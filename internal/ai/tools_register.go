@@ -30,6 +30,13 @@ func RegisterPhase4Tools(registry *ToolHandlerRegistry, deps *ToolDeps) {
 	registry.RegisterHandler("content.update", ContentUpdateHandler(deps))
 	registry.RegisterPrivacyTarget("content.update", ContentUpdatePrivacyTarget)
 
+	// --- Content draft-request tool (Phase 8, tasks 8.01 + 8.02 + 8.05) ---
+	// content.create_draft is gated by agent.draft_request (not
+	// content.create) at the catalog layer. It forces status="draft",
+	// forces author_id to the AI persona's backing user, and creates a
+	// HITL review with source='agent_draft_request'.
+	registry.RegisterHandler("content.create_draft", ContentCreateDraftHandler(deps))
+
 	// --- Custom field tools (tasks 4.05-4.08) ---
 	registry.RegisterHandler("custom_fields.list", CustomFieldsListHandler(deps))
 	registry.RegisterHandler("custom_field_values.read", CFVReadHandler(deps))

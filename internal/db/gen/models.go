@@ -302,6 +302,7 @@ type AiHitlReview struct {
 	Reason        *string            `json:"reason"`
 	ReviewedAt    pgtype.Timestamptz `json:"reviewed_at"`
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	Source        string             `json:"source"`
 }
 
 type AiPersona struct {
@@ -1100,9 +1101,9 @@ type CredentialPathway struct {
 	HitlReviewedBy         pgtype.UUID        `json:"hitl_reviewed_by"`
 	HitlReviewedAt         pgtype.Timestamptz `json:"hitl_reviewed_at"`
 	HitlReviewNotes        *string            `json:"hitl_review_notes"`
-	IsJapabotIndexed       bool               `json:"is_japabot_indexed"`
 	CreatedAt              pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt              pgtype.Timestamptz `json:"updated_at"`
+	IsJapabotIndexed       *bool              `json:"is_japabot_indexed"`
 }
 
 type CredentialProfession struct {

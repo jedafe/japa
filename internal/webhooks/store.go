@@ -3,6 +3,7 @@ package webhooks
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -314,6 +315,8 @@ func (s *Store) GetWebhookEndpoint(ctx context.Context, id pgtype.UUID) (Webhook
 		// update fails; the delivery can still proceed with the plaintext.
 		if enc, encErr := crypto.Encrypt(row.Secret); encErr == nil {
 			_, _ = s.db.Writer.Exec(ctx, `UPDATE webhook_endpoints SET secret = $1 WHERE id = $2`, enc, id)
+		} else {
+			slog.Warn("webhooks: failed to re-encrypt legacy plaintext secret", "endpoint_id", id, "error", encErr)
 		}
 	}
 

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -570,8 +571,13 @@ func toAdNetworkDTO(n AdNetwork) AdNetworkDTO {
 		dto.HasAPIKey = true
 		if plain, err := crypto.Decrypt(*n.ApiKeyEncrypted); err == nil {
 			dto.APIKeyMasked = maskAPIKey(plain)
+		} else if strings.HasPrefix(*n.ApiKeyEncrypted, "v1:") {
+			// Encrypted format but decryption failed (corrupted/tampered) —
+			// do not mask the ciphertext blob, show a safe placeholder.
+			slog.Warn("advertising: failed to decrypt api key", "error", err)
+			dto.APIKeyMasked = "****"
 		} else {
-			// Legacy plaintext — mask directly.
+			// Legacy plaintext (pre-encryption) — mask directly.
 			dto.APIKeyMasked = maskAPIKey(*n.ApiKeyEncrypted)
 		}
 	}

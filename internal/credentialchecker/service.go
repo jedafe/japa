@@ -104,6 +104,8 @@ type CreatePathwayRequest struct {
 
 // UpdatePathwayRequest is the request body for PATCH /admin/credentials/:id.
 // All fields are optional (pointer); only provided fields are updated.
+// is_japabot_indexed is intentionally absent — it is a GENERATED ALWAYS AS
+// column computed from status + is_active and cannot be updated directly.
 type UpdatePathwayRequest struct {
 	ProfessionID           *pgtype.UUID `json:"profession_id"`
 	IssuingSpaceID         *string `json:"issuing_space_id"`
@@ -118,7 +120,6 @@ type UpdatePathwayRequest struct {
 	SourceURLLastChecked   *string `json:"source_url_last_checked"`
 	Status                 *string `json:"status"`
 	IsActive               *bool   `json:"is_active"`
-	IsJapabotIndexed       *bool   `json:"is_japabot_indexed"`
 }
 
 // CreateNoteRequest is the request body for POST /credentials/:id/notes.
@@ -140,11 +141,13 @@ type GeneratePathwayRequest struct {
 	DestinationSpaceID string      `json:"destination_space_id"`
 }
 
-// GeneratePathwayResponse is the placeholder response for the Content
-// Agent draft generation endpoint.
+// GeneratePathwayResponse is the response for the Content Agent draft
+// generation endpoint. Returns the created pathway ID so the admin can
+// navigate to the draft for HITL review.
 type GeneratePathwayResponse struct {
 	Status             string       `json:"status"`
 	Message            string       `json:"message"`
+	PathwayID          string       `json:"pathway_id,omitempty"`
 	ProfessionID       pgtype.UUID  `json:"profession_id,omitempty"`
 	IssuingSpaceID     string       `json:"issuing_space_id,omitempty"`
 	DestinationSpaceID string       `json:"destination_space_id,omitempty"`
@@ -218,7 +221,9 @@ func (s *Service) ListPathways(ctx context.Context, tenantID, destSpaceID, issui
 }
 
 // GetPathway returns a single pathway by id plus its published community
-// notes. Only published pathways are returned to public callers.
+// notes. Only published pathways are returned to public callers — draft,
+// ai_draft, pending, and rejected pathways are hidden (ADR-088: ai_draft
+// status is NEVER visible to end users).
 func (s *Service) GetPathway(ctx context.Context, id, tenantID pgtype.UUID) (PathwayDetailDTO, error) {
 	row, err := s.store.GetPathwayByID(ctx, id, tenantID)
 	if err != nil {
@@ -226,6 +231,10 @@ func (s *Service) GetPathway(ctx context.Context, id, tenantID pgtype.UUID) (Pat
 			return PathwayDetailDTO{}, pgx.ErrNoRows
 		}
 		return PathwayDetailDTO{}, fmt.Errorf("credentialchecker: get pathway: %w", err)
+	}
+
+	if row.Status != StatusPublished {
+		return PathwayDetailDTO{}, pgx.ErrNoRows
 	}
 
 	notes, err := s.store.GetPathwayNotes(ctx, id, tenantID)
@@ -337,7 +346,6 @@ func (s *Service) UpdatePathway(ctx context.Context, id, tenantID pgtype.UUID, r
 		OfficialApplicationURL: req.OfficialApplicationURL,
 		Status:                 req.Status,
 		IsActive:               req.IsActive,
-		IsJapabotIndexed:       req.IsJapabotIndexed,
 	}
 
 	if req.IssuingSpaceID != nil && *req.IssuingSpaceID != "" {
@@ -395,17 +403,24 @@ func (s *Service) ApprovePathway(ctx context.Context, id, tenantID, reviewerID p
 }
 
 // CreateNote submits a community note on a pathway. Auth required
-// (credential_checker.note permission checked at route level).
+// (credential_checker.note permission checked at route level). Notes may
+// only be submitted on published pathways — draft/ai_draft/pending
+// pathways are not publicly visible and should not accumulate notes.
 func (s *Service) CreateNote(ctx context.Context, pathwayID, tenantID, userID pgtype.UUID, note string) (CommunityNoteDTO, error) {
 	if note == "" {
 		return CommunityNoteDTO{}, fmt.Errorf("note is required")
 	}
 
-	if _, err := s.store.GetPathwayByID(ctx, pathwayID, tenantID); err != nil {
+	pathway, err := s.store.GetPathwayByID(ctx, pathwayID, tenantID)
+	if err != nil {
 		if err == pgx.ErrNoRows {
 			return CommunityNoteDTO{}, pgx.ErrNoRows
 		}
 		return CommunityNoteDTO{}, fmt.Errorf("credentialchecker: note: get pathway: %w", err)
+	}
+
+	if pathway.Status != StatusPublished {
+		return CommunityNoteDTO{}, pgx.ErrNoRows
 	}
 
 	id, err := s.store.CreateNote(ctx, pathwayID, userID, note)
@@ -423,20 +438,50 @@ func (s *Service) CreateNote(ctx context.Context, pathwayID, tenantID, userID pg
 	}, nil
 }
 
-// GeneratePathwayDraft is a placeholder for the Content Agent draft
-// generation endpoint. It returns 202 Accepted with a placeholder
-// response indicating that the AI generation pipeline is not yet wired.
-// Admin-only (credential_checker.manage permission checked at route
-// level).
+// GeneratePathwayDraft creates an AI-drafted credential pathway in
+// 'ai_draft' status. The pathway is marked ai_generated=true with
+// ai_model='content_agent_v1' and requires HITL approval (ApprovePathway)
+// before publication. Admin-only (credential_checker.manage permission
+// checked at route level). Ref: ADR-088, geo-aware-tool-pattern.md.
 func (s *Service) GeneratePathwayDraft(ctx context.Context, tenantID pgtype.UUID, req GeneratePathwayRequest) (GeneratePathwayResponse, error) {
-	resp := GeneratePathwayResponse{
+	var issuingSpaceID pgtype.UUID
+	if err := issuingSpaceID.Scan(req.IssuingSpaceID); err != nil {
+		return GeneratePathwayResponse{}, fmt.Errorf("invalid issuing_space_id: %w", err)
+	}
+
+	var destSpaceID pgtype.UUID
+	if err := destSpaceID.Scan(req.DestinationSpaceID); err != nil {
+		return GeneratePathwayResponse{}, fmt.Errorf("invalid destination_space_id: %w", err)
+	}
+
+	aiModel := "content_agent_v1"
+	input := CreatePathwayInput{
+		TenantID:           tenantID,
+		ProfessionID:       req.ProfessionID,
+		IssuingSpaceID:     issuingSpaceID,
+		DestinationSpaceID: destSpaceID,
+		RegulatoryBody:     "AI-generated — pending review",
+		PathwayType:        PathwayDirect,
+		PathwayDescription: "AI-generated pathway description — pending HITL review.",
+		Status:             StatusAIDraft,
+		IsActive:           false,
+		AIGenerated:        true,
+		AIModel:            &aiModel,
+	}
+
+	id, err := s.store.CreatePathway(ctx, input)
+	if err != nil {
+		return GeneratePathwayResponse{}, fmt.Errorf("credentialchecker: generate draft: %w", err)
+	}
+
+	return GeneratePathwayResponse{
 		Status:             "accepted",
-		Message:            "Content Agent draft generation queued. Pathway will be created in 'ai_draft' status upon completion.",
+		Message:            "Content Agent draft created in 'ai_draft' status. Review and approve to publish.",
+		PathwayID:          id.String(),
 		ProfessionID:       req.ProfessionID,
 		IssuingSpaceID:     req.IssuingSpaceID,
 		DestinationSpaceID: req.DestinationSpaceID,
-	}
-	return resp, nil
+	}, nil
 }
 
 // AdminListPathways returns all pathways (any status) for the admin

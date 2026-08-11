@@ -44,6 +44,28 @@ func (q *Queries) CheckFieldPermissionForUser(ctx context.Context, arg CheckFiel
 	return i, err
 }
 
+const countCustomFieldValuesByGroup = `-- name: CountCustomFieldValuesByGroup :one
+SELECT count(*)::bigint
+FROM custom_field_values cfv
+JOIN custom_fields cf ON cfv.field_id = cf.id
+WHERE cf.group_id = $1 AND cf.tenant_id = $2
+`
+
+type CountCustomFieldValuesByGroupParams struct {
+	GroupID  pgtype.UUID `json:"group_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+// BUG-008: counts custom_field_values referencing any field in the given
+// group, so DeleteFieldGroup can reject deletion when the group is in use.
+// Tenant-scoped via the JOIN to custom_fields.
+func (q *Queries) CountCustomFieldValuesByGroup(ctx context.Context, arg CountCustomFieldValuesByGroupParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countCustomFieldValuesByGroup, arg.GroupID, arg.TenantID)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const createAssignment = `-- name: CreateAssignment :one
 INSERT INTO custom_field_group_assignments (group_id, entity_class, entity_id, position)
 VALUES ($1, $2, $3, $4)

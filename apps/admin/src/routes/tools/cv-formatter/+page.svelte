@@ -1,5 +1,6 @@
 <script lang="ts">
 	// /tools/cv-formatter — admin management for CV formatting standards (§95).
+	// Ref: japaconnect-engineering/sections/95-cv-formatter.md
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import { Modal } from '$lib/components/ui/modal';
 	import { Button } from '$lib/components/ui/button';
@@ -9,15 +10,26 @@
 	import type { ActionItem } from '$lib/components/ui/data-table';
 	import { cvFormatterAdminApi } from '$lib/api';
 
-	type CVStandardItem = {
+	// CVStandardRow matches the backend StandardDTO (§95, ADR-103).
+	type CVStandardRow = {
 		id: string;
-		dest_country: string;
-		format_name: string;
-		template?: string;
-		guidelines?: string;
-		language?: string;
-		max_pages?: number;
-		updated_at?: string;
+		destination_space_id: string;
+		destination_space_name?: string;
+		destination_space_code?: string;
+		recommended_length_pages?: string;
+		photo_policy?: string;
+		date_format?: string;
+		recommended_sections?: string[];
+		tone_guidance?: string;
+		common_pitfalls?: string;
+		created_at: string;
+		updated_at: string;
+	};
+
+	type SpaceOption = {
+		id: string;
+		name: string;
+		geo_code?: string;
 	};
 
 	const canManage = $derived(hasPermission('cv_formatter.manage'));
@@ -26,23 +38,40 @@
 	let entityController = $state<EntityPageController | undefined>(undefined);
 	let pageError = $state('');
 	let acting = $state(false);
+	let destinations = $state<SpaceOption[]>([]);
 
 	// ── Upsert modal state ──────────────────────────────────────────────────
 	let showUpsertModal = $state(false);
-	let upsertDestCountry = $state('');
-	let upsertFormatName = $state('');
-	let upsertTemplate = $state('');
-	let upsertGuidelines = $state('');
-	let upsertLanguage = $state('');
-	let upsertMaxPages = $state('');
+	let upsertDestSpaceId = $state('');
+	let upsertLengthPages = $state('');
+	let upsertPhotoPolicy = $state('');
+	let upsertDateFormat = $state('');
+	let upsertSections = $state('');
+	let upsertToneGuidance = $state('');
+	let upsertCommonPitfalls = $state('');
+
+	// Load destination spaces (countries) for the selector.
+	$effect(() => {
+		if (!showUpsertModal || destinations.length > 0) return;
+		cvFormatterAdminApi.listDestinations().then((res) => {
+			if (res.ok && Array.isArray(res.data)) {
+				destinations = (res.data as SpaceOption[]).map((d) => ({
+					id: d.id,
+					name: d.name,
+					geo_code: d.geo_code
+				}));
+			}
+		});
+	});
 
 	function openUpsert() {
-		upsertDestCountry = '';
-		upsertFormatName = '';
-		upsertTemplate = '';
-		upsertGuidelines = '';
-		upsertLanguage = '';
-		upsertMaxPages = '';
+		upsertDestSpaceId = '';
+		upsertLengthPages = '';
+		upsertPhotoPolicy = '';
+		upsertDateFormat = '';
+		upsertSections = '';
+		upsertToneGuidance = '';
+		upsertCommonPitfalls = '';
 		showUpsertModal = true;
 	}
 
@@ -51,13 +80,16 @@
 		pageError = '';
 		try {
 			const body: Record<string, unknown> = {
-				dest_country: upsertDestCountry,
-				format_name: upsertFormatName,
-				template: upsertTemplate,
-				guidelines: upsertGuidelines,
-				language: upsertLanguage
+				destination_space_id: upsertDestSpaceId,
+				recommended_length_pages: upsertLengthPages || undefined,
+				photo_policy: upsertPhotoPolicy || undefined,
+				date_format: upsertDateFormat || undefined,
+				recommended_sections: upsertSections
+					? upsertSections.split(',').map((s) => s.trim()).filter(Boolean)
+					: undefined,
+				tone_guidance: upsertToneGuidance || undefined,
+				common_pitfalls: upsertCommonPitfalls || undefined
 			};
-			if (upsertMaxPages) body.max_pages = parseInt(upsertMaxPages, 10);
 			const result = await cvFormatterAdminApi.upsertStandard(body);
 			if (result.ok) {
 				showUpsertModal = false;
@@ -75,19 +107,19 @@
 	// ── Row actions ─────────────────────────────────────────────────────────
 	const rowActions = $derived.by<ActionItem[]>(() => {
 		const acts: ActionItem[] = [
-			{ label: t('common.view', 'View'), icon: Eye, onclick: (_row: CVStandardItem, ctx) => ctx?.openView(_row) }
+			{ label: t('common.view', 'View'), icon: Eye, onclick: (_row: CVStandardRow, ctx) => ctx?.openView(_row) }
 		];
 		return acts;
 	});
 
 	// `fields` is required by EntityPageConfig; readonly page so the form is never shown.
 	const fields: FieldDef[] = [
-		{ key: 'dest_country', label: t('app.tools.col_dest_country', 'Destination Country'), type: 'text' },
-		{ key: 'format_name', label: t('app.tools.col_format_name', 'Format Name'), type: 'text' },
-		{ key: 'template', label: t('app.tools.col_template', 'Template'), type: 'textarea' },
-		{ key: 'guidelines', label: t('app.tools.col_guidelines', 'Guidelines'), type: 'textarea' },
-		{ key: 'language', label: t('app.tools.col_language', 'Language'), type: 'text' },
-		{ key: 'max_pages', label: t('app.tools.col_max_pages', 'Max Pages'), type: 'number' }
+		{ key: 'destination_space_id', label: t('app.tools.col_destination', 'Destination'), type: 'text' },
+		{ key: 'recommended_length_pages', label: t('app.tools.col_length_pages', 'Recommended Length'), type: 'text' },
+		{ key: 'photo_policy', label: t('app.tools.col_photo_policy', 'Photo Policy'), type: 'text' },
+		{ key: 'date_format', label: t('app.tools.col_date_format', 'Date Format'), type: 'text' },
+		{ key: 'tone_guidance', label: t('app.tools.col_tone_guidance', 'Tone Guidance'), type: 'textarea' },
+		{ key: 'common_pitfalls', label: t('app.tools.col_common_pitfalls', 'Common Pitfalls'), type: 'textarea' }
 	];
 
 	const config = $derived<EntityPageConfig>({
@@ -96,17 +128,26 @@
 		readonly: true,
 		pageSize: 25,
 		columns: [
-			{ key: 'dest_country', label: t('app.tools.col_dest_country', 'Destination'), sortable: true },
-			{ key: 'format_name', label: t('app.tools.col_format_name', 'Format'), sortable: true },
 			{
-				key: 'language',
-				label: t('app.tools.col_language', 'Language'),
+				key: 'destination_space_name',
+				label: t('app.tools.col_destination', 'Destination'),
+				sortable: true,
 				render: (value: string) => value || '—'
 			},
 			{
-				key: 'max_pages',
-				label: t('app.tools.col_max_pages', 'Max Pages'),
-				render: (value: number) => (value ? String(value) : '—')
+				key: 'recommended_length_pages',
+				label: t('app.tools.col_length_pages', 'Length'),
+				render: (value: string) => value || '—'
+			},
+			{
+				key: 'photo_policy',
+				label: t('app.tools.col_photo_policy', 'Photo Policy'),
+				render: (value: string) => value || '—'
+			},
+			{
+				key: 'date_format',
+				label: t('app.tools.col_date_format', 'Date Format'),
+				render: (value: string) => value || '—'
 			},
 			{
 				key: 'updated_at',
@@ -120,7 +161,7 @@
 		load: async () => {
 			const result = await cvFormatterAdminApi.listStandards();
 			if (result.ok) {
-				const data = (result.data as CVStandardItem[]) ?? [];
+				const data = (result.data as CVStandardRow[]) ?? [];
 				return { data, total: data.length, totalPages: 1 };
 			}
 			throw new Error(result.error ?? t('common.error', 'An error occurred'));
@@ -157,103 +198,131 @@
 <Modal bind:open={showUpsertModal} title={t('app.tools.upsert_cv_standard', 'Upsert CV Standard')}>
 	<div class="space-y-4">
 		<div>
-			<label for="upsert-dest" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('app.tools.col_dest_country', 'Destination Country')}</label>
-			<input
+			<label for="upsert-dest" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('app.tools.col_destination', 'Destination')}</label>
+			<select
 				id="upsert-dest"
 				class="w-full rounded-lg border p-3 text-sm"
 				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
-				bind:value={upsertDestCountry}
-				placeholder={t('app.tools.dest_country_placeholder', 'e.g. Japan')}
-			/>
+				bind:value={upsertDestSpaceId}
+			>
+				<option value="">{t('app.tools.select_destination', 'Select destination country')}</option>
+				{#each destinations as d (d.id)}
+					<option value={d.id}>{d.name}</option>
+				{/each}
+			</select>
 		</div>
 		<div>
-			<label for="upsert-format" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('app.tools.col_format_name', 'Format Name')}</label>
-			<input
-				id="upsert-format"
-				class="w-full rounded-lg border p-3 text-sm"
-				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
-				bind:value={upsertFormatName}
-				placeholder={t('app.tools.format_name_placeholder', 'e.g. Japanese Standard CV (rirekisho)')}
-			/>
-		</div>
-		<div>
-			<label for="upsert-lang" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('app.tools.col_language', 'Language')}</label>
-			<input
-				id="upsert-lang"
-				class="w-full rounded-lg border p-3 text-sm"
-				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
-				bind:value={upsertLanguage}
-				placeholder={t('app.tools.language_placeholder', 'e.g. Japanese')}
-			/>
-		</div>
-		<div>
-			<label for="upsert-pages" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('app.tools.col_max_pages', 'Max Pages')}</label>
+			<label for="upsert-pages" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('app.tools.col_length_pages', 'Recommended Length (pages)')}</label>
 			<input
 				id="upsert-pages"
-				type="number"
 				class="w-full rounded-lg border p-3 text-sm"
 				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
-				bind:value={upsertMaxPages}
-				placeholder={t('app.tools.max_pages_placeholder', 'e.g. 2')}
+				bind:value={upsertLengthPages}
+				placeholder={t('app.tools.length_pages_placeholder', 'e.g. 1-2')}
 			/>
 		</div>
 		<div>
-			<label for="upsert-template" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('app.tools.col_template', 'Template')}</label>
-			<textarea
-				id="upsert-template"
+			<label for="upsert-photo" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('app.tools.col_photo_policy', 'Photo Policy')}</label>
+			<select
+				id="upsert-photo"
 				class="w-full rounded-lg border p-3 text-sm"
 				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
-				rows="4"
-				bind:value={upsertTemplate}
-				placeholder={t('app.tools.template_placeholder', 'Template content or structure...')}
-			></textarea>
+				bind:value={upsertPhotoPolicy}
+			>
+				<option value="">{t('common.none', 'None')}</option>
+				<option value="required">{t('app.tools.photo_required', 'Required')}</option>
+				<option value="optional">{t('app.tools.photo_optional', 'Optional')}</option>
+				<option value="not_recommended">{t('app.tools.photo_not_recommended', 'Not Recommended')}</option>
+				<option value="prohibited">{t('app.tools.photo_prohibited', 'Prohibited')}</option>
+			</select>
 		</div>
 		<div>
-			<label for="upsert-guidelines" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('app.tools.col_guidelines', 'Guidelines')}</label>
+			<label for="upsert-date" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('app.tools.col_date_format', 'Date Format')}</label>
+			<input
+				id="upsert-date"
+				class="w-full rounded-lg border p-3 text-sm"
+				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+				bind:value={upsertDateFormat}
+				placeholder={t('app.tools.date_format_placeholder', 'e.g. YYYY-MM-DD')}
+			/>
+		</div>
+		<div>
+			<label for="upsert-sections" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('app.tools.col_sections', 'Recommended Sections')}</label>
+			<input
+				id="upsert-sections"
+				class="w-full rounded-lg border p-3 text-sm"
+				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+				bind:value={upsertSections}
+				placeholder={t('app.tools.sections_placeholder', 'Comma-separated, e.g. Personal Info, Education, Work Experience')}
+			/>
+		</div>
+		<div>
+			<label for="upsert-tone" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('app.tools.col_tone_guidance', 'Tone Guidance')}</label>
 			<textarea
-				id="upsert-guidelines"
+				id="upsert-tone"
 				class="w-full rounded-lg border p-3 text-sm"
 				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
 				rows="3"
-				bind:value={upsertGuidelines}
-				placeholder={t('app.tools.guidelines_placeholder', 'Formatting guidelines...')}
+				bind:value={upsertToneGuidance}
+				placeholder={t('app.tools.tone_guidance_placeholder', 'e.g. Formal and concise')}
+			></textarea>
+		</div>
+		<div>
+			<label for="upsert-pitfalls" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('app.tools.col_common_pitfalls', 'Common Pitfalls')}</label>
+			<textarea
+				id="upsert-pitfalls"
+				class="w-full rounded-lg border p-3 text-sm"
+				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+				rows="3"
+				bind:value={upsertCommonPitfalls}
+				placeholder={t('app.tools.common_pitfalls_placeholder', 'e.g. Avoid including personal details like age or marital status')}
 			></textarea>
 		</div>
 	</div>
 	<div class="mt-4 flex justify-end gap-2">
 		<Button variant="ghost" onclick={() => (showUpsertModal = false)}>{t('common.cancel', 'Cancel')}</Button>
-		<Button onclick={confirmUpsert} disabled={acting}>
+		<Button onclick={confirmUpsert} disabled={acting || !upsertDestSpaceId}>
 			{acting ? t('common.saving', 'Saving...') : t('common.save', 'Save')}
 		</Button>
 	</div>
 </Modal>
 
 <!-- ── View slide-over body ──────────────────────────────────────────────── -->
-{#snippet CVStandardView({ row }: { row: CVStandardItem })}
+{#snippet CVStandardView({ row }: { row: CVStandardRow })}
 	<div class="space-y-4">
 		<div>
-			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.tools.col_dest_country', 'Destination Country')}</p>
-			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.dest_country}</p>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.tools.col_destination', 'Destination')}</p>
+			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.destination_space_name ?? row.destination_space_id}</p>
 		</div>
 		<div>
-			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.tools.col_format_name', 'Format Name')}</p>
-			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.format_name}</p>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.tools.col_length_pages', 'Recommended Length')}</p>
+			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.recommended_length_pages ?? '—'}</p>
 		</div>
 		<div>
-			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.tools.col_language', 'Language')}</p>
-			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.language || '—'}</p>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.tools.col_photo_policy', 'Photo Policy')}</p>
+			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.photo_policy ?? '—'}</p>
 		</div>
 		<div>
-			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.tools.col_max_pages', 'Max Pages')}</p>
-			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.max_pages ? String(row.max_pages) : '—'}</p>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.tools.col_date_format', 'Date Format')}</p>
+			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.date_format ?? '—'}</p>
+		</div>
+		{#if row.recommended_sections && row.recommended_sections.length > 0}
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.tools.col_sections', 'Recommended Sections')}</p>
+				<div class="mt-1 flex flex-wrap gap-2">
+					{#each row.recommended_sections as section (section)}
+						<span class="px-2.5 py-1 text-xs rounded-full" style="background: var(--color-surface-subtle); color: var(--color-foreground)">{section}</span>
+					{/each}
+				</div>
+			</div>
+		{/if}
+		<div>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.tools.col_tone_guidance', 'Tone Guidance')}</p>
+			<p class="mt-1 whitespace-pre-wrap text-sm" style="color: var(--color-foreground)">{row.tone_guidance ?? '—'}</p>
 		</div>
 		<div>
-			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.tools.col_template', 'Template')}</p>
-			<p class="mt-1 whitespace-pre-wrap text-sm" style="color: var(--color-foreground)">{row.template || '—'}</p>
-		</div>
-		<div>
-			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.tools.col_guidelines', 'Guidelines')}</p>
-			<p class="mt-1 whitespace-pre-wrap text-sm" style="color: var(--color-foreground)">{row.guidelines || '—'}</p>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.tools.col_common_pitfalls', 'Common Pitfalls')}</p>
+			<p class="mt-1 whitespace-pre-wrap text-sm" style="color: var(--color-foreground)">{row.common_pitfalls ?? '—'}</p>
 		</div>
 		<div>
 			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.tools.col_updated_at', 'Updated')}</p>

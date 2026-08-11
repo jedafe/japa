@@ -347,6 +347,14 @@ func (s *Store) softDeleteAttestationCommunityUpdatesByUser(ctx context.Context,
 	return s.write.SoftDeleteAttestationCommunityUpdatesByUser(ctx, userID)
 }
 
+// softDeleteCredentialCommunityNotesByUser soft-deletes §94
+// credential_community_notes authored by the user during GDPR erasure.
+// Sets deleted_at = now() to preserve the note text while removing the
+// user's PII association.
+func (s *Store) softDeleteCredentialCommunityNotesByUser(ctx context.Context, userID pgtype.UUID) error {
+	return s.write.SoftDeleteCredentialCommunityNotesByUser(ctx, userID)
+}
+
 func (s *Store) gdprExportUserApiKeys(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
 	return exportJSONSlice(ctx, s.read.GdprExportUserApiKeys, gen.GdprExportUserApiKeysParams{UserID: userID, TenantID: tenantID})
 }

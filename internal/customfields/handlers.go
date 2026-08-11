@@ -16,6 +16,8 @@ import (
 	"log/slog"
 	"net/http"
 	"net/netip"
+	neturl "net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -67,7 +69,18 @@ type Handlers struct {
 	// Settings is used to read system_settings for form fee overrides.
 	// Nil in tests — the form's submission_fee_credits column is used directly.
 	settings SettingsReader
+
+	// richTextSanitizer sanitizes HTML in rich_text field values to prevent
+	// stored XSS (BUG-001). Injected from server.go to avoid an import cycle
+	// between customfields and content. When nil, rich_text values are stored
+	// as-is (test-only — production MUST wire this).
+	richTextSanitizer RichTextSanitizer
 }
+
+// RichTextSanitizer sanitizes user-supplied HTML for safe storage and display.
+// Implemented by content.SanitizeHTML; injected via SetRichTextSanitizer to
+// avoid an import cycle (customfields cannot import content).
+type RichTextSanitizer func(raw string) string
 
 // WalletSpender deducts credits from a user's wallet.
 type WalletSpender interface {
@@ -110,6 +123,11 @@ func (h *Handlers) SetPaymentsService(p PaymentCreator) { h.payments = p }
 // SetSettings wires the settings reader for system_settings lookups
 // (Section 06 Paid Form Submissions — fee overrides).
 func (h *Handlers) SetSettings(s SettingsReader) { h.settings = s }
+
+// SetRichTextSanitizer wires the HTML sanitizer used to scrub rich_text
+// field values before storage (BUG-001 — stored XSS prevention). Required
+// in production; tests may omit it.
+func (h *Handlers) SetRichTextSanitizer(s RichTextSanitizer) { h.richTextSanitizer = s }
 
 // errorResponse is the JSON body returned for error responses, following the
 // JapaConnect API error format: {"error": {"code": "...", "message": "..."}}.
@@ -240,6 +258,35 @@ func toFieldSummary(f gen.ListAllCustomFieldsByTenantRow) fieldSummary {
 	}
 }
 
+// toFieldSummaryFromGroup converts a gen.ListCustomFieldsByGroupRow to a
+// fieldSummary, preserving the Options JSONB as raw JSON instead of
+// base64-encoded []byte. This is the group-scoped variant of toFieldSummary.
+func toFieldSummaryFromGroup(f gen.ListCustomFieldsByGroupRow) fieldSummary {
+	var opts json.RawMessage
+	if f.Options != nil {
+		opts = json.RawMessage(f.Options)
+	}
+	return fieldSummary{
+		ID:             f.ID,
+		GroupID:        f.GroupID,
+		Label:          f.Label,
+		Key:            f.Key,
+		FieldType:      f.FieldType,
+		Options:        opts,
+		EmbedPlatforms: f.EmbedPlatforms,
+		Placeholder:    f.Placeholder,
+		DefaultValue:   f.DefaultValue,
+		IsRequired:     f.IsRequired,
+		IsSystem:       f.IsSystem,
+		ShowInFrontend: f.ShowInFrontend,
+		Filterable:     f.Filterable,
+		Sortable:       f.Sortable,
+		Searchable:     f.Searchable,
+		Position:       f.Position,
+		CreatedAt:      f.CreatedAt,
+	}
+}
+
 // enrichFieldGroups assembles enriched field group objects from the bare
 // group structs, their assignments (for entity_type), and their fields.
 // Uses bulk queries to avoid N+1 per-group lookups.
@@ -290,14 +337,19 @@ func (h *Handlers) enrichFieldGroups(
 }
 
 // ListFieldGroups handles GET /api/v1/custom-field-groups.
-// It accepts two optional query params:
+// It accepts optional query params:
 //   - entity_class: exact match on the assignment entity_class column
 //   - entity_type:  simplified token (e.g. "content", "user_profile") that
 //     is matched against the derived EntityTypeFromClass value
+//   - q:            case-insensitive search on group name, slug, and description
+//   - sort:         "key:dir" e.g. "name:asc", "created_at:desc"
+//   - page:         1-based page number (default 1)
+//   - page_size:    page size (default 25, max 100)
 //
-// When both are provided, entity_class takes precedence. The entity_type
-// filter is applied post-enrichment so it works with the simplified tokens
-// the frontend dropdown uses (Section 06).
+// When both entity_class and entity_type are provided, entity_class takes
+// precedence. The entity_type filter, search, sort, and pagination are all
+// applied post-enrichment so they work with the derived/simplified values
+// the frontend uses (Section 06).
 func (h *Handlers) ListFieldGroups(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -306,6 +358,21 @@ func (h *Handlers) ListFieldGroups(w http.ResponseWriter, r *http.Request) {
 
 	entityClass := r.URL.Query().Get("entity_class")
 	entityType := r.URL.Query().Get("entity_type")
+	searchQuery := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("q")))
+	sortParam := r.URL.Query().Get("sort")
+
+	page := 1
+	if p := r.URL.Query().Get("page"); p != "" {
+		if v, err := strconv.Atoi(p); err == nil && v > 0 {
+			page = v
+		}
+	}
+	pageSize := 25
+	if ps := r.URL.Query().Get("page_size"); ps != "" {
+		if v, err := strconv.Atoi(ps); err == nil && v > 0 && v <= 100 {
+			pageSize = v
+		}
+	}
 
 	var groups []gen.CustomFieldGroup
 	var err error
@@ -333,7 +400,81 @@ func (h *Handlers) ListFieldGroups(w http.ResponseWriter, r *http.Request) {
 		enriched = filtered
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": enriched})
+	// Post-filter by search query (case-insensitive on name, slug, description).
+	if searchQuery != "" {
+		filtered := enriched[:0]
+		for _, g := range enriched {
+			if strings.Contains(strings.ToLower(g.Name), searchQuery) ||
+				strings.Contains(strings.ToLower(g.Slug), searchQuery) ||
+				(g.Description != nil && strings.Contains(strings.ToLower(*g.Description), searchQuery)) {
+				filtered = append(filtered, g)
+			}
+		}
+		enriched = filtered
+	}
+
+	// Sort: parse "key:dir" e.g. "name:asc", "created_at:desc".
+	sortKey := "created_at"
+	sortDir := "desc"
+	if sortParam != "" {
+		parts := strings.SplitN(sortParam, ":", 2)
+		if parts[0] != "" {
+			sortKey = parts[0]
+		}
+		if len(parts) > 1 && (parts[1] == "asc" || parts[1] == "desc") {
+			sortDir = parts[1]
+		}
+	}
+	sort.Slice(enriched, func(i, j int) bool {
+		less := false
+		switch sortKey {
+		case "name":
+			less = enriched[i].Name < enriched[j].Name
+		case "slug":
+			less = enriched[i].Slug < enriched[j].Slug
+		case "entity_type":
+			less = enriched[i].EntityType < enriched[j].EntityType
+		case "field_count":
+			less = enriched[i].FieldCount < enriched[j].FieldCount
+		case "created_at":
+			less = enriched[i].CreatedAt.Time.Before(enriched[j].CreatedAt.Time)
+		default:
+			less = enriched[i].Name < enriched[j].Name
+		}
+		if sortDir == "desc" {
+			return !less
+		}
+		return less
+	})
+
+	// Pagination: slice the enriched result.
+	total := len(enriched)
+	totalPages := 1
+	if pageSize > 0 {
+		totalPages = (total + pageSize - 1) / pageSize
+		if totalPages < 1 {
+			totalPages = 1
+		}
+	}
+	start := (page - 1) * pageSize
+	if start > total {
+		start = total
+	}
+	end := start + pageSize
+	if end > total {
+		end = total
+	}
+	paged := enriched[start:end]
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data": paged,
+		"meta": map[string]any{
+			"page":        page,
+			"page_size":   pageSize,
+			"total":       total,
+			"total_pages": totalPages,
+		},
+	})
 }
 
 // GetFieldGroup handles GET /api/v1/custom-field-groups/{id}. It returns the
@@ -363,8 +504,15 @@ func (h *Handlers) GetFieldGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Convert to frontend-friendly fieldSummary so Options JSONB is
+	// serialized as raw JSON, not base64-encoded []byte.
+	fieldSummaries := make([]fieldSummary, 0, len(fields))
+	for _, f := range fields {
+		fieldSummaries = append(fieldSummaries, toFieldSummaryFromGroup(f))
+	}
+
 	writeJSON(w, http.StatusOK, map[string]any{
-		"data": map[string]any{"group": group, "fields": fields},
+		"data": map[string]any{"group": group, "fields": fieldSummaries},
 	})
 }
 
@@ -600,7 +748,14 @@ func (h *Handlers) ListFieldsByGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": fields})
+	// Convert to frontend-friendly fieldSummary so Options JSONB is
+	// serialized as raw JSON, not base64-encoded []byte.
+	fieldSummaries := make([]fieldSummary, 0, len(fields))
+	for _, f := range fields {
+		fieldSummaries = append(fieldSummaries, toFieldSummaryFromGroup(f))
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": fieldSummaries})
 }
 
 // CreateField handles POST /api/v1/custom-field-groups/{id}/fields.
@@ -1048,6 +1203,31 @@ func (h *Handlers) SetFieldValue(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// BUG-005: type-specific value validation for text-based field types.
+	if req.ValueText != nil && *req.ValueText != "" {
+		fd := fieldDef{Label: field.Label, Key: field.Key, FieldType: field.FieldType, Options: field.Options, IsRequired: field.IsRequired}
+		if msg, ok := validateTextValue(fd, *req.ValueText); !ok {
+			writeError(w, http.StatusBadRequest, "invalid_value", msg)
+			return
+		}
+	}
+
+	// BUG-005: validate select/multiselect values against allowed options.
+	if req.ValueJson != nil && (field.FieldType == FieldTypeSelect || field.FieldType == FieldTypeMultiselect) {
+		fd := fieldDef{Label: field.Label, Key: field.Key, FieldType: field.FieldType, Options: field.Options, IsRequired: field.IsRequired}
+		if msg, ok := validateSelectValue(fd, req.ValueJson); !ok {
+			writeError(w, http.StatusBadRequest, "invalid_value", msg)
+			return
+		}
+	}
+
+	// BUG-001: sanitize rich_text HTML before storage to prevent stored XSS.
+	// rich_text fields write to value_text; we scrub the HTML in-place.
+	if field.FieldType == FieldTypeRichText && req.ValueText != nil && *req.ValueText != "" && h.richTextSanitizer != nil {
+		sanitized := h.richTextSanitizer(*req.ValueText)
+		req.ValueText = &sanitized
+	}
+
 	value, err := h.Service.UpsertFieldValue(r.Context(), gen.UpsertCustomFieldValueParams{
 		FieldID:     fieldID,
 		EntityType:  req.EntityType,
@@ -1138,6 +1318,44 @@ func (h *Handlers) SetFieldPermission(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "set"}})
 }
 
+// DeleteFieldPermission handles DELETE /api/v1/custom-fields/{id}/permissions.
+// BUG-009: completes the field-permission CRUD surface — previously only
+// PUT (upsert) and GET (list) existed, so a permission could never be
+// removed once set. The request body carries the user_group_id to remove.
+func (h *Handlers) DeleteFieldPermission(w http.ResponseWriter, r *http.Request) {
+	fieldID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		return
+	}
+
+	var req struct {
+		UserGroupID string `json:"user_group_id"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		return
+	}
+
+	var groupID pgtype.UUID
+	if err := groupID.Scan(req.UserGroupID); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid user group ID format")
+		return
+	}
+
+	if err := h.Service.DeleteFieldPermission(r.Context(), fieldID, groupID); err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	// Rule 6: invalidate the field-permission cache for every member of the
+	// affected group.
+	h.Service.InvalidateFieldPermissionCacheForGroup(r.Context(), groupID)
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
+}
+
 // ---------------------------------------------------------------------------
 // Forms
 // ---------------------------------------------------------------------------
@@ -1172,6 +1390,21 @@ func (h *Handlers) ListForms(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		handleServiceError(w, err)
 		return
+	}
+
+	// BUG-010: support the ?is_system=true|false filter documented in the
+	// route catalog (api-routes-catalog.md L1151). Applied post-query since
+	// the ListForms SQL does not have a filtered variant.
+	if isSystem := r.URL.Query().Get("is_system"); isSystem != "" {
+		filtered := forms[:0]
+		for _, f := range forms {
+			if isSystem == "true" && f.IsSystem {
+				filtered = append(filtered, f)
+			} else if isSystem == "false" && !f.IsSystem {
+				filtered = append(filtered, f)
+			}
+		}
+		forms = filtered
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": forms})
@@ -1257,11 +1490,11 @@ func (h *Handlers) GetForm(w http.ResponseWriter, r *http.Request) {
 		Options   []string `json:"options"`
 	}
 	type stepJSON struct {
-		ID            string          `json:"id"`
-		Title         string          `json:"title"`
-		Position      int32           `json:"position"`
-		FieldGroupID  *string         `json:"field_group_id"`
-		Fields        []stepFieldJSON `json:"fields"`
+		ID           string          `json:"id"`
+		Title        string          `json:"title"`
+		Position     int32           `json:"position"`
+		FieldGroupID *string         `json:"field_group_id"`
+		Fields       []stepFieldJSON `json:"fields"`
 	}
 	stepList := []stepJSON{}
 	if form.IsMultiStep {
@@ -1514,12 +1747,13 @@ func (h *Handlers) UpdateForm(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		Name           string  `json:"name"`
-		Description    *string `json:"description"`
-		IsMultiStep    bool    `json:"is_multi_step"`
-		SubmitLabel    string  `json:"submit_label"`
-		SuccessMessage *string `json:"success_message"`
-		Status         string  `json:"status"`
+		Name                 string  `json:"name"`
+		Description          *string `json:"description"`
+		IsMultiStep          bool    `json:"is_multi_step"`
+		SubmitLabel          string  `json:"submit_label"`
+		SuccessMessage       *string `json:"success_message"`
+		Status               string  `json:"status"`
+		SubmissionFeeCredits *int32  `json:"submission_fee_credits"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -1537,15 +1771,31 @@ func (h *Handlers) UpdateForm(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// BUG-006: preserve the existing submission_fee_credits when the request
+	// does not include it. Without this, the Go zero value (0) would silently
+	// reset paid forms to free on every PATCH call.
+	feeCredits := int32(0)
+	existing, err := h.Service.GetForm(r.Context(), id, tenantID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	if req.SubmissionFeeCredits != nil {
+		feeCredits = *req.SubmissionFeeCredits
+	} else {
+		feeCredits = existing.SubmissionFeeCredits
+	}
+
 	form, err := h.Service.UpdateForm(r.Context(), gen.UpdateFormParams{
-		Name:           req.Name,
-		Description:    req.Description,
-		IsMultiStep:    req.IsMultiStep,
-		SubmitLabel:    req.SubmitLabel,
-		SuccessMessage: req.SuccessMessage,
-		Status:         req.Status,
-		ID:             id,
-		TenantID:       tenantID,
+		Name:                 req.Name,
+		Description:          req.Description,
+		IsMultiStep:          req.IsMultiStep,
+		SubmitLabel:          req.SubmitLabel,
+		SuccessMessage:       req.SuccessMessage,
+		Status:               req.Status,
+		SubmissionFeeCredits: feeCredits,
+		ID:                   id,
+		TenantID:             tenantID,
 	})
 	if err != nil {
 		handleServiceError(w, err)
@@ -1690,11 +1940,11 @@ func (h *Handlers) GetFormEmbed(w http.ResponseWriter, r *http.Request) {
 
 	// For multi-step forms, build a steps[] array with per-step fields.
 	type stepJSON struct {
-		ID            string      `json:"id"`
-		Title         string      `json:"title"`
-		Position      int32       `json:"position"`
-		FieldGroupID  *string     `json:"field_group_id"`
-		Fields        []fieldJSON `json:"fields"`
+		ID           string      `json:"id"`
+		Title        string      `json:"title"`
+		Position     int32       `json:"position"`
+		FieldGroupID *string     `json:"field_group_id"`
+		Fields       []fieldJSON `json:"fields"`
 	}
 	stepList := []stepJSON{}
 	if form.IsMultiStep {
@@ -1729,17 +1979,17 @@ func (h *Handlers) GetFormEmbed(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
-			"id":                       form.ID,
-			"slug":                     form.Slug,
-			"name":                     form.Name,
-			"description":              form.Description,
-			"status":                   form.Status,
-			"is_multi_step":            form.IsMultiStep,
-			"submit_label":             form.SubmitLabel,
-			"success_message":          form.SuccessMessage,
-			"submission_fee_credits":   form.SubmissionFeeCredits,
-			"fields":                   fieldList,
-			"steps":                    stepList,
+			"id":                     form.ID,
+			"slug":                   form.Slug,
+			"name":                   form.Name,
+			"description":            form.Description,
+			"status":                 form.Status,
+			"is_multi_step":          form.IsMultiStep,
+			"submit_label":           form.SubmitLabel,
+			"success_message":        form.SuccessMessage,
+			"submission_fee_credits": form.SubmissionFeeCredits,
+			"fields":                 fieldList,
+			"steps":                  stepList,
 		},
 	})
 }
@@ -1812,6 +2062,23 @@ func (h *Handlers) SubmitForm(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		handleServiceError(w, err)
 		return
+	}
+
+	// BUG-002: validate field_values against the form's field definitions
+	// (required fields, type validation, unknown keys). Also sanitizes
+	// rich_text HTML (BUG-001) in-place. When the form has no field
+	// definitions, validation is skipped (lenient posture for legacy forms).
+	if req.FieldValues != nil {
+		if msg, ok := h.validateFormSubmission(r.Context(), formID, tenantID, req.FieldValues); !ok {
+			writeError(w, http.StatusBadRequest, "invalid_field_values", msg)
+			return
+		}
+		// Re-marshal in case rich_text values were sanitized in-place.
+		fieldValues, err = json.Marshal(req.FieldValues)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_body", "field_values could not be serialized after validation")
+			return
+		}
 	}
 
 	// Determine the fee: use the form's submission_fee_credits, or override
@@ -2002,6 +2269,284 @@ func (h *Handlers) enqueueFormTriggers(formID, tenantID, submissionID, userID pg
 		slog.Warn("customfields: enqueuing form trigger task",
 			"submission_id", submissionID.String(), "error", err)
 	}
+}
+
+// validateFormSubmission validates the submitted field_values against the
+// form's field definitions (BUG-002). It checks:
+//  1. Required fields (is_required=true) are present and non-empty.
+//  2. Provided field keys/labels correspond to actual fields on the form.
+//  3. Values match their field types (URL, email, select options).
+//  4. rich_text values are sanitized (BUG-001).
+//
+// The field_values map is keyed by field label (matching the frontend
+// contract — see apps/main feedback/+page.svelte). Field keys are also
+// accepted for API callers. The map is mutated in-place: rich_text values
+// are replaced with their sanitized versions.
+//
+// Returns an error message and false when validation fails, or "" and true
+// when it passes. When the form has no field definitions (e.g. a legacy
+// form with no assigned field group), validation is skipped — all values
+// are accepted — to avoid breaking existing flows.
+func (h *Handlers) validateFormSubmission(ctx context.Context, formID, tenantID pgtype.UUID, fieldValues map[string]any) (string, bool) {
+	fields, err := h.Service.GetFormFields(ctx, formID, tenantID)
+	if err != nil {
+		// If we can't load fields, don't block the submission — log and
+		// proceed. This matches the lenient posture for forms with no
+		// field definitions.
+		slog.Warn("customfields: loading form fields for validation", "form_id", formID.String(), "error", err)
+		return "", true
+	}
+	if len(fields) == 0 {
+		return "", true
+	}
+
+	// Build lookup maps: label→field and key→field.
+	byLabel := make(map[string]fieldDef, len(fields))
+	byKey := make(map[string]fieldDef, len(fields))
+	for _, f := range fields {
+		fd := fieldDef{Label: f.Label, Key: f.Key, FieldType: f.FieldType, Options: f.Options, IsRequired: f.IsRequired}
+		byLabel[f.Label] = fd
+		byKey[f.Key] = fd
+	}
+
+	// 1. Check required fields are present and non-empty.
+	for _, f := range fields {
+		if !f.IsRequired {
+			continue
+		}
+		val, exists := lookupFieldValue(fieldValues, f.Label, f.Key)
+		if !exists || isEmptyValue(val) {
+			return fmt.Sprintf("Field %q is required", f.Label), false
+		}
+	}
+
+	// 2. Check each provided value corresponds to a known field, and validate
+	//    the value against the field type.
+	for rawKey, rawVal := range fieldValues {
+		f, ok := byLabel[rawKey]
+		if !ok {
+			f, ok = byKey[rawKey]
+		}
+		if !ok {
+			return fmt.Sprintf("Unknown field %q — this field is not defined on the form", rawKey), false
+		}
+
+		// BUG-001: sanitize rich_text HTML before storage. Mutate the map
+		// in-place so the sanitized value is what gets persisted.
+		if f.FieldType == FieldTypeRichText {
+			if strVal, isStr := rawVal.(string); isStr && strVal != "" && h.richTextSanitizer != nil {
+				fieldValues[rawKey] = h.richTextSanitizer(strVal)
+			}
+		}
+
+		if msg, ok := h.validateFieldValue(f, rawVal); !ok {
+			return msg, false
+		}
+	}
+
+	return "", true
+}
+
+// lookupFieldValue finds a value in the map by label or key (case-sensitive).
+func lookupFieldValue(m map[string]any, label, key string) (any, bool) {
+	if v, ok := m[label]; ok {
+		return v, true
+	}
+	if v, ok := m[key]; ok {
+		return v, true
+	}
+	return nil, false
+}
+
+// isEmptyValue returns true for nil, empty string, or empty slice/array values.
+func isEmptyValue(v any) bool {
+	switch val := v.(type) {
+	case nil:
+		return true
+	case string:
+		return strings.TrimSpace(val) == ""
+	case []any:
+		return len(val) == 0
+	case []string:
+		return len(val) == 0
+	default:
+		return false
+	}
+}
+
+// fieldDef captures the subset of a custom field definition needed for
+// validation. Both gen.GetCustomFieldByIDRow and gen.ListCustomFieldsByGroupRow
+// can be converted to this type, avoiding duplication of validation logic
+// across the two code paths (SetFieldValue vs SubmitForm).
+type fieldDef struct {
+	Label      string
+	Key        string
+	FieldType  string
+	Options    []byte
+	IsRequired bool
+}
+
+// validateFieldValue validates a single field value against its field type
+// (BUG-005). Returns an error message and false when validation fails.
+// rich_text sanitization (BUG-001) is handled by the caller before this
+// function is invoked.
+func (h *Handlers) validateFieldValue(f fieldDef, raw any) (string, bool) {
+	strVal, _ := raw.(string)
+
+	switch f.FieldType {
+	case FieldTypeURL:
+		if strVal == "" {
+			return "", true
+		}
+		u, err := neturl.Parse(strVal)
+		if err != nil || u.Scheme == "" || (u.Scheme != "http" && u.Scheme != "https") {
+			return fmt.Sprintf("Field %q must be a valid http or https URL", f.Label), false
+		}
+
+	case FieldTypeEmail:
+		if strVal == "" {
+			return "", true
+		}
+		if !strings.Contains(strVal, "@") || !strings.Contains(strVal, ".") {
+			return fmt.Sprintf("Field %q must be a valid email address", f.Label), false
+		}
+
+	case FieldTypePhone:
+		if strVal == "" {
+			return "", true
+		}
+		// Basic phone validation: digits, spaces, +, -, (, ).
+		cleaned := strings.NewReplacer(" ", "", "-", "", "(", "", ")", "", "+", "").Replace(strVal)
+		if len(cleaned) < 7 || len(cleaned) > 15 {
+			return fmt.Sprintf("Field %q must be a valid phone number (7-15 digits)", f.Label), false
+		}
+		for _, r := range cleaned {
+			if r < '0' || r > '9' {
+				return fmt.Sprintf("Field %q must be a valid phone number", f.Label), false
+			}
+		}
+
+	case FieldTypeSelect:
+		if strVal == "" {
+			return "", true
+		}
+		if !valueInOptions(f.Options, strVal) {
+			return fmt.Sprintf("Field %q value is not one of the allowed options", f.Label), false
+		}
+
+	case FieldTypeMultiselect:
+		if strVal == "" {
+			return "", true
+		}
+		// Multiselect can be a string (single) or an array.
+		switch v := raw.(type) {
+		case string:
+			if !valueInOptions(f.Options, v) {
+				return fmt.Sprintf("Field %q value is not one of the allowed options", f.Label), false
+			}
+		case []any:
+			for _, item := range v {
+				s, _ := item.(string)
+				if !valueInOptions(f.Options, s) {
+					return fmt.Sprintf("Field %q value %q is not one of the allowed options", f.Label, s), false
+				}
+			}
+		case []string:
+			for _, item := range v {
+				if !valueInOptions(f.Options, item) {
+					return fmt.Sprintf("Field %q value %q is not one of the allowed options", f.Label, item), false
+				}
+			}
+		}
+	}
+
+	return "", true
+}
+
+// valueInOptions checks whether a value matches one of the field's select
+// options. The options JSONB is [{value, label}]; we match against both
+// value and label for flexibility (the frontend sometimes sends labels).
+func valueInOptions(optionsJSON []byte, target string) bool {
+	if optionsJSON == nil || target == "" {
+		return false
+	}
+	var opts []struct {
+		Value string `json:"value"`
+		Label string `json:"label"`
+	}
+	if json.Unmarshal(optionsJSON, &opts) != nil {
+		return false
+	}
+	for _, o := range opts {
+		if o.Value == target || o.Label == target {
+			return true
+		}
+	}
+	return false
+}
+
+// validateTextValue validates a text-column value against its field type
+// (BUG-005). Used by SetFieldValue for field types that write to value_text.
+// Returns an error message and false when validation fails.
+func validateTextValue(field fieldDef, val string) (string, bool) {
+	switch field.FieldType {
+	case FieldTypeURL:
+		u, err := neturl.Parse(val)
+		if err != nil || u.Scheme == "" || (u.Scheme != "http" && u.Scheme != "https") {
+			return fmt.Sprintf("Field %q must be a valid http or https URL", field.Label), false
+		}
+	case FieldTypeEmail:
+		if !strings.Contains(val, "@") || !strings.Contains(val, ".") {
+			return fmt.Sprintf("Field %q must be a valid email address", field.Label), false
+		}
+	case FieldTypePhone:
+		cleaned := strings.NewReplacer(" ", "", "-", "", "(", "", ")", "", "+", "").Replace(val)
+		if len(cleaned) < 7 || len(cleaned) > 15 {
+			return fmt.Sprintf("Field %q must be a valid phone number (7-15 digits)", field.Label), false
+		}
+		for _, r := range cleaned {
+			if r < '0' || r > '9' {
+				return fmt.Sprintf("Field %q must be a valid phone number", field.Label), false
+			}
+		}
+	}
+	return "", true
+}
+
+// validateSelectValue validates a select/multiselect value_json against the
+// field's allowed options (BUG-005). The value_json is expected to be a
+// string (select) or array of strings (multiselect). Returns an error
+// message and false when validation fails.
+func validateSelectValue(field fieldDef, valueJson map[string]any) (string, bool) {
+	// Select fields store the selected value(s) in value_json. The shape
+	// can be {"value": "..."} or just a string array. We check each value
+	// against the field's options.
+	var values []string
+	if v, ok := valueJson["value"].(string); ok {
+		values = append(values, v)
+	}
+	if arr, ok := valueJson["values"].([]any); ok {
+		for _, item := range arr {
+			if s, ok := item.(string); ok {
+				values = append(values, s)
+			}
+		}
+	}
+	// Also accept a top-level array.
+	if arr, ok := valueJson[""].([]any); ok {
+		for _, item := range arr {
+			if s, ok := item.(string); ok {
+				values = append(values, s)
+			}
+		}
+	}
+
+	for _, v := range values {
+		if !valueInOptions(field.Options, v) {
+			return fmt.Sprintf("Field %q value %q is not one of the allowed options", field.Label, v), false
+		}
+	}
+	return "", true
 }
 
 // ListFormSubmissions handles GET /api/v1/forms/{id}/submissions with
@@ -2401,11 +2946,11 @@ func (h *Handlers) ListFormSteps(w http.ResponseWriter, r *http.Request) {
 	}
 
 	type stepJSON struct {
-		ID            string  `json:"id"`
-		FormID        string  `json:"form_id"`
-		Title         string  `json:"title"`
-		Position      int32   `json:"position"`
-		FieldGroupID  *string `json:"field_group_id"`
+		ID           string  `json:"id"`
+		FormID       string  `json:"form_id"`
+		Title        string  `json:"title"`
+		Position     int32   `json:"position"`
+		FieldGroupID *string `json:"field_group_id"`
 	}
 
 	result := make([]stepJSON, 0, len(steps))
@@ -2635,10 +3180,31 @@ func (h *Handlers) ListEntityTypes(w http.ResponseWriter, r *http.Request) {
 
 // ListEntityTypesAdmin handles GET /admin/custom-field-entity-types — returns
 // the full entity type rows (including is_system, sort_order) for the admin UI.
+// Supports optional query params:
+//   - q:         case-insensitive search on value and label
+//   - sort:      "key:dir" e.g. "label:asc", "sort_order:desc"
+//   - page:      1-based page number (default 1)
+//   - page_size: page size (default 25, max 100)
 func (h *Handlers) ListEntityTypesAdmin(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
+	}
+
+	searchQuery := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("q")))
+	sortParam := r.URL.Query().Get("sort")
+
+	page := 1
+	if p := r.URL.Query().Get("page"); p != "" {
+		if v, err := strconv.Atoi(p); err == nil && v > 0 {
+			page = v
+		}
+	}
+	pageSize := 25
+	if ps := r.URL.Query().Get("page_size"); ps != "" {
+		if v, err := strconv.Atoi(ps); err == nil && v > 0 && v <= 100 {
+			pageSize = v
+		}
 	}
 
 	types, err := h.Service.ListEntityTypes(r.Context(), tenantID)
@@ -2647,7 +3213,80 @@ func (h *Handlers) ListEntityTypesAdmin(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": types})
+	// Post-filter by search query (case-insensitive on value and label).
+	if searchQuery != "" {
+		filtered := types[:0]
+		for _, t := range types {
+			if strings.Contains(strings.ToLower(t.Value), searchQuery) ||
+				strings.Contains(strings.ToLower(t.Label), searchQuery) {
+				filtered = append(filtered, t)
+			}
+		}
+		types = filtered
+	}
+
+	// Sort: parse "key:dir" e.g. "value:asc", "sort_order:desc".
+	sortKey := "sort_order"
+	sortDir := "asc"
+	if sortParam != "" {
+		parts := strings.SplitN(sortParam, ":", 2)
+		if parts[0] != "" {
+			sortKey = parts[0]
+		}
+		if len(parts) > 1 && (parts[1] == "asc" || parts[1] == "desc") {
+			sortDir = parts[1]
+		}
+	}
+	sort.Slice(types, func(i, j int) bool {
+		less := false
+		switch sortKey {
+		case "value":
+			less = types[i].Value < types[j].Value
+		case "label":
+			less = types[i].Label < types[j].Label
+		case "sort_order":
+			less = types[i].SortOrder < types[j].SortOrder
+		case "is_system":
+			less = !types[i].IsSystem && types[j].IsSystem
+		case "created_at":
+			less = types[i].CreatedAt.Time.Before(types[j].CreatedAt.Time)
+		default:
+			less = types[i].SortOrder < types[j].SortOrder
+		}
+		if sortDir == "desc" {
+			return !less
+		}
+		return less
+	})
+
+	// Pagination: slice the result.
+	total := len(types)
+	totalPages := 1
+	if pageSize > 0 {
+		totalPages = (total + pageSize - 1) / pageSize
+		if totalPages < 1 {
+			totalPages = 1
+		}
+	}
+	start := (page - 1) * pageSize
+	if start > total {
+		start = total
+	}
+	end := start + pageSize
+	if end > total {
+		end = total
+	}
+	paged := types[start:end]
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data": paged,
+		"meta": map[string]any{
+			"page":        page,
+			"page_size":   pageSize,
+			"total":       total,
+			"total_pages": totalPages,
+		},
+	})
 }
 
 // CreateEntityType handles POST /admin/custom-field-entity-types.

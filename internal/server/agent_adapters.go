@@ -21,6 +21,8 @@ package server
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -29,6 +31,7 @@ import (
 	"github.com/jedafe/japa/internal/content"
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/rag"
+	"github.com/jedafe/japa/internal/worker"
 	"github.com/valkey-io/valkey-go/valkeycompat"
 )
 
@@ -298,4 +301,197 @@ func (a *agentComparisonAdapter) UpsertComparisonValueWithMetadata(ctx context.C
 		ValueRating:  input.ValueRating,
 		ValueBoolean: input.ValueBoolean,
 	}, metadata)
+}
+
+// ---------------------------------------------------------------------------
+// Phase 8 adapters — persona resolver + agent draft processor
+// ---------------------------------------------------------------------------
+
+// agentPersonaAdapter adapts personas.Store.GetAIPersonaByID to the
+// ai.PersonaResolver interface. The ai package uses a narrow interface so
+// it does not import internal/personas (avoids a cycle risk). The adapter
+// returns only the backing users.id the content.create_draft tool needs.
+//
+// Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Content Request Flow)
+// Ref: japaconnect-engineering/sections/68-ai-personas.md (ai_personas.user_id)
+type agentPersonaAdapter struct {
+	store personaUserIDResolver
+}
+
+// personaUserIDResolver is the subset of *personas.Store the adapter calls.
+// Defined as an interface so the adapter is testable with a stub.
+type personaUserIDResolver interface {
+	GetAIPersonaByID(ctx context.Context, tenantID, id pgtype.UUID) (gen.GetAIPersonaByIDRow, error)
+}
+
+// GetPersonaUserID returns the backing users.id for the given persona ID.
+func (a *agentPersonaAdapter) GetPersonaUserID(ctx context.Context, tenantID, personaID pgtype.UUID) (pgtype.UUID, error) {
+	row, err := a.store.GetAIPersonaByID(ctx, tenantID, personaID)
+	if err != nil {
+		return pgtype.UUID{}, err
+	}
+	return row.UserID, nil
+}
+
+// agentDraftProcessorAdapter implements worker.AgentDraftProcessor. It
+// creates a draft content row with the AI persona as author + a HITL
+// review with source='agent_draft_request'. The adapter closes over the
+// content.Service + ai.Store + personas.Store + AI dispatcher so the
+// worker package does not import internal/ai or internal/content (which
+// would create a cycle).
+//
+// Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Content Request Flow, Asynq path)
+// Ref: japaconnect-engineering/roadmaps/ROADMAP-AI-AGENT.md (Phase 8, task 8.03)
+type agentDraftProcessorAdapter struct {
+	contentSvc   *content.Service
+	aiStore      *ai.Store
+	personaStore personaUserIDResolver
+	dispatcher   agentDraftDispatcher
+}
+
+// agentDraftDispatcher is the subset of *ai.Dispatcher the adapter calls to
+// generate the draft body from the topic prompt + external results.
+type agentDraftDispatcher interface {
+	// GenerateDraftBody synthesizes a draft body from the topic prompt +
+	// external search results. Returns markdown body text.
+	GenerateDraftBody(ctx context.Context, tenantID pgtype.UUID, contentType, topicPrompt, externalResults string) (string, error)
+}
+
+// agentDraftDispatcherAdapter implements agentDraftDispatcher by calling
+// the AI gateway's Dispatch with category "content_generation". The
+// generated text is the draft body.
+type agentDraftDispatcherAdapter struct {
+	dispatcher aiDispatcherPort
+}
+
+// aiDispatcherPort is the subset of *ai.Dispatcher the adapter calls.
+type aiDispatcherPort interface {
+	Dispatch(ctx context.Context, category string, req ai.Request) (ai.Response, error)
+}
+
+// GenerateDraftBody synthesizes a draft body via the AI gateway.
+func (a *agentDraftDispatcherAdapter) GenerateDraftBody(ctx context.Context, tenantID pgtype.UUID, contentType, topicPrompt, externalResults string) (string, error) {
+	prompt := fmt.Sprintf("Generate a %s draft about: %s", contentType, topicPrompt)
+	if externalResults != "" {
+		prompt += fmt.Sprintf("\n\nExternal reference material:\n%s", externalResults)
+	}
+	resp, err := a.dispatcher.Dispatch(ctx, "content_generation", ai.Request{
+		Category: "content_generation",
+		Payload: map[string]any{
+			"prompt":    prompt,
+			"tenant_id": tenantID,
+		},
+	})
+	if err != nil {
+		return "", err
+	}
+	if text, ok := resp.Raw["text"].(string); ok {
+		return text, nil
+	}
+	if text, ok := resp.Raw["content"].(string); ok {
+		return text, nil
+	}
+	if output, ok := resp.Raw["output"].(string); ok {
+		return output, nil
+	}
+	// Fallback: no recognized text field; return the topic prompt as the
+	// body so the draft is still created with meaningful content.
+	return topicPrompt, nil
+}
+
+// CreateAgentDraft implements worker.AgentDraftProcessor. It:
+//  1. Resolves the persona's backing users.id (the author).
+//  2. Generates the draft body via the AI dispatcher (synthesizes the
+//     topic prompt + external results).
+//  3. Creates the contents row with status='draft', author_id=persona
+//     user_id, and _ai_provenance in field_values.
+//  4. Creates a HITL review with source='agent_draft_request' + the
+//     created content_id.
+func (a *agentDraftProcessorAdapter) CreateAgentDraft(ctx context.Context, payload worker.AgentDraftPayload) error {
+	var tenantID pgtype.UUID
+	if err := tenantID.Scan(payload.TenantID); err != nil {
+		return fmt.Errorf("invalid tenant_id: %w", err)
+	}
+	var personaID pgtype.UUID
+	if err := personaID.Scan(payload.PersonaID); err != nil {
+		return fmt.Errorf("invalid persona_id: %w", err)
+	}
+	var userID pgtype.UUID
+	if payload.UserID != "" {
+		_ = userID.Scan(payload.UserID) // best-effort; only used for provenance
+	}
+	var geoSpaceID pgtype.UUID
+	if payload.GeoSpaceID != "" {
+		_ = geoSpaceID.Scan(payload.GeoSpaceID)
+	}
+
+	// 1. Resolve the persona's backing user_id (the author).
+	persona, err := a.personaStore.GetAIPersonaByID(ctx, tenantID, personaID)
+	if err != nil {
+		return fmt.Errorf("resolving persona: %w", err)
+	}
+	if payload.ContentType == "" {
+		return fmt.Errorf("content_type is required")
+	}
+
+	// 2. Generate the draft body via the AI dispatcher.
+	body := payload.TopicPrompt
+	if a.dispatcher != nil {
+		generated, gerr := a.dispatcher.GenerateDraftBody(ctx, tenantID, payload.ContentType, payload.TopicPrompt, payload.ExternalResults)
+		if gerr != nil {
+			return fmt.Errorf("generating draft body: %w", gerr)
+		}
+		if generated != "" {
+			body = generated
+		}
+	}
+
+	// 3. Build field_values JSONB with _ai_provenance.
+	provenance := map[string]any{
+		"ai_generated":        true,
+		"ai_persona_id":       payload.PersonaID,
+		"prompted_by_user_id": payload.UserID,
+		"original_prompt":     payload.TopicPrompt,
+		"agent_session_id":    payload.AgentSessionID,
+	}
+	fieldValues := map[string]any{
+		"_ai_provenance": provenance,
+	}
+	fvJSON, err := json.Marshal(fieldValues)
+	if err != nil {
+		return fmt.Errorf("encoding field values: %w", err)
+	}
+
+	// 4. Create the contents row with status='draft'.
+	row, err := a.contentSvc.CreateContent(ctx, tenantID, content.CreateContentInput{
+		AuthorID:    persona.UserID,
+		ContentType: payload.ContentType,
+		Title:       payload.TopicPrompt,
+		Body:        body,
+		FieldValues: fvJSON,
+		GeoSpaceID:  geoSpaceID,
+		Status:      "draft",
+	})
+	if err != nil {
+		return fmt.Errorf("creating draft content: %w", err)
+	}
+
+	// 5. Create a HITL review with source='agent_draft_request'.
+	if a.aiStore != nil {
+		_, hitlErr := a.aiStore.CreateHITLReview(ctx, ai.HITLReview{
+			TenantID:    tenantID,
+			ContentID:   row.ID,
+			ContentType: payload.ContentType,
+			AIOutput:    fvJSON,
+			Status:      ai.HITLStatusPending,
+			Source:      ai.HITLSourceAgentDraftRequest,
+		})
+		if hitlErr != nil {
+			// Non-fatal: the draft was created; the admin can still see
+			// it in the content list. The HITL queue simply did not get
+			// a row.
+		}
+	}
+
+	return nil
 }

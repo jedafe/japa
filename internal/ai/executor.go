@@ -516,19 +516,30 @@ func (e *Executor) Execute(ctx context.Context, p ExecuteParams) (res *ToolResul
 	}
 
 	// Step 6 — HITL (§103 step 7, when the tool config requests it).
+	// A handler may pre-create its own HITL review (e.g. content.create_draft
+	// sets source='agent_draft_request' + content_id + persona context the
+	// executor does not have) and surface the review ID via
+	// hres.Metadata["hitl_review_id"]. When present, the executor honors it
+	// and skips its own createHITL — avoiding a duplicate review row.
 	if cfg.RequiresHITL && e.store != nil {
-		review, hitlErr := e.createHITL(ctx, p, call, cfg, hres)
-		if hitlErr != nil {
-			slog.Warn("ai: HITL review creation failed; tool result returned without review",
-				"tool", call.Name, "error", hitlErr)
-			// Non-fatal: the tool call still succeeded; the HITL queue
-			// simply did not get a row. The admin can still see the tool
-			// call in ai_agent_tool_calls.
-		} else {
-			hitlReviewID = review.ID
+		if preID, ok := hitlReviewIDFromMeta(hres); ok {
+			hitlReviewID = preID
 			resultStatus = ToolCallStatusHITLQueued
 			hres.Status = ToolCallStatusHITLQueued
-			hres.Metadata = appendMeta(hres.Metadata, "hitl_review_id", review.ID)
+		} else {
+			review, hitlErr := e.createHITL(ctx, p, call, cfg, hres)
+			if hitlErr != nil {
+				slog.Warn("ai: HITL review creation failed; tool result returned without review",
+					"tool", call.Name, "error", hitlErr)
+				// Non-fatal: the tool call still succeeded; the HITL queue
+				// simply did not get a row. The admin can still see the tool
+				// call in ai_agent_tool_calls.
+			} else {
+				hitlReviewID = review.ID
+				resultStatus = ToolCallStatusHITLQueued
+				hres.Status = ToolCallStatusHITLQueued
+				hres.Metadata = appendMeta(hres.Metadata, "hitl_review_id", review.ID)
+			}
 		}
 	}
 
@@ -545,6 +556,13 @@ func (e *Executor) Execute(ctx context.Context, p ExecuteParams) (res *ToolResul
 // namespace (e.g. "content.create" → "content"); ai_output is the tool
 // result JSON. content_id is left null — the agent may create a HITL review
 // for an operation that has no backing content row (e.g. a bulk field set).
+//
+// The source is set to 'agent_tool' (migration 000395) so the admin panel
+// can filter tool-triggered HITL reviews from agent draft requests
+// ('agent_draft_request') and manual/admin reviews ('manual'). The
+// content.create_draft tool sets its own source='agent_draft_request'
+// inside the handler because it has the content_id + persona context the
+// executor does not.
 func (e *Executor) createHITL(ctx context.Context, p ExecuteParams, call ToolCall, cfg ToolConfig, res *ToolResult) (HITLReview, error) {
 	contentType := deriveContentType(call.Name)
 	aiOutput := []byte(res.Content)
@@ -556,6 +574,7 @@ func (e *Executor) createHITL(ctx context.Context, p ExecuteParams, call ToolCal
 		TenantID:    p.TenantID,
 		ContentType: contentType,
 		AIOutput:    aiOutput,
+		Source:      HITLSourceAgentTool,
 	}
 	return CreateHITLReview(ctx, e.store, review)
 }
@@ -579,6 +598,27 @@ func appendMeta(m map[string]any, key string, value any) map[string]any {
 	}
 	m[key] = value
 	return m
+}
+
+// hitlReviewIDFromMeta extracts a pre-created HITL review ID from a tool
+// result's Metadata. Handlers that create their own HITL review (e.g.
+// content.create_draft, which needs content_id + persona context the
+// executor lacks) set Metadata["hitl_review_id"] to the review's UUID so
+// the executor skips its own createHITL and records the existing review ID
+// on the ai_agent_tool_calls row. Returns (id, false) when not set.
+func hitlReviewIDFromMeta(res *ToolResult) (pgtype.UUID, bool) {
+	if res == nil || res.Metadata == nil {
+		return pgtype.UUID{}, false
+	}
+	v, ok := res.Metadata["hitl_review_id"]
+	if !ok {
+		return pgtype.UUID{}, false
+	}
+	id, ok := v.(pgtype.UUID)
+	if !ok || !id.Valid {
+		return pgtype.UUID{}, false
+	}
+	return id, true
 }
 
 // ---------------------------------------------------------------------------

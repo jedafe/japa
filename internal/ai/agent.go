@@ -125,7 +125,8 @@ type AgentHandler struct {
 	sessions    SessionStore
 	geo         GeoSpaceResolver
 	rateLimiter RateLimiter
-	cache       CacheClient // for jc:agent:tools:{user_id} catalog cache
+	cache       CacheClient     // for jc:agent:tools:{user_id} catalog cache
+	persona     PersonaResolver // Phase 8: resolve agent.default_persona_id → user_id for draft requests
 
 	// llmCategory is the gateway provider category used for ChatWithTools
 	// dispatch. Defaults to "chat" — the agent uses the same chat-capable
@@ -190,6 +191,16 @@ func WithAgentCache(c CacheClient) AgentOption {
 // WithAgentLLMCategory overrides the gateway provider category.
 func WithAgentLLMCategory(cat string) AgentOption {
 	return func(h *AgentHandler) { h.llmCategory = cat }
+}
+
+// WithAgentPersona injects the AI persona resolver (Phase 8). The agent
+// loop uses it to resolve agent.default_persona_id → the persona's backing
+// users.id when a user without content.create prompts the agent about
+// content that doesn't exist (pre-search = NONE). The resolved user_id is
+// injected into the system prompt so the LLM passes it to the
+// content.create_draft tool as the author_id.
+func WithAgentPersona(p PersonaResolver) AgentOption {
+	return func(h *AgentHandler) { h.persona = p }
 }
 
 // ---------------------------------------------------------------------------
@@ -280,12 +291,85 @@ func (h *AgentHandler) HandleAgentRequest(ctx context.Context, userID, tenantID 
 	// --- Set session state in Valkey for cancellation checks ---
 	h.setSessionState(ctx, session.ID)
 
+	// --- Phase 8: resolve the draft-request context (Content Request Flow).
+	// When pre-search = NONE and the user has agent.draft_request but not
+	// content.create, the agent should search externally and create a draft
+	// for admin review. The persona user_id is resolved here so the system
+	// prompt can instruct the LLM to pass it to content.create_draft. ---
+	draftCtx := h.resolveDraftRequestContext(ctx, userID, tenantID, preSearchResult.Level)
+
 	// --- Return channel and run the loop in a goroutine ---
 	events := make(chan AgentEvent, 32)
 
-	go h.runLoop(ctx, session, userID, tenantID, prompt, geoSpaceID, geoSummary, preSearchResult, events)
+	go h.runLoop(ctx, session, userID, tenantID, prompt, geoSpaceID, geoSummary, preSearchResult, draftCtx, events)
 
 	return events, nil
+}
+
+// draftRequestContext holds the Phase 8 Content Request Flow context. When
+// Active is true, the agent loop injects draft-request instructions + the
+// persona user_id into the system prompt so the LLM uses external.search
+// + content.create_draft instead of content.create.
+type draftRequestContext struct {
+	Active        bool   // true when the draft-request path applies
+	PersonaUserID string // the persona's backing users.id (UUID string)
+	PersonaID     string // the agent.default_persona_id (UUID string)
+}
+
+// resolveDraftRequestContext determines whether the current request is on
+// the Phase 8 draft-request path (§103 Content Request Flow). The path is
+// active when ALL of the following hold:
+//   - pre-search level is NONE (no existing content covers the request)
+//   - the user has agent.draft_request permission
+//   - the user does NOT have content.create permission (users with
+//     content.create use the normal content.create tool with themselves as
+//     author)
+//   - agent.default_persona_id is configured and resolves to a persona
+//
+// When active, the persona's backing users.id is resolved and returned so
+// the system prompt can instruct the LLM to pass it to content.create_draft
+// as the author_id. Resolution failures (no persona configured, persona not
+// found) degrade gracefully — the path stays inactive and the LLM falls
+// back to presenting external results without creating a draft.
+func (h *AgentHandler) resolveDraftRequestContext(ctx context.Context, userID, tenantID pgtype.UUID, level PreSearchLevel) draftRequestContext {
+	if level != PreSearchNone || h.perms == nil || h.persona == nil {
+		return draftRequestContext{}
+	}
+	if !h.perms.HasPermission(ctx, userID, tenantID, "agent.draft_request") {
+		return draftRequestContext{}
+	}
+	if h.perms.HasPermission(ctx, userID, tenantID, "content.create") {
+		// User has full create capability — they use content.create, not
+		// the draft-request path.
+		return draftRequestContext{}
+	}
+
+	personaIDStr := h.getStringSetting(ctx, tenantID, "agent.default_persona_id", "")
+	if personaIDStr == "" || personaIDStr == "\"\"" {
+		return draftRequestContext{}
+	}
+	personaID, err := scanUUID(personaIDStr)
+	if err != nil || !personaID.Valid {
+		return draftRequestContext{}
+	}
+	pid, err := h.persona.GetPersonaUserID(ctx, tenantID, personaID)
+	if err != nil || !pid.Valid {
+		slog.Warn("ai: draft-request persona resolution failed", "persona_id", personaIDStr, "error", err)
+		return draftRequestContext{}
+	}
+	return draftRequestContext{
+		Active:        true,
+		PersonaUserID: pid.String(),
+		PersonaID:     personaIDStr,
+	}
+}
+
+// getStringSetting reads a string setting with fallback.
+func (h *AgentHandler) getStringSetting(ctx context.Context, tenantID pgtype.UUID, key, fallback string) string {
+	if h.settings == nil {
+		return fallback
+	}
+	return h.settings.GetStringOr(ctx, tenantID, key, fallback)
 }
 
 // ---------------------------------------------------------------------------
@@ -300,6 +384,7 @@ func (h *AgentHandler) runLoop(
 	geoSpaceID *pgtype.UUID,
 	geoSummary string,
 	preSearchResult *PreSearchResult,
+	draftCtx draftRequestContext,
 	events chan<- AgentEvent,
 ) {
 	defer close(events)
@@ -347,6 +432,13 @@ func (h *AgentHandler) runLoop(
 
 	// --- Task 5.07: build system prompt ---
 	systemPrompt := buildSystemPrompt(geoSummary, preSearchResult, tools)
+
+	// --- Phase 8: when the draft-request path is active, append the
+	// persona user_id + draft-request instructions so the LLM uses
+	// external.search + content.create_draft instead of content.create. ---
+	if draftCtx.Active {
+		systemPrompt += buildDraftRequestPromptSection(draftCtx)
+	}
 
 	// --- Task 5.08: LLM function-calling loop ---
 	messages := []ChatMessage{
@@ -799,6 +891,40 @@ func buildSystemPrompt(geoSummary string, preSearch *PreSearchResult, tools []To
 	}
 
 	return b.String()
+}
+
+// buildDraftRequestPromptSection appends the Phase 8 Content Request Flow
+// instructions to the system prompt when the draft-request path is active
+// (pre-search = NONE + user has agent.draft_request + persona resolved).
+// The LLM is instructed to use external.search + content.create_draft with
+// the resolved persona user_id as the author_id, and to never use
+// content.create (which the user lacks permission for anyway, but the
+// explicit instruction prevents the LLM from attempting it).
+//
+// Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Content Request Flow)
+// Ref: japaconnect-engineering/roadmaps/ROADMAP-AI-AGENT.md (Phase 8, task 8.01)
+func buildDraftRequestPromptSection(d draftRequestContext) string {
+	return fmt.Sprintf(`
+
+DRAFT-REQUEST MODE (Phase 8 Content Request Flow):
+Pre-search found no existing content covering this request, and the user does
+not have content.create permission. They do have agent.draft_request, which
+means you may create a draft for admin review.
+
+When the request is suitable for content creation:
+1. Call external.search to gather relevant external information.
+2. Summarize the external results for the user in your response.
+3. Call content.create_draft with:
+   - author_id: "%s"  (the AI persona's backing user — do NOT use the calling user)
+   - ai_persona_id: "%s"
+   - original_prompt: the user's original request text
+   - status is forced to "draft" by the tool; do not attempt to publish.
+4. Tell the user the draft has been submitted for admin review and will be
+   published after a human reviewer approves it.
+
+Do NOT call content.create — the user lacks permission and the call will be
+rejected. Use content.create_draft exclusively for the draft-request path.
+`, d.PersonaUserID, d.PersonaID)
 }
 
 // systemPromptPreamble is the §103 behavior rules block, verbatim from the
