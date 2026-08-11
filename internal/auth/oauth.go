@@ -10,6 +10,7 @@ import (
 	"context"
 	"crypto/ecdsa"
 	"crypto/rsa"
+	"crypto/subtle"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -838,13 +839,13 @@ func GenerateOAuthState() (string, error) {
 	return generateRefreshToken() // reuses the 32-byte random generator
 }
 
-// ValidateOAuthState checks that the callback state matches the expected value.
-// The state should be stored server-side (e.g. in a session cookie or Valkey)
-// during the initiation phase and validated here.
+// ValidateOAuthState checks that the callback state matches the expected value
+// using a constant-time comparison to prevent timing side-channels on the OAuth
+// CSRF state parameter. The state should be stored server-side (e.g. in a
+// session cookie or Valkey) during the initiation phase and validated here.
 func ValidateOAuthState(expected, received string) bool {
 	if expected == "" || received == "" {
 		return false
 	}
-
-	return expected == received
+	return subtle.ConstantTimeCompare([]byte(expected), []byte(received)) == 1
 }

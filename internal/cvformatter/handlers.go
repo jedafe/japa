@@ -110,7 +110,8 @@ func parsePageParams(r *http.Request) (page, limit int32) {
 
 // HandleListStandards handles GET /cv-formatter/standards — list all
 // destination CV standards. Public; returns 404 with cv_formatter_disabled
-// when the feature flag is off. Accepts ?dest= to filter by destination.
+// when the feature flag is off. Accepts ?dest= to filter by destination
+// space ID (geo-aware tool pattern: ?dest= is the primary filter).
 func (h *Handlers) HandleListStandards(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
@@ -122,26 +123,27 @@ func (h *Handlers) HandleListStandards(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// If ?dest= is provided, redirect to the single-standard endpoint logic.
+	standards, err := h.service.ListStandards(r.Context())
+	if err != nil {
+		slog.Error("cvformatter: list standards failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "list_failed", "Failed to list standards")
+		return
+	}
+
+	// Filter by ?dest= destination space ID (geo-aware tool pattern).
 	if destParam := r.URL.Query().Get("dest"); destParam != "" {
 		var destSpaceID pgtype.UUID
 		if err := destSpaceID.Scan(destParam); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid destination space ID")
 			return
 		}
-		standard, err := h.service.GetStandardByDest(r.Context(), destSpaceID)
-		if err != nil {
-			writeError(w, http.StatusNotFound, "standard_not_found", "CV standard not found for this destination")
-			return
+		filtered := make([]StandardDTO, 0, 1)
+		for _, s := range standards {
+			if s.DestinationSpaceID == destSpaceID.String() {
+				filtered = append(filtered, s)
+			}
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"data": standard})
-		return
-	}
-
-	standards, err := h.service.ListStandards(r.Context())
-	if err != nil {
-		slog.Error("cvformatter: list standards failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "list_failed", "Failed to list standards")
+		writeJSON(w, http.StatusOK, map[string]any{"data": filtered})
 		return
 	}
 

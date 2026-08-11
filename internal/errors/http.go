@@ -109,6 +109,8 @@ func HandleServiceError(w http.ResponseWriter, err error) {
 		WriteError(w, http.StatusConflict, "already_exists", "Resource already exists")
 	case errors.Is(err, ErrInvalidStatusTransition):
 		WriteError(w, http.StatusConflict, "invalid_status_transition", stripSentinelPrefix(err, ErrInvalidStatusTransition))
+	case errors.Is(err, ErrInUse):
+		WriteError(w, http.StatusConflict, "in_use", stripSentinelPrefix(err, ErrInUse))
 
 	// --- 400 Bad Request ---
 	case errors.Is(err, ErrRequired):

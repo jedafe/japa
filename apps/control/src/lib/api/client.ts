@@ -14,6 +14,54 @@ export interface ApiResult<T> {
 	status: number;
 }
 
+const CSRF_HEADER = 'X-CSRF-Token';
+const CSRF_COOKIE = 'csrf_token';
+const MUTATING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+
+// readCsrfCookie returns the csrf_token cookie value, or null when absent.
+// The cookie is intentionally non-HttpOnly (see internal/csrf) so client-side
+// JS can read it for the double-submit pattern.
+function readCsrfCookie(): string | null {
+	if (typeof document === 'undefined') return null;
+	const match = document.cookie
+		.split(';')
+		.map((c) => c.trim())
+		.find((c) => c.startsWith(`${CSRF_COOKIE}=`));
+	return match ? decodeURIComponent(match.slice(CSRF_COOKIE.length + 1)) : null;
+}
+
+// refreshCsrfCookie fetches a fresh double-submit CSRF token from the backend's
+// /api/v1/csrf endpoint. The backend sets a new csrf_token cookie via Set-Cookie
+// and echoes the token in the JSON body. After this call, readCsrfCookie() returns
+// the new value. Returns true on success, false on failure.
+let csrfRefreshPromise: Promise<boolean> | null = null;
+
+async function refreshCsrfCookie(): Promise<boolean> {
+	if (csrfRefreshPromise) return csrfRefreshPromise;
+	csrfRefreshPromise = (async () => {
+		try {
+			const res = await fetch(`${PUBLIC_JC_API_URL}/api/v1/csrf`, {
+				method: 'GET',
+				credentials: 'include',
+				headers: { 'Content-Type': 'application/json' },
+			});
+			return res.ok;
+		} catch {
+			return false;
+		} finally {
+			csrfRefreshPromise = null;
+		}
+	})();
+	return csrfRefreshPromise;
+}
+
+// isCsrfRejection reports whether a 403 response is a CSRF token failure that
+// warrants a token refresh + retry.
+function isCsrfRejection(status: number, body: ApiOk<unknown> | ApiErr | null): boolean {
+	if (status !== 403) return false;
+	return body !== null && 'error' in body && body.error?.code === 'csrf_token_invalid';
+}
+
 export async function apiFetch<T>(
 	path: string,
 	options: RequestInit = {},
@@ -26,17 +74,19 @@ export async function apiFetch<T>(
 	// /control/... and the request reaches the backend unchanged. Do not prefix
 	// with /api/v1 here: that path is not registered and returns 404.
 	const url = `${PUBLIC_JC_API_URL}${path}`;
+	const method = (options.method ?? 'GET').toString().toUpperCase();
+	const isMutating = MUTATING_METHODS.has(method);
 
-	try {
+	async function doFetch(opts: RequestInit): Promise<{ res: Response; body: ApiOk<unknown> | ApiErr | null }> {
 		const headers: Record<string, string> = {
-			...(options.headers as Record<string, string> | undefined),
+			...(opts.headers as Record<string, string> | undefined),
 		};
-		if (options.body) {
+		if (opts.body) {
 			headers['Content-Type'] = 'application/json';
 		}
 
 		const res = await fetcher(url, {
-			...options,
+			...opts,
 			credentials: 'include',
 			headers,
 		});
@@ -48,11 +98,34 @@ export async function apiFetch<T>(
 		} else if (res.status !== 204) {
 			const text = await res.text();
 			if (!res.ok) {
-				return {
-					data: null,
-					error: { code: 'non_json_response', message: text.slice(0, 200) || res.statusText, status: res.status },
-					status: res.status
-				};
+				return { res, body: { error: { code: 'non_json_response', message: text.slice(0, 200) || res.statusText, status: res.status } } as ApiErr };
+			}
+		}
+		return { res, body };
+	}
+
+	try {
+		let { res, body } = await doFetch(options);
+
+		// On a CSRF rejection for a mutating request, refresh the token cookie
+		// and retry once with the updated X-CSRF-Token header. This mirrors the
+		// retry logic in the admin/main/learn/tools apps and prevents the user
+		// from having to manually reload the page when the session-scoped
+		// csrf_token cookie becomes stale.
+		if (isMutating && isCsrfRejection(res.status, body)) {
+			const refreshed = await refreshCsrfCookie();
+			if (refreshed) {
+				const newToken = readCsrfCookie();
+				if (newToken) {
+					const retryHeaders = {
+						...(options.headers as Record<string, string> | undefined),
+						[CSRF_HEADER]: newToken,
+					};
+					const retryOpts = { ...options, headers: retryHeaders };
+					const retry = await doFetch(retryOpts);
+					res = retry.res;
+					body = retry.body;
+				}
 			}
 		}
 

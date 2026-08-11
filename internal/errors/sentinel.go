@@ -40,6 +40,10 @@ var (
 
 	// ErrInsufficientBalance indicates a wallet balance would go negative.
 	ErrInsufficientBalance = errors.New("insufficient balance")
+
+	// ErrInUse indicates a resource cannot be deleted because it is
+	// referenced by other records (e.g. a field group with existing values).
+	ErrInUse = errors.New("in use")
 )
 
 // WrapDuplicate wraps an error with the duplicate sentinel if it appears to be

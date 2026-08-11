@@ -164,6 +164,16 @@ func NewScheduler(cfg *Config) *asynq.Scheduler {
 	// each published entry. Default queue.
 	schedule("0 8 * * *", TypeCalendarSendReminders, 24*time.Hour)
 
+	// Weekly credential checker link validation — Sunday 02:00 UTC (§94,
+	// ADR-102). HEAD-checks regulatory_body_url on active pathways and
+	// logs pathways whose URLs return 404. Low queue.
+	schedule("0 2 * * 0", TypeCredentialsCheckLinks, 7*24*time.Hour)
+
+	// Nightly CV format session purge — 05:00 UTC (§95, ADR-103).
+	// Deletes cv_format_sessions rows past their expires_at (24h after
+	// creation). Low queue.
+	schedule("0 5 * * *", TypeCvFormatSessionsPurge, 24*time.Hour)
+
 	return scheduler
 }
 

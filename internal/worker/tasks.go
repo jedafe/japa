@@ -37,6 +37,7 @@ const (
 	TypeContentFanOutToFeeds          = "content:fan_out_to_feeds"
 	TypeAIGenerateContentEmbedding    = "content:generate_embedding"
 	TypeContentGenerateDraft          = "content:generate_draft"
+	TypeAgentCreateDraftRequest       = "agent:create_draft_request"
 	TypeReviewAggregateRecalc         = "content:recalc_review_aggregate"
 	TypeTicketSendStatusUpdate        = "ticket:send_status_update"
 	TypeLearningUpdateTrackCompletion = "learning:update_track_completion"
@@ -132,6 +133,7 @@ func RegisterHandlers(mux *asynq.ServeMux) {
 	mux.HandleFunc(TypeContentFanOutToFeeds, HandleContentFanOutToFeeds)
 	mux.HandleFunc(TypeAIGenerateContentEmbedding, HandleAIGenerateContentEmbedding)
 	mux.HandleFunc(TypeContentGenerateDraft, HandleContentGenerateDraft)
+	mux.HandleFunc(TypeAgentCreateDraftRequest, HandleAgentCreateDraftRequest)
 	mux.HandleFunc(TypeReviewAggregateRecalc, HandleReviewAggregateRecalc)
 	mux.HandleFunc(TypeTicketSendStatusUpdate, HandleTicketSendStatusUpdate)
 	mux.HandleFunc(TypeLearningUpdateTrackCompletion, HandleLearningUpdateTrackCompletion)
@@ -232,4 +234,11 @@ func RegisterHandlers(mux *asynq.ServeMux) {
 	// §86 Community Calendar handlers (ADR-094).
 	mux.HandleFunc(TypeCalendarStalenessCheck, HandleCalendarStalenessCheck)
 	mux.HandleFunc(TypeCalendarSendReminders, HandleCalendarSendReminders)
+
+	// §94 Professional Credential Checker handlers (ADR-102).
+	mux.HandleFunc(TypeCredentialsCheckLinks, HandleCredentialsCheckLinks)
+
+	// §95 CV Formatter handlers (ADR-103).
+	mux.HandleFunc(TypeCvFormatProcess, HandleCvFormatProcess)
+	mux.HandleFunc(TypeCvFormatSessionsPurge, HandleCvFormatSessionsPurge)
 }

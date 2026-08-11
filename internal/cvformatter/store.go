@@ -294,6 +294,40 @@ WHERE id = $1
 	return r, nil
 }
 
+// UpdateSessionStatus updates a session's status, output_text, tokens_used,
+// and ai_model. Called by ProcessSession after the AI Gateway returns.
+// outputText, tokensUsed, and model may be nil.
+func (s *Store) UpdateSessionStatus(ctx context.Context, id pgtype.UUID, status string, outputText *string, tokensUsed *int32, model *string) error {
+	const q = `
+UPDATE cv_format_sessions
+SET status = $2,
+    output_text = $3,
+    tokens_used = $4,
+    ai_model = $5
+WHERE id = $1
+`
+	cmd, err := s.pool.Writer.Exec(ctx, q, id, status, outputText, tokensUsed, model)
+	if err != nil {
+		return fmt.Errorf("cvformatter: update session status: %w", err)
+	}
+	if cmd.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+	return nil
+}
+
+// DeleteExpiredSessions deletes cv_format_sessions rows past their
+// expires_at. Called by the cv_format_sessions:purge nightly Asynq task
+// (§95, ADR-103). Returns the number of deleted rows.
+func (s *Store) DeleteExpiredSessions(ctx context.Context) (int64, error) {
+	const q = `DELETE FROM cv_format_sessions WHERE expires_at < now()`
+	cmd, err := s.pool.Writer.Exec(ctx, q)
+	if err != nil {
+		return 0, fmt.Errorf("cvformatter: delete expired sessions: %w", err)
+	}
+	return cmd.RowsAffected(), nil
+}
+
 // CountUserSessionsThisMonth returns the number of cv_format_sessions
 // rows created by the given user in the current calendar month. Used by
 // the service for the standard-member quota check (§95).

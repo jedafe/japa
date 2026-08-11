@@ -31,7 +31,7 @@
 
 	let selectedDest = $state('');
 	let inputText = $state('');
-	let outputFormat = $state('text');
+	let outputFormat = $state('docx');
 	let loadingStandard = $state(false);
 	let currentStandard = $state<CvStandard | null>(null);
 
@@ -280,9 +280,8 @@
 							bind:value={outputFormat}
 							class="px-3 py-1.5 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius)] text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none"
 						>
-							<option value="text">{t('cv_formatter.format_text', 'Plain text')}</option>
-							<option value="markdown">{t('cv_formatter.format_markdown', 'Markdown')}</option>
-							<option value="html">{t('cv_formatter.format_html', 'HTML')}</option>
+							<option value="docx">{t('cv_formatter.format_docx', 'DOCX')}</option>
+							<option value="pdf">{t('cv_formatter.format_pdf', 'PDF')}</option>
 						</select>
 					</div>
 
@@ -374,6 +373,14 @@
 									{t('cv_formatter.tokens_used', 'Tokens used:')} {session.tokens_used}
 								</p>
 							{/if}
+							<!-- HITL disclosure (§95, ADR-088): AI-generated output
+							     must be reviewed by the user before use. -->
+							<div class="mt-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-3 flex items-start gap-2">
+								<AlertTriangle size={14} class="text-amber-600 flex-shrink-0 mt-0.5" />
+								<p class="text-xs text-[var(--color-text)] leading-relaxed">
+									{t('cv_formatter.hitl_disclosure', 'AI-generated output should be reviewed by a human before submission. Verify all facts, dates, and personal information for accuracy.')}
+								</p>
+							</div>
 						</div>
 					{/if}
 				</div>

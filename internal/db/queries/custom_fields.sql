@@ -43,6 +43,15 @@ RETURNING id, tenant_id, name, slug, description, is_system, created_at;
 DELETE FROM custom_field_groups
 WHERE id = @id AND tenant_id = @tenant_id AND is_system = false;
 
+-- name: CountCustomFieldValuesByGroup :one
+-- BUG-008: counts custom_field_values referencing any field in the given
+-- group, so DeleteFieldGroup can reject deletion when the group is in use.
+-- Tenant-scoped via the JOIN to custom_fields.
+SELECT count(*)::bigint
+FROM custom_field_values cfv
+JOIN custom_fields cf ON cfv.field_id = cf.id
+WHERE cf.group_id = @group_id AND cf.tenant_id = @tenant_id;
+
 -- =====================
 -- Custom Fields
 -- =====================

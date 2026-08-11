@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/valkey"
 )
 
@@ -130,7 +131,22 @@ func (s *Service) UpdateFieldGroup(ctx context.Context, id, tenantID pgtype.UUID
 
 // DeleteFieldGroup deletes a non-system custom field group, scoped to the
 // tenant. System groups are protected at the database level.
+// BUG-008: rejects deletion when the group has existing custom_field_values
+// (i.e. the group is actively storing data for entities). This prevents
+// silent data loss when an admin deletes a group that's in use.
 func (s *Service) DeleteFieldGroup(ctx context.Context, id, tenantID pgtype.UUID) error {
+	// Check for existing field values referencing this group's fields.
+	count, err := s.read.CountCustomFieldValuesByGroup(ctx, gen.CountCustomFieldValuesByGroupParams{
+		GroupID:  id,
+		TenantID: tenantID,
+	})
+	if err != nil {
+		return fmt.Errorf("checking field group usage: %w", err)
+	}
+	if count > 0 {
+		return fmt.Errorf("%w: cannot delete field group with %d existing value(s)", errpkg.ErrInUse, count)
+	}
+
 	if err := s.write.DeleteCustomFieldGroup(ctx, gen.DeleteCustomFieldGroupParams{
 		ID:       id,
 		TenantID: tenantID,

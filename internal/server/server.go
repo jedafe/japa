@@ -670,6 +670,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	cfHandlers.SetWalletService(walletService)
 	cfHandlers.SetPaymentsService(paymentService)
 	cfHandlers.SetSettings(settingsService)
+	// BUG-001: wire the HTML sanitizer so rich_text field values are scrubbed
+	// before storage (stored XSS prevention). content.SanitizeHTML is the
+	// whitelist-based sanitizer shared across the platform.
+	cfHandlers.SetRichTextSanitizer(content.SanitizeHTML)
 
 	// Advertising subsystem (Section 25 — Ad Placement).
 	adService := advertising.NewService(database, settingsService)
@@ -1032,6 +1036,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	cvFormatterStore := cvformatter.NewStore(database)
 	cvFormatterService := cvformatter.NewService(cvFormatterStore, settingsService)
 	cvFormatterService.SetRBAC(rbacResolver)
+	cvFormatterService.SetEnqueuer(taskEnqueuer)
+	cvFormatterService.SetCache(&cvFormatterCache{rdb: vkClient.Redis()})
 	cvFormatterHandlers := cvformatter.NewHandlers(cvFormatterService, settingsService)
 
 	housingGuideStore := housingguide.NewStore(database)
@@ -1214,6 +1220,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		WithCache(agentCache)
 	agentDeps.ContentCreator = contentCreatorBridge.create
 	agentDeps.ContentUpdater = contentUpdaterBridge.update
+	// Phase 8: persona resolver + HITL store for content.create_draft.
+	agentDeps.Persona = &agentPersonaAdapter{store: personasStore}
+	agentDeps.HITL = aiStore
 
 	agentRegistry := ai.NewToolHandlerRegistry()
 	ai.RegisterPhase4Tools(agentRegistry, agentDeps)
@@ -1240,6 +1249,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		ai.WithAgentGeoResolver(gen.New(database.Reader)),
 		ai.WithAgentRateLimiter(agentRateLimiter),
 		ai.WithAgentCache(agentCache),
+		ai.WithAgentPersona(&agentPersonaAdapter{store: personasStore}),
 	)
 
 	agentHTTPHandlers := ai.NewAgentHTTPHandlers(agentHandler, gen.New(database.Reader),
@@ -1272,6 +1282,24 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	aiProcessorAdapter := ai.NewWorkerAdapter(aiDispatcher)
 	aiProcessorAdapter.SetSettings(settingsService) // honor ai.humanize.* for background generation
 	worker.RegisterAIProcessor(aiProcessorAdapter)
+
+	// Phase 8: register the agent draft processor so the
+	// agent:create_draft_request Asynq task creates draft content + a HITL
+	// review with source='agent_draft_request'. The adapter closes over the
+	// content service + AI store + persona store + AI dispatcher so the
+	// worker package does not import internal/ai or internal/content.
+	worker.RegisterAgentDraftProcessor(&agentDraftProcessorAdapter{
+		contentSvc:   contentService,
+		aiStore:      aiStore,
+		personaStore: personasStore,
+		dispatcher:   &agentDraftDispatcherAdapter{dispatcher: aiDispatcher},
+	})
+
+	// §95 CV Formatter — wire the AI dispatcher into the service and
+	// register the service as the cv_format:process / cv_format_sessions:purge
+	// Asynq task processor (ADR-103).
+	cvFormatterService.SetAIDispatcher(&cvFormatterAIDispatcher{dispatcher: aiDispatcher})
+	worker.RegisterCvFormatterProcessor(cvFormatterService)
 
 	moderationProcessorAdapter := spam.NewWorkerAdapter(spamPipeline)
 	worker.RegisterModerationProcessor(moderationProcessorAdapter)
@@ -1667,7 +1695,14 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Delete("/custom-fields/{id}", cfHandlers.DeleteField)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "custom_fields.field.edit")).
 				Put("/custom-fields/{id}/permissions", cfHandlers.SetFieldPermission)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/custom-fields/{id}/permissions", cfHandlers.ListFieldPermissions)
+			// BUG-007: gate ListFieldPermissions with custom_fields.group.view so
+			// non-admin users cannot read the field-level RBAC configuration.
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "custom_fields.group.view")).
+				Get("/custom-fields/{id}/permissions", cfHandlers.ListFieldPermissions)
+			// BUG-009: DELETE route for field permissions — completes the CRUD
+			// surface so permissions can be removed, not just upserted.
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "custom_fields.field.edit")).
+				Delete("/custom-fields/{id}/permissions", cfHandlers.DeleteFieldPermission)
 
 			// Field value routes
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/custom-field-values/{entity_type}/{entity_id}", cfHandlers.ListFieldValues)

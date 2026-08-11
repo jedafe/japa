@@ -127,8 +127,8 @@ var taskTier = func() map[string]string {
 		TypeTicketSendConfirmation, TypePushDelivery, TypeDMNotifyRequest, TypeDMNotifyMessage,
 		TypeUniversityProcessEnrollment, TypeUniversitySendInstructorPayout,
 		TypeAffiliateCreditCommission, // BUG-012: financial side effect → critical (§56)
-		TypeNotificationSendPush,       // §77 V2 — push delivery is user-facing-critical
-		TypeEmbassyDispatchAlerts,      // §91 — time-sensitive slot availability (ADR-099)
+		TypeNotificationSendPush,      // §77 V2 — push delivery is user-facing-critical
+		TypeEmbassyDispatchAlerts,     // §91 — time-sensitive slot availability (ADR-099)
 	} {
 		m[t] = QueueCritical
 	}
@@ -142,6 +142,7 @@ var taskTier = func() map[string]string {
 		TypeScheduledPublish, TypeLinkPreviewFetch, TypeLanguagePackAITranslate,
 		TypeMediaScan, TypeContentFanOutToFeeds, TypeAIGenerateContentEmbedding,
 		TypeContentGenerateDraft,
+		TypeAgentCreateDraftRequest,
 		TypeReviewAggregateRecalc, TypeTicketSendStatusUpdate,
 		TypeLearningUpdateTrackCompletion, TypeVideoProcessing,
 		TypeWalletProcessActivityEvent, TypeNewsletterSend,
@@ -170,6 +171,8 @@ var taskTier = func() map[string]string {
 		TypeEmbassyPoll,
 		// §86 Community Calendar (ADR-094) — daily reminders on default tier.
 		TypeCalendarSendReminders,
+		// §95 CV Formatter (ADR-103) — AI formatting on default tier.
+		TypeCvFormatProcess,
 	} {
 		m[t] = QueueDefault
 	}
@@ -210,6 +213,10 @@ var taskTier = func() map[string]string {
 		TypeEmbassyExpireChecks,
 		// §86 Community Calendar (ADR-094) — nightly staleness check, low tier.
 		TypeCalendarStalenessCheck,
+		// §94 Professional Credential Checker (ADR-102) — weekly link check, low tier.
+		TypeCredentialsCheckLinks,
+		// §95 CV Formatter (ADR-103) — nightly purge of expired sessions, low tier.
+		TypeCvFormatSessionsPurge,
 	} {
 		m[t] = QueueLow
 	}
@@ -257,6 +264,7 @@ func TaskTypeCatalog() []map[string]string {
 		{TypeMediaScan, "default", "Scan uploaded media for policy violations"},
 		{TypeContentFanOutToFeeds, "default", "Fan out content to follower feeds"},
 		{TypeAIGenerateContentEmbedding, "default", "Generate vector embedding for content"},
+		{TypeAgentCreateDraftRequest, "default", "Create draft content from external sources for admin review (Section 103, Phase 8)"},
 		{TypeReviewAggregateRecalc, "default", "Recalculate review aggregate scores"},
 		{TypeTicketSendStatusUpdate, "default", "Send ticket status change email"},
 		{TypeLearningUpdateTrackCompletion, "default", "Update learning track completion"},
@@ -316,6 +324,10 @@ func TaskTypeCatalog() []map[string]string {
 		{TypeEmbassyPoll, "default", "Poll a monitored embassy booking page for open appointment slots"},
 		{TypeEmbassyDispatchAlerts, "critical", "Dispatch notifications to users with a matching active appointment alert"},
 		{TypeEmbassyExpireChecks, "low", "Expire appointment alerts past their expires_at date"},
+		{TypeCredentialsCheckLinks, "low", "HEAD-check regulatory_body_url on active credential pathways for 404s"},
+		// §95 CV Formatter (ADR-103)
+		{TypeCvFormatProcess, "default", "Process a pending CV format session via the AI Gateway"},
+		{TypeCvFormatSessionsPurge, "low", "Purge expired CV format sessions past their expires_at"},
 	}
 
 	result := make([]map[string]string, len(tasks))

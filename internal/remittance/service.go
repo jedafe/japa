@@ -746,7 +746,11 @@ func providerToInfo(p gen.RemittanceProvider) ProviderInfo {
 // provider, returning the original raw JSON. Use this when the rate-fetch
 // logic needs the provider's API credentials (ADR-075).
 func DecryptAPIConfig(p gen.RemittanceProvider) ([]byte, error) {
-	return crypto.DecryptJSON(p.ApiConfig)
+	decrypted, err := crypto.DecryptJSON(p.ApiConfig)
+	if err != nil {
+		return nil, fmt.Errorf("remittance: decrypt api_config: %w", err)
+	}
+	return decrypted, nil
 }
 
 // ---------------------------------------------------------------------------

@@ -150,11 +150,19 @@ func DisableTOTP(ctx context.Context, store TOTPStore, userID pgtype.UUID, code 
 }
 
 func encryptSecret(secret string) (string, error) {
-	return crypto.Encrypt(secret)
+	enc, err := crypto.Encrypt(secret)
+	if err != nil {
+		return "", fmt.Errorf("auth: encrypt totp secret: %w", err)
+	}
+	return enc, nil
 }
 
 func decryptSecret(encrypted string) (string, error) {
-	return crypto.Decrypt(encrypted)
+	plaintext, err := crypto.Decrypt(encrypted)
+	if err != nil {
+		return "", fmt.Errorf("auth: decrypt totp secret: %w", err)
+	}
+	return plaintext, nil
 }
 
 // FormatBackupCodes formats backup codes as a JSON-compatible string slice.

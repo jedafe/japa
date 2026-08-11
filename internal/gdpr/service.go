@@ -1016,6 +1016,13 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 			return fmt.Errorf("soft-deleting attestation community updates: %w", err)
 		}
 
+		// §94: soft-delete credential_community_notes authored by the user
+		// so their PII is removed while the note text survives for other
+		// users. Ref: §94, ADR-102.
+		if err := q.SoftDeleteCredentialCommunityNotesByUser(ctx, userID); err != nil {
+			return fmt.Errorf("soft-deleting credential community notes: %w", err)
+		}
+
 		// ticket_events.user_id is nullable audit trail; nullify the actor, keep the event.
 		if err := q.NullifyTicketEventsUser(ctx, userID); err != nil {
 			return fmt.Errorf("nullifying ticket events user: %w", err)
@@ -1268,6 +1275,23 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 			return fmt.Errorf("reassigning community_organisations hitl_reviewed_by: %w", err)
 		}
 
+		// BUG-017: Scrub PII from cv_format_sessions during the
+		// anonymization phase (§95, ADR-103, ADR-014). The table has
+		// ON DELETE CASCADE from users(id) so rows are removed at
+		// hard-delete, but input_text (the user's full CV) and
+		// output_text (the formatted CV) must be cleared now so they
+		// are not recoverable during the retention window. Best-effort:
+		// a failure logs a warning but does not abort.
+		if _, err := s.db.Writer.Exec(ctx, `
+			UPDATE cv_format_sessions
+			SET input_text = '[scrubbed]',
+			    output_text = NULL
+			WHERE tenant_id = $2 AND user_id = $1
+		`, userID, tenantID); err != nil {
+			slog.Warn("failed to scrub cv_format_sessions PII during deletion",
+				"user_id", userID.String(), "error", err)
+		}
+
 		// 5. Physical deletion — ON DELETE CASCADE handles all child tables.
 		// The following feed-related tables are cascade-purged here (no
 		// explicit step needed, documented for GDPR traceability — BUG-014):
@@ -1492,6 +1516,7 @@ type UserDataExport struct {
 	ComparisonItems      []map[string]interface{} `json:"comparison_items"`       // BUG-004
 	ComparisonDimensions []map[string]interface{} `json:"comparison_dimensions"`  // BUG-004
 	ComparisonValues     []map[string]interface{} `json:"comparison_values"`      // BUG-004
+	CvFormatSessions     []map[string]interface{} `json:"cv_format_sessions"`     // §95 BUG-014
 	ExportMetadata       map[string]interface{}   `json:"export_metadata"`
 }
 
@@ -2035,6 +2060,65 @@ func (s *Service) collectUserData(ctx context.Context, userID, tenantID pgtype.U
 		export.CommunityOrganisations = collected
 	} else {
 		slog.Warn("failed to collect community_organisations for export", "user_id", userID.String(), "error", err)
+	}
+
+	// BUG-014: export cv_format_sessions owned by the user so the GDPR
+	// data export includes their CV formatting session history. The
+	// input_text and output_text fields contain the user's CV content.
+	// Ref: §95, ADR-103.
+	if rows, err := s.db.Reader.Query(ctx, `
+		SELECT id, tenant_id, user_id, origin_space_id, destination_space_id,
+		       input_text, output_text, output_format, status, ai_model,
+		       tokens_used, created_at, expires_at
+		FROM cv_format_sessions
+		WHERE tenant_id = $2 AND user_id = $1
+	`, userID, tenantID); err == nil {
+		collected := []map[string]interface{}{}
+		for rows.Next() {
+			var (
+				id, tenantID2, userID2, originSpaceID, destSpaceID pgtype.UUID
+				inputText, outputFormat, status string
+				outputText, aiModel *string
+				tokensUsed *int32
+				createdAt, expiresAt pgtype.Timestamptz
+			)
+			if err := rows.Scan(
+				&id, &tenantID2, &userID2, &originSpaceID, &destSpaceID,
+				&inputText, &outputText, &outputFormat, &status, &aiModel,
+				&tokensUsed, &createdAt, &expiresAt,
+			); err != nil {
+				slog.Warn("failed to scan cv_format_sessions row for export", "user_id", userID.String(), "error", err)
+				continue
+			}
+			m := map[string]interface{}{
+				"id":                  id.String(),
+				"tenant_id":           tenantID2.String(),
+				"user_id":             userID2.String(),
+				"destination_space_id": destSpaceID.String(),
+				"input_text":          inputText,
+				"output_format":       outputFormat,
+				"status":              status,
+				"created_at":          createdAt.Time,
+				"expires_at":          expiresAt.Time,
+			}
+			if originSpaceID.Valid {
+				m["origin_space_id"] = originSpaceID.String()
+			}
+			if outputText != nil {
+				m["output_text"] = *outputText
+			}
+			if aiModel != nil {
+				m["ai_model"] = *aiModel
+			}
+			if tokensUsed != nil {
+				m["tokens_used"] = *tokensUsed
+			}
+			collected = append(collected, m)
+		}
+		rows.Close()
+		export.CvFormatSessions = collected
+	} else {
+		slog.Warn("failed to collect cv_format_sessions for export", "user_id", userID.String(), "error", err)
 	}
 
 	return export, nil

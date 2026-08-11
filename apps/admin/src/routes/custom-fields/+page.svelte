@@ -125,6 +125,12 @@
 				label: t('fieldGroups.fields', 'Fields'),
 				sortable: true,
 				render: (v: number) => String(v ?? 0)
+			},
+			{
+				key: 'is_system',
+				label: t('fieldGroups.type', 'Type'),
+				sortable: true,
+				componentSnippet: SystemBadge
 			}
 		],
 		filters: [
@@ -146,13 +152,15 @@
 			},
 			{
 				label: t('common.edit', 'Edit'),
-				onclick: (_row: FieldGroup, ctx) => ctx?.openEdit(_row)
+				onclick: (_row: FieldGroup, ctx) => ctx?.openEdit(_row),
+				show: (row: FieldGroup) => !row.is_system
 			},
 			{
 				label: t('common.delete', 'Delete'),
 				icon: Trash2,
 				variant: 'destructive',
-				onclick: (_row: FieldGroup, ctx) => ctx?.openDelete(_row)
+				onclick: (_row: FieldGroup, ctx) => ctx?.openDelete(_row),
+				show: (row: FieldGroup) => !row.is_system
 			}
 		],
 		bulkActions: [
@@ -164,14 +172,24 @@
 			}
 		],
 		fields,
-		load: async ({ q, filter }) => {
+		load: async ({ q, filter, page, pageSize, sort }) => {
 			const params = new URLSearchParams();
 			if (filter.entity_type) params.set('entity_type', filter.entity_type);
 			if (q) params.set('q', q);
+			// page is 0-based from EntityPage; backend expects 1-based.
+			params.set('page', String(page + 1));
+			params.set('page_size', String(pageSize));
+			if (sort) params.set('sort', sort);
 			const result = await fieldGroupsAdminApiExtended.list(params.toString() || undefined);
 			if (result.ok) {
-				const data = (Array.isArray(result.data) ? result.data : []) as FieldGroup[];
-				return { data, total: data.length, totalPages: 1 };
+				const body = result.data;
+				const data = (Array.isArray(body?.data) ? body.data : []) as FieldGroup[];
+				const meta = body?.meta;
+				return {
+					data,
+					total: meta?.total ?? data.length,
+					totalPages: meta?.total_pages ?? 1
+				};
 			}
 			throw new Error(result.error ?? t('common.error', 'Failed to load field groups'));
 		},
@@ -440,7 +458,7 @@
 		groupFields = reordered;
 		try {
 			await fieldGroupsAdminApiExtended.reorderFields(editorGroup.id, {
-				field_ids: reordered.map((f) => f.id)
+				ordered_field_ids: reordered.map((f) => f.id)
 			});
 			await loadGroupFields();
 			entityController?.reload();
@@ -517,7 +535,7 @@
 							</tr>
 						</thead>
 						<tbody>
-							{#each groupFields as f, i (f.id)}
+							{#each groupFields as f, i (f.id ?? `field-${i}`)}
 								<tr class="border-t" style="border-color: var(--color-border)">
 									<td class="px-2 py-2 text-center" style="color: var(--color-muted)">
 										<div class="flex flex-col items-center">
@@ -624,7 +642,7 @@
 				class="w-full rounded-lg border px-3 py-2 text-sm disabled:opacity-50"
 				style="border-color: var(--color-border); background-color: var(--color-background); color: var(--color-foreground)"
 			>
-				{#each fieldTypes as ft (ft)}
+				{#each fieldTypes as ft (ft.value)}
 					<option value={ft.value}>{ft.label}</option>
 				{/each}
 			</select>
@@ -663,7 +681,7 @@
 				</div>
 				{#if options.length > 0}
 					<div class="mt-2 flex flex-wrap gap-2">
-						{#each options as opt (opt)}
+						{#each options as opt (opt.value)}
 							<span class="inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs" style="background: var(--color-surface)">
 								<span style="color: var(--color-muted)">{opt.value}</span>: {opt.label}
 								<button type="button" class="ml-0.5 opacity-50 hover:opacity-100" onclick={() => removeOption(opt)}>&times;</button>
@@ -734,6 +752,25 @@
 	{entityLabel(value)}
 {/snippet}
 
+<!-- SystemBadge renders a badge indicating whether the group is system-defined -->
+{#snippet SystemBadge({ value }: { value: any; row: FieldGroup })}
+	{#if value}
+		<span
+			class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium"
+			style="background: color-mix(in srgb, var(--color-primary) 12%, transparent); color: var(--color-primary)"
+		>
+			{t('fieldGroups.system', 'System')}
+		</span>
+	{:else}
+		<span
+			class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium"
+			style="background: var(--color-surface); color: var(--color-muted)"
+		>
+			{t('fieldGroups.custom', 'Custom')}
+		</span>
+	{/if}
+{/snippet}
+
 <!-- View slide-over body showing the group's fields -->
 {#snippet GroupView({ row }: { row: FieldGroup })}
 	<div class="space-y-4">
@@ -761,6 +798,14 @@
 					{t('fieldGroups.fields', 'Fields')}
 				</p>
 				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.field_count ?? 0}</p>
+			</div>
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">
+					{t('fieldGroups.type', 'Type')}
+				</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">
+					{row.is_system ? t('fieldGroups.system', 'System') : t('fieldGroups.custom', 'Custom')}
+				</p>
 			</div>
 		</div>
 		{#if row.description}
