@@ -1,4 +1,4 @@
--- 000247_geo_awareness_extension.down.sql
+-- 000382_geo_awareness_extension.down.sql
 -- Rollback: remove origin_country custom field and geo_personalization
 -- settings added by ADR-064a.
 

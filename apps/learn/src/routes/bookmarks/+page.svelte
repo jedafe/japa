@@ -23,6 +23,8 @@
 	let newFolderName = $state('');
 	let creatingFolder = $state(false);
 	let deletingFolderId = $state<string | null>(null);
+	let folderError = $state('');
+	let removingBookmarkId = $state<string | null>(null);
 
 	// Rename state
 	let editingFolderId = $state<string | null>(null);
@@ -82,10 +84,13 @@
 	async function createFolder() {
 		if (!newFolderName.trim() || creatingFolder) return;
 		creatingFolder = true;
+		folderError = '';
 		const res = await api.post<BookmarkFolder>('/me/bookmark-folders', { name: newFolderName.trim() });
 		if (res.data) {
 			folders = [...folders, res.data];
 			newFolderName = '';
+		} else {
+			folderError = res.error?.message ?? t('learn.bookmarks_folder_error', 'Failed to create folder');
 		}
 		creatingFolder = false;
 	}
@@ -93,10 +98,13 @@
 	async function deleteFolder(id: string) {
 		if (deletingFolderId) return;
 		deletingFolderId = id;
+		folderError = '';
 		const res = await api.delete(`/me/bookmark-folders/${id}`);
 		if (!res.error) {
 			folders = folders.filter((f) => f.id !== id);
 			if (activeFolder === id) selectFolder(null);
+		} else {
+			folderError = res.error?.message ?? t('learn.bookmarks_folder_error', 'Failed to delete folder');
 		}
 		deletingFolderId = null;
 	}
@@ -104,6 +112,7 @@
 	function startRename(folder: BookmarkFolder) {
 		editingFolderId = folder.id;
 		editFolderName = folder.name;
+		folderError = '';
 	}
 
 	function cancelRename() {
@@ -114,13 +123,30 @@
 	async function confirmRename(id: string) {
 		if (!editFolderName.trim() || renamingFolder) return;
 		renamingFolder = true;
+		folderError = '';
 		const res = await api.patch<BookmarkFolder>(`/me/bookmark-folders/${id}`, { name: editFolderName.trim() });
 		if (res.data) {
 			folders = folders.map((f) => (f.id === id ? res.data! : f));
+			renamingFolder = false;
+			editingFolderId = null;
+			editFolderName = '';
+		} else {
+			renamingFolder = false;
+			folderError = res.error?.message ?? t('learn.bookmarks_folder_error', 'Failed to rename folder');
 		}
-		renamingFolder = false;
-		editingFolderId = null;
-		editFolderName = '';
+	}
+
+	async function removeBookmark(id: string) {
+		if (removingBookmarkId) return;
+		removingBookmarkId = id;
+		folderError = '';
+		const res = await api.delete(`/me/bookmarks/${id}`);
+		if (!res.error) {
+			bookmarks = bookmarks.filter((b) => b.id !== id);
+		} else {
+			folderError = res.error?.message ?? t('learn.bookmarks_remove_error', 'Failed to remove bookmark');
+		}
+		removingBookmarkId = null;
 	}
 </script>
 
@@ -140,6 +166,9 @@
 	<div class="grid gap-4 sm:grid-cols-[200px_1fr]">
 		<!-- Folder sidebar -->
 		<aside class="space-y-2">
+			{#if folderError}
+				<p class="rounded-[var(--radius)] bg-red-500/10 px-3 py-2 text-xs text-red-500" role="alert">{folderError}</p>
+			{/if}
 			<button
 				type="button"
 				onclick={() => selectFolder(null)}
@@ -256,8 +285,8 @@
 			{:else}
 				<ul class="space-y-3">
 					{#each bookmarks as bm (bm.id)}
-						<li class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-							<a href={entityUrl(bm)} class="group flex items-center justify-between gap-3 hover:text-[var(--color-primary)]">
+						<li class="group flex items-center justify-between gap-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+							<a href={entityUrl(bm)} class="flex min-w-0 flex-1 items-center justify-between gap-3 hover:text-[var(--color-primary)]">
 								<div class="min-w-0 flex-1">
 									<p class="font-medium text-[var(--color-text)]">{entityLabel(bm)}</p>
 									<p class="mt-1 text-xs text-[var(--color-muted)]">
@@ -266,6 +295,19 @@
 								</div>
 								<ExternalLink class="h-4 w-4 shrink-0 text-[var(--color-muted)] group-hover:text-[var(--color-primary)]" />
 							</a>
+							<button
+								type="button"
+								onclick={() => removeBookmark(bm.id)}
+								disabled={removingBookmarkId === bm.id}
+								class="shrink-0 rounded p-1.5 text-[var(--color-muted)] opacity-0 transition-opacity hover:text-[var(--color-danger)] group-hover:opacity-100 disabled:opacity-50"
+								aria-label={t('learn.bookmarks_remove', 'Remove bookmark')}
+							>
+								{#if removingBookmarkId === bm.id}
+									<Loader2 size={14} class="animate-spin" />
+								{:else}
+									<Trash2 size={14} />
+								{/if}
+							</button>
 						</li>
 					{/each}
 				</ul>

@@ -1,10 +1,11 @@
 <script lang="ts">
 	import { CornerUpLeft } from 'lucide-svelte';
-	import { encodeReplyBody } from '$lib/tiptap/serialize';
+	import { encodeTiptapDoc } from '$lib/tiptap/serialize';
 	import { api } from '$lib/api/client';
 	import { t } from '$lib/i18n';
 	import type { ForumReply } from '$lib/types';
 	import ReplyItem from './ReplyItem.svelte';
+	import CommentEditor from '$lib/components/comments/CommentEditor.svelte';
 
 	interface Props {
 		/** Flat list of all replies for the thread (parent_reply_id links them). */
@@ -41,21 +42,19 @@
 		return byParent.get(id) ?? [];
 	}
 
-	// Top-level reply composer state.
-	let topDraft = $state('');
+	// Top-level reply composer state — body is base64 TipTap JSON.
+	let topBody = $state<string>('');
 	let topSubmitting = $state(false);
 	let addedTop: ForumReply[] = $state([]);
 
 	async function submitTopReply() {
-		const text = topDraft.trim();
-		if (!text || topSubmitting || !authed) return;
+		if (!topBody || topSubmitting || !authed) return;
 		topSubmitting = true;
-		const body = encodeReplyBody(text);
-		const res = await api.post<ForumReply>(`/forum/${threadId}/replies`, { body });
+		const res = await api.post<ForumReply>(`/forum/${threadId}/replies`, { body: topBody });
 		topSubmitting = false;
 		if (res.error || !res.data) return;
 		addedTop = [...addedTop, res.data];
-		topDraft = '';
+		topBody = '';
 	}
 
 	const allTop = $derived([...topLevel, ...addedTop]);
@@ -70,12 +69,7 @@
 
 	{#if authed}
 		<div class="mb-6 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
-			<textarea
-				bind:value={topDraft}
-				rows="3"
-				placeholder={t('forum.reply_placeholder', 'Write a reply…')}
-				class="w-full resize-y rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]"
-			></textarea>
+			<CommentEditor placeholder={t('forum.reply_placeholder', 'Write a reply…')} oninput={(b) => (topBody = b)} />
 			<div class="mt-2 flex items-center justify-between">
 				<span class="inline-flex items-center gap-1 text-xs text-[var(--color-muted)]">
 					<CornerUpLeft size={12} /> {t('forum.replying_to_thread', 'Replying to this thread')}
@@ -83,7 +77,7 @@
 				<button
 					type="button"
 					onclick={submitTopReply}
-					disabled={!topDraft.trim() || topSubmitting}
+					disabled={!topBody || topSubmitting}
 					class="rounded-[var(--radius)] bg-[var(--color-primary)] px-3.5 py-1.5 text-xs font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)] disabled:opacity-50"
 				>
 					{topSubmitting ? t('common.loading', 'Loading') : t('forum.post_reply', 'Post reply')}

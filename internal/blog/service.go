@@ -126,7 +126,13 @@ func (s *Service) AddPostToSeries(ctx context.Context, seriesID, contentID, tena
 }
 
 // RemovePostFromSeries removes a post from a series.
-func (s *Service) RemovePostFromSeries(ctx context.Context, seriesID, contentID pgtype.UUID) error {
+// BUG-003: verifies the series belongs to the caller's tenant before
+// deleting, otherwise an attacker with blog.series.edit in tenant A could
+// remove posts from a series in tenant B by knowing its series_id.
+func (s *Service) RemovePostFromSeries(ctx context.Context, seriesID, contentID, tenantID pgtype.UUID) error {
+	if _, err := s.store.getBlogSeriesByID(ctx, seriesID, tenantID); err != nil {
+		return fmt.Errorf("verifying series tenant: %w", err)
+	}
 	return s.store.removePostFromSeries(ctx, seriesID, contentID)
 }
 
@@ -144,17 +150,28 @@ func (s *Service) GetSeriesForContent(ctx context.Context, contentID pgtype.UUID
 }
 
 // ReorderPostsInSeries updates the position of a post within a series.
-func (s *Service) ReorderPostsInSeries(ctx context.Context, seriesID, contentID pgtype.UUID, position int32) error {
+// BUG-004: verifies the series belongs to the caller's tenant before
+// mutating (same cross-tenant risk as BulkReorderSeriesPosts).
+func (s *Service) ReorderPostsInSeries(ctx context.Context, seriesID, contentID, tenantID pgtype.UUID, position int32) error {
+	if _, err := s.store.getBlogSeriesByID(ctx, seriesID, tenantID); err != nil {
+		return fmt.Errorf("verifying series tenant: %w", err)
+	}
 	return s.store.reorderSeriesPosts(ctx, seriesID, contentID, position)
 }
 
 // BulkReorderSeriesPosts atomically replaces all posts in a series with the
 // given ordered list, eliminating the N+1 round-trip of per-post updates.
-func (s *Service) BulkReorderSeriesPosts(ctx context.Context, seriesID pgtype.UUID, posts []struct {
+// BUG-004: verifies the series belongs to the caller's tenant before
+// mutating, otherwise an attacker with blog.series.edit in tenant A could
+// wipe and rewrite the post order of a series in tenant B.
+func (s *Service) BulkReorderSeriesPosts(ctx context.Context, seriesID, tenantID pgtype.UUID, posts []struct {
 	ContentID pgtype.UUID
 	Position  int32
 },
 ) error {
+	if _, err := s.store.getBlogSeriesByID(ctx, seriesID, tenantID); err != nil {
+		return fmt.Errorf("verifying series tenant: %w", err)
+	}
 	return s.store.bulkReorderSeriesPosts(ctx, seriesID, posts)
 }
 

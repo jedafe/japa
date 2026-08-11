@@ -10,6 +10,7 @@
 	import MediaLibraryModal from '$lib/components/media/MediaLibraryModal.svelte';
 	import InsertModal from './InsertModal.svelte';
 	import LinkPreviewCard from './LinkPreviewCard.svelte';
+	import EmojiPicker from '$lib/components/tiptap/EmojiPicker.svelte';
 	import {
 		Heading2,
 		Heading3,
@@ -380,6 +381,11 @@
 		openMediaPicker();
 	}
 
+	function insertEmoji(emoji: string) {
+		if (!editor) return;
+		editor.chain().focus().insertContent(emoji).run();
+	}
+
 	// ---- Media picker (image upload via MediaLibraryModal) ----
 	let mediaPickerOpen = $state(false);
 
@@ -512,18 +518,10 @@
 	{/if}
 
 	<!-- The editor card wraps the Tiptap mount and (in WYSIWYG mode) the
-	     formatting toolbar docked at the bottom inside the same border.
+	     formatting toolbar docked at the top inside the same border.
 	     The .editor-surface is always mounted so the Editor instance keeps
 	     its DOM node across mode switches; hidden via CSS in markdown mode. -->
 	<div class="editor-surface" class:hidden={mode === 'markdown'}>
-		<div
-			bind:this={element}
-			class="prose-content"
-			onkeydown={slashKeyDown}
-			role="textbox"
-			tabindex="-1"
-		></div>
-
 		{#if mode === 'wysiwyg' && editor}
 			<div class="toolbar" role="toolbar">
 				<button type="button" class="tb-btn" class:active={isActive('bold')} title={t('create.editor.toolbar.bold')} onclick={() => tb('toggleBold')}><Bold size={16} /></button>
@@ -546,13 +544,22 @@
 				<button type="button" class="tb-btn" title={t("create.editor.toolbar.coupon")} onclick={() => openInsertModal("coupon")}><Ticket size={16} /></button>
 				<button type="button" class="tb-btn" title={t('create.editor.toolbar.divider')} onclick={() => tb('setHorizontalRule')}><Minus size={16} /></button>
 				<span class="tb-sep"></span>
+				<EmojiPicker onselect={insertEmoji} />
+				<span class="tb-sep"></span>
 				<button type="button" class="tb-btn" title={t('create.editor.toolbar.undo')} onclick={() => tb('undo')} disabled={!editor.can().undo()}><Undo2 size={16} /></button>
 				<button type="button" class="tb-btn" title={t('create.editor.toolbar.redo')} onclick={() => tb('redo')} disabled={!editor.can().redo()}><Redo2 size={16} /></button>
 			</div>
 		{/if}
+		<div
+			bind:this={element}
+			class="prose-content"
+			onkeydown={slashKeyDown}
+			role="textbox"
+			tabindex="-1"
+		></div>
 	</div>
 
-	<!-- Mode switcher — floated at top-right of the editing surface -->
+	<!-- Mode switcher — floated at bottom-right of the editing surface -->
 	<div class="mode-switcher" role="tablist" aria-label={t('create.title')}>
 		{#each MODES as m (m.value)}
 			<button
@@ -612,10 +619,10 @@
 		position: relative;
 	}
 
-	/* ---- Mode switcher — floated at top-right of the editing surface ---- */
+	/* ---- Mode switcher — floated at bottom-right of the editing surface ---- */
 	.mode-switcher {
 		position: absolute;
-		top: 8px;
+		bottom: 20px;
 		right: 8px;
 		z-index: 20;
 		display: inline-flex;
@@ -633,11 +640,11 @@
 		height: 28px;
 		padding: 0;
 		border: none;
-		border-radius: calc(var(--radius) - 2px);
+		border-radius: 0;
 		background: transparent;
 		color: var(--color-text-subtle);
 		cursor: pointer;
-		transition: background 0.12s, color 0.12s;
+		transition: color 0.12s;
 	}
 	.mode-tab:hover {
 		color: var(--color-text);
@@ -645,18 +652,17 @@
 	.mode-tab.active {
 		background: var(--color-surface);
 		color: var(--color-primary);
-		box-shadow: 0 1px 2px rgb(0 0 0 / 0.08);
 	}
 
-	/* ---- WYSIWYG toolbar — docked at the bottom inside the editor card ---- */
+	/* ---- WYSIWYG toolbar — docked at the top inside the editor card ---- */
 	.toolbar {
 		display: flex;
 		flex-wrap: wrap;
 		align-items: center;
 		gap: 2px;
 		padding: 6px 8px;
-		border-top: 1px solid var(--color-border);
-		border-radius: 0 0 var(--radius) var(--radius);
+		border-bottom: 1px solid var(--color-border);
+		border-radius: var(--radius) var(--radius) 0 0;
 		background: var(--color-surface-subtle);
 	}
 	.tb-btn {
@@ -693,7 +699,7 @@
 	/* ---- Markdown source textarea ---- */
 	.markdown-source {
 		width: 100%;
-		min-height: 300px;
+		min-height: 355px;
 		padding: 10px 14px;
 		border: 1px solid var(--color-border);
 		border-radius: var(--radius);
@@ -723,11 +729,11 @@
 		transition: border-color 0.15s, box-shadow 0.15s;
 	}
 
-	/* The editable region fills the card; the toolbar docks at the bottom
+	/* The editable region fills the card; the toolbar docks at the top
 	 * inside the same border. */
 	.prose-content {
 		flex: 1 1 auto;
-		min-height: 300px;
+		min-height: 355px;
 		padding: 10px 14px;
 		outline: none;
 		font-size: 1rem;
@@ -746,7 +752,7 @@
 	 * Tiptap creates the .ProseMirror div at runtime without Svelte's
 	 * scoped style hash. */
 	.prose-content :global(.ProseMirror) {
-		min-height: 260px;
+		min-height: 305px;
 	}
 
 	/* Link preview block node — styled container inside the editor. */

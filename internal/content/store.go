@@ -1068,10 +1068,12 @@ func (s *Service) CreateBookmark(ctx context.Context, tenantID, userID pgtype.UU
 }
 
 // SetBookmarkFolder moves an existing bookmark into a folder (BL-011).
-// Pass a zero pgtype.UUID to unfile the bookmark.
-func (s *Service) SetBookmarkFolder(ctx context.Context, userID pgtype.UUID, entityType string, entityID pgtype.UUID, folderID pgtype.UUID) error {
+// Pass a zero pgtype.UUID to unfile the bookmark. Tenant-scoped for
+// defense-in-depth (BE-05).
+func (s *Service) SetBookmarkFolder(ctx context.Context, tenantID, userID pgtype.UUID, entityType string, entityID pgtype.UUID, folderID pgtype.UUID) error {
 	if err := s.write.SetBookmarkFolder(ctx, gen.SetBookmarkFolderParams{
 		FolderID:   folderID,
+		TenantID:   tenantID,
 		UserID:     userID,
 		EntityType: entityType,
 		EntityID:   entityID,
@@ -1120,8 +1122,10 @@ func (s *Service) ListBookmarksByFolder(ctx context.Context, tenantID, userID, f
 }
 
 // RemoveBookmark deletes a user's bookmark for the given entity.
-func (s *Service) RemoveBookmark(ctx context.Context, userID pgtype.UUID, entityType string, entityID pgtype.UUID) error {
+// Tenant-scoped for defense-in-depth (BE-05).
+func (s *Service) RemoveBookmark(ctx context.Context, tenantID, userID pgtype.UUID, entityType string, entityID pgtype.UUID) error {
 	if err := s.write.DeleteBookmark(ctx, gen.DeleteBookmarkParams{
+		TenantID:   tenantID,
 		UserID:     userID,
 		EntityType: entityType,
 		EntityID:   entityID,

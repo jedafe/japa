@@ -1,6 +1,6 @@
 -- Seed the three system custom fields for the tag_fields group (Section 06).
 -- The tag_fields group (00000000-0000-0000-0000-000000000046) was created in
--- migration 000008 and assigned to entity_class 'tag' in migration 000238,
+-- migration 000008 and assigned to entity_class 'tag' in migration 000389,
 -- but no actual fields were seeded. This migration adds the three spec-required
 -- fields: Wiki Content, Related Tags, External Link.
 -- Ref: japaconnect-engineering/sections/06-custom-field-builder-form-builder.md

@@ -4,8 +4,10 @@
 	import { api } from '$lib/api/client';
 	import { t, i18n } from '$lib/i18n';
 	import type { Comment } from '$lib/types';
+	import { tiptapBodyToHtml } from '$lib/tiptap/serialize';
 	// Self-import replaces the deprecated <svelte:self> for recursive nesting.
 	import CommentItem from './CommentItem.svelte';
+	import CommentEditor from './CommentEditor.svelte';
 
 	interface Props {
 		comment: Comment;
@@ -27,6 +29,7 @@
 	const authorLabel = $derived(comment.display_name || comment.username || t('forum.member', 'Member'));
 	const isAuthor = $derived(!!currentUserId && currentUserId === comment.author_user_id);
 	const beyondMaxDepth = $derived(depth >= MAX_DEPTH);
+	const bodyHtml = $derived(tiptapBodyToHtml(comment.body));
 
 	// Vote state (optimistic + rollback). The backend uses upsert semantics;
 	// DELETE /comments/{id}/vote retracts. We track the user's current vote
@@ -84,7 +87,7 @@
 	// Reply composer.
 	let collapsed = $state(false);
 	let composing = $state(false);
-	let draft = $state('');
+	let replyBody = $state<string>('');
 	let submitting = $state(false);
 	let localReplies = $state<Comment[]>([]);
 
@@ -106,37 +109,35 @@
 	}
 
 	async function submitReply() {
-		const text = draft.trim();
-		if (!text || submitting || !authed) return;
+		if (!replyBody || submitting || !authed) return;
 		submitting = true;
 		const res = await api.post<Comment>(`/content/${contentId}/comments`, {
 			parent_id: comment.id,
-			body: text
+			body: replyBody
 		});
 		submitting = false;
 		if (res.error || !res.data) return;
 		localReplies = [...localReplies, res.data];
-		draft = '';
+		replyBody = '';
 		composing = false;
 	}
 
 	// Edit / delete (author only).
 	let editing = $state(false);
-	let editDraft = $state('');
+	let editBody = $state<string>('');
 	let editPending = $state(false);
 	let deleted = $state(false);
 	let deletePending = $state(false);
 
 	function startEdit() {
-		editDraft = comment.body;
+		editBody = comment.body;
 		editing = true;
 	}
 
 	async function saveEdit() {
-		const text = editDraft.trim();
-		if (!text || editPending) return;
+		if (!editBody || editPending) return;
 		editPending = true;
-		const res = await api.patch<Comment>(`/comments/${comment.id}`, { body: text });
+		const res = await api.patch<Comment>(`/comments/${comment.id}`, { body: editBody });
 		editPending = false;
 		if (res.error || !res.data) return;
 		comment = { ...comment, body: res.data.body, is_edited: res.data.is_edited, edited_at: res.data.edited_at };
@@ -209,11 +210,7 @@
 		{:else if !collapsed}
 			{#if editing}
 				<div class="mt-2">
-					<textarea
-						bind:value={editDraft}
-						rows="3"
-						class="w-full resize-y rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]"
-					></textarea>
+					<CommentEditor initialBody={editBody} oninput={(b) => (editBody = b)} />
 					<div class="mt-2 flex items-center justify-end gap-2">
 						<button
 							type="button"
@@ -225,7 +222,7 @@
 						<button
 							type="button"
 							onclick={saveEdit}
-							disabled={!editDraft.trim() || editPending}
+							disabled={!editBody || editPending}
 							class="rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1 text-xs font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)] disabled:opacity-50"
 						>
 							{editPending ? t('common.loading') : t('comments.save')}
@@ -233,8 +230,8 @@
 					</div>
 				</div>
 			{:else}
-				<!-- Body: plain text (Section 49 comments are not TipTap JSON). -->
-				<p class="mt-1.5 whitespace-pre-wrap break-words text-[14px] leading-relaxed text-[var(--color-text)]">{comment.body}</p>
+				<!-- Body: TipTap JSON rendered to HTML (Section 49). -->
+				<div class="mt-1.5 break-words text-[14px] leading-relaxed text-[var(--color-text)] prose-comment">{@html bodyHtml}</div>
 			{/if}
 
 			<!-- Actions -->
@@ -291,16 +288,11 @@
 			<!-- Inline reply composer -->
 			{#if composing && authed}
 				<div class="mt-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-2.5">
-					<textarea
-						bind:value={draft}
-						rows="3"
-						placeholder={t('comments.reply_placeholder')}
-						class="w-full resize-y rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]"
-					></textarea>
+					<CommentEditor placeholder={t('comments.reply_placeholder')} oninput={(b) => (replyBody = b)} />
 					<div class="mt-2 flex items-center justify-end gap-2">
 						<button
 							type="button"
-							onclick={() => { composing = false; draft = ''; }}
+							onclick={() => { composing = false; replyBody = ''; }}
 							class="rounded-[var(--radius)] px-2.5 py-1 text-xs text-[var(--color-muted)] hover:text-[var(--color-text)]"
 						>
 							{t('comments.cancel')}
@@ -308,7 +300,7 @@
 						<button
 							type="button"
 							onclick={submitReply}
-							disabled={!draft.trim() || submitting}
+							disabled={!replyBody || submitting}
 							class="rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1 text-xs font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)] disabled:opacity-50"
 						>
 							{submitting ? t('common.loading') : t('comments.post_reply')}

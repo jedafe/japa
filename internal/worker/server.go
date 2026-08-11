@@ -154,6 +154,16 @@ func NewScheduler(cfg *Config) *asynq.Scheduler {
 	// the async polling architecture and cleaned up periodically.
 	schedule("30 * * * *", TypeAssessmentCleanupAnonymous, 1*time.Hour)
 
+	// Nightly calendar staleness check — 04:00 UTC (§86, ADR-094).
+	// Marks recurring entries as 'unverified' when their staleness_check_due
+	// date has passed. Low queue.
+	schedule("0 4 * * *", TypeCalendarStalenessCheck, 24*time.Hour)
+
+	// Daily calendar reminder dispatch — 08:00 UTC (§86, ADR-094).
+	// Dispatches notifications to subscribers at 90/30/7-day marks before
+	// each published entry. Default queue.
+	schedule("0 8 * * *", TypeCalendarSendReminders, 24*time.Hour)
+
 	return scheduler
 }
 

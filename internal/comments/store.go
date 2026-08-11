@@ -9,8 +9,8 @@ import (
 
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
-	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/db/gen"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/mentions"
 	"github.com/jedafe/japa/internal/notifications"
 )
@@ -21,9 +21,10 @@ import (
 
 // CreateCommentInput holds the parameters for creating a new comment.
 type CreateCommentInput struct {
-	ContentID pgtype.UUID
-	ParentID  pgtype.UUID
-	Body      string
+	ContentID   pgtype.UUID
+	ParentID    pgtype.UUID
+	Body        []byte // TipTap JSON document (jsonb column)
+	IsAnonymous bool
 }
 
 // CreateComment creates a new comment or reply. The depth is computed from the
@@ -58,6 +59,7 @@ func (s *Service) CreateComment(ctx context.Context, tenantID, userID pgtype.UUI
 		ParentID:     parentID,
 		Body:         input.Body,
 		Depth:        depth,
+		IsAnonymous:  input.IsAnonymous,
 	})
 	if err != nil {
 		return gen.Comment{}, fmt.Errorf("creating comment: %w", err)
@@ -73,6 +75,18 @@ func (s *Service) CreateComment(ctx context.Context, tenantID, userID pgtype.UUI
 	}); err != nil {
 		slog.Warn("comments: failed to increment content comment_count",
 			"content_id", input.ContentID.String(), "error", err)
+	}
+
+	// Keep the parent comment's denormalized reply_count in sync (Section 49,
+	// BUG-008). Fire-and-forget: a failure only logs.
+	if input.ParentID.Valid {
+		if err := s.write.IncrementCommentReplyCount(ctx, gen.IncrementCommentReplyCountParams{
+			ParentID: input.ParentID,
+			TenantID: tenantID,
+		}); err != nil {
+			slog.Warn("comments: failed to increment parent reply_count",
+				"parent_id", input.ParentID.String(), "error", err)
+		}
 	}
 
 	return comment, nil
@@ -138,7 +152,7 @@ func (s *Service) DispatchCommentNotifications(ctx context.Context, tenantID pgt
 	// Apply privacy filtering when DB checkers are wired (BUG-004):
 	// skip erased users (GDPR), blocked users (privacy), and non-members
 	// of private spaces (visibility leak). Section 15 mention edge cases.
-	mentionedUsers, err := mentions.ExtractMentions([]byte(comment.Body))
+	mentionedUsers, err := mentions.ExtractMentions(comment.Body)
 	if err != nil {
 		// Body may not be valid TipTap JSON (e.g., plain text); skip mentions.
 		return
@@ -206,23 +220,107 @@ func (s *Service) GetComment(ctx context.Context, tenantID, commentID pgtype.UUI
 	return comment, nil
 }
 
-// ListCommentsByContent returns top-level comments for the given content.
-func (s *Service) ListCommentsByContent(ctx context.Context, tenantID, contentID pgtype.UUID, limit, offset int32) ([]gen.ListCommentsByContentRow, error) {
+// ListCommentsByContent returns top-level comments for the given content,
+// honoring the Section 49 ?sort=top|new|oldest query parameter. "top" (the
+// default) orders by pin then vote score then recency; "new" by recency;
+// "oldest" by ascending creation time. Pinned comments always surface first.
+func (s *Service) ListCommentsByContent(ctx context.Context, tenantID, contentID pgtype.UUID, sort string, limit, offset int32) ([]gen.ListCommentsByContentRow, error) {
 	if limit <= 0 || limit > 100 {
 		limit = 20
 	}
 
-	comments, err := s.read.ListCommentsByContent(ctx, gen.ListCommentsByContentParams{
-		ContentID:  contentID,
-		TenantID:   tenantID,
-		PageLimit:  limit,
-		PageOffset: offset,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("listing comments: %w", err)
-	}
+	switch sort {
+	case "new":
+		rows, err := s.read.ListCommentsByContentNew(ctx, gen.ListCommentsByContentNewParams{
+			ContentID:  contentID,
+			TenantID:   tenantID,
+			PageLimit:  limit,
+			PageOffset: offset,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("listing comments (new): %w", err)
+		}
+		return s.coerceNewRows(rows), nil
 
-	return comments, nil
+	case "oldest":
+		rows, err := s.read.ListCommentsByContentOldest(ctx, gen.ListCommentsByContentOldestParams{
+			ContentID:  contentID,
+			TenantID:   tenantID,
+			PageLimit:  limit,
+			PageOffset: offset,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("listing comments (oldest): %w", err)
+		}
+		return s.coerceOldestRows(rows), nil
+
+	default: // "top" and any unrecognized value
+		comments, err := s.read.ListCommentsByContent(ctx, gen.ListCommentsByContentParams{
+			ContentID:  contentID,
+			TenantID:   tenantID,
+			PageLimit:  limit,
+			PageOffset: offset,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("listing comments: %w", err)
+		}
+		return comments, nil
+	}
+}
+
+// coerceNewRows / coerceOldestRows adapt the per-sort row types to the
+// canonical ListCommentsByContentRow so callers (handler + frontend) see one
+// shape regardless of sort. The field sets are identical by construction.
+func (s *Service) coerceNewRows(rows []gen.ListCommentsByContentNewRow) []gen.ListCommentsByContentRow {
+	out := make([]gen.ListCommentsByContentRow, len(rows))
+	for i := range rows {
+		out[i] = gen.ListCommentsByContentRow{
+			ID:           rows[i].ID,
+			TenantID:     rows[i].TenantID,
+			ContentID:    rows[i].ContentID,
+			AuthorUserID: rows[i].AuthorUserID,
+			ParentID:     rows[i].ParentID,
+			Body:         rows[i].Body,
+			Depth:        rows[i].Depth,
+			VoteScore:    rows[i].VoteScore,
+			IsPinned:     rows[i].IsPinned,
+			IsEdited:     rows[i].IsEdited,
+			EditedAt:     rows[i].EditedAt,
+			CreatedAt:    rows[i].CreatedAt,
+			UpdatedAt:    rows[i].UpdatedAt,
+			DeletedAt:    rows[i].DeletedAt,
+			Username:     rows[i].Username,
+			DisplayName:  rows[i].DisplayName,
+			AvatarUrl:    rows[i].AvatarUrl,
+		}
+	}
+	return out
+}
+
+func (s *Service) coerceOldestRows(rows []gen.ListCommentsByContentOldestRow) []gen.ListCommentsByContentRow {
+	out := make([]gen.ListCommentsByContentRow, len(rows))
+	for i := range rows {
+		out[i] = gen.ListCommentsByContentRow{
+			ID:           rows[i].ID,
+			TenantID:     rows[i].TenantID,
+			ContentID:    rows[i].ContentID,
+			AuthorUserID: rows[i].AuthorUserID,
+			ParentID:     rows[i].ParentID,
+			Body:         rows[i].Body,
+			Depth:        rows[i].Depth,
+			VoteScore:    rows[i].VoteScore,
+			IsPinned:     rows[i].IsPinned,
+			IsEdited:     rows[i].IsEdited,
+			EditedAt:     rows[i].EditedAt,
+			CreatedAt:    rows[i].CreatedAt,
+			UpdatedAt:    rows[i].UpdatedAt,
+			DeletedAt:    rows[i].DeletedAt,
+			Username:     rows[i].Username,
+			DisplayName:  rows[i].DisplayName,
+			AvatarUrl:    rows[i].AvatarUrl,
+		}
+	}
+	return out
 }
 
 // ListRepliesByParent returns replies for a given parent comment.
@@ -247,7 +345,7 @@ func (s *Service) ListRepliesByParent(ctx context.Context, tenantID, parentID pg
 // UpdateComment updates a comment's body. Only the author can edit (enforced
 // by the sqlc UpdateComment WHERE clause). The edit is rejected if the
 // `comments.edit_window_minutes` window has elapsed since creation (BL-009).
-func (s *Service) UpdateComment(ctx context.Context, tenantID, commentID, userID pgtype.UUID, body string) (gen.Comment, error) {
+func (s *Service) UpdateComment(ctx context.Context, tenantID, commentID, userID pgtype.UUID, body []byte) (gen.Comment, error) {
 	// Edit-window enforcement (BL-009 / Section 49). Fetch the comment first
 	// to read created_at. GetComment joins users/user_profiles, so it returns
 	// a GetCommentRow; we only need the CreatedAt + AuthorUserID fields.
@@ -288,7 +386,9 @@ func (s *Service) UpdateComment(ctx context.Context, tenantID, commentID, userID
 	return comment, nil
 }
 
-// SoftDeleteComment soft-deletes a comment by setting deleted_at.
+// SoftDeleteComment soft-deletes a comment by setting deleted_at. This is the
+// moderator path (comments.delete_any) — no author check. Authors must use
+// SoftDeleteCommentByAuthor instead (Section 49, BUG-003).
 func (s *Service) SoftDeleteComment(ctx context.Context, tenantID, commentID pgtype.UUID) error {
 	if err := s.write.SoftDeleteComment(ctx, gen.SoftDeleteCommentParams{
 		ID:       commentID,
@@ -297,6 +397,43 @@ func (s *Service) SoftDeleteComment(ctx context.Context, tenantID, commentID pgt
 		return fmt.Errorf("deleting comment: %w", err)
 	}
 
+	return nil
+}
+
+// SoftDeleteCommentByAuthor soft-deletes a comment only when author_user_id
+// matches. The author check is enforced atomically in the sqlc WHERE clause
+// so a comments.delete_own holder cannot delete another author's comment
+// (BUG-003). Returns errpkg.ErrNotFound when the comment does not exist or the
+// user is not the author.
+func (s *Service) SoftDeleteCommentByAuthor(ctx context.Context, tenantID, commentID, userID pgtype.UUID) error {
+	if err := s.write.SoftDeleteCommentByAuthor(ctx, gen.SoftDeleteCommentByAuthorParams{
+		ID:           commentID,
+		TenantID:     tenantID,
+		AuthorUserID: userID,
+	}); err != nil {
+		return fmt.Errorf("deleting own comment: %w", err)
+	}
+	return nil
+}
+
+// RemoveComment marks a comment as removed by a moderator (Section 49 —
+// status='removed' + removed_by + removed_reason). Unlike a soft-delete, the
+// row remains visible for audit and is excluded from public queries by the
+// status filter. The reason is optional (empty string → NULL). Used by the
+// admin moderation surface (BUG-010).
+func (s *Service) RemoveComment(ctx context.Context, tenantID, commentID, moderatorID pgtype.UUID, reason string) error {
+	var reasonPtr *string
+	if reason != "" {
+		reasonPtr = &reason
+	}
+	if err := s.write.RemoveComment(ctx, gen.RemoveCommentParams{
+		ID:            commentID,
+		TenantID:      tenantID,
+		RemovedBy:     moderatorID,
+		RemovedReason: reasonPtr,
+	}); err != nil {
+		return fmt.Errorf("removing comment: %w", err)
+	}
 	return nil
 }
 

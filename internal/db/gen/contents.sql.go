@@ -451,18 +451,46 @@ func (q *Queries) DecrementContentCommentCount(ctx context.Context, arg Decremen
 
 const deleteBookmark = `-- name: DeleteBookmark :exec
 DELETE FROM bookmarks
-WHERE user_id = $1 AND entity_type = $2 AND entity_id = $3
+WHERE tenant_id = $1 AND user_id = $2 AND entity_type = $3 AND entity_id = $4
 `
 
 type DeleteBookmarkParams struct {
+	TenantID   pgtype.UUID `json:"tenant_id"`
 	UserID     pgtype.UUID `json:"user_id"`
 	EntityType string      `json:"entity_type"`
 	EntityID   pgtype.UUID `json:"entity_id"`
 }
 
 func (q *Queries) DeleteBookmark(ctx context.Context, arg DeleteBookmarkParams) error {
-	_, err := q.db.Exec(ctx, deleteBookmark, arg.UserID, arg.EntityType, arg.EntityID)
+	_, err := q.db.Exec(ctx, deleteBookmark,
+		arg.TenantID,
+		arg.UserID,
+		arg.EntityType,
+		arg.EntityID,
+	)
 	return err
+}
+
+const deleteBookmarkByID = `-- name: DeleteBookmarkByID :execrows
+DELETE FROM bookmarks
+WHERE id = $1 AND tenant_id = $2 AND user_id = $3
+`
+
+type DeleteBookmarkByIDParams struct {
+	ID       pgtype.UUID `json:"id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+	UserID   pgtype.UUID `json:"user_id"`
+}
+
+// Deletes a single bookmark by its row ID, scoped to tenant + owner.
+// Used by DELETE /me/bookmarks/{id} — the polymorphic remove endpoint that
+// works regardless of entity_type (content, forum_thread, space, comment, etc.).
+func (q *Queries) DeleteBookmarkByID(ctx context.Context, arg DeleteBookmarkByIDParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteBookmarkByID, arg.ID, arg.TenantID, arg.UserID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const deleteContent = `-- name: DeleteContent :exec
@@ -2347,7 +2375,7 @@ func (q *Queries) ListPublishedContentForDigest(ctx context.Context, tenantID pg
 const listPublishedContentForLLMsTxt = `-- name: ListPublishedContentForLLMsTxt :many
 SELECT title, slug
 FROM contents
-WHERE tenant_id = $1 AND status = 'published'
+WHERE tenant_id = $1 AND status = 'published' AND visibility = 'public'
 ORDER BY created_at DESC
 LIMIT 1000
 `
@@ -2847,11 +2875,12 @@ func (q *Queries) SearchContentsBySpace(ctx context.Context, arg SearchContentsB
 
 const setBookmarkFolder = `-- name: SetBookmarkFolder :exec
 UPDATE bookmarks SET folder_id = $1
-WHERE user_id = $2 AND entity_type = $3 AND entity_id = $4
+WHERE tenant_id = $2 AND user_id = $3 AND entity_type = $4 AND entity_id = $5
 `
 
 type SetBookmarkFolderParams struct {
 	FolderID   pgtype.UUID `json:"folder_id"`
+	TenantID   pgtype.UUID `json:"tenant_id"`
 	UserID     pgtype.UUID `json:"user_id"`
 	EntityType string      `json:"entity_type"`
 	EntityID   pgtype.UUID `json:"entity_id"`
@@ -2860,6 +2889,7 @@ type SetBookmarkFolderParams struct {
 func (q *Queries) SetBookmarkFolder(ctx context.Context, arg SetBookmarkFolderParams) error {
 	_, err := q.db.Exec(ctx, setBookmarkFolder,
 		arg.FolderID,
+		arg.TenantID,
 		arg.UserID,
 		arg.EntityType,
 		arg.EntityID,

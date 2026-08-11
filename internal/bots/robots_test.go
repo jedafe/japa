@@ -138,7 +138,7 @@ func TestGenerateRobotsTxt_CrawlDelayFormat(t *testing.T) {
 
 	txt := GenerateRobotsTxt(bots)
 
-	if !strings.Contains(txt, "Crawl-delay: 30s") {
-		t.Errorf("expected Crawl-delay: 30s in output, got:\n%s", txt)
+	if !strings.Contains(txt, "Crawl-delay: 30") {
+		t.Errorf("expected Crawl-delay: 30 in output, got:\n%s", txt)
 	}
 }

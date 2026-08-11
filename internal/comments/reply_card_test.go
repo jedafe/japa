@@ -29,7 +29,7 @@ func TestToReplyCards_LeanAndCorrect(t *testing.T) {
 		TenantID:     mustUUID(t, "22222222-2222-2222-2222-222222222222"),
 		ContentID:    mustUUID(t, "33333333-3333-3333-3333-333333333333"),
 		ParentID:     mustUUID(t, "44444444-4444-4444-4444-444444444444"),
-		Body:         "great post",
+		Body:         []byte(`{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"great post"}]}]}`),
 		VoteScore:    7,
 		CreatedAt:    pgtype.Timestamptz{Time: time.Now(), Valid: true},
 		ContentTitle: "Hello World",
@@ -41,7 +41,7 @@ func TestToReplyCards_LeanAndCorrect(t *testing.T) {
 		t.Fatalf("got %d cards, want 1", len(cards))
 	}
 	c := cards[0]
-	if c.Body != "great post" || c.VoteScore != 7 || c.ContentTitle != "Hello World" || c.ContentSlug != "hello-world" {
+	if string(c.Body) != `{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"great post"}]}]}` || c.VoteScore != 7 || c.ContentTitle != "Hello World" || c.ContentSlug != "hello-world" {
 		t.Fatalf("field-copy mismatch: %+v", c)
 	}
 

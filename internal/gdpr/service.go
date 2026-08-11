@@ -1169,6 +1169,35 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 			return fmt.Errorf("deleting webhook_deliveries with user PII: %w", err)
 		}
 
+		// BUG-025: Community Calendar GDPR erasure (§86, ADR-094).
+		// calendar_entries.submitted_by and calendar_entries.reviewed_by
+		// reference users(id) with no ON DELETE clause. Reassign to the
+		// placeholder so the entries survive (they are community content, not
+		// user PII). calendar_saves and calendar_subscriptions are user-owned
+		// config — delete them to prevent re-identification.
+		// Ref: japaconnect-engineering/sections/86-community-calendar.md
+		//      japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
+		if err := q.GdprReassignCalendarEntriesSubmittedBy(ctx, gen.GdprReassignCalendarEntriesSubmittedByParams{
+			UserID: userID, TenantID: tenantID, TargetUserID: deletedUserPlaceholder,
+		}); err != nil {
+			return fmt.Errorf("reassigning calendar_entries submitted_by: %w", err)
+		}
+		if err := q.GdprReassignCalendarEntriesReviewedBy(ctx, gen.GdprReassignCalendarEntriesReviewedByParams{
+			UserID: userID, TenantID: tenantID, TargetUserID: deletedUserPlaceholder,
+		}); err != nil {
+			return fmt.Errorf("reassigning calendar_entries reviewed_by: %w", err)
+		}
+		if err := q.GdprDeleteCalendarSavesByUser(ctx, gen.GdprDeleteCalendarSavesByUserParams{
+			UserID: userID, TenantID: tenantID,
+		}); err != nil {
+			return fmt.Errorf("deleting calendar_saves: %w", err)
+		}
+		if err := q.GdprDeleteCalendarSubscriptionsByUser(ctx, gen.GdprDeleteCalendarSubscriptionsByUserParams{
+			UserID: userID, TenantID: tenantID,
+		}); err != nil {
+			return fmt.Errorf("deleting calendar_subscriptions: %w", err)
+		}
+
 		// 5. Physical deletion — ON DELETE CASCADE handles all child tables.
 		// The following feed-related tables are cascade-purged here (no
 		// explicit step needed, documented for GDPR traceability — BUG-014):
@@ -1386,6 +1415,9 @@ type UserDataExport struct {
 	DMSettings           []map[string]interface{} `json:"dm_settings"`         // BUG-022
 	UserBlocks           []map[string]interface{} `json:"user_blocks"`         // BUG-022
 	AttestationCommunityUpdates []map[string]interface{} `json:"attestation_community_updates"` // §97 BUG-015
+	CalendarEntries      []map[string]interface{} `json:"calendar_entries"`       // §86 BUG-025
+	CalendarSaves        []map[string]interface{} `json:"calendar_saves"`         // §86 BUG-025
+	CalendarSubscriptions []map[string]interface{} `json:"calendar_subscriptions"` // §86 BUG-025
 	ExportMetadata       map[string]interface{}   `json:"export_metadata"`
 }
 
@@ -1850,6 +1882,24 @@ func (s *Service) collectUserData(ctx context.Context, userID, tenantID pgtype.U
 		export.AttestationCommunityUpdates = rows
 	} else {
 		slog.Warn("failed to collect attestation_community_updates for export", "user_id", userID.String(), "error", err)
+	}
+
+	// BUG-025: export calendar_entries submitted by the user, calendar_saves,
+	// and calendar_subscriptions. Ref: §86, ADR-094.
+	if rows, err := s.store.gdprExportUserCalendarEntries(ctx, userID, tenantID); err == nil {
+		export.CalendarEntries = rows
+	} else {
+		slog.Warn("failed to collect calendar_entries for export", "user_id", userID.String(), "error", err)
+	}
+	if rows, err := s.store.gdprExportUserCalendarSaves(ctx, userID, tenantID); err == nil {
+		export.CalendarSaves = rows
+	} else {
+		slog.Warn("failed to collect calendar_saves for export", "user_id", userID.String(), "error", err)
+	}
+	if rows, err := s.store.gdprExportUserCalendarSubscriptions(ctx, userID, tenantID); err == nil {
+		export.CalendarSubscriptions = rows
+	} else {
+		slog.Warn("failed to collect calendar_subscriptions for export", "user_id", userID.String(), "error", err)
 	}
 
 	return export, nil

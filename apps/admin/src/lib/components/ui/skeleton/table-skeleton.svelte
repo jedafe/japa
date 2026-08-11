@@ -14,7 +14,7 @@
 </script>
 
 <div class={clsx("space-y-3", className)}>
-  {#each Array(rows) as _ (_)}
+  {#each Array(rows) as _, r (r)}
     <div class="flex items-center gap-4">
       {#each Array(columns) as _, i (i)}
         <Skeleton 

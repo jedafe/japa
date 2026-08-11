@@ -8,8 +8,11 @@
 	import { Button } from '$lib/components/ui/button';
 	import { ArrowLeft } from 'lucide-svelte';
 
-	// Ref: jc-admin-develop — RBAC gate for blog creation
-	const canCreate = $derived(hasPermission('blog.post.create'));
+	// Ref: jc-admin-develop — RBAC gate for blog creation (Section 24 — blog.create).
+	// BUG-002: previously checked 'blog.post.create', a node that does not exist
+	// in the permissions seed (migration 000109 seeds 'blog.create'), so the
+	// create form was always blocked even for super_admin.
+	const canCreate = $derived(hasPermission('blog.create'));
 
 	let title = $state('');
 	let slug = $state('');

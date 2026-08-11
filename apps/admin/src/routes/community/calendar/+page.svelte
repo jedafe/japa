@@ -12,11 +12,14 @@
 	type CalendarItem = {
 		id: string;
 		title: string;
-		start_date: string;
-		end_date: string;
+		occurs_at: string;
+		ends_at?: string;
 		status: string;
 		description?: string;
-		location?: string;
+		category?: string;
+		destination_space_id?: string;
+		origin_space_id?: string;
+		source_url?: string;
 	};
 
 	const canManage = $derived(hasPermission('calendar.review'));
@@ -40,7 +43,8 @@
 		acting = true;
 		pageError = '';
 		try {
-			const result = await calendarAdminApi.update(actionTarget.id, { status: 'rejected', reason: rejectReason });
+			// §86: 'rejected' is not a valid status. Use 'archived' to reject.
+			const result = await calendarAdminApi.update(actionTarget.id, { status: 'archived', reason: rejectReason });
 			if (result.ok) {
 				showRejectModal = false;
 				entityController?.reload();
@@ -58,7 +62,8 @@
 		acting = true;
 		pageError = '';
 		try {
-			const result = await calendarAdminApi.update(item.id, { status: 'approved' });
+			// §86: 'approved' is now 'published' per spec status enum.
+			const result = await calendarAdminApi.update(item.id, { status: 'published' });
 			if (result.ok) {
 				entityController?.reload();
 			} else {
@@ -96,10 +101,11 @@
 
 	const fields: FieldDef[] = [
 		{ key: 'title', label: t('app.calendar.col_title', 'Title'), type: 'text' },
-		{ key: 'start_date', label: t('app.calendar.col_start_date', 'Start Date'), type: 'date' },
-		{ key: 'end_date', label: t('app.calendar.col_end_date', 'End Date'), type: 'date' },
+		{ key: 'occurs_at', label: t('app.calendar.col_start_date', 'Start Date'), type: 'datetime-local' },
+		{ key: 'ends_at', label: t('app.calendar.col_end_date', 'End Date'), type: 'datetime-local' },
 		{ key: 'status', label: t('app.calendar.col_status', 'Status'), type: 'text' },
-		{ key: 'location', label: t('app.calendar.detail_location', 'Location'), type: 'text' },
+		{ key: 'category', label: t('app.calendar.col_category', 'Category'), type: 'text' },
+		{ key: 'source_url', label: t('app.calendar.col_source', 'Source URL'), type: 'url' },
 		{ key: 'description', label: t('app.calendar.detail_description', 'Description'), type: 'textarea' }
 	];
 
@@ -111,13 +117,13 @@
 		columns: [
 			{ key: 'title', label: t('app.calendar.col_title', 'Title'), sortable: true },
 			{
-				key: 'start_date',
+				key: 'occurs_at',
 				label: t('app.calendar.col_start_date', 'Start Date'),
 				sortable: true,
 				render: (value: string) => (value ? new Date(value).toLocaleDateString() : '—')
 			},
 			{
-				key: 'end_date',
+				key: 'ends_at',
 				label: t('app.calendar.col_end_date', 'End Date'),
 				sortable: true,
 				render: (value: string) => (value ? new Date(value).toLocaleDateString() : '—')
@@ -127,14 +133,40 @@
 				label: t('app.calendar.col_status', 'Status'),
 				sortable: true,
 				render: (value: string) => value || '—'
+			},
+			{
+				key: 'category',
+				label: t('app.calendar.col_category', 'Category'),
+				sortable: true,
+				render: (value: string) => value || '—'
 			}
 		],
 		actions: rowActions,
 		fields,
-		load: async () => {
-			const result = await calendarAdminApi.list();
+		load: async (params) => {
+			// BUG-020: pass pagination params to the API for server-side paging.
+			const queryParts: string[] = [];
+			if (params.page) queryParts.push(`page=${params.page}`);
+			if (params.pageSize) queryParts.push(`page_size=${params.pageSize}`);
+			if (params.q) queryParts.push(`q=${encodeURIComponent(params.q)}`);
+			if (params.sort) {
+				queryParts.push(`sort=${params.sort}`);
+			}
+			if (params.filter) {
+				for (const [k, v] of Object.entries(params.filter)) {
+					if (v) queryParts.push(`${k}=${encodeURIComponent(String(v))}`);
+				}
+			}
+			const query = queryParts.length > 0 ? `?${queryParts.join('&')}` : '';
+			const result = await calendarAdminApi.list(query);
 			if (result.ok) {
-				const data = (result.data as CalendarItem[]) ?? [];
+				// Backend returns { data, meta: { page, per_page, total, total_pages } }
+				const body = result.data as any;
+				const data = (body?.data ?? body) as CalendarItem[];
+				const meta = body?.meta;
+				if (meta) {
+					return { data, total: meta.total, totalPages: meta.total_pages };
+				}
 				return { data, total: data.length, totalPages: 1 };
 			}
 			throw new Error(result.error ?? t('common.error', 'An error occurred'));
@@ -193,20 +225,26 @@
 		</div>
 		<div>
 			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.calendar.col_start_date', 'Start Date')}</p>
-			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.start_date ? new Date(row.start_date).toLocaleString() : '—'}</p>
+			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.occurs_at ? new Date(row.occurs_at).toLocaleString() : '—'}</p>
 		</div>
 		<div>
 			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.calendar.col_end_date', 'End Date')}</p>
-			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.end_date ? new Date(row.end_date).toLocaleString() : '—'}</p>
+			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.ends_at ? new Date(row.ends_at).toLocaleString() : '—'}</p>
 		</div>
 		<div>
 			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.calendar.col_status', 'Status')}</p>
 			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.status || '—'}</p>
 		</div>
 		<div>
-			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.calendar.detail_location', 'Location')}</p>
-			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.location || '—'}</p>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.calendar.col_category', 'Category')}</p>
+			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.category || '—'}</p>
 		</div>
+		{#if row.source_url}
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.calendar.col_source', 'Source URL')}</p>
+				<a href={row.source_url} target="_blank" rel="noopener noreferrer nofollow" class="mt-1 text-sm font-medium text-blue-500 hover:underline" style="color: var(--color-primary)">{row.source_url}</a>
+			</div>
+		{/if}
 		<div>
 			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.calendar.detail_description', 'Description')}</p>
 			<p class="mt-1 whitespace-pre-wrap text-sm" style="color: var(--color-foreground)">{row.description || '—'}</p>
