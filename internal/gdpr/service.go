@@ -1116,6 +1116,15 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 			return fmt.Errorf("anonymizing audit log actor: %w", err)
 		}
 
+		// platform_data_imports.created_by is NOT NULL; reassign to placeholder so
+		// the import audit trail survives when the admin who created the import is
+		// erased (BUG-013, Section 67 / Section 15 compliance).
+		if err := q.ReassignPlatformDataImportCreatedBy(ctx, gen.ReassignPlatformDataImportCreatedByParams{
+			UserID: userID, TenantID: tenantID, TargetUserID: deletedUserPlaceholder,
+		}); err != nil {
+			return fmt.Errorf("reassigning platform_data_imports created_by: %w", err)
+		}
+
 		// Japa University GDPR cascade (ADR-063 / audit C2):
 		//   - Clear sensitive payout_method jsonb on the user's instructor
 		//     profile(s) before the profile is cascade-deleted.
@@ -1292,6 +1301,26 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 				"user_id", userID.String(), "error", err)
 		}
 
+		// BUG-010: Platform data exports/imports (Section 67) created_by
+		// references users(id). The migration 000403 made the column
+		// nullable and switched the FK to ON DELETE SET NULL, so the
+		// final HardDeleteUser would already nullify the column. We also
+		// reassign to the placeholder here so the audit trail preserves a
+		// stable "deleted user" attribution rather than an anonymous NULL,
+		// matching the platform-wide erasure convention (ADR-014).
+		// Ref: japaconnect-engineering/sections/67-platform-data-portability.md
+		//      japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
+		if err := q.ReassignPlatformDataExportCreatedBy(ctx, gen.ReassignPlatformDataExportCreatedByParams{
+			UserID: userID, TenantID: tenantID, TargetUserID: deletedUserPlaceholder,
+		}); err != nil {
+			return fmt.Errorf("reassigning platform_data_exports created_by: %w", err)
+		}
+		if err := q.ReassignPlatformDataImportCreatedBy(ctx, gen.ReassignPlatformDataImportCreatedByParams{
+			UserID: userID, TenantID: tenantID, TargetUserID: deletedUserPlaceholder,
+		}); err != nil {
+			return fmt.Errorf("reassigning platform_data_imports created_by: %w", err)
+		}
+
 		// 5. Physical deletion — ON DELETE CASCADE handles all child tables.
 		// The following feed-related tables are cascade-purged here (no
 		// explicit step needed, documented for GDPR traceability — BUG-014):
@@ -1452,72 +1481,72 @@ func parseIPAddress(s *string) *netip.Addr {
 
 // UserDataExport represents the complete user data export.
 type UserDataExport struct {
-	UserProfile          map[string]interface{}   `json:"user_profile"`
-	Consents             []map[string]interface{} `json:"consents"`
-	Content              []map[string]interface{} `json:"content"`
-	Comments             []map[string]interface{} `json:"comments"`
-	Spaces               []map[string]interface{} `json:"spaces"`
-	Payments             []map[string]interface{} `json:"payments"`
-	Notifications        []map[string]interface{} `json:"notifications"`
-	UserProfiles         []map[string]interface{} `json:"user_profiles"`
-	Reactions            []map[string]interface{} `json:"reactions"`
-	Bookmarks            []map[string]interface{} `json:"bookmarks"`
-	BookmarkFolders      []map[string]interface{} `json:"bookmark_folders"` // BL-005
-	ContentShares        []map[string]interface{} `json:"content_shares"`
-	ContentViews         []map[string]interface{} `json:"content_views"`
-	Follows              []map[string]interface{} `json:"follows"`
-	ForumThreads         []map[string]interface{} `json:"forum_threads"`
-	ForumReplies         []map[string]interface{} `json:"forum_replies"`
-	ForumVotes           []map[string]interface{} `json:"forum_votes"`
-	ForumBookmarks       []map[string]interface{} `json:"forum_bookmarks"`
-	ForumPollVotes       []map[string]interface{} `json:"forum_poll_votes"`
-	ForumThreadTags      []map[string]interface{} `json:"forum_thread_tags"`
-	ReplyViews           []map[string]interface{} `json:"reply_views"`
-	Media                []map[string]interface{} `json:"media"`
-	Reviews              []map[string]interface{} `json:"reviews"`
-	SpaceMembers         []map[string]interface{} `json:"space_members"`
-	SpaceModerators      []map[string]interface{} `json:"space_moderators"`
-	TagModerators        []map[string]interface{} `json:"tag_moderators"`
-	ConsentRecords       []map[string]interface{} `json:"consent_records"`
-	WalletLedger         []map[string]interface{} `json:"wallet_ledger"`
-	ActivityEvents       []map[string]interface{} `json:"activity_events"`
-	LessonProgress       []map[string]interface{} `json:"lesson_progress"`
-	LearningCertificates []map[string]interface{} `json:"learning_certificates"`
-	MentorshipMatches    []map[string]interface{} `json:"mentorship_matches"`
-	MentorshipConnections []map[string]interface{} `json:"mentorship_connections"` // §102 ADR-110
-	MentorProfiles       []map[string]interface{} `json:"mentor_profiles"`        // §102 ADR-110
-	MentorSessions       []map[string]interface{} `json:"mentor_sessions"`        // §102 ADR-110
-	MentorReviews        []map[string]interface{} `json:"mentor_reviews"`         // §102 ADR-110
-	ProfessionalProfiles []map[string]interface{} `json:"professional_profiles"`
-	ProfessionalRelocations []map[string]interface{} `json:"professional_relocations"` // §33 child table
-	ProfessionalDocuments   []map[string]interface{} `json:"professional_documents"`   // §33 child table
-	ProfessionalVerifiers   []map[string]interface{} `json:"professional_verifiers"`   // §33 child table
-	Organizations        []map[string]interface{} `json:"organizations"`
-	ApiKeys              []map[string]interface{} `json:"api_keys"`
-	UserPreferences      []map[string]interface{} `json:"user_preferences"`
-	UserMutes            []map[string]interface{} `json:"user_mutes"`
-	SpaceMutes           []map[string]interface{} `json:"space_mutes"`
-	TicketComments       []map[string]interface{} `json:"ticket_comments"`
-	InstructorProfiles   []map[string]interface{} `json:"instructor_profiles"`
-	RevenueSplits        []map[string]interface{} `json:"revenue_splits"`
-	InstructorPayouts    []map[string]interface{} `json:"instructor_payouts"`
-	CustomFieldValues    []map[string]interface{} `json:"custom_field_values"` // BUG-020
-	PushTokens           []map[string]interface{} `json:"push_tokens"`         // BUG-014
-	DMConversations      []map[string]interface{} `json:"dm_conversations"`    // BUG-022
-	DMMessages           []map[string]interface{} `json:"dm_messages"`         // BUG-022
-	DMRequests           []map[string]interface{} `json:"dm_requests"`         // BUG-022
-	DMSettings           []map[string]interface{} `json:"dm_settings"`         // BUG-022
-	UserBlocks           []map[string]interface{} `json:"user_blocks"`         // BUG-022
+	UserProfile                 map[string]interface{}   `json:"user_profile"`
+	Consents                    []map[string]interface{} `json:"consents"`
+	Content                     []map[string]interface{} `json:"content"`
+	Comments                    []map[string]interface{} `json:"comments"`
+	Spaces                      []map[string]interface{} `json:"spaces"`
+	Payments                    []map[string]interface{} `json:"payments"`
+	Notifications               []map[string]interface{} `json:"notifications"`
+	UserProfiles                []map[string]interface{} `json:"user_profiles"`
+	Reactions                   []map[string]interface{} `json:"reactions"`
+	Bookmarks                   []map[string]interface{} `json:"bookmarks"`
+	BookmarkFolders             []map[string]interface{} `json:"bookmark_folders"` // BL-005
+	ContentShares               []map[string]interface{} `json:"content_shares"`
+	ContentViews                []map[string]interface{} `json:"content_views"`
+	Follows                     []map[string]interface{} `json:"follows"`
+	ForumThreads                []map[string]interface{} `json:"forum_threads"`
+	ForumReplies                []map[string]interface{} `json:"forum_replies"`
+	ForumVotes                  []map[string]interface{} `json:"forum_votes"`
+	ForumBookmarks              []map[string]interface{} `json:"forum_bookmarks"`
+	ForumPollVotes              []map[string]interface{} `json:"forum_poll_votes"`
+	ForumThreadTags             []map[string]interface{} `json:"forum_thread_tags"`
+	ReplyViews                  []map[string]interface{} `json:"reply_views"`
+	Media                       []map[string]interface{} `json:"media"`
+	Reviews                     []map[string]interface{} `json:"reviews"`
+	SpaceMembers                []map[string]interface{} `json:"space_members"`
+	SpaceModerators             []map[string]interface{} `json:"space_moderators"`
+	TagModerators               []map[string]interface{} `json:"tag_moderators"`
+	ConsentRecords              []map[string]interface{} `json:"consent_records"`
+	WalletLedger                []map[string]interface{} `json:"wallet_ledger"`
+	ActivityEvents              []map[string]interface{} `json:"activity_events"`
+	LessonProgress              []map[string]interface{} `json:"lesson_progress"`
+	LearningCertificates        []map[string]interface{} `json:"learning_certificates"`
+	MentorshipMatches           []map[string]interface{} `json:"mentorship_matches"`
+	MentorshipConnections       []map[string]interface{} `json:"mentorship_connections"` // §102 ADR-110
+	MentorProfiles              []map[string]interface{} `json:"mentor_profiles"`        // §102 ADR-110
+	MentorSessions              []map[string]interface{} `json:"mentor_sessions"`        // §102 ADR-110
+	MentorReviews               []map[string]interface{} `json:"mentor_reviews"`         // §102 ADR-110
+	ProfessionalProfiles        []map[string]interface{} `json:"professional_profiles"`
+	ProfessionalRelocations     []map[string]interface{} `json:"professional_relocations"` // §33 child table
+	ProfessionalDocuments       []map[string]interface{} `json:"professional_documents"`   // §33 child table
+	ProfessionalVerifiers       []map[string]interface{} `json:"professional_verifiers"`   // §33 child table
+	Organizations               []map[string]interface{} `json:"organizations"`
+	ApiKeys                     []map[string]interface{} `json:"api_keys"`
+	UserPreferences             []map[string]interface{} `json:"user_preferences"`
+	UserMutes                   []map[string]interface{} `json:"user_mutes"`
+	SpaceMutes                  []map[string]interface{} `json:"space_mutes"`
+	TicketComments              []map[string]interface{} `json:"ticket_comments"`
+	InstructorProfiles          []map[string]interface{} `json:"instructor_profiles"`
+	RevenueSplits               []map[string]interface{} `json:"revenue_splits"`
+	InstructorPayouts           []map[string]interface{} `json:"instructor_payouts"`
+	CustomFieldValues           []map[string]interface{} `json:"custom_field_values"`           // BUG-020
+	PushTokens                  []map[string]interface{} `json:"push_tokens"`                   // BUG-014
+	DMConversations             []map[string]interface{} `json:"dm_conversations"`              // BUG-022
+	DMMessages                  []map[string]interface{} `json:"dm_messages"`                   // BUG-022
+	DMRequests                  []map[string]interface{} `json:"dm_requests"`                   // BUG-022
+	DMSettings                  []map[string]interface{} `json:"dm_settings"`                   // BUG-022
+	UserBlocks                  []map[string]interface{} `json:"user_blocks"`                   // BUG-022
 	AttestationCommunityUpdates []map[string]interface{} `json:"attestation_community_updates"` // §97 BUG-015
-	CalendarEntries      []map[string]interface{} `json:"calendar_entries"`       // §86 BUG-025
-	CalendarSaves        []map[string]interface{} `json:"calendar_saves"`         // §86 BUG-025
-	CalendarSubscriptions []map[string]interface{} `json:"calendar_subscriptions"` // §86 BUG-025
-	CommunityOrganisations []map[string]interface{} `json:"community_organisations"` // §101 BUG-016
-	ComparisonItems      []map[string]interface{} `json:"comparison_items"`       // BUG-004
-	ComparisonDimensions []map[string]interface{} `json:"comparison_dimensions"`  // BUG-004
-	ComparisonValues     []map[string]interface{} `json:"comparison_values"`      // BUG-004
-	CvFormatSessions     []map[string]interface{} `json:"cv_format_sessions"`     // §95 BUG-014
-	ExportMetadata       map[string]interface{}   `json:"export_metadata"`
+	CalendarEntries             []map[string]interface{} `json:"calendar_entries"`              // §86 BUG-025
+	CalendarSaves               []map[string]interface{} `json:"calendar_saves"`                // §86 BUG-025
+	CalendarSubscriptions       []map[string]interface{} `json:"calendar_subscriptions"`        // §86 BUG-025
+	CommunityOrganisations      []map[string]interface{} `json:"community_organisations"`       // §101 BUG-016
+	ComparisonItems             []map[string]interface{} `json:"comparison_items"`              // BUG-004
+	ComparisonDimensions        []map[string]interface{} `json:"comparison_dimensions"`         // BUG-004
+	ComparisonValues            []map[string]interface{} `json:"comparison_values"`             // BUG-004
+	CvFormatSessions            []map[string]interface{} `json:"cv_format_sessions"`            // §95 BUG-014
+	ExportMetadata              map[string]interface{}   `json:"export_metadata"`
 }
 
 // collectUserData gathers all user data from relevant tables.
@@ -2077,10 +2106,10 @@ func (s *Service) collectUserData(ctx context.Context, userID, tenantID pgtype.U
 		for rows.Next() {
 			var (
 				id, tenantID2, userID2, originSpaceID, destSpaceID pgtype.UUID
-				inputText, outputFormat, status string
-				outputText, aiModel *string
-				tokensUsed *int32
-				createdAt, expiresAt pgtype.Timestamptz
+				inputText, outputFormat, status                    string
+				outputText, aiModel                                *string
+				tokensUsed                                         *int32
+				createdAt, expiresAt                               pgtype.Timestamptz
 			)
 			if err := rows.Scan(
 				&id, &tenantID2, &userID2, &originSpaceID, &destSpaceID,
@@ -2091,15 +2120,15 @@ func (s *Service) collectUserData(ctx context.Context, userID, tenantID pgtype.U
 				continue
 			}
 			m := map[string]interface{}{
-				"id":                  id.String(),
-				"tenant_id":           tenantID2.String(),
-				"user_id":             userID2.String(),
+				"id":                   id.String(),
+				"tenant_id":            tenantID2.String(),
+				"user_id":              userID2.String(),
 				"destination_space_id": destSpaceID.String(),
-				"input_text":          inputText,
-				"output_format":       outputFormat,
-				"status":              status,
-				"created_at":          createdAt.Time,
-				"expires_at":          expiresAt.Time,
+				"input_text":           inputText,
+				"output_format":        outputFormat,
+				"status":               status,
+				"created_at":           createdAt.Time,
+				"expires_at":           expiresAt.Time,
 			}
 			if originSpaceID.Valid {
 				m["origin_space_id"] = originSpaceID.String()

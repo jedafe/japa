@@ -1280,17 +1280,18 @@ type DeviceToken struct {
 }
 
 type DigestEdition struct {
-	ID           pgtype.UUID        `json:"id"`
-	TenantID     pgtype.UUID        `json:"tenant_id"`
-	SpaceID      pgtype.UUID        `json:"space_id"`
-	Cadence      string             `json:"cadence"`
+	ID       pgtype.UUID `json:"id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+	SpaceID  pgtype.UUID `json:"space_id"`
+	Cadence  string      `json:"cadence"`
+	// draft|review|published|cancelled (§84)
 	Status       string             `json:"status"`
 	ScheduledFor pgtype.Timestamptz `json:"scheduled_for"`
 	PublishedAt  pgtype.Timestamptz `json:"published_at"`
 	Content      []byte             `json:"content"`
 	EmailSent    bool               `json:"email_sent"`
 	EmailSentAt  pgtype.Timestamptz `json:"email_sent_at"`
-	GeneratedBy  *string            `json:"generated_by"`
+	GeneratedBy  string             `json:"generated_by"`
 	ReviewedBy   pgtype.UUID        `json:"reviewed_by"`
 	CreatedAt    pgtype.Timestamptz `json:"created_at"`
 }
@@ -3061,6 +3062,7 @@ type Space struct {
 	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
 	CurrencyCode   *string            `json:"currency_code"`
 	Keywords       []string           `json:"keywords"`
+	CreatorUserID  pgtype.UUID        `json:"creator_user_id"`
 }
 
 type SpaceMember struct {

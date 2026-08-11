@@ -3392,7 +3392,11 @@ func HandleDBManualVacuum(ctx context.Context, t *asynq.Task) error {
 		return nil
 	}
 
+	// Versioned payload: Version 1 is the current shape. A Version of 0
+	// is accepted for backward compatibility with any in-flight tasks
+	// queued before the version field was added.
 	var payload struct {
+		Version   int    `json:"version"`    // payload schema version (current: 1)
 		TableName string `json:"table_name"` // optional: specific table to vacuum
 		Full      bool   `json:"full"`       // VACUUM FULL vs regular
 	}
@@ -3407,7 +3411,7 @@ func HandleDBManualVacuum(ctx context.Context, t *asynq.Task) error {
 		return err
 	}
 
-	slog.Info("task:db:manual_vacuum: vacuum complete", "table", payload.TableName, "full", payload.Full)
+	slog.Info("task:db:manual_vacuum: vacuum complete", "table", payload.TableName, "full", payload.Full, "version", payload.Version)
 
 	return nil
 }

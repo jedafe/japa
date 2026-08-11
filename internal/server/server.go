@@ -969,6 +969,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Ref: japaconnect-engineering/sections/84-community-digest-widget.md (ADR-092)
 	digestStore := digest.NewStore(database)
 	digestService := digest.NewService(digestStore, settingsService)
+	digestService.SetEnqueuer(taskEnqueuer)
+	digestService.SetValkey(vkClient.Redis())
 	digestHandlers := digest.NewHandlers(digestService, settingsService)
 
 	// Ref: japaconnect-engineering/sections/85-mutual-aid-board.md (ADR-093)
@@ -1210,6 +1212,14 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	contentCreatorBridge := &agentContentCreatorBridge{svc: contentService}
 	contentUpdaterBridge := &agentContentUpdaterBridge{svc: contentService}
 
+	// Phase 9: the users service is needed for the user.* AI tools. It is
+	// constructed here (before the agent deps wiring) because the agent
+	// deps block runs before the User Profile & Preferences subsystem
+	// section below. The full usersService wiring (MediaResolver, wallet
+	// points provider, etc.) happens later — only the base service is
+	// needed for the AI agent's GetProfile/UpdateProfile calls.
+	agentUsersSvc := users.NewService(database)
+
 	agentDeps := ai.NewToolDeps().
 		WithContent(contentService).
 		WithCustomFields(cfService).
@@ -1223,9 +1233,22 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Phase 8: persona resolver + HITL store for content.create_draft.
 	agentDeps.Persona = &agentPersonaAdapter{store: personasStore}
 	agentDeps.HITL = aiStore
+	// Phase 9: extended tool catalog (Section 103). Spaces, custom field
+	// definitions, and content lifecycle services match the ai package
+	// interfaces 1:1 and are wired directly. Learning, docs, menus, and
+	// users use mirror types in the ai package to avoid import cycles, so
+	// adapters are wired here.
+	agentDeps.Spaces = spaceService
+	agentDeps.Learning = &agentLearningAdapter{store: learningStore}
+	agentDeps.Docs = &agentDocsAdapter{svc: docsService}
+	agentDeps.Menus = &agentMenusAdapter{svc: menusService}
+	agentDeps.Users = &agentUsersAdapter{svc: agentUsersSvc}
+	agentDeps.CustomFieldDefs = cfService
+	agentDeps.ContentLifecycle = contentService
 
 	agentRegistry := ai.NewToolHandlerRegistry()
 	ai.RegisterPhase4Tools(agentRegistry, agentDeps)
+	ai.RegisterPhase9Tools(agentRegistry, agentDeps)
 	// Load tool configs from the ai_tools table (migration 000388 seed).
 	// Errors are non-fatal — the agent degrades to no tools if the table
 	// is empty or the configs are unparseable.
@@ -2974,6 +2997,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Get("/admin/data-exports/{id}", platformDataExportHandlers.HandleGetExport)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "gdpr.data_exports.view")).
 				Delete("/admin/data-exports/{id}", platformDataExportHandlers.HandleDeleteExport)
+			// Download endpoint for completed export files (BUG-006). Serves
+			// the generated file from the storage backend, gated by the same
+			// permission as the other export routes.
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "gdpr.data_exports.view")).
+				Get("/admin/data-exports/{id}/download", platformDataExportHandlers.HandleDownloadExport)
 			// Platform data imports (Section 67) — admin-initiated imports of
 			// platform data from CSV/JSON files.
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "gdpr.data_exports.view")).

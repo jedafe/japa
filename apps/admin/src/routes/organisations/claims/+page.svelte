@@ -50,7 +50,7 @@
 
 	const canReview = $derived(hasPermission("admin.moderation"));
 
-	const statusFilters = [
+	const statusFilters = $derived([
 		{
 			key: "status",
 			label: t("organisations.status", "Status"),
@@ -62,9 +62,9 @@
 				{ value: "withdrawn", label: t("organisations.withdrawn", "Withdrawn") }
 			]
 		}
-	];
+	]);
 
-	const columns = [
+	const columns = $derived([
 		{
 			key: "org_name",
 			label: t("organisations.name", "Organization"),
@@ -105,7 +105,7 @@
 			class: "w-40",
 			componentSnippet: ClaimActionsCell
 		}
-	];
+	]);
 
 	// Search is client-side; status is server-side (re-fetches on change).
 	const filtered = $derived.by(() => {

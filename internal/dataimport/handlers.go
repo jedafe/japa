@@ -69,22 +69,24 @@ func scanUUIDParam(w http.ResponseWriter, r *http.Request, name string) (pgtype.
 }
 
 func parsePagination(r *http.Request) (int, int) {
-	page := 1
-	limit := 20
-	if q := r.URL.Query().Get("page"); q != "" {
+	pageSize := 20
+	pageOffset := 0
+	if q := r.URL.Query().Get("page_size"); q != "" {
 		if v, err := strconv.Atoi(q); err == nil && v > 0 {
-			page = v
+			pageSize = v
 		}
 	}
-	if q := r.URL.Query().Get("limit"); q != "" {
-		if v, err := strconv.Atoi(q); err == nil && v > 0 {
-			limit = v
+	if q := r.URL.Query().Get("page_offset"); q != "" {
+		if v, err := strconv.Atoi(q); err == nil && v >= 0 {
+			pageOffset = v
 		}
 	}
-	if limit > 100 {
-		limit = 100
+	if pageSize > 100 {
+		pageSize = 100
 	}
-	return page, limit
+	// Convert offset to page number for the service layer.
+	page := (pageOffset / pageSize) + 1
+	return page, pageSize
 }
 
 // ---------------------------------------------------------------------------
@@ -168,10 +170,10 @@ func (h *Handlers) HandleListImports(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"data": serializeImports(imports),
 		"pagination": map[string]any{
-			"page":   page,
-			"limit":  limit,
-			"total":  total,
-			"status": status,
+			"page_size":   limit,
+			"page_offset": (page - 1) * limit,
+			"total":       total,
+			"status":      status,
 		},
 	})
 }

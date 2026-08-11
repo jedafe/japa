@@ -30,7 +30,11 @@ import (
 	"github.com/jedafe/japa/internal/comparison"
 	"github.com/jedafe/japa/internal/content"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/docs"
+	"github.com/jedafe/japa/internal/learning"
+	"github.com/jedafe/japa/internal/menus"
 	"github.com/jedafe/japa/internal/rag"
+	"github.com/jedafe/japa/internal/users"
 	"github.com/jedafe/japa/internal/worker"
 	"github.com/valkey-io/valkey-go/valkeycompat"
 )
@@ -494,4 +498,349 @@ func (a *agentDraftProcessorAdapter) CreateAgentDraft(ctx context.Context, paylo
 	}
 
 	return nil
+}
+
+// ---------------------------------------------------------------------------
+// Phase 9 adapters (Section 103 — extended tool catalog)
+// ---------------------------------------------------------------------------
+
+// agentLearningAdapter bridges learning.Store to the ai.LearningStore
+// interface. The ai package uses mirror types (ai.LearningTrack,
+// ai.LearningLesson, ai.LearningCreateTrackInput, etc.) to avoid an import
+// cycle with internal/learning. This adapter converts between the two.
+//
+// learn.lessons.reorder has no backing Store method — the adapter uses
+// UpdateLesson per entry to set the new sort_order. This is sequential
+// (not a single bulk SQL UPDATE) but correct; a future migration can add
+// a bulk reorder query if performance requires it.
+type agentLearningAdapter struct{ store *learning.Store }
+
+func (a *agentLearningAdapter) ListTracks(ctx context.Context, tenantID pgtype.UUID) ([]ai.LearningTrack, error) {
+	tracks, err := a.store.ListAllTracks(ctx, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]ai.LearningTrack, 0, len(tracks))
+	for _, t := range tracks {
+		out = append(out, learningTrackToAI(t))
+	}
+	return out, nil
+}
+
+func (a *agentLearningAdapter) CreateTrack(ctx context.Context, tenantID pgtype.UUID, input ai.LearningCreateTrackInput) (*ai.LearningTrack, error) {
+	t, err := a.store.CreateTrack(ctx, tenantID, learning.CreateTrackInput{
+		Title:                input.Title,
+		Slug:                 input.Slug,
+		Description:          input.Description,
+		Difficulty:           input.Difficulty,
+		CoverMediaID:         input.CoverMediaID,
+		IsPublished:          input.IsPublished,
+		SortOrder:            input.SortOrder,
+		Category:             input.Category,
+		SubscriptionEligible: input.SubscriptionEligible,
+	})
+	if err != nil {
+		return nil, err
+	}
+	aiT := learningTrackToAI(*t)
+	return &aiT, nil
+}
+
+func (a *agentLearningAdapter) UpdateTrack(ctx context.Context, tenantID, id pgtype.UUID, input ai.LearningUpdateTrackInput) (*ai.LearningTrack, error) {
+	t, err := a.store.UpdateTrack(ctx, tenantID, id, learning.UpdateTrackInput{
+		Title:                input.Title,
+		Description:          input.Description,
+		Difficulty:           input.Difficulty,
+		CoverMediaID:         input.CoverMediaID,
+		IsPublished:          input.IsPublished,
+		SortOrder:            input.SortOrder,
+		Category:             input.Category,
+		SubscriptionEligible: input.SubscriptionEligible,
+	})
+	if err != nil {
+		return nil, err
+	}
+	aiT := learningTrackToAI(*t)
+	return &aiT, nil
+}
+
+func (a *agentLearningAdapter) ListLessons(ctx context.Context, tenantID pgtype.UUID) ([]ai.LearningLesson, error) {
+	lessons, err := a.store.ListAllLessons(ctx, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]ai.LearningLesson, 0, len(lessons))
+	for _, l := range lessons {
+		out = append(out, learningLessonToAI(l))
+	}
+	return out, nil
+}
+
+func (a *agentLearningAdapter) CreateLesson(ctx context.Context, tenantID, moduleID pgtype.UUID, input ai.LearningCreateLessonInput) (*ai.LearningLesson, error) {
+	l, err := a.store.CreateLesson(ctx, tenantID, moduleID, learning.CreateLessonInput{
+		Title:           input.Title,
+		Slug:            input.Slug,
+		LessonType:      input.LessonType,
+		Content:         input.Content,
+		MediaID:         input.MediaID,
+		DurationMinutes: input.DurationMinutes,
+		SortOrder:       input.SortOrder,
+		IsPublished:     input.IsPublished,
+		IsPreview:       input.IsPreview,
+	})
+	if err != nil {
+		return nil, err
+	}
+	aiL := learningLessonToAI(*l)
+	return &aiL, nil
+}
+
+func (a *agentLearningAdapter) UpdateLesson(ctx context.Context, tenantID, id pgtype.UUID, input ai.LearningUpdateLessonInput) (*ai.LearningLesson, error) {
+	l, err := a.store.UpdateLesson(ctx, tenantID, id, learning.UpdateLessonInput{
+		Title:           input.Title,
+		LessonType:      input.LessonType,
+		Content:         input.Content,
+		MediaID:         input.MediaID,
+		DurationMinutes: input.DurationMinutes,
+		SortOrder:       input.SortOrder,
+		IsPublished:     input.IsPublished,
+		IsPreview:       input.IsPreview,
+	})
+	if err != nil {
+		return nil, err
+	}
+	aiL := learningLessonToAI(*l)
+	return &aiL, nil
+}
+
+// ReorderLessons updates each lesson's sort_order sequentially. The
+// learning.Store does not expose a bulk reorder query, so we call
+// UpdateLesson per entry. A failure on one entry aborts the reorder
+// (the caller can retry). This is acceptable for the AI agent's use
+// case (small batches).
+func (a *agentLearningAdapter) ReorderLessons(ctx context.Context, tenantID pgtype.UUID, entries []ai.LearningReorderEntry) error {
+	for _, e := range entries {
+		// Fetch the existing lesson to preserve its fields, then update
+		// only the sort_order. UpdateLessonInput requires Title and
+		// LessonType, so we must read first.
+		lesson, err := a.store.GetLessonByID(ctx, tenantID, e.ID)
+		if err != nil {
+			return fmt.Errorf("reorder: fetching lesson %s: %w", e.ID, err)
+		}
+		_, err = a.store.UpdateLesson(ctx, tenantID, e.ID, learning.UpdateLessonInput{
+			Title:           lesson.Title,
+			LessonType:      lesson.LessonType,
+			Content:         lesson.Content,
+			MediaID:         derefUUID(lesson.MediaID),
+			DurationMinutes: lesson.DurationMinutes,
+			SortOrder:       e.SortOrder,
+			IsPublished:     lesson.IsPublished,
+		})
+		if err != nil {
+			return fmt.Errorf("reorder: updating lesson %s sort_order: %w", e.ID, err)
+		}
+	}
+	return nil
+}
+
+func learningTrackToAI(t learning.Track) ai.LearningTrack {
+	return ai.LearningTrack{
+		ID:          t.ID,
+		TenantID:    t.TenantID,
+		Title:       t.Title,
+		Slug:        t.Slug,
+		Description: t.Description,
+		Difficulty:  t.Difficulty,
+		IsPublished: t.IsPublished,
+		SortOrder:   t.SortOrder,
+		CreatedAt:   pgtype.Timestamptz{Time: t.CreatedAt, Valid: !t.CreatedAt.IsZero()},
+		UpdatedAt:   pgtype.Timestamptz{Time: t.UpdatedAt, Valid: !t.UpdatedAt.IsZero()},
+	}
+}
+
+func learningLessonToAI(l learning.Lesson) ai.LearningLesson {
+	return ai.LearningLesson{
+		ID:              l.ID,
+		TenantID:        l.TenantID,
+		ModuleID:        l.ModuleID,
+		Title:           l.Title,
+		Slug:            l.Slug,
+		LessonType:      l.LessonType,
+		Content:         l.Content,
+		DurationMinutes: l.DurationMinutes,
+		SortOrder:       l.SortOrder,
+		IsPublished:     l.IsPublished,
+		IsPreview:       l.IsPreview,
+		CreatedAt:       pgtype.Timestamptz{Time: l.CreatedAt, Valid: !l.CreatedAt.IsZero()},
+		UpdatedAt:       pgtype.Timestamptz{Time: l.UpdatedAt, Valid: !l.UpdatedAt.IsZero()},
+	}
+}
+
+// derefUUID returns the pgtype.UUID value pointed to by p, or the zero
+// value when p is nil.
+func derefUUID(p *pgtype.UUID) pgtype.UUID {
+	if p == nil {
+		return pgtype.UUID{}
+	}
+	return *p
+}
+
+// agentDocsAdapter bridges docs.Service to the ai.DocsService interface.
+// The ai package uses mirror types (ai.DocsPage, ai.DocsCreatePageRequest,
+// ai.DocsUpdatePageRequest) to avoid an import cycle with internal/docs.
+type agentDocsAdapter struct{ svc *docs.Service }
+
+func (a *agentDocsAdapter) ListAllDocPages(ctx context.Context, tenantID pgtype.UUID) ([]ai.DocsPage, error) {
+	pages, err := a.svc.ListAllDocPages(ctx, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]ai.DocsPage, 0, len(pages))
+	for _, p := range pages {
+		out = append(out, docsPageToAI(p))
+	}
+	return out, nil
+}
+
+func (a *agentDocsAdapter) GetDocPageByID(ctx context.Context, tenantID, id pgtype.UUID) (*ai.DocsPage, error) {
+	p, err := a.svc.GetDocPageByID(ctx, tenantID, id)
+	if err != nil {
+		return nil, err
+	}
+	aiP := docsPageToAI(*p)
+	return &aiP, nil
+}
+
+func (a *agentDocsAdapter) CreateDocPage(ctx context.Context, tenantID pgtype.UUID, req ai.DocsCreatePageRequest) (pgtype.UUID, error) {
+	return a.svc.CreateDocPage(ctx, tenantID, docs.CreateDocPageRequest{
+		Title:        req.Title,
+		Slug:         req.Slug,
+		Audience:     req.Audience,
+		Content:      req.Content,
+		AIGenerated:  req.AIGenerated,
+		ReviewStatus: req.ReviewStatus,
+		ParentID:     req.ParentID,
+		Position:     req.Position,
+	})
+}
+
+func (a *agentDocsAdapter) UpdateDocPage(ctx context.Context, tenantID, id pgtype.UUID, req ai.DocsUpdatePageRequest) error {
+	return a.svc.UpdateDocPage(ctx, tenantID, id, docs.UpdateDocPageRequest{
+		Title:        req.Title,
+		Content:      req.Content,
+		ReviewStatus: req.ReviewStatus,
+	})
+}
+
+func docsPageToAI(p docs.DocPage) ai.DocsPage {
+	return ai.DocsPage{
+		ID:           p.ID,
+		Title:        p.Title,
+		Slug:         p.Slug,
+		Audience:     p.Audience,
+		Content:      p.Content,
+		AIGenerated:  p.AIGenerated,
+		ReviewStatus: p.ReviewStatus,
+		ParentID:     p.ParentID,
+		Position:     p.Position,
+		CreatedAt:    p.CreatedAt,
+		UpdatedAt:    p.UpdatedAt,
+	}
+}
+
+// agentMenusAdapter bridges menus.Service to the ai.MenusService interface.
+// The ai package uses mirror types (ai.MenusCreateMenuItemInput,
+// ai.MenusUpdateMenuItemInput, ai.MenusListResponse) to avoid an import
+// cycle with internal/menus. ListMenus returns *menus.ListMenusResponse
+// (pointer); the adapter dereferences it.
+type agentMenusAdapter struct{ svc *menus.Service }
+
+func (a *agentMenusAdapter) ListMenus(ctx context.Context, tenantID pgtype.UUID, q, placement, status, sort, sortDir string, limit, offset int32) (ai.MenusListResponse, error) {
+	resp, err := a.svc.ListMenus(ctx, tenantID, q, placement, status, sort, sortDir, limit, offset)
+	if err != nil {
+		return ai.MenusListResponse{}, err
+	}
+	return ai.MenusListResponse{
+		Items:      resp.Items,
+		Total:      resp.Total,
+		TotalPages: resp.TotalPages,
+		Page:       resp.Page,
+	}, nil
+}
+
+func (a *agentMenusAdapter) CreateMenuItem(ctx context.Context, tenantID pgtype.UUID, input ai.MenusCreateMenuItemInput) (gen.CreateMenuItemRow, error) {
+	return a.svc.CreateMenuItem(ctx, tenantID, menus.CreateMenuItemInput{
+		MenuID:           input.MenuID,
+		ParentID:         input.ParentID,
+		Label:            input.Label,
+		URL:              input.URL,
+		Icon:             input.Icon,
+		SortOrder:        input.SortOrder,
+		PermissionNode:   input.PermissionNode,
+		RequiredGroupIDs: input.RequiredGroupIDs,
+		Visibility:       input.Visibility,
+		Target:           input.Target,
+		IsAdSlot:         input.IsAdSlot,
+		AdSlotConfig:     input.AdSlotConfig,
+	})
+}
+
+func (a *agentMenusAdapter) UpdateMenuItem(ctx context.Context, id, tenantID pgtype.UUID, input ai.MenusUpdateMenuItemInput) (gen.UpdateMenuItemRow, error) {
+	return a.svc.UpdateMenuItem(ctx, id, tenantID, menus.UpdateMenuItemInput{
+		Label:            input.Label,
+		URL:              input.URL,
+		Icon:             input.Icon,
+		ParentID:         input.ParentID,
+		SortOrder:        input.SortOrder,
+		PermissionNode:   input.PermissionNode,
+		RequiredGroupIDs: input.RequiredGroupIDs,
+		Visibility:       input.Visibility,
+		Target:           input.Target,
+		IsAdSlot:         input.IsAdSlot,
+		AdSlotConfig:     input.AdSlotConfig,
+		Status:           input.Status,
+	})
+}
+
+func (a *agentMenusAdapter) DeleteMenuItem(ctx context.Context, id, tenantID pgtype.UUID) error {
+	return a.svc.DeleteMenuItem(ctx, id, tenantID)
+}
+
+// agentUsersAdapter bridges users.Service to the ai.UsersService interface.
+// The ai package uses mirror types (ai.UserProfile,
+// ai.UserProfileUpdateRequest) to avoid an import cycle with
+// internal/users. The adapter strips PII from UserProfileResponse.
+type agentUsersAdapter struct{ svc *users.Service }
+
+func (a *agentUsersAdapter) GetProfile(ctx context.Context, tenantID, userID pgtype.UUID) (*ai.UserProfile, error) {
+	p, err := a.svc.GetProfile(ctx, tenantID, userID)
+	if err != nil {
+		return nil, err
+	}
+	return &ai.UserProfile{
+		ID:            p.ID,
+		Username:      p.Username,
+		DisplayName:   p.DisplayName,
+		AvatarURL:     p.AvatarURL,
+		Bio:           p.Bio,
+		Timezone:      p.Timezone,
+		ProfileType:   p.ProfileType,
+		FollowerCount: p.FollowerCount,
+		CreatedAt:     p.CreatedAt,
+	}, nil
+}
+
+func (a *agentUsersAdapter) UpdateProfile(ctx context.Context, tenantID, userID pgtype.UUID, req *ai.UserProfileUpdateRequest) error {
+	var uReq *users.UpdateProfileRequest
+	if req != nil {
+		uReq = &users.UpdateProfileRequest{
+			DisplayName:        req.DisplayName,
+			AvatarURL:          req.AvatarURL,
+			Bio:                req.Bio,
+			Timezone:           req.Timezone,
+			OriginCountry:      req.OriginCountry,
+			DestinationCountry: req.DestinationCountry,
+		}
+	}
+	return a.svc.UpdateProfile(ctx, tenantID, userID, uReq)
 }

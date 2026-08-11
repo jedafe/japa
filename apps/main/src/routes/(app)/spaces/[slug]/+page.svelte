@@ -20,6 +20,7 @@
 	import { cardStyleFor, type CardStyleConfig } from '$lib/feed/cardStyle';
 	import type { FeedItem } from '$lib/types';
 	import FeedCard from '$lib/components/feed/FeedCard.svelte';
+	import DigestWidget from '$lib/components/digest/DigestWidget.svelte';
 	import type {
 		Space, SpaceContentItem, SpaceMember, SpaceModerator, SpaceRule,
 		SpacePermissionPreset, SpaceJoinRequest
@@ -458,6 +459,9 @@
 <div class="mx-auto w-full max-w-full">
 	<div class="p-3">
 		{#if activeTab === 'feed'}
+			<div class="mb-3">
+				<DigestWidget spaceId={space.id} />
+			</div>
 			{#if feedItems.length === 0}
 				<EmptyState icon={Rss} title={t('space.feed_empty', 'No posts yet')} />
 			{:else}

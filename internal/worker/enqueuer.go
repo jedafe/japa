@@ -173,6 +173,8 @@ var taskTier = func() map[string]string {
 		TypeCalendarSendReminders,
 		// §95 CV Formatter (ADR-103) — AI formatting on default tier.
 		TypeCvFormatProcess,
+		// §84 Community Digest Widget (ADR-092) — email send on publish, default tier.
+		TypeDigestSendEmail,
 	} {
 		m[t] = QueueDefault
 	}
@@ -198,6 +200,7 @@ var taskTier = func() map[string]string {
 		TypeScheduledPublishSweep, TypeGdprRetentionSweep,
 		TypeUniversityCalculatePeriodPayouts, TypeUniversityFetchLogo,
 		TypeContentScanAffiliateLinks,
+		TypePlatformDataExport, TypePlatformDataImport,
 		// V2 low-tier tasks (§§60-76)
 		TypeStudioRetryFailed,
 		TypeRemittancePruneOldRates,
@@ -217,6 +220,8 @@ var taskTier = func() map[string]string {
 		TypeCredentialsCheckLinks,
 		// §95 CV Formatter (ADR-103) — nightly purge of expired sessions, low tier.
 		TypeCvFormatSessionsPurge,
+		// §84 Community Digest Widget (ADR-092) — weekly generation, low tier.
+		TypeDigestGenerate,
 	} {
 		m[t] = QueueLow
 	}
@@ -317,6 +322,8 @@ func TaskTypeCatalog() []map[string]string {
 		{TypeGdprRetentionSweep, "low", "Process GDPR retention-wait deletions"},
 		{TypeUniversityCalculatePeriodPayouts, "low", "Roll open revenue splits into instructor payouts for a period"},
 		{TypeUniversityFetchLogo, "low", "Fetch and store a university logo from a remote URL during space auto-seeding"},
+		{TypePlatformDataExport, "low", "Generate platform data export file (CSV/JSON/XLSX) from platform data (Section 67)"},
+		{TypePlatformDataImport, "low", "Parse platform data import file and insert/update rows (Section 67)"},
 		// §102 Mentorship Matching (ADR-110)
 		{TypeMentorGenerateEmbedding, "default", "Generate pgvector embedding for a mentor's bio"},
 		{TypeMentorUpdateMeilisearch, "default", "Sync a mentor's profile to the Meilisearch mentors index"},
@@ -328,6 +335,9 @@ func TaskTypeCatalog() []map[string]string {
 		// §95 CV Formatter (ADR-103)
 		{TypeCvFormatProcess, "default", "Process a pending CV format session via the AI Gateway"},
 		{TypeCvFormatSessionsPurge, "low", "Purge expired CV format sessions past their expires_at"},
+		// §84 Community Digest Widget (ADR-092)
+		{TypeDigestGenerate, "low", "Assemble a new community digest edition from platform analytics"},
+		{TypeDigestSendEmail, "default", "Send a published digest edition to subscribed members"},
 	}
 
 	result := make([]map[string]string, len(tasks))

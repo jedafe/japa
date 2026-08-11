@@ -157,7 +157,7 @@
 			{ path: "/community/planning-groups", label: t("nav.community_planning_groups", "Planning Groups"), icon: Target, permission: "planning_group.manage_any" },
 			{ path: "/community/mutual-aid", label: t("nav.community_mutual_aid", "Mutual Aid"), icon: LifeBuoy, permission: "mutual_aid.moderate" },
 			{ path: "/community/calendar", label: t("nav.community_calendar", "Calendar"), icon: CalendarDays, permission: "calendar.review" },
-			{ path: "/community/digest", label: t("nav.community_digest", "Digest"), icon: Newspaper, permission: "calendar.review" },
+			{ path: "/community/digest", label: t("nav.community_digest", "Digest"), icon: Newspaper, permission: "digest.manage" },
 			{ path: "/community/achievements", label: t("nav.community_achievements", "Achievements"), icon: Award, permission: "achievement.moderate" },
 			{ path: "/community/services", label: t("nav.community_services", "Service Directory"), icon: Building2, permission: "service.verify" }
 		]
