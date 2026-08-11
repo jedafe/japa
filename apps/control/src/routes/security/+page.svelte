@@ -632,7 +632,7 @@
 	</Tabs.Content>
 </Tabs.Root>
 
-<Dialog.Root bind:open={showCreateModal}>
+<Dialog.Root bind:open={showCreateModal} onOpenChange={(isOpen) => { if (!isOpen) { cidr = ''; blockType = 'full'; reason = ''; createError = ''; } }}>
 	<Dialog.Portal>
 		<Dialog.Overlay class="bg-black/50 data-[state=open]:animate-in data-[state=open]:fade-in data-[state=closed]:animate-out data-[state=closed]:fade-out fixed inset-0 z-50" />
 		<Dialog.Content

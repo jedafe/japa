@@ -7,6 +7,7 @@
 package contentimport
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -506,12 +507,70 @@ func TestConvertHTMLToTipTap_InvalidHTML(t *testing.T) {
 // for an empty URL.
 func TestParseRSSFeed_EmptyURL(t *testing.T) {
 	svc := &Service{}
-	_, err := svc.ParseRSSFeed("")
+	_, err := svc.ParseRSSFeed(context.Background(), "")
 	if err == nil {
 		t.Error("ParseRSSFeed(\"\") expected error, got nil")
 	}
 	if !strings.Contains(err.Error(), "empty feed URL") {
 		t.Errorf("ParseRSSFeed(\"\") error = %q, want it to contain 'empty feed URL'", err.Error())
+	}
+}
+
+// TestParseRSSFeed_BlockedIP verifies that ParseRSSFeed rejects loopback
+// addresses (SSRF protection).
+func TestParseRSSFeed_BlockedIP(t *testing.T) {
+	svc := &Service{}
+	_, err := svc.ParseRSSFeed(context.Background(), "http://127.0.0.1/feed")
+	if err == nil {
+		t.Error("ParseRSSFeed(loopback) expected error, got nil")
+	}
+}
+
+// TestParseRSSFeed_PrivateIP verifies that ParseRSSFeed rejects private
+// IP ranges (SSRF protection).
+func TestParseRSSFeed_PrivateIP(t *testing.T) {
+	svc := &Service{}
+	_, err := svc.ParseRSSFeed(context.Background(), "http://10.0.0.1/feed")
+	if err == nil {
+		t.Error("ParseRSSFeed(private IP) expected error, got nil")
+	}
+}
+
+// TestParseRSSFeed_BadScheme verifies that ParseRSSFeed rejects non-http
+// schemes.
+func TestParseRSSFeed_BadScheme(t *testing.T) {
+	svc := &Service{}
+	_, err := svc.ParseRSSFeed(context.Background(), "ftp://example.com/feed")
+	if err == nil {
+		t.Error("ParseRSSFeed(ftp) expected error, got nil")
+	}
+}
+
+// TestValidateSourceURL verifies the handler-level URL validation.
+func TestValidateSourceURL(t *testing.T) {
+	tests := []struct {
+		name    string
+		url     string
+		wantErr bool
+	}{
+		{"empty", "", false},
+		{"valid https", "https://medium.com/@user", false},
+		{"valid http", "http://example.com/feed.xml", false},
+		{"ftp scheme", "ftp://example.com/feed", true},
+		{"javascript scheme", "javascript:alert(1)", true},
+		{"no host", "https:///feed", true},
+		{"too long", "https://example.com/" + strings.Repeat("a", 2100), true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			msg := validateSourceURL(tt.url)
+			if tt.wantErr && msg == "" {
+				t.Errorf("validateSourceURL(%q) expected error, got empty", tt.url)
+			}
+			if !tt.wantErr && msg != "" {
+				t.Errorf("validateSourceURL(%q) unexpected error: %s", tt.url, msg)
+			}
+		})
 	}
 }
 

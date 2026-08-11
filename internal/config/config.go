@@ -244,6 +244,15 @@ func applyDefaults(cfg *Config) error {
 		return fmt.Errorf("JC_JWT_SECRET must be set to at least %d characters in production", minJWTSecretLength)
 	}
 
+	// The encryption key protects TOTP secrets, API keys, and api_config at
+	// rest (AES-256-GCM via internal/crypto). Without it, the crypto package
+	// falls back to storing secrets in cleartext — acceptable in development
+	// but a hard fail-fast requirement in production. Priority:
+	// JC_ENCRYPTION_KEY → JC_STOCK_ENCRYPTION_KEY → JC_TOTP_ENCRYPTION_KEY.
+	if cfg.IsProduction() && cfg.EncryptionKey == "" && os.Getenv("JC_STOCK_ENCRYPTION_KEY") == "" && cfg.TOTPEncryptionKey == "" {
+		return fmt.Errorf("JC_ENCRYPTION_KEY must be set in production (secrets at rest cannot be encrypted without it)")
+	}
+
 	return nil
 }
 

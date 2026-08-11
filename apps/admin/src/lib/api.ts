@@ -1476,12 +1476,14 @@ export const affiliateProgramAdminApi = {
 };
 
 export const affiliateEnhancementsAdminApi = {
-	scanResults: () =>
-		api<unknown>('/admin/affiliate/scan-results'),
+	scanResults: (params?: string) =>
+		api<unknown>(`/admin/affiliate/scan-results${params ? `?${params}` : ''}`),
 	reviewScanResult: (id: string, body: { action: string; notes?: string }) =>
 		api<unknown>(`/admin/affiliate/scan-results/${id}`, { method: 'PATCH', body }),
-	commissions: () =>
-		api<unknown>('/admin/affiliate/commissions'),
+	commissions: (params?: string) =>
+		api<unknown>(`/admin/affiliate/commissions${params ? `?${params}` : ''}`),
+	recordCommission: (body: { provider_id: string; content_id: string; external_commission: number; event_description?: string }) =>
+		api<unknown>('/admin/affiliate/commissions', { method: 'POST', body }),
 	updateAuthorCommission: (providerId: string, body: { author_commission_pct: number }) =>
 		api<unknown>(`/admin/affiliate/providers/${providerId}/author-commission`, { method: 'PATCH', body }),
 };
@@ -1817,7 +1819,10 @@ export const taxCalculatorAdminApi = {
 };
 
 export const communityLocatorAdminApi = {
-	list: (params?: string) => api<unknown>(`/admin/community-locator${params ? `?${params}` : ''}`),
+	list: (params?: string) =>
+		apiRaw<{ data: unknown[]; pagination: { page: number; limit: number; total: number } }>(
+			`/admin/community-locator${params ? `?${params}` : ''}`
+		),
 	approve: (id: string) =>
 		api<unknown>(`/admin/community-locator/${id}/approve`, { method: 'PATCH', body: {} }),
 	verify: (id: string) =>

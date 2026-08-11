@@ -130,3 +130,23 @@ func (q *Queries) UpsertSystemSetting(ctx context.Context, arg UpsertSystemSetti
 	)
 	return err
 }
+
+const upsertSystemSettingPreservePublic = `-- name: UpsertSystemSettingPreservePublic :exec
+INSERT INTO system_settings (tenant_id, key, value, is_public, created_at, updated_at)
+VALUES ($1, $2, $3, false, now(), now())
+ON CONFLICT (tenant_id, key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()
+`
+
+type UpsertSystemSettingPreservePublicParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	Key      string      `json:"key"`
+	Value    []byte      `json:"value"`
+}
+
+// Like UpsertSystemSetting but preserves the existing is_public value on
+// conflict (only updates value). Used by SetSetting and UpdateSettingsBatch
+// where the caller does not manage the is_public flag.
+func (q *Queries) UpsertSystemSettingPreservePublic(ctx context.Context, arg UpsertSystemSettingPreservePublicParams) error {
+	_, err := q.db.Exec(ctx, upsertSystemSettingPreservePublic, arg.TenantID, arg.Key, arg.Value)
+	return err
+}

@@ -53,10 +53,22 @@ var ErrInvalidScriptPath = errors.New("renderer: script path must be a .js/.ts f
 
 // Renderer converts ProseMirror JSON to HTML via TipTap SSR.
 type Renderer struct {
-	scriptPath string
-	cache      *valkey.Client
-	cacheTTL   time.Duration
+	scriptPath       string
+	cache            *valkey.Client
+	cacheTTL         time.Duration
+	couponResolver   CouponResolver
+	affiliateResolver AffiliateLinkResolver
 }
+
+// SetCouponResolver injects the coupon resolver for render-time coupon_embed
+// resolution (Section 55 P4). When nil, coupon_embed placeholders are left
+// as-is.
+func (r *Renderer) SetCouponResolver(cr CouponResolver) { r.couponResolver = cr }
+
+// SetAffiliateLinkResolver injects the affiliate link resolver for render-time
+// href rewriting (Section 55 P4). When nil, affiliate link hrefs are left
+// as-is.
+func (r *Renderer) SetAffiliateLinkResolver(alr AffiliateLinkResolver) { r.affiliateResolver = alr }
 
 // New creates a Renderer that shells out to the given Bun script.
 // The cache is used to store rendered HTML keyed by content_id:updated_at.
@@ -151,15 +163,21 @@ func (r *Renderer) Render(ctx context.Context, tenantID, contentID pgtype.UUID, 
 	// This strips <script>, event handlers, javascript: URIs, and any
 	// tags/attributes not in the content.SanitizeHTML allowlist — including
 	// raw html injected by the platformEmbed node.
-	html = content.SanitizeHTML(html)
+	htmlOut := content.SanitizeHTML(html)
+
+	// Render-time resolution of coupon_embed placeholders and affiliate link
+	// href rewriting (Section 55 P4). This runs AFTER sanitization so the
+	// injected coupon widget HTML and rewritten hrefs are safe. Best-effort:
+	// resolution failures are logged and the original placeholder is left.
+	htmlOut = resolveCouponEmbedsAndAffiliateLinks(ctx, htmlOut, r.couponResolver, r.affiliateResolver)
 
 	// Cache the result (best-effort — failure does not break the response)
 	if r.cache != nil {
 		cacheKey := r.cacheKey(tenantID, contentID, updatedAt)
-		_ = r.cache.Redis().Set(ctx, cacheKey, html, r.cacheTTL).Err()
+		_ = r.cache.Redis().Set(ctx, cacheKey, htmlOut, r.cacheTTL).Err()
 	}
 
-	return html, nil
+	return htmlOut, nil
 }
 
 // renderViaBun shells out to Bun to run the TipTap SSR script.

@@ -11,7 +11,15 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/valkey"
 	"github.com/jedafe/japa/internal/worker"
+	"github.com/valkey-io/valkey-go/valkeycompat"
+)
+
+// Cache TTLs (Section 55 Valkey Caching / catalog: jc:coupon:{id}, jc:coupon_list:{tenant}).
+const (
+	couponCacheTTL     = 15 * time.Minute
+	couponListCacheTTL = 5 * time.Minute
 )
 
 // Enqueuer is the interface for enqueuing background tasks.
@@ -24,6 +32,7 @@ type Service struct {
 	store    *Store
 	db       *db.DB
 	enqueuer Enqueuer
+	vk       valkeycompat.Cmdable
 }
 
 func NewService(database *db.DB) *Service {
@@ -39,6 +48,10 @@ func NewServiceWithEnqueuer(database *db.DB, enqueuer Enqueuer) *Service {
 	svc.enqueuer = enqueuer
 	return svc
 }
+
+// SetCache injects a Valkey cache client for coupon detail/list caching
+// (Section 55). When nil, the service falls back to direct DB reads.
+func (s *Service) SetCache(vk valkeycompat.Cmdable) { s.vk = vk }
 
 type noopEnqueuer struct{}
 
@@ -144,7 +157,7 @@ type CreateCouponInput struct {
 }
 
 func (s *Service) CreateCoupon(ctx context.Context, tenantID, userID pgtype.UUID, input CreateCouponInput) (gen.Coupon, error) {
-	return s.store.createCoupon(ctx, gen.CreateCouponParams{
+	c, err := s.store.createCoupon(ctx, gen.CreateCouponParams{
 		TenantID: tenantID, ProviderID: toNullableUUID(input.ProviderID), CouponType: input.CouponType,
 		Title: input.Title, Description: input.Description, Code: input.Code,
 		DiscountType: input.DiscountType, DiscountValue: toNullableNumeric(input.DiscountValue),
@@ -152,15 +165,40 @@ func (s *Service) CreateCoupon(ctx context.Context, tenantID, userID pgtype.UUID
 		IsVerified: input.IsVerified, Status: input.Status,
 		ValidFrom: toTimestamptz(input.ValidFrom), ExpiresAt: toTimestamptz(input.ExpiresAt), CreatedBy: userID,
 	})
+	if err != nil {
+		return gen.Coupon{}, err
+	}
+	s.invalidateCouponCaches(ctx, tenantID, c.ID)
+	return c, nil
 }
 
 func (s *Service) GetCoupon(ctx context.Context, id, tenantID pgtype.UUID) (gen.GetCouponByIDRow, error) {
+	// Try cache first (jc:coupon:{id}, TTL 15min — Section 55).
+	cacheKey := valkey.MustKey("coupon:%s", id.String())
+	if s.vk != nil {
+		if cached, err := s.vk.Get(ctx, cacheKey).Result(); err == nil && cached != "" {
+			var c gen.GetCouponByIDRow
+			if jsonErr := json.Unmarshal([]byte(cached), &c); jsonErr == nil {
+				return c, nil
+			}
+		}
+	}
+
 	c, err := s.store.getCouponByID(ctx, id, tenantID)
 	if err != nil {
 		if isNoRows(err) {
 			return gen.GetCouponByIDRow{}, ErrCouponNotFound
 		}
 		return gen.GetCouponByIDRow{}, fmt.Errorf("getting coupon: %w", err)
+	}
+
+	// Best-effort cache write.
+	if s.vk != nil {
+		if data, jsonErr := json.Marshal(c); jsonErr == nil {
+			if err := s.vk.Set(ctx, cacheKey, string(data), couponCacheTTL).Err(); err != nil {
+				slog.Warn("coupons: failed to cache coupon", "id", id.String(), "error", err)
+			}
+		}
 	}
 	return c, nil
 }
@@ -171,12 +209,37 @@ func (s *Service) ListCoupons(ctx context.Context, tenantID pgtype.UUID, status,
 }
 
 func (s *Service) ListActiveCoupons(ctx context.Context, tenantID pgtype.UUID, providerID *pgtype.UUID, couponType, search *string, page, pageSize int32) ([]gen.ListActiveCouponsByTenantRow, error) {
+	// Only cache unfiltered first-page lists (jc:coupon_list:{tenant}, TTL 5min — Section 55).
+	canCache := providerID == nil && couponType == nil && search == nil && page == 1
+	cacheKey := valkey.MustKey("coupon_list:%s", tenantID.String())
+	if canCache && s.vk != nil {
+		if cached, err := s.vk.Get(ctx, cacheKey).Result(); err == nil && cached != "" {
+			var coupons []gen.ListActiveCouponsByTenantRow
+			if jsonErr := json.Unmarshal([]byte(cached), &coupons); jsonErr == nil {
+				return coupons, nil
+			}
+		}
+	}
+
 	limit, offset := paginate(page, pageSize)
 	pid := pgtype.UUID{}
 	if providerID != nil {
 		pid = *providerID
 	}
-	return s.store.listActiveCoupons(ctx, tenantID, pid, couponType, search, limit, offset)
+	coupons, err := s.store.listActiveCoupons(ctx, tenantID, pid, couponType, search, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+
+	// Best-effort cache write (only for unfiltered first page).
+	if canCache && s.vk != nil {
+		if data, jsonErr := json.Marshal(coupons); jsonErr == nil {
+			if err := s.vk.Set(ctx, cacheKey, string(data), couponListCacheTTL).Err(); err != nil {
+				slog.Warn("coupons: failed to cache coupon list", "tenant", tenantID.String(), "error", err)
+			}
+		}
+	}
+	return coupons, nil
 }
 
 type UpdateCouponInput = CreateCouponInput
@@ -189,13 +252,18 @@ func (s *Service) UpdateCoupon(ctx context.Context, id, tenantID pgtype.UUID, in
 		}
 		return gen.Coupon{}, fmt.Errorf("checking coupon: %w", err)
 	}
-	return s.store.updateCoupon(ctx, gen.UpdateCouponParams{
+	c, err := s.store.updateCoupon(ctx, gen.UpdateCouponParams{
 		ID: id, TenantID: tenantID, Title: input.Title, Description: input.Description, Code: input.Code,
 		DiscountType: input.DiscountType, DiscountValue: toNullableNumeric(input.DiscountValue),
 		Currency: input.Currency, TermsUrl: input.TermsURL, ReferralUrl: input.ReferralURL,
 		IsVerified: input.IsVerified, Status: input.Status,
 		ValidFrom: toTimestamptz(input.ValidFrom), ExpiresAt: toTimestamptz(input.ExpiresAt),
 	})
+	if err != nil {
+		return gen.Coupon{}, err
+	}
+	s.invalidateCouponCaches(ctx, tenantID, c.ID)
+	return c, nil
 }
 
 func (s *Service) DeleteCoupon(ctx context.Context, id, tenantID pgtype.UUID) error {
@@ -206,7 +274,27 @@ func (s *Service) DeleteCoupon(ctx context.Context, id, tenantID pgtype.UUID) er
 		}
 		return fmt.Errorf("checking coupon: %w", err)
 	}
-	return s.store.deleteCoupon(ctx, id, tenantID)
+	if err := s.store.deleteCoupon(ctx, id, tenantID); err != nil {
+		return err
+	}
+	s.invalidateCouponCaches(ctx, tenantID, id)
+	return nil
+}
+
+// invalidateCouponCaches clears the single-coupon cache (jc:coupon:{id}) and
+// the tenant coupon list cache (jc:coupon_list:{tenant}) after any coupon
+// mutation (Section 55). Best-effort: errors are logged.
+func (s *Service) invalidateCouponCaches(ctx context.Context, tenantID, couponID pgtype.UUID) {
+	if s.vk == nil {
+		return
+	}
+	keys := []string{
+		valkey.MustKey("coupon:%s", couponID.String()),
+		valkey.MustKey("coupon_list:%s", tenantID.String()),
+	}
+	if err := s.vk.Del(ctx, keys...).Err(); err != nil {
+		slog.Warn("coupons: failed to invalidate caches", "keys", keys, "error", err)
+	}
 }
 
 // ── Coupon Events ───────────────────────────────────────────────────

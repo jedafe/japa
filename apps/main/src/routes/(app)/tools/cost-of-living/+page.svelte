@@ -17,9 +17,12 @@
 
 	const cities = $derived<ColCity[]>(data.cities);
 	const disabled = $derived(data.disabled);
+	// Tool config from col_calculator.* system_settings (Rule 3 / Rule 16).
+	const maxCities = $derived(data.maxCities ?? 3);
+	const staleDays = $derived(data.staleDays ?? 180);
 
-	// Up to 3 selected city IDs (baseline always included).
-	let selectedIds = $state<string[]>(untrack(() => data.preselected.slice(0, 3)));
+	// Up to maxCities selected city IDs (baseline always included).
+	let selectedIds = $state<string[]>(untrack(() => data.preselected.slice(0, maxCities)));
 	let matrix = $state<ColComparisonMatrix | null>(null);
 	let loading = $state(false);
 	let error = $state<string | null>(null);
@@ -33,7 +36,7 @@
 	// Ensure baseline is always in the selection.
 	$effect(() => {
 		if (baselineCity && !selectedIds.includes(baselineCity.id)) {
-			selectedIds = [baselineCity.id, ...selectedIds.filter((id) => id !== baselineCity.id)].slice(0, 3);
+			selectedIds = [baselineCity.id, ...selectedIds.filter((id) => id !== baselineCity.id)].slice(0, maxCities);
 		}
 	});
 
@@ -60,7 +63,7 @@
 			if (baselineCity && id === baselineCity.id) return; // can't remove baseline
 			selectedIds = selectedIds.filter((sid) => sid !== id);
 		} else {
-			if (selectedIds.length >= 3) return;
+			if (selectedIds.length >= maxCities) return;
 			selectedIds = [...selectedIds, id];
 		}
 		fetchComparison();
@@ -87,6 +90,20 @@
 	function formatRatio(r: number): string {
 		return r.toFixed(2) + '×';
 	}
+
+	// Staleness check — §72 requires a "data may be outdated" notice when any
+	// city's last_updated_at is older than col_calculator.stale_days (default 180).
+	const isStale = $derived.by(() => {
+		if (!matrix) return false;
+		const thresholdMs = staleDays * 24 * 60 * 60 * 1000;
+		for (const city of matrix.cities) {
+			if (city.last_updated) {
+				const age = Date.now() - new Date(city.last_updated).getTime();
+				if (age > thresholdMs) return true;
+			}
+		}
+		return false;
+	});
 
 	// Some seeded cities may have an empty title; fall back to the geo space
 	// name so chips and buttons always have an accessible label (§H). Accepts
@@ -153,7 +170,7 @@
 		<div class="border-b border-[var(--color-border)] px-4 py-3">
 			<div class="mb-2 flex items-center justify-between">
 				<span class="text-xs font-medium uppercase tracking-wide text-[var(--color-muted)]">
-					{t('col.select_cities', 'Select up to 3 cities')}
+					{t('col.select_cities', 'Select up to {max} cities').replace('{max}', String(maxCities))}
 				</span>
 				{#if selectedIds.length >= 2}
 					<button
@@ -199,7 +216,7 @@
 						<button
 							type="button"
 							onclick={() => toggleCity(city.id)}
-							disabled={selectedIds.length >= 3}
+							disabled={selectedIds.length >= maxCities}
 							class="rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-1 text-xs text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)] disabled:opacity-40"
 						>
 							{cityLabel(city)}
@@ -221,6 +238,11 @@
 			{:else if error}
 				<EmptyState icon={Calculator} title={t('col.load_error', 'Could not load comparison')} body={error} />
 			{:else if matrix}
+				{#if isStale}
+					<div class="mb-4 rounded-[var(--radius-card)] border border-yellow-300 bg-yellow-50 px-4 py-3 text-sm text-yellow-800 dark:border-yellow-700 dark:bg-yellow-900/20 dark:text-yellow-300">
+						{t('col.stale_warning', 'Some city data may be outdated. Values are curated manually and updated periodically.')}
+					</div>
+				{/if}
 				<!-- Overall index -->
 				<div class="mb-4 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 					<h2 class="mb-3 text-sm font-medium text-[var(--color-text)]">

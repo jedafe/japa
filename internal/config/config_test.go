@@ -33,6 +33,7 @@ func TestLoad_ReadsEnvironmentVariables(t *testing.T) {
 	t.Setenv("JC_JWT_SECRET", "test-jwt-secret-key-32-bytes-long!")
 	t.Setenv("JC_JWT_KEY_ID", "key-prod")
 	t.Setenv("JC_COOKIE_DOMAIN", ".example.com")
+	t.Setenv("JC_ENCRYPTION_KEY", "test-encryption-key-for-production")
 
 	cfg, err := Load()
 	if err != nil {
@@ -176,11 +177,12 @@ func TestIsProduction(t *testing.T) {
 			} else {
 				os.Unsetenv("JC_ENV")
 			}
-			// Production validation requires JC_COOKIE_DOMAIN, JC_DATABASE_URL
-			// and JC_JWT_SECRET.
+			// Production validation requires JC_COOKIE_DOMAIN, JC_DATABASE_URL,
+			// JC_JWT_SECRET, and JC_ENCRYPTION_KEY.
 			t.Setenv("JC_COOKIE_DOMAIN", ".example.com")
 			t.Setenv("JC_DATABASE_URL", "postgresql://test:test@localhost:5432/testdb?sslmode=disable")
 			t.Setenv("JC_JWT_SECRET", strings.Repeat("x", 32))
+			t.Setenv("JC_ENCRYPTION_KEY", "test-encryption-key")
 
 			cfg, err := Load()
 			if err != nil {
@@ -249,7 +251,47 @@ func clearAllJCEnv(t *testing.T) {
 		"JC_JWT_KEY_ID",
 		"JC_COOKIE_DOMAIN",
 		"JC_XIAOMI_API_KEY",
+		"JC_ENCRYPTION_KEY",
+		"JC_STOCK_ENCRYPTION_KEY",
+		"JC_TOTP_ENCRYPTION_KEY",
 	} {
 		os.Unsetenv(key)
+	}
+}
+
+// TestLoad_ProductionRequiresEncryptionKey verifies that JC_ENCRYPTION_KEY
+// (or a legacy alias) is mandatory in production — without it, secrets at
+// rest cannot be encrypted and the server must fail fast.
+func TestLoad_ProductionRequiresEncryptionKey(t *testing.T) {
+	t.Setenv("JC_ENV", "production")
+	t.Setenv("JC_DATABASE_URL", "postgresql://test:test@localhost:5432/testdb?sslmode=disable")
+	t.Setenv("JC_COOKIE_DOMAIN", ".example.com")
+	t.Setenv("JC_JWT_SECRET", strings.Repeat("x", 32))
+	os.Unsetenv("JC_ENCRYPTION_KEY")
+	os.Unsetenv("JC_STOCK_ENCRYPTION_KEY")
+	os.Unsetenv("JC_TOTP_ENCRYPTION_KEY")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("Load should fail in production without JC_ENCRYPTION_KEY")
+	}
+	if !strings.Contains(err.Error(), "JC_ENCRYPTION_KEY") {
+		t.Errorf("error should mention JC_ENCRYPTION_KEY, got: %v", err)
+	}
+}
+
+// TestLoad_ProductionAcceptsLegacyEncryptionKey verifies that the legacy
+// JC_TOTP_ENCRYPTION_KEY alias still satisfies the production check.
+func TestLoad_ProductionAcceptsLegacyEncryptionKey(t *testing.T) {
+	t.Setenv("JC_ENV", "production")
+	t.Setenv("JC_DATABASE_URL", "postgresql://test:test@localhost:5432/testdb?sslmode=disable")
+	t.Setenv("JC_COOKIE_DOMAIN", ".example.com")
+	t.Setenv("JC_JWT_SECRET", strings.Repeat("x", 32))
+	os.Unsetenv("JC_ENCRYPTION_KEY")
+	os.Unsetenv("JC_STOCK_ENCRYPTION_KEY")
+	t.Setenv("JC_TOTP_ENCRYPTION_KEY", "legacy-totp-key")
+
+	if _, err := Load(); err != nil {
+		t.Fatalf("Load should succeed with legacy JC_TOTP_ENCRYPTION_KEY, got: %v", err)
 	}
 }

@@ -115,9 +115,10 @@ func (s *Store) listComparisonTypeAccess(ctx context.Context, typeID pgtype.UUID
 }
 
 //nolint:unused // reserved for future features
-func (s *Store) deleteComparisonTypeAccess(ctx context.Context, typeID, userGroupID pgtype.UUID) error {
+func (s *Store) deleteComparisonTypeAccess(ctx context.Context, typeID, tenantID, userGroupID pgtype.UUID) error {
 	if err := s.write.DeleteComparisonTypeAccess(ctx, gen.DeleteComparisonTypeAccessParams{
 		TypeID:      typeID,
+		TenantID:    tenantID,
 		UserGroupID: userGroupID,
 	}); err != nil {
 		return fmt.Errorf("deleting comparison type access: %w", err)
@@ -275,6 +276,16 @@ func (s *Store) upsertComparisonValue(ctx context.Context, p gen.UpsertCompariso
 	row, err := s.write.UpsertComparisonValue(ctx, p)
 	if err != nil {
 		return gen.ComparisonValue{}, fmt.Errorf("upserting comparison value: %w", err)
+	}
+
+	return row, nil
+}
+
+//nolint:unused // reserved for future features
+func (s *Store) upsertComparisonValueWithMetadata(ctx context.Context, p gen.UpsertComparisonValueWithMetadataParams) (gen.ComparisonValue, error) {
+	row, err := s.write.UpsertComparisonValueWithMetadata(ctx, p)
+	if err != nil {
+		return gen.ComparisonValue{}, fmt.Errorf("upserting comparison value with metadata: %w", err)
 	}
 
 	return row, nil

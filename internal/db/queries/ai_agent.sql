@@ -148,6 +148,90 @@ FROM custom_field_values cfv
 JOIN custom_fields cf ON cfv.field_id = cf.id
 WHERE cfv.id = @id AND cf.tenant_id = @tenant_id;
 
+-- name: GetCustomFieldValueEntity :one
+-- Returns the entity_type and entity_id for a custom_field_values row,
+-- tenant-scoped via the custom_fields JOIN. Used by the PUT /me/ai-privacy
+-- handler to verify that the calling user owns the entity the field value
+-- is attached to before allowing them to set ai_exempt.
+-- Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Privacy Exemption)
+SELECT cfv.entity_type, cfv.entity_id
+FROM custom_field_values cfv
+JOIN custom_fields cf ON cfv.field_id = cf.id
+WHERE cfv.id = @id AND cf.tenant_id = @tenant_id;
+
 -- name: GetUserAIExempt :one
 SELECT ai_exempt FROM users
 WHERE id = @id AND tenant_id = @tenant_id;
+
+-- =====================================================================
+-- Privacy exemption writes (§103 Privacy Exemption Columns).
+-- Used by the user-facing PUT /me/ai-privacy route (Phase 6). A user may
+-- only set the flag on their OWN data; the handler enforces ownership
+-- (entity ID == authenticated user ID for "profile", or entity author ==
+-- user for "content"/"custom_field_value") before calling these. All three
+-- are tenant-scoped at the SQL layer for defense-in-depth (BUG-014).
+-- =====================================================================
+
+-- name: SetContentAIExempt :one
+UPDATE contents SET ai_exempt = @ai_exempt, updated_at = now()
+WHERE id = @id AND tenant_id = @tenant_id AND deleted_at IS NULL
+RETURNING id, tenant_id, author_id, ai_exempt;
+
+-- name: SetCustomFieldValueAIExempt :one
+-- custom_field_values has no tenant_id column; JOIN custom_fields to
+-- enforce tenancy transitively (same pattern as GetCustomFieldValueAIExempt).
+UPDATE custom_field_values cfv
+SET ai_exempt = @ai_exempt
+FROM custom_fields cf
+WHERE cfv.field_id = cf.id
+  AND cfv.id = @id
+  AND cf.tenant_id = @tenant_id
+RETURNING cfv.id, cfv.field_id, cfv.ai_exempt;
+
+-- name: SetUserAIExempt :one
+UPDATE users SET ai_exempt = @ai_exempt
+WHERE id = @id AND tenant_id = @tenant_id
+RETURNING id, tenant_id, ai_exempt;
+
+-- =====================================================================
+-- Admin aggregates (Phase 6 — GET /admin/agent/tool-stats, cost-report).
+-- =====================================================================
+
+-- Per-tool usage statistics: call count, success rate, average latency.
+-- Filters by tenant and an optional date range (from_date / to_date, both
+-- nullable). Success rate is the fraction of calls with status = 'success'.
+-- name: GetAgentToolStats :many
+SELECT tool_name,
+       COUNT(*)                                          AS total_calls,
+       COUNT(*) FILTER (WHERE status = 'success')        AS success_count,
+       COUNT(*) FILTER (WHERE status = 'error')          AS error_count,
+       COUNT(*) FILTER (WHERE status = 'unauthorized')   AS unauthorized_count,
+       COUNT(*) FILTER (WHERE status = 'privacy_blocked') AS privacy_blocked_count,
+       COUNT(*) FILTER (WHERE status = 'hitl_queued')    AS hitl_queued_count,
+       COALESCE(AVG(latency_ms), 0)                      AS avg_latency_ms,
+       COALESCE(MAX(latency_ms), 0)                      AS max_latency_ms
+FROM ai_agent_tool_calls
+WHERE tenant_id = @tenant_id
+  AND (@from_date::timestamptz IS NULL OR created_at >= @from_date)
+  AND (@to_date::timestamptz   IS NULL OR created_at <  @to_date)
+GROUP BY tool_name
+ORDER BY total_calls DESC;
+
+-- Cost breakdown by user for the admin cost report. Joins
+-- ai_agent_sessions to users to surface the username. Filters by tenant
+-- and an optional date range. estimated_cost is numeric(10,4); we cast to
+-- double precision for JSON-friendly aggregation.
+-- name: GetAgentCostReport :many
+SELECT s.user_id,
+       u.username,
+       COUNT(*)                                          AS session_count,
+       COALESCE(SUM(s.total_tokens), 0)                  AS total_tokens,
+       COALESCE(SUM(s.tool_call_count), 0)               AS total_tool_calls,
+       COALESCE(SUM(CAST(s.estimated_cost AS double precision)), 0) AS total_cost_usd
+FROM ai_agent_sessions s
+LEFT JOIN users u ON u.id = s.user_id AND u.tenant_id = s.tenant_id
+WHERE s.tenant_id = @tenant_id
+  AND (@from_date::timestamptz IS NULL OR s.created_at >= @from_date)
+  AND (@to_date::timestamptz   IS NULL OR s.created_at <  @to_date)
+GROUP BY s.user_id, u.username
+ORDER BY total_cost_usd DESC;

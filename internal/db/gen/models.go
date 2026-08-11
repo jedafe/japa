@@ -728,10 +728,16 @@ type CommunityOrganisation struct {
 	SubmittedBy          pgtype.UUID        `json:"submitted_by"`
 	ReviewedBy           pgtype.UUID        `json:"reviewed_by"`
 	ReviewedAt           pgtype.Timestamptz `json:"reviewed_at"`
-	IsJapabotIndexed     bool               `json:"is_japabot_indexed"`
 	CreatedAt            pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
 	DeletedAt            pgtype.Timestamptz `json:"deleted_at"`
+	AiGenerated          bool               `json:"ai_generated"`
+	AiModel              *string            `json:"ai_model"`
+	AiPromptHash         *string            `json:"ai_prompt_hash"`
+	HitlReviewedBy       pgtype.UUID        `json:"hitl_reviewed_by"`
+	HitlReviewedAt       pgtype.Timestamptz `json:"hitl_reviewed_at"`
+	HitlReviewNotes      *string            `json:"hitl_review_notes"`
+	IsJapabotIndexed     *bool              `json:"is_japabot_indexed"`
 }
 
 type ComparisonDimension struct {
