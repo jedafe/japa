@@ -461,6 +461,67 @@ func (q *Queries) ListAllUserBlocks(ctx context.Context, limit int32) ([]ListAll
 	return items, nil
 }
 
+const listBlockedUsers = `-- name: ListBlockedUsers :many
+SELECT ub.blocked_id, ub.created_at,
+       u.username,
+       COALESCE(up.display_name, '') AS display_name,
+       COALESCE(up.avatar_url, '') AS avatar_url
+FROM user_blocks ub
+JOIN users u ON u.id = ub.blocked_id
+LEFT JOIN user_profiles up ON up.user_id = u.id AND up.tenant_id = ub.tenant_id
+WHERE ub.blocker_id = $1 AND ub.tenant_id = $2
+ORDER BY ub.created_at DESC
+LIMIT $3 OFFSET $4
+`
+
+type ListBlockedUsersParams struct {
+	BlockerID pgtype.UUID `json:"blocker_id"`
+	TenantID  pgtype.UUID `json:"tenant_id"`
+	Limit     int32       `json:"limit"`
+	Offset    int32       `json:"offset"`
+}
+
+type ListBlockedUsersRow struct {
+	BlockedID   pgtype.UUID        `json:"blocked_id"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	Username    string             `json:"username"`
+	DisplayName string             `json:"display_name"`
+	AvatarUrl   string             `json:"avatar_url"`
+}
+
+// Tenant-scoped blocked-users list with profile enrichment (BUG-003, BUG-004).
+// Ref: japaconnect-engineering/sections/41-spam-content-safety.md
+func (q *Queries) ListBlockedUsers(ctx context.Context, arg ListBlockedUsersParams) ([]ListBlockedUsersRow, error) {
+	rows, err := q.db.Query(ctx, listBlockedUsers,
+		arg.BlockerID,
+		arg.TenantID,
+		arg.Limit,
+		arg.Offset,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListBlockedUsersRow
+	for rows.Next() {
+		var i ListBlockedUsersRow
+		if err := rows.Scan(
+			&i.BlockedID,
+			&i.CreatedAt,
+			&i.Username,
+			&i.DisplayName,
+			&i.AvatarUrl,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listCensoredWords = `-- name: ListCensoredWords :many
 SELECT id, tenant_id, pattern, action, replacement, created_at
 FROM censored_words

@@ -175,6 +175,8 @@ var taskTier = func() map[string]string {
 		TypeCvFormatProcess,
 		// §84 Community Digest Widget (ADR-092) — email send on publish, default tier.
 		TypeDigestSendEmail,
+		// §87 Japa Stage Profiles (ADR-095) — stage-change recommendation fan-out, default tier.
+		TypeJapaStageRecommend,
 	} {
 		m[t] = QueueDefault
 	}

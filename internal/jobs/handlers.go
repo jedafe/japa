@@ -451,9 +451,9 @@ func (h *Handlers) HandleUpdateApplicationStatus(w http.ResponseWriter, r *http.
 	})
 }
 
-// HandleAdminListApplications handles GET /api/v1/admin/jobs — admin view of
-// all applications. Admin only.
-func (h *Handlers) HandleAdminListApplications(w http.ResponseWriter, r *http.Request) {
+// HandleAdminListJobs handles GET /api/v1/admin/jobs — admin view of all job
+// listings (Section 63: "all listings (admin)"). Admin only.
+func (h *Handlers) HandleAdminListJobs(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
@@ -466,15 +466,15 @@ func (h *Handlers) HandleAdminListApplications(w http.ResponseWriter, r *http.Re
 	page, limit := parsePagination(r)
 	status := r.URL.Query().Get("status")
 
-	results, total, err := h.service.AdminListApplications(r.Context(), tenantID, status, page, limit)
+	results, total, err := h.service.AdminListJobs(r.Context(), tenantID, status, page, limit)
 	if err != nil {
-		slog.Error("jobs: admin list failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "admin_list_failed", "Failed to list applications")
+		slog.Error("jobs: admin list jobs failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "admin_list_failed", "Failed to list job listings")
 		return
 	}
 
-	// Include status distribution for the admin dashboard.
-	dist, _ := h.service.AdminApplicationStatusDistribution(r.Context(), tenantID)
+	// Include listing status distribution for the admin dashboard.
+	dist, _ := h.service.AdminJobStatusDistribution(r.Context(), tenantID)
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"data": results,

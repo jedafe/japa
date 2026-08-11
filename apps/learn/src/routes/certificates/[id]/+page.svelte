@@ -31,7 +31,7 @@
 <svelte:head>
 	<title>{cert.recipient_name} — {cert.track_title} · {t('learn.certificates')}</title>
 	<meta name="description" content={`Certificate of completion: ${cert.track_title}`} />
-	<link rel="canonical" href={`https://learn.japaconnect.com/certificates/${cert.id}`} />
+	<link rel="canonical" href={`https://university.japaconnect.com/certificates/${cert.id}`} />
 	<script type="application/ld+json">
 		{JSON.stringify({
 			'@context': 'https://schema.org',
@@ -74,12 +74,12 @@
 
 		<div class="mt-8 flex items-center justify-center gap-4 border-t border-[var(--color-border)] pt-6 text-sm text-[var(--color-muted)]">
 			<div>
-				<p class="text-xs">Issued</p>
+				<p class="text-xs">{t('learn.certificate_issued_label', 'Issued')}</p>
 				<p class="font-medium text-[var(--color-text)]">{new Date(cert.issued_at).toLocaleDateString()}</p>
 			</div>
 			{#if cert.certificate_number}
 				<div>
-					<p class="text-xs">Certificate #</p>
+					<p class="text-xs">{t('learn.certificate_number_label', 'Certificate #')}</p>
 					<p class="font-medium text-[var(--color-text)]">{cert.certificate_number}</p>
 				</div>
 			{/if}
@@ -91,7 +91,7 @@
 				class="inline-flex items-center gap-2 rounded-[var(--radius)] border border-[var(--color-border)] px-4 py-2 text-sm font-medium text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
 			>
 				<CheckCircle size={16} class="text-[var(--color-progress)]" />
-				View course
+				{t('learn.view_course', 'View course')}
 			</a>
 			<button
 				type="button"

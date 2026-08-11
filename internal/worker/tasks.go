@@ -245,4 +245,5 @@ func RegisterHandlers(mux *asynq.ServeMux) {
 	// §84 Community Digest Widget handlers (ADR-092).
 	mux.HandleFunc(TypeDigestGenerate, HandleDigestGenerate)
 	mux.HandleFunc(TypeDigestSendEmail, HandleDigestSendEmail)
+	mux.HandleFunc(TypeJapaStageRecommend, HandleJapaStageRecommend)
 }

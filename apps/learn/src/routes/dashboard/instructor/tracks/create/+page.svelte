@@ -162,7 +162,7 @@
 			>
 				<option value="">—</option>
 				{#each DIFFICULTIES as d (d)}
-					<option value={d}>{t(`university.difficulty_${d}`)}</option>
+					<option value={d}>{t(`level.${d}`)}</option>
 				{/each}
 			</select>
 		</div>

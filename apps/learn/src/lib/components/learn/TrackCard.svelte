@@ -32,7 +32,7 @@
 	const href = $derived(`/tracks/${track.slug}`);
 
 	// Price badge — always shown on the unified University surface.
-	const priceLabel = $derived(() => {
+	const priceLabel = $derived.by(() => {
 		if (isFreeForUser(track.price_kobo, user?.is_pro)) {
 			return user?.is_pro ? t('learn.included_pro') : t('learn.free');
 		}
@@ -63,11 +63,11 @@
 			<LevelBadge level={track.level} />
 		</div>
 		<!-- Price badge (top-right) -->
-		{#if priceLabel()}
+		{#if priceLabel}
 			<span
 				class="absolute right-3 top-3 rounded-full bg-[var(--color-surface)]/90 px-2.5 py-0.5 text-xs font-semibold text-[var(--color-text)] backdrop-blur"
 			>
-				{priceLabel()}
+				{priceLabel}
 			</span>
 		{/if}
 	</div>

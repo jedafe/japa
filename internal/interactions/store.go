@@ -9,52 +9,53 @@ import (
 	"github.com/jedafe/japa/internal/db/gen"
 )
 
-// ToggleBlock adds or removes a user block. Returns true if blocked, false if unblocked.
-// Tenant-scoped per JEOS §9 (BUG-006).
-func (s *Service) ToggleBlock(ctx context.Context, tenantID, blockerID, blockedID pgtype.UUID) (bool, error) {
+// BlockUser idempotently blocks a user. Returns nil if already blocked.
+// Tenant-scoped per JEOS §9 (BUG-006). Ref: §41 — POST /users/:id/block.
+func (s *Service) BlockUser(ctx context.Context, tenantID, blockerID, blockedID pgtype.UUID) error {
 	if blockerID == blockedID {
-		return false, errors.New("cannot block yourself")
+		return errors.New("cannot block yourself")
 	}
 
-	existing, err := s.read.GetUserBlocks(ctx, blockerID)
-	if err != nil {
-		return false, fmt.Errorf("listing user blocks: %w", err)
-	}
-
-	for _, b := range existing {
-		if b.BlockedID == blockedID {
-			if err := s.write.DeleteUserBlock(ctx, gen.DeleteUserBlockParams{
-				BlockerID: blockerID,
-				BlockedID: blockedID,
-				TenantID:  tenantID,
-			}); err != nil {
-				return false, fmt.Errorf("deleting user block: %w", err)
-			}
-
-			return false, nil
-		}
-	}
-
-	if err := s.write.CreateUserBlock(ctx, gen.CreateUserBlockParams{
+	return s.write.CreateUserBlock(ctx, gen.CreateUserBlockParams{
 		BlockerID: blockerID,
 		BlockedID: blockedID,
 		TenantID:  tenantID,
-	}); err != nil {
-		return false, fmt.Errorf("creating user block: %w", err)
+	})
+}
+
+// UnblockUser idempotently removes a user block. Returns nil if not blocked.
+// Tenant-scoped per JEOS §9 (BUG-006). Ref: §41 — DELETE /users/:id/block.
+func (s *Service) UnblockUser(ctx context.Context, tenantID, blockerID, blockedID pgtype.UUID) error {
+	if blockerID == blockedID {
+		return errors.New("cannot block yourself")
 	}
 
-	return true, nil
+	return s.write.DeleteUserBlock(ctx, gen.DeleteUserBlockParams{
+		BlockerID: blockerID,
+		BlockedID: blockedID,
+		TenantID:  tenantID,
+	})
 }
 
-// BlockedUserInfo holds the blocked user's ID and creation timestamp.
+// BlockedUserInfo holds the blocked user's ID, profile, and creation timestamp.
 type BlockedUserInfo struct {
-	BlockedID pgtype.UUID        `json:"blocked_id"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	BlockedID   pgtype.UUID        `json:"blocked_id"`
+	Username    string             `json:"username"`
+	DisplayName string             `json:"display_name"`
+	AvatarURL   string             `json:"avatar_url"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 }
 
-// ListBlockedUsers returns users blocked by the given user.
-func (s *Service) ListBlockedUsers(ctx context.Context, blockerID pgtype.UUID) ([]BlockedUserInfo, error) {
-	rows, err := s.read.GetUserBlocks(ctx, blockerID)
+// ListBlockedUsers returns users blocked by the given user, tenant-scoped
+// with profile enrichment (BUG-003, BUG-004).
+// Ref: japaconnect-engineering/sections/41-spam-content-safety.md
+func (s *Service) ListBlockedUsers(ctx context.Context, tenantID, blockerID pgtype.UUID, limit, offset int32) ([]BlockedUserInfo, error) {
+	rows, err := s.read.ListBlockedUsers(ctx, gen.ListBlockedUsersParams{
+		BlockerID: blockerID,
+		TenantID:  tenantID,
+		Limit:     limit,
+		Offset:    offset,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("listing blocked users: %w", err)
 	}
@@ -62,8 +63,11 @@ func (s *Service) ListBlockedUsers(ctx context.Context, blockerID pgtype.UUID) (
 	result := make([]BlockedUserInfo, len(rows))
 	for i, r := range rows {
 		result[i] = BlockedUserInfo{
-			BlockedID: r.BlockedID,
-			CreatedAt: r.CreatedAt,
+			BlockedID:   r.BlockedID,
+			Username:    r.Username,
+			DisplayName: r.DisplayName,
+			AvatarURL:   r.AvatarUrl,
+			CreatedAt:   r.CreatedAt,
 		}
 	}
 

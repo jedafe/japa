@@ -173,19 +173,36 @@ func TestParseUUIDParam(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// ToggleBlock — self-block validation
+// BlockUser / UnblockUser — self-block validation
 // ---------------------------------------------------------------------------
 
-func TestToggleBlock_SelfBlock(t *testing.T) {
+func TestBlockUser_SelfBlock(t *testing.T) {
 	t.Parallel()
 
 	svc := &Service{}
 	ctx := t.Context()
 	userID := pgtype.UUID{Valid: true}
 
-	_, err := svc.ToggleBlock(ctx, pgtype.UUID{Valid: true}, userID, userID)
+	err := svc.BlockUser(ctx, pgtype.UUID{Valid: true}, userID, userID)
 	if err == nil {
 		t.Fatal("expected error for self-block")
+	}
+
+	if !strings.Contains(err.Error(), "cannot block yourself") {
+		t.Errorf("error = %q, want contains 'cannot block yourself'", err.Error())
+	}
+}
+
+func TestUnblockUser_SelfBlock(t *testing.T) {
+	t.Parallel()
+
+	svc := &Service{}
+	ctx := t.Context()
+	userID := pgtype.UUID{Valid: true}
+
+	err := svc.UnblockUser(ctx, pgtype.UUID{Valid: true}, userID, userID)
+	if err == nil {
+		t.Fatal("expected error for self-unblock")
 	}
 
 	if !strings.Contains(err.Error(), "cannot block yourself") {

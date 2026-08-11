@@ -35,7 +35,7 @@
 <svelte:head>
 	<title>{t('learn.search_results')} · {t('app.name')}</title>
 	<meta name="description" content={t('learn.search_placeholder')} />
-	<link rel="canonical" href="https://learn.japaconnect.com/search" />
+	<link rel="canonical" href="https://university.japaconnect.com/search" />
 </svelte:head>
 
 <div class="px-4 py-6 md:px-6 lg:px-8">

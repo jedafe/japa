@@ -489,14 +489,14 @@ func (h *Handlers) DeleteConsent(w http.ResponseWriter, r *http.Request) {
 
 // ListPendingDataExports handles GET /api/v1/admin/data-exports.
 func (h *Handlers) ListPendingDataExports(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
+	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
 
 	limit := parsePageSize(r)
 
-	requests, err := h.Service.ListPendingDataExportRequests(r.Context(), limit)
+	requests, err := h.Service.ListPendingDataExportRequests(r.Context(), tenantID, limit)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -507,14 +507,14 @@ func (h *Handlers) ListPendingDataExports(w http.ResponseWriter, r *http.Request
 
 // ListPendingDeletions handles GET /api/v1/admin/deletions.
 func (h *Handlers) ListPendingDeletions(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
+	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
 
 	limit := parsePageSize(r)
 
-	requests, err := h.Service.ListPendingDeletionRequests(r.Context(), limit)
+	requests, err := h.Service.ListPendingDeletionRequests(r.Context(), tenantID, limit)
 	if err != nil {
 		handleServiceError(w, err)
 		return

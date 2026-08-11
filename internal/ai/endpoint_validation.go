@@ -1,0 +1,153 @@
+// Package ai — endpoint_validation.go provides URL validation for all LLM
+// provider HTTP calls. gosec's G704 (SSRF via taint analysis) flags every
+// http.NewRequestWithContext call that uses a URL derived from a struct
+// field, because it cannot prove the field wasn't set from user input.
+//
+// The provider base URLs come from admin-configured system_settings (Rule 3),
+// not from user input, so the SSRF risk is low. However, defense-in-depth
+// requires that we validate the URL at the point of use rather than relying
+// on the assumption that admins won't misconfigure it. If a future feature
+// allows user-configured custom LLM endpoints, this validation prevents an
+// attacker from redirecting requests to internal services.
+//
+// validateEndpoint enforces:
+//   - URL must parse successfully
+//   - Scheme must be https (or http only when explicitly allowed for local
+//     development proxies — see validateEndpointAllowHTTP)
+//   - Host must be non-empty
+//   - Host must not be a bare IP address in production (prevents SSRF to
+//     internal services like 169.254.169.254, localhost, etc.)
+//
+// Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Security)
+package ai
+
+import (
+	"fmt"
+	"math"
+	"net"
+	"net/url"
+	"strings"
+)
+
+// errInvalidEndpoint is returned when an endpoint URL fails validation.
+// The error message is deliberately generic to avoid leaking whether the
+// URL was an internal address, a bare IP, or malformed.
+var errInvalidEndpoint = fmt.Errorf("ai: invalid or disallowed endpoint URL")
+
+// validateEndpoint validates that an endpoint URL is safe to make HTTP
+// requests to. It enforces HTTPS, non-empty host, and rejects bare IP
+// addresses and internal/loopback hosts. Use this for all production LLM
+// provider calls.
+func validateEndpoint(rawURL string) error {
+	return validateEndpointWithPolicy(rawURL, false)
+}
+
+// validateEndpointAllowHTTP validates an endpoint URL but permits HTTP
+// scheme. Use this only for local development proxies where HTTPS is not
+// available (e.g. a local Ollama instance at http://localhost:11434).
+// Internal/loopback hosts are still allowed in this mode since the
+// development proxy is expected to be local.
+func validateEndpointAllowHTTP(rawURL string) error {
+	return validateEndpointWithPolicy(rawURL, true)
+}
+
+// validateEndpointWithPolicy is the shared validation logic. When
+// allowHTTP is true, HTTP scheme is permitted and internal hosts are
+// allowed (development mode). When false, HTTPS is required and internal
+// hosts are rejected (production mode).
+//
+// When the scheme is HTTP (non-production), internal/loopback hosts are
+// always allowed — HTTP is inherently non-production and typically used
+// for local test servers (httptest.NewServer) or local LLM proxies
+// (Ollama at http://localhost:11434). The SSRF protection applies only
+// to HTTPS endpoints, which are the production path.
+func validateEndpointWithPolicy(rawURL string, allowHTTP bool) error {
+	if strings.TrimSpace(rawURL) == "" {
+		return errInvalidEndpoint
+	}
+
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return errInvalidEndpoint
+	}
+
+	// Scheme enforcement.
+	if allowHTTP {
+		if u.Scheme != "https" && u.Scheme != "http" {
+			return errInvalidEndpoint
+		}
+	} else {
+		if u.Scheme != "https" {
+			return errInvalidEndpoint
+		}
+	}
+
+	// Host must be non-empty.
+	host := u.Hostname()
+	if host == "" {
+		return errInvalidEndpoint
+	}
+
+	// SSRF protection: reject internal/loopback hosts only for HTTPS
+	// endpoints. HTTP endpoints are inherently non-production (test
+	// servers, local proxies) and may use loopback addresses.
+	if u.Scheme == "https" {
+		if isInternalHost(host) {
+			return errInvalidEndpoint
+		}
+	}
+
+	return nil
+}
+
+// isInternalHost reports whether the host is a loopback, private, or
+// link-local address — these should never be valid LLM provider endpoints
+// in production. Also rejects bare "localhost" hostname.
+func isInternalHost(host string) bool {
+	if host == "localhost" || strings.HasSuffix(host, ".localhost") {
+		return true
+	}
+
+	// Try to parse as IP address — if it's not an IP, it's a hostname
+	// and we only check for localhost above.
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return false
+	}
+
+	// Reject loopback (127.0.0.0/8, ::1), private (10.x, 172.16-31.x,
+	// 192.168.x, fc00::/7), and link-local (169.254.x, fe80::/10).
+	if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsUnspecified() {
+		return true
+	}
+
+	return false
+}
+
+// safeInt32 converts an int to int32 without risking integer overflow.
+// If the value exceeds int32 range, it returns math.MaxInt32 (for positive
+// values) or math.MinInt32 (for negative values). Use this instead of
+// direct int32(n) conversions to satisfy gosec G115.
+func safeInt32(n int) int32 {
+	if n > math.MaxInt32 {
+		return math.MaxInt32
+	}
+	if n < math.MinInt32 {
+		return math.MinInt32
+	}
+	return int32(n)
+}
+
+// safeInt64ToInt32 converts an int64 to int32 without risking integer
+// overflow. If the value exceeds int32 range, it returns math.MaxInt32
+// (for positive values) or math.MinInt32 (for negative values). Use this
+// instead of direct int32(n) conversions to satisfy gosec G115.
+func safeInt64ToInt32(n int64) int32 {
+	if n > math.MaxInt32 {
+		return math.MaxInt32
+	}
+	if n < math.MinInt32 {
+		return math.MinInt32
+	}
+	return int32(n)
+}

@@ -320,6 +320,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Feature flag checker — uses Valkey L2 cache for cross-instance
 	// consistency (Section 42: jc:flags:{tenant_id}:{flag_key}, TTL 5min).
 	featureChecker := features.New(database, vkClient.Redis())
+	closers = append(closers, featureChecker.Close)
 
 	// RBAC resolver and store for permission checks at the router level.
 	// The resolver uses Valkey as L2 cache (shared across server instances)
@@ -384,6 +385,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	// Wire enqueuer into services that need async tasks.
 	spaceService.SetEnqueuer(taskEnqueuer)
+	spaceService.SetValkey(vkClient.Redis()) // VALKEY-001: mute key cache invalidation (Section 52)
 	// AUDIT-C4: enqueue university:fetch_logo when an admin sets/changes a
 	// university's logo_url via POST/PATCH /admin/universities.
 	universitiesHandlers.SetEnqueuer(taskEnqueuer)
@@ -569,7 +571,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	// Feed System subsystem (Section 32 — Activity Feed / Timeline).
 	feedService := feed.NewService(database, vkClient.Redis())
-	feedService.SetEnqueuer(taskEnqueuer)
+	feedService.SetSettings(settingsService) // BUG-FEED-004: For-You feed reads feed.for_you_window_days, feed.max_followed_spaces_in_feed, and geo_personalization.enabled from system_settings (Rule 3).
 	feedHandlers := feed.NewHandlers(feedService)
 	feedHandlers.SetSettings(settingsService)
 	feedHandlers.SetCache(vkClient.Valkey()) // BUG-006: explore feed caching
@@ -718,6 +720,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	gdprService.SetHonchoEraser(honcho.NewClient(cfg.HonchoURL))
 	gdprService.SetSessionDeleter(gdpr.NewValkeySessionDeleter(vkClient.Redis()))
 	gdprService.SetSettings(settingsService)
+	// GAP-GDPR-A: explicit LocalStorage wiring so the data export file is
+	// persisted to data/gdpr-exports/{tenantID}/. Swap for an S3/SeaweedFS
+	// adapter (ADR-048) in production via gdprService.SetStorage(...).
+	gdprService.SetStorage(gdpr.NewLocalStorage(""))
 	gdprHandlers := gdpr.NewHandlers(gdprService)
 
 	// Register GDPR processor with worker for background tasks.
@@ -739,6 +745,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Email Templates — Tenant-customizable transactional emails (ADR-055).
 	emailTemplatesService := emailtemplates.NewService(database)
 	emailTemplatesHandlers := emailtemplates.NewHandlers(emailTemplatesService, asynqClient)
+	emailTemplatesHandlers.SetRedisClient(vkClient.Redis())
 
 	// Redirects — Admin-managed URL redirect rules (ADR-056).
 	redirectsService := redirects.NewService(database, vkClient.Redis())
@@ -889,6 +896,19 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	gamificationStore := gamification.NewStore(database)
 	gamificationService := gamification.NewService(gamificationStore, settingsService)
 	gamificationHandlers := gamification.NewHandlers(gamificationService, settingsService)
+	// Wire the wallet service as the gamification PointsAwarder so challenge
+	// completion credits reward_points to the user's wallet (BUG-GAMMA-002).
+	// The wallet service enqueues wallet:award_points fire-and-forget (Rule 8).
+	gamificationService.SetPointsAwarder(walletService)
+	// Wire the notification service as the gamification Notifier so badge
+	// awards and challenge completions send user notifications
+	// (BUG-GAMMA-003, ADR-082 §2). Fire-and-forget per Rule 8.
+	gamificationService.SetNotifier(gamificationNotifierAdapter{svc: notificationService})
+	// Wire the gamification evaluator into the wallet service so
+	// wallet:process_activity_event evaluates activity_count badges,
+	// lifetime_points badges, and challenge progress after each successful
+	// ledger earn (BUG-GAMMA-001, ADR-082 §2).
+	walletService.SetGamificationEvaluator(gamificationService)
 
 	// Ref: japaconnect-engineering/sections/65-content-import.md (ADR-083)
 	contentImportStore := contentimport.NewStore(database)
@@ -990,8 +1010,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	// Ref: japaconnect-engineering/sections/87-japa-stage-profiles.md (ADR-095)
 	japaStageStore := japastage.NewStore(database)
-	japaStageService := japastage.NewService(japaStageStore, settingsService)
-	japaStageHandlers := japastage.NewHandlers(japaStageService, settingsService)
+	japaStageService := japastage.NewService(japaStageStore, settingsService).
+		WithNotifier(notificationService).
+		WithHoncho(honcho.NewClient(cfg.HonchoURL))
+	japaStageHandlers := japastage.NewHandlers(japaStageService, settingsService, asynqClient)
 
 	// Ref: japaconnect-engineering/sections/88-ask-an-expat.md (ADR-096)
 	amaStore := ama.NewStore(database)
@@ -1044,6 +1066,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	housingGuideStore := housingguide.NewStore(database)
 	housingGuideService := housingguide.NewService(housingGuideStore, settingsService)
+	housingGuideService.SetEnqueuer(taskEnqueuer)
 	housingGuideHandlers := housingguide.NewHandlers(housingGuideService, settingsService)
 
 	attestationGuideStore := attestationguide.NewStore(database)
@@ -1067,6 +1090,13 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	assessmentService := assessment.NewService(assessmentStore, settingsService)
 	assessmentService.SetEnqueuer(taskEnqueuer)
 	assessmentHandlers := assessment.NewHandlers(assessmentService, settingsService)
+
+	// Wire the Readiness Assessment checker into the japa stage service and
+	// register the japa_stage:recommend processor (§87, ADR-095). The
+	// assessment store satisfies japastage.AssessmentChecker; the service
+	// satisfies worker.JapaStageProcessor.
+	japaStageService.WithAssessmentChecker(assessmentStore)
+	worker.RegisterJapaStageProcessor(japaStageService)
 
 	// Ref: japaconnect-engineering/sections/72-cost-of-living.md (ADR-072)
 	costOfLivingStore := costofliving.NewStore(database)
@@ -1334,7 +1364,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	// Admin Impersonation subsystem (Section 46).
 	impersonationStore := impersonation.NewStore(vkClient.Redis())
-	impersonationService := impersonation.NewService(impersonationStore, database.Writer)
+	impersonationService := impersonation.NewService(impersonationStore, gen.New(database.Writer))
 	impersonationService.SetRBAC(rbacResolver) // SEC-009: no-admin-on-admin safety check (Section 46, ADR-047)
 	impersonationHandlers := impersonation.NewHandlers(impersonationService)
 
@@ -1399,6 +1429,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// pool; it is registered with the worker so the search_index_sync task
 	// can upsert documents asynchronously.
 	searchIndexer := search.NewIndexer(meiliClient, gen.New(database.Reader))
+	searchIndexer.SetPool(database)
 	worker.RegisterSearchIndexer(searchIndexer)
 
 	searchHandlers := search.NewHandlers(meiliClient)
@@ -2110,8 +2141,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/spaces/{space_id}/followers", followHandlers.GetFollowers)
 
 			// User Blocks (Section 41 — user-facing, non-admin)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "interactions.block.manage")).Post("/users/{user_id}/block", interactionsHandlers.ToggleBlock)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "interactions.block.manage")).Delete("/users/{user_id}/block", interactionsHandlers.ToggleBlock)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "interactions.block.manage")).Post("/users/{user_id}/block", interactionsHandlers.BlockUser)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "interactions.block.manage")).Delete("/users/{user_id}/block", interactionsHandlers.UnblockUser)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/blocked-users", interactionsHandlers.ListBlocked)
 
 			// User Mutes (Section 52)
@@ -2342,6 +2373,16 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			paymentService.SetWebhookEmitter(webhookService)
 			orgService.SetWebhookEmitter(webhookService)
 			forumService.SetSpaceBroadcaster(&forumSpaceBroadcaster{hub: wsHub})
+			// BUG-009/010: wire Valkey for distributed JSON-LD cache and
+			// view-count counters with periodic flush. Ref: valkey-keys-catalog.md.
+			forumService.SetValkey(vkClient.Redis())
+			// BUG-011/012: wire Asynq client for activity feed fan-out
+			// (content:fan_out_to_feeds) and Meilisearch indexing
+			// (search:index_entity). Ref: Section 11, 12, 32.
+			forumService.SetAsynqClient(asynqClient)
+			// BUG-013: wire notification dispatcher for reply-to-author
+			// notifications. Ref: Section 35.
+			forumService.SetNotificationDispatcher(commentNotificationAdapter{svc: notificationService})
 			forumHandlers := forum.NewHandlers(forumService, contentService)
 			// Wire erased-mention redaction for GDPR/ADR-029 compliance.
 			forumHandlers.SetMentionCheckers(mentionCheckers)
@@ -2352,8 +2393,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				r.Get("/forum", forumHandlers.ListThreads)
 				// Section 88 — AMA routes registered BEFORE /forum/{slug} to
 				// avoid being shadowed by the wildcard route (chi matches in
-				// registration order). Feature-gated via feature.ama (ADR-096).
-				r.With(features.Gate(featureChecker, "feature.ama")).Group(func(r chi.Router) {
+				// registration order). Feature-gated via forum.ama.enabled (ADR-096).
+				r.With(features.Gate(featureChecker, "forum.ama.enabled")).Group(func(r chi.Router) {
 					r.Get("/forum/ama", amaHandlers.HandleList)
 					r.Get("/forum/ama/{id}", amaHandlers.HandleGet)
 					r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.ama.create")).
@@ -3368,7 +3409,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// AI Agent Executor routes (Section 103, ADR-111) — Phase 6.
 			// The agent SSE endpoint, capabilities, session history, and
 			// session management. All gated by the agent.use RBAC permission
-			// (seeded by migration 000387) + RequireAuth.
+			// (seeded by migration 000372) + RequireAuth.
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "agent.use")).
 				Post("/ai/agent", agentHTTPHandlers.HandleAgent)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "agent.use")).
@@ -3403,7 +3444,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 			// AI Agent admin routes (Section 103 — Admin Observability).
 			// Session audit trail, tool usage statistics, and cost reporting.
-			// Gated by the agent.admin permission node.
+			// Gated by the agent.admin permission node (seeded by migration
+			// 000406).
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "agent.admin")).
 				Get("/admin/agent/sessions", agentHTTPHandlers.HandleAdminListSessions)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "agent.admin")).
@@ -3635,11 +3677,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 			// §102 Mentorship Matching routes (ADR-110).
 			// Feature-flagged via features.Gate (returns 404 when disabled, ADR-042).
-			r.With(features.Gate(featureChecker, "feature.mentorship")).Group(func(r chi.Router) {
+			r.With(features.Gate(featureChecker, "mentorship.enabled")).Group(func(r chi.Router) {
 				// Public discovery: list mentors, view mentor profile, compare.
 				r.Get("/mentors", mentorshipHandlers.ListMentors)
 				r.Get("/mentors/{username}", mentorshipHandlers.GetMentorByUsername)
-				r.With(features.Gate(featureChecker, "feature.mentorship_comparison")).
+				r.With(features.Gate(featureChecker, "mentorship.comparison")).
 					Get("/compare/mentors", mentorshipHandlers.CompareMentors)
 
 				// Authenticated: manage own mentor profile.
@@ -4434,7 +4476,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Patch("/org/{org_id}/jobs/{id}/applications/{app_id}", jobsHandlers.HandleUpdateApplicationStatus)
 			// Admin moderation (Section 63).
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "jobs.manage")).
-				Get("/admin/jobs", jobsHandlers.HandleAdminListApplications)
+				Get("/admin/jobs", jobsHandlers.HandleAdminListJobs)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "jobs.manage")).
 				Patch("/admin/jobs/{id}/feature", jobsHandlers.HandleAdminToggleFeature)
 
@@ -4568,7 +4610,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 			// Section 79 — Community Story Wall (ADR-087)
 			// Feature-flagged via features.Gate (returns 404 when disabled, ADR-042).
-			r.With(features.Gate(featureChecker, "feature.story")).Group(func(r chi.Router) {
+			r.With(features.Gate(featureChecker, "story.enabled")).Group(func(r chi.Router) {
 				// Public browse (anonymous): list + single story by slug.
 				r.Get("/stories", storyHandlers.HandleList)
 				r.Get("/stories/{slug}", storyHandlers.HandleGetBySlug)
@@ -4588,7 +4630,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 			// Section 80 — Destination Wiki (ADR-088)
 			// Feature-flagged via features.Gate (returns 404 when disabled, ADR-042).
-			r.With(features.Gate(featureChecker, "feature.wiki")).Group(func(r chi.Router) {
+			r.With(features.Gate(featureChecker, "wiki.enabled")).Group(func(r chi.Router) {
 				// Public browse (anonymous): wiki index + single page + history.
 				r.Get("/wiki/{space_slug}", wikiHandlers.HandleGetIndex)
 				r.Get("/wiki/{space_slug}/{page_slug}", wikiHandlers.HandleGetPage)
@@ -4611,7 +4653,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			})
 
 			// Section 81 — Scam Alert Board (ADR-089)
-			r.With(features.Gate(featureChecker, "feature.scam_alert")).Group(func(r chi.Router) {
+			r.With(features.Gate(featureChecker, "scam_alert.enabled")).Group(func(r chi.Router) {
 				r.Get("/scam-alerts", scamAlertHandlers.HandleList)
 				r.Get("/scam-alerts/{id}", scamAlertHandlers.HandleGet)
 				r.Post("/scam-alerts", scamAlertHandlers.HandleSubmit)
@@ -4630,7 +4672,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			})
 
 			// Section 82 — Japa Planning Groups (ADR-090)
-			r.With(features.Gate(featureChecker, "feature.planning_group")).Group(func(r chi.Router) {
+			r.With(features.Gate(featureChecker, "planning_group.enabled")).Group(func(r chi.Router) {
 				r.Get("/planning-groups", planningGroupHandlers.HandleList)
 				r.Get("/planning-groups/{id}", planningGroupHandlers.HandleGet)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "planning_group.create")).
@@ -4660,7 +4702,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			})
 
 			// Section 83 — Visa Timeline Tracker (ADR-091)
-			r.With(features.Gate(featureChecker, "feature.visa_timeline")).Group(func(r chi.Router) {
+			r.With(features.Gate(featureChecker, "visa_timeline.enabled")).Group(func(r chi.Router) {
 				r.Get("/visa-timelines/stats", visaTimelineHandlers.HandleStats)
 				r.Get("/visa-timelines/stats/trend", visaTimelineHandlers.HandleTrend)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "visa_timeline.create")).
@@ -4680,7 +4722,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			})
 
 			// Section 84 — Community Digest Widget (ADR-092)
-			r.With(features.Gate(featureChecker, "feature.digest")).Group(func(r chi.Router) {
+			r.With(features.Gate(featureChecker, "digest.enabled")).Group(func(r chi.Router) {
 				r.Get("/digest/latest", digestHandlers.HandleGetLatest)
 				r.Get("/digest/{id}", digestHandlers.HandleGet)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "digest.manage")).
@@ -4696,7 +4738,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			})
 
 			// Section 85 — Mutual Aid Board (ADR-093)
-			r.With(features.Gate(featureChecker, "feature.mutual_aid")).Group(func(r chi.Router) {
+			r.With(features.Gate(featureChecker, "mutual_aid.enabled")).Group(func(r chi.Router) {
 				r.Get("/mutual-aid", mutualAidHandlers.HandleList)
 				r.Get("/mutual-aid/{id}", mutualAidHandlers.HandleGet)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "mutual_aid.create_offer")).
@@ -4718,7 +4760,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			})
 
 			// Section 86 — Community Calendar (ADR-094)
-			r.With(features.Gate(featureChecker, "feature.calendar")).Group(func(r chi.Router) {
+			r.With(features.Gate(featureChecker, "calendar.enabled")).Group(func(r chi.Router) {
 				r.Get("/calendar", calendarHandlers.HandleList)
 				r.Get("/calendar/{id}", calendarHandlers.HandleGet)
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).
@@ -4738,9 +4780,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			})
 
 			// Section 87 — Japa Stage Progress Profiles (ADR-095)
-			r.With(features.Gate(featureChecker, "feature.japa_stage")).Group(func(r chi.Router) {
+			r.With(features.Gate(featureChecker, "japa_stage.enabled")).Group(func(r chi.Router) {
 				r.Get("/users/{username}/japa-stage", japaStageHandlers.HandleGetByUsername)
 				r.Get("/members/by-stage", japaStageHandlers.HandleListByStage)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "profile.japa_stage.edit")).
+					Get("/me/japa-stage", japaStageHandlers.HandleGetOwn)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "profile.japa_stage.edit")).
 					Patch("/me/japa-stage", japaStageHandlers.HandleUpdateOwn)
 			})
@@ -4750,7 +4794,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// /forum/{slug}) to avoid route shadowing. See line ~2037.
 
 			// Section 89 — Community Achievement Feed (ADR-097)
-			r.With(features.Gate(featureChecker, "feature.achievement")).Group(func(r chi.Router) {
+			r.With(features.Gate(featureChecker, "achievement.enabled")).Group(func(r chi.Router) {
 				r.Get("/achievements", achievementHandlers.HandleList)
 				r.Get("/achievements/{slug}", achievementHandlers.HandleGet)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "achievement.create")).
@@ -4769,7 +4813,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			})
 
 			// Section 98 — Service Directory (ADR-098)
-			r.With(features.Gate(featureChecker, "feature.service_directory")).Group(func(r chi.Router) {
+			r.With(features.Gate(featureChecker, "service_directory.enabled")).Group(func(r chi.Router) {
 				r.Get("/services", serviceDirHandlers.HandleList)
 				r.Get("/services/{slug}", serviceDirHandlers.HandleGet)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "service.create")).
@@ -4872,7 +4916,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// The internal service.Enabled() checks remain as a secondary defense.
 
 			// §90 — Visa Route Comparison (ADR-098)
-			r.With(features.Gate(featureChecker, "feature.visa_routes")).Group(func(r chi.Router) {
+			r.With(features.Gate(featureChecker, "visa_routes.enabled")).Group(func(r chi.Router) {
 				r.Get("/visa-routes", visaRoutesHandlers.HandleList)
 				r.Get("/visa-routes/compare", visaRoutesHandlers.HandleCompare)
 				r.Get("/visa-routes/{id}", visaRoutesHandlers.HandleGet)
@@ -4889,7 +4933,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			})
 
 			// §91 — Embassy Appointment Alerter (ADR-099)
-			r.With(features.Gate(featureChecker, "feature.appointment_alert")).Group(func(r chi.Router) {
+			r.With(features.Gate(featureChecker, "appointment_alert.enabled")).Group(func(r chi.Router) {
 				r.Get("/embassies", appointmentAlertHandlers.HandleListEmbassies)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "appointment_alert.manage_own")).
 					Get("/me/appointment-alerts", appointmentAlertHandlers.HandleListMyAlerts)
@@ -4910,7 +4954,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			})
 
 			// §92 — Arrival Checklist (ADR-100)
-			r.With(features.Gate(featureChecker, "feature.arrival_checklist")).Group(func(r chi.Router) {
+			r.With(features.Gate(featureChecker, "arrival_checklist.enabled")).Group(func(r chi.Router) {
 				r.Get("/arrival-checklist/selector", arrivalChecklistHandlers.HandleSelector)
 				r.Get("/arrival-checklist/{guide_id}", arrivalChecklistHandlers.HandleGetGuide)
 				// User-facing progress routes (§92 catalog lines 2023-2025)
@@ -4933,7 +4977,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			})
 
 			// §94 — Professional Credential Checker (ADR-102)
-			r.With(features.Gate(featureChecker, "feature.credential_checker")).Group(func(r chi.Router) {
+			r.With(features.Gate(featureChecker, "credential_checker.enabled")).Group(func(r chi.Router) {
 				r.Get("/credentials/professions", credentialCheckerHandlers.HandleListProfessions)
 				r.Get("/credentials", credentialCheckerHandlers.HandleListPathways)
 				r.Get("/credentials/{id}", credentialCheckerHandlers.HandleGetPathway)
@@ -4952,7 +4996,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			})
 
 			// §95 — CV Formatter (ADR-103)
-			r.With(features.Gate(featureChecker, "feature.cv_formatter")).Group(func(r chi.Router) {
+			r.With(features.Gate(featureChecker, "cv_formatter.enabled")).Group(func(r chi.Router) {
 				r.Get("/cv-formatter/standards", cvFormatterHandlers.HandleListStandards)
 				r.Get("/cv-formatter/standards/{dest}", cvFormatterHandlers.HandleGetStandard)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "cv_formatter.use")).
@@ -4968,7 +5012,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			})
 
 			// §96 — Housing Guide (ADR-104)
-			r.With(features.Gate(featureChecker, "feature.housing_guide")).Group(func(r chi.Router) {
+			r.With(features.Gate(featureChecker, "housing_guide.enabled")).Group(func(r chi.Router) {
 				r.Get("/housing-guide", housingGuideHandlers.HandleList)
 				r.Get("/housing-guide/{id}", housingGuideHandlers.HandleGet)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "housing_guide.manage")).
@@ -4981,10 +5025,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Patch("/admin/housing-guides/{id}", housingGuideHandlers.HandleAdminUpdate)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "housing_guide.manage")).
 					Patch("/admin/housing-guides/{id}/approve", housingGuideHandlers.HandleAdminApprove)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "housing_guide.manage")).
+					Patch("/admin/housing-guides/{id}/reject", housingGuideHandlers.HandleAdminReject)
 			})
 
 			// §97 — Attestation Guide (ADR-105)
-			r.With(features.Gate(featureChecker, "feature.attestation_guide")).Group(func(r chi.Router) {
+			r.With(features.Gate(featureChecker, "attestation_guide.enabled")).Group(func(r chi.Router) {
 				r.Get("/attestation", attestationGuideHandlers.HandleList)
 				r.Get("/attestation/{id}", attestationGuideHandlers.HandleGet)
 				r.Get("/attestation/{id}/export/pdf", attestationGuideHandlers.HandleExportPDF)
@@ -5003,13 +5049,13 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			})
 
 			// §99 — Language Test Hub (ADR-107)
-			r.With(features.Gate(featureChecker, "feature.language_test_hub")).Group(func(r chi.Router) {
+			r.With(features.Gate(featureChecker, "language_test_hub.enabled")).Group(func(r chi.Router) {
 				r.Get("/language-tests", languageTestHubHandlers.HandleListTests)
 				r.Get("/language-tests/requirements", languageTestHubHandlers.HandleListRequirements)
 				r.Get("/language-tests/{test_slug}", languageTestHubHandlers.HandleGetTest)
 				r.Get("/language-tests/{test_slug}/resources", languageTestHubHandlers.HandleListResources)
 				r.Get("/language-tests/{test_slug}/stories", languageTestHubHandlers.HandleListStories)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "language_test_hub.story")).
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "moderate"), rbac.RequirePermission(rbacResolver, "language_test_hub.story")).
 					Post("/language-tests/{test_slug}/stories", languageTestHubHandlers.HandleCreateStory)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "language_test_hub.manage")).
 					Get("/admin/language-tests/requirements", languageTestHubHandlers.HandleAdminListRequirements)
@@ -5022,7 +5068,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			})
 
 			// §100 — Tax Calculator (ADR-108)
-			r.With(features.Gate(featureChecker, "feature.tax_calculator")).Group(func(r chi.Router) {
+			r.With(features.Gate(featureChecker, "tax_calculator.enabled")).Group(func(r chi.Router) {
 				r.Get("/tax-calculator", taxCalculatorHandlers.HandleList)
 				r.Get("/tax-calculator/treaty", taxCalculatorHandlers.HandleTreaty)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tax_calculator.manage")).
@@ -5038,7 +5084,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			})
 
 			// §101 — Diaspora Community Locator (ADR-109)
-			r.With(features.Gate(featureChecker, "feature.community_locator")).Group(func(r chi.Router) {
+			r.With(features.Gate(featureChecker, "community_locator.enabled")).Group(func(r chi.Router) {
 				r.Get("/community-locator", communityLocatorHandlers.HandleList)
 				r.Get("/community-locator/{slug}", communityLocatorHandlers.HandleGet)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "community_locator.submit")).
@@ -5388,6 +5434,20 @@ func (a *walletPaymentAdapter) CreatePayment(
 // fire-and-forget per Rule 8.
 type commentNotificationAdapter struct {
 	svc *notifications.Service
+}
+
+// gamificationNotifierAdapter adapts notifications.Service.CreateNotification
+// to the gamification.Notifier interface (BUG-GAMMA-003, ADR-082 §2).
+// Badge-award and challenge-completion notifications are fire-and-forget
+// per Rule 8. The actor is the system (zero UUID) and the subject is the
+// badge/challenge itself.
+type gamificationNotifierAdapter struct {
+	svc *notifications.Service
+}
+
+func (a gamificationNotifierAdapter) Notify(ctx context.Context, tenantID, recipientID pgtype.UUID, nType, title, body, actionURL string) error {
+	var zeroUUID pgtype.UUID
+	return a.svc.CreateNotification(ctx, tenantID, recipientID, nType, "system", zeroUUID, nType, zeroUUID, title, body, actionURL)
 }
 
 // adsNotificationAdapter adapts notifications.Service.DispatchNotification to

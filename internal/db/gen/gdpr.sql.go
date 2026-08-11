@@ -302,6 +302,11 @@ SET display_name = 'Deleted User',
     operating_hours = NULL,
     content_country_preference = NULL,
     preferred_currency = NULL,
+    japa_stage = NULL,
+    japa_stage_dest_space_id = NULL,
+    japa_stage_history = '[]'::jsonb,
+    japa_stage_is_public = false,
+    japa_stage_updated_at = NULL,
     updated_at = now()
 WHERE user_id = $1 AND tenant_id = $2
 `
@@ -317,6 +322,11 @@ type AnonymizeUserProfileParams struct {
 // (which reveals country origin/preference), preferred_currency, avatar/cover
 // URLs — is scrubbed before the hard-delete phase. The row itself is preserved
 // (FK integrity) until HardDeleteUser cascades.
+//
+// Also clears the japa_stage* columns (§87, ADR-095): japa_stage,
+// japa_stage_dest_space_id, japa_stage_history (an append-only log of the
+// member's relocation stage + destination over time — PII), and
+// japa_stage_is_public (revoked so no public directory leak survives).
 func (q *Queries) AnonymizeUserProfile(ctx context.Context, arg AnonymizeUserProfileParams) error {
 	_, err := q.db.Exec(ctx, anonymizeUserProfile, arg.UserID, arg.TenantID)
 	return err
@@ -1750,7 +1760,7 @@ func (q *Queries) GdprExportUserMentorshipMatches(ctx context.Context, arg GdprE
 
 const gdprExportUserMutes = `-- name: GdprExportUserMutes :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT id, tenant_id, user_id, muted_user_id, created_at FROM user_mutes WHERE user_id = $1 AND tenant_id = $2) t
+FROM (SELECT id, tenant_id, user_id, muted_user_id, created_at FROM user_mutes WHERE (user_id = $1 OR muted_user_id = $1) AND tenant_id = $2) t
 `
 
 type GdprExportUserMutesParams struct {
@@ -1758,6 +1768,8 @@ type GdprExportUserMutesParams struct {
 	TenantID pgtype.UUID `json:"tenant_id"`
 }
 
+// BUG-008: export both muter and muted directions for GDPR portability.
+// Ref: japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
 func (q *Queries) GdprExportUserMutes(ctx context.Context, arg GdprExportUserMutesParams) (interface{}, error) {
 	row := q.db.QueryRow(ctx, gdprExportUserMutes, arg.UserID, arg.TenantID)
 	var data interface{}
@@ -2553,13 +2565,20 @@ const listPendingDataExportRequests = `-- name: ListPendingDataExportRequests :m
 SELECT id, tenant_id, user_id, status, download_url, expires_at,
     completed_at, created_at
 FROM data_export_requests
-WHERE status = 'pending'
+WHERE status = 'pending' AND tenant_id = $1
 ORDER BY created_at ASC
-LIMIT $1
+LIMIT $2
 `
 
-func (q *Queries) ListPendingDataExportRequests(ctx context.Context, pageLimit int32) ([]DataExportRequest, error) {
-	rows, err := q.db.Query(ctx, listPendingDataExportRequests, pageLimit)
+type ListPendingDataExportRequestsParams struct {
+	TenantID  pgtype.UUID `json:"tenant_id"`
+	PageLimit int32       `json:"page_limit"`
+}
+
+// BUG-GDPR-002: scoped to the caller's tenant so an admin in tenant A
+// cannot see tenant B's pending export requests (§5.3 cross-tenant bleed).
+func (q *Queries) ListPendingDataExportRequests(ctx context.Context, arg ListPendingDataExportRequestsParams) ([]DataExportRequest, error) {
+	rows, err := q.db.Query(ctx, listPendingDataExportRequests, arg.TenantID, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -2593,10 +2612,15 @@ SELECT adr.id, adr.tenant_id, adr.user_id, adr.status, adr.reason, adr.completed
 FROM account_deletion_requests adr
 LEFT JOIN users u ON u.id = adr.user_id
 LEFT JOIN user_profiles up ON up.user_id = adr.user_id
-WHERE adr.status = 'pending'
+WHERE adr.status = 'pending' AND adr.tenant_id = $1
 ORDER BY adr.created_at ASC
-LIMIT $1
+LIMIT $2
 `
+
+type ListPendingDeletionRequestsParams struct {
+	TenantID  pgtype.UUID `json:"tenant_id"`
+	PageLimit int32       `json:"page_limit"`
+}
 
 type ListPendingDeletionRequestsRow struct {
 	ID           pgtype.UUID        `json:"id"`
@@ -2611,8 +2635,10 @@ type ListPendingDeletionRequestsRow struct {
 	DisplayName  *string            `json:"display_name"`
 }
 
-func (q *Queries) ListPendingDeletionRequests(ctx context.Context, pageLimit int32) ([]ListPendingDeletionRequestsRow, error) {
-	rows, err := q.db.Query(ctx, listPendingDeletionRequests, pageLimit)
+// BUG-GDPR-001: scoped to the caller's tenant so an admin in tenant A
+// cannot see tenant B's pending deletion requests (§5.3 cross-tenant bleed).
+func (q *Queries) ListPendingDeletionRequests(ctx context.Context, arg ListPendingDeletionRequestsParams) ([]ListPendingDeletionRequestsRow, error) {
+	rows, err := q.db.Query(ctx, listPendingDeletionRequests, arg.TenantID, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -2667,6 +2693,45 @@ func (q *Queries) ListRetentionWaitElapsed(ctx context.Context) ([]ListRetention
 	for rows.Next() {
 		var i ListRetentionWaitElapsedRow
 		if err := rows.Scan(&i.ID, &i.TenantID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listStalePendingDataExportRequests = `-- name: ListStalePendingDataExportRequests :many
+SELECT id, tenant_id, user_id
+FROM data_export_requests
+WHERE status = 'pending'
+  AND created_at < now() - interval '30 minutes'
+ORDER BY created_at ASC
+LIMIT 50
+`
+
+type ListStalePendingDataExportRequestsRow struct {
+	ID       pgtype.UUID `json:"id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+	UserID   pgtype.UUID `json:"user_id"`
+}
+
+// GAP-GDPR-B: re-enqueue stale pending data export requests whose original
+// enqueue may have been lost (e.g. RequestDataExport's enqueuer.Enqueue
+// failed and only logged). Mirrors ListStalePendingDeletionRequests.
+// Tenant-scoped at the call site; the sweep iterates all tenants.
+func (q *Queries) ListStalePendingDataExportRequests(ctx context.Context) ([]ListStalePendingDataExportRequestsRow, error) {
+	rows, err := q.db.Query(ctx, listStalePendingDataExportRequests)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListStalePendingDataExportRequestsRow
+	for rows.Next() {
+		var i ListStalePendingDataExportRequestsRow
+		if err := rows.Scan(&i.ID, &i.TenantID, &i.UserID); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

@@ -1,13 +1,13 @@
 /**
  * SEO helpers for the Learn app.
- * Ref: ADR-060 (canonical URLs on learn.japaconnect.com), Rule 16 (no hardcoded
+ * Ref: ADR-060 (canonical URLs on university.japaconnect.com), Rule 16 (no hardcoded
  * data — these helpers shape API data, they don't replace it).
  */
 
 export interface SeoMeta {
 	title: string;
 	description?: string;
-	/** Canonical URL (learn.japaconnect.com/<path>). */
+	/** Canonical URL (university.japaconnect.com/<path>). */
 	canonicalPath?: string;
 	/** Open Graph image URL. */
 	ogImage?: string;
@@ -17,7 +17,7 @@ export interface SeoMeta {
 	noindex?: boolean;
 }
 
-const CANONICAL_ORIGIN = 'https://learn.japaconnect.com';
+const CANONICAL_ORIGIN = 'https://university.japaconnect.com';
 
 /** Build the absolute canonical URL for a path. */
 export function canonicalUrl(path: string): string {

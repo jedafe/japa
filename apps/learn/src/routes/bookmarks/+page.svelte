@@ -16,6 +16,7 @@
 	const LEARNING_ENTITY_TYPES = 'learning_track,content';
 
 	let bookmarks = $state<Bookmark[]>([]);
+	let totalCount = $state(0);
 	let folders = $state<BookmarkFolder[]>([]);
 	let loading = $state(true);
 	let activeFolder = $state<string | null>(null);
@@ -37,7 +38,10 @@
 		if (folderId) params.set('folder_id', folderId);
 		const r = await api.get<Bookmark[]>(`/me/bookmarks?${params.toString()}`);
 		loading = false;
-		if (r.data) bookmarks = r.data;
+		if (r.data) {
+			bookmarks = r.data;
+			if (!folderId) totalCount = r.data.length;
+		}
 	}
 
 	async function loadFolders() {
@@ -143,6 +147,7 @@
 		const res = await api.delete(`/me/bookmarks/${id}`);
 		if (!res.error) {
 			bookmarks = bookmarks.filter((b) => b.id !== id);
+			if (!activeFolder) totalCount = Math.max(0, totalCount - 1);
 		} else {
 			folderError = res.error?.message ?? t('learn.bookmarks_remove_error', 'Failed to remove bookmark');
 		}
@@ -167,7 +172,7 @@
 		<!-- Folder sidebar -->
 		<aside class="space-y-2">
 			{#if folderError}
-				<p class="rounded-[var(--radius)] bg-red-500/10 px-3 py-2 text-xs text-red-500" role="alert">{folderError}</p>
+				<p class="rounded-[var(--radius)] bg-[var(--color-danger)]/10 px-3 py-2 text-xs text-[var(--color-danger)]" role="alert">{folderError}</p>
 			{/if}
 			<button
 				type="button"
@@ -176,7 +181,7 @@
 			>
 				<BookmarkIcon size={14} />
 				{t('learn.bookmarks_all', 'All')}
-				<span class="ml-auto text-xs text-[var(--color-muted)]">{bookmarks.length}</span>
+				<span class="ml-auto text-xs text-[var(--color-muted)]">{totalCount}</span>
 			</button>
 
 			{#each folders as folder (folder.id)}

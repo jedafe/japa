@@ -44,15 +44,18 @@
 
 	// Local filter state, seeded from SSR-passed filters.
 	let stageFilter = $state(untrack(() => data.filters.stage));
+	let destFilter = $state(untrack(() => data.filters.dest));
 
 	// Keep local filter state in sync when navigating between pages/filters.
 	$effect(() => {
 		stageFilter = data.filters.stage;
+		destFilter = data.filters.dest;
 	});
 
 	function applyFilters() {
 		const params = new URLSearchParams();
 		if (stageFilter) params.set('stage', stageFilter);
+		if (destFilter) params.set('dest', destFilter);
 		goto(`/japa-stage${params.toString() ? `?${params.toString()}` : ''}`);
 	}
 
@@ -63,6 +66,7 @@
 	function changePage(p: number) {
 		const params = new URLSearchParams();
 		if (data.filters.stage) params.set('stage', data.filters.stage);
+		if (data.filters.dest) params.set('dest', data.filters.dest);
 		params.set('page', String(p));
 		goto(`/japa-stage?${params.toString()}`);
 	}
@@ -75,7 +79,7 @@
 		)
 	);
 
-	const hasFilters = $derived(!!data.filters.stage);
+	const hasFilters = $derived(!!data.filters.stage || !!data.filters.dest);
 </script>
 
 <svelte:head>
@@ -154,6 +158,21 @@
 					<option value="">{t('japa_stage.all_stages', 'All stages')}</option>
 					{#each STAGES as s (s)}
 						<option value={s}>{stageLabel(s)}</option>
+					{/each}
+				</select>
+			</div>
+			<div class="flex flex-col gap-1">
+				<label for="filter-dest" class="text-xs font-medium text-[var(--color-text-subtle)]">
+					{t('japa_stage.filter_dest', 'Destination')}
+				</label>
+				<select
+					id="filter-dest"
+					bind:value={destFilter}
+					class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]"
+				>
+					<option value="">{t('japa_stage.all_destinations', 'All destinations')}</option>
+					{#each data.countries as c (c.id)}
+						<option value={c.id}>{c.name}</option>
 					{/each}
 				</select>
 			</div>

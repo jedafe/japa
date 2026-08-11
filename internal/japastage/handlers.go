@@ -4,11 +4,17 @@
 // Routes:
 //
 //	GET   /api/v1/users/:username/japa-stage — public stage view
+//	GET   /api/v1/me/japa-stage              — own stage (auth, profile.japa_stage.edit)
 //	PATCH /api/v1/me/japa-stage              — update own stage (auth, profile.japa_stage.edit)
-//	GET   /api/v1/members/by-stage           — directory by stage (?stage=)
+//	GET   /api/v1/members/by-stage           — directory ?stage=&dest=&page= (public profiles only)
+//
+// On a successful PATCH, the handler enqueues a fire-and-forget
+// japa_stage:recommend Asynq task (Rule 8) so the worker can dispatch tool
+// recommendations, update the JapaBot peer card, and prompt a Readiness
+// Assessment (§87 Stage-Based Recommendations).
 //
 // Ref: japaconnect-engineering/sections/87-japa-stage-progress-profiles.md
-//      japaconnect-engineering/adr/ADR-095-japa-stage-progress-profiles.md
+//      japaconnect-engineering/adr/ADR-095-japa-stage-profiles.md
 package japastage
 
 import (
@@ -19,23 +25,28 @@ import (
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/tenant"
+	"github.com/jedafe/japa/internal/worker"
 )
 
 // Handlers exposes the japa stage profile endpoints.
 type Handlers struct {
-	service  *Service
-	settings *config.Settings
+	service      *Service
+	settings     *config.Settings
+	asynqClient  *asynq.Client
 }
 
 // NewHandlers creates japa stage handlers bound to the provided service.
-func NewHandlers(service *Service, settings *config.Settings) *Handlers {
-	return &Handlers{service: service, settings: settings}
+// asynqClient may be nil — when absent, stage-change fan-out is skipped
+// (logged at warn) instead of crashing the request.
+func NewHandlers(service *Service, settings *config.Settings, asynqClient *asynq.Client) *Handlers {
+	return &Handlers{service: service, settings: settings, asynqClient: asynqClient}
 }
 
 // ---------------------------------------------------------------------------
@@ -74,17 +85,25 @@ func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUse
 	return u, true
 }
 
+// parsePageParams reads pagination from the query string. Both `page_size`
+// (the convention per api-response-format.md) and `limit` (back-compat) are
+// accepted; `page` is 1-based.
 func parsePageParams(r *http.Request) (page, limit int32) {
 	page = 1
 	limit = 20
 	if v := r.URL.Query().Get("page"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			page = int32(n)
+			page = int32(n) //nolint:gosec // G109,G115: page numbers are practically small
 		}
 	}
-	if v := r.URL.Query().Get("limit"); v != "" {
+	// Prefer page_size (convention); fall back to limit for older clients.
+	if v := r.URL.Query().Get("page_size"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 100 {
-			limit = int32(n)
+			limit = int32(n) //nolint:gosec // G109,G115: bounded by n <= 100 check above
+		}
+	} else if v := r.URL.Query().Get("limit"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 100 {
+			limit = int32(n) //nolint:gosec // G109,G115: bounded by n <= 100 check above
 		}
 	}
 	return page, limit
@@ -129,7 +148,8 @@ func (h *Handlers) HandleGetByUsername(w http.ResponseWriter, r *http.Request) {
 }
 
 // HandleListByStage handles GET /members/by-stage — public directory of
-// members filtered by stage. Query params: ?stage=&page=&limit=
+// members filtered by stage. Query params: ?stage=&dest=&page=&page_size=
+// (dest is the destination space id, geo-aware ?dest= filter per §87).
 func (h *Handlers) HandleListByStage(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
@@ -151,32 +171,73 @@ func (h *Handlers) HandleListByStage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	dest := r.URL.Query().Get("dest")
 	page, limit := parsePageParams(r)
 
-	members, total, err := h.service.ListByStage(r.Context(), tenantID, stage, page, limit)
+	members, total, err := h.service.ListByStage(r.Context(), tenantID, stage, dest, page, limit)
 	if err != nil {
 		slog.Error("japastage: list by stage failed", "stage", stage, "error", err)
 		writeError(w, http.StatusInternalServerError, "list_failed", "Failed to list members by stage")
 		return
 	}
 
+	// Offset-pagination envelope per conventions/api-response-format.md:
+	// { data: [...], meta: { page, page_size, total, total_pages } }.
+	totalPages := int64(1)
+	if limit > 0 && total > 0 {
+		totalPages = (total + int64(limit) - 1) / int64(limit)
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"data": members,
-		"pagination": map[string]any{
-			"page":  page,
-			"limit": limit,
-			"total": total,
+		"meta": map[string]any{
+			"page":        page,
+			"page_size":   limit,
+			"total":       total,
+			"total_pages": totalPages,
 		},
 	})
 }
 
 // ---------------------------------------------------------------------------
-// Authenticated handlers (update own stage — profile.japa_stage.edit)
+// Authenticated handlers (own profile — profile.japa_stage.edit)
 // ---------------------------------------------------------------------------
 
+// HandleGetOwn handles GET /me/japa-stage — the caller's own stage profile
+// (full view, including history and the visibility flag).
+func (h *Handlers) HandleGetOwn(w http.ResponseWriter, r *http.Request) {
+	user, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+		writeError(w, http.StatusNotFound, "japa_stage_disabled", "Japa stage profiles are not available")
+		return
+	}
+
+	profile, err := h.service.GetOwn(r.Context(), user.UserID, tenantID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "profile_not_found", "Profile not found")
+			return
+		}
+		slog.Error("japastage: get own failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "get_failed", "Failed to get japa stage profile")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": profile})
+}
+
 // HandleUpdateOwn handles PATCH /me/japa-stage — update the authenticated
-// user's own japa stage and destination space. Auth required
-// (profile.japa_stage.edit permission checked at route registration).
+// user's own japa stage, destination, and (optionally) visibility. Auth
+// required (profile.japa_stage.edit permission checked at route
+// registration). On success a japa_stage:recommend Asynq task is enqueued
+// fire-and-forget (Rule 8) so the worker can dispatch recommendations.
 func (h *Handlers) HandleUpdateOwn(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
 	if !ok {
@@ -216,6 +277,28 @@ func (h *Handlers) HandleUpdateOwn(w http.ResponseWriter, r *http.Request) {
 		slog.Error("japastage: update own failed", "error", err)
 		writeError(w, http.StatusInternalServerError, "update_failed", "Failed to update japa stage")
 		return
+	}
+
+	// Fire-and-forget japa_stage:recommend (§87, Rule 8). Idempotent on
+	// (user_id, stage, set_at) via asynq.Unique over a short window so a
+	// duplicate PATCH within the same minute does not double-dispatch.
+	if h.asynqClient != nil {
+		payload, _ := json.Marshal(map[string]any{
+			"user_id":          user.UserID.String(),
+			"tenant_id":        tenantID.String(),
+			"stage":            input.Stage,
+			"destination_space_id": input.DestSpaceID,
+		})
+		task := asynq.NewTask(worker.TypeJapaStageRecommend, payload)
+		if _, err := h.asynqClient.Enqueue(task,
+			asynq.Queue(worker.QueueForTask(worker.TypeJapaStageRecommend)),
+			asynq.MaxRetry(3),
+			asynq.Unique(60*1_000_000_000), // 1 minute
+		); err != nil {
+			slog.Warn("japastage: enqueue japa_stage:recommend failed", "error", err)
+		}
+	} else {
+		slog.Warn("japastage: asynq client nil, skipping japa_stage:recommend fan-out")
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": profile})
