@@ -1636,6 +1636,11 @@ func (h *Handlers) RemoveReaction(w http.ResponseWriter, r *http.Request) {
 	}
 
 	reactionKey := chi.URLParam(r, "key")
+	// Fall back to the query string for the singular /content/{id}/react
+	// route (catalog line 260), which has no {key} path parameter.
+	if reactionKey == "" {
+		reactionKey = r.URL.Query().Get("key")
+	}
 	if reactionKey == "" {
 		writeError(w, http.StatusBadRequest, "missing_key", "Reaction key is required")
 		return

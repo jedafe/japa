@@ -62,7 +62,11 @@ WHERE cta.type_id = @type_id;
 
 -- name: DeleteComparisonTypeAccess :exec
 DELETE FROM comparison_type_access
-WHERE type_id = @type_id AND user_group_id = sqlc.narg(user_group_id);
+WHERE type_id = @type_id
+  AND user_group_id = sqlc.narg(user_group_id)
+  AND type_id IN (
+      SELECT id FROM comparison_type_definitions WHERE id = @type_id AND tenant_id = @tenant_id
+  );
 
 -- =====================
 -- Comparison Items CRUD
@@ -102,7 +106,7 @@ WHERE id = @id AND tenant_id = @tenant_id AND deleted_at IS NULL;
 
 -- name: ReorderComparisonItems :exec
 UPDATE comparison_items SET position = @position
-WHERE id = @id AND content_id = @content_id AND tenant_id = @tenant_id;
+WHERE id = @id AND content_id = @content_id AND tenant_id = @tenant_id AND deleted_at IS NULL;
 
 -- =====================
 -- Comparison Dimensions CRUD
@@ -139,7 +143,7 @@ WHERE id = @id AND tenant_id = @tenant_id AND deleted_at IS NULL;
 
 -- name: ReorderComparisonDimensions :exec
 UPDATE comparison_dimensions SET position = @position
-WHERE id = @id AND content_id = @content_id AND tenant_id = @tenant_id;
+WHERE id = @id AND content_id = @content_id AND tenant_id = @tenant_id AND deleted_at IS NULL;
 
 -- =====================
 -- Comparison Values CRUD
@@ -159,13 +163,34 @@ SET value = EXCLUDED.value,
     created_at = now()
 RETURNING dimension_id, item_id, tenant_id, value, value_rating, value_boolean, created_at, metadata;
 
+-- name: UpsertComparisonValueWithMetadata :one
+-- Upserts a comparison value together with its provenance metadata JSONB
+-- (Section 103 — Comparison Engine Provenance). Used by the AI Comparison
+-- Engine to record the source (custom_field|rag|external|llm_knowledge),
+-- source_ref, confidence, and retrieved_at timestamp for each value it
+-- fills. The metadata column was added by migration 000373.
+INSERT INTO comparison_values (
+    dimension_id, item_id, tenant_id, value, value_rating, value_boolean, metadata
+) VALUES (
+    @dimension_id, @item_id, @tenant_id, sqlc.narg(value),
+    sqlc.narg(value_rating), sqlc.narg(value_boolean), sqlc.narg(metadata)
+)
+ON CONFLICT (dimension_id, item_id) DO UPDATE
+SET value = EXCLUDED.value,
+    value_rating = EXCLUDED.value_rating,
+    value_boolean = EXCLUDED.value_boolean,
+    metadata = COALESCE(EXCLUDED.metadata, comparison_values.metadata),
+    created_at = now()
+RETURNING dimension_id, item_id, tenant_id, value, value_rating, value_boolean, created_at, metadata;
+
 -- name: ListComparisonValuesByDimension :many
 SELECT cv.dimension_id, cv.item_id, cv.tenant_id, cv.value, cv.value_rating,
        cv.value_boolean, cv.created_at, cv.metadata,
        ci.title AS item_title
 FROM comparison_values cv
 JOIN comparison_items ci ON ci.id = cv.item_id
-WHERE cv.dimension_id = @dimension_id AND cv.tenant_id = @tenant_id;
+WHERE cv.dimension_id = @dimension_id AND cv.tenant_id = @tenant_id
+  AND ci.deleted_at IS NULL;
 
 -- name: GetComparisonValue :one
 SELECT dimension_id, item_id, tenant_id, value, value_rating, value_boolean, created_at, metadata
@@ -189,7 +214,8 @@ SELECT cv.dimension_id, cv.item_id, cv.tenant_id, cv.value, cv.value_rating,
 FROM comparison_values cv
 JOIN comparison_items ci ON ci.id = cv.item_id
 JOIN comparison_dimensions cd ON cd.id = cv.dimension_id
-WHERE ci.content_id = @content_id AND cv.tenant_id = @tenant_id;
+WHERE ci.content_id = @content_id AND cv.tenant_id = @tenant_id
+  AND ci.deleted_at IS NULL AND cd.deleted_at IS NULL;
 
 -- =====================
 -- Comparison list with type + space filters (Section 30, BUG-007)
@@ -220,5 +246,5 @@ ORDER BY c.created_at DESC, c.id DESC
 LIMIT @page_limit OFFSET @page_offset;
 
 -- name: CountComparisonItemsByType :one
-SELECT count(*)::int FROM comparison_items WHERE type_id = @type_id AND tenant_id = @tenant_id;
+SELECT count(*)::int FROM comparison_items WHERE type_id = @type_id AND tenant_id = @tenant_id AND deleted_at IS NULL;
 

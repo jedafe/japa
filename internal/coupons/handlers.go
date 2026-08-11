@@ -7,6 +7,7 @@ import (
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	errpkg "github.com/jedafe/japa/internal/errors"
@@ -112,7 +113,11 @@ func (h *Handlers) ListPublicCoupons(w http.ResponseWriter, r *http.Request) {
 	}
 	providerID := parseQueryUUID(r, "provider_id")
 	couponType := parseQueryString(r, "coupon_type")
-	search := parseQueryString(r, "search")
+	// Accept both `q` (spec §55 documented param) and `search` (legacy alias).
+	search := parseQueryString(r, "q")
+	if search == nil {
+		search = parseQueryString(r, "search")
+	}
 	page := int32(parseQueryInt(r, "page", 1))
 	pageSize := int32(parseQueryInt(r, "page_size", DefaultPageSize))
 
@@ -145,9 +150,19 @@ func (h *Handlers) GetCoupon(w http.ResponseWriter, r *http.Request) {
 
 // RecordCouponClick handles POST /api/v1/coupons/:id/click
 func (h *Handlers) RecordCouponClick(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid coupon ID")
+		return
+	}
+	// Verify the coupon exists (tenant-scoped) before recording the event so
+	// a missing coupon returns 404 instead of an FK-violation 500 (BUG-013).
+	if _, err := h.Service.GetCoupon(r.Context(), id, tenantID); err != nil {
+		handleServiceError(w, err)
 		return
 	}
 	var input struct {
@@ -302,7 +317,11 @@ func (h *Handlers) ListCouponsAdmin(w http.ResponseWriter, r *http.Request) {
 	}
 	status := parseQueryString(r, "status")
 	couponType := parseQueryString(r, "coupon_type")
-	search := parseQueryString(r, "search")
+	// Accept both `q` (spec §55 documented param) and `search` (legacy alias).
+	search := parseQueryString(r, "q")
+	if search == nil {
+		search = parseQueryString(r, "search")
+	}
 	page := int32(parseQueryInt(r, "page", 1))
 	pageSize := int32(parseQueryInt(r, "page_size", DefaultPageSize))
 
@@ -481,9 +500,30 @@ func (h *Handlers) ListAffiliateScanResults(w http.ResponseWriter, r *http.Reque
 	if !ok {
 		return
 	}
-	rows, err := h.Service.db.Reader.Query(r.Context(),
-		"SELECT id, content_id, url, domain, detection_method, action_taken, created_at "+
-			"FROM content_affiliate_scan_results WHERE tenant_id = $1 ORDER BY created_at DESC LIMIT 50", tenantID)
+	page := int32(parseQueryInt(r, "page", 1))
+	pageSize := int32(parseQueryInt(r, "page_size", DefaultPageSize))
+	limit, offset := paginate(page, pageSize)
+	domainFilter := parseQueryString(r, "domain")
+	actionFilter := parseQueryString(r, "action")
+
+	var rows pgx.Rows
+	var err error
+	if domainFilter != nil {
+		rows, err = h.Service.db.Reader.Query(r.Context(),
+			"SELECT id, content_id, url, domain, detection_method, action_taken, created_at "+
+				"FROM content_affiliate_scan_results WHERE tenant_id = $1 AND domain = $2 ORDER BY created_at DESC LIMIT $3 OFFSET $4",
+			tenantID, *domainFilter, limit, offset)
+	} else if actionFilter != nil {
+		rows, err = h.Service.db.Reader.Query(r.Context(),
+			"SELECT id, content_id, url, domain, detection_method, action_taken, created_at "+
+				"FROM content_affiliate_scan_results WHERE tenant_id = $1 AND action_taken = $2 ORDER BY created_at DESC LIMIT $3 OFFSET $4",
+			tenantID, *actionFilter, limit, offset)
+	} else {
+		rows, err = h.Service.db.Reader.Query(r.Context(),
+			"SELECT id, content_id, url, domain, detection_method, action_taken, created_at "+
+				"FROM content_affiliate_scan_results WHERE tenant_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3",
+			tenantID, limit, offset)
+	}
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "query_error", "Failed to query scan results")
 		return
@@ -506,7 +546,7 @@ func (h *Handlers) ListAffiliateScanResults(w http.ResponseWriter, r *http.Reque
 	if results == nil {
 		results = []map[string]any{}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": results})
+	writeJSON(w, http.StatusOK, map[string]any{"data": results, "page": page, "page_size": pageSize})
 }
 
 // ReviewAffiliateScanResult handles PATCH /admin/affiliate/scan-results/{id}
@@ -534,9 +574,17 @@ func (h *Handlers) ReviewAffiliateScanResult(w http.ResponseWriter, r *http.Requ
 	}
 	var reviewerID pgtype.UUID
 	reviewerID.Scan(user.UserID)
-	h.Service.db.Writer.Exec(r.Context(),
+	tag, err := h.Service.db.Writer.Exec(r.Context(),
 		"UPDATE content_affiliate_scan_results SET action_taken = $1, reviewed_by = $2, reviewed_at = now(), notes = $3 WHERE id = $4 AND tenant_id = $5",
 		input.Action, reviewerID, input.Notes, id, tenantID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "update_failed", "Failed to review scan result")
+		return
+	}
+	if tag.RowsAffected() == 0 {
+		writeError(w, http.StatusNotFound, "scan_result_not_found", "Scan result not found")
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"updated": true}})
 }
 
@@ -546,13 +594,42 @@ func (h *Handlers) ListAffiliateCommissions(w http.ResponseWriter, r *http.Reque
 	if !ok {
 		return
 	}
-	rows, err := h.Service.db.Reader.Query(r.Context(),
-		"SELECT ac.id, ac.content_id, ac.author_user_id, ac.external_commission, ac.author_share, "+
-			"ac.author_commission_pct, ac.event_description, ac.credited, ac.created_at, ap.name, u.username "+
-			"FROM affiliate_content_commissions ac "+
-			"LEFT JOIN affiliate_providers ap ON ap.id = ac.provider_id "+
-			"LEFT JOIN users u ON u.id = ac.author_user_id "+
-			"WHERE ac.tenant_id = $1 ORDER BY ac.created_at DESC LIMIT 50", tenantID)
+	page := int32(parseQueryInt(r, "page", 1))
+	pageSize := int32(parseQueryInt(r, "page_size", DefaultPageSize))
+	limit, offset := paginate(page, pageSize)
+	creditedFilter := parseQueryString(r, "credited")
+
+	var rows pgx.Rows
+	var err error
+	if creditedFilter != nil {
+		var credited bool
+		switch *creditedFilter {
+		case "true", "1":
+			credited = true
+		case "false", "0":
+			credited = false
+		default:
+			writeError(w, http.StatusBadRequest, "invalid_filter", "credited must be 'true' or 'false'")
+			return
+		}
+		rows, err = h.Service.db.Reader.Query(r.Context(),
+			"SELECT ac.id, ac.content_id, ac.author_user_id, ac.external_commission, ac.author_share, "+
+				"ac.author_commission_pct, ac.event_description, ac.credited, ac.created_at, ap.name, u.username "+
+				"FROM affiliate_content_commissions ac "+
+				"LEFT JOIN affiliate_providers ap ON ap.id = ac.provider_id "+
+				"LEFT JOIN users u ON u.id = ac.author_user_id "+
+				"WHERE ac.tenant_id = $1 AND ac.credited = $2 ORDER BY ac.created_at DESC LIMIT $3 OFFSET $4",
+			tenantID, credited, limit, offset)
+	} else {
+		rows, err = h.Service.db.Reader.Query(r.Context(),
+			"SELECT ac.id, ac.content_id, ac.author_user_id, ac.external_commission, ac.author_share, "+
+				"ac.author_commission_pct, ac.event_description, ac.credited, ac.created_at, ap.name, u.username "+
+				"FROM affiliate_content_commissions ac "+
+				"LEFT JOIN affiliate_providers ap ON ap.id = ac.provider_id "+
+				"LEFT JOIN users u ON u.id = ac.author_user_id "+
+				"WHERE ac.tenant_id = $1 ORDER BY ac.created_at DESC LIMIT $2 OFFSET $3",
+			tenantID, limit, offset)
+	}
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "query_error", "Failed to query commissions")
 		return
@@ -581,7 +658,7 @@ func (h *Handlers) ListAffiliateCommissions(w http.ResponseWriter, r *http.Reque
 	if results == nil {
 		results = []map[string]any{}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": results})
+	writeJSON(w, http.StatusOK, map[string]any{"data": results, "page": page, "page_size": pageSize})
 }
 
 // UpdateProviderAuthorCommission handles PATCH /admin/affiliate/providers/{id}/author-commission
@@ -606,9 +683,17 @@ func (h *Handlers) UpdateProviderAuthorCommission(w http.ResponseWriter, r *http
 		writeError(w, http.StatusBadRequest, "invalid_pct", "Percentage must be 0-100")
 		return
 	}
-	h.Service.db.Writer.Exec(r.Context(),
+	tag, err := h.Service.db.Writer.Exec(r.Context(),
 		"UPDATE affiliate_providers SET author_commission_pct = $1 WHERE id = $2 AND tenant_id = $3",
 		input.AuthorCommissionPct, id, tenantID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "update_failed", "Failed to update author commission percentage")
+		return
+	}
+	if tag.RowsAffected() == 0 {
+		writeError(w, http.StatusNotFound, "provider_not_found", "Affiliate provider not found")
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"updated": true}})
 }
 

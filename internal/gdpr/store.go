@@ -373,6 +373,20 @@ func (s *Store) gdprExportUserTicketComments(ctx context.Context, userID, tenant
 	return decodeJSONSlice(data)
 }
 
+// Comparison GDPR export helpers (BUG-004). These export the linked
+// comparison_items/dimensions/values for content authored by the user.
+func (s *Store) gdprExportUserComparisonItems(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
+	return exportJSONSlice(ctx, s.read.GdprExportUserComparisonItems, gen.GdprExportUserComparisonItemsParams{UserID: userID, TenantID: tenantID})
+}
+
+func (s *Store) gdprExportUserComparisonDimensions(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
+	return exportJSONSlice(ctx, s.read.GdprExportUserComparisonDimensions, gen.GdprExportUserComparisonDimensionsParams{UserID: userID, TenantID: tenantID})
+}
+
+func (s *Store) gdprExportUserComparisonValues(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
+	return exportJSONSlice(ctx, s.read.GdprExportUserComparisonValues, gen.GdprExportUserComparisonValuesParams{UserID: userID, TenantID: tenantID})
+}
+
 // Japa University GDPR export helpers (ADR-063 / audit C2).
 func (s *Store) gdprExportInstructorProfiles(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
 	return exportJSONSlice(ctx, s.read.GdprExportInstructorProfiles, gen.GdprExportInstructorProfilesParams{UserID: userID, TenantID: tenantID})
@@ -666,6 +680,18 @@ func (s *Store) anonymizeUserProfile(ctx context.Context, p gen.AnonymizeUserPro
 func (s *Store) anonymizeAffiliateLinkEvents(ctx context.Context, p gen.AnonymizeAffiliateLinkEventsParams) error {
 	if err := s.write.AnonymizeAffiliateLinkEvents(ctx, p); err != nil {
 		return fmt.Errorf("anonymizing affiliate link events: %w", err)
+	}
+	return nil
+}
+
+// anonymizeCouponEvents scrubs user_id PII from coupon_events recorded by the
+// deleted user during the GDPR retention window (Section 55, ADR-014). The
+// events are retained for aggregate click/copy analytics; only the user
+// association is cleared. Best-effort: callers log a warning on failure but do
+// not abort the erasure.
+func (s *Store) anonymizeCouponEvents(ctx context.Context, userID pgtype.UUID) error {
+	if err := s.write.AnonymizeCouponEvents(ctx, userID); err != nil {
+		return fmt.Errorf("anonymizing coupon events: %w", err)
 	}
 	return nil
 }

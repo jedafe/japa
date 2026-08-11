@@ -55,6 +55,32 @@ func (q *Queries) AnonymizeAuditLogActor(ctx context.Context, arg AnonymizeAudit
 	return err
 }
 
+const anonymizeComparisonDimensionsByAuthor = `-- name: AnonymizeComparisonDimensionsByAuthor :execrows
+UPDATE comparison_dimensions cd
+SET label = '[anonymized]'
+FROM contents c
+WHERE cd.content_id = c.id
+  AND c.tenant_id = $1
+  AND c.author_id = $2
+  AND cd.deleted_at IS NULL
+`
+
+type AnonymizeComparisonDimensionsByAuthorParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	UserID   pgtype.UUID `json:"user_id"`
+}
+
+// BUG-003: anonymize comparison_dimensions.label for content authored by the
+// deleted user. The label is user-authored free text and can re-identify a
+// deleted user via their comparison content. Runs before HardDeleteUser.
+func (q *Queries) AnonymizeComparisonDimensionsByAuthor(ctx context.Context, arg AnonymizeComparisonDimensionsByAuthorParams) (int64, error) {
+	result, err := q.db.Exec(ctx, anonymizeComparisonDimensionsByAuthor, arg.TenantID, arg.UserID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const anonymizeComparisonItemsByAuthor = `-- name: AnonymizeComparisonItemsByAuthor :execrows
 UPDATE comparison_items ci
 SET title = '[anonymized]',
@@ -81,6 +107,50 @@ func (q *Queries) AnonymizeComparisonItemsByAuthor(ctx context.Context, arg Anon
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const anonymizeComparisonValuesByAuthor = `-- name: AnonymizeComparisonValuesByAuthor :execrows
+UPDATE comparison_values cv
+SET value = '[anonymized]',
+    value_rating = NULL,
+    value_boolean = NULL
+FROM contents c
+JOIN comparison_items ci ON ci.id = cv.item_id
+WHERE ci.content_id = c.id
+  AND cv.tenant_id = $1
+  AND c.author_id = $2
+`
+
+type AnonymizeComparisonValuesByAuthorParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	UserID   pgtype.UUID `json:"user_id"`
+}
+
+// BUG-003: anonymize comparison_values.value for content authored by the
+// deleted user. The value column is user-authored free text and can
+// re-identify a deleted user via their comparison content. Runs before
+// HardDeleteUser.
+func (q *Queries) AnonymizeComparisonValuesByAuthor(ctx context.Context, arg AnonymizeComparisonValuesByAuthorParams) (int64, error) {
+	result, err := q.db.Exec(ctx, anonymizeComparisonValuesByAuthor, arg.TenantID, arg.UserID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const anonymizeCouponEvents = `-- name: AnonymizeCouponEvents :exec
+UPDATE coupon_events
+SET user_id = NULL
+WHERE user_id = $1
+`
+
+// Scrubs user_id PII from coupon_events recorded by the deleted user during
+// the GDPR retention window (Section 55, ADR-014). The events themselves are
+// retained for aggregate click/copy analytics; only the user association is
+// cleared. Best-effort: a failure logs a warning but does not abort the erasure.
+func (q *Queries) AnonymizeCouponEvents(ctx context.Context, userID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, anonymizeCouponEvents, userID)
+	return err
 }
 
 const anonymizeDMMessagesBySender = `-- name: AnonymizeDMMessagesBySender :exec
@@ -1144,6 +1214,84 @@ func (q *Queries) GdprExportUserComments(ctx context.Context, arg GdprExportUser
 		return nil, err
 	}
 	return items, nil
+}
+
+const gdprExportUserComparisonDimensions = `-- name: GdprExportUserComparisonDimensions :one
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (
+    SELECT cd.id, cd.content_id, cd.label, cd.dimension_type, cd.position, cd.created_at
+    FROM comparison_dimensions cd
+    JOIN contents c ON c.id = cd.content_id
+    WHERE c.author_id = $1 AND cd.tenant_id = $2
+    ORDER BY cd.created_at DESC
+) t
+`
+
+type GdprExportUserComparisonDimensionsParams struct {
+	UserID   pgtype.UUID `json:"user_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+func (q *Queries) GdprExportUserComparisonDimensions(ctx context.Context, arg GdprExportUserComparisonDimensionsParams) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportUserComparisonDimensions, arg.UserID, arg.TenantID)
+	var data interface{}
+	err := row.Scan(&data)
+	return data, err
+}
+
+const gdprExportUserComparisonItems = `-- name: GdprExportUserComparisonItems :one
+
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (
+    SELECT ci.id, ci.content_id, ci.title, ci.description, ci.position, ci.created_at
+    FROM comparison_items ci
+    JOIN contents c ON c.id = ci.content_id
+    WHERE c.author_id = $1 AND ci.tenant_id = $2
+    ORDER BY ci.created_at DESC
+) t
+`
+
+type GdprExportUserComparisonItemsParams struct {
+	UserID   pgtype.UUID `json:"user_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+// =====================================================================
+// Comparison GDPR export (BUG-004)
+// comparison_items/dimensions/values are linked to content authored by the
+// user. The parent content rows are exported by GdprExportUserContent; these
+// queries export the linked comparison data so the user receives the full
+// data set they authored, per GDPR right to data portability.
+// =====================================================================
+func (q *Queries) GdprExportUserComparisonItems(ctx context.Context, arg GdprExportUserComparisonItemsParams) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportUserComparisonItems, arg.UserID, arg.TenantID)
+	var data interface{}
+	err := row.Scan(&data)
+	return data, err
+}
+
+const gdprExportUserComparisonValues = `-- name: GdprExportUserComparisonValues :one
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (
+    SELECT cv.dimension_id, cv.item_id, cv.value, cv.value_rating, cv.value_boolean, cv.created_at
+    FROM comparison_values cv
+    JOIN comparison_items ci ON ci.id = cv.item_id
+    JOIN contents c ON c.id = ci.content_id
+    WHERE c.author_id = $1 AND cv.tenant_id = $2
+    ORDER BY cv.created_at DESC
+) t
+`
+
+type GdprExportUserComparisonValuesParams struct {
+	UserID   pgtype.UUID `json:"user_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+func (q *Queries) GdprExportUserComparisonValues(ctx context.Context, arg GdprExportUserComparisonValuesParams) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportUserComparisonValues, arg.UserID, arg.TenantID)
+	var data interface{}
+	err := row.Scan(&data)
+	return data, err
 }
 
 const gdprExportUserConsentRecords = `-- name: GdprExportUserConsentRecords :one

@@ -47,14 +47,13 @@
 	let createClientSecret = $state('');
 	let createRedirectUri = $state('');
 
-	let providers = $state<OAuthProviderDef[]>([
-		{ key: 'google', label: 'Google', description: 'Google OAuth 2.0 / OpenID Connect' }
-	]);
+	let providers = $state<OAuthProviderDef[]>([]);
 
 	let confirmDeleteOpen = $state(false);
 	let pendingDeleteId = $state<string | null>(null);
 	let pendingBulkDeleteIds = $state<string[]>([]);
 	let confirmBulkDeleteOpen = $state(false);
+	let toggling = $state<string | null>(null);
 
 	async function load() {
 		const result = await api<OAuthClient[]>('/control/oauth-clients');
@@ -137,8 +136,16 @@
 				label: t('common.enable', 'Enable'),
 				icon: CheckCircle,
 				onClick: async (row) => {
-					const id = (row as unknown as OAuthClient).id;
-					await api(`/control/oauth-clients/${id}`, { method: 'PATCH', body: { enabled: true } });
+					const client = row as unknown as OAuthClient;
+					toggling = client.id;
+					const previous = client.enabled;
+					clients = clients.map((c) => c.id === client.id ? { ...c, enabled: true } : c);
+					const result = await api(`/control/oauth-clients/${client.id}`, { method: 'PATCH', body: { enabled: true } });
+					if (!result.ok) {
+						clients = clients.map((c) => c.id === client.id ? { ...c, enabled: previous } : c);
+						errorMessage = result.error || t('oauth_clients.toggle_error', 'Failed to update OAuth client.');
+					}
+					toggling = null;
 					load();
 				},
 				hidden: (row) => (row as unknown as OAuthClient).enabled
@@ -147,8 +154,16 @@
 				label: t('common.disable', 'Disable'),
 				icon: XCircle,
 				onClick: async (row) => {
-					const id = (row as unknown as OAuthClient).id;
-					await api(`/control/oauth-clients/${id}`, { method: 'PATCH', body: { enabled: false } });
+					const client = row as unknown as OAuthClient;
+					toggling = client.id;
+					const previous = client.enabled;
+					clients = clients.map((c) => c.id === client.id ? { ...c, enabled: false } : c);
+					const result = await api(`/control/oauth-clients/${client.id}`, { method: 'PATCH', body: { enabled: false } });
+					if (!result.ok) {
+						clients = clients.map((c) => c.id === client.id ? { ...c, enabled: previous } : c);
+						errorMessage = result.error || t('oauth_clients.toggle_error', 'Failed to update OAuth client.');
+					}
+					toggling = null;
 					load();
 				},
 				hidden: (row) => !(row as unknown as OAuthClient).enabled

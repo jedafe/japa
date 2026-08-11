@@ -9,11 +9,26 @@ import type { ColCity, ColCitiesListResponse } from '$lib/types';
  * round-trip. The comparison matrix is fetched client-side when the user
  * selects cities (shareable via ?city_ids= query param).
  *
+ * Tool config (max_cities, stale_days) is read from the root layout's
+ * siteSettings (col_calculator.* system_settings) so the UI never hardcodes
+ * configurable values (Rule 3 / Rule 16).
+ *
  * Ref: japaconnect-engineering/sections/72-cost-of-living.md
  */
 export const load: PageServerLoad = async (event) => {
 	const ctx = apiContext(event);
 	const authed = !!event.locals.user;
+
+	// Tool config from the root layout's public siteSettings (Rule 3 / Rule 16).
+	const { siteSettings } = await event.parent();
+	let maxCities = 3;
+	let staleDays = 180;
+	if (typeof siteSettings?.['col_calculator.max_cities'] === 'number') {
+		maxCities = siteSettings['col_calculator.max_cities'] as number;
+	}
+	if (typeof siteSettings?.['col_calculator.stale_days'] === 'number') {
+		staleDays = siteSettings['col_calculator.stale_days'] as number;
+	}
 
 	let cities: ColCity[] = [];
 	let disabled = false;
@@ -30,5 +45,5 @@ export const load: PageServerLoad = async (event) => {
 	const cityIdsParam = event.url.searchParams.get('city_ids');
 	const preselected = cityIdsParam ? cityIdsParam.split(',').filter(Boolean) : [];
 
-	return { cities, disabled, authed, preselected };
+	return { cities, disabled, authed, preselected, maxCities, staleDays };
 };

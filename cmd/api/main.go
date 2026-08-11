@@ -99,6 +99,7 @@ func run() error {
 		}
 
 		scheduler.Shutdown()
+		server.Shutdown()
 	}()
 
 	// Start listening in a goroutine so we can handle shutdown signals.

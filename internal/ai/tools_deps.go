@@ -52,6 +52,122 @@ type RAGService interface {
 	Retrieve(ctx context.Context, tenantID pgtype.UUID, query, language string, geoSpaceID *pgtype.UUID) ([]RAGChunk, error)
 }
 
+// ComparisonService is the subset of internal/comparison.Service the
+// comparison tools (Phase 7) call. Defined as an interface so handlers can
+// be tested with a stub. The signatures match the real comparison.Service
+// methods 1:1 so the wiring layer can assign the concrete service directly.
+//
+// Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Comparison Engine)
+// Ref: japaconnect-engineering/sections/30-generic-comparison-system.md
+type ComparisonService interface {
+	// Type definitions.
+	ListComparisonTypes(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]gen.ListComparisonTypesByTenantRow, error)
+	GetComparisonTypeBySlug(ctx context.Context, slug string, tenantID pgtype.UUID) (gen.GetComparisonTypeBySlugRow, error)
+	CreateComparisonType(ctx context.Context, tenantID pgtype.UUID, input ComparisonTypeCreateInput) (gen.CreateComparisonTypeRow, error)
+
+	// Comparison content (creates a content_type='comparison' row + items + dimensions).
+	CreateComparison(ctx context.Context, tenantID, userID pgtype.UUID, input ComparisonCreateInput) (ComparisonCreateResult, error)
+	GetComparisonDetail(ctx context.Context, id, tenantID pgtype.UUID) (ComparisonDetail, error)
+	GetComparisonMatrix(ctx context.Context, contentID, tenantID pgtype.UUID) ([]ComparisonMatrixItem, error)
+
+	// Dimensions.
+	CreateComparisonDimension(ctx context.Context, tenantID pgtype.UUID, input ComparisonDimensionCreateInput) (gen.CreateComparisonDimensionRow, error)
+
+	// Values (with provenance metadata for AI-filled values).
+	UpsertComparisonValueWithMetadata(ctx context.Context, tenantID pgtype.UUID, input ComparisonValueUpsertInput, metadata []byte) (gen.ComparisonValue, error)
+}
+
+// ComparisonTypeCreateInput mirrors comparison.CreateComparisonTypeInput
+// without importing internal/comparison (avoids a cycle: comparison imports
+// content + customfields, and the ai package must stay leaf-adjacent).
+type ComparisonTypeCreateInput struct {
+	Name         string
+	Slug         string
+	Description  string
+	Icon         string
+	FieldGroupID pgtype.UUID
+	ItemLabel    string
+	IsSystem     bool
+}
+
+// ComparisonCreateInput mirrors comparison.CreateComparisonInput.
+type ComparisonCreateInput struct {
+	Title      string
+	Body       string
+	Visibility string
+	Status     string
+	SpaceID    pgtype.UUID
+	TypeID     pgtype.UUID
+	Items      []ComparisonItemInput
+	Dimensions []string
+}
+
+// ComparisonItemInput mirrors comparison.ComparisonItemInput.
+type ComparisonItemInput struct {
+	Name string
+	Slug string
+}
+
+// ComparisonCreateResult mirrors comparison.CreateComparisonResult.
+type ComparisonCreateResult struct {
+	ID         pgtype.UUID `json:"id"`
+	TenantID   pgtype.UUID `json:"tenant_id"`
+	AuthorID   pgtype.UUID `json:"author_id"`
+	Title      string      `json:"title"`
+	Slug       string      `json:"slug"`
+	Visibility string      `json:"visibility"`
+	SpaceID    pgtype.UUID `json:"space_id"`
+}
+
+// ComparisonDimensionCreateInput mirrors comparison.CreateComparisonDimensionInput.
+type ComparisonDimensionCreateInput struct {
+	ContentID     pgtype.UUID
+	Label         string
+	DimensionType string
+	Position      int32
+}
+
+// ComparisonValueUpsertInput mirrors comparison.UpsertComparisonValueInput.
+type ComparisonValueUpsertInput struct {
+	DimensionID  pgtype.UUID
+	ItemID       pgtype.UUID
+	Value        string
+	ValueRating  *float64
+	ValueBoolean *bool
+}
+
+// ComparisonDetail mirrors comparison.ComparisonDetail (the subset the AI
+// tools surface to the LLM).
+type ComparisonDetail struct {
+	ID         pgtype.UUID                                `json:"id"`
+	TenantID   pgtype.UUID                                `json:"tenant_id"`
+	AuthorID   pgtype.UUID                                `json:"author_id"`
+	Title      string                                     `json:"title"`
+	Slug       string                                     `json:"slug"`
+	Body       string                                     `json:"body"`
+	Visibility string                                     `json:"visibility"`
+	Status     string                                     `json:"status"`
+	SpaceID    pgtype.UUID                                `json:"space_id"`
+	Items      []gen.ListComparisonItemsByContentRow      `json:"items"`
+	Dimensions []gen.ListComparisonDimensionsByContentRow `json:"dimensions"`
+}
+
+// ComparisonMatrixItem mirrors comparison.ComparisonMatrixItem.
+type ComparisonMatrixItem struct {
+	Item       gen.ListComparisonItemsByContentRow `json:"item"`
+	Dimensions []ComparisonMatrixDimension         `json:"dimensions"`
+}
+
+// ComparisonMatrixDimension mirrors comparison.ComparisonMatrixDimension.
+type ComparisonMatrixDimension struct {
+	DimensionID  pgtype.UUID `json:"dimension_id"`
+	Label        string      `json:"label"`
+	Type         string      `json:"type"`
+	Value        *string     `json:"value"`
+	ValueRating  *float64    `json:"value_rating"`
+	ValueBoolean *bool       `json:"value_boolean"`
+}
+
 // RAGChunk is the provider-agnostic shape of rag.RetrievedChunk used by the
 // rag.search tool. It mirrors rag.RetrievedChunk but is defined here so the
 // ai package does not import internal/rag (avoiding a cycle when rag imports
@@ -99,6 +215,7 @@ type ToolDeps struct {
 	ContentUpdater ContentUpdater
 	CustomFields   CustomFieldsService
 	RAG            RAGService
+	Comparison     ComparisonService
 	Privacy        PrivacyExemptionChecker
 	Settings       SettingsReader
 	Cache          CacheClient  // nil disables external-search caching
@@ -119,6 +236,9 @@ func (d *ToolDeps) WithCustomFields(s CustomFieldsService) *ToolDeps { d.CustomF
 
 // WithRAG injects the RAG service.
 func (d *ToolDeps) WithRAG(s RAGService) *ToolDeps { d.RAG = s; return d }
+
+// WithComparison injects the comparison service (Phase 7).
+func (d *ToolDeps) WithComparison(s ComparisonService) *ToolDeps { d.Comparison = s; return d }
 
 // WithPrivacy injects the privacy exemption checker.
 func (d *ToolDeps) WithPrivacy(p PrivacyExemptionChecker) *ToolDeps { d.Privacy = p; return d }

@@ -2614,6 +2614,114 @@ func (q *Queries) PublishScheduledContent(ctx context.Context, arg PublishSchedu
 	return result.RowsAffected(), nil
 }
 
+const reassignSingleContentAuthor = `-- name: ReassignSingleContentAuthor :one
+UPDATE contents
+SET author_id = $1, field_values = $2, updated_at = now()
+WHERE id = $3 AND tenant_id = $4 AND deleted_at IS NULL
+RETURNING id, tenant_id, author_id, space_id, content_type, title, slug, body, body_html,
+          field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
+          canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
+          status, visibility, is_locked, is_pinned, read_time_minutes,
+          view_count, comment_count, share_count, reshare_count, publish_at, published_at,
+          created_at, updated_at, guide_category
+`
+
+type ReassignSingleContentAuthorParams struct {
+	AuthorID    pgtype.UUID `json:"author_id"`
+	FieldValues []byte      `json:"field_values"`
+	ID          pgtype.UUID `json:"id"`
+	TenantID    pgtype.UUID `json:"tenant_id"`
+}
+
+type ReassignSingleContentAuthorRow struct {
+	ID              pgtype.UUID        `json:"id"`
+	TenantID        pgtype.UUID        `json:"tenant_id"`
+	AuthorID        pgtype.UUID        `json:"author_id"`
+	SpaceID         pgtype.UUID        `json:"space_id"`
+	ContentType     string             `json:"content_type"`
+	Title           string             `json:"title"`
+	Slug            string             `json:"slug"`
+	Body            string             `json:"body"`
+	BodyHtml        string             `json:"body_html"`
+	FieldValues     []byte             `json:"field_values"`
+	ContentHash     *string            `json:"content_hash"`
+	GeoSpaceID      pgtype.UUID        `json:"geo_space_id"`
+	HeaderImageID   pgtype.UUID        `json:"header_image_id"`
+	FeaturedImageID pgtype.UUID        `json:"featured_image_id"`
+	CanonicalUrl    *string            `json:"canonical_url"`
+	MetaTitle       *string            `json:"meta_title"`
+	MetaDescription *string            `json:"meta_description"`
+	OgImageUrl      *string            `json:"og_image_url"`
+	SeoIndexable    bool               `json:"seo_indexable"`
+	Status          string             `json:"status"`
+	Visibility      string             `json:"visibility"`
+	IsLocked        bool               `json:"is_locked"`
+	IsPinned        bool               `json:"is_pinned"`
+	ReadTimeMinutes int32              `json:"read_time_minutes"`
+	ViewCount       int32              `json:"view_count"`
+	CommentCount    int32              `json:"comment_count"`
+	ShareCount      int32              `json:"share_count"`
+	ReshareCount    int32              `json:"reshare_count"`
+	PublishAt       pgtype.Timestamptz `json:"publish_at"`
+	PublishedAt     pgtype.Timestamptz `json:"published_at"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+	GuideCategory   *string            `json:"guide_category"`
+}
+
+// Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Authorship Assignment)
+// Updates a single content row's author_id and field_values in one
+// statement. The caller (agent handler) reads the current field_values,
+// merges the _ai_provenance.author_assigned_by / author_assignment_reason
+// metadata in Go, and passes the full updated JSONB here. Tenant-scoped
+// for defense-in-depth (BUG-014). Distinct from gdpr.sql's
+// ReassignContentAuthor (:exec bulk reassign on user deletion).
+func (q *Queries) ReassignSingleContentAuthor(ctx context.Context, arg ReassignSingleContentAuthorParams) (ReassignSingleContentAuthorRow, error) {
+	row := q.db.QueryRow(ctx, reassignSingleContentAuthor,
+		arg.AuthorID,
+		arg.FieldValues,
+		arg.ID,
+		arg.TenantID,
+	)
+	var i ReassignSingleContentAuthorRow
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.AuthorID,
+		&i.SpaceID,
+		&i.ContentType,
+		&i.Title,
+		&i.Slug,
+		&i.Body,
+		&i.BodyHtml,
+		&i.FieldValues,
+		&i.ContentHash,
+		&i.GeoSpaceID,
+		&i.HeaderImageID,
+		&i.FeaturedImageID,
+		&i.CanonicalUrl,
+		&i.MetaTitle,
+		&i.MetaDescription,
+		&i.OgImageUrl,
+		&i.SeoIndexable,
+		&i.Status,
+		&i.Visibility,
+		&i.IsLocked,
+		&i.IsPinned,
+		&i.ReadTimeMinutes,
+		&i.ViewCount,
+		&i.CommentCount,
+		&i.ShareCount,
+		&i.ReshareCount,
+		&i.PublishAt,
+		&i.PublishedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.GuideCategory,
+	)
+	return i, err
+}
+
 const recordContentView = `-- name: RecordContentView :exec
 INSERT INTO user_content_views (content_id, user_id, session_id, country_code, viewed_at)
 VALUES ($1, $2, $3, $4, now())
