@@ -440,6 +440,7 @@ type MenusCreateMenuItemInput struct {
 	Target           string          `json:"target"`
 	IsAdSlot         bool            `json:"is_ad_slot"`
 	AdSlotConfig     json.RawMessage `json:"ad_slot_config,omitempty"`
+	Status           string          `json:"status,omitempty"`
 }
 
 // MenusUpdateMenuItemInput mirrors menus.UpdateMenuItemInput.

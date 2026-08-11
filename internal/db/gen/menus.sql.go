@@ -60,8 +60,8 @@ func (q *Queries) CountMenus(ctx context.Context, arg CountMenusParams) (int32, 
 }
 
 const createMenu = `-- name: CreateMenu :one
-INSERT INTO menus (tenant_id, slug, name, placement)
-VALUES ($1, $2, $3, $4)
+INSERT INTO menus (tenant_id, slug, name, placement, status)
+VALUES ($1, $2, $3, $4, $5)
 RETURNING id, tenant_id, slug, name, placement, status, created_at, updated_at
 `
 
@@ -70,6 +70,7 @@ type CreateMenuParams struct {
 	Slug      string      `json:"slug"`
 	Name      string      `json:"name"`
 	Placement string      `json:"placement"`
+	Status    string      `json:"status"`
 }
 
 func (q *Queries) CreateMenu(ctx context.Context, arg CreateMenuParams) (Menu, error) {
@@ -78,6 +79,7 @@ func (q *Queries) CreateMenu(ctx context.Context, arg CreateMenuParams) (Menu, e
 		arg.Slug,
 		arg.Name,
 		arg.Placement,
+		arg.Status,
 	)
 	var i Menu
 	err := row.Scan(
@@ -96,10 +98,10 @@ func (q *Queries) CreateMenu(ctx context.Context, arg CreateMenuParams) (Menu, e
 const createMenuItem = `-- name: CreateMenuItem :one
 INSERT INTO menu_items (tenant_id, menu_id, parent_id, label, url, icon,
     sort_order, permission_node, visibility, target, is_ad_slot, ad_slot_config,
-    required_group_ids)
+    required_group_ids, status)
 VALUES ($1, $2, $3, $4, $5, $6,
     $7, $8, $9, $10, $11,
-    $12, $13)
+    $12, $13, $14)
 RETURNING id, tenant_id, menu_id, parent_id, label, url, icon, sort_order,
     permission_node, visibility, target, is_ad_slot, ad_slot_config,
     status, required_group_ids, created_at, updated_at
@@ -119,6 +121,7 @@ type CreateMenuItemParams struct {
 	IsAdSlot         bool        `json:"is_ad_slot"`
 	AdSlotConfig     []byte      `json:"ad_slot_config"`
 	RequiredGroupIds []byte      `json:"required_group_ids"`
+	Status           string      `json:"status"`
 }
 
 type CreateMenuItemRow struct {
@@ -156,6 +159,7 @@ func (q *Queries) CreateMenuItem(ctx context.Context, arg CreateMenuItemParams) 
 		arg.IsAdSlot,
 		arg.AdSlotConfig,
 		arg.RequiredGroupIds,
+		arg.Status,
 	)
 	var i CreateMenuItemRow
 	err := row.Scan(

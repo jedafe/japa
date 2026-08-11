@@ -15,6 +15,7 @@ import (
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/clientip"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/mentions"
 	"github.com/jedafe/japa/internal/spam"
 	"github.com/jedafe/japa/internal/tenant"
 	"github.com/jedafe/japa/internal/worker"
@@ -54,11 +55,12 @@ type PermissionChecker interface {
 
 // Handlers holds dependencies for comment HTTP handlers.
 type Handlers struct {
-	Service      *Service
-	SpamPipeline *spam.SpamPipeline
-	asynqClient  TaskEnqueueClient      // nil disables engagement updates (test-only)
-	notifier     NotificationDispatcher // nil disables notifications (test-only)
-	perms        PermissionChecker      // nil disables delete_any moderator path
+	Service         *Service
+	SpamPipeline    *spam.SpamPipeline
+	asynqClient     TaskEnqueueClient      // nil disables engagement updates (test-only)
+	notifier        NotificationDispatcher // nil disables notifications (test-only)
+	perms           PermissionChecker      // nil disables delete_any moderator path
+	mentionCheckers *mentions.DBCheckers   // nil disables erased-mention redaction
 }
 
 // NewHandlers creates Handlers with the given Service.
@@ -82,6 +84,27 @@ func (h *Handlers) SetNotifier(n NotificationDispatcher) { h.notifier = n }
 // SetPermissionChecker wires the RBAC resolver used by DeleteComment to allow
 // the comments.delete_any moderator path for non-authors (BUG-003).
 func (h *Handlers) SetPermissionChecker(p PermissionChecker) { h.perms = p }
+
+// SetMentionCheckers wires the DB-backed erased-user checker used to
+// redact mentions of deleted users in comment responses (Section 15 /
+// ADR-029). nil disables redaction (backward compat / tests).
+func (h *Handlers) SetMentionCheckers(c *mentions.DBCheckers) { h.mentionCheckers = c }
+
+// computeErasedMentionIDs returns the set of mentioned user IDs in a comment
+// body whose accounts have been erased (Section 15 / ADR-029). Returns nil
+// when checkers are not wired or no mentions are erased. Best-effort: errors
+// are logged and an empty result is returned so the request still succeeds.
+func (h *Handlers) computeErasedMentionIDs(ctx context.Context, tenantID pgtype.UUID, body []byte) []string {
+	if h.mentionCheckers == nil {
+		return nil
+	}
+	erased, err := mentions.ComputeErasedMentionIDs(ctx, body, tenantID, h.mentionCheckers)
+	if err != nil {
+		slog.Warn("comments: ComputeErasedMentionIDs failed", "error", err)
+		return nil
+	}
+	return erased
+}
 
 // requireTenant resolves the tenant from the request context.
 func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
@@ -236,7 +259,23 @@ func (h *Handlers) ListComments(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": comments})
+	// GDPR / ADR-029: compute erased-mention IDs across all comments so the
+	// frontend can render @[deleted user] for mentions of erased users.
+	resp := map[string]any{"data": comments}
+	erasedSet := make(map[string]struct{})
+	for _, c := range comments {
+		for _, id := range h.computeErasedMentionIDs(r.Context(), tenantID, c.Body) {
+			erasedSet[id] = struct{}{}
+		}
+	}
+	if len(erasedSet) > 0 {
+		erasedIDs := make([]string, 0, len(erasedSet))
+		for id := range erasedSet {
+			erasedIDs = append(erasedIDs, id)
+		}
+		resp["deleted_user_ids"] = erasedIDs
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // GetComment handles GET /api/v1/comments/{id}.
@@ -258,7 +297,12 @@ func (h *Handlers) GetComment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": comment})
+	// GDPR / ADR-029: expose deleted_user_ids for frontend rendering.
+	resp := map[string]any{"data": comment}
+	if erasedIDs := h.computeErasedMentionIDs(r.Context(), tenantID, comment.Body); len(erasedIDs) > 0 {
+		resp["deleted_user_ids"] = erasedIDs
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // CreateComment handles POST /api/v1/content/{id}/comments.
@@ -383,7 +427,20 @@ func (h *Handlers) UpdateComment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": comment})
+	// Dispatch @mention notifications for newly added mentions — fire-and-forget
+	// (Section 49 — comment:notify_mention → notification:dispatch_batch).
+	// The notification batch system deduplicates by (recipient, type, subject)
+	// so mentions that were already notified on create won't produce duplicates.
+	if h.notifier != nil {
+		h.Service.DispatchCommentNotifications(r.Context(), tenantID, comment, h.notifier)
+	}
+
+	// GDPR / ADR-029: expose deleted_user_ids for frontend rendering.
+	resp := map[string]any{"data": comment}
+	if erasedIDs := h.computeErasedMentionIDs(r.Context(), tenantID, comment.Body); len(erasedIDs) > 0 {
+		resp["deleted_user_ids"] = erasedIDs
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // DeleteComment handles DELETE /api/v1/comments/{id}.

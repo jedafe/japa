@@ -147,8 +147,8 @@ SELECT up.user_id, up.tenant_id, up.is_mentor, up.mentor_capacity,
        up.display_name, up.avatar_url, u.username,
        (up.mentor_capacity - up.active_mentee_count)::int AS available_slots,
        CASE WHEN up.mentor_embedding IS NOT NULL
-            THEN 1 - (up.mentor_embedding <=> @mentee_embedding)
-            ELSE 0
+            THEN (1 - (up.mentor_embedding <=> @mentee_embedding))::double precision
+            ELSE 0::double precision
        END AS bio_similarity
 FROM user_profiles up
 JOIN users u ON u.id = up.user_id AND u.tenant_id = up.tenant_id
@@ -186,6 +186,17 @@ ORDER BY u.username;
 INSERT INTO mentorship_connections (tenant_id, mentor_id, mentee_id, status, goals, destination_space_id)
 VALUES (@tenant_id, @mentor_id, @mentee_id, 'pending', @goals, @destination_space_id)
 RETURNING *;
+
+-- name: GetActiveOrPendingConnection :one
+-- Check whether an active or pending connection already exists between a
+-- mentor and mentee (§102: a new request can only be sent after the previous
+-- one has been resolved). Returns at most one row.
+SELECT id FROM mentorship_connections
+WHERE tenant_id = @tenant_id
+  AND mentor_id = @mentor_id
+  AND mentee_id = @mentee_id
+  AND status IN ('pending', 'active')
+LIMIT 1;
 
 -- name: GetMentorshipConnection :one
 -- Get a single connection by ID (within tenant).

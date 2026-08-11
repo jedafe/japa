@@ -53,6 +53,17 @@
 			return u;
 		}
 	}
+
+	/** Defense-in-depth: only allow http(s) and relative URLs as href.
+	 *  The server sanitizer also validates data-url, but the frontend
+	 *  must never render javascript:/data: URIs as clickable links. */
+	function safeHref(u: string): string {
+		const lower = u.trim().toLowerCase();
+		if (lower.startsWith('http://') || lower.startsWith('https://') || lower.startsWith('/') || lower.startsWith('#') || lower.startsWith('?')) {
+			return u;
+		}
+		return '#';
+	}
 </script>
 
 <div class="link-preview-card">
@@ -64,13 +75,13 @@
 	{:else if error}
 		<div class="lp-error">
 			<span>{t('create.editor.link_preview.error')}</span>
-			<a href={url} target="_blank" rel="noopener noreferrer" class="lp-open-external">
+			<a href={safeHref(url)} target="_blank" rel="noopener noreferrer" class="lp-open-external">
 				{displayUrl(url)}
 				<ExternalLink size={12} />
 			</a>
 		</div>
 	{:else if preview}
-		<a href={url} target="_blank" rel="noopener noreferrer" class="lp-content">
+		<a href={safeHref(url)} target="_blank" rel="noopener noreferrer" class="lp-content">
 			{#if preview.image}
 				<div class="lp-image">
 					<img src={preview.image} alt={preview.title} loading="lazy" />

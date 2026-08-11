@@ -222,6 +222,16 @@ SET display_name = 'Deleted User',
     japa_stage_history = '[]'::jsonb,
     japa_stage_is_public = false,
     japa_stage_updated_at = NULL,
+    -- §102 Mentorship Matching (ADR-110): clear mentor PII — mentor_bio is
+    -- personal text, mentor_embedding is derived PII, mentor_areas reveals
+    -- expertise/destination knowledge, is_mentor reveals opt-in status.
+    is_mentor = false,
+    mentor_capacity = NULL,
+    active_mentee_count = NULL,
+    mentor_areas = NULL,
+    mentor_bio = NULL,
+    mentor_since = NULL,
+    mentor_embedding = NULL,
     updated_at = now()
 WHERE user_id = @user_id AND tenant_id = @tenant_id;
 
@@ -1042,6 +1052,15 @@ DELETE FROM user_dm_settings WHERE user_id = @user_id AND tenant_id = @tenant_id
 -- GDPR erasure. Block relationships are user-owned config.
 DELETE FROM user_blocks
 WHERE blocker_id = @user_id OR blocked_id = @user_id;
+
+-- name: DeleteNotificationsByUser :exec
+-- BUG-M006: delete notifications addressed to the erased user during GDPR
+-- erasure (Section 19). Notification rows contain recipient_id and may
+-- reference actor_user_id; the recipient's notifications are user-owned
+-- data and must be removed. Actor references in other users' notifications
+-- are anonymized separately if needed.
+DELETE FROM notifications
+WHERE recipient_id = @user_id AND tenant_id = @tenant_id;
 
 -- name: GdprExportAttestationCommunityUpdates :one
 -- §97: export attestation_community_updates authored by the user.

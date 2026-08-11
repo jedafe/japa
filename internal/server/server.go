@@ -513,6 +513,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	commentsHandlers.SetAsynqClient(asynqClient)
 	// BUG-004: wire DB-backed privacy checkers for comment mention filtering.
 	commentsService.SetMentionCheckers(mentionCheckers)
+	// Wire erased-mention redaction for GDPR/ADR-029 compliance in comment
+	// responses (ListComments / GetComment / UpdateComment).
+	commentsHandlers.SetMentionCheckers(mentionCheckers)
 	// BUG-003: wire the RBAC resolver so DeleteComment can distinguish
 	// comments.delete_own (author) from comments.delete_any (moderator).
 	commentsHandlers.SetPermissionChecker(rbacResolver)
@@ -593,6 +596,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Blog Extension subsystem (Section 24 — Blog Extension).
 	blogService := blog.NewService(database)
 	blogHandlers := blog.NewHandlers(blogService, contentService, cfg.SiteURL, cfg.SiteName)
+	// Wire mention notification dispatch for blog posts (Section 15 / ADR-029).
+	// Fire-and-forget per Rule 8.
+	blogHandlers.SetMentionNotifier(commentNotificationAdapter{svc: notificationService})
 	// Wire erased-mention redaction for GDPR/ADR-029 compliance.
 	blogHandlers.SetMentionCheckers(mentionCheckers)
 	// Wire RSS cache + on-publish regeneration (Section 24 — rss:regenerate
@@ -760,7 +766,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	// Media subsystem (Section 34 — Media System).
 	mediaService := media.NewService(database)
+	// Inject system_settings provider for Rule 3 compliance
+	// (media.max_upload_mb, media.allowed_video_types, media.cdn.base_url).
+	mediaService.SetSettings(settingsService)
 	mediaHandlers := media.NewHandlers(mediaService)
+	// Inject RBAC resolver for in-handler permission checks (media.video.upload).
+	mediaHandlers.SetPermissionChecker(rbacResolver)
 	// Resolve logo_media_id to an imgproxy-signed logo_url in university
 	// and space responses (Section 34 / ADR-039 — audit finding H5).
 	universitiesHandlers.SetMediaResolver(mediaService)
@@ -1180,6 +1191,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// AI Core subsystem (Section 20 — AI Core).
 	aiDispatcher := ai.NewDispatcher()
 
+	// §102: wire the AI embedder into the mentorship service for
+	// mentor:generate_embedding tasks (ADR-110).
+	mentorshipService.SetEmbedder(ai.NewRAGEmbedder(aiDispatcher))
+
 	// Register Xiaomi MiMo as the primary content generation + chat provider.
 	// The "chat" category is required by HandleChat (JapaBot) — without it,
 	// every /ai/chat request fails with "no providers registered for category
@@ -1431,6 +1446,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	searchIndexer := search.NewIndexer(meiliClient, gen.New(database.Reader))
 	searchIndexer.SetPool(database)
 	worker.RegisterSearchIndexer(searchIndexer)
+
+	// §102: wire the Meilisearch indexer into the mentorship service and
+	// register it as the MentorProcessor so mentor:generate_embedding and
+	// mentor:update_meilisearch tasks are handled (ADR-110).
+	mentorshipService.SetMeilisearchIndexer(searchIndexer)
+	worker.RegisterMentorProcessor(mentorshipService)
 
 	searchHandlers := search.NewHandlers(meiliClient)
 	searchHandlers.SetQueries(gen.New(database.Reader))
@@ -2313,11 +2334,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "media.upload")).Post("/media/upload", mediaHandlers.InitiateUpload)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/media/confirm/{id}", mediaHandlers.ConfirmUpload)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/media/{id}", mediaHandlers.GetMedia)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Patch("/media/{id}", mediaHandlers.UpdateMetadata)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "media.library.view_own")).Get("/media/{id}", mediaHandlers.GetMedia)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "media.library.view_own")).Patch("/media/{id}", mediaHandlers.UpdateMetadata)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "media.delete_own")).Delete("/media/{id}", mediaHandlers.DeleteMedia)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/media", mediaHandlers.ListMedia)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/media", mediaHandlers.ListMyMedia)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "media.view_all")).Get("/media", mediaHandlers.ListMedia)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "media.library.view_own")).Get("/me/media", mediaHandlers.ListMyMedia)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "media.delete_own")).Post("/media/bulk-delete", mediaHandlers.BulkDelete)
 
 			// Media quarantine admin routes — review queue for virus scan false positives
@@ -2332,7 +2353,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "media.view_all")).
 				Get("/admin/media", mediaHandlers.ListMedia)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "media.delete_any")).
-				Delete("/admin/media/{id}", mediaHandlers.DeleteMedia)
+				Delete("/admin/media/{id}", mediaHandlers.AdminDeleteMedia)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "media.edit_any")).
 				Patch("/admin/media/{id}", mediaHandlers.AdminUpdateMetadata)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "media.quarantine.manage")).
@@ -2384,6 +2405,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// notifications. Ref: Section 35.
 			forumService.SetNotificationDispatcher(commentNotificationAdapter{svc: notificationService})
 			forumHandlers := forum.NewHandlers(forumService, contentService)
+			// Wire mention notification dispatch for forum threads and replies
+			// (Section 15 / ADR-029). Fire-and-forget per Rule 8.
+			forumHandlers.SetMentionNotifier(commentNotificationAdapter{svc: notificationService})
 			// Wire erased-mention redaction for GDPR/ADR-029 compliance.
 			forumHandlers.SetMentionCheckers(mentionCheckers)
 

@@ -1,6 +1,6 @@
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet, apiGetEnvelope, apiList, ApiError } from '$lib/server/api';
+import { apiContext, apiGet, apiGetEnvelope, ApiError } from '$lib/server/api';
 import type { ContentArticle } from '$lib/types/content';
 import type { Comment } from '$lib/types';
 
@@ -80,12 +80,21 @@ export const load: PageServerLoad = async (event) => {
 
 	let comments: Comment[] = [];
 	let commentsLoadError = false;
+	let commentDeletedUserIds: string[] | null = null;
 	try {
-		const { items } = await apiList<Comment>(ctx, `/content/${article.id}/comments?page_size=50`);
-		comments = items;
+		const envelope = await apiGetEnvelope<Comment[]>(ctx, `/content/${article.id}/comments?page_size=50`);
+		comments = envelope.data ?? [];
+		commentDeletedUserIds = envelope.deleted_user_ids ?? null;
 	} catch {
 		commentsLoadError = true;
 	}
+
+	// Merge deleted user IDs from the article body and comments so the
+	// frontend can render @[deleted user] for all erased mentions (ADR-029).
+	const allDeletedUserIds = new Set<string>();
+	if (deletedUserIds) for (const id of deletedUserIds) allDeletedUserIds.add(id);
+	if (commentDeletedUserIds) for (const id of commentDeletedUserIds) allDeletedUserIds.add(id);
+	const mergedDeletedUserIds = allDeletedUserIds.size > 0 ? Array.from(allDeletedUserIds) : null;
 
 	// Sidebar widgets (Section 59, ADR-066). The content reading layout renders
 	// these below the CreatorCard in the right <aside>.
@@ -125,7 +134,7 @@ export const load: PageServerLoad = async (event) => {
 		rightSidebarWidgets,
 		relatedContent,
 		jsonLd,
-		deletedUserIds,
+		deletedUserIds: mergedDeletedUserIds,
 		initiallyFollowing: isFollowing
 	};
 };

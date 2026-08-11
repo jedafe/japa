@@ -227,8 +227,11 @@ func sanitizeAttributes(n *html.Node) {
 			continue
 		}
 
-		// Validate URL attributes.
-		if attrName == "href" || attrName == "src" {
+		// Validate URL attributes. data-url is used by the link-preview
+		// TipTap node (Section 15) and is rendered as <a href> on view
+		// pages, so it must be scheme-validated the same as href/src to
+		// prevent stored XSS via javascript: URIs.
+		if attrName == "href" || attrName == "src" || attrName == "data-url" {
 			if !isSafeURL(attr.Val) {
 				continue
 			}

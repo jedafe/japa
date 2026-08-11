@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
+	"log/slog"
 	"os"
 )
 
@@ -19,7 +20,8 @@ type ImageProxyOpts struct {
 
 // MediaURL generates an imgproxy HMAC-SHA256 signed URL for a media item.
 // Called on every serialization — NEVER cached in DB.
-// Falls back to a local serving endpoint when imgproxy is not configured.
+// Falls back to a local serving endpoint when imgproxy is not configured
+// or when the key/salt are invalid hex (security: never sign with an empty key).
 func MediaURL(storageBucket, storagePath string, opts ImageProxyOpts) string { //nolint:revive // stuttering type name preserved for API compatibility
 	key := os.Getenv("JC_IMGPROXY_KEY")
 	salt := os.Getenv("JC_IMGPROXY_SALT")
@@ -27,6 +29,19 @@ func MediaURL(storageBucket, storagePath string, opts ImageProxyOpts) string { /
 
 	// Fallback to local serving endpoint when imgproxy is not configured.
 	if key == "" || salt == "" || baseURL == "" {
+		return "/api/v1/media/serve/" + storageBucket + "/" + storagePath
+	}
+
+	keyBytes, err := hex.DecodeString(key)
+	if err != nil {
+		slog.Error("imgproxy: JC_IMGPROXY_KEY is not valid hex — falling back to local serve",
+			"error", err)
+		return "/api/v1/media/serve/" + storageBucket + "/" + storagePath
+	}
+	saltBytes, err := hex.DecodeString(salt)
+	if err != nil {
+		slog.Error("imgproxy: JC_IMGPROXY_SALT is not valid hex — falling back to local serve",
+			"error", err)
 		return "/api/v1/media/serve/" + storageBucket + "/" + storagePath
 	}
 
@@ -57,18 +72,9 @@ func MediaURL(storageBucket, storagePath string, opts ImageProxyOpts) string { /
 	path := fmt.Sprintf("/rs:%s:%d:%d/plain/%s@%s",
 		resizingType, width, height, encoded, format)
 
-	keyBytes := hexDecode(key)
-	saltBytes := hexDecode(salt)
-
 	mac := hmac.New(sha256.New, keyBytes)
 	mac.Write(append(saltBytes, []byte(path)...))
 	sig := base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
 
 	return baseURL + "/" + sig + path
-}
-
-// hexDecode decodes a hex string, returning nil on error.
-func hexDecode(s string) []byte {
-	b, _ := hex.DecodeString(s)
-	return b
 }

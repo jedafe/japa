@@ -91,7 +91,7 @@
 	// `fields` drives EntityForm rendering + edit-form seeding for the MENU entity.
 	const fields: FieldDef[] = [
 		{ key: 'name', label: t('menus.name', 'Name'), type: 'text', placeholder: 'e.g., Primary Nav', required: true },
-		{ key: 'slug', label: t('menus.slug', 'Slug'), type: 'text', placeholder: 'primary-nav', required: true },
+		{ key: 'slug', label: t('menus.slug', 'Slug'), type: 'text', placeholder: 'primary-nav', required: true, readonlyInEdit: true, help: t('menus.slug_immutable', 'Slug cannot be changed after creation') },
 		{ key: 'placement', label: t('menus.placement', 'Placement'), type: 'select', options: placementOptions },
 		{ key: 'status', label: t('common.status', 'Status'), type: 'select', options: statusOptions }
 	];
@@ -212,10 +212,11 @@
 			});
 			return res.ok ? { ok: true } : { ok: false, error: res.error };
 		},
+		// Slug is immutable after creation (backend UpdateMenu does not
+		// accept slug — it is the public URL identifier per ADR-054).
 		update: async (id, body) => {
 			const res = await menusAdminApi.update(id, {
 				name: String(body.name ?? '').trim(),
-				slug: String(body.slug ?? '').trim().toLowerCase().replace(/\s+/g, '-'),
 				placement: String(body.placement ?? 'sidebar'),
 				status: String(body.status ?? 'active')
 			});

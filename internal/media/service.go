@@ -17,8 +17,14 @@ import (
 	"github.com/jedafe/japa/internal/db/gen"
 )
 
-// MaxFileSizeBytes is the maximum allowed upload size (50 MB).
+// MaxFileSizeBytes is the fallback maximum allowed upload size when
+// media.max_upload_mb is not configured in system_settings (50 MB).
 const MaxFileSizeBytes int64 = 50 * 1024 * 1024
+
+// ErrMediaNotFound is returned when a media item does not exist or does not
+// belong to the requesting user. The handler maps this to 404 to avoid
+// leaking existence information to unauthorized users.
+var ErrMediaNotFound = errors.New("media not found")
 
 // AllowedMIMETypes is the set of MIME types accepted for upload.
 var AllowedMIMETypes = map[string]bool{
@@ -59,11 +65,21 @@ func (s *Service) InitiateUpload(ctx context.Context, tenantID, uploaderID pgtyp
 		return UploadResult{}, errors.New("file_size_bytes must be positive")
 	}
 
-	if fileSize > MaxFileSizeBytes {
-		return UploadResult{}, fmt.Errorf("file too large: %d bytes exceeds limit of %d bytes", fileSize, MaxFileSizeBytes)
+	// Max upload size from system_settings 'media.max_upload_mb' (Rule 3).
+	// Falls back to MaxFileSizeBytes (50 MB) when settings are not configured.
+	maxBytes := MaxFileSizeBytes
+	if s.settings != nil {
+		maxMB := s.settings.GetIntOr(ctx, tenantID, "media.max_upload_mb", 50)
+		if maxMB > 0 {
+			maxBytes = int64(maxMB) * 1024 * 1024
+		}
 	}
 
-	if !AllowedMIMETypes[mimeType] {
+	if fileSize > maxBytes {
+		return UploadResult{}, fmt.Errorf("file too large: %d bytes exceeds limit of %d bytes", fileSize, maxBytes)
+	}
+
+	if !s.isAllowedMIME(ctx, tenantID, mimeType) {
 		return UploadResult{}, fmt.Errorf("unsupported MIME type: %s", mimeType)
 	}
 
@@ -292,6 +308,7 @@ func (s *Service) GetMedia(ctx context.Context, tenantID, mediaID pgtype.UUID) (
 }
 
 // UpdateMetadata updates alt_text, caption, dimensions, and user_group_id on a media item.
+// Admin path — no ownership check (gated by media.edit_any).
 func (s *Service) UpdateMetadata(ctx context.Context, tenantID, mediaID pgtype.UUID, altText, caption *string, width, height *int32, duration *float64, userGroupID pgtype.UUID) error {
 	var durationNum pgtype.Numeric
 	if duration != nil {
@@ -312,9 +329,38 @@ func (s *Service) UpdateMetadata(ctx context.Context, tenantID, mediaID pgtype.U
 	})
 }
 
-// DeleteMedia soft-deletes a media item.
+// UpdateMetadataOwn updates metadata scoped to the uploader (gated by media.edit_own).
+// Returns ErrMediaNotFound if the media belongs to a different user.
+func (s *Service) UpdateMetadataOwn(ctx context.Context, tenantID, uploaderID, mediaID pgtype.UUID, altText, caption *string, width, height *int32, duration *float64, userGroupID pgtype.UUID) error {
+	var durationNum pgtype.Numeric
+	if duration != nil {
+		if err := durationNum.Scan(fmt.Sprintf("%f", *duration)); err != nil {
+			return fmt.Errorf("invalid duration %v: %w", *duration, err)
+		}
+	}
+
+	return s.store.UpdateMediaMetadataOwn(ctx, gen.UpdateMediaMetadataOwnParams{
+		ID:             mediaID,
+		TenantID:       tenantID,
+		UploaderUserID: uploaderID,
+		AltText:        altText,
+		Caption:        caption,
+		WidthPx:        width,
+		HeightPx:       height,
+		DurationSecs:   durationNum,
+		UserGroupID:    userGroupID,
+	})
+}
+
+// DeleteMedia soft-deletes a media item (admin path — no ownership check).
 func (s *Service) DeleteMedia(ctx context.Context, tenantID, mediaID pgtype.UUID) error {
 	return s.store.SoftDeleteMedia(ctx, mediaID, tenantID)
+}
+
+// DeleteMediaOwn soft-deletes a media item scoped to the uploader (gated by media.delete_own).
+// Returns ErrMediaNotFound if the media belongs to a different user.
+func (s *Service) DeleteMediaOwn(ctx context.Context, tenantID, uploaderID, mediaID pgtype.UUID) error {
+	return s.store.SoftDeleteMediaOwn(ctx, mediaID, tenantID, uploaderID)
 }
 
 // ListMedia returns paginated media, optionally filtered by uploader, type,
@@ -416,7 +462,7 @@ func (s *Service) GetMediaURL(m *gen.Medium, opts ImageProxyOpts) string {
 	return MediaURL(m.StorageBucket, m.StoragePath, opts)
 }
 
-// BulkDelete soft-deletes multiple media items.
+// BulkDelete soft-deletes multiple media items (admin — no ownership check).
 func (s *Service) BulkDelete(ctx context.Context, tenantID pgtype.UUID, mediaIDs []pgtype.UUID) error {
 	if len(mediaIDs) == 0 {
 		return nil
@@ -425,9 +471,60 @@ func (s *Service) BulkDelete(ctx context.Context, tenantID pgtype.UUID, mediaIDs
 	return s.store.BulkSoftDeleteMedia(ctx, tenantID, mediaIDs)
 }
 
+// BulkDeleteOwn soft-deletes multiple media items scoped to the uploader.
+func (s *Service) BulkDeleteOwn(ctx context.Context, tenantID, uploaderID pgtype.UUID, mediaIDs []pgtype.UUID) error {
+	if len(mediaIDs) == 0 {
+		return nil
+	}
+
+	return s.store.BulkSoftDeleteMediaOwn(ctx, tenantID, uploaderID, mediaIDs)
+}
+
 // IsAllowedMIMEType checks if a MIME type is in the allowed set.
 func IsAllowedMIMEType(mimeType string) bool {
 	return AllowedMIMETypes[mimeType]
+}
+
+// isAllowedMIME checks if a MIME type is allowed for upload, considering
+// system_settings 'media.allowed_video_types' for video types (Rule 3).
+// When settings are not configured, falls back to the static AllowedMIMETypes
+// map.
+func (s *Service) isAllowedMIME(ctx context.Context, tenantID pgtype.UUID, mimeType string) bool {
+	canonical := CanonicalMIMEType(mimeType)
+
+	// Non-video types use the static allowed set.
+	if !strings.HasPrefix(canonical, "video/") {
+		return AllowedMIMETypes[canonical]
+	}
+
+	// Video types: check against media.allowed_video_types from system_settings.
+	// Default is "mp4,webm,mov" per the system-settings-catalog.
+	if s.settings == nil {
+		return AllowedMIMETypes[canonical]
+	}
+
+	allowedCSV := s.settings.GetStringOr(ctx, tenantID, "media.allowed_video_types", "mp4,webm,mov")
+	return isVideoTypeAllowed(canonical, allowedCSV)
+}
+
+// isVideoTypeAllowed checks if a canonical video MIME type is in the
+// comma-separated list of allowed video extensions from system_settings.
+// The setting stores extensions (mp4,webm,mov); this maps them to MIME types.
+func isVideoTypeAllowed(canonicalMIME, allowedCSV string) bool {
+	extToMIME := map[string]string{
+		"mp4":  "video/mp4",
+		"webm": "video/webm",
+		"mov":  "video/quicktime",
+		"avi":  "video/avi",
+		"mkv":  "video/x-matroska",
+	}
+	for _, ext := range strings.Split(allowedCSV, ",") {
+		ext = strings.TrimSpace(strings.ToLower(ext))
+		if mime, ok := extToMIME[ext]; ok && mime == canonicalMIME {
+			return true
+		}
+	}
+	return false
 }
 
 // NormalizeMIMEType normalizes a MIME type to a canonical form for comparison.
@@ -463,8 +560,16 @@ func (s *Service) StoreFromBytes(ctx context.Context, tenantID, uploaderID pgtyp
 	if len(data) == 0 {
 		return pgtype.UUID{}, errors.New("data is empty")
 	}
-	if int64(len(data)) > MaxFileSizeBytes {
-		return pgtype.UUID{}, fmt.Errorf("data too large: %d bytes exceeds limit of %d bytes", len(data), MaxFileSizeBytes)
+	// Max upload size from system_settings 'media.max_upload_mb' (Rule 3).
+	maxBytes := MaxFileSizeBytes
+	if s.settings != nil {
+		maxMB := s.settings.GetIntOr(ctx, tenantID, "media.max_upload_mb", 50)
+		if maxMB > 0 {
+			maxBytes = int64(maxMB) * 1024 * 1024
+		}
+	}
+	if int64(len(data)) > maxBytes {
+		return pgtype.UUID{}, fmt.Errorf("data too large: %d bytes exceeds limit of %d bytes", len(data), maxBytes)
 	}
 
 	// Sniff MIME type from content.

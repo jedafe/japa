@@ -100,6 +100,7 @@ type menuCreateArgs struct {
 	Target           string          `json:"target,omitempty"`
 	IsAdSlot         bool            `json:"is_ad_slot,omitempty"`
 	AdSlotConfig     json.RawMessage `json:"ad_slot_config,omitempty"`
+	Status           string          `json:"status,omitempty"`
 }
 
 // MenuCreateHandler returns a ToolHandler that creates a menu item. The
@@ -144,6 +145,7 @@ func MenuCreateHandler(deps *ToolDeps) ToolHandler {
 			Target:           target,
 			IsAdSlot:         a.IsAdSlot,
 			AdSlotConfig:     a.AdSlotConfig,
+			Status:           a.Status,
 		})
 		if err != nil {
 			return errorToolResult("menu_create_failed", err.Error()), nil
