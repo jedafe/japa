@@ -85,7 +85,7 @@ type CreateCommunityUpdateInput struct {
 }
 
 // GeneratePathwayInput is the request body for the Content Agent draft
-// placeholder endpoint (POST /admin/attestation/generate).
+// endpoint (POST /admin/attestation/generate).
 type GeneratePathwayInput struct {
 	DocumentType       string `json:"document_type"`
 	IssuingSpaceID     string `json:"issuing_space_id"`
@@ -227,6 +227,51 @@ func (s *Service) Create(ctx context.Context, tenantID pgtype.UUID, input Create
 	return pathwayRowToDTO(row), nil
 }
 
+// GenerateDraft creates an AI-drafted pathway in 'ai_draft' status with
+// empty pathway_steps. The pathway is marked ai_generated=true and
+// requires HITL approval (Approve) before publication. Admin-only
+// (attestation_guide.manage permission).
+func (s *Service) GenerateDraft(ctx context.Context, tenantID pgtype.UUID, input GeneratePathwayInput) (PathwayDTO, error) {
+	if input.DocumentType == "" || input.IssuingSpaceID == "" || input.DestinationSpaceID == "" {
+		return PathwayDTO{}, fmt.Errorf("document_type, issuing_space_id, and destination_space_id are required")
+	}
+
+	var issuingSpaceID pgtype.UUID
+	if err := issuingSpaceID.Scan(input.IssuingSpaceID); err != nil {
+		return PathwayDTO{}, fmt.Errorf("invalid issuing_space_id: %w", err)
+	}
+
+	var destSpaceID pgtype.UUID
+	if err := destSpaceID.Scan(input.DestinationSpaceID); err != nil {
+		return PathwayDTO{}, fmt.Errorf("invalid destination_space_id: %w", err)
+	}
+
+	aiModel := "content_agent_v1"
+	p := Pathway{
+		TenantID:           tenantID,
+		DocumentType:       input.DocumentType,
+		IssuingSpaceID:     issuingSpaceID,
+		DestinationSpaceID: destSpaceID,
+		ApostilleRequired:  false, // to be determined by Hague Convention lookup at approve time
+		PathwaySteps:       []byte("[]"),
+		Status:             PathwayStatusAIDraft,
+		IsActive:           false, // not active until approved
+		AIGenerated:        true,
+		AIModel:            &aiModel,
+	}
+
+	created, err := s.store.CreatePathway(ctx, p)
+	if err != nil {
+		return PathwayDTO{}, fmt.Errorf("attestationguide: generate draft: %w", err)
+	}
+
+	row, err := s.store.GetPathwayByID(ctx, created.ID, tenantID)
+	if err != nil {
+		return PathwayDTO{}, fmt.Errorf("attestationguide: generate draft: reload: %w", err)
+	}
+	return pathwayRowToDTO(row), nil
+}
+
 // Approve performs the HITL approval on an AI-drafted pathway. Sets
 // hitl_reviewed_by, hitl_reviewed_at = now(), status = 'published'.
 // Admin-only (attestation_guide.manage permission).
@@ -283,22 +328,26 @@ func (s *Service) SubmitCommunityUpdate(ctx context.Context, pathwayID, tenantID
 
 // ReviewCommunityUpdate approves or rejects a pending community update.
 // Admin-only (attestation_guide.manage permission).
-func (s *Service) ReviewCommunityUpdate(ctx context.Context, updateID, reviewerID pgtype.UUID, approve bool) (CommunityUpdateDTO, error) {
+func (s *Service) ReviewCommunityUpdate(ctx context.Context, updateID, tenantID, reviewerID pgtype.UUID, approve bool) (CommunityUpdateDTO, error) {
 	status := UpdateStatusApproved
 	if !approve {
 		status = UpdateStatusRejected
 	}
-	if err := s.store.ReviewCommunityUpdate(ctx, updateID, reviewerID, status); err != nil {
+	if err := s.store.ReviewCommunityUpdate(ctx, updateID, tenantID, reviewerID, status); err != nil {
 		if err == pgx.ErrNoRows {
 			return CommunityUpdateDTO{}, pgx.ErrNoRows
 		}
 		return CommunityUpdateDTO{}, fmt.Errorf("attestationguide: review update: %w", err)
 	}
-	dto := CommunityUpdateDTO{Status: status}
-	if updateID.Valid {
-		dto.ID = updateID.String()
+	// Reload the full row so the DTO includes all fields (BUG-005 fix).
+	row, err := s.store.GetCommunityUpdateByID(ctx, updateID, tenantID)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return CommunityUpdateDTO{}, pgx.ErrNoRows
+		}
+		return CommunityUpdateDTO{}, fmt.Errorf("attestationguide: review update: reload: %w", err)
 	}
-	return dto, nil
+	return communityUpdateToDTO(row), nil
 }
 
 // AdminList returns all attestation pathways (any status) for the

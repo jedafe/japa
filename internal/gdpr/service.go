@@ -969,6 +969,13 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 			return fmt.Errorf("deleting user blocks: %w", err)
 		}
 
+		// BUG-015: soft-delete attestation_community_updates authored by the
+		// user so their PII is removed while the pathway audit trail survives.
+		// Ref: §97, ADR-105.
+		if err := q.SoftDeleteAttestationCommunityUpdatesByUser(ctx, userID); err != nil {
+			return fmt.Errorf("soft-deleting attestation community updates: %w", err)
+		}
+
 		// ticket_events.user_id is nullable audit trail; nullify the actor, keep the event.
 		if err := q.NullifyTicketEventsUser(ctx, userID); err != nil {
 			return fmt.Errorf("nullifying ticket events user: %w", err)
@@ -1378,6 +1385,7 @@ type UserDataExport struct {
 	DMRequests           []map[string]interface{} `json:"dm_requests"`         // BUG-022
 	DMSettings           []map[string]interface{} `json:"dm_settings"`         // BUG-022
 	UserBlocks           []map[string]interface{} `json:"user_blocks"`         // BUG-022
+	AttestationCommunityUpdates []map[string]interface{} `json:"attestation_community_updates"` // §97 BUG-015
 	ExportMetadata       map[string]interface{}   `json:"export_metadata"`
 }
 
@@ -1833,6 +1841,15 @@ func (s *Service) collectUserData(ctx context.Context, userID, tenantID pgtype.U
 		export.UserBlocks = rows
 	} else {
 		slog.Warn("failed to collect user_blocks for export", "user_id", userID.String(), "error", err)
+	}
+
+	// BUG-015: export attestation_community_updates authored by the user
+	// so the GDPR data export includes community-submitted attestation
+	// pathway updates. Ref: §97, ADR-105.
+	if rows, err := s.store.gdprExportAttestationCommunityUpdates(ctx, userID, tenantID); err == nil {
+		export.AttestationCommunityUpdates = rows
+	} else {
+		slog.Warn("failed to collect attestation_community_updates for export", "user_id", userID.String(), "error", err)
 	}
 
 	return export, nil

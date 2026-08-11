@@ -898,7 +898,7 @@ func (h *AuthHandlers) HandleForgotPassword(w http.ResponseWriter, r *http.Reque
 	// Per-email rate limit: 3 requests per 10 minutes. Prevents a single
 	// email address from being used to flood the reset-email queue.
 	if h.VKClient != nil {
-		emailKey := valkey.MustKey("ratelimit:forgot_password:%s", req.Email)
+		emailKey := valkey.MustKey("jc:ratelimit:forgot_password:%s", req.Email)
 
 		ok, err := rateLimitCheck(r.Context(), h.VKClient.Redis(), emailKey, 3, 10*time.Minute)
 		if err != nil {
@@ -1135,6 +1135,19 @@ func (h *AuthHandlers) HandleResetPassword(w http.ResponseWriter, r *http.Reques
 		slog.Error("reset-password: failed to invalidate sessions", "user_id", rec.UserID.String(), "error", err)
 	}
 
+	// Audit log: record the password reset action.
+	// Ref: §02 "Audit log: 'user.password_reset'"
+	if h.Database != nil {
+		meta, _ := json.Marshal(map[string]string{"user_id": rec.UserID.String()})
+		_, err := h.Database.Writer.Exec(r.Context(), `
+			INSERT INTO audit_logs (tenant_id, action_type, target_type, metadata)
+			VALUES ($1, 'user.password_reset', 'user', $2::jsonb)
+		`, rec.TenantID, meta)
+		if err != nil {
+			slog.Warn("reset-password: failed to write audit log", "error", err)
+		}
+	}
+
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"data": map[string]string{
 			"message": "Password has been reset. Please log in with your new password.",
@@ -1209,7 +1222,7 @@ func (h *AuthHandlers) HandleResendVerification(w http.ResponseWriter, r *http.R
 	// Per-email rate limit: 1 request per 5 minutes. Prevents a single
 	// email address from being used to flood the verification-email queue.
 	if h.VKClient != nil {
-		emailKey := valkey.MustKey("ratelimit:resend_verification:%s", req.Email)
+		emailKey := valkey.MustKey("jc:ratelimit:resend_verification:%s", req.Email)
 
 		ok, err := rateLimitCheck(r.Context(), h.VKClient.Redis(), emailKey, 1, 5*time.Minute)
 		if err != nil {
@@ -1251,6 +1264,15 @@ func (h *AuthHandlers) HandleResendVerification(w http.ResponseWriter, r *http.R
 	if err != nil {
 		slog.Error("resend-verification: failed to generate token", "error", err)
 		return
+	}
+
+	// Invalidate previous unverified tokens before issuing a new one.
+	// Ref: §02 "POST /auth/resend-verification → invalidates previous unverified token"
+	if err := h.Queries.InvalidateUserEmailVerifications(r.Context(), gen.InvalidateUserEmailVerificationsParams{
+		UserID:   user.ID,
+		TenantID: t.ID,
+	}); err != nil {
+		slog.Error("resend-verification: failed to invalidate previous tokens", "error", err)
 	}
 
 	expiresAt := time.Now().Add(VerificationTokenTTL)

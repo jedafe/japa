@@ -179,6 +179,36 @@ func (h *Handlers) DismissTour(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "dismissed"}})
 }
 
+// GetOptions handles GET /api/v1/onboarding/options.
+// Returns the option lists for Step 1 (japa status) and Step 2 (primary goal)
+// so the frontend does not hardcode them (Rule 16). The option values are
+// the canonical machine-readable keys stored in step_data; the frontend
+// resolves the label_key via i18n for display.
+func (h *Handlers) GetOptions(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data": OnboardingOptionsResponse{
+			JapaStatuses: []OnboardingOption{
+				{Value: "newly_japa", LabelKey: "onboarding.status_newly_japa"},
+				{Value: "settling_in", LabelKey: "onboarding.status_settling_in"},
+				{Value: "settled", LabelKey: "onboarding.status_settled"},
+				{Value: "planning", LabelKey: "onboarding.status_planning"},
+				{Value: "considering", LabelKey: "onboarding.status_considering"},
+				{Value: "returned", LabelKey: "onboarding.status_returned"},
+				{Value: "never_left", LabelKey: "onboarding.status_never_left"},
+				{Value: "not_say", LabelKey: "onboarding.status_not_say"},
+			},
+			PrimaryGoals: []OnboardingOption{
+				{Value: "work", LabelKey: "onboarding.goal_work"},
+				{Value: "study", LabelKey: "onboarding.goal_study"},
+				{Value: "business", LabelKey: "onboarding.goal_business"},
+				{Value: "family", LabelKey: "onboarding.goal_family"},
+				{Value: "lifestyle", LabelKey: "onboarding.goal_lifestyle"},
+				{Value: "unsure", LabelKey: "onboarding.goal_unsure"},
+			},
+		},
+	})
+}
+
 // ---------------------------------------------------------------------------
 // Admin Onboarding Handlers
 // ---------------------------------------------------------------------------

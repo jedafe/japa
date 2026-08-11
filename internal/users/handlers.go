@@ -57,6 +57,11 @@ type Handlers struct {
 	// token TTLs). Implements auth.SettingsReader. Wired via SetAuthSettings
 	// during server setup. When nil, ChangePassword falls back to defaults.
 	authSettings auth.SettingsReader
+	// keyRot is the JWT key rotation used to validate and revoke the current
+	// access token on password change. Wired via SetKeyRotation during server
+	// setup. When nil, JTI revocation is skipped (refresh token revocation
+	// still happens via the store).
+	keyRot *auth.KeyRotation
 }
 
 // NewHandlers creates Handlers with the given Service. A nil resolver is
@@ -84,6 +89,14 @@ func (h *Handlers) SetSettings(s geoSettingsReader) {
 // validation rules. Called once during server setup.
 func (h *Handlers) SetAuthSettings(s auth.SettingsReader) {
 	h.authSettings = s
+}
+
+// SetKeyRotation wires the JWT key rotation. Used by ChangePassword to
+// validate and revoke the caller's current access token JTI after a
+// successful password change, forcing immediate re-login on all devices.
+// Ref: §02 "Session invalidation on password change"
+func (h *Handlers) SetKeyRotation(kr *auth.KeyRotation) {
+	h.keyRot = kr
 }
 
 // requireTenant resolves the tenant from the request context.

@@ -1,7 +1,7 @@
 import { redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiGet, apiList } from '$lib/server/api';
-import type { OnboardingStatus, TagSuggestion, OnboardingRecommendation, GeoContext, GeoCountry, Achievement } from '$lib/types';
+import type { OnboardingStatus, TagSuggestion, OnboardingRecommendation, GeoContext, GeoCountry, Achievement, OnboardingOptions } from '$lib/types';
 
 /**
  * Onboarding wizard (Section 09). Five-step post-login flow that collects
@@ -60,6 +60,15 @@ export const load: PageServerLoad = async (event) => {
 		countries = [];
 	}
 
+	// Preload onboarding option lists (japa status, primary goal) — Rule 16:
+	// from API, not hardcoded in the component.
+	let onboardingOptions: OnboardingOptions | null = null;
+	try {
+		onboardingOptions = await apiGet<OnboardingOptions>(ctx, '/onboarding/options');
+	} catch {
+		onboardingOptions = null;
+	}
+
 	// §89 Community Achievement Feed — preload latest achievements for the
 	// Step 5 social-proof preview. Best-effort: the feature may be disabled
 	// (returns 404), in which case the preview section is hidden.
@@ -77,6 +86,7 @@ export const load: PageServerLoad = async (event) => {
 		recommendations,
 		geoContext,
 		countries,
+		onboardingOptions,
 		achievements
 	};
 };

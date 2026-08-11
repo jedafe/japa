@@ -134,6 +134,22 @@ func (h *Handlers) ChangePassword(w http.ResponseWriter, r *http.Request) {
 			"user_id", user.UserID.String(), "error", err)
 	}
 
+	// Revoke the current access token's JTI so it is immediately invalid,
+	// not just after the 15-minute TTL expires. Same pattern as the logout
+	// handler (internal/auth/handlers.go Logout).
+	if h.keyRot != nil && h.Redis != nil {
+		if authHeader := r.Header.Get("Authorization"); authHeader != "" {
+			parts := strings.SplitN(authHeader, " ", 2)
+			if len(parts) == 2 && strings.EqualFold(parts[0], "Bearer") {
+				if claims, err := h.keyRot.ValidateAccessToken(parts[1]); err == nil {
+					if err := auth.RevokeToken(r.Context(), claims.JTI, claims.ExpiresAt.Time, h.Redis); err != nil {
+						slog.Error("change-password: revoke access token JTI", "error", err)
+					}
+				}
+			}
+		}
+	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "updated"}})
 }
 

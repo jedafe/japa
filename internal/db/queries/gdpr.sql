@@ -939,3 +939,24 @@ DELETE FROM user_dm_settings WHERE user_id = @user_id AND tenant_id = @tenant_id
 -- GDPR erasure. Block relationships are user-owned config.
 DELETE FROM user_blocks
 WHERE blocker_id = @user_id OR blocked_id = @user_id;
+
+-- name: GdprExportAttestationCommunityUpdates :one
+-- §97: export attestation_community_updates authored by the user.
+-- The table has no tenant_id column; tenant scoping is via the parent
+-- pathway's tenant_id.
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (
+    SELECT u.id, u.pathway_id, u.step_index, u.fee_estimate,
+           u.turnaround_days, u.note, u.status, u.reviewed_by, u.created_at
+    FROM attestation_community_updates u
+    JOIN attestation_pathways p ON p.id = u.pathway_id
+    WHERE u.user_id = @user_id AND p.tenant_id = @tenant_id AND u.deleted_at IS NULL
+) t;
+
+-- name: SoftDeleteAttestationCommunityUpdatesByUser :exec
+-- §97: soft-delete attestation_community_updates authored by the user
+-- during GDPR erasure. Sets deleted_at = now() to preserve audit trail
+-- while removing the user's PII association.
+UPDATE attestation_community_updates
+SET deleted_at = now()
+WHERE user_id = @user_id AND deleted_at IS NULL;

@@ -2,6 +2,7 @@
 	import { untrack } from 'svelte';
 	import { replaceState } from '$app/navigation';
 	import { api } from '$lib/api/client';
+	import { PUBLIC_JC_API_URL } from '$env/static/public';
 	import { buildSeoMeta } from '$lib/seo';
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
@@ -86,10 +87,15 @@
 		updateUrl();
 	}
 
+	let docTypeDebounce: ReturnType<typeof setTimeout> | null = null;
+
 	function onDocTypeInput() {
-		// Debounce not strictly necessary for a text filter, but we re-fetch on
-		// each change since the backend filters server-side.
-		loadPathways();
+		// Debounce the server-side filter so we don't fire a request per keystroke.
+		if (docTypeDebounce) clearTimeout(docTypeDebounce);
+		docTypeDebounce = setTimeout(() => {
+			loadPathways();
+			docTypeDebounce = null;
+		}, 300);
 	}
 
 	function updateUrl() {
@@ -291,11 +297,11 @@
 										{pathway.document_type}
 									</span>
 									{#if pathway.apostille_required}
-										<span class="text-xs px-2 py-0.5 bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 rounded-full font-medium">
+										<span class="text-xs px-2 py-0.5 rounded-full font-medium" style="background: color-mix(in srgb, var(--color-primary) 15%, transparent); color: var(--color-primary">
 											{t('attestation_guide.apostille_required', 'Apostille required')}
 										</span>
 									{:else}
-										<span class="text-xs px-2 py-0.5 bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400 rounded-full font-medium">
+										<span class="text-xs px-2 py-0.5 rounded-full font-medium" style="background: color-mix(in srgb, var(--color-muted) 15%, transparent); color: var(--color-muted">
 											{t('attestation_guide.no_apostille', 'No apostille')}
 										</span>
 									{/if}
@@ -368,7 +374,7 @@
 								<!-- Actions: PDF export + community update -->
 								<div class="flex flex-wrap items-center gap-3 pt-2 border-t border-border">
 									<a
-										href={`/attestation/${pathway.id}/export/pdf`}
+										href={`${PUBLIC_JC_API_URL}/attestation/${pathway.id}/export/pdf`}
 										target="_blank"
 										rel="noopener noreferrer"
 										class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-text bg-surface border border-border rounded-lg hover:border-primary hover:text-primary transition-colors"
@@ -392,7 +398,7 @@
 											{t('attestation_guide.update_title', 'Submit a community update')}
 										</h4>
 										{#if updateError}
-											<p class="text-sm text-red-500">{updateError}</p>
+											<p class="text-sm" style="color: var(--color-danger">{updateError}</p>
 										{/if}
 										<div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
 											<div>

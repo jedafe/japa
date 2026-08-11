@@ -66,6 +66,44 @@ func (kr *KeyRotation) RemoveKey(kid string) {
 	delete(kr.Keys, kid)
 }
 
+// LoadFromDB loads all active signing keys from the database and populates
+// the in-memory rotation map. The most recently created key becomes the
+// current signing key. If the database has active keys, they replace any
+// keys already in the rotation. Ref: §02 "jwt_signing_keys table".
+func (kr *KeyRotation) LoadFromDB(ctx context.Context, store *JWTKeyStore) error {
+	keys, err := store.GetActiveKeys(ctx)
+	if err != nil {
+		return fmt.Errorf("loading JWT signing keys from DB: %w", err)
+	}
+
+	if len(keys) == 0 {
+		return nil // No keys in DB — caller should seed from env
+	}
+
+	// Replace in-memory keys with DB-loaded keys.
+	kr.Keys = make(map[string][]byte, len(keys))
+	for _, k := range keys {
+		kr.Keys[k.KID] = k.Secret
+	}
+
+	// The first key (most recently created) is the current signing key.
+	kr.CurrentKeyID = keys[0].KID
+
+	return nil
+}
+
+// PersistKey encrypts and stores a signing key to the database so it
+// survives server restarts. Called during bootstrap when seeding from
+// the JC_JWT_SECRET env var, or during key rotation when adding a new key.
+func (kr *KeyRotation) PersistKey(ctx context.Context, store *JWTKeyStore, kid string, secret []byte) error {
+	if err := store.InsertKey(ctx, kid, secret); err != nil {
+		return fmt.Errorf("persisting JWT signing key %s: %w", kid, err)
+	}
+
+	kr.AddKey(kid, secret)
+	return nil
+}
+
 // SetCurrent sets the key ID used to sign new tokens.
 func (kr *KeyRotation) SetCurrent(kid string) error {
 	if _, ok := kr.Keys[kid]; !ok {
