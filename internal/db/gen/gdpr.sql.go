@@ -745,6 +745,38 @@ func (q *Queries) GdprDeleteAdEventsByUser(ctx context.Context, userID pgtype.UU
 	return err
 }
 
+const gdprDeleteCalendarSavesByUser = `-- name: GdprDeleteCalendarSavesByUser :exec
+DELETE FROM calendar_saves
+WHERE user_id = $1 AND tenant_id = $2
+`
+
+type GdprDeleteCalendarSavesByUserParams struct {
+	UserID   pgtype.UUID `json:"user_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+// §86: delete calendar_saves for the user during GDPR erasure (BUG-025).
+func (q *Queries) GdprDeleteCalendarSavesByUser(ctx context.Context, arg GdprDeleteCalendarSavesByUserParams) error {
+	_, err := q.db.Exec(ctx, gdprDeleteCalendarSavesByUser, arg.UserID, arg.TenantID)
+	return err
+}
+
+const gdprDeleteCalendarSubscriptionsByUser = `-- name: GdprDeleteCalendarSubscriptionsByUser :exec
+DELETE FROM calendar_subscriptions
+WHERE user_id = $1 AND tenant_id = $2
+`
+
+type GdprDeleteCalendarSubscriptionsByUserParams struct {
+	UserID   pgtype.UUID `json:"user_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+// §86: delete calendar_subscriptions for the user during GDPR erasure (BUG-025).
+func (q *Queries) GdprDeleteCalendarSubscriptionsByUser(ctx context.Context, arg GdprDeleteCalendarSubscriptionsByUserParams) error {
+	_, err := q.db.Exec(ctx, gdprDeleteCalendarSubscriptionsByUser, arg.UserID, arg.TenantID)
+	return err
+}
+
 const gdprDeleteUserContentViews = `-- name: GdprDeleteUserContentViews :exec
 DELETE FROM user_content_views WHERE user_id = $1
 `
@@ -999,6 +1031,75 @@ func (q *Queries) GdprExportUserBookmarks(ctx context.Context, arg GdprExportUse
 	return data, err
 }
 
+const gdprExportUserCalendarEntries = `-- name: GdprExportUserCalendarEntries :one
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (
+    SELECT e.id, e.title, e.description, e.category,
+           e.destination_space_id, e.origin_space_id,
+           e.occurs_at, e.ends_at, e.is_recurring, e.recurrence_pattern,
+           e.source_url, e.status, e.created_at
+    FROM calendar_entries e
+    WHERE e.submitted_by = $1 AND e.tenant_id = $2 AND e.deleted_at IS NULL
+) t
+`
+
+type GdprExportUserCalendarEntriesParams struct {
+	UserID   pgtype.UUID `json:"user_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+// §86: export calendar_entries submitted by the user (BUG-025).
+func (q *Queries) GdprExportUserCalendarEntries(ctx context.Context, arg GdprExportUserCalendarEntriesParams) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportUserCalendarEntries, arg.UserID, arg.TenantID)
+	var data interface{}
+	err := row.Scan(&data)
+	return data, err
+}
+
+const gdprExportUserCalendarSaves = `-- name: GdprExportUserCalendarSaves :one
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (
+    SELECT s.entry_id, s.saved_at
+    FROM calendar_saves s
+    WHERE s.user_id = $1 AND s.tenant_id = $2
+) t
+`
+
+type GdprExportUserCalendarSavesParams struct {
+	UserID   pgtype.UUID `json:"user_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+// §86: export calendar_saves for the user (BUG-025).
+func (q *Queries) GdprExportUserCalendarSaves(ctx context.Context, arg GdprExportUserCalendarSavesParams) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportUserCalendarSaves, arg.UserID, arg.TenantID)
+	var data interface{}
+	err := row.Scan(&data)
+	return data, err
+}
+
+const gdprExportUserCalendarSubscriptions = `-- name: GdprExportUserCalendarSubscriptions :one
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (
+    SELECT sub.destination_space_id, sub.category, sub.created_at
+    FROM calendar_subscriptions sub
+    WHERE sub.user_id = $1 AND sub.tenant_id = $2
+) t
+`
+
+type GdprExportUserCalendarSubscriptionsParams struct {
+	UserID   pgtype.UUID `json:"user_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+// §86: export calendar_subscriptions for the user (BUG-025).
+func (q *Queries) GdprExportUserCalendarSubscriptions(ctx context.Context, arg GdprExportUserCalendarSubscriptionsParams) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportUserCalendarSubscriptions, arg.UserID, arg.TenantID)
+	var data interface{}
+	err := row.Scan(&data)
+	return data, err
+}
+
 const gdprExportUserComments = `-- name: GdprExportUserComments :many
 SELECT id, content_id, body, parent_id, created_at
 FROM comments
@@ -1014,7 +1115,7 @@ type GdprExportUserCommentsParams struct {
 type GdprExportUserCommentsRow struct {
 	ID        pgtype.UUID        `json:"id"`
 	ContentID pgtype.UUID        `json:"content_id"`
-	Body      string             `json:"body"`
+	Body      []byte             `json:"body"`
 	ParentID  pgtype.UUID        `json:"parent_id"`
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }
@@ -1950,6 +2051,44 @@ UPDATE ad_campaigns SET created_by = NULL WHERE created_by = $1
 // row is preserved (it may belong to an organization). Ref: Section 25/61.
 func (q *Queries) GdprNullifyAdCampaignCreator(ctx context.Context, userID pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, gdprNullifyAdCampaignCreator, userID)
+	return err
+}
+
+const gdprReassignCalendarEntriesReviewedBy = `-- name: GdprReassignCalendarEntriesReviewedBy :exec
+UPDATE calendar_entries
+SET reviewed_by = $1
+WHERE reviewed_by = $2 AND tenant_id = $3
+`
+
+type GdprReassignCalendarEntriesReviewedByParams struct {
+	TargetUserID pgtype.UUID `json:"target_user_id"`
+	UserID       pgtype.UUID `json:"user_id"`
+	TenantID     pgtype.UUID `json:"tenant_id"`
+}
+
+// §86: reassign calendar_entries.reviewed_by to placeholder during GDPR
+// erasure (BUG-025).
+func (q *Queries) GdprReassignCalendarEntriesReviewedBy(ctx context.Context, arg GdprReassignCalendarEntriesReviewedByParams) error {
+	_, err := q.db.Exec(ctx, gdprReassignCalendarEntriesReviewedBy, arg.TargetUserID, arg.UserID, arg.TenantID)
+	return err
+}
+
+const gdprReassignCalendarEntriesSubmittedBy = `-- name: GdprReassignCalendarEntriesSubmittedBy :exec
+UPDATE calendar_entries
+SET submitted_by = $1
+WHERE submitted_by = $2 AND tenant_id = $3
+`
+
+type GdprReassignCalendarEntriesSubmittedByParams struct {
+	TargetUserID pgtype.UUID `json:"target_user_id"`
+	UserID       pgtype.UUID `json:"user_id"`
+	TenantID     pgtype.UUID `json:"tenant_id"`
+}
+
+// §86: reassign calendar_entries.submitted_by to placeholder during GDPR
+// erasure (BUG-025). The entries are community content, not user PII.
+func (q *Queries) GdprReassignCalendarEntriesSubmittedBy(ctx context.Context, arg GdprReassignCalendarEntriesSubmittedByParams) error {
+	_, err := q.db.Exec(ctx, gdprReassignCalendarEntriesSubmittedBy, arg.TargetUserID, arg.UserID, arg.TenantID)
 	return err
 }
 

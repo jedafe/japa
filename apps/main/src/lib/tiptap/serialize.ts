@@ -311,3 +311,12 @@ export function encodeReplyBody(text: string): string {
 	const doc: TipTapDoc = { type: 'doc', content: paragraphs };
 	return encodeBase64Text(JSON.stringify(doc));
 }
+
+/**
+ * Encode a TipTap document (from editor.getJSON()) into a base64 string for
+ * API transport. The Go backend stores body as jsonb; encoding/json decodes
+ * []byte fields as base64, so the frontend must base64-encode the JSON.
+ */
+export function encodeTiptapDoc(doc: TipTapDoc): string {
+	return encodeBase64Text(JSON.stringify(doc));
+}

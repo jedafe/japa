@@ -1,4 +1,4 @@
--- 000238_seed_system_field_group_assignments.up.sql
+-- 000389_seed_system_field_group_assignments.up.sql
 --
 -- The original custom field architecture migration (000008) created system
 -- field groups for Blog Post, Forum, Space, University, Organization, and

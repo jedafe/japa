@@ -6,6 +6,7 @@
 	import { EmptyState, LoadingSkeleton } from '$lib/components/ui';
 	import type { Comment } from '$lib/types';
 	import CommentItem from './CommentItem.svelte';
+	import CommentEditor from './CommentEditor.svelte';
 
 	/**
 	 * Unified comment engine for content singles (blog + CPTs) — Section 49.
@@ -41,24 +42,23 @@
 		});
 	});
 
-	// Top-level composer state.
-	let draft = $state('');
+	// Top-level composer state — body is base64 TipTap JSON.
+	let draftBody = $state<string>('');
 	let submitting = $state(false);
 	let composeError = $state<string | null>(null);
 
 	async function submitComment() {
-		const text = draft.trim();
-		if (!text || submitting || !authed) return;
+		if (!draftBody || submitting || !authed) return;
 		submitting = true;
 		composeError = null;
-		const res = await api.post<Comment>(`/content/${contentId}/comments`, { body: text });
+		const res = await api.post<Comment>(`/content/${contentId}/comments`, { body: draftBody });
 		submitting = false;
 		if (res.error || !res.data) {
 			composeError = res.error?.message ?? t('comments.load_error');
 			return;
 		}
 		comments = [res.data, ...comments];
-		draft = '';
+		draftBody = '';
 	}
 
 	const count = $derived(comments.length);
@@ -73,12 +73,7 @@
 
 	{#if authed}
 		<div class="mb-6 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
-			<textarea
-				bind:value={draft}
-				rows="3"
-				placeholder={t('comments.placeholder')}
-				class="w-full resize-y rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]"
-			></textarea>
+			<CommentEditor placeholder={t('comments.placeholder')} oninput={(b) => (draftBody = b)} />
 			<div class="mt-2 flex items-center justify-between">
 				<span class="inline-flex items-center gap-1 text-xs text-[var(--color-muted)]">
 					<CornerUpLeft size={12} /> {t('comments.replying_to')}
@@ -86,7 +81,7 @@
 				<button
 					type="button"
 					onclick={submitComment}
-					disabled={!draft.trim() || submitting}
+					disabled={!draftBody || submitting}
 					class="rounded-[var(--radius)] bg-[var(--color-primary)] px-3.5 py-1.5 text-xs font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)] disabled:opacity-50"
 				>
 					{submitting ? t('common.loading') : t('comments.post')}

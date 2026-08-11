@@ -3,6 +3,7 @@
 package comments
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/jedafe/japa/internal/testdb"
@@ -39,8 +40,9 @@ func TestListByAuthor_OnlyRepliesOnPublishedPublic(t *testing.T) {
 	if total != 1 || len(got) != 1 {
 		t.Fatalf("got total=%d len=%d, want 1 (only replies on published+public): %+v", total, len(got), got)
 	}
-	if got[0].Body != "great post" {
-		t.Fatalf("returned wrong comment body=%q want %q", got[0].Body, "great post")
+	// Body is now TipTap JSON (jsonb); check the text is present in the doc.
+	if !strings.Contains(string(got[0].Body), "great post") {
+		t.Fatalf("returned wrong comment body=%q want text containing %q", string(got[0].Body), "great post")
 	}
 	if got[0].ContentTitle == "" {
 		t.Fatalf("expected parent-content title joined, got empty")

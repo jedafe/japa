@@ -156,7 +156,7 @@
 						<span class="text-sm text-[var(--color-text-subtle)]">{data.page}</span>
 						<a
 							href="?tab={data.tab}&page={data.page + 1}"
-							class="rounded-lg border border-[var(--color-border)] px-4 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:border-[var(--color-primary)]/40 !hasNext ? 'pointer-events-none opacity-40' : ''}"
+							class="rounded-lg border border-[var(--color-border)] px-4 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:border-[var(--color-primary)]/40 {!hasNext ? 'pointer-events-none opacity-40' : ''}"
 							aria-disabled={!hasNext}
 						>
 							{t('blog.next_page', 'Next')}

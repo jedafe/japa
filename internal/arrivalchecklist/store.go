@@ -495,7 +495,7 @@ type UserChecklistRow struct {
 
 // ListUserChecklists returns the distinct arrival checklist guides a user has
 // progress on, with item counts and completion counts. Uses checklist_progress
-// with list_type = 'arrival' (migration 000369).
+// with list_type = 'arrival' (migration 000381).
 func (s *Store) ListUserChecklists(ctx context.Context, tenantID, userID pgtype.UUID) ([]UserChecklistRow, error) {
 	const q = `
 SELECT g.id,

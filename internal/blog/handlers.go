@@ -616,8 +616,16 @@ func (h *Handlers) AddPostToSeries(w http.ResponseWriter, r *http.Request) {
 }
 
 // RemovePostFromSeries handles DELETE /api/v1/blog/series/{id}/posts/{postId}.
+// BUG-003: now requires tenant context and the service verifies the series
+// belongs to the caller's tenant before deleting, preventing cross-tenant
+// post removal by an attacker who knows the series_id.
 func (h *Handlers) RemovePostFromSeries(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -634,7 +642,7 @@ func (h *Handlers) RemovePostFromSeries(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if err := h.Service.RemovePostFromSeries(r.Context(), seriesID, contentID); err != nil {
+	if err := h.Service.RemovePostFromSeries(r.Context(), seriesID, contentID, tenantID); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -677,8 +685,16 @@ func (h *Handlers) GetContentSeries(w http.ResponseWriter, r *http.Request) {
 }
 
 // ReorderSeriesPosts handles PATCH /api/v1/blog/series/{id}/posts/reorder.
+// BUG-004: now requires tenant context and the service verifies the series
+// belongs to the caller's tenant before mutating, preventing cross-tenant
+// post reorder by an attacker who knows the series_id.
 func (h *Handlers) ReorderSeriesPosts(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -719,7 +735,7 @@ func (h *Handlers) ReorderSeriesPosts(w http.ResponseWriter, r *http.Request) {
 		posts[i].Position = p.Position
 	}
 
-	if err := h.Service.BulkReorderSeriesPosts(r.Context(), seriesID, posts); err != nil {
+	if err := h.Service.BulkReorderSeriesPosts(r.Context(), seriesID, tenantID, posts); err != nil {
 		handleServiceError(w, err)
 		return
 	}

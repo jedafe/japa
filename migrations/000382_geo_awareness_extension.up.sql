@@ -1,4 +1,4 @@
--- 000247_geo_awareness_extension.up.sql
+-- 000382_geo_awareness_extension.up.sql
 -- ADR-064a: Geo-Awareness Extension — origin_country custom field,
 -- stage_tool_matrix system setting, city_level_enabled killswitch,
 -- Nominatim reverse-geocoding config, and tool label/URL catalog.

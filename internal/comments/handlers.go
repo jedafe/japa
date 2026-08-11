@@ -45,12 +45,20 @@ type TaskEnqueueClient interface {
 	Enqueue(task *asynq.Task, opts ...asynq.Option) (*asynq.TaskInfo, error)
 }
 
+// PermissionChecker resolves RBAC permissions at runtime. Implemented by
+// *rbac.RBAC. Used by DeleteComment to distinguish comments.delete_own
+// (author) from comments.delete_any (moderator) at request time (BUG-003).
+type PermissionChecker interface {
+	HasPermission(ctx context.Context, userID, tenantID pgtype.UUID, permKey string) bool
+}
+
 // Handlers holds dependencies for comment HTTP handlers.
 type Handlers struct {
 	Service      *Service
 	SpamPipeline *spam.SpamPipeline
 	asynqClient  TaskEnqueueClient      // nil disables engagement updates (test-only)
 	notifier     NotificationDispatcher // nil disables notifications (test-only)
+	perms        PermissionChecker      // nil disables delete_any moderator path
 }
 
 // NewHandlers creates Handlers with the given Service.
@@ -70,6 +78,10 @@ func (h *Handlers) SetAsynqClient(c TaskEnqueueClient) { h.asynqClient = c }
 // SetNotifier wires the notification dispatcher used after comment creation
 // (Section 49 — comment:notify_author/parent/mention → notification:dispatch_batch).
 func (h *Handlers) SetNotifier(n NotificationDispatcher) { h.notifier = n }
+
+// SetPermissionChecker wires the RBAC resolver used by DeleteComment to allow
+// the comments.delete_any moderator path for non-authors (BUG-003).
+func (h *Handlers) SetPermissionChecker(p PermissionChecker) { h.perms = p }
 
 // requireTenant resolves the tenant from the request context.
 func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
@@ -192,6 +204,13 @@ func (h *Handlers) ListComments(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Section 49 — ?sort=top|new|oldest for top-level comments. "top" is the
+	// default when the param is absent or unrecognized.
+	sort := r.URL.Query().Get("sort")
+	if sort != "new" && sort != "oldest" {
+		sort = "top"
+	}
+
 	parentIDStr := r.URL.Query().Get("parent_id")
 	if parentIDStr != "" {
 		var parentID pgtype.UUID
@@ -211,7 +230,7 @@ func (h *Handlers) ListComments(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	comments, err := h.Service.ListCommentsByContent(r.Context(), tenantID, contentID, limit, offset)
+	comments, err := h.Service.ListCommentsByContent(r.Context(), tenantID, contentID, sort, limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -261,8 +280,9 @@ func (h *Handlers) CreateComment(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var input struct {
-		ParentID *string `json:"parent_id"`
-		Body     string  `json:"body"`
+		ParentID    *string `json:"parent_id"`
+		Body        []byte  `json:"body"` // TipTap JSON (base64-encoded in transport, decoded to raw JSON bytes by encoding/json)
+		IsAnonymous bool    `json:"is_anonymous"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -270,14 +290,15 @@ func (h *Handlers) CreateComment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if input.Body == "" {
+	if len(input.Body) == 0 {
 		writeError(w, http.StatusBadRequest, "missing_body", "Comment body is required")
 		return
 	}
 
 	createInput := CreateCommentInput{
-		ContentID: contentID,
-		Body:      input.Body,
+		ContentID:   contentID,
+		Body:        input.Body,
+		IsAnonymous: input.IsAnonymous,
 	}
 
 	if input.ParentID != nil && *input.ParentID != "" {
@@ -291,7 +312,7 @@ func (h *Handlers) CreateComment(w http.ResponseWriter, r *http.Request) {
 	if h.SpamPipeline != nil {
 		clientIP := clientip.FromRequest(r)
 		spamResult, err := h.SpamPipeline.Check(r.Context(), tenantID, spam.SpamCheckRequest{
-			Content:    input.Body,
+			Content:    string(input.Body),
 			UserID:     user.UserID,
 			IP:         clientIP,
 			UserType:   "existing",
@@ -343,7 +364,7 @@ func (h *Handlers) UpdateComment(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var input struct {
-		Body string `json:"body"`
+		Body []byte `json:"body"` // TipTap JSON
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -351,7 +372,7 @@ func (h *Handlers) UpdateComment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if input.Body == "" {
+	if len(input.Body) == 0 {
 		writeError(w, http.StatusBadRequest, "missing_body", "Comment body is required")
 		return
 	}
@@ -366,7 +387,18 @@ func (h *Handlers) UpdateComment(w http.ResponseWriter, r *http.Request) {
 }
 
 // DeleteComment handles DELETE /api/v1/comments/{id}.
+//
+// Section 49 — soft-delete own comment (comments.delete_own) or any comment
+// as a moderator (comments.delete_any). The route is wired with RequireAuth
+// only; the own-vs-any decision is made here at request time so a moderator
+// holding only comments.delete_any is not blocked by a delete_own middleware
+// gate, and a plain member cannot delete another author's comment (BUG-003).
 func (h *Handlers) DeleteComment(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
@@ -375,6 +407,35 @@ func (h *Handlers) DeleteComment(w http.ResponseWriter, r *http.Request) {
 	commentID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		return
+	}
+
+	// Fetch the comment to determine authorship. GetComment returns a joined
+	// row; we only need AuthorUserID.
+	existing, err := h.Service.GetComment(r.Context(), tenantID, commentID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	isAuthor := existing.AuthorUserID.Valid && existing.AuthorUserID.Bytes == user.UserID.Bytes
+
+	if isAuthor {
+		// Author path — comments.delete_own. The sqlc query enforces
+		// author_user_id atomically, so even if the row changed hands between
+		// the GetComment and the delete, a non-author cannot delete.
+		if err := h.Service.SoftDeleteCommentByAuthor(r.Context(), tenantID, commentID, user.UserID); err != nil {
+			handleServiceError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusNoContent, nil)
+		return
+	}
+
+	// Moderator path — comments.delete_any. Requires the RBAC checker; when
+	// not wired, deny (test-only default).
+	if h.perms == nil || !h.perms.HasPermission(r.Context(), user.UserID, tenantID, "comments.delete_any") {
+		writeError(w, http.StatusForbidden, "forbidden", "You can only delete your own comments")
 		return
 	}
 
@@ -482,6 +543,47 @@ func (h *Handlers) UnpinComment(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusNoContent, nil)
+}
+
+// RemoveComment handles POST /api/v1/admin/comments/{id}/remove.
+//
+// Section 49 — moderator removal-by-status. Sets status='removed' +
+// removed_by + removed_reason, leaving the row visible for audit (unlike a
+// soft-delete). The route is gated by comments.delete_any (BUG-010).
+func (h *Handlers) RemoveComment(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	commentID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid comment ID")
+		return
+	}
+
+	var input struct {
+		Reason string `json:"reason"`
+	}
+	// Body is optional — a moderator may remove without a reason.
+	if r.Body != nil && r.ContentLength != 0 {
+		if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+			return
+		}
+	}
+
+	if err := h.Service.RemoveComment(r.Context(), tenantID, commentID, user.UserID, input.Reason); err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"removed": true}})
 }
 
 // handleServiceError translates a Service-layer error into the appropriate HTTP

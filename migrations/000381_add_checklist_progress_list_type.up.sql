@@ -1,4 +1,4 @@
--- 000369_add_checklist_progress_list_type.up.sql
+-- 000381_add_checklist_progress_list_type.up.sql
 -- Add list_type column to checklist_progress so arrival checklist progress
 -- (§92) can be distinguished from visa checklist progress (§70).
 --

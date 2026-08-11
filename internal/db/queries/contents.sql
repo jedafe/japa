@@ -440,11 +440,18 @@ RETURNING id, tenant_id, user_id, entity_type, entity_id, folder, folder_id, cre
 
 -- name: SetBookmarkFolder :exec
 UPDATE bookmarks SET folder_id = @folder_id
-WHERE user_id = @user_id AND entity_type = @entity_type AND entity_id = @entity_id;
+WHERE tenant_id = @tenant_id AND user_id = @user_id AND entity_type = @entity_type AND entity_id = @entity_id;
 
 -- name: DeleteBookmark :exec
 DELETE FROM bookmarks
-WHERE user_id = @user_id AND entity_type = @entity_type AND entity_id = @entity_id;
+WHERE tenant_id = @tenant_id AND user_id = @user_id AND entity_type = @entity_type AND entity_id = @entity_id;
+
+-- name: DeleteBookmarkByID :execrows
+-- Deletes a single bookmark by its row ID, scoped to tenant + owner.
+-- Used by DELETE /me/bookmarks/{id} — the polymorphic remove endpoint that
+-- works regardless of entity_type (content, forum_thread, space, comment, etc.).
+DELETE FROM bookmarks
+WHERE id = @id AND tenant_id = @tenant_id AND user_id = @user_id;
 
 -- name: IsBookmarked :one
 SELECT EXISTS(
@@ -585,7 +592,7 @@ LIMIT 50;
 -- name: ListPublishedContentForLLMsTxt :many
 SELECT title, slug
 FROM contents
-WHERE tenant_id = @tenant_id AND status = 'published'
+WHERE tenant_id = @tenant_id AND status = 'published' AND visibility = 'public'
 ORDER BY created_at DESC
 LIMIT 1000;
 

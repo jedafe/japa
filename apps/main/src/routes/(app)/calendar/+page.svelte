@@ -138,13 +138,13 @@
 		try {
 			if (subscribed) {
 				await api.delete('/calendar/subscribe', {
-					destination_country: destInput || undefined,
+					destination_space_id: destInput || undefined,
 					category: categoryInput || undefined
 				});
 				subscribed = false;
 			} else {
 				await api.post('/calendar/subscribe', {
-					destination_country: destInput || undefined,
+					destination_space_id: destInput || undefined,
 					category: categoryInput || undefined
 				});
 				subscribed = true;
@@ -158,8 +158,11 @@
 		return categories.find((c) => c.value === cat)?.label ?? cat;
 	}
 
+	// BUG-007: check staleness via status === 'unverified' (§86 Staleness
+	// Management). Entries flagged by the nightly staleness_check task get
+	// status='unverified' and should display a warning.
 	function isStale(entry: CalendarEntry): boolean {
-		return false;
+		return entry.status === 'unverified';
 	}
 
 	function isUnverified(entry: CalendarEntry): boolean {
@@ -193,7 +196,9 @@
 	}
 
 	// Month view: group entries by their occurs_at day.
-	const monthGroups = $derived(() => {
+	// BUG-019: use $derived.by() so dependencies are tracked when the
+	// function body runs, not when the function is created.
+	const monthGroups = $derived.by(() => {
 		const groups = new Map<string, CalendarEntry[]>();
 		for (const e of data.entries) {
 			const key = fmtDay(e.occurs_at);
@@ -218,7 +223,7 @@
 							name: e.title,
 							startDate: e.occurs_at,
 							...(e.ends_at ? { endDate: e.ends_at } : {}),
-							eventStatus: e.status === 'verified' ? 'https://schema.org/EventScheduled' : 'https://schema.org/EventPostponed',
+							eventStatus: e.status === 'published' ? 'https://schema.org/EventScheduled' : 'https://schema.org/EventPostponed',
 							url: `${page.url.origin}/calendar/${e.id}`
 						}
 					}))
@@ -389,7 +394,7 @@
 		{:else if currentView === 'month'}
 			<!-- Month view: simple calendar grid grouped by date -->
 			<div class="space-y-3">
-				{#each monthGroups() as [day, dayEntries] (day)}
+				{#each monthGroups as [day, dayEntries] (day)}
 					<div class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)]">
 						<div class="border-b border-[var(--color-border)] px-4 py-2 text-sm font-semibold text-[var(--color-text)]">
 							{day}
@@ -405,7 +410,7 @@
 		{:else if currentView === 'week'}
 			<!-- Week view: same chronological grouping as month, simpler label -->
 			<div class="space-y-3">
-				{#each monthGroups() as [day, dayEntries] (day)}
+				{#each monthGroups as [day, dayEntries] (day)}
 					<div class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)]">
 						<div class="border-b border-[var(--color-border)] px-4 py-2 text-sm font-semibold text-[var(--color-text)]">
 							{day}

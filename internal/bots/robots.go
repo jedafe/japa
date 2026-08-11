@@ -53,7 +53,7 @@ func GenerateRobotsTxt(bots []KnownBot) string {
 
 		if b.CrawlDelay > 0 {
 			sb.WriteString("Crawl-delay: ")
-			sb.WriteString(fmt.Sprintf("%ds", b.CrawlDelay))
+			sb.WriteString(fmt.Sprintf("%d", b.CrawlDelay))
 			sb.WriteString("\n")
 		}
 
@@ -69,7 +69,7 @@ func GenerateRobotsTxt(bots []KnownBot) string {
 
 		if b.CrawlDelay > 0 {
 			sb.WriteString("Crawl-delay: ")
-			sb.WriteString(fmt.Sprintf("%ds", b.CrawlDelay))
+			sb.WriteString(fmt.Sprintf("%d", b.CrawlDelay))
 			sb.WriteString("\n")
 		}
 

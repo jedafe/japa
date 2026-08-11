@@ -46,7 +46,7 @@ type CalendarEntry struct {
 	IsRecurring        bool
 	RecurrencePattern  *string
 	SourceURL          *string
-	Status             string // pending|approved|archived|flagged
+	Status             string // pending|published|archived|unverified (§86)
 	SubmittedBy        pgtype.UUID
 	ReviewedBy         pgtype.UUID
 	ReviewedAt         pgtype.Timestamptz
@@ -84,7 +84,113 @@ RETURNING id
 	return entryID, nil
 }
 
-// GetEntry returns a single approved calendar entry by id and tenant.
+// SetStalenessCheckDue sets staleness_check_due = occurs_at - 60 days for
+// recurring entries. Non-recurring entries get a NULL staleness_check_due.
+// Ref: §86 Staleness Management, ADR-094.
+func (s *Store) SetStalenessCheckDue(ctx context.Context, id pgtype.UUID) error {
+	_, err := s.pool.Writer.Exec(ctx, `
+UPDATE calendar_entries
+SET staleness_check_due = CASE
+    WHEN is_recurring THEN occurs_at - INTERVAL '60 days'
+    ELSE NULL
+END
+WHERE id = $1
+`, id)
+	if err != nil {
+		return fmt.Errorf("calendar: set staleness_check_due: %w", err)
+	}
+	return nil
+}
+
+// FlagStaleEntries marks entries as 'unverified' when their
+// staleness_check_due date has passed. Returns the count of flagged entries.
+// Ref: §86 Staleness Management — nightly Asynq task calendar:staleness_check.
+func (s *Store) FlagStaleEntries(ctx context.Context) (int64, error) {
+	cmd, err := s.pool.Writer.Exec(ctx, `
+UPDATE calendar_entries
+SET status = 'unverified', updated_at = now()
+WHERE staleness_check_due IS NOT NULL
+  AND staleness_check_due <= now()
+  AND status = 'published'
+  AND deleted_at IS NULL
+`)
+	if err != nil {
+		return 0, fmt.Errorf("calendar: flag stale entries: %w", err)
+	}
+	return cmd.RowsAffected(), nil
+}
+
+// UpcomingEntriesForReminders returns published entries occurring within the
+// next `daysAhead` days that have subscribers. Used by calendar:send_reminders.
+// Ref: §86 — reminders fire at 90/30/7 days before each entry.
+func (s *Store) UpcomingEntriesForReminders(ctx context.Context, daysAhead int) ([]CalendarEntry, error) {
+	rows, err := s.pool.Reader.Query(ctx, `
+SELECT e.id, e.tenant_id, e.title, e.description, e.category,
+       e.destination_space_id, e.origin_space_id,
+       e.occurs_at, e.ends_at, e.is_recurring, e.recurrence_pattern,
+       e.source_url, e.status, e.submitted_by, e.reviewed_by, e.reviewed_at,
+       e.staleness_check_due, e.created_at, e.updated_at, e.deleted_at
+FROM calendar_entries e
+WHERE e.status = 'published'
+  AND e.deleted_at IS NULL
+  AND e.occurs_at >= now()
+  AND e.occurs_at <= now() + make_interval(days => $1)
+ORDER BY e.occurs_at ASC
+`, daysAhead)
+	if err != nil {
+		return nil, fmt.Errorf("calendar: upcoming entries: %w", err)
+	}
+	defer rows.Close()
+
+	var out []CalendarEntry
+	for rows.Next() {
+		var e CalendarEntry
+		if err := rows.Scan(
+			&e.ID, &e.TenantID, &e.Title, &e.Description, &e.Category,
+			&e.DestinationSpaceID, &e.OriginSpaceID,
+			&e.OccursAt, &e.EndsAt, &e.IsRecurring, &e.RecurrencePattern,
+			&e.SourceURL, &e.Status, &e.SubmittedBy, &e.ReviewedBy, &e.ReviewedAt,
+			&e.StalenessCheckDue, &e.CreatedAt, &e.UpdatedAt, &e.DeletedAt,
+		); err != nil {
+			return nil, fmt.Errorf("calendar: scan upcoming entry: %w", err)
+		}
+		out = append(out, e)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("calendar: iterate upcoming entries: %w", err)
+	}
+	return out, nil
+}
+
+// SubscribersForEntry returns user IDs subscribed to the entry's
+// destination+category combination.
+func (s *Store) SubscribersForEntry(ctx context.Context, entry CalendarEntry) ([]pgtype.UUID, error) {
+	rows, err := s.pool.Reader.Query(ctx, `
+SELECT user_id FROM calendar_subscriptions
+WHERE tenant_id = $1
+  AND destination_space_id = $2
+  AND (category IS NULL OR category = $3 OR category = '')
+`, entry.TenantID, entry.DestinationSpaceID, entry.Category)
+	if err != nil {
+		return nil, fmt.Errorf("calendar: subscribers for entry: %w", err)
+	}
+	defer rows.Close()
+
+	var out []pgtype.UUID
+	for rows.Next() {
+		var uid pgtype.UUID
+		if err := rows.Scan(&uid); err != nil {
+			return nil, fmt.Errorf("calendar: scan subscriber: %w", err)
+		}
+		out = append(out, uid)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("calendar: iterate subscribers: %w", err)
+	}
+	return out, nil
+}
+
+// GetEntry returns a single published calendar entry by id and tenant.
 func (s *Store) GetEntry(ctx context.Context, id, tenantID pgtype.UUID) (CalendarEntry, error) {
 	const q = `
 SELECT id, tenant_id, title, description, category,
@@ -93,7 +199,7 @@ SELECT id, tenant_id, title, description, category,
        source_url, status, submitted_by, reviewed_by, reviewed_at,
        staleness_check_due, created_at, updated_at, deleted_at
 FROM calendar_entries
-WHERE id = $1 AND tenant_id = $2 AND status = 'approved'
+WHERE id = $1 AND tenant_id = $2 AND status = 'published'
   AND deleted_at IS NULL
 LIMIT 1
 `
@@ -118,6 +224,7 @@ LIMIT 1
 type ListEntriesFilter struct {
 	TenantID           pgtype.UUID
 	DestinationSpaceID pgtype.UUID
+	OriginSpaceID      pgtype.UUID
 	Category           string
 	From               pgtype.Timestamptz
 	To                 pgtype.Timestamptz
@@ -125,7 +232,9 @@ type ListEntriesFilter struct {
 	Offset             int32
 }
 
-// ListEntries returns approved calendar entries matching the filter.
+// ListEntries returns published calendar entries matching the filter.
+// Uses COUNT(*) OVER() window function to return the total count in the
+// same query, avoiding a separate COUNT query (BUG-024).
 func (s *Store) ListEntries(ctx context.Context, f ListEntriesFilter) ([]CalendarEntry, int64, error) {
 	var (
 		conditions []string
@@ -137,12 +246,17 @@ func (s *Store) ListEntries(ctx context.Context, f ListEntriesFilter) ([]Calenda
 	args = append(args, f.TenantID)
 	argIdx++
 
-	conditions = append(conditions, "status = 'approved'")
+	conditions = append(conditions, "status = 'published'")
 	conditions = append(conditions, "deleted_at IS NULL")
 
 	if f.DestinationSpaceID.Valid {
 		conditions = append(conditions, fmt.Sprintf("destination_space_id = $%d", argIdx))
 		args = append(args, f.DestinationSpaceID)
+		argIdx++
+	}
+	if f.OriginSpaceID.Valid {
+		conditions = append(conditions, fmt.Sprintf("origin_space_id = $%d", argIdx))
+		args = append(args, f.OriginSpaceID)
 		argIdx++
 	}
 	if f.Category != "" {
@@ -174,12 +288,15 @@ func (s *Store) ListEntries(ctx context.Context, f ListEntriesFilter) ([]Calenda
 		offset = 0
 	}
 
+	// BUG-024: use COUNT(*) OVER() to get total in the same query,
+	// eliminating the separate COUNT query that doubled query cost.
 	listQ := fmt.Sprintf(`
 SELECT id, tenant_id, title, description, category,
        destination_space_id, origin_space_id,
        occurs_at, ends_at, is_recurring, recurrence_pattern,
        source_url, status, submitted_by, reviewed_by, reviewed_at,
-       staleness_check_due, created_at, updated_at, deleted_at
+       staleness_check_due, created_at, updated_at, deleted_at,
+       COUNT(*) OVER() AS total_count
 FROM calendar_entries
 WHERE %s
 ORDER BY occurs_at ASC
@@ -194,6 +311,7 @@ LIMIT $%d OFFSET $%d
 	defer rows.Close()
 
 	var out []CalendarEntry
+	var total int64
 	for rows.Next() {
 		var e CalendarEntry
 		if err := rows.Scan(
@@ -202,6 +320,7 @@ LIMIT $%d OFFSET $%d
 			&e.OccursAt, &e.EndsAt, &e.IsRecurring, &e.RecurrencePattern,
 			&e.SourceURL, &e.Status, &e.SubmittedBy, &e.ReviewedBy, &e.ReviewedAt,
 			&e.StalenessCheckDue, &e.CreatedAt, &e.UpdatedAt, &e.DeletedAt,
+			&total,
 		); err != nil {
 			return nil, 0, fmt.Errorf("calendar: scan entry: %w", err)
 		}
@@ -209,13 +328,6 @@ LIMIT $%d OFFSET $%d
 	}
 	if err := rows.Err(); err != nil {
 		return nil, 0, fmt.Errorf("calendar: iterate entries: %w", err)
-	}
-
-	countQ := fmt.Sprintf(`SELECT COUNT(*) FROM calendar_entries WHERE %s`, whereClause)
-	countArgs := args[:len(args)-2]
-	var total int64
-	if err := s.pool.Reader.QueryRow(ctx, countQ, countArgs...).Scan(&total); err != nil {
-		return nil, 0, fmt.Errorf("calendar: count entries: %w", err)
 	}
 
 	return out, total, nil
@@ -275,17 +387,21 @@ WHERE user_id = $1 AND tenant_id = $2 AND destination_space_id = $3 AND category
 type AdminListEntriesFilter struct {
 	TenantID           pgtype.UUID
 	DestinationSpaceID pgtype.UUID
+	OriginSpaceID      pgtype.UUID
 	Category           string
 	Status             string
 	From               pgtype.Timestamptz
 	To                 pgtype.Timestamptz
 	Q                  string
+	Sort               string
+	Order              string
 	Limit              int32
 	Offset             int32
 }
 
 // AdminListEntries returns all calendar entries (any status) for admin
-// management (paginated).
+// management (paginated). Uses COUNT(*) OVER() window function to return
+// the total count in the same query (BUG-024).
 func (s *Store) AdminListEntries(ctx context.Context, f AdminListEntriesFilter) ([]CalendarEntry, int64, error) {
 	var (
 		conditions []string
@@ -302,6 +418,11 @@ func (s *Store) AdminListEntries(ctx context.Context, f AdminListEntriesFilter) 
 	if f.DestinationSpaceID.Valid {
 		conditions = append(conditions, fmt.Sprintf("destination_space_id = $%d", argIdx))
 		args = append(args, f.DestinationSpaceID)
+		argIdx++
+	}
+	if f.OriginSpaceID.Valid {
+		conditions = append(conditions, fmt.Sprintf("origin_space_id = $%d", argIdx))
+		args = append(args, f.OriginSpaceID)
 		argIdx++
 	}
 	if f.Category != "" {
@@ -343,17 +464,31 @@ func (s *Store) AdminListEntries(ctx context.Context, f AdminListEntriesFilter) 
 		offset = 0
 	}
 
+	// Sort: allow created_at, occurs_at, title, status. Default created_at DESC.
+	sortCol := "created_at"
+	switch f.Sort {
+	case "occurs_at", "title", "status", "updated_at":
+		sortCol = f.Sort
+	}
+	sortDir := "DESC"
+	if f.Order == "asc" {
+		sortDir = "ASC"
+	}
+
+	// BUG-024: use COUNT(*) OVER() to get total in the same query,
+	// eliminating the separate COUNT query that doubled query cost.
 	listQ := fmt.Sprintf(`
 SELECT id, tenant_id, title, description, category,
        destination_space_id, origin_space_id,
        occurs_at, ends_at, is_recurring, recurrence_pattern,
        source_url, status, submitted_by, reviewed_by, reviewed_at,
-       staleness_check_due, created_at, updated_at, deleted_at
+       staleness_check_due, created_at, updated_at, deleted_at,
+       COUNT(*) OVER() AS total_count
 FROM calendar_entries
 WHERE %s
-ORDER BY created_at DESC
+ORDER BY %s %s
 LIMIT $%d OFFSET $%d
-`, whereClause, argIdx, argIdx+1)
+`, whereClause, sortCol, sortDir, argIdx, argIdx+1)
 	args = append(args, limit, offset)
 
 	rows, err := s.pool.Reader.Query(ctx, listQ, args...)
@@ -363,6 +498,7 @@ LIMIT $%d OFFSET $%d
 	defer rows.Close()
 
 	var out []CalendarEntry
+	var total int64
 	for rows.Next() {
 		var e CalendarEntry
 		if err := rows.Scan(
@@ -371,6 +507,7 @@ LIMIT $%d OFFSET $%d
 			&e.OccursAt, &e.EndsAt, &e.IsRecurring, &e.RecurrencePattern,
 			&e.SourceURL, &e.Status, &e.SubmittedBy, &e.ReviewedBy, &e.ReviewedAt,
 			&e.StalenessCheckDue, &e.CreatedAt, &e.UpdatedAt, &e.DeletedAt,
+			&total,
 		); err != nil {
 			return nil, 0, fmt.Errorf("calendar: admin scan entry: %w", err)
 		}
@@ -380,18 +517,11 @@ LIMIT $%d OFFSET $%d
 		return nil, 0, fmt.Errorf("calendar: admin iterate entries: %w", err)
 	}
 
-	countQ := fmt.Sprintf(`SELECT COUNT(*) FROM calendar_entries WHERE %s`, whereClause)
-	countArgs := args[:len(args)-2]
-	var total int64
-	if err := s.pool.Reader.QueryRow(ctx, countQ, countArgs...).Scan(&total); err != nil {
-		return nil, 0, fmt.Errorf("calendar: admin count entries: %w", err)
-	}
-
 	return out, total, nil
 }
 
 // AdminUpdateEntry updates the status of a calendar entry and stamps the
-// reviewer. Valid statuses: approved, archived, flagged.
+// reviewer. Valid statuses: published, archived, unverified.
 func (s *Store) AdminUpdateEntry(ctx context.Context, id, tenantID, reviewerID pgtype.UUID, status string) error {
 	cmd, err := s.pool.Writer.Exec(ctx, `
 UPDATE calendar_entries

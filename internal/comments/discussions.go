@@ -1,0 +1,238 @@
+package comments
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net/http"
+	"strconv"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/content"
+	"github.com/jedafe/japa/internal/db/gen"
+	errpkg "github.com/jedafe/japa/internal/errors"
+)
+
+// ---------------------------------------------------------------------------
+// Content Thread Links (Section 49 — Comment Thread Link Flow)
+//
+// GET  /api/v1/content/{id}/discussions — list linked discussion threads
+// POST /api/v1/content/{id}/discussions — start a conversation: create a
+//   discussion thread derived from the blog/content (or link an existing
+//   thread via { thread_id }) and record the content_thread_links cross-link.
+// ---------------------------------------------------------------------------
+
+// DiscussionSummary is the public shape for a linked discussion thread entry
+// returned by GET /content/{id}/discussions.
+type DiscussionSummary struct {
+	ID                 pgtype.UUID        `json:"id"`
+	ThreadID           pgtype.UUID        `json:"thread_id"`
+	ThreadTitle        string             `json:"thread_title"`
+	ThreadSlug         string             `json:"thread_slug"`
+	ThreadCommentCount int32              `json:"thread_comment_count"`
+	ThreadAuthorID     pgtype.UUID        `json:"thread_author_id"`
+	LinkCount          int32              `json:"link_count"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+}
+
+// ListDiscussions returns the discussion threads linked to a content item
+// (Section 49 — blog/non-forum ↔ discussion cross-links).
+func (s *Service) ListDiscussions(ctx context.Context, tenantID, contentID pgtype.UUID, limit, offset int32) ([]DiscussionSummary, int32, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 20
+	}
+
+	rows, err := s.read.ListContentThreadLinks(ctx, gen.ListContentThreadLinksParams{
+		ContentID:  contentID,
+		TenantID:   tenantID,
+		PageLimit:  limit,
+		PageOffset: offset,
+	})
+	if err != nil {
+		return nil, 0, fmt.Errorf("listing content thread links: %w", err)
+	}
+
+	out := make([]DiscussionSummary, len(rows))
+	for i := range rows {
+		out[i] = DiscussionSummary{
+			ID:                 rows[i].ID,
+			ThreadID:           rows[i].ThreadID,
+			ThreadTitle:        rows[i].ThreadTitle,
+			ThreadSlug:         rows[i].ThreadSlug,
+			ThreadCommentCount: rows[i].ThreadCommentCount,
+			ThreadAuthorID:     rows[i].ThreadAuthorID,
+			LinkCount:          rows[i].LinkCount,
+			CreatedAt:          rows[i].CreatedAt,
+		}
+	}
+
+	total, err := s.read.CountContentThreadLinks(ctx, gen.CountContentThreadLinksParams{
+		ContentID: contentID,
+		TenantID:  tenantID,
+	})
+	if err != nil {
+		return nil, 0, fmt.Errorf("counting content thread links: %w", err)
+	}
+
+	return out, total, nil
+}
+
+// StartConversationInput is the body for POST /content/{id}/discussions.
+type StartConversationInput struct {
+	// ThreadID, when set, links an existing discussion thread instead of
+	// creating a new one.
+	ThreadID pgtype.UUID
+}
+
+// StartConversation creates a discussion thread derived from the blog/content
+// (or links an existing thread when ThreadID is supplied) and records the
+// content_thread_links cross-link. Returns the linked thread id.
+func (s *Service) StartConversation(ctx context.Context, tenantID, contentID, userID pgtype.UUID, input StartConversationInput) (gen.ContentThreadLink, error) {
+	var threadID pgtype.UUID
+
+	if input.ThreadID.Valid {
+		// Validate the existing thread exists in the same tenant before linking.
+		if _, err := s.read.GetContentByID(ctx, gen.GetContentByIDParams{
+			ID:       input.ThreadID,
+			TenantID: tenantID,
+		}); err != nil {
+			return gen.ContentThreadLink{}, fmt.Errorf("resolving existing thread: %w", err)
+		}
+		threadID = input.ThreadID
+	} else {
+		// Derive a new discussion thread from the blog/content.
+		blog, err := s.read.GetContentByID(ctx, gen.GetContentByIDParams{
+			ID:       contentID,
+			TenantID: tenantID,
+		})
+		if err != nil {
+			return gen.ContentThreadLink{}, fmt.Errorf("fetching content to derive discussion: %w", err)
+		}
+
+		title := "Discussing: " + blog.Title
+		thread, err := s.write.CreateContent(ctx, gen.CreateContentParams{
+			TenantID:    tenantID,
+			AuthorID:    userID,
+			ContentType: "discussion",
+			Title:       title,
+			Slug:        content.Slugify(title),
+			// Body is empty — users add comments to the thread.
+			Body:       "",
+			BodyHtml:   "",
+			GeoSpaceID: blog.GeoSpaceID,
+			SpaceID:    blog.SpaceID,
+			Status:     "published",
+			Visibility: blog.Visibility,
+		})
+		if err != nil {
+			return gen.ContentThreadLink{}, fmt.Errorf("creating discussion thread: %w", err)
+		}
+		threadID = thread.ID
+	}
+
+	link, err := s.write.CreateContentThreadLink(ctx, gen.CreateContentThreadLinkParams{
+		TenantID:  tenantID,
+		ContentID: contentID,
+		ThreadID:  threadID,
+	})
+	if err != nil {
+		return gen.ContentThreadLink{}, fmt.Errorf("creating content thread link: %w", err)
+	}
+
+	return link, nil
+}
+
+// ---------------------------------------------------------------------------
+// HTTP Handlers
+// ---------------------------------------------------------------------------
+
+// ListDiscussions handles GET /api/v1/content/{id}/discussions.
+func (h *Handlers) ListDiscussions(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	contentID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		return
+	}
+
+	limit := parsePageSize(r)
+	var offset int32
+	if os := r.URL.Query().Get("page_offset"); os != "" {
+		if n, err := strconv.Atoi(os); err == nil && n >= 0 {
+			offset = int32(n) //nolint:gosec // G109: validated
+		}
+	}
+
+	discussions, total, err := h.Service.ListDiscussions(r.Context(), tenantID, contentID, limit, offset)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data": discussions,
+		"meta": map[string]any{"total": total, "page_size": limit, "page_offset": offset},
+	})
+}
+
+// StartConversation handles POST /api/v1/content/{id}/discussions.
+func (h *Handlers) StartConversation(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	contentID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		return
+	}
+
+	var input struct {
+		ThreadID *string `json:"thread_id"`
+	}
+
+	// Body is optional (omitting thread_id creates a new discussion).
+	if r.Body != nil && r.ContentLength != 0 {
+		if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+			return
+		}
+	}
+
+	var in StartConversationInput
+	if input.ThreadID != nil && *input.ThreadID != "" {
+		if err := in.ThreadID.Scan(*input.ThreadID); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_thread_id", "Invalid thread_id format")
+			return
+		}
+	}
+
+	link, err := h.Service.StartConversation(r.Context(), tenantID, contentID, user.UserID, in)
+	if err != nil {
+		// GetContentByID returns ErrNotFound / pgx.ErrNoRows when the thread/content is missing.
+		if errors.Is(err, errpkg.ErrNotFound) || errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "not_found", "Content or thread not found")
+			return
+		}
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, map[string]any{"data": map[string]any{
+		"id":         link.ID,
+		"thread_id":  link.ThreadID,
+		"link_count": link.LinkCount,
+	}})
+}

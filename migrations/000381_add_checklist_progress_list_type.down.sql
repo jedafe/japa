@@ -1,5 +1,5 @@
--- 000369_add_checklist_progress_list_type.down.sql
--- Reverses 000369_add_checklist_progress_list_type.up.sql.
+-- 000381_add_checklist_progress_list_type.down.sql
+-- Reverses 000381_add_checklist_progress_list_type.up.sql.
 
 BEGIN;
 

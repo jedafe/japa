@@ -17,10 +17,12 @@ import (
 
 // IPBlockMiddleware checks whether the request IP is blocked for the
 // current tenant. Blocked IPs receive a 403 Forbidden response. The
-// middleware extracts the real IP from the request (respecting
-// X-Forwarded-For via chi's RealIP middleware which runs earlier in the
-// chain) and checks it against the tenant's active IP blocks using
-// PostgreSQL's <<= inet containment operator.
+// middleware extracts the real client IP via clientip.FromRequest, which
+// honours X-Forwarded-For / X-Real-IP only when the immediate peer is a
+// trusted proxy (JC_TRUSTED_PROXIES) — otherwise a blocked client could
+// unblock itself by sending a spoofed forwarding header. The resolved IP
+// is checked against the tenant's active IP blocks using PostgreSQL's
+// <<= inet containment operator.
 func IPBlockMiddleware(database *db.DB) func(http.Handler) http.Handler {
 	store := NewStoreWithReader(database)
 

@@ -59,6 +59,7 @@ func (h *Handlers) ListFolders(w http.ResponseWriter, r *http.Request) {
 
 	folders, err := h.service.ListFolders(r.Context(), tenantID, user.UserID)
 	if err != nil {
+		slog.Warn("list bookmark folders failed", "error", err, "user_id", user.UserID)
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list bookmark folders")
 		return
 	}
@@ -91,9 +92,18 @@ func (h *Handlers) CreateFolder(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "missing_name", "name is required")
 		return
 	}
+	if len(input.Name) > MaxFolderNameLength {
+		writeError(w, http.StatusBadRequest, "name_too_long", "Folder name must be 100 characters or fewer")
+		return
+	}
 
 	folder, err := h.service.CreateFolder(r.Context(), tenantID, user.UserID, input.Name)
 	if err != nil {
+		if errors.Is(err, errpkg.ErrDuplicate) {
+			writeError(w, http.StatusConflict, "duplicate_bookmark_folder", "A folder with this name already exists")
+			return
+		}
+		slog.Warn("create bookmark folder failed", "error", err, "user_id", user.UserID)
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to create bookmark folder")
 		return
 	}
@@ -132,6 +142,10 @@ func (h *Handlers) UpdateFolder(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "missing_name", "name is required")
 		return
 	}
+	if len(input.Name) > MaxFolderNameLength {
+		writeError(w, http.StatusBadRequest, "name_too_long", "Folder name must be 100 characters or fewer")
+		return
+	}
 
 	folder, err := h.service.UpdateFolder(r.Context(), id, tenantID, user.UserID, input.Name)
 	if err != nil {
@@ -139,7 +153,11 @@ func (h *Handlers) UpdateFolder(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusNotFound, "not_found", "Bookmark folder not found")
 			return
 		}
-
+		if errors.Is(err, errpkg.ErrDuplicate) {
+			writeError(w, http.StatusConflict, "duplicate_bookmark_folder", "A folder with this name already exists")
+			return
+		}
+		slog.Warn("update bookmark folder failed", "error", err, "user_id", user.UserID, "folder_id", id)
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to update bookmark folder")
 		return
 	}
@@ -171,6 +189,7 @@ func (h *Handlers) DeleteFolder(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		slog.Warn("delete bookmark folder failed", "error", err, "user_id", user.UserID, "folder_id", id)
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to delete bookmark folder")
 		return
 	}

@@ -16,6 +16,7 @@ import (
 
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/db/gen"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/tenant"
 )
 
@@ -639,6 +640,42 @@ func (h *Handlers) ListMyBookmarks(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": bookmarks})
+}
+
+// DeleteMyBookmark handles DELETE /api/v1/me/bookmarks/{id}.
+// Removes a bookmark by its row ID — polymorphic, works for any entity_type
+// (content, forum_thread, space, comment, learning_track, etc.). Tenant +
+// owner scoped; returns 404 if the bookmark doesn't exist or belongs to
+// another user.
+func (h *Handlers) DeleteMyBookmark(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	idStr := chi.URLParam(r, "id")
+	var bookmarkID pgtype.UUID
+	if err := bookmarkID.Scan(idStr); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		return
+	}
+
+	if err := h.Service.DeleteBookmarkByID(r.Context(), bookmarkID, tenantID, user.UserID); err != nil {
+		if errors.Is(err, errpkg.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "not_found", "Bookmark not found")
+			return
+		}
+		slog.Warn("delete my bookmark failed", "error", err, "user_id", user.UserID, "bookmark_id", bookmarkID)
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusNoContent, nil)
 }
 
 // GetMyAnalytics handles GET /api/v1/me/analytics.

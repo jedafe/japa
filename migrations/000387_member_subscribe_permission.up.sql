@@ -1,4 +1,4 @@
--- 000198_member_subscribe_permission.up.sql
+-- 000387_member_subscribe_permission.up.sql
 -- Grant payments.subscriptions.manage to the member role so regular users
 -- can self-subscribe via POST /subscriptions. Previously only super_admin
 -- (via wildcard bypass) and admin roles could create subscriptions.
