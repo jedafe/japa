@@ -11,20 +11,18 @@ import (
 )
 
 // scanFailedLoginSpike checks if failed logins in the last hour exceed threshold.
+// BUG-ANALYTICS-06 fix: query audit_logs (action_type = 'auth.login_failed')
+// instead of platform_events, which never contained that event type.
 func (s *Service) scanFailedLoginSpike(ctx context.Context, tenantID pgtype.UUID) error {
-	// Query the security_scan_results table for recent failed_login_spike findings.
-	// If no finding exists in the last hour, check if there's a spike and record it.
 	oneHourAgo := time.Now().Add(-1 * time.Hour)
 
-	// Count recent failed login events from platform_events meta.
-	// This is a heuristic — in production the actual auth logs would be queried.
 	var count int64
 
 	err := s.db.Reader.QueryRow(ctx, `
 		SELECT COUNT(*)
-		FROM platform_events
+		FROM audit_logs
 		WHERE tenant_id = $1
-		  AND event_type = 'auth.login_failed'
+		  AND action_type = 'auth.login_failed'
 		  AND created_at >= $2
 	`, tenantID, oneHourAgo).Scan(&count)
 	if err != nil {
@@ -55,16 +53,19 @@ func (s *Service) scanFailedLoginSpike(ctx context.Context, tenantID pgtype.UUID
 }
 
 // scanSLABreachCount checks for SLA breaches in the ticket system.
+// BUG-ANALYTICS-07 fix: query the tickets table for actual SLA breaches
+// (sla_breach_at IS NOT NULL AND status is open) instead of counting
+// previous security_scan_results findings (which was circular).
 func (s *Service) scanSLABreachCount(ctx context.Context, tenantID pgtype.UUID) error {
 	var count int64
 
 	err := s.db.Reader.QueryRow(ctx, `
 		SELECT COUNT(*)
-		FROM security_scan_results
+		FROM tickets
 		WHERE tenant_id = $1
-		  AND scan_type = 'sla_breach_count'
-		  AND resolved_at IS NULL
-		  AND created_at >= now() - interval '24 hours'
+		  AND sla_breach_at IS NOT NULL
+		  AND sla_breach_at < now()
+		  AND status NOT IN ('resolved', 'closed')
 	`, tenantID).Scan(&count)
 	if err != nil {
 		return fmt.Errorf("counting SLA breaches: %w", err)
@@ -73,14 +74,14 @@ func (s *Service) scanSLABreachCount(ctx context.Context, tenantID pgtype.UUID) 
 	if count > 5 {
 		meta, _ := json.Marshal(map[string]any{
 			"breach_count": count,
-			"period":       "24h",
+			"period":       "current",
 		})
 
 		_, err = s.store.CreateSecurityScanResult(ctx, gen.CreateSecurityScanResultParams{
 			TenantID: tenantID,
 			ScanType: string(ScanSLABreachCount),
 			Severity: string(SeverityCritical),
-			Finding:  fmt.Sprintf("High SLA breach count: %d unresolved in 24h", count),
+			Finding:  fmt.Sprintf("High SLA breach count: %d unresolved open tickets with breached SLA", count),
 			Meta:     meta,
 		})
 		if err != nil {

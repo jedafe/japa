@@ -3054,5 +3054,19 @@
 	"forms.ph_hmac_signing_secret": "HMAC signing secret",
 	"forms.ph_eg_feedback": "e.g., Feedback",
 	"forms.ph_notification_message_text": "Notification message text",
-	"ai.tools.ph_eg_aigenerate": "e.g. ai.generate"
+	"ai.tools.ph_eg_aigenerate": "e.g. ai.generate",
+
+	"nav.tools_appointment_alert": "Embassy Alerter",
+	"app.tools.appointment_alert_heading": "Embassy Appointment Alerter",
+	"app.tools.appointment_alert_desc": "Manage monitored embassies and trigger availability polling",
+	"app.tools.appointment_alert_page_title": "Embassy Appointment Alerter — JapaConnect Admin",
+	"app.tools.add_embassy": "Add Embassy",
+	"app.tools.poll_now": "Poll Now",
+	"app.tools.col_slug": "Slug",
+	"app.tools.col_name": "Name",
+	"app.tools.col_destination": "Destination",
+	"app.tools.col_booking_url": "Booking URL",
+	"app.tools.col_poll_interval": "Poll Interval",
+	"app.tools.col_is_active": "Active",
+	"app.tools.col_last_polled": "Last Polled"
 }

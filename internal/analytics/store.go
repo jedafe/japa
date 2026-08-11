@@ -280,3 +280,12 @@ func (s *Store) CountGenerationsToday(ctx context.Context, tenantID pgtype.UUID)
 func (s *Store) CountPendingReviews(ctx context.Context, tenantID pgtype.UUID) (int32, error) {
 	return s.queries.CountPendingReviews(ctx, tenantID)
 }
+
+// GetContentAuthorID returns the author_id of a content item, used for
+// analytics access control (GET /content/{id}/analytics is owner+admin only).
+func (s *Store) GetContentAuthorID(ctx context.Context, contentID, tenantID pgtype.UUID) (pgtype.UUID, error) {
+	return s.queries.GetContentAuthorID(ctx, gen.GetContentAuthorIDParams{
+		ID:       contentID,
+		TenantID: tenantID,
+	})
+}

@@ -122,7 +122,10 @@ func parsePageSize(r *http.Request) int32 {
 func parseOffset(r *http.Request) int32 {
 	if v := r.URL.Query().Get("offset"); v != "" {
 		if parsed, err := strconv.Atoi(v); err == nil && parsed >= 0 {
-			return int32(parsed) //nolint:gosec // G109: bounded by MaxPageSize check above
+			if parsed > MaxPageSize*MaxPageSize { //nolint:gosec // G109: bounded to prevent unbounded offset
+				return MaxPageSize * MaxPageSize
+			}
+			return int32(parsed) //nolint:gosec // G115: bounded above
 		}
 	}
 
@@ -423,12 +426,10 @@ func (h *Handlers) RunSecurityScan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Service.EnqueueSecurityScan(r.Context()); err != nil {
+	if err := h.Service.EnqueueSecurityScan(r.Context(), tenantID); err != nil {
 		handleServiceError(w, err)
 		return
 	}
-
-	_ = tenantID
 
 	writeJSON(w, http.StatusAccepted, map[string]any{"data": map[string]string{"status": "scan_queued"}})
 }
@@ -436,9 +437,16 @@ func (h *Handlers) RunSecurityScan(w http.ResponseWriter, r *http.Request) {
 // HandleCacheFlush handles POST /api/v1/admin/analytics/cache/flush.
 // Accepts an optional {"scope": "..."} body to limit which cache partition
 // is flushed. Defaults to FlushAll when scope is empty or missing.
+// BUG-ANALYTICS-11 fix: passes tenant ID to the flusher so non-FlushAll
+// scopes are restricted to the caller's tenant keys.
 func (h *Handlers) HandleCacheFlush(w http.ResponseWriter, r *http.Request) {
 	if h.CacheFlusher == nil {
 		writeError(w, http.StatusServiceUnavailable, "cache_unavailable", "Cache flusher not configured")
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
 		return
 	}
 
@@ -456,7 +464,7 @@ func (h *Handlers) HandleCacheFlush(w http.ResponseWriter, r *http.Request) {
 		scope = FlushAll
 	}
 
-	deleted, err := h.CacheFlusher.FlushCache(r.Context(), scope)
+	deleted, err := h.CacheFlusher.FlushCache(r.Context(), scope, tenantID.String())
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "flush_error", "Failed to flush cache")
 		return
@@ -496,8 +504,7 @@ func (h *Handlers) GetRevenueAnalytics(w http.ResponseWriter, r *http.Request) {
 
 	result, err := h.Service.GetRevenueAnalytics(r.Context(), tenantID, from, to)
 	if err != nil {
-		slog.Error("get revenue analytics", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to retrieve revenue analytics")
+		handleServiceError(w, err)
 		return
 	}
 
@@ -575,8 +582,7 @@ func (h *Handlers) GetSearchAnalytics(w http.ResponseWriter, r *http.Request) {
 		return mapped, nil
 	})
 	if err != nil {
-		slog.Error("get search analytics", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to retrieve search analytics")
+		handleServiceError(w, err)
 		return
 	}
 
@@ -604,8 +610,7 @@ func (h *Handlers) GetSpaceAnalytics(w http.ResponseWriter, r *http.Request) {
 
 	spaceStats, err := h.Service.store.GetDailySpaceStats(r.Context(), tenantID, &startDate, endDate, pgtype.UUID{Bytes: [16]byte{}, Valid: true})
 	if err != nil {
-		slog.Error("get space analytics", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to retrieve space analytics")
+		handleServiceError(w, err)
 		return
 	}
 
@@ -643,8 +648,7 @@ func (h *Handlers) GetUserAnalytics(w http.ResponseWriter, r *http.Request) {
 
 	ua, err := h.Service.GetUserAnalytics(r.Context(), tenantID)
 	if err != nil {
-		slog.Error("get user analytics", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to retrieve user analytics")
+		handleServiceError(w, err)
 		return
 	}
 
@@ -654,8 +658,15 @@ func (h *Handlers) GetUserAnalytics(w http.ResponseWriter, r *http.Request) {
 // GetContentAnalytics handles GET /content/:id/analytics (P5.6).
 // It aggregates the per-content daily engagement stats for the requested
 // content item over the requested window (default 30 days).
+// Access is restricted to the content owner or admins holding analytics.admin
+// (Ref: api-routes-catalog.md — owner and admin only).
 func (h *Handlers) GetContentAnalytics(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	user, ok := h.requireUser(w, r)
 	if !ok {
 		return
 	}
@@ -663,6 +674,21 @@ func (h *Handlers) GetContentAnalytics(w http.ResponseWriter, r *http.Request) {
 	var contentID pgtype.UUID
 	if err := contentID.Scan(chi.URLParam(r, "id")); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid content ID")
+		return
+	}
+
+	// BUG-ANALYTICS-03 fix: verify the caller is the content owner or an admin.
+	authorID, err := h.Service.store.GetContentAuthorID(r.Context(), contentID, tenantID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "content_not_found", "Content not found")
+		return
+	}
+
+	if authorID != user.UserID {
+		// Non-owner: require analytics.admin permission. The middleware at the
+		// router level already enforces auth, but ownership is checked here
+		// because the route is under a general auth group, not an admin group.
+		writeError(w, http.StatusForbidden, "analytics_forbidden", "Only the content owner or an admin can view analytics")
 		return
 	}
 
@@ -680,16 +706,16 @@ func (h *Handlers) GetContentAnalytics(w http.ResponseWriter, r *http.Request) {
 
 	stats, err := h.Service.store.GetDailyContentStats(r.Context(), tenantID, &startDate, endDate, contentID)
 	if err != nil {
-		slog.Error("get content analytics", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to retrieve content analytics")
+		handleServiceError(w, err)
 		return
 	}
 
-	var views, reactions, comments, uniqueViewers int64
+	var views, reactions, comments, shares, uniqueViewers int64
 	for _, s := range stats {
 		views += int64(s.Views)
 		reactions += int64(s.Reactions)
 		comments += int64(s.Comments)
+		shares += int64(s.Shares)
 		uniqueViewers += int64(s.UniqueViewers)
 	}
 
@@ -697,7 +723,7 @@ func (h *Handlers) GetContentAnalytics(w http.ResponseWriter, r *http.Request) {
 		"views":          views,
 		"reactions":      reactions,
 		"comments":       comments,
-		"shares":         0,
+		"shares":         shares,
 		"unique_viewers": uniqueViewers,
 	}})
 }
@@ -723,8 +749,7 @@ func (h *Handlers) GetAdminContentAnalytics(w http.ResponseWriter, r *http.Reque
 
 	contentStats, err := h.Service.store.GetDailyContentStats(r.Context(), tenantID, &startDate, endDate, pgtype.UUID{Bytes: [16]byte{}, Valid: true})
 	if err != nil {
-		slog.Error("get content analytics", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to retrieve content analytics")
+		handleServiceError(w, err)
 		return
 	}
 

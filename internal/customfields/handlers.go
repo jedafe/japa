@@ -875,14 +875,15 @@ func (h *Handlers) ListFieldValues(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
 	// Field-level RBAC (Section 06): super-admins see all fields; other users
 	// only see fields their user group has can_view=true on.
 	user := auth.FromContext(r.Context())
 	if h.rbac != nil && user != nil && user.UserID.Valid {
-		tenantID, ok := h.requireTenant(w, r)
-		if !ok {
-			return
-		}
 		if !h.rbac.IsSuperAdmin(r.Context(), user.UserID, tenantID) {
 			visibleIDs, err := h.Service.ListVisibleFieldIDsForUser(r.Context(), user.UserID)
 			if err != nil {
@@ -899,7 +900,7 @@ func (h *Handlers) ListFieldValues(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	values, err := h.Service.ListFieldValuesByEntity(r.Context(), entityType, entityID)
+	values, err := h.Service.ListFieldValuesByEntity(r.Context(), tenantID, entityType, entityID)
 	if err != nil {
 		handleServiceError(w, err)
 		return

@@ -952,7 +952,13 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	appointmentAlertStore := appointmentalert.NewStore(database)
 	appointmentAlertService := appointmentalert.NewService(appointmentAlertStore, settingsService)
+	appointmentAlertService.SetEnqueuer(taskEnqueuer)
 	appointmentAlertHandlers := appointmentalert.NewHandlers(appointmentAlertService, settingsService)
+	// Register the service as the embassy alerter processor so the
+	// embassy:poll / embassy:dispatch_alerts / embassy:expire_checks Asynq
+	// tasks are handled (§91, ADR-099). Poll/dispatch are stubs until the
+	// scraper is implemented; ExpireAlerts is fully functional.
+	worker.RegisterEmbassyAlerterProcessor(appointmentAlertService)
 
 	arrivalChecklistStore := arrivalchecklist.NewStore(database)
 	arrivalChecklistService := arrivalchecklist.NewService(arrivalChecklistStore, settingsService)
@@ -4620,7 +4626,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				r.Get("/embassies", appointmentAlertHandlers.HandleListEmbassies)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "appointment_alert.manage_own")).
 					Get("/me/appointment-alerts", appointmentAlertHandlers.HandleListMyAlerts)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "appointment_alert.manage_own")).
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "appointment_alert.create")).
 					Post("/me/appointment-alerts", appointmentAlertHandlers.HandleCreateMyAlert)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "appointment_alert.manage_own")).
 					Patch("/me/appointment-alerts/{id}", appointmentAlertHandlers.HandleUpdateMyAlert)
@@ -5347,8 +5353,8 @@ type assessmentRAGRetriever struct {
 	svc *rag.Service
 }
 
-func (r *assessmentRAGRetriever) Retrieve(ctx context.Context, tenantID pgtype.UUID, query, language string) ([]assessment.RAGChunk, error) {
-	chunks, err := r.svc.Retrieve(ctx, tenantID, query, language)
+func (r *assessmentRAGRetriever) Retrieve(ctx context.Context, tenantID pgtype.UUID, query, language string, geoSpaceID *pgtype.UUID) ([]assessment.RAGChunk, error) {
+	chunks, err := r.svc.Retrieve(ctx, tenantID, query, language, geoSpaceID)
 	if err != nil {
 		return nil, err
 	}

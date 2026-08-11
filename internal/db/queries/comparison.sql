@@ -157,18 +157,18 @@ SET value = EXCLUDED.value,
     value_rating = EXCLUDED.value_rating,
     value_boolean = EXCLUDED.value_boolean,
     created_at = now()
-RETURNING dimension_id, item_id, tenant_id, value, value_rating, value_boolean, created_at;
+RETURNING dimension_id, item_id, tenant_id, value, value_rating, value_boolean, created_at, metadata;
 
 -- name: ListComparisonValuesByDimension :many
 SELECT cv.dimension_id, cv.item_id, cv.tenant_id, cv.value, cv.value_rating,
-       cv.value_boolean, cv.created_at,
+       cv.value_boolean, cv.created_at, cv.metadata,
        ci.title AS item_title
 FROM comparison_values cv
 JOIN comparison_items ci ON ci.id = cv.item_id
 WHERE cv.dimension_id = @dimension_id AND cv.tenant_id = @tenant_id;
 
 -- name: GetComparisonValue :one
-SELECT dimension_id, item_id, tenant_id, value, value_rating, value_boolean, created_at
+SELECT dimension_id, item_id, tenant_id, value, value_rating, value_boolean, created_at, metadata
 FROM comparison_values
 WHERE dimension_id = @dimension_id AND item_id = @item_id AND tenant_id = @tenant_id;
 
@@ -185,7 +185,7 @@ WHERE dimension_id = @dimension_id AND tenant_id = @tenant_id;
 
 -- name: GetComparisonValuesByContent :many
 SELECT cv.dimension_id, cv.item_id, cv.tenant_id, cv.value, cv.value_rating,
-       cv.value_boolean, cv.created_at
+       cv.value_boolean, cv.created_at, cv.metadata
 FROM comparison_values cv
 JOIN comparison_items ci ON ci.id = cv.item_id
 JOIN comparison_dimensions cd ON cd.id = cv.dimension_id

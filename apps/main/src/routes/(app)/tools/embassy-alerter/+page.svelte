@@ -21,7 +21,7 @@
 	import type { PageData } from './$types';
 
 	/**
-	 * Embassy Appointment Alerter tool — §91, ADR-088.
+	 * Embassy Appointment Alerter tool — §91, ADR-099.
 	 * Destination selector → list of embassies (with booking links) →
 	 * create/manage appointment alerts (auth required). Unauthed users see a
 	 * registration prompt when they try to create an alert.
@@ -44,6 +44,9 @@
 	let selectedDestId = $state<string>(untrack(() => data.initialDestId ?? ''));
 	let loadingEmbassies = $state(false);
 	let loadingAlerts = $state(false);
+	// Request-id guard: increment on each loadEmbassies call; discard stale
+	// responses if the user changed destination while a load was in flight.
+	let loadEmbassiesReqId = 0;
 
 	// Alert creation form state
 	let showRegisterPrompt = $state(false);
@@ -71,8 +74,11 @@
 			embassies = [];
 			return;
 		}
+		const reqId = ++loadEmbassiesReqId;
 		loadingEmbassies = true;
 		const res = await api.get<Embassy[]>(`/embassies?dest=${selectedDestId}`);
+		// Discard stale response if a newer load was started.
+		if (reqId !== loadEmbassiesReqId) return;
 		loadingEmbassies = false;
 		if (!res.error) embassies = res.data ?? [];
 		else embassies = [];

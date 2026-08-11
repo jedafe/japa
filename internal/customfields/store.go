@@ -321,8 +321,12 @@ func (s *Service) GetFieldValue(ctx context.Context, fieldID pgtype.UUID, entity
 }
 
 // ListFieldValuesByEntity returns every stored field value for a given entity.
-func (s *Service) ListFieldValuesByEntity(ctx context.Context, entityType string, entityID pgtype.UUID) ([]gen.CustomFieldValue, error) {
+// tenantID is required — the underlying query enforces tenant scoping at the
+// SQL layer via a JOIN to custom_fields.tenant_id (BUG-014). Passing a
+// zero-value UUID would yield no rows.
+func (s *Service) ListFieldValuesByEntity(ctx context.Context, tenantID pgtype.UUID, entityType string, entityID pgtype.UUID) ([]gen.CustomFieldValue, error) {
 	values, err := s.read.ListCustomFieldValuesByEntity(ctx, gen.ListCustomFieldValuesByEntityParams{
+		TenantID:   tenantID,
 		EntityType: entityType,
 		EntityID:   entityID,
 	})

@@ -273,6 +273,97 @@ func (q *Queries) SearchContentEmbeddings(ctx context.Context, arg SearchContent
 	return items, nil
 }
 
+const searchContentEmbeddingsGeoFiltered = `-- name: SearchContentEmbeddingsGeoFiltered :many
+
+SELECT
+    ce.id,
+    ce.tenant_id,
+    ce.entity_type,
+    ce.entity_id,
+    ce.chunk_index,
+    ce.chunk_text,
+    ce.language,
+    ce.created_at,
+    (1.0 - (ce.embedding <=> $1))::float8 AS similarity
+FROM content_embeddings ce
+JOIN contents c ON c.id = ce.entity_id AND ce.entity_type = 'content'
+WHERE ce.tenant_id = $2
+  AND ($3::text = '' OR ce.language = $3)
+  AND (
+      $4::uuid IS NULL
+      OR c.geo_space_id = $4
+      OR c.geo_space_id IN (SELECT id FROM spaces WHERE parent_id = $4)
+  )
+ORDER BY ce.embedding <=> $1
+LIMIT $5
+`
+
+type SearchContentEmbeddingsGeoFilteredParams struct {
+	QueryEmbedding *pgvector.Vector `json:"query_embedding"`
+	TenantID       pgtype.UUID      `json:"tenant_id"`
+	Language       string           `json:"language"`
+	GeoSpaceID     pgtype.UUID      `json:"geo_space_id"`
+	TopK           int32            `json:"top_k"`
+}
+
+type SearchContentEmbeddingsGeoFilteredRow struct {
+	ID         pgtype.UUID        `json:"id"`
+	TenantID   pgtype.UUID        `json:"tenant_id"`
+	EntityType string             `json:"entity_type"`
+	EntityID   pgtype.UUID        `json:"entity_id"`
+	ChunkIndex int32              `json:"chunk_index"`
+	ChunkText  string             `json:"chunk_text"`
+	Language   string             `json:"language"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+	Similarity float64            `json:"similarity"`
+}
+
+// =====================================================================
+// Geo-filtered HNSW cosine retrieval (§103 Geo-Filtered RAG amendment to §69).
+// Same shape as SearchContentEmbeddings but JOINs to contents and restricts
+// to chunks whose source content is geo-scoped to the given space or its
+// direct children. When geo_space_id is NULL the geo filter is a no-op
+// (backward-compatible with §69 unfiltered retrieval). Only entity_type =
+// 'content' chunks are geo-filterable (other entity types have no
+// geo_space_id); non-content chunks are excluded when a geo scope is set.
+// Used by the AI agent's rag.search tool and the agent pre-search step.
+// =====================================================================
+func (q *Queries) SearchContentEmbeddingsGeoFiltered(ctx context.Context, arg SearchContentEmbeddingsGeoFilteredParams) ([]SearchContentEmbeddingsGeoFilteredRow, error) {
+	rows, err := q.db.Query(ctx, searchContentEmbeddingsGeoFiltered,
+		arg.QueryEmbedding,
+		arg.TenantID,
+		arg.Language,
+		arg.GeoSpaceID,
+		arg.TopK,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SearchContentEmbeddingsGeoFilteredRow
+	for rows.Next() {
+		var i SearchContentEmbeddingsGeoFilteredRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.EntityType,
+			&i.EntityID,
+			&i.ChunkIndex,
+			&i.ChunkText,
+			&i.Language,
+			&i.CreatedAt,
+			&i.Similarity,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const upsertContentEmbedding = `-- name: UpsertContentEmbedding :one
 
 

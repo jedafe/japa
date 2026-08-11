@@ -61,7 +61,7 @@ type AIResponse struct {
 // The assessment service uses it to ground AI-assisted roadmap steps in
 // platform content.
 type RAGRetriever interface {
-	Retrieve(ctx context.Context, tenantID pgtype.UUID, query, language string) ([]RAGChunk, error)
+	Retrieve(ctx context.Context, tenantID pgtype.UUID, query, language string, geoSpaceID *pgtype.UUID) ([]RAGChunk, error)
 	FormatContext(chunks []RAGChunk) string
 }
 
@@ -627,7 +627,7 @@ func (s *Service) generateAIRoadmapSteps(ctx context.Context, tenantID pgtype.UU
 	ragContext := ""
 	if s.rag != nil {
 		query := fmt.Sprintf("relocation readiness advice for weak areas: %s", strings.Join(weakestDims[:min(3, len(weakestDims))], ", "))
-		chunks, err := s.rag.Retrieve(ctx, tenantID, query, "en")
+		chunks, err := s.rag.Retrieve(ctx, tenantID, query, "en", nil)
 		if err != nil {
 			slog.Warn("assessment: ai roadmap: RAG retrieve failed", "error", err)
 		} else if len(chunks) > 0 {
