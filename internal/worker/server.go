@@ -174,6 +174,13 @@ func NewScheduler(cfg *Config) *asynq.Scheduler {
 	// creation). Low queue.
 	schedule("0 5 * * *", TypeCvFormatSessionsPurge, 24*time.Hour)
 
+	// Weekly community digest generation — Sunday 22:00 UTC (§84, ADR-092).
+	// Assembles a new digest edition from platform analytics (top threads,
+	// new members, events, featured story, poll) for each active tenant.
+	// The edition enters the 1-hour admin review window before auto-publish.
+	// Low queue.
+	schedule("0 22 * * 0", TypeDigestGenerate, 7*24*time.Hour)
+
 	return scheduler
 }
 

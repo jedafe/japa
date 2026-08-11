@@ -50,3 +50,11 @@ SELECT * FROM platform_data_imports
 WHERE status = 'pending'
 ORDER BY created_at ASC
 LIMIT @limit_val;
+
+-- name: ReassignPlatformDataImportCreatedBy :exec
+-- Reassign created_by to a placeholder user during GDPR erasure so the
+-- import audit trail survives when the admin who created the import is
+-- erased (BUG-013, Section 67 / Section 15 compliance).
+UPDATE platform_data_imports
+SET created_by = @target_user_id
+WHERE created_by = @user_id AND tenant_id = @tenant_id;

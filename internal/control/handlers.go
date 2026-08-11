@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -1088,17 +1089,28 @@ func (h *Handlers) DBHealthCheck(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handlers) DBVacuum(w http.ResponseWriter, r *http.Request) {
 	// Parse optional JSON body: { table_name?: string, full?: bool }
-	// When omitted, the entire database is vacuumed (table_name="").
+	// When omitted (no body or empty object), the entire database is
+	// vacuumed (table_name=""). A malformed body is rejected with 400 so
+	// a bad request does not silently trigger a full-database VACUUM.
 	var payload struct {
+		Version   int    `json:"version"`    // payload schema version (current: 1)
 		TableName string `json:"table_name"`
 		Full      bool   `json:"full"`
 	}
 	if r.Body != nil {
-		_ = json.NewDecoder(r.Body).Decode(&payload)
+		dec := json.NewDecoder(r.Body)
+		if err := dec.Decode(&payload); err != nil {
+			// io.EOF means an empty body — that's fine, use zero values.
+			if !errors.Is(err, io.EOF) {
+				writeError(w, http.StatusBadRequest, "invalid_request_body", "Malformed JSON body")
+				return
+			}
+		}
 	}
 
 	// Enqueue async vacuum task via Asynq for background processing.
 	if h.Client != nil {
+		payload.Version = 1 // current payload schema version
 		payloadBytes, err := json.Marshal(payload)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "internal_error", "Failed to encode vacuum payload")
@@ -1114,8 +1126,12 @@ func (h *Handlers) DBVacuum(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Fallback: run inline if no Asynq client.
-	if err := h.DB.Vacuum(r.Context(), payload.TableName, payload.Full); err != nil {
+	// Fallback: run inline if no Asynq client. Use a detached context so
+	// the VACUUM is not cancelled by the request deadline (VACUUM on large
+	// tables can exceed the 30s WriteTimeout).
+	vacuumCtx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 10*time.Minute)
+	defer cancel()
+	if err := h.DB.Vacuum(vacuumCtx, payload.TableName, payload.Full); err != nil {
 		slog.Error("control: db vacuum", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to run VACUUM")
 		return

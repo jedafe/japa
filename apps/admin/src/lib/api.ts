@@ -1833,10 +1833,10 @@ export const communityLocatorAdminApi = {
 };
 
 export const digestAdminApi = {
-	list: (params?: string) => api<unknown>(`/admin/digest${params ? `?${params}` : ''}`),
+	list: (params?: string) => apiRaw<{ data: unknown[]; pagination: { page: number; limit: number; total: number } }>(`/admin/digest${params ? `?${params}` : ''}`),
 	update: (id: string, body: Record<string, unknown>) =>
 		api<unknown>(`/admin/digest/${id}`, { method: 'PATCH', body }),
 	publish: (id: string) => api<unknown>(`/admin/digest/${id}/publish`, { method: 'POST', body: {} }),
-	generate: (body: Record<string, unknown>) =>
-		api<unknown>(`/admin/digest/generate`, { method: 'POST', body }),
+	generate: () =>
+		api<unknown>(`/admin/digest/generate`, { method: 'POST', body: {} }),
 };

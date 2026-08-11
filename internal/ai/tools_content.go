@@ -830,3 +830,249 @@ func filterNonExemptFieldValues(cfvs []gen.CustomFieldValue) []map[string]any {
 	}
 	return out
 }
+
+// ---------------------------------------------------------------------------
+// Phase 9 — Content lifecycle tools (tasks 9.08)
+//
+//   - content.delete  — soft-delete content (admin/high-capability only)
+//   - content.list    — list content by type/space/geo
+//   - content.publish — change status to published (triggers HITL for
+//                       high-stakes categories)
+// ---------------------------------------------------------------------------
+
+// contentDeleteArgs is the argument shape for content.delete.
+type contentDeleteArgs struct {
+	ContentID string `json:"content_id"`
+}
+
+// ContentDeleteHandler returns a ToolHandler that soft-deletes a content
+// row. The executor's RBAC gate checks the required_permission
+// (content.delete); the tool config sets requires_hitl = true. The
+// handler performs a defense-in-depth privacy re-check before deleting.
+//
+// The underlying content.Service.DeleteContent performs a soft delete
+// (sets deleted_at = now()), per Rule 11 — never hard-delete user content.
+func ContentDeleteHandler(deps *ToolDeps) ToolHandler {
+	return func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error) {
+		if deps == nil || deps.ContentLifecycle == nil {
+			return errorToolResult("content_lifecycle_unavailable", "content lifecycle service is not configured"), nil
+		}
+
+		var a contentDeleteArgs
+		if err := json.Unmarshal(args, &a); err != nil {
+			return errorToolResult("invalid_arguments", fmt.Sprintf("invalid arguments: %v", err)), nil
+		}
+		contentID, err := scanUUID(a.ContentID)
+		if err != nil {
+			return errorToolResult("invalid_content_id", "content_id is not a valid UUID"), nil
+		}
+
+		// Defense-in-depth: check the content's exemption status before
+		// deleting. The executor's privacy gate already covers this, but
+		// the handler re-checks to guard against a misconfigured
+		// PrivacyTargetFunc.
+		if deps.Privacy != nil {
+			exempt, err := deps.Privacy.IsExempt(ctx, PrivacyEntityContent, tenantID, contentID)
+			if err != nil {
+				return errorToolResult("privacy_check_failed", err.Error()), nil
+			}
+			if exempt {
+				return privacyBlockedResult("content is marked as private and not available to the agent"), nil
+			}
+		}
+
+		if err := deps.ContentLifecycle.DeleteContent(ctx, contentID, tenantID); err != nil {
+			return errorToolResult("content_delete_failed", err.Error()), nil
+		}
+
+		return successToolResult(map[string]any{
+			"content_id": uuidString(contentID),
+			"deleted":    true,
+		}), nil
+	}
+}
+
+// ContentDeletePrivacyTarget extracts the content_id from content.delete
+// arguments for the executor's privacy gate.
+func ContentDeletePrivacyTarget(ctx context.Context, args json.RawMessage, tenantID pgtype.UUID) (PrivacyEntityType, pgtype.UUID, error) {
+	var a contentDeleteArgs
+	if err := json.Unmarshal(args, &a); err != nil {
+		return "", pgtype.UUID{}, fmt.Errorf("parsing content.delete args: %w", err)
+	}
+	id, err := scanUUID(a.ContentID)
+	if err != nil {
+		return "", pgtype.UUID{}, fmt.Errorf("invalid content_id: %w", err)
+	}
+	return PrivacyEntityContent, id, nil
+}
+
+// contentListArgs is the LLM-produced argument shape for content.list.
+type contentListArgs struct {
+	ContentType string `json:"content_type,omitempty"`
+	Limit       int32  `json:"limit,omitempty"`
+}
+
+// ContentListHandler returns a ToolHandler that lists content by type.
+// When content_type is empty, it falls back to the tenant-wide list
+// (deps.Content.ListContents). Exempt content is filtered post-query.
+func ContentListHandler(deps *ToolDeps) ToolHandler {
+	return func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error) {
+		if deps == nil {
+			return errorToolResult("content_unavailable", "content service is not configured"), nil
+		}
+
+		var a contentListArgs
+		if err := json.Unmarshal(args, &a); err != nil {
+			return errorToolResult("invalid_arguments", fmt.Sprintf("invalid arguments: %v", err)), nil
+		}
+		if a.Limit <= 0 || a.Limit > 50 {
+			a.Limit = 20
+		}
+
+		// Type-filtered listing via ContentLifecycleService.
+		if a.ContentType != "" {
+			if deps.ContentLifecycle == nil {
+				return errorToolResult("content_lifecycle_unavailable", "content lifecycle service is not configured"), nil
+			}
+			rows, err := deps.ContentLifecycle.ListContentsByType(ctx, tenantID, a.ContentType, pgtype.Timestamptz{}, a.Limit)
+			if err != nil {
+				return errorToolResult("content_list_failed", err.Error()), nil
+			}
+			filtered := filterExemptContentFromType(ctx, deps.Privacy, tenantID, rows)
+			return successToolResult(map[string]any{
+				"results":      contentListResultsFromType(filtered),
+				"total":        len(filtered),
+				"content_type": a.ContentType,
+			}), nil
+		}
+
+		// Tenant-wide listing via ContentService (Phase 4).
+		if deps.Content == nil {
+			return errorToolResult("content_unavailable", "content service is not configured"), nil
+		}
+		results, err := deps.Content.ListContents(ctx, tenantID, "", pgtype.Timestamptz{}, a.Limit)
+		if err != nil {
+			return errorToolResult("content_list_failed", err.Error()), nil
+		}
+		filtered := filterExemptContentFromTenant(ctx, deps.Privacy, tenantID, results)
+		return successToolResult(map[string]any{
+			"results": contentSearchResultsFromTenant(filtered),
+			"total":   len(filtered),
+		}), nil
+	}
+}
+
+// filterExemptContentFromType strips ai_exempt content from type-filtered
+// listing results.
+func filterExemptContentFromType(ctx context.Context, privacy PrivacyExemptionChecker, tenantID pgtype.UUID, rows []gen.ListContentsByTypeRow) []gen.ListContentsByTypeRow {
+	if privacy == nil {
+		return rows
+	}
+	out := make([]gen.ListContentsByTypeRow, 0, len(rows))
+	for _, r := range rows {
+		exempt, err := privacy.IsExempt(ctx, PrivacyEntityContent, tenantID, r.ID)
+		if err == nil && exempt {
+			continue
+		}
+		out = append(out, r)
+	}
+	return out
+}
+
+// contentListResultsFromType converts type-filtered rows to the trimmed
+// LLM-facing shape.
+func contentListResultsFromType(rows []gen.ListContentsByTypeRow) []contentSearchResult {
+	out := make([]contentSearchResult, 0, len(rows))
+	for _, r := range rows {
+		item := contentSearchResult{
+			ID:          uuidString(r.ID),
+			Title:       r.Title,
+			Slug:        r.Slug,
+			ContentType: r.ContentType,
+			Status:      r.Status,
+			GeoSpaceID:  uuidString(r.GeoSpaceID),
+			CreatedAt:   timestampString(r.CreatedAt),
+		}
+		if r.AuthorUsername != nil {
+			item.AuthorName = *r.AuthorUsername
+		}
+		out = append(out, item)
+	}
+	return out
+}
+
+// contentPublishArgs is the LLM-produced argument shape for content.publish.
+type contentPublishArgs struct {
+	ContentID string `json:"content_id"`
+	Status    string `json:"status,omitempty"`
+}
+
+// ContentPublishHandler returns a ToolHandler that changes a content row's
+// status. The executor's RBAC gate checks the required_permission
+// (content.publish); the tool config sets requires_hitl = true for
+// high-stakes categories.
+//
+// The handler performs a defense-in-depth privacy re-check before
+// publishing. The status defaults to "published" but can be set to other
+// valid statuses (draft, scheduled, archived) — the agent never publishes
+// directly without HITL review (the tool config's requires_hitl flag
+// ensures a human reviews the action).
+func ContentPublishHandler(deps *ToolDeps) ToolHandler {
+	return func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error) {
+		if deps == nil || deps.ContentLifecycle == nil {
+			return errorToolResult("content_lifecycle_unavailable", "content lifecycle service is not configured"), nil
+		}
+
+		var a contentPublishArgs
+		if err := json.Unmarshal(args, &a); err != nil {
+			return errorToolResult("invalid_arguments", fmt.Sprintf("invalid arguments: %v", err)), nil
+		}
+		contentID, err := scanUUID(a.ContentID)
+		if err != nil {
+			return errorToolResult("invalid_content_id", "content_id is not a valid UUID"), nil
+		}
+
+		status := a.Status
+		if status == "" {
+			status = "published"
+		}
+
+		// Defense-in-depth privacy re-check.
+		if deps.Privacy != nil {
+			exempt, err := deps.Privacy.IsExempt(ctx, PrivacyEntityContent, tenantID, contentID)
+			if err != nil {
+				return errorToolResult("privacy_check_failed", err.Error()), nil
+			}
+			if exempt {
+				return privacyBlockedResult("content is marked as private and not available to the agent"), nil
+			}
+		}
+
+		row, err := deps.ContentLifecycle.UpdateContentStatus(ctx, contentID, tenantID, status)
+		if err != nil {
+			return errorToolResult("content_publish_failed", err.Error()), nil
+		}
+
+		return successToolResult(map[string]any{
+			"content_id": uuidString(row.ID),
+			"title":      row.Title,
+			"slug":       row.Slug,
+			"status":     row.Status,
+			"updated_at": timestampString(row.UpdatedAt),
+		}), nil
+	}
+}
+
+// ContentPublishPrivacyTarget extracts the content_id from content.publish
+// arguments for the executor's privacy gate.
+func ContentPublishPrivacyTarget(ctx context.Context, args json.RawMessage, tenantID pgtype.UUID) (PrivacyEntityType, pgtype.UUID, error) {
+	var a contentPublishArgs
+	if err := json.Unmarshal(args, &a); err != nil {
+		return "", pgtype.UUID{}, fmt.Errorf("parsing content.publish args: %w", err)
+	}
+	id, err := scanUUID(a.ContentID)
+	if err != nil {
+		return "", pgtype.UUID{}, fmt.Errorf("invalid content_id: %w", err)
+	}
+	return PrivacyEntityContent, id, nil
+}

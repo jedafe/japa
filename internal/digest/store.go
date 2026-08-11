@@ -37,13 +37,13 @@ type DigestEdition struct {
 	TenantID     pgtype.UUID
 	SpaceID      pgtype.UUID
 	Cadence      string
-	Status       string // draft|scheduled|published
+	Status       string // draft|review|published|cancelled (§84)
 	ScheduledFor pgtype.Timestamptz
 	PublishedAt  pgtype.Timestamptz
 	Content      []byte // jsonb
 	EmailSent    bool
 	EmailSentAt  pgtype.Timestamptz
-	GeneratedBy  pgtype.UUID
+	GeneratedBy  string // TEXT per §84 schema ('system'|'ai'|'manual')
 	ReviewedBy   pgtype.UUID
 	CreatedAt    pgtype.Timestamptz
 }
@@ -132,11 +132,22 @@ type ListEditionsFilter struct {
 	TenantID pgtype.UUID
 	SpaceID  pgtype.UUID
 	Status   string
+	Sort     string // created_at|published_at|scheduled_for (default: created_at)
+	Order    string // asc|desc (default: desc)
 	Limit    int32
 	Offset   int32
 }
 
-// ListEditions returns all digest editions for admin management (paginated).
+// allowedSortColumns maps sort keys to their qualified column names. Only
+// these columns may appear in the ORDER BY clause (SQLi guard).
+var allowedSortColumns = map[string]string{
+	"created_at":    "created_at",
+	"published_at":  "published_at",
+	"scheduled_for": "scheduled_for",
+}
+
+// ListEditions returns all digest editions for admin management (paginated,
+// filterable, sortable).
 func (s *Store) ListEditions(ctx context.Context, f ListEditionsFilter) ([]DigestEdition, int64, error) {
 	var (
 		conditions []string
@@ -172,14 +183,24 @@ func (s *Store) ListEditions(ctx context.Context, f ListEditionsFilter) ([]Diges
 		offset = 0
 	}
 
+	// Build ORDER BY from whitelisted sort column + direction.
+	sortCol := allowedSortColumns[f.Sort]
+	if sortCol == "" {
+		sortCol = "created_at"
+	}
+	orderDir := "DESC"
+	if strings.ToUpper(f.Order) == "ASC" {
+		orderDir = "ASC"
+	}
+
 	listQ := fmt.Sprintf(`
 SELECT id, tenant_id, space_id, cadence, status, scheduled_for, published_at,
        content, email_sent, email_sent_at, generated_by, reviewed_by, created_at
 FROM digest_editions
 WHERE %s
-ORDER BY created_at DESC
+ORDER BY %s %s
 LIMIT $%d OFFSET $%d
-`, whereClause, argIdx, argIdx+1)
+`, whereClause, sortCol, orderDir, argIdx, argIdx+1)
 	args = append(args, limit, offset)
 
 	rows, err := s.pool.Reader.Query(ctx, listQ, args...)
@@ -214,12 +235,13 @@ LIMIT $%d OFFSET $%d
 	return out, total, nil
 }
 
-// UpdateEdition updates the content of a draft (unpublished) edition.
+// UpdateEdition updates the content of a draft or review-status edition
+// (editable during the 1-hour review window per §84).
 func (s *Store) UpdateEdition(ctx context.Context, id, tenantID pgtype.UUID, content []byte) error {
 	cmd, err := s.pool.Writer.Exec(ctx, `
 UPDATE digest_editions
 SET content = $3
-WHERE id = $1 AND tenant_id = $2 AND status = 'draft'
+WHERE id = $1 AND tenant_id = $2 AND status IN ('draft', 'review')
 `, id, tenantID, content)
 	if err != nil {
 		return fmt.Errorf("digest: update edition: %w", err)
@@ -231,11 +253,12 @@ WHERE id = $1 AND tenant_id = $2 AND status = 'draft'
 }
 
 // PublishEdition marks an edition as published and stamps the reviewer.
+// Accepts editions in draft or review status (§84 lifecycle).
 func (s *Store) PublishEdition(ctx context.Context, id, tenantID, reviewerID pgtype.UUID) error {
 	cmd, err := s.pool.Writer.Exec(ctx, `
 UPDATE digest_editions
 SET status = 'published', published_at = now(), reviewed_by = $3
-WHERE id = $1 AND tenant_id = $2 AND status IN ('draft', 'scheduled')
+WHERE id = $1 AND tenant_id = $2 AND status IN ('draft', 'review', 'scheduled')
 `, id, tenantID, reviewerID)
 	if err != nil {
 		return fmt.Errorf("digest: publish edition: %w", err)

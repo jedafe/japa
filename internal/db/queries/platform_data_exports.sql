@@ -49,3 +49,11 @@ SELECT * FROM platform_data_exports
 WHERE status = 'pending'
 ORDER BY created_at ASC
 LIMIT @limit_val;
+
+-- name: ReassignPlatformDataExportCreatedBy :exec
+-- Reassign created_by to a placeholder user during GDPR erasure so the
+-- export audit trail survives when the admin who created the export is
+-- erased (BUG-010, Section 67 / Section 15 compliance).
+UPDATE platform_data_exports
+SET created_by = @target_user_id
+WHERE created_by = @user_id AND tenant_id = @tenant_id;

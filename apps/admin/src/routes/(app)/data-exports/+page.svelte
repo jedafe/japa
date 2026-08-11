@@ -1,25 +1,22 @@
 <script lang="ts">
+	// /data-exports — Platform Data Export (Section 67).
+	// Migrated to the EntityPage scaffold per apps/admin/AGENTS.md.
+	// Non-standard CRUD: no edit, custom create form (select/checkbox),
+	// status filter, summary cards, download link in view slide-over.
+	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import { t } from '$lib/stores/i18n.svelte';
-	import { api, apiRaw } from "$lib/api";
-	import { hasPermission } from "$lib/stores/permissions.svelte";
-	import PageHeader from "$lib/components/layout/page-header.svelte";
-	import { Card, CardContent } from "$lib/components/ui/card";
-	import { Tabs } from "$lib/components/ui/tabs";
-	import { DataTable } from "$lib/components/ui/data-table";
-	import type { ActionItem, FilterDef } from "$lib/components/ui/data-table";
-	import { SlideOver } from "$lib/components/ui/slide-over";
-	import { Badge } from "$lib/components/ui/badge";
-	import { Button } from "$lib/components/ui/button";
-	import { Modal } from "$lib/components/ui/modal";
-	import { Select } from "$lib/components/ui/select";
-	import { Download, Plus, RefreshCw, Clock, CheckCircle, XCircle, FileDown, Eye, Trash2 } from "lucide-svelte";
+	import { api, apiRaw } from '$lib/api';
+	import PageHeader from '$lib/components/layout/page-header.svelte';
+	import { Card, CardContent } from '$lib/components/ui/card';
+	import { Select } from '$lib/components/ui/select';
+	import { Download, RefreshCw, Clock, CheckCircle, XCircle, Trash2, FileDown } from 'lucide-svelte';
 
 	type DataExport = {
 		id: string;
 		name: string;
 		type: string;
 		format: string;
-		status: "pending" | "processing" | "completed" | "failed";
+		status: 'pending' | 'processing' | 'completed' | 'failed';
 		fileUrl: string | null;
 		fileSize: number | null;
 		includeMetadata: boolean;
@@ -29,224 +26,221 @@
 		completedAt: string | null;
 	};
 
-	let exports = $state<DataExport[]>([]);
-	let loading = $state(true);
-	let activeTab = $state("all");
-	let createSlideOverOpen = $state(false);
-	let deleteConfirmOpen = $state(false);
-	let deletingId = $state<string | null>(null);
+	// ── Page-local state ──────────────────────────────────────────────────
+	let entityController = $state<EntityPageController | undefined>(undefined);
+	let pageError = $state('');
+	let pageSuccess = $state('');
+	let summaryData = $state<DataExport[]>([]);
+	let bulkDeleting = $state(false);
 	let saving = $state(false);
-	let errorMessage = $state("");
-	let successMessage = $state("");
 
-	let showViewSlideOver = $state(false);
-	let viewTarget = $state<DataExport | null>(null);
-	let selectedIds = $state<Set<string>>(new Set());
-
-	const canManageExports = $derived(hasPermission("gdpr.data_exports.view"));
-
-	let form = $state({
-		name: "",
-		type: "users",
-		format: "csv",
-		includeMetadata: true
-	});
-
-	const exportTypes = $derived([
-		{ value: "users", label: t('app.data_exports.type_users', 'Users') },
-		{ value: "posts", label: t('app.data_exports.type_posts', 'Posts') },
-		{ value: "comments", label: t('app.data_exports.type_comments', 'Comments') },
-		{ value: "orders", label: t('app.data_exports.type_orders', 'Orders') },
-		{ value: "transactions", label: t('app.data_exports.type_transactions', 'Transactions') },
-		{ value: "analytics", label: t('app.data_exports.type_analytics', 'Analytics') },
-		{ value: "moderation", label: t('app.data_exports.type_moderation', 'Moderation Logs') }
-	]);
-
-	const formatOptions = [
-		{ value: "csv", label: t('app.data_exports.format_csv', 'CSV') },
-		{ value: "json", label: t('app.data_exports.format_json', 'JSON') },
-		{ value: "xlsx", label: t('app.data_exports.format_xlsx', 'Excel (XLSX)') }
+	const exportTypes = [
+		{ value: 'users', label: t('app.data_exports.type_users', 'Users') },
+		{ value: 'posts', label: t('app.data_exports.type_posts', 'Posts') },
+		{ value: 'comments', label: t('app.data_exports.type_comments', 'Comments') },
+		{ value: 'orders', label: t('app.data_exports.type_orders', 'Orders') },
+		{ value: 'transactions', label: t('app.data_exports.type_transactions', 'Transactions') },
+		{ value: 'analytics', label: t('app.data_exports.type_analytics', 'Analytics') },
+		{ value: 'moderation', label: t('app.data_exports.type_moderation', 'Moderation Logs') }
 	];
 
-	let tabs = $derived([
-		{ value: "all", label: t('app.data_exports.tab_all', 'All Exports'), icon: Download, count: exports.length },
-		{ value: "active", label: t('app.data_exports.tab_in_progress', 'In Progress'), icon: Clock, count: exports.filter((e) => e.status === "pending" || e.status === "processing").length },
-		{ value: "completed", label: t('app.data_exports.tab_completed', 'Completed'), icon: CheckCircle, count: exports.filter((e) => e.status === "completed").length },
-		{ value: "failed", label: t('app.data_exports.tab_failed', 'Failed'), icon: XCircle, count: exports.filter((e) => e.status === "failed").length }
-	]);
+	const formatOptions = [
+		{ value: 'csv', label: t('app.data_exports.format_csv', 'CSV') },
+		{ value: 'json', label: t('app.data_exports.format_json', 'JSON') }
+	];
 
-	let filteredExports = $derived.by(() => {
-		let result = [...exports];
-		if (activeTab === "active") result = result.filter((e) => e.status === "pending" || e.status === "processing");
-		if (activeTab === "completed") result = result.filter((e) => e.status === "completed");
-		if (activeTab === "failed") result = result.filter((e) => e.status === "failed");
-		return result;
+	// ── Summary cards (page-local, above EntityPage) ──────────────────────
+	async function loadSummary() {
+		const result = await apiRaw<{ data: DataExport[]; pagination: { total: number } }>(
+			'/admin/data-exports?page_size=100&page_offset=1'
+		);
+		if (result.ok) {
+			summaryData = Array.isArray(result.data.data) ? result.data.data : [];
+		}
+	}
+
+	$effect(() => {
+		loadSummary();
 	});
 
-	const exportFilters: FilterDef[] = $derived([
-		{
-			key: "type",
-			label: t('app.data_exports.filter_export_type', 'Export Type'),
-			options: exportTypes
-		}
-	]);
-
+	// ── Helpers ───────────────────────────────────────────────────────────
 	function formatFileSize(bytes: number | null): string {
-		if (!bytes) return "—";
+		if (!bytes) return '—';
 		if (bytes < 1024) return `${bytes} B`;
 		if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
 		return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 	}
 
-	function statusVariant(status: string) {
+	function statusBadgeClass(status: string): string {
 		switch (status) {
-			case "completed": return "success";
-			case "failed": return "destructive";
-			case "processing": return "warning";
-			default: return "secondary";
+			case 'completed': return 'bg-success/15 text-success border-success';
+			case 'failed': return 'bg-danger/15 text-danger border-danger';
+			case 'processing': return 'bg-warning/15 text-warning border-warning';
+			default: return 'bg-surface text-foreground border';
 		}
 	}
 
-	const exportColumns = [
-		{
-			key: "name",
-			label: t('app.data_exports.col_name', 'Name'),
-			sortable: true,
-			render: (_: any, row: any) => `
-				<div>
-					<p class="font-medium text-foreground">${row.name}</p>
-					<p class="text-xs text-muted">${row.type} · ${row.format.toUpperCase()}</p>
-				</div>
-			`
-		},
-		{
-			key: "status",
-			label: t('app.data_exports.col_status', 'Status'),
-			sortable: true,
-			render: (value: string) => {
-				const variant = statusVariant(value);
-				const cls =
-					variant === "success"
-						? "bg-success/15 text-success border-success"
-						: variant === "destructive"
-							? "bg-danger/15 text-danger border-danger"
-							: variant === "warning"
-								? "bg-warning/15 text-warning border-warning"
-								: "bg-surface text-foreground border";
-				return `<span class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${cls}">${value.charAt(0).toUpperCase() + value.slice(1)}</span>`;
-			}
-		},
-		{
-			key: "fileSize",
-			label: t('app.data_exports.col_size', 'Size'),
-			sortable: true,
-			render: (value: number | null) => `<span class="text-sm text-foreground-alt">${formatFileSize(value)}</span>`
-		},
-		{
-			key: "createdAt",
-			label: t('app.data_exports.col_created', 'Created'),
-			sortable: true,
-			render: (value: string) => `<span class="text-sm text-foreground-alt">${new Date(value).toLocaleString()}</span>`
-		},
-		{
-			key: "completedAt",
-			label: t('app.data_exports.col_completed', 'Completed'),
-			sortable: true,
-			render: (value: string | null) => value ? `<span class="text-sm text-foreground-alt">${new Date(value).toLocaleString()}</span>` : `<span class="text-sm text-muted">—</span>`
+	// ── Bulk delete (in-flight guard per AGENTS.md) ───────────────────────
+	async function bulkDelete(ids: Set<string>) {
+		const idArr = Array.from(ids);
+		if (idArr.length === 0) return;
+		if (bulkDeleting) return;
+		bulkDeleting = true;
+		pageError = '';
+		try {
+			await Promise.all(idArr.map((id) => api(`/admin/data-exports/${id}`, { method: 'DELETE' })));
+			pageSuccess = t('app.data_exports.msg_bulk_deleted', `${idArr.length} export(s) deleted`);
+			await loadSummary();
+		} catch (e) {
+			pageError = e instanceof Error ? e.message : t('app.data_exports.msg_delete_failed', 'Failed to delete export');
+		} finally {
+			bulkDeleting = false;
 		}
+	}
+
+	// ── EntityPage config ─────────────────────────────────────────────────
+	// `fields` is required for EntityForm seeding even though we use
+	// formSnippet for the create form (the export create flow has select
+	// inputs and a checkbox that EntityForm supports, but we keep the
+	// custom snippet for layout control).
+	const fields: FieldDef[] = [
+		{ key: 'name', label: t('app.data_exports.export_name', 'Export Name'), type: 'text', required: true },
+		{ key: 'type', label: t('app.data_exports.data_type', 'Data Type'), type: 'select', options: exportTypes },
+		{ key: 'format', label: t('app.data_exports.format', 'Format'), type: 'select', options: formatOptions },
+		{ key: 'includeMetadata', label: t('app.data_exports.include_metadata_timestamps_ids', 'Include metadata (timestamps, IDs)'), type: 'checkbox' }
 	];
 
-	const exportRowActions: ActionItem[] = [
-		{ label: t('common.view', 'View'), icon: Eye, onclick: (row: DataExport) => openView(row) },
-		{
-			label: t('common.delete', 'Delete'),
-			icon: Trash2,
-			variant: 'destructive',
-			onclick: (row: DataExport) => openDeleteConfirm(row.id),
-			show: () => canManageExports
-		}
-	];
-
-	async function loadExports() {
-		loading = true;
-		const result = await apiRaw<{ data: DataExport[]; pagination: { total: number } }>(
-			"/admin/data-exports?page=1&limit=100"
-		);
-		if (result.ok) {
-			exports = Array.isArray(result.data.data) ? result.data.data : [];
-		}
-		loading = false;
-	}
-
-	async function submitExport() {
-		if (!form.name.trim()) return;
-		saving = true;
-		errorMessage = "";
-		const result = await api("/admin/data-exports", {
-			method: "POST",
-			body: {
-				name: form.name.trim(),
-				type: form.type,
-				format: form.format,
-				includeMetadata: form.includeMetadata
+	const config: EntityPageConfig = {
+		title: t('app.data_exports.title', 'Data Exports'),
+		description: t('app.data_exports.description', 'Export platform data in various formats'),
+		createLabel: t('app.data_exports.action_new', 'New Export'),
+		createPermission: 'gdpr.data_exports.view',
+		deletePermission: 'gdpr.data_exports.view',
+		readonly: true, // no edit — exports are fire-and-forget, not editable
+		pageSize: 25,
+		columns: [
+			{
+				key: 'name',
+				label: t('app.data_exports.col_name', 'Name'),
+				sortable: true,
+				render: (_: any, row: any) => `
+					<div>
+						<p class="font-medium text-foreground">${row.name}</p>
+						<p class="text-xs text-muted">${row.type} · ${row.format.toUpperCase()}</p>
+					</div>`
+			},
+			{
+				key: 'status',
+				label: t('app.data_exports.col_status', 'Status'),
+				sortable: true,
+				render: (value: string) => {
+					const cls = statusBadgeClass(value);
+					return `<span class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${cls}">${value.charAt(0).toUpperCase() + value.slice(1)}</span>`;
+				}
+			},
+			{
+				key: 'fileSize',
+				label: t('app.data_exports.col_size', 'Size'),
+				sortable: true,
+				render: (value: number | null) => `<span class="text-sm text-foreground-alt">${formatFileSize(value)}</span>`
+			},
+			{
+				key: 'createdAt',
+				label: t('app.data_exports.col_created', 'Created'),
+				sortable: true,
+				render: (value: string) => `<span class="text-sm text-foreground-alt">${new Date(value).toLocaleString()}</span>`
+			},
+			{
+				key: 'completedAt',
+				label: t('app.data_exports.col_completed', 'Completed'),
+				sortable: true,
+				render: (value: string | null) => value
+					? `<span class="text-sm text-foreground-alt">${new Date(value).toLocaleString()}</span>`
+					: `<span class="text-sm text-muted">—</span>`
 			}
-		});
-		if (result.ok) {
-			createSlideOverOpen = false;
-			resetForm();
-			successMessage = t('app.data_exports.msg_queued', 'Export job queued successfully');
-			loadExports();
-		} else {
-			errorMessage = result.error ?? t('app.data_exports.msg_create_failed', 'Failed to create export');
-		}
-		saving = false;
-	}
+		],
+		filters: [
+			{
+				key: 'status',
+				label: t('app.data_exports.col_status', 'Status'),
+				options: [
+					{ value: 'pending', label: t('app.data_exports.tab_all', 'Pending') },
+					{ value: 'processing', label: t('app.data_exports.tab_in_progress', 'Processing') },
+					{ value: 'completed', label: t('app.data_exports.tab_completed', 'Completed') },
+					{ value: 'failed', label: t('app.data_exports.tab_failed', 'Failed') }
+				]
+			},
+			{
+				key: 'type',
+				label: t('app.data_exports.filter_export_type', 'Export Type'),
+				options: exportTypes
+			}
+		],
+		bulkActions: [
+			{
+				label: t('app.data_exports.action_delete_selected', 'Delete Selected'),
+				icon: Trash2,
+				variant: 'destructive',
+				onclick: bulkDelete
+			}
+		],
+		fields,
+		load: async ({ q, sort, filter, page, pageSize }) => {
+			const params = new URLSearchParams();
+			params.set('page_size', String(pageSize || 25));
+			params.set('page_offset', String(page || 1));
+			if (filter.status) params.set('status', filter.status);
+			if (filter.type) params.set('type', filter.type);
+			if (q) params.set('q', q);
+			if (sort) params.set('sort', sort);
+			const result = await apiRaw<{ data: DataExport[]; pagination: { total: number; page_size: number; page_offset: number } }>(
+				`/admin/data-exports?${params.toString()}`
+			);
+			if (result.ok) {
+				const data = (result.data.data as DataExport[]) ?? [];
+				const total = result.data.pagination?.total ?? data.length;
+				const ps = result.data.pagination?.page_size ?? (pageSize || 25);
+				const totalPages = Math.max(1, Math.ceil(total / ps));
+				return { data, total, totalPages };
+			}
+			throw new Error(result.error ?? t('app.data_exports.msg_create_failed', 'Failed to load exports'));
+		},
+		create: async (body) => {
+			saving = true;
+			pageError = '';
+			try {
+				const result = await api('/admin/data-exports', {
+					method: 'POST',
+					body: {
+						name: String(body.name ?? '').trim(),
+						type: body.type ?? 'users',
+						format: body.format ?? 'csv',
+						includeMetadata: body.includeMetadata ?? true
+					}
+				});
+				if (result.ok) {
+					pageSuccess = t('app.data_exports.msg_queued', 'Export job queued successfully');
+					await loadSummary();
+					return { ok: true };
+				}
+				return { ok: false, error: result.error ?? t('app.data_exports.msg_create_failed', 'Failed to create export') };
+			} finally {
+				saving = false;
+			}
+		},
+		remove: async (id) => {
+			const result = await api(`/admin/data-exports/${id}`, { method: 'DELETE' });
+			if (result.ok) {
+				pageSuccess = t('app.data_exports.msg_deleted', 'Export deleted');
+				await loadSummary();
+				return { ok: true };
+			}
+			return { ok: false, error: result.error ?? t('app.data_exports.msg_delete_failed', 'Failed to delete export') };
+		},
+		formSnippet: ExportForm,
+		viewSnippet: ExportView
+	};
 
-	function openView(ex: DataExport) {
-		viewTarget = ex;
-		showViewSlideOver = true;
-	}
-
-	function openDeleteConfirm(id: string) {
-		deletingId = id;
-		deleteConfirmOpen = true;
-	}
-
-	async function confirmDelete() {
-		if (!deletingId) return;
-		saving = true;
-		const result = await api(`/admin/data-exports/${deletingId}`, { method: "DELETE" });
-		if (result.ok) {
-			successMessage = t('app.data_exports.msg_deleted', 'Export deleted');
-			loadExports();
-		} else {
-			errorMessage = result.error ?? t('app.data_exports.msg_delete_failed', 'Failed to delete export');
-		}
-		deleteConfirmOpen = false;
-		deletingId = null;
-		saving = false;
-	}
-
-	async function bulkDelete() {
-		if (!selectedIds.size) return;
-		saving = true;
-		const ids = [...selectedIds];
-		for (const id of ids) {
-			await api(`/admin/data-exports/${id}`, { method: "DELETE" });
-		}
-		selectedIds = new Set();
-		successMessage = t('app.data_exports.msg_bulk_deleted', `${ids.length} export(s) deleted`);
-		loadExports();
-		saving = false;
-	}
-
-	function resetForm() {
-		form = { name: "", type: "users", format: "csv", includeMetadata: true };
-	}
-
-	$effect(() => {
-		loadExports();
-	});
 </script>
 
 <svelte:head>
@@ -257,20 +251,19 @@
 	title={t('app.data_exports.title', 'Data Exports')}
 	description={t('app.data_exports.description', 'Export platform data in various formats')}
 	actions={[
-		{ label: t('app.data_exports.action_new', 'New Export'), icon: Plus, onclick: () => (createSlideOverOpen = true) },
-		{ label: t('app.data_exports.action_refresh', 'Refresh'), icon: RefreshCw, variant: "ghost", onclick: loadExports }
+		{ label: t('app.data_exports.action_refresh', 'Refresh'), icon: RefreshCw, variant: 'ghost', onclick: () => { entityController?.reload(); loadSummary(); } }
 	]}
 />
 
 <div class="space-y-6">
-	{#if errorMessage}
+	{#if pageError}
 		<div class="rounded-lg border border-danger bg-danger-50 px-4 py-3 text-sm text-danger-700">
-			{errorMessage}
+			{pageError}
 		</div>
 	{/if}
-	{#if successMessage}
+	{#if pageSuccess}
 		<div class="rounded-lg border border-success bg-success-50 px-4 py-3 text-sm text-success-700">
-			{successMessage}
+			{pageSuccess}
 		</div>
 	{/if}
 
@@ -280,8 +273,8 @@
 			<CardContent class="p-6">
 				<div class="flex items-center justify-between">
 					<div>
-						<p class="text-sm font-medium text-muted">{t('app.data-exports.total_exports')}</p>
-						<p class="text-2xl font-bold text-foreground">{exports.length}</p>
+						<p class="text-sm font-medium text-muted">{t('app.data_exports.total_exports', 'Total Exports')}</p>
+						<p class="text-2xl font-bold text-foreground">{summaryData.length}</p>
 					</div>
 					<div class="rounded-lg bg-primary-100 p-3">
 						<Download class="h-6 w-6 text-primary-600" />
@@ -293,9 +286,9 @@
 			<CardContent class="p-6">
 				<div class="flex items-center justify-between">
 					<div>
-						<p class="text-sm font-medium text-muted">{t('app.data-exports.in_progress')}</p>
+						<p class="text-sm font-medium text-muted">{t('app.data_exports.tab_in_progress', 'In Progress')}</p>
 						<p class="text-2xl font-bold text-warning-600">
-							{exports.filter((e) => e.status === "pending" || e.status === "processing").length}
+							{summaryData.filter((e) => e.status === 'pending' || e.status === 'processing').length}
 						</p>
 					</div>
 					<div class="rounded-lg bg-warning/15 p-3">
@@ -308,8 +301,8 @@
 			<CardContent class="p-6">
 				<div class="flex items-center justify-between">
 					<div>
-						<p class="text-sm font-medium text-muted">{t('app.data-exports.completed')}</p>
-						<p class="text-2xl font-bold text-success-600">{exports.filter((e) => e.status === "completed").length}</p>
+						<p class="text-sm font-medium text-muted">{t('app.data_exports.tab_completed', 'Completed')}</p>
+						<p class="text-2xl font-bold text-success-600">{summaryData.filter((e) => e.status === 'completed').length}</p>
 					</div>
 					<div class="rounded-lg bg-success/15 p-3">
 						<CheckCircle class="h-6 w-6 text-success-600" />
@@ -321,8 +314,8 @@
 			<CardContent class="p-6">
 				<div class="flex items-center justify-between">
 					<div>
-						<p class="text-sm font-medium text-muted">{t('app.data-exports.failed')}</p>
-						<p class="text-2xl font-bold text-danger-600">{exports.filter((e) => e.status === "failed").length}</p>
+						<p class="text-sm font-medium text-muted">{t('app.data_exports.tab_failed', 'Failed')}</p>
+						<p class="text-2xl font-bold text-danger-600">{summaryData.filter((e) => e.status === 'failed').length}</p>
 					</div>
 					<div class="rounded-lg bg-danger/15 p-3">
 						<XCircle class="h-6 w-6 text-danger-600" />
@@ -332,133 +325,89 @@
 		</Card>
 	</div>
 
-	<Tabs {tabs} bind:value={activeTab} />
-
-	<Card>
-		<CardContent class="p-0">
-			{#if loading}
-				<p class="py-8 text-center text-sm text-muted">{t('app.data-exports.loading')}</p>
-			{:else}
-				<DataTable
-					columns={exportColumns}
-					data={filteredExports}
-					filters={exportFilters}
-					actions={exportRowActions}
-					pageSize={20}
-					emptyMessage={t('app.data_exports.empty', 'No data exports found')}
-					selectable
-					bind:selectedIds
-				>
-					{#snippet bulkActions()}
-						{#if canManageExports}
-						<Button variant="destructive" size="sm" onclick={bulkDelete} disabled={saving}>
-							<Trash2 class="h-3.5 w-3.5 mr-1" />
-							{t('app.data_exports.action_delete_selected', 'Delete Selected')} ({selectedIds.size})
-						</Button>
-						{/if}
-					{/snippet}
-				</DataTable>
-			{/if}
-		</CardContent>
-	</Card>
+	<EntityPage {config} bind:controller={entityController} />
 </div>
 
-<!-- Create Export SlideOver -->
-<SlideOver bind:open={createSlideOverOpen} title={t('app.data_exports.modal_new_title', 'New Data Export')}>
+<!-- ── Snippets ───────────────────────────────────────────────────────── -->
+
+<!-- Create form (formSnippet). Binds to page-local `form` state. -->
+{#snippet ExportForm({ value, editing }: { value: any; editing: boolean })}
 	<div class="space-y-4">
 		<div>
-			<label for="export-name" class="mb-1 block text-sm font-medium text-foreground-alt">{t('app.data-exports.export_name')}</label>
+			<label for="export-name" class="mb-1 block text-sm font-medium text-foreground-alt">{t('app.data_exports.export_name', 'Export Name')}</label>
 			<input
 				id="export-name"
 				type="text"
-				class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
+				class="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
 				placeholder={t('app.data_exports.name_placeholder', 'e.g., Users Q1 2024')}
-				bind:value={form.name}
+				bind:value={value.name}
 			/>
 		</div>
 		<div class="grid grid-cols-2 gap-4">
 			<div>
-				<label for="export-type" class="mb-1 block text-sm font-medium text-foreground-alt">{t('app.data-exports.data_type')}</label>
-				<Select bind:value={form.type} options={exportTypes} />
+				<label for="export-type" class="mb-1 block text-sm font-medium text-foreground-alt">{t('app.data_exports.data_type', 'Data Type')}</label>
+				<Select bind:value={value.type} options={exportTypes} />
 			</div>
 			<div>
-				<label for="export-format" class="mb-1 block text-sm font-medium text-foreground-alt">{t('app.data-exports.format')}</label>
-				<Select bind:value={form.format} options={formatOptions} />
+				<label for="export-format" class="mb-1 block text-sm font-medium text-foreground-alt">{t('app.data_exports.format', 'Format')}</label>
+				<Select bind:value={value.format} options={formatOptions} />
 			</div>
 		</div>
 		<div class="flex items-center gap-2">
 			<input
 				id="export-metadata"
 				type="checkbox"
-				bind:checked={form.includeMetadata}
-				class="h-4 w-4 rounded border text-primary-600 focus:ring-primary"
+				bind:checked={value.includeMetadata}
+				class="h-4 w-4 rounded border-border text-primary-600 focus:ring-primary"
 			/>
-			<label for="export-metadata" class="text-sm font-medium text-foreground-alt">{t('app.data-exports.include_metadata_timestamps_ids')}</label>
+			<label for="export-metadata" class="text-sm font-medium text-foreground-alt">{t('app.data_exports.include_metadata_timestamps_ids', 'Include metadata (timestamps, IDs)')}</label>
 		</div>
 	</div>
-	{#snippet footer()}
-		<div class="flex justify-end gap-3 pt-2">
-			<Button variant="outline" onclick={() => { createSlideOverOpen = false; resetForm(); }}>{t('app.data-exports.cancel')}</Button>
-			<Button onclick={submitExport} disabled={saving || !form.name.trim()}>
-				{saving ? t('app.data_exports.btn_queuing', 'Queuing...') : t('app.data_exports.btn_start', 'Start Export')}
-			</Button>
-		</div>
-	{/snippet}
-</SlideOver>
+{/snippet}
 
-<!-- View SlideOver -->
-<SlideOver bind:open={showViewSlideOver} title={t('app.data_exports.modal_details_title', 'Export Details')}>
-	{#if viewTarget}
-		<div class="space-y-4">
-			<div class="grid grid-cols-2 gap-4">
-				<div>
-					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.data_exports.detail_name', 'Name')}</p>
-					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.name}</p>
-				</div>
-				<div>
-					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.data_exports.detail_type', 'Type')}</p>
-					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.type} · {viewTarget.format.toUpperCase()}</p>
-				</div>
-				<div>
-					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.data_exports.detail_status', 'Status')}</p>
-					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.status}</p>
-				</div>
-				<div>
-					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.data_exports.detail_size', 'Size')}</p>
-					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{formatFileSize(viewTarget.fileSize)}</p>
-				</div>
-				<div class="col-span-2">
-					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.data_exports.detail_created', 'Created')}</p>
-					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{new Date(viewTarget.createdAt).toLocaleString()}</p>
-				</div>
-				{#if viewTarget.status === "completed" && viewTarget.fileUrl}
-					<div class="col-span-2">
-						<a href={viewTarget.fileUrl} class="inline-flex items-center gap-1 text-sm font-medium" style="color: var(--color-primary)" download>
-							<Download class="h-3.5 w-3.5" /> {t('app.data_exports.detail_download', 'Download file')}
-						</a>
-					</div>
-				{/if}
-			</div>
-		</div>
-	{/if}
-	{#snippet footer()}
-		<div class="flex justify-end">
-			<Button variant="outline" onclick={() => (showViewSlideOver = false)}>{t('app.data_exports.btn_close', 'Close')}</Button>
-		</div>
-	{/snippet}
-</SlideOver>
-
-<!-- Delete Confirmation Modal -->
-<Modal bind:open={deleteConfirmOpen} title={t('app.data_exports.modal_delete_title', 'Confirm Delete')} description={t('app.data_exports.modal_delete_description', 'This action cannot be undone')}>
+<!-- View slide-over body (viewSnippet) -->
+{#snippet ExportView({ row }: { row: DataExport })}
 	<div class="space-y-4">
-		<p class="text-sm text-foreground-alt">
-			{t('app.data_exports.modal_delete_body', 'Are you sure you want to delete this export? The downloaded file will no longer be available.')}
-		</p>
-		<div class="flex justify-end gap-3">
-			<Button variant="outline" onclick={() => (deleteConfirmOpen = false)}>{t('app.data-exports.cancel')}</Button>
-			<Button variant="destructive" onclick={confirmDelete} disabled={saving}>
-				{saving ? t('app.data_exports.btn_deleting', 'Deleting...') : t('app.data_exports.btn_delete_export', 'Delete Export')}
-			</Button>
+		<div class="grid grid-cols-2 gap-4">
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.data_exports.detail_name', 'Name')}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.name}</p>
+			</div>
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.data_exports.detail_type', 'Type')}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.type} · {row.format.toUpperCase()}</p>
+			</div>
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.data_exports.detail_status', 'Status')}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.status}</p>
+			</div>
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.data_exports.detail_size', 'Size')}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{formatFileSize(row.fileSize)}</p>
+			</div>
+			<div class="col-span-2">
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.data_exports.detail_created', 'Created')}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{new Date(row.createdAt).toLocaleString()}</p>
+			</div>
+			{#if row.completedAt}
+				<div class="col-span-2">
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.data_exports.col_completed', 'Completed')}</p>
+					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{new Date(row.completedAt).toLocaleString()}</p>
+				</div>
+			{/if}
+			{#if row.status === 'completed' && row.fileUrl}
+				<div class="col-span-2">
+					<a href={row.fileUrl} class="inline-flex items-center gap-1 text-sm font-medium" style="color: var(--color-primary)" download>
+						<FileDown class="h-3.5 w-3.5" /> {t('app.data_exports.detail_download', 'Download file')}
+					</a>
+				</div>
+			{/if}
+			{#if row.errorMessage}
+				<div class="col-span-2">
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.data_exports.detail_error', 'Error')}</p>
+					<p class="mt-1 text-sm font-medium text-danger">{row.errorMessage}</p>
+				</div>
+			{/if}
 		</div>
 	</div>
-</Modal>
+{/snippet}

@@ -241,4 +241,8 @@ func RegisterHandlers(mux *asynq.ServeMux) {
 	// §95 CV Formatter handlers (ADR-103).
 	mux.HandleFunc(TypeCvFormatProcess, HandleCvFormatProcess)
 	mux.HandleFunc(TypeCvFormatSessionsPurge, HandleCvFormatSessionsPurge)
+
+	// §84 Community Digest Widget handlers (ADR-092).
+	mux.HandleFunc(TypeDigestGenerate, HandleDigestGenerate)
+	mux.HandleFunc(TypeDigestSendEmail, HandleDigestSendEmail)
 }

@@ -171,6 +171,18 @@ type CvFormatterProcessor interface {
 	PurgeExpiredSessions(ctx context.Context) (int64, error)
 }
 
+// DigestProcessor handles Community Digest Widget background tasks (§84,
+// ADR-092). GenerateEdition assembles a new digest edition from platform
+// analytics (top threads, new members, events, featured story, poll) and
+// stores it in draft/review status for the 1-hour admin review window.
+// SendEditionEmail sends the published digest to members with the digest
+// notification preference enabled, reusing §62 Newsletter infrastructure.
+// Ref: japaconnect-engineering/sections/84-community-digest-widget.md
+type DigestProcessor interface {
+	GenerateEdition(ctx context.Context, tenantID, spaceID pgtype.UUID) error
+	SendEditionEmail(ctx context.Context, editionID, tenantID pgtype.UUID) error
+}
+
 // ---------------------------------------------------------------------------
 // Global processor slots — nil-safe (graceful degradation when unregistered).
 // ---------------------------------------------------------------------------
@@ -191,6 +203,7 @@ var (
 	embassyAlerterProcessor EmbassyAlerterProcessor
 	calendarProcessor       CalendarProcessor
 	cvFormatterProcessor    CvFormatterProcessor
+	digestProcessor         DigestProcessor
 	agentDraftProcessor     AgentDraftProcessor
 )
 
@@ -211,6 +224,7 @@ func RegisterMentorProcessor(p MentorProcessor)                 { mentorProcesso
 func RegisterEmbassyAlerterProcessor(p EmbassyAlerterProcessor) { embassyAlerterProcessor = p }
 func RegisterCalendarProcessor(p CalendarProcessor)             { calendarProcessor = p }
 func RegisterCvFormatterProcessor(p CvFormatterProcessor)       { cvFormatterProcessor = p }
+func RegisterDigestProcessor(p DigestProcessor)                 { digestProcessor = p }
 func RegisterAgentDraftProcessor(p AgentDraftProcessor)         { agentDraftProcessor = p }
 
 // ---------------------------------------------------------------------------
@@ -275,6 +289,16 @@ const (
 	// nightly on the low queue, deleting sessions past their expires_at.
 	TypeCvFormatProcess       = "cv_format:process"
 	TypeCvFormatSessionsPurge = "cv_format_sessions:purge"
+
+	// §84 Community Digest Widget (ADR-092).
+	// digest:generate runs weekly on Sunday 22:00 UTC on the low queue,
+	// assembling a new digest edition from platform analytics (top threads,
+	// new members, events, featured story, poll). digest:send_email runs
+	// on the default queue when an edition is published, sending the digest
+	// to members with the digest notification preference enabled (reuses
+	// §62 Newsletter infrastructure).
+	TypeDigestGenerate  = "digest:generate"
+	TypeDigestSendEmail = "digest:send_email"
 )
 
 // ---------------------------------------------------------------------------
@@ -1014,5 +1038,78 @@ func HandleCvFormatSessionsPurge(ctx context.Context, _ *asynq.Task) error {
 		return fmt.Errorf("task:cv_format_sessions:purge: %w", err)
 	}
 	slog.Info("task:cv_format_sessions:purge: purged expired sessions", "count", n)
+	return nil
+}
+
+// HandleDigestGenerate assembles a new community digest edition from platform
+// analytics (§84, ADR-092). Runs weekly on Sunday 22:00 UTC on the low queue.
+// When triggered by the admin "Generate" button, the payload carries
+// tenant_id and optionally space_id for a per-Space digest.
+func HandleDigestGenerate(ctx context.Context, t *asynq.Task) error {
+	if digestProcessor == nil {
+		slog.Warn("task:digest:generate: no processor registered, skipping")
+		return nil
+	}
+	var p struct {
+		TenantID string `json:"tenant_id"`
+		SpaceID  string `json:"space_id"`
+	}
+	if err := json.Unmarshal(t.Payload(), &p); err != nil {
+		return fmt.Errorf("task:digest:generate: invalid payload: %w", err)
+	}
+	if p.TenantID == "" {
+		// Cron mode: iterate all tenants. The processor handles tenant
+		// iteration when tenantID is the zero UUID.
+		if err := digestProcessor.GenerateEdition(ctx, pgtype.UUID{}, pgtype.UUID{}); err != nil {
+			return fmt.Errorf("task:digest:generate: %w", err)
+		}
+		return nil
+	}
+	var tenantID pgtype.UUID
+	if err := tenantID.Scan(p.TenantID); err != nil {
+		return fmt.Errorf("task:digest:generate: bad tenant_id: %w", err)
+	}
+	var spaceID pgtype.UUID
+	if p.SpaceID != "" {
+		if err := spaceID.Scan(p.SpaceID); err != nil {
+			return fmt.Errorf("task:digest:generate: bad space_id: %w", err)
+		}
+	}
+	if err := digestProcessor.GenerateEdition(ctx, tenantID, spaceID); err != nil {
+		return fmt.Errorf("task:digest:generate: %w", err)
+	}
+	slog.Info("task:digest:generate: edition assembled",
+		"tenant_id", p.TenantID, "space_id", p.SpaceID)
+	return nil
+}
+
+// HandleDigestSendEmail sends a published digest edition to members with the
+// digest notification preference enabled (§84, ADR-092). Runs on the default
+// queue when an edition is published. Reuses §62 Newsletter infrastructure.
+func HandleDigestSendEmail(ctx context.Context, t *asynq.Task) error {
+	if digestProcessor == nil {
+		slog.Warn("task:digest:send_email: no processor registered, skipping")
+		return nil
+	}
+	var p struct {
+		EditionID string `json:"edition_id"`
+		TenantID  string `json:"tenant_id"`
+	}
+	if err := json.Unmarshal(t.Payload(), &p); err != nil {
+		return fmt.Errorf("task:digest:send_email: invalid payload: %w", err)
+	}
+	var editionID pgtype.UUID
+	if err := editionID.Scan(p.EditionID); err != nil {
+		return fmt.Errorf("task:digest:send_email: bad edition_id: %w", err)
+	}
+	var tenantID pgtype.UUID
+	if err := tenantID.Scan(p.TenantID); err != nil {
+		return fmt.Errorf("task:digest:send_email: bad tenant_id: %w", err)
+	}
+	if err := digestProcessor.SendEditionEmail(ctx, editionID, tenantID); err != nil {
+		return fmt.Errorf("task:digest:send_email: %w", err)
+	}
+	slog.Info("task:digest:send_email: sent",
+		"edition_id", p.EditionID, "tenant_id", p.TenantID)
 	return nil
 }

@@ -196,11 +196,17 @@
 	});
 
 	// ── Data loading ────────────────────────────────────────────────────────
+	// untrack config.load so the reload $effect only re-fires on
+	// pagination/search/sort/filter state changes, not when the parent's
+	// config $derived re-creates the load function (e.g. after permissions
+	// or i18n load post-mount). Without this, every config re-derivation
+	// triggers a duplicate fetch loop.
 	async function reload() {
 		loading = true;
 		error = '';
 		try {
-			const result = await config.load({
+			const loadFn = untrack(() => config.load);
+			const result = await loadFn({
 				page: currentPage,
 				pageSize,
 				q: searchQuery,
@@ -224,11 +230,14 @@
 	}
 
 	// Re-fetch whenever any pagination/search/sort/filter state changes.
+	// Track filterValueKey (cleaned) instead of filterValue to avoid a
+	// duplicate fetch when the FilterPanel's Select writes empty strings
+	// into filterValue on mount.
 	$effect(() => {
 		void currentPage;
 		void pageSize;
 		void searchQuery;
-		void filterValue;
+		void filterValueKey;
 		void sortKey;
 		void sortDir;
 		void reload();
@@ -237,7 +246,14 @@
 	// Reflect page/pageSize/filters in the URL. Sort/dir/q are written by the
 	// DataTable (urlSync={true}); this effect only owns the state DataTable
 	// does not, and preserves sort/dir/q when it updates the URL.
-	const filterValueKey = $derived(JSON.stringify(filterValue));
+	// Track the serialized, cleaned filter state (only truthy values) instead
+	// of the raw filterValue object. The FilterPanel's Select bindings can
+	// write empty/undefined strings into filterValue on mount, which would
+	// trigger a duplicate reload if we tracked the raw object. By cleaning
+	// empty values, the key stays "{}" until a real filter is selected.
+	const filterValueKey = $derived(
+		JSON.stringify(Object.fromEntries(Object.entries(filterValue).filter(([, v]) => v)))
+	);
 	let urlSyncReady = false;
 	$effect(() => {
 		void currentPage;

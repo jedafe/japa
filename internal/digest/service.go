@@ -1,6 +1,6 @@
 // Package digest — service.go orchestrates digest edition browsing, draft
 // editing, publication, and generation triggers. Feature-flagged via
-// digest.enabled and digest.email system_settings (§84).
+// feature.digest (feature_flags gate) and digest.email system_setting (§84).
 //
 // Ref: japaconnect-engineering/sections/84-community-digest.md
 //      japaconnect-engineering/adr/ADR-092-community-digest.md
@@ -10,13 +10,31 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/jedafe/japa/internal/config"
+	valkeycompat "github.com/valkey-io/valkey-go/valkeycompat"
 )
+
+// digestDraftKeyTTL is the Valkey TTL for jc:digest_draft keys (§84 spec: 2h
+// review window).
+const digestDraftKeyTTL = 2 * time.Hour
+
+// TaskEnqueuer is the interface for enqueuing Asynq background tasks
+// (structural typing — *worker.Enqueuer satisfies this).
+type TaskEnqueuer interface {
+	Enqueue(taskType string, payload []byte, opts ...interface{}) error
+}
+
+// noopEnqueuer silently drops tasks when no real enqueuer is wired (tests,
+// development).
+type noopEnqueuer struct{}
+
+func (noopEnqueuer) Enqueue(string, []byte, ...interface{}) error { return nil }
 
 // DigestEditionDTO is the API response shape for a digest edition (listing).
 type DigestEditionDTO struct {
@@ -47,12 +65,28 @@ type UpdateEditionInput struct {
 type Service struct {
 	store    *Store
 	settings *config.Settings
+	enqueuer TaskEnqueuer
+	vk       valkeycompat.Cmdable
 }
 
 // NewService creates a digest service.
 func NewService(store *Store, settings *config.Settings) *Service {
-	return &Service{store: store, settings: settings}
+	return &Service{store: store, settings: settings, enqueuer: noopEnqueuer{}}
 }
+
+// SetEnqueuer injects the Asynq task enqueuer used to dispatch
+// digest:generate and digest:send_email tasks (§84, Rule 7/8).
+func (s *Service) SetEnqueuer(e TaskEnqueuer) {
+	if e == nil {
+		s.enqueuer = noopEnqueuer{}
+		return
+	}
+	s.enqueuer = e
+}
+
+// SetValkey injects the Valkey client used for the jc:digest_draft lock
+// (§84, valkey-keys-catalog.md, Rule 4).
+func (s *Service) SetValkey(vk valkeycompat.Cmdable) { s.vk = vk }
 
 // Enabled reads the digest.enabled system_setting toggle.
 func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
@@ -98,8 +132,19 @@ func (s *Service) Get(ctx context.Context, tenantID, id pgtype.UUID) (DigestEdit
 	return editionToDetailDTO(edition), nil
 }
 
-// AdminList returns all digest editions for admin management (paginated).
-func (s *Service) AdminList(ctx context.Context, tenantID pgtype.UUID, page, limit int32) ([]DigestEditionDTO, int64, error) {
+// AdminListFilter holds admin list filter parameters (§84 admin pattern:
+// filter + sort + paginate, no infinite scroll).
+type AdminListFilter struct {
+	TenantID pgtype.UUID
+	SpaceID  pgtype.UUID
+	Status   string // draft|review|published|cancelled
+	Sort     string // created_at|published_at|scheduled_for (default: created_at)
+	Order    string // asc|desc (default: desc)
+}
+
+// AdminList returns all digest editions for admin management (paginated,
+// filterable by space/status, sortable).
+func (s *Service) AdminList(ctx context.Context, f AdminListFilter, page, limit int32) ([]DigestEditionDTO, int64, error) {
 	if limit <= 0 {
 		limit = 20
 	}
@@ -109,7 +154,11 @@ func (s *Service) AdminList(ctx context.Context, tenantID pgtype.UUID, page, lim
 	offset := (page - 1) * limit
 
 	editions, total, err := s.store.ListEditions(ctx, ListEditionsFilter{
-		TenantID: tenantID,
+		TenantID: f.TenantID,
+		SpaceID:  f.SpaceID,
+		Status:   f.Status,
+		Sort:     f.Sort,
+		Order:    f.Order,
 		Limit:    limit,
 		Offset:   offset,
 	})
@@ -150,7 +199,9 @@ func (s *Service) AdminUpdate(ctx context.Context, tenantID, id pgtype.UUID, con
 	return nil
 }
 
-// AdminPublish publishes a draft or scheduled edition.
+// AdminPublish publishes a draft or review edition, enqueues the
+// digest:send_email task (fire-and-forget, Rule 8), and clears the
+// jc:digest_draft Valkey key (§84, ADR-092).
 func (s *Service) AdminPublish(ctx context.Context, tenantID, reviewerID, id pgtype.UUID) error {
 	if err := s.store.PublishEdition(ctx, id, tenantID, reviewerID); err != nil {
 		if err == pgx.ErrNoRows {
@@ -158,16 +209,60 @@ func (s *Service) AdminPublish(ctx context.Context, tenantID, reviewerID, id pgt
 		}
 		return fmt.Errorf("digest: admin publish: %w", err)
 	}
+
+	// Clear the draft review lock (§84, valkey-keys-catalog.md).
+	s.clearDraftLock(ctx, tenantID, id)
+
+	// Fire-and-forget: enqueue digest:send_email so members with the digest
+	// notification preference receive the published edition (§84, Rule 8).
+	// Reuses §62 Newsletter infrastructure in the task handler.
+	payload, _ := json.Marshal(map[string]string{
+		"edition_id": id.String(),
+		"tenant_id":  tenantID.String(),
+	})
+	if err := s.enqueuer.Enqueue("digest:send_email", payload); err != nil {
+		// Log but do not fail the publish — email delivery is async and
+		// retryable. The edition is already published.
+		slog.Error("digest: enqueue send_email failed", "error", err, "edition_id", id.String())
+	}
 	return nil
 }
 
-// AdminGenerate triggers generation of a new digest edition. For now this
-// returns a 202 Accepted sentinel — the actual generation job enqueue goes
-// through the existing §20 AI Gateway (ADR-092).
+// AdminGenerate triggers generation of a new digest edition by enqueuing the
+// digest:generate Asynq task (§84, ADR-092). The task assembles the edition
+// from platform analytics — no AI generation (purely metrics-driven).
+// Returns "accepted" to indicate the task was enqueued (202 response).
 func (s *Service) AdminGenerate(ctx context.Context, tenantID pgtype.UUID) (string, error) {
-	// The actual digest generation task enqueue would go here — for now,
-	// we return an accepted sentinel indicating the request was accepted.
+	payload, _ := json.Marshal(map[string]string{
+		"tenant_id": tenantID.String(),
+	})
+	if err := s.enqueuer.Enqueue("digest:generate", payload); err != nil {
+		return "", fmt.Errorf("digest: enqueue generate: %w", err)
+	}
 	return "accepted", nil
+}
+
+// setDraftLock sets jc:digest_draft:{tenant_id}:{edition_id} with a 2h TTL
+// marking the edition as pending admin review (§84, valkey-keys-catalog.md).
+func (s *Service) setDraftLock(ctx context.Context, tenantID, editionID pgtype.UUID) {
+	if s.vk == nil || !tenantID.Valid || !editionID.Valid {
+		return
+	}
+	key := "jc:digest_draft:" + tenantID.String() + ":" + editionID.String()
+	if err := s.vk.Set(ctx, key, "1", digestDraftKeyTTL).Err(); err != nil {
+		slog.Error("digest: set draft lock", "error", err, "key", key)
+	}
+}
+
+// clearDraftLock removes the jc:digest_draft key on publish or cancel.
+func (s *Service) clearDraftLock(ctx context.Context, tenantID, editionID pgtype.UUID) {
+	if s.vk == nil || !tenantID.Valid || !editionID.Valid {
+		return
+	}
+	key := "jc:digest_draft:" + tenantID.String() + ":" + editionID.String()
+	if err := s.vk.Del(ctx, key).Err(); err != nil {
+		slog.Error("digest: clear draft lock", "error", err, "key", key)
+	}
 }
 
 // editionToDTO converts a DigestEdition to a DigestEditionDTO.
@@ -184,8 +279,8 @@ func editionToDTO(e DigestEdition) DigestEditionDTO {
 	}
 	dto.ScheduledFor = formatTs(e.ScheduledFor)
 	dto.PublishedAt = formatTs(e.PublishedAt)
-	if e.GeneratedBy.Valid {
-		dto.GeneratedBy = e.GeneratedBy.String()
+	if e.GeneratedBy != "" {
+		dto.GeneratedBy = e.GeneratedBy
 	}
 	if e.ReviewedBy.Valid {
 		dto.ReviewedBy = e.ReviewedBy.String()
