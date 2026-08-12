@@ -19,9 +19,10 @@ import (
 
 // Handlers provides HTTP handlers for organization management.
 type Handlers struct {
-	service        *Service
-	follows        FollowService
-	jsonldResolver JSONLDResolver
+	service           *Service
+	follows           FollowService
+	jsonldResolver    JSONLDResolver
+	customFieldLookup CustomFieldLookup
 }
 
 // FollowService is the subset of the follows.Service used by org handlers.
@@ -36,10 +37,24 @@ type JSONLDResolver interface {
 	ResolveJSONLD(ctx context.Context, tenantID pgtype.UUID, contentType string, fields map[string]string) (json.RawMessage, error)
 }
 
+// CustomFieldLookup resolves a custom field definition by key within a tenant.
+// Used by /organizations/meta to read the org_type select field's options
+// from the custom field system instead of a dedicated table.
+type CustomFieldLookup interface {
+	GetCustomFieldByKey(ctx context.Context, key string, tenantID pgtype.UUID) (gen.GetCustomFieldByKeyRow, error)
+}
+
 // NewHandlers creates a Handlers instance with the given Service. A nil
 // resolver is acceptable — JSON-LD is simply omitted when unavailable.
 func NewHandlers(service *Service, follows FollowService, resolver JSONLDResolver) *Handlers {
 	return &Handlers{service: service, follows: follows, jsonldResolver: resolver}
+}
+
+// SetCustomFieldLookup injects the custom field lookup for reading org type
+// options from the custom_fields table (Section 07 + custom field architecture).
+// Optional — when unset, /organizations/meta falls back to hardcoded constants.
+func (h *Handlers) SetCustomFieldLookup(l CustomFieldLookup) {
+	h.customFieldLookup = l
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
@@ -138,6 +153,68 @@ type createOrganizationRequest struct {
 	OrgType     string `json:"org_type"`
 }
 
+// GetOrganizationMeta handles GET /organizations/meta.
+// Returns the valid org_types, member_roles, invitation_roles, and
+// claim_statuses so the frontend can populate option dropdowns from the API
+// instead of hardcoding them (Rule 16, BUG-022/023).
+// org_types are read from the custom_fields table (key='org_type', assigned
+// to the organization_fields group). When the custom field lookup is not
+// injected or the field doesn't exist, hardcoded constants are used as fallback.
+// Ref: japaconnect-engineering/sections/07-organization-profiles-claim-ownership.md
+//      japaconnect-engineering/sections/08-custom-field-architecture.md
+func (h *Handlers) GetOrganizationMeta(w http.ResponseWriter, r *http.Request) {
+	t := tenant.FromContext(r.Context())
+	tenantID := pgtype.UUID{}
+	if t != nil {
+		tenantID = t.ID
+	}
+
+	orgTypes := []map[string]string{
+		{"value": OrgTypeBusiness, "label": "Business"},
+		{"value": OrgTypeNGO, "label": "NGO"},
+		{"value": OrgTypeGovernment, "label": "Government"},
+		{"value": OrgTypeEmbassy, "label": "Embassy"},
+		{"value": OrgTypeUniversity, "label": "University"},
+		{"value": OrgTypeMedia, "label": "Media"},
+		{"value": OrgTypeCommunity, "label": "Community"},
+	}
+
+	// Read org types from the custom_fields table (key='org_type') when the
+	// lookup is available. The field's options JSONB stores [{value, label}].
+	if h.customFieldLookup != nil && tenantID.Valid {
+		field, err := h.customFieldLookup.GetCustomFieldByKey(r.Context(), "org_type", tenantID)
+		if err == nil && len(field.Options) > 0 {
+			var opts []map[string]string
+			if jsonErr := json.Unmarshal(field.Options, &opts); jsonErr == nil && len(opts) > 0 {
+				orgTypes = opts
+			}
+		}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data": map[string]any{
+			"org_types": orgTypes,
+			"member_roles": []map[string]string{
+				{"value": MemberRoleOwner, "label": "Owner"},
+				{"value": MemberRoleAdmin, "label": "Admin"},
+				{"value": MemberRoleEditor, "label": "Editor"},
+				{"value": MemberRoleMember, "label": "Member"},
+			},
+			"invitation_roles": []map[string]string{
+				{"value": InvitationRoleAdmin, "label": "Admin"},
+				{"value": InvitationRoleEditor, "label": "Editor"},
+				{"value": InvitationRoleMember, "label": "Member"},
+			},
+			"claim_statuses": []map[string]string{
+				{"value": "pending", "label": "Pending"},
+				{"value": "approved", "label": "Approved"},
+				{"value": "rejected", "label": "Rejected"},
+				{"value": "withdrawn", "label": "Withdrawn"},
+			},
+		},
+	})
+}
+
 // CreateOrganization handles POST /organizations.
 func (h *Handlers) CreateOrganization(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireAuth(w, r)
@@ -167,37 +244,6 @@ func (h *Handlers) CreateOrganization(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, map[string]any{"data": result})
 }
 
-// GetOrganization handles GET /organizations/{slug}.
-func (h *Handlers) GetOrganization(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenantID(w, r)
-	if !ok {
-		return
-	}
-
-	slug := chi.URLParam(r, "slug")
-
-	result, err := h.service.GetOrganizationBySlug(r.Context(), slug, tenantID)
-	if err != nil {
-		handleServiceError(w, err)
-		return
-	}
-
-	// JSON-LD structured data (Section 14 / Section 26). Resolve the
-	// admin-managed Organization template, interpolating the org's field
-	// values. Best-effort: a missing template or resolution error degrades
-	// to no json_ld field. Emitted as a sibling of `data`.
-	resp := map[string]any{"data": result}
-	if h.jsonldResolver != nil {
-		if jsonLd, jErr := h.jsonldResolver.ResolveJSONLD(r.Context(), tenantID, "Organization", orgJSONLDFields(result)); jErr == nil && len(jsonLd) > 0 {
-			resp["json_ld"] = json.RawMessage(jsonLd)
-		} else if jErr != nil {
-			slog.Warn("organizations: JSON-LD template resolution failed", "slug", slug, "error", jErr)
-		}
-	}
-
-	writeJSON(w, http.StatusOK, resp)
-}
-
 // orgJSONLDFields builds the {{field_key}} → value map for interpolating an
 // Organization JSON-LD template from an organization row.
 func orgJSONLDFields(o gen.Organization) map[string]string {
@@ -225,41 +271,6 @@ func orgJSONLDFields(o gen.Organization) map[string]string {
 		"facebook_url": "",
 		"founded_at":  "",
 	}
-}
-
-// ListOrganizations handles GET /organizations.
-func (h *Handlers) ListOrganizations(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenantID(w, r)
-	if !ok {
-		return
-	}
-
-	orgType := r.URL.Query().Get("org_type")
-	countryCode := r.URL.Query().Get("country_code")
-	search := r.URL.Query().Get("q")
-	verified := r.URL.Query().Get("verified")
-	limit := parsePageSize(r)
-	offset := parsePageOffset(r)
-
-	items, total, err := h.service.ListOrganizations(r.Context(), tenantID, orgType, countryCode, search, verified, limit, offset)
-	if err != nil {
-		handleServiceError(w, err)
-		return
-	}
-
-	totalPages := int32(1)
-	if limit > 0 && total > 0 {
-		totalPages = int32((total + int64(limit) - 1) / int64(limit))
-	}
-
-	writeJSON(w, http.StatusOK, map[string]any{
-		"data": map[string]any{
-			"items":       items,
-			"total":       total,
-			"total_pages": totalPages,
-			"page":        offset / limit,
-		},
-	})
 }
 
 type updateOrganizationRequest struct {
@@ -377,13 +388,18 @@ func (h *Handlers) DeleteOrganization(w http.ResponseWriter, r *http.Request) {
 
 // ListMembers handles GET /organizations/{id}/members.
 func (h *Handlers) ListMembers(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requireTenantID(w, r)
+	if !ok {
+		return
+	}
+
 	orgID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid organization ID")
 		return
 	}
 
-	result, err := h.service.ListMembers(r.Context(), orgID)
+	result, err := h.service.ListMembers(r.Context(), orgID, tenantID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -398,8 +414,9 @@ type addMemberRequest struct {
 }
 
 // AddMember handles POST /organizations/{id}/members.
+// Ref: japaconnect-engineering/sections/07-organization-profiles-claim-ownership.md
 func (h *Handlers) AddMember(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireAuth(w, r)
+	user, ok := requireAuth(w, r)
 	if !ok {
 		return
 	}
@@ -421,11 +438,7 @@ func (h *Handlers) AddMember(w http.ResponseWriter, r *http.Request) {
 		role = MemberRoleMember
 	}
 
-	if err := h.service.store.AddMember(r.Context(), gen.AddOrganizationMemberParams{
-		OrganizationID: orgID,
-		UserID:         req.UserID,
-		Role:           role,
-	}); err != nil {
+	if err := h.service.AddMember(r.Context(), orgID, user.UserID, req.UserID, role); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -544,13 +557,18 @@ func (h *Handlers) ListInvitations(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	tenantID, ok := requireTenantID(w, r)
+	if !ok {
+		return
+	}
+
 	orgID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid organization ID")
 		return
 	}
 
-	result, err := h.service.ListInvitations(r.Context(), orgID, user.UserID)
+	result, err := h.service.ListInvitations(r.Context(), orgID, user.UserID, tenantID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -597,7 +615,7 @@ func (h *Handlers) AcceptInvitation(w http.ResponseWriter, r *http.Request) {
 	token := chi.URLParam(r, "token")
 	tokenHash := hashToken(token)
 
-	if err := h.service.AcceptInvitation(r.Context(), tokenHash, user.UserID); err != nil {
+	if err := h.service.AcceptInvitation(r.Context(), tokenHash, user.UserID, user.TenantID); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -863,7 +881,24 @@ func (h *Handlers) AdminListOrganizations(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": items, "total": total, "limit": limit, "offset": offset})
+	// BUG-019: Use the standard paginated response format with meta
+	// (consistent with ListPublicOrganizations and §03 API contract).
+	totalPages := int64(0)
+	if limit > 0 {
+		totalPages = total / int64(limit)
+		if total%int64(limit) > 0 {
+			totalPages++
+		}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data": items,
+		"meta": map[string]any{
+			"total":       total,
+			"page":        offset / max(limit, 1),
+			"total_pages": totalPages,
+		},
+	})
 }
 
 // AdminGetOrganization handles GET /admin/organizations/{id}.
@@ -991,13 +1026,18 @@ func (h *Handlers) AdminDeleteOrganization(w http.ResponseWriter, r *http.Reques
 
 // AdminListMembers handles GET /admin/organizations/{id}/members.
 func (h *Handlers) AdminListMembers(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requireTenantID(w, r)
+	if !ok {
+		return
+	}
+
 	orgID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid organization ID")
 		return
 	}
 
-	members, err := h.service.AdminListMembers(r.Context(), orgID)
+	members, err := h.service.AdminListMembers(r.Context(), orgID, tenantID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -1008,13 +1048,18 @@ func (h *Handlers) AdminListMembers(w http.ResponseWriter, r *http.Request) {
 
 // AdminListInvitations handles GET /admin/organizations/{id}/invitations.
 func (h *Handlers) AdminListInvitations(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requireTenantID(w, r)
+	if !ok {
+		return
+	}
+
 	orgID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid organization ID")
 		return
 	}
 
-	invitations, err := h.service.AdminListInvitations(r.Context(), orgID)
+	invitations, err := h.service.AdminListInvitations(r.Context(), orgID, tenantID)
 	if err != nil {
 		handleServiceError(w, err)
 		return

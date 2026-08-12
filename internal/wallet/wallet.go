@@ -7,7 +7,9 @@ package wallet
 
 import (
 	"context"
+	"fmt"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
@@ -88,6 +90,9 @@ type Service struct {
 	// after any currency CRUD operation (Section 58, Rule 4). Optional —
 	// when nil, cache invalidation is skipped (tests).
 	cacheInvalidator CacheInvalidator
+	// gamificationEvaluator evaluates badges after ledger earns
+	// (BUG-GAMMA-001). Optional — nil = skip evaluation.
+	gamificationEvaluator GamificationEvaluator
 }
 
 // CacheInvalidator flushes Valkey cache entries for the wallet currency
@@ -141,6 +146,20 @@ func (s *Service) SetPaymentsService(p PaymentCreator) { s.paymentsService = p }
 // cache (Section 58, Rule 4). Called after any currency CRUD operation.
 func (s *Service) SetCacheInvalidator(c CacheInvalidator) { s.cacheInvalidator = c }
 
+// GamificationEvaluator evaluates badges and challenge progress after a
+// wallet ledger earn (BUG-GAMMA-001, ADR-082 §2). Implemented by
+// *gamification.Service; nil-safe on the Service struct.
+type GamificationEvaluator interface {
+	EvaluateForWallet(ctx context.Context, tenantID, userID pgtype.UUID, activityKey string) error
+}
+
+// SetGamificationEvaluator injects the gamification service for post-earn
+// badge evaluation (BUG-GAMMA-001). Optional — when nil, evaluation is
+// skipped.
+func (s *Service) SetGamificationEvaluator(e GamificationEvaluator) {
+	s.gamificationEvaluator = e
+}
+
 // walletEnqueuer is the subset of worker.Enqueuer that wallet needs.
 type walletEnqueuer interface {
 	Enqueue(taskType string, payload []byte, opts ...interface{}) error
@@ -166,4 +185,37 @@ func (s *Service) SetEnqueuer(e walletEnqueuer) {
 // the same DB pool for currency lookups (Section 58, ADR-065).
 func (s *Service) Store() *Store {
 	return s.store
+}
+
+// AwardPoints credits reward_points to a user's wallet by inserting a
+// ledger entry of type "points" with operation "earn" (BUG-GAMMA-002).
+// Used by the gamification service when a challenge is completed.
+func (s *Service) AwardPoints(ctx context.Context, tenantID, userID pgtype.UUID, points int, reason string) error {
+	if points <= 0 {
+		return nil
+	}
+	// Read the current balance and insert the ledger entry atomically.
+	tx, err := s.db.Writer.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return fmt.Errorf("beginning transaction: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	var currentBalance int64
+	err = tx.QueryRow(ctx,
+		`SELECT COALESCE(SUM(amount), 0) FROM wallet_ledger WHERE tenant_id = $1 AND user_id = $2 AND ledger_type = 'points'`,
+		tenantID, userID).Scan(&currentBalance)
+	if err != nil {
+		return fmt.Errorf("reading current points balance: %w", err)
+	}
+	reasonStr := reason
+	sourceStr := "gamification"
+	_, err = tx.Exec(ctx,
+		`INSERT INTO wallet_ledger (tenant_id, user_id, ledger_type, operation, amount, resulting_balance, source, reason)
+		 VALUES ($1, $2, 'points', 'earn', $3, $4, $5, $6)`,
+		tenantID, userID, int64(points), currentBalance+int64(points), sourceStr, reasonStr)
+	if err != nil {
+		return fmt.Errorf("inserting points ledger entry: %w", err)
+	}
+	return tx.Commit(ctx)
 }

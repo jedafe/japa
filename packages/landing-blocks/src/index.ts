@@ -16,6 +16,7 @@ export type {
   CtaButtonProps,
   ContainerProps,
   CustomBlockProps, CustomBlockDef, BlockConfigSchema, ConfigSchemaField,
+  WidgetBlockProps,
 } from './types';
 
 export { geoCopy, GLOBAL_TOKENS, getGeoTokens } from './geo/copyRegistry';

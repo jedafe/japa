@@ -6,7 +6,7 @@
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import { Modal } from '$lib/components/ui/modal';
 	import { Button } from '$lib/components/ui/button';
-	import { pageBuilderAdminApiExtended } from '$lib/api';
+	import { pageBuilderAdminApiExtended, apiRaw } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { Eye, Pencil, Trash2, Star } from 'lucide-svelte';
@@ -162,13 +162,22 @@
 			}
 		],
 		fields,
-		load: async ({ q }) => {
+		load: async ({ q, page, pageSize }) => {
 			const params = new URLSearchParams();
+			params.set('page_size', String(pageSize));
+			params.set('page_offset', String(page));
 			if (q) params.set('q', q);
-			const result = await pageBuilderAdminApiExtended.listThemes(params.toString() || undefined);
+			const result = await apiRaw<{ data?: PageTheme[]; total?: number; total_pages?: number }>(
+				`/admin/pagebuilder/themes?${params.toString()}`
+			);
 			if (result.ok) {
-				const data = (result.data as PageTheme[]) ?? [];
-				return { data, total: data.length, totalPages: 1 };
+				const d = result.data;
+				const items = d.data ?? [];
+				return {
+					data: items,
+					total: d.total ?? items.length,
+					totalPages: d.total_pages ?? 1
+				};
 			}
 			throw new Error(result.error ?? t('common.error', 'Failed to load themes'));
 		},

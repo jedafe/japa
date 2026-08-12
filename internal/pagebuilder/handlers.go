@@ -8,9 +8,11 @@
 package pagebuilder
 
 import (
+	"context"
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"strconv"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -19,14 +21,29 @@ import (
 	"github.com/jedafe/japa/internal/tenant"
 )
 
+// WidgetResolver resolves a widget by ID and returns its rendered data,
+// widget type, and configured card type.
+// Implemented by widgets.Service — defined here as an interface so the
+// pagebuilder package doesn't depend on the widgets package at compile time.
+type WidgetResolver interface {
+	RenderWidgetByID(ctx context.Context, id pgtype.UUID) (json.RawMessage, string, string, error)
+}
+
 // Handlers holds dependencies for pagebuilder HTTP handlers.
 type Handlers struct {
-	Service *Service
+	Service   *Service
+	Widgets   WidgetResolver
 }
 
 // NewHandlers creates Handlers with the given Service.
 func NewHandlers(service *Service) *Handlers {
 	return &Handlers{Service: service}
+}
+
+// SetWidgetResolver injects the widget resolver (late binding to avoid
+// import cycles at construction time).
+func (h *Handlers) SetWidgetResolver(r WidgetResolver) {
+	h.Widgets = r
 }
 
 // ---------------------------------------------------------------------------
@@ -87,6 +104,41 @@ func writeError(w http.ResponseWriter, status int, code, message string) {
 	})
 }
 
+// parsePageParams extracts page/page_size from the query string.
+// page is 1-based; page_size defaults to 20, max 100. Matches the
+// geo-aware tool pattern used by calendar/media/admin list endpoints.
+func parsePageParams(r *http.Request) (page, limit int32) {
+	page = 1
+	limit = 20
+	if v := r.URL.Query().Get("page_offset"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			page = int32(n)
+		}
+	} else if v := r.URL.Query().Get("page"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			page = int32(n)
+		}
+	}
+	if v := r.URL.Query().Get("page_size"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 100 {
+			limit = int32(n)
+		}
+	} else if v := r.URL.Query().Get("limit"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 100 {
+			limit = int32(n)
+		}
+	}
+	return page, limit
+}
+
+// totalPages computes the page count from a total row count and page size.
+func totalPages(total int64, limit int32) int64 {
+	if limit <= 0 {
+		return 1
+	}
+	return (total + int64(limit) - 1) / int64(limit)
+}
+
 // ---------------------------------------------------------------------------
 // Block Handlers
 // ---------------------------------------------------------------------------
@@ -98,13 +150,20 @@ func (h *Handlers) ListBlocks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	blocks, err := h.Service.ListBlocks(r.Context(), tenantID, r.URL.Query().Get("q"))
+	page, limit := parsePageParams(r)
+	blocks, total, err := h.Service.ListBlocks(r.Context(), tenantID, r.URL.Query().Get("q"), page, limit)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": blocks})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data":        blocks,
+		"total":       total,
+		"total_pages": totalPages(total, limit),
+		"page":        page,
+		"page_size":   limit,
+	})
 }
 
 // GetBlock handles GET /api/v1/admin/pagebuilder/blocks/{id}.
@@ -214,13 +273,20 @@ func (h *Handlers) ListTemplates(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query().Get("q")
 	category := r.URL.Query().Get("category")
 
-	templates, err := h.Service.ListTemplates(r.Context(), tenantID, q, category)
+	page, limit := parsePageParams(r)
+	templates, total, err := h.Service.ListTemplates(r.Context(), tenantID, q, category, page, limit)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": templates})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data":        templates,
+		"total":       total,
+		"total_pages": totalPages(total, limit),
+		"page":        page,
+		"page_size":   limit,
+	})
 }
 
 // GetTemplate handles GET /api/v1/admin/pagebuilder/templates/{id}.
@@ -327,13 +393,20 @@ func (h *Handlers) ListThemes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	themes, err := h.Service.ListThemes(r.Context(), tenantID, r.URL.Query().Get("q"))
+	page, limit := parsePageParams(r)
+	themes, total, err := h.Service.ListThemes(r.Context(), tenantID, r.URL.Query().Get("q"), page, limit)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": themes})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data":        themes,
+		"total":       total,
+		"total_pages": totalPages(total, limit),
+		"page":        page,
+		"page_size":   limit,
+	})
 }
 
 // GetTheme handles GET /api/v1/admin/pagebuilder/themes/{id}.
@@ -447,7 +520,14 @@ func (h *Handlers) SetDefaultTheme(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"message": "theme set as default"})
+	// Return the updated theme so the client receives the standard {"data": ...}
+	// envelope (Rule 5). The service only toggles is_default, so re-fetch.
+	theme, err := h.Service.GetTheme(r.Context(), id, tenantID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": theme})
 }
 
 // ---------------------------------------------------------------------------
@@ -462,18 +542,25 @@ func (h *Handlers) ListPages(w http.ResponseWriter, r *http.Request) {
 	}
 
 	q := r.URL.Query()
-	pages, err := h.Service.ListPages(r.Context(), tenantID, PageListFilter{
+	page, limit := parsePageParams(r)
+	pages, total, err := h.Service.ListPages(r.Context(), tenantID, PageListFilter{
 		Q:        q.Get("q"),
 		PageType: q.Get("page_type"),
 		Slug:     q.Get("slug"),
 		Status:   q.Get("status"),
-	})
+	}, page, limit)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": pages})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data":        pages,
+		"total":       total,
+		"total_pages": totalPages(total, limit),
+		"page":        page,
+		"page_size":   limit,
+	})
 }
 
 // GetPage handles GET /api/v1/admin/pages/{id}.
@@ -672,6 +759,9 @@ func (h *Handlers) ListPublishedPages(w http.ResponseWriter, r *http.Request) {
 }
 
 // GetPublishedPage handles GET /pages/{slug} — public endpoint, no auth required.
+// Widget blocks within the page's blocks array are server-side resolved:
+// each `widget` block's `props._resolved` is populated with the widget's
+// rendered data (Valkey-cached) so the frontend doesn't need a second round-trip.
 func (h *Handlers) GetPublishedPage(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -690,7 +780,68 @@ func (h *Handlers) GetPublishedPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Resolve widget blocks server-side (Section 16: "blocks + resolved
+	// widget data"). Walk the blocks JSONB, find blocks with type=widget,
+	// render each widget, and inject the data into props._resolved.
+	if h.Widgets != nil && len(page.Blocks) > 0 {
+		page.Blocks = h.resolveWidgetBlocks(r.Context(), page.Blocks)
+	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": page})
+}
+
+// resolveWidgetBlocks walks a blocks JSONB array, resolves any widget blocks,
+// and returns the updated JSONB. Non-widget blocks are passed through unchanged.
+// Errors for individual widgets are logged but don't fail the page render —
+// the frontend will show a fallback "Unable to load" state.
+func (h *Handlers) resolveWidgetBlocks(ctx context.Context, blocksJSON json.RawMessage) json.RawMessage {
+	var blocks []map[string]any
+	if err := json.Unmarshal(blocksJSON, &blocks); err != nil {
+		return blocksJSON // not a valid array — return as-is
+	}
+
+	for i, block := range blocks {
+		blockType, _ := block["type"].(string)
+		if blockType != "widget" {
+			continue
+		}
+		props, ok := block["props"].(map[string]any)
+		if !ok {
+			continue
+		}
+		widgetIDStr, _ := props["widget_id"].(string)
+		if widgetIDStr == "" {
+			continue
+		}
+
+		var widgetID pgtype.UUID
+		if err := widgetID.Scan(widgetIDStr); err != nil {
+			slog.Warn("pagebuilder: invalid widget_id in block", "widget_id", widgetIDStr, "error", err)
+			continue
+		}
+
+		data, widgetType, cardType, err := h.Widgets.RenderWidgetByID(ctx, widgetID)
+		if err != nil {
+			slog.Warn("pagebuilder: failed to resolve widget", "widget_id", widgetIDStr, "error", err)
+			continue
+		}
+
+		resolved := map[string]any{
+			"widget_type": widgetType,
+			"data":        json.RawMessage(data),
+		}
+		if cardType != "" {
+			resolved["card_type"] = cardType
+		}
+		props["_resolved"] = resolved
+		blocks[i]["props"] = props
+	}
+
+	resolved, err := json.Marshal(blocks)
+	if err != nil {
+		return blocksJSON
+	}
+	return resolved
 }
 
 // ─── P5.6 Pagebuilder Extras ─────────────────────────────────────────────
@@ -778,17 +929,30 @@ func (h *Handlers) DuplicatePage(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, map[string]any{"data": page})
 }
 
+// slugify lowercases s, replaces non-alphanumeric runs with a single hyphen,
+// and trims leading/trailing hyphens. "Hello World!!!" → "hello-world".
 func slugify(s string) string {
-	result := make([]byte, len(s))
+	var b []byte
+	prevDash := true // trim leading dashes
 	for i := 0; i < len(s); i++ {
 		c := s[i]
-		if c >= 'a' && c <= 'z' || c >= '0' && c <= '9' {
-			result[i] = c
-		} else if c >= 'A' && c <= 'Z' {
-			result[i] = c + 32
-		} else {
-			result[i] = '-'
+		switch {
+		case c >= 'a' && c <= 'z', c >= '0' && c <= '9':
+			b = append(b, c)
+			prevDash = false
+		case c >= 'A' && c <= 'Z':
+			b = append(b, c+32)
+			prevDash = false
+		default:
+			if !prevDash {
+				b = append(b, '-')
+				prevDash = true
+			}
 		}
 	}
-	return string(result)
+	// trim trailing dash
+	if len(b) > 0 && b[len(b)-1] == '-' {
+		b = b[:len(b)-1]
+	}
+	return string(b)
 }

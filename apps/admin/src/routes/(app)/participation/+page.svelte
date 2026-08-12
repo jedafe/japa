@@ -3,8 +3,9 @@
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import PageHeader from '$lib/components/layout/page-header.svelte';
 	import { DataTable } from '$lib/components/ui/data-table';
-	import { Bot, RefreshCw } from 'lucide-svelte';
-	import { api } from '$lib/api';
+	import type { ActionItem } from '$lib/components/ui/data-table';
+	import { Bot, RefreshCw, Check, X } from 'lucide-svelte';
+	import { api, apiRaw } from '$lib/api';
 
 	// QueueItem matches the backend participation.QueueItem DTO (§76).
 	type QueueItem = {
@@ -16,31 +17,46 @@
 		created_at: string;
 	};
 
+	type QueueData = {
+		items: QueueItem[];
+		total: number;
+		page: number;
+		page_size: number;
+		total_pages: number;
+	};
+
 	type Stats = {
 		synthetic_actions_today: number;
 		global_daily_cap: number;
 		active_personas: number;
 	};
 
-	const canView = $derived(hasPermission('participation.view'));
+	const canReview = $derived(hasPermission('participation.review'));
 
 	let queue = $state<QueueItem[]>([]);
+	let listPage = $state(0);
+	let listPageSize = $state(25);
+	let listTotalPages = $state(1);
 	let stats = $state<Stats | null>(null);
 	let loading = $state(true);
 	let error = $state('');
+	let acting = $state(false);
 
 	async function load() {
 		loading = true;
 		error = '';
 		try {
+			const pageParam = listPage + 1;
 			const [queueResult, statsResult] = await Promise.all([
-				api<{ items: QueueItem[]; total: number }>('/admin/participation/queue'),
+				api<QueueData>(`/admin/participation/queue?page=${pageParam}&page_size=${listPageSize}`),
 				api<Stats>('/admin/participation/stats')
 			]);
 			if (queueResult.ok) {
-				queue = queueResult.data?.items ?? [];
+				const q = queueResult.data;
+				queue = q?.items ?? [];
+				listTotalPages = q?.total_pages ?? 1;
 			} else {
-				error = queueResult.error;
+				error = queueResult.error ?? 'Failed to load participation queue';
 			}
 			if (statsResult.ok) {
 				stats = statsResult.data ?? null;
@@ -51,6 +67,46 @@
 			loading = false;
 		}
 	}
+
+	// approve/reject reuses PATCH /admin/moderation-queue/:id (§76).
+	// The backend ModerateItem handler detects persona_action-sourced
+	// content_reviews rows, updates their status, and enqueues
+	// persona:dispatch_action on approve (BUG-001).
+	async function reviewAction(row: QueueItem, action: 'approve' | 'reject') {
+		if (acting) return;
+		acting = true;
+		try {
+			const result = await apiRaw(`/admin/moderation-queue/${row.review_id}`, {
+				method: 'PATCH',
+				body: { action }
+			});
+			if (result.ok) {
+				await load();
+			} else {
+				error = result.error ?? `Failed to ${action} action`;
+			}
+		} catch (e) {
+			error = e instanceof Error ? e.message : `Failed to ${action} action`;
+		} finally {
+			acting = false;
+		}
+	}
+
+	const rowActions: ActionItem[] = [
+		{
+			label: t('participation.approve', 'Approve'),
+			icon: Check,
+			onclick: (row: QueueItem) => reviewAction(row, 'approve'),
+			show: () => canReview
+		},
+		{
+			label: t('participation.reject', 'Reject'),
+			icon: X,
+			onclick: (row: QueueItem) => reviewAction(row, 'reject'),
+			variant: 'destructive',
+			show: () => canReview
+		}
+	];
 
 	const columns = $derived([
 		{
@@ -97,34 +153,41 @@
 
 {#if stats}
 	<div class="mb-4 grid grid-cols-3 gap-4">
-		<div class="rounded-lg border p-4" style="border-color: var(--color-border)">
-			<p class="text-xs font-medium" style="color: var(--color-muted)">{t('participation.active_personas', 'Active Personas')}</p>
-			<p class="mt-1 text-2xl font-bold" style="color: var(--color-foreground)">{stats.active_personas}</p>
+		<div class="rounded-lg border border-border p-4">
+			<p class="text-xs font-medium text-muted-foreground">{t('participation.active_personas', 'Active Personas')}</p>
+			<p class="mt-1 text-2xl font-bold text-foreground">{stats.active_personas}</p>
 		</div>
-		<div class="rounded-lg border p-4" style="border-color: var(--color-border)">
-			<p class="text-xs font-medium" style="color: var(--color-muted)">{t('participation.synthetic_today', 'Synthetic Actions Today')}</p>
-			<p class="mt-1 text-2xl font-bold" style="color: var(--color-foreground)">{stats.synthetic_actions_today}</p>
+		<div class="rounded-lg border border-border p-4">
+			<p class="text-xs font-medium text-muted-foreground">{t('participation.synthetic_today', 'Synthetic Actions Today')}</p>
+			<p class="mt-1 text-2xl font-bold text-foreground">{stats.synthetic_actions_today}</p>
 		</div>
-		<div class="rounded-lg border p-4" style="border-color: var(--color-border)">
-			<p class="text-xs font-medium" style="color: var(--color-muted)">{t('participation.global_cap', 'Global Daily Cap')}</p>
-			<p class="mt-1 text-2xl font-bold" style="color: var(--color-foreground)">{stats.global_daily_cap}</p>
+		<div class="rounded-lg border border-border p-4">
+			<p class="text-xs font-medium text-muted-foreground">{t('participation.global_cap', 'Global Daily Cap')}</p>
+			<p class="mt-1 text-2xl font-bold text-foreground">{stats.global_daily_cap}</p>
 		</div>
 	</div>
 {/if}
 
 {#if loading}
-	<div class="flex items-center gap-2 p-8" style="color: var(--color-muted)">
+	<div class="flex items-center gap-2 p-8 text-muted-foreground">
 		<Bot class="h-4 w-4 animate-pulse" />
 		<span>{t('participation.loading', 'Loading queue...')}</span>
 	</div>
 {:else if error}
-	<div class="rounded-lg border p-4" style="border-color: var(--color-danger); color: var(--color-danger)">
+	<div class="rounded-lg border border-danger p-4 text-danger">
 		{error}
 	</div>
 {:else}
 	<DataTable
 		data={queue}
 		{columns}
+		actions={rowActions}
+		serverSide
+		page={listPage}
+		totalPages={listTotalPages}
+		pageSize={listPageSize}
+		onpagechange={(p) => { listPage = p; load(); }}
+		onpagesizechange={(s) => { listPageSize = s; listPage = 0; load(); }}
 		emptyMessage={t('participation.empty', 'No queued persona actions.')}
 	/>
 {/if}

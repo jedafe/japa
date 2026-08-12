@@ -103,9 +103,13 @@ func (s *Store) RemoveMember(ctx context.Context, organizationID, userID pgtype.
 	})
 }
 
-// ListMembers returns members of an organization.
-func (s *Store) ListMembers(ctx context.Context, organizationID pgtype.UUID) ([]gen.ListOrganizationMembersRow, error) {
-	return s.read.ListOrganizationMembers(ctx, organizationID)
+// ListMembers returns members of an organization. Tenant-scoped for
+// defense-in-depth (BUG-004).
+func (s *Store) ListMembers(ctx context.Context, organizationID, tenantID pgtype.UUID) ([]gen.ListOrganizationMembersRow, error) {
+	return s.read.ListOrganizationMembers(ctx, gen.ListOrganizationMembersParams{
+		OrganizationID: organizationID,
+		TenantID:       tenantID,
+	})
 }
 
 // UpdateMemberRole updates a member role.
@@ -134,9 +138,13 @@ func (s *Store) CreateInvitation(ctx context.Context, params gen.CreateOrganizat
 	return s.write.CreateOrganizationInvitation(ctx, params)
 }
 
-// ListInvitations returns pending invitations.
-func (s *Store) ListInvitations(ctx context.Context, organizationID pgtype.UUID) ([]gen.OrganizationInvitation, error) {
-	return s.read.ListOrganizationInvitations(ctx, organizationID)
+// ListInvitations returns pending invitations. Tenant-scoped for
+// defense-in-depth (BUG-005).
+func (s *Store) ListInvitations(ctx context.Context, organizationID, tenantID pgtype.UUID) ([]gen.OrganizationInvitation, error) {
+	return s.read.ListOrganizationInvitations(ctx, gen.ListOrganizationInvitationsParams{
+		OrganizationID: organizationID,
+		TenantID:       tenantID,
+	})
 }
 
 // AcceptInvitation accepts an invitation.
@@ -294,6 +302,63 @@ func (s *Store) GetOrganizationAnalytics(ctx context.Context, orgID, tenantID pg
 }
 
 // VerifyOrganization marks an organization as verified (admin action).
-func (s *Store) VerifyOrganization(ctx context.Context, id pgtype.UUID) error {
-	return s.write.VerifyOrganization(ctx, id)
+// Tenant-scoped to prevent cross-tenant verification (BUG-002).
+func (s *Store) VerifyOrganization(ctx context.Context, id, tenantID pgtype.UUID) error {
+	return s.write.VerifyOrganization(ctx, gen.VerifyOrganizationParams{ID: id, TenantID: tenantID})
+}
+
+// UnverifyOrganization revokes an organization's verification (admin action).
+// Tenant-scoped and clears verification_type (BUG-002, BUG-016).
+func (s *Store) UnverifyOrganization(ctx context.Context, id, tenantID pgtype.UUID) error {
+	return s.write.UnverifyOrganization(ctx, gen.UnverifyOrganizationParams{ID: id, TenantID: tenantID})
+}
+
+// TransferOrganizationOwnership updates an org's owner_user_id to the new
+// owner (the claimant whose ownership claim was approved). Tenant-scoped.
+// Ref: japaconnect-engineering/sections/07-organization-profiles-claim-ownership.md
+func (s *Store) TransferOrganizationOwnership(ctx context.Context, orgID, newOwnerID, tenantID pgtype.UUID) error {
+	return s.write.TransferOrganizationOwnership(ctx, gen.TransferOrganizationOwnershipParams{
+		ID:          orgID,
+		OwnerUserID: newOwnerID,
+		TenantID:    tenantID,
+	})
+}
+
+// GetUserEmail returns the email address for the given user in the given tenant.
+// Used by AcceptInvitation to verify the accepting user's email matches the
+// invited email (BUG-003).
+func (s *Store) GetUserEmail(ctx context.Context, userID, tenantID pgtype.UUID) (string, error) {
+	return s.read.GetUserEmail(ctx, gen.GetUserEmailParams{
+		UserID:   userID,
+		TenantID: tenantID,
+	})
+}
+
+// GetPendingClaimByClaimant checks if a user already has a pending claim for
+// an org. Returns pgx.ErrNoRows if no pending claim exists (BUG-010).
+func (s *Store) GetPendingClaimByClaimant(ctx context.Context, orgID, tenantID, claimantUserID pgtype.UUID) (pgtype.UUID, error) {
+	return s.read.GetPendingClaimByClaimant(ctx, gen.GetPendingClaimByClaimantParams{
+		OrganizationID: orgID,
+		TenantID:       tenantID,
+		ClaimantUserID: claimantUserID,
+	})
+}
+
+// GetFormSubmissionByID returns a form submission by ID (tenant-scoped).
+// Used by ClaimOwnership to verify the linked form submission has status='new'
+// before creating a claim (BUG-009).
+func (s *Store) GetFormSubmissionByID(ctx context.Context, submissionID, tenantID pgtype.UUID) (gen.GetFormSubmissionByIDRow, error) {
+	return s.read.GetFormSubmissionByID(ctx, gen.GetFormSubmissionByIDParams{
+		ID:       submissionID,
+		TenantID: tenantID,
+	})
+}
+
+// GetPendingInvitationByEmail checks if a pending invitation already exists
+// for the given email+org. Returns pgx.ErrNoRows if none exists (BUG-017).
+func (s *Store) GetPendingInvitationByEmail(ctx context.Context, orgID pgtype.UUID, email string) (pgtype.UUID, error) {
+	return s.read.GetPendingInvitationByEmail(ctx, gen.GetPendingInvitationByEmailParams{
+		OrganizationID: orgID,
+		Email:          email,
+	})
 }

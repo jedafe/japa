@@ -98,9 +98,16 @@ type GenerateGuideRequest struct {
 
 // Service holds the business logic for the Housing & Accommodation Finder
 // Guide.
+// Enqueuer is the subset of worker.Enqueuer that housingguide needs for
+// fire-and-forget task dispatch (Rule 8).
+type Enqueuer interface {
+	Enqueue(taskType string, payload []byte, opts ...interface{}) error
+}
+
 type Service struct {
 	store    *Store
 	settings *config.Settings
+	enqueuer Enqueuer // nil = no task dispatch
 }
 
 // NewService creates a housing guide service.
@@ -110,6 +117,10 @@ func NewService(store *Store, settings *config.Settings) *Service {
 		settings: settings,
 	}
 }
+
+// SetEnqueuer injects the Asynq task enqueuer for fire-and-forget dispatch
+// (Rule 8). Optional — when nil, task dispatch is skipped.
+func (s *Service) SetEnqueuer(e Enqueuer) { s.enqueuer = e }
 
 // Enabled reads the housing_guide.enabled system_setting toggle
 // (§96 feature flag).
@@ -293,6 +304,54 @@ func (s *Service) Approve(ctx context.Context, id, tenantID, reviewerID pgtype.U
 	if err != nil {
 		return GuideDTO{}, fmt.Errorf("housingguide: approve: fetch approved: %w", err)
 	}
+
+	// Enqueue a search index update so the newly published guide is
+	// searchable (fire-and-forget, Rule 8).
+	if s.enqueuer != nil {
+		go func() {
+			payload, _ := json.Marshal(map[string]any{
+				"guide_id":  id.String(),
+				"status":    "published",
+				"tenant_id": tenantID.String(),
+			})
+			_ = s.enqueuer.Enqueue("search:index_entity", payload)
+		}()
+	}
+
+	return rowToDTO(row), nil
+}
+
+// Reject rejects a pending housing guide (admin HITL). Sets status to
+// 'rejected' and records the reviewer and review notes.
+func (s *Service) Reject(ctx context.Context, id, tenantID, reviewerID pgtype.UUID, reason string) (GuideDTO, error) {
+	var notes *string
+	if reason != "" {
+		notes = &reason
+	}
+	if err := s.store.RejectGuide(ctx, id, tenantID, reviewerID, notes); err != nil {
+		if err == pgx.ErrNoRows {
+			return GuideDTO{}, pgx.ErrNoRows
+		}
+		return GuideDTO{}, fmt.Errorf("housingguide: reject: %w", err)
+	}
+	row, err := s.store.GetGuideByID(ctx, id, tenantID)
+	if err != nil {
+		return GuideDTO{}, fmt.Errorf("housingguide: reject: fetch rejected: %w", err)
+	}
+
+	// Enqueue a search index update to remove the rejected guide from
+	// search results (fire-and-forget, Rule 8).
+	if s.enqueuer != nil {
+		go func() {
+			payload, _ := json.Marshal(map[string]any{
+				"guide_id":  id.String(),
+				"status":    "rejected",
+				"tenant_id": tenantID.String(),
+			})
+			_ = s.enqueuer.Enqueue("search:index_entity", payload)
+		}()
+	}
+
 	return rowToDTO(row), nil
 }
 

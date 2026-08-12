@@ -145,23 +145,33 @@ WHERE id = @id AND tenant_id = @tenant_id
 RETURNING *;
 
 -- name: CancelSubscription :one
+-- JEOS §17: POST /me/subscription/cancel cancels at period end — the user
+-- keeps access until current_period_end, then the subscription ends. We set
+-- cancel_at_period_end = true and cancelled_at = now() but leave status
+-- 'active' so entitlements remain until the period ends. A scheduled job
+-- transitions to 'canceled' at current_period_end (BUG-002).
 UPDATE subscriptions
-SET status = 'canceled', cancel_at = now(), updated_at = now()
+SET cancel_at_period_end = true, cancelled_at = now(), updated_at = now()
 WHERE id = @id AND tenant_id = @tenant_id
   AND status = 'active'
 RETURNING *;
 
 -- name: SoftDeleteSubscription :exec
 UPDATE subscriptions
-SET status = 'canceled', cancel_at = now(), updated_at = now()
+SET status = 'canceled', cancel_at = now(), cancel_at_period_end = true, cancelled_at = now(), updated_at = now()
 WHERE id = @id AND tenant_id = @tenant_id;
 
 -- name: ReactivateSubscription :one
+-- Reactivates the caller's most recently canceled or scheduled-for-cancellation
+-- subscription. Matches both 'canceled' rows and 'active' rows with
+-- cancel_at_period_end = true so a user can undo a period-end cancel before
+-- the period ends (BUG-002).
 UPDATE subscriptions
-SET status = 'active', cancel_at = NULL, updated_at = now()
+SET status = 'active', cancel_at = NULL, cancel_at_period_end = false, cancelled_at = NULL, updated_at = now()
 WHERE id = (
     SELECT s.id FROM subscriptions s
-    WHERE s.user_id = @user_id AND s.tenant_id = @tenant_id AND s.status = 'canceled'
+    WHERE s.user_id = @user_id AND s.tenant_id = @tenant_id
+      AND (s.status = 'canceled' OR (s.status = 'active' AND s.cancel_at_period_end = true))
     ORDER BY s.updated_at DESC
     LIMIT 1
 )
@@ -211,7 +221,7 @@ SET
     valid_from = COALESCE(sqlc.narg(valid_from), valid_from),
     valid_until = sqlc.narg(valid_until)
 WHERE id = @id AND tenant_id = @tenant_id
-RETURNING id, code;
+RETURNING *;
 
 -- =====================
 -- Discount Code Uses

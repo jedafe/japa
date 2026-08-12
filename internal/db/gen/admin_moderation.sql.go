@@ -714,11 +714,18 @@ func (q *Queries) SoftDeleteUserWarning(ctx context.Context, id pgtype.UUID) err
 }
 
 const unverifyOrganization = `-- name: UnverifyOrganization :exec
-UPDATE organizations SET verified = false, updated_at = now() WHERE id = $1
+UPDATE organizations SET verified = false, verification_type = NULL, updated_at = now()
+WHERE id = $1 AND tenant_id = $2
 `
 
-func (q *Queries) UnverifyOrganization(ctx context.Context, id pgtype.UUID) error {
-	_, err := q.db.Exec(ctx, unverifyOrganization, id)
+type UnverifyOrganizationParams struct {
+	ID       pgtype.UUID `json:"id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+// Tenant-scoped and clears verification_type (BUG-002, BUG-016).
+func (q *Queries) UnverifyOrganization(ctx context.Context, arg UnverifyOrganizationParams) error {
+	_, err := q.db.Exec(ctx, unverifyOrganization, arg.ID, arg.TenantID)
 	return err
 }
 
@@ -756,13 +763,20 @@ func (q *Queries) UpdateUserStatus(ctx context.Context, arg UpdateUserStatusPara
 
 const verifyOrganization = `-- name: VerifyOrganization :exec
 
-UPDATE organizations SET verified = true, updated_at = now() WHERE id = $1
+UPDATE organizations SET verified = true, updated_at = now()
+WHERE id = $1 AND tenant_id = $2
 `
+
+type VerifyOrganizationParams struct {
+	ID       pgtype.UUID `json:"id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
 
 // =====================
 // Organization Verification
 // =====================
-func (q *Queries) VerifyOrganization(ctx context.Context, id pgtype.UUID) error {
-	_, err := q.db.Exec(ctx, verifyOrganization, id)
+// Tenant-scoped to prevent cross-tenant verification (BUG-002).
+func (q *Queries) VerifyOrganization(ctx context.Context, arg VerifyOrganizationParams) error {
+	_, err := q.db.Exec(ctx, verifyOrganization, arg.ID, arg.TenantID)
 	return err
 }

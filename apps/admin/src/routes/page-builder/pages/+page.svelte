@@ -7,7 +7,7 @@
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import { Modal } from '$lib/components/ui/modal';
 	import { Button } from '$lib/components/ui/button';
-	import { pagesApi, pageTemplatesAdminApiExtended, pageBuilderAdminApiExtended, api } from '$lib/api';
+	import { pagesApi, pageTemplatesAdminApiExtended, pageBuilderAdminApiExtended, api, apiRaw } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { onMount } from 'svelte';
@@ -51,9 +51,11 @@
 	]);
 
 	async function loadTemplatesAndThemes() {
+		// Fetch with a large page_size so dropdown options aren't truncated
+		// by the default 20-item pagination.
 		const [tplRes, themeRes] = await Promise.all([
-			pageTemplatesAdminApiExtended.list(),
-			pageBuilderAdminApiExtended.listThemes()
+			pageTemplatesAdminApiExtended.list('page_size=100'),
+			pageBuilderAdminApiExtended.listThemes('page_size=100')
 		]);
 		if (tplRes.ok) {
 			const tpls = (tplRes.data as any[]) ?? [];
@@ -121,8 +123,9 @@
 
 		// If a homepage page already exists, re-seed its blocks (self-heal:
 		// earlier versions created an empty/corrupted row) then open the
-		// editor. Otherwise create it.
-		const result = await pagesApi.list();
+		// editor. Otherwise create it. Filter by slug so pagination doesn't
+		// hide the homepage on a later page.
+		const result = await pagesApi.list('slug=homepage&page_size=100');
 		if (result.ok) {
 			const existing = (result.data as Page[])?.find((p) => p.slug === 'homepage');
 			if (existing) {
@@ -406,14 +409,23 @@
 			}
 		],
 		fields,
-		load: async ({ q, filter }) => {
+		load: async ({ q, filter, page, pageSize }) => {
 			const params = new URLSearchParams();
+			params.set('page_size', String(pageSize));
+			params.set('page_offset', String(page));
 			if (filter.status) params.set('status', filter.status);
 			if (q) params.set('q', q);
-			const result = await pagesApi.list(params.toString() || undefined);
+			const result = await apiRaw<{ data?: Page[]; total?: number; total_pages?: number }>(
+				`/admin/pages?${params.toString()}`
+			);
 			if (result.ok) {
-				const data = (result.data as Page[]) ?? [];
-				return { data, total: data.length, totalPages: 1 };
+				const d = result.data;
+				const items = d.data ?? [];
+				return {
+					data: items,
+					total: d.total ?? items.length,
+					totalPages: d.total_pages ?? 1
+				};
 			}
 			throw new Error(result.error ?? t('common.error', 'Failed to load pages'));
 		},

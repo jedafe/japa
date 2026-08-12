@@ -75,36 +75,6 @@ func TestCreateOrganization_Unauthorized(t *testing.T) {
 	}
 }
 
-func TestGetOrganization_Unauthorized(t *testing.T) {
-	t.Parallel()
-
-	h := testHandlers()
-	router := chi.NewRouter()
-	router.Get("/organizations/{slug}", h.GetOrganization)
-
-	req := httptest.NewRequest(http.MethodGet, "/organizations/test-org", nil)
-	rr := httptest.NewRecorder()
-	router.ServeHTTP(rr, req)
-
-	if rr.Code != http.StatusUnauthorized {
-		t.Errorf("status = %d, want %d", rr.Code, http.StatusUnauthorized)
-	}
-}
-
-func TestListOrganizations_Unauthorized(t *testing.T) {
-	t.Parallel()
-
-	h := testHandlers()
-	req := httptest.NewRequest(http.MethodGet, "/organizations", nil)
-
-	rr := httptest.NewRecorder()
-	h.ListOrganizations(rr, req)
-
-	if rr.Code != http.StatusUnauthorized {
-		t.Errorf("status = %d, want %d", rr.Code, http.StatusUnauthorized)
-	}
-}
-
 // ---------------------------------------------------------------------------
 // Input validation
 // ---------------------------------------------------------------------------

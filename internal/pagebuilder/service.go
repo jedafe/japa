@@ -33,8 +33,8 @@ func validationError(msg string) error {
 // ---------------------------------------------------------------------------
 
 // ListBlocks returns all blocks for a tenant, optionally filtered by q.
-func (s *Service) ListBlocks(ctx context.Context, tenantID pgtype.UUID, q string) ([]Block, error) {
-	return s.store.ListBlocks(ctx, tenantID, q)
+func (s *Service) ListBlocks(ctx context.Context, tenantID pgtype.UUID, q string, page, limit int32) ([]Block, int64, error) {
+	return s.store.ListBlocks(ctx, tenantID, q, page, limit)
 }
 
 // GetBlock returns a single block by ID, scoped to the tenant.
@@ -86,8 +86,8 @@ func (s *Service) DeleteBlock(ctx context.Context, id, tenantID pgtype.UUID) err
 // ---------------------------------------------------------------------------
 
 // ListTemplates returns all templates for a tenant, optionally filtered by q and category.
-func (s *Service) ListTemplates(ctx context.Context, tenantID pgtype.UUID, q, category string) ([]Template, error) {
-	return s.store.ListTemplates(ctx, tenantID, q, category)
+func (s *Service) ListTemplates(ctx context.Context, tenantID pgtype.UUID, q, category string, page, limit int32) ([]Template, int64, error) {
+	return s.store.ListTemplates(ctx, tenantID, q, category, page, limit)
 }
 
 // GetTemplate returns a single template by ID, scoped to the tenant.
@@ -135,8 +135,8 @@ func (s *Service) DeleteTemplate(ctx context.Context, id, tenantID pgtype.UUID) 
 // ---------------------------------------------------------------------------
 
 // ListThemes returns all themes for a tenant, optionally filtered by q.
-func (s *Service) ListThemes(ctx context.Context, tenantID pgtype.UUID, q string) ([]Theme, error) {
-	return s.store.ListThemes(ctx, tenantID, q)
+func (s *Service) ListThemes(ctx context.Context, tenantID pgtype.UUID, q string, page, limit int32) ([]Theme, int64, error) {
+	return s.store.ListThemes(ctx, tenantID, q, page, limit)
 }
 
 // GetTheme returns a single theme by ID, scoped to the tenant.
@@ -180,9 +180,10 @@ func (s *Service) SetDefaultTheme(ctx context.Context, id, tenantID pgtype.UUID)
 // Page operations
 // ---------------------------------------------------------------------------
 
-// ListPages returns all pages for a tenant, optionally narrowed by f.
-func (s *Service) ListPages(ctx context.Context, tenantID pgtype.UUID, f PageListFilter) ([]Page, error) {
-	return s.store.ListPages(ctx, tenantID, f)
+// ListPages returns a paginated list of pages for a tenant, optionally
+// narrowed by f. page is 1-based; limit is the page size.
+func (s *Service) ListPages(ctx context.Context, tenantID pgtype.UUID, f PageListFilter, page, limit int32) ([]Page, int64, error) {
+	return s.store.ListPages(ctx, tenantID, f, page, limit)
 }
 
 // ListPublishedPages returns only published pages for public consumption.
@@ -245,12 +246,14 @@ func (s *Service) DuplicatePage(ctx context.Context, id, tenantID, createdBy pgt
 	}
 
 	// Derive a tenant-unique slug: {src.Slug}-copy, -copy-2, -copy-3, ...
+	// Bounded to 1000 attempts to guarantee termination even if a tenant has
+	// somehow filled the -copy-N namespace.
 	base := src.Slug
 	if base == "" {
 		base = "page"
 	}
 	slug := base + "-copy"
-	for n := 2; ; n++ {
+	for n := 2; n <= 1000; n++ {
 		exists, err := s.store.SlugExists(ctx, slug, tenantID)
 		if err != nil {
 			return Page{}, err
@@ -259,6 +262,9 @@ func (s *Service) DuplicatePage(ctx context.Context, id, tenantID, createdBy pgt
 			break
 		}
 		slug = fmt.Sprintf("%s-copy-%d", base, n)
+		if n == 1000 {
+			return Page{}, validationError("could not find a unique slug for the duplicate after 1000 attempts")
+		}
 	}
 
 	input := CreatePageInput{
@@ -292,45 +298,43 @@ func (s *Service) UpdatePage(ctx context.Context, id, tenantID pgtype.UUID, inpu
 	return s.store.UpdatePage(ctx, id, tenantID, input)
 }
 
-// sanitizeBlocksJSON walks a JSON structure recursively and applies
-// HTML sanitization to any string values. This prevents XSS via
-// unsanitized user-supplied page builder content (AUDIT-BE-008).
+// sanitizeBlocksJSON scopes HTML sanitization to the fields that actually
+// carry HTML: the `content` block's `props.html` string (the TipTap-backed
+// rich-text block per ADR-011). Blanket-sanitizing every string in the block
+// array corrupts non-HTML props such as URLs (href, background_image),
+// plain-text labels (eyebrow, subhead, button labels), and alt text. Ref:
+// §14 Tiptap sanitize; ADR-011; AUDIT-BE-008.
 func sanitizeBlocksJSON(raw json.RawMessage) json.RawMessage {
 	if len(raw) == 0 {
 		return raw
 	}
 
-	var v any
-	if err := json.Unmarshal(raw, &v); err != nil {
+	var blocks []map[string]any
+	if err := json.Unmarshal(raw, &blocks); err != nil {
+		// Not a block array (e.g. a single object) — leave untouched.
 		return raw
 	}
 
-	sanitized := sanitizeJSONValue(v)
-	result, err := json.Marshal(sanitized)
+	for _, block := range blocks {
+		blockType, _ := block["type"].(string)
+		if blockType != "content" {
+			continue
+		}
+		props, ok := block["props"].(map[string]any)
+		if !ok {
+			continue
+		}
+		if html, ok := props["html"].(string); ok {
+			props["html"] = content.SanitizeHTML(html)
+		}
+	}
+
+	result, err := json.Marshal(blocks)
 	if err != nil {
 		return raw
 	}
 
 	return result
-}
-
-func sanitizeJSONValue(v any) any {
-	switch val := v.(type) {
-	case map[string]any:
-		for k, elem := range val {
-			val[k] = sanitizeJSONValue(elem)
-		}
-		return val
-	case []any:
-		for i, elem := range val {
-			val[i] = sanitizeJSONValue(elem)
-		}
-		return val
-	case string:
-		return content.SanitizeHTML(val)
-	default:
-		return v
-	}
 }
 
 // DeletePage removes a page.

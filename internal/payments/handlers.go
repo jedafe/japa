@@ -373,12 +373,20 @@ func (h *Handlers) InitiatePayment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Look up the payer's email — Paystack /transaction/initialize requires
+	// it (BUG-004). Other providers ignore the field.
+	email, _ := gen.New(h.Service.db.Reader).GetUserEmail(r.Context(), gen.GetUserEmailParams{
+		UserID:   user.UserID,
+		TenantID: tenantID,
+	})
+
 	result, err := h.Service.CreatePayment(r.Context(), tenantID, user.UserID, CreatePaymentInput{
 		Provider:     input.Provider,
 		PurposeType:  input.PurposeType,
 		PurposeID:    input.PurposeID,
 		Amount:       input.Amount,
 		Currency:     input.Currency,
+		Email:        email,
 		Metadata:     input.Metadata,
 		DiscountCode: input.DiscountCode,
 	})
@@ -632,6 +640,14 @@ func resolveNOWPaymentsStatus(event WebhookEvent) string {
 
 // extractPaystackEventID extracts the event ID from a Paystack webhook payload.
 // Paystack events carry "event" (type) and an "id" or "reference" field.
+//
+// The event ID is the dedup key for payment_webhook_events
+// (UNIQUE(provider, event_id)), so it MUST be unique per logical event.
+// Falling back to the bare event type (e.g. "charge.success") is unsafe —
+// every charge.success in the tenant would collide and the second payment
+// would be silently skipped (BUG-007). When no stable reference is present
+// we compose a deterministic ID from provider + provider_ref + event_type
+// so distinct payments never collide.
 func extractPaystackEventID(payload map[string]interface{}) string {
 	// Paystack event ID is in data.reference or top-level id
 	if data, ok := payload["data"].(map[string]interface{}); ok {
@@ -642,9 +658,13 @@ func extractPaystackEventID(payload map[string]interface{}) string {
 	if id, ok := payload["id"].(string); ok && id != "" {
 		return id
 	}
-	// Fall back to event type as a last resort
-	if ev, ok := payload["event"].(string); ok {
-		return ev
+	// Deterministic composite fallback: provider_ref + event_type. This
+	// keeps distinct payments separate while still deduping retries of the
+	// same event for the same payment.
+	ev, _ := payload["event"].(string)
+	providerRef := extractPaystackProviderRef(payload)
+	if providerRef != "" && ev != "" {
+		return fmt.Sprintf("%s:%s", providerRef, ev)
 	}
 	return ""
 }
@@ -686,14 +706,30 @@ func extractStripeProviderRef(payload map[string]interface{}) string {
 }
 
 // extractNOWPaymentsEventID extracts the event ID from a NOWPayments IPN payload.
+//
+// NOWPayments sends multiple IPN events for the same payment as it
+// transitions waiting → confirming → finished, all sharing the same
+// payment_id. Because payment_webhook_events dedups on
+// UNIQUE(provider, event_id), using the bare payment_id would collapse
+// all status transitions into one event — only the first IPN (e.g.
+// "waiting" → processing) is processed and the "finished" IPN is
+// silently dropped, so the payment is never marked succeeded (BUG-008).
+// We therefore compose the event ID from payment_id + payment_status so
+// each status transition is a distinct, dedup-safe event.
 func extractNOWPaymentsEventID(payload map[string]interface{}) string {
-	if id, ok := payload["payment_id"].(string); ok && id != "" {
-		return id
+	paymentID, _ := payload["payment_id"].(string)
+	if paymentID == "" {
+		// Fall back to order_id when payment_id is absent (early IPNs).
+		paymentID, _ = payload["order_id"].(string)
 	}
-	if id, ok := payload["order_id"].(string); ok && id != "" {
-		return id
+	if paymentID == "" {
+		return ""
 	}
-	return ""
+	status, _ := payload["payment_status"].(string)
+	if status == "" {
+		return paymentID
+	}
+	return fmt.Sprintf("%s:%s", paymentID, status)
 }
 
 // extractNOWPaymentsProviderRef extracts the reference matching
@@ -828,6 +864,7 @@ func (h *Handlers) RefundPayment(w http.ResponseWriter, r *http.Request) {
 
 	refund, err := h.Service.CreateRefund(r.Context(), CreateRefundInput{
 		PaymentID: id.String(),
+		TenantID:  tenantID,
 		Amount:    input.Amount,
 		Reason:    input.Reason,
 	})
@@ -1318,7 +1355,7 @@ func (h *Handlers) UpdateDiscountCode(w http.ResponseWriter, r *http.Request) {
 	}
 
 	queries := gen.New(h.Service.db.Writer)
-	_, err = queries.UpdateDiscountCode(r.Context(), gen.UpdateDiscountCodeParams{
+	updated, err := queries.UpdateDiscountCode(r.Context(), gen.UpdateDiscountCodeParams{
 		ID:            id,
 		TenantID:      tenantID,
 		NewCode:       input.Code,
@@ -1333,7 +1370,7 @@ func (h *Handlers) UpdateDiscountCode(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to update discount code")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"id": id.String()}})
+	writeJSON(w, http.StatusOK, map[string]any{"data": updated})
 }
 
 // GetDiscountCodeUsage handles GET /admin/discount-codes/:id/usage.
@@ -1345,6 +1382,15 @@ func (h *Handlers) GetDiscountCodeUsage(w http.ResponseWriter, r *http.Request) 
 	codeID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid discount code ID")
+		return
+	}
+
+	// Use a COUNT query for the total instead of len(list) capped at 1000
+	// (BUG-012 — same class as BUG-018). The user list is still paginated
+	// with a 1000-row window for the slide-over display.
+	total, err := h.Service.store.countDiscountCodeUses(r.Context(), codeID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to get usage count")
 		return
 	}
 
@@ -1374,7 +1420,7 @@ func (h *Handlers) GetDiscountCodeUsage(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
 			"users": users,
-			"total": len(uses),
+			"total": total,
 		},
 	})
 }

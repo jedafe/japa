@@ -33,7 +33,7 @@
 		if (!discountCode.trim()) return;
 		error = null;
 		const r = await api.post<{ code: string; discount_kobo: number }>(
-			`/payments/discounts/validate`,
+			`/payments/discount-codes/validate`,
 			{ code: discountCode.trim(), purpose_type: 'course_access', purpose_id: track.id }
 		);
 		if (r.data) {
@@ -53,10 +53,11 @@
 				provider: 'credit',
 				purpose_type: 'course_access',
 				purpose_id: track.id,
-				amount_kobo: track.price_kobo,
+				amount: track.price_kobo,
 				currency: track.currency || 'NGN',
 				discount_code: discountApplied?.code ?? undefined
-			}
+			},
+			{ 'Idempotency-Key': crypto.randomUUID() }
 		);
 		processing = false;
 		if (r.data?.status === 'succeeded' || r.data?.status === 'completed') {
@@ -76,11 +77,12 @@
 				provider,
 				purpose_type: 'course_access',
 				purpose_id: track.id,
-				amount_kobo: track.price_kobo,
+				amount: track.price_kobo,
 				currency: track.currency || 'NGN',
 				discount_code: discountApplied?.code ?? undefined,
 				return_url: `${window.location.origin}/tracks/${track.slug}`
-			}
+			},
+			{ 'Idempotency-Key': crypto.randomUUID() }
 		);
 		processing = false;
 		if (r.data?.checkout_url) {

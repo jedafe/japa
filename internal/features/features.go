@@ -42,6 +42,7 @@ type flagCacheEntry struct {
 type flagCache struct {
 	mu      sync.RWMutex
 	entries map[string]map[string]*flagCacheEntry // tenant_id -> key -> entry
+	done    chan struct{}
 }
 
 // New creates a feature flag Checker backed by the given database and
@@ -56,12 +57,25 @@ func New(database *db.DB, vkClient valkeycompat.Cmdable) *Checker {
 		db: database,
 		cache: &flagCache{
 			entries: make(map[string]map[string]*flagCacheEntry),
+			done:    make(chan struct{}),
 		},
 		vk: vkClient,
 	}
 	go c.cache.cleanupLoop(60 * time.Second)
 
 	return c
+}
+
+// Close stops the background cleanup goroutine and releases resources.
+func (c *Checker) Close() {
+	if c.cache.done != nil {
+		select {
+		case <-c.cache.done:
+			// already closed
+		default:
+			close(c.cache.done)
+		}
+	}
 }
 
 // IsEnabled checks if a feature is enabled for the tenant in context.
@@ -263,26 +277,32 @@ func (c *Checker) valkeyFlushTenant(ctx context.Context, tenantID string) {
 }
 
 // cleanupLoop periodically evicts cache entries older than maxAge.
+// Stops when the done channel is closed (graceful shutdown).
 func (fc *flagCache) cleanupLoop(maxAge time.Duration) {
 	ticker := time.NewTicker(maxAge)
 	defer ticker.Stop()
 
-	for range ticker.C {
-		fc.mu.Lock()
-		now := time.Now()
+	for {
+		select {
+		case <-fc.done:
+			return
+		case <-ticker.C:
+			fc.mu.Lock()
+			now := time.Now()
 
-		for tenantKey, tenantFlags := range fc.entries {
-			for key, entry := range tenantFlags {
-				if now.Sub(entry.createdAt) > maxAge {
-					delete(tenantFlags, key)
+			for tenantKey, tenantFlags := range fc.entries {
+				for key, entry := range tenantFlags {
+					if now.Sub(entry.createdAt) > maxAge {
+						delete(tenantFlags, key)
+					}
+				}
+
+				if len(tenantFlags) == 0 {
+					delete(fc.entries, tenantKey)
 				}
 			}
-
-			if len(tenantFlags) == 0 {
-				delete(fc.entries, tenantKey)
-			}
+			fc.mu.Unlock()
 		}
-		fc.mu.Unlock()
 	}
 }
 

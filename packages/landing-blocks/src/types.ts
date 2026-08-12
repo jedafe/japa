@@ -406,6 +406,35 @@ export interface MediaBlockProps {
 }
 
 /**
+ * Props for the Widget block — embeds a `widget_configurations` record
+ * (Section 16) into a page. The widget's rendered data is fetched from
+ * `/api/v1/widgets/{widget_id}` (Valkey-cached) and injected into the
+ * block at render time.
+ *
+ * When the page is rendered server-side, the widget data may be pre-resolved
+ * and injected via `_resolved` to avoid a client-side fetch.
+ */
+export interface WidgetBlockProps {
+  /** UUID of the widget_configurations row. */
+  widget_id: string;
+  /** Display layout for the widget data. */
+  layout: 'grid' | 'list' | 'compact' | 'ghost' | 'magazine' | 'reddit';
+  /** Number of columns when layout is 'grid'. */
+  columns: number;
+  /** Optional heading rendered above the widget data. */
+  heading?: string;
+  /** Optional "view all" link href. */
+  view_all_href?: string;
+  /** Pre-resolved widget data injected by the server (internal — not edited). */
+  _resolved?: {
+    widget_type: string;
+    data: unknown;
+    card_type?: string;
+    cached_at?: string;
+  };
+}
+
+/**
  * Props for the Container block — a flexible layout wrapper that groups
  * child blocks with stack / grid / flex layouts and arbitrary nesting.
  *
@@ -531,6 +560,7 @@ export type Block =
   | (BaseBlock & { type: 'live_rate_ticker'; props: LiveRateTickerProps })
   | (BaseBlock & { type: 'tabs'; props: TabsProps })
   | (BaseBlock & { type: 'media'; props: MediaBlockProps })
+  | (BaseBlock & { type: 'widget'; props: WidgetBlockProps })
   | (BaseBlock & { type: 'container'; props: ContainerProps })
   | (BaseBlock & { type: 'custom'; props: CustomBlockProps; block_def_id: string });
 

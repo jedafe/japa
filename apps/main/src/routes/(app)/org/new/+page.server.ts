@@ -1,7 +1,7 @@
 import { fail, redirect } from '@sveltejs/kit';
 import type { PageServerLoad, Actions } from './$types';
-import { apiContext, apiPost, ApiError } from '$lib/server/api';
-import type { PublicOrganization } from '$lib/types';
+import { apiContext, apiGet, apiPost, ApiError } from '$lib/server/api';
+import type { OrgMeta, PublicOrganization } from '$lib/types';
 
 /**
  * Create-organization form at /org/new — auth-gated. POST
@@ -14,7 +14,16 @@ export const load: PageServerLoad = async (event) => {
 	if (!event.locals.user) {
 		throw redirect(307, `/login?redirect=${encodeURIComponent(event.url.pathname + event.url.search)}`);
 	}
-	return {};
+
+	// BUG-022: Fetch org type options from the API (Rule 16).
+	let orgMeta: OrgMeta | null = null;
+	try {
+		orgMeta = await apiGet<OrgMeta>(apiContext(event), '/organizations/meta');
+	} catch {
+		// Non-fatal — the form falls back to hardcoded options.
+	}
+
+	return { orgMeta };
 };
 
 export const actions: Actions = {

@@ -22,6 +22,7 @@ type CreatePaymentInput struct {
 	PurposeID    string
 	Amount       int64
 	Currency     string
+	Email        string // Payer email — required by Paystack /transaction/initialize
 	Metadata     map[string]interface{}
 	DiscountCode string
 }
@@ -74,6 +75,7 @@ func (s *Service) CreatePayment(ctx context.Context, tenantID, userID pgtype.UUI
 		resp, err := provider.InitiatePayment(ctx, PaymentRequest{
 			TenantID:    tenantID.String(),
 			UserID:      userID.String(),
+			Email:       input.Email,
 			Amount:      input.Amount,
 			Currency:    currency,
 			PurposeType: input.PurposeType,
@@ -355,6 +357,14 @@ type CreateSubscriptionInput struct {
 }
 
 // CreateSubscription creates a new subscription.
+//
+// JEOS §17 requires recurring Pro billing to go through Stripe or Paystack
+// with a real provider subscription created (provider_sub_id stored) and
+// activation deferred to the provider webhook. The previous implementation
+// inserted a local row with status='active' and no provider call, granting
+// Pro access immediately without charging — a free-entitlement bug (BUG-003).
+// Until the provider subscription integration is built, this endpoint
+// returns a not_implemented error so no unearned entitlement is granted.
 func (s *Service) CreateSubscription(ctx context.Context, tenantID, userID pgtype.UUID, input CreateSubscriptionInput) (gen.Subscription, error) {
 	if input.Plan == "" {
 		return gen.Subscription{}, errors.New("plan is required")
@@ -372,34 +382,19 @@ func (s *Service) CreateSubscription(ctx context.Context, tenantID, userID pgtyp
 		return gen.Subscription{}, fmt.Errorf("invalid provider for subscription: %s (only stripe and paystack support recurring billing)", input.Provider)
 	}
 
-	// Calculate period based on plan
-	now := time.Now()
-
-	var periodEnd time.Time
-
+	// Validate plan.
 	switch input.Plan {
-	case PlanProMonthly:
-		periodEnd = now.AddDate(0, 1, 0)
-	case PlanProYearly:
-		periodEnd = now.AddDate(1, 0, 0)
+	case PlanProMonthly, PlanProYearly:
 	default:
 		return gen.Subscription{}, fmt.Errorf("invalid plan: %s", input.Plan)
 	}
 
-	subscription, err := s.store.createSubscription(ctx, gen.CreateSubscriptionParams{
-		TenantID:           tenantID,
-		UserID:             userID,
-		Plan:               input.Plan,
-		Provider:           input.Provider,
-		Status:             SubscriptionStatusActive,
-		CurrentPeriodStart: pgtype.Timestamptz{Time: now, Valid: true},
-		CurrentPeriodEnd:   pgtype.Timestamptz{Time: periodEnd, Valid: true},
-	})
-	if err != nil {
-		return gen.Subscription{}, err
-	}
-
-	return subscription, nil
+	// Provider subscription creation (Stripe Subscription / Paystack plan
+	// subscription) is not yet implemented. Creating a local row with
+	// status='active' and no provider_sub_id would grant Pro access
+	// without a real billing cycle — a free-entitlement bug. Return a
+	// clear not_implemented error until the provider integration lands.
+	return gen.Subscription{}, fmt.Errorf("%w: subscription billing is not yet available; use POST /payments/intent with purpose_type=pro_membership for one-time Pro purchases", errpkg.ErrNotImplemented)
 }
 
 // GetSubscription retrieves a subscription by ID.
@@ -644,12 +639,21 @@ func (s *Service) ApplyDiscountCodeUse(ctx context.Context, codeID, userID, paym
 // CreateRefundInput holds parameters for creating a refund.
 type CreateRefundInput struct {
 	PaymentID   string
+	TenantID    pgtype.UUID
 	Amount      int64
 	Reason      string
 	ProviderRef string
 }
 
 // CreateRefund creates a new refund for a payment.
+//
+// In addition to recording the refund row, this finalizes the payment's
+// status transition to "refunded" and enqueues the webhook processor with
+// status="refunded" so the worker runs reversePaymentSideEffects (course
+// access revocation, org boost expiry, wallet credit reversal) per JEOS §17.
+// Without this, an admin-initiated refund would leave a dangling pending
+// refund row and never reverse the side effects of the original purchase
+// (BUG-001 — Guide §13 "Refund path doesn't reverse the ledger entry").
 func (s *Service) CreateRefund(ctx context.Context, input CreateRefundInput) (gen.PaymentRefund, error) {
 	if input.PaymentID == "" {
 		return gen.PaymentRefund{}, errors.New("payment_id is required")
@@ -683,6 +687,42 @@ func (s *Service) CreateRefund(ctx context.Context, input CreateRefundInput) (ge
 	})
 	if err != nil {
 		return gen.PaymentRefund{}, err
+	}
+
+	// Finalize the payment status as "refunded" so the canonical payment
+	// row reflects the provider state and downstream queries see the
+	// refund. The handler has already verified the payment was succeeded.
+	updated, err := s.store.updatePaymentStatus(ctx, paymentID, input.TenantID, PaymentStatusRefunded)
+	if err != nil {
+		// The refund row is recorded; surface the error but don't lose it.
+		return refund, fmt.Errorf("updating payment status to refunded: %w", err)
+	}
+
+	// Enqueue the webhook processor with status="refunded" so the worker
+	// runs reversePaymentSideEffects (course access, org boost, wallet
+	// credit reversal) per JEOS §17. The provider_ref is forwarded so the
+	// worker can match the payment. Fire-and-forget per Rule 8 — the
+	// payment is already marked refunded.
+	if s.enqueuer != nil {
+		providerRefStr := ""
+		if updated.ProviderRef != nil && *updated.ProviderRef != "" {
+			providerRefStr = *updated.ProviderRef
+		}
+		payload, _ := json.Marshal(map[string]string{
+			"event_id":     fmt.Sprintf("admin_refund:%s", refund.ID.String()),
+			"tenant_id":    input.TenantID.String(),
+			"status":       PaymentStatusRefunded,
+			"provider_ref": providerRefStr,
+			"provider":     updated.Provider,
+		})
+		if err := s.enqueuer.Enqueue(worker.TypePaymentWebhookProcess, payload); err != nil {
+			slog.Error("payments: failed to enqueue refund reversal",
+				"payment_id", paymentID, "refund_id", refund.ID, "error", err)
+			errpkg.CaptureException(fmt.Errorf("enqueue refund reversal (payment %s): %w", paymentID, err))
+			// Non-fatal: the payment is already marked refunded. The
+			// reversal can be retried by re-running the refund or by a
+			// future sweep job.
+		}
 	}
 
 	return refund, nil

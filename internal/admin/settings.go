@@ -59,6 +59,14 @@ type Handlers struct {
 	Settings *config.Settings
 	GDPR     GDPRService
 	Orgs     OrgVerifier
+	Tasks    TaskEnqueuer
+}
+
+// TaskEnqueuer is the subset of the worker enqueuer that admin needs to
+// dispatch follow-up tasks (e.g. persona:dispatch_action when a persona
+// action review is approved, §76/ADR-077 §4).
+type TaskEnqueuer interface {
+	Enqueue(taskType string, payload []byte, opts ...interface{}) error
 }
 
 // GDPRService is the interface the admin hard-delete handler needs from the GDPR service.
@@ -67,11 +75,13 @@ type GDPRService interface {
 }
 
 // OrgVerifier is the subset of the organizations service the admin verify
-// handler needs to mark an org verified and emit the organization.verified
-// webhook event (Section 12). Local interface so admin does not import
-// organizations (which would create a cycle via server wiring).
+// handler needs to mark an org verified/unverified and emit the
+// organization.verified / organization.unverified webhook events (Section 12).
+// Local interface so admin does not import organizations (which would create
+// a cycle via server wiring).
 type OrgVerifier interface {
 	VerifyOrganization(ctx context.Context, id, tenantID, adminID pgtype.UUID) error
+	UnverifyOrganization(ctx context.Context, id, tenantID, adminID pgtype.UUID) error
 }
 
 // NewHandlers creates Handlers with the given database pool.
@@ -92,6 +102,12 @@ func (h *Handlers) SetValkey(v valkeycompat.Cmdable) {
 // SetSettings injects the hot-reloadable settings reader for cache invalidation.
 func (h *Handlers) SetSettings(s *config.Settings) {
 	h.Settings = s
+}
+
+// SetTaskEnqueuer injects the worker task enqueuer for dispatching follow-up
+// tasks (e.g. persona:dispatch_action on persona-action review approval, §76).
+func (h *Handlers) SetTaskEnqueuer(e TaskEnqueuer) {
+	h.Tasks = e
 }
 
 // SetGDPR injects the GDPR service for admin hard-delete operations.

@@ -15,15 +15,23 @@ import (
 	"github.com/jedafe/japa/internal/auth"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/tenant"
+	"github.com/valkey-io/valkey-go/valkeycompat"
 )
 
 type Handlers struct {
 	Service     *Service
 	AsynqClient *asynq.Client
+	redis       valkeycompat.Cmdable
 }
 
 func NewHandlers(service *Service, asynqClient *asynq.Client) *Handlers {
 	return &Handlers{Service: service, AsynqClient: asynqClient}
+}
+
+// SetRedisClient injects the Valkey client for template caching and rate
+// limiting. Optional — when nil, in-memory rate limiting is used.
+func (h *Handlers) SetRedisClient(c valkeycompat.Cmdable) {
+	h.redis = c
 }
 
 // testEmailRateLimiter is a simple in-memory fixed-window rate limiter keyed
@@ -214,10 +222,24 @@ func (h *Handlers) TestTemplate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Rate limit: 3 test emails per minute per user.
+	// Uses Valkey distributed rate limiting when available, falls back to
+	// in-memory for single-instance deployments.
 	user := auth.FromContext(r.Context())
 	if user != nil {
 		key := "test_email:" + user.UserID.String()
-		if !testEmailLimiter.Allow(key, 3, 1*time.Minute) {
+		allowed := true
+		if h.redis != nil {
+			// Distributed fixed-window via INCR + EXPIRE.
+			ctx := r.Context()
+			count, err := h.redis.Incr(ctx, "jc:ratelimit:"+key).Result()
+			if err == nil && count == 1 {
+				h.redis.Expire(ctx, "jc:ratelimit:"+key, 1*time.Minute)
+			}
+			allowed = err == nil && count <= 3
+		} else {
+			allowed = testEmailLimiter.Allow(key, 3, 1*time.Minute)
+		}
+		if !allowed {
 			writeError(w, http.StatusTooManyRequests, "rate_limit_exceeded", "Too many test email requests. Please try again later.")
 			return
 		}
