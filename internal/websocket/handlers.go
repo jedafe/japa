@@ -44,7 +44,7 @@ type Handlers struct {
 	vkClient       *valkey.Client
 	keyRotation    *auth.KeyRotation
 	spamPipeline   *spam.SpamPipeline
-	sessionChecker func(userID string) bool // BUG-018
+	sessionChecker func(userID, tenantID string) bool // BUG-018
 }
 
 // NewHandlers creates Handlers with the given dependencies.
@@ -65,8 +65,9 @@ func (h *Handlers) SetSpamPipeline(p *spam.SpamPipeline) {
 
 // SetSessionChecker injects the session validity checker used to re-validate
 // WebSocket connections on each pong (BUG-018). The checker returns false if
-// the user's session has been revoked or the user has been banned.
-func (h *Handlers) SetSessionChecker(checker func(userID string) bool) {
+// the user's session has been revoked, the user has been banned, or the
+// account has been suspended/deleted.
+func (h *Handlers) SetSessionChecker(checker func(userID, tenantID string) bool) {
 	h.sessionChecker = checker
 }
 
@@ -239,8 +240,10 @@ func (h *Handlers) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 	// Register with hub.
 	h.hub.Register(client)
 
-	// Send presence event to all.
-	h.hub.BroadcastToAll(WSEvent{
+	// Send presence event to the caller's tenant only. Broadcasting to all
+	// connected clients would leak presence across tenant boundaries (Rule 4:
+	// tenant-scoped, §5.3 cross-tenant leak prevention).
+	h.hub.BroadcastToTenant(tenantID.String(), WSEvent{
 		Type:    EventPresence,
 		Payload: map[string]interface{}{"user_id": userID.String(), "status": "online"},
 	})
@@ -258,7 +261,7 @@ func (h *Handlers) GetOnlineUsers(w http.ResponseWriter, _ *http.Request) {
 }
 
 // readPump reads messages from the WebSocket connection.
-func (c *Client) readPump(_ *DMService) {
+func (c *Client) readPump(dmSvc *DMService) {
 	defer func() {
 		c.Hub.Unregister(c)
 		_ = c.Conn.Close()
@@ -270,9 +273,10 @@ func (c *Client) readPump(_ *DMService) {
 		_ = c.Conn.SetReadDeadline(time.Now().Add(60 * time.Second))
 
 		// BUG-018: re-validate the session on each pong (every 30-60s).
-		// If the user has been banned or their sessions revoked mid-connection,
-		// close the socket so it does not stay live with stale credentials.
-		if c.SessionChecker != nil && !c.SessionChecker(c.UserID) {
+		// If the user has been banned, suspended, or their account deleted
+		// mid-connection, close the socket so it does not stay live with
+		// stale credentials.
+		if c.SessionChecker != nil && !c.SessionChecker(c.UserID, c.TenantID) {
 			slog.Info("ws session invalidated, closing connection", "user_id", c.UserID)
 			return websocket.ErrCloseSent
 		}
@@ -318,11 +322,98 @@ func (c *Client) readPump(_ *DMService) {
 					c.Hub.UnsubscribeFromSpace(c, payload.SpaceID)
 				}
 			}
+		case "typing":
+			// Section 10: typing indicators reuse the existing `typing` event
+			// type, scoped to the conversation channel. The client sends
+			// {conversation_id, is_typing}; the server forwards to the OTHER
+			// participant only. The sender must be a participant —
+			// GetOtherParticipant validates this so non-participants cannot
+			// probe conversation membership. The client should throttle
+			// typing events (e.g. every 3s, not per keystroke) to avoid
+			// excessive DB lookups.
+			c.handleTypingEvent(dmSvc, event)
 		}
 	}
 }
 
+// typingLookup is the subset of DMService needed by handleTypingEvent.
+// Defining it as an interface allows tests to inject a mock without a DB
+// dependency. *DMService satisfies this interface.
+type typingLookup interface {
+	GetOtherParticipant(ctx context.Context, tenantID, conversationID, userID pgtype.UUID) (pgtype.UUID, error)
+}
+
+// handleTypingEvent parses a typing indicator from the client, looks up the
+// other participant in the conversation, and broadcasts a typing event to
+// that participant via the hub. Non-participants get a silent no-op (the
+// lookup error is logged at debug level, not returned to the sender, so
+// membership is not leaked).
+func (c *Client) handleTypingEvent(dmSvc typingLookup, event WSEvent) {
+	if dmSvc == nil {
+		return
+	}
+
+	var payload struct {
+		ConversationID string `json:"conversation_id"`
+		IsTyping       bool   `json:"is_typing"`
+	}
+
+	data, ok := event.Payload.(map[string]interface{})
+	if !ok {
+		return
+	}
+
+	if err := json.Unmarshal(mustMarshal(data), &payload); err != nil {
+		return
+	}
+
+	if payload.ConversationID == "" {
+		return
+	}
+
+	var convID pgtype.UUID
+	if err := convID.Scan(payload.ConversationID); err != nil {
+		return
+	}
+
+	var tenantID pgtype.UUID
+	if err := tenantID.Scan(c.TenantID); err != nil {
+		return
+	}
+
+	var userID pgtype.UUID
+	if err := userID.Scan(c.UserID); err != nil {
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	otherID, err := dmSvc.GetOtherParticipant(ctx, tenantID, convID, userID)
+	if err != nil {
+		// Not a participant or conversation doesn't exist — silently drop
+		// so membership is not leaked to the sender.
+		return
+	}
+
+	c.Hub.BroadcastToUser(otherID.String(), WSEvent{
+		Type: EventTyping,
+		Payload: map[string]interface{}{
+			"conversation_id": payload.ConversationID,
+			"user_id":         c.UserID,
+			"is_typing":       payload.IsTyping,
+		},
+	})
+}
+
 // writePump writes messages from the send channel to the WebSocket connection.
+// Each message is written as its own WebSocket text frame. The previous
+// implementation drained queued messages into a single frame separated by
+// newlines, but the browser client parses each frame with JSON.parse, which
+// rejects a frame containing multiple JSON objects — causing every queued
+// message (and the first one) to be silently dropped under burst load.
+// Writing one frame per message keeps the wire protocol one-JSON-per-frame,
+// which is what the client expects.
 func (c *Client) writePump() {
 	ticker := time.NewTicker(30 * time.Second)
 	defer func() {
@@ -340,21 +431,7 @@ func (c *Client) writePump() {
 				return
 			}
 
-			w, err := c.Conn.NextWriter(websocket.TextMessage)
-			if err != nil {
-				return
-			}
-
-			_, _ = w.Write(message)
-
-			// Drain queued messages into current write.
-			n := len(c.Send)
-			for range n {
-				_, _ = w.Write([]byte("\n"))
-				_, _ = w.Write(<-c.Send)
-			}
-
-			if err := w.Close(); err != nil {
+			if err := c.Conn.WriteMessage(websocket.TextMessage, message); err != nil {
 				return
 			}
 

@@ -688,6 +688,14 @@ func (s *Service) UpdateApplicationStatus(ctx context.Context, tenantID, appID p
 	return app, nil
 }
 
+// GetApplicationForNotification fetches a job application by ID for the
+// notification adapter. Read-only — does not mutate application state.
+// Used by the jobs:notify_application_status Asynq task handler (§63,
+// ADR-081).
+func (s *Service) GetApplicationForNotification(ctx context.Context, tenantID, applicationID pgtype.UUID) (gen.JobApplication, error) {
+	return s.store.GetJobApplicationByID(ctx, tenantID, applicationID)
+}
+
 // ListUserApplications returns an applicant's application history with
 // pagination.
 func (s *Service) ListUserApplications(ctx context.Context, tenantID, userID pgtype.UUID, page, limit int) ([]ApplicationResult, int64, error) {

@@ -8,6 +8,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/valkey-io/valkey-go/valkeycompat"
+	errpkg "github.com/jedafe/japa/internal/errors"
 )
 
 // Service orchestrates widget CRUD and rendering with Valkey caching.
@@ -41,13 +42,13 @@ func (s *Service) Get(ctx context.Context, id, tenantID pgtype.UUID) (Widget, er
 // Create creates a new widget configuration.
 func (s *Service) Create(ctx context.Context, tenantID pgtype.UUID, input CreateWidgetInput) (Widget, error) {
 	if input.Name == "" {
-		return Widget{}, validationError("name is required")
+		return Widget{}, fmt.Errorf("%w: name is required", errpkg.ErrInvalid)
 	}
 	if input.WidgetType == "" {
-		return Widget{}, validationError("widget_type is required")
+		return Widget{}, fmt.Errorf("%w: widget_type is required", errpkg.ErrInvalid)
 	}
 	if !IsValidWidgetType(input.WidgetType) {
-		return Widget{}, validationError(fmt.Sprintf("widget_type must be one of: %v", ValidWidgetTypes))
+		return Widget{}, fmt.Errorf("%w: widget_type must be one of: %v", errpkg.ErrInvalid, ValidWidgetTypes)
 	}
 	return s.store.Create(ctx, tenantID, input)
 }
@@ -55,7 +56,7 @@ func (s *Service) Create(ctx context.Context, tenantID pgtype.UUID, input Create
 // Update modifies a widget and invalidates its Valkey cache.
 func (s *Service) Update(ctx context.Context, id, tenantID pgtype.UUID, input UpdateWidgetInput) (Widget, error) {
 	if input.WidgetType != nil && !IsValidWidgetType(*input.WidgetType) {
-		return Widget{}, validationError(fmt.Sprintf("widget_type must be one of: %v", ValidWidgetTypes))
+		return Widget{}, fmt.Errorf("%w: widget_type must be one of: %v", errpkg.ErrInvalid, ValidWidgetTypes)
 	}
 	w, err := s.store.Update(ctx, id, tenantID, input)
 	if err != nil {
@@ -163,8 +164,3 @@ func (s *Service) invalidateCache(ctx context.Context, id pgtype.UUID) {
 func widgetCacheKey(id pgtype.UUID) string {
 	return "jc:widget:" + id.String()
 }
-
-// validationError is a sentinel error for input validation failures.
-type validationError string
-
-func (e validationError) Error() string { return string(e) }

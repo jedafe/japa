@@ -1,8 +1,12 @@
 package websocket
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"testing"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 // ---------------------------------------------------------------------------
@@ -538,5 +542,240 @@ func TestConversationResultStructFields(t *testing.T) {
 	}
 	if !result.IsNew {
 		t.Error("IsNew should be true")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// WS-005: handleTypingEvent — typing indicator routing (Section 10)
+// ---------------------------------------------------------------------------
+//
+// handleTypingEvent parses a typing event from the client, looks up the other
+// participant via DMService.GetOtherParticipant, and broadcasts a typing event
+// to that participant. Non-participants get a silent no-op. These tests use a
+// mock DMService to avoid a DB dependency.
+
+// mockDMServiceForTyping implements the subset of DMService needed by
+// handleTypingEvent: just GetOtherParticipant.
+type mockDMServiceForTyping struct {
+	// otherParticipantID is returned for valid participant lookups.
+	otherParticipantID string
+	// err controls the return value. If non-nil, the lookup "fails" (simulating
+	// a non-participant or non-existent conversation).
+	err error
+	// calls records the arguments passed to GetOtherParticipant.
+	calls []mockTypingCall
+}
+
+type mockTypingCall struct {
+	tenantID      string
+	conversationID string
+	userID        string
+}
+
+func (m *mockDMServiceForTyping) GetOtherParticipant(_ context.Context, tenantID, conversationID, userID pgtype.UUID) (pgtype.UUID, error) {
+	m.calls = append(m.calls, mockTypingCall{
+		tenantID:       tenantID.String(),
+		conversationID: conversationID.String(),
+		userID:         userID.String(),
+	})
+	if m.err != nil {
+		return pgtype.UUID{}, m.err
+	}
+	var id pgtype.UUID
+	_ = id.Scan(m.otherParticipantID)
+	return id, nil
+}
+
+func TestHandleTypingEventBroadcastsToOtherParticipant(t *testing.T) {
+	t.Parallel()
+
+	const (
+		senderID   = "11111111-1111-1111-1111-111111111111"
+		recipientID = "22222222-2222-2222-2222-222222222222"
+		tenantID   = "33333333-3333-3333-3333-333333333333"
+		convID     = "44444444-4444-4444-4444-444444444444"
+	)
+
+	hub := NewHub()
+	otherClient := &Client{
+		Hub:      hub,
+		UserID:   recipientID,
+		TenantID: tenantID,
+		Send:     make(chan []byte, 256),
+		SpaceIDs: make(map[string]bool),
+	}
+	hub.Register(otherClient)
+
+	sender := &Client{
+		Hub:      hub,
+		UserID:   senderID,
+		TenantID: tenantID,
+		Send:     make(chan []byte, 256),
+		SpaceIDs: make(map[string]bool),
+	}
+
+	mockSvc := &mockDMServiceForTyping{otherParticipantID: recipientID}
+	sender.handleTypingEvent(mockSvc, WSEvent{
+		Type: EventTyping,
+		Payload: map[string]interface{}{
+			"conversation_id": convID,
+			"is_typing":        true,
+		},
+	})
+
+	if len(mockSvc.calls) != 1 {
+		t.Fatalf("expected 1 GetOtherParticipant call, got %d", len(mockSvc.calls))
+	}
+
+	// The other participant should receive a typing event.
+	select {
+	case msg := <-otherClient.Send:
+		var ev WSEvent
+		if err := json.Unmarshal(msg, &ev); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		if ev.Type != EventTyping {
+			t.Errorf("type = %q, want %q", ev.Type, EventTyping)
+		}
+		payload, ok := ev.Payload.(map[string]interface{})
+		if !ok {
+			t.Fatal("payload is not a map")
+		}
+		if payload["user_id"] != senderID {
+			t.Errorf("user_id = %v, want %s", payload["user_id"], senderID)
+		}
+		if payload["is_typing"] != true {
+			t.Errorf("is_typing = %v, want true", payload["is_typing"])
+		}
+	default:
+		t.Error("other participant did not receive typing event")
+	}
+}
+
+func TestHandleTypingEventNonParticipantSilentlyDrops(t *testing.T) {
+	t.Parallel()
+
+	const (
+		recipientID = "22222222-2222-2222-2222-222222222222"
+		tenantID   = "33333333-3333-3333-3333-333333333333"
+		convID     = "44444444-4444-4444-4444-444444444444"
+	)
+
+	hub := NewHub()
+	otherClient := &Client{
+		Hub:      hub,
+		UserID:   recipientID,
+		TenantID: tenantID,
+		Send:     make(chan []byte, 256),
+		SpaceIDs: make(map[string]bool),
+	}
+	hub.Register(otherClient)
+
+	sender := &Client{
+		Hub:      hub,
+		UserID:   "55555555-5555-5555-5555-555555555555",
+		TenantID: tenantID,
+		Send:     make(chan []byte, 256),
+		SpaceIDs: make(map[string]bool),
+	}
+
+	// Simulate a non-participant: GetOtherParticipant returns an error.
+	mockSvc := &mockDMServiceForTyping{err: errors.New("not a participant")}
+	sender.handleTypingEvent(mockSvc, WSEvent{
+		Type: EventTyping,
+		Payload: map[string]interface{}{
+			"conversation_id": convID,
+			"is_typing":        true,
+		},
+	})
+
+	// The other participant should NOT receive anything.
+	select {
+	case <-otherClient.Send:
+		t.Error("recipient received typing event from non-participant — membership leak")
+	default:
+		// expected
+	}
+}
+
+func TestHandleTypingEventNilDMServiceIsNoOp(t *testing.T) {
+	t.Parallel()
+
+	hub := NewHub()
+	sender := &Client{
+		Hub:      hub,
+		UserID:   "11111111-1111-1111-1111-111111111111",
+		TenantID: "33333333-3333-3333-3333-333333333333",
+		Send:     make(chan []byte, 256),
+		SpaceIDs: make(map[string]bool),
+	}
+
+	// Should not panic with nil DMService.
+	sender.handleTypingEvent(nil, WSEvent{
+		Type:    EventTyping,
+		Payload: map[string]interface{}{"conversation_id": "44444444-4444-4444-4444-444444444444", "is_typing": true},
+	})
+}
+
+func TestHandleTypingEventMissingConversationIDIgnores(t *testing.T) {
+	t.Parallel()
+
+	hub := NewHub()
+	sender := &Client{
+		Hub:      hub,
+		UserID:   "11111111-1111-1111-1111-111111111111",
+		TenantID: "33333333-3333-3333-3333-333333333333",
+		Send:     make(chan []byte, 256),
+		SpaceIDs: make(map[string]bool),
+	}
+
+	mockSvc := &mockDMServiceForTyping{otherParticipantID: "22222222-2222-2222-2222-222222222222"}
+	// Missing conversation_id — should be a no-op, no DB lookup.
+	sender.handleTypingEvent(mockSvc, WSEvent{
+		Type: EventTyping,
+		Payload: map[string]interface{}{
+			"is_typing": true,
+		},
+	})
+
+	if len(mockSvc.calls) != 0 {
+		t.Errorf("expected 0 GetOtherParticipant calls, got %d", len(mockSvc.calls))
+	}
+}
+
+// ---------------------------------------------------------------------------
+// WS-006: SessionChecker signature (userID + tenantID)
+// ---------------------------------------------------------------------------
+
+func TestSessionCheckerReceivesTenantID(t *testing.T) {
+	t.Parallel()
+
+	var receivedUserID, receivedTenantID string
+
+	hub := NewHub()
+	client := &Client{
+		Hub:      hub,
+		UserID:   "user-1",
+		TenantID: "tenant-1",
+		Send:     make(chan []byte, 256),
+		SpaceIDs: make(map[string]bool),
+		SessionChecker: func(userID, tenantID string) bool {
+			receivedUserID = userID
+			receivedTenantID = tenantID
+			return true
+		},
+	}
+	hub.Register(client)
+
+	// Simulate a pong: the checker should receive both userID and tenantID.
+	if !client.SessionChecker(client.UserID, client.TenantID) {
+		t.Error("SessionChecker returned false for valid session")
+	}
+
+	if receivedUserID != "user-1" {
+		t.Errorf("SessionChecker received userID %q, want user-1", receivedUserID)
+	}
+	if receivedTenantID != "tenant-1" {
+		t.Errorf("SessionChecker received tenantID %q, want tenant-1", receivedTenantID)
 	}
 }

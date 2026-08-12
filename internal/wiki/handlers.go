@@ -18,6 +18,7 @@
 package wiki
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -37,11 +38,52 @@ import (
 type Handlers struct {
 	service  *Service
 	settings *config.Settings
+	points   pointsChecker
+	perms    permissionChecker
+	rag      ragIndexer
 }
 
 // NewHandlers creates wiki handlers bound to the provided service.
 func NewHandlers(service *Service, settings *config.Settings) *Handlers {
 	return &Handlers{service: service, settings: settings}
+}
+
+// pointsChecker returns the user's lifetime points (reputation) for the
+// reputation gate on wiki edits (§80: wiki.edit is reputation-gated).
+type pointsChecker interface {
+	GetPointsBalance(ctx context.Context, tenantID, userID pgtype.UUID) (int64, error)
+}
+
+// permissionChecker checks RBAC nodes at runtime. Used by the community_edits
+// gate (§80): when wiki.community_edits is false, only wiki.review/wiki.manage
+// holders may submit. Also used for the wiki.lock gate (B7).
+type permissionChecker interface {
+	HasPermission(ctx context.Context, userID, tenantID pgtype.UUID, permKey string) bool
+}
+
+// ragIndexer is the subset of the RAG indexer that wiki needs to index
+// approved revision content into content_embeddings (B8, §69/ADR-069).
+// Implemented by rag.Service; nil disables RAG indexing (graceful degradation).
+type ragIndexer interface {
+	IndexEntity(ctx context.Context, tenantID pgtype.UUID, entityType string, entityID pgtype.UUID, body, language string) error
+}
+
+// SetPointsChecker injects the points service for reputation checks on
+// wiki edits. Called once during server wiring.
+func (h *Handlers) SetPointsChecker(pc pointsChecker) {
+	h.points = pc
+}
+
+// SetPermissionChecker injects the RBAC resolver for the community_edits gate.
+// Called once during server wiring.
+func (h *Handlers) SetPermissionChecker(pc permissionChecker) {
+	h.perms = pc
+}
+
+// SetRAGIndexer injects the RAG indexer for embedding approved wiki content
+// (B8). Called once during server wiring; nil disables RAG indexing.
+func (h *Handlers) SetRAGIndexer(ri ragIndexer) {
+	h.rag = ri
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
@@ -219,7 +261,12 @@ func (h *Handlers) HandleGetHistory(w http.ResponseWriter, r *http.Request) {
 
 // HandleSubmitRevision handles POST /wiki/:space_slug/:page_slug/revisions —
 // submit a wiki edit for review. Auth required (wiki.edit permission checked
-// at route registration). The service checks the reputation threshold.
+// at route registration). The handler enforces two §80 business-logic gates
+// before delegating to the service:
+//   - wiki.community_edits: when false, only wiki.review/wiki.manage holders
+//     may submit (mod-only edits).
+//   - wiki.min_reputation_to_edit: the submitter's lifetime points must meet
+//     the configured threshold.
 func (h *Handlers) HandleSubmitRevision(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
 	if !ok {
@@ -235,6 +282,40 @@ func (h *Handlers) HandleSubmitRevision(w http.ResponseWriter, r *http.Request) 
 	if spaceSlug == "" || pageSlug == "" {
 		writeError(w, http.StatusBadRequest, "missing_slug", "Space and page slugs are required")
 		return
+	}
+
+	// B5: community_edits gate (§80). When wiki.community_edits is false,
+	// community submissions are blocked — only mods/admins (wiki.review or
+	// wiki.manage holders) may submit.
+	if !h.service.CommunityEditsAllowed(r.Context(), tenantID) && h.perms != nil {
+		isMod := h.perms.HasPermission(r.Context(), user.UserID, tenantID, "wiki.review") ||
+			h.perms.HasPermission(r.Context(), user.UserID, tenantID, "wiki.manage")
+		if !isMod {
+			writeError(w, http.StatusForbidden, "community_edits_disabled",
+				"Community edits are currently disabled for this wiki")
+			return
+		}
+	}
+
+	// B4: reputation gate (§80). wiki.edit is "member with reputation ≥
+	// threshold". The route middleware checks the wiki.edit permission node;
+	// this checks the lifetime-points threshold on top.
+	if h.points != nil {
+		threshold := h.service.MinReputationToEdit(r.Context(), tenantID)
+		if threshold > 0 {
+			points, err := h.points.GetPointsBalance(r.Context(), tenantID, user.UserID)
+			if err != nil {
+				slog.Error("wiki: reputation check failed", "error", err)
+				writeError(w, http.StatusInternalServerError, "reputation_check_failed",
+					"Failed to verify reputation")
+				return
+			}
+			if points < int64(threshold) {
+				writeError(w, http.StatusForbidden, "insufficient_reputation",
+					"You need more reputation to edit this wiki page")
+				return
+			}
+		}
 	}
 
 	var input SubmitRevisionInput
@@ -258,6 +339,10 @@ func (h *Handlers) HandleSubmitRevision(w http.ResponseWriter, r *http.Request) 
 			writeError(w, http.StatusForbidden, "page_locked", "This wiki page is locked to mod-only edits")
 			return
 		}
+		if errors.Is(err, ErrEditInProgress) {
+			writeError(w, http.StatusConflict, "edit_in_progress", "A wiki edit is already in progress for this page")
+			return
+		}
 		slog.Error("wiki: submit revision failed", "error", err)
 		writeError(w, http.StatusInternalServerError, "submit_failed", "Failed to submit revision")
 		return
@@ -276,6 +361,8 @@ func (h *Handlers) HandleSubmitRevision(w http.ResponseWriter, r *http.Request) 
 // ---------------------------------------------------------------------------
 
 // HandleApproveRevision handles POST /admin/wiki/:page_id/revisions/:id/approve.
+// After approval, fire-and-forget enqueues RAG indexing of the approved
+// content (B8, §69/ADR-069) so Japabot can retrieve wiki knowledge.
 func (h *Handlers) HandleApproveRevision(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
 	if !ok {
@@ -299,16 +386,32 @@ func (h *Handlers) HandleApproveRevision(w http.ResponseWriter, r *http.Request)
 	}
 	_ = json.NewDecoder(r.Body).Decode(&body)
 
-	if err := h.service.ApproveRevision(r.Context(), revID, pageID, tenantID, user.UserID, body.Notes); err != nil {
+	content, err := h.service.ApproveRevision(r.Context(), revID, pageID, tenantID, user.UserID, body.Notes)
+	if err != nil {
 		slog.Error("wiki: approve failed", "error", err)
 		writeError(w, http.StatusInternalServerError, "approve_failed", "Failed to approve revision")
 		return
+	}
+
+	// B8: fire-and-forget RAG indexing of the approved content. The RAG
+	// indexer's IndexEntity calls ExtractPlainText internally, which handles
+	// TipTap JSON. Errors are logged, never propagated (Rule 8).
+	if h.rag != nil && len(content) > 0 {
+		go func() {
+			ctx := context.Background()
+			if err := h.rag.IndexEntity(ctx, tenantID, "wiki_page", pageID, string(content), ""); err != nil {
+				slog.Warn("wiki: RAG index failed on approval",
+					"page_id", pageID.String(), "error", err)
+			}
+		}()
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"approved": true}})
 }
 
 // HandleRejectRevision handles POST /admin/wiki/:page_id/revisions/:id/reject.
+// The frontend sends { "reason": "..." }; we accept both "reason" (UI field)
+// and "notes" (legacy/direct-API alias) and persist to hitl_review_notes (B2).
 func (h *Handlers) HandleRejectRevision(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
 	if !ok {
@@ -324,11 +427,16 @@ func (h *Handlers) HandleRejectRevision(w http.ResponseWriter, r *http.Request) 
 	}
 
 	var body struct {
-		Notes string `json:"notes"`
+		Reason string `json:"reason"`
+		Notes  string `json:"notes"`
 	}
 	_ = json.NewDecoder(r.Body).Decode(&body)
+	notes := body.Reason
+	if notes == "" {
+		notes = body.Notes
+	}
 
-	if err := h.service.RejectRevision(r.Context(), revID, tenantID, user.UserID, body.Notes); err != nil {
+	if err := h.service.RejectRevision(r.Context(), revID, tenantID, user.UserID, notes); err != nil {
 		slog.Error("wiki: reject failed", "error", err)
 		writeError(w, http.StatusInternalServerError, "reject_failed", "Failed to reject revision")
 		return
@@ -337,9 +445,13 @@ func (h *Handlers) HandleRejectRevision(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"rejected": true}})
 }
 
-// HandleUpdatePage handles PATCH /admin/wiki/:page_id — lock/unlock, feature.
+// HandleUpdatePage handles PATCH /admin/wiki/:page_id — lock/unlock, feature,
+// activate. The route middleware checks wiki.manage. When the is_locked field
+// is being toggled, the handler additionally checks wiki.lock (§80 RBAC:
+// wiki.lock is a distinct permission for lock/unlock, B7).
 func (h *Handlers) HandleUpdatePage(w http.ResponseWriter, r *http.Request) {
-	if _, ok := requireUser(w, r); !ok {
+	user, ok := requireUser(w, r)
+	if !ok {
 		return
 	}
 	tenantID, ok := requireTenant(w, r)
@@ -357,6 +469,16 @@ func (h *Handlers) HandleUpdatePage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// B7: when is_locked is being changed, require wiki.lock in addition to
+	// wiki.manage (§80 defines wiki.lock as a distinct permission node).
+	if input.IsLocked != nil && h.perms != nil {
+		if !h.perms.HasPermission(r.Context(), user.UserID, tenantID, "wiki.lock") {
+			writeError(w, http.StatusForbidden, "lock_permission_required",
+				"Locking/unlocking wiki pages requires the wiki.lock permission")
+			return
+		}
+	}
+
 	if err := h.service.UpdatePage(r.Context(), pageID, tenantID, input); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "page_not_found", "Wiki page not found")
@@ -370,15 +492,18 @@ func (h *Handlers) HandleUpdatePage(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"updated": true}})
 }
 
-// HandleGenerate handles POST /admin/wiki/generate — trigger Content Agent
-// draft for a wiki page. Creates a stub page (if needed) and enqueues an AI
-// generation task. The actual AI generation goes through the existing §20
-// AI Gateway (ADR-088).
+// HandleGenerate handles POST /admin/wiki/generate — create a stub wiki page
+// for a space/category combination so the Content Agent can later fill in a
+// draft revision (ADR-088). The page shell is created now; the AI draft
+// content enters the HITL review queue as a pending ai_generated revision
+// when the Content Agent task runs (B3: replaces the former stub).
 func (h *Handlers) HandleGenerate(w http.ResponseWriter, r *http.Request) {
-	if _, ok := requireUser(w, r); !ok {
+	user, ok := requireUser(w, r)
+	if !ok {
 		return
 	}
-	if _, ok := requireTenant(w, r); !ok {
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
 		return
 	}
 
@@ -393,16 +518,39 @@ func (h *Handlers) HandleGenerate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// The actual AI generation task enqueue would go here — for now, we
-	// return a 202 indicating the generation request has been accepted.
-	// The Content Agent draft enters the HITL review queue on completion.
-	writeJSON(w, http.StatusAccepted, map[string]any{
+	pageID, err := h.service.GeneratePage(r.Context(), tenantID, user.UserID, input)
+	if err != nil {
+		if errors.Is(err, ErrSpaceNotFound) {
+			writeError(w, http.StatusNotFound, "space_not_found", "Destination space not found")
+			return
+		}
+		if errors.Is(err, ErrPageExists) {
+			// Idempotent: page already exists. Return 200 with the slug so the
+			// caller can still trigger an AI draft for the existing page.
+			writeJSON(w, http.StatusOK, map[string]any{
+				"data": map[string]any{
+					"status":      "already_exists",
+					"space_slug":  input.SpaceSlug,
+					"page_slug":   input.PageSlug,
+					"title":       input.Title,
+					"category":    input.Category,
+				},
+			})
+			return
+		}
+		slog.Error("wiki: generate failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "generate_failed", "Failed to generate wiki page")
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, map[string]any{
 		"data": map[string]any{
-			"status":     "accepted",
-			"space_slug": input.SpaceSlug,
-			"page_slug":  input.PageSlug,
-			"title":      input.Title,
-			"category":   input.Category,
+			"status":      "created",
+			"page_id":     pageID,
+			"space_slug":  input.SpaceSlug,
+			"page_slug":   input.PageSlug,
+			"title":       input.Title,
+			"category":    input.Category,
 		},
 	})
 }

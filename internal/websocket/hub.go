@@ -14,6 +14,11 @@ import (
 // events on other instances (Rule 4: tenant-scoped).
 type Publisher interface {
 	Publish(event WSEvent, targetUserID, targetTenantID, targetSpaceID string)
+	// PublishTenant publishes a tenant-scoped broadcast so only instances
+	// with clients in the same tenant deliver it locally. Used for presence
+	// and other tenant-wide events that must not cross tenant boundaries
+	// (Rule 4: tenant-scoped, §5.3 cross-tenant leak prevention).
+	PublishTenant(event WSEvent, targetTenantID string)
 }
 
 // Hub manages WebSocket connections and broadcasts.
@@ -32,7 +37,7 @@ type Client struct {
 	TenantID       string
 	Send           chan []byte
 	SpaceIDs       map[string]bool       // subscribed spaces
-	SessionChecker func(userID string) bool // BUG-018: re-validate session on pong
+	SessionChecker func(userID, tenantID string) bool // BUG-018: re-validate session on pong
 }
 
 // WSEvent is the envelope for all WebSocket messages.
@@ -188,6 +193,23 @@ func (h *Hub) BroadcastToAll(event WSEvent) {
 	}
 }
 
+// BroadcastToTenant sends an event to every connected client in a specific
+// tenant on this instance and publishes to Valkey for delivery on other
+// instances. Use this for presence and other tenant-scoped broadcasts so a
+// user in tenant A never receives events from tenant B (Rule 4: tenant-scoped,
+// §5.3 cross-tenant leak prevention).
+func (h *Hub) BroadcastToTenant(tenantID string, event WSEvent) {
+	h.deliverLocalTenant(tenantID, event)
+
+	h.mu.RLock()
+	bridge := h.pubsub
+	h.mu.RUnlock()
+
+	if bridge != nil {
+		bridge.PublishTenant(event, tenantID)
+	}
+}
+
 // deliverLocalAll sends an event to every client connected to THIS instance
 // only. It does NOT publish to Valkey — see deliverLocalUser for the
 // loop-safety rationale.
@@ -210,6 +232,37 @@ func (h *Hub) deliverLocalAll(event WSEvent) {
 		case client.Send <- data:
 		default:
 			slog.Warn("ws client send buffer full, dropping broadcast", "user_id", client.UserID)
+		}
+	}
+}
+
+// deliverLocalTenant sends an event to every client connected to THIS instance
+// whose TenantID matches, only. It does NOT publish to Valkey — see
+// deliverLocalUser for the loop-safety rationale. This is the tenant-scoped
+// counterpart of deliverLocalAll, used for presence so a user in tenant A
+// never receives presence events from tenant B (Rule 4: tenant-scoped).
+func (h *Hub) deliverLocalTenant(tenantID string, event WSEvent) {
+	h.mu.RLock()
+	clients := make([]*Client, 0, len(h.clients))
+	for _, c := range h.clients {
+		if c.TenantID == tenantID {
+			clients = append(clients, c)
+		}
+	}
+	h.mu.RUnlock()
+
+	data, err := json.Marshal(event)
+	if err != nil {
+		slog.Error("ws marshal tenant broadcast event", "error", err)
+		return
+	}
+
+	for _, client := range clients {
+		select {
+		case client.Send <- data:
+		default:
+			slog.Warn("ws client send buffer full, dropping tenant broadcast",
+				"user_id", client.UserID, "tenant_id", tenantID)
 		}
 	}
 }
