@@ -3,7 +3,7 @@
 **Date:** 2026-08-12
 **Status:** Approved (pending user spec review)
 **Source idea:** `.jeos/ideas/japa-intelligence-system.md`
-**Scope:** Ingestion spine + scholarships domain + Japa Radar (main site + dashboard widget + notifications). Flutter mobile Radar screen is v1.5 fast-follow; backend API endpoints are in v1.
+**Scope:** Ingestion spine + scholarships domain + Japa Radar (main site + dashboard widget + notifications). Backend API endpoints are in v1 and serve any client. Subsequent domain expansions (jobs, visa, FX, remittance, cost-of-living) precede the Flutter mobile app — the domain consumer surfaces already exist in JapaConnect, while the mobile app (§77) has not yet been started, so domain ingestion delivers value sooner and the mobile app is a longer-horizon deliverable.
 
 ---
 
@@ -21,7 +21,7 @@ This spec designs that producer half as a new `internal/intelligence/` package, 
 
 | Decision | Choice |
 |---|---|
-| Scope | Ingestion spine + scholarships domain + Japa Radar (main + dashboard + notifications). Mobile Radar = v1.5 fast-follow; backend endpoints in v1. |
+| Scope | Ingestion spine + scholarships domain + Japa Radar (main + dashboard + notifications). Backend endpoints in v1 serve any client. Subsequent domain expansions precede the Flutter mobile app — domain consumer surfaces already exist (§63/§70/§74/§72), mobile app (§77) is not yet started. |
 | Tenancy | Global platform-level data, geo-space-tagged, administered via Control Panel. Authoritative external sources (DAAD, Grants.gov) are not tenant-specific; geo space (§05) is the scoping dimension, not tenant. |
 | Publish model | 1 record = 1 `contents` row (auto-generated guide, `canonical_url = source_url`) + 1 `scholarships` row referencing it. Dedup by source_url/external_key. UPDATE on re-crawl. |
 | Fetcher v1 | Static HTTP + goquery, RSS, native API, PDF text extraction, OCR fallback. No Playwright (deferred to v2). |
@@ -717,7 +717,7 @@ intel:retry_failed_source — default, manual trigger from control panel
 
 ## 7. Japa Radar Surface & Notifications
 
-The user-facing half. Three surfaces in v1 (main site, dashboard widget, notifications) plus backend API endpoints that serve all clients including the v1.5 Flutter screen.
+The user-facing half. Three surfaces in v1 (main site, dashboard widget, notifications) plus backend API endpoints that serve any client (including the future Flutter mobile app when it is built).
 
 ### API endpoints (new routes — added to §api-routes-catalog)
 
@@ -863,9 +863,9 @@ Notification payload:
 
 **Deadline-approaching reminders** reuse the existing §73 daily deadline-check task — it already checks `saved_scholarships` and sends reminders. No new task needed; it now reads from the `scholarships` table instead of `custom_field_values`. **Implementation note:** verify the exact §73 deadline-check task name against the §11 Asynq catalog during implementation (the §11 catalog is the source of truth for task names per Rule 7); this spec does not invent a new task name for this purpose.
 
-### v1.5 Flutter mobile (out of v1 spec, endpoints ready)
+### Future Flutter mobile (out of v1 spec, endpoints ready)
 
-The `/api/v1/intel/radar*` endpoints are JSON, auth via existing §02 session/JWT, and serve any client. The Flutter Radar screen (apps/mobile, §77) is a fast-follow consuming the same endpoints + push via §35 mobile push channel. **No backend work in v1.5** — just the mobile UI. This keeps v1 backend-complete while letting mobile ship when ready.
+The `/api/v1/intel/radar*` endpoints are JSON, auth via existing §02 session/JWT, and serve any client. The Flutter Radar screen (apps/mobile, §77) will consume the same endpoints + push via §35 mobile push channel when the mobile app is built. **No backend work for mobile** — just the mobile UI. The mobile app is sequenced AFTER subsequent domain expansions (jobs, visa, FX, remittance, cost-of-living), because the domain consumer surfaces already exist in JapaConnect (delivering value via thin spine-reuse per domain) while the mobile app codebase has not yet been started.
 
 ### Rule 16 compliance
 
@@ -1025,13 +1025,13 @@ Each step is independently revertable: disable `intel.enabled` to stop all crawl
 
 | Out | Why | When |
 |---|---|---|
-| Jobs, visa, FX, remittance, cost-of-living ingestion domains | Prove the spine on scholarships first; each is its own spec | v2+ specs, each reusing this spine |
+| Jobs, visa, FX, remittance, cost-of-living ingestion domains | Prove the spine on scholarships first; each is its own spec. **Sequenced BEFORE the Flutter mobile app** because the consumer surfaces for these domains already exist in JapaConnect (§63 jobs, §70/§83/§90/§93 visa, §74 remittance, §72 cost-of-living), so each ingestion domain delivers immediate user value via thin spine-reuse, while the mobile app (§77) is not yet started. | v2+ specs, each reusing this spine — prioritized ahead of mobile |
 | Playwright / Chromium JS-rendered scraping | Heavy ops; most authoritative sources are static | v2, if JS-rendered sources prove necessary |
 | Semantic cross-source dedup / multi-source merge | Hard, error-prone, YAGNI for first domain | v2, when source overlap becomes common |
 | Fine-tuning a "JapaConnect AI model" | Source idea §25 explicitly defers — keep fresh data in knowledge layer, retrieve via RAG | Future, separate spec |
 | Object storage (S3) for raw documents | v1 volume fits in Postgres | v2, when `intel_raw_documents` size justifies offload |
 | Kafka / NATS event bus | Not v1. Domain event emission goes through `DomainEventPublisher` interface (Asynq-backed); a future `KafkaEventPublisher` swaps in at one seam without touching intelligence business logic. Platform-wide Kafka adoption is a separate ADR, triggered when: event volume crosses ~10K/sec sustained, platform moves to microservices, event replay becomes a real need, or multiple external subscribers want a JapaConnect event stream. Internal task orchestration (crawl→extract→promote chain) stays Asynq permanently — it's task dispatch, not event streaming. Note (Level 2 / campground rule): as other subsystems (§35 notifications, §32 feeds, §12 webhooks) are touched for unrelated reasons, introduce an `EventPublisher` interface at their emit seams so the platform migrates incrementally rather than via big-bang refactor. | Separate future ADR |
-| Flutter mobile Radar screen | Separate app codebase; backend endpoints are ready in v1 | v1.5 fast-follow, mobile UI only |
+| Flutter mobile Radar screen | Separate app codebase (apps/mobile, §77) that has not yet been started. Backend endpoints are ready in v1 and serve any client. **Sequenced AFTER subsequent domain expansions** (jobs, visa, FX, remittance, cost-of-living) because those domains' consumer surfaces already exist in JapaConnect and deliver value via thin spine-reuse, while the mobile app is greenfield. | After domain expansions, when mobile app development begins |
 | AI-driven crawler autonomy (LLM decides what to crawl) | Source idea §16 explicitly forbids; deterministic scheduler only | Not planned |
 | Real-time push (WebSocket) for Radar updates | §10 WebSocket exists but Radar is poll/notify-based via §35 | Future, if user demand justifies |
 | User-submitted sources (Tier 4) | Moderation burden; v1 is official/trusted sources only | v2, with a submission + review flow |
@@ -1074,7 +1074,7 @@ Each step is independently revertable: disable `intel.enabled` to stop all crawl
 | §49 Comments | Scholarship content is commentable |
 | §69 RAG knowledge layer | `content:generate_embedding` for published scholarships |
 | §73 Scholarship finder | Reversed by ADR-XXX; `saved_scholarships` unchanged |
-| §77 Flutter mobile | v1.5 fast-follow consuming v1 endpoints |
+| §77 Flutter mobile | After subsequent domain expansions; consumes v1 endpoints when app is built |
 | §80 Destination wiki | Country intelligence enriches wiki over time (incremental) |
 | ADR-058 App shell | `/radar` page reuses unified shell |
 | ADR-088 Geo-aware tool | Geo-space scoping aligns with this pattern |
