@@ -69,6 +69,30 @@ FROM contents
 WHERE author_id = @user_id AND tenant_id = @tenant_id
 ORDER BY created_at DESC;
 
+-- name: GdprExportUserServiceListings :many
+-- §98 BUG-008: export the user's service_listing_meta rows joined to
+-- their content rows. The base content row is already exported by
+-- GdprExportUserContent; this adds the structured service fields.
+SELECT c.id AS content_id,
+       c.title,
+       c.slug,
+       c.created_at,
+       sm.service_category,
+       sm.is_verified,
+       sm.verification_type,
+       sm.claim_status,
+       sm.origin_communities,
+       sm.is_remote,
+       sm.website_url,
+       sm.booking_url,
+       sm.price_range
+FROM contents c
+JOIN service_listing_meta sm ON sm.content_id = c.id AND sm.tenant_id = c.tenant_id
+WHERE c.author_id = @user_id AND c.tenant_id = @tenant_id
+  AND c.content_type = 'service_listing'
+  AND c.deleted_at IS NULL
+ORDER BY c.created_at DESC;
+
 -- name: GdprExportUserComments :many
 SELECT id, content_id, body, parent_id, created_at
 FROM comments

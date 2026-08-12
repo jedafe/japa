@@ -4,6 +4,11 @@
  * The returned shape is ready to spread into a `<svelte:head>` block or pass to
  * any meta-rendering component. `jsonLdString` is pre-serialized so it can be
  * dropped directly into a `<script type="application/ld+json">` body.
+ *
+ * `canonicalUrl`, `robots`, and `hreflang` support Section 26's
+ * ResolveMetadata contract: every public page emits a canonical URL and
+ * robots meta; multi-locale pages emit hreflang alternates.
+ * Ref: japaconnect-engineering/sections/26-seo-performance.md
  */
 export interface BuildMetaOptions {
 	title: string;
@@ -12,6 +17,12 @@ export interface BuildMetaOptions {
 	url?: string;
 	image?: string;
 	jsonLd?: object;
+	/** Canonical URL — self-referencing fallback handled by caller per Section 26. */
+	canonicalUrl?: string;
+	/** Robots meta directive (e.g., "index,follow", "noindex,nofollow"). Defaults to "index,follow". */
+	robots?: string;
+	/** Hreflang alternates: map of language code → URL. Emits <link rel="alternate" hreflang="..."> tags. */
+	hreflang?: Record<string, string>;
 }
 
 export interface SeoMeta {
@@ -27,6 +38,9 @@ export interface SeoMeta {
 	twitterDescription: string;
 	twitterImage: string;
 	jsonLdString: string | null;
+	canonicalUrl: string;
+	robots: string;
+	hreflang: Record<string, string>;
 }
 
 export function buildMeta(opts: BuildMetaOptions): SeoMeta {
@@ -48,6 +62,9 @@ export function buildMeta(opts: BuildMetaOptions): SeoMeta {
 		twitterTitle: title,
 		twitterDescription: description,
 		twitterImage: ogImage,
-		jsonLdString: opts.jsonLd ? JSON.stringify(opts.jsonLd) : null
+		jsonLdString: opts.jsonLd ? JSON.stringify(opts.jsonLd) : null,
+		canonicalUrl: opts.canonicalUrl ?? '',
+		robots: opts.robots ?? 'index,follow',
+		hreflang: opts.hreflang ?? {}
 	};
 }

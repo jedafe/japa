@@ -2971,7 +2971,7 @@ type ServiceListingMetum struct {
 	ServiceCategory    string             `json:"service_category"`
 	DestinationSpaceID pgtype.UUID        `json:"destination_space_id"`
 	CitySpaceID        pgtype.UUID        `json:"city_space_id"`
-	OriginCommunities  *string            `json:"origin_communities"`
+	OriginCommunities  []string           `json:"origin_communities"`
 	IsRemote           bool               `json:"is_remote"`
 	WebsiteUrl         *string            `json:"website_url"`
 	BookingUrl         *string            `json:"booking_url"`
@@ -2982,6 +2982,8 @@ type ServiceListingMetum struct {
 	ClaimedByOrgID     pgtype.UUID        `json:"claimed_by_org_id"`
 	CreatedAt          pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+	VerifiedBy         pgtype.UUID        `json:"verified_by"`
+	VerifiedAt         pgtype.Timestamptz `json:"verified_at"`
 }
 
 type SharePlatform struct {

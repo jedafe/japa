@@ -13,6 +13,7 @@
 	import PostEditor from '$lib/components/create/editors/PostEditor.svelte';
 	import { hydrateLinkPreviews } from '$lib/tiptap/hydrateLinkPreviews';
 	import { hydrateMentions } from '$lib/tiptap/hydrateMentions';
+	import { breadcrumbJsonLd } from '$lib/seo/breadcrumbs';
 	import type { ForumThread } from '$lib/types';
 	import type { PageData } from './$types';
 
@@ -55,6 +56,27 @@
 						userInteractionCount: thread.reply_count
 					}
 				})
+	);
+
+	// BreadcrumbList JSON-LD (Section 26 — all pages with hierarchy).
+	// Forum threads live under /forum, optionally within a space.
+	const breadcrumbLd = $derived(
+		JSON.stringify(
+			breadcrumbJsonLd(
+				thread.space_slug
+					? [
+							{ name: 'Home', path: page.url.origin },
+							{ name: 'Forum', path: `${page.url.origin}/forum` },
+							{ name: thread.space_name ?? thread.space_slug, path: `${page.url.origin}/spaces/${thread.space_slug}` },
+							{ name: thread.title, path: page.url.href }
+						]
+					: [
+							{ name: 'Home', path: page.url.origin },
+							{ name: 'Forum', path: `${page.url.origin}/forum` },
+							{ name: thread.title, path: page.url.href }
+						]
+			)
+		)
 	);
 
 	// Solve / un-solve (OP or moderator only — backend enforces the permission).
@@ -243,6 +265,7 @@
 	<meta property="og:type" content="article" />
 	<meta property="og:url" content={page.url.href} />
 	{@html `<script type="application/ld+json">${jsonLd}</script>`}
+	{@html `<script type="application/ld+json">${breadcrumbLd}</script>`}
 </svelte:head>
 
 <div class="mx-auto w-full max-w-full px-4 py-6">

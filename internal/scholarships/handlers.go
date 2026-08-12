@@ -256,9 +256,9 @@ func (h *Handlers) HandleListSavedScholarships(w http.ResponseWriter, r *http.Re
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"data": rows,
 		"meta": map[string]interface{}{
-			"total":   total,
-			"page":    page,
-			"limit":   limit,
+			"total":       total,
+			"page_size":   limit,
+			"page_offset": (page - 1) * limit,
 		},
 	})
 }
@@ -412,14 +412,29 @@ func scanUUIDParam(w http.ResponseWriter, r *http.Request, param string) (pgtype
 	return id, true
 }
 
+// parsePagination reads the offset-pagination convention params
+// (`page_size` + `page_offset`) per conventions/api-response-format.md, with
+// back-compat for the legacy `limit` + `page` (1-based) pair. Returns a
+// 1-based page and a clamped page size so callers can compute
+// `offset = (page-1) * limit` unchanged.
 func parsePagination(r *http.Request) (int, int) {
-	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
-	if page <= 0 {
-		page = 1
+	q := r.URL.Query()
+	pageSize, _ := strconv.Atoi(q.Get("page_size"))
+	if pageSize <= 0 {
+		pageSize, _ = strconv.Atoi(q.Get("limit"))
 	}
-	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-	if limit <= 0 || limit > 100 {
-		limit = 20
+	if pageSize <= 0 || pageSize > 100 {
+		pageSize = 20
 	}
-	return page, limit
+	pageOffset, _ := strconv.Atoi(q.Get("page_offset"))
+	if pageOffset < 0 {
+		// Legacy back-compat: derive offset from 1-based `page`.
+		page, _ := strconv.Atoi(q.Get("page"))
+		if page <= 0 {
+			page = 1
+		}
+		pageOffset = (page - 1) * pageSize
+	}
+	page := (pageOffset / pageSize) + 1
+	return page, pageSize
 }

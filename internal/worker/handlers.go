@@ -32,6 +32,7 @@ import (
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	rssmodel "github.com/jedafe/japa/internal/rss/model"
+	"github.com/jedafe/japa/internal/seo"
 	"github.com/jedafe/japa/internal/valkey"
 	"github.com/valkey-io/valkey-go/valkeycompat"
 
@@ -2847,6 +2848,11 @@ func generateSitemapForTenant(ctx context.Context, tenantID pgtype.UUID, baseURL
 	}
 
 	slog.Info("task:sitemap:generate: sitemap written", "tenant_id", tenantID.String(), "path", sitemapPath, "url_count", urlCount)
+
+	// Invalidate the on-demand sitemap Valkey cache so the live HTTP
+	// handlers serve fresh XML on next request (BE-11 fix).
+	// Ref: japaconnect-engineering/sections/26-seo-performance.md
+	seo.InvalidateSitemapCache(ctx, rdb, tenantID)
 }
 
 // HandleRSSRegenerate regenerates the RSS feed for published content.

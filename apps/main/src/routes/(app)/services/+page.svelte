@@ -62,8 +62,7 @@
 
 	const sortOptions = [
 		{ value: 'latest', label: t('services.sort_latest', 'Latest') },
-		{ value: 'rating', label: t('services.sort_rating', 'Top rated') },
-		{ value: 'distance', label: t('services.sort_distance', 'Distance') }
+		{ value: 'top', label: t('services.sort_top', 'Top') }
 	];
 
 	function buildParams(): URLSearchParams {

@@ -62,6 +62,8 @@ type contentDocument struct {
 	ContentType       string   `json:"content_type"`
 	URL               string   `json:"url"`
 	Status            string   `json:"status"`
+	SpaceID           string   `json:"space_id"`
+	TagSlugs          []string `json:"tag_slugs"`
 	RelevantCountries []string `json:"relevant_countries"`
 }
 
@@ -85,6 +87,16 @@ func (ix *Indexer) IndexContent(ctx context.Context, contentID, tenantID [16]byt
 		return fmt.Errorf("fetching content for index: %w", err)
 	}
 
+	// Fetch tag slugs for the content so tag-scoped search works (§54
+	// GET /tags/{slug}/search). Best-effort: a query error degrades to an
+	// empty tag list — the document is still indexed without tag filtering.
+	tagSlugs := ix.resolveContentTagSlugs(ctx, row.ID)
+
+	spaceID := ""
+	if row.SpaceID.Valid {
+		spaceID = row.SpaceID.String()
+	}
+
 	doc := contentDocument{
 		ID:                row.ID.String(),
 		TenantID:          row.TenantID.String(),
@@ -94,6 +106,8 @@ func (ix *Indexer) IndexContent(ctx context.Context, contentID, tenantID [16]byt
 		ContentType:       row.ContentType,
 		URL:               contentURL(row.ContentType, row.Slug),
 		Status:            row.Status,
+		SpaceID:           spaceID,
+		TagSlugs:          tagSlugs,
 		RelevantCountries: ix.resolveRelevantCountries(ctx, tID, row.GeoSpaceID),
 	}
 
@@ -134,6 +148,26 @@ func (ix *Indexer) resolveRelevantCountries(ctx context.Context, tenantID pgtype
 		currentID = space.ParentID
 	}
 	return []string{}
+}
+
+// resolveContentTagSlugs returns the slugs of all tags attached to the given
+// content ID. Used to populate the tag_slugs array in the posts index document
+// so tag-scoped search (§54 GET /tags/{slug}/search) can filter on it.
+// Best-effort: on error returns an empty slice so indexing still succeeds.
+func (ix *Indexer) resolveContentTagSlugs(ctx context.Context, contentID pgtype.UUID) []string {
+	if ix.read == nil {
+		return []string{}
+	}
+	tags, err := ix.read.ListContentTags(ctx, contentID)
+	if err != nil {
+		slog.Warn("search:index: listing content tags failed", "content_id", contentID.String(), "error", err)
+		return []string{}
+	}
+	slugs := make([]string, 0, len(tags))
+	for _, t := range tags {
+		slugs = append(slugs, t.Slug)
+	}
+	return slugs
 }
 
 // buildExcerpt produces a plain-text preview from a content body that may be
@@ -404,15 +438,37 @@ type userDocument struct {
 
 // IndexUser fetches a user profile and upserts it into the users index.
 // Uses GetUserProfile which JOINs user_profiles for display_name and bio.
+// Respects the search_indexable privacy opt-out (§13, §19): if the user has
+// opted out of discoverability, their document is deleted from the index
+// instead of upserted.
 func (ix *Indexer) IndexUser(ctx context.Context, userID, tenantID [16]byte) error {
 	if ix.client == nil {
 		slog.Warn("search:index: no meilisearch client, skipping")
 		return nil
 	}
 
+	tID := pgtype.UUID{Bytes: tenantID, Valid: true}
+	uID := pgtype.UUID{Bytes: userID, Valid: true}
+
+	// §13/§19: check search_indexable opt-out before indexing. If the user
+	// has opted out of discoverability, remove them from the index so they
+	// don't appear in search results. Best-effort: if the privacy settings
+	// row is missing, default to indexable (COALESCE true in the query).
+	priv, err := ix.read.GetUserPrivacySettings(ctx, gen.GetUserPrivacySettingsParams{
+		TenantID: tID,
+		UserID:   uID,
+	})
+	if err == nil && !priv.SearchIndexable {
+		slog.Info("search:index: user opted out of search_indexable, removing from index", "user_id", uID.String())
+		return ix.DeleteDocument(ctx, IndexUsers, userID)
+	}
+	// On privacy-settings query error, proceed with indexing — the
+	// COALESCE default in the DB is true, so a missing row means
+	// indexable. A query error is logged but does not block indexing.
+
 	row, err := ix.read.GetUserProfile(ctx, gen.GetUserProfileParams{
-		TenantID: pgtype.UUID{Bytes: tenantID, Valid: true},
-		UserID:   pgtype.UUID{Bytes: userID, Valid: true},
+		TenantID: tID,
+		UserID:   uID,
 	})
 	if err != nil {
 		return fmt.Errorf("fetching user profile for index: %w", err)
@@ -756,6 +812,7 @@ type ReindexSummary struct {
 	Space        int `json:"space"`
 	User         int `json:"user"`
 	Tag          int `json:"tag"`
+	LearningTrack int `json:"learning_track"`
 	DocPage      int `json:"doc_page"`
 	Organization int `json:"organization"`
 	Errors       int `json:"errors"`
@@ -913,6 +970,36 @@ func (ix *Indexer) ReindexAll(ctx context.Context, tenantID pgtype.UUID) (*Reind
 				summary.Errors++
 			} else {
 				summary.User++
+			}
+		}
+		if len(rows) < reindexBatchSize {
+			break
+		}
+	}
+
+	// Learning tracks — offset-paginated via ListUniversityCatalog with
+	// empty filters (all published tracks). IndexLearningTrack re-fetches
+	// the full row via GetUniversityTrackByID.
+	for offset := int32(0); ; offset += reindexBatchSize {
+		rows, err := ix.read.ListUniversityCatalog(ctx, gen.ListUniversityCatalogParams{
+			TenantID:   tenantID,
+			Category:   "",
+			Language:   "",
+			IsFree:     false,
+			PageOffset: offset,
+			PageLimit:  reindexBatchSize,
+		})
+		if err != nil {
+			slog.Warn("search:reindex: listing learning tracks failed", "error", err)
+			summary.Errors++
+			break
+		}
+		for _, row := range rows {
+			if err := ix.IndexLearningTrack(ctx, row.ID.Bytes, tenantID.Bytes); err != nil {
+				slog.Warn("search:reindex: learning track failed", "id", row.ID, "error", err)
+				summary.Errors++
+			} else {
+				summary.LearningTrack++
 			}
 		}
 		if len(rows) < reindexBatchSize {

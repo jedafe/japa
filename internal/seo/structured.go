@@ -30,12 +30,18 @@ func GenerateArticleJSONLD(title, description, author, imageURL, publishedAt, up
 
 // GenerateQAPageJSONLD produces a schema.org QAPage structured data object.
 // For solved threads, set isSolved to true and provide a non-empty answerBody.
-func GenerateQAPageJSONLD(questionTitle, questionBody, answerBody, author string, isSolved bool) map[string]interface{} {
+// dateCreated should be the thread's actual creation timestamp (RFC3339);
+// when empty, the current time is used as a last resort.
+func GenerateQAPageJSONLD(questionTitle, questionBody, answerBody, author, dateCreated string, isSolved bool) map[string]interface{} {
+	created := dateCreated
+	if created == "" {
+		created = time.Now().UTC().Format(time.RFC3339)
+	}
 	question := map[string]interface{}{
 		"@type":       "Question",
 		"name":        questionTitle,
 		"text":        questionBody,
-		"dateCreated": time.Now().UTC().Format(time.RFC3339),
+		"dateCreated": created,
 		"author":      map[string]interface{}{"@type": "Person", "name": author},
 		"answerCount": 0,
 		"isAccepted":  false,
@@ -58,11 +64,19 @@ func GenerateQAPageJSONLD(questionTitle, questionBody, answerBody, author string
 }
 
 // GenerateReviewJSONLD produces a schema.org Review structured data object
-// with an aggregate rating. Use for any reviewable item (mentor, service, etc.).
-func GenerateReviewJSONLD(itemName string, rating float64, reviewCount int) map[string]interface{} {
+// with an aggregate rating. entityType is the schema.org @type for the
+// reviewed entity (e.g., "Service", "Person", "Organization"); it defaults
+// to "Product" when empty for backwards compatibility. Use the entity's
+// real type per Section 26's structured-data table — "Product" is wrong
+// for mentors, services, and organizations.
+func GenerateReviewJSONLD(itemName string, rating float64, reviewCount int, entityType string) map[string]interface{} {
+	et := entityType
+	if et == "" {
+		et = "Product"
+	}
 	return map[string]interface{}{
 		"@context": "https://schema.org",
-		"@type":    "Product",
+		"@type":    et,
 		"name":     itemName,
 		"aggregateRating": map[string]interface{}{
 			"@type":       "AggregateRating",
@@ -107,4 +121,35 @@ func GenerateCourseJSONLD(name, description, provider, url string) map[string]in
 	}
 
 	return course
+}
+
+// BreadcrumbItem represents a single breadcrumb in a BreadcrumbList.
+type BreadcrumbItem struct {
+	Name string
+	URL  string
+}
+
+// GenerateBreadcrumbListJSONLD produces a schema.org BreadcrumbList structured
+// data object from an ordered list of crumbs (root → leaf). Used on all pages
+// with hierarchy (blog posts, forum threads, space hubs, learning lessons)
+// per Section 26's structured-data table.
+// Ref: japaconnect-engineering/sections/26-seo-performance.md
+func GenerateBreadcrumbListJSONLD(items []BreadcrumbItem) map[string]interface{} {
+	elements := make([]map[string]interface{}, 0, len(items))
+	for i, item := range items {
+		entry := map[string]interface{}{
+			"@type":    "ListItem",
+			"position": i + 1,
+			"name":     item.Name,
+		}
+		if item.URL != "" {
+			entry["item"] = item.URL
+		}
+		elements = append(elements, entry)
+	}
+	return map[string]interface{}{
+		"@context":         "https://schema.org",
+		"@type":            "BreadcrumbList",
+		"itemListElement":  elements,
+	}
 }

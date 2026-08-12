@@ -18,15 +18,15 @@ import (
 
 // Meilisearch index UIDs — one per searchable entity type.
 const (
-	IndexPosts             = "posts"              // blog posts, discussions, pages (contents table)
-	IndexForumThreads      = "forum_threads"      // Q&A threads
-	IndexSpaces            = "spaces"             // geo-first community spaces
-	IndexUsers             = "users"              // user profiles
-	IndexTags              = "tags"               // forum tags
-	IndexKnowledgeArticles = "knowledge_articles" // learning platform articles
-	IndexLearningTracks    = "learning_tracks"    // Japa University marketplace courses (ADR-063)
-	IndexDocPages          = "doc_pages"          // documentation pages (SEARCH-001)
-	IndexOrganizations     = "organizations"      // verified orgs/businesses (Section 54)
+	IndexPosts              = "posts"              // blog posts, discussions, pages (contents table)
+	IndexForumThreads       = "forum_threads"      // Q&A threads
+	IndexSpaces             = "spaces"             // geo-first community spaces
+	IndexUsers              = "users"              // user profiles
+	IndexTags               = "tags"               // forum tags
+	IndexKnowledgeArticles  = "knowledge_articles" // learning platform articles (§13, ADR-069)
+	IndexLearningTracks     = "learning_tracks"    // Japa University marketplace courses (ADR-063)
+	IndexDocPages           = "doc_pages"          // documentation pages (SEARCH-001)
+	IndexOrganizations      = "organizations"      // verified orgs/businesses (Section 54)
 )
 
 // PrimaryKey is the primary key used by every Meilisearch index. All
@@ -50,7 +50,7 @@ var allIndexes = []string{
 // for filtering. tenant_id is filterable on every index so searches scope to
 // the requesting tenant.
 var filterableAttributesByIndex = map[string][]string{
-	IndexPosts:             {"tenant_id", "content_type", "status", "relevant_countries"},
+	IndexPosts:             {"tenant_id", "content_type", "status", "relevant_countries", "space_id", "tag_slugs"},
 	IndexForumThreads:      {"tenant_id", "space_id", "solved"},
 	IndexSpaces:            {"tenant_id", "level", "status"},
 	IndexUsers:             {"tenant_id", "status"},

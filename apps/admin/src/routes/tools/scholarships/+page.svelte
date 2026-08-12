@@ -33,7 +33,7 @@
 		try {
 			const [statsRes, logRes] = await Promise.all([
 				scholarshipAdminApi.stats(),
-				scholarshipAdminApi.reminderLog()
+				scholarshipAdminApi.reminderLog('page_size=100')
 			]);
 			if (statsRes.ok) stats = (statsRes.data as Record<string, any>) ?? {};
 			if (logRes.ok) reminderLogEntries = (logRes.data as any[]) ?? [];
@@ -105,7 +105,7 @@
 		actions: rowActions,
 		fields,
 		load: async () => {
-			const result = await scholarshipAdminApi.deadlines();
+			const result = await scholarshipAdminApi.deadlines('page_size=100');
 			if (result.ok) {
 				const data = (result.data as DeadlineItem[]) ?? [];
 				return { data, total: data.length, totalPages: 1 };

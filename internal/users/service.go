@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/worker"
 )
 
 // Service provides user profile and preference operations with reader/writer
@@ -29,6 +31,20 @@ type Service struct {
 	// Optional — when nil, the public profile omits the points field even
 	// if the user has consented (Section 28). Implemented by wallet.Service.
 	PointsProvider PointsProvider
+	// enqueuer injects the Asynq task enqueuer for search index sync.
+	// Optional — when nil, search reindex on privacy changes is skipped.
+	enqueuer userEnqueuer
+}
+
+// userEnqueuer is the subset of worker.Enqueuer that users needs.
+type userEnqueuer interface {
+	Enqueue(taskType string, payload []byte, opts ...interface{}) error
+}
+
+// SetEnqueuer injects the Asynq enqueuer for async user tasks (search index
+// sync on privacy settings change).
+func (s *Service) SetEnqueuer(e userEnqueuer) {
+	s.enqueuer = e
 }
 
 // MediaResolver resolves a media UUID to a presigned URL.
@@ -629,7 +645,35 @@ func (s *Service) UpdatePrivacySettings(ctx context.Context, tenantID, userID pg
 		showPointsPublicly = *req.ShowPointsPublicly
 	}
 
-	return s.store.upsertUserPrivacySettings(ctx, tenantID, userID, dmPrivacy, profileVisibility, searchIndexable, showOnlineStatus, showActivity, showPointsPublicly)
+	if err := s.store.upsertUserPrivacySettings(ctx, tenantID, userID, dmPrivacy, profileVisibility, searchIndexable, showOnlineStatus, showActivity, showPointsPublicly); err != nil {
+		return err
+	}
+
+	// §13/§19: when search_indexable changed, re-index the user so the
+	// Meilisearch users index reflects their discoverability opt-out. The
+	// IndexUser method checks search_indexable and deletes the document
+	// if the user opted out, or upserts it if they opted back in.
+	s.enqueueUserSearchIndex(tenantID, userID)
+
+	return nil
+}
+
+// enqueueUserSearchIndex enqueues a search:index_entity task for the user so
+// the Meilisearch index reflects their current search_indexable setting.
+// Best-effort — logs errors but never fails the caller.
+func (s *Service) enqueueUserSearchIndex(tenantID, userID pgtype.UUID) {
+	if s.enqueuer == nil {
+		return
+	}
+	payload, _ := json.Marshal(map[string]string{
+		"entity_id":   userID.String(),
+		"entity_type": "user",
+		"tenant_id":   tenantID.String(),
+	})
+	if err := s.enqueuer.Enqueue(worker.TypeSearchIndexSync, payload); err != nil {
+		slog.Warn("users: failed to enqueue search:index_entity for user",
+			"user_id", userID.String(), "error", err)
+	}
 }
 
 // ListSessions returns the user's active sessions. currentSessionID is the
