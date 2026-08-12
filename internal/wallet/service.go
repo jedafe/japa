@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -214,6 +215,19 @@ func (s *Service) ProcessActivityEvent(ctx context.Context, eventID, tenantID pg
 
 	if err := tx.Commit(ctx); err != nil {
 		return fmt.Errorf("committing transaction: %w", err)
+	}
+
+	// Evaluate gamification badges after the ledger earn is committed
+	// (BUG-GAMMA-001, ADR-082 §2). Fire-and-forget — a badge evaluation
+	// failure must not fail the already-committed ledger entry; the event
+	// is marked processed and the points are already credited.
+	if s.gamificationEvaluator != nil {
+		if err := s.gamificationEvaluator.EvaluateForWallet(ctx, tenantID, event.UserID, event.ActivityKey); err != nil {
+			slog.Warn("wallet: gamification badge evaluation failed",
+				"user_id", event.UserID.String(),
+				"activity_key", event.ActivityKey,
+				"error", err)
+		}
 	}
 
 	return nil

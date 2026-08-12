@@ -22,9 +22,12 @@
 package ai
 
 import (
+	"context"
 	"fmt"
+	"io"
 	"math"
 	"net"
+	"net/http"
 	"net/url"
 	"strings"
 )
@@ -150,4 +153,22 @@ func safeInt64ToInt32(n int64) int32 {
 		return math.MinInt32
 	}
 	return int32(n)
+}
+
+// newValidatedHTTPRequest creates an *http.Request after validating the
+// endpoint URL against the SSRF policy (validateEndpointAllowHTTP). This is
+// the single point where gosec G704 (SSRF via taint analysis) is suppressed:
+// the URL is validated immediately before the request is created, so the
+// sink is provably guarded.
+//
+// Provider base URLs are validated at construction time in
+// NewProviderFromConfig (admin-supplied URLs) or auto-selected from a
+// hardcoded allowlist (Xiaomi). This call-site validation is defense-in-
+// depth: it catches any path that bypasses the constructor (e.g. tests
+// setting baseURL directly) and makes the guard visible at the sink.
+func newValidatedHTTPRequest(ctx context.Context, method, rawURL string, body io.Reader) (*http.Request, error) {
+	if err := validateEndpointAllowHTTP(rawURL); err != nil {
+		return nil, err
+	}
+	return http.NewRequestWithContext(ctx, method, rawURL, body) // #nosec G704 -- rawURL validated by validateEndpointAllowHTTP above
 }

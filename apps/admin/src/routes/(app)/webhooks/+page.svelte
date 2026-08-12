@@ -214,9 +214,6 @@
 					event_types: formEvents,
 					is_active: formActive
 				};
-				if (formSecret.trim()) {
-					body.secret = formSecret.trim();
-				}
 				const result = await webhooksAdminApiExtended.update(editingEndpoint.id, body);
 				if (result.ok) {
 					showSlideOver = false;
@@ -471,10 +468,8 @@
 			</div>
 		</div>
 		{#if modalMode === "edit"}
-			<div>
-				<label for="wh-secret" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("webhooks.secret", "Secret")}</label>
-				<input id="wh-secret" type="password" bind:value={formSecret} class="mt-1 w-full rounded-lg border p-2 text-sm font-mono" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" placeholder="whsec_..." />
-				<p class="mt-1 text-xs" style="color: var(--color-muted)">{t("webhooks.secret_hint", "Leave blank to keep the existing secret. Only set to rotate.")}</p>
+			<div class="rounded-lg border p-3 text-xs" style="border-color: var(--color-border); color: var(--color-muted)">
+				{t("webhooks.secret_hint", "The signing secret is set on creation and shown once. To rotate, delete and recreate the webhook.")}
 			</div>
 		{/if}
 		<div class="flex items-center gap-2">

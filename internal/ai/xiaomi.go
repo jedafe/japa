@@ -155,7 +155,7 @@ func (p *XiaomiProvider) Send(ctx context.Context, req Request) (Response, error
 
 	endpoint := p.baseURL + "/chat/completions"
 
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
+	httpReq, err := newValidatedHTTPRequest(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
 		return Response{}, fmt.Errorf("xiaomi: creating request: %w", err)
 	}
@@ -163,7 +163,7 @@ func (p *XiaomiProvider) Send(ctx context.Context, req Request) (Response, error
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("api-key", p.apiKey)
 
-	httpResp, err := p.httpClient.Do(httpReq)
+	httpResp, err := p.httpClient.Do(httpReq) // #nosec G704 -- endpoint validated by newValidatedHTTPRequest
 	if err != nil {
 		return Response{}, fmt.Errorf("xiaomi: request failed: %w", err)
 	}
@@ -343,7 +343,7 @@ func (p *XiaomiProvider) ChatWithTools(ctx context.Context, req ChatWithToolsReq
 	}
 
 	endpoint := p.baseURL + "/chat/completions"
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
+	httpReq, err := newValidatedHTTPRequest(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
 		return ChatWithToolsResponse{}, fmt.Errorf("xiaomi: creating tools request: %w", err)
 	}
@@ -351,7 +351,7 @@ func (p *XiaomiProvider) ChatWithTools(ctx context.Context, req ChatWithToolsReq
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("api-key", p.apiKey)
 
-	httpResp, err := p.httpClient.Do(httpReq)
+	httpResp, err := p.httpClient.Do(httpReq) // #nosec G704 -- endpoint validated by newValidatedHTTPRequest
 	if err != nil {
 		return ChatWithToolsResponse{}, fmt.Errorf("xiaomi: tools request failed: %w", err)
 	}
@@ -464,7 +464,7 @@ func (p *XiaomiProvider) FetchModels(ctx context.Context) ([]ModelInfo, error) {
 	}
 
 	endpoint := p.baseURL + "/models"
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	httpReq, err := newValidatedHTTPRequest(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return nil, fmt.Errorf("xiaomi: creating models request: %w", err)
 	}

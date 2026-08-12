@@ -176,7 +176,7 @@ func (p *AnthropicProvider) Send(ctx context.Context, req Request) (Response, er
 
 	endpoint := p.baseURL + "/messages"
 
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
+	httpReq, err := newValidatedHTTPRequest(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
 		return Response{}, fmt.Errorf("anthropic: creating request: %w", err)
 	}
@@ -191,7 +191,7 @@ func (p *AnthropicProvider) Send(ctx context.Context, req Request) (Response, er
 		httpReq.Header.Set("anthropic-version", AnthropicAPIVersion)
 	}
 
-	httpResp, err := p.httpClient.Do(httpReq)
+	httpResp, err := p.httpClient.Do(httpReq) // #nosec G704 -- endpoint validated by newValidatedHTTPRequest
 	if err != nil {
 		return Response{}, fmt.Errorf("anthropic: request failed: %w", err)
 	}
@@ -352,7 +352,7 @@ func (p *AnthropicProvider) ChatWithTools(ctx context.Context, req ChatWithTools
 	}
 
 	endpoint := p.baseURL + "/messages"
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
+	httpReq, err := newValidatedHTTPRequest(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
 		return ChatWithToolsResponse{}, fmt.Errorf("anthropic: creating tools request: %w", err)
 	}
@@ -365,7 +365,7 @@ func (p *AnthropicProvider) ChatWithTools(ctx context.Context, req ChatWithTools
 		httpReq.Header.Set("anthropic-version", AnthropicAPIVersion)
 	}
 
-	httpResp, err := p.httpClient.Do(httpReq)
+	httpResp, err := p.httpClient.Do(httpReq) // #nosec G704 -- endpoint validated by newValidatedHTTPRequest
 	if err != nil {
 		return ChatWithToolsResponse{}, fmt.Errorf("anthropic: tools request failed: %w", err)
 	}
@@ -551,7 +551,7 @@ func (p *AnthropicProvider) FetchModels(ctx context.Context) ([]ModelInfo, error
 	}
 
 	endpoint := p.baseURL + "/models"
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	httpReq, err := newValidatedHTTPRequest(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return nil, fmt.Errorf("anthropic: creating models request: %w", err)
 	}

@@ -13,8 +13,10 @@ package visatimeline
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -36,20 +38,24 @@ func NewStore(database *db.DB) *Store {
 
 // Timeline holds a single visa_timelines row.
 type Timeline struct {
-	ID                pgtype.UUID
-	TenantID          pgtype.UUID
-	UserID            pgtype.UUID
-	OriginSpaceID     pgtype.UUID
+	ID                 pgtype.UUID
+	TenantID           pgtype.UUID
+	UserID             pgtype.UUID
+	OriginSpaceID      pgtype.UUID
 	DestinationSpaceID pgtype.UUID
-	VisaCategory      string
-	Consulate         *string
-	ApplicationMethod *string
-	Outcome           *string
-	IsShared          bool
-	AnonymisedAt      pgtype.Timestamptz
-	CreatedAt         pgtype.Timestamptz
-	UpdatedAt         pgtype.Timestamptz
-	DeletedAt         pgtype.Timestamptz
+	VisaCategory       string
+	Consulate          *string
+	ApplicationMethod  *string
+	Outcome            *string
+	IsShared           bool
+	AnonymisedAt       pgtype.Timestamptz
+	CreatedAt          pgtype.Timestamptz
+	UpdatedAt          pgtype.Timestamptz
+	DeletedAt          pgtype.Timestamptz
+	// Milestones is populated by ListUserTimelines / AdminList via a
+	// LATERAL join so the API can return timelines with their milestones
+	// in a single round-trip (§83 — no separate list-milestones route).
+	Milestones []Milestone
 }
 
 // Milestone holds a single visa_timeline_milestones row.
@@ -141,13 +147,31 @@ WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
 // ListUserTimelines returns all non-deleted timelines owned by a user within
 // a tenant, newest first.
 func (s *Store) ListUserTimelines(ctx context.Context, userID, tenantID pgtype.UUID) ([]Timeline, error) {
+	// Join milestones via COALESCE(LATERAL json_agg, '[]') so the API can
+	// return timelines with their milestones in a single round-trip (§83
+	// defines no separate list-milestones route). Milestones are ordered
+	// chronologically inside the LATERAL subquery.
 	const q = `
-SELECT id, tenant_id, user_id, origin_space_id, destination_space_id,
-       visa_category, consulate, application_method, outcome, is_shared,
-       anonymised_at, created_at, updated_at, deleted_at
-FROM visa_timelines
-WHERE user_id = $1 AND tenant_id = $2 AND deleted_at IS NULL
-ORDER BY created_at DESC
+SELECT t.id, t.tenant_id, t.user_id, t.origin_space_id, t.destination_space_id,
+       t.visa_category, t.consulate, t.application_method, t.outcome, t.is_shared,
+       t.anonymised_at, t.created_at, t.updated_at, t.deleted_at,
+       COALESCE(ms.milestones, '[]'::json) AS milestones
+FROM visa_timelines t
+LEFT JOIN LATERAL (
+    SELECT json_agg(json_build_object(
+        'id', m.id,
+        'tenant_id', m.tenant_id,
+        'timeline_id', m.timeline_id,
+        'milestone_type', m.milestone_type,
+        'occurred_at', m.occurred_at,
+        'notes', m.notes,
+        'created_at', m.created_at
+    ) ORDER BY m.occurred_at ASC) AS milestones
+    FROM visa_timeline_milestones m
+    WHERE m.timeline_id = t.id
+) ms ON TRUE
+WHERE t.user_id = $1 AND t.tenant_id = $2 AND t.deleted_at IS NULL
+ORDER BY t.created_at DESC
 `
 	rows, err := s.pool.Reader.Query(ctx, q, userID, tenantID)
 	if err != nil {
@@ -158,13 +182,16 @@ ORDER BY created_at DESC
 	var out []Timeline
 	for rows.Next() {
 		var t Timeline
+		var milestonesJSON []byte
 		if err := rows.Scan(
 			&t.ID, &t.TenantID, &t.UserID, &t.OriginSpaceID, &t.DestinationSpaceID,
 			&t.VisaCategory, &t.Consulate, &t.ApplicationMethod, &t.Outcome, &t.IsShared,
 			&t.AnonymisedAt, &t.CreatedAt, &t.UpdatedAt, &t.DeletedAt,
+			&milestonesJSON,
 		); err != nil {
 			return nil, fmt.Errorf("visatimeline: scan timeline: %w", err)
 		}
+		t.Milestones = decodeMilestonesJSON(milestonesJSON)
 		out = append(out, t)
 	}
 	if err := rows.Err(); err != nil {
@@ -200,6 +227,11 @@ func (s *Store) UpdateTimeline(ctx context.Context, id, tenantID pgtype.UUID, in
 		sets = append(sets, fmt.Sprintf("is_shared = $%d", argIdx))
 		args = append(args, *input.IsShared)
 		argIdx++
+		// §83/ADR-091: stamp anonymised_at when the timeline is shared
+		// (anonymisation audit trail). Only set when sharing is enabled.
+		if *input.IsShared {
+			sets = append(sets, "anonymised_at = now()")
+		}
 	}
 	if input.Consulate != nil {
 		sets = append(sets, fmt.Sprintf("consulate = $%d", argIdx))
@@ -353,8 +385,9 @@ ORDER BY occurred_at ASC, created_at ASC
 
 // GetStats returns the aggregated processing-time statistics for a given
 // origin → destination → visa category combination (consulate optional). The
-// stats are read from the pre-aggregated visa_processing_stats table.
-func (s *Store) GetStats(ctx context.Context, tenantID, originSpaceID, destSpaceID pgtype.UUID, visaCategory string) ([]ProcessingStat, error) {
+// stats are read from the pre-aggregated visa_processing_stats table. When
+// months > 0, only periods within the last `months` months are returned.
+func (s *Store) GetStats(ctx context.Context, tenantID, originSpaceID, destSpaceID pgtype.UUID, visaCategory, consulate string, months int) ([]ProcessingStat, error) {
 	var (
 		conditions []string
 		args       []any
@@ -379,6 +412,14 @@ func (s *Store) GetStats(ctx context.Context, tenantID, originSpaceID, destSpace
 		conditions = append(conditions, fmt.Sprintf("visa_category = $%d", argIdx))
 		args = append(args, visaCategory)
 		argIdx++
+	}
+	if consulate != "" {
+		conditions = append(conditions, fmt.Sprintf("consulate = $%d", argIdx))
+		args = append(args, consulate)
+		argIdx++
+	}
+	if months > 0 {
+		conditions = append(conditions, fmt.Sprintf("period_start >= now() - interval '%d months'", months))
 	}
 
 	whereClause := strings.Join(conditions, " AND ")
@@ -417,8 +458,9 @@ ORDER BY period_start DESC
 }
 
 // GetTrend returns a monthly trend series (avg/median processing days) for a
-// destination space + visa category over the last `months` months.
-func (s *Store) GetTrend(ctx context.Context, tenantID, destSpaceID pgtype.UUID, visaCategory string, months int) ([]TrendPoint, error) {
+// destination space + visa category over the last `months` months. When
+// consulate is non-empty, the trend is filtered to that consulate only.
+func (s *Store) GetTrend(ctx context.Context, tenantID, destSpaceID pgtype.UUID, visaCategory, consulate string, months int) ([]TrendPoint, error) {
 	if months <= 0 {
 		months = 12
 	}
@@ -441,6 +483,11 @@ func (s *Store) GetTrend(ctx context.Context, tenantID, destSpaceID pgtype.UUID,
 	if visaCategory != "" {
 		conditions = append(conditions, fmt.Sprintf("visa_category = $%d", argIdx))
 		args = append(args, visaCategory)
+		argIdx++
+	}
+	if consulate != "" {
+		conditions = append(conditions, fmt.Sprintf("consulate = $%d", argIdx))
+		args = append(args, consulate)
 		argIdx++
 	}
 
@@ -542,12 +589,26 @@ func (s *Store) AdminList(ctx context.Context, f AdminListFilter) ([]Timeline, i
 	}
 
 	listQ := fmt.Sprintf(`
-SELECT id, tenant_id, user_id, origin_space_id, destination_space_id,
-       visa_category, consulate, application_method, outcome, is_shared,
-       anonymised_at, created_at, updated_at, deleted_at
-FROM visa_timelines
+SELECT t.id, t.tenant_id, t.user_id, t.origin_space_id, t.destination_space_id,
+       t.visa_category, t.consulate, t.application_method, t.outcome, t.is_shared,
+       t.anonymised_at, t.created_at, t.updated_at, t.deleted_at,
+       COALESCE(ms.milestones, '[]'::json) AS milestones
+FROM visa_timelines t
+LEFT JOIN LATERAL (
+    SELECT json_agg(json_build_object(
+        'id', m.id,
+        'tenant_id', m.tenant_id,
+        'timeline_id', m.timeline_id,
+        'milestone_type', m.milestone_type,
+        'occurred_at', m.occurred_at,
+        'notes', m.notes,
+        'created_at', m.created_at
+    ) ORDER BY m.occurred_at ASC) AS milestones
+    FROM visa_timeline_milestones m
+    WHERE m.timeline_id = t.id
+) ms ON TRUE
 WHERE %s
-ORDER BY created_at DESC
+ORDER BY t.created_at DESC
 LIMIT $%d OFFSET $%d
 `, whereClause, argIdx, argIdx+1)
 	args = append(args, limit, offset)
@@ -561,13 +622,16 @@ LIMIT $%d OFFSET $%d
 	var out []Timeline
 	for rows.Next() {
 		var t Timeline
+		var milestonesJSON []byte
 		if err := rows.Scan(
 			&t.ID, &t.TenantID, &t.UserID, &t.OriginSpaceID, &t.DestinationSpaceID,
 			&t.VisaCategory, &t.Consulate, &t.ApplicationMethod, &t.Outcome, &t.IsShared,
 			&t.AnonymisedAt, &t.CreatedAt, &t.UpdatedAt, &t.DeletedAt,
+			&milestonesJSON,
 		); err != nil {
 			return nil, 0, fmt.Errorf("visatimeline: admin scan timeline: %w", err)
 		}
+		t.Milestones = decodeMilestonesJSON(milestonesJSON)
 		out = append(out, t)
 	}
 	if err := rows.Err(); err != nil {
@@ -582,4 +646,196 @@ LIMIT $%d OFFSET $%d
 	}
 
 	return out, total, nil
+}
+
+// RefreshStats recomputes the visa_processing_stats aggregate table from
+// shared, non-deleted visa_timelines and their milestones. For each
+// (tenant_id, origin_space_id, destination_space_id, visa_category,
+// consulate, month) bucket, computes sample_count, avg_days, median_days,
+// p10_days, p90_days of the processing span (decision or visa_issued
+// milestone occurred_at minus the earliest applied/submitted milestone
+// occurred_at). Timelines without a decision/visa_issued milestone are
+// excluded (still in progress). Called nightly by the
+// visa_timeline:refresh_stats Asynq task (§83, ADR-091).
+//
+// The aggregate is computed fresh each run: existing rows for the affected
+// period are deleted then re-inserted in a single transaction.
+func (s *Store) RefreshStats(ctx context.Context) (int64, error) {
+	// Compute processing spans per timeline. A span is the number of days
+	// between the earliest "applied" milestone and the latest
+	// "decision"/"visa_issued" milestone. Timelines sharing the same
+	// (tenant, origin, dest, visa_category, consulate) are bucketed by
+	// the month of the decision date.
+	const q = `
+WITH spans AS (
+    SELECT
+        t.tenant_id,
+        t.origin_space_id,
+        t.destination_space_id,
+        t.visa_category,
+        t.consulate,
+        date_trunc('month', dec_m.occurred_at)::date AS period_start,
+        EXTRACT(EPOCH FROM (dec_m.occurred_at - first_m.first_occurred))::numeric / 86400 AS days_span
+    FROM visa_timelines t
+    JOIN LATERAL (
+        SELECT occurred_at
+        FROM visa_timeline_milestones m
+        WHERE m.timeline_id = t.id
+          AND m.milestone_type IN ('applied')
+        ORDER BY occurred_at ASC
+        LIMIT 1
+    ) first_m ON TRUE
+    JOIN LATERAL (
+        SELECT occurred_at
+        FROM visa_timeline_milestones m
+        WHERE m.timeline_id = t.id
+          AND m.milestone_type IN ('decision', 'visa_issued')
+        ORDER BY occurred_at DESC
+        LIMIT 1
+    ) dec_m ON TRUE
+    WHERE t.is_shared = TRUE
+      AND t.deleted_at IS NULL
+      AND t.outcome IN ('approved', 'refused', 'withdrawn')
+),
+buckets AS (
+    SELECT
+        tenant_id,
+        origin_space_id,
+        destination_space_id,
+        visa_category,
+        consulate,
+        period_start,
+        COUNT(*) AS sample_count,
+        AVG(days_span)::numeric(6,1) AS avg_days,
+        PERCENTILE_CONT(0.5)  WITHIN GROUP (ORDER BY days_span)::numeric(6,1) AS median_days,
+        PERCENTILE_CONT(0.10) WITHIN GROUP (ORDER BY days_span)::numeric(6,1) AS p10_days,
+        PERCENTILE_CONT(0.90) WITHIN GROUP (ORDER BY days_span)::numeric(6,1) AS p90_days
+    FROM spans
+    GROUP BY tenant_id, origin_space_id, destination_space_id, visa_category, consulate, period_start
+)
+INSERT INTO visa_processing_stats (
+    tenant_id, origin_space_id, destination_space_id, visa_category,
+    consulate, period_start, sample_count, avg_days, median_days,
+    p10_days, p90_days, refreshed_at
+)
+SELECT
+    tenant_id, origin_space_id, destination_space_id, visa_category,
+    consulate, period_start, sample_count, avg_days, median_days,
+    p10_days, p90_days, now()
+FROM buckets
+ON CONFLICT (tenant_id, origin_space_id, destination_space_id, visa_category, consulate, period_start)
+DO UPDATE SET
+    sample_count = EXCLUDED.sample_count,
+    avg_days = EXCLUDED.avg_days,
+    median_days = EXCLUDED.median_days,
+    p10_days = EXCLUDED.p10_days,
+    p90_days = EXCLUDED.p90_days,
+    refreshed_at = EXCLUDED.refreshed_at
+`
+	cmd, err := s.pool.Writer.Exec(ctx, q)
+	if err != nil {
+		return 0, fmt.Errorf("visatimeline: refresh stats: %w", err)
+	}
+	return cmd.RowsAffected(), nil
+}
+
+// InProgressTimelineOwner identifies (user_id, tenant_id) pairs whose shared
+// timeline has no decision/visa_issued milestone yet, for the weekly
+// visa_timeline:prompt_update nudge (§83, ADR-091). Only timelines updated
+// more than 7 days ago are returned so the prompt is not spammy.
+func (s *Store) InProgressTimelineOwners(ctx context.Context) ([]struct {
+	UserID   pgtype.UUID
+	TenantID pgtype.UUID
+}, error) {
+	const q = `
+SELECT DISTINCT t.user_id, t.tenant_id
+FROM visa_timelines t
+WHERE t.deleted_at IS NULL
+  AND t.user_id IS NOT NULL
+  AND t.outcome = 'pending'
+  AND t.updated_at < now() - interval '7 days'
+  AND NOT EXISTS (
+      SELECT 1 FROM visa_timeline_milestones m
+      WHERE m.timeline_id = t.id
+        AND m.milestone_type IN ('decision', 'visa_issued')
+  )
+`
+	rows, err := s.pool.Reader.Query(ctx, q)
+	if err != nil {
+		return nil, fmt.Errorf("visatimeline: in-progress timeline owners: %w", err)
+	}
+	defer rows.Close()
+
+	var out []struct {
+		UserID   pgtype.UUID
+		TenantID pgtype.UUID
+	}
+	for rows.Next() {
+		var r struct {
+			UserID   pgtype.UUID
+			TenantID pgtype.UUID
+		}
+		if err := rows.Scan(&r.UserID, &r.TenantID); err != nil {
+			return nil, fmt.Errorf("visatimeline: scan in-progress owner: %w", err)
+		}
+		out = append(out, r)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("visatimeline: iterate in-progress owners: %w", err)
+	}
+	return out, nil
+}
+
+// UserAccountAge returns the user's created_at timestamp for the anti-gaming
+// account-age gate (§83: account age ≥ visa_timeline.min_account_age_days).
+// Returns pgtype.Timestamptz{} (Valid=false) if the user does not exist.
+func (s *Store) UserAccountAge(ctx context.Context, tenantID, userID pgtype.UUID) (pgtype.Timestamptz, error) {
+	const q = `SELECT created_at FROM users WHERE id = $1 AND tenant_id = $2`
+	var ts pgtype.Timestamptz
+	if err := s.pool.Reader.QueryRow(ctx, q, userID, tenantID).Scan(&ts); err != nil {
+		if err == pgx.ErrNoRows {
+			return pgtype.Timestamptz{}, nil
+		}
+		return pgtype.Timestamptz{}, fmt.Errorf("visatimeline: user account age: %w", err)
+	}
+	return ts, nil
+}
+
+// decodeMilestonesJSON parses the JSON array produced by the LATERAL
+// json_agg in ListUserTimelines / AdminList into []Milestone. Returns an
+// empty slice (not nil) when the JSON is "[]" or null so callers always
+// get a non-nil slice.
+func decodeMilestonesJSON(raw []byte) []Milestone {
+	if len(raw) == 0 || string(raw) == "null" {
+		return []Milestone{}
+	}
+	var raws []struct {
+		ID            string  `json:"id"`
+		TenantID      string  `json:"tenant_id"`
+		TimelineID    string  `json:"timeline_id"`
+		MilestoneType string  `json:"milestone_type"`
+		OccurredAt    string  `json:"occurred_at"`
+		Notes         *string `json:"notes"`
+		CreatedAt     string  `json:"created_at"`
+	}
+	if err := json.Unmarshal(raw, &raws); err != nil {
+		return []Milestone{}
+	}
+	out := make([]Milestone, 0, len(raws))
+	for _, r := range raws {
+		var m Milestone
+		_ = m.ID.Scan(r.ID)
+		_ = m.TenantID.Scan(r.TenantID)
+		_ = m.TimelineID.Scan(r.TimelineID)
+		m.MilestoneType = r.MilestoneType
+		if t, err := time.Parse(time.RFC3339Nano, r.OccurredAt); err == nil {
+			m.OccurredAt = pgtype.Timestamptz{Time: t, Valid: true}
+		}
+		m.Notes = r.Notes
+		if t, err := time.Parse(time.RFC3339Nano, r.CreatedAt); err == nil {
+			m.CreatedAt = pgtype.Timestamptz{Time: t, Valid: true}
+		}
+		out = append(out, m)
+	}
+	return out
 }

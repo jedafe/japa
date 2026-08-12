@@ -1,6 +1,7 @@
 <script lang="ts">
 	// Ref: japaconnect-engineering/sections/83-visa-timeline-tracker.md
 	import { untrack } from 'svelte';
+	import { goto } from '$app/navigation';
 	import { t } from '$lib/i18n';
 	import { Spline } from 'layerchart';
 	import { CalendarClock, Filter, X } from 'lucide-svelte';
@@ -10,7 +11,7 @@
 
 	let { data }: { data: PageData } = $props();
 
-	const stats = $derived<VisaProcessingStats | null>(data.stats);
+	const stats = $derived<VisaProcessingStats[]>(data.stats);
 	const trend = $derived<TrendPoint[]>(data.trend);
 	const filters = $derived(data.filters);
 
@@ -27,14 +28,28 @@
 	let fDest = $state(untrack(() => filters.dest));
 	let fOrigin = $state(untrack(() => filters.origin));
 	let fVisa = $state(untrack(() => filters.visa));
+	let fConsulate = $state(untrack(() => filters.consulate));
 
 	$effect(() => {
 		fDest = filters.dest;
 		fOrigin = filters.origin;
 		fVisa = filters.visa;
+		fConsulate = filters.consulate;
 	});
 
-	const hasFilters = $derived(!!(filters.dest || filters.origin || filters.visa));
+	const hasFilters = $derived(!!(filters.dest || filters.origin || filters.visa || filters.consulate));
+
+	// The stats endpoint returns an array of period rows (one per month
+	// bucket). Derive the latest period for headline display, matching the
+	// tools app /processing-tracker pattern.
+	const latestStat = $derived.by<VisaProcessingStats | null>(() => {
+		if (stats.length === 0) return null;
+		return [...stats].sort(
+			(a, b) => new Date(b.period_start).getTime() - new Date(a.period_start).getTime()
+		)[0];
+	});
+
+	const totalSamples = $derived(stats.reduce((sum, s) => sum + s.sample_count, 0));
 
 	const trendData = $derived(
 		trend
@@ -43,11 +58,11 @@
 	);
 
 	const statCards = $derived([
-		{ key: 'avg_days', label: t('visa_timelines.avg_days', 'Average'), value: stats?.avg_days },
-		{ key: 'median_days', label: t('visa_timelines.median_days', 'Median'), value: stats?.median_days },
-		{ key: 'p10_days', label: t('visa_timelines.p10_days', 'Fastest (P10)'), value: stats?.p10_days },
-		{ key: 'p90_days', label: t('visa_timelines.p90_days', 'Slowest (P90)'), value: stats?.p90_days },
-		{ key: 'sample_count', label: t('visa_timelines.sample_count', 'Samples'), value: stats?.sample_count }
+		{ key: 'avg_days', label: t('visa_timelines.avg_days', 'Average'), value: latestStat?.avg_days },
+		{ key: 'median_days', label: t('visa_timelines.median_days', 'Median'), value: latestStat?.median_days },
+		{ key: 'p10_days', label: t('visa_timelines.p10_days', 'Fastest (P10)'), value: latestStat?.p10_days },
+		{ key: 'p90_days', label: t('visa_timelines.p90_days', 'Slowest (P90)'), value: latestStat?.p90_days },
+		{ key: 'sample_count', label: t('visa_timelines.sample_count', 'Samples'), value: totalSamples }
 	]);
 
 	function applyFilters(e: SubmitEvent) {
@@ -56,13 +71,22 @@
 		if (fDest.trim()) qs.set('dest', fDest.trim());
 		if (fOrigin.trim()) qs.set('origin', fOrigin.trim());
 		if (fVisa.trim()) qs.set('visa', fVisa.trim());
+		if (fConsulate.trim()) qs.set('consulate', fConsulate.trim());
 		const q = qs.toString();
-		window.location.href = `/visa-timelines${q ? `?${q}` : ''}`;
+		goto(`/visa-timelines${q ? `?${q}` : ''}`);
 	}
 
 	function fmtDays(v: number | null | undefined): string {
 		if (v == null) return '—';
 		return `${Math.round(v)} ${t('visa_timelines.days', 'days')}`;
+	}
+
+	function fmtDate(iso: string): string {
+		try {
+			return new Date(iso).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+		} catch {
+			return iso;
+		}
 	}
 
 	function countryName(id: string): string {
@@ -112,7 +136,7 @@
 			<div class="mb-3 flex items-center gap-2 text-sm font-medium text-[var(--color-text)]">
 				<Filter size={15} /> {t('visa_timelines.filters', 'Filters')}
 			</div>
-			<div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+			<div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
 				<div class="flex flex-col gap-1">
 					<label for="f-dest" class="text-xs text-[var(--color-text-subtle)]">
 						{t('visa_timelines.destination', 'Destination')}
@@ -141,6 +165,12 @@
 					</label>
 					<input id="f-visa" type="text" bind:value={fVisa} class={inputClass} placeholder="e.g. student" />
 				</div>
+				<div class="flex flex-col gap-1">
+					<label for="f-consulate" class="text-xs text-[var(--color-text-subtle)]">
+						{t('visa_timelines.consulate', 'Consulate')}
+					</label>
+					<input id="f-consulate" type="text" bind:value={fConsulate} class={inputClass} placeholder="e.g. Lagos" />
+				</div>
 			</div>
 			<div class="mt-3 flex items-center justify-end gap-2">
 				{#if hasFilters}
@@ -164,7 +194,7 @@
 			<div class="rounded-[var(--radius)] border border-[var(--color-danger)]/30 bg-[var(--color-danger)]/10 px-4 py-3 text-sm text-[var(--color-danger)]">
 				{t('visa_timelines.load_error', 'Could not load statistics. Please try again later.')}
 			</div>
-		{:else if !stats || stats.sample_count === 0}
+		{:else if !latestStat}
 			<EmptyState
 				icon={CalendarClock}
 				title={t('visa_timelines.empty_title', 'No data yet')}
@@ -194,6 +224,37 @@
 					{#if filters.dest}<span class="rounded-full bg-[var(--color-surface-subtle)] px-2 py-0.5">{countryName(filters.dest)}</span>{/if}
 					{#if filters.origin}<span class="rounded-full bg-[var(--color-surface-subtle)] px-2 py-0.5">{countryName(filters.origin)}</span>{/if}
 					{#if filters.visa}<span class="rounded-full bg-[var(--color-surface-subtle)] px-2 py-0.5">{filters.visa}</span>{/if}
+					{#if filters.consulate}<span class="rounded-full bg-[var(--color-surface-subtle)] px-2 py-0.5">{filters.consulate}</span>{/if}
+				</div>
+			{/if}
+
+			<!-- All periods table -->
+			{#if stats.length > 1}
+				<div class="overflow-x-auto rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)]">
+					<table class="w-full text-sm">
+						<thead>
+							<tr class="border-b border-[var(--color-border)] text-left text-xs text-[var(--color-text-subtle)]">
+								<th class="py-2 pr-4 font-medium">{t('visa_timelines.period', 'Period')}</th>
+								<th class="py-2 pr-4 font-medium">{t('visa_timelines.avg_days', 'Average')}</th>
+								<th class="py-2 pr-4 font-medium">{t('visa_timelines.median_days', 'Median')}</th>
+								<th class="py-2 pr-4 font-medium">{t('visa_timelines.p10_days', 'p10')}</th>
+								<th class="py-2 pr-4 font-medium">{t('visa_timelines.p90_days', 'p90')}</th>
+								<th class="py-2 font-medium">{t('visa_timelines.sample_count', 'Samples')}</th>
+							</tr>
+						</thead>
+						<tbody>
+							{#each [...stats].sort((a, b) => new Date(b.period_start).getTime() - new Date(a.period_start).getTime()) as s (s.period_start + (s.consulate ?? ''))}
+								<tr class="border-b border-[var(--color-border)]/50">
+									<td class="py-2 pr-4 text-[var(--color-text)]">{fmtDate(s.period_start)}</td>
+									<td class="py-2 pr-4 text-[var(--color-text)]">{fmtDays(s.avg_days)}</td>
+									<td class="py-2 pr-4 text-[var(--color-text)]">{fmtDays(s.median_days)}</td>
+									<td class="py-2 pr-4 text-[var(--color-success)]">{fmtDays(s.p10_days)}</td>
+									<td class="py-2 pr-4 text-[var(--color-warning)]">{fmtDays(s.p90_days)}</td>
+									<td class="py-2 text-[var(--color-text-subtle)]">{s.sample_count}</td>
+								</tr>
+							{/each}
+						</tbody>
+					</table>
 				</div>
 			{/if}
 

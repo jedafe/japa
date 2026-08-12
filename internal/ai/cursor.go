@@ -270,7 +270,7 @@ func (p *CursorProvider) createAgent(ctx context.Context, prompt string) (cursor
 	}
 
 	endpoint := p.baseURL + "/agents"
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
+	httpReq, err := newValidatedHTTPRequest(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
 		return cursorCreateAgentResponse{}, fmt.Errorf("cursor: creating request: %w", err)
 	}
@@ -279,7 +279,7 @@ func (p *CursorProvider) createAgent(ctx context.Context, prompt string) (cursor
 	// Cursor uses Basic auth: API key as username, empty password.
 	httpReq.SetBasicAuth(p.apiKey, "")
 
-	resp, err := p.httpClient.Do(httpReq)
+	resp, err := p.httpClient.Do(httpReq) // #nosec G704 -- endpoint validated by newValidatedHTTPRequest
 	if err != nil {
 		return cursorCreateAgentResponse{}, fmt.Errorf("cursor: request failed: %w", err)
 	}
@@ -305,14 +305,14 @@ func (p *CursorProvider) createAgent(ctx context.Context, prompt string) (cursor
 // getRun sends GET /v1/agents/{id}/runs/{runId} to poll the run status.
 func (p *CursorProvider) getRun(ctx context.Context, agentID, runID string) (cursorRun, error) {
 	endpoint := fmt.Sprintf("%s/agents/%s/runs/%s", p.baseURL, agentID, runID)
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	httpReq, err := newValidatedHTTPRequest(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return cursorRun{}, fmt.Errorf("cursor: creating poll request: %w", err)
 	}
 
 	httpReq.SetBasicAuth(p.apiKey, "")
 
-	resp, err := p.httpClient.Do(httpReq)
+	resp, err := p.httpClient.Do(httpReq) // #nosec G704 -- endpoint validated by newValidatedHTTPRequest
 	if err != nil {
 		return cursorRun{}, fmt.Errorf("cursor: poll request failed: %w", err)
 	}
@@ -366,7 +366,7 @@ func (p *CursorProvider) FetchModels(ctx context.Context) ([]ModelInfo, error) {
 	}
 
 	endpoint := p.baseURL + "/models"
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	httpReq, err := newValidatedHTTPRequest(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return nil, fmt.Errorf("cursor: creating models request: %w", err)
 	}

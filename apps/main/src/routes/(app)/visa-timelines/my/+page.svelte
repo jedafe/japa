@@ -425,7 +425,7 @@
 															disabled={editSaving}
 															class="rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1 text-xs font-medium text-[var(--color-primary-contrast)] disabled:opacity-50"
 														>
-															{t('common.submitting', 'Saving…') === 'Submitting…' && !editSaving ? t('common.save', 'Save') : t('common.submitting', 'Saving…')}
+															{#if editSaving}{t('common.submitting', 'Saving…')}{:else}{t('common.save', 'Save')}{/if}
 														</button>
 														<button
 															type="button"

@@ -1,25 +1,50 @@
 <script lang="ts">
-	// /tools/visa-routes — admin HITL review queue for AI-generated visa route guides.
+	// /tools/visa-routes — admin management page for visa route data.
+	// Full CRUD: create, edit, deactivate (soft-delete), approve (HITL), generate (AI draft).
+	// Ref: §90 (Visa Route Comparison), ADR-098, ADR-088 (Universal AI content generation).
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
+	import { Modal } from '$lib/components/ui/modal';
+	import { Button } from '$lib/components/ui/button';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
-	import { Eye, CheckCircle } from 'lucide-svelte';
+	import { Eye, CheckCircle, Sparkles, Trash2 } from 'lucide-svelte';
 	import type { ActionItem } from '$lib/components/ui/data-table';
-	import { visaRoutesAdminApi } from '$lib/api';
+	import { visaRoutesAdminApi, api } from '$lib/api';
 
-	type VisaRouteItem = {
+	// RouteDTO — matches the backend response shape (internal/visaroutes/service.go).
+	type VisaRoute = {
+		id: string;
+		destination_space_id: string;
+		destination_space_name?: string;
+		destination_space_code?: string;
+		visa_category: string;
+		name: string;
+		slug: string;
+		eligibility_summary?: string;
+		requirements?: Record<string, unknown> | null;
+		typical_fee_usd?: number | null;
+		path_to_pr?: string;
+		renewal_terms?: string;
+		restrictions?: string;
+		gov_source_url: string;
+		source_url_last_checked?: string;
+		status: string;
+		is_active: boolean;
+		ai_generated: boolean;
+		ai_model?: string;
+		ai_prompt_hash?: string;
+		hitl_reviewed_by?: string;
+		hitl_reviewed_at?: string;
+		hitl_review_notes?: string;
+		is_japabot_indexed: boolean;
+		created_at: string;
+		updated_at: string;
+	};
+
+	// Destination option — for the generate modal's destination dropdown.
+	type GeoSpaceOption = {
 		id: string;
 		name: string;
-		origin_country: string;
-		dest_country: string;
-		visa_type: string;
-		status: string;
-		ai_generated: boolean;
-		summary?: string;
-		requirements?: string;
-		processing_time?: string;
-		cost?: string;
-		updated_at?: string;
 	};
 
 	const canManage = $derived(hasPermission('visa_routes.manage'));
@@ -28,8 +53,61 @@
 	let entityController = $state<EntityPageController | undefined>(undefined);
 	let pageError = $state('');
 	let acting = $state(false);
+	let deleting = $state(false);
 
-	async function approveItem(item: VisaRouteItem) {
+	// ── Generate modal state ────────────────────────────────────────────────
+	let showGenerateModal = $state(false);
+	let generateDestSpaceId = $state('');
+	let generateVisaCategory = $state('');
+	let destinations = $state<GeoSpaceOption[]>([]);
+	let loadingDestinations = $state(false);
+
+	async function openGenerate() {
+		generateDestSpaceId = '';
+		generateVisaCategory = '';
+		showGenerateModal = true;
+		// Fetch destination countries for the dropdown (Rule 16 — no hardcoded data).
+		if (destinations.length === 0) {
+			loadingDestinations = true;
+			try {
+				const result = await api<GeoSpaceOption[]>('/spaces?level=country');
+				if (result.ok) {
+					destinations = result.data ?? [];
+				}
+			} catch {
+				// Best-effort — modal still works with manual UUID entry.
+			} finally {
+				loadingDestinations = false;
+			}
+		}
+	}
+
+	async function confirmGenerate() {
+		if (!generateDestSpaceId) {
+			pageError = t('app.tools.dest_required', 'Destination is required');
+			return;
+		}
+		acting = true;
+		pageError = '';
+		try {
+			const result = await visaRoutesAdminApi.generate({
+				destination_space_id: generateDestSpaceId,
+				visa_category: generateVisaCategory || undefined
+			});
+			if (result.ok) {
+				showGenerateModal = false;
+				entityController?.reload();
+			} else {
+				pageError = result.error ?? t('common.error', 'An error occurred');
+			}
+		} catch {
+			pageError = t('common.error', 'An error occurred');
+		} finally {
+			acting = false;
+		}
+	}
+
+	async function approveItem(item: VisaRoute) {
 		acting = true;
 		pageError = '';
 		try {
@@ -46,41 +124,120 @@
 		}
 	}
 
+	// ── Delete confirm modal ────────────────────────────────────────────────
+	let showDeleteModal = $state(false);
+	let pendingDeleteId = $state('');
+
+	function openDelete(row: VisaRoute) {
+		pendingDeleteId = row.id;
+		showDeleteModal = true;
+	}
+
+	async function confirmDelete() {
+		if (!pendingDeleteId || deleting) return;
+		deleting = true;
+		pageError = '';
+		try {
+			const result = await visaRoutesAdminApi.delete(pendingDeleteId);
+			if (result.ok) {
+				showDeleteModal = false;
+				pendingDeleteId = '';
+				entityController?.reload();
+			} else {
+				pageError = result.error ?? t('common.error', 'An error occurred');
+			}
+		} catch {
+			pageError = t('common.error', 'An error occurred');
+		} finally {
+			deleting = false;
+		}
+	}
+
 	// ── Row actions ─────────────────────────────────────────────────────────
 	const rowActions = $derived.by<ActionItem[]>(() => {
 		const acts: ActionItem[] = [
-			{ label: t('common.view', 'View'), icon: Eye, onclick: (_row: VisaRouteItem, ctx) => ctx?.openView(_row) }
+			{ label: t('common.view', 'View'), icon: Eye, onclick: (_row: VisaRoute, ctx) => ctx?.openView(_row) }
 		];
 		if (canManage) {
 			acts.push({
 				label: t('common.approve', 'Approve'),
 				icon: CheckCircle,
 				onclick: approveItem,
-				show: () => true
+				show: (row: VisaRoute) => row.status !== 'published'
+			});
+			acts.push({
+				label: t('common.deactivate', 'Deactivate'),
+				icon: Trash2,
+				onclick: openDelete,
+				variant: 'destructive',
+				show: (row: VisaRoute) => row.is_active
 			});
 		}
 		return acts;
 	});
 
-	// `fields` is required by EntityPageConfig; readonly page so the form is never shown, but kept for shape completeness.
+	// ── Form fields (drives EntityForm for create/edit) ─────────────────────
 	const fields: FieldDef[] = [
 		{ key: 'name', label: t('app.tools.col_name', 'Name'), type: 'text' },
-		{ key: 'origin_country', label: t('app.tools.col_origin_country', 'Origin Country'), type: 'text' },
-		{ key: 'dest_country', label: t('app.tools.col_dest_country', 'Destination Country'), type: 'text' },
-		{ key: 'visa_type', label: t('app.tools.col_visa_type', 'Visa Type'), type: 'text' },
-		{ key: 'summary', label: t('app.tools.col_summary', 'Summary'), type: 'textarea' }
+		{ key: 'visa_category', label: t('app.tools.col_visa_type', 'Visa Category'), type: 'text' },
+		{ key: 'destination_space_id', label: t('app.tools.col_dest_country', 'Destination Space ID'), type: 'text' },
+		{ key: 'slug', label: t('app.tools.col_slug', 'Slug'), type: 'text' },
+		{ key: 'eligibility_summary', label: t('app.tools.col_summary', 'Eligibility Summary'), type: 'textarea' },
+		{ key: 'gov_source_url', label: t('app.tools.col_gov_source_url', 'Government Source URL'), type: 'url' },
+		{ key: 'typical_fee_usd', label: t('app.tools.col_typical_fee', 'Typical Fee (USD)'), type: 'number' },
+		{ key: 'path_to_pr', label: t('app.tools.col_path_to_pr', 'Path to PR'), type: 'textarea' },
+		{ key: 'renewal_terms', label: t('app.tools.col_renewal_terms', 'Renewal Terms'), type: 'textarea' },
+		{ key: 'restrictions', label: t('app.tools.col_restrictions', 'Restrictions'), type: 'textarea' },
+		{
+			key: 'status',
+			label: t('app.tools.col_status', 'Status'),
+			type: 'select',
+			options: [
+				{ value: 'draft', label: 'Draft' },
+				{ value: 'ai_draft', label: 'AI Draft' },
+				{ value: 'pending', label: 'Pending' },
+				{ value: 'published', label: 'Published' },
+				{ value: 'rejected', label: 'Rejected' }
+			]
+		},
+		{ key: 'is_active', label: t('app.tools.col_is_active', 'Active'), type: 'checkbox' }
+	];
+
+	// ── Filters ─────────────────────────────────────────────────────────────
+	const statusFilterOptions = [
+		{ value: '', label: t('common.all', 'All') },
+		{ value: 'draft', label: 'Draft' },
+		{ value: 'ai_draft', label: 'AI Draft' },
+		{ value: 'pending', label: 'Pending' },
+		{ value: 'published', label: 'Published' },
+		{ value: 'rejected', label: 'Rejected' }
 	];
 
 	const config = $derived<EntityPageConfig>({
-		title: t('app.tools.visa_routes_heading', 'Visa Routes Review Queue'),
-		description: t('app.tools.visa_routes_desc', 'Review and approve AI-generated visa route guides'),
-		readonly: true,
+		title: t('app.tools.visa_routes_heading', 'Visa Routes Management'),
+		description: t('app.tools.visa_routes_desc', 'Manage visa route data — eligibility, fees, path to PR, and renewal terms'),
+		createLabel: t('common.create', 'Create'),
+		createPermission: 'visa_routes.manage',
+		editPermission: 'visa_routes.manage',
+		deletePermission: 'visa_routes.manage',
 		pageSize: 25,
+		filters: [
+			{ key: 'status', label: t('app.tools.col_status', 'Status'), options: statusFilterOptions }
+		],
 		columns: [
 			{ key: 'name', label: t('app.tools.col_name', 'Name'), sortable: true },
-			{ key: 'origin_country', label: t('app.tools.col_origin_country', 'Origin'), sortable: true },
-			{ key: 'dest_country', label: t('app.tools.col_dest_country', 'Destination'), sortable: true },
-			{ key: 'visa_type', label: t('app.tools.col_visa_type', 'Visa Type'), sortable: true },
+			{
+				key: 'destination_space_name',
+				label: t('app.tools.col_dest_country', 'Destination'),
+				sortable: true,
+				render: (value: string) => value || '—'
+			},
+			{
+				key: 'visa_category',
+				label: t('app.tools.col_visa_type', 'Visa Category'),
+				sortable: true,
+				render: (value: string) => value || '—'
+			},
 			{
 				key: 'status',
 				label: t('app.tools.col_status', 'Status'),
@@ -91,24 +248,66 @@
 				key: 'ai_generated',
 				label: t('app.tools.col_ai_generated', 'AI Generated'),
 				render: (value: boolean) => (value ? t('common.yes', 'Yes') : t('common.no', 'No'))
+			},
+			{
+				key: 'is_active',
+				label: t('app.tools.col_is_active', 'Active'),
+				render: (value: boolean) => (value ? t('common.yes', 'Yes') : t('common.no', 'No'))
+			},
+			{
+				key: 'updated_at',
+				label: t('app.tools.col_updated_at', 'Updated'),
+				sortable: true,
+				render: (value: string) => (value ? new Date(value).toLocaleDateString() : '—')
 			}
 		],
 		actions: rowActions,
 		fields,
-		load: async () => {
-			const result = await visaRoutesAdminApi.list();
+		load: async (params) => {
+			// Server-side pagination — pass page/limit/q/status to the backend.
+			// Ref: geo-aware-tool-pattern.md (admin list must filter+sort+paginate).
+			const queryParts: string[] = [];
+			queryParts.push(`page=${params.page ?? 1}`);
+			queryParts.push(`limit=${params.pageSize ?? 25}`);
+			if (params.q) queryParts.push(`q=${encodeURIComponent(params.q)}`);
+			if (params.sort) {
+				queryParts.push(`sort=${encodeURIComponent(params.sort)}`);
+			}
+			if (params.filter?.status) {
+				queryParts.push(`status=${encodeURIComponent(params.filter.status)}`);
+			}
+			const queryString = queryParts.join('&');
+
+			const result = await visaRoutesAdminApi.listRaw(queryString);
 			if (result.ok) {
-				const data = (result.data as VisaRouteItem[]) ?? [];
-				return { data, total: data.length, totalPages: 1 };
+				const data = (result.data.data as VisaRoute[]) ?? [];
+				const total = result.data.pagination?.total ?? data.length;
+				const totalPages = Math.max(1, Math.ceil(total / (params.pageSize ?? 25)));
+				return { data, total, totalPages };
 			}
 			throw new Error(result.error ?? t('common.error', 'An error occurred'));
+		},
+		create: async (body) => {
+			const result = await visaRoutesAdminApi.create(body);
+			if (result.ok) return { ok: true };
+			return { ok: false, error: result.error };
+		},
+		update: async (id, body) => {
+			const result = await visaRoutesAdminApi.update(id, body);
+			if (result.ok) return { ok: true };
+			return { ok: false, error: result.error };
+		},
+		remove: async (id) => {
+			const result = await visaRoutesAdminApi.delete(id);
+			if (result.ok) return { ok: true };
+			return { ok: false, error: result.error };
 		},
 		viewSnippet: VisaRouteView
 	});
 </script>
 
 <svelte:head>
-	<title>{t('app.tools.visa_routes_page_title', 'Visa Routes Review Queue — JapaConnect Admin')}</title>
+	<title>{t('app.tools.visa_routes_page_title', 'Visa Routes Management — JapaConnect Admin')}</title>
 </svelte:head>
 
 {#if pageError}
@@ -120,38 +319,162 @@
 	</div>
 {/if}
 
+<div class="mb-4 flex justify-end">
+	{#if canManage}
+		<Button onclick={openGenerate}>
+			<Sparkles size={16} />
+			{t('app.tools.generate', 'Generate')}
+		</Button>
+	{/if}
+</div>
+
 <EntityPage {config} bind:controller={entityController} />
 
+<!-- ── Generate modal ────────────────────────────────────────────────────── -->
+<Modal bind:open={showGenerateModal} title={t('app.tools.generate_visa_route', 'Generate Visa Route Draft')}>
+	<div class="space-y-4">
+		<div>
+			<label for="gen-dest" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('app.tools.col_dest_country', 'Destination Country')}</label>
+			{#if loadingDestinations}
+				<p class="text-sm" style="color: var(--color-muted)">{t('common.loading', 'Loading...')}</p>
+			{:else if destinations.length > 0}
+				<select
+					id="gen-dest"
+					class="w-full rounded-lg border p-3 text-sm"
+					style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+					bind:value={generateDestSpaceId}
+				>
+					<option value="">{t('common.select', 'Select...')}</option>
+					{#each destinations as dest (dest.id)}
+						<option value={dest.id}>{dest.name}</option>
+					{/each}
+				</select>
+			{:else}
+				<input
+					id="gen-dest"
+					class="w-full rounded-lg border p-3 text-sm"
+					style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+					bind:value={generateDestSpaceId}
+					placeholder={t('app.tools.dest_space_id_placeholder', 'Destination space UUID')}
+				/>
+			{/if}
+		</div>
+		<div>
+			<label for="gen-visa-cat" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('app.tools.col_visa_category', 'Visa Category (optional)')}</label>
+			<input
+				id="gen-visa-cat"
+				class="w-full rounded-lg border p-3 text-sm"
+				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+				bind:value={generateVisaCategory}
+				placeholder={t('app.tools.visa_category_placeholder', 'e.g. work, student, family')}
+			/>
+		</div>
+	</div>
+	<div class="mt-4 flex justify-end gap-2">
+		<Button variant="ghost" onclick={() => (showGenerateModal = false)}>{t('common.cancel', 'Cancel')}</Button>
+		<Button onclick={confirmGenerate} disabled={acting || !generateDestSpaceId}>
+			{acting ? t('app.tools.generating', 'Generating...') : t('app.tools.generate', 'Generate')}
+		</Button>
+	</div>
+</Modal>
+
+<!-- ── Delete confirm modal ──────────────────────────────────────────────── -->
+<Modal bind:open={showDeleteModal} title={t('app.tools.deactivate_visa_route', 'Deactivate Visa Route')}>
+	<p class="text-sm" style="color: var(--color-foreground)">
+		{t('app.tools.deactivate_confirm', 'Are you sure you want to deactivate this visa route? It will be hidden from public listings.')}
+	</p>
+	<div class="mt-4 flex justify-end gap-2">
+		<Button variant="ghost" onclick={() => (showDeleteModal = false)}>{t('common.cancel', 'Cancel')}</Button>
+		<Button variant="destructive" onclick={confirmDelete} disabled={deleting}>
+			{deleting ? t('common.deleting', 'Deleting...') : t('common.deactivate', 'Deactivate')}
+		</Button>
+	</div>
+</Modal>
+
 <!-- ── View slide-over body ──────────────────────────────────────────────── -->
-{#snippet VisaRouteView({ row }: { row: VisaRouteItem })}
+{#snippet VisaRouteView({ row }: { row: VisaRoute })}
 	<div class="space-y-4">
 		<div>
 			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.tools.col_name', 'Name')}</p>
 			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.name}</p>
 		</div>
 		<div>
-			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.tools.col_origin_country', 'Origin Country')}</p>
-			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.origin_country || '—'}</p>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.tools.col_dest_country', 'Destination')}</p>
+			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.destination_space_name || row.destination_space_id}</p>
 		</div>
 		<div>
-			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.tools.col_dest_country', 'Destination Country')}</p>
-			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.dest_country || '—'}</p>
-		</div>
-		<div>
-			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.tools.col_visa_type', 'Visa Type')}</p>
-			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.visa_type || '—'}</p>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.tools.col_visa_type', 'Visa Category')}</p>
+			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.visa_category || '—'}</p>
 		</div>
 		<div>
 			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.tools.col_status', 'Status')}</p>
 			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.status || '—'}</p>
 		</div>
 		<div>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.tools.col_is_active', 'Active')}</p>
+			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.is_active ? t('common.yes', 'Yes') : t('common.no', 'No')}</p>
+		</div>
+		<div>
 			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.tools.col_ai_generated', 'AI Generated')}</p>
 			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.ai_generated ? t('common.yes', 'Yes') : t('common.no', 'No')}</p>
 		</div>
+		{#if row.ai_model}
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.tools.col_ai_model', 'AI Model')}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.ai_model}</p>
+			</div>
+		{/if}
+		{#if row.eligibility_summary}
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.tools.col_summary', 'Eligibility Summary')}</p>
+				<p class="mt-1 text-sm" style="color: var(--color-foreground)">{row.eligibility_summary}</p>
+			</div>
+		{/if}
+		{#if row.typical_fee_usd != null}
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.tools.col_typical_fee', 'Typical Fee')}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">${row.typical_fee_usd}</p>
+			</div>
+		{/if}
+		{#if row.path_to_pr}
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.tools.col_path_to_pr', 'Path to PR')}</p>
+				<p class="mt-1 text-sm" style="color: var(--color-foreground)">{row.path_to_pr}</p>
+			</div>
+		{/if}
+		{#if row.renewal_terms}
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.tools.col_renewal_terms', 'Renewal Terms')}</p>
+				<p class="mt-1 text-sm" style="color: var(--color-foreground)">{row.renewal_terms}</p>
+			</div>
+		{/if}
+		{#if row.restrictions}
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.tools.col_restrictions', 'Restrictions')}</p>
+				<p class="mt-1 text-sm" style="color: var(--color-foreground)">{row.restrictions}</p>
+			</div>
+		{/if}
+		{#if row.gov_source_url}
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.tools.col_gov_source_url', 'Government Source')}</p>
+				<a href={row.gov_source_url} target="_blank" rel="noopener noreferrer" class="mt-1 text-sm text-blue-500 hover:underline" style="color: var(--color-primary)">{row.gov_source_url}</a>
+			</div>
+		{/if}
+		{#if row.hitl_reviewed_by}
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.tools.col_hitl_reviewed_by', 'HITL Reviewed By')}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.hitl_reviewed_by}</p>
+			</div>
+		{/if}
+		{#if row.hitl_reviewed_at}
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.tools.col_hitl_reviewed_at', 'Reviewed At')}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{new Date(row.hitl_reviewed_at).toLocaleString()}</p>
+			</div>
+		{/if}
 		<div>
-			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.tools.col_summary', 'Summary')}</p>
-			<p class="mt-1 text-sm" style="color: var(--color-foreground)">{row.summary || '—'}</p>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.tools.col_updated_at', 'Updated')}</p>
+			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.updated_at ? new Date(row.updated_at).toLocaleString() : '—'}</p>
 		</div>
 	</div>
 {/snippet}

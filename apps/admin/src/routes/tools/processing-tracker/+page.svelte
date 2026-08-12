@@ -1,5 +1,6 @@
 <script lang="ts">
 	// /tools/processing-tracker — management page for user-submitted visa processing timeline entries.
+	// Ref: japaconnect-engineering/sections/83-visa-timeline-tracker.md (ADR-091)
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import { Modal } from '$lib/components/ui/modal';
 	import { Button } from '$lib/components/ui/button';
@@ -9,14 +10,36 @@
 	import type { ActionItem } from '$lib/components/ui/data-table';
 	import { processingTrackerAdminApi } from '$lib/api';
 
-	type TrackerItem = {
+	// TimelineDTO shape from GET /admin/visa-timelines (§83). The backend
+	// returns the full TimelineDTO with joined milestones; we derive the
+	// admin-facing columns from it.
+	type Milestone = {
 		id: string;
-		user_email: string;
-		dest_country: string;
+		milestone_type: string;
+		occurred_at: string;
+		notes?: string;
+	};
+
+	type TimelineDTO = {
+		id: string;
+		user_id: string;
+		origin_space_id?: string;
+		destination_space_id: string;
 		visa_category: string;
-		submitted_date?: string;
-		status: string;
-		processing_days?: number;
+		consulate?: string;
+		application_method?: string;
+		outcome?: string;
+		is_shared: boolean;
+		anonymised_at?: string;
+		created_at: string;
+		updated_at: string;
+		milestones?: Milestone[];
+	};
+
+	// AdminListResponse is the envelope from GET /admin/visa-timelines.
+	type AdminListResponse = {
+		data: TimelineDTO[];
+		pagination: { page: number; limit: number; total: number };
 	};
 
 	const canManage = $derived(hasPermission('visa_timeline.manage_any'));
@@ -25,10 +48,10 @@
 	let entityController = $state<EntityPageController | undefined>(undefined);
 	let pageError = $state('');
 	let acting = $state(false);
-	let actionTarget = $state<TrackerItem | null>(null);
+	let actionTarget = $state<TimelineDTO | null>(null);
 	let showDeleteModal = $state(false);
 
-	function openDelete(item: TrackerItem) {
+	function openDelete(item: TimelineDTO) {
 		actionTarget = item;
 		showDeleteModal = true;
 	}
@@ -52,10 +75,27 @@
 		}
 	}
 
+	// Derive processing days from the milestone span (earliest applied →
+	// latest decision/visa_issued), matching the backend RefreshStats logic.
+	function processingDays(tl: TimelineDTO): number | null {
+		const ms = tl.milestones ?? [];
+		const applied = ms
+			.filter((m) => m.milestone_type === 'applied')
+			.sort((a, b) => new Date(a.occurred_at).getTime() - new Date(b.occurred_at).getTime())[0];
+		const decision = ms
+			.filter((m) => m.milestone_type === 'decision' || m.milestone_type === 'visa_issued')
+			.sort((a, b) => new Date(b.occurred_at).getTime() - new Date(a.occurred_at).getTime())[0];
+		if (!applied || !decision) return null;
+		const days = Math.round(
+			(new Date(decision.occurred_at).getTime() - new Date(applied.occurred_at).getTime()) / 86400000
+		);
+		return days >= 0 ? days : null;
+	}
+
 	// ── Row actions ─────────────────────────────────────────────────────────
 	const rowActions = $derived.by<ActionItem[]>(() => {
 		const acts: ActionItem[] = [
-			{ label: t('common.view', 'View'), icon: Eye, onclick: (_row: TrackerItem, ctx) => ctx?.openView(_row) }
+			{ label: t('common.view', 'View'), icon: Eye, onclick: (_row: TimelineDTO, ctx) => ctx?.openView(_row) }
 		];
 		if (canManage) {
 			acts.push({
@@ -71,10 +111,9 @@
 
 	// `fields` is required by EntityPageConfig; readonly page so the form is never shown, but kept for shape completeness.
 	const fields: FieldDef[] = [
-		{ key: 'user_email', label: t('app.tools.col_user_email', 'User Email'), type: 'email' },
-		{ key: 'dest_country', label: t('app.tools.col_dest_country', 'Destination Country'), type: 'text' },
 		{ key: 'visa_category', label: t('app.tools.col_visa_category', 'Visa Category'), type: 'text' },
-		{ key: 'status', label: t('app.tools.col_status', 'Status'), type: 'text' }
+		{ key: 'destination_space_id', label: t('app.tools.col_dest_country', 'Destination'), type: 'text' },
+		{ key: 'outcome', label: t('app.tools.col_status', 'Status'), type: 'text' }
 	];
 
 	const config = $derived<EntityPageConfig>({
@@ -83,35 +122,57 @@
 		readonly: true,
 		pageSize: 25,
 		columns: [
-			{ key: 'user_email', label: t('app.tools.col_user_email', 'User Email'), sortable: true },
-			{ key: 'dest_country', label: t('app.tools.col_dest_country', 'Destination'), sortable: true },
 			{ key: 'visa_category', label: t('app.tools.col_visa_category', 'Visa Category'), sortable: true },
+			{ key: 'destination_space_id', label: t('app.tools.col_dest_country', 'Destination'), sortable: true },
 			{
-				key: 'submitted_date',
+				key: 'consulate',
+				label: t('app.tools.col_consulate', 'Consulate'),
+				sortable: true,
+				render: (value: string) => value || '—'
+			},
+			{
+				key: 'created_at',
 				label: t('app.tools.col_submitted_date', 'Submitted'),
 				sortable: true,
 				render: (value: string) => (value ? new Date(value).toLocaleDateString() : '—')
 			},
 			{
-				key: 'status',
+				key: 'outcome',
 				label: t('app.tools.col_status', 'Status'),
 				sortable: true,
-				render: (value: string) => value || '—'
+				render: (value: string) => value || 'pending'
+			},
+			{
+				key: 'is_shared',
+				label: t('app.tools.col_shared', 'Shared'),
+				sortable: true,
+				render: (value: boolean) => (value ? '✓' : '—')
 			},
 			{
 				key: 'processing_days',
 				label: t('app.tools.col_processing_days', 'Processing Days'),
 				sortable: true,
-				render: (value: number) => (value != null ? String(value) : '—')
+				render: (_value: unknown, row: TimelineDTO) => {
+					const d = processingDays(row);
+					return d != null ? String(d) : '—';
+				}
 			}
 		],
 		actions: rowActions,
 		fields,
-		load: async () => {
-			const result = await processingTrackerAdminApi.list();
+		load: async (params) => {
+			const qs = new URLSearchParams();
+			if (params.page) qs.set('page', String(params.page));
+			if (params.pageSize) qs.set('limit', String(params.pageSize));
+			if (params.q) qs.set('q', params.q);
+			if (params.sort) qs.set('sort', params.sort);
+			const result = await processingTrackerAdminApi.list(qs.toString());
 			if (result.ok) {
-				const data = (result.data as TrackerItem[]) ?? [];
-				return { data, total: data.length, totalPages: 1 };
+				const envelope = result.data as AdminListResponse;
+				const data = envelope?.data ?? [];
+				const total = envelope?.pagination?.total ?? data.length;
+				const totalPages = Math.max(1, Math.ceil(total / (params.pageSize || 25)));
+				return { data, total, totalPages };
 			}
 			throw new Error(result.error ?? t('common.error', 'An error occurred'));
 		},
@@ -145,8 +206,8 @@
 				class="rounded-lg border p-3 text-sm"
 				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
 			>
-				<p><strong>{actionTarget.user_email || '—'}</strong></p>
-				<p class="mt-1" style="color: var(--color-muted)">{actionTarget.dest_country || '—'} · {actionTarget.visa_category || '—'}</p>
+				<p><strong>{actionTarget.visa_category || '—'}</strong></p>
+				<p class="mt-1" style="color: var(--color-muted)">{actionTarget.destination_space_id || '—'} · {actionTarget.consulate || '—'}</p>
 			</div>
 		{/if}
 	</div>
@@ -159,31 +220,45 @@
 </Modal>
 
 <!-- ── View slide-over body ──────────────────────────────────────────────── -->
-{#snippet TrackerView({ row }: { row: TrackerItem })}
+{#snippet TrackerView({ row }: { row: TimelineDTO })}
 	<div class="space-y-4">
-		<div>
-			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.tools.col_user_email', 'User Email')}</p>
-			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.user_email || '—'}</p>
-		</div>
-		<div>
-			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.tools.col_dest_country', 'Destination Country')}</p>
-			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.dest_country || '—'}</p>
-		</div>
 		<div>
 			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.tools.col_visa_category', 'Visa Category')}</p>
 			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.visa_category || '—'}</p>
 		</div>
 		<div>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.tools.col_dest_country', 'Destination')}</p>
+			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.destination_space_id || '—'}</p>
+		</div>
+		<div>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.tools.col_consulate', 'Consulate')}</p>
+			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.consulate || '—'}</p>
+		</div>
+		<div>
 			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.tools.col_submitted_date', 'Submitted Date')}</p>
-			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.submitted_date ? new Date(row.submitted_date).toLocaleString() : '—'}</p>
+			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.created_at ? new Date(row.created_at).toLocaleString() : '—'}</p>
 		</div>
 		<div>
 			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.tools.col_status', 'Status')}</p>
-			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.status || '—'}</p>
+			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.outcome || 'pending'}</p>
+		</div>
+		<div>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.tools.col_shared', 'Shared')}</p>
+			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.is_shared ? '✓' : '—'}</p>
 		</div>
 		<div>
 			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.tools.col_processing_days', 'Processing Days')}</p>
-			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.processing_days != null ? String(row.processing_days) : '—'}</p>
+			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{processingDays(row) != null ? String(processingDays(row)) : '—'}</p>
 		</div>
+		{#if row.milestones && row.milestones.length > 0}
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.tools.col_milestones', 'Milestones')}</p>
+				<ul class="mt-1 space-y-1 text-sm" style="color: var(--color-foreground)">
+					{#each row.milestones as m (m.id)}
+						<li>{m.milestone_type.replace('_', ' ')} — {new Date(m.occurred_at).toLocaleDateString()}{#if m.notes} · {m.notes}{/if}</li>
+					{/each}
+				</ul>
+			</div>
+		{/if}
 	</div>
 {/snippet}
