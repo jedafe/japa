@@ -14,7 +14,8 @@
 //   - planning_group_checkins    — weekly progress check-ins
 //
 // Ref: japaconnect-engineering/sections/82-planning-groups.md
-//      japaconnect-engineering/adr/ADR-090-planning-groups.md
+//
+//	japaconnect-engineering/adr/ADR-090-planning-groups.md
 package planninggroups
 
 import (
@@ -43,21 +44,22 @@ func NewStore(database *db.DB) *Store {
 
 // PlanningGroup represents a single planning_groups row.
 type PlanningGroup struct {
-	ID                     pgtype.UUID
-	TenantID               pgtype.UUID
-	Name                   string
-	Description            *string
-	DestinationSpaceID     pgtype.UUID
-	VisaCategory           *string
-	TargetDepartureWindow  *string
-	TargetDepartureAt      pgtype.Timestamptz
-	MaxMembers             pgtype.Int4
-	IsOpenJoin             bool
-	OwnerID                pgtype.UUID
-	ExpiresAt              pgtype.Timestamptz
-	CreatedAt              pgtype.Timestamptz
-	UpdatedAt              pgtype.Timestamptz
-	DeletedAt              pgtype.Timestamptz
+	ID                    pgtype.UUID
+	TenantID              pgtype.UUID
+	Name                  string
+	Description           *string
+	DestinationSpaceID    pgtype.UUID
+	VisaCategory          *string
+	TargetDepartureWindow *string
+	TargetDepartureAt     pgtype.Timestamptz
+	MaxMembers            pgtype.Int4
+	IsOpenJoin            bool
+	OwnerID               pgtype.UUID
+	ExpiresAt             pgtype.Timestamptz
+	CreatedAt             pgtype.Timestamptz
+	UpdatedAt             pgtype.Timestamptz
+	DeletedAt             pgtype.Timestamptz
+	MemberCount           int64
 }
 
 // PlanningGroupMember represents a single planning_group_members row.
@@ -123,21 +125,51 @@ RETURNING id, tenant_id, name, description, destination_space_id, visa_category,
 	return g, nil
 }
 
+// GetMemberCount returns the number of members in a group.
+func (s *Store) GetMemberCount(ctx context.Context, groupID, tenantID pgtype.UUID) (int64, error) {
+	var count int64
+	err := s.pool.Reader.QueryRow(ctx, `
+SELECT COUNT(*) FROM planning_group_members
+WHERE group_id = $1 AND tenant_id = $2
+`, groupID, tenantID).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("planninggroups: get member count: %w", err)
+	}
+	return count, nil
+}
+
+// IsMember returns true if the user is a member of the planning group.
+func (s *Store) IsMember(ctx context.Context, groupID, userID, tenantID pgtype.UUID) (bool, error) {
+	var exists bool
+	err := s.pool.Reader.QueryRow(ctx, `
+SELECT EXISTS(SELECT 1 FROM planning_group_members
+WHERE group_id = $1 AND user_id = $2 AND tenant_id = $3)
+`, groupID, userID, tenantID).Scan(&exists)
+	if err != nil {
+		return false, fmt.Errorf("planninggroups: is member: %w", err)
+	}
+	return exists, nil
+}
+
 // GetGroup returns a single planning group by id (must not be soft-deleted).
+// Includes a member_count subquery.
 func (s *Store) GetGroup(ctx context.Context, id, tenantID pgtype.UUID) (PlanningGroup, error) {
 	const q = `
-SELECT id, tenant_id, name, description, destination_space_id, visa_category,
-       target_departure_window, target_departure_at, max_members, is_open_join,
-       owner_id, expires_at, created_at, updated_at, deleted_at
-FROM planning_groups
-WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
+SELECT g.id, g.tenant_id, g.name, g.description, g.destination_space_id, g.visa_category,
+       g.target_departure_window, g.target_departure_at, g.max_members, g.is_open_join,
+       g.owner_id, g.expires_at, g.created_at, g.updated_at, g.deleted_at,
+       COALESCE(m.cnt, 0) AS member_count
+FROM planning_groups g
+LEFT JOIN (SELECT group_id, COUNT(*) AS cnt FROM planning_group_members GROUP BY group_id) m
+  ON m.group_id = g.id
+WHERE g.id = $1 AND g.tenant_id = $2 AND g.deleted_at IS NULL
 `
 	var g PlanningGroup
 	err := s.pool.Reader.QueryRow(ctx, q, id, tenantID).Scan(
 		&g.ID, &g.TenantID, &g.Name, &g.Description, &g.DestinationSpaceID,
 		&g.VisaCategory, &g.TargetDepartureWindow, &g.TargetDepartureAt,
 		&g.MaxMembers, &g.IsOpenJoin, &g.OwnerID, &g.ExpiresAt,
-		&g.CreatedAt, &g.UpdatedAt, &g.DeletedAt,
+		&g.CreatedAt, &g.UpdatedAt, &g.DeletedAt, &g.MemberCount,
 	)
 	if err != nil {
 		if err == pgx.ErrNoRows {
@@ -150,11 +182,11 @@ WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
 
 // ListGroupsFilter holds the filter parameters for listing planning groups.
 type ListGroupsFilter struct {
-	TenantID            pgtype.UUID
-	DestinationSpaceID  pgtype.UUID // optional
-	VisaCategory        string      // optional
-	Limit               int32
-	Offset              int32
+	TenantID           pgtype.UUID
+	DestinationSpaceID pgtype.UUID // optional
+	VisaCategory       string      // optional
+	Limit              int32
+	Offset             int32
 }
 
 // ListGroups returns a paginated list of non-deleted planning groups,
@@ -198,12 +230,15 @@ func (s *Store) ListGroups(ctx context.Context, f ListGroupsFilter) ([]PlanningG
 	}
 
 	listQ := fmt.Sprintf(`
-SELECT id, tenant_id, name, description, destination_space_id, visa_category,
-       target_departure_window, target_departure_at, max_members, is_open_join,
-       owner_id, expires_at, created_at, updated_at, deleted_at
-FROM planning_groups
+SELECT g.id, g.tenant_id, g.name, g.description, g.destination_space_id, g.visa_category,
+       g.target_departure_window, g.target_departure_at, g.max_members, g.is_open_join,
+       g.owner_id, g.expires_at, g.created_at, g.updated_at, g.deleted_at,
+       COALESCE(m.cnt, 0) AS member_count
+FROM planning_groups g
+LEFT JOIN (SELECT group_id, COUNT(*) AS cnt FROM planning_group_members GROUP BY group_id) m
+  ON m.group_id = g.id
 WHERE %s
-ORDER BY created_at DESC
+ORDER BY g.created_at DESC
 LIMIT $%d OFFSET $%d
 `, whereClause, argIdx, argIdx+1)
 	args = append(args, limit, offset)
@@ -221,7 +256,7 @@ LIMIT $%d OFFSET $%d
 			&g.ID, &g.TenantID, &g.Name, &g.Description, &g.DestinationSpaceID,
 			&g.VisaCategory, &g.TargetDepartureWindow, &g.TargetDepartureAt,
 			&g.MaxMembers, &g.IsOpenJoin, &g.OwnerID, &g.ExpiresAt,
-			&g.CreatedAt, &g.UpdatedAt, &g.DeletedAt,
+			&g.CreatedAt, &g.UpdatedAt, &g.DeletedAt, &g.MemberCount,
 		); err != nil {
 			return nil, 0, fmt.Errorf("planninggroups: scan group: %w", err)
 		}
@@ -456,22 +491,23 @@ ORDER BY created_at ASC
 
 // UpdateMilestone updates the completed state of a milestone. When marking
 // completed, completed_at is stamped; when un-completing, it is cleared.
-func (s *Store) UpdateMilestone(ctx context.Context, milestoneID, tenantID pgtype.UUID, completed bool) error {
+// The milestone must belong to the given group and user (ownership check).
+func (s *Store) UpdateMilestone(ctx context.Context, milestoneID, groupID, userID, tenantID pgtype.UUID, completed bool) error {
 	var q string
 	if completed {
 		q = `
 UPDATE planning_group_milestones
 SET completed = true, completed_at = now()
-WHERE id = $1 AND tenant_id = $2
+WHERE id = $1 AND group_id = $2 AND user_id = $3 AND tenant_id = $4
 `
 	} else {
 		q = `
 UPDATE planning_group_milestones
 SET completed = false, completed_at = NULL
-WHERE id = $1 AND tenant_id = $2
+WHERE id = $1 AND group_id = $2 AND user_id = $3 AND tenant_id = $4
 `
 	}
-	cmd, err := s.pool.Writer.Exec(ctx, q, milestoneID, tenantID)
+	cmd, err := s.pool.Writer.Exec(ctx, q, milestoneID, groupID, userID, tenantID)
 	if err != nil {
 		return fmt.Errorf("planninggroups: update milestone: %w", err)
 	}
@@ -545,6 +581,120 @@ WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
 	}
 	if cmd.RowsAffected() == 0 {
 		return pgx.ErrNoRows
+	}
+	return nil
+}
+
+// AdminListGroups returns all planning groups for the admin review queue,
+// including soft-deleted ones, with member_count. Filters by tenant only.
+func (s *Store) AdminListGroups(ctx context.Context, tenantID pgtype.UUID) ([]PlanningGroup, error) {
+	const q = `
+SELECT g.id, g.tenant_id, g.name, g.description, g.destination_space_id, g.visa_category,
+       g.target_departure_window, g.target_departure_at, g.max_members, g.is_open_join,
+       g.owner_id, g.expires_at, g.created_at, g.updated_at, g.deleted_at,
+       COALESCE(m.cnt, 0) AS member_count
+FROM planning_groups g
+LEFT JOIN (SELECT group_id, COUNT(*) AS cnt FROM planning_group_members GROUP BY group_id) m
+  ON m.group_id = g.id
+WHERE g.tenant_id = $1
+ORDER BY g.created_at DESC
+`
+	rows, err := s.pool.Reader.Query(ctx, q, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("planninggroups: admin list groups: %w", err)
+	}
+	defer rows.Close()
+
+	var out []PlanningGroup
+	for rows.Next() {
+		var g PlanningGroup
+		if err := rows.Scan(
+			&g.ID, &g.TenantID, &g.Name, &g.Description, &g.DestinationSpaceID,
+			&g.VisaCategory, &g.TargetDepartureWindow, &g.TargetDepartureAt,
+			&g.MaxMembers, &g.IsOpenJoin, &g.OwnerID, &g.ExpiresAt,
+			&g.CreatedAt, &g.UpdatedAt, &g.DeletedAt, &g.MemberCount,
+		); err != nil {
+			return nil, fmt.Errorf("planninggroups: admin scan group: %w", err)
+		}
+		out = append(out, g)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("planninggroups: admin iterate groups: %w", err)
+	}
+	return out, nil
+}
+
+// ExpireGroups soft-deletes planning groups whose expires_at has passed.
+// Returns the number of groups expired. Called nightly by the
+// planning_group:expire Asynq task (§82, ADR-090).
+func (s *Store) ExpireGroups(ctx context.Context) (int64, error) {
+	cmd, err := s.pool.Writer.Exec(ctx, `
+UPDATE planning_groups
+SET deleted_at = now(), updated_at = now()
+WHERE expires_at IS NOT NULL
+  AND expires_at < now()
+  AND deleted_at IS NULL
+`)
+	if err != nil {
+		return 0, fmt.Errorf("planninggroups: expire groups: %w", err)
+	}
+	return cmd.RowsAffected(), nil
+}
+
+// ExpiringGroupOwner is used by SendCheckinReminders to identify members
+// who haven't checked in this week.
+type MemberWithoutCheckin struct {
+	GroupID  pgtype.UUID
+	UserID   pgtype.UUID
+	TenantID pgtype.UUID
+}
+
+// MembersWithoutWeeklyCheckin returns group members who haven't submitted
+// a check-in in the current week. Used by the planning_group:checkin_reminder
+// Asynq task (§82, ADR-090) to send weekly reminders.
+func (s *Store) MembersWithoutWeeklyCheckin(ctx context.Context) ([]MemberWithoutCheckin, error) {
+	const q = `
+SELECT m.group_id, m.user_id, m.tenant_id
+FROM planning_group_members m
+JOIN planning_groups g ON g.id = m.group_id AND g.deleted_at IS NULL
+WHERE NOT EXISTS (
+    SELECT 1 FROM planning_group_checkins c
+    WHERE c.group_id = m.group_id
+      AND c.user_id = m.user_id
+      AND c.tenant_id = m.tenant_id
+      AND c.created_at >= date_trunc('week', now())
+)
+`
+	rows, err := s.pool.Reader.Query(ctx, q)
+	if err != nil {
+		return nil, fmt.Errorf("planninggroups: members without checkin: %w", err)
+	}
+	defer rows.Close()
+
+	var out []MemberWithoutCheckin
+	for rows.Next() {
+		var m MemberWithoutCheckin
+		if err := rows.Scan(&m.GroupID, &m.UserID, &m.TenantID); err != nil {
+			return nil, fmt.Errorf("planninggroups: scan member without checkin: %w", err)
+		}
+		out = append(out, m)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("planninggroups: iterate members without checkin: %w", err)
+	}
+	return out, nil
+}
+
+// InviteMember inserts a membership row for an invited user. Used by the
+// POST /planning-groups/:id/invite endpoint (owner only, §82).
+func (s *Store) InviteMember(ctx context.Context, groupID, userID, tenantID pgtype.UUID) error {
+	_, err := s.pool.Writer.Exec(ctx, `
+INSERT INTO planning_group_members (group_id, user_id, tenant_id)
+VALUES ($1, $2, $3)
+ON CONFLICT (group_id, user_id, tenant_id) DO NOTHING
+`, groupID, userID, tenantID)
+	if err != nil {
+		return fmt.Errorf("planninggroups: invite member: %w", err)
 	}
 	return nil
 }

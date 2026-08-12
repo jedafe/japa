@@ -28,6 +28,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
+	"github.com/jedafe/japa/internal/clientip"
 	"github.com/jedafe/japa/internal/tenant"
 )
 
@@ -313,10 +314,14 @@ func (h *Handlers) HandleRedirect(w http.ResponseWriter, r *http.Request) {
 		sessionID = "anonymous"
 	}
 
-	// Record the click (fire-and-forget — don't block the redirect).
-	go func() {
-		_ = h.Service.RecordClick(r.Context(), code, sessionID)
-	}()
+	// Record the click via Asynq fire-and-forget (Rule 8). BUG-005 fix: the
+	// previous code spawned a goroutine using r.Context(), which is cancelled
+	// the moment the redirect response is written — the Valkey SET was racing
+	// with context cancellation and frequently dropped. Enqueuing a task
+	// decouples the click recording from the request lifecycle.
+	if err := h.Service.EnqueueRecordClick(code, sessionID, clientip.FromRequest(r), r.UserAgent()); err != nil {
+		slog.Warn("referral: enqueue record_click failed", "code", code, "error", err)
+	}
 
 	http.SetCookie(w, &http.Cookie{
 		Name:     "jc_ref",

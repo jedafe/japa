@@ -1549,6 +1549,82 @@ export interface ProfessionalProfile {
 	created_at: string;
 }
 
+/** GET /profiles/types — a professional profile type. */
+export interface ProfessionalProfileType {
+	id: string;
+	tenant_id: string;
+	name: string;
+	slug: string;
+	icon?: string | null;
+	field_group_id?: string | null;
+	is_system: boolean;
+	created_at: string;
+}
+
+/** GET /profiles/{id}/members — a professional profile member. */
+export interface ProfessionalProfileMember {
+	profile_id: string;
+	user_id: string;
+	role: string;
+	invited_by?: string | null;
+	joined_at: string;
+	username: string;
+	email: string;
+}
+
+/** GET /profiles/{id}/invitations — a professional profile invitation. */
+export interface ProfessionalProfileInvitation {
+	id: string;
+	profile_id: string;
+	email: string;
+	role: string;
+	invited_by?: string | null;
+	token: string;
+	expires_at: string;
+	accepted_at?: string | null;
+	created_at: string;
+}
+
+/** GET /profiles/{id}/relocations — a professional profile relocation. */
+export interface ProfessionalRelocation {
+	id: string;
+	tenant_id: string;
+	profile_id: string;
+	country: string;
+	city?: string | null;
+	status?: string | null;
+	year?: number | null;
+	created_at: string;
+	updated_at: string;
+}
+
+/** GET /profiles/{id}/documents — a professional profile document. */
+export interface ProfessionalDocument {
+	id: string;
+	tenant_id: string;
+	profile_id: string;
+	title: string;
+	document_type: string;
+	description?: string | null;
+	file_url?: string | null;
+	verified: boolean;
+	created_at: string;
+	updated_at: string;
+}
+
+/** GET /profiles/{id}/verifiers — a professional profile verifier. */
+export interface ProfessionalVerifier {
+	id: string;
+	tenant_id: string;
+	profile_id: string;
+	user_id: string;
+	role?: string | null;
+	status?: string | null;
+	created_at: string;
+	updated_at: string;
+	user_name: string;
+}
+
 /* ------------------------------------------------------------------ *
  * Page Builder — Section 27 (GET /pages/{slug})
  * ------------------------------------------------------------------ */
@@ -2425,6 +2501,8 @@ export interface PlanningGroup {
 	expires_at?: string;
 	created_at: string;
 	updated_at?: string;
+	member_count: number;
+	status: string;
 }
 
 export interface PlanningMilestone {

@@ -159,6 +159,13 @@ func (s *Store) ListActiveAlertsForCorridor(ctx context.Context, tenantID pgtype
 	})
 }
 
+// ListAllActiveAlertsForTenant returns all active alerts for a tenant that are
+// eligible for notification (last_triggered_at is null or > 24h ago). Used by
+// the remittance:check_alerts task to evaluate every corridor in one pass.
+func (s *Store) ListAllActiveAlertsForTenant(ctx context.Context, tenantID pgtype.UUID) ([]gen.RemittanceRateAlert, error) {
+	return s.queries.ListAllActiveAlertsForTenant(ctx, tenantID)
+}
+
 // MarkAlertTriggered sets last_triggered_at to now() for the given alert.
 func (s *Store) MarkAlertTriggered(ctx context.Context, id pgtype.UUID) error {
 	return s.queries.MarkAlertTriggered(ctx, id)

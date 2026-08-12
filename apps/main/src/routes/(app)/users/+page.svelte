@@ -29,11 +29,16 @@
 	let selectedProfileType = $state(untrack(() => data.profileType));
 	const searchPlaceholder = $derived(t('users.search_placeholder', 'Search people…'));
 
+	// User-account profile_type enum — fixed backend constraint per §02
+	// (validated in internal/users/handlers.go UpdateProfileType). These are
+	// NOT professional profile types (§33); they are the user-account-level
+	// types. 'professional' was previously listed here but is not a valid
+	// user profile_type value and has been removed.
 	const profileTypes = $derived([
 		{ value: '', label: t('users.profile_type_all', 'All') },
 		{ value: 'personal', label: t('users.profile_type_personal', 'Personal') },
-		{ value: 'professional', label: t('users.profile_type_professional', 'Professional') },
-		{ value: 'business', label: t('users.profile_type_business', 'Business') }
+		{ value: 'business', label: t('users.profile_type_business', 'Business') },
+		{ value: 'organisation', label: t('users.profile_type_organisation', 'Organisation') }
 	]);
 
 	function buildHref(pageNum: number): string {

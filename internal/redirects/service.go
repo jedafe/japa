@@ -131,7 +131,7 @@ func (s *Service) CreateRedirect(ctx context.Context, tenantID pgtype.UUID, sour
 		return gen.Redirect{}, ErrInvalidHTTPStatus
 	}
 	if !strings.HasPrefix(sourcePath, "/") {
-		return gen.Redirect{}, fmt.Errorf("source_path must start with /")
+		return gen.Redirect{}, ErrInvalidSourcePath
 	}
 	if err := validateTargetURL(targetURL); err != nil {
 		return gen.Redirect{}, err
@@ -152,7 +152,7 @@ func (s *Service) UpdateRedirect(ctx context.Context, id, tenantID pgtype.UUID, 
 		return gen.Redirect{}, ErrInvalidHTTPStatus
 	}
 	if !strings.HasPrefix(sourcePath, "/") {
-		return gen.Redirect{}, fmt.Errorf("source_path must start with /")
+		return gen.Redirect{}, ErrInvalidSourcePath
 	}
 	if err := validateTargetURL(targetURL); err != nil {
 		return gen.Redirect{}, err

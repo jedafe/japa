@@ -478,6 +478,25 @@ DELETE FROM professional_profiles WHERE owner_user_id = @user_id AND tenant_id =
 -- professional_profile_invitations.invited_by is nullable; clear inviter reference on others' profiles.
 UPDATE professional_profile_invitations SET invited_by = NULL WHERE invited_by = @user_id;
 
+-- name: DeleteProfessionalProfileMembershipsByUser :exec
+-- professional_profile_members.user_id is NOT NULL; remove the erased user's
+-- memberships in OTHER users' profiles to prevent re-identification via
+-- member rosters (§15 GDPR right-to-erasure).
+DELETE FROM professional_profile_members WHERE user_id = @user_id;
+
+-- name: DeleteProfessionalVerifiersByUser :exec
+-- professional_verifiers.user_id is NOT NULL; remove the erased user's
+-- verifier roles on OTHER users' profiles to prevent re-identification
+-- via verifier rosters (§15 GDPR right-to-erasure).
+DELETE FROM professional_verifiers WHERE user_id = @user_id AND tenant_id = @tenant_id;
+
+-- name: DeleteProfessionalProfileInvitationsByEmail :exec
+-- professional_profile_invitations are keyed by email; delete invitations
+-- sent to the erased user's email to remove PII (§15 GDPR right-to-erasure).
+DELETE FROM professional_profile_invitations
+WHERE email = (SELECT u.email FROM users u WHERE u.id = @user_id AND u.tenant_id = @tenant_id)
+  AND accepted_at IS NULL;
+
 -- name: ReassignOrganizationOwner :exec
 -- organizations.owner_user_id is NOT NULL; reassign to the deleted-user placeholder to preserve the org for remaining members.
 UPDATE organizations SET owner_user_id = @target_user_id
@@ -708,6 +727,22 @@ SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (SELECT pv.* FROM professional_verifiers pv
       JOIN professional_profiles pp ON pp.id = pv.profile_id
       WHERE pp.owner_user_id = @user_id AND pv.tenant_id = @tenant_id) t;
+
+-- name: GdprExportUserProfessionalMemberships :one
+-- Exports the user's memberships in ALL professional profiles (including
+-- profiles owned by others), not just their own profiles. This is needed
+-- for GDPR right-to-portability (§15).
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (SELECT ppm.* FROM professional_profile_members ppm
+      WHERE ppm.user_id = @user_id) t;
+
+-- name: GdprExportUserProfessionalInvitations :one
+-- Exports invitations sent to the user's email address (invitations are
+-- keyed by email, not user_id). Joins users to resolve the email.
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (SELECT ppi.* FROM professional_profile_invitations ppi
+      JOIN users u ON u.id = @user_id AND u.tenant_id = @tenant_id
+      WHERE ppi.email = u.email) t;
 
 -- name: GdprExportUserOrganizations :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
@@ -1162,3 +1197,43 @@ WHERE user_id = @user_id AND tenant_id = @tenant_id;
 -- §86: delete calendar_subscriptions for the user during GDPR erasure (BUG-025).
 DELETE FROM calendar_subscriptions
 WHERE user_id = @user_id AND tenant_id = @tenant_id;
+
+-- name: GdprExportReferralCodes :one
+-- BUG-013: export referral_codes owned by the user so the GDPR data export
+-- includes the user's referral code and click count.
+-- Ref: japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md, §60
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (
+    SELECT id, code, click_count, created_at
+    FROM referral_codes
+    WHERE user_id = @user_id AND tenant_id = @tenant_id
+    ORDER BY created_at
+) t;
+
+-- name: GdprExportReferralsAsReferrer :one
+-- BUG-013: export referrals where the user is the referrer so the GDPR data
+-- export includes referral history (status, reward, dates). Referee PII is
+-- NOT included — only the referral_code, status, and timestamps.
+-- Ref: japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md, §60
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (
+    SELECT id, referral_code, status, reward_amount, flagged_reason,
+           qualified_at, credited_at, created_at
+    FROM referrals
+    WHERE referrer_id = @user_id AND tenant_id = @tenant_id
+    ORDER BY created_at
+) t;
+
+-- name: GdprExportReferralsAsReferee :one
+-- BUG-013: export the referral row where the user is the referee (the user
+-- was referred). Includes the referral_code and status only — referrer PII
+-- is excluded per §60 "Referral history exposes status/count, not referee PII"
+-- (symmetric: referee export excludes referrer PII).
+-- Ref: japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md, §60
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (
+    SELECT id, referral_code, status, reward_amount, qualified_at, credited_at, created_at
+    FROM referrals
+    WHERE referee_id = @user_id AND tenant_id = @tenant_id
+    ORDER BY created_at
+) t;

@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
@@ -418,7 +419,10 @@ func (s *Service) CreateInvitation(ctx context.Context, profileID, invitedBy pgt
 }
 
 // AcceptInvitation accepts an invitation by token and adds the user as a member.
-func (s *Service) AcceptInvitation(ctx context.Context, token string, userID pgtype.UUID) error {
+// The accepting user's email must match the invitation email. Both the
+// invitation acceptance and the member addition are wrapped in a single
+// transaction to prevent partial commits.
+func (s *Service) AcceptInvitation(ctx context.Context, token string, userID, tenantID pgtype.UUID) error {
 	inv, err := s.store.getProfessionalProfileInvitationByToken(ctx, token)
 	if err != nil {
 		return errors.New("invalid or expired invitation")
@@ -434,19 +438,42 @@ func (s *Service) AcceptInvitation(ctx context.Context, token string, userID pgt
 		return errors.New("invitation has expired")
 	}
 
-	// Accept the invitation.
-	if err := s.store.acceptProfessionalProfileInvitation(ctx, inv.ID); err != nil {
+	// Verify the accepting user's email matches the invitation email.
+	userEmail, err := s.store.getUserEmail(ctx, userID, tenantID)
+	if err != nil {
+		return fmt.Errorf("looking up accepting user email: %w", err)
+	}
+
+	if !strings.EqualFold(userEmail, inv.Email) {
+		return errors.New("invitation email does not match your account email")
+	}
+
+	// Wrap invitation acceptance + member addition in a transaction to
+	// prevent a partial commit where the invitation is marked accepted but
+	// the member row fails to insert (§6.2 transaction boundary).
+	tx, err := s.db.Writer.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("beginning transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	qtx := s.store.write.WithTx(tx)
+
+	if err := qtx.AcceptProfessionalProfileInvitation(ctx, inv.ID); err != nil {
 		return fmt.Errorf("accepting invitation: %w", err)
 	}
 
-	// Add the user as a member.
-	if err := s.store.addProfessionalProfileMember(ctx, gen.AddProfessionalProfileMemberParams{
+	if err := qtx.AddProfessionalProfileMember(ctx, gen.AddProfessionalProfileMemberParams{
 		ProfileID: inv.ProfileID,
 		UserID:    userID,
 		Role:      inv.Role,
 		InvitedBy: inv.InvitedBy,
 	}); err != nil {
 		return fmt.Errorf("adding member from invitation: %w", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("committing invitation acceptance: %w", err)
 	}
 
 	return nil
@@ -803,6 +830,6 @@ func (s *Service) IsAdminMember(ctx context.Context, profileID, userID pgtype.UU
 }
 
 // ListProfileContent returns paginated content authored by a professional profile.
-func (s *Service) ListProfileContent(ctx context.Context, tenantID, profileID pgtype.UUID, limit, offset int32) ([]gen.Content, error) {
+func (s *Service) ListProfileContent(ctx context.Context, tenantID, profileID pgtype.UUID, limit, offset int32) ([]gen.ListContentsByAuthorProfileRow, error) {
 	return s.store.listProfileContent(ctx, tenantID, profileID, limit, offset)
 }

@@ -193,6 +193,40 @@ func NewScheduler(cfg *Config) *asynq.Scheduler {
 	// Low queue.
 	schedule("0 22 * * 0", TypeDigestGenerate, 7*24*time.Hour)
 
+	// Nightly planning group expiry — 03:30 UTC (§82, ADR-090).
+	// Soft-deletes planning groups whose expires_at has passed. Low queue.
+	schedule("30 3 * * *", TypePlanningGroupExpire, 24*time.Hour)
+
+	// Weekly planning group check-in reminder — Monday 09:00 UTC (§82,
+	// ADR-090). Sends check-in reminders to members who haven't checked in
+	// this week. Default queue.
+	schedule("0 9 * * 1", TypePlanningGroupCheckinReminder, 7*24*time.Hour)
+
+	// Remittance rate fetch — every 30 min (§74, ADR-075 §8).
+	// The cron spec can be overridden via JC_SCHEDULER_CRON_REMITTANCE_FETCH_RATES.
+	// The per-tenant fetch interval (remittance.fetch_interval_minutes) is
+	// enforced inside the handler — the scheduler fires globally every 30 min
+	// and the handler skips tenants whose interval hasn't elapsed.
+	schedule("*/30 * * * *", TypeRemittanceFetchRates, 30*time.Minute)
+
+	// Remittance alert check — every 30 min (§74, ADR-075 §4).
+	// Evaluates active alerts against current best rates and dispatches
+	// notifications for thresholds met (24h debounce per alert).
+	schedule("*/30 * * * *", TypeRemittanceCheckAlerts, 30*time.Minute)
+
+	// Weekly remittance rate pruning — Sunday 03:00 UTC (§74, ADR-075 §7).
+	// Deletes rate rows older than remittance.history_retention_days
+	// (default 365), keeping one snapshot per provider/corridor/day.
+	// Low queue.
+	schedule("0 3 * * 0", TypeRemittancePruneOldRates, 7*24*time.Hour)
+
+	// §60 Referral — daily sweep to surface flagged referrals for admin review.
+	// The handler is a no-op placeholder (the flagged queue is exposed via
+	// GET /admin/referrals/flagged); the cron exists so the task catalog entry
+	// is exercised and future notification wiring has a schedule to attach to.
+	// Low queue. BUG-006 fix: this was missing entirely.
+	schedule("0 6 * * *", TypeReferralReviewFlagged, 24*time.Hour)
+
 	return scheduler
 }
 
@@ -219,8 +253,8 @@ func Addr(cfg *Config) string {
 // standard cron, so day 1 (Monday) maps to cron "1", day 7 (Sunday) maps
 // to cron "0".
 func newsletterDigestCronSpec() string {
-	day := 1   // Monday (spec default)
-	hour := 8  // 08:00 UTC (spec default)
+	day := 1  // Monday (spec default)
+	hour := 8 // 08:00 UTC (spec default)
 
 	if v := os.Getenv("JC_NEWSLETTER_DIGEST_DAY"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n >= 1 && n <= 7 {

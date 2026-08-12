@@ -284,19 +284,23 @@ func (res *Resolver) enrichArchetype(ctx context.Context, vc *VisitorContext, us
 
 		// ADR-064a: Resolve the user's current_geo_space_id to extract
 		// city-level data and override CurrentCountry from the Space hierarchy
-		// (more reliable than GeoIP for VPN/travel scenarios).
-		geoSpace, err := res.read.GetUserCurrentGeoSpace(ctx, gen.GetUserCurrentGeoSpaceParams{
-			UserID: user.UserID, TenantID: t.ID,
-		})
-		if err == nil && geoSpace.CurrentGeoSpaceID.Valid {
-			vc.CurrentGeoSpaceID = geoSpace.CurrentGeoSpaceID.String()
-			// Override CurrentCountry from the Space hierarchy when available.
-			if geoSpace.CountryGeoCode != nil && *geoSpace.CountryGeoCode != "" {
-				vc.CurrentCountry = strings.ToUpper(*geoSpace.CountryGeoCode)
-			}
-			// Set CurrentCity from the Space name when it's a city-level space.
-			if geoSpace.CityName != nil && *geoSpace.CityName != "" {
-				vc.CurrentCity = *geoSpace.CityName
+		// (more reliable than GeoIP for VPN/travel scenarios). Gated on the
+		// geo_personalization.city_level_enabled killswitch (ADR-064a §6) —
+		// when false, city-level enrichment is skipped entirely.
+		if res.getBoolSetting(ctx, t.ID, "geo_personalization.city_level_enabled", true) {
+			geoSpace, err := res.read.GetUserCurrentGeoSpace(ctx, gen.GetUserCurrentGeoSpaceParams{
+				UserID: user.UserID, TenantID: t.ID,
+			})
+			if err == nil && geoSpace.CurrentGeoSpaceID.Valid {
+				vc.CurrentGeoSpaceID = geoSpace.CurrentGeoSpaceID.String()
+				// Override CurrentCountry from the Space hierarchy when available.
+				if geoSpace.CountryGeoCode != nil && *geoSpace.CountryGeoCode != "" {
+					vc.CurrentCountry = strings.ToUpper(*geoSpace.CountryGeoCode)
+				}
+				// Set CurrentCity from the Space name when it's a city-level space.
+				if geoSpace.CityName != nil && *geoSpace.CityName != "" {
+					vc.CurrentCity = *geoSpace.CityName
+				}
 			}
 		}
 	}
@@ -383,6 +387,15 @@ func (res *Resolver) marketSet(ctx context.Context, t *tenant.Tenant, key, fallb
 		}
 	}
 	return out
+}
+
+// getBoolSetting reads a bool system_setting with a fallback. Returns the
+// fallback when the resolver has no settings reader (e.g. tests).
+func (res *Resolver) getBoolSetting(ctx context.Context, tenantID pgtype.UUID, key string, fallback bool) bool {
+	if res.settings == nil {
+		return fallback
+	}
+	return res.settings.GetBoolOr(ctx, tenantID, key, fallback)
 }
 
 // cache writes the resolved context to Valkey (best-effort, never blocks).

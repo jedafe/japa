@@ -87,7 +87,6 @@ import (
 	"github.com/jedafe/japa/internal/onboarding"
 	"github.com/jedafe/japa/internal/organizations"
 	"github.com/jedafe/japa/internal/pagebuilder"
-	"github.com/jedafe/japa/internal/widgets"
 	"github.com/jedafe/japa/internal/participation"
 	"github.com/jedafe/japa/internal/payments"
 	"github.com/jedafe/japa/internal/personas"
@@ -131,6 +130,7 @@ import (
 	"github.com/jedafe/japa/internal/wallet"
 	"github.com/jedafe/japa/internal/webhooks"
 	"github.com/jedafe/japa/internal/websocket"
+	"github.com/jedafe/japa/internal/widgets"
 	"github.com/jedafe/japa/internal/wiki"
 	"github.com/jedafe/japa/internal/worker"
 	"github.com/jedafe/japa/internal/workerv2"
@@ -588,7 +588,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	trendingHandlers.SetCache(vkClient.Valkey())
 
 	// Recommendation engine (ADR-064a) — geo-aware tool/feature suggestions.
-	recommendationsHandlers := recommendations.NewHandlers(settingsService, vkClient.Redis())
+	recommendationsHandlers := recommendations.NewHandlers(settingsService, vkClient.Redis(), trendingStore)
 
 	// Register trending processor with worker for background tasks.
 	trendingProc := trending.NewProcessor(database, slog.Default())
@@ -627,8 +627,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	// Organization system (Section 07).
 	orgService := organizations.NewServiceWithSettings(database, settingsService)
-	orgService.SetValkeyCache(vkClient.Redis())    // jc:org:profile / jc:org:list read-through cache
-	orgService.SetAsynqClient(asynqClient)          // BUG-018: invitation email:send tasks
+	orgService.SetValkeyCache(vkClient.Redis()) // jc:org:profile / jc:org:list read-through cache
+	orgService.SetAsynqClient(asynqClient)      // BUG-018: invitation email:send tasks
 	orgHandlers := organizations.NewHandlers(orgService, followService, contentService)
 	orgHandlers.SetCustomFieldLookup(cfService) // org_type options from custom_fields (Section 07 + 08)
 
@@ -897,10 +897,16 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	newsletterService.SetSettings(settingsService)
 	newsletterHandlers := newsletter.NewHandlers(newsletterService)
 
-	// Referral Program subsystem (Section 34).
+	// Referral Program subsystem (Section 34 / §60, ADR-078).
 	referralService := referral.NewService(database)
 	referralService.SetSettings(settingsService)
+	referralService.SetValkey(vkClient.Redis())  // jc:referral_attr attribution key
+	referralService.SetEnqueuer(taskEnqueuer)    // referral:record_click + wallet:award_points
 	referralHandlers := referral.NewHandlers(referralService)
+	// Wire referral capture into the auth signup flow (§60 — ?ref=CODE at
+	// registration creates a pending referrals row). Injected here because
+	// referral.Service is constructed after AuthHandlers.
+	authHandlers.SetReferralCapturer(referralService)
 
 	// V2 feature subsystems (Sections 61–76, ADRs 079–085).
 	// Each follows the same Store→Service→Handlers layering as v1 packages.
@@ -997,6 +1003,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	planningGroupStore := planninggroups.NewStore(database)
 	planningGroupService := planninggroups.NewService(planningGroupStore, settingsService)
 	planningGroupHandlers := planninggroups.NewHandlers(planningGroupService, settingsService)
+	// Register the service as the planning_group:expire /
+	// planning_group:checkin_reminder processor so the Asynq tasks are
+	// handled (§82, ADR-090).
+	worker.RegisterPlanningGroupProcessor(planningGroupService)
 
 	// Ref: japaconnect-engineering/sections/83-visa-timeline-tracker.md (ADR-091)
 	visaTimelineStore := visatimeline.NewStore(database)
@@ -1139,6 +1149,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Ref: japaconnect-engineering/sections/74-remittance-tracker.md (ADR-075)
 	remittanceStore := remittance.NewStore(database)
 	remittanceService := remittance.NewService(remittanceStore, settingsService)
+	remittanceService.SetCache(vkClient.Redis())   // VALKEY-004: jc:remit:* corridor rate cache
+	remittanceService.SetEnqueuer(taskEnqueuer)     // admin fetch trigger + alert check tasks
+	remittanceService.SetNotifier(notificationService) // rate-alert notification dispatch (ADR-075 §4)
 	remittanceHandlers := remittance.NewHandlers(remittanceService, settingsService)
 
 	// Ref: japaconnect-engineering/sections/61-self-serve-ads.md (ADR-079)
@@ -1987,9 +2000,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Get("/spaces/{slug}/content", spaceHandlers.ListSpaceContent)
 			r.With(auth.OptionalAuth(kr, vkClient.Redis()), spaces.SpaceResolver(spaceService)).
 				Get("/spaces/{slug}/pinned", spaceHandlers.ListPinned)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), spaces.SpaceResolver(spaceService), rbac.RequirePermission(rbacResolver, "spaces.moderate")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), spaces.SpaceResolver(spaceService), rbac.RequireSpacePermission(rbacResolver, "spaces.moderate")).
 				Post("/spaces/{slug}/pinned", spaceHandlers.AddPinned)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), spaces.SpaceResolver(spaceService), rbac.RequirePermission(rbacResolver, "spaces.moderate")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), spaces.SpaceResolver(spaceService), rbac.RequireSpacePermission(rbacResolver, "spaces.moderate")).
 				Delete("/spaces/{slug}/pinned/{content_id}", spaceHandlers.RemovePinned)
 
 			// Dedicated leave (catalog: DELETE /spaces/:id/leave), split from
@@ -2003,11 +2016,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Space rule routes (slug-resolved via SpaceResolver middleware)
 			r.With(auth.OptionalAuth(kr, vkClient.Redis()), spaces.SpaceResolver(spaceService)).
 				Get("/spaces/{slug}/rules", spaceHandlers.ListSpaceRules)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), spaces.SpaceResolver(spaceService), rbac.RequirePermission(rbacResolver, "spaces.moderate")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), spaces.SpaceResolver(spaceService), rbac.RequireSpacePermission(rbacResolver, "spaces.moderate")).
 				Post("/spaces/{slug}/rules", spaceHandlers.CreateSpaceRule)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), spaces.SpaceResolver(spaceService), rbac.RequirePermission(rbacResolver, "spaces.moderate")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), spaces.SpaceResolver(spaceService), rbac.RequireSpacePermission(rbacResolver, "spaces.moderate")).
 				Patch("/spaces/{slug}/rules/{ruleId}", spaceHandlers.UpdateSpaceRule)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), spaces.SpaceResolver(spaceService), rbac.RequirePermission(rbacResolver, "spaces.moderate")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), spaces.SpaceResolver(spaceService), rbac.RequireSpacePermission(rbacResolver, "spaces.moderate")).
 				Delete("/spaces/{slug}/rules/{ruleId}", spaceHandlers.DeleteSpaceRule)
 
 			// Space moderator routes (slug-resolved via SpaceResolver middleware).
@@ -2314,10 +2327,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Wire DM store into mentorship service for auto-opening DM
 			// threads when a mentorship connection is accepted (§102, ADR-110).
 			mentorshipService.SetDMCreator(wsDMStore)
-		// Wire DM service into mutual aid handlers so HandleRespond can
-		// open a DM thread with the post author (§85, ADR-093). An adapter
-		// converts websocket.ConversationResult to mutualaid.dmConversationResult.
-		mutualAidHandlers.SetDMInitiator(&mutualAidDMAdapter{dm: wsDMService})
+			// Wire DM service into mutual aid handlers so HandleRespond can
+			// open a DM thread with the post author (§85, ADR-093). An adapter
+			// converts websocket.ConversationResult to mutualaid.dmConversationResult.
+			mutualAidHandlers.SetDMInitiator(&mutualAidDMAdapter{dm: wsDMService})
 			wsHandlers := websocket.NewHandlers(wsService, wsDMService, wsHub, vkClient, kr)
 			wsHandlers.SetSpamPipeline(spamPipeline)
 			wsHandlers.SetSessionChecker(func(userID string) bool {
@@ -2696,8 +2709,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				// Profile type routes
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "professional_profile.type.create")).
 					Post("/profiles/types", professionalHandlers.CreateProfessionalProfileType)
-				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/profiles/types", professionalHandlers.ListProfessionalProfileTypes)
-				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/profiles/types/{slug}", professionalHandlers.GetProfessionalProfileType)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "professional_profile.type.view")).Get("/profiles/types", professionalHandlers.ListProfessionalProfileTypes)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "professional_profile.type.view")).Get("/profiles/types/{slug}", professionalHandlers.GetProfessionalProfileType)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "professional_profile.type.create")).
 					Patch("/profiles/types/{id}", professionalHandlers.UpdateProfessionalProfileType)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "professional_profile.type.create")).
@@ -3200,6 +3213,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Developer Portal — Swagger UI (public, no auth). The spec it fetches
 			// is the canonical /docs/openapi.json (§6.4 dedupe — no second route).
 			r.Get("/developer/swagger", publicapi.HandleSwaggerUI(cfg.SiteName))
+			// Embedded Swagger UI assets (go:embed, no CDN — PUB-016, §47).
+			r.Handle("/developer/swagger/assets/*",
+				http.StripPrefix("/developer/swagger/assets", publicapi.HandleSwaggerUIAssets()))
 
 			// Developer Portal — API Key management (Section 47)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "api.keys.self_manage")).
@@ -3235,13 +3251,25 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				r.Use(publicapi.APIKeyMiddleware(publicAPIService))
 				r.Use(publicapi.SlidingWindowRateLimitWithSettings(vkClient.Redis(), settingsService))
 
+				r.Get("/public/content", publicAPIHandlers.ListContent)
 				r.Get("/public/content/{id}", publicAPIHandlers.GetContentByID)
+				r.Get("/public/content/{id}/comments", publicAPIHandlers.ListContentComments)
 				r.Get("/public/spaces", publicAPIHandlers.ListSpaces)
 				r.Get("/public/spaces/{slug}", publicAPIHandlers.GetSpaceBySlug)
 				r.Get("/public/tags", publicAPIHandlers.ListTags)
+				r.Get("/public/tags/{slug}", publicAPIHandlers.GetTagBySlug)
+				r.Get("/public/users", publicAPIHandlers.ListUsers)
 				r.Get("/public/users/{id}", publicAPIHandlers.GetUserByID)
 				r.Get("/public/search", publicAPIHandlers.SearchContent)
 				r.With(csrf.EnsureCookie(cfg.CookieDomain, cfg.IsProduction())).Get("/public/me", publicAPIHandlers.GetMyProfile)
+
+				// Trending endpoints (Section 47 — public read-only snapshots)
+				// Mounted under /public/trending/ to avoid chi radix-tree
+				// collision with the existing /trending/* routes (line ~2246).
+				r.Get("/public/trending/content", publicAPIHandlers.GetTrendingContentHandler)
+				r.Get("/public/trending/tags", publicAPIHandlers.GetTrendingTagsHandler)
+				r.Get("/public/trending/spaces", publicAPIHandlers.GetTrendingSpacesHandler)
+				r.Get("/public/trending/users", publicAPIHandlers.GetTrendingUsersHandler)
 			})
 
 			// User Profile & Preferences routes (catalog: /me, /me/profile)
@@ -3479,6 +3507,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Delete("/admin/rag/entity/{type}/{id}", ragHandlers.HandlePurgeEntity)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ai.rag.manage")).
 				Get("/admin/settings/rag", ragHandlers.HandleGetSettings)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ai.rag.manage")).
+				Put("/admin/settings/rag", ragHandlers.HandleUpdateSettings)
 
 			// AI Agent Executor routes (Section 103, ADR-111) — Phase 6.
 			// The agent SSE endpoint, capabilities, session history, and
@@ -3725,15 +3755,15 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Delete("/admin/affiliate-links/{id}", affiliateHandlers.DeleteLinkAdmin)
 
 			// Referral Program admin routes (Section 34 — Referral)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "referral.admin")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "referral.manage")).
 				Get("/admin/referral/program", referralHandlers.GetProgram)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "referral.admin")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "referral.manage")).
 				Put("/admin/referral/program", referralHandlers.UpdateProgram)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "referral.admin")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "referral.manage")).
 				Get("/admin/referral/referrals", referralHandlers.ListReferrals)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "referral.admin")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "referral.manage")).
 				Get("/admin/referral/referrals/{id}", referralHandlers.GetReferral)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "referral.admin")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "referral.manage")).
 				Delete("/admin/referral/referrals/{id}", referralHandlers.DeleteReferral)
 
 			// Mentorship admin routes (Section 35 — Mentorship)
@@ -4287,9 +4317,6 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).
 				Delete("/admin/profiles/{id}/verify", professionalHandlers.UnverifyProfile)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/profiles/{id}/content", professionalHandlers.ListProfileContent)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "professional_profile.member.manage")).
-				Post("/profiles/{id}/members/invite", professionalHandlers.InviteMember)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/profiles/invitations/accept", professionalHandlers.AcceptProfileInvitation)
 
 			// Task 14: Learning admin extras
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "learning.admin.manage")).
@@ -4765,6 +4792,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Post("/planning-groups", planningGroupHandlers.HandleCreate)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "planning_group.create")).
 					Post("/planning-groups/{id}/join", planningGroupHandlers.HandleJoin)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "planning_group.manage_own")).
+					Post("/planning-groups/{id}/invite", planningGroupHandlers.HandleInvite)
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).
 					Delete("/planning-groups/{id}/leave", planningGroupHandlers.HandleLeave)
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).
@@ -4783,6 +4812,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Get("/planning-groups/{id}/checkins", planningGroupHandlers.HandleListCheckins)
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).
 					Post("/planning-groups/{id}/checkins", planningGroupHandlers.HandleCreateCheckin)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "planning_group.manage_any")).
+					Get("/admin/planning-groups", planningGroupHandlers.HandleAdminList)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "planning_group.manage_any")).
 					Post("/admin/planning-groups/{id}/extend", planningGroupHandlers.HandleAdminExtend)
 			})
@@ -5232,7 +5263,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Get("/admin/newsletter/stats", newsletterHandlers.HandleAdminStats)
 
 			// Section 60 — Referral System (ADR-078) public + me routes.
-			// Admin referral/program routes are wired above (referral.admin).
+			// Admin referral/program routes are wired above (referral.manage).
 			// /ref/{code} is public; click tracking enqueues referral:record_click.
 			// NOTE: /r/{code} is already used by the affiliate redirect (§56),
 			// so the referral system uses /ref/{code} to avoid a route collision.
@@ -5244,13 +5275,13 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "referral.use")).
 				Get("/me/referral/history", referralHandlers.HandleMyHistory)
 			// V2 admin referral moderation routes (ADR-078).
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "referral.admin")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "referral.manage")).
 				Get("/admin/referrals", referralHandlers.HandleAdminListReferrals)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "referral.admin")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "referral.manage")).
 				Get("/admin/referrals/stats", referralHandlers.HandleAdminReferralStats)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "referral.admin")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "referral.manage")).
 				Get("/admin/referrals/flagged", referralHandlers.HandleAdminFlagged)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "referral.admin")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "referral.manage")).
 				Patch("/admin/referrals/{id}/resolve", referralHandlers.HandleAdminResolveFlagged)
 		})
 	})

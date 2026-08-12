@@ -225,13 +225,14 @@ func spaceFromContext(r *http.Request) pgtype.UUID {
 //  3. The chi URL parameter "id"
 //
 // It then delegates to HasSpacePermission, which dynamically resolves
-// "spaces.moderator.assign" via the space_moderators table (Section 03 /
-// RBAC-001).
+// "spaces.moderate" via the space_moderators table (Section 03 / RBAC-001):
+// an assigned moderator can moderate the specific space they were assigned
+// to without holding the static "spaces.moderate" node.
 //
 // Usage:
 //
-//	r.With(rbac.RequireSpacePermission(rbacResolver, "spaces.moderator.assign")).
-//	    Delete("/spaces/{space_id}/posts/{id}", handler)
+//	r.With(rbac.RequireSpacePermission(rbacResolver, "spaces.moderate")).
+//	    Delete("/spaces/{slug}/rules/{ruleId}", handler)
 func RequireSpacePermission(resolver *RBAC, permKey string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

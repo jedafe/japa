@@ -177,6 +177,8 @@ var taskTier = func() map[string]string {
 		TypeDigestSendEmail,
 		// §87 Japa Stage Profiles (ADR-095) — stage-change recommendation fan-out, default tier.
 		TypeJapaStageRecommend,
+		// §82 Japa Planning Groups (ADR-090) — weekly check-in reminder, default tier.
+		TypePlanningGroupCheckinReminder,
 	} {
 		m[t] = QueueDefault
 	}
@@ -226,6 +228,8 @@ var taskTier = func() map[string]string {
 		TypeCvFormatSessionsPurge,
 		// §84 Community Digest Widget (ADR-092) — weekly generation, low tier.
 		TypeDigestGenerate,
+		// §82 Japa Planning Groups (ADR-090) — nightly expiry sweep, low tier.
+		TypePlanningGroupExpire,
 	} {
 		m[t] = QueueLow
 	}
@@ -342,6 +346,9 @@ func TaskTypeCatalog() []map[string]string {
 		// §84 Community Digest Widget (ADR-092)
 		{TypeDigestGenerate, "low", "Assemble a new community digest edition from platform analytics"},
 		{TypeDigestSendEmail, "default", "Send a published digest edition to subscribed members"},
+		// §82 Japa Planning Groups (ADR-090)
+		{TypePlanningGroupExpire, "low", "Soft-delete planning groups past their expires_at date"},
+		{TypePlanningGroupCheckinReminder, "default", "Send weekly check-in reminders to planning group members who haven't checked in"},
 	}
 
 	result := make([]map[string]string, len(tasks))

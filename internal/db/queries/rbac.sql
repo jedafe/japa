@@ -8,20 +8,20 @@
 SELECT user_id FROM user_group_memberships WHERE group_id = @group_id;
 
 -- name: CreateUserGroup :one
-INSERT INTO user_groups (tenant_id, name, slug)
-VALUES (@tenant_id, @name, @slug)
+INSERT INTO user_groups (tenant_id, name, slug, description)
+VALUES (@tenant_id, @name, @slug, @description)
 RETURNING id;
 
 -- name: DeleteUserGroup :exec
 DELETE FROM user_groups WHERE tenant_id = @tenant_id AND slug = @slug AND is_system = false;
 
 -- name: DeleteUserGroupByID :exec
-DELETE FROM user_groups WHERE id = @id AND is_system = false;
+DELETE FROM user_groups WHERE id = @id AND tenant_id = @tenant_id AND is_system = false;
 
 -- name: GetUserGroupByID :one
-SELECT id, tenant_id, name, slug, is_system
+SELECT id, tenant_id, name, slug, is_system, description
 FROM user_groups
-WHERE id = @id;
+WHERE id = @id AND tenant_id = @tenant_id;
 
 -- name: AddUserToGroup :exec
 INSERT INTO user_group_memberships (tenant_id, user_id, group_id)
@@ -33,7 +33,7 @@ DELETE FROM user_group_memberships
 WHERE tenant_id = @tenant_id AND user_id = @user_id AND group_id = @group_id;
 
 -- name: ListUserGroupsByTenant :many
-SELECT id, tenant_id, name, slug, is_system
+SELECT id, tenant_id, name, slug, is_system, description
 FROM user_groups
 WHERE tenant_id = @tenant_id
 ORDER BY name;
@@ -63,7 +63,7 @@ WHERE ugm.group_id = @group_id AND ugm.tenant_id = @tenant_id
 ORDER BY u.username;
 
 -- name: UpdateUserGroup :exec
-UPDATE user_groups SET name = @name, slug = @slug WHERE id = @id;
+UPDATE user_groups SET name = @name, slug = @slug, description = @description WHERE id = @id AND tenant_id = @tenant_id;
 
 -- =====================
 -- Role Operations
@@ -77,19 +77,35 @@ ORDER BY key;
 -- name: ListAllRoles :many
 SELECT id, name, slug
 FROM user_roles
+WHERE tenant_id = @tenant_id
 ORDER BY name;
 
 -- name: ListRolesPaginated :many
 SELECT id, name, slug
 FROM user_roles
-WHERE (@search::text = '' OR name ILIKE '%' || @search || '%')
+WHERE tenant_id = @tenant_id AND (@search::text = '' OR name ILIKE '%' || @search || '%')
 ORDER BY name
 LIMIT @page_limit OFFSET @page_offset;
 
 -- name: CountRoles :one
 SELECT COUNT(*)::int AS count
 FROM user_roles
-WHERE (@search::text = '' OR name ILIKE '%' || @search || '%');
+WHERE tenant_id = @tenant_id AND (@search::text = '' OR name ILIKE '%' || @search || '%');
+
+-- name: ListRolePermissionsByTenant :many
+SELECT rp.role_id, p.key, p.description
+FROM role_permissions rp
+JOIN user_roles ur ON rp.role_id = ur.id
+JOIN permissions p ON rp.permission_id = p.id
+WHERE ur.tenant_id = @tenant_id
+ORDER BY rp.role_id, p.key;
+
+-- name: CountGroupsByRoleAndTenant :many
+SELECT gr.role_id, COUNT(gr.group_id)::int AS group_count
+FROM group_roles gr
+JOIN user_roles ur ON gr.role_id = ur.id
+WHERE ur.tenant_id = @tenant_id
+GROUP BY gr.role_id;
 
 -- name: CreateUserRole :one
 INSERT INTO user_roles (tenant_id, name, slug)
@@ -114,12 +130,12 @@ ORDER BY ur.name;
 DELETE FROM group_roles WHERE group_id = @group_id AND role_id = @role_id;
 
 -- name: DeleteUserRole :exec
-DELETE FROM role_permissions WHERE role_id = @role_id;
-DELETE FROM group_roles WHERE role_id = @role_id;
-DELETE FROM user_roles WHERE id = @role_id;
+-- role_permissions and group_roles have ON DELETE CASCADE from user_roles,
+-- so deleting the user_roles row cleans up all dependent rows automatically.
+DELETE FROM user_roles WHERE id = @role_id AND tenant_id = @tenant_id;
 
 -- name: UpdateUserRole :exec
-UPDATE user_roles SET name = @name WHERE id = @id;
+UPDATE user_roles SET name = @name WHERE id = @id AND tenant_id = @tenant_id;
 
 -- =====================
 -- Permission Operations

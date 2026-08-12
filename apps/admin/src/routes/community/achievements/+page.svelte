@@ -84,7 +84,11 @@
 	const config = $derived<EntityPageConfig>({
 		title: t('app.achievements.review_queue_heading', 'Achievements Moderation'),
 		description: t('app.achievements.review_queue_desc', 'Review community achievement records'),
-		createPermission: 'achievement.moderate',
+		// Achievements are user-submitted; admins moderate (publish/unpublish/
+		// delete) via row actions, not create/edit. readonly suppresses the
+		// Create toolbar button and the Edit row action (EntityPage gates both
+		// on !config.readonly), neither of which has a backend handler here.
+		readonly: true,
 		deletePermission: 'achievement.moderate',
 		pageSize: 25,
 		columns: [

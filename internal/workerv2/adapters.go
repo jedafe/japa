@@ -386,19 +386,48 @@ func NewRemittanceAdapter(svc *remittance.Service, database *db.DB) *RemittanceA
 	return &RemittanceAdapter{svc: svc, db: database}
 }
 
-// FetchRates resolves the provider's tenant and triggers a rate fetch.
+// FetchRates resolves the provider's tenant and performs the actual rate
+// fetch by calling the provider's API adapter, inserting rate rows, and
+// invalidating the corridor cache (ADR-075 §2). This is the task-handler
+// entry point — it does NOT re-enqueue the fetch task (which would create
+// an infinite loop). The admin manual trigger calls TriggerFetch (which
+// enqueues this task), and the scheduler enqueues it on the configured
+// interval.
 func (a *RemittanceAdapter) FetchRates(ctx context.Context, providerID pgtype.UUID) error {
 	tid, err := lookupTenantIDByEntity(ctx, a.db, "remittance_providers", "id", providerID)
 	if err != nil {
 		return err
 	}
-	return a.svc.TriggerFetch(ctx, tid, providerID)
+	return a.svc.FetchProviderRates(ctx, tid, providerID)
 }
 
-// CheckAlerts iterates every tenant and checks all active rate alerts
-// against latest rates. The service's FindAlertsNeedingNotifications is
-// corridor-specific (requires send/receive currency); this adapter queries
-// all active alerts directly via SQL so every corridor is covered.
+// FetchAllRates iterates all active API-sourced providers across all tenants
+// and fetches their rates. Called by the scheduler sweep (empty payload).
+// Manual providers are skipped (rates are admin-entered). Returns the number
+// of providers processed. Ref: ADR-075 §2, §8.
+func (a *RemittanceAdapter) FetchAllRates(ctx context.Context) (int, error) {
+	tenantIDs, err := listTenantIDs(ctx, a.db)
+	if err != nil {
+		return 0, err
+	}
+	var total int
+	for _, tid := range tenantIDs {
+		n, err := a.svc.FetchAllProviderRates(ctx, tid)
+		if err != nil {
+			slog.Warn("task:remittance:fetch_rates: tenant sweep failed",
+				"tenant_id", tid, "error", err)
+			continue
+		}
+		total += n
+	}
+	return total, nil
+}
+
+// CheckAlerts iterates every tenant, evaluates all active rate alerts
+// against the current best rate for each corridor, dispatches notifications
+// for alerts whose thresholds are met, and marks them triggered (ADR-075 §4).
+// The 24-hour debounce is enforced by the SQL query (last_triggered_at is
+// null or > 24h ago).
 func (a *RemittanceAdapter) CheckAlerts(ctx context.Context) (int, error) {
 	tenantIDs, err := listTenantIDs(ctx, a.db)
 	if err != nil {
@@ -406,42 +435,30 @@ func (a *RemittanceAdapter) CheckAlerts(ctx context.Context) (int, error) {
 	}
 	var total int
 	for _, tid := range tenantIDs {
-		rows, err := a.db.Reader.Query(ctx,
-			`SELECT id FROM remittance_rate_alerts
-			 WHERE tenant_id = $1 AND is_active = true
-			   AND (last_triggered_at IS NULL OR last_triggered_at < now() - interval '24 hours')`,
-			tid)
+		n, err := a.svc.CheckAndDispatchAlerts(ctx, tid)
 		if err != nil {
-			slog.Warn("task:remittance:check_alerts: tenant query failed", "tenant_id", tid, "error", err)
+			slog.Warn("task:remittance:check_alerts: tenant check failed", "tenant_id", tid, "error", err)
 			continue
 		}
-		for rows.Next() {
-			var alertID pgtype.UUID
-			if err := rows.Scan(&alertID); err != nil {
-				rows.Close()
-				slog.Warn("task:remittance:check_alerts: scan failed", "error", err)
-				continue
-			}
-			if err := a.svc.MarkAlertTriggered(ctx, alertID); err != nil {
-				slog.Warn("task:remittance:check_alerts: mark alert triggered failed", "alert_id", alertID, "error", err)
-				continue
-			}
-			total++
-		}
-		rows.Close()
+		total += n
 	}
 	return total, nil
 }
 
-// PruneOldRates iterates every tenant and prunes rates beyond retention.
+// PruneOldRates iterates every tenant and prunes rates beyond the configured
+// retention period (remittance.history_retention_days, default 365). The
+// SQL keeps one snapshot per provider per corridor per day for older data
+// (daily downsampling). Ref: ADR-075 §7, Rule 3 (no hardcoded config).
 func (a *RemittanceAdapter) PruneOldRates(ctx context.Context) (int, error) {
 	tenantIDs, err := listTenantIDs(ctx, a.db)
 	if err != nil {
 		return 0, err
 	}
-	cutoff := time.Now().AddDate(0, 0, -90)
 	var total int
 	for _, tid := range tenantIDs {
+		// Read the per-tenant retention setting (Rule 3 — never hardcode).
+		retentionDays := a.svc.HistoryRetentionDays(ctx, tid)
+		cutoff := time.Now().AddDate(0, 0, -retentionDays)
 		if err := a.svc.PruneOldRates(ctx, tid, cutoff); err != nil {
 			slog.Warn("task:remittance:prune_old_rates: tenant sweep failed", "tenant_id", tid, "error", err)
 			continue
@@ -469,36 +486,34 @@ func NewReferralAdapter(svc *referral.Service, database *db.DB) *ReferralAdapter
 	return &ReferralAdapter{svc: svc, db: database}
 }
 
-// RecordClick records a referral click. The sessionID is derived from IP +
-// userAgent so the service's dedup logic still works.
-func (a *ReferralAdapter) RecordClick(ctx context.Context, code, ip, userAgent string) error {
-	sessionID := ip + "|" + userAgent
+// RecordClick records a referral click. The sessionID is now passed through
+// from the redirect handler (BUG-005/BUG-010 fix) instead of being synthesized
+// from IP+userAgent, which was lossy and collision-prone.
+func (a *ReferralAdapter) RecordClick(ctx context.Context, code, sessionID, ip, userAgent string) error {
+	if sessionID == "" {
+		// Backward-compat fallback for older payloads without session_id.
+		sessionID = ip + "|" + userAgent
+	}
 	return a.svc.RecordClick(ctx, code, sessionID)
 }
 
-// CheckConversion resolves the referral's tenant and checks for conversion.
-func (a *ReferralAdapter) CheckConversion(ctx context.Context, referralID pgtype.UUID) error {
-	tid, err := lookupTenantIDByEntity(ctx, a.db, "referrals", "id", referralID)
-	if err != nil {
-		return err
-	}
-	// The service's CheckConversion requires payer/payment/session context
-	// that the task payload doesn't carry. Log and skip — conversion checks
-	// are triggered from the payment flow, not from a background task.
-	slog.Info("task:referral:check_conversion: tenant resolved, skipping (conversion checked at payment time)", "tenant_id", tid, "referral_id", referralID)
-	return nil
+// CheckConversion runs the referral conversion check for a successful payment.
+// Delegates to referral.Service.CheckConversion which looks up the payer's
+// referral row, runs fraud checks, and transitions pending→qualified→credited.
+func (a *ReferralAdapter) CheckConversion(ctx context.Context, tenantID, payerID, paymentID pgtype.UUID, sessionID string) error {
+	return a.svc.CheckConversion(ctx, tenantID, payerID, paymentID, sessionID)
 }
 
-// ReviewFlagged resolves the referral's tenant and resolves the flagged referral.
-// The service's AdminResolveFlagged accepts "credit" or "reject"; the background
-// task defaults to "credit" so legitimate referrals are not penalised by a
-// delayed review. An admin can manually reject via the admin panel.
+// ReviewFlagged is the daily sweep hook (§60 referral:review_flagged).
+// BUG-007 fix: the previous implementation auto-credited flagged referrals,
+// defeating the fraud-control purpose. The daily sweep should only SURFACE
+// flagged referrals for admin review — it must not credit them. The admin
+// resolves flagged referrals manually via PATCH /admin/referrals/:id/resolve.
+// This hook is a no-op placeholder for future notification wiring; the
+// flagged queue is already exposed via GET /admin/referrals/flagged.
 func (a *ReferralAdapter) ReviewFlagged(ctx context.Context, referralID pgtype.UUID) error {
-	tid, err := lookupTenantIDByEntity(ctx, a.db, "referrals", "id", referralID)
-	if err != nil {
-		return err
-	}
-	return a.svc.AdminResolveFlagged(ctx, tid, referralID, "credit")
+	slog.Info("task:referral:review_flagged: surfaced for admin review", "referral_id", referralID)
+	return nil
 }
 
 // ---------------------------------------------------------------------------

@@ -3,9 +3,10 @@
 	import { Gift, Copy, Check, Users, MousePointerClick, CheckCircle2 } from 'lucide-svelte';
 	import { api } from '$lib/api/client';
 	import { page } from '$app/state';
-	import type { ReferralStats } from '$lib/types';
+	import type { ReferralStats, ReferralHistoryEntry } from '$lib/types';
 
 	let stats = $state<ReferralStats | null>(null);
+	let history = $state<ReferralHistoryEntry[]>([]);
 	let loading = $state(true);
 	let disabled = $state(false);
 	let copied = $state(false);
@@ -16,15 +17,21 @@
 
 	async function loadStats() {
 		loading = true;
-		const res = await api.get<ReferralStats>('/me/referral');
+		const [statsRes, historyRes] = await Promise.all([
+			api.get<ReferralStats>('/me/referral'),
+			api.get<ReferralHistoryEntry[]>('/me/referral/history')
+		]);
 		loading = false;
-		if (res.error) {
-			if (res.error.code === 'referral_disabled') {
+		if (statsRes.error) {
+			if (statsRes.error.code === 'referral_disabled') {
 				disabled = true;
 			}
 			return;
 		}
-		stats = res.data;
+		stats = statsRes.data;
+		if (!historyRes.error && historyRes.data) {
+			history = historyRes.data;
+		}
 	}
 
 	async function copyLink() {
@@ -37,6 +44,9 @@
 			// Clipboard may be blocked; ignore.
 		}
 	}
+
+	const statusLabel = (status: string) =>
+		t(`referral.status_${status}`, status);
 
 	$effect(() => {
 		loadStats();
@@ -92,6 +102,27 @@
 					{/if}
 				</button>
 			</div>
+
+			<!-- Referral history (BUG-015 fix) -->
+			{#if history.length > 0}
+				<div class="mt-4 border-t border-[var(--color-border)] pt-3">
+					<h3 class="mb-2 text-xs font-medium text-[var(--color-muted)]">
+						{t('referral.history', 'Referral history')}
+					</h3>
+					<ul class="space-y-1">
+						{#each history.slice(0, 5) as entry}
+							<li class="flex items-center justify-between text-xs">
+								<span class="font-mono text-[var(--color-text)]">{entry.referral_code}</span>
+								<span class="text-[var(--color-muted)]">{statusLabel(entry.status)}</span>
+							</li>
+						{/each}
+					</ul>
+				</div>
+			{:else if !loading}
+				<p class="mt-3 text-xs text-[var(--color-muted)]">
+					{t('referral.history_empty', 'No referrals yet. Share your link to start earning.')}
+				</p>
+			{/if}
 		{/if}
 	</div>
 {/if}

@@ -18,7 +18,8 @@
 //	POST   /api/v1/admin/planning-groups/:id/extend      — extend expiry (auth, planning_group.manage_any)
 //
 // Ref: japaconnect-engineering/sections/82-planning-groups.md
-//      japaconnect-engineering/adr/ADR-090-planning-groups.md
+//
+//	japaconnect-engineering/adr/ADR-090-planning-groups.md
 package planninggroups
 
 import (
@@ -82,6 +83,28 @@ func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUse
 		return nil, false
 	}
 	return u, true
+}
+
+// requireMembership checks that the requesting user is a member of the given
+// planning group. Returns true if the user is a member; otherwise writes a
+// 403 error and returns false. §82: "Group check-ins and milestone details
+// are visible only to group members."
+func (h *Handlers) requireMembership(w http.ResponseWriter, r *http.Request, groupID, tenantID pgtype.UUID) (*auth.AuthenticatedUser, bool) {
+	user, ok := requireUser(w, r)
+	if !ok {
+		return nil, false
+	}
+	isMember, err := h.service.IsMember(r.Context(), groupID, user.UserID, tenantID)
+	if err != nil {
+		slog.Error("planninggroups: membership check failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "membership_check_failed", "Failed to verify membership")
+		return nil, false
+	}
+	if !isMember {
+		writeError(w, http.StatusForbidden, "not_member", "You must be a member of this group to perform this action")
+		return nil, false
+	}
+	return user, true
 }
 
 func scanUUIDParam(w http.ResponseWriter, r *http.Request, name string) (pgtype.UUID, bool) {
@@ -263,12 +286,95 @@ func (h *Handlers) HandleJoin(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewDecoder(r.Body).Decode(&body)
 
 	if err := h.service.Join(r.Context(), groupID, user.UserID, tenantID, body.DepartureDate); err != nil {
-		slog.Error("planninggroups: join failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "join_failed", "Failed to join planning group")
+		switch {
+		case errors.Is(err, pgx.ErrNoRows):
+			writeError(w, http.StatusNotFound, "group_not_found", "Planning group not found")
+		case errors.Is(err, ErrGroupNotOpen):
+			writeError(w, http.StatusForbidden, "group_not_open", "This planning group is invite-only")
+		case errors.Is(err, ErrGroupFull):
+			writeError(w, http.StatusConflict, "group_full", "This planning group is at capacity")
+		case errors.Is(err, ErrAlreadyMember):
+			writeError(w, http.StatusConflict, "already_member", "You are already a member of this group")
+		default:
+			slog.Error("planninggroups: join failed", "error", err)
+			writeError(w, http.StatusInternalServerError, "join_failed", "Failed to join planning group")
+		}
 		return
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"joined": true}})
+}
+
+// HandleInvite handles POST /planning-groups/:id/invite — invite a user to
+// join a planning group (owner only). Auth required (planning_group.manage_own
+// permission checked at route registration).
+func (h *Handlers) HandleInvite(w http.ResponseWriter, r *http.Request) {
+	user, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+	groupID, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+		writeError(w, http.StatusNotFound, "planning_groups_disabled", "Planning groups are not available")
+		return
+	}
+
+	var body struct {
+		UserID string `json:"user_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		return
+	}
+	if body.UserID == "" {
+		writeError(w, http.StatusBadRequest, "missing_user_id", "user_id is required")
+		return
+	}
+
+	var inviteeID pgtype.UUID
+	if err := inviteeID.Scan(body.UserID); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_user_id", "Invalid user_id")
+		return
+	}
+
+	// Verify the requesting user is the group owner.
+	group, err := h.service.Get(r.Context(), groupID, tenantID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "group_not_found", "Planning group not found")
+			return
+		}
+		slog.Error("planninggroups: invite: get failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "invite_failed", "Failed to invite user")
+		return
+	}
+	if group.OwnerID != user.UserID.String() {
+		writeError(w, http.StatusForbidden, "not_owner", "Only the group owner can invite users")
+		return
+	}
+
+	if err := h.service.InviteMember(r.Context(), groupID, inviteeID, tenantID); err != nil {
+		switch {
+		case errors.Is(err, pgx.ErrNoRows):
+			writeError(w, http.StatusNotFound, "group_not_found", "Planning group not found")
+		case errors.Is(err, ErrGroupFull):
+			writeError(w, http.StatusConflict, "group_full", "This planning group is at capacity")
+		default:
+			slog.Error("planninggroups: invite failed", "error", err)
+			writeError(w, http.StatusInternalServerError, "invite_failed", "Failed to invite user")
+		}
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"invited": true}})
 }
 
 // HandleLeave handles DELETE /planning-groups/:id/leave — leave a group.
@@ -306,8 +412,7 @@ func (h *Handlers) HandleLeave(w http.ResponseWriter, r *http.Request) {
 }
 
 // HandleGetMembers handles GET /planning-groups/:id/members — list members.
-// Auth required (route registration enforces auth; the list is visible to
-// authenticated members of the community).
+// Auth + membership required (§82: group content is members-only).
 func (h *Handlers) HandleGetMembers(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
@@ -320,6 +425,10 @@ func (h *Handlers) HandleGetMembers(w http.ResponseWriter, r *http.Request) {
 
 	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
 		writeError(w, http.StatusNotFound, "planning_groups_disabled", "Planning groups are not available")
+		return
+	}
+
+	if _, ok := h.requireMembership(w, r, groupID, tenantID); !ok {
 		return
 	}
 
@@ -426,12 +535,9 @@ func (h *Handlers) HandleDelete(w http.ResponseWriter, r *http.Request) {
 // ---------------------------------------------------------------------------
 
 // HandleListMilestones handles GET /planning-groups/:id/milestones — list the
-// requesting user's milestones in a group. Auth required.
+// requesting user's milestones in a group. Auth + membership required
+// (§82: milestone details are visible only to group members).
 func (h *Handlers) HandleListMilestones(w http.ResponseWriter, r *http.Request) {
-	user, ok := requireUser(w, r)
-	if !ok {
-		return
-	}
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -443,6 +549,11 @@ func (h *Handlers) HandleListMilestones(w http.ResponseWriter, r *http.Request) 
 
 	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
 		writeError(w, http.StatusNotFound, "planning_groups_disabled", "Planning groups are not available")
+		return
+	}
+
+	user, ok := h.requireMembership(w, r, groupID, tenantID)
+	if !ok {
 		return
 	}
 
@@ -457,12 +568,8 @@ func (h *Handlers) HandleListMilestones(w http.ResponseWriter, r *http.Request) 
 }
 
 // HandleCreateMilestone handles POST /planning-groups/:id/milestones — create
-// a milestone for the requesting user. Auth required.
+// a milestone for the requesting user. Auth + membership required.
 func (h *Handlers) HandleCreateMilestone(w http.ResponseWriter, r *http.Request) {
-	user, ok := requireUser(w, r)
-	if !ok {
-		return
-	}
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -474,6 +581,11 @@ func (h *Handlers) HandleCreateMilestone(w http.ResponseWriter, r *http.Request)
 
 	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
 		writeError(w, http.StatusNotFound, "planning_groups_disabled", "Planning groups are not available")
+		return
+	}
+
+	user, ok := h.requireMembership(w, r, groupID, tenantID)
+	if !ok {
 		return
 	}
 
@@ -500,9 +612,18 @@ func (h *Handlers) HandleCreateMilestone(w http.ResponseWriter, r *http.Request)
 }
 
 // HandleUpdateMilestone handles PATCH /planning-groups/:id/milestones/:mid —
-// update the completed state of a milestone. Auth required.
+// update the completed state of a milestone. Auth + ownership required
+// (§82: milestones are personal; only the owner can complete their own).
 func (h *Handlers) HandleUpdateMilestone(w http.ResponseWriter, r *http.Request) {
+	user, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
 	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+	groupID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
 	}
@@ -524,7 +645,7 @@ func (h *Handlers) HandleUpdateMilestone(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	if err := h.service.UpdateMilestone(r.Context(), milestoneID, tenantID, body.Completed); err != nil {
+	if err := h.service.UpdateMilestone(r.Context(), milestoneID, groupID, user.UserID, tenantID, body.Completed); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "milestone_not_found", "Milestone not found")
 			return
@@ -542,7 +663,8 @@ func (h *Handlers) HandleUpdateMilestone(w http.ResponseWriter, r *http.Request)
 // ---------------------------------------------------------------------------
 
 // HandleListCheckins handles GET /planning-groups/:id/checkins — list this
-// week's check-ins for a group. Auth required.
+// week's check-ins for a group. Auth + membership required (§82: group
+// check-ins are visible only to group members).
 func (h *Handlers) HandleListCheckins(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
@@ -558,6 +680,10 @@ func (h *Handlers) HandleListCheckins(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if _, ok := h.requireMembership(w, r, groupID, tenantID); !ok {
+		return
+	}
+
 	checkins, err := h.service.ListCheckins(r.Context(), groupID, tenantID)
 	if err != nil {
 		slog.Error("planninggroups: list checkins failed", "error", err)
@@ -569,12 +695,8 @@ func (h *Handlers) HandleListCheckins(w http.ResponseWriter, r *http.Request) {
 }
 
 // HandleCreateCheckin handles POST /planning-groups/:id/checkins — create a
-// weekly check-in for the requesting user. Auth required.
+// weekly check-in for the requesting user. Auth + membership required.
 func (h *Handlers) HandleCreateCheckin(w http.ResponseWriter, r *http.Request) {
-	user, ok := requireUser(w, r)
-	if !ok {
-		return
-	}
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -586,6 +708,11 @@ func (h *Handlers) HandleCreateCheckin(w http.ResponseWriter, r *http.Request) {
 
 	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
 		writeError(w, http.StatusNotFound, "planning_groups_disabled", "Planning groups are not available")
+		return
+	}
+
+	user, ok := h.requireMembership(w, r, groupID, tenantID)
+	if !ok {
 		return
 	}
 
@@ -612,8 +739,35 @@ func (h *Handlers) HandleCreateCheckin(w http.ResponseWriter, r *http.Request) {
 }
 
 // ---------------------------------------------------------------------------
-// Admin handler (extend expiry — planning_group.manage_any)
+// Admin handler (list + extend expiry — planning_group.manage_any)
 // ---------------------------------------------------------------------------
+
+// HandleAdminList handles GET /admin/planning-groups — list all planning
+// groups for the admin review queue. Admin-only (planning_group.manage_any
+// permission checked at route registration).
+func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
+	if _, ok := requireUser(w, r); !ok {
+		return
+	}
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+		writeError(w, http.StatusNotFound, "planning_groups_disabled", "Planning groups are not available")
+		return
+	}
+
+	groups, err := h.service.AdminListGroups(r.Context(), tenantID)
+	if err != nil {
+		slog.Error("planninggroups: admin list failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "admin_list_failed", "Failed to list planning groups")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": groups})
+}
 
 // HandleAdminExtend handles POST /admin/planning-groups/:id/extend — extend
 // the expiry of a planning group. Admin-only (planning_group.manage_any
@@ -631,8 +785,8 @@ func (h *Handlers) HandleAdminExtend(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.service == nil {
-		writeError(w, http.StatusServiceUnavailable, "planning_groups_unavailable", "Planning groups service not configured")
+	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+		writeError(w, http.StatusNotFound, "planning_groups_disabled", "Planning groups are not available")
 		return
 	}
 

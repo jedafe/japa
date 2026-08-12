@@ -615,6 +615,23 @@ func (s *Service) ProcessAccountDeletion(ctx context.Context, requestID pgtype.U
 		}
 	}
 
+	// 1e. Delete the user's remittance_rate_alerts during the anonymization
+	// phase (Section 74, ADR-075, ADR-014). The table has ON DELETE CASCADE
+	// from users(id) so rows are removed at hard-delete, but the user's rate
+	// alert subscriptions reveal financial interests (corridor + threshold)
+	// and could fire notifications to a deleted account during the retention
+	// window. Deletion (not anonymization) is correct because alerts have no
+	// free-text PII and are useless to a deleted user. Best-effort.
+	if step == deletionStepAnonymized {
+		if _, err := s.db.Writer.Exec(ctx, `
+			DELETE FROM remittance_rate_alerts
+			WHERE user_id = $1 AND tenant_id = $2
+		`, request.UserID, request.TenantID); err != nil {
+			slog.Warn("failed to delete remittance_rate_alerts during deletion",
+				"user_id", request.UserID.String(), "error", err)
+		}
+	}
+
 	// 2. Revoke all refresh tokens (best-effort).
 	if step < deletionStepTokensRevoked {
 		if err := s.store.deleteUserTokens(ctx, gen.DeleteUserTokensParams{
@@ -1104,6 +1121,28 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 			return fmt.Errorf("nullifying professional profile invitation inviter: %w", err)
 		}
 
+		// professional_profile_members.user_id is NOT NULL; remove the erased user's
+		// memberships in OTHER users' profiles to prevent re-identification via rosters.
+		if err := q.DeleteProfessionalProfileMembershipsByUser(ctx, userID); err != nil {
+			return fmt.Errorf("deleting professional profile memberships: %w", err)
+		}
+
+		// professional_verifiers.user_id is NOT NULL; remove the erased user's verifier
+		// roles on OTHER users' profiles to prevent re-identification via verifier rosters.
+		if err := q.DeleteProfessionalVerifiersByUser(ctx, gen.DeleteProfessionalVerifiersByUserParams{
+			UserID: userID, TenantID: tenantID,
+		}); err != nil {
+			return fmt.Errorf("deleting professional verifier roles: %w", err)
+		}
+
+		// professional_profile_invitations are keyed by email; delete pending invitations
+		// sent to the erased user's email to remove PII.
+		if err := q.DeleteProfessionalProfileInvitationsByEmail(ctx, gen.DeleteProfessionalProfileInvitationsByEmailParams{
+			UserID: userID, TenantID: tenantID,
+		}); err != nil {
+			return fmt.Errorf("deleting professional profile invitations by email: %w", err)
+		}
+
 		// organizations.owner_user_id is NOT NULL; reassign to placeholder to preserve the org for remaining members.
 		if err := q.ReassignOrganizationOwner(ctx, gen.ReassignOrganizationOwnerParams{
 			UserID: userID, TenantID: tenantID, TargetUserID: deletedUserPlaceholder,
@@ -1417,6 +1456,28 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 			return fmt.Errorf("deleting newsletter_subscribers for user: %w", err)
 		}
 
+		// BUG-003: Purge RAG content_embeddings for the user's SOFT-DELETED
+		// content. Non-deleted content is reassigned to the placeholder user
+		// (step 1 above) and its embeddings are preserved — the content still
+		// exists with a new author. But soft-deleted content (deleted_at IS NOT
+		// NULL) is not retrievable in RAG (BUG-001 fix filters by deleted_at IS
+		// NULL), so its embeddings are orphaned PII that must be removed.
+		// content_embeddings has no FK to contents (polymorphic entity_type/
+		// entity_id), so ON DELETE CASCADE does not fire.
+		// Ref: japaconnect-engineering/sections/69-rag-knowledge-layer.md
+		//      japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
+		if _, err := s.db.Writer.Exec(ctx, `
+			DELETE FROM content_embeddings
+			WHERE tenant_id = $2
+			  AND entity_type = 'content'
+			  AND entity_id IN (
+			      SELECT id FROM contents
+			      WHERE tenant_id = $2 AND author_id = $1 AND deleted_at IS NOT NULL
+			  )
+		`, userID, tenantID); err != nil {
+			return fmt.Errorf("purging content_embeddings for soft-deleted content: %w", err)
+		}
+
 		// 5. Physical deletion — ON DELETE CASCADE handles all child tables.
 		// The following feed-related tables are cascade-purged here (no
 		// explicit step needed, documented for GDPR traceability — BUG-014):
@@ -1619,6 +1680,8 @@ type UserDataExport struct {
 	ProfessionalRelocations     []map[string]interface{} `json:"professional_relocations"` // §33 child table
 	ProfessionalDocuments       []map[string]interface{} `json:"professional_documents"`   // §33 child table
 	ProfessionalVerifiers       []map[string]interface{} `json:"professional_verifiers"`   // §33 child table
+	ProfessionalMemberships     []map[string]interface{} `json:"professional_profile_memberships"` // §33 memberships in others' profiles
+	ProfessionalInvitations     []map[string]interface{} `json:"professional_profile_invitations"` // §33 invitations sent to user's email
 	Organizations               []map[string]interface{} `json:"organizations"`
 	ApiKeys                     []map[string]interface{} `json:"api_keys"`
 	UserPreferences             []map[string]interface{} `json:"user_preferences"`
@@ -1645,6 +1708,10 @@ type UserDataExport struct {
 	ComparisonDimensions        []map[string]interface{} `json:"comparison_dimensions"`         // BUG-004
 	ComparisonValues            []map[string]interface{} `json:"comparison_values"`             // BUG-004
 	CvFormatSessions            []map[string]interface{} `json:"cv_format_sessions"`            // §95 BUG-014
+	RemittanceRateAlerts        []map[string]interface{} `json:"remittance_rate_alerts"`        // §74 BUG-013
+	ReferralCodes               []map[string]interface{} `json:"referral_codes"`                // §60 BUG-013
+	ReferralsAsReferrer         []map[string]interface{} `json:"referrals_as_referrer"`         // §60 BUG-013
+	ReferralsAsReferee          []map[string]interface{} `json:"referrals_as_referee"`          // §60 BUG-013
 	ExportMetadata              map[string]interface{}   `json:"export_metadata"`
 }
 
@@ -1993,6 +2060,18 @@ func (s *Service) collectUserData(ctx context.Context, userID, tenantID pgtype.U
 		slog.Warn("failed to collect professional_verifiers for export", "user_id", userID.String(), "error", err)
 	}
 
+	if rows, err := s.store.gdprExportUserProfessionalMemberships(ctx, userID, tenantID); err == nil {
+		export.ProfessionalMemberships = rows
+	} else {
+		slog.Warn("failed to collect professional_profile_memberships for export", "user_id", userID.String(), "error", err)
+	}
+
+	if rows, err := s.store.gdprExportUserProfessionalInvitations(ctx, userID, tenantID); err == nil {
+		export.ProfessionalInvitations = rows
+	} else {
+		slog.Warn("failed to collect professional_profile_invitations for export", "user_id", userID.String(), "error", err)
+	}
+
 	// Organizations owned by the user.
 	if rows, err := s.store.gdprExportUserOrganizations(ctx, userID, tenantID); err == nil {
 		export.Organizations = rows
@@ -2269,6 +2348,72 @@ func (s *Service) collectUserData(ctx context.Context, userID, tenantID pgtype.U
 		export.CvFormatSessions = collected
 	} else {
 		slog.Warn("failed to collect cv_format_sessions for export", "user_id", userID.String(), "error", err)
+	}
+
+	// Collect remittance_rate_alerts (§74, ADR-075 — user's rate alert
+	// subscriptions reveal financial interests and are user data per §15).
+	if rows, err := s.db.Reader.Query(ctx, `
+		SELECT id, send_currency, receive_currency, target_rate, direction,
+		       is_active, last_triggered_at, created_at
+		FROM remittance_rate_alerts
+		WHERE user_id = $1 AND tenant_id = $2
+		ORDER BY created_at DESC
+	`, userID, tenantID); err == nil {
+		collected := make([]map[string]interface{}, 0)
+		for rows.Next() {
+			var (
+				id              pgtype.UUID
+				sendCurrency    string
+				receiveCurrency string
+				targetRate      pgtype.Numeric
+				direction       string
+				isActive        bool
+				lastTriggered   pgtype.Timestamptz
+				createdAt       pgtype.Timestamptz
+			)
+			if err := rows.Scan(&id, &sendCurrency, &receiveCurrency, &targetRate,
+				&direction, &isActive, &lastTriggered, &createdAt); err != nil {
+				slog.Warn("failed to scan remittance_rate_alerts row for export",
+					"user_id", userID.String(), "error", err)
+				continue
+			}
+			m := map[string]interface{}{
+				"id":               id.String(),
+				"send_currency":    sendCurrency,
+				"receive_currency": receiveCurrency,
+				"target_rate":      targetRate,
+				"direction":        direction,
+				"is_active":        isActive,
+				"created_at":       createdAt.Time,
+			}
+			if lastTriggered.Valid {
+				m["last_triggered_at"] = lastTriggered.Time
+			}
+			collected = append(collected, m)
+		}
+		rows.Close()
+		export.RemittanceRateAlerts = collected
+	} else {
+		slog.Warn("failed to collect remittance_rate_alerts for export", "user_id", userID.String(), "error", err)
+	}
+
+	// §60 BUG-013: referral data — referral_codes owned by the user, referrals
+	// where they are the referrer, and referrals where they are the referee.
+	// Referee/referrer PII is excluded from the opposite-side export per §60.
+	if rows, err := s.store.gdprExportReferralCodes(ctx, userID, tenantID); err == nil {
+		export.ReferralCodes = rows
+	} else {
+		slog.Warn("failed to collect referral_codes for export", "user_id", userID.String(), "error", err)
+	}
+	if rows, err := s.store.gdprExportReferralsAsReferrer(ctx, userID, tenantID); err == nil {
+		export.ReferralsAsReferrer = rows
+	} else {
+		slog.Warn("failed to collect referrals_as_referrer for export", "user_id", userID.String(), "error", err)
+	}
+	if rows, err := s.store.gdprExportReferralsAsReferee(ctx, userID, tenantID); err == nil {
+		export.ReferralsAsReferee = rows
+	} else {
+		slog.Warn("failed to collect referrals_as_referee for export", "user_id", userID.String(), "error", err)
 	}
 
 	return export, nil

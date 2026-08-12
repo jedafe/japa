@@ -442,9 +442,10 @@
     } else flash(t('users.detail.action_error', 'Action failed'), true);
   }
 
-  // Moderation config options — fetched from backend (BUG-019/BUG-020/BUG-021),
-  // with hardcoded values kept as fallback defaults.
-  let profileTypeOptions = $state<string[]>(['personal', 'business', 'organisation']);
+  // Moderation config options — fetched from backend (BUG-019/BUG-020/BUG-021).
+  // No hardcoded fallback per Rule 16; the loadModerationConfig() call
+  // populates these from /admin/users/config.
+  let profileTypeOptions = $state<string[]>([]);
   let violationTypes = $state<ModerationConfigOption[]>([
     { value: 'spam', label: 'Spam' },
     { value: 'harassment', label: 'Harassment' },

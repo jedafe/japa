@@ -5,11 +5,13 @@
 // the ContentEmbedder and SearchIndexer patterns.
 //
 // Ref: japaconnect-engineering/sections/69-rag-knowledge-layer.md
-//      japaconnect-engineering/adr/ADR-069-japabot-rag-knowledge-layer.md
+//
+//	japaconnect-engineering/adr/ADR-069-japabot-rag-knowledge-layer.md
 package worker
 
 import (
 	"context"
+	"log/slog"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -37,4 +39,19 @@ var ragIndexer RAGIndexer
 // skips the RAG indexing step (graceful degradation).
 func RegisterRAGIndexer(r RAGIndexer) {
 	ragIndexer = r
+}
+
+// PurgeRAGEntity deletes all RAG embeddings for a specific entity. This is
+// called by the content handlers on delete/archive/unpublish (ADR-069 §2:
+// "Content is unpublished or deleted — deletes its content_embeddings rows").
+// Fire-and-forget: errors are logged but never propagated to the caller.
+// If no RAG indexer is registered, the call is a no-op (graceful degradation).
+func PurgeRAGEntity(ctx context.Context, tenantID pgtype.UUID, entityType string, entityID pgtype.UUID) {
+	if ragIndexer == nil {
+		return
+	}
+	if err := ragIndexer.PurgeEntity(ctx, tenantID, entityType, entityID); err != nil {
+		slog.Warn("worker: RAG purge failed",
+			"entity_type", entityType, "entity_id", entityID.String(), "error", err)
+	}
 }

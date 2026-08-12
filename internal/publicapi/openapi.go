@@ -46,13 +46,21 @@ func GetPublicOpenAPISpec(siteURL string, siteName string) map[string]any {
 // these actual paths.
 func buildPublicPaths() map[string]any {
 	return map[string]any{
-		"/public/spaces":        spacesPath(),
-		"/public/spaces/{slug}": spaceBySlugPath(),
-		"/public/content/{id}":  contentByIDPath(),
-		"/public/users/{id}":    userByIDPath(),
-		"/public/tags":          tagsPath(),
-		"/public/search":        searchPath(),
-		"/public/me":            mePath(),
+		"/public/spaces":            spacesPath(),
+		"/public/spaces/{slug}":     spaceBySlugPath(),
+		"/public/content":           contentListPath(),
+		"/public/content/{id}":      contentByIDPath(),
+		"/public/content/{id}/comments": contentCommentsPath(),
+		"/public/users":             usersListPath(),
+		"/public/users/{id}":        userByIDPath(),
+		"/public/tags":              tagsPath(),
+		"/public/tags/{slug}":       tagBySlugPath(),
+		"/public/search":            searchPath(),
+		"/public/me":                mePath(),
+		"/public/trending/content":  trendingEndpoint("Trending content", "Retrieve trending content snapshots scored by recent engagement."),
+		"/public/trending/tags":     trendingEndpoint("Trending tags", "Retrieve trending tag snapshots scored by recent follower growth."),
+		"/public/trending/spaces":   trendingEndpoint("Trending spaces", "Retrieve trending space snapshots scored by recent member activity."),
+		"/public/trending/users":    trendingEndpoint("Trending users", "Retrieve trending user snapshots scored by recent engagement."),
 	}
 }
 
@@ -102,6 +110,77 @@ func contentByIDPath() map[string]any {
 			"parameters":  []any{uuidPathParam("id", "Content ID")},
 			"responses": map[string]any{
 				"200": singleResponse("Content details", "Content"),
+				"401": refResponse("Unauthorized"),
+				"404": refResponse("NotFound"),
+				"429": refResponse("RateLimited"),
+			},
+		},
+	}
+}
+
+func contentListPath() map[string]any {
+	return map[string]any{
+		"get": map[string]any{
+			"summary":     "List published content",
+			"description": "Retrieve a paginated list of published, public content within the API key's tenant. Drafts, scheduled, and private content are never exposed.",
+			"tags":        []any{"Content"},
+			"parameters":  paginationParams("content"),
+			"responses": map[string]any{
+				"200": paginatedResponse("List of published content", "Content"),
+				"401": refResponse("Unauthorized"),
+				"429": refResponse("RateLimited"),
+			},
+		},
+	}
+}
+
+func contentCommentsPath() map[string]any {
+	return map[string]any{
+		"get": map[string]any{
+			"summary":     "List content comments",
+			"description": "Retrieve top-level published comments for a content item, ordered by pinned then vote score.",
+			"tags":        []any{"Content"},
+			"parameters": append([]any{uuidPathParam("id", "Content ID")}, paginationParams("comments")...),
+			"responses": map[string]any{
+				"200": paginatedResponse("List of comments", "Comment"),
+				"401": refResponse("Unauthorized"),
+				"404": refResponse("NotFound"),
+				"429": refResponse("RateLimited"),
+			},
+		},
+	}
+}
+
+func usersListPath() map[string]any {
+	return map[string]any{
+		"get": map[string]any{
+			"summary":     "List public users",
+			"description": "Retrieve a paginated list of public user profiles. PII-safe: no email, status, last_login, or group membership. Filter by ?q= (username/display_name search) and ?type= (profile_type).",
+			"tags":        []any{"Users"},
+			"parameters": []any{
+				queryParam("q", "Search by username or display name"),
+				filterParam("type", "Filter by profile type (e.g. individual, organization)"),
+				limitParam(20, 100),
+				offsetParam(),
+			},
+			"responses": map[string]any{
+				"200": paginatedResponse("List of public user profiles", "User"),
+				"401": refResponse("Unauthorized"),
+				"429": refResponse("RateLimited"),
+			},
+		},
+	}
+}
+
+func tagBySlugPath() map[string]any {
+	return map[string]any{
+		"get": map[string]any{
+			"summary":     "Get tag detail",
+			"description": "Retrieve a single tag by its URL slug, including follower and content counts.",
+			"tags":        []any{"Tags"},
+			"parameters":  []any{stringPathParam("slug", "Tag slug")},
+			"responses": map[string]any{
+				"200": singleResponse("Tag details", "Tag"),
 				"401": refResponse("Unauthorized"),
 				"404": refResponse("NotFound"),
 				"429": refResponse("RateLimited"),
@@ -172,7 +251,21 @@ func trendingEndpoint(summary, description string) map[string]any {
 			"summary":     summary,
 			"description": description,
 			"tags":        []any{"Trending"},
-			"parameters":  []any{limitParam(10, 50)},
+			"parameters": []any{
+				limitParam(10, 50),
+				map[string]any{
+					"name":        "window",
+					"in":          "query",
+					"schema":      map[string]any{"type": "string", "enum": []any{"24h", "7d", "30d"}, "default": "24h"},
+					"description": "Time window for the trending snapshot.",
+				},
+				map[string]any{
+					"name":        "geo",
+					"in":          "query",
+					"schema":      map[string]any{"type": "string"},
+					"description": "Geo code filter for geo-aware trending (ADR-064). Omit for global ranking.",
+				},
+			},
 			"responses": map[string]any{
 				"200": map[string]any{
 					"description": "Trending snapshot",

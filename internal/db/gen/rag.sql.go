@@ -197,19 +197,28 @@ func (q *Queries) ListPublishedContentIDsForReindex(ctx context.Context, arg Lis
 const searchContentEmbeddings = `-- name: SearchContentEmbeddings :many
 
 SELECT
-    id,
-    tenant_id,
-    entity_type,
-    entity_id,
-    chunk_index,
-    chunk_text,
-    language,
-    created_at,
-    (1.0 - (embedding <=> $1))::float8 AS similarity
-FROM content_embeddings
-WHERE tenant_id = $2
-  AND ($3::text = '' OR language = $3)
-ORDER BY embedding <=> $1
+    ce.id,
+    ce.tenant_id,
+    ce.entity_type,
+    ce.entity_id,
+    ce.chunk_index,
+    ce.chunk_text,
+    ce.language,
+    ce.created_at,
+    (1.0 - (ce.embedding <=> $1))::float8 AS similarity
+FROM content_embeddings ce
+WHERE ce.tenant_id = $2
+  AND ($3::text = '' OR ce.language = $3)
+  AND (
+      ce.entity_type != 'content'
+      OR EXISTS (
+          SELECT 1 FROM contents c
+          WHERE c.id = ce.entity_id
+            AND c.status = 'published'
+            AND c.deleted_at IS NULL
+      )
+  )
+ORDER BY ce.embedding <=> $1
 LIMIT $4
 `
 
@@ -238,6 +247,14 @@ type SearchContentEmbeddingsRow struct {
 // filtered by language. The <=> operator is cosine distance; we ORDER BY
 // ascending distance and LIMIT to top_k.
 // =====================================================================
+// BUG-001 fix: filter out chunks whose source content is soft-deleted or not
+// published. An EXISTS subquery (only for entity_type = 'content' chunks)
+// ensures that deleted/unpublished/archived/draft content passages are never
+// returned in RAG retrieval. Non-content entity types (forum_thread, space,
+// learning_track) pass through the entity_type != 'content' branch.
+// Ref: ADR-069 §2 — "Content is unpublished or deleted — deletes its
+//
+//	content_embeddings rows" implies only published content is retrievable.
 func (q *Queries) SearchContentEmbeddings(ctx context.Context, arg SearchContentEmbeddingsParams) ([]SearchContentEmbeddingsRow, error) {
 	rows, err := q.db.Query(ctx, searchContentEmbeddings,
 		arg.QueryEmbedding,
@@ -289,6 +306,8 @@ FROM content_embeddings ce
 JOIN contents c ON c.id = ce.entity_id AND ce.entity_type = 'content'
 WHERE ce.tenant_id = $2
   AND ($3::text = '' OR ce.language = $3)
+  AND c.status = 'published'
+  AND c.deleted_at IS NULL
   AND (
       $4::uuid IS NULL
       OR c.geo_space_id = $4
@@ -328,6 +347,10 @@ type SearchContentEmbeddingsGeoFilteredRow struct {
 // geo_space_id); non-content chunks are excluded when a geo scope is set.
 // Used by the AI agent's rag.search tool and the agent pre-search step.
 // =====================================================================
+// BUG-001 fix: also filter by c.status = 'published' AND c.deleted_at IS NULL
+// so that soft-deleted or unpublished content is never returned in geo-filtered
+// RAG retrieval. The JOIN to contents already exists for the geo filter, so
+// the status/deleted_at conditions are added to the WHERE clause.
 func (q *Queries) SearchContentEmbeddingsGeoFiltered(ctx context.Context, arg SearchContentEmbeddingsGeoFilteredParams) ([]SearchContentEmbeddingsGeoFilteredRow, error) {
 	rows, err := q.db.Query(ctx, searchContentEmbeddingsGeoFiltered,
 		arg.QueryEmbedding,

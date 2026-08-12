@@ -88,6 +88,8 @@ func handleServiceError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusBadRequest, "validation_error", err.Error())
 	case errors.Is(err, ErrInvalidTargetURL):
 		writeError(w, http.StatusBadRequest, "invalid_target_url", err.Error())
+	case errors.Is(err, ErrInvalidSourcePath):
+		writeError(w, http.StatusBadRequest, "validation_error", err.Error())
 	case errors.Is(err, ErrDuplicateSourcePath):
 		writeError(w, http.StatusConflict, "already_exists", err.Error())
 	case errors.Is(err, errpkg.ErrRequired):
@@ -105,7 +107,7 @@ func (h *Handlers) ListRedirects(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var isActive *bool
-	if v := r.URL.Query().Get("status"); v != "" {
+	if v := r.URL.Query().Get("status"); v == "active" || v == "inactive" {
 		b := v == "active"
 		isActive = &b
 	}
@@ -195,6 +197,9 @@ func (h *Handlers) UpdateRedirect(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
 		return
+	}
+	if input.HTTPStatus == 0 {
+		input.HTTPStatus = 301
 	}
 	redirect, err := h.Service.UpdateRedirect(r.Context(), id, tenantID, input.SourcePath, input.TargetURL, input.HTTPStatus, input.IsActive, input.Notes)
 	if err != nil {

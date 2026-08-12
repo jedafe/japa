@@ -45,7 +45,8 @@ export const DASHBOARD_VIEWS: ViewMeta[] = [
 	{ slug: 'bookmarks', labelKey: 'dashboard.nav.bookmarks', icon: 'bookmark', group: 'activity', backendReady: true, component: null, isRoute: true },
 	{ slug: 'media', labelKey: 'dashboard.nav.media', icon: 'image', group: 'activity', backendReady: true, component: null, isRoute: true },
 	{ slug: 'spaces', labelKey: 'dashboard.nav.spaces', icon: 'users-round', group: 'activity', backendReady: true, component: null, isRoute: true },
-	{ slug: 'organizations', labelKey: 'dashboard.nav.organizations', icon: 'building-2', group: 'activity', backendReady: true, component: null, isRoute: true }
+	{ slug: 'organizations', labelKey: 'dashboard.nav.organizations', icon: 'building-2', group: 'activity', backendReady: true, component: null, isRoute: true },
+	{ slug: 'profiles', labelKey: 'dashboard.nav.profiles', icon: 'briefcase', group: 'activity', backendReady: true, component: null, isRoute: true }
 ];
 
 export function resolveView(slug: string): ViewMeta | null {
