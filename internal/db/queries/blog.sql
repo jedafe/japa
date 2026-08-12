@@ -400,6 +400,9 @@ WHERE c.tenant_id = @tenant_id
 
 -- name: ListPublishedPostsForRSS :many
 -- H4: filter deleted_at so soft-deleted posts don't leak into the feed.
+-- RSS-002: filter auto_hidden = false so spam/auto-hidden posts don't leak
+-- into the public blog RSS feed (matches every query in rss.sql, §51).
+-- RSS-007: NULLS LAST so a NULL published_at doesn't sort ahead of real dates.
 SELECT c.id, c.title, c.slug, c.body_html, c.body, c.author_id,
        c.published_at, c.created_at, c.read_time_minutes
 FROM contents c
@@ -407,5 +410,6 @@ WHERE c.tenant_id = @tenant_id
   AND c.status = 'published'
   AND c.content_type = 'blog_post'
   AND c.deleted_at IS NULL
-ORDER BY c.published_at DESC
+  AND c.auto_hidden = false
+ORDER BY c.published_at DESC NULLS LAST
 LIMIT @page_limit;

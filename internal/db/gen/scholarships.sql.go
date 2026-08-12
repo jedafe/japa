@@ -288,8 +288,11 @@ SELECT
     ss.tenant_id,
     ss.remind_before_days,
     ss.last_reminded_at,
-    cfv.value_text AS deadline_value
+    cfv.value_text AS deadline_value,
+    c.title AS guide_title,
+    c.slug  AS guide_slug
 FROM saved_scholarships ss
+JOIN contents c ON c.id = ss.guide_id
 JOIN custom_field_values cfv ON cfv.entity_id = ss.guide_id
     AND cfv.entity_type = 'content'
 JOIN custom_fields cf ON cf.id = cfv.field_id
@@ -313,6 +316,8 @@ type FindScholarshipsNeedingRemindersRow struct {
 	RemindBeforeDays int32              `json:"remind_before_days"`
 	LastRemindedAt   pgtype.Timestamptz `json:"last_reminded_at"`
 	DeadlineValue    *string            `json:"deadline_value"`
+	GuideTitle       string             `json:"guide_title"`
+	GuideSlug        string             `json:"guide_slug"`
 }
 
 // =====================================================================
@@ -337,6 +342,8 @@ func (q *Queries) FindScholarshipsNeedingReminders(ctx context.Context, arg Find
 			&i.RemindBeforeDays,
 			&i.LastRemindedAt,
 			&i.DeadlineValue,
+			&i.GuideTitle,
+			&i.GuideSlug,
 		); err != nil {
 			return nil, err
 		}

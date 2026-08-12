@@ -233,9 +233,10 @@ func (s *Service) FlagReview(ctx context.Context, id, tenantID pgtype.UUID) erro
 	}
 
 	_, err = s.store.updateReviewStatus(ctx, gen.UpdateReviewStatusParams{
-		ID:       id,
-		TenantID: tenantID,
-		Status:   ReviewStatusFlagged,
+		ID:        id,
+		TenantID:  tenantID,
+		Status:    ReviewStatusFlagged,
+		RemovedBy: pgtype.UUID{}, // flagging does not remove — clear removed_by
 	})
 	if err != nil {
 		return fmt.Errorf("flag review: %w", err)
@@ -265,10 +266,18 @@ func (s *Service) ModerateReview(ctx context.Context, id, tenantID, moderatorUse
 		return gen.Review{}, fmt.Errorf("invalid status: %s", status)
 	}
 
+	// Record who removed the review (spec §29 L55: removed_by).
+	// Only set when status='removed'; clear for publish/flag.
+	var removedBy pgtype.UUID
+	if status == ReviewStatusRemoved {
+		removedBy = moderatorUserID
+	}
+
 	review, err := s.store.updateReviewStatus(ctx, gen.UpdateReviewStatusParams{
-		ID:       id,
-		TenantID: tenantID,
-		Status:   status,
+		ID:        id,
+		TenantID:  tenantID,
+		Status:    status,
+		RemovedBy: removedBy,
 	})
 	if err != nil {
 		return gen.Review{}, fmt.Errorf("update review status: %w", err)

@@ -6,6 +6,7 @@ package scholarships
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 
@@ -152,6 +153,10 @@ func (h *Handlers) HandleSaveScholarship(w http.ResponseWriter, r *http.Request)
 
 	saved, err := h.svc.SaveScholarship(r.Context(), tenantID, userID, guideID)
 	if err != nil {
+		if errors.Is(err, ErrGuideNotFound) {
+			writeError(w, http.StatusNotFound, "guide_not_found", err.Error())
+			return
+		}
 		writeError(w, http.StatusBadRequest, "save_failed", err.Error())
 		return
 	}
@@ -183,9 +188,9 @@ func (h *Handlers) HandleUpdateSavedScholarship(w http.ResponseWriter, r *http.R
 	}
 
 	var body struct {
-		Status           string `json:"status"`
-		Notes            string `json:"notes"`
-		RemindBeforeDays *int32 `json:"remind_before_days"`
+		Status           string  `json:"status"`
+		Notes            *string `json:"notes"`
+		RemindBeforeDays *int32  `json:"remind_before_days"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")

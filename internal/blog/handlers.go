@@ -1275,11 +1275,16 @@ func (h *Handlers) GetRSSFeed(w http.ResponseWriter, r *http.Request) {
 		siteURL = scheme + "://" + fwdHost
 	}
 
-	// C6: try the Valkey cache first.
-	cacheKey := valkey.MustKey("cache:feed:rss:%s", tenantID.String())
+	// RSS-001: use a blog-specific cache key. The universal feed cache
+	// (jc:cache:feed:rss:{tenant_id}) is populated by the worker from
+	// ListRSSFeedItems (all content types). Reading from it here would
+	// serve non-blog content (forum posts, etc.) as the blog feed.
+	cacheKey := valkey.MustKey("cache:feed:rss:blog:%s", tenantID.String())
 	if h.Redis != nil {
 		if cached, err := h.Redis.Get(r.Context(), cacheKey).Result(); err == nil && cached != "" {
 			w.Header().Set("Content-Type", "application/rss+xml; charset=utf-8")
+			// RSS-004: §26 requires Cache-Control: max-age=900 on all feeds.
+			w.Header().Set("Cache-Control", "public, max-age=900")
 			w.Header().Set("X-Cache", "HIT")
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(cached))
@@ -1295,6 +1300,8 @@ func (h *Handlers) GetRSSFeed(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/rss+xml; charset=utf-8")
+	// RSS-004: §26 requires Cache-Control: max-age=900 on all feeds.
+	w.Header().Set("Cache-Control", "public, max-age=900")
 	w.Header().Set("X-Cache", "MISS")
 	w.WriteHeader(http.StatusOK)
 

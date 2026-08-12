@@ -23,7 +23,6 @@ import (
 	"log/slog"
 	"net/url"
 	"strings"
-	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"golang.org/x/net/html"
@@ -108,7 +107,8 @@ func resolveCouponEmbedsAndAffiliateLinks(ctx context.Context, input string, cou
 
 // resolveCouponEmbed replaces a coupon-embed placeholder div with the resolved
 // coupon widget HTML. If the coupon is expired or not found, an "Offer expired"
-// message is rendered instead.
+// message is rendered instead. The display_mode attribute ("compact" or "full")
+// controls the widget variant (Section 55).
 func resolveCouponEmbed(ctx context.Context, n *html.Node, couponIDStr string, resolver CouponResolver) {
 	var couponID pgtype.UUID
 	if err := couponID.Scan(couponIDStr); err != nil {
@@ -122,8 +122,10 @@ func resolveCouponEmbed(ctx context.Context, n *html.Node, couponIDStr string, r
 		return
 	}
 
+	displayMode := getAttr(n, "data-display-mode")
+
 	// Build the replacement widget HTML.
-	widgetHTML := buildCouponWidgetHTML(coupon)
+	widgetHTML := buildCouponWidgetHTML(coupon, displayMode)
 
 	// Parse the widget HTML and replace the placeholder's children.
 	widgetDoc, err := html.ParseFragment(strings.NewReader(widgetHTML), n.Parent)
@@ -140,7 +142,7 @@ func resolveCouponEmbed(ctx context.Context, n *html.Node, couponIDStr string, r
 	}
 	// Remove data attributes (no longer needed after resolution).
 	n.Attr = filterAttrs(n.Attr, func(a html.Attribute) bool {
-		return a.Key != "data-type" && a.Key != "data-coupon-id"
+		return a.Key != "data-type" && a.Key != "data-coupon-id" && a.Key != "data-display-mode"
 	})
 	// Add a class for styling.
 	n.Attr = append(n.Attr, html.Attribute{Key: "class", Val: "coupon-embed-widget"})
@@ -151,66 +153,99 @@ func resolveCouponEmbed(ctx context.Context, n *html.Node, couponIDStr string, r
 	}
 }
 
-// resolveAffiliateLink rewrites an <a> href to inject affiliate tracking params.
-// If the link doesn't match a registered provider, it's left unchanged.
+// resolveAffiliateLink rewrites an <a> href to inject affiliate tracking params
+// (Section 55 P4). The TipTap link node stores affiliate_provider_id as a
+// data-affiliate-provider-id attribute on the <a> tag (emitted by the SSR
+// script). If the attribute is present and the resolver returns a tracking-
+// injected URL, the href is replaced. Links without the attribute or whose
+// resolution fails are left unchanged (best-effort).
 func resolveAffiliateLink(ctx context.Context, n *html.Node, href string, resolver AffiliateLinkResolver) {
-	// The provider ID is not stored on the <a> tag in the current TipTap
-	// schema. We attempt resolution by treating the href's domain as the
-	// provider base_url. The resolver implementation should match by domain.
-	// For now, we pass a zero providerID and the original URL; the service
-	// implementation handles domain matching.
-	// NOTE: This is a simplified implementation. A full implementation would
-	// need a domain-to-providerID lookup. The current coupons.Service
-	// ResolveAffiliateLinkForRender requires a providerID, so we skip
-	// domain-based matching here and leave the link unchanged until the
-	// TipTap schema stores the provider_id on affiliate links.
-	// TODO: When the TipTap affiliateLink node stores provider_id, wire it here.
-	_ = ctx
-	_ = n
-	_ = href
-	_ = resolver
+	providerIDStr := getAttr(n, "data-affiliate-provider-id")
+	if providerIDStr == "" {
+		return
+	}
+
+	var providerID pgtype.UUID
+	if err := providerID.Scan(providerIDStr); err != nil {
+		slog.Warn("renderer: invalid affiliate_provider_id on link", "provider_id", providerIDStr, "error", err)
+		return
+	}
+
+	result, err := resolver.ResolveAffiliateLinkForRender(ctx, providerID, href)
+	if err != nil {
+		slog.Warn("renderer: failed to resolve affiliate link", "provider_id", providerIDStr, "href", href, "error", err)
+		return
+	}
+
+	if result.ResolvedURL == "" || result.ResolvedURL == href {
+		return
+	}
+
+	// Replace the href attribute with the tracking-injected URL.
+	for i, a := range n.Attr {
+		if a.Key == "href" {
+			n.Attr[i].Val = result.ResolvedURL
+			return
+		}
+	}
 }
 
 // buildCouponWidgetHTML builds the HTML for a resolved coupon widget.
-func buildCouponWidgetHTML(c *CouponRenderResult) string {
+// displayMode "compact" renders a minimal one-line widget; "full" (default)
+// renders the complete card. The referral_url is scheme-validated (http/https
+// only) before injection to prevent stored XSS via javascript: URIs (§5.1).
+func buildCouponWidgetHTML(c *CouponRenderResult, displayMode string) string {
 	if c.IsExpired || c.Status != "active" {
 		return `<div class="coupon-expired">This offer has expired.</div>`
 	}
 
+	compact := displayMode == "compact"
+
 	var b strings.Builder
-	b.WriteString(`<div class="coupon-card">`)
+	b.WriteString(`<div class="coupon-card`)
+	if compact {
+		b.WriteString(` coupon-card-compact`)
+	}
+	b.WriteString(`">`)
 
 	// Title
 	b.WriteString(fmt.Sprintf(`<div class="coupon-title">%s</div>`, htmlpkg.EscapeString(c.Title)))
 
-	// Code
-	b.WriteString(fmt.Sprintf(`<div class="coupon-code"><code>%s</code></div>`, htmlpkg.EscapeString(c.Code)))
+	if compact {
+		// Compact mode: code + CTA only, no discount/provider/expiry details.
+		b.WriteString(fmt.Sprintf(`<div class="coupon-code"><code>%s</code></div>`, htmlpkg.EscapeString(c.Code)))
+	} else {
+		// Code
+		b.WriteString(fmt.Sprintf(`<div class="coupon-code"><code>%s</code></div>`, htmlpkg.EscapeString(c.Code)))
 
-	// Discount
-	if c.DiscountType != nil && c.DiscountValue != nil {
-		dt := *c.DiscountType
-		dv := *c.DiscountValue
-		if dt == "percent" {
-			b.WriteString(fmt.Sprintf(`<div class="coupon-discount">%s%% off</div>`, htmlpkg.EscapeString(dv)))
-		} else if dt == "free_shipping" {
-			b.WriteString(`<div class="coupon-discount">Free Shipping</div>`)
-		} else {
-			b.WriteString(fmt.Sprintf(`<div class="coupon-discount">%s off</div>`, htmlpkg.EscapeString(dv)))
+		// Discount
+		if c.DiscountType != nil && c.DiscountValue != nil {
+			dt := *c.DiscountType
+			dv := *c.DiscountValue
+			if dt == "percent" {
+				b.WriteString(fmt.Sprintf(`<div class="coupon-discount">%s%% off</div>`, htmlpkg.EscapeString(dv)))
+			} else if dt == "free_shipping" {
+				b.WriteString(`<div class="coupon-discount">Free Shipping</div>`)
+			} else {
+				b.WriteString(fmt.Sprintf(`<div class="coupon-discount">%s off</div>`, htmlpkg.EscapeString(dv)))
+			}
+		}
+
+		// Provider
+		if c.ProviderName != nil {
+			b.WriteString(fmt.Sprintf(`<div class="coupon-provider">%s</div>`, htmlpkg.EscapeString(*c.ProviderName)))
+		}
+
+		// Expiry
+		if c.ExpiresAt != nil {
+			b.WriteString(fmt.Sprintf(`<div class="coupon-expires">Expires: %s</div>`, htmlpkg.EscapeString(*c.ExpiresAt)))
 		}
 	}
 
-	// Provider
-	if c.ProviderName != nil {
-		b.WriteString(fmt.Sprintf(`<div class="coupon-provider">%s</div>`, htmlpkg.EscapeString(*c.ProviderName)))
-	}
-
-	// Expiry
-	if c.ExpiresAt != nil {
-		b.WriteString(fmt.Sprintf(`<div class="coupon-expires">Expires: %s</div>`, htmlpkg.EscapeString(*c.ExpiresAt)))
-	}
-
-	// CTA
-	if c.ReferralURL != nil {
+	// CTA — validate the referral_url scheme before injecting into href to
+	// prevent stored XSS via javascript: URIs (§5.1). The widget HTML is
+	// built AFTER SanitizeHTML runs, so this is the only scheme check.
+	if c.ReferralURL != nil && isSafeURL(*c.ReferralURL) {
 		b.WriteString(fmt.Sprintf(`<a href="%s" rel="nofollow noopener noreferrer" target="_blank" class="coupon-cta">Get this deal</a>`, htmlpkg.EscapeString(*c.ReferralURL)))
 	}
 
@@ -248,6 +283,15 @@ func isExternalLink(href string) bool {
 	return u.Scheme == "http" || u.Scheme == "https"
 }
 
-// resolveTimestamp is a placeholder to avoid unused import warnings if
-// time is not otherwise used in future refactors.
-var _ = time.Now
+// isSafeURL returns true if the URL uses http, https, or is a relative path.
+// Rejects javascript:, data:, vbscript: and other dangerous schemes. Used to
+// validate referral_url before injecting into <a href> in the coupon widget
+// (§5.1 — the widget HTML is built after SanitizeHTML, so this is the only
+// scheme check).
+func isSafeURL(raw string) bool {
+	lower := strings.TrimSpace(strings.ToLower(raw))
+	if lower == "" || strings.HasPrefix(lower, "/") || strings.HasPrefix(lower, "#") || strings.HasPrefix(lower, "?") {
+		return true
+	}
+	return strings.HasPrefix(lower, "http://") || strings.HasPrefix(lower, "https://")
+}

@@ -2456,9 +2456,15 @@ export type ScamType =
 	| 'whatsapp_telegram'
 	| 'other';
 
-export type ScamStatus = 'new' | 'under_review' | 'confirmed' | 'rejected';
+export type ScamStatus = 'under_review' | 'confirmed' | 'debunked' | 'duplicate';
 
-export type ScamPlatform = string;
+export type ScamPlatform =
+	| 'whatsapp'
+	| 'instagram'
+	| 'linkedin'
+	| 'email'
+	| 'website'
+	| 'other';
 
 export interface ScamReport {
 	id: string;

@@ -2880,6 +2880,7 @@ type Review struct {
 	Status         string             `json:"status"`
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	RemovedBy      pgtype.UUID        `json:"removed_by"`
 }
 
 type ReviewAggregate struct {

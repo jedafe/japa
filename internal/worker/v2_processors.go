@@ -216,6 +216,16 @@ type PlanningGroupProcessor interface {
 	SendCheckinReminders(ctx context.Context) (int64, error)
 }
 
+// ScamAlertProcessor handles Scam Alert Board background tasks (§81, ADR-089).
+// NotifySubscribers fans out notifications to subscribers of the report's
+// destination space when a report is confirmed, awards the Community Guardian
+// badge to the reporter (§64), and enqueues wallet:award_points for the
+// reporter's contribution. Called fire-and-forget from the Review handler.
+// Ref: japaconnect-engineering/sections/81-scam-alert-board.md
+type ScamAlertProcessor interface {
+	NotifySubscribers(ctx context.Context, reportID, tenantID pgtype.UUID) error
+}
+
 // ---------------------------------------------------------------------------
 // Global processor slots — nil-safe (graceful degradation when unregistered).
 // ---------------------------------------------------------------------------
@@ -241,6 +251,7 @@ var (
 	agentDraftProcessor     AgentDraftProcessor
 	japaStageProcessor      JapaStageProcessor
 	planningGroupProcessor  PlanningGroupProcessor
+	scamAlertProcessor      ScamAlertProcessor
 )
 
 // Register functions — call once at startup before the worker serves.
@@ -265,6 +276,7 @@ func RegisterDigestProcessor(p DigestProcessor)                 { digestProcesso
 func RegisterAgentDraftProcessor(p AgentDraftProcessor)         { agentDraftProcessor = p }
 func RegisterJapaStageProcessor(p JapaStageProcessor)           { japaStageProcessor = p }
 func RegisterPlanningGroupProcessor(p PlanningGroupProcessor)   { planningGroupProcessor = p }
+func RegisterScamAlertProcessor(p ScamAlertProcessor)           { scamAlertProcessor = p }
 
 // ---------------------------------------------------------------------------
 // Task type constants (V2 — Sections 60–77).
@@ -360,6 +372,16 @@ const (
 	// members who haven't checked in this week.
 	TypePlanningGroupExpire          = "planning_group:expire"
 	TypePlanningGroupCheckinReminder = "planning_group:checkin_reminder"
+
+	// §81 Scam Alert Board (ADR-089).
+	// scam_alert:notify_subscribers runs on the default queue after a
+	// moderator confirms a scam report. It fans out notifications to all
+	// users subscribed to the report's destination space, awards the
+	// Community Guardian badge to the reporter (§64), and enqueues a
+	// wallet:award_points task for the reporter's contribution.
+	// Idempotent via jc:scam_alert:notified:{user_id}:{report_id} Valkey
+	// dedup guard (24h TTL).
+	TypeScamAlertNotifySubscribers = "scam_alert:notify_subscribers"
 )
 
 // ---------------------------------------------------------------------------
@@ -1277,5 +1299,38 @@ func HandlePlanningGroupCheckinReminder(ctx context.Context, _ *asynq.Task) erro
 		return fmt.Errorf("task:planning_group:checkin_reminder: %w", err)
 	}
 	slog.Info("task:planning_group:checkin_reminder: sent reminders", "count", n)
+	return nil
+}
+
+// HandleScamAlertNotifySubscribers fans out scam-alert notifications to
+// subscribers of the confirmed report's destination space, awards the
+// Community Guardian badge to the reporter (§64), and enqueues
+// wallet:award_points for the reporter (§81, ADR-089). Fire-and-forget on
+// the default queue.
+func HandleScamAlertNotifySubscribers(ctx context.Context, t *asynq.Task) error {
+	if scamAlertProcessor == nil {
+		slog.Warn("task:scam_alert:notify_subscribers: no processor registered, skipping")
+		return nil
+	}
+
+	var p struct {
+		ReportID string `json:"report_id"`
+		TenantID string `json:"tenant_id"`
+	}
+	if err := json.Unmarshal(t.Payload(), &p); err != nil {
+		return fmt.Errorf("task:scam_alert:notify_subscribers: unmarshaling payload: %w", err)
+	}
+
+	var reportID, tenantID pgtype.UUID
+	if err := reportID.Scan(p.ReportID); err != nil {
+		return fmt.Errorf("task:scam_alert:notify_subscribers: invalid report_id: %w", err)
+	}
+	if err := tenantID.Scan(p.TenantID); err != nil {
+		return fmt.Errorf("task:scam_alert:notify_subscribers: invalid tenant_id: %w", err)
+	}
+
+	if err := scamAlertProcessor.NotifySubscribers(ctx, reportID, tenantID); err != nil {
+		return fmt.Errorf("task:scam_alert:notify_subscribers: %w", err)
+	}
 	return nil
 }

@@ -4,24 +4,26 @@
 // standard RSS 2.0 XML. All feeds are public (no auth required) and
 // tenant-scoped via the tenant middleware.
 //
+// The shared RSS 2.0 XML model lives in internal/rss/model — imported by
+// this package, internal/blog, and internal/worker so all three render
+// feeds identically (RSS-011).
+//
 // Ref: japaconnect-engineering/sections/26-seo-performance.md
 package rss
 
 import (
 	"context"
 	"encoding/json"
-	"encoding/xml"
 	"fmt"
-	"io"
 	"log/slog"
 	"net/http"
-	"regexp"
 	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/rss/model"
 	"github.com/jedafe/japa/internal/tenant"
 	"github.com/jedafe/japa/internal/valkey"
 	"github.com/valkey-io/valkey-go/valkeycompat"
@@ -35,52 +37,45 @@ const defaultFeedLimit = 20
 const cacheMaxAge = 900
 
 // ---------------------------------------------------------------------------
-// XML model
+// XML model — aliases re-exported from the shared internal/rss/model
+// subpackage (RSS-011). Aliases preserve backward compatibility for tests
+// and any external references.
 // ---------------------------------------------------------------------------
 
 // RSSFeed is the top-level RSS 2.0 envelope.
-type RSSFeed struct { //nolint:revive // stuttering type name preserved for API compatibility
-	XMLName xml.Name   `xml:"rss"`
-	Version string     `xml:"version,attr"`
-	Channel RSSChannel `xml:"channel"`
-}
+type RSSFeed = model.Feed //nolint:revive // stuttering alias preserved for API compatibility
 
 // RSSChannel groups feed metadata and items.
-type RSSChannel struct { //nolint:revive // stuttering type name preserved for API compatibility
-	Title         string    `xml:"title"`
-	Link          string    `xml:"link"`
-	Description   string    `xml:"description"`
-	Language      string    `xml:"language"`
-	LastBuildDate string    `xml:"lastBuildDate"`
-	Items         []RSSItem `xml:"item"`
-}
+type RSSChannel = model.Channel //nolint:revive // stuttering alias preserved for API compatibility
 
 // RSSItem represents a single entry in the feed.
-type RSSItem struct { //nolint:revive // stuttering type name preserved for API compatibility
-	Title       string `xml:"title"`
-	Link        string `xml:"link"`
-	GUID        string `xml:"guid"`
-	Description string `xml:"description"`
-	PubDate     string `xml:"pubDate"`
-	Author      string `xml:"author,omitempty"`
-}
+type RSSItem = model.Item //nolint:revive // stuttering alias preserved for API compatibility
 
 // ---------------------------------------------------------------------------
 // Handlers
 // ---------------------------------------------------------------------------
 
-// CacheReader is the subset of valkeycompat.Cmdable used for reading
-// cached RSS feeds (jc:cache:feed:rss:{tenant_id}).
-type CacheReader interface {
+// CacheClient is the subset of valkeycompat.Cmdable used for reading and
+// writing cached RSS feeds (jc:cache:feed:rss:*). RSS-005: space/tag/user
+// feeds now cache their rendered XML inline (write-on-miss) so the
+// Cache-Control: max-age=900 header is backed by an actual cache.
+type CacheClient interface {
 	Get(ctx context.Context, key string) *valkeycompat.StringCmd
+	Set(ctx context.Context, key string, value interface{}, expiration time.Duration) *valkeycompat.StatusCmd
 }
+
+// feedCacheTTL is the TTL for inline-cached space/tag/user feeds. Matches
+// the universal feed's worker-generated cache (1hr) — comfortably longer
+// than the Cache-Control max-age=900s so the 15min browser TTL stays valid
+// between hourly regenerations.
+const feedCacheTTL = time.Hour
 
 // Handlers holds dependencies for RSS HTTP handlers.
 type Handlers struct {
 	q         *gen.Queries
 	siteURL   string
 	siteName  string
-	redis     CacheReader // nil disables cache reads
+	redis     CacheClient // nil disables cache reads/writes
 	feedLimit int32
 }
 
@@ -94,8 +89,9 @@ func NewHandlers(q *gen.Queries, siteURL string, siteName string) *Handlers {
 	}
 }
 
-// SetRedis injects the Valkey/Redis client for reading cached feeds.
-func (h *Handlers) SetRedis(r CacheReader) {
+// SetRedis injects the Valkey/Redis client for reading and writing cached
+// feeds.
+func (h *Handlers) SetRedis(r CacheClient) {
 	h.redis = r
 }
 
@@ -140,6 +136,53 @@ func (h *Handlers) HandleFeed(w http.ResponseWriter, r *http.Request) {
 	serveRSSFeed(w, h.siteName, siteURL+"/feed.xml", h.siteName+" — latest content", items)
 }
 
+// serveCachedOrLive handles the space/tag/user feed pattern: try the
+// Valkey cache for the given key, serve on hit; on miss, run the query,
+// render, write the rendered XML back to the cache, and serve. RSS-005.
+//
+// The render callback is only invoked on a cache miss and returns the
+// items or an error (in which case a 500 is written and no caching occurs).
+func (h *Handlers) serveCachedOrLive(
+	w http.ResponseWriter,
+	r *http.Request,
+	cacheKey string,
+	render func() ([]RSSItem, error),
+	title, link, description string,
+) {
+	// RSS-005: try the inline cache first.
+	if h.redis != nil {
+		if cached, err := h.redis.Get(r.Context(), cacheKey).Result(); err == nil && cached != "" {
+			w.Header().Set("Content-Type", "application/rss+xml; charset=utf-8")
+			w.Header().Set("Cache-Control", "public, max-age="+itoa(cacheMaxAge))
+			w.Header().Set("X-Cache", "HIT")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(cached))
+			return
+		}
+	}
+
+	items, err := render()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Internal server error")
+		return
+	}
+
+	// Render to bytes so we can both write it to the cache and serve it.
+	xmlBytes := renderFeedXML(title, link, description, items)
+
+	if h.redis != nil && xmlBytes != nil {
+		if err := h.redis.Set(r.Context(), cacheKey, string(xmlBytes), feedCacheTTL).Err(); err != nil {
+			slog.Warn("rss: failed to cache feed", "cache_key", cacheKey, "error", err)
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/rss+xml; charset=utf-8")
+	w.Header().Set("Cache-Control", "public, max-age="+itoa(cacheMaxAge))
+	w.Header().Set("X-Cache", "MISS")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(xmlBytes)
+}
+
 // HandleSpaceFeed serves a space-specific RSS feed at /spaces/{slug}/feed.xml.
 func (h *Handlers) HandleSpaceFeed(w http.ResponseWriter, r *http.Request) {
 	slug := chi.URLParam(r, "slug")
@@ -155,21 +198,25 @@ func (h *Handlers) HandleSpaceFeed(w http.ResponseWriter, r *http.Request) {
 	}
 
 	siteURL := resolveSiteURL(r, h.siteURL)
+	cacheKey := valkey.MustKey("cache:feed:rss:space:%s:%s", tenantID.String(), slug)
 
-	rows, err := h.q.ListRSSSpaceFeedItems(r.Context(), gen.ListRSSSpaceFeedItemsParams{
-		TenantID:  tenantID,
-		Slug:      slug,
-		PageLimit: h.feedLimit,
-	})
-	if err != nil {
-		slog.Error("rss: query space feed", "slug", slug, "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Internal server error")
-		return
-	}
-
-	items := feedItemsFromSpaceRows(rows, siteURL)
-	serveRSSFeed(w, h.siteName+" — "+slug, siteURL+"/spaces/"+slug,
-		"Posts from the "+slug+" space on "+h.siteName, items)
+	h.serveCachedOrLive(w, r, cacheKey,
+		func() ([]RSSItem, error) {
+			rows, err := h.q.ListRSSSpaceFeedItems(r.Context(), gen.ListRSSSpaceFeedItemsParams{
+				TenantID:  tenantID,
+				Slug:      slug,
+				PageLimit: h.feedLimit,
+			})
+			if err != nil {
+				slog.Error("rss: query space feed", "slug", slug, "error", err)
+				return nil, err
+			}
+			return feedItemsFromSpaceRows(rows, siteURL), nil
+		},
+		h.siteName+" — "+slug,
+		siteURL+"/spaces/"+slug,
+		"Posts from the "+slug+" space on "+h.siteName,
+	)
 }
 
 // HandleTagFeed serves a tag-specific RSS feed at /tags/{slug}/feed.xml.
@@ -187,21 +234,25 @@ func (h *Handlers) HandleTagFeed(w http.ResponseWriter, r *http.Request) {
 	}
 
 	siteURL := resolveSiteURL(r, h.siteURL)
+	cacheKey := valkey.MustKey("cache:feed:rss:tag:%s:%s", tenantID.String(), slug)
 
-	rows, err := h.q.ListRSSTagFeedItems(r.Context(), gen.ListRSSTagFeedItemsParams{
-		TenantID:  tenantID,
-		Slug:      slug,
-		PageLimit: h.feedLimit,
-	})
-	if err != nil {
-		slog.Error("rss: query tag feed", "slug", slug, "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Internal server error")
-		return
-	}
-
-	items := feedItemsFromTagRows(rows, siteURL)
-	serveRSSFeed(w, h.siteName+" — #"+slug, siteURL+"/tags/"+slug,
-		"Posts tagged #"+slug+" on "+h.siteName, items)
+	h.serveCachedOrLive(w, r, cacheKey,
+		func() ([]RSSItem, error) {
+			rows, err := h.q.ListRSSTagFeedItems(r.Context(), gen.ListRSSTagFeedItemsParams{
+				TenantID:  tenantID,
+				Slug:      slug,
+				PageLimit: h.feedLimit,
+			})
+			if err != nil {
+				slog.Error("rss: query tag feed", "slug", slug, "error", err)
+				return nil, err
+			}
+			return feedItemsFromTagRows(rows, siteURL), nil
+		},
+		h.siteName+" — #"+slug,
+		siteURL+"/tags/"+slug,
+		"Posts tagged #"+slug+" on "+h.siteName,
+	)
 }
 
 // HandleUserFeed serves a user-specific RSS feed at /users/{username}/feed.xml.
@@ -219,21 +270,25 @@ func (h *Handlers) HandleUserFeed(w http.ResponseWriter, r *http.Request) {
 	}
 
 	siteURL := resolveSiteURL(r, h.siteURL)
+	cacheKey := valkey.MustKey("cache:feed:rss:user:%s:%s", tenantID.String(), username)
 
-	rows, err := h.q.ListRSSUserFeedItems(r.Context(), gen.ListRSSUserFeedItemsParams{
-		TenantID:  tenantID,
-		Username:  username,
-		PageLimit: h.feedLimit,
-	})
-	if err != nil {
-		slog.Error("rss: query user feed", "username", username, "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Internal server error")
-		return
-	}
-
-	items := feedItemsFromUserRows(rows, siteURL)
-	serveRSSFeed(w, h.siteName+" — "+username, siteURL+"/users/"+username,
-		"Posts by "+username+" on "+h.siteName, items)
+	h.serveCachedOrLive(w, r, cacheKey,
+		func() ([]RSSItem, error) {
+			rows, err := h.q.ListRSSUserFeedItems(r.Context(), gen.ListRSSUserFeedItemsParams{
+				TenantID:  tenantID,
+				Username:  username,
+				PageLimit: h.feedLimit,
+			})
+			if err != nil {
+				slog.Error("rss: query user feed", "username", username, "error", err)
+				return nil, err
+			}
+			return feedItemsFromUserRows(rows, siteURL), nil
+		},
+		h.siteName+" — "+username,
+		siteURL+"/users/"+username,
+		"Posts by "+username+" on "+h.siteName,
+	)
 }
 
 // ---------------------------------------------------------------------------
@@ -266,82 +321,13 @@ func resolveSiteURL(r *http.Request, fallback string) string {
 	return fallback
 }
 
-// htmlTagPattern matches HTML/XML tags for stripping to plain text.
-var htmlTagPattern = regexp.MustCompile(`<[^>]*>`)
-
-// htmlToTextExcerpt strips HTML tags from bodyHtml, collapses whitespace,
-// and truncates to maxRunes characters, returning a clean plain-text excerpt
-// suitable for an RSS <description> element.
-func htmlToTextExcerpt(bodyHtml string, maxRunes int) string {
-	plain := htmlTagPattern.ReplaceAllString(bodyHtml, "")
-	plain = strings.TrimSpace(plain)
-	plain = strings.Join(strings.Fields(plain), " ")
-	if len([]rune(plain)) <= maxRunes {
-		return plain
-	}
-	runes := []rune(plain)
-	return string(runes[:maxRunes]) + "…"
-}
-
-// excerptFromBody extracts a plain-text excerpt from raw markdown body
-// (fallback when body_html is empty).
-func excerptFromBody(body string) string {
-	plain := strings.TrimSpace(body)
-	plain = strings.Join(strings.Fields(plain), " ")
-	if len([]rune(plain)) <= 300 {
-		return plain
-	}
-	runes := []rune(plain)
-	return string(runes[:300]) + "…"
-}
-
-// formatTime formats a pgtype.Timestamptz as RFC1123Z for RSS pubDate.
-func formatTime(t pgtype.Timestamptz) string {
-	if t.Valid {
-		return t.Time.Format(time.RFC1123Z)
-	}
-	return ""
-}
-
-// feedItemFromRow converts a generic RSS row to an RSSItem.
-// Uses published_at for PubDate (falling back to created_at), strips HTML
-// for the description, and sets a GUID from the content ID.
-func feedItemFromRow(id pgtype.UUID, title, slug, bodyHtml, body, username string, publishedAt, createdAt pgtype.Timestamptz, siteURL string) RSSItem {
-	// PubDate: prefer published_at, fall back to created_at.
-	pubDate := formatTime(publishedAt)
-	if pubDate == "" {
-		pubDate = formatTime(createdAt)
-	}
-
-	// Description: strip HTML from body_html, fall back to body excerpt.
-	desc := htmlToTextExcerpt(bodyHtml, 300)
-	if desc == "" && body != "" {
-		desc = excerptFromBody(body)
-	}
-
-	// GUID: use content UUID as a URN.
-	guid := ""
-	if id.Valid {
-		guid = "urn:uuid:" + id.String()
-	}
-
-	return RSSItem{
-		Title:       title,
-		Link:        siteURL + "/content/" + slug,
-		GUID:        guid,
-		Description: desc,
-		PubDate:     pubDate,
-		Author:      username,
-	}
-}
-
 // feedItemsFromAllRows converts ListRSSFeedItemsRow to RSS items.
 func feedItemsFromAllRows(rows []gen.ListRSSFeedItemsRow, siteURL string) []RSSItem {
 	items := make([]RSSItem, 0, len(rows))
 	for _, row := range rows {
-		items = append(items, feedItemFromRow(
+		items = append(items, model.ItemFromRow(
 			row.ID, row.Title, row.Slug, row.BodyHtml, row.Body,
-			row.Username, row.PublishedAt, row.CreatedAt, siteURL,
+			row.Username, row.PublishedAt, row.CreatedAt, siteURL, "/content/",
 		))
 	}
 	return items
@@ -351,9 +337,9 @@ func feedItemsFromAllRows(rows []gen.ListRSSFeedItemsRow, siteURL string) []RSSI
 func feedItemsFromSpaceRows(rows []gen.ListRSSSpaceFeedItemsRow, siteURL string) []RSSItem {
 	items := make([]RSSItem, 0, len(rows))
 	for _, row := range rows {
-		items = append(items, feedItemFromRow(
+		items = append(items, model.ItemFromRow(
 			row.ID, row.Title, row.Slug, row.BodyHtml, row.Body,
-			row.Username, row.PublishedAt, row.CreatedAt, siteURL,
+			row.Username, row.PublishedAt, row.CreatedAt, siteURL, "/content/",
 		))
 	}
 	return items
@@ -363,9 +349,9 @@ func feedItemsFromSpaceRows(rows []gen.ListRSSSpaceFeedItemsRow, siteURL string)
 func feedItemsFromTagRows(rows []gen.ListRSSTagFeedItemsRow, siteURL string) []RSSItem {
 	items := make([]RSSItem, 0, len(rows))
 	for _, row := range rows {
-		items = append(items, feedItemFromRow(
+		items = append(items, model.ItemFromRow(
 			row.ID, row.Title, row.Slug, row.BodyHtml, row.Body,
-			row.Username, row.PublishedAt, row.CreatedAt, siteURL,
+			row.Username, row.PublishedAt, row.CreatedAt, siteURL, "/content/",
 		))
 	}
 	return items
@@ -375,51 +361,35 @@ func feedItemsFromTagRows(rows []gen.ListRSSTagFeedItemsRow, siteURL string) []R
 func feedItemsFromUserRows(rows []gen.ListRSSUserFeedItemsRow, siteURL string) []RSSItem {
 	items := make([]RSSItem, 0, len(rows))
 	for _, row := range rows {
-		items = append(items, feedItemFromRow(
+		items = append(items, model.ItemFromRow(
 			row.ID, row.Title, row.Slug, row.BodyHtml, row.Body,
-			row.Username, row.PublishedAt, row.CreatedAt, siteURL,
+			row.Username, row.PublishedAt, row.CreatedAt, siteURL, "/content/",
 		))
 	}
 	return items
+}
+
+// renderFeedXML marshals the feed to XML bytes (with the XML declaration).
+// Delegates to the shared model.Render (RSS-011).
+func renderFeedXML(title, link, description string, items []RSSItem) []byte {
+	return model.Render(title, link, description, "en", items)
 }
 
 // serveRSSFeed marshals the feed to XML and writes the response.
 func serveRSSFeed(w http.ResponseWriter, title, link, description string, items []RSSItem) {
 	w.Header().Set("Content-Type", "application/rss+xml; charset=utf-8")
 	w.Header().Set("Cache-Control", "public, max-age="+itoa(cacheMaxAge))
-
-	// lastBuildDate: the most recent item's pubDate, or now.
-	var lastBuild string
-	if len(items) > 0 && items[0].PubDate != "" {
-		lastBuild = items[0].PubDate
-	} else {
-		lastBuild = time.Now().UTC().Format(time.RFC1123Z)
-	}
-
-	feed := RSSFeed{
-		Version: "2.0",
-		Channel: RSSChannel{
-			Title:         title,
-			Link:          link,
-			Description:   description,
-			Language:      "en",
-			LastBuildDate: lastBuild,
-			Items:         items,
-		},
-	}
-
+	// RSS-006: signal cache miss for observability (HIT is set by callers
+	// that serve from cache).
+	w.Header().Set("X-Cache", "MISS")
 	w.WriteHeader(http.StatusOK)
 
-	// Write the XML declaration before encoding (required by some RSS readers).
-	if _, err := io.WriteString(w, xml.Header); err != nil {
-		slog.Error("rss: write xml header", "error", err)
+	xmlBytes := renderFeedXML(title, link, description, items)
+	if xmlBytes == nil {
 		return
 	}
-
-	enc := xml.NewEncoder(w)
-	enc.Indent("", "  ")
-	if err := enc.Encode(feed); err != nil {
-		slog.Error("rss: encode xml", "error", err)
+	if _, err := w.Write(xmlBytes); err != nil {
+		slog.Error("rss: write xml", "error", err)
 	}
 }
 

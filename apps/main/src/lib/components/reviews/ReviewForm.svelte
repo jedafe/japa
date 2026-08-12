@@ -98,7 +98,7 @@
 	></textarea>
 
 	{#if errorKey}
-		<p class="text-sm text-red-500" role="alert">{t(errorKey)}</p>
+		<p class="text-sm text-[var(--color-danger)]" role="alert">{t(errorKey)}</p>
 	{/if}
 
 	<div class="flex justify-end">

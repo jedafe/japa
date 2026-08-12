@@ -1357,7 +1357,8 @@ WHERE c.tenant_id = $1
   AND c.status = 'published'
   AND c.content_type = 'blog_post'
   AND c.deleted_at IS NULL
-ORDER BY c.published_at DESC
+  AND c.auto_hidden = false
+ORDER BY c.published_at DESC NULLS LAST
 LIMIT $2
 `
 
@@ -1382,6 +1383,9 @@ type ListPublishedPostsForRSSRow struct {
 // RSS Feed Queries
 // =====================
 // H4: filter deleted_at so soft-deleted posts don't leak into the feed.
+// RSS-002: filter auto_hidden = false so spam/auto-hidden posts don't leak
+// into the public blog RSS feed (matches every query in rss.sql, §51).
+// RSS-007: NULLS LAST so a NULL published_at doesn't sort ahead of real dates.
 func (q *Queries) ListPublishedPostsForRSS(ctx context.Context, arg ListPublishedPostsForRSSParams) ([]ListPublishedPostsForRSSRow, error) {
 	rows, err := q.db.Query(ctx, listPublishedPostsForRSS, arg.TenantID, arg.PageLimit)
 	if err != nil {
