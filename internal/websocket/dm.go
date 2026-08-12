@@ -575,11 +575,18 @@ func (s *DMService) GetMessages(ctx context.Context, tenantID, conversationID, u
 
 	msgs := make([]MessageInfo, len(rows))
 	for i, r := range rows {
+		// SenderDisplayName is a *string from sqlc. Dereference safely so
+		// the API returns the actual name, not a pointer address (the
+		// previous fmt.Sprintf("%v", *string) printed "0xc0000123a0").
+		var displayName string
+		if r.SenderDisplayName != nil {
+			displayName = *r.SenderDisplayName
+		}
 		msgs[i] = MessageInfo{
 			ID:                r.ID.String(),
 			SenderID:          r.SenderID.String(),
 			SenderUsername:    r.SenderUsername,
-			SenderDisplayName: fmt.Sprintf("%v", r.SenderDisplayName),
+			SenderDisplayName: displayName,
 			Body:              r.Body,
 			CreatedAt:         r.CreatedAt.Time.String(),
 		}
@@ -747,6 +754,28 @@ func (s *DMService) DeleteMessage(ctx context.Context, tenantID, conversationID,
 // checking blocks and privacy settings per Section 48.
 func (s *DMService) GetOrCreateConversationForInitiator(ctx context.Context, tenantID, initiatorID, recipientID pgtype.UUID) (ConversationResult, error) {
 	return s.GetOrCreateConversation(ctx, tenantID, initiatorID, recipientID)
+}
+
+// GetOtherParticipant returns the ID of the other participant in a
+// conversation, scoped to the tenant. Returns an error if the conversation
+// doesn't exist or the given user is not a participant. Used by the typing
+// indicator path (Section 10) to route typing events to the correct
+// recipient without exposing conversation membership to non-participants.
+func (s *DMService) GetOtherParticipant(ctx context.Context, tenantID, conversationID, userID pgtype.UUID) (pgtype.UUID, error) {
+	conv, err := s.store.GetConversationByID(ctx, conversationID, tenantID)
+	if err != nil {
+		return pgtype.UUID{}, fmt.Errorf("looking up conversation: %w", err)
+	}
+
+	if conv.Participant1ID != userID && conv.Participant2ID != userID {
+		return pgtype.UUID{}, errors.New("user is not a participant in this conversation")
+	}
+
+	if conv.Participant1ID == userID {
+		return conv.Participant2ID, nil
+	}
+
+	return conv.Participant1ID, nil
 }
 
 // enqueueDMNotifyMessage enqueues a push notification for a new DM message.

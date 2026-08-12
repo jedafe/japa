@@ -1026,6 +1026,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	wikiStore := wiki.NewStore(database)
 	wikiService := wiki.NewService(wikiStore, settingsService)
 	wikiHandlers := wiki.NewHandlers(wikiService, settingsService)
+	// B4/B5: wire the reputation (points) checker and RBAC resolver so the
+	// wiki.edit submission gate can enforce wiki.min_reputation_to_edit and
+	// wiki.community_edits (§80 business-logic gates).
+	wikiHandlers.SetPointsChecker(walletService)
+	wikiHandlers.SetPermissionChecker(rbacResolver)
 
 	// Ref: japaconnect-engineering/sections/81-scam-alert-board.md (ADR-089)
 	scamAlertStore := scamalert.NewStore(database)
@@ -1068,7 +1073,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	digestService := digest.NewService(digestStore, settingsService)
 	digestService.SetEnqueuer(taskEnqueuer)
 	digestService.SetValkey(vkClient.Redis())
+	digestService.SetEmailDispatcher(emailDispatcher)
 	digestHandlers := digest.NewHandlers(digestService, settingsService)
+	// Register the service as the digest:generate / digest:send_email
+	// processor so the Asynq tasks are handled (§84, ADR-092).
+	worker.RegisterDigestProcessor(digestService)
 
 	// Ref: japaconnect-engineering/sections/85-mutual-aid-board.md (ADR-093)
 	mutualAidStore := mutualaid.NewStore(database)
@@ -1350,6 +1359,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Inject the RAG service into the AI handlers so HandleChat can run the
 	// retrieval step before the LLM call when rag.enabled is true.
 	aiHandlers.SetRAGService(ragService)
+
+	// B6/B8: wire Valkey (edit lock) and RAG indexer (embedding on approval)
+	// into the wiki service/handlers. These are wired here because ragService
+	// is created above; the wiki handlers were created earlier at line ~1028.
+	wikiService.SetValkey(vkClient.Redis())
+	wikiHandlers.SetRAGIndexer(ragService)
 
 	// AI Agent Executor (Section 103, ADR-111) — Phase 6 wiring.
 	// The agent handler ties together the gateway function-calling extension
@@ -2393,7 +2408,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// PGX-002: use a signal-aware context so the bridge stops on
 			// SIGINT/SIGTERM instead of running forever on context.Background().
 			wsCtx, wsCancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-			_ = wsCancel // cancelled implicitly when the process receives the signal
+			// Register the cancel func with the shutdown closers so a graceful
+			// Shutdown() (not triggered by a signal) also stops the bridge
+			// goroutine and releases the signal handler. Previously the cancel
+			// func was discarded, leaking the goroutine + signal handler on
+			// non-signal shutdown.
+			closers = append(closers, wsCancel)
 			go wsBridge.Start(wsCtx)
 
 			wsService := websocket.NewService(database, wsHub)
@@ -2409,15 +2429,31 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			mutualAidHandlers.SetDMInitiator(&mutualAidDMAdapter{dm: wsDMService})
 			wsHandlers := websocket.NewHandlers(wsService, wsDMService, wsHub, vkClient, kr)
 			wsHandlers.SetSpamPipeline(spamPipeline)
-			wsHandlers.SetSessionChecker(func(userID string) bool {
+			wsHandlers.SetSessionChecker(func(userID, tenantID string) bool {
 				var uid pgtype.UUID
 				if err := uid.Scan(userID); err != nil {
 					return false
 				}
+				var tid pgtype.UUID
+				if err := tid.Scan(tenantID); err != nil {
+					return false
+				}
 				ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 				defer cancel()
-				_, err := gen.New(database.Reader).GetUserBanExpiration(ctx, uid)
-				if err == nil {
+				q := gen.New(database.Reader)
+				// Check 1: active ban or suspension via user_moderation_actions.
+				if _, err := q.GetUserBanExpiration(ctx, uid); err == nil {
+					return false
+				}
+				// Check 2: user status. Covers GDPR erasure (status='deleted')
+				// and direct admin suspension (status='suspended') that may not
+				// have a corresponding user_moderation_actions row. Only
+				// status='active' keeps the connection live.
+				user, err := q.GetUserByID(ctx, gen.GetUserByIDParams{
+					TenantID: tid,
+					UserID:   uid,
+				})
+				if err != nil || user.Status != "active" {
 					return false
 				}
 				return true

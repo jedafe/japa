@@ -436,9 +436,12 @@ func HandlePaymentWebhookProcess(ctx context.Context, t *asynq.Task) error {
 		ProviderRef: &payload.ProviderRef,
 	})
 	if err != nil {
-		slog.Warn("task:payment:process_webhook: no matching payment found",
-			"provider_ref", payload.ProviderRef, "error", err)
-		return nil
+		if errors.Is(err, pgx.ErrNoRows) {
+			slog.Warn("task:payment:process_webhook: no matching payment found",
+				"provider_ref", payload.ProviderRef)
+			return nil
+		}
+		return fmt.Errorf("task:payment:process_webhook: query payment by provider_ref: %w", err)
 	}
 
 	// Status-transition guard: prevent downgrading from succeeded.
@@ -834,7 +837,7 @@ func HandleTicketSendConfirmation(ctx context.Context, t *asynq.Task) error {
 	}
 	body := bodyBuf.String()
 
-	if err := sendEmail(*ticket.SubmitterEmail, "Ticket Confirmation - "+ticket.Subject, body, true); err != nil {
+	if err := sendEmailWithContext(ctx, *ticket.SubmitterEmail, "Ticket Confirmation - "+ticket.Subject, body, true); err != nil {
 		slog.Error("task:ticket:send_confirmation: email failed",
 			"ticket_id", payload.TicketID, "error", err)
 		return err
@@ -2209,7 +2212,7 @@ func HandleTicketSendStatusUpdate(ctx context.Context, t *asynq.Task) error {
 	}
 	body := statusBuf.String()
 
-	if err := sendEmail(*ticket.SubmitterEmail, "Ticket Status Update - "+ticket.Subject, body, true); err != nil {
+	if err := sendEmailWithContext(ctx, *ticket.SubmitterEmail, "Ticket Status Update - "+ticket.Subject, body, true); err != nil {
 		slog.Error("task:ticket:send_status_update: email failed",
 			"ticket_id", payload.TicketID, "error", err)
 		return err
@@ -2715,7 +2718,7 @@ func sendDigestToUser(ctx context.Context, userID, tenantID, email, period strin
 		return fmt.Errorf("rendering digest template: %w", err)
 	}
 
-	if err := sendEmail(email,
+	if err := sendEmailWithContext(ctx, email,
 		fmt.Sprintf("Your %s Digest", cases.Title(language.English).String(period)),
 		body.String(), true); err != nil {
 		return fmt.Errorf("sending email: %w", err)

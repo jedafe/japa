@@ -274,6 +274,7 @@ func TaskTypeCatalog() []map[string]string {
 		{TypePushDelivery, "critical", "Send push notifications"},
 		{TypeDMNotifyRequest, "critical", "Notify DM request received"},
 		{TypeDMNotifyMessage, "critical", "Notify new DM message"},
+		{TypeNotificationSendPush, "critical", "Dispatch push notification to FCM/APNs for a device token (§77, ADR-074)"},
 		// Default tier
 		{TypeEmailSend, "default", "Send transactional email"},
 		{TypeSearchIndexSync, "default", "Index entity in Meilisearch"},
@@ -302,6 +303,26 @@ func TaskTypeCatalog() []map[string]string {
 		// Japa University (ADR-063)
 		{TypeUniversityNotifyInstructorApproved, "default", "Notify creator their instructor application was approved"},
 		{TypeUniversityNotifyCourseApproved, "default", "Notify creator their track was approved to the marketplace"},
+		// V2 default-tier tasks (§§60-76, ADRs 068-085)
+		{TypeContentGenerateDraft, "default", "Generate a draft content item via the AI Gateway (studio/persona/agent)"},
+		{TypeFormFireSubmissionTriggers, "default", "Fire form submission triggers (assign_user_group / send_email / send_webhook / create_ticket / notify_admin)"},
+		{TypeAssessmentScoreSubmission, "default", "Score a completed readiness assessment, generate roadmap, notify (§71, ADR-071)"},
+		{TypeAssessmentCleanupAnonymous, "default", "Hourly cleanup of anonymous assessment_results older than 24h (§71)"},
+		{TypeStudioRunBatch, "default", "Enqueue individual content.generate_draft jobs for a studio batch (§75, ADR-076)"},
+		{TypePersonaRunActivity, "default", "Persona orchestration loop — select, generate, dispatch or queue actions (§76, ADR-077)"},
+		{TypePersonaDispatchAction, "default", "Execute a single approved queued persona action (§76)"},
+		{TypeRemittanceFetchRates, "default", "Fetch live rates from API-sourced remittance providers (§74, ADR-075)"},
+		{TypeRemittanceCheckAlerts, "default", "Check rate alerts against current best rate, dispatch notifications (§74)"},
+		{TypeReferralRecordClick, "default", "Persist referral click + set Valkey attribution key (§60, ADR-078)"},
+		{TypeReferralCheckConversion, "default", "On payment — fraud check, status transition, credit award (§60)"},
+		{TypeAdsRefundCampaignCredits, "default", "Refund unused credits on campaign rejection or early end (§61, ADR-079)"},
+		{TypeAdsNotifyCampaignStatus, "default", "Notify org of self-serve campaign review decision (§61)"},
+		{TypeJobsNotifyApplicationStatus, "default", "Notify applicant of job application status change (§63, ADR-081)"},
+		{TypeImportProcessSource, "default", "Parse import source, create draft contents rows (§65, ADR-083)"},
+		// §86 Community Calendar (ADR-094) — daily reminders on default tier.
+		{TypeCalendarSendReminders, "default", "Dispatch notifications to subscribers at 90/30/7-day marks before each published entry (§86)"},
+		// §87 Japa Stage Profiles (ADR-095) — stage-change recommendation fan-out, default tier.
+		{TypeJapaStageRecommend, "default", "Generate stage-transition recommendations on PATCH /me/japa-stage event (§87)"},
 		// Low tier
 		{TypeDigestEmail, "low", "Send digest email"},
 		{TypeSitemapGenerate, "low", "Generate sitemap XML"},
@@ -332,7 +353,7 @@ func TaskTypeCatalog() []map[string]string {
 		{TypeCouponTrackEvents, "low", "Track coupon usage events"},
 		{TypeCouponExpireCheck, "low", "Expire outdated coupons"},
 		{TypeAffiliateRecordClick, "default", "Record affiliate link click"},
-		{TypeAffiliateCreditCommission, "low", "Credit affiliate commission"},
+		{TypeAffiliateCreditCommission, "critical", "Credit affiliate commission (financial side effect — §56, BUG-012)"},
 		{TypeAffiliateExpireCheck, "low", "Expire stale affiliate links"},
 		{TypeContentScanAffiliateLinks, "low", "Scan content for unregistered affiliate links and record results for moderation"},
 		{TypeRedirectRecordHit, "low", "Record URL redirect hit"},
@@ -343,9 +364,9 @@ func TaskTypeCatalog() []map[string]string {
 		{TypeUniversityFetchLogo, "low", "Fetch and store a university logo from a remote URL during space auto-seeding"},
 		{TypePlatformDataExport, "low", "Generate platform data export file (CSV/JSON/XLSX) from platform data (Section 67)"},
 		{TypePlatformDataImport, "low", "Parse platform data import file and insert/update rows (Section 67)"},
-		// §102 Mentorship Matching (ADR-110)
-		{TypeMentorGenerateEmbedding, "default", "Generate pgvector embedding for a mentor's bio"},
-		{TypeMentorUpdateMeilisearch, "default", "Sync a mentor's profile to the Meilisearch mentors index"},
+		// §102 Mentorship Matching (ADR-110) — low queue per spec.
+		{TypeMentorGenerateEmbedding, "low", "Generate pgvector embedding for a mentor's bio"},
+		{TypeMentorUpdateMeilisearch, "low", "Sync a mentor's profile to the Meilisearch mentors index"},
 		// §91 Embassy Appointment Alerter (ADR-099)
 		{TypeEmbassyPoll, "default", "Poll a monitored embassy booking page for open appointment slots"},
 		{TypeEmbassyDispatchAlerts, "critical", "Dispatch notifications to users with a matching active appointment alert"},
@@ -367,6 +388,18 @@ func TaskTypeCatalog() []map[string]string {
 		// §83 Visa Timeline Tracker (ADR-091)
 		{TypeVisaTimelineRefreshStats, "low", "Recompute visa_processing_stats aggregate from shared timelines + milestones (nightly)"},
 		{TypeVisaTimelinePromptUpdate, "low", "Prompt members with in-progress visa timelines to add a milestone (weekly)"},
+		// V2 low-tier tasks (§§60-76, ADRs 078-085)
+		{TypeStudioRetryFailed, "low", "Retry all failed jobs in a studio batch (§75)"},
+		{TypeRemittancePruneOldRates, "low", "Weekly — daily-downsample + delete rate rows past retention (§74)"},
+		{TypeReferralReviewFlagged, "low", "Daily sweep — surface flagged referrals in admin queue (§60)"},
+		{TypeScholarshipCheckDeadlines, "low", "Daily — check saved scholarship deadlines, send reminders (§73, ADR-073)"},
+		{TypeJobsExpireListings, "low", "Daily — archive job listings past application_deadline (§63)"},
+		{TypeGamificationExpireChallenges, "low", "Daily — deactivate challenges past ends_at (§64, ADR-082)"},
+		{TypeImportFetchMedia, "low", "Fetch + store external images referenced in imported content (§65)"},
+		// §86 Community Calendar (ADR-094) — nightly staleness check, low tier.
+		{TypeCalendarStalenessCheck, "low", "Mark recurring calendar entries as unverified when their staleness_check_due date has passed (§86)"},
+		// §85 Mutual Aid Board (ADR-093) — nightly expiry sweep, low tier.
+		{TypeMutualAidExpire, "low", "Expire mutual aid posts past their 30-day expires_at and notify owners 3 days before (§85)"},
 	}
 
 	result := make([]map[string]string, len(tasks))

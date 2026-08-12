@@ -4,11 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jedafe/japa/internal/db"
+	errpkg "github.com/jedafe/japa/internal/errors"
 )
 
 // Store handles widget_configurations database operations.
@@ -183,13 +183,7 @@ func (s *Store) Delete(ctx context.Context, id, tenantID pgtype.UUID) error {
 		return fmt.Errorf("deleting widget: %w", err)
 	}
 	if tag.RowsAffected() == 0 {
-		return ErrNotFound
+		return errpkg.ErrNotFound
 	}
 	return nil
 }
-
-// ErrNotFound is returned when a widget is not found.
-var ErrNotFound = fmt.Errorf("widget not found")
-
-// now is a var for testability.
-var now = time.Now

@@ -8,7 +8,8 @@
  *   - Server -> client events: notification, presence, typing,
  *     space_activity, feed_update, dm_message, moderation_alert
  *   - Client -> server events: subscribe_space / unsubscribe_space
- *     with payload { "space_id": "..." }
+ *     with payload { "space_id": "..." }, and typing with payload
+ *     { "conversation_id": "...", "is_typing": true|false }
  *   - Liveness: server sends WS-level Ping frames every 30s; the browser
  *     auto-responds with Pong (no manual JSON ping needed).
  *
@@ -115,6 +116,17 @@ class WsClient {
 	/** Unsubscribe from a space's live updates (client -> server). */
 	unsubscribeSpace(spaceId: string): void {
 		this.send({ type: 'unsubscribe_space', payload: { space_id: spaceId } });
+	}
+
+	/** Send a typing indicator to the other participant in a DM conversation
+	 * (client -> server). The server forwards it to the other participant
+	 * only. Throttle on the caller side (e.g. every 3s, not per keystroke)
+	 * to avoid excessive server-side DB lookups. */
+	sendTyping(conversationId: string, isTyping: boolean): void {
+		this.send({
+			type: 'typing',
+			payload: { conversation_id: conversationId, is_typing: isTyping }
+		});
 	}
 
 	/** True when a WebSocket is currently open. */

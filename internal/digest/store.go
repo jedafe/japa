@@ -12,6 +12,9 @@ package digest
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -19,6 +22,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/jedafe/japa/internal/db"
+	"github.com/jedafe/japa/internal/db/gen"
 )
 
 // Store is the data-access layer for digest_editions.
@@ -267,4 +271,293 @@ WHERE id = $1 AND tenant_id = $2 AND status IN ('draft', 'review', 'scheduled')
 		return pgx.ErrNoRows
 	}
 	return nil
+}
+
+// MarkEmailSent stamps email_sent=true and email_sent_at=now() on a
+// published edition after the digest:send_email task completes.
+func (s *Store) MarkEmailSent(ctx context.Context, id, tenantID pgtype.UUID) error {
+	cmd, err := s.pool.Writer.Exec(ctx, `
+UPDATE digest_editions
+SET email_sent = true, email_sent_at = now()
+WHERE id = $1 AND tenant_id = $2 AND status = 'published'
+`, id, tenantID)
+	if err != nil {
+		return fmt.Errorf("digest: mark email sent: %w", err)
+	}
+	if cmd.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+	return nil
+}
+
+// ListActiveTenantIDs returns every active tenant ID. Used by the cron-mode
+// path of GenerateEdition (zero tenantID → iterate all tenants).
+func (s *Store) ListActiveTenantIDs(ctx context.Context) ([]pgtype.UUID, error) {
+	return gen.New(s.pool.Reader).ListActiveTenantIDs(ctx)
+}
+
+// DigestContent is the JSON shape stored in digest_editions.content. Each
+// section is assembled by AssembleDigestContent per §84 generation logic.
+type DigestContent struct {
+	TopThreads  []DigestThread  `json:"top_threads"`
+	NewMembers  []DigestMember  `json:"new_members"`
+	UpcomingEvents []DigestEvent `json:"upcoming_events"`
+	FeaturedStory *DigestStory  `json:"featured_story,omitempty"`
+}
+
+// DigestThread is a top forum thread summary.
+type DigestThread struct {
+	Title      string `json:"title"`
+	Slug       string `json:"slug"`
+	VoteScore  int    `json:"vote_score"`
+	ReplyCount int    `json:"reply_count"`
+}
+
+// DigestMember is a new-member summary (display_name only — no PII leak).
+type DigestMember struct {
+	Username    string `json:"username"`
+	DisplayName string `json:"display_name,omitempty"`
+}
+
+// DigestEvent is an upcoming event summary.
+type DigestEvent struct {
+	Title string `json:"title"`
+	Slug  string `json:"slug"`
+}
+
+// DigestStory is the featured story summary.
+type DigestStory struct {
+	Title string `json:"title"`
+	Slug  string `json:"slug"`
+}
+
+// AssembleDigestContent queries platform analytics and assembles the five
+// digest sections per §84 generation logic: top threads, new members,
+// upcoming events, and a featured story. The poll section is omitted (it
+// requires admin-seeded poll questions and is deferred to a future phase).
+// When spaceID is valid, results are scoped to that Space; otherwise the
+// tenant-wide digest is assembled.
+//
+// Ref: japaconnect-engineering/sections/84-community-digest-widget.md
+func (s *Store) AssembleDigestContent(ctx context.Context, tenantID, spaceID pgtype.UUID) (json.RawMessage, error) {
+	content := DigestContent{}
+
+	// 1. Top threads: top 5 forum threads by (vote_score × 3 + reply_count × 5)
+	// in the past 7 days (§84).
+	var (
+		threadsQ strings.Builder
+		tArgs   []any
+	)
+	threadsQ.WriteString(`
+SELECT ft.title, ft.slug, ft.vote_score, ft.reply_count
+FROM forum_threads ft
+WHERE ft.tenant_id = $1
+  AND ft.deleted_at IS NULL
+  AND ft.created_at >= now() - interval '7 days'
+`)
+	tArgs = append(tArgs, tenantID)
+	argIdx := 2
+	if spaceID.Valid {
+		threadsQ.WriteString(fmt.Sprintf(" AND ft.space_id = $%d", argIdx))
+		tArgs = append(tArgs, spaceID)
+		argIdx++
+	}
+	threadsQ.WriteString(" ORDER BY (ft.vote_score * 3 + ft.reply_count * 5) DESC LIMIT 5")
+
+	trows, err := s.pool.Reader.Query(ctx, threadsQ.String(), tArgs...)
+	if err != nil {
+		return nil, fmt.Errorf("digest: assemble: top threads: %w", err)
+	}
+	for trows.Next() {
+		var t DigestThread
+		if err := trows.Scan(&t.Title, &t.Slug, &t.VoteScore, &t.ReplyCount); err != nil {
+			trows.Close()
+			return nil, fmt.Errorf("digest: assemble: scan thread: %w", err)
+		}
+		content.TopThreads = append(content.TopThreads, t)
+	}
+	trows.Close()
+	if err := trows.Err(); err != nil {
+		return nil, fmt.Errorf("digest: assemble: iterate threads: %w", err)
+	}
+
+	// 2. New members: users created in the past 7 days who completed onboarding
+	// (§84). Opt-out is handled by user privacy settings — this query surfaces
+	// only username and display_name.
+	mrows, err := s.pool.Reader.Query(ctx, `
+SELECT u.username, COALESCE(up.display_name, '')
+FROM users u
+JOIN onboarding_state os ON os.user_id = u.id AND os.tenant_id = u.tenant_id
+LEFT JOIN user_profiles up ON up.user_id = u.id AND up.tenant_id = u.tenant_id
+WHERE u.tenant_id = $1
+  AND u.created_at >= now() - interval '7 days'
+  AND os.completed = true
+ORDER BY u.created_at DESC
+LIMIT 10
+`, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("digest: assemble: new members: %w", err)
+	}
+	for mrows.Next() {
+		var m DigestMember
+		if err := mrows.Scan(&m.Username, &m.DisplayName); err != nil {
+			mrows.Close()
+			return nil, fmt.Errorf("digest: assemble: scan member: %w", err)
+		}
+		content.NewMembers = append(content.NewMembers, m)
+	}
+	mrows.Close()
+	if err := mrows.Err(); err != nil {
+		return nil, fmt.Errorf("digest: assemble: iterate members: %w", err)
+	}
+
+	// 3. Upcoming events: next 5 published events (content_type='event'),
+	// geo-filtered to the digest's Space where applicable (§84).
+	var (
+		eventsQ strings.Builder
+		eArgs   []any
+	)
+	eventsQ.WriteString(`
+SELECT c.title, c.slug
+FROM contents c
+WHERE c.tenant_id = $1
+  AND c.content_type = 'event'
+  AND c.status = 'published'
+  AND c.publish_at IS NOT NULL
+  AND c.publish_at >= now()
+`)
+	eArgs = append(eArgs, tenantID)
+	argIdx = 2
+	if spaceID.Valid {
+		eventsQ.WriteString(fmt.Sprintf(" AND c.space_id = $%d", argIdx))
+		eArgs = append(eArgs, spaceID)
+		argIdx++
+	}
+	eventsQ.WriteString(" ORDER BY c.publish_at ASC LIMIT 5")
+
+	erows, err := s.pool.Reader.Query(ctx, eventsQ.String(), eArgs...)
+	if err != nil {
+		return nil, fmt.Errorf("digest: assemble: upcoming events: %w", err)
+	}
+	for erows.Next() {
+		var e DigestEvent
+		if err := erows.Scan(&e.Title, &e.Slug); err != nil {
+			erows.Close()
+			return nil, fmt.Errorf("digest: assemble: scan event: %w", err)
+		}
+		content.UpcomingEvents = append(content.UpcomingEvents, e)
+	}
+	erows.Close()
+	if err := erows.Err(); err != nil {
+		return nil, fmt.Errorf("digest: assemble: iterate events: %w", err)
+	}
+
+	// 4. Featured story: highest engagement story (content_type='story') in the
+	// past 30 days (§84). Engagement proxy: comment_count + share_count +
+	// reshare_count (content_scores not reliably maintained for all content
+	// types).
+	var (
+		storyQ strings.Builder
+		sArgs  []any
+	)
+	storyQ.WriteString(`
+SELECT c.title, c.slug
+FROM contents c
+WHERE c.tenant_id = $1
+  AND c.content_type = 'story'
+  AND c.status = 'published'
+  AND c.created_at >= now() - interval '30 days'
+`)
+	sArgs = append(sArgs, tenantID)
+	argIdx = 2
+	if spaceID.Valid {
+		storyQ.WriteString(fmt.Sprintf(" AND c.space_id = $%d", argIdx))
+		sArgs = append(sArgs, spaceID)
+		argIdx++
+	}
+	storyQ.WriteString(" ORDER BY (c.comment_count + c.share_count + c.reshare_count) DESC LIMIT 1")
+
+	var story DigestStory
+	err = s.pool.Reader.QueryRow(ctx, storyQ.String(), sArgs...).Scan(&story.Title, &story.Slug)
+	if err == nil {
+		content.FeaturedStory = &story
+	} else if err != pgx.ErrNoRows {
+		return nil, fmt.Errorf("digest: assemble: featured story: %w", err)
+	}
+
+	raw, err := json.Marshal(content)
+	if err != nil {
+		return nil, fmt.Errorf("digest: assemble: marshal content: %w", err)
+	}
+	return raw, nil
+}
+
+// GetDigestSubscriberEmails returns the emails of all subscribers with
+// digest_enabled=true for the given tenant. Used by SendEditionEmail to
+// dispatch the published digest (§84 email channel, reuses §62 Newsletter
+// subscriber infrastructure).
+func (s *Store) GetDigestSubscriberEmails(ctx context.Context, tenantID pgtype.UUID) ([]string, error) {
+	q := gen.New(s.pool.Reader)
+	var emails []string
+	page := int32(1)
+	const pageSize = int32(500)
+	for {
+		rows, err := q.GetDigestSubscribers(ctx, gen.GetDigestSubscribersParams{
+			TenantID:   tenantID,
+			PageOffset: (page - 1) * pageSize,
+			PageLimit:  pageSize,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("digest: get subscribers: %w", err)
+		}
+		if len(rows) == 0 {
+			break
+		}
+		for _, r := range rows {
+			emails = append(emails, r.Email)
+		}
+		if len(rows) < int(pageSize) {
+			break
+		}
+		page++
+	}
+	return emails, nil
+}
+
+// CreateUnsubscribeTokenForEmail resolves the newsletter subscriber by email
+// and creates a one-click unsubscribe token, returning the token string.
+// Returns ("", nil) if the subscriber is not found (best-effort — the email
+// is still sent without an unsubscribe header).
+func (s *Store) CreateUnsubscribeTokenForEmail(ctx context.Context, tenantID pgtype.UUID, emailAddr string) (string, error) {
+	q := gen.New(s.pool.Reader)
+	sub, err := q.GetSubscriberByEmail(ctx, gen.GetSubscriberByEmailParams{
+		TenantID: tenantID, Email: emailAddr,
+	})
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return "", nil
+		}
+		return "", fmt.Errorf("digest: resolve subscriber: %w", err)
+	}
+	token, err := generateUnsubscribeToken()
+	if err != nil {
+		return "", fmt.Errorf("digest: generate token: %w", err)
+	}
+	if _, err := q.CreateUnsubscribeToken(ctx, gen.CreateUnsubscribeTokenParams{
+		Token:        token,
+		SubscriberID: sub.ID,
+	}); err != nil {
+		return "", fmt.Errorf("digest: persist token: %w", err)
+	}
+	return token, nil
+}
+
+// generateUnsubscribeToken generates a 32-byte hex token for one-click
+// unsubscribe, mirroring the worker package's newsletterGenerateUnsubscribeToken.
+func generateUnsubscribeToken() (string, error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", fmt.Errorf("digest: generate token: %w", err)
+	}
+	return hex.EncodeToString(b), nil
 }
