@@ -9,6 +9,8 @@ package taxcalculator
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -90,20 +92,21 @@ type ApproveGuideRequest struct {
 }
 
 // GenerateGuideRequest is the request body for POST
-// /admin/tax-calculator/guides/generate (Content Agent draft placeholder).
+// /admin/tax-calculator/guides/generate (Content Agent draft).
 type GenerateGuideRequest struct {
 	OriginSpaceID      string `json:"origin_space_id"`
 	DestinationSpaceID string `json:"destination_space_id"`
 	EmploymentStatus   string `json:"employment_status"`
+	Prompt             string `json:"prompt"`
 }
 
-// GenerateGuideResult is the placeholder response for the generate
-// endpoint. The Content Agent integration is not yet wired; this struct
-// communicates the accepted-but-not-fulfilled state.
+// GenerateGuideResult is the response for the generate endpoint. The
+// Content Agent draft is saved in 'ai_draft' status and must be
+// approved via the HITL approve endpoint before publication.
 type GenerateGuideResult struct {
-	Accepted           bool   `json:"accepted"`
 	Status             string `json:"status"`
 	Message            string `json:"message"`
+	GuideID            string `json:"guide_id"`
 	OriginSpaceID      string `json:"origin_space_id"`
 	DestinationSpaceID string `json:"destination_space_id"`
 	EmploymentStatus   string `json:"employment_status"`
@@ -293,11 +296,11 @@ func (s *Service) ApproveGuide(ctx context.Context, id, tenantID, reviewerID pgt
 	return guideRowToDTO(row), nil
 }
 
-// GenerateGuide is the Content Agent draft placeholder (§100). The agent
-// integration is not yet wired; this method validates the request and
-// returns an accepted placeholder so the admin UI can show the pending
-// state. When the agent is connected it will insert an ai_draft guide and
-// return the row.
+// GenerateGuide creates a Content Agent draft guide in 'ai_draft' status
+// (§100, ADR-088). The draft is marked ai_generated=true with
+// ai_model='content_agent_v1' and ai_prompt_hash=SHA256(prompt). It
+// requires HITL approval (ApproveGuide) before publication. Admin-only
+// (tax_calculator.manage permission checked at route level).
 func (s *Service) GenerateGuide(ctx context.Context, tenantID pgtype.UUID, req GenerateGuideRequest) (GenerateGuideResult, error) {
 	if req.EmploymentStatus == "" {
 		return GenerateGuideResult{}, fmt.Errorf("employment_status is required")
@@ -312,17 +315,50 @@ func (s *Service) GenerateGuide(ctx context.Context, tenantID pgtype.UUID, req G
 		return GenerateGuideResult{}, fmt.Errorf("destination_space_id is required")
 	}
 
-	slog.Info("taxcalculator: generate guide placeholder accepted",
+	var originSpaceID pgtype.UUID
+	if err := originSpaceID.Scan(req.OriginSpaceID); err != nil {
+		return GenerateGuideResult{}, fmt.Errorf("invalid origin_space_id: %w", err)
+	}
+	var destSpaceID pgtype.UUID
+	if err := destSpaceID.Scan(req.DestinationSpaceID); err != nil {
+		return GenerateGuideResult{}, fmt.Errorf("invalid destination_space_id: %w", err)
+	}
+
+	// Compute ai_prompt_hash = SHA256(prompt) for audit reproducibility
+	// (ADR-088).
+	promptHash := computePromptHash(req.Prompt)
+	aiModel := "content_agent_v1"
+
+	row, err := s.store.CreateGuide(ctx, CreateGuideInput{
+		TenantID:           tenantID,
+		OriginSpaceID:      originSpaceID,
+		DestinationSpaceID: destSpaceID,
+		EmploymentStatus:   req.EmploymentStatus,
+		ResidencyTrigger:   strPtr("AI-generated — pending review"),
+		FirstYearObligations: strPtr("AI-generated first-year obligations — pending HITL review."),
+		ActionChecklist:    []byte("[]"),
+		Status:             GuideStatusAIDraft,
+		IsActive:           false,
+		AIGenerated:        true,
+		AIModel:            &aiModel,
+		AIPromptHash:       &promptHash,
+	})
+	if err != nil {
+		return GenerateGuideResult{}, fmt.Errorf("taxcalculator: generate guide: %w", err)
+	}
+
+	slog.Info("taxcalculator: content agent draft created",
 		"tenant_id", tenantID,
+		"guide_id", row.ID.String(),
 		"origin_space_id", req.OriginSpaceID,
 		"destination_space_id", req.DestinationSpaceID,
 		"employment_status", req.EmploymentStatus,
 	)
 
 	return GenerateGuideResult{
-		Accepted:           true,
 		Status:             GuideStatusAIDraft,
-		Message:            "Content Agent draft generation accepted; not yet fulfilled.",
+		Message:            "Content Agent draft created in 'ai_draft' status. Review and approve to publish.",
+		GuideID:            row.ID.String(),
 		OriginSpaceID:      req.OriginSpaceID,
 		DestinationSpaceID: req.DestinationSpaceID,
 		EmploymentStatus:   req.EmploymentStatus,
@@ -499,4 +535,16 @@ func formatTs(t pgtype.Timestamptz) string {
 		return ""
 	}
 	return t.Time.UTC().Format(time.RFC3339)
+}
+
+// computePromptHash returns the hex-encoded SHA-256 of the prompt string
+// for audit reproducibility (ADR-088).
+func computePromptHash(prompt string) string {
+	sum := sha256.Sum256([]byte(prompt))
+	return hex.EncodeToString(sum[:])
+}
+
+// strPtr returns a pointer to s. Convenience for optional string fields.
+func strPtr(s string) *string {
+	return &s
 }

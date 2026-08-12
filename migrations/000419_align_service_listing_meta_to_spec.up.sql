@@ -11,13 +11,20 @@ BEGIN;
 
 -- origin_communities: convert text (JSON blob) → text[].
 -- Existing rows hold either NULL or a JSON array string like '["Nigerian","Ghanaian"]'.
--- Use jsonb_array_elements_text to extract elements into a native text[].
+--
+-- Postgres forbids subqueries (including ARRAY(SELECT ...)) inside an
+-- ALTER COLUMN TYPE ... USING transform expression (SQLSTATE 0A000), so the
+-- conversion is done in three steps: add a new text[] column, backfill it
+-- from the old text column with an UPDATE (subqueries are allowed in
+-- UPDATE), then drop the old column and rename the new one into place.
 ALTER TABLE service_listing_meta
     ALTER COLUMN origin_communities DROP DEFAULT;
 
 ALTER TABLE service_listing_meta
-    ALTER COLUMN origin_communities TYPE text[]
-    USING CASE
+    ADD COLUMN IF NOT EXISTS origin_communities_new text[] NOT NULL DEFAULT ARRAY[]::text[];
+
+UPDATE service_listing_meta
+    SET origin_communities_new = CASE
         WHEN origin_communities IS NULL OR origin_communities::text = '[]' THEN ARRAY[]::text[]
         WHEN origin_communities::text ~ '^\[' THEN
             ARRAY(SELECT value::text
@@ -26,7 +33,10 @@ ALTER TABLE service_listing_meta
     END;
 
 ALTER TABLE service_listing_meta
-    ALTER COLUMN origin_communities SET DEFAULT ARRAY[]::text[];
+    DROP COLUMN origin_communities;
+
+ALTER TABLE service_listing_meta
+    RENAME COLUMN origin_communities_new TO origin_communities;
 
 -- claim_status: fix default and migrate 'none' → 'unclaimed'.
 ALTER TABLE service_listing_meta

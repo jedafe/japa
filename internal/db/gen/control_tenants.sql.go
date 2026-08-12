@@ -11,6 +11,19 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const countTenants = `-- name: CountTenants :one
+SELECT count(*)::int FROM tenants
+WHERE ($1::text = '' OR status = $1::text)
+`
+
+// Total tenant count for pagination metadata, with optional status filter.
+func (q *Queries) CountTenants(ctx context.Context, statusFilter string) (int32, error) {
+	row := q.db.QueryRow(ctx, countTenants, statusFilter)
+	var column_1 int32
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const createTenant = `-- name: CreateTenant :one
 INSERT INTO tenants (name, slug, domain)
 VALUES ($1, $2, $3)
@@ -182,8 +195,16 @@ const listTenants = `-- name: ListTenants :many
 
 SELECT id, name, slug, domain, status, created_at, updated_at, deleted_at
 FROM tenants
+WHERE ($1::text = '' OR status = $1::text)
 ORDER BY created_at DESC
+LIMIT $3 OFFSET $2
 `
+
+type ListTenantsParams struct {
+	StatusFilter string `json:"status_filter"`
+	PageOffset   int32  `json:"page_offset"`
+	PageLimit    int32  `json:"page_limit"`
+}
 
 type ListTenantsRow struct {
 	ID        pgtype.UUID        `json:"id"`
@@ -199,8 +220,9 @@ type ListTenantsRow struct {
 // Control Panel: tenant management (catalog: /control/tenants/*, super-admin only).
 // Control Panel shows all tenants including soft-deleted ones so
 // super-admins can see the full inventory; the UI filters by status.
-func (q *Queries) ListTenants(ctx context.Context) ([]ListTenantsRow, error) {
-	rows, err := q.db.Query(ctx, listTenants)
+// Supports optional status filtering and offset pagination (§17).
+func (q *Queries) ListTenants(ctx context.Context, arg ListTenantsParams) ([]ListTenantsRow, error) {
+	rows, err := q.db.Query(ctx, listTenants, arg.StatusFilter, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}

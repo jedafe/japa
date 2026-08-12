@@ -853,6 +853,21 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			"tenant_id", tenantID.String(), "title", title)
 		return nil
 	})
+	// Wire the create_ticket trigger (Section 06 → Section 38): form
+	// submissions with a create_ticket trigger create a support ticket
+	// via the ticket service. Without this hook the trigger silently skips.
+	formTriggerDispatcher.SetTicketCreator(func(ctx context.Context, tenantID pgtype.UUID, subject, description string, submitterUserID *pgtype.UUID) error {
+		input := tickets.CreateTicketInput{
+			Subject:     subject,
+			Description: description,
+			Priority:    string(tickets.PriorityNormal),
+		}
+		if submitterUserID != nil {
+			input.SubmitterUserID = *submitterUserID
+		}
+		_, err := ticketService.CreateTicket(ctx, tenantID, input)
+		return err
+	})
 	worker.RegisterFormTriggerProcessor(formTriggerDispatcher)
 
 	// Documentation System subsystem (Section 44).
@@ -3059,18 +3074,18 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Ticket System routes (Section 38 — Ticket System)
 			// User portal (catalog: /tickets, /me/tickets)
 			r.Get("/ticket-types", ticketHandlers.ListTicketTypes)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tickets.submit")).
 				Post("/tickets", ticketHandlers.CreateTicket)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tickets.view_own")).
 				Get("/me/tickets", ticketHandlers.ListMyTickets)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tickets.view_own")).
 				Get("/me/tickets/{id}", ticketHandlers.GetMyTicket)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tickets.submit")).
 				Post("/me/tickets/{id}/comments", ticketHandlers.AddReply)
 
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tickets.view_own")).
 				Post("/me/tickets/{id}/attachments", ticketHandlers.AddAttachment)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tickets.view_own")).
 				Get("/me/tickets/{id}/attachments", ticketHandlers.ListAttachments)
 
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tickets.view_all")).
@@ -5259,7 +5274,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Post("/admin/tax-calculator/guides", taxCalculatorHandlers.HandleCreateGuide)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tax_calculator.manage")).
 					Post("/admin/tax-calculator/guides/generate", taxCalculatorHandlers.HandleGenerateGuide)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tax_calculator.manage")).
+				// BUG-005: ADR-108 requires the HITL approve endpoint to
+				// check tax_content.review (qualified reviewer), not
+				// tax_calculator.manage. A user with manage but not
+				// review must not be able to publish tax content.
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tax_content.review")).
 					Patch("/admin/tax-calculator/guides/{id}/approve", taxCalculatorHandlers.HandleApproveGuide)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tax_calculator.manage")).
 					Post("/admin/tax-calculator/treaties", taxCalculatorHandlers.HandleUpsertTreaty)

@@ -967,6 +967,19 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 			return fmt.Errorf("nullifying ad campaign creator: %w", err)
 		}
 
+		// GDPR: nullify studio_jobs/studio_batches created_by for jobs/batches
+		// created by the user. The FKs have no CASCADE/SET NULL and were NOT
+		// NULL until migration 000421 dropped that constraint. Without this
+		// step the final HardDeleteUser would block on the residual foreign
+		// key. The job/batch rows are preserved (they may have drafts in the
+		// review queue). Ref: Section 75, ADR-076, GDPR erasure model.
+		if err := q.GdprNullifyStudioJobCreator(ctx, userID); err != nil {
+			return fmt.Errorf("nullifying studio job creator: %w", err)
+		}
+		if err := q.GdprNullifyStudioBatchCreator(ctx, userID); err != nil {
+			return fmt.Errorf("nullifying studio batch creator: %w", err)
+		}
+
 		// space_pinned_posts.pinned_by has no CASCADE; remove pins made by the user.
 		if err := q.DeleteSpacePinnedPostsByUser(ctx, userID); err != nil {
 			return fmt.Errorf("deleting space pinned posts: %w", err)

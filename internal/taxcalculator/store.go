@@ -307,9 +307,12 @@ func (s *Store) CreateGuide(ctx context.Context, in CreateGuideInput) (GuideRow,
 	if checklist == nil {
 		checklist = []byte("[]")
 	}
+	// BUG-004: HITL is mandatory for all tax content (§100/ADR-108).
+	// New guides default to 'draft' — only ApproveGuide may set
+	// 'published'. Reject any caller-supplied 'published' status here.
 	status := in.Status
-	if status == "" {
-		status = GuideStatusPublished
+	if status == "" || status == GuideStatusPublished {
+		status = GuideStatusDraft
 	}
 
 	const q = `
@@ -376,8 +379,16 @@ func (s *Store) UpdateGuide(ctx context.Context, id, tenantID pgtype.UUID, in Up
 		argIdx++
 	}
 	if in.Status != nil {
+		// BUG-004: Only ApproveGuide may set status='published'.
+		// UpdateGuide is for editing content fields, not for
+		// publishing. Silently downgrade any 'published' to 'pending'
+		// so the HITL gate is never bypassed via the update path.
+		st := *in.Status
+		if st == GuideStatusPublished {
+			st = GuideStatusPending
+		}
 		sets = append(sets, fmt.Sprintf("status = $%d", argIdx))
-		args = append(args, *in.Status)
+		args = append(args, st)
 		argIdx++
 	}
 	if in.IsActive != nil {
