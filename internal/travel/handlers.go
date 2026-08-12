@@ -25,6 +25,7 @@ import (
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/config"
@@ -99,6 +100,19 @@ func atoiDefault(s string, fallback int) int {
 		return fallback
 	}
 	return v
+}
+
+// writeConflictIfDuplicate maps a pgx unique-violation (SQLSTATE 23505) to a
+// 409 duplicate_provider error envelope (Rule 5). Returns true when the error
+// was handled (response already written); false when the caller should handle
+// the error itself.
+func writeConflictIfDuplicate(w http.ResponseWriter, err error, code, message string) bool {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+		writeError(w, http.StatusConflict, code, message)
+		return true
+	}
+	return false
 }
 
 // ---------------------------------------------------------------------------
@@ -299,6 +313,9 @@ func (h *Handlers) HandleAdminCreateProvider(w http.ResponseWriter, r *http.Requ
 		IsActive:        body.IsActive,
 	})
 	if err != nil {
+		if writeConflictIfDuplicate(w, err, "duplicate_provider", "A travel provider with this slug already exists") {
+			return
+		}
 		slog.Error("travel: admin create provider failed", "error", err)
 		writeError(w, http.StatusInternalServerError, "create_provider_failed", "Failed to create provider")
 		return
@@ -369,6 +386,9 @@ func (h *Handlers) HandleAdminUpdateProvider(w http.ResponseWriter, r *http.Requ
 		IsActive:        body.IsActive,
 	})
 	if err != nil {
+		if writeConflictIfDuplicate(w, err, "duplicate_provider", "A travel provider with this slug already exists") {
+			return
+		}
 		slog.Error("travel: admin update provider failed", "error", err)
 		writeError(w, http.StatusInternalServerError, "update_provider_failed", "Failed to update provider")
 		return

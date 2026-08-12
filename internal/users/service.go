@@ -326,6 +326,12 @@ func (s *Service) UpdateProfile(ctx context.Context, tenantID, userID pgtype.UUI
 		}
 	}
 
+	// Re-index the user in Meilisearch when display_name changes so the
+	// search index reflects the new name (§13/§19).
+	if req.DisplayName != nil {
+		s.enqueueUserSearchIndex(tenantID, userID)
+	}
+
 	return nil
 }
 
@@ -1196,6 +1202,15 @@ func (s *Service) UpdateAccount(ctx context.Context, tenantID, userID pgtype.UUI
 			return nil, fmt.Errorf("updating display name: %w", err)
 		}
 		result.DisplayNameChanged = true
+	}
+
+	// Re-index the user in Meilisearch when username or display_name
+	// changes so the search index reflects the new values (§13/§19).
+	// UpdateProfile already enqueues when display_name changes, but
+	// username changes are handled here since UpdateProfile doesn't
+	// touch the username field.
+	if result.UsernameChanged {
+		s.enqueueUserSearchIndex(tenantID, userID)
 	}
 
 	return result, nil

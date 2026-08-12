@@ -293,9 +293,10 @@ func (s *Service) ProcessEnrollment(ctx context.Context, tenantID, userID, track
 			return nil
 		}
 		// Read the configured per-stream rate from system_settings (BUG-008).
-		// Setting key: university.pro_stream_rate_kobo (default 100 = 1.00 NGN).
+		// Setting key: university.pro_stream_rate_kobo (default 5000 = 50.00 NGN,
+		// matching system-settings-catalog.md and migration 000169).
 		if s.settings != nil {
-			grossKobo = int64(s.settings.GetIntOr(ctx, tenantID, "university.pro_stream_rate_kobo", 100))
+			grossKobo = int64(s.settings.GetIntOr(ctx, tenantID, "university.pro_stream_rate_kobo", 5000))
 		}
 	}
 

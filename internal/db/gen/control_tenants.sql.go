@@ -106,6 +106,12 @@ DELETE FROM learning_certificates WHERE tenant_id = $1
 // avoid FK violations. Tables with CASCADE from tenants (contents, feeds,
 // spaces, notifications, tickets, payments, enrollments, coupons, etc.)
 // are auto-deleted by PostgreSQL and intentionally omitted.
+//
+// MAINTENANCE: When a new tenant-scoped table is added without ON DELETE
+// CASCADE on tenants(id), it MUST be added to this query in the correct FK
+// dependency position. Otherwise its rows will leak after tenant hard-delete
+// (GDPR/NDPR §15 erasure gap). Tables with ON DELETE CASCADE must NOT be
+// added here (PostgreSQL handles them automatically).
 func (q *Queries) DeleteTenantData(ctx context.Context, tenantID pgtype.UUID) (int64, error) {
 	result, err := q.db.Exec(ctx, deleteTenantData, tenantID)
 	if err != nil {

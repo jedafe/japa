@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/hibiken/asynq"
+	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/db/gen"
 )
 
 // ---------------------------------------------------------------------------
@@ -55,6 +57,9 @@ func HandleUniversityProcessEnrollment(ctx context.Context, t *asynq.Task) error
 //
 // Payload: { tenant_id, period_start, period_end }
 // When period_start/period_end are empty, the previous calendar month is used.
+// When tenant_id is empty (cron-mode sweep), the handler iterates all active
+// tenants and runs the aggregation per tenant — mirroring the pattern used by
+// the sitemap, RSS, and security-scan sweep handlers (BUG-001/BUG-002).
 func HandleUniversityCalculatePeriodPayouts(ctx context.Context, t *asynq.Task) error {
 	slog.Info("task:university:calculate_period_payouts")
 
@@ -82,10 +87,43 @@ func HandleUniversityCalculatePeriodPayouts(ctx context.Context, t *asynq.Task) 
 		payload.PeriodEnd = end.Format(time.DateOnly)
 	}
 
-	if err := universityProcessor.CalculatePeriodPayouts(ctx, payload.TenantID,
-		payload.PeriodStart, payload.PeriodEnd); err != nil {
-		slog.Error("task:university:calculate_period_payouts: processor failed", "error", err)
-		return err
+	// Collect tenant IDs: either the single requested tenant or all active
+	// ones (cron-mode sweep). An empty tenant_id from the scheduler iterates
+	// every tenant so payouts are aggregated platform-wide (BUG-002).
+	var tenantIDs []pgtype.UUID
+	if payload.TenantID != "" {
+		var tid pgtype.UUID
+		if err := tid.Scan(payload.TenantID); err != nil {
+			slog.Error("task:university:calculate_period_payouts: invalid tenant_id", "error", err)
+			return fmt.Errorf("task:university:calculate_period_payouts: invalid tenant_id: %w", err)
+		}
+		tenantIDs = []pgtype.UUID{tid}
+	} else {
+		if dbPool == nil {
+			slog.Warn("task:university:calculate_period_payouts: no db pool, cannot list tenants")
+			return nil
+		}
+		var err error
+		tenantIDs, err = gen.New(dbPool.Reader).ListActiveTenantIDs(ctx)
+		if err != nil {
+			slog.Error("task:university:calculate_period_payouts: list tenants failed", "error", err)
+			return fmt.Errorf("task:university:calculate_period_payouts: %w", err)
+		}
+	}
+
+	if len(tenantIDs) == 0 {
+		slog.Warn("task:university:calculate_period_payouts: no active tenants found")
+		return nil
+	}
+
+	for _, tenantID := range tenantIDs {
+		if err := universityProcessor.CalculatePeriodPayouts(ctx, tenantID.String(),
+			payload.PeriodStart, payload.PeriodEnd); err != nil {
+			slog.Error("task:university:calculate_period_payouts: processor failed",
+				"tenant_id", tenantID.String(), "error", err)
+			// Continue to the next tenant — a single tenant failure must not
+			// abort the whole sweep (mirrors the sitemap/RSS sweep handlers).
+		}
 	}
 	return nil
 }

@@ -207,6 +207,10 @@ func (h *Handlers) GetTrendingContent(w http.ResponseWriter, r *http.Request) {
 	// Try Valkey cache (jc:trending:content:{tenant}:{geo}:{window}, Section 53, TTL 30min).
 	// Include content_type in the cache key when filtering.
 	// Uses distributed lock stampede protection (BUG-008).
+	//
+	// The cache always stores maxLimit rows; per-request ?limit= is applied
+	// by truncating after the cache lookup so that different limit values
+	// share one cache entry (no limit-suffix collision).
 	tenantStr := tenantID.String()
 	cacheKey := vkcache.MustKey("trending:content:%s:%s:%s", tenantStr, geoCode, window)
 	if contentType != nil {
@@ -214,18 +218,14 @@ func (h *Handlers) GetTrendingContent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	data, err := vkcache.GetOrComputeNative(r.Context(), h.cache, cacheKey, trendingCacheTTL, func(ctx context.Context) ([]gen.GetTrendingContentRow, error) {
-		// Fetch a larger pool when filtering by type, then filter in Go.
-		fetchLimit := limit
-		if contentType != nil {
-			fetchLimit = maxLimit // fetch max, filter, then truncate
-		}
-
-		rows, err := h.Store.GetTrendingContent(ctx, tenantID, window, geoCode, fetchLimit)
+		// Always fetch the max pool so the cache serves any ?limit= value.
+		rows, err := h.Store.GetTrendingContent(ctx, tenantID, window, geoCode, maxLimit)
 		if err != nil {
 			return nil, err
 		}
 
-		// Apply content_type filter in Go (BUG-007).
+		// Apply content_type filter in Go (BUG-007). Truncation to the
+		// requested limit happens after the cache lookup below.
 		if contentType != nil {
 			filtered := make([]gen.GetTrendingContentRow, 0, len(rows))
 			for _, item := range rows {
@@ -234,9 +234,6 @@ func (h *Handlers) GetTrendingContent(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 			rows = filtered
-			if int32(len(rows)) > limit {
-				rows = rows[:limit]
-			}
 		}
 
 		// Ensure non-nil so JSON encodes [] not null (BUG: trending/spaces
@@ -249,6 +246,11 @@ func (h *Handlers) GetTrendingContent(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		handleServiceError(w, err)
 		return
+	}
+
+	// Truncate the cached pool to the requested limit (per-request).
+	if int32(len(data)) > limit {
+		data = data[:limit]
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": data})
@@ -267,12 +269,18 @@ func (h *Handlers) GetTrendingTags(w http.ResponseWriter, r *http.Request) {
 	geoCode := parseGeoCode(r)
 	limit := parseLimit(r)
 
-	// Valkey cache (jc:trending:tags:{tenant}:{geo}, Section 53, TTL 30min).
+	// Valkey cache (jc:trending:tags:{tenant}:{geo}:{window}, Section 53, TTL 30min).
+	// window is included because the SQL filters by window; omitting it
+	// caused different ?window= values to collide on the same cache entry
+	// and return stale data.
+	//
+	// The cache always stores maxLimit rows; per-request ?limit= is applied
+	// by truncating after the cache lookup.
 	tenantStr := tenantID.String()
-	cacheKey := vkcache.MustKey("trending:tags:%s:%s", tenantStr, geoCode)
+	cacheKey := vkcache.MustKey("trending:tags:%s:%s:%s", tenantStr, geoCode, window)
 
 	data, err := vkcache.GetOrComputeNative(r.Context(), h.cache, cacheKey, trendingCacheTTL, func(ctx context.Context) ([]gen.GetTrendingTagsRow, error) {
-		rows, err := h.Store.GetTrendingTags(ctx, tenantID, window, geoCode, limit)
+		rows, err := h.Store.GetTrendingTags(ctx, tenantID, window, geoCode, maxLimit)
 		if err != nil {
 			return nil, err
 		}
@@ -284,6 +292,11 @@ func (h *Handlers) GetTrendingTags(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		handleServiceError(w, err)
 		return
+	}
+
+	// Truncate the cached pool to the requested limit (per-request).
+	if int32(len(data)) > limit {
+		data = data[:limit]
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": data})
@@ -302,29 +315,30 @@ func (h *Handlers) GetTrendingSpaces(w http.ResponseWriter, r *http.Request) {
 	limit := parseLimit(r)
 	level := parseLevelPtr(r) // BUG-008
 
-	// Try Valkey cache (jc:trending:spaces:{tenant}:{geo}, Section 53, TTL 30min).
-	// Include level in the cache key when filtering.
+	// Try Valkey cache (jc:trending:spaces:{tenant}:{geo}:{window}, Section 53, TTL 30min).
+	// window is included because the SQL filters by window; omitting it
+	// caused different ?window= values to collide on the same cache entry
+	// and return stale data. level is included when filtering.
 	// Uses distributed lock stampede protection (BUG-008).
+	//
+	// The cache always stores maxLimit rows; per-request ?limit= is applied
+	// by truncating after the cache lookup.
 	tenantStr := tenantID.String()
-	cacheKey := vkcache.MustKey("trending:spaces:%s:%s", tenantStr, geoCode)
+	cacheKey := vkcache.MustKey("trending:spaces:%s:%s:%s", tenantStr, geoCode, window)
 	if level != nil {
 		cacheKey += ":" + *level
 	}
 
 	data, err := vkcache.GetOrComputeNative(r.Context(), h.cache, cacheKey, trendingCacheTTL, func(ctx context.Context) ([]gen.GetTrendingSpacesRow, error) {
-		// Fetch a larger pool when filtering by level, then filter in Go.
-		fetchLimit := limit
-		if level != nil {
-			fetchLimit = maxLimit
-		}
-
-		rows, err := h.Store.GetTrendingSpaces(ctx, tenantID, window, geoCode, fetchLimit)
+		// Always fetch the max pool so the cache serves any ?limit= value.
+		rows, err := h.Store.GetTrendingSpaces(ctx, tenantID, window, geoCode, maxLimit)
 		if err != nil {
 			return nil, err
 		}
 
 		// Apply level filter in Go (BUG-008). The row doesn't include level,
 		// so we fetch the levels for the returned space IDs and filter.
+		// Truncation to the requested limit happens after the cache lookup.
 		if level != nil {
 			ids := make([]pgtype.UUID, 0, len(rows))
 			for _, item := range rows {
@@ -341,9 +355,6 @@ func (h *Handlers) GetTrendingSpaces(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 			rows = filtered
-			if int32(len(rows)) > limit {
-				rows = rows[:limit]
-			}
 		}
 
 		// Ensure non-nil so JSON encodes [] not null (BUG: trending/spaces
@@ -356,6 +367,11 @@ func (h *Handlers) GetTrendingSpaces(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		handleServiceError(w, err)
 		return
+	}
+
+	// Truncate the cached pool to the requested limit (per-request).
+	if int32(len(data)) > limit {
+		data = data[:limit]
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": data})
@@ -411,7 +427,14 @@ func (h *Handlers) GetSuggestedUsers(w http.ResponseWriter, r *http.Request) {
 	cacheKey := vkcache.MustKey("suggestions:users:%s", userStr)
 
 	data, err := vkcache.GetOrComputeNative(r.Context(), h.cache, cacheKey, suggestionsCacheTTL, func(ctx context.Context) ([]gen.GetSuggestedUsersRow, error) {
-		return h.Store.GetSuggestedUsers(ctx, user.UserID, tenantID, limit, geoCode)
+		rows, err := h.Store.GetSuggestedUsers(ctx, user.UserID, tenantID, limit, geoCode)
+		if err != nil {
+			return nil, err
+		}
+		if rows == nil {
+			rows = []gen.GetSuggestedUsersRow{}
+		}
+		return rows, nil
 	})
 	if err != nil {
 		handleServiceError(w, err)
@@ -444,7 +467,14 @@ func (h *Handlers) GetSuggestedSpaces(w http.ResponseWriter, r *http.Request) {
 	cacheKey := vkcache.MustKey("suggestions:spaces:%s", userStr)
 
 	data, err := vkcache.GetOrComputeNative(r.Context(), h.cache, cacheKey, suggestionsCacheTTL, func(ctx context.Context) ([]gen.GetSuggestedSpacesRow, error) {
-		return h.Store.GetSuggestedSpaces(ctx, user.UserID, tenantID, limit, geoCode)
+		rows, err := h.Store.GetSuggestedSpaces(ctx, user.UserID, tenantID, limit, geoCode)
+		if err != nil {
+			return nil, err
+		}
+		if rows == nil {
+			rows = []gen.GetSuggestedSpacesRow{}
+		}
+		return rows, nil
 	})
 	if err != nil {
 		handleServiceError(w, err)
@@ -474,6 +504,9 @@ func (h *Handlers) GetSuggestedTags(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		handleServiceError(w, err)
 		return
+	}
+	if data == nil {
+		data = []gen.GetSuggestedTagsRow{}
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": data})
@@ -510,6 +543,9 @@ func (h *Handlers) GetSuggestedContent(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		handleServiceError(w, err)
 		return
+	}
+	if data == nil {
+		data = []gen.GetSuggestedContentRow{}
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": data})

@@ -7,8 +7,13 @@ import type { SessionUser, Locale } from '$lib/types';
  * Japa University — the single learning surface (ADR-063 consolidation).
  * The former dual-shell (Learn vs University) has been unified: the app
  * always renders the Japa University shell with the creator-economy
- * marketplace. The canonical host is university.japaconnect.com; the
- * learn.japaconnect.com host redirects to it (handled by the edge/proxy).
+ * marketplace. The canonical host is configured via the
+ * `university.subdomain` and `university.custom_domain` system_settings
+ * (ADR-063 §2); the edge/proxy routes the configured host to this app
+ * and the backend resolves the tenant from the hostname. The
+ * learn.japaconnect.com host redirects to the configured university host
+ * (handled by the edge/proxy).
+ * Ref: japaconnect-engineering/conventions/system-settings-catalog.md
  */
 export const handle: Handle = async ({ event, resolve }) => {
 	// Hostname excludes the port; the backend resolves the tenant from it.

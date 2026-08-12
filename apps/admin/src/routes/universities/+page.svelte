@@ -3,7 +3,7 @@
 	import { Modal } from "$lib/components/ui/modal";
 	import { Button } from "$lib/components/ui/button";
 	import { SlideOver } from "$lib/components/ui/slide-over";
-	import { universitiesAdminApi } from "$lib/api";
+	import { universitiesAdminApi, geoApi } from "$lib/api";
 	import { t } from "$lib/stores/i18n.svelte";
 	import { hasPermission } from "$lib/stores/permissions.svelte";
 	import {
@@ -29,8 +29,23 @@
 
 	const canManage = $derived(hasPermission("admin.settings"));
 
+	// ── Country filter options (loaded from /geo/countries — Rule 16) ───────
+	// The backend ListUniversitiesAdmin accepts ?country= (ISO 3166-1 alpha-2).
+	// The country list is fetched from the geo API so it stays in sync with the
+	// seeded Primary Spaces and is never hardcoded.
+	let countryOptions = $state<{ value: string; label: string }[]>([]);
+	$effect(() => {
+		geoApi.listCountries().then((res: any) => {
+			const rows: Array<{ geo_code?: string; name?: string; slug?: string }> =
+				res?.ok ? (res.data ?? []) : [];
+			countryOptions = rows
+				.filter((c) => c.geo_code)
+				.map((c) => ({ value: c.geo_code!, label: c.name ?? c.geo_code! }));
+		}).catch(() => { /* empty filter on failure — list still works */ });
+	});
+
 	// ── Filter options ──────────────────────────────────────────────────────
-	const filterDefs: FilterDef[] = [
+	const filterDefs = $derived<FilterDef[]>([
 		{
 			key: "verified",
 			label: t("universities.verified", "Verified"),
@@ -38,8 +53,13 @@
 				{ value: "true", label: t("common.yes", "Yes") },
 				{ value: "false", label: t("common.no", "No") }
 			]
+		},
+		{
+			key: "country",
+			label: t("universities.country", "Country"),
+			options: countryOptions
 		}
-	];
+	]);
 
 	// ── Page-local state for sub-flows ──────────────────────────────────────
 	// EntityPage owns list/pagination/search state; the page only owns
@@ -54,12 +74,13 @@
 	let deleteTarget = $state<University | null>(null);
 	let showStatusModal = $state(false);
 	let statusTarget = $state<University | null>(null);
-	let formStatus = $state("draft");
+	let formStatus = $state("pending");
 	let showBulkImportModal = $state(false);
 	let csvFile = $state<File | null>(null);
 
 	let formName = $state("");
 	let formSlug = $state("");
+	let formLogoUrl = $state("");
 	let formVerified = $state(false);
 
 	// ── Row actions ─────────────────────────────────────────────────────────
@@ -102,9 +123,12 @@
 	});
 
 	// ── Create/Edit form fields ─────────────────────────────────────────────
+	// logo_url is accepted by the backend (POST/PATCH /admin/universities) and
+	// enqueues university:fetch_logo to download + store it (Section 39).
 	const fields: FieldDef[] = [
 		{ key: "name", label: t("universities.name", "Name"), type: "text", required: true },
 		{ key: "slug", label: t("universities.domain_slug", "Domain"), type: "text", placeholder: "mit.edu" },
+		{ key: "logo_url", label: t("universities.logo_url", "Logo URL"), type: "url", placeholder: "https://…" },
 		{ key: "verified", label: t("universities.verified", "Verified"), type: "checkbox" }
 	];
 
@@ -145,12 +169,14 @@
 		headerActions: canManage ? [
 			{ label: t("universities.bulkImport", "CSV Import"), icon: Upload, onclick: openBulkImport, variant: "outline" }
 		] : [],
-		load: async ({ page, pageSize, q }) => {
+		load: async ({ page, pageSize, q, filter }) => {
 			const params = new URLSearchParams({
 				page: String(page + 1),
 				limit: String(pageSize)
 			});
 			if (q) params.set("q", q);
+			// Section 39: admin list filterable by country (geo_code).
+			if (filter?.country) params.set("country", filter.country);
 			const result = await universitiesAdminApi.list(params.toString());
 			if (result.ok) {
 				const body = result.data as any;
@@ -168,6 +194,7 @@
 			const res = await universitiesAdminApi.create({
 				name: String(body.name ?? "").trim(),
 				slug: String(body.slug ?? "").trim(),
+				logo_url: String(body.logo_url ?? "").trim() || undefined as any,
 				verified: !!body.verified
 			});
 			return res.ok ? { ok: true } : { ok: false, error: res.error };
@@ -182,7 +209,7 @@
 	// ── Sub-flow handlers ───────────────────────────────────────────────────
 	function openEdit(uni: University) {
 		editTarget = uni;
-		formName = uni.name; formSlug = uni.slug; formVerified = uni.status === "active";
+		formName = uni.name; formSlug = uni.slug; formLogoUrl = ""; formVerified = uni.status === "active";
 		showEditSlideOver = true;
 	}
 
@@ -204,7 +231,10 @@
 		acting = true;
 		try {
 			const result = await universitiesAdminApi.update(editTarget.id, {
-				name: formName.trim(), slug: formSlug.trim(), verified: formVerified
+				name: formName.trim(),
+				slug: formSlug.trim(),
+				logo_url: formLogoUrl.trim() || undefined,
+				verified: formVerified
 			});
 			if (result.ok) { showEditSlideOver = false; entityController?.reload(); }
 			else { pageError = result.error; }
@@ -294,6 +324,7 @@
 		<div class="space-y-3">
 			<div><label for="edit-uni-name" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t("universities.name", "Name")}</label><input id="edit-uni-name" type="text" class="w-full rounded-lg border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={formName} /></div>
 			<div><label for="edit-uni-domain" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t("universities.domain_slug", "Domain")}</label><input id="edit-uni-domain" type="text" class="w-full rounded-lg border px-3 py-2 text-sm font-mono" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={formSlug} /></div>
+			<div><label for="edit-uni-logo" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t("universities.logo_url", "Logo URL")}</label><input id="edit-uni-logo" type="url" placeholder="https://…" class="w-full rounded-lg border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={formLogoUrl} /></div>
 			<div class="flex items-center gap-2"><input id="edit-uni-verified" type="checkbox" bind:checked={formVerified} /><label for="edit-uni-verified" class="text-sm">{t("universities.verified", "Verified")}</label></div>
 		</div>
 	{/if}
@@ -321,7 +352,7 @@
 	{#if statusTarget}
 		<p class="mb-3 text-sm" style="color: var(--color-foreground)">{t("universities.statusFor", "Status for")} <strong>{statusTarget.name}</strong></p>
 		<div class="space-y-2">
-			{#each ["draft", "published", "archived"] as s (s)}
+			{#each ["active", "pending", "suspended"] as s (s)}
 				<label class="flex items-center gap-2 text-sm" style="color: var(--color-foreground)">
 					<input type="radio" name="status" value={s} bind:group={formStatus} />
 					{s}
@@ -338,7 +369,7 @@
 <!-- ── CSV bulk import modal ── -->
 <Modal bind:open={showBulkImportModal} title={t("universities.bulkImport", "CSV Bulk Import")} size="default">
 	<div class="space-y-3">
-		<p class="text-sm" style="color: var(--color-muted)">{t("universities.bulkImportHelp", "Upload a CSV file with columns: name, slug, domain. Each row will create a university.")}</p>
+		<p class="text-sm" style="color: var(--color-muted)">{t("universities.bulkImportHelp", "Upload a CSV file with columns: name, slug, logo_url. Each row will create a university. Duplicate slugs are skipped.")}</p>
 		<div>
 			<label for="csv-file" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t("universities.csvFile", "CSV File")}</label>
 			<input id="csv-file" type="file" accept=".csv" onchange={handleFileSelect} class="w-full text-sm" />
