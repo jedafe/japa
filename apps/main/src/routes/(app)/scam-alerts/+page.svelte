@@ -1,6 +1,7 @@
 <script lang="ts">
 	// Ref: japaconnect-engineering/sections/81-scam-alert-board.md
 	import { untrack } from 'svelte';
+	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { TriangleAlert, Plus, Pin, Search, X } from 'lucide-svelte';
 	import { api } from '$lib/api/client';
@@ -26,6 +27,7 @@
 	let atEnd = $state(false);
 	let loading = $state(false);
 	let sentinel = $state<HTMLElement | null>(null);
+	let currentPage = $state(1);
 
 	// Filter form state — seeded from SSR query params.
 	let destFilter = $state(untrack(() => data.filters.dest));
@@ -38,6 +40,7 @@
 			alerts = seed;
 			atEnd = seed.length < data.pageSize;
 			loading = false;
+			currentPage = 1;
 			destFilter = data.filters.dest;
 			scamTypeFilter = data.filters.scam_type;
 		});
@@ -50,11 +53,6 @@
 			'Community-reported scam alerts to help the diaspora stay safe.'
 		)
 	);
-
-	function cursor(): string | null {
-		const last = alerts[alerts.length - 1];
-		return last ? last.created_at : null;
-	}
 
 	$effect(() => {
 		const el = sentinel;
@@ -71,10 +69,12 @@
 
 	async function loadMore() {
 		if (loading || atEnd) return;
-		const c = cursor();
-		if (!c) return;
 		loading = true;
-		const params = new URLSearchParams({ page_size: String(data.pageSize), cursor_created_at: c });
+		const nextPage = currentPage + 1;
+		const params = new URLSearchParams({
+			page: String(nextPage),
+			limit: String(data.pageSize)
+		});
 		if (data.filters.dest) params.set('dest', data.filters.dest);
 		if (data.filters.scam_type) params.set('scam_type', data.filters.scam_type);
 		const res = await api.get<ScamReport[]>(`/scam-alerts?${params.toString()}`);
@@ -84,6 +84,7 @@
 		}
 		const batch = res.data ?? [];
 		alerts = [...alerts, ...batch];
+		currentPage = nextPage;
 		atEnd = batch.length < data.pageSize;
 		loading = false;
 	}
@@ -94,13 +95,13 @@
 		if (destFilter) params.set('dest', destFilter);
 		if (scamTypeFilter) params.set('scam_type', scamTypeFilter);
 		const qs = params.toString();
-		window.location.href = qs ? `/scam-alerts?${qs}` : '/scam-alerts';
+		goto(qs ? `/scam-alerts?${qs}` : '/scam-alerts');
 	}
 
 	function clearFilters() {
 		destFilter = '';
 		scamTypeFilter = '';
-		window.location.href = '/scam-alerts';
+		goto('/scam-alerts');
 	}
 
 	const hasFilters = $derived(!!data.filters.dest || !!data.filters.scam_type);

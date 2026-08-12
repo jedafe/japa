@@ -8,17 +8,23 @@ package scholarships
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/db/gen"
 )
+
+// ErrGuideNotFound indicates the target guide is not a published scholarship
+// (or does not exist), so it cannot be saved to a user's tracker.
+var ErrGuideNotFound = errors.New("scholarships: guide not found or not a published scholarship")
 
 // Status constants for saved scholarship tracker.
 const (
@@ -265,6 +271,57 @@ func (s *Service) FindScholarships(ctx context.Context, tenantID pgtype.UUID, fi
 		argIdx++
 	}
 
+	// Amount + deadline range filters on custom_field_values. These were
+	// previously accepted by the API but never applied to the query.
+	if filters.MinAmount > 0 {
+		conditions = append(conditions, fmt.Sprintf(`
+			EXISTS (
+				SELECT 1 FROM custom_field_values cfv
+				JOIN custom_fields cf ON cf.id = cfv.field_id
+				WHERE cfv.entity_id = c.id
+				  AND cf.key = 'award_amount_usd'
+				  AND cfv.value_number >= $%d
+			)`, argIdx))
+		args = append(args, filters.MinAmount)
+		argIdx++
+	}
+	if filters.MaxAmount > 0 {
+		conditions = append(conditions, fmt.Sprintf(`
+			EXISTS (
+				SELECT 1 FROM custom_field_values cfv
+				JOIN custom_fields cf ON cf.id = cfv.field_id
+				WHERE cfv.entity_id = c.id
+				  AND cf.key = 'award_amount_usd'
+				  AND cfv.value_number <= $%d
+			)`, argIdx))
+		args = append(args, filters.MaxAmount)
+		argIdx++
+	}
+	if filters.DeadlineFrom != "" {
+		conditions = append(conditions, fmt.Sprintf(`
+			EXISTS (
+				SELECT 1 FROM custom_field_values cfv
+				JOIN custom_fields cf ON cf.id = cfv.field_id
+				WHERE cfv.entity_id = c.id
+				  AND cf.key = 'application_deadline'
+				  AND cfv.value_text >= $%d
+			)`, argIdx))
+		args = append(args, filters.DeadlineFrom)
+		argIdx++
+	}
+	if filters.DeadlineTo != "" {
+		conditions = append(conditions, fmt.Sprintf(`
+			EXISTS (
+				SELECT 1 FROM custom_field_values cfv
+				JOIN custom_fields cf ON cf.id = cfv.field_id
+				WHERE cfv.entity_id = c.id
+				  AND cf.key = 'application_deadline'
+				  AND cfv.value_text <= $%d
+			)`, argIdx))
+		args = append(args, filters.DeadlineTo)
+		argIdx++
+	}
+
 	// Sort order
 	var orderBy string
 	switch filters.Sort {
@@ -287,11 +344,17 @@ func (s *Service) FindScholarships(ctx context.Context, tenantID pgtype.UUID, fi
 	dataQuery := fmt.Sprintf(`
 		SELECT c.id, c.title, c.slug, c.meta_description,
 			COALESCE(
-				(SELECT json_object_agg(cf.key, cfv.value_text)
+				(SELECT json_object_agg(cf.key,
+					CASE
+						WHEN cfv.value_text IS NOT NULL THEN cfv.value_text
+						WHEN cfv.value_number IS NOT NULL THEN cfv.value_number::text
+						WHEN cfv.value_bool IS NOT NULL THEN cfv.value_bool::text
+						ELSE ''
+					END)
 				 FROM custom_field_values cfv
 				 JOIN custom_fields cf ON cf.id = cfv.field_id
 				 WHERE cfv.entity_id = c.id
-				   AND cfv.value_text IS NOT NULL AND cfv.value_text != ''
+				   AND COALESCE(cfv.value_text, cfv.value_number::text, cfv.value_bool::text) != ''
 				), '{}'::json
 			) AS field_values,
 			COUNT(*) OVER() AS total_count
@@ -345,11 +408,17 @@ func (s *Service) GetScholarshipDetail(ctx context.Context, tenantID pgtype.UUID
 	query := `
 		SELECT c.id, c.title, c.slug, c.meta_description,
 			COALESCE(
-				(SELECT json_object_agg(cf.key, cfv.value_text)
+				(SELECT json_object_agg(cf.key,
+					CASE
+						WHEN cfv.value_text IS NOT NULL THEN cfv.value_text
+						WHEN cfv.value_number IS NOT NULL THEN cfv.value_number::text
+						WHEN cfv.value_bool IS NOT NULL THEN cfv.value_bool::text
+						ELSE ''
+					END)
 				 FROM custom_field_values cfv
 				 JOIN custom_fields cf ON cf.id = cfv.field_id
 				 WHERE cfv.entity_id = c.id
-				   AND cfv.value_text IS NOT NULL AND cfv.value_text != ''
+				   AND COALESCE(cfv.value_text, cfv.value_number::text, cfv.value_bool::text) != ''
 				), '{}'::json
 			) AS field_values
 		FROM contents c
@@ -377,8 +446,18 @@ func (s *Service) GetScholarshipDetail(ctx context.Context, tenantID pgtype.UUID
 	return r, nil
 }
 
-// SaveScholarship saves a scholarship to the user's tracker.
+// SaveScholarship saves a scholarship to the user's tracker. The guide is
+// validated to be a published scholarship guide first, and a duplicate save
+// (ON CONFLICT DO NOTHING) returns the existing tracker row instead of an
+// error so repeated saves are idempotent.
 func (s *Service) SaveScholarship(ctx context.Context, tenantID, userID, guideID pgtype.UUID) (gen.SavedScholarship, error) {
+	// Validate the target is a published scholarship guide before saving.
+	// Without this, any content ID (draft, unpublished, or non-scholarship)
+	// could be saved to the tracker.
+	if _, err := s.GetScholarshipDetail(ctx, tenantID, guideID); err != nil {
+		return gen.SavedScholarship{}, ErrGuideNotFound
+	}
+
 	defaultReminderDays := int32(s.settings.GetIntOr(ctx, tenantID, "scholarship_finder.default_reminder_days", 14))
 
 	saved, err := s.store.SaveScholarship(ctx, gen.SaveScholarshipParams{
@@ -388,6 +467,20 @@ func (s *Service) SaveScholarship(ctx context.Context, tenantID, userID, guideID
 		RemindBeforeDays: defaultReminderDays,
 	})
 	if err != nil {
+		// ON CONFLICT (tenant_id, user_id, guide_id) DO NOTHING returns no
+		// row when the tracker entry already exists; surface the existing
+		// row so a repeat save is idempotent rather than a 400.
+		if errors.Is(err, pgx.ErrNoRows) {
+			existing, gerr := s.store.GetSavedScholarship(ctx, gen.GetSavedScholarshipParams{
+				TenantID: tenantID,
+				UserID:   userID,
+				GuideID:  guideID,
+			})
+			if gerr != nil {
+				return gen.SavedScholarship{}, gerr
+			}
+			return existing, nil
+		}
 		return gen.SavedScholarship{}, err
 	}
 
@@ -411,17 +504,16 @@ func (s *Service) SaveScholarship(ctx context.Context, tenantID, userID, guideID
 }
 
 // UpdateSavedScholarship updates the status/notes/reminder_days.
-func (s *Service) UpdateSavedScholarship(ctx context.Context, tenantID, userID, guideID pgtype.UUID, status, notes string, remindBeforeDays *int32) (gen.SavedScholarship, error) {
+// `notes` is a pointer so callers can clear notes with an explicit empty
+// string (nil means "leave unchanged", matching the SQL COALESCE update).
+func (s *Service) UpdateSavedScholarship(ctx context.Context, tenantID, userID, guideID pgtype.UUID, status string, notes *string, remindBeforeDays *int32) (gen.SavedScholarship, error) {
 	if status != "" && !IsValidStatus(status) {
 		return gen.SavedScholarship{}, fmt.Errorf("scholarships: invalid status: %s", status)
 	}
 
-	var statusArg, notesArg *string
+	var statusArg *string
 	if status != "" {
 		statusArg = &status
-	}
-	if notes != "" {
-		notesArg = &notes
 	}
 
 	var remindArg *int32
@@ -434,7 +526,7 @@ func (s *Service) UpdateSavedScholarship(ctx context.Context, tenantID, userID, 
 		UserID:           userID,
 		GuideID:          guideID,
 		Status:           statusArg,
-		Notes:            notesArg,
+		Notes:            notes,
 		RemindBeforeDays: remindArg,
 	})
 }
@@ -701,11 +793,77 @@ func (s *Service) AdminReminderLog(ctx context.Context, tenantID pgtype.UUID, pa
 
 // FindNeedingReminders returns saved scholarships needing deadline reminders.
 // Called by the scholarship:check_deadlines worker task.
+//
+// The store query returns every saved scholarship with a non-null deadline
+// and no recent reminder; this method additionally enforces the
+// remind_before_days window so reminders are only dispatched for deadlines
+// that are still ahead and within the user's configured lead time. Without
+// this filter the daily sweep would notify users about far-future deadlines
+// (and re-notify every day), which is notification spam (ADR-073 §3).
 func (s *Service) FindNeedingReminders(ctx context.Context, tenantID pgtype.UUID, batchLimit int32) ([]gen.FindScholarshipsNeedingRemindersRow, error) {
-	return s.store.FindNeedingReminders(ctx, gen.FindScholarshipsNeedingRemindersParams{
+	rows, err := s.store.FindNeedingReminders(ctx, gen.FindScholarshipsNeedingRemindersParams{
 		TenantID:   tenantID,
 		BatchLimit: batchLimit,
 	})
+	if err != nil {
+		return nil, err
+	}
+
+	now := time.Now().UTC()
+	out := make([]gen.FindScholarshipsNeedingRemindersRow, 0, len(rows))
+
+	for _, r := range rows {
+		if !withinReminderWindow(r, now) {
+			continue
+		}
+
+		out = append(out, r)
+	}
+
+	return out, nil
+}
+
+// withinReminderWindow reports whether a saved scholarship should receive a
+// deadline reminder right now: the deadline must be parseable, still ahead,
+// and within the user's configured remind_before_days lead time.
+func withinReminderWindow(r gen.FindScholarshipsNeedingRemindersRow, now time.Time) bool {
+	if r.DeadlineValue == nil || *r.DeadlineValue == "" {
+		return false
+	}
+
+	deadline, ok := parseDeadlineValue(*r.DeadlineValue)
+	if !ok {
+		// Unparseable deadline — skip rather than emit a malformed reminder.
+		return false
+	}
+
+	// Compare by calendar day (UTC) so a deadline later today still counts as
+	// "ahead of" now rather than being treated as already passed.
+	deadlineDay := time.Date(deadline.Year(), deadline.Month(), deadline.Day(), 0, 0, 0, 0, time.UTC)
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+
+	if deadlineDay.Before(today) {
+		return false
+	}
+
+	windowEnd := today.AddDate(0, 0, int(r.RemindBeforeDays))
+
+	return !deadlineDay.After(windowEnd)
+}
+
+// parseDeadlineValue parses an application_deadline custom-field value, which
+// is stored as text in either YYYY-MM-DD or RFC3339 form (matching the admin
+// deadline report parsing in AdminDeadlines).
+func parseDeadlineValue(v string) (time.Time, bool) {
+	if t, err := time.Parse("2006-01-02", v); err == nil {
+		return t, true
+	}
+
+	if t, err := time.Parse(time.RFC3339, v); err == nil {
+		return t, true
+	}
+
+	return time.Time{}, false
 }
 
 // MarkReminderSent updates last_reminded_at for a saved scholarship.

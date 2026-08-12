@@ -769,9 +769,12 @@
 							>
 								<option value="">{t('space.report_reason_select', 'Select a reason…')}</option>
 								<option value="spam">{t('space.report_spam', 'Spam')}</option>
-								<option value="harassment">{t('space.report_harassment', 'Harassment or hate speech')}</option>
+								<option value="harassment">{t('space.report_harassment', 'Harassment')}</option>
+								<option value="hate_speech">{t('space.report_hate_speech', 'Hate speech')}</option>
 								<option value="misinformation">{t('space.report_misinformation', 'Misinformation')}</option>
-								<option value="illegal">{t('space.report_illegal', 'Illegal content')}</option>
+								<option value="illegal_content">{t('space.report_illegal', 'Illegal content')}</option>
+								<option value="self_harm">{t('space.report_self_harm', 'Self harm')}</option>
+								<option value="copyright">{t('space.report_copyright', 'Copyright')}</option>
 								<option value="other">{t('space.report_other', 'Other')}</option>
 							</select>
 						</div>

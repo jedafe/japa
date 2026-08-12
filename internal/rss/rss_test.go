@@ -9,6 +9,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/rss/model"
 )
 
 // newTestHandlers creates Handlers with a nil queries pointer for tests
@@ -306,9 +307,9 @@ func TestHTMLToTextExcerpt(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			got := htmlToTextExcerpt(tt.input, tt.maxRunes)
+			got := model.HTMLToTextExcerpt(tt.input, tt.maxRunes)
 			if got != tt.want {
-				t.Fatalf("htmlToTextExcerpt() = %q, want %q", got, tt.want)
+				t.Fatalf("model.HTMLToTextExcerpt() = %q, want %q", got, tt.want)
 			}
 		})
 	}

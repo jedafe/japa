@@ -979,6 +979,8 @@
 	"reviews.status": "Statut",
 	"reviews.moderate": "Modérer",
 	"reviews.moderate_help": "Définissez le statut de modération de cet avis.",
+	"reviews.moderate_reason": "Raison (facultatif)",
+	"reviews.moderate_reason_placeholder": "Raison de cette action de modération…",
 	"reviews.status_approved": "Approuvé",
 	"reviews.status_flagged": "Signalé",
 	"reviews.status_pending": "En attente",

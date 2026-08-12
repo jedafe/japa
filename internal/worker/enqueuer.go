@@ -179,6 +179,10 @@ var taskTier = func() map[string]string {
 		TypeJapaStageRecommend,
 		// §82 Japa Planning Groups (ADR-090) — weekly check-in reminder, default tier.
 		TypePlanningGroupCheckinReminder,
+		// §81 Scam Alert Board (ADR-089) — confirm-event notification fan-out, default tier.
+		TypeScamAlertNotifySubscribers,
+		// §51 Content Reports — notify moderation team of a new report, default tier.
+		TypeReportNotifyAdmin,
 	} {
 		m[t] = QueueDefault
 	}
@@ -317,6 +321,7 @@ func TaskTypeCatalog() []map[string]string {
 		{TypeMaintenancePruneAuditLogs, "low", "Prune old audit logs"},
 		{TypeMaintenancePrunePushTokens, "low", "Prune stale push tokens"},
 		{TypeModerationAutoHide, "low", "Auto-hide heavily reported content"},
+		{TypeReportNotifyAdmin, "default", "Notify moderation team of a new report"},
 		{TypeDMCleanupDeclinedRequests, "low", "Clean up declined DM requests"},
 		{TypeCouponTrackEvents, "low", "Track coupon usage events"},
 		{TypeCouponExpireCheck, "low", "Expire outdated coupons"},
@@ -349,6 +354,8 @@ func TaskTypeCatalog() []map[string]string {
 		// §82 Japa Planning Groups (ADR-090)
 		{TypePlanningGroupExpire, "low", "Soft-delete planning groups past their expires_at date"},
 		{TypePlanningGroupCheckinReminder, "default", "Send weekly check-in reminders to planning group members who haven't checked in"},
+		// §81 Scam Alert Board (ADR-089)
+		{TypeScamAlertNotifySubscribers, "default", "Fan out scam-alert notifications to subscribers on report confirmation + award Community Guardian badge"},
 	}
 
 	result := make([]map[string]string, len(tasks))

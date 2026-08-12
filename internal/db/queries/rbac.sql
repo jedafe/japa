@@ -202,3 +202,16 @@ SELECT EXISTS(
     JOIN user_groups ug ON ugm.group_id = ug.id
     WHERE ugm.tenant_id = @tenant_id AND ugm.user_id = @user_id AND ug.slug = @group_slug
 ) AS in_group;
+
+-- name: ListUserIDsByPermissionKey :many
+-- Returns the distinct user IDs that hold the given permission key via the
+-- RBAC chain: user_group_memberships → user_groups → group_roles →
+-- role_permissions → permissions. Used by report:notify_admin to fan out
+-- moderation notifications to every user with reports.review.
+SELECT DISTINCT ugm.user_id
+FROM user_group_memberships ugm
+JOIN user_groups ug ON ugm.group_id = ug.id
+JOIN group_roles gr ON gr.group_id = ug.id
+JOIN role_permissions rp ON rp.role_id = gr.role_id
+JOIN permissions p ON rp.permission_id = p.id
+WHERE ugm.tenant_id = @tenant_id AND p.key = @permission_key;

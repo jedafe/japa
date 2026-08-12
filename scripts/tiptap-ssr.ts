@@ -26,6 +26,28 @@ import TableRow from '@tiptap/extension-table-row';
 import TableCell from '@tiptap/extension-table-cell';
 import TableHeader from '@tiptap/extension-table-header';
 
+// Custom Link extension that also renders the affiliate_provider_id
+// attribute when present (Section 55 P4 — render-time affiliate link
+// rewriting). The Go backend's affiliate resolver reads this attribute
+// to inject tracking params at render time.
+const AffiliateLink = Link.extend({
+  addAttributes() {
+    return {
+      ...this.parent?.(),
+      affiliateProviderId: {
+        default: null,
+        renderHTML: (attrs) => {
+          if (!attrs.affiliateProviderId) {
+            return {};
+          }
+          return { 'data-affiliate-provider-id': attrs.affiliateProviderId };
+        },
+        parseHTML: (el) => el.getAttribute('data-affiliate-provider-id') || null,
+      },
+    };
+  },
+});
+
 // Custom extension for platform embeds (YouTube, Twitter, etc.)
 // Per §55 P4 (render-time over save-time), the node stores the platform
 // and url — NOT pre-resolved HTML. The SSR script emits only safe data
@@ -81,13 +103,21 @@ const CouponEmbed = {
     return {
       coupon_id: { default: null },
       label: { default: null },
+      display_mode: { default: 'full' },
     };
   },
   parseHTML() {
     return [{ tag: 'div[data-type="coupon-embed"]' }];
   },
   renderHTML(node) {
-    return ['div', { 'data-type': 'coupon-embed', 'data-coupon-id': node.attrs.coupon_id }, 0];
+    const attrs: Record<string, string> = {
+      'data-type': 'coupon-embed',
+      'data-coupon-id': node.attrs.coupon_id,
+    };
+    if (node.attrs.display_mode && node.attrs.display_mode !== 'full') {
+      attrs['data-display-mode'] = node.attrs.display_mode;
+    }
+    return ['div', attrs, 0];
   },
 };
 
@@ -135,7 +165,7 @@ const ContentLink = {
 
 const extensions = [
   StarterKit,
-  Link.configure({ openOnClick: false }),
+  AffiliateLink.configure({ openOnClick: false }),
   Image,
   Placeholder,
   Table,

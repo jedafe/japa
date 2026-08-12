@@ -482,6 +482,34 @@ func (h *Handlers) enqueueFanOutTask(contentID, tenantID, authorID, spaceID pgty
 	}
 }
 
+// enqueueRSSRegenerate enqueues the rss:regenerate task for a tenant so the
+// universal + blog RSS feeds reflect newly published content without waiting
+// for the hourly cron. Fire-and-forget per Rule 8 (RSS-013).
+//
+// Ref: japaconnect-engineering/sections/26-seo-performance.md
+// Ref: japaconnect-engineering/sections/11-job-queue-asynq.md
+func (h *Handlers) enqueueRSSRegenerate(tenantID pgtype.UUID) {
+	if h.AsynqClient == nil {
+		return
+	}
+
+	payload, err := json.Marshal(map[string]string{
+		"tenant_id": tenantID.String(),
+	})
+	if err != nil {
+		slog.Warn("content: failed to marshal rss:regenerate payload", "error", err)
+		return
+	}
+
+	if _, err := h.AsynqClient.Enqueue(
+		asynq.NewTask(worker.TypeRSSRegenerate, payload),
+		asynq.Queue(worker.QueueForTask(worker.TypeRSSRegenerate)),
+	); err != nil {
+		slog.Warn("content: failed to enqueue rss:regenerate task",
+			"tenant_id", tenantID.String(), "error", err)
+	}
+}
+
 // dispatchMentionNotifications extracts @mentioned users from the content
 // body (TipTap JSON) and fires a mention.content notification to each via
 // the batch system (Section 35 — BL-002). Fire-and-forget per Rule 8:
@@ -849,6 +877,9 @@ func (h *Handlers) CreateContent(w http.ResponseWriter, r *http.Request) {
 	// are fanned out by the scheduled-publish handler when they go live.
 	if content.Status == StatusPublished {
 		h.enqueueFeedFanOut(r.Context(), content.ID, tenantID, user.UserID, content.SpaceID, content.ContentType)
+		// RSS-013: regenerate RSS feeds so new content appears without
+		// waiting for the hourly cron.
+		h.enqueueRSSRegenerate(tenantID)
 	}
 
 	// Enqueue link preview fetches for external URLs in the body — fire-and-forget
@@ -1205,6 +1236,8 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 	// This covers the draft→published path that CreateContent doesn't handle.
 	if prevErr == nil && prevContent.Status != StatusPublished && content.Status == StatusPublished {
 		h.enqueueFeedFanOut(r.Context(), id, tenantID, content.AuthorID, content.SpaceID, content.ContentType)
+		// RSS-013: regenerate RSS feeds on draft→published transition.
+		h.enqueueRSSRegenerate(tenantID)
 	}
 
 	// Enqueue link preview fetches for external URLs in the body — fire-and-forget
@@ -1284,6 +1317,8 @@ func (h *Handlers) PublishContent(w http.ResponseWriter, r *http.Request) {
 	// This covers the draft→published path that CreateContent doesn't handle.
 	if prevErr == nil && prevContent.Status != StatusPublished {
 		h.enqueueFeedFanOut(r.Context(), id, tenantID, updated.AuthorID, updated.SpaceID, updated.ContentType)
+		// RSS-013: regenerate RSS feeds on explicit publish.
+		h.enqueueRSSRegenerate(tenantID)
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": updated})

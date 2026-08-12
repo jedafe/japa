@@ -18,7 +18,7 @@ export const load: PageServerLoad = async (event) => {
 		countries = [];
 	}
 
-	const params = new URLSearchParams({ page_size: String(PAGE_SIZE) });
+	const params = new URLSearchParams({ page: '1', limit: String(PAGE_SIZE) });
 	if (dest) params.set('dest', dest);
 	if (scam_type) params.set('scam_type', scam_type);
 

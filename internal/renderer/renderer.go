@@ -39,9 +39,27 @@ const ScriptRootEnv = "JC_RENDERER_SCRIPT_ROOT"
 // string, e.g. "12h", "30m"). Defaults to 24h per Section 15 / valkey catalog.
 const CacheTTLEnv = "JC_RENDERER_CACHE_TTL"
 
+// TimeoutEnv is the env var that overrides the per-render Bun subprocess
+// timeout (Go duration string, e.g. "10s", "30s"). Defaults to 10s. Prevents
+// a hanging SSR script from tying up a request goroutine indefinitely.
+const TimeoutEnv = "JC_RENDERER_TIMEOUT"
+
+// MaxConcurrentEnv is the env var that overrides the maximum number of
+// concurrent Bun subprocesses. Defaults to 8. Prevents resource exhaustion
+// under burst load.
+const MaxConcurrentEnv = "JC_RENDERER_MAX_CONCURRENT"
+
 // defaultCacheTTL is the render cache TTL used when JC_RENDERER_CACHE_TTL is
 // unset. Matches the valkey-keys-catalog entry (24hr).
 const defaultCacheTTL = 24 * time.Hour
+
+// defaultTimeout is the per-render Bun subprocess timeout used when
+// JC_RENDERER_TIMEOUT is unset.
+const defaultTimeout = 10 * time.Second
+
+// defaultMaxConcurrent is the maximum number of concurrent Bun subprocesses
+// used when JC_RENDERER_MAX_CONCURRENT is unset.
+const defaultMaxConcurrent = 8
 
 // defaultScriptRoot is the allowlist root used when JC_RENDERER_SCRIPT_ROOT
 // is unset. Resolved against the process working directory.
@@ -53,10 +71,12 @@ var ErrInvalidScriptPath = errors.New("renderer: script path must be a .js/.ts f
 
 // Renderer converts ProseMirror JSON to HTML via TipTap SSR.
 type Renderer struct {
-	scriptPath       string
-	cache            *valkey.Client
-	cacheTTL         time.Duration
-	couponResolver   CouponResolver
+	scriptPath        string
+	cache             *valkey.Client
+	cacheTTL          time.Duration
+	timeout           time.Duration
+	sem               chan struct{}
+	couponResolver    CouponResolver
 	affiliateResolver AffiliateLinkResolver
 }
 
@@ -91,10 +111,28 @@ func New(scriptPath string, cache *valkey.Client) (*Renderer, error) {
 			slog.Warn("invalid JC_RENDERER_CACHE_TTL, using default", "value", env, "default", defaultCacheTTL)
 		}
 	}
+	timeout := defaultTimeout
+	if env := strings.TrimSpace(os.Getenv(TimeoutEnv)); env != "" {
+		if parsed, err := time.ParseDuration(env); err == nil && parsed > 0 {
+			timeout = parsed
+		} else {
+			slog.Warn("invalid JC_RENDERER_TIMEOUT, using default", "value", env, "default", defaultTimeout)
+		}
+	}
+	maxConcurrent := defaultMaxConcurrent
+	if env := strings.TrimSpace(os.Getenv(MaxConcurrentEnv)); env != "" {
+		if parsed, err := strconv.Atoi(env); err == nil && parsed > 0 {
+			maxConcurrent = parsed
+		} else {
+			slog.Warn("invalid JC_RENDERER_MAX_CONCURRENT, using default", "value", env, "default", defaultMaxConcurrent)
+		}
+	}
 	return &Renderer{
 		scriptPath: cleaned,
 		cache:      cache,
 		cacheTTL:   ttl,
+		timeout:    timeout,
+		sem:        make(chan struct{}, maxConcurrent),
 	}, nil
 }
 
@@ -182,14 +220,31 @@ func (r *Renderer) Render(ctx context.Context, tenantID, contentID pgtype.UUID, 
 
 // renderViaBun shells out to Bun to run the TipTap SSR script.
 // The input is validated before being piped to the external process.
+// A dedicated timeout (JC_RENDERER_TIMEOUT, default 10s) bounds the
+// subprocess so a hanging SSR script cannot tie up the request goroutine.
+// A concurrency semaphore (JC_RENDERER_MAX_CONCURRENT, default 8) caps
+// the number of simultaneous Bun processes to prevent resource exhaustion.
 func (r *Renderer) renderViaBun(ctx context.Context, json []byte) (string, error) {
 	if err := validateRenderInput(json); err != nil {
 		return "", err
 	}
 
+	// Acquire a concurrency slot. On context cancellation, return early.
+	select {
+	case r.sem <- struct{}{}:
+		defer func() { <-r.sem }()
+	case <-ctx.Done():
+		return "", ctx.Err()
+	}
+
+	// Apply a dedicated render timeout so a hanging Bun process is killed
+	// even if the request context has no deadline.
+	renderCtx, cancel := context.WithTimeout(ctx, r.timeout)
+	defer cancel()
+
 	// scriptPath was validated against the allowlist root in New(); no
 	// gosec suppression needed here.
-	cmd := exec.CommandContext(ctx, "bun", "run", r.scriptPath)
+	cmd := exec.CommandContext(renderCtx, "bun", "run", r.scriptPath)
 	cmd.Stdin = bytes.NewReader(json)
 
 	var stdout, stderr bytes.Buffer

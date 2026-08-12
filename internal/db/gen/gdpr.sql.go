@@ -2267,7 +2267,7 @@ func (q *Queries) GdprExportUserReplyViews(ctx context.Context, userID pgtype.UU
 
 const gdprExportUserReviews = `-- name: GdprExportUserReviews :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT id, tenant_id, entity_type, entity_id, reviewer_user_id, rating, title, body, status, created_at, updated_at FROM reviews WHERE reviewer_user_id = $1 AND tenant_id = $2) t
+FROM (SELECT id, tenant_id, entity_type, entity_id, reviewer_user_id, rating, title, body, status, created_at, updated_at, removed_by FROM reviews WHERE reviewer_user_id = $1 AND tenant_id = $2) t
 `
 
 type GdprExportUserReviewsParams struct {

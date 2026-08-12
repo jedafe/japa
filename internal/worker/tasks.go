@@ -90,6 +90,7 @@ const (
 	TypeMaintenancePruneAuditLogs       = "maintenance:prune_audit_logs"
 	TypeMaintenancePrunePushTokens      = "maintenance:prune_push_tokens"
 	TypeModerationAutoHide              = "moderation:auto_hide"
+	TypeReportNotifyAdmin               = "report:notify_admin"
 	TypeDMCleanupDeclinedRequests       = "dm:cleanup_declined_requests"
 	TypeTenantCleanupData               = "tenant:cleanup_data"
 	TypeCouponTrackEvents               = "coupon:track_events"
@@ -183,6 +184,7 @@ func RegisterHandlers(mux *asynq.ServeMux) {
 	mux.HandleFunc(TypeMaintenancePruneAuditLogs, HandleMaintenancePruneAuditLogs)
 	mux.HandleFunc(TypeMaintenancePrunePushTokens, HandleMaintenancePrunePushTokens)
 	mux.HandleFunc(TypeModerationAutoHide, HandleModerationAutoHide)
+	mux.HandleFunc(TypeReportNotifyAdmin, HandleReportNotifyAdmin)
 	mux.HandleFunc(TypeDMCleanupDeclinedRequests, HandleDMCleanupDeclinedRequests)
 	mux.HandleFunc(TypeCouponTrackEvents, HandleCouponTrackEvents)
 	mux.HandleFunc(TypeCouponExpireCheck, HandleCouponExpireCheck)
@@ -253,4 +255,7 @@ func RegisterHandlers(mux *asynq.ServeMux) {
 	// §82 Japa Planning Groups handlers (ADR-090).
 	mux.HandleFunc(TypePlanningGroupExpire, HandlePlanningGroupExpire)
 	mux.HandleFunc(TypePlanningGroupCheckinReminder, HandlePlanningGroupCheckinReminder)
+
+	// §81 Scam Alert Board handlers (ADR-089).
+	mux.HandleFunc(TypeScamAlertNotifySubscribers, HandleScamAlertNotifySubscribers)
 }

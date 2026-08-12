@@ -78,7 +78,7 @@ INSERT INTO scam_reports (
     origin_space_id, origin_community, platform_used,
     approximate_date, amount_range, description, reported_to_authorities,
     status
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'pending')
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'under_review')
 RETURNING id
 `,
 		report.TenantID, report.ReporterID, report.ScamType, report.DestinationSpaceID,
@@ -248,7 +248,7 @@ func (s *Store) Subscribe(ctx context.Context, userID, tenantID, destSpaceID pgt
 	_, err := s.pool.Writer.Exec(ctx, `
 INSERT INTO scam_alert_subscriptions (user_id, tenant_id, destination_space_id)
 VALUES ($1, $2, $3)
-ON CONFLICT (user_id, tenant_id, destination_space_id) DO NOTHING
+ON CONFLICT (user_id, destination_space_id) DO NOTHING
 `, userID, tenantID, destSpaceID)
 	if err != nil {
 		return fmt.Errorf("scamalert: subscribe: %w", err)
@@ -266,6 +266,45 @@ WHERE user_id = $1 AND tenant_id = $2 AND destination_space_id = $3
 		return fmt.Errorf("scamalert: unsubscribe: %w", err)
 	}
 	return nil
+}
+
+// ListSubscribersByDestination returns all user IDs subscribed to scam
+// alerts for the given destination space. Used by the
+// scam_alert:notify_subscribers task to fan out notifications on confirm.
+func (s *Store) ListSubscribersByDestination(ctx context.Context, tenantID, destSpaceID pgtype.UUID) ([]pgtype.UUID, error) {
+	rows, err := s.pool.Reader.Query(ctx, `
+SELECT user_id FROM scam_alert_subscriptions
+WHERE tenant_id = $1 AND destination_space_id = $2
+`, tenantID, destSpaceID)
+	if err != nil {
+		return nil, fmt.Errorf("scamalert: list subscribers: %w", err)
+	}
+	defer rows.Close()
+
+	var userIDs []pgtype.UUID
+	for rows.Next() {
+		var uid pgtype.UUID
+		if err := rows.Scan(&uid); err != nil {
+			return nil, fmt.Errorf("scamalert: list subscribers: scan: %w", err)
+		}
+		userIDs = append(userIDs, uid)
+	}
+	return userIDs, rows.Err()
+}
+
+// GetReportForNotification returns the report's destination_space_id and
+// reporter_id for the notify_subscribers task. Returns pgx.ErrNoRows if
+// the report does not exist or does not belong to the tenant.
+func (s *Store) GetReportForNotification(ctx context.Context, id, tenantID pgtype.UUID) (destSpaceID, reporterID pgtype.UUID, scamType, description string, err error) {
+	err = s.pool.Reader.QueryRow(ctx, `
+SELECT destination_space_id, reporter_id, scam_type, description
+FROM scam_reports
+WHERE id = $1 AND tenant_id = $2 AND status = 'confirmed'
+`, id, tenantID).Scan(&destSpaceID, &reporterID, &scamType, &description)
+	if err != nil {
+		return pgtype.UUID{}, pgtype.UUID{}, "", "", err
+	}
+	return destSpaceID, reporterID, scamType, description, nil
 }
 
 // AdminListReportsFilter holds filter parameters for the admin moderation list.

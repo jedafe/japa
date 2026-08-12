@@ -33,6 +33,7 @@
 	let showModerateModal = $state(false);
 	let moderateTarget = $state<Review | null>(null);
 	let moderateStatus = $state('published');
+	let moderateReason = $state('');
 
 	// Delete state-action confirm (DELETE — hard delete)
 	let showDeleteConfirm = $state(false);
@@ -41,6 +42,7 @@
 	function openModerate(review: Review) {
 		moderateTarget = review;
 		moderateStatus = review.status ?? 'published';
+		moderateReason = '';
 		showModerateModal = true;
 	}
 
@@ -56,7 +58,7 @@
 		try {
 			const result = await api(`/admin/reviews/${moderateTarget.id}`, {
 				method: 'PATCH',
-				body: { status: moderateStatus }
+				body: { status: moderateStatus, reason: moderateReason || undefined }
 			});
 			if (result.ok) {
 				showModerateModal = false;
@@ -276,6 +278,18 @@
 					]}
 					bind:value={moderateStatus}
 				/>
+			</div>
+			<div>
+				<label for="moderateReason" class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">
+					{t('reviews.moderate_reason', 'Reason (optional)')}
+				</label>
+				<textarea
+					id="moderateReason"
+					rows={2}
+					bind:value={moderateReason}
+					placeholder={t('reviews.moderate_reason_placeholder', 'Reason for this moderation action…')}
+					class="mt-1 w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
+				></textarea>
 			</div>
 		</div>
 	{/if}

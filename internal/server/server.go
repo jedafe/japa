@@ -707,6 +707,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// resolution and affiliate link href rewriting (Section 55 P4, BUG-004/005).
 	if rendererInstance != nil {
 		rendererInstance.SetCouponResolver(&couponRenderAdapter{svc: couponService})
+		rendererInstance.SetAffiliateLinkResolver(&affiliateLinkRenderAdapter{svc: couponService})
 	}
 
 	// User Affiliate Program subsystem (Section 56).
@@ -998,6 +999,15 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	scamAlertStore := scamalert.NewStore(database)
 	scamAlertService := scamalert.NewService(scamAlertStore, settingsService)
 	scamAlertHandlers := scamalert.NewHandlers(scamAlertService, settingsService)
+	// Wire the Asynq enqueuer for fire-and-forget notification fan-out on
+	// report confirmation (Rule 8), the notification service for
+	// subscriber dispatch (§35), and the gamification service for the
+	// Community Guardian badge (§64). Register the service as the
+	// scam_alert:notify_subscribers processor (§81, ADR-089).
+	scamAlertService.SetEnqueuer(taskEnqueuer)
+	scamAlertService.SetNotifier(notificationService)
+	scamAlertService.SetBadgeAwarder(gamificationService)
+	worker.RegisterScamAlertProcessor(scamAlertService)
 
 	// Ref: japaconnect-engineering/sections/82-japa-planning-groups.md (ADR-090)
 	planningGroupStore := planninggroups.NewStore(database)
@@ -2011,7 +2021,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Delete("/spaces/{slug}/leave", spaceHandlers.Leave)
 			// catalog: POST /spaces/:id/report — takes a raw ID (like the other
 			// report routes), not the slug the rest of this block resolves on.
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "moderation.report")).Post("/spaces/{id}/report", reportsHandlers.ReportSpace)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "reports.submit")).Post("/spaces/{id}/report", reportsHandlers.ReportSpace)
 
 			// Space rule routes (slug-resolved via SpaceResolver middleware)
 			r.With(auth.OptionalAuth(kr, vkClient.Redis()), spaces.SpaceResolver(spaceService)).
@@ -2073,7 +2083,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Post("/content/{id}/schedule", contentHandlers.ScheduleContent)
 			r.With(auth.OptionalAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "loose")).Post("/content/{id}/view", contentHandlers.RecordContentView)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/content/{id}/share-count", contentHandlers.GetContentShareCount)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "moderation.report")).Post("/content/{id}/report", reportsHandlers.ReportContent)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "reports.submit")).Post("/content/{id}/report", reportsHandlers.ReportContent)
 			// Revisions (require auth + permission to view)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.revisions.view")).
 				Get("/content/{id}/revisions", contentHandlers.ListRevisions)
@@ -2133,7 +2143,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			if rendererHandlers != nil {
 				renderHandler = rendererHandlers.Render
 			}
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/content/render", renderHandler)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "moderate")).Post("/content/render", renderHandler)
 
 			// Link preview routes (Section 15 — Link Preview Fetch, BUG-008 RBAC gate)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "link_preview.fetch")).Get("/link-preview", linkPreviewHandlers.Fetch)
@@ -2183,7 +2193,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.EditLockMiddleware(vkClient.Redis(), settingsService)).Delete("/comments/{id}", commentsHandlers.DeleteComment)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "comments.vote")).Post("/comments/{id}/vote", commentsHandlers.VoteComment)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "comments.vote")).Delete("/comments/{id}/vote", commentsHandlers.RemoveVote)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "moderation.report")).Post("/comments/{id}/report", reportsHandlers.ReportComment)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "reports.submit")).Post("/comments/{id}/report", reportsHandlers.ReportComment)
 			// BUG-002: pin node is comments.pin (Section 49), not content.pin.
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "comments.pin")).
 				Post("/comments/{id}/pin", commentsHandlers.PinComment)
@@ -2211,7 +2221,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "interactions.mute.manage")).Post("/users/{user_id}/mute", interactionsHandlers.MuteUser)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "interactions.mute.manage")).Delete("/users/{user_id}/mute", interactionsHandlers.UnmuteUser)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/users/{user_id}/mute-status", interactionsHandlers.GetUserMuteStatus)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "moderation.report")).Post("/users/{id}/report", reportsHandlers.ReportUser)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "reports.submit")).Post("/users/{id}/report", reportsHandlers.ReportUser)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/muted-users", interactionsHandlers.ListMutedUsers)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/muted-spaces", interactionsHandlers.ListMutedSpaces)
 
@@ -2367,7 +2377,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "dm.send")).Patch("/dm/conversations/{id}/messages/{mid}", wsHandlers.EditMessage)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "dm.delete")).Delete("/dm/conversations/{id}/messages/{mid}", wsHandlers.DeleteMessage)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "dm.view")).Post("/dm/conversations/{id}/read", wsHandlers.MarkAsRead)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "moderation.report")).Post("/dm/conversations/{id}/messages/{mid}/report", reportsHandlers.ReportDMMessage)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "reports.submit")).Post("/dm/conversations/{id}/messages/{mid}/report", reportsHandlers.ReportDMMessage)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "dm.view")).Get("/dm/requests", wsHandlers.ListMessageRequests)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "dm.view")).Post("/dm/requests/{id}/accept", wsHandlers.AcceptMessageRequest)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "dm.view")).Post("/dm/requests/{id}/decline", wsHandlers.DeclineMessageRequest)
@@ -2624,7 +2634,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/reviews", reviewHandlers.ListReviews)
 				r.Get("/reviews/{entity_type}/{entity_id}", reviewHandlers.ListReviews)
 				r.Get("/reviews/{entity_type}/{entity_id}/aggregate", reviewHandlers.GetAggregate)
-				r.Get("/reviews/{id}", reviewHandlers.GetReview)
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/reviews/{id}", reviewHandlers.GetReview)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "reviews.edit_own")).Patch("/reviews/{id}", reviewHandlers.UpdateReview)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "reviews.delete_own")).Delete("/reviews/{id}", reviewHandlers.DeleteReview)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "reviews.flag")).Post("/reviews/{id}/flag", reviewHandlers.FlagReview)
@@ -3328,7 +3338,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Delete("/me/data-export", gdprHandlers.CancelMyDataExport)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/data-export/status", gdprHandlers.GetMyDataExportStatus)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/data-export/download", gdprHandlers.GetMyDataExportDownload)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/reports", reportsHandlers.ListMyReports)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "reports.view_own")).Get("/me/reports", reportsHandlers.ListMyReports)
 			// Public user directory — PII-safe (no email/status/groups). OptionalAuth
 			// so authed users get their session without a 401. OptionalPermission
 			// lets admins revoke directory.users.view from a group to hide /users
@@ -5855,6 +5865,24 @@ func (a *couponRenderAdapter) ResolveCouponForRender(ctx context.Context, id pgt
 		IsExpired:     c.IsExpired,
 		ReferralURL:   c.ReferralURL,
 		Status:        c.Status,
+	}, nil
+}
+
+// affiliateLinkRenderAdapter adapts coupons.Service to implement the
+// renderer.AffiliateLinkResolver interface for render-time affiliate link
+// href rewriting (Section 55 P4, BE-CRITICAL-001). Same adapter pattern as
+// couponRenderAdapter — avoids an import cycle between renderer and coupons.
+type affiliateLinkRenderAdapter struct {
+	svc *coupons.Service
+}
+
+func (a *affiliateLinkRenderAdapter) ResolveAffiliateLinkForRender(ctx context.Context, providerID pgtype.UUID, originalURL string) (*renderer.AffiliateLinkRenderResult, error) {
+	r, err := a.svc.ResolveAffiliateLinkForRender(ctx, providerID, originalURL)
+	if err != nil {
+		return nil, err
+	}
+	return &renderer.AffiliateLinkRenderResult{
+		ResolvedURL: r.ResolvedURL,
 	}, nil
 }
 

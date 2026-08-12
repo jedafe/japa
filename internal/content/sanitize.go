@@ -37,12 +37,14 @@ var allowedAttributes = map[string]map[string]bool{
 	},
 	"a": {
 		"href": true, "title": true, "target": true, "rel": true,
+		"data-affiliate-provider-id": true,
 	},
 	"img": {
 		"src": true, "alt": true, "title": true, "width": true, "height": true,
 	},
 	"div": {
 		"data-type": true, "data-url": true, "data-coupon-id": true,
+		"data-display-mode": true,
 	},
 	"span": {
 		// Mention nodes (Section 15): data-type, data-id, data-label,

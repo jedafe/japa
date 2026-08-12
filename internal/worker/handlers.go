@@ -7,7 +7,6 @@ import (
 	"crypto/tls"
 	"encoding/hex"
 	"encoding/json"
-	"encoding/xml"
 	"errors"
 	"fmt"
 	"html/template"
@@ -16,7 +15,6 @@ import (
 	"math/big"
 	"net/smtp"
 	"os"
-	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -33,6 +31,7 @@ import (
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	rssmodel "github.com/jedafe/japa/internal/rss/model"
 	"github.com/jedafe/japa/internal/valkey"
 	"github.com/valkey-io/valkey-go/valkeycompat"
 
@@ -62,8 +61,10 @@ func RegisterEmailGateway(d *email.EmailDispatcher) {
 
 // redisCache is the subset of the valkeycompat.Cmdable API that worker
 // handlers need. Used by HandleRSSRegenerate to cache feeds under
-// jc:rss:feed:* (TASK-003) and by HandleMaintenanceRegenerateLLMsTxt to
-// invalidate llms.txt caches. valkeycompat.Cmdable satisfies this interface.
+// jc:cache:feed:rss:{tenant_id} (universal) and
+// jc:cache:feed:rss:blog:{tenant_id} (blog-only), and by
+// HandleMaintenanceRegenerateLLMsTxt to invalidate llms.txt caches.
+// valkeycompat.Cmdable satisfies this interface.
 type redisCache interface {
 	Set(ctx context.Context, key string, value interface{}, expiration time.Duration) *valkeycompat.StatusCmd
 	Get(ctx context.Context, key string) *valkeycompat.StringCmd
@@ -211,6 +212,29 @@ func scheduleFanOutTask(enq *Enqueuer, contentID, tenantID, authorID, spaceID pg
 	if err := enq.Enqueue(TypeContentFanOutToFeeds, payload); err != nil {
 		slog.Warn("scheduleFanOutTask: failed to enqueue fan-out",
 			"content_id", contentID.String(), "fan_out_type", fanOutType, "error", err)
+	}
+}
+
+// scheduleRSSRegenerate enqueues the rss:regenerate task for a tenant so
+// RSS feeds reflect newly published content without waiting for the hourly
+// cron. Fire-and-forget per Rule 8 (RSS-013).
+//
+// Ref: japaconnect-engineering/sections/26-seo-performance.md
+// Ref: japaconnect-engineering/sections/11-job-queue-asynq.md
+func scheduleRSSRegenerate(enq *Enqueuer, tenantID pgtype.UUID) {
+	if enq == nil {
+		return
+	}
+	payload, err := json.Marshal(map[string]string{
+		"tenant_id": tenantID.String(),
+	})
+	if err != nil {
+		slog.Warn("scheduleRSSRegenerate: failed to marshal payload", "error", err)
+		return
+	}
+	if err := enq.Enqueue(TypeRSSRegenerate, payload); err != nil {
+		slog.Warn("scheduleRSSRegenerate: failed to enqueue rss:regenerate",
+			"tenant_id", tenantID.String(), "error", err)
 	}
 }
 
@@ -1442,6 +1466,10 @@ func HandleScheduledPublish(ctx context.Context, t *asynq.Task) error {
 		scheduleFanOutTask(taskEnqueuer, contentID, tenantID, published.AuthorID, sid, published.ContentType, "space")
 		scheduleFanOutTask(taskEnqueuer, contentID, tenantID, published.AuthorID, sid, published.ContentType, "bubble")
 	}
+
+	// RSS-013: regenerate RSS feeds so the newly published scheduled content
+	// appears without waiting for the hourly cron. Fire-and-forget.
+	scheduleRSSRegenerate(taskEnqueuer, tenantID)
 
 	return nil
 }
@@ -2870,6 +2898,10 @@ func HandleRSSRegenerate(ctx context.Context, t *asynq.Task) error {
 	return nil
 }
 
+// rssFeedLimit is the number of items returned per feed. Matches
+// internal/rss.defaultFeedLimit. RSS-008: previously hardcoded as 20 inline.
+const rssFeedLimit = 20
+
 // generateRSSForTenant generates the RSS feed for a single tenant using the
 // shared sqlc query (ListRSSFeedItems — the same one internal/rss uses for
 // live requests) and caches the rendered XML in Valkey under
@@ -2877,103 +2909,35 @@ func HandleRSSRegenerate(ctx context.Context, t *asynq.Task) error {
 // The live /feed.xml route can read from this cache to avoid a DB hit on
 // every request. Writing to a local file is removed — it was not
 // multi-tenant safe.
-
-// rssHTMLTagPattern matches HTML/XML tags for stripping to plain text.
-var rssHTMLTagPattern = regexp.MustCompile(`<[^>]*>`)
-
-// rssHTMLToTextExcerpt strips HTML tags, collapses whitespace, and truncates
-// to maxRunes characters for an RSS <description> element.
-func rssHTMLToTextExcerpt(bodyHtml string, maxRunes int) string {
-	plain := rssHTMLTagPattern.ReplaceAllString(bodyHtml, "")
-	plain = strings.TrimSpace(plain)
-	plain = strings.Join(strings.Fields(plain), " ")
-	if len([]rune(plain)) <= maxRunes {
-		return plain
-	}
-	runes := []rune(plain)
-	return string(runes[:maxRunes]) + "…"
-}
-
-// rssExcerptFromBody extracts a plain-text excerpt from raw markdown body.
-func rssExcerptFromBody(body string) string {
-	plain := strings.TrimSpace(body)
-	plain = strings.Join(strings.Fields(plain), " ")
-	if len([]rune(plain)) <= 300 {
-		return plain
-	}
-	runes := []rune(plain)
-	return string(runes[:300]) + "…"
-}
-
+//
+// RSS-001: also generates a blog-only feed (ListPublishedPostsForRSS) into
+// jc:cache:feed:rss:blog:{tenant_id} so /api/v1/blog/feed.xml doesn't serve
+// non-blog content from the universal cache.
+//
+// RSS-011: uses the shared internal/rss/model subpackage for the XML model
+// and rendering helpers — no more local copies that can drift (this drift
+// caused RSS-003: the old local formatRSSTime didn't check IsZero).
 func generateRSSForTenant(ctx context.Context, tenantID pgtype.UUID, baseURL string) {
 	q := gen.New(dbPool.Reader)
 	rows, err := q.ListRSSFeedItems(ctx, gen.ListRSSFeedItemsParams{
 		TenantID:  tenantID,
-		PageLimit: 20,
+		PageLimit: rssFeedLimit,
 	})
 	if err != nil {
 		slog.Error("task:rss_regenerate: failed to list content", "tenant_id", tenantID.String(), "error", err)
 		return
 	}
 
-	items := make([]rssItem, 0, len(rows))
+	items := make([]rssmodel.Item, 0, len(rows))
 	for _, row := range rows {
-		// PubDate: prefer published_at, fall back to created_at.
-		pubDate := formatRSSTime(row.PublishedAt)
-		if pubDate == "" {
-			pubDate = formatRSSTime(row.CreatedAt)
-		}
-
-		// Description: strip HTML from body_html, fall back to body excerpt.
-		desc := rssHTMLToTextExcerpt(row.BodyHtml, 300)
-		if desc == "" && row.Body != "" {
-			desc = rssExcerptFromBody(row.Body)
-		}
-
-		// GUID: use content UUID as a URN.
-		guid := ""
-		if row.ID.Valid {
-			guid = "urn:uuid:" + row.ID.String()
-		}
-
-		items = append(items, rssItem{
-			Title:       row.Title,
-			Link:        baseURL + "/content/" + row.Slug,
-			GUID:        guid,
-			Description: desc,
-			PubDate:     pubDate,
-			Author:      row.Username,
-		})
+		items = append(items, rssmodel.ItemFromRow(
+			row.ID, row.Title, row.Slug, row.BodyHtml, row.Body,
+			row.Username, row.PublishedAt, row.CreatedAt, baseURL, "/content/",
+		))
 	}
 
-	// lastBuildDate: most recent item's pubDate, or now.
-	var lastBuild string
-	if len(items) > 0 && items[0].PubDate != "" {
-		lastBuild = items[0].PubDate
-	} else {
-		lastBuild = time.Now().UTC().Format(time.RFC1123Z)
-	}
+	xmlBytes := rssmodel.Render(siteName, baseURL, siteName+" — latest content", "en", items)
 
-	feed := rssFeed{
-		Version: "2.0",
-		Channel: rssChannel{
-			Title:         siteName,
-			Link:          baseURL,
-			Description:   siteName + " — latest content",
-			Language:      "en",
-			LastBuildDate: lastBuild,
-			Items:         items,
-		},
-	}
-
-	xmlBytes, err := xml.MarshalIndent(feed, "", "  ")
-	if err != nil {
-		slog.Error("task:rss_regenerate: marshal xml", "tenant_id", tenantID.String(), "error", err)
-		return
-	}
-	xmlBytes = append([]byte(xml.Header+"\n"), xmlBytes...)
-
-	// Cache in Valkey under the jc:cache:feed:rss: prefix (VALKEY-002 compliance).
 	cacheKey := valkey.MustKey("cache:feed:rss:%s", tenantID.String())
 	if rdb != nil {
 		if err := rdb.Set(ctx, cacheKey, string(xmlBytes), time.Hour).Err(); err != nil {
@@ -2984,42 +2948,64 @@ func generateRSSForTenant(ctx context.Context, tenantID pgtype.UUID, baseURL str
 	}
 
 	slog.Info("task:rss_regenerate: feed cached", "tenant_id", tenantID.String(), "item_count", len(items), "cache_key", cacheKey)
+
+	// RSS-001: generate the blog-only feed into a separate cache key so
+	// /api/v1/blog/feed.xml doesn't serve non-blog content from the
+	// universal cache. Uses ListPublishedPostsForRSS (content_type=blog_post,
+	// auto_hidden=false) — the same query the live blog handler falls back
+	// to on a cache miss.
+	generateBlogRSSForTenant(ctx, q, tenantID, baseURL)
 }
 
-// rssFeed / rssChannel / rssItem are local RSS 2.0 XML models for the worker's
-// feed regeneration task. They mirror internal/rss.RSSFeed but are kept local
-// to avoid importing internal/rss (which imports chi/tenant/http — heavy for
-// a background worker).
-type rssFeed struct {
-	XMLName xml.Name   `xml:"rss"`
-	Version string     `xml:"version,attr"`
-	Channel rssChannel `xml:"channel"`
-}
-
-type rssChannel struct {
-	Title         string    `xml:"title"`
-	Link          string    `xml:"link"`
-	Description   string    `xml:"description"`
-	Language      string    `xml:"language,omitempty"`
-	LastBuildDate string    `xml:"lastBuildDate"`
-	Items         []rssItem `xml:"item"`
-}
-
-type rssItem struct {
-	Title       string `xml:"title"`
-	Link        string `xml:"link"`
-	GUID        string `xml:"guid"`
-	Description string `xml:"description"`
-	PubDate     string `xml:"pubDate"`
-	Author      string `xml:"author,omitempty"`
-}
-
-// formatRSSTime formats a pgtype.Timestamptz as RFC1123Z for RSS pubDate.
-func formatRSSTime(t pgtype.Timestamptz) string {
-	if t.Valid {
-		return t.Time.Format(time.RFC1123Z)
+// generateBlogRSSForTenant generates the blog-only RSS feed and caches it
+// under jc:cache:feed:rss:blog:{tenant_id} (1hr TTL).
+func generateBlogRSSForTenant(ctx context.Context, q *gen.Queries, tenantID pgtype.UUID, baseURL string) {
+	rows, err := q.ListPublishedPostsForRSS(ctx, gen.ListPublishedPostsForRSSParams{
+		TenantID:  tenantID,
+		PageLimit: rssFeedLimit,
+	})
+	if err != nil {
+		slog.Error("task:rss_regenerate: failed to list blog posts", "tenant_id", tenantID.String(), "error", err)
+		return
 	}
-	return ""
+
+	items := make([]rssmodel.Item, 0, len(rows))
+	for _, p := range rows {
+		pubDate := rssmodel.FormatTime(p.PublishedAt)
+		if pubDate == "" {
+			pubDate = rssmodel.FormatTime(p.CreatedAt)
+		}
+
+		desc := rssmodel.HTMLToTextExcerpt(p.BodyHtml, rssmodel.ExcerptMaxRunes)
+		if desc == "" && p.Body != "" {
+			desc = rssmodel.ExcerptFromBody(p.Body)
+		}
+
+		items = append(items, rssmodel.Item{
+			Title:       p.Title,
+			Link:        baseURL + "/blog/" + p.Slug,
+			GUID:        rssmodel.GUIDFromID(p.ID),
+			Description: desc,
+			PubDate:     pubDate,
+		})
+	}
+
+	xmlBytes := rssmodel.Render(
+		siteName+" Blog",
+		baseURL+"/blog",
+		siteName+" Blog — latest posts",
+		"en-us",
+		items,
+	)
+
+	cacheKey := valkey.MustKey("cache:feed:rss:blog:%s", tenantID.String())
+	if rdb != nil {
+		if err := rdb.Set(ctx, cacheKey, string(xmlBytes), time.Hour).Err(); err != nil {
+			slog.Error("task:rss_regenerate: failed to cache blog feed", "tenant_id", tenantID.String(), "error", err)
+		}
+	}
+
+	slog.Info("task:rss_regenerate: blog feed cached", "tenant_id", tenantID.String(), "item_count", len(items), "cache_key", cacheKey)
 }
 
 // HandleDataExport generates a GDPR data export archive for a user.
@@ -3999,6 +3985,10 @@ func HandleScheduledPublishSweep(ctx context.Context, _ *asynq.Task) error {
 	}
 
 	published := 0
+	// RSS-013: track tenants that had content published so we enqueue one
+	// rss:regenerate per tenant after the loop (avoids redundant enqueues
+	// when a tenant has multiple posts going live in the same sweep).
+	affectedTenants := make(map[pgtype.UUID]struct{})
 
 	for _, pc := range pending {
 		rowsAffected, err := gen.New(dbPool.Writer).PublishScheduledContent(ctx, gen.PublishScheduledContentParams{
@@ -4014,13 +4004,22 @@ func HandleScheduledPublishSweep(ctx context.Context, _ *asynq.Task) error {
 		}
 
 		published++
+		affectedTenants[pc.TenantID] = struct{}{}
 
 		slog.Info("task:content:publish_sweep: content published",
 			"content_id", pc.ID.String())
 	}
 
+	// RSS-013: regenerate RSS feeds for each affected tenant so newly
+	// published scheduled content appears without waiting for the hourly
+	// cron. Fire-and-forget.
+	for tid := range affectedTenants {
+		scheduleRSSRegenerate(taskEnqueuer, tid)
+	}
+
 	slog.Info("task:content:publish_sweep: sweep complete",
-		"published", published, "total", len(pending))
+		"published", published, "total", len(pending),
+		"rss_tenants", len(affectedTenants))
 
 	return nil
 }
@@ -4404,6 +4403,117 @@ func HandleModerationAutoHide(ctx context.Context, t *asynq.Task) error {
 			"report_count", reportCount)
 	}
 
+	return nil
+}
+
+// HandleReportNotifyAdmin notifies the moderation team (every user holding
+// the reports.review permission) that a new content report was submitted.
+// For each recipient it inserts an in-app notification and enqueues a push
+// delivery. Idempotent on report_id — duplicate deliveries are acceptable
+// (the notification insert has no unique constraint, but the Asynq task
+// dedup window + retry backoff prevents spam).
+//
+// Ref: japaconnect-engineering/sections/51-content-reports-flagging.md
+func HandleReportNotifyAdmin(ctx context.Context, t *asynq.Task) error {
+	slog.Info("task:report:notify_admin")
+
+	if dbPool == nil {
+		slog.Warn("task:report:notify_admin: no database, skipping")
+		return nil
+	}
+
+	var payload struct {
+		ReportID   string `json:"report_id"`
+		TenantID   string `json:"tenant_id"`
+		EntityType string `json:"entity_type"`
+		EntityID   string `json:"entity_id"`
+		Reason     string `json:"reason"`
+	}
+
+	if err := parsePayload(t, &payload); err != nil {
+		slog.Error("task:report:notify_admin: invalid payload", "error", err)
+		return err
+	}
+
+	tenantID, err := scanUUID(payload.TenantID)
+	if err != nil {
+		return fmt.Errorf("task:report:notify_admin: %w", err)
+	}
+
+	reportID, err := scanUUID(payload.ReportID)
+	if err != nil {
+		return fmt.Errorf("task:report:notify_admin: %w", err)
+	}
+
+	// Resolve every user with the reports.review permission for this tenant.
+	q := gen.New(dbPool.Reader)
+	recipients, err := q.ListUserIDsByPermissionKey(ctx, gen.ListUserIDsByPermissionKeyParams{
+		TenantID:      tenantID,
+		PermissionKey: "reports.review",
+	})
+	if err != nil {
+		slog.Error("task:report:notify_admin: failed to list recipients",
+			"error", err, "tenant_id", payload.TenantID)
+		return err
+	}
+
+	if len(recipients) == 0 {
+		slog.Info("task:report:notify_admin: no recipients with reports.review, skipping",
+			"tenant_id", payload.TenantID)
+		return nil
+	}
+
+	// Build the notification content.
+	title := "New content report"
+	body := fmt.Sprintf("%s reported (%s)", payload.EntityType, payload.Reason)
+	if payload.Reason == "" {
+		body = fmt.Sprintf("%s reported", payload.EntityType)
+	}
+	actionURL := "/admin/reports"
+	subjectType := "content_report"
+	actorType := "system"
+
+	wq := gen.New(dbPool.Writer)
+	for _, recipientID := range recipients {
+		bodyPtr := &body
+		actionURLPtr := &actionURL
+		subjectTypePtr := &subjectType
+		actorTypePtr := &actorType
+
+		if err := wq.InsertNotification(ctx, gen.InsertNotificationParams{
+			TenantID:         tenantID,
+			RecipientID:      recipientID,
+			NotificationType: "report.new",
+			ActorType:        actorTypePtr,
+			ActorID:          pgtype.UUID{},
+			SubjectType:      subjectTypePtr,
+			SubjectID:        reportID,
+			Title:            title,
+			Body:             bodyPtr,
+			ActionUrl:        actionURLPtr,
+		}); err != nil {
+			slog.Error("task:report:notify_admin: failed to insert notification",
+				"error", err, "recipient_id", recipientID.String())
+			continue
+		}
+
+		// Enqueue a push notification for this recipient (best-effort).
+		if taskEnqueuer != nil {
+			pushPayload, _ := json.Marshal(map[string]string{
+				"user_id":    recipientID.String(),
+				"title":      title,
+				"body":       body,
+				"action_url": actionURL,
+			})
+			if err := taskEnqueuer.Enqueue(TypePushDelivery, pushPayload); err != nil {
+				slog.Warn("task:report:notify_admin: failed to enqueue push",
+					"error", err, "recipient_id", recipientID.String())
+			}
+		}
+	}
+
+	slog.Info("task:report:notify_admin: notifications dispatched",
+		"report_id", payload.ReportID, "recipients", len(recipients))
 	return nil
 }
 

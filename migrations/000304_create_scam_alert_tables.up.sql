@@ -14,16 +14,16 @@ CREATE TABLE IF NOT EXISTS scam_reports (
     id                      uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id               uuid NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
     reporter_id             uuid REFERENCES users(id) ON DELETE SET NULL, -- nullable for anonymous
-    scam_type               text NOT NULL, -- impersonation|fake_job|phishing|payment_fraud|housing|other
+    scam_type               text NOT NULL, -- fraudulent_agent|fake_job|housing_fraud|fake_scholarship|whatsapp_telegram|other (§81)
     destination_space_id    uuid NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
     origin_space_id         uuid REFERENCES spaces(id) ON DELETE SET NULL,
     origin_community        text, -- free-text community tag
-    platform_used           text, -- whatsapp|telegram|email|facebook|linkedin|other
+    platform_used           text, -- whatsapp|instagram|linkedin|email|website|other (§81)
     approximate_date        date,
     amount_range            text, -- e.g. "$500-$1000"
     description             text NOT NULL,
     reported_to_authorities boolean NOT NULL DEFAULT false,
-    status                  text NOT NULL DEFAULT 'pending', -- pending|confirmed|rejected
+    status                  text NOT NULL DEFAULT 'under_review', -- under_review|confirmed|debunked|duplicate (§81)
     moderator_note          text,
     is_pinned               boolean NOT NULL DEFAULT false,
     pinned_space_id         uuid REFERENCES spaces(id) ON DELETE SET NULL,

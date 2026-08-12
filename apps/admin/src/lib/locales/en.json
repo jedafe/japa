@@ -2294,6 +2294,8 @@
 	"reviews.hard_delete_title": "Permanently Delete Review",
 	"reviews.moderate": "Moderate",
 	"reviews.moderate_help": "Set the moderation status for this review.",
+	"reviews.moderate_reason": "Reason (optional)",
+	"reviews.moderate_reason_placeholder": "Reason for this moderation action…",
 	"reviews.rating": "Rating",
 	"reviews.search": "Search reviews...",
 	"reviews.status": "Status",

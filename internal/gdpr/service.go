@@ -1372,6 +1372,28 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 			return fmt.Errorf("reassigning mutual_aid_posts user_id: %w", err)
 		}
 
+		// §81 Scam Alert Board GDPR erasure (ADR-089).
+		// scam_reports.reporter_id references users(id) with ON DELETE SET
+		// NULL, so the final HardDeleteUser would nullify it. Reassign to the
+		// placeholder so confirmed reports (community content) survive with a
+		// stable "deleted user" attribution rather than an anonymous NULL,
+		// matching the mutual_aid_posts pattern. scam_alert_subscriptions is
+		// pure user PII (subscription preferences) and is deleted outright.
+		// Ref: japaconnect-engineering/sections/81-scam-alert-board.md
+		//      japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
+		if _, err := s.db.Writer.Exec(ctx, `
+			UPDATE scam_reports
+			SET reporter_id = $3, updated_at = now()
+			WHERE tenant_id = $2 AND reporter_id = $1
+		`, userID, tenantID, deletedUserPlaceholder); err != nil {
+			return fmt.Errorf("reassigning scam_reports reporter_id: %w", err)
+		}
+		if _, err := s.db.Writer.Exec(ctx, `
+			DELETE FROM scam_alert_subscriptions
+			WHERE tenant_id = $2 AND user_id = $1
+		`, userID, tenantID); err != nil {
+			return fmt.Errorf("deleting scam_alert_subscriptions for user: %w", err)
+		}
 
 		// BUG-016: Community Locator GDPR erasure (§101, ADR-109).
 		// community_organisations.submitted_by and reviewed_by reference
@@ -1703,6 +1725,8 @@ type UserDataExport struct {
 	CalendarSaves               []map[string]interface{} `json:"calendar_saves"`                // §86 BUG-025
 	CalendarSubscriptions       []map[string]interface{} `json:"calendar_subscriptions"`        // §86 BUG-025
 	MutualAidPosts              []map[string]interface{} `json:"mutual_aid_posts"`               // §85 BUG-005
+	ScamReports                 []map[string]interface{} `json:"scam_reports"`                   // §81
+	ScamAlertSubscriptions      []map[string]interface{} `json:"scam_alert_subscriptions"`       // §81
 	CommunityOrganisations      []map[string]interface{} `json:"community_organisations"`       // §101 BUG-016
 	ComparisonItems             []map[string]interface{} `json:"comparison_items"`              // BUG-004
 	ComparisonDimensions        []map[string]interface{} `json:"comparison_dimensions"`         // BUG-004
@@ -2247,6 +2271,50 @@ func (s *Service) collectUserData(ctx context.Context, userID, tenantID pgtype.U
 		}
 	} else {
 		slog.Warn("failed to collect mutual_aid_posts for export", "user_id", userID.String(), "error", err)
+	}
+
+	// §81: export scam_reports filed by the user + their scam-alert
+	// subscriptions so the GDPR data export includes their scam-alert
+	// activity. Ref: japaconnect-engineering/sections/81-scam-alert-board.md
+	if rows, err := s.db.Reader.Query(ctx, `
+		SELECT id, tenant_id, scam_type, destination_space_id, origin_space_id,
+		       origin_community, platform_used, approximate_date, amount_range,
+		       description, reported_to_authorities, status, moderator_note,
+		       is_pinned, pinned_space_id, reviewed_by, reviewed_at,
+		       created_at, updated_at
+		FROM scam_reports
+		WHERE tenant_id = $2 AND reporter_id = $1
+		ORDER BY created_at DESC
+	`, userID, tenantID); err == nil {
+		defer rows.Close()
+		for rows.Next() {
+			row := make(map[string]interface{})
+			cols, _ := rows.Values()
+			for i, col := range rows.FieldDescriptions() {
+				row[string(col.Name)] = cols[i]
+			}
+			export.ScamReports = append(export.ScamReports, row)
+		}
+	} else {
+		slog.Warn("failed to collect scam_reports for export", "user_id", userID.String(), "error", err)
+	}
+	if rows, err := s.db.Reader.Query(ctx, `
+		SELECT user_id, tenant_id, destination_space_id, created_at
+		FROM scam_alert_subscriptions
+		WHERE tenant_id = $2 AND user_id = $1
+		ORDER BY created_at DESC
+	`, userID, tenantID); err == nil {
+		defer rows.Close()
+		for rows.Next() {
+			row := make(map[string]interface{})
+			cols, _ := rows.Values()
+			for i, col := range rows.FieldDescriptions() {
+				row[string(col.Name)] = cols[i]
+			}
+			export.ScamAlertSubscriptions = append(export.ScamAlertSubscriptions, row)
+		}
+	} else {
+		slog.Warn("failed to collect scam_alert_subscriptions for export", "user_id", userID.String(), "error", err)
 	}
 
 	// BUG-016: export community_organisations submitted by the user so the
