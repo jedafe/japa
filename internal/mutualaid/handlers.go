@@ -19,6 +19,7 @@
 package mutualaid
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -34,15 +35,80 @@ import (
 	"github.com/jedafe/japa/internal/tenant"
 )
 
+// permissionChecker is the minimal RBAC interface needed for in-handler
+// permission checks (post_type-specific create nodes). Kept as an interface
+// so the handler stays testable with a stub.
+type permissionChecker interface {
+	HasPermission(ctx context.Context, userID, tenantID pgtype.UUID, permKey string) bool
+}
+
+// pointsChecker returns the user's lifetime points (reputation) for the
+// reputation gate on need posts (§85: create_need is reputation-gated).
+type pointsChecker interface {
+	GetPointsBalance(ctx context.Context, tenantID, userID pgtype.UUID) (int64, error)
+}
+
+// DMConversationResult is the minimal return from dmInitiator — just the
+// conversation ID and whether it was newly created. Avoids importing the
+// websocket package (which would create an import cycle).
+type DMConversationResult struct {
+	ConversationID pgtype.UUID
+	IsNew          bool
+}
+
+// dmInitiator opens or creates a DM conversation and sends the initial
+// message. Used by HandleRespond to wire the §48 DM system (ADR-093).
+// Implemented by an adapter around websocket.DMService.
+type dmInitiator interface {
+	GetOrCreateConversationForInitiator(ctx context.Context, tenantID, initiatorID, recipientID pgtype.UUID) (DMConversationResult, error)
+	SendMessage(ctx context.Context, tenantID, conversationID, senderID pgtype.UUID, body string) error
+}
+
 // Handlers exposes the mutual aid board endpoints.
 type Handlers struct {
 	service  *Service
 	settings *config.Settings
+	perms    permissionChecker
+	points   pointsChecker
+	dm       dmInitiator
 }
 
 // NewHandlers creates mutual aid handlers bound to the provided service.
 func NewHandlers(service *Service, settings *config.Settings) *Handlers {
 	return &Handlers{service: service, settings: settings}
+}
+
+// SetPermissionChecker injects the RBAC resolver for post_type-specific
+// permission checks (create_need, create_skill_swap). Called once during
+// server wiring.
+func (h *Handlers) SetPermissionChecker(pc permissionChecker) {
+	h.perms = pc
+}
+
+// SetPointsChecker injects the wallet service for reputation checks on
+// need posts. Called once during server wiring.
+func (h *Handlers) SetPointsChecker(pc pointsChecker) {
+	h.points = pc
+}
+
+// SetDMInitiator injects the DM service for the respond handler. Called
+// once during server wiring.
+func (h *Handlers) SetDMInitiator(dm dmInitiator) {
+	h.dm = dm
+}
+
+// permKeyForPostType maps a post_type to its RBAC node per §85.
+func permKeyForPostType(postType string) string {
+	switch postType {
+	case PostTypeNeed:
+		return "mutual_aid.create_need"
+	case PostTypeOffer:
+		return "mutual_aid.create_offer"
+	case PostTypeSkillSwap:
+		return "mutual_aid.create_skill_swap"
+	default:
+		return ""
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -98,12 +164,29 @@ func parsePageParams(r *http.Request) (page, limit int32) {
 			page = int32(n)
 		}
 	}
+	// Accept both "limit" and "page_size" — the frontend sends page_size
+	// (BUG-008: param mismatch).
 	if v := r.URL.Query().Get("limit"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 100 {
+			limit = int32(n)
+		}
+	} else if v := r.URL.Query().Get("page_size"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 100 {
 			limit = int32(n)
 		}
 	}
 	return page, limit
+}
+
+// parseSortParam returns the sort key from the query string. "latest" (default)
+// sorts by created_at DESC; "nearest" is reserved for geo-distance sorting
+// (not yet implemented — falls back to latest).
+func parseSortParam(r *http.Request) string {
+	v := r.URL.Query().Get("sort")
+	if v == "" {
+		return "latest"
+	}
+	return v
 }
 
 func scanOptionalUUIDParam(r *http.Request, name string) (pgtype.UUID, error) {
@@ -128,8 +211,8 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "mutual_aid_disabled", "Mutual aid board is not available")
+	if h.service == nil {
+		writeError(w, http.StatusServiceUnavailable, "service_unavailable", "Mutual aid service is not available")
 		return
 	}
 
@@ -173,8 +256,8 @@ func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "mutual_aid_disabled", "Mutual aid board is not available")
+	if h.service == nil {
+		writeError(w, http.StatusServiceUnavailable, "service_unavailable", "Mutual aid service is not available")
 		return
 	}
 
@@ -201,9 +284,10 @@ func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
 // Authenticated handlers (create, update, respond, fulfill, renew, delete)
 // ---------------------------------------------------------------------------
 
-// HandleCreate handles POST /mutual-aid — create a new post. Auth required
-// (mutual_aid.create_offer | create_need | create_skill_swap permission
-// checked at route registration based on post_type).
+// HandleCreate handles POST /mutual-aid — create a new post. Auth required.
+// The route middleware checks mutual_aid.create_offer as a baseline gate;
+// the handler then checks the post_type-specific permission (create_need,
+// create_skill_swap) and the reputation gate for need posts (§85).
 func (h *Handlers) HandleCreate(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
 	if !ok {
@@ -214,8 +298,8 @@ func (h *Handlers) HandleCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "mutual_aid_disabled", "Mutual aid board is not available")
+	if h.service == nil {
+		writeError(w, http.StatusServiceUnavailable, "service_unavailable", "Mutual aid service is not available")
 		return
 	}
 
@@ -236,6 +320,47 @@ func (h *Handlers) HandleCreate(w http.ResponseWriter, r *http.Request) {
 	if input.PostType == "" {
 		writeError(w, http.StatusBadRequest, "missing_type", "post_type is required")
 		return
+	}
+	if input.Category == "" {
+		writeError(w, http.StatusBadRequest, "missing_category", "Category is required")
+		return
+	}
+	if input.Description == "" {
+		writeError(w, http.StatusBadRequest, "missing_description", "Description is required")
+		return
+	}
+
+	// Post_type-specific RBAC check (BUG-001): the route middleware checks
+	// create_offer as a baseline; here we check the specific node for the
+	// requested post_type.
+	permKey := permKeyForPostType(input.PostType)
+	if permKey == "" {
+		writeError(w, http.StatusBadRequest, "invalid_type", "Invalid post_type")
+		return
+	}
+	if permKey != "mutual_aid.create_offer" && h.perms != nil {
+		if !h.perms.HasPermission(r.Context(), user.UserID, tenantID, permKey) {
+			writeError(w, http.StatusForbidden, "forbidden", "You do not have permission to create this post type")
+			return
+		}
+	}
+
+	// Reputation gate for need posts (BUG-002): §85 specifies create_need
+	// is "member with reputation ≥ threshold".
+	if input.PostType == PostTypeNeed && h.points != nil {
+		threshold := h.service.NeedReputationThreshold(r.Context(), tenantID)
+		if threshold > 0 {
+			points, err := h.points.GetPointsBalance(r.Context(), tenantID, user.UserID)
+			if err != nil {
+				slog.Error("mutualaid: reputation check failed", "error", err)
+				writeError(w, http.StatusInternalServerError, "reputation_check_failed", "Failed to verify reputation")
+				return
+			}
+			if points < threshold {
+				writeError(w, http.StatusForbidden, "insufficient_reputation", "You need more reputation to post a need")
+				return
+			}
+		}
 	}
 
 	post, err := h.service.Create(r.Context(), tenantID, user.UserID, input)
@@ -264,8 +389,8 @@ func (h *Handlers) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "mutual_aid_disabled", "Mutual aid board is not available")
+	if h.service == nil {
+		writeError(w, http.StatusServiceUnavailable, "service_unavailable", "Mutual aid service is not available")
 		return
 	}
 
@@ -294,8 +419,8 @@ func (h *Handlers) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 }
 
 // HandleRespond handles POST /mutual-aid/:id/respond — open a DM thread with
-// the post author. Auth required. Returns 202 Accepted; the actual DM thread
-// creation is a placeholder pending the messaging subsystem.
+// the post author. Auth required. Returns 200 with the conversation_id, or
+// 202 if the DM subsystem is not configured (graceful degradation).
 func (h *Handlers) HandleRespond(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
 	if !ok {
@@ -310,8 +435,8 @@ func (h *Handlers) HandleRespond(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "mutual_aid_disabled", "Mutual aid board is not available")
+	if h.service == nil {
+		writeError(w, http.StatusServiceUnavailable, "service_unavailable", "Mutual aid service is not available")
 		return
 	}
 
@@ -331,14 +456,55 @@ func (h *Handlers) HandleRespond(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Placeholder: DM thread creation will be wired to the messaging
-	// subsystem once available. For now we acknowledge the request.
-	writeJSON(w, http.StatusAccepted, map[string]any{
+	// Parse optional message body.
+	var req RespondRequest
+	_ = json.NewDecoder(r.Body).Decode(&req)
+
+	// Wire the DM system (BUG-003): create or get conversation with the
+	// post author and send the initial message. Per §85 responses go
+	// through DM (§48) rather than public comments.
+	if h.dm == nil {
+		// Graceful degradation: if DM subsystem is not wired, acknowledge.
+		writeJSON(w, http.StatusAccepted, map[string]any{
+			"data": map[string]any{
+				"accepted":  true,
+				"post_id":   post.ID,
+				"author_id": post.AuthorID,
+			},
+		})
+		return
+	}
+
+	var authorID pgtype.UUID
+	if err := authorID.Scan(post.AuthorID); err != nil {
+		slog.Error("mutualaid: parse author id failed", "author_id", post.AuthorID, "error", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to parse author ID")
+		return
+	}
+
+	result, err := h.dm.GetOrCreateConversationForInitiator(r.Context(), tenantID, user.UserID, authorID)
+	if err != nil {
+		slog.Error("mutualaid: dm create failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "dm_failed", "Failed to open conversation")
+		return
+	}
+
+	// Send the initial message if one was provided.
+	message := req.Message
+	if message == "" {
+		message = "I'm responding to your mutual aid post: " + post.Title
+	}
+	if err := h.dm.SendMessage(r.Context(), tenantID, result.ConversationID, user.UserID, message); err != nil {
+		slog.Error("mutualaid: dm send failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "dm_send_failed", "Failed to send initial message")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
-			"accepted":   true,
-			"post_id":    post.ID,
-			"author_id":  post.AuthorID,
-			"thread_id":  nil,
+			"conversation_id": result.ConversationID.String(),
+			"is_new":          result.IsNew,
+			"post_id":         post.ID,
 		},
 	})
 }
@@ -359,8 +525,8 @@ func (h *Handlers) HandleFulfill(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "mutual_aid_disabled", "Mutual aid board is not available")
+	if h.service == nil {
+		writeError(w, http.StatusServiceUnavailable, "service_unavailable", "Mutual aid service is not available")
 		return
 	}
 
@@ -397,8 +563,8 @@ func (h *Handlers) HandleRenew(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "mutual_aid_disabled", "Mutual aid board is not available")
+	if h.service == nil {
+		writeError(w, http.StatusServiceUnavailable, "service_unavailable", "Mutual aid service is not available")
 		return
 	}
 
@@ -436,8 +602,8 @@ func (h *Handlers) HandleDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "mutual_aid_disabled", "Mutual aid board is not available")
+	if h.service == nil {
+		writeError(w, http.StatusServiceUnavailable, "service_unavailable", "Mutual aid service is not available")
 		return
 	}
 

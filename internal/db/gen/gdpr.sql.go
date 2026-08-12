@@ -588,6 +588,30 @@ func (q *Queries) DeleteForumThreadTagsByAuthor(ctx context.Context, arg DeleteF
 	return err
 }
 
+const deleteNotificationBatchWindowsByUser = `-- name: DeleteNotificationBatchWindowsByUser :exec
+DELETE FROM notification_batch_windows WHERE recipient_id = $1
+`
+
+// BUG-012: delete notification_batch_windows for the erased user during GDPR
+// erasure (Section 35). Orphaned batch windows would dispatch notifications
+// to a deleted user; removing them prevents that.
+func (q *Queries) DeleteNotificationBatchWindowsByUser(ctx context.Context, userID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteNotificationBatchWindowsByUser, userID)
+	return err
+}
+
+const deleteNotificationPreferencesByUser = `-- name: DeleteNotificationPreferencesByUser :exec
+DELETE FROM notification_preferences WHERE user_id = $1
+`
+
+// BUG-011: delete notification_preferences for the erased user during GDPR
+// erasure (Section 35). Preferences are user-owned config with no audit
+// requirement; safe to hard-delete (not user content per Rule 11).
+func (q *Queries) DeleteNotificationPreferencesByUser(ctx context.Context, userID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteNotificationPreferencesByUser, userID)
+	return err
+}
+
 const deleteNotificationsByUser = `-- name: DeleteNotificationsByUser :exec
 DELETE FROM notifications
 WHERE recipient_id = $1 AND tenant_id = $2
@@ -647,6 +671,18 @@ type DeleteProfessionalProfilesByOwnerParams struct {
 // professional_profiles.owner_user_id has no CASCADE; delete the user's owned profiles (cascades members/invitations).
 func (q *Queries) DeleteProfessionalProfilesByOwner(ctx context.Context, arg DeleteProfessionalProfilesByOwnerParams) error {
 	_, err := q.db.Exec(ctx, deleteProfessionalProfilesByOwner, arg.UserID, arg.TenantID)
+	return err
+}
+
+const deletePushSubscriptionsByUser = `-- name: DeletePushSubscriptionsByUser :exec
+DELETE FROM push_subscriptions WHERE user_id = $1
+`
+
+// BUG-010: delete push_subscriptions for the erased user during GDPR erasure
+// (Section 35). The endpoint URL and p256dh/auth keys are device-identifying
+// PII and must be removed.
+func (q *Queries) DeletePushSubscriptionsByUser(ctx context.Context, userID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deletePushSubscriptionsByUser, userID)
 	return err
 }
 

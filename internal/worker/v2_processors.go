@@ -160,6 +160,15 @@ type CalendarProcessor interface {
 	SendReminders(ctx context.Context) (int, error)
 }
 
+// MutualAidProcessor handles Mutual Aid Board background tasks (§85, ADR-093).
+// ExpirePosts marks active posts past their 30-day expires_at as 'expired'
+// and sends a 3-day-prior notification to owners whose posts are about to
+// expire. Nightly sweep on the low queue.
+// Ref: japaconnect-engineering/sections/85-mutual-aid-board.md
+type MutualAidProcessor interface {
+	ExpirePosts(ctx context.Context) (int64, error)
+}
+
 // CvFormatterProcessor handles CV Formatter background tasks (§95, ADR-103).
 // ProcessSession calls the AI Gateway with the destination's cv_standards
 // system prompt + the user's input_text, stores the output, and marks the
@@ -211,6 +220,7 @@ var (
 	mentorProcessor         MentorProcessor
 	embassyAlerterProcessor EmbassyAlerterProcessor
 	calendarProcessor       CalendarProcessor
+	mutualAidProcessor      MutualAidProcessor
 	cvFormatterProcessor    CvFormatterProcessor
 	digestProcessor         DigestProcessor
 	agentDraftProcessor     AgentDraftProcessor
@@ -233,6 +243,7 @@ func RegisterStudioProcessor(p StudioProcessor)                 { studioProcesso
 func RegisterMentorProcessor(p MentorProcessor)                 { mentorProcessor = p }
 func RegisterEmbassyAlerterProcessor(p EmbassyAlerterProcessor) { embassyAlerterProcessor = p }
 func RegisterCalendarProcessor(p CalendarProcessor)             { calendarProcessor = p }
+func RegisterMutualAidProcessor(p MutualAidProcessor)           { mutualAidProcessor = p }
 func RegisterCvFormatterProcessor(p CvFormatterProcessor)       { cvFormatterProcessor = p }
 func RegisterDigestProcessor(p DigestProcessor)                 { digestProcessor = p }
 func RegisterAgentDraftProcessor(p AgentDraftProcessor)         { agentDraftProcessor = p }
@@ -287,6 +298,11 @@ const (
 	// dispatching notifications to subscribers at 90/30/7-day marks.
 	TypeCalendarStalenessCheck = "calendar:staleness_check"
 	TypeCalendarSendReminders  = "calendar:send_reminders"
+
+	// §85 Mutual Aid Board (ADR-093).
+	// mutual_aid:expire runs nightly on the low queue, expiring posts
+	// past their 30-day expires_at and notifying owners 3 days before.
+	TypeMutualAidExpire = "mutual_aid:expire"
 
 	// §94 Professional Credential Checker (ADR-102).
 	// credentials:check_links runs weekly on the low queue, HEAD-checking
@@ -931,6 +947,22 @@ func HandleCalendarSendReminders(ctx context.Context, _ *asynq.Task) error {
 		return fmt.Errorf("task:calendar:send_reminders: %w", err)
 	}
 	slog.Info("task:calendar:send_reminders: dispatched reminders", "count", n)
+	return nil
+}
+
+// HandleMutualAidExpire expires mutual aid posts past their 30-day
+// expires_at and sends a 3-day-prior notification to owners whose posts
+// are about to expire (§85, ADR-093). Nightly sweep on the low queue.
+func HandleMutualAidExpire(ctx context.Context, _ *asynq.Task) error {
+	if mutualAidProcessor == nil {
+		slog.Warn("task:mutual_aid:expire: no processor registered, skipping")
+		return nil
+	}
+	n, err := mutualAidProcessor.ExpirePosts(ctx)
+	if err != nil {
+		return fmt.Errorf("task:mutual_aid:expire: %w", err)
+	}
+	slog.Info("task:mutual_aid:expire: expired posts", "count", n)
 	return nil
 }
 

@@ -34,27 +34,37 @@ func BanEnforcement(rdb valkeycompat.Cmdable, isBanned func(ctx context.Context,
 			userID := user.UserID.String()
 			cacheKey := valkey.MustKey("ban:%s", userID)
 
-			// Check Valkey cache for ban status.
-			if rdb != nil {
-				cached, err := rdb.Get(r.Context(), cacheKey).Bytes()
-				if err == nil && len(cached) > 0 {
-					var permData struct {
-						Banned    bool       `json:"banned"`
-						ExpiresAt *time.Time `json:"banned_expires_at,omitempty"`
-					}
-					if json.Unmarshal(cached, &permData) == nil && permData.Banned {
-						// Check if ban has expired.
-						if permData.ExpiresAt != nil && permData.ExpiresAt.Before(time.Now()) {
-							rdb.Del(r.Context(), cacheKey)
-							// Cache the "not banned" state briefly to avoid DB hit on next request.
-							rdb.Set(r.Context(), cacheKey, []byte(`{"banned":false}`), 5*time.Minute)
+			// Check Valkey cache for ban status. The cache is invalidated
+			// (Del) whenever a ban is created, so a cached "not banned"
+			// state is safe to honour without a DB round-trip.
+		cacheCheck:
+			for {
+				if rdb != nil {
+					cached, err := rdb.Get(r.Context(), cacheKey).Bytes()
+					if err == nil && len(cached) > 0 {
+						var permData struct {
+							Banned    bool       `json:"banned"`
+							ExpiresAt *time.Time `json:"banned_expires_at,omitempty"`
+						}
+						if json.Unmarshal(cached, &permData) == nil {
+							if permData.Banned {
+								// Check if ban has expired.
+								if permData.ExpiresAt != nil && permData.ExpiresAt.Before(time.Now()) {
+									rdb.Del(r.Context(), cacheKey)
+									// Fall through to DB check — the cached ban is
+									// stale and the user may have been re-banned.
+									break cacheCheck
+								}
+								writeBanResponse(w, permData.ExpiresAt)
+								return
+							}
+							// Cache says not banned — skip the DB hit.
 							next.ServeHTTP(w, r)
 							return
 						}
-						writeBanResponse(w, permData.ExpiresAt)
-						return
 					}
 				}
+				break cacheCheck
 			}
 
 			// Fallback to DB check.
@@ -63,7 +73,7 @@ func BanEnforcement(rdb valkeycompat.Cmdable, isBanned func(ctx context.Context,
 				// Update cache so subsequent requests hit Valkey.
 				if rdb != nil {
 					data, _ := json.Marshal(map[string]any{
-						"banned":             true,
+						"banned":            true,
 						"banned_expires_at": expiresAt,
 					})
 					rdb.Set(r.Context(), cacheKey, data, 5*time.Minute)

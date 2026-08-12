@@ -29,7 +29,8 @@ func (s *Store) insertNotification(ctx context.Context, params gen.InsertNotific
 }
 
 // getNotificationsByRecipient returns paginated notifications for a user.
-func (s *Store) getNotificationsByRecipient(ctx context.Context, tenantID, recipientID pgtype.UUID, limit, offset int32) ([]gen.GetNotificationsByRecipientRow, error) {
+// BUG-007: supports the unread_only filter (§35 L107).
+func (s *Store) getNotificationsByRecipient(ctx context.Context, tenantID, recipientID pgtype.UUID, limit, offset int32, unreadOnly bool) ([]gen.GetNotificationsByRecipientRow, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -39,6 +40,7 @@ func (s *Store) getNotificationsByRecipient(ctx context.Context, tenantID, recip
 		RecipientID: recipientID,
 		PageLimit:   limit,
 		PageOffset:  offset,
+		UnreadOnly:  unreadOnly,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("getting notifications: %w", err)
@@ -116,10 +118,10 @@ func (s *Store) upsertNotificationPreference(ctx context.Context, params gen.Ups
 }
 
 // getOpenBatchWindow returns an open, non-dispatched batch window.
-func (s *Store) getOpenBatchWindow(ctx context.Context, params gen.GetOpenBatchWindowParams) (gen.NotificationBatchWindow, error) {
+func (s *Store) getOpenBatchWindow(ctx context.Context, params gen.GetOpenBatchWindowParams) (gen.GetOpenBatchWindowRow, error) {
 	window, err := s.read.GetOpenBatchWindow(ctx, params)
 	if err != nil {
-		return gen.NotificationBatchWindow{}, fmt.Errorf("getting open batch window: %w", err)
+		return gen.GetOpenBatchWindowRow{}, fmt.Errorf("getting open batch window: %w", err)
 	}
 
 	return window, nil
@@ -153,10 +155,10 @@ func (s *Store) markBatchWindowDispatched(ctx context.Context, windowID pgtype.U
 }
 
 // getBatchWindowByID returns a batch window by its ID.
-func (s *Store) getBatchWindowByID(ctx context.Context, windowID pgtype.UUID) (gen.NotificationBatchWindow, error) {
+func (s *Store) getBatchWindowByID(ctx context.Context, windowID pgtype.UUID) (gen.GetBatchWindowByIDRow, error) {
 	window, err := s.read.GetBatchWindowByID(ctx, windowID)
 	if err != nil {
-		return gen.NotificationBatchWindow{}, fmt.Errorf("getting batch window by ID: %w", err)
+		return gen.GetBatchWindowByIDRow{}, fmt.Errorf("getting batch window by ID: %w", err)
 	}
 
 	return window, nil
@@ -230,4 +232,17 @@ func (s *Store) getUserDisplayName(ctx context.Context, userID pgtype.UUID) (*st
 	}
 
 	return user.DisplayName, nil
+}
+
+// getUserEmail returns the user's email address for notification email
+// delivery (§35, BUG-003). Tenant-scoped per §04.
+func (s *Store) getUserEmail(ctx context.Context, tenantID, userID pgtype.UUID) (*string, error) {
+	email, err := s.read.GetUserEmail(ctx, gen.GetUserEmailParams{
+		TenantID: tenantID,
+		UserID:   userID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("getting user email: %w", err)
+	}
+	return &email, nil
 }

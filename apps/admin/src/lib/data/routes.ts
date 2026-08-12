@@ -120,6 +120,7 @@ const adminRoutes: string[] = [
 	'/newsletter',
 	'/notification-types',
 	'/onboarding',
+	'/onboarding/templates',
 	'/organisations',
 	'/page-builder',
 	'/page-builder/pages',

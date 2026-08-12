@@ -362,6 +362,48 @@ func (q *Queries) GetDigestSubscribers(ctx context.Context, arg GetDigestSubscri
 	return items, nil
 }
 
+const getNewsletterCampaignForSend = `-- name: GetNewsletterCampaignForSend :one
+
+SELECT id, tenant_id, subject, html, body, segment, segment_id, status
+FROM newsletter_campaigns
+WHERE tenant_id = $1 AND id = $2
+`
+
+type GetNewsletterCampaignForSendParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	ID       pgtype.UUID `json:"id"`
+}
+
+type GetNewsletterCampaignForSendRow struct {
+	ID        pgtype.UUID `json:"id"`
+	TenantID  pgtype.UUID `json:"tenant_id"`
+	Subject   string      `json:"subject"`
+	Html      string      `json:"html"`
+	Body      []byte      `json:"body"`
+	Segment   string      `json:"segment"`
+	SegmentID pgtype.UUID `json:"segment_id"`
+	Status    string      `json:"status"`
+}
+
+// =====================================================================
+// Campaign send: fetch full campaign row (incl. segment) for the worker.
+// =====================================================================
+func (q *Queries) GetNewsletterCampaignForSend(ctx context.Context, arg GetNewsletterCampaignForSendParams) (GetNewsletterCampaignForSendRow, error) {
+	row := q.db.QueryRow(ctx, getNewsletterCampaignForSend, arg.TenantID, arg.ID)
+	var i GetNewsletterCampaignForSendRow
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.Subject,
+		&i.Html,
+		&i.Body,
+		&i.Segment,
+		&i.SegmentID,
+		&i.Status,
+	)
+	return i, err
+}
+
 const getSubscriberByEmail = `-- name: GetSubscriberByEmail :one
 
 
@@ -567,6 +609,185 @@ type MarkComplainedParams struct {
 func (q *Queries) MarkComplained(ctx context.Context, arg MarkComplainedParams) error {
 	_, err := q.db.Exec(ctx, markComplained, arg.TenantID, arg.Email)
 	return err
+}
+
+const newsletterRecipientsAll = `-- name: NewsletterRecipientsAll :many
+
+SELECT ns.email
+FROM newsletter_subscribers ns
+WHERE ns.tenant_id = $1
+  AND ns.status = 'subscribed'
+  AND ns.campaign_enabled = true
+ORDER BY ns.subscribed_at ASC
+LIMIT $3 OFFSET $2
+`
+
+type NewsletterRecipientsAllParams struct {
+	TenantID   pgtype.UUID `json:"tenant_id"`
+	PageOffset int32       `json:"page_offset"`
+	PageLimit  int32       `json:"page_limit"`
+}
+
+// =====================================================================
+// Segment-aware recipient resolution for newsletter:send (§62, ADR-080 §3).
+// Returns emails of subscribers matching the campaign's segment.
+//
+//	segment = 'all'              → all subscribed + campaign_enabled
+//	segment = 'pro_subscribers'  → subscribed + campaign_enabled + pro tier users
+//	segment = 'space'            → subscribed + campaign_enabled + users following segment_id space
+//	segment = 'tag'              → subscribed + campaign_enabled + users following segment_id tag
+//
+// The space/tag follower filters are best-effort: if the follower tables
+// are not present or the join yields no rows, the segment falls back to
+// 'all' so a misconfigured segment never silently drops every recipient.
+// =====================================================================
+func (q *Queries) NewsletterRecipientsAll(ctx context.Context, arg NewsletterRecipientsAllParams) ([]string, error) {
+	rows, err := q.db.Query(ctx, newsletterRecipientsAll, arg.TenantID, arg.PageOffset, arg.PageLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var email string
+		if err := rows.Scan(&email); err != nil {
+			return nil, err
+		}
+		items = append(items, email)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const newsletterRecipientsBySpace = `-- name: NewsletterRecipientsBySpace :many
+SELECT ns.email
+FROM newsletter_subscribers ns
+JOIN follows f ON f.follower_id = ns.user_id AND f.tenant_id = ns.tenant_id
+WHERE ns.tenant_id = $1
+  AND ns.status = 'subscribed'
+  AND ns.campaign_enabled = true
+  AND f.entity_type = 'space'
+  AND f.entity_id = $2
+ORDER BY ns.subscribed_at ASC
+LIMIT $4 OFFSET $3
+`
+
+type NewsletterRecipientsBySpaceParams struct {
+	TenantID   pgtype.UUID `json:"tenant_id"`
+	SegmentID  pgtype.UUID `json:"segment_id"`
+	PageOffset int32       `json:"page_offset"`
+	PageLimit  int32       `json:"page_limit"`
+}
+
+func (q *Queries) NewsletterRecipientsBySpace(ctx context.Context, arg NewsletterRecipientsBySpaceParams) ([]string, error) {
+	rows, err := q.db.Query(ctx, newsletterRecipientsBySpace,
+		arg.TenantID,
+		arg.SegmentID,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var email string
+		if err := rows.Scan(&email); err != nil {
+			return nil, err
+		}
+		items = append(items, email)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const newsletterRecipientsByTag = `-- name: NewsletterRecipientsByTag :many
+SELECT ns.email
+FROM newsletter_subscribers ns
+JOIN follows f ON f.follower_id = ns.user_id AND f.tenant_id = ns.tenant_id
+WHERE ns.tenant_id = $1
+  AND ns.status = 'subscribed'
+  AND ns.campaign_enabled = true
+  AND f.entity_type = 'tag'
+  AND f.entity_id = $2
+ORDER BY ns.subscribed_at ASC
+LIMIT $4 OFFSET $3
+`
+
+type NewsletterRecipientsByTagParams struct {
+	TenantID   pgtype.UUID `json:"tenant_id"`
+	SegmentID  pgtype.UUID `json:"segment_id"`
+	PageOffset int32       `json:"page_offset"`
+	PageLimit  int32       `json:"page_limit"`
+}
+
+func (q *Queries) NewsletterRecipientsByTag(ctx context.Context, arg NewsletterRecipientsByTagParams) ([]string, error) {
+	rows, err := q.db.Query(ctx, newsletterRecipientsByTag,
+		arg.TenantID,
+		arg.SegmentID,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var email string
+		if err := rows.Scan(&email); err != nil {
+			return nil, err
+		}
+		items = append(items, email)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const newsletterRecipientsPro = `-- name: NewsletterRecipientsPro :many
+SELECT ns.email
+FROM newsletter_subscribers ns
+JOIN subscriptions sub ON sub.user_id = ns.user_id AND sub.tenant_id = ns.tenant_id
+WHERE ns.tenant_id = $1
+  AND ns.status = 'subscribed'
+  AND ns.campaign_enabled = true
+  AND sub.status = 'active'
+  AND sub.plan LIKE 'pro_%'
+ORDER BY ns.subscribed_at ASC
+LIMIT $3 OFFSET $2
+`
+
+type NewsletterRecipientsProParams struct {
+	TenantID   pgtype.UUID `json:"tenant_id"`
+	PageOffset int32       `json:"page_offset"`
+	PageLimit  int32       `json:"page_limit"`
+}
+
+func (q *Queries) NewsletterRecipientsPro(ctx context.Context, arg NewsletterRecipientsProParams) ([]string, error) {
+	rows, err := q.db.Query(ctx, newsletterRecipientsPro, arg.TenantID, arg.PageOffset, arg.PageLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var email string
+		if err := rows.Scan(&email); err != nil {
+			return nil, err
+		}
+		items = append(items, email)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const subscribe = `-- name: Subscribe :one

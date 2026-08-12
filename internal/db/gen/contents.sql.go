@@ -2341,7 +2341,9 @@ func (q *Queries) ListPublishedContentByOrganization(ctx context.Context, arg Li
 const listPublishedContentForDigest = `-- name: ListPublishedContentForDigest :many
 SELECT title, slug, created_at
 FROM contents
-WHERE tenant_id = $1 AND status = 'published'
+WHERE tenant_id = $1
+  AND status = 'published'
+  AND created_at >= now() - interval '7 days'
 ORDER BY created_at DESC
 LIMIT 10
 `

@@ -6,78 +6,63 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/jedafe/japa/internal/db/gen"
 )
 
-// PushSubscription represents a stored browser push subscription.
-type PushSubscription struct {
-	ID       pgtype.UUID
-	UserID   pgtype.UUID
-	Endpoint string
-	P256DH   string
-	Auth     string
-}
-
 // PushStore provides database access for push subscriptions.
+// Ref: japaconnect-engineering/sections/35-notification-system.md
 type PushStore struct {
-	write *pgxpool.Pool
-	read  *pgxpool.Pool
+	write *gen.Queries
+	read  *gen.Queries
 }
 
 // NewPushStore creates a PushStore backed by the given connection pools.
 func NewPushStore(read, write *pgxpool.Pool) *PushStore {
-	return &PushStore{read: read, write: write}
-}
-
-// GetPushSubscriptions returns all push subscriptions for a user.
-func (s *PushStore) GetPushSubscriptions(ctx context.Context, userID pgtype.UUID) ([]PushSubscription, error) {
-	rows, err := s.read.Query(ctx,
-		`SELECT id, user_id, endpoint, p256dh, auth_key
-		 FROM push_subscriptions WHERE user_id = $1`, userID)
-	if err != nil {
-		return nil, fmt.Errorf("querying push subscriptions: %w", err)
+	return &PushStore{
+		read:  gen.New(read),
+		write: gen.New(write),
 	}
-	defer rows.Close()
-
-	var subs []PushSubscription
-
-	for rows.Next() {
-		var sub PushSubscription
-		if err := rows.Scan(&sub.ID, &sub.UserID, &sub.Endpoint, &sub.P256DH, &sub.Auth); err != nil {
-			return nil, fmt.Errorf("scanning push subscription: %w", err)
-		}
-
-		subs = append(subs, sub)
-	}
-
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterating push subscriptions: %w", err)
-	}
-
-	return subs, nil
 }
 
 // SavePushSubscription upserts a push subscription (idempotent on user_id + endpoint).
 func (s *PushStore) SavePushSubscription(ctx context.Context, userID pgtype.UUID, endpoint, p256dh, auth string) error {
-	_, err := s.write.Exec(ctx,
-		`INSERT INTO push_subscriptions (user_id, endpoint, p256dh, auth_key)
-		 VALUES ($1, $2, $3, $4)
-		 ON CONFLICT (user_id, endpoint) DO UPDATE SET p256dh = EXCLUDED.p256dh, auth_key = EXCLUDED.auth_key`,
-		userID, endpoint, p256dh, auth)
-	if err != nil {
+	if err := s.write.SavePushSubscription(ctx, gen.SavePushSubscriptionParams{
+		UserID:   userID,
+		Endpoint: endpoint,
+		P256dh:   p256dh,
+		AuthKey:  auth,
+	}); err != nil {
 		return fmt.Errorf("upserting push subscription: %w", err)
 	}
-
 	return nil
 }
 
-// DeletePushSubscription removes a push subscription by endpoint.
-func (s *PushStore) DeletePushSubscription(ctx context.Context, userID pgtype.UUID, endpoint string) error {
-	_, err := s.write.Exec(ctx,
-		`DELETE FROM push_subscriptions WHERE user_id = $1 AND endpoint = $2`,
-		userID, endpoint)
-	if err != nil {
-		return fmt.Errorf("deleting push subscription: %w", err)
+// DeletePushSubscriptionByEndpoint removes a push subscription by endpoint.
+func (s *PushStore) DeletePushSubscriptionByEndpoint(ctx context.Context, userID pgtype.UUID, endpoint string) error {
+	if err := s.write.DeletePushSubscriptionByEndpoint(ctx, gen.DeletePushSubscriptionByEndpointParams{
+		UserID:   userID,
+		Endpoint: endpoint,
+	}); err != nil {
+		return fmt.Errorf("deleting push subscription by endpoint: %w", err)
 	}
-
 	return nil
+}
+
+// DeletePushSubscriptionByID removes a push subscription by its primary key.
+// BUG-005: catalog route is DELETE /me/push-tokens/{id} (path-param id).
+func (s *PushStore) DeletePushSubscriptionByID(ctx context.Context, id pgtype.UUID) error {
+	if err := s.write.DeletePushSubscription(ctx, id); err != nil {
+		return fmt.Errorf("deleting push subscription by id: %w", err)
+	}
+	return nil
+}
+
+// GetPushSubscriptionByID returns a push subscription by its primary key.
+// Used for ownership checks before deletion (BUG-005).
+func (s *PushStore) GetPushSubscriptionByID(ctx context.Context, id pgtype.UUID) (gen.GetPushSubscriptionByIDRow, error) {
+	row, err := s.read.GetPushSubscriptionByID(ctx, id)
+	if err != nil {
+		return gen.GetPushSubscriptionByIDRow{}, fmt.Errorf("getting push subscription by id: %w", err)
+	}
+	return row, nil
 }

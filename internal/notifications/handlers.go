@@ -2,6 +2,7 @@ package notifications
 
 import (
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -102,7 +103,8 @@ func parsePageOffset(r *http.Request) int32 {
 // Notification Handlers
 // ---------------------------------------------------------------------------
 
-// ListNotifications handles GET /api/v1/notifications.
+// ListNotifications handles GET /me/notifications.
+// Supports ?unread_only=true filter (BUG-007, §35 L107).
 func (h *Handlers) ListNotifications(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
 	if !ok {
@@ -116,8 +118,9 @@ func (h *Handlers) ListNotifications(w http.ResponseWriter, r *http.Request) {
 
 	limit := parsePageSize(r)
 	offset := parsePageOffset(r)
+	unreadOnly := r.URL.Query().Has("unread_only") && r.URL.Query().Get("unread_only") != "false" && r.URL.Query().Get("unread_only") != "0"
 
-	notifications, err := h.service.GetNotifications(r.Context(), tenantID, user.UserID, limit, offset)
+	notifications, err := h.service.GetNotifications(r.Context(), tenantID, user.UserID, limit, offset, unreadOnly)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to get notifications")
 		return
@@ -445,7 +448,8 @@ func (h *Handlers) HandlePushSubscribe(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, map[string]any{"data": map[string]string{"status": "subscribed"}})
 }
 
-// HandlePushUnsubscribe handles DELETE /api/v1/push/subscribe.
+// HandlePushUnsubscribe handles DELETE /me/push-tokens (by endpoint in body).
+// Kept for backward compatibility with older clients that key by endpoint.
 func (h *Handlers) HandlePushUnsubscribe(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
 	if !ok {
@@ -467,6 +471,40 @@ func (h *Handlers) HandlePushUnsubscribe(w http.ResponseWriter, r *http.Request)
 	}
 
 	if err := h.service.DeletePushSubscription(r.Context(), user.UserID, input.Endpoint); err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to delete push subscription")
+		return
+	}
+
+	writeJSON(w, http.StatusNoContent, nil)
+}
+
+// HandlePushUnsubscribeByID handles DELETE /me/push-tokens/{id}.
+// BUG-005: catalog route uses the path-param token id (push subscription UUID).
+// Performs an ownership check — a user can only delete their own subscriptions.
+// Ref: japaconnect-engineering/sections/35-notification-system.md
+func (h *Handlers) HandlePushUnsubscribeByID(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	idStr := chi.URLParam(r, "id")
+	if idStr == "" {
+		writeError(w, http.StatusBadRequest, "missing_id", "push token id is required")
+		return
+	}
+
+	var id pgtype.UUID
+	if err := id.Scan(idStr); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid push token id")
+		return
+	}
+
+	if err := h.service.DeletePushSubscriptionByID(r.Context(), user.UserID, id); err != nil {
+		if errors.Is(err, ErrPushSubscriptionNotOwned) {
+			writeError(w, http.StatusForbidden, "not_owned", "Push subscription does not belong to you")
+			return
+		}
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to delete push subscription")
 		return
 	}

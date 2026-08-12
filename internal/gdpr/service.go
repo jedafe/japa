@@ -1021,6 +1021,28 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 			return fmt.Errorf("deleting user notifications: %w", err)
 		}
 
+		// BUG-011: delete notification_preferences for the erased user.
+		// Preferences are user-owned config (in-app/email/push toggles) with no
+		// audit requirement; safe to hard-delete. Ref: §35, §15.
+		if err := q.DeleteNotificationPreferencesByUser(ctx, userID); err != nil {
+			return fmt.Errorf("deleting notification preferences: %w", err)
+		}
+
+		// BUG-012: delete notification_batch_windows for the erased user.
+		// Orphaned batch windows would dispatch notifications to a deleted user.
+		// Ref: §35, §15.
+		if err := q.DeleteNotificationBatchWindowsByUser(ctx, userID); err != nil {
+			return fmt.Errorf("deleting notification batch windows: %w", err)
+		}
+
+		// BUG-010: delete push_subscriptions for the erased user. The endpoint URL
+		// and p256dh/auth keys are device-identifying PII. The table has ON DELETE
+		// CASCADE on user_id, but the anonymize phase runs before hard-delete, so
+		// we remove them explicitly here to clear PII immediately. Ref: §35, §15.
+		if err := q.DeletePushSubscriptionsByUser(ctx, userID); err != nil {
+			return fmt.Errorf("deleting push subscriptions: %w", err)
+		}
+
 		// BUG-015: soft-delete attestation_community_updates authored by the
 		// user so their PII is removed while the pathway audit trail survives.
 		// Ref: §97, ADR-105.
@@ -1265,6 +1287,16 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 		}); err != nil {
 			return fmt.Errorf("deleting calendar_subscriptions: %w", err)
 		}
+		// BUG-005: Mutual Aid Board GDPR erasure (§85, ADR-093).
+		// mutual_aid_posts.user_id references users(id). Reassign to the
+		// placeholder so posts survive (they are community content) but the
+		// user is no longer attributable.
+		// Ref: japaconnect-engineering/sections/85-mutual-aid-board.md
+		//      japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
+		if _, err := s.db.Writer.Exec(ctx, `UPDATE mutual_aid_posts SET user_id = $3, updated_at = now() WHERE tenant_id = $2 AND user_id = $1 AND deleted_at IS NULL`, userID, tenantID, deletedUserPlaceholder); err != nil {
+			return fmt.Errorf("reassigning mutual_aid_posts user_id: %w", err)
+		}
+
 
 		// BUG-016: Community Locator GDPR erasure (§101, ADR-109).
 		// community_organisations.submitted_by and reviewed_by reference
@@ -1331,6 +1363,22 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 			UserID: userID, TenantID: tenantID, TargetUserID: deletedUserPlaceholder,
 		}); err != nil {
 			return fmt.Errorf("reassigning platform_data_imports created_by: %w", err)
+		}
+
+		// BUG-015: Newsletter subscriber PII (email + subscription state) must
+		// not survive erasure. newsletter_subscribers.user_id references
+		// users(id) with ON DELETE SET NULL (migration 000051), so the final
+		// HardDeleteUser would nullify user_id but leave the email row behind.
+		// Delete the user's subscriber row explicitly so the PII email is
+		// removed. newsletter_unsubscribe_tokens cascade via subscriber_id.
+		// Ref: japaconnect-engineering/sections/62-newsletter-digest.md
+		//      japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
+		//      japaconnect-engineering/adr/ADR-080-newsletter-digest.md
+		if _, err := s.db.Writer.Exec(ctx, `
+			DELETE FROM newsletter_subscribers
+			WHERE tenant_id = $2 AND user_id = $1
+		`, userID, tenantID); err != nil {
+			return fmt.Errorf("deleting newsletter_subscribers for user: %w", err)
 		}
 
 		// 5. Physical deletion — ON DELETE CASCADE handles all child tables.
@@ -1555,6 +1603,7 @@ type UserDataExport struct {
 	CalendarEntries             []map[string]interface{} `json:"calendar_entries"`              // §86 BUG-025
 	CalendarSaves               []map[string]interface{} `json:"calendar_saves"`                // §86 BUG-025
 	CalendarSubscriptions       []map[string]interface{} `json:"calendar_subscriptions"`        // §86 BUG-025
+	MutualAidPosts              []map[string]interface{} `json:"mutual_aid_posts"`               // §85 BUG-005
 	CommunityOrganisations      []map[string]interface{} `json:"community_organisations"`       // §101 BUG-016
 	ComparisonItems             []map[string]interface{} `json:"comparison_items"`              // BUG-004
 	ComparisonDimensions        []map[string]interface{} `json:"comparison_dimensions"`         // BUG-004
@@ -2061,6 +2110,28 @@ func (s *Service) collectUserData(ctx context.Context, userID, tenantID pgtype.U
 		export.CalendarSubscriptions = rows
 	} else {
 		slog.Warn("failed to collect calendar_subscriptions for export", "user_id", userID.String(), "error", err)
+	}
+
+	// BUG-005: export mutual_aid_posts authored by the user. Ref: §85.
+	if rows, err := s.db.Reader.Query(ctx, `
+		SELECT id, tenant_id, post_type, category, title, description,
+		       destination_space_id, city_space_id, status, is_fulfilled,
+		       expires_at, created_at, updated_at
+		FROM mutual_aid_posts
+		WHERE tenant_id = $2 AND user_id = $1 AND deleted_at IS NULL
+		ORDER BY created_at DESC
+	`, userID, tenantID); err == nil {
+		defer rows.Close()
+		for rows.Next() {
+			row := make(map[string]interface{})
+			cols, _ := rows.Values()
+			for i, col := range rows.FieldDescriptions() {
+				row[string(col.Name)] = cols[i]
+			}
+			export.MutualAidPosts = append(export.MutualAidPosts, row)
+		}
+	} else {
+		slog.Warn("failed to collect mutual_aid_posts for export", "user_id", userID.String(), "error", err)
 	}
 
 	// BUG-016: export community_organisations submitted by the user so the

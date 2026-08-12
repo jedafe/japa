@@ -79,22 +79,28 @@ func OperationBanEnforcement(rdb valkeycompat.Cmdable,
 					}
 					if json.Unmarshal(cached, &restrictions) == nil {
 						if expiryStr, ok := restrictions.BannedOps[string(op)]; ok {
-							// Check if ban has expired.
+							// Check if the restriction has expired.
+							expired := false
 							if expiryStr != nil {
 								if expiry, err := time.Parse(time.RFC3339, *expiryStr); err == nil && expiry.Before(time.Now()) {
-									// Expired — let through (cache will refresh on next request).
-									next.ServeHTTP(w, r)
-									return
+									expired = true
 								}
 							}
-							var expiresAt *time.Time
-							if expiryStr != nil {
-								if t, err := time.Parse(time.RFC3339, *expiryStr); err == nil {
-									expiresAt = &t
+							if expired {
+								// Evict the stale cache entry and fall through
+								// to the DB check so a newly-issued restriction
+								// is not masked by the old cache entry.
+								rdb.Del(r.Context(), cacheKey)
+							} else {
+								var expiresAt *time.Time
+								if expiryStr != nil {
+									if t, err := time.Parse(time.RFC3339, *expiryStr); err == nil {
+										expiresAt = &t
+									}
 								}
+								writeOperationBanResponse(w, string(op), expiresAt)
+								return
 							}
-							writeOperationBanResponse(w, string(op), expiresAt)
-							return
 						}
 					}
 				}
@@ -130,14 +136,14 @@ func writeOperationBanResponse(w http.ResponseWriter, operation string, expiresA
 	}
 
 	resp := map[string]any{
-		"error": map[string]any{
-			"code":      "operation_restricted",
-			"message":   msg,
-			"operation": operation,
+		"error": map[string]string{
+			"code":    "operation_restricted",
+			"message": msg,
 		},
+		"operation": operation,
 	}
 	if expiresAt != nil {
-		resp["error"].(map[string]any)["expires_at"] = expiresAt.Format(time.RFC3339)
+		resp["expires_at"] = expiresAt.Format(time.RFC3339)
 	}
 
 	json.NewEncoder(w).Encode(resp)

@@ -23,7 +23,7 @@
 	const statusOptions = [
 		{ value: 'active', label: t('mutual_aid.status.active', 'Active') },
 		{ value: 'fulfilled', label: t('mutual_aid.status.fulfilled', 'Fulfilled') },
-		{ value: 'closed', label: t('mutual_aid.status.closed', 'Closed') },
+		{ value: 'removed', label: t('mutual_aid.status.removed', 'Removed') },
 		{ value: 'expired', label: t('mutual_aid.status.expired', 'Expired') }
 	];
 
@@ -111,11 +111,23 @@
 		],
 		actions: rowActions,
 		fields,
-		load: async () => {
-			const result = await mutualAidAdminApi.list();
+		load: async (params) => {
+			// Build query params for server-side pagination, sorting, and search.
+			const queryParts: string[] = [];
+			queryParts.push(`page=${params.page ?? 1}`);
+			queryParts.push(`limit=${params.pageSize ?? 25}`);
+			if (params.q) queryParts.push(`q=${encodeURIComponent(params.q)}`);
+			if (params.sort) {
+				queryParts.push(`sort=${params.sort}`);
+			}
+			const qs = queryParts.join('&');
+			const result = await mutualAidAdminApi.list(qs);
 			if (result.ok) {
-				const data = (result.data as MutualAidItem[]) ?? [];
-				return { data, total: data.length, totalPages: 1 };
+				const resp = result.data as { items?: MutualAidItem[]; meta?: { total?: number; total_pages?: number } };
+				const data = resp.items ?? (Array.isArray(resp) ? (resp as MutualAidItem[]) : []);
+				const total = resp.meta?.total ?? data.length;
+				const totalPages = resp.meta?.total_pages ?? Math.max(1, Math.ceil(total / (params.pageSize ?? 25)));
+				return { data, total, totalPages };
 			}
 			throw new Error(result.error ?? t('common.error', 'An error occurred'));
 		},

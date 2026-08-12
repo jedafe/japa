@@ -38,6 +38,10 @@
 	let loading = $state(false);
 	let markingAll = $state(false);
 	let open = $state(false);
+	// BUG-015: infinite scroll state (§35 L96 — "Infinite scroll within the dropdown").
+	let page = $state(0);
+	let hasMore = $state(true);
+	let loadingMore = $state(false);
 	// Section 35 filter-by-type tabs.
 	type FilterTab = 'all' | 'mentions' | 'reactions' | 'follows' | 'replies' | 'system';
 	let activeFilter = $state<FilterTab>('all');
@@ -98,9 +102,34 @@
 	async function loadOnOpen() {
 		if (notifications.length > 0 || loading) return;
 		loading = true;
+		page = 0;
+		hasMore = true;
 		const res = await api.get<Notification[]>(`/me/notifications?page_size=20`);
-		if (res.data) notifications = res.data;
+		if (res.data) {
+			notifications = res.data;
+			// BUG-015: if the API returned fewer than the page size, there's no more.
+			if (res.data.length < 20) hasMore = false;
+		}
 		loading = false;
+	}
+
+	/**
+	 * BUG-015: load the next page of notifications for infinite scroll.
+	 * §35 L96: "Infinite scroll within the dropdown".
+	 */
+	async function loadMore() {
+		if (loadingMore || !hasMore || loading) return;
+		loadingMore = true;
+		page += 1;
+		const offset = page * 20;
+		const res = await api.get<Notification[]>(`/me/notifications?page_size=20&page_offset=${offset}`);
+		if (res.data) {
+			notifications = [...notifications, ...res.data];
+			if (res.data.length < 20) hasMore = false;
+		} else {
+			hasMore = false;
+		}
+		loadingMore = false;
 	}
 
 	/** Mark a single notification read and navigate to its action URL. */
@@ -129,6 +158,28 @@
 
 	const unread = $derived(notifications.filter((n) => !n.read_at).length);
 	const badge = $derived(realtime.unreadNotifications);
+
+	/**
+	 * BUG-015: Svelte action that triggers loadMore when the sentinel
+	 * element scrolls into view. Uses IntersectionObserver for efficient
+	 * scroll detection without polling. §35 L96.
+	 */
+	function infiniteScroll(node: HTMLElement) {
+		const observer = new IntersectionObserver(
+			(entries) => {
+				if (entries[0]?.isIntersecting) {
+					loadMore();
+				}
+			},
+			{ root: node.closest('.overflow-y-auto'), threshold: 0.1 }
+		);
+		observer.observe(node);
+		return {
+			destroy() {
+				observer.disconnect();
+			}
+		};
+	}
 </script>
 
 <DropdownMenu.Root bind:open>
@@ -220,6 +271,19 @@
 							</span>
 						</button>
 					{/each}
+					<!-- BUG-015: infinite scroll sentinel (§35 L96). -->
+					{#if hasMore && !loadingMore}
+						<div
+							use:infiniteScroll
+							class="h-1 w-full"
+							aria-hidden="true"
+						></div>
+					{/if}
+					{#if loadingMore}
+						<div class="flex items-center justify-center px-3 py-3 text-[var(--color-muted)]">
+							<Loader2 size={14} class="animate-spin" />
+						</div>
+					{/if}
 				{/if}
 			</div>
 
