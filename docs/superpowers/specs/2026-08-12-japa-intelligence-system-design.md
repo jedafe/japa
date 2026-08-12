@@ -861,7 +861,7 @@ Notification payload:
 
 **Respects §35 batch windows** (per recent migration d4e0c757 — `notification batch windows tenant_id`). Notifications are batched per user per window, not one-push-per-scholarship. A user following 5 countries where 30 scholarships publish overnight gets one batched digest, not 30 pushes.
 
-**Deadline-approaching reminders** reuse the existing §73 daily deadline-check task — it already checks `saved_scholarships` and sends reminders. No new task needed; it now reads from the `scholarships` table instead of `custom_field_values`. **Implementation note:** verify the exact §73 deadline-check task name against the §11 Asynq catalog during implementation (the §11 catalog is the source of truth for task names per Rule 7); this spec does not invent a new task name for this purpose.
+**Deadline-approaching reminders** reuse the existing §73 daily deadline-check task (`scholarship:check_deadlines`, already in §11 catalog per `internal/scholarships/service.go:44`) — it already checks `saved_scholarships` and sends reminders. No new task needed; it now reads from the `scholarships` table instead of `custom_field_values`.
 
 ### Future Flutter mobile (out of v1 spec, endpoints ready)
 
@@ -994,7 +994,7 @@ Following JapaConnect's testing conventions (§27) + TDD discipline where it add
 Follows the `jc-backend-migrate` skill discipline: up/down pairing, zero-downtime, circular-FK-safe ordering, sqlc regeneration after.
 
 **Migration 428 (up) — `intel_sources` + `intel_raw_documents` + `intel_records` + `intel_review_log`:**
-The four generic spine tables. No FKs to existing JapaConnect tables (no `contents`, `spaces`, `users` references except `intel_review_log.actor_user_id → users(id)`). Creates indexes. Safe to ship and run independently — no data, no consumers yet.
+File names: `migrations/000428_intelligence_spine_tables.up.sql` + `migrations/000428_intelligence_spine_tables.down.sql` (matching existing `000425_…`/`000426_…`/`000427_…` naming). The four generic spine tables. No FKs to existing JapaConnect tables (no `contents`, `spaces`, `users` references except `intel_review_log.actor_user_id → users(id)`). Creates indexes. Safe to ship and run independently — no data, no consumers yet.
 
 **Migration 429 (up) — `scholarships` table + §73 amendment:**
 Creates `scholarships` with `guide_id → contents(id)` and `country_space_id → spaces(id)` FKs. The `country_space_id` FK is added via ALTER TABLE after table creation (spaces already exists, so no circular-FK issue). Also adds the FK from `intel_records.promoted_record_id → scholarships(id)` via ALTER TABLE — this couldn't be in migration 428 because `scholarships` didn't exist yet (circular FK resolved by deferred ALTER, per Rule 13 pattern). Adds the GIN/btree indexes.
@@ -1007,7 +1007,7 @@ Inserts the 8 new RBAC permission nodes (`intel.sources.manage`, `intel.sources.
 
 **Down migrations 428d–431d:** reverse order. 431d removes RBAC nodes + settings (only the new ones, by name). 430d is a no-op (backfilled `scholarships` rows are not deleted — they're real data now; the down migration just marks the backfill as reversible by leaving the rows in place and dropping the `scholarships` table in 429d). 429d drops `scholarships` + indexes. 428d drops the four spine tables.
 
-**sqlc regeneration:** after migrations 428–430 land, run `make sqlc-gen` (Rule 2) to generate the typed query structs for the new tables. Query files added to `db/queries/intelligence.sql` + `db/queries/scholarships_intel.sql`.
+**sqlc regeneration:** after migrations 428–430 land, run `make sqlc-gen` (Rule 2) to generate the typed query structs for the new tables. Query files added to `internal/db/queries/intelligence.sql` + `internal/db/queries/scholarships_intel.sql` (matching the existing `internal/db/queries/` location per `sqlc.yaml`).
 
 **§73 ADR amendment (filed alongside spec):** ADR-XXX — "Dedicated `scholarships` table for intelligence system projection." Reverses §73's "no parallel data store" locked decision. Justification: machine-extracted provenance/confidence/evidence data is a different shape from editorial content metadata; the `custom_field_values` EAV store cannot carry per-field confidence or evidence. The `contents` row remains the editorial wrapper (title, body, SEO, comments, RAG) — `scholarships` is the structured projection. `saved_scholarships.guide_id → contents(id)` continues to work unchanged. The ADR is written in JEOS (`.jeos/adr/`) before any code, per the "JEOS is always updated before code" rule.
 
