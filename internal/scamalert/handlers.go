@@ -238,6 +238,14 @@ func (h *Handlers) HandleSubmit(w http.ResponseWriter, r *http.Request) {
 
 	report, err := h.service.Submit(r.Context(), tenantID, reporterID, input)
 	if err != nil {
+		if errors.Is(err, ErrInvalidScamType) {
+			writeError(w, http.StatusBadRequest, "invalid_scam_type", "Scam type must be one of: fraudulent_agent, fake_job, housing_fraud, fake_scholarship, whatsapp_telegram, other")
+			return
+		}
+		if errors.Is(err, ErrInvalidPlatform) {
+			writeError(w, http.StatusBadRequest, "invalid_platform", "Platform must be one of: whatsapp, instagram, linkedin, email, website, other")
+			return
+		}
 		slog.Error("scamalert: submit failed", "error", err)
 		writeError(w, http.StatusInternalServerError, "submit_failed", "Failed to submit scam report")
 		return
@@ -252,7 +260,7 @@ func (h *Handlers) HandleSubmit(w http.ResponseWriter, r *http.Request) {
 
 // HandleSubscribe handles POST /scam-alerts/:id/subscribe — subscribe the
 // authenticated user to scam alerts for the report's destination space.
-// Auth required (scam_alert.subscribe checked at route registration).
+// Auth required (no separate RBAC node per §81 — subscribe is auth-only).
 func (h *Handlers) HandleSubscribe(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
 	if !ok {
@@ -301,7 +309,7 @@ func (h *Handlers) HandleSubscribe(w http.ResponseWriter, r *http.Request) {
 
 // HandleUnsubscribe handles DELETE /scam-alerts/:id/subscribe — unsubscribe
 // the authenticated user from scam alerts for the report's destination space.
-// Auth required.
+// Auth required (no separate RBAC node per §81 — subscribe is auth-only).
 func (h *Handlers) HandleUnsubscribe(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
 	if !ok {
@@ -435,12 +443,16 @@ func (h *Handlers) HandleReview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if input.Status != "confirmed" && input.Status != "rejected" {
-		writeError(w, http.StatusBadRequest, "invalid_status", "Status must be 'confirmed' or 'rejected'")
+	if input.Status != "confirmed" && input.Status != "debunked" && input.Status != "duplicate" {
+		writeError(w, http.StatusBadRequest, "invalid_status", "Status must be 'confirmed', 'debunked', or 'duplicate'")
 		return
 	}
 
 	if err := h.service.Review(r.Context(), id, tenantID, input.Status, input.ModeratorNote, user.UserID); err != nil {
+		if errors.Is(err, ErrInvalidStatus) {
+			writeError(w, http.StatusBadRequest, "invalid_status", "Status must be 'confirmed', 'debunked', or 'duplicate'")
+			return
+		}
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "report_not_found", "Scam report not found")
 			return

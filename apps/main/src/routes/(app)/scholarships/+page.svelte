@@ -121,11 +121,12 @@
 	}
 
 	async function scholarshipSearchFetcher(q: string): Promise<SearchSuggestion[]> {
-		const res = await api.get<{ scholarships: Scholarship[] }>(
-			`/scholarships?q=${encodeURIComponent(q)}&limit=8`
-		);
+		const res = await api.get<Scholarship[]>(`/scholarships?q=${encodeURIComponent(q)}&limit=8`);
 		if (res.error || !res.data) return [];
-		return (res.data.scholarships ?? []).map((s) => ({
+		// The backend returns the scholarship array directly in `data`
+		// (`{ data: [...], meta: {...} }`), not wrapped in a `scholarships`
+		// key — reading `res.data.scholarships` here made suggestions empty.
+		return (res.data ?? []).map((s) => ({
 			id: s.guide_id,
 			title: s.title,
 			url: `/scholarships?q=${encodeURIComponent(s.slug)}`,

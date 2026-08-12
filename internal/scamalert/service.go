@@ -9,6 +9,7 @@ package scamalert
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"time"
@@ -61,20 +62,64 @@ type SubmitReportInput struct {
 
 // ReviewInput is the request body for PATCH /admin/scam-alerts/:id.
 type ReviewInput struct {
-	Status        string `json:"status"` // confirmed|rejected
+	Status        string `json:"status"` // confirmed|debunked|duplicate
 	ModeratorNote string `json:"moderator_note"`
 }
+
+// Notifier is the interface used by the scam-alert service to dispatch
+// notifications to subscribers. It is satisfied by *notifications.Service.
+// Defined here (rather than importing notifications directly) to avoid an
+// import cycle: notifications → worker → scamalert.
+// Ref: japaconnect-engineering/sections/35-notification-system.md
+type Notifier interface {
+	CreateNotification(ctx context.Context, tenantID, recipientID pgtype.UUID, nType, actorType string, actorID pgtype.UUID, subjectType string, subjectID pgtype.UUID, title, body, actionURL string) error
+}
+
+// BadgeAwarder evaluates and awards badges for a given activity key.
+// It is satisfied by *gamification.Service. Defined here to avoid an
+// import cycle: gamification → worker → scamalert.
+// Ref: japaconnect-engineering/sections/64-gamification.md
+type BadgeAwarder interface {
+	EvaluateForWallet(ctx context.Context, tenantID, userID pgtype.UUID, activityKey string) error
+}
+
+// TaskEnqueuer enqueues Asynq tasks fire-and-forget (Rule 8).
+type TaskEnqueuer interface {
+	Enqueue(taskType string, payload []byte, opts ...interface{}) error
+}
+
+// Task name constants for Asynq tasks enqueued by this service.
+const (
+	TaskNotifySubscribers = "scam_alert:notify_subscribers"
+	TaskAwardPoints       = "wallet:award_points"
+)
 
 // Service holds the business logic for the Scam Alert Board.
 type Service struct {
 	store    *Store
 	settings *config.Settings
+	notifier Notifier
+	awarder  BadgeAwarder
+	enqueuer TaskEnqueuer
 }
 
 // NewService creates a scam-alert service.
 func NewService(store *Store, settings *config.Settings) *Service {
 	return &Service{store: store, settings: settings}
 }
+
+// SetNotifier injects the notification service used to dispatch subscriber
+// notifications on report confirmation (§81, §35). Called once at startup.
+func (s *Service) SetNotifier(n Notifier) { s.notifier = n }
+
+// SetBadgeAwarder injects the gamification service used to evaluate the
+// Community Guardian badge when a report is confirmed (§64). Called once
+// at startup.
+func (s *Service) SetBadgeAwarder(b BadgeAwarder) { s.awarder = b }
+
+// SetEnqueuer injects the Asynq task enqueuer for fire-and-forget fan-out
+// (Rule 8). Called once at startup.
+func (s *Service) SetEnqueuer(e TaskEnqueuer) { s.enqueuer = e }
 
 // Enabled reads the scam_alert.enabled system_setting toggle (§81 feature flag).
 func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
@@ -85,19 +130,70 @@ func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
 }
 
 // AnonymousReportsAllowed reads the scam_alert.anonymous_reports setting.
+// §81 default is true.
 func (s *Service) AnonymousReportsAllowed(ctx context.Context, tenantID pgtype.UUID) bool {
 	if s.settings == nil {
-		return false
+		return true
 	}
-	return s.settings.GetBoolOr(ctx, tenantID, "scam_alert.anonymous_reports", false)
+	return s.settings.GetBoolOr(ctx, tenantID, "scam_alert.anonymous_reports", true)
 }
 
-// Submit creates a new scam report in 'pending' status. reporterID may be
-// zero-valued (invalid) for anonymous reports when anonymous reports are
+// validScamTypes and validPlatforms are the §81 enum values. The DB CHECK
+// constraints (migration 000417) enforce these at the store layer; these
+// constants let the service reject invalid input with a structured error
+// before hitting the DB.
+var validScamTypes = map[string]bool{
+	"fraudulent_agent":  true,
+	"fake_job":          true,
+	"housing_fraud":     true,
+	"fake_scholarship":  true,
+	"whatsapp_telegram": true,
+	"other":             true,
+}
+
+var validPlatforms = map[string]bool{
+	"whatsapp":  true,
+	"instagram": true,
+	"linkedin":  true,
+	"email":     true,
+	"website":   true,
+	"other":     true,
+}
+
+// validReviewStatuses are the status values a moderator may set via Review
+// (§81 status machine: under_review → confirmed | debunked | duplicate).
+var validReviewStatuses = map[string]bool{
+	"confirmed": true,
+	"debunked":  true,
+	"duplicate": true,
+}
+
+// ErrInvalidScamType is returned when the submitted scam_type is not in the
+// §81 enum.
+var ErrInvalidScamType = fmt.Errorf("invalid scam_type")
+
+// ErrInvalidPlatform is returned when the submitted platform_used is not in
+// the §81 enum.
+var ErrInvalidPlatform = fmt.Errorf("invalid platform_used")
+
+// ErrInvalidStatus is returned when the review status is not in the §81 enum.
+var ErrInvalidStatus = fmt.Errorf("invalid status")
+
+// Submit creates a new scam report in 'under_review' status. reporterID may
+// be zero-valued (invalid) for anonymous reports when anonymous reports are
 // allowed.
 func (s *Service) Submit(ctx context.Context, tenantID, reporterID pgtype.UUID, input SubmitReportInput) (ScamReportDTO, error) {
 	if input.ScamType == "" || input.DestinationSpaceID == "" || input.Description == "" {
 		return ScamReportDTO{}, fmt.Errorf("scam_type, destination_space_id, and description are required")
+	}
+
+	// §81 enum validation — reject invalid scam_type/platform_used before
+	// hitting the DB CHECK constraints so the caller gets a structured error.
+	if !validScamTypes[input.ScamType] {
+		return ScamReportDTO{}, ErrInvalidScamType
+	}
+	if input.PlatformUsed != "" && !validPlatforms[input.PlatformUsed] {
+		return ScamReportDTO{}, ErrInvalidPlatform
 	}
 
 	var destSpaceID pgtype.UUID
@@ -167,7 +263,7 @@ func (s *Service) Submit(ctx context.Context, tenantID, reporterID pgtype.UUID, 
 		DestinationSpaceID:    destSpaceID.String(),
 		Description:           input.Description,
 		ReportedToAuthorities: input.ReportedToAuthorities,
-		Status:                "pending",
+		Status:                "under_review",
 	}
 	if originSpaceID.Valid {
 		dto.OriginSpaceID = originSpaceID.String()
@@ -272,11 +368,18 @@ func (s *Service) AdminList(ctx context.Context, tenantID pgtype.UUID, status st
 	return dtos, total, nil
 }
 
-// Review updates the status of a report (confirm or reject). The reviewerID
-// is stamped as reviewed_by.
+// Review updates the status of a report (confirm, debunk, or mark duplicate).
+// The reviewerID is stamped as reviewed_by. §81 status machine:
+// under_review → confirmed | debunked | duplicate.
+//
+// When the status is "confirmed", a scam_alert:notify_subscribers Asynq task
+// is enqueued fire-and-forget (Rule 8) to fan out notifications to
+// subscribers of the report's destination space, award the Community
+// Guardian badge to the reporter (§64), and enqueue wallet:award_points
+// for the reporter's contribution.
 func (s *Service) Review(ctx context.Context, id, tenantID pgtype.UUID, status, note string, reviewerID pgtype.UUID) error {
-	if status != "confirmed" && status != "rejected" {
-		return fmt.Errorf("status must be 'confirmed' or 'rejected'")
+	if !validReviewStatuses[status] {
+		return ErrInvalidStatus
 	}
 	if err := s.store.UpdateReportStatus(ctx, id, tenantID, status, note, reviewerID); err != nil {
 		if err == pgx.ErrNoRows {
@@ -284,7 +387,126 @@ func (s *Service) Review(ctx context.Context, id, tenantID pgtype.UUID, status, 
 		}
 		return fmt.Errorf("scamalert: review: %w", err)
 	}
+
+	// §81: on confirm, enqueue the notification + badge fan-out task.
+	// Fire-and-forget — never block the review response (Rule 8).
+	if status == "confirmed" && s.enqueuer != nil {
+		payload, err := json.Marshal(struct {
+			ReportID string `json:"report_id"`
+			TenantID string `json:"tenant_id"`
+		}{
+			ReportID: id.String(),
+			TenantID: tenantID.String(),
+		})
+		if err != nil {
+			slog.Error("scamalert: review: marshal notify payload failed", "error", err)
+		} else if err := s.enqueuer.Enqueue(TaskNotifySubscribers, payload); err != nil {
+			slog.Error("scamalert: review: enqueue notify task failed", "error", err)
+		}
+	}
+
 	return nil
+}
+
+// NotifySubscribers is the Asynq task processor for
+// scam_alert:notify_subscribers. It is called fire-and-forget after a
+// moderator confirms a report. It:
+//  1. Loads the confirmed report's destination_space_id + reporter_id.
+//  2. Queries all subscribers for that destination.
+//  3. Dispatches a scam_alert.confirmed notification to each subscriber
+//     via the notification service (§35).
+//  4. Awards the Community Guardian badge to the reporter via the
+//     gamification service (§64) — EvaluateForWallet with activity key
+//     "scam_alert.confirmed".
+//  5. Enqueues wallet:award_points for the reporter's contribution.
+//
+// All steps are nil-safe: if the notifier/awarder/enqueuer is not wired,
+// the method logs a warning and continues. This makes the feature
+// gracefully degrade in tests and development.
+func (s *Service) NotifySubscribers(ctx context.Context, reportID, tenantID pgtype.UUID) error {
+	destSpaceID, reporterID, scamType, description, err := s.store.GetReportForNotification(ctx, reportID, tenantID)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			slog.Warn("scamalert: notify: report not found or not confirmed",
+				"report_id", reportID.String())
+			return nil //nolint:nilerr // not an error — report may have been re-reviewed
+		}
+		return fmt.Errorf("scamalert: notify: get report: %w", err)
+	}
+
+	// 1. Fan out notifications to subscribers.
+	if s.notifier != nil {
+		subscribers, err := s.store.ListSubscribersByDestination(ctx, tenantID, destSpaceID)
+		if err != nil {
+			slog.Error("scamalert: notify: list subscribers failed", "error", err)
+		} else {
+			title := fmt.Sprintf("Scam alert confirmed: %s", scamType)
+			body := excerpt(description, 200)
+			actionURL := fmt.Sprintf("/scam-alerts/%s", reportID.String())
+			for _, subID := range subscribers {
+				if err := s.notifier.CreateNotification(
+					ctx, tenantID, subID,
+					"scam_alert.confirmed", "system", pgtype.UUID{},
+					"scam_report", reportID,
+					title, body, actionURL,
+				); err != nil {
+					slog.Warn("scamalert: notify: create notification failed",
+						"subscriber_id", subID.String(), "error", err)
+				}
+			}
+			slog.Info("scamalert: notify: dispatched notifications",
+				"report_id", reportID.String(), "subscriber_count", len(subscribers))
+		}
+	} else {
+		slog.Warn("scamalert: notify: notifier not wired, skipping subscriber fan-out")
+	}
+
+	// 2. Award Community Guardian badge to the reporter (§64).
+	//    EvaluateForWallet checks activity_count badges for the
+	//    "scam_alert.confirmed" activity key and awards the badge if the
+	//    threshold (1) is met. The reporter_id may be invalid for
+	//    anonymous reports — skip badge award in that case.
+	if s.awarder != nil && reporterID.Valid {
+		if err := s.awarder.EvaluateForWallet(ctx, tenantID, reporterID, "scam_alert.confirmed"); err != nil {
+			slog.Warn("scamalert: notify: badge evaluation failed",
+				"reporter_id", reporterID.String(), "error", err)
+		}
+	}
+
+	// 3. Enqueue wallet:award_points for the reporter's contribution.
+	//    The points amount is configured via the wallet activity_rules
+	//    table. Here we enqueue a direct award with a fixed amount as a
+	//    baseline; the wallet service deduplicates via idempotency key.
+	if s.enqueuer != nil && reporterID.Valid {
+		payload, err := json.Marshal(struct {
+			TenantID    string `json:"tenant_id"`
+			UserID      string `json:"user_id"`
+			Points      int64  `json:"points"`
+			Reason      string `json:"reason"`
+			ReferenceID string `json:"reference_id,omitempty"`
+		}{
+			TenantID:    tenantID.String(),
+			UserID:      reporterID.String(),
+			Points:      50, // baseline points for a confirmed scam report
+			Reason:      "scam_alert.confirmed",
+			ReferenceID: reportID.String(),
+		})
+		if err != nil {
+			slog.Error("scamalert: notify: marshal award payload failed", "error", err)
+		} else if err := s.enqueuer.Enqueue(TaskAwardPoints, payload); err != nil {
+			slog.Error("scamalert: notify: enqueue award points failed", "error", err)
+		}
+	}
+
+	return nil
+}
+
+// excerpt returns the first n characters of s, suffixed with "…" if truncated.
+func excerpt(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "…"
 }
 
 // Pin pins a confirmed report to a space.

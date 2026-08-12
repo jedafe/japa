@@ -16,6 +16,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -34,15 +35,6 @@ import (
 	"github.com/jedafe/japa/internal/scholarships"
 	"github.com/jedafe/japa/internal/worker"
 )
-
-// pgtypeUUIDString returns the canonical string form of a pgtype.UUID,
-// or "" when invalid. Used for building notification action URLs.
-func pgtypeUUIDString(id pgtype.UUID) string {
-	if !id.Valid {
-		return ""
-	}
-	return id.String()
-}
 
 // tenantRow is a minimal tenant row for cross-tenant iteration.
 type tenantRow struct {
@@ -348,13 +340,27 @@ func (a *ScholarshipAdapter) dispatchReminder(ctx context.Context, tenantID pgty
 		slog.Warn("task:scholarship:check_deadlines: notifications service not configured, skipping dispatch")
 		return nil
 	}
+
 	deadline := ""
 	if r.DeadlineValue != nil {
 		deadline = *r.DeadlineValue
 	}
+
 	title := "Scholarship deadline approaching"
-	body := fmt.Sprintf("Your saved scholarship has an application deadline on %s. Apply soon.", deadline)
-	actionURL := fmt.Sprintf("/scholarships/%s", pgtypeUUIDString(r.GuideID))
+	if r.GuideTitle != "" {
+		title = "Deadline approaching: " + r.GuideTitle
+	}
+
+	body := fmt.Sprintf("The application deadline for %q is %s. Apply soon.", r.GuideTitle, deadline)
+
+	// The main app's finder has no detail page for a single guide; link to
+	// the finder search for the scholarship so the notification resolves to a
+	// real page (the previous /scholarships/{id} link routed to a 404).
+	actionURL := "/scholarships"
+	if r.GuideTitle != "" {
+		actionURL = "/scholarships?q=" + url.QueryEscape(r.GuideTitle)
+	}
+
 	return a.notif.CreateNotification(
 		ctx,
 		tenantID,

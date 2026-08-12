@@ -134,49 +134,12 @@ func (s *Service) CreateReport(ctx context.Context, tenantID, reporterUserID pgt
 		return gen.ContentReport{}, fmt.Errorf("creating report: %w", err)
 	}
 
-	if input.EntityType == EntityTypeContent {
-		s.checkAutoHide(ctx, tenantID, input.EntityType, input.EntityID)
-	}
+	// Auto-hide is handled by the moderation:auto_hide Asynq task enqueued by
+	// the handler (fire-and-forget per Rule 8). The worker covers content,
+	// comment, and message entity types and reads the same
+	// moderation.auto_hide_report_count setting (default 5 per Section 51).
 
 	return report, nil
-}
-
-// checkAutoHide counts pending reports for the entity and auto-hides content
-// when the threshold is reached. Best-effort — errors are logged but never
-// propagate to the caller.
-func (s *Service) checkAutoHide(ctx context.Context, tenantID pgtype.UUID, entityType string, entityID pgtype.UUID) {
-	threshold := 3
-	if s.settings != nil {
-		threshold = s.settings.GetIntOr(ctx, tenantID, "moderation.auto_hide_report_count", 3)
-	}
-
-	count, err := s.write.CountPendingReportsForEntity(ctx, gen.CountPendingReportsForEntityParams{
-		TenantID:   tenantID,
-		EntityType: entityType,
-		EntityID:   entityID,
-	})
-	if err != nil {
-		slog.Warn("reports: failed to count pending reports for auto-hide",
-			"entity_type", entityType, "entity_id", entityID.String(), "error", err)
-		return
-	}
-
-	if count < int32(threshold) {
-		return
-	}
-
-	_, err = s.write.AutoHideContent(ctx, gen.AutoHideContentParams{
-		ID:       entityID,
-		TenantID: tenantID,
-	})
-	if err != nil {
-		slog.Warn("reports: failed to auto-hide content",
-			"content_id", entityID.String(), "report_count", count, "error", err)
-		return
-	}
-
-	slog.Info("reports: content auto-hidden",
-		"content_id", entityID.String(), "report_count", count, "threshold", threshold)
 }
 
 // ListMyReports returns the caller's own submitted reports, newest first.
@@ -319,14 +282,23 @@ func (s *Service) WarnUser(ctx context.Context, userID pgtype.UUID, reason strin
 }
 
 // BanUser bans the given user and invalidates caches so the ban takes effect
-// immediately (Rule 6), mirroring the admin user-moderation handler.
+// immediately (Rule 6), mirroring the admin user-moderation handler. It also
+// updates users.status to 'banned' so the ban is reflected in list queries.
 func (s *Service) BanUser(ctx context.Context, userID pgtype.UUID, reason string) error {
 	if err := s.write.CreateUserBan(ctx, gen.CreateUserBanParams{
 		UserID: userID,
-		Reason:  &reason,
+		Reason: &reason,
 		Column3: 0,
 	}); err != nil {
 		return err
+	}
+	// Reflect the ban in users.status so list queries and status checks see
+	// the banned state (mirrors internal/admin/moderation.go:BanUser).
+	if err := s.write.UpdateUserStatus(ctx, gen.UpdateUserStatusParams{
+		Status: "banned",
+		ID:     userID,
+	}); err != nil {
+		slog.Error("ban user: failed to update users.status", "error", err, "user_id", userID.String())
 	}
 	if s.valkey != nil {
 		if err := rbac.InvalidatePermCache(ctx, s.valkey, userID); err != nil {

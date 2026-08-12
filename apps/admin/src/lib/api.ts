@@ -1659,6 +1659,10 @@ export const wikiAdminApi = {
 
 export const scamAlertAdminApi = {
 	list: (params?: string) => api<unknown>(`/admin/scam-alerts${params ? `?${params}` : ''}`),
+	listRaw: (params?: string) =>
+		apiRaw<{ data: unknown[]; pagination: { page: number; limit: number; total: number } }>(
+			`/admin/scam-alerts${params ? `?${params}` : ''}`
+		),
 	update: (id: string, body: Record<string, unknown>) =>
 		api<unknown>(`/admin/scam-alerts/${id}`, { method: 'PATCH', body }),
 	pin: (id: string) => api<unknown>(`/admin/scam-alerts/${id}/pin`, { method: 'POST', body: {} }),

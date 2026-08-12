@@ -134,8 +134,11 @@ SELECT
     ss.tenant_id,
     ss.remind_before_days,
     ss.last_reminded_at,
-    cfv.value_text AS deadline_value
+    cfv.value_text AS deadline_value,
+    c.title AS guide_title,
+    c.slug  AS guide_slug
 FROM saved_scholarships ss
+JOIN contents c ON c.id = ss.guide_id
 JOIN custom_field_values cfv ON cfv.entity_id = ss.guide_id
     AND cfv.entity_type = 'content'
 JOIN custom_fields cf ON cf.id = cfv.field_id

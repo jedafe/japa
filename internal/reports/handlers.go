@@ -118,6 +118,20 @@ func (h *Handlers) submitReport(w http.ResponseWriter, r *http.Request, entityTy
 			slog.Warn("reports: failed to enqueue moderation:auto_hide",
 				"entity_type", entityType, "entity_id", entityID.String(), "error", err)
 		}
+
+		// Enqueue admin notification (Section 51 report:notify_admin).
+		// Notifies every user with reports.review that a new report was filed.
+		notifyPayload, _ := json.Marshal(map[string]string{
+			"report_id":   report.ID.String(),
+			"tenant_id":   tenantID.String(),
+			"entity_type": entityType,
+			"entity_id":   entityID.String(),
+			"reason":      body.Reason,
+		})
+		if err := h.enqueuer.Enqueue(worker.TypeReportNotifyAdmin, notifyPayload); err != nil {
+			slog.Warn("reports: failed to enqueue report:notify_admin",
+				"report_id", report.ID.String(), "error", err)
+		}
 	}
 
 	writeJSON(w, http.StatusCreated, map[string]any{"data": report})
@@ -329,13 +343,18 @@ func (h *Handlers) UpdateReport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Fire the user-moderation side effects for warn/ban actions.
+	// Fire the user-moderation side effects for warn/ban actions. Both
+	// target the reported user (the offender), resolved via ResolveTargetUser
+	// — never the reporter. Space reports and unknown types resolve to no
+	// target, in which case the side effect is skipped.
 	switch input.Action {
 	case "warn":
-		// "Warn Reporter": warn the user who filed the report.
-		if report.ReporterUserID.Valid {
-			if e := h.service.WarnUser(r.Context(), report.ReporterUserID, input.Reason); e != nil {
-				slog.Warn("reports: warn side-effect failed", "id", id.String(), "error", e)
+		target, found, e := h.service.ResolveTargetUser(r.Context(), report.EntityType, report.EntityID)
+		if e != nil {
+			slog.Warn("reports: resolve warn target failed", "id", id.String(), "error", e)
+		} else if found {
+			if e2 := h.service.WarnUser(r.Context(), target, input.Reason); e2 != nil {
+				slog.Warn("reports: warn side-effect failed", "id", id.String(), "error", e2)
 			}
 		}
 	case "ban":

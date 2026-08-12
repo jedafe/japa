@@ -1,8 +1,9 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import { goto, invalidateAll } from '$app/navigation';
+	import { invalidateAll } from '$app/navigation';
 	import { t, i18n } from '$lib/i18n';
-	import { ArrowLeft, CheckCircle2, Eye, MessageSquare, Bookmark, Share2, Flag, Pencil, Save, X } from 'lucide-svelte';
+	import { ArrowLeft, CheckCircle2, Eye, MessageSquare, Bookmark, Share2, Flag, Pencil, Save, X, Loader2 } from 'lucide-svelte';
+	import { Dialog } from 'bits-ui';
 	import { relativeTime } from '$lib/feed/time';
 	import { tiptapBodyToHtml, tiptapExcerpt } from '$lib/tiptap/serialize';
 	import { api } from '$lib/api/client';
@@ -141,8 +142,48 @@
 		}
 	}
 
-	function reportThread() {
-		goto(`/report?entity_type=forum_thread&entity_id=${thread.id}`);
+	// Report thread — submits a content report via POST /content/{content_id}/report.
+	// A forum thread is reported as entity_type 'content' using its content_id
+	// (the contents row backing the thread). Ref: japaconnect-engineering/sections/51-content-reports-flagging.md
+	let reportOpen = $state(false);
+	let reportReason = $state('');
+	let reportNotes = $state('');
+	let reportSubmitting = $state(false);
+	let reportError = $state('');
+	let reportSubmitted = $state(false);
+
+	function openReport() {
+		if (!thread.content_id) return;
+		reportOpen = true;
+		reportSubmitted = false;
+		reportError = '';
+	}
+
+	function closeReport() {
+		reportOpen = false;
+		reportSubmitted = false;
+		reportError = '';
+		reportReason = '';
+		reportNotes = '';
+	}
+
+	async function submitReport() {
+		if (!thread.content_id || !reportReason.trim() || reportSubmitting) return;
+		reportSubmitting = true;
+		reportError = '';
+		const res = await api.post<{ id: string }>(`/content/${thread.content_id}/report`, {
+			reason: reportReason.trim(),
+			notes: reportNotes.trim() || null,
+			evidence_urls: []
+		});
+		if (res.error) {
+			reportError = res.error.message;
+		} else {
+			reportSubmitted = true;
+			reportReason = '';
+			reportNotes = '';
+		}
+		reportSubmitting = false;
 	}
 
 	// Inline edit (author or moderator — backend enforces via can_edit).
@@ -381,7 +422,7 @@
 			<button type="button" onclick={shareThread} class="flex items-center gap-1 transition-colors hover:text-[var(--color-text)]">
 				<Share2 size={14} /> {shared ? t('forum.shared', 'Copied!') : t('forum.share', 'Share')}
 			</button>
-			<button type="button" onclick={reportThread} class="flex items-center gap-1 transition-colors hover:text-[var(--color-text)]">
+			<button type="button" onclick={openReport} disabled={!thread.content_id} class="flex items-center gap-1 transition-colors hover:text-[var(--color-text)] disabled:cursor-not-allowed disabled:opacity-50" title={thread.content_id ? t('forum.report', 'Report') : t('forum.report_unavailable', 'Reporting unavailable')}>
 				<Flag size={14} /> {t('forum.report', 'Report')}
 			</button>
 			{#if data.canSolve}
@@ -430,3 +471,88 @@
 		</aside>
 	{/if}
 </div>
+
+<!-- Report thread dialog — POST /content/{content_id}/report (Section 51) -->
+{#if reportOpen}
+	<Dialog.Root open={reportOpen}>
+		<Dialog.Portal>
+			<Dialog.Overlay class="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm" />
+			<Dialog.Content class="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-[12px] border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-xl">
+				<Dialog.Close class="absolute right-4 top-4 text-[var(--color-muted)] hover:text-[var(--color-text)]" onclick={closeReport}>
+					<X size={20} />
+				</Dialog.Close>
+				<div class="mb-4 flex items-center gap-2">
+					<Flag size={20} class="text-red-500" />
+					<h2 class="text-lg font-semibold text-[var(--color-text)]">{t('forum.report_title', 'Report this discussion')}</h2>
+				</div>
+				{#if reportSubmitted}
+					<p class="rounded-lg bg-green-50 px-4 py-3 text-sm text-green-700 dark:bg-green-950/30 dark:text-green-400">
+						{t('forum.report_submitted', 'Your report has been submitted. Our team will review it.')}
+					</p>
+					<button
+						type="button"
+						onclick={closeReport}
+						class="mt-4 rounded-lg bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-white hover:opacity-90"
+					>
+						{t('common.close', 'Close')}
+					</button>
+				{:else}
+					<form onsubmit={(e) => { e.preventDefault(); submitReport(); }} class="space-y-3">
+						{#if reportError}
+							<p class="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-950/30 dark:text-red-400">{reportError}</p>
+						{/if}
+						<div>
+							<label for="report-reason" class="mb-1 block text-xs font-medium text-[var(--color-muted)]">
+								{t('forum.report_reason', 'Reason')}
+							</label>
+							<select
+								id="report-reason"
+								bind:value={reportReason}
+								class="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"
+								required
+							>
+								<option value="">{t('forum.report_reason_select', 'Select a reason…')}</option>
+								<option value="spam">{t('forum.report_spam', 'Spam')}</option>
+								<option value="harassment">{t('forum.report_harassment', 'Harassment')}</option>
+								<option value="hate_speech">{t('forum.report_hate_speech', 'Hate speech')}</option>
+								<option value="misinformation">{t('forum.report_misinformation', 'Misinformation')}</option>
+								<option value="illegal_content">{t('forum.report_illegal', 'Illegal content')}</option>
+								<option value="self_harm">{t('forum.report_self_harm', 'Self harm')}</option>
+								<option value="copyright">{t('forum.report_copyright', 'Copyright')}</option>
+								<option value="other">{t('forum.report_other', 'Other')}</option>
+							</select>
+						</div>
+						<div>
+							<label for="report-notes" class="mb-1 block text-xs font-medium text-[var(--color-muted)]">
+								{t('forum.report_notes', 'Additional notes (optional)')}
+							</label>
+							<textarea
+								id="report-notes"
+								bind:value={reportNotes}
+								rows={3}
+								class="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"
+							></textarea>
+						</div>
+						<div class="flex items-center gap-2">
+							<button
+								type="submit"
+								disabled={reportSubmitting || !reportReason.trim()}
+								class="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
+							>
+								{#if reportSubmitting}<Loader2 size={14} class="animate-spin" />{:else}
+								{t('forum.report_submit', 'Submit report')}{/if}
+							</button>
+							<button
+								type="button"
+								onclick={closeReport}
+								class="rounded-lg border border-[var(--color-border)] px-4 py-2 text-sm text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
+							>
+								{t('common.cancel', 'Cancel')}
+							</button>
+						</div>
+					</form>
+				{/if}
+			</Dialog.Content>
+		</Dialog.Portal>
+	</Dialog.Root>
+{/if}
