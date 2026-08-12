@@ -61,12 +61,23 @@ export const load: PageServerLoad = async (event) => {
 					.catch(() => false)
 			: Promise.resolve(false);
 
+	// BUG-007: hydrate the block button's initial state on SSR. Fetches the
+	// viewer's blocked-users list and checks whether the profile user is in
+	// it. Only fetch when the viewer is authenticated and viewing someone
+	// else's profile. Best-effort: a failure degrades to `false` (not blocked).
+	const initiallyBlocked =
+		!isOwnProfile && event.locals.user
+			? apiList<{ blocked_id: string }>(ctx, '/me/blocked-users')
+					.then((r) => r.items.some((b) => b.blocked_id === userId))
+					.catch(() => false)
+			: Promise.resolve(false);
+
 	// Tab data — each degrades to an empty list on failure (a missing tab must
 	// never blank the whole profile). Each tab fetches its dedicated
 	// /users/{id}/<tab> endpoint (JEOS api-routes-catalog §334–340).
 	// Phase 18.01a — analytics time-series (follower growth + top content) for
 	// the LayerChart visualizations on the owner-only analytics tab. Ref: ADR-059.
-	const [posts, replies, media, spaces, certificates, likes, analytics, isFollowing, badges, allBadges, followerGrowth, topContent] = await Promise.all([
+	const [posts, replies, media, spaces, certificates, likes, analytics, isFollowing, badges, allBadges, followerGrowth, topContent, isBlocked] = await Promise.all([
 		apiList<ProfilePost>(ctx, `/users/${userId}/content`).then((r) => r.items).catch(() => []),
 		apiList<ProfileReply>(ctx, `/users/${userId}/replies`).then((r) => r.items).catch(() => []),
 		apiList<ProfileMedia>(ctx, `/users/${userId}/media`).then((r) => r.items).catch(() => []),
@@ -94,13 +105,15 @@ export const load: PageServerLoad = async (event) => {
 		// Top content by views for the analytics BarChart (owner-only).
 		isOwnProfile
 			? apiList<TopContentItem>(ctx, '/me/analytics/content?page_size=10').then((r) => r.items).catch(() => [])
-			: Promise.resolve([] as TopContentItem[])
+			: Promise.resolve([] as TopContentItem[]),
+		initiallyBlocked
 	]);
 
 	return {
 		user,
 		isOwnProfile,
 		initiallyFollowing: isFollowing,
+		initiallyBlocked: isBlocked,
 		posts,
 		replies,
 		media,

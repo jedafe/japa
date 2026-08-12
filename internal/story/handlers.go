@@ -28,6 +28,7 @@ import (
 
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/config"
+	"github.com/jedafe/japa/internal/rbac"
 	"github.com/jedafe/japa/internal/tenant"
 )
 
@@ -87,20 +88,34 @@ func scanUUIDParam(w http.ResponseWriter, r *http.Request, name string) (pgtype.
 	return id, true
 }
 
-func parsePageParams(r *http.Request) (page, limit int32) {
-	page = 1
-	limit = 20
-	if v := r.URL.Query().Get("page"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			page = int32(n)
-		}
+// hasPermission checks if the authenticated user has a specific permission
+// via the RBAC resolver stored in the request context by the middleware.
+// Returns false if the resolver is not in the context.
+func hasPermission(r *http.Request, user *auth.AuthenticatedUser, permKey string) bool {
+	resolver, ok := r.Context().Value(rbac.ResolverKey).(*rbac.RBAC)
+	if !ok || resolver == nil {
+		return false
 	}
-	if v := r.URL.Query().Get("limit"); v != "" {
+	return resolver.HasPermission(r.Context(), user.UserID, user.TenantID, permKey)
+}
+
+// parsePageParams reads page_size and page_offset query params per
+// conventions/api-response-format.md offset pagination convention.
+// Defaults: page_size=20, page_offset=0. Max page_size=100.
+func parsePageParams(r *http.Request) (pageSize, pageOffset int32) {
+	pageSize = 20
+	pageOffset = 0
+	if v := r.URL.Query().Get("page_size"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 100 {
-			limit = int32(n)
+			pageSize = int32(n)
 		}
 	}
-	return page, limit
+	if v := r.URL.Query().Get("page_offset"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+			pageOffset = int32(n)
+		}
+	}
+	return pageSize, pageOffset
 }
 
 // ---------------------------------------------------------------------------
@@ -138,9 +153,9 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 	visaCategory := r.URL.Query().Get("visa")
 	profession := r.URL.Query().Get("profession")
 	sort := r.URL.Query().Get("sort")
-	page, limit := parsePageParams(r)
+	pageSize, pageOffset := parsePageParams(r)
 
-	stories, total, err := h.service.List(r.Context(), tenantID, originSpaceID, destSpaceID, visaCategory, profession, sort, page, limit)
+	stories, total, err := h.service.List(r.Context(), tenantID, originSpaceID, destSpaceID, visaCategory, profession, sort, pageSize, pageOffset)
 	if err != nil {
 		slog.Error("story: list failed", "error", err)
 		writeError(w, http.StatusInternalServerError, "list_failed", "Failed to list stories")
@@ -150,9 +165,9 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"data": stories,
 		"pagination": map[string]any{
-			"page":  page,
-			"limit": limit,
-			"total": total,
+			"page_size":   pageSize,
+			"page_offset": pageOffset,
+			"total":       total,
 		},
 	})
 }
@@ -262,7 +277,7 @@ func (h *Handlers) HandleEdit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	story, err := h.service.EditOwn(r.Context(), contentID, tenantID, user.UserID, input)
+	story, err := h.service.EditOwn(r.Context(), contentID, tenantID, user.UserID, input, hasPermission(r, user, "story.edit_any"))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "story_not_found", "Story not found")
@@ -302,7 +317,7 @@ func (h *Handlers) HandleDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.service.DeleteOwn(r.Context(), contentID, tenantID, user.UserID); err != nil {
+	if err := h.service.DeleteOwn(r.Context(), contentID, tenantID, user.UserID, hasPermission(r, user, "story.delete_any")); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "story_not_found", "Story not found")
 			return
@@ -325,8 +340,10 @@ func (h *Handlers) HandleDelete(w http.ResponseWriter, r *http.Request) {
 
 // HandleVerify handles POST /admin/stories/:id/verify — mark story as
 // verified. Admin-only (story.verify permission checked at route registration).
+// Sets hitl_reviewed_by and hitl_reviewed_at per ADR-088.
 func (h *Handlers) HandleVerify(w http.ResponseWriter, r *http.Request) {
-	if _, ok := requireUser(w, r); !ok {
+	user, ok := requireUser(w, r)
+	if !ok {
 		return
 	}
 	tenantID, ok := requireTenant(w, r)
@@ -343,7 +360,7 @@ func (h *Handlers) HandleVerify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.service.Verify(r.Context(), contentID, tenantID); err != nil {
+	if err := h.service.Verify(r.Context(), contentID, tenantID, user.UserID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "story_not_found", "Story not found")
 			return
@@ -358,7 +375,7 @@ func (h *Handlers) HandleVerify(w http.ResponseWriter, r *http.Request) {
 
 // HandleAdminList handles GET /admin/stories — moderation queue listing all
 // stories (any status). Admin-only (story.verify permission checked at route
-// registration). Supports ?status=&verified=&q=&page=&limit=.
+// registration). Supports ?status=&verified=&q=&sort=latest|oldest|title&page_size=&page_offset=.
 func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
@@ -375,6 +392,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 
 	status := r.URL.Query().Get("status")
 	q := r.URL.Query().Get("q")
+	sort := r.URL.Query().Get("sort")
 
 	var verifiedPtr *bool
 	if v := r.URL.Query().Get("verified"); v != "" {
@@ -384,12 +402,12 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	page, limit := parsePageParams(r)
-	if limit > 200 {
-		limit = 200
+	pageSize, pageOffset := parsePageParams(r)
+	if pageSize > 200 {
+		pageSize = 200
 	}
 
-	stories, total, err := h.service.AdminList(r.Context(), tenantID, status, q, verifiedPtr, page, limit)
+	stories, total, err := h.service.AdminList(r.Context(), tenantID, status, q, verifiedPtr, sort, pageSize, pageOffset)
 	if err != nil {
 		slog.Error("story: admin list failed", "error", err)
 		writeError(w, http.StatusInternalServerError, "admin_list_failed", "Failed to list stories")
@@ -399,9 +417,45 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"data": stories,
 		"pagination": map[string]any{
-			"page":  page,
-			"limit": limit,
-			"total": total,
+			"page_size":   pageSize,
+			"page_offset": pageOffset,
+			"total":       total,
 		},
 	})
+}
+
+// HandleAdminDelete handles DELETE /admin/stories/:id — admin deletion of any
+// story (story.delete_any permission checked at route registration). Soft-deletes
+// per Rule 11.
+func (h *Handlers) HandleAdminDelete(w http.ResponseWriter, r *http.Request) {
+	user, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+	contentID, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	if h.service == nil {
+		writeError(w, http.StatusServiceUnavailable, "story_unavailable", "Story service not configured")
+		return
+	}
+
+	// bypassOwnership=true: admin with story.delete_any can delete any story.
+	if err := h.service.DeleteOwn(r.Context(), contentID, tenantID, user.UserID, true); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "story_not_found", "Story not found")
+			return
+		}
+		slog.Error("story: admin delete failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "delete_failed", "Failed to delete story")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"deleted": true}})
 }

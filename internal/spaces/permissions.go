@@ -72,3 +72,79 @@ func (s *Service) CanPostInSpace(
 		return false
 	}
 }
+
+// CanReplyInSpace reports whether the given user may reply to content in the
+// space, based on the space's replying_perm axis (Section 05 lines 145-154,
+// BUG-002). The axis values mirror those of CanPostInSpace.
+func (s *Service) CanReplyInSpace(
+	ctx context.Context,
+	space gen.GetSpaceByIDRow,
+	userID, tenantID pgtype.UUID,
+	permChecker PermissionChecker,
+	verifiedChecker UserVerifiedChecker,
+) bool {
+	return canActInSpace(ctx, s, space.ReplyingPerm, space, userID, tenantID, permChecker, verifiedChecker)
+}
+
+// CanCommentInSpace reports whether the given user may comment on content in
+// the space, based on the space's commenting_perm axis (Section 05 lines
+// 145-154, BUG-002). The axis values mirror those of CanPostInSpace.
+func (s *Service) CanCommentInSpace(
+	ctx context.Context,
+	space gen.GetSpaceByIDRow,
+	userID, tenantID pgtype.UUID,
+	permChecker PermissionChecker,
+	verifiedChecker UserVerifiedChecker,
+) bool {
+	return canActInSpace(ctx, s, space.CommentingPerm, space, userID, tenantID, permChecker, verifiedChecker)
+}
+
+// canActInSpace is the shared enforcement logic for the posting, replying, and
+// commenting permission axes (Section 05 lines 145-154). All three axes share
+// the same value set and resolution rules; only the column differs.
+func canActInSpace(
+	ctx context.Context,
+	s *Service,
+	perm string,
+	space gen.GetSpaceByIDRow,
+	userID, tenantID pgtype.UUID,
+	permChecker PermissionChecker,
+	verifiedChecker UserVerifiedChecker,
+) bool {
+	switch perm {
+	case PermOpen:
+		return true
+	case PermMembers:
+		isMember, err := s.IsMember(ctx, space.ID, userID, tenantID)
+		if err != nil || !isMember {
+			return false
+		}
+		return true
+	case PermVerified:
+		isMember, err := s.IsMember(ctx, space.ID, userID, tenantID)
+		if err != nil || !isMember {
+			return false
+		}
+		if verifiedChecker == nil {
+			return false
+		}
+		verified, err := verifiedChecker(ctx, userID, tenantID)
+		if err != nil || !verified {
+			return false
+		}
+		return true
+	case PermModerators:
+		isMod, err := s.IsModerator(ctx, space.ID, userID)
+		if err != nil || !isMod {
+			return false
+		}
+		return true
+	case PermAdmins:
+		if permChecker == nil {
+			return false
+		}
+		return permChecker.HasPermission(ctx, userID, tenantID, "spaces.moderate.any")
+	default:
+		return false
+	}
+}

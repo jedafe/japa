@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
-	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 
@@ -346,6 +345,12 @@ func (s *Service) MarkJobFailed(ctx context.Context, tenantID, jobID pgtype.UUID
 	return s.store.UpdateJobStatus(ctx, tenantID, jobID, "failed", strPtr(errMsg))
 }
 
+// MarkJobPublished marks a job's draft as auto-published (status='published').
+// Used for content types in studio.auto_publish_types (§75).
+func (s *Service) MarkJobPublished(ctx context.Context, tenantID, jobID, draftContentID pgtype.UUID) error {
+	return s.store.UpdateJobPublished(ctx, tenantID, jobID, draftContentID)
+}
+
 // ShouldAutoPublish returns true if the content type can skip review.
 // High-stakes guide categories always return false.
 func (s *Service) ShouldAutoPublish(ctx context.Context, tenantID pgtype.UUID, contentType, guideCategory string) bool {
@@ -364,14 +369,8 @@ func (s *Service) ShouldAutoPublish(ctx context.Context, tenantID pgtype.UUID, c
 
 // RunBatch is the processor method called by the studio:run_batch task handler.
 // It loads all queued jobs in the batch and enqueues generation for each.
-func (s *Service) RunBatch(ctx context.Context, batchID pgtype.UUID) error {
-	// Resolve tenant from the batch.
-	batch, err := s.store.GetBatch(ctx, pgtype.UUID{}, batchID)
-	if err != nil {
-		return fmt.Errorf("studio: run_batch: get batch: %w", err)
-	}
-
-	jobs, _, err := s.store.ListJobs(ctx, batch.TenantID, JobListFilter{
+func (s *Service) RunBatch(ctx context.Context, tenantID, batchID pgtype.UUID) error {
+	jobs, _, err := s.store.ListJobs(ctx, tenantID, JobListFilter{
 		BatchID: &batchID, Status: strPtr("queued"), Limit: 100,
 	})
 	if err != nil {
@@ -388,13 +387,6 @@ func (s *Service) RunBatch(ctx context.Context, batchID pgtype.UUID) error {
 }
 
 // RetryFailed is the processor method called by the studio:retry_failed task.
-func (s *Service) RetryFailed(ctx context.Context, jobID pgtype.UUID) error {
-	job, err := s.store.GetJob(ctx, pgtype.UUID{}, jobID)
-	if err != nil {
-		return fmt.Errorf("studio: retry_failed: get job: %w", err)
-	}
-	return s.RetryJob(ctx, job.TenantID, jobID)
+func (s *Service) RetryFailed(ctx context.Context, tenantID, jobID pgtype.UUID) error {
+	return s.RetryJob(ctx, tenantID, jobID)
 }
-
-// _ ensures time is used (for future review-time calculations).
-var _ = time.Now

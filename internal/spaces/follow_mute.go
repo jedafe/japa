@@ -60,8 +60,9 @@ func (s *Service) ToggleFollowSpace(ctx context.Context, tenantID, userID, space
 	return true, nil
 }
 
-// MuteSpace mutes a space and invalidates the jc:muted_spaces:{user_id}
-// Valkey cache (Section 52 / VALKEY-001).
+// MuteSpace mutes a space and invalidates the
+// jc:muted_spaces:{tenant_id}:{user_id} Valkey cache (Section 52 /
+// VALKEY-001, BUG-003: tenant-scoped).
 func (s *Service) MuteSpace(ctx context.Context, tenantID, userID, spaceID pgtype.UUID) error {
 	if err := s.write.MuteSpace(ctx, gen.MuteSpaceParams{
 		TenantID: tenantID,
@@ -70,12 +71,13 @@ func (s *Service) MuteSpace(ctx context.Context, tenantID, userID, spaceID pgtyp
 	}); err != nil {
 		return err
 	}
-	s.invalidateMutedSpacesCache(ctx, userID)
+	s.invalidateMutedSpacesCache(ctx, tenantID, userID)
 	return nil
 }
 
 // UnmuteSpace removes a space mute and invalidates the
-// jc:muted_spaces:{user_id} Valkey cache (Section 52 / VALKEY-001).
+// jc:muted_spaces:{tenant_id}:{user_id} Valkey cache (Section 52 /
+// VALKEY-001, BUG-003: tenant-scoped).
 func (s *Service) UnmuteSpace(ctx context.Context, tenantID, userID, spaceID pgtype.UUID) error {
 	if err := s.write.UnmuteSpace(ctx, gen.UnmuteSpaceParams{
 		TenantID: tenantID,
@@ -84,7 +86,7 @@ func (s *Service) UnmuteSpace(ctx context.Context, tenantID, userID, spaceID pgt
 	}); err != nil {
 		return err
 	}
-	s.invalidateMutedSpacesCache(ctx, userID)
+	s.invalidateMutedSpacesCache(ctx, tenantID, userID)
 	return nil
 }
 

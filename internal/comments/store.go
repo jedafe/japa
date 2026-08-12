@@ -208,6 +208,22 @@ func (s *Service) DispatchCommentNotifications(ctx context.Context, tenantID pgt
 		}
 	}
 }
+
+// GetContentSpaceID returns the space_id of the content that a comment is
+// posted on. Returns pgtype.UUID{} with Valid=false if the content has no
+// space. Used by the handler to enforce the space's commenting_perm and
+// replying_perm axes (Section 05 lines 145-154, BUG-002).
+func (s *Service) GetContentSpaceID(ctx context.Context, tenantID, contentID pgtype.UUID) (pgtype.UUID, error) {
+	content, err := s.read.GetContentByID(ctx, gen.GetContentByIDParams{
+		ID:       contentID,
+		TenantID: tenantID,
+	})
+	if err != nil {
+		return pgtype.UUID{}, fmt.Errorf("getting content for space_id: %w", err)
+	}
+	return content.SpaceID, nil
+}
+
 func (s *Service) GetComment(ctx context.Context, tenantID, commentID pgtype.UUID) (gen.GetCommentRow, error) {
 	comment, err := s.read.GetComment(ctx, gen.GetCommentParams{
 		ID:       commentID,

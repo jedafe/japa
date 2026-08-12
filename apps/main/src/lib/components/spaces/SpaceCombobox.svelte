@@ -34,6 +34,14 @@
 		disabled?: boolean;
 		/** Exclude these space IDs from results (e.g. the current space). */
 		excludeIds?: string[];
+		/**
+		 * When true, use GET /spaces/suggest-parents instead of /spaces/search.
+		 * This endpoint returns primary spaces eligible to be parents of a
+		 * custom space (Section 05 lines 252-267, BUG-012). Ignored when a
+		 * query is typed — in that case /spaces/search is used so the user
+		 * can still search by name.
+		 */
+		parentMode?: boolean;
 	}
 
 	let {
@@ -45,7 +53,8 @@
 		onSelect,
 		onRemove,
 		disabled = false,
-		excludeIds = []
+		excludeIds = [],
+		parentMode = false
 	}: Props = $props();
 
 	let query = $state('');
@@ -61,8 +70,23 @@
 	function doSearch(q: string) {
 		query = q;
 		if (timer) clearTimeout(timer);
+		// BUG-012: In parentMode with no query, load suggested parents from
+		// the dedicated endpoint so only eligible primary spaces are shown.
 		if (q.trim().length < 1) {
-			results = [];
+			if (parentMode) {
+				loading = true;
+				timer = setTimeout(async () => {
+					const res = await api.get<SpaceOption[]>('/spaces/suggest-parents');
+					let items = res.data ?? [];
+					if (excludeIds.length > 0) {
+						items = items.filter((s) => !excludeIds.includes(s.id));
+					}
+					results = items;
+					loading = false;
+				}, 100);
+			} else {
+				results = [];
+			}
 			return;
 		}
 		loading = true;
@@ -149,7 +173,7 @@
 				value={query}
 				disabled={disabled}
 				oninput={(e) => doSearch(e.currentTarget.value)}
-				onfocus={() => { open = true; }}
+				onfocus={() => { open = true; if (parentMode && query.trim().length < 1) doSearch(''); }}
 			/>
 			{#if loading}
 				<div class="absolute right-2.5 top-1/2 -translate-y-1/2">

@@ -23,6 +23,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -34,6 +35,7 @@ import (
 	"github.com/jedafe/japa/internal/learning"
 	"github.com/jedafe/japa/internal/menus"
 	"github.com/jedafe/japa/internal/rag"
+	"github.com/jedafe/japa/internal/studio"
 	"github.com/jedafe/japa/internal/users"
 	"github.com/jedafe/japa/internal/worker"
 	"github.com/valkey-io/valkey-go/valkeycompat"
@@ -845,3 +847,214 @@ func (a *agentUsersAdapter) UpdateProfile(ctx context.Context, tenantID, userID 
 	}
 	return a.svc.UpdateProfile(ctx, tenantID, userID, uReq)
 }
+
+// ---------------------------------------------------------------------------
+// AI Content Studio (Section 75, ADR-076) — studioDraftProcessorAdapter
+// ---------------------------------------------------------------------------
+
+// studioDraftProcessorAdapter implements worker.StudioProcessor by closing
+// over the studio service (job state + batch/retry orchestration) and the
+// content/ai/personas services needed for the actual draft generation. It
+// lives in the wiring layer (internal/server) so the worker package does not
+// import internal/studio, internal/content, internal/ai, or internal/personas
+// (which would create cycles).
+type studioDraftProcessorAdapter struct {
+	studio       studioProcessorService
+	contentSvc   *content.Service
+	aiStore      *ai.Store
+	personaStore personaUserIDResolver
+	dispatcher   aiDispatcherPort
+}
+
+// studioProcessorService is the subset of *studio.Service the adapter calls.
+type studioProcessorService interface {
+	GetJob(ctx context.Context, tenantID, id pgtype.UUID) (studio.Job, error)
+	MarkJobGenerating(ctx context.Context, tenantID, jobID pgtype.UUID) error
+	MarkJobGenerated(ctx context.Context, tenantID, jobID, draftContentID, reviewID pgtype.UUID) error
+	MarkJobFailed(ctx context.Context, tenantID, jobID pgtype.UUID, errMsg string) error
+	MarkJobPublished(ctx context.Context, tenantID, jobID, draftContentID pgtype.UUID) error
+	ShouldAutoPublish(ctx context.Context, tenantID pgtype.UUID, contentType, guideCategory string) bool
+	RunBatch(ctx context.Context, tenantID, batchID pgtype.UUID) error
+	RetryFailed(ctx context.Context, tenantID, jobID pgtype.UUID) error
+}
+
+// RunBatch delegates to the studio service.
+func (a *studioDraftProcessorAdapter) RunBatch(ctx context.Context, tenantID, batchID pgtype.UUID) error {
+	return a.studio.RunBatch(ctx, tenantID, batchID)
+}
+
+// RetryFailed delegates to the studio service.
+func (a *studioDraftProcessorAdapter) RetryFailed(ctx context.Context, tenantID, jobID pgtype.UUID) error {
+	return a.studio.RetryFailed(ctx, tenantID, jobID)
+}
+
+// GenerateJob runs the §75 single-job generation pipeline:
+//  1. Load the studio job + persona (voice prompt + backing author).
+//  2. Generate the draft body via the AI gateway (content_generation).
+//  3. Create the contents row with status='draft', author=persona user_id.
+//  4. Route to the HITL review queue with source='studio', OR auto-publish
+//     low-stakes types per studio.auto_publish_types (§75).
+//  5. Update the studio job to 'in_review' (or 'published').
+func (a *studioDraftProcessorAdapter) GenerateJob(ctx context.Context, tenantID, jobID pgtype.UUID) error {
+	job, err := a.studio.GetJob(ctx, tenantID, jobID)
+	if err != nil {
+		return fmt.Errorf("studio: generate: get job: %w", err)
+	}
+	// Guard against re-processing a job that already produced a draft.
+	if job.Status != "queued" && job.Status != "generating" {
+		slog.Warn("studio: generate: job not in a generatable state, skipping",
+			"job_id", jobID, "status", job.Status)
+		return nil
+	}
+
+	// 1. Mark generating.
+	if err := a.studio.MarkJobGenerating(ctx, tenantID, jobID); err != nil {
+		return fmt.Errorf("studio: generate: mark generating: %w", err)
+	}
+
+	// 2. Resolve the persona's backing user (the author) + voice prompt.
+	persona, err := a.personaStore.GetAIPersonaByID(ctx, tenantID, job.PersonaID)
+	if err != nil {
+		_ = a.studio.MarkJobFailed(ctx, tenantID, jobID, "persona not found: "+err.Error())
+		return fmt.Errorf("studio: generate: resolve persona: %w", err)
+	}
+
+	// 3. Generate the draft body via the AI gateway.
+	body := job.TopicPrompt
+	if a.dispatcher != nil {
+		generated, gerr := a.studioGenerateBody(ctx, tenantID, job, persona)
+		if gerr != nil {
+			_ = a.studio.MarkJobFailed(ctx, tenantID, jobID, "AI generation failed: "+gerr.Error())
+			return fmt.Errorf("studio: generate: body: %w", gerr)
+		}
+		if generated != "" {
+			body = generated
+		}
+	}
+
+	// 4. Build field_values with _ai_provenance (ADR-088 universal AI
+	// content generation pattern).
+	provenance := map[string]any{
+		"ai_generated":   true,
+		"ai_persona_id":  job.PersonaID.String(),
+		"source":         "studio",
+		"original_prompt": job.TopicPrompt,
+	}
+	if len(job.TargetTags) > 0 {
+		provenance["target_tags"] = job.TargetTags
+	}
+	fieldValues := map[string]any{"_ai_provenance": provenance}
+	fvJSON, err := json.Marshal(fieldValues)
+	if err != nil {
+		_ = a.studio.MarkJobFailed(ctx, tenantID, jobID, "encode field values: "+err.Error())
+		return fmt.Errorf("studio: generate: encode field values: %w", err)
+	}
+
+	// 5. Create the contents row with status='draft'.
+	row, err := a.contentSvc.CreateContent(ctx, tenantID, content.CreateContentInput{
+		AuthorID:      persona.UserID,
+		SpaceID:       job.TargetSpaceID,
+		ContentType:   job.ContentType,
+		Title:         job.TopicPrompt,
+		Body:          body,
+		FieldValues:   fvJSON,
+		Status:        "draft",
+		GuideCategory: job.GuideCategory,
+	})
+	if err != nil {
+		_ = a.studio.MarkJobFailed(ctx, tenantID, jobID, "create content: "+err.Error())
+		return fmt.Errorf("studio: generate: create content: %w", err)
+	}
+
+	// 6. Route to HITL review (source='studio') OR auto-publish low-stakes.
+	if a.studio.ShouldAutoPublish(ctx, tenantID, job.ContentType, derefStr(job.GuideCategory)) {
+		if _, perr := a.contentSvc.UpdateContentStatus(ctx, row.ID, tenantID, "published"); perr != nil {
+			slog.Warn("studio: generate: auto-publish failed, routing to review",
+				"job_id", jobID, "content_id", row.ID, "error", perr)
+			a.createStudioReview(ctx, tenantID, row.ID, job.ContentType, fvJSON)
+			_ = a.studio.MarkJobGenerated(ctx, tenantID, jobID, row.ID, pgtype.UUID{})
+			return nil
+		}
+		if err := a.studio.MarkJobPublished(ctx, tenantID, jobID, row.ID); err != nil {
+			slog.Warn("studio: generate: mark job published failed", "job_id", jobID, "error", err)
+		}
+		slog.Info("studio: generate: auto-published", "job_id", jobID, "content_id", row.ID)
+		return nil
+	}
+
+	var reviewID pgtype.UUID
+	if a.aiStore != nil {
+		review, rerr := a.aiStore.CreateHITLReview(ctx, ai.HITLReview{
+			TenantID:    tenantID,
+			ContentID:   row.ID,
+			ContentType: job.ContentType,
+			AIOutput:    fvJSON,
+			Status:      ai.HITLStatusPending,
+			Source:      ai.HITLSourceStudio,
+		})
+		if rerr != nil {
+			slog.Warn("studio: generate: create HITL review failed, draft remains",
+				"job_id", jobID, "content_id", row.ID, "error", rerr)
+		} else {
+			reviewID = review.ID
+		}
+	}
+	if err := a.studio.MarkJobGenerated(ctx, tenantID, jobID, row.ID, reviewID); err != nil {
+		return fmt.Errorf("studio: generate: mark generated: %w", err)
+	}
+	slog.Info("studio: generate: draft routed to review",
+		"job_id", jobID, "content_id", row.ID, "review_id", reviewID)
+	return nil
+}
+
+
+// studioGenerateBody synthesizes a draft body via the AI gateway, weaving in
+// the persona voice prompt when present.
+func (a *studioDraftProcessorAdapter) studioGenerateBody(ctx context.Context, tenantID pgtype.UUID, job studio.Job, persona gen.GetAIPersonaByIDRow) (string, error) {
+	prompt := fmt.Sprintf("Generate a %s draft about: %s", job.ContentType, job.TopicPrompt)
+	if persona.VoicePrompt != nil && *persona.VoicePrompt != "" {
+		prompt = fmt.Sprintf("Voice: %s\n\n%s", *persona.VoicePrompt, prompt)
+	}
+	if job.GuideCategory != nil && *job.GuideCategory != "" {
+		prompt += fmt.Sprintf("\nGuide category: %s", *job.GuideCategory)
+	}
+	resp, err := a.dispatcher.Dispatch(ctx, "content_generation", ai.Request{
+		Category: "content_generation",
+		Payload: map[string]any{
+			"prompt":    prompt,
+			"tenant_id": tenantID,
+		},
+	})
+	if err != nil {
+		return "", err
+	}
+	if text, ok := resp.Raw["text"].(string); ok {
+		return text, nil
+	}
+	if text, ok := resp.Raw["content"].(string); ok {
+		return text, nil
+	}
+	if output, ok := resp.Raw["output"].(string); ok {
+		return output, nil
+	}
+	// Fallback: no recognized text field; return the topic prompt so the
+	// draft is still created with meaningful content.
+	return job.TopicPrompt, nil
+}
+
+// createStudioReview is a best-effort HITL review creation helper.
+func (a *studioDraftProcessorAdapter) createStudioReview(ctx context.Context, tenantID, contentID pgtype.UUID, contentType string, fvJSON []byte) {
+	_, err := a.aiStore.CreateHITLReview(ctx, ai.HITLReview{
+		TenantID:    tenantID,
+		ContentID:   contentID,
+		ContentType: contentType,
+		AIOutput:    fvJSON,
+		Status:      ai.HITLStatusPending,
+		Source:      ai.HITLSourceStudio,
+	})
+	if err != nil {
+		slog.Warn("studio: create HITL review failed", "content_id", contentID, "error", err)
+	}
+}
+
+

@@ -199,14 +199,15 @@ func (s *Service) GetBySlug(ctx context.Context, slug string, tenantID pgtype.UU
 }
 
 // List returns a paginated, filtered list of published stories.
-func (s *Service) List(ctx context.Context, tenantID pgtype.UUID, originSpaceID, destSpaceID pgtype.UUID, visaCategory, profession, sort string, page, limit int32) ([]StoryDTO, int64, error) {
-	if limit <= 0 {
-		limit = 20
+// pageSize and pageOffset follow the conventions/api-response-format.md
+// offset pagination convention (?page_size=N&page_offset=N).
+func (s *Service) List(ctx context.Context, tenantID pgtype.UUID, originSpaceID, destSpaceID pgtype.UUID, visaCategory, profession, sort string, pageSize, pageOffset int32) ([]StoryDTO, int64, error) {
+	if pageSize <= 0 {
+		pageSize = 20
 	}
-	if page <= 0 {
-		page = 1
+	if pageOffset < 0 {
+		pageOffset = 0
 	}
-	offset := (page - 1) * limit
 
 	rows, total, err := s.store.ListStories(ctx, ListStoriesFilter{
 		TenantID:      tenantID,
@@ -216,8 +217,8 @@ func (s *Service) List(ctx context.Context, tenantID pgtype.UUID, originSpaceID,
 		Profession:    profession,
 		Sort:          sort,
 		Status:        content.StatusPublished,
-		Limit:         limit,
-		Offset:        offset,
+		Limit:         pageSize,
+		Offset:        pageOffset,
 	})
 	if err != nil {
 		return nil, 0, fmt.Errorf("story: list: %w", err)
@@ -232,8 +233,9 @@ func (s *Service) List(ctx context.Context, tenantID pgtype.UUID, originSpaceID,
 
 // EditOwn updates the author's own story. The caller must verify ownership
 // (story.edit_own permission + author_id match). Only the provided (non-nil)
-// fields are updated.
-func (s *Service) EditOwn(ctx context.Context, contentID, tenantID, userID pgtype.UUID, input EditStoryInput) (StoryDTO, error) {
+// fields are updated. If bypassOwnership is true (caller has story.edit_any),
+// the ownership check is skipped so moderators/admins can edit any story.
+func (s *Service) EditOwn(ctx context.Context, contentID, tenantID, userID pgtype.UUID, input EditStoryInput, bypassOwnership bool) (StoryDTO, error) {
 	// Fetch existing content to verify ownership.
 	existing, err := s.content.GetContent(ctx, contentID, tenantID)
 	if err != nil {
@@ -242,7 +244,7 @@ func (s *Service) EditOwn(ctx context.Context, contentID, tenantID, userID pgtyp
 		}
 		return StoryDTO{}, fmt.Errorf("story: edit: get content: %w", err)
 	}
-	if existing.AuthorID != userID {
+	if !bypassOwnership && existing.AuthorID != userID {
 		return StoryDTO{}, ErrNotOwner
 	}
 
@@ -303,8 +305,10 @@ func (s *Service) EditOwn(ctx context.Context, contentID, tenantID, userID pgtyp
 }
 
 // DeleteOwn soft-deletes the author's own story. The caller must verify
-// ownership (story.delete_own permission + author_id match).
-func (s *Service) DeleteOwn(ctx context.Context, contentID, tenantID, userID pgtype.UUID) error {
+// ownership (story.delete_own permission + author_id match). If
+// bypassOwnership is true (caller has story.delete_any), the ownership check
+// is skipped so moderators/admins can delete any story.
+func (s *Service) DeleteOwn(ctx context.Context, contentID, tenantID, userID pgtype.UUID, bypassOwnership bool) error {
 	existing, err := s.content.GetContent(ctx, contentID, tenantID)
 	if err != nil {
 		if err == pgx.ErrNoRows {
@@ -312,7 +316,7 @@ func (s *Service) DeleteOwn(ctx context.Context, contentID, tenantID, userID pgt
 		}
 		return fmt.Errorf("story: delete: get content: %w", err)
 	}
-	if existing.AuthorID != userID {
+	if !bypassOwnership && existing.AuthorID != userID {
 		return ErrNotOwner
 	}
 
@@ -323,8 +327,10 @@ func (s *Service) DeleteOwn(ctx context.Context, contentID, tenantID, userID pgt
 }
 
 // Verify marks a story as verified by an admin (story.verify permission).
-func (s *Service) Verify(ctx context.Context, contentID, tenantID pgtype.UUID) error {
-	if err := s.store.VerifyStory(ctx, contentID, tenantID); err != nil {
+// Sets hitl_reviewed_by and hitl_reviewed_at per ADR-088 HITL review audit
+// trail.
+func (s *Service) Verify(ctx context.Context, contentID, tenantID, adminUserID pgtype.UUID) error {
+	if err := s.store.VerifyStory(ctx, contentID, tenantID, adminUserID); err != nil {
 		if err == pgx.ErrNoRows {
 			return pgx.ErrNoRows
 		}
@@ -334,22 +340,25 @@ func (s *Service) Verify(ctx context.Context, contentID, tenantID pgtype.UUID) e
 }
 
 // AdminList returns all stories (any status) for the moderation queue.
-func (s *Service) AdminList(ctx context.Context, tenantID pgtype.UUID, status, q string, verified *bool, page, limit int32) ([]StoryDTO, int64, error) {
-	if limit <= 0 {
-		limit = 20
+// pageSize and pageOffset follow the conventions/api-response-format.md
+// offset pagination convention. sort may be "latest" (default), "oldest",
+// or "title".
+func (s *Service) AdminList(ctx context.Context, tenantID pgtype.UUID, status, q string, verified *bool, sort string, pageSize, pageOffset int32) ([]StoryDTO, int64, error) {
+	if pageSize <= 0 {
+		pageSize = 20
 	}
-	if page <= 0 {
-		page = 1
+	if pageOffset < 0 {
+		pageOffset = 0
 	}
-	offset := (page - 1) * limit
 
 	rows, total, err := s.store.AdminListStories(ctx, AdminListStoriesFilter{
-		TenantID: tenantID,
-		Status:   status,
-		Verified: verified,
-		Q:        q,
-		Limit:    limit,
-		Offset:   offset,
+		TenantID:  tenantID,
+		Status:    status,
+		Verified:  verified,
+		Q:         q,
+		Sort:      sort,
+		Limit:     pageSize,
+		Offset:    pageOffset,
 	})
 	if err != nil {
 		return nil, 0, fmt.Errorf("story: admin list: %w", err)

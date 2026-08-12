@@ -106,6 +106,23 @@ JOIN spaces s ON s.id = sm.space_id
 WHERE sm.user_id = @user_id AND sm.tenant_id = @tenant_id
 ORDER BY sm.joined_at DESC;
 
+-- name: GdprExportOwnedSpaceParents :many
+-- Returns parent space IDs for spaces owned by the user (BUG-004: GDPR
+-- export completeness for space_parent_spaces).
+SELECT sps.space_id, sps.parent_space_id
+FROM space_parent_spaces sps
+JOIN space_members sm ON sm.space_id = sps.space_id
+WHERE sm.user_id = @user_id AND sm.tenant_id = @tenant_id AND sm.role = 'owner';
+
+-- name: GdprExportOwnedSpaceRules :many
+-- Returns rules for spaces owned by the user (BUG-004: GDPR export
+-- completeness for space_rules).
+SELECT sr.id, sr.space_id, sr.title, sr.body, sr.position
+FROM space_rules sr
+JOIN space_members sm ON sm.space_id = sr.space_id
+WHERE sm.user_id = @user_id AND sm.tenant_id = @tenant_id AND sm.role = 'owner'
+ORDER BY sr.space_id, sr.position;
+
 -- name: GdprExportUserPayments :many
 SELECT id, provider, amount, currency, status, purpose_type, created_at
 FROM payments

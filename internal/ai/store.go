@@ -53,6 +53,10 @@ const (
 	HITLSourceManual            = "manual"
 	HITLSourceAgentDraftRequest = "agent_draft_request"
 	HITLSourceAgentTool         = "agent_tool"
+	// HITLSourceStudio marks drafts created by the AI Content Studio (§75,
+	// ADR-076) so the admin panel can show them in the "Studio" tab. The
+	// value is permitted by the source CHECK constraint (migration 000420).
+	HITLSourceStudio = "studio"
 )
 
 // CreateHITLReview inserts a new HITL review record and returns it.

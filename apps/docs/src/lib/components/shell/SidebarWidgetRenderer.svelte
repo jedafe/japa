@@ -4,13 +4,16 @@
 	// Handles content-slot widget types: ad_slot, rich_text, custom_html,
 	// recent_content, space_list, trending_tags, suggested_spaces.
 	// Topbar widget types (search, theme_toggle, language_toggle, user_dropdown)
-	// are rendered by the app shell's hardcoded topbar and are skipped here.
+	// are rendered here from the admin-managed widget set (FE-S4 removed the
+	// previously hardcoded topbar that duplicated these widgets).
 
 	import { t } from '$lib/i18n';
 	import { Sun, Moon, Languages, Bell, Mail, Share2, Calendar, Trophy, Hash, Star, BarChart3, MousePointerClick, UserCircle, FolderTree, MessageSquare, PlayCircle, GraduationCap, BookOpen, CircleDashed, ThumbsUp, List } from 'lucide-svelte';
 	import { theme } from '$lib/stores/theme.svelte';
 	import { i18n } from '$lib/i18n';
 	import SearchLauncher from './SearchLauncher.svelte';
+	import UserDropdown from './UserDropdown.svelte';
+	import type { SessionUser } from '$lib/types';
 
 	interface SidebarWidget {
 		id: string;
@@ -22,9 +25,10 @@
 
 	interface Props {
 		widget: SidebarWidget;
+		user?: SessionUser | null;
 	}
 
-	let { widget }: Props = $props();
+	let { widget, user = null }: Props = $props();
 
 	const widgetProps = $derived(widget.props ?? {});
 	const title = $derived(typeof widgetProps.title === 'string' ? widgetProps.title : '');
@@ -284,7 +288,9 @@
 {:else if widget.widget_type === 'search'}
 	<!-- Search widget (Main app variant) — Docs uses 'search_launcher' instead. -->
 {:else if widget.widget_type === 'user_dropdown'}
-	<!-- User dropdown — rendered by the app shell's hardcoded topbar. -->
+	{#if user}
+		<UserDropdown {user} />
+	{/if}
 {:else}
 	<!-- Unknown widget type — render nothing rather than crashing. -->
 {/if}
