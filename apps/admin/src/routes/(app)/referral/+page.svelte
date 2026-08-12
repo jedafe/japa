@@ -6,7 +6,7 @@
 	import { Tabs } from '$lib/components/ui/tabs';
 	import { DataTable } from '$lib/components/ui/data-table';
 	import { Button } from '$lib/components/ui/button';
-	import { Gift, Users, Trash2 } from 'lucide-svelte';
+	import { Gift, Users, Trash2, Flag, BarChart3, Check, X } from 'lucide-svelte';
 
 	// Backend contract: internal/referral/service.go Program struct.
 	type ReferralProgram = {
@@ -38,8 +38,26 @@
 		created_at: string;
 	};
 
+	// V2 admin referral (§60, ADR-078). No referee PII.
+	type V2Referral = {
+		id: string;
+		referral_code: string;
+		referrer_id: string;
+		status: string;
+		reward_amount: string | null;
+		flagged_reason: string | null;
+		qualified_at: string | null;
+		credited_at: string | null;
+		created_at: string;
+	};
+
+	type V2Stats = { status: string; count: number }[];
+
 	let program = $state<ReferralProgram | null>(null);
 	let referrals = $state<Referral[]>([]);
+	let v2Referrals = $state<V2Referral[]>([]);
+	let v2Flagged = $state<V2Referral[]>([]);
+	let v2Stats = $state<V2Stats>([]);
 	let loading = $state(true);
 	let error = $state('');
 	let saving = $state(false);
@@ -47,11 +65,26 @@
 	let searchQuery = $state('');
 	let selectedIds = $state<Set<string>>(new Set());
 	let bulkDeleting = $state(false);
+	let resolving = $state<string | null>(null);
 
 	const tabs = $derived([
 		{ value: 'program', label: t('referral.program_settings'), icon: Gift },
-		{ value: 'referrals', label: t('referral.recent_referrals'), icon: Users, count: referrals.length }
+		{ value: 'referrals', label: t('referral.recent_referrals'), icon: Users, count: referrals.length },
+		{ value: 'v2_all', label: 'All Referrals (V2)', icon: Users, count: v2Referrals.length },
+		{ value: 'v2_flagged', label: 'Flagged Queue', icon: Flag, count: v2Flagged.length },
+		{ value: 'v2_stats', label: 'Stats', icon: BarChart3 }
 	]);
+
+	// BUG-017 fix: added credited/flagged/rejected V2 statuses.
+	const statusClasses: Record<string, string> = {
+		qualified: 'bg-success/15 text-success border-success',
+		credited: 'bg-success/15 text-success border-success',
+		rewarded: 'bg-success/15 text-success border-success',
+		pending: 'bg-warning/15 text-warning border-warning',
+		flagged: 'bg-danger/15 text-danger border-danger',
+		rejected: 'bg-danger/15 text-danger border-danger',
+		expired: 'bg-danger/15 text-danger border-danger'
+	};
 
 	const referralColumns = $derived([
 		{
@@ -76,15 +109,7 @@
 			key: 'status',
 			label: t('referral.status'),
 			sortable: true,
-			render: (value: string) => {
-				const classes: Record<string, string> = {
-					qualified: 'bg-success/15 text-success border-success',
-					rewarded: 'bg-success/15 text-success border-success',
-					pending: 'bg-warning/15 text-warning border-warning',
-					expired: 'bg-danger/15 text-danger border-danger'
-				};
-				return `<span class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${classes[value] || 'bg-surface text-foreground border'}">${value}</span>`;
-			}
+			render: (value: string) => `<span class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${statusClasses[value] || 'bg-surface text-foreground border'}">${value}</span>`
 		},
 		{
 			key: 'reward_paid_at',
@@ -104,6 +129,38 @@
 		}
 	]);
 
+	const v2ReferralColumns = $derived([
+		{
+			key: 'referral_code',
+			label: t('referral.code'),
+			sortable: true,
+			render: (value: string) => `<span class="font-mono text-xs font-medium text-foreground">${value}</span>`
+		},
+		{
+			key: 'referrer_id',
+			label: t('referral.referrer'),
+			sortable: true,
+			render: (value: string) => `<span class="font-mono text-xs text-foreground-alt">${value.slice(0, 8)}...</span>`
+		},
+		{
+			key: 'status',
+			label: t('referral.status'),
+			sortable: true,
+			render: (value: string) => `<span class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${statusClasses[value] || 'bg-surface text-foreground border'}">${value}</span>`
+		},
+		{
+			key: 'flagged_reason',
+			label: 'Flag Reason',
+			render: (value: string | null) => value ? `<span class="text-xs text-danger">${value}</span>` : '<span class="text-xs text-muted">—</span>'
+		},
+		{
+			key: 'created_at',
+			label: t('referral.date'),
+			sortable: true,
+			render: (value: string) => `<span class="text-sm">${new Date(value).toLocaleDateString()}</span>`
+		}
+	]);
+
 	$effect(() => {
 		load();
 	});
@@ -112,9 +169,12 @@
 		loading = true;
 		error = '';
 		try {
-			const [programResult, referralsResult] = await Promise.all([
+			const [programResult, referralsResult, v2AllResult, v2FlaggedResult, v2StatsResult] = await Promise.all([
 				api<ReferralProgram>('/admin/referral/program'),
-				api<Referral[]>('/admin/referral/referrals')
+				api<Referral[]>('/admin/referral/referrals'),
+				api<V2Referral[]>('/admin/referrals'),
+				api<V2Referral[]>('/admin/referrals/flagged'),
+				api<V2Stats>('/admin/referrals/stats')
 			]);
 			if (programResult.ok) {
 				program = programResult.data;
@@ -123,6 +183,15 @@
 			}
 			if (referralsResult.ok) {
 				referrals = referralsResult.data ?? [];
+			}
+			if (v2AllResult.ok) {
+				v2Referrals = v2AllResult.data ?? [];
+			}
+			if (v2FlaggedResult.ok) {
+				v2Flagged = v2FlaggedResult.data ?? [];
+			}
+			if (v2StatsResult.ok) {
+				v2Stats = v2StatsResult.data ?? [];
 			}
 		} catch {
 			error = t('common.error');
@@ -173,6 +242,27 @@
 			error = t('common.error');
 		}
 		bulkDeleting = false;
+	}
+
+	// BUG-014 fix: V2 admin resolve flagged referral (credit or reject).
+	async function resolveFlagged(id: string, action: 'credit' | 'reject') {
+		resolving = id;
+		error = '';
+		try {
+			const result = await api(`/admin/referrals/${id}/resolve`, {
+				method: 'PATCH',
+				body: { action }
+			});
+			if (!result.ok) {
+				error = result.error;
+			} else {
+				await load();
+			}
+		} catch {
+			error = t('common.error');
+		} finally {
+			resolving = null;
+		}
 	}
 </script>
 
@@ -275,7 +365,7 @@
 			</Card>
 		{/if}
 	{:else if activeTab === 'referrals'}
-		<!-- Referrals List -->
+		<!-- Legacy Referrals List -->
 		<Card>
 			<CardContent class="p-0">
 				<DataTable
@@ -295,6 +385,78 @@
 						</Button>
 					{/snippet}
 				</DataTable>
+			</CardContent>
+		</Card>
+	{:else if activeTab === 'v2_all'}
+		<!-- V2 All Referrals (BUG-014 fix) -->
+		<Card>
+			<CardContent class="p-0">
+				<DataTable
+					columns={v2ReferralColumns}
+					data={v2Referrals}
+					pageSize={20}
+					emptyMessage="No referrals"
+					searchable
+				/>
+			</CardContent>
+		</Card>
+	{:else if activeTab === 'v2_flagged'}
+		<!-- V2 Flagged Queue (BUG-014 fix) — admin resolve UI -->
+		<Card>
+			<CardContent class="p-0">
+				{#if v2Flagged.length === 0}
+					<p class="py-8 text-center text-sm text-muted">No flagged referrals awaiting review.</p>
+				{:else}
+					<div class="divide-y divide-border">
+						{#each v2Flagged as row}
+							<div class="flex items-center justify-between gap-4 p-4">
+								<div class="min-w-0 flex-1">
+									<p class="font-mono text-xs font-medium text-foreground">{row.referral_code}</p>
+									<p class="mt-1 text-xs text-danger">Flagged: {row.flagged_reason ?? 'unknown'}</p>
+									<p class="mt-0.5 text-xs text-muted">{new Date(row.created_at).toLocaleDateString()}</p>
+								</div>
+								<div class="flex shrink-0 items-center gap-2">
+									<Button
+										size="sm"
+										onclick={() => resolveFlagged(row.id, 'credit')}
+										disabled={resolving === row.id}
+									>
+										<Check class="h-3.5 w-3.5 mr-1" />
+										Credit
+									</Button>
+									<Button
+										variant="destructive"
+										size="sm"
+										onclick={() => resolveFlagged(row.id, 'reject')}
+										disabled={resolving === row.id}
+									>
+										<X class="h-3.5 w-3.5 mr-1" />
+										Reject
+									</Button>
+								</div>
+							</div>
+						{/each}
+					</div>
+				{/if}
+			</CardContent>
+		</Card>
+	{:else if activeTab === 'v2_stats'}
+		<!-- V2 Stats (BUG-014 fix) -->
+		<Card>
+			<CardContent class="p-6">
+				<h3 class="mb-4 text-lg font-semibold text-foreground">Referral Stats</h3>
+				{#if v2Stats.length === 0}
+					<p class="text-sm text-muted">No referral data yet.</p>
+				{:else}
+					<div class="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+						{#each v2Stats as stat}
+							<div class="rounded-lg border border-border bg-surface p-4 text-center">
+								<span class="block text-2xl font-bold text-foreground">{stat.count}</span>
+								<span class="mt-1 block text-xs font-medium capitalize text-foreground-alt">{stat.status}</span>
+							</div>
+						{/each}
+					</div>
+				{/if}
 			</CardContent>
 		</Card>
 	{/if}

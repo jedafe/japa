@@ -1180,7 +1180,14 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Enqueue async embedding generation — fire-and-forget.
-	h.enqueueContentEmbedding(id, tenantID)
+	// BUG-002 fix: if the content transitioned from published to non-published,
+	// purge RAG embeddings instead of re-indexing (ADR-069 §2: unpublished
+	// content must not be retrievable in RAG).
+	if prevErr == nil && prevContent.Status == StatusPublished && content.Status != StatusPublished {
+		worker.PurgeRAGEntity(r.Context(), tenantID, "content", id)
+	} else {
+		h.enqueueContentEmbedding(id, tenantID)
+	}
 
 	// Enqueue search index sync — fire-and-forget.
 	h.enqueueSearchIndex(id, tenantID, "index")
@@ -1227,6 +1234,11 @@ func (h *Handlers) DeleteContent(w http.ResponseWriter, r *http.Request) {
 
 	// Enqueue search index deletion — fire-and-forget.
 	h.enqueueSearchIndex(id, tenantID, "delete")
+
+	// BUG-002 fix: purge RAG embeddings on content delete (ADR-069 §2:
+	// "Content is unpublished or deleted — deletes its content_embeddings
+	// rows"). Fire-and-forget — errors are logged, never propagated.
+	worker.PurgeRAGEntity(r.Context(), tenantID, "content", id)
 
 	writeJSON(w, http.StatusNoContent, nil)
 }
@@ -1301,6 +1313,10 @@ func (h *Handlers) ArchiveContent(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
+	// BUG-002 fix: purge RAG embeddings on archive (ADR-069 §2: content that
+	// is no longer published must not be retrievable in RAG). Fire-and-forget.
+	worker.PurgeRAGEntity(r.Context(), tenantID, "content", id)
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": updated})
 }

@@ -5,7 +5,8 @@
 // so it never imports content or media directly.
 //
 // Ref: japaconnect-engineering/sections/65-content-import.md
-//      japaconnect-engineering/adr/ADR-083-content-import.md
+//
+//	japaconnect-engineering/adr/ADR-083-content-import.md
 package server
 
 import (

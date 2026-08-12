@@ -68,15 +68,20 @@ type ScholarshipProcessor interface {
 
 // RemittanceProcessor handles remittance background tasks (§74, ADR-075).
 type RemittanceProcessor interface {
+	// FetchRates fetches rates for a single provider (admin-triggered).
 	FetchRates(ctx context.Context, providerID pgtype.UUID) error
+	// FetchAllRates iterates all active API-sourced providers across all
+	// tenants (scheduler-triggered sweep). Returns the number of providers
+	// processed.
+	FetchAllRates(ctx context.Context) (int, error)
 	CheckAlerts(ctx context.Context) (int, error)
 	PruneOldRates(ctx context.Context) (int, error)
 }
 
 // ReferralProcessor handles referral background tasks (§60, ADR-078).
 type ReferralProcessor interface {
-	RecordClick(ctx context.Context, code, ip, userAgent string) error
-	CheckConversion(ctx context.Context, referralID pgtype.UUID) error
+	RecordClick(ctx context.Context, code, sessionID, ip, userAgent string) error
+	CheckConversion(ctx context.Context, tenantID, payerID, paymentID pgtype.UUID, sessionID string) error
 	ReviewFlagged(ctx context.Context, referralID pgtype.UUID) error
 }
 
@@ -201,6 +206,16 @@ type JapaStageProcessor interface {
 	RecommendForStage(ctx context.Context, userID, tenantID pgtype.UUID, stage, destSpaceID string) error
 }
 
+// PlanningGroupProcessor handles Planning Groups background tasks (§82,
+// ADR-090). ExpireGroups soft-deletes groups past their expires_at (nightly,
+// low queue). SendCheckinReminders identifies members who haven't checked in
+// this week and dispatches reminder notifications (weekly, default queue).
+// Ref: japaconnect-engineering/sections/82-japa-planning-groups.md
+type PlanningGroupProcessor interface {
+	ExpireGroups(ctx context.Context) (int64, error)
+	SendCheckinReminders(ctx context.Context) (int64, error)
+}
+
 // ---------------------------------------------------------------------------
 // Global processor slots — nil-safe (graceful degradation when unregistered).
 // ---------------------------------------------------------------------------
@@ -225,6 +240,7 @@ var (
 	digestProcessor         DigestProcessor
 	agentDraftProcessor     AgentDraftProcessor
 	japaStageProcessor      JapaStageProcessor
+	planningGroupProcessor  PlanningGroupProcessor
 )
 
 // Register functions — call once at startup before the worker serves.
@@ -248,6 +264,7 @@ func RegisterCvFormatterProcessor(p CvFormatterProcessor)       { cvFormatterPro
 func RegisterDigestProcessor(p DigestProcessor)                 { digestProcessor = p }
 func RegisterAgentDraftProcessor(p AgentDraftProcessor)         { agentDraftProcessor = p }
 func RegisterJapaStageProcessor(p JapaStageProcessor)           { japaStageProcessor = p }
+func RegisterPlanningGroupProcessor(p PlanningGroupProcessor)   { planningGroupProcessor = p }
 
 // ---------------------------------------------------------------------------
 // Task type constants (V2 — Sections 60–77).
@@ -335,6 +352,14 @@ const (
 	// Idempotent on (user_id, stage, set_at) — enqueued with a 1-minute
 	// Unique window so a duplicate PATCH does not double-dispatch.
 	TypeJapaStageRecommend = "japa_stage:recommend"
+
+	// §82 Japa Planning Groups (ADR-090).
+	// planning_group:expire runs nightly on the low queue, soft-deleting
+	// groups whose expires_at has passed. planning_group:checkin_reminder
+	// runs weekly on the default queue, sending check-in reminders to
+	// members who haven't checked in this week.
+	TypePlanningGroupExpire          = "planning_group:expire"
+	TypePlanningGroupCheckinReminder = "planning_group:checkin_reminder"
 )
 
 // ---------------------------------------------------------------------------
@@ -514,6 +539,9 @@ func HandleScholarshipCheckDeadlines(ctx context.Context, _ *asynq.Task) error {
 }
 
 // HandleRemittanceFetchRates fetches live rates for a provider (§74).
+// When called by the cron scheduler with an empty payload, it iterates all
+// active API-sourced providers across all tenants. When called with a
+// provider_id (admin manual trigger), it fetches only that provider.
 func HandleRemittanceFetchRates(ctx context.Context, t *asynq.Task) error {
 	if remittanceProcessor == nil {
 		slog.Warn("task:remittance:fetch_rates: no processor registered, skipping")
@@ -522,9 +550,19 @@ func HandleRemittanceFetchRates(ctx context.Context, t *asynq.Task) error {
 	var p struct {
 		ProviderID string `json:"provider_id"`
 	}
-	if err := json.Unmarshal(t.Payload(), &p); err != nil {
-		return fmt.Errorf("task:remittance:fetch_rates: invalid payload: %w", err)
+	// Tolerate empty payload from the cron scheduler — process all providers.
+	_ = json.Unmarshal(t.Payload(), &p)
+
+	if p.ProviderID == "" {
+		// Scheduler sweep — fetch all active API providers.
+		n, err := remittanceProcessor.FetchAllRates(ctx)
+		if err != nil {
+			return fmt.Errorf("task:remittance:fetch_rates: sweep: %w", err)
+		}
+		slog.Info("task:remittance:fetch_rates: sweep completed", "providers", n)
+		return nil
 	}
+
 	var id pgtype.UUID
 	if err := id.Scan(p.ProviderID); err != nil {
 		return fmt.Errorf("task:remittance:fetch_rates: bad provider_id: %w", err)
@@ -571,35 +609,46 @@ func HandleReferralRecordClick(ctx context.Context, t *asynq.Task) error {
 	}
 	var p struct {
 		Code      string `json:"code"`
+		SessionID string `json:"session_id"`
 		IP        string `json:"ip"`
 		UserAgent string `json:"user_agent"`
 	}
 	if err := json.Unmarshal(t.Payload(), &p); err != nil {
 		return fmt.Errorf("task:referral:record_click: invalid payload: %w", err)
 	}
-	if err := referralProcessor.RecordClick(ctx, p.Code, p.IP, p.UserAgent); err != nil {
+	if err := referralProcessor.RecordClick(ctx, p.Code, p.SessionID, p.IP, p.UserAgent); err != nil {
 		return fmt.Errorf("task:referral:record_click: %w", err)
 	}
 	return nil
 }
 
 // HandleReferralCheckConversion checks if a referral has converted (§60).
+// Triggered fire-and-forget by the payment webhook handler on succeeded.
 func HandleReferralCheckConversion(ctx context.Context, t *asynq.Task) error {
 	if referralProcessor == nil {
 		slog.Warn("task:referral:check_conversion: no processor registered, skipping")
 		return nil
 	}
 	var p struct {
-		ReferralID string `json:"referral_id"`
+		TenantID  string `json:"tenant_id"`
+		PayerID   string `json:"payer_id"`
+		PaymentID string `json:"payment_id"`
+		SessionID string `json:"session_id"`
 	}
 	if err := json.Unmarshal(t.Payload(), &p); err != nil {
 		return fmt.Errorf("task:referral:check_conversion: invalid payload: %w", err)
 	}
-	var id pgtype.UUID
-	if err := id.Scan(p.ReferralID); err != nil {
-		return fmt.Errorf("task:referral:check_conversion: bad referral_id: %w", err)
+	var tenantID, payerID, paymentID pgtype.UUID
+	if err := tenantID.Scan(p.TenantID); err != nil {
+		return fmt.Errorf("task:referral:check_conversion: bad tenant_id: %w", err)
 	}
-	if err := referralProcessor.CheckConversion(ctx, id); err != nil {
+	if err := payerID.Scan(p.PayerID); err != nil {
+		return fmt.Errorf("task:referral:check_conversion: bad payer_id: %w", err)
+	}
+	if err := paymentID.Scan(p.PaymentID); err != nil {
+		return fmt.Errorf("task:referral:check_conversion: bad payment_id: %w", err)
+	}
+	if err := referralProcessor.CheckConversion(ctx, tenantID, payerID, paymentID, p.SessionID); err != nil {
 		return fmt.Errorf("task:referral:check_conversion: %w", err)
 	}
 	return nil
@@ -1197,5 +1246,36 @@ func HandleJapaStageRecommend(ctx context.Context, t *asynq.Task) error {
 	}
 	slog.Info("task:japa_stage:recommend: dispatched",
 		"user_id", p.UserID, "stage", p.Stage)
+	return nil
+}
+
+// HandlePlanningGroupExpire soft-deletes planning groups whose expires_at has
+// passed (§82, ADR-090). Nightly sweep on the low queue.
+func HandlePlanningGroupExpire(ctx context.Context, _ *asynq.Task) error {
+	if planningGroupProcessor == nil {
+		slog.Warn("task:planning_group:expire: no processor registered, skipping")
+		return nil
+	}
+	n, err := planningGroupProcessor.ExpireGroups(ctx)
+	if err != nil {
+		return fmt.Errorf("task:planning_group:expire: %w", err)
+	}
+	slog.Info("task:planning_group:expire: expired groups", "count", n)
+	return nil
+}
+
+// HandlePlanningGroupCheckinReminder sends weekly check-in reminders to
+// planning group members who haven't checked in this week (§82, ADR-090).
+// Weekly sweep on the default queue.
+func HandlePlanningGroupCheckinReminder(ctx context.Context, _ *asynq.Task) error {
+	if planningGroupProcessor == nil {
+		slog.Warn("task:planning_group:checkin_reminder: no processor registered, skipping")
+		return nil
+	}
+	n, err := planningGroupProcessor.SendCheckinReminders(ctx)
+	if err != nil {
+		return fmt.Errorf("task:planning_group:checkin_reminder: %w", err)
+	}
+	slog.Info("task:planning_group:checkin_reminder: sent reminders", "count", n)
 	return nil
 }

@@ -483,6 +483,45 @@ func (q *Queries) ListActiveAlertsForCorridor(ctx context.Context, arg ListActiv
 	return items, nil
 }
 
+const listAllActiveAlertsForTenant = `-- name: ListAllActiveAlertsForTenant :many
+SELECT id, tenant_id, user_id, send_currency, receive_currency, target_rate, direction, is_active, last_triggered_at, created_at FROM remittance_rate_alerts
+WHERE tenant_id = $1
+  AND is_active = true
+  AND (last_triggered_at IS NULL OR last_triggered_at < now() - interval '24 hours')
+ORDER BY created_at DESC
+`
+
+func (q *Queries) ListAllActiveAlertsForTenant(ctx context.Context, tenantID pgtype.UUID) ([]RemittanceRateAlert, error) {
+	rows, err := q.db.Query(ctx, listAllActiveAlertsForTenant, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []RemittanceRateAlert
+	for rows.Next() {
+		var i RemittanceRateAlert
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.UserID,
+			&i.SendCurrency,
+			&i.ReceiveCurrency,
+			&i.TargetRate,
+			&i.Direction,
+			&i.IsActive,
+			&i.LastTriggeredAt,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listRemittanceProviders = `-- name: ListRemittanceProviders :many
 SELECT id, tenant_id, name, slug, logo_media_id, website_url, data_source, api_config, is_active, display_order, created_at FROM remittance_providers
 WHERE tenant_id = $1

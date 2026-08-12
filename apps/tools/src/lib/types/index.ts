@@ -400,10 +400,11 @@ export interface RemittanceCalculationRow {
 }
 
 export interface RemittanceHistoryPoint {
-	timestamp: string;
-	provider_id: string;
-	provider_name: string;
-	rate: number;
+	/** ISO date string (YYYY-MM-DD) for the day bucket. */
+	day: string;
+	max_rate: number;
+	min_rate: number;
+	avg_rate: number;
 }
 
 export interface RemittanceAlert {

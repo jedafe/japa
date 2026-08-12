@@ -998,13 +998,18 @@ func (h *Handlers) AcceptInvitation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
 	token := chi.URLParam(r, "token")
 	if token == "" {
 		writeError(w, http.StatusBadRequest, "missing_token", "token is required")
 		return
 	}
 
-	if err := h.Service.AcceptInvitation(r.Context(), token, user.UserID); err != nil {
+	if err := h.Service.AcceptInvitation(r.Context(), token, user.UserID, tenantID); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -1588,94 +1593,4 @@ func (h *Handlers) ListProfileContent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": content})
-}
-
-// InviteMember is a deprecated alias for CreateInvitation. The P5.6
-// /profiles/:id/members/invite route is kept for backward compatibility but
-// delegates to the secure CreateInvitation service path (crypto-random token,
-// ownership check, proper invited_by). The raw-SQL implementation that used a
-// predictable token and skipped ownership was removed.
-//
-// Ref: sections/33-professional-profiles.md
-func (h *Handlers) InviteMember(w http.ResponseWriter, r *http.Request) {
-	user, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-
-	tenantID, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
-
-	profileID, err := parseUUIDParam(r, "id")
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid profile ID")
-		return
-	}
-
-	if !h.checkProfileOwnerOrAdmin(w, r, profileID, user, tenantID) {
-		return
-	}
-
-	var input struct {
-		Email string `json:"email"`
-		Role  string `json:"role"`
-	}
-
-	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
-		return
-	}
-
-	if input.Email == "" {
-		writeError(w, http.StatusBadRequest, "missing_email", "Email is required")
-		return
-	}
-
-	inv, err := h.Service.CreateInvitation(r.Context(), profileID, user.UserID, CreateInvitationInput{
-		Email: input.Email,
-		Role:  input.Role,
-	})
-	if err != nil {
-		handleServiceError(w, err)
-		return
-	}
-
-	writeJSON(w, http.StatusCreated, map[string]any{"data": inv})
-}
-
-// AcceptProfileInvitation is a deprecated alias for AcceptInvitation. The P5.6
-// /profiles/invitations/accept route is kept for backward compatibility but
-// delegates to the secure AcceptInvitation service path (adds the user as a
-// member, validates expiry, tenant-scoped). The raw-SQL implementation that
-// skipped member creation and ignored tenant was removed.
-//
-// Ref: sections/33-professional-profiles.md
-func (h *Handlers) AcceptProfileInvitation(w http.ResponseWriter, r *http.Request) {
-	user, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-
-	var input struct {
-		Token string `json:"token"`
-	}
-
-	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
-		return
-	}
-
-	if input.Token == "" {
-		writeError(w, http.StatusBadRequest, "missing_token", "Token is required")
-		return
-	}
-
-	if err := h.Service.AcceptInvitation(r.Context(), input.Token, user.UserID); err != nil {
-		handleServiceError(w, err)
-		return
-	}
-
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"accepted": true}})
 }

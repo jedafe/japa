@@ -152,6 +152,13 @@ WHERE tenant_id = @tenant_id
   AND is_active = true
   AND (last_triggered_at IS NULL OR last_triggered_at < now() - interval '24 hours');
 
+-- name: ListAllActiveAlertsForTenant :many
+SELECT * FROM remittance_rate_alerts
+WHERE tenant_id = @tenant_id
+  AND is_active = true
+  AND (last_triggered_at IS NULL OR last_triggered_at < now() - interval '24 hours')
+ORDER BY created_at DESC;
+
 -- name: MarkAlertTriggered :exec
 UPDATE remittance_rate_alerts
 SET last_triggered_at = now()

@@ -3549,6 +3549,7 @@ type UserGroup struct {
 	CreatedAt          pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
 	MaxSpacesCreatable int32              `json:"max_spaces_creatable"`
+	Description        *string            `json:"description"`
 }
 
 type UserGroupMembership struct {

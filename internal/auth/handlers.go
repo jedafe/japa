@@ -26,6 +26,15 @@ import (
 	"github.com/jedafe/japa/internal/worker"
 )
 
+// ReferralCapturer captures a referral code at signup, creating a pending
+// referral record linking the referrer to the newly registered user.
+// Implemented by referral.Service; injected via SetReferralCapturer so the
+// auth package does not import referral (avoids an import cycle).
+// Ref: japaconnect-engineering/sections/60-referral-system.md (Attribution)
+type ReferralCapturer interface {
+	CaptureSignupReferral(ctx context.Context, tenantID, refereeUserID pgtype.UUID, refCode string) error
+}
+
 // AuthHandlers holds dependencies for auth HTTP handlers.
 type AuthHandlers struct { //nolint:revive // stuttering type name preserved for API compatibility
 	DB           Querier
@@ -41,7 +50,11 @@ type AuthHandlers struct { //nolint:revive // stuttering type name preserved for
 	SupportURL   string           // Support page URL for email footers
 	CookieDomain  string // Cookie domain for cross-subdomain sharing (e.g. ".example.com"), empty = exact host
 	SecureCookies bool   // When true, session/CSRF cookies are marked Secure (production / TLS)
+	ReferralCapturer ReferralCapturer // Optional — wired by server after referral.Service is constructed (§60)
 }
+
+// SetReferralCapturer injects the referral capture dependency (§60, ADR-078).
+func (h *AuthHandlers) SetReferralCapturer(rc ReferralCapturer) { h.ReferralCapturer = rc }
 
 // Querier is the interface for database operations needed by auth handlers.
 type Querier interface {
@@ -127,6 +140,7 @@ func (h *AuthHandlers) Register(w http.ResponseWriter, r *http.Request) {
 		Email    string `json:"email"`
 		Username string `json:"username"`
 		Password string `json:"password"`
+		RefCode  string `json:"ref_code"` // §60 — referral code captured at signup (?ref=CODE)
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -136,6 +150,13 @@ func (h *AuthHandlers) Register(w http.ResponseWriter, r *http.Request) {
 
 	req.Email = strings.TrimSpace(strings.ToLower(req.Email))
 	req.Username = strings.TrimSpace(req.Username)
+
+	// §60 Referral capture — the ref code may arrive in the JSON body
+	// (ref_code) or as the ?ref= query param (e.g. when the frontend forwards
+	// it from the URL). Fall back to the query param so both paths work.
+	if req.RefCode == "" {
+		req.RefCode = strings.TrimSpace(r.URL.Query().Get("ref"))
+	}
 
 	if req.Email == "" || req.Username == "" || req.Password == "" {
 		writeError(w, http.StatusBadRequest, "missing_fields", "Email, username, and password are required")
@@ -196,6 +217,16 @@ func (h *AuthHandlers) Register(w http.ResponseWriter, r *http.Request) {
 		PasswordHash: passwordHash,
 	}); err != nil {
 		slog.Warn("register: failed to record password history", "error", err)
+	}
+
+	// §60 Referral capture — create a pending referral row linking the
+	// referrer to the new user. Non-fatal: a failure logs a warning but does
+	// not block registration (the referral is simply lost). Self-referral and
+	// duplicate-referee are guarded inside CaptureSignupReferral.
+	if req.RefCode != "" && h.ReferralCapturer != nil {
+		if err := h.ReferralCapturer.CaptureSignupReferral(r.Context(), tenant.ID, userID, req.RefCode); err != nil {
+			slog.Warn("register: failed to capture referral", "ref_code", req.RefCode, "error", err)
+		}
 	}
 
 	// Send welcome email (fire-and-forget, Golden Rule 8).

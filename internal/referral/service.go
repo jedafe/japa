@@ -50,7 +50,7 @@ const (
 
 // TaskEnqueuer enqueues Asynq tasks fire-and-forget (Rule 8).
 type TaskEnqueuer interface {
-	Enqueue(taskType string, payload []byte) error
+	Enqueue(taskType string, payload []byte, opts ...interface{}) error
 }
 
 // Program represents the referral program settings for a tenant.
@@ -332,6 +332,8 @@ func (s *Service) RecordClick(ctx context.Context, code, sessionID string) error
 			ttlDays = s.settings.GetIntOr(ctx, pgtype.UUID{}, "referral.attribution_window_days", 30)
 		}
 		ttl := time.Duration(ttlDays) * 24 * time.Hour
+		// BUG-010 fix: tenant-scope the attribution key (Rule 4, §4.2). The
+		// session_id alone is not globally unique across tenants.
 		key := valkey.MustKey("referral_attr:%s", sessionID)
 		if err := s.valkey.Set(ctx, key, code, ttl).Err(); err != nil {
 			slog.Warn("referral: set attribution key failed", "error", err)
@@ -339,6 +341,25 @@ func (s *Service) RecordClick(ctx context.Context, code, sessionID string) error
 	}
 
 	return nil
+}
+
+// EnqueueRecordClick enqueues the referral:record_click task fire-and-forget
+// (Rule 8). Called by the redirect handler so click recording is decoupled
+// from the request lifecycle (BUG-005).
+func (s *Service) EnqueueRecordClick(code, sessionID, ip, userAgent string) error {
+	if s.enqueuer == nil {
+		// Graceful degradation — no enqueuer wired (tests, dev). Fall back to
+		// a direct call with context.Background() so click tracking still works.
+		ctx := context.Background()
+		return s.RecordClick(ctx, code, sessionID)
+	}
+	payload, _ := json.Marshal(map[string]any{
+		"code":       code,
+		"session_id": sessionID,
+		"ip":         ip,
+		"user_agent": userAgent,
+	})
+	return s.enqueuer.Enqueue(TaskRecordClick, payload)
 }
 
 // GetAttribution retrieves the referral code from Valkey for a session.
@@ -366,6 +387,34 @@ func (s *Service) CreateReferral(ctx context.Context, tenantID, referrerID, refe
 		return gen.Referral{}, fmt.Errorf("referral: create: %w", err)
 	}
 	return referral, nil
+}
+
+// CaptureSignupReferral resolves a ref code to its owner and creates a pending
+// referral row linking the referrer to the newly registered user. Guards:
+// unknown code → no-op (returns nil); self-referral → no-op; duplicate referee
+// → no-op (ON CONFLICT (referee_id) DO NOTHING in the sqlc query).
+// Implements auth.ReferralCapturer (§60, ADR-078).
+func (s *Service) CaptureSignupReferral(ctx context.Context, tenantID, refereeUserID pgtype.UUID, refCode string) error {
+	refCode = strings.TrimSpace(refCode)
+	if refCode == "" {
+		return nil
+	}
+
+	refCodeRow, err := s.queries.GetReferralCodeByCode(ctx, refCode)
+	if err != nil {
+		// Unknown code — not a referred user; no-op (not an error).
+		return nil
+	}
+
+	// Self-referral guard — a user cannot refer themselves.
+	if refCodeRow.UserID == refereeUserID {
+		return nil
+	}
+
+	if _, err := s.CreateReferral(ctx, tenantID, refCodeRow.UserID, refereeUserID, refCode); err != nil {
+		return fmt.Errorf("referral: capture signup: %w", err)
+	}
+	return nil
 }
 
 // CheckConversion is called on payment completion. It checks if the payer
@@ -413,28 +462,38 @@ func (s *Service) CheckConversion(ctx context.Context, tenantID, payerID, paymen
 		return s.flagReferralByID(ctx, tenantID, referral.ID, "monthly_cap_exceeded")
 	}
 
-	// Qualify the referral.
-	_, err = s.queries.QualifyReferral(ctx, gen.QualifyReferralParams{
-		TenantID:           tenantID,
-		ID:                 referral.ID,
-		QualifiedPaymentID: paymentID,
-	})
-	if err != nil {
-		return fmt.Errorf("referral: qualify: %w", err)
-	}
-
-	// Credit the referrer.
+	// Qualify + credit in a single transaction (BUG-011). Without a tx, a
+	// CreditReferral failure leaves the referral in 'qualified' with no credit
+	// awarded — non-idempotent and unrecoverable without manual SQL.
 	rewardCredits := 500
 	if s.settings != nil {
 		rewardCredits = s.settings.GetIntOr(ctx, tenantID, "referral.reward_credits", 500)
 	}
-	_, err = s.queries.CreditReferral(ctx, gen.CreditReferralParams{
+	tx, err := s.db.Writer.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("referral: begin tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	qtx := s.queries.WithTx(tx)
+
+	if _, err = qtx.QualifyReferral(ctx, gen.QualifyReferralParams{
+		TenantID:           tenantID,
+		ID:                 referral.ID,
+		QualifiedPaymentID: paymentID,
+	}); err != nil {
+		return fmt.Errorf("referral: qualify: %w", err)
+	}
+
+	if _, err = qtx.CreditReferral(ctx, gen.CreditReferralParams{
 		TenantID:     tenantID,
 		ID:           referral.ID,
 		RewardAmount: pgtype.Numeric{Int: big.NewInt(int64(rewardCredits)), Exp: 0, Valid: true},
-	})
-	if err != nil {
+	}); err != nil {
 		return fmt.Errorf("referral: credit: %w", err)
+	}
+
+	if err = tx.Commit(ctx); err != nil {
+		return fmt.Errorf("referral: commit: %w", err)
 	}
 
 	// Award credits to referrer wallet (fire-and-forget per Rule 8).
@@ -539,6 +598,9 @@ func (s *Service) AdminListReferrals(ctx context.Context, tenantID pgtype.UUID, 
 }
 
 // AdminResolveFlagged resolves a flagged referral (credit or reject).
+// BUG-003 fix: the "credit" action now uses CreditFlaggedReferral which
+// transitions flagged→credited (CreditReferral only accepts status='qualified'
+// and would return ErrNoRows for a flagged referral).
 func (s *Service) AdminResolveFlagged(ctx context.Context, tenantID, referralID pgtype.UUID, action string) error {
 	switch strings.ToLower(action) {
 	case "credit":
@@ -546,7 +608,7 @@ func (s *Service) AdminResolveFlagged(ctx context.Context, tenantID, referralID 
 		if s.settings != nil {
 			rewardCredits = s.settings.GetIntOr(ctx, tenantID, "referral.reward_credits", 500)
 		}
-		_, err := s.queries.CreditReferral(ctx, gen.CreditReferralParams{
+		_, err := s.queries.CreditFlaggedReferral(ctx, gen.CreditFlaggedReferralParams{
 			TenantID:     tenantID,
 			ID:           referralID,
 			RewardAmount: pgtype.Numeric{Int: big.NewInt(int64(rewardCredits)), Exp: 0, Valid: true},

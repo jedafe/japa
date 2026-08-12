@@ -195,12 +195,12 @@
 			{ path: "/discount-codes", label: t("nav.discount_codes", "Discount Codes"), icon: DollarSign, permission: "payments.discount_codes.manage" },
 			{ path: "/plans", label: t("nav.plans", "Subscription Plans"), icon: CreditCard, permission: "payments.plans.manage" },
 			{ path: "/affiliate", label: t("nav.affiliate", "Affiliate Links"), icon: Link, permission: "affiliate.admin.view" },
-			{ path: "/referral", label: t("nav.referral", "Referrals"), icon: Share2, permission: "referral.admin" },
+			{ path: "/referral", label: t("nav.referral", "Referrals"), icon: Share2, permission: "referral.manage" },
 			{ path: "/ads", label: t("nav.ads", "Advertisements"), icon: Zap, permission: "ad.campaign.manage" },
 			{ path: "/ads/slot-types", label: t("nav.slot_types", "Slot Types"), icon: ListOrdered, permission: "ad.campaign.manage" },
 			{ path: "/ads/networks", label: t("nav.ad_networks", "Ad Networks"), icon: Globe, permission: "ad.network.manage" },
 		{ path: "/travel", label: t("nav.travel", "Travel Providers"), icon: Plane, permission: "travel.manage" },
-		{ path: "/remittance", label: t("nav.remittance", "Remittance Providers"), icon: Banknote, permission: "remittance.admin" }
+		{ path: "/remittance", label: t("nav.remittance", "Remittance Providers"), icon: Banknote, permission: "remittance.manage" }
 		]
 		},
 		{

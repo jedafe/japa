@@ -20,7 +20,7 @@
 		created_at: string;
 	};
 
-	const canManage = $derived(hasPermission('remittance.admin'));
+	const canManage = $derived(hasPermission('remittance.manage'));
 
 	let providers = $state<RemittanceProvider[]>([]);
 	let loading = $state(true);
@@ -254,7 +254,6 @@
 				<select id="remittance-data-source" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={newProvider.data_source}>
 					<option value="manual">Manual</option>
 					<option value="api">API</option>
-					<option value="scraper">Scraper</option>
 				</select>
 			</div>
 			<div>

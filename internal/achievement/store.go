@@ -274,10 +274,11 @@ WHERE %s
 	return out, total, nil
 }
 
-// GetBySlug returns a single achievement by its slug, joining contents +
-// achievement_meta + spaces + users.
-func (s *Store) GetBySlug(ctx context.Context, slug string, tenantID pgtype.UUID) (AchievementRow, error) {
-	const q = `
+// achievementSelectColumns is the shared column list + joins for the
+// achievement detail query, used by both GetBySlug and GetByID. Includes a
+// correlated reaction_count subquery (§29 polymorphic reactions, entity_type
+// 'content') so every detail response surfaces the true reaction count.
+const achievementSelectColumns = `
 SELECT c.id, c.tenant_id, c.author_id, c.title, c.slug, c.body, c.body_html,
        c.status, c.visibility, c.view_count, c.comment_count,
        (SELECT COUNT(*) FROM reactions r
@@ -295,12 +296,12 @@ LEFT JOIN spaces os ON os.id = am.origin_space_id
 JOIN spaces ds ON ds.id = am.destination_space_id
 LEFT JOIN users u ON u.id = c.author_id
 LEFT JOIN user_profiles up ON up.user_id = c.author_id
-WHERE c.tenant_id = $1 AND c.slug = $2 AND c.content_type = 'achievement'
-  AND c.deleted_at IS NULL
-LIMIT 1
 `
+
+// scanAchievementRow scans a single achievement detail row into an AchievementRow.
+func scanAchievementRow(row pgx.Row) (AchievementRow, error) {
 	var r AchievementRow
-	err := s.pool.Reader.QueryRow(ctx, q, tenantID, slug).Scan(
+	if err := row.Scan(
 		&r.ID, &r.TenantID, &r.AuthorID, &r.Title, &r.Slug, &r.Body, &r.BodyHTML,
 		&r.Status, &r.Visibility, &r.ViewCount, &r.CommentCount, &r.ReactionCount,
 		&r.PublishedAt, &r.CreatedAt, &r.UpdatedAt,
@@ -309,12 +310,76 @@ LIMIT 1
 		&r.DestSpaceID, &r.DestSpaceName, &r.DestSpaceCode,
 		&r.IsAnonymous,
 		&r.AuthorName, &r.AuthorAvatar,
-	)
-	if err != nil {
+	); err != nil {
 		if err == pgx.ErrNoRows {
 			return AchievementRow{}, pgx.ErrNoRows
 		}
+		return AchievementRow{}, err
+	}
+	return r, nil
+}
+
+// GetBySlug returns a single achievement by its slug. Only published
+// achievements are visible to the public; an unpublished (e.g. admin-
+// moderated) achievement is only visible to its own author. Pass a zero
+// (invalid) viewerID for anonymous access. Joins contents + achievement_meta
+// + spaces + users.
+func (s *Store) GetBySlug(ctx context.Context, slug string, tenantID, viewerID pgtype.UUID) (AchievementRow, error) {
+	q := achievementSelectColumns + `
+WHERE c.tenant_id = $1 AND c.slug = $2 AND c.content_type = 'achievement'
+  AND c.deleted_at IS NULL
+  AND (c.status = 'published'`
+	args := []any{tenantID, slug}
+	if viewerID.Valid {
+		q += ` OR c.author_id = $3`
+		args = append(args, viewerID)
+	}
+	q += ")\nLIMIT 1\n"
+
+	r, err := scanAchievementRow(s.pool.Reader.QueryRow(ctx, q, args...))
+	if err != nil {
 		return AchievementRow{}, fmt.Errorf("achievement: get by slug: %w", err)
+	}
+	return r, nil
+}
+
+// GetByID returns a single achievement by its content id, with the same
+// published-or-author visibility rule as GetBySlug. Used by the
+// submit/edit response paths so every mutation returns the complete DTO
+// (reaction_count, space names, author info) instead of the partial
+// metaToDTO shape.
+func (s *Store) GetByID(ctx context.Context, contentID, tenantID, viewerID pgtype.UUID) (AchievementRow, error) {
+	q := achievementSelectColumns + `
+WHERE c.tenant_id = $1 AND c.id = $2 AND c.content_type = 'achievement'
+  AND c.deleted_at IS NULL
+  AND (c.status = 'published'`
+	args := []any{tenantID, contentID}
+	if viewerID.Valid {
+		q += ` OR c.author_id = $3`
+		args = append(args, viewerID)
+	}
+	q += ")\nLIMIT 1\n"
+
+	r, err := scanAchievementRow(s.pool.Reader.QueryRow(ctx, q, args...))
+	if err != nil {
+		return AchievementRow{}, fmt.Errorf("achievement: get by id: %w", err)
+	}
+	return r, nil
+}
+
+// GetByIDAnyStatus returns a single achievement by its content id regardless
+// of publication status. For admin/moderation response paths only — the
+// caller must hold the achievement.moderate permission (enforced at the
+// route level).
+func (s *Store) GetByIDAnyStatus(ctx context.Context, contentID, tenantID pgtype.UUID) (AchievementRow, error) {
+	q := achievementSelectColumns + `
+WHERE c.tenant_id = $1 AND c.id = $2 AND c.content_type = 'achievement'
+  AND c.deleted_at IS NULL
+LIMIT 1
+`
+	r, err := scanAchievementRow(s.pool.Reader.QueryRow(ctx, q, tenantID, contentID))
+	if err != nil {
+		return AchievementRow{}, fmt.Errorf("achievement: get by id (admin): %w", err)
 	}
 	return r, nil
 }

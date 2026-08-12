@@ -107,7 +107,7 @@ func (h *Handlers) CreateGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, err := h.store.CreateGroup(r.Context(), tenantID, input.Name, slug)
+	id, err := h.store.CreateGroup(r.Context(), tenantID, input.Name, slug, input.Description)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to create group")
 		return
@@ -143,9 +143,10 @@ func (h *Handlers) CreateGroup(w http.ResponseWriter, r *http.Request) {
 // DeleteGroup handles DELETE /api/v1/admin/user-groups/{id}.
 // The {id} parameter is a UUID — consistent with all other group endpoints.
 // System groups are protected by the store layer (is_system = false in the
-// DELETE query) and by an explicit check here.
+// DELETE query) and by an explicit check here. The tenant_id filter prevents
+// cross-tenant deletion.
 func (h *Handlers) DeleteGroup(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(r)
+	tenantID, ok := requireTenant(r)
 	if !ok {
 		writeError(w, http.StatusUnauthorized, "unauthenticated", "Authentication required")
 		return
@@ -157,7 +158,7 @@ func (h *Handlers) DeleteGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.store.DeleteGroupByID(r.Context(), groupID); err != nil {
+	if err := h.store.DeleteGroupByID(r.Context(), tenantID, groupID); err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to delete group")
 		return
 	}
@@ -304,6 +305,12 @@ func (h *Handlers) GetUserPermissions(w http.ResponseWriter, r *http.Request) {
 
 // ListRoles handles GET /api/v1/admin/rbac/roles.
 func (h *Handlers) ListRoles(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requireTenant(r)
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "unauthenticated", "Authentication required")
+		return
+	}
+
 	limit := int32(25)
 	offset := int32(0)
 	search := r.URL.Query().Get("search")
@@ -323,7 +330,7 @@ func (h *Handlers) ListRoles(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	roles, total, err := h.store.ListRolesPaginated(r.Context(), search, limit, offset)
+	roles, total, err := h.store.ListRolesPaginated(r.Context(), tenantID, search, limit, offset)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list roles")
 		return
@@ -491,12 +498,17 @@ func parseUUID(s string) (pgtype.UUID, error) {
 
 // DeleteRole handles DELETE /admin/roles/:id (P5.6).
 func (h *Handlers) DeleteRole(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requireTenant(r)
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "unauthenticated", "Authentication required")
+		return
+	}
 	roleID, err := parseUUID(chi.URLParam(r, "id"))
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid role ID")
 		return
 	}
-	if err := h.store.DeleteRole(r.Context(), roleID); err != nil {
+	if err := h.store.DeleteRole(r.Context(), tenantID, roleID); err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to delete role")
 		return
 	}
@@ -505,6 +517,11 @@ func (h *Handlers) DeleteRole(w http.ResponseWriter, r *http.Request) {
 
 // UpdateRole handles PATCH /admin/roles/:id (P5.6).
 func (h *Handlers) UpdateRole(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requireTenant(r)
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "unauthenticated", "Authentication required")
+		return
+	}
 	roleID, err := parseUUID(chi.URLParam(r, "id"))
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid role ID")
@@ -517,7 +534,7 @@ func (h *Handlers) UpdateRole(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_input", "Invalid request body")
 		return
 	}
-	if err := h.store.UpdateRole(r.Context(), roleID, input.Name); err != nil {
+	if err := h.store.UpdateRole(r.Context(), tenantID, roleID, input.Name); err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to update role")
 		return
 	}
@@ -547,9 +564,15 @@ func (h *Handlers) SetRolePermissions(w http.ResponseWriter, r *http.Request) {
 
 // UpdateGroup handles PATCH /admin/user-groups/:id (P5.6).
 // System groups cannot have their slug changed — the slug is the resolution
-// key for IsSuperAdmin and other system-group checks. Name and permission
-// updates on system groups are allowed.
+// key for IsSuperAdmin and other system-group checks. Name, description,
+// and permission updates on system groups are allowed. The tenant_id filter
+// prevents cross-tenant updates.
 func (h *Handlers) UpdateGroup(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requireTenant(r)
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "unauthenticated", "Authentication required")
+		return
+	}
 	groupID, err := parseUUID(chi.URLParam(r, "id"))
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid group ID")
@@ -574,7 +597,7 @@ func (h *Handlers) UpdateGroup(w http.ResponseWriter, r *http.Request) {
 	// Protect system groups from slug changes — the slug is the resolution
 	// key for IsSuperAdmin (rbac.go:178) and IsSystemGroup. Changing it
 	// would break the system.
-	existing, err := h.store.GetGroupByID(r.Context(), groupID)
+	existing, err := h.store.GetGroupByID(r.Context(), tenantID, groupID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to look up group")
 		return
@@ -594,7 +617,14 @@ func (h *Handlers) UpdateGroup(w http.ResponseWriter, r *http.Request) {
 		updateSlug = existing.Slug
 	}
 
-	if err := h.store.UpdateGroup(r.Context(), groupID, input.Name, updateSlug); err != nil {
+	// Preserve the existing description when the request omits it, so a
+	// PATCH that only updates name/slug/permissions doesn't wipe it.
+	updateDesc := input.Description
+	if updateDesc == "" {
+		updateDesc = existing.Description
+	}
+
+	if err := h.store.UpdateGroup(r.Context(), tenantID, groupID, input.Name, updateSlug, updateDesc); err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to update group")
 		return
 	}
@@ -619,7 +649,7 @@ func (h *Handlers) UpdateGroup(w http.ResponseWriter, r *http.Request) {
 		"id":          groupID.String(),
 		"name":        input.Name,
 		"slug":        slug,
-		"description": input.Description,
+		"description": updateDesc,
 		"permissions": input.Permissions,
 	}})
 }

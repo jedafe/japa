@@ -3,12 +3,14 @@
 // Feature-flagged via planning_group.enabled system_setting (§82).
 //
 // Ref: japaconnect-engineering/sections/82-planning-groups.md
-//      japaconnect-engineering/adr/ADR-090-planning-groups.md
+//
+//	japaconnect-engineering/adr/ADR-090-planning-groups.md
 package planninggroups
 
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -32,6 +34,8 @@ type PlanningGroupDTO struct {
 	ExpiresAt             string `json:"expires_at,omitempty"`
 	CreatedAt             string `json:"created_at"`
 	UpdatedAt             string `json:"updated_at,omitempty"`
+	MemberCount           int64  `json:"member_count"`
+	Status                string `json:"status"`
 }
 
 // MemberDTO is the API response shape for a planning group member.
@@ -93,6 +97,20 @@ type UpdateGroupInput struct {
 // group they did not create.
 var ErrNotOwner = fmt.Errorf("not the planning group owner")
 
+// ErrNotMember is returned when a user tries to access group content without
+// being a member.
+var ErrNotMember = fmt.Errorf("not a member of this planning group")
+
+// ErrGroupNotOpen is returned when a user tries to join an invite-only group.
+var ErrGroupNotOpen = fmt.Errorf("planning group is not open for joining")
+
+// ErrGroupFull is returned when a group is at max_members capacity.
+var ErrGroupFull = fmt.Errorf("planning group is full")
+
+// ErrAlreadyMember is returned when a user tries to join a group they're
+// already in.
+var ErrAlreadyMember = fmt.Errorf("already a member of this planning group")
+
 // Service holds the business logic for Japa Planning Groups.
 type Service struct {
 	store    *Store
@@ -118,6 +136,11 @@ func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
 func (s *Service) Create(ctx context.Context, tenantID, ownerID pgtype.UUID, input CreateGroupInput) (PlanningGroupDTO, error) {
 	if input.Name == "" || input.DestinationSpaceID == "" {
 		return PlanningGroupDTO{}, fmt.Errorf("name and destination_space_id are required")
+	}
+	// §82: groups are 5–20 members (max_members DEFAULT 15). Enforce a
+	// reasonable 2–100 range server-side (frontend validates the same).
+	if input.MaxMembers > 0 && (input.MaxMembers < 2 || input.MaxMembers > 100) {
+		return PlanningGroupDTO{}, fmt.Errorf("max_members must be between 2 and 100")
 	}
 
 	var destSpaceID pgtype.UUID
@@ -304,7 +327,35 @@ func (s *Service) DeleteOwn(ctx context.Context, id, tenantID, userID pgtype.UUI
 // Join adds the requesting user as a member of a planning group. The
 // caller must have the planning_group.create permission (checked at route
 // registration). departureDate is optional (RFC 3339 or YYYY-MM-DD).
+// Checks is_open_join and max_members capacity per §82.
 func (s *Service) Join(ctx context.Context, groupID, userID, tenantID pgtype.UUID, departureDate string) error {
+	group, err := s.store.GetGroup(ctx, groupID, tenantID)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return pgx.ErrNoRows
+		}
+		return fmt.Errorf("planninggroups: join: get: %w", err)
+	}
+
+	// Check if already a member.
+	isMember, err := s.store.IsMember(ctx, groupID, userID, tenantID)
+	if err != nil {
+		return fmt.Errorf("planninggroups: join: is_member: %w", err)
+	}
+	if isMember {
+		return ErrAlreadyMember
+	}
+
+	// §82: invite-only groups cannot be joined directly.
+	if !group.IsOpenJoin {
+		return ErrGroupNotOpen
+	}
+
+	// §82: enforce max_members capacity.
+	if group.MaxMembers.Valid && group.MemberCount >= int64(group.MaxMembers.Int32) {
+		return ErrGroupFull
+	}
+
 	var dep pgtype.Date
 	if departureDate != "" {
 		t, err := time.Parse("2006-01-02", departureDate)
@@ -369,15 +420,86 @@ func (s *Service) ListMilestones(ctx context.Context, groupID, userID, tenantID 
 	return dtos, nil
 }
 
-// UpdateMilestone updates the completed state of a milestone.
-func (s *Service) UpdateMilestone(ctx context.Context, milestoneID, tenantID pgtype.UUID, completed bool) error {
-	if err := s.store.UpdateMilestone(ctx, milestoneID, tenantID, completed); err != nil {
+// UpdateMilestone updates the completed state of a milestone. The milestone
+// must belong to the given group and the requesting user (ownership check).
+func (s *Service) UpdateMilestone(ctx context.Context, milestoneID, groupID, userID, tenantID pgtype.UUID, completed bool) error {
+	if err := s.store.UpdateMilestone(ctx, milestoneID, groupID, userID, tenantID, completed); err != nil {
 		if err == pgx.ErrNoRows {
 			return pgx.ErrNoRows
 		}
 		return fmt.Errorf("planninggroups: update milestone: %w", err)
 	}
 	return nil
+}
+
+// IsMember returns true if the user is a member of the planning group.
+func (s *Service) IsMember(ctx context.Context, groupID, userID, tenantID pgtype.UUID) (bool, error) {
+	return s.store.IsMember(ctx, groupID, userID, tenantID)
+}
+
+// InviteMember adds a user to a planning group by invitation. Only the
+// group owner may invite (checked at the handler level via
+// planning_group.manage_own). The invited user is added directly as a
+// member (§82: "invite user (owner only)").
+func (s *Service) InviteMember(ctx context.Context, groupID, inviteeUserID, tenantID pgtype.UUID) error {
+	group, err := s.store.GetGroup(ctx, groupID, tenantID)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return pgx.ErrNoRows
+		}
+		return fmt.Errorf("planninggroups: invite: get: %w", err)
+	}
+	// Enforce max_members capacity even for invitations.
+	if group.MaxMembers.Valid && group.MemberCount >= int64(group.MaxMembers.Int32) {
+		return ErrGroupFull
+	}
+	if err := s.store.InviteMember(ctx, groupID, inviteeUserID, tenantID); err != nil {
+		return fmt.Errorf("planninggroups: invite: %w", err)
+	}
+	return nil
+}
+
+// AdminListGroups returns all planning groups for the admin review queue.
+func (s *Service) AdminListGroups(ctx context.Context, tenantID pgtype.UUID) ([]PlanningGroupDTO, error) {
+	groups, err := s.store.AdminListGroups(ctx, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("planninggroups: admin list: %w", err)
+	}
+	dtos := make([]PlanningGroupDTO, 0, len(groups))
+	for _, g := range groups {
+		dtos = append(dtos, groupToDTO(g))
+	}
+	return dtos, nil
+}
+
+// ExpireGroups soft-deletes planning groups whose expires_at has passed.
+// Called nightly by the planning_group:expire Asynq task (§82, ADR-090).
+// Implements worker.PlanningGroupProcessor.
+func (s *Service) ExpireGroups(ctx context.Context) (int64, error) {
+	n, err := s.store.ExpireGroups(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("planninggroups: expire groups: %w", err)
+	}
+	return n, nil
+}
+
+// SendCheckinReminders identifies members who haven't checked in this week
+// and dispatches reminder notifications. Called weekly by the
+// planning_group:checkin_reminder Asynq task (§82, ADR-090).
+// Implements worker.PlanningGroupProcessor.
+func (s *Service) SendCheckinReminders(ctx context.Context) (int64, error) {
+	members, err := s.store.MembersWithoutWeeklyCheckin(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("planninggroups: send checkin reminders: %w", err)
+	}
+	// TODO: dispatch notifications via the notification service once the
+	// notifier is wired (s.notifier.NotifyCheckinReminder). For now, log
+	// the count so the task is not a silent no-op.
+	if len(members) > 0 {
+		slog.InfoContext(ctx, "planninggroups: checkin reminders queued",
+			"count", len(members))
+	}
+	return int64(len(members)), nil
 }
 
 // CreateCheckin adds a weekly check-in for the requesting user in a group.
@@ -439,6 +561,8 @@ func groupToDTO(g PlanningGroup) PlanningGroupDTO {
 		UpdatedAt:          formatTs(g.UpdatedAt),
 		ExpiresAt:          formatTs(g.ExpiresAt),
 		TargetDepartureAt:  formatTs(g.TargetDepartureAt),
+		MemberCount:        g.MemberCount,
+		Status:             groupStatus(g),
 	}
 	if g.Description != nil {
 		dto.Description = *g.Description
@@ -453,6 +577,18 @@ func groupToDTO(g PlanningGroup) PlanningGroupDTO {
 		dto.MaxMembers = g.MaxMembers.Int32
 	}
 	return dto
+}
+
+// groupStatus derives a display status for a planning group: "deleted",
+// "expired", or "active".
+func groupStatus(g PlanningGroup) string {
+	if g.DeletedAt.Valid {
+		return "deleted"
+	}
+	if g.ExpiresAt.Valid && g.ExpiresAt.Time.Before(time.Now()) {
+		return "expired"
+	}
+	return "active"
 }
 
 // memberToDTO converts a PlanningGroupMember to a MemberDTO.

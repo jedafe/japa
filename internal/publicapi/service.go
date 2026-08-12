@@ -854,6 +854,76 @@ func (s *Service) SearchContent(ctx context.Context, tenantID pgtype.UUID, query
 	return results, rows.Err()
 }
 
+// ListPublishedContent returns a paginated list of published, public content
+// within a tenant. Only status='published' AND visibility='public' rows are
+// returned — the public API must never expose drafts, scheduled, or
+// private/member-only content (Section 47, api.read.content scope).
+// Ref: japaconnect-engineering/sections/47-public-api-developer-portal.md
+func (s *Service) ListPublishedContent(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]map[string]any, error) {
+	rows, err := s.store.dbPool.Query(ctx, `
+		SELECT c.id, c.title, c.slug, c.content_type, c.author_id, c.space_id,
+		       c.view_count, c.comment_count, c.read_time_minutes,
+		       c.published_at, c.created_at,
+		       u.username AS author_username,
+		       s.name AS space_name
+		FROM contents c
+		LEFT JOIN users u ON u.id = c.author_id AND u.tenant_id = c.tenant_id
+		LEFT JOIN spaces s ON s.id = c.space_id AND s.tenant_id = c.tenant_id
+		WHERE c.tenant_id = $1
+		  AND c.status = 'published'
+		  AND c.visibility = 'public'
+		  AND c.deleted_at IS NULL
+		  AND c.auto_hidden = false
+		ORDER BY c.published_at DESC NULLS LAST, c.created_at DESC
+		LIMIT $2 OFFSET $3
+	`, tenantID, limit, offset)
+	if err != nil {
+		return nil, fmt.Errorf("list published content: %w", err)
+	}
+	defer rows.Close()
+
+	var results []map[string]any
+	for rows.Next() {
+		var id, authorID, spaceID pgtype.UUID
+		var title, slug, contentType string
+		var viewCount, commentCount, readTime int32
+		var publishedAt, createdAt pgtype.Timestamptz
+		var authorUsername, spaceName *string
+		if err := rows.Scan(&id, &title, &slug, &contentType, &authorID, &spaceID,
+			&viewCount, &commentCount, &readTime,
+			&publishedAt, &createdAt,
+			&authorUsername, &spaceName); err != nil {
+			return nil, fmt.Errorf("list published content scan: %w", err)
+		}
+		item := map[string]any{
+			"id":            id.String(),
+			"title":         title,
+			"slug":          slug,
+			"content_type":  contentType,
+			"author_id":     authorID.String(),
+			"space_id":      spaceID.String(),
+			"view_count":    viewCount,
+			"comment_count": commentCount,
+			"read_time":     readTime,
+			"published_at":  publishedAt,
+			"created_at":    createdAt,
+		}
+		if authorUsername != nil {
+			item["author_username"] = *authorUsername
+		}
+		if spaceName != nil {
+			item["space_name"] = *spaceName
+		}
+		results = append(results, item)
+	}
+
+	if results == nil {
+		results = []map[string]any{}
+	}
+
+	return results, rows.Err()
+}
+
 // RotateAPIKey generates a new API key with the same name, scopes, and
 // rate_limit_tier as the old key, sets the old key's expires_at to now+24h
 // (grace period), and returns the new key with the full secret (shown once).

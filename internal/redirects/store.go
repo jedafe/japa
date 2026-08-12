@@ -2,8 +2,10 @@ package redirects
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
 )
@@ -62,6 +64,10 @@ func (s *Store) getRedirectByPath(ctx context.Context, tenantID pgtype.UUID, sou
 func (s *Store) createRedirect(ctx context.Context, p gen.CreateRedirectParams) (gen.Redirect, error) {
 	row, err := s.write.CreateRedirect(ctx, p)
 	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return gen.Redirect{}, fmt.Errorf("creating redirect: %w", ErrDuplicateSourcePath)
+		}
 		return gen.Redirect{}, fmt.Errorf("creating redirect: %w", err)
 	}
 	return row, nil
@@ -70,6 +76,10 @@ func (s *Store) createRedirect(ctx context.Context, p gen.CreateRedirectParams) 
 func (s *Store) updateRedirect(ctx context.Context, p gen.UpdateRedirectParams) (gen.Redirect, error) {
 	row, err := s.write.UpdateRedirect(ctx, p)
 	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return gen.Redirect{}, fmt.Errorf("updating redirect: %w", ErrDuplicateSourcePath)
+		}
 		return gen.Redirect{}, fmt.Errorf("updating redirect: %w", err)
 	}
 	return row, nil

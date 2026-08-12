@@ -164,13 +164,15 @@ func (s *Service) Submit(ctx context.Context, tenantID, authorID pgtype.UUID, in
 		return AchievementDTO{}, fmt.Errorf("achievement: create achievement_meta: %w", err)
 	}
 
-	return s.getAchievementDTOByID(ctx, contentRow.ID, tenantID)
+	return s.getAchievementDTOByID(ctx, contentRow.ID, tenantID, authorID)
 }
 
-// GetBySlug returns a single published achievement by its slug.
-// Anonymous-accessible.
-func (s *Service) GetBySlug(ctx context.Context, slug string, tenantID pgtype.UUID) (AchievementDTO, error) {
-	row, err := s.store.GetBySlug(ctx, slug, tenantID)
+// GetBySlug returns a single achievement by its slug. Only published
+// achievements are visible to anonymous viewers; an unpublished achievement
+// (e.g. admin-moderated) is visible only to its own author. Pass a zero
+// (invalid) viewerID for anonymous access.
+func (s *Service) GetBySlug(ctx context.Context, slug string, tenantID, viewerID pgtype.UUID) (AchievementDTO, error) {
+	row, err := s.store.GetBySlug(ctx, slug, tenantID, viewerID)
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			return AchievementDTO{}, pgx.ErrNoRows
@@ -301,7 +303,7 @@ func (s *Service) EditOwn(ctx context.Context, contentID, tenantID, userID pgtyp
 		return AchievementDTO{}, fmt.Errorf("achievement: edit: update achievement_meta: %w", err)
 	}
 
-	return s.getAchievementDTOByID(ctx, contentID, tenantID)
+	return s.getAchievementDTOByID(ctx, contentID, tenantID, userID)
 }
 
 // DeleteOwn soft-deletes the author's own achievement. The caller must verify
@@ -363,7 +365,7 @@ func (s *Service) AdminSetStatus(ctx context.Context, contentID, tenantID pgtype
 	if _, err := s.content.UpdateContentStatus(ctx, contentID, tenantID, status); err != nil {
 		return AchievementDTO{}, fmt.Errorf("achievement: admin set status: %w", err)
 	}
-	return s.getAchievementDTOByID(ctx, contentID, tenantID)
+	return s.getAchievementDTOByIDAdmin(ctx, contentID, tenantID)
 }
 
 // AdminDelete soft-deletes an achievement from the moderation queue. Caller
@@ -375,18 +377,34 @@ func (s *Service) AdminDelete(ctx context.Context, contentID, tenantID pgtype.UU
 	return nil
 }
 
-// getAchievementDTOByID fetches an achievement by content_id and converts to
-// DTO.
-func (s *Service) getAchievementDTOByID(ctx context.Context, contentID, tenantID pgtype.UUID) (AchievementDTO, error) {
-	contentRow, err := s.content.GetContent(ctx, contentID, tenantID)
+// getAchievementDTOByID fetches an achievement by content_id via the full
+// joined detail query (so the DTO includes reaction_count, space names, and
+// author info) and converts it to a DTO. The viewerID authorises viewing
+// unpublished achievements owned by the viewer; pass a zero (invalid) UUID
+// when the caller is a system/admin context that should see any achievement.
+func (s *Service) getAchievementDTOByID(ctx context.Context, contentID, tenantID, viewerID pgtype.UUID) (AchievementDTO, error) {
+	row, err := s.store.GetByID(ctx, contentID, tenantID, viewerID)
 	if err != nil {
+		if err == pgx.ErrNoRows {
+			return AchievementDTO{}, pgx.ErrNoRows
+		}
 		return AchievementDTO{}, fmt.Errorf("achievement: get by id: %w", err)
 	}
-	meta, err := s.store.GetMeta(ctx, contentID, tenantID)
+	return rowToDTO(row), nil
+}
+
+// getAchievementDTOByIDAdmin fetches an achievement by content_id regardless
+// of publication status, for admin/moderation response paths. The caller
+// must hold the achievement.moderate permission (enforced at route level).
+func (s *Service) getAchievementDTOByIDAdmin(ctx context.Context, contentID, tenantID pgtype.UUID) (AchievementDTO, error) {
+	row, err := s.store.GetByIDAnyStatus(ctx, contentID, tenantID)
 	if err != nil {
-		return AchievementDTO{}, fmt.Errorf("achievement: get meta by id: %w", err)
+		if err == pgx.ErrNoRows {
+			return AchievementDTO{}, pgx.ErrNoRows
+		}
+		return AchievementDTO{}, fmt.Errorf("achievement: get by id (admin): %w", err)
 	}
-	return metaToDTO(contentRow, meta), nil
+	return rowToDTO(row), nil
 }
 
 // ErrNotOwner is returned when a user tries to edit or delete an achievement
@@ -443,38 +461,6 @@ func rowToDTO(r AchievementRow) AchievementDTO {
 	}
 	if r.AuthorID.Valid {
 		dto.AuthorID = r.AuthorID.String()
-	}
-	return dto
-}
-
-// metaToDTO converts a content row + achievement_meta into an AchievementDTO.
-func metaToDTO(c gen.GetContentByIDRow, m AchievementMeta) AchievementDTO {
-	dto := AchievementDTO{
-		ID:           c.ID.String(),
-		Title:        c.Title,
-		Slug:         c.Slug,
-		Body:         c.Body,
-		BodyHTML:     c.BodyHtml,
-		Status:       c.Status,
-		Visibility:   c.Visibility,
-		ViewCount:    c.ViewCount,
-		CommentCount: c.CommentCount,
-		PublishedAt:  formatTs(c.PublishedAt),
-		CreatedAt:    formatTs(c.CreatedAt),
-		UpdatedAt:    formatTs(c.UpdatedAt),
-		IsAnonymous:  m.IsAnonymous,
-	}
-	if m.MilestoneType != nil {
-		dto.MilestoneType = *m.MilestoneType
-	}
-	if m.OriginSpaceID.Valid {
-		dto.OriginSpaceID = m.OriginSpaceID.String()
-	}
-	if m.DestinationSpaceID.Valid {
-		dto.DestSpaceID = m.DestinationSpaceID.String()
-	}
-	if c.AuthorID.Valid {
-		dto.AuthorID = c.AuthorID.String()
 	}
 	return dto
 }

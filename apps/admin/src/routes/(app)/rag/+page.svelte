@@ -5,7 +5,7 @@
 	import { Card, CardContent, CardHeader } from '$lib/components/ui/card';
 	import { Button } from '$lib/components/ui/button';
 	import { Badge } from '$lib/components/ui/badge';
-	import { Brain, RefreshCw, Trash2, Database, FileText } from 'lucide-svelte';
+	import { Brain, RefreshCw, Trash2, Database, FileText, Settings } from 'lucide-svelte';
 	import { api } from '$lib/api';
 
 	type EntityTypeStats = {
@@ -20,6 +20,13 @@
 		by_type: EntityTypeStats[];
 	};
 
+	type RagSettings = {
+		'rag.enabled': boolean;
+		'rag.embedding_model': string;
+		'rag.retrieval_top_k': number;
+		'rag.chunk_max_tokens': number;
+	};
+
 	const canManage = $derived(hasPermission('ai.rag.manage'));
 
 	let stats = $state<IndexStats | null>(null);
@@ -28,6 +35,17 @@
 	let reindexing = $state(false);
 	let message = $state('');
 	let messageType = $state('');
+
+	// Settings state
+	let settings = $state<RagSettings | null>(null);
+	let settingsLoading = $state(false);
+	let settingsSaving = $state(false);
+	let settingsForm = $state({
+		enabled: true,
+		embedding_model: 'text-embedding-3-small',
+		retrieval_top_k: 5,
+		chunk_max_tokens: 400
+	});
 
 	async function loadStats() {
 		loading = true;
@@ -40,9 +58,58 @@
 				error = result.error;
 			}
 		} catch (e) {
-			error = e instanceof Error ? e.message : t('rag.load_error', 'Failed to load RAG status');
+			error = e instanceof Error ? e.message : t('rag.load_error');
 		} finally {
 			loading = false;
+		}
+	}
+
+	async function loadSettings() {
+		settingsLoading = true;
+		try {
+			const result = await api<RagSettings>('/admin/settings/rag');
+			if (result.ok) {
+				settings = result.data;
+				settingsForm = {
+					enabled: result.data['rag.enabled'],
+					embedding_model: result.data['rag.embedding_model'],
+					retrieval_top_k: result.data['rag.retrieval_top_k'],
+					chunk_max_tokens: result.data['rag.chunk_max_tokens']
+				};
+			}
+		} catch (e) {
+			// Settings load is best-effort — the status dashboard still works.
+			console.error('Failed to load RAG settings', e);
+		} finally {
+			settingsLoading = false;
+		}
+	}
+
+	async function saveSettings() {
+		settingsSaving = true;
+		message = '';
+		try {
+			const result = await api('/admin/settings/rag', {
+				method: 'PUT',
+				body: JSON.stringify({
+					enabled: settingsForm.enabled,
+					embedding_model: settingsForm.embedding_model,
+					retrieval_top_k: settingsForm.retrieval_top_k,
+					chunk_max_tokens: settingsForm.chunk_max_tokens
+				})
+			});
+			if (result.ok) {
+				messageType = 'success';
+				message = t('rag.settings_saved');
+			} else {
+				messageType = 'error';
+				message = result.error;
+			}
+		} catch (e) {
+			messageType = 'error';
+			message = e instanceof Error ? e.message : t('rag.settings_error');
+		} finally {
+			settingsSaving = false;
 		}
 	}
 
@@ -53,7 +120,7 @@
 			const result = await api('/admin/rag/reindex', { method: 'POST' });
 			if (result.ok) {
 				messageType = 'success';
-				message = t('rag.reindex_queued', 'Re-index queued. This may take several minutes.');
+				message = t('rag.reindex_queued');
 				setTimeout(() => loadStats(), 3000);
 			} else {
 				messageType = 'error';
@@ -61,7 +128,7 @@
 			}
 		} catch (e) {
 			messageType = 'error';
-			message = e instanceof Error ? e.message : t('rag.reindex_error', 'Failed to queue re-index');
+			message = e instanceof Error ? e.message : t('rag.reindex_error');
 		} finally {
 			reindexing = false;
 		}
@@ -72,7 +139,7 @@
 			const result = await api(`/admin/rag/entity/${entityType}/${entityId}`, { method: 'DELETE' });
 			if (result.ok) {
 				messageType = 'success';
-				message = t('rag.purge_success', 'Entity embeddings purged.');
+				message = t('rag.purge_success');
 				loadStats();
 			} else {
 				messageType = 'error';
@@ -80,16 +147,17 @@
 			}
 		} catch (e) {
 			messageType = 'error';
-			message = e instanceof Error ? e.message : t('rag.purge_error', 'Failed to purge entity');
+			message = e instanceof Error ? e.message : t('rag.purge_error');
 		}
 	}
 
 	loadStats();
+	loadSettings();
 </script>
 
 <PageHeader
-	title={t('rag.title', 'RAG / Knowledge Index')}
-	description={t('rag.description', 'Manage the retrieval-augmented generation index status and trigger re-indexing.')}
+	title={t('rag.title')}
+	description={t('rag.description')}
 />
 
 {#if message}
@@ -106,7 +174,7 @@
 {#if loading}
 	<div class="flex items-center gap-2 p-8" style="color: var(--color-muted)">
 		<RefreshCw class="h-4 w-4 animate-spin" />
-		<span>{t('rag.loading', 'Loading RAG status...')}</span>
+		<span>{t('rag.loading')}</span>
 	</div>
 {:else if error}
 	<div class="rounded-lg border p-4" style="border-color: var(--color-danger); color: var(--color-danger)">
@@ -118,7 +186,7 @@
 			<CardHeader>
 				<div class="flex items-center gap-2">
 					<Database class="h-5 w-5" style="color: var(--color-primary)" />
-					<span class="text-sm font-medium" style="color: var(--color-muted)">{t('rag.total_chunks', 'Total Chunks')}</span>
+					<span class="text-sm font-medium" style="color: var(--color-muted)">{t('rag.total_chunks')}</span>
 				</div>
 			</CardHeader>
 			<CardContent>
@@ -129,7 +197,7 @@
 			<CardHeader>
 				<div class="flex items-center gap-2">
 					<FileText class="h-5 w-5" style="color: var(--color-primary)" />
-					<span class="text-sm font-medium" style="color: var(--color-muted)">{t('rag.total_entities', 'Total Entities')}</span>
+					<span class="text-sm font-medium" style="color: var(--color-muted)">{t('rag.total_entities')}</span>
 				</div>
 			</CardHeader>
 			<CardContent>
@@ -140,7 +208,7 @@
 			<CardHeader>
 				<div class="flex items-center gap-2">
 					<Brain class="h-5 w-5" style="color: var(--color-primary)" />
-					<span class="text-sm font-medium" style="color: var(--color-muted)">{t('rag.last_indexed', 'Last Indexed')}</span>
+					<span class="text-sm font-medium" style="color: var(--color-muted)">{t('rag.last_indexed')}</span>
 				</div>
 			</CardHeader>
 			<CardContent>
@@ -155,29 +223,44 @@
 		{#if canManage}
 			<Button onclick={triggerReindex} disabled={reindexing}>
 				<RefreshCw class="h-4 w-4 {reindexing ? 'animate-spin' : ''}" />
-				{reindexing ? t('rag.reindexing', 'Re-indexing...') : t('rag.trigger_reindex', 'Trigger Re-index')}
+				{reindexing ? t('rag.reindexing') : t('rag.trigger_reindex')}
 			</Button>
 		{/if}
 	</div>
 
 	{#if stats.by_type && stats.by_type.length > 0}
 		<div class="mt-8">
-			<h3 class="mb-3 text-sm font-semibold" style="color: var(--color-foreground)">{t('rag.by_type', 'Chunks by Entity Type')}</h3>
+			<h3 class="mb-3 text-sm font-semibold" style="color: var(--color-foreground)">{t('rag.by_type')}</h3>
 			<div class="overflow-hidden rounded-lg border" style="border-color: var(--color-border)">
 				<table class="w-full text-sm">
 					<thead style="background: var(--color-surface-alt)">
 						<tr>
-							<th class="px-4 py-2 text-left font-medium" style="color: var(--color-muted)">{t('rag.entity_type', 'Entity Type')}</th>
-							<th class="px-4 py-2 text-right font-medium" style="color: var(--color-muted)">{t('rag.chunk_count', 'Chunk Count')}</th>
+							<th class="px-4 py-2 text-left font-medium" style="color: var(--color-muted)">{t('rag.entity_type')}</th>
+							<th class="px-4 py-2 text-right font-medium" style="color: var(--color-muted)">{t('rag.chunk_count')}</th>
+							{#if canManage}
+								<th class="px-4 py-2 text-right font-medium" style="color: var(--color-muted)">{t('rag.purge')}</th>
+							{/if}
 						</tr>
 					</thead>
 					<tbody>
-						{#each stats.by_type as et (et)}
+						{#each stats.by_type as et (et.entity_type)}
 							<tr class="border-t" style="border-color: var(--color-border)">
 								<td class="px-4 py-2" style="color: var(--color-foreground)">
 									<Badge variant="outline">{et.entity_type}</Badge>
 								</td>
 								<td class="px-4 py-2 text-right font-mono" style="color: var(--color-foreground)">{et.chunk_count.toLocaleString()}</td>
+								{#if canManage}
+									<td class="px-4 py-2 text-right">
+										<Button
+											variant="destructive"
+											size="sm"
+											onclick={() => purgeEntity(et.entity_type, et.entity_type)}
+										>
+											<Trash2 class="h-3 w-3" />
+											{t('rag.purge')}
+										</Button>
+									</td>
+								{/if}
 							</tr>
 						{/each}
 					</tbody>
@@ -185,4 +268,94 @@
 			</div>
 		</div>
 	{/if}
+{/if}
+
+{#if canManage && !settingsLoading && settings}
+	<div class="mt-8">
+		<div class="mb-3 flex items-center gap-2">
+			<Settings class="h-4 w-4" style="color: var(--color-primary)" />
+			<h3 class="text-sm font-semibold" style="color: var(--color-foreground)">{t('rag.settings')}</h3>
+		</div>
+		<Card>
+			<CardContent>
+				<form
+					class="grid gap-4 pt-4"
+					onsubmit={(e) => {
+						e.preventDefault();
+						saveSettings();
+					}}
+				>
+					<div class="flex items-center justify-between">
+						<div>
+							<label class="text-sm font-medium" style="color: var(--color-foreground)" for="rag-enabled">
+								{t('rag.setting_enabled')}
+							</label>
+							<p class="text-xs" style="color: var(--color-muted)">{t('rag.setting_enabled_help')}</p>
+						</div>
+						<input
+							id="rag-enabled"
+							type="checkbox"
+							bind:checked={settingsForm.enabled}
+							class="h-4 w-4"
+						/>
+					</div>
+
+					<div class="grid gap-1">
+						<label class="text-sm font-medium" style="color: var(--color-foreground)" for="rag-model">
+							{t('rag.setting_embedding_model')}
+						</label>
+						<p class="text-xs" style="color: var(--color-muted)">{t('rag.setting_embedding_model_help')}</p>
+						<select
+							id="rag-model"
+							bind:value={settingsForm.embedding_model}
+							class="rounded-md border px-3 py-2 text-sm"
+							style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+						>
+							<option value="text-embedding-3-small">text-embedding-3-small</option>
+							<option value="text-embedding-3-large">text-embedding-3-large</option>
+							<option value="text-embedding-ada-002">text-embedding-ada-002</option>
+						</select>
+					</div>
+
+					<div class="grid gap-1">
+						<label class="text-sm font-medium" style="color: var(--color-foreground)" for="rag-topk">
+							{t('rag.setting_retrieval_top_k')}
+						</label>
+						<p class="text-xs" style="color: var(--color-muted)">{t('rag.setting_retrieval_top_k_help')}</p>
+						<input
+							id="rag-topk"
+							type="number"
+							min="1"
+							max="50"
+							bind:value={settingsForm.retrieval_top_k}
+							class="rounded-md border px-3 py-2 text-sm"
+							style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+						/>
+					</div>
+
+					<div class="grid gap-1">
+						<label class="text-sm font-medium" style="color: var(--color-foreground)" for="rag-chunk">
+							{t('rag.setting_chunk_max_tokens')}
+						</label>
+						<p class="text-xs" style="color: var(--color-muted)">{t('rag.setting_chunk_max_tokens_help')}</p>
+						<input
+							id="rag-chunk"
+							type="number"
+							min="50"
+							max="2000"
+							bind:value={settingsForm.chunk_max_tokens}
+							class="rounded-md border px-3 py-2 text-sm"
+							style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+						/>
+					</div>
+
+					<div>
+						<Button type="submit" disabled={settingsSaving}>
+							{settingsSaving ? t('rag.saving') : t('rag.save_settings')}
+						</Button>
+					</div>
+				</form>
+			</CardContent>
+		</Card>
+	</div>
 {/if}

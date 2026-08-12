@@ -133,13 +133,15 @@ func (r *RBAC) HasPermission(ctx context.Context, userID, tenantID pgtype.UUID, 
 }
 
 // HasSpacePermission checks if a user has a permission in the context of a
-// specific space. For "spaces.moderator.assign", the permission is
-// dynamically resolved by checking the space_moderators table at runtime
-// (Section 03 / RBAC-001) — it is NOT a static grant in the RBAC table.
+// specific space. For "spaces.moderate", the permission is dynamically
+// resolved by checking the space_moderators table at runtime (Section 03 /
+// RBAC-001) — an assigned moderator can moderate the specific space they
+// were assigned to without holding the static "spaces.moderate.any" node.
+// The assignment record in space_moderators IS the grant.
 // For all other permission nodes, this falls back to HasPermission.
 func (r *RBAC) HasSpacePermission(ctx context.Context, userID, tenantID, spaceID pgtype.UUID, permKey string) bool {
-	// Static permissions resolve through the normal path.
-	if permKey != "spaces.moderator.assign" {
+	// Only "spaces.moderate" gets dynamic per-space resolution.
+	if permKey != "spaces.moderate" {
 		return r.HasPermission(ctx, userID, tenantID, permKey)
 	}
 
@@ -151,15 +153,16 @@ func (r *RBAC) HasSpacePermission(ctx context.Context, userID, tenantID, spaceID
 	if uc.Permissions[SystemWildcardPermission] {
 		return true
 	}
-	// If the user has the broader "spaces.moderate" (all spaces) node,
-	// they don't need per-space assignment.
+	// If the user has the static "spaces.moderate" node (granted to
+	// super_admin and optionally a dedicated moderation UserGroup per
+	// Section 03), they can moderate any space — no per-space check needed.
 	if uc.Permissions["spaces.moderate"] {
 		return true
 	}
 
 	// Dynamic resolution: check space_moderators for this user + space.
 	// Per Section 03, the assignment record IS the grant — no static RBAC
-	// entry is needed.
+	// entry is needed for assigned moderators.
 	if !spaceID.Valid {
 		return false
 	}
@@ -461,7 +464,11 @@ func (r *RBAC) ClearCache() {
 // InvalidatePermCache removes a single user's permission entries from Valkey.
 // Ref: japaconnect-engineering/sections/03-rbac.md (Amendment: Permission Cache Invalidation)
 // Called after: group reassignment, role grant/revoke, ban create, moderator assignment/removal.
+// Returns nil when v is nil (graceful degradation when Valkey is unreachable).
 func InvalidatePermCache(ctx context.Context, v valkeycompat.Cmdable, userID pgtype.UUID) error {
+	if v == nil {
+		return nil
+	}
 	return v.Del(ctx, permCacheKeyPrefix+userID.String()).Err()
 }
 
