@@ -702,7 +702,7 @@ func (h *Handlers) CreateSpace(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	space, err := h.Service.CreateSpace(r.Context(), gen.CreateSpaceParams{
+	space, err := h.Service.CreateSpaceWithOwner(r.Context(), gen.CreateSpaceParams{
 		TenantID:       tenantID,
 		ParentID:       parentID,
 		SpaceTypeID:    spaceTypeID,
@@ -717,34 +717,10 @@ func (h *Handlers) CreateSpace(w http.ResponseWriter, r *http.Request) {
 		CommentingPerm: axes.Commenting,
 		JoiningPerm:    axes.Joining,
 		Status:         StatusActive,
-	})
+	}, user.UserID, parentSpaceUUIDs)
 	if err != nil {
 		handleServiceError(w, err)
 		return
-	}
-
-	// BUG-001: add the creator as the space owner (role='owner') so they can
-	// exercise the space_owner moderator-assignment path (Section 05 lines
-	// 198-224). Without this the creator could never assign moderators.
-	if err := h.Service.AddOwner(r.Context(), space.ID, user.UserID, tenantID); err != nil {
-		slog.Warn("create space: failed to add creator as owner",
-			"space_id", space.ID.String(), "user_id", user.UserID.String(), "error", err)
-		// Non-fatal: the space exists; the owner row can be repaired later.
-	} else if err := h.Service.IncrementSpaceCount(r.Context(), space.ID, tenantID, 1); err != nil {
-		slog.Warn("create space: failed to increment member_count",
-			"space_id", space.ID.String(), "error", err)
-	}
-
-	// BUG-002: link the new custom space to its primary parent spaces via
-	// space_parent_spaces (Section 05 lines 46-53, 190). Best-effort —
-	// logs failures but does not fail the request since the space row is
-	// already committed; the parent links can be repaired via POST
-	// /spaces/{slug}/parents.
-	for _, psid := range parentSpaceUUIDs {
-		if err := h.Service.AddParentSpace(r.Context(), space.ID, psid); err != nil {
-			slog.Warn("create space: failed to link parent space",
-				"space_id", space.ID.String(), "parent_id", psid.String(), "error", err)
-		}
 	}
 
 	// Enqueue async auto-population (Wikipedia summary, flag image, etc.).

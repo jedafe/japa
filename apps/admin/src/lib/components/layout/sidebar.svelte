@@ -96,7 +96,7 @@
 			{ path: "/media", label: t("nav.media", "Media"), icon: Image, permission: "media.view_all" },
 			{ path: "/spaces", label: t("nav.spaces", "Spaces"), icon: Globe, permission: "spaces.admin" },
 			{ path: "/geo", label: t("nav.geo", "Geo Tools"), icon: Globe, permission: "geo.lookup" },
-			{ path: "/space-types", label: t("nav.space_types", "Space Types"), icon: Layout, permission: "space_types.create" },
+			{ path: "/space-types", label: t("nav.space_types", "Space Types"), icon: Layout, permission: "spaces.types.create" },
 			{ path: "/tags", label: t("nav.tags", "Tags"), icon: Tag, permission: "tags.manage" },
 			{ path: "/reactions", label: t("nav.reactions", "Reactions"), icon: Star, permission: "content.reaction_types.manage" },
 		{ path: "/share-platforms", label: t("nav.share_platforms", "Share Platforms"), icon: Share2, permission: "content.reaction_types.manage" },

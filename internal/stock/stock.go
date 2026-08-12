@@ -6,10 +6,12 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sort"
 	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
+	"golang.org/x/sync/errgroup"
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/crypto"
 	"github.com/jedafe/japa/internal/db"
@@ -51,10 +53,15 @@ type DownloadedPhoto struct {
 	ProviderPhotoID string
 }
 
-// cacheEntry holds cached search results with expiry.
+// ErrProviderUnavailable is returned when a provider is not loaded or enabled.
+var ErrProviderUnavailable = fmt.Errorf("provider is not available")
+
+// cacheEntry holds cached search results with expiry and last-access time
+// for proper LRU eviction.
 type cacheEntry struct {
 	Result    *SearchResult
 	ExpiresAt time.Time
+	LastAccess time.Time
 }
 
 // DefaultCacheTTL is how long search results stay in the LRU cache.
@@ -72,7 +79,6 @@ type Service struct {
 	mu        sync.RWMutex
 	cacheMu   sync.RWMutex
 	cfg       *config.Config
-	db        *db.DB
 }
 
 // NewService creates a Service. Call ReloadProviders after construction
@@ -84,7 +90,6 @@ func NewService(database *db.DB, mediaSvc *media.Service, cfg *config.Config) *S
 		media:     mediaSvc,
 		cache:     make(map[string]*cacheEntry),
 		cfg:       cfg,
-		db:        database,
 	}
 }
 
@@ -170,23 +175,6 @@ func (s *Service) seedFromEnv(ctx context.Context) {
 	_ = s.store.SeedProvider(ctx, "openverse", "")
 }
 
-// AvailableProviders returns provider names available to a user with the given
-// permission nodes. Openverse is available with media.stock.search; the other
-// three require media.stock.providers.
-func (s *Service) AvailableProviders(ctx context.Context, userPerms []string) []string {
-	hasSearch := false
-	hasProviders := false
-	for _, p := range userPerms {
-		if p == "media.stock.search" {
-			hasSearch = true
-		}
-		if p == "media.stock.providers" {
-			hasProviders = true
-		}
-	}
-	return s.AvailableProvidersForPerms(hasSearch, hasProviders)
-}
-
 // AvailableProvidersForPerms returns provider names available to a user with
 // the given resolved permission flags. This uses the RBAC resolver's
 // HasPermission result (which honours the "*" wildcard) rather than raw
@@ -210,6 +198,12 @@ func (s *Service) AvailableProvidersForPerms(hasSearch, hasProviders bool) []str
 		}
 	}
 	return names
+}
+
+// ListAllProviders returns all configured providers with their enabled/disabled
+// status and API key presence. Used by the admin handler.
+func (s *Service) ListAllProviders(ctx context.Context) ([]ProviderConfigRow, error) {
+	return s.store.ListProviders(ctx)
 }
 
 // Search queries stock providers with caching.
@@ -244,27 +238,52 @@ func (s *Service) Search(ctx context.Context, query, providerFilter string, page
 		return s.searchSingle(ctx, searchProviders[0], query, page, perPage)
 	}
 
-	// Fan out to all providers and merge.
+	// Fan out to all providers concurrently and merge.
+	type providerResult struct {
+		photos []StockPhoto
+		total  int
+		hasMore bool
+	}
+	results := make([]providerResult, len(searchProviders))
+	g, gctx := errgroup.WithContext(ctx)
+	for i, p := range searchProviders {
+		i, p := i, p
+		g.Go(func() error {
+			result, err := s.searchSingle(gctx, p, query, page, perPage)
+			if err != nil {
+				slog.Warn("stock: provider search failed", "provider", p.Name(), "query", query, "error", err)
+				return nil // don't fail the whole search on one provider error
+			}
+			results[i] = providerResult{
+				photos:  result.Photos,
+				total:   result.Total,
+				hasMore: result.HasNextPage,
+			}
+			return nil
+		})
+	}
+	_ = g.Wait()
+
 	merged := &SearchResult{Photos: []StockPhoto{}, Page: page, PerPage: perPage}
-	for _, p := range searchProviders {
-		result, err := s.searchSingle(ctx, p, query, page, perPage)
-		if err != nil {
-			slog.Warn("stock: provider search failed", "provider", p.Name(), "query", query, "error", err)
-			continue
-		}
-		merged.Photos = append(merged.Photos, result.Photos...)
-		merged.Total += result.Total
-		merged.HasNextPage = merged.HasNextPage || result.HasNextPage
+	for _, r := range results {
+		merged.Photos = append(merged.Photos, r.photos...)
+		merged.Total += r.total
+		merged.HasNextPage = merged.HasNextPage || r.hasMore
 	}
 	return merged, nil
 }
 
 func (s *Service) searchSingle(ctx context.Context, p StockProvider, query string, page, perPage int) (*SearchResult, error) {
 	key := cacheKey(p.Name(), query, page, perPage)
+	now := time.Now()
 
 	s.cacheMu.RLock()
-	if entry, ok := s.cache[key]; ok && time.Now().Before(entry.ExpiresAt) {
+	if entry, ok := s.cache[key]; ok && now.Before(entry.ExpiresAt) {
 		s.cacheMu.RUnlock()
+		// Update last-access time under the write lock for LRU tracking.
+		s.cacheMu.Lock()
+		entry.LastAccess = now
+		s.cacheMu.Unlock()
 		return entry.Result, nil
 	}
 	s.cacheMu.RUnlock()
@@ -275,16 +294,27 @@ func (s *Service) searchSingle(ctx context.Context, p StockProvider, query strin
 	}
 
 	s.cacheMu.Lock()
-	// Simple LRU eviction: if over max, clear the oldest half.
+	// LRU eviction: if over max, sort by last-access time and evict the
+	// oldest half. Unlike random map iteration, this preserves hot entries.
 	if len(s.cache) >= MaxCacheEntries {
-		for k := range s.cache {
-			delete(s.cache, k)
-			if len(s.cache) < MaxCacheEntries/2 {
-				break
-			}
+		type kv struct {
+			key string
+			la  time.Time
+		}
+		entries := make([]kv, 0, len(s.cache))
+		for k, e := range s.cache {
+			entries = append(entries, kv{k, e.LastAccess})
+		}
+		sort.Slice(entries, func(i, j int) bool { return entries[i].la.Before(entries[j].la) })
+		evictCount := len(s.cache) - MaxCacheEntries/2
+		if evictCount < 0 {
+			evictCount = len(s.cache) / 2
+		}
+		for i := 0; i < evictCount && i < len(entries); i++ {
+			delete(s.cache, entries[i].key)
 		}
 	}
-	s.cache[key] = &cacheEntry{Result: result, ExpiresAt: time.Now().Add(DefaultCacheTTL)}
+	s.cache[key] = &cacheEntry{Result: result, ExpiresAt: now.Add(DefaultCacheTTL), LastAccess: now}
 	s.cacheMu.Unlock()
 
 	return result, nil
@@ -296,7 +326,7 @@ func (s *Service) GetPhoto(ctx context.Context, providerName, photoID string) (*
 	p, ok := s.providers[providerName]
 	s.mu.RUnlock()
 	if !ok {
-		return nil, fmt.Errorf("provider %s is not available", providerName)
+		return nil, fmt.Errorf("%w: %s", ErrProviderUnavailable, providerName)
 	}
 
 	val, err := p.GetByID(ctx, photoID)
@@ -312,7 +342,7 @@ func (s *Service) ImportPhoto(ctx context.Context, tenantID, uploaderID pgtype.U
 	p, ok := s.providers[providerName]
 	s.mu.RUnlock()
 	if !ok {
-		return pgtype.UUID{}, fmt.Errorf("provider %s is not available", providerName)
+		return pgtype.UUID{}, fmt.Errorf("%w: %s", ErrProviderUnavailable, providerName)
 	}
 
 	downloaded, err := p.Download(ctx, photoID)

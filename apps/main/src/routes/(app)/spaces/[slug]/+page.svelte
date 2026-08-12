@@ -5,7 +5,7 @@
 	import {
 		Rss, MessageSquare, Users, Info, PenSquare, Search, BarChart3,
 		UserPlus, UserCheck, Loader2, BellOff, Bell, Flag, Pin, PinOff,
-		Check, X, Inbox
+		Check, X, Inbox, ChevronUp, ChevronDown
 	} from 'lucide-svelte';
 	import { Dialog } from 'bits-ui';
 	import SetSidebar from '$lib/components/shell/SetSidebar.svelte';
@@ -268,6 +268,23 @@
 		feedLoading = false;
 	}
 
+	// reloadFeed refetches the first page of feed items. Used by the pinned
+	// reorder rollback path to restore server-side order after a failed
+	// PATCH /spaces/{id}/pinned/reorder.
+	async function reloadFeed() {
+		try {
+			const res = await api.get<SpaceContentItem[]>(
+				`/spaces/${space.slug}/content?page_size=${data.pageSize}&page_offset=0`
+			);
+			if (res.data) {
+				feedItems = res.data;
+				feedEnd = res.data.length < data.pageSize;
+			}
+		} catch {
+			// Best-effort — leave the current order in place.
+		}
+	}
+
 	async function loadMoreMembers() {
 		if (membersLoading || membersEnd) return;
 		membersLoading = true;
@@ -307,6 +324,40 @@
 			feedItems = feedItems.map((f) => f.id === item.id ? { ...f, is_pinned: was } : f);
 		}
 		pinningId = null;
+	}
+
+	// --- Pinned post reorder (Ref: §05; PATCH /spaces/{id}/pinned/reorder) ---
+	let reordering = $state(false);
+
+	async function reorderPinned(direction: 'up' | 'down', item: SpaceContentItem) {
+		if (reordering) return;
+		const pinned = feedItems.filter((f) => f.is_pinned);
+		const idx = pinned.findIndex((f) => f.id === item.id);
+		if (idx < 0) return;
+		const swapIdx = direction === 'up' ? idx - 1 : idx + 1;
+		if (swapIdx < 0 || swapIdx >= pinned.length) return;
+		// Optimistic: swap the two pinned items in the feedItems array
+		const aId = pinned[idx].id;
+		const bId = pinned[swapIdx].id;
+		const aIdx = feedItems.findIndex((f) => f.id === aId);
+		const bIdx = feedItems.findIndex((f) => f.id === bId);
+		if (aIdx < 0 || bIdx < 0) return;
+		const newItems = [...feedItems];
+		[newItems[aIdx], newItems[bIdx]] = [newItems[bIdx], newItems[aIdx]];
+		feedItems = newItems;
+		reordering = true;
+		try {
+			const newOrder = pinned.map((f) => f.id);
+			// Swap in the order array
+			[newOrder[idx], newOrder[swapIdx]] = [newOrder[swapIdx], newOrder[idx]];
+			await api.patch<{ reordered: boolean }>(`/spaces/${space.id}/pinned/reorder`, {
+				order: newOrder
+			});
+		} catch {
+			// Rollback: refetch the feed to restore server-side order
+			await reloadFeed();
+		}
+		reordering = false;
 	}
 
 	// --- Join request queue (Ref: §05; GET /admin/spaces/{id}/join-requests) ---
@@ -492,22 +543,46 @@
 								</span>
 							{/if}
 							{#if canManage}
-								<button
-									type="button"
-									disabled={pinningId === item.id}
-									onclick={() => togglePin(item)}
-									class="absolute right-3 top-3 z-10 grid h-7 w-7 place-items-center rounded-full text-[var(--color-muted)] opacity-0 transition-opacity hover:bg-[var(--color-surface)] group-hover:opacity-100 disabled:opacity-50"
-									title={item.is_pinned ? t('space.unpin', 'Unpin') : t('space.pin', 'Pin')}
-									aria-label={item.is_pinned ? t('space.unpin', 'Unpin') : t('space.pin', 'Pin')}
-								>
-									{#if pinningId === item.id}
-										<Loader2 size={13} class="animate-spin" />
-									{:else if item.is_pinned}
-										<PinOff size={13} />
-									{:else}
-										<Pin size={13} />
+								<div class="absolute right-3 top-3 z-10 flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+									{#if item.is_pinned}
+										<button
+											type="button"
+											disabled={reordering}
+											onclick={() => reorderPinned('up', item)}
+											class="grid h-7 w-7 place-items-center rounded-full text-[var(--color-muted)] hover:bg-[var(--color-surface)] disabled:opacity-50"
+											title={t('space.pinned_move_up', 'Move pinned up')}
+											aria-label={t('space.pinned_move_up', 'Move pinned up')}
+										>
+											<ChevronUp size={13} />
+										</button>
+										<button
+											type="button"
+											disabled={reordering}
+											onclick={() => reorderPinned('down', item)}
+											class="grid h-7 w-7 place-items-center rounded-full text-[var(--color-muted)] hover:bg-[var(--color-surface)] disabled:opacity-50"
+											title={t('space.pinned_move_down', 'Move pinned down')}
+											aria-label={t('space.pinned_move_down', 'Move pinned down')}
+										>
+											<ChevronDown size={13} />
+										</button>
 									{/if}
-								</button>
+									<button
+										type="button"
+										disabled={pinningId === item.id}
+										onclick={() => togglePin(item)}
+										class="grid h-7 w-7 place-items-center rounded-full text-[var(--color-muted)] hover:bg-[var(--color-surface)] disabled:opacity-50"
+										title={item.is_pinned ? t('space.unpin', 'Unpin') : t('space.pin', 'Pin')}
+										aria-label={item.is_pinned ? t('space.unpin', 'Unpin') : t('space.pin', 'Pin')}
+									>
+										{#if pinningId === item.id}
+											<Loader2 size={13} class="animate-spin" />
+										{:else if item.is_pinned}
+											<PinOff size={13} />
+										{:else}
+											<Pin size={13} />
+										{/if}
+									</button>
+								</div>
 							{/if}
 						</div>
 					{/each}

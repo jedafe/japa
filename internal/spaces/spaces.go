@@ -142,16 +142,18 @@ type Service struct {
 }
 
 // SetValkey wires the Valkey client for mute SET cache invalidation
-// (Section 52 / VALKEY-001). Key: jc:muted_spaces:{user_id}.
+// (Section 52 / VALKEY-001, BUG-003: tenant-scoped). Key:
+// jc:muted_spaces:{tenant_id}:{user_id}.
 func (s *Service) SetValkey(vk valkeycompat.Cmdable) { s.vk = vk }
 
-// invalidateMutedSpacesCache deletes the muted-spaces SET cache for the user.
-// Called after mute/unmute so the next read refetches from the DB.
-func (s *Service) invalidateMutedSpacesCache(ctx context.Context, userID pgtype.UUID) {
+// invalidateMutedSpacesCache deletes the tenant-scoped muted-spaces SET cache
+// for the user. Called after mute/unmute so the next read refetches from the
+// DB.
+func (s *Service) invalidateMutedSpacesCache(ctx context.Context, tenantID, userID pgtype.UUID) {
 	if s.vk == nil {
 		return
 	}
-	key := valkey.MustKey("muted_spaces:%s", userID.String())
+	key := valkey.MustKey("muted_spaces:%s:%s", tenantID.String(), userID.String())
 	if err := s.vk.Del(ctx, key).Err(); err != nil {
 		slog.Warn("invalidate muted_spaces cache", "error", err)
 	}

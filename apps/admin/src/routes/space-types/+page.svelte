@@ -55,7 +55,7 @@
 		title: t('app.space_types.page_title', 'Space Types'),
 		description: t('space-types.manage_space_type_categories_including_u', 'Manage space type categories including university types.'),
 		createLabel: t('app.space_types.add_space_type', 'Add Space Type'),
-		createPermission: 'space_types.create',
+		createPermission: 'spaces.types.create',
 		pageSize: 25,
 		columns: [
 			{ key: 'name', label: t('space-types.name', 'Name'), sortable: true },

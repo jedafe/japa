@@ -7,6 +7,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 )
 
@@ -480,6 +481,54 @@ func (s *Service) CreateSpace(ctx context.Context, params gen.CreateSpaceParams)
 	}
 
 	return space, nil
+}
+
+// CreateSpaceWithOwner creates a space, adds the creator as owner, increments
+// the member count, and links any primary parent spaces — all in a single
+// transaction (BUG-001). If any step fails the entire operation rolls back,
+// preventing orphaned spaces without owners.
+//
+// Ref: sections/05-geo-first-space-system.md lines 198-224 (moderator
+// assignment requires creator ownership).
+func (s *Service) CreateSpaceWithOwner(
+	ctx context.Context,
+	params gen.CreateSpaceParams,
+	creatorUserID pgtype.UUID,
+	parentSpaceIDs []pgtype.UUID,
+) (gen.CreateSpaceRow, error) {
+	return db.WithTxResult(ctx, s.db.Writer, func(q *gen.Queries) (gen.CreateSpaceRow, error) {
+		space, err := q.CreateSpace(ctx, params)
+		if err != nil {
+			return gen.CreateSpaceRow{}, fmt.Errorf("creating space: %w", err)
+		}
+
+		if err := q.AddSpaceOwner(ctx, gen.AddSpaceOwnerParams{
+			SpaceID:  space.ID,
+			UserID:   creatorUserID,
+			TenantID: params.TenantID,
+		}); err != nil {
+			return gen.CreateSpaceRow{}, fmt.Errorf("adding space owner: %w", err)
+		}
+
+		if err := q.IncrementSpaceCount(ctx, gen.IncrementSpaceCountParams{
+			Delta:    1,
+			ID:       space.ID,
+			TenantID: params.TenantID,
+		}); err != nil {
+			return gen.CreateSpaceRow{}, fmt.Errorf("incrementing member count: %w", err)
+		}
+
+		for _, psid := range parentSpaceIDs {
+			if err := q.AddParentSpace(ctx, gen.AddParentSpaceParams{
+				SpaceID:       space.ID,
+				ParentSpaceID: psid,
+			}); err != nil {
+				return gen.CreateSpaceRow{}, fmt.Errorf("linking parent space: %w", err)
+			}
+		}
+
+		return space, nil
+	})
 }
 
 // UpdateSpace updates the mutable fields of a space, scoped to the tenant.

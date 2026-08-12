@@ -287,14 +287,15 @@ func ContentReadPrivacyTarget(ctx context.Context, args json.RawMessage, tenantI
 // _ai_provenance into the FieldValues JSONB. Status is intentionally not
 // accepted — the agent always creates draft content (§103).
 type contentCreateArgs struct {
-	Title       string            `json:"title"`
-	Body        string            `json:"body"`
-	ContentType string            `json:"content_type"`
-	AuthorID    string            `json:"author_id"`
-	GeoSpaceID  string            `json:"geo_space_id,omitempty"`
-	SpaceID     string            `json:"space_id,omitempty"`
-	FieldValues map[string]any    `json:"field_values,omitempty"`
-	Provenance  *aiProvenanceArgs `json:"_ai_provenance,omitempty"`
+	Title          string            `json:"title"`
+	Body           string            `json:"body"`
+	ContentType    string            `json:"content_type"`
+	AuthorID       string            `json:"author_id"`
+	GeoSpaceID     string            `json:"geo_space_id,omitempty"`
+	SpaceID        string            `json:"space_id,omitempty"`
+	GuideCategory  string            `json:"guide_category,omitempty"`
+	FieldValues    map[string]any    `json:"field_values,omitempty"`
+	Provenance     *aiProvenanceArgs `json:"_ai_provenance,omitempty"`
 }
 
 // aiProvenanceArgs is the provenance metadata injected into field_values.
@@ -378,56 +379,65 @@ func ContentCreateHandler(deps *ToolDeps) ToolHandler {
 		}
 
 		row, err := deps.ContentCreator(ctx, tenantID, ContentCreateInput{
-			AuthorID:    authorID,
-			SpaceID:     spaceID,
-			ContentType: a.ContentType,
-			Title:       a.Title,
-			Body:        a.Body,
-			FieldValues: fvJSON,
-			GeoSpaceID:  geoSpaceID,
-			Status:      status,
+			AuthorID:      authorID,
+			SpaceID:       spaceID,
+			ContentType:   a.ContentType,
+			Title:         a.Title,
+			Body:          a.Body,
+			FieldValues:   fvJSON,
+			GeoSpaceID:    geoSpaceID,
+			Status:        status,
+			GuideCategory: a.GuideCategory,
 		})
 		if err != nil {
 			return errorToolResult("content_create_failed", err.Error()), nil
 		}
 
-		return successToolResult(map[string]any{
-			"content_id":   uuidString(row.ID),
-			"title":        row.Title,
-			"slug":         row.Slug,
-			"status":       row.Status,
-			"content_type": row.ContentType,
-			"author_id":    uuidString(row.AuthorID),
-			"geo_space_id": uuidString(row.GeoSpaceID),
-			"created_at":   timestampString(row.CreatedAt),
-		}), nil
+		res := successToolResult(map[string]any{
+			"content_id":     uuidString(row.ID),
+			"title":          row.Title,
+			"slug":           row.Slug,
+			"status":         row.Status,
+			"content_type":   row.ContentType,
+			"author_id":      uuidString(row.AuthorID),
+			"geo_space_id":   uuidString(row.GeoSpaceID),
+			"created_at":     timestampString(row.CreatedAt),
+			"guide_category": row.GuideCategory,
+		})
+		// Phase 11.02a — force HITL for high-stakes guide categories so the
+		// executor creates a HITL review even when the tool's requires_hitl
+		// flag is false.
+		res.ForceHITL = IsHighStakesCategory(a.GuideCategory)
+		return res, nil
 	}
 }
 
 // ContentCreateInput is the provider-agnostic input for content creation,
 // mirroring the subset of content.CreateContentInput the agent needs.
 type ContentCreateInput struct {
-	AuthorID    pgtype.UUID
-	SpaceID     pgtype.UUID
-	ContentType string
-	Title       string
-	Body        string
-	FieldValues []byte
-	GeoSpaceID  pgtype.UUID
-	Status      string
+	AuthorID       pgtype.UUID
+	SpaceID        pgtype.UUID
+	ContentType    string
+	Title          string
+	Body           string
+	FieldValues    []byte
+	GeoSpaceID     pgtype.UUID
+	Status         string
+	GuideCategory  string
 }
 
 // ContentCreateRow is the provider-agnostic return shape, mirroring the
 // subset of gen.CreateContentRow the agent reports back to the LLM.
 type ContentCreateRow struct {
-	ID          pgtype.UUID
-	Title       string
-	Slug        string
-	Status      string
-	ContentType string
-	AuthorID    pgtype.UUID
-	GeoSpaceID  pgtype.UUID
-	CreatedAt   pgtype.Timestamptz
+	ID            pgtype.UUID
+	Title         string
+	Slug          string
+	Status        string
+	ContentType   string
+	AuthorID      pgtype.UUID
+	GeoSpaceID    pgtype.UUID
+	CreatedAt     pgtype.Timestamptz
+	GuideCategory string
 }
 
 // ContentCreator is the function type the wiring layer provides to bridge
@@ -476,6 +486,7 @@ type contentCreateDraftArgs struct {
 	AuthorID       string         `json:"author_id"`
 	GeoSpaceID     string         `json:"geo_space_id,omitempty"`
 	SpaceID        string         `json:"space_id,omitempty"`
+	GuideCategory  string         `json:"guide_category,omitempty"`
 	FieldValues    map[string]any `json:"field_values,omitempty"`
 	OriginalPrompt string         `json:"original_prompt,omitempty"`
 	AIPersonaID    string         `json:"ai_persona_id,omitempty"`
@@ -576,14 +587,15 @@ func ContentCreateDraftHandler(deps *ToolDeps) ToolHandler {
 		}
 
 		row, err := deps.ContentCreator(ctx, tenantID, ContentCreateInput{
-			AuthorID:    authorID,
-			SpaceID:     spaceID,
-			ContentType: a.ContentType,
-			Title:       a.Title,
-			Body:        a.Body,
-			FieldValues: fvJSON,
-			GeoSpaceID:  geoSpaceID,
-			Status:      status,
+			AuthorID:      authorID,
+			SpaceID:       spaceID,
+			ContentType:   a.ContentType,
+			Title:         a.Title,
+			Body:          a.Body,
+			FieldValues:   fvJSON,
+			GeoSpaceID:    geoSpaceID,
+			Status:        status,
+			GuideCategory: a.GuideCategory,
 		})
 		if err != nil {
 			return errorToolResult("content_create_draft_failed", err.Error()), nil
@@ -623,10 +635,17 @@ func ContentCreateDraftHandler(deps *ToolDeps) ToolHandler {
 			"created_at":     timestampString(row.CreatedAt),
 			"hitl_review_id": uuidString(hitlReviewID),
 			"review_status":  "draft submitted for admin review",
+			"guide_category": row.GuideCategory,
 		})
 		if hitlReviewID.Valid {
 			res.Metadata = map[string]any{"hitl_review_id": hitlReviewID}
 		}
+		// Phase 11.02a — force HITL for high-stakes guide categories so the
+		// executor creates a HITL review even when the tool's requires_hitl
+		// flag is false. The draft handler already creates a HITL review
+		// above; ForceHITL ensures the executor does not skip its own HITL
+		// step when the tool config has requires_hitl=false.
+		res.ForceHITL = IsHighStakesCategory(a.GuideCategory)
 		return res, nil
 	}
 }

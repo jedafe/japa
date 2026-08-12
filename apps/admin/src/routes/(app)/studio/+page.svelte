@@ -40,6 +40,10 @@
 		draft_ready: number;
 		in_review: number;
 		published: number;
+		rejected: number;
+		failed: number;
+		publish_rate: number;
+		avg_review_hours: number;
 	};
 
 	type ContentTypeOption = {
@@ -66,7 +70,7 @@
 
 	let newJob = $state({
 		persona_id: '',
-		content_type: 'blog',
+		content_type: 'blog_post',
 		topic_prompt: '',
 		guide_category: '',
 		target_space_id: '',
@@ -187,7 +191,7 @@
 				messageType = 'success';
 				message = t('studio.create_success', 'Studio job created.');
 				createJobSlideOverOpen = false;
-				newJob = { persona_id: '', content_type: 'blog', topic_prompt: '', guide_category: '', target_space_id: '', target_tags: '' };
+				newJob = { persona_id: '', content_type: 'blog_post', topic_prompt: '', guide_category: '', target_space_id: '', target_tags: '' };
 				load();
 			} else {
 				messageType = 'error';
@@ -466,7 +470,7 @@
 		</div>
 		{#snippet footer()}
 			<div class="flex justify-end gap-2">
-				{#if viewingJob && canManage && (viewingJob.status === 'failed' || viewingJob.status === 'draft_ready')}
+				{#if viewingJob && canManage && viewingJob.status === 'failed'}
 					<Button variant="outline" onclick={() => { retryJob(viewingJob!.id); viewJobSlideOverOpen = false; }}>
 						<RotateCcw class="h-4 w-4" />
 						{t('studio.retry', 'Retry')}

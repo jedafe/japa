@@ -33,6 +33,60 @@ func (q *Queries) CheckDuplicateHash(ctx context.Context, arg CheckDuplicateHash
 	return duplicate, err
 }
 
+const countAllUserBlocks = `-- name: CountAllUserBlocks :one
+SELECT COUNT(*)::int AS count
+FROM user_blocks
+WHERE tenant_id = $1
+`
+
+// Total count for admin DataTable pagination (BUG-010). Tenant-scoped.
+func (q *Queries) CountAllUserBlocks(ctx context.Context, tenantID pgtype.UUID) (int32, error) {
+	row := q.db.QueryRow(ctx, countAllUserBlocks, tenantID)
+	var count int32
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countCensoredWords = `-- name: CountCensoredWords :one
+SELECT COUNT(*)::int AS count
+FROM censored_words
+WHERE tenant_id = $1
+  AND ($2::text IS NULL OR action = $2)
+`
+
+type CountCensoredWordsParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	Action   *string     `json:"action"`
+}
+
+// Total count for admin DataTable pagination (BUG-010).
+func (q *Queries) CountCensoredWords(ctx context.Context, arg CountCensoredWordsParams) (int32, error) {
+	row := q.db.QueryRow(ctx, countCensoredWords, arg.TenantID, arg.Action)
+	var count int32
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countIPBlocks = `-- name: CountIPBlocks :one
+SELECT COUNT(*)::int AS count
+FROM ip_blocks
+WHERE tenant_id = $1
+  AND ($2::text IS NULL OR block_type = $2)
+`
+
+type CountIPBlocksParams struct {
+	TenantID  pgtype.UUID `json:"tenant_id"`
+	BlockType *string     `json:"block_type"`
+}
+
+// Total count for admin DataTable pagination (BUG-010).
+func (q *Queries) CountIPBlocks(ctx context.Context, arg CountIPBlocksParams) (int32, error) {
+	row := q.db.QueryRow(ctx, countIPBlocks, arg.TenantID, arg.BlockType)
+	var count int32
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createCensoredWord = `-- name: CreateCensoredWord :one
 
 INSERT INTO censored_words (tenant_id, pattern, action, replacement)
@@ -333,6 +387,40 @@ func (q *Queries) GetIPBlockByID(ctx context.Context, arg GetIPBlockByIDParams) 
 	return i, err
 }
 
+const getIPBlockTypeForIP = `-- name: GetIPBlockTypeForIP :one
+SELECT COALESCE(
+    (SELECT block_type::text FROM ip_blocks
+     WHERE tenant_id = $1
+       AND $2::inet <<= cidr
+       AND (expires_at IS NULL OR expires_at > now())
+     ORDER BY CASE block_type
+       WHEN 'full' THEN 0
+       WHEN 'registration' THEN 1
+       WHEN 'posting' THEN 2
+       WHEN 'api' THEN 3
+       ELSE 4
+     END
+     LIMIT 1),
+    ''
+)::text AS block_type
+`
+
+type GetIPBlockTypeForIPParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	Ip       netip.Addr  `json:"ip"`
+}
+
+// Returns the most severe block_type for a matched IP. 'full' takes priority
+// over 'registration'/'posting'/'api' so a full block is enforced even if a
+// narrower block also matches. Per §41 IP Block Middleware, non-full block
+// types are scoped to specific route groups rather than blocking all requests.
+func (q *Queries) GetIPBlockTypeForIP(ctx context.Context, arg GetIPBlockTypeForIPParams) (string, error) {
+	row := q.db.QueryRow(ctx, getIPBlockTypeForIP, arg.TenantID, arg.Ip)
+	var block_type string
+	err := row.Scan(&block_type)
+	return block_type, err
+}
+
 const getUserBlocks = `-- name: GetUserBlocks :many
 SELECT blocker_id, blocked_id, created_at
 FROM user_blocks
@@ -419,9 +507,15 @@ LEFT JOIN users bu ON bu.id = ub.blocker_id
 LEFT JOIN user_profiles bp ON bp.user_id = ub.blocker_id AND bp.tenant_id = bu.tenant_id
 LEFT JOIN users buu ON buu.id = ub.blocked_id
 LEFT JOIN user_profiles bpp ON bpp.user_id = ub.blocked_id AND bpp.tenant_id = buu.tenant_id
+WHERE ub.tenant_id = $1
 ORDER BY ub.created_at DESC
-LIMIT $1
+LIMIT $2
 `
+
+type ListAllUserBlocksParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	Limit    int32       `json:"limit"`
+}
 
 type ListAllUserBlocksRow struct {
 	BlockerID          pgtype.UUID        `json:"blocker_id"`
@@ -433,8 +527,9 @@ type ListAllUserBlocksRow struct {
 	BlockedDisplayName *string            `json:"blocked_display_name"`
 }
 
-func (q *Queries) ListAllUserBlocks(ctx context.Context, limit int32) ([]ListAllUserBlocksRow, error) {
-	rows, err := q.db.Query(ctx, listAllUserBlocks, limit)
+// Tenant-scoped per JEOS §9 (BUG-001). Admin list must not cross tenants.
+func (q *Queries) ListAllUserBlocks(ctx context.Context, arg ListAllUserBlocksParams) ([]ListAllUserBlocksRow, error) {
+	rows, err := q.db.Query(ctx, listAllUserBlocks, arg.TenantID, arg.Limit)
 	if err != nil {
 		return nil, err
 	}
@@ -442,6 +537,66 @@ func (q *Queries) ListAllUserBlocks(ctx context.Context, limit int32) ([]ListAll
 	var items []ListAllUserBlocksRow
 	for rows.Next() {
 		var i ListAllUserBlocksRow
+		if err := rows.Scan(
+			&i.BlockerID,
+			&i.BlockedID,
+			&i.CreatedAt,
+			&i.BlockerUsername,
+			&i.BlockerDisplayName,
+			&i.BlockedUsername,
+			&i.BlockedDisplayName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listAllUserBlocksPaginated = `-- name: ListAllUserBlocksPaginated :many
+SELECT ub.blocker_id, ub.blocked_id, ub.created_at,
+       bu.username AS blocker_username, bp.display_name AS blocker_display_name,
+       buu.username AS blocked_username, bpp.display_name AS blocked_display_name
+FROM user_blocks ub
+LEFT JOIN users bu ON bu.id = ub.blocker_id
+LEFT JOIN user_profiles bp ON bp.user_id = ub.blocker_id AND bp.tenant_id = bu.tenant_id
+LEFT JOIN users buu ON buu.id = ub.blocked_id
+LEFT JOIN user_profiles bpp ON bpp.user_id = ub.blocked_id AND bpp.tenant_id = buu.tenant_id
+WHERE ub.tenant_id = $1
+ORDER BY ub.created_at DESC, ub.blocker_id DESC
+LIMIT $2 OFFSET $3
+`
+
+type ListAllUserBlocksPaginatedParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	Limit    int32       `json:"limit"`
+	Offset   int32       `json:"offset"`
+}
+
+type ListAllUserBlocksPaginatedRow struct {
+	BlockerID          pgtype.UUID        `json:"blocker_id"`
+	BlockedID          pgtype.UUID        `json:"blocked_id"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	BlockerUsername    *string            `json:"blocker_username"`
+	BlockerDisplayName *string            `json:"blocker_display_name"`
+	BlockedUsername    *string            `json:"blocked_username"`
+	BlockedDisplayName *string            `json:"blocked_display_name"`
+}
+
+// Offset-based paginated admin list for DataTable server-side pagination
+// (BUG-010). Tenant-scoped per JEOS §9.
+func (q *Queries) ListAllUserBlocksPaginated(ctx context.Context, arg ListAllUserBlocksPaginatedParams) ([]ListAllUserBlocksPaginatedRow, error) {
+	rows, err := q.db.Query(ctx, listAllUserBlocksPaginated, arg.TenantID, arg.Limit, arg.Offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListAllUserBlocksPaginatedRow
+	for rows.Next() {
+		var i ListAllUserBlocksPaginatedRow
 		if err := rows.Scan(
 			&i.BlockerID,
 			&i.BlockedID,
@@ -556,6 +711,56 @@ func (q *Queries) ListCensoredWords(ctx context.Context, tenantID pgtype.UUID) (
 	return items, nil
 }
 
+const listCensoredWordsPaginated = `-- name: ListCensoredWordsPaginated :many
+SELECT id, tenant_id, pattern, action, replacement, created_at
+FROM censored_words
+WHERE tenant_id = $1
+  AND ($4::text IS NULL OR action = $4)
+ORDER BY created_at DESC, id DESC
+LIMIT $2 OFFSET $3
+`
+
+type ListCensoredWordsPaginatedParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	Limit    int32       `json:"limit"`
+	Offset   int32       `json:"offset"`
+	Action   *string     `json:"action"`
+}
+
+// Offset-based paginated list for admin DataTable server-side pagination
+// (BUG-010). Supports optional action filter.
+func (q *Queries) ListCensoredWordsPaginated(ctx context.Context, arg ListCensoredWordsPaginatedParams) ([]CensoredWord, error) {
+	rows, err := q.db.Query(ctx, listCensoredWordsPaginated,
+		arg.TenantID,
+		arg.Limit,
+		arg.Offset,
+		arg.Action,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []CensoredWord
+	for rows.Next() {
+		var i CensoredWord
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.Pattern,
+			&i.Action,
+			&i.Replacement,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listIPBlocks = `-- name: ListIPBlocks :many
 SELECT id, tenant_id, cidr, block_type, reason, blocked_by, expires_at, created_at
 FROM ip_blocks
@@ -573,6 +778,58 @@ type ListIPBlocksParams struct {
 
 func (q *Queries) ListIPBlocks(ctx context.Context, arg ListIPBlocksParams) ([]IpBlock, error) {
 	rows, err := q.db.Query(ctx, listIPBlocks, arg.TenantID, arg.Limit, arg.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []IpBlock
+	for rows.Next() {
+		var i IpBlock
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.Cidr,
+			&i.BlockType,
+			&i.Reason,
+			&i.BlockedBy,
+			&i.ExpiresAt,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listIPBlocksPaginated = `-- name: ListIPBlocksPaginated :many
+SELECT id, tenant_id, cidr, block_type, reason, blocked_by, expires_at, created_at
+FROM ip_blocks
+WHERE tenant_id = $1
+  AND ($4::text IS NULL OR block_type = $4)
+ORDER BY created_at DESC, id DESC
+LIMIT $2 OFFSET $3
+`
+
+type ListIPBlocksPaginatedParams struct {
+	TenantID  pgtype.UUID `json:"tenant_id"`
+	Limit     int32       `json:"limit"`
+	Offset    int32       `json:"offset"`
+	BlockType *string     `json:"block_type"`
+}
+
+// Offset-based paginated list for admin DataTable server-side pagination
+// (BUG-010). Supports optional block_type filter.
+func (q *Queries) ListIPBlocksPaginated(ctx context.Context, arg ListIPBlocksPaginatedParams) ([]IpBlock, error) {
+	rows, err := q.db.Query(ctx, listIPBlocksPaginated,
+		arg.TenantID,
+		arg.Limit,
+		arg.Offset,
+		arg.BlockType,
+	)
 	if err != nil {
 		return nil, err
 	}

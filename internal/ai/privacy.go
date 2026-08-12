@@ -164,16 +164,40 @@ var blockedExact = map[string]struct{}{
 // ai_tools config JSONB: even if a row were misconfigured with is_blocked =
 // false, the executor still refuses to dispatch.
 //
-// The check is case-sensitive — tool names are lowercase by convention and
-// the LLM tool definitions are seeded lowercase.
+// The check normalizes the tool name (trim + lowercase) before matching so
+// an LLM cannot bypass the blocklist via casing or whitespace (Phase 11.03a).
 func IsBlockedOperation(toolName string) bool {
-	if _, ok := blockedExact[toolName]; ok {
+	normalized := strings.ToLower(strings.TrimSpace(toolName))
+	if _, ok := blockedExact[normalized]; ok {
 		return true
 	}
 	for _, p := range blockedPrefixes {
-		if strings.HasPrefix(toolName, p) {
+		if strings.HasPrefix(normalized, p) {
 			return true
 		}
 	}
 	return false
+}
+
+// highStakesCategories is the set of §103 guide categories that unconditionally
+// require HITL review even when the tool's requires_hitl flag is false. These
+// categories have significant real-world consequences (visa applications,
+// banking, grants, health insurance, university admission) where incorrect AI
+// output could cause harm. The check is case-insensitive and whitespace-
+// tolerant (Phase 11.02a).
+var highStakesCategories = map[string]struct{}{
+	"visa":             {},
+	"banking":          {},
+	"grants":           {},
+	"health_insurance": {},
+	"admission":        {},
+}
+
+// IsHighStakesCategory reports whether the given guide category is a §103
+// high-stakes category that unconditionally requires HITL review. The check
+// is case-insensitive and trims surrounding whitespace (Phase 11.02a).
+func IsHighStakesCategory(category string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(category))
+	_, ok := highStakesCategories[normalized]
+	return ok
 }

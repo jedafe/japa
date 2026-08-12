@@ -149,7 +149,7 @@
 		<div class="shell-sidebar">
 			<div class="sidebar-topbar">
 				{#each topbarWidgets as widget (widget.id)}
-					<SidebarWidgetRenderer {widget} />
+					<SidebarWidgetRenderer {widget} {user} />
 				{/each}
 			</div>
 			<div class="sidebar-body">
@@ -163,7 +163,7 @@
 
 				{#each contentWidgets as widget (widget.id)}
 					<div class="mt-4">
-						<SidebarWidgetRenderer {widget} />
+						<SidebarWidgetRenderer {widget} {user} />
 					</div>
 				{/each}
 			</div>
@@ -231,7 +231,7 @@
 		<div class="shell-sidebar">
 			<div class="sidebar-topbar">
 				{#each topbarWidgets as widget (widget.id)}
-					<SidebarWidgetRenderer {widget} />
+					<SidebarWidgetRenderer {widget} {user} />
 				{/each}
 			</div>
 			<div class="sidebar-body">
@@ -249,7 +249,7 @@
 				     ADR-066). Rendered below the route-specific snippet (TOC). -->
 				{#each contentWidgets as widget (widget.id)}
 					<div class="mt-4">
-						<SidebarWidgetRenderer {widget} />
+						<SidebarWidgetRenderer {widget} {user} />
 					</div>
 				{/each}
 			</div>

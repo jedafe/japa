@@ -83,6 +83,24 @@ func (s *Store) gdprExportUserSpaces(ctx context.Context, userID, tenantID pgtyp
 	})
 }
 
+// gdprExportOwnedSpaceParents returns parent space links for spaces owned by
+// the user (BUG-004: GDPR export completeness for space_parent_spaces).
+func (s *Store) gdprExportOwnedSpaceParents(ctx context.Context, userID, tenantID pgtype.UUID) ([]gen.GdprExportOwnedSpaceParentsRow, error) {
+	return s.read.GdprExportOwnedSpaceParents(ctx, gen.GdprExportOwnedSpaceParentsParams{
+		UserID:   userID,
+		TenantID: tenantID,
+	})
+}
+
+// gdprExportOwnedSpaceRules returns rules for spaces owned by the user
+// (BUG-004: GDPR export completeness for space_rules).
+func (s *Store) gdprExportOwnedSpaceRules(ctx context.Context, userID, tenantID pgtype.UUID) ([]gen.GdprExportOwnedSpaceRulesRow, error) {
+	return s.read.GdprExportOwnedSpaceRules(ctx, gen.GdprExportOwnedSpaceRulesParams{
+		UserID:   userID,
+		TenantID: tenantID,
+	})
+}
+
 func (s *Store) gdprExportUserPayments(ctx context.Context, userID, tenantID pgtype.UUID) ([]gen.GdprExportUserPaymentsRow, error) {
 	return s.read.GdprExportUserPayments(ctx, gen.GdprExportUserPaymentsParams{
 		UserID:   userID,
@@ -477,8 +495,10 @@ func (s *Store) gdprExportUserDMSettings(ctx context.Context, userID, tenantID p
 }
 
 // gdprExportUserBlocks exports user_blocks where the user is blocker or
-// blocked. The user_blocks table has no tenant_id column; the query takes
-// only user_id.
+// blocked. The user_blocks table gained a tenant_id column in migration
+// 000293 (BUG-006), but the export query takes only user_id because user
+// IDs are globally unique UUIDs and the export is user-scoped, not
+// tenant-scoped.
 func (s *Store) gdprExportUserBlocks(ctx context.Context, userID pgtype.UUID) ([]map[string]interface{}, error) {
 	data, err := s.read.GdprExportUserBlocks(ctx, userID)
 	if err != nil {

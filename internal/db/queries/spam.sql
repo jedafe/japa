@@ -25,6 +25,23 @@ WHERE tenant_id = $1
 ORDER BY created_at DESC, id DESC
 LIMIT $2;
 
+-- name: ListIPBlocksPaginated :many
+-- Offset-based paginated list for admin DataTable server-side pagination
+-- (BUG-010). Supports optional block_type filter.
+SELECT id, tenant_id, cidr, block_type, reason, blocked_by, expires_at, created_at
+FROM ip_blocks
+WHERE tenant_id = $1
+  AND (sqlc.narg(block_type)::text IS NULL OR block_type = sqlc.narg(block_type))
+ORDER BY created_at DESC, id DESC
+LIMIT $2 OFFSET $3;
+
+-- name: CountIPBlocks :one
+-- Total count for admin DataTable pagination (BUG-010).
+SELECT COUNT(*)::int AS count
+FROM ip_blocks
+WHERE tenant_id = $1
+  AND (sqlc.narg(block_type)::text IS NULL OR block_type = sqlc.narg(block_type));
+
 -- name: DeleteIPBlock :exec
 DELETE FROM ip_blocks
 WHERE id = $1 AND tenant_id = $2;
@@ -54,6 +71,27 @@ SELECT EXISTS(
       AND @ip::inet <<= cidr
       AND (expires_at IS NULL OR expires_at > now())
 ) AS blocked;
+
+-- name: GetIPBlockTypeForIP :one
+-- Returns the most severe block_type for a matched IP. 'full' takes priority
+-- over 'registration'/'posting'/'api' so a full block is enforced even if a
+-- narrower block also matches. Per §41 IP Block Middleware, non-full block
+-- types are scoped to specific route groups rather than blocking all requests.
+SELECT COALESCE(
+    (SELECT block_type::text FROM ip_blocks
+     WHERE tenant_id = @tenant_id
+       AND @ip::inet <<= cidr
+       AND (expires_at IS NULL OR expires_at > now())
+     ORDER BY CASE block_type
+       WHEN 'full' THEN 0
+       WHEN 'registration' THEN 1
+       WHEN 'posting' THEN 2
+       WHEN 'api' THEN 3
+       ELSE 4
+     END
+     LIMIT 1),
+    ''
+)::text AS block_type;
 
 -- =====================
 -- User Blocks
@@ -91,6 +129,7 @@ ORDER BY ub.created_at DESC
 LIMIT $3 OFFSET $4;
 
 -- name: ListAllUserBlocks :many
+-- Tenant-scoped per JEOS §9 (BUG-001). Admin list must not cross tenants.
 SELECT ub.blocker_id, ub.blocked_id, ub.created_at,
        bu.username AS blocker_username, bp.display_name AS blocker_display_name,
        buu.username AS blocked_username, bpp.display_name AS blocked_display_name
@@ -99,8 +138,30 @@ LEFT JOIN users bu ON bu.id = ub.blocker_id
 LEFT JOIN user_profiles bp ON bp.user_id = ub.blocker_id AND bp.tenant_id = bu.tenant_id
 LEFT JOIN users buu ON buu.id = ub.blocked_id
 LEFT JOIN user_profiles bpp ON bpp.user_id = ub.blocked_id AND bpp.tenant_id = buu.tenant_id
+WHERE ub.tenant_id = $1
 ORDER BY ub.created_at DESC
-LIMIT $1;
+LIMIT $2;
+
+-- name: ListAllUserBlocksPaginated :many
+-- Offset-based paginated admin list for DataTable server-side pagination
+-- (BUG-010). Tenant-scoped per JEOS §9.
+SELECT ub.blocker_id, ub.blocked_id, ub.created_at,
+       bu.username AS blocker_username, bp.display_name AS blocker_display_name,
+       buu.username AS blocked_username, bpp.display_name AS blocked_display_name
+FROM user_blocks ub
+LEFT JOIN users bu ON bu.id = ub.blocker_id
+LEFT JOIN user_profiles bp ON bp.user_id = ub.blocker_id AND bp.tenant_id = bu.tenant_id
+LEFT JOIN users buu ON buu.id = ub.blocked_id
+LEFT JOIN user_profiles bpp ON bpp.user_id = ub.blocked_id AND bpp.tenant_id = buu.tenant_id
+WHERE ub.tenant_id = $1
+ORDER BY ub.created_at DESC, ub.blocker_id DESC
+LIMIT $2 OFFSET $3;
+
+-- name: CountAllUserBlocks :one
+-- Total count for admin DataTable pagination (BUG-010). Tenant-scoped.
+SELECT COUNT(*)::int AS count
+FROM user_blocks
+WHERE tenant_id = $1;
 
 -- name: IsBlocked :one
 -- Tenant-scoped per JEOS §9 (BUG-006). Checks both directions in one query.
@@ -125,6 +186,23 @@ SELECT id, tenant_id, pattern, action, replacement, created_at
 FROM censored_words
 WHERE tenant_id = $1
 ORDER BY created_at DESC;
+
+-- name: ListCensoredWordsPaginated :many
+-- Offset-based paginated list for admin DataTable server-side pagination
+-- (BUG-010). Supports optional action filter.
+SELECT id, tenant_id, pattern, action, replacement, created_at
+FROM censored_words
+WHERE tenant_id = $1
+  AND (sqlc.narg(action)::text IS NULL OR action = sqlc.narg(action))
+ORDER BY created_at DESC, id DESC
+LIMIT $2 OFFSET $3;
+
+-- name: CountCensoredWords :one
+-- Total count for admin DataTable pagination (BUG-010).
+SELECT COUNT(*)::int AS count
+FROM censored_words
+WHERE tenant_id = $1
+  AND (sqlc.narg(action)::text IS NULL OR action = sqlc.narg(action));
 
 -- name: DeleteCensoredWord :exec
 DELETE FROM censored_words

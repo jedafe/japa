@@ -105,8 +105,14 @@ type PersonaProcessor interface {
 
 // StudioProcessor handles AI Content Studio tasks (§75, ADR-076).
 type StudioProcessor interface {
-	RunBatch(ctx context.Context, batchID pgtype.UUID) error
-	RetryFailed(ctx context.Context, jobID pgtype.UUID) error
+	RunBatch(ctx context.Context, tenantID, batchID pgtype.UUID) error
+	RetryFailed(ctx context.Context, tenantID, jobID pgtype.UUID) error
+	// GenerateJob generates the draft for a single studio job: it loads the
+	// job, resolves its persona, invokes the AI gateway for the body, creates
+	// the draft contents row and routes it to the HITL review queue (or
+	// auto-publishes low-stakes types per studio.auto_publish_types). This is
+	// the actual payload of the extended content:generate_draft task.
+	GenerateJob(ctx context.Context, tenantID, jobID pgtype.UUID) error
 }
 
 // AgentDraftProcessor handles the agent:create_draft_request task
@@ -831,7 +837,8 @@ func HandleStudioRunBatch(ctx context.Context, t *asynq.Task) error {
 		return nil
 	}
 	var p struct {
-		BatchID string `json:"batch_id"`
+		BatchID  string `json:"batch_id"`
+		TenantID string `json:"tenant_id"`
 	}
 	if err := json.Unmarshal(t.Payload(), &p); err != nil {
 		return fmt.Errorf("task:studio:run_batch: invalid payload: %w", err)
@@ -840,7 +847,11 @@ func HandleStudioRunBatch(ctx context.Context, t *asynq.Task) error {
 	if err := id.Scan(p.BatchID); err != nil {
 		return fmt.Errorf("task:studio:run_batch: bad batch_id: %w", err)
 	}
-	if err := studioProcessor.RunBatch(ctx, id); err != nil {
+	var tenantID pgtype.UUID
+	if err := tenantID.Scan(p.TenantID); err != nil {
+		return fmt.Errorf("task:studio:run_batch: bad tenant_id: %w", err)
+	}
+	if err := studioProcessor.RunBatch(ctx, tenantID, id); err != nil {
 		return fmt.Errorf("task:studio:run_batch: %w", err)
 	}
 	return nil
@@ -853,7 +864,8 @@ func HandleStudioRetryFailed(ctx context.Context, t *asynq.Task) error {
 		return nil
 	}
 	var p struct {
-		JobID string `json:"job_id"`
+		JobID    string `json:"job_id"`
+		TenantID string `json:"tenant_id"`
 	}
 	if err := json.Unmarshal(t.Payload(), &p); err != nil {
 		return fmt.Errorf("task:studio:retry_failed: invalid payload: %w", err)
@@ -862,7 +874,11 @@ func HandleStudioRetryFailed(ctx context.Context, t *asynq.Task) error {
 	if err := id.Scan(p.JobID); err != nil {
 		return fmt.Errorf("task:studio:retry_failed: bad job_id: %w", err)
 	}
-	if err := studioProcessor.RetryFailed(ctx, id); err != nil {
+	var tenantID pgtype.UUID
+	if err := tenantID.Scan(p.TenantID); err != nil {
+		return fmt.Errorf("task:studio:retry_failed: bad tenant_id: %w", err)
+	}
+	if err := studioProcessor.RetryFailed(ctx, tenantID, id); err != nil {
 		return fmt.Errorf("task:studio:retry_failed: %w", err)
 	}
 	return nil

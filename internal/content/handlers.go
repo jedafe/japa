@@ -852,6 +852,13 @@ func (h *Handlers) CreateContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Record the creation for the spam rate-limit layer (BUG-004). Without
+	// this the jc:spam:rate:{tenant}:{user} sorted set is never populated and
+	// the rate_limit scoring layer always returns 0.
+	if h.SpamPipeline != nil {
+		h.SpamPipeline.RecordContentCreation(r.Context(), tenantID, user.UserID)
+	}
+
 	// Auto-assign content to spaces based on keyword matching in the title.
 	// Only runs when no space_id was explicitly selected by the user and a
 	// space matcher is wired. Matches primary (country/state/city) and public

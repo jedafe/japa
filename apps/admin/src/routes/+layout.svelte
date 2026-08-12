@@ -126,7 +126,7 @@
 		'/translations': 'i18n.manage',
 		'/search': 'search.analytics.view',
 		'/professional-types': 'professional.manage',
-		'/space-types': 'space_types.create',
+		'/space-types': 'spaces.types.create',
 		'/ads': 'ad.campaign.manage',
 		'/ads/slot-types': 'ad.campaign.manage',
 		'/ads/networks': 'ad.network.manage',

@@ -72,7 +72,6 @@ type StoryRow struct {
 	Visibility         string
 	ViewCount          int32
 	CommentCount       int32
-	ReactionCount      int32
 	PublishedAt        pgtype.Timestamptz
 	CreatedAt          pgtype.Timestamptz
 	UpdatedAt          pgtype.Timestamptz
@@ -173,13 +172,18 @@ WHERE content_id = $1 AND tenant_id = $2
 	return m, nil
 }
 
-// VerifyStory marks a story as verified by an admin.
-func (s *Store) VerifyStory(ctx context.Context, contentID, tenantID pgtype.UUID) error {
+// VerifyStory marks a story as verified by an admin. Sets hitl_reviewed_by
+// and hitl_reviewed_at per ADR-088 HITL review audit trail.
+func (s *Store) VerifyStory(ctx context.Context, contentID, tenantID, adminUserID pgtype.UUID) error {
 	const q = `
-UPDATE story_meta SET verified = true, updated_at = now()
+UPDATE story_meta
+SET verified = true,
+    hitl_reviewed_by = $3,
+    hitl_reviewed_at = now(),
+    updated_at = now()
 WHERE content_id = $1 AND tenant_id = $2
 `
-	cmd, err := s.pool.Writer.Exec(ctx, q, contentID, tenantID)
+	cmd, err := s.pool.Writer.Exec(ctx, q, contentID, tenantID, adminUserID)
 	if err != nil {
 		return fmt.Errorf("story: verify story: %w", err)
 	}
@@ -273,7 +277,7 @@ func (s *Store) ListStories(ctx context.Context, f ListStoriesFilter) ([]StoryRo
 
 	listQuery := fmt.Sprintf(`
 SELECT c.id, c.tenant_id, c.author_id, c.title, c.slug, c.body, c.body_html,
-       c.status, c.visibility, c.view_count, c.comment_count, 0 AS reaction_count,
+       c.status, c.visibility, c.view_count, c.comment_count,
        c.published_at, c.created_at, c.updated_at,
        sm.origin_space_id, os.name AS origin_space_name, os.geo_code AS origin_space_code,
        sm.destination_space_id, ds.name AS dest_space_name, ds.geo_code AS dest_space_code,
@@ -304,7 +308,7 @@ LIMIT $%d OFFSET $%d
 		var r StoryRow
 		if err := rows.Scan(
 			&r.ID, &r.TenantID, &r.AuthorID, &r.Title, &r.Slug, &r.Body, &r.BodyHTML,
-			&r.Status, &r.Visibility, &r.ViewCount, &r.CommentCount, &r.ReactionCount,
+			&r.Status, &r.Visibility, &r.ViewCount, &r.CommentCount,
 			&r.PublishedAt, &r.CreatedAt, &r.UpdatedAt,
 			&r.OriginSpaceID, &r.OriginSpaceName, &r.OriginSpaceCode,
 			&r.DestSpaceID, &r.DestSpaceName, &r.DestSpaceCode,
@@ -336,12 +340,13 @@ WHERE %s
 	return out, total, nil
 }
 
-// GetStoryBySlug returns a single story by its slug, joining contents +
-// story_meta + spaces + users.
+// GetStoryBySlug returns a single published story by its slug, joining contents +
+// story_meta + spaces + users. Only published stories are returned to anonymous
+// browsers; draft/pending stories are not publicly accessible (§79).
 func (s *Store) GetStoryBySlug(ctx context.Context, slug string, tenantID pgtype.UUID) (StoryRow, error) {
 	const q = `
 SELECT c.id, c.tenant_id, c.author_id, c.title, c.slug, c.body, c.body_html,
-       c.status, c.visibility, c.view_count, c.comment_count, 0 AS reaction_count,
+       c.status, c.visibility, c.view_count, c.comment_count,
        c.published_at, c.created_at, c.updated_at,
        sm.origin_space_id, os.name AS origin_space_name, os.geo_code AS origin_space_code,
        sm.destination_space_id, ds.name AS dest_space_name, ds.geo_code AS dest_space_code,
@@ -356,13 +361,13 @@ JOIN spaces ds ON ds.id = sm.destination_space_id
 LEFT JOIN users u ON u.id = c.author_id
 LEFT JOIN user_profiles up ON up.user_id = c.author_id
 WHERE c.tenant_id = $1 AND c.slug = $2 AND c.content_type = 'story'
-  AND c.deleted_at IS NULL
+  AND c.status = 'published' AND c.deleted_at IS NULL
 LIMIT 1
 `
 	var r StoryRow
 	err := s.pool.Reader.QueryRow(ctx, q, tenantID, slug).Scan(
 		&r.ID, &r.TenantID, &r.AuthorID, &r.Title, &r.Slug, &r.Body, &r.BodyHTML,
-		&r.Status, &r.Visibility, &r.ViewCount, &r.CommentCount, &r.ReactionCount,
+		&r.Status, &r.Visibility, &r.ViewCount, &r.CommentCount,
 		&r.PublishedAt, &r.CreatedAt, &r.UpdatedAt,
 		&r.OriginSpaceID, &r.OriginSpaceName, &r.OriginSpaceCode,
 		&r.DestSpaceID, &r.DestSpaceName, &r.DestSpaceCode,
@@ -386,6 +391,7 @@ type AdminListStoriesFilter struct {
 	Status    string // optional: filter by content status
 	Verified  *bool  // optional: filter by verified state
 	Q         string // optional: search title
+	Sort      string // "latest" (default), "oldest", "title"
 	Limit     int32
 	Offset    int32
 }
@@ -426,6 +432,16 @@ func (s *Store) AdminListStories(ctx context.Context, f AdminListStoriesFilter) 
 
 	whereClause := strings.Join(conditions, " AND ")
 
+	// Sort clause — admin list must support sort per the geo-aware tool pattern.
+	// "oldest" → created_at ASC; "title" → title ASC; default "latest" → created_at DESC.
+	orderClause := "c.created_at DESC"
+	switch f.Sort {
+	case "oldest":
+		orderClause = "c.created_at ASC"
+	case "title":
+		orderClause = "c.title ASC"
+	}
+
 	limit := f.Limit
 	if limit <= 0 {
 		limit = 20
@@ -440,7 +456,7 @@ func (s *Store) AdminListStories(ctx context.Context, f AdminListStoriesFilter) 
 
 	listQuery := fmt.Sprintf(`
 SELECT c.id, c.tenant_id, c.author_id, c.title, c.slug, c.body, c.body_html,
-       c.status, c.visibility, c.view_count, c.comment_count, 0 AS reaction_count,
+       c.status, c.visibility, c.view_count, c.comment_count,
        c.published_at, c.created_at, c.updated_at,
        sm.origin_space_id, os.name AS origin_space_name, os.geo_code AS origin_space_code,
        sm.destination_space_id, ds.name AS dest_space_name, ds.geo_code AS dest_space_code,
@@ -455,9 +471,9 @@ JOIN spaces ds ON ds.id = sm.destination_space_id
 LEFT JOIN users u ON u.id = c.author_id
 LEFT JOIN user_profiles up ON up.user_id = c.author_id
 WHERE %s
-ORDER BY c.created_at DESC
+ORDER BY %s
 LIMIT $%d OFFSET $%d
-`, whereClause, argIdx, argIdx+1)
+`, whereClause, orderClause, argIdx, argIdx+1)
 	args = append(args, limit, offset)
 
 	rows, err := s.pool.Reader.Query(ctx, listQuery, args...)
@@ -471,7 +487,7 @@ LIMIT $%d OFFSET $%d
 		var r StoryRow
 		if err := rows.Scan(
 			&r.ID, &r.TenantID, &r.AuthorID, &r.Title, &r.Slug, &r.Body, &r.BodyHTML,
-			&r.Status, &r.Visibility, &r.ViewCount, &r.CommentCount, &r.ReactionCount,
+			&r.Status, &r.Visibility, &r.ViewCount, &r.CommentCount,
 			&r.PublishedAt, &r.CreatedAt, &r.UpdatedAt,
 			&r.OriginSpaceID, &r.OriginSpaceName, &r.OriginSpaceCode,
 			&r.DestSpaceID, &r.DestSpaceName, &r.DestSpaceCode,

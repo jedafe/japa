@@ -1,9 +1,8 @@
 <script lang="ts">
 	// Ref: japaconnect-engineering/sections/79-community-story-wall.md
 	import { t } from '$lib/i18n';
-	import { goto } from '$app/navigation';
 	import { api } from '$lib/api/client';
-	import { ArrowLeft, Send, Loader2 } from 'lucide-svelte';
+	import { ArrowLeft, Send, Loader2, CheckCircle } from 'lucide-svelte';
 	import type { Story } from '$lib/types';
 	import type { PageData } from './$types';
 
@@ -23,6 +22,7 @@
 	let loading = $state(false);
 	let errors = $state<Record<string, string>>({});
 	let submitError = $state('');
+	let submitted = $state(false);
 
 	const inputClass =
 		'w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20';
@@ -58,8 +58,8 @@
 			};
 
 			const res = await api.post<Story>('/stories', payload);
-			if (res.data && res.data.slug) {
-				await goto(`/stories/${res.data.slug}`);
+			if (res.data) {
+				submitted = true;
 			} else {
 				submitError = res.error?.message ?? t('stories.errors.submit_failed', 'Failed to submit your story');
 			}
@@ -92,7 +92,30 @@
 			{t('stories.new_subheading', 'Your relocation journey can help others navigating the same path.')}
 		</p>
 
-		<form onsubmit={submit} class="mt-6 space-y-4" novalidate>
+		{#if submitted}
+			<div class="mt-6 rounded-[var(--radius)] border border-[var(--color-primary)]/30 bg-[var(--color-primary)]/5 p-4">
+				<div class="flex items-start gap-3">
+					<CheckCircle size={20} class="mt-0.5 shrink-0 text-[var(--color-primary)]" />
+					<div class="min-w-0">
+						<h2 class="text-sm font-semibold text-[var(--color-text)]">
+							{t('stories.submitted_title', 'Story submitted for review')}
+						</h2>
+						<p class="mt-1 text-sm text-[var(--color-text-subtle)]">
+							{t('stories.submitted_body', 'Your story has been submitted and is pending moderation review. Once approved, it will appear on the public Story Wall. You can view your draft below.')}
+						</p>
+					</div>
+				</div>
+				<div class="mt-3 flex gap-2">
+					<a
+						href="/stories"
+						class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-xs font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
+					>
+						<ArrowLeft size={14} /> {t('stories.back_to_wall', 'Back to stories')}
+					</a>
+				</div>
+			</div>
+		{:else}
+			<form onsubmit={submit} class="mt-6 space-y-4" novalidate>
 			<!-- Title -->
 			<div class="flex flex-col gap-1.5">
 				<label for="f-title" class="text-sm font-medium text-[var(--color-text)]">
@@ -189,5 +212,6 @@
 				</button>
 			</div>
 		</form>
+		{/if}
 	</div>
 </div>

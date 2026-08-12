@@ -4,6 +4,7 @@
 	import { Modal } from '$lib/components/ui/modal';
 	import { Button } from '$lib/components/ui/button';
 	import { storyAdminApi } from '$lib/api';
+	import { apiRaw } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { Eye, CheckCircle, Trash2 } from 'lucide-svelte';
@@ -16,7 +17,8 @@
 		author_id: string;
 		status: string;
 		created_at: string;
-		content?: string;
+		body?: string;
+		body_html?: string;
 	};
 
 	const canManage = $derived(hasPermission('story.verify'));
@@ -96,7 +98,7 @@
 		{ key: 'title', label: t('app.story.col_title', 'Title'), type: 'text' },
 		{ key: 'author_name', label: t('app.story.col_author', 'Author'), type: 'text' },
 		{ key: 'status', label: t('app.story.col_status', 'Status'), type: 'text' },
-		{ key: 'content', label: t('app.story.detail_content', 'Content'), type: 'textarea' }
+		{ key: 'body', label: t('app.story.detail_content', 'Content'), type: 'textarea' }
 	];
 
 	const config = $derived<EntityPageConfig>({
@@ -127,11 +129,26 @@
 		],
 		actions: rowActions,
 		fields,
-		load: async () => {
-			const result = await storyAdminApi.list();
+		load: async (params) => {
+			// Build query string with server-side pagination params.
+			const qp = new URLSearchParams();
+			if (params.page && params.page > 1) qp.set('page_offset', String((params.page - 1) * (params.pageSize ?? 25)));
+			if (params.pageSize) qp.set('page_size', String(params.pageSize));
+			if (params.q) qp.set('q', params.q);
+			if (params.sort) {
+				// EntityPage passes sort as "key:dir" (e.g. "created_at:desc").
+				const [sortKey, sortDir] = params.sort.split(':');
+				if (sortKey === 'created_at') qp.set('sort', sortDir === 'asc' ? 'oldest' : 'latest');
+				else if (sortKey === 'title') qp.set('sort', 'title');
+			}
+			const result = await apiRaw<{ data: StoryItem[]; pagination: { total: number } }>(
+				`/admin/stories${qp.toString() ? `?${qp.toString()}` : ''}`
+			);
 			if (result.ok) {
-				const data = (result.data as StoryItem[]) ?? [];
-				return { data, total: data.length, totalPages: 1 };
+				const data = (result.data as { data: StoryItem[]; pagination: { total: number } }).data ?? [];
+				const total = (result.data as { data: StoryItem[]; pagination: { total: number } }).pagination?.total ?? data.length;
+				const totalPages = Math.max(1, Math.ceil(total / (params.pageSize ?? 25)));
+				return { data, total, totalPages };
 			}
 			throw new Error(result.error ?? t('common.error', 'An error occurred'));
 		},
@@ -190,7 +207,7 @@
 		</div>
 		<div>
 			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.story.detail_content', 'Content')}</p>
-			<p class="mt-1 whitespace-pre-wrap text-sm" style="color: var(--color-foreground)">{row.content || '—'}</p>
+			<p class="mt-1 whitespace-pre-wrap text-sm" style="color: var(--color-foreground)">{row.body || row.body_html || '—'}</p>
 		</div>
 	</div>
 {/snippet}
