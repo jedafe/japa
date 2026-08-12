@@ -232,6 +232,18 @@ type ScamAlertProcessor interface {
 	NotifySubscribers(ctx context.Context, reportID, tenantID pgtype.UUID) error
 }
 
+// VisaTimelineProcessor handles Visa Timeline Tracker background tasks (§83,
+// ADR-091). RefreshStats recomputes the visa_processing_stats aggregate
+// table from shared, non-deleted visa_timelines + their milestones (nightly,
+// low queue). PromptUpdate sends a weekly nudge to members with in-progress
+// timelines (weekly, low queue). Both run in cron mode (no payload) and
+// iterate all tenants inside the processor.
+// Ref: japaconnect-engineering/sections/83-visa-timeline-tracker.md
+type VisaTimelineProcessor interface {
+	RefreshStats(ctx context.Context) (int64, error)
+	PromptUpdate(ctx context.Context) (int64, error)
+}
+
 // ---------------------------------------------------------------------------
 // Global processor slots — nil-safe (graceful degradation when unregistered).
 // ---------------------------------------------------------------------------
@@ -258,6 +270,7 @@ var (
 	japaStageProcessor      JapaStageProcessor
 	planningGroupProcessor  PlanningGroupProcessor
 	scamAlertProcessor      ScamAlertProcessor
+	visaTimelineProcessor   VisaTimelineProcessor
 )
 
 // Register functions — call once at startup before the worker serves.
@@ -283,6 +296,7 @@ func RegisterAgentDraftProcessor(p AgentDraftProcessor)         { agentDraftProc
 func RegisterJapaStageProcessor(p JapaStageProcessor)           { japaStageProcessor = p }
 func RegisterPlanningGroupProcessor(p PlanningGroupProcessor)   { planningGroupProcessor = p }
 func RegisterScamAlertProcessor(p ScamAlertProcessor)           { scamAlertProcessor = p }
+func RegisterVisaTimelineProcessor(p VisaTimelineProcessor)     { visaTimelineProcessor = p }
 
 // ---------------------------------------------------------------------------
 // Task type constants (V2 — Sections 60–77).
@@ -345,6 +359,13 @@ const (
 	// URLs return 404 so admins can review and update them.
 	TypeCredentialsCheckLinks = "credentials:check_links"
 
+	// §90 Visa Route Comparison (ADR-098).
+	// visa_routes:check_links runs weekly on Sunday 01:00 UTC on the low
+	// queue, HEAD-checking gov_source_url on active+published visa routes
+	// and logging routes whose URLs return 404 so admins can review and
+	// update them. Also updates source_url_last_checked to today.
+	TypeVisaRoutesCheckLinks = "visa_routes:check_links"
+
 	// §95 CV Formatter (ADR-103).
 	// cv_format:process runs on the default queue, processing a single
 	// pending session via the AI Gateway. cv_format_sessions:purge runs
@@ -378,6 +399,17 @@ const (
 	// members who haven't checked in this week.
 	TypePlanningGroupExpire          = "planning_group:expire"
 	TypePlanningGroupCheckinReminder = "planning_group:checkin_reminder"
+
+	// §83 Visa Timeline Tracker (ADR-091).
+	// visa_timeline:refresh_stats runs nightly on the low queue,
+	// recomputing the visa_processing_stats aggregate table from shared,
+	// non-deleted visa_timelines and their milestones (avg/median/p10/p90
+	// processing days per origin × destination × visa_category × consulate
+	// × month bucket). visa_timeline:prompt_update runs weekly on the low
+	// queue, nudging members with in-progress timelines (no decision/
+	// visa_issued milestone) to add a milestone.
+	TypeVisaTimelineRefreshStats = "visa_timeline:refresh_stats"
+	TypeVisaTimelinePromptUpdate = "visa_timeline:prompt_update"
 
 	// §81 Scam Alert Board (ADR-089).
 	// scam_alert:notify_subscribers runs on the default queue after a
@@ -1140,6 +1172,90 @@ WHERE is_active = true
 	return nil
 }
 
+// HandleVisaRoutesCheckLinks HEAD-checks gov_source_url on active+published
+// visa routes and logs routes whose URLs return 404 so admins can review and
+// update them (§90, ADR-098). Weekly sweep on the low queue. Also updates
+// source_url_last_checked to today for each checked route.
+func HandleVisaRoutesCheckLinks(ctx context.Context, _ *asynq.Task) error {
+	if dbPool == nil {
+		slog.Warn("task:visa_routes:check_links: no db pool registered, skipping")
+		return nil
+	}
+
+	const q = `
+SELECT id, gov_source_url
+FROM visa_routes
+WHERE is_active = true
+  AND status = 'published'
+  AND gov_source_url IS NOT NULL
+  AND gov_source_url != ''
+`
+	rows, err := dbPool.Reader.Query(ctx, q)
+	if err != nil {
+		return fmt.Errorf("task:visa_routes:check_links: query routes: %w", err)
+	}
+	defer rows.Close()
+
+	type route struct {
+		id  pgtype.UUID
+		url string
+	}
+	var routes []route
+	for rows.Next() {
+		var r route
+		if err := rows.Scan(&r.id, &r.url); err != nil {
+			return fmt.Errorf("task:visa_routes:check_links: scan row: %w", err)
+		}
+		routes = append(routes, r)
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("task:visa_routes:check_links: iterate rows: %w", err)
+	}
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	broken := 0
+	for _, r := range routes {
+		req, err := http.NewRequestWithContext(ctx, http.MethodHead, r.url, nil)
+		if err != nil {
+			slog.Warn("task:visa_routes:check_links: invalid URL",
+				"route_id", r.id.String(), "url", r.url, "error", err)
+			continue
+		}
+		resp, err := client.Do(req)
+		if err != nil {
+			slog.Warn("task:visa_routes:check_links: request failed",
+				"route_id", r.id.String(), "url", r.url, "error", err)
+			continue
+		}
+		resp.Body.Close()
+
+		if resp.StatusCode == http.StatusNotFound {
+			broken++
+			slog.Warn("task:visa_routes:check_links: gov_source_url returns 404",
+				"route_id", r.id.String(), "url", r.url)
+		}
+	}
+
+	// Update source_url_last_checked for all checked routes.
+	if len(routes) > 0 {
+		const updateQ = `
+UPDATE visa_routes
+SET source_url_last_checked = now()::date, updated_at = now()
+WHERE is_active = true
+  AND status = 'published'
+  AND gov_source_url IS NOT NULL
+  AND gov_source_url != ''
+`
+		if _, err := dbPool.Writer.Exec(ctx, updateQ); err != nil {
+			slog.Error("task:visa_routes:check_links: update last_checked failed", "error", err)
+		}
+	}
+
+	slog.Info("task:visa_routes:check_links: checked routes",
+		"total", len(routes), "broken", broken)
+	return nil
+}
+
 // HandleCvFormatProcess processes a single CV format session via the AI
 // Gateway (§95, ADR-103). The session_id is carried in the JSON payload.
 // Default queue. Idempotent on session_id — re-processing a completed
@@ -1348,5 +1464,39 @@ func HandleScamAlertNotifySubscribers(ctx context.Context, t *asynq.Task) error 
 	if err := scamAlertProcessor.NotifySubscribers(ctx, reportID, tenantID); err != nil {
 		return fmt.Errorf("task:scam_alert:notify_subscribers: %w", err)
 	}
+	return nil
+}
+
+// HandleVisaTimelineRefreshStats recomputes the visa_processing_stats
+// aggregate table from shared, non-deleted visa_timelines and their
+// milestones (§83, ADR-091). Runs nightly on the low queue in cron mode
+// (no payload); the processor iterates all tenants internally.
+func HandleVisaTimelineRefreshStats(ctx context.Context, _ *asynq.Task) error {
+	if visaTimelineProcessor == nil {
+		slog.Warn("task:visa_timeline:refresh_stats: no processor registered, skipping")
+		return nil
+	}
+	n, err := visaTimelineProcessor.RefreshStats(ctx)
+	if err != nil {
+		return fmt.Errorf("task:visa_timeline:refresh_stats: %w", err)
+	}
+	slog.Info("task:visa_timeline:refresh_stats: refreshed stat rows", "count", n)
+	return nil
+}
+
+// HandleVisaTimelinePromptUpdate sends a weekly nudge to members with
+// in-progress visa timelines (no decision/visa_issued milestone) prompting
+// them to add a milestone (§83, ADR-091). Runs weekly on the low queue in
+// cron mode (no payload); the processor iterates all tenants internally.
+func HandleVisaTimelinePromptUpdate(ctx context.Context, _ *asynq.Task) error {
+	if visaTimelineProcessor == nil {
+		slog.Warn("task:visa_timeline:prompt_update: no processor registered, skipping")
+		return nil
+	}
+	n, err := visaTimelineProcessor.PromptUpdate(ctx)
+	if err != nil {
+		return fmt.Errorf("task:visa_timeline:prompt_update: %w", err)
+	}
+	slog.Info("task:visa_timeline:prompt_update: sent prompts", "count", n)
 	return nil
 }

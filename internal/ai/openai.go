@@ -145,7 +145,7 @@ func (p *OpenAIProvider) Send(ctx context.Context, req Request) (Response, error
 
 	endpoint := p.baseURL + "/chat/completions"
 
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
+	httpReq, err := newValidatedHTTPRequest(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
 		return Response{}, fmt.Errorf("openai: creating request: %w", err)
 	}
@@ -159,7 +159,7 @@ func (p *OpenAIProvider) Send(ctx context.Context, req Request) (Response, error
 	httpReq.Header.Set("HTTP-Referer", "https://japaconnect.com")
 	httpReq.Header.Set("X-Title", "JapaConnect")
 
-	httpResp, err := p.httpClient.Do(httpReq)
+	httpResp, err := p.httpClient.Do(httpReq) // #nosec G704 -- endpoint validated by newValidatedHTTPRequest
 	if err != nil {
 		return Response{}, fmt.Errorf("openai: request failed: %w", err)
 	}
@@ -355,7 +355,7 @@ func (p *OpenAIProvider) ChatWithTools(ctx context.Context, req ChatWithToolsReq
 	}
 
 	endpoint := p.baseURL + "/chat/completions"
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
+	httpReq, err := newValidatedHTTPRequest(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
 		return ChatWithToolsResponse{}, fmt.Errorf("openai: creating tools request: %w", err)
 	}
@@ -365,7 +365,7 @@ func (p *OpenAIProvider) ChatWithTools(ctx context.Context, req ChatWithToolsReq
 	httpReq.Header.Set("HTTP-Referer", "https://japaconnect.com")
 	httpReq.Header.Set("X-Title", "JapaConnect")
 
-	httpResp, err := p.httpClient.Do(httpReq)
+	httpResp, err := p.httpClient.Do(httpReq) // #nosec G704 -- endpoint validated by newValidatedHTTPRequest
 	if err != nil {
 		return ChatWithToolsResponse{}, fmt.Errorf("openai: tools request failed: %w", err)
 	}
@@ -480,7 +480,7 @@ func (p *OpenAIProvider) FetchModels(ctx context.Context) ([]ModelInfo, error) {
 	}
 
 	endpoint := p.baseURL + "/models"
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	httpReq, err := newValidatedHTTPRequest(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return nil, fmt.Errorf("openai: creating models request: %w", err)
 	}

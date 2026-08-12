@@ -18,11 +18,13 @@
 package visatimeline
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
@@ -33,15 +35,29 @@ import (
 	"github.com/jedafe/japa/internal/tenant"
 )
 
+// pointsChecker returns the user's lifetime points (reputation) for the
+// anti-gaming reputation gate on shared timelines (§83: contribute to
+// aggregate stats requires reputation ≥ visa_timeline.min_reputation).
+type pointsChecker interface {
+	GetPointsBalance(ctx context.Context, tenantID, userID pgtype.UUID) (int64, error)
+}
+
 // Handlers exposes the visa-timeline endpoints.
 type Handlers struct {
 	service  *Service
 	settings *config.Settings
+	points   pointsChecker
 }
 
 // NewHandlers creates visa-timeline handlers bound to the provided service.
 func NewHandlers(service *Service, settings *config.Settings) *Handlers {
 	return &Handlers{service: service, settings: settings}
+}
+
+// SetPointsChecker injects the wallet service for the anti-gaming reputation
+// gate on shared timelines (§83). Called once at startup from server.go.
+func (h *Handlers) SetPointsChecker(pc pointsChecker) {
+	h.points = pc
 }
 
 // ---------------------------------------------------------------------------
@@ -110,7 +126,7 @@ func parsePageParams(r *http.Request) (page, limit int32) {
 // ---------------------------------------------------------------------------
 
 // HandleStats handles GET /visa-timelines/stats — public aggregated
-// processing-time statistics. Query params: ?origin=&dest=&visa=
+// processing-time statistics. Query params: ?origin=&dest=&visa=&consulate=&months=
 func (h *Handlers) HandleStats(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
@@ -138,8 +154,15 @@ func (h *Handlers) HandleStats(w http.ResponseWriter, r *http.Request) {
 	}
 
 	visaCategory := r.URL.Query().Get("visa")
+	consulate := r.URL.Query().Get("consulate")
+	months := 0
+	if v := r.URL.Query().Get("months"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 60 {
+			months = n
+		}
+	}
 
-	stats, err := h.service.GetStats(r.Context(), tenantID, originSpaceID, destSpaceID, visaCategory)
+	stats, err := h.service.GetStats(r.Context(), tenantID, originSpaceID, destSpaceID, visaCategory, consulate, months)
 	if err != nil {
 		slog.Error("visatimeline: stats failed", "error", err)
 		writeError(w, http.StatusInternalServerError, "stats_failed", "Failed to get stats")
@@ -150,7 +173,7 @@ func (h *Handlers) HandleStats(w http.ResponseWriter, r *http.Request) {
 }
 
 // HandleTrend handles GET /visa-timelines/stats/trend — public monthly trend.
-// Query params: ?dest=&visa=&months= (default 12)
+// Query params: ?dest=&visa=&consulate=&months= (default 12)
 func (h *Handlers) HandleTrend(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
@@ -171,6 +194,7 @@ func (h *Handlers) HandleTrend(w http.ResponseWriter, r *http.Request) {
 	}
 
 	visaCategory := r.URL.Query().Get("visa")
+	consulate := r.URL.Query().Get("consulate")
 	months := 12
 	if v := r.URL.Query().Get("months"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 60 {
@@ -178,7 +202,7 @@ func (h *Handlers) HandleTrend(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	points, err := h.service.GetTrend(r.Context(), tenantID, destSpaceID, visaCategory, months)
+	points, err := h.service.GetTrend(r.Context(), tenantID, destSpaceID, visaCategory, consulate, months)
 	if err != nil {
 		slog.Error("visatimeline: trend failed", "error", err)
 		writeError(w, http.StatusInternalServerError, "trend_failed", "Failed to get trend")
@@ -252,6 +276,25 @@ func (h *Handlers) HandleCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Anti-gaming gate (§83 Privacy & Anti-Gaming): contributing to the
+	// community aggregate requires (a) account age ≥
+	// visa_timeline.min_account_age_days (default 30) and (b) reputation ≥
+	// visa_timeline.min_reputation (default 50). The timeline itself can
+	// always be created privately; only the share flag is gated. If the
+	// user does not meet the thresholds, we force is_shared=false rather
+	// than rejecting the whole request, so members can still track their
+	// own journey privately.
+	if input.IsShared {
+		if !h.checkAntiGaming(w, r, tenantID, user.UserID) {
+			// Gate failed — the helper already wrote the error response
+			// when the check itself errored. If the thresholds simply
+			// aren't met, downgrade to private and continue.
+			if input.IsShared {
+				input.IsShared = false
+			}
+		}
+	}
+
 	timeline, err := h.service.Create(r.Context(), tenantID, user.UserID, input)
 	if err != nil {
 		slog.Error("visatimeline: create failed", "error", err)
@@ -260,6 +303,53 @@ func (h *Handlers) HandleCreate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusCreated, map[string]any{"data": timeline})
+}
+
+// checkAntiGaming verifies the account-age and reputation thresholds for
+// sharing a timeline in the community aggregate (§83). Returns true if the
+// user meets both thresholds (or if the checker is not wired, in which case
+// the gate is a no-op for graceful degradation). Returns false if the
+// thresholds are not met (the caller should downgrade is_shared to false) or
+// if the check itself failed (the caller should also downgrade + the error
+// has already been written to the response).
+func (h *Handlers) checkAntiGaming(w http.ResponseWriter, r *http.Request, tenantID, userID pgtype.UUID) bool {
+	minAgeDays := 30
+	if h.settings != nil {
+		minAgeDays = h.settings.GetIntOr(r.Context(), tenantID, "visa_timeline.min_account_age_days", 30)
+	}
+	minReputation := 50
+	if h.settings != nil {
+		minReputation = h.settings.GetIntOr(r.Context(), tenantID, "visa_timeline.min_reputation", 50)
+	}
+
+	// Account-age check via the store.
+	createdAt, err := h.service.store.UserAccountAge(r.Context(), tenantID, userID)
+	if err != nil {
+		slog.Error("visatimeline: account age check failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "anti_gaming_check_failed", "Failed to verify account age")
+		return false
+	}
+	if createdAt.Valid {
+		ageDays := int(time.Since(createdAt.Time).Hours() / 24)
+		if ageDays < minAgeDays {
+			return false
+		}
+	}
+
+	// Reputation check via the wallet points balance.
+	if h.points != nil && minReputation > 0 {
+		points, err := h.points.GetPointsBalance(r.Context(), tenantID, userID)
+		if err != nil {
+			slog.Error("visatimeline: reputation check failed", "error", err)
+			writeError(w, http.StatusInternalServerError, "anti_gaming_check_failed", "Failed to verify reputation")
+			return false
+		}
+		if points < int64(minReputation) {
+			return false
+		}
+	}
+
+	return true
 }
 
 // HandleUpdate handles PATCH /me/visa-timelines/:id — update own timeline
@@ -349,6 +439,10 @@ func (h *Handlers) HandleAddMilestone(w http.ResponseWriter, r *http.Request) {
 		}
 		if errors.Is(err, ErrNotOwner) {
 			writeError(w, http.StatusForbidden, "not_owner", "You can only add milestones to your own timelines")
+			return
+		}
+		if errors.Is(err, ErrImplausibleSequence) {
+			writeError(w, http.StatusUnprocessableEntity, "implausible_sequence", "This milestone date is inconsistent with existing milestones")
 			return
 		}
 		slog.Error("visatimeline: add milestone failed", "error", err)

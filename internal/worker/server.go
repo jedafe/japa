@@ -181,6 +181,11 @@ func NewScheduler(cfg *Config) *asynq.Scheduler {
 	// logs pathways whose URLs return 404. Low queue.
 	schedule("0 2 * * 0", TypeCredentialsCheckLinks, 7*24*time.Hour)
 
+	// Weekly visa route link validation — Sunday 01:00 UTC (§90, ADR-098).
+	// HEAD-checks gov_source_url on active+published visa routes and logs
+	// routes whose URLs return 404 so admins can review. Low queue.
+	schedule("0 1 * * 0", TypeVisaRoutesCheckLinks, 7*24*time.Hour)
+
 	// Nightly CV format session purge — 05:00 UTC (§95, ADR-103).
 	// Deletes cv_format_sessions rows past their expires_at (24h after
 	// creation). Low queue.
@@ -201,6 +206,15 @@ func NewScheduler(cfg *Config) *asynq.Scheduler {
 	// ADR-090). Sends check-in reminders to members who haven't checked in
 	// this week. Default queue.
 	schedule("0 9 * * 1", TypePlanningGroupCheckinReminder, 7*24*time.Hour)
+
+	// Nightly visa timeline stats refresh — 02:00 UTC (§83, ADR-091).
+	// Recomputes the visa_processing_stats aggregate table from shared,
+	// non-deleted visa_timelines + milestones. Low queue.
+	schedule("0 2 * * *", TypeVisaTimelineRefreshStats, 24*time.Hour)
+
+	// Weekly visa timeline update prompt — Monday 09:00 UTC (§83, ADR-091).
+	// Nudges members with in-progress timelines to add a milestone. Low queue.
+	schedule("0 9 * * 1", TypeVisaTimelinePromptUpdate, 7*24*time.Hour)
 
 	// Remittance rate fetch — every 30 min (§74, ADR-075 §8).
 	// The cron spec can be overridden via JC_SCHEDULER_CRON_REMITTANCE_FETCH_RATES.

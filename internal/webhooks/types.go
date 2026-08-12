@@ -25,10 +25,13 @@ type CreateWebhookRequest struct {
 }
 
 // UpdateWebhookRequest is the input for updating an existing webhook endpoint.
+// The secret is NOT accepted here — §12 PATCH only allows { name, url,
+// event_types, is_active }. Secret rotation must go through a dedicated
+// rotate endpoint (BUG-023: previously accepted client-supplied secrets,
+// defeating the server-generated signing model).
 type UpdateWebhookRequest struct {
 	Name       *string  `json:"name,omitempty"`
 	URL        *string  `json:"url,omitempty"`
-	Secret     *string  `json:"secret,omitempty"`
 	EventTypes []string `json:"event_types,omitempty"`
 	IsActive   *bool    `json:"is_active,omitempty"`
 }

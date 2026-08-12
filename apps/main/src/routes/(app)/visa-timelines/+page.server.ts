@@ -6,8 +6,11 @@ import type { VisaProcessingStats, TrendPoint, Space } from '$lib/types';
 /**
  * Visa Timeline aggregate stats at /visa-timelines (Section 83).
  * SSR-fetches GET /visa-timelines/stats and GET /visa-timelines/stats/trend,
- * passing through the dest/origin/visa query params so the
+ * passing through the dest/origin/visa/consulate/months query params so the
  * page renders with the active filters applied without a client round-trip.
+ *
+ * The stats endpoint returns an array of period rows (one per month bucket);
+ * the page derives the latest period for headline display.
  */
 export const load: PageServerLoad = async (event) => {
 	const ctx = apiContext(event);
@@ -16,7 +19,9 @@ export const load: PageServerLoad = async (event) => {
 	const filters = {
 		dest: event.url.searchParams.get('dest') ?? '',
 		origin: event.url.searchParams.get('origin') ?? '',
-		visa: event.url.searchParams.get('visa') ?? ''
+		visa: event.url.searchParams.get('visa') ?? '',
+		consulate: event.url.searchParams.get('consulate') ?? '',
+		months: event.url.searchParams.get('months') ?? ''
 	};
 
 	let countries: Space[] = [];
@@ -31,13 +36,15 @@ export const load: PageServerLoad = async (event) => {
 	if (filters.dest) qs.set('dest', filters.dest);
 	if (filters.origin) qs.set('origin', filters.origin);
 	if (filters.visa) qs.set('visa', filters.visa);
+	if (filters.consulate) qs.set('consulate', filters.consulate);
+	if (filters.months) qs.set('months', filters.months);
 	const query = qs.toString();
 
-	let stats: VisaProcessingStats | null = null;
+	let stats: VisaProcessingStats[] = [];
 	let trend: TrendPoint[] = [];
 	let loadError = false;
 	try {
-		stats = await apiGet<VisaProcessingStats>(ctx, `/visa-timelines/stats${query ? `?${query}` : ''}`);
+		stats = await apiGet<VisaProcessingStats[]>(ctx, `/visa-timelines/stats${query ? `?${query}` : ''}`);
 	} catch {
 		loadError = true;
 	}

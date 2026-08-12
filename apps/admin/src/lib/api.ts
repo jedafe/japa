@@ -1774,11 +1774,17 @@ export const cvFormatterAdminApi = {
 
 export const visaRoutesAdminApi = {
 	list: (params?: string) => api<unknown>(`/admin/visa-routes${params ? `?${params}` : ''}`),
+	listRaw: (params?: string) =>
+		apiRaw<{ data: unknown[]; pagination: { page: number; limit: number; total: number } }>(
+			`/admin/visa-routes${params ? `?${params}` : ''}`
+		),
 	create: (body: Record<string, unknown>) => api<unknown>(`/admin/visa-routes`, { method: 'POST', body }),
 	update: (id: string, body: Record<string, unknown>) =>
 		api<unknown>(`/admin/visa-routes/${id}`, { method: 'PATCH', body }),
 	delete: (id: string) => api<unknown>(`/admin/visa-routes/${id}`, { method: 'DELETE' }),
 	approve: (id: string) => api<unknown>(`/admin/visa-routes/${id}/approve`, { method: 'PATCH', body: {} }),
+	generate: (body: Record<string, unknown>) =>
+		api<unknown>(`/admin/visa-routes/generate`, { method: 'POST', body }),
 };
 
 export const arrivalChecklistAdminApi = {

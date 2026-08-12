@@ -321,24 +321,52 @@ func NewProviderFromConfig(cfg ProviderConfig, apiKey string) (Provider, error) 
 		//   - OpenCode Zen: (admin-configured base URL)
 		//   - Ollama:       http://localhost:11434/v1
 		//   - Command Code: https://api.commandcode.ai/provider/v1
+		//
+		// Validate the admin-supplied base URL before constructing the
+		// provider. validateEndpointAllowHTTP permits HTTP for local
+		// proxies (Ollama at http://localhost:11434) while still enforcing
+		// a valid http(s) scheme, non-empty host, and rejecting HTTPS to
+		// internal/loopback hosts (SSRF defense-in-depth, §103 Security).
+		// An empty BaseURL is allowed — the constructor falls back to a
+		// hardcoded default HTTPS endpoint.
+		if cfg.BaseURL != "" {
+			if err := validateEndpointAllowHTTP(cfg.BaseURL); err != nil {
+				return nil, fmt.Errorf("ai: invalid base URL for %s provider: %w", cfg.ProviderType, err)
+			}
+		}
 		p := NewOpenAIProvider(cfg.Name, apiKey, cfg.BaseURL, cfg.Model)
 		return p, nil
 	case "anthropic":
 		// Dedicated Anthropic Messages API provider.
 		// Native: https://api.anthropic.com/v1 (x-api-key header)
 		// Command Code: https://api.commandcode.ai/provider/v1 (Bearer auth, auto-detected)
+		if cfg.BaseURL != "" {
+			if err := validateEndpointAllowHTTP(cfg.BaseURL); err != nil {
+				return nil, fmt.Errorf("ai: invalid base URL for anthropic provider: %w", err)
+			}
+		}
 		p := NewAnthropicProvider(cfg.Name, apiKey, cfg.BaseURL, cfg.Model)
 		return p, nil
 	case "devin":
 		// Devin agent API — async session-based, wraps create+poll into Send().
 		// Base URL must include the org path:
 		//   https://api.devin.ai/v3/organizations/org-abc123
+		if cfg.BaseURL != "" {
+			if err := validateEndpointAllowHTTP(cfg.BaseURL); err != nil {
+				return nil, fmt.Errorf("ai: invalid base URL for devin provider: %w", err)
+			}
+		}
 		p := NewDevinProvider(cfg.Name, apiKey, cfg.BaseURL, cfg.Model)
 		return p, nil
 	case "cursor":
 		// Cursor Cloud Agents API — async agent-based, wraps create+poll into Send().
 		// Base URL: https://api.cursor.com/v1
 		// Auth: Basic auth with API key as username.
+		if cfg.BaseURL != "" {
+			if err := validateEndpointAllowHTTP(cfg.BaseURL); err != nil {
+				return nil, fmt.Errorf("ai: invalid base URL for cursor provider: %w", err)
+			}
+		}
 		p := NewCursorProvider(cfg.Name, apiKey, cfg.BaseURL, cfg.Model)
 		return p, nil
 	default:

@@ -8,6 +8,7 @@
 //	GET   /api/v1/visa-routes/:id               — route detail
 //	GET   /api/v1/admin/visa-routes             — all routes (visa_routes.manage)
 //	POST  /api/v1/admin/visa-routes             — create route (visa_routes.manage)
+//	POST  /api/v1/admin/visa-routes/generate    — Content Agent draft (visa_routes.manage)
 //	PATCH /api/v1/admin/visa-routes/:id         — update route (visa_routes.manage)
 //	PATCH /api/v1/admin/visa-routes/:id/approve — HITL approve (visa_routes.manage)
 //	DELETE /api/v1/admin/visa-routes/:id        — deactivate route (visa_routes.manage)
@@ -441,6 +442,46 @@ func (h *Handlers) HandleAdminApprove(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"approved": true}})
+}
+
+// HandleAdminGenerate handles POST /admin/visa-routes/generate — Content
+// Agent draft placeholder. Admin-only (visa_routes.manage permission checked
+// at route registration). Returns 202 Accepted with a placeholder response
+// indicating the generation has been queued (§90, ADR-088).
+func (h *Handlers) HandleAdminGenerate(w http.ResponseWriter, r *http.Request) {
+	user, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+		writeError(w, http.StatusNotFound, "visa_routes_disabled", "Visa routes are not available")
+		return
+	}
+
+	var input GenerateRouteRequest
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		return
+	}
+
+	if input.DestinationSpaceID == "" {
+		writeError(w, http.StatusBadRequest, "missing_destination_space_id", "destination_space_id is required")
+		return
+	}
+
+	result, err := h.service.GenerateDraft(r.Context(), tenantID, input)
+	if err != nil {
+		slog.Error("visaroutes: admin generate failed", "error", err, "user_id", user.UserID)
+		writeError(w, http.StatusInternalServerError, "generate_failed", "Failed to queue draft generation")
+		return
+	}
+
+	writeJSON(w, http.StatusAccepted, map[string]any{"data": result})
 }
 
 // HandleAdminDelete handles DELETE /admin/visa-routes/:id — soft-deactivate

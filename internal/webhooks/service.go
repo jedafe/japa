@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db"
 	errpkg "github.com/jedafe/japa/internal/errors"
@@ -77,6 +78,18 @@ func generateChallengeToken() (string, error) {
 	return hex.EncodeToString(b), nil
 }
 
+// generateEventID generates a unique UUID for each webhook event occurrence
+// (BUG-022). The §12 envelope's event_id must be unique per event so
+// consumers can deduplicate and trace deliveries. Previously all deliveries
+// shared the zero UUID, making the field useless.
+func generateEventID() (pgtype.UUID, error) {
+	var id pgtype.UUID
+	if err := id.Scan(uuid.New().String()); err != nil {
+		return pgtype.UUID{}, fmt.Errorf("generating event ID: %w", err)
+	}
+	return id, nil
+}
+
 // ---------------------------------------------------------------------------
 // Admin CRUD — Webhook Endpoints
 // ---------------------------------------------------------------------------
@@ -124,7 +137,10 @@ func (s *Service) CreateEndpoint(ctx context.Context, tenantID, createdBy pgtype
 	return ep, nil
 }
 
-// UpdateEndpoint updates an existing webhook endpoint.
+// UpdateEndpoint updates an existing webhook endpoint. The signing secret is
+// never changed by this method — §12 PATCH only accepts { name, url,
+// event_types, is_active } (BUG-023). The current secret is preserved
+// as-is (already encrypted at rest from the initial create).
 func (s *Service) UpdateEndpoint(ctx context.Context, tenantID, id pgtype.UUID, input UpdateWebhookRequest) (WebhookEndpointResponse, error) {
 	// Fetch current values for merge.
 	current, err := s.store.GetEndpoint(ctx, tenantID, id)
@@ -142,10 +158,10 @@ func (s *Service) UpdateEndpoint(ctx context.Context, tenantID, id pgtype.UUID, 
 		url = *input.URL
 	}
 
+	// BUG-023: preserve the current secret — the client cannot supply or
+	// rotate the signing secret via PATCH. Secret rotation requires a
+	// dedicated endpoint that generates a new server-side secret.
 	secret := current.Secret
-	if input.Secret != nil {
-		secret = *input.Secret
-	}
 
 	eventTypes := current.EventTypes
 	if input.EventTypes != nil {
@@ -223,9 +239,11 @@ func (s *Service) TestEndpoint(ctx context.Context, tenantID, endpointID pgtype.
 		"message": fmt.Sprintf("This is a test webhook delivery from %s", s.siteName),
 	}
 
-	var eventID pgtype.UUID
-	if err := eventID.Scan("00000000-0000-0000-0000-000000000000"); err != nil {
-		return pgtype.UUID{}, fmt.Errorf("creating test event ID: %w", err)
+	// BUG-022: generate a unique event ID per event occurrence so the
+	// envelope's event_id is meaningful for deduplication and tracing.
+	eventID, err := generateEventID()
+	if err != nil {
+		return pgtype.UUID{}, err
 	}
 
 	deliveryID, err := s.CreateDelivery(ctx, tenantID, endpoint.ID, eventID, eventType, testPayload)
@@ -394,8 +412,19 @@ func (s *Service) GetDelivery(ctx context.Context, tenantID, deliveryID pgtype.U
 	return &d, nil
 }
 
-// RetryDelivery reschedules a failed delivery for immediate retry.
-func (s *Service) RetryDelivery(ctx context.Context, tenantID, deliveryID pgtype.UUID) error {
+// RetryDelivery reschedules a failed delivery for immediate retry. It
+// verifies that the delivery belongs to the given endpointID (BUG-025:
+// previously did not verify ownership, allowing cross-webhook retry).
+func (s *Service) RetryDelivery(ctx context.Context, tenantID, endpointID, deliveryID pgtype.UUID) error {
+	// Verify the delivery belongs to this endpoint before retrying.
+	delivery, err := s.store.GetDelivery(ctx, tenantID, deliveryID)
+	if err != nil {
+		return fmt.Errorf("fetching delivery for retry: %w", err)
+	}
+	if delivery.EndpointID != endpointID {
+		return fmt.Errorf("delivery %s does not belong to webhook endpoint %s", deliveryID, endpointID)
+	}
+
 	if err := s.store.RetryDelivery(ctx, tenantID, deliveryID); err != nil {
 		return err
 	}
@@ -439,9 +468,13 @@ func (s *Service) EmitEvent(ctx context.Context, tenantID pgtype.UUID, eventType
 		return
 	}
 
-	var eventID pgtype.UUID
-	if err := eventID.Scan("00000000-0000-0000-0000-000000000000"); err != nil {
-		slog.Warn("webhooks: failed to scan zero event ID", "error", err)
+	// BUG-022: generate a unique event ID per event occurrence so the
+	// envelope's event_id is meaningful for deduplication and tracing.
+	// All deliveries for this event share the same event_id, which is
+	// correct — they are fan-out copies of the same logical event.
+	eventID, err := generateEventID()
+	if err != nil {
+		slog.Warn("webhooks: failed to generate event ID", "error", err)
 		return
 	}
 

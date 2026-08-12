@@ -1,7 +1,7 @@
 {
   "exclude-rules": [
     {
-      "path": "internal/ai/(openai|anthropic|xiaomi|devin|cursor)\\.go",
+      "path": "internal/ai/(openai|anthropic|xiaomi|devin|cursor|endpoint_validation)\\.go",
       "rules": ["G704"]
     }
   ]
