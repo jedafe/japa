@@ -134,7 +134,7 @@ func parsePageSizeOffset(r *http.Request) int32 {
 // User Portal Handlers
 // ---------------------------------------------------------------------------
 
-// CreateTicket handles POST /support.
+// CreateTicket handles POST /api/v1/tickets.
 func (h *Handlers) CreateTicket(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
 	if !ok {
@@ -195,7 +195,7 @@ func (h *Handlers) CreateTicket(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, map[string]any{"data": ticket})
 }
 
-// ListMyTickets handles GET /support/my.
+// ListMyTickets handles GET /api/v1/me/tickets.
 func (h *Handlers) ListMyTickets(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
 	if !ok {
@@ -219,7 +219,7 @@ func (h *Handlers) ListMyTickets(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"data": tickets})
 }
 
-// GetMyTicket handles GET /support/my/:id.
+// GetMyTicket handles GET /api/v1/me/tickets/{id}.
 func (h *Handlers) GetMyTicket(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
 	if !ok {
@@ -270,7 +270,7 @@ func (h *Handlers) GetMyTicket(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// AddReply handles POST /support/my/:id/reply.
+// AddReply handles POST /api/v1/me/tickets/{id}/comments.
 func (h *Handlers) AddReply(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
 	if !ok {

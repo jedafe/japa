@@ -78,7 +78,10 @@
 		{ value: "", label: t("tickets.all", "All"), icon: Ticket },
 		{ value: "open", label: t("tickets.open", "Open"), icon: AlertCircle },
 		{ value: "in_progress", label: t("tickets.in_progress", "In Progress"), icon: Clock },
-		{ value: "resolved", label: t("tickets.resolved", "Resolved"), icon: CheckCircle }
+		{ value: "waiting_on_user", label: t("tickets.waiting_on_user", "Waiting on User"), icon: MessageSquare },
+		{ value: "resolved", label: t("tickets.resolved", "Resolved"), icon: CheckCircle },
+		{ value: "closed", label: t("tickets.closed", "Closed"), icon: CheckCircle },
+		{ value: "spam", label: t("tickets.spam", "Spam"), icon: AlertCircle }
 	];
 
 	const filterDefs: FilterDef[] = [
@@ -86,10 +89,10 @@
 			key: "priority",
 			label: t("tickets.priority", "Priority"),
 			options: [
-				{ value: "low", label: "Low" },
-				{ value: "normal", label: "Normal" },
-				{ value: "high", label: "High" },
-				{ value: "urgent", label: "Urgent" }
+				{ value: "low", label: t("tickets.low", "Low") },
+				{ value: "normal", label: t("tickets.normal", "Normal") },
+				{ value: "high", label: t("tickets.high", "High") },
+				{ value: "urgent", label: t("tickets.urgent", "Urgent") }
 			]
 		}
 	];
@@ -379,7 +382,7 @@
 		{#if loading}
 			<TableSkeleton rows={8} columns={columns.length} />
 		{:else}
-			<DataTable {columns} data={tickets} pageSize={10} selectable bind:selectedIds filters={filterDefs} bind:filterValue={filterValues} onfilterapply={() => { currentPage = 0; loadTickets(); }} onfilterclear={() => { filterValues = {}; currentPage = 0; loadTickets(); }} actions={rowActions}>
+			<DataTable {columns} data={tickets} pageSize={10} selectable bind:selectedIds filters={filterDefs} bind:filterValue={filterValues} onfilterapply={() => { currentPage = 0; }} onfilterclear={() => { filterValues = {}; currentPage = 0; }} actions={rowActions}>
 				{#snippet bulkActions()}
 					<Button variant="destructive" size="sm" onclick={bulkDelete} disabled={bulkDeleting}>
 						<Trash2 class="mr-1 h-3.5 w-3.5" />

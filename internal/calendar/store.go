@@ -338,7 +338,7 @@ func (s *Store) SaveEntry(ctx context.Context, userID, entryID, tenantID pgtype.
 	_, err := s.pool.Writer.Exec(ctx, `
 INSERT INTO calendar_saves (user_id, entry_id, tenant_id, saved_at)
 VALUES ($1, $2, $3, now())
-ON CONFLICT (user_id, entry_id, tenant_id) DO NOTHING
+ON CONFLICT (user_id, entry_id) DO NOTHING
 `, userID, entryID, tenantID)
 	if err != nil {
 		return fmt.Errorf("calendar: save entry: %w", err)
@@ -363,7 +363,7 @@ func (s *Store) Subscribe(ctx context.Context, userID, tenantID, destSpaceID pgt
 	_, err := s.pool.Writer.Exec(ctx, `
 INSERT INTO calendar_subscriptions (user_id, tenant_id, destination_space_id, category, created_at)
 VALUES ($1, $2, $3, $4, now())
-ON CONFLICT (user_id, tenant_id, destination_space_id, category) DO NOTHING
+ON CONFLICT (tenant_id, user_id, destination_space_id, category) DO NOTHING
 `, userID, tenantID, destSpaceID, category)
 	if err != nil {
 		return fmt.Errorf("calendar: subscribe: %w", err)

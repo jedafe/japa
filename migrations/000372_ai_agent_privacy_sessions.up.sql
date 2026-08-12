@@ -127,9 +127,12 @@ INSERT INTO permissions (key, description) VALUES
 ON CONFLICT (key) DO NOTHING;
 
 -- Grant the four new nodes to super_admin.
+-- Note: the roles table is `user_roles` (from 000006_create_rbac_tables.sql);
+-- an earlier draft referenced a non-existent `roles` table, which errored
+-- on databases that apply migrations transactionally (e.g. the testdb harness).
 INSERT INTO role_permissions (role_id, permission_id)
 SELECT r.id, p.id
-FROM roles r
+FROM user_roles r
 CROSS JOIN permissions p
 WHERE r.slug = 'super_admin'
   AND p.key IN ('agent.use', 'agent.draft_request', 'agent.external_search', 'content.assign_author')
@@ -140,7 +143,7 @@ ON CONFLICT DO NOTHING;
 -- content.assign_author stays admin-only.
 INSERT INTO role_permissions (role_id, permission_id)
 SELECT r.id, p.id
-FROM roles r
+FROM user_roles r
 CROSS JOIN permissions p
 WHERE r.slug = 'member'
   AND p.key IN ('agent.use', 'agent.draft_request', 'agent.external_search')

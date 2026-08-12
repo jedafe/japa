@@ -34,9 +34,14 @@ import (
 	"github.com/jedafe/japa/internal/db"
 )
 
-// defaultTestDSN is used when neither JC_TEST_DATABASE_URL nor
-// JC_DATABASE_URL is set. It targets the dedicated japa_test database on
-// the same local Postgres instance the app and migrator use.
+// defaultTestDSN is used when JC_TEST_DATABASE_URL is unset. It targets the
+// dedicated japa_test database on the same local Postgres instance the app
+// and migrator use. The harness intentionally does NOT fall back to
+// JC_DATABASE_URL: that variable is the application's DSN and legitimately
+// points at the primary "japa" database in dev/prod, so reusing it would
+// make the Connect guard refuse every integration test (and, were the guard
+// absent, would seed/migrate real data). ADR-061 requires tests to target a
+// dedicated test database by default; the only override is JC_TEST_DATABASE_URL.
 const defaultTestDSN = "postgresql://japa:japa@localhost:5432/japa_test?sslmode=disable"
 
 // primaryDatabaseName is the development/production database name. Connect
@@ -98,13 +103,14 @@ func Connect(t *testing.T) *db.DB {
 }
 
 // resolveDSN picks the test database connection string: JC_TEST_DATABASE_URL
-// first, then JC_DATABASE_URL, then the hardcoded japa_test default (ADR-061).
+// if set, otherwise the hardcoded japa_test default (ADR-061). It deliberately
+// ignores JC_DATABASE_URL — that variable is the application's DSN and points
+// at the primary "japa" database in dev/prod, so falling back to it would make
+// Connect's primary-database guard refuse every integration test (and, sans
+// guard, would risk seeding/migrating real data). The dedicated japa_test
+// default is the safe baseline; JC_TEST_DATABASE_URL is the only escape hatch.
 func resolveDSN() string {
 	if dsn := os.Getenv("JC_TEST_DATABASE_URL"); dsn != "" {
-		return dsn
-	}
-
-	if dsn := os.Getenv("JC_DATABASE_URL"); dsn != "" {
 		return dsn
 	}
 

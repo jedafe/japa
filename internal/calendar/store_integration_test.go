@@ -513,13 +513,10 @@ func TestFlagStaleEntries(t *testing.T) {
 	}
 
 	// Verify the entry is now unverified.
-	entry, err := store.GetEntry(t.Context(), entryID, tenantID)
-	if err != nil {
-		t.Fatalf("GetEntry after staleness: %v", err)
-	}
+	_, err = store.GetEntry(t.Context(), entryID, tenantID)
 	// GetEntry only returns published entries, so this should be ErrNoRows
 	// now that the entry is unverified.
 	if err != pgx.ErrNoRows {
-		t.Errorf("expected ErrNoRows for unverified entry, got entry with status %q", entry.Status)
+		t.Fatalf("expected ErrNoRows for unverified entry, got err=%v", err)
 	}
 }

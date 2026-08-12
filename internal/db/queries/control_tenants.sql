@@ -3,14 +3,22 @@
 -- name: ListTenants :many
 -- Control Panel shows all tenants including soft-deleted ones so
 -- super-admins can see the full inventory; the UI filters by status.
+-- Supports optional status filtering and offset pagination (§17).
 SELECT id, name, slug, domain, status, created_at, updated_at, deleted_at
 FROM tenants
-ORDER BY created_at DESC;
+WHERE (sqlc.arg('status_filter')::text = '' OR status = sqlc.arg('status_filter')::text)
+ORDER BY created_at DESC
+LIMIT @page_limit OFFSET @page_offset;
 
 -- name: GetTenantByID :one
 SELECT id, name, slug, domain, status, created_at, updated_at, deleted_at
 FROM tenants
 WHERE id = @id;
+
+-- name: CountTenants :one
+-- Total tenant count for pagination metadata, with optional status filter.
+SELECT count(*)::int FROM tenants
+WHERE (sqlc.arg('status_filter')::text = '' OR status = sqlc.arg('status_filter')::text);
 
 -- name: CreateTenant :one
 INSERT INTO tenants (name, slug, domain)
@@ -50,6 +58,12 @@ DELETE FROM tenants WHERE id = @id;
 -- avoid FK violations. Tables with CASCADE from tenants (contents, feeds,
 -- spaces, notifications, tickets, payments, enrollments, coupons, etc.)
 -- are auto-deleted by PostgreSQL and intentionally omitted.
+--
+-- MAINTENANCE: When a new tenant-scoped table is added without ON DELETE
+-- CASCADE on tenants(id), it MUST be added to this query in the correct FK
+-- dependency position. Otherwise its rows will leak after tenant hard-delete
+-- (GDPR/NDPR §15 erasure gap). Tables with ON DELETE CASCADE must NOT be
+-- added here (PostgreSQL handles them automatically).
 DELETE FROM learning_certificates WHERE tenant_id = @tenant_id;
 DELETE FROM ownership_claims WHERE tenant_id = @tenant_id;
 DELETE FROM ai_hitl_reviews WHERE tenant_id = @tenant_id;

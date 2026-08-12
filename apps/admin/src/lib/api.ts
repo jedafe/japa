@@ -1845,7 +1845,10 @@ export const languageTestHubAdminApi = {
 };
 
 export const taxCalculatorAdminApi = {
-	list: (params?: string) => api<unknown>(`/admin/tax-calculator${params ? `?${params}` : ''}`),
+	list: (params?: string) =>
+		apiRaw<{ data: { guides: unknown[]; treaties: unknown[] }; pagination: { page: number; limit: number; total: number } }>(
+			`/admin/tax-calculator${params ? `?${params}` : ''}`
+		),
 	createGuide: (body: Record<string, unknown>) =>
 		api<unknown>(`/admin/tax-calculator/guides`, { method: 'POST', body }),
 	approveGuide: (id: string) =>

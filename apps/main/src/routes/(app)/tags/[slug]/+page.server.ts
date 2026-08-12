@@ -40,13 +40,24 @@ export const load: PageServerLoad = async (event) => {
 	}
 
 	// Tagged content — degrades to an empty list on failure so a missing feed
-	// never blanks the whole tag view.
+	// never blanks the whole tag view. Supports cursor-based pagination
+	// (Section 14): the initial SSR load fetches the first page; subsequent
+	// "Load More" clicks are handled client-side via ?cursor=.
 	let items: ContentArticle[] = [];
 	let loadError = false;
+	let nextCursor = '';
 	try {
-		items = (
-			await apiList<ContentArticle>(ctx, `/tags/${slug}/content?page_size=${PAGE_SIZE}`)
-		).items;
+		const cursorParam = event.url.searchParams.get('cursor') ?? '';
+		const params = new URLSearchParams({ page_size: String(PAGE_SIZE) });
+		if (cursorParam) params.set('cursor', cursorParam);
+		items = (await apiList<ContentArticle>(ctx, `/tags/${slug}/content?${params.toString()}`)).items;
+		// Compute the next cursor from the last item's created_at so the
+		// client can fetch the following page without a server round-trip
+		// for metadata.
+		if (items.length >= PAGE_SIZE && items.length > 0) {
+			const last = items[items.length - 1];
+			if (last?.created_at) nextCursor = last.created_at;
+		}
 	} catch {
 		loadError = true;
 	}
@@ -113,6 +124,7 @@ export const load: PageServerLoad = async (event) => {
 		loadError,
 		fieldDefs,
 		canManage,
-		initiallyFollowing: isFollowing
+		initiallyFollowing: isFollowing,
+		nextCursor
 	};
 };

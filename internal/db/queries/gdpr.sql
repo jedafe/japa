@@ -644,6 +644,18 @@ DELETE FROM ad_events WHERE user_id = @user_id;
 -- row is preserved (it may belong to an organization). Ref: Section 25/61.
 UPDATE ad_campaigns SET created_by = NULL WHERE created_by = @user_id;
 
+-- name: GdprNullifyStudioJobCreator :exec
+-- Nullifies studio_jobs.created_by for jobs created by the erased user. The
+-- FK has no CASCADE/SET NULL, so without this step the final HardDeleteUser
+-- would block on the residual foreign key. The job row is preserved (it may
+-- have generated content in the review queue). Ref: Section 75, GDPR erasure.
+UPDATE studio_jobs SET created_by = NULL WHERE created_by = @user_id;
+
+-- name: GdprNullifyStudioBatchCreator :exec
+-- Nullifies studio_batches.created_by for batches created by the erased user.
+-- Same rationale as GdprNullifyStudioJobCreator. Ref: Section 75, GDPR erasure.
+UPDATE studio_batches SET created_by = NULL WHERE created_by = @user_id;
+
 -- name: GdprExportUserFollows :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (SELECT * FROM follows WHERE follower_id = @user_id AND tenant_id = @tenant_id) t;
