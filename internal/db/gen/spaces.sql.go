@@ -2858,8 +2858,16 @@ FROM spaces
 WHERE tenant_id = $1 AND space_type_id = $2 AND deleted_at IS NULL
   AND ($3::text = '' OR name ILIKE '%' || $3 || '%' OR slug ILIKE '%' || $3 || '%')
   AND ($4::text = '' OR geo_code = $4)
-ORDER BY created_at DESC, id DESC
-LIMIT $6 OFFSET $5
+ORDER BY
+  CASE WHEN $5::text = 'name' THEN name ELSE NULL END ASC,
+  CASE
+    WHEN $5::text = 'members' THEN member_count
+    WHEN $5::text = 'followers' THEN follower_count
+    WHEN $5::text = 'posts' THEN post_count
+    ELSE NULL
+  END DESC,
+  created_at DESC, id DESC
+LIMIT $7 OFFSET $6
 `
 
 type ListSpacesByTypePaginatedParams struct {
@@ -2867,6 +2875,7 @@ type ListSpacesByTypePaginatedParams struct {
 	SpaceTypeID pgtype.UUID `json:"space_type_id"`
 	Search      string      `json:"search"`
 	GeoCode     string      `json:"geo_code"`
+	Sort        string      `json:"sort"`
 	OffsetVal   int32       `json:"offset_val"`
 	LimitVal    int32       `json:"limit_val"`
 }
@@ -2899,12 +2908,15 @@ type ListSpacesByTypePaginatedRow struct {
 	CurrencyCode   *string            `json:"currency_code"`
 }
 
+// sort accepts: ” (default → newest), 'name' (A–Z), 'members', 'followers',
+// 'posts' (all numeric DESC). Unknown values fall back to newest.
 func (q *Queries) ListSpacesByTypePaginated(ctx context.Context, arg ListSpacesByTypePaginatedParams) ([]ListSpacesByTypePaginatedRow, error) {
 	rows, err := q.db.Query(ctx, listSpacesByTypePaginated,
 		arg.TenantID,
 		arg.SpaceTypeID,
 		arg.Search,
 		arg.GeoCode,
+		arg.Sort,
 		arg.OffsetVal,
 		arg.LimitVal,
 	)
@@ -3547,6 +3559,87 @@ func (q *Queries) UpdateSpaceRule(ctx context.Context, arg UpdateSpaceRuleParams
 		&i.Position,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const updateSpaceSlug = `-- name: UpdateSpaceSlug :one
+UPDATE spaces SET slug = $1, updated_at = now()
+WHERE id = $2 AND tenant_id = $3 AND deleted_at IS NULL
+RETURNING id, tenant_id, parent_id, space_type_id, name, slug, description, wiki_content,
+          logo_media_id, header_image_id, geo_code, level, member_count, post_count,
+          follower_count, visibility, posting_perm, replying_perm, commenting_perm,
+          joining_perm, status, created_at, updated_at, deleted_at, currency_code
+`
+
+type UpdateSpaceSlugParams struct {
+	Slug     string      `json:"slug"`
+	ID       pgtype.UUID `json:"id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+type UpdateSpaceSlugRow struct {
+	ID             pgtype.UUID        `json:"id"`
+	TenantID       pgtype.UUID        `json:"tenant_id"`
+	ParentID       pgtype.UUID        `json:"parent_id"`
+	SpaceTypeID    pgtype.UUID        `json:"space_type_id"`
+	Name           string             `json:"name"`
+	Slug           string             `json:"slug"`
+	Description    *string            `json:"description"`
+	WikiContent    []byte             `json:"wiki_content"`
+	LogoMediaID    pgtype.UUID        `json:"logo_media_id"`
+	HeaderImageID  pgtype.UUID        `json:"header_image_id"`
+	GeoCode        *string            `json:"geo_code"`
+	Level          string             `json:"level"`
+	MemberCount    int32              `json:"member_count"`
+	PostCount      int32              `json:"post_count"`
+	FollowerCount  int32              `json:"follower_count"`
+	Visibility     string             `json:"visibility"`
+	PostingPerm    string             `json:"posting_perm"`
+	ReplyingPerm   string             `json:"replying_perm"`
+	CommentingPerm string             `json:"commenting_perm"`
+	JoiningPerm    string             `json:"joining_perm"`
+	Status         string             `json:"status"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
+	CurrencyCode   *string            `json:"currency_code"`
+}
+
+// Updates only the slug of a space. Separate from UpdateSpace (which does not
+// touch slug) so university/space admin handlers can rename the slug without
+// rewriting every other column. Tenant-scoped, soft-delete-aware. The
+// UNIQUE(tenant_id, slug) constraint rejects a collision with a 23505 error
+// the caller maps to a 409.
+func (q *Queries) UpdateSpaceSlug(ctx context.Context, arg UpdateSpaceSlugParams) (UpdateSpaceSlugRow, error) {
+	row := q.db.QueryRow(ctx, updateSpaceSlug, arg.Slug, arg.ID, arg.TenantID)
+	var i UpdateSpaceSlugRow
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.ParentID,
+		&i.SpaceTypeID,
+		&i.Name,
+		&i.Slug,
+		&i.Description,
+		&i.WikiContent,
+		&i.LogoMediaID,
+		&i.HeaderImageID,
+		&i.GeoCode,
+		&i.Level,
+		&i.MemberCount,
+		&i.PostCount,
+		&i.FollowerCount,
+		&i.Visibility,
+		&i.PostingPerm,
+		&i.ReplyingPerm,
+		&i.CommentingPerm,
+		&i.JoiningPerm,
+		&i.Status,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DeletedAt,
+		&i.CurrencyCode,
 	)
 	return i, err
 }

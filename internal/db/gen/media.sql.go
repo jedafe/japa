@@ -925,7 +925,8 @@ type ListMediaFromPublicPostsByUserParams struct {
 // Public profile Media tab: media referenced (featured/header image) by the
 // user's PUBLISHED PUBLIC posts. Excludes unconfirmed uploads, group-restricted
 // media, soft-deleted media, and non-image files (e.g. HTML error pages
-// mislabeled as images). Public-safe.
+// mislabeled as images). Public-safe. Mirrors ListMediaFromOrgPublicPosts but
+// scoped to the author's posts (c.author_id) instead of the org.
 func (q *Queries) ListMediaFromPublicPostsByUser(ctx context.Context, arg ListMediaFromPublicPostsByUserParams) ([]Medium, error) {
 	rows, err := q.db.Query(ctx, listMediaFromPublicPostsByUser,
 		arg.TenantID,

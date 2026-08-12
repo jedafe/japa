@@ -400,13 +400,15 @@ func (s *Service) ListSpacesByType(ctx context.Context, tenantID, spaceTypeID pg
 }
 
 // ListSpacesByTypePaginated returns a page of spaces of the given type,
-// filtered by optional search and geo_code, with server-side pagination.
-func (s *Service) ListSpacesByTypePaginated(ctx context.Context, tenantID, spaceTypeID pgtype.UUID, search, geoCode string, limit, offset int32) ([]gen.ListSpacesByTypePaginatedRow, error) {
+// filtered by optional search and geo_code, with server-side pagination and
+// optional sort ('' = newest, 'name', 'members', 'followers', 'posts').
+func (s *Service) ListSpacesByTypePaginated(ctx context.Context, tenantID, spaceTypeID pgtype.UUID, search, geoCode, sort string, limit, offset int32) ([]gen.ListSpacesByTypePaginatedRow, error) {
 	spaces, err := s.read.ListSpacesByTypePaginated(ctx, gen.ListSpacesByTypePaginatedParams{
 		TenantID:    tenantID,
 		SpaceTypeID: spaceTypeID,
 		Search:      search,
 		GeoCode:     geoCode,
+		Sort:        sort,
 		LimitVal:    limit,
 		OffsetVal:   offset,
 	})
@@ -538,6 +540,21 @@ func (s *Service) UpdateSpace(ctx context.Context, params gen.UpdateSpaceParams)
 		return gen.UpdateSpaceRow{}, fmt.Errorf("updating space: %w", err)
 	}
 
+	return space, nil
+}
+
+// UpdateSpaceSlug updates only the slug of a space, scoped to the tenant.
+// The caller is responsible for mapping a unique-violation (pgcode 23505)
+// to a 409. Ref: sections/39-space-types-university.md (admin slug rename).
+func (s *Service) UpdateSpaceSlug(ctx context.Context, id, tenantID pgtype.UUID, slug string) (gen.UpdateSpaceSlugRow, error) {
+	space, err := s.write.UpdateSpaceSlug(ctx, gen.UpdateSpaceSlugParams{
+		ID:       id,
+		TenantID: tenantID,
+		Slug:     slug,
+	})
+	if err != nil {
+		return gen.UpdateSpaceSlugRow{}, fmt.Errorf("updating space slug: %w", err)
+	}
 	return space, nil
 }
 

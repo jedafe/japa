@@ -27,7 +27,11 @@ export const load: PageServerLoad = async (event) => {
 
 	let universities: University[] = [];
 	try {
-		universities = (await apiList<University>(ctx, '/universities')).items;
+		// The backend ListUniversities handler is server-paginated (max 100/page).
+		// For the comparison picker we fetch the first 100 (newest) — the picker
+		// filters client-side by name. Users needing an older university can use
+		// the main /universities page search to find the slug.
+		universities = (await apiList<University>(ctx, '/universities?limit=100')).items;
 	} catch {
 		universities = [];
 	}

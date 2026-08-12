@@ -18,6 +18,7 @@ import (
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/tenant"
+	"github.com/jedafe/japa/internal/valkey"
 )
 
 // ChangePasswordRequest is the input for changing password.
@@ -778,11 +779,43 @@ func (h *Handlers) DeactivateAccount(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusUnauthorized, "invalid_password", "Password is incorrect")
 			return
 		}
+	} else {
+		// OAuth-only accounts (password_hash IS NULL) cannot verify
+		// ownership via password. Reject to prevent deactivation by a
+		// stolen session token without credential verification.
+		writeError(w, http.StatusBadRequest, "no_password_set", "This account does not have a password set. Use password reset to set a password before deactivating.")
+		return
 	}
 
 	if err := h.Service.DeactivateAccount(r.Context(), tenantID, user.UserID); err != nil {
 		handleServiceError(w, err)
 		return
+	}
+
+	// Invalidate all sessions for this user — a deactivated user must not
+	// continue to use the platform on existing tokens. Ref: §02 (Session
+	// invalidation), Rule 6 (perm cache invalidation).
+	if err := h.Service.store.revokeAllRefreshTokens(r.Context(), tenantID, user.UserID); err != nil {
+		slog.Error("deactivate: failed to invalidate sessions",
+			"user_id", user.UserID.String(), "error", err)
+	}
+	// Invalidate the permission cache so cached permissions don't outlive
+	// the deactivation (Rule 6).
+	if h.Redis != nil {
+		_ = h.Redis.Del(r.Context(), valkey.MustKey("perm:%s", user.UserID.String())).Err()
+	}
+	// Revoke the current access token's JTI so it is immediately invalid.
+	if h.keyRot != nil && h.Redis != nil {
+		if authHeader := r.Header.Get("Authorization"); authHeader != "" {
+			parts := strings.SplitN(authHeader, " ", 2)
+			if len(parts) == 2 && strings.EqualFold(parts[0], "Bearer") {
+				if claims, err := h.keyRot.ValidateAccessToken(parts[1]); err == nil {
+					if err := auth.RevokeToken(r.Context(), claims.JTI, claims.ExpiresAt.Time, h.Redis); err != nil {
+						slog.Error("deactivate: revoke access token JTI", "error", err)
+					}
+				}
+			}
+		}
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deactivated"}})

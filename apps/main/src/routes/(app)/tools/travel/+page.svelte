@@ -4,7 +4,11 @@
 	import { Plane, Lock, Hotel, ExternalLink } from 'lucide-svelte';
 	import { EmptyState, LoadingSkeleton } from '$lib/components/ui';
 	import { api } from '$lib/api/client';
-	import type { TravelFlightResult, TravelHotelResult } from '$lib/types';
+	import type {
+		TravelFlightResult,
+		TravelHotelResult,
+		TravelSearchResponse
+	} from '$lib/types';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -46,7 +50,7 @@
 			date: flightDate,
 			adults: flightAdults
 		});
-		const res = await api.get<TravelFlightResult[]>(`/travel/search/flights?${params.toString()}`);
+		const res = await api.get<TravelSearchResponse>(`/travel/search/flights?${params.toString()}`);
 		loading = false;
 		if (res.error) {
 			if (res.error.code === 'travel_disabled') {
@@ -56,7 +60,9 @@
 			error = res.error.message;
 			return;
 		}
-		flights = res.data ?? [];
+		// Backend returns { data: { results: [...], cache_hit, search_time_ms } };
+		// the API client unwraps body.data, so res.data is the SearchResponse.
+		flights = (res.data?.results as TravelFlightResult[] | undefined) ?? [];
 	}
 
 	async function searchHotels() {
@@ -70,7 +76,7 @@
 			checkout: hotelCheckOut,
 			guests: hotelGuests
 		});
-		const res = await api.get<TravelHotelResult[]>(`/travel/search/hotels?${params.toString()}`);
+		const res = await api.get<TravelSearchResponse>(`/travel/search/hotels?${params.toString()}`);
 		loading = false;
 		if (res.error) {
 			if (res.error.code === 'travel_disabled') {
@@ -80,7 +86,7 @@
 			error = res.error.message;
 			return;
 		}
-		hotels = res.data ?? [];
+		hotels = (res.data?.results as TravelHotelResult[] | undefined) ?? [];
 	}
 </script>
 

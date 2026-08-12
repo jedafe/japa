@@ -1004,6 +1004,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Ref: japaconnect-engineering/sections/67-travel-search.md (ADR-085)
 	travelStore := travel.NewStore(database)
 	travelService := travel.NewService(travelStore, settingsService)
+	travelService.SetCache(vkClient.Redis()) // VALKEY-006: jc:travel:search:{hash} result cache (§67)
 	travelHandlers := travel.NewHandlers(travelService, settingsService)
 
 	// Ref: japaconnect-engineering/sections/68-ai-personas.md (ADR-068)
@@ -2346,6 +2347,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Universities (Section 39 — read-view over University-type spaces)
 			r.Get("/universities", universitiesHandlers.ListUniversities)
 			r.Get("/universities/{slug}", universitiesHandlers.GetUniversity)
+			// Section 39 line 152: comparison matrix link redirects to the
+			// /compare/universities picker with this university pre-selected.
+			r.Get("/universities/{slug}/compare", universitiesHandlers.CompareUniversities)
 
 			// University admin CRUD (P5.6 — Task 11, catalog paths)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.settings")).
@@ -2358,13 +2362,15 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Delete("/admin/universities/{id}", universitiesHandlers.DeleteUniversity)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.settings")).
 				Post("/admin/universities/{id}/verify", universitiesHandlers.VerifyUniversity)
-
-			// NOTE (P5): GET /universities/:id/compare deferred — the existing
-			// comparison system is content-authored (pre-defined items/dimensions
-			// attached to a comparison article), not ad-hoc entity-by-ID comparison.
-			// Needs a product decision on which "compare" behavior is meant before
-			// wiring: show existing authored comparisons mentioning this university,
-			// or dynamically diff custom-field values between universities.
+			// Audit U-1: unverify, status change, and CSV bulk-import routes
+			// called by the admin frontend were missing (404). Wired here so the
+			// admin panel's Unverify / Change Status / CSV Import buttons work.
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.settings")).
+				Delete("/admin/universities/{id}/verify", universitiesHandlers.UnverifyUniversity)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.settings")).
+				Patch("/admin/universities/{id}/status", universitiesHandlers.UpdateUniversityStatus)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.settings")).
+				Post("/admin/universities/bulk-import", universitiesHandlers.BulkImportUniversities)
 
 			// WebSocket + DM routes (Section 10 — Real-Time WebSockets)
 			wsHub := websocket.NewHub()
@@ -3344,7 +3350,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Put("/me/preferences", usersHandlers.UpdateMyPreferences)
 
 			// User /me/ account management routes (Section 50)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/me/change-password", usersHandlers.ChangePassword)
+			// Ref: japaconnect-engineering/sections/50-user-dashboard-settings.md (user.account.manage_own)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "user.account.manage_own")).Post("/me/change-password", usersHandlers.ChangePassword)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/privacy", usersHandlers.GetPrivacy)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Patch("/me/privacy", usersHandlers.UpdatePrivacy)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/sessions", usersHandlers.ListSessions)
@@ -4632,10 +4639,6 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// (Section 53 "You might also like") instead of returning trending content.
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).
 				Get("/suggestions/content", trendingHandlers.GetSuggestedContent)
-
-			// Task 11: Universities compare
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).
-				Get("/universities/{id}/compare", universitiesHandlers.CompareUniversities)
 
 			// ──────────────────────────────────────────────────────────────
 			// V2 feature routes (Sections 61–76, ADRs 068, 070–085).

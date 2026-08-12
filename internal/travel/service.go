@@ -355,9 +355,25 @@ func (s *Service) cacheTTL(ctx context.Context, tenantID pgtype.UUID) time.Durat
 
 // searchCacheKey builds the Valkey key for a cached search result. The hash
 // is over the canonical JSON of the search params plus the tenant ID, so
-// identical queries hit the cache (ADR-085 §3, jc:travel:search:{hash}).
+// identical queries within a tenant hit the cache while identical queries
+// across tenants stay isolated (ADR-085 §3, jc:travel:search:{hash};
+// Rule 4 — all keys tenant-scoped).
 func searchCacheKey(tenantID pgtype.UUID, params interface{}) string {
-	return valkey.MustKey("travel:search:%s", HashSearchQuery(params))
+	return valkey.MustKey("travel:search:%s", hashTenantQuery(tenantID, params))
+}
+
+// hashTenantQuery produces a SHA-256 hash over the tenant ID and the canonical
+// JSON of params. Including the tenant ID prevents cross-tenant cache
+// collisions when two tenants issue identical searches.
+func hashTenantQuery(tenantID pgtype.UUID, params interface{}) string {
+	tenantPart := ""
+	if tenantID.Valid {
+		tenantPart = tenantID.String()
+	}
+	return HashSearchQuery(struct {
+		TenantID string `json:"tenant_id"`
+		Params   any    `json:"params"`
+	}{TenantID: tenantPart, Params: params})
 }
 
 // HashSearchQuery generates a SHA-256 hash of the canonical JSON encoding of

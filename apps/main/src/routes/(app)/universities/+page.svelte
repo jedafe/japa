@@ -23,8 +23,12 @@
 		t('universities.description', 'Explore universities relevant to the Nigerian diaspora community.')
 	);
 
-	// Full catalog — filtered / sorted / paginated client-side (see +page.server.ts).
-	const all = $derived<University[]>(data.universities);
+	// Server-paginated slice for the current page (filter/sort/page are
+	// server-side — the backend honors ?q=, ?country=, ?sort=, ?page=, ?limit=).
+	const paged = $derived<University[]>(data.universities);
+	const total = $derived(data.meta?.total ?? data.universities.length);
+	const totalPages = $derived(data.meta?.total_pages ?? 1);
+	const currentPage = $derived(data.meta?.page ?? (parseInt(page.url.searchParams.get('page') ?? '1', 10) || 1));
 
 	// URL is the source of truth for filter / sort / page state. The country
 	// filter falls back to the geo-aware default (ADR-064) resolved server-side
@@ -33,14 +37,15 @@
 	const qParam = $derived(page.url.searchParams.get('q') ?? '');
 	const countryParam = $derived(page.url.searchParams.get('country') ?? '');
 	const effectiveCountry = $derived(countryParam || data.countryDefault || '');
-	const sortParam = $derived(page.url.searchParams.get('sort') ?? 'name');
-	const pageParam = $derived(parseInt(page.url.searchParams.get('page') ?? '1', 10) || 1);
+	const sortParam = $derived(page.url.searchParams.get('sort') ?? 'newest');
 
-	// Country options derived from the distinct geo_code values present in the
-	// catalog. When no universities carry a geo_code the dropdown degrades to a
-	// single "All countries" entry.
+	// Country options are derived from the distinct geo_code values present in
+	// the current page slice. When the page has no geo_codes the dropdown
+	// degrades to a single "All countries" entry. (For a full country list the
+	// /geo/countries endpoint is the canonical source; here we keep the dropdown
+	// lightweight and derived from what's on screen.)
 	const countryOptions = $derived.by(() => {
-		const codes = [...new Set(all.map((u) => u.geo_code).filter((c): c is string => !!c))];
+		const codes = [...new Set(paged.map((u) => u.geo_code).filter((c): c is string => !!c))];
 		return [
 			{ value: '', label: t('universities.all_countries', 'All countries') },
 			...codes.map((c) => ({ value: c, label: c }))
@@ -48,52 +53,16 @@
 	});
 
 	const sortOptions = $derived([
+		{ value: 'newest', label: t('universities.sort_newest', 'Newest') },
 		{ value: 'name', label: t('universities.sort_name', 'Name (A–Z)') },
 		{ value: 'members', label: t('universities.sort_members', 'Most members') },
 		{ value: 'followers', label: t('universities.sort_followers', 'Most followers') },
-		{ value: 'posts', label: t('universities.sort_posts', 'Most posts') },
-		{ value: 'newest', label: t('universities.sort_newest', 'Newest') }
+		{ value: 'posts', label: t('universities.sort_posts', 'Most posts') }
 	]);
 
-	// Filter → Sort → Paginate pipeline.
-	const filtered = $derived.by(() => {
-		let list = all;
-		const q = qParam.trim().toLowerCase();
-		if (q) list = list.filter((u) => u.name.toLowerCase().includes(q));
-		if (effectiveCountry) list = list.filter((u) => u.geo_code === effectiveCountry);
-		return list;
-	});
-
-	const sorted = $derived.by(() => {
-		const list = [...filtered];
-		switch (sortParam) {
-			case 'members':
-				list.sort((a, b) => b.member_count - a.member_count);
-				break;
-			case 'followers':
-				list.sort((a, b) => b.follower_count - a.follower_count);
-				break;
-			case 'posts':
-				list.sort((a, b) => b.post_count - a.post_count);
-				break;
-			case 'newest':
-				list.sort((a, b) => b.created_at.localeCompare(a.created_at));
-				break;
-			default:
-				list.sort((a, b) => a.name.localeCompare(b.name));
-		}
-		return list;
-	});
-
-	const totalPages = $derived(Math.max(1, Math.ceil(sorted.length / data.pageSize)));
-	const currentPage = $derived(Math.min(pageParam, totalPages));
-	const paged = $derived(
-		sorted.slice((currentPage - 1) * data.pageSize, currentPage * data.pageSize)
-	);
-
 	const hasActiveFilters = $derived(!!qParam || !!effectiveCountry);
-	const showingStart = $derived(sorted.length === 0 ? 0 : (currentPage - 1) * data.pageSize + 1);
-	const showingEnd = $derived(Math.min(currentPage * data.pageSize, sorted.length));
+	const showingStart = $derived(total === 0 ? 0 : (currentPage - 1) * data.pageSize + 1);
+	const showingEnd = $derived(Math.min(currentPage * data.pageSize, total));
 
 	// Form input state — kept in sync with URL params so back/forward navigation
 	// restores the visible field values.
@@ -115,7 +84,7 @@
 		const sort = overrides.sort ?? sortParam;
 		if (q) params.set('q', q);
 		if (country) params.set('country', country);
-		if (sort && sort !== 'name') params.set('sort', sort);
+		if (sort && sort !== 'newest') params.set('sort', sort);
 		return params;
 	}
 
@@ -139,7 +108,7 @@
 		qInput = '';
 		countryInput = '';
 		const params = new URLSearchParams();
-		if (sortParam && sortParam !== 'name') params.set('sort', sortParam);
+		if (sortParam && sortParam !== 'newest') params.set('sort', sortParam);
 		goto(`/universities${params.toString() ? `?${params.toString()}` : ''}`);
 	}
 
@@ -149,11 +118,13 @@
 		goto(`/universities${params.toString() ? `?${params.toString()}` : ''}`);
 	}
 
-	// Autocomplete fetcher — filters the already-loaded catalog (no API call).
+	// Autocomplete fetcher — filters the already-loaded page slice (no API call).
+	// The full search is performed server-side on submit; this only suggests
+	// matches from the current page for quick navigation.
 	async function uniSearchFetcher(query: string): Promise<SearchSuggestion[]> {
 		const q = query.trim().toLowerCase();
 		if (!q) return [];
-		return all
+		return paged
 			.filter((u) => u.name.toLowerCase().includes(q))
 			.slice(0, 8)
 			.map((u) => ({
@@ -261,7 +232,7 @@
 					<SelectField
 						value={sortParam}
 						options={sortOptions}
-						placeholder={t('universities.sort_name', 'Name (A–Z)')}
+						placeholder={t('universities.sort_newest', 'Newest')}
 						onValueChange={setSort}
 					/>
 				</div>
@@ -291,7 +262,7 @@
 	<div class="p-3">
 		{#if navigating.to}
 			<LoadingSkeleton variant="card" />
-		{:else if sorted.length === 0}
+		{:else if total === 0}
 			<EmptyState
 				icon={GraduationCap}
 				title={t('universities.empty', 'No universities found')}
@@ -302,7 +273,7 @@
 				{t('common.showing', 'Showing {start}-{end} of {total}')
 					.replace('{start}', String(showingStart))
 					.replace('{end}', String(showingEnd))
-					.replace('{total}', String(sorted.length))}
+					.replace('{total}', String(total))}
 			</p>
 
 			{#if viewMode === 'grid'}
