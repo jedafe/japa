@@ -156,27 +156,46 @@ func (h *Handlers) Subscribe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Validate the source field. The public endpoint may only use the
+	// public source values ('signup', 'onboarding', 'footer'); the admin-
+	// only sources ('import', 'api') are rejected to prevent spoofing
+	// admin/api-originated subscriptions. Defaults to 'signup' when empty.
+	// Ref: japaconnect-engineering/sections/62-newsletter-digest.md (source CHECK)
+	source := input.Source
+	if source == "" {
+		source = SourceSignup
+	}
+	switch source {
+	case SourceSignup, SourceOnboarding, SourceFooter:
+		// allowed
+	default:
+		writeError(w, http.StatusBadRequest, "validation_error",
+			"source must be one of: signup, onboarding, footer")
+		return
+	}
+
 	// Link to user ID if authenticated.
 	var userID *pgtype.UUID
 	if u := auth.FromContext(r.Context()); u != nil {
 		userID = &u.UserID
 	}
 
-	subscriber, err := h.Service.CreateSubscriber(r.Context(), tenantID, email, userID, input.Source)
+	subscriber, err := h.Service.CreateSubscriber(r.Context(), tenantID, email, userID, source)
 	if err != nil {
-		// Duplicate email on the unique (tenant_id, email) index → already subscribed.
-		if isDuplicateSubscriberErr(err) {
-			writeJSON(w, http.StatusOK, map[string]any{
-				"data": map[string]string{"status": "already_subscribed"},
-			})
-			return
-		}
 		slog.Error("creating newsletter subscriber (public)", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to subscribe")
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": subscriber})
+	// The Subscribe query is an upsert (ON CONFLICT DO UPDATE), so a
+	// re-subscribe for an existing email returns the re-activated row with
+	// status='subscribed' rather than a duplicate error. Return 200 for
+	// re-subscribes (existing row) and 201 for new subscribers.
+	status := http.StatusCreated
+	if subscriber.UnsubscribedAt.Valid || subscriber.SubscribedAt.Valid {
+		status = http.StatusOK
+	}
+	writeJSON(w, status, map[string]any{"data": subscriber})
 }
 
 // isValidEmail performs a basic RFC-5321 email format check. The canonical
@@ -189,12 +208,6 @@ func isValidEmail(s string) bool {
 	}
 	dot := strings.IndexByte(s[at+1:], '.')
 	return dot > 0
-}
-
-// isDuplicateSubscriberErr reports whether err is a unique-violation from the
-// (tenant_id, email) index on newsletter_subscribers.
-func isDuplicateSubscriberErr(err error) bool {
-	return err != nil && strings.Contains(err.Error(), "23505")
 }
 
 // ---------------------------------------------------------------------------
@@ -301,7 +314,55 @@ func (h *Handlers) CreateSubscriber(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, map[string]any{"data": subscriber})
 }
 
-// ListSubscribers returns all newsletter subscribers for the tenant.
+// ImportSubscribers bulk-imports subscribers from a list of emails.
+// POST /admin/newsletter/subscribers/import — gated by newsletter.import
+// (§62 RBAC, ADR-080 §6). Each email is upserted with source='import'.
+// Returns the count of imported and skipped (invalid) emails.
+func (h *Handlers) ImportSubscribers(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	var input struct {
+		Emails []string `json:"emails"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
+		return
+	}
+
+	if len(input.Emails) == 0 {
+		writeError(w, http.StatusBadRequest, "validation_error", "emails is required")
+		return
+	}
+
+	imported := 0
+	skipped := 0
+	for _, raw := range input.Emails {
+		email := strings.TrimSpace(raw)
+		if email == "" || !isValidEmail(email) {
+			skipped++
+			continue
+		}
+		if _, err := h.Service.CreateSubscriber(r.Context(), tenantID, email, nil, SourceImport); err != nil {
+			slog.Warn("newsletter import: skip email", "email", email, "error", err)
+			skipped++
+			continue
+		}
+		imported++
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data": map[string]int{
+			"imported": imported,
+			"skipped":  skipped,
+		},
+	})
+}
+
+// ListSubscribers returns all newsletter subscribers for the tenant,
+// optionally filtered by ?status= (subscribed|unsubscribed|bounced|complained).
 // GET /admin/newsletter/subscribers.
 func (h *Handlers) ListSubscribers(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
@@ -311,8 +372,21 @@ func (h *Handlers) ListSubscribers(w http.ResponseWriter, r *http.Request) {
 
 	limit := parsePageSize(r)
 	offset := parseOffset(r)
+	status := r.URL.Query().Get("status")
 
-	subscribers, err := h.Service.ListSubscribers(r.Context(), tenantID, limit, offset)
+	// Validate the status filter against the allowed enum if provided.
+	if status != "" {
+		switch status {
+		case StatusSubscribed, StatusUnsubscribed, StatusBounced, StatusComplained:
+			// allowed
+		default:
+			writeError(w, http.StatusBadRequest, "validation_error",
+				"status must be one of: subscribed, unsubscribed, bounced, complained")
+			return
+		}
+	}
+
+	subscribers, err := h.Service.ListSubscribersFiltered(r.Context(), tenantID, status, limit, offset)
 	if err != nil {
 		slog.Error("listing newsletter subscribers", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list subscribers")
@@ -561,22 +635,10 @@ func (h *Handlers) HandleSendCampaign(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get all subscriber emails opted into campaigns.
-	emails, err := h.Service.GetAllSubscriberEmails(r.Context(), tenantID)
-	if err != nil {
-		slog.Error("getting subscriber emails", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to get subscribers")
-
-		return
-	}
-
-	if len(emails) == 0 {
-		writeError(w, http.StatusBadRequest, "no_subscribers", "No active subscribers to send to")
-		return
-	}
-
-	// Enqueue the newsletter send task.
-	if err := h.Service.EnqueueNewsletterSend(r.Context(), id, tenantID, campaign.Subject, campaign.HTML, emails); err != nil {
+	// Enqueue the newsletter send task. The worker re-fetches the campaign
+	// and resolves segment-aware recipients from the DB (§62, ADR-080 §3),
+	// so the handler does not need to pre-fetch the recipient list.
+	if err := h.Service.EnqueueNewsletterSend(r.Context(), id, tenantID); err != nil {
 		slog.Error("enqueuing newsletter send", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to enqueue newsletter send")
 
@@ -585,8 +647,7 @@ func (h *Handlers) HandleSendCampaign(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusAccepted, map[string]any{
 		"data": map[string]any{
-			"status":     "sending",
-			"recipients": len(emails),
+			"status": "sending",
 		},
 	})
 }
@@ -701,4 +762,65 @@ func (h *Handlers) HandleAdminStats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": stats})
+}
+
+// HandleWebhook processes bounce/complaint webhooks from the marketing
+// email provider (ADR-015). The provider POSTs a JSON payload describing
+// the event; this handler updates the matching subscriber's status to
+// 'bounced' or 'complained' so future sends skip them (§62 Compliance,
+// ADR-080 §4). Public route — authenticated at the provider level via a
+// shared secret passed in the X-Webhook-Secret header (JC_NEWSLETTER_WEBHOOK_SECRET).
+//
+// Ref: japaconnect-engineering/sections/62-newsletter-digest.md
+//      japaconnect-engineering/adr/ADR-080-newsletter-digest.md
+func (h *Handlers) HandleWebhook(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	// Shared-secret auth: the provider echoes a secret set in config.
+	expected := r.Header.Get("X-Webhook-Secret")
+	if expected == "" || expected != h.Service.WebhookSecret(r.Context()) {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "Invalid webhook secret")
+		return
+	}
+
+	var payload struct {
+		EventType string `json:"event_type"` // "bounce" | "complaint" | "delivered" | "open" | "click"
+		Email     string `json:"email"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
+		return
+	}
+
+	if payload.Email == "" {
+		writeError(w, http.StatusBadRequest, "validation_error", "email is required")
+		return
+	}
+
+	switch payload.EventType {
+	case "bounce":
+		if err := h.Service.MarkBounced(r.Context(), tenantID, payload.Email); err != nil {
+			slog.Error("newsletter webhook: mark bounced", "email", payload.Email, "error", err)
+			writeError(w, http.StatusInternalServerError, "internal_error", "Failed to mark bounced")
+			return
+		}
+	case "complaint":
+		if err := h.Service.MarkComplained(r.Context(), tenantID, payload.Email); err != nil {
+			slog.Error("newsletter webhook: mark complained", "email", payload.Email, "error", err)
+			writeError(w, http.StatusInternalServerError, "internal_error", "Failed to mark complained")
+			return
+		}
+	case "delivered", "open", "click":
+		// No status change needed; provider engagement events are out of
+		// scope for the subscriber status machine. Acknowledge to avoid
+		// provider retries.
+	default:
+		writeError(w, http.StatusBadRequest, "validation_error", "unsupported event_type")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "ok"}})
 }

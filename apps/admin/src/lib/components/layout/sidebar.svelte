@@ -143,6 +143,7 @@
 		{ path: "/university/revenue-splits", label: t("nav.university_revenue_splits", "Revenue Splits"), icon: DollarSign, permission: "university.revenue.list" },
 		{ path: "/mentorship", label: t("nav.mentorship", "Mentorship"), icon: Users2, permission: "mentorship.admin" },
 		{ path: "/onboarding", label: t("nav.onboarding", "Onboarding"), icon: UserPlus, permission: "admin.settings.view" },
+		{ path: "/onboarding/templates", label: t("nav.onboarding_templates", "Onboarding Templates"), icon: FileText, permission: "admin.settings.view" },
 		{ path: "/gamification", label: t("nav.gamification", "Gamification"), icon: Trophy, permission: "gamification.view" },
 		{ path: "/jobs", label: t("nav.jobs", "Jobs Board"), icon: Briefcase, permission: "jobs.admin" }
 		]

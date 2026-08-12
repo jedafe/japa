@@ -97,9 +97,12 @@ func EditLockMiddleware(rdb valkeycompat.Cmdable, settings editLockSettingsReade
 			ctx := r.Context()
 
 			// Read TTL from system settings with fallback to the default.
+			// The fallback (90) matches editLockTTLDefault and the
+			// valkey-keys-catalog.md entry (90s) for audit conformance
+			// (AUDIT-BE-028).
 			ttl := editLockTTLDefault
 			if settings != nil {
-				ttl = time.Duration(settings.GetIntOr(ctx, defaultTenantUUID, "content.edit_lock_ttl_seconds", 120)) * time.Second
+				ttl = time.Duration(settings.GetIntOr(ctx, defaultTenantUUID, "content.edit_lock_ttl_seconds", 90)) * time.Second
 			}
 
 			if r.Method == http.MethodDelete {

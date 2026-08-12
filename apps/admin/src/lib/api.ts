@@ -1178,6 +1178,7 @@ export const onboardingAdminApi = {
 	listSettings: () => api<{ min_tags_follow: number; min_users_follow: number; min_spaces_join: number; promoted_spaces: string[]; promoted_users: string[]; promoted_tags: string[] }>('/admin/onboarding/settings'),
 	updateSettings: (body: Record<string, unknown>) => api<unknown>('/admin/onboarding/settings', { method: 'PUT', body }),
 	listTemplates: () => api<unknown[]>('/admin/onboarding/templates'),
+	getTemplate: (id: string) => api<unknown>(`/admin/onboarding/templates/${id}`),
 	createTemplate: (body: Record<string, unknown>) => api<unknown>('/admin/onboarding/templates', { method: 'POST', body }),
 	updateTemplate: (id: string, body: Record<string, unknown>) => api<unknown>(`/admin/onboarding/templates/${id}`, { method: 'PATCH', body }),
 	deleteTemplate: (id: string) => api<unknown>(`/admin/onboarding/templates/${id}`, { method: 'DELETE' }),

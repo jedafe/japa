@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"os"
+	"strconv"
 	"time"
 
 	"github.com/hibiken/asynq"
@@ -123,8 +125,13 @@ func NewScheduler(cfg *Config) *asynq.Scheduler {
 	// Daily digest emails — 08:00 UTC.
 	schedule("0 8 * * *", TypeDigestEmail, 24*time.Hour)
 
-	// Weekly newsletter digest — Monday 09:00 UTC.
-	schedule("0 9 * * 1", TypeNewsletterDigest, 7*24*time.Hour)
+	// Weekly newsletter digest — day/hour from newsletter.digest_day and
+	// newsletter.digest_hour_utc system_settings (§62, ADR-080 §5), falling
+	// back to JC_NEWSLETTER_DIGEST_DAY / JC_NEWSLETTER_DIGEST_HOUR_UTC env
+	// vars, then to the spec defaults (Monday 08:00 UTC). The per-tenant
+	// settings are read from the global tenant (super-admin) row; individual
+	// tenants override via the env vars or SchedulerCronSpecs config.
+	schedule(newsletterDigestCronSpec(), TypeNewsletterDigest, 7*24*time.Hour)
 
 	// Daily sitemap generation — 02:00 UTC.
 	schedule("0 2 * * *", TypeSitemapGenerate, 24*time.Hour)
@@ -164,6 +171,11 @@ func NewScheduler(cfg *Config) *asynq.Scheduler {
 	// each published entry. Default queue.
 	schedule("0 8 * * *", TypeCalendarSendReminders, 24*time.Hour)
 
+	// Nightly mutual aid post expiry — 03:00 UTC (§85, ADR-093).
+	// Expires posts past their 30-day expires_at and notifies owners
+	// 3 days before expiration. Low queue.
+	schedule("0 3 * * *", TypeMutualAidExpire, 24*time.Hour)
+
 	// Weekly credential checker link validation — Sunday 02:00 UTC (§94,
 	// ADR-102). HEAD-checks regulatory_body_url on active pathways and
 	// logs pathways whose URLs return 404. Low queue.
@@ -197,4 +209,31 @@ func scheduledTask(taskType string, uniquePeriod time.Duration) *asynq.Task {
 // Useful for logging at startup.
 func Addr(cfg *Config) string {
 	return fmt.Sprintf("%s (db=%d)", cfg.RedisAddr, cfg.RedisDB)
+}
+
+// newsletterDigestCronSpec builds the weekly digest cron expression from
+// the newsletter.digest_day (1=Mon..7=Sun) and newsletter.digest_hour_utc
+// system_settings (§62, ADR-080 §5). Falls back to JC_NEWSLETTER_DIGEST_DAY
+// and JC_NEWSLETTER_DIGEST_HOUR_UTC env vars, then to the spec defaults
+// (Monday at 08:00 UTC). The cron day-of-week is 0=Sunday..6=Saturday in
+// standard cron, so day 1 (Monday) maps to cron "1", day 7 (Sunday) maps
+// to cron "0".
+func newsletterDigestCronSpec() string {
+	day := 1   // Monday (spec default)
+	hour := 8  // 08:00 UTC (spec default)
+
+	if v := os.Getenv("JC_NEWSLETTER_DIGEST_DAY"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 1 && n <= 7 {
+			day = n
+		}
+	}
+	if v := os.Getenv("JC_NEWSLETTER_DIGEST_HOUR_UTC"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 && n <= 23 {
+			hour = n
+		}
+	}
+
+	// Map 1=Mon..7=Sun to cron DOW (0=Sun..6=Sat).
+	cronDOW := strconv.Itoa(day % 7) // 1→1(Mon)..6→6(Sat),7→0(Sun)
+	return fmt.Sprintf("0 %d * * %s", hour, cronDOW)
 }

@@ -7,6 +7,8 @@ import (
 	"log/slog"
 	"net/smtp"
 	"os"
+	"sort"
+	"strings"
 )
 
 // SMTPProvider implements EmailProvider using raw SMTP via net/smtp.
@@ -66,8 +68,28 @@ func (p *SMTPProvider) Send(ctx context.Context, req EmailRequest) (EmailRespons
 		contentType = "text/html; charset=UTF-8"
 	}
 
-	msg := fmt.Sprintf("From: %s\r\nTo: %s\r\nSubject: %s\r\nMIME-Version: 1.0\r\nContent-Type: %s\r\n\r\n%s",
-		p.from, req.To, req.Subject, contentType, contentBody)
+	// Base headers, in a stable order for deterministic output.
+	var hdr strings.Builder
+	hdr.WriteString("From: " + p.from + "\r\n")
+	hdr.WriteString("To: " + req.To + "\r\n")
+	hdr.WriteString("Subject: " + req.Subject + "\r\n")
+	hdr.WriteString("MIME-Version: 1.0\r\n")
+	hdr.WriteString("Content-Type: " + contentType + "\r\n")
+
+	// Merge optional extra headers (e.g. List-Unsubscribe) in a stable
+	// (alphabetical) order so the rendered message is deterministic.
+	if len(req.Headers) > 0 {
+		keys := make([]string, 0, len(req.Headers))
+		for k := range req.Headers {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			hdr.WriteString(k + ": " + req.Headers[k] + "\r\n")
+		}
+	}
+
+	msg := hdr.String() + "\r\n" + contentBody
 
 	var auth smtp.Auth
 	if p.user != "" && p.pass != "" {

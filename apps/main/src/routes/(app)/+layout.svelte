@@ -19,7 +19,13 @@
 
 	// Section 09 Product Tour: ?tour=1 triggers the contextual walkthrough
 	// after onboarding completion. The tour starts once the app shell renders.
-	const tourRequested = $derived(page.url.searchParams.get('tour') === '1');
+	// Guard: if the user previously dismissed the tour (tour_dismissed=true),
+	// ?tour=1 is suppressed so it never re-triggers automatically. The
+	// explicit "Replay tour" link uses ?tour=replay to override the guard.
+	const tourParam = $derived(page.url.searchParams.get('tour'));
+	const tourRequested = $derived(
+		tourParam === 'replay' || (tourParam === '1' && !data.tourDismissed)
+	);
 
 	// ADR-058 §5 Exception #3: guest landing page renders WITHOUT the app shell.
 	// This covers both the Page Builder landing and the default GuestLanding fallback.

@@ -543,6 +543,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	spamPipeline.SetSettings(settingsService)
 	notificationService.SetAsynqClient(asynqClient)
 	notificationService.SetSettings(settingsService)
+	notificationService.SetValkey(vkClient)
 	authHandlers.AsynqClient = asynqClient
 	authHandlers.Settings = settingsService
 	oauthHandlers.Settings = settingsService
@@ -1008,6 +1009,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	mutualAidStore := mutualaid.NewStore(database)
 	mutualAidService := mutualaid.NewService(mutualAidStore, settingsService)
 	mutualAidHandlers := mutualaid.NewHandlers(mutualAidService, settingsService)
+	// Wire RBAC resolver for post_type-specific permission checks
+	// (create_need, create_skill_swap) and wallet service for the
+	// reputation gate on need posts.
+	mutualAidHandlers.SetPermissionChecker(rbacResolver)
+	mutualAidHandlers.SetPointsChecker(walletService)
+	// DM adapter is wired later, after wsDMService is created.
 
 	// Ref: japaconnect-engineering/sections/86-community-calendar.md (ADR-094)
 	calendarStore := calendar.NewStore(database)
@@ -1018,6 +1025,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// calendar:staleness_check / calendar:send_reminders Asynq tasks are
 	// handled (§86, ADR-094).
 	worker.RegisterCalendarProcessor(calendarService)
+
+	// Register the mutual aid service as the mutual_aid:expire processor
+	// so the nightly Asynq task is handled (§85, ADR-093).
+	worker.RegisterMutualAidProcessor(mutualAidService)
 
 	// Ref: japaconnect-engineering/sections/87-japa-stage-profiles.md (ADR-095)
 	japaStageStore := japastage.NewStore(database)
@@ -2008,8 +2019,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Put("/space-permission-presets/{name}", spaceHandlers.UpdatePermissionPreset)
 
 			// Content routes (Section 14 — Content Type System)
-			// Create (require auth + moderate rate limit + permission)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "moderate"), rbac.RequirePermission(rbacResolver, "content.create")).
+			// Create (require auth + moderate rate limit + censor check + permission)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "moderate"), spam.CensorMiddleware(database, vkClient), rbac.RequirePermission(rbacResolver, "content.create")).
 				Post("/content", contentHandlers.CreateContent)
 			// Read (require auth for list; single content is public for
 			// published items — Section 14 public content SSR).
@@ -2017,10 +2028,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.OptionalAuth(kr, vkClient.Redis())).Get("/content/{slug}", contentHandlers.GetContent)
 			// Content types (public — for frontend content type selection)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/content-types", contentHandlers.ListContentTypes)
-			// Update/Delete (require auth + permission)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.edit")).
+			// Update/Delete (require auth + edit lock + censor check + permission)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.EditLockMiddleware(vkClient.Redis(), settingsService), spam.CensorMiddleware(database, vkClient), rbac.RequirePermission(rbacResolver, "content.edit")).
 				Patch("/content/{id}", contentHandlers.UpdateContent)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.delete")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.EditLockMiddleware(vkClient.Redis(), settingsService), rbac.RequirePermission(rbacResolver, "content.delete")).
 				Delete("/content/{id}", contentHandlers.DeleteContent)
 			// Lifecycle: publish/archive/schedule are status transitions (content.edit);
 			// view/share-count just require auth.
@@ -2134,12 +2145,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Comments (Section 49 — Unified Comment System)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/comments/{id}", commentsHandlers.GetComment)
 			r.Get("/content/{id}/comments", commentsHandlers.ListComments)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "comments.create")).Post("/content/{id}/comments", commentsHandlers.CreateComment)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "comments.edit_own")).Patch("/comments/{id}", commentsHandlers.UpdateComment)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), spam.CensorMiddleware(database, vkClient), rbac.RequirePermission(rbacResolver, "comments.create")).Post("/content/{id}/comments", commentsHandlers.CreateComment)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.EditLockMiddleware(vkClient.Redis(), settingsService), spam.CensorMiddleware(database, vkClient), rbac.RequirePermission(rbacResolver, "comments.edit_own")).Patch("/comments/{id}", commentsHandlers.UpdateComment)
 			// BUG-003: own-vs-any resolved in the handler (RequireAuth only) so a
 			// moderator with comments.delete_any is not blocked by a delete_own
 			// middleware gate, and a plain member cannot delete another's comment.
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Delete("/comments/{id}", commentsHandlers.DeleteComment)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.EditLockMiddleware(vkClient.Redis(), settingsService)).Delete("/comments/{id}", commentsHandlers.DeleteComment)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "comments.vote")).Post("/comments/{id}/vote", commentsHandlers.VoteComment)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "comments.vote")).Delete("/comments/{id}/vote", commentsHandlers.RemoveVote)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "moderation.report")).Post("/comments/{id}/report", reportsHandlers.ReportComment)
@@ -2189,8 +2200,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// catalog: POST /me/push-tokens, DELETE /me/push-tokens/:id
 			r.Get("/push/vapid-key", notificationHandlers.HandleGetVAPIDKey)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/me/push-tokens", notificationHandlers.HandlePushSubscribe)
-			// NOTE (§7.1): catalog is DELETE /me/push-tokens/:id; handler currently keys
-			// by endpoint in the body. Path-param (token id) migration deferred to P4.
+			// BUG-005: catalog route is DELETE /me/push-tokens/:id (path-param id).
+			// The {id} variant is registered below (Task 28 me-additions block) and
+			// uses HandlePushUnsubscribeByID. This body-endpoint variant is kept for
+			// backward compatibility with older clients that key by endpoint.
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Delete("/me/push-tokens", notificationHandlers.HandlePushUnsubscribe)
 
 			// Feed routes (Section 32 — Activity Feed / Timeline)
@@ -2264,6 +2277,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// WebSocket + DM routes (Section 10 — Real-Time WebSockets)
 			wsHub := websocket.NewHub()
 			controlHandlers.SetWSHub(wsHub)
+			// BUG-002: wire the WS hub into the notification service so new
+			// notifications are pushed to clients in real time. Ref: §35 L88.
+			notificationService.SetWSHub(wsHubWSAdapter{hub: wsHub})
 			// PubSub bridge for multi-instance WebSocket scaling.
 			wsBridge := websocket.NewPubSubBridge(vkClient.Redis(), wsHub)
 			wsHub.SetPubSub(wsBridge)
@@ -2281,6 +2297,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Wire DM store into mentorship service for auto-opening DM
 			// threads when a mentorship connection is accepted (§102, ADR-110).
 			mentorshipService.SetDMCreator(wsDMStore)
+		// Wire DM service into mutual aid handlers so HandleRespond can
+		// open a DM thread with the post author (§85, ADR-093). An adapter
+		// converts websocket.ConversationResult to mutualaid.dmConversationResult.
+		mutualAidHandlers.SetDMInitiator(&mutualAidDMAdapter{dm: wsDMService})
 			wsHandlers := websocket.NewHandlers(wsService, wsDMService, wsHub, vkClient, kr)
 			wsHandlers.SetSpamPipeline(spamPipeline)
 			wsHandlers.SetSessionChecker(func(userID string) bool {
@@ -2494,12 +2514,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				// service enforces own-vs-any scoping for blog.edit_own; admin
 				// "edit any" is covered by PATCH /admin/blog/{id} (blog.review.manage).
 				r.Get("/blog", blogHandlers.ListPosts)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "moderate"), rbac.RequirePermission(rbacResolver, "blog.create")).
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "moderate"), spam.CensorMiddleware(database, vkClient), rbac.RequirePermission(rbacResolver, "blog.create")).
 					Post("/blog", blogHandlers.CreatePost)
 				r.Get("/blog/{slug}", blogHandlers.GetPost)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "blog.edit_own")).
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.EditLockMiddleware(vkClient.Redis(), settingsService), spam.CensorMiddleware(database, vkClient), rbac.RequirePermission(rbacResolver, "blog.edit_own")).
 					Patch("/blog/{id}", contentHandlers.UpdateContent)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "blog.edit_own")).
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.EditLockMiddleware(vkClient.Redis(), settingsService), rbac.RequirePermission(rbacResolver, "blog.edit_own")).
 					Delete("/blog/{id}", contentHandlers.DeleteContent)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "blog.create")).
 					Post("/blog/{id}/submit-for-review", blogHandlers.SubmitForReview)
@@ -3300,6 +3320,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.settings.view")).Get("/admin/onboarding/settings", onboardingHandlers.GetAdminSettings)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.settings")).Put("/admin/onboarding/settings", onboardingHandlers.UpdateAdminSettings)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.settings.view")).Get("/admin/onboarding/templates", onboardingHandlers.ListTemplates)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.settings.view")).Get("/admin/onboarding/templates/{id}", onboardingHandlers.GetTemplate)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.settings")).Post("/admin/onboarding/templates", onboardingHandlers.CreateTemplate)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.settings")).Patch("/admin/onboarding/templates/{id}", onboardingHandlers.UpdateTemplate)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.settings")).Delete("/admin/onboarding/templates/{id}", onboardingHandlers.DeleteTemplate)
@@ -3521,6 +3542,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Get("/admin/newsletter/subscribers/{id}", newsletterHandlers.GetSubscriber)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "newsletter.manage")).
 				Post("/admin/newsletter/subscribers", newsletterHandlers.CreateSubscriber)
+			// Subscriber import — gated by newsletter.import (§62 RBAC, ADR-080 §6).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "newsletter.import")).
+				Post("/admin/newsletter/subscribers/import", newsletterHandlers.ImportSubscribers)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "newsletter.manage")).
 				Delete("/admin/newsletter/subscribers/{id}", newsletterHandlers.DeleteSubscriber)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "newsletter.manage")).
@@ -4419,7 +4443,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "api.keys.self_manage")).
 				Patch("/me/api-keys/{id}", publicAPIHandlers.UpdateAPIKey)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).
-				Delete("/me/push-tokens/{id}", notificationHandlers.HandlePushUnsubscribe)
+				Delete("/me/push-tokens/{id}", notificationHandlers.HandlePushUnsubscribeByID)
 
 			// Task 29: AI conversations — gated by feature.japabot +
 			// ai.context.use RBAC, matching /ai/chat (Section 20: JapaBot
@@ -5158,6 +5182,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Newsletter public routes (Section 62 — ADR-080).
 			// Unsubscribe via token (no auth) + subscriber preferences.
 			r.Delete("/newsletter/unsubscribe", newsletterHandlers.HandleUnsubscribe)
+			// Provider bounce/complaint webhook (§62 Compliance, ADR-080 §4).
+			// Authenticated via X-Webhook-Secret shared secret, not user auth.
+			r.Post("/newsletter/webhook", newsletterHandlers.HandleWebhook)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).
 				Get("/newsletter/preferences", newsletterHandlers.HandleGetPreferences)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).
@@ -5760,4 +5787,50 @@ func (a *couponRenderAdapter) ResolveCouponForRender(ctx context.Context, id pgt
 		ReferralURL:   c.ReferralURL,
 		Status:        c.Status,
 	}, nil
+}
+
+// wsHubWSAdapter adapts *websocket.Hub to the notifications.WSHuber
+// interface so the notification service can broadcast real-time `notification`
+// WS events without importing the websocket package directly (avoids an
+// import cycle). BUG-002: previously the notification service never sent WS
+// events. Ref: japaconnect-engineering/sections/35-notification-system.md
+type wsHubWSAdapter struct {
+	hub *websocket.Hub
+}
+
+func (a wsHubWSAdapter) BroadcastToUser(userID string, event notifications.WSEventPayload) {
+	a.hub.BroadcastToUser(userID, websocket.WSEvent{
+		Type:    event.Type,
+		Payload: event.Payload,
+	})
+}
+
+// mutualAidDMAdapter wraps websocket.DMService to implement the
+// mutualaid.dmInitiator interface. Converts ConversationResult to the
+// simpler dmConversationResult struct (avoids importing websocket types
+// into the mutualaid package).
+type mutualAidDMAdapter struct {
+	dm *websocket.DMService
+}
+
+func (a *mutualAidDMAdapter) GetOrCreateConversationForInitiator(
+	ctx context.Context,
+	tenantID, initiatorID, recipientID pgtype.UUID,
+) (mutualaid.DMConversationResult, error) {
+	result, err := a.dm.GetOrCreateConversationForInitiator(ctx, tenantID, initiatorID, recipientID)
+	if err != nil {
+		return mutualaid.DMConversationResult{}, err
+	}
+	return mutualaid.DMConversationResult{
+		ConversationID: result.Conversation.ID,
+		IsNew:          result.IsNew,
+	}, nil
+}
+
+func (a *mutualAidDMAdapter) SendMessage(
+	ctx context.Context,
+	tenantID, conversationID, senderID pgtype.UUID,
+	body string,
+) error {
+	return a.dm.SendMessage(ctx, tenantID, conversationID, senderID, body)
 }

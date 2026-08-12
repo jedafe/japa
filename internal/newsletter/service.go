@@ -15,6 +15,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
 	"time"
 
 	"github.com/hibiken/asynq"
@@ -136,6 +137,14 @@ func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
 	return s.settings.GetBoolOr(ctx, tenantID, "newsletter.enabled", true)
 }
 
+// WebhookSecret returns the shared secret used to authenticate provider
+// bounce/complaint webhooks (§62 Compliance, ADR-080 §4). Read from the
+// JC_NEWSLETTER_WEBHOOK_SECRET environment variable. An empty string means
+// webhooks are rejected (fail-closed).
+func (s *Service) WebhookSecret(_ context.Context) string {
+	return os.Getenv("JC_NEWSLETTER_WEBHOOK_SECRET")
+}
+
 // GetAllSubscriberEmails returns all subscriber emails opted into campaigns
 // for a tenant (status = 'subscribed' AND campaign_enabled = true).
 func (s *Service) GetAllSubscriberEmails(ctx context.Context, tenantID pgtype.UUID) ([]string, error) {
@@ -162,8 +171,10 @@ func (s *Service) GetAllSubscriberEmails(ctx context.Context, tenantID pgtype.UU
 	return emails, rows.Err()
 }
 
-// EnqueueNewsletterSend enqueues a newsletter_send Asynq task.
-func (s *Service) EnqueueNewsletterSend(_ context.Context, campaignID, tenantID pgtype.UUID, subject, htmlBody string, recipients []string) error {
+// EnqueueNewsletterSend enqueues a newsletter_send Asynq task. The worker
+// re-fetches the campaign and resolves segment-aware recipients from the
+// DB, so only the IDs are carried in the payload (§62, ADR-080 §3).
+func (s *Service) EnqueueNewsletterSend(_ context.Context, campaignID, tenantID pgtype.UUID) error {
 	if s.client == nil {
 		return errors.New("asynq client not configured")
 	}
@@ -185,8 +196,7 @@ func (s *Service) EnqueueNewsletterSend(_ context.Context, campaignID, tenantID 
 
 	slog.Info("newsletter: send task enqueued",
 		"campaign_id", campaignID.String(),
-		"task_id", info.ID,
-		"recipients", len(recipients))
+		"task_id", info.ID)
 
 	return nil
 }
@@ -210,20 +220,31 @@ func (s *Service) ListSubscribers(ctx context.Context, tenantID pgtype.UUID, lim
 	}
 	defer rows.Close()
 
-	var subscribers []Subscriber
-
+	var out []Subscriber
 	for rows.Next() {
-		var sub Subscriber
-		if err := rows.Scan(&sub.ID, &sub.TenantID, &sub.Email, &sub.UserID, &sub.Status,
-			&sub.DigestEnabled, &sub.CampaignEnabled, &sub.SubscribedAt, &sub.UnsubscribedAt,
-			&sub.Source, &sub.CreatedAt); err != nil {
+		var s Subscriber
+		if err := rows.Scan(
+			&s.ID, &s.TenantID, &s.Email, &s.UserID, &s.Status,
+			&s.DigestEnabled, &s.CampaignEnabled,
+			&s.SubscribedAt, &s.UnsubscribedAt, &s.Source, &s.CreatedAt,
+		); err != nil {
 			return nil, fmt.Errorf("scanning newsletter subscriber: %w", err)
 		}
-
-		subscribers = append(subscribers, sub)
+		out = append(out, s)
 	}
+	return out, rows.Err()
+}
 
-	return subscribers, rows.Err()
+// ListSubscribersFiltered returns newsletter subscribers for the tenant,
+// optionally filtered by status (§62 admin route ?status=). Uses the
+// AdminListSubscribers sqlc query which supports status filtering.
+func (s *Service) ListSubscribersFiltered(ctx context.Context, tenantID pgtype.UUID, status string, limit, offset int32) ([]gen.NewsletterSubscriber, error) {
+	return s.queries.AdminListSubscribers(ctx, gen.AdminListSubscribersParams{
+		TenantID:   tenantID,
+		Status:      status,
+		PageLimit:   limit,
+		PageOffset:  offset,
+	})
 }
 
 // GetSubscriber returns a single newsletter subscriber by ID.

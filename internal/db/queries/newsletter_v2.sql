@@ -187,3 +187,69 @@ SET status = @status,
     unsubscribed_at = CASE WHEN @status = 'unsubscribed' THEN now() ELSE unsubscribed_at END
 WHERE tenant_id = @tenant_id AND id = @id
 RETURNING *;
+
+-- =====================================================================
+-- Campaign send: fetch full campaign row (incl. segment) for the worker.
+-- =====================================================================
+
+-- name: GetNewsletterCampaignForSend :one
+SELECT id, tenant_id, subject, html, body, segment, segment_id, status
+FROM newsletter_campaigns
+WHERE tenant_id = @tenant_id AND id = @id;
+
+-- =====================================================================
+-- Segment-aware recipient resolution for newsletter:send (§62, ADR-080 §3).
+-- Returns emails of subscribers matching the campaign's segment.
+--   segment = 'all'              → all subscribed + campaign_enabled
+--   segment = 'pro_subscribers'  → subscribed + campaign_enabled + pro tier users
+--   segment = 'space'            → subscribed + campaign_enabled + users following segment_id space
+--   segment = 'tag'              → subscribed + campaign_enabled + users following segment_id tag
+-- The space/tag follower filters are best-effort: if the follower tables
+-- are not present or the join yields no rows, the segment falls back to
+-- 'all' so a misconfigured segment never silently drops every recipient.
+-- =====================================================================
+
+-- name: NewsletterRecipientsAll :many
+SELECT ns.email
+FROM newsletter_subscribers ns
+WHERE ns.tenant_id = @tenant_id
+  AND ns.status = 'subscribed'
+  AND ns.campaign_enabled = true
+ORDER BY ns.subscribed_at ASC
+LIMIT @page_limit OFFSET @page_offset;
+
+-- name: NewsletterRecipientsPro :many
+SELECT ns.email
+FROM newsletter_subscribers ns
+JOIN subscriptions sub ON sub.user_id = ns.user_id AND sub.tenant_id = ns.tenant_id
+WHERE ns.tenant_id = @tenant_id
+  AND ns.status = 'subscribed'
+  AND ns.campaign_enabled = true
+  AND sub.status = 'active'
+  AND sub.plan LIKE 'pro_%'
+ORDER BY ns.subscribed_at ASC
+LIMIT @page_limit OFFSET @page_offset;
+
+-- name: NewsletterRecipientsBySpace :many
+SELECT ns.email
+FROM newsletter_subscribers ns
+JOIN follows f ON f.follower_id = ns.user_id AND f.tenant_id = ns.tenant_id
+WHERE ns.tenant_id = @tenant_id
+  AND ns.status = 'subscribed'
+  AND ns.campaign_enabled = true
+  AND f.entity_type = 'space'
+  AND f.entity_id = @segment_id
+ORDER BY ns.subscribed_at ASC
+LIMIT @page_limit OFFSET @page_offset;
+
+-- name: NewsletterRecipientsByTag :many
+SELECT ns.email
+FROM newsletter_subscribers ns
+JOIN follows f ON f.follower_id = ns.user_id AND f.tenant_id = ns.tenant_id
+WHERE ns.tenant_id = @tenant_id
+  AND ns.status = 'subscribed'
+  AND ns.campaign_enabled = true
+  AND f.entity_type = 'tag'
+  AND f.entity_id = @segment_id
+ORDER BY ns.subscribed_at ASC
+LIMIT @page_limit OFFSET @page_offset;

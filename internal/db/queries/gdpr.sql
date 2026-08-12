@@ -1062,6 +1062,24 @@ WHERE blocker_id = @user_id OR blocked_id = @user_id;
 DELETE FROM notifications
 WHERE recipient_id = @user_id AND tenant_id = @tenant_id;
 
+-- name: DeleteNotificationPreferencesByUser :exec
+-- BUG-011: delete notification_preferences for the erased user during GDPR
+-- erasure (Section 35). Preferences are user-owned config with no audit
+-- requirement; safe to hard-delete (not user content per Rule 11).
+DELETE FROM notification_preferences WHERE user_id = @user_id;
+
+-- name: DeleteNotificationBatchWindowsByUser :exec
+-- BUG-012: delete notification_batch_windows for the erased user during GDPR
+-- erasure (Section 35). Orphaned batch windows would dispatch notifications
+-- to a deleted user; removing them prevents that.
+DELETE FROM notification_batch_windows WHERE recipient_id = @user_id;
+
+-- name: DeletePushSubscriptionsByUser :exec
+-- BUG-010: delete push_subscriptions for the erased user during GDPR erasure
+-- (Section 35). The endpoint URL and p256dh/auth keys are device-identifying
+-- PII and must be removed.
+DELETE FROM push_subscriptions WHERE user_id = @user_id;
+
 -- name: GdprExportAttestationCommunityUpdates :one
 -- §97: export attestation_community_updates authored by the user.
 -- The table has no tenant_id column; tenant scoping is via the parent
