@@ -205,12 +205,14 @@
 		}
 	}
 
-	// Prepare history data for LayerChart — group by provider for multi-line
+	// Prepare history data for LayerChart — daily aggregate (avg rate per day).
+	// The backend returns { day, max_rate, min_rate, avg_rate } per ADR-075 §6.
 	const chartData = $derived.by(() => {
 		return history.map((p) => ({
-			timestamp: new Date(p.timestamp),
-			rate: p.rate,
-			provider: p.provider_name
+			date: new Date(p.day),
+			avg: p.avg_rate,
+			min: p.min_rate,
+			max: p.max_rate
 		}));
 	});
 
@@ -414,10 +416,12 @@
 					<div class="h-60 w-full">
 						<LineChart
 							data={chartData}
-							x="timestamp"
-							y="rate"
-							c="provider"
-							cRange={['var(--chart-1)', 'var(--chart-2)', 'var(--chart-3)', 'var(--chart-4)', 'var(--chart-5)']}
+							x="date"
+							y="avg"
+							props={{
+								line: { class: 'stroke-[var(--chart-1)]' },
+								area: { class: 'fill-[var(--chart-1)]/10' }
+							}}
 						/>
 					</div>
 				</div>

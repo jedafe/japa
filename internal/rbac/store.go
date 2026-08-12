@@ -67,15 +67,21 @@ func (s *Store) invalidateGroupCache(ctx context.Context, groupID pgtype.UUID) {
 
 // CreateGroup creates a new user group. System groups cannot be created
 // via this method - they are seeded at install time only.
-func (s *Store) CreateGroup(ctx context.Context, tenantID pgtype.UUID, name, slug string) (pgtype.UUID, error) {
+func (s *Store) CreateGroup(ctx context.Context, tenantID pgtype.UUID, name, slug, description string) (pgtype.UUID, error) {
 	if IsSystemGroup(slug) {
 		return pgtype.UUID{}, fmt.Errorf("cannot create system group %s via API", slug)
 	}
 
+	var descPtr *string
+	if description != "" {
+		descPtr = &description
+	}
+
 	id, err := s.write.CreateUserGroup(ctx, gen.CreateUserGroupParams{
-		TenantID: tenantID,
-		Name:     name,
-		Slug:     slug,
+		TenantID:    tenantID,
+		Name:        name,
+		Slug:        slug,
+		Description: descPtr,
 	})
 	if err != nil {
 		return pgtype.UUID{}, fmt.Errorf("creating group: %w", err)
@@ -127,9 +133,10 @@ func (s *Store) DeleteGroup(ctx context.Context, tenantID pgtype.UUID, slug stri
 }
 
 // DeleteGroupByID deletes a user group by its UUID. System groups cannot be
-// deleted (the sqlc query enforces is_system = false). After deletion, it
-// invalidates the permission cache for all former members (Rule 6).
-func (s *Store) DeleteGroupByID(ctx context.Context, groupID pgtype.UUID) error {
+// deleted (the sqlc query enforces is_system = false). The tenant_id filter
+// prevents cross-tenant deletion. After deletion, it invalidates the
+// permission cache for all former members (Rule 6).
+func (s *Store) DeleteGroupByID(ctx context.Context, tenantID, groupID pgtype.UUID) error {
 	// Collect member IDs before deletion so we can invalidate their caches
 	// after the group is removed.
 	memberIDs, err := s.read.ListGroupMembersByGroupID(ctx, groupID)
@@ -138,7 +145,10 @@ func (s *Store) DeleteGroupByID(ctx context.Context, groupID pgtype.UUID) error 
 		memberIDs = nil // proceed — don't block the mutation
 	}
 
-	if err := s.write.DeleteUserGroupByID(ctx, groupID); err != nil {
+	if err := s.write.DeleteUserGroupByID(ctx, gen.DeleteUserGroupByIDParams{
+		ID:       groupID,
+		TenantID: tenantID,
+	}); err != nil {
 		return fmt.Errorf("deleting group by ID: %w", err)
 	}
 
@@ -280,6 +290,9 @@ func (s *Store) ListGroups(ctx context.Context, tenantID pgtype.UUID) ([]Group, 
 			IsSystem:    r.IsSystem,
 			MemberCount: memberCounts[r.ID],
 		}
+		if r.Description != nil {
+			g.Description = *r.Description
+		}
 
 		if perms, ok := groupPerms[r.ID]; ok {
 			g.Permissions = make([]string, 0, len(perms))
@@ -357,9 +370,9 @@ type Role struct {
 	UserCount  int32       `json:"user_count"`
 }
 
-// ListRoles returns all roles.
-func (s *Store) ListRoles(ctx context.Context) ([]Role, error) {
-	rows, err := s.read.ListAllRoles(ctx)
+// ListRoles returns all roles for a tenant.
+func (s *Store) ListRoles(ctx context.Context, tenantID pgtype.UUID) ([]Role, error) {
+	rows, err := s.read.ListAllRoles(ctx, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("listing roles: %w", err)
 	}
@@ -377,8 +390,10 @@ func (s *Store) ListRoles(ctx context.Context) ([]Role, error) {
 }
 
 // ListRolesPaginated returns a paginated list of roles with optional search.
-func (s *Store) ListRolesPaginated(ctx context.Context, search string, limit, offset int32) ([]Role, int32, error) {
+// Uses batch queries for permissions and group counts to avoid N+1 lookups.
+func (s *Store) ListRolesPaginated(ctx context.Context, tenantID pgtype.UUID, search string, limit, offset int32) ([]Role, int32, error) {
 	rows, err := s.read.ListRolesPaginated(ctx, gen.ListRolesPaginatedParams{
+		TenantID:   tenantID,
 		Search:     search,
 		PageLimit:  limit,
 		PageOffset: offset,
@@ -387,34 +402,45 @@ func (s *Store) ListRolesPaginated(ctx context.Context, search string, limit, of
 		return nil, 0, fmt.Errorf("listing roles paginated: %w", err)
 	}
 
+	// Batch query: all role permissions for this tenant.
+	permRows, err := s.read.ListRolePermissionsByTenant(ctx, tenantID)
+	if err != nil {
+		slog.Warn("rbac: failed to batch list role permissions", "tenant_id", tenantID, "error", err)
+		permRows = nil
+	}
+	rolePerms := make(map[pgtype.UUID][]string)
+	for _, r := range permRows {
+		rolePerms[r.RoleID] = append(rolePerms[r.RoleID], r.Key)
+	}
+
+	// Batch query: group counts per role for this tenant.
+	groupCountRows, err := s.read.CountGroupsByRoleAndTenant(ctx, tenantID)
+	if err != nil {
+		slog.Warn("rbac: failed to batch count groups by role", "tenant_id", tenantID, "error", err)
+		groupCountRows = nil
+	}
+	groupCounts := make(map[pgtype.UUID]int32)
+	for _, r := range groupCountRows {
+		groupCounts[r.RoleID] = r.GroupCount
+	}
+
 	roles := make([]Role, 0, len(rows))
 	for _, r := range rows {
 		role := Role{
-			ID:   r.ID,
-			Name: r.Name,
-			Slug: r.Slug,
+			ID:        r.ID,
+			Name:      r.Name,
+			Slug:      r.Slug,
+			UserCount: groupCounts[r.ID],
 		}
-
-		// Get permissions for this role.
-		permRows, err := s.read.ListRolePermissionsByKey(ctx, r.ID)
-		if err == nil {
-			perms := make([]string, 0, len(permRows))
-			for _, p := range permRows {
-				perms = append(perms, p.Key)
-			}
-			role.Permissions = perms
-		}
-
-		// Count groups assigned to this role.
-		groupRows, err := s.read.ListGroupsByRoleID(ctx, r.ID)
-		if err == nil {
-			role.UserCount = int32(len(groupRows))
-		}
+		role.Permissions = rolePerms[r.ID]
 
 		roles = append(roles, role)
 	}
 
-	total, err := s.read.CountRoles(ctx, search)
+	total, err := s.read.CountRoles(ctx, gen.CountRolesParams{
+		TenantID: tenantID,
+		Search:   search,
+	})
 	if err != nil {
 		return nil, 0, fmt.Errorf("counting roles: %w", err)
 	}
@@ -527,10 +553,11 @@ func slugify(name string) string {
 }
 
 // DeleteRole removes a role and all its permission/group assignments (P5.6).
+// role_permissions and group_rows cascade-delete with the user_roles row.
 // After deletion, it invalidates the permission cache for every group that
 // held this role so members don't retain the role's capabilities for up to
 // 5 minutes (Rule 6).
-func (s *Store) DeleteRole(ctx context.Context, roleID pgtype.UUID) error {
+func (s *Store) DeleteRole(ctx context.Context, tenantID, roleID pgtype.UUID) error {
 	// Collect affected groups before deletion so we can invalidate their
 	// members' caches after the role is removed.
 	groupIDs, err := s.read.ListGroupsByRoleID(ctx, roleID)
@@ -539,7 +566,10 @@ func (s *Store) DeleteRole(ctx context.Context, roleID pgtype.UUID) error {
 		groupIDs = nil // proceed — don't block the mutation
 	}
 
-	if err := s.write.DeleteUserRole(ctx, roleID); err != nil {
+	if err := s.write.DeleteUserRole(ctx, gen.DeleteUserRoleParams{
+		RoleID:   roleID,
+		TenantID: tenantID,
+	}); err != nil {
 		return fmt.Errorf("deleting role: %w", err)
 	}
 
@@ -552,10 +582,11 @@ func (s *Store) DeleteRole(ctx context.Context, roleID pgtype.UUID) error {
 }
 
 // UpdateRole updates a role's name (P5.6).
-func (s *Store) UpdateRole(ctx context.Context, roleID pgtype.UUID, name string) error {
+func (s *Store) UpdateRole(ctx context.Context, tenantID, roleID pgtype.UUID, name string) error {
 	if err := s.write.UpdateUserRole(ctx, gen.UpdateUserRoleParams{
-		ID:   roleID,
-		Name: name,
+		ID:       roleID,
+		Name:     name,
+		TenantID: tenantID,
 	}); err != nil {
 		return fmt.Errorf("updating role: %w", err)
 	}
@@ -608,12 +639,19 @@ func (s *Store) SetRolePermissions(ctx context.Context, roleID pgtype.UUID, perm
 	return nil
 }
 
-// UpdateGroup updates a group's name and slug (P5.6).
-func (s *Store) UpdateGroup(ctx context.Context, groupID pgtype.UUID, name, slug string) error {
+// UpdateGroup updates a group's name, slug, and description (P5.6).
+// The tenant_id filter prevents cross-tenant updates.
+func (s *Store) UpdateGroup(ctx context.Context, tenantID, groupID pgtype.UUID, name, slug, description string) error {
+	var descPtr *string
+	if description != "" {
+		descPtr = &description
+	}
 	if err := s.write.UpdateUserGroup(ctx, gen.UpdateUserGroupParams{
-		ID:   groupID,
-		Name: name,
-		Slug: slug,
+		ID:          groupID,
+		TenantID:    tenantID,
+		Name:        name,
+		Slug:        slug,
+		Description: descPtr,
 	}); err != nil {
 		return fmt.Errorf("updating group: %w", err)
 	}
@@ -623,8 +661,11 @@ func (s *Store) UpdateGroup(ctx context.Context, groupID pgtype.UUID, name, slug
 // IsSystemGroupByID checks whether the group with the given ID is one of the
 // three system defaults (super_admin, members, guest). Used by handlers to
 // prevent dangerous slug changes on system groups.
-func (s *Store) IsSystemGroupByID(ctx context.Context, groupID pgtype.UUID) (bool, error) {
-	g, err := s.read.GetUserGroupByID(ctx, groupID)
+func (s *Store) IsSystemGroupByID(ctx context.Context, tenantID, groupID pgtype.UUID) (bool, error) {
+	g, err := s.read.GetUserGroupByID(ctx, gen.GetUserGroupByIDParams{
+		ID:       groupID,
+		TenantID: tenantID,
+	})
 	if err != nil {
 		return false, fmt.Errorf("looking up group: %w", err)
 	}
@@ -632,18 +673,26 @@ func (s *Store) IsSystemGroupByID(ctx context.Context, groupID pgtype.UUID) (boo
 }
 
 // GetGroupByID returns the user group with the given ID, including its
-// current slug and is_system flag. Used by handlers that need to preserve
-// the slug of system groups during updates.
-func (s *Store) GetGroupByID(ctx context.Context, groupID pgtype.UUID) (Group, error) {
-	g, err := s.read.GetUserGroupByID(ctx, groupID)
+// current slug, is_system flag, and description. Used by handlers that need
+// to preserve the slug of system groups during updates. The tenant_id filter
+// prevents cross-tenant reads.
+func (s *Store) GetGroupByID(ctx context.Context, tenantID, groupID pgtype.UUID) (Group, error) {
+	g, err := s.read.GetUserGroupByID(ctx, gen.GetUserGroupByIDParams{
+		ID:       groupID,
+		TenantID: tenantID,
+	})
 	if err != nil {
 		return Group{}, fmt.Errorf("looking up group: %w", err)
 	}
-	return Group{
+	group := Group{
 		ID:       g.ID,
 		TenantID: g.TenantID,
 		Name:     g.Name,
 		Slug:     g.Slug,
 		IsSystem: g.IsSystem,
-	}, nil
+	}
+	if g.Description != nil {
+		group.Description = *g.Description
+	}
+	return group, nil
 }

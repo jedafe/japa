@@ -204,7 +204,7 @@
 						<div class="flex items-center justify-between border-t border-[var(--color-border)] pt-3 text-xs text-[var(--color-muted)]">
 							<span class="inline-flex items-center gap-1">
 								<Users size={12} />
-								{group.max_members ?? 0}
+								{group.member_count ?? 0}/{group.max_members ?? 0}
 							</span>
 							{#if group.visa_category}
 								<span>{group.visa_category}</span>

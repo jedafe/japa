@@ -31,6 +31,7 @@ package remittance
 import (
 	"encoding/json"
 	"log/slog"
+	"math"
 	"net/http"
 	"strconv"
 
@@ -42,6 +43,18 @@ import (
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/tenant"
 )
+
+// safeInt32 converts an int to int32, clamping to math.MaxInt32 if too large.
+// Used for pagination parameters to prevent integer overflow (gosec G109/G115).
+func safeInt32(n int) int32 {
+	if n > math.MaxInt32 {
+		return math.MaxInt32
+	}
+	if n < 0 {
+		return 0
+	}
+	return int32(n) //nolint:gosec // G109/G115: bounded by MaxInt32 check above
+}
 
 // Handlers exposes the remittance tracker HTTP endpoints.
 type Handlers struct {
@@ -439,14 +452,14 @@ func (h *Handlers) HandleAdminListProviders(w http.ResponseWriter, r *http.Reque
 	limit := int32(20)
 	if l := r.URL.Query().Get("limit"); l != "" {
 		if parsed, err := strconv.Atoi(l); err == nil && parsed > 0 && parsed <= 100 {
-			limit = int32(parsed)
+			limit = safeInt32(parsed)
 		}
 	}
 
 	offset := int32(0)
 	if o := r.URL.Query().Get("offset"); o != "" {
 		if parsed, err := strconv.Atoi(o); err == nil && parsed >= 0 {
-			offset = int32(parsed)
+			offset = safeInt32(parsed)
 		}
 	}
 

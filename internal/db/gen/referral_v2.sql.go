@@ -293,6 +293,47 @@ func (q *Queries) CreateReferralCode(ctx context.Context, arg CreateReferralCode
 	return i, err
 }
 
+const creditFlaggedReferral = `-- name: CreditFlaggedReferral :one
+UPDATE referrals
+SET
+    status         = 'credited',
+    reward_amount  = $1,
+    credited_at    = now(),
+    flagged_reason = NULL
+WHERE tenant_id = $2 AND id = $3 AND status = 'flagged'
+RETURNING id, tenant_id, referrer_id, referee_id, referral_code, status, reward_paid_at, created_at, qualified_payment_id, reward_amount, flagged_reason, qualified_at, credited_at
+`
+
+type CreditFlaggedReferralParams struct {
+	RewardAmount pgtype.Numeric `json:"reward_amount"`
+	TenantID     pgtype.UUID    `json:"tenant_id"`
+	ID           pgtype.UUID    `json:"id"`
+}
+
+// Transitions a flagged referral to credited after admin review (§60
+// PATCH /admin/referrals/:id/resolve action=credit). CreditReferral only
+// accepts status='qualified'; flagged referrals need their own transition.
+func (q *Queries) CreditFlaggedReferral(ctx context.Context, arg CreditFlaggedReferralParams) (Referral, error) {
+	row := q.db.QueryRow(ctx, creditFlaggedReferral, arg.RewardAmount, arg.TenantID, arg.ID)
+	var i Referral
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.ReferrerID,
+		&i.RefereeID,
+		&i.ReferralCode,
+		&i.Status,
+		&i.RewardPaidAt,
+		&i.CreatedAt,
+		&i.QualifiedPaymentID,
+		&i.RewardAmount,
+		&i.FlaggedReason,
+		&i.QualifiedAt,
+		&i.CreditedAt,
+	)
+	return i, err
+}
+
 const creditReferral = `-- name: CreditReferral :one
 UPDATE referrals
 SET
@@ -335,7 +376,7 @@ UPDATE referrals
 SET
     status         = 'flagged',
     flagged_reason = $1
-WHERE tenant_id = $2 AND id = $3
+WHERE tenant_id = $2 AND id = $3 AND status IN ('pending', 'qualified')
 RETURNING id, tenant_id, referrer_id, referee_id, referral_code, status, reward_paid_at, created_at, qualified_payment_id, reward_amount, flagged_reason, qualified_at, credited_at
 `
 
@@ -345,6 +386,9 @@ type FlagReferralParams struct {
 	ID            pgtype.UUID `json:"id"`
 }
 
+// Status guard: only pending or qualified referrals can be flagged. This
+// prevents reverting an already-credited or rejected referral (§60 status
+// machine, BUG-012).
 func (q *Queries) FlagReferral(ctx context.Context, arg FlagReferralParams) (Referral, error) {
 	row := q.db.QueryRow(ctx, flagReferral, arg.FlaggedReason, arg.TenantID, arg.ID)
 	var i Referral

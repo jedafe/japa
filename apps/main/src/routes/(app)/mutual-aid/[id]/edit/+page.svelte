@@ -4,6 +4,7 @@
 	import { goto } from '$app/navigation';
 	import { ArrowLeft, Send } from 'lucide-svelte';
 	import { api } from '$lib/api/client';
+	import { untrack } from 'svelte';
 	import type { MutualAidPost, MutualAidPostType, MutualAidCategory, Space } from '$lib/types';
 	import type { PageData } from './$types';
 
@@ -21,12 +22,12 @@
 		{ value: 'other', label: t('mutual_aid.cat_other', 'Other') }
 	];
 
-	let postType = $state<MutualAidPostType>(post.post_type as MutualAidPostType);
-	let category = $state<MutualAidCategory>((post.category as MutualAidCategory) ?? 'housing');
-	let title = $state(post.title ?? '');
-	let description = $state(post.description ?? '');
-	let destinationSpaceId = $state(post.destination_space_id ?? '');
-	let citySpaceId = $state(post.city_space_id ?? '');
+	let postType = $state<MutualAidPostType>(untrack(() => post.post_type as MutualAidPostType));
+	let category = $state<MutualAidCategory>(untrack(() => (post.category as MutualAidCategory) ?? 'housing'));
+	let title = $state(untrack(() => post.title ?? ''));
+	let description = $state(untrack(() => post.description ?? ''));
+	let destinationSpaceId = $state(untrack(() => post.destination_space_id ?? ''));
+	let citySpaceId = $state(untrack(() => post.city_space_id ?? ''));
 	let submitting = $state(false);
 	let error = $state<string | null>(null);
 

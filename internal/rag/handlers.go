@@ -7,6 +7,7 @@
 //	GET    /api/v1/admin/rag/status             — index stats (total chunks, last indexed)
 //	DELETE /api/v1/admin/rag/entity/:type/:id   — purge embeddings for an entity
 //	GET    /api/v1/admin/settings/rag           — get RAG settings
+//	PUT    /api/v1/admin/settings/rag           — update RAG settings
 //
 // Ref: japaconnect-engineering/sections/69-rag-knowledge-layer.md
 //      japaconnect-engineering/adr/ADR-069-japabot-rag-knowledge-layer.md
@@ -214,4 +215,70 @@ func (h *Handlers) HandleGetSettings(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"data": settings,
 	})
+}
+
+// HandleUpdateSettings — PUT /api/v1/admin/settings/rag
+//
+// Saves the four RAG system settings (rag.enabled, rag.embedding_model,
+// rag.retrieval_top_k, rag.chunk_max_tokens). The request body is a flat
+// map of key→value pairs using the short key (without the "rag." prefix),
+// matching the pattern of the generic admin settings PUT handler.
+// Ref: japaconnect-engineering/sections/69-rag-knowledge-layer.md
+//      japaconnect-engineering/conventions/system-settings-catalog.md
+func (h *Handlers) HandleUpdateSettings(w http.ResponseWriter, r *http.Request) {
+	if _, ok := requireUser(w, r); !ok {
+		return
+	}
+
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	if h.settings == nil {
+		writeError(w, http.StatusServiceUnavailable, "settings_unavailable", "Settings service not configured")
+		return
+	}
+
+	var updates map[string]any
+	if err := json.NewDecoder(r.Body).Decode(&updates); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
+		return
+	}
+
+	if len(updates) == 0 {
+		writeError(w, http.StatusBadRequest, "empty_body", "No settings provided")
+		return
+	}
+
+	// Validate keys against the four allowed RAG settings.
+	validKeys := map[string]bool{
+		"enabled":         true,
+		"embedding_model": true,
+		"retrieval_top_k": true,
+		"chunk_max_tokens": true,
+	}
+
+	ctx := r.Context()
+	pending := make(map[string][]byte, len(updates))
+	for key, value := range updates {
+		if !validKeys[key] {
+			writeError(w, http.StatusBadRequest, "invalid_key", "Unknown setting key: "+key)
+			return
+		}
+		valueJSON, err := json.Marshal(value)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_value", "Cannot serialize value for key: "+key)
+			return
+		}
+		pending["rag."+key] = valueJSON
+	}
+
+	if err := h.settings.UpdateSettingsBatch(ctx, tenantID, pending); err != nil {
+		slog.Error("rag: failed to save settings", "error", err)
+		writeError(w, http.StatusInternalServerError, "db_error", "Failed to save settings")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": nil})
 }

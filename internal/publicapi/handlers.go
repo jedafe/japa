@@ -805,6 +805,293 @@ func (h *Handlers) GetMyProfile(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"data": user})
 }
 
+// ListContent handles GET /api/v1/public/content — returns a paginated list
+// of published, public content within the API key's tenant.
+// Ref: japaconnect-engineering/sections/47-public-api-developer-portal.md
+func (h *Handlers) ListContent(w http.ResponseWriter, r *http.Request) {
+	if h.Service == nil {
+		writeError(w, http.StatusServiceUnavailable, "not_ready", "Public API not configured")
+		return
+	}
+
+	keyCtx := APIKeyFromContext(r.Context())
+	if keyCtx == nil {
+		writeError(w, http.StatusUnauthorized, "api_key_required", "X-API-Key header is required")
+		return
+	}
+
+	limit := parsePageSize(r, defaultPageSize, 100)
+	offset := parseOffset(r)
+
+	results, err := h.Service.ListPublishedContent(r.Context(), keyCtx.TenantID, limit, offset)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data":   results,
+		"limit":  limit,
+		"offset": offset,
+	})
+}
+
+// ListContentComments handles GET /api/v1/public/content/{id}/comments —
+// returns top-level published comments for a content item.
+// Ref: japaconnect-engineering/sections/47-public-api-developer-portal.md
+func (h *Handlers) ListContentComments(w http.ResponseWriter, r *http.Request) {
+	if h.Queries == nil {
+		writeError(w, http.StatusServiceUnavailable, "not_ready", "Public API not configured")
+		return
+	}
+
+	keyCtx := APIKeyFromContext(r.Context())
+	if keyCtx == nil {
+		writeError(w, http.StatusUnauthorized, "api_key_required", "X-API-Key header is required")
+		return
+	}
+
+	contentID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid content ID")
+		return
+	}
+
+	limit := parsePageSize(r, defaultPageSize, 100)
+	offset := parseOffset(r)
+
+	comments, err := h.Queries.ListCommentsByContent(r.Context(), gen.ListCommentsByContentParams{
+		ContentID:  contentID,
+		TenantID:   keyCtx.TenantID,
+		PageOffset: offset,
+		PageLimit:  limit,
+	})
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data":   comments,
+		"limit":  limit,
+		"offset": offset,
+	})
+}
+
+// ListUsers handles GET /api/v1/public/users — returns a paginated list of
+// public user profiles. PII-safe: no email, status, last_login, or groups.
+// Ref: japaconnect-engineering/sections/47-public-api-developer-portal.md
+func (h *Handlers) ListUsers(w http.ResponseWriter, r *http.Request) {
+	if h.Queries == nil {
+		writeError(w, http.StatusServiceUnavailable, "not_ready", "Public API not configured")
+		return
+	}
+
+	keyCtx := APIKeyFromContext(r.Context())
+	if keyCtx == nil {
+		writeError(w, http.StatusUnauthorized, "api_key_required", "X-API-Key header is required")
+		return
+	}
+
+	search := r.URL.Query().Get("q")
+	profileType := r.URL.Query().Get("type")
+	limit := parsePageSize(r, defaultPageSize, 100)
+	offset := parseOffset(r)
+
+	users, err := h.Queries.ListPublicUsers(r.Context(), gen.ListPublicUsersParams{
+		TenantID:    keyCtx.TenantID,
+		Search:      search,
+		ProfileType: profileType,
+		PageOffset:  offset,
+		PageLimit:   limit,
+	})
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data":   users,
+		"limit":  limit,
+		"offset": offset,
+	})
+}
+
+// GetTagBySlug handles GET /api/v1/public/tags/{slug} — returns a single
+// tag by its URL slug.
+// Ref: japaconnect-engineering/sections/47-public-api-developer-portal.md
+func (h *Handlers) GetTagBySlug(w http.ResponseWriter, r *http.Request) {
+	if h.Queries == nil {
+		writeError(w, http.StatusServiceUnavailable, "not_ready", "Public API not configured")
+		return
+	}
+
+	keyCtx := APIKeyFromContext(r.Context())
+	if keyCtx == nil {
+		writeError(w, http.StatusUnauthorized, "api_key_required", "X-API-Key header is required")
+		return
+	}
+
+	slug := chi.URLParam(r, "slug")
+	if slug == "" {
+		writeError(w, http.StatusBadRequest, "missing_slug", "Slug is required")
+		return
+	}
+
+	tag, err := h.Queries.GetTagBySlug(r.Context(), gen.GetTagBySlugParams{
+		Slug:     slug,
+		TenantID: keyCtx.TenantID,
+	})
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": tag})
+}
+
+// ---------------------------------------------------------------------------
+// Trending endpoints (Section 47 — public read-only trending snapshots)
+// ---------------------------------------------------------------------------
+
+// parseTrendingWindow validates the ?window= query param. Accepts 24h, 7d,
+// 30d; defaults to 24h (matching internal/trending/handlers.go).
+func parseTrendingWindow(r *http.Request) string {
+	if v := r.URL.Query().Get("window"); v != "" {
+		switch v {
+		case "24h", "7d", "30d":
+			return v
+		}
+	}
+	return "24h"
+}
+
+// GetTrendingContentHandler handles GET /api/v1/trending/content — returns
+// trending content snapshots for the API key's tenant.
+// Ref: japaconnect-engineering/sections/47-public-api-developer-portal.md
+func (h *Handlers) GetTrendingContentHandler(w http.ResponseWriter, r *http.Request) {
+	if h.Queries == nil {
+		writeError(w, http.StatusServiceUnavailable, "not_ready", "Public API not configured")
+		return
+	}
+
+	keyCtx := APIKeyFromContext(r.Context())
+	if keyCtx == nil {
+		writeError(w, http.StatusUnauthorized, "api_key_required", "X-API-Key header is required")
+		return
+	}
+
+	window := parseTrendingWindow(r)
+	geoCode := r.URL.Query().Get("geo")
+	limit := parsePageSize(r, 10, 50)
+
+	rows, err := h.Queries.GetTrendingContent(r.Context(), gen.GetTrendingContentParams{
+		TenantID: keyCtx.TenantID,
+		Window:   window,
+		Column3:  geoCode,
+		Limit:    limit,
+	})
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": rows})
+}
+
+// GetTrendingTagsHandler handles GET /api/v1/trending/tags.
+func (h *Handlers) GetTrendingTagsHandler(w http.ResponseWriter, r *http.Request) {
+	if h.Queries == nil {
+		writeError(w, http.StatusServiceUnavailable, "not_ready", "Public API not configured")
+		return
+	}
+
+	keyCtx := APIKeyFromContext(r.Context())
+	if keyCtx == nil {
+		writeError(w, http.StatusUnauthorized, "api_key_required", "X-API-Key header is required")
+		return
+	}
+
+	window := parseTrendingWindow(r)
+	geoCode := r.URL.Query().Get("geo")
+	limit := parsePageSize(r, 10, 50)
+
+	rows, err := h.Queries.GetTrendingTags(r.Context(), gen.GetTrendingTagsParams{
+		TenantID: keyCtx.TenantID,
+		Window:   window,
+		Column3:  geoCode,
+		Limit:    limit,
+	})
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": rows})
+}
+
+// GetTrendingSpacesHandler handles GET /api/v1/trending/spaces.
+func (h *Handlers) GetTrendingSpacesHandler(w http.ResponseWriter, r *http.Request) {
+	if h.Queries == nil {
+		writeError(w, http.StatusServiceUnavailable, "not_ready", "Public API not configured")
+		return
+	}
+
+	keyCtx := APIKeyFromContext(r.Context())
+	if keyCtx == nil {
+		writeError(w, http.StatusUnauthorized, "api_key_required", "X-API-Key header is required")
+		return
+	}
+
+	window := parseTrendingWindow(r)
+	geoCode := r.URL.Query().Get("geo")
+	limit := parsePageSize(r, 10, 50)
+
+	rows, err := h.Queries.GetTrendingSpaces(r.Context(), gen.GetTrendingSpacesParams{
+		TenantID: keyCtx.TenantID,
+		Window:   window,
+		Column3:  geoCode,
+		Limit:    limit,
+	})
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": rows})
+}
+
+// GetTrendingUsersHandler handles GET /api/v1/trending/users.
+func (h *Handlers) GetTrendingUsersHandler(w http.ResponseWriter, r *http.Request) {
+	if h.Queries == nil {
+		writeError(w, http.StatusServiceUnavailable, "not_ready", "Public API not configured")
+		return
+	}
+
+	keyCtx := APIKeyFromContext(r.Context())
+	if keyCtx == nil {
+		writeError(w, http.StatusUnauthorized, "api_key_required", "X-API-Key header is required")
+		return
+	}
+
+	window := parseTrendingWindow(r)
+	geoCode := r.URL.Query().Get("geo")
+	limit := parsePageSize(r, 10, 50)
+
+	rows, err := h.Queries.GetTrendingUsers(r.Context(), gen.GetTrendingUsersParams{
+		TenantID: keyCtx.TenantID,
+		Window:   window,
+		Column3:  geoCode,
+		Limit:    limit,
+	})
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": rows})
+}
+
 // GetAPIKeyAnalytics returns aggregate analytics for all API keys (admin view).
 // GET /api/v1/control/api-keys/analytics.
 func (h *Handlers) GetAPIKeyAnalytics(w http.ResponseWriter, r *http.Request) {

@@ -149,7 +149,9 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// HandleGet handles GET /achievements/:slug — single published achievement.
+// HandleGet handles GET /achievements/:slug — single achievement. Only
+// published achievements are visible to anonymous viewers; an unpublished
+// (admin-moderated) achievement is visible only to its own author.
 func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
@@ -167,7 +169,14 @@ func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	achievement, err := h.service.GetBySlug(r.Context(), slug, tenantID)
+	// Pass the authenticated viewer (if any) so authors can view their own
+	// unpublished achievements; anonymous viewers see published only.
+	var viewerID pgtype.UUID
+	if u := auth.FromContext(r.Context()); u != nil {
+		viewerID = u.UserID
+	}
+
+	achievement, err := h.service.GetBySlug(r.Context(), slug, tenantID, viewerID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "achievement_not_found", "Achievement not found")

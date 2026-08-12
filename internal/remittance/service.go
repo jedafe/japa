@@ -46,12 +46,46 @@ type TaskEnqueuer interface {
 	Enqueue(taskType string, payload []byte, opts ...interface{}) error
 }
 
+// RateSnapshot is a single rate quote returned by a RateProvider for a
+// corridor. The provider adapter normalises the provider-specific response
+// into this shape so the service can insert it without knowing the provider
+// API details (ADR-075 §2).
+type RateSnapshot struct {
+	SendCurrency    string
+	ReceiveCurrency string
+	Rate            float64
+	FeeFlat         float64
+	FeePct          float64
+	TransferTime    string
+	SourceURL       string
+}
+
+// RateProvider is the pluggable interface for live rate-fetching adapters
+// (ADR-075 §2). Each API-sourced provider registers an implementation that
+// knows how to call the provider's API, normalise the response, and return
+// one or more RateSnapshots. The manual data_source returns nil (no live
+// fetch — rates are entered by admins).
+type RateProvider interface {
+	// FetchRates calls the provider's API and returns rate snapshots for the
+	// given corridors. If corridors is empty/nil, the provider should fetch
+	// all configured corridors. apiConfig is the decrypted provider config.
+	FetchRates(ctx context.Context, apiConfig []byte, corridors []Corridor) ([]RateSnapshot, error)
+}
+
+// Notifier is the minimal interface for dispatching rate-alert notifications.
+// The notifications.Service satisfies this. Used by CheckAndDispatchAlerts.
+type Notifier interface {
+	CreateNotification(ctx context.Context, tenantID, recipientID pgtype.UUID, nType, actorType string, actorID pgtype.UUID, subjectType string, subjectID pgtype.UUID, title, body, actionURL string) error
+}
+
 // Service holds the business logic for the Remittance Rate Tracker.
 type Service struct {
-	store    *Store
-	settings *config.Settings
-	cache    valkeycompat.Cmdable // nil = caching disabled
-	enqueuer TaskEnqueuer
+	store     *Store
+	settings  *config.Settings
+	cache     valkeycompat.Cmdable // nil = caching disabled
+	enqueuer  TaskEnqueuer
+	providers map[string]RateProvider // keyed by provider slug
+	notifier  Notifier
 }
 
 // NewService creates a remittance service.
@@ -67,6 +101,14 @@ func (s *Service) SetCache(c valkeycompat.Cmdable) { s.cache = c }
 
 // SetEnqueuer injects the Asynq task enqueuer for fetch/check tasks.
 func (s *Service) SetEnqueuer(e TaskEnqueuer) { s.enqueuer = e }
+
+// SetProviders injects the rate-provider adapters keyed by provider slug.
+// A nil map is acceptable — API-sourced providers will fail with a clear
+// "no provider adapter registered" error until one is configured.
+func (s *Service) SetProviders(p map[string]RateProvider) { s.providers = p }
+
+// SetNotifier injects the notification service for rate-alert dispatch.
+func (s *Service) SetNotifier(n Notifier) { s.notifier = n }
 
 // ---------------------------------------------------------------------------
 // DTOs
@@ -152,11 +194,16 @@ type ProviderCalculation struct {
 }
 
 // CalculateResult is the output of the send-amount calculator: ranked
-// providers with the best provider highlighted.
+// providers with the best provider highlighted. The DTO includes the input
+// parameters (send_amount, send_currency, receive_currency) so the frontend
+// can render the result without echoing the request separately.
 type CalculateResult struct {
-	Providers        []ProviderCalculation `json:"providers"`
-	BestProviderID   string                `json:"best_provider_id"`
-	BestReceiveAmount float64              `json:"best_receive_amount"`
+	SendAmount       float64               `json:"send_amount"`
+	SendCurrency     string                `json:"send_currency"`
+	ReceiveCurrency  string                `json:"receive_currency"`
+	Results          []ProviderCalculation `json:"results"`
+	BestProviderID   string                `json:"best_provider_id,omitempty"`
+	BestReceiveAmount float64              `json:"best_receive_amount,omitempty"`
 }
 
 // ---------------------------------------------------------------------------
@@ -226,8 +273,8 @@ func (s *Service) manualStaleHours(ctx context.Context, tenantID pgtype.UUID) in
 	return s.settings.GetIntOr(ctx, tenantID, "remittance.manual_stale_hours", 24)
 }
 
-// historyRetentionDays returns the configured history retention period.
-func (s *Service) historyRetentionDays(ctx context.Context, tenantID pgtype.UUID) int {
+// HistoryRetentionDays returns the configured history retention period.
+func (s *Service) HistoryRetentionDays(ctx context.Context, tenantID pgtype.UUID) int {
 	if s.settings == nil {
 		return 365
 	}
@@ -254,14 +301,18 @@ func (s *Service) IsManualRateStale(fetchedAt time.Time) bool {
 // Cache key builders
 // ---------------------------------------------------------------------------
 
-// ratesCacheKey builds the Valkey key for cached latest rates of a corridor.
-func ratesCacheKey(sendCurrency, receiveCurrency string) string {
-	return valkey.MustKey("remit:rates:%s:%s", sendCurrency, receiveCurrency)
+// ratesCacheKey builds the tenant-scoped Valkey key for cached latest rates
+// of a corridor. Tenant scoping prevents cross-tenant data bleed (Rule 4,
+// §4.2). Ref: conventions/valkey-keys-catalog.md (jc:remit:rates).
+func ratesCacheKey(tenantID pgtype.UUID, sendCurrency, receiveCurrency string) string {
+	return valkey.MustKey("remit:rates:%s:%s:%s", tenantID.String(), sendCurrency, receiveCurrency)
 }
 
-// bestCacheKey builds the Valkey key for the cached best rate of a corridor.
-func bestCacheKey(sendCurrency, receiveCurrency string) string {
-	return valkey.MustKey("remit:best:%s:%s", sendCurrency, receiveCurrency)
+// bestCacheKey builds the tenant-scoped Valkey key for the cached best rate
+// of a corridor. Tenant scoping prevents cross-tenant data bleed (Rule 4,
+// §4.2). Ref: conventions/valkey-keys-catalog.md (jc:remit:best).
+func bestCacheKey(tenantID pgtype.UUID, sendCurrency, receiveCurrency string) string {
+	return valkey.MustKey("remit:best:%s:%s:%s", tenantID.String(), sendCurrency, receiveCurrency)
 }
 
 // ---------------------------------------------------------------------------
@@ -269,14 +320,14 @@ func bestCacheKey(sendCurrency, receiveCurrency string) string {
 // ---------------------------------------------------------------------------
 
 // GetRates returns the latest rates for a corridor across all active
-// providers. Results are cached in Valkey (jc:remit:rates:{send}:{receive},
+// providers. Results are cached in Valkey (jc:remit:rates:{tenant}:{send}:{receive},
 // 15-min TTL) and fall back to a live DB query on cache miss.
 func (s *Service) GetRates(ctx context.Context, tenantID pgtype.UUID, sendCurrency, receiveCurrency string) ([]RateInfo, error) {
 	if !s.IsEnabled(ctx, tenantID) {
 		return nil, fmt.Errorf("remittance: tracker disabled")
 	}
 
-	key := ratesCacheKey(sendCurrency, receiveCurrency)
+	key := ratesCacheKey(tenantID, sendCurrency, receiveCurrency)
 	if s.cache != nil {
 		if cached, err := s.cache.Get(ctx, key).Result(); err == nil && cached != "" {
 			var rates []RateInfo
@@ -323,14 +374,14 @@ func (s *Service) GetRates(ctx context.Context, tenantID pgtype.UUID, sendCurren
 }
 
 // GetBestRate returns the provider with the best (highest) effective rate for
-// a corridor. Results are cached in Valkey (jc:remit:best:{send}:{receive},
+// a corridor. Results are cached in Valkey (jc:remit:best:{tenant}:{send}:{receive},
 // 15-min TTL) and fall back to a live DB query on cache miss.
 func (s *Service) GetBestRate(ctx context.Context, tenantID pgtype.UUID, sendCurrency, receiveCurrency string) (*BestRate, error) {
 	if !s.IsEnabled(ctx, tenantID) {
 		return nil, fmt.Errorf("remittance: tracker disabled")
 	}
 
-	key := bestCacheKey(sendCurrency, receiveCurrency)
+	key := bestCacheKey(tenantID, sendCurrency, receiveCurrency)
 	if s.cache != nil {
 		if cached, err := s.cache.Get(ctx, key).Result(); err == nil && cached != "" {
 			var best BestRate
@@ -389,7 +440,12 @@ func (s *Service) Calculate(ctx context.Context, tenantID pgtype.UUID, sendAmoun
 		return nil, err
 	}
 	if len(rates) == 0 {
-		return &CalculateResult{Providers: []ProviderCalculation{}}, nil
+		return &CalculateResult{
+			SendAmount:      sendAmount,
+			SendCurrency:    sendCurrency,
+			ReceiveCurrency: receiveCurrency,
+			Results:         []ProviderCalculation{},
+		}, nil
 	}
 
 	providers := make([]ProviderCalculation, 0, len(rates))
@@ -404,7 +460,10 @@ func (s *Service) Calculate(ctx context.Context, tenantID pgtype.UUID, sendAmoun
 	})
 
 	result := &CalculateResult{
-		Providers: providers,
+		SendAmount:      sendAmount,
+		SendCurrency:    sendCurrency,
+		ReceiveCurrency: receiveCurrency,
+		Results:         providers,
 	}
 	if len(providers) > 0 {
 		result.BestProviderID = providers[0].ProviderID
@@ -456,7 +515,7 @@ func (s *Service) GetHistory(ctx context.Context, tenantID pgtype.UUID, sendCurr
 		return nil, fmt.Errorf("remittance: tracker disabled")
 	}
 
-	maxDays := s.historyRetentionDays(ctx, tenantID)
+	maxDays := s.HistoryRetentionDays(ctx, tenantID)
 	if days <= 0 {
 		days = 30
 	}
@@ -708,7 +767,7 @@ func (s *Service) InsertManualRate(ctx context.Context, tenantID, providerID pgt
 		return gen.RemittanceRate{}, fmt.Errorf("remittance: insert manual rate: %w", err)
 	}
 
-	s.InvalidateRateCache(ctx, sendCurrency, receiveCurrency)
+	s.InvalidateRateCache(ctx, tenantID, sendCurrency, receiveCurrency)
 
 	return r, nil
 }
@@ -775,23 +834,26 @@ func (s *Service) PruneOldRates(ctx context.Context, tenantID pgtype.UUID, cutof
 	return s.store.PruneOldRates(ctx, tenantID, cutoffDate)
 }
 
-// InvalidateRateCache deletes the Valkey cache keys for a corridor. Called
-// after every successful rate fetch (API or manual insert).
-func (s *Service) InvalidateRateCache(ctx context.Context, sendCurrency, receiveCurrency string) {
+// InvalidateRateCache deletes the tenant-scoped Valkey cache keys for a
+// corridor. Called after every successful rate fetch (API or manual insert).
+func (s *Service) InvalidateRateCache(ctx context.Context, tenantID pgtype.UUID, sendCurrency, receiveCurrency string) {
 	if s.cache == nil {
 		return
 	}
 	keys := []string{
-		ratesCacheKey(sendCurrency, receiveCurrency),
-		bestCacheKey(sendCurrency, receiveCurrency),
+		ratesCacheKey(tenantID, sendCurrency, receiveCurrency),
+		bestCacheKey(tenantID, sendCurrency, receiveCurrency),
 	}
 	if err := s.cache.Del(ctx, keys...).Err(); err != nil {
 		slog.Warn("remittance: invalidate cache failed",
+			"tenant_id", tenantID.String(),
 			"send", sendCurrency, "receive", receiveCurrency, "error", err)
 	}
 }
 
 // TriggerFetch enqueues a remittance:fetch_rates task for a specific provider.
+// This is the admin-triggered entry point — the task handler then calls
+// FetchProviderRates to perform the actual API call and rate insertion.
 func (s *Service) TriggerFetch(ctx context.Context, tenantID, providerID pgtype.UUID) error {
 	if s.enqueuer == nil {
 		return fmt.Errorf("remittance: no enqueuer configured")
@@ -810,4 +872,203 @@ func (s *Service) TriggerFetch(ctx context.Context, tenantID, providerID pgtype.
 	}
 
 	return nil
+}
+
+// FetchProviderRates fetches live rates from a provider's API, inserts each
+// rate as an append-only snapshot row, and invalidates the corridor cache.
+// This is the actual rate-fetch implementation called by the
+// remittance:fetch_rates task handler (ADR-075 §2). For manual providers
+// (data_source='manual'), this is a no-op — manual rates are entered by
+// admins via InsertManualRate.
+func (s *Service) FetchProviderRates(ctx context.Context, tenantID, providerID pgtype.UUID) error {
+	provider, err := s.store.GetProviderByID(ctx, tenantID, providerID)
+	if err != nil {
+		return fmt.Errorf("remittance: fetch provider rates: get provider: %w", err)
+	}
+
+	// Manual providers have no live API to call — rates are admin-entered.
+	if provider.DataSource == DataSourceManual {
+		slog.Info("remittance: fetch provider rates: skipping manual provider",
+			"provider_id", providerID.String(), "slug", provider.Slug)
+		return nil
+	}
+
+	// Resolve the registered RateProvider adapter for this provider slug.
+	if s.providers == nil {
+		return fmt.Errorf("remittance: no rate-provider adapters registered (provider %q)", provider.Slug)
+	}
+	adapter, ok := s.providers[provider.Slug]
+	if !ok {
+		return fmt.Errorf("remittance: no rate-provider adapter registered for slug %q", provider.Slug)
+	}
+
+	// Decrypt the provider's API credentials/config (ADR-075 §1).
+	apiConfig, err := DecryptAPIConfig(provider)
+	if err != nil {
+		return fmt.Errorf("remittance: fetch provider rates: decrypt config: %w", err)
+	}
+
+	// Fetch all configured corridors for this tenant so the provider adapter
+	// can fetch rates for each one.
+	corridors, err := s.GetCorridors(ctx, tenantID)
+	if err != nil {
+		return fmt.Errorf("remittance: fetch provider rates: get corridors: %w", err)
+	}
+
+	snapshots, err := adapter.FetchRates(ctx, apiConfig, corridors)
+	if err != nil {
+		return fmt.Errorf("remittance: fetch provider rates: adapter %q: %w", provider.Slug, err)
+	}
+	if len(snapshots) == 0 {
+		slog.Info("remittance: fetch provider rates: adapter returned no snapshots",
+			"provider_id", providerID.String(), "slug", provider.Slug)
+		return nil
+	}
+
+	// Insert each snapshot as an append-only rate row and invalidate the
+	// corridor cache. ADR-075 §3: rate history is append-only — never UPDATE.
+	for _, snap := range snapshots {
+		arg := gen.InsertRemittanceRateParams{
+			TenantID:        tenantID,
+			ProviderID:      providerID,
+			SendCurrency:    snap.SendCurrency,
+			ReceiveCurrency: snap.ReceiveCurrency,
+			Rate:            numericFromFloat(snap.Rate),
+			IsManual:        false,
+		}
+		if snap.FeeFlat > 0 {
+			arg.FeeFlat = numericFromFloat(snap.FeeFlat)
+		}
+		if snap.FeePct > 0 {
+			arg.FeePct = numericFromFloat(snap.FeePct)
+		}
+		if snap.TransferTime != "" {
+			arg.TransferTime = &snap.TransferTime
+		}
+		if snap.SourceURL != "" {
+			arg.SourceUrl = &snap.SourceURL
+		}
+
+		if _, err := s.store.InsertRate(ctx, arg); err != nil {
+			slog.Warn("remittance: fetch provider rates: insert rate failed",
+				"provider_id", providerID.String(),
+				"send", snap.SendCurrency, "receive", snap.ReceiveCurrency,
+				"error", err)
+			continue
+		}
+
+		s.InvalidateRateCache(ctx, tenantID, snap.SendCurrency, snap.ReceiveCurrency)
+	}
+
+	slog.Info("remittance: fetch provider rates: completed",
+		"provider_id", providerID.String(), "slug", provider.Slug,
+		"snapshots", len(snapshots))
+	return nil
+}
+
+// FetchAllProviderRates iterates all active API-sourced providers for a
+// tenant and fetches their rates. Called by the scheduler sweep. Manual
+// providers are skipped. Returns the number of providers processed.
+// Ref: ADR-075 §2, §8.
+func (s *Service) FetchAllProviderRates(ctx context.Context, tenantID pgtype.UUID) (int, error) {
+	providers, err := s.store.ListProviders(ctx, tenantID, true)
+	if err != nil {
+		return 0, fmt.Errorf("remittance: fetch all provider rates: list providers: %w", err)
+	}
+
+	var total int
+	for _, p := range providers {
+		if p.DataSource != DataSourceAPI {
+			continue // skip manual providers
+		}
+		if err := s.FetchProviderRates(ctx, tenantID, p.ID); err != nil {
+			slog.Warn("remittance: fetch all provider rates: provider failed",
+				"provider_id", p.ID.String(), "slug", p.Slug, "error", err)
+			continue
+		}
+		total++
+	}
+	return total, nil
+}
+
+// CheckAndDispatchAlerts evaluates all active alerts for a tenant against the
+// current best rate for each corridor. When an alert's threshold is met
+// (rate above/below target) and the 24-hour debounce window has elapsed, a
+// notification is dispatched and the alert's last_triggered_at is updated
+// (ADR-075 §4). Returns the number of alerts that fired.
+func (s *Service) CheckAndDispatchAlerts(ctx context.Context, tenantID pgtype.UUID) (int, error) {
+	if s.notifier == nil {
+		return 0, fmt.Errorf("remittance: no notifier configured")
+	}
+
+	// Query all active alerts for this tenant that are eligible for
+	// notification (last_triggered_at is null or > 24h ago). Group by
+	// corridor so we fetch the best rate once per corridor.
+	alerts, err := s.store.ListAllActiveAlertsForTenant(ctx, tenantID)
+	if err != nil {
+		return 0, fmt.Errorf("remittance: check alerts: list alerts: %w", err)
+	}
+
+	// Cache best rates per corridor to avoid redundant lookups.
+	type corridorKey struct{ send, recv string }
+	rateCache := make(map[corridorKey]*BestRate)
+
+	var fired int
+	for _, alert := range alerts {
+		key := corridorKey{alert.SendCurrency, alert.ReceiveCurrency}
+		best, ok := rateCache[key]
+		if !ok {
+			best, err = s.GetBestRate(ctx, tenantID, alert.SendCurrency, alert.ReceiveCurrency)
+			if err != nil {
+				slog.Warn("remittance: check alerts: get best rate failed",
+					"send", alert.SendCurrency, "receive", alert.ReceiveCurrency,
+					"error", err)
+				continue
+			}
+			rateCache[key] = best
+		}
+		if best == nil {
+			continue // no rates for this corridor yet
+		}
+
+		// Evaluate the threshold condition (ADR-075 §4).
+		met := false
+		switch alert.Direction {
+		case DirectionAbove:
+			met = best.Rate >= numericToFloat64(alert.TargetRate)
+		case DirectionBelow:
+			met = best.Rate <= numericToFloat64(alert.TargetRate)
+		}
+		if !met {
+			continue
+		}
+
+		// Dispatch the notification.
+		title := fmt.Sprintf("Rate alert: %s→%s %s %.4f",
+			alert.SendCurrency, alert.ReceiveCurrency, alert.Direction,
+			numericToFloat64(alert.TargetRate))
+		body := fmt.Sprintf("Current best rate is %.4f via %s.",
+			best.Rate, best.ProviderName)
+		actionURL := "/tools/remittance"
+
+		var zeroUUID pgtype.UUID
+		if err := s.notifier.CreateNotification(ctx, tenantID, alert.UserID,
+			"remittance_alert", "", zeroUUID,
+			"remittance_corridor", alert.ID,
+			title, body, actionURL); err != nil {
+			slog.Warn("remittance: check alerts: create notification failed",
+				"alert_id", alert.ID.String(), "error", err)
+			continue
+		}
+
+		// Mark the alert as triggered (24h debounce).
+		if err := s.store.MarkAlertTriggered(ctx, alert.ID); err != nil {
+			slog.Warn("remittance: check alerts: mark triggered failed",
+				"alert_id", alert.ID.String(), "error", err)
+			continue
+		}
+		fired++
+	}
+
+	return fired, nil
 }

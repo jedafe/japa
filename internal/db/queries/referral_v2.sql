@@ -87,12 +87,28 @@ SET
 WHERE tenant_id = @tenant_id AND id = @id AND status = 'qualified'
 RETURNING *;
 
+-- name: CreditFlaggedReferral :one
+-- Transitions a flagged referral to credited after admin review (§60
+-- PATCH /admin/referrals/:id/resolve action=credit). CreditReferral only
+-- accepts status='qualified'; flagged referrals need their own transition.
+UPDATE referrals
+SET
+    status         = 'credited',
+    reward_amount  = @reward_amount,
+    credited_at    = now(),
+    flagged_reason = NULL
+WHERE tenant_id = @tenant_id AND id = @id AND status = 'flagged'
+RETURNING *;
+
 -- name: FlagReferral :one
+-- Status guard: only pending or qualified referrals can be flagged. This
+-- prevents reverting an already-credited or rejected referral (§60 status
+-- machine, BUG-012).
 UPDATE referrals
 SET
     status         = 'flagged',
     flagged_reason = @flagged_reason
-WHERE tenant_id = @tenant_id AND id = @id
+WHERE tenant_id = @tenant_id AND id = @id AND status IN ('pending', 'qualified')
 RETURNING *;
 
 -- name: RejectReferral :exec

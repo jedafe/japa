@@ -249,4 +249,8 @@ func RegisterHandlers(mux *asynq.ServeMux) {
 	mux.HandleFunc(TypeDigestGenerate, HandleDigestGenerate)
 	mux.HandleFunc(TypeDigestSendEmail, HandleDigestSendEmail)
 	mux.HandleFunc(TypeJapaStageRecommend, HandleJapaStageRecommend)
+
+	// §82 Japa Planning Groups handlers (ADR-090).
+	mux.HandleFunc(TypePlanningGroupExpire, HandlePlanningGroupExpire)
+	mux.HandleFunc(TypePlanningGroupCheckinReminder, HandlePlanningGroupCheckinReminder)
 }

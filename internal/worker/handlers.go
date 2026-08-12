@@ -250,7 +250,8 @@ func resolveBaseURL(ctx context.Context, tenantID pgtype.UUID) string {
 // rather than dropped, but the failure is visible in logs.
 //
 // Ref: japaconnect-engineering/sections/62-newsletter-digest.md
-//      japaconnect-engineering/adr/ADR-080-newsletter-digest.md
+//
+//	japaconnect-engineering/adr/ADR-080-newsletter-digest.md
 func newsletterUnsubscribeLink(ctx context.Context, tenantID pgtype.UUID, recipient string) (string, map[string]string) {
 	if dbPool == nil {
 		return "", nil
@@ -287,8 +288,8 @@ func newsletterUnsubscribeLink(ctx context.Context, tenantID pgtype.UUID, recipi
 	url := strings.TrimRight(base, "/") + "/unsubscribe?token=" + token
 
 	headers := map[string]string{
-		"List-Unsubscribe":         "<" + url + ">",
-		"List-Unsubscribe-Post":    "List-Unsubscribe=One-Click",
+		"List-Unsubscribe":      "<" + url + ">",
+		"List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
 	}
 	return url, headers
 }
@@ -535,6 +536,24 @@ func HandlePaymentWebhookProcess(ctx context.Context, t *asynq.Task) error {
 				slog.Error("task:payment:process_webhook: failed to enqueue credit purchase grant",
 					"payment_id", p.ID, "error", err)
 			}
+		}
+	}
+
+	// §60 Referral conversion — on any successful payment, enqueue the
+	// referral:check_conversion task so the referrer's pending referral can
+	// transition to qualified→credited. The task is idempotent (no-op when no
+	// referral row exists for the payer). Fire-and-forget per Rule 8.
+	// Ref: japaconnect-engineering/sections/60-referral-system.md (Attribution)
+	if payload.Status == "succeeded" && taskEnqueuer != nil {
+		referralPayload, _ := json.Marshal(map[string]any{
+			"tenant_id":  tenantID.String(),
+			"payer_id":   p.UserID.String(),
+			"payment_id": p.ID.String(),
+			"session_id": p.UserID.String(), // attribution key is per-user at signup
+		})
+		if err := taskEnqueuer.Enqueue(TypeReferralCheckConversion, referralPayload); err != nil {
+			slog.Error("task:payment:process_webhook: failed to enqueue referral check_conversion",
+				"payment_id", p.ID, "error", err)
 		}
 	}
 
@@ -1995,7 +2014,19 @@ func ragIndexAfterEmbed(ctx context.Context, tenantID, contentID [16]byte, text 
 	tenantUUID := pgtype.UUID{Bytes: tenantID, Valid: true}
 	contentUUID := pgtype.UUID{Bytes: contentID, Valid: true}
 
-	if err := ragIndexer.IndexEntity(ctx, tenantUUID, "content", contentUUID, text, "en"); err != nil {
+	// BUG-004 fix: resolve the indexing language from the i18n.default_language
+	// system setting (§7 i18n) instead of hardcoding "en". Falls back to "en"
+	// when settings are not injected or the key is unset. The language is
+	// stored on each content_embeddings row and used by retrieval to filter
+	// by the user's locale (ADR-069 §3).
+	// Ref: japaconnect-engineering/sections/69-rag-knowledge-layer.md
+	//      japaconnect-engineering/conventions/system-settings-catalog.md
+	language := "en"
+	if appSettings != nil {
+		language = appSettings.GetStringOr(ctx, tenantUUID, "i18n.default_language", "en")
+	}
+
+	if err := ragIndexer.IndexEntity(ctx, tenantUUID, "content", contentUUID, text, language); err != nil {
 		slog.Warn("task:content:generate_embedding: RAG index failed",
 			"content_id", contentUUID.String(), "error", err)
 	}
@@ -4088,7 +4119,8 @@ func sendEmailWithContext(ctx context.Context, to, subject, body string, isHTML 
 // and digest) via the ADR-015 marketing provider, with optional extra SMTP
 // headers (e.g. List-Unsubscribe for GDPR one-click unsubscribe).
 // Ref: japaconnect-engineering/adr/ADR-015-multi-provider-email.md
-//      japaconnect-engineering/adr/ADR-080-newsletter-digest.md
+//
+//	japaconnect-engineering/adr/ADR-080-newsletter-digest.md
 func sendMarketingEmail(ctx context.Context, to, subject, body string, isHTML bool, headers map[string]string) error {
 	return sendEmailWithCategory(ctx, to, subject, body, isHTML, "marketing", headers)
 }

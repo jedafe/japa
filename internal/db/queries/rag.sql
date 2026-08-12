@@ -54,20 +54,36 @@ WHERE tenant_id = @tenant_id AND entity_type = @entity_type AND entity_id = @ent
 -- =====================================================================
 
 -- name: SearchContentEmbeddings :many
+-- BUG-001 fix: filter out chunks whose source content is soft-deleted or not
+-- published. An EXISTS subquery (only for entity_type = 'content' chunks)
+-- ensures that deleted/unpublished/archived/draft content passages are never
+-- returned in RAG retrieval. Non-content entity types (forum_thread, space,
+-- learning_track) pass through the entity_type != 'content' branch.
+-- Ref: ADR-069 §2 — "Content is unpublished or deleted — deletes its
+--      content_embeddings rows" implies only published content is retrievable.
 SELECT
-    id,
-    tenant_id,
-    entity_type,
-    entity_id,
-    chunk_index,
-    chunk_text,
-    language,
-    created_at,
-    (1.0 - (embedding <=> @query_embedding))::float8 AS similarity
-FROM content_embeddings
-WHERE tenant_id = @tenant_id
-  AND (@language::text = '' OR language = @language)
-ORDER BY embedding <=> @query_embedding
+    ce.id,
+    ce.tenant_id,
+    ce.entity_type,
+    ce.entity_id,
+    ce.chunk_index,
+    ce.chunk_text,
+    ce.language,
+    ce.created_at,
+    (1.0 - (ce.embedding <=> @query_embedding))::float8 AS similarity
+FROM content_embeddings ce
+WHERE ce.tenant_id = @tenant_id
+  AND (@language::text = '' OR ce.language = @language)
+  AND (
+      ce.entity_type != 'content'
+      OR EXISTS (
+          SELECT 1 FROM contents c
+          WHERE c.id = ce.entity_id
+            AND c.status = 'published'
+            AND c.deleted_at IS NULL
+      )
+  )
+ORDER BY ce.embedding <=> @query_embedding
 LIMIT @top_k;
 
 -- =====================================================================
@@ -82,6 +98,10 @@ LIMIT @top_k;
 -- =====================================================================
 
 -- name: SearchContentEmbeddingsGeoFiltered :many
+-- BUG-001 fix: also filter by c.status = 'published' AND c.deleted_at IS NULL
+-- so that soft-deleted or unpublished content is never returned in geo-filtered
+-- RAG retrieval. The JOIN to contents already exists for the geo filter, so
+-- the status/deleted_at conditions are added to the WHERE clause.
 SELECT
     ce.id,
     ce.tenant_id,
@@ -96,6 +116,8 @@ FROM content_embeddings ce
 JOIN contents c ON c.id = ce.entity_id AND ce.entity_type = 'content'
 WHERE ce.tenant_id = @tenant_id
   AND (@language::text = '' OR ce.language = @language)
+  AND c.status = 'published'
+  AND c.deleted_at IS NULL
   AND (
       sqlc.narg(geo_space_id)::uuid IS NULL
       OR c.geo_space_id = sqlc.narg(geo_space_id)
