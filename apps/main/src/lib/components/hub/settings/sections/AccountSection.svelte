@@ -90,7 +90,7 @@
 	<div class="mt-6 border-t border-[var(--color-border)] pt-4">
 		<button
 			type="button"
-			onclick={() => goto('/?tour=1')}
+			onclick={() => goto('/?tour=replay')}
 			class="text-sm font-medium text-[var(--color-primary)] hover:underline"
 		>
 			{t('settings.account.replay_tour', 'Replay product tour')}

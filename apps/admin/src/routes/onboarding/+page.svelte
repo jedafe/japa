@@ -3,7 +3,7 @@
 	import PageHeader from '$lib/components/layout/page-header.svelte';
 	import { Card, CardContent, CardHeader } from '$lib/components/ui/card';
 	import { Button } from '$lib/components/ui/button';
-	import { Save, RefreshCw } from 'lucide-svelte';
+	import { Save, RefreshCw, FileText } from 'lucide-svelte';
 	import { onboardingAdminApi, spacesAdminApi, tagsAdminApi, userManagementApi } from '$lib/api';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { TagInput } from '$lib/components/ui/tag-input';
@@ -132,6 +132,9 @@
 <PageHeader
 	title={t('onboarding.title', 'Onboarding Settings')}
 	description={t('onboarding.description', 'Configure the onboarding wizard for new users')}
+	actions={[
+		{ label: t('onboarding.templates.title', 'Onboarding Templates'), icon: FileText, href: '/onboarding/templates', variant: 'outline' }
+	]}
 />
 
 {#if loading}

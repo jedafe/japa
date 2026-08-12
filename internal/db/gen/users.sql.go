@@ -904,6 +904,24 @@ func (q *Queries) GetUserDraft(ctx context.Context, arg GetUserDraftParams) (Get
 	return i, err
 }
 
+const getUserEmail = `-- name: GetUserEmail :one
+SELECT email FROM users WHERE id = $1 AND tenant_id = $2
+`
+
+type GetUserEmailParams struct {
+	UserID   pgtype.UUID `json:"user_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+// Returns the user's email address for notification email delivery (§35).
+// Tenant-scoped per §04.
+func (q *Queries) GetUserEmail(ctx context.Context, arg GetUserEmailParams) (string, error) {
+	row := q.db.QueryRow(ctx, getUserEmail, arg.UserID, arg.TenantID)
+	var email string
+	err := row.Scan(&email)
+	return email, err
+}
+
 const getUserEmailVerifiedStatus = `-- name: GetUserEmailVerifiedStatus :one
 SELECT email_verified_at FROM users WHERE id = $1 AND tenant_id = $2
 `

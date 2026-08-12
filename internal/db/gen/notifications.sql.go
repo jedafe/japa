@@ -92,11 +92,12 @@ func (q *Queries) AdminListNotificationTypes(ctx context.Context, arg AdminListN
 }
 
 const createBatchWindow = `-- name: CreateBatchWindow :exec
-INSERT INTO notification_batch_windows (recipient_id, notification_type, subject_type, subject_id, actor_ids, actor_count, last_actor_id, window_close_at)
-VALUES ($1, $2, $3, $4, ARRAY[$5::uuid], 1, $5, now() + make_interval(mins => $6))
+INSERT INTO notification_batch_windows (tenant_id, recipient_id, notification_type, subject_type, subject_id, actor_ids, actor_count, last_actor_id, window_close_at)
+VALUES ($1, $2, $3, $4, $5, ARRAY[$6::uuid], 1, $6, now() + make_interval(mins => $7))
 `
 
 type CreateBatchWindowParams struct {
+	TenantID         pgtype.UUID `json:"tenant_id"`
 	RecipientID      pgtype.UUID `json:"recipient_id"`
 	NotificationType string      `json:"notification_type"`
 	SubjectType      string      `json:"subject_type"`
@@ -107,6 +108,7 @@ type CreateBatchWindowParams struct {
 
 func (q *Queries) CreateBatchWindow(ctx context.Context, arg CreateBatchWindowParams) error {
 	_, err := q.db.Exec(ctx, createBatchWindow,
+		arg.TenantID,
 		arg.RecipientID,
 		arg.NotificationType,
 		arg.SubjectType,
@@ -159,17 +161,33 @@ func (q *Queries) ExtendBatchWindow(ctx context.Context, arg ExtendBatchWindowPa
 }
 
 const getBatchWindowByID = `-- name: GetBatchWindowByID :one
-SELECT id, recipient_id, notification_type, subject_type, subject_id,
+SELECT id, tenant_id, recipient_id, notification_type, subject_type, subject_id,
        actor_ids, actor_count, last_actor_id, window_open_at, window_close_at, dispatched
 FROM notification_batch_windows
 WHERE id = $1
 `
 
-func (q *Queries) GetBatchWindowByID(ctx context.Context, id pgtype.UUID) (NotificationBatchWindow, error) {
+type GetBatchWindowByIDRow struct {
+	ID               pgtype.UUID        `json:"id"`
+	TenantID         pgtype.UUID        `json:"tenant_id"`
+	RecipientID      pgtype.UUID        `json:"recipient_id"`
+	NotificationType string             `json:"notification_type"`
+	SubjectType      string             `json:"subject_type"`
+	SubjectID        pgtype.UUID        `json:"subject_id"`
+	ActorIds         []pgtype.UUID      `json:"actor_ids"`
+	ActorCount       int32              `json:"actor_count"`
+	LastActorID      pgtype.UUID        `json:"last_actor_id"`
+	WindowOpenAt     pgtype.Timestamptz `json:"window_open_at"`
+	WindowCloseAt    pgtype.Timestamptz `json:"window_close_at"`
+	Dispatched       bool               `json:"dispatched"`
+}
+
+func (q *Queries) GetBatchWindowByID(ctx context.Context, id pgtype.UUID) (GetBatchWindowByIDRow, error) {
 	row := q.db.QueryRow(ctx, getBatchWindowByID, id)
-	var i NotificationBatchWindow
+	var i GetBatchWindowByIDRow
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.RecipientID,
 		&i.NotificationType,
 		&i.SubjectType,
@@ -276,13 +294,15 @@ SELECT n.id, n.tenant_id, n.recipient_id, n.notification_type, n.actor_type, n.a
 FROM notifications n
 JOIN notification_types nt ON nt.key = n.notification_type
 WHERE n.tenant_id = $1 AND n.recipient_id = $2
+  AND ($3::bool = false OR n.read_at IS NULL)
 ORDER BY n.created_at DESC
-LIMIT $4 OFFSET $3
+LIMIT $5 OFFSET $4
 `
 
 type GetNotificationsByRecipientParams struct {
 	TenantID    pgtype.UUID `json:"tenant_id"`
 	RecipientID pgtype.UUID `json:"recipient_id"`
+	UnreadOnly  bool        `json:"unread_only"`
 	PageOffset  int32       `json:"page_offset"`
 	PageLimit   int32       `json:"page_limit"`
 }
@@ -308,6 +328,7 @@ func (q *Queries) GetNotificationsByRecipient(ctx context.Context, arg GetNotifi
 	rows, err := q.db.Query(ctx, getNotificationsByRecipient,
 		arg.TenantID,
 		arg.RecipientID,
+		arg.UnreadOnly,
 		arg.PageOffset,
 		arg.PageLimit,
 	)
@@ -346,7 +367,7 @@ func (q *Queries) GetNotificationsByRecipient(ctx context.Context, arg GetNotifi
 
 const getOpenBatchWindow = `-- name: GetOpenBatchWindow :one
 
-SELECT id, recipient_id, notification_type, subject_type, subject_id,
+SELECT id, tenant_id, recipient_id, notification_type, subject_type, subject_id,
        actor_ids, actor_count, last_actor_id, window_open_at, window_close_at, dispatched
 FROM notification_batch_windows
 WHERE recipient_id = $1
@@ -364,19 +385,35 @@ type GetOpenBatchWindowParams struct {
 	SubjectID        pgtype.UUID `json:"subject_id"`
 }
 
+type GetOpenBatchWindowRow struct {
+	ID               pgtype.UUID        `json:"id"`
+	TenantID         pgtype.UUID        `json:"tenant_id"`
+	RecipientID      pgtype.UUID        `json:"recipient_id"`
+	NotificationType string             `json:"notification_type"`
+	SubjectType      string             `json:"subject_type"`
+	SubjectID        pgtype.UUID        `json:"subject_id"`
+	ActorIds         []pgtype.UUID      `json:"actor_ids"`
+	ActorCount       int32              `json:"actor_count"`
+	LastActorID      pgtype.UUID        `json:"last_actor_id"`
+	WindowOpenAt     pgtype.Timestamptz `json:"window_open_at"`
+	WindowCloseAt    pgtype.Timestamptz `json:"window_close_at"`
+	Dispatched       bool               `json:"dispatched"`
+}
+
 // =====================
 // Batch Dedup Windows
 // =====================
-func (q *Queries) GetOpenBatchWindow(ctx context.Context, arg GetOpenBatchWindowParams) (NotificationBatchWindow, error) {
+func (q *Queries) GetOpenBatchWindow(ctx context.Context, arg GetOpenBatchWindowParams) (GetOpenBatchWindowRow, error) {
 	row := q.db.QueryRow(ctx, getOpenBatchWindow,
 		arg.RecipientID,
 		arg.NotificationType,
 		arg.SubjectType,
 		arg.SubjectID,
 	)
-	var i NotificationBatchWindow
+	var i GetOpenBatchWindowRow
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.RecipientID,
 		&i.NotificationType,
 		&i.SubjectType,

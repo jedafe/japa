@@ -2,6 +2,7 @@ import type { LayoutServerLoad } from './$types';
 import { redirect } from '@sveltejs/kit';
 import { apiContext, apiGet } from '$lib/server/api';
 import { normalizeConfig, type CardStyleConfig } from '$lib/feed/cardStyle';
+import type { OnboardingStatus } from '$lib/types';
 
 /**
  * Shell-scoped data for every `(app)` route: the per-type card-style config so
@@ -14,6 +15,11 @@ import { normalizeConfig, type CardStyleConfig } from '$lib/feed/cardStyle';
  * main app. Redirect any request to that host to learn.japaconnect.com so the
  * catalog, tracks, lesson player, instructor, and earnings surfaces live in
  * exactly one place. Ref: audit finding C2.
+ *
+ * Section 09 Product Tour: for authed users, fetch `tour_dismissed` from the
+ * onboarding status so the layout can guard the `?tour=1` auto-trigger — a
+ * dismissed tour must never re-trigger automatically. The explicit "Replay
+ * tour" link uses `?tour=replay` to override the guard.
  */
 export const load: LayoutServerLoad = async (event) => {
 	if (event.locals.isUniversityHost) {
@@ -29,5 +35,16 @@ export const load: LayoutServerLoad = async (event) => {
 		cardStyleConfig = { default: 'reddit', byType: {} };
 	}
 
-	return { cardStyleConfig };
+	// Section 09: fetch tour_dismissed for the ?tour=1 auto-trigger guard.
+	let tourDismissed = false;
+	if (event.locals.user) {
+		try {
+			const status = await apiGet<OnboardingStatus>(ctx, '/onboarding/status');
+			tourDismissed = !!status?.tour_dismissed;
+		} catch {
+			tourDismissed = false;
+		}
+	}
+
+	return { cardStyleConfig, tourDismissed };
 };

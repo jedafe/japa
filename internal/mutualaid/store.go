@@ -41,7 +41,7 @@ const (
 
 	StatusActive    = "active"
 	StatusExpired   = "expired"
-	StatusModerated = "moderated"
+	StatusRemoved   = "removed"
 	StatusFulfilled = "fulfilled"
 )
 
@@ -344,13 +344,13 @@ WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
 	return nil
 }
 
-// RenewPost extends expires_at by 30 days from newExpiry (or now if
-// newExpiry is zero). The post is also flipped back to status='active'
-// if it had expired.
+// RenewPost extends expires_at by 30 days from newExpiry. The post is
+// flipped back to status='active' if it had expired, but is_fulfilled
+// is NOT reset (BUG-015: renewing should not un-fulfill a post).
 func (s *Store) RenewPost(ctx context.Context, id, tenantID pgtype.UUID, newExpiry pgtype.Timestamptz) error {
 	const q = `
 UPDATE mutual_aid_posts
-SET expires_at = $3, status = 'active', is_fulfilled = false, updated_at = now()
+SET expires_at = $3, status = 'active', updated_at = now()
 WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
 `
 	cmd, err := s.pool.Writer.Exec(ctx, q, id, tenantID, newExpiry)
@@ -488,4 +488,56 @@ WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
 		return pgx.ErrNoRows
 	}
 	return nil
+}
+
+// ExpirePosts marks all active posts past their expires_at as 'expired'.
+// Returns the number of posts expired. Called nightly by the
+// mutual_aid:expire Asynq task (§85, ADR-093).
+func (s *Store) ExpirePosts(ctx context.Context) (int64, error) {
+	const q = `
+UPDATE mutual_aid_posts
+SET status = 'expired', updated_at = now()
+WHERE status = 'active' AND expires_at < now() AND deleted_at IS NULL`
+	cmd, err := s.pool.Writer.Exec(ctx, q)
+	if err != nil {
+		return 0, fmt.Errorf("mutualaid: expire posts: %w", err)
+	}
+	return cmd.RowsAffected(), nil
+}
+
+// PostsExpiringSoon returns the IDs and owner IDs of active posts that
+// will expire within the next 3 days. Used by the mutual_aid:expire task
+// to send 3-day-prior notifications (§85).
+func (s *Store) PostsExpiringSoon(ctx context.Context, withinHours int) ([]ExpiringPost, error) {
+	const q = `
+SELECT id, tenant_id, user_id, title, expires_at
+FROM mutual_aid_posts
+WHERE status = 'active'
+  AND deleted_at IS NULL
+  AND expires_at BETWEEN now() AND now() + ($1 || ' hours')::interval
+ORDER BY expires_at ASC`
+	rows, err := s.pool.Reader.Query(ctx, q, fmt.Sprintf("%d", withinHours))
+	if err != nil {
+		return nil, fmt.Errorf("mutualaid: expiring soon: %w", err)
+	}
+	defer rows.Close()
+
+	var posts []ExpiringPost
+	for rows.Next() {
+		var p ExpiringPost
+		if err := rows.Scan(&p.ID, &p.TenantID, &p.UserID, &p.Title, &p.ExpiresAt); err != nil {
+			return nil, fmt.Errorf("mutualaid: expiring soon scan: %w", err)
+		}
+		posts = append(posts, p)
+	}
+	return posts, rows.Err()
+}
+
+// ExpiringPost is a post that is about to expire (for notifications).
+type ExpiringPost struct {
+	ID        pgtype.UUID
+	TenantID  pgtype.UUID
+	UserID    pgtype.UUID
+	Title     string
+	ExpiresAt pgtype.Timestamptz
 }

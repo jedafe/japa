@@ -266,6 +266,28 @@ func (h *Handlers) ListTemplates(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"data": templates})
 }
 
+// GetTemplate handles GET /admin/onboarding/templates/:id.
+func (h *Handlers) GetTemplate(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	var id pgtype.UUID
+	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid template ID")
+		return
+	}
+
+	template, err := h.Service.GetTemplate(r.Context(), tenantID, id)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": template})
+}
+
 // CreateTemplate handles POST /admin/onboarding/templates.
 func (h *Handlers) CreateTemplate(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)

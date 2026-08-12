@@ -80,14 +80,6 @@ func NewService(store *Store, settings *config.Settings) *Service {
 	return &Service{store: store, settings: settings}
 }
 
-// Enabled reads the mutual_aid.enabled system_setting toggle (§85 feature flag).
-func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
-	if s.settings == nil {
-		return false
-	}
-	return s.settings.GetBoolOr(ctx, tenantID, "mutual_aid.enabled", false)
-}
-
 // Create inserts a new mutual aid post. Auth required (permission checked at
 // route level based on post_type: create_offer, create_need, create_skill_swap).
 func (s *Service) Create(ctx context.Context, tenantID, userID pgtype.UUID, input CreatePostRequest) (PostDTO, error) {
@@ -322,7 +314,7 @@ func (s *Service) AdminList(ctx context.Context, tenantID pgtype.UUID, postType,
 
 // AdminModerate sets the status of a post (moderation action).
 func (s *Service) AdminModerate(ctx context.Context, id, tenantID pgtype.UUID, status string) error {
-	if status != StatusActive && status != StatusExpired && status != StatusModerated && status != StatusFulfilled {
+	if status != StatusActive && status != StatusExpired && status != StatusRemoved && status != StatusFulfilled {
 		return fmt.Errorf("invalid status: %s", status)
 	}
 	if err := s.store.AdminUpdateStatus(ctx, id, tenantID, status); err != nil {
@@ -332,6 +324,30 @@ func (s *Service) AdminModerate(ctx context.Context, id, tenantID pgtype.UUID, s
 		return fmt.Errorf("mutualaid: admin moderate: %w", err)
 	}
 	return nil
+}
+
+// NeedReputationThreshold returns the minimum reputation (lifetime points)
+// required to create a need post. Reads the mutual_aid.need_reputation_threshold
+// system_setting (§85: create_need is reputation-gated).
+func (s *Service) NeedReputationThreshold(ctx context.Context, tenantID pgtype.UUID) int64 {
+	if s.settings == nil {
+		return 0
+	}
+	return int64(s.settings.GetIntOr(ctx, tenantID, "mutual_aid.need_reputation_threshold", 0))
+}
+
+// ExpirePosts marks all active posts past their expires_at as 'expired'
+// and sends a 3-day-prior notification to owners whose posts are about
+// to expire. Called nightly by the mutual_aid:expire Asynq task (§85).
+// Implements worker.MutualAidProcessor.
+func (s *Service) ExpirePosts(ctx context.Context) (int64, error) {
+	n, err := s.store.ExpirePosts(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("mutualaid: expire: %w", err)
+	}
+	// TODO: send 3-day-prior notifications via the notification service
+	// once the notifier is wired (s.notifier.NotifyExpiringPost).
+	return n, nil
 }
 
 // ErrNotOwner is returned when a user tries to edit, delete, fulfill, or

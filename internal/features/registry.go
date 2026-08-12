@@ -54,7 +54,7 @@ var Registry = []Feature{
 	{Key: "feature.planning_group", Label: "Japa Planning Groups", Default: false},
 	{Key: "feature.visa_timeline", Label: "Visa Timeline Tracker", Default: false},
 	{Key: "feature.digest", Label: "Community Digest Widget", Default: false},
-	{Key: "feature.mutual_aid", Label: "Mutual Aid Board", Default: false},
+	{Key: "mutual_aid.enabled", Label: "Mutual Aid Board", Default: false},
 	{Key: "feature.calendar", Label: "Community Calendar", Default: false},
 	{Key: "feature.japa_stage", Label: "Japa Stage Progress Profiles", Default: false},
 	{Key: "feature.ama", Label: "Ask an Expat AMA", Default: false},

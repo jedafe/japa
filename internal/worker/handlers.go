@@ -3,7 +3,9 @@ package worker
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"crypto/tls"
+	"encoding/hex"
 	"encoding/json"
 	"encoding/xml"
 	"errors"
@@ -15,6 +17,8 @@ import (
 	"net/smtp"
 	"os"
 	"regexp"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -235,6 +239,69 @@ func resolveBaseURL(ctx context.Context, tenantID pgtype.UUID) string {
 	}
 
 	return os.Getenv("JC_SITE_URL")
+}
+
+// newsletterUnsubscribeLink resolves (or creates) a one-click unsubscribe
+// token for the recipient and returns the /unsubscribe?token=TOKEN URL plus
+// the SMTP List-Unsubscribe / List-Unsubscribe-Post headers required for
+// GDPR one-click unsubscribe (§62, ADR-080 §4). Returns an empty url and
+// nil headers (with a warning log) if the subscriber cannot be resolved or
+// the token cannot be created — the email is still sent without the link
+// rather than dropped, but the failure is visible in logs.
+//
+// Ref: japaconnect-engineering/sections/62-newsletter-digest.md
+//      japaconnect-engineering/adr/ADR-080-newsletter-digest.md
+func newsletterUnsubscribeLink(ctx context.Context, tenantID pgtype.UUID, recipient string) (string, map[string]string) {
+	if dbPool == nil {
+		return "", nil
+	}
+
+	q := gen.New(dbPool.Reader)
+	sub, err := q.GetSubscriberByEmail(ctx, gen.GetSubscriberByEmailParams{
+		TenantID: tenantID, Email: recipient,
+	})
+	if err != nil {
+		slog.Warn("newsletter: resolve subscriber for unsubscribe token failed",
+			"recipient", recipient, "error", err)
+		return "", nil
+	}
+
+	token, err := newsletterGenerateUnsubscribeToken()
+	if err != nil {
+		slog.Warn("newsletter: generate unsubscribe token failed", "error", err)
+		return "", nil
+	}
+
+	if _, err := q.CreateUnsubscribeToken(ctx, gen.CreateUnsubscribeTokenParams{
+		Token:        token,
+		SubscriberID: sub.ID,
+	}); err != nil {
+		slog.Warn("newsletter: persist unsubscribe token failed", "error", err)
+		return "", nil
+	}
+
+	base := resolveBaseURL(ctx, tenantID)
+	if base == "" {
+		base = os.Getenv("JC_SITE_URL")
+	}
+	url := strings.TrimRight(base, "/") + "/unsubscribe?token=" + token
+
+	headers := map[string]string{
+		"List-Unsubscribe":         "<" + url + ">",
+		"List-Unsubscribe-Post":    "List-Unsubscribe=One-Click",
+	}
+	return url, headers
+}
+
+// newsletterGenerateUnsubscribeToken generates a 32-byte hex token for
+// one-click unsubscribe. Mirrors internal/newsletter.GenerateUnsubscribeToken
+// without importing the newsletter package (worker uses gen directly).
+func newsletterGenerateUnsubscribeToken() (string, error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", fmt.Errorf("newsletter: generate token: %w", err)
+	}
+	return hex.EncodeToString(b), nil
 }
 
 // readDB returns a read-only query interface.
@@ -2274,7 +2341,11 @@ func HandleWalletDeductCredits(ctx context.Context, t *asynq.Task) error {
 	return walletProcessor.DeductCreditsTask(ctx, t.Payload())
 }
 
-// HandleNewsletterSend sends a newsletter campaign to all subscribers.
+// HandleNewsletterSend sends a newsletter campaign to all subscribers
+// matching the campaign's segment. Uses the marketing-category email
+// provider (ADR-015/ADR-080), batches sends by newsletter.batch_size
+// (§62/§22 fan-out pattern), and generates a per-recipient one-click
+// unsubscribe token + List-Unsubscribe header (§62 Compliance, ADR-080 §4).
 func HandleNewsletterSend(ctx context.Context, t *asynq.Task) error {
 	slog.Info("task:newsletter:send")
 
@@ -2292,7 +2363,6 @@ func HandleNewsletterSend(ctx context.Context, t *asynq.Task) error {
 		return err
 	}
 
-	// Re-fetch campaign content from DB (payload = IDs only).
 	campaignID, err := scanUUID(payload.NewsletterID)
 	if err != nil {
 		return fmt.Errorf("task:newsletter:send: %w", err)
@@ -2302,7 +2372,12 @@ func HandleNewsletterSend(ctx context.Context, t *asynq.Task) error {
 		return fmt.Errorf("task:newsletter:send: %w", err)
 	}
 
-	campaign, err := gen.New(dbPool.Reader).GetNewsletterCampaign(ctx, gen.GetNewsletterCampaignParams{
+	reader := gen.New(dbPool.Reader)
+	writer := gen.New(dbPool.Writer)
+
+	// Fetch the full campaign row (incl. segment) so we can resolve the
+	// correct recipient set per §62/ADR-080 §3.
+	campaign, err := reader.GetNewsletterCampaignForSend(ctx, gen.GetNewsletterCampaignForSendParams{
 		ID: campaignID, TenantID: tenantID,
 	})
 	if err != nil {
@@ -2310,40 +2385,70 @@ func HandleNewsletterSend(ctx context.Context, t *asynq.Task) error {
 	}
 	subject, htmlBody := campaign.Subject, campaign.Html
 
-	// Upsert pending send state rows for all active subscribers.
-	if err := gen.New(dbPool.Writer).UpsertNewsletterSendState(ctx, gen.UpsertNewsletterSendStateParams{
-		CampaignID: campaignID, TenantID: tenantID,
-	}); err != nil {
-		return fmt.Errorf("task:newsletter:send: upsert send state: %w", err)
-	}
+	// Resolve the batch size from system_settings (§62, default 500).
+	batchSize := newsletterBatchSize(ctx, tenantID)
 
-	// Query only pending recipients.
-	pending, err := gen.New(dbPool.Reader).ListPendingNewsletterRecipients(ctx, campaignID)
-	if err != nil {
-		return fmt.Errorf("task:newsletter:send: query pending: %w", err)
-	}
-
+	// Resolve recipients page-by-page according to the campaign segment,
+	// upserting send-state rows and dispatching in batches. Paging keeps
+	// memory bounded for large lists and mirrors the §22 fan-out pattern.
 	sent := 0
 	failed := 0
-
-	for _, r := range pending {
-		if err := sendEmail(r, subject, htmlBody, true); err != nil {
-			slog.Error("task:newsletter:send: email failed", "error", err)
-			errMsg := err.Error()
-			_ = gen.New(dbPool.Writer).MarkNewsletterRecipientFailed(ctx, gen.MarkNewsletterRecipientFailedParams{
-				Error: &errMsg, CampaignID: campaignID, Recipient: r,
-			})
-			failed++
-			continue
+	total := 0
+	page := int32(0)
+	for {
+		recipients, err := newsletterRecipientsForSegment(ctx, reader, tenantID, campaign.Segment, campaign.SegmentID, page, batchSize)
+		if err != nil {
+			return fmt.Errorf("task:newsletter:send: resolve recipients (segment=%s page=%d): %w", campaign.Segment, page, err)
 		}
-		_ = gen.New(dbPool.Writer).MarkNewsletterRecipientSent(ctx, gen.MarkNewsletterRecipientSentParams{
-			CampaignID: campaignID, Recipient: r,
-		})
-		sent++
+		if len(recipients) == 0 {
+			break
+		}
+
+		// Upsert pending send-state rows for this batch so a crash mid-send
+		// is resumable. UpsertNewsletterSendState resolves all subscribed
+		// recipients internally (segment='all'); for segment-specific sends
+		// the send-state rows are best-effort bookkeeping and may include
+		// recipients outside the segment — that is acceptable because the
+		// per-recipient MarkNewsletterRecipientSent/Failed calls below are
+		// the source of truth for delivery status.
+		if err := writer.UpsertNewsletterSendState(ctx, gen.UpsertNewsletterSendStateParams{
+			CampaignID: campaignID, TenantID: tenantID,
+		}); err != nil {
+			slog.Warn("task:newsletter:send: upsert send state failed", "error", err)
+		}
+
+		for _, r := range recipients {
+			total++
+			// Generate a per-recipient one-click unsubscribe token + headers.
+			unsubURL, headers := newsletterUnsubscribeLink(ctx, tenantID, r)
+			body := htmlBody
+			if unsubURL != "" {
+				body = appendUnsubscribeLink(htmlBody, unsubURL)
+			}
+
+			if err := sendMarketingEmail(ctx, r, subject, body, true, headers); err != nil {
+				slog.Error("task:newsletter:send: email failed", "recipient", r, "error", err)
+				errMsg := err.Error()
+				_ = writer.MarkNewsletterRecipientFailed(ctx, gen.MarkNewsletterRecipientFailedParams{
+					Error: &errMsg, CampaignID: campaignID, Recipient: r,
+				})
+				failed++
+				continue
+			}
+			_ = writer.MarkNewsletterRecipientSent(ctx, gen.MarkNewsletterRecipientSentParams{
+				CampaignID: campaignID, Recipient: r,
+			})
+			sent++
+		}
+
+		if int32(len(recipients)) < batchSize {
+			break
+		}
+		page++
 	}
 
 	// Mark the campaign as sent with the recipient count (Section 62).
-	_ = gen.New(dbPool.Writer).MarkCampaignSent(ctx, gen.MarkCampaignSentParams{
+	_ = writer.MarkCampaignSent(ctx, gen.MarkCampaignSentParams{
 		TenantID:       tenantID,
 		ID:             campaignID,
 		RecipientCount: int32(sent),
@@ -2351,9 +2456,88 @@ func HandleNewsletterSend(ctx context.Context, t *asynq.Task) error {
 
 	slog.Info("task:newsletter:send: batch complete",
 		"newsletter_id", payload.NewsletterID,
-		"sent", sent, "failed", failed, "total", len(pending))
+		"segment", campaign.Segment,
+		"sent", sent, "failed", failed, "total", total)
 
 	return nil
+}
+
+// newsletterRecipientsForSegment resolves the recipient email list for one
+// page of the campaign's segment. Falls back to 'all' for unknown segments
+// or when a space/tag segment yields no followers (so a misconfigured
+// segment never silently drops every recipient).
+func newsletterRecipientsForSegment(ctx context.Context, q *gen.Queries, tenantID pgtype.UUID, segment string, segmentID pgtype.UUID, page, limit int32) ([]string, error) {
+	offset := page * limit
+	switch segment {
+	case "pro_subscribers":
+		return q.NewsletterRecipientsPro(ctx, gen.NewsletterRecipientsProParams{
+			TenantID: tenantID, PageOffset: offset, PageLimit: limit,
+		})
+	case "space":
+		if !segmentID.Valid {
+			break
+		}
+		rows, err := q.NewsletterRecipientsBySpace(ctx, gen.NewsletterRecipientsBySpaceParams{
+			TenantID: tenantID, SegmentID: segmentID, PageOffset: offset, PageLimit: limit,
+		})
+		if err == nil && len(rows) > 0 {
+			return rows, nil
+		}
+		// Fall back to 'all' if the space has no matching subscribers.
+		slog.Warn("task:newsletter:send: space segment yielded no recipients, falling back to all",
+			"segment_id", segmentID.String(), "error", err)
+	case "tag":
+		if !segmentID.Valid {
+			break
+		}
+		rows, err := q.NewsletterRecipientsByTag(ctx, gen.NewsletterRecipientsByTagParams{
+			TenantID: tenantID, SegmentID: segmentID, PageOffset: offset, PageLimit: limit,
+		})
+		if err == nil && len(rows) > 0 {
+			return rows, nil
+		}
+		slog.Warn("task:newsletter:send: tag segment yielded no recipients, falling back to all",
+			"segment_id", segmentID.String(), "error", err)
+	}
+	return q.NewsletterRecipientsAll(ctx, gen.NewsletterRecipientsAllParams{
+		TenantID: tenantID, PageOffset: offset, PageLimit: limit,
+	})
+}
+
+// newsletterBatchSize reads the newsletter.batch_size system_setting
+// (§62, default 500). Falls back to 500 on any error.
+func newsletterBatchSize(ctx context.Context, tenantID pgtype.UUID) int32 {
+	if dbPool == nil {
+		return 500
+	}
+	row, err := gen.New(dbPool.Reader).GetSettingValue(ctx, gen.GetSettingValueParams{
+		TenantID: tenantID, Key: "newsletter.batch_size",
+	})
+	if err != nil || len(row) == 0 {
+		return 500
+	}
+	n, err := strconv.Atoi(strings.Trim(string(row), `"`))
+	if err != nil || n <= 0 {
+		return 500
+	}
+	if n > 5000 {
+		n = 5000
+	}
+	return int32(n) //nolint:gosec // bounded by 5000 cap above
+}
+
+// appendUnsubscribeLink appends a one-click unsubscribe footer to the HTML
+// body if not already present. The link uses the /unsubscribe?token=TOKEN
+// page on the main app (§62 Compliance, ADR-080 §4).
+func appendUnsubscribeLink(htmlBody, unsubURL string) string {
+	footer := `<p style="margin-top:24px;font-size:11px;color:#888;"><a href="` + unsubURL + `">Unsubscribe</a></p>`
+	if strings.Contains(htmlBody, unsubURL) {
+		return htmlBody
+	}
+	if strings.Contains(htmlBody, "</body>") {
+		return strings.Replace(htmlBody, "</body>", footer+"</body>", 1)
+	}
+	return htmlBody + footer
 }
 
 // ---------------------------------------------------------------------------
@@ -3498,7 +3682,15 @@ func HandleNewsletterDigest(ctx context.Context, t *asynq.Task) error {
 	sent := 0
 	failed := 0
 	for _, recipient := range subscribers {
-		if err := sendEmail(recipient, subject, body.String(), true); err != nil {
+		// Generate a per-recipient one-click unsubscribe token + headers
+		// (§62 Compliance, ADR-080 §4) and send via the marketing-category
+		// provider (ADR-015/ADR-080).
+		unsubURL, headers := newsletterUnsubscribeLink(ctx, tenantID, recipient)
+		htmlBody := body.String()
+		if unsubURL != "" {
+			htmlBody = appendUnsubscribeLink(htmlBody, unsubURL)
+		}
+		if err := sendMarketingEmail(ctx, recipient, subject, htmlBody, true, headers); err != nil {
 			slog.Error("task:newsletter:digest: email failed", "recipient", recipient, "error", err)
 			failed++
 			continue
@@ -3889,6 +4081,22 @@ func sendEmail(to, subject, body string, isHTML bool) error {
 // gateway dispatch path. The legacy SMTP fallback does not support context
 // cancellation (net/smtp has no context API).
 func sendEmailWithContext(ctx context.Context, to, subject, body string, isHTML bool) error {
+	return sendEmailWithCategory(ctx, to, subject, body, isHTML, "transactional", nil)
+}
+
+// sendMarketingEmail sends a marketing-category email (newsletter campaigns
+// and digest) via the ADR-015 marketing provider, with optional extra SMTP
+// headers (e.g. List-Unsubscribe for GDPR one-click unsubscribe).
+// Ref: japaconnect-engineering/adr/ADR-015-multi-provider-email.md
+//      japaconnect-engineering/adr/ADR-080-newsletter-digest.md
+func sendMarketingEmail(ctx context.Context, to, subject, body string, isHTML bool, headers map[string]string) error {
+	return sendEmailWithCategory(ctx, to, subject, body, isHTML, "marketing", headers)
+}
+
+// sendEmailWithCategory is the shared dispatch path. category is
+// "transactional" or "marketing" (ADR-015). headers is an optional set of
+// extra SMTP headers merged into the message by providers that support them.
+func sendEmailWithCategory(ctx context.Context, to, subject, body string, isHTML bool, category string, headers map[string]string) error {
 	// If dispatcher is available, use it
 	if emailGateway != nil {
 		req := email.EmailRequest{
@@ -3896,7 +4104,8 @@ func sendEmailWithContext(ctx context.Context, to, subject, body string, isHTML 
 			Subject:  subject,
 			Body:     body,
 			IsHTML:   isHTML,
-			Category: "transactional",
+			Category: category,
+			Headers:  headers,
 		}
 		_, err := emailGateway.Dispatch(ctx, req)
 		return err
@@ -3916,8 +4125,21 @@ func sendEmailWithContext(ctx context.Context, to, subject, body string, isHTML 
 		contentBody = wrapHTMLEmail(body)
 	}
 
-	msg := fmt.Sprintf("From: %s\r\nTo: %s\r\nSubject: %s\r\nMIME-Version: 1.0\r\nContent-Type: %s\r\n\r\n%s",
-		cfg.From, to, subject, contentType, contentBody)
+	// Build the message, merging any extra headers in a stable order.
+	var hdr strings.Builder
+	hdr.WriteString(fmt.Sprintf("From: %s\r\nTo: %s\r\nSubject: %s\r\nMIME-Version: 1.0\r\nContent-Type: %s\r\n",
+		cfg.From, to, subject, contentType))
+	if len(headers) > 0 {
+		keys := make([]string, 0, len(headers))
+		for k := range headers {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			hdr.WriteString(k + ": " + headers[k] + "\r\n")
+		}
+	}
+	msg := hdr.String() + "\r\n" + contentBody
 
 	var auth smtp.Auth
 	if cfg.User != "" && cfg.Pass != "" {

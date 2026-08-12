@@ -218,6 +218,8 @@ var taskTier = func() map[string]string {
 		TypeEmbassyExpireChecks,
 		// §86 Community Calendar (ADR-094) — nightly staleness check, low tier.
 		TypeCalendarStalenessCheck,
+		// §85 Mutual Aid Board (ADR-093) — nightly expiry sweep, low tier.
+		TypeMutualAidExpire,
 		// §94 Professional Credential Checker (ADR-102) — weekly link check, low tier.
 		TypeCredentialsCheckLinks,
 		// §95 CV Formatter (ADR-103) — nightly purge of expired sessions, low tier.

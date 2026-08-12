@@ -2246,6 +2246,7 @@ type NotificationBatchWindow struct {
 	WindowOpenAt     pgtype.Timestamptz `json:"window_open_at"`
 	WindowCloseAt    pgtype.Timestamptz `json:"window_close_at"`
 	Dispatched       bool               `json:"dispatched"`
+	TenantID         pgtype.UUID        `json:"tenant_id"`
 }
 
 type NotificationPreference struct {

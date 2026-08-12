@@ -617,7 +617,9 @@ LIMIT 1000;
 -- name: ListPublishedContentForDigest :many
 SELECT title, slug, created_at
 FROM contents
-WHERE tenant_id = @tenant_id AND status = 'published'
+WHERE tenant_id = @tenant_id
+  AND status = 'published'
+  AND created_at >= now() - interval '7 days'
 ORDER BY created_at DESC
 LIMIT 10;
 

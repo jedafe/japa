@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -47,7 +48,7 @@ type DispatchResult struct {
 // 2. If window exists and not dispatched: extend it (add actor)
 // 3. If no window: create new window
 // Returns whether a new notification was created or batch was extended.
-func (s *Service) DispatchNotification(ctx context.Context, _, recipientID pgtype.UUID, nType, _ string, actorID pgtype.UUID, subjectType string, subjectID pgtype.UUID, _, _, _ string) (DispatchResult, error) {
+func (s *Service) DispatchNotification(ctx context.Context, tenantID, recipientID pgtype.UUID, nType, _ string, actorID pgtype.UUID, subjectType string, subjectID pgtype.UUID, _, _, _ string) (DispatchResult, error) {
 	// Check user preferences — if in-app is disabled, skip entirely.
 	pref, err := s.store.getNotificationPreferences(ctx, recipientID)
 	if err == nil {
@@ -81,9 +82,12 @@ func (s *Service) DispatchNotification(ctx context.Context, _, recipientID pgtyp
 	// AUDIT-FRESH-SETTING-007: batch window is configurable via system_settings.
 	batchWindowMinutes := 5
 	if s.settings != nil {
-		batchWindowMinutes = s.settings.GetIntOr(ctx, pgtype.UUID{}, "notifications.batch_window_minutes", batchWindowMinutes)
+		batchWindowMinutes = s.settings.GetIntOr(ctx, tenantID, "notifications.batch_window_minutes", batchWindowMinutes)
 	}
+	// BUG-001: pass tenant_id so the batch window carries tenant context
+	// through to DispatchBatch, which needs it for the notifications insert.
 	if err := s.store.createBatchWindow(ctx, gen.CreateBatchWindowParams{
+		TenantID:         tenantID,
 		RecipientID:      recipientID,
 		NotificationType: nType,
 		SubjectType:      subjectType,
@@ -113,7 +117,7 @@ func (s *Service) DispatchNotification(ctx context.Context, _, recipientID pgtyp
 
 // enqueueBatchDispatch schedules a notification:dispatch_batch Asynq task
 // to fire when the batch window closes.
-func (s *Service) enqueueBatchDispatch(window gen.NotificationBatchWindow) {
+func (s *Service) enqueueBatchDispatch(window gen.GetOpenBatchWindowRow) {
 	if s.client == nil {
 		return
 	}
@@ -159,11 +163,13 @@ func (s *Service) DispatchBatch(ctx context.Context, windowID pgtype.UUID) error
 	title := BuildBatchTitle(actorName, window.ActorCount, action)
 
 	// Insert the aggregated notification.
+	// BUG-001: use the batch window's tenant_id (previously zero UUID, which
+	// violated the NOT NULL FK constraint on notifications.tenant_id).
 	var bodyPtr *string
 	var actionURLPtr *string
 
 	if err := s.store.insertNotification(ctx, gen.InsertNotificationParams{
-		TenantID:         pgtype.UUID{}, // batch windows are tenant-less in current schema
+		TenantID:         window.TenantID,
 		RecipientID:      window.RecipientID,
 		NotificationType: window.NotificationType,
 		ActorType:        stringPtr(ActorTypeUser),
@@ -182,8 +188,29 @@ func (s *Service) DispatchBatch(ctx context.Context, windowID pgtype.UUID) error
 		return fmt.Errorf("marking batch window dispatched: %w", err)
 	}
 
+	// BUG-002: broadcast the new notification via WebSocket so the client
+	// sees it without a manual refresh. Ref: §35 L88, §11.
+	s.broadcastNotification(window.RecipientID, map[string]any{
+		"id":                pgtype.UUID{}, // ID not returned by insertNotification; client refetches
+		"notification_type": window.NotificationType,
+		"actor_type":        ActorTypeUser,
+		"actor_id":          window.LastActorID,
+		"subject_type":      window.SubjectType,
+		"subject_id":        window.SubjectID,
+		"title":             title,
+		"body":              "",
+		"action_url":        "",
+		"created_at":        time.Now().UTC().Format(time.RFC3339),
+	})
+
+	// BUG-013: invalidate the unread count cache so the badge updates.
+	s.invalidateUnreadCount(ctx, window.RecipientID)
+
 	// Enqueue push delivery if user has push enabled for this type.
 	s.checkAndEnqueuePush(ctx, window.RecipientID, window.NotificationType, title, "", "")
+
+	// BUG-003: enqueue email delivery if user has email enabled for this type.
+	s.checkAndEnqueueEmail(ctx, window.TenantID, window.RecipientID, window.NotificationType, title, "", "")
 
 	return nil
 }
@@ -264,15 +291,36 @@ func (s *Service) CreateNotification(ctx context.Context, tenantID, recipientID 
 		return fmt.Errorf("inserting notification: %w", err)
 	}
 
+	// BUG-002: broadcast the new notification via WebSocket so the client
+	// sees it without a manual refresh. Ref: §35 L88, §11.
+	s.broadcastNotification(recipientID, map[string]any{
+		"notification_type": nType,
+		"actor_type":        actorType,
+		"actor_id":          actorID,
+		"subject_type":      subjectType,
+		"subject_id":        subjectID,
+		"title":             title,
+		"body":              body,
+		"action_url":        actionURL,
+		"created_at":        time.Now().UTC().Format(time.RFC3339),
+	})
+
+	// BUG-013: invalidate the unread count cache so the badge updates.
+	s.invalidateUnreadCount(ctx, recipientID)
+
 	// Enqueue push delivery if user has push enabled for this type.
 	s.checkAndEnqueuePush(ctx, recipientID, nType, title, body, actionURL)
+
+	// BUG-003: enqueue email delivery if user has email enabled for this type.
+	s.checkAndEnqueueEmail(ctx, tenantID, recipientID, nType, title, body, actionURL)
 
 	return nil
 }
 
 // GetNotifications returns paginated notifications for a user.
-func (s *Service) GetNotifications(ctx context.Context, tenantID, recipientID pgtype.UUID, limit, offset int32) ([]NotificationInfo, error) {
-	rows, err := s.store.getNotificationsByRecipient(ctx, tenantID, recipientID, limit, offset)
+// BUG-007: supports the ?unread_only=true filter (§35 L107).
+func (s *Service) GetNotifications(ctx context.Context, tenantID, recipientID pgtype.UUID, limit, offset int32, unreadOnly bool) ([]NotificationInfo, error) {
+	rows, err := s.store.getNotificationsByRecipient(ctx, tenantID, recipientID, limit, offset, unreadOnly)
 	if err != nil {
 		return nil, fmt.Errorf("getting notifications: %w", err)
 	}
@@ -286,28 +334,48 @@ func (s *Service) GetNotifications(ctx context.Context, tenantID, recipientID pg
 }
 
 // GetUnreadCount returns the count of unread notifications.
+// BUG-013: caches the count in Valkey (jc:notif_unread:{user_id}) with a
+// 60s TTL to avoid hitting the DB on every badge poll.
 func (s *Service) GetUnreadCount(ctx context.Context, tenantID, recipientID pgtype.UUID) (int, error) {
+	// Try cache first.
+	if cached := s.getCachedUnreadCount(ctx, recipientID); cached >= 0 {
+		return cached, nil
+	}
+
 	count, err := s.store.getUnreadCount(ctx, tenantID, recipientID)
 	if err != nil {
 		return 0, fmt.Errorf("getting unread count: %w", err)
 	}
 
+	s.setCachedUnreadCount(ctx, recipientID, int(count))
 	return int(count), nil
 }
 
 // MarkAsRead marks a single notification as read.
 func (s *Service) MarkAsRead(ctx context.Context, notificationID, recipientID pgtype.UUID) error {
-	return s.store.markNotificationRead(ctx, notificationID, recipientID)
+	if err := s.store.markNotificationRead(ctx, notificationID, recipientID); err != nil {
+		return err
+	}
+	s.invalidateUnreadCount(ctx, recipientID)
+	return nil
 }
 
 // MarkAllAsRead marks all notifications as read for a user.
 func (s *Service) MarkAllAsRead(ctx context.Context, tenantID, recipientID pgtype.UUID) error {
-	return s.store.markAllNotificationsRead(ctx, tenantID, recipientID)
+	if err := s.store.markAllNotificationsRead(ctx, tenantID, recipientID); err != nil {
+		return err
+	}
+	s.invalidateUnreadCount(ctx, recipientID)
+	return nil
 }
 
 // DeleteNotification deletes a single notification.
 func (s *Service) DeleteNotification(ctx context.Context, notificationID, recipientID pgtype.UUID) error {
-	return s.store.deleteNotification(ctx, notificationID, recipientID)
+	if err := s.store.deleteNotification(ctx, notificationID, recipientID); err != nil {
+		return err
+	}
+	s.invalidateUnreadCount(ctx, recipientID)
+	return nil
 }
 
 // GetPreferences returns all notification types merged with the user's

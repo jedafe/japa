@@ -235,6 +235,9 @@ func RegisterHandlers(mux *asynq.ServeMux) {
 	mux.HandleFunc(TypeCalendarStalenessCheck, HandleCalendarStalenessCheck)
 	mux.HandleFunc(TypeCalendarSendReminders, HandleCalendarSendReminders)
 
+	// §85 Mutual Aid Board handlers (ADR-093).
+	mux.HandleFunc(TypeMutualAidExpire, HandleMutualAidExpire)
+
 	// §94 Professional Credential Checker handlers (ADR-102).
 	mux.HandleFunc(TypeCredentialsCheckLinks, HandleCredentialsCheckLinks)
 

@@ -16,6 +16,7 @@ SELECT n.id, n.tenant_id, n.recipient_id, n.notification_type, n.actor_type, n.a
 FROM notifications n
 JOIN notification_types nt ON nt.key = n.notification_type
 WHERE n.tenant_id = @tenant_id AND n.recipient_id = @recipient_id
+  AND (@unread_only::bool = false OR n.read_at IS NULL)
 ORDER BY n.created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
@@ -56,7 +57,7 @@ SET in_app = EXCLUDED.in_app, email = EXCLUDED.email, push = EXCLUDED.push;
 -- =====================
 
 -- name: GetOpenBatchWindow :one
-SELECT id, recipient_id, notification_type, subject_type, subject_id,
+SELECT id, tenant_id, recipient_id, notification_type, subject_type, subject_id,
        actor_ids, actor_count, last_actor_id, window_open_at, window_close_at, dispatched
 FROM notification_batch_windows
 WHERE recipient_id = @recipient_id
@@ -67,8 +68,8 @@ WHERE recipient_id = @recipient_id
   AND window_close_at > now();
 
 -- name: CreateBatchWindow :exec
-INSERT INTO notification_batch_windows (recipient_id, notification_type, subject_type, subject_id, actor_ids, actor_count, last_actor_id, window_close_at)
-VALUES (@recipient_id, @notification_type, @subject_type, @subject_id, ARRAY[@actor_id::uuid], 1, @actor_id, now() + make_interval(mins => @window_minutes));
+INSERT INTO notification_batch_windows (tenant_id, recipient_id, notification_type, subject_type, subject_id, actor_ids, actor_count, last_actor_id, window_close_at)
+VALUES (@tenant_id, @recipient_id, @notification_type, @subject_type, @subject_id, ARRAY[@actor_id::uuid], 1, @actor_id, now() + make_interval(mins => @window_minutes));
 
 -- name: ExtendBatchWindow :exec
 UPDATE notification_batch_windows
@@ -81,7 +82,7 @@ WHERE id = @id;
 UPDATE notification_batch_windows SET dispatched = true WHERE id = @id;
 
 -- name: GetBatchWindowByID :one
-SELECT id, recipient_id, notification_type, subject_type, subject_id,
+SELECT id, tenant_id, recipient_id, notification_type, subject_type, subject_id,
        actor_ids, actor_count, last_actor_id, window_open_at, window_close_at, dispatched
 FROM notification_batch_windows
 WHERE id = @id;

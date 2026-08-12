@@ -82,6 +82,19 @@ func (s *Store) listTemplates(ctx context.Context, tenantID pgtype.UUID) ([]gen.
 	return rows, nil
 }
 
+// getTemplate retrieves a single onboarding template by ID.
+func (s *Store) getTemplate(ctx context.Context, tenantID, id pgtype.UUID) (gen.OnboardingTemplate, error) {
+	row, err := s.read.GetOnboardingTemplate(ctx, gen.GetOnboardingTemplateParams{
+		ID:       id,
+		TenantID: tenantID,
+	})
+	if err != nil {
+		return gen.OnboardingTemplate{}, fmt.Errorf("getting onboarding template: %w", err)
+	}
+
+	return row, nil
+}
+
 // createTemplate inserts a new onboarding template.
 func (s *Store) createTemplate(ctx context.Context, tenantID pgtype.UUID, name, description string, steps []byte, isActive, isSystem bool) (gen.OnboardingTemplate, error) {
 	row, err := s.write.CreateOnboardingTemplate(ctx, gen.CreateOnboardingTemplateParams{

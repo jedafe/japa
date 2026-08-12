@@ -20,6 +20,47 @@ func (q *Queries) DeletePushSubscription(ctx context.Context, id pgtype.UUID) er
 	return err
 }
 
+const deletePushSubscriptionByEndpoint = `-- name: DeletePushSubscriptionByEndpoint :exec
+DELETE FROM push_subscriptions WHERE user_id = $1 AND endpoint = $2
+`
+
+type DeletePushSubscriptionByEndpointParams struct {
+	UserID   pgtype.UUID `json:"user_id"`
+	Endpoint string      `json:"endpoint"`
+}
+
+func (q *Queries) DeletePushSubscriptionByEndpoint(ctx context.Context, arg DeletePushSubscriptionByEndpointParams) error {
+	_, err := q.db.Exec(ctx, deletePushSubscriptionByEndpoint, arg.UserID, arg.Endpoint)
+	return err
+}
+
+const getPushSubscriptionByID = `-- name: GetPushSubscriptionByID :one
+SELECT id, user_id, endpoint, p256dh, auth_key
+FROM push_subscriptions
+WHERE id = $1
+`
+
+type GetPushSubscriptionByIDRow struct {
+	ID       pgtype.UUID `json:"id"`
+	UserID   pgtype.UUID `json:"user_id"`
+	Endpoint string      `json:"endpoint"`
+	P256dh   string      `json:"p256dh"`
+	AuthKey  string      `json:"auth_key"`
+}
+
+func (q *Queries) GetPushSubscriptionByID(ctx context.Context, id pgtype.UUID) (GetPushSubscriptionByIDRow, error) {
+	row := q.db.QueryRow(ctx, getPushSubscriptionByID, id)
+	var i GetPushSubscriptionByIDRow
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.Endpoint,
+		&i.P256dh,
+		&i.AuthKey,
+	)
+	return i, err
+}
+
 const listPushSubscriptionsByUser = `-- name: ListPushSubscriptionsByUser :many
 
 SELECT id, endpoint, p256dh, auth_key
@@ -68,5 +109,29 @@ WHERE last_used_at < now() - interval '90 days'
 
 func (q *Queries) PruneStalePushTokens(ctx context.Context) error {
 	_, err := q.db.Exec(ctx, pruneStalePushTokens)
+	return err
+}
+
+const savePushSubscription = `-- name: SavePushSubscription :exec
+INSERT INTO push_subscriptions (user_id, endpoint, p256dh, auth_key)
+VALUES ($1, $2, $3, $4)
+ON CONFLICT (user_id, endpoint) DO UPDATE
+SET p256dh = EXCLUDED.p256dh, auth_key = EXCLUDED.auth_key
+`
+
+type SavePushSubscriptionParams struct {
+	UserID   pgtype.UUID `json:"user_id"`
+	Endpoint string      `json:"endpoint"`
+	P256dh   string      `json:"p256dh"`
+	AuthKey  string      `json:"auth_key"`
+}
+
+func (q *Queries) SavePushSubscription(ctx context.Context, arg SavePushSubscriptionParams) error {
+	_, err := q.db.Exec(ctx, savePushSubscription,
+		arg.UserID,
+		arg.Endpoint,
+		arg.P256dh,
+		arg.AuthKey,
+	)
 	return err
 }

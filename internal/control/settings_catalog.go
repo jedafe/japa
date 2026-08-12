@@ -304,7 +304,8 @@ var settingsCatalog = map[string]settingMeta{
 	"digest.email":                  {Type: "bool", DefaultValue: "true", Description: "Send digest via email when published.", Panel: "control"},
 
 	// Mutual Aid Board (§85, ADR-093)
-	"mutual_aid.enabled":            {Type: "bool", DefaultValue: "false", Description: "Global mutual aid board toggle.", Panel: "control"},
+	"mutual_aid.enabled":                     {Type: "bool", DefaultValue: "false", Description: "Global mutual aid board toggle.", Panel: "control"},
+	"mutual_aid.need_reputation_threshold":   {Type: "int", DefaultValue: "0", Description: "Minimum reputation (lifetime points) required to create a need post. 0 disables the gate.", Panel: "control"},
 
 	// Community Calendar (§86, ADR-094)
 	"calendar.enabled":              {Type: "bool", DefaultValue: "false", Description: "Global community calendar toggle.", Panel: "control"},

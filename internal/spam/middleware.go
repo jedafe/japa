@@ -160,18 +160,34 @@ func extractIP(r *http.Request) string {
 
 // extractBodyText reads the request body and extracts text content for
 // censor checking. It looks for "body", "content", "title", and "message"
-// fields in the JSON body. The body is consumed — apply this middleware
-// before the handler reads it, or use a tee reader in the handler.
+// fields in the JSON body. The body is read into a buffer and then
+// restored on the request so the downstream handler can read it again —
+// failing to restore the body would leave every handler behind this
+// middleware with an empty/EOF body.
+//
+// The read is capped at 1MB via io.LimitReader. http.MaxBytesReader is
+// not used because it requires a non-nil http.ResponseWriter to emit the
+// 413 status on overflow, and this helper does not have one (passing nil
+// panics on overflow).
 func extractBodyText(r *http.Request) string {
 	if r.Body == nil {
 		return ""
 	}
 
-	// Read up to 1MB for censor checking
-	limitedReader := http.MaxBytesReader(nil, r.Body, 1<<20)
+	// Read up to 1MB for censor checking. io.LimitReader does not panic
+	// on overflow — it simply stops reading, so an oversized body is
+	// truncated rather than causing a 413.
+	limitedReader := io.LimitReader(r.Body, 1<<20)
 
 	var buf bytes.Buffer
-	_, _ = io.Copy(&buf, limitedReader)
+	if _, err := io.Copy(&buf, limitedReader); err != nil {
+		// Restore whatever was read so the handler can try too.
+		r.Body = io.NopCloser(bytes.NewReader(buf.Bytes()))
+		return ""
+	}
+
+	// Restore the body so the downstream handler can read it.
+	r.Body = io.NopCloser(bytes.NewReader(buf.Bytes()))
 
 	body := buf.String()
 	if body == "" {

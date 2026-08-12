@@ -9,6 +9,11 @@ type EmailRequest struct {
 	Body     string
 	IsHTML   bool
 	Category string // "transactional" or "marketing"
+	// Headers carries optional extra SMTP headers (e.g. List-Unsubscribe,
+	// List-Unsubscribe-Post) merged into the outgoing message by providers
+	// that support custom headers. Providers that do not support custom
+	// headers silently ignore this field.
+	Headers map[string]string
 }
 
 // EmailResponse is the standard envelope returned by any email provider.

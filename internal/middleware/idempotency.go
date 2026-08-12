@@ -16,6 +16,7 @@ package middleware
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -57,6 +58,26 @@ func IdempotencyKeyFromContext(ctx context.Context) string {
 // idempotency middleware needs.
 type idempotencySettingsReader interface {
 	GetIntOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback int) int
+}
+
+// releaseLockScript atomically deletes the processing lock only if the
+// stored value matches the caller's token. This prevents a slow handler
+// whose lock TTL has expired from deleting a lock that a different
+// request has since acquired.
+var releaseLockScript = valkeycompat.NewScript(`
+if redis.call("GET", KEYS[1]) == ARGV[1] then
+    return redis.call("DEL", KEYS[1])
+else
+    return 0
+end
+`)
+
+// idempotencyLockToken generates a random hex token used as the value of
+// the processing lock so the holder can be identified on release.
+func idempotencyLockToken() string {
+	b := make([]byte, 16)
+	_, _ = rand.Read(b)
+	return hex.EncodeToString(b)
 }
 
 // cachedResponse is the JSON-serialisable payload stored in Valkey for
@@ -162,16 +183,28 @@ func IdempotencyMiddleware(rdb valkeycompat.Cmdable, settings idempotencySetting
 			}
 
 			// Acquire a processing lock to prevent concurrent execution.
+			// The lock value is a random token so only this holder can
+			// release it; a slow handler whose lock TTL expires must not
+			// delete a lock that another request has since acquired.
 			lockKey := cacheKey + ":lock"
-			acquired, err := rdb.SetNX(ctx, lockKey, "1", 30*time.Second).Result()
+			lockToken := idempotencyLockToken()
+			acquired, err := rdb.SetNX(ctx, lockKey, lockToken, 30*time.Second).Result()
 			if err != nil {
 				slog.Warn("idempotency: failed to acquire lock", "err", err)
 				next.ServeHTTP(w, r)
 				return
 			}
 			if !acquired {
-				// Another request is processing. Wait briefly then check cache.
-				time.Sleep(100 * time.Millisecond)
+				// Another request is processing. Wait briefly (context-aware)
+				// then check the cache for a completed response.
+				timer := time.NewTimer(100 * time.Millisecond)
+				select {
+				case <-ctx.Done():
+					timer.Stop()
+					next.ServeHTTP(w, r)
+					return
+				case <-timer.C:
+				}
 				cached, err := rdb.Get(ctx, cacheKey).Bytes()
 				if err == nil && len(cached) > 0 {
 					var resp cachedResponse
@@ -185,7 +218,12 @@ func IdempotencyMiddleware(rdb valkeycompat.Cmdable, settings idempotencySetting
 				next.ServeHTTP(w, r)
 				return
 			}
-			defer rdb.Del(ctx, lockKey)
+			// Release the lock on exit, but only if we still own it.
+			defer func() {
+				if _, err := releaseLockScript.Run(ctx, rdb, []string{lockKey}, lockToken).Result(); err != nil && err != valkeycompat.Nil {
+					slog.Warn("idempotency: failed to release lock", "key", lockKey, "err", err)
+				}
+			}()
 
 			// Wrap the writer so we can capture the handler's output.
 			capture := &responseCapture{ResponseWriter: w}

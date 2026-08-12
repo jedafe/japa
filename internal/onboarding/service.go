@@ -16,6 +16,7 @@ import (
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
+	errpkg "github.com/jedafe/japa/internal/errors"
 )
 
 // Service provides onboarding business logic with reader/writer pool separation.
@@ -242,7 +243,29 @@ func (s *Service) getMinSpacesJoin(ctx context.Context, tenantID pgtype.UUID) in
 }
 
 // Complete marks onboarding as completed for the given user.
+// Per Section 09, completion is the terminal action of the 5-step flow —
+// a user must have reached step 5 before they can complete. This prevents
+// a malicious client from calling POST /onboarding/complete immediately
+// after signup and bypassing the baseline density target.
 func (s *Service) Complete(ctx context.Context, tenantID, userID pgtype.UUID) error {
+	state, err := s.store.getState(ctx, tenantID, userID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return fmt.Errorf("%w: onboarding not started", errpkg.ErrInvalidStatusTransition)
+		}
+		return fmt.Errorf("getting onboarding state for completion: %w", err)
+	}
+
+	if state.Completed {
+		return nil // idempotent — already completed
+	}
+
+	// Ref: japaconnect-engineering/sections/09-onboarding-flow.md
+	// The 5-step flow requires the user to reach step 5 before completing.
+	if state.CurrentStep < 5 {
+		return fmt.Errorf("%w: onboarding not complete (current step %d, need 5)", errpkg.ErrInvalidStatusTransition, state.CurrentStep)
+	}
+
 	if err := s.store.completeOnboarding(ctx, tenantID, userID); err != nil {
 		return fmt.Errorf("completing onboarding: %w", err)
 	}
@@ -485,7 +508,7 @@ func (s *Service) recommendSpacesByTags(ctx context.Context, tenantID, _ pgtype.
 	}
 
 	query := fmt.Sprintf(`
-		SELECT s.id, s.name, s.slug, s.avatar_url, s.description
+		SELECT s.id, s.name, s.slug, s.description
 		FROM spaces s
 		WHERE s.tenant_id = $1
 		  AND s.status = 'active'
@@ -505,21 +528,20 @@ func (s *Service) recommendSpacesByTags(ctx context.Context, tenantID, _ pgtype.
 	for rows.Next() {
 		var id, name, slug pgtype.Text
 
-		var avatarURL, description pgtype.Text
-		if err := rows.Scan(&id, &name, &slug, &avatarURL, &description); err != nil {
+		var description pgtype.Text
+		if err := rows.Scan(&id, &name, &slug, &description); err != nil {
 			continue
 		}
 		// Simple tag overlap scoring based on description matching.
 		score := tagOverlapScore(description.String, tags)
 		if score > 0 {
 			recs = append(recs, OnboardingRecommendation{
-				Type:      "space",
-				ID:        id.String,
-				Name:      name.String,
-				Slug:      slug.String,
-				AvatarURL: avatarURL.String,
-				Reason:    "tag_overlap",
-				Score:     score,
+				Type:   "space",
+				ID:     id.String,
+				Name:   name.String,
+				Slug:   slug.String,
+				Reason: "tag_overlap",
+				Score:  score,
 			})
 		}
 	}
@@ -605,7 +627,7 @@ func (s *Service) recommendByGeo(ctx context.Context, tenantID, _ pgtype.UUID, f
 // getPopularItems returns popular spaces/users as a fallback.
 func (s *Service) getPopularItems(ctx context.Context, tenantID pgtype.UUID) ([]OnboardingRecommendation, error) {
 	rows, err := s.db.Reader.Query(ctx, `
-		SELECT s.id, s.name, s.slug, s.avatar_url
+		SELECT s.id, s.name, s.slug
 		FROM spaces s
 		WHERE s.tenant_id = $1
 		  AND s.status = 'active'
@@ -620,19 +642,18 @@ func (s *Service) getPopularItems(ctx context.Context, tenantID pgtype.UUID) ([]
 	var recs []OnboardingRecommendation
 
 	for rows.Next() {
-		var id, name, slug, avatarURL pgtype.Text
-		if err := rows.Scan(&id, &name, &slug, &avatarURL); err != nil {
+		var id, name, slug pgtype.Text
+		if err := rows.Scan(&id, &name, &slug); err != nil {
 			continue
 		}
 
 		recs = append(recs, OnboardingRecommendation{
-			Type:      "space",
-			ID:        id.String,
-			Name:      name.String,
-			Slug:      slug.String,
-			AvatarURL: avatarURL.String,
-			Reason:    "reputation",
-			Score:     0.5,
+			Type:   "space",
+			ID:     id.String,
+			Name:   name.String,
+			Slug:   slug.String,
+			Reason: "reputation",
+			Score:  0.5,
 		})
 	}
 
@@ -663,9 +684,17 @@ func tagOverlapScore(description string, tags []string) float64 {
 
 // autoJoinGeoSpaces joins the user to the country, state, and city geo spaces
 // based on the onboarding step data. Failures are non-fatal — the caller logs
-// and continues without blocking onboarding.
+// and continues without blocking onboarding. All joins + the geo-space update
+// run in a single transaction so a mid-sequence failure rolls back the entire
+// geo-join (BUG-002 fix, §6.2 transaction boundary, Section 09 space auto-join).
 func (s *Service) autoJoinGeoSpaces(ctx context.Context, tenantID, userID pgtype.UUID, fields stepDataFields) error {
-	queries := gen.New(s.db.Writer)
+	tx, err := s.db.Writer.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("beginning geo-join transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }() // no-op after commit
+
+	queries := gen.New(tx)
 
 	// Find country space by geo_code.
 	countrySpace, err := queries.GetSpaceByGeoCode(ctx, gen.GetSpaceByGeoCodeParams{
@@ -736,6 +765,10 @@ func (s *Service) autoJoinGeoSpaces(ctx context.Context, tenantID, userID pgtype
 		TenantID:          tenantID,
 	}); err != nil {
 		return fmt.Errorf("setting user geo space: %w", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("committing geo-join transaction: %w", err)
 	}
 
 	return nil
@@ -855,6 +888,11 @@ func (s *Service) UpdateAdminSettings(ctx context.Context, tenantID pgtype.UUID,
 // so admins can pre-configure templates ahead of the consumer-side wiring.
 func (s *Service) ListTemplates(ctx context.Context, tenantID pgtype.UUID) ([]gen.OnboardingTemplate, error) {
 	return s.store.listTemplates(ctx, tenantID)
+}
+
+// GetTemplate retrieves a single onboarding template by ID.
+func (s *Service) GetTemplate(ctx context.Context, tenantID, id pgtype.UUID) (gen.OnboardingTemplate, error) {
+	return s.store.getTemplate(ctx, tenantID, id)
 }
 
 // CreateTemplate creates a new onboarding template.

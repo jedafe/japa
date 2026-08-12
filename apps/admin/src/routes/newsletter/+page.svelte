@@ -16,6 +16,7 @@
 	import { Select } from '$lib/components/ui/select';
 	import type { ActionItem, BulkAction } from '$lib/components/ui/data-table';
 	import { Mail, Plus, Send, Users, BarChart3, Trash2, Eye, Pencil, Upload } from 'lucide-svelte';
+	import { BarChart } from 'layerchart';
 	import { api } from '$lib/api';
 
 	type Subscriber = {
@@ -55,6 +56,8 @@
 	let subscribers = $state<Subscriber[]>([]);
 	let campaigns = $state<Campaign[]>([]);
 	let stats = $state<NewsletterStats>({ subscribers: 0, campaigns: 0, avgOpenRate: 0, avgClickRate: 0 });
+	// LayerChart axis format for the campaign-performance bar chart.
+	const newsletterChartAxis: any = { x: { ticks: { rotate: -30 } } };
 	let loading = $state(true);
 	let pageError = $state('');
 	let filterValue = $state<Record<string, string>>({});
@@ -368,16 +371,20 @@
 		if (lines.length === 0) return;
 		importing = true;
 		importResult = { success: 0, failed: 0, errors: [] };
-		for (const line of lines) {
-			const [email, name] = line.split(',').map((s) => s.trim());
-			try {
-				const result = await api('/admin/newsletter/subscribers', { method: 'POST', body: { email, ...(name ? { name } : {}) } });
-				if (result.ok) importResult.success++;
-				else { importResult.failed++; importResult.errors.push(`${email}: ${result.error ?? 'failed'}`); }
-			} catch (e) {
-				importResult.failed++;
-				importResult.errors.push(`${email}: ${e instanceof Error ? e.message : 'failed'}`);
+		const emails = lines.map((line) => line.split(',')[0].trim()).filter((e) => e);
+		try {
+			const result = await api('/admin/newsletter/subscribers/import', { method: 'POST', body: { emails } });
+			if (result.ok) {
+				const data = (result.data ?? {}) as { imported?: number; skipped?: number };
+				importResult.success = data.imported ?? 0;
+				importResult.failed = data.skipped ?? 0;
+			} else {
+				importResult.failed = emails.length;
+				importResult.errors.push(result.error ?? 'failed');
 			}
+		} catch (e) {
+			importResult.failed = emails.length;
+			importResult.errors.push(e instanceof Error ? e.message : 'failed');
 		}
 		importing = false;
 		if (importResult.success > 0) loadSubscribers();
@@ -470,9 +477,28 @@
 				<h3 class="text-lg font-semibold text-foreground">{t('newsletter.campaign_performance')}</h3>
 			</CardHeader>
 			<CardContent>
-				<div class="flex h-64 items-center justify-center rounded-lg bg-surface">
-					<p class="text-muted">{t('newsletter.analytics_chart_placeholder_integrate_wi')}</p>
-				</div>
+				{#if campaigns.filter((c) => c.status === 'sent').length > 0}
+					<div class="h-64">
+						<BarChart
+							data={campaigns
+								.filter((c) => c.status === 'sent')
+								.map((c) => ({
+									name: c.subject ?? c.name ?? 'Untitled',
+									open_rate: c.open_rate ?? c.openRate ?? 0,
+									click_rate: c.click_rate ?? 0
+								}))}
+							x="name"
+							y="open_rate"
+							xPadding={[0.1, 0.1]}
+							cRange={['var(--chart-1)']}
+							axis={newsletterChartAxis}
+						/>
+					</div>
+				{:else}
+					<div class="flex h-64 items-center justify-center rounded-lg bg-surface">
+						<p class="text-muted">{t('newsletter.analytics_chart_placeholder_integrate_wi')}</p>
+					</div>
+				{/if}
 			</CardContent>
 		</Card>
 	{/if}
