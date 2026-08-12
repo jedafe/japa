@@ -82,6 +82,7 @@ func (p *PixabayProvider) Search(ctx context.Context, query string, page, perPag
 			Width:           r.ImageWidth,
 			Height:          r.ImageHeight,
 			Photographer:     r.User,
+			PhotographerURL:  fmt.Sprintf("https://pixabay.com/users/%s-%d/", r.User, r.ID),
 			Description:     r.Tags,
 		})
 	}
@@ -145,6 +146,7 @@ func (p *PixabayProvider) GetByID(ctx context.Context, photoID string) (*StockPh
 		Width:           h.ImageWidth,
 		Height:          h.ImageHeight,
 		Photographer:     h.User,
+		PhotographerURL:  fmt.Sprintf("https://pixabay.com/users/%s-%d/", h.User, h.ID),
 		Description:     h.Tags,
 	}, nil
 }
@@ -179,6 +181,7 @@ func (p *PixabayProvider) Download(ctx context.Context, photoID string) (*Downlo
 		Data:             data,
 		Filename:         photoID + ".jpg",
 		Photographer:     photo.Photographer,
+		PhotographerURL:  photo.PhotographerURL,
 		License:          "pixabay",
 		LicenseURL:       "https://pixabay.com/service/license/",
 		ProviderPhotoID:  photoID,

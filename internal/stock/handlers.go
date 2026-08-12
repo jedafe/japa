@@ -174,6 +174,10 @@ func (h *StockHandlers) GetPhoto(w http.ResponseWriter, r *http.Request) {
 
 	photo, err := h.svc.GetPhoto(r.Context(), providerName, photoID)
 	if err != nil {
+		if errors.Is(err, ErrProviderUnavailable) {
+			writeError(w, http.StatusNotFound, "provider_unavailable", err.Error())
+			return
+		}
 		writeError(w, http.StatusNotFound, "photo_not_found", err.Error())
 		return
 	}
@@ -241,7 +245,7 @@ func (h *StockHandlers) ImportPhoto(w http.ResponseWriter, r *http.Request) {
 // AdminListProviders returns all providers with enabled/disabled status.
 // GET /api/v1/admin/stock/providers
 func (h *StockHandlers) AdminListProviders(w http.ResponseWriter, r *http.Request) {
-	rows, err := h.svc.store.ListProviders(r.Context())
+	rows, err := h.svc.ListAllProviders(r.Context())
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "list_error", "Failed to list providers")
 		return

@@ -1085,6 +1085,94 @@ func (q *Queries) GdprExportInstructorProfiles(ctx context.Context, arg GdprExpo
 	return data, err
 }
 
+const gdprExportOwnedSpaceParents = `-- name: GdprExportOwnedSpaceParents :many
+SELECT sps.space_id, sps.parent_space_id
+FROM space_parent_spaces sps
+JOIN space_members sm ON sm.space_id = sps.space_id
+WHERE sm.user_id = $1 AND sm.tenant_id = $2 AND sm.role = 'owner'
+`
+
+type GdprExportOwnedSpaceParentsParams struct {
+	UserID   pgtype.UUID `json:"user_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+type GdprExportOwnedSpaceParentsRow struct {
+	SpaceID       pgtype.UUID `json:"space_id"`
+	ParentSpaceID pgtype.UUID `json:"parent_space_id"`
+}
+
+// Returns parent space IDs for spaces owned by the user (BUG-004: GDPR
+// export completeness for space_parent_spaces).
+func (q *Queries) GdprExportOwnedSpaceParents(ctx context.Context, arg GdprExportOwnedSpaceParentsParams) ([]GdprExportOwnedSpaceParentsRow, error) {
+	rows, err := q.db.Query(ctx, gdprExportOwnedSpaceParents, arg.UserID, arg.TenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GdprExportOwnedSpaceParentsRow
+	for rows.Next() {
+		var i GdprExportOwnedSpaceParentsRow
+		if err := rows.Scan(&i.SpaceID, &i.ParentSpaceID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const gdprExportOwnedSpaceRules = `-- name: GdprExportOwnedSpaceRules :many
+SELECT sr.id, sr.space_id, sr.title, sr.body, sr.position
+FROM space_rules sr
+JOIN space_members sm ON sm.space_id = sr.space_id
+WHERE sm.user_id = $1 AND sm.tenant_id = $2 AND sm.role = 'owner'
+ORDER BY sr.space_id, sr.position
+`
+
+type GdprExportOwnedSpaceRulesParams struct {
+	UserID   pgtype.UUID `json:"user_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+type GdprExportOwnedSpaceRulesRow struct {
+	ID       pgtype.UUID `json:"id"`
+	SpaceID  pgtype.UUID `json:"space_id"`
+	Title    string      `json:"title"`
+	Body     string      `json:"body"`
+	Position int32       `json:"position"`
+}
+
+// Returns rules for spaces owned by the user (BUG-004: GDPR export
+// completeness for space_rules).
+func (q *Queries) GdprExportOwnedSpaceRules(ctx context.Context, arg GdprExportOwnedSpaceRulesParams) ([]GdprExportOwnedSpaceRulesRow, error) {
+	rows, err := q.db.Query(ctx, gdprExportOwnedSpaceRules, arg.UserID, arg.TenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GdprExportOwnedSpaceRulesRow
+	for rows.Next() {
+		var i GdprExportOwnedSpaceRulesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.SpaceID,
+			&i.Title,
+			&i.Body,
+			&i.Position,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const gdprExportPushTokens = `-- name: GdprExportPushTokens :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (

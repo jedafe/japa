@@ -256,6 +256,18 @@ func (s *Store) UpdateJobGenerated(ctx context.Context, tenantID, id, draftConte
 	return err
 }
 
+// UpdateJobPublished sets the draft_content_id, status, and timestamps for a
+// job whose draft was auto-published (studio.auto_publish_types, §75). No
+// review_id is written because auto-published types skip the HITL queue.
+func (s *Store) UpdateJobPublished(ctx context.Context, tenantID, id, draftContentID pgtype.UUID) error {
+	_, err := s.db.Writer.Exec(ctx,
+		`UPDATE studio_jobs SET draft_content_id = $3, status = 'published',
+		          generated_at = now(), published_at = now()
+		  WHERE id = $1 AND tenant_id = $2`,
+		id, tenantID, draftContentID)
+	return err
+}
+
 // ListBatches lists batches for a tenant.
 func (s *Store) ListBatches(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]Batch, int64, error) {
 	rows, err := s.db.Reader.Query(ctx,
@@ -376,9 +388,19 @@ func (s *Store) ListFailedJobs(ctx context.Context, tenantID, batchID pgtype.UUI
 	return jobs, rows.Err()
 }
 
-// StudioStats holds aggregate stats for the studio dashboard.
+// StudioStats holds aggregate stats for the studio dashboard. The status
+// breakdown fields (Queued/Generating/...) mirror the statuses the admin
+// frontend renders on the Stats tab; TotalJobs is the overall count and
+// PublishRate / AvgReviewH are the aggregate quality metrics.
 type StudioStats struct {
 	TotalJobs   int64   `json:"total_jobs"`
+	Queued      int64   `json:"queued"`
+	Generating  int64   `json:"generating"`
+	DraftReady  int64   `json:"draft_ready"`
+	InReview    int64   `json:"in_review"`
+	Published   int64   `json:"published"`
+	Rejected    int64   `json:"rejected"`
+	Failed      int64   `json:"failed"`
 	PublishRate float64 `json:"publish_rate"`
 	AvgReviewH  float64 `json:"avg_review_hours"`
 }
@@ -388,10 +410,18 @@ func (s *Store) GetStats(ctx context.Context, tenantID pgtype.UUID) (StudioStats
 	var st StudioStats
 	err := s.db.Reader.QueryRow(ctx, `
 		SELECT count(*),
+		       count(*) FILTER (WHERE status = 'queued'),
+		       count(*) FILTER (WHERE status = 'generating'),
+		       count(*) FILTER (WHERE status = 'draft_ready'),
+		       count(*) FILTER (WHERE status = 'in_review'),
+		       count(*) FILTER (WHERE status = 'published'),
+		       count(*) FILTER (WHERE status = 'rejected'),
+		       count(*) FILTER (WHERE status = 'failed'),
 		       COALESCE(avg(CASE WHEN status = 'published' THEN 1.0 ELSE 0.0 END), 0),
 		       COALESCE(avg(EXTRACT(EPOCH FROM (COALESCE(reviewed_at, now()) - generated_at)) / 3600), 0)
 		FROM studio_jobs WHERE tenant_id = $1`, tenantID,
-	).Scan(&st.TotalJobs, &st.PublishRate, &st.AvgReviewH)
+	).Scan(&st.TotalJobs, &st.Queued, &st.Generating, &st.DraftReady, &st.InReview,
+		&st.Published, &st.Rejected, &st.Failed, &st.PublishRate, &st.AvgReviewH)
 	return st, err
 }
 

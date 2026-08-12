@@ -63,7 +63,7 @@
 			class="sticky top-0 z-10 -mx-4 flex items-center gap-2 bg-[var(--color-bg)]/90 px-4 py-2 backdrop-blur"
 		>
 			{#each topbarWidgets as widget (widget.id)}
-				<SidebarWidgetRenderer {widget} />
+				<SidebarWidgetRenderer {widget} {user} />
 			{/each}
 		</div>
 	{/if}
@@ -81,6 +81,6 @@
 	<!-- Admin-managed content-slot sidebar widgets (Section 59, ADR-066).
 	     Rendered below the route-specific snippet and ContinueLearningCard. -->
 	{#each contentWidgets as widget (widget.id)}
-		<SidebarWidgetRenderer {widget} />
+		<SidebarWidgetRenderer {widget} {user} />
 	{/each}
 </aside>

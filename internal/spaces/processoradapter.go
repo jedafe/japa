@@ -30,13 +30,26 @@ var ErrWikiNotFound = errors.New("wiki article not found")
 // calls (Wikidata + Wikipedia). Wikidata's SPARQL endpoint rate-limits
 // aggressively (~1 request / 2s for anonymous clients), and Wikipedia's
 // REST API has similar limits. The limiter is global so concurrent worker
-// goroutines share a single queue.
+// goroutines share a single queue. The interval is configurable at runtime
+// via SetWikiRateInterval (BUG-005: spaces.wiki_rate_interval_ms setting).
 var wikiRateLimiter = &wikiLimiter{interval: 2 * time.Second}
 
 type wikiLimiter struct {
 	mu       sync.Mutex
 	interval time.Duration
 	lastCall time.Time
+}
+
+// SetWikiRateInterval updates the minimum interval between Wiki API calls.
+// Called from the worker bootstrap with the value from system_settings
+// (spaces.wiki_rate_interval_ms). A value of 0 or less keeps the default.
+func SetWikiRateInterval(d time.Duration) {
+	if d <= 0 {
+		return
+	}
+	wikiRateLimiter.mu.Lock()
+	wikiRateLimiter.interval = d
+	wikiRateLimiter.mu.Unlock()
 }
 
 // wait blocks until at least l.interval has elapsed since the last call.

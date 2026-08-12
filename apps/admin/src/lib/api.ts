@@ -54,7 +54,7 @@ export async function apiRaw<T = any>(path: string, opts: FetchOptions = {}): Pr
 }
 
 export const spamApi = {
-	getIpBlocks: (params?: string) => api<unknown>(`/admin/spam/ip-blocks${params ? `?${params}` : ''}`),
+	getIpBlocks: (params?: string) => apiRaw<{ data: unknown[]; total: number; total_pages: number }>(`/admin/spam/ip-blocks${params ? `?${params}` : ''}`),
 	createIpBlock: (body: { cidr: string; block_type: string; reason?: string; expires_at?: string }) =>
 		api('/admin/spam/ip-blocks', { method: 'POST', body }),
 	updateIpBlock: (id: string, body: { cidr?: string; block_type?: string; reason?: string; expires_at?: string }) =>
@@ -62,7 +62,7 @@ export const spamApi = {
 	deleteIpBlock: (id: string) =>
 		api(`/admin/spam/ip-blocks/${id}`, { method: 'DELETE' }),
 
-	getCensoredWords: (params?: string) => api<unknown>(`/admin/spam/censored-words${params ? `?${params}` : ''}`),
+	getCensoredWords: (params?: string) => apiRaw<{ data: unknown[]; total: number; total_pages: number }>(`/admin/spam/censored-words${params ? `?${params}` : ''}`),
 	createCensoredWord: (body: { pattern: string; action: string; replacement?: string }) =>
 		api('/admin/spam/censored-words', { method: 'POST', body }),
 	updateCensoredWord: (id: string, body: { pattern?: string; action?: string; replacement?: string }) =>
@@ -70,7 +70,7 @@ export const spamApi = {
 	deleteCensoredWord: (id: string) =>
 		api(`/admin/spam/censored-words/${id}`, { method: 'DELETE' }),
 
-	getUserBlocks: (params?: string) => api<unknown>(`/admin/spam/user-blocks${params ? `?${params}` : ''}`),
+	getUserBlocks: (params?: string) => apiRaw<{ data: unknown[]; total: number; total_pages: number }>(`/admin/spam/user-blocks${params ? `?${params}` : ''}`),
 	deleteUserBlock: (blockerId: string, blockedId: string) =>
 		api(`/admin/spam/user-blocks/${blockerId}/${blockedId}`, { method: 'DELETE' }),
 };

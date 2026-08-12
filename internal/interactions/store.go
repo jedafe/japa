@@ -89,7 +89,8 @@ func (s *Service) IsBlocked(ctx context.Context, tenantID, userA, userB pgtype.U
 // =====================
 
 // MuteUser mutes a user. Returns true if muted, false if already muted (idempotent).
-// Invalidates the jc:muted_users:{user_id} Valkey cache (Section 52 / VALKEY-001).
+// Invalidates the jc:muted_users:{tenant_id}:{user_id} Valkey cache (Section 52
+// / VALKEY-001, BUG-003: tenant-scoped).
 func (s *Service) MuteUser(ctx context.Context, tenantID, userID, mutedUserID pgtype.UUID) error {
 	if err := s.write.MuteUser(ctx, gen.MuteUserParams{
 		TenantID:    tenantID,
@@ -98,12 +99,13 @@ func (s *Service) MuteUser(ctx context.Context, tenantID, userID, mutedUserID pg
 	}); err != nil {
 		return err
 	}
-	s.invalidateMutedUsersCache(ctx, userID)
+	s.invalidateMutedUsersCache(ctx, tenantID, userID)
 	return nil
 }
 
 // UnmuteUser removes a mute.
-// Invalidates the jc:muted_users:{user_id} Valkey cache (Section 52 / VALKEY-001).
+// Invalidates the jc:muted_users:{tenant_id}:{user_id} Valkey cache (Section 52
+// / VALKEY-001, BUG-003: tenant-scoped).
 func (s *Service) UnmuteUser(ctx context.Context, tenantID, userID, mutedUserID pgtype.UUID) error {
 	if err := s.write.UnmuteUser(ctx, gen.UnmuteUserParams{
 		TenantID:    tenantID,
@@ -112,7 +114,7 @@ func (s *Service) UnmuteUser(ctx context.Context, tenantID, userID, mutedUserID 
 	}); err != nil {
 		return err
 	}
-	s.invalidateMutedUsersCache(ctx, userID)
+	s.invalidateMutedUsersCache(ctx, tenantID, userID)
 	return nil
 }
 
@@ -167,7 +169,8 @@ func (s *Service) ListMutedUsers(ctx context.Context, tenantID, userID pgtype.UU
 // =====================
 
 // MuteSpace mutes a space.
-// Invalidates the jc:muted_spaces:{user_id} Valkey cache (Section 52 / VALKEY-001).
+// Invalidates the jc:muted_spaces:{tenant_id}:{user_id} Valkey cache (Section
+// 52 / VALKEY-001, BUG-003: tenant-scoped).
 func (s *Service) MuteSpace(ctx context.Context, tenantID, userID, spaceID pgtype.UUID) error {
 	if err := s.write.MuteSpace(ctx, gen.MuteSpaceParams{
 		TenantID: tenantID,
@@ -176,12 +179,13 @@ func (s *Service) MuteSpace(ctx context.Context, tenantID, userID, spaceID pgtyp
 	}); err != nil {
 		return err
 	}
-	s.invalidateMutedSpacesCache(ctx, userID)
+	s.invalidateMutedSpacesCache(ctx, tenantID, userID)
 	return nil
 }
 
 // UnmuteSpace removes a space mute.
-// Invalidates the jc:muted_spaces:{user_id} Valkey cache (Section 52 / VALKEY-001).
+// Invalidates the jc:muted_spaces:{tenant_id}:{user_id} Valkey cache (Section
+// 52 / VALKEY-001, BUG-003: tenant-scoped).
 func (s *Service) UnmuteSpace(ctx context.Context, tenantID, userID, spaceID pgtype.UUID) error {
 	if err := s.write.UnmuteSpace(ctx, gen.UnmuteSpaceParams{
 		TenantID: tenantID,
@@ -190,7 +194,7 @@ func (s *Service) UnmuteSpace(ctx context.Context, tenantID, userID, spaceID pgt
 	}); err != nil {
 		return err
 	}
-	s.invalidateMutedSpacesCache(ctx, userID)
+	s.invalidateMutedSpacesCache(ctx, tenantID, userID)
 	return nil
 }
 

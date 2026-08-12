@@ -524,6 +524,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// BUG-003: wire the RBAC resolver so DeleteComment can distinguish
 	// comments.delete_own (author) from comments.delete_any (moderator).
 	commentsHandlers.SetPermissionChecker(rbacResolver)
+	// BUG-002: wire the space permission checker so CreateComment enforces
+	// the space's commenting_perm (top-level comments) and replying_perm
+	// (replies) axes (Section 05 lines 145-154). Reuses the same adapter
+	// already wired for content posting checks.
+	commentsHandlers.SetSpaceChecker(spacePostChecker)
 
 	// Interactions subsystem (Sections 41, 52 — Blocks & Mutes).
 	interactionsService := interactions.NewService(database)
@@ -532,6 +537,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	worker.RegisterSettings(settingsService)
 	worker.RegisterRedis(vkClient.Redis()) // TASK-003: RSS feed caching in Valkey
+	// BUG-005: configure the Wiki API rate limiter interval from
+	// spaces.wiki_rate_interval_ms (default 2000ms). Hot-reloadable — the
+	// worker re-reads the setting on each wiki enrichment task.
+	spaces.SetWikiRateInterval(time.Duration(
+		settingsService.GetIntOr(context.Background(), defaultTenantID, "spaces.wiki_rate_interval_ms", 2000),
+	) * time.Millisecond)
 
 	// Initialize email provider gateway (ADR-015 — multi-provider failover)
 	emailDispatcher := email.NewEmailDispatcher()
@@ -866,7 +877,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	botHandlers := bots.NewHandlers(botService)
 
 	// Spam Prevention & Content Safety admin handlers (Section 41).
-	spamHandlers := spam.NewHandlers(spamStore)
+	// Wired with the Valkey client so censored-word mutations invalidate the
+	// jc:spam:censored:{tenant_id} cache immediately (BUG-002).
+	spamHandlers := spam.NewHandlersWithCache(spamStore, vkClient)
 
 	// Platform Analytics & Site Reports subsystem (Section 40).
 	analyticsService := analytics.NewServiceWithEnqueuer(database, taskEnqueuer)
@@ -904,8 +917,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Referral Program subsystem (Section 34 / §60, ADR-078).
 	referralService := referral.NewService(database)
 	referralService.SetSettings(settingsService)
-	referralService.SetValkey(vkClient.Redis())  // jc:referral_attr attribution key
-	referralService.SetEnqueuer(taskEnqueuer)    // referral:record_click + wallet:award_points
+	referralService.SetValkey(vkClient.Redis()) // jc:referral_attr attribution key
+	referralService.SetEnqueuer(taskEnqueuer)   // referral:record_click + wallet:award_points
 	referralHandlers := referral.NewHandlers(referralService)
 	// Wire referral capture into the auth signup flow (§60 — ?ref=CODE at
 	// registration creates a pending referrals row). Injected here because
@@ -1162,8 +1175,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Ref: japaconnect-engineering/sections/74-remittance-tracker.md (ADR-075)
 	remittanceStore := remittance.NewStore(database)
 	remittanceService := remittance.NewService(remittanceStore, settingsService)
-	remittanceService.SetCache(vkClient.Redis())   // VALKEY-004: jc:remit:* corridor rate cache
-	remittanceService.SetEnqueuer(taskEnqueuer)     // admin fetch trigger + alert check tasks
+	remittanceService.SetCache(vkClient.Redis())       // VALKEY-004: jc:remit:* corridor rate cache
+	remittanceService.SetEnqueuer(taskEnqueuer)        // admin fetch trigger + alert check tasks
 	remittanceService.SetNotifier(notificationService) // rate-alert notification dispatch (ADR-075 §4)
 	remittanceHandlers := remittance.NewHandlers(remittanceService, settingsService)
 
@@ -1207,7 +1220,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	studioService.SetEnqueuer(taskEnqueuer)
 	studioHandlers := studio.NewHandlers(studioService)
 	studioHandlers.SetPersonaService(personasService)
-	worker.RegisterStudioProcessor(studioService)
+	// The full §75 generation pipeline adapter (persona voice → AI gateway →
+	// draft content → HITL review / auto-publish) is registered as the
+	// StudioProcessor after aiStore/aiDispatcher are created (see below).
 
 	// Participation Orchestration Engine (Section 76, ADR-077).
 	participationService := participation.NewService(database, settingsService, vkClient.Redis())
@@ -1272,6 +1287,18 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	spamPipeline.SetClassifier(spam.NewAIClassifier(aiDispatcher))
 
 	aiStore := ai.NewStore(database.Reader, database.Writer)
+
+	// Register the full §75 generation pipeline adapter (persona voice →
+	// AI gateway → draft content → HITL review / auto-publish) as the
+	// StudioProcessor so content:generate_draft, studio:run_batch, and
+	// studio:retry_failed run the real pipeline instead of a no-op.
+	worker.RegisterStudioProcessor(&studioDraftProcessorAdapter{
+		studio:       studioService,
+		contentSvc:   contentService,
+		aiStore:      aiStore,
+		personaStore: personasStore,
+		dispatcher:   aiDispatcher,
+	})
 	aiHandlers := ai.NewHandlers(aiDispatcher, aiStore)
 	aiHandlers.SetHonchoClient(honcho.NewClient(cfg.HonchoURL))
 	aiHandlers.SetSettings(settingsService) // Rule 3: ai.japabot_enabled global toggle
@@ -1737,7 +1764,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Tight rate limit to throttle brute-force attempts.
 			r.Route("/auth", func(r chi.Router) {
 				r.Use(mw.RateLimit(vkClient.Redis(), "tight"))
-				r.Post("/register", authHandlers.Register)
+				// Per §41, a "registration" IP block only blocks the registration
+				// endpoint, not all requests (BUG-003).
+				r.With(spam.RequireNotIPBlocked(spam.BlockTypeRegistration)).Post("/register", authHandlers.Register)
 				r.Post("/login", authHandlers.Login)
 				r.Post("/refresh", authHandlers.Refresh)
 				r.Post("/logout", authHandlers.Logout)
@@ -1962,13 +1991,13 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// themselves is admin-only).
 			r.With(auth.OptionalAuth(kr, vkClient.Redis())).Get("/space-types", spaceHandlers.ListSpaceTypes)
 			r.With(auth.OptionalAuth(kr, vkClient.Redis())).Get("/space-types/{id}", spaceHandlers.GetSpaceType)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "space_types.create")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "spaces.types.create")).
 				Get("/admin/space-types", spaceHandlers.ListSpaceTypes)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "space_types.create")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "spaces.types.create")).
 				Post("/admin/space-types", spaceHandlers.CreateSpaceType)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "space_types.edit")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "spaces.types.edit")).
 				Patch("/admin/space-types/{id}", spaceHandlers.UpdateSpaceType)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "space_types.delete")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "spaces.types.delete")).
 				Delete("/admin/space-types/{id}", spaceHandlers.DeleteSpaceType)
 
 			// Space routes
@@ -2068,7 +2097,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 			// Content routes (Section 14 — Content Type System)
 			// Create (require auth + moderate rate limit + censor check + permission)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "moderate"), spam.CensorMiddleware(database, vkClient), rbac.RequirePermission(rbacResolver, "content.create")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "moderate"), spam.CensorMiddleware(database, vkClient), spam.RequireNotIPBlocked(spam.BlockTypePosting), rbac.RequirePermission(rbacResolver, "content.create")).
 				Post("/content", contentHandlers.CreateContent)
 			// Read (require auth for list; single content is public for
 			// published items — Section 14 public content SSR).
@@ -2193,7 +2222,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Comments (Section 49 — Unified Comment System)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/comments/{id}", commentsHandlers.GetComment)
 			r.Get("/content/{id}/comments", commentsHandlers.ListComments)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), spam.CensorMiddleware(database, vkClient), rbac.RequirePermission(rbacResolver, "comments.create")).Post("/content/{id}/comments", commentsHandlers.CreateComment)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), spam.CensorMiddleware(database, vkClient), spam.RequireNotIPBlocked(spam.BlockTypePosting), rbac.RequirePermission(rbacResolver, "comments.create")).Post("/content/{id}/comments", commentsHandlers.CreateComment)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.EditLockMiddleware(vkClient.Redis(), settingsService), spam.CensorMiddleware(database, vkClient), rbac.RequirePermission(rbacResolver, "comments.edit_own")).Patch("/comments/{id}", commentsHandlers.UpdateComment)
 			// BUG-003: own-vs-any resolved in the handler (RequireAuth only) so a
 			// moderator with comments.delete_any is not blocked by a delete_own
@@ -4761,18 +4790,20 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				// Public browse (anonymous): list + single story by slug.
 				r.Get("/stories", storyHandlers.HandleList)
 				r.Get("/stories/{slug}", storyHandlers.HandleGetBySlug)
-				// Authenticated: submit, edit own, delete own.
+				// Authenticated: submit, edit own/any, delete own/any.
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "story.create")).
 					Post("/stories", storyHandlers.HandleSubmit)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "story.edit_own")).
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequireAnyPermission(rbacResolver, "story.edit_own", "story.edit_any")).
 					Patch("/stories/{id}", storyHandlers.HandleEdit)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "story.delete_own")).
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequireAnyPermission(rbacResolver, "story.delete_own", "story.delete_any")).
 					Delete("/stories/{id}", storyHandlers.HandleDelete)
-				// Admin: verify + moderation queue.
+				// Admin: verify + moderation queue + admin delete.
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "story.verify")).
 					Post("/admin/stories/{id}/verify", storyHandlers.HandleVerify)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "story.verify")).
 					Get("/admin/stories", storyHandlers.HandleAdminList)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "story.delete_any")).
+					Delete("/admin/stories/{id}", storyHandlers.HandleAdminDelete)
 			})
 
 			// Section 80 — Destination Wiki (ADR-088)

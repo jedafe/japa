@@ -2,7 +2,8 @@
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
 	import { untrack } from 'svelte';
-	import { FileText, MessageSquare, Image, Heart, Users, Info, BarChart3, Award, Pin } from 'lucide-svelte';
+	import { invalidate } from '$app/navigation';
+	import { FileText, MessageSquare, Image, Heart, Users, Info, BarChart3, Award, Pin, Ban } from 'lucide-svelte';
 	import { Chart, Svg, Bars, Axis, LineChart } from 'layerchart';
 	import SetSidebar from '$lib/components/shell/SetSidebar.svelte';
 	import ProfileHeader from '$lib/components/profile/ProfileHeader.svelte';
@@ -13,6 +14,7 @@
 	import { cardStyleFor, type CardStyleConfig } from '$lib/feed/cardStyle';
 	import type { ProfileAnalytics, ProfilePost, FeedItem, FollowerGrowthItem, TopContentItem } from '$lib/types';
 	import FeedCard from '$lib/components/feed/FeedCard.svelte';
+	import { blockUser, unblockUser } from '$lib/api/hub';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -40,6 +42,39 @@
 	const isOwnProfile = $derived(data.isOwnProfile);
 	const initiallyFollowing = $derived(data.initiallyFollowing);
 	let activeTab = $state(untrack(() => page.url.searchParams.get('tab') ?? 'posts'));
+
+	// BUG-007: Block/unblock toggle for the profile user. Mirrors the
+	// FollowButton pattern — local state seeded from SSR, optimistic update,
+	// invalidate the blocked-users list on success.
+	let isBlocked = $state(false);
+	let blockPending = $state(false);
+
+	// Re-seed isBlocked when the SSR data changes (e.g. navigating to a
+	// different user's profile). Using $effect avoids the
+	// state_referenced_locally warning and keeps the toggle in sync with
+	// the server-side blocked-users check on navigation.
+	$effect(() => {
+		isBlocked = data.initiallyBlocked;
+	});
+
+	async function toggleBlock() {
+		if (blockPending) return;
+		blockPending = true;
+		const wasBlocked = isBlocked;
+		isBlocked = !wasBlocked; // optimistic
+		try {
+			if (wasBlocked) {
+				await unblockUser(user.id);
+			} else {
+				await blockUser(user.id);
+			}
+			await invalidate('/api/v1/me/blocked-users');
+		} catch (e) {
+			isBlocked = wasBlocked; // revert on error
+		} finally {
+			blockPending = false;
+		}
+	}
 
 	// Phase 34.03 — earned + unearned badges. On the own profile we also have
 	// the full catalog (data.allBadges); unearned badges surface a "how to earn"
@@ -138,6 +173,18 @@
 <ProfileHeader {user} {isOwnProfile}>
 	{#if !isOwnProfile}
 		<FollowButton entityType="user" entityId={user.id} {initiallyFollowing} />
+		<button
+			type="button"
+			class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border px-3 py-1.5 text-sm font-medium transition-colors {isBlocked
+				? 'border-[var(--color-danger)] text-[var(--color-danger)] hover:bg-[var(--color-danger)]/10'
+				: 'border-[var(--color-border)] text-[var(--color-muted)] hover:text-[var(--color-danger)] hover:border-[var(--color-danger)]'}"
+			disabled={blockPending}
+			onclick={toggleBlock}
+			aria-label={isBlocked ? t('profile.unblock_user', 'Unblock user') : t('profile.block_user', 'Block user')}
+		>
+			<Ban class="h-4 w-4" />
+			{isBlocked ? t('profile.unblock', 'Unblock') : t('profile.block', 'Block')}
+		</button>
 	{/if}
 </ProfileHeader>
 

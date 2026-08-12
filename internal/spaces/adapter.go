@@ -38,3 +38,33 @@ func (a *PostCheckerAdapter) CanPostInSpace(ctx context.Context, spaceID, userID
 	}
 	return a.Service.CanPostInSpace(ctx, space, userID, tenantID, a.PermChecker, a.VerifiedChecker), nil
 }
+
+// CanCommentInSpace loads the space and checks the commenting_perm axis
+// (Section 05 lines 145-154, BUG-002). Super admins bypass the check.
+func (a *PostCheckerAdapter) CanCommentInSpace(ctx context.Context, spaceID, userID, tenantID pgtype.UUID) (bool, error) {
+	isSuperAdmin, err := a.Service.IsSuperAdmin(ctx, tenantID, userID)
+	if err == nil && isSuperAdmin {
+		return true, nil
+	}
+
+	space, err := a.Service.GetSpace(ctx, spaceID, tenantID)
+	if err != nil {
+		return false, fmt.Errorf("loading space for comment check: %w", err)
+	}
+	return a.Service.CanCommentInSpace(ctx, space, userID, tenantID, a.PermChecker, a.VerifiedChecker), nil
+}
+
+// CanReplyInSpace loads the space and checks the replying_perm axis
+// (Section 05 lines 145-154, BUG-002). Super admins bypass the check.
+func (a *PostCheckerAdapter) CanReplyInSpace(ctx context.Context, spaceID, userID, tenantID pgtype.UUID) (bool, error) {
+	isSuperAdmin, err := a.Service.IsSuperAdmin(ctx, tenantID, userID)
+	if err == nil && isSuperAdmin {
+		return true, nil
+	}
+
+	space, err := a.Service.GetSpace(ctx, spaceID, tenantID)
+	if err != nil {
+		return false, fmt.Errorf("loading space for reply check: %w", err)
+	}
+	return a.Service.CanReplyInSpace(ctx, space, userID, tenantID, a.PermChecker, a.VerifiedChecker), nil
+}

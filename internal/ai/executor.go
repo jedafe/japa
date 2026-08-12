@@ -47,9 +47,10 @@ import (
 // reserved for executor-internal bookkeeping (e.g. the created content_id)
 // and is not sent to the LLM.
 type ToolResult struct {
-	Content  string         `json:"content"`
-	Status   string         `json:"status"`
-	Metadata map[string]any `json:"metadata,omitempty"`
+	Content   string         `json:"content"`
+	Status    string         `json:"status"`
+	Metadata  map[string]any `json:"metadata,omitempty"`
+	ForceHITL bool           `json:"-"`
 }
 
 // Tool call status constants — match the ai_agent_tool_calls.status CHECK
@@ -416,6 +417,12 @@ func (e *Executor) Execute(ctx context.Context, p ExecuteParams) (res *ToolResul
 	start := time.Now()
 	call := p.Call
 
+	// Phase 11.03a — normalize the tool name (trim + lowercase) before any
+	// lookup or blocklist check so an LLM cannot bypass the blocklist via
+	// casing or whitespace. The normalized name is used for all downstream
+	// config lookups, RBAC checks, and logging.
+	call.Name = strings.ToLower(strings.TrimSpace(call.Name))
+
 	// logToolCall writes the ai_agent_tool_calls row with the final status
 	// and latency. It is deferred so every return path is logged. The
 	// initial row is created with status "pending"; the deferred update
@@ -440,7 +447,19 @@ func (e *Executor) Execute(ctx context.Context, p ExecuteParams) (res *ToolResul
 		}
 	}()
 
-	// Step 1 — Schema validation (lightweight: required top-level fields).
+	// Step 1 — Security boundary (§103 step 4, moved before schema
+	// validation, RBAC, and privacy so a blocked op never reaches those
+	// checks — defense-in-depth: even a misconfigured catalog row cannot
+	// let a blocked tool through. This runs before the config lookup so a
+	// blocked tool that is not registered (e.g. "rbac.grant") still returns
+	// unauthorized rather than a generic "unknown tool" error (Phase 11.03a).
+	if IsBlockedOperation(call.Name) {
+		resultStatus = ToolCallStatusUnauthorized
+		resultErr = fmt.Errorf("ai: operation %q is not available through the agent", call.Name)
+		return e.unauthorizedResult(resultErr), resultErr
+	}
+
+	// Step 2 — Schema validation (lightweight: required top-level fields).
 	cfg, ok := e.registry.Config(call.Name)
 	if !ok {
 		resultErr = fmt.Errorf("ai: unknown tool %q", call.Name)
@@ -451,10 +470,11 @@ func (e *Executor) Execute(ctx context.Context, p ExecuteParams) (res *ToolResul
 		return e.errorResult(resultErr), resultErr
 	}
 
-	// Step 2 — Security boundary (§103 step 4, moved before RBAC/privacy so
-	// a blocked op never reaches those checks — defense-in-depth: even a
-	// misconfigured catalog row cannot let a blocked tool through).
-	if IsBlockedOperation(call.Name) || cfg.IsBlocked {
+	// Re-check the per-tool is_blocked flag from the catalog config now that
+	// we have the config. The hardcoded blocklist above catches known-bad
+	// tool names even when they are not registered; this catches a tool that
+	// is registered but flagged as blocked in its config JSONB.
+	if cfg.IsBlocked {
 		resultStatus = ToolCallStatusUnauthorized
 		resultErr = fmt.Errorf("ai: operation %q is not available through the agent", call.Name)
 		return e.unauthorizedResult(resultErr), resultErr
@@ -483,24 +503,31 @@ func (e *Executor) Execute(ctx context.Context, p ExecuteParams) (res *ToolResul
 		resultErr = fmt.Errorf("ai: no handler registered for tool %q", call.Name)
 		return e.errorResult(resultErr), resultErr
 	}
-	if e.privacy != nil {
-		if pt := e.registry.privacyTargetFor(call.Name); pt != nil {
-			et, eid, err := pt(ctx, call.Arguments, p.TenantID)
+	if pt := e.registry.privacyTargetFor(call.Name); pt != nil {
+		// Phase 11.01a — fail-closed: if a privacy target is registered for
+		// this tool but no privacy checker is configured, deny the call
+		// rather than silently allowing a privacy-gated tool through. This
+		// mirrors the RBAC fail-closed pattern.
+		if e.privacy == nil {
+			resultStatus = ToolCallStatusPrivacyBlocked
+			resultErr = fmt.Errorf("ai: tool %q has a privacy target but no privacy checker is configured", call.Name)
+			return e.privacyBlockedResult(resultErr), resultErr
+		}
+		et, eid, err := pt(ctx, call.Arguments, p.TenantID)
+		if err != nil {
+			resultErr = fmt.Errorf("ai: resolving privacy target for %q: %w", call.Name, err)
+			return e.errorResult(resultErr), resultErr
+		}
+		if et != "" && eid != (pgtype.UUID{}) {
+			exempt, err := e.privacy.IsExempt(ctx, et, p.TenantID, eid)
 			if err != nil {
-				resultErr = fmt.Errorf("ai: resolving privacy target for %q: %w", call.Name, err)
+				resultErr = fmt.Errorf("ai: privacy check for %q: %w", call.Name, err)
 				return e.errorResult(resultErr), resultErr
 			}
-			if et != "" && eid != (pgtype.UUID{}) {
-				exempt, err := e.privacy.IsExempt(ctx, et, p.TenantID, eid)
-				if err != nil {
-					resultErr = fmt.Errorf("ai: privacy check for %q: %w", call.Name, err)
-					return e.errorResult(resultErr), resultErr
-				}
-				if exempt {
-					resultStatus = ToolCallStatusPrivacyBlocked
-					resultErr = fmt.Errorf("%w: tool %q targets an ai_exempt entity", ErrPrivacyBlocked, call.Name)
-					return e.privacyBlockedResult(resultErr), resultErr
-				}
+			if exempt {
+				resultStatus = ToolCallStatusPrivacyBlocked
+				resultErr = fmt.Errorf("%w: tool %q targets an ai_exempt entity", ErrPrivacyBlocked, call.Name)
+				return e.privacyBlockedResult(resultErr), resultErr
 			}
 		}
 	}
@@ -515,13 +542,17 @@ func (e *Executor) Execute(ctx context.Context, p ExecuteParams) (res *ToolResul
 		hres = &ToolResult{Status: ToolCallStatusSuccess, Content: "{}"}
 	}
 
-	// Step 6 — HITL (§103 step 7, when the tool config requests it).
-	// A handler may pre-create its own HITL review (e.g. content.create_draft
-	// sets source='agent_draft_request' + content_id + persona context the
-	// executor does not have) and surface the review ID via
-	// hres.Metadata["hitl_review_id"]. When present, the executor honors it
-	// and skips its own createHITL — avoiding a duplicate review row.
-	if cfg.RequiresHITL && e.store != nil {
+	// Step 6 — HITL (§103 step 7, when the tool config requests it or the
+	// handler forces it). A handler may pre-create its own HITL review (e.g.
+	// content.create_draft sets source='agent_draft_request' + content_id +
+	// persona context the executor does not have) and surface the review ID
+	// via hres.Metadata["hitl_review_id"]. When present, the executor honors
+	// it and skips its own createHITL — avoiding a duplicate review row.
+	//
+	// Phase 11.02a: a handler may set hres.ForceHITL=true to unconditionally
+	// request HITL even when the tool config's requires_hitl flag is false
+	// (e.g. high-stakes guide categories like visa/banking/grants).
+	if (cfg.RequiresHITL || (hres != nil && hres.ForceHITL)) && e.store != nil {
 		if preID, ok := hitlReviewIDFromMeta(hres); ok {
 			hitlReviewID = preID
 			resultStatus = ToolCallStatusHITLQueued

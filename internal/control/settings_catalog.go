@@ -59,6 +59,7 @@ var settingsCatalog = map[string]settingMeta{
 	// Spaces
 	"spaces.bubble_depth":       {Type: "int", DefaultValue: "2", Description: "How many levels posts bubble up the space hierarchy.", Panel: "admin"},
 	"spaces.max_pinned_posts":   {Type: "int", DefaultValue: "5", Description: "Max pinned posts per space.", Panel: "admin"},
+	"spaces.wiki_rate_interval_ms": {Type: "int", DefaultValue: "2000", Description: "Minimum interval (ms) between Wiki API calls.", Panel: "admin"},
 	// Moderation
 	"moderation.auto_hide_report_count":      {Type: "int", DefaultValue: "5", Description: "Auto-hide content after N reports.", Panel: "admin"},
 	"moderation.ai_auto_flag_threshold":      {Type: "float", DefaultValue: "0.85", Description: "AI classifier confidence for auto-flag.", Panel: "admin"},

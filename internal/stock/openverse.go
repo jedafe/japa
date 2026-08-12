@@ -171,14 +171,28 @@ func (p *OpenverseProvider) Download(ctx context.Context, photoID string) (*Down
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("openverse download returned %d", resp.StatusCode)
+	}
+
 	data, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("reading photo data: %w", err)
 	}
 
+	// Build a safe filename: strip path separators, fallback to photoID
+	// if the description is empty.
+	filename := strings.ReplaceAll(photo.Description, " ", "_")
+	filename = strings.NewReplacer("/", "_", "\\", "_").Replace(filename)
+	filename = strings.TrimSpace(filename)
+	if filename == "" {
+		filename = photoID
+	}
+	filename += ".jpg"
+
 	return &DownloadedPhoto{
 		Data:            data,
-		Filename:        strings.ReplaceAll(photo.Description, " ", "_") + ".jpg",
+		Filename:        filename,
 		Photographer:     photo.Photographer,
 		PhotographerURL:  photo.PhotographerURL,
 		License:         photo.License,

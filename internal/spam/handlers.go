@@ -12,6 +12,7 @@ import (
 	"github.com/jedafe/japa/internal/auth"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/tenant"
+	"github.com/jedafe/japa/internal/valkey"
 )
 
 const (
@@ -50,11 +51,32 @@ func deleteByID(w http.ResponseWriter, r *http.Request, entityName string, delet
 // Handlers holds dependencies for spam admin HTTP handlers.
 type Handlers struct {
 	Store *Store
+	rdb   *valkey.Client
 }
 
 // NewHandlers creates Handlers with the given Store.
 func NewHandlers(store *Store) *Handlers {
 	return &Handlers{Store: store}
+}
+
+// NewHandlersWithCache creates Handlers with a Valkey client for censored-words
+// cache invalidation after admin mutations (BUG-002).
+func NewHandlersWithCache(store *Store, rdb *valkey.Client) *Handlers {
+	return &Handlers{Store: store, rdb: rdb}
+}
+
+// invalidateCensoredCache is a best-effort cache invalidation helper. It logs
+// failures but never returns an error to the caller — a stale cache (1h TTL)
+// is preferable to failing an otherwise-successful admin mutation.
+func (h *Handlers) invalidateCensoredCache(ctx context.Context, tenantID pgtype.UUID) {
+	if h.rdb == nil {
+		return
+	}
+
+	if err := InvalidateCensoredWordsCache(ctx, h.rdb, tenantID); err != nil {
+		slog.Warn("failed to invalidate censored words cache after mutation",
+			"tenant_id", tenantID, "error", err)
+	}
 }
 
 // --- helpers ---
@@ -106,6 +128,38 @@ func parseCursorCreatedAt(r *http.Request) pgtype.Timestamptz {
 	return ts
 }
 
+// parsePageOffset parses the page_offset query param, falling back to
+// page-based offset (page=N → offset = N * page_size) when page_offset is
+// absent. Used by admin DataTable server-side pagination (BUG-010).
+func parsePageOffset(r *http.Request) int32 {
+	s := r.URL.Query().Get("page_offset")
+	if s == "" {
+		if ps := r.URL.Query().Get("page"); ps != "" {
+			if p, err := strconv.ParseInt(ps, 10, 32); err == nil && p >= 0 {
+				return int32(p) * parsePageSize(r) //nolint:gosec // G109: bounded by maxPageSize
+			}
+		}
+		return 0
+	}
+
+	v, err := strconv.ParseInt(s, 10, 32)
+	if err != nil || v < 0 {
+		return 0
+	}
+
+	return int32(v) //nolint:gosec // G109: non-negative, bounded
+}
+
+// parseOptionalStringParam returns a *string for the given query param, or nil
+// when the param is absent. Used for optional filter params like block_type.
+func parseOptionalStringParam(r *http.Request, key string) *string {
+	s := r.URL.Query().Get(key)
+	if s == "" {
+		return nil
+	}
+	return &s
+}
+
 func parseUUIDParam(r *http.Request, param string) (pgtype.UUID, error) {
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, param)); err != nil {
@@ -144,6 +198,8 @@ func handleServiceError(w http.ResponseWriter, err error) {
 // ---------------------------------------------------------------------------
 
 // ListIPBlocks handles GET /admin/spam/ip-blocks.
+// Returns offset-paginated IP blocks with total/total_pages for DataTable
+// server-side pagination (BUG-010). Supports optional block_type filter.
 func (h *Handlers) ListIPBlocks(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
@@ -155,9 +211,10 @@ func (h *Handlers) ListIPBlocks(w http.ResponseWriter, r *http.Request) {
 	}
 
 	limit := parsePageSize(r)
-	cursor := parseCursorCreatedAt(r)
+	offset := parsePageOffset(r)
+	blockType := parseOptionalStringParam(r, "block_type")
 
-	blocks, err := h.Store.ListIPBlocks(r.Context(), tenantID, limit, cursor)
+	blocks, err := h.Store.ListIPBlocksPaginated(r.Context(), tenantID, limit, offset, blockType)
 	if err != nil {
 		slog.Error("listing ip blocks", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list IP blocks")
@@ -165,7 +222,25 @@ func (h *Handlers) ListIPBlocks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": blocks})
+	count, err := h.Store.CountIPBlocks(r.Context(), tenantID, blockType)
+	if err != nil {
+		slog.Error("counting ip blocks", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to count IP blocks")
+
+		return
+	}
+
+	totalPages := int32(1)
+	if limit > 0 {
+		totalPages = (count + limit - 1) / limit
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data":        blocks,
+		"total":       count,
+		"page":        offset / limit,
+		"total_pages": totalPages,
+	})
 }
 
 // CreateIPBlock handles POST /admin/spam/ip-blocks.
@@ -309,6 +384,8 @@ func (h *Handlers) DeleteIPBlock(w http.ResponseWriter, r *http.Request) {
 // ---------------------------------------------------------------------------
 
 // ListCensoredWords handles GET /admin/spam/censored-words.
+// Returns offset-paginated censored words with total/total_pages for DataTable
+// server-side pagination (BUG-010). Supports optional action filter.
 func (h *Handlers) ListCensoredWords(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
@@ -319,7 +396,11 @@ func (h *Handlers) ListCensoredWords(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	words, err := h.Store.ListCensoredWords(r.Context(), tenantID)
+	limit := parsePageSize(r)
+	offset := parsePageOffset(r)
+	action := parseOptionalStringParam(r, "action")
+
+	words, err := h.Store.ListCensoredWordsPaginated(r.Context(), tenantID, limit, offset, action)
 	if err != nil {
 		slog.Error("listing censored words", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list censored words")
@@ -327,7 +408,25 @@ func (h *Handlers) ListCensoredWords(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": words})
+	count, err := h.Store.CountCensoredWords(r.Context(), tenantID, action)
+	if err != nil {
+		slog.Error("counting censored words", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to count censored words")
+
+		return
+	}
+
+	totalPages := int32(1)
+	if limit > 0 {
+		totalPages = (count + limit - 1) / limit
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data":        words,
+		"total":       count,
+		"page":        offset / limit,
+		"total_pages": totalPages,
+	})
 }
 
 // CreateCensoredWord handles POST /admin/spam/censored-words.
@@ -385,6 +484,8 @@ func (h *Handlers) CreateCensoredWord(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.invalidateCensoredCache(r.Context(), tenantID)
+
 	writeJSON(w, http.StatusCreated, map[string]any{"data": word})
 }
 
@@ -438,14 +539,38 @@ func (h *Handlers) UpdateCensoredWord(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.invalidateCensoredCache(r.Context(), tenantID)
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": word})
 }
 
 // DeleteCensoredWord handles DELETE /admin/spam/censored-words/{id}.
 func (h *Handlers) DeleteCensoredWord(w http.ResponseWriter, r *http.Request) {
-	deleteByID(w, r, "censored word", func(ctx context.Context, id, tenantID pgtype.UUID) error {
-		return h.Store.DeleteCensoredWord(ctx, id, tenantID)
-	})
+	if _, ok := requireUser(w, r); !ok {
+		return
+	}
+
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	id, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid censored word ID")
+		return
+	}
+
+	if err := h.Store.DeleteCensoredWord(r.Context(), id, tenantID); err != nil {
+		slog.Error("deleting censored word", "error", err)
+		handleServiceError(w, err)
+
+		return
+	}
+
+	h.invalidateCensoredCache(r.Context(), tenantID)
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
 }
 
 // ---------------------------------------------------------------------------
@@ -453,14 +578,22 @@ func (h *Handlers) DeleteCensoredWord(w http.ResponseWriter, r *http.Request) {
 // ---------------------------------------------------------------------------
 
 // ListUserBlocks handles GET /admin/spam/user-blocks.
+// Returns offset-paginated user blocks with total/total_pages for DataTable
+// server-side pagination (BUG-010). Tenant-scoped per JEOS §9.
 func (h *Handlers) ListUserBlocks(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
 
-	limit := parsePageSize(r)
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
 
-	blocks, err := h.Store.ListAllUserBlocks(r.Context(), limit)
+	limit := parsePageSize(r)
+	offset := parsePageOffset(r)
+
+	blocks, err := h.Store.ListAllUserBlocksPaginated(r.Context(), tenantID, limit, offset)
 	if err != nil {
 		slog.Error("listing user blocks", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list user blocks")
@@ -468,7 +601,25 @@ func (h *Handlers) ListUserBlocks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": blocks})
+	count, err := h.Store.CountAllUserBlocks(r.Context(), tenantID)
+	if err != nil {
+		slog.Error("counting user blocks", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to count user blocks")
+
+		return
+	}
+
+	totalPages := int32(1)
+	if limit > 0 {
+		totalPages = (count + limit - 1) / limit
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data":        blocks,
+		"total":       count,
+		"page":        offset / limit,
+		"total_pages": totalPages,
+	})
 }
 
 // DeleteUserBlock handles DELETE /admin/spam/user-blocks/{blockerId}/{blockedId}.

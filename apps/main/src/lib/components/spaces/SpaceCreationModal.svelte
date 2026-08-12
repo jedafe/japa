@@ -34,6 +34,15 @@
 		level?: string;
 	}
 
+	interface PermissionPreset {
+		name: string;
+		visibility: string;
+		posting_perm: string;
+		replying_perm: string;
+		commenting_perm: string;
+		joining_perm: string;
+	}
+
 	interface Props {
 		open?: boolean;
 		/** When provided, called with the created space instead of navigating to it. */
@@ -75,8 +84,21 @@
 	let submitting = $state(false);
 	let error = $state('');
 
+	// Quota display (BUG-008): fetch the user's owned spaces count to show
+	// how many spaces they have created.
+	let ownedSpacesCount = $state<number | null>(null);
+
+	// Permission presets (BUG-009): fetch the available presets so the user
+	// can choose one when creating a custom space.
+	let presets = $state<PermissionPreset[]>([]);
+	let selectedPresetName = $state('');
+
 	$effect(() => {
-		if (open) fetchSpaceTypes();
+		if (open) {
+			fetchSpaceTypes();
+			fetchOwnedSpacesCount();
+			fetchPresets();
+		}
 	});
 
 	async function fetchSpaceTypes() {
@@ -92,6 +114,24 @@
 			}
 		} catch {
 			spaceTypes = [];
+		}
+	}
+
+	async function fetchOwnedSpacesCount() {
+		try {
+			const res = await api.get<{ id: string }[]>('/me/spaces/owned');
+			ownedSpacesCount = res.data?.length ?? 0;
+		} catch {
+			ownedSpacesCount = null;
+		}
+	}
+
+	async function fetchPresets() {
+		try {
+			const res = await api.get<PermissionPreset[]>('/space-permission-presets');
+			presets = res.data ?? [];
+		} catch {
+			presets = [];
 		}
 	}
 
@@ -368,6 +408,7 @@
 				description: description.trim() || undefined
 			};
 			if (parentId) body.parent_id = parentId;
+			if (selectedPresetName) body.preset_name = selectedPresetName;
 
 			const res = await api.post<{ id: string; slug: string; name: string }>('/spaces', body);
 			if (res.data?.slug) {
@@ -404,6 +445,7 @@
 		nameSuggestions = [];
 		showNameSuggestions = false;
 		error = '';
+		selectedPresetName = '';
 	}
 </script>
 
@@ -716,6 +758,32 @@
 							disabled={submitting}
 						></textarea>
 					</div>
+
+					{#if presets.length > 0}
+						<div>
+							<label for="space-preset" class="mb-1 block text-xs font-medium text-[var(--color-muted)]">
+								{t('spaces.preset_label', 'Permission preset')}
+								<span class="font-normal text-[var(--color-muted)]">({t('spaces.optional_label', 'optional')})</span>
+							</label>
+							<select
+								id="space-preset"
+								bind:value={selectedPresetName}
+								class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]"
+								disabled={submitting}
+							>
+								<option value="">{t('spaces.preset_default', 'Default (members can post)')}</option>
+								{#each presets as p (p.name)}
+									<option value={p.name}>{p.name}</option>
+								{/each}
+							</select>
+						</div>
+					{/if}
+
+					{#if ownedSpacesCount !== null}
+						<p class="text-xs text-[var(--color-muted)]">
+							{t('spaces.quota_used', 'Spaces created')}: {ownedSpacesCount}
+						</p>
+					{/if}
 
 					{#if error}
 						<p class="text-sm text-red-500" role="alert">{error}</p>

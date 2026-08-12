@@ -253,7 +253,7 @@ func (h *Handlers) HandleCreateBatch(w http.ResponseWriter, r *http.Request) {
 		h.writeError(w, http.StatusBadRequest, "batch_create_failed", err.Error())
 		return
 	}
-	h.writeJSON(w, http.StatusCreated, map[string]any{"batch": batch, "jobs": jobs})
+	h.writeJSON(w, http.StatusCreated, map[string]any{"data": map[string]any{"batch": batch, "jobs": jobs}})
 }
 
 // HandleGetBatch — GET /api/v1/admin/studio/batches/:id

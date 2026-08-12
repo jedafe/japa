@@ -47,35 +47,6 @@ func (s *Store) ListProviders(ctx context.Context) ([]ProviderConfigRow, error) 
 	return providers, rows.Err()
 }
 
-// GetProvider returns a single provider by name.
-func (s *Store) GetProvider(ctx context.Context, name string) (*ProviderConfigRow, error) {
-	var r ProviderConfigRow
-	err := s.read.QueryRow(ctx,
-		`SELECT provider_name, enabled, COALESCE(api_key_encrypted, ''),
-		        created_at, updated_at
-		 FROM stock_providers
-		 WHERE provider_name = $1`, name,
-	).Scan(&r.ProviderName, &r.Enabled, &r.APIKeyEncrypted, &r.CreatedAt, &r.UpdatedAt)
-	if err != nil {
-		return nil, fmt.Errorf("getting provider %s: %w", name, err)
-	}
-	return &r, nil
-}
-
-// UpsertProvider inserts or updates a provider row.
-func (s *Store) UpsertProvider(ctx context.Context, row ProviderConfigRow) error {
-	_, err := s.pool.Exec(ctx,
-		`INSERT INTO stock_providers (provider_name, enabled, api_key_encrypted)
-		 VALUES ($1, $2, $3)
-		 ON CONFLICT (provider_name) DO UPDATE
-		 SET enabled = $2, api_key_encrypted = $3, updated_at = now()`,
-		row.ProviderName, row.Enabled, row.APIKeyEncrypted)
-	if err != nil {
-		return fmt.Errorf("upserting provider %s: %w", row.ProviderName, err)
-	}
-	return nil
-}
-
 // ToggleProvider enables or disables a provider.
 func (s *Store) ToggleProvider(ctx context.Context, name string, enabled bool) error {
 	tag, err := s.pool.Exec(ctx,

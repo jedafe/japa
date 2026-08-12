@@ -53,6 +53,14 @@ type PermissionChecker interface {
 	HasPermission(ctx context.Context, userID, tenantID pgtype.UUID, permKey string) bool
 }
 
+// SpaceCommentChecker checks whether a user may comment or reply in a space,
+// based on the space's commenting_perm and replying_perm axes (Section 05
+// lines 145-154, BUG-002). Implemented by spaces.PostCheckerAdapter.
+type SpaceCommentChecker interface {
+	CanCommentInSpace(ctx context.Context, spaceID, userID, tenantID pgtype.UUID) (bool, error)
+	CanReplyInSpace(ctx context.Context, spaceID, userID, tenantID pgtype.UUID) (bool, error)
+}
+
 // Handlers holds dependencies for comment HTTP handlers.
 type Handlers struct {
 	Service         *Service
@@ -61,6 +69,7 @@ type Handlers struct {
 	notifier        NotificationDispatcher // nil disables notifications (test-only)
 	perms           PermissionChecker      // nil disables delete_any moderator path
 	mentionCheckers *mentions.DBCheckers   // nil disables erased-mention redaction
+	spaceChecker    SpaceCommentChecker    // nil disables space perm checks (test-only)
 }
 
 // NewHandlers creates Handlers with the given Service.
@@ -89,6 +98,11 @@ func (h *Handlers) SetPermissionChecker(p PermissionChecker) { h.perms = p }
 // redact mentions of deleted users in comment responses (Section 15 /
 // ADR-029). nil disables redaction (backward compat / tests).
 func (h *Handlers) SetMentionCheckers(c *mentions.DBCheckers) { h.mentionCheckers = c }
+
+// SetSpaceChecker wires the space permission checker used to enforce the
+// commenting_perm and replying_perm axes (Section 05, BUG-002). nil disables
+// the check (backward compat / tests).
+func (h *Handlers) SetSpaceChecker(c SpaceCommentChecker) { h.spaceChecker = c }
 
 // computeErasedMentionIDs returns the set of mentioned user IDs in a comment
 // body whose accounts have been erased (Section 15 / ADR-029). Returns nil
@@ -370,10 +384,45 @@ func (h *Handlers) CreateComment(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Space permission check — enforce the space's commenting_perm (for
+	// top-level comments) and replying_perm (for replies) axes (Section 05
+	// lines 145-154, BUG-002). Skipped when no space checker is wired or
+	// the content has no space.
+	if h.spaceChecker != nil {
+		spaceID, err := h.Service.GetContentSpaceID(r.Context(), tenantID, contentID)
+		if err != nil {
+			slog.Warn("comments: failed to resolve content space_id for perm check",
+				"content_id", contentID.String(), "error", err)
+		} else if spaceID.Valid {
+			isReply := createInput.ParentID.Valid
+			var allowed bool
+			if isReply {
+				allowed, err = h.spaceChecker.CanReplyInSpace(r.Context(), spaceID, user.UserID, tenantID)
+			} else {
+				allowed, err = h.spaceChecker.CanCommentInSpace(r.Context(), spaceID, user.UserID, tenantID)
+			}
+			if err != nil {
+				slog.Warn("comments: space perm check failed",
+					"space_id", spaceID.String(), "error", err)
+			} else if !allowed {
+				writeError(w, http.StatusForbidden, "space_permission_denied",
+					"You do not have permission to comment in this space")
+				return
+			}
+		}
+	}
+
 	comment, err := h.Service.CreateComment(r.Context(), tenantID, user.UserID, createInput)
 	if err != nil {
 		handleServiceError(w, err)
 		return
+	}
+
+	// Record the creation for the spam rate-limit layer (BUG-004). Without
+	// this the jc:spam:rate:{tenant}:{user} sorted set is never populated and
+	// the rate_limit scoring layer always returns 0.
+	if h.SpamPipeline != nil {
+		h.SpamPipeline.RecordContentCreation(r.Context(), tenantID, user.UserID)
 	}
 
 	// Fire-and-forget comment notifications (Section 49 — BL-001/BL-002).

@@ -1897,11 +1897,13 @@ func HandleAIGenerateContentEmbedding(ctx context.Context, t *asynq.Task) error 
 func HandleContentGenerateDraft(ctx context.Context, t *asynq.Task) error {
 	slog.Info("task:content:generate_draft")
 
-	// If a studio processor is registered, delegate to it — it has the full
-	// pipeline (persona voice, field schema, review routing).
+	// If a studio processor is registered, delegate to it — it runs the full
+	// §75 single-job pipeline (persona voice, field schema, content creation,
+	// review routing).
 	if studioProcessor != nil {
 		var p struct {
-			JobID string `json:"job_id"`
+			JobID    string `json:"job_id"`
+			TenantID string `json:"tenant_id"`
 		}
 		if err := parsePayloadOrSkip(t, &p); err != nil {
 			return fmt.Errorf("task:content:generate_draft: invalid payload: %w", err)
@@ -1910,7 +1912,11 @@ func HandleContentGenerateDraft(ctx context.Context, t *asynq.Task) error {
 		if err := id.Scan(p.JobID); err != nil {
 			return fmt.Errorf("task:content:generate_draft: bad job_id: %w", err)
 		}
-		if err := studioProcessor.RunBatch(ctx, id); err != nil {
+		var tenantID pgtype.UUID
+		if err := tenantID.Scan(p.TenantID); err != nil {
+			return fmt.Errorf("task:content:generate_draft: bad tenant_id: %w", err)
+		}
+		if err := studioProcessor.GenerateJob(ctx, tenantID, id); err != nil {
 			return fmt.Errorf("task:content:generate_draft: %w", err)
 		}
 		return nil

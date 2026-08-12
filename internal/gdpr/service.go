@@ -1510,6 +1510,12 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 		//     content_scores.content_id → contents(id); scores for the
 		//     user's content are removed when the content is cascade-deleted
 		//     or retained when content is reassigned to the placeholder)
+		//   - story_meta (ON DELETE CASCADE from story_meta.content_id →
+		//     contents(id); the user's story metadata is removed when the
+		//     story content is cascade-deleted or retained when reassigned
+		//     to the placeholder. story_meta.hitl_reviewed_by → users(id)
+		//     ON DELETE SET NULL, so the admin reviewer reference is
+		//     nullified. Ref: §79 Community Story Wall, ADR-087.)
 		// Ref: japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
 		if err := q.HardDeleteUser(ctx, gen.HardDeleteUserParams{
 			UserID: userID, TenantID: tenantID,
@@ -1715,6 +1721,8 @@ type UserDataExport struct {
 	Reviews                     []map[string]interface{} `json:"reviews"`
 	SpaceMembers                []map[string]interface{} `json:"space_members"`
 	SpaceModerators             []map[string]interface{} `json:"space_moderators"`
+	SpaceParentSpaces           []map[string]interface{} `json:"space_parent_spaces"` // BUG-004
+	SpaceRules                  []map[string]interface{} `json:"space_rules"`         // BUG-004
 	TagModerators               []map[string]interface{} `json:"tag_moderators"`
 	ConsentRecords              []map[string]interface{} `json:"consent_records"`
 	WalletLedger                []map[string]interface{} `json:"wallet_ledger"`
@@ -1880,6 +1888,32 @@ func (s *Service) collectUserData(ctx context.Context, userID, tenantID pgtype.U
 		}
 	} else {
 		slog.Warn("failed to collect spaces for export", "user_id", userID.String(), "error", err)
+	}
+
+	// BUG-004: Collect parent space links and rules for spaces owned by the
+	// user (space_parent_spaces, space_rules).
+	if parentRows, err := s.store.gdprExportOwnedSpaceParents(ctx, userID, tenantID); err == nil {
+		for _, p := range parentRows {
+			export.SpaceParentSpaces = append(export.SpaceParentSpaces, map[string]interface{}{
+				"space_id":        p.SpaceID.String(),
+				"parent_space_id": p.ParentSpaceID.String(),
+			})
+		}
+	} else {
+		slog.Warn("failed to collect space_parent_spaces for export", "user_id", userID.String(), "error", err)
+	}
+	if ruleRows, err := s.store.gdprExportOwnedSpaceRules(ctx, userID, tenantID); err == nil {
+		for _, r := range ruleRows {
+			export.SpaceRules = append(export.SpaceRules, map[string]interface{}{
+				"id":       r.ID.String(),
+				"space_id": r.SpaceID.String(),
+				"title":    r.Title,
+				"body":     r.Body,
+				"position": r.Position,
+			})
+		}
+	} else {
+		slog.Warn("failed to collect space_rules for export", "user_id", userID.String(), "error", err)
 	}
 
 	// Collect user's payment history.

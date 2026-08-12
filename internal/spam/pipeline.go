@@ -83,6 +83,7 @@ type SpamPipeline struct { //nolint:revive // stuttering type name preserved for
 // for hot-reloadable moderation thresholds. Local interface to avoid import cycles.
 type spamSettingsReader interface {
 	GetIntOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback int) int
+	GetFloatOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback float64) float64
 }
 
 // SetSettings injects the hot-reloadable settings reader for spam thresholds.
@@ -243,6 +244,22 @@ func RecordContentCreation(ctx context.Context, rdb *valkey.Client, tenantID, us
 	}
 
 	return nil
+}
+
+// RecordContentCreation records a content creation event on the pipeline's
+// own Valkey client. This is the preferred call site for handlers that hold a
+// *SpamPipeline reference — it uses the pipeline's rdb so the caller does not
+// need a separate Valkey client. BUG-004: without this call the rate_limit
+// layer's sorted set is never populated and the layer always returns 0.
+func (p *SpamPipeline) RecordContentCreation(ctx context.Context, tenantID, userID pgtype.UUID) {
+	if p == nil || p.rdb == nil {
+		return
+	}
+
+	if err := RecordContentCreation(ctx, p.rdb, tenantID, userID); err != nil {
+		slog.Warn("spam: failed to record content creation for rate limiting",
+			"user_id", userID, "error", err)
+	}
 }
 
 // checkContentHash looks for duplicate content by comparing the SHA-256 hash
@@ -458,13 +475,11 @@ func (p *SpamPipeline) checkAIClassification(ctx context.Context, tenantID pgtyp
 
 	threshold := aiFlagThreshold
 	if p.settings != nil {
-		// The setting is stored as int*100 in some configs; use the raw
-		// float setting if available. GetIntOr returns cents (e.g. 85 for
-		// 0.85), so divide by 100.
-		cents := p.settings.GetIntOr(ctx, tenantID, "moderation.ai_auto_flag_threshold", 85)
-		if cents > 0 {
-			threshold = float64(cents) / 100.0
-		}
+		// BUG-005: the catalog declares moderation.ai_auto_flag_threshold as
+		// a float (0.85). Read it as a float directly; the previous GetIntOr
+		// call returned 0 for a float-stored value, which collapsed the
+		// threshold to 0.0 and flagged all content with any AI score.
+		threshold = p.settings.GetFloatOr(ctx, tenantID, "moderation.ai_auto_flag_threshold", aiFlagThreshold)
 	}
 
 	var reasons []string

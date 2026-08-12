@@ -909,6 +909,7 @@
 
 				<SpaceCombobox
 					multiple
+					parentMode
 					filter="level:country,state,city"
 					placeholder={t('space.parents.search_placeholder', 'Search primary spaces to link…')}
 					excludeIds={[space.id, ...parentSpaces.map((p) => p.id)]}

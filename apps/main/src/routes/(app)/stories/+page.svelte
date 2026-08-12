@@ -93,7 +93,7 @@
 		loadingMore = true;
 		const params = buildParams();
 		params.set('page_size', String(data.pageSize));
-		params.set('offset', String(stories.length));
+		params.set('page_offset', String(stories.length));
 		const res = await api.get<Story[]>(`/stories?${params.toString()}`);
 		loadingMore = false;
 		if (res.data) {

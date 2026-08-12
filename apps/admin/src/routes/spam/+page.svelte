@@ -38,7 +38,13 @@
 
 	type Tab = 'ip-blocks' | 'censored-words' | 'user-blocks';
 
-	const PERMISSION = 'spam.ip_block.manage';
+	// BUG-008: each tab gates create/edit/delete on its own permission node,
+	// matching the backend RBAC wiring (spam.ip_block.manage,
+	// spam.censored_words.manage, spam.user_block.manage). The previous code
+	// used a single 'spam.ip_block.manage' for all three tabs.
+	const IP_BLOCK_PERM = 'spam.ip_block.manage';
+	const CENSORED_PERM = 'spam.censored_words.manage';
+	const USER_BLOCK_PERM = 'spam.user_block.manage';
 
 	let activeTab = $state<Tab>('ip-blocks');
 
@@ -112,9 +118,9 @@
 		title: t('spam.ip_blocks', 'IP Blocks'),
 		description: t('spam.description', 'Manage IP blocks, censored words, and user blocks'),
 		createLabel: t('spam.add_ip_block', 'Add IP Block'),
-		createPermission: PERMISSION,
-		editPermission: PERMISSION,
-		deletePermission: PERMISSION,
+		createPermission: IP_BLOCK_PERM,
+		editPermission: IP_BLOCK_PERM,
+		deletePermission: IP_BLOCK_PERM,
 		pageSize: 25,
 		columns: [
 			{ key: 'cidr', label: t('spam.cidr', 'IP / CIDR'), sortable: true },
@@ -130,17 +136,30 @@
 			{ label: t('common.deleteSelected', 'Delete Selected'), icon: Trash2, variant: 'destructive', onclick: bulkDeleteIpBlocks }
 		],
 		fields: ipFields,
-		load: async ({ q, filter }) => {
-			const params = new URLSearchParams();
+		load: async ({ page, pageSize, q, filter }) => {
+			// BUG-010: server-side pagination. The backend now accepts
+			// page_size + page_offset + optional block_type filter and
+			// returns total/total_pages at the top level.
+			const params = new URLSearchParams({
+				page_size: String(pageSize),
+				page_offset: String(page * pageSize)
+			});
 			if (filter.block_type) params.set('block_type', filter.block_type);
-			const result = await spamApi.getIpBlocks(params.toString() || undefined);
+			const result = await spamApi.getIpBlocks(params.toString());
 			if (result.ok) {
-				let items = (result.data as IpBlock[]) ?? [];
+				const d = result.data;
+				let items = (d.data as IpBlock[]) ?? [];
+				// q (text search) is still client-side — the backend list
+				// endpoint does not support a q param for IP blocks.
 				if (q) {
 					const lq = q.toLowerCase();
 					items = items.filter((b) => b.cidr?.toLowerCase().includes(lq) || b.reason?.toLowerCase().includes(lq));
 				}
-				return { data: items, total: items.length, totalPages: 1 };
+				return {
+					data: items,
+					total: d.total ?? items.length,
+					totalPages: d.total_pages ?? 1
+				};
 			}
 			throw new Error(result.error ?? t('common.error', 'Failed to load IP blocks'));
 		},
@@ -182,9 +201,9 @@
 		title: t('spam.censored_words', 'Censored Words'),
 		description: t('spam.description', 'Manage IP blocks, censored words, and user blocks'),
 		createLabel: t('spam.add_pattern', 'Add Pattern'),
-		createPermission: PERMISSION,
-		editPermission: PERMISSION,
-		deletePermission: PERMISSION,
+		createPermission: CENSORED_PERM,
+		editPermission: CENSORED_PERM,
+		deletePermission: CENSORED_PERM,
 		pageSize: 25,
 		columns: [
 			{ key: 'pattern', label: t('spam.pattern', 'Pattern'), sortable: true },
@@ -197,17 +216,29 @@
 			{ label: t('common.deleteSelected', 'Delete Selected'), icon: Trash2, variant: 'destructive', onclick: bulkDeleteCensoredWords }
 		],
 		fields: cwFields,
-		load: async ({ q, filter }) => {
-			const params = new URLSearchParams();
+		load: async ({ page, pageSize, q, filter }) => {
+			// BUG-010: server-side pagination. The backend now accepts
+			// page_size + page_offset + optional action filter and returns
+			// total/total_pages at the top level.
+			const params = new URLSearchParams({
+				page_size: String(pageSize),
+				page_offset: String(page * pageSize)
+			});
 			if (filter.action) params.set('action', filter.action);
-			const result = await spamApi.getCensoredWords(params.toString() || undefined);
+			const result = await spamApi.getCensoredWords(params.toString());
 			if (result.ok) {
-				let items = (result.data as CensoredWord[]) ?? [];
+				const d = result.data;
+				let items = (d.data as CensoredWord[]) ?? [];
+				// q (text search) is still client-side.
 				if (q) {
 					const lq = q.toLowerCase();
 					items = items.filter((w) => w.pattern?.toLowerCase().includes(lq) || w.action?.toLowerCase().includes(lq));
 				}
-				return { data: items, total: items.length, totalPages: 1 };
+				return {
+					data: items,
+					total: d.total ?? items.length,
+					totalPages: d.total_pages ?? 1
+				};
 			}
 			throw new Error(result.error ?? t('common.error', 'Failed to load censored words'));
 		},
@@ -244,7 +275,7 @@
 		title: t('spam.user_blocks', 'User Blocks'),
 		description: t('spam.description', 'Manage IP blocks, censored words, and user blocks'),
 		readonly: true,
-		deletePermission: PERMISSION,
+		deletePermission: USER_BLOCK_PERM,
 		pageSize: 25,
 		columns: [
 			{
@@ -269,20 +300,32 @@
 				icon: Trash2,
 				variant: 'destructive',
 				onclick: (_row, ctx) => ctx?.openDelete(_row),
-				show: () => hasPermission(PERMISSION)
+				show: () => hasPermission(USER_BLOCK_PERM)
 			}
 		],
-		load: async ({ q }) => {
-			const result = await spamApi.getUserBlocks();
+		load: async ({ page, pageSize, q }) => {
+			// BUG-010: server-side pagination. The backend now accepts
+			// page_size + page_offset and returns total/total_pages.
+			const params = new URLSearchParams({
+				page_size: String(pageSize),
+				page_offset: String(page * pageSize)
+			});
+			const result = await spamApi.getUserBlocks(params.toString());
 			if (result.ok) {
-				let items = ((result.data as UserBlock[]) ?? []).map(mapUserBlock);
+				const d = result.data;
+				let items = ((d.data as UserBlock[]) ?? []).map(mapUserBlock);
+				// q (text search) is still client-side.
 				if (q) {
 					const lq = q.toLowerCase();
 					items = items.filter(
 						(b) => b.blocker_id?.toLowerCase().includes(lq) || b.blocked_id?.toLowerCase().includes(lq)
 					);
 				}
-				return { data: items, total: items.length, totalPages: 1 };
+				return {
+					data: items,
+					total: d.total ?? items.length,
+					totalPages: d.total_pages ?? 1
+				};
 			}
 			throw new Error(result.error ?? t('common.error', 'Failed to load user blocks'));
 		},

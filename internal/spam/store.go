@@ -103,6 +103,26 @@ func (s *Store) ListIPBlocks(ctx context.Context, tenantID pgtype.UUID, limit in
 	})
 }
 
+// ListIPBlocksPaginated returns offset-paginated IP blocks for admin DataTable
+// server-side pagination (BUG-010). Supports optional block_type filter.
+func (s *Store) ListIPBlocksPaginated(ctx context.Context, tenantID pgtype.UUID, limit, offset int32, blockType *string) ([]gen.IpBlock, error) {
+	return s.queries.ListIPBlocksPaginated(ctx, gen.ListIPBlocksPaginatedParams{
+		TenantID:  tenantID,
+		Limit:     limit,
+		Offset:    offset,
+		BlockType: blockType,
+	})
+}
+
+// CountIPBlocks returns the total count of IP blocks for the tenant, optionally
+// filtered by block_type, for DataTable pagination (BUG-010).
+func (s *Store) CountIPBlocks(ctx context.Context, tenantID pgtype.UUID, blockType *string) (int32, error) {
+	return s.queries.CountIPBlocks(ctx, gen.CountIPBlocksParams{
+		TenantID:  tenantID,
+		BlockType: blockType,
+	})
+}
+
 // DeleteIPBlock removes an IP block by ID.
 func (s *Store) DeleteIPBlock(ctx context.Context, id, tenantID pgtype.UUID) error {
 	return s.queries.DeleteIPBlock(ctx, gen.DeleteIPBlockParams{
@@ -189,6 +209,27 @@ func (s *Store) IsIPBlocked(ctx context.Context, tenantID pgtype.UUID, ip string
 	return result, nil
 }
 
+// GetIPBlockTypeForIP returns the most severe block_type matching the given IP
+// for the tenant, or "" if no block matches. 'full' takes priority over
+// 'registration'/'posting'/'api'. Per §41, non-full types are scoped to
+// specific route groups rather than blocking all requests (BUG-003).
+func (s *Store) GetIPBlockTypeForIP(ctx context.Context, tenantID pgtype.UUID, ip string) (string, error) {
+	parsedIP, err := netip.ParseAddr(ip)
+	if err != nil {
+		return "", nil //nolint:nilerr // intentional: invalid IPs are not blocked
+	}
+
+	blockType, err := s.queries.GetIPBlockTypeForIP(ctx, gen.GetIPBlockTypeForIPParams{
+		TenantID: tenantID,
+		Ip:       parsedIP,
+	})
+	if err != nil {
+		return "", fmt.Errorf("getting IP block type: %w", err)
+	}
+
+	return blockType, nil
+}
+
 // --- User Blocks ---
 
 // CreateUserBlock creates a block relationship.
@@ -216,9 +257,29 @@ func (s *Store) GetUserBlocks(ctx context.Context, blockerID pgtype.UUID) ([]gen
 	return s.queries.GetUserBlocks(ctx, blockerID)
 }
 
-// ListAllUserBlocks returns paginated user blocks across all users.
-func (s *Store) ListAllUserBlocks(ctx context.Context, limit int32) ([]gen.ListAllUserBlocksRow, error) {
-	return s.queries.ListAllUserBlocks(ctx, limit)
+// ListAllUserBlocks returns paginated user blocks for the given tenant.
+// Tenant-scoped per JEOS §9 (BUG-001).
+func (s *Store) ListAllUserBlocks(ctx context.Context, tenantID pgtype.UUID, limit int32) ([]gen.ListAllUserBlocksRow, error) {
+	return s.queries.ListAllUserBlocks(ctx, gen.ListAllUserBlocksParams{
+		TenantID: tenantID,
+		Limit:    limit,
+	})
+}
+
+// ListAllUserBlocksPaginated returns offset-paginated user blocks for admin
+// DataTable server-side pagination (BUG-010). Tenant-scoped per JEOS §9.
+func (s *Store) ListAllUserBlocksPaginated(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]gen.ListAllUserBlocksPaginatedRow, error) {
+	return s.queries.ListAllUserBlocksPaginated(ctx, gen.ListAllUserBlocksPaginatedParams{
+		TenantID: tenantID,
+		Limit:    limit,
+		Offset:   offset,
+	})
+}
+
+// CountAllUserBlocks returns the total count of user blocks for the tenant,
+// for DataTable pagination (BUG-010). Tenant-scoped.
+func (s *Store) CountAllUserBlocks(ctx context.Context, tenantID pgtype.UUID) (int32, error) {
+	return s.queries.CountAllUserBlocks(ctx, tenantID)
 }
 
 // IsBlocked checks whether user A has blocked user B or vice versa.
@@ -259,6 +320,26 @@ func (s *Store) CreateCensoredWord(ctx context.Context, input CreateCensoredWord
 // ListCensoredWords returns all censored words for the given tenant.
 func (s *Store) ListCensoredWords(ctx context.Context, tenantID pgtype.UUID) ([]gen.CensoredWord, error) {
 	return s.queries.ListCensoredWords(ctx, tenantID)
+}
+
+// ListCensoredWordsPaginated returns offset-paginated censored words for admin
+// DataTable server-side pagination (BUG-010). Supports optional action filter.
+func (s *Store) ListCensoredWordsPaginated(ctx context.Context, tenantID pgtype.UUID, limit, offset int32, action *string) ([]gen.CensoredWord, error) {
+	return s.queries.ListCensoredWordsPaginated(ctx, gen.ListCensoredWordsPaginatedParams{
+		TenantID: tenantID,
+		Limit:    limit,
+		Offset:   offset,
+		Action:   action,
+	})
+}
+
+// CountCensoredWords returns the total count of censored words for the tenant,
+// optionally filtered by action, for DataTable pagination (BUG-010).
+func (s *Store) CountCensoredWords(ctx context.Context, tenantID pgtype.UUID, action *string) (int32, error) {
+	return s.queries.CountCensoredWords(ctx, gen.CountCensoredWordsParams{
+		TenantID: tenantID,
+		Action:   action,
+	})
 }
 
 // DeleteCensoredWord removes a censored word by ID.
