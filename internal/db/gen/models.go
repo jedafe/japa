@@ -1687,6 +1687,73 @@ type InstructorProfile struct {
 	UpdatedAt             pgtype.Timestamptz `json:"updated_at"`
 }
 
+type IntelRawDocument struct {
+	ID          pgtype.UUID        `json:"id"`
+	SourceID    pgtype.UUID        `json:"source_id"`
+	Url         string             `json:"url"`
+	HttpStatus  int32              `json:"http_status"`
+	HttpHeaders []byte             `json:"http_headers"`
+	ContentType *string            `json:"content_type"`
+	Body        []byte             `json:"body"`
+	ContentHash string             `json:"content_hash"`
+	RetrievedAt pgtype.Timestamptz `json:"retrieved_at"`
+}
+
+type IntelRecord struct {
+	ID                pgtype.UUID        `json:"id"`
+	SourceID          pgtype.UUID        `json:"source_id"`
+	RawDocumentID     pgtype.UUID        `json:"raw_document_id"`
+	EntityType        string             `json:"entity_type"`
+	ExternalKey       string             `json:"external_key"`
+	Extracted         []byte             `json:"extracted"`
+	Confidence        []byte             `json:"confidence"`
+	Evidence          []byte             `json:"evidence"`
+	ConfidenceOverall float32            `json:"confidence_overall"`
+	Status            string             `json:"status"`
+	FreshnessScore    int32              `json:"freshness_score"`
+	GeoSpaceIds       []pgtype.UUID      `json:"geo_space_ids"`
+	ExtractedAt       pgtype.Timestamptz `json:"extracted_at"`
+	LastVerifiedAt    pgtype.Timestamptz `json:"last_verified_at"`
+	PromotedRecordID  pgtype.UUID        `json:"promoted_record_id"`
+}
+
+type IntelReviewLog struct {
+	ID            pgtype.UUID        `json:"id"`
+	IntelRecordID pgtype.UUID        `json:"intel_record_id"`
+	ActorUserID   pgtype.UUID        `json:"actor_user_id"`
+	Action        string             `json:"action"`
+	FieldChanges  []byte             `json:"field_changes"`
+	Note          *string            `json:"note"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+}
+
+type IntelSource struct {
+	ID                  pgtype.UUID        `json:"id"`
+	Name                string             `json:"name"`
+	Domain              string             `json:"domain"`
+	SourceUrl           string             `json:"source_url"`
+	Category            string             `json:"category"`
+	SourceType          string             `json:"source_type"`
+	TrustLevel          int16              `json:"trust_level"`
+	CrawlMethod         string             `json:"crawl_method"`
+	CrawlFrequency      string             `json:"crawl_frequency"`
+	CrawlFrequencyMins  int32              `json:"crawl_frequency_mins"`
+	RobotsPolicy        []byte             `json:"robots_policy"`
+	SourceLicense       *string            `json:"source_license"`
+	AttributionRequired bool               `json:"attribution_required"`
+	UsageRestriction    *string            `json:"usage_restriction"`
+	ProviderConfig      []byte             `json:"provider_config"`
+	Enabled             bool               `json:"enabled"`
+	LastCrawledAt       pgtype.Timestamptz `json:"last_crawled_at"`
+	LastSuccessAt       pgtype.Timestamptz `json:"last_success_at"`
+	LastErrorAt         pgtype.Timestamptz `json:"last_error_at"`
+	LastErrorMessage    *string            `json:"last_error_message"`
+	LastChangedAt       pgtype.Timestamptz `json:"last_changed_at"`
+	ConsecutiveFailures int32              `json:"consecutive_failures"`
+	CreatedAt           pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
+}
+
 type IpBlock struct {
 	ID        pgtype.UUID        `json:"id"`
 	TenantID  pgtype.UUID        `json:"tenant_id"`
@@ -2942,6 +3009,37 @@ type ScamReport struct {
 	DeletedAt             pgtype.Timestamptz `json:"deleted_at"`
 }
 
+type Scholarship struct {
+	ID                   pgtype.UUID        `json:"id"`
+	IntelRecordID        pgtype.UUID        `json:"intel_record_id"`
+	GuideID              pgtype.UUID        `json:"guide_id"`
+	SourceUrl            string             `json:"source_url"`
+	SourceType           string             `json:"source_type"`
+	TrustLevel           int16              `json:"trust_level"`
+	Title                string             `json:"title"`
+	Description          *string            `json:"description"`
+	Country              string             `json:"country"`
+	CountrySpaceID       pgtype.UUID        `json:"country_space_id"`
+	University           *string            `json:"university"`
+	DegreeLevel          *string            `json:"degree_level"`
+	FieldsOfStudy        []string           `json:"fields_of_study"`
+	EligibleCountries    []string           `json:"eligible_countries"`
+	Funding              []byte             `json:"funding"`
+	Deadline             pgtype.Date        `json:"deadline"`
+	ApplicationUrl       *string            `json:"application_url"`
+	RequiredDocuments    []string           `json:"required_documents"`
+	MinimumGpa           pgtype.Numeric     `json:"minimum_gpa"`
+	LanguageRequirements []byte             `json:"language_requirements"`
+	ConfidenceOverall    float32            `json:"confidence_overall"`
+	VerificationStatus   string             `json:"verification_status"`
+	FreshnessScore       int32              `json:"freshness_score"`
+	OverrideSource       string             `json:"override_source"`
+	EditorialOverrides   []byte             `json:"editorial_overrides"`
+	LastVerifiedAt       pgtype.Timestamptz `json:"last_verified_at"`
+	CreatedAt            pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
+}
+
 type SearchAnalytic struct {
 	ID           int64              `json:"id"`
 	TenantID     pgtype.UUID        `json:"tenant_id"`
@@ -3710,9 +3808,9 @@ type VisaRoute struct {
 	HitlReviewedBy       pgtype.UUID        `json:"hitl_reviewed_by"`
 	HitlReviewedAt       pgtype.Timestamptz `json:"hitl_reviewed_at"`
 	HitlReviewNotes      *string            `json:"hitl_review_notes"`
-	IsJapabotIndexed     bool               `json:"is_japabot_indexed"`
 	CreatedAt            pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
+	IsJapabotIndexed     *bool              `json:"is_japabot_indexed"`
 }
 
 type VisaTimeline struct {
