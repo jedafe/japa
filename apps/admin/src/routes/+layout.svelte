@@ -117,7 +117,7 @@
 		'/onboarding': 'admin.settings.view',
 		'/custom-fields': 'custom_fields.group.view',
 		'/guide-categories': 'custom_fields.group.view',
-		'/widgets': 'pagebuilder.blocks.manage',
+		'/widgets': 'widgets.manage',
 		'/jsonld-templates': 'content.jsonld.manage',
 		'/page-builder': 'pagebuilder.blocks.manage',
 		'/page-builder/pages': 'pages.manage',

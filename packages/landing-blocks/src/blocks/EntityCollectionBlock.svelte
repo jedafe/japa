@@ -90,8 +90,8 @@
             href={entityHref(props.entity_type, entity)}
             class="group block rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5 transition-all hover:shadow-lg hover:-translate-y-1"
           >
-            {#if entity.cover_image_url || entity.logo_url}
-              <img src={(entity.cover_image_url ?? entity.logo_url) as string} alt="" class="mb-3 h-32 w-full rounded-[var(--radius)] object-cover" loading="lazy" />
+            {#if entity.cover_image_url || entity.featured_image_url || entity.logo_url || entity.image_url}
+              <img src={(entity.cover_image_url ?? entity.featured_image_url ?? entity.logo_url ?? entity.image_url) as string} alt="" class="mb-3 h-32 w-full rounded-[var(--radius)] object-cover" loading="lazy" />
             {/if}
             {#if entity.badge}
               <span class="mb-2 inline-block rounded-full bg-[var(--color-surface-subtle)] px-2 py-0.5 text-xs font-medium text-[var(--color-primary)]">{entity.badge as string}</span>

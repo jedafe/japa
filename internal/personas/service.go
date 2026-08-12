@@ -53,6 +53,7 @@ type ActivityPolicy struct {
 	EligibleSpaces       []string       `json:"eligible_spaces"`
 	MinContentAgeHours   int            `json:"min_content_age_hours"`
 	AvoidOwnContent      bool           `json:"avoid_own_content"`
+	AvoidRecentAuthors   []string       `json:"avoid_recent_authors"`
 	ActiveHoursUTC       [2]int         `json:"active_hours_utc"`
 }
 
@@ -195,10 +196,23 @@ func (s *Service) ProvisionPersonas(ctx context.Context, tenantID, adminUserID p
 
 	q := gen.New(tx)
 
-	// Resolve the default profile type once (used when an input omits type_id).
-	defaultTypeID, err := s.resolveDefaultTypeID(ctx, tenantID)
-	if err != nil {
-		return nil, fmt.Errorf("personas: resolve default profile type: %w", err)
+	// Resolve the default profile type only if at least one input omits
+	// type_id (BUG-007: resolving unconditionally blocked provisioning on
+	// tenants that lack 'contributor'/'columnist' types even when every
+	// input supplied an explicit type_id).
+	needsDefault := false
+	for _, in := range inputs {
+		if in.TypeID == "" {
+			needsDefault = true
+			break
+		}
+	}
+	var defaultTypeID pgtype.UUID
+	if needsDefault {
+		defaultTypeID, err = s.resolveDefaultTypeID(ctx, tenantID)
+		if err != nil {
+			return nil, fmt.Errorf("personas: resolve default profile type: %w", err)
+		}
 	}
 
 	results := make([]ProvisionResult, len(inputs))

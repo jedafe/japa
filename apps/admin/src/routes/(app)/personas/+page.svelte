@@ -27,7 +27,10 @@
 	};
 
 	// PersonaInput matches the backend PersonaInput struct. The backend
-	// requires name and slug (service.go validates both). Ref: §68.
+	// requires name and slug (service.go validates both). type_id is optional
+	// — when omitted the backend falls back to 'contributor'/'columnist', but
+	// tenants that lack those types must pass an explicit type_id (BUG-007).
+	// Ref: §68.
 	type PersonaInput = {
 		name: string;
 		slug: string;
@@ -36,6 +39,27 @@
 		disclosure_mode: string;
 		autonomy_mode: string;
 		activity_policy?: ActivityPolicy;
+		type_id?: string;
+	};
+
+	// ProfileTypeOption — minimal shape from /profiles/types (Rule 16: no
+	// hardcoded option lists; the selector is populated from the API).
+	type ProfileTypeOption = {
+		id: string;
+		name: string;
+		slug: string;
+	};
+
+	// ActivityEntry matches the backend ActivityEntry struct
+	// (internal/personas/service.go). Ref: §68.
+	type ActivityEntry = {
+		id: number;
+		event_type: string;
+		entity_type?: string;
+		entity_id?: string;
+		meta: Record<string, unknown>;
+		is_synthetic: boolean;
+		created_at: string;
 	};
 
 	// ActivityPolicy matches the backend ActivityPolicy struct (§68).
@@ -67,7 +91,7 @@
 	let error = $state('');
 	let createSlideOverOpen = $state(false);
 	let activitySlideOverOpen = $state(false);
-	let activityLog = $state<unknown[]>([]);
+	let activityLog = $state<ActivityEntry[]>([]);
 	let activityLoading = $state(false);
 	let activityTotal = $state(0);
 	let activityPage = $state(0);
@@ -76,6 +100,14 @@
 	let saving = $state(false);
 	let message = $state('');
 	let messageType = $state('');
+
+	// Profile types for the create-form selector (BUG-007: without a
+	// type_id selector, provisioning fails on tenants that lack the
+	// 'contributor'/'columnist' default types). Loaded from /profiles/types
+	// per Rule 16.
+	let profileTypes = $state<ProfileTypeOption[]>([]);
+	let profileTypesLoading = $state(false);
+	let profileTypesError = $state('');
 
 	// Server-side pagination state (BUG-003: list was not paginated — only 20
 	// personas loaded with no way to see more).
@@ -116,6 +148,26 @@
 	let editingPersona = $state<Persona | null>(null);
 	let editForm = $state<UpdateInput>({});
 	let savingEdit = $state(false);
+
+	// loadProfileTypes fetches the available professional profile types so
+	// the create-form selector can offer them (BUG-007). Per Rule 16, the
+	// list comes from the API — never hardcoded.
+	async function loadProfileTypes() {
+		profileTypesLoading = true;
+		profileTypesError = '';
+		try {
+			const result = await api<ProfileTypeOption[]>('/profiles/types');
+			if (result.ok) {
+				profileTypes = result.data ?? [];
+			} else {
+				profileTypesError = result.error;
+			}
+		} catch (e) {
+			profileTypesError = e instanceof Error ? e.message : 'Failed to load profile types';
+		} finally {
+			profileTypesLoading = false;
+		}
+	}
 
 	async function load() {
 		loading = true;
@@ -159,7 +211,7 @@
 			const params = new URLSearchParams();
 			params.set('limit', String(activityPageSize));
 			params.set('page', String(activityPage + 1));
-			const result = await apiRaw<{ data: unknown[]; meta: { total: number } }>(
+			const result = await apiRaw<{ data: ActivityEntry[]; meta: { total: number } }>(
 				`/admin/personas/${activityPersonaId}/activity?${params.toString()}`
 			);
 			if (result.ok) {
@@ -265,31 +317,26 @@
 		{
 			key: 'profile_name',
 			label: t('personas.name', 'Name'),
-			sortable: true,
 			render: (value: string) => `<span class="text-foreground font-medium">${value ?? '—'}</span>`
 		},
 		{
 			key: 'backing_username',
 			label: t('personas.username', 'Username'),
-			sortable: true,
 			render: (value: string) => `<span class="font-mono text-xs text-muted-foreground">${value ?? '—'}</span>`
 		},
 		{
 			key: 'disclosure_mode',
 			label: t('personas.disclosure', 'Disclosure'),
-			sortable: true,
 			render: (value: string) => `<span class="text-foreground">${value}</span>`
 		},
 		{
 			key: 'autonomy_mode',
 			label: t('personas.autonomy', 'Autonomy'),
-			sortable: true,
 			render: (value: string) => `<span class="text-foreground">${value}</span>`
 		},
 		{
 			key: 'status',
 			label: t('personas.status', 'Status'),
-			sortable: true,
 			render: (value: string) => {
 				const cls = value === 'active' ? 'bg-success/15 text-success border-success' : 'bg-muted text-muted-foreground border-border';
 				return `<span class="inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium ${cls}">${value}</span>`;
@@ -298,7 +345,6 @@
 		{
 			key: 'created_at',
 			label: t('personas.created', 'Created'),
-			sortable: true,
 			render: (value: string) => `<span class="text-muted-foreground text-xs">${value ? new Date(value).toLocaleDateString() : '—'}</span>`
 		}
 	]);
@@ -314,6 +360,7 @@
 	];
 
 	load();
+	loadProfileTypes();
 </script>
 
 <PageHeader
@@ -416,6 +463,26 @@
 								placeholder={t('personas.slug_placeholder', 'e.g. adaora-okafor')}
 							/>
 						</div>
+					</div>
+					<div class="mt-2">
+						<label for={`persona-type-${idx}`} class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('personas.profile_type', 'Profile Type')}</label>
+						{#if profileTypesLoading}
+							<p class="text-xs" style="color: var(--color-muted)">{t('personas.loading_types', 'Loading profile types...')}</p>
+						{:else if profileTypesError}
+							<p class="text-xs" style="color: var(--color-danger)">{profileTypesError}</p>
+						{:else}
+							<select
+								id={`persona-type-${idx}`}
+								class="w-full rounded-md border px-3 py-1.5 text-sm"
+								style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+								bind:value={persona.type_id}
+							>
+								<option value="">{t('personas.type_default', 'Default (contributor/columnist)')}</option>
+								{#each profileTypes as pt (pt.id)}
+									<option value={pt.id}>{pt.name} ({pt.slug})</option>
+								{/each}
+							</select>
+						{/if}
 					</div>
 					<div class="mt-2">
 						<label for={`persona-tagline-${idx}`} class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('personas.tagline', 'Tagline')}</label>
@@ -525,9 +592,29 @@
 			<p class="p-4 text-center text-sm" style="color: var(--color-muted)">{t('personas.no_activity', 'No activity recorded.')}</p>
 		{:else}
 			<div class="max-h-96 space-y-2 overflow-y-auto">
-				{#each activityLog as entry (entry)}
+				{#each activityLog as entry (entry.id)}
 					<div class="rounded-md border p-2 text-xs" style="border-color: var(--color-border); color: var(--color-foreground)">
-						{JSON.stringify(entry, null, 2)}
+						<div class="flex items-center justify-between gap-2">
+							<span class="font-medium">{entry.event_type}</span>
+							<span style="color: var(--color-muted)">{entry.created_at ? new Date(entry.created_at).toLocaleString() : '—'}</span>
+						</div>
+						{#if entry.entity_type}
+							<div class="mt-1" style="color: var(--color-muted)">
+								{t('personas.entity', 'Entity')}: {entry.entity_type}
+								{#if entry.entity_id}
+									<span class="font-mono">{entry.entity_id.slice(0, 8)}</span>
+								{/if}
+							</div>
+						{/if}
+						{#if entry.is_synthetic}
+							<span class="mt-1 inline-block rounded border px-1 py-0.5 text-[10px]" style="border-color: var(--color-border); color: var(--color-muted)">synthetic</span>
+						{/if}
+						{#if entry.meta && Object.keys(entry.meta).length > 0}
+							<details class="mt-1">
+								<summary class="cursor-pointer" style="color: var(--color-muted)">{t('personas.meta', 'Meta')}</summary>
+								<pre class="mt-1 overflow-x-auto rounded p-1 text-[10px]" style="background: var(--color-muted); color: var(--color-foreground)">{JSON.stringify(entry.meta, null, 2)}</pre>
+							</details>
+						{/if}
 					</div>
 				{/each}
 			</div>

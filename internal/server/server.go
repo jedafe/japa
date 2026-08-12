@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"crypto/rand"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -86,6 +87,7 @@ import (
 	"github.com/jedafe/japa/internal/onboarding"
 	"github.com/jedafe/japa/internal/organizations"
 	"github.com/jedafe/japa/internal/pagebuilder"
+	"github.com/jedafe/japa/internal/widgets"
 	"github.com/jedafe/japa/internal/participation"
 	"github.com/jedafe/japa/internal/payments"
 	"github.com/jedafe/japa/internal/personas"
@@ -625,8 +627,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	// Organization system (Section 07).
 	orgService := organizations.NewServiceWithSettings(database, settingsService)
-	orgService.SetValkeyCache(vkClient.Redis()) // jc:org:profile / jc:org:list read-through cache
+	orgService.SetValkeyCache(vkClient.Redis())    // jc:org:profile / jc:org:list read-through cache
+	orgService.SetAsynqClient(asynqClient)          // BUG-018: invitation email:send tasks
 	orgHandlers := organizations.NewHandlers(orgService, followService, contentService)
+	orgHandlers.SetCustomFieldLookup(cfService) // org_type options from custom_fields (Section 07 + 08)
 
 	// Wallet & Credits subsystem (Section 28 — Wallet & Credits).
 	walletService := wallet.NewService(database)
@@ -850,6 +854,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	adminHandlers.SetSettings(settingsService)
 	adminHandlers.SetGDPR(gdprService)
 	adminHandlers.SetOrgVerifier(orgService)
+	adminHandlers.SetTaskEnqueuer(taskEnqueuer)
 
 	// Bot & Crawler Management subsystem (Section 43).
 	botStore := bots.NewStoreWithDB(database)
@@ -1195,6 +1200,18 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	pagebuilderService := pagebuilder.NewService(database)
 	pagebuilderHandlers := pagebuilder.NewHandlers(pagebuilderService)
 
+	// Widget configurations subsystem (Section 16 — data-source-driven dynamic
+	// blocks with Valkey-cached rendering).
+	widgetStore := widgets.NewStore(database)
+	widgetRenderer := widgets.NewRenderer(database.Reader)
+	widgetService := widgets.NewService(widgetStore, widgetRenderer, vkClient.Redis())
+	widgetHandlers := widgets.NewHandlers(widgetService)
+
+	// Wire the widget resolver into the page builder so GetPublishedPage
+	// can server-side resolve widget blocks (Section 16: "blocks + resolved
+	// widget data").
+	pagebuilderHandlers.SetWidgetResolver(widgetService)
+
 	// Register analytics processor with worker for background tasks.
 	analyticsAdapter := analytics.NewWorkerAdapter(analyticsService)
 	worker.RegisterAnalyticsProcessor(analyticsAdapter)
@@ -1390,7 +1407,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	// Admin Impersonation subsystem (Section 46).
 	impersonationStore := impersonation.NewStore(vkClient.Redis())
-	impersonationService := impersonation.NewService(impersonationStore, gen.New(database.Writer))
+	impersonationService := impersonation.NewService(impersonationStore, database.Writer)
 	impersonationService.SetRBAC(rbacResolver) // SEC-009: no-admin-on-admin safety check (Section 46, ADR-047)
 	impersonationHandlers := impersonation.NewHandlers(impersonationService)
 
@@ -2425,6 +2442,17 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// notifications. Ref: Section 35.
 			forumService.SetNotificationDispatcher(commentNotificationAdapter{svc: notificationService})
 			forumHandlers := forum.NewHandlers(forumService, contentService)
+			// Wire the persona action dispatcher (ADR-077 §5, BUG-010) now that
+			// the forum service is created. The dispatcher routes approved
+			// persona actions to the existing action endpoints (comments,
+			// follows, content reactions/bookmarks, forum, customfields).
+			participationService.SetDispatcher(&personaActionDispatcher{
+				comments: commentsService,
+				follows:  followService,
+				content:  contentService,
+				forum:    forumService,
+				cf:       cfService,
+			})
 			// Wire mention notification dispatch for forum threads and replies
 			// (Section 15 / ADR-029). Fire-and-forget per Rule 8.
 			forumHandlers.SetMentionNotifier(commentNotificationAdapter{svc: notificationService})
@@ -2739,6 +2767,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Organization routes (Section 07 — Organization Profiles & Claim Ownership)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "organizations.create")).Post("/organizations", orgHandlers.CreateOrganization)
 			r.With(auth.OptionalAuth(kr, vkClient.Redis()), rbac.OptionalPermission(rbacResolver, "directory.organizations.view")).Get("/organizations", orgHandlers.ListPublicOrganizations)
+			r.With(auth.OptionalAuth(kr, vkClient.Redis())).Get("/organizations/meta", orgHandlers.GetOrganizationMeta)
 			r.With(auth.OptionalAuth(kr, vkClient.Redis())).Get("/organizations/{slug}", orgHandlers.GetPublicOrganization)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "organizations.edit_own")).Patch("/organizations/{id}", orgHandlers.UpdateOrganization)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "organizations.delete_own")).Delete("/organizations/{id}", orgHandlers.DeleteOrganization)
@@ -4067,14 +4096,15 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.Get("/page-templates", pagebuilderHandlers.ListTemplates)
 			r.Get("/page-templates/{id}", pagebuilderHandlers.GetTemplate)
 
-			// Admin widgets CRUD (P5.6 — Task 27, catalog: /admin/widgets)
+			// Admin widget configurations CRUD (Section 16 — widget_configurations).
+			// Gates on widgets.manage RBAC node (migration 000412).
 			r.Group(func(r chi.Router) {
 				r.Use(auth.RequireAuth(kr, vkClient.Redis()))
-				r.Use(rbac.RequirePermission(rbacResolver, "pagebuilder.blocks.manage"))
-				r.Get("/admin/widgets", pagebuilderHandlers.ListBlocks)
-				r.Post("/admin/widgets", pagebuilderHandlers.CreateBlock)
-				r.Patch("/admin/widgets/{id}", pagebuilderHandlers.UpdateBlock)
-				r.Delete("/admin/widgets/{id}", pagebuilderHandlers.DeleteBlock)
+				r.Use(rbac.RequirePermission(rbacResolver, "widgets.manage"))
+				r.Get("/admin/widgets", widgetHandlers.ListWidgets)
+				r.Post("/admin/widgets", widgetHandlers.CreateWidget)
+				r.Patch("/admin/widgets/{id}", widgetHandlers.UpdateWidget)
+				r.Delete("/admin/widgets/{id}", widgetHandlers.DeleteWidget)
 			})
 
 			// Platform Settings (admin)
@@ -4195,6 +4225,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Post("/admin/organizations/{id}/claim", adminHandlers.ClaimOrganization)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).
 				Get("/admin/organizations/pending-claims", adminHandlers.ListPendingOwnershipClaims)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).
+				Get("/admin/organizations/claims/{id}/submission", adminHandlers.GetClaimFormSubmission)
 
 			// Organizations admin CRUD
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).
@@ -4429,7 +4461,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Delete("/pages/{id}", pagebuilderHandlers.DeletePage)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "pages.manage")).
 				Patch("/pages/{id}/blocks", pagebuilderHandlers.ReorderBlocks)
-			r.Get("/widgets/{id}", pagebuilderHandlers.GetBlock)
+			// Public widget render endpoint (Section 16 — Valkey-cached by
+			// widget.cache_ttl_secs, key jc:widget:{id}).
+			r.Get("/widgets/{id}", widgetHandlers.RenderWidget)
 
 			// Task 28: Me additions
 			// Ref: japaconnect-engineering/sections/50-user-dashboard-settings.md
@@ -4635,12 +4669,16 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Get("/admin/studio/stats", studioHandlers.HandleStats)
 
 			// Section 76 — Participation Orchestration (ADR-077)
-			// Admin queue/stats endpoints. Review approve/reject reuses
-			// PATCH /admin/moderation-queue/:id.
+			// Admin queue/stats endpoints. The queue is the review surface
+			// (participation.review, BUG-006); stats are read-only
+			// (participation.view). Review approve/reject reuses
+			// PATCH /admin/moderation-queue/:id (wired to content_reviews
+			// in admin.ModerateItem, BUG-001).
+			participationHandlers := participation.NewHandlers(database, participationService, settingsService, vkClient.Redis())
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "participation.review")).
+				Get("/admin/participation/queue", participationHandlers.HandleQueue)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "participation.view")).
-				Get("/admin/participation/queue", participation.HandleQueue(database))
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "participation.view")).
-				Get("/admin/participation/stats", participation.HandleStats(database))
+				Get("/admin/participation/stats", participationHandlers.HandleStats)
 
 			// Section 70 — Visa Document Checklist Generator (ADR-070)
 			r.Get("/checklist/selector", checklistHandlers.HandleSelector)
@@ -5833,4 +5871,93 @@ func (a *mutualAidDMAdapter) SendMessage(
 	body string,
 ) error {
 	return a.dm.SendMessage(ctx, tenantID, conversationID, senderID, body)
+}
+
+// personaActionDispatcher adapts the existing action services (comments,
+// follows, content, forum, customfields) to the participation.ActionDispatcher
+// interface (ADR-077 §5, BUG-010). It is defined here in the server package
+// so the participation package does not need to import those five packages —
+// the dependency is inverted via the interface.
+type personaActionDispatcher struct {
+	comments *comments.Service
+	follows  *follows.Service
+	content  *content.Service
+	forum    *forum.Service
+	cf       *customfields.Service
+}
+
+func (d *personaActionDispatcher) CreateComment(ctx context.Context, tenantID, personaUserID, targetContentID pgtype.UUID, body []byte) (pgtype.UUID, error) {
+	c, err := d.comments.CreateComment(ctx, tenantID, personaUserID, comments.CreateCommentInput{
+		ContentID: targetContentID,
+		Body:      body,
+	})
+	if err != nil {
+		return pgtype.UUID{}, err
+	}
+	return c.ID, nil
+}
+
+func (d *personaActionDispatcher) CreateForumThread(ctx context.Context, tenantID, personaUserID, spaceID pgtype.UUID, title, slug string, body []byte) (pgtype.UUID, error) {
+	// forum_question: the persona starts a new thread. The content row was
+	// already published by DispatchAction; here we create the forum thread
+	// linked to that content. We need a content_id — use a zero UUID and
+	// let the forum service create its own content, or pass the published
+	// content. Since DispatchAction already published the draft content,
+	// we pass a zero content_id and let the forum service create a new one.
+	// Actually, the forum service's CreateThread expects a content_id for
+	// the root post. We'll create the thread with the space and body.
+	t, err := d.forum.CreateThread(ctx, tenantID, personaUserID, forum.CreateThreadInput{
+		SpaceID: spaceID,
+		Title:   title,
+		Slug:    slug,
+		Body:    body,
+	})
+	if err != nil {
+		return pgtype.UUID{}, err
+	}
+	return t.ID, nil
+}
+
+func (d *personaActionDispatcher) CreateForumReply(ctx context.Context, tenantID, personaUserID, threadID pgtype.UUID, body []byte) (pgtype.UUID, error) {
+	r, err := d.forum.CreateReply(ctx, tenantID, threadID, personaUserID, forum.CreateReplyInput{
+		Body: body,
+	})
+	if err != nil {
+		return pgtype.UUID{}, err
+	}
+	return r.ID, nil
+}
+
+func (d *personaActionDispatcher) ToggleFollow(ctx context.Context, tenantID, personaUserID pgtype.UUID, entityType string, entityID pgtype.UUID) error {
+	_, err := d.follows.ToggleFollow(ctx, tenantID, personaUserID, entityType, entityID)
+	return err
+}
+
+func (d *personaActionDispatcher) AddReaction(ctx context.Context, tenantID, personaUserID pgtype.UUID, entityType string, entityID pgtype.UUID, reactionKey string) error {
+	_, err := d.content.AddReaction(ctx, tenantID, entityType, entityID, personaUserID, reactionKey)
+	return err
+}
+
+func (d *personaActionDispatcher) CreateBookmark(ctx context.Context, tenantID, personaUserID pgtype.UUID, entityType string, entityID pgtype.UUID) error {
+	var zeroFolderID pgtype.UUID
+	_, err := d.content.CreateBookmark(ctx, tenantID, personaUserID, entityType, entityID, "default", zeroFolderID)
+	return err
+}
+
+func (d *personaActionDispatcher) SubmitForm(ctx context.Context, tenantID, personaUserID, formID pgtype.UUID, fieldValues map[string]any) (pgtype.UUID, error) {
+	valuesJSON, err := json.Marshal(fieldValues)
+	if err != nil {
+		return pgtype.UUID{}, fmt.Errorf("marshal field values: %w", err)
+	}
+	sub, err := d.cf.CreateFormSubmission(ctx, gen.CreateFormSubmissionParams{
+		FormID:      formID,
+		TenantID:    tenantID,
+		UserID:      personaUserID,
+		FieldValues: valuesJSON,
+		Status:      "submitted",
+	})
+	if err != nil {
+		return pgtype.UUID{}, err
+	}
+	return sub.ID, nil
 }

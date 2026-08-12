@@ -11,9 +11,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/valkey-io/valkey-go/valkeycompat"
 )
 
 // Vote values for forum_threads and forum_replies.
@@ -91,6 +93,9 @@ type Service struct {
 	permCache  permCacheInvalidator
 	webhooks   webhookEmitter
 	broadcaster spaceBroadcaster
+	valkey     valkeycompat.Cmdable
+	asynq      *asynq.Client
+	notifier   NotificationDispatcher
 
 	// BUG-020: in-memory JSON-LD cache for solved threads.
 	jsonLDCache sync.Map
@@ -146,6 +151,35 @@ func (s *Service) SetWebhookEmitter(w webhookEmitter) { s.webhooks = w }
 // SetSpaceBroadcaster injects the WebSocket space broadcaster for live
 // poll/vote updates (Section 10).
 func (s *Service) SetSpaceBroadcaster(b spaceBroadcaster) { s.broadcaster = b }
+
+// SetValkey injects the Valkey client for distributed caching (view counts,
+// rate limiting). Optional — when nil, in-memory fallbacks are used.
+func (s *Service) SetValkey(c valkeycompat.Cmdable) { s.valkey = c }
+
+// SetAsynqClient injects the Asynq client for fire-and-forget fan-out tasks
+// (content:fan_out_to_feeds, search:index_entity). Optional — when nil,
+// fan-out is skipped.
+func (s *Service) SetAsynqClient(c *asynq.Client) { s.asynq = c }
+
+// NotificationDispatcher dispatches reply-to-author notifications
+// (Section 35). Fire-and-forget per Rule 8. Matches the
+// commentNotificationAdapter signature in server.go.
+type NotificationDispatcher interface {
+	DispatchNotification(
+		ctx context.Context,
+		tenantID, recipientID pgtype.UUID,
+		nType, subjectTitle string,
+		actorID pgtype.UUID,
+		subjectType string,
+		subjectID pgtype.UUID,
+		subjectURL, actorName, actorAvatar string,
+	) error
+}
+
+// SetNotificationDispatcher injects the notification adapter for reply-to-author
+// notifications (BUG-013, Section 35). Optional — when nil, notifications are
+// skipped.
+func (s *Service) SetNotificationDispatcher(n NotificationDispatcher) { s.notifier = n }
 
 // emitWebhook fires a forum.* event fire-and-forget (Rule 8). Errors are
 // never returned to the caller; a missing emitter is a no-op.

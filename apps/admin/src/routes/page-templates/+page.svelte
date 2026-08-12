@@ -1,7 +1,7 @@
 <script lang="ts">
 	// /page-templates — migrated to the EntityPage scaffold; simple CRUD entity using declarative `fields` (EntityForm).
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
-	import { pageTemplatesAdminApiExtended } from '$lib/api';
+	import { pageTemplatesAdminApiExtended, apiRaw } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { Trash2 } from 'lucide-svelte';
 
@@ -134,15 +134,24 @@
 			}
 		],
 		fields,
-		load: async ({ q, filter }) => {
+		load: async ({ q, filter, page, pageSize }) => {
 			const params = new URLSearchParams();
+			params.set('page_size', String(pageSize));
+			params.set('page_offset', String(page));
 			if (filter.page_type) params.set('category', filter.page_type);
 			if (filter.is_system) params.set('is_system', filter.is_system);
 			if (q) params.set('q', q);
-			const result = await pageTemplatesAdminApiExtended.list(params.toString() || undefined);
+			const result = await apiRaw<{ data?: PageTemplate[]; total?: number; total_pages?: number }>(
+				`/admin/page-templates?${params.toString()}`
+			);
 			if (result.ok) {
-				const data = (result.data as PageTemplate[]) ?? [];
-				return { data, total: data.length, totalPages: 1 };
+				const d = result.data;
+				const items = d.data ?? [];
+				return {
+					data: items,
+					total: d.total ?? items.length,
+					totalPages: d.total_pages ?? 1
+				};
 			}
 			throw new Error(result.error ?? t('common.error', 'Failed to load page templates'));
 		},

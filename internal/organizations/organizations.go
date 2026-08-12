@@ -14,10 +14,12 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/valkey"
+	"github.com/jedafe/japa/internal/worker"
 	"github.com/valkey-io/valkey-go/valkeycompat"
 )
 
@@ -92,6 +94,7 @@ type Service struct {
 	settings SettingsReader
 	vk       valkeycompat.Cmdable
 	webhooks webhookEmitter
+	asynq    *asynq.Client
 }
 
 // NewService creates a Service backed by the given database.
@@ -123,6 +126,11 @@ func (s *Service) SetValkeyCache(vk valkeycompat.Cmdable) {
 // (Section 12).
 func (s *Service) SetWebhookEmitter(w webhookEmitter) { s.webhooks = w }
 
+// SetAsynqClient injects the Asynq client for enqueueing email:send tasks
+// (BUG-018: invitation email notification). nil disables email delivery
+// (degraded mode — the invitation is still created, just not emailed).
+func (s *Service) SetAsynqClient(c *asynq.Client) { s.asynq = c }
+
 // emitWebhook fires an organization.* / claim.* event fire-and-forget
 // (Rule 8). Errors are logged but never returned to the caller — webhook
 // delivery is async.
@@ -131,6 +139,48 @@ func (s *Service) emitWebhook(ctx context.Context, tenantID pgtype.UUID, eventTy
 		return
 	}
 	s.webhooks.EmitEvent(ctx, tenantID, eventType, payload)
+}
+
+// enqueueInvitationEmail enqueues an email:send task to notify the invited
+// user of their organization invitation (BUG-018). Fire-and-forget per Rule 8
+// — errors are logged but never returned to the caller. The invitation is
+// already persisted; email delivery is best-effort.
+// Ref: japaconnect-engineering/sections/07-organization-profiles-claim-ownership.md
+// Ref: japaconnect-engineering/sections/20-notification-channels.md
+func (s *Service) enqueueInvitationEmail(ctx context.Context, orgName, inviteeEmail, role, token string) {
+	if s.asynq == nil {
+		return
+	}
+
+	subject := fmt.Sprintf("You've been invited to join %s on JapaConnect", orgName)
+	body := fmt.Sprintf(
+		"You have been invited to join %s as a %s.\n\n"+
+			"To accept this invitation, click the link below:\n"+
+			"%s\n\n"+
+			"If you did not expect this invitation, you can safely ignore this email.",
+		orgName, role, "/organizations/invitations/"+token+"/accept",
+	)
+
+	payload, err := json.Marshal(map[string]any{
+		"to":      inviteeEmail,
+		"subject": subject,
+		"body":    body,
+		"type":    "organization_invitation",
+	})
+	if err != nil {
+		slog.Error("organizations: marshal invitation email payload", "error", err)
+		return
+	}
+
+	task := asynq.NewTask(worker.TypeEmailSend, payload)
+	if _, err := s.asynq.Enqueue(task, asynq.Queue(worker.QueueForTask(worker.TypeEmailSend))); err != nil {
+		slog.Error("organizations: enqueue invitation email",
+			"invitee_email", inviteeEmail, "error", err)
+		return
+	}
+
+	slog.Info("organizations: invitation email enqueued",
+		"invitee_email", inviteeEmail, "org_name", orgName)
 }
 
 // orgProfileCacheKey builds jc:org:profile:{tenant_id}:{slug}.

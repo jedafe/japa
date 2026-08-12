@@ -1,7 +1,7 @@
 <script lang="ts">
 	// /page-builder — migrated to the EntityPage scaffold; CRUD list of pagebuilder blocks.
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
-	import { pageBuilderAdminApiExtended, pageBuilderApi } from '$lib/api';
+	import { pageBuilderAdminApiExtended, pageBuilderApi, apiRaw } from '$lib/api';
 	import type { BlockType } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { Trash2 } from 'lucide-svelte';
@@ -134,13 +134,22 @@
 			}
 		],
 		fields,
-		load: async ({ q }) => {
+		load: async ({ q, page, pageSize }) => {
 			const params = new URLSearchParams();
+			params.set('page_size', String(pageSize));
+			params.set('page_offset', String(page));
 			if (q) params.set('q', q);
-			const result = await pageBuilderAdminApiExtended.listBlocks(params.toString() || undefined);
+			const result = await apiRaw<{ data?: Block[]; total?: number; total_pages?: number }>(
+				`/admin/pagebuilder/blocks?${params.toString()}`
+			);
 			if (result.ok) {
-				const data = (result.data as Block[]) ?? [];
-				return { data, total: data.length, totalPages: 1 };
+				const d = result.data;
+				const items = d.data ?? [];
+				return {
+					data: items,
+					total: d.total ?? items.length,
+					totalPages: d.total_pages ?? 1
+				};
 			}
 			throw new Error(result.error ?? t('common.error', 'Failed to load blocks'));
 		},

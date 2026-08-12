@@ -74,9 +74,10 @@ DELETE FROM organization_members
 WHERE organization_id = $1 AND user_id = $2;
 
 -- name: ListOrganizationMembers :many
+-- Tenant-scoped via the users join (defense-in-depth, BUG-004).
 SELECT om.*, u.username, up.display_name, up.avatar_url
 FROM organization_members om
-JOIN users u ON u.id = om.user_id
+JOIN users u ON u.id = om.user_id AND u.tenant_id = @tenant_id
 LEFT JOIN user_profiles up ON up.user_id = u.id AND up.tenant_id = u.tenant_id
 WHERE om.organization_id = $1
 ORDER BY om.joined_at DESC;
@@ -96,9 +97,18 @@ SELECT * FROM organization_invitations
 WHERE token_hash = $1 AND expires_at > now() AND accepted_at IS NULL;
 
 -- name: ListOrganizationInvitations :many
-SELECT * FROM organization_invitations
-WHERE organization_id = $1 AND accepted_at IS NULL
-ORDER BY created_at DESC;
+-- Tenant-scoped via the organizations join (defense-in-depth, BUG-005).
+SELECT oi.* FROM organization_invitations oi
+JOIN organizations o ON o.id = oi.organization_id AND o.tenant_id = @tenant_id
+WHERE oi.organization_id = $1 AND oi.accepted_at IS NULL
+ORDER BY oi.created_at DESC;
+
+-- name: GetPendingInvitationByEmail :one
+-- Checks if a pending (un-accepted) invitation already exists for the given
+-- email+org (BUG-017). Returns pgx.ErrNoRows if none exists.
+SELECT id FROM organization_invitations
+WHERE organization_id = $1 AND email = $2 AND accepted_at IS NULL
+LIMIT 1;
 
 -- name: AcceptOrganizationInvitation :exec
 UPDATE organization_invitations
@@ -133,6 +143,13 @@ SELECT id FROM ownership_claims
 WHERE organization_id = $1 AND tenant_id = $2 AND status = 'pending'
 ORDER BY created_at DESC LIMIT 1;
 
+-- name: GetPendingClaimByClaimant :one
+-- Checks if a user already has a pending claim for an org (BUG-010).
+-- Used to prevent duplicate pending claims per user per org.
+SELECT id FROM ownership_claims
+WHERE organization_id = $1 AND tenant_id = $2 AND claimant_user_id = $3 AND status = 'pending'
+LIMIT 1;
+
 -- name: GetOwnershipClaimByID :one
 -- Returns a single ownership claim by ID (for GET /claim-ownership/{id}).
 -- Joined with the claimant's username and org name for display.
@@ -164,12 +181,17 @@ ORDER BY oc.created_at DESC;
 -- 'all' returns every claim (history view); any other value filters by that
 -- exact status (pending|approved|rejected|withdrawn). Used by
 -- GET /admin/organizations/pending-claims?status=.
+-- Includes form_submission_id, resolution_note, reviewed_by, and reviewed_at
+-- so the admin can inspect the claimant's submitted form data and review history.
 SELECT oc.id, oc.organization_id, oc.claimant_user_id, oc.evidence_url, oc.notes, oc.created_at, oc.status,
+       oc.form_submission_id, oc.resolution_note, oc.reviewed_by, oc.reviewed_at,
        u.username AS claimant_username, u.email AS claimant_email,
-       o.name AS org_name, o.slug AS org_slug
+       o.name AS org_name, o.slug AS org_slug,
+       reviewer.username AS reviewed_by_username
 FROM ownership_claims oc
 JOIN users u ON u.id = oc.claimant_user_id
 JOIN organizations o ON o.id = oc.organization_id
+LEFT JOIN users reviewer ON reviewer.id = oc.reviewed_by
 WHERE oc.tenant_id = $1
   AND ($2::text = '' OR $2::text = 'all' OR oc.status = $2)
 ORDER BY oc.created_at DESC;
@@ -178,6 +200,14 @@ ORDER BY oc.created_at DESC;
 UPDATE ownership_claims
 SET status = 'approved', reviewed_by = $3, resolution_note = $4, reviewed_at = now()
 WHERE id = $1 AND tenant_id = $2;
+
+-- name: TransferOrganizationOwnership :exec
+-- Transfers an organization's owner_user_id to a new owner (the claimant
+-- whose ownership claim was approved). Tenant-scoped for defense-in-depth.
+-- Ref: japaconnect-engineering/sections/07-organization-profiles-claim-ownership.md
+UPDATE organizations
+SET owner_user_id = $2, updated_at = now()
+WHERE id = $1 AND tenant_id = $3;
 
 -- name: ReviewOwnershipClaim :exec
 UPDATE ownership_claims

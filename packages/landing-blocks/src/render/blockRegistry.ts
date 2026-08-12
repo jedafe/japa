@@ -28,6 +28,7 @@ import HeadingBlock from '../blocks/HeadingBlock.svelte';
 import CtaButtonBlock from '../blocks/CtaButtonBlock.svelte';
 import ContainerBlock from '../blocks/ContainerBlock.svelte';
 import CustomBlock from '../blocks/CustomBlock.svelte';
+import WidgetBlock from '../blocks/WidgetBlock.svelte';
 
 export interface BlockMeta {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -65,4 +66,5 @@ export const blockRegistry: Record<Block['type'], BlockMeta> = {
   media: { component: MediaBlock, icon: 'Image', label: 'Single Media', category: 'media' },
   container: { component: ContainerBlock, icon: 'LayoutPanelTop', label: 'Container', category: 'layout' },
   custom: { component: CustomBlock, icon: 'Puzzle', label: 'Custom Block', category: 'custom' },
+  widget: { component: WidgetBlock, icon: 'LayoutDashboard', label: 'Widget', category: 'data' },
 };

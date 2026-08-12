@@ -14,8 +14,8 @@ import (
 func TestBlockTemplateCount(t *testing.T) {
 	t.Parallel()
 
-	if got := BlockTypeCount(); got != 17 {
-		t.Errorf("BlockTypeCount() = %d, want 17", got)
+	if got := BlockTypeCount(); got != 18 {
+		t.Errorf("BlockTypeCount() = %d, want 18", got)
 	}
 }
 
@@ -23,8 +23,8 @@ func TestGetBlockTemplatesReturnsAll(t *testing.T) {
 	t.Parallel()
 
 	templates := GetBlockTemplates()
-	if len(templates) != 17 {
-		t.Fatalf("GetBlockTemplates() returned %d templates, want 17", len(templates))
+	if len(templates) != 18 {
+		t.Fatalf("GetBlockTemplates() returned %d templates, want 18", len(templates))
 	}
 }
 
@@ -140,8 +140,8 @@ func TestBlockTemplatesJSONSerializable(t *testing.T) {
 		t.Fatalf("json.Unmarshal round-trip error: %v", err)
 	}
 
-	if len(decoded) != 17 {
-		t.Errorf("round-trip produced %d templates, want 17", len(decoded))
+	if len(decoded) != 18 {
+		t.Errorf("round-trip produced %d templates, want 18", len(decoded))
 	}
 }
 
@@ -176,7 +176,7 @@ func TestListBlockTypesHandler(t *testing.T) {
 		t.Fatalf("unmarshal response: %v", err)
 	}
 
-	if len(body.Data.BlockTypes) != 17 {
-		t.Errorf("response contained %d block types, want 17", len(body.Data.BlockTypes))
+	if len(body.Data.BlockTypes) != 18 {
+		t.Errorf("response contained %d block types, want 18", len(body.Data.BlockTypes))
 	}
 }

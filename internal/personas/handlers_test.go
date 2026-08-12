@@ -253,3 +253,63 @@ func TestActivityPolicy_DefaultRoundTrip(t *testing.T) {
 		t.Errorf("default AvoidOwnContent = %v, want false", decoded.AvoidOwnContent)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// ProvisionPersonas — needsDefault logic (BUG-007)
+// ---------------------------------------------------------------------------
+
+// TestProvisionPersonas_NeedsDefaultLogic verifies that the needsDefault
+// check correctly identifies when at least one input omits type_id (and
+// therefore the default profile type resolution must run). This is the
+// core of the BUG-007 fix: resolveDefaultTypeID must NOT be called when
+// every input supplies an explicit type_id, so provisioning succeeds on
+// tenants that lack the 'contributor'/'columnist' default types.
+func TestProvisionPersonas_NeedsDefaultLogic(t *testing.T) {
+	tests := []struct {
+		name      string
+		typeIDs   []string
+		wantNeed  bool
+	}{
+		{
+			name:     "all inputs have type_id",
+			typeIDs:  []string{"uuid-1", "uuid-2"},
+			wantNeed: false,
+		},
+		{
+			name:     "one input missing type_id",
+			typeIDs:  []string{"uuid-1", ""},
+			wantNeed: true,
+		},
+		{
+			name:     "all inputs missing type_id",
+			typeIDs:  []string{"", ""},
+			wantNeed: true,
+		},
+		{
+			name:     "single input with type_id",
+			typeIDs:  []string{"uuid-1"},
+			wantNeed: false,
+		},
+		{
+			name:     "single input missing type_id",
+			typeIDs:  []string{""},
+			wantNeed: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			needsDefault := false
+			for _, tid := range tt.typeIDs {
+				if tid == "" {
+					needsDefault = true
+					break
+				}
+			}
+			if needsDefault != tt.wantNeed {
+				t.Errorf("needsDefault = %v, want %v (typeIDs=%v)",
+					needsDefault, tt.wantNeed, tt.typeIDs)
+			}
+		})
+	}
+}

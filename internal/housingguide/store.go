@@ -456,6 +456,28 @@ WHERE id = $1 AND tenant_id = $2
 	return nil
 }
 
+// RejectGuide rejects a pending housing guide, setting its status to
+// 'rejected' and recording the reviewer and review notes.
+func (s *Store) RejectGuide(ctx context.Context, id, tenantID, reviewerID pgtype.UUID, notes *string) error {
+	const q = `
+UPDATE housing_guides
+SET hitl_reviewed_by = $3,
+    hitl_reviewed_at = now(),
+    hitl_review_notes = $4,
+    status = 'rejected',
+    updated_at = now()
+WHERE id = $1 AND tenant_id = $2 AND status = 'pending_review'
+`
+	cmd, err := s.pool.Writer.Exec(ctx, q, id, tenantID, reviewerID, notes)
+	if err != nil {
+		return fmt.Errorf("housingguide: reject guide: %w", err)
+	}
+	if cmd.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+	return nil
+}
+
 // AdminListFilter holds filter parameters for the admin management list.
 type AdminListFilter struct {
 	TenantID          pgtype.UUID

@@ -7,3 +7,4 @@ export { default as SortableSection } from './SortableSection.svelte';
 export { default as DraggableBlockType } from './DraggableBlockType.svelte';
 export { default as ContainerChildren } from './ContainerChildren.svelte';
 export { default as ResizeHandle } from './ResizeHandle.svelte';
+export { default as WidgetPicker } from './WidgetPicker.svelte';

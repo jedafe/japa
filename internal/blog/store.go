@@ -203,13 +203,32 @@ func (s *Store) bulkReorderSeriesPosts(ctx context.Context, seriesID pgtype.UUID
 // Content Reviews
 // ---------------------------------------------------------------------------
 
+// contentReviewFromRow converts any of the sqlc-generated *Row types for
+// content_reviews into a gen.ContentReview. The Row types all share the same
+// fields as ContentReview minus Source (which no caller uses).
+func contentReviewFromRow(r any) gen.ContentReview {
+	switch v := r.(type) {
+	case gen.CreateContentReviewRow:
+		return gen.ContentReview{ID: v.ID, TenantID: v.TenantID, ContentID: v.ContentID, ReviewerUserID: v.ReviewerUserID, Status: v.Status, Feedback: v.Feedback, CreatedAt: v.CreatedAt, UpdatedAt: v.UpdatedAt, DeletedAt: v.DeletedAt}
+	case gen.GetContentReviewByIDRow:
+		return gen.ContentReview{ID: v.ID, TenantID: v.TenantID, ContentID: v.ContentID, ReviewerUserID: v.ReviewerUserID, Status: v.Status, Feedback: v.Feedback, CreatedAt: v.CreatedAt, UpdatedAt: v.UpdatedAt, DeletedAt: v.DeletedAt}
+	case gen.ListContentReviewsByContentRow:
+		return gen.ContentReview{ID: v.ID, TenantID: v.TenantID, ContentID: v.ContentID, ReviewerUserID: v.ReviewerUserID, Status: v.Status, Feedback: v.Feedback, CreatedAt: v.CreatedAt, UpdatedAt: v.UpdatedAt, DeletedAt: v.DeletedAt}
+	case gen.ListPendingContentReviewsRow:
+		return gen.ContentReview{ID: v.ID, TenantID: v.TenantID, ContentID: v.ContentID, ReviewerUserID: v.ReviewerUserID, Status: v.Status, Feedback: v.Feedback, CreatedAt: v.CreatedAt, UpdatedAt: v.UpdatedAt, DeletedAt: v.DeletedAt}
+	case gen.UpdateContentReviewStatusRow:
+		return gen.ContentReview{ID: v.ID, TenantID: v.TenantID, ContentID: v.ContentID, ReviewerUserID: v.ReviewerUserID, Status: v.Status, Feedback: v.Feedback, CreatedAt: v.CreatedAt, UpdatedAt: v.UpdatedAt, DeletedAt: v.DeletedAt}
+	}
+	return gen.ContentReview{}
+}
+
 func (s *Store) createContentReview(ctx context.Context, p gen.CreateContentReviewParams) (gen.ContentReview, error) {
 	row, err := s.write.CreateContentReview(ctx, p)
 	if err != nil {
 		return gen.ContentReview{}, fmt.Errorf("creating content review: %w", err)
 	}
 
-	return row, nil
+	return contentReviewFromRow(row), nil
 }
 
 func (s *Store) getContentReviewByID(ctx context.Context, id, tenantID pgtype.UUID) (gen.ContentReview, error) {
@@ -218,7 +237,7 @@ func (s *Store) getContentReviewByID(ctx context.Context, id, tenantID pgtype.UU
 		return gen.ContentReview{}, fmt.Errorf("getting content review by ID: %w", err)
 	}
 
-	return row, nil
+	return contentReviewFromRow(row), nil
 }
 
 func (s *Store) listContentReviewsByContent(ctx context.Context, contentID, tenantID pgtype.UUID) ([]gen.ContentReview, error) {
@@ -230,7 +249,11 @@ func (s *Store) listContentReviewsByContent(ctx context.Context, contentID, tena
 		return nil, fmt.Errorf("listing content reviews by content: %w", err)
 	}
 
-	return rows, nil
+	out := make([]gen.ContentReview, len(rows))
+	for i, r := range rows {
+		out[i] = contentReviewFromRow(r)
+	}
+	return out, nil
 }
 
 func (s *Store) listPendingContentReviews(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]gen.ContentReview, error) {
@@ -247,7 +270,11 @@ func (s *Store) listPendingContentReviews(ctx context.Context, tenantID pgtype.U
 		return nil, fmt.Errorf("listing pending content reviews: %w", err)
 	}
 
-	return rows, nil
+	out := make([]gen.ContentReview, len(rows))
+	for i, r := range rows {
+		out[i] = contentReviewFromRow(r)
+	}
+	return out, nil
 }
 
 func (s *Store) updateContentReviewStatus(ctx context.Context, p gen.UpdateContentReviewStatusParams) (gen.ContentReview, error) {
@@ -256,7 +283,7 @@ func (s *Store) updateContentReviewStatus(ctx context.Context, p gen.UpdateConte
 		return gen.ContentReview{}, fmt.Errorf("updating content review status: %w", err)
 	}
 
-	return row, nil
+	return contentReviewFromRow(row), nil
 }
 
 func (s *Store) deleteContentReview(ctx context.Context, id, tenantID pgtype.UUID) error {

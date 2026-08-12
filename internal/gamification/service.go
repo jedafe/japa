@@ -17,6 +17,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/valkey-io/valkey-go/valkeycompat"
 
 	"github.com/jedafe/japa/internal/config"
@@ -57,11 +58,25 @@ type ValkeyCache interface {
 	Set(ctx context.Context, key string, value any, ttl time.Duration) *valkeycompat.StatusCmd
 }
 
+// PointsAwarder credits reward points to a user's wallet (BUG-GAMMA-002).
+// Implemented by *wallet.Service; nil-safe on the Service struct.
+type PointsAwarder interface {
+	AwardPoints(ctx context.Context, tenantID, userID pgtype.UUID, points int, reason string) error
+}
+
+// Notifier sends user notifications for badge awards and challenge
+// completions (BUG-GAMMA-003, ADR-082 §2). Fire-and-forget per Rule 8.
+type Notifier interface {
+	Notify(ctx context.Context, tenantID, recipientID pgtype.UUID, nType, title, body, actionURL string) error
+}
+
 // Service holds the business logic for the gamification layer.
 type Service struct {
-	store    *Store
-	settings *config.Settings
-	cache    valkeycompat.Cmdable // nil = caching disabled
+	store         *Store
+	settings      *config.Settings
+	cache         valkeycompat.Cmdable // nil = caching disabled
+	pointsAwarder PointsAwarder        // nil = no wallet crediting
+	notifier      Notifier             // nil = no notifications
 }
 
 // NewService creates a gamification service.
@@ -74,3 +89,21 @@ func NewService(store *Store, settings *config.Settings) *Service {
 
 // SetCache injects the Valkey client for leaderboard caching.
 func (s *Service) SetCache(c valkeycompat.Cmdable) { s.cache = c }
+
+// SetPointsAwarder injects the wallet service for reward-point crediting
+// (BUG-GAMMA-002). Optional — when nil, challenge completion skips crediting.
+func (s *Service) SetPointsAwarder(p PointsAwarder) { s.pointsAwarder = p }
+
+// SetNotifier injects the notification adapter for badge/challenge
+// notifications (BUG-GAMMA-003). Optional — when nil, notifications are
+// skipped.
+func (s *Service) SetNotifier(n Notifier) { s.notifier = n }
+
+// EvaluateForWallet is a thin wrapper around EvaluateBadges that satisfies
+// the wallet.GamificationEvaluator interface (BUG-GAMMA-001). It discards
+// the returned badge list — the wallet only needs the side effects (badge
+// awards, notifications).
+func (s *Service) EvaluateForWallet(ctx context.Context, tenantID, userID pgtype.UUID, activityKey string) error {
+	_, err := s.EvaluateBadges(ctx, tenantID, userID, activityKey)
+	return err
+}

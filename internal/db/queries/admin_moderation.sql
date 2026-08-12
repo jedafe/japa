@@ -97,10 +97,14 @@ ON CONFLICT (user_id, group_id) DO NOTHING;
 -- =====================
 
 -- name: VerifyOrganization :exec
-UPDATE organizations SET verified = true, updated_at = now() WHERE id = $1;
+-- Tenant-scoped to prevent cross-tenant verification (BUG-002).
+UPDATE organizations SET verified = true, updated_at = now()
+WHERE id = $1 AND tenant_id = $2;
 
 -- name: UnverifyOrganization :exec
-UPDATE organizations SET verified = false, updated_at = now() WHERE id = $1;
+-- Tenant-scoped and clears verification_type (BUG-002, BUG-016).
+UPDATE organizations SET verified = false, verification_type = NULL, updated_at = now()
+WHERE id = $1 AND tenant_id = $2;
 
 -- =====================
 -- Appeals

@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/db/gen"
@@ -229,17 +230,21 @@ func (h *Handlers) ListPendingOwnershipClaims(w http.ResponseWriter, r *http.Req
 	}
 
 	type claimResponse struct {
-		ID               string  `json:"id"`
-		OrganizationID   string  `json:"organization_id"`
-		ClaimantUserID   string  `json:"claimant_user_id"`
-		ClaimantUsername string  `json:"claimant_username"`
-		ClaimantEmail    string  `json:"claimant_email"`
-		OrgName          string  `json:"org_name"`
-		OrgSlug          string  `json:"org_slug"`
-		Status           string  `json:"status"`
-		EvidenceURL      *string `json:"evidence_url"`
-		Notes            *string `json:"notes"`
-		CreatedAt        string  `json:"created_at"`
+		ID                 string  `json:"id"`
+		OrganizationID     string  `json:"organization_id"`
+		ClaimantUserID     string  `json:"claimant_user_id"`
+		ClaimantUsername   string  `json:"claimant_username"`
+		ClaimantEmail      string  `json:"claimant_email"`
+		OrgName            string  `json:"org_name"`
+		OrgSlug            string  `json:"org_slug"`
+		Status             string  `json:"status"`
+		EvidenceURL        *string `json:"evidence_url"`
+		Notes              *string `json:"notes"`
+		FormSubmissionID   *string `json:"form_submission_id"`
+		ResolutionNote     *string `json:"resolution_note"`
+		ReviewedByUsername *string `json:"reviewed_by_username"`
+		ReviewedAt         *string `json:"reviewed_at"`
+		CreatedAt          string  `json:"created_at"`
 	}
 
 	items := make([]claimResponse, len(claims))
@@ -257,7 +262,85 @@ func (h *Handlers) ListPendingOwnershipClaims(w http.ResponseWriter, r *http.Req
 			Notes:            c.Notes,
 			CreatedAt:        c.CreatedAt.Time.Format("2006-01-02T15:04:05Z"),
 		}
+		if c.FormSubmissionID.Valid {
+			s := uuid.UUID(c.FormSubmissionID.Bytes).String()
+			items[i].FormSubmissionID = &s
+		}
+		if c.ResolutionNote != nil {
+			items[i].ResolutionNote = c.ResolutionNote
+		}
+		if c.ReviewedByUsername != nil {
+			items[i].ReviewedByUsername = c.ReviewedByUsername
+		}
+		if c.ReviewedAt.Valid {
+			s := c.ReviewedAt.Time.Format("2006-01-02T15:04:05Z")
+			items[i].ReviewedAt = &s
+		}
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": items})
+}
+
+// GetClaimFormSubmission handles GET /admin/organizations/claims/{id}/submission.
+// Returns the form submission data linked to an ownership claim so the admin
+// can inspect the claimant's submitted field values during claim review.
+// Ref: japaconnect-engineering/sections/07-organization-profiles-claim-ownership.md
+func (h *Handlers) GetClaimFormSubmission(w http.ResponseWriter, r *http.Request) {
+	user := auth.FromContext(r.Context())
+	if user == nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		return
+	}
+
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	claimID, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid claim ID")
+		return
+	}
+
+	// Fetch the claim to get the form_submission_id.
+	claim, err := h.Queries.GetOwnershipClaimByID(r.Context(), gen.GetOwnershipClaimByIDParams{
+		ID:       pgtype.UUID{Bytes: claimID, Valid: true},
+		TenantID: tenantID,
+	})
+	if err != nil {
+		writeError(w, http.StatusNotFound, "claim_not_found", "Claim not found")
+		return
+	}
+
+	if !claim.FormSubmissionID.Valid {
+		writeError(w, http.StatusNotFound, "no_submission", "This claim has no linked form submission")
+		return
+	}
+
+	submission, err := h.Queries.GetFormSubmissionByID(r.Context(), gen.GetFormSubmissionByIDParams{
+		ID:       claim.FormSubmissionID,
+		TenantID: tenantID,
+	})
+	if err != nil {
+		writeError(w, http.StatusNotFound, "submission_not_found", "Form submission not found")
+		return
+	}
+
+	// Parse the field_values JSON for the response.
+	var fieldValues any
+	if len(submission.FieldValues) > 0 {
+		_ = json.Unmarshal(submission.FieldValues, &fieldValues)
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data": map[string]any{
+			"id":           uuid.UUID(submission.ID.Bytes).String(),
+			"form_id":      uuid.UUID(submission.FormID.Bytes).String(),
+			"field_values": fieldValues,
+			"status":       submission.Status,
+			"created_at":   submission.CreatedAt.Time.Format("2006-01-02T15:04:05Z"),
+			"claim_id":     claimID.String(),
+		},
+	})
 }

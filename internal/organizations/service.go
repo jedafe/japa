@@ -7,9 +7,12 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
@@ -78,6 +81,9 @@ type ReviewClaimInput struct {
 }
 
 // CreateOrganization creates a new organization and adds the creator as owner.
+// The org insert, owner member insert, and member-count increment are wrapped
+// in a single transaction so a partial failure cannot leave an orphaned org
+// (BUG-007).
 func (s *Service) CreateOrganization(ctx context.Context, tenantID, userID pgtype.UUID, input CreateOrganizationInput) (gen.Organization, error) {
 	if input.Name == "" {
 		return gen.Organization{}, errors.New("name is required")
@@ -113,7 +119,15 @@ func (s *Service) CreateOrganization(ctx context.Context, tenantID, userID pgtyp
 		}
 	}
 
-	org, err := s.store.CreateOrganization(ctx, gen.CreateOrganizationParams{
+	tx, err := s.db.Writer.Begin(ctx)
+	if err != nil {
+		return gen.Organization{}, fmt.Errorf("beginning transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	qtx := s.store.write.WithTx(tx)
+
+	org, err := qtx.CreateOrganization(ctx, gen.CreateOrganizationParams{
 		TenantID:    tenantID,
 		OwnerUserID: userID,
 		Name:        input.Name,
@@ -125,11 +139,16 @@ func (s *Service) CreateOrganization(ctx context.Context, tenantID, userID pgtyp
 		OrgType:     orgType,
 	})
 	if err != nil {
+		// BUG-014: Map unique constraint violation (slug) to 409 already_exists.
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return gen.Organization{}, fmt.Errorf("%w: slug already taken", errpkg.ErrDuplicate)
+		}
 		return gen.Organization{}, fmt.Errorf("creating organization: %w", err)
 	}
 
 	// Add creator as owner member.
-	if err := s.store.AddMember(ctx, gen.AddOrganizationMemberParams{
+	if err := qtx.AddOrganizationMember(ctx, gen.AddOrganizationMemberParams{
 		OrganizationID: org.ID,
 		UserID:         userID,
 		Role:           MemberRoleOwner,
@@ -138,8 +157,16 @@ func (s *Service) CreateOrganization(ctx context.Context, tenantID, userID pgtyp
 	}
 
 	// Increment member count.
-	if err := s.store.IncrementMemberCount(ctx, org.ID, tenantID, 1); err != nil {
+	if err := qtx.IncrementOrganizationMemberCount(ctx, gen.IncrementOrganizationMemberCountParams{
+		ID:          org.ID,
+		MemberCount: 1,
+		TenantID:    tenantID,
+	}); err != nil {
 		return gen.Organization{}, fmt.Errorf("incrementing member count: %w", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return gen.Organization{}, fmt.Errorf("committing transaction: %w", err)
 	}
 
 	s.InvalidateOrgCache(ctx, tenantID)
@@ -213,6 +240,10 @@ func (s *Service) UpdateOrganization(ctx context.Context, id, tenantID, userID p
 
 	role, err := s.store.GetMemberRole(ctx, id, userID)
 	if err != nil {
+		// BUG-021: A non-member (ErrNoRows) should get 403, not 404.
+		if errors.Is(err, pgx.ErrNoRows) {
+			return fmt.Errorf("%w: insufficient permissions", errpkg.ErrForbidden)
+		}
 		return fmt.Errorf("checking membership: %w", err)
 	}
 
@@ -269,6 +300,13 @@ func (s *Service) InviteMember(ctx context.Context, orgID, _, invitedBy pgtype.U
 		return gen.OrganizationInvitation{}, fmt.Errorf("%w: insufficient permissions", errpkg.ErrForbidden)
 	}
 
+	// BUG-017: Check for existing pending invitation for this email+org.
+	if _, err := s.store.GetPendingInvitationByEmail(ctx, orgID, input.Email); err == nil {
+		return gen.OrganizationInvitation{}, fmt.Errorf("%w: invitation already pending for this email", errpkg.ErrDuplicate)
+	} else if !errors.Is(err, pgx.ErrNoRows) {
+		return gen.OrganizationInvitation{}, fmt.Errorf("checking existing invitations: %w", err)
+	}
+
 	invRole := input.Role
 	if invRole == "" {
 		invRole = InvitationRoleMember
@@ -277,17 +315,33 @@ func (s *Service) InviteMember(ctx context.Context, orgID, _, invitedBy pgtype.U
 	token := uuid.New().String()
 	tokenHash := hashToken(token)
 
-	return s.store.CreateInvitation(ctx, gen.CreateOrganizationInvitationParams{
+	inv, err := s.store.CreateInvitation(ctx, gen.CreateOrganizationInvitationParams{
 		OrganizationID: orgID,
 		Email:          input.Email,
 		Role:           invRole,
 		InvitedBy:      invitedBy,
 		TokenHash:      tokenHash,
 	})
+	if err != nil {
+		return gen.OrganizationInvitation{}, err
+	}
+
+	// BUG-018: Enqueue a fire-and-forget email:send task to notify the
+	// invitee. Best-effort — the invitation is already persisted.
+	org, orgErr := s.store.GetOrganizationByIDOnly(ctx, orgID)
+	if orgErr == nil {
+		s.enqueueInvitationEmail(ctx, org.Name, input.Email, invRole, token)
+	} else {
+		slog.Warn("organizations: fetch org for invitation email",
+			"org_id", orgID.String(), "error", orgErr)
+	}
+
+	return inv, nil
 }
 
 // ListInvitations returns pending invitations for an organization.
-func (s *Service) ListInvitations(ctx context.Context, orgID, userID pgtype.UUID) ([]gen.OrganizationInvitation, error) {
+// Tenant-scoped for defense-in-depth (BUG-005).
+func (s *Service) ListInvitations(ctx context.Context, orgID, userID, tenantID pgtype.UUID) ([]gen.OrganizationInvitation, error) {
 	role, err := s.store.GetMemberRole(ctx, orgID, userID)
 	if err != nil {
 		return nil, fmt.Errorf("checking membership: %w", err)
@@ -297,7 +351,7 @@ func (s *Service) ListInvitations(ctx context.Context, orgID, userID pgtype.UUID
 		return nil, fmt.Errorf("%w: insufficient permissions", errpkg.ErrForbidden)
 	}
 
-	return s.store.ListInvitations(ctx, orgID)
+	return s.store.ListInvitations(ctx, orgID, tenantID)
 }
 
 // RevokeInvitation revokes a pending invitation. Only owner or admin can revoke.
@@ -316,7 +370,11 @@ func (s *Service) RevokeInvitation(ctx context.Context, orgID, userID, invitatio
 }
 
 // AcceptInvitation accepts an invitation by token and adds the user as a member.
-func (s *Service) AcceptInvitation(ctx context.Context, tokenHash string, userID pgtype.UUID) error {
+// The invitation accept, member insert, and member-count increment are wrapped
+// in a single transaction so a partial failure cannot leave an accepted-but-
+// unjoined invitation (BUG-008). The accepting user's email must match the
+// invited email (BUG-003).
+func (s *Service) AcceptInvitation(ctx context.Context, tokenHash string, userID, tenantID pgtype.UUID) error {
 	inv, err := s.store.GetInvitationByToken(ctx, tokenHash)
 	if err != nil {
 		return fmt.Errorf("finding invitation: %w", err)
@@ -328,11 +386,34 @@ func (s *Service) AcceptInvitation(ctx context.Context, tokenHash string, userID
 		return fmt.Errorf("finding organization: %w", err)
 	}
 
-	if err := s.store.AcceptInvitation(ctx, inv.ID, inv.OrganizationID); err != nil {
+	// Verify the accepting user's email matches the invited email (BUG-003).
+	userEmail, err := s.store.GetUserEmail(ctx, userID, org.TenantID)
+	if err != nil {
+		return fmt.Errorf("fetching user email: %w", err)
+	}
+	if userEmail == "" || inv.Email == "" {
+		return fmt.Errorf("%w: invitation email mismatch", errpkg.ErrForbidden)
+	}
+	if !strings.EqualFold(userEmail, inv.Email) {
+		return fmt.Errorf("%w: invitation email mismatch", errpkg.ErrForbidden)
+	}
+
+	tx, err := s.db.Writer.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("beginning transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	qtx := s.store.write.WithTx(tx)
+
+	if err := qtx.AcceptOrganizationInvitation(ctx, gen.AcceptOrganizationInvitationParams{
+		ID:             inv.ID,
+		OrganizationID: inv.OrganizationID,
+	}); err != nil {
 		return fmt.Errorf("accepting invitation: %w", err)
 	}
 
-	if err := s.store.AddMember(ctx, gen.AddOrganizationMemberParams{
+	if err := qtx.AddOrganizationMember(ctx, gen.AddOrganizationMemberParams{
 		OrganizationID: inv.OrganizationID,
 		UserID:         userID,
 		Role:           inv.Role,
@@ -340,14 +421,65 @@ func (s *Service) AcceptInvitation(ctx context.Context, tokenHash string, userID
 		return fmt.Errorf("adding member: %w", err)
 	}
 
-	if err := s.store.IncrementMemberCount(ctx, inv.OrganizationID, org.TenantID, 1); err != nil {
+	if err := qtx.IncrementOrganizationMemberCount(ctx, gen.IncrementOrganizationMemberCountParams{
+		ID:          inv.OrganizationID,
+		MemberCount: 1,
+		TenantID:    org.TenantID,
+	}); err != nil {
+		return fmt.Errorf("incrementing member count: %w", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("committing transaction: %w", err)
+	}
+
+	return nil
+}
+
+// AddMember adds a user to an organization. Only owner or admin can add
+// members. The member count is incremented atomically.
+// Ref: japaconnect-engineering/sections/07-organization-profiles-claim-ownership.md
+func (s *Service) AddMember(ctx context.Context, orgID, addedBy, targetUserID pgtype.UUID, role string) error {
+	callerRole, err := s.store.GetMemberRole(ctx, orgID, addedBy)
+	if err != nil {
+		return fmt.Errorf("checking membership: %w", err)
+	}
+
+	if callerRole != MemberRoleOwner && callerRole != MemberRoleAdmin {
+		return fmt.Errorf("%w: insufficient permissions", errpkg.ErrForbidden)
+	}
+
+	// Cannot add a member with the owner role — only the creator is owner.
+	if role == MemberRoleOwner {
+		return fmt.Errorf("%w: cannot add a member with the owner role", errpkg.ErrForbidden)
+	}
+
+	if err := s.store.AddMember(ctx, gen.AddOrganizationMemberParams{
+		OrganizationID: orgID,
+		UserID:         targetUserID,
+		Role:           role,
+		InvitedBy:      addedBy,
+	}); err != nil {
+		return fmt.Errorf("adding member: %w", err)
+	}
+
+	// Fetch the org for tenant-scoped member-count update.
+	org, err := s.store.GetOrganizationByIDOnly(ctx, orgID)
+	if err != nil {
+		return fmt.Errorf("finding organization: %w", err)
+	}
+
+	if err := s.store.IncrementMemberCount(ctx, orgID, org.TenantID, 1); err != nil {
 		return fmt.Errorf("incrementing member count: %w", err)
 	}
 
 	return nil
 }
 
-// RemoveMember removes a member from the organization. Only owner or admin can remove.
+// RemoveMember removes a member from the organization. Only owner or admin
+// can remove. The member removal and count decrement are wrapped in a single
+// transaction so a partial failure cannot leave a stale member_count
+// (BUG-013).
 func (s *Service) RemoveMember(ctx context.Context, orgID, removedBy, targetUserID pgtype.UUID) error {
 	role, err := s.store.GetMemberRole(ctx, orgID, removedBy)
 	if err != nil {
@@ -368,26 +500,46 @@ func (s *Service) RemoveMember(ctx context.Context, orgID, removedBy, targetUser
 		return fmt.Errorf("%w: cannot remove the owner", errpkg.ErrForbidden)
 	}
 
-	if err := s.store.RemoveMember(ctx, orgID, targetUserID); err != nil {
-		return fmt.Errorf("removing member: %w", err)
-	}
-
 	// Fetch the org for tenant-scoped member-count update.
 	org, err := s.store.GetOrganizationByIDOnly(ctx, orgID)
 	if err != nil {
 		return fmt.Errorf("finding organization: %w", err)
 	}
 
-	if err := s.store.IncrementMemberCount(ctx, orgID, org.TenantID, -1); err != nil {
+	tx, err := s.db.Writer.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("beginning transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	qtx := s.store.write.WithTx(tx)
+
+	if err := qtx.RemoveOrganizationMember(ctx, gen.RemoveOrganizationMemberParams{
+		OrganizationID: orgID,
+		UserID:         targetUserID,
+	}); err != nil {
+		return fmt.Errorf("removing member: %w", err)
+	}
+
+	if err := qtx.IncrementOrganizationMemberCount(ctx, gen.IncrementOrganizationMemberCountParams{
+		ID:          orgID,
+		MemberCount: -1,
+		TenantID:    org.TenantID,
+	}); err != nil {
 		return fmt.Errorf("decrementing member count: %w", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("committing transaction: %w", err)
 	}
 
 	return nil
 }
 
-// ListMembers returns all members of an organization.
-func (s *Service) ListMembers(ctx context.Context, orgID pgtype.UUID) ([]gen.ListOrganizationMembersRow, error) {
-	return s.store.ListMembers(ctx, orgID)
+// ListMembers returns all members of an organization. Tenant-scoped for
+// defense-in-depth (BUG-004).
+func (s *Service) ListMembers(ctx context.Context, orgID, tenantID pgtype.UUID) ([]gen.ListOrganizationMembersRow, error) {
+	return s.store.ListMembers(ctx, orgID, tenantID)
 }
 
 // UpdateMemberRole changes a member's role. Only owner can change roles.
@@ -417,11 +569,45 @@ func (s *Service) UpdateMemberRole(ctx context.Context, orgID, updatedBy, target
 }
 
 // ClaimOwnership creates an ownership claim for an unclaimed organization.
+// ClaimOwnership creates a new ownership claim. Before creating the claim,
+// the service verifies: (1) the organization exists and is active (BUG-012),
+// (2) the user doesn't already have a pending claim for this org (BUG-010),
+// and (3) when a form submission is linked, its status is 'new' (BUG-009).
+// Ref: japaconnect-engineering/sections/07-organization-profiles-claim-ownership.md
 func (s *Service) ClaimOwnership(ctx context.Context, tenantID, userID, orgID pgtype.UUID, input ClaimOwnershipInput) (gen.OwnershipClaim, error) {
+	// BUG-012: Verify the org exists and is active.
+	active, err := s.store.ActiveOrgExistsByID(ctx, tenantID, orgID)
+	if err != nil {
+		return gen.OwnershipClaim{}, fmt.Errorf("checking organization: %w", err)
+	}
+	if !active {
+		return gen.OwnershipClaim{}, fmt.Errorf("%w: organization not found or inactive", errpkg.ErrNotFound)
+	}
+
+	// BUG-010: Check for existing pending claim by this user for this org.
+	if _, err := s.store.GetPendingClaimByClaimant(ctx, orgID, tenantID, userID); err == nil {
+		return gen.OwnershipClaim{}, fmt.Errorf("%w: you already have a pending claim for this organization", errpkg.ErrDuplicate)
+	} else if !errors.Is(err, pgx.ErrNoRows) {
+		return gen.OwnershipClaim{}, fmt.Errorf("checking existing claims: %w", err)
+	}
+
 	var formSubmissionID pgtype.UUID
 	if input.FormSubmissionID != nil {
 		formSubmissionID = *input.FormSubmissionID
+
+		// BUG-009: Verify the linked form submission has status='new'.
+		submission, err := s.store.GetFormSubmissionByID(ctx, formSubmissionID, tenantID)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return gen.OwnershipClaim{}, fmt.Errorf("%w: form submission not found", errpkg.ErrNotFound)
+			}
+			return gen.OwnershipClaim{}, fmt.Errorf("fetching form submission: %w", err)
+		}
+		if submission.Status != "new" {
+			return gen.OwnershipClaim{}, fmt.Errorf("%w: form submission must have status 'new'", errpkg.ErrInvalid)
+		}
 	}
+
 	return s.store.CreateOwnershipClaim(ctx, gen.CreateOwnershipClaimParams{
 		TenantID:         tenantID,
 		ClaimantUserID:   userID,
@@ -455,7 +641,10 @@ func (s *Service) WithdrawOwnershipClaim(ctx context.Context, claimID, tenantID,
 	return s.store.WithdrawOwnershipClaim(ctx, claimID, tenantID, claimantUserID)
 }
 
-// ReviewOwnershipClaim approves or rejects a claim (admin).
+// ReviewOwnershipClaim approves or rejects a claim (admin). When approving,
+// the organization's owner_user_id is transferred to the claimant and the
+// claimant is added as an 'owner' member (BUG-006).
+// Ref: japaconnect-engineering/sections/07-organization-profiles-claim-ownership.md
 func (s *Service) ReviewOwnershipClaim(ctx context.Context, claimID, tenantID, reviewedBy pgtype.UUID, input ReviewClaimInput) error {
 	// Fetch the claim before reviewing so the webhook payload can carry the
 	// organization_id (entity_id). The row is read tenant-scoped.
@@ -472,6 +661,24 @@ func (s *Service) ReviewOwnershipClaim(ctx context.Context, claimID, tenantID, r
 		ResolutionNote: strPtr(input.ResolutionNote),
 	}); err != nil {
 		return err
+	}
+
+	// When approving, transfer org ownership to the claimant (BUG-006).
+	if input.Status == ClaimStatusApproved && claim.ClaimantUserID.Valid {
+		if err := s.store.TransferOrganizationOwnership(ctx, claim.OrganizationID, claim.ClaimantUserID, tenantID); err != nil {
+			slog.Error("organizations: transfer ownership on claim approval", "claim_id", claimID.String(), "error", err)
+			return fmt.Errorf("transferring ownership: %w", err)
+		}
+		// Ensure the claimant is an owner member.
+		if err := s.store.AddMember(ctx, gen.AddOrganizationMemberParams{
+			OrganizationID: claim.OrganizationID,
+			UserID:         claim.ClaimantUserID,
+			Role:           MemberRoleOwner,
+		}); err != nil {
+			slog.Error("organizations: add owner member on claim approval", "claim_id", claimID.String(), "error", err)
+			return fmt.Errorf("adding owner member: %w", err)
+		}
+		s.InvalidateOrgCache(ctx, tenantID)
 	}
 
 	var eventType string
@@ -503,7 +710,7 @@ func (s *Service) VerifyOrganization(ctx context.Context, id, tenantID, adminID 
 		slog.Warn("organizations: fetch org for verify webhook payload", "org_id", id.String(), "error", err)
 	}
 
-	if err := s.store.VerifyOrganization(ctx, id); err != nil {
+	if err := s.store.VerifyOrganization(ctx, id, tenantID); err != nil {
 		return fmt.Errorf("verifying organization: %w", err)
 	}
 
@@ -513,6 +720,25 @@ func (s *Service) VerifyOrganization(ctx context.Context, id, tenantID, adminID 
 		"organization_id": id,
 		"name":            org.Name,
 		"verified_by":     adminID,
+	})
+
+	return nil
+}
+
+// UnverifyOrganization revokes an organization's verification badge and
+// emits the organization.unverified webhook event (Section 12). Clears
+// verification_type as well (BUG-016). adminID is the administrator who
+// performed the unverification (for the webhook payload).
+func (s *Service) UnverifyOrganization(ctx context.Context, id, tenantID, adminID pgtype.UUID) error {
+	if err := s.store.UnverifyOrganization(ctx, id, tenantID); err != nil {
+		return fmt.Errorf("unverifying organization: %w", err)
+	}
+
+	s.InvalidateOrgCache(ctx, tenantID)
+
+	s.emitWebhook(ctx, tenantID, "organization.unverified", map[string]any{
+		"organization_id": id,
+		"unverified_by":   adminID,
 	})
 
 	return nil
@@ -631,11 +857,13 @@ func (s *Service) AdminDeleteOrganization(ctx context.Context, id, tenantID pgty
 }
 
 // AdminListMembers lists members of an organisation (no membership check).
-func (s *Service) AdminListMembers(ctx context.Context, orgID pgtype.UUID) ([]gen.ListOrganizationMembersRow, error) {
-	return s.store.ListMembers(ctx, orgID)
+// Tenant-scoped for defense-in-depth (BUG-004/005).
+func (s *Service) AdminListMembers(ctx context.Context, orgID, tenantID pgtype.UUID) ([]gen.ListOrganizationMembersRow, error) {
+	return s.store.ListMembers(ctx, orgID, tenantID)
 }
 
 // AdminListInvitations lists invitations for an organisation (no membership check).
-func (s *Service) AdminListInvitations(ctx context.Context, orgID pgtype.UUID) ([]gen.OrganizationInvitation, error) {
-	return s.store.ListInvitations(ctx, orgID)
+// Tenant-scoped for defense-in-depth (BUG-005).
+func (s *Service) AdminListInvitations(ctx context.Context, orgID, tenantID pgtype.UUID) ([]gen.OrganizationInvitation, error) {
+	return s.store.ListInvitations(ctx, orgID, tenantID)
 }

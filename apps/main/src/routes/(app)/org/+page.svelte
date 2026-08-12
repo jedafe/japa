@@ -30,16 +30,22 @@
 	let selectedVerified = $state(untrack(() => data.verified));
 	const searchPlaceholder = $derived(t('organizations.search_placeholder', 'Search organizations…'));
 
-	const orgTypes = $derived([
-		{ value: '', label: t('organizations.filter_all', 'All') },
-		{ value: 'business', label: t('organizations.new.type_business', 'Business') },
-		{ value: 'ngo', label: t('organizations.new.type_ngo', 'NGO') },
-		{ value: 'government', label: t('organizations.new.type_government', 'Government') },
-		{ value: 'embassy', label: t('organizations.new.type_embassy', 'Embassy') },
-		{ value: 'university', label: t('organizations.new.type_university', 'University') },
-		{ value: 'media', label: t('organizations.new.type_media', 'Media') },
-		{ value: 'community', label: t('organizations.new.type_community', 'Community') }
-	]);
+	// BUG-022: Org type options come from the API (Rule 16), with a
+	// hardcoded fallback for when the meta endpoint is unavailable.
+	const orgTypes = $derived(
+		data.orgMeta?.org_types
+			? [{ value: '', label: t('organizations.filter_all', 'All') }, ...data.orgMeta.org_types]
+			: [
+					{ value: '', label: t('organizations.filter_all', 'All') },
+					{ value: 'business', label: t('organizations.new.type_business', 'Business') },
+					{ value: 'ngo', label: t('organizations.new.type_ngo', 'NGO') },
+					{ value: 'government', label: t('organizations.new.type_government', 'Government') },
+					{ value: 'embassy', label: t('organizations.new.type_embassy', 'Embassy') },
+					{ value: 'university', label: t('organizations.new.type_university', 'University') },
+					{ value: 'media', label: t('organizations.new.type_media', 'Media') },
+					{ value: 'community', label: t('organizations.new.type_community', 'Community') }
+				]
+	);
 
 	const verifiedOptions = $derived([
 		{ value: '', label: t('organizations.filter_all', 'All') },

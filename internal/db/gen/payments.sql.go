@@ -13,7 +13,7 @@ import (
 
 const cancelSubscription = `-- name: CancelSubscription :one
 UPDATE subscriptions
-SET status = 'canceled', cancel_at = now(), updated_at = now()
+SET cancel_at_period_end = true, cancelled_at = now(), updated_at = now()
 WHERE id = $1 AND tenant_id = $2
   AND status = 'active'
 RETURNING id, tenant_id, user_id, plan, provider, provider_ref, status, current_period_start, current_period_end, cancel_at, created_at, updated_at, provider_sub_id, cancel_at_period_end, cancelled_at
@@ -24,6 +24,11 @@ type CancelSubscriptionParams struct {
 	TenantID pgtype.UUID `json:"tenant_id"`
 }
 
+// JEOS §17: POST /me/subscription/cancel cancels at period end — the user
+// keeps access until current_period_end, then the subscription ends. We set
+// cancel_at_period_end = true and cancelled_at = now() but leave status
+// 'active' so entitlements remain until the period ends. A scheduled job
+// transitions to 'canceled' at current_period_end (BUG-002).
 func (q *Queries) CancelSubscription(ctx context.Context, arg CancelSubscriptionParams) (Subscription, error) {
 	row := q.db.QueryRow(ctx, cancelSubscription, arg.ID, arg.TenantID)
 	var i Subscription
@@ -1115,10 +1120,11 @@ func (q *Queries) MarkWebhookEventProcessed(ctx context.Context, arg MarkWebhook
 
 const reactivateSubscription = `-- name: ReactivateSubscription :one
 UPDATE subscriptions
-SET status = 'active', cancel_at = NULL, updated_at = now()
+SET status = 'active', cancel_at = NULL, cancel_at_period_end = false, cancelled_at = NULL, updated_at = now()
 WHERE id = (
     SELECT s.id FROM subscriptions s
-    WHERE s.user_id = $1 AND s.tenant_id = $2 AND s.status = 'canceled'
+    WHERE s.user_id = $1 AND s.tenant_id = $2
+      AND (s.status = 'canceled' OR (s.status = 'active' AND s.cancel_at_period_end = true))
     ORDER BY s.updated_at DESC
     LIMIT 1
 )
@@ -1130,6 +1136,10 @@ type ReactivateSubscriptionParams struct {
 	TenantID pgtype.UUID `json:"tenant_id"`
 }
 
+// Reactivates the caller's most recently canceled or scheduled-for-cancellation
+// subscription. Matches both 'canceled' rows and 'active' rows with
+// cancel_at_period_end = true so a user can undo a period-end cancel before
+// the period ends (BUG-002).
 func (q *Queries) ReactivateSubscription(ctx context.Context, arg ReactivateSubscriptionParams) (Subscription, error) {
 	row := q.db.QueryRow(ctx, reactivateSubscription, arg.UserID, arg.TenantID)
 	var i Subscription
@@ -1155,7 +1165,7 @@ func (q *Queries) ReactivateSubscription(ctx context.Context, arg ReactivateSubs
 
 const softDeleteSubscription = `-- name: SoftDeleteSubscription :exec
 UPDATE subscriptions
-SET status = 'canceled', cancel_at = now(), updated_at = now()
+SET status = 'canceled', cancel_at = now(), cancel_at_period_end = true, cancelled_at = now(), updated_at = now()
 WHERE id = $1 AND tenant_id = $2
 `
 
@@ -1180,7 +1190,7 @@ SET
     valid_from = COALESCE($6, valid_from),
     valid_until = $7
 WHERE id = $8 AND tenant_id = $9
-RETURNING id, code
+RETURNING id, tenant_id, code, discount_type, discount_value, applicable_to, max_uses, uses_per_user, group_id, valid_from, valid_until, created_by, created_at
 `
 
 type UpdateDiscountCodeParams struct {
@@ -1195,12 +1205,7 @@ type UpdateDiscountCodeParams struct {
 	TenantID      pgtype.UUID        `json:"tenant_id"`
 }
 
-type UpdateDiscountCodeRow struct {
-	ID   pgtype.UUID `json:"id"`
-	Code string      `json:"code"`
-}
-
-func (q *Queries) UpdateDiscountCode(ctx context.Context, arg UpdateDiscountCodeParams) (UpdateDiscountCodeRow, error) {
+func (q *Queries) UpdateDiscountCode(ctx context.Context, arg UpdateDiscountCodeParams) (DiscountCode, error) {
 	row := q.db.QueryRow(ctx, updateDiscountCode,
 		arg.NewCode,
 		arg.DiscountType,
@@ -1212,8 +1217,22 @@ func (q *Queries) UpdateDiscountCode(ctx context.Context, arg UpdateDiscountCode
 		arg.ID,
 		arg.TenantID,
 	)
-	var i UpdateDiscountCodeRow
-	err := row.Scan(&i.ID, &i.Code)
+	var i DiscountCode
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.Code,
+		&i.DiscountType,
+		&i.DiscountValue,
+		&i.ApplicableTo,
+		&i.MaxUses,
+		&i.UsesPerUser,
+		&i.GroupID,
+		&i.ValidFrom,
+		&i.ValidUntil,
+		&i.CreatedBy,
+		&i.CreatedAt,
+	)
 	return i, err
 }
 
