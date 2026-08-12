@@ -230,7 +230,7 @@ CREATE INDEX idx_scholarships_space             ON scholarships (country_space_i
 
 **`intel_record_id` is nullable** to support the §73 backfill migration — existing scholarship guide content (in `custom_field_values`) gets promoted to `scholarships` rows without an `intel_records` parent (they predate the ingestion system). `override_source='editorial'` for backfilled rows (treat existing data as human-curated).
 
-**§73 amendment:** §73 currently says "no parallel data store" — scholarships live in `custom_field_values`. This design introduces a dedicated `scholarships` table. That reverses §73's locked decision and **requires ADR-XXX** (filed alongside this spec in `.jeos/adr/`). `saved_scholarships.guide_id` continues to work unchanged — it references `contents(id)` either way. Existing scholarship guide content remains valid; the migration backfills `scholarships` rows from existing `custom_field_values` (one-time data migration, reversible via down migration). The §73 section file is updated to reference the new `scholarships` table.
+**§73 amendment:** §73 currently says "no parallel data store" — scholarships live in `custom_field_values`. This design introduces a dedicated `scholarships` table. That reverses §73's locked decision and **requires ADR-112** (filed alongside this spec in `.jeos/adr/`). `saved_scholarships.guide_id` continues to work unchanged — it references `contents(id)` either way. Existing scholarship guide content remains valid; the migration backfills `scholarships` rows from existing `custom_field_values` (one-time data migration, reversible via down migration). The §73 section file is updated to reference the new `scholarships` table.
 
 ### `intel_review_log` — moderation audit trail
 
@@ -1009,7 +1009,7 @@ Inserts the 8 new RBAC permission nodes (`intel.sources.manage`, `intel.sources.
 
 **sqlc regeneration:** after migrations 428–430 land, run `make sqlc-gen` (Rule 2) to generate the typed query structs for the new tables. Query files added to `internal/db/queries/intelligence.sql` + `internal/db/queries/scholarships_intel.sql` (matching the existing `internal/db/queries/` location per `sqlc.yaml`).
 
-**§73 ADR amendment (filed alongside spec):** ADR-XXX — "Dedicated `scholarships` table for intelligence system projection." Reverses §73's "no parallel data store" locked decision. Justification: machine-extracted provenance/confidence/evidence data is a different shape from editorial content metadata; the `custom_field_values` EAV store cannot carry per-field confidence or evidence. The `contents` row remains the editorial wrapper (title, body, SEO, comments, RAG) — `scholarships` is the structured projection. `saved_scholarships.guide_id → contents(id)` continues to work unchanged. The ADR is written in JEOS (`.jeos/adr/`) before any code, per the "JEOS is always updated before code" rule.
+**§73 ADR amendment (filed alongside spec):** ADR-112 — "Dedicated `scholarships` table for intelligence system projection." Reverses §73's "no parallel data store" locked decision. Justification: machine-extracted provenance/confidence/evidence data is a different shape from editorial content metadata; the `custom_field_values` EAV store cannot carry per-field confidence or evidence. The `contents` row remains the editorial wrapper (title, body, SEO, comments, RAG) — `scholarships` is the structured projection. `saved_scholarships.guide_id → contents(id)` continues to work unchanged. The ADR is written in JEOS (`.jeos/adr/`) before any code, per the "JEOS is always updated before code" rule.
 
 ### Rollout sequence (gated, reversible at each step)
 
@@ -1045,7 +1045,7 @@ Each step is independently revertable: disable `intel.enabled` to stop all crawl
 | LLM cost exceeds budget | `gpt-4o-mini` default + extraction cache + volatility-tuned crawl frequency + per-domain `system_settings` thresholds. Monitor `ai_usage_log`. |
 | Tesseract/pdftoppm ops burden in CI/prod | Graceful degradation — missing binary → REVIEW_REQUIRED, not failure. CI installs it; prod Dockerfile documents it. |
 | Legal challenge from a source | `source_license` + `usage_restriction` + `attribution_required` enforced pre-flight. Attribution in every published content. Disable-source button for immediate takedown. |
-| §73 reversal introduces inconsistency | ADR-XXX filed before code. `saved_scholarships` unchanged. Backfill migration preserves existing data. §73 section file updated to reference the new `scholarships` table. |
+| §73 reversal introduces inconsistency | ADR-112 filed before code. `saved_scholarships` unchanged. Backfill migration preserves existing data. §73 section file updated to reference the new `scholarships` table. |
 | Raw document bloat in Postgres | Monitor in Control Panel. v2 offload to S3 is a documented future step, not a v1 blocker. |
 
 ---
@@ -1073,7 +1073,7 @@ Each step is independently revertable: disable `intel.enabled` to stop all crawl
 | §35 Notifications | `intel:notify_discoveries` → `notification:dispatch_batch` |
 | §49 Comments | Scholarship content is commentable |
 | §69 RAG knowledge layer | `content:generate_embedding` for published scholarships |
-| §73 Scholarship finder | Reversed by ADR-XXX; `saved_scholarships` unchanged |
+| §73 Scholarship finder | Reversed by ADR-112; `saved_scholarships` unchanged |
 | §77 Flutter mobile | After subsequent domain expansions; consumes v1 endpoints when app is built |
 | §80 Destination wiki | Country intelligence enriches wiki over time (incremental) |
 | ADR-058 App shell | `/radar` page reuses unified shell |
@@ -1086,7 +1086,7 @@ Each step is independently revertable: disable `intel.enabled` to stop all crawl
 The writing-plans skill will produce the implementation plan. Items the plan must address (non-exhaustive):
 
 - Migration files 428–431 (up + down) + sqlc gen
-- ADR-XXX written in `.jeos/adr/` before any code
+- ADR-112 written in `.jeos/adr/` before any code
 - §11 catalog update (11 new tasks)
 - §03 RBAC catalog update (8 new nodes)
 - `system-settings-catalog.md` update (10 new keys)
