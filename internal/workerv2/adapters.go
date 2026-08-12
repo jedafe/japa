@@ -41,11 +41,13 @@ type tenantRow struct {
 	ID pgtype.UUID
 }
 
-// listTenantIDs returns every tenant ID in the system. Periodic v2 tasks
-// (expire listings, expire challenges, check deadlines, check alerts, prune
-// old rates) iterate over this list so each tenant gets its own sweep.
+// listTenantIDs returns every active tenant ID in the system. Periodic v2
+// tasks (expire listings, expire challenges, check deadlines, check alerts,
+// prune old rates) iterate over this list so each tenant gets its own sweep.
+// Suspended tenants are excluded — their background processing is paused
+// until they are reactivated (migration 000112_tenant_status).
 func listTenantIDs(ctx context.Context, database *db.DB) ([]pgtype.UUID, error) {
-	rows, err := database.Reader.Query(ctx, "SELECT id FROM tenants ORDER BY created_at")
+	rows, err := database.Reader.Query(ctx, "SELECT id FROM tenants WHERE status = 'active' ORDER BY created_at")
 	if err != nil {
 		return nil, fmt.Errorf("listing tenants: %w", err)
 	}
@@ -82,13 +84,16 @@ func lookupTenantIDByEntity(ctx context.Context, database *db.DB, table, entityC
 // JobsAdapter adapts the tenant-scoped jobs.Service to the cross-tenant
 // JobsProcessor interface expected by the Asynq task handlers.
 type JobsAdapter struct {
-	svc *jobs.Service
-	db  *db.DB
+	svc   *jobs.Service
+	db    *db.DB
+	notif *notifications.Service
 }
 
 // NewJobsAdapter creates a JobsAdapter wrapping the given service and database.
-func NewJobsAdapter(svc *jobs.Service, database *db.DB) *JobsAdapter {
-	return &JobsAdapter{svc: svc, db: database}
+// The notifications service is used to dispatch the application_status_update
+// notification to the applicant after a status change (§63, ADR-081).
+func NewJobsAdapter(svc *jobs.Service, database *db.DB, notifSvc *notifications.Service) *JobsAdapter {
+	return &JobsAdapter{svc: svc, db: database, notif: notifSvc}
 }
 
 // ExpireListingsPastDeadline iterates every tenant and expires job listings
@@ -111,14 +116,34 @@ func (a *JobsAdapter) ExpireListingsPastDeadline(ctx context.Context) (int, erro
 }
 
 // NotifyApplicationStatus looks up the application's tenant and notifies the
-// applicant of a status change.
+// applicant of a status change. The status change already happened in the
+// HTTP handler before the task was enqueued; this method only sends the
+// notification (§63, ADR-081).
 func (a *JobsAdapter) NotifyApplicationStatus(ctx context.Context, applicationID pgtype.UUID) error {
 	tid, err := lookupTenantIDByEntity(ctx, a.db, "job_applications", "id", applicationID)
 	if err != nil {
 		return err
 	}
-	_, err = a.svc.UpdateApplicationStatus(ctx, tid, applicationID, "", nil)
-	return err
+	app, err := a.svc.GetApplicationForNotification(ctx, tid, applicationID)
+	if err != nil {
+		return fmt.Errorf("jobs: notify application status: fetch application: %w", err)
+	}
+	if a.notif != nil {
+		if err := a.notif.CreateNotification(ctx, tid, app.ApplicantID,
+			"job_application_status_update", "system", pgtype.UUID{},
+			"job_application", applicationID,
+			"Job Application Update",
+			fmt.Sprintf("Your application status is now: %s", app.Status),
+			""); err != nil {
+			slog.Warn("jobs: notify application status: create notification failed",
+				"application_id", applicationID.String(), "error", err)
+		}
+	}
+	slog.Info("jobs: notify application status",
+		"application_id", applicationID.String(),
+		"applicant_id", app.ApplicantID.String(),
+		"status", app.Status)
+	return nil
 }
 
 // ---------------------------------------------------------------------------
@@ -631,7 +656,7 @@ func RegisterV2Processors(
 	devSvc *devices.Service,
 	notifSvc *notifications.Service,
 ) {
-	worker.RegisterJobsProcessor(NewJobsAdapter(jobsSvc, database))
+	worker.RegisterJobsProcessor(NewJobsAdapter(jobsSvc, database, notifSvc))
 	worker.RegisterGamificationProcessor(NewGamificationAdapter(gamSvc, database))
 	worker.RegisterImportProcessor(NewImportAdapter(impSvc, database))
 	worker.RegisterAssessmentProcessor(NewAssessmentAdapter(assSvc, database, notifSvc))

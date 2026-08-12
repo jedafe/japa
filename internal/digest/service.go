@@ -10,13 +10,17 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"html/template"
 	"log/slog"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/jedafe/japa/internal/config"
+	"github.com/jedafe/japa/internal/email"
 	valkeycompat "github.com/valkey-io/valkey-go/valkeycompat"
 )
 
@@ -35,6 +39,14 @@ type TaskEnqueuer interface {
 type noopEnqueuer struct{}
 
 func (noopEnqueuer) Enqueue(string, []byte, ...interface{}) error { return nil }
+
+// EmailDispatcher is the interface for sending digest emails. Satisfied by
+// *email.EmailDispatcher (structural typing). When nil, SendEditionEmail
+// logs a warning and skips email delivery (the edition is still marked sent
+// so the task does not retry indefinitely on misconfigured environments).
+type EmailDispatcher interface {
+	Dispatch(ctx context.Context, req email.EmailRequest) (email.EmailResponse, error)
+}
 
 // DigestEditionDTO is the API response shape for a digest edition (listing).
 type DigestEditionDTO struct {
@@ -63,10 +75,11 @@ type UpdateEditionInput struct {
 
 // Service holds the business logic for the Community Digest.
 type Service struct {
-	store    *Store
-	settings *config.Settings
-	enqueuer TaskEnqueuer
-	vk       valkeycompat.Cmdable
+	store          *Store
+	settings       *config.Settings
+	enqueuer       TaskEnqueuer
+	vk             valkeycompat.Cmdable
+	emailDispatcher EmailDispatcher
 }
 
 // NewService creates a digest service.
@@ -87,6 +100,11 @@ func (s *Service) SetEnqueuer(e TaskEnqueuer) {
 // SetValkey injects the Valkey client used for the jc:digest_draft lock
 // (§84, valkey-keys-catalog.md, Rule 4).
 func (s *Service) SetValkey(vk valkeycompat.Cmdable) { s.vk = vk }
+
+// SetEmailDispatcher injects the email dispatcher used by SendEditionEmail
+// to deliver the published digest to subscribers (§84 email channel, reuses
+// §62 Newsletter infrastructure via the ADR-015 marketing provider).
+func (s *Service) SetEmailDispatcher(d EmailDispatcher) { s.emailDispatcher = d }
 
 // Enabled reads the digest.enabled system_setting toggle.
 func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
@@ -242,6 +260,237 @@ func (s *Service) AdminGenerate(ctx context.Context, tenantID pgtype.UUID) (stri
 	return "accepted", nil
 }
 
+// GenerateEdition is the digest:generate task processor (§84, ADR-092). It
+// assembles a new digest edition from platform analytics (top threads, new
+// members, upcoming events, featured story) and stores it in draft status
+// for the admin review window. When tenantID is the zero UUID (cron mode),
+// it iterates all active tenants. When spaceID is valid, the edition is
+// scoped to that Space; otherwise it is tenant-wide.
+//
+// This method satisfies the worker.DigestProcessor interface. It is
+// idempotent per (tenant_id, space_id, cadence, week) — a duplicate
+// generate within the same week overwrites the existing draft rather than
+// creating a second one (the admin review window handles the rest).
+//
+// Ref: japaconnect-engineering/sections/84-community-digest-widget.md
+func (s *Service) GenerateEdition(ctx context.Context, tenantID, spaceID pgtype.UUID) error {
+	// Cron mode: zero tenantID → iterate all active tenants.
+	if !tenantID.Valid {
+		tenantIDs, err := s.store.ListActiveTenantIDs(ctx)
+		if err != nil {
+			return fmt.Errorf("digest: generate: list tenants: %w", err)
+		}
+		var firstErr error
+		for _, tid := range tenantIDs {
+			if err := s.generateForTenant(ctx, tid, spaceID); err != nil {
+				slog.Warn("task:digest:generate: tenant failed", "tenant_id", tid, "error", err)
+				if firstErr == nil {
+					firstErr = err
+				}
+				continue
+			}
+		}
+		return firstErr
+	}
+	return s.generateForTenant(ctx, tenantID, spaceID)
+}
+
+// generateForTenant assembles and stores a single digest edition for one
+// tenant (and optionally one Space).
+func (s *Service) generateForTenant(ctx context.Context, tenantID, spaceID pgtype.UUID) error {
+	if !s.Enabled(ctx, tenantID) {
+		slog.Info("task:digest:generate: feature disabled, skipping", "tenant_id", tenantID)
+		return nil
+	}
+
+	content, err := s.store.AssembleDigestContent(ctx, tenantID, spaceID)
+	if err != nil {
+		return fmt.Errorf("digest: generate: assemble content: %w", err)
+	}
+
+	editionID, err := s.store.CreateEdition(ctx, DigestEdition{
+		TenantID:    tenantID,
+		SpaceID:     spaceID,
+		Cadence:     "weekly",
+		Status:      "draft",
+		ScheduledFor: pgtype.Timestamptz{Time: time.Now().Add(24 * time.Hour), Valid: true},
+		Content:     content,
+		GeneratedBy: "system",
+	})
+	if err != nil {
+		return fmt.Errorf("digest: generate: create edition: %w", err)
+	}
+
+	// Set the draft review lock so the admin review window is tracked (§84).
+	s.setDraftLock(ctx, tenantID, editionID)
+
+	slog.Info("task:digest:generate: edition assembled",
+		"tenant_id", tenantID, "edition_id", editionID, "space_id", spaceID.Valid)
+	return nil
+}
+
+// SendEditionEmail is the digest:send_email task processor (§84, ADR-092).
+// It loads a published edition, renders its content into HTML, and sends it
+// to all subscribers with digest_enabled=true via the ADR-015 marketing
+// provider. One-click unsubscribe headers are generated per recipient
+// (reusing §62 Newsletter unsubscribe token infrastructure). After
+// dispatch, the edition's email_sent flag is stamped.
+//
+// This method satisfies the worker.DigestProcessor interface.
+//
+// Ref: japaconnect-engineering/sections/84-community-digest-widget.md
+func (s *Service) SendEditionEmail(ctx context.Context, editionID, tenantID pgtype.UUID) error {
+	if !tenantID.Valid || !editionID.Valid {
+		return fmt.Errorf("digest: send_email: edition_id and tenant_id are required")
+	}
+	if !s.EmailEnabled(ctx, tenantID) {
+		slog.Info("task:digest:send_email: email disabled, skipping", "tenant_id", tenantID)
+		return nil
+	}
+	if s.emailDispatcher == nil {
+		slog.Warn("task:digest:send_email: no email dispatcher wired, skipping", "tenant_id", tenantID)
+		return nil
+	}
+
+	edition, err := s.store.GetEdition(ctx, editionID, tenantID)
+	if err != nil {
+		return fmt.Errorf("digest: send_email: load edition: %w", err)
+	}
+	if edition.Status != "published" {
+		return fmt.Errorf("digest: send_email: edition %s is not published (status=%s)",
+			editionID, edition.Status)
+	}
+
+	subscribers, err := s.store.GetDigestSubscriberEmails(ctx, tenantID)
+	if err != nil {
+		return fmt.Errorf("digest: send_email: list subscribers: %w", err)
+	}
+	if len(subscribers) == 0 {
+		slog.Info("task:digest:send_email: no subscribers, skipping", "tenant_id", tenantID)
+		return nil
+	}
+
+	baseURL := s.resolveBaseURL(ctx, tenantID)
+	subject := s.emailSubject(ctx, tenantID)
+	htmlBody := renderDigestEmail(edition.Content, baseURL)
+
+	sent, failed := 0, 0
+	for _, recipient := range subscribers {
+		unsubURL, headers := s.unsubscribeLink(ctx, tenantID, recipient, baseURL)
+		body := htmlBody
+		if unsubURL != "" {
+			body = appendUnsubscribeLinkToHTML(body, unsubURL)
+		}
+		if _, err := s.emailDispatcher.Dispatch(ctx, email.EmailRequest{
+			To:       recipient,
+			Subject:  subject,
+			Body:     body,
+			IsHTML:   true,
+			Category: "marketing",
+			Headers:  headers,
+		}); err != nil {
+			slog.Warn("task:digest:send_email: send failed", "recipient", recipient, "error", err)
+			failed++
+			continue
+		}
+		sent++
+	}
+
+	// Stamp email_sent so the admin panel reflects delivery status.
+	if err := s.store.MarkEmailSent(ctx, editionID, tenantID); err != nil {
+		slog.Warn("task:digest:send_email: mark email_sent failed", "error", err)
+	}
+
+	slog.Info("task:digest:send_email: complete",
+		"tenant_id", tenantID, "edition_id", editionID,
+		"subscribers", len(subscribers), "sent", sent, "failed", failed)
+	return nil
+}
+
+// resolveBaseURL returns the tenant's site base URL from system_settings,
+// falling back to the JC_SITE_URL env var (mirrors worker.resolveBaseURL).
+func (s *Service) resolveBaseURL(ctx context.Context, tenantID pgtype.UUID) string {
+	if s.settings != nil {
+		if v := s.settings.GetStringOr(ctx, tenantID, "site.base_url", ""); v != "" {
+			return v
+		}
+	}
+	return os.Getenv("JC_SITE_URL")
+}
+
+// emailSubject resolves the site name for the digest email subject line.
+func (s *Service) emailSubject(ctx context.Context, tenantID pgtype.UUID) string {
+	name := "JapaConnect"
+	if s.settings != nil {
+		if v := s.settings.GetStringOr(ctx, tenantID, "site.name", ""); v != "" {
+			name = v
+		}
+	}
+	return fmt.Sprintf("Weekly Community Digest — %s", name)
+}
+
+// unsubscribeLink generates a per-recipient one-click unsubscribe URL + the
+// List-Unsubscribe SMTP headers (§62 compliance, ADR-080 §4). Returns
+// ("", nil) if the subscriber cannot be resolved (best-effort).
+func (s *Service) unsubscribeLink(ctx context.Context, tenantID pgtype.UUID, recipient, baseURL string) (string, map[string]string) {
+	token, err := s.store.CreateUnsubscribeTokenForEmail(ctx, tenantID, recipient)
+	if err != nil {
+		slog.Warn("task:digest:send_email: unsubscribe token failed", "recipient", recipient, "error", err)
+		return "", nil
+	}
+	if token == "" {
+		return "", nil
+	}
+	base := baseURL
+	if base == "" {
+		base = os.Getenv("JC_SITE_URL")
+	}
+	url := strings.TrimRight(base, "/") + "/unsubscribe?token=" + token
+	headers := map[string]string{
+		"List-Unsubscribe":      "<" + url + ">",
+		"List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+	}
+	return url, headers
+}
+
+// renderDigestEmail renders the edition content JSON into an HTML email
+// body using html/template for XSS safety. The template mirrors the v1
+// HandleNewsletterDigest layout (§62).
+func renderDigestEmail(content []byte, baseURL string) string {
+	var c DigestContent
+	_ = json.Unmarshal(content, &c)
+
+	const tmpl = `<div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
+<h2>Weekly Community Digest</h2>
+{{if .TopThreads}}<h3>Top Threads</h3><ul>{{range .TopThreads}}<li><a href="{{$.BaseURL}}/forum/{{.Slug}}">{{.Title}}</a></li>{{end}}</ul>{{end}}
+{{if .NewMembers}}<h3>New Members</h3><ul>{{range .NewMembers}}<li>{{if .DisplayName}}{{.DisplayName}}{{else}}{{.Username}}{{end}}</li>{{end}}</ul>{{end}}
+{{if .UpcomingEvents}}<h3>Upcoming Events</h3><ul>{{range .UpcomingEvents}}<li><a href="{{$.BaseURL}}/{{.Slug}}">{{.Title}}</a></li>{{end}}</ul>{{end}}
+{{if .FeaturedStory}}<h3>Featured Story</h3><p><a href="{{$.BaseURL}}/{{.FeaturedStory.Slug}}">{{.FeaturedStory.Title}}</a></p>{{end}}
+</div>`
+
+	t, err := template.New("digest").Parse(tmpl)
+	if err != nil {
+		return "<div style=\"font-family: sans-serif;\"><h2>Weekly Community Digest</h2></div>"
+	}
+	data := struct {
+		BaseURL        string
+		DigestContent
+	}{BaseURL: baseURL, DigestContent: c}
+	var body strings.Builder
+	_ = t.Execute(&body, data)
+	return body.String()
+}
+
+// appendUnsubscribeLinkToHTML appends a visible unsubscribe link to the
+// email body before </body> (or at the end). Mirrors worker.appendUnsubscribeLink.
+func appendUnsubscribeLinkToHTML(htmlBody, unsubURL string) string {
+	footer := fmt.Sprintf(`<p style="margin-top: 24px; font-size: 12px; color: #888;"><a href="%s">Unsubscribe</a></p>`, unsubURL)
+	if strings.Contains(htmlBody, "</body>") {
+		return strings.Replace(htmlBody, "</body>", footer+"</body>", 1)
+	}
+	return htmlBody + footer
+}
+
 // setDraftLock sets jc:digest_draft:{tenant_id}:{edition_id} with a 2h TTL
 // marking the edition as pending admin review (§84, valkey-keys-catalog.md).
 func (s *Service) setDraftLock(ctx context.Context, tenantID, editionID pgtype.UUID) {
@@ -306,3 +555,4 @@ func formatTs(t pgtype.Timestamptz) string {
 	}
 	return t.Time.UTC().Format(time.RFC3339)
 }
+

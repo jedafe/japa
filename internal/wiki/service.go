@@ -9,13 +9,17 @@ package wiki
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/valkey-io/valkey-go/valkeycompat"
 
 	"github.com/jedafe/japa/internal/config"
+	"github.com/jedafe/japa/internal/valkey"
 )
 
 // WikiPageDTO is the API response shape for a wiki page (index listing).
@@ -30,6 +34,17 @@ type WikiPageDTO struct {
 	UpdatedAt      string `json:"updated_at"`
 	SpaceSlug      string `json:"space_slug,omitempty"`
 	SpaceName      string `json:"space_name,omitempty"`
+}
+
+// AdminWikiPageDTO extends WikiPageDTO with the latest revision metadata
+// needed by the admin review queue (B1). latest_revision_id gates the
+// Approve/Reject actions in the frontend; status + excerpt populate the
+// table columns.
+type AdminWikiPageDTO struct {
+	WikiPageDTO
+	LatestRevisionID     string `json:"latest_revision_id,omitempty"`
+	LatestRevisionStatus string `json:"status,omitempty"`
+	Excerpt              string `json:"excerpt,omitempty"`
 }
 
 // WikiPageDetailDTO is the full wiki page with current approved revision.
@@ -80,12 +95,17 @@ type GeneratePageInput struct {
 type Service struct {
 	store    *Store
 	settings *config.Settings
+	vk       valkeycompat.Cmdable
 }
 
 // NewService creates a wiki service.
 func NewService(store *Store, settings *config.Settings) *Service {
 	return &Service{store: store, settings: settings}
 }
+
+// SetValkey injects the Valkey client used for the jc:wiki_edit_lock lock
+// (B6: soft edit lock preventing concurrent wiki edits, §80 / valkey-keys-catalog).
+func (s *Service) SetValkey(vk valkeycompat.Cmdable) { s.vk = vk }
 
 // Enabled reads the wiki.enabled system_setting toggle.
 func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
@@ -204,6 +224,11 @@ func (s *Service) GetRevisionHistory(ctx context.Context, tenantID pgtype.UUID, 
 // SubmitRevision creates a new pending revision for a wiki page. The
 // caller must have the wiki.edit permission and meet the reputation
 // threshold (checked by the handler before calling this method).
+//
+// B6: acquires the jc:wiki_edit_lock:{page_id}:{user_id} Valkey lock before
+// inserting to prevent the same user from double-submitting concurrently.
+// The lock is released on success or failure; a 5-minute TTL auto-expires
+// if the process crashes mid-request.
 func (s *Service) SubmitRevision(ctx context.Context, tenantID, userID pgtype.UUID, spaceSlug, pageSlug string, input SubmitRevisionInput) (string, error) {
 	if len(input.Content) == 0 {
 		return "", fmt.Errorf("content is required")
@@ -221,6 +246,23 @@ func (s *Service) SubmitRevision(ctx context.Context, tenantID, userID pgtype.UU
 		return "", ErrPageLocked
 	}
 
+	// B6: acquire the per-user-per-page edit lock. SET NX EX 5m.
+	lockKey := valkey.MustKey("wiki_edit_lock:%s:%s", page.ID.String(), userID.String())
+	if s.vk != nil {
+		acquired, lerr := s.vk.SetNX(ctx, lockKey, "1", 5*time.Minute).Result()
+		if lerr != nil {
+			slog.Warn("wiki: edit lock acquire failed, proceeding", "error", lerr)
+			// Fail open — degrade gracefully if Valkey is unreachable.
+		} else if !acquired {
+			return "", ErrEditInProgress
+		}
+		defer func() {
+			if err := s.vk.Del(ctx, lockKey).Err(); err != nil {
+				slog.Warn("wiki: edit lock release failed", "error", err)
+			}
+		}()
+	}
+
 	revID, err := s.store.SubmitRevision(ctx, tenantID, page.ID, userID, input.Content, input.Summary, false, "", "")
 	if err != nil {
 		return "", fmt.Errorf("wiki: submit: %w", err)
@@ -228,12 +270,15 @@ func (s *Service) SubmitRevision(ctx context.Context, tenantID, userID pgtype.UU
 	return revID.String(), nil
 }
 
-// ApproveRevision approves a pending revision (moderator+).
-func (s *Service) ApproveRevision(ctx context.Context, revID, pageID, tenantID, reviewerID pgtype.UUID, notes string) error {
-	if err := s.store.ApproveRevision(ctx, revID, pageID, tenantID, reviewerID, notes); err != nil {
-		return fmt.Errorf("wiki: approve: %w", err)
+// ApproveRevision approves a pending revision (moderator+). Returns the
+// approved revision's content (TipTap JSON bytes) so the handler can
+// fire-and-forget RAG indexing (B8, §69/ADR-069).
+func (s *Service) ApproveRevision(ctx context.Context, revID, pageID, tenantID, reviewerID pgtype.UUID, notes string) ([]byte, error) {
+	content, err := s.store.ApproveRevision(ctx, revID, pageID, tenantID, reviewerID, notes)
+	if err != nil {
+		return nil, fmt.Errorf("wiki: approve: %w", err)
 	}
-	return nil
+	return content, nil
 }
 
 // RejectRevision rejects a pending revision (moderator+).
@@ -256,7 +301,8 @@ func (s *Service) UpdatePage(ctx context.Context, pageID, tenantID pgtype.UUID, 
 }
 
 // AdminListPages returns all wiki pages for admin management (paginated).
-func (s *Service) AdminListPages(ctx context.Context, tenantID pgtype.UUID, spaceID pgtype.UUID, category, q string, isLocked *bool, page, limit int32) ([]WikiPageDTO, int64, error) {
+// Each row includes the latest revision metadata for the review queue (B1).
+func (s *Service) AdminListPages(ctx context.Context, tenantID pgtype.UUID, spaceID pgtype.UUID, category, q string, isLocked *bool, page, limit int32) ([]AdminWikiPageDTO, int64, error) {
 	if limit <= 0 {
 		limit = 20
 	}
@@ -278,11 +324,22 @@ func (s *Service) AdminListPages(ctx context.Context, tenantID pgtype.UUID, spac
 		return nil, 0, fmt.Errorf("wiki: admin list: %w", err)
 	}
 
-	dtos := make([]WikiPageDTO, 0, len(pages))
+	dtos := make([]AdminWikiPageDTO, 0, len(pages))
 	for _, p := range pages {
-		dto := pageToDTO(p.WikiPage)
+		dto := AdminWikiPageDTO{
+			WikiPageDTO: pageToDTO(p.WikiPage),
+		}
 		dto.SpaceSlug = p.SpaceSlug
 		dto.SpaceName = p.SpaceName
+		if p.LatestRevisionID != nil {
+			dto.LatestRevisionID = p.LatestRevisionID.String()
+		}
+		if p.LatestRevisionStatus != nil {
+			dto.LatestRevisionStatus = *p.LatestRevisionStatus
+		}
+		if p.Excerpt != nil {
+			dto.Excerpt = *p.Excerpt
+		}
 		dtos = append(dtos, dto)
 	}
 	return dtos, total, nil
@@ -291,6 +348,45 @@ func (s *Service) AdminListPages(ctx context.Context, tenantID pgtype.UUID, spac
 // ErrPageLocked is returned when a wiki page is locked and cannot accept
 // community edits.
 var ErrPageLocked = fmt.Errorf("wiki page is locked to mod-only edits")
+
+// ErrEditInProgress is returned when the same user already has a concurrent
+// wiki edit submission in-flight for the same page (B6: jc:wiki_edit_lock).
+var ErrEditInProgress = fmt.Errorf("a wiki edit is already in progress for this page by this user")
+
+// ErrSpaceNotFound is returned when the destination space slug does not exist.
+var ErrSpaceNotFound = fmt.Errorf("destination space not found")
+
+// GeneratePage creates a stub wiki page for a space/category combination,
+// resolving the space_slug to a space_id. If the page already exists (same
+// slug within the space), it returns the existing page id (idempotent). The
+// actual AI draft content is added later as a pending ai_generated revision
+// via the Content Agent — this method only ensures the page shell exists
+// (B3: replaces the former stub handler).
+func (s *Service) GeneratePage(ctx context.Context, tenantID, userID pgtype.UUID, input GeneratePageInput) (string, error) {
+	spaceID, err := s.store.GetSpaceIDBySlug(ctx, tenantID, input.SpaceSlug)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", ErrSpaceNotFound
+		}
+		return "", fmt.Errorf("wiki: generate: resolve space: %w", err)
+	}
+
+	category := input.Category
+	if category == "" {
+		category = "other"
+	}
+
+	pageID, err := s.store.CreatePage(ctx, tenantID, spaceID, userID, input.PageSlug, input.Title, category)
+	if err != nil {
+		if errors.Is(err, ErrPageExists) {
+			// Page already exists — return a sentinel so the handler can 200
+			// instead of 201. The caller can still enqueue an AI draft for it.
+			return "", ErrPageExists
+		}
+		return "", fmt.Errorf("wiki: generate: create page: %w", err)
+	}
+	return pageID.String(), nil
+}
 
 // pageToDTO converts a WikiPage to a WikiPageDTO.
 func pageToDTO(p WikiPage) WikiPageDTO {

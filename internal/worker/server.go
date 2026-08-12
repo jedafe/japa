@@ -191,6 +191,18 @@ func NewScheduler(cfg *Config) *asynq.Scheduler {
 	// creation). Low queue.
 	schedule("0 5 * * *", TypeCvFormatSessionsPurge, 24*time.Hour)
 
+	// Daily gamification challenge expiry — 04:00 UTC (§64, ADR-082).
+	// Deactivates challenges past their ends_at. Low queue.
+	// BUG: was missing from the scheduler — the task was registered as a
+	// handler but never enqueued, so expired challenges were never swept.
+	schedule("0 4 * * *", TypeGamificationExpireChallenges, 24*time.Hour)
+
+	// Nightly embassy alert expiry — 03:00 UTC (§91, ADR-099).
+	// Expires appointment alerts past their expires_at date. Low queue.
+	// BUG: was missing from the scheduler — the task was registered as a
+	// handler but never enqueued, so expired alerts were never swept.
+	schedule("0 3 * * *", TypeEmbassyExpireChecks, 24*time.Hour)
+
 	// Weekly community digest generation — Sunday 22:00 UTC (§84, ADR-092).
 	// Assembles a new digest edition from platform analytics (top threads,
 	// new members, events, featured story, poll) for each active tenant.

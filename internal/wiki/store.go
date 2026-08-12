@@ -55,6 +55,16 @@ type WikiPageWithSpace struct {
 	SpaceName string
 }
 
+// AdminWikiPageWithSpace extends WikiPageWithSpace with the latest revision
+// metadata for the admin review queue (B1: contract drift fix). The latest
+// revision is the most recently created row for the page, regardless of status.
+type AdminWikiPageWithSpace struct {
+	WikiPageWithSpace
+	LatestRevisionID     *pgtype.UUID
+	LatestRevisionStatus *string
+	Excerpt              *string
+}
+
 // WikiRevision represents a single revision row.
 type WikiRevision struct {
 	ID                pgtype.UUID
@@ -289,11 +299,12 @@ RETURNING id
 }
 
 // ApproveRevision marks a revision as approved and stamps the reviewer.
-// Also updates the wiki_page's updated_at.
-func (s *Store) ApproveRevision(ctx context.Context, revID, pageID, tenantID, reviewerID pgtype.UUID, reviewNotes string) error {
+// Also updates the wiki_page's updated_at. Returns the approved revision's
+// content (TipTap JSON) so the caller can enqueue RAG indexing (B8).
+func (s *Store) ApproveRevision(ctx context.Context, revID, pageID, tenantID, reviewerID pgtype.UUID, reviewNotes string) ([]byte, error) {
 	tx, err := s.pool.Writer.Begin(ctx)
 	if err != nil {
-		return fmt.Errorf("wiki: approve: begin tx: %w", err)
+		return nil, fmt.Errorf("wiki: approve: begin tx: %w", err)
 	}
 	defer tx.Rollback(ctx)
 
@@ -302,27 +313,32 @@ func (s *Store) ApproveRevision(ctx context.Context, revID, pageID, tenantID, re
 		notesPtr = &reviewNotes
 	}
 
-	_, err = tx.Exec(ctx, `
+	var content []byte
+	err = tx.QueryRow(ctx, `
 UPDATE wiki_revisions
 SET status = 'approved', reviewed_by = $3, reviewed_at = now(),
     hitl_reviewed_by = $3, hitl_reviewed_at = now(), hitl_review_notes = $4
 WHERE id = $1 AND tenant_id = $2 AND status = 'pending'
-`, revID, tenantID, reviewerID, notesPtr)
+RETURNING content
+`, revID, tenantID, reviewerID, notesPtr).Scan(&content)
 	if err != nil {
-		return fmt.Errorf("wiki: approve: update revision: %w", err)
+		if err == pgx.ErrNoRows {
+			return nil, fmt.Errorf("wiki: approve: revision not found or not pending")
+		}
+		return nil, fmt.Errorf("wiki: approve: update revision: %w", err)
 	}
 
 	_, err = tx.Exec(ctx, `
 UPDATE wiki_pages SET updated_at = now() WHERE id = $1 AND tenant_id = $2
 `, pageID, tenantID)
 	if err != nil {
-		return fmt.Errorf("wiki: approve: update page: %w", err)
+		return nil, fmt.Errorf("wiki: approve: update page: %w", err)
 	}
 
 	if err := tx.Commit(ctx); err != nil {
-		return fmt.Errorf("wiki: approve: commit: %w", err)
+		return nil, fmt.Errorf("wiki: approve: commit: %w", err)
 	}
-	return nil
+	return content, nil
 }
 
 // RejectRevision marks a revision as rejected and stamps the reviewer.
@@ -388,6 +404,23 @@ UPDATE wiki_pages SET %s WHERE id = $%d AND tenant_id = $%d
 	return nil
 }
 
+// GetSpaceIDBySlug resolves a space slug to its ID within a tenant. Used by
+// the generate endpoint to create a stub wiki page from a space_slug.
+func (s *Store) GetSpaceIDBySlug(ctx context.Context, tenantID pgtype.UUID, spaceSlug string) (pgtype.UUID, error) {
+	var id pgtype.UUID
+	err := s.pool.Reader.QueryRow(ctx,
+		`SELECT id FROM spaces WHERE tenant_id = $1 AND slug = $2 LIMIT 1`,
+		tenantID, spaceSlug,
+	).Scan(&id)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return pgtype.UUID{}, pgx.ErrNoRows
+		}
+		return pgtype.UUID{}, fmt.Errorf("wiki: get space by slug: %w", err)
+	}
+	return id, nil
+}
+
 // CreatePage creates a new wiki page. Used by the admin generate endpoint
 // and the space activation seed job.
 func (s *Store) CreatePage(ctx context.Context, tenantID, spaceID, createdBy pgtype.UUID, slug, title, category string) (pgtype.UUID, error) {
@@ -419,7 +452,9 @@ type AdminListPagesFilter struct {
 }
 
 // AdminListPages returns all wiki pages for admin management (paginated).
-func (s *Store) AdminListPages(ctx context.Context, f AdminListPagesFilter) ([]WikiPageWithSpace, int64, error) {
+// Each row includes the latest revision's id, status, and an excerpt so the
+// admin review queue can gate Approve/Reject actions (B1).
+func (s *Store) AdminListPages(ctx context.Context, f AdminListPagesFilter) ([]AdminWikiPageWithSpace, int64, error) {
 	var (
 		conditions []string
 		args       []any
@@ -468,9 +503,20 @@ func (s *Store) AdminListPages(ctx context.Context, f AdminListPagesFilter) ([]W
 SELECT wp.id, wp.tenant_id, wp.space_id, wp.slug, wp.title, wp.category,
        wp.is_active, wp.is_featured, wp.is_locked, wp.created_by,
        wp.created_at, wp.updated_at, wp.is_japabot_indexed,
-       sp.slug AS space_slug, sp.name AS space_name
+       sp.slug AS space_slug, sp.name AS space_name,
+       lr.id AS latest_revision_id, lr.status AS latest_revision_status,
+       lr.excerpt
 FROM wiki_pages wp
 JOIN spaces sp ON sp.id = wp.space_id AND sp.tenant_id = wp.tenant_id
+LEFT JOIN LATERAL (
+    SELECT wr.id, wr.status,
+           COALESCE(wr.summary, left(btrim(regexp_replace(
+               wr.content::text, '<[^>]+>', '', 'g')), 200), '') AS excerpt
+    FROM wiki_revisions wr
+    WHERE wr.wiki_page_id = wp.id AND wr.tenant_id = wp.tenant_id
+    ORDER BY wr.created_at DESC
+    LIMIT 1
+) lr ON true
 WHERE %s
 ORDER BY wp.updated_at DESC
 LIMIT $%d OFFSET $%d
@@ -483,14 +529,15 @@ LIMIT $%d OFFSET $%d
 	}
 	defer rows.Close()
 
-	var out []WikiPageWithSpace
+	var out []AdminWikiPageWithSpace
 	for rows.Next() {
-		var p WikiPageWithSpace
+		var p AdminWikiPageWithSpace
 		if err := rows.Scan(
 			&p.ID, &p.TenantID, &p.SpaceID, &p.Slug, &p.Title, &p.Category,
 			&p.IsActive, &p.IsFeatured, &p.IsLocked, &p.CreatedBy,
 			&p.CreatedAt, &p.UpdatedAt, &p.IsJapabotIndexed,
 			&p.SpaceSlug, &p.SpaceName,
+			&p.LatestRevisionID, &p.LatestRevisionStatus, &p.Excerpt,
 		); err != nil {
 			return nil, 0, fmt.Errorf("wiki: admin scan page: %w", err)
 		}
