@@ -20,7 +20,7 @@
 		updated_at: string;
 	};
 
-	const priorities = ['low', 'normal', 'high', 'urgent'];
+	const priorities = ['low', 'normal', 'high', 'urgent'] as const;
 
 	function slugify(text: string): string {
 		return text
@@ -58,7 +58,7 @@
 			key: 'default_priority',
 			label: t('ticket-types.default_priority', 'Default Priority'),
 			type: 'select',
-			options: priorities.map((p) => ({ value: p, label: p }))
+			options: priorities.map((p) => ({ value: p, label: t(`tickets.${p}`, p) }))
 		},
 		{ key: 'is_public', label: t('ticket-types.active', 'Active'), type: 'checkbox' }
 	];

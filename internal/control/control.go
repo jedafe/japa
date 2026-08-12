@@ -38,14 +38,30 @@ func NewService(database *db.DB) *Service {
 	return &Service{read: gen.New(database.Reader), write: gen.New(database.Writer)}
 }
 
-// ListTenants returns every tenant, newest first.
-func (s *Service) ListTenants(ctx context.Context) ([]gen.ListTenantsRow, error) {
-	tenants, err := s.read.ListTenants(ctx)
+// ListTenants returns a paginated list of tenants, newest first.
+// statusFilter is empty for all statuses, or one of active/suspended/deleted.
+func (s *Service) ListTenants(ctx context.Context, statusFilter string, limit, offset int32) ([]gen.ListTenantsRow, error) {
+	tenants, err := s.read.ListTenants(ctx, gen.ListTenantsParams{
+		StatusFilter: statusFilter,
+		PageLimit:    limit,
+		PageOffset:   offset,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("listing tenants: %w", err)
 	}
 
 	return tenants, nil
+}
+
+// CountTenants returns the total number of tenants matching the optional
+// status filter, for pagination metadata.
+func (s *Service) CountTenants(ctx context.Context, statusFilter string) (int32, error) {
+	count, err := s.read.CountTenants(ctx, statusFilter)
+	if err != nil {
+		return 0, fmt.Errorf("counting tenants: %w", err)
+	}
+
+	return count, nil
 }
 
 // GetTenant returns a single tenant by ID.
@@ -117,8 +133,13 @@ func (s *Service) DeleteTenant(ctx context.Context, id pgtype.UUID) (gen.DeleteT
 	return t, nil
 }
 
-// SuspendTenant sets a tenant's status to suspended.
+// SuspendTenant sets a tenant's status to suspended. The default tenant
+// (00000000-0000-0000-0000-000000000001) cannot be suspended — suspending it
+// would take down the entire platform.
 func (s *Service) SuspendTenant(ctx context.Context, id pgtype.UUID) (gen.SetTenantStatusRow, error) {
+	if id.String() == DefaultTenantID {
+		return gen.SetTenantStatusRow{}, fmt.Errorf("suspending tenant: cannot suspend the default tenant")
+	}
 	return s.setStatus(ctx, id, TenantStatusSuspended)
 }
 

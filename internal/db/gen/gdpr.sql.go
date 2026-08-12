@@ -2611,6 +2611,30 @@ func (q *Queries) GdprNullifyAdCampaignCreator(ctx context.Context, userID pgtyp
 	return err
 }
 
+const gdprNullifyStudioBatchCreator = `-- name: GdprNullifyStudioBatchCreator :exec
+UPDATE studio_batches SET created_by = NULL WHERE created_by = $1
+`
+
+// Nullifies studio_batches.created_by for batches created by the erased user.
+// Same rationale as GdprNullifyStudioJobCreator. Ref: Section 75, GDPR erasure.
+func (q *Queries) GdprNullifyStudioBatchCreator(ctx context.Context, userID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, gdprNullifyStudioBatchCreator, userID)
+	return err
+}
+
+const gdprNullifyStudioJobCreator = `-- name: GdprNullifyStudioJobCreator :exec
+UPDATE studio_jobs SET created_by = NULL WHERE created_by = $1
+`
+
+// Nullifies studio_jobs.created_by for jobs created by the erased user. The
+// FK has no CASCADE/SET NULL, so without this step the final HardDeleteUser
+// would block on the residual foreign key. The job row is preserved (it may
+// have generated content in the review queue). Ref: Section 75, GDPR erasure.
+func (q *Queries) GdprNullifyStudioJobCreator(ctx context.Context, userID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, gdprNullifyStudioJobCreator, userID)
+	return err
+}
+
 const gdprReassignCalendarEntriesReviewedBy = `-- name: GdprReassignCalendarEntriesReviewedBy :exec
 UPDATE calendar_entries
 SET reviewed_by = $1

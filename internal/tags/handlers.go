@@ -185,7 +185,7 @@ func (h *Handlers) ListTags(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"data":        enriched,
 		"total":       count,
-		"page":        offset / limit,
+		"page":        offset / limit, // 0-based page index (offset is always a multiple of limit from parsePageOffset)
 		"total_pages": totalPages,
 	})
 }
@@ -370,10 +370,12 @@ func parsePageSize(r *http.Request) int32 {
 func parsePageOffset(r *http.Request) int32 {
 	s := r.URL.Query().Get("page_offset")
 	if s == "" {
-		// Support page-based offset: page=N → offset = N * page_size
+		// Support page-based offset: page=N → offset = (N-1) * page_size.
+		// The JEOS route catalog documents `page=1` as the first page
+		// (1-based), so page=1 maps to offset 0.
 		if ps := r.URL.Query().Get("page"); ps != "" {
-			if p, err := strconv.ParseInt(ps, 10, 32); err == nil && p >= 0 {
-				return int32(p) * parsePageSize(r)
+			if p, err := strconv.ParseInt(ps, 10, 32); err == nil && p >= 1 {
+				return int32(p-1) * parsePageSize(r)
 			}
 		}
 		return 0

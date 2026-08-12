@@ -54,6 +54,7 @@
 	};
 
 	const canManage = $derived(hasPermission('studio.manage'));
+	const canCreate = $derived(hasPermission('studio.create') || hasPermission('studio.manage'));
 
 	let activeTab = $state('jobs');
 	let jobs = $state<StudioJob[]>([]);
@@ -70,7 +71,7 @@
 
 	let newJob = $state({
 		persona_id: '',
-		content_type: 'blog_post',
+		content_type: '',
 		topic_prompt: '',
 		guide_category: '',
 		target_space_id: '',
@@ -119,11 +120,21 @@
 			}
 			if (typesRes.ok) {
 				contentTypes = typesRes.data ?? [];
+				// Auto-select the first content type if none selected yet.
+				if (contentTypes.length > 0 && !newJob.content_type) {
+					newJob.content_type = contentTypes[0].type;
+				}
 			}
 		} catch {
-			// Non-critical — form will use defaults
+			// Non-critical — form will show loading state
 		}
 	}
+
+	// Derive the guide categories for the currently selected content type.
+	const selectedContentType = $derived(
+		contentTypes.find((ct) => ct.type === newJob.content_type)
+	);
+	const guideCategories = $derived(selectedContentType?.guide_categories ?? []);
 
 	async function retryJob(id: string) {
 		try {
@@ -144,6 +155,31 @@
 
 	let viewingJob = $state<StudioJob | null>(null);
 	let viewJobSlideOverOpen = $state(false);
+
+	let createBatchSlideOverOpen = $state(false);
+	let savingBatch = $state(false);
+	let newBatch = $state({
+		name: '',
+		description: '',
+		jobs: [] as Array<{ persona_id: string; content_type: string; guide_category: string; topic_prompt: string }>
+	});
+
+	type BatchDetail = {
+		batch: StudioBatch;
+		stats: {
+			total: number;
+			queued: number;
+			generating: number;
+			draft_ready: number;
+			in_review: number;
+			approved: number;
+			published: number;
+			rejected: number;
+			failed: number;
+		};
+	};
+	let viewingBatch = $state<BatchDetail | null>(null);
+	let viewBatchSlideOverOpen = $state(false);
 
 	async function viewJob(id: string) {
 		try {
@@ -191,7 +227,7 @@
 				messageType = 'success';
 				message = t('studio.create_success', 'Studio job created.');
 				createJobSlideOverOpen = false;
-				newJob = { persona_id: '', content_type: 'blog_post', topic_prompt: '', guide_category: '', target_space_id: '', target_tags: '' };
+				newJob = { persona_id: '', content_type: '', topic_prompt: '', guide_category: '', target_space_id: '', target_tags: '' };
 				load();
 			} else {
 				messageType = 'error';
@@ -202,6 +238,84 @@
 			message = e instanceof Error ? e.message : t('studio.create_error', 'Failed to create job');
 		} finally {
 			saving = false;
+		}
+	}
+
+	function addBatchJobRow() {
+		newBatch.jobs = [...newBatch.jobs, { persona_id: '', content_type: '', guide_category: '', topic_prompt: '' }];
+	}
+
+	function removeBatchJobRow(idx: number) {
+		newBatch.jobs = newBatch.jobs.filter((_, i) => i !== idx);
+	}
+
+	async function createBatch() {
+		savingBatch = true;
+		message = '';
+		try {
+			const body = {
+				name: newBatch.name,
+				description: newBatch.description || undefined,
+				jobs: newBatch.jobs
+					.filter((j) => j.topic_prompt && j.content_type)
+					.map((j) => ({
+						persona_id: j.persona_id,
+						content_type: j.content_type,
+						guide_category: j.guide_category || undefined,
+						topic_prompt: j.topic_prompt
+					}))
+			};
+			if (!body.name || body.jobs.length === 0) {
+				messageType = 'error';
+				message = t('studio.batch_validation', 'Batch name and at least one job are required.');
+				savingBatch = false;
+				return;
+			}
+			const result = await api('/admin/studio/batches', { method: 'POST', body });
+			if (result.ok) {
+				messageType = 'success';
+				message = t('studio.batch_create_success', 'Batch created.');
+				createBatchSlideOverOpen = false;
+				newBatch = { name: '', description: '', jobs: [] };
+				load();
+			} else {
+				messageType = 'error';
+				message = result.error;
+			}
+		} catch (e) {
+			messageType = 'error';
+			message = e instanceof Error ? e.message : t('studio.batch_create_error', 'Failed to create batch');
+		} finally {
+			savingBatch = false;
+		}
+	}
+
+	async function viewBatch(id: string) {
+		try {
+			const result = await api<BatchDetail>(`/admin/studio/batches/${id}`);
+			if (result.ok && result.data) {
+				viewingBatch = result.data;
+				viewBatchSlideOverOpen = true;
+			}
+		} catch {
+			// silent
+		}
+	}
+
+	async function retryBatch(id: string) {
+		try {
+			const result = await api(`/admin/studio/batches/${id}/retry`, { method: 'POST' });
+			if (result.ok) {
+				messageType = 'success';
+				message = t('studio.batch_retry_success', 'Failed jobs retried.');
+				load();
+			} else {
+				messageType = 'error';
+				message = result.error;
+			}
+		} catch (e) {
+			messageType = 'error';
+			message = e instanceof Error ? e.message : t('studio.batch_retry_error', 'Failed to retry batch');
 		}
 	}
 
@@ -255,7 +369,7 @@
 			label: t('studio.retry', 'Retry'),
 			icon: RotateCcw,
 			onclick: (row: StudioJob) => retryJob(row.id),
-			show: (row: StudioJob) => canManage && (row.status === 'failed' || row.status === 'draft_ready')
+			show: (row: StudioJob) => canManage && row.status === 'failed'
 		},
 		{
 			label: t('common.cancel', 'Cancel'),
@@ -291,14 +405,25 @@
 		}
 	]);
 
+	const batchRowActions: ActionItem[] = [
+		{ label: t('common.view', 'View'), icon: Eye, onclick: (row: StudioBatch) => viewBatch(row.id) },
+		{
+			label: t('studio.retry_failed', 'Retry Failed'),
+			icon: RotateCcw,
+			onclick: (row: StudioBatch) => retryBatch(row.id),
+			show: () => canManage
+		}
+	];
+
 	load();
 </script>
 
 <PageHeader
 	title={t('studio.title', 'AI Content Studio')}
 	description={t('studio.description', 'Manage AI-generated content jobs and batches.')}
-	actions={canManage ? [
-		{ label: t('studio.create_job', 'Create Job'), icon: Plus, onclick: () => { loadCreateOptions(); createJobSlideOverOpen = true; } }
+	actions={canCreate ? [
+		{ label: t('studio.create_job', 'Create Job'), icon: Plus, onclick: () => { loadCreateOptions(); createJobSlideOverOpen = true; } },
+		{ label: t('studio.create_batch', 'Create Batch'), icon: BarChart3, onclick: () => { loadCreateOptions(); createBatchSlideOverOpen = true; } }
 	] : []}
 />
 
@@ -336,6 +461,7 @@
 		<DataTable
 			data={batches}
 			columns={batchColumns}
+			actions={batchRowActions}
 			emptyMessage={t('studio.no_batches', 'No batches found.')}
 		/>
 	{:else if activeTab === 'stats' && stats}
@@ -414,11 +540,21 @@
 						<option value={ct.type}>{ct.label}</option>
 					{/each}
 					{#if contentTypes.length === 0}
-						<option value="blog">Blog Post</option>
-						<option value="guide">Guide</option>
+						<option value="" disabled>{t('studio.loading_types', 'Loading content types...')}</option>
 					{/if}
 				</select>
 			</div>
+			{#if guideCategories.length > 0}
+				<div>
+					<label for="studio-guide-category" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('studio.guide_category', 'Guide Category')}</label>
+					<select id="studio-guide-category" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={newJob.guide_category}>
+						<option value="">{t('studio.select_category', 'Select category...')}</option>
+						{#each guideCategories as cat (cat)}
+							<option value={cat}>{cat}</option>
+						{/each}
+					</select>
+				</div>
+			{/if}
 			<div>
 				<label for="studio-topic" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('studio.topic_prompt', 'Topic Prompt')}</label>
 				<textarea id="studio-topic" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" rows="3" bind:value={newJob.topic_prompt} placeholder={t('studio.topic_placeholder', 'Describe what the AI should write about...')}></textarea>
@@ -477,6 +613,117 @@
 					</Button>
 				{/if}
 				<Button onclick={() => { viewJobSlideOverOpen = false; viewingJob = null; }}>{t('common.close', 'Close')}</Button>
+			</div>
+		{/snippet}
+	</SlideOver>
+{/if}
+
+{#if createBatchSlideOverOpen}
+	<SlideOver
+		bind:open={createBatchSlideOverOpen}
+		title={t('studio.create_batch_title', 'Create Studio Batch')}
+	>
+		<div class="space-y-3">
+			<div>
+				<label for="batch-name" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('studio.batch_name', 'Batch Name')}</label>
+				<input id="batch-name" type="text" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={newBatch.name} placeholder={t('studio.batch_name_ph', 'e.g. UK visa guides — Oct 2026')} />
+			</div>
+			<div>
+				<label for="batch-desc" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('studio.description', 'Description')}</label>
+				<input id="batch-desc" type="text" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={newBatch.description} placeholder={t('studio.batch_desc_ph', 'Optional description')} />
+			</div>
+			<div class="border-t pt-3" style="border-color: var(--color-border)">
+				<div class="mb-2 flex items-center justify-between">
+					<span class="text-sm font-medium" style="color: var(--color-foreground)">{t('studio.batch_jobs', 'Jobs in batch')}</span>
+					<Button variant="outline" onclick={addBatchJobRow}>
+						<Plus class="h-4 w-4" />
+						{t('studio.add_job', 'Add Job')}
+					</Button>
+				</div>
+				{#if newBatch.jobs.length === 0}
+					<p class="text-xs" style="color: var(--color-muted)">{t('studio.no_batch_jobs', 'No jobs added yet. Click "Add Job" to start.')}</p>
+				{/if}
+				{#each newBatch.jobs as job, idx (idx)}
+					<div class="mb-3 rounded-md border p-3 space-y-2" style="border-color: var(--color-border)">
+						<div class="flex items-center justify-between">
+							<span class="text-xs font-medium" style="color: var(--color-muted)">{t('studio.job_n', 'Job')} {idx + 1}</span>
+							<button onclick={() => removeBatchJobRow(idx)} class="text-xs" style="color: var(--color-danger)">
+								<X class="h-3 w-3" />
+							</button>
+						</div>
+						<select class="w-full rounded-md border px-2 py-1 text-xs" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={job.persona_id}>
+							<option value="">{t('studio.select_persona', 'Select a persona...')}</option>
+							{#each personas as p (p)}
+								<option value={p.id}>{p.label}</option>
+							{/each}
+						</select>
+						<select class="w-full rounded-md border px-2 py-1 text-xs" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={job.content_type}>
+							<option value="">{t('studio.select_type', 'Select type...')}</option>
+							{#each contentTypes as ct (ct)}
+								<option value={ct.type}>{ct.label}</option>
+							{/each}
+						</select>
+						<input type="text" class="w-full rounded-md border px-2 py-1 text-xs" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={job.topic_prompt} placeholder={t('studio.topic_placeholder', 'Describe what the AI should write about...')} />
+					</div>
+				{/each}
+			</div>
+		</div>
+		{#snippet footer()}
+			<div class="flex justify-end gap-2">
+				<Button variant="outline" onclick={() => (createBatchSlideOverOpen = false)}>{t('common.cancel', 'Cancel')}</Button>
+				<Button onclick={createBatch} disabled={savingBatch || !newBatch.name}>
+					{savingBatch ? t('common.saving', 'Saving...') : t('studio.create_batch', 'Create Batch')}
+				</Button>
+			</div>
+		{/snippet}
+	</SlideOver>
+{/if}
+
+{#if viewBatchSlideOverOpen && viewingBatch}
+	<SlideOver
+		bind:open={viewBatchSlideOverOpen}
+		title={t('studio.batch_detail', 'Batch Detail')}
+	>
+		<div class="space-y-3 text-sm">
+			<div class="grid gap-2 sm:grid-cols-2">
+				<div>
+					<span class="text-xs font-medium" style="color: var(--color-muted)">{t('studio.batch_name', 'Name')}</span>
+					<p style="color: var(--color-foreground)">{viewingBatch.batch.name}</p>
+				</div>
+				<div>
+					<span class="text-xs font-medium" style="color: var(--color-muted)">{t('studio.created', 'Created')}</span>
+					<p style="color: var(--color-foreground)">{viewingBatch.batch.created_at ? new Date(viewingBatch.batch.created_at).toLocaleString() : '—'}</p>
+				</div>
+			</div>
+			{#if viewingBatch.batch.description}
+				<div>
+					<span class="text-xs font-medium" style="color: var(--color-muted)">{t('studio.description', 'Description')}</span>
+					<p style="color: var(--color-foreground)">{viewingBatch.batch.description}</p>
+				</div>
+			{/if}
+			<div class="border-t pt-2" style="border-color: var(--color-border)">
+				<span class="text-xs font-medium" style="color: var(--color-muted)">{t('studio.progress', 'Progress')}</span>
+				<div class="mt-2 grid grid-cols-2 gap-2 text-xs">
+					<div>Total: <span class="font-bold" style="color: var(--color-foreground)">{viewingBatch.stats.total}</span></div>
+					<div>Queued: <span style="color: var(--color-muted)">{viewingBatch.stats.queued}</span></div>
+					<div>Generating: <span style="color: var(--color-warning)">{viewingBatch.stats.generating}</span></div>
+					<div>Draft Ready: <span style="color: var(--color-primary)">{viewingBatch.stats.draft_ready}</span></div>
+					<div>In Review: <span style="color: var(--color-warning)">{viewingBatch.stats.in_review}</span></div>
+					<div>Published: <span style="color: var(--color-success)">{viewingBatch.stats.published}</span></div>
+					<div>Rejected: <span style="color: var(--color-danger)">{viewingBatch.stats.rejected}</span></div>
+					<div>Failed: <span style="color: var(--color-danger)">{viewingBatch.stats.failed}</span></div>
+				</div>
+			</div>
+		</div>
+		{#snippet footer()}
+			<div class="flex justify-end gap-2">
+				{#if canManage && viewingBatch && viewingBatch.stats.failed > 0}
+					<Button variant="outline" onclick={() => { retryBatch(viewingBatch!.batch.id); viewBatchSlideOverOpen = false; }}>
+						<RotateCcw class="h-4 w-4" />
+						{t('studio.retry_failed', 'Retry Failed')}
+					</Button>
+				{/if}
+				<Button onclick={() => { viewBatchSlideOverOpen = false; viewingBatch = null; }}>{t('common.close', 'Close')}</Button>
 			</div>
 		{/snippet}
 	</SlideOver>

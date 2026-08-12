@@ -40,8 +40,44 @@
 		};
 	}
 
-	const feedItems = $derived(data.items.map(toFeedItem));
-	const gridLayout = $derived(gridMode(feedItems.map((i) => i.content_type), config));
+	// Cursor-based pagination state (Section 14). The initial page is SSR'd;
+	// "Load More" fetches the next page client-side and appends.
+	let extraItems: typeof data.items = $state([]);
+	let nextCursor = $state(untrack(() => data.nextCursor ?? ''));
+	let loadingMore = $state(false);
+
+	const allItems = $derived([...data.items, ...extraItems]);
+	const allFeedItems = $derived(allItems.map(toFeedItem));
+	const allGridLayout = $derived(gridMode(allFeedItems.map((i) => i.content_type), config));
+
+	async function loadMore() {
+		if (!nextCursor || loadingMore) return;
+		loadingMore = true;
+		try {
+			const res = await api.get<{ data: typeof data.items }>(
+				`/tags/${tag.slug}/content?page_size=${data.pageSize}&cursor=${encodeURIComponent(nextCursor)}`
+			);
+			if (res.error || !res.data) {
+				loadingMore = false;
+				return;
+			}
+			const fetched = res.data.data ?? [];
+			if (fetched.length > 0) {
+				extraItems = [...extraItems, ...fetched];
+			}
+			// Advance the cursor to the last fetched item's created_at; if
+			// fewer than a full page came back, there are no more pages.
+			if (fetched.length >= data.pageSize && fetched.length > 0) {
+				nextCursor = fetched[fetched.length - 1]?.created_at ?? '';
+			} else {
+				nextCursor = '';
+			}
+		} catch {
+			// leave nextCursor so the user can retry
+		} finally {
+			loadingMore = false;
+		}
+	}
 
 	const tag = $derived(data.tag);
 	const authed = $derived(!!page.data.user);
@@ -333,20 +369,39 @@
 			<p class="py-12 text-center text-[var(--color-text-subtle)]">
 				{t('tag.load_error', 'Failed to load tagged content. Please try again later.')}
 			</p>
-		{:else if data.items.length === 0}
+		{:else if allItems.length === 0}
 			<EmptyState icon={Hash} title={t('tag.empty', 'No content with this tag yet.')} />
 		{:else}
-			{#if gridLayout}
+			{#if allGridLayout}
 				<div class="grid gap-3.5 sm:grid-cols-2">
-					{#each feedItems as item (item.id)}
+					{#each allFeedItems as item (item.id)}
 						<FeedCard {item} style={cardStyleFor(item.content_type, config)} layout="grid-cell" />
 					{/each}
 				</div>
 			{:else}
 				<div class="divide-y divide-[var(--color-border)] overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)]">
-					{#each feedItems as item (item.id)}
+					{#each allFeedItems as item (item.id)}
 						<FeedCard {item} style={cardStyleFor(item.content_type, config)} layout="stream" />
 					{/each}
+				</div>
+			{/if}
+
+			{#if nextCursor}
+				<div class="mt-6 flex justify-center">
+					<button
+						type="button"
+						onclick={loadMore}
+						disabled={loadingMore}
+						aria-busy={loadingMore}
+						class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] px-4 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)] disabled:opacity-50"
+					>
+						{#if loadingMore}
+							<Loader2 size={14} class="animate-spin" />
+							{t('common.loading', 'Loading…')}
+						{:else}
+							{t('tag.load_more', 'Load More')}
+						{/if}
+					</button>
 				</div>
 			{/if}
 		{/if}
@@ -461,7 +516,12 @@
 				{/if}
 
 				{#if editError}
-					<p class="rounded-[var(--radius)] bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950/30 dark:text-red-400">{editError}</p>
+					<p
+					class="rounded-[var(--radius)] px-3 py-2 text-sm"
+					style="background: color-mix(in srgb, var(--color-danger) 10%, transparent); color: var(--color-danger)"
+				>
+					{editError}
+				</p>
 				{/if}
 			</div>
 

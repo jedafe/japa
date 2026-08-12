@@ -1,5 +1,6 @@
 <script lang="ts">
-	// /tools/tax-calculator — read-only HITL review queue with Approve Guide + AI Generate Guide actions.
+	// /tools/tax-calculator — HITL review queue with Approve Guide + AI Generate Guide actions.
+	// BUG-001/002/003/011 fix: response shape, field names, generate fields, pagination.
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import { Modal } from '$lib/components/ui/modal';
 	import { Button } from '$lib/components/ui/button';
@@ -11,17 +12,24 @@
 
 	type GuideItem = {
 		id: string;
-		title: string;
-		dest_country: string;
-		employment_type: string;
+		employment_status: string;
+		origin_space_name: string | null;
+		destination_space_name: string | null;
+		residency_trigger: string | null;
+		worldwide_income_taxed: boolean | null;
+		first_year_obligations: string | null;
 		status: string;
+		is_active: boolean;
 		ai_generated: boolean;
+		ai_model: string | null;
+		hitl_reviewed_by: string | null;
+		hitl_reviewed_at: string | null;
 		updated_at: string;
-		content?: string;
-		summary?: string;
+		created_at: string;
 	};
 
 	const canManage = $derived(hasPermission('tax_calculator.manage'));
+	const canReview = $derived(hasPermission('tax_content.review'));
 
 	// ── State ───────────────────────────────────────────────────────────────
 	let entityController = $state<EntityPageController | undefined>(undefined);
@@ -30,9 +38,10 @@
 
 	// Generate modal state
 	let showGenerateModal = $state(false);
-	let generateTopic = $state('');
-	let generateCountry = $state('');
-	let generateEmploymentType = $state('');
+	let generateOrigin = $state('');
+	let generateDest = $state('');
+	let generateEmployment = $state('');
+	let generatePrompt = $state('');
 	let generating = $state(false);
 
 	async function approveGuide(item: GuideItem) {
@@ -53,21 +62,23 @@
 	}
 
 	function openGenerate() {
-		generateTopic = '';
-		generateCountry = '';
-		generateEmploymentType = '';
+		generateOrigin = '';
+		generateDest = '';
+		generateEmployment = '';
+		generatePrompt = '';
 		showGenerateModal = true;
 	}
 
 	async function confirmGenerate() {
-		if (!generateTopic.trim()) return;
+		if (!generateOrigin.trim() || !generateDest.trim() || !generateEmployment.trim()) return;
 		generating = true;
 		pageError = '';
 		try {
 			const result = await taxCalculatorAdminApi.generateGuide({
-				topic: generateTopic.trim(),
-				dest_country: generateCountry.trim() || undefined,
-				employment_type: generateEmploymentType.trim() || undefined
+				origin_space_id: generateOrigin.trim(),
+				destination_space_id: generateDest.trim(),
+				employment_status: generateEmployment.trim(),
+				prompt: generatePrompt.trim()
 			});
 			if (result.ok) {
 				showGenerateModal = false;
@@ -87,13 +98,15 @@
 		const acts: ActionItem[] = [
 			{ label: t('common.view', 'View'), icon: Eye, onclick: (_row: GuideItem, ctx) => ctx?.openView(_row) }
 		];
-		if (canManage) {
+		if (canReview) {
 			acts.push({
 				label: t('common.approve_guide', 'Approve Guide'),
 				icon: CheckCircle,
 				onclick: approveGuide,
-				show: () => true
+				show: (row: GuideItem) => row.status !== 'published'
 			});
+		}
+		if (canManage) {
 			acts.push({
 				label: t('common.generate_guide', 'Generate Guide'),
 				icon: Sparkles,
@@ -105,10 +118,9 @@
 	});
 
 	const fields: FieldDef[] = [
-		{ key: 'title', label: t('common.title', 'Title'), type: 'text' },
-		{ key: 'dest_country', label: t('common.country', 'Country'), type: 'text' },
-		{ key: 'employment_type', label: t('common.employment_type', 'Employment Type'), type: 'text' },
-		{ key: 'content', label: t('common.content', 'Content'), type: 'textarea' }
+		{ key: 'employment_status', label: t('common.employment_status', 'Employment Status'), type: 'text' },
+		{ key: 'residency_trigger', label: t('tax_calculator.residency_trigger', 'Residency Trigger'), type: 'textarea' },
+		{ key: 'first_year_obligations', label: t('tax_calculator.first_year_obligations', 'First Year Obligations'), type: 'textarea' }
 	];
 
 	const config = $derived<EntityPageConfig>({
@@ -117,9 +129,23 @@
 		readonly: true,
 		pageSize: 25,
 		columns: [
-			{ key: 'title', label: t('common.title', 'Title'), sortable: true },
-			{ key: 'dest_country', label: t('common.country', 'Country'), sortable: true },
-			{ key: 'employment_type', label: t('common.employment_type', 'Employment Type'), sortable: true },
+			{
+				key: 'employment_status',
+				label: t('common.employment_status', 'Employment Status'),
+				sortable: true
+			},
+			{
+				key: 'origin_space_name',
+				label: t('tax_calculator.origin', 'Origin'),
+				sortable: true,
+				render: (value: string | null) => value ?? '—'
+			},
+			{
+				key: 'destination_space_name',
+				label: t('tax_calculator.destination', 'Destination'),
+				sortable: true,
+				render: (value: string | null) => value ?? '—'
+			},
 			{
 				key: 'status',
 				label: t('common.status', 'Status'),
@@ -140,13 +166,36 @@
 		],
 		actions: rowActions,
 		fields,
-		load: async () => {
-			const result = await taxCalculatorAdminApi.list();
-			if (result.ok) {
-				const data = (result.data as GuideItem[]) ?? [];
-				return { data, total: data.length, totalPages: 1 };
+		load: async (params) => {
+			// BUG-011: pass pagination/sort/filter params to the backend.
+			const queryParts: string[] = [];
+			queryParts.push(`page=${params.page ?? 1}`);
+			queryParts.push(`limit=${params.pageSize ?? 25}`);
+			if (params.q) queryParts.push(`q=${encodeURIComponent(params.q)}`);
+			if (params.sort) {
+				queryParts.push(`sort=${encodeURIComponent(params.sort)}`);
+				queryParts.push(`order=desc`);
 			}
-			throw new Error(result.error ?? t('common.error', 'An error occurred'));
+			// Pass filter values as individual query params.
+			if (params.filter) {
+				for (const [key, value] of Object.entries(params.filter)) {
+					if (value != null && value !== '') {
+						queryParts.push(`${encodeURIComponent(key)}=${encodeURIComponent(String(value))}`);
+					}
+				}
+			}
+			const query = queryParts.join('&');
+			const result = await taxCalculatorAdminApi.list(query);
+			if (result.ok && result.data) {
+				// BUG-001: backend returns { data: { guides, treaties }, pagination }
+				// Extract guides array and pagination total.
+				const guides = (result.data.data?.guides as GuideItem[]) ?? [];
+				const total = result.data.pagination?.total ?? guides.length;
+				const totalPages = Math.max(1, Math.ceil(total / (params.pageSize ?? 25)));
+				return { data: guides, total, totalPages };
+			}
+			const errMsg = !result.ok ? result.error : t('common.error', 'An error occurred');
+			throw new Error(errMsg);
 		},
 		viewSnippet: GuideView
 	});
@@ -171,42 +220,57 @@
 <Modal bind:open={showGenerateModal} title={t('app.tools.generate_tax_guide', 'Generate Tax Calculator Guide')}>
 	<div class="space-y-4">
 		<div>
-			<label for="gen-topic" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('app.tools.topic_prompt', 'Topic / Prompt')}</label>
-			<textarea
-				id="gen-topic"
-				class="w-full rounded-lg border p-3 text-sm"
-				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
-				rows="4"
-				bind:value={generateTopic}
-				placeholder={t('app.tools.topic_placeholder', 'Describe the tax calculator guide to generate...')}
-			></textarea>
-		</div>
-		<div>
-			<label for="gen-country" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('common.country', 'Country')}</label>
+			<label for="gen-origin" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('tax_calculator.origin', 'Origin Country Space ID')}</label>
 			<input
-				id="gen-country"
+				id="gen-origin"
 				type="text"
 				class="w-full rounded-lg border p-3 text-sm"
 				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
-				bind:value={generateCountry}
-				placeholder={t('common.country_placeholder', 'e.g. Japan')}
+				bind:value={generateOrigin}
+				placeholder={t('tax_calculator.origin_placeholder', 'UUID of origin country space')}
 			/>
 		</div>
 		<div>
-			<label for="gen-emp" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('common.employment_type', 'Employment Type')}</label>
+			<label for="gen-dest" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('tax_calculator.destination', 'Destination Country Space ID')}</label>
 			<input
+				id="gen-dest"
+				type="text"
+				class="w-full rounded-lg border p-3 text-sm"
+				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+				bind:value={generateDest}
+				placeholder={t('tax_calculator.destination_placeholder', 'UUID of destination country space')}
+			/>
+		</div>
+		<div>
+			<label for="gen-emp" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('common.employment_status', 'Employment Status')}</label>
+			<select
 				id="gen-emp"
-				type="text"
 				class="w-full rounded-lg border p-3 text-sm"
 				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
-				bind:value={generateEmploymentType}
-				placeholder={t('common.employment_type_placeholder', 'e.g. Full-time Employee')}
-			/>
+				bind:value={generateEmployment}
+			>
+				<option value="">{t('common.select', 'Select…')}</option>
+				<option value="employed">{t('tax_calculator.employed', 'Employed')}</option>
+				<option value="self_employed">{t('tax_calculator.self_employed', 'Self-employed')}</option>
+				<option value="contractor">{t('tax_calculator.contractor', 'Contractor')}</option>
+				<option value="unemployed">{t('tax_calculator.unemployed', 'Unemployed')}</option>
+			</select>
+		</div>
+		<div>
+			<label for="gen-prompt" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('app.tools.topic_prompt', 'Prompt')}</label>
+			<textarea
+				id="gen-prompt"
+				class="w-full rounded-lg border p-3 text-sm"
+				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+				rows="3"
+				bind:value={generatePrompt}
+				placeholder={t('app.tools.topic_placeholder', 'Describe the tax guide to generate...')}
+			></textarea>
 		</div>
 	</div>
 	<div class="mt-4 flex justify-end gap-2">
 		<Button variant="ghost" onclick={() => (showGenerateModal = false)}>{t('common.cancel', 'Cancel')}</Button>
-		<Button onclick={confirmGenerate} disabled={generating || !generateTopic.trim()}>
+		<Button onclick={confirmGenerate} disabled={generating || !generateOrigin.trim() || !generateDest.trim() || !generateEmployment.trim()}>
 			{generating ? t('common.generating', 'Generating...') : t('common.generate_guide', 'Generate Guide')}
 		</Button>
 	</div>
@@ -216,16 +280,16 @@
 {#snippet GuideView({ row }: { row: GuideItem })}
 	<div class="space-y-4">
 		<div>
-			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('common.title', 'Title')}</p>
-			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.title}</p>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('common.employment_status', 'Employment Status')}</p>
+			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.employment_status || '—'}</p>
 		</div>
 		<div>
-			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('common.country', 'Country')}</p>
-			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.dest_country || '—'}</p>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('tax_calculator.origin', 'Origin')}</p>
+			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.origin_space_name || '—'}</p>
 		</div>
 		<div>
-			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('common.employment_type', 'Employment Type')}</p>
-			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.employment_type || '—'}</p>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('tax_calculator.destination', 'Destination')}</p>
+			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.destination_space_name || '—'}</p>
 		</div>
 		<div>
 			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('common.status', 'Status')}</p>
@@ -235,21 +299,27 @@
 			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('common.ai_generated', 'AI Generated')}</p>
 			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.ai_generated ? t('common.yes', 'Yes') : t('common.no', 'No')}</p>
 		</div>
+		{#if row.residency_trigger}
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('tax_calculator.residency_trigger', 'Residency Trigger')}</p>
+				<p class="mt-1 text-sm" style="color: var(--color-foreground)">{row.residency_trigger}</p>
+			</div>
+		{/if}
+		{#if row.first_year_obligations}
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('tax_calculator.first_year_obligations', 'First Year Obligations')}</p>
+				<p class="mt-1 whitespace-pre-wrap text-sm" style="color: var(--color-foreground)">{row.first_year_obligations}</p>
+			</div>
+		{/if}
+		{#if row.worldwide_income_taxed !== null && row.worldwide_income_taxed !== undefined}
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('tax_calculator.worldwide_income_taxed', 'Worldwide Income Taxed')}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.worldwide_income_taxed ? t('common.yes', 'Yes') : t('common.no', 'No')}</p>
+			</div>
+		{/if}
 		<div>
 			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('common.updated', 'Updated')}</p>
 			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.updated_at ? new Date(row.updated_at).toLocaleString() : '—'}</p>
 		</div>
-		{#if row.summary}
-			<div>
-				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('common.summary', 'Summary')}</p>
-				<p class="mt-1 text-sm" style="color: var(--color-foreground)">{row.summary}</p>
-			</div>
-		{/if}
-		{#if row.content}
-			<div>
-				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('common.content', 'Content')}</p>
-				<p class="mt-1 whitespace-pre-wrap text-sm" style="color: var(--color-foreground)">{row.content}</p>
-			</div>
-		{/if}
 	</div>
 {/snippet}

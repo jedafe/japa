@@ -28,6 +28,7 @@ type Tenant struct {
 	Name    string
 	Slug    string
 	Domain  pgtype.Text
+	Status  string
 	BaseURL string
 }
 
@@ -46,35 +47,39 @@ type TenantStore interface { //nolint:revive // stuttering type name preserved f
 
 // Middleware resolves the tenant from the request and stores it in context.
 // It tries the Host header first, then falls back to the default tenant.
+// Only active tenants are served; suspended or soft-deleted tenants are
+// skipped so requests are never routed to a dead tenant.
 func Middleware(store TenantStore) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ctx := r.Context()
 
-			var tenant *Tenant
+			var t *Tenant
 
 			host := r.Host
 			if host != "" {
-				t, err := store.GetTenantByHost(ctx, host)
-				if err == nil {
-					tenant = t
+				resolved, err := store.GetTenantByHost(ctx, host)
+				if err != nil {
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusServiceUnavailable)
+					_, _ = w.Write([]byte(`{"error":{"code":"tenant_unavailable","message":"Tenant resolution failed"}}`))
+					return
 				}
+				t = resolved
 			}
 
-			if tenant == nil {
-				t, err := store.GetDefaultTenant(ctx)
-				if err != nil || t == nil {
+			if t == nil {
+				resolved, err := store.GetDefaultTenant(ctx)
+				if err != nil || resolved == nil {
 					w.Header().Set("Content-Type", "application/json")
 					w.WriteHeader(http.StatusServiceUnavailable)
 					_, _ = w.Write([]byte(`{"error":{"code":"tenant_unavailable","message":"No tenant available"}}`))
-
 					return
 				}
-
-				tenant = t
+				t = resolved
 			}
 
-			ctx = context.WithValue(ctx, TenantContextKey, tenant)
+			ctx = context.WithValue(ctx, TenantContextKey, t)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}

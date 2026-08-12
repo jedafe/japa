@@ -21,6 +21,7 @@ import (
 
 	"github.com/jedafe/japa/internal/ai"
 	"github.com/jedafe/japa/internal/auth"
+	"github.com/jedafe/japa/internal/clientip"
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
@@ -140,13 +141,47 @@ func (h *Handlers) SetAIDispatcher(d *ai.Dispatcher) {
 // ---------------------------------------------------------------------------
 
 func (h *Handlers) ListTenants(w http.ResponseWriter, r *http.Request) {
-	tenants, err := h.Service.ListTenants(r.Context())
+	// Parse pagination params (§17: filter + sort + paginate, no infinite scroll).
+	limit := int32(20)
+	offset := int32(0)
+
+	if s := r.URL.Query().Get("page_size"); s != "" {
+		if n, err := strconv.ParseInt(s, 10, 32); err == nil && n > 0 {
+			limit = int32(n)
+			if limit > 100 {
+				limit = 100
+			}
+		}
+	}
+
+	if s := r.URL.Query().Get("page_offset"); s != "" {
+		if n, err := strconv.ParseInt(s, 10, 32); err == nil && n >= 0 {
+			offset = int32(n)
+		}
+	}
+
+	statusFilter := r.URL.Query().Get("status")
+
+	tenants, err := h.Service.ListTenants(r.Context(), statusFilter, limit, offset)
 	if err != nil {
 		slog.Error("control: list tenants", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list tenants")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": tenants})
+
+	total, err := h.Service.CountTenants(r.Context(), statusFilter)
+	if err != nil {
+		slog.Error("control: count tenants", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to count tenants")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data":   tenants,
+		"total":  total,
+		"limit":  limit,
+		"offset": offset,
+	})
 }
 
 func (h *Handlers) CreateTenant(w http.ResponseWriter, r *http.Request) {
@@ -229,11 +264,17 @@ func (h *Handlers) DeleteTenant(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to delete tenant")
 		return
 	}
+	h.auditTenantAction(r, "tenant.delete", id)
 
 	// Enqueue the tenant:cleanup_data task with a 30-day delay so all
 	// non-cascading child data is hard-deleted after the grace period.
+	// The initiated_by field carries the admin's user ID for traceability.
 	if h.Client != nil {
-		payload, _ := json.Marshal(map[string]string{"tenant_id": tenant.ID.String(), "initiated_by": "system"})
+		initiatedBy := "system"
+		if u := auth.FromContext(r.Context()); u != nil {
+			initiatedBy = u.UserID.String()
+		}
+		payload, _ := json.Marshal(map[string]string{"tenant_id": tenant.ID.String(), "initiated_by": initiatedBy})
 		task := asynq.NewTask(worker.TypeTenantCleanupData, payload)
 		if _, err := h.Client.Enqueue(task,
 			asynq.ProcessAt(time.Now().Add(30*24*time.Hour)),
@@ -258,6 +299,7 @@ func (h *Handlers) SuspendTenant(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to suspend tenant")
 		return
 	}
+	h.auditTenantAction(r, "tenant.suspend", id)
 	writeJSON(w, http.StatusOK, map[string]any{"data": tenant})
 }
 
@@ -273,6 +315,7 @@ func (h *Handlers) UnsuspendTenant(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to unsuspend tenant")
 		return
 	}
+	h.auditTenantAction(r, "tenant.unsuspend", id)
 	writeJSON(w, http.StatusOK, map[string]any{"data": tenant})
 }
 
@@ -629,10 +672,37 @@ func (h *Handlers) UpdateTenantSettings(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	for key, value := range input {
-		data, _ := json.Marshal(value)
+		// The system_settings.value column is jsonb, so every value must be
+		// valid JSON. When the frontend sends a JSON array/object as a string
+		// (e.g. onboarding.promoted_* settings store '["uuid"]' as a string),
+		// json.Marshal would double-encode it. Detect this case and store the
+		// raw JSON directly — mirrors UpdateSystemSettings logic.
+		var data []byte
+		if s, ok := value.(string); ok {
+			trimmed := strings.TrimSpace(s)
+			if (strings.HasPrefix(trimmed, "[") && strings.HasSuffix(trimmed, "]")) ||
+				(strings.HasPrefix(trimmed, "{") && strings.HasSuffix(trimmed, "}")) {
+				if json.Valid([]byte(trimmed)) {
+					data = []byte(trimmed)
+				} else {
+					data, _ = json.Marshal(value)
+				}
+			} else {
+				data, _ = json.Marshal(value)
+			}
+		} else {
+			data, _ = json.Marshal(value)
+		}
+		// Consult the catalog for the is_public flag so appearance/branding
+		// settings are exposed via GET /site/settings/public. On CONFLICT
+		// (existing row), preserve the current is_public value.
+		isPublic := false
+		if meta, ok := settingsCatalog[key]; ok {
+			isPublic = meta.Public
+		}
 		_, err := h.DB.Writer.Exec(r.Context(),
-			`INSERT INTO system_settings (tenant_id, key, value, updated_at) VALUES ($1, $2, $3, NOW()) ON CONFLICT (tenant_id, key) DO UPDATE SET value = $3, updated_at = NOW()`,
-			tenantID, key, string(data),
+			`INSERT INTO system_settings (tenant_id, key, value, is_public, updated_at) VALUES ($1, $2, $3, $4, NOW()) ON CONFLICT (tenant_id, key) DO UPDATE SET value = $3, updated_at = NOW()`,
+			tenantID, key, string(data), isPublic,
 		)
 		if err != nil {
 			slog.Error("control: update tenant setting", "key", key, "error", err)
@@ -2671,6 +2741,28 @@ func parseUUIDParam(r *http.Request, param string) (pgtype.UUID, error) {
 		return pgtype.UUID{}, err
 	}
 	return id, nil
+}
+
+// auditTenantAction writes an audit_logs row for a significant tenant
+// management action (suspend, unsuspend, delete). The actor is the
+// authenticated super-admin; the target is the affected tenant.
+func (h *Handlers) auditTenantAction(r *http.Request, actionType string, targetID pgtype.UUID) {
+	ctx := r.Context()
+	t := tenant.FromContext(ctx)
+	if t == nil {
+		return
+	}
+	var actorID any
+	if u := auth.FromContext(ctx); u != nil {
+		actorID = u.UserID
+	}
+	ip := clientip.FromRequest(r)
+	if _, err := h.DB.Writer.Exec(ctx, `
+		INSERT INTO audit_logs (tenant_id, actor_user_id, action_type, target_type, target_id, ip_address)
+		VALUES ($1, $2, $3, 'tenant', $4, $5::inet)
+	`, t.ID, actorID, actionType, targetID, ip); err != nil {
+		slog.Error("control: audit tenant action", "action", actionType, "error", err)
+	}
 }
 
 func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {

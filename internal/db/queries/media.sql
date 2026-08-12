@@ -221,10 +221,11 @@ WHERE tenant_id = @tenant_id
   AND (@flagged::text = '' OR flagged = (@flagged = 'true'));
 
 -- name: ListMediaFromPublicPostsByUser :many
--- Public profile Media tab: all confirmed, non-group-restricted IMAGE media
--- uploaded by the user. Excludes unconfirmed uploads, group-restricted media,
--- soft-deleted media, and non-image files (e.g. HTML error pages mislabeled
--- as images). Public-safe.
+-- Public profile Media tab: media referenced (featured/header image) by the
+-- user's PUBLISHED PUBLIC posts. Excludes unconfirmed uploads, group-restricted
+-- media, soft-deleted media, and non-image files (e.g. HTML error pages
+-- mislabeled as images). Public-safe. Mirrors ListMediaFromOrgPublicPosts but
+-- scoped to the author's posts (c.author_id) instead of the org.
 SELECT m.* FROM media m
 WHERE m.tenant_id = @tenant_id
   AND m.deleted_at IS NULL
@@ -232,6 +233,14 @@ WHERE m.tenant_id = @tenant_id
   AND m.user_group_id IS NULL
   AND m.uploader_user_id = @author_id
   AND m.mime_type LIKE 'image/%'
+  AND EXISTS (
+    SELECT 1 FROM contents c
+    WHERE c.tenant_id = @tenant_id
+      AND c.author_id = @author_id
+      AND c.status = 'published'
+      AND c.visibility = 'public'
+      AND (c.featured_image_id = m.id OR c.header_image_id = m.id)
+  )
 ORDER BY m.created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
@@ -242,7 +251,15 @@ WHERE m.tenant_id = @tenant_id
   AND m.confirmed = true
   AND m.user_group_id IS NULL
   AND m.uploader_user_id = @author_id
-  AND m.mime_type LIKE 'image/%';
+  AND m.mime_type LIKE 'image/%'
+  AND EXISTS (
+    SELECT 1 FROM contents c
+    WHERE c.tenant_id = @tenant_id
+      AND c.author_id = @author_id
+      AND c.status = 'published'
+      AND c.visibility = 'public'
+      AND (c.featured_image_id = m.id OR c.header_image_id = m.id)
+  );
 
 -- name: ListMediaFromOrgPublicPosts :many
 -- Org profile Media tab: media referenced (featured/header image) by the ORG's

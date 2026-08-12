@@ -28,6 +28,7 @@
 
 	let guides = $state<TaxGuideWithAi[]>([]);
 	let treaty = $state<TaxTreaty | null>(null);
+	let taxConsultants = $state<Array<{ id: string; name: string; slug?: string; description?: string }>>([]);
 	let loading = $state(false);
 	let hasSearched = $state(false);
 	let expandedId = $state<string | null>(null);
@@ -53,6 +54,7 @@
 		expandedId = null;
 		guides = [];
 		treaty = null;
+		taxConsultants = [];
 
 		// Build query params for tax guides
 		const params = new URLSearchParams();
@@ -60,11 +62,16 @@
 		params.set('origin', selectedOriginId);
 		if (employmentStatus) params.set('employment', employmentStatus);
 
-		// Fetch tax guides and treaty info in parallel
-		const [guidesRes, treatyRes] = await Promise.all([
+		// Fetch tax guides, treaty info, and service directory tax consultants
+		// (§100: result page surfaces verified tax consultants from §98
+		// filtered by service_category='finance' and destination_country_id).
+		const [guidesRes, treatyRes, consultantsRes] = await Promise.all([
 			api.get<TaxGuideWithAi[]>(`/tax-calculator?${params.toString()}`),
 			api.get<TaxTreaty>(
 				`/tax-calculator/treaty?dest=${selectedDestId}&origin=${selectedOriginId}`
+			),
+			api.get<Array<{ id: string; name: string; slug?: string; description?: string }>>(
+				`/service-directory?dest=${selectedDestId}&category=finance&limit=5`
 			)
 		]);
 
@@ -73,18 +80,31 @@
 		else guides = [];
 		if (!treatyRes.error) treaty = treatyRes.data;
 		else treaty = null;
+		if (!consultantsRes.error) taxConsultants = consultantsRes.data ?? [];
+		else taxConsultants = [];
 	}
 
 	function toggleExpand(id: string) {
 		expandedId = expandedId === id ? null : id;
 	}
 
-	/** Render action_checklist as a list if it's an array. */
+	/** Render action_checklist items — each item is {action, deadline_description, official_url}. */
 	function checklistItems(
 		val: unknown[] | Record<string, unknown> | null | undefined
-	): string[] {
-		if (Array.isArray(val)) return val.map((v) => String(v));
-		return [];
+	): Array<{ action: string; deadline?: string; url?: string }> {
+		if (!Array.isArray(val)) return [];
+		return val.map((v) => {
+			if (typeof v === 'string') return { action: v };
+			if (v && typeof v === 'object') {
+				const obj = v as Record<string, unknown>;
+				return {
+					action: String(obj.action ?? obj.title ?? ''),
+					deadline: obj.deadline_description ? String(obj.deadline_description) : undefined,
+					url: obj.official_url ? String(obj.official_url) : undefined
+				};
+			}
+			return { action: String(v) };
+		}).filter((item) => item.action.length > 0);
 	}
 
 	function onOriginChange(e: Event) {
@@ -175,18 +195,23 @@
 				</div>
 			</div>
 
-			<!-- Employment status (text input — no endpoint for employment types) -->
+			<!-- Employment status (select — backend validates enum) -->
 			<div class="flex items-center gap-3">
 				<label for="employment" class="text-sm font-medium text-text whitespace-nowrap">
 					{t('tax_calculator.employment_status', 'Employment status:')}
 				</label>
-				<input
+				<select
 					id="employment"
-					type="text"
-					bind:value={employmentStatus}
-					placeholder={t('tax_calculator.employment_placeholder', 'e.g. employed, self-employed, student (optional)')}
+					value={employmentStatus}
+					onchange={(e) => (employmentStatus = (e.currentTarget as HTMLSelectElement).value)}
 					class="flex-1 px-4 py-2 bg-surface border border-border rounded-lg text-text focus:border-primary focus:outline-none"
-				/>
+				>
+					<option value="">{t('tax_calculator.employment_any', 'Any (optional)')}</option>
+					<option value="employed">{t('tax_calculator.employed', 'Employed')}</option>
+					<option value="self_employed">{t('tax_calculator.self_employed', 'Self-employed')}</option>
+					<option value="contractor">{t('tax_calculator.contractor', 'Contractor')}</option>
+					<option value="unemployed">{t('tax_calculator.unemployed', 'Unemployed')}</option>
+				</select>
 				<button
 					onclick={search}
 					disabled={!canSearch || loading}
@@ -300,7 +325,17 @@
 															{#each items as item, i (i)}
 																<li class="flex items-start gap-2 text-sm text-text">
 																	<Icon name="check-circle" size={14} class="text-[var(--tool-accent)] flex-shrink-0 mt-0.5" />
-																	{item}
+																	<span>
+																		{item.action}
+																		{#if item.deadline}
+																			<span class="text-muted">— {item.deadline}</span>
+																		{/if}
+																		{#if item.url}
+																			<a href={item.url} target="_blank" rel="noopener noreferrer" class="ml-1 text-primary hover:underline inline-flex items-center gap-0.5">
+																				<Icon name="external-link" size={12} />
+																			</a>
+																		{/if}
+																	</span>
 																</li>
 															{/each}
 														</ul>
@@ -355,6 +390,36 @@
 						</div>
 					</div>
 				{/if}
+
+				<!-- Service Directory: verified tax consultants (§100 Integration) -->
+				{#if taxConsultants.length > 0}
+					<div>
+						<h2 class="text-sm font-semibold text-muted uppercase tracking-wide mb-3">
+							{t('tax_calculator.tax_consultants', 'Verified tax consultants')}
+						</h2>
+						<div class="space-y-2">
+							{#each taxConsultants as consultant (consultant.id)}
+								<a
+									href={`/service-directory/${consultant.slug ?? consultant.id}`}
+									class="block p-3 bg-surface border border-border rounded-lg hover:bg-surface-subtle transition-colors"
+								>
+									<p class="text-sm font-medium text-text">{consultant.name}</p>
+									{#if consultant.description}
+										<p class="text-xs text-muted mt-1 line-clamp-2">{consultant.description}</p>
+									{/if}
+								</a>
+							{/each}
+						</div>
+					</div>
+				{/if}
+
+				<!-- HITL disclosure (§100/ADR-108: mandatory on every output page) -->
+				<div class="mt-6 p-3 bg-surface-subtle border border-border rounded-lg text-xs text-muted">
+					{t(
+						'tax_calculator.hitl_disclosure',
+						'All tax content on this page has been reviewed by a qualified tax professional before publication. This tool provides general guidance only — consult a qualified tax advisor for your specific situation.'
+					)}
+				</div>
 			</div>
 		{/if}
 	{/if}
