@@ -29,7 +29,9 @@ export const load: PageServerLoad = async (event) => {
 	const ctx = apiContext(event);
 	const authed = !!event.locals.user;
 
-	const page = Math.max(0, parseInt(event.url.searchParams.get('page') ?? '0', 10) || 0);
+	// 1-based page index (matches PaginationControls + the /jobs page
+	// convention). Default 1; clamp negative/NaN to 1.
+	const page = Math.max(1, parseInt(event.url.searchParams.get('page') ?? '1', 10) || 1);
 
 	const params = new URLSearchParams();
 	const q = event.url.searchParams.get('q');
@@ -43,7 +45,7 @@ export const load: PageServerLoad = async (event) => {
 	if (sort) params.set('sort', sort);
 	if (renewable) params.set('renewable', renewable);
 	params.set('page_size', String(PAGE_SIZE));
-	params.set('page_offset', String(page * PAGE_SIZE));
+	params.set('page_offset', String((page - 1) * PAGE_SIZE));
 
 	let scholarships: Scholarship[] = [];
 	let disabled = false;

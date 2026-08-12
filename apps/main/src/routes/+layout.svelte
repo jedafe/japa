@@ -68,9 +68,31 @@
 	});
 
 	// Canonical URLs for hreflang — pathname only, host is implicit.
+	// Languages are read from i18n.enabled_languages (system_settings catalog,
+	// Public: true) so the hreflang set matches the active language selector
+	// rather than a hardcoded en/fr list. Falls back to en,fr when the
+	// setting is absent (Rule 3 — no hardcoded config in the steady state).
+	// Ref: japaconnect-engineering/sections/26-seo-performance.md
+	//      conventions/system-settings-catalog.md (i18n.enabled_languages)
 	let pathname = $derived(page.url.pathname);
-	let canonicalEn = $derived(`/en${pathname === '/' ? '' : pathname}`);
-	let canonicalFr = $derived(`/fr${pathname === '/' ? '' : pathname}`);
+	let enabledLanguages = $derived(
+		((data.siteSettings?.['i18n.enabled_languages'] as string | undefined) ?? 'en,fr')
+			.split(',')
+			.map((l) => l.trim())
+			.filter(Boolean)
+	);
+	let defaultLanguage = $derived(
+		(data.siteSettings?.['i18n.default_language'] as string | undefined) ?? 'en'
+	);
+	let hreflangLinks = $derived(
+		enabledLanguages.map((lang) => ({
+			lang,
+			href: `/${lang}${pathname === '/' ? '' : pathname}`
+		}))
+	);
+	let xDefaultHref = $derived(
+		`/${defaultLanguage}${pathname === '/' ? '' : pathname}`
+	);
 
 	// Site-level settings from GET /site/settings/public (general.*).
 	// Used for SEO meta tags and the maintenance banner.
@@ -90,9 +112,8 @@
 </script>
 
 <svelte:head>
-	<link rel="alternate" hreflang="en" href={canonicalEn} />
-	<link rel="alternate" hreflang="fr" href={canonicalFr} />
-	<link rel="alternate" hreflang="x-default" href={canonicalEn} />
+	{#each hreflangLinks as link}<link rel="alternate" hreflang={link.lang} href={link.href} />{/each}
+	<link rel="alternate" hreflang="x-default" href={xDefaultHref} />
 	<link rel="alternate" type="application/rss+xml" title={t('blog.rss_title', 'JapaConnect Blog')} href="/blog/rss.xml" />
 	<link
 		rel="alternate"

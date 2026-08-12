@@ -5,7 +5,7 @@
 	import { goto } from '$app/navigation';
 	import { api } from '$lib/api/client';
 	import { Briefcase, Plus, Loader2, AlertCircle } from 'lucide-svelte';
-	import type { ServiceCategory, ServiceListing } from '$lib/types';
+	import type { ServiceCategory, ServiceListing, Space } from '$lib/types';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -30,6 +30,10 @@
 	let submitting = $state(false);
 	let errorMsg = $state('');
 
+	// BUG-010: city is a dependent select populated from /spaces?level=city&parent=<dest>.
+	let cities = $state<Space[]>([]);
+	let loadingCities = $state(false);
+
 	// Schema-defined service_category enum (§98) — labels via i18n fallback.
 	const categoryOptions: { value: ServiceCategory; label: string }[] = [
 		{ value: 'immigration_legal', label: t('services.cat_immigration_legal', 'Immigration & Legal') },
@@ -43,6 +47,26 @@
 
 	const inputClass =
 		'w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20';
+
+	// Fetch cities when the destination country changes (BUG-010).
+	let lastFetchedDest = $state('');
+	$effect(() => {
+		if (!destinationSpaceId || destinationSpaceId === lastFetchedDest) return;
+		lastFetchedDest = destinationSpaceId;
+		citySpaceId = '';
+		cities = [];
+		loadingCities = true;
+		(async () => {
+			try {
+				const res = await api.get<Space[]>(`/spaces?level=city&parent=${destinationSpaceId}`);
+				cities = Array.isArray(res.data) ? res.data : [];
+			} catch {
+				cities = [];
+			} finally {
+				loadingCities = false;
+			}
+		})();
+	});
 
 	function validate(): boolean {
 		if (!title.trim()) {
@@ -74,7 +98,7 @@
 			destination_space_id: destinationSpaceId,
 			is_remote: isRemote
 		};
-		if (citySpaceId.trim()) payload.city_space_id = citySpaceId.trim();
+		if (citySpaceId) payload.city_space_id = citySpaceId;
 		if (origins.length > 0) payload.origin_communities = origins;
 		if (websiteUrl.trim()) payload.website_url = websiteUrl.trim();
 		if (bookingUrl.trim()) payload.booking_url = bookingUrl.trim();
@@ -169,13 +193,23 @@
 					<label for="city" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 						{t('services.field_city', 'City')}
 					</label>
-					<input
+					<select
 						id="city"
-						type="text"
 						bind:value={citySpaceId}
-						placeholder={t('services.city_placeholder', 'e.g. London')}
 						class={inputClass}
-					/>
+						disabled={!destinationSpaceId || loadingCities}
+					>
+						<option value="">
+							{loadingCities
+								? t('services.city_loading', 'Loading cities…')
+								: destinationSpaceId
+									? t('services.city_select', 'Select a city (optional)')
+									: t('services.city_select_dest_first', 'Select a country first')}
+						</option>
+						{#each cities as city (city.id)}
+							<option value={city.id}>{city.name}</option>
+						{/each}
+					</select>
 				</div>
 			</div>
 

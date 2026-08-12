@@ -9,6 +9,7 @@
 	import CommentThread from '$lib/components/comments/CommentThread.svelte';
 	import { hydrateLinkPreviews } from '$lib/tiptap/hydrateLinkPreviews';
 	import { hydrateMentions } from '$lib/tiptap/hydrateMentions';
+	import { breadcrumbJsonLd } from '$lib/seo/breadcrumbs';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -52,6 +53,17 @@
 		if (!article.id) return;
 		api.post(`/content/${article.id}/view`, {});
 	});
+
+	// BreadcrumbList JSON-LD (Section 26 — all pages with hierarchy).
+	const breadcrumbLd = $derived(
+		JSON.stringify(
+			breadcrumbJsonLd([
+				{ name: 'Home', path: page.url.origin },
+				{ name: 'Blog', path: `${page.url.origin}/blog` },
+				{ name: article.title, path: page.url.href }
+			])
+		)
+	);
 </script>
 
 <svelte:head>
@@ -66,6 +78,7 @@
 	<meta name="twitter:title" content={article.title} />
 	<meta name="twitter:description" content={description} />
 	{@html `<script type="application/ld+json">${jsonLd}</script>`}
+	{@html `<script type="application/ld+json">${breadcrumbLd}</script>`}
 </svelte:head>
 
 <!-- ADR-058 Exception #1: dev.to reading layout.

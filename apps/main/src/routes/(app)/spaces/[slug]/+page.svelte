@@ -21,6 +21,7 @@
 	import type { FeedItem } from '$lib/types';
 	import FeedCard from '$lib/components/feed/FeedCard.svelte';
 	import DigestWidget from '$lib/components/digest/DigestWidget.svelte';
+	import { breadcrumbJsonLd } from '$lib/seo/breadcrumbs';
 	import type {
 		Space, SpaceContentItem, SpaceMember, SpaceModerator, SpaceRule,
 		SpacePermissionPreset, SpaceJoinRequest
@@ -209,6 +210,17 @@
 	const title = $derived(`${space.name} — ${t('app.name')}`);
 	const description = $derived(space.description ?? `${space.name} on ${t('app.name')}`);
 
+	// BreadcrumbList JSON-LD (Section 26 — all pages with hierarchy).
+	const breadcrumbLd = $derived(
+		JSON.stringify(
+			breadcrumbJsonLd([
+				{ name: 'Home', path: page.url.origin },
+				{ name: 'Spaces', path: `${page.url.origin}/spaces` },
+				{ name: space.name, path: page.url.href }
+			])
+		)
+	);
+
 	// Client-side load-more for the space feed (cursor-less page_offset paging).
 	let feedItems = $state<SpaceContentItem[]>(untrack(() => data.content));
 	let feedLoading = $state(false);
@@ -348,6 +360,7 @@
 	<meta property="og:description" content={description} />
 	<meta property="og:type" content="website" />
 	<meta property="og:url" content={page.url.href} />
+	{@html `<script type="application/ld+json">${breadcrumbLd}</script>`}
 </svelte:head>
 
 <SetSidebar>

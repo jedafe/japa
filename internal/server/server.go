@@ -484,6 +484,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Composes contentService + followService directly.
 	tagsService := tags.NewService(database)
 	tagsHandlers := tags.NewHandlers(tagsService, contentService, followService)
+	// Wire the RBAC resolver so AddTagModerator/RemoveTagModerator can flush
+	// the TARGET user's permission cache after the mutation (Rule 6).
+	tagsHandlers.SetPermCacheInvalidator(rbacResolver)
 	// Wire the tag slug resolver so content handlers can accept bulk {tag_slugs} (BUG-006).
 	contentHandlers.SetTagResolver(tagSlugResolverAdapter{svc: tagsService})
 	// Wire the guide category lister so ListContentTypes returns admin-configured categories.
@@ -1075,7 +1078,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	achievementService := achievement.NewService(achievementStore, contentService, settingsService)
 	achievementHandlers := achievement.NewHandlers(achievementService, settingsService)
 
-	// Ref: japaconnect-engineering/sections/98-service-directory.md (ADR-098)
+	// Ref: japaconnect-engineering/sections/98-service-directory.md (ADR-106)
 	serviceDirStore := servicedir.NewStore(database)
 	serviceDirService := servicedir.NewService(serviceDirStore, contentService, settingsService)
 	serviceDirHandlers := servicedir.NewHandlers(serviceDirService, settingsService)
@@ -1452,6 +1455,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// they have opted in via show_points_publicly (Section 28). Credits are
 	// never exposed publicly.
 	usersService.PointsProvider = walletService
+	// Wire the Asynq enqueuer so privacy settings changes (search_indexable
+	// opt-out) trigger a search:index_entity task to sync the user's
+	// document in the Meilisearch users index (§13/§19).
+	usersService.SetEnqueuer(taskEnqueuer)
 	usersHandlers := users.NewHandlers(usersService, contentService)
 	// Wire the RBAC resolver so GetMyContent can fall back to a
 	// tenant-scoped (non-author-scoped) fetch for super-admins and users
@@ -1515,8 +1522,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	// SEO & Performance subsystem (Section 26).
 	seoQueries := gen.New(database.Writer)
-	sitemapHandler := seo.NewSitemapHandler(seoQueries, database.Reader)
-	ogImageHandler := seo.NewOGImageHandler(database.Reader, cfg.SiteName)
+	sitemapHandler := seo.NewSitemapHandler(seoQueries, database.Reader, settingsService, vkClient, cfg.SiteURL)
+	ogImageHandler := seo.NewOGImageHandler(database.Reader, vkClient, cfg.SiteName)
 
 	// Config handlers for public settings endpoint.
 	configHandlers := config.NewHandlers(settingsService)
@@ -1581,6 +1588,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		r.Get("/sitemap-spaces.xml", sitemapHandler.ServeSpacesSitemap)
 		r.Get("/sitemap-tags.xml", sitemapHandler.ServeTagsSitemap)
 		r.Get("/sitemap-users.xml", sitemapHandler.ServeUsersSitemap)
+		r.Get("/sitemap-images.xml", sitemapHandler.ServeImagesSitemap)
 		r.Get("/og/{id}.png", ogImageHandler.ServeOGImage)
 		// Universal RSS feeds (public — no auth required, tenant-scoped)
 		rssHandlers := rsspkg.NewHandlers(gen.New(database.Reader), cfg.SiteURL, cfg.SiteName)
@@ -3429,9 +3437,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Tag moderators (Section 49).
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tags.manage")).
 				Get("/admin/tags/{id}/moderators", tagsHandlers.ListTagModerators)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tags.manage")).
+			// AUDIT-RULE6: AddTagModerator/RemoveTagModerator mutate
+			// tag_moderators → handler must call InvalidatePermCache (Rule 6).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermissionWithInvalidation(rbacResolver, "tags.manage")).
 				Post("/admin/tags/{id}/moderators", tagsHandlers.AddTagModerator)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tags.manage")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermissionWithInvalidation(rbacResolver, "tags.manage")).
 				Delete("/admin/tags/{id}/moderators/{userId}", tagsHandlers.RemoveTagModerator)
 
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.analytics.search")).
@@ -4162,9 +4172,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Delete("/admin/user-groups/{id}", rbacHandlers.DeleteGroup)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.rbac.manage")).
 				Get("/admin/user-groups/{id}/members", rbacHandlers.ListGroupMembers)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.rbac.manage")).
+			// AUDIT-RULE6: AddGroupMember/RemoveGroupMember mutate user_group
+			// membership → RequirePermissionWithInvalidation signals that the
+			// handler must call InvalidatePermCache for the target user (Rule 6).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermissionWithInvalidation(rbacResolver, "admin.rbac.manage")).
 				Post("/admin/user-groups/{id}/members", rbacHandlers.AddGroupMember)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.rbac.manage")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermissionWithInvalidation(rbacResolver, "admin.rbac.manage")).
 				Delete("/admin/user-groups/{id}/members/{userId}", rbacHandlers.RemoveGroupMember)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.rbac.manage")).
 				Get("/admin/permissions", rbacHandlers.ListPermissions)
@@ -4174,11 +4187,17 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Post("/admin/roles", rbacHandlers.CreateRole)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.rbac.manage")).
 				Get("/admin/roles/{id}/permissions", rbacHandlers.ListRolePermissions)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.rbac.manage")).
+			// AUDIT-RULE6: AssignPermissionToRole mutates role_permissions →
+			// RequirePermissionWithInvalidation signals handler must invalidate
+			// affected users' caches (Rule 6).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermissionWithInvalidation(rbacResolver, "admin.rbac.manage")).
 				Post("/admin/roles/{id}/permissions", rbacHandlers.AssignPermissionToRole)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.rbac.manage")).
 				Get("/admin/user-groups/{id}/roles", rbacHandlers.ListGroupRoles)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.rbac.manage")).
+			// AUDIT-RULE6: AssignRoleToGroup mutates user_role_assignments →
+			// RequirePermissionWithInvalidation signals handler must invalidate
+			// affected group members' caches (Rule 6).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermissionWithInvalidation(rbacResolver, "admin.rbac.manage")).
 				Post("/admin/user-groups/{id}/roles", rbacHandlers.AssignRoleToGroup)
 
 			// GetUserPermissions resolves the CALLER's own permission set (no admin
@@ -4396,13 +4415,17 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// routes block (gdpr.data_exports.view). Do not re-register here.
 
 			// Task 21: Users admin moderation
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).
+			// AUDIT-RULE6: Ban/Unban insert/remove user_bans → handler must call
+			// InvalidatePermCache for the target user (Rule 6).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermissionWithInvalidation(rbacResolver, "admin.moderation")).
 				Post("/admin/users/{id}/ban", adminHandlers.BanUser)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermissionWithInvalidation(rbacResolver, "admin.moderation")).
 				Delete("/admin/users/{id}/ban", adminHandlers.UnbanUser)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).
 				Get("/admin/users/{id}/bans", adminHandlers.ListUserBans)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.rbac.manage")).
+			// AUDIT-RULE6: UpdateUserGroup changes users.user_group_id → handler
+			// must call InvalidatePermCache for the target user (Rule 6).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermissionWithInvalidation(rbacResolver, "admin.rbac.manage")).
 				Patch("/admin/users/{id}/group", adminHandlers.UpdateUserGroup)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).
 				Patch("/admin/users/{id}/status", adminHandlers.UpdateUserStatus)
@@ -4414,11 +4437,13 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Delete("/admin/users/{id}/warnings/{warningId}", adminHandlers.DeleteUserWarning)
 
 			// Granular ban system
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).
+			// AUDIT-RULE6: Restrict/LiftRestriction/LiftAllRestrictions mutate
+			// user_operation_bans → handler must call InvalidatePermCache (Rule 6).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermissionWithInvalidation(rbacResolver, "admin.moderation")).
 				Post("/admin/users/{id}/restrict", adminHandlers.RestrictUser)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermissionWithInvalidation(rbacResolver, "admin.moderation")).
 				Delete("/admin/users/{id}/restrict/{operation}", adminHandlers.LiftRestriction)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermissionWithInvalidation(rbacResolver, "admin.moderation")).
 				Delete("/admin/users/{id}/restrict", adminHandlers.LiftAllRestrictions)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).
 				Get("/admin/users/{id}/restrictions", adminHandlers.ListRestrictions)
@@ -4536,12 +4561,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Get("/content/{id}/discussions", commentsHandlers.ListDiscussions)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "comments.create")).
 				Post("/content/{id}/discussions", commentsHandlers.StartConversation)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.reactions.add")).
-				Post("/content/{id}/react", contentHandlers.AddReaction)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.reactions.remove")).
-				Delete("/content/{id}/react", contentHandlers.RemoveReaction)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.edit")).
-				Patch("/content/{id}/spaces", contentHandlers.UpdateContentSpaces)
+			// NOTE: /content/{id}/react (POST+DELETE) and /content/{id}/spaces
+			// (PATCH) are registered once in the main content route group above
+			// (see "Singular reaction action routes"). They must not be
+			// re-registered here — chi treats the second registration as a
+			// duplicate and TestNoDuplicateRoutes fails.
 
 			// Task 34: Users public extras
 			// Profile Analytics dashboard — owner-only per JEOS §342 [auth, self].
@@ -4939,7 +4963,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Delete("/admin/achievements/{id}", achievementHandlers.HandleAdminDelete)
 			})
 
-			// Section 98 — Service Directory (ADR-098)
+			// Section 98 — Service Directory (ADR-106)
 			r.With(features.Gate(featureChecker, "service_directory.enabled")).Group(func(r chi.Router) {
 				r.Get("/services", serviceDirHandlers.HandleList)
 				r.Get("/services/{slug}", serviceDirHandlers.HandleGet)

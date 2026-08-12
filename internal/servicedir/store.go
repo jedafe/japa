@@ -1,4 +1,4 @@
-// Package servicedir implements the Service Directory (§98, ADR-098).
+// Package servicedir implements the Service Directory (§98, ADR-106).
 //
 // Service listings are records in the contents table with
 // content_type = 'service_listing', extended by the
@@ -11,7 +11,7 @@
 // analytics from the Content Type System (§14).
 //
 // Ref: japaconnect-engineering/sections/98-service-directory.md
-//      japaconnect-engineering/adr/ADR-098-service-directory.md
+//      japaconnect-engineering/adr/ADR-106-service-directory.md
 package servicedir
 
 import (
@@ -25,29 +25,48 @@ import (
 	"github.com/jedafe/japa/internal/db"
 )
 
-// Service categories (§98).
+// Service categories (§98 schema: immigration_legal|relocation|finance|education|health|community|other).
 const (
 	CategoryImmigrationLegal = "immigration_legal"
-	CategoryHousing          = "housing"
-	CategoryBanking          = "banking"
-	CategoryHealthcare       = "healthcare"
+	CategoryRelocation       = "relocation"
+	CategoryFinance          = "finance"
 	CategoryEducation        = "education"
-	CategoryTranslation      = "translation"
+	CategoryHealth           = "health"
+	CategoryCommunity        = "community"
 	CategoryOther            = "other"
 )
 
-// Claim statuses (§98).
+// validCategories is the canonical set used for input validation (BUG-013).
+var validCategories = map[string]struct{}{
+	CategoryImmigrationLegal: {},
+	CategoryRelocation:       {},
+	CategoryFinance:          {},
+	CategoryEducation:        {},
+	CategoryHealth:           {},
+	CategoryCommunity:        {},
+	CategoryOther:            {},
+}
+
+// IsValidCategory reports whether s is a canonical §98 service_category.
+func IsValidCategory(s string) bool {
+	_, ok := validCategories[s]
+	return ok
+}
+
+// Claim statuses (§98 schema: unclaimed|pending|approved|rejected).
 const (
-	ClaimStatusNone     = "none"
-	ClaimStatusPending  = "pending"
-	ClaimStatusApproved = "approved"
-	ClaimStatusRejected = "rejected"
+	ClaimStatusUnclaimed = "unclaimed"
+	ClaimStatusPending   = "pending"
+	ClaimStatusApproved  = "approved"
+	ClaimStatusRejected  = "rejected"
 )
 
-// Verification types (§98).
+// Verification types (§98 schema: self|community|admin|professional_body).
 const (
-	VerificationTypeManual = "manual"
-	VerificationTypeAuto   = "auto"
+	VerificationTypeSelf             = "self"
+	VerificationTypeCommunity        = "community"
+	VerificationTypeAdmin            = "admin"
+	VerificationTypeProfessionalBody = "professional_body"
 )
 
 // Store is the data-access layer for service_listing_meta and service
@@ -72,7 +91,7 @@ type ServiceMeta struct {
 	ServiceCategory     *string
 	DestinationSpaceID  pgtype.UUID
 	CitySpaceID         pgtype.UUID
-	OriginCommunities   []byte // JSON array of community/space IDs
+	OriginCommunities   []string // §98 schema: text[]
 	IsRemote            bool
 	WebsiteURL          *string
 	BookingURL          *string
@@ -81,6 +100,8 @@ type ServiceMeta struct {
 	VerificationType    *string
 	ClaimStatus         *string
 	ClaimedByOrgID      pgtype.UUID
+	VerifiedBy          pgtype.UUID
+	VerifiedAt          pgtype.Timestamptz
 	CreatedAt           pgtype.Timestamptz
 	UpdatedAt           pgtype.Timestamptz
 }
@@ -112,7 +133,7 @@ type ServiceRow struct {
 	CitySpaceID        pgtype.UUID
 	CitySpaceName      *string
 	CitySpaceCode      *string
-	OriginCommunities  []byte
+	OriginCommunities  []string
 	IsRemote           bool
 	WebsiteURL         *string
 	BookingURL         *string
@@ -122,6 +143,8 @@ type ServiceRow struct {
 	ClaimStatus        *string
 	ClaimedByOrgID     pgtype.UUID
 	ClaimedOrgName     *string
+	VerifiedBy         pgtype.UUID
+	VerifiedAt         pgtype.Timestamptz
 	AuthorName         *string
 	AuthorAvatar       *string
 }
@@ -137,11 +160,11 @@ INSERT INTO service_listing_meta (
 `
 	originCommunities := meta.OriginCommunities
 	if originCommunities == nil {
-		originCommunities = []byte("[]")
+		originCommunities = []string{}
 	}
 	claimStatus := meta.ClaimStatus
 	if claimStatus == nil {
-		s := ClaimStatusNone
+		s := ClaimStatusUnclaimed
 		claimStatus = &s
 	}
 	_, err := s.pool.Writer.Exec(ctx, q,
@@ -162,6 +185,7 @@ func (s *Store) GetMeta(ctx context.Context, contentID, tenantID pgtype.UUID) (S
 SELECT id, tenant_id, content_id, org_id, service_category, destination_space_id,
        city_space_id, origin_communities, is_remote, website_url, booking_url,
        price_range, is_verified, verification_type, claim_status, claimed_by_org_id,
+       verified_by, verified_at,
        created_at, updated_at
 FROM service_listing_meta
 WHERE content_id = $1 AND tenant_id = $2
@@ -172,6 +196,7 @@ WHERE content_id = $1 AND tenant_id = $2
 		&m.DestinationSpaceID, &m.CitySpaceID, &m.OriginCommunities,
 		&m.IsRemote, &m.WebsiteURL, &m.BookingURL, &m.PriceRange,
 		&m.IsVerified, &m.VerificationType, &m.ClaimStatus, &m.ClaimedByOrgID,
+		&m.VerifiedBy, &m.VerifiedAt,
 		&m.CreatedAt, &m.UpdatedAt,
 	)
 	if err != nil {
@@ -188,7 +213,7 @@ WHERE content_id = $1 AND tenant_id = $2
 func (s *Store) UpdateMeta(ctx context.Context, contentID, tenantID pgtype.UUID, meta ServiceMeta) error {
 	originCommunities := meta.OriginCommunities
 	if originCommunities == nil {
-		originCommunities = []byte("[]")
+		originCommunities = []string{}
 	}
 	const q = `
 UPDATE service_listing_meta
@@ -218,14 +243,16 @@ WHERE content_id = $1 AND tenant_id = $2
 
 // ListServicesFilter holds the filter parameters for listing services.
 type ListServicesFilter struct {
-	TenantID           pgtype.UUID
-	DestSpaceID        pgtype.UUID // optional
-	ServiceCategory    string      // optional
-	IsVerified         *bool       // optional
-	Sort               string      // "top" | "latest" (default: latest)
-	Status             string      // filter by status (default: published)
-	Limit              int32
-	Offset             int32
+	TenantID        pgtype.UUID
+	DestSpaceID     pgtype.UUID // optional, ?dest=
+	CitySpaceID     pgtype.UUID // optional, ?city= (BUG-005)
+	ServiceCategory string      // optional, ?category=
+	OriginCommunity string      // optional, ?origin= (BUG-005) — single community tag, matched via array contains
+	IsVerified      *bool       // optional, ?verified=
+	Sort            string      // "top" | "latest" (default: latest)
+	Status          string      // filter by status (default: published)
+	Limit           int32
+	Offset          int32
 }
 
 // ListServices returns a paginated, filtered list of published service
@@ -263,9 +290,20 @@ func (s *Store) ListServices(ctx context.Context, f ListServicesFilter) ([]Servi
 		args = append(args, f.DestSpaceID)
 		argIdx++
 	}
+	if f.CitySpaceID.Valid {
+		conditions = append(conditions, fmt.Sprintf("sm.city_space_id = $%d", argIdx))
+		args = append(args, f.CitySpaceID)
+		argIdx++
+	}
 	if f.ServiceCategory != "" {
 		conditions = append(conditions, fmt.Sprintf("sm.service_category = $%d", argIdx))
 		args = append(args, f.ServiceCategory)
+		argIdx++
+	}
+	if f.OriginCommunity != "" {
+		// text[] containment: provider serves the requested community.
+		conditions = append(conditions, fmt.Sprintf("$%d = ANY(sm.origin_communities)", argIdx))
+		args = append(args, f.OriginCommunity)
 		argIdx++
 	}
 	if f.IsVerified != nil {
@@ -304,6 +342,7 @@ SELECT c.id, c.tenant_id, c.author_id, c.title, c.slug, c.body, c.body_html,
        sm.origin_communities, sm.is_remote, sm.website_url, sm.booking_url,
        sm.price_range, sm.is_verified, sm.verification_type,
        sm.claim_status, sm.claimed_by_org_id, co.name AS claimed_org_name,
+       sm.verified_by, sm.verified_at,
        u.username AS author_name, up.avatar_url AS author_avatar
 FROM contents c
 JOIN service_listing_meta sm ON sm.content_id = c.id AND sm.tenant_id = c.tenant_id
@@ -339,6 +378,7 @@ LIMIT $%d OFFSET $%d
 			&r.OriginCommunities, &r.IsRemote, &r.WebsiteURL, &r.BookingURL,
 			&r.PriceRange, &r.IsVerified, &r.VerificationType,
 			&r.ClaimStatus, &r.ClaimedByOrgID, &r.ClaimedOrgName,
+			&r.VerifiedBy, &r.VerifiedAt,
 			&r.AuthorName, &r.AuthorAvatar,
 		); err != nil {
 			return nil, 0, fmt.Errorf("servicedir: scan service row: %w", err)
@@ -377,6 +417,7 @@ SELECT c.id, c.tenant_id, c.author_id, c.title, c.slug, c.body, c.body_html,
        sm.origin_communities, sm.is_remote, sm.website_url, sm.booking_url,
        sm.price_range, sm.is_verified, sm.verification_type,
        sm.claim_status, sm.claimed_by_org_id, co.name AS claimed_org_name,
+       sm.verified_by, sm.verified_at,
        u.username AS author_name, up.avatar_url AS author_avatar
 FROM contents c
 JOIN service_listing_meta sm ON sm.content_id = c.id AND sm.tenant_id = c.tenant_id
@@ -402,6 +443,7 @@ LIMIT 1
 		&r.OriginCommunities, &r.IsRemote, &r.WebsiteURL, &r.BookingURL,
 		&r.PriceRange, &r.IsVerified, &r.VerificationType,
 		&r.ClaimStatus, &r.ClaimedByOrgID, &r.ClaimedOrgName,
+		&r.VerifiedBy, &r.VerifiedAt,
 		&r.AuthorName, &r.AuthorAvatar,
 	)
 	if err != nil {
@@ -495,6 +537,7 @@ SELECT c.id, c.tenant_id, c.author_id, c.title, c.slug, c.body, c.body_html,
        sm.origin_communities, sm.is_remote, sm.website_url, sm.booking_url,
        sm.price_range, sm.is_verified, sm.verification_type,
        sm.claim_status, sm.claimed_by_org_id, co.name AS claimed_org_name,
+       sm.verified_by, sm.verified_at,
        u.username AS author_name, up.avatar_url AS author_avatar
 FROM contents c
 JOIN service_listing_meta sm ON sm.content_id = c.id AND sm.tenant_id = c.tenant_id
@@ -530,6 +573,7 @@ LIMIT $%d OFFSET $%d
 			&r.OriginCommunities, &r.IsRemote, &r.WebsiteURL, &r.BookingURL,
 			&r.PriceRange, &r.IsVerified, &r.VerificationType,
 			&r.ClaimStatus, &r.ClaimedByOrgID, &r.ClaimedOrgName,
+			&r.VerifiedBy, &r.VerifiedAt,
 			&r.AuthorName, &r.AuthorAvatar,
 		); err != nil {
 			return nil, 0, fmt.Errorf("servicedir: admin scan service row: %w", err)
@@ -555,14 +599,19 @@ WHERE %s
 }
 
 // VerifyService marks a service listing as verified by an admin, recording
-// the verification type (e.g. "manual" or "auto").
-func (s *Store) VerifyService(ctx context.Context, contentID, tenantID pgtype.UUID, verificationType string) error {
+// the verification type (§98: self|community|admin|professional_body) and
+// the admin user_id + timestamp for audit (ADR-088 HITL, BUG-015).
+func (s *Store) VerifyService(ctx context.Context, contentID, tenantID, verifiedBy pgtype.UUID, verificationType string) error {
 	const q = `
 UPDATE service_listing_meta
-SET is_verified = true, verification_type = $3, updated_at = now()
+SET is_verified = true,
+    verification_type = $4,
+    verified_by = $3,
+    verified_at = now(),
+    updated_at = now()
 WHERE content_id = $1 AND tenant_id = $2
 `
-	cmd, err := s.pool.Writer.Exec(ctx, q, contentID, tenantID, verificationType)
+	cmd, err := s.pool.Writer.Exec(ctx, q, contentID, tenantID, verifiedBy, verificationType)
 	if err != nil {
 		return fmt.Errorf("servicedir: verify service: %w", err)
 	}

@@ -2840,7 +2840,7 @@ export interface ServiceListing {
 	city_space_id?: string;
 	city_space_name?: string;
 	city_space_code?: string;
-	origin_communities?: unknown;
+	origin_communities?: string[];
 	is_remote: boolean;
 	website_url?: string;
 	booking_url?: string;
@@ -2850,6 +2850,8 @@ export interface ServiceListing {
 	claim_status?: string;
 	claimed_by_org_id?: string;
 	claimed_org_name?: string;
+	verified_by?: string;
+	verified_at?: string;
 	author_id?: string;
 	author_name?: string;
 	author_avatar?: string;
