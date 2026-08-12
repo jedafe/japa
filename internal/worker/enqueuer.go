@@ -228,12 +228,18 @@ var taskTier = func() map[string]string {
 		TypeMutualAidExpire,
 		// §94 Professional Credential Checker (ADR-102) — weekly link check, low tier.
 		TypeCredentialsCheckLinks,
+		// §90 Visa Route Comparison (ADR-098) — weekly link check, low tier.
+		TypeVisaRoutesCheckLinks,
 		// §95 CV Formatter (ADR-103) — nightly purge of expired sessions, low tier.
 		TypeCvFormatSessionsPurge,
 		// §84 Community Digest Widget (ADR-092) — weekly generation, low tier.
 		TypeDigestGenerate,
 		// §82 Japa Planning Groups (ADR-090) — nightly expiry sweep, low tier.
 		TypePlanningGroupExpire,
+		// §83 Visa Timeline Tracker (ADR-091) — nightly stats refresh +
+		// weekly update prompt, low tier.
+		TypeVisaTimelineRefreshStats,
+		TypeVisaTimelinePromptUpdate,
 	} {
 		m[t] = QueueLow
 	}
@@ -345,6 +351,8 @@ func TaskTypeCatalog() []map[string]string {
 		{TypeEmbassyDispatchAlerts, "critical", "Dispatch notifications to users with a matching active appointment alert"},
 		{TypeEmbassyExpireChecks, "low", "Expire appointment alerts past their expires_at date"},
 		{TypeCredentialsCheckLinks, "low", "HEAD-check regulatory_body_url on active credential pathways for 404s"},
+		// §90 Visa Route Comparison (ADR-098)
+		{TypeVisaRoutesCheckLinks, "low", "HEAD-check gov_source_url on active+published visa routes for 404s"},
 		// §95 CV Formatter (ADR-103)
 		{TypeCvFormatProcess, "default", "Process a pending CV format session via the AI Gateway"},
 		{TypeCvFormatSessionsPurge, "low", "Purge expired CV format sessions past their expires_at"},
@@ -356,6 +364,9 @@ func TaskTypeCatalog() []map[string]string {
 		{TypePlanningGroupCheckinReminder, "default", "Send weekly check-in reminders to planning group members who haven't checked in"},
 		// §81 Scam Alert Board (ADR-089)
 		{TypeScamAlertNotifySubscribers, "default", "Fan out scam-alert notifications to subscribers on report confirmation + award Community Guardian badge"},
+		// §83 Visa Timeline Tracker (ADR-091)
+		{TypeVisaTimelineRefreshStats, "low", "Recompute visa_processing_stats aggregate from shared timelines + milestones (nightly)"},
+		{TypeVisaTimelinePromptUpdate, "low", "Prompt members with in-progress visa timelines to add a milestone (weekly)"},
 	}
 
 	result := make([]map[string]string, len(tasks))

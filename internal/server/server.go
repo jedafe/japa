@@ -1054,6 +1054,14 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	visaTimelineStore := visatimeline.NewStore(database)
 	visaTimelineService := visatimeline.NewService(visaTimelineStore, settingsService)
 	visaTimelineHandlers := visatimeline.NewHandlers(visaTimelineService, settingsService)
+	// Wire the wallet service for the anti-gaming reputation gate on shared
+	// timelines (§83: contribute to aggregate requires reputation ≥
+	// visa_timeline.min_reputation).
+	visaTimelineHandlers.SetPointsChecker(walletService)
+	// Register the service as the visa_timeline:refresh_stats /
+	// visa_timeline:prompt_update processor so the Asynq tasks are
+	// handled (§83, ADR-091).
+	worker.RegisterVisaTimelineProcessor(visaTimelineService)
 
 	// Ref: japaconnect-engineering/sections/84-community-digest-widget.md (ADR-092)
 	digestStore := digest.NewStore(database)
@@ -3645,8 +3653,6 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Post("/admin/webhooks/{id}/test", webhookHandlers.TestWebhook)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "integrations.webhooks.manage")).
 				Get("/admin/webhooks/{id}/deliveries", webhookHandlers.ListDeliveries)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "integrations.webhooks.manage")).
-				Post("/admin/webhooks/{id}/retry/{delivery_id}", webhookHandlers.RetryDelivery)
 			// Catalog: PATCH /admin/webhooks/:id (P5.6 — Task 8)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "integrations.webhooks.manage")).
 				Patch("/admin/webhooks/{id}", webhookHandlers.UpdateWebhook)
@@ -3654,6 +3660,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "integrations.webhooks.manage")).
 				Post("/admin/webhooks/{id}/verify", webhookHandlers.VerifyWebhook)
 			// Catalog: POST /admin/webhooks/:id/deliveries/:delivery_id/retry (P5.6 — Task 8)
+			// BUG-024: removed duplicate non-catalog route /admin/webhooks/:id/retry/:delivery_id
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "integrations.webhooks.manage")).
 				Post("/admin/webhooks/{id}/deliveries/{delivery_id}/retry", webhookHandlers.RetryDelivery)
 
@@ -5124,6 +5131,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Get("/admin/visa-routes", visaRoutesHandlers.HandleAdminList)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "visa_routes.manage")).
 					Post("/admin/visa-routes", visaRoutesHandlers.HandleAdminCreate)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "visa_routes.manage")).
+					Post("/admin/visa-routes/generate", visaRoutesHandlers.HandleAdminGenerate)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "visa_routes.manage")).
 					Patch("/admin/visa-routes/{id}", visaRoutesHandlers.HandleAdminUpdate)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "visa_routes.manage")).

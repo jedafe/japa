@@ -10,6 +10,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -68,7 +69,6 @@ type CreateRouteInput struct {
 	AIGenerated          *bool  `json:"ai_generated"`
 	AIModel              string `json:"ai_model"`
 	AIPromptHash         string `json:"ai_prompt_hash"`
-	IsJapabotIndexed     *bool  `json:"is_japabot_indexed"`
 }
 
 // UpdateRouteInput is the request body for PATCH /admin/visa-routes/:id.
@@ -91,12 +91,19 @@ type UpdateRouteInput struct {
 	AIGenerated          *bool   `json:"ai_generated"`
 	AIModel              *string `json:"ai_model"`
 	AIPromptHash         *string `json:"ai_prompt_hash"`
-	IsJapabotIndexed     *bool   `json:"is_japabot_indexed"`
 }
 
 // ApproveInput is the request body for PATCH /admin/visa-routes/:id/approve.
 type ApproveInput struct {
 	Notes *string `json:"notes"`
+}
+
+// GenerateRouteRequest is the request body for POST
+// /admin/visa-routes/generate (Content Agent draft placeholder, §90,
+// ADR-088).
+type GenerateRouteRequest struct {
+	DestinationSpaceID string `json:"destination_space_id"`
+	VisaCategory       string `json:"visa_category"`
 }
 
 // Service holds the business logic for visa routes.
@@ -284,10 +291,6 @@ func (s *Service) Create(ctx context.Context, tenantID pgtype.UUID, input Create
 	if input.AIGenerated != nil {
 		aiGenerated = *input.AIGenerated
 	}
-	isJapabotIndexed := false
-	if input.IsJapabotIndexed != nil {
-		isJapabotIndexed = *input.IsJapabotIndexed
-	}
 
 	row, err := s.store.Create(ctx, CreateRoute{
 		TenantID:             tenantID,
@@ -308,7 +311,6 @@ func (s *Service) Create(ctx context.Context, tenantID pgtype.UUID, input Create
 		AIGenerated:          aiGenerated,
 		AIModel:              aiModel,
 		AIPromptHash:         aiPromptHash,
-		IsJapabotIndexed:     isJapabotIndexed,
 	})
 	if err != nil {
 		return RouteDTO{}, fmt.Errorf("visaroutes: create: %w", err)
@@ -386,9 +388,6 @@ func (s *Service) Update(ctx context.Context, id, tenantID pgtype.UUID, input Up
 	if input.AIPromptHash != nil {
 		update.AIPromptHash = input.AIPromptHash
 	}
-	if input.IsJapabotIndexed != nil {
-		update.IsJapabotIndexed = input.IsJapabotIndexed
-	}
 
 	row, err := s.store.Update(ctx, id, tenantID, update)
 	if err != nil {
@@ -420,6 +419,35 @@ func (s *Service) Deactivate(ctx context.Context, id, tenantID pgtype.UUID) erro
 		return fmt.Errorf("visaroutes: deactivate: %w", err)
 	}
 	return nil
+}
+
+// GenerateDraft is the Content Agent draft placeholder for POST
+// /admin/visa-routes/generate (§90, ADR-088). It does not yet invoke the
+// Content Agent; instead it returns a placeholder response indicating the
+// generation has been queued. The actual AI generation will be wired in a
+// follow-up (§90 Content Agent integration).
+func (s *Service) GenerateDraft(ctx context.Context, tenantID pgtype.UUID, input GenerateRouteRequest) (map[string]any, error) {
+	if input.DestinationSpaceID == "" {
+		return nil, fmt.Errorf("destination_space_id is required")
+	}
+
+	var destSpaceID pgtype.UUID
+	if err := destSpaceID.Scan(input.DestinationSpaceID); err != nil {
+		return nil, fmt.Errorf("invalid destination_space_id: %w", err)
+	}
+
+	slog.Info("visaroutes: generate draft placeholder",
+		"tenant_id", tenantID,
+		"dest_space_id", destSpaceID,
+		"visa_category", input.VisaCategory,
+	)
+
+	return map[string]any{
+		"status":               "queued",
+		"destination_space_id": input.DestinationSpaceID,
+		"visa_category":        input.VisaCategory,
+		"message":              "Content Agent draft generation queued; not yet implemented.",
+	}, nil
 }
 
 // rowToDTO converts a RouteRow to a RouteDTO.

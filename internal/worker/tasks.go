@@ -243,6 +243,9 @@ func RegisterHandlers(mux *asynq.ServeMux) {
 	// §94 Professional Credential Checker handlers (ADR-102).
 	mux.HandleFunc(TypeCredentialsCheckLinks, HandleCredentialsCheckLinks)
 
+	// §90 Visa Route Comparison handlers (ADR-098).
+	mux.HandleFunc(TypeVisaRoutesCheckLinks, HandleVisaRoutesCheckLinks)
+
 	// §95 CV Formatter handlers (ADR-103).
 	mux.HandleFunc(TypeCvFormatProcess, HandleCvFormatProcess)
 	mux.HandleFunc(TypeCvFormatSessionsPurge, HandleCvFormatSessionsPurge)
@@ -258,4 +261,8 @@ func RegisterHandlers(mux *asynq.ServeMux) {
 
 	// §81 Scam Alert Board handlers (ADR-089).
 	mux.HandleFunc(TypeScamAlertNotifySubscribers, HandleScamAlertNotifySubscribers)
+
+	// §83 Visa Timeline Tracker handlers (ADR-091).
+	mux.HandleFunc(TypeVisaTimelineRefreshStats, HandleVisaTimelineRefreshStats)
+	mux.HandleFunc(TypeVisaTimelinePromptUpdate, HandleVisaTimelinePromptUpdate)
 }

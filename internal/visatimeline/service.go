@@ -9,6 +9,7 @@ package visatimeline
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -19,18 +20,19 @@ import (
 
 // TimelineDTO is the API response shape for a single timeline.
 type TimelineDTO struct {
-	ID                 string `json:"id"`
-	UserID             string `json:"user_id"`
-	OriginSpaceID      string `json:"origin_space_id,omitempty"`
-	DestinationSpaceID string `json:"destination_space_id"`
-	VisaCategory       string `json:"visa_category"`
-	Consulate          string `json:"consulate,omitempty"`
-	ApplicationMethod  string `json:"application_method,omitempty"`
-	Outcome            string `json:"outcome,omitempty"`
-	IsShared           bool   `json:"is_shared"`
-	AnonymisedAt       string `json:"anonymised_at,omitempty"`
-	CreatedAt          string `json:"created_at"`
-	UpdatedAt          string `json:"updated_at"`
+	ID                 string          `json:"id"`
+	UserID             string          `json:"user_id"`
+	OriginSpaceID      string          `json:"origin_space_id,omitempty"`
+	DestinationSpaceID string          `json:"destination_space_id"`
+	VisaCategory       string          `json:"visa_category"`
+	Consulate          string          `json:"consulate,omitempty"`
+	ApplicationMethod  string          `json:"application_method,omitempty"`
+	Outcome            string          `json:"outcome,omitempty"`
+	IsShared           bool            `json:"is_shared"`
+	AnonymisedAt       string          `json:"anonymised_at,omitempty"`
+	CreatedAt          string          `json:"created_at"`
+	UpdatedAt          string          `json:"updated_at"`
+	Milestones         []MilestoneDTO `json:"milestones,omitempty"`
 }
 
 // MilestoneDTO is the API response shape for a single milestone.
@@ -242,8 +244,27 @@ func (s *Service) DeleteOwn(ctx context.Context, id, tenantID, userID pgtype.UUI
 	return nil
 }
 
+// milestoneOrder defines the canonical chronological order of visa
+// application milestones (§83). A milestone that violates this order
+// relative to existing milestones is flagged as implausible.
+var milestoneOrder = map[string]int{
+	"applied":        1,
+	"biometrics":     2,
+	"medical":        3,
+	"docs_requested": 4,
+	"decision":       5,
+	"visa_issued":    6,
+}
+
+// ErrImplausibleSequence is returned when a new milestone's type or date
+// violates the canonical milestone order relative to existing milestones
+// (§83 Privacy & Anti-Gaming: implausible sequences are flagged).
+var ErrImplausibleSequence = fmt.Errorf("implausible milestone sequence")
+
 // AddMilestone appends a milestone to a timeline owned by the authenticated
-// user. Ownership is verified against the stored user_id.
+// user. Ownership is verified against the stored user_id. Implausible
+// milestone sequences (e.g. decision before applied, or a date that precedes
+// an earlier-stage milestone) are rejected per §83 anti-gaming rules.
 func (s *Service) AddMilestone(ctx context.Context, timelineID, tenantID, userID pgtype.UUID, input AddMilestoneInput) (MilestoneDTO, error) {
 	if input.MilestoneType == "" {
 		return MilestoneDTO{}, fmt.Errorf("milestone_type is required")
@@ -264,6 +285,39 @@ func (s *Service) AddMilestone(ctx context.Context, timelineID, tenantID, userID
 	if input.OccurredAt != "" {
 		if err := occurredAt.Scan(input.OccurredAt); err != nil {
 			return MilestoneDTO{}, fmt.Errorf("invalid occurred_at: %w", err)
+		}
+	}
+
+	// Implausible-sequence check (§83 Privacy & Anti-Gaming). Fetch
+	// existing milestones and verify the new milestone's type-order and
+	// date are consistent with the canonical order. A milestone is
+	// implausible if:
+	//   - a later-stage milestone already exists with an earlier date, OR
+	//   - an earlier-stage milestone already exists with a later date.
+	existingMilestones, err := s.store.ListMilestones(ctx, timelineID, tenantID)
+	if err != nil {
+		return MilestoneDTO{}, fmt.Errorf("visatimeline: add milestone: list existing: %w", err)
+	}
+	newOrder, newOrderOk := milestoneOrder[input.MilestoneType]
+	if newOrderOk && occurredAt.Valid {
+		for _, em := range existingMilestones {
+			if !em.OccurredAt.Valid {
+				continue
+			}
+			emOrder, emOrderOk := milestoneOrder[em.MilestoneType]
+			if !emOrderOk {
+				continue
+			}
+			// New milestone is later-stage but dated before an
+			// earlier-stage existing milestone → implausible.
+			if newOrder > emOrder && occurredAt.Time.Before(em.OccurredAt.Time) {
+				return MilestoneDTO{}, ErrImplausibleSequence
+			}
+			// New milestone is earlier-stage but dated after a
+			// later-stage existing milestone → implausible.
+			if newOrder < emOrder && occurredAt.Time.After(em.OccurredAt.Time) {
+				return MilestoneDTO{}, ErrImplausibleSequence
+			}
 		}
 	}
 
@@ -331,9 +385,10 @@ func (s *Service) ListMilestones(ctx context.Context, timelineID, tenantID pgtyp
 }
 
 // GetStats returns the public aggregated processing-time statistics for an
-// origin → destination → visa category combination.
-func (s *Service) GetStats(ctx context.Context, tenantID, originSpaceID, destSpaceID pgtype.UUID, visaCategory string) ([]ProcessingStatDTO, error) {
-	stats, err := s.store.GetStats(ctx, tenantID, originSpaceID, destSpaceID, visaCategory)
+// origin → destination → visa category combination. Consulate and months
+// are optional filters (§83 route signature: ?dest=&origin=&visa=&consulate=&months=).
+func (s *Service) GetStats(ctx context.Context, tenantID, originSpaceID, destSpaceID pgtype.UUID, visaCategory, consulate string, months int) ([]ProcessingStatDTO, error) {
+	stats, err := s.store.GetStats(ctx, tenantID, originSpaceID, destSpaceID, visaCategory, consulate, months)
 	if err != nil {
 		return nil, fmt.Errorf("visatimeline: get stats: %w", err)
 	}
@@ -345,9 +400,9 @@ func (s *Service) GetStats(ctx context.Context, tenantID, originSpaceID, destSpa
 }
 
 // GetTrend returns the monthly trend series for a destination space + visa
-// category over the last `months` months.
-func (s *Service) GetTrend(ctx context.Context, tenantID, destSpaceID pgtype.UUID, visaCategory string, months int) ([]TrendPointDTO, error) {
-	points, err := s.store.GetTrend(ctx, tenantID, destSpaceID, visaCategory, months)
+// category over the last `months` months. Consulate is an optional filter.
+func (s *Service) GetTrend(ctx context.Context, tenantID, destSpaceID pgtype.UUID, visaCategory, consulate string, months int) ([]TrendPointDTO, error) {
+	points, err := s.store.GetTrend(ctx, tenantID, destSpaceID, visaCategory, consulate, months)
 	if err != nil {
 		return nil, fmt.Errorf("visatimeline: get trend: %w", err)
 	}
@@ -388,7 +443,11 @@ func (s *Service) AdminDelete(ctx context.Context, id, tenantID pgtype.UUID) err
 // create.
 var ErrNotOwner = fmt.Errorf("not the timeline owner")
 
-// timelineToDTO converts a Timeline row to a TimelineDTO.
+// timelineToDTO converts a Timeline row to a TimelineDTO. When the Timeline
+// has joined Milestones (from ListUserTimelines / AdminList), they are
+// mapped to MilestoneDTO so list endpoints return timelines with their
+// milestones in a single round-trip (§83 — no separate list-milestones
+// route).
 func timelineToDTO(t Timeline) TimelineDTO {
 	dto := TimelineDTO{
 		ID:                 t.ID.String(),
@@ -411,6 +470,12 @@ func timelineToDTO(t Timeline) TimelineDTO {
 	}
 	if t.Outcome != nil {
 		dto.Outcome = *t.Outcome
+	}
+	if len(t.Milestones) > 0 {
+		dto.Milestones = make([]MilestoneDTO, 0, len(t.Milestones))
+		for _, m := range t.Milestones {
+			dto.Milestones = append(dto.Milestones, milestoneToDTO(m))
+		}
 	}
 	return dto
 }
@@ -481,4 +546,36 @@ func formatTs(t pgtype.Timestamptz) string {
 		return ""
 	}
 	return t.Time.UTC().Format(time.RFC3339)
+}
+
+// RefreshStats recomputes the visa_processing_stats aggregate table from
+// shared, non-deleted visa_timelines and their milestones. Called nightly
+// by the visa_timeline:refresh_stats Asynq task (§83, ADR-091).
+// Implements worker.VisaTimelineProcessor.
+func (s *Service) RefreshStats(ctx context.Context) (int64, error) {
+	n, err := s.store.RefreshStats(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("visatimeline: refresh stats: %w", err)
+	}
+	return n, nil
+}
+
+// PromptUpdate sends a weekly nudge to members with in-progress visa
+// timelines (no decision/visa_issued milestone). Called weekly by the
+// visa_timeline:prompt_update Asynq task (§83, ADR-091).
+// Implements worker.VisaTimelineProcessor.
+//
+// The actual notification dispatch is delegated to the notification service
+// when wired; until then the count is logged so the task is not a silent
+// no-op (mirroring the planning_group:checkin_reminder pattern).
+func (s *Service) PromptUpdate(ctx context.Context) (int64, error) {
+	owners, err := s.store.InProgressTimelineOwners(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("visatimeline: prompt update: %w", err)
+	}
+	if len(owners) > 0 {
+		slog.InfoContext(ctx, "visatimeline: prompt update queued",
+			"count", len(owners))
+	}
+	return int64(len(owners)), nil
 }

@@ -7,6 +7,7 @@ package wallet
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
@@ -190,32 +191,64 @@ func (s *Service) Store() *Store {
 // AwardPoints credits reward_points to a user's wallet by inserting a
 // ledger entry of type "points" with operation "earn" (BUG-GAMMA-002).
 // Used by the gamification service when a challenge is completed.
+//
+// Follows the AUDIT-BE-005 pattern: acquires a per-user advisory lock,
+// reads the latest balance via the sqlc-generated query, and inserts the
+// ledger entry with a deterministic idempotency key so duplicate calls
+// (e.g. gamination retries) are safe (Rule 9).
 func (s *Service) AwardPoints(ctx context.Context, tenantID, userID pgtype.UUID, points int, reason string) error {
 	if points <= 0 {
 		return nil
 	}
-	// Read the current balance and insert the ledger entry atomically.
-	tx, err := s.db.Writer.BeginTx(ctx, pgx.TxOptions{})
+
+	tx, err := s.db.Writer.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("beginning transaction: %w", err)
 	}
-	defer tx.Rollback(ctx)
+	defer func() { _ = tx.Rollback(ctx) }()
 
-	var currentBalance int64
-	err = tx.QueryRow(ctx,
-		`SELECT COALESCE(SUM(amount), 0) FROM wallet_ledger WHERE tenant_id = $1 AND user_id = $2 AND ledger_type = 'points'`,
-		tenantID, userID).Scan(&currentBalance)
-	if err != nil {
-		return fmt.Errorf("reading current points balance: %w", err)
+	qtx := s.store.write.WithTx(tx)
+
+	// Serialize concurrent balance mutations for this user (AUDIT-BE-005).
+	lockKey := "wallet:" + tenantID.String() + ":" + userID.String()
+	if _, err = tx.Exec(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", lockKey); err != nil {
+		return fmt.Errorf("acquiring wallet lock: %w", err)
 	}
-	reasonStr := reason
-	sourceStr := "gamification"
-	_, err = tx.Exec(ctx,
-		`INSERT INTO wallet_ledger (tenant_id, user_id, ledger_type, operation, amount, resulting_balance, source, reason)
-		 VALUES ($1, $2, 'points', 'earn', $3, $4, $5, $6)`,
-		tenantID, userID, int64(points), currentBalance+int64(points), sourceStr, reasonStr)
+
+	currentBalance, err := qtx.GetLatestBalance(ctx, gen.GetLatestBalanceParams{
+		TenantID:   tenantID,
+		UserID:     userID,
+		LedgerType: LedgerTypePoints,
+	})
 	if err != nil {
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return fmt.Errorf("reading current points balance: %w", err)
+		}
+		currentBalance = 0
+	}
+
+	newBalance := currentBalance + int64(points)
+	sourceStr := "gamification"
+	reasonStr := reason
+	idempotencyKey := fmt.Sprintf("gamification_award:%s:%s", userID.String(), reason)
+
+	if _, err = qtx.InsertLedgerEntry(ctx, gen.InsertLedgerEntryParams{
+		TenantID:         tenantID,
+		UserID:           userID,
+		LedgerType:       LedgerTypePoints,
+		Operation:        OperationEarn,
+		Amount:           int64(points),
+		ResultingBalance: newBalance,
+		Source:           &sourceStr,
+		Reference:        &reasonStr,
+		IdempotencyKey:   &idempotencyKey,
+		Reason:           &reasonStr,
+	}); err != nil {
 		return fmt.Errorf("inserting points ledger entry: %w", err)
 	}
-	return tx.Commit(ctx)
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("committing transaction: %w", err)
+	}
+	return nil
 }

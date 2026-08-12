@@ -14,10 +14,11 @@
 
 	interface WebhookEndpoint {
 		id: string;
+		name: string;
 		url: string;
-		events: string[];
-		secret: string;
+		event_types: string[];
 		is_active: boolean;
+		verified_at: string | null;
 		created_at: string;
 	}
 
@@ -33,7 +34,7 @@
 
 	let createModalOpen = $state(false);
 	let editingWebhook = $state<WebhookEndpoint | null>(null);
-	let form = $state({ url: '', events: [] as string[], secret: '', is_active: true });
+	let form = $state({ name: '', url: '', event_types: [] as string[], is_active: true });
 	let saving = $state(false);
 	let eventSearch = $state('');
 
@@ -53,16 +54,16 @@
 	let availableEvents = $state<WebhookEventDef[]>([]);
 
 	function toggleEventInForm(eventKey: string) {
-		const idx = form.events.indexOf(eventKey);
+		const idx = form.event_types.indexOf(eventKey);
 		if (idx >= 0) {
-			form.events = form.events.filter((e) => e !== eventKey);
+			form.event_types = form.event_types.filter((e) => e !== eventKey);
 		} else {
-			form.events = [...form.events, eventKey];
+			form.event_types = [...form.event_types, eventKey];
 		}
 	}
 
 	function removeEventFromForm(eventKey: string) {
-		form.events = form.events.filter((e) => e !== eventKey);
+		form.event_types = form.event_types.filter((e) => e !== eventKey);
 	}
 
 	let filteredAvailableEvents = $derived.by(() => {
@@ -74,13 +75,20 @@
 	});
 
 	let selectedEventLabels = $derived.by(() => {
-		return form.events.map((key) => {
+		return form.event_types.map((key) => {
 			const def = availableEvents.find((e) => e.key === key);
 			return { key, label: def?.label ?? key };
 		});
 	});
 
 	const columns: DataTableColumn[] = [
+		{
+			key: 'name',
+			label: t('webhooks.name', 'Name'),
+			sortable: true,
+			render: (val) =>
+				`<span class="font-medium text-foreground">${escapeHtml(val) || '—'}</span>`
+		},
 		{
 			key: 'url',
 			label: t('webhooks.url', 'URL'),
@@ -89,7 +97,7 @@
 				`<span class="font-mono text-xs break-all">${escapeHtml(val) || '—'}</span>`
 		},
 		{
-			key: 'events',
+			key: 'event_types',
 			label: t('webhooks.events', 'Events'),
 			sortable: false,
 			render: (val) => {
@@ -181,14 +189,15 @@
 	});
 
 	let formValid = $derived(
-		form.url.trim() !== '' &&
+		form.name.trim() !== '' &&
+			form.url.trim() !== '' &&
 			/^https?:\/\//.test(form.url.trim()) &&
-			form.events.length > 0
+			form.event_types.length > 0
 	);
 
 	function openCreateModal() {
 		editingWebhook = null;
-		form = { url: '', events: [], secret: '', is_active: true };
+		form = { name: '', url: '', event_types: [], is_active: true };
 		eventSearch = '';
 		createModalOpen = true;
 	}
@@ -196,9 +205,9 @@
 	function openEditModal(webhook: WebhookEndpoint) {
 		editingWebhook = webhook;
 		form = {
+			name: webhook.name,
 			url: webhook.url,
-			events: Array.isArray(webhook.events) ? [...webhook.events] : [],
-			secret: webhook.secret,
+			event_types: Array.isArray(webhook.event_types) ? [...webhook.event_types] : [],
 			is_active: webhook.is_active
 		};
 		eventSearch = '';
@@ -208,7 +217,7 @@
 	function closeCreateModal() {
 		createModalOpen = false;
 		editingWebhook = null;
-		form = { url: '', events: [], secret: '', is_active: true };
+		form = { name: '', url: '', event_types: [], is_active: true };
 		eventSearch = '';
 	}
 
@@ -218,9 +227,9 @@
 		message = '';
 		try {
 			const body = {
+				name: form.name.trim(),
 				url: form.url.trim(),
-				events: form.events,
-				secret: form.secret.trim(),
+				event_types: form.event_types,
 				is_active: form.is_active
 			};
 			if (editingWebhook) {
@@ -428,6 +437,18 @@
 			</Dialog.Title>
 			<div class="mt-4 space-y-4">
 				<div>
+					<label for="webhook-name" class="text-foreground mb-1 block text-sm font-medium">
+						{t('webhooks.name', 'Name')}
+					</label>
+					<input
+						id="webhook-name"
+						type="text"
+						bind:value={form.name}
+						class="border-border-input bg-background text-foreground w-full rounded-9px border px-3 py-2 text-sm transition-colors hover:border-border-input-hover focus:border-border-input-hover focus:shadow-date-field-focus"
+						placeholder={t('webhooks.name_placeholder', 'My Webhook')}
+					/>
+				</div>
+				<div>
 					<label for="webhook-url" class="text-foreground mb-1 block text-sm font-medium">
 						{t('webhooks.url', 'URL')}
 					</label>
@@ -471,10 +492,10 @@
 							class="border-border-input bg-background text-foreground hover:border-border-input-hover focus:border-border-input-hover focus:shadow-date-field-focus flex w-full items-center justify-between rounded-9px border px-3 py-2 text-sm transition-colors"
 							aria-label={t('webhooks.events', 'Events')}
 						>
-							<span class={form.events.length === 0 ? 'text-muted-foreground' : ''}>
-								{form.events.length === 0
+							<span class={form.event_types.length === 0 ? 'text-muted-foreground' : ''}>
+								{form.event_types.length === 0
 									? t('webhooks.select_events', 'Select events...')
-									: t('webhooks.events_selected', '{count} selected').replace('{count}', String(form.events.length))}
+									: t('webhooks.events_selected', '{count} selected').replace('{count}', String(form.event_types.length))}
 							</span>
 							<ChevronDown class="text-muted-foreground size-4 shrink-0" />
 						</Popover.Trigger>
@@ -513,7 +534,7 @@
 										{#each filteredAvailableEvents as event (event.key)}
 											<button
 												type="button"
-												class="hover:bg-accent flex w-full items-center gap-2 rounded-9px px-3 py-2 text-left text-sm transition-colors {form.events.includes(event.key) ? 'bg-accent' : ''}"
+												class="hover:bg-accent flex w-full items-center gap-2 rounded-9px px-3 py-2 text-left text-sm transition-colors {form.event_types.includes(event.key) ? 'bg-accent' : ''}"
 												onclick={() => toggleEventInForm(event.key)}
 												title={event.description}
 											>
@@ -521,19 +542,19 @@
 													<span class="text-foreground block font-medium">{event.label}</span>
 													<span class="text-muted-foreground block font-mono text-xs">{event.key}</span>
 												</span>
-												{#if form.events.includes(event.key)}
+												{#if form.event_types.includes(event.key)}
 													<Check class="text-foreground size-4 shrink-0" />
 												{/if}
 											</button>
 										{/each}
 									{/if}
 								</div>
-								{#if form.events.length > 0}
+								{#if form.event_types.length > 0}
 									<div class="border-border-input border-t p-2">
 										<button
 											type="button"
 											class="text-muted-foreground hover:text-foreground w-full text-center text-xs font-medium"
-											onclick={() => { form.events = []; }}
+											onclick={() => { form.event_types = []; }}
 										>
 											{t('webhooks.clear_all', 'Clear all')}
 										</button>
@@ -546,20 +567,8 @@
 						{t('webhooks.events_hint', 'Select the events to subscribe to.')}
 					</p>
 				</div>
-				<div>
-					<label for="webhook-secret" class="text-foreground mb-1 block text-sm font-medium">
-						{t('webhooks.secret', 'Secret')}
-					</label>
-					<input
-						id="webhook-secret"
-						type="password"
-						bind:value={form.secret}
-						class="border-border-input bg-background text-foreground w-full rounded-9px border px-3 py-2 font-mono text-sm transition-colors hover:border-border-input-hover focus:border-border-input-hover focus:shadow-date-field-focus"
-						placeholder="whsec_..."
-					/>
-					<p class="text-muted-foreground mt-1 text-xs">
-						{t('webhooks.secret_hint', 'Used to sign webhook payloads for verification.')}
-					</p>
+				<div class="rounded-9px border border-border-input p-3 text-xs text-muted-foreground">
+					{t('webhooks.secret_hint', 'The signing secret is generated automatically on creation and shown once. To rotate, delete and recreate the webhook.')}
 				</div>
 				{#if editingWebhook}
 					<label class="text-foreground flex items-center gap-2 text-sm font-medium">

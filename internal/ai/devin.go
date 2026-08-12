@@ -220,7 +220,7 @@ func (p *DevinProvider) createSession(ctx context.Context, prompt string) (devin
 	}
 
 	endpoint := p.baseURL + "/sessions"
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
+	httpReq, err := newValidatedHTTPRequest(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
 		return devinSessionResponse{}, fmt.Errorf("devin: creating request: %w", err)
 	}
@@ -228,7 +228,7 @@ func (p *DevinProvider) createSession(ctx context.Context, prompt string) (devin
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("Authorization", "Bearer "+p.apiKey)
 
-	resp, err := p.httpClient.Do(httpReq)
+	resp, err := p.httpClient.Do(httpReq) // #nosec G704 -- endpoint validated by newValidatedHTTPRequest
 	if err != nil {
 		return devinSessionResponse{}, fmt.Errorf("devin: request failed: %w", err)
 	}
@@ -254,14 +254,14 @@ func (p *DevinProvider) createSession(ctx context.Context, prompt string) (devin
 // getSession sends GET /sessions/{devin_id} to poll the session status.
 func (p *DevinProvider) getSession(ctx context.Context, devinID string) (devinSessionResponse, error) {
 	endpoint := p.baseURL + "/sessions/" + devinID
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	httpReq, err := newValidatedHTTPRequest(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return devinSessionResponse{}, fmt.Errorf("devin: creating poll request: %w", err)
 	}
 
 	httpReq.Header.Set("Authorization", "Bearer "+p.apiKey)
 
-	resp, err := p.httpClient.Do(httpReq)
+	resp, err := p.httpClient.Do(httpReq) // #nosec G704 -- endpoint validated by newValidatedHTTPRequest
 	if err != nil {
 		return devinSessionResponse{}, fmt.Errorf("devin: poll request failed: %w", err)
 	}

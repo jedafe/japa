@@ -217,11 +217,23 @@ func (res *Resolver) resolve(r *http.Request) VisitorContext {
 			cacheKey = valkey.MustKey("visitor:ctx:user:%s", user.UserID.String())
 		}
 	} else {
-		cacheKey = valkey.MustKey("visitor:ctx:ip:%s", clientip.FromRequest(r))
+		// BUG-V001: Anonymous IP cache key must be tenant-scoped to
+		// prevent cross-tenant data bleed. The archetype resolver uses
+		// tenant-scoped geo_personalization.origin_markets /
+		// destination_markets settings, so two tenants with different
+		// market lists produce different archetypes for the same IP.
+		// Without tenant scoping, tenant A's cached context would be
+		// served to tenant B. When tenant is nil (no tenant context),
+		// skip caching entirely — we cannot safely tenant-scope the key.
+		if t != nil {
+			cacheKey = valkey.MustKey("visitor:ctx:ip:%s:%s", t.ID, clientip.FromRequest(r))
+		}
 	}
 
-	// Try cache first.
-	if res.rdb != nil {
+	// Try cache first. cacheKey is empty when the anonymous visitor has no
+	// tenant context (BUG-V001: we skip caching rather than risk cross-tenant
+	// bleed on an unscoped key).
+	if res.rdb != nil && cacheKey != "" {
 		if cached, err := res.rdb.Get(r.Context(), cacheKey).Result(); err == nil && cached != "" {
 			if cv, ok := unmarshalCache(cached); ok {
 				// Preserve auth state (not cached) and language (request-scoped).
@@ -453,34 +465,4 @@ func resolveLanguage(r *http.Request) string {
 		return "en"
 	}
 	return accept
-}
-
-// SetUserPreference updates the user's content_country_preference and
-// invalidates their cached VisitorContext.
-func SetUserPreference(ctx context.Context, q *gen.Queries, rdb valkeycompat.Cmdable, tenantID, userID pgtype.UUID, country string) error {
-	c := strings.ToUpper(strings.TrimSpace(country))
-	if c == "" {
-		// Setting empty string clears the preference (falls back to GeoIP).
-		if err := q.SetUserContentCountryPreference(ctx, gen.SetUserContentCountryPreferenceParams{
-			TenantID: tenantID, UserID: userID,
-		}); err != nil {
-			return err
-		}
-	} else {
-		cc := &c
-		if err := q.SetUserContentCountryPreference(ctx, gen.SetUserContentCountryPreferenceParams{
-			TenantID: tenantID, UserID: userID, ContentCountryPreference: cc,
-		}); err != nil {
-			return err
-		}
-	}
-
-	// Invalidate cache. Session-based keys (jc:visitor:ctx:{jti}) can't be
-	// enumerated without SCAN, so we delete the user-based fallback key and
-	// rely on the 30-min TTL for session-scoped keys. Preference changes are
-	// infrequent and 30-min staleness is acceptable per ADR-064.
-	if rdb != nil {
-		_ = rdb.Del(ctx, valkey.MustKey("visitor:ctx:user:%s", userID.String())).Err()
-	}
-	return nil
 }

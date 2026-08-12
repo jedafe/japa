@@ -1408,6 +1408,33 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 			return fmt.Errorf("deleting scam_alert_subscriptions for user: %w", err)
 		}
 
+		// §83 Visa Timeline Tracker GDPR erasure (ADR-091).
+		// visa_timelines.user_id references users(id) with ON DELETE SET
+		// NULL. Shared timelines feed the anonymised
+		// visa_processing_stats aggregate (which has no user_id) and must
+		// survive erasure — the contribution is intentionally anonymised.
+		// Private (is_shared=false) timelines are user PII and are
+		// soft-deleted. For shared timelines, nullify user_id + stamp
+		// anonymised_at so the audit trail records the erasure-triggered
+		// anonymisation. visa_timeline_milestones cascade with their
+		// parent timeline (ON DELETE CASCADE).
+		// Ref: japaconnect-engineering/sections/83-visa-timeline-tracker.md
+		//      japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
+		if _, err := s.db.Writer.Exec(ctx, `
+			UPDATE visa_timelines
+			SET user_id = NULL, anonymised_at = now(), updated_at = now()
+			WHERE tenant_id = $2 AND user_id = $1 AND is_shared = TRUE AND deleted_at IS NULL
+		`, userID, tenantID); err != nil {
+			return fmt.Errorf("anonymising shared visa_timelines: %w", err)
+		}
+		if _, err := s.db.Writer.Exec(ctx, `
+			UPDATE visa_timelines
+			SET deleted_at = now(), updated_at = now()
+			WHERE tenant_id = $2 AND user_id = $1 AND is_shared = FALSE AND deleted_at IS NULL
+		`, userID, tenantID); err != nil {
+			return fmt.Errorf("soft-deleting private visa_timelines: %w", err)
+		}
+
 		// BUG-016: Community Locator GDPR erasure (§101, ADR-109).
 		// community_organisations.submitted_by and reviewed_by reference
 		// users(id) with ON DELETE SET NULL. Reassign to the placeholder so

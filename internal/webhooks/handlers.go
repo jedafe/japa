@@ -347,9 +347,18 @@ func (h *Handlers) ListDeliveries(w http.ResponseWriter, r *http.Request) {
 }
 
 // RetryDelivery handles POST /admin/webhooks/{id}/deliveries/{delivery_id}/retry.
+// It verifies that the delivery belongs to the webhook endpoint {id} in the
+// URL path before retrying (BUG-025: previously ignored {id}, allowing a
+// user to retry a delivery from any webhook by guessing the delivery_id).
 func (h *Handlers) RetryDelivery(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
+		return
+	}
+
+	endpointID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid webhook ID")
 		return
 	}
 
@@ -359,7 +368,7 @@ func (h *Handlers) RetryDelivery(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Service.RetryDelivery(r.Context(), tenantID, deliveryID); err != nil {
+	if err := h.Service.RetryDelivery(r.Context(), tenantID, endpointID, deliveryID); err != nil {
 		handleServiceError(w, err)
 		return
 	}

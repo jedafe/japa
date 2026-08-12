@@ -442,7 +442,6 @@ type CreateRoute struct {
 	AIGenerated         bool
 	AIModel             *string
 	AIPromptHash        *string
-	IsJapabotIndexed    bool
 }
 
 // Create inserts a new visa route and returns the created row.
@@ -460,9 +459,8 @@ INSERT INTO visa_routes (
     tenant_id, destination_space_id, visa_category, name, slug,
     eligibility_summary, requirements_json, typical_fee_usd, path_to_pr,
     renewal_terms, restrictions, gov_source_url, source_url_last_checked,
-    status, is_active, ai_generated, ai_model, ai_prompt_hash,
-    is_japabot_indexed
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+    status, is_active, ai_generated, ai_model, ai_prompt_hash
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
 RETURNING id
 `
 	var id pgtype.UUID
@@ -472,7 +470,7 @@ RETURNING id
 		input.TypicalFeeUSD, input.PathToPR, input.RenewalTerms,
 		input.Restrictions, input.GovSourceURL, input.SourceURLLastChecked,
 		status, input.IsActive, input.AIGenerated, input.AIModel,
-		input.AIPromptHash, input.IsJapabotIndexed,
+		input.AIPromptHash,
 	).Scan(&id)
 	if err != nil {
 		return RouteRow{}, fmt.Errorf("visaroutes: create: %w", err)
@@ -500,7 +498,6 @@ type UpdateRoute struct {
 	AIGenerated         *bool
 	AIModel             *string
 	AIPromptHash        *string
-	IsJapabotIndexed    *bool
 }
 
 // Update applies a partial update to a visa route and returns the
@@ -595,11 +592,6 @@ func (s *Store) Update(ctx context.Context, id, tenantID pgtype.UUID, input Upda
 	if input.AIPromptHash != nil {
 		sets = append(sets, fmt.Sprintf("ai_prompt_hash = $%d", argIdx))
 		args = append(args, *input.AIPromptHash)
-		argIdx++
-	}
-	if input.IsJapabotIndexed != nil {
-		sets = append(sets, fmt.Sprintf("is_japabot_indexed = $%d", argIdx))
-		args = append(args, *input.IsJapabotIndexed)
 		argIdx++
 	}
 
