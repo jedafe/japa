@@ -1695,7 +1695,10 @@ export const achievementAdminApi = {
 };
 
 export const serviceDirectoryAdminApi = {
-	list: (params?: string) => api<unknown>(`/admin/services${params ? `?${params}` : ''}`),
+	list: (params?: string) =>
+		apiRaw<{ data: unknown[]; pagination: { page: number; limit: number; total: number } }>(
+			`/admin/services${params ? `?${params}` : ''}`
+		),
 	verify: (id: string) => api<unknown>(`/admin/services/${id}/verify`, { method: 'PATCH', body: {} }),
 	resolveClaim: (serviceId: string, claimId: string, body: Record<string, unknown>) =>
 		api<unknown>(`/admin/services/${serviceId}/claim/${claimId}`, { method: 'PATCH', body }),

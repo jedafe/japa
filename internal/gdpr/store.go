@@ -59,6 +59,16 @@ func (s *Store) gdprExportUserContent(ctx context.Context, userID, tenantID pgty
 	})
 }
 
+// gdprExportUserServiceListings exports the user's service_listing_meta rows
+// joined to their content rows (§98 BUG-008). The base content row is already
+// exported by gdprExportUserContent; this adds the structured service fields.
+func (s *Store) gdprExportUserServiceListings(ctx context.Context, userID, tenantID pgtype.UUID) ([]gen.GdprExportUserServiceListingsRow, error) {
+	return s.read.GdprExportUserServiceListings(ctx, gen.GdprExportUserServiceListingsParams{
+		UserID:   userID,
+		TenantID: tenantID,
+	})
+}
+
 func (s *Store) gdprExportUserComments(ctx context.Context, userID, tenantID pgtype.UUID) ([]gen.GdprExportUserCommentsRow, error) {
 	return s.read.GdprExportUserComments(ctx, gen.GdprExportUserCommentsParams{
 		UserID:   userID,

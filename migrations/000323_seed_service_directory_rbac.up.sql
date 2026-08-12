@@ -1,5 +1,5 @@
 -- 000323_seed_service_directory_rbac.up.sql
--- RBAC nodes for Service Directory (§98, ADR-098).
+-- RBAC nodes for Service Directory (§98, ADR-106).
 --   service.create    — agent, professional, org_member, admin
 --   service.edit_own  — listing owner org
 --   service.edit_any  — admin, super_admin

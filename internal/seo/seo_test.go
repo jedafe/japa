@@ -2,12 +2,15 @@ package seo
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"encoding/xml"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 func TestGeneratePlaceholderOG(t *testing.T) {
@@ -147,6 +150,7 @@ func TestGenerateQAPageJSONLD_Solved(t *testing.T) {
 		"I need help with my application.",
 		"Here is the step-by-step process...",
 		"Ada N.",
+		"2025-01-15T10:00:00Z",
 		true,
 	)
 
@@ -180,7 +184,7 @@ func TestGenerateQAPageJSONLD_Solved(t *testing.T) {
 func TestGenerateQAPageJSONLD_Unsolved(t *testing.T) {
 	t.Parallel()
 
-	ld := GenerateQAPageJSONLD("Q", "B", "", "Author", false)
+	ld := GenerateQAPageJSONLD("Q", "B", "", "Author", "2025-01-15T10:00:00Z", false)
 
 	mainEntity := ld["mainEntity"].(map[string]interface{})
 	if mainEntity["answerCount"] != 0 {
@@ -195,10 +199,10 @@ func TestGenerateQAPageJSONLD_Unsolved(t *testing.T) {
 func TestGenerateReviewJSONLD(t *testing.T) {
 	t.Parallel()
 
-	ld := GenerateReviewJSONLD("Immigration Consultancy", 4.5, 120)
+	ld := GenerateReviewJSONLD("Immigration Consultancy", 4.5, 120, "Service")
 
-	if ld["@type"] != "Product" {
-		t.Errorf("expected @type Product, got %v", ld["@type"])
+	if ld["@type"] != "Service" {
+		t.Errorf("expected @type Service, got %v", ld["@type"])
 	}
 
 	rating := ld["aggregateRating"].(map[string]interface{})
@@ -277,6 +281,37 @@ func TestGenerateCourseJSONLD_NoURL(t *testing.T) {
 	}
 }
 
+func TestGenerateBreadcrumbListJSONLD(t *testing.T) {
+	t.Parallel()
+
+	ld := GenerateBreadcrumbListJSONLD([]BreadcrumbItem{
+		{Name: "Home", URL: "https://example.com"},
+		{Name: "Blog", URL: "https://example.com/blog"},
+		{Name: "My Post", URL: "https://example.com/blog/my-post"},
+	})
+
+	if ld["@type"] != "BreadcrumbList" {
+		t.Errorf("expected @type BreadcrumbList, got %v", ld["@type"])
+	}
+
+	elements, ok := ld["itemListElement"].([]map[string]interface{})
+	if !ok {
+		t.Fatal("itemListElement should be a slice of maps")
+	}
+	if len(elements) != 3 {
+		t.Fatalf("expected 3 items, got %d", len(elements))
+	}
+	if elements[0]["position"] != 1 {
+		t.Errorf("expected position 1, got %v", elements[0]["position"])
+	}
+	if elements[2]["name"] != "My Post" {
+		t.Errorf("expected last item name 'My Post', got %v", elements[2]["name"])
+	}
+	if elements[1]["item"] != "https://example.com/blog" {
+		t.Errorf("expected item URL, got %v", elements[1]["item"])
+	}
+}
+
 // --- Hreflang tests ---
 
 func TestHreflangLink(t *testing.T) {
@@ -329,12 +364,44 @@ func TestHreflangAlternate_CustomLanguages(t *testing.T) {
 	}
 }
 
+// stubHreflangSettings is a minimal hreflangSettingsReader for testing
+// ResolveLanguages without a real config.Settings.
+type stubHreflangSettings struct {
+	langs string
+}
+
+func (s stubHreflangSettings) GetStringOr(_ context.Context, _ pgtype.UUID, _ string, _ string) string {
+	return s.langs
+}
+
+func TestResolveLanguages(t *testing.T) {
+	t.Parallel()
+
+	// Reader returns a multi-language CSV.
+	got := ResolveLanguages(context.Background(), stubHreflangSettings{langs: "en, fr , es"}, pgtype.UUID{})
+	if len(got) != 3 || got[0] != "en" || got[1] != "fr" || got[2] != "es" {
+		t.Errorf("expected [en fr es], got %v", got)
+	}
+
+	// Empty setting falls back to FallbackLanguages.
+	got = ResolveLanguages(context.Background(), stubHreflangSettings{langs: ""}, pgtype.UUID{})
+	if len(got) != 2 || got[0] != "en" || got[1] != "fr" {
+		t.Errorf("expected fallback [en fr], got %v", got)
+	}
+
+	// Nil reader falls back to FallbackLanguages.
+	got = ResolveLanguages(context.Background(), nil, pgtype.UUID{})
+	if len(got) != 2 || got[0] != "en" || got[1] != "fr" {
+		t.Errorf("expected fallback [en fr] for nil reader, got %v", got)
+	}
+}
+
 // --- OG Image Handler tests ---
 
 func TestServeOGImage(t *testing.T) {
 	t.Parallel()
 
-	h := NewOGImageHandler(nil, "Test Site")
+	h := NewOGImageHandler(nil, nil, "Test Site")
 	req := httptest.NewRequest(http.MethodGet, "/og/00000000-0000-0000-0000-000000000001.png", nil)
 	rec := httptest.NewRecorder()
 
@@ -362,7 +429,7 @@ func TestServeOGImage(t *testing.T) {
 func TestNewOGImageHandler(t *testing.T) {
 	t.Parallel()
 
-	h := NewOGImageHandler(nil, "Test Site")
+	h := NewOGImageHandler(nil, nil, "Test Site")
 	if h == nil {
 		t.Fatal("NewOGImageHandler should return non-nil")
 	}

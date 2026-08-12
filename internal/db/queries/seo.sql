@@ -10,6 +10,11 @@ ORDER BY updated_at DESC;
 -- then the content title/body, then empty defaults. og_image_url falls back
 -- to the featured image's media URL when blank — resolved by the caller via
 -- the media join, not here (this query stays single-row).
+-- og_description falls back to '' (not the title) per Section 26
+-- ResolveMetadata: the caller resolves the body-excerpt fallback via
+-- excerpt(body, 160) when og_description is empty. Using the title as the
+-- OG description is wrong — it duplicates og_title and is useless for
+-- social sharing.
 SELECT c.id, c.tenant_id,
        COALESCE(c.meta_title, c.title) AS title,
        COALESCE(c.meta_description, '') AS description,
@@ -17,7 +22,7 @@ SELECT c.id, c.tenant_id,
        COALESCE(c.og_image_url, '') AS og_image,
        COALESCE(c.canonical_url, '') AS canonical_url,
        COALESCE(c.meta_title, c.title) AS og_title,
-       COALESCE(c.meta_description, c.title) AS og_description,
+       COALESCE(c.meta_description, '') AS og_description,
        c.seo_indexable,
        COALESCE(up.display_name, u.username, '') AS author,
        COALESCE(c.published_at, c.created_at) AS published_at,

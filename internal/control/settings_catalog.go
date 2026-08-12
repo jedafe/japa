@@ -332,7 +332,7 @@ var settingsCatalog = map[string]settingMeta{
 	"achievement.enabled":           {Type: "bool", DefaultValue: "false", Description: "Global achievement feed toggle.", Panel: "control"},
 	"achievement_reactions":         {Type: "json", DefaultValue: "[]", Description: "Curated reaction set for achievements (emoji + label pairs).", Panel: "control"},
 
-	// Service Directory (§98, ADR-098)
+	// Service Directory (§98, ADR-106)
 	"service_directory.enabled":     {Type: "bool", DefaultValue: "false", Description: "Global service directory toggle.", Panel: "control"},
 	"service_directory.subdomain":   {Type: "string", DefaultValue: "", Description: "Optional standalone subdomain (ADR-086).", Panel: "control"},
 	"service_directory.custom_domain": {Type: "string", DefaultValue: "", Description: "Optional custom domain (ADR-086).", Panel: "control"},

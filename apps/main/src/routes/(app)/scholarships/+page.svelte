@@ -84,8 +84,10 @@
 	}
 
 	const hasActiveFilters = $derived(!!q || !!country || !!level || !!renewable);
-	const showingStart = $derived(data.currentPage * data.pageSize + 1);
-	const showingEnd = $derived(Math.min((data.currentPage + 1) * data.pageSize, data.total));
+	// 1-based page (data.currentPage is 1-based); showing range is
+	// [(page-1)*size + 1, min(page*size, total)].
+	const showingStart = $derived((data.currentPage - 1) * data.pageSize + 1);
+	const showingEnd = $derived(Math.min(data.currentPage * data.pageSize, data.total));
 
 	async function toggleSave(s: Scholarship) {
 		if (!authed) return;

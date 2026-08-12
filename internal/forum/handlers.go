@@ -602,7 +602,7 @@ func (h *Handlers) resolveQAPageJSONLD(
 		}
 	}
 
-	return seo.GenerateQAPageJSONLD(thread.Title, questionBody, answerBody, authorName, isSolved)
+	return seo.GenerateQAPageJSONLD(thread.Title, questionBody, answerBody, authorName, tsString(thread.CreatedAt), isSolved)
 }
 
 // ifaceString returns the first non-empty string representation of the given

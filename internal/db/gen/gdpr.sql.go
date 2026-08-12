@@ -2282,6 +2282,86 @@ func (q *Queries) GdprExportUserReviews(ctx context.Context, arg GdprExportUserR
 	return data, err
 }
 
+const gdprExportUserServiceListings = `-- name: GdprExportUserServiceListings :many
+SELECT c.id AS content_id,
+       c.title,
+       c.slug,
+       c.created_at,
+       sm.service_category,
+       sm.is_verified,
+       sm.verification_type,
+       sm.claim_status,
+       sm.origin_communities,
+       sm.is_remote,
+       sm.website_url,
+       sm.booking_url,
+       sm.price_range
+FROM contents c
+JOIN service_listing_meta sm ON sm.content_id = c.id AND sm.tenant_id = c.tenant_id
+WHERE c.author_id = $1 AND c.tenant_id = $2
+  AND c.content_type = 'service_listing'
+  AND c.deleted_at IS NULL
+ORDER BY c.created_at DESC
+`
+
+type GdprExportUserServiceListingsParams struct {
+	UserID   pgtype.UUID `json:"user_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+type GdprExportUserServiceListingsRow struct {
+	ContentID         pgtype.UUID        `json:"content_id"`
+	Title             string             `json:"title"`
+	Slug              string             `json:"slug"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	ServiceCategory   string             `json:"service_category"`
+	IsVerified        bool               `json:"is_verified"`
+	VerificationType  *string            `json:"verification_type"`
+	ClaimStatus       string             `json:"claim_status"`
+	OriginCommunities []string           `json:"origin_communities"`
+	IsRemote          bool               `json:"is_remote"`
+	WebsiteUrl        *string            `json:"website_url"`
+	BookingUrl        *string            `json:"booking_url"`
+	PriceRange        *string            `json:"price_range"`
+}
+
+// §98 BUG-008: export the user's service_listing_meta rows joined to
+// their content rows. The base content row is already exported by
+// GdprExportUserContent; this adds the structured service fields.
+func (q *Queries) GdprExportUserServiceListings(ctx context.Context, arg GdprExportUserServiceListingsParams) ([]GdprExportUserServiceListingsRow, error) {
+	rows, err := q.db.Query(ctx, gdprExportUserServiceListings, arg.UserID, arg.TenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GdprExportUserServiceListingsRow
+	for rows.Next() {
+		var i GdprExportUserServiceListingsRow
+		if err := rows.Scan(
+			&i.ContentID,
+			&i.Title,
+			&i.Slug,
+			&i.CreatedAt,
+			&i.ServiceCategory,
+			&i.IsVerified,
+			&i.VerificationType,
+			&i.ClaimStatus,
+			&i.OriginCommunities,
+			&i.IsRemote,
+			&i.WebsiteUrl,
+			&i.BookingUrl,
+			&i.PriceRange,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const gdprExportUserSpaceMembers = `-- name: GdprExportUserSpaceMembers :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (SELECT id, space_id, user_id, tenant_id, role, joined_at, status FROM space_members WHERE user_id = $1 AND tenant_id = $2) t

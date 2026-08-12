@@ -48,15 +48,31 @@
 		return categoryOptions.find((o) => o.value === value)?.label ?? value;
 	}
 
-	// Claim flow state (POST /services/{id}/claim).
+	// Claim flow state (POST /services/{id}/claim). The backend requires
+	// { org_id } — the user must claim on behalf of one of their orgs
+	// (BUG-004). The org picker is populated from data.myOrgs (fetched
+	// server-side via GET /me/organizations).
+	let claimOrgId = $state('');
 	let claiming = $state(false);
 	let claimResult = $state<{ ok?: boolean; error?: string } | null>(null);
 
+	const canClaim = $derived(
+		!!service &&
+			service.claim_status === 'unclaimed' &&
+			(data.myOrgs?.length ?? 0) > 0
+	);
+
 	async function claimListing() {
 		if (!service) return;
+		if (!claimOrgId) {
+			claimResult = { error: t('services.claim_select_org', 'Select an organization to claim on behalf of.') };
+			return;
+		}
 		claiming = true;
 		claimResult = null;
-		const res = await api.post<{ status: string }>(`/services/${service.id}/claim`);
+		const res = await api.post<{ claim_status: string }>(`/services/${service.id}/claim`, {
+			org_id: claimOrgId
+		});
 		claiming = false;
 		if (res.data) {
 			claimResult = { ok: true };
@@ -228,25 +244,42 @@
 								<CheckCircle2 size={16} />
 								{t('services.claim_submitted', 'Claim submitted for review.')}
 							</div>
-						{:else}
-							<button
-								type="button"
-								onclick={claimListing}
-								disabled={claiming}
-								class="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)] disabled:opacity-50"
-							>
-								{#if claiming}
-									<Loader2 size={16} class="animate-spin" />
-								{:else}
-									<BadgeCheck size={16} />
+						{:else if canClaim}
+							<div class="flex flex-wrap items-center gap-2">
+								<select
+									value={claimOrgId}
+									onchange={(e) => (claimOrgId = e.currentTarget.value)}
+									class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]"
+									aria-label={t('services.claim_select_org', 'Select organization')}
+								>
+									<option value="">{t('services.claim_select_org', 'Select an organization')}</option>
+									{#each data.myOrgs as org (org.id)}
+										<option value={org.id}>{org.name}</option>
+									{/each}
+								</select>
+								<button
+									type="button"
+									onclick={claimListing}
+									disabled={claiming}
+									class="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)] disabled:opacity-50"
+								>
+									{#if claiming}
+										<Loader2 size={16} class="animate-spin" />
+									{:else}
+										<BadgeCheck size={16} />
+									{/if}
+									{t('services.claim_listing', 'Claim this listing')}
+								</button>
+								{#if claimResult?.error}
+									<span class="flex items-center gap-1 text-sm text-[var(--color-danger)]">
+										<AlertCircle size={14} /> {claimResult.error}
+									</span>
 								{/if}
-								{t('services.claim_listing', 'Claim this listing')}
-							</button>
-							{#if claimResult?.error}
-								<span class="flex items-center gap-1 text-sm text-[var(--color-danger)]">
-									<AlertCircle size={14} /> {claimResult.error}
-								</span>
-							{/if}
+							</div>
+						{:else}
+							<p class="text-xs text-[var(--color-muted)]">
+								{t('services.claim_need_org', 'You must be a member of an organization to claim this listing.')}
+							</p>
 						{/if}
 					{/if}
 				</div>

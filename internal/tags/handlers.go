@@ -1,6 +1,7 @@
 package tags
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -23,6 +24,13 @@ import (
 const defaultPageSize int32 = 20
 const maxPageSize int32 = 100
 
+// PermCacheInvalidator flushes a user's permission cache (jc:perm:{user_id})
+// after a permission-affecting mutation. Implemented by rbac.RBAC.
+// Ref: AGENTS.md Rule 6, sections/03-rbac.md (Permission Cache Invalidation).
+type PermCacheInvalidator interface {
+	InvalidateUserCache(ctx context.Context, userID pgtype.UUID)
+}
+
 // Handlers holds dependencies for tag HTTP handlers. Composes the existing
 // content and follows services directly (no import cycle: neither imports
 // this package) rather than through an adapter interface.
@@ -30,11 +38,32 @@ type Handlers struct {
 	service *Service
 	content *content.Service
 	follows *follows.Service
+	permCache PermCacheInvalidator
 }
 
 // NewHandlers creates Handlers with the given services.
 func NewHandlers(service *Service, contentService *content.Service, followsService *follows.Service) *Handlers {
 	return &Handlers{service: service, content: contentService, follows: followsService}
+}
+
+// SetPermCacheInvalidator injects the RBAC resolver so handlers can flush
+// the TARGET user's permission cache after tag moderator assign/remove
+// (Rule 6). The middleware-level RequirePermissionWithInvalidation only
+// flushes the CALLER's cache; the target user's cache must be flushed here.
+func (h *Handlers) SetPermCacheInvalidator(p PermCacheInvalidator) {
+	h.permCache = p
+}
+
+// invalidateTargetPermCache flushes the target user's permission cache after
+// a tag moderator assignment/removal. It is a no-op when no invalidator is
+// wired (graceful degradation). Errors are logged but never fail the
+// request — the mutation has already succeeded and the cache will expire
+// via TTL.
+func (h *Handlers) invalidateTargetPermCache(ctx context.Context, targetUserID pgtype.UUID) {
+	if h.permCache == nil {
+		return
+	}
+	h.permCache.InvalidateUserCache(ctx, targetUserID)
 }
 
 // requireTenant resolves the tenant from the request context.
@@ -764,6 +793,10 @@ func (h *Handlers) AddTagModerator(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Rule 6: invalidate the TARGET user's permission cache so the newly
+	// assigned tag moderator's permissions are visible immediately.
+	h.invalidateTargetPermCache(r.Context(), userID)
+
 	writeJSON(w, http.StatusCreated, map[string]any{"data": map[string]any{
 		"tag_id":   row.TagID,
 		"user_id":  row.UserID,
@@ -794,6 +827,10 @@ func (h *Handlers) RemoveTagModerator(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to remove tag moderator")
 		return
 	}
+
+	// Rule 6: invalidate the removed moderator's permission cache so their
+	// tag moderation permissions are revoked immediately.
+	h.invalidateTargetPermCache(r.Context(), userID)
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"removed": true}})
 }

@@ -1,9 +1,9 @@
 // Package servicedir — handlers.go provides the HTTP handlers for the
-// Service Directory routes (§98, ADR-098).
+// Service Directory routes (§98, ADR-106).
 //
 // Routes:
 //
-//	GET   /api/v1/services                     — list ?dest=&category=&verified=&sort=top|latest
+//	GET   /api/v1/services                     — list ?dest=&city=&category=&origin=&verified=&sort=top|latest
 //	GET   /api/v1/services/:slug               — single service listing
 //	POST  /api/v1/services                     — create service listing (auth, service.create)
 //	PATCH /api/v1/services/:id                 — edit own service listing (auth, service.edit_own)
@@ -13,7 +13,7 @@
 //	PATCH /api/v1/admin/services/:id/claim/:claim_id — resolve claim (auth, service.verify)
 //
 // Ref: japaconnect-engineering/sections/98-service-directory.md
-//      japaconnect-engineering/adr/ADR-098-service-directory.md
+//      japaconnect-engineering/adr/ADR-106-service-directory.md
 package servicedir
 
 import (
@@ -110,7 +110,7 @@ func parsePageParams(r *http.Request) (page, limit int32) {
 // ---------------------------------------------------------------------------
 
 // HandleList handles GET /services — list published service listings with
-// filters. Query params: ?dest=&category=&verified=&sort=top|latest&page=&limit=
+// filters. Query params: ?dest=&city=&category=&origin=&verified=&sort=top|latest&page=&limit=
 func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
@@ -130,7 +130,16 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	var citySpaceID pgtype.UUID
+	if v := r.URL.Query().Get("city"); v != "" {
+		if err := citySpaceID.Scan(v); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid city space ID")
+			return
+		}
+	}
+
 	serviceCategory := r.URL.Query().Get("category")
+	originCommunity := r.URL.Query().Get("origin")
 	sort := r.URL.Query().Get("sort")
 
 	var verifiedPtr *bool
@@ -143,7 +152,7 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 
 	page, limit := parsePageParams(r)
 
-	services, total, err := h.service.List(r.Context(), tenantID, destSpaceID, serviceCategory, verifiedPtr, sort, page, limit)
+	services, total, err := h.service.List(r.Context(), tenantID, destSpaceID, citySpaceID, serviceCategory, originCommunity, verifiedPtr, sort, page, limit)
 	if err != nil {
 		slog.Error("servicedir: list failed", "error", err)
 		writeError(w, http.StatusInternalServerError, "list_failed", "Failed to list services")
@@ -226,6 +235,10 @@ func (h *Handlers) HandleCreate(w http.ResponseWriter, r *http.Request) {
 
 	service, err := h.service.Create(r.Context(), tenantID, user.UserID, input)
 	if err != nil {
+		if errors.Is(err, ErrInvalidCategory) {
+			writeError(w, http.StatusBadRequest, "invalid_category", "service_category must be one of immigration_legal|relocation|finance|education|health|community|other")
+			return
+		}
 		slog.Error("servicedir: create failed", "error", err)
 		writeError(w, http.StatusInternalServerError, "create_failed", "Failed to create service listing")
 		return
@@ -236,6 +249,8 @@ func (h *Handlers) HandleCreate(w http.ResponseWriter, r *http.Request) {
 
 // HandleEdit handles PATCH /services/:id — edit own service listing. Auth
 // required (service.edit_own permission checked at route registration).
+// The feature flag is enforced by the features.Gate middleware at route
+// registration (BUG-014: no redundant in-handler check).
 func (h *Handlers) HandleEdit(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
 	if !ok {
@@ -247,11 +262,6 @@ func (h *Handlers) HandleEdit(w http.ResponseWriter, r *http.Request) {
 	}
 	contentID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
-		return
-	}
-
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "service_directory_disabled", "Service directory is not available")
 		return
 	}
 
@@ -269,6 +279,10 @@ func (h *Handlers) HandleEdit(w http.ResponseWriter, r *http.Request) {
 		}
 		if errors.Is(err, ErrNotOwner) {
 			writeError(w, http.StatusForbidden, "not_owner", "You can only edit your own service listings")
+			return
+		}
+		if errors.Is(err, ErrInvalidCategory) {
+			writeError(w, http.StatusBadRequest, "invalid_category", "service_category must be one of immigration_legal|relocation|finance|education|health|community|other")
 			return
 		}
 		slog.Error("servicedir: edit failed", "error", err)
@@ -392,9 +406,13 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 
 // HandleAdminVerify handles PATCH /admin/services/:id/verify — mark a
 // service listing as verified. Admin-only (service.verify permission
-// checked at route registration). Optional body: {"verification_type":"manual"}
+// checked at route registration). The admin user_id is recorded in
+// verified_by for audit (ADR-088, BUG-015). Optional body:
+// {"verification_type":"admin"} — defaults to "admin" since an admin is
+// performing the verification (§98 enum: self|community|admin|professional_body).
 func (h *Handlers) HandleAdminVerify(w http.ResponseWriter, r *http.Request) {
-	if _, ok := requireUser(w, r); !ok {
+	user, ok := requireUser(w, r)
+	if !ok {
 		return
 	}
 	tenantID, ok := requireTenant(w, r)
@@ -411,7 +429,7 @@ func (h *Handlers) HandleAdminVerify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	verificationType := VerificationTypeManual
+	verificationType := VerificationTypeAdmin
 	var body struct {
 		VerificationType *string `json:"verification_type"`
 	}
@@ -419,7 +437,7 @@ func (h *Handlers) HandleAdminVerify(w http.ResponseWriter, r *http.Request) {
 		verificationType = *body.VerificationType
 	}
 
-	if err := h.service.AdminVerify(r.Context(), contentID, tenantID, verificationType); err != nil {
+	if err := h.service.AdminVerify(r.Context(), contentID, tenantID, user.UserID, verificationType); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "service_not_found", "Service not found")
 			return
@@ -429,7 +447,7 @@ func (h *Handlers) HandleAdminVerify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"verified": true, "verification_type": verificationType}})
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"verified": true, "verification_type": verificationType, "verified_by": user.UserID.String()}})
 }
 
 // HandleAdminResolveClaim handles PATCH /admin/services/:id/claim/:claim_id

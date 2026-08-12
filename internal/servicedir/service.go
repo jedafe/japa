@@ -5,7 +5,7 @@
 // Feature-flagged via service_directory.enabled system_setting (§98).
 //
 // Ref: japaconnect-engineering/sections/98-service-directory.md
-//      japaconnect-engineering/adr/ADR-098-service-directory.md
+//      japaconnect-engineering/adr/ADR-106-service-directory.md
 package servicedir
 
 import (
@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -35,41 +36,43 @@ type ContentService interface {
 
 // ServiceDTO is the API response shape for a single service listing.
 type ServiceDTO struct {
-	ID              string `json:"id"`
-	Title           string `json:"title"`
-	Slug            string `json:"slug"`
-	Body            string `json:"body"`
-	BodyHTML        string `json:"body_html"`
-	Status          string `json:"status"`
-	Visibility      string `json:"visibility"`
-	ViewCount       int32  `json:"view_count"`
-	CommentCount    int32  `json:"comment_count"`
-	PublishedAt     string `json:"published_at"`
-	CreatedAt       string `json:"created_at"`
-	UpdatedAt       string `json:"updated_at"`
-	OrgID           string `json:"org_id,omitempty"`
-	OrgName         string `json:"org_name,omitempty"`
-	OrgSlug         string `json:"org_slug,omitempty"`
-	ServiceCategory string `json:"service_category,omitempty"`
-	DestSpaceID     string `json:"destination_space_id,omitempty"`
-	DestSpaceName   string `json:"destination_space_name,omitempty"`
-	DestSpaceCode   string `json:"destination_space_code,omitempty"`
-	CitySpaceID     string `json:"city_space_id,omitempty"`
-	CitySpaceName   string `json:"city_space_name,omitempty"`
-	CitySpaceCode   string `json:"city_space_code,omitempty"`
-	OriginCommunities any  `json:"origin_communities,omitempty"`
-	IsRemote        bool   `json:"is_remote"`
-	WebsiteURL      string `json:"website_url,omitempty"`
-	BookingURL      string `json:"booking_url,omitempty"`
-	PriceRange      string `json:"price_range,omitempty"`
-	IsVerified      bool   `json:"is_verified"`
-	VerificationType string `json:"verification_type,omitempty"`
-	ClaimStatus     string `json:"claim_status,omitempty"`
-	ClaimedByOrgID  string `json:"claimed_by_org_id,omitempty"`
-	ClaimedOrgName  string `json:"claimed_org_name,omitempty"`
-	AuthorID        string `json:"author_id,omitempty"`
-	AuthorName      string `json:"author_name,omitempty"`
-	AuthorAvatar    string `json:"author_avatar,omitempty"`
+	ID               string   `json:"id"`
+	Title            string   `json:"title"`
+	Slug             string   `json:"slug"`
+	Body             string   `json:"body"`
+	BodyHTML         string   `json:"body_html"`
+	Status           string   `json:"status"`
+	Visibility       string   `json:"visibility"`
+	ViewCount        int32    `json:"view_count"`
+	CommentCount     int32    `json:"comment_count"`
+	PublishedAt      string   `json:"published_at"`
+	CreatedAt        string   `json:"created_at"`
+	UpdatedAt        string   `json:"updated_at"`
+	OrgID            string   `json:"org_id,omitempty"`
+	OrgName          string   `json:"org_name,omitempty"`
+	OrgSlug          string   `json:"org_slug,omitempty"`
+	ServiceCategory  string   `json:"service_category,omitempty"`
+	DestSpaceID      string   `json:"destination_space_id,omitempty"`
+	DestSpaceName    string   `json:"destination_space_name,omitempty"`
+	DestSpaceCode    string   `json:"destination_space_code,omitempty"`
+	CitySpaceID      string   `json:"city_space_id,omitempty"`
+	CitySpaceName    string   `json:"city_space_name,omitempty"`
+	CitySpaceCode    string   `json:"city_space_code,omitempty"`
+	OriginCommunities []string `json:"origin_communities,omitempty"`
+	IsRemote         bool     `json:"is_remote"`
+	WebsiteURL       string   `json:"website_url,omitempty"`
+	BookingURL       string   `json:"booking_url,omitempty"`
+	PriceRange       string   `json:"price_range,omitempty"`
+	IsVerified       bool     `json:"is_verified"`
+	VerificationType string   `json:"verification_type,omitempty"`
+	ClaimStatus      string   `json:"claim_status,omitempty"`
+	ClaimedByOrgID   string   `json:"claimed_by_org_id,omitempty"`
+	ClaimedOrgName   string   `json:"claimed_org_name,omitempty"`
+	VerifiedBy       string   `json:"verified_by,omitempty"`
+	VerifiedAt       string   `json:"verified_at,omitempty"`
+	AuthorID         string   `json:"author_id,omitempty"`
+	AuthorName       string   `json:"author_name,omitempty"`
+	AuthorAvatar     string   `json:"author_avatar,omitempty"`
 }
 
 // CreateServiceInput is the request body for POST /services.
@@ -127,6 +130,10 @@ func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
 	return s.settings.GetBoolOr(ctx, tenantID, "service_directory.enabled", false)
 }
 
+// ErrInvalidCategory is returned when a create/edit input supplies a
+// service_category that is not in the §98 canonical enum.
+var ErrInvalidCategory = fmt.Errorf("invalid service_category")
+
 // Create creates a new service listing — a contents row with
 // content_type='service_listing' plus a service_listing_meta row. The
 // listing is created in 'draft' status; the author can submit for review
@@ -135,6 +142,11 @@ func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
 func (s *Service) Create(ctx context.Context, tenantID, authorID pgtype.UUID, input CreateServiceInput) (ServiceDTO, error) {
 	if input.Title == "" {
 		return ServiceDTO{}, fmt.Errorf("title is required")
+	}
+	// BUG-013: validate service_category against the §98 enum. Empty is
+	// rejected because the column is NOT NULL.
+	if input.ServiceCategory == "" || !IsValidCategory(input.ServiceCategory) {
+		return ServiceDTO{}, ErrInvalidCategory
 	}
 
 	var orgID pgtype.UUID
@@ -158,7 +170,7 @@ func (s *Service) Create(ctx context.Context, tenantID, authorID pgtype.UUID, in
 		}
 	}
 
-	originCommunities, err := marshalOriginCommunities(input.OriginCommunities)
+	originCommunities, err := normalizeOriginCommunities(input.OriginCommunities)
 	if err != nil {
 		return ServiceDTO{}, fmt.Errorf("invalid origin_communities: %w", err)
 	}
@@ -222,7 +234,9 @@ func (s *Service) GetBySlug(ctx context.Context, slug string, tenantID pgtype.UU
 }
 
 // List returns a paginated, filtered list of published service listings.
-func (s *Service) List(ctx context.Context, tenantID, destSpaceID pgtype.UUID, serviceCategory string, isVerified *bool, sort string, page, limit int32) ([]ServiceDTO, int64, error) {
+// destSpaceID, citySpaceID, serviceCategory, originCommunity are optional
+// geo-aware filters (§98: ?dest=&city=&category=&origin=&verified=&sort=).
+func (s *Service) List(ctx context.Context, tenantID, destSpaceID, citySpaceID pgtype.UUID, serviceCategory, originCommunity string, isVerified *bool, sort string, page, limit int32) ([]ServiceDTO, int64, error) {
 	if limit <= 0 {
 		limit = 20
 	}
@@ -234,7 +248,9 @@ func (s *Service) List(ctx context.Context, tenantID, destSpaceID pgtype.UUID, s
 	rows, total, err := s.store.ListServices(ctx, ListServicesFilter{
 		TenantID:        tenantID,
 		DestSpaceID:     destSpaceID,
+		CitySpaceID:     citySpaceID,
 		ServiceCategory: serviceCategory,
+		OriginCommunity: originCommunity,
 		IsVerified:      isVerified,
 		Sort:            sort,
 		Status:          content.StatusPublished,
@@ -299,10 +315,14 @@ func (s *Service) EditOwn(ctx context.Context, contentID, tenantID, userID pgtyp
 		}
 	}
 	if input.ServiceCategory != nil {
+		// BUG-013: validate category on edit when supplied.
+		if *input.ServiceCategory == "" || !IsValidCategory(*input.ServiceCategory) {
+			return ServiceDTO{}, ErrInvalidCategory
+		}
 		meta.ServiceCategory = input.ServiceCategory
 	}
 	if input.OriginCommunities != nil {
-		oc, err := marshalOriginCommunities(input.OriginCommunities)
+		oc, err := normalizeOriginCommunities(input.OriginCommunities)
 		if err != nil {
 			return ServiceDTO{}, fmt.Errorf("servicedir: edit: invalid origin_communities: %w", err)
 		}
@@ -376,12 +396,13 @@ func (s *Service) AdminList(ctx context.Context, tenantID pgtype.UUID, status, c
 
 // AdminVerify marks a service listing as verified by an admin
 // (service.verify permission). The verificationType records how the
-// verification was performed (e.g. "manual").
-func (s *Service) AdminVerify(ctx context.Context, contentID, tenantID pgtype.UUID, verificationType string) error {
+// verification was performed (§98: self|community|admin|professional_body);
+// the admin user_id is recorded in verified_by for audit (ADR-088, BUG-015).
+func (s *Service) AdminVerify(ctx context.Context, contentID, tenantID, verifiedBy pgtype.UUID, verificationType string) error {
 	if verificationType == "" {
-		verificationType = VerificationTypeManual
+		verificationType = VerificationTypeAdmin
 	}
-	if err := s.store.VerifyService(ctx, contentID, tenantID, verificationType); err != nil {
+	if err := s.store.VerifyService(ctx, contentID, tenantID, verifiedBy, verificationType); err != nil {
 		if err == pgx.ErrNoRows {
 			return pgx.ErrNoRows
 		}
@@ -479,7 +500,7 @@ func rowToDTO(r ServiceRow) ServiceDTO {
 	if r.CitySpaceCode != nil {
 		dto.CitySpaceCode = *r.CitySpaceCode
 	}
-	dto.OriginCommunities = parseOriginCommunities(r.OriginCommunities)
+	dto.OriginCommunities = r.OriginCommunities
 	if r.WebsiteURL != nil {
 		dto.WebsiteURL = *r.WebsiteURL
 	}
@@ -501,6 +522,10 @@ func rowToDTO(r ServiceRow) ServiceDTO {
 	if r.ClaimedOrgName != nil {
 		dto.ClaimedOrgName = *r.ClaimedOrgName
 	}
+	if r.VerifiedBy.Valid {
+		dto.VerifiedBy = r.VerifiedBy.String()
+	}
+	dto.VerifiedAt = formatTs(r.VerifiedAt)
 	if r.AuthorName != nil {
 		dto.AuthorName = *r.AuthorName
 	}
@@ -543,7 +568,7 @@ func metaToDTO(c gen.GetContentByIDRow, m ServiceMeta) ServiceDTO {
 	if m.CitySpaceID.Valid {
 		dto.CitySpaceID = m.CitySpaceID.String()
 	}
-	dto.OriginCommunities = parseOriginCommunities(m.OriginCommunities)
+	dto.OriginCommunities = m.OriginCommunities
 	if m.WebsiteURL != nil {
 		dto.WebsiteURL = *m.WebsiteURL
 	}
@@ -562,36 +587,71 @@ func metaToDTO(c gen.GetContentByIDRow, m ServiceMeta) ServiceDTO {
 	if m.ClaimedByOrgID.Valid {
 		dto.ClaimedByOrgID = m.ClaimedByOrgID.String()
 	}
+	if m.VerifiedBy.Valid {
+		dto.VerifiedBy = m.VerifiedBy.String()
+	}
+	dto.VerifiedAt = formatTs(m.VerifiedAt)
 	if c.AuthorID.Valid {
 		dto.AuthorID = c.AuthorID.String()
 	}
 	return dto
 }
 
-// marshalOriginCommunities converts the input (any) into a JSON []byte for
-// storage. nil/empty values produce an empty JSON array.
-func marshalOriginCommunities(v any) ([]byte, error) {
+// normalizeOriginCommunities converts the input (any) into a []string for
+// storage in the text[] column (§98 schema, BUG-006). Accepts []string,
+// []any, or a JSON array string. nil/empty values produce an empty slice.
+func normalizeOriginCommunities(v any) ([]string, error) {
 	if v == nil {
-		return []byte("[]"), nil
+		return []string{}, nil
 	}
-	b, err := json.Marshal(v)
-	if err != nil {
-		return nil, err
+	switch val := v.(type) {
+	case []string:
+		if val == nil {
+			return []string{}, nil
+		}
+		return val, nil
+	case []any:
+		out := make([]string, 0, len(val))
+		for _, item := range val {
+			s, ok := item.(string)
+			if !ok {
+				return nil, fmt.Errorf("origin_communities: non-string element")
+			}
+			if s != "" {
+				out = append(out, s)
+			}
+		}
+		return out, nil
+	case string:
+		if val == "" {
+			return []string{}, nil
+		}
+		// Treat as JSON array string for backward compatibility.
+		var arr []string
+		if err := json.Unmarshal([]byte(val), &arr); err == nil {
+			return arr, nil
+		}
+		// Fall back: single comma-separated string.
+		parts := strings.Split(val, ",")
+		out := make([]string, 0, len(parts))
+		for _, p := range parts {
+			if t := strings.TrimSpace(p); t != "" {
+				out = append(out, t)
+			}
+		}
+		return out, nil
+	default:
+		// Last resort: JSON-encode then decode as []string.
+		b, err := json.Marshal(v)
+		if err != nil {
+			return nil, err
+		}
+		var arr []string
+		if err := json.Unmarshal(b, &arr); err != nil {
+			return nil, err
+		}
+		return arr, nil
 	}
-	return b, nil
-}
-
-// parseOriginCommunities decodes the JSON []byte into a generic value for
-// the DTO. Invalid/empty payloads yield nil.
-func parseOriginCommunities(b []byte) any {
-	if len(b) == 0 {
-		return nil
-	}
-	var v any
-	if err := json.Unmarshal(b, &v); err != nil {
-		return nil
-	}
-	return v
 }
 
 // formatTs renders a pgtype.Timestamptz as RFC 3339 UTC, or "" if NULL.

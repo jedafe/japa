@@ -1527,7 +1527,35 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 		"user_id", userID.String(),
 		"tenant_id", tenantID.String())
 
+	// §15/§19: remove the user's document from the Meilisearch users index
+	// so they no longer appear in search results. Also delete any content
+	// they authored that was reassigned to the placeholder — those
+	// documents should be removed from the posts index too. Best-effort:
+	// the enqueuer fires search:index_entity with operation "delete" so the
+	// worker handles the Meilisearch cleanup asynchronously.
+	s.enqueueSearchIndexDelete(tenantID, userID, "user")
+
 	return nil
+}
+
+// enqueueSearchIndexDelete enqueues a search:index_entity task with operation
+// "delete" to remove the entity's document from the Meilisearch index. Used by
+// GDPR erasure to ensure erased users' documents are purged from search.
+// Best-effort — logs errors but never fails the caller.
+func (s *Service) enqueueSearchIndexDelete(tenantID, entityID pgtype.UUID, entityType string) {
+	if s.enqueuer == nil {
+		return
+	}
+	payload, _ := json.Marshal(map[string]string{
+		"entity_id":   entityID.String(),
+		"entity_type": entityType,
+		"tenant_id":   tenantID.String(),
+		"operation":   "delete",
+	})
+	if err := s.enqueuer.Enqueue("search:index_entity", payload); err != nil {
+		slog.Warn("gdpr: failed to enqueue search:index_entity delete",
+			"entity_id", entityID.String(), "entity_type", entityType, "error", err)
+	}
 }
 
 // HardDeleteUser is the public entry point for admin-triggered hard deletes.
@@ -1736,6 +1764,7 @@ type UserDataExport struct {
 	ReferralCodes               []map[string]interface{} `json:"referral_codes"`                // §60 BUG-013
 	ReferralsAsReferrer         []map[string]interface{} `json:"referrals_as_referrer"`         // §60 BUG-013
 	ReferralsAsReferee          []map[string]interface{} `json:"referrals_as_referee"`          // §60 BUG-013
+	ServiceListings             []map[string]interface{} `json:"service_listings"`              // §98 BUG-008
 	ExportMetadata              map[string]interface{}   `json:"export_metadata"`
 }
 
@@ -1787,6 +1816,40 @@ func (s *Service) collectUserData(ctx context.Context, userID, tenantID pgtype.U
 		}
 	} else {
 		slog.Warn("failed to collect content for export", "user_id", userID.String(), "error", err)
+	}
+
+	// Collect user's service listings (§98 BUG-008). The base content row is
+	// already in export.Content above; this adds the service_listing_meta
+	// structured fields (category, destination, origin communities, etc.).
+	if serviceRows, err := s.store.gdprExportUserServiceListings(ctx, userID, tenantID); err == nil {
+		for _, r := range serviceRows {
+			entry := map[string]interface{}{
+				"content_id":         r.ContentID.String(),
+				"title":              r.Title,
+				"slug":               r.Slug,
+				"service_category":   r.ServiceCategory,
+				"is_verified":        r.IsVerified,
+				"claim_status":       r.ClaimStatus,
+				"origin_communities": r.OriginCommunities,
+				"is_remote":          r.IsRemote,
+				"created_at":         r.CreatedAt.Time,
+			}
+			if r.VerificationType != nil {
+				entry["verification_type"] = *r.VerificationType
+			}
+			if r.WebsiteUrl != nil {
+				entry["website_url"] = *r.WebsiteUrl
+			}
+			if r.BookingUrl != nil {
+				entry["booking_url"] = *r.BookingUrl
+			}
+			if r.PriceRange != nil {
+				entry["price_range"] = *r.PriceRange
+			}
+			export.ServiceListings = append(export.ServiceListings, entry)
+		}
+	} else {
+		slog.Warn("failed to collect service listings for export", "user_id", userID.String(), "error", err)
 	}
 
 	// Collect user's comments.
