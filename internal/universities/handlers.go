@@ -9,9 +9,12 @@ package universities
 
 import (
 	"context"
+	"encoding/csv"
 	"encoding/json"
+	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
@@ -37,12 +40,13 @@ const customFieldEntityTypeSpace = "space"
 type SpacesService interface {
 	GetSpaceTypeBySlug(ctx context.Context, slug string, tenantID pgtype.UUID) (gen.SpaceType, error)
 	ListSpacesByType(ctx context.Context, tenantID, spaceTypeID pgtype.UUID) ([]gen.ListSpacesByTypeRow, error)
-	ListSpacesByTypePaginated(ctx context.Context, tenantID, spaceTypeID pgtype.UUID, search, geoCode string, limit, offset int32) ([]gen.ListSpacesByTypePaginatedRow, error)
+	ListSpacesByTypePaginated(ctx context.Context, tenantID, spaceTypeID pgtype.UUID, search, geoCode, sort string, limit, offset int32) ([]gen.ListSpacesByTypePaginatedRow, error)
 	CountSpacesByType(ctx context.Context, tenantID, spaceTypeID pgtype.UUID, search, geoCode string) (int64, error)
 	GetSpaceBySlug(ctx context.Context, slug string, tenantID pgtype.UUID) (gen.GetSpaceBySlugRow, error)
 	GetSpace(ctx context.Context, id, tenantID pgtype.UUID) (gen.GetSpaceByIDRow, error)
 	CreateSpace(ctx context.Context, params gen.CreateSpaceParams) (gen.CreateSpaceRow, error)
 	UpdateSpace(ctx context.Context, params gen.UpdateSpaceParams) (gen.UpdateSpaceRow, error)
+	UpdateSpaceSlug(ctx context.Context, id, tenantID pgtype.UUID, slug string) (gen.UpdateSpaceSlugRow, error)
 	DeleteSpace(ctx context.Context, id, tenantID pgtype.UUID) error
 }
 
@@ -105,6 +109,7 @@ func (h *Handlers) enqueueFetchLogo(ctx context.Context, tenantID, spaceID, uplo
 		return
 	}
 	payload, err := json.Marshal(map[string]string{
+		"version":     "1",
 		"tenant_id":   tenantID.String(),
 		"space_id":    spaceID.String(),
 		"logo_url":    logoURL,
@@ -173,8 +178,12 @@ type universityDetail struct {
 }
 
 // ListUniversities handles GET /api/v1/universities — every space of the
-// University space-type. Supports optional ?country= filtering by geo_code
-// (ISO 3166-1 alpha-2). [public]
+// University space-type. Honors the Section 39 catalogued query params:
+// ?country= (ISO 3166-1 alpha-2), ?q= (name/slug ILIKE search), ?page= (1-based),
+// ?limit= (page size, default 25, max 100). Returns {data, meta} with pagination
+// metadata. Server-side filtered + paginated so the ~9,000-row seeded catalog
+// never loads in full on a single SSR render (Section 39 line 149, ADR-039).
+// [public]
 func (h *Handlers) ListUniversities(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -187,26 +196,47 @@ func (h *Handlers) ListUniversities(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	universities, err := h.spaces.ListSpacesByType(r.Context(), tenantID, spaceType.ID)
+	page := parseIntDefault(r.URL.Query().Get("page"), 1)
+	limit := parseIntDefault(r.URL.Query().Get("limit"), 25)
+	if limit < 1 || limit > 100 {
+		limit = 25
+	}
+	if page < 1 {
+		page = 1
+	}
+	offset := int32((page - 1) * limit)
+	limit32 := int32(limit)
+
+	search := strings.TrimSpace(r.URL.Query().Get("q"))
+	country := strings.TrimSpace(r.URL.Query().Get("country"))
+	sort := strings.TrimSpace(r.URL.Query().Get("sort"))
+
+	universities, err := h.spaces.ListSpacesByTypePaginated(r.Context(), tenantID, spaceType.ID, search, country, sort, limit32, offset)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list universities")
 		return
 	}
 
-	// Optional country filter — applied in-memory since ListSpacesByType does
-	// not accept a geo_code parameter. The catalog is small so this is fine.
-	country := strings.TrimSpace(r.URL.Query().Get("country"))
-	if country != "" {
-		filtered := make([]gen.ListSpacesByTypeRow, 0, len(universities))
-		for _, u := range universities {
-			if u.GeoCode != nil && *u.GeoCode == country {
-				filtered = append(filtered, u)
-			}
-		}
-		universities = filtered
+	total, err := h.spaces.CountSpacesByType(r.Context(), tenantID, spaceType.ID, search, country)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to count universities")
+		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": universities})
+	totalPages := int(total) / limit
+	if int(total)%limit != 0 {
+		totalPages++
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data": universities,
+		"meta": map[string]any{
+			"total":       total,
+			"page":        page,
+			"limit":       limit,
+			"total_pages": totalPages,
+		},
+	})
 }
 
 // ListUniversitiesAdmin handles GET /api/v1/admin/universities — server-side
@@ -239,8 +269,9 @@ func (h *Handlers) ListUniversitiesAdmin(w http.ResponseWriter, r *http.Request)
 
 	search := strings.TrimSpace(r.URL.Query().Get("q"))
 	country := strings.TrimSpace(r.URL.Query().Get("country"))
+	sort := strings.TrimSpace(r.URL.Query().Get("sort"))
 
-	universities, err := h.spaces.ListSpacesByTypePaginated(r.Context(), tenantID, spaceType.ID, search, country, limit32, offset)
+	universities, err := h.spaces.ListSpacesByTypePaginated(r.Context(), tenantID, spaceType.ID, search, country, sort, limit32, offset)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list universities")
 		return
@@ -602,12 +633,14 @@ func (h *Handlers) UpdateUniversity(w http.ResponseWriter, r *http.Request) {
 		name = strings.TrimSpace(*input.Name)
 	}
 
+	// U-2 fix: verified=false → "pending" (consistent with CreateUniversity),
+	// not "suspended" (which is a moderation/punishment status).
 	status := existing.Status
 	if input.Verified != nil {
 		if *input.Verified {
 			status = "active"
 		} else {
-			status = "suspended"
+			status = "pending"
 		}
 	}
 
@@ -628,6 +661,23 @@ func (h *Handlers) UpdateUniversity(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "update_failed", "Failed to update university")
 		return
+	}
+
+	// U-4 fix: actually update the slug when a new one is supplied. UpdateSpace
+	// does not touch slug (no slug column in its SET clause), so a separate
+	// UpdateSpaceSlug call is required. A collision on UNIQUE(tenant_id, slug)
+	// surfaces as a 409.
+	if input.Slug != nil {
+		newSlug := strings.TrimSpace(*input.Slug)
+		if newSlug != "" && newSlug != existing.Slug {
+			updated, err := h.spaces.UpdateSpaceSlug(r.Context(), id, tenantID, newSlug)
+			if err != nil {
+				writeError(w, http.StatusConflict, "slug_in_use", "Slug is already in use")
+				return
+			}
+			space.Slug = updated.Slug
+			space.UpdatedAt = updated.UpdatedAt
+		}
 	}
 
 	if input.LogoURL != nil {
@@ -703,17 +753,250 @@ func (h *Handlers) VerifyUniversity(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"data": space})
 }
 
-// CompareUniversities handles GET /universities/:id/compare.
+// UnverifyUniversity handles DELETE /admin/universities/:id/verify — reverses
+// a prior verify by setting status back to "pending" (consistent with
+// CreateUniversity's unverified status). Ref: Section 39, audit finding U-1.
+func (h *Handlers) UnverifyUniversity(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	var id pgtype.UUID
+	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid university ID")
+		return
+	}
+
+	existing, err := h.spaces.GetSpace(r.Context(), id, tenantID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "not_found", "University not found")
+		return
+	}
+
+	space, err := h.spaces.UpdateSpace(r.Context(), gen.UpdateSpaceParams{
+		ID:             id,
+		TenantID:       tenantID,
+		Name:           existing.Name,
+		Description:    existing.Description,
+		WikiContent:    existing.WikiContent,
+		GeoCode:        existing.GeoCode,
+		Visibility:     existing.Visibility,
+		PostingPerm:    existing.PostingPerm,
+		ReplyingPerm:   existing.ReplyingPerm,
+		CommentingPerm: existing.CommentingPerm,
+		JoiningPerm:    existing.JoiningPerm,
+		Status:         "pending",
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "unverify_failed", "Failed to unverify university")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": space})
+}
+
+// allowedUniversityStatuses is the set of status values the admin may set on a
+// university space. The spaces.status column has no CHECK constraint, so this
+// allowlist prevents orphan statuses no other code path recognizes (audit U-3).
+var allowedUniversityStatuses = map[string]bool{
+	"active":    true,
+	"pending":   true,
+	"suspended": true,
+}
+
+// UpdateUniversityStatus handles PATCH /admin/universities/:id/status — sets
+// the space status to one of {active, pending, suspended}. Ref: Section 39,
+// audit finding U-1.
+func (h *Handlers) UpdateUniversityStatus(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	var id pgtype.UUID
+	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid university ID")
+		return
+	}
+
+	var input struct {
+		Status string `json:"status"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", "Invalid body")
+		return
+	}
+	input.Status = strings.TrimSpace(input.Status)
+	if !allowedUniversityStatuses[input.Status] {
+		writeError(w, http.StatusBadRequest, "invalid_status",
+			"Status must be one of: active, pending, suspended")
+		return
+	}
+
+	existing, err := h.spaces.GetSpace(r.Context(), id, tenantID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "not_found", "University not found")
+		return
+	}
+
+	space, err := h.spaces.UpdateSpace(r.Context(), gen.UpdateSpaceParams{
+		ID:             id,
+		TenantID:       tenantID,
+		Name:           existing.Name,
+		Description:    existing.Description,
+		WikiContent:    existing.WikiContent,
+		GeoCode:        existing.GeoCode,
+		Visibility:     existing.Visibility,
+		PostingPerm:    existing.PostingPerm,
+		ReplyingPerm:   existing.ReplyingPerm,
+		CommentingPerm: existing.CommentingPerm,
+		JoiningPerm:    existing.JoiningPerm,
+		Status:         input.Status,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "update_failed", "Failed to update status")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": space})
+}
+
+// BulkImportUniversities handles POST /admin/universities/bulk-import —
+// accepts a CSV upload (columns: name, slug, logo_url) and creates a
+// university space per row. Idempotent per row: a duplicate slug is skipped
+// (not an error) so re-importing the same file is safe. Returns a summary of
+// created / skipped / failed counts. Ref: Section 39, audit finding U-1.
+func (h *Handlers) BulkImportUniversities(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	// 10 MB upload cap — matches media.max_upload_mb default for a CSV.
+	if err := r.ParseMultipartForm(10 << 20); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_upload", "Failed to parse upload (max 10 MB)")
+		return
+	}
+
+	file, _, err := r.FormFile("file")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "missing_file", "CSV file is required (field name: file)")
+		return
+	}
+	defer file.Close()
+
+	spaceType, err := h.spaces.GetSpaceTypeBySlug(r.Context(), universitySpaceTypeSlug, tenantID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to resolve university space type")
+		return
+	}
+
+	var actorID pgtype.UUID
+	if u := auth.FromContext(r.Context()); u != nil {
+		actorID = u.UserID
+	}
+
+	created, skipped, failed := 0, 0, 0
+	reader := csv.NewReader(file)
+	reader.FieldsPerRecord = -1 // tolerate ragged rows
+	header, err := reader.Read()
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_csv", "CSV is empty or missing a header row")
+		return
+	}
+	colIndex := make(map[string]int, len(header))
+	for i, h := range header {
+		colIndex[strings.ToLower(strings.TrimSpace(h))] = i
+	}
+	nameCol, nameOK := colIndex["name"]
+	slugCol, slugOK := colIndex["slug"]
+	logoCol, logoOK := colIndex["logo_url"]
+
+	if !nameOK {
+		writeError(w, http.StatusBadRequest, "invalid_csv", "CSV must have a 'name' column")
+		return
+	}
+
+	for {
+		row, err := reader.Read()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			failed++
+			continue
+		}
+		name := strings.TrimSpace(row[nameCol])
+		if name == "" {
+			failed++
+			continue
+		}
+		slug := ""
+		if slugOK && slugCol < len(row) {
+			slug = strings.TrimSpace(row[slugCol])
+		}
+		if slug == "" {
+			slug = slugify(name)
+		}
+		logoURL := ""
+		if logoOK && logoCol < len(row) {
+			logoURL = strings.TrimSpace(row[logoCol])
+		}
+
+		space, err := h.spaces.CreateSpace(r.Context(), gen.CreateSpaceParams{
+			TenantID:       tenantID,
+			SpaceTypeID:    spaceType.ID,
+			Name:           name,
+			Slug:           slug,
+			Level:          "custom",
+			Visibility:     "public",
+			PostingPerm:    "members",
+			ReplyingPerm:   "members",
+			CommentingPerm: "members",
+			JoiningPerm:    "open",
+			Status:         "pending",
+		})
+		if err != nil {
+			// Duplicate slug (UNIQUE violation) → skip, not a failure.
+			skipped++
+			continue
+		}
+		if logoURL != "" {
+			h.enqueueFetchLogo(r.Context(), tenantID, space.ID, actorID, logoURL)
+		}
+		created++
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data": map[string]any{
+			"created": created,
+			"skipped": skipped,
+			"failed":  failed,
+		},
+	})
+}
+
+// CompareUniversities handles GET /universities/{slug}/compare — redirects to
+// the comparison picker at /compare/universities with this university
+// pre-selected as Item 1 (Section 39 line 152: "comparison matrix link
+// (redirects to /comparisons/universities)"). Ref: audit finding U-5.
 func (h *Handlers) CompareUniversities(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
-	space, err := h.spaces.GetSpaceBySlug(r.Context(), chi.URLParam(r, "id"), tenantID)
-	if err != nil {
+	slug := chi.URLParam(r, "slug")
+	if slug == "" {
+		writeError(w, http.StatusBadRequest, "missing_slug", "University slug is required")
+		return
+	}
+	// Verify the university exists so a bad slug 404s rather than redirecting
+	// to a picker with a dead pre-selection.
+	if _, err := h.spaces.GetSpaceBySlug(r.Context(), slug, tenantID); err != nil {
 		writeError(w, http.StatusNotFound, "not_found", "University not found")
 		return
 	}
-	fields, _ := h.customFields.ListFieldValuesByEntity(r.Context(), tenantID, customFieldEntityTypeSpace, space.ID)
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"space": space, "fields": fields}})
+	target := "/compare/universities?item1_slug=" + url.QueryEscape(slug)
+	http.Redirect(w, r, target, http.StatusSeeOther)
 }

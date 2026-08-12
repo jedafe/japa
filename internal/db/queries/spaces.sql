@@ -118,6 +118,8 @@ WHERE tenant_id = @tenant_id AND space_type_id = @space_type_id AND deleted_at I
 ORDER BY created_at DESC, id DESC;
 
 -- name: ListSpacesByTypePaginated :many
+-- sort accepts: '' (default → newest), 'name' (A–Z), 'members', 'followers',
+-- 'posts' (all numeric DESC). Unknown values fall back to newest.
 SELECT id, tenant_id, parent_id, space_type_id, name, slug, description, wiki_content,
        logo_media_id, header_image_id, geo_code, level, member_count, post_count,
        follower_count, visibility, posting_perm, replying_perm, commenting_perm,
@@ -126,7 +128,15 @@ FROM spaces
 WHERE tenant_id = @tenant_id AND space_type_id = @space_type_id AND deleted_at IS NULL
   AND (@search::text = '' OR name ILIKE '%' || @search || '%' OR slug ILIKE '%' || @search || '%')
   AND (@geo_code::text = '' OR geo_code = @geo_code)
-ORDER BY created_at DESC, id DESC
+ORDER BY
+  CASE WHEN @sort::text = 'name' THEN name ELSE NULL END ASC,
+  CASE
+    WHEN @sort::text = 'members' THEN member_count
+    WHEN @sort::text = 'followers' THEN follower_count
+    WHEN @sort::text = 'posts' THEN post_count
+    ELSE NULL
+  END DESC,
+  created_at DESC, id DESC
 LIMIT @limit_val OFFSET @offset_val;
 
 -- name: CountSpacesByType :one
@@ -349,6 +359,19 @@ SET name = @name, description = sqlc.narg(description), wiki_content = sqlc.narg
     geo_code = sqlc.narg(geo_code), visibility = @visibility, posting_perm = @posting_perm,
     replying_perm = @replying_perm, commenting_perm = @commenting_perm, joining_perm = @joining_perm,
     status = @status, updated_at = now()
+WHERE id = @id AND tenant_id = @tenant_id AND deleted_at IS NULL
+RETURNING id, tenant_id, parent_id, space_type_id, name, slug, description, wiki_content,
+          logo_media_id, header_image_id, geo_code, level, member_count, post_count,
+          follower_count, visibility, posting_perm, replying_perm, commenting_perm,
+          joining_perm, status, created_at, updated_at, deleted_at, currency_code;
+
+-- name: UpdateSpaceSlug :one
+-- Updates only the slug of a space. Separate from UpdateSpace (which does not
+-- touch slug) so university/space admin handlers can rename the slug without
+-- rewriting every other column. Tenant-scoped, soft-delete-aware. The
+-- UNIQUE(tenant_id, slug) constraint rejects a collision with a 23505 error
+-- the caller maps to a 409.
+UPDATE spaces SET slug = @slug, updated_at = now()
 WHERE id = @id AND tenant_id = @tenant_id AND deleted_at IS NULL
 RETURNING id, tenant_id, parent_id, space_type_id, name, slug, description, wiki_content,
           logo_media_id, header_image_id, geo_code, level, member_count, post_count,

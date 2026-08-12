@@ -995,6 +995,9 @@ func (h *Handlers) GetTrendingContentHandler(w http.ResponseWriter, r *http.Requ
 		handleServiceError(w, err)
 		return
 	}
+	if rows == nil {
+		rows = []gen.GetTrendingContentRow{}
+	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": rows})
 }
@@ -1025,6 +1028,9 @@ func (h *Handlers) GetTrendingTagsHandler(w http.ResponseWriter, r *http.Request
 	if err != nil {
 		handleServiceError(w, err)
 		return
+	}
+	if rows == nil {
+		rows = []gen.GetTrendingTagsRow{}
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": rows})
@@ -1057,6 +1063,9 @@ func (h *Handlers) GetTrendingSpacesHandler(w http.ResponseWriter, r *http.Reque
 		handleServiceError(w, err)
 		return
 	}
+	if rows == nil {
+		rows = []gen.GetTrendingSpacesRow{}
+	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": rows})
 }
@@ -1087,6 +1096,9 @@ func (h *Handlers) GetTrendingUsersHandler(w http.ResponseWriter, r *http.Reques
 	if err != nil {
 		handleServiceError(w, err)
 		return
+	}
+	if rows == nil {
+		rows = []gen.GetTrendingUsersRow{}
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": rows})

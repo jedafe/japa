@@ -541,7 +541,20 @@ func (h *Handlers) DeleteUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"id": userID.String(), "status": "deleted"})
+	// Revoke all sessions for the deleted user — a soft-deleted user must
+	// not continue to use the platform on existing tokens. Ref: §02
+	// (Session invalidation), Rule 6 (perm cache invalidation).
+	if err := h.Service.store.revokeAllRefreshTokens(r.Context(), tenantID, userID); err != nil {
+		slog.Error("delete-user: failed to invalidate sessions",
+			"user_id", userID.String(), "error", err)
+	}
+	// Invalidate the permission cache so cached permissions don't outlive
+	// the deletion (Rule 6).
+	if h.Redis != nil {
+		_ = h.Redis.Del(r.Context(), valkey.MustKey("perm:%s", userID.String())).Err()
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"id": userID.String(), "status": "deleted"}})
 }
 
 // UpdateProfileType handles PATCH /api/v1/admin/users/{id}/profile-type.
@@ -581,7 +594,7 @@ func (h *Handlers) UpdateProfileType(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"id": userID.String(), "profile_type": req.ProfileType})
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"id": userID.String(), "profile_type": req.ProfileType}})
 }
 
 // ---------------------------------------------------------------------------

@@ -771,9 +771,9 @@ export const universitiesAdminApi = {
 	list: (params?: string) => apiRaw(`/admin/universities${params ? `?${params}` : ''}`),
 	listPublic: (params?: string) => api<unknown>(`/universities${params ? `?${params}` : ''}`),
 	getBySlug: (slug: string) => api<unknown>(`/universities/${encodeURIComponent(slug)}`),
-	create: (body: { name: string; slug: string; verified: boolean }) =>
+	create: (body: { name: string; slug: string; logo_url?: string; verified: boolean }) =>
 		api('/admin/universities', { method: 'POST', body }),
-	update: (id: string, body: { name?: string; slug?: string; verified?: boolean }) =>
+	update: (id: string, body: { name?: string; slug?: string; logo_url?: string; verified?: boolean }) =>
 		api(`/admin/universities/${id}`, { method: 'PATCH', body }),
 	delete: (id: string) =>
 		api(`/admin/universities/${id}`, { method: 'DELETE' }),
@@ -1877,4 +1877,35 @@ export const digestAdminApi = {
 	publish: (id: string) => api<unknown>(`/admin/digest/${id}/publish`, { method: 'POST', body: {} }),
 	generate: () =>
 		api<unknown>(`/admin/digest/generate`, { method: 'POST', body: {} }),
+};
+
+// Section 67 — Travel Search providers (ADR-085). No DELETE route in the spec;
+// deactivation is via PATCH is_active. api_config is write-only (never returned).
+export interface TravelProvider {
+	id: string;
+	name: string;
+	slug: string;
+	provider_type: 'flight' | 'hotel' | 'both';
+	affiliate_config?: Record<string, string> | null;
+	is_active: boolean;
+	created_at: string;
+}
+
+export const travelAdminApi = {
+	list: (params?: string) => api<TravelProvider[]>(`/admin/travel/providers${params ? `?${params}` : ''}`),
+	create: (body: {
+		name: string;
+		slug: string;
+		provider_type: string;
+		api_config?: unknown;
+		affiliate_config?: unknown;
+		is_active: boolean;
+	}) => api<TravelProvider>('/admin/travel/providers', { method: 'POST', body }),
+	update: (id: string, body: {
+		name?: string;
+		provider_type?: string;
+		api_config?: unknown;
+		affiliate_config?: unknown;
+		is_active?: boolean;
+	}) => api<TravelProvider>(`/admin/travel/providers/${id}`, { method: 'PATCH', body }),
 };
