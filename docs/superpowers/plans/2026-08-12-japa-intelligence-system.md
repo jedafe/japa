@@ -151,7 +151,7 @@ apps/control/src/lib/components/intelligence/RawContentPane.svelte
 ### JEOS / spec docs
 
 ```
-.jeos/adr/ADR-XXX-intelligence-scholarships-table.md   # MUST be filed before any code
+.jeos/adr/ADR-112-intelligence-scholarships-table.md   # MUST be filed before any code
 .jeos/sections/11-job-queue-asynq.md                   # add 11 intel:* tasks to catalog
 .jeos/sections/03-rbac.md                              # add 8 intel.* permission nodes
 .jeos/conventions/system-settings-catalog.md           # add 10 intel.* keys
@@ -166,10 +166,10 @@ apps/control/src/lib/components/intelligence/RawContentPane.svelte
 
 JEOS is always updated before code. These tasks update the catalogs and file the ADR. No Go code in this phase.
 
-### Task 1: File ADR-XXX for §73 reversal
+### Task 1: File ADR-112 for §73 reversal
 
 **Files:**
-- Create: `.jeos/adr/ADR-XXX-intelligence-scholarships-table.md`
+- Create: `.jeos/adr/ADR-112-intelligence-scholarships-table.md`
 
 **Interfaces:**
 - Produces: ADR document referenced by all subsequent migration/code tasks
@@ -182,7 +182,7 @@ Then read one: `cat .jeos/adr/ADR-073-scholarship-finder.md` (or the closest-num
 - [ ] **Step 2: Write the ADR**
 
 ```markdown
-# ADR-XXX: Dedicated `scholarships` table for intelligence system projection
+# ADR-112: Dedicated `scholarships` table for intelligence system projection
 
 **Status:** Proposed
 **Date:** 2026-08-12
@@ -250,8 +250,8 @@ This is the exact pattern §73 already uses for `saved_scholarships.guide_id
 - [ ] **Step 3: Commit**
 
 ```bash
-git add .jeos/adr/ADR-XXX-intelligence-scholarships-table.md
-git commit -m "docs(jeos): file ADR-XXX for §73 scholarships table reversal"
+git add .jeos/adr/ADR-112-intelligence-scholarships-table.md
+git commit -m "docs(jeos): file ADR-112 for §73 scholarships table reversal"
 ```
 
 ### Task 2: Add 11 Asynq tasks to §11 catalog
@@ -430,22 +430,22 @@ Read `.jeos/sections/73-scholarship-finder.md`. Find the "no parallel data store
 
 Add an amendment section at the bottom of §73:
 ```markdown
-## Amendment (ADR-XXX): Dedicated scholarships table
+## Amendment (ADR-112): Dedicated scholarships table
 
-The "no parallel data store" decision is reversed by ADR-XXX. Scholarship
+The "no parallel data store" decision is reversed by ADR-112. Scholarship
 structured fields (deadline, eligible_countries, funding, provenance,
 confidence, freshness) now live in a dedicated `scholarships` table that
 references `contents(id)` via `guide_id`. The `contents` row remains the
 editorial wrapper. `saved_scholarships.guide_id → contents(id)` is
 unchanged. See docs/superpowers/specs/2026-08-12-japa-intelligence-system-design.md
-and .jeos/adr/ADR-XXX-intelligence-scholarships-table.md.
+and .jeos/adr/ADR-112-intelligence-scholarships-table.md.
 ```
 
 - [ ] **Step 3: Commit**
 
 ```bash
 git add .jeos/sections/73-scholarship-finder.md
-git commit -m "docs(jeos): amend §73 to reference new scholarships table (ADR-XXX)"
+git commit -m "docs(jeos): amend §73 to reference new scholarships table (ADR-112)"
 ```
 
 ---
@@ -592,7 +592,7 @@ git commit -m "feat(db): migration 428 — intelligence spine tables"
 
 ```sql
 -- 000429_intelligence_scholarships_table.up.sql
--- Scholarships domain projection table (reverses §73 per ADR-XXX).
+-- Scholarships domain projection table (reverses §73 per ADR-112).
 -- Ref: docs/superpowers/specs/2026-08-12-japa-intelligence-system-design.md (Section 3)
 
 BEGIN;
@@ -665,7 +665,7 @@ COMMIT;
 
 ```bash
 git add migrations/000429_intelligence_scholarships_table.up.sql migrations/000429_intelligence_scholarships_table.down.sql
-git commit -m "feat(db): migration 429 — scholarships table + §73 reversal (ADR-XXX)"
+git commit -m "feat(db): migration 429 — scholarships table + §73 reversal (ADR-112)"
 ```
 
 ### Task 10: Migration 430 — backfill scholarships from custom_field_values
@@ -2724,7 +2724,7 @@ git commit -m "chore(intelligence): final verification fixes"
 - [x] Section 7 (Radar Surface + Notifications) → Tasks 23, 25-26
 - [x] Section 8 (Testing + Ops) → Tasks 28-30
 - [x] Section 9 (Migration + Rollout + Out-of-scope) → Tasks 8-11, 28
-- [x] ADR-XXX → Task 1
+- [x] ADR-112 → Task 1
 - [x] §11 catalog update → Task 2
 - [x] §03 RBAC catalog → Task 3
 - [x] system_settings catalog → Task 4
