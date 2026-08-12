@@ -949,6 +949,7 @@ type ContentReview struct {
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
 	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
+	Source         string             `json:"source"`
 }
 
 type ContentRevision struct {
@@ -3793,6 +3794,18 @@ type WebhookEndpoint struct {
 	IsActive   bool               `json:"is_active"`
 	VerifiedAt pgtype.Timestamptz `json:"verified_at"`
 	CreatedBy  pgtype.UUID        `json:"created_by"`
+}
+
+type WidgetConfiguration struct {
+	ID           pgtype.UUID        `json:"id"`
+	TenantID     pgtype.UUID        `json:"tenant_id"`
+	Name         string             `json:"name"`
+	WidgetType   string             `json:"widget_type"`
+	Config       []byte             `json:"config"`
+	CacheTtlSecs int32              `json:"cache_ttl_secs"`
+	IsActive     bool               `json:"is_active"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
 }
 
 type WikiPage struct {

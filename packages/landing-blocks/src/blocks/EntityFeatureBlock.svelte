@@ -41,10 +41,10 @@
     {:else}
       <div class={layoutClass}>
         {#if props.layout === 'split' || props.layout === 'hero'}
-          {#if props.media_override?.url || entity.cover_image_url || entity.logo_url}
+          {#if props.media_override?.url || entity.cover_image_url || entity.featured_image_url || entity.logo_url || entity.image_url}
             <div class="overflow-hidden rounded-[var(--radius-card)]">
               <img
-                src={(props.media_override?.url ?? entity.cover_image_url ?? entity.logo_url) as string}
+                src={(props.media_override?.url ?? entity.cover_image_url ?? entity.featured_image_url ?? entity.logo_url ?? entity.image_url) as string}
                 alt={(props.media_override?.alt ?? '') as string}
                 class="w-full object-cover"
                 loading="lazy"

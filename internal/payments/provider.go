@@ -31,6 +31,7 @@ type Provider interface {
 type PaymentRequest struct {
 	TenantID     string
 	UserID       string
+	Email        string // Required by Paystack /transaction/initialize
 	Amount       int64
 	Currency     string
 	PurposeType  string
@@ -111,6 +112,7 @@ func (p *PaystackProvider) InitiatePayment(ctx context.Context, req PaymentReque
 
 	payload := paystackInitRequest{
 		Amount:   req.Amount,
+		Email:    req.Email,
 		Currency: req.Currency,
 		Metadata: req.Metadata,
 	}

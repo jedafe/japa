@@ -147,10 +147,22 @@ type CreateContentReviewParams struct {
 	Feedback       *string     `json:"feedback"`
 }
 
+type CreateContentReviewRow struct {
+	ID             pgtype.UUID        `json:"id"`
+	TenantID       pgtype.UUID        `json:"tenant_id"`
+	ContentID      pgtype.UUID        `json:"content_id"`
+	ReviewerUserID pgtype.UUID        `json:"reviewer_user_id"`
+	Status         string             `json:"status"`
+	Feedback       *string            `json:"feedback"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
+}
+
 // =====================
 // Content Reviews
 // =====================
-func (q *Queries) CreateContentReview(ctx context.Context, arg CreateContentReviewParams) (ContentReview, error) {
+func (q *Queries) CreateContentReview(ctx context.Context, arg CreateContentReviewParams) (CreateContentReviewRow, error) {
 	row := q.db.QueryRow(ctx, createContentReview,
 		arg.TenantID,
 		arg.ContentID,
@@ -158,7 +170,7 @@ func (q *Queries) CreateContentReview(ctx context.Context, arg CreateContentRevi
 		arg.Status,
 		arg.Feedback,
 	)
-	var i ContentReview
+	var i CreateContentReviewRow
 	err := row.Scan(
 		&i.ID,
 		&i.TenantID,
@@ -513,9 +525,21 @@ type GetContentReviewByIDParams struct {
 	TenantID pgtype.UUID `json:"tenant_id"`
 }
 
-func (q *Queries) GetContentReviewByID(ctx context.Context, arg GetContentReviewByIDParams) (ContentReview, error) {
+type GetContentReviewByIDRow struct {
+	ID             pgtype.UUID        `json:"id"`
+	TenantID       pgtype.UUID        `json:"tenant_id"`
+	ContentID      pgtype.UUID        `json:"content_id"`
+	ReviewerUserID pgtype.UUID        `json:"reviewer_user_id"`
+	Status         string             `json:"status"`
+	Feedback       *string            `json:"feedback"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
+}
+
+func (q *Queries) GetContentReviewByID(ctx context.Context, arg GetContentReviewByIDParams) (GetContentReviewByIDRow, error) {
 	row := q.db.QueryRow(ctx, getContentReviewByID, arg.ID, arg.TenantID)
-	var i ContentReview
+	var i GetContentReviewByIDRow
 	err := row.Scan(
 		&i.ID,
 		&i.TenantID,
@@ -829,15 +853,27 @@ type ListContentReviewsByContentParams struct {
 	TenantID  pgtype.UUID `json:"tenant_id"`
 }
 
-func (q *Queries) ListContentReviewsByContent(ctx context.Context, arg ListContentReviewsByContentParams) ([]ContentReview, error) {
+type ListContentReviewsByContentRow struct {
+	ID             pgtype.UUID        `json:"id"`
+	TenantID       pgtype.UUID        `json:"tenant_id"`
+	ContentID      pgtype.UUID        `json:"content_id"`
+	ReviewerUserID pgtype.UUID        `json:"reviewer_user_id"`
+	Status         string             `json:"status"`
+	Feedback       *string            `json:"feedback"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
+}
+
+func (q *Queries) ListContentReviewsByContent(ctx context.Context, arg ListContentReviewsByContentParams) ([]ListContentReviewsByContentRow, error) {
 	rows, err := q.db.Query(ctx, listContentReviewsByContent, arg.ContentID, arg.TenantID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ContentReview
+	var items []ListContentReviewsByContentRow
 	for rows.Next() {
-		var i ContentReview
+		var i ListContentReviewsByContentRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.TenantID,
@@ -1006,15 +1042,27 @@ type ListPendingContentReviewsParams struct {
 	PageLimit  int32       `json:"page_limit"`
 }
 
-func (q *Queries) ListPendingContentReviews(ctx context.Context, arg ListPendingContentReviewsParams) ([]ContentReview, error) {
+type ListPendingContentReviewsRow struct {
+	ID             pgtype.UUID        `json:"id"`
+	TenantID       pgtype.UUID        `json:"tenant_id"`
+	ContentID      pgtype.UUID        `json:"content_id"`
+	ReviewerUserID pgtype.UUID        `json:"reviewer_user_id"`
+	Status         string             `json:"status"`
+	Feedback       *string            `json:"feedback"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
+}
+
+func (q *Queries) ListPendingContentReviews(ctx context.Context, arg ListPendingContentReviewsParams) ([]ListPendingContentReviewsRow, error) {
 	rows, err := q.db.Query(ctx, listPendingContentReviews, arg.TenantID, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ContentReview
+	var items []ListPendingContentReviewsRow
 	for rows.Next() {
-		var i ContentReview
+		var i ListPendingContentReviewsRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.TenantID,
@@ -1476,9 +1524,21 @@ type UpdateContentReviewStatusParams struct {
 	TenantID       pgtype.UUID `json:"tenant_id"`
 }
 
+type UpdateContentReviewStatusRow struct {
+	ID             pgtype.UUID        `json:"id"`
+	TenantID       pgtype.UUID        `json:"tenant_id"`
+	ContentID      pgtype.UUID        `json:"content_id"`
+	ReviewerUserID pgtype.UUID        `json:"reviewer_user_id"`
+	Status         string             `json:"status"`
+	Feedback       *string            `json:"feedback"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
+}
+
 // BUG-003: also set reviewer_user_id (nullable) so the actual reviewer is
 // recorded on approve/reject, not the submitting author placeholder.
-func (q *Queries) UpdateContentReviewStatus(ctx context.Context, arg UpdateContentReviewStatusParams) (ContentReview, error) {
+func (q *Queries) UpdateContentReviewStatus(ctx context.Context, arg UpdateContentReviewStatusParams) (UpdateContentReviewStatusRow, error) {
 	row := q.db.QueryRow(ctx, updateContentReviewStatus,
 		arg.Status,
 		arg.Feedback,
@@ -1486,7 +1546,7 @@ func (q *Queries) UpdateContentReviewStatus(ctx context.Context, arg UpdateConte
 		arg.ID,
 		arg.TenantID,
 	)
-	var i ContentReview
+	var i UpdateContentReviewStatusRow
 	err := row.Scan(
 		&i.ID,
 		&i.TenantID,

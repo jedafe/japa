@@ -22,7 +22,20 @@
 		status: string; // 'pending' | 'approved' | 'rejected' | 'withdrawn'
 		evidence_url?: string | null;
 		notes?: string | null;
+		form_submission_id?: string | null;
+		resolution_note?: string | null;
+		reviewed_by_username?: string | null;
+		reviewed_at?: string | null;
 		created_at: string;
+	};
+
+	type ClaimSubmission = {
+		id: string;
+		form_id: string;
+		field_values: Record<string, unknown> | null;
+		status: string;
+		created_at: string;
+		claim_id: string;
 	};
 
 	let claims = $state<PendingClaim[]>([]);
@@ -35,10 +48,15 @@
 	// the full history (approved/rejected/withdrawn) for audit.
 	let statusFilter = $state("pending");
 
+	// BUG-022/023: Claim status options fetched from the API (Rule 16).
+	let claimStatusOptions = $state<{ value: string; label: string }[]>([]);
+
 	let showViewModal = $state(false);
 	let showApproveModal = $state(false);
 	let showRejectModal = $state(false);
 	let target = $state<PendingClaim | null>(null);
+	let claimSubmission = $state<ClaimSubmission | null>(null);
+	let submissionLoading = $state(false);
 	let actionLoading = $state(false);
 
 	// Bulk selection
@@ -54,13 +72,16 @@
 		{
 			key: "status",
 			label: t("organisations.status", "Status"),
-			options: [
-				{ value: "all", label: t("organisations.all", "All") },
-				{ value: "pending", label: t("organisations.pending", "Pending") },
-				{ value: "approved", label: t("organisations.approved", "Approved") },
-				{ value: "rejected", label: t("organisations.rejected", "Rejected") },
-				{ value: "withdrawn", label: t("organisations.withdrawn", "Withdrawn") }
-			]
+			// BUG-022/023: Use API-driven claim status options with hardcoded fallback.
+			options: claimStatusOptions.length > 0
+				? [{ value: "all", label: t("organisations.all", "All") }, ...claimStatusOptions]
+				: [
+						{ value: "all", label: t("organisations.all", "All") },
+						{ value: "pending", label: t("organisations.pending", "Pending") },
+						{ value: "approved", label: t("organisations.approved", "Approved") },
+						{ value: "rejected", label: t("organisations.rejected", "Rejected") },
+						{ value: "withdrawn", label: t("organisations.withdrawn", "Withdrawn") }
+					]
 		}
 	]);
 
@@ -174,7 +195,21 @@
 
 	function openView(c: PendingClaim) {
 		target = c;
+		claimSubmission = null;
+		submissionLoading = false;
 		showViewModal = true;
+		// Fetch the claimant's form submission data if the claim has one linked.
+		if (c.form_submission_id) {
+			submissionLoading = true;
+			organisationsAdminApi.claimSubmission(c.id).then((res) => {
+				if (res.ok && res.data) {
+					claimSubmission = res.data;
+				}
+				submissionLoading = false;
+			}).catch(() => {
+				submissionLoading = false;
+			});
+		}
 	}
 	function openApprove(c: PendingClaim) {
 		target = c;
@@ -263,6 +298,16 @@
 		}
 		load();
 	}
+
+	// BUG-022/023: Fetch claim status options from the API on mount (Rule 16).
+	$effect(() => {
+		(async () => {
+			const result = await organisationsAdminApi.meta();
+			if (result.ok && result.data?.claim_statuses) {
+				claimStatusOptions = result.data.claim_statuses;
+			}
+		})();
+	});
 
 	$effect(() => {
 		load();
@@ -404,6 +449,57 @@
 						{t("organisations.notes", "Notes")}
 					</p>
 					<p class="mt-1 text-sm" style="color: var(--color-foreground)">{target.notes}</p>
+				</div>
+			{/if}
+			<!-- Claimant submitted form data -->
+			{#if target.form_submission_id}
+				<div>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">
+						{t("organisations.submitted_form", "Submitted Form Data")}
+					</p>
+					{#if submissionLoading}
+						<p class="mt-1 text-sm" style="color: var(--color-muted)">{t("common.loading", "Loading...")}</p>
+					{:else if claimSubmission}
+						<div class="mt-1 rounded-lg border p-3 text-sm" style="border-color: var(--color-border); background-color: var(--color-surface); color: var(--color-foreground)">
+							{#if claimSubmission.field_values && Object.keys(claimSubmission.field_values).length > 0}
+								<dl class="space-y-2">
+									{#each Object.entries(claimSubmission.field_values) as [key, value]}
+										<div class="flex gap-2">
+											<dt class="font-medium min-w-[120px]" style="color: var(--color-muted)">{key}:</dt>
+											<dd class="flex-1">{typeof value === 'object' ? JSON.stringify(value) : String(value)}</dd>
+										</div>
+									{/each}
+								</dl>
+							{:else}
+								<p style="color: var(--color-muted)">{t("organisations.no_form_data", "No form data submitted")}</p>
+							{/if}
+							<p class="mt-3 text-xs" style="color: var(--color-muted)">
+								{t("organisations.submission_status", "Submission status")}: {claimSubmission.status}
+								· {new Date(claimSubmission.created_at).toLocaleString()}
+							</p>
+						</div>
+					{:else}
+						<p class="mt-1 text-sm" style="color: var(--color-muted)">{t("organisations.submission_not_found", "Form submission not found")}</p>
+					{/if}
+				</div>
+			{/if}
+			<!-- Review history for approved/rejected claims -->
+			{#if target.status !== "pending" && (target.reviewed_by_username || target.reviewed_at || target.resolution_note)}
+				<div>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">
+						{t("organisations.review_history", "Review History")}
+					</p>
+					<div class="mt-1 rounded-lg border p-3 text-sm space-y-1" style="border-color: var(--color-border); background-color: var(--color-surface); color: var(--color-foreground)">
+						{#if target.reviewed_by_username}
+							<p><span style="color: var(--color-muted)">{t("organisations.reviewed_by", "Reviewed by")}:</span> {target.reviewed_by_username}</p>
+						{/if}
+						{#if target.reviewed_at}
+							<p><span style="color: var(--color-muted)">{t("organisations.reviewed_at", "Reviewed at")}:</span> {new Date(target.reviewed_at).toLocaleString()}</p>
+						{/if}
+						{#if target.resolution_note}
+							<p><span style="color: var(--color-muted)">{t("organisations.resolution_note", "Resolution note")}:</span> {target.resolution_note}</p>
+						{/if}
+					</div>
 				</div>
 			{/if}
 		</div>

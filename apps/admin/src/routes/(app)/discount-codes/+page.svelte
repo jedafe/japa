@@ -93,11 +93,18 @@
 		{ value: 'fixed', label: t('discounts.fixed', 'Fixed') }
 	];
 
+	const applicableToOptions = [
+		{ value: 'all', label: t('discounts.applicable_all', 'All purposes') },
+		{ value: 'course_access', label: t('discounts.applicable_course', 'Course access') },
+		{ value: 'pro_membership', label: t('discounts.applicable_pro', 'Pro membership') }
+	];
+
 	const fields: FieldDef[] = [
 		{ key: 'code', label: t('discounts.code', 'Code'), type: 'text', required: true },
 		{ key: 'description', label: t('discounts.description', 'Description'), type: 'text' },
 		{ key: 'discount_type', label: t('discounts.type', 'Type'), type: 'select', options: discountTypeOptions },
 		{ key: 'discount_value', label: t('discounts.value', 'Value'), type: 'number', required: true },
+		{ key: 'applicable_to', label: t('discounts.applicable_to', 'Applies To'), type: 'select', options: applicableToOptions },
 		{ key: 'valid_from', label: t('discounts.valid_from', 'Valid From'), type: 'date' },
 		{ key: 'valid_until', label: t('discounts.valid_until', 'Valid Until'), type: 'date' },
 		{ key: 'max_uses', label: t('discounts.usage_limit', 'Usage Limit'), type: 'number', min: 0 }
@@ -205,7 +212,7 @@
 				description: String(body.description ?? '').trim() || undefined,
 				discount_type: body.discount_type ?? 'percent',
 				discount_value: Number(body.discount_value),
-				applicable_to: 'all',
+				applicable_to: body.applicable_to ?? 'all',
 				valid_from: body.valid_from ? dateInputToStartOfDayISO(String(body.valid_from)) : null,
 				valid_until: body.valid_until ? dateInputToEndOfDayISO(String(body.valid_until)) : null,
 				max_uses: body.max_uses != null && body.max_uses !== '' ? Number(body.max_uses) : null
@@ -219,6 +226,7 @@
 				description: String(body.description ?? '').trim() || undefined,
 				discount_type: body.discount_type ?? 'percent',
 				discount_value: Number(body.discount_value),
+				applicable_to: body.applicable_to ?? 'all',
 				valid_from: body.valid_from ? dateInputToStartOfDayISO(String(body.valid_from)) : null,
 				valid_until: body.valid_until ? dateInputToEndOfDayISO(String(body.valid_until)) : null,
 				max_uses: body.max_uses != null && body.max_uses !== '' ? Number(body.max_uses) : null

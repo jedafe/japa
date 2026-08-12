@@ -1,6 +1,6 @@
 import type { PageServerLoad } from './$types';
-import { apiContext, apiList, ApiError } from '$lib/server/api';
-import type { PublicOrganization } from '$lib/types';
+import { apiContext, apiGet, apiList, ApiError } from '$lib/server/api';
+import type { OrgMeta, PublicOrganization } from '$lib/types';
 
 /**
  * Organizations index at /org — public, SSR, indexable. Lists every
@@ -28,6 +28,14 @@ export const load: PageServerLoad = async (event) => {
 	let loadError = false;
 	let forbidden = false;
 
+	// BUG-022: Fetch org type options from the API (Rule 16).
+	let orgMeta: OrgMeta | null = null;
+	try {
+		orgMeta = await apiGet<OrgMeta>(ctx, '/organizations/meta');
+	} catch {
+		// Non-fatal — the page falls back to an empty filter.
+	}
+
 	try {
 		const params = new URLSearchParams();
 		params.set('page_size', String(PAGE_SIZE));
@@ -48,5 +56,5 @@ export const load: PageServerLoad = async (event) => {
 		}
 	}
 
-	return { orgs, q, orgType, verified, page, totalPages, total, pageSize: PAGE_SIZE, forbidden, loadError };
+	return { orgs, q, orgType, verified, page, totalPages, total, pageSize: PAGE_SIZE, forbidden, loadError, orgMeta };
 };

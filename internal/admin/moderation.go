@@ -907,7 +907,7 @@ func (h *Handlers) VerifyOrganization(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	} else {
-		err := h.Queries.VerifyOrganization(r.Context(), oid)
+		err := h.Queries.VerifyOrganization(r.Context(), gen.VerifyOrganizationParams{ID: oid, TenantID: tenantID})
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "internal_error", "Failed to verify organization")
 			return
@@ -919,6 +919,7 @@ func (h *Handlers) VerifyOrganization(w http.ResponseWriter, r *http.Request) {
 }
 
 // UnverifyOrganization handles DELETE /admin/organizations/:id/verify.
+// Ref: japaconnect-engineering/sections/07-organization-profiles-claim-ownership.md
 func (h *Handlers) UnverifyOrganization(w http.ResponseWriter, r *http.Request) {
 	orgID := chi.URLParam(r, "id")
 	var oid pgtype.UUID
@@ -926,13 +927,27 @@ func (h *Handlers) UnverifyOrganization(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid organization ID")
 		return
 	}
-	err := h.Queries.UnverifyOrganization(r.Context(), oid)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to unverify organization")
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
 		return
 	}
-	// Invalidate org cache so the unverified status is reflected immediately.
-	if tenantID, ok := requireTenant(w, r); ok {
+	user, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+	// Route through the organizations service so the organization.unverified
+	// webhook event is emitted (Section 12) and the org cache is invalidated.
+	if h.Orgs != nil {
+		if err := h.Orgs.UnverifyOrganization(r.Context(), oid, tenantID, user.UserID); err != nil {
+			writeError(w, http.StatusInternalServerError, "internal_error", "Failed to unverify organization")
+			return
+		}
+	} else {
+		err := h.Queries.UnverifyOrganization(r.Context(), gen.UnverifyOrganizationParams{ID: oid, TenantID: tenantID})
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "internal_error", "Failed to unverify organization")
+			return
+		}
 		organizations.InvalidateOrgCacheByCmdable(r.Context(), h.Valkey, tenantID)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": orgID, "verified": false}})
@@ -1118,6 +1133,17 @@ func (h *Handlers) ModerateItem(w http.ResponseWriter, r *http.Request) {
 		slog.Error("moderation: updating content report", "id", id, "error", err)
 	}
 
+	// Participation Orchestration (§76, ADR-077 §4, BUG-001): if the ID
+	// matches a content_reviews row with source='persona_action', update
+	// its status and — on approve — enqueue persona:dispatch_action so the
+	// approved action is actually published. Previously ModerateItem only
+	// touched the `reviews` table (§29 Ratings & Reviews) and the
+	// content_reviews persona-action row stayed 'pending' forever.
+	if h.handlePersonaActionReview(ctx, rid, tenantID, user.UserID, input.Action, input.Reason) {
+		slog.Info("moderation: persona action review processed",
+			"item_id", id, "action", input.Action, "reviewer", user.UserID.String())
+	}
+
 	slog.Info("moderation item processed",
 		"user_id", user.UserID.String(),
 		"item_id", id,
@@ -1130,6 +1156,63 @@ func (h *Handlers) ModerateItem(w http.ResponseWriter, r *http.Request) {
 			"status": newStatus,
 		},
 	})
+}
+
+// handlePersonaActionReview handles a content_reviews row with
+// source='persona_action' (§76, ADR-077 §4, BUG-001). It returns true if the
+// ID matched a persona-action review (so the caller can log it). On approve,
+// it sets the review status to 'approved', records the reviewer, and enqueues
+// the persona:dispatch_action task so the action is published. On reject, it
+// sets the status to 'rejected'. The content_reviews status CHECK constraint
+// (000018) allows 'approved' and 'rejected'.
+func (h *Handlers) handlePersonaActionReview(ctx context.Context, id, tenantID, reviewerID pgtype.UUID, action, reason string) bool {
+	// Check whether this ID is a persona-action content_reviews row.
+	var source, status string
+	err := h.DB.Reader.QueryRow(ctx,
+		`SELECT source, status FROM content_reviews
+		 WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL`,
+		id, tenantID,
+	).Scan(&source, &status)
+	if err != nil {
+		return false // not a content_reviews row (or not found) — not a persona action
+	}
+	if source != "persona_action" {
+		return false // an editorial review, not a persona action — leave to other flows
+	}
+
+	// Map the moderation action to a content_reviews status. content_reviews
+	// allows 'pending','approved','changes_requested','rejected' (000018).
+	var newCRStatus string
+	switch action {
+	case "approve":
+		newCRStatus = "approved"
+	case "reject", "delete":
+		newCRStatus = "rejected"
+	default:
+		return true
+	}
+
+	_, err = h.DB.Writer.Exec(ctx,
+		`UPDATE content_reviews
+		 SET status = $1, reviewer_user_id = $2, feedback = $3, updated_at = now()
+		 WHERE id = $4 AND tenant_id = $5 AND source = 'persona_action'`,
+		newCRStatus, reviewerID, reason, id, tenantID,
+	)
+	if err != nil {
+		slog.Error("moderation: persona action review update failed", "id", id, "error", err)
+		return true
+	}
+
+	// On approve, enqueue persona:dispatch_action so the action is published
+	// (ADR-077 §4/§5). The dispatch task loads the review by ID, verifies
+	// status='approved', and publishes the content.
+	if action == "approve" && h.Tasks != nil {
+		payload, _ := json.Marshal(map[string]string{"action_id": id.String()})
+		if err := h.Tasks.Enqueue("persona:dispatch_action", payload); err != nil {
+			slog.Error("moderation: enqueue persona:dispatch_action failed", "id", id, "error", err)
+		}
+	}
+	return true
 }
 
 // ─── Content Moderation ───────────────────────────────────────────────────

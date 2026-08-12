@@ -30,7 +30,7 @@
 		type CustomBlockDef,
 		type RuntimeBlockMeta,
 	} from '@japaconnect/landing-blocks';
-	import { DraggableBlockType, SortableSection, ContainerChildren, ResizeHandle } from '$lib/components/landing-editor';
+	import { DraggableBlockType, SortableSection, ContainerChildren, ResizeHandle, WidgetPicker } from '$lib/components/landing-editor';
 	import { Button } from '$lib/components/ui/button';
 	import { Tabs, Dialog } from 'bits-ui';
 	import * as LucideIcons from 'lucide-svelte';
@@ -39,6 +39,8 @@
 
 	// Cast for DI — the editors expect Component<any>, MediaPickerModal has bindable props
 	const MediaPicker = MediaPickerModal as unknown as Component;
+	// WidgetPicker is used by the widget block content editor for live search.
+	const WidgetPickerComponent = WidgetPicker as unknown as Component;
 
 	const canManagePages = $derived(hasPermission('pages.manage'));
 	const canPublishPages = $derived(hasPermission('pages.publish'));
@@ -249,6 +251,11 @@
 		// don't crash on an empty children array.
 		if (type === 'container') {
 			return { id: crypto.randomUUID(), type: 'container', visible: true, props: { layout: 'grid', columns: 2, gap: 'md', children: [] } } as Block;
+		}
+		// Widget blocks need defaults for layout/columns so the renderer
+		// doesn't crash on an empty widget_id.
+		if (type === 'widget') {
+			return { id: crypto.randomUUID(), type: 'widget', visible: true, props: { widget_id: '', layout: 'grid', columns: 3, heading: '', view_all_href: '' } } as Block;
 		}
 		return { id: crypto.randomUUID(), type: type as Block['type'], visible: true, props: {} } as Block;
 	}
@@ -967,7 +974,7 @@
 								{#if selectedBlock.type === 'custom'}
 									<Editor props={selectedBlock.props} blockDefId={selectedBlock.block_def_id} onchange={(v: unknown) => updateBlockProps(selectedBlock.id, v)} mediaPickerComponent={MediaPicker} geoCtx={previewCtx} />
 								{:else}
-									<Editor props={selectedBlock.props} onchange={(v: unknown) => updateBlockProps(selectedBlock.id, v)} mediaPickerComponent={MediaPicker} geoCtx={previewCtx} />
+									<Editor props={selectedBlock.props} onchange={(v: unknown) => updateBlockProps(selectedBlock.id, v)} mediaPickerComponent={MediaPicker} widgetPickerComponent={WidgetPickerComponent} geoCtx={previewCtx} />
 								{/if}
 							{:else}
 								<p class="text-xs" style="color: var(--color-muted)">{t('pageBuilder.no_config', 'No content editor for this block type')}</p>

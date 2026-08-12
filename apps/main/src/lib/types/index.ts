@@ -800,6 +800,21 @@ export interface OrgOwner {
 	avatar_url?: string | null;
 }
 
+/** GET /organizations/meta — valid option lists for org dropdowns (Rule 16).
+ * Used by org list, new, and dashboard pages to populate selects from the API
+ * instead of hardcoding option arrays. */
+export interface OrgMeta {
+	org_types: OrgMetaOption[];
+	member_roles: OrgMetaOption[];
+	invitation_roles: OrgMetaOption[];
+	claim_statuses: OrgMetaOption[];
+}
+
+export interface OrgMetaOption {
+	value: string;
+	label: string;
+}
+
 /** GET /organizations/{id} (authed member) — full gen.Organization row for the
  * org admin dashboard. Includes owner_user_id, status, and timestamps. */
 export interface OrganizationAdmin {

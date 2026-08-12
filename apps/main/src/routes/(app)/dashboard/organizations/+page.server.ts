@@ -3,8 +3,8 @@
 // returns the org row + the caller's member_role.
 import { redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiList } from '$lib/server/api';
-import type { OrganizationAdmin } from '$lib/types';
+import { apiContext, apiGet, apiList } from '$lib/server/api';
+import type { OrganizationAdmin, OrgMeta } from '$lib/types';
 
 /** GET /me/organizations row — org + member_role. */
 export interface MyOrganizationRow extends OrganizationAdmin {
@@ -17,5 +17,14 @@ export const load: PageServerLoad = async (event) => {
 	}
 	const ctx = apiContext(event);
 	const organizations = (await apiList<MyOrganizationRow>(ctx, '/me/organizations')).items;
-	return { organizations };
+
+	// BUG-022: Fetch org type options from the API (Rule 16).
+	let orgMeta: OrgMeta | null = null;
+	try {
+		orgMeta = await apiGet<OrgMeta>(ctx, '/organizations/meta');
+	} catch {
+		// Non-fatal — the form falls back to hardcoded options.
+	}
+
+	return { organizations, orgMeta };
 };

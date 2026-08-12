@@ -44,6 +44,7 @@ type Service struct {
 	sessionDeleter SessionDeleter
 	siteName       string
 	settings       SettingsProvider
+	storage        Storage
 }
 
 // SettingsProvider abstracts system settings access for hard-delete configuration.
@@ -92,6 +93,13 @@ func (s *Service) SetSessionDeleter(d SessionDeleter) {
 // SetSettings injects the system settings provider for hard-delete configuration.
 func (s *Service) SetSettings(sp SettingsProvider) {
 	s.settings = sp
+}
+
+// SetStorage injects the storage backend for GDPR data export files
+// (ADR-048). When unset, exports use the default LocalStorage rooted at
+// data/gdpr-exports.
+func (s *Service) SetStorage(st Storage) {
+	s.storage = st
 }
 
 // noopEnqueuer is a no-op implementation for development.
@@ -328,15 +336,30 @@ func (s *Service) ProcessDataExport(ctx context.Context, requestID pgtype.UUID) 
 		return fmt.Errorf("marshaling export data: %w", err)
 	}
 
-	// In production, upload to S3 and create signed URL.
-	// For now, store locally and create a reference URL.
+	// Store the export file via the injected Storage backend (ADR-048).
+	// When no storage is configured, fall back to a marker URL.
 	// AUDIT-FRESH-SETTING-008: export expiry is configurable via system_settings.
 	exportExpiryDays := 1
 	if s.settings != nil {
 		exportExpiryDays = s.settings.GetIntOr(ctx, request.TenantID, "gdpr.export_expiry_days", exportExpiryDays)
 	}
 	expiresAt := time.Now().Add(time.Duration(exportExpiryDays) * 24 * time.Hour)
-	exportURL := fmt.Sprintf("/exports/%s/data.json", request.UserID.String())
+	var exportURL string
+	if s.storage != nil {
+		url, _, storeErr := s.storage.Store(ctx, request.TenantID, requestID, "application/json", exportJSON)
+		if storeErr != nil {
+			if _, statusErr := s.store.updateDataExportRequestStatus(ctx, gen.UpdateDataExportRequestStatusParams{
+				ID:     requestID,
+				Status: string(ExportFailed),
+			}); statusErr != nil {
+				slog.Error("update data export status to failed", "error", statusErr)
+			}
+			return fmt.Errorf("storing export file: %w", storeErr)
+		}
+		exportURL = url
+	} else {
+		exportURL = fmt.Sprintf("/exports/%s/data.json", request.UserID.String())
+	}
 	slog.Info("data export generated",
 		"user_id", request.UserID.String(),
 		"export_size", len(exportJSON),
@@ -1231,6 +1254,19 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 			WHERE last_reviewed_by = $1
 		`, userID); err != nil {
 			return fmt.Errorf("nullifying doc_pages last_reviewed_by: %w", err)
+		}
+
+		// Nullify pages.created_by references. The pages table (Page Builder,
+		// Section 16) has created_by uuid REFERENCES users(id) with no ON DELETE
+		// clause (migration 000055). Without this, the HardDeleteUser DELETE
+		// fails with a FK violation for any admin who has created page-builder
+		// pages. The pages themselves are retained (they are tenant CMS content,
+		// not user PII). Ref: §16; §15 GDPR erasure.
+		if _, err := s.db.Writer.Exec(ctx, `
+			UPDATE pages SET created_by = NULL
+			WHERE created_by = $1
+		`, userID); err != nil {
+			return fmt.Errorf("nullifying pages created_by: %w", err)
 		}
 
 		// BUG-011: trending_snapshots with entity_type='user' reference the

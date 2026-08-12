@@ -29,8 +29,15 @@ func NewStore(database *db.DB) *Store {
 // Blocks CRUD
 // ---------------------------------------------------------------------------
 
-// ListBlocks returns all blocks for a tenant, ordered by name.
-func (s *Store) ListBlocks(ctx context.Context, tenantID pgtype.UUID, q string) ([]Block, error) {
+// ListBlocks returns a paginated list of blocks for a tenant, ordered by name.
+// page is 1-based; limit is the page size. Returns the items and the total row
+// count (before pagination) so the handler can compute total_pages.
+func (s *Store) ListBlocks(ctx context.Context, tenantID pgtype.UUID, q string, page, limit int32) ([]Block, int64, error) {
+	offset := (page - 1) * limit
+	if offset < 0 {
+		offset = 0
+	}
+
 	rows, err := s.reader.Query(ctx, `
 		SELECT id, tenant_id, name, slug, category, component,
 		       COALESCE(default_config, '{}'::jsonb),
@@ -40,13 +47,15 @@ func (s *Store) ListBlocks(ctx context.Context, tenantID pgtype.UUID, q string) 
 		WHERE tenant_id = $1
 		  AND ($2 = '' OR name ILIKE '%' || $2 || '%' OR slug ILIKE '%' || $2 || '%' OR category ILIKE '%' || $2 || '%')
 		ORDER BY name
-	`, tenantID, q)
+		LIMIT $3 OFFSET $4
+	`, tenantID, q, limit, offset)
 	if err != nil {
-		return nil, fmt.Errorf("listing blocks: %w", err)
+		return nil, 0, fmt.Errorf("listing blocks: %w", err)
 	}
 	defer rows.Close()
 
 	var blocks []Block
+	blocks = make([]Block, 0)
 
 	for rows.Next() {
 		var b Block
@@ -55,13 +64,27 @@ func (s *Store) ListBlocks(ctx context.Context, tenantID pgtype.UUID, q string) 
 			&b.DefaultConfig, &b.ConfigSchema,
 			&b.PreviewImage, &b.IsSystem, &b.IsEnabled, &b.CreatedAt, &b.UpdatedAt,
 		); err != nil {
-			return nil, fmt.Errorf("scanning block: %w", err)
+			return nil, 0, fmt.Errorf("scanning block: %w", err)
 		}
 
 		blocks = append(blocks, b)
 	}
 
-	return blocks, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, 0, err
+	}
+
+	var total int64
+	err = s.reader.QueryRow(ctx, `
+		SELECT COUNT(*) FROM pagebuilder_blocks
+		WHERE tenant_id = $1
+		  AND ($2 = '' OR name ILIKE '%' || $2 || '%' OR slug ILIKE '%' || $2 || '%' OR category ILIKE '%' || $2 || '%')
+	`, tenantID, q).Scan(&total)
+	if err != nil {
+		return nil, 0, fmt.Errorf("counting blocks: %w", err)
+	}
+
+	return blocks, total, nil
 }
 
 // GetBlock returns a single block by ID, scoped to the tenant.
@@ -183,8 +206,14 @@ func (s *Store) DeleteBlock(ctx context.Context, id, tenantID pgtype.UUID) error
 // Templates CRUD
 // ---------------------------------------------------------------------------
 
-// ListTemplates returns all templates for a tenant, optionally filtered by q and category.
-func (s *Store) ListTemplates(ctx context.Context, tenantID pgtype.UUID, q, category string) ([]Template, error) {
+// ListTemplates returns a paginated list of templates for a tenant, optionally
+// filtered by q and category. page is 1-based; limit is the page size.
+func (s *Store) ListTemplates(ctx context.Context, tenantID pgtype.UUID, q, category string, page, limit int32) ([]Template, int64, error) {
+	offset := (page - 1) * limit
+	if offset < 0 {
+		offset = 0
+	}
+
 	rows, err := s.reader.Query(ctx, `
 		SELECT id, tenant_id, name, slug, description, page_type,
 		       COALESCE(blocks, '[]'::jsonb), is_system, created_at, updated_at
@@ -193,13 +222,15 @@ func (s *Store) ListTemplates(ctx context.Context, tenantID pgtype.UUID, q, cate
 		  AND ($2 = '' OR name ILIKE '%' || $2 || '%' OR slug ILIKE '%' || $2 || '%' OR description ILIKE '%' || $2 || '%')
 		  AND ($3 = '' OR page_type = $3)
 		ORDER BY name
-	`, tenantID, q, category)
+		LIMIT $4 OFFSET $5
+	`, tenantID, q, category, limit, offset)
 	if err != nil {
-		return nil, fmt.Errorf("listing templates: %w", err)
+		return nil, 0, fmt.Errorf("listing templates: %w", err)
 	}
 	defer rows.Close()
 
 	var templates []Template
+	templates = make([]Template, 0)
 
 	for rows.Next() {
 		var t Template
@@ -207,13 +238,28 @@ func (s *Store) ListTemplates(ctx context.Context, tenantID pgtype.UUID, q, cate
 			&t.ID, &t.TenantID, &t.Name, &t.Slug, &t.Description, &t.PageType,
 			&t.Blocks, &t.IsSystem, &t.CreatedAt, &t.UpdatedAt,
 		); err != nil {
-			return nil, fmt.Errorf("scanning template: %w", err)
+			return nil, 0, fmt.Errorf("scanning template: %w", err)
 		}
 
 		templates = append(templates, t)
 	}
 
-	return templates, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, 0, err
+	}
+
+	var total int64
+	err = s.reader.QueryRow(ctx, `
+		SELECT COUNT(*) FROM pagebuilder_templates
+		WHERE tenant_id = $1
+		  AND ($2 = '' OR name ILIKE '%' || $2 || '%' OR slug ILIKE '%' || $2 || '%' OR description ILIKE '%' || $2 || '%')
+		  AND ($3 = '' OR page_type = $3)
+	`, tenantID, q, category).Scan(&total)
+	if err != nil {
+		return nil, 0, fmt.Errorf("counting templates: %w", err)
+	}
+
+	return templates, total, nil
 }
 
 // GetTemplate returns a single template by ID, scoped to the tenant.
@@ -313,8 +359,13 @@ func (s *Store) DeleteTemplate(ctx context.Context, id, tenantID pgtype.UUID) er
 // Themes CRUD
 // ---------------------------------------------------------------------------
 
-// ListThemes returns all themes for a tenant, ordered by name.
-func (s *Store) ListThemes(ctx context.Context, tenantID pgtype.UUID, q string) ([]Theme, error) {
+// ListThemes returns a paginated list of themes for a tenant, ordered by name.
+func (s *Store) ListThemes(ctx context.Context, tenantID pgtype.UUID, q string, page, limit int32) ([]Theme, int64, error) {
+	offset := (page - 1) * limit
+	if offset < 0 {
+		offset = 0
+	}
+
 	rows, err := s.reader.Query(ctx, `
 		SELECT id, tenant_id, name, slug, description,
 		       COALESCE(colors, '{}'::jsonb),
@@ -325,13 +376,15 @@ func (s *Store) ListThemes(ctx context.Context, tenantID pgtype.UUID, q string) 
 		WHERE tenant_id = $1
 		  AND ($2 = '' OR name ILIKE '%' || $2 || '%' OR slug ILIKE '%' || $2 || '%' OR description ILIKE '%' || $2 || '%')
 		ORDER BY name
-	`, tenantID, q)
+		LIMIT $3 OFFSET $4
+	`, tenantID, q, limit, offset)
 	if err != nil {
-		return nil, fmt.Errorf("listing themes: %w", err)
+		return nil, 0, fmt.Errorf("listing themes: %w", err)
 	}
 	defer rows.Close()
 
 	var themes []Theme
+	themes = make([]Theme, 0)
 
 	for rows.Next() {
 		var t Theme
@@ -340,13 +393,27 @@ func (s *Store) ListThemes(ctx context.Context, tenantID pgtype.UUID, q string) 
 			&t.Colors, &t.Typography, &t.Spacing,
 			&t.IsDefault, &t.CreatedAt, &t.UpdatedAt,
 		); err != nil {
-			return nil, fmt.Errorf("scanning theme: %w", err)
+			return nil, 0, fmt.Errorf("scanning theme: %w", err)
 		}
 
 		themes = append(themes, t)
 	}
 
-	return themes, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, 0, err
+	}
+
+	var total int64
+	err = s.reader.QueryRow(ctx, `
+		SELECT COUNT(*) FROM pagebuilder_themes
+		WHERE tenant_id = $1
+		  AND ($2 = '' OR name ILIKE '%' || $2 || '%' OR slug ILIKE '%' || $2 || '%' OR description ILIKE '%' || $2 || '%')
+	`, tenantID, q).Scan(&total)
+	if err != nil {
+		return nil, 0, fmt.Errorf("counting themes: %w", err)
+	}
+
+	return themes, total, nil
 }
 
 // GetTheme returns a single theme by ID, scoped to the tenant.
@@ -517,9 +584,14 @@ type PageListFilter struct {
 	Status   string // exact match on status
 }
 
-// ListPages returns all pages for a tenant, ordered by created_at DESC,
-// optionally narrowed by the supplied filter.
-func (s *Store) ListPages(ctx context.Context, tenantID pgtype.UUID, f PageListFilter) ([]Page, error) {
+// ListPages returns a paginated list of pages for a tenant, ordered by
+// created_at DESC, optionally narrowed by the supplied filter.
+func (s *Store) ListPages(ctx context.Context, tenantID pgtype.UUID, f PageListFilter, page, limit int32) ([]Page, int64, error) {
+	offset := (page - 1) * limit
+	if offset < 0 {
+		offset = 0
+	}
+
 	rows, err := s.reader.Query(ctx, `
 		SELECT id, tenant_id, title, slug, description, template_id, theme_id,
 		       COALESCE(blocks, '[]'::jsonb),
@@ -532,13 +604,15 @@ func (s *Store) ListPages(ctx context.Context, tenantID pgtype.UUID, f PageListF
 		  AND ($4 = '' OR slug = $4)
 		  AND ($5 = '' OR status = $5)
 		ORDER BY created_at DESC
-	`, tenantID, f.Q, f.PageType, f.Slug, f.Status)
+		LIMIT $6 OFFSET $7
+	`, tenantID, f.Q, f.PageType, f.Slug, f.Status, limit, offset)
 	if err != nil {
-		return nil, fmt.Errorf("listing pages: %w", err)
+		return nil, 0, fmt.Errorf("listing pages: %w", err)
 	}
 	defer rows.Close()
 
 	var pages []Page
+	pages = make([]Page, 0)
 
 	for rows.Next() {
 		var p Page
@@ -547,13 +621,30 @@ func (s *Store) ListPages(ctx context.Context, tenantID pgtype.UUID, f PageListF
 			&p.TemplateID, &p.ThemeID, &p.Blocks, &p.Meta,
 			&p.Status, &p.PageType, &p.PublishedAt, &p.CreatedBy, &p.CreatedAt, &p.UpdatedAt,
 		); err != nil {
-			return nil, fmt.Errorf("scanning page: %w", err)
+			return nil, 0, fmt.Errorf("scanning page: %w", err)
 		}
 
 		pages = append(pages, p)
 	}
 
-	return pages, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, 0, err
+	}
+
+	var total int64
+	err = s.reader.QueryRow(ctx, `
+		SELECT COUNT(*) FROM pages
+		WHERE tenant_id = $1
+		  AND ($2 = '' OR title ILIKE '%' || $2 || '%' OR slug ILIKE '%' || $2 || '%' OR description ILIKE '%' || $2 || '%')
+		  AND ($3 = '' OR page_type = $3)
+		  AND ($4 = '' OR slug = $4)
+		  AND ($5 = '' OR status = $5)
+	`, tenantID, f.Q, f.PageType, f.Slug, f.Status).Scan(&total)
+	if err != nil {
+		return nil, 0, fmt.Errorf("counting pages: %w", err)
+	}
+
+	return pages, total, nil
 }
 
 // ListPublishedPages returns published pages for public consumption.
@@ -564,7 +655,7 @@ func (s *Store) ListPublishedPages(ctx context.Context, tenantID pgtype.UUID) ([
 		       COALESCE(meta, '{}'::jsonb),
 		       status, page_type, published_at, created_by, created_at, updated_at
 		FROM pages
-		WHERE tenant_id = $1 AND status = 'published' AND page_type = 'page'
+		WHERE tenant_id = $1 AND status = 'published' AND page_type IN ('page', 'landing')
 		ORDER BY created_at DESC
 	`, tenantID)
 	if err != nil {
@@ -573,6 +664,7 @@ func (s *Store) ListPublishedPages(ctx context.Context, tenantID pgtype.UUID) ([
 	defer rows.Close()
 
 	var pages []Page
+	pages = make([]Page, 0)
 
 	for rows.Next() {
 		var p Page
@@ -696,15 +788,21 @@ func (s *Store) CreatePage(ctx context.Context, tenantID, createdBy pgtype.UUID,
 }
 
 // UpdatePage updates an existing page row.
+//
+// Omitted fields are preserved: when the client sends only title+blocks (the
+// common admin-editor save), description/template_id/theme_id/meta are kept
+// intact via COALESCE. A nil json.RawMessage is passed as SQL NULL so COALESCE
+// falls back to the existing column value; a non-nil RawMessage (including `[]`
+// or `{}`) overwrites. Ref: §16; §1.3 data-loss fix.
 func (s *Store) UpdatePage(ctx context.Context, id, tenantID pgtype.UUID, input UpdatePageInput) (Page, error) {
-	blocks := input.Blocks
-	if blocks == nil {
-		blocks = json.RawMessage(`[]`)
+	var blocks any
+	if input.Blocks != nil {
+		blocks = input.Blocks
 	}
 
-	meta := input.Meta
-	if meta == nil {
-		meta = json.RawMessage(`{}`)
+	var meta any
+	if input.Meta != nil {
+		meta = input.Meta
 	}
 
 	var p Page
@@ -714,8 +812,11 @@ func (s *Store) UpdatePage(ctx context.Context, id, tenantID pgtype.UUID, input 
 		UPDATE pages
 		SET title = $3,
 		    slug = COALESCE(NULLIF($4, ''), slug),
-		    description = $5, template_id = $6,
-		    theme_id = $7, blocks = $8, meta = $9,
+		    description = COALESCE($5, description),
+		    template_id = COALESCE($6, template_id),
+		    theme_id = COALESCE($7, theme_id),
+		    blocks = COALESCE($8::jsonb, blocks),
+		    meta = COALESCE($9::jsonb, meta),
 		    status = COALESCE(NULLIF($10, ''), status),
 		    page_type = COALESCE(NULLIF($11, ''), page_type),
 		    updated_at = now()
@@ -784,7 +885,7 @@ func (s *Store) ArchivePage(ctx context.Context, id, tenantID pgtype.UUID) (Page
 
 	err := s.writer.QueryRow(ctx, `
 		UPDATE pages
-		SET status = 'archived', updated_at = now()
+		SET status = 'archived', published_at = NULL, updated_at = now()
 		WHERE id = $1 AND tenant_id = $2
 		RETURNING id, tenant_id, title, slug, description, template_id, theme_id,
 		          COALESCE(blocks, '[]'::jsonb),

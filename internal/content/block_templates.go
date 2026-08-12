@@ -264,6 +264,20 @@ func newDefaultRegistry() *BlockTemplateRegistry {
 				},
 				Category: BlockCategoryMonetization,
 			},
+			{
+				Type:        "widget",
+				Name:        "Widget",
+				Description: "Data-source-driven dynamic block backed by a widget_configurations record (Section 16)",
+				Icon:        "layout-dashboard",
+				DefaultProps: map[string]any{
+					"widget_id":    "",
+					"layout":       "grid",
+					"columns":      3,
+					"heading":      "",
+					"view_all_href": "",
+				},
+				Category: BlockCategoryData,
+			},
 		},
 	}
 }

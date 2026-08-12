@@ -729,8 +729,32 @@ export const organisationsAdminApi = {
 			status: string;
 			evidence_url?: string | null;
 			notes?: string | null;
+			form_submission_id?: string | null;
+			resolution_note?: string | null;
+			reviewed_by_username?: string | null;
+			reviewed_at?: string | null;
 			created_at: string;
 		}[]>(`/admin/organizations/pending-claims${params ? `?${params}` : ''}`),
+	claimSubmission: (claimId: string) =>
+		api<{
+			id: string;
+			form_id: string;
+			field_values: Record<string, unknown> | null;
+			status: string;
+			created_at: string;
+			claim_id: string;
+		}>(`/admin/organizations/claims/${claimId}/submission`),
+	// BUG-022/023: Org metadata endpoint for API-driven option lists (Rule 16).
+	// org_types are read from the custom_fields table (key='org_type').
+	// Admins manage org type options via the Custom Fields admin page
+	// (organization_fields group → org_type field → options editor).
+	meta: () =>
+		api<{
+			org_types: { value: string; label: string }[];
+			member_roles: { value: string; label: string }[];
+			invitation_roles: { value: string; label: string }[];
+			claim_statuses: { value: string; label: string }[];
+		}>('/organizations/meta'),
 };
 
 export const reactionsAdminApi = {

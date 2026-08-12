@@ -27,6 +27,7 @@ import HeadingContentEditor from './HeadingContentEditor.svelte';
 import CtaButtonContentEditor from './CtaButtonContentEditor.svelte';
 import ContainerContentEditor from './ContainerContentEditor.svelte';
 import CustomBlockEditor from './CustomBlockEditor.svelte';
+import WidgetContentEditor from './WidgetContentEditor.svelte';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const contentEditorRegistry: Record<Block['type'], Component<any>> = {
@@ -57,4 +58,5 @@ export const contentEditorRegistry: Record<Block['type'], Component<any>> = {
   live_rate_ticker: LiveRateTickerContentEditor,
   tabs: TabsContentEditor,
   media: MediaContentEditor,
+  widget: WidgetContentEditor,
 };

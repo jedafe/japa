@@ -44,6 +44,10 @@ var (
 	// ErrInUse indicates a resource cannot be deleted because it is
 	// referenced by other records (e.g. a field group with existing values).
 	ErrInUse = errors.New("in use")
+
+	// ErrNotImplemented indicates the operation is recognized but not yet
+	// implemented (e.g. a provider integration that is still pending).
+	ErrNotImplemented = errors.New("not implemented")
 )
 
 // WrapDuplicate wraps an error with the duplicate sentinel if it appears to be

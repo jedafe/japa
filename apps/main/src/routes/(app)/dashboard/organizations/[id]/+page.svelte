@@ -296,13 +296,19 @@
 			<label class="flex flex-col gap-1.5">
 				<span class="text-sm font-medium text-[var(--color-text)]">{t('org_admin.field_type')}</span>
 				<select class={inputClass} bind:value={orgType}>
-					<option value="business">{t('organizations.new.type_business', 'Business')}</option>
-					<option value="ngo">{t('organizations.new.type_ngo', 'NGO')}</option>
-					<option value="government">{t('organizations.new.type_government', 'Government')}</option>
-					<option value="embassy">{t('organizations.new.type_embassy', 'Embassy')}</option>
-					<option value="university">{t('organizations.new.type_university', 'University')}</option>
-					<option value="media">{t('organizations.new.type_media', 'Media')}</option>
-					<option value="community">{t('organizations.new.type_community', 'Community')}</option>
+					{#if data.orgMeta?.org_types}
+						{#each data.orgMeta.org_types as ot (ot.value)}
+							<option value={ot.value}>{ot.label}</option>
+						{/each}
+					{:else}
+						<option value="business">{t('organizations.new.type_business', 'Business')}</option>
+						<option value="ngo">{t('organizations.new.type_ngo', 'NGO')}</option>
+						<option value="government">{t('organizations.new.type_government', 'Government')}</option>
+						<option value="embassy">{t('organizations.new.type_embassy', 'Embassy')}</option>
+						<option value="university">{t('organizations.new.type_university', 'University')}</option>
+						<option value="media">{t('organizations.new.type_media', 'Media')}</option>
+						<option value="community">{t('organizations.new.type_community', 'Community')}</option>
+					{/if}
 				</select>
 			</label>
 		</div>
@@ -345,9 +351,15 @@
 			<label class="flex flex-col gap-1.5">
 				<span class="text-sm font-medium text-[var(--color-text)]">{t('org_admin.invite_role', 'Role')}</span>
 				<select class={inputClass} bind:value={inviteRole}>
-					<option value="admin">{t('org_admin.role.admin')}</option>
-					<option value="editor">{t('org_admin.role.editor', 'Editor')}</option>
-					<option value="member">{t('org_admin.role.member')}</option>
+					{#if data.orgMeta?.invitation_roles}
+						{#each data.orgMeta.invitation_roles as ir (ir.value)}
+							<option value={ir.value}>{ir.label}</option>
+						{/each}
+					{:else}
+						<option value="admin">{t('org_admin.role.admin')}</option>
+						<option value="editor">{t('org_admin.role.editor', 'Editor')}</option>
+						<option value="member">{t('org_admin.role.member')}</option>
+					{/if}
 				</select>
 			</label>
 			<button
@@ -393,10 +405,16 @@
 								class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 text-xs text-[var(--color-text)]"
 								aria-label={t('org_admin.role_label')}
 							>
-								<option value="owner">{t('org_admin.role.owner')}</option>
-								<option value="admin">{t('org_admin.role.admin')}</option>
-								<option value="editor">{t('org_admin.role.editor', 'Editor')}</option>
-								<option value="member">{t('org_admin.role.member')}</option>
+								{#if data.orgMeta?.member_roles}
+									{#each data.orgMeta.member_roles as mr (mr.value)}
+										<option value={mr.value}>{mr.label}</option>
+									{/each}
+								{:else}
+									<option value="owner">{t('org_admin.role.owner')}</option>
+									<option value="admin">{t('org_admin.role.admin')}</option>
+									<option value="editor">{t('org_admin.role.editor', 'Editor')}</option>
+									<option value="member">{t('org_admin.role.member')}</option>
+								{/if}
 							</select>
 							<button
 								type="button"

@@ -187,13 +187,19 @@
 						{t('organizations.new.field_type', 'Organization type')}
 					</label>
 					<select id="org_type" name="org_type" bind:value={orgType} class={inputClass}>
-						<option value="business">{t('organizations.new.type_business', 'Business')}</option>
-						<option value="ngo">{t('organizations.new.type_ngo', 'NGO')}</option>
-						<option value="government">{t('organizations.new.type_government', 'Government')}</option>
-						<option value="embassy">{t('organizations.new.type_embassy', 'Embassy')}</option>
-						<option value="university">{t('organizations.new.type_university', 'University')}</option>
-						<option value="media">{t('organizations.new.type_media', 'Media')}</option>
-						<option value="community">{t('organizations.new.type_community', 'Community')}</option>
+						{#if data.orgMeta?.org_types}
+							{#each data.orgMeta.org_types as ot (ot.value)}
+								<option value={ot.value}>{ot.label}</option>
+							{/each}
+						{:else}
+							<option value="business">{t('organizations.new.type_business', 'Business')}</option>
+							<option value="ngo">{t('organizations.new.type_ngo', 'NGO')}</option>
+							<option value="government">{t('organizations.new.type_government', 'Government')}</option>
+							<option value="embassy">{t('organizations.new.type_embassy', 'Embassy')}</option>
+							<option value="university">{t('organizations.new.type_university', 'University')}</option>
+							<option value="media">{t('organizations.new.type_media', 'Media')}</option>
+							<option value="community">{t('organizations.new.type_community', 'Community')}</option>
+						{/if}
 					</select>
 				</div>
 

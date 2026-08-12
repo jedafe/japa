@@ -422,3 +422,45 @@ func (h *Handlers) HandleAdminApprove(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": guide})
 }
+
+// HandleAdminReject rejects a pending housing guide (admin HITL).
+func (h *Handlers) HandleAdminReject(w http.ResponseWriter, r *http.Request) {
+	user, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+	id, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+		writeError(w, http.StatusNotFound, "housing_guide_disabled", "Housing guide is not available")
+		return
+	}
+
+	var input struct {
+		Reason string `json:"reason"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil && err.Error() != "EOF" {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		return
+	}
+
+	guide, err := h.service.Reject(r.Context(), id, tenantID, user.UserID, input.Reason)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "guide_not_found", "Housing guide not found or not pending review")
+			return
+		}
+		slog.Error("housingguide: admin reject failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "reject_failed", "Failed to reject housing guide")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": guide})
+}

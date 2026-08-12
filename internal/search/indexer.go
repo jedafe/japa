@@ -17,6 +17,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/meilisearch/meilisearch-go"
 )
@@ -32,6 +33,7 @@ const maxExcerptRunes = 200
 type Indexer struct {
 	client meilisearch.ServiceManager
 	read   *gen.Queries
+	pool   *db.DB
 }
 
 // NewIndexer creates an Indexer backed by the given Meilisearch client and
@@ -41,6 +43,13 @@ type Indexer struct {
 func NewIndexer(client meilisearch.ServiceManager, read *gen.Queries) *Indexer {
 	return &Indexer{client: client, read: read}
 }
+
+// SetPool injects the database pool for background reindex operations.
+// Optional — when nil, reindex-from-pool operations are skipped.
+func (i *Indexer) SetPool(d *db.DB) { i.pool = d }
+
+// HasPool returns true when a database pool has been injected.
+func (i *Indexer) HasPool() bool { return i.pool != nil }
 
 // contentDocument is the shape stored in the posts index. Field names match
 // the Meilisearch searchable/filterable attributes.

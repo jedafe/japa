@@ -6,7 +6,7 @@
 import { error, redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiGet, apiList } from '$lib/server/api';
-import type { OrganizationAdmin, OrgMember, ProfilePost } from '$lib/types';
+import type { OrganizationAdmin, OrgMember, OrgMeta, ProfilePost } from '$lib/types';
 
 export const load: PageServerLoad = async (event) => {
 	if (!event.locals.user) {
@@ -24,12 +24,14 @@ export const load: PageServerLoad = async (event) => {
 		throw error(status, { code, message: 'Organization not found' });
 	}
 
-	// Members + invitations + content + analytics load best-effort.
-	const [membersRes, invitationsRes, contentRes, analyticsRes] = await Promise.all([
+	// Members + invitations + content + analytics + meta load best-effort.
+	const [membersRes, invitationsRes, contentRes, analyticsRes, orgMetaRes] = await Promise.all([
 		apiList<OrgMember>(ctx, `/organizations/${id}/members`).catch(() => ({ items: [] as OrgMember[] })),
 		apiList<unknown>(ctx, `/organizations/${id}/invitations`).catch(() => ({ items: [] as unknown[] })),
 		apiList<ProfilePost>(ctx, `/organizations/${id}/content?page_size=20`).catch(() => ({ items: [] as ProfilePost[] })),
-		apiGet<unknown>(ctx, `/organizations/${id}/analytics`).catch(() => null)
+		apiGet<unknown>(ctx, `/organizations/${id}/analytics`).catch(() => null),
+		// BUG-022/023: Fetch org type + member role options from the API (Rule 16).
+		apiGet<OrgMeta>(ctx, '/organizations/meta').catch(() => null)
 	]);
 
 	return {
@@ -37,6 +39,7 @@ export const load: PageServerLoad = async (event) => {
 		members: membersRes.items,
 		invitations: invitationsRes.items,
 		content: contentRes.items,
-		analytics: analyticsRes
+		analytics: analyticsRes,
+		orgMeta: orgMetaRes
 	};
 };

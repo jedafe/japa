@@ -613,6 +613,47 @@ func (q *Queries) GetOwnershipClaimByID(ctx context.Context, arg GetOwnershipCla
 	return i, err
 }
 
+const getPendingClaimByClaimant = `-- name: GetPendingClaimByClaimant :one
+SELECT id FROM ownership_claims
+WHERE organization_id = $1 AND tenant_id = $2 AND claimant_user_id = $3 AND status = 'pending'
+LIMIT 1
+`
+
+type GetPendingClaimByClaimantParams struct {
+	OrganizationID pgtype.UUID `json:"organization_id"`
+	TenantID       pgtype.UUID `json:"tenant_id"`
+	ClaimantUserID pgtype.UUID `json:"claimant_user_id"`
+}
+
+// Checks if a user already has a pending claim for an org (BUG-010).
+// Used to prevent duplicate pending claims per user per org.
+func (q *Queries) GetPendingClaimByClaimant(ctx context.Context, arg GetPendingClaimByClaimantParams) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, getPendingClaimByClaimant, arg.OrganizationID, arg.TenantID, arg.ClaimantUserID)
+	var id pgtype.UUID
+	err := row.Scan(&id)
+	return id, err
+}
+
+const getPendingInvitationByEmail = `-- name: GetPendingInvitationByEmail :one
+SELECT id FROM organization_invitations
+WHERE organization_id = $1 AND email = $2 AND accepted_at IS NULL
+LIMIT 1
+`
+
+type GetPendingInvitationByEmailParams struct {
+	OrganizationID pgtype.UUID `json:"organization_id"`
+	Email          string      `json:"email"`
+}
+
+// Checks if a pending (un-accepted) invitation already exists for the given
+// email+org (BUG-017). Returns pgx.ErrNoRows if none exists.
+func (q *Queries) GetPendingInvitationByEmail(ctx context.Context, arg GetPendingInvitationByEmailParams) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, getPendingInvitationByEmail, arg.OrganizationID, arg.Email)
+	var id pgtype.UUID
+	err := row.Scan(&id)
+	return id, err
+}
+
 const getPendingOwnershipClaim = `-- name: GetPendingOwnershipClaim :one
 SELECT id FROM ownership_claims
 WHERE organization_id = $1 AND tenant_id = $2 AND status = 'pending'
@@ -769,13 +810,20 @@ func (q *Queries) IsOrganizationMember(ctx context.Context, arg IsOrganizationMe
 }
 
 const listOrganizationInvitations = `-- name: ListOrganizationInvitations :many
-SELECT id, organization_id, email, role, invited_by, token_hash, expires_at, accepted_at, created_at FROM organization_invitations
-WHERE organization_id = $1 AND accepted_at IS NULL
-ORDER BY created_at DESC
+SELECT oi.id, oi.organization_id, oi.email, oi.role, oi.invited_by, oi.token_hash, oi.expires_at, oi.accepted_at, oi.created_at FROM organization_invitations oi
+JOIN organizations o ON o.id = oi.organization_id AND o.tenant_id = $2
+WHERE oi.organization_id = $1 AND oi.accepted_at IS NULL
+ORDER BY oi.created_at DESC
 `
 
-func (q *Queries) ListOrganizationInvitations(ctx context.Context, organizationID pgtype.UUID) ([]OrganizationInvitation, error) {
-	rows, err := q.db.Query(ctx, listOrganizationInvitations, organizationID)
+type ListOrganizationInvitationsParams struct {
+	OrganizationID pgtype.UUID `json:"organization_id"`
+	TenantID       pgtype.UUID `json:"tenant_id"`
+}
+
+// Tenant-scoped via the organizations join (defense-in-depth, BUG-005).
+func (q *Queries) ListOrganizationInvitations(ctx context.Context, arg ListOrganizationInvitationsParams) ([]OrganizationInvitation, error) {
+	rows, err := q.db.Query(ctx, listOrganizationInvitations, arg.OrganizationID, arg.TenantID)
 	if err != nil {
 		return nil, err
 	}
@@ -807,11 +855,16 @@ func (q *Queries) ListOrganizationInvitations(ctx context.Context, organizationI
 const listOrganizationMembers = `-- name: ListOrganizationMembers :many
 SELECT om.organization_id, om.user_id, om.role, om.invited_by, om.joined_at, u.username, up.display_name, up.avatar_url
 FROM organization_members om
-JOIN users u ON u.id = om.user_id
+JOIN users u ON u.id = om.user_id AND u.tenant_id = $2
 LEFT JOIN user_profiles up ON up.user_id = u.id AND up.tenant_id = u.tenant_id
 WHERE om.organization_id = $1
 ORDER BY om.joined_at DESC
 `
+
+type ListOrganizationMembersParams struct {
+	OrganizationID pgtype.UUID `json:"organization_id"`
+	TenantID       pgtype.UUID `json:"tenant_id"`
+}
 
 type ListOrganizationMembersRow struct {
 	OrganizationID pgtype.UUID        `json:"organization_id"`
@@ -824,8 +877,9 @@ type ListOrganizationMembersRow struct {
 	AvatarUrl      *string            `json:"avatar_url"`
 }
 
-func (q *Queries) ListOrganizationMembers(ctx context.Context, organizationID pgtype.UUID) ([]ListOrganizationMembersRow, error) {
-	rows, err := q.db.Query(ctx, listOrganizationMembers, organizationID)
+// Tenant-scoped via the users join (defense-in-depth, BUG-004).
+func (q *Queries) ListOrganizationMembers(ctx context.Context, arg ListOrganizationMembersParams) ([]ListOrganizationMembersRow, error) {
+	rows, err := q.db.Query(ctx, listOrganizationMembers, arg.OrganizationID, arg.TenantID)
 	if err != nil {
 		return nil, err
 	}
@@ -1124,11 +1178,14 @@ func (q *Queries) ListOwnershipClaims(ctx context.Context, arg ListOwnershipClai
 
 const listOwnershipClaimsForAdmin = `-- name: ListOwnershipClaimsForAdmin :many
 SELECT oc.id, oc.organization_id, oc.claimant_user_id, oc.evidence_url, oc.notes, oc.created_at, oc.status,
+       oc.form_submission_id, oc.resolution_note, oc.reviewed_by, oc.reviewed_at,
        u.username AS claimant_username, u.email AS claimant_email,
-       o.name AS org_name, o.slug AS org_slug
+       o.name AS org_name, o.slug AS org_slug,
+       reviewer.username AS reviewed_by_username
 FROM ownership_claims oc
 JOIN users u ON u.id = oc.claimant_user_id
 JOIN organizations o ON o.id = oc.organization_id
+LEFT JOIN users reviewer ON reviewer.id = oc.reviewed_by
 WHERE oc.tenant_id = $1
   AND ($2::text = '' OR $2::text = 'all' OR oc.status = $2)
 ORDER BY oc.created_at DESC
@@ -1140,17 +1197,22 @@ type ListOwnershipClaimsForAdminParams struct {
 }
 
 type ListOwnershipClaimsForAdminRow struct {
-	ID               pgtype.UUID        `json:"id"`
-	OrganizationID   pgtype.UUID        `json:"organization_id"`
-	ClaimantUserID   pgtype.UUID        `json:"claimant_user_id"`
-	EvidenceUrl      *string            `json:"evidence_url"`
-	Notes            *string            `json:"notes"`
-	CreatedAt        pgtype.Timestamptz `json:"created_at"`
-	Status           string             `json:"status"`
-	ClaimantUsername string             `json:"claimant_username"`
-	ClaimantEmail    string             `json:"claimant_email"`
-	OrgName          string             `json:"org_name"`
-	OrgSlug          string             `json:"org_slug"`
+	ID                 pgtype.UUID        `json:"id"`
+	OrganizationID     pgtype.UUID        `json:"organization_id"`
+	ClaimantUserID     pgtype.UUID        `json:"claimant_user_id"`
+	EvidenceUrl        *string            `json:"evidence_url"`
+	Notes              *string            `json:"notes"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	Status             string             `json:"status"`
+	FormSubmissionID   pgtype.UUID        `json:"form_submission_id"`
+	ResolutionNote     *string            `json:"resolution_note"`
+	ReviewedBy         pgtype.UUID        `json:"reviewed_by"`
+	ReviewedAt         pgtype.Timestamptz `json:"reviewed_at"`
+	ClaimantUsername   string             `json:"claimant_username"`
+	ClaimantEmail      string             `json:"claimant_email"`
+	OrgName            string             `json:"org_name"`
+	OrgSlug            string             `json:"org_slug"`
+	ReviewedByUsername *string            `json:"reviewed_by_username"`
 }
 
 // Ref: japaconnect-engineering/sections/07-organization-profiles-claim-ownership.md
@@ -1158,6 +1220,8 @@ type ListOwnershipClaimsForAdminRow struct {
 // 'all' returns every claim (history view); any other value filters by that
 // exact status (pending|approved|rejected|withdrawn). Used by
 // GET /admin/organizations/pending-claims?status=.
+// Includes form_submission_id, resolution_note, reviewed_by, and reviewed_at
+// so the admin can inspect the claimant's submitted form data and review history.
 func (q *Queries) ListOwnershipClaimsForAdmin(ctx context.Context, arg ListOwnershipClaimsForAdminParams) ([]ListOwnershipClaimsForAdminRow, error) {
 	rows, err := q.db.Query(ctx, listOwnershipClaimsForAdmin, arg.TenantID, arg.Column2)
 	if err != nil {
@@ -1175,10 +1239,15 @@ func (q *Queries) ListOwnershipClaimsForAdmin(ctx context.Context, arg ListOwner
 			&i.Notes,
 			&i.CreatedAt,
 			&i.Status,
+			&i.FormSubmissionID,
+			&i.ResolutionNote,
+			&i.ReviewedBy,
+			&i.ReviewedAt,
 			&i.ClaimantUsername,
 			&i.ClaimantEmail,
 			&i.OrgName,
 			&i.OrgSlug,
+			&i.ReviewedByUsername,
 		); err != nil {
 			return nil, err
 		}
@@ -1398,6 +1467,26 @@ type SoftDeleteOrganizationParams struct {
 
 func (q *Queries) SoftDeleteOrganization(ctx context.Context, arg SoftDeleteOrganizationParams) error {
 	_, err := q.db.Exec(ctx, softDeleteOrganization, arg.ID, arg.TenantID)
+	return err
+}
+
+const transferOrganizationOwnership = `-- name: TransferOrganizationOwnership :exec
+UPDATE organizations
+SET owner_user_id = $2, updated_at = now()
+WHERE id = $1 AND tenant_id = $3
+`
+
+type TransferOrganizationOwnershipParams struct {
+	ID          pgtype.UUID `json:"id"`
+	OwnerUserID pgtype.UUID `json:"owner_user_id"`
+	TenantID    pgtype.UUID `json:"tenant_id"`
+}
+
+// Transfers an organization's owner_user_id to a new owner (the claimant
+// whose ownership claim was approved). Tenant-scoped for defense-in-depth.
+// Ref: japaconnect-engineering/sections/07-organization-profiles-claim-ownership.md
+func (q *Queries) TransferOrganizationOwnership(ctx context.Context, arg TransferOrganizationOwnershipParams) error {
+	_, err := q.db.Exec(ctx, transferOrganizationOwnership, arg.ID, arg.OwnerUserID, arg.TenantID)
 	return err
 }
 

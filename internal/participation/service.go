@@ -48,13 +48,42 @@ type EventTracker interface {
 	TrackSyntheticEvent(ctx context.Context, tenantID, userID pgtype.UUID, eventType, entityType string, entityID pgtype.UUID, meta map[string]any) error
 }
 
+// ActionDispatcher is the dependency-inverted interface for dispatching
+// approved persona actions to the existing action endpoints (ADR-077 §5).
+// The participation package does NOT import the comments, follows, content,
+// forum, or customfields packages — instead the server wiring injects a
+// concrete adapter that calls those services directly. This keeps the
+// participation dependency graph narrow (BUG-010).
+//
+// Each method is called as the persona's backing user (is_bot=true) and
+// receives the tenant ID, the persona's backing user_id, and the action
+// payload. The methods return the created entity ID (when applicable) and
+// an error. Implementations must tenant-scope every write.
+type ActionDispatcher interface {
+	// CreateComment posts a comment on targetContentID as the persona.
+	CreateComment(ctx context.Context, tenantID, personaUserID, targetContentID pgtype.UUID, body []byte) (pgtype.UUID, error)
+	// CreateForumThread creates a new forum thread (forum_question action).
+	CreateForumThread(ctx context.Context, tenantID, personaUserID, spaceID pgtype.UUID, title, slug string, body []byte) (pgtype.UUID, error)
+	// CreateForumReply posts a reply to a forum thread (forum_answer action).
+	CreateForumReply(ctx context.Context, tenantID, personaUserID, threadID pgtype.UUID, body []byte) (pgtype.UUID, error)
+	// ToggleFollow follows the target entity as the persona.
+	ToggleFollow(ctx context.Context, tenantID, personaUserID pgtype.UUID, entityType string, entityID pgtype.UUID) error
+	// AddReaction adds a reaction to the target entity as the persona.
+	AddReaction(ctx context.Context, tenantID, personaUserID pgtype.UUID, entityType string, entityID pgtype.UUID, reactionKey string) error
+	// CreateBookmark bookmarks the target entity as the persona.
+	CreateBookmark(ctx context.Context, tenantID, personaUserID pgtype.UUID, entityType string, entityID pgtype.UUID) error
+	// SubmitForm submits a form as the persona.
+	SubmitForm(ctx context.Context, tenantID, personaUserID, formID pgtype.UUID, fieldValues map[string]any) (pgtype.UUID, error)
+}
+
 // Service holds the business logic for the Participation Orchestration Engine.
 type Service struct {
-	db       *db.DB
-	settings *config.Settings
-	vk       valkeycompat.Cmdable
-	enqueuer TaskEnqueuer
-	tracker  EventTracker
+	db         *db.DB
+	settings   *config.Settings
+	vk         valkeycompat.Cmdable
+	enqueuer   TaskEnqueuer
+	tracker    EventTracker
+	dispatcher ActionDispatcher
 }
 
 // NewService creates a Service backed by the given database, settings, and
@@ -71,6 +100,13 @@ func (s *Service) SetEnqueuer(e TaskEnqueuer) { s.enqueuer = e }
 // platform_event with is_synthetic = true so the activity log works and
 // real-metric materialized views exclude persona activity (ADR-068 §4).
 func (s *Service) SetEventTracker(t EventTracker) { s.tracker = t }
+
+// SetDispatcher injects the action dispatcher used to route approved persona
+// actions to the existing action endpoints (ADR-077 §5, BUG-010). When unset,
+// only content-type actions (forum_question, blog_post) are dispatched via
+// the publish-content path; non-content actions (follow, react, bookmark,
+// comment, forum_answer, form_submit) are skipped with a warning.
+func (s *Service) SetDispatcher(d ActionDispatcher) { s.dispatcher = d }
 
 // highStakesCategories are the guide categories that always require human
 // review, regardless of autonomy_mode. Hardcoded per §76 — not configurable.
@@ -237,28 +273,36 @@ func (s *Service) RunActivity(ctx context.Context, personaID pgtype.UUID) error 
 }
 
 // DispatchAction executes a single approved queued persona action. Called by
-// the persona:dispatch_action task.
+// the persona:dispatch_action task. It reads the action payload from
+// content_reviews.feedback and routes the action to the correct existing
+// endpoint via the ActionDispatcher (ADR-077 §5, BUG-010).
+//
+// Content-type actions (forum_question, blog_post, discussion) are published
+// directly via the contents table. Non-content actions (comment, forum_answer,
+// follow, react, bookmark, form_submit) are dispatched through the existing
+// action services via the injected ActionDispatcher.
 func (s *Service) DispatchAction(ctx context.Context, actionID pgtype.UUID) error {
 	if !s.isEnabled(ctx) {
 		return nil
 	}
 
 	// Load the queued action from content_reviews + the content's author
-	// (the persona's backing user_id) so we can record a synthetic event.
+	// (the persona's backing user_id) + the action payload from feedback.
 	var (
 		tenantID   pgtype.UUID
 		contentID  pgtype.UUID
 		reviewerID pgtype.UUID
 		status     string
 		authorID   pgtype.UUID
+		feedback   []byte
 	)
 	err := s.db.Reader.QueryRow(ctx,
 		`SELECT cr.tenant_id, cr.content_id, cr.reviewer_user_id, cr.status,
-		        c.author_user_id
+		        c.author_user_id, cr.feedback
 		 FROM content_reviews cr
 		 JOIN contents c ON c.id = cr.content_id
-		 WHERE cr.id = $1`, actionID,
-	).Scan(&tenantID, &contentID, &reviewerID, &status, &authorID)
+		 WHERE cr.id = $1 AND cr.source = 'persona_action'`, actionID,
+	).Scan(&tenantID, &contentID, &reviewerID, &status, &authorID, &feedback)
 	if err != nil {
 		return fmt.Errorf("participation: load action: %w", err)
 	}
@@ -268,30 +312,133 @@ func (s *Service) DispatchAction(ctx context.Context, actionID pgtype.UUID) erro
 		return nil
 	}
 
-	// The action is approved — publish the content.
-	_, err = s.db.Writer.Exec(ctx,
-		`UPDATE contents SET status = 'published', published_at = now()
-		 WHERE id = $1 AND tenant_id = $2`,
-		contentID, tenantID)
-	if err != nil {
-		return fmt.Errorf("participation: publish content: %w", err)
+	// Parse the action payload to determine the routing.
+	var payload actionPayload
+	if len(feedback) > 0 {
+		if err := json.Unmarshal(feedback, &payload); err != nil {
+			return fmt.Errorf("participation: parse action payload: %w", err)
+		}
+	}
+	if payload.ActionType == "" {
+		// Legacy row queued before BUG-010 fix — default to content publish.
+		payload.ActionType = "blog_post"
 	}
 
-	// Mark the studio job or persona action as published.
-	_, _ = s.db.Writer.Exec(ctx,
-		`UPDATE studio_jobs SET status = 'published', published_at = now()
-		 WHERE draft_content_id = $1 AND tenant_id = $2`,
-		contentID, tenantID)
+	// Route the action. Content-type actions publish the draft content row
+	// directly; non-content actions call the existing action endpoints via
+	// the dispatcher (ADR-077 §5, BUG-010).
+	var dispatchedEntityID pgtype.UUID
+	switch payload.ActionType {
+	case "blog_post", "discussion", "guide", "forum_thread":
+		// Content-type action: publish the draft content row.
+		_, err = s.db.Writer.Exec(ctx,
+			`UPDATE contents SET status = 'published', published_at = now()
+			 WHERE id = $1 AND tenant_id = $2`,
+			contentID, tenantID)
+		if err != nil {
+			return fmt.Errorf("participation: publish content: %w", err)
+		}
+		dispatchedEntityID = contentID
+	case "forum_question":
+		// forum_question creates a new forum thread in the target space.
+		// The draft content row is the thread's root content; publish it
+		// first, then create the forum thread via the dispatcher.
+		_, err = s.db.Writer.Exec(ctx,
+			`UPDATE contents SET status = 'published', published_at = now()
+			 WHERE id = $1 AND tenant_id = $2`,
+			contentID, tenantID)
+		if err != nil {
+			return fmt.Errorf("participation: publish forum thread content: %w", err)
+		}
+		dispatchedEntityID = contentID
+		if s.dispatcher != nil {
+			var spaceID pgtype.UUID
+			_ = spaceID.Scan(payload.TargetSpaceID)
+			// Derive a title and slug from the body. In production the
+			// AI gateway generates a proper title; here we use a fallback.
+			title := "Persona Discussion"
+			slug := fmt.Sprintf("persona-%d", time.Now().UnixNano())
+			threadID, derr := s.dispatcher.CreateForumThread(ctx, tenantID, authorID, spaceID, title, slug, payload.Body)
+			if derr != nil {
+				slog.Error("participation: dispatch forum_question", "action_id", actionID, "error", derr)
+			} else {
+				dispatchedEntityID = threadID
+			}
+		}
+	default:
+		// Non-content action: route through the dispatcher (BUG-010).
+		if s.dispatcher == nil {
+			slog.Warn("participation: dispatch_action: no dispatcher configured, skipping non-content action",
+				"action_id", actionID, "action_type", payload.ActionType)
+			return nil
+		}
+		dispErr := s.dispatchNonContentAction(ctx, payload, tenantID, authorID)
+		if dispErr != nil {
+			slog.Error("participation: dispatch_action: non-content action failed",
+				"action_id", actionID, "action_type", payload.ActionType, "error", dispErr)
+			return dispErr
+		}
+		dispatchedEntityID = contentID
+	}
 
 	// Record a synthetic platform_event so the persona activity log works
 	// and real-metric materialized views exclude this action (ADR-068 §4, P10).
-	s.trackPersonaEvent(ctx, tenantID, authorID, "persona.action_dispatched", "content", contentID, map[string]any{
+	s.trackPersonaEvent(ctx, tenantID, authorID, "persona.action_dispatched", "content", dispatchedEntityID, map[string]any{
 		"action_id":   actionID.String(),
 		"reviewer_id": reviewerID.String(),
+		"action_type": payload.ActionType,
 	})
 
-	slog.Info("participation: dispatch_action: published", "action_id", actionID, "content_id", contentID)
+	slog.Info("participation: dispatch_action: complete", "action_id", actionID, "action_type", payload.ActionType, "content_id", contentID)
 	return nil
+}
+
+// dispatchNonContentAction routes a non-content persona action to the correct
+// existing action endpoint via the ActionDispatcher (ADR-077 §5, BUG-010).
+func (s *Service) dispatchNonContentAction(ctx context.Context, payload actionPayload, tenantID, personaUserID pgtype.UUID) error {
+	var (
+		targetContentID pgtype.UUID
+		targetEntityID  pgtype.UUID
+		targetThreadID  pgtype.UUID
+		targetFormID    pgtype.UUID
+	)
+	_ = targetContentID.Scan(payload.TargetContentID)
+	_ = targetEntityID.Scan(payload.TargetEntityID)
+	_ = targetThreadID.Scan(payload.TargetThreadID)
+	_ = targetFormID.Scan(payload.TargetFormID)
+
+	switch payload.ActionType {
+	case "comment":
+		_, err := s.dispatcher.CreateComment(ctx, tenantID, personaUserID, targetContentID, payload.Body)
+		return err
+	case "forum_answer":
+		// Look up the forum thread by the target content's content_id.
+		var threadID pgtype.UUID
+		err := s.db.Reader.QueryRow(ctx,
+			`SELECT id FROM forum_threads WHERE content_id = $1 AND tenant_id = $2`,
+			targetContentID, tenantID,
+		).Scan(&threadID)
+		if err != nil {
+			return fmt.Errorf("participation: find forum thread for answer: %w", err)
+		}
+		_, err = s.dispatcher.CreateForumReply(ctx, tenantID, personaUserID, threadID, payload.Body)
+		return err
+	case "follow":
+		return s.dispatcher.ToggleFollow(ctx, tenantID, personaUserID, payload.TargetEntityType, targetEntityID)
+	case "react":
+		return s.dispatcher.AddReaction(ctx, tenantID, personaUserID, payload.TargetEntityType, targetEntityID, payload.ReactionKey)
+	case "bookmark":
+		return s.dispatcher.CreateBookmark(ctx, tenantID, personaUserID, payload.TargetEntityType, targetEntityID)
+	case "form_submit":
+		var fieldValues map[string]any
+		if len(payload.Body) > 0 {
+			_ = json.Unmarshal(payload.Body, &fieldValues)
+		}
+		_, err := s.dispatcher.SubmitForm(ctx, tenantID, personaUserID, targetFormID, fieldValues)
+		return err
+	default:
+		return fmt.Errorf("participation: unknown action type %q", payload.ActionType)
+	}
 }
 
 // SweepActivePersonas queries all active personas across all tenants and
@@ -373,11 +520,12 @@ func (s *Service) SweepActivePersonas(ctx context.Context) error {
 
 // eligibleContent is a minimal content row for candidate selection.
 type eligibleContent struct {
-	ID             pgtype.UUID
-	GuideCategory  string
-	Tags           []string
-	AuthorID       pgtype.UUID
-	CreatedAt      time.Time
+	ID            pgtype.UUID
+	SpaceID       pgtype.UUID
+	GuideCategory string
+	Tags          []string
+	AuthorID      pgtype.UUID
+	CreatedAt     time.Time
 }
 
 // loadPersona loads a persona by ID.
@@ -429,7 +577,7 @@ func (s *Service) findEligibleContent(ctx context.Context, persona personas.Pers
 	minAge := time.Now().Add(-time.Duration(policy.MinContentAgeHours) * time.Hour)
 
 	// Build a cache key hash from the query parameters.
-	cacheHash := buildEligibleCacheHash(persona.ID, minAge, policy.AvoidOwnContent, policy.EligibleContentTypes)
+	cacheHash := buildEligibleCacheHash(persona.ID, minAge, policy.AvoidOwnContent, policy.EligibleContentTypes, policy.EligibleSpaces, policy.AvoidRecentAuthors)
 	cacheKey := valkey.MustKey("persona:eligible:%s:%s", persona.ID, cacheHash)
 
 	// Try cache first.
@@ -442,7 +590,7 @@ func (s *Service) findEligibleContent(ctx context.Context, persona personas.Pers
 		}
 	}
 
-	query := `SELECT c.id, c.guide_category, c.tags, c.author_user_id, c.created_at
+	query := `SELECT c.id, c.space_id, c.guide_category, c.tags, c.author_user_id, c.created_at
 	          FROM contents c
 	          WHERE c.tenant_id = $1
 	            AND c.status = 'published'
@@ -463,6 +611,22 @@ func (s *Service) findEligibleContent(ctx context.Context, persona personas.Pers
 		argIdx++
 	}
 
+	// eligible_spaces: empty = all spaces. When set, restrict to contents
+	// whose space slug is in the list (BUG-007 — previously ignored).
+	if len(policy.EligibleSpaces) > 0 {
+		query += ` AND EXISTS (SELECT 1 FROM spaces sp WHERE sp.id = c.space_id AND sp.tenant_id = c.tenant_id AND sp.slug = ANY($` + strconv.Itoa(argIdx) + `))`
+		args = append(args, policy.EligibleSpaces)
+		argIdx++
+	}
+
+	// avoid_recent_authors: list of usernames to never engage with
+	// (BUG-007 — previously ignored). users.username is the identifier.
+	if len(policy.AvoidRecentAuthors) > 0 {
+		query += ` AND NOT EXISTS (SELECT 1 FROM users au WHERE au.id = c.author_user_id AND au.username = ANY($` + strconv.Itoa(argIdx) + `))`
+		args = append(args, policy.AvoidRecentAuthors)
+		argIdx++
+	}
+
 	query += ` ORDER BY c.created_at DESC LIMIT 50`
 
 	rows, err := s.db.Reader.Query(ctx, query, args...)
@@ -474,7 +638,7 @@ func (s *Service) findEligibleContent(ctx context.Context, persona personas.Pers
 	var results []eligibleContent
 	for rows.Next() {
 		var c eligibleContent
-		if err := rows.Scan(&c.ID, &c.GuideCategory, &c.Tags, &c.AuthorID, &c.CreatedAt); err != nil {
+		if err := rows.Scan(&c.ID, &c.SpaceID, &c.GuideCategory, &c.Tags, &c.AuthorID, &c.CreatedAt); err != nil {
 			return nil, err
 		}
 		results = append(results, c)
@@ -495,7 +659,7 @@ func (s *Service) findEligibleContent(ctx context.Context, persona personas.Pers
 
 // buildEligibleCacheHash computes a deterministic hash of the eligible-content
 // query parameters for the jc:persona:eligible:{persona_id}:{hash} cache key.
-func buildEligibleCacheHash(personaID string, minAge time.Time, avoidOwn bool, contentTypes []string) string {
+func buildEligibleCacheHash(personaID string, minAge time.Time, avoidOwn bool, contentTypes, eligibleSpaces, avoidAuthors []string) string {
 	h := sha256.New()
 	h.Write([]byte(personaID))
 	h.Write([]byte(minAge.Format(time.RFC3339)))
@@ -505,12 +669,41 @@ func buildEligibleCacheHash(personaID string, minAge time.Time, avoidOwn bool, c
 	for _, ct := range contentTypes {
 		h.Write([]byte(ct))
 	}
+	for _, sp := range eligibleSpaces {
+		h.Write([]byte("sp:"))
+		h.Write([]byte(sp))
+	}
+	for _, au := range avoidAuthors {
+		h.Write([]byte("au:"))
+		h.Write([]byte(au))
+	}
 	return hex.EncodeToString(h.Sum(nil))[:16]
 }
 
-// selectAction picks an action type that hasn't exhausted its budget.
+// actionPriority is the deterministic order in which action types are
+// considered when selecting the next action within budget. Iterating a map
+// directly yields non-deterministic order (BUG-011); this fixed order makes
+// selection reproducible per run and biases toward higher-value actions
+// (comment, forum_answer) before lightweight ones (react, bookmark, follow).
+var actionPriority = []string{
+	"comment",
+	"forum_answer",
+	"forum_question",
+	"follow",
+	"react",
+	"bookmark",
+	"form_submit",
+}
+
+// selectAction picks an action type that hasn't exhausted its budget. It
+// iterates the action types in a deterministic priority order (BUG-011)
+// rather than over the budget map, so the same run yields the same choice.
 func (s *Service) selectAction(ctx context.Context, personaID pgtype.UUID, today string, budget map[string]int) string {
-	for action, max := range budget {
+	for _, action := range actionPriority {
+		max, ok := budget[action]
+		if !ok {
+			continue
+		}
 		used := s.getDailyCounter(ctx, personaID, today, action)
 		if used < max {
 			return action
@@ -519,21 +712,85 @@ func (s *Service) selectAction(ctx context.Context, personaID pgtype.UUID, today
 	return ""
 }
 
+// actionPayload is the JSON blob stored in content_reviews.feedback when a
+// persona action is queued. It carries everything DispatchAction needs to
+// route the action to the correct existing endpoint (ADR-077 §5, BUG-010):
+//   - action_type: the orchestration verb (comment, follow, react, ...)
+//   - target_content_id: the content the persona is engaging with
+//   - target_space_id: the space for forum_question thread creation
+//   - target_thread_id: the forum thread for forum_answer replies
+//   - target_entity_type: the polymorphic entity type for follow/react/bookmark
+//   - target_entity_id: the polymorphic entity ID for follow/react/bookmark
+//   - target_form_id: the form ID for form_submit
+//   - reaction_key: the reaction key for react
+//   - body: the AI-generated TipTap JSON body for content-bearing actions
+type actionPayload struct {
+	ActionType       string          `json:"action_type"`
+	TargetContentID  string          `json:"target_content_id,omitempty"`
+	TargetSpaceID    string          `json:"target_space_id,omitempty"`
+	TargetThreadID   string          `json:"target_thread_id,omitempty"`
+	TargetEntityType string          `json:"target_entity_type,omitempty"`
+	TargetEntityID   string          `json:"target_entity_id,omitempty"`
+	TargetFormID     string          `json:"target_form_id,omitempty"`
+	ReactionKey      string          `json:"reaction_key,omitempty"`
+	Body             json.RawMessage `json:"body,omitempty"`
+}
+
 // routeToReviewQueue creates a content_reviews entry for the persona action.
 func (s *Service) routeToReviewQueue(ctx context.Context, persona personas.PersonaDetail, content eligibleContent, actionType string) error {
-	var tenantID, userID, profileID, createdBy pgtype.UUID
+	var tenantID, userID, profileID pgtype.UUID
 	_ = tenantID.Scan(persona.TenantID)
 	_ = userID.Scan(persona.UserID)
 	_ = profileID.Scan(persona.ProfileID)
-	_ = createdBy.Scan(persona.CreatedBy)
+
+	// Build the action payload that DispatchAction will read back after
+	// approval (BUG-010, ADR-077 §5). This captures the full action context
+	// at queue time so the dispatcher can route to the correct existing
+	// endpoint without re-deriving the target.
+	payload := actionPayload{
+		ActionType: actionType,
+		Body:       json.RawMessage(`{"type":"doc"}`), // AI-generated body placeholder
+	}
+	switch actionType {
+	case "comment":
+		payload.TargetContentID = content.ID.String()
+	case "forum_answer":
+		// The eligible content is the thread's root content; the dispatcher
+		// looks up the forum thread by content_id at dispatch time.
+		payload.TargetContentID = content.ID.String()
+	case "forum_question":
+		// The persona starts a new thread in the content's space.
+		payload.TargetSpaceID = content.SpaceID.String()
+	case "follow":
+		payload.TargetEntityType = "user"
+		payload.TargetEntityID = content.AuthorID.String()
+	case "react":
+		payload.TargetEntityType = "content"
+		payload.TargetEntityID = content.ID.String()
+		payload.ReactionKey = "like" // default reaction key
+	case "bookmark":
+		payload.TargetEntityType = "content"
+		payload.TargetEntityID = content.ID.String()
+	case "form_submit":
+		// form_submit target is set by the caller; eligible content doesn't
+		// carry a form_id, so this action type requires external enrichment.
+	}
+	payloadJSON, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("marshal action payload: %w", err)
+	}
 
 	// Create a draft content for the persona action. The persona's backing
 	// user account has is_bot=true (added in migration 000246), so the
 	// content is attributed to the persona's user_id.
 	// Map the action type to a valid §14 content_type (BUG-007).
+	// For non-content actions (follow, react, bookmark, form_submit), the
+	// draft content row is still created as a record of the AI-generated
+	// body, but DispatchAction routes through the existing action endpoints
+	// instead of publishing it (BUG-010, ADR-077 §5).
 	contentType := actionTypeToContentType(actionType)
 	var contentID pgtype.UUID
-	err := s.db.Writer.QueryRow(ctx,
+	err = s.db.Writer.QueryRow(ctx,
 		`INSERT INTO contents (tenant_id, author_user_id, author_profile_id, content_type,
 		                       body, status, created_at)
 		 VALUES ($1, $2, $3, $4, $5, 'draft', now())
@@ -545,20 +802,27 @@ func (s *Service) routeToReviewQueue(ctx context.Context, persona personas.Perso
 		return fmt.Errorf("create draft: %w", err)
 	}
 
-	// Create the review entry.
+	// Create the review entry with source='persona_action' (§76, ADR-077 §4,
+	// migration 000411) so the admin queue can filter persona actions from
+	// editorial reviews. reviewer_user_id is NULL until an admin approves
+	// or rejects (BUG-009) — createdBy is the persona's creator, not the
+	// reviewer. The action payload is stored in feedback so DispatchAction
+	// can route the action to the correct existing endpoint (BUG-010).
 	_, err = s.db.Writer.Exec(ctx,
-		`INSERT INTO content_reviews (tenant_id, content_id, reviewer_user_id, status)
-		 VALUES ($1, $2, $3, 'pending')`,
-		tenantID, contentID, createdBy)
+		`INSERT INTO content_reviews (tenant_id, content_id, reviewer_user_id, status, source, feedback)
+		 VALUES ($1, $2, NULL, 'pending', 'persona_action', $3)`,
+		tenantID, contentID, payloadJSON)
 	if err != nil {
 		return fmt.Errorf("create review: %w", err)
 	}
 
 	// Record a synthetic platform_event for the queued action (ADR-068 §4, P10).
 	s.trackPersonaEvent(ctx, tenantID, userID, "persona.action_queued", "content", contentID, map[string]any{
-		"action_type":  actionType,
-		"content_type": contentType,
-		"target_content_id": content.ID.String(),
+		"action_type":        actionType,
+		"content_type":       contentType,
+		"target_content_id":  content.ID.String(),
+		"target_entity_type": payload.TargetEntityType,
+		"target_entity_id":   payload.TargetEntityID,
 	})
 
 	return nil

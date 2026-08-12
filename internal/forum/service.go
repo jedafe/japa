@@ -2,10 +2,12 @@ package forum
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
 
+	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
 )
@@ -272,6 +274,52 @@ func (s *Service) CreateReply(ctx context.Context, tenantID, threadID, authorUse
 	s.emitWebhook(ctx, tenantID, "forum.reply.created", map[string]any{
 		"reply_id": reply.ID, "thread_id": threadID, "author_id": authorUserID,
 	})
+
+	// BUG-013: Notify the thread author about the reply (fire-and-forget, Rule 8).
+	// Don't notify if the reply author is the thread author.
+	if s.notifier != nil {
+		thread, threadErr := s.store.getThreadByID(ctx, threadID, tenantID)
+		if threadErr == nil && thread.AuthorUserID != authorUserID {
+			go func() {
+				notifyCtx := context.Background()
+				subjectTitle := thread.Title
+				subjectType := "forum_thread"
+				subjectID := threadID
+				actorName := ""
+				actorAvatar := ""
+				subjectURL := fmt.Sprintf("/forum/threads/%s", threadID)
+				_ = s.notifier.DispatchNotification(
+					notifyCtx, tenantID, thread.AuthorUserID,
+					"forum_reply", subjectTitle,
+					authorUserID,
+					subjectType, subjectID,
+					subjectURL, actorName, actorAvatar,
+				)
+			}()
+		}
+	}
+
+	// BUG-011/012: Enqueue fan-out tasks for activity feed and search indexing
+	// (fire-and-forget, Rule 8).
+	if s.asynq != nil {
+		go func() {
+			payload, _ := json.Marshal(map[string]any{
+				"entity_type": "forum_reply",
+				"entity_id":   reply.ID.String(),
+				"thread_id":   threadID.String(),
+				"author_id":   authorUserID.String(),
+				"tenant_id":   tenantID.String(),
+			})
+			_, _ = s.asynq.Enqueue(
+				asynq.NewTask("content:fan_out_to_feeds", payload),
+				asynq.MaxRetry(3),
+			)
+			_, _ = s.asynq.Enqueue(
+				asynq.NewTask("search:index_entity", payload),
+				asynq.MaxRetry(3),
+			)
+		}()
+	}
 
 	return reply, nil
 }
