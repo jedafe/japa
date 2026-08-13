@@ -827,11 +827,11 @@ func (s *Service) FindNeedingReminders(ctx context.Context, tenantID pgtype.UUID
 // deadline reminder right now: the deadline must be parseable, still ahead,
 // and within the user's configured remind_before_days lead time.
 func withinReminderWindow(r gen.FindScholarshipsNeedingRemindersRow, now time.Time) bool {
-	if r.DeadlineValue == nil || *r.DeadlineValue == "" {
+	if r.DeadlineValue == "" {
 		return false
 	}
 
-	deadline, ok := parseDeadlineValue(*r.DeadlineValue)
+	deadline, ok := parseDeadlineValue(r.DeadlineValue)
 	if !ok {
 		// Unparseable deadline — skip rather than emit a malformed reminder.
 		return false
