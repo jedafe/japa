@@ -15,7 +15,7 @@ import (
 	"github.com/jedafe/japa/internal/db/gen"
 )
 
-func mustStr(s string) *string { return &s }
+func mustStr(s string) string { return s }
 
 func TestParseDeadlineValue(t *testing.T) {
 	tests := []struct {
@@ -40,7 +40,7 @@ func TestParseDeadlineValue(t *testing.T) {
 
 func TestWithinReminderWindow(t *testing.T) {
 	now := time.Date(2025, 3, 10, 12, 0, 0, 0, time.UTC)
-	row := func(deadline *string, remindDays int32) gen.FindScholarshipsNeedingRemindersRow {
+	row := func(deadline string, remindDays int32) gen.FindScholarshipsNeedingRemindersRow {
 		return gen.FindScholarshipsNeedingRemindersRow{
 			DeadlineValue:    deadline,
 			RemindBeforeDays: remindDays,
@@ -56,7 +56,6 @@ func TestWithinReminderWindow(t *testing.T) {
 		{"deadline at window edge", row(mustStr("2025-03-24"), 14), true},
 		{"beyond window", row(mustStr("2025-04-10"), 14), false},
 		{"already past", row(mustStr("2025-03-01"), 14), false},
-		{"nil deadline", row(nil, 14), false},
 		{"empty deadline", row(mustStr(""), 14), false},
 		{"unparseable deadline", row(mustStr("someday"), 14), false},
 		{"zero remind window", row(mustStr("2025-03-11"), 0), false},

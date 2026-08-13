@@ -366,10 +366,7 @@ func (a *ScholarshipAdapter) dispatchReminder(ctx context.Context, tenantID pgty
 		return nil
 	}
 
-	deadline := ""
-	if r.DeadlineValue != nil {
-		deadline = *r.DeadlineValue
-	}
+	deadline := r.DeadlineValue
 
 	title := "Scholarship deadline approaching"
 	if r.GuideTitle != "" {
