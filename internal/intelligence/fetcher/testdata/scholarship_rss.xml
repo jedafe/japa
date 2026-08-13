@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>JapaConnect Scholarship Feed</title>
+    <link>https://japaconnect.com/scholarships</link>
+    <description>Aggregated scholarship opportunities for Nigerian students.</description>
+    <language>en</language>
+    <item>
+      <title>DAAD Scholarship for Developing Countries 2026</title>
+      <link>https://www.daad.de/go/en/offerta/93037112</link>
+      <description>Postgraduate funding in Germany for applicants from eligible developing nations. Deadline 31 October 2026.</description>
+      <pubDate>Mon, 12 Aug 2026 09:00:00 GMT</pubDate>
+    </item>
+    <item>
+      <title>MEXT Scholarship Japan 2026</title>
+      <link>https://www.studyinjapan.go.jp/en/scholarship/</link>
+      <description>Monbukagakusho scholarship for undergraduate and research students in Japan. Deadline June 2026.</description>
+      <pubDate>Tue, 13 Aug 2026 09:00:00 GMT</pubDate>
+    </item>
+    <item>
+      <title>Joint Japan/World Bank Graduate Scholarship</title>
+      <link>https://www.jointjapanescheme.org/</link>
+      <description>Funds development-focused graduate study for scholars from World Bank member countries. Deadline May 2026.</description>
+      <pubDate>Wed, 14 Aug 2026 09:00:00 GMT</pubDate>
+    </item>
+  </channel>
+</rss>
