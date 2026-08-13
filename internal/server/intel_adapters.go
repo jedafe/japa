@@ -3,27 +3,33 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/intelligence/extractor"
 	"github.com/jedafe/japa/internal/intelligence/extractor/schemas"
 	"github.com/jedafe/japa/internal/intelligence/promoter"
+	intel_stores "github.com/jedafe/japa/internal/intelligence/stores"
 	"github.com/jedafe/japa/internal/intelligence/sources"
 	"github.com/jedafe/japa/internal/worker"
 )
 
 // intelSchedulerSourceAdapter wraps *sources.Store so it satisfies the
 // scheduler.DueSourceLister interface. The sources store exposes ListDue
-// (which wraps the gen.ListDueIntelSources query); the adapter renames it
-// to the method the scheduler expects.
+// (which wraps the gen.ListDueIntelSources query); the adapter passes the
+// configured tenantID through. Per ADR-112 Amendment 2, all intelligence
+// queries are tenant-scoped.
 type intelSchedulerSourceAdapter struct {
-	store *sources.Store
+	store    *sources.Store
+	tenantID pgtype.UUID
 }
 
-func (a *intelSchedulerSourceAdapter) ListDueIntelSources(ctx context.Context, limit int32) ([]gen.IntelSource, error) {
-	return a.store.ListDue(ctx, limit)
+func (a *intelSchedulerSourceAdapter) ListDue(ctx context.Context, tenantID pgtype.UUID, limit int32) ([]gen.IntelSource, error) {
+	return a.store.ListDue(ctx, tenantID, limit)
 }
 
 // intelExtractorPortAdapter wraps *extractor.Extractor so it satisfies the
@@ -37,10 +43,17 @@ type intelExtractorPortAdapter struct {
 
 // Extract calls the underlying extractor with the scholarship schema and
 // returns the marshalled extraction + aggregate confidence in the shape
-// worker.IntelExtractResult expects.
+// worker.IntelExtractResult expects. If the extractor returns
+// ErrExtractionRetriesExhausted, the error is wrapped with the worker's
+// port-level sentinel so HandleIntelExtract can detect it via errors.Is
+// and route the record to REVIEW_REQUIRED instead of failing the task
+// (BUG-16 fix).
 func (a *intelExtractorPortAdapter) Extract(ctx context.Context, sourceURL, sourceType, sourceText string) (worker.IntelExtractResult, error) {
 	result, err := a.ext.Extract(ctx, schemas.Scholarship, sourceURL, sourceType, sourceText)
 	if err != nil {
+		if errors.Is(err, extractor.ErrExtractionRetriesExhausted) {
+			return worker.IntelExtractResult{}, fmt.Errorf("%w: %v", worker.ErrIntelExtractionRetriesExhausted, err)
+		}
 		return worker.IntelExtractResult{}, err
 	}
 	raw, err := json.Marshal(result.Extraction)
@@ -48,8 +61,8 @@ func (a *intelExtractorPortAdapter) Extract(ctx context.Context, sourceURL, sour
 		return worker.IntelExtractResult{}, err
 	}
 	return worker.IntelExtractResult{
-		RawExtraction:      raw,
-		ConfidenceOverall:  aggregateConfidence(result.Extraction),
+		RawExtraction:     raw,
+		ConfidenceOverall: aggregateConfidence(result.Extraction),
 	}, nil
 }
 
@@ -89,4 +102,20 @@ func aggregateConfidence(ext extractor.Extraction) float32 {
 		sum += f.Confidence
 	}
 	return float32(sum / float64(len(ext)))
+}
+
+// intelPromoterStoreAdapter wraps *stores.Store so it satisfies the
+// promoter.Store interface, including the WithTx method whose callback
+// type differs between the two packages. The embedded *stores.Store
+// provides all CRUD methods via promotion; the adapter only overrides
+// WithTx to bridge func(*stores.Store) error → func(promoter.TxStore) error
+// (BUG-01/02 fix: §6.2 transaction boundary).
+type intelPromoterStoreAdapter struct {
+	*intel_stores.Store
+}
+
+func (a *intelPromoterStoreAdapter) WithTx(ctx context.Context, fn func(promoter.TxStore) error) error {
+	return a.Store.WithTx(ctx, func(s *intel_stores.Store) error {
+		return fn(s)
+	})
 }

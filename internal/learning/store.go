@@ -1466,8 +1466,8 @@ func (s *Store) ListEnrollmentsByUser(ctx context.Context, tenantID, userID pgty
 			TrackTitle:       r.TrackTitle,
 			ThumbnailURL:     r.ThumbnailUrl,
 			Level:            r.Level,
-			LessonsCompleted: int32(r.LessonsCompleted),
-			LessonsTotal:     int32(r.LessonsTotal),
+			LessonsCompleted: int32(r.LessonsCompleted), // #nosec G115 -- DB count, bounded by int32 column type
+			LessonsTotal:     int32(r.LessonsTotal),     // #nosec G115 -- DB count, bounded by int32 column type
 			LastActivityAt:   lastActivityAt,
 		}
 

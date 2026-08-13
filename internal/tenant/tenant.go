@@ -85,6 +85,26 @@ func Middleware(store TenantStore) func(http.Handler) http.Handler {
 	}
 }
 
+// SingleTenantMiddleware returns middleware that always injects the given
+// tenant into the request context, with no per-request database lookup.
+//
+// Use this when the platform runs as a single-tenant deployment (ADR-004
+// amendment): the default tenant is resolved once at boot and reused for
+// every request, eliminating the per-request GetTenantByHost query that
+// Middleware(store) performs. This removes a DB round-trip from every
+// request's hot path.
+//
+// When a second tenant is provisioned in the future, swap back to
+// Middleware(store) for host-based resolution.
+func SingleTenantMiddleware(t *Tenant) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			ctx := context.WithValue(r.Context(), TenantContextKey, t)
+			next.ServeHTTP(w, r.WithContext(ctx))
+		})
+	}
+}
+
 // IDFromContext returns the tenant ID from the context as pgtype.UUID.
 func IDFromContext(ctx context.Context) pgtype.UUID {
 	t := FromContext(ctx)

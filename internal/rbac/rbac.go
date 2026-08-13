@@ -23,8 +23,11 @@ import (
 )
 
 // permCacheTTL is how long permission entries live in Valkey before expiring.
-// Matches the roadmap spec: 5 minutes.
-const permCacheTTL = 5 * time.Minute
+// Extended from 5 to 10 minutes (ADR-004 amendment performance tuning):
+// permissions change rarely, and cache invalidation fires on every
+// group/role/ban/moderator change (Rule 6), so a 10-minute TTL is safe
+// and halves the DB load from permission checks for active users.
+const permCacheTTL = 10 * time.Minute
 
 // permCacheKeyPrefix namespaces all RBAC cache keys in Valkey.
 const permCacheKeyPrefix = "jc:perm:"

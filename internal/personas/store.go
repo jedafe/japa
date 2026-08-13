@@ -107,21 +107,26 @@ func (s *Store) GetAIPersonaByID(ctx context.Context, tenantID, id pgtype.UUID) 
 	})
 }
 
-// ListAIPersonas lists personas for a tenant with pagination. An empty status
-// returns all statuses.
-func (s *Store) ListAIPersonas(ctx context.Context, tenantID pgtype.UUID, status string, limit, offset int32) ([]gen.ListAIPersonasRow, error) {
+// ListAIPersonas lists personas for a tenant with pagination, optional status
+// filter, search query, and sort. An empty status returns all statuses; an
+// empty q matches all rows; sort/dir default to created_at DESC.
+func (s *Store) ListAIPersonas(ctx context.Context, tenantID pgtype.UUID, status, q, sort, dir string, limit, offset int32) ([]gen.ListAIPersonasRow, error) {
 	return s.read.ListAIPersonas(ctx, gen.ListAIPersonasParams{
 		TenantID:   tenantID,
 		Status:     status,
+		Q:          q,
+		Sort:       sort,
+		Dir:        dir,
 		PageLimit:  limit,
 		PageOffset: offset,
 	})
 }
 
-// CountAIPersonas counts personas for a tenant. An empty status counts all.
-func (s *Store) CountAIPersonas(ctx context.Context, tenantID pgtype.UUID, status string) (int64, error) {
+// CountAIPersonas counts personas for a tenant with the same status and search
+// filters applied to ListAIPersonas.
+func (s *Store) CountAIPersonas(ctx context.Context, tenantID pgtype.UUID, status, q string) (int64, error) {
 	return s.read.CountAIPersonas(ctx, gen.CountAIPersonasParams{
-		TenantID: tenantID, Status: status,
+		TenantID: tenantID, Status: status, Q: q,
 	})
 }
 

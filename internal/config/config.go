@@ -18,7 +18,8 @@ import (
 // Fields are intentionally flat — no nested structs — so it is easy to read
 // from environment variables and easy to inspect in logs or debug output.
 type Config struct {
-	DatabaseURL              string // JC_DATABASE_URL — pgx connection string for PostgreSQL
+	DatabaseURL              string // JC_DATABASE_URL — pgx connection string for PostgreSQL (writer/primary)
+	DatabaseReaderURL        string // JC_DATABASE_READER_URL — pgx connection string for read replica (empty = use DatabaseURL for reads too)
 	DBMaxConns               int32  // JC_DB_MAX_CONNS — max connections per pgxpool (0 = default 25)
 	DBMinConns               int32  // JC_DB_MIN_CONNS — min connections per pgxpool (0 = default 5)
 	DBMaxConnLifetimeMs      int    // JC_DB_MAX_CONN_LIFETIME_MS — max connection lifetime (0 = default 30m)
@@ -33,6 +34,7 @@ type Config struct {
 	MeilisearchURL           string // JC_MEILISEARCH_URL — Meilisearch HTTP endpoint
 	MeilisearchKey           string // JC_MEILISEARCH_KEY — Meilisearch master key (empty for dev)
 	GeoIPDBPath              string // JC_GEOIP_DB_PATH — path to the MaxMind GeoLite2 database file
+	MaxmindAccountID         string // JC_MAXMIND_ACCOUNT_ID — MaxMind account ID (Basic Auth username for DB downloads)
 	MaxmindLicenseKey        string // JC_MAXMIND_LICENSE_KEY — license key for downloading GeoIP databases
 	GlitchtipDSN             string // JC_GLITCHTIP_DSN — GlitchTip DSN for error reporting
 	ImgproxyKey              string // JC_IMGPROXY_KEY — signing key for imgproxy URL generation
@@ -98,6 +100,7 @@ func Load() (Config, error) {
 
 	cfg := Config{
 		DatabaseURL:              os.Getenv("JC_DATABASE_URL"),
+		DatabaseReaderURL:        os.Getenv("JC_DATABASE_READER_URL"),
 		DBMaxConns:               int32(getEnvInt("JC_DB_MAX_CONNS", 0)),
 		DBMinConns:               int32(getEnvInt("JC_DB_MIN_CONNS", 0)),
 		DBMaxConnLifetimeMs:      getEnvInt("JC_DB_MAX_CONN_LIFETIME_MS", 0),
@@ -112,6 +115,7 @@ func Load() (Config, error) {
 		MeilisearchURL:           os.Getenv("JC_MEILISEARCH_URL"),
 		MeilisearchKey:           os.Getenv("JC_MEILISEARCH_KEY"),
 		GeoIPDBPath:              os.Getenv("JC_GEOIP_DB_PATH"),
+		MaxmindAccountID:         os.Getenv("JC_MAXMIND_ACCOUNT_ID"),
 		MaxmindLicenseKey:        os.Getenv("JC_MAXMIND_LICENSE_KEY"),
 		GlitchtipDSN:             os.Getenv("JC_GLITCHTIP_DSN"),
 		ImgproxyKey:              os.Getenv("JC_IMGPROXY_KEY"),
@@ -309,10 +313,11 @@ func (c Config) IsDevelopment() bool {
 // logs in cleartext.
 func (c Config) String() string {
 	return fmt.Sprintf(
-		"Config{Env=%s, Port=%s, DatabaseURL=%s, RedisAddr=%s, MeilisearchURL=%s, ReleaseSHA=%s}",
+		"Config{Env=%s, Port=%s, DatabaseURL=%s, DatabaseReaderURL=%s, RedisAddr=%s, MeilisearchURL=%s, ReleaseSHA=%s}",
 		c.Env,
 		c.Port,
 		maskURL(c.DatabaseURL),
+		maskURL(c.DatabaseReaderURL),
 		c.RedisAddr,
 		c.MeilisearchURL,
 		c.ReleaseSHA,

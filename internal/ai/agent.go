@@ -101,10 +101,12 @@ type GeoSpaceResolver interface {
 }
 
 // RateLimiter is the subset of Valkey commands the agent uses for the
-// jc:agent:rate:{user_id}:{date} daily counter. valkeycompat.Cmdable
-// satisfies this.
+// jc:agent:rate:{user_id}:{date} daily counter and the
+// jc:agent:cost:{user_id}:{date} daily cost accumulator.
+// valkeycompat.Cmdable satisfies this.
 type RateLimiter interface {
 	Incr(ctx context.Context, key string) (int64, error)
+	IncrByFloat(ctx context.Context, key string, increment float64) (float64, error)
 	Expire(ctx context.Context, key string, ttlSeconds int) error
 }
 
@@ -212,6 +214,12 @@ func WithAgentPersona(p PersonaResolver) AgentOption {
 // TTL — the date component in the key ensures a new key is used each day,
 // so the TTL is a safety upper bound, not the exact midnight boundary.
 const agentRateLimitTTL = 24 * time.Hour
+
+// agentCostAccumulatorTTL is the TTL for jc:agent:cost:{user_id}:{date}
+// keys. Per the Valkey keys catalog: until midnight UTC. We approximate
+// this with a 24-hour TTL — the date component in the key ensures a new
+// key is used each day, so the TTL is a safety upper bound.
+const agentCostAccumulatorTTL = 24 * time.Hour
 
 // agentCatalogCacheTTL is the TTL for jc:agent:tools:{user_id} keys.
 // Per the Valkey keys catalog: 10 minutes.
@@ -580,6 +588,7 @@ func (h *AgentHandler) runLoop(
 	// User-initiated cancellation → CancelAgentSession (status = 'cancelled').
 	if cancelled {
 		h.cancelSession(ctx, session)
+		h.trackCost(ctx, userID, estimatedCost)
 		sendEvent(AgentEvent{
 			Type:      EventError,
 			SessionID: session.ID.String(),
@@ -590,6 +599,7 @@ func (h *AgentHandler) runLoop(
 
 	if loopErr != nil {
 		h.failSession(ctx, session, loopErr, toolCallCount, totalTokens, estimatedCost)
+		h.trackCost(ctx, userID, estimatedCost)
 		sendEvent(AgentEvent{
 			Type:      EventError,
 			SessionID: session.ID.String(),
@@ -602,6 +612,7 @@ func (h *AgentHandler) runLoop(
 	if maxedOut || finalResponse == "" {
 		loopErr = fmt.Errorf("agent: max tool calls exceeded (%d)", maxToolCalls)
 		h.failSession(ctx, session, loopErr, toolCallCount, totalTokens, estimatedCost)
+		h.trackCost(ctx, userID, estimatedCost)
 		sendEvent(AgentEvent{
 			Type:      EventError,
 			SessionID: session.ID.String(),
@@ -611,6 +622,7 @@ func (h *AgentHandler) runLoop(
 	}
 
 	h.completeSession(ctx, session, finalResponse, toolCallCount, totalTokens, estimatedCost)
+	h.trackCost(ctx, userID, estimatedCost)
 	sendEvent(AgentEvent{
 		Type:          EventFinalResponse,
 		SessionID:     session.ID.String(),
@@ -719,6 +731,29 @@ func (h *AgentHandler) checkRateLimit(ctx context.Context, userID, tenantID pgty
 	return nil
 }
 
+// trackCost accumulates the session's estimated cost into the
+// jc:agent:cost:{user_id}:{date} Valkey key (valkey-keys-catalog.md:237).
+// This enables per-user daily cost monitoring and budget enforcement beyond
+// the per-request cost limit. Best-effort: a Valkey error logs a warning but
+// does not fail the session.
+func (h *AgentHandler) trackCost(ctx context.Context, userID pgtype.UUID, cost float64) {
+	if h.rateLimiter == nil || cost <= 0 {
+		return
+	}
+	key := valkey.MustKey("agent:cost:%s:%s", userID.String(), time.Now().UTC().Format("2006-01-02"))
+	total, err := h.rateLimiter.IncrByFloat(ctx, key, cost)
+	if err != nil {
+		slog.Warn("ai: failed to track agent cost", "error", err)
+		return
+	}
+	// Set TTL on first increment so the key expires.
+	if total == cost {
+		if err := h.rateLimiter.Expire(ctx, key, int(agentCostAccumulatorTTL.Seconds())); err != nil {
+			slog.Warn("ai: failed to set agent cost key TTL", "error", err)
+		}
+	}
+}
+
 // buildToolCatalog returns the tool configs available to the user, filtered
 // by RBAC. The result is cached in jc:agent:tools:{user_id} for 10 minutes
 // (task 5.06). When the registry or perms checker is nil, returns nil.
@@ -786,8 +821,8 @@ func (h *AgentHandler) completeSession(ctx context.Context, session gen.AiAgentS
 	summaryPtr := &summary
 	_, err := h.sessions.CompleteAgentSession(context.WithoutCancel(ctx), gen.CompleteAgentSessionParams{
 		ResultSummary: summaryPtr,
-		ToolCallCount: int32(toolCallCount),
-		TotalTokens:   int32(totalTokens),
+		ToolCallCount: int32(toolCallCount), // #nosec G115 -- bounded by single session tool calls
+		TotalTokens:   int32(totalTokens),   // #nosec G115 -- bounded by single session token count
 		EstimatedCost: floatToNumeric(cost),
 		ID:            session.ID,
 		TenantID:      session.TenantID,
@@ -806,8 +841,8 @@ func (h *AgentHandler) failSession(ctx context.Context, session gen.AiAgentSessi
 	errMsg := loopErr.Error()
 	_, err := h.sessions.FailAgentSession(context.WithoutCancel(ctx), gen.FailAgentSessionParams{
 		ErrorMessage:  &errMsg,
-		ToolCallCount: int32(toolCallCount),
-		TotalTokens:   int32(totalTokens),
+		ToolCallCount: int32(toolCallCount), // #nosec G115 -- bounded by single session tool calls
+		TotalTokens:   int32(totalTokens),   // #nosec G115 -- bounded by single session token count
 		EstimatedCost: floatToNumeric(cost),
 		ID:            session.ID,
 		TenantID:      session.TenantID,

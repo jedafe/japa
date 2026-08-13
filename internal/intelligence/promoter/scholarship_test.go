@@ -22,6 +22,7 @@ type mockStore struct {
 	source    gen.IntelSource
 	existing  gen.Scholarship
 	hasExisting bool
+	countrySpaceID pgtype.UUID // BUG-005: country space id returned by GetCountrySpace
 
 	// recorded calls
 	createContentCalls   []gen.CreateContentParams
@@ -34,28 +35,35 @@ type mockStore struct {
 	lastScholarship gen.Scholarship
 }
 
-func (m *mockStore) GetIntelRecord(ctx context.Context, id pgtype.UUID) (gen.IntelRecord, error) {
+func (m *mockStore) GetIntelRecord(ctx context.Context, tenantID, id pgtype.UUID) (gen.IntelRecord, error) {
 	return m.record, nil
 }
 
-func (m *mockStore) GetIntelSource(ctx context.Context, id pgtype.UUID) (gen.IntelSource, error) {
+func (m *mockStore) GetIntelSource(ctx context.Context, tenantID, id pgtype.UUID) (gen.IntelSource, error) {
 	return m.source, nil
 }
 
-func (m *mockStore) GetScholarshipByIntelRecord(ctx context.Context, intelRecordID pgtype.UUID) (gen.Scholarship, error) {
+func (m *mockStore) GetScholarshipByIntelRecord(ctx context.Context, tenantID, intelRecordID pgtype.UUID) (gen.Scholarship, error) {
 	if !m.hasExisting {
 		return gen.Scholarship{}, errors.New("pgx: no rows in result set")
 	}
 	return m.existing, nil
 }
 
-func (m *mockStore) CreateContent(ctx context.Context, arg gen.CreateContentParams) (gen.CreateContentRow, error) {
+// GetCountrySpace returns the seeded country space id (BUG-005 fix). Tests
+// that want to exercise the space-resolution path set countrySpaceID; the
+// default zero value leaves country_space_id NULL.
+func (m *mockStore) GetCountrySpace(ctx context.Context, tenantID pgtype.UUID, countryCode string) (pgtype.UUID, error) {
+	return m.countrySpaceID, nil
+}
+
+func (m *mockStore) CreateContent(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateContentParams) (gen.CreateContentRow, error) {
 	m.createContentCalls = append(m.createContentCalls, arg)
 	id := pgtype.UUID{Bytes: uuid.New(), Valid: true}
 	return gen.CreateContentRow{ID: id, GuideCategory: arg.GuideCategory}, nil
 }
 
-func (m *mockStore) CreateScholarship(ctx context.Context, arg gen.CreateScholarshipParams) (gen.Scholarship, error) {
+func (m *mockStore) CreateScholarship(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateScholarshipParams) (gen.Scholarship, error) {
 	m.createScholarshipCalls = append(m.createScholarshipCalls, arg)
 	row := gen.Scholarship{
 		ID:             pgtype.UUID{Bytes: uuid.New(), Valid: true},
@@ -69,7 +77,7 @@ func (m *mockStore) CreateScholarship(ctx context.Context, arg gen.CreateScholar
 	return row, nil
 }
 
-func (m *mockStore) UpdateScholarship(ctx context.Context, arg gen.UpdateScholarshipParams) error {
+func (m *mockStore) UpdateScholarship(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateScholarshipParams) error {
 	m.updateScholarshipCalls = append(m.updateScholarshipCalls, arg)
 	// Reflect the update into lastScholarship so tests can assert final state.
 	m.lastScholarship = gen.Scholarship{
@@ -82,14 +90,21 @@ func (m *mockStore) UpdateScholarship(ctx context.Context, arg gen.UpdateScholar
 	return nil
 }
 
-func (m *mockStore) CreateIntelReviewLog(ctx context.Context, arg gen.CreateIntelReviewLogParams) error {
+func (m *mockStore) CreateIntelReviewLog(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateIntelReviewLogParams) error {
 	m.reviewLogCalls = append(m.reviewLogCalls, arg)
 	return nil
 }
 
-func (m *mockStore) UpdateIntelRecordPromoted(ctx context.Context, arg gen.UpdateIntelRecordPromotedParams) error {
+func (m *mockStore) UpdateIntelRecordPromoted(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateIntelRecordPromotedParams) error {
 	m.promotedCalls = append(m.promotedCalls, arg)
 	return nil
+}
+
+// WithTx runs fn with the mock itself as the TxStore. The mock has no real
+// database, so the transaction is a passthrough — fn's CRUD calls go to the
+// mock's recording methods directly.
+func (m *mockStore) WithTx(ctx context.Context, fn func(TxStore) error) error {
+	return fn(m)
 }
 
 func mustDate(t *testing.T, s string) pgtype.Date {

@@ -109,7 +109,13 @@ func (h *Handlers) HandleQueue(w http.ResponseWriter, r *http.Request) {
 		orderCol = "COALESCE(p.display_name, u.username)"
 	}
 	offset := (page - 1) * pageSize
-	listArgs := []interface{}{t.ID, pageSize, offset}
+	// Build args starting with tenant_id only. pageSize and offset are
+	// appended at the end after all WHERE-clause params, so placeholder
+	// indices for LIMIT/OFFSET are correct regardless of whether search
+	// is present (BUG-002 — previously pageSize/offset were in the initial
+	// args, causing $2=search to receive pageSize and $3=LIMIT to receive
+	// offset when search was provided).
+	listArgs := []interface{}{t.ID}
 	listQuery := `SELECT cr.id, cr.content_id, c.content_type, cr.status, cr.created_at,
 			        COALESCE(p.display_name, u.username) as persona_name
 			 FROM content_reviews cr
@@ -123,7 +129,6 @@ func (h *Handlers) HandleQueue(w http.ResponseWriter, r *http.Request) {
 		listArgs = append(listArgs, search)
 		argIdx++
 	}
-	// Re-index page/pageSize/offset after the optional search param.
 	listQuery += ` ORDER BY ` + orderCol + ` ` + sortDir + ` LIMIT $` + strconv.Itoa(argIdx) + ` OFFSET $` + strconv.Itoa(argIdx+1)
 	listArgs = append(listArgs, pageSize, offset)
 

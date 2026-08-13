@@ -20,16 +20,23 @@ const UpdateURL = "https://download.maxmind.com/geoip/databases/GeoLite2-City/up
 
 // Updater handles downloading and applying GeoLite2 database updates.
 type Updater struct {
+	accountID  string
 	licenseKey string
 	dbPath     string
 	reader     *Reader
 }
 
 // NewUpdater creates an Updater that downloads updates using the
-// given MaxMind license key and stores the database at dbPath.
-// The reader is used to atomically swap in the new database.
-func NewUpdater(licenseKey, dbPath string, reader *Reader) *Updater {
+// given MaxMind account ID and license key, and stores the database at
+// dbPath. The reader is used to atomically swap in the new database.
+//
+// MaxMind's download endpoint requires the Account ID as the Basic Auth
+// username and the License Key as the password. If accountID is empty,
+// the license key is used as both (backward compatibility with older
+// configs that only set JC_MAXMIND_LICENSE_KEY).
+func NewUpdater(accountID, licenseKey, dbPath string, reader *Reader) *Updater {
 	return &Updater{
+		accountID:  accountID,
 		licenseKey: licenseKey,
 		dbPath:     dbPath,
 		reader:     reader,
@@ -51,7 +58,19 @@ func (u *Updater) DownloadAndUpdate() error {
 		return fmt.Errorf("creating update request: %w", err)
 	}
 
-	req.SetBasicAuth(u.licenseKey, u.licenseKey)
+	// MaxMind requires a User-Agent header; requests without one may be
+	// rejected with HTTP 403.
+	req.Header.Set("User-Agent", "JapaConnect-GeoIP-Updater/1.0")
+
+	// MaxMind's download endpoint uses Basic Auth with the Account ID as
+	// the username and the License Key as the password. Fall back to the
+	// license key as the username when no account ID is configured (older
+	// configs that only set JC_MAXMIND_LICENSE_KEY).
+	username := u.accountID
+	if username == "" {
+		username = u.licenseKey
+	}
+	req.SetBasicAuth(username, u.licenseKey)
 
 	client := &http.Client{Timeout: 5 * time.Minute}
 

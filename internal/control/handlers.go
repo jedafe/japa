@@ -44,23 +44,23 @@ type HonchoHealthChecker interface {
 
 // Handlers holds dependencies for control panel HTTP handlers.
 type Handlers struct {
-	Service          *Service
-	DB               *db.DB
-	FeatureChecker   *features.Checker
-	SpamStore        *spam.Store
-	PublicAPI        *publicapi.Handlers
-	Inspector        *asynq.Inspector
-	Client           *asynq.Client
-	RBAC             *rbac.RBAC
-	Settings         *config.Settings
-	Valkey           valkeycompat.Cmdable
-	MeiliSearch      meilisearch.ServiceManager
-	WSHub            *websocket.Hub
-	Honcho           HonchoHealthChecker
-	AIStore          *ai.Store
-	ProviderStore    *ai.ProviderStore
-	AIDispatcher     *ai.Dispatcher
-	StartTime        time.Time
+	Service        *Service
+	DB             *db.DB
+	FeatureChecker *features.Checker
+	SpamStore      *spam.Store
+	PublicAPI      *publicapi.Handlers
+	Inspector      *asynq.Inspector
+	Client         *asynq.Client
+	RBAC           *rbac.RBAC
+	Settings       *config.Settings
+	Valkey         valkeycompat.Cmdable
+	MeiliSearch    meilisearch.ServiceManager
+	WSHub          *websocket.Hub
+	Honcho         HonchoHealthChecker
+	AIStore        *ai.Store
+	ProviderStore  *ai.ProviderStore
+	AIDispatcher   *ai.Dispatcher
+	StartTime      time.Time
 }
 
 // NewHandlers creates a new Handlers.
@@ -491,7 +491,7 @@ func (h *Handlers) UpdateSystemSetting(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var input struct {
-		Value    any  `json:"value"`
+		Value    any   `json:"value"`
 		IsPublic *bool `json:"is_public"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -729,7 +729,7 @@ func (h *Handlers) UpdateTenantSettingKey(w http.ResponseWriter, r *http.Request
 		return
 	}
 	var input struct {
-		Value    any  `json:"value"`
+		Value    any   `json:"value"`
 		IsPublic *bool `json:"is_public"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -909,16 +909,36 @@ func (h *Handlers) HealthCheck(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) DBHealthCheck(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	// Measure latency with ping.
+	// Check both pools: Writer is always the primary; Reader is the replica
+	// when JC_DATABASE_READER_URL is set, otherwise it is also the primary.
+	// This lets the control panel show the status of both nodes.
 	start := time.Now()
-	if err := h.DB.Reader.Ping(ctx); err != nil {
-		slog.Error("control: db health check", "error", err)
+	readerErr := h.DB.Reader.Ping(ctx)
+	readerLatency := time.Since(start).Milliseconds()
+
+	start = time.Now()
+	writerErr := h.DB.Writer.Ping(ctx)
+	writerLatency := time.Since(start).Milliseconds()
+
+	if readerErr != nil && writerErr != nil {
+		slog.Error("control: db health check", "reader_error", readerErr, "writer_error", writerErr)
 		writeJSON(w, http.StatusServiceUnavailable, map[string]any{
-			"data": map[string]any{"status": "unhealthy", "error": err.Error()},
+			"data": map[string]any{"status": "unhealthy", "error": readerErr.Error()},
 		})
 		return
 	}
-	latency := time.Since(start).Milliseconds()
+
+	if readerErr != nil {
+		slog.Warn("control: db reader pool unreachable", "error", readerErr)
+	}
+	if writerErr != nil {
+		slog.Warn("control: db writer pool unreachable", "error", writerErr)
+	}
+
+	latency := readerLatency
+	if readerErr != nil {
+		latency = writerLatency
+	}
 
 	// Database version.
 	var version string
@@ -939,12 +959,12 @@ func (h *Handlers) DBHealthCheck(w http.ResponseWriter, r *http.Request) {
 	// Table details — includes dead_tuple_ratio from pg_stat_user_tables
 	// (Ref: japaconnect-engineering/sections/21-control-panel.md — Database Health Tooling).
 	type tableInfo struct {
-		Name            string  `json:"name"`
-		RowCount        int64   `json:"row_count"`
-		SizeBytes       int64   `json:"size_bytes"`
-		IndexCount      int     `json:"index_count"`
-		LastVacuum      *string `json:"last_vacuum"`
-		DeadTupleRatio  float64 `json:"dead_tuple_ratio"`
+		Name           string  `json:"name"`
+		RowCount       int64   `json:"row_count"`
+		SizeBytes      int64   `json:"size_bytes"`
+		IndexCount     int     `json:"index_count"`
+		LastVacuum     *string `json:"last_vacuum"`
+		DeadTupleRatio float64 `json:"dead_tuple_ratio"`
 	}
 	var tables []tableInfo
 	rows, err := h.DB.Reader.Query(ctx, `
@@ -1065,8 +1085,8 @@ func (h *Handlers) DBHealthCheck(w http.ResponseWriter, r *http.Request) {
 
 	// Replication.
 	type replicationInfo struct {
-		State       string  `json:"state"`
-		LagSeconds  float64 `json:"lag_seconds"`
+		State      string  `json:"state"`
+		LagSeconds float64 `json:"lag_seconds"`
 	}
 	var repl *replicationInfo
 	var isRecovery bool
@@ -1135,7 +1155,7 @@ func (h *Handlers) DBHealthCheck(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
-			"connected":         true,
+			"connected":         readerErr == nil || writerErr == nil,
 			"version":           version,
 			"latency_ms":        latency,
 			"size_bytes":        sizeBytes,
@@ -1152,6 +1172,18 @@ func (h *Handlers) DBHealthCheck(w http.ResponseWriter, r *http.Request) {
 				"idle":   idleConns,
 				"max":    maxConns,
 			},
+			"pools": map[string]any{
+				"primary": map[string]any{
+					"role":       "primary",
+					"reachable":  writerErr == nil,
+					"latency_ms": writerLatency,
+				},
+				"reader": map[string]any{
+					"role":       "reader",
+					"reachable":  readerErr == nil,
+					"latency_ms": readerLatency,
+				},
+			},
 			"replication": repl,
 		},
 	})
@@ -1163,7 +1195,7 @@ func (h *Handlers) DBVacuum(w http.ResponseWriter, r *http.Request) {
 	// vacuumed (table_name=""). A malformed body is rejected with 400 so
 	// a bad request does not silently trigger a full-database VACUUM.
 	var payload struct {
-		Version   int    `json:"version"`    // payload schema version (current: 1)
+		Version   int    `json:"version"` // payload schema version (current: 1)
 		TableName string `json:"table_name"`
 		Full      bool   `json:"full"`
 	}
@@ -1217,12 +1249,12 @@ func (h *Handlers) QueueStats(w http.ResponseWriter, r *http.Request) {
 	if h.Inspector == nil {
 		writeJSON(w, http.StatusOK, map[string]any{
 			"data": map[string]any{
-				"queues":               []any{},
-				"total_pending":        0,
-				"total_active":         0,
-				"total_completed_24h":  0,
-				"total_failed_24h":     0,
-				"dlq_count":            0,
+				"queues":              []any{},
+				"total_pending":       0,
+				"total_active":        0,
+				"total_completed_24h": 0,
+				"total_failed_24h":    0,
+				"dlq_count":           0,
 			},
 		})
 		return
@@ -1280,12 +1312,12 @@ func (h *Handlers) QueueStats(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
-			"queues":               queues,
-			"total_pending":        totalPending,
-			"total_active":         totalActive,
-			"total_completed_24h":  totalCompleted,
-			"total_failed_24h":     totalFailed,
-			"dlq_count":            dlqDepth,
+			"queues":              queues,
+			"total_pending":       totalPending,
+			"total_active":        totalActive,
+			"total_completed_24h": totalCompleted,
+			"total_failed_24h":    totalFailed,
+			"dlq_count":           dlqDepth,
 		},
 	})
 }
@@ -1306,14 +1338,14 @@ func (h *Handlers) ListDLQ(w http.ResponseWriter, r *http.Request) {
 		}
 		for _, entry := range entries {
 			tasks = append(tasks, map[string]any{
-				"task_id":      entry.ID,
-				"task_type":    entry.Type,
-				"queue":        queueName,
-				"payload":      string(entry.Payload),
+				"task_id":       entry.ID,
+				"task_type":     entry.Type,
+				"queue":         queueName,
+				"payload":       string(entry.Payload),
 				"error_message": entry.LastErr,
-				"retry_count":  entry.Retried,
-				"max_retries":  entry.MaxRetry,
-				"failed_at":    entry.LastFailedAt.Format(time.RFC3339),
+				"retry_count":   entry.Retried,
+				"max_retries":   entry.MaxRetry,
+				"failed_at":     entry.LastFailedAt.Format(time.RFC3339),
 			})
 		}
 	}
@@ -1339,14 +1371,14 @@ func (h *Handlers) ListQueueTasks(w http.ResponseWriter, r *http.Request) {
 	}
 
 	type taskSummary struct {
-		ID          string    `json:"id"`
-		Type        string    `json:"type"`
-		State       string    `json:"state"`
-		Payload     string    `json:"payload"`
-		RetryCount  int       `json:"retry_count"`
-		MaxRetry    int       `json:"max_retry"`
-		LastErr     string    `json:"last_err,omitempty"`
-		LastFailedAt *string  `json:"last_failed_at,omitempty"`
+		ID            string  `json:"id"`
+		Type          string  `json:"type"`
+		State         string  `json:"state"`
+		Payload       string  `json:"payload"`
+		RetryCount    int     `json:"retry_count"`
+		MaxRetry      int     `json:"max_retry"`
+		LastErr       string  `json:"last_err,omitempty"`
+		LastFailedAt  *string `json:"last_failed_at,omitempty"`
 		NextProcessAt *string `json:"next_process_at,omitempty"`
 	}
 
@@ -1491,15 +1523,15 @@ func (h *Handlers) DiscardAllDLQ(w http.ResponseWriter, r *http.Request) {
 // ---------------------------------------------------------------------------
 
 type cacheNamespace struct {
-	Prefix            string  `json:"prefix"`
-	KeyCount          int64   `json:"key_count"`
-	MemoryEstimateMB  float64 `json:"memory_estimate_mb"`
+	Prefix           string  `json:"prefix"`
+	KeyCount         int64   `json:"key_count"`
+	MemoryEstimateMB float64 `json:"memory_estimate_mb"`
 }
 
 type cacheStatsResponse struct {
-	Namespaces      []cacheNamespace `json:"namespaces"`
-	TotalKeys       int64            `json:"total_keys"`
-	TotalMemoryMB   float64          `json:"total_memory_mb"`
+	Namespaces    []cacheNamespace `json:"namespaces"`
+	TotalKeys     int64            `json:"total_keys"`
+	TotalMemoryMB float64          `json:"total_memory_mb"`
 }
 
 func (h *Handlers) CacheStats(w http.ResponseWriter, r *http.Request) {
@@ -1536,9 +1568,9 @@ func (h *Handlers) CacheStats(w http.ResponseWriter, r *http.Request) {
 	}
 
 	stats := cacheStatsResponse{
-		Namespaces:     namespaces,
-		TotalKeys:      totalKeys,
-		TotalMemoryMB:  totalMemoryMB,
+		Namespaces:    namespaces,
+		TotalKeys:     totalKeys,
+		TotalMemoryMB: totalMemoryMB,
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": stats})
 }
@@ -2272,8 +2304,8 @@ func (h *Handlers) ListDeployments(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"data": []map[string]any{
 			{
-				"version":  "1.0.0",
-				"status":   "active",
+				"version":     "1.0.0",
+				"status":      "active",
 				"deployed_at": h.StartTime.Format(time.RFC3339),
 			},
 		},

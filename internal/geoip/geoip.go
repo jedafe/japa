@@ -13,7 +13,6 @@ package geoip
 import (
 	"context"
 	"net"
-	"sync"
 	"sync/atomic"
 
 	"github.com/oschwald/geoip2-golang"
@@ -56,7 +55,6 @@ func FromContext(ctx context.Context) GeoContext {
 // stored atomically so database updates can swap it without locking.
 type Reader struct {
 	current atomic.Pointer[geoip2.Reader]
-	mu      sync.Mutex
 }
 
 // NewReader opens a GeoLite2 database file and returns a Reader.
@@ -137,20 +135,22 @@ func (r *Reader) Lookup(ipStr string) GeoContext {
 // a new .mmdb file. The old reader is closed and the new one takes effect
 // immediately for all subsequent lookups - no server restart needed.
 func (r *Reader) Swap(newReader *geoip2.Reader) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
 	old := r.current.Swap(newReader)
 	if old != nil {
 		_ = old.Close()
 	}
 }
 
-// Close releases the database reader resources.
+// Close releases the database reader resources. It atomically swaps the
+// pointer to nil before closing the taken reader, so concurrent Lookup
+// and IsLoaded calls see an unloaded state immediately (not a closed
+// reader that would produce errors). This also prevents a double-close
+// race with Swap: only one of Close or Swap can win the Swap(nil) /
+// Swap(newReader) and take ownership of the old reader.
 func (r *Reader) Close() {
-	reader := r.current.Load()
-	if reader != nil {
-		_ = reader.Close()
+	old := r.current.Swap(nil)
+	if old != nil {
+		_ = old.Close()
 	}
 }
 

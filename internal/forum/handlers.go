@@ -52,12 +52,21 @@ type MentionNotifier interface {
 	) error
 }
 
+// RAGEntityIndexer is the subset of the RAG indexer that forum needs to
+// index thread content into content_embeddings (§69/ADR-069). Implemented
+// by rag.Service; nil disables RAG indexing (graceful degradation).
+type RAGEntityIndexer interface {
+	IndexEntity(ctx context.Context, tenantID pgtype.UUID, entityType string, entityID pgtype.UUID, body, language string) error
+	PurgeEntity(ctx context.Context, tenantID pgtype.UUID, entityType string, entityID pgtype.UUID) error
+}
+
 // Handlers holds dependencies for forum HTTP handlers.
 type Handlers struct {
 	Service         *Service
 	jsonldResolver  JSONLDResolver
 	notifier        MentionNotifier      // nil disables mention notifications (test-only)
 	mentionCheckers *mentions.DBCheckers // nil disables erased-mention redaction
+	ragIndexer      RAGEntityIndexer     // nil disables RAG indexing (§69)
 }
 
 // NewHandlers creates Handlers with the given Service and optional JSON-LD
@@ -76,6 +85,50 @@ func (h *Handlers) SetMentionNotifier(n MentionNotifier) { h.notifier = n }
 // redact mentions of deleted users in thread/reply responses (Section 15 /
 // ADR-029). nil disables redaction (backward compat / tests).
 func (h *Handlers) SetMentionCheckers(c *mentions.DBCheckers) { h.mentionCheckers = c }
+
+// SetRAGIndexer injects the RAG indexer for embedding forum threads into
+// content_embeddings (§69/ADR-069 BUG-001 fix). nil disables RAG indexing.
+func (h *Handlers) SetRAGIndexer(r RAGEntityIndexer) { h.ragIndexer = r }
+
+// indexThreadRAG fires-and-forgets a RAG indexing call for a forum thread.
+// Errors are logged, never propagated (Rule 8). The body is the thread title
+// + body concatenated for embedding.
+func (h *Handlers) indexThreadRAG(ctx context.Context, tenantID, threadID pgtype.UUID, title string, body []byte) {
+	if h.ragIndexer == nil {
+		return
+	}
+	text := title
+	if len(body) > 0 {
+		if text != "" {
+			text += "\n\n"
+		}
+		text += string(body)
+	}
+	if text == "" {
+		return
+	}
+	go func() { // #nosec G118 -- fire-and-forget: request ctx is cancelled on HTTP return (Rule 8)
+		bgCtx := context.Background()
+		if err := h.ragIndexer.IndexEntity(bgCtx, tenantID, "forum_thread", threadID, text, "en"); err != nil {
+			slog.Warn("forum: RAG index failed for thread",
+				"thread_id", threadID.String(), "error", err)
+		}
+	}()
+}
+
+// purgeThreadRAG fires-and-forgets a RAG purge for a deleted forum thread.
+func (h *Handlers) purgeThreadRAG(ctx context.Context, tenantID, threadID pgtype.UUID) {
+	if h.ragIndexer == nil {
+		return
+	}
+	go func() { // #nosec G118 -- fire-and-forget: request ctx is cancelled on HTTP return (Rule 8)
+		bgCtx := context.Background()
+		if err := h.ragIndexer.PurgeEntity(bgCtx, tenantID, "forum_thread", threadID); err != nil {
+			slog.Warn("forum: RAG purge failed for thread",
+				"thread_id", threadID.String(), "error", err)
+		}
+	}()
+}
 
 // ---------------------------------------------------------------------------
 // Shared helpers
@@ -156,7 +209,7 @@ func parsePageSize(r *http.Request) int32 {
 		return MaxPageSize
 	}
 
-	return int32(n) //nolint:gosec // G109: bounded by MaxPageSize check above
+	return int32(n) // #nosec G109 G115 -- bounded by MaxPageSize check above
 }
 
 // parseCursorCreatedAt extracts the cursor_created_at query parameter.
@@ -262,6 +315,10 @@ func (h *Handlers) CreateThread(w http.ResponseWriter, r *http.Request) {
 
 	// Dispatch @mention notifications — fire-and-forget (BL-002, Section 15).
 	h.dispatchMentionNotifications(r.Context(), tenantID, user.UserID, thread.ID, spaceID, input.Body, "mention.content")
+
+	// RAG indexing — fire-and-forget (§69/ADR-069 BUG-001 fix: forum threads
+	// are part of the RAG corpus).
+	h.indexThreadRAG(r.Context(), tenantID, thread.ID, input.Title, input.Body)
 
 	writeJSON(w, http.StatusCreated, map[string]any{"data": thread})
 }
@@ -659,6 +716,9 @@ func (h *Handlers) UpdateThread(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// RAG re-indexing — fire-and-forget (§69/ADR-069 BUG-001 fix).
+	h.indexThreadRAG(r.Context(), tenantID, id, input.Title, input.Body)
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": thread})
 }
 
@@ -684,6 +744,10 @@ func (h *Handlers) DeleteThread(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
+	// RAG purge — fire-and-forget (§69/ADR-069 BUG-001 fix: deleted threads
+	// must not be retrievable in RAG).
+	h.purgeThreadRAG(r.Context(), tenantID, id)
 
 	writeJSON(w, http.StatusNoContent, nil)
 }
@@ -1162,7 +1226,7 @@ func parsePageSizeOffset(r *http.Request) int32 {
 		return 0
 	}
 
-	return int32(n) //nolint:gosec // G109: bounded by MaxPageSize check above
+	return int32(n) // #nosec G109 G115 -- bounded by MaxPageSize check above
 }
 
 // ---------------------------------------------------------------------------

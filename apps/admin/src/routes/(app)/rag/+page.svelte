@@ -6,11 +6,13 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Brain, RefreshCw, Trash2, Database, FileText, Settings } from 'lucide-svelte';
+	import { Modal } from '$lib/components/ui/modal';
 	import { api } from '$lib/api';
 
 	type EntityTypeStats = {
 		entity_type: string;
 		chunk_count: number;
+		entity_count: number;
 	};
 
 	type IndexStats = {
@@ -35,6 +37,12 @@
 	let reindexing = $state(false);
 	let message = $state('');
 	let messageType = $state('');
+
+	// Purge confirmation state — the by_type table is an aggregate view, so
+	// the purge button purges ALL embeddings for the entity type. A
+	// confirmation modal is shown before the destructive DELETE.
+	let purgeModalOpen = $state(false);
+	let pendingPurgeType = $state('');
 
 	// Settings state
 	let settings = $state<RagSettings | null>(null);
@@ -134,9 +142,22 @@
 		}
 	}
 
-	async function purgeEntity(entityType: string, entityId: string) {
+	async function confirmPurgeType(entityType: string) {
+		pendingPurgeType = entityType;
+		purgeModalOpen = true;
+	}
+
+	async function executePurge() {
+		const entityType = pendingPurgeType;
+		purgeModalOpen = false;
+		pendingPurgeType = '';
 		try {
-			const result = await api(`/admin/rag/entity/${entityType}/${entityId}`, { method: 'DELETE' });
+			// BUG-004 fix: the by_type table is an aggregate view. The DELETE
+			// /admin/rag/entity/{type}/{id} route expects a specific entity
+			// UUID, not a type. We use a sentinel "all" id to signal a
+			// type-level purge; the backend handler treats id="all" as
+			// "purge all embeddings for this entity_type".
+			const result = await api(`/admin/rag/entity/${entityType}/all`, { method: 'DELETE' });
 			if (result.ok) {
 				messageType = 'success';
 				message = t('rag.purge_success');
@@ -236,6 +257,7 @@
 					<thead style="background: var(--color-surface-alt)">
 						<tr>
 							<th class="px-4 py-2 text-left font-medium" style="color: var(--color-muted)">{t('rag.entity_type')}</th>
+							<th class="px-4 py-2 text-right font-medium" style="color: var(--color-muted)">{t('rag.total_entities')}</th>
 							<th class="px-4 py-2 text-right font-medium" style="color: var(--color-muted)">{t('rag.chunk_count')}</th>
 							{#if canManage}
 								<th class="px-4 py-2 text-right font-medium" style="color: var(--color-muted)">{t('rag.purge')}</th>
@@ -248,13 +270,14 @@
 								<td class="px-4 py-2" style="color: var(--color-foreground)">
 									<Badge variant="outline">{et.entity_type}</Badge>
 								</td>
+								<td class="px-4 py-2 text-right font-mono" style="color: var(--color-foreground)">{et.entity_count.toLocaleString()}</td>
 								<td class="px-4 py-2 text-right font-mono" style="color: var(--color-foreground)">{et.chunk_count.toLocaleString()}</td>
 								{#if canManage}
 									<td class="px-4 py-2 text-right">
 										<Button
 											variant="destructive"
 											size="sm"
-											onclick={() => purgeEntity(et.entity_type, et.entity_type)}
+											onclick={() => confirmPurgeType(et.entity_type)}
 										>
 											<Trash2 class="h-3 w-3" />
 											{t('rag.purge')}
@@ -268,6 +291,20 @@
 			</div>
 		</div>
 	{/if}
+{/if}
+
+{#if purgeModalOpen}
+	<Modal bind:open={purgeModalOpen} title={t('rag.purge')} description={t('rag.confirm_purge')} size="sm">
+		<div class="flex justify-end gap-2 pt-4">
+			<Button variant="outline" onclick={() => { purgeModalOpen = false; pendingPurgeType = ''; }}>
+				{t('rag.cancel_purge', 'Cancel')}
+			</Button>
+			<Button variant="destructive" onclick={executePurge}>
+				<Trash2 class="h-4 w-4" />
+				{t('rag.purge')}
+			</Button>
+		</div>
+	</Modal>
 {/if}
 
 {#if canManage && !settingsLoading && settings}
@@ -305,16 +342,14 @@
 							{t('rag.setting_embedding_model')}
 						</label>
 						<p class="text-xs" style="color: var(--color-muted)">{t('rag.setting_embedding_model_help')}</p>
-						<select
+						<input
 							id="rag-model"
+							type="text"
 							bind:value={settingsForm.embedding_model}
+							placeholder="text-embedding-3-small"
 							class="rounded-md border px-3 py-2 text-sm"
 							style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
-						>
-							<option value="text-embedding-3-small">text-embedding-3-small</option>
-							<option value="text-embedding-3-large">text-embedding-3-large</option>
-							<option value="text-embedding-ada-002">text-embedding-ada-002</option>
-						</select>
+						/>
 					</div>
 
 					<div class="grid gap-1">

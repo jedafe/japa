@@ -10,34 +10,37 @@ import (
 )
 
 // Store provides database operations for the analytics subsystem.
-// All queries use sqlc-generated Queries against the Writer pool for
-// writes and Reader pool for reads.
+// Uses the Reader pool for read queries and Writer pool for writes,
+// matching the reader/writer separation pattern used across the codebase.
 type Store struct {
-	queries *gen.Queries
+	read  *gen.Queries
+	write *gen.Queries
 }
 
-// NewStore creates a Store backed by the Writer pool.
+// NewStore creates a Store backed by both Reader and Writer pools.
 func NewStore(database *db.DB) *Store {
 	return &Store{
-		queries: gen.New(database.Writer),
+		read:  gen.New(database.Reader),
+		write: gen.New(database.Writer),
 	}
 }
 
-// NewStoreWithReader creates a Store using the Reader pool.
+// NewStoreWithReader creates a Store using only the Reader pool (read-only).
 func NewStoreWithReader(database *db.DB) *Store {
 	return &Store{
-		queries: gen.New(database.Reader),
+		read:  gen.New(database.Reader),
+		write: gen.New(database.Reader),
 	}
 }
 
 // CreatePlatformEvent records a new platform event.
 func (s *Store) CreatePlatformEvent(ctx context.Context, p gen.CreatePlatformEventParams) (gen.CreatePlatformEventRow, error) {
-	return s.queries.CreatePlatformEvent(ctx, p)
+	return s.write.CreatePlatformEvent(ctx, p)
 }
 
 // ListPlatformEvents returns events matching the given filters.
 func (s *Store) ListPlatformEvents(ctx context.Context, tenantID pgtype.UUID, filter EventFilter) ([]gen.ListPlatformEventsRow, error) {
-	return s.queries.ListPlatformEvents(ctx, gen.ListPlatformEventsParams{
+	return s.read.ListPlatformEvents(ctx, gen.ListPlatformEventsParams{
 		TenantID: tenantID,
 		Column2:  filter.EventType,
 		Column3:  pgtype.UUID{Bytes: [16]byte{}, Valid: true}, // zero UUID = no user filter
@@ -51,7 +54,7 @@ func (s *Store) ListPlatformEvents(ctx context.Context, tenantID pgtype.UUID, fi
 
 // GetEventCountsByType aggregates event counts by event_type.
 func (s *Store) GetEventCountsByType(ctx context.Context, tenantID pgtype.UUID, startDate, endDate *time.Time) ([]gen.GetEventCountsByTypeRow, error) {
-	return s.queries.GetEventCountsByType(ctx, gen.GetEventCountsByTypeParams{
+	return s.read.GetEventCountsByType(ctx, gen.GetEventCountsByTypeParams{
 		TenantID: tenantID,
 		Column2:  nullableTimestamptz(startDate),
 		Column3:  nullableTimestamptz(endDate),
@@ -60,7 +63,7 @@ func (s *Store) GetEventCountsByType(ctx context.Context, tenantID pgtype.UUID, 
 
 // GetDailyContentStats returns per-content daily stats.
 func (s *Store) GetDailyContentStats(ctx context.Context, tenantID pgtype.UUID, startDate, endDate *pgtype.Date, contentID pgtype.UUID) ([]gen.GetDailyContentStatsRow, error) {
-	return s.queries.GetDailyContentStats(ctx, gen.GetDailyContentStatsParams{
+	return s.read.GetDailyContentStats(ctx, gen.GetDailyContentStatsParams{
 		TenantID: tenantID,
 		Column2:  nullableDate(startDate),
 		Column3:  nullableDate(endDate),
@@ -70,7 +73,7 @@ func (s *Store) GetDailyContentStats(ctx context.Context, tenantID pgtype.UUID, 
 
 // GetTopContentByViews returns the top N content items by views.
 func (s *Store) GetTopContentByViews(ctx context.Context, tenantID pgtype.UUID, startDate, endDate *pgtype.Date, limit int32) ([]gen.GetTopContentByViewsRow, error) {
-	return s.queries.GetTopContentByViews(ctx, gen.GetTopContentByViewsParams{
+	return s.read.GetTopContentByViews(ctx, gen.GetTopContentByViewsParams{
 		TenantID: tenantID,
 		Column2:  nullableDate(startDate),
 		Column3:  nullableDate(endDate),
@@ -80,7 +83,7 @@ func (s *Store) GetTopContentByViews(ctx context.Context, tenantID pgtype.UUID, 
 
 // GetDailySpaceStats returns per-space daily stats.
 func (s *Store) GetDailySpaceStats(ctx context.Context, tenantID pgtype.UUID, startDate, endDate *pgtype.Date, spaceID pgtype.UUID) ([]gen.GetDailySpaceStatsRow, error) {
-	return s.queries.GetDailySpaceStats(ctx, gen.GetDailySpaceStatsParams{
+	return s.read.GetDailySpaceStats(ctx, gen.GetDailySpaceStatsParams{
 		TenantID: tenantID,
 		Column2:  nullableDate(startDate),
 		Column3:  nullableDate(endDate),
@@ -90,7 +93,7 @@ func (s *Store) GetDailySpaceStats(ctx context.Context, tenantID pgtype.UUID, st
 
 // GetUserEngagementStats returns materialized view data for user engagement.
 func (s *Store) GetUserEngagementStats(ctx context.Context, tenantID pgtype.UUID, startDate, endDate *pgtype.Date, userID pgtype.UUID) ([]gen.MvUserEngagementStat, error) {
-	return s.queries.GetUserEngagementStats(ctx, gen.GetUserEngagementStatsParams{
+	return s.read.GetUserEngagementStats(ctx, gen.GetUserEngagementStatsParams{
 		TenantID: tenantID,
 		Column2:  nullableDate(startDate),
 		Column3:  nullableDate(endDate),
@@ -100,7 +103,7 @@ func (s *Store) GetUserEngagementStats(ctx context.Context, tenantID pgtype.UUID
 
 // GetUserGrowthOverTime returns new user registrations over time.
 func (s *Store) GetUserGrowthOverTime(ctx context.Context, tenantID pgtype.UUID, startDate, endDate *pgtype.Date) ([]gen.GetUserGrowthOverTimeRow, error) {
-	return s.queries.GetUserGrowthOverTime(ctx, gen.GetUserGrowthOverTimeParams{
+	return s.read.GetUserGrowthOverTime(ctx, gen.GetUserGrowthOverTimeParams{
 		TenantID: tenantID,
 		Column2:  nullableDate(startDate),
 		Column3:  nullableDate(endDate),
@@ -109,7 +112,7 @@ func (s *Store) GetUserGrowthOverTime(ctx context.Context, tenantID pgtype.UUID,
 
 // GetTrafficSources returns referrer breakdown from platform events.
 func (s *Store) GetTrafficSources(ctx context.Context, tenantID pgtype.UUID, startDate, endDate *pgtype.Timestamptz, limit int32) ([]gen.GetTrafficSourcesRow, error) {
-	return s.queries.GetTrafficSources(ctx, gen.GetTrafficSourcesParams{
+	return s.read.GetTrafficSources(ctx, gen.GetTrafficSourcesParams{
 		TenantID: tenantID,
 		Column2:  nullableTimestamptzPtr(startDate),
 		Column3:  nullableTimestamptzPtr(endDate),
@@ -119,27 +122,27 @@ func (s *Store) GetTrafficSources(ctx context.Context, tenantID pgtype.UUID, sta
 
 // RefreshDailyContentStatsView refreshes the content stats materialized view.
 func (s *Store) RefreshDailyContentStatsView(ctx context.Context) error {
-	return s.queries.RefreshDailyContentStatsView(ctx)
+	return s.write.RefreshDailyContentStatsView(ctx)
 }
 
 // RefreshDailySpaceStatsView refreshes the space stats materialized view.
 func (s *Store) RefreshDailySpaceStatsView(ctx context.Context) error {
-	return s.queries.RefreshDailySpaceStatsView(ctx)
+	return s.write.RefreshDailySpaceStatsView(ctx)
 }
 
 // RefreshUserEngagementStatsView refreshes the user engagement stats materialized view.
 func (s *Store) RefreshUserEngagementStatsView(ctx context.Context) error {
-	return s.queries.RefreshUserEngagementStatsView(ctx)
+	return s.write.RefreshUserEngagementStatsView(ctx)
 }
 
 // CreateSecurityScanResult records a new security scan finding.
 func (s *Store) CreateSecurityScanResult(ctx context.Context, p gen.CreateSecurityScanResultParams) (gen.SecurityScanResult, error) {
-	return s.queries.CreateSecurityScanResult(ctx, p)
+	return s.write.CreateSecurityScanResult(ctx, p)
 }
 
 // ListSecurityScanResults returns scan results matching filters.
 func (s *Store) ListSecurityScanResults(ctx context.Context, tenantID pgtype.UUID, filter SecurityScanFilter) ([]gen.SecurityScanResult, error) {
-	return s.queries.ListSecurityScanResults(ctx, gen.ListSecurityScanResultsParams{
+	return s.read.ListSecurityScanResults(ctx, gen.ListSecurityScanResultsParams{
 		TenantID: tenantID,
 		Column2:  filter.Severity,
 		Column3:  filter.Unresolved,
@@ -150,7 +153,7 @@ func (s *Store) ListSecurityScanResults(ctx context.Context, tenantID pgtype.UUI
 
 // ResolveSecurityScanResult marks a finding as resolved.
 func (s *Store) ResolveSecurityScanResult(ctx context.Context, id, tenantID pgtype.UUID) error {
-	return s.queries.ResolveSecurityScanResult(ctx, gen.ResolveSecurityScanResultParams{
+	return s.write.ResolveSecurityScanResult(ctx, gen.ResolveSecurityScanResultParams{
 		ID:       id,
 		TenantID: tenantID,
 	})
@@ -158,12 +161,12 @@ func (s *Store) ResolveSecurityScanResult(ctx context.Context, id, tenantID pgty
 
 // GetUnresolvedCriticalFindings returns unresolved critical findings for alerting.
 func (s *Store) GetUnresolvedCriticalFindings(ctx context.Context, tenantID pgtype.UUID) ([]gen.GetUnresolvedCriticalFindingsRow, error) {
-	return s.queries.GetUnresolvedCriticalFindings(ctx, tenantID)
+	return s.read.GetUnresolvedCriticalFindings(ctx, tenantID)
 }
 
 // GetDailyActiveUsers returns DAU over time.
 func (s *Store) GetDailyActiveUsers(ctx context.Context, tenantID pgtype.UUID, startDate, endDate *pgtype.Timestamptz) ([]gen.GetDailyActiveUsersRow, error) {
-	return s.queries.GetDailyActiveUsers(ctx, gen.GetDailyActiveUsersParams{
+	return s.read.GetDailyActiveUsers(ctx, gen.GetDailyActiveUsersParams{
 		TenantID: tenantID,
 		Column2:  nullableTimestamptzPtr(startDate),
 		Column3:  nullableTimestamptzPtr(endDate),
@@ -172,7 +175,7 @@ func (s *Store) GetDailyActiveUsers(ctx context.Context, tenantID pgtype.UUID, s
 
 // GetMonthlyActiveUsers returns MAU over time.
 func (s *Store) GetMonthlyActiveUsers(ctx context.Context, tenantID pgtype.UUID, startDate, endDate *pgtype.Timestamptz) ([]gen.GetMonthlyActiveUsersRow, error) {
-	return s.queries.GetMonthlyActiveUsers(ctx, gen.GetMonthlyActiveUsersParams{
+	return s.read.GetMonthlyActiveUsers(ctx, gen.GetMonthlyActiveUsersParams{
 		TenantID: tenantID,
 		Column2:  nullableTimestamptzPtr(startDate),
 		Column3:  nullableTimestamptzPtr(endDate),
@@ -181,7 +184,7 @@ func (s *Store) GetMonthlyActiveUsers(ctx context.Context, tenantID pgtype.UUID,
 
 // GetContentVolumeOverTime returns content creation volume.
 func (s *Store) GetContentVolumeOverTime(ctx context.Context, tenantID pgtype.UUID, startDate, endDate *pgtype.Timestamptz) ([]gen.GetContentVolumeOverTimeRow, error) {
-	return s.queries.GetContentVolumeOverTime(ctx, gen.GetContentVolumeOverTimeParams{
+	return s.read.GetContentVolumeOverTime(ctx, gen.GetContentVolumeOverTimeParams{
 		TenantID: tenantID,
 		Column2:  nullableTimestamptzPtr(startDate),
 		Column3:  nullableTimestamptzPtr(endDate),
@@ -190,17 +193,17 @@ func (s *Store) GetContentVolumeOverTime(ctx context.Context, tenantID pgtype.UU
 
 // GetTotalUsers returns the total number of users for a tenant.
 func (s *Store) GetTotalUsers(ctx context.Context, tenantID pgtype.UUID) (int32, error) {
-	return s.queries.GetTotalUsers(ctx, tenantID)
+	return s.read.GetTotalUsers(ctx, tenantID)
 }
 
 // GetActiveUsers returns the number of active users (logged in within 30 days).
 func (s *Store) GetActiveUsers(ctx context.Context, tenantID pgtype.UUID) (int32, error) {
-	return s.queries.GetActiveUsers(ctx, tenantID)
+	return s.read.GetActiveUsers(ctx, tenantID)
 }
 
 // GetNewUsersToday returns the number of users registered today.
 func (s *Store) GetNewUsersToday(ctx context.Context, tenantID pgtype.UUID) (int32, error) {
-	return s.queries.GetNewUsersToday(ctx, tenantID)
+	return s.read.GetNewUsersToday(ctx, tenantID)
 }
 
 // nullableTimestamptz converts a *time.Time to a pgtype.Timestamptz.
@@ -233,7 +236,7 @@ func nullableDate(d *pgtype.Date) pgtype.Date {
 
 // GetSearchAnalytics returns search analytics summary for the given time window.
 func (s *Store) GetSearchAnalytics(ctx context.Context, tenantID pgtype.UUID, startDate, endDate *time.Time, limit int32) ([]gen.GetSearchAnalyticsSummaryRow, error) {
-	return s.queries.GetSearchAnalyticsSummary(ctx, gen.GetSearchAnalyticsSummaryParams{
+	return s.read.GetSearchAnalyticsSummary(ctx, gen.GetSearchAnalyticsSummaryParams{
 		TenantID: tenantID,
 		Column2:  nullableTimestamptz(startDate),
 		Column3:  nullableTimestamptz(endDate),
@@ -244,12 +247,12 @@ func (s *Store) GetSearchAnalytics(ctx context.Context, tenantID pgtype.UUID, st
 
 // GetRevenueSummary returns total revenue, monthly revenue, and active subscription count.
 func (s *Store) GetRevenueSummary(ctx context.Context, tenantID pgtype.UUID) (gen.GetRevenueSummaryRow, error) {
-	return s.queries.GetRevenueSummary(ctx, tenantID)
+	return s.read.GetRevenueSummary(ctx, tenantID)
 }
 
 // GetRevenueByPeriod returns revenue aggregated by month for the given time window.
 func (s *Store) GetRevenueByPeriod(ctx context.Context, tenantID pgtype.UUID, startDate, endDate *time.Time) ([]gen.GetRevenueByPeriodRow, error) {
-	return s.queries.GetRevenueByPeriod(ctx, gen.GetRevenueByPeriodParams{
+	return s.read.GetRevenueByPeriod(ctx, gen.GetRevenueByPeriodParams{
 		TenantID: tenantID,
 		Column2:  nullableTimestamptz(startDate),
 		Column3:  nullableTimestamptz(endDate),
@@ -258,33 +261,33 @@ func (s *Store) GetRevenueByPeriod(ctx context.Context, tenantID pgtype.UUID, st
 
 // CountPendingReports returns the total number of pending content reports.
 func (s *Store) CountPendingReports(ctx context.Context, tenantID pgtype.UUID) (int32, error) {
-	return s.queries.CountPendingReports(ctx, tenantID)
+	return s.read.CountPendingReports(ctx, tenantID)
 }
 
 // CountOpenTickets returns the number of tickets not yet resolved/closed/spam.
 func (s *Store) CountOpenTickets(ctx context.Context, tenantID pgtype.UUID) (int32, error) {
-	return s.queries.CountOpenTickets(ctx, tenantID)
+	return s.read.CountOpenTickets(ctx, tenantID)
 }
 
 // CountSpamQueue returns the total number of flagged media and auto-hidden content.
 func (s *Store) CountSpamQueue(ctx context.Context, tenantID pgtype.UUID) (int32, error) {
-	return s.queries.CountSpamQueue(ctx, tenantID)
+	return s.read.CountSpamQueue(ctx, tenantID)
 }
 
 // CountGenerationsToday returns the number of AI studio jobs created today.
 func (s *Store) CountGenerationsToday(ctx context.Context, tenantID pgtype.UUID) (int32, error) {
-	return s.queries.CountGenerationsToday(ctx, tenantID)
+	return s.read.CountGenerationsToday(ctx, tenantID)
 }
 
 // CountPendingReviews returns the number of content reviews awaiting HITL review.
 func (s *Store) CountPendingReviews(ctx context.Context, tenantID pgtype.UUID) (int32, error) {
-	return s.queries.CountPendingReviews(ctx, tenantID)
+	return s.read.CountPendingReviews(ctx, tenantID)
 }
 
 // GetContentAuthorID returns the author_id of a content item, used for
 // analytics access control (GET /content/{id}/analytics is owner+admin only).
 func (s *Store) GetContentAuthorID(ctx context.Context, contentID, tenantID pgtype.UUID) (pgtype.UUID, error) {
-	return s.queries.GetContentAuthorID(ctx, gen.GetContentAuthorIDParams{
+	return s.read.GetContentAuthorID(ctx, gen.GetContentAuthorIDParams{
 		ID:       contentID,
 		TenantID: tenantID,
 	})

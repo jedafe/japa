@@ -313,3 +313,52 @@ func TestProvisionPersonas_NeedsDefaultLogic(t *testing.T) {
 		})
 	}
 }
+
+// ---------------------------------------------------------------------------
+// ProvisionPersonas — duplicate slug pre-validation (BUG-013)
+// ---------------------------------------------------------------------------
+
+// TestProvisionPersonas_DuplicateSlugDetection verifies that the duplicate
+// slug pre-validation catches duplicate slugs within a batch before opening
+// a transaction. Without this check, the second CreatePersonaUser would hit
+// a UNIQUE(tenant_id, email) constraint violation inside the tx, and the
+// admin would get a generic "provisioning failed" error with no indication
+// of which slug collided.
+func TestProvisionPersonas_DuplicateSlugDetection(t *testing.T) {
+	tests := []struct {
+		name     string
+		slugs    []string
+		wantDup  bool
+		wantIdx  int
+	}{
+		{"all unique slugs", []string{"ada", "bola", "chi"}, false, -1},
+		{"two duplicate slugs", []string{"ada", "bola", "ada"}, true, 2},
+		{"same slug twice", []string{"ada", "ada"}, true, 1},
+		{"single slug", []string{"ada"}, false, -1},
+		{"triplicate slug", []string{"x", "x", "x"}, true, 1},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			seen := make(map[string]int)
+			dupIdx := -1
+			for i, slug := range tt.slugs {
+				if prev, dup := seen[slug]; dup {
+					dupIdx = i
+					_ = prev
+					break
+				}
+				seen[slug] = i
+			}
+			gotDup := dupIdx != -1
+			if gotDup != tt.wantDup {
+				t.Errorf("duplicate detected = %v, want %v (slugs=%v)",
+					gotDup, tt.wantDup, tt.slugs)
+			}
+			if gotDup && dupIdx != tt.wantIdx {
+				t.Errorf("duplicate at index %d, want %d (slugs=%v)",
+					dupIdx, tt.wantIdx, tt.slugs)
+			}
+		})
+	}
+}

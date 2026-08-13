@@ -74,6 +74,7 @@ import (
 	"github.com/jedafe/japa/internal/intelligence/dedup"
 	"github.com/jedafe/japa/internal/intelligence/events"
 	"github.com/jedafe/japa/internal/intelligence/extractor"
+	intel_fetcher "github.com/jedafe/japa/internal/intelligence/fetcher"
 	"github.com/jedafe/japa/internal/intelligence/promoter"
 	"github.com/jedafe/japa/internal/intelligence/scheduler"
 	"github.com/jedafe/japa/internal/intelligence/sources"
@@ -185,15 +186,16 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// GeoIP updater for the maintenance: update_geoip_db task.
 	// Created here and registered with the worker so the Asynq handler
 	// can atomically swap in a fresh MaxMind database weekly.
-	geoipUpdater := geoip.NewUpdater(cfg.MaxmindLicenseKey, cfg.GeoIPDBPath, geoipReader)
+	geoipUpdater := geoip.NewUpdater(cfg.MaxmindAccountID, cfg.MaxmindLicenseKey, cfg.GeoIPDBPath, geoipReader)
 	worker.RegisterGeoIPUpdater(geoipUpdater)
 
 	// Register site name for worker handlers (RSS feeds, LLMS.txt, emails).
 	worker.RegisterSiteName(cfg.SiteName)
 
 	// IP block middleware — reject blocked IPs before they reach any handler.
-	// Runs after RealIP (so the resolved IP is available) but before all
-	// other middleware and route handlers.
+	// Resolves the client IP internally via clientip.FromRequest (trusted-proxy
+	// model, JEOS Section 37) and runs before all other middleware and route
+	// handlers.
 	r.Use(spam.IPBlockMiddleware(database))
 
 	h := NewHandler(database)
@@ -208,8 +210,13 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01,
 	}, Valid: true}
+	// defaultTenant is resolved once at boot and reused by SingleTenantMiddleware
+	// for every request, eliminating the per-request GetTenantByHost DB lookup
+	// (ADR-004 amendment — single-tenant freeze).
+	defaultTenant := &tenant.Tenant{ID: defaultTenantID}
 	if dt, err := tenantStore.GetDefaultTenant(context.Background()); err == nil && dt != nil {
 		defaultTenantID = dt.ID
+		defaultTenant = dt
 	}
 
 	// JWT key rotation — keys are persisted in the jwt_signing_keys table
@@ -1367,12 +1374,21 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Inject the RAG service into the AI handlers so HandleChat can run the
 	// retrieval step before the LLM call when rag.enabled is true.
 	aiHandlers.SetRAGService(ragService)
+	// §19/ADR-014: wire the GDPR consent checker so HandleChat verifies
+	// ai_processing consent before sending user prompts to external providers.
+	aiHandlers.SetConsentChecker(gdprService)
 
 	// B6/B8: wire Valkey (edit lock) and RAG indexer (embedding on approval)
 	// into the wiki service/handlers. These are wired here because ragService
 	// is created above; the wiki handlers were created earlier at line ~1028.
 	wikiService.SetValkey(vkClient.Redis())
 	wikiHandlers.SetRAGIndexer(ragService)
+	// BUG-001 fix: wire RAG indexer into the spaces and learning handlers so
+	// spaces and learning tracks are embedded into content_embeddings
+	// (§69/ADR-069). These handlers were created earlier; ragService is
+	// created above.
+	spaceHandlers.SetRAGIndexer(ragService)
+	learningHandlers.SetRAGIndexer(ragService)
 
 	// AI Agent Executor (Section 103, ADR-111) — Phase 6 wiring.
 	// The agent handler ties together the gateway function-calling extension
@@ -1512,8 +1528,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	intelSourcesStore := sources.NewStore(database)
 	intelSourcesService := sources.NewService(intelSourcesStore)
 	intelStores := intel_stores.NewStore(database)
-	intelScheduler := scheduler.NewScheduler(&intelSchedulerSourceAdapter{store: intelSourcesStore}, vkClient.Redis())
-	intelDedupService := dedup.NewService(intelStores)
+	intelScheduler := scheduler.NewScheduler(&intelSchedulerSourceAdapter{store: intelSourcesStore, tenantID: defaultTenantID}, vkClient.Redis(), defaultTenantID)
+	intelDedupService := dedup.NewService(intelStores, defaultTenantID)
 	intelEventPublisher := events.NewAsynqEventPublisher(asynqClient)
 
 	// Extractor port adapter: wraps *extractor.Extractor so the worker
@@ -1521,13 +1537,15 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// close the extractor → ai → auth → worker cycle). The adapter selects
 	// the scholarship schema internally; future entity types will branch
 	// on source_type here.
-	intelExtractor := extractor.NewExtractor(aiDispatcher)
+	intelExtractor := extractor.NewExtractor(aiDispatcher, extractor.WithTenantID(defaultTenantID))
 	intelExtractorAdapter := &intelExtractorPortAdapter{ext: intelExtractor}
 
 	// Promoter port adapter: wraps *promoter.ScholarshipPromoter so the
 	// worker can call Promote without importing the promoter package
-	// (promoter → extractor → ai → auth → worker).
-	intelPromoter := promoter.NewScholarshipPromoter(intelStores, defaultTenantID, defaultTenantID)
+	// (promoter → extractor → ai → auth → worker). The promoter store is
+	// wrapped in intelPromoterStoreAdapter to bridge the WithTx callback
+	// type between stores.Store and promoter.Store (BUG-01/02 fix).
+	intelPromoter := promoter.NewScholarshipPromoter(&intelPromoterStoreAdapter{Store: intelStores}, defaultTenantID, defaultTenantID)
 	intelPromoterAdapter := &intelPromoterPortAdapter{prom: intelPromoter}
 
 	// Register the intelligence spine dependencies with the worker package
@@ -1541,14 +1559,14 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		intelDedupService,
 		intelPromoterAdapter,
 		intelEventPublisher,
-		nil, // fetcher: the composite fetcher adapter is wired in a follow-up
+		intel_fetcher.NewComposite(), // composite fetcher: dispatches by crawl_method (BUG-008 fix)
 		asynqClient,
 	)
 
 	// HTTP handlers for the /api/v1/intel/* routes. The radar reuses the
 	// existing follows service (entity_type "space") and scholarships
 	// service (saved-scholarship tracker) so no parallel tables are needed.
-	intelHandlers := intel_handlers.NewHandlers(intelStores, intelSourcesService, followService, scholarshipsService)
+	intelHandlers := intel_handlers.NewHandlers(intelStores, intelSourcesService, followService, scholarshipsService, asynqClient)
 
 	// Admin Impersonation subsystem (Section 46).
 	impersonationStore := impersonation.NewStore(vkClient.Redis())
@@ -1614,6 +1632,14 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	meiliClient, err := search.NewClient(cfg.MeilisearchURL, cfg.MeilisearchKey)
 	if err != nil {
 		slog.Warn("meilisearch client not created", "error", err)
+	}
+
+	// Wire Meilisearch into the content service for ?q= search offload
+	// (ADR-004 amendment performance tuning — docs/PERFORMANCE_AUDIT.md §4).
+	// When wired, list-page ?q= queries use Meilisearch (typo tolerance,
+	// ranking) instead of PostgreSQL ILIKE. Falls back to ILIKE if nil.
+	if meiliClient != nil {
+		contentService.SetSearcher(search.NewContentSearchAdapter(meiliClient))
 	}
 
 	// Search subsystem.
@@ -1698,7 +1724,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Public bot-facing endpoints (robots.txt and llms.txt)
 	// These require tenant resolution but no authentication.
 	r.Group(func(r chi.Router) {
-		r.Use(tenant.Middleware(tenantStore))
+		r.Use(tenant.SingleTenantMiddleware(defaultTenant))
 		r.Get("/robots.txt", bots.RobotsHandler(botStore, vkClient))
 		r.Get("/llms.txt", bots.LLMsHandler(botStore, vkClient, cfg.SiteName, cfg.SiteDescription))
 		r.Get("/llms-full.txt", bots.LLMsHandler(botStore, vkClient, cfg.SiteName, cfg.SiteDescription))
@@ -1735,7 +1761,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	// API routes go through tenant resolution
 	r.Group(func(r chi.Router) {
-		r.Use(tenant.Middleware(tenantStore))
+		r.Use(tenant.SingleTenantMiddleware(defaultTenant))
 		r.Route("/api/v1", func(r chi.Router) {
 			// Baseline rate limit for all API routes (ADR-022).
 			// Tighter tiers are applied to specific subgroups below.
@@ -2636,6 +2662,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			forumHandlers.SetMentionNotifier(commentNotificationAdapter{svc: notificationService})
 			// Wire erased-mention redaction for GDPR/ADR-029 compliance.
 			forumHandlers.SetMentionCheckers(mentionCheckers)
+			// Wire RAG indexer so forum threads are embedded into
+			// content_embeddings (§69/ADR-069 BUG-001 fix).
+			forumHandlers.SetRAGIndexer(ragService)
 
 			r.With(features.Gate(featureChecker, "feature.forum")).Group(func(r chi.Router) {
 				// Thread routes
@@ -5210,6 +5239,19 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Get("/intel/scholarships/{id}", intelHandlers.HandleScholarshipDetail)
 			r.With(auth.OptionalAuth(kr, vkClient.Redis())).
 				Get("/intel/sources", intelHandlers.HandleSourcesDirectory)
+			// Sources CRUD — RBAC-gated by intel.sources.manage (control panel
+			// admin only). BUG-002 fix: the control panel calls these routes but
+			// they were not registered, so source create/edit/delete returned 404.
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "intel.sources.manage")).
+				Post("/intel/sources", intelHandlers.HandleCreateSource)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "intel.sources.manage")).
+				Patch("/intel/sources/{id}", intelHandlers.HandleUpdateSource)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "intel.sources.manage")).
+				Delete("/intel/sources/{id}", intelHandlers.HandleDeleteSource)
+			// Raw document fetch — RBAC-gated by intel.review.view (control panel
+			// four-pane moderation raw content pane). BUG-003 fix.
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "intel.review.view")).
+				Get("/intel/raw-documents/{id}", intelHandlers.HandleGetRawDocument)
 			// Review queue — RBAC-gated by intel.review.* (admin only).
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "intel.review.view")).
 				Get("/intel/review/queue", intelHandlers.HandleReviewQueue)
@@ -5217,6 +5259,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Post("/intel/review/{record_id}/approve", intelHandlers.HandleReviewApprove)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "intel.review.reject")).
 				Post("/intel/review/{record_id}/reject", intelHandlers.HandleReviewReject)
+			// Review edit — saves admin field edits to editorial_overrides.
+			// RBAC-gated by intel.review.edit. BUG-004 fix.
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "intel.review.edit")).
+				Patch("/intel/review/{record_id}/edit", intelHandlers.HandleReviewEdit)
 
 			// Section 74 — Remittance Rate Tracker (ADR-075)
 			r.Get("/remittance/rates", remittanceHandlers.HandleGetRates)
@@ -5516,7 +5562,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Super-admin Control Panel routes (Section 21).
 	// Tenant-scoped, requires auth + control.panel.access permission.
 	r.Group(func(r chi.Router) {
-		r.Use(tenant.Middleware(tenantStore))
+		r.Use(tenant.SingleTenantMiddleware(defaultTenant))
 		r.Use(auth.RequireAuth(kr, vkClient.Redis()))
 		r.Use(rbac.RequirePermission(rbacResolver, "control.panel.access"))
 		// Audit finding C1: enforce double-submit CSRF on all mutating /control/* requests.
@@ -6168,20 +6214,17 @@ func (d *personaActionDispatcher) CreateComment(ctx context.Context, tenantID, p
 	return c.ID, nil
 }
 
-func (d *personaActionDispatcher) CreateForumThread(ctx context.Context, tenantID, personaUserID, spaceID pgtype.UUID, title, slug string, body []byte) (pgtype.UUID, error) {
+func (d *personaActionDispatcher) CreateForumThread(ctx context.Context, tenantID, personaUserID, contentID, spaceID pgtype.UUID, title, slug string, body []byte) (pgtype.UUID, error) {
 	// forum_question: the persona starts a new thread. The content row was
-	// already published by DispatchAction; here we create the forum thread
-	// linked to that content. We need a content_id — use a zero UUID and
-	// let the forum service create its own content, or pass the published
-	// content. Since DispatchAction already published the draft content,
-	// we pass a zero content_id and let the forum service create a new one.
-	// Actually, the forum service's CreateThread expects a content_id for
-	// the root post. We'll create the thread with the space and body.
+	// already published by DispatchAction; pass its ID as ContentID so the
+	// forum thread links to it via forum_threads.content_id (BUG-004 —
+	// previously content_id was NULL, leaving an orphan content row).
 	t, err := d.forum.CreateThread(ctx, tenantID, personaUserID, forum.CreateThreadInput{
-		SpaceID: spaceID,
-		Title:   title,
-		Slug:    slug,
-		Body:    body,
+		ContentID: contentID,
+		SpaceID:   spaceID,
+		Title:     title,
+		Slug:      slug,
+		Body:      body,
 	})
 	if err != nil {
 		return pgtype.UUID{}, err

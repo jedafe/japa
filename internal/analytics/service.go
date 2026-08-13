@@ -26,12 +26,10 @@ type Service struct {
 	enqueuer Enqueuer
 }
 
-// NewService creates a Service backed by the given database pool.
+// NewService creates a Service backed by both Reader and Writer pools.
 func NewService(database *db.DB) *Service {
 	return &Service{
-		store: &Store{
-			queries: gen.New(database.Writer),
-		},
+		store:    NewStore(database),
 		db:       database,
 		enqueuer: &noopEnqueuer{},
 	}

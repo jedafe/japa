@@ -241,9 +241,12 @@ func (p *AnthropicProvider) Send(ctx context.Context, req Request) (Response, er
 	}, nil
 }
 
-// VerifyWebhookSignature is a no-op for Anthropic.
+// VerifyWebhookSignature returns an error because Anthropic webhook
+// verification is not implemented. A no-op return (nil) would silently
+// accept forged payloads. Returning an error ensures any future webhook
+// integration must implement real HMAC verification.
 func (p *AnthropicProvider) VerifyWebhookSignature(_ []byte, _ string) error {
-	return nil
+	return errors.New("ai: anthropic webhook signature verification not implemented")
 }
 
 // Models returns the Claude models this provider can serve.

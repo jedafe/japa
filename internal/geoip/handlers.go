@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"net"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -35,6 +36,24 @@ type SuggestedSpace struct {
 	GeoCode     string `json:"geo_code,omitempty"`
 	MemberCount int32  `json:"member_count"`
 	PostCount   int32  `json:"post_count"`
+}
+
+// GeoSpace is the public projection of a seeded geo Space returned by the
+// hierarchy endpoints (/geo/countries, /geo/countries/{code}/states,
+// /geo/states/{id}/cities). It is a stable contract type, independent of
+// sqlc-generated row structs, so regenerating internal/db never changes the
+// API shape and internal fields (tenant_id, perms, wiki_content, etc.) are
+// never leaked to unauthenticated callers.
+type GeoSpace struct {
+	ID            string `json:"id"`
+	Name          string `json:"name"`
+	Slug          string `json:"slug"`
+	Level         string `json:"level"`
+	GeoCode       string `json:"geo_code,omitempty"`
+	Description   string `json:"description,omitempty"`
+	MemberCount   int32  `json:"member_count"`
+	PostCount     int32  `json:"post_count"`
+	FollowerCount int32  `json:"follower_count"`
 }
 
 // Handlers provides HTTP endpoints for geolocation.
@@ -90,6 +109,18 @@ func (h *Handlers) HandleGeoLookup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Validate IP format before touching the database. This separates the
+	// two distinct error conditions per Section 37: (a) the param is not a
+	// valid IP address format → 400 invalid_ip; (b) the IP is valid format
+	// but resolves to a reserved range / has no country data → 404
+	// geo_not_available. Conflating them (the previous behaviour) returned
+	// 400 lookup_failed for a valid-format IP like 10.0.0.1, which violated
+	// the IsValid semantics in Section 37.
+	if net.ParseIP(ip) == nil {
+		writeError(w, http.StatusBadRequest, "invalid_ip", "ip query parameter is not a valid IP address")
+		return
+	}
+
 	if !h.reader.IsLoaded() {
 		writeError(w, http.StatusServiceUnavailable, "geoip_not_loaded", "GeoIP database not loaded")
 		return
@@ -97,7 +128,7 @@ func (h *Handlers) HandleGeoLookup(w http.ResponseWriter, r *http.Request) {
 
 	geo := h.reader.Lookup(ip)
 	if !geo.IsValid {
-		writeError(w, http.StatusBadRequest, "lookup_failed", "could not resolve IP address")
+		writeError(w, http.StatusNotFound, "geo_not_available", "No geolocation data for this IP address")
 		return
 	}
 
@@ -153,7 +184,12 @@ func (h *Handlers) HandleListCountries(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": countries})
+	out := make([]GeoSpace, 0, len(countries))
+	for _, c := range countries {
+		out = append(out, projectGeoSpace(c.ID, c.Name, c.Slug, c.Level, c.GeoCode, c.Description, c.MemberCount, c.PostCount, c.FollowerCount))
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": out})
 }
 
 // HandleListStates returns the state/province spaces for a country, looked
@@ -179,7 +215,12 @@ func (h *Handlers) HandleListStates(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": states})
+	out := make([]GeoSpace, 0, len(states))
+	for _, s := range states {
+		out = append(out, projectGeoSpace(s.ID, s.Name, s.Slug, s.Level, s.GeoCode, s.Description, s.MemberCount, s.PostCount, s.FollowerCount))
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": out})
 }
 
 // HandleListCities returns the city spaces for a state.
@@ -206,7 +247,12 @@ func (h *Handlers) HandleListCities(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": cities})
+	out := make([]GeoSpace, 0, len(cities))
+	for _, c := range cities {
+		out = append(out, projectGeoSpace(c.ID, c.Name, c.Slug, c.Level, c.GeoCode, c.Description, c.MemberCount, c.PostCount, c.FollowerCount))
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": out})
 }
 
 // suggestedSpaces runs the deterministic /geo/me suggested_spaces algorithm
@@ -275,6 +321,30 @@ func derefStr(p *string) string {
 	}
 
 	return *p
+}
+
+// projectGeoSpace builds a GeoSpace projection from the common fields shared
+// by all geo hierarchy sqlc row structs. It is the single chokepoint that
+// keeps internal columns (tenant_id, space_type_id, wiki_content, perms,
+// logo_media_id, header_image_id, deleted_at, currency_code, etc.) out of the
+// public API response.
+func projectGeoSpace(
+	id pgtype.UUID,
+	name, slug, level string,
+	geoCode, description *string,
+	memberCount, postCount, followerCount int32,
+) GeoSpace {
+	return GeoSpace{
+		ID:            id.String(),
+		Name:          name,
+		Slug:          slug,
+		Level:         level,
+		GeoCode:       derefStr(geoCode),
+		Description:   derefStr(description),
+		MemberCount:   memberCount,
+		PostCount:     postCount,
+		FollowerCount: followerCount,
+	}
 }
 
 // ---------------------------------------------------------------------------

@@ -7,3 +7,7 @@
 
 CREATE DATABASE honcho;
 CREATE DATABASE glitchtip;
+
+-- Replication user for the read replica (ADR-004 amendment performance tuning).
+-- The replica uses this account to stream WAL from the primary.
+CREATE ROLE replicator WITH REPLICATION LOGIN PASSWORD 'japa_replica';

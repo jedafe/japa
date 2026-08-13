@@ -1697,6 +1697,7 @@ type IntelRawDocument struct {
 	Body        []byte             `json:"body"`
 	ContentHash string             `json:"content_hash"`
 	RetrievedAt pgtype.Timestamptz `json:"retrieved_at"`
+	TenantID    pgtype.UUID        `json:"tenant_id"`
 }
 
 type IntelRecord struct {
@@ -1715,6 +1716,7 @@ type IntelRecord struct {
 	ExtractedAt       pgtype.Timestamptz `json:"extracted_at"`
 	LastVerifiedAt    pgtype.Timestamptz `json:"last_verified_at"`
 	PromotedRecordID  pgtype.UUID        `json:"promoted_record_id"`
+	TenantID          pgtype.UUID        `json:"tenant_id"`
 }
 
 type IntelReviewLog struct {
@@ -1725,6 +1727,7 @@ type IntelReviewLog struct {
 	FieldChanges  []byte             `json:"field_changes"`
 	Note          *string            `json:"note"`
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	TenantID      pgtype.UUID        `json:"tenant_id"`
 }
 
 type IntelSource struct {
@@ -1752,6 +1755,7 @@ type IntelSource struct {
 	ConsecutiveFailures int32              `json:"consecutive_failures"`
 	CreatedAt           pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
+	TenantID            pgtype.UUID        `json:"tenant_id"`
 }
 
 type IpBlock struct {
@@ -3038,6 +3042,7 @@ type Scholarship struct {
 	LastVerifiedAt       pgtype.Timestamptz `json:"last_verified_at"`
 	CreatedAt            pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
+	TenantID             pgtype.UUID        `json:"tenant_id"`
 }
 
 type SearchAnalytic struct {

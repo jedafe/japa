@@ -13,18 +13,22 @@ import (
 
 const countAIPersonas = `-- name: CountAIPersonas :one
 SELECT COUNT(*) AS count
-FROM ai_personas
-WHERE tenant_id = $1
-  AND ($2::text = '' OR status = $2)
+FROM ai_personas ap
+JOIN users u ON u.id = ap.user_id
+JOIN professional_profiles pp ON pp.id = ap.profile_id
+WHERE ap.tenant_id = $1
+  AND ($2::text = '' OR ap.status = $2)
+  AND ($3::text = '' OR pp.name ILIKE '%' || $3 || '%' OR u.username ILIKE '%' || $3 || '%')
 `
 
 type CountAIPersonasParams struct {
 	TenantID pgtype.UUID `json:"tenant_id"`
 	Status   string      `json:"status"`
+	Q        string      `json:"q"`
 }
 
 func (q *Queries) CountAIPersonas(ctx context.Context, arg CountAIPersonasParams) (int64, error) {
-	row := q.db.QueryRow(ctx, countAIPersonas, arg.TenantID, arg.Status)
+	row := q.db.QueryRow(ctx, countAIPersonas, arg.TenantID, arg.Status, arg.Q)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -269,19 +273,39 @@ const listAIPersonas = `-- name: ListAIPersonas :many
 SELECT
     ap.id, ap.tenant_id, ap.user_id, ap.profile_id, ap.disclosure_mode, ap.autonomy_mode, ap.voice_prompt, ap.activity_policy, ap.status, ap.created_by, ap.created_at, ap.updated_at,
     u.username  AS backing_username,
-    pp.name     AS profile_name
+    pp.name     AS profile_name,
+    stats.total_actions AS total_actions,
+    stats.last_action_at AS last_action_at
 FROM ai_personas ap
 JOIN users u ON u.id = ap.user_id
 JOIN professional_profiles pp ON pp.id = ap.profile_id
+LEFT JOIN LATERAL (
+    SELECT COUNT(*) AS total_actions, MAX(pe.created_at) AS last_action_at
+    FROM platform_events pe
+    WHERE pe.tenant_id = ap.tenant_id
+      AND pe.user_id = ap.user_id
+      AND pe.is_synthetic = true
+) stats ON true
 WHERE ap.tenant_id = $1
   AND ($2::text = '' OR ap.status = $2)
-ORDER BY ap.created_at DESC
-LIMIT $4 OFFSET $3
+  AND ($3::text = '' OR pp.name ILIKE '%' || $3 || '%' OR u.username ILIKE '%' || $3 || '%')
+ORDER BY
+    CASE WHEN $4::text = 'name' AND $5::text = 'asc' THEN pp.name END ASC,
+    CASE WHEN $4::text = 'name' AND $5::text = 'desc' THEN pp.name END DESC,
+    CASE WHEN $4::text = 'created_at' AND $5::text = 'asc' THEN ap.created_at END ASC,
+    CASE WHEN $4::text = 'created_at' AND $5::text = 'desc' THEN ap.created_at END DESC,
+    CASE WHEN $4::text = 'total_actions' AND $5::text = 'asc' THEN stats.total_actions END ASC,
+    CASE WHEN $4::text = 'total_actions' AND $5::text = 'desc' THEN stats.total_actions END DESC,
+    ap.created_at DESC
+LIMIT $7 OFFSET $6
 `
 
 type ListAIPersonasParams struct {
 	TenantID   pgtype.UUID `json:"tenant_id"`
 	Status     string      `json:"status"`
+	Q          string      `json:"q"`
+	Sort       string      `json:"sort"`
+	Dir        string      `json:"dir"`
 	PageOffset int32       `json:"page_offset"`
 	PageLimit  int32       `json:"page_limit"`
 }
@@ -301,6 +325,8 @@ type ListAIPersonasRow struct {
 	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
 	BackingUsername string             `json:"backing_username"`
 	ProfileName     string             `json:"profile_name"`
+	TotalActions    int64              `json:"total_actions"`
+	LastActionAt    interface{}        `json:"last_action_at"`
 }
 
 // =====================================================================
@@ -310,6 +336,9 @@ func (q *Queries) ListAIPersonas(ctx context.Context, arg ListAIPersonasParams) 
 	rows, err := q.db.Query(ctx, listAIPersonas,
 		arg.TenantID,
 		arg.Status,
+		arg.Q,
+		arg.Sort,
+		arg.Dir,
 		arg.PageOffset,
 		arg.PageLimit,
 	)
@@ -335,6 +364,8 @@ func (q *Queries) ListAIPersonas(ctx context.Context, arg ListAIPersonasParams) 
 			&i.UpdatedAt,
 			&i.BackingUsername,
 			&i.ProfileName,
+			&i.TotalActions,
+			&i.LastActionAt,
 		); err != nil {
 			return nil, err
 		}

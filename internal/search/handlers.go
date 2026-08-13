@@ -913,14 +913,14 @@ func (h *Handlers) logSearchAsync(ctx context.Context, tenantID pgtype.UUID, que
 		contentTypePtr = &contentType
 	}
 
-	go func() {
+	go func() { // #nosec G118 -- fire-and-forget: request ctx is cancelled on HTTP return (Rule 8)
 		bgCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
 		if err := h.queries.LogSearchQuery(bgCtx, gen.LogSearchQueryParams{
 			TenantID:     tenantID,
 			Query:        query,
-			ResultsCount: int32(resultsCount),
+			ResultsCount: int32(resultsCount), // #nosec G115 -- search result count, bounded by page size
 			UserID:       userID,
 			ContentType:  contentTypePtr,
 		}); err != nil {

@@ -12,6 +12,8 @@ package studio
 
 import (
 	"context"
+	"errors"
+	"strconv"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -28,6 +30,10 @@ type Store struct {
 func NewStore(database *db.DB) *Store {
 	return &Store{db: database}
 }
+
+// ErrJobNotCancellable is returned when CancelJob is called on a job that is
+// not in 'queued' or 'failed' status.
+var ErrJobNotCancellable = errors.New("studio: job is not in a cancellable status (only queued/failed can be cancelled)")
 
 // Job is a studio_jobs row.
 type Job struct {
@@ -230,12 +236,20 @@ func (s *Store) ListJobs(ctx context.Context, tenantID pgtype.UUID, f JobListFil
 	return jobs, total, rows.Err()
 }
 
-// DeleteJob cancels a queued or failed job.
+// DeleteJob cancels a queued or failed job. Returns ErrJobNotCancellable if
+// the job is in a status that cannot be cancelled (e.g. generating,
+// published, in_review).
 func (s *Store) DeleteJob(ctx context.Context, tenantID, id pgtype.UUID) error {
-	_, err := s.db.Writer.Exec(ctx,
+	tag, err := s.db.Writer.Exec(ctx,
 		`DELETE FROM studio_jobs WHERE id = $1 AND tenant_id = $2 AND status IN ('queued','failed')`,
 		id, tenantID)
-	return err
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrJobNotCancellable
+	}
+	return nil
 }
 
 // UpdateJobStatus updates the status and optional error message.
@@ -246,13 +260,53 @@ func (s *Store) UpdateJobStatus(ctx context.Context, tenantID, id pgtype.UUID, s
 	return err
 }
 
-// UpdateJobGenerated sets the draft_content_id, review_id, and status after generation.
-func (s *Store) UpdateJobGenerated(ctx context.Context, tenantID, id, draftContentID, reviewID pgtype.UUID) error {
+// ErrJobAlreadyGenerating is returned by MarkJobGeneratingCAS when the job is
+// no longer in 'queued' status — another task already picked it up. This is
+// the compare-and-swap guard that prevents duplicate draft generation when two
+// content:generate_draft tasks for the same job_id are processed concurrently
+// (ADR-076 §1 job idempotency).
+var ErrJobAlreadyGenerating = errors.New("studio: job already picked up by another worker")
+
+// MarkJobGeneratingCAS atomically transitions a job from 'queued' to
+// 'generating' using a compare-and-swap UPDATE. Returns ErrJobAlreadyGenerating
+// if 0 rows were affected (the job was no longer 'queued' — another worker
+// already claimed it). This prevents the race condition where two concurrent
+// content:generate_draft tasks both pass the status guard in GenerateJob and
+// both proceed to generate duplicate drafts.
+func (s *Store) MarkJobGeneratingCAS(ctx context.Context, tenantID, id pgtype.UUID) error {
+	tag, err := s.db.Writer.Exec(ctx,
+		`UPDATE studio_jobs SET status = 'generating' WHERE id = $1 AND tenant_id = $2 AND status = 'queued'`,
+		id, tenantID)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrJobAlreadyGenerating
+	}
+	return nil
+}
+
+// UpdateJobGenerated sets the draft_content_id and status to 'draft_ready'
+// after the AI gateway has produced the draft content (ADR-076 §2 step 7).
+// The job remains in 'draft_ready' until it is routed to the review queue
+// (UpdateJobRoutedToReview) or auto-published (UpdateJobPublished).
+func (s *Store) UpdateJobGenerated(ctx context.Context, tenantID, id, draftContentID pgtype.UUID) error {
 	_, err := s.db.Writer.Exec(ctx,
-		`UPDATE studio_jobs SET draft_content_id = $3, review_id = $4, status = 'in_review',
+		`UPDATE studio_jobs SET draft_content_id = $3, status = 'draft_ready',
 		          generated_at = now()
 		  WHERE id = $1 AND tenant_id = $2`,
-		id, tenantID, draftContentID, reviewID)
+		id, tenantID, draftContentID)
+	return err
+}
+
+// UpdateJobRoutedToReview sets the review_id and status to 'in_review' after
+// the draft has been routed to the content_reviews HITL queue (ADR-076 §2
+// step 8). Called after UpdateJobGenerated once the review row exists.
+func (s *Store) UpdateJobRoutedToReview(ctx context.Context, tenantID, id, reviewID pgtype.UUID) error {
+	_, err := s.db.Writer.Exec(ctx,
+		`UPDATE studio_jobs SET review_id = $3, status = 'in_review'
+		  WHERE id = $1 AND tenant_id = $2`,
+		id, tenantID, reviewID)
 	return err
 }
 
@@ -417,8 +471,16 @@ func (s *Store) GetStats(ctx context.Context, tenantID pgtype.UUID) (StudioStats
 		       count(*) FILTER (WHERE status = 'published'),
 		       count(*) FILTER (WHERE status = 'rejected'),
 		       count(*) FILTER (WHERE status = 'failed'),
-		       COALESCE(avg(CASE WHEN status = 'published' THEN 1.0 ELSE 0.0 END), 0),
-		       COALESCE(avg(EXTRACT(EPOCH FROM (COALESCE(reviewed_at, now()) - generated_at)) / 3600), 0)
+		       COALESCE(
+		         count(*) FILTER (WHERE status = 'published')::float /
+		         NULLIF(count(*) FILTER (WHERE status IN ('published','rejected','failed')), 0),
+		         0
+		       ),
+		       COALESCE(
+		         avg(EXTRACT(EPOCH FROM (reviewed_at - generated_at)) / 3600)
+		           FILTER (WHERE reviewed_at IS NOT NULL AND generated_at IS NOT NULL),
+		         0
+		       )
 		FROM studio_jobs WHERE tenant_id = $1`, tenantID,
 	).Scan(&st.TotalJobs, &st.Queued, &st.Generating, &st.DraftReady, &st.InReview,
 		&st.Published, &st.Rejected, &st.Failed, &st.PublishRate, &st.AvgReviewH)
@@ -437,10 +499,7 @@ func (s *Store) CountActiveJobs(ctx context.Context, tenantID pgtype.UUID) (int,
 }
 
 // fmtArg converts an int to a string for parameterized query building.
-// Safe for small argIdx values (1-9); this package never exceeds 8 args.
+// Uses strconv.Itoa for correct conversion at any argIdx value.
 func fmtArg(i int) string {
-	if i < 0 || i > 9 {
-		return "1"
-	}
-	return string(rune('0' + i))
+	return strconv.Itoa(i)
 }

@@ -8,6 +8,7 @@ package forum
 
 import (
 	"context"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -209,7 +210,10 @@ func (s *Service) broadcastSpace(tenantID, spaceID pgtype.UUID, eventType string
 func (s *Service) drainViewIncrements() {
 	for inc := range s.viewChan {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		s.store.incrementThreadViewCount(ctx, inc.threadID, inc.tenantID)
+		if err := s.store.incrementThreadViewCount(ctx, inc.threadID, inc.tenantID); err != nil { // #nosec G118 -- background worker, no request context
+			slog.Warn("forum: failed to increment thread view count",
+				"thread_id", inc.threadID.String(), "error", err)
+		}
 		cancel()
 	}
 }

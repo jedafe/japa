@@ -36,6 +36,15 @@ DELETE FROM content_embeddings
 WHERE tenant_id = @tenant_id AND entity_type = @entity_type AND entity_id = @entity_id;
 
 -- =====================================================================
+-- Delete all chunks for every entity of a given type within a tenant.
+-- Used by the admin by-type aggregate purge (DELETE /admin/rag/entity/:type/all).
+-- =====================================================================
+
+-- name: DeleteContentEmbeddingsByType :exec
+DELETE FROM content_embeddings
+WHERE tenant_id = @tenant_id AND entity_type = @entity_type;
+
+-- =====================================================================
 -- Delete chunks for an entity that exceed the current chunk count.
 -- Used after re-indexing with fewer chunks: stale tail chunks must be
 -- removed so the table never holds orphaned chunks from a shorter re-index.
@@ -168,5 +177,43 @@ SELECT id, tenant_id FROM contents
 WHERE tenant_id = @tenant_id
   AND status = 'published'
   AND deleted_at IS NULL
+ORDER BY created_at DESC
+LIMIT @page_limit OFFSET @page_offset;
+
+-- =====================================================================
+-- List all non-deleted forum thread IDs for a tenant (for full corpus
+-- re-index). Forum threads are part of the RAG corpus (ADR-069 §2).
+-- =====================================================================
+
+-- name: ListForumThreadIDsForReindex :many
+SELECT id, tenant_id FROM forum_threads
+WHERE tenant_id = @tenant_id
+  AND deleted_at IS NULL
+ORDER BY created_at DESC
+LIMIT @page_limit OFFSET @page_offset;
+
+-- =====================================================================
+-- List all active space IDs for a tenant (for full corpus re-index).
+-- Spaces are part of the RAG corpus (ADR-069 §2).
+-- =====================================================================
+
+-- name: ListSpaceIDsForReindex :many
+SELECT id, tenant_id FROM spaces
+WHERE tenant_id = @tenant_id
+  AND status = 'active'
+ORDER BY created_at DESC
+LIMIT @page_limit OFFSET @page_offset;
+
+-- =====================================================================
+-- List all published learning track IDs for a tenant (for full corpus
+-- re-index). Learning tracks are part of the RAG corpus (ADR-069 §2).
+-- Only published tracks are indexed; learning_tracks has no deleted_at
+-- column (tracks are hard-deleted).
+-- =====================================================================
+
+-- name: ListLearningTrackIDsForReindex :many
+SELECT id, tenant_id FROM learning_tracks
+WHERE tenant_id = @tenant_id
+  AND is_published = true
 ORDER BY created_at DESC
 LIMIT @page_limit OFFSET @page_offset;

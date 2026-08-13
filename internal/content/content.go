@@ -108,6 +108,16 @@ type Service struct {
 	write    *gen.Queries
 	settings settingsReader
 	webhooks webhookEmitter
+	searcher ContentSearcher
+}
+
+// ContentSearcher abstracts full-text search for content IDs.
+// When wired (via SetSearcher), the content listing uses Meilisearch
+// for ?q= queries instead of PostgreSQL ILIKE — providing typo tolerance,
+// relevance ranking, and search-engine-grade matching.
+// When not wired (nil), the service falls back to ILIKE filtering.
+type ContentSearcher interface {
+	SearchContentIDs(ctx context.Context, tenantID pgtype.UUID, query string, limit int) ([]pgtype.UUID, error)
 }
 
 // settingsReader is the subset of *config.Settings used by the content
@@ -136,6 +146,15 @@ func (s *Service) SetSettings(sr settingsReader) {
 
 // SetWebhookEmitter injects the content.* event fan-out (Section 12).
 func (s *Service) SetWebhookEmitter(w webhookEmitter) { s.webhooks = w }
+
+// SetSearcher injects a Meilisearch-backed content searcher. When set,
+// ListContents uses Meilisearch for ?q= queries instead of ILIKE.
+// Pass nil to disable and fall back to ILIKE.
+func (s *Service) SetSearcher(searcher ContentSearcher) { s.searcher = searcher }
+
+// HasSearcher returns true when a Meilisearch content searcher is wired.
+// Used by handlers to decide whether to use SearchContents or ListContents.
+func (s *Service) HasSearcher() bool { return s.searcher != nil }
 
 // emitWebhook fires a content.* event fire-and-forget (Rule 8). Errors are
 // logged but never returned to the caller — webhook delivery is async.

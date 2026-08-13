@@ -21,6 +21,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/jedafe/japa/internal/config"
+	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/valkey"
 	"github.com/jedafe/japa/internal/worker"
 )
@@ -77,14 +78,14 @@ func ragQueryCacheKey(tenantID pgtype.UUID, queryEmbedding []float32, language s
 	for _, f := range queryEmbedding {
 		bits := math.Float32bits(f)
 		var buf [4]byte
-		buf[0] = byte(bits)
-		buf[1] = byte(bits >> 8)
-		buf[2] = byte(bits >> 16)
-		buf[3] = byte(bits >> 24)
+		buf[0] = byte(bits)          // #nosec G115 -- bit extraction, no overflow
+		buf[1] = byte(bits >> 8)     // #nosec G115 -- bit extraction, no overflow
+		buf[2] = byte(bits >> 16)    // #nosec G115 -- bit extraction, no overflow
+		buf[3] = byte(bits >> 24)    // #nosec G115 -- bit extraction, no overflow
 		h.Write(buf[:])
 	}
 	h.Write([]byte(language))
-	h.Write([]byte{byte(topK), byte(topK >> 8), byte(topK >> 16), byte(topK >> 24)})
+	h.Write([]byte{byte(topK), byte(topK >> 8), byte(topK >> 16), byte(topK >> 24)}) // #nosec G115 -- bit extraction, no overflow
 	if geoSpaceID != nil && geoSpaceID.Valid {
 		h.Write(geoSpaceID.Bytes[:])
 	} else {
@@ -138,7 +139,7 @@ func (s *Service) IndexEntity(ctx context.Context, tenantID pgtype.UUID, entityT
 	}
 
 	// Delete stale tail chunks from a previous, longer index.
-	if err := s.store.DeleteStaleTail(ctx, tenantID, entityType, entityID, int32(len(chunkTexts))); err != nil {
+	if err := s.store.DeleteStaleTail(ctx, tenantID, entityType, entityID, int32(len(chunkTexts))); err != nil { // #nosec G115 -- len() of a chunked text slice
 		slog.Warn("rag: index: failed to delete stale tail",
 			"entity_id", entityID.String(), "error", err)
 	}
@@ -152,6 +153,13 @@ func (s *Service) IndexEntity(ctx context.Context, tenantID pgtype.UUID, entityT
 // PurgeEntity deletes all chunks for an entity. Used on unpublish/delete.
 func (s *Service) PurgeEntity(ctx context.Context, tenantID pgtype.UUID, entityType string, entityID pgtype.UUID) error {
 	return s.store.DeleteEntityEmbeddings(ctx, tenantID, entityType, entityID)
+}
+
+// PurgeEntityType deletes all chunks for every entity of the given type
+// within a tenant. Used by the admin DELETE /admin/rag/entity/:type/all
+// route (the by-type aggregate purge from the dashboard).
+func (s *Service) PurgeEntityType(ctx context.Context, tenantID pgtype.UUID, entityType string) error {
+	return s.store.DeleteEmbeddingsByType(ctx, tenantID, entityType)
 }
 
 // Retrieve performs the RAG retrieval step: embed the query, search HNSW,
@@ -182,7 +190,7 @@ func (s *Service) Retrieve(ctx context.Context, tenantID pgtype.UUID, query, lan
 	}
 
 	model := s.settings.GetStringOr(ctx, tenantID, "rag.embedding_model", "text-embedding-3-small")
-	topK := int32(s.settings.GetIntOr(ctx, tenantID, "rag.retrieval_top_k", 5))
+	topK := int32(s.settings.GetIntOr(ctx, tenantID, "rag.retrieval_top_k", 5)) // #nosec G115 -- bounded by settings validation (1-50)
 
 	queryVec, err := s.embedder.GenerateEmbedding(ctx, query, model)
 	if err != nil {
@@ -302,5 +310,227 @@ func (s *Service) QueueReindex(ctx context.Context, tenantID pgtype.UUID) error 
 	}
 
 	slog.Info("rag: reindex: queued", "tenant_id", tenantID.String(), "total_enqueued", totalEnqueued)
+
+	// BUG-001 fix: also re-index forum_threads, spaces, and learning_tracks
+	// (ADR-069 §2 corpus). These entity types are indexed inline (not via the
+	// content:generate_embedding worker task), so we enumerate their IDs and
+	// fire-and-forget IndexEntity calls in background goroutines. The HTTP
+	// response returns immediately after enumeration; the actual embedding
+	// work happens asynchronously.
+	go s.reindexForumThreads(tenantID)    // #nosec G118 -- fire-and-forget: request ctx is cancelled on HTTP return (Rule 8)
+	go s.reindexSpaces(tenantID)          // #nosec G118 -- fire-and-forget: request ctx is cancelled on HTTP return (Rule 8)
+	go s.reindexLearningTracks(tenantID)  // #nosec G118 -- fire-and-forget: request ctx is cancelled on HTTP return (Rule 8)
+
 	return nil
+}
+
+// reindexForumThreads enumerates all non-deleted forum threads for the tenant
+// and re-indexes them into content_embeddings. Fire-and-forget — called in a
+// goroutine from QueueReindex.
+func (s *Service) reindexForumThreads(tenantID pgtype.UUID) {
+	ctx := context.Background()
+	language := "en"
+	if s.settings != nil {
+		language = s.settings.GetStringOr(ctx, tenantID, "i18n.default_language", "en")
+	}
+	const batchSize int32 = 100
+	var offset int32 = 0
+	total := 0
+	for {
+		ids, err := s.store.ListForumThreadIDs(ctx, tenantID, batchSize, offset)
+		if err != nil {
+			slog.Warn("rag: reindex forum threads: list batch failed",
+				"offset", offset, "error", err)
+			return
+		}
+		if len(ids) == 0 {
+			break
+		}
+		for _, id := range ids {
+			// Fetch thread title + body from DB for embedding.
+			thread, err := s.fetchForumThreadText(ctx, tenantID, id.ID)
+			if err != nil {
+				slog.Warn("rag: reindex forum threads: fetch failed",
+					"thread_id", id.ID.String(), "error", err)
+				continue
+			}
+			if thread == "" {
+				continue
+			}
+			if err := s.IndexEntity(ctx, tenantID, "forum_thread", id.ID, thread, language); err != nil {
+				slog.Warn("rag: reindex forum threads: index failed",
+					"thread_id", id.ID.String(), "error", err)
+				continue
+			}
+			total++
+		}
+		offset += batchSize
+	}
+	if total > 0 {
+		slog.Info("rag: reindex forum threads: done",
+			"tenant_id", tenantID.String(), "total_indexed", total)
+	}
+}
+
+// reindexSpaces enumerates all active spaces for the tenant and re-indexes
+// them into content_embeddings. Fire-and-forget — called in a goroutine from
+// QueueReindex.
+func (s *Service) reindexSpaces(tenantID pgtype.UUID) {
+	ctx := context.Background()
+	language := "en"
+	if s.settings != nil {
+		language = s.settings.GetStringOr(ctx, tenantID, "i18n.default_language", "en")
+	}
+	const batchSize int32 = 100
+	var offset int32 = 0
+	total := 0
+	for {
+		ids, err := s.store.ListSpaceIDs(ctx, tenantID, batchSize, offset)
+		if err != nil {
+			slog.Warn("rag: reindex spaces: list batch failed",
+				"offset", offset, "error", err)
+			return
+		}
+		if len(ids) == 0 {
+			break
+		}
+		for _, id := range ids {
+			text, err := s.fetchSpaceText(ctx, tenantID, id.ID)
+			if err != nil {
+				slog.Warn("rag: reindex spaces: fetch failed",
+					"space_id", id.ID.String(), "error", err)
+				continue
+			}
+			if text == "" {
+				continue
+			}
+			if err := s.IndexEntity(ctx, tenantID, "space", id.ID, text, language); err != nil {
+				slog.Warn("rag: reindex spaces: index failed",
+					"space_id", id.ID.String(), "error", err)
+				continue
+			}
+			total++
+		}
+		offset += batchSize
+	}
+	if total > 0 {
+		slog.Info("rag: reindex spaces: done",
+			"tenant_id", tenantID.String(), "total_indexed", total)
+	}
+}
+
+// reindexLearningTracks enumerates all published learning tracks for the
+// tenant and re-indexes them into content_embeddings. Fire-and-forget —
+// called in a goroutine from QueueReindex.
+func (s *Service) reindexLearningTracks(tenantID pgtype.UUID) {
+	ctx := context.Background()
+	language := "en"
+	if s.settings != nil {
+		language = s.settings.GetStringOr(ctx, tenantID, "i18n.default_language", "en")
+	}
+	const batchSize int32 = 100
+	var offset int32 = 0
+	total := 0
+	for {
+		ids, err := s.store.ListLearningTrackIDs(ctx, tenantID, batchSize, offset)
+		if err != nil {
+			slog.Warn("rag: reindex learning tracks: list batch failed",
+				"offset", offset, "error", err)
+			return
+		}
+		if len(ids) == 0 {
+			break
+		}
+		for _, id := range ids {
+			text, err := s.fetchLearningTrackText(ctx, tenantID, id.ID)
+			if err != nil {
+				slog.Warn("rag: reindex learning tracks: fetch failed",
+					"track_id", id.ID.String(), "error", err)
+				continue
+			}
+			if text == "" {
+				continue
+			}
+			if err := s.IndexEntity(ctx, tenantID, "learning_track", id.ID, text, language); err != nil {
+				slog.Warn("rag: reindex learning tracks: index failed",
+					"track_id", id.ID.String(), "error", err)
+				continue
+			}
+			total++
+		}
+		offset += batchSize
+	}
+	if total > 0 {
+		slog.Info("rag: reindex learning tracks: done",
+			"tenant_id", tenantID.String(), "total_indexed", total)
+	}
+}
+
+// fetchForumThreadText loads a forum thread's title + body from the database
+// for RAG embedding. Returns empty string if the thread has no text.
+func (s *Service) fetchForumThreadText(ctx context.Context, tenantID, threadID pgtype.UUID) (string, error) {
+	q := gen.New(s.store.pool.Reader)
+	row, err := q.GetForumThreadByID(ctx, gen.GetForumThreadByIDParams{
+		ID:       threadID,
+		TenantID: tenantID,
+	})
+	if err != nil {
+		return "", err
+	}
+	text := row.Title
+	if len(row.Body) > 0 {
+		if text != "" {
+			text += "\n\n"
+		}
+		text += string(row.Body)
+	}
+	return text, nil
+}
+
+// fetchSpaceText loads a space's name + description + wiki_content from the
+// database for RAG embedding. Returns empty string if the space has no text.
+func (s *Service) fetchSpaceText(ctx context.Context, tenantID, spaceID pgtype.UUID) (string, error) {
+	q := gen.New(s.store.pool.Reader)
+	row, err := q.GetSpaceByID(ctx, gen.GetSpaceByIDParams{
+		ID:       spaceID,
+		TenantID: tenantID,
+	})
+	if err != nil {
+		return "", err
+	}
+	text := row.Name
+	if row.Description != nil && *row.Description != "" {
+		if text != "" {
+			text += "\n\n"
+		}
+		text += *row.Description
+	}
+	if len(row.WikiContent) > 0 {
+		if text != "" {
+			text += "\n\n"
+		}
+		text += string(row.WikiContent)
+	}
+	return text, nil
+}
+
+// fetchLearningTrackText loads a learning track's title + description from
+// the database for RAG embedding. Returns empty string if the track has no text.
+func (s *Service) fetchLearningTrackText(ctx context.Context, tenantID, trackID pgtype.UUID) (string, error) {
+	q := gen.New(s.store.pool.Reader)
+	row, err := q.GetLearningTrackByID(ctx, gen.GetLearningTrackByIDParams{
+		ID:       trackID,
+		TenantID: tenantID,
+	})
+	if err != nil {
+		return "", err
+	}
+	text := row.Title
+	if row.Description != nil && *row.Description != "" {
+		if text != "" {
+			text += "\n\n"
+		}
+		text += *row.Description
+	}
+	return text, nil
 }

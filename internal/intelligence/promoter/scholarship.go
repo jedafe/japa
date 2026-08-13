@@ -20,15 +20,40 @@ import (
 
 // Store is the persistence surface the ScholarshipPromoter needs.
 // *stores.Store satisfies this interface; tests substitute a mock.
+//
+// WithTx runs a callback inside a transaction. The callback receives a
+// TxStore — a narrower interface that only exposes the write methods needed
+// inside the transaction. This ensures createPath and updatePath perform
+// their multi-table writes atomically (BUG-01/02 fix, §6.2 transaction
+// boundary).
 type Store interface {
-	GetIntelRecord(ctx context.Context, id pgtype.UUID) (gen.IntelRecord, error)
-	GetIntelSource(ctx context.Context, id pgtype.UUID) (gen.IntelSource, error)
-	GetScholarshipByIntelRecord(ctx context.Context, intelRecordID pgtype.UUID) (gen.Scholarship, error)
-	CreateScholarship(ctx context.Context, arg gen.CreateScholarshipParams) (gen.Scholarship, error)
-	UpdateScholarship(ctx context.Context, arg gen.UpdateScholarshipParams) error
-	CreateContent(ctx context.Context, arg gen.CreateContentParams) (gen.CreateContentRow, error)
-	UpdateIntelRecordPromoted(ctx context.Context, arg gen.UpdateIntelRecordPromotedParams) error
-	CreateIntelReviewLog(ctx context.Context, arg gen.CreateIntelReviewLogParams) error
+	GetIntelRecord(ctx context.Context, tenantID, id pgtype.UUID) (gen.IntelRecord, error)
+	GetIntelSource(ctx context.Context, tenantID, id pgtype.UUID) (gen.IntelSource, error)
+	GetScholarshipByIntelRecord(ctx context.Context, tenantID, intelRecordID pgtype.UUID) (gen.Scholarship, error)
+	CreateScholarship(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateScholarshipParams) (gen.Scholarship, error)
+	UpdateScholarship(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateScholarshipParams) error
+	CreateContent(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateContentParams) (gen.CreateContentRow, error)
+	UpdateIntelRecordPromoted(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateIntelRecordPromotedParams) error
+	CreateIntelReviewLog(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateIntelReviewLogParams) error
+	// GetCountrySpace resolves the country-level geo space (§05) id for an
+	// ISO-3 country code, so the promoter can stamp scholarships.country_space_id.
+	// Returns (pgtype.UUID{}, nil) when no country space exists yet; the
+	// promoter treats that as a nullable country_space_id (spec §455). BUG-005 fix.
+	GetCountrySpace(ctx context.Context, tenantID pgtype.UUID, countryCode string) (pgtype.UUID, error)
+	WithTx(ctx context.Context, fn func(TxStore) error) error
+}
+
+// TxStore is the subset of Store needed inside a transaction. It exposes
+// only the write methods that createPath and updatePath call, so the
+// transactional store can be a narrower type. *stores.Store satisfies this
+// interface (via WithTx's callback), and the test mock satisfies it
+// directly.
+type TxStore interface {
+	CreateContent(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateContentParams) (gen.CreateContentRow, error)
+	CreateScholarship(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateScholarshipParams) (gen.Scholarship, error)
+	UpdateIntelRecordPromoted(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateIntelRecordPromotedParams) error
+	UpdateScholarship(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateScholarshipParams) error
+	CreateIntelReviewLog(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateIntelReviewLogParams) error
 }
 
 // Default freshness score for a freshly promoted / re-verified row. The
@@ -86,7 +111,7 @@ var ErrNotScholarship = errors.New("promoter: intel record is not a scholarship"
 func (p *ScholarshipPromoter) Promote(ctx context.Context, recordID uuid.UUID) (PromoteResult, error) {
 	pgID := uuidToPg(recordID)
 
-	record, err := p.store.GetIntelRecord(ctx, pgID)
+	record, err := p.store.GetIntelRecord(ctx, p.tenantID, pgID)
 	if err != nil {
 		return PromoteResult{}, fmt.Errorf("promoter: load intel record: %w", err)
 	}
@@ -99,14 +124,14 @@ func (p *ScholarshipPromoter) Promote(ctx context.Context, recordID uuid.UUID) (
 		return PromoteResult{}, fmt.Errorf("promoter: parse extracted: %w", err)
 	}
 
-	source, err := p.store.GetIntelSource(ctx, record.SourceID)
+	source, err := p.store.GetIntelSource(ctx, p.tenantID, record.SourceID)
 	if err != nil {
 		return PromoteResult{}, fmt.Errorf("promoter: load intel source: %w", err)
 	}
 
 	// Does a projection row already exist for this intel record? A not-found
 	// error means we take the create path; any other error propagates.
-	existing, err := p.store.GetScholarshipByIntelRecord(ctx, pgID)
+	existing, err := p.store.GetScholarshipByIntelRecord(ctx, p.tenantID, pgID)
 	if err != nil {
 		if isNotFound(err) {
 			return p.createPath(ctx, record, source, ext)
@@ -118,7 +143,9 @@ func (p *ScholarshipPromoter) Promote(ctx context.Context, recordID uuid.UUID) (
 }
 
 // createPath inserts the contents guide entry, the scholarships projection row,
-// and flips the intel record to 'published' with the promoted row id.
+// and flips the intel record to 'published' with the promoted row id. All
+// three writes run inside a single transaction so a failure in any one
+// rolls back the others — no orphaned content rows (BUG-01 fix, §6.2).
 func (p *ScholarshipPromoter) createPath(ctx context.Context, record gen.IntelRecord, source gen.IntelSource, ext extractor.Extraction) (PromoteResult, error) {
 	title := stringField(ext, "title")
 	if title == "" {
@@ -129,7 +156,20 @@ func (p *ScholarshipPromoter) createPath(ctx context.Context, record gen.IntelRe
 	hash := content.ComputeContentHash(body)
 	canonicalURL := source.SourceUrl
 
-	contentRow, err := p.store.CreateContent(ctx, gen.CreateContentParams{
+	// Resolve the destination country's geo space (§05) so the space-scoped
+	// radar feed (ListScholarshipsBySpace) can match this scholarship. The
+	// lookup is best-effort: when no country space exists for the extracted
+	// ISO-3 code, country_space_id stays NULL and the radar falls back to the
+	// ?country= filter. BUG-005 fix (spec §455).
+	countryCode := firstCountry(ext, "country")
+	var countrySpaceID pgtype.UUID
+	if countryCode != "" {
+		if id, err := p.store.GetCountrySpace(ctx, p.tenantID, countryCode); err == nil && id.Valid {
+			countrySpaceID = id
+		}
+	}
+
+	contentParams := gen.CreateContentParams{
 		TenantID:        p.tenantID,
 		AuthorID:        p.authorID,
 		ContentType:     "guide",
@@ -146,33 +186,43 @@ func (p *ScholarshipPromoter) createPath(ctx context.Context, record gen.IntelRe
 		GuideCategory:   ptr("scholarship"),
 		PublishAt:       pgtype.Timestamptz{Time: p.now(), Valid: true},
 		PublishedAt:     pgtype.Timestamptz{Time: p.now(), Valid: true},
+	}
+	scholarshipParams := buildCreateParams(record, source, pgtype.UUID{}, ext)        // guideID filled inside tx
+	scholarshipParams.CountrySpaceID = countrySpaceID // override the invalid pgtype.UUID{} default
+
+	var result PromoteResult
+	err := p.store.WithTx(ctx, func(tx TxStore) error {
+		contentRow, err := tx.CreateContent(ctx, p.tenantID, contentParams)
+		if err != nil {
+			return fmt.Errorf("promoter: create guide content: %w", err)
+		}
+		scholarshipParams.GuideID = contentRow.ID
+		scholarship, err := tx.CreateScholarship(ctx, p.tenantID, scholarshipParams)
+		if err != nil {
+			return fmt.Errorf("promoter: create scholarship: %w", err)
+		}
+		if err := tx.UpdateIntelRecordPromoted(ctx, p.tenantID, gen.UpdateIntelRecordPromotedParams{
+			ID:               record.ID,
+			PromotedRecordID: scholarship.ID,
+		}); err != nil {
+			return fmt.Errorf("promoter: mark intel record promoted: %w", err)
+		}
+		result = PromoteResult{
+			DomainID:  pgToUUID(scholarship.ID),
+			ContentID: pgToUUID(contentRow.ID),
+			Action:    ActionCreated,
+		}
+		return nil
 	})
-	if err != nil {
-		return PromoteResult{}, fmt.Errorf("promoter: create guide content: %w", err)
-	}
-
-	scholarship, err := p.store.CreateScholarship(ctx, buildCreateParams(record, source, contentRow.ID, ext))
-	if err != nil {
-		return PromoteResult{}, fmt.Errorf("promoter: create scholarship: %w", err)
-	}
-
-	if err := p.store.UpdateIntelRecordPromoted(ctx, gen.UpdateIntelRecordPromotedParams{
-		ID:               record.ID,
-		PromotedRecordID: scholarship.ID,
-	}); err != nil {
-		return PromoteResult{}, fmt.Errorf("promoter: mark intel record promoted: %w", err)
-	}
-
-	return PromoteResult{
-		DomainID:  pgToUUID(scholarship.ID),
-		ContentID: pgToUUID(contentRow.ID),
-		Action:    ActionCreated,
-	}, nil
+	return result, err
 }
 
 // updatePath applies the new extraction to the existing scholarship row,
 // skipping any field present in editorial_overrides, and records an
-// auto_update review-log entry when fields actually change.
+// auto_update review-log entry when fields actually change. The scholarship
+// update and the review log write run inside a single transaction so the
+// audit trail is always consistent with the projection state (BUG-02 fix,
+// §6.2).
 func (p *ScholarshipPromoter) updatePath(ctx context.Context, record gen.IntelRecord, existing gen.Scholarship, ext extractor.Extraction) (PromoteResult, error) {
 	overrides, err := parseOverrideKeys(existing.EditorialOverrides)
 	if err != nil {
@@ -186,7 +236,9 @@ func (p *ScholarshipPromoter) updatePath(ctx context.Context, record gen.IntelRe
 		// last_verified_at + freshness_score by re-stamping the row with
 		// its current values at full freshness.
 		params.FreshnessScore = freshScore
-		if err := p.store.UpdateScholarship(ctx, params); err != nil {
+		if err := p.store.WithTx(ctx, func(tx TxStore) error {
+			return tx.UpdateScholarship(ctx, p.tenantID, params)
+		}); err != nil {
 			return PromoteResult{}, fmt.Errorf("promoter: bump scholarship freshness: %w", err)
 		}
 		return PromoteResult{
@@ -197,33 +249,35 @@ func (p *ScholarshipPromoter) updatePath(ctx context.Context, record gen.IntelRe
 	}
 
 	params.FreshnessScore = freshScore
-	if err := p.store.UpdateScholarship(ctx, params); err != nil {
-		return PromoteResult{}, fmt.Errorf("promoter: update scholarship: %w", err)
-	}
-
-	// Record the auto_update in the review log so the human-in-the-loop UI can
-	// show what the automation changed. Field changes are JSON-encoded as
-	// [{"field": "...", "from": ..., "to": ...}, ...].
 	changesJSON, err := marshalFieldChanges(existing, params, changed)
 	if err != nil {
 		return PromoteResult{}, fmt.Errorf("promoter: marshal field changes: %w", err)
 	}
 	note := "automatic re-crawl update"
-	if err := p.store.CreateIntelReviewLog(ctx, gen.CreateIntelReviewLogParams{
+	reviewLogParams := gen.CreateIntelReviewLogParams{
 		IntelRecordID: record.ID,
 		Action:        "auto_update",
 		FieldChanges:  changesJSON,
 		Note:          &note,
-	}); err != nil {
-		return PromoteResult{}, fmt.Errorf("promoter: write auto_update review log: %w", err)
 	}
 
-	return PromoteResult{
-		DomainID:     pgToUUID(existing.ID),
-		ContentID:    pgToUUID(existing.GuideID),
-		Action:       ActionUpdated,
-		ChangedFields: changed,
-	}, nil
+	var result PromoteResult
+	err = p.store.WithTx(ctx, func(tx TxStore) error {
+		if err := tx.UpdateScholarship(ctx, p.tenantID, params); err != nil {
+			return fmt.Errorf("promoter: update scholarship: %w", err)
+		}
+		if err := tx.CreateIntelReviewLog(ctx, p.tenantID, reviewLogParams); err != nil {
+			return fmt.Errorf("promoter: write auto_update review log: %w", err)
+		}
+		result = PromoteResult{
+			DomainID:      pgToUUID(existing.ID),
+			ContentID:     pgToUUID(existing.GuideID),
+			Action:        ActionUpdated,
+			ChangedFields: changed,
+		}
+		return nil
+	})
+	return result, err
 }
 
 // ---------------------------------------------------------------------------
@@ -253,10 +307,15 @@ func buildCreateParams(record gen.IntelRecord, source gen.IntelSource, guideID p
 		MinimumGpa:           numericField(ext, "minimum_gpa"),
 		LanguageRequirements: jsonbField(ext, "language_requirements"),
 		ConfidenceOverall:    record.ConfidenceOverall,
-		VerificationStatus:   "auto",
-		FreshnessScore:       freshScore,
-		OverrideSource:       "auto",
-		EditorialOverrides:   emptyJSONObject(),
+		// spec §530: create path stamps 'verified' + 'ingestion'. The
+		// scholarships CHECK constraint (migration 000429) only allows
+		// verification_status IN ('verified','needs_review','conflict','stale')
+		// and override_source IN ('ingestion','editorial','mixed'); the prior
+		// 'auto' values violated the CHECK and rejected every insert.
+		VerificationStatus: "verified",
+		FreshnessScore:     freshScore,
+		OverrideSource:     "ingestion",
+		EditorialOverrides: emptyJSONObject(),
 	}
 }
 
@@ -464,7 +523,7 @@ func stringSliceField(ext extractor.Extraction, key string) []string {
 		}
 	}
 	if len(out) == 0 {
-		return nil
+		return []string{}
 	}
 	return out
 }

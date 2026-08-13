@@ -29,9 +29,11 @@ type APIFetcher struct {
 	client *http.Client
 }
 
-// NewAPIFetcher returns an APIFetcher with a 30s timeout.
+// NewAPIFetcher returns an APIFetcher with a 30s timeout and SSRF-safe
+// transport (redirects to private IPs are blocked; response bodies are
+// capped at defaultMaxBodySize by the Fetch method).
 func NewAPIFetcher() *APIFetcher {
-	return &APIFetcher{client: &http.Client{Timeout: 30 * time.Second}}
+	return &APIFetcher{client: NewSafeClient(30*time.Second, defaultMaxBodySize)}
 }
 
 // ParseProviderConfig decodes source.provider_config into APIProviderConfig.
@@ -73,7 +75,7 @@ func (f *APIFetcher) Fetch(ctx context.Context, source sources.Source) (FetchRes
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(NewMaxBodyReader(resp.Body, defaultMaxBodySize))
 	if err != nil {
 		return FetchResult{}, fmt.Errorf("api: read body: %w", err)
 	}

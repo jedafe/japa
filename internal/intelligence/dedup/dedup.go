@@ -28,20 +28,26 @@ type RecordLister interface {
 	// GetIntelRecordByExternalKey fetches a single intel record by the
 	// (source_id, external_key) natural key. It returns pgx.ErrNoRows
 	// (wrapped) when no record exists for that key pair.
-	GetIntelRecordByExternalKey(ctx context.Context, arg gen.GetIntelRecordByExternalKeyParams) (gen.IntelRecord, error)
+	GetIntelRecordByExternalKey(ctx context.Context, tenantID pgtype.UUID, arg gen.GetIntelRecordByExternalKeyParams) (gen.IntelRecord, error)
+	// ListIntelRecordsByExternalKey fetches all intel records matching the
+	// given external_key across ALL sources. Used by CheckAcrossSources to
+	// detect cross-source conflicts (BUG-20 fix).
+	ListIntelRecordsByExternalKey(ctx context.Context, tenantID pgtype.UUID, externalKey string) ([]gen.IntelRecord, error)
 }
 
 // Service wraps a RecordLister and exposes the dedup decision logic. It is
 // safe for concurrent use because it holds no mutable state.
 type Service struct {
-	store RecordLister
+	store    RecordLister
+	tenantID pgtype.UUID
 }
 
 // NewService creates a dedup service backed by the given record lister. Any
 // *stores.Store satisfies RecordLister, so callers can pass the shared
-// intelligence store directly.
-func NewService(store RecordLister) *Service {
-	return &Service{store: store}
+// intelligence store directly. The tenantID scopes all queries per ADR-112
+// Amendment 2.
+func NewService(store RecordLister, tenantID pgtype.UUID) *Service {
+	return &Service{store: store, tenantID: tenantID}
 }
 
 // CheckResult describes the dedup outcome for a candidate intel record.
@@ -86,7 +92,7 @@ func (r CheckResult) String() string {
 // is handled by CheckAcrossSources. Any error other than "no rows" is
 // returned to the caller unchanged.
 func (s *Service) Check(ctx context.Context, sourceID pgtype.UUID, externalKey string) (CheckResult, error) {
-	_, err := s.store.GetIntelRecordByExternalKey(ctx, gen.GetIntelRecordByExternalKeyParams{
+	_, err := s.store.GetIntelRecordByExternalKey(ctx, s.tenantID, gen.GetIntelRecordByExternalKeyParams{
 		SourceID:    sourceID,
 		ExternalKey: externalKey,
 	})
@@ -103,18 +109,23 @@ func (s *Service) Check(ctx context.Context, sourceID pgtype.UUID, externalKey s
 
 // CheckAcrossSources reports whether a different source_id already claims
 // the given external_key, which indicates a cross-source conflict that
-// should be held for human review.
+// should be held for human review rather than silently creating a duplicate
+// projection row (BUG-20 fix).
 //
-// TODO: stores.Store does not yet expose a lookup by external_key alone
-// (without a source_id filter). Once a ListIntelRecordsByExternalKey or
-// similar query is generated, implement the cross-source scan here. For
-// now this returns CheckResultNew so callers can proceed; conflict
-// detection is deferred until that query exists.
+// The query returns all intel records matching external_key regardless of
+// source. If any record has a different source_id than the candidate, it is
+// a cross-source conflict.
 func (s *Service) CheckAcrossSources(ctx context.Context, sourceID pgtype.UUID, externalKey string) (CheckResult, error) {
-	_ = ctx
-	_ = sourceID
-	_ = externalKey
-	// No cross-source query available yet; defer to the per-source Check
-	// result so the pipeline is not blocked.
+	records, err := s.store.ListIntelRecordsByExternalKey(ctx, s.tenantID, externalKey)
+	if err != nil {
+		return 0, fmt.Errorf("dedup: cross-source check: %w", err)
+	}
+	for _, rec := range records {
+		// A record from a DIFFERENT source with the same external_key is a
+		// cross-source conflict. Same-source records are handled by Check.
+		if rec.SourceID != sourceID {
+			return CheckResultConflict, nil
+		}
+	}
 	return CheckResultNew, nil
 }

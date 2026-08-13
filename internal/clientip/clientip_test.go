@@ -2,6 +2,7 @@ package clientip
 
 import (
 	"context"
+	"net"
 	"net/http"
 	"testing"
 )
@@ -285,5 +286,171 @@ func TestTrustedProxies_DefaultsRestored(t *testing.T) {
 
 	if got := FromRequest(r); got != "203.0.113.70" {
 		t.Fatalf("expected default loopback to be trusted after reset, got %q", got)
+	}
+}
+
+// --- Additional edge-case coverage (CIP-3) ---
+
+func TestFromRequest_EmptyRemoteAddr_ReturnsEmpty(t *testing.T) {
+	t.Parallel()
+
+	// RemoteAddr is empty (can happen in tests or unusual server configs).
+	// No headers should be consulted because we can't verify the peer.
+	r := requestWith("", map[string]string{
+		"X-Forwarded-For": "203.0.113.10",
+		"X-Real-IP":       "203.0.113.20",
+	})
+
+	if got := FromRequest(r); got != "" {
+		t.Fatalf("expected empty string for empty RemoteAddr, got %q", got)
+	}
+}
+
+func TestFromRequest_IPv4MappedIPv6_InXFF(t *testing.T) {
+	t.Parallel()
+
+	// ::ffff:203.0.113.10 is an IPv4-mapped IPv6 address. It should be
+	// canonicalized to "203.0.113.10" and treated as untrusted (not in
+	// any default trusted CIDR).
+	r := requestWith("10.0.0.5:4321", map[string]string{
+		"X-Forwarded-For": "::ffff:203.0.113.10, 10.0.0.5",
+	})
+
+	if got := FromRequest(r); got != "203.0.113.10" {
+		t.Fatalf("expected canonical IPv4 from mapped IPv6, got %q", got)
+	}
+}
+
+func TestFromRequest_IPv4MappedIPv6_Loopback_IsTrusted(t *testing.T) {
+	t.Parallel()
+
+	// ::ffff:127.0.0.1 maps to 127.0.0.1, which is in the default trusted
+	// set (127.0.0.0/8). The walker should skip it and fall through to
+	// X-Real-IP.
+	r := requestWith("10.0.0.5:4321", map[string]string{
+		"X-Forwarded-For": "::ffff:127.0.0.1, 10.0.0.5",
+		"X-Real-IP":       "203.0.113.99",
+	})
+
+	if got := FromRequest(r); got != "203.0.113.99" {
+		t.Fatalf("expected mapped loopback to be trusted, fall through to X-Real-IP, got %q", got)
+	}
+}
+
+func TestFromRequest_WhitespaceOnlyXFF_FallsToRealIP(t *testing.T) {
+	t.Parallel()
+
+	// XFF with only whitespace/commas → all entries trimmed to "" and
+	// skipped. Should fall through to X-Real-IP.
+	r := requestWith("127.0.0.1:4321", map[string]string{
+		"X-Forwarded-For": " , , , ",
+		"X-Real-IP":       "203.0.113.88",
+	})
+
+	if got := FromRequest(r); got != "203.0.113.88" {
+		t.Fatalf("expected X-Real-IP when XFF is whitespace-only, got %q", got)
+	}
+}
+
+func TestFromRequest_AllInvalidXFF_FallsToRealIP(t *testing.T) {
+	t.Parallel()
+
+	// XFF with only invalid IPs → all skipped. Fall through to X-Real-IP.
+	r := requestWith("127.0.0.1:4321", map[string]string{
+		"X-Forwarded-For": "not-an-ip, also-bad, 999.999.999.999",
+		"X-Real-IP":       "203.0.113.77",
+	})
+
+	if got := FromRequest(r); got != "203.0.113.77" {
+		t.Fatalf("expected X-Real-IP when XFF is all invalid, got %q", got)
+	}
+}
+
+func TestFromRequest_AllInvalidXFF_NoRealIP_FallsToPeer(t *testing.T) {
+	t.Parallel()
+
+	// XFF all invalid, no X-Real-IP → fall through to peer.
+	r := requestWith("127.0.0.1:4321", map[string]string{
+		"X-Forwarded-For": "not-an-ip, also-bad",
+	})
+
+	if got := FromRequest(r); got != "127.0.0.1" {
+		t.Fatalf("expected peer when XFF all invalid and no X-Real-IP, got %q", got)
+	}
+}
+
+func TestTrustedProxies_EnvOverride_AllInvalid_NoTrustedProxies(t *testing.T) {
+	// All-invalid JC_TRUSTED_PROXIES → no trusted proxies. Forwarding
+	// headers from any peer (including default-trusted loopback) are
+	// ignored. This is the safe behaviour: a garbage config yields no
+	// trusted proxies, not the defaults.
+	t.Setenv("JC_TRUSTED_PROXIES", "garbage, not-a-cidr, ???")
+	resetForTesting()
+	defer resetForTesting()
+
+	r := requestWith("127.0.0.1:4321", map[string]string{
+		"X-Real-IP": "203.0.113.50",
+	})
+
+	if got := FromRequest(r); got != "127.0.0.1" {
+		t.Fatalf("expected peer (no trusted proxies after all-invalid env), got %q", got)
+	}
+}
+
+func TestTrustedProxies_EnvOverride_MixedValidInvalid(t *testing.T) {
+	// Mixed valid/invalid entries → valid ones are used, invalid skipped.
+	t.Setenv("JC_TRUSTED_PROXIES", "garbage, 198.51.100.0/24, not-an-ip")
+	resetForTesting()
+	defer resetForTesting()
+
+	// 198.51.100.10 is trusted (valid CIDR).
+	r := requestWith("198.51.100.10:4321", map[string]string{
+		"X-Real-IP": "203.0.113.60",
+	})
+
+	if got := FromRequest(r); got != "203.0.113.60" {
+		t.Fatalf("expected forwarded IP via valid CIDR in mixed env, got %q", got)
+	}
+
+	// 127.0.0.1 is NOT trusted (defaults replaced, only 198.51.100.0/24 is).
+	r2 := requestWith("127.0.0.1:4321", map[string]string{
+		"X-Real-IP": "203.0.113.60",
+	})
+
+	if got := FromRequest(r2); got != "127.0.0.1" {
+		t.Fatalf("expected loopback untrusted after mixed env override, got %q", got)
+	}
+}
+
+func TestTrustedProxies_EnvOverride_EmptyString_UsesDefaults(t *testing.T) {
+	// JC_TRUSTED_PROXIES set to empty string → os.Getenv returns "" →
+	// defaults are used (same as unset). This documents the behaviour that
+	// an operator cannot disable all trusted proxies by setting the env
+	// var to empty — empty means "use defaults".
+	t.Setenv("JC_TRUSTED_PROXIES", "")
+	resetForTesting()
+	defer resetForTesting()
+
+	r := requestWith("127.0.0.1:4321", map[string]string{
+		"X-Real-IP": "203.0.113.70",
+	})
+
+	if got := FromRequest(r); got != "203.0.113.70" {
+		t.Fatalf("expected defaults when JC_TRUSTED_PROXIES is empty string, got %q", got)
+	}
+}
+
+func TestIsTrustedProxy_IPv4MappedIPv6_Loopback(t *testing.T) {
+	t.Parallel()
+
+	// ::ffff:127.0.0.1 should be trusted because it maps to 127.0.0.1,
+	// which is in 127.0.0.0/8.
+	ip := net.ParseIP("::ffff:127.0.0.1")
+	if ip == nil {
+		t.Fatal("failed to parse ::ffff:127.0.0.1")
+	}
+
+	if !IsTrustedProxy(ip) {
+		t.Fatal("expected ::ffff:127.0.0.1 to be trusted (maps to loopback)")
 	}
 }

@@ -376,7 +376,7 @@ func (e *ComparisonEngine) AddDimensions(
 					"content_id", in.ContentID, "error", err)
 				positionByContent[in.ContentID] = 0
 			} else {
-				positionByContent[in.ContentID] = int32(len(detail.Dimensions))
+				positionByContent[in.ContentID] = int32(len(detail.Dimensions)) // #nosec G115 -- len() of a DB result slice
 			}
 		}
 	}
