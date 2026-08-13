@@ -63,7 +63,11 @@ type ActionDispatcher interface {
 	// CreateComment posts a comment on targetContentID as the persona.
 	CreateComment(ctx context.Context, tenantID, personaUserID, targetContentID pgtype.UUID, body []byte) (pgtype.UUID, error)
 	// CreateForumThread creates a new forum thread (forum_question action).
-	CreateForumThread(ctx context.Context, tenantID, personaUserID, spaceID pgtype.UUID, title, slug string, body []byte) (pgtype.UUID, error)
+	// contentID is the published contents row that backs the thread's root
+	// post; the forum thread links to it via forum_threads.content_id
+	// (BUG-004 — previously the thread was created with content_id=NULL,
+	// leaving an orphan published content row).
+	CreateForumThread(ctx context.Context, tenantID, personaUserID, contentID, spaceID pgtype.UUID, title, slug string, body []byte) (pgtype.UUID, error)
 	// CreateForumReply posts a reply to a forum thread (forum_answer action).
 	CreateForumReply(ctx context.Context, tenantID, personaUserID, threadID pgtype.UUID, body []byte) (pgtype.UUID, error)
 	// ToggleFollow follows the target entity as the persona.
@@ -198,11 +202,18 @@ func (s *Service) RunActivity(ctx context.Context, personaID pgtype.UUID) error 
 		return nil
 	}
 
-	// Parse activity policy.
+	// Parse activity policy. Start with code-level defaults, then adopt the
+	// stored policy only if it has a non-zero ActionsPerDay. The DB default
+	// for activity_policy is '{}' (migration 000246); unmarshaling '{}' into
+	// the struct zeroes all fields, overwriting the defaults and leaving
+	// ActionsPerDay=0 — the persona would never act (BUG-003).
 	policy := DefaultActivityPolicy()
 	if persona.ActivityPolicy != nil && len(persona.ActivityPolicy) > 0 {
-		if err := json.Unmarshal(persona.ActivityPolicy, &policy); err != nil {
+		var stored ActivityPolicy
+		if err := json.Unmarshal(persona.ActivityPolicy, &stored); err != nil {
 			slog.Warn("participation: run_activity: bad activity_policy, using default", "error", err)
+		} else if stored.ActionsPerDay > 0 {
+			policy = stored
 		}
 	}
 
@@ -342,7 +353,9 @@ func (s *Service) DispatchAction(ctx context.Context, actionID pgtype.UUID) erro
 	case "forum_question":
 		// forum_question creates a new forum thread in the target space.
 		// The draft content row is the thread's root content; publish it
-		// first, then create the forum thread via the dispatcher.
+		// first, then create the forum thread linked to that content via
+		// forum_threads.content_id (BUG-004 — previously the thread was
+		// created with content_id=NULL, leaving an orphan content row).
 		_, err = s.db.Writer.Exec(ctx,
 			`UPDATE contents SET status = 'published', published_at = now()
 			 WHERE id = $1 AND tenant_id = $2`,
@@ -358,7 +371,7 @@ func (s *Service) DispatchAction(ctx context.Context, actionID pgtype.UUID) erro
 			// AI gateway generates a proper title; here we use a fallback.
 			title := "Persona Discussion"
 			slug := fmt.Sprintf("persona-%d", time.Now().UnixNano())
-			threadID, derr := s.dispatcher.CreateForumThread(ctx, tenantID, authorID, spaceID, title, slug, payload.Body)
+			threadID, derr := s.dispatcher.CreateForumThread(ctx, tenantID, authorID, contentID, spaceID, title, slug, payload.Body)
 			if derr != nil {
 				slog.Error("participation: dispatch forum_question", "action_id", actionID, "error", derr)
 			} else {
@@ -627,7 +640,14 @@ func (s *Service) findEligibleContent(ctx context.Context, persona personas.Pers
 		argIdx++
 	}
 
-	query += ` ORDER BY c.created_at DESC LIMIT 50`
+	// §76 / ADR-077 §2: score by recency and engagement gap — prefer content
+	// with fewer comments/reactions (adds value where missing). Order by
+	// engagement ascending, then recency descending (BUG-006 — previously
+	// only ordered by created_at DESC, always targeting the newest content).
+	query += ` ORDER BY (
+		(SELECT count(*) FROM comments cm WHERE cm.content_id = c.id AND cm.tenant_id = c.tenant_id AND cm.deleted_at IS NULL) +
+		(SELECT count(*) FROM reactions r WHERE r.entity_type = 'content' AND r.entity_id = c.id AND r.tenant_id = c.tenant_id)
+	) ASC, c.created_at DESC LIMIT 50`
 
 	rows, err := s.db.Reader.Query(ctx, query, args...)
 	if err != nil {
@@ -964,7 +984,9 @@ func (s *Service) isWithinActiveHours(hours [2]int) bool {
 		return true
 	}
 	hour := time.Now().UTC().Hour()
-	return hour >= hours[0] && hour < hours[1]
+	// §76 / ADR-077 §1: active_hours_utc is an inclusive range [start, end].
+	// Previously used < (exclusive), which excluded the final hour (BUG-005).
+	return hour >= hours[0] && hour <= hours[1]
 }
 
 func nextMidnightUTC() time.Time {

@@ -10,7 +10,7 @@
 	import { SlideOver } from '$lib/components/ui/slide-over';
 	import type { ActionItem } from '$lib/components/ui/data-table';
 	import { Wand, Plus, RefreshCw, BarChart3, RotateCcw, X, Eye } from 'lucide-svelte';
-	import { api } from '$lib/api';
+	import { api, apiRaw } from '$lib/api';
 
 	type StudioJob = {
 		id: string;
@@ -53,6 +53,11 @@
 		can_auto_publish: boolean;
 	};
 
+	type ContentTypeResponse = {
+		types: ContentTypeOption[];
+		default_persona_id?: string;
+	};
+
 	const canManage = $derived(hasPermission('studio.manage'));
 	const canCreate = $derived(hasPermission('studio.create') || hasPermission('studio.manage'));
 
@@ -68,6 +73,22 @@
 	let messageType = $state('');
 	let personas = $state<{ id: string; label: string }[]>([]);
 	let contentTypes = $state<ContentTypeOption[]>([]);
+	let defaultPersonaID = $state('');
+
+	// Server-side pagination state for jobs table.
+	let jobsPage = $state(0);
+	let jobsPageSize = $state(25);
+	let jobsTotal = $state(0);
+	let jobsTotalPages = $state(1);
+	let jobsFilterStatus = $state('');
+	let jobsFilterContentType = $state('');
+	let jobsFilterPersonaID = $state('');
+
+	// Server-side pagination state for batches table.
+	let batchesPage = $state(0);
+	let batchesPageSize = $state(25);
+	let batchesTotal = $state(0);
+	let batchesTotalPages = $state(1);
 
 	let newJob = $state({
 		persona_id: '',
@@ -84,21 +105,39 @@
 		{ value: 'stats', label: t('studio.stats', 'Statistics'), icon: BarChart3 }
 	]);
 
+	async function loadJobs() {
+		const params = new URLSearchParams();
+		params.set('limit', String(jobsPageSize));
+		params.set('offset', String(jobsPage * jobsPageSize));
+		if (jobsFilterStatus) params.set('status', jobsFilterStatus);
+		if (jobsFilterContentType) params.set('content_type', jobsFilterContentType);
+		if (jobsFilterPersonaID) params.set('persona_id', jobsFilterPersonaID);
+		const res = await apiRaw<{ data: StudioJob[]; meta: { total: number } }>(`/admin/studio/jobs?${params.toString()}`);
+		if (res.ok && res.data) {
+			jobs = res.data.data ?? [];
+			jobsTotal = res.data.meta?.total ?? 0;
+			jobsTotalPages = Math.max(1, Math.ceil(jobsTotal / jobsPageSize));
+		}
+	}
+
+	async function loadBatches() {
+		const params = new URLSearchParams();
+		params.set('limit', String(batchesPageSize));
+		params.set('offset', String(batchesPage * batchesPageSize));
+		const res = await apiRaw<{ data: StudioBatch[]; meta: { total: number } }>(`/admin/studio/batches?${params.toString()}`);
+		if (res.ok && res.data) {
+			batches = res.data.data ?? [];
+			batchesTotal = res.data.meta?.total ?? 0;
+			batchesTotalPages = Math.max(1, Math.ceil(batchesTotal / batchesPageSize));
+		}
+	}
+
 	async function load() {
 		loading = true;
 		error = '';
 		try {
-			const [jobsRes, batchesRes, statsRes] = await Promise.all([
-				api<StudioJob[]>('/admin/studio/jobs'),
-				api<StudioBatch[]>('/admin/studio/batches'),
-				api<StudioStats>('/admin/studio/stats')
-			]);
-			if (jobsRes.ok) {
-				jobs = jobsRes.data ?? [];
-			}
-			if (batchesRes.ok) {
-				batches = batchesRes.data ?? [];
-			}
+			await Promise.all([loadJobs(), loadBatches()]);
+			const statsRes = await api<StudioStats>('/admin/studio/stats');
 			if (statsRes.ok) {
 				stats = statsRes.data;
 			}
@@ -109,20 +148,53 @@
 		}
 	}
 
+	function onJobsPageChange(p: number) {
+		jobsPage = p;
+		loadJobs();
+	}
+
+	function onJobsPageSizeChange(s: number) {
+		jobsPageSize = s;
+		jobsPage = 0;
+		loadJobs();
+	}
+
+	function onBatchesPageChange(p: number) {
+		batchesPage = p;
+		loadBatches();
+	}
+
+	function onBatchesPageSizeChange(s: number) {
+		batchesPageSize = s;
+		batchesPage = 0;
+		loadBatches();
+	}
+
+	function applyJobFilters() {
+		jobsPage = 0;
+		loadJobs();
+	}
+
 	async function loadCreateOptions() {
 		try {
 			const [personasRes, typesRes] = await Promise.all([
 				api<{ id: string; label: string }[]>('/admin/studio/personas'),
-				api<ContentTypeOption[]>('/admin/studio/content-types')
+				api<ContentTypeResponse>('/admin/studio/content-types')
 			]);
 			if (personasRes.ok) {
 				personas = personasRes.data ?? [];
 			}
-			if (typesRes.ok) {
-				contentTypes = typesRes.data ?? [];
+			if (typesRes.ok && typesRes.data) {
+				contentTypes = typesRes.data.types ?? [];
+				defaultPersonaID = typesRes.data.default_persona_id ?? '';
 				// Auto-select the first content type if none selected yet.
 				if (contentTypes.length > 0 && !newJob.content_type) {
 					newJob.content_type = contentTypes[0].type;
+				}
+				// Pre-select the default persona if configured (§75
+				// studio.default_persona_id) and no persona is selected yet.
+				if (defaultPersonaID && !newJob.persona_id) {
+					newJob.persona_id = defaultPersonaID;
 				}
 			}
 		} catch {
@@ -347,9 +419,10 @@
 					generating: 'bg-warning/15 text-warning border-warning',
 					draft_ready: 'bg-primary/15 text-primary border-primary',
 					in_review: 'bg-warning/15 text-warning border-warning',
+					approved: 'bg-primary/15 text-primary border-primary',
 					published: 'bg-success/15 text-success border-success',
-					failed: 'bg-danger/15 text-danger border-danger',
-					cancelled: 'bg-muted text-muted-foreground border-border'
+					rejected: 'bg-danger/15 text-danger border-danger',
+					failed: 'bg-danger/15 text-danger border-danger'
 				};
 				const cls = clsMap[value] ?? 'bg-muted text-muted-foreground border-border';
 				return `<span class="inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium ${cls}">${value}</span>`;
@@ -451,11 +524,51 @@
 	<Tabs {tabs} bind:value={activeTab} />
 
 	{#if activeTab === 'jobs'}
+		<div class="mb-4 flex flex-wrap items-end gap-3">
+			<div>
+				<label for="filter-status" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('studio.status', 'Status')}</label>
+				<select id="filter-status" class="rounded-md border px-2 py-1 text-xs" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={jobsFilterStatus} onchange={applyJobFilters}>
+					<option value="">{t('studio.all_statuses', 'All statuses')}</option>
+					<option value="queued">queued</option>
+					<option value="generating">generating</option>
+					<option value="draft_ready">draft_ready</option>
+					<option value="in_review">in_review</option>
+					<option value="published">published</option>
+					<option value="rejected">rejected</option>
+					<option value="failed">failed</option>
+				</select>
+			</div>
+			<div>
+				<label for="filter-content-type" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('studio.content_type', 'Content Type')}</label>
+				<select id="filter-content-type" class="rounded-md border px-2 py-1 text-xs" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={jobsFilterContentType} onchange={applyJobFilters}>
+					<option value="">{t('studio.all_types', 'All types')}</option>
+					{#each contentTypes as ct (ct)}
+						<option value={ct.type}>{ct.label}</option>
+					{/each}
+				</select>
+			</div>
+			<div>
+				<label for="filter-persona" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('studio.persona', 'Persona')}</label>
+				<select id="filter-persona" class="rounded-md border px-2 py-1 text-xs" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={jobsFilterPersonaID} onchange={applyJobFilters}>
+					<option value="">{t('studio.all_personas', 'All personas')}</option>
+					{#each personas as p (p)}
+						<option value={p.id}>{p.label}</option>
+					{/each}
+				</select>
+			</div>
+		</div>
 		<DataTable
 			data={jobs}
 			columns={jobColumns}
 			actions={jobRowActions}
 			emptyMessage={t('studio.no_jobs', 'No studio jobs found.')}
+			serverSide={true}
+			totalRows={jobsTotal}
+			totalPages={jobsTotalPages}
+			page={jobsPage}
+			pageSize={jobsPageSize}
+			onpagechange={onJobsPageChange}
+			onpagesizechange={onJobsPageSizeChange}
 		/>
 	{:else if activeTab === 'batches'}
 		<DataTable
@@ -463,6 +576,13 @@
 			columns={batchColumns}
 			actions={batchRowActions}
 			emptyMessage={t('studio.no_batches', 'No batches found.')}
+			serverSide={true}
+			totalRows={batchesTotal}
+			totalPages={batchesTotalPages}
+			page={batchesPage}
+			pageSize={batchesPageSize}
+			onpagechange={onBatchesPageChange}
+			onpagesizechange={onBatchesPageSizeChange}
 		/>
 	{:else if activeTab === 'stats' && stats}
 		<div class="grid gap-4 md:grid-cols-3">

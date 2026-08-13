@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"github.com/jackc/pgx/v5"
@@ -79,7 +80,8 @@ func personaEmail(slug string, tenantID pgtype.UUID) string {
 }
 
 // PersonaDetail is the API-facing persona record with joined user + profile
-// names and the decoded activity_policy.
+// names, the decoded activity_policy, and recent actions (§68 spec:
+// "persona detail + activity_policy + recent actions").
 type PersonaDetail struct {
 	ID              string          `json:"id"`
 	TenantID        string          `json:"tenant_id"`
@@ -98,9 +100,12 @@ type PersonaDetail struct {
 	ProfileName     string          `json:"profile_name"`
 	ProfileSlug     string          `json:"profile_slug"`
 	ProfileTagline  *string         `json:"profile_tagline,omitempty"`
+	RecentActivity  []ActivityEntry `json:"recent_activity"`
 }
 
 // PersonaListItem is the list-view persona record (fewer joined fields).
+// Includes activity stats (total_actions, last_action_at) per §68 spec
+// ("list all personas + activity stats").
 type PersonaListItem struct {
 	ID              string          `json:"id"`
 	TenantID        string          `json:"tenant_id"`
@@ -116,6 +121,8 @@ type PersonaListItem struct {
 	UpdatedAt       string          `json:"updated_at"`
 	BackingUsername string          `json:"backing_username"`
 	ProfileName     string          `json:"profile_name"`
+	TotalActions    int64           `json:"total_actions"`
+	LastActionAt    *string         `json:"last_action_at,omitempty"`
 }
 
 // ActivityEntry is a single platform_events row in the persona activity log.
@@ -167,24 +174,55 @@ type ProvisionResult struct {
 // partial provision is a data integrity failure (ADR-068 §7).
 //
 // The admin user ID is recorded as created_by on every ai_personas row.
+//
+// The batch size is capped by the persona.max_batch_size system setting
+// (BUG-006: an unbounded batch holds a long write transaction and can DoS
+// the writer pool). Default cap is 100 when the setting is unset.
 func (s *Service) ProvisionPersonas(ctx context.Context, tenantID, adminUserID pgtype.UUID, inputs []PersonaInput) ([]ProvisionResult, error) {
 	if len(inputs) == 0 {
 		return nil, errors.New("personas: no personas to provision")
 	}
 
+	// BUG-006: cap the batch size via system_settings (Rule 3: configurable).
+	maxBatch := 100
+	if s.settings != nil {
+		maxBatch = s.settings.GetIntOr(ctx, tenantID, "persona.max_batch_size", 100)
+	}
+	if maxBatch <= 0 {
+		maxBatch = 100 // defensive: a misconfigured zero/negative falls back
+	}
+	if len(inputs) > maxBatch {
+		return nil, fmt.Errorf("personas: batch size %d exceeds persona.max_batch_size %d: %w", len(inputs), maxBatch, errpkg.ErrInvalid)
+	}
+
 	// Validate every input up front so we fail fast before opening a tx.
 	for i, in := range inputs {
 		if in.Name == "" || in.Slug == "" {
-			return nil, fmt.Errorf("personas: input %d: name and slug are required", i)
+			return nil, fmt.Errorf("personas: input %d: name and slug are required: %w", i, errpkg.ErrInvalid)
 		}
 		if err := validateMode(in.DisclosureMode, "disclosure_mode",
 			DisclosureModeDisclosed, DisclosureModeUndisclosed); err != nil {
-			return nil, fmt.Errorf("personas: input %d: %w", i, err)
+			return nil, fmt.Errorf("personas: input %d: %w: %w", i, errpkg.ErrInvalid, err)
 		}
 		if err := validateMode(in.AutonomyMode, "autonomy_mode",
 			AutonomyModeAutonomous, AutonomyModeQueued); err != nil {
-			return nil, fmt.Errorf("personas: input %d: %w", i, err)
+			return nil, fmt.Errorf("personas: input %d: %w: %w", i, errpkg.ErrInvalid, err)
 		}
+		if err := validateActivityPolicy(in.ActivityPolicy); err != nil {
+			return nil, fmt.Errorf("personas: input %d: %w: %w", i, errpkg.ErrInvalid, err)
+		}
+	}
+
+	// Pre-validate duplicate slugs within the batch (BUG-013). Without this,
+	// the second CreatePersonaUser hits a UNIQUE(tenant_id, email) constraint
+	// violation inside the tx and the admin gets a generic "provisioning
+	// failed" error with no indication of which slug collided.
+	seenSlugs := make(map[string]int, len(inputs))
+	for i, in := range inputs {
+		if prev, dup := seenSlugs[in.Slug]; dup {
+			return nil, fmt.Errorf("personas: duplicate slug %q in batch (inputs %d and %d): %w", in.Slug, prev, i, errpkg.ErrInvalid)
+		}
+		seenSlugs[in.Slug] = i
 	}
 
 	pool := s.store.DB().Writer
@@ -334,28 +372,76 @@ func validateMode(mode, field string, allowed ...string) error {
 	return fmt.Errorf("invalid %s %q (allowed: %s)", field, mode, strings.Join(allowed, ", "))
 }
 
+// validateActivityPolicy validates an ActivityPolicy for sensible values
+// (BUG-001). The policy governs the orchestration engine's scheduling, so
+// nonsensical values (negative actions, reversed hours, out-of-range hours)
+// would produce broken schedules.
+func validateActivityPolicy(p ActivityPolicy) error {
+	if p.ActionsPerDay < 0 {
+		return fmt.Errorf("activity_policy.actions_per_day must be >= 0, got %d", p.ActionsPerDay)
+	}
+	for action, budget := range p.ActionBudget {
+		if budget < 0 {
+			return fmt.Errorf("activity_policy.action_budget[%q] must be >= 0, got %d", action, budget)
+		}
+	}
+	if p.MinContentAgeHours < 0 {
+		return fmt.Errorf("activity_policy.min_content_age_hours must be >= 0, got %d", p.MinContentAgeHours)
+	}
+	start, end := p.ActiveHoursUTC[0], p.ActiveHoursUTC[1]
+	if start < 0 || start > 23 || end < 0 || end > 23 {
+		return fmt.Errorf("activity_policy.active_hours_utc values must be 0-23, got [%d,%d]", start, end)
+	}
+	// Allow [0,0] as "no restriction" (zero-value default). Otherwise the
+	// start must be strictly less than end so the window is non-empty.
+	if !(start == 0 && end == 0) && start >= end {
+		return fmt.Errorf("activity_policy.active_hours_utc start must be < end, got [%d,%d]", start, end)
+	}
+	return nil
+}
+
 // ---------------------------------------------------------------------------
 // Persona read / update
 // ---------------------------------------------------------------------------
 
-// GetPersona returns a single persona by ID with joined user + profile names
-// and the decoded activity_policy.
+// GetPersona returns a single persona by ID with joined user + profile names,
+// the decoded activity_policy, and the 5 most recent synthetic activity
+// entries (§68 spec: "persona detail + activity_policy + recent actions").
 func (s *Service) GetPersona(ctx context.Context, tenantID, id pgtype.UUID) (PersonaDetail, error) {
 	row, err := s.store.GetAIPersonaByID(ctx, tenantID, id)
 	if err != nil {
 		return PersonaDetail{}, err
 	}
-	return personaDetailFromRow(row), nil
+	detail := personaDetailFromRow(row)
+
+	// Fetch the 5 most recent synthetic platform_events for the persona's
+	// backing user (§68 "recent actions" in the detail response). Use the
+	// raw UUID from the row (detail.UserID is a string for JSON output).
+	recentRows, err := s.store.ListPersonaActivity(ctx, tenantID, row.UserID, 5, 0)
+	if err != nil {
+		// Don't fail the whole request if activity fetch fails — the persona
+		// config is the primary payload. Log and return empty recent_activity.
+		slog.Warn("personas: get recent activity failed", "error", err, "id", id.String())
+		detail.RecentActivity = []ActivityEntry{}
+		return detail, nil
+	}
+	recent := make([]ActivityEntry, 0, len(recentRows))
+	for _, r := range recentRows {
+		recent = append(recent, activityEntryFromRow(r))
+	}
+	detail.RecentActivity = recent
+	return detail, nil
 }
 
 // ListPersonas returns a paginated list of personas for a tenant. An empty
-// status returns all statuses.
-func (s *Service) ListPersonas(ctx context.Context, tenantID pgtype.UUID, status string, limit, offset int32) ([]PersonaListItem, int64, error) {
-	rows, err := s.store.ListAIPersonas(ctx, tenantID, status, limit, offset)
+// status returns all statuses; an empty q matches all rows; sort/dir default
+// to created_at DESC.
+func (s *Service) ListPersonas(ctx context.Context, tenantID pgtype.UUID, status, q, sort, dir string, limit, offset int32) ([]PersonaListItem, int64, error) {
+	rows, err := s.store.ListAIPersonas(ctx, tenantID, status, q, sort, dir, limit, offset)
 	if err != nil {
 		return nil, 0, err
 	}
-	total, err := s.store.CountAIPersonas(ctx, tenantID, status)
+	total, err := s.store.CountAIPersonas(ctx, tenantID, status, q)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -379,23 +465,32 @@ type UpdatePersonaInput struct {
 // voice_prompt). Nil/empty fields are left unchanged. Mode and status values
 // are validated up front so invalid input returns a clean 400 validation_error
 // instead of a raw CHECK-constraint 500 (BUG-001, Rule 5).
-func (s *Service) UpdatePersona(ctx context.Context, tenantID, id pgtype.UUID, in UpdatePersonaInput) (gen.AiPersona, error) {
+//
+// Returns a PersonaDetail (with joined user + profile names) so the response
+// shape matches HandleGet (BUG-004: previously returned the raw
+// gen.AiPersona row, inconsistent with the rest of the API).
+func (s *Service) UpdatePersona(ctx context.Context, tenantID, id pgtype.UUID, in UpdatePersonaInput) (PersonaDetail, error) {
 	if in.DisclosureMode != nil {
 		if err := validateMode(*in.DisclosureMode, "disclosure_mode",
 			DisclosureModeDisclosed, DisclosureModeUndisclosed); err != nil {
-			return gen.AiPersona{}, fmt.Errorf("personas: %w: %w", errpkg.ErrInvalid, err)
+			return PersonaDetail{}, fmt.Errorf("personas: %w: %w", errpkg.ErrInvalid, err)
 		}
 	}
 	if in.AutonomyMode != nil {
 		if err := validateMode(*in.AutonomyMode, "autonomy_mode",
 			AutonomyModeAutonomous, AutonomyModeQueued); err != nil {
-			return gen.AiPersona{}, fmt.Errorf("personas: %w: %w", errpkg.ErrInvalid, err)
+			return PersonaDetail{}, fmt.Errorf("personas: %w: %w", errpkg.ErrInvalid, err)
 		}
 	}
 	if in.Status != nil {
 		if err := validateMode(*in.Status, "status",
 			StatusActive, StatusPaused, StatusRetired); err != nil {
-			return gen.AiPersona{}, fmt.Errorf("personas: %w: %w", errpkg.ErrInvalid, err)
+			return PersonaDetail{}, fmt.Errorf("personas: %w: %w", errpkg.ErrInvalid, err)
+		}
+	}
+	if in.ActivityPolicy != nil {
+		if err := validateActivityPolicy(*in.ActivityPolicy); err != nil {
+			return PersonaDetail{}, fmt.Errorf("personas: %w: %w", errpkg.ErrInvalid, err)
 		}
 	}
 
@@ -410,11 +505,16 @@ func (s *Service) UpdatePersona(ctx context.Context, tenantID, id pgtype.UUID, i
 	if in.ActivityPolicy != nil {
 		b, err := json.Marshal(*in.ActivityPolicy)
 		if err != nil {
-			return gen.AiPersona{}, fmt.Errorf("personas: marshal activity policy: %w", err)
+			return PersonaDetail{}, fmt.Errorf("personas: marshal activity policy: %w", err)
 		}
 		params.ActivityPolicy = b
 	}
-	return s.store.UpdateAIPersona(ctx, params)
+	if _, err := s.store.UpdateAIPersona(ctx, params); err != nil {
+		return PersonaDetail{}, err
+	}
+	// Re-fetch the joined row so the response includes user + profile names
+	// (BUG-004: consistent with HandleGet's PersonaDetail shape).
+	return s.GetPersona(ctx, tenantID, id)
 }
 
 // GetPersonaActivity returns a paginated activity log (platform_events) for a
@@ -515,7 +615,7 @@ func personaDetailFromRow(r gen.GetAIPersonaByIDRow) PersonaDetail {
 }
 
 func personaListItemFromRow(r gen.ListAIPersonasRow) PersonaListItem {
-	return PersonaListItem{
+	item := PersonaListItem{
 		ID:              r.ID.String(),
 		TenantID:        r.TenantID.String(),
 		UserID:          r.UserID.String(),
@@ -530,7 +630,15 @@ func personaListItemFromRow(r gen.ListAIPersonasRow) PersonaListItem {
 		UpdatedAt:       r.UpdatedAt.Time.UTC().Format("2006-01-02T15:04:05Z07:00"),
 		BackingUsername: r.BackingUsername,
 		ProfileName:     r.ProfileName,
+		TotalActions:    r.TotalActions,
 	}
+	// LastActionAt is interface{} from sqlc (MAX(timestamptz) is nullable).
+	// Type-assert to pgtype.Timestamptz and format only if valid.
+	if ts, ok := r.LastActionAt.(pgtype.Timestamptz); ok && ts.Valid {
+		s := ts.Time.UTC().Format("2006-01-02T15:04:05Z07:00")
+		item.LastActionAt = &s
+	}
+	return item
 }
 
 func activityEntryFromRow(r gen.ListPersonaActivityRow) ActivityEntry {

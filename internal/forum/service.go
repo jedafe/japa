@@ -280,7 +280,7 @@ func (s *Service) CreateReply(ctx context.Context, tenantID, threadID, authorUse
 	if s.notifier != nil {
 		thread, threadErr := s.store.getThreadByID(ctx, threadID, tenantID)
 		if threadErr == nil && thread.AuthorUserID != authorUserID {
-			go func() {
+			go func() { // #nosec G118 -- fire-and-forget: request ctx is cancelled on HTTP return (Rule 8)
 				notifyCtx := context.Background()
 				subjectTitle := thread.Title
 				subjectType := "forum_thread"

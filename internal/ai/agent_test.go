@@ -150,6 +150,13 @@ func (s *stubRateLimiter) Incr(ctx context.Context, key string) (int64, error) {
 	return s.count, nil
 }
 
+func (s *stubRateLimiter) IncrByFloat(ctx context.Context, key string, increment float64) (float64, error) {
+	if s.failIncr {
+		return 0, fmt.Errorf("valkey unavailable")
+	}
+	return increment, nil
+}
+
 func (s *stubRateLimiter) Expire(ctx context.Context, key string, ttlSeconds int) error {
 	s.expired = true
 	return nil

@@ -14,6 +14,7 @@
 package clientip
 
 import (
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -50,11 +51,17 @@ func trustedProxies() []*net.IPNet {
 
 // parseTrustedProxyList reads JC_TRUSTED_PROXIES from the environment and
 // returns the parsed CIDR list. When the env var is empty the default CIDRs
-// (loopback + RFC1918 + RFC4193) are used.
+// (loopback + RFC1918 + RFC4193) are used. Invalid entries are skipped with a
+// warning log so that a misconfigured proxy list is visible to operators — a
+// silently dropped CIDR would leave a real proxy untrusted, causing forwarding
+// headers to be ignored and rate limits / IP blocks to key on the proxy address
+// instead of the real client.
 func parseTrustedProxyList() []*net.IPNet {
 	entries := defaultTrustedCIDRs
+	source := "defaults"
 	if env := strings.TrimSpace(os.Getenv("JC_TRUSTED_PROXIES")); env != "" {
 		entries = strings.Split(env, ",")
+		source = "JC_TRUSTED_PROXIES"
 	}
 
 	var nets []*net.IPNet
@@ -72,6 +79,9 @@ func parseTrustedProxyList() []*net.IPNet {
 				}
 
 				nets = append(nets, &net.IPNet{IP: ip, Mask: net.CIDRMask(bits, bits)})
+			} else {
+				slog.Warn("clientip: skipping invalid trusted proxy entry (not a valid IP)",
+					"entry", entry, "source", source)
 			}
 
 			continue
@@ -79,8 +89,14 @@ func parseTrustedProxyList() []*net.IPNet {
 
 		if _, network, err := net.ParseCIDR(entry); err == nil {
 			nets = append(nets, network)
+		} else {
+			slog.Warn("clientip: skipping invalid trusted proxy CIDR",
+				"entry", entry, "source", source, "error", err)
 		}
 	}
+
+	slog.Info("clientip: trusted proxy set loaded",
+		"source", source, "cidr_count", len(nets))
 
 	return nets
 }

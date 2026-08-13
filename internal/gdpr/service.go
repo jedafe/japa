@@ -14,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/worker"
 )
 
@@ -392,6 +393,19 @@ func (s *Service) ListPendingDataExportRequests(ctx context.Context, tenantID pg
 
 // RequestAccountDeletion creates a deletion request and enqueues a background job.
 func (s *Service) RequestAccountDeletion(ctx context.Context, tenantID, userID pgtype.UUID, reason string) (gen.AccountDeletionRequest, error) {
+	// ADR-068 compliance: persona backing accounts (is_bot = true) are system
+	// accounts, not data subjects — user-erasure/export flows do not apply to
+	// them. Erasing a persona backing account would cascade-delete the
+	// ai_personas row and destroy the persona. Reject the request up front.
+	isBot, err := s.store.read.GetUserIsBot(ctx, gen.GetUserIsBotParams{
+		UserID: userID, TenantID: tenantID,
+	})
+	if err == nil && isBot {
+		return gen.AccountDeletionRequest{}, fmt.Errorf("%w: cannot erase AI persona backing account (system account, not a data subject)", errpkg.ErrForbidden)
+	}
+	// If the user doesn't exist (pgx.ErrNoRows), let the create call below
+	// surface the appropriate error — don't mask it here.
+
 	var reasonPtr *string
 	if reason != "" {
 		reasonPtr = &reason
@@ -448,6 +462,19 @@ func (s *Service) ProcessAccountDeletion(ctx context.Context, requestID pgtype.U
 	request, err := s.store.getAccountDeletionRequest(ctx, requestID, pgtype.UUID{})
 	if err != nil {
 		return fmt.Errorf("fetching deletion request: %w", err)
+	}
+
+	// ADR-068 compliance (defense-in-depth): if the target user is a persona
+	// backing account (is_bot = true), abort processing. The guard in
+	// RequestAccountDeletion prevents creating such requests, but a stale
+	// request created before the guard was added must not be executed.
+	isBot, botErr := s.store.read.GetUserIsBot(ctx, gen.GetUserIsBotParams{
+		UserID: request.UserID, TenantID: request.TenantID,
+	})
+	if botErr == nil && isBot {
+		// Mark the request as failed so it is not retried.
+		s.markDeletionFailed(ctx, requestID)
+		return fmt.Errorf("%w: cannot erase AI persona backing account (system account, not a data subject)", errpkg.ErrForbidden)
 	}
 
 	// Mark as processing. A retried job re-enters here; progress_step is
@@ -1518,6 +1545,42 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 			return fmt.Errorf("deleting newsletter_subscribers for user: %w", err)
 		}
 
+		// BUG-006/BUG-007: Scrub PII from ai_agent_sessions (and cascading
+		// ai_agent_tool_calls) during the anonymization phase (§103, ADR-111,
+		// ADR-014). The table has ON DELETE CASCADE from users(id) so rows are
+		// removed at hard-delete, but the prompt field (the user's personal
+		// questions about visa, finance, health) and tool-call arguments/results
+		// (which may contain profile data) must be cleared now so they are not
+		// recoverable during the retention window. Delete the rows explicitly
+		// rather than scrubbing in-place — the session history has no value
+		// once the user is erased. ai_agent_tool_calls cascades from
+		// ai_agent_sessions via ON DELETE CASCADE on session_id.
+		// Ref: japaconnect-engineering/sections/103-ai-agent-executor.md
+		//      japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
+		if _, err := s.db.Writer.Exec(ctx, `
+			DELETE FROM ai_agent_sessions
+			WHERE tenant_id = $2 AND user_id = $1
+		`, userID, tenantID); err != nil {
+			return fmt.Errorf("deleting ai_agent_sessions for user: %w", err)
+		}
+
+		// BUG-008: ai_hitl_reviews.reviewer_id references users(id) WITHOUT
+		// an ON DELETE clause, so the final HardDeleteUser would fail with a
+		// foreign key violation if the user reviewed any HITL items. Nullify
+		// reviewer_id (and clear human_feedback PII) before the hard delete.
+		// The review records themselves are retained for audit traceability —
+		// only the reviewer attribution is anonymized.
+		// Ref: japaconnect-engineering/sections/20-ai-core.md (HITL)
+		//      japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
+		if _, err := s.db.Writer.Exec(ctx, `
+			UPDATE ai_hitl_reviews
+			SET reviewer_id = NULL,
+			    human_feedback = NULL
+			WHERE tenant_id = $2 AND reviewer_id = $1
+		`, userID, tenantID); err != nil {
+			return fmt.Errorf("nullifying ai_hitl_reviews reviewer_id: %w", err)
+		}
+
 		// BUG-003: Purge RAG content_embeddings for the user's SOFT-DELETED
 		// content. Non-deleted content is reassigned to the placeholder user
 		// (step 1 above) and its embeddings are preserved — the content still
@@ -1557,6 +1620,16 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 		//     ON DELETE SET NULL, so the admin reviewer reference is
 		//     nullified. Ref: §79 Community Story Wall, ADR-087.)
 		// Ref: japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
+
+		// Intelligence System (§INTEL, ADR-112) — delete the user's review
+		// audit trail. intel_review_log.actor_user_id is the only PII-bearing
+		// reference in the intelligence tables; the spec §8 requires it be
+		// included in the erasure job. BUG-015 fix.
+		// Ref: docs/superpowers/specs/2026-08-12-japa-intelligence-system-design.md §8
+		if err := q.DeleteIntelReviewLogByActor(ctx, userID); err != nil {
+			return fmt.Errorf("deleting intel review log by actor: %w", err)
+		}
+
 		if err := q.HardDeleteUser(ctx, gen.HardDeleteUserParams{
 			UserID: userID, TenantID: tenantID,
 		}); err != nil {

@@ -65,11 +65,14 @@ func RegisterEmailGateway(d *email.EmailDispatcher) {
 // jc:cache:feed:rss:{tenant_id} (universal) and
 // jc:cache:feed:rss:blog:{tenant_id} (blog-only), and by
 // HandleMaintenanceRegenerateLLMsTxt to invalidate llms.txt caches.
+// Also used by the intelligence cron handlers for the scheduler leader
+// lock (jc:intel:scheduler_leader, BUG-13 fix).
 // valkeycompat.Cmdable satisfies this interface.
 type redisCache interface {
 	Set(ctx context.Context, key string, value interface{}, expiration time.Duration) *valkeycompat.StatusCmd
 	Get(ctx context.Context, key string) *valkeycompat.StringCmd
 	Del(ctx context.Context, keys ...string) *valkeycompat.IntCmd
+	SetNX(ctx context.Context, key string, value interface{}, expiration time.Duration) *valkeycompat.BoolCmd
 }
 
 // RegisterDBPool sets the database connection pool for worker handlers.
@@ -101,6 +104,7 @@ type settingsReader interface {
 	GetIntOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback int) int
 	GetFloatOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback float64) float64
 	GetStringOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback string) string
+	GetBoolOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback bool) bool
 }
 
 // appSettings holds the injected settings reader. Nil until RegisterSettings is

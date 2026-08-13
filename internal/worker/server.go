@@ -264,6 +264,17 @@ func NewScheduler(cfg *Config) *asynq.Scheduler {
 	// Ref: japaconnect-engineering/adr/ADR-063-japa-university-creator-economy.md (§6)
 	schedule("0 0 1 * *", TypeUniversityCalculatePeriodPayouts, 24*time.Hour)
 
+	// Intelligence System (§INTEL, ADR-112) — two cron entry points.
+	// schedule_crawls runs every 15 min on the critical queue: selects due
+	// intel_sources and enqueues intel:fetch_source per source. The handler
+	// acquires a distributed leader lock (jc:intel:scheduler_leader) so
+	// duplicate replicas do not double-enqueue. refresh_freshness runs daily
+	// at 04:30 UTC (offset from other 04:00 tasks to spread load): decays
+	// freshness scores and re-enqueues fetch_source for stale sources.
+	// Ref: docs/superpowers/specs/2026-08-12-japa-intelligence-system-design.md §4
+	schedule("*/15 * * * *", TypeIntelScheduleCrawls, 15*time.Minute)
+	schedule("30 4 * * *", TypeIntelRefreshFreshness, 24*time.Hour)
+
 	return scheduler
 }
 

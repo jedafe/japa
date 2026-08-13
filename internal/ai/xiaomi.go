@@ -25,10 +25,10 @@ const (
 	XiaomiModelPro         = "mimo-v2-pro"
 	XiaomiModelV25Pro      = "mimo-v2.5-pro"
 	XiaomiModelOmni        = "mimo-v2-omni"
-	XiaomiBasePayg         = "https://api.xiaomimimo.com/v1"            // API endpoint URL, not a credential.
-	XiaomiBaseTokenPlanCN  = "https://token-plan-cn.xiaomimimo.com/v1"  //nolint:gosec // G101: API endpoint URL, not a credential
-	XiaomiBaseTokenPlanSGP = "https://token-plan-sgp.xiaomimimo.com/v1" //nolint:gosec // G101: API endpoint URL, not a credential
-	XiaomiBaseTokenPlanAMS = "https://token-plan-ams.xiaomimimo.com/v1" //nolint:gosec // G101: API endpoint URL, not a credential
+	XiaomiBasePayg         = "https://api.xiaomimimo.com/v1"            // #nosec G101 -- API endpoint URL, not a credential
+	XiaomiBaseTokenPlanCN  = "https://token-plan-cn.xiaomimimo.com/v1"  // #nosec G101 -- API endpoint URL, not a credential
+	XiaomiBaseTokenPlanSGP = "https://token-plan-sgp.xiaomimimo.com/v1" // #nosec G101 -- API endpoint URL, not a credential
+	XiaomiBaseTokenPlanAMS = "https://token-plan-ams.xiaomimimo.com/v1" // #nosec G101 -- API endpoint URL, not a credential
 )
 
 // mimoChatRequest is the OpenAI-compatible request body for MiMo.
@@ -227,10 +227,12 @@ func buildMimoMessages(prompt string, payload map[string]any) []mimoMessage {
 	return messages
 }
 
-// VerifyWebhookSignature is a no-op. MiMo does not currently send webhooks.
+// VerifyWebhookSignature returns an error because MiMo does not support
+// webhook callbacks. A no-op return (nil) would silently accept forged
+// payloads if a webhook handler were ever wired in. Returning an error
+// ensures any future webhook integration must implement real verification.
 func (p *XiaomiProvider) VerifyWebhookSignature(_ []byte, _ string) error {
-	// MiMo does not send webhook callbacks — signature verification is a no-op.
-	return nil
+	return errors.New("ai: xiaomi provider does not support webhook callbacks")
 }
 
 // Models returns the MiMo models this provider can serve, for the admin model

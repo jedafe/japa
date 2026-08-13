@@ -55,15 +55,17 @@ func validateEndpointAllowHTTP(rawURL string) error {
 }
 
 // validateEndpointWithPolicy is the shared validation logic. When
-// allowHTTP is true, HTTP scheme is permitted and internal hosts are
-// allowed (development mode). When false, HTTPS is required and internal
-// hosts are rejected (production mode).
+// allowHTTP is true, HTTP scheme is permitted for loopback hosts only
+// (development mode — local LLM proxies like Ollama at
+// http://localhost:11434). When false, HTTPS is required and all
+// internal hosts are rejected (production mode).
 //
-// When the scheme is HTTP (non-production), internal/loopback hosts are
-// always allowed — HTTP is inherently non-production and typically used
-// for local test servers (httptest.NewServer) or local LLM proxies
-// (Ollama at http://localhost:11434). The SSRF protection applies only
-// to HTTPS endpoints, which are the production path.
+// SSRF protection applies to ALL schemes: non-loopback internal hosts
+// (private ranges, link-local/cloud-metadata, unspecified) are rejected
+// for both HTTP and HTTPS. Only loopback (127.0.0.0/8, ::1, localhost)
+// is permitted with HTTP — this covers the local development proxy use
+// case while blocking SSRF to cloud metadata (169.254.169.254) and
+// internal services (10.x, 172.16.x, 192.168.x) via HTTP.
 func validateEndpointWithPolicy(rawURL string, allowHTTP bool) error {
 	if strings.TrimSpace(rawURL) == "" {
 		return errInvalidEndpoint
@@ -91,11 +93,12 @@ func validateEndpointWithPolicy(rawURL string, allowHTTP bool) error {
 		return errInvalidEndpoint
 	}
 
-	// SSRF protection: reject internal/loopback hosts only for HTTPS
-	// endpoints. HTTP endpoints are inherently non-production (test
-	// servers, local proxies) and may use loopback addresses.
-	if u.Scheme == "https" {
-		if isInternalHost(host) {
+	// SSRF protection: reject internal hosts for ALL schemes.
+	// For HTTPS: all internal hosts (including loopback) are rejected.
+	// For HTTP (allowHTTP only): non-loopback internal hosts are rejected;
+	// loopback is allowed for local development proxies (Ollama).
+	if isInternalHost(host) {
+		if u.Scheme == "https" || !isLoopbackHost(host) {
 			return errInvalidEndpoint
 		}
 	}
@@ -125,6 +128,22 @@ func isInternalHost(host string) bool {
 	}
 
 	return false
+}
+
+// isLoopbackHost reports whether the host is a loopback address
+// (127.0.0.0/8, ::1) or the bare "localhost" hostname. This is used to
+// allow HTTP to loopback for local development proxies (Ollama) while
+// rejecting HTTP to other internal hosts (cloud metadata, private
+// ranges) for SSRF defense.
+func isLoopbackHost(host string) bool {
+	if host == "localhost" || strings.HasSuffix(host, ".localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return false
+	}
+	return ip.IsLoopback()
 }
 
 // safeInt32 converts an int to int32 without risking integer overflow.
@@ -166,6 +185,11 @@ func safeInt64ToInt32(n int64) int32 {
 // hardcoded allowlist (Xiaomi). This call-site validation is defense-in-
 // depth: it catches any path that bypasses the constructor (e.g. tests
 // setting baseURL directly) and makes the guard visible at the sink.
+//
+// validateEndpointAllowHTTP permits HTTP only to loopback addresses
+// (localhost, 127.0.0.0/8, ::1) for local development proxies (Ollama).
+// Non-loopback internal hosts (cloud metadata 169.254.169.254, private
+// ranges 10.x/172.16.x/192.168.x) are rejected for all schemes.
 func newValidatedHTTPRequest(ctx context.Context, method, rawURL string, body io.Reader) (*http.Request, error) {
 	if err := validateEndpointAllowHTTP(rawURL); err != nil {
 		return nil, err

@@ -11,7 +11,9 @@ package spaces
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -48,6 +50,14 @@ type MediaResolver interface {
 	GetMediaURL(m *gen.Medium, opts media.ImageProxyOpts) string
 }
 
+// RAGEntityIndexer is the subset of the RAG indexer that spaces needs to
+// index space content into content_embeddings (§69/ADR-069). Implemented
+// by rag.Service; nil disables RAG indexing (graceful degradation).
+type RAGEntityIndexer interface {
+	IndexEntity(ctx context.Context, tenantID pgtype.UUID, entityType string, entityID pgtype.UUID, body, language string) error
+	PurgeEntity(ctx context.Context, tenantID pgtype.UUID, entityType string, entityID pgtype.UUID) error
+}
+
 type Handlers struct {
 	Service *Service
 	Unread  *UnreadCounter
@@ -55,6 +65,7 @@ type Handlers struct {
 	follows FollowToggleService
 	permCache PermCacheInvalidator
 	media    MediaResolver // nil = logo_url omitted from responses
+	ragIndexer RAGEntityIndexer // nil disables RAG indexing (§69)
 }
 
 // FollowToggleService is the subset of the follows.Service used by the space
@@ -81,6 +92,56 @@ func (h *Handlers) SetPermCacheInvalidator(p PermCacheInvalidator) {
 // SetMediaResolver wires the media service used to resolve logo_media_id to a
 // signed imgproxy URL (returned as logo_url in space responses). Optional.
 func (h *Handlers) SetMediaResolver(m MediaResolver) { h.media = m }
+
+// SetRAGIndexer injects the RAG indexer for embedding space content into
+// content_embeddings (§69/ADR-069 BUG-001 fix). nil disables RAG indexing.
+func (h *Handlers) SetRAGIndexer(r RAGEntityIndexer) { h.ragIndexer = r }
+
+// indexSpaceRAG fires-and-forgets a RAG indexing call for a space. The body
+// is the space name + description + keywords concatenated for embedding.
+// Errors are logged, never propagated (Rule 8).
+func (h *Handlers) indexSpaceRAG(ctx context.Context, tenantID, spaceID pgtype.UUID, name, description string, keywords []string) {
+	if h.ragIndexer == nil {
+		return
+	}
+	text := name
+	if description != "" {
+		if text != "" {
+			text += "\n\n"
+		}
+		text += description
+	}
+	if len(keywords) > 0 {
+		if text != "" {
+			text += "\n\n"
+		}
+		text += strings.Join(keywords, ", ")
+	}
+	if text == "" {
+		return
+	}
+	go func() { // #nosec G118 -- fire-and-forget: request ctx is cancelled on HTTP return (Rule 8)
+		bgCtx := context.Background()
+		if err := h.ragIndexer.IndexEntity(bgCtx, tenantID, "space", spaceID, text, "en"); err != nil {
+			slog.Warn("spaces: RAG index failed for space",
+				"space_id", spaceID.String(), "error", err)
+		}
+	}()
+}
+
+// purgeSpaceRAG fires-and-forgets a RAG purge for a deleted space.
+func (h *Handlers) purgeSpaceRAG(ctx context.Context, tenantID, spaceID pgtype.UUID) {
+	if h.ragIndexer == nil {
+		return
+	}
+	go func() { // #nosec G118 -- fire-and-forget: request ctx is cancelled on HTTP return (Rule 8)
+		bgCtx := context.Background()
+		if err := h.ragIndexer.PurgeEntity(bgCtx, tenantID, "space", spaceID); err != nil {
+			slog.Warn("spaces: RAG purge failed for space",
+				"space_id", spaceID.String(), "error", err)
+		}
+	}()
+}
 
 // resolveLogoURL resolves a space's logo_media_id to an imgproxy-signed URL
 // via the media service. Returns empty when no logo is set, the media

@@ -155,13 +155,13 @@ func filterSpacesByNameSlug(spaces any, search string) any {
 func spacesLen(spaces any) int32 {
 	switch s := spaces.(type) {
 	case []gen.ListSpacesByTenantRow:
-		return int32(len(s))
+		return int32(len(s)) // #nosec G115 -- len() of a DB result slice
 	case []gen.ListSpacesByLevelRow:
-		return int32(len(s))
+		return int32(len(s)) // #nosec G115 -- len() of a DB result slice
 	case []gen.ListSpacesByTypeRow:
-		return int32(len(s))
+		return int32(len(s)) // #nosec G115 -- len() of a DB result slice
 	case []gen.ListChildSpacesRow:
-		return int32(len(s))
+		return int32(len(s)) // #nosec G115 -- len() of a DB result slice
 	default:
 		return 0
 	}
@@ -187,7 +187,7 @@ func paginateSpaces(spaces any, offset, limit int32) any {
 // paginateSpaceSlice is a generic helper that applies offset/limit pagination
 // to any slice type.
 func paginateSpaceSlice[T any](s []T, offset, limit int32) []T {
-	total := int32(len(s))
+	total := int32(len(s)) // #nosec G115 -- len() of a DB result slice
 	if offset >= total {
 		return []T{}
 	}
@@ -292,7 +292,7 @@ func (h *Handlers) AdminListSpaces(w http.ResponseWriter, r *http.Request) {
 
 	totalPages := int32(1)
 	if limit > 0 {
-		totalPages = int32((total + int64(limit) - 1) / int64(limit))
+		totalPages = int32((total + int64(limit) - 1) / int64(limit)) // #nosec G115 -- bounded by total/limit division
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -729,6 +729,14 @@ func (h *Handlers) CreateSpace(w http.ResponseWriter, r *http.Request) {
 	// immediately (BL-004).
 	h.Service.EnqueueSearchIndex(r.Context(), space.ID, tenantID, "index")
 
+	// RAG indexing — fire-and-forget (§69/ADR-069 BUG-001 fix: spaces are
+	// part of the RAG corpus).
+	desc := ""
+	if req.Description != nil {
+		desc = *req.Description
+	}
+	h.indexSpaceRAG(r.Context(), tenantID, space.ID, req.Name, desc, nil)
+
 	writeJSON(w, http.StatusCreated, map[string]any{"data": space})
 }
 
@@ -932,6 +940,13 @@ func (h *Handlers) UpdateSpace(w http.ResponseWriter, r *http.Request) {
 	// Re-sync the Meilisearch index so search reflects the update (BL-004).
 	h.Service.EnqueueSearchIndex(r.Context(), spaceID, tenantID, "index")
 
+	// RAG re-indexing — fire-and-forget (§69/ADR-069 BUG-001 fix).
+	updDesc := ""
+	if description != nil {
+		updDesc = *description
+	}
+	h.indexSpaceRAG(r.Context(), tenantID, spaceID, name, updDesc, req.Keywords)
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": result})
 }
 
@@ -955,6 +970,10 @@ func (h *Handlers) DeleteSpace(w http.ResponseWriter, r *http.Request) {
 
 	// Remove the space from the Meilisearch index (BL-004).
 	h.Service.EnqueueSearchIndex(r.Context(), id, tenantID, "delete")
+
+	// RAG purge — fire-and-forget (§69/ADR-069 BUG-001 fix: deleted spaces
+	// must not be retrievable in RAG).
+	h.purgeSpaceRAG(r.Context(), tenantID, id)
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
 }

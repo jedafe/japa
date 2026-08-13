@@ -107,6 +107,9 @@ type PersonaProcessor interface {
 type StudioProcessor interface {
 	RunBatch(ctx context.Context, tenantID, batchID pgtype.UUID) error
 	RetryFailed(ctx context.Context, tenantID, jobID pgtype.UUID) error
+	// RetryBatchFailed retries all failed jobs in a batch asynchronously.
+	// Called by the studio:retry_failed task handler (ADR-076 §7).
+	RetryBatchFailed(ctx context.Context, tenantID, batchID pgtype.UUID) (int, error)
 	// GenerateJob generates the draft for a single studio job: it loads the
 	// job, resolves its persona, invokes the AI gateway for the body, creates
 	// the draft contents row and routes it to the HITL review queue (or
@@ -889,30 +892,35 @@ func HandleStudioRunBatch(ctx context.Context, t *asynq.Task) error {
 	return nil
 }
 
-// HandleStudioRetryFailed retries a failed studio job (§75).
+// HandleStudioRetryFailed retries all failed jobs in a studio batch (§75,
+// ADR-076 §7). The task payload carries a batch_id; the processor retries
+// all failed jobs in that batch asynchronously.
 func HandleStudioRetryFailed(ctx context.Context, t *asynq.Task) error {
 	if studioProcessor == nil {
 		slog.Warn("task:studio:retry_failed: no processor registered, skipping")
 		return nil
 	}
 	var p struct {
-		JobID    string `json:"job_id"`
+		BatchID  string `json:"batch_id"`
 		TenantID string `json:"tenant_id"`
 	}
 	if err := json.Unmarshal(t.Payload(), &p); err != nil {
 		return fmt.Errorf("task:studio:retry_failed: invalid payload: %w", err)
 	}
 	var id pgtype.UUID
-	if err := id.Scan(p.JobID); err != nil {
-		return fmt.Errorf("task:studio:retry_failed: bad job_id: %w", err)
+	if err := id.Scan(p.BatchID); err != nil {
+		return fmt.Errorf("task:studio:retry_failed: bad batch_id: %w", err)
 	}
 	var tenantID pgtype.UUID
 	if err := tenantID.Scan(p.TenantID); err != nil {
 		return fmt.Errorf("task:studio:retry_failed: bad tenant_id: %w", err)
 	}
-	if err := studioProcessor.RetryFailed(ctx, tenantID, id); err != nil {
+	count, err := studioProcessor.RetryBatchFailed(ctx, tenantID, id)
+	if err != nil {
 		return fmt.Errorf("task:studio:retry_failed: %w", err)
 	}
+	slog.Info("task:studio:retry_failed: retried jobs",
+		"batch_id", id, "count", count)
 	return nil
 }
 

@@ -3,12 +3,13 @@
 // volatility (source idea §17, Phase 3 Task 20).
 //
 // The volatility auto-tuner stores a per-source effective interval in Valkey
-// under `jc:intel:effective_interval:{source_id}` (TTL 7d). After 5
-// consecutive unchanged crawls the interval is doubled (capped at
+// under `jc:intel:effective_interval:{tenant_id}:{source_id}` (TTL 7d).
+// After 5 consecutive unchanged crawls the interval is doubled (capped at
 // MaxEffectiveIntervalMins); after any change the interval is halved (floored
 // at the source's base crawl_frequency_mins). A separate counter key
-// `jc:intel:effective_interval:{source_id}:unchanged_count` tracks the
-// consecutive-unchanged streak so the value survives restarts.
+// `jc:intel:effective_interval:{tenant_id}:{source_id}:unchanged_count`
+// tracks the consecutive-unchanged streak so the value survives restarts.
+// All keys are tenant-scoped per ADR-112 Amendment 2.
 package scheduler
 
 import (
@@ -18,6 +19,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/valkey-io/valkey-go/valkeycompat"
 
 	"github.com/jedafe/japa/internal/db/gen"
@@ -28,7 +30,7 @@ import (
 // select sources whose crawl interval has elapsed. Declaring it as an
 // interface keeps the scheduler testable without a live *db.DB.
 type DueSourceLister interface {
-	ListDueIntelSources(ctx context.Context, limit int32) ([]gen.IntelSource, error)
+	ListDue(ctx context.Context, tenantID pgtype.UUID, limit int32) ([]gen.IntelSource, error)
 }
 
 // MaxEffectiveIntervalMins caps how far the auto-tuner can stretch a source's
@@ -49,20 +51,22 @@ const effectiveIntervalTTL = 7 * 24 * time.Hour
 type Scheduler struct {
 	sourceStore DueSourceLister
 	rdb         valkeycompat.Cmdable
+	tenantID    pgtype.UUID
 }
 
 // NewScheduler returns a Scheduler backed by the given source store and
 // Valkey (go-redis-compatible) client. A *sources.Store satisfies
-// DueSourceLister, so the concrete store can be passed directly.
-func NewScheduler(sourceStore DueSourceLister, rdb valkeycompat.Cmdable) *Scheduler {
-	return &Scheduler{sourceStore: sourceStore, rdb: rdb}
+// DueSourceLister, so the concrete store can be passed directly. The
+// tenantID scopes all Valkey keys per ADR-112 Amendment 2.
+func NewScheduler(sourceStore DueSourceLister, rdb valkeycompat.Cmdable, tenantID pgtype.UUID) *Scheduler {
+	return &Scheduler{sourceStore: sourceStore, rdb: rdb, tenantID: tenantID}
 }
 
 // SelectDue returns up to batchSize enabled sources whose crawl interval has
 // elapsed (or that have never been crawled), oldest-first. It is a thin pass-
 // through to the source store's ListDueIntelSources query.
 func (s *Scheduler) SelectDue(ctx context.Context, batchSize int32) ([]sources.Source, error) {
-	rows, err := s.sourceStore.ListDueIntelSources(ctx, batchSize)
+	rows, err := s.sourceStore.ListDue(ctx, s.tenantID, batchSize)
 	if err != nil {
 		return nil, fmt.Errorf("scheduler: select due: %w", err)
 	}
@@ -90,8 +94,8 @@ func (s *Scheduler) RecordCrawlOutcome(ctx context.Context, sourceID string, bas
 		return fmt.Errorf("scheduler: record crawl outcome: non-positive base interval %d", baseIntervalMins)
 	}
 
-	intervalKey := intervalKey(sourceID)
-	countKey := unchangedCountKey(sourceID)
+	intervalKey := intervalKey(s.tenantID, sourceID)
+	countKey := unchangedCountKey(s.tenantID, sourceID)
 
 	if changed {
 		// A change signals volatility: halve the effective interval, floored
@@ -129,7 +133,7 @@ func (s *Scheduler) RecordCrawlOutcome(ctx context.Context, sourceID string, bas
 // TTL), the source's base interval is returned so callers can fall back to
 // the configured crawl_frequency_mins.
 func (s *Scheduler) EffectiveIntervalMins(ctx context.Context, sourceID string, baseIntervalMins int32) (int32, error) {
-	val, err := s.rdb.Get(ctx, intervalKey(sourceID)).Result()
+	val, err := s.rdb.Get(ctx, intervalKey(s.tenantID, sourceID)).Result()
 	if err != nil {
 		// Missing key → no tuning yet; use the base interval.
 		if isRedisNil(err) {
@@ -220,12 +224,12 @@ func (s *Scheduler) setInterval(ctx context.Context, intervalKey string, mins in
 	return nil
 }
 
-func intervalKey(sourceID string) string {
-	return fmt.Sprintf("jc:intel:effective_interval:%s", sourceID)
+func intervalKey(tenantID pgtype.UUID, sourceID string) string {
+	return fmt.Sprintf("jc:intel:effective_interval:%s:%s", tenantID.String(), sourceID)
 }
 
-func unchangedCountKey(sourceID string) string {
-	return fmt.Sprintf("jc:intel:effective_interval:%s:unchanged_count", sourceID)
+func unchangedCountKey(tenantID pgtype.UUID, sourceID string) string {
+	return fmt.Sprintf("jc:intel:effective_interval:%s:%s:unchanged_count", tenantID.String(), sourceID)
 }
 
 // isRedisNil reports whether err is a "key not found" error from the

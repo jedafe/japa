@@ -175,7 +175,7 @@ func parsePageSize(r *http.Request) int32 {
 		return 100
 	}
 
-	return int32(n) //nolint:gosec // G109: bounded by MaxPageSize check above
+	return int32(n) // #nosec G109 G115 -- bounded by MaxPageSize check above
 }
 
 // parsePageSizeOffset extracts the page_offset query parameter.
@@ -190,5 +190,5 @@ func parsePageSizeOffset(r *http.Request) int32 {
 		return 0
 	}
 
-	return int32(n) //nolint:gosec // G109: bounded by MaxPageSize check above
+	return int32(n) // #nosec G109 G115 -- bounded by non-negative check above
 }

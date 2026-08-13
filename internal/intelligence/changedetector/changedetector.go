@@ -21,3 +21,17 @@ func Compare(newHash, priorHash string) Decision {
 	}
 	return DecisionChanged
 }
+
+// String returns a human-readable label for the decision, used in logs.
+func (d Decision) String() string {
+	switch d {
+	case DecisionChanged:
+		return "changed"
+	case DecisionUnchanged:
+		return "unchanged"
+	case DecisionFirstCrawl:
+		return "first_crawl"
+	default:
+		return "unknown"
+	}
+}

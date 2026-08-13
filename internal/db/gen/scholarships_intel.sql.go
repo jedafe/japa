@@ -12,7 +12,7 @@ import (
 )
 
 const countScholarshipsByCountry = `-- name: CountScholarshipsByCountry :many
-SELECT country, count(*) as count FROM scholarships GROUP BY country
+SELECT country, count(*) as count FROM scholarships WHERE tenant_id = $1 GROUP BY country
 `
 
 type CountScholarshipsByCountryRow struct {
@@ -20,8 +20,8 @@ type CountScholarshipsByCountryRow struct {
 	Count   int64  `json:"count"`
 }
 
-func (q *Queries) CountScholarshipsByCountry(ctx context.Context) ([]CountScholarshipsByCountryRow, error) {
-	rows, err := q.db.Query(ctx, countScholarshipsByCountry)
+func (q *Queries) CountScholarshipsByCountry(ctx context.Context, tenantID pgtype.UUID) ([]CountScholarshipsByCountryRow, error) {
+	rows, err := q.db.Query(ctx, countScholarshipsByCountry, tenantID)
 	if err != nil {
 		return nil, err
 	}
@@ -43,7 +43,7 @@ func (q *Queries) CountScholarshipsByCountry(ctx context.Context) ([]CountSchola
 const createScholarship = `-- name: CreateScholarship :one
 
 INSERT INTO scholarships (
-  intel_record_id, guide_id, source_url, source_type, trust_level,
+  tenant_id, intel_record_id, guide_id, source_url, source_type, trust_level,
   title, description, country, country_space_id, university,
   degree_level, fields_of_study, eligible_countries, funding,
   deadline, application_url, required_documents, minimum_gpa,
@@ -52,11 +52,12 @@ INSERT INTO scholarships (
 ) VALUES (
   $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
   $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
-  $21, $22, $23, $24
-) RETURNING id, intel_record_id, guide_id, source_url, source_type, trust_level, title, description, country, country_space_id, university, degree_level, fields_of_study, eligible_countries, funding, deadline, application_url, required_documents, minimum_gpa, language_requirements, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, last_verified_at, created_at, updated_at
+  $21, $22, $23, $24, $25
+) RETURNING id, intel_record_id, guide_id, source_url, source_type, trust_level, title, description, country, country_space_id, university, degree_level, fields_of_study, eligible_countries, funding, deadline, application_url, required_documents, minimum_gpa, language_requirements, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, last_verified_at, created_at, updated_at, tenant_id
 `
 
 type CreateScholarshipParams struct {
+	TenantID             pgtype.UUID    `json:"tenant_id"`
 	IntelRecordID        pgtype.UUID    `json:"intel_record_id"`
 	GuideID              pgtype.UUID    `json:"guide_id"`
 	SourceUrl            string         `json:"source_url"`
@@ -86,8 +87,12 @@ type CreateScholarshipParams struct {
 // internal/db/queries/scholarships_intel.sql
 // sqlc queries for the scholarships projection table (intelligence system).
 // Ref: ADR-112, docs/superpowers/specs/2026-08-12-japa-intelligence-system-design.md
+//
+// All queries are tenant-scoped (ADR-112 Amendment 2). Every query filters
+// by tenant_id to guarantee data isolation across tenants.
 func (q *Queries) CreateScholarship(ctx context.Context, arg CreateScholarshipParams) (Scholarship, error) {
 	row := q.db.QueryRow(ctx, createScholarship,
+		arg.TenantID,
 		arg.IntelRecordID,
 		arg.GuideID,
 		arg.SourceUrl,
@@ -143,16 +148,22 @@ func (q *Queries) CreateScholarship(ctx context.Context, arg CreateScholarshipPa
 		&i.LastVerifiedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.TenantID,
 	)
 	return i, err
 }
 
 const getScholarship = `-- name: GetScholarship :one
-SELECT id, intel_record_id, guide_id, source_url, source_type, trust_level, title, description, country, country_space_id, university, degree_level, fields_of_study, eligible_countries, funding, deadline, application_url, required_documents, minimum_gpa, language_requirements, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, last_verified_at, created_at, updated_at FROM scholarships WHERE id = $1
+SELECT id, intel_record_id, guide_id, source_url, source_type, trust_level, title, description, country, country_space_id, university, degree_level, fields_of_study, eligible_countries, funding, deadline, application_url, required_documents, minimum_gpa, language_requirements, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, last_verified_at, created_at, updated_at, tenant_id FROM scholarships WHERE tenant_id = $1 AND id = $2
 `
 
-func (q *Queries) GetScholarship(ctx context.Context, id pgtype.UUID) (Scholarship, error) {
-	row := q.db.QueryRow(ctx, getScholarship, id)
+type GetScholarshipParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	ID       pgtype.UUID `json:"id"`
+}
+
+func (q *Queries) GetScholarship(ctx context.Context, arg GetScholarshipParams) (Scholarship, error) {
+	row := q.db.QueryRow(ctx, getScholarship, arg.TenantID, arg.ID)
 	var i Scholarship
 	err := row.Scan(
 		&i.ID,
@@ -183,16 +194,22 @@ func (q *Queries) GetScholarship(ctx context.Context, id pgtype.UUID) (Scholarsh
 		&i.LastVerifiedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.TenantID,
 	)
 	return i, err
 }
 
 const getScholarshipByGuide = `-- name: GetScholarshipByGuide :one
-SELECT id, intel_record_id, guide_id, source_url, source_type, trust_level, title, description, country, country_space_id, university, degree_level, fields_of_study, eligible_countries, funding, deadline, application_url, required_documents, minimum_gpa, language_requirements, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, last_verified_at, created_at, updated_at FROM scholarships WHERE guide_id = $1
+SELECT id, intel_record_id, guide_id, source_url, source_type, trust_level, title, description, country, country_space_id, university, degree_level, fields_of_study, eligible_countries, funding, deadline, application_url, required_documents, minimum_gpa, language_requirements, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, last_verified_at, created_at, updated_at, tenant_id FROM scholarships WHERE tenant_id = $1 AND guide_id = $2
 `
 
-func (q *Queries) GetScholarshipByGuide(ctx context.Context, guideID pgtype.UUID) (Scholarship, error) {
-	row := q.db.QueryRow(ctx, getScholarshipByGuide, guideID)
+type GetScholarshipByGuideParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	GuideID  pgtype.UUID `json:"guide_id"`
+}
+
+func (q *Queries) GetScholarshipByGuide(ctx context.Context, arg GetScholarshipByGuideParams) (Scholarship, error) {
+	row := q.db.QueryRow(ctx, getScholarshipByGuide, arg.TenantID, arg.GuideID)
 	var i Scholarship
 	err := row.Scan(
 		&i.ID,
@@ -223,16 +240,22 @@ func (q *Queries) GetScholarshipByGuide(ctx context.Context, guideID pgtype.UUID
 		&i.LastVerifiedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.TenantID,
 	)
 	return i, err
 }
 
 const getScholarshipByIntelRecord = `-- name: GetScholarshipByIntelRecord :one
-SELECT id, intel_record_id, guide_id, source_url, source_type, trust_level, title, description, country, country_space_id, university, degree_level, fields_of_study, eligible_countries, funding, deadline, application_url, required_documents, minimum_gpa, language_requirements, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, last_verified_at, created_at, updated_at FROM scholarships WHERE intel_record_id = $1
+SELECT id, intel_record_id, guide_id, source_url, source_type, trust_level, title, description, country, country_space_id, university, degree_level, fields_of_study, eligible_countries, funding, deadline, application_url, required_documents, minimum_gpa, language_requirements, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, last_verified_at, created_at, updated_at, tenant_id FROM scholarships WHERE tenant_id = $1 AND intel_record_id = $2
 `
 
-func (q *Queries) GetScholarshipByIntelRecord(ctx context.Context, intelRecordID pgtype.UUID) (Scholarship, error) {
-	row := q.db.QueryRow(ctx, getScholarshipByIntelRecord, intelRecordID)
+type GetScholarshipByIntelRecordParams struct {
+	TenantID      pgtype.UUID `json:"tenant_id"`
+	IntelRecordID pgtype.UUID `json:"intel_record_id"`
+}
+
+func (q *Queries) GetScholarshipByIntelRecord(ctx context.Context, arg GetScholarshipByIntelRecordParams) (Scholarship, error) {
+	row := q.db.QueryRow(ctx, getScholarshipByIntelRecord, arg.TenantID, arg.IntelRecordID)
 	var i Scholarship
 	err := row.Scan(
 		&i.ID,
@@ -263,16 +286,22 @@ func (q *Queries) GetScholarshipByIntelRecord(ctx context.Context, intelRecordID
 		&i.LastVerifiedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.TenantID,
 	)
 	return i, err
 }
 
 const getScholarshipBySourceURL = `-- name: GetScholarshipBySourceURL :one
-SELECT id, intel_record_id, guide_id, source_url, source_type, trust_level, title, description, country, country_space_id, university, degree_level, fields_of_study, eligible_countries, funding, deadline, application_url, required_documents, minimum_gpa, language_requirements, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, last_verified_at, created_at, updated_at FROM scholarships WHERE source_url = $1
+SELECT id, intel_record_id, guide_id, source_url, source_type, trust_level, title, description, country, country_space_id, university, degree_level, fields_of_study, eligible_countries, funding, deadline, application_url, required_documents, minimum_gpa, language_requirements, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, last_verified_at, created_at, updated_at, tenant_id FROM scholarships WHERE tenant_id = $1 AND source_url = $2
 `
 
-func (q *Queries) GetScholarshipBySourceURL(ctx context.Context, sourceUrl string) (Scholarship, error) {
-	row := q.db.QueryRow(ctx, getScholarshipBySourceURL, sourceUrl)
+type GetScholarshipBySourceURLParams struct {
+	TenantID  pgtype.UUID `json:"tenant_id"`
+	SourceUrl string      `json:"source_url"`
+}
+
+func (q *Queries) GetScholarshipBySourceURL(ctx context.Context, arg GetScholarshipBySourceURLParams) (Scholarship, error) {
+	row := q.db.QueryRow(ctx, getScholarshipBySourceURL, arg.TenantID, arg.SourceUrl)
 	var i Scholarship
 	err := row.Scan(
 		&i.ID,
@@ -303,21 +332,23 @@ func (q *Queries) GetScholarshipBySourceURL(ctx context.Context, sourceUrl strin
 		&i.LastVerifiedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.TenantID,
 	)
 	return i, err
 }
 
 const listScholarships = `-- name: ListScholarships :many
-SELECT id, intel_record_id, guide_id, source_url, source_type, trust_level, title, description, country, country_space_id, university, degree_level, fields_of_study, eligible_countries, funding, deadline, application_url, required_documents, minimum_gpa, language_requirements, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, last_verified_at, created_at, updated_at FROM scholarships ORDER BY created_at DESC LIMIT $1 OFFSET $2
+SELECT id, intel_record_id, guide_id, source_url, source_type, trust_level, title, description, country, country_space_id, university, degree_level, fields_of_study, eligible_countries, funding, deadline, application_url, required_documents, minimum_gpa, language_requirements, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, last_verified_at, created_at, updated_at, tenant_id FROM scholarships WHERE tenant_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3
 `
 
 type ListScholarshipsParams struct {
-	Limit  int32 `json:"limit"`
-	Offset int32 `json:"offset"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+	Limit    int32       `json:"limit"`
+	Offset   int32       `json:"offset"`
 }
 
 func (q *Queries) ListScholarships(ctx context.Context, arg ListScholarshipsParams) ([]Scholarship, error) {
-	rows, err := q.db.Query(ctx, listScholarships, arg.Limit, arg.Offset)
+	rows, err := q.db.Query(ctx, listScholarships, arg.TenantID, arg.Limit, arg.Offset)
 	if err != nil {
 		return nil, err
 	}
@@ -354,6 +385,7 @@ func (q *Queries) ListScholarships(ctx context.Context, arg ListScholarshipsPara
 			&i.LastVerifiedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.TenantID,
 		); err != nil {
 			return nil, err
 		}
@@ -366,154 +398,20 @@ func (q *Queries) ListScholarships(ctx context.Context, arg ListScholarshipsPara
 }
 
 const listScholarshipsByCountry = `-- name: ListScholarshipsByCountry :many
-SELECT id, intel_record_id, guide_id, source_url, source_type, trust_level, title, description, country, country_space_id, university, degree_level, fields_of_study, eligible_countries, funding, deadline, application_url, required_documents, minimum_gpa, language_requirements, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, last_verified_at, created_at, updated_at FROM scholarships WHERE country = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3
+SELECT id, intel_record_id, guide_id, source_url, source_type, trust_level, title, description, country, country_space_id, university, degree_level, fields_of_study, eligible_countries, funding, deadline, application_url, required_documents, minimum_gpa, language_requirements, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, last_verified_at, created_at, updated_at, tenant_id FROM scholarships WHERE tenant_id = $1 AND country = $2 ORDER BY created_at DESC LIMIT $3 OFFSET $4
 `
 
 type ListScholarshipsByCountryParams struct {
-	Country string `json:"country"`
-	Limit   int32  `json:"limit"`
-	Offset  int32  `json:"offset"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+	Country  string      `json:"country"`
+	Limit    int32       `json:"limit"`
+	Offset   int32       `json:"offset"`
 }
 
 func (q *Queries) ListScholarshipsByCountry(ctx context.Context, arg ListScholarshipsByCountryParams) ([]Scholarship, error) {
-	rows, err := q.db.Query(ctx, listScholarshipsByCountry, arg.Country, arg.Limit, arg.Offset)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []Scholarship
-	for rows.Next() {
-		var i Scholarship
-		if err := rows.Scan(
-			&i.ID,
-			&i.IntelRecordID,
-			&i.GuideID,
-			&i.SourceUrl,
-			&i.SourceType,
-			&i.TrustLevel,
-			&i.Title,
-			&i.Description,
-			&i.Country,
-			&i.CountrySpaceID,
-			&i.University,
-			&i.DegreeLevel,
-			&i.FieldsOfStudy,
-			&i.EligibleCountries,
-			&i.Funding,
-			&i.Deadline,
-			&i.ApplicationUrl,
-			&i.RequiredDocuments,
-			&i.MinimumGpa,
-			&i.LanguageRequirements,
-			&i.ConfidenceOverall,
-			&i.VerificationStatus,
-			&i.FreshnessScore,
-			&i.OverrideSource,
-			&i.EditorialOverrides,
-			&i.LastVerifiedAt,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listScholarshipsBySpace = `-- name: ListScholarshipsBySpace :many
-SELECT id, intel_record_id, guide_id, source_url, source_type, trust_level, title, description, country, country_space_id, university, degree_level, fields_of_study, eligible_countries, funding, deadline, application_url, required_documents, minimum_gpa, language_requirements, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, last_verified_at, created_at, updated_at FROM scholarships WHERE country_space_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3
-`
-
-type ListScholarshipsBySpaceParams struct {
-	CountrySpaceID pgtype.UUID `json:"country_space_id"`
-	Limit          int32       `json:"limit"`
-	Offset         int32       `json:"offset"`
-}
-
-func (q *Queries) ListScholarshipsBySpace(ctx context.Context, arg ListScholarshipsBySpaceParams) ([]Scholarship, error) {
-	rows, err := q.db.Query(ctx, listScholarshipsBySpace, arg.CountrySpaceID, arg.Limit, arg.Offset)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []Scholarship
-	for rows.Next() {
-		var i Scholarship
-		if err := rows.Scan(
-			&i.ID,
-			&i.IntelRecordID,
-			&i.GuideID,
-			&i.SourceUrl,
-			&i.SourceType,
-			&i.TrustLevel,
-			&i.Title,
-			&i.Description,
-			&i.Country,
-			&i.CountrySpaceID,
-			&i.University,
-			&i.DegreeLevel,
-			&i.FieldsOfStudy,
-			&i.EligibleCountries,
-			&i.Funding,
-			&i.Deadline,
-			&i.ApplicationUrl,
-			&i.RequiredDocuments,
-			&i.MinimumGpa,
-			&i.LanguageRequirements,
-			&i.ConfidenceOverall,
-			&i.VerificationStatus,
-			&i.FreshnessScore,
-			&i.OverrideSource,
-			&i.EditorialOverrides,
-			&i.LastVerifiedAt,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const searchScholarships = `-- name: SearchScholarships :many
-SELECT id, intel_record_id, guide_id, source_url, source_type, trust_level, title, description, country, country_space_id, university, degree_level, fields_of_study, eligible_countries, funding, deadline, application_url, required_documents, minimum_gpa, language_requirements, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, last_verified_at, created_at, updated_at FROM scholarships
-WHERE ($1::text IS NULL OR country = $1)
-  AND ($2::text IS NULL OR $2 = ANY(eligible_countries))
-  AND ($3::text IS NULL OR degree_level = $3)
-  AND ($4::date IS NULL OR deadline >= $4)
-  AND ($5::date IS NULL OR deadline <= $5)
-  AND ($6::text IS NULL OR $6 = ANY(fields_of_study))
-ORDER BY deadline ASC NULLS LAST, confidence_overall DESC
-LIMIT $7 OFFSET $8
-`
-
-type SearchScholarshipsParams struct {
-	Column1 string      `json:"column_1"`
-	Column2 string      `json:"column_2"`
-	Column3 string      `json:"column_3"`
-	Column4 pgtype.Date `json:"column_4"`
-	Column5 pgtype.Date `json:"column_5"`
-	Column6 string      `json:"column_6"`
-	Limit   int32       `json:"limit"`
-	Offset  int32       `json:"offset"`
-}
-
-func (q *Queries) SearchScholarships(ctx context.Context, arg SearchScholarshipsParams) ([]Scholarship, error) {
-	rows, err := q.db.Query(ctx, searchScholarships,
-		arg.Column1,
-		arg.Column2,
-		arg.Column3,
-		arg.Column4,
-		arg.Column5,
-		arg.Column6,
+	rows, err := q.db.Query(ctx, listScholarshipsByCountry,
+		arg.TenantID,
+		arg.Country,
 		arg.Limit,
 		arg.Offset,
 	)
@@ -553,6 +451,303 @@ func (q *Queries) SearchScholarships(ctx context.Context, arg SearchScholarships
 			&i.LastVerifiedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.TenantID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listScholarshipsBySpace = `-- name: ListScholarshipsBySpace :many
+SELECT id, intel_record_id, guide_id, source_url, source_type, trust_level, title, description, country, country_space_id, university, degree_level, fields_of_study, eligible_countries, funding, deadline, application_url, required_documents, minimum_gpa, language_requirements, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, last_verified_at, created_at, updated_at, tenant_id FROM scholarships WHERE tenant_id = $1 AND country_space_id = $2 ORDER BY created_at DESC LIMIT $3 OFFSET $4
+`
+
+type ListScholarshipsBySpaceParams struct {
+	TenantID       pgtype.UUID `json:"tenant_id"`
+	CountrySpaceID pgtype.UUID `json:"country_space_id"`
+	Limit          int32       `json:"limit"`
+	Offset         int32       `json:"offset"`
+}
+
+func (q *Queries) ListScholarshipsBySpace(ctx context.Context, arg ListScholarshipsBySpaceParams) ([]Scholarship, error) {
+	rows, err := q.db.Query(ctx, listScholarshipsBySpace,
+		arg.TenantID,
+		arg.CountrySpaceID,
+		arg.Limit,
+		arg.Offset,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Scholarship
+	for rows.Next() {
+		var i Scholarship
+		if err := rows.Scan(
+			&i.ID,
+			&i.IntelRecordID,
+			&i.GuideID,
+			&i.SourceUrl,
+			&i.SourceType,
+			&i.TrustLevel,
+			&i.Title,
+			&i.Description,
+			&i.Country,
+			&i.CountrySpaceID,
+			&i.University,
+			&i.DegreeLevel,
+			&i.FieldsOfStudy,
+			&i.EligibleCountries,
+			&i.Funding,
+			&i.Deadline,
+			&i.ApplicationUrl,
+			&i.RequiredDocuments,
+			&i.MinimumGpa,
+			&i.LanguageRequirements,
+			&i.ConfidenceOverall,
+			&i.VerificationStatus,
+			&i.FreshnessScore,
+			&i.OverrideSource,
+			&i.EditorialOverrides,
+			&i.LastVerifiedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.TenantID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listScholarshipsBySpaces = `-- name: ListScholarshipsBySpaces :many
+SELECT id, intel_record_id, guide_id, source_url, source_type, trust_level, title, description, country, country_space_id, university, degree_level, fields_of_study, eligible_countries, funding, deadline, application_url, required_documents, minimum_gpa, language_requirements, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, last_verified_at, created_at, updated_at, tenant_id FROM scholarships
+WHERE tenant_id = $1
+  AND country_space_id = ANY($2::uuid[])
+ORDER BY created_at DESC
+LIMIT $3
+`
+
+type ListScholarshipsBySpacesParams struct {
+	TenantID pgtype.UUID   `json:"tenant_id"`
+	Column2  []pgtype.UUID `json:"column_2"`
+	Limit    int32         `json:"limit"`
+}
+
+// Union query for the followed-countries radar feed (spec §739). Replaces
+// the per-space N+1 loop in HandleRadarFollowed (BUG-008b fix). Returns
+// scholarships whose country_space_id is in the followed set, ordered by
+// created_at desc, capped at limit.
+func (q *Queries) ListScholarshipsBySpaces(ctx context.Context, arg ListScholarshipsBySpacesParams) ([]Scholarship, error) {
+	rows, err := q.db.Query(ctx, listScholarshipsBySpaces, arg.TenantID, arg.Column2, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Scholarship
+	for rows.Next() {
+		var i Scholarship
+		if err := rows.Scan(
+			&i.ID,
+			&i.IntelRecordID,
+			&i.GuideID,
+			&i.SourceUrl,
+			&i.SourceType,
+			&i.TrustLevel,
+			&i.Title,
+			&i.Description,
+			&i.Country,
+			&i.CountrySpaceID,
+			&i.University,
+			&i.DegreeLevel,
+			&i.FieldsOfStudy,
+			&i.EligibleCountries,
+			&i.Funding,
+			&i.Deadline,
+			&i.ApplicationUrl,
+			&i.RequiredDocuments,
+			&i.MinimumGpa,
+			&i.LanguageRequirements,
+			&i.ConfidenceOverall,
+			&i.VerificationStatus,
+			&i.FreshnessScore,
+			&i.OverrideSource,
+			&i.EditorialOverrides,
+			&i.LastVerifiedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.TenantID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listScholarshipsKeyset = `-- name: ListScholarshipsKeyset :many
+SELECT id, intel_record_id, guide_id, source_url, source_type, trust_level, title, description, country, country_space_id, university, degree_level, fields_of_study, eligible_countries, funding, deadline, application_url, required_documents, minimum_gpa, language_requirements, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, last_verified_at, created_at, updated_at, tenant_id FROM scholarships
+WHERE tenant_id = $1
+  AND ($2::timestamptz IS NULL
+       OR created_at < $2
+       OR (created_at = $2 AND id < $3))
+ORDER BY created_at DESC, id DESC
+LIMIT $4
+`
+
+type ListScholarshipsKeysetParams struct {
+	TenantID pgtype.UUID        `json:"tenant_id"`
+	Column2  pgtype.Timestamptz `json:"column_2"`
+	ID       pgtype.UUID        `json:"id"`
+	Limit    int32              `json:"limit"`
+}
+
+// Keyset (cursor) pagination for the radar feed (spec §731-733). Resumes
+// after the (cursor_created_at, cursor_id) tuple using explicit comparisons
+// (sqlc infers param types reliably from these, unlike row-value
+// comparisons). BUG-006 fix: the prior handler encoded a cursor but never
+// read it, so pagination was offset-only and clients could not resume.
+func (q *Queries) ListScholarshipsKeyset(ctx context.Context, arg ListScholarshipsKeysetParams) ([]Scholarship, error) {
+	rows, err := q.db.Query(ctx, listScholarshipsKeyset,
+		arg.TenantID,
+		arg.Column2,
+		arg.ID,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Scholarship
+	for rows.Next() {
+		var i Scholarship
+		if err := rows.Scan(
+			&i.ID,
+			&i.IntelRecordID,
+			&i.GuideID,
+			&i.SourceUrl,
+			&i.SourceType,
+			&i.TrustLevel,
+			&i.Title,
+			&i.Description,
+			&i.Country,
+			&i.CountrySpaceID,
+			&i.University,
+			&i.DegreeLevel,
+			&i.FieldsOfStudy,
+			&i.EligibleCountries,
+			&i.Funding,
+			&i.Deadline,
+			&i.ApplicationUrl,
+			&i.RequiredDocuments,
+			&i.MinimumGpa,
+			&i.LanguageRequirements,
+			&i.ConfidenceOverall,
+			&i.VerificationStatus,
+			&i.FreshnessScore,
+			&i.OverrideSource,
+			&i.EditorialOverrides,
+			&i.LastVerifiedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.TenantID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const searchScholarships = `-- name: SearchScholarships :many
+SELECT id, intel_record_id, guide_id, source_url, source_type, trust_level, title, description, country, country_space_id, university, degree_level, fields_of_study, eligible_countries, funding, deadline, application_url, required_documents, minimum_gpa, language_requirements, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, last_verified_at, created_at, updated_at, tenant_id FROM scholarships
+WHERE tenant_id = $1
+  AND ($2::text IS NULL OR country = $2)
+  AND ($3::text IS NULL OR $3 = ANY(eligible_countries))
+  AND ($4::text IS NULL OR degree_level = $4)
+  AND ($5::date IS NULL OR deadline >= $5)
+  AND ($6::date IS NULL OR deadline <= $6)
+  AND ($7::text IS NULL OR $7 = ANY(fields_of_study))
+ORDER BY deadline ASC NULLS LAST, confidence_overall DESC
+LIMIT $8 OFFSET $9
+`
+
+type SearchScholarshipsParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	Column2  string      `json:"column_2"`
+	Column3  string      `json:"column_3"`
+	Column4  string      `json:"column_4"`
+	Column5  pgtype.Date `json:"column_5"`
+	Column6  pgtype.Date `json:"column_6"`
+	Column7  string      `json:"column_7"`
+	Limit    int32       `json:"limit"`
+	Offset   int32       `json:"offset"`
+}
+
+func (q *Queries) SearchScholarships(ctx context.Context, arg SearchScholarshipsParams) ([]Scholarship, error) {
+	rows, err := q.db.Query(ctx, searchScholarships,
+		arg.TenantID,
+		arg.Column2,
+		arg.Column3,
+		arg.Column4,
+		arg.Column5,
+		arg.Column6,
+		arg.Column7,
+		arg.Limit,
+		arg.Offset,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Scholarship
+	for rows.Next() {
+		var i Scholarship
+		if err := rows.Scan(
+			&i.ID,
+			&i.IntelRecordID,
+			&i.GuideID,
+			&i.SourceUrl,
+			&i.SourceType,
+			&i.TrustLevel,
+			&i.Title,
+			&i.Description,
+			&i.Country,
+			&i.CountrySpaceID,
+			&i.University,
+			&i.DegreeLevel,
+			&i.FieldsOfStudy,
+			&i.EligibleCountries,
+			&i.Funding,
+			&i.Deadline,
+			&i.ApplicationUrl,
+			&i.RequiredDocuments,
+			&i.MinimumGpa,
+			&i.LanguageRequirements,
+			&i.ConfidenceOverall,
+			&i.VerificationStatus,
+			&i.FreshnessScore,
+			&i.OverrideSource,
+			&i.EditorialOverrides,
+			&i.LastVerifiedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.TenantID,
 		); err != nil {
 			return nil, err
 		}
@@ -566,16 +761,17 @@ func (q *Queries) SearchScholarships(ctx context.Context, arg SearchScholarships
 
 const updateScholarship = `-- name: UpdateScholarship :exec
 UPDATE scholarships
-SET title = $2, description = $3, country = $4, country_space_id = $5, university = $6,
-    degree_level = $7, fields_of_study = $8, eligible_countries = $9, funding = $10,
-    deadline = $11, application_url = $12, required_documents = $13, minimum_gpa = $14,
-    language_requirements = $15, confidence_overall = $16, verification_status = $17,
-    freshness_score = $18, override_source = $19, editorial_overrides = $20,
+SET title = $3, description = $4, country = $5, country_space_id = $6, university = $7,
+    degree_level = $8, fields_of_study = $9, eligible_countries = $10, funding = $11,
+    deadline = $12, application_url = $13, required_documents = $14, minimum_gpa = $15,
+    language_requirements = $16, confidence_overall = $17, verification_status = $18,
+    freshness_score = $19, override_source = $20, editorial_overrides = $21,
     last_verified_at = now(), updated_at = now()
-WHERE id = $1
+WHERE tenant_id = $1 AND id = $2
 `
 
 type UpdateScholarshipParams struct {
+	TenantID             pgtype.UUID    `json:"tenant_id"`
 	ID                   pgtype.UUID    `json:"id"`
 	Title                string         `json:"title"`
 	Description          *string        `json:"description"`
@@ -600,6 +796,7 @@ type UpdateScholarshipParams struct {
 
 func (q *Queries) UpdateScholarship(ctx context.Context, arg UpdateScholarshipParams) error {
 	_, err := q.db.Exec(ctx, updateScholarship,
+		arg.TenantID,
 		arg.ID,
 		arg.Title,
 		arg.Description,
@@ -624,16 +821,41 @@ func (q *Queries) UpdateScholarship(ctx context.Context, arg UpdateScholarshipPa
 	return err
 }
 
+const updateScholarshipEditorialOverrides = `-- name: UpdateScholarshipEditorialOverrides :exec
+UPDATE scholarships
+SET editorial_overrides = $3,
+    override_source = CASE
+        WHEN override_source = 'ingestion' THEN 'editorial'
+        WHEN override_source = 'editorial' THEN 'editorial'
+        ELSE 'mixed'
+    END,
+    updated_at = now()
+WHERE tenant_id = $1 AND id = $2
+`
+
+type UpdateScholarshipEditorialOverridesParams struct {
+	TenantID           pgtype.UUID `json:"tenant_id"`
+	ID                 pgtype.UUID `json:"id"`
+	EditorialOverrides []byte      `json:"editorial_overrides"`
+}
+
+func (q *Queries) UpdateScholarshipEditorialOverrides(ctx context.Context, arg UpdateScholarshipEditorialOverridesParams) error {
+	_, err := q.db.Exec(ctx, updateScholarshipEditorialOverrides, arg.TenantID, arg.ID, arg.EditorialOverrides)
+	return err
+}
+
 const updateScholarshipFreshness = `-- name: UpdateScholarshipFreshness :exec
-UPDATE scholarships SET freshness_score = $2, last_verified_at = now(), updated_at = now() WHERE id = $1
+UPDATE scholarships SET freshness_score = $3, last_verified_at = now(), updated_at = now()
+WHERE tenant_id = $1 AND id = $2
 `
 
 type UpdateScholarshipFreshnessParams struct {
+	TenantID       pgtype.UUID `json:"tenant_id"`
 	ID             pgtype.UUID `json:"id"`
 	FreshnessScore int32       `json:"freshness_score"`
 }
 
 func (q *Queries) UpdateScholarshipFreshness(ctx context.Context, arg UpdateScholarshipFreshnessParams) error {
-	_, err := q.db.Exec(ctx, updateScholarshipFreshness, arg.ID, arg.FreshnessScore)
+	_, err := q.db.Exec(ctx, updateScholarshipFreshness, arg.TenantID, arg.ID, arg.FreshnessScore)
 	return err
 }

@@ -21,6 +21,24 @@
 	const authed = $derived(data.authed);
 	const intelUnavailable = $derived(data.intelUnavailable);
 
+	// Geo-aware filter state — when ?space_id= or ?dest= is present, the
+	// page shows the filtered feed instead of the followed-countries feed.
+	const hasGeoFilter = $derived(data.hasGeoFilter);
+	const geoItems = $derived<RadarItem[]>(data.geoItems);
+	const selectedSpaceId = $derived(data.spaceId);
+	const selectedDest = $derived(data.dest);
+
+	// The selected country name (for the filter badge). Resolved from the
+	// countries list by space_id, or from the dest param.
+	const selectedCountryName = $derived.by(() => {
+		if (selectedSpaceId) {
+			const space = countries.find((c) => c.id === selectedSpaceId);
+			return space?.name ?? selectedSpaceId;
+		}
+		if (selectedDest) return selectedDest;
+		return '';
+	});
+
 	// Followed feed items + country browse list (SSR-seeded).
 	const followedItems = $derived<RadarItem[]>(data.followedItems);
 	const countries = $derived<Space[]>(data.countries);
@@ -141,6 +159,47 @@
 		<p class="mt-1 text-sm text-[var(--color-text-subtle)]">{description}</p>
 	</div>
 
+	{#if !intelUnavailable}
+		<!-- Geo-aware country selector — the first input. Selecting a country
+		     filters the radar feed to that country via ?space_id=. This matches
+		     the geo-aware pattern used by other surfaces (§31 spaces, §32 feed).
+		     BUG-012 fix. -->
+		<div class="border-b border-[var(--color-border)] px-4 py-3">
+			<div class="flex items-center gap-2">
+				<label for="radar-country-select" class="sr-only">
+					{t('radar.browse_countries', 'Browse countries')}
+				</label>
+				<select
+					id="radar-country-select"
+					class="flex-1 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none"
+					value={selectedSpaceId}
+					onchange={(e) => {
+						const val = e.currentTarget.value;
+						if (val) {
+							goto(`?space_id=${encodeURIComponent(val)}`, { keepFocus: true });
+						} else {
+							goto('?', { keepFocus: true });
+						}
+					}}
+				>
+					<option value="">{t('radar.browse_countries', 'Browse countries')}</option>
+					{#each countries as space (space.id)}
+						<option value={space.id}>{space.name}</option>
+					{/each}
+				</select>
+				{#if hasGeoFilter}
+					<button
+						type="button"
+						onclick={() => goto('?', { keepFocus: true })}
+						class="shrink-0 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-2 text-xs font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
+					>
+						{t('common.clear', 'Clear')}
+					</button>
+				{/if}
+			</div>
+		</div>
+	{/if}
+
 	{#if intelUnavailable}
 		<div class="p-4">
 			<EmptyState
@@ -148,6 +207,33 @@
 				title={t('radar.unavailable_title', 'Radar is currently unavailable')}
 				body={t('radar.unavailable_body', 'The intelligence service is not configured. Check back soon.')}
 			/>
+		</div>
+	{:else if hasGeoFilter}
+		<!-- Geo-filtered feed — shows opportunities for the selected country
+		     (via ?space_id= or ?dest=). This is public so guests can browse a
+		     specific country's opportunities. BUG-012 fix. -->
+		<div class="border-b border-[var(--color-border)] px-4 py-4">
+			<h2 class="mb-3 flex items-center gap-2 text-sm font-medium text-[var(--color-text)]">
+				<Globe size={16} class="text-[var(--color-primary)]" />
+				{selectedCountryName}
+				{#if data.geoCount > 0}
+					<span class="text-xs font-normal text-[var(--color-muted)]">({data.geoCount})</span>
+				{/if}
+			</h2>
+
+			{#if geoItems.length === 0}
+				<EmptyState
+					icon={Radar}
+					title={t('radar.empty_followed', 'No opportunities in your followed countries yet')}
+					body={t('radar.empty_followed_body', 'Follow countries below to surface their latest scholarships here.')}
+				/>
+			{:else}
+				<div class="space-y-2">
+					{#each geoItems as item (item.id)}
+						<RadarItemRow {item} />
+					{/each}
+				</div>
+			{/if}
 		</div>
 	{:else}
 		<!-- Followed countries feed — pinned to top (authed only) -->

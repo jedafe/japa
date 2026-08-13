@@ -56,20 +56,40 @@ WHERE ap.tenant_id = @tenant_id AND ap.id = @id;
 SELECT
     ap.*,
     u.username  AS backing_username,
-    pp.name     AS profile_name
+    pp.name     AS profile_name,
+    stats.total_actions AS total_actions,
+    stats.last_action_at AS last_action_at
+FROM ai_personas ap
+JOIN users u ON u.id = ap.user_id
+JOIN professional_profiles pp ON pp.id = ap.profile_id
+LEFT JOIN LATERAL (
+    SELECT COUNT(*) AS total_actions, MAX(pe.created_at) AS last_action_at
+    FROM platform_events pe
+    WHERE pe.tenant_id = ap.tenant_id
+      AND pe.user_id = ap.user_id
+      AND pe.is_synthetic = true
+) stats ON true
+WHERE ap.tenant_id = @tenant_id
+  AND (@status::text = '' OR ap.status = @status)
+  AND (@q::text = '' OR pp.name ILIKE '%' || @q || '%' OR u.username ILIKE '%' || @q || '%')
+ORDER BY
+    CASE WHEN @sort::text = 'name' AND @dir::text = 'asc' THEN pp.name END ASC,
+    CASE WHEN @sort::text = 'name' AND @dir::text = 'desc' THEN pp.name END DESC,
+    CASE WHEN @sort::text = 'created_at' AND @dir::text = 'asc' THEN ap.created_at END ASC,
+    CASE WHEN @sort::text = 'created_at' AND @dir::text = 'desc' THEN ap.created_at END DESC,
+    CASE WHEN @sort::text = 'total_actions' AND @dir::text = 'asc' THEN stats.total_actions END ASC,
+    CASE WHEN @sort::text = 'total_actions' AND @dir::text = 'desc' THEN stats.total_actions END DESC,
+    ap.created_at DESC
+LIMIT @page_limit OFFSET @page_offset;
+
+-- name: CountAIPersonas :one
+SELECT COUNT(*) AS count
 FROM ai_personas ap
 JOIN users u ON u.id = ap.user_id
 JOIN professional_profiles pp ON pp.id = ap.profile_id
 WHERE ap.tenant_id = @tenant_id
   AND (@status::text = '' OR ap.status = @status)
-ORDER BY ap.created_at DESC
-LIMIT @page_limit OFFSET @page_offset;
-
--- name: CountAIPersonas :one
-SELECT COUNT(*) AS count
-FROM ai_personas
-WHERE tenant_id = @tenant_id
-  AND (@status::text = '' OR status = @status);
+  AND (@q::text = '' OR pp.name ILIKE '%' || @q || '%' OR u.username ILIKE '%' || @q || '%');
 
 -- =====================================================================
 -- Update a persona's config (activity_policy, modes, status, voice_prompt).

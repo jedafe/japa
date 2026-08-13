@@ -7,9 +7,9 @@ package studio
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
-	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -21,7 +21,7 @@ import (
 // personaLister is the subset of the personas service that studio needs to
 // populate the persona dropdown in the create-job modal.
 type personaLister interface {
-	ListPersonas(ctx context.Context, tenantID pgtype.UUID, status string, limit, offset int32) ([]personas.PersonaListItem, int64, error)
+	ListPersonas(ctx context.Context, tenantID pgtype.UUID, status, q, sort, dir string, limit, offset int32) ([]personas.PersonaListItem, int64, error)
 }
 
 // Handlers holds the HTTP handlers for the studio admin API.
@@ -207,6 +207,10 @@ func (h *Handlers) HandleCancelJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.svc.CancelJob(r.Context(), tenantID, id); err != nil {
+		if errors.Is(err, ErrJobNotCancellable) {
+			h.writeError(w, http.StatusConflict, "job_not_cancellable", err.Error())
+			return
+		}
 		h.writeError(w, http.StatusBadRequest, "cancel_failed", err.Error())
 		return
 	}
@@ -275,6 +279,10 @@ func (h *Handlers) HandleGetBatch(w http.ResponseWriter, r *http.Request) {
 }
 
 // HandleRetryBatch — POST /api/v1/admin/studio/batches/:id/retry
+// Enqueues a studio:retry_failed task for asynchronous processing (ADR-076 §7).
+// The task retries all failed jobs in the batch without blocking the HTTP
+// request — batches may contain many failed jobs and retrying them
+// synchronously would time out.
 func (h *Handlers) HandleRetryBatch(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -284,12 +292,11 @@ func (h *Handlers) HandleRetryBatch(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	count, err := h.svc.RetryBatchFailed(r.Context(), tenantID, id)
-	if err != nil {
+	if err := h.svc.EnqueueRetryFailed(r.Context(), tenantID, id); err != nil {
 		h.writeError(w, http.StatusBadRequest, "batch_retry_failed", err.Error())
 		return
 	}
-	h.writeJSON(w, http.StatusOK, map[string]any{"retried": count})
+	h.writeJSON(w, http.StatusAccepted, map[string]any{"status": "retry_queued"})
 }
 
 // HandleContentTypes — GET /api/v1/admin/studio/content-types
@@ -298,8 +305,8 @@ func (h *Handlers) HandleContentTypes(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	types := h.svc.ListContentTypes(r.Context(), tenantID)
-	h.writeJSON(w, http.StatusOK, map[string]any{"data": types})
+	resp := h.svc.ListContentTypes(r.Context(), tenantID)
+	h.writeJSON(w, http.StatusOK, map[string]any{"data": resp})
 }
 
 // HandleStats — GET /api/v1/admin/studio/stats
@@ -331,7 +338,7 @@ func (h *Handlers) HandlePersonas(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Fetch active personas only — studio jobs require an active persona.
-	items, _, err := h.personas.ListPersonas(r.Context(), tenantID, "active", 100, 0)
+	items, _, err := h.personas.ListPersonas(r.Context(), tenantID, "active", "", "created_at", "desc", 100, 0)
 	if err != nil {
 		h.writeError(w, http.StatusInternalServerError, "personas_list_failed", "Failed to list personas")
 		return
@@ -356,6 +363,3 @@ func (h *Handlers) HandlePersonas(w http.ResponseWriter, r *http.Request) {
 
 	h.writeJSON(w, http.StatusOK, map[string]any{"data": opts})
 }
-
-// _ prevents unused import warning for strings.
-var _ = strings.TrimSpace

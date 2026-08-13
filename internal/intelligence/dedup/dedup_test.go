@@ -22,16 +22,30 @@ type mockLister struct {
 	// calls records the arguments passed to GetIntelRecordByExternalKey
 	// so tests can assert the lookup used the expected key pair.
 	calls []gen.GetIntelRecordByExternalKeyParams
+	// crossSourceRecords is returned from ListIntelRecordsByExternalKey.
+	crossSourceRecords []gen.IntelRecord
+	// crossSourceErr is returned from ListIntelRecordsByExternalKey.
+	crossSourceErr error
 }
 
-func (m *mockLister) GetIntelRecordByExternalKey(ctx context.Context, arg gen.GetIntelRecordByExternalKeyParams) (gen.IntelRecord, error) {
+func (m *mockLister) GetIntelRecordByExternalKey(ctx context.Context, tenantID pgtype.UUID, arg gen.GetIntelRecordByExternalKeyParams) (gen.IntelRecord, error) {
 	m.calls = append(m.calls, arg)
 	return m.record, m.err
 }
 
+func (m *mockLister) ListIntelRecordsByExternalKey(ctx context.Context, tenantID pgtype.UUID, externalKey string) ([]gen.IntelRecord, error) {
+	return m.crossSourceRecords, m.crossSourceErr
+}
+
+// testTenantID is the default tenant UUID used for tenant-scoped queries in
+// tests. Matches the system default tenant per ADR-112 Amendment 2.
+func testTenantID() pgtype.UUID {
+	return pgtype.UUID{Bytes: [16]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}, Valid: true}
+}
+
 func TestCheck_NewRecord(t *testing.T) {
 	mock := &mockLister{err: pgx.ErrNoRows}
-	svc := NewService(mock)
+	svc := NewService(mock, testTenantID())
 
 	sourceID := pgtype.UUID{Bytes: [16]byte{1, 2, 3}, Valid: true}
 	got, err := svc.Check(context.Background(), sourceID, "ext-123")
@@ -57,7 +71,7 @@ func TestCheck_UpdateRecord(t *testing.T) {
 		record: gen.IntelRecord{ExternalKey: "ext-123"},
 		err:    nil,
 	}
-	svc := NewService(mock)
+	svc := NewService(mock, testTenantID())
 
 	sourceID := pgtype.UUID{Bytes: [16]byte{1, 2, 3}, Valid: true}
 	got, err := svc.Check(context.Background(), sourceID, "ext-123")
@@ -72,7 +86,7 @@ func TestCheck_UpdateRecord(t *testing.T) {
 func TestCheck_StoreError(t *testing.T) {
 	wantErr := errors.New("connection refused")
 	mock := &mockLister{err: wantErr}
-	svc := NewService(mock)
+	svc := NewService(mock, testTenantID())
 
 	sourceID := pgtype.UUID{Bytes: [16]byte{1, 2, 3}, Valid: true}
 	_, err := svc.Check(context.Background(), sourceID, "ext-123")
@@ -101,18 +115,59 @@ func TestCheckResult_String(t *testing.T) {
 	}
 }
 
-func TestCheckAcrossSources_Deferred(t *testing.T) {
-	// Until a cross-source query exists, CheckAcrossSources must not
-	// block the pipeline: it returns CheckResultNew with no error.
-	mock := &mockLister{err: pgx.ErrNoRows}
-	svc := NewService(mock)
-
+func TestCheckAcrossSources_NoConflict(t *testing.T) {
+	// No records from any source — no conflict.
 	sourceID := pgtype.UUID{Bytes: [16]byte{1, 2, 3}, Valid: true}
+	mock := &mockLister{
+		crossSourceRecords: nil,
+	}
+	svc := NewService(mock, testTenantID())
+
 	got, err := svc.CheckAcrossSources(context.Background(), sourceID, "ext-123")
 	if err != nil {
 		t.Fatalf("CheckAcrossSources returned unexpected error: %v", err)
 	}
 	if got != CheckResultNew {
-		t.Fatalf("got %v, want %v", got, CheckResultNew)
+		t.Fatalf("got %v, want %v (no cross-source records)", got, CheckResultNew)
+	}
+}
+
+func TestCheckAcrossSources_SameSourceNoConflict(t *testing.T) {
+	// Records exist but only from the SAME source — not a cross-source conflict.
+	sourceID := pgtype.UUID{Bytes: [16]byte{1, 2, 3}, Valid: true}
+	mock := &mockLister{
+		crossSourceRecords: []gen.IntelRecord{
+			{SourceID: sourceID, ExternalKey: "ext-123"},
+		},
+	}
+	svc := NewService(mock, testTenantID())
+
+	got, err := svc.CheckAcrossSources(context.Background(), sourceID, "ext-123")
+	if err != nil {
+		t.Fatalf("CheckAcrossSources returned unexpected error: %v", err)
+	}
+	if got != CheckResultNew {
+		t.Fatalf("got %v, want %v (same source is not a conflict)", got, CheckResultNew)
+	}
+}
+
+func TestCheckAcrossSources_DifferentSourceConflict(t *testing.T) {
+	// A record exists from a DIFFERENT source with the same external_key —
+	// this is a cross-source conflict (BUG-20 fix).
+	sourceID := pgtype.UUID{Bytes: [16]byte{1, 2, 3}, Valid: true}
+	otherSourceID := pgtype.UUID{Bytes: [16]byte{9, 9, 9}, Valid: true}
+	mock := &mockLister{
+		crossSourceRecords: []gen.IntelRecord{
+			{SourceID: otherSourceID, ExternalKey: "ext-123"},
+		},
+	}
+	svc := NewService(mock, testTenantID())
+
+	got, err := svc.CheckAcrossSources(context.Background(), sourceID, "ext-123")
+	if err != nil {
+		t.Fatalf("CheckAcrossSources returned unexpected error: %v", err)
+	}
+	if got != CheckResultConflict {
+		t.Fatalf("got %v, want %v (different source = conflict)", got, CheckResultConflict)
 	}
 }

@@ -28,6 +28,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -54,6 +55,15 @@ type PermissionChecker interface {
 	HasPermission(ctx context.Context, userID, tenantID pgtype.UUID, permKey string) bool
 }
 
+// ConsentChecker checks whether a user has granted a specific consent type.
+// The gdpr.Service satisfies this interface. When nil, consent checks are
+// skipped (graceful degradation — the wiring layer SHOULD provide one).
+// Used to verify ai_processing consent before sending user prompts to
+// external AI providers (§19, ADR-014).
+type ConsentChecker interface {
+	HasConsent(ctx context.Context, userID pgtype.UUID, consentType string) (bool, error)
+}
+
 // Handlers holds dependencies for AI HTTP handlers.
 type Handlers struct {
 	Dispatcher  *Dispatcher
@@ -62,7 +72,8 @@ type Handlers struct {
 	AsynqClient TaskEnqueueClient
 	Settings    *config.Settings // hot-reloadable system_settings (ai.japabot_enabled, etc.)
 	Perms       PermissionChecker
-	ragService  RAGRetriever // Section 69: RAG retrieval at chat time (nil = non-RAG fallback)
+	consents    ConsentChecker // §19: ai_processing consent gate (nil = skip check)
+	ragService  RAGRetriever   // Section 69: RAG retrieval at chat time (nil = non-RAG fallback)
 }
 
 // RAGRetriever is the interface for the RAG retrieval step (Section 69,
@@ -78,6 +89,13 @@ type RAGRetriever interface {
 // before the LLM call if rag.enabled is true.
 func (h *Handlers) SetRAGService(r RAGRetriever) {
 	h.ragService = r
+}
+
+// SetConsentChecker injects the consent checker used to verify
+// ai_processing consent before sending user prompts to external AI
+// providers (§19, ADR-014). When nil, consent checks are skipped.
+func (h *Handlers) SetConsentChecker(c ConsentChecker) {
+	h.consents = c
 }
 
 // enqueueAIProcessTask enqueues an async AI processing task.
@@ -280,7 +298,7 @@ func parsePageSize(r *http.Request) int32 {
 		return 100
 	}
 
-	return int32(n) //nolint:gosec // G109: bounded by MaxPageSize check above
+	return int32(n) // #nosec G109 G115 -- bounded by MaxPageSize check above
 }
 
 func parsePageOffset(r *http.Request) int32 {
@@ -294,7 +312,7 @@ func parsePageOffset(r *http.Request) int32 {
 		return 0
 	}
 
-	return int32(n) //nolint:gosec // G109: bounded by MaxPageSize check above
+	return int32(n) // #nosec G109 G115 -- bounded by non-negative check above
 }
 
 // ---------------------------------------------------------------------------
@@ -503,6 +521,20 @@ func (h *Handlers) HandleChat(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// §19/ADR-014: verify ai_processing consent before sending user prompts
+	// to external AI providers. When the consent checker is nil, the check
+	// is skipped (graceful degradation — the wiring layer SHOULD provide one).
+	if h.consents != nil {
+		consented, err := h.consents.HasConsent(r.Context(), user.UserID, "ai_processing")
+		if err != nil {
+			slog.Warn("ai: consent check failed, allowing request", "error", err)
+		} else if !consented {
+			writeError(w, http.StatusForbidden, "ai_consent_required",
+				"You must consent to AI processing before using JapaBot")
+			return
+		}
+	}
+
 	var input struct {
 		Message        string         `json:"message"`
 		ConversationID string         `json:"conversation_id,omitempty"`
@@ -537,7 +569,12 @@ func (h *Handlers) HandleChat(w http.ResponseWriter, r *http.Request) {
 	// chat falls back to a non-RAG LLM call.
 	var ragSources []map[string]any
 	if h.ragService != nil {
-		chunks, err := h.ragService.Retrieve(r.Context(), tenantID, input.Message, "", nil)
+		// BUG-003 fix: resolve the user's preferred language from the
+		// Accept-Language header so RAG retrieval filters by language
+		// (ADR-069 §3 step 3). Falls back to empty (no filter) if the
+		// header is absent.
+		ragLang := resolveAcceptLanguage(r)
+		chunks, err := h.ragService.Retrieve(r.Context(), tenantID, input.Message, ragLang, nil)
 		if err != nil {
 			slog.Warn("ai chat: RAG retrieval failed, falling back to non-RAG",
 				"error", err)
@@ -1074,8 +1111,9 @@ func (h *Handlers) HandleListPendingHITL(w http.ResponseWriter, r *http.Request)
 
 	limit := parsePageSize(r)
 	offset := parsePageOffset(r)
+	sourceFilter := r.URL.Query().Get("source")
 
-	reviews, err := ListPendingReviews(r.Context(), h.Store, tenantID, limit, offset)
+	reviews, err := ListPendingReviews(r.Context(), h.Store, tenantID, sourceFilter, limit, offset)
 	if err != nil {
 		slog.Error("listing pending HITL reviews", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list reviews")
@@ -1083,7 +1121,7 @@ func (h *Handlers) HandleListPendingHITL(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	total, err := CountPendingReviews(r.Context(), h.Store, tenantID)
+	total, err := CountPendingReviews(r.Context(), h.Store, tenantID, sourceFilter)
 	if err != nil {
 		slog.Error("counting pending HITL reviews", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to count reviews")
@@ -1113,7 +1151,7 @@ func (h *Handlers) HandleListPendingHITL(w http.ResponseWriter, r *http.Request)
 			ID:          rev.ID.String(),
 			Content:     decodeAIOutput(rev.AIOutput),
 			ContentType: rev.ContentType,
-			Source:      "ai_hitl",
+			Source:      rev.Source,
 			Status:      rev.Status,
 			CreatedAt:   rev.CreatedAt.Format(time.RFC3339),
 		}
@@ -1551,4 +1589,25 @@ func (h *Handlers) HandleListCategories(w http.ResponseWriter, _ *http.Request) 
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": categories})
+}
+
+// resolveAcceptLanguage extracts the primary 2-letter language tag from the
+// Accept-Language header for RAG retrieval filtering (ADR-069 §3 step 3).
+// Returns "" when the header is absent so the retrieval language filter is
+// skipped (backward-compatible with the pre-filter behavior).
+func resolveAcceptLanguage(r *http.Request) string {
+	accept := r.Header.Get("Accept-Language")
+	if accept == "" {
+		return ""
+	}
+	// "en-US,en;q=0.9,fr;q=0.8" → "en"
+	parts := strings.SplitN(accept, ",", 2)
+	tag := strings.TrimSpace(parts[0])
+	if idx := strings.Index(tag, "-"); idx > 0 {
+		tag = tag[:idx]
+	}
+	if len(tag) == 2 {
+		return strings.ToLower(tag)
+	}
+	return ""
 }

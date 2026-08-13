@@ -18,9 +18,11 @@ type RSSFetcher struct {
 	client *http.Client
 }
 
-// NewRSSFetcher returns an RSSFetcher with a 30s timeout.
+// NewRSSFetcher returns an RSSFetcher with a 30s timeout and SSRF-safe
+// transport (redirects to private IPs are blocked; response bodies are
+// capped at defaultMaxBodySize by the Fetch method).
 func NewRSSFetcher() *RSSFetcher {
-	return &RSSFetcher{client: &http.Client{Timeout: 30 * time.Second}}
+	return &RSSFetcher{client: NewSafeClient(30*time.Second, defaultMaxBodySize)}
 }
 
 type rssFeed struct {
@@ -48,7 +50,7 @@ func (f *RSSFetcher) Fetch(ctx context.Context, source sources.Source) (FetchRes
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(NewMaxBodyReader(resp.Body, defaultMaxBodySize))
 	if err != nil {
 		return FetchResult{}, fmt.Errorf("rss: read body: %w", err)
 	}

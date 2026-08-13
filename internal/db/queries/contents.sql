@@ -81,6 +81,31 @@ WHERE c.tenant_id = @tenant_id
 ORDER BY c.created_at DESC, c.id DESC
 LIMIT @page_limit;
 
+-- name: ListContentsByIDs :many
+-- Fetches content rows by a list of IDs with the same JOINed enrichment
+-- as ListContentsByTenant. Used by the Meilisearch search integration:
+-- when ?q= is present, the handler queries Meilisearch for matching IDs,
+-- then uses this query to fetch the full rows with author/space names.
+-- Ref: docs/PERFORMANCE_AUDIT.md §4 (Search Offload)
+SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c.body_html,
+       c.field_values, c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
+       c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
+       c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
+       c.view_count, c.comment_count, c.share_count, c.reshare_count, c.publish_at, c.published_at,
+       c.created_at, c.updated_at, c.guide_category,
+       u.username AS author_username, up.display_name AS author_display_name,
+       s.name AS space_name
+FROM contents c
+LEFT JOIN users u ON u.id = c.author_id AND u.tenant_id = c.tenant_id
+LEFT JOIN user_profiles up ON up.user_id = c.author_id AND up.tenant_id = c.tenant_id
+LEFT JOIN spaces s ON s.id = c.space_id AND s.tenant_id = c.tenant_id
+WHERE c.tenant_id = @tenant_id
+  AND c.id = ANY(@ids::uuid[])
+  AND c.deleted_at IS NULL
+  AND c.auto_hidden = false
+ORDER BY c.created_at DESC, c.id DESC
+LIMIT @page_limit;
+
 -- name: ListContentsByType :many
 SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c.body_html,
        c.field_values, c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,

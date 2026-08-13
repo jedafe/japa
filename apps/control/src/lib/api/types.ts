@@ -206,6 +206,10 @@ export interface DbHealth {
 	slow_queries: { pid: number; duration: number; duration_ms: number; state: string; query_preview: string; query: string; timestamp: string }[];
 	indexes_unused: { name: string; table_name: string; scans: number }[];
 	connection_pool?: { active: number; idle: number; max: number };
+	pools?: {
+		primary: { role: string; reachable: boolean; latency_ms: number };
+		reader: { role: string; reachable: boolean; latency_ms: number };
+	};
 	replication?: { state: string; lag_seconds: number };
 }
 

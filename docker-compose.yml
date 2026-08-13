@@ -10,17 +10,49 @@
 
 services:
   # PostgreSQL 18 with pgvector extension for vector similarity search.
+  # Primary — all writes go here. Replication settings (wal_level, max_wal_senders)
+  # enable the read replica below. POSTGRES_HOST_AUTH_METHOD=trust is dev-only;
+  # production should use md5 + proper pg_hba.conf replication rules.
   postgres:
     image: pgvector/pgvector:pg18
+    command: postgres -c wal_level=replica -c max_wal_senders=10 -c hot_standby=on
     environment:
       POSTGRES_USER: japa
       POSTGRES_PASSWORD: japa
       POSTGRES_DB: japa
+      POSTGRES_HOST_AUTH_METHOD: trust
     ports:
       - "5433:5432"
     volumes:
       - postgres-data:/var/lib/postgresql
       - ./docker/postgres-init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U japa -d japa"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # PostgreSQL read replica — receives all read traffic when JC_DATABASE_READER_URL
+  # is set on the go-api service. Streams WAL from the primary via pg_basebackup +
+  # streaming replication. Dev-only setup (trust auth); production should use
+  # proper pg_hba.conf rules and password auth.
+  postgres-replica:
+    image: pgvector/pgvector:pg18
+    entrypoint: ["/usr/local/bin/postgres-replica-entrypoint.sh"]
+    environment:
+      PRIMARY_HOST: postgres
+      PRIMARY_PORT: "5432"
+      REPLICA_USER: replicator
+      REPLICA_PASSWORD: japa_replica
+      POSTGRES_HOST_AUTH_METHOD: trust
+    ports:
+      - "5434:5432"
+    volumes:
+      - postgres-replica-data:/var/lib/postgresql
+      - ./docker/postgres-replica-entrypoint.sh:/usr/local/bin/postgres-replica-entrypoint.sh:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U japa -d japa"]
       interval: 5s
@@ -129,6 +161,10 @@ services:
       dockerfile: Dockerfile
     environment:
       JC_DATABASE_URL: postgresql://japa:japa@postgres:5432/japa?sslmode=disable
+      JC_DATABASE_READER_URL: postgresql://japa:japa@postgres-replica:5432/japa?sslmode=disable
+      # Read queries use the replica; writes use the primary (above).
+      # To disable the replica, comment out JC_DATABASE_READER_URL — both
+      # pools will then use JC_DATABASE_URL.
       JC_REDIS_ADDR: valkey:6379
       JC_MEILISEARCH_URL: http://meilisearch:7700
       JC_MEILISEARCH_KEY: ${JC_MEILISEARCH_KEY}
@@ -141,6 +177,8 @@ services:
       - "8080:8080"
     depends_on:
       postgres:
+        condition: service_healthy
+      postgres-replica:
         condition: service_healthy
       valkey:
         condition: service_healthy
@@ -201,6 +239,7 @@ services:
 
 volumes:
   postgres-data:
+  postgres-replica-data:
   valkey-data:
   meili-data:
   seaweedfs-data:

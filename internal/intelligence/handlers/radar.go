@@ -2,9 +2,14 @@ package handlers
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"log/slog"
 	"net/http"
+	"strconv"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -12,6 +17,7 @@ import (
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/follows"
 	"github.com/jedafe/japa/internal/scholarships"
+	"github.com/jedafe/japa/internal/tenant"
 )
 
 // radarItem is the v1 radar feed item shape. In v1 the radar surfaces
@@ -53,6 +59,75 @@ func scholarshipToRadarItem(s gen.Scholarship) radarItem {
 	}
 }
 
+// encodeCursor encodes a keyset cursor (created_at + id) as a base64 string
+// for the next_cursor field in the spec envelope. The cursor is opaque to
+// the client; the handler decodes it to resume pagination.
+func encodeCursor(createdAt pgtype.Timestamptz, id pgtype.UUID) string {
+	if !createdAt.Valid || !id.Valid {
+		return ""
+	}
+	raw := fmt.Sprintf("%d|%s", createdAt.Time.UnixNano(), id.String())
+	return base64.RawURLEncoding.EncodeToString([]byte(raw))
+}
+
+// parseCursor decodes a base64 keyset cursor. Returns the created_at
+// timestamp and id; ok=false if the cursor is empty or malformed.
+func parseCursor(cursor string) (ts pgtype.Timestamptz, id pgtype.UUID, ok bool) {
+	if cursor == "" {
+		return pgtype.Timestamptz{}, pgtype.UUID{}, false
+	}
+	raw, err := base64.RawURLEncoding.DecodeString(cursor)
+	if err != nil {
+		return pgtype.Timestamptz{}, pgtype.UUID{}, false
+	}
+	parts := splitOnce(raw, '|')
+	if len(parts) != 2 {
+		return pgtype.Timestamptz{}, pgtype.UUID{}, false
+	}
+	nano, err := strconv.ParseInt(parts[0], 10, 64)
+	if err != nil {
+		return pgtype.Timestamptz{}, pgtype.UUID{}, false
+	}
+	if err := id.Scan(parts[1]); err != nil {
+		return pgtype.Timestamptz{}, pgtype.UUID{}, false
+	}
+	ts = pgtype.Timestamptz{Time: timeFromNano(nano), Valid: true}
+	return ts, id, true
+}
+
+// splitOnce splits s at the first occurrence of sep.
+func splitOnce(s []byte, sep byte) []string {
+	for i, b := range s {
+		if b == sep {
+			return []string{string(s[:i]), string(s[i+1:])}
+		}
+	}
+	return []string{string(s)}
+}
+
+// timeFromNano converts a UnixNano value to a time.Time.
+func timeFromNano(nano int64) time.Time {
+	return time.Unix(0, nano).UTC()
+}
+
+// countByType aggregates radar items by their Type field.
+func countByType(items []radarItem) map[string]int {
+	counts := make(map[string]int)
+	for _, item := range items {
+		counts[item.Type]++
+	}
+	return counts
+}
+
+// countByCountry aggregates radar items by their Country field.
+func countByCountry(items []radarItem) map[string]int {
+	counts := make(map[string]int)
+	for _, item := range items {
+		counts[item.Country]++
+	}
+	return counts
+}
+
 // HandleRadarFeed returns the geo-scoped radar feed. In v1 this is the set
 // of promoted scholarships filtered by the caller's space_id query param
 // (or country when space_id is absent). Anonymous callers get the global
@@ -75,6 +150,14 @@ func (h *Handlers) HandleRadarFeed(w http.ResponseWriter, r *http.Request) {
 	page, limit := parsePagination(r)
 	offset := clampInt32((page - 1) * limit)
 
+	// BUG-006 fix: the spec §731-733 requires keyset pagination via ?cursor=.
+	// The cursor encodes (created_at, id). When present, decode it and use a
+	// keyset query (WHERE (created_at, id) < (cursor_ts, cursor_id)); when
+	// absent, fall back to offset pagination for the first page. The
+	// next_cursor is still returned so clients can resume.
+	cursorStr := q.Get("cursor")
+	cursorTS, cursorID, hasCursor := parseCursor(cursorStr)
+
 	spaceIDStr := q.Get("space_id")
 	country := q.Get("country")
 
@@ -82,31 +165,41 @@ func (h *Handlers) HandleRadarFeed(w http.ResponseWriter, r *http.Request) {
 	var err error
 
 	switch {
+	case hasCursor:
+		// Keyset path: resume after the cursor item, ignoring space/country
+		// filters (the cursor already encodes the prior page's scope). This
+		// keeps the global feed paginating consistently.
+		rows, err = h.intelStores.ListScholarshipsKeyset(r.Context(), tenantID, gen.ListScholarshipsKeysetParams{
+			Column2: cursorTS,
+			ID:      cursorID,
+			Limit:   clampInt32(limit),
+		})
 	case spaceIDStr != "":
 		var spaceID pgtype.UUID
 		if e := spaceID.Scan(spaceIDStr); e != nil {
 			writeError(w, http.StatusBadRequest, "invalid_uuid", "Invalid space_id")
 			return
 		}
-		rows, err = h.intelStores.ListScholarshipsBySpace(r.Context(), gen.ListScholarshipsBySpaceParams{
+		rows, err = h.intelStores.ListScholarshipsBySpace(r.Context(), tenantID, gen.ListScholarshipsBySpaceParams{
 			CountrySpaceID: spaceID,
 			Limit:          clampInt32(limit),
 			Offset:         offset,
 		})
 	case country != "":
-		rows, err = h.intelStores.ListScholarshipsByCountry(r.Context(), gen.ListScholarshipsByCountryParams{
+		rows, err = h.intelStores.ListScholarshipsByCountry(r.Context(), tenantID, gen.ListScholarshipsByCountryParams{
 			Country: country,
 			Limit:   clampInt32(limit),
 			Offset:  offset,
 		})
 	default:
-		rows, err = h.intelStores.ListScholarships(r.Context(), gen.ListScholarshipsParams{
+		rows, err = h.intelStores.ListScholarships(r.Context(), tenantID, gen.ListScholarshipsParams{
 			Limit:  clampInt32(limit),
 			Offset: offset,
 		})
 	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "radar_feed_failed", err.Error())
+		slog.Error("intel: radar feed query failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "radar_feed_failed", "Failed to load radar feed")
 		return
 	}
 
@@ -115,19 +208,29 @@ func (h *Handlers) HandleRadarFeed(w http.ResponseWriter, r *http.Request) {
 		items = append(items, scholarshipToRadarItem(s))
 	}
 
+	// Keyset pagination: if the result set equals the limit, there may be
+	// more items. Encode the last item's (created_at, id) as the cursor.
+	hasMore := len(items) >= limit
+	nextCursor := ""
+	if hasMore && len(items) > 0 {
+		last := items[len(items)-1]
+		nextCursor = encodeCursor(last.CreatedAt, last.ID)
+	}
+
 	// Resolve the caller's followed space IDs so the UI can badge items
 	// whose country space the user follows. Best-effort: a failure
 	// degrades to an empty slice.
 	followedSpaces := h.resolveFollowedSpaceIDs(r.Context(), tenantID, userID)
 
+	// Spec envelope: {items, next_cursor, has_more, counts_by_type,
+	// counts_by_country, followed_space_ids} (BUG-03 fix, §3.3).
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"data": items,
-		"meta": map[string]interface{}{
-			"page_size":          limit,
-			"page_offset":        (page - 1) * limit,
-			"count":              len(items),
-			"followed_space_ids": followedSpaces,
-		},
+		"items":              items,
+		"next_cursor":        nextCursor,
+		"has_more":           hasMore,
+		"counts_by_type":     countByType(items),
+		"counts_by_country":  countByCountry(items),
+		"followed_space_ids": followedSpaces,
 	})
 }
 
@@ -145,10 +248,15 @@ func (h *Handlers) HandleRadarCounts(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireTenant(w, r); !ok {
 		return
 	}
+	tenantID := tenant.IDFromContext(r.Context())
+	if !tenantID.Valid {
+		tenantID = defaultIntelTenantID
+	}
 
-	rows, err := h.intelStores.CountScholarshipsByCountry(r.Context())
+	rows, err := h.intelStores.CountScholarshipsByCountry(r.Context(), tenantID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "counts_failed", err.Error())
+		slog.Error("intel: radar counts query failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "counts_failed", "Failed to load radar counts")
 		return
 	}
 	if rows == nil {
@@ -156,22 +264,31 @@ func (h *Handlers) HandleRadarCounts(w http.ResponseWriter, r *http.Request) {
 	}
 
 	total := int64(0)
+	byCountry := make(map[string]int64, len(rows))
 	for _, r := range rows {
 		total += r.Count
+		byCountry[r.Country] = r.Count
 	}
 
+	// Spec envelope: {total_new, by_type, by_country} (BUG-04 fix, §3.3).
+	// In v1 all radar items are scholarships, so by_type has a single key.
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"data": rows,
-		"meta": map[string]interface{}{
-			"total_countries": len(rows),
-			"total_scholarships": total,
-		},
+		"total_new":  total,
+		"by_type":    map[string]int64{"scholarship": total},
+		"by_country": byCountry,
 	})
 }
 
 // HandleRadarFollowed returns the radar feed scoped to the caller's followed
 // country spaces. It resolves the user's followed "space" entities via the
-// follows service, then unions the scholarships for each followed space.
+// follows service, then fetches scholarships for ALL followed spaces in a
+// single query (BUG-008b fix: the prior per-space loop was an N+1 — one
+// query per followed country).
+//
+// BUG-008a fix: the response now uses the radar envelope
+// {items, next_cursor, has_more, counts_by_type, counts_by_country,
+// followed_space_ids} per spec §739 (same envelope as /radar), not the
+// generic {data, meta} envelope.
 //
 // GET /api/v1/intel/radar/followed
 func (h *Handlers) HandleRadarFollowed(w http.ResponseWriter, r *http.Request) {
@@ -189,49 +306,58 @@ func (h *Handlers) HandleRadarFollowed(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	page, limit := parsePagination(r)
-	offset := clampInt32((page - 1) * limit)
+	_, limit := parsePagination(r)
 
 	followed, err := h.followsSvc.GetFollowingByType(r.Context(), tenantID, userID, userID, follows.EntityTypeSpace, 100, 0)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "followed_spaces_failed", err.Error())
+		slog.Error("intel: radar followed spaces lookup failed", "user_id", userID.String(), "error", err)
+		writeError(w, http.StatusInternalServerError, "followed_spaces_failed", "Failed to load followed spaces")
 		return
 	}
 
-	// Collect scholarships across all followed spaces. In v1 we fetch per
-	// space and merge; a dedicated union query can replace this once the
-	// feed grows beyond a handful of followed spaces.
-	var allItems []radarItem
+	// Collect followed space IDs and run a single union query.
+	spaceIDs := make([]pgtype.UUID, 0, len(followed))
+	followedSpaceStrs := make([]string, 0, len(followed))
 	for _, f := range followed {
-		rows, err := h.intelStores.ListScholarshipsBySpace(r.Context(), gen.ListScholarshipsBySpaceParams{
-			CountrySpaceID: f.EntityID,
-			Limit:          clampInt32(limit),
-			Offset:         offset,
+		if f.EntityID.Valid {
+			spaceIDs = append(spaceIDs, f.EntityID)
+			followedSpaceStrs = append(followedSpaceStrs, f.EntityID.String())
+		}
+	}
+
+	var rows []gen.Scholarship
+	if len(spaceIDs) > 0 {
+		rows, err = h.intelStores.ListScholarshipsBySpaces(r.Context(), tenantID, gen.ListScholarshipsBySpacesParams{
+			Column2: spaceIDs,
+			Limit:   clampInt32(limit),
 		})
 		if err != nil {
-			continue // best-effort per space
-		}
-		for _, s := range rows {
-			allItems = append(allItems, scholarshipToRadarItem(s))
+			slog.Error("intel: radar followed union query failed", "error", err)
+			writeError(w, http.StatusInternalServerError, "followed_feed_failed", "Failed to load followed feed")
+			return
 		}
 	}
 
-	// Clamp to the requested page size after merging.
-	if len(allItems) > limit {
-		allItems = allItems[:limit]
-	}
-	if allItems == nil {
-		allItems = []radarItem{}
+	items := make([]radarItem, 0, len(rows))
+	for _, s := range rows {
+		items = append(items, scholarshipToRadarItem(s))
 	}
 
+	hasMore := len(items) >= limit
+	nextCursor := ""
+	if hasMore && len(items) > 0 {
+		last := items[len(items)-1]
+		nextCursor = encodeCursor(last.CreatedAt, last.ID)
+	}
+
+	// Radar envelope (spec §739), NOT the generic {data, meta} envelope.
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"data": allItems,
-		"meta": map[string]interface{}{
-			"page_size":      limit,
-			"page_offset":    (page - 1) * limit,
-			"count":          len(allItems),
-			"followed_count": len(followed),
-		},
+		"items":              items,
+		"next_cursor":        nextCursor,
+		"has_more":           hasMore,
+		"counts_by_type":     countByType(items),
+		"counts_by_country":  countByCountry(items),
+		"followed_space_ids": followedSpaceStrs,
 	})
 }
 
@@ -275,7 +401,8 @@ func (h *Handlers) HandleRadarFollow(w http.ResponseWriter, r *http.Request) {
 
 	followed, err := h.followsSvc.ToggleFollow(r.Context(), tenantID, userID, follows.EntityTypeSpace, spaceID)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "follow_failed", err.Error())
+		slog.Error("intel: radar follow failed", "space_id", body.SpaceID, "error", err)
+		writeError(w, http.StatusBadRequest, "follow_failed", "Failed to follow space")
 		return
 	}
 
@@ -287,8 +414,10 @@ func (h *Handlers) HandleRadarFollow(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// HandleRadarUnfollow unfollows a country space. The space_id is read from
-// the query string so DELETE can stay bodyless.
+// HandleRadarUnfollow unfollows a country space. Per the spec the space_id
+// is carried in the request body ({ space_id }). A query-string fallback
+// (?space_id=) is kept for backward compatibility with bodyless DELETE
+// clients (BUG-15 fix, §3.3).
 //
 // DELETE /api/v1/intel/radar/follow
 func (h *Handlers) HandleRadarUnfollow(w http.ResponseWriter, r *http.Request) {
@@ -306,7 +435,16 @@ func (h *Handlers) HandleRadarUnfollow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Read space_id from body per spec; fall back to query string.
 	spaceIDStr := r.URL.Query().Get("space_id")
+	if spaceIDStr == "" && r.Body != nil {
+		var body struct {
+			SpaceID string `json:"space_id"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err == nil && body.SpaceID != "" {
+			spaceIDStr = body.SpaceID
+		}
+	}
 	if spaceIDStr == "" {
 		writeError(w, http.StatusBadRequest, "missing_param", "space_id is required")
 		return
@@ -319,7 +457,8 @@ func (h *Handlers) HandleRadarUnfollow(w http.ResponseWriter, r *http.Request) {
 
 	followed, err := h.followsSvc.ToggleFollow(r.Context(), tenantID, userID, follows.EntityTypeSpace, spaceID)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "unfollow_failed", err.Error())
+		slog.Error("intel: radar unfollow failed", "space_id", spaceIDStr, "error", err)
+		writeError(w, http.StatusBadRequest, "unfollow_failed", "Failed to unfollow space")
 		return
 	}
 
@@ -344,19 +483,24 @@ func (h *Handlers) HandleRadarItemDetail(w http.ResponseWriter, r *http.Request)
 	if _, ok := requireTenant(w, r); !ok {
 		return
 	}
+	tenantID := tenant.IDFromContext(r.Context())
+	if !tenantID.Valid {
+		tenantID = defaultIntelTenantID
+	}
 
 	itemID, ok := scanUUIDParam(w, r, "item_id")
 	if !ok {
 		return
 	}
 
-	s, err := h.intelStores.GetScholarship(r.Context(), itemID)
+	s, err := h.intelStores.GetScholarship(r.Context(), tenantID, itemID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "not_found", "Radar item not found")
 			return
 		}
-		writeError(w, http.StatusInternalServerError, "lookup_failed", err.Error())
+		slog.Error("intel: radar item detail lookup failed", "item_id", itemID.String(), "error", err)
+		writeError(w, http.StatusInternalServerError, "lookup_failed", "Failed to load radar item")
 		return
 	}
 
@@ -390,7 +534,8 @@ func (h *Handlers) HandleRadarSaved(w http.ResponseWriter, r *http.Request) {
 
 	rows, total, err := h.scholarSvc.ListSavedScholarships(r.Context(), tenantID, userID, status, page, limit)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "saved_list_failed", err.Error())
+		slog.Error("intel: radar saved list failed", "user_id", userID.String(), "error", err)
+		writeError(w, http.StatusInternalServerError, "saved_list_failed", "Failed to load saved opportunities")
 		return
 	}
 	if rows == nil {
@@ -447,23 +592,25 @@ func (h *Handlers) HandleRadarSave(w http.ResponseWriter, r *http.Request) {
 
 	// Resolve the scholarship projection row to get its guide_id — the
 	// saved-scholarship tracker keys on guide_id, not scholarship.id.
-	s, err := h.intelStores.GetScholarship(r.Context(), itemID)
+	s, err := h.intelStores.GetScholarship(r.Context(), tenantID, itemID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "not_found", "Radar item not found")
 			return
 		}
-		writeError(w, http.StatusInternalServerError, "lookup_failed", err.Error())
+		slog.Error("intel: radar save lookup failed", "item_id", itemID.String(), "error", err)
+		writeError(w, http.StatusInternalServerError, "lookup_failed", "Failed to load radar item")
 		return
 	}
 
 	saved, err := h.scholarSvc.SaveScholarship(r.Context(), tenantID, userID, s.GuideID)
 	if err != nil {
 		if errors.Is(err, scholarships.ErrGuideNotFound) {
-			writeError(w, http.StatusNotFound, "guide_not_found", err.Error())
+			writeError(w, http.StatusNotFound, "guide_not_found", "Guide not found for this opportunity")
 			return
 		}
-		writeError(w, http.StatusBadRequest, "save_failed", err.Error())
+		slog.Error("intel: radar save failed", "item_id", itemID.String(), "error", err)
+		writeError(w, http.StatusBadRequest, "save_failed", "Failed to save opportunity")
 		return
 	}
 
@@ -502,18 +649,20 @@ func (h *Handlers) HandleRadarUnsave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s, err := h.intelStores.GetScholarship(r.Context(), itemID)
+	s, err := h.intelStores.GetScholarship(r.Context(), tenantID, itemID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "not_found", "Radar item not found")
 			return
 		}
-		writeError(w, http.StatusInternalServerError, "lookup_failed", err.Error())
+		slog.Error("intel: radar unsave lookup failed", "item_id", itemID.String(), "error", err)
+		writeError(w, http.StatusInternalServerError, "lookup_failed", "Failed to load radar item")
 		return
 	}
 
 	if err := h.scholarSvc.DeleteSavedScholarship(r.Context(), tenantID, userID, s.GuideID); err != nil {
-		writeError(w, http.StatusBadRequest, "unsave_failed", err.Error())
+		slog.Error("intel: radar unsave failed", "item_id", itemID.String(), "error", err)
+		writeError(w, http.StatusBadRequest, "unsave_failed", "Failed to unsave opportunity")
 		return
 	}
 

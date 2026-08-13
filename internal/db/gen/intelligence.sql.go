@@ -11,13 +11,36 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const countPromotedIntelRecordsBySource = `-- name: CountPromotedIntelRecordsBySource :one
+SELECT count(*) FROM intel_records
+WHERE tenant_id = $1 AND source_id = $2 AND promoted_record_id IS NOT NULL
+`
+
+type CountPromotedIntelRecordsBySourceParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	SourceID pgtype.UUID `json:"source_id"`
+}
+
+// Returns the number of intel_records for a source that have been promoted
+// (promoted_record_id IS NOT NULL). Used by the source-delete handler to
+// enforce the spec §650 / route-catalog §2225 invariant "promoted records
+// preserved" — deleting a source with promoted records would CASCADE-wipe
+// the promoted scholarships + their contents guides (BUG-004 fix).
+func (q *Queries) CountPromotedIntelRecordsBySource(ctx context.Context, arg CountPromotedIntelRecordsBySourceParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countPromotedIntelRecordsBySource, arg.TenantID, arg.SourceID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createIntelRawDocument = `-- name: CreateIntelRawDocument :one
-INSERT INTO intel_raw_documents (source_id, url, http_status, http_headers, content_type, body, content_hash)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
-RETURNING id, source_id, url, http_status, http_headers, content_type, body, content_hash, retrieved_at
+INSERT INTO intel_raw_documents (tenant_id, source_id, url, http_status, http_headers, content_type, body, content_hash)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+RETURNING id, source_id, url, http_status, http_headers, content_type, body, content_hash, retrieved_at, tenant_id
 `
 
 type CreateIntelRawDocumentParams struct {
+	TenantID    pgtype.UUID `json:"tenant_id"`
 	SourceID    pgtype.UUID `json:"source_id"`
 	Url         string      `json:"url"`
 	HttpStatus  int32       `json:"http_status"`
@@ -29,6 +52,7 @@ type CreateIntelRawDocumentParams struct {
 
 func (q *Queries) CreateIntelRawDocument(ctx context.Context, arg CreateIntelRawDocumentParams) (IntelRawDocument, error) {
 	row := q.db.QueryRow(ctx, createIntelRawDocument,
+		arg.TenantID,
 		arg.SourceID,
 		arg.Url,
 		arg.HttpStatus,
@@ -48,17 +72,19 @@ func (q *Queries) CreateIntelRawDocument(ctx context.Context, arg CreateIntelRaw
 		&i.Body,
 		&i.ContentHash,
 		&i.RetrievedAt,
+		&i.TenantID,
 	)
 	return i, err
 }
 
 const createIntelRecord = `-- name: CreateIntelRecord :one
-INSERT INTO intel_records (source_id, raw_document_id, entity_type, external_key, extracted, confidence, evidence, confidence_overall, status, geo_space_ids)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'extracted', $9)
-RETURNING id, source_id, raw_document_id, entity_type, external_key, extracted, confidence, evidence, confidence_overall, status, freshness_score, geo_space_ids, extracted_at, last_verified_at, promoted_record_id
+INSERT INTO intel_records (tenant_id, source_id, raw_document_id, entity_type, external_key, extracted, confidence, evidence, confidence_overall, status, geo_space_ids)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'extracted', $10)
+RETURNING id, source_id, raw_document_id, entity_type, external_key, extracted, confidence, evidence, confidence_overall, status, freshness_score, geo_space_ids, extracted_at, last_verified_at, promoted_record_id, tenant_id
 `
 
 type CreateIntelRecordParams struct {
+	TenantID          pgtype.UUID   `json:"tenant_id"`
 	SourceID          pgtype.UUID   `json:"source_id"`
 	RawDocumentID     pgtype.UUID   `json:"raw_document_id"`
 	EntityType        string        `json:"entity_type"`
@@ -72,6 +98,7 @@ type CreateIntelRecordParams struct {
 
 func (q *Queries) CreateIntelRecord(ctx context.Context, arg CreateIntelRecordParams) (IntelRecord, error) {
 	row := q.db.QueryRow(ctx, createIntelRecord,
+		arg.TenantID,
 		arg.SourceID,
 		arg.RawDocumentID,
 		arg.EntityType,
@@ -99,16 +126,18 @@ func (q *Queries) CreateIntelRecord(ctx context.Context, arg CreateIntelRecordPa
 		&i.ExtractedAt,
 		&i.LastVerifiedAt,
 		&i.PromotedRecordID,
+		&i.TenantID,
 	)
 	return i, err
 }
 
 const createIntelReviewLog = `-- name: CreateIntelReviewLog :exec
-INSERT INTO intel_review_log (intel_record_id, actor_user_id, action, field_changes, note)
-VALUES ($1, $2, $3, $4, $5)
+INSERT INTO intel_review_log (tenant_id, intel_record_id, actor_user_id, action, field_changes, note)
+VALUES ($1, $2, $3, $4, $5, $6)
 `
 
 type CreateIntelReviewLogParams struct {
+	TenantID      pgtype.UUID `json:"tenant_id"`
 	IntelRecordID pgtype.UUID `json:"intel_record_id"`
 	ActorUserID   pgtype.UUID `json:"actor_user_id"`
 	Action        string      `json:"action"`
@@ -118,6 +147,7 @@ type CreateIntelReviewLogParams struct {
 
 func (q *Queries) CreateIntelReviewLog(ctx context.Context, arg CreateIntelReviewLogParams) error {
 	_, err := q.db.Exec(ctx, createIntelReviewLog,
+		arg.TenantID,
 		arg.IntelRecordID,
 		arg.ActorUserID,
 		arg.Action,
@@ -129,34 +159,39 @@ func (q *Queries) CreateIntelReviewLog(ctx context.Context, arg CreateIntelRevie
 
 const createIntelSource = `-- name: CreateIntelSource :one
 
-INSERT INTO intel_sources (name, domain, source_url, category, source_type, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, enabled)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
-RETURNING id, name, domain, source_url, category, source_type, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, enabled, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at
+INSERT INTO intel_sources (tenant_id, name, domain, source_url, category, source_type, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, enabled)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+RETURNING id, name, domain, source_url, category, source_type, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, enabled, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at, tenant_id
 `
 
 type CreateIntelSourceParams struct {
-	Name                string  `json:"name"`
-	Domain              string  `json:"domain"`
-	SourceUrl           string  `json:"source_url"`
-	Category            string  `json:"category"`
-	SourceType          string  `json:"source_type"`
-	TrustLevel          int16   `json:"trust_level"`
-	CrawlMethod         string  `json:"crawl_method"`
-	CrawlFrequency      string  `json:"crawl_frequency"`
-	CrawlFrequencyMins  int32   `json:"crawl_frequency_mins"`
-	RobotsPolicy        []byte  `json:"robots_policy"`
-	SourceLicense       *string `json:"source_license"`
-	AttributionRequired bool    `json:"attribution_required"`
-	UsageRestriction    *string `json:"usage_restriction"`
-	ProviderConfig      []byte  `json:"provider_config"`
-	Enabled             bool    `json:"enabled"`
+	TenantID            pgtype.UUID `json:"tenant_id"`
+	Name                string      `json:"name"`
+	Domain              string      `json:"domain"`
+	SourceUrl           string      `json:"source_url"`
+	Category            string      `json:"category"`
+	SourceType          string      `json:"source_type"`
+	TrustLevel          int16       `json:"trust_level"`
+	CrawlMethod         string      `json:"crawl_method"`
+	CrawlFrequency      string      `json:"crawl_frequency"`
+	CrawlFrequencyMins  int32       `json:"crawl_frequency_mins"`
+	RobotsPolicy        []byte      `json:"robots_policy"`
+	SourceLicense       *string     `json:"source_license"`
+	AttributionRequired bool        `json:"attribution_required"`
+	UsageRestriction    *string     `json:"usage_restriction"`
+	ProviderConfig      []byte      `json:"provider_config"`
+	Enabled             bool        `json:"enabled"`
 }
 
 // internal/db/queries/intelligence.sql
 // sqlc queries for the intelligence spine tables.
 // Ref: ADR-112, docs/superpowers/specs/2026-08-12-japa-intelligence-system-design.md
+//
+// All queries are tenant-scoped (ADR-112 Amendment 2). Every query filters
+// by tenant_id to guarantee data isolation across tenants.
 func (q *Queries) CreateIntelSource(ctx context.Context, arg CreateIntelSourceParams) (IntelSource, error) {
 	row := q.db.QueryRow(ctx, createIntelSource,
+		arg.TenantID,
 		arg.Name,
 		arg.Domain,
 		arg.SourceUrl,
@@ -199,25 +234,72 @@ func (q *Queries) CreateIntelSource(ctx context.Context, arg CreateIntelSourcePa
 		&i.ConsecutiveFailures,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.TenantID,
 	)
 	return i, err
 }
 
-const deleteIntelSource = `-- name: DeleteIntelSource :exec
-DELETE FROM intel_sources WHERE id = $1
+const deleteIntelReviewLogByActor = `-- name: DeleteIntelReviewLogByActor :exec
+DELETE FROM intel_review_log WHERE actor_user_id = $1
 `
 
-func (q *Queries) DeleteIntelSource(ctx context.Context, id pgtype.UUID) error {
-	_, err := q.db.Exec(ctx, deleteIntelSource, id)
+func (q *Queries) DeleteIntelReviewLogByActor(ctx context.Context, actorUserID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteIntelReviewLogByActor, actorUserID)
 	return err
 }
 
-const getIntelRecord = `-- name: GetIntelRecord :one
-SELECT id, source_id, raw_document_id, entity_type, external_key, extracted, confidence, evidence, confidence_overall, status, freshness_score, geo_space_ids, extracted_at, last_verified_at, promoted_record_id FROM intel_records WHERE id = $1
+const deleteIntelSource = `-- name: DeleteIntelSource :exec
+DELETE FROM intel_sources WHERE tenant_id = $1 AND id = $2
 `
 
-func (q *Queries) GetIntelRecord(ctx context.Context, id pgtype.UUID) (IntelRecord, error) {
-	row := q.db.QueryRow(ctx, getIntelRecord, id)
+type DeleteIntelSourceParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	ID       pgtype.UUID `json:"id"`
+}
+
+func (q *Queries) DeleteIntelSource(ctx context.Context, arg DeleteIntelSourceParams) error {
+	_, err := q.db.Exec(ctx, deleteIntelSource, arg.TenantID, arg.ID)
+	return err
+}
+
+const getIntelRawDocument = `-- name: GetIntelRawDocument :one
+SELECT id, source_id, url, http_status, http_headers, content_type, body, content_hash, retrieved_at, tenant_id FROM intel_raw_documents WHERE tenant_id = $1 AND id = $2
+`
+
+type GetIntelRawDocumentParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	ID       pgtype.UUID `json:"id"`
+}
+
+func (q *Queries) GetIntelRawDocument(ctx context.Context, arg GetIntelRawDocumentParams) (IntelRawDocument, error) {
+	row := q.db.QueryRow(ctx, getIntelRawDocument, arg.TenantID, arg.ID)
+	var i IntelRawDocument
+	err := row.Scan(
+		&i.ID,
+		&i.SourceID,
+		&i.Url,
+		&i.HttpStatus,
+		&i.HttpHeaders,
+		&i.ContentType,
+		&i.Body,
+		&i.ContentHash,
+		&i.RetrievedAt,
+		&i.TenantID,
+	)
+	return i, err
+}
+
+const getIntelRecord = `-- name: GetIntelRecord :one
+SELECT id, source_id, raw_document_id, entity_type, external_key, extracted, confidence, evidence, confidence_overall, status, freshness_score, geo_space_ids, extracted_at, last_verified_at, promoted_record_id, tenant_id FROM intel_records WHERE tenant_id = $1 AND id = $2
+`
+
+type GetIntelRecordParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	ID       pgtype.UUID `json:"id"`
+}
+
+func (q *Queries) GetIntelRecord(ctx context.Context, arg GetIntelRecordParams) (IntelRecord, error) {
+	row := q.db.QueryRow(ctx, getIntelRecord, arg.TenantID, arg.ID)
 	var i IntelRecord
 	err := row.Scan(
 		&i.ID,
@@ -235,21 +317,23 @@ func (q *Queries) GetIntelRecord(ctx context.Context, id pgtype.UUID) (IntelReco
 		&i.ExtractedAt,
 		&i.LastVerifiedAt,
 		&i.PromotedRecordID,
+		&i.TenantID,
 	)
 	return i, err
 }
 
 const getIntelRecordByExternalKey = `-- name: GetIntelRecordByExternalKey :one
-SELECT id, source_id, raw_document_id, entity_type, external_key, extracted, confidence, evidence, confidence_overall, status, freshness_score, geo_space_ids, extracted_at, last_verified_at, promoted_record_id FROM intel_records WHERE source_id = $1 AND external_key = $2
+SELECT id, source_id, raw_document_id, entity_type, external_key, extracted, confidence, evidence, confidence_overall, status, freshness_score, geo_space_ids, extracted_at, last_verified_at, promoted_record_id, tenant_id FROM intel_records WHERE tenant_id = $1 AND source_id = $2 AND external_key = $3
 `
 
 type GetIntelRecordByExternalKeyParams struct {
+	TenantID    pgtype.UUID `json:"tenant_id"`
 	SourceID    pgtype.UUID `json:"source_id"`
 	ExternalKey string      `json:"external_key"`
 }
 
 func (q *Queries) GetIntelRecordByExternalKey(ctx context.Context, arg GetIntelRecordByExternalKeyParams) (IntelRecord, error) {
-	row := q.db.QueryRow(ctx, getIntelRecordByExternalKey, arg.SourceID, arg.ExternalKey)
+	row := q.db.QueryRow(ctx, getIntelRecordByExternalKey, arg.TenantID, arg.SourceID, arg.ExternalKey)
 	var i IntelRecord
 	err := row.Scan(
 		&i.ID,
@@ -267,16 +351,22 @@ func (q *Queries) GetIntelRecordByExternalKey(ctx context.Context, arg GetIntelR
 		&i.ExtractedAt,
 		&i.LastVerifiedAt,
 		&i.PromotedRecordID,
+		&i.TenantID,
 	)
 	return i, err
 }
 
 const getIntelSource = `-- name: GetIntelSource :one
-SELECT id, name, domain, source_url, category, source_type, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, enabled, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at FROM intel_sources WHERE id = $1
+SELECT id, name, domain, source_url, category, source_type, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, enabled, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at, tenant_id FROM intel_sources WHERE tenant_id = $1 AND id = $2
 `
 
-func (q *Queries) GetIntelSource(ctx context.Context, id pgtype.UUID) (IntelSource, error) {
-	row := q.db.QueryRow(ctx, getIntelSource, id)
+type GetIntelSourceParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	ID       pgtype.UUID `json:"id"`
+}
+
+func (q *Queries) GetIntelSource(ctx context.Context, arg GetIntelSourceParams) (IntelSource, error) {
+	row := q.db.QueryRow(ctx, getIntelSource, arg.TenantID, arg.ID)
 	var i IntelSource
 	err := row.Scan(
 		&i.ID,
@@ -303,16 +393,22 @@ func (q *Queries) GetIntelSource(ctx context.Context, id pgtype.UUID) (IntelSour
 		&i.ConsecutiveFailures,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.TenantID,
 	)
 	return i, err
 }
 
 const getIntelSourceByURL = `-- name: GetIntelSourceByURL :one
-SELECT id, name, domain, source_url, category, source_type, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, enabled, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at FROM intel_sources WHERE source_url = $1
+SELECT id, name, domain, source_url, category, source_type, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, enabled, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at, tenant_id FROM intel_sources WHERE tenant_id = $1 AND source_url = $2
 `
 
-func (q *Queries) GetIntelSourceByURL(ctx context.Context, sourceUrl string) (IntelSource, error) {
-	row := q.db.QueryRow(ctx, getIntelSourceByURL, sourceUrl)
+type GetIntelSourceByURLParams struct {
+	TenantID  pgtype.UUID `json:"tenant_id"`
+	SourceUrl string      `json:"source_url"`
+}
+
+func (q *Queries) GetIntelSourceByURL(ctx context.Context, arg GetIntelSourceByURLParams) (IntelSource, error) {
+	row := q.db.QueryRow(ctx, getIntelSourceByURL, arg.TenantID, arg.SourceUrl)
 	var i IntelSource
 	err := row.Scan(
 		&i.ID,
@@ -339,31 +435,43 @@ func (q *Queries) GetIntelSourceByURL(ctx context.Context, sourceUrl string) (In
 		&i.ConsecutiveFailures,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.TenantID,
 	)
 	return i, err
 }
 
 const getLatestIntelRawDocHash = `-- name: GetLatestIntelRawDocHash :one
-SELECT content_hash FROM intel_raw_documents WHERE source_id = $1 ORDER BY retrieved_at DESC LIMIT 1
+SELECT content_hash FROM intel_raw_documents WHERE tenant_id = $1 AND source_id = $2 ORDER BY retrieved_at DESC LIMIT 1
 `
 
-func (q *Queries) GetLatestIntelRawDocHash(ctx context.Context, sourceID pgtype.UUID) (string, error) {
-	row := q.db.QueryRow(ctx, getLatestIntelRawDocHash, sourceID)
+type GetLatestIntelRawDocHashParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	SourceID pgtype.UUID `json:"source_id"`
+}
+
+func (q *Queries) GetLatestIntelRawDocHash(ctx context.Context, arg GetLatestIntelRawDocHashParams) (string, error) {
+	row := q.db.QueryRow(ctx, getLatestIntelRawDocHash, arg.TenantID, arg.SourceID)
 	var content_hash string
 	err := row.Scan(&content_hash)
 	return content_hash, err
 }
 
 const listDueIntelSources = `-- name: ListDueIntelSources :many
-SELECT id, name, domain, source_url, category, source_type, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, enabled, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at FROM intel_sources
-WHERE enabled = true
+SELECT id, name, domain, source_url, category, source_type, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, enabled, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at, tenant_id FROM intel_sources
+WHERE tenant_id = $1
+  AND enabled = true
   AND (last_crawled_at IS NULL OR now() - last_crawled_at >= (crawl_frequency_mins || ' minutes')::interval)
 ORDER BY last_crawled_at NULLS FIRST
-LIMIT $1
+LIMIT $2
 `
 
-func (q *Queries) ListDueIntelSources(ctx context.Context, limit int32) ([]IntelSource, error) {
-	rows, err := q.db.Query(ctx, listDueIntelSources, limit)
+type ListDueIntelSourcesParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	Limit    int32       `json:"limit"`
+}
+
+func (q *Queries) ListDueIntelSources(ctx context.Context, arg ListDueIntelSourcesParams) ([]IntelSource, error) {
+	rows, err := q.db.Query(ctx, listDueIntelSources, arg.TenantID, arg.Limit)
 	if err != nil {
 		return nil, err
 	}
@@ -396,6 +504,53 @@ func (q *Queries) ListDueIntelSources(ctx context.Context, limit int32) ([]Intel
 			&i.ConsecutiveFailures,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.TenantID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listIntelRecordsByExternalKey = `-- name: ListIntelRecordsByExternalKey :many
+SELECT id, source_id, raw_document_id, entity_type, external_key, extracted, confidence, evidence, confidence_overall, status, freshness_score, geo_space_ids, extracted_at, last_verified_at, promoted_record_id, tenant_id FROM intel_records WHERE tenant_id = $1 AND external_key = $2 ORDER BY extracted_at DESC
+`
+
+type ListIntelRecordsByExternalKeyParams struct {
+	TenantID    pgtype.UUID `json:"tenant_id"`
+	ExternalKey string      `json:"external_key"`
+}
+
+func (q *Queries) ListIntelRecordsByExternalKey(ctx context.Context, arg ListIntelRecordsByExternalKeyParams) ([]IntelRecord, error) {
+	rows, err := q.db.Query(ctx, listIntelRecordsByExternalKey, arg.TenantID, arg.ExternalKey)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []IntelRecord
+	for rows.Next() {
+		var i IntelRecord
+		if err := rows.Scan(
+			&i.ID,
+			&i.SourceID,
+			&i.RawDocumentID,
+			&i.EntityType,
+			&i.ExternalKey,
+			&i.Extracted,
+			&i.Confidence,
+			&i.Evidence,
+			&i.ConfidenceOverall,
+			&i.Status,
+			&i.FreshnessScore,
+			&i.GeoSpaceIds,
+			&i.ExtractedAt,
+			&i.LastVerifiedAt,
+			&i.PromotedRecordID,
+			&i.TenantID,
 		); err != nil {
 			return nil, err
 		}
@@ -408,18 +563,20 @@ func (q *Queries) ListDueIntelSources(ctx context.Context, limit int32) ([]Intel
 }
 
 const listIntelRecordsByStatus = `-- name: ListIntelRecordsByStatus :many
-SELECT id, source_id, raw_document_id, entity_type, external_key, extracted, confidence, evidence, confidence_overall, status, freshness_score, geo_space_ids, extracted_at, last_verified_at, promoted_record_id FROM intel_records WHERE entity_type = $1 AND status = $2 ORDER BY extracted_at DESC LIMIT $3 OFFSET $4
+SELECT id, source_id, raw_document_id, entity_type, external_key, extracted, confidence, evidence, confidence_overall, status, freshness_score, geo_space_ids, extracted_at, last_verified_at, promoted_record_id, tenant_id FROM intel_records WHERE tenant_id = $1 AND entity_type = $2 AND status = $3 ORDER BY extracted_at DESC LIMIT $4 OFFSET $5
 `
 
 type ListIntelRecordsByStatusParams struct {
-	EntityType string `json:"entity_type"`
-	Status     string `json:"status"`
-	Limit      int32  `json:"limit"`
-	Offset     int32  `json:"offset"`
+	TenantID   pgtype.UUID `json:"tenant_id"`
+	EntityType string      `json:"entity_type"`
+	Status     string      `json:"status"`
+	Limit      int32       `json:"limit"`
+	Offset     int32       `json:"offset"`
 }
 
 func (q *Queries) ListIntelRecordsByStatus(ctx context.Context, arg ListIntelRecordsByStatusParams) ([]IntelRecord, error) {
 	rows, err := q.db.Query(ctx, listIntelRecordsByStatus,
+		arg.TenantID,
 		arg.EntityType,
 		arg.Status,
 		arg.Limit,
@@ -448,6 +605,7 @@ func (q *Queries) ListIntelRecordsByStatus(ctx context.Context, arg ListIntelRec
 			&i.ExtractedAt,
 			&i.LastVerifiedAt,
 			&i.PromotedRecordID,
+			&i.TenantID,
 		); err != nil {
 			return nil, err
 		}
@@ -460,11 +618,16 @@ func (q *Queries) ListIntelRecordsByStatus(ctx context.Context, arg ListIntelRec
 }
 
 const listIntelReviewLog = `-- name: ListIntelReviewLog :many
-SELECT id, intel_record_id, actor_user_id, action, field_changes, note, created_at FROM intel_review_log WHERE intel_record_id = $1 ORDER BY created_at DESC
+SELECT id, intel_record_id, actor_user_id, action, field_changes, note, created_at, tenant_id FROM intel_review_log WHERE tenant_id = $1 AND intel_record_id = $2 ORDER BY created_at DESC
 `
 
-func (q *Queries) ListIntelReviewLog(ctx context.Context, intelRecordID pgtype.UUID) ([]IntelReviewLog, error) {
-	rows, err := q.db.Query(ctx, listIntelReviewLog, intelRecordID)
+type ListIntelReviewLogParams struct {
+	TenantID      pgtype.UUID `json:"tenant_id"`
+	IntelRecordID pgtype.UUID `json:"intel_record_id"`
+}
+
+func (q *Queries) ListIntelReviewLog(ctx context.Context, arg ListIntelReviewLogParams) ([]IntelReviewLog, error) {
+	rows, err := q.db.Query(ctx, listIntelReviewLog, arg.TenantID, arg.IntelRecordID)
 	if err != nil {
 		return nil, err
 	}
@@ -480,6 +643,7 @@ func (q *Queries) ListIntelReviewLog(ctx context.Context, intelRecordID pgtype.U
 			&i.FieldChanges,
 			&i.Note,
 			&i.CreatedAt,
+			&i.TenantID,
 		); err != nil {
 			return nil, err
 		}
@@ -492,16 +656,17 @@ func (q *Queries) ListIntelReviewLog(ctx context.Context, intelRecordID pgtype.U
 }
 
 const listIntelSources = `-- name: ListIntelSources :many
-SELECT id, name, domain, source_url, category, source_type, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, enabled, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at FROM intel_sources ORDER BY created_at DESC LIMIT $1 OFFSET $2
+SELECT id, name, domain, source_url, category, source_type, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, enabled, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at, tenant_id FROM intel_sources WHERE tenant_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3
 `
 
 type ListIntelSourcesParams struct {
-	Limit  int32 `json:"limit"`
-	Offset int32 `json:"offset"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+	Limit    int32       `json:"limit"`
+	Offset   int32       `json:"offset"`
 }
 
 func (q *Queries) ListIntelSources(ctx context.Context, arg ListIntelSourcesParams) ([]IntelSource, error) {
-	rows, err := q.db.Query(ctx, listIntelSources, arg.Limit, arg.Offset)
+	rows, err := q.db.Query(ctx, listIntelSources, arg.TenantID, arg.Limit, arg.Offset)
 	if err != nil {
 		return nil, err
 	}
@@ -534,6 +699,7 @@ func (q *Queries) ListIntelSources(ctx context.Context, arg ListIntelSourcesPara
 			&i.ConsecutiveFailures,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.TenantID,
 		); err != nil {
 			return nil, err
 		}
@@ -546,11 +712,16 @@ func (q *Queries) ListIntelSources(ctx context.Context, arg ListIntelSourcesPara
 }
 
 const listIntelSourcesByCategory = `-- name: ListIntelSourcesByCategory :many
-SELECT id, name, domain, source_url, category, source_type, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, enabled, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at FROM intel_sources WHERE category = $1 AND enabled = true ORDER BY trust_level, name
+SELECT id, name, domain, source_url, category, source_type, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, enabled, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at, tenant_id FROM intel_sources WHERE tenant_id = $1 AND category = $2 AND enabled = true ORDER BY trust_level, name
 `
 
-func (q *Queries) ListIntelSourcesByCategory(ctx context.Context, category string) ([]IntelSource, error) {
-	rows, err := q.db.Query(ctx, listIntelSourcesByCategory, category)
+type ListIntelSourcesByCategoryParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	Category string      `json:"category"`
+}
+
+func (q *Queries) ListIntelSourcesByCategory(ctx context.Context, arg ListIntelSourcesByCategoryParams) ([]IntelSource, error) {
+	rows, err := q.db.Query(ctx, listIntelSourcesByCategory, arg.TenantID, arg.Category)
 	if err != nil {
 		return nil, err
 	}
@@ -583,6 +754,7 @@ func (q *Queries) ListIntelSourcesByCategory(ctx context.Context, category strin
 			&i.ConsecutiveFailures,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.TenantID,
 		); err != nil {
 			return nil, err
 		}
@@ -595,11 +767,16 @@ func (q *Queries) ListIntelSourcesByCategory(ctx context.Context, category strin
 }
 
 const listStaleIntelRecords = `-- name: ListStaleIntelRecords :many
-SELECT id, source_id, raw_document_id, entity_type, external_key, extracted, confidence, evidence, confidence_overall, status, freshness_score, geo_space_ids, extracted_at, last_verified_at, promoted_record_id FROM intel_records WHERE freshness_score <= 40 AND status = 'published' LIMIT $1
+SELECT id, source_id, raw_document_id, entity_type, external_key, extracted, confidence, evidence, confidence_overall, status, freshness_score, geo_space_ids, extracted_at, last_verified_at, promoted_record_id, tenant_id FROM intel_records WHERE tenant_id = $1 AND freshness_score <= 40 AND status = 'published' LIMIT $2
 `
 
-func (q *Queries) ListStaleIntelRecords(ctx context.Context, limit int32) ([]IntelRecord, error) {
-	rows, err := q.db.Query(ctx, listStaleIntelRecords, limit)
+type ListStaleIntelRecordsParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	Limit    int32       `json:"limit"`
+}
+
+func (q *Queries) ListStaleIntelRecords(ctx context.Context, arg ListStaleIntelRecordsParams) ([]IntelRecord, error) {
+	rows, err := q.db.Query(ctx, listStaleIntelRecords, arg.TenantID, arg.Limit)
 	if err != nil {
 		return nil, err
 	}
@@ -623,6 +800,7 @@ func (q *Queries) ListStaleIntelRecords(ctx context.Context, limit int32) ([]Int
 			&i.ExtractedAt,
 			&i.LastVerifiedAt,
 			&i.PromotedRecordID,
+			&i.TenantID,
 		); err != nil {
 			return nil, err
 		}
@@ -635,102 +813,205 @@ func (q *Queries) ListStaleIntelRecords(ctx context.Context, limit int32) ([]Int
 }
 
 const updateIntelRecordFreshness = `-- name: UpdateIntelRecordFreshness :exec
-UPDATE intel_records SET freshness_score = $2, status = CASE WHEN $2 <= 40 THEN 'stale' ELSE status END WHERE id = $1
+UPDATE intel_records SET freshness_score = $3, status = CASE WHEN $3 <= 40 THEN 'stale' ELSE status END WHERE tenant_id = $1 AND id = $2
 `
 
 type UpdateIntelRecordFreshnessParams struct {
+	TenantID       pgtype.UUID `json:"tenant_id"`
 	ID             pgtype.UUID `json:"id"`
 	FreshnessScore int32       `json:"freshness_score"`
 }
 
 func (q *Queries) UpdateIntelRecordFreshness(ctx context.Context, arg UpdateIntelRecordFreshnessParams) error {
-	_, err := q.db.Exec(ctx, updateIntelRecordFreshness, arg.ID, arg.FreshnessScore)
+	_, err := q.db.Exec(ctx, updateIntelRecordFreshness, arg.TenantID, arg.ID, arg.FreshnessScore)
 	return err
 }
 
 const updateIntelRecordPromoted = `-- name: UpdateIntelRecordPromoted :exec
-UPDATE intel_records SET promoted_record_id = $2, status = 'published' WHERE id = $1
+UPDATE intel_records SET promoted_record_id = $3, status = 'published' WHERE tenant_id = $1 AND id = $2
 `
 
 type UpdateIntelRecordPromotedParams struct {
+	TenantID         pgtype.UUID `json:"tenant_id"`
 	ID               pgtype.UUID `json:"id"`
 	PromotedRecordID pgtype.UUID `json:"promoted_record_id"`
 }
 
 func (q *Queries) UpdateIntelRecordPromoted(ctx context.Context, arg UpdateIntelRecordPromotedParams) error {
-	_, err := q.db.Exec(ctx, updateIntelRecordPromoted, arg.ID, arg.PromotedRecordID)
+	_, err := q.db.Exec(ctx, updateIntelRecordPromoted, arg.TenantID, arg.ID, arg.PromotedRecordID)
 	return err
 }
 
 const updateIntelRecordStatus = `-- name: UpdateIntelRecordStatus :exec
-UPDATE intel_records SET status = $2, last_verified_at = now() WHERE id = $1
+UPDATE intel_records SET status = $3, last_verified_at = now() WHERE tenant_id = $1 AND id = $2
 `
 
 type UpdateIntelRecordStatusParams struct {
-	ID     pgtype.UUID `json:"id"`
-	Status string      `json:"status"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+	ID       pgtype.UUID `json:"id"`
+	Status   string      `json:"status"`
 }
 
 func (q *Queries) UpdateIntelRecordStatus(ctx context.Context, arg UpdateIntelRecordStatusParams) error {
-	_, err := q.db.Exec(ctx, updateIntelRecordStatus, arg.ID, arg.Status)
+	_, err := q.db.Exec(ctx, updateIntelRecordStatus, arg.TenantID, arg.ID, arg.Status)
 	return err
+}
+
+const updateIntelSource = `-- name: UpdateIntelSource :one
+UPDATE intel_sources
+SET name = $3,
+    domain = $4,
+    source_url = $5,
+    category = $6,
+    source_type = $7,
+    trust_level = $8,
+    crawl_method = $9,
+    crawl_frequency = $10,
+    crawl_frequency_mins = $11,
+    source_license = $12,
+    attribution_required = $13,
+    usage_restriction = $14,
+    enabled = $15,
+    updated_at = now()
+WHERE tenant_id = $1 AND id = $2
+RETURNING id, name, domain, source_url, category, source_type, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, enabled, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at, tenant_id
+`
+
+type UpdateIntelSourceParams struct {
+	TenantID            pgtype.UUID `json:"tenant_id"`
+	ID                  pgtype.UUID `json:"id"`
+	Name                string      `json:"name"`
+	Domain              string      `json:"domain"`
+	SourceUrl           string      `json:"source_url"`
+	Category            string      `json:"category"`
+	SourceType          string      `json:"source_type"`
+	TrustLevel          int16       `json:"trust_level"`
+	CrawlMethod         string      `json:"crawl_method"`
+	CrawlFrequency      string      `json:"crawl_frequency"`
+	CrawlFrequencyMins  int32       `json:"crawl_frequency_mins"`
+	SourceLicense       *string     `json:"source_license"`
+	AttributionRequired bool        `json:"attribution_required"`
+	UsageRestriction    *string     `json:"usage_restriction"`
+	Enabled             bool        `json:"enabled"`
+}
+
+func (q *Queries) UpdateIntelSource(ctx context.Context, arg UpdateIntelSourceParams) (IntelSource, error) {
+	row := q.db.QueryRow(ctx, updateIntelSource,
+		arg.TenantID,
+		arg.ID,
+		arg.Name,
+		arg.Domain,
+		arg.SourceUrl,
+		arg.Category,
+		arg.SourceType,
+		arg.TrustLevel,
+		arg.CrawlMethod,
+		arg.CrawlFrequency,
+		arg.CrawlFrequencyMins,
+		arg.SourceLicense,
+		arg.AttributionRequired,
+		arg.UsageRestriction,
+		arg.Enabled,
+	)
+	var i IntelSource
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Domain,
+		&i.SourceUrl,
+		&i.Category,
+		&i.SourceType,
+		&i.TrustLevel,
+		&i.CrawlMethod,
+		&i.CrawlFrequency,
+		&i.CrawlFrequencyMins,
+		&i.RobotsPolicy,
+		&i.SourceLicense,
+		&i.AttributionRequired,
+		&i.UsageRestriction,
+		&i.ProviderConfig,
+		&i.Enabled,
+		&i.LastCrawledAt,
+		&i.LastSuccessAt,
+		&i.LastErrorAt,
+		&i.LastErrorMessage,
+		&i.LastChangedAt,
+		&i.ConsecutiveFailures,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.TenantID,
+	)
+	return i, err
 }
 
 const updateIntelSourceCrawlStatus = `-- name: UpdateIntelSourceCrawlStatus :exec
 UPDATE intel_sources
 SET last_crawled_at = now(),
-    last_success_at = CASE WHEN $2 THEN now() ELSE last_success_at END,
-    last_error_at = CASE WHEN $2 THEN last_error_at ELSE now() END,
-    last_error_message = $3,
-    consecutive_failures = CASE WHEN $2 THEN 0 ELSE consecutive_failures + 1 END,
+    last_success_at = CASE WHEN $3::boolean THEN now() ELSE last_success_at END,
+    last_error_at = CASE WHEN $3::boolean THEN last_error_at ELSE now() END,
+    last_error_message = $4,
+    consecutive_failures = CASE WHEN $3::boolean THEN 0 ELSE consecutive_failures + 1 END,
     updated_at = now()
-WHERE id = $1
+WHERE tenant_id = $1 AND id = $2
 `
 
 type UpdateIntelSourceCrawlStatusParams struct {
-	ID               pgtype.UUID        `json:"id"`
-	LastSuccessAt    pgtype.Timestamptz `json:"last_success_at"`
-	LastErrorMessage *string            `json:"last_error_message"`
+	TenantID         pgtype.UUID `json:"tenant_id"`
+	ID               pgtype.UUID `json:"id"`
+	Success          bool        `json:"success"`
+	LastErrorMessage *string     `json:"last_error_message"`
 }
 
 func (q *Queries) UpdateIntelSourceCrawlStatus(ctx context.Context, arg UpdateIntelSourceCrawlStatusParams) error {
-	_, err := q.db.Exec(ctx, updateIntelSourceCrawlStatus, arg.ID, arg.LastSuccessAt, arg.LastErrorMessage)
+	_, err := q.db.Exec(ctx, updateIntelSourceCrawlStatus,
+		arg.TenantID,
+		arg.ID,
+		arg.Success,
+		arg.LastErrorMessage,
+	)
 	return err
 }
 
 const updateIntelSourceEnabled = `-- name: UpdateIntelSourceEnabled :exec
-UPDATE intel_sources SET enabled = $2, updated_at = now() WHERE id = $1
+UPDATE intel_sources SET enabled = $3, updated_at = now() WHERE tenant_id = $1 AND id = $2
 `
 
 type UpdateIntelSourceEnabledParams struct {
-	ID      pgtype.UUID `json:"id"`
-	Enabled bool        `json:"enabled"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+	ID       pgtype.UUID `json:"id"`
+	Enabled  bool        `json:"enabled"`
 }
 
 func (q *Queries) UpdateIntelSourceEnabled(ctx context.Context, arg UpdateIntelSourceEnabledParams) error {
-	_, err := q.db.Exec(ctx, updateIntelSourceEnabled, arg.ID, arg.Enabled)
+	_, err := q.db.Exec(ctx, updateIntelSourceEnabled, arg.TenantID, arg.ID, arg.Enabled)
 	return err
 }
 
 const updateIntelSourceLastChanged = `-- name: UpdateIntelSourceLastChanged :exec
-UPDATE intel_sources SET last_changed_at = now(), updated_at = now() WHERE id = $1
+UPDATE intel_sources SET last_changed_at = now(), updated_at = now() WHERE tenant_id = $1 AND id = $2
 `
 
-func (q *Queries) UpdateIntelSourceLastChanged(ctx context.Context, id pgtype.UUID) error {
-	_, err := q.db.Exec(ctx, updateIntelSourceLastChanged, id)
+type UpdateIntelSourceLastChangedParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	ID       pgtype.UUID `json:"id"`
+}
+
+func (q *Queries) UpdateIntelSourceLastChanged(ctx context.Context, arg UpdateIntelSourceLastChangedParams) error {
+	_, err := q.db.Exec(ctx, updateIntelSourceLastChanged, arg.TenantID, arg.ID)
 	return err
 }
 
 const updateIntelSourceRobotsPolicy = `-- name: UpdateIntelSourceRobotsPolicy :exec
-UPDATE intel_sources SET robots_policy = $2, updated_at = now() WHERE id = $1
+UPDATE intel_sources SET robots_policy = $3, updated_at = now() WHERE tenant_id = $1 AND id = $2
 `
 
 type UpdateIntelSourceRobotsPolicyParams struct {
+	TenantID     pgtype.UUID `json:"tenant_id"`
 	ID           pgtype.UUID `json:"id"`
 	RobotsPolicy []byte      `json:"robots_policy"`
 }
 
 func (q *Queries) UpdateIntelSourceRobotsPolicy(ctx context.Context, arg UpdateIntelSourceRobotsPolicyParams) error {
-	_, err := q.db.Exec(ctx, updateIntelSourceRobotsPolicy, arg.ID, arg.RobotsPolicy)
+	_, err := q.db.Exec(ctx, updateIntelSourceRobotsPolicy, arg.TenantID, arg.ID, arg.RobotsPolicy)
 	return err
 }

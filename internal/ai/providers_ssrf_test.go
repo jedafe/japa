@@ -123,3 +123,37 @@ func TestNewProviderFromConfig_SSRF_AllowsPublicHTTPS(t *testing.T) {
 		}
 	}
 }
+
+func TestNewProviderFromConfig_SSRF_RejectsInternalHTTP(t *testing.T) {
+	// HTTP to non-loopback internal hosts must be rejected for SSRF
+	// defense. Only loopback (localhost, 127.0.0.x) is allowed with HTTP
+	// for local development proxies (Ollama). Cloud metadata (169.254.x),
+	// private ranges (10.x, 172.16.x, 192.168.x), and unspecified (0.0.0.0)
+	// must be rejected even with HTTP.
+	internalHTTPURLs := []string{
+		"http://169.254.169.254/latest/meta-data/", // cloud metadata
+		"http://10.0.0.1/v1",
+		"http://172.16.0.1/v1",
+		"http://192.168.1.1/v1",
+		"http://0.0.0.0/v1",
+	}
+	providerTypes := []string{"openai", "anthropic", "devin", "cursor"}
+
+	for _, pt := range providerTypes {
+		for _, u := range internalHTTPURLs {
+			cfg := ProviderConfig{
+				ProviderType: pt,
+				BaseURL:      u,
+				Name:         "test-ssrf-http-" + pt,
+			}
+			_, err := NewProviderFromConfig(cfg, "sk-test")
+			if err == nil {
+				t.Errorf("NewProviderFromConfig(type=%s, baseURL=%q) = nil error, want error (non-loopback internal HTTP must be rejected)", pt, u)
+				continue
+			}
+			if !strings.Contains(err.Error(), "invalid base URL") {
+				t.Errorf("NewProviderFromConfig(type=%s, baseURL=%q) error = %q, want error mentioning \"invalid base URL\"", pt, u, err.Error())
+			}
+		}
+	}
+}
