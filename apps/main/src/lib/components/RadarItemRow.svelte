@@ -25,19 +25,20 @@
 
 	let { item, showCountry = false }: Props = $props();
 
-	// Trust tier — the backend stores trust_level as an int16 (0–3). We map
-	// it to a tier label + colour. ≥2 is "verified"; <2 is "needs review".
-	const trustTier = $derived(item.trust_level ?? 0);
-	const isVerified = $derived(trustTier >= 2);
+	// Trust tier — the backend stores trust_level as an int16 (1–4) where
+	// 1=Official (highest), 2=Trusted, 3=Aggregator, 4=Community (lowest).
+	// Lower is better. ≤2 is "verified"; >2 is "needs review".
+	const trustTier = $derived(item.trust_level ?? 4);
+	const isVerified = $derived(trustTier <= 2);
 	const trustLabel = $derived(
-		trustTier >= 3
+		trustTier <= 1
 			? t('radar.trust_high', 'High trust')
-			: trustTier >= 2
+			: trustTier <= 2
 				? t('radar.trust_verified', 'Verified')
 				: t('radar.trust_review', 'Needs review')
 	);
 	const trustClass = $derived(
-		trustTier >= 2
+		trustTier <= 2
 			? 'border-[var(--color-success)]/40 bg-[var(--color-success)]/10 text-[var(--color-success)]'
 			: 'border-[var(--color-warning)]/40 bg-[var(--color-warning)]/10 text-[var(--color-warning)]'
 	);

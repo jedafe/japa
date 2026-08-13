@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
+	import { replaceState } from '$app/navigation';
 	import { Gauge, Lock, CheckCircle2, ArrowRight, TrendingUp } from 'lucide-svelte';
 	import { LineChart } from 'layerchart';
 	import { EmptyState, LoadingSkeleton } from '$lib/components/ui';
@@ -74,6 +75,9 @@
 	// status:"queued"}; the client polls GET /assessment/result/by-submission
 	// until the worker writes the result (200) or the retry budget is spent.
 	let polling = $state(false);
+	// Polling timer handle — stored so it can be cleared on destroy to avoid
+	// a memory leak (§4.3 — no polling leaks).
+	let pollTimer: ReturnType<typeof setTimeout> | null = null;
 
 	async function submit() {
 		if (!form) return;
@@ -111,7 +115,9 @@
 		const maxAttempts = 20;
 		const delayMs = 1000;
 		for (let attempt = 0; attempt < maxAttempts; attempt++) {
-			await new Promise((r) => setTimeout(r, delayMs));
+			await new Promise<void>((resolve) => {
+				pollTimer = setTimeout(resolve, delayMs);
+			});
 			const res = await api.get<AssessmentResult | { status: string }>(
 				`/assessment/result/by-submission/${submissionId}`
 			);
@@ -127,9 +133,25 @@
 		throw new Error(t('assessment.scoring_timeout', 'Scoring is taking too long. Please try again.'));
 	}
 
+	// Clear the polling timer on destroy so a mid-poll navigation does not
+	// fire a pending setTimeout on an unmounted component (§4.3).
+	$effect(() => {
+		return () => {
+			if (pollTimer) {
+				clearTimeout(pollTimer);
+				pollTimer = null;
+			}
+		};
+	});
+
 	function resetResult() {
 		result = null;
 		answers = {};
+		// Clear the ?result= query param so the URL does not retain the old
+		// result ID after retaking (§1.2 — navigation state consistency).
+		const url = new URL(page.url);
+		url.searchParams.delete('result');
+		replaceState(url, {});
 	}
 </script>
 
@@ -237,7 +259,7 @@
 						{t('assessment.roadmap', 'Recommended next steps')}
 					</h3>
 					<ol class="space-y-3">
-						{#each result.roadmap as step, i (step.title)}
+						{#each result.roadmap as step, i (i)}
 							<li class="flex items-start gap-3">
 								<span class="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-[var(--color-primary)] text-xs font-medium text-white">
 									{i + 1}

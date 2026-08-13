@@ -246,6 +246,7 @@ func RegisterHandlers(mux *asynq.ServeMux) {
 	mux.HandleFunc(TypeEmbassyPoll, HandleEmbassyPoll)
 	mux.HandleFunc(TypeEmbassyDispatchAlerts, HandleEmbassyDispatchAlerts)
 	mux.HandleFunc(TypeEmbassyExpireChecks, HandleEmbassyExpireChecks)
+	mux.HandleFunc(TypeEmbassySchedulePolls, HandleEmbassySchedulePolls)
 
 	// §86 Community Calendar handlers (ADR-094).
 	mux.HandleFunc(TypeCalendarStalenessCheck, HandleCalendarStalenessCheck)

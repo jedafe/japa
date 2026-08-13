@@ -284,9 +284,14 @@ LIMIT 1;
 -- Resolves the affiliate member + commission rate for a link code, reading
 -- the rate from system_settings (affiliate.commission.*) per Section 56 —
 -- the single source of truth. Falls back to the catalog defaults (15/20/10)
--- when a tenant has not configured the rate. pro_subscription maps to the
--- pro_monthly rate (V1; annual vs monthly distinction is handled at the
--- payment-purpose layer).
+-- when a tenant has not configured the rate.
+--
+-- V1 behavior (BUG-008): pro_subscription always maps to the pro_monthly
+-- rate. The pro_annual rate is configurable but unused in V1 — there is no
+-- product_type='pro_subscription_annual' distinction. Annual vs monthly
+-- distinction is handled at the payment-purpose layer (pro_membership
+-- covers both billing cycles). This is accepted V1 behavior; V2 may
+-- introduce a separate annual product type if needed.
 SELECT apm.user_id, apm.tenant_id, ual.product_type,
   (CASE ual.product_type
     WHEN 'course' THEN COALESCE(

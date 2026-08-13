@@ -147,6 +147,20 @@
 		description: t('app.tools.arrival_checklist_desc', 'Review and approve AI-generated arrival checklists'),
 		readonly: true,
 		pageSize: 25,
+		filters: [
+			{
+				key: 'status',
+				label: t('app.tools.col_status', 'Status'),
+				options: [
+					{ value: '', label: t('common.all', 'All') },
+					{ value: 'draft', label: t('app.tools.status_draft', 'Draft') },
+					{ value: 'ai_draft', label: t('app.tools.status_ai_draft', 'AI Draft') },
+					{ value: 'pending', label: t('app.tools.status_pending', 'Pending') },
+					{ value: 'published', label: t('app.tools.status_published', 'Published') },
+					{ value: 'rejected', label: t('app.tools.status_rejected', 'Rejected') }
+				]
+			}
+		],
 		columns: [
 			{
 				key: 'destination_space_name',
@@ -187,25 +201,32 @@
 		actions: rowActions,
 		fields,
 		load: async (params) => {
-			// Server-side pagination — pass page/limit/q to the backend.
+			// Server-side pagination — pass page/limit/q/sort/order to the backend.
+			// EntityPage encodes sort as "column:dir" (e.g. "updated_at:desc").
 			// Ref: geo-aware-tool-pattern.md (admin list must filter+sort+paginate).
 			const queryParts: string[] = [];
 			queryParts.push(`page=${params.page ?? 1}`);
 			queryParts.push(`limit=${params.pageSize ?? 25}`);
 			if (params.q) queryParts.push(`q=${encodeURIComponent(params.q)}`);
 			if (params.sort) {
-				queryParts.push(`sort=${encodeURIComponent(params.sort)}`);
+				const [sortCol, sortDir] = params.sort.split(':');
+				if (sortCol) queryParts.push(`sort=${encodeURIComponent(sortCol)}`);
+				if (sortDir) queryParts.push(`order=${encodeURIComponent(sortDir)}`);
 			}
 			if (params.filter?.dest) {
 				queryParts.push(`dest=${encodeURIComponent(params.filter.dest)}`);
+			}
+			if (params.filter?.status) {
+				queryParts.push(`status=${encodeURIComponent(params.filter.status)}`);
 			}
 			const queryString = queryParts.join('&');
 
 			const result = await arrivalChecklistAdminApi.listRaw(queryString);
 			if (result.ok) {
 				const data = (result.data.data as ArrivalChecklistGuide[]) ?? [];
-				const total = result.data.pagination?.total ?? data.length;
-				const totalPages = Math.max(1, Math.ceil(total / (params.pageSize ?? 25)));
+				const meta = result.data.meta ?? { total: 0, per_page: 25 };
+				const total = meta.total ?? data.length;
+				const totalPages = meta.total_pages ?? Math.max(1, Math.ceil(total / (meta.per_page ?? 25)));
 				return { data, total, totalPages };
 			}
 			throw new Error(result.error ?? t('common.error', 'An error occurred'));

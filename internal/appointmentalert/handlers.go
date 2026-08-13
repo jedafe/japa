@@ -14,7 +14,8 @@
 //	POST  /api/v1/admin/embassies/:id/poll     — trigger immediate poll (admin, embassy_monitor.manage)
 //
 // Ref: japaconnect-engineering/sections/91-embassy-appointment-alerter.md
-//      japaconnect-engineering/adr/ADR-099-embassy-appointment-alerter.md
+//
+//	japaconnect-engineering/adr/ADR-099-embassy-appointment-alerter.md
 package appointmentalert
 
 import (
@@ -133,7 +134,7 @@ func (h *Handlers) HandleListEmbassies(w http.ResponseWriter, r *http.Request) {
 
 	page, limit := parsePageParams(r)
 
-	embassies, total, err := h.service.ListEmbassies(r.Context(), tenantID, destSpaceID, true, page, limit)
+	embassies, total, err := h.service.ListEmbassies(r.Context(), tenantID, destSpaceID, true, page, limit, "", "", "")
 	if err != nil {
 		slog.Error("appointmentalert: list embassies failed", "error", err)
 		writeError(w, http.StatusInternalServerError, "list_failed", "Failed to list embassies")
@@ -321,7 +322,8 @@ func (h *Handlers) HandleDeleteMyAlert(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusNoContent, nil)
+	// 204 No Content — no response body (§3.1).
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // ---------------------------------------------------------------------------
@@ -346,6 +348,13 @@ func (h *Handlers) HandleAdminListEmbassies(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	// Feature-flag gate: return 404 (not 403) when the feature is disabled,
+	// consistent with the public endpoints (§91, feature-flag-naming.md).
+	if !h.service.Enabled(r.Context(), tenantID) {
+		writeError(w, http.StatusNotFound, "appointment_alert_disabled", "Appointment alerts are not available")
+		return
+	}
+
 	var destSpaceID pgtype.UUID
 	if v := r.URL.Query().Get("dest"); v != "" {
 		if err := destSpaceID.Scan(v); err != nil {
@@ -366,7 +375,16 @@ func (h *Handlers) HandleAdminListEmbassies(w http.ResponseWriter, r *http.Reque
 		limit = 200
 	}
 
-	embassies, total, err := h.service.ListEmbassies(r.Context(), tenantID, destSpaceID, activeOnly, page, limit)
+	// Optional search (q) and sort (sort/order) params for the admin
+	// DataTable (§17, geo-aware tool pattern).
+	search := r.URL.Query().Get("q")
+	sortBy := r.URL.Query().Get("sort")
+	sortOrder := r.URL.Query().Get("order")
+	if sortOrder == "" {
+		sortOrder = r.URL.Query().Get("dir") // DataTable sends ?dir=
+	}
+
+	embassies, total, err := h.service.ListEmbassies(r.Context(), tenantID, destSpaceID, activeOnly, page, limit, search, sortBy, sortOrder)
 	if err != nil {
 		slog.Error("appointmentalert: admin list embassies failed", "error", err)
 		writeError(w, http.StatusInternalServerError, "admin_list_failed", "Failed to list embassies")
@@ -509,7 +527,7 @@ func (h *Handlers) HandleAdminPollEmbassy(w http.ResponseWriter, r *http.Request
 
 	writeJSON(w, http.StatusAccepted, map[string]any{
 		"data": map[string]any{
-			"status":   "poll_triggered",
+			"status":     "poll_triggered",
 			"embassy_id": embassyID.String(),
 		},
 	})

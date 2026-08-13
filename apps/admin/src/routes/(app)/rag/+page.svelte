@@ -44,15 +44,16 @@
 	let purgeModalOpen = $state(false);
 	let pendingPurgeType = $state('');
 
-	// Settings state
+	// Settings state — initialized empty; loadSettings() populates from the
+	// /admin/settings/rag API (Rule 16: no hardcoded defaults).
 	let settings = $state<RagSettings | null>(null);
 	let settingsLoading = $state(false);
 	let settingsSaving = $state(false);
 	let settingsForm = $state({
-		enabled: true,
-		embedding_model: 'text-embedding-3-small',
-		retrieval_top_k: 5,
-		chunk_max_tokens: 400
+		enabled: false,
+		embedding_model: '',
+		retrieval_top_k: 0,
+		chunk_max_tokens: 0
 	});
 
 	async function loadStats() {

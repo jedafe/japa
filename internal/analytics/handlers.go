@@ -20,6 +20,7 @@ import (
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
+	"github.com/jedafe/japa/internal/rbac"
 	"github.com/jedafe/japa/internal/tenant"
 	vkcache "github.com/jedafe/japa/internal/valkey"
 	"github.com/valkey-io/valkey-go/valkeycompat"
@@ -34,6 +35,7 @@ const analyticsCacheTTL = 5 * time.Minute
 type Handlers struct {
 	Service      *Service
 	CacheFlusher *CacheFlusher
+	rbacResolver *rbac.RBAC          // nil disables inline permission checks (tests)
 	cache        valkeycompat.Cmdable // nil disables caching (tests)
 }
 
@@ -45,6 +47,12 @@ func NewHandlers(service *Service) *Handlers {
 // SetCacheFlusher attaches a CacheFlusher for the admin cache flush endpoint.
 func (h *Handlers) SetCacheFlusher(flusher *CacheFlusher) {
 	h.CacheFlusher = flusher
+}
+
+// SetRBAC attaches the RBAC resolver for inline permission checks
+// (e.g. GetContentAnalytics owner-or-admin access control).
+func (h *Handlers) SetRBAC(resolver *rbac.RBAC) {
+	h.rbacResolver = resolver
 }
 
 // SetCache injects a Valkey client for read-through analytics caching
@@ -685,11 +693,13 @@ func (h *Handlers) GetContentAnalytics(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if authorID != user.UserID {
-		// Non-owner: require analytics.admin permission. The middleware at the
-		// router level already enforces auth, but ownership is checked here
-		// because the route is under a general auth group, not an admin group.
-		writeError(w, http.StatusForbidden, "analytics_forbidden", "Only the content owner or an admin can view analytics")
-		return
+		// Non-owner: require analytics.admin permission. The route is under a
+		// general auth group (not an admin group), so the permission check is
+		// done inline here. Ref: api-routes-catalog.md — owner and admin only.
+		if h.rbacResolver == nil || !h.rbacResolver.HasPermission(r.Context(), user.UserID, tenantID, "analytics.admin") {
+			writeError(w, http.StatusForbidden, "analytics_forbidden", "Only the content owner or an admin can view analytics")
+			return
+		}
 	}
 
 	from, to, err := resolveWindow(r, 30)

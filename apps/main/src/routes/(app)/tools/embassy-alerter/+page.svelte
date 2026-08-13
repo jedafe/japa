@@ -54,7 +54,7 @@
 	let alertDateStart = $state('');
 	let alertDateEnd = $state('');
 	let alertVisaCategory = $state('');
-	let alertChannels = $state<string[]>(['email']);
+	let alertChannels = $state<string[]>(['in_app', 'email']);
 	let alertSaving = $state(false);
 
 	// Alert edit state
@@ -102,7 +102,7 @@
 		alertDateStart = '';
 		alertDateEnd = '';
 		alertVisaCategory = '';
-		alertChannels = ['email'];
+		alertChannels = ['in_app', 'email'];
 	}
 
 	function closeAlertForm() {
@@ -154,9 +154,9 @@
 			visa_category: editVisaCategory || undefined,
 			notification_channels: editChannels
 		});
-		editingAlertId = null;
 		if (!res.error && res.data) {
 			alerts = alerts.map((a) => (a.id === id ? res.data! : a));
+			editingAlertId = null;
 		}
 	}
 
@@ -436,6 +436,15 @@
 												<label class="flex items-center gap-1 text-[var(--color-text)]">
 													<input
 														type="checkbox"
+														checked={editChannels.includes('in_app')}
+														onchange={() => (editChannels = toggleChannel(editChannels, 'in_app'))}
+														class="accent-[var(--color-primary)]"
+													/>
+													{t('embassy_alerter.in_app', 'In-app')}
+												</label>
+												<label class="flex items-center gap-1 text-[var(--color-text)]">
+													<input
+														type="checkbox"
 														checked={editChannels.includes('email')}
 														onchange={() => (editChannels = toggleChannel(editChannels, 'email'))}
 														class="accent-[var(--color-primary)]"
@@ -611,6 +620,15 @@
 							{t('embassy_alerter.notifications', 'Notifications')}
 						</span>
 						<div class="flex gap-4">
+							<label class="flex items-center gap-2 text-sm text-[var(--color-text)]">
+								<input
+									type="checkbox"
+									checked={alertChannels.includes('in_app')}
+									onchange={() => (alertChannels = toggleChannel(alertChannels, 'in_app'))}
+									class="accent-[var(--color-primary)]"
+								/>
+								{t('embassy_alerter.in_app', 'In-app')}
+							</label>
 							<label class="flex items-center gap-2 text-sm text-[var(--color-text)]">
 								<input
 									type="checkbox"

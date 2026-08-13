@@ -95,14 +95,40 @@
 				render: (value: string) => (value ? new Date(value).toLocaleDateString() : '—')
 			}
 		],
+		filters: [
+			{
+				key: 'score_band',
+				label: t('app.tools.col_readiness_level', 'Readiness Level'),
+				options: [
+					{ value: '0-39', label: '0–39' },
+					{ value: '40-59', label: '40–59' },
+					{ value: '60-74', label: '60–74' },
+					{ value: '75-100', label: '75–100' }
+				]
+			}
+		],
 		actions: rowActions,
 		fields,
 		load: async (params) => {
 			const queryParts: string[] = [];
 			if (params.page) queryParts.push(`page=${params.page}`);
 			if (params.pageSize) queryParts.push(`limit=${params.pageSize}`);
+			// EntityPage passes sort as "key:dir" (e.g. "total_score:desc").
+			// The backend accepts separate sort + dir params.
 			if (params.sort) {
-				queryParts.push(`sort=${params.sort}`);
+				const [sortKey, sortDir] = params.sort.split(':');
+				queryParts.push(`sort=${encodeURIComponent(sortKey)}`);
+				if (sortDir) queryParts.push(`dir=${encodeURIComponent(sortDir)}`);
+			}
+			// Score-band filter: the filter value is "min-max" (e.g. "40-59").
+			// Split into min_score + max_score query params.
+			const band = params.filter?.score_band;
+			if (band) {
+				const [minStr, maxStr] = band.split('-');
+				const min = parseInt(minStr, 10);
+				const max = parseInt(maxStr, 10);
+				if (!isNaN(min)) queryParts.push(`min_score=${min}`);
+				if (!isNaN(max)) queryParts.push(`max_score=${max}`);
 			}
 			const queryString = queryParts.length > 0 ? queryParts.join('&') : '';
 			const result = await readinessAdminApi.listResults(queryString);

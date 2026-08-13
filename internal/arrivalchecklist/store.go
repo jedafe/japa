@@ -120,12 +120,27 @@ type ListGuidesFilter struct {
 	DestinationSpaceID pgtype.UUID // optional
 	VisaCategory       string      // optional; "_all" sentinel handled by caller
 	ApplicantType      string      // optional
-	Status             string      // optional (default: published)
+	Status             string      // optional; empty = no status filter (admin sees all).
+	// PublicOnly, when true, forces status='published' regardless of Status.
+	// Used by the public selector/guide endpoints; the admin list sets it
+	// false so the HITL queue can see draft/ai_draft/pending/rejected rows.
+	PublicOnly         bool
 	IsActive           *bool       // optional
 	AIGenerated        *bool       // optional
 	Q                  string      // optional search on destination name
+	Sort               string      // optional: created_at|updated_at|status|destination (default updated_at)
+	Order              string      // optional: asc|desc (default desc)
 	Limit              int32
 	Offset             int32
+}
+
+// allowedSortColumns maps the frontend sort keys to qualified SQL columns.
+var allowedSortColumns = map[string]string{
+	"created_at":  "g.created_at",
+	"updated_at":  "g.updated_at",
+	"status":      "g.status",
+	"destination": "sp.name",
+	"version":     "g.version",
 }
 
 // ListGuides returns a paginated, filtered list of arrival checklist
@@ -145,7 +160,9 @@ func (s *Store) ListGuides(ctx context.Context, f ListGuidesFilter) ([]GuideRow,
 		conditions = append(conditions, fmt.Sprintf("g.status = $%d", argIdx))
 		args = append(args, f.Status)
 		argIdx++
-	} else {
+	} else if f.PublicOnly {
+		// Public endpoints only see published guides; admin list (PublicOnly=false)
+		// sees all statuses so the HITL queue can review drafts.
 		conditions = append(conditions, "g.status = 'published'")
 	}
 
@@ -182,6 +199,16 @@ func (s *Store) ListGuides(ctx context.Context, f ListGuidesFilter) ([]GuideRow,
 
 	whereClause := strings.Join(conditions, " AND ")
 
+	// Resolve sort column (whitelisted to prevent SQL injection).
+	sortCol := allowedSortColumns[f.Sort]
+	if sortCol == "" {
+		sortCol = "g.updated_at"
+	}
+	sortDir := strings.ToUpper(f.Order)
+	if sortDir != "ASC" && sortDir != "DESC" {
+		sortDir = "DESC"
+	}
+
 	limit := f.Limit
 	if limit <= 0 {
 		limit = 20
@@ -205,9 +232,9 @@ FROM arrival_checklist_guides g
 LEFT JOIN spaces sp ON sp.id = g.destination_space_id
 LEFT JOIN users ru ON ru.id = g.hitl_reviewed_by
 WHERE %s
-ORDER BY g.updated_at DESC
+ORDER BY %s %s
 LIMIT $%d OFFSET $%d
-`, whereClause, argIdx, argIdx+1)
+`, whereClause, sortCol, sortDir, argIdx, argIdx+1)
 	args = append(args, limit, offset)
 
 	rows, err := s.pool.Reader.Query(ctx, listQuery, args...)

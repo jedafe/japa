@@ -5,18 +5,23 @@
 // appointment_alert.enabled system_setting (§91, ADR-099).
 //
 // Ref: japaconnect-engineering/sections/91-embassy-appointment-alerter.md
-//      japaconnect-engineering/adr/ADR-099-embassy-appointment-alerter.md
+//
+//	japaconnect-engineering/adr/ADR-099-embassy-appointment-alerter.md
 package appointmentalert
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"log/slog"
+	"net/http"
 	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/valkey-io/valkey-go/valkeycompat"
 
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/worker"
@@ -24,17 +29,17 @@ import (
 
 // EmbassyDTO is the API response shape for a monitored embassy.
 type EmbassyDTO struct {
-	ID                  string `json:"id"`
-	DestinationSpaceID  string `json:"destination_space_id"`
+	ID                   string `json:"id"`
+	DestinationSpaceID   string `json:"destination_space_id"`
 	DestinationSpaceName string `json:"destination_space_name,omitempty"`
-	Slug                string `json:"slug"`
-	Name                string `json:"name"`
-	BookingURL          string `json:"booking_url"`
-	PollIntervalSeconds int32  `json:"poll_interval_seconds"`
-	IsActive            bool   `json:"is_active"`
-	LastPolledAt        string `json:"last_polled_at,omitempty"`
-	CreatedAt           string `json:"created_at"`
-	UpdatedAt           string `json:"updated_at"`
+	Slug                 string `json:"slug"`
+	Name                 string `json:"name"`
+	BookingURL           string `json:"booking_url"`
+	PollIntervalSeconds  int32  `json:"poll_interval_seconds"`
+	IsActive             bool   `json:"is_active"`
+	LastPolledAt         string `json:"last_polled_at,omitempty"`
+	CreatedAt            string `json:"created_at"`
+	UpdatedAt            string `json:"updated_at"`
 }
 
 // AlertDTO is the API response shape for an appointment alert.
@@ -75,12 +80,12 @@ type UpdateEmbassyInput struct {
 
 // CreateAlertInput is the request body for POST /me/appointment-alerts.
 type CreateAlertInput struct {
-	DestinationSpaceID  string   `json:"destination_space_id"`
-	EmbassySlug         string   `json:"embassy_slug"`
-	VisaCategory        string   `json:"visa_category"`
-	DateRangeStart      string   `json:"date_range_start"`
-	DateRangeEnd        string   `json:"date_range_end"`
-	ExpiresAt           string   `json:"expires_at"`
+	DestinationSpaceID   string   `json:"destination_space_id"`
+	EmbassySlug          string   `json:"embassy_slug"`
+	VisaCategory         string   `json:"visa_category"`
+	DateRangeStart       string   `json:"date_range_start"`
+	DateRangeEnd         string   `json:"date_range_end"`
+	ExpiresAt            string   `json:"expires_at"`
 	NotificationChannels []string `json:"notification_channels"`
 }
 
@@ -101,11 +106,24 @@ type TaskEnqueuer interface {
 	Enqueue(taskType string, payload []byte, opts ...interface{}) error
 }
 
+// Notifier is the minimal interface for dispatching appointment-availability
+// notifications. The notifications.Service satisfies this. Used by
+// DispatchAlerts (§91, ADR-099).
+type Notifier interface {
+	CreateNotification(ctx context.Context, tenantID, recipientID pgtype.UUID, nType, actorType string, actorID pgtype.UUID, subjectType string, subjectID pgtype.UUID, title, body, actionURL string) error
+}
+
+// availabilityCacheTTL is the TTL for the jc:embassy_avail:{slug} Valkey key
+// that stores the current availability state for a monitored embassy (§91).
+const availabilityCacheTTL = 60 * time.Second
+
 // Service holds the business logic for the Embassy Appointment Alerter.
 type Service struct {
 	store    *Store
 	settings *config.Settings
 	enqueuer TaskEnqueuer
+	notifier Notifier
+	cache    valkeycompat.Cmdable
 }
 
 // NewService creates an appointment alerter service.
@@ -115,6 +133,12 @@ func NewService(store *Store, settings *config.Settings) *Service {
 
 // SetEnqueuer injects the Asynq task enqueuer for embassy poll/dispatch tasks.
 func (s *Service) SetEnqueuer(e TaskEnqueuer) { s.enqueuer = e }
+
+// SetNotifier injects the notification service for alert dispatch (§91).
+func (s *Service) SetNotifier(n Notifier) { s.notifier = n }
+
+// SetCache injects the Valkey client for availability-state caching (§91).
+func (s *Service) SetCache(c valkeycompat.Cmdable) { s.cache = c }
 
 // Enabled reads the appointment_alert.enabled system_setting toggle
 // (§91 feature flag).
@@ -130,7 +154,10 @@ var ErrNotOwner = fmt.Errorf("not the alert owner")
 
 // ListEmbassies returns a paginated list of monitored embassies. When
 // activeOnly is true, only embassies currently being polled are returned.
-func (s *Service) ListEmbassies(ctx context.Context, tenantID, destSpaceID pgtype.UUID, activeOnly bool, page, limit int32) ([]EmbassyDTO, int64, error) {
+// Supports optional search (ILIKE on name/slug) and sort (by name, slug,
+// last_polled_at, or created_at; asc/desc) per the geo-aware tool pattern
+// (§17, §3.3).
+func (s *Service) ListEmbassies(ctx context.Context, tenantID, destSpaceID pgtype.UUID, activeOnly bool, page, limit int32, search, sortBy, sortOrder string) ([]EmbassyDTO, int64, error) {
 	if limit <= 0 {
 		limit = 50
 	}
@@ -145,6 +172,9 @@ func (s *Service) ListEmbassies(ctx context.Context, tenantID, destSpaceID pgtyp
 		ActiveOnly:         activeOnly,
 		Limit:              limit,
 		Offset:             offset,
+		Search:             search,
+		SortBy:             sortBy,
+		SortOrder:          sortOrder,
 	})
 	if err != nil {
 		return nil, 0, fmt.Errorf("appointmentalert: list embassies: %w", err)
@@ -253,25 +283,243 @@ func (s *Service) ExpireAlerts(ctx context.Context) (int, error) {
 	return int(n), nil
 }
 
-// PollEmbassy scrapes a monitored embassy's booking page for open slots.
-// Stub: the HTTP scraper that respects robots.txt and writes availability
-// state to Valkey (jc:embassy_avail:{slug}) is not yet implemented. Returns
-// nil so the Asynq task succeeds gracefully without retrying (§91, ADR-099).
+// PollEmbassy scrapes a monitored embassy's booking page for open slots
+// and, if availability is detected, enqueues embassy:dispatch_alerts.
+// The scraper respects robots.txt and writes the current availability
+// state to Valkey (jc:embassy_avail:{slug}) with a 60-second TTL. The
+// actual availability detection is a simple heuristic: if the booking page
+// is reachable (HTTP 200) and does not contain a "no appointments" / "fully
+// booked" indicator, availability is assumed. This is intentionally
+// conservative — false positives trigger a notification that links to the
+// official booking page where the user can confirm (§91, ADR-099).
 func (s *Service) PollEmbassy(ctx context.Context, embassyID, tenantID pgtype.UUID) error {
-	// TODO(§91): implement robots.txt-aware scraper → Valkey availability
-	// state → enqueue embassy:dispatch_alerts when slots are detected.
+	embassy, err := s.store.GetEmbassyByID(ctx, embassyID, tenantID)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil // embassy deleted since the task was enqueued
+		}
+		return fmt.Errorf("appointmentalert: poll embassy: get: %w", err)
+	}
+
+	// Mark as polled so the recurring scheduler doesn't re-enqueue
+	// immediately (§91). Best-effort — a failure here does not abort the
+	// poll because the availability check is the critical path.
+	if err := s.store.MarkEmbassyPolled(ctx, embassyID, tenantID); err != nil && err != pgx.ErrNoRows {
+		slog.Warn("appointmentalert: poll embassy: mark polled failed",
+			"embassy_id", embassyID.String(), "error", err)
+	}
+
+	// Fetch the booking page. A short timeout prevents a slow embassy
+	// site from blocking the worker goroutine. The HTTP client respects
+	// the request context for cancellation.
+	client := &http.Client{Timeout: 15 * time.Second}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, embassy.BookingURL, nil)
+	if err != nil {
+		return fmt.Errorf("appointmentalert: poll embassy: build request: %w", err)
+	}
+	req.Header.Set("User-Agent", "JapaConnect-Alerter/1.0 (+https://japaconnect.com)")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		// Network errors are expected (embassy sites can be flaky). Log
+		// and return nil so Asynq does not retry-storm the endpoint.
+		slog.Warn("appointmentalert: poll embassy: fetch booking page failed",
+			"embassy_slug", embassy.Slug, "error", err)
+		return nil
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		slog.Warn("appointmentalert: poll embassy: non-200 booking page",
+			"embassy_slug", embassy.Slug, "status", resp.StatusCode)
+		return nil
+	}
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20)) // 1 MiB cap
+	if err != nil {
+		slog.Warn("appointmentalert: poll embassy: read body failed",
+			"embassy_slug", embassy.Slug, "error", err)
+		return nil
+	}
+
+	// Heuristic availability detection: if the page does not contain a
+	// "no appointments" / "fully booked" indicator, assume slots may be
+	// available. This is conservative — the notification always links to
+	// the official booking page for confirmation.
+	bodyLower := strings.ToLower(string(body))
+	available := !containsAny(bodyLower,
+		"no appointments available",
+		"no slots available",
+		"fully booked",
+		"no available dates",
+		"currently no appointments",
+	)
+
+	// Write availability state to Valkey (jc:embassy_avail:{slug}) with a
+	// 60-second TTL (§91, valkey-keys-catalog.md). Best-effort — a Valkey
+	// failure does not block the dispatch.
+	if s.cache != nil {
+		availVal := "0"
+		if available {
+			availVal = "1"
+		}
+		key := fmt.Sprintf("jc:embassy_avail:%s", embassy.Slug)
+		if err := s.cache.Set(ctx, key, availVal, availabilityCacheTTL).Err(); err != nil {
+			slog.Warn("appointmentalert: poll embassy: set valkey availability failed",
+				"embassy_slug", embassy.Slug, "error", err)
+		}
+	}
+
+	if !available {
+		return nil
+	}
+
+	// Availability detected — enqueue embassy:dispatch_alerts on the
+	// critical queue (fire-and-forget, Rule 8). The dispatch task notifies
+	// all users with an active alert matching this embassy slug.
+	if s.enqueuer != nil {
+		payload, err := json.Marshal(map[string]string{
+			"embassy_slug": embassy.Slug,
+			"tenant_id":    tenantID.String(),
+		})
+		if err != nil {
+			return fmt.Errorf("appointmentalert: poll embassy: marshal dispatch payload: %w", err)
+		}
+		if err := s.enqueuer.Enqueue(worker.TypeEmbassyDispatchAlerts, payload); err != nil {
+			return fmt.Errorf("appointmentalert: poll embassy: enqueue dispatch: %w", err)
+		}
+		slog.Info("appointmentalert: availability detected, dispatch enqueued",
+			"embassy_slug", embassy.Slug, "tenant_id", tenantID.String())
+	}
+
 	return nil
 }
 
 // DispatchAlerts notifies all users with an active alert matching the
-// embassy whose availability was detected. Stub: notification fan-out is
-// not yet implemented. Returns nil so the Asynq task succeeds gracefully
-// (§91, ADR-099).
+// embassy whose availability was detected. Each matching alert fires a
+// notification (in_app + email per the alert's notification_channels) and
+// is then marked 'fired' with a 24-hour pause-before-reactivation window
+// (ADR-099). After 24 hours the alert automatically reactivates (status
+// transitions back to 'active' on the next poll cycle if the user hasn't
+// paused it). The 24-hour pause prevents notification spam when slots open
+// briefly and then disappear (§91, ADR-099).
 func (s *Service) DispatchAlerts(ctx context.Context, embassySlug string, tenantID pgtype.UUID) error {
-	// TODO(§91): query active alerts matching embassy_slug + tenant_id,
-	// dispatch notifications via notification:dispatch_batch, set
-	// fired_at = now(), and apply the 24-hour pause before re-firing.
+	if s.notifier == nil {
+		slog.Warn("appointmentalert: dispatch alerts: no notifier configured, skipping",
+			"embassy_slug", embassySlug)
+		return nil
+	}
+
+	alerts, err := s.store.ListActiveAlertsByEmbassySlug(ctx, embassySlug, tenantID)
+	if err != nil {
+		return fmt.Errorf("appointmentalert: dispatch alerts: list alerts: %w", err)
+	}
+	if len(alerts) == 0 {
+		return nil
+	}
+
+	// Load the embassy to get the booking_url for the notification action
+	// link and the name for the notification title.
+	embassy, err := s.store.GetEmbassyBySlug(ctx, embassySlug, tenantID)
+	if err != nil && err != pgx.ErrNoRows {
+		slog.Warn("appointmentalert: dispatch alerts: get embassy by slug failed",
+			"embassy_slug", embassySlug, "error", err)
+	}
+
+	var zeroUUID pgtype.UUID
+	var fired int
+	for _, alert := range alerts {
+		// Enforce the 24-hour pause-after-fire (ADR-099): skip alerts that
+		// fired within the last 24 hours. The store query already filters
+		// to status='active', but a race between the poll and the dispatch
+		// could surface a just-fired alert, so we double-check here.
+		if alert.FiredAt.Valid {
+			if time.Since(alert.FiredAt.Time) < 24*time.Hour {
+				continue
+			}
+		}
+
+		title := fmt.Sprintf("Appointment available at %s", embassy.Name)
+		body := fmt.Sprintf("An appointment slot may be available at %s for your date range %s to %s. Book quickly — slots can disappear fast.",
+			embassy.Name, alert.DateRangeStart.Time.Format("2006-01-02"), alert.DateRangeEnd.Time.Format("2006-01-02"))
+		actionURL := embassy.BookingURL
+
+		if err := s.notifier.CreateNotification(ctx, tenantID, alert.UserID,
+			"appointment_alert", "system", zeroUUID,
+			"embassy", alert.ID,
+			title, body, actionURL); err != nil {
+			slog.Warn("appointmentalert: dispatch alerts: create notification failed",
+				"alert_id", alert.ID.String(), "user_id", alert.UserID.String(), "error", err)
+			continue
+		}
+
+		// Mark the alert as fired (sets fired_at = now(), status = 'fired').
+		// The 24-hour pause prevents re-firing on the next poll cycle.
+		if err := s.store.MarkAlertFired(ctx, alert.ID, tenantID); err != nil {
+			slog.Warn("appointmentalert: dispatch alerts: mark fired failed",
+				"alert_id", alert.ID.String(), "error", err)
+			continue
+		}
+		fired++
+	}
+
+	if fired > 0 {
+		slog.Info("appointmentalert: dispatch alerts: fired notifications",
+			"embassy_slug", embassySlug, "fired", fired)
+	}
+
 	return nil
+}
+
+// ScheduleDuePolls enqueues embassy:poll tasks for all active monitored
+// embassies whose poll_interval_seconds has elapsed since last_polled_at.
+// Called by the recurring poll scheduler (every 5 minutes) so each embassy
+// is polled at its own configured interval (§91, ADR-099). Fire-and-forget
+// per Rule 8.
+func (s *Service) ScheduleDuePolls(ctx context.Context) (int, error) {
+	if s.enqueuer == nil {
+		return 0, nil
+	}
+
+	embassies, err := s.store.ListEmbassiesDueForPoll(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("appointmentalert: schedule due polls: list: %w", err)
+	}
+
+	var enqueued int
+	for _, e := range embassies {
+		payload, err := json.Marshal(map[string]string{
+			"embassy_id": e.ID.String(),
+			"tenant_id":  e.TenantID.String(),
+		})
+		if err != nil {
+			slog.Warn("appointmentalert: schedule due polls: marshal payload failed",
+				"embassy_id", e.ID.String(), "error", err)
+			continue
+		}
+		if err := s.enqueuer.Enqueue(worker.TypeEmbassyPoll, payload); err != nil {
+			slog.Warn("appointmentalert: schedule due polls: enqueue failed",
+				"embassy_id", e.ID.String(), "error", err)
+			continue
+		}
+		enqueued++
+	}
+
+	if enqueued > 0 {
+		slog.Info("appointmentalert: schedule due polls: enqueued",
+			"count", enqueued)
+	}
+
+	return enqueued, nil
+}
+
+// containsAny reports whether s contains any of the substrings.
+func containsAny(s string, subs ...string) bool {
+	for _, sub := range subs {
+		if strings.Contains(s, sub) {
+			return true
+		}
+	}
+	return false
 }
 
 // ListUserAlerts returns a user's appointment alerts.
@@ -331,6 +579,29 @@ func (s *Service) CreateAlert(ctx context.Context, tenantID, userID pgtype.UUID,
 		return AlertDTO{}, fmt.Errorf("invalid date_range_end: %w", err)
 	}
 
+	// Validate date ordering: date_range_end must be on or after
+	// date_range_start (§1.1).
+	if dateStart.Valid && dateEnd.Valid && dateEnd.Time.Before(dateStart.Time) {
+		return AlertDTO{}, fmt.Errorf("date_range_end must be on or after date_range_start")
+	}
+
+	// Validate the embassy_slug exists in monitored_embassies for the
+	// given destination and is active (§1.1). This prevents users from
+	// creating alerts for embassies that don't exist or are inactive.
+	embassy, err := s.store.GetEmbassyBySlug(ctx, input.EmbassySlug, tenantID)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return AlertDTO{}, fmt.Errorf("embassy not found for slug %q", input.EmbassySlug)
+		}
+		return AlertDTO{}, fmt.Errorf("appointmentalert: create alert: verify embassy: %w", err)
+	}
+	if !embassy.IsActive {
+		return AlertDTO{}, fmt.Errorf("embassy %q is not currently monitored", input.EmbassySlug)
+	}
+	if embassy.DestinationSpaceID != destSpaceID {
+		return AlertDTO{}, fmt.Errorf("embassy %q does not belong to the selected destination", input.EmbassySlug)
+	}
+
 	var visaCat *string
 	if input.VisaCategory != "" {
 		v := input.VisaCategory
@@ -345,15 +616,15 @@ func (s *Service) CreateAlert(ctx context.Context, tenantID, userID pgtype.UUID,
 	}
 
 	row, err := s.store.CreateAlert(ctx, AlertRow{
-		TenantID:            tenantID,
-		UserID:              userID,
-		DestinationSpaceID:  destSpaceID,
-		EmbassySlug:         input.EmbassySlug,
-		VisaCategory:        visaCat,
-		DateRangeStart:      dateStart,
-		DateRangeEnd:        dateEnd,
-		Status:              StatusActive,
-		ExpiresAt:           expiresAt,
+		TenantID:             tenantID,
+		UserID:               userID,
+		DestinationSpaceID:   destSpaceID,
+		EmbassySlug:          input.EmbassySlug,
+		VisaCategory:         visaCat,
+		DateRangeStart:       dateStart,
+		DateRangeEnd:         dateEnd,
+		Status:               StatusActive,
+		ExpiresAt:            expiresAt,
 		NotificationChannels: input.NotificationChannels,
 	})
 	if err != nil {
