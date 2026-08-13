@@ -73,7 +73,7 @@ func (h *Handlers) HandleRadarFeed(w http.ResponseWriter, r *http.Request) {
 
 	q := r.URL.Query()
 	page, limit := parsePagination(r)
-	offset := int32((page - 1) * limit)
+	offset := clampInt32((page - 1) * limit)
 
 	spaceIDStr := q.Get("space_id")
 	country := q.Get("country")
@@ -90,18 +90,18 @@ func (h *Handlers) HandleRadarFeed(w http.ResponseWriter, r *http.Request) {
 		}
 		rows, err = h.intelStores.ListScholarshipsBySpace(r.Context(), gen.ListScholarshipsBySpaceParams{
 			CountrySpaceID: spaceID,
-			Limit:          int32(limit),
+			Limit:          clampInt32(limit),
 			Offset:         offset,
 		})
 	case country != "":
 		rows, err = h.intelStores.ListScholarshipsByCountry(r.Context(), gen.ListScholarshipsByCountryParams{
 			Country: country,
-			Limit:   int32(limit),
+			Limit:   clampInt32(limit),
 			Offset:  offset,
 		})
 	default:
 		rows, err = h.intelStores.ListScholarships(r.Context(), gen.ListScholarshipsParams{
-			Limit:  int32(limit),
+			Limit:  clampInt32(limit),
 			Offset: offset,
 		})
 	}
@@ -190,7 +190,7 @@ func (h *Handlers) HandleRadarFollowed(w http.ResponseWriter, r *http.Request) {
 	}
 
 	page, limit := parsePagination(r)
-	offset := int32((page - 1) * limit)
+	offset := clampInt32((page - 1) * limit)
 
 	followed, err := h.followsSvc.GetFollowingByType(r.Context(), tenantID, userID, userID, follows.EntityTypeSpace, 100, 0)
 	if err != nil {
@@ -205,7 +205,7 @@ func (h *Handlers) HandleRadarFollowed(w http.ResponseWriter, r *http.Request) {
 	for _, f := range followed {
 		rows, err := h.intelStores.ListScholarshipsBySpace(r.Context(), gen.ListScholarshipsBySpaceParams{
 			CountrySpaceID: f.EntityID,
-			Limit:          int32(limit),
+			Limit:          clampInt32(limit),
 			Offset:         offset,
 		})
 		if err != nil {

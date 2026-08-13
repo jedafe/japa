@@ -62,7 +62,7 @@ func (h *Handlers) HandleSourcesDirectory(w http.ResponseWriter, r *http.Request
 
 	category := r.URL.Query().Get("category")
 	page, limit := parsePagination(r)
-	offset := int32((page - 1) * limit)
+	offset := clampInt32((page - 1) * limit)
 
 	var rows []sources.Source
 	var err error
@@ -71,7 +71,7 @@ func (h *Handlers) HandleSourcesDirectory(w http.ResponseWriter, r *http.Request
 		rows, err = h.intelSources.ListByCategory(r.Context(), sources.Category(category))
 	} else {
 		rows, err = h.intelSources.List(r.Context(), gen.ListIntelSourcesParams{
-			Limit:  int32(limit),
+			Limit:  clampInt32(limit),
 			Offset: offset,
 		})
 	}
@@ -120,12 +120,12 @@ func (h *Handlers) HandleReviewQueue(w http.ResponseWriter, r *http.Request) {
 	}
 
 	page, limit := parsePagination(r)
-	offset := int32((page - 1) * limit)
+	offset := clampInt32((page - 1) * limit)
 
 	rows, err := h.intelStores.ListIntelRecordsByStatus(r.Context(), gen.ListIntelRecordsByStatusParams{
 		EntityType: "scholarship",
 		Status:     "review",
-		Limit:      int32(limit),
+		Limit:      clampInt32(limit),
 		Offset:     offset,
 	})
 	if err != nil {

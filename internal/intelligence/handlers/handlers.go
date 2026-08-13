@@ -11,6 +11,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"math"
 	"net/http"
 	"strconv"
 
@@ -133,4 +134,19 @@ func parsePagination(r *http.Request) (int, int) {
 	}
 	page := (pageOffset / pageSize) + 1
 	return page, pageSize
+}
+
+// clampInt32 safely converts an int to int32, clamping to math.MaxInt32
+// to prevent integer overflow (gosec G115). All pagination values from
+// parsePagination are already bounded (pageSize <= 100, page >= 1), but
+// the product (page-1)*pageSize can still exceed int32 on pathological
+// inputs — clamp to be safe.
+func clampInt32(v int) int32 {
+	if v > math.MaxInt32 {
+		return math.MaxInt32
+	}
+	if v < 0 {
+		return 0
+	}
+	return int32(v)
 }

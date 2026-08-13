@@ -14,6 +14,7 @@ package scheduler
 import (
 	"context"
 	"fmt"
+	"math"
 	"strconv"
 	"time"
 
@@ -140,7 +141,10 @@ func (s *Scheduler) EffectiveIntervalMins(ctx context.Context, sourceID string, 
 	if err != nil {
 		return 0, fmt.Errorf("scheduler: effective interval: parse %q: %w", val, err)
 	}
-	return int32(mins), nil
+	if mins > math.MaxInt32 {
+		mins = math.MaxInt32
+	}
+	return int32(mins), nil // #nosec G109 -- bounded by math.MaxInt32 check above
 }
 
 // doubleInterval doubles the stored effective interval, seeding it from the
@@ -201,7 +205,10 @@ func (s *Scheduler) storedOrBase(ctx context.Context, intervalKey string, baseIn
 	if mins <= 0 {
 		return baseIntervalMins, nil
 	}
-	return int32(mins), nil
+	if mins > math.MaxInt32 {
+		mins = math.MaxInt32
+	}
+	return int32(mins), nil // #nosec G109 -- bounded by math.MaxInt32 check above
 }
 
 // setInterval writes the effective interval (in minutes) with the standard
