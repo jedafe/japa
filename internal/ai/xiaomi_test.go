@@ -710,7 +710,7 @@ func TestXiaomiProviderSend_EmptyChoices(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// VerifyWebhookSignature — No-Op
+// VerifyWebhookSignature — Unsupported (returns error)
 // ---------------------------------------------------------------------------
 
 func TestXiaomiProviderVerifyWebhookSignature(t *testing.T) {
@@ -719,8 +719,8 @@ func TestXiaomiProviderVerifyWebhookSignature(t *testing.T) {
 	p := NewXiaomiProvider("sk-test", "")
 
 	err := p.VerifyWebhookSignature([]byte("payload"), "sig123")
-	if err != nil {
-		t.Errorf("VerifyWebhookSignature() unexpected error: %v", err)
+	if err == nil {
+		t.Error("VerifyWebhookSignature() expected error, got nil")
 	}
 }
 

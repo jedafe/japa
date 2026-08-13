@@ -221,6 +221,36 @@ func (s *Service) ListContents(ctx context.Context, tenantID pgtype.UUID, q stri
 	return contents, nil
 }
 
+// SearchContents uses Meilisearch to find content matching the query, then
+// fetches the full rows (with JOINed author/space names) from PostgreSQL by ID.
+// Returns the same column set as ListContents but with Meilisearch-grade
+// full-text search (typo tolerance, relevance ranking) instead of ILIKE.
+// Call this when a ContentSearcher is wired and q is non-empty.
+func (s *Service) SearchContents(ctx context.Context, tenantID pgtype.UUID, q string, limit int32) ([]gen.ListContentsByIDsRow, error) {
+	if s.searcher == nil {
+		return nil, fmt.Errorf("no content searcher configured")
+	}
+
+	if limit <= 0 || limit > MaxPageSize {
+		limit = DefaultPageSize
+	}
+
+	ids, err := s.searcher.SearchContentIDs(ctx, tenantID, q, int(limit))
+	if err != nil {
+		return nil, fmt.Errorf("searching content via Meilisearch: %w", err)
+	}
+
+	if len(ids) == 0 {
+		return []gen.ListContentsByIDsRow{}, nil
+	}
+
+	return s.read.ListContentsByIDs(ctx, gen.ListContentsByIDsParams{
+		TenantID:  tenantID,
+		Ids:       ids,
+		PageLimit: limit,
+	})
+}
+
 // ListContentsByType returns a page of content filtered by content_type.
 func (s *Service) ListContentsByType(ctx context.Context, tenantID pgtype.UUID, contentType string, cursor pgtype.Timestamptz, limit int32) ([]gen.ListContentsByTypeRow, error) {
 	if limit <= 0 || limit > MaxPageSize {

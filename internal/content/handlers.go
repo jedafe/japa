@@ -1051,6 +1051,16 @@ func (h *Handlers) ListContent(w http.ResponseWriter, r *http.Request) {
 		contents, err = h.Service.ListContentsBySpace(r.Context(), tenantID, spaceID, cursor, limit)
 	} else if contentType != "" {
 		contents, err = h.Service.ListContentsByType(r.Context(), tenantID, contentType, cursor, limit)
+	} else if q != "" && h.Service.HasSearcher() {
+		// Use Meilisearch for full-text search (typo tolerance, ranking)
+		// instead of ILIKE. Falls back to ILIKE on Meilisearch failure.
+		results, searchErr := h.Service.SearchContents(r.Context(), tenantID, q, limit)
+		if searchErr != nil {
+			slog.Warn("content: Meilisearch search failed, falling back to ILIKE", "error", searchErr, "query", q)
+			contents, err = h.Service.ListContents(r.Context(), tenantID, q, cursor, limit)
+		} else {
+			contents = results
+		}
 	} else {
 		contents, err = h.Service.ListContents(r.Context(), tenantID, q, cursor, limit)
 	}

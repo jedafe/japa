@@ -2802,6 +2802,26 @@ func (q *Queries) GetUserConsents(ctx context.Context, arg GetUserConsentsParams
 	return items, nil
 }
 
+const getUserIsBot = `-- name: GetUserIsBot :one
+SELECT is_bot FROM users WHERE id = $1 AND tenant_id = $2
+`
+
+type GetUserIsBotParams struct {
+	UserID   pgtype.UUID `json:"user_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+// Returns the is_bot flag for a user. Used by RequestAccountDeletion to
+// reject erasure of AI persona backing accounts (ADR-068 compliance:
+// "Persona backing accounts are system accounts, not data subjects, so
+// user-erasure/export flows do not apply to them").
+func (q *Queries) GetUserIsBot(ctx context.Context, arg GetUserIsBotParams) (bool, error) {
+	row := q.db.QueryRow(ctx, getUserIsBot, arg.UserID, arg.TenantID)
+	var is_bot bool
+	err := row.Scan(&is_bot)
+	return is_bot, err
+}
+
 const hardDeleteUser = `-- name: HardDeleteUser :exec
 DELETE FROM users
 WHERE id = $1 AND tenant_id = $2 AND status = 'deleted'

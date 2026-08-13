@@ -50,12 +50,22 @@ func run() error {
 	// Create the database pool. This pings the database on startup so
 	// we fail fast if PostgreSQL is unreachable. Pool tuning comes from
 	// JC_DB_* environment variables; zero values fall back to defaults.
-	database, err := db.NewWithConfig(context.Background(), cfg.DatabaseURL, db.PoolConfig{
+	// When JC_DATABASE_READER_URL is set, reads go to the replica and
+	// writes go to the primary (db.NewWithReplica). When it is empty,
+	// both pools point at the primary (db.NewWithConfig).
+	poolCfg := db.PoolConfig{
 		MaxConns:        cfg.DBMaxConns,
 		MinConns:        cfg.DBMinConns,
 		MaxConnLifetime: time.Duration(cfg.DBMaxConnLifetimeMs) * time.Millisecond,
 		MaxConnIdleTime: time.Duration(cfg.DBMaxConnIdleTimeMs) * time.Millisecond,
-	})
+	}
+	var database *db.DB
+	if cfg.DatabaseReaderURL != "" {
+		slog.Info("database: read replica configured", "reader_url", cfg.DatabaseReaderURL)
+		database, err = db.NewWithReplica(context.Background(), cfg.DatabaseURL, cfg.DatabaseReaderURL, poolCfg)
+	} else {
+		database, err = db.NewWithConfig(context.Background(), cfg.DatabaseURL, poolCfg)
+	}
 	if err != nil {
 		return fmt.Errorf("creating database pool: %w", err)
 	}

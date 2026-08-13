@@ -575,6 +575,13 @@ WHERE user_id = @user_id AND tenant_id = @tenant_id;
 UPDATE account_deletion_requests SET user_id = @target_user_id
 WHERE user_id = @user_id AND tenant_id = @tenant_id;
 
+-- name: GetUserIsBot :one
+-- Returns the is_bot flag for a user. Used by RequestAccountDeletion to
+-- reject erasure of AI persona backing accounts (ADR-068 compliance:
+-- "Persona backing accounts are system accounts, not data subjects, so
+-- user-erasure/export flows do not apply to them").
+SELECT is_bot FROM users WHERE id = @user_id AND tenant_id = @tenant_id;
+
 -- name: ReassignAIPersonaCreatedBy :exec
 -- ai_personas.created_by is NOT NULL and references users(id). When an admin
 -- who created personas is GDPR-erased, reassign created_by to the placeholder

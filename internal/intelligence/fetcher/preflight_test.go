@@ -46,81 +46,94 @@ func validUUID() pgtype.UUID {
 	return pgtype.UUID{Bytes: [16]byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}, Valid: true}
 }
 
+// testTenantID is the default tenant UUID used for tenant-scoped Valkey keys
+// in tests. Matches the system default tenant (00000000-0000-0000-0000-000000000001)
+// per ADR-112 Amendment 2.
+func testTenantID() pgtype.UUID {
+	return pgtype.UUID{Bytes: [16]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}, Valid: true}
+}
+
 func TestPreflightCheck_CrawlLock(t *testing.T) {
 	p := newTestChecker(t, 3600, 10)
+	tid := testTenantID()
 
 	src := sources.Source{ID: validUUID(), Domain: "example.com", TrustLevel: 1}
-	if err := p.Check(context.Background(), src); err != nil {
+	if err := p.Check(context.Background(), src, tid); err != nil {
 		t.Fatalf("first check: %v", err)
 	}
 	// Second check on same source should be locked.
-	if err := p.Check(context.Background(), src); err != ErrCrawlLocked {
+	if err := p.Check(context.Background(), src, tid); err != ErrCrawlLocked {
 		t.Errorf("second check: got %v, want ErrCrawlLocked", err)
 	}
 }
 
 func TestPreflightCheck_ReleaseCrawlLock(t *testing.T) {
 	p := newTestChecker(t, 3600, 10)
+	tid := testTenantID()
 
 	src := sources.Source{ID: validUUID(), Domain: "example.com", TrustLevel: 1}
-	if err := p.Check(context.Background(), src); err != nil {
+	if err := p.Check(context.Background(), src, tid); err != nil {
 		t.Fatalf("first check: %v", err)
 	}
 	// Releasing the lock should allow a second check to pass.
-	p.ReleaseCrawlLock(context.Background(), src.ID.String())
-	if err := p.Check(context.Background(), src); err != nil {
+	p.ReleaseCrawlLock(context.Background(), tid, src.ID.String())
+	if err := p.Check(context.Background(), src, tid); err != nil {
 		t.Errorf("check after release: got %v, want nil", err)
 	}
 }
 
 func TestPreflightCheck_LicenseRepublish(t *testing.T) {
 	p := newTestChecker(t, 3600, 10)
+	tid := testTenantID()
 
 	proprietary := "proprietary"
 	src := sources.Source{ID: validUUID(), Domain: "blog.example.com", TrustLevel: 3, SourceLicense: &proprietary}
-	if err := p.Check(context.Background(), src); err != ErrLicenseRepublish {
+	if err := p.Check(context.Background(), src, tid); err != ErrLicenseRepublish {
 		t.Errorf("got %v, want ErrLicenseRepublish", err)
 	}
 }
 
 func TestPreflightCheck_LicenseNilTier3(t *testing.T) {
 	p := newTestChecker(t, 3600, 10)
+	tid := testTenantID()
 
 	// Tier 3 with no license at all should be refused.
 	src := sources.Source{ID: validUUID(), Domain: "blog.example.com", TrustLevel: 3}
-	if err := p.Check(context.Background(), src); err != ErrLicenseRepublish {
+	if err := p.Check(context.Background(), src, tid); err != ErrLicenseRepublish {
 		t.Errorf("got %v, want ErrLicenseRepublish", err)
 	}
 }
 
 func TestPreflightCheck_LicenseAllowedTier1(t *testing.T) {
 	p := newTestChecker(t, 3600, 10)
+	tid := testTenantID()
 
 	// Tier 1 (official) is not subject to the license check even with a
 	// proprietary license.
 	proprietary := "proprietary"
 	src := sources.Source{ID: validUUID(), Domain: "gov.example.com", TrustLevel: 1, SourceLicense: &proprietary}
-	if err := p.Check(context.Background(), src); err != nil {
+	if err := p.Check(context.Background(), src, tid); err != nil {
 		t.Errorf("tier 1 with proprietary license: got %v, want nil", err)
 	}
 }
 
 func TestPreflightCheck_RateLimited(t *testing.T) {
 	p := newTestChecker(t, 3600, 2)
+	tid := testTenantID()
 
 	src := sources.Source{ID: validUUID(), Domain: "ratelimit.example.com", TrustLevel: 1}
 	// First two checks pass (counter 1 and 2); the third exceeds the limit.
-	if err := p.Check(context.Background(), src); err != nil {
+	if err := p.Check(context.Background(), src, tid); err != nil {
 		t.Fatalf("check 1: %v", err)
 	}
 	// Release the crawl lock between checks so only the rate limiter is
 	// exercised.
-	p.ReleaseCrawlLock(context.Background(), src.ID.String())
-	if err := p.Check(context.Background(), src); err != nil {
+	p.ReleaseCrawlLock(context.Background(), tid, src.ID.String())
+	if err := p.Check(context.Background(), src, tid); err != nil {
 		t.Fatalf("check 2: %v", err)
 	}
-	p.ReleaseCrawlLock(context.Background(), src.ID.String())
-	if err := p.Check(context.Background(), src); err != ErrRateLimited {
+	p.ReleaseCrawlLock(context.Background(), tid, src.ID.String())
+	if err := p.Check(context.Background(), src, tid); err != ErrRateLimited {
 		t.Errorf("check 3: got %v, want ErrRateLimited", err)
 	}
 }

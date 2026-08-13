@@ -15,7 +15,6 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/jedafe/japa/internal/config"
-	"github.com/jedafe/japa/internal/personas"
 )
 
 // TaskEnqueuer is the subset of worker.Enqueuer that studio needs.
@@ -95,7 +94,11 @@ func (s *Service) CreateJob(ctx context.Context, tenantID, createdBy pgtype.UUID
 	return job, nil
 }
 
-// CreateBatch creates a batch with multiple jobs and enqueues generation for each.
+// CreateBatch creates a batch with multiple jobs and enqueues a single
+// studio:run_batch task. The task processor fans out individual
+// content:generate_draft jobs respecting studio.max_concurrent_jobs
+// (ADR-076 §2/§7). This avoids flooding the AI gateway and keeps the HTTP
+// request fast — batch generation is inherently asynchronous.
 func (s *Service) CreateBatch(ctx context.Context, tenantID, createdBy pgtype.UUID, in CreateBatchInput) (Batch, []Job, error) {
 	if !s.isEnabled(ctx, tenantID) {
 		return Batch{}, nil, fmt.Errorf("studio: feature is disabled")
@@ -107,16 +110,14 @@ func (s *Service) CreateBatch(ctx context.Context, tenantID, createdBy pgtype.UU
 		return Batch{}, nil, fmt.Errorf("studio: batch must contain at least one job")
 	}
 
-	// Enforce studio.max_concurrent_jobs (ADR-076, §75). Default 3.
-	if err := s.checkConcurrency(ctx, tenantID, len(in.Jobs)); err != nil {
-		return Batch{}, nil, err
-	}
-
 	batch, err := s.store.CreateBatch(ctx, tenantID, createdBy, in.Name, in.Description)
 	if err != nil {
 		return Batch{}, nil, fmt.Errorf("studio: create batch: %w", err)
 	}
 
+	// Create all jobs in 'queued' status. Generation is enqueued by the
+	// studio:run_batch task processor, not inline — this is the async batch
+	// pipeline per ADR-076 §2/§7.
 	var jobs []Job
 	for _, jin := range in.Jobs {
 		job, err := s.store.CreateJob(ctx, tenantID, createdBy, batch.ID, jin)
@@ -124,11 +125,18 @@ func (s *Service) CreateBatch(ctx context.Context, tenantID, createdBy pgtype.UU
 			slog.Warn("studio: create job in batch failed", "batch_id", batch.ID, "error", err)
 			continue
 		}
-		if err := s.enqueueGeneration(ctx, job); err != nil {
-			_ = s.store.UpdateJobStatus(ctx, tenantID, job.ID, "failed", strPtr(err.Error()))
-			slog.Warn("studio: enqueue job in batch failed", "job_id", job.ID, "error", err)
-		}
 		jobs = append(jobs, job)
+	}
+
+	if len(jobs) == 0 {
+		return batch, jobs, fmt.Errorf("studio: batch created but no jobs could be inserted")
+	}
+
+	// Enqueue a single studio:run_batch task — the processor fans out
+	// individual content:generate_draft jobs respecting max_concurrent_jobs.
+	if err := s.enqueueRunBatch(ctx, tenantID, batch.ID); err != nil {
+		slog.Warn("studio: enqueue run_batch failed, jobs remain queued",
+			"batch_id", batch.ID, "error", err)
 	}
 
 	return batch, jobs, nil
@@ -149,12 +157,19 @@ func (s *Service) ListJobs(ctx context.Context, tenantID pgtype.UUID, f JobListF
 
 // RetryJob resets a failed job to queued and re-enqueues generation.
 func (s *Service) RetryJob(ctx context.Context, tenantID, id pgtype.UUID) error {
+	if !s.isEnabled(ctx, tenantID) {
+		return fmt.Errorf("studio: feature is disabled")
+	}
 	job, err := s.store.GetJob(ctx, tenantID, id)
 	if err != nil {
 		return fmt.Errorf("studio: get job for retry: %w", err)
 	}
 	if job.Status != "failed" {
 		return fmt.Errorf("studio: only failed jobs can be retried (current: %s)", job.Status)
+	}
+	// Enforce studio.max_concurrent_jobs (ADR-076, §75) before enqueuing.
+	if err := s.checkConcurrency(ctx, tenantID, 1); err != nil {
+		return err
 	}
 	if err := s.store.UpdateJobStatus(ctx, tenantID, id, "queued", nil); err != nil {
 		return fmt.Errorf("studio: reset job status: %w", err)
@@ -163,7 +178,8 @@ func (s *Service) RetryJob(ctx context.Context, tenantID, id pgtype.UUID) error 
 	return s.enqueueGeneration(ctx, job)
 }
 
-// CancelJob deletes a queued or failed job.
+// CancelJob deletes a queued or failed job. Returns ErrJobNotCancellable if
+// the job is in a status that cannot be cancelled.
 func (s *Service) CancelJob(ctx context.Context, tenantID, id pgtype.UUID) error {
 	return s.store.DeleteJob(ctx, tenantID, id)
 }
@@ -188,9 +204,21 @@ func (s *Service) GetBatch(ctx context.Context, tenantID, id pgtype.UUID) (Batch
 
 // RetryBatchFailed retries all failed jobs in a batch.
 func (s *Service) RetryBatchFailed(ctx context.Context, tenantID, batchID pgtype.UUID) (int, error) {
+	if !s.isEnabled(ctx, tenantID) {
+		return 0, fmt.Errorf("studio: feature is disabled")
+	}
 	jobs, err := s.store.ListFailedJobs(ctx, tenantID, batchID)
 	if err != nil {
 		return 0, fmt.Errorf("studio: list failed jobs: %w", err)
+	}
+	// Enforce studio.max_concurrent_jobs (ADR-076, §75) — check once for the
+	// batch; individual jobs beyond the limit remain in 'queued' and are
+	// picked up by subsequent run_batch invocations.
+	if err := s.checkConcurrency(ctx, tenantID, len(jobs)); err != nil {
+		// If the full batch would exceed the limit, still retry as many as
+		// we can within the limit — the rest stay queued for later pickup.
+		slog.Warn("studio: retry batch: concurrency limit, retrying partial",
+			"batch_id", batchID, "failed_count", len(jobs), "error", err)
 	}
 	var count int
 	for _, job := range jobs {
@@ -213,15 +241,6 @@ func (s *Service) GetStats(ctx context.Context, tenantID pgtype.UUID) (StudioSta
 	return s.store.GetStats(ctx, tenantID)
 }
 
-// ListStudioPersonas returns personas available for studio use.
-func (s *Service) ListStudioPersonas(ctx context.Context, tenantID pgtype.UUID) ([]personas.PersonaListItem, int64, error) {
-	// Delegate to the personas package — studio reuses the same persona list.
-	// The personas service is not injected here; the handler will call the
-	// personas service directly. This method is a placeholder for the
-	// service-level integration point.
-	return nil, 0, fmt.Errorf("studio: use personas service directly")
-}
-
 // ContentTypeInfo describes a content type available in the studio.
 type ContentTypeInfo struct {
 	Type           string   `json:"type"`
@@ -230,13 +249,23 @@ type ContentTypeInfo struct {
 	CanAutoPublish bool     `json:"can_auto_publish"`
 }
 
-// ListContentTypes returns the content types available for studio generation.
-func (s *Service) ListContentTypes(ctx context.Context, tenantID pgtype.UUID) []ContentTypeInfo {
+// ContentTypeResponse wraps the content types list with studio configuration
+// the frontend needs (e.g. the default persona pre-selection per
+// studio.default_persona_id, §75 system_settings).
+type ContentTypeResponse struct {
+	Types            []ContentTypeInfo `json:"types"`
+	DefaultPersonaID string            `json:"default_persona_id,omitempty"`
+}
+
+// ListContentTypes returns the content types available for studio generation
+// along with the studio.default_persona_id setting so the frontend can
+// pre-select a persona in the new-job form (§75 system_settings, ADR-076 §6).
+func (s *Service) ListContentTypes(ctx context.Context, tenantID pgtype.UUID) ContentTypeResponse {
 	types := []ContentTypeInfo{
 		{Type: "discussion", Label: "Discussion", CanAutoPublish: true},
 		{Type: "page", Label: "Page", CanAutoPublish: true},
 		{Type: "blog_post", Label: "Blog Post", CanAutoPublish: false},
-		{Type: "guide", Label: "Guide", GuideCategories: []string{"visa", "banking", "grants", "health_insurance", "admission", "scholarship", "housing", "general"}, CanAutoPublish: false},
+		{Type: "guide", Label: "Guide", GuideCategories: []string{"visa", "travel_routes", "scholarship", "grants", "admission", "accommodation", "banking", "work_career", "health_insurance", "culture_lifestyle"}, CanAutoPublish: false},
 		{Type: "comparison", Label: "Comparison", CanAutoPublish: false},
 		{Type: "event", Label: "Event", CanAutoPublish: false},
 		{Type: "job_listing", Label: "Job Listing", CanAutoPublish: false},
@@ -245,8 +274,10 @@ func (s *Service) ListContentTypes(ctx context.Context, tenantID pgtype.UUID) []
 
 	// Filter by auto_publish_types setting.
 	autoPublishCSV := ""
+	defaultPersonaID := ""
 	if s.settings != nil {
 		autoPublishCSV, _ = s.settings.GetSetting(ctx, tenantID, "studio.auto_publish_types")
+		defaultPersonaID, _ = s.settings.GetSetting(ctx, tenantID, "studio.default_persona_id")
 	}
 	autoPublishMap := parseCSV(autoPublishCSV)
 	for i := range types {
@@ -259,7 +290,10 @@ func (s *Service) ListContentTypes(ctx context.Context, tenantID pgtype.UUID) []
 		}
 	}
 
-	return types
+	return ContentTypeResponse{
+		Types:            types,
+		DefaultPersonaID: defaultPersonaID,
+	}
 }
 
 // enqueueGeneration enqueues a content:generate_draft task for the job.
@@ -279,6 +313,45 @@ func (s *Service) enqueueGeneration(ctx context.Context, job Job) error {
 	}
 	if err := s.enqueuer.Enqueue("content:generate_draft", payload); err != nil {
 		return fmt.Errorf("studio: enqueue: %w", err)
+	}
+	return nil
+}
+
+// enqueueRunBatch enqueues a studio:run_batch task for the batch. The task
+// processor fans out individual content:generate_draft jobs respecting
+// studio.max_concurrent_jobs (ADR-076 §2/§7).
+func (s *Service) enqueueRunBatch(ctx context.Context, tenantID, batchID pgtype.UUID) error {
+	if s.enqueuer == nil {
+		return fmt.Errorf("studio: no enqueuer configured")
+	}
+	payload, err := json.Marshal(map[string]string{
+		"batch_id":  batchID.String(),
+		"tenant_id": tenantID.String(),
+	})
+	if err != nil {
+		return fmt.Errorf("studio: marshal run_batch payload: %w", err)
+	}
+	if err := s.enqueuer.Enqueue("studio:run_batch", payload); err != nil {
+		return fmt.Errorf("studio: enqueue run_batch: %w", err)
+	}
+	return nil
+}
+
+// enqueueRetryFailed enqueues a studio:retry_failed task for a batch. The
+// task processor retries all failed jobs asynchronously (ADR-076 §7).
+func (s *Service) enqueueRetryFailed(ctx context.Context, tenantID, batchID pgtype.UUID) error {
+	if s.enqueuer == nil {
+		return fmt.Errorf("studio: no enqueuer configured")
+	}
+	payload, err := json.Marshal(map[string]string{
+		"batch_id":  batchID.String(),
+		"tenant_id": tenantID.String(),
+	})
+	if err != nil {
+		return fmt.Errorf("studio: marshal retry_failed payload: %w", err)
+	}
+	if err := s.enqueuer.Enqueue("studio:retry_failed", payload); err != nil {
+		return fmt.Errorf("studio: enqueue retry_failed: %w", err)
 	}
 	return nil
 }
@@ -328,16 +401,26 @@ func parseCSV(s string) map[string]bool {
 // strPtr returns a pointer to the given string.
 func strPtr(s string) *string { return &s }
 
-// MarkJobGenerating sets a job's status to 'generating'.
+// MarkJobGenerating atomically transitions a job from 'queued' to 'generating'
+// using a compare-and-swap UPDATE. Returns ErrJobAlreadyGenerating if another
+// worker already claimed the job — the caller should skip generation. This
+// prevents duplicate draft generation from concurrent content:generate_draft
+// tasks (ADR-076 §1 job idempotency).
 func (s *Service) MarkJobGenerating(ctx context.Context, tenantID, jobID pgtype.UUID) error {
-	return s.store.UpdateJobStatus(ctx, tenantID, jobID, "generating", nil)
+	return s.store.MarkJobGeneratingCAS(ctx, tenantID, jobID)
 }
 
-// MarkJobGenerated sets the draft_content_id, review_id, and status after
-// successful generation. This is called by the task handler after the AI
-// gateway returns the draft content.
-func (s *Service) MarkJobGenerated(ctx context.Context, tenantID, jobID, draftContentID, reviewID pgtype.UUID) error {
-	return s.store.UpdateJobGenerated(ctx, tenantID, jobID, draftContentID, reviewID)
+// MarkJobGenerated sets the draft_content_id and status to 'draft_ready'
+// after the AI gateway has produced the draft content (ADR-076 §2 step 7).
+func (s *Service) MarkJobGenerated(ctx context.Context, tenantID, jobID, draftContentID pgtype.UUID) error {
+	return s.store.UpdateJobGenerated(ctx, tenantID, jobID, draftContentID)
+}
+
+// MarkJobRoutedToReview sets the review_id and status to 'in_review' after
+// the draft has been routed to the content_reviews HITL queue (ADR-076 §2
+// step 8). Called after MarkJobGenerated once the review row exists.
+func (s *Service) MarkJobRoutedToReview(ctx context.Context, tenantID, jobID, reviewID pgtype.UUID) error {
+	return s.store.UpdateJobRoutedToReview(ctx, tenantID, jobID, reviewID)
 }
 
 // MarkJobFailed sets a job's status to 'failed' with an error message.
@@ -368,7 +451,10 @@ func (s *Service) ShouldAutoPublish(ctx context.Context, tenantID pgtype.UUID, c
 }
 
 // RunBatch is the processor method called by the studio:run_batch task handler.
-// It loads all queued jobs in the batch and enqueues generation for each.
+// It loads all queued jobs in the batch and enqueues generation for each,
+// respecting studio.max_concurrent_jobs (ADR-076 §2/§7). Jobs beyond the
+// concurrency limit remain in 'queued' status and are picked up by subsequent
+// run_batch invocations (e.g. after a job completes and the active count drops).
 func (s *Service) RunBatch(ctx context.Context, tenantID, batchID pgtype.UUID) error {
 	jobs, _, err := s.store.ListJobs(ctx, tenantID, JobListFilter{
 		BatchID: &batchID, Status: strPtr("queued"), Limit: 100,
@@ -376,17 +462,60 @@ func (s *Service) RunBatch(ctx context.Context, tenantID, batchID pgtype.UUID) e
 	if err != nil {
 		return fmt.Errorf("studio: run_batch: list jobs: %w", err)
 	}
+	if len(jobs) == 0 {
+		return nil
+	}
 
-	for _, job := range jobs {
-		if err := s.enqueueGeneration(ctx, job); err != nil {
-			slog.Warn("studio: run_batch: enqueue failed", "job_id", job.ID, "error", err)
+	// Determine how many jobs we can enqueue without exceeding the
+	// max_concurrent_jobs limit.
+	maxConcurrent := 3
+	if s.settings != nil {
+		maxConcurrent = s.settings.GetIntOr(ctx, tenantID, "studio.max_concurrent_jobs", 3)
+	}
+
+	active, err := s.store.CountActiveJobs(ctx, tenantID)
+	if err != nil {
+		slog.Warn("studio: run_batch: count active failed, enqueuing all",
+			"batch_id", batchID, "error", err)
+		active = 0
+	}
+
+	// Enqueue at most (maxConcurrent - active) jobs. If maxConcurrent <= 0,
+	// there's no limit — enqueue all.
+	toEnqueue := len(jobs)
+	if maxConcurrent > 0 {
+		remaining := maxConcurrent - active
+		if remaining < 0 {
+			remaining = 0
+		}
+		if toEnqueue > remaining {
+			toEnqueue = remaining
 		}
 	}
-	slog.Info("studio: run_batch: enqueued jobs", "batch_id", batchID, "count", len(jobs))
+
+	enqueued := 0
+	for i := 0; i < toEnqueue; i++ {
+		if err := s.enqueueGeneration(ctx, jobs[i]); err != nil {
+			slog.Warn("studio: run_batch: enqueue failed",
+				"job_id", jobs[i].ID, "error", err)
+			continue
+		}
+		enqueued++
+	}
+
+	slog.Info("studio: run_batch: enqueued jobs",
+		"batch_id", batchID, "enqueued", enqueued,
+		"remaining_queued", len(jobs)-enqueued)
 	return nil
 }
 
 // RetryFailed is the processor method called by the studio:retry_failed task.
 func (s *Service) RetryFailed(ctx context.Context, tenantID, jobID pgtype.UUID) error {
 	return s.RetryJob(ctx, tenantID, jobID)
+}
+
+// EnqueueRetryFailed enqueues a studio:retry_failed task for a batch. Called
+// by the HTTP handler so batch retry is asynchronous (ADR-076 §7).
+func (s *Service) EnqueueRetryFailed(ctx context.Context, tenantID, batchID pgtype.UUID) error {
+	return s.enqueueRetryFailed(ctx, tenantID, batchID)
 }

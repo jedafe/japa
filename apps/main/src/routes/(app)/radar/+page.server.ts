@@ -23,6 +23,14 @@ export const load: PageServerLoad = async (event) => {
 	const page = Math.max(1, parseInt(event.url.searchParams.get('page') ?? '1', 10) || 1);
 	const offset = (page - 1) * PAGE_SIZE;
 
+	// Geo-aware filter: ?space_id= or ?dest= (country code). When present,
+	// the radar feed is filtered to that country/space instead of showing
+	// the followed-countries feed. This matches the geo-aware pattern used
+	// by other surfaces (§31 spaces, §32 feed).
+	const spaceId = event.url.searchParams.get('space_id') ?? '';
+	const dest = event.url.searchParams.get('dest') ?? '';
+	const hasGeoFilter = spaceId !== '' || dest !== '';
+
 	// Country list — public. Filtered to level=country so the browse list
 	// only shows country spaces (the radar groups opportunities by country).
 	let countries: Space[] = [];
@@ -68,6 +76,30 @@ export const load: PageServerLoad = async (event) => {
 		}
 	}
 
+	// Geo-filtered feed — when ?space_id= or ?dest= is present, fetch the
+	// radar feed filtered to that country/space. This is public (no auth
+	// required) so guests can browse a specific country's opportunities.
+	let geoItems: RadarItem[] = [];
+	let geoCount = 0;
+	if (hasGeoFilter && !intelUnavailable) {
+		try {
+			const params = new URLSearchParams();
+			params.set('page_size', String(PAGE_SIZE));
+			params.set('page_offset', String(offset));
+			if (spaceId) params.set('space_id', spaceId);
+			else if (dest) params.set('country', dest);
+			const res = await apiList<RadarItem>(ctx, `/intel/radar?${params.toString()}`);
+			geoItems = res.items;
+			const meta = res.meta as (ListMeta & { count?: number }) | undefined;
+			geoCount = meta?.count ?? geoItems.length;
+		} catch (err) {
+			if (err instanceof ApiError && err.status === 503) {
+				intelUnavailable = true;
+			}
+			geoItems = [];
+		}
+	}
+
 	// Resolve the caller's followed space IDs so the browse list can badge
 	// followed countries. The public radar feed emits `followed_space_ids` in
 	// its meta; we fetch a single-row page just to read that sidecar. Best-
@@ -94,6 +126,12 @@ export const load: PageServerLoad = async (event) => {
 		intelUnavailable,
 		authed,
 		pageSize: PAGE_SIZE,
-		currentPage: page
+		currentPage: page,
+		// Geo-aware filter state
+		spaceId,
+		dest,
+		hasGeoFilter,
+		geoItems,
+		geoCount
 	};
 };

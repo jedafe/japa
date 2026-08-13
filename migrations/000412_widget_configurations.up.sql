@@ -15,8 +15,8 @@ CREATE TABLE IF NOT EXISTS widget_configurations (
     updated_at      timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE INDEX idx_widget_configurations_tenant ON widget_configurations (tenant_id, is_active);
-CREATE UNIQUE INDEX idx_widget_configurations_tenant_name ON widget_configurations (tenant_id, name);
+CREATE INDEX IF NOT EXISTS idx_widget_configurations_tenant ON widget_configurations (tenant_id, is_active);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_widget_configurations_tenant_name ON widget_configurations (tenant_id, name);
 
 -- RBAC: widgets.manage gates all admin widget CRUD routes (Section 16).
 INSERT INTO permissions (key, description)

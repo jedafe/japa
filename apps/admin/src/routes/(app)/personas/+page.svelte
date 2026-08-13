@@ -8,6 +8,7 @@
 	import type { ActionItem } from '$lib/components/ui/data-table';
 	import { Bot, Plus, Trash2, Activity, Pencil } from 'lucide-svelte';
 	import { api, apiRaw } from '$lib/api';
+	import type { BulkAction } from '$lib/components/ui/data-table';
 
 	// Persona type matches the backend PersonaDetail / PersonaListItem DTOs
 	// (internal/personas/service.go). Ref: §68, ADR-068.
@@ -110,12 +111,16 @@
 	let profileTypesError = $state('');
 
 	// Server-side pagination state (BUG-003: list was not paginated — only 20
-	// personas loaded with no way to see more).
+	// personas loaded with no way to see more). BUG-007: added search and sort
+	// support per DataTable spec.
 	let listPage = $state(0);
 	let listPageSize = $state(10);
 	let listTotal = $state(0);
 	let listTotalPages = $state(1);
 	let statusFilter = $state('');
+	let searchQuery = $state('');
+	let sortKey = $state('created_at');
+	let sortDir = $state<'asc' | 'desc'>('desc');
 
 	function defaultPolicy(): ActivityPolicy {
 		return {
@@ -173,12 +178,15 @@
 		loading = true;
 		error = '';
 		try {
-			// BUG-003: use apiRaw to access top-level meta.total alongside data,
-			// and send page/limit params for server-side pagination.
+			// BUG-002: use page_size/page_offset (canonical convention).
+			// BUG-007: pass q/sort/dir for DataTable search+sort support.
 			const params = new URLSearchParams();
-			params.set('limit', String(listPageSize));
-			params.set('page', String(listPage + 1));
+			params.set('page_size', String(listPageSize));
+			params.set('page_offset', String(listPage * listPageSize));
 			if (statusFilter) params.set('status', statusFilter);
+			if (searchQuery) params.set('q', searchQuery);
+			if (sortKey) params.set('sort', sortKey);
+			if (sortDir) params.set('dir', sortDir);
 			const result = await apiRaw<{ data: Persona[]; meta: { total: number; limit: number; offset: number } }>(
 				`/admin/personas?${params.toString()}`
 			);
@@ -204,13 +212,14 @@
 	}
 
 	// BUG-004: activity log was not paginated — only 20 entries loaded with no
-	// way to see more. Now fetches with page/limit and supports pagination.
+	// way to see more. Now fetches with page_size/page_offset (BUG-002) and
+	// supports pagination.
 	async function loadActivity() {
 		activityLoading = true;
 		try {
 			const params = new URLSearchParams();
-			params.set('limit', String(activityPageSize));
-			params.set('page', String(activityPage + 1));
+			params.set('page_size', String(activityPageSize));
+			params.set('page_offset', String(activityPage * activityPageSize));
 			const result = await apiRaw<{ data: ActivityEntry[]; meta: { total: number } }>(
 				`/admin/personas/${activityPersonaId}/activity?${params.toString()}`
 			);
@@ -286,14 +295,63 @@
 		editSlideOverOpen = true;
 	}
 
+	// BUG-007: bulk actions per DataTable spec. Pause/retire let admins
+	// manage multiple personas at once. In-flight guard prevents duplicate
+	// calls on double-click (admin AGENTS.md bulk-delete pattern).
+	let bulkProcessing = $state(false);
+
+	async function bulkUpdateStatus(ids: Set<string>, status: string) {
+		const idArr = Array.from(ids);
+		if (idArr.length === 0 || bulkProcessing) return;
+		bulkProcessing = true;
+		message = '';
+		try {
+			await Promise.all(idArr.map((id) =>
+				api(`/admin/personas/${id}`, { method: 'PATCH', body: { status } })
+			));
+			messageType = 'success';
+			message = t('personas.bulk_status_success', '{count} persona(s) updated to {status}.')
+				.replace('{count}', String(idArr.length))
+				.replace('{status}', status);
+			load();
+		} catch (e) {
+			messageType = 'error';
+			message = e instanceof Error ? e.message : t('personas.bulk_error', 'Bulk update failed');
+		} finally {
+			bulkProcessing = false;
+		}
+	}
+
+	const bulkActionsList: BulkAction[] = [
+		{
+			label: t('personas.bulk_pause', 'Pause'),
+			onclick: (ids: Set<string>) => bulkUpdateStatus(ids, 'paused'),
+			disabled: (_ids: Set<string>, rows?: any[]) => {
+				// Only allow pausing when at least one selected persona is active.
+				return !rows?.some((r: Persona) => r.status === 'active');
+			}
+		},
+		{
+			label: t('personas.bulk_retire', 'Retire'),
+			onclick: (ids: Set<string>) => bulkUpdateStatus(ids, 'retired'),
+			variant: 'destructive',
+			disabled: (_ids: Set<string>, rows?: any[]) => {
+				// Only allow retiring when at least one selected persona is not retired.
+				return !rows?.some((r: Persona) => r.status !== 'retired');
+			}
+		}
+	];
+
 	async function submitEdit() {
 		if (!editingPersona) return;
 		savingEdit = true;
 		message = '';
 		try {
 			const body: UpdateInput = { ...editForm };
-			// Don't send empty voice_prompt as an update
-			if (body.voice_prompt === '') delete body.voice_prompt;
+			// BUG-012: Send voice_prompt as empty string (not deleted) so the
+			// backend sets it to '' (clearing it). Previously the field was
+			// deleted when empty, causing COALESCE to keep the old value —
+			// the admin could never clear a voice_prompt once set.
 			const result = await api(`/admin/personas/${editingPersona.id}`, { method: 'PATCH', body });
 			if (result.ok) {
 				messageType = 'success';
@@ -317,6 +375,7 @@
 		{
 			key: 'profile_name',
 			label: t('personas.name', 'Name'),
+			sortable: true,
 			render: (value: string) => `<span class="text-foreground font-medium">${value ?? '—'}</span>`
 		},
 		{
@@ -343,8 +402,15 @@
 			}
 		},
 		{
+			key: 'total_actions',
+			label: t('personas.total_actions', 'Actions'),
+			sortable: true,
+			render: (value: number) => `<span class="text-muted-foreground text-xs">${value ?? 0}</span>`
+		},
+		{
 			key: 'created_at',
 			label: t('personas.created', 'Created'),
+			sortable: true,
 			render: (value: string) => `<span class="text-muted-foreground text-xs">${value ? new Date(value).toLocaleDateString() : '—'}</span>`
 		}
 	]);
@@ -412,6 +478,11 @@
 		{columns}
 		actions={rowActions}
 		serverSide
+		searchable
+		searchPlaceholder={t('personas.search_placeholder', 'Search by name or username...')}
+		onsearch={(q) => { searchQuery = q; listPage = 0; load(); }}
+		onsortchange={(s) => { sortKey = s.key ?? 'created_at'; sortDir = s.dir; listPage = 0; load(); }}
+		bulkActionsList={canManage ? bulkActionsList : undefined}
 		page={listPage}
 		totalPages={listTotalPages}
 		pageSize={listPageSize}
@@ -540,7 +611,7 @@
 								<input
 									id={`persona-actions-${idx}`}
 									type="number"
-									min="1"
+									min="0"
 									max="100"
 									class="w-full rounded-md border px-3 py-1.5 text-sm"
 									style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
@@ -557,6 +628,65 @@
 									style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
 									bind:value={persona.activity_policy!.min_content_age_hours}
 								/>
+							</div>
+							<div class="sm:col-span-2">
+								<label for={`persona-content-types-${idx}`} class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('personas.eligible_content_types', 'Eligible Content Types (comma-separated)')}</label>
+								<input
+									id={`persona-content-types-${idx}`}
+									type="text"
+									class="w-full rounded-md border px-3 py-1.5 text-sm"
+									style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+									value={persona.activity_policy!.eligible_content_types.join(', ')}
+									oninput={(e) => { persona.activity_policy!.eligible_content_types = (e.target as HTMLInputElement).value.split(',').map(s => s.trim()).filter(Boolean); }}
+									placeholder="blog_post, guide, discussion"
+								/>
+							</div>
+							<div class="sm:col-span-2">
+								<label for={`persona-spaces-${idx}`} class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('personas.eligible_spaces', 'Eligible Spaces (comma-separated)')}</label>
+								<input
+									id={`persona-spaces-${idx}`}
+									type="text"
+									class="w-full rounded-md border px-3 py-1.5 text-sm"
+									style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+									value={persona.activity_policy!.eligible_spaces.join(', ')}
+									oninput={(e) => { persona.activity_policy!.eligible_spaces = (e.target as HTMLInputElement).value.split(',').map(s => s.trim()).filter(Boolean); }}
+									placeholder="lagos, abuja"
+								/>
+							</div>
+							<div class="sm:col-span-2">
+								<label for={`persona-active-hours-${idx}`} class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('personas.active_hours_utc', 'Active Hours UTC (start-end)')}</label>
+								<div class="flex items-center gap-2">
+									<input
+										id={`persona-active-hours-start-${idx}`}
+										type="number"
+										min="0"
+										max="23"
+										class="w-full rounded-md border px-3 py-1.5 text-sm"
+										style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+										bind:value={persona.activity_policy!.active_hours_utc[0]}
+										placeholder="8"
+									/>
+									<span class="text-xs" style="color: var(--color-muted)">—</span>
+									<input
+										id={`persona-active-hours-end-${idx}`}
+										type="number"
+										min="0"
+										max="23"
+										class="w-full rounded-md border px-3 py-1.5 text-sm"
+										style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+										bind:value={persona.activity_policy!.active_hours_utc[1]}
+										placeholder="22"
+									/>
+								</div>
+							</div>
+							<div class="flex items-center gap-2 sm:col-span-2">
+								<input
+									id={`persona-avoid-own-${idx}`}
+									type="checkbox"
+									class="rounded"
+									bind:checked={persona.activity_policy!.avoid_own_content}
+								/>
+								<label for={`persona-avoid-own-${idx}`} class="text-xs" style="color: var(--color-muted)">{t('personas.avoid_own_content', 'Avoid own content')}</label>
 							</div>
 						</div>
 					</details>
@@ -708,7 +838,7 @@
 							<input
 								id="edit-persona-actions"
 								type="number"
-								min="1"
+								min="0"
 								max="100"
 								class="w-full rounded-md border px-3 py-1.5 text-sm"
 								style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
@@ -725,6 +855,56 @@
 								style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
 								bind:value={editForm.activity_policy.min_content_age_hours}
 							/>
+						</div>
+						<div class="sm:col-span-2">
+							<label for="edit-persona-content-types" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('personas.eligible_content_types', 'Eligible Content Types (comma-separated)')}</label>
+							<input
+								id="edit-persona-content-types"
+								type="text"
+								class="w-full rounded-md border px-3 py-1.5 text-sm"
+								style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+								value={editForm.activity_policy.eligible_content_types.join(', ')}
+								oninput={(e) => { editForm.activity_policy!.eligible_content_types = (e.target as HTMLInputElement).value.split(',').map(s => s.trim()).filter(Boolean); }}
+								placeholder="blog_post, guide, discussion"
+							/>
+						</div>
+						<div class="sm:col-span-2">
+							<label for="edit-persona-spaces" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('personas.eligible_spaces', 'Eligible Spaces (comma-separated)')}</label>
+							<input
+								id="edit-persona-spaces"
+								type="text"
+								class="w-full rounded-md border px-3 py-1.5 text-sm"
+								style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+								value={editForm.activity_policy.eligible_spaces.join(', ')}
+								oninput={(e) => { editForm.activity_policy!.eligible_spaces = (e.target as HTMLInputElement).value.split(',').map(s => s.trim()).filter(Boolean); }}
+								placeholder="lagos, abuja"
+							/>
+						</div>
+						<div class="sm:col-span-2">
+							<label for="edit-persona-active-hours" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('personas.active_hours_utc', 'Active Hours UTC (start-end)')}</label>
+							<div class="flex items-center gap-2">
+								<input
+									id="edit-persona-active-hours-start"
+									type="number"
+									min="0"
+									max="23"
+									class="w-full rounded-md border px-3 py-1.5 text-sm"
+									style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+									bind:value={editForm.activity_policy.active_hours_utc[0]}
+									placeholder="8"
+								/>
+								<span class="text-xs" style="color: var(--color-muted)">—</span>
+								<input
+									id="edit-persona-active-hours-end"
+									type="number"
+									min="0"
+									max="23"
+									class="w-full rounded-md border px-3 py-1.5 text-sm"
+									style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+									bind:value={editForm.activity_policy.active_hours_utc[1]}
+									placeholder="22"
+								/>
+							</div>
 						</div>
 						<div class="flex items-center gap-2 sm:col-span-2">
 							<input

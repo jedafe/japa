@@ -2,15 +2,24 @@ package extractor
 
 import (
 	"context"
+	"crypto/sha256"
 	_ "embed"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/ai"
 	"github.com/jedafe/japa/internal/intelligence/extractor/schemas"
+	"github.com/valkey-io/valkey-go/valkeycompat"
 )
+
+// extractionCacheTTL is the TTL for the LLM extraction result cache (24
+// hours per valkey-keys-catalog Section INTEL).
+const extractionCacheTTL = 24 * time.Hour
 
 // AIGateway is the minimal interface the extractor needs from §20. The
 // concrete *ai.Dispatcher satisfies this interface; tests substitute a mock.
@@ -20,6 +29,12 @@ type AIGateway interface {
 
 // Extractor calls the AI gateway to extract structured entity fields from
 // source text, then validates the output against the entity schema.
+//
+// When a Valkey client is provided via WithCache, extraction results are
+// cached under jc:intel:extraction_cache:{tenant_id}:{content_hash} (24hr
+// TTL) so identical source content skips the LLM call on subsequent crawls
+// (BUG-18 fix, valkey-keys-catalog Section INTEL, tenant-scoped per
+// ADR-112 Amendment 2).
 type Extractor struct {
 	gateway     AIGateway
 	category    string
@@ -28,6 +43,8 @@ type Extractor struct {
 	maxTokens   int
 	maxRetries  int
 	timeout     time.Duration
+	rdb         valkeycompat.Cmdable
+	tenantID    pgtype.UUID
 }
 
 // ExtractorOption configures an Extractor.
@@ -64,6 +81,23 @@ func WithCategory(c string) ExtractorOption {
 	return func(e *Extractor) { e.category = c }
 }
 
+// WithCache enables Valkey-backed extraction result caching. Identical
+// source content (by SHA-256 hash) skips the LLM call and returns the
+// cached extraction result. The cache key is
+// jc:intel:extraction_cache:{tenant_id}:{content_hash} with a 24hr TTL
+// per valkey-keys-catalog Section INTEL (BUG-18 fix, tenant-scoped per
+// ADR-112 Amendment 2).
+func WithCache(rdb valkeycompat.Cmdable) ExtractorOption {
+	return func(e *Extractor) { e.rdb = rdb }
+}
+
+// WithTenantID sets the tenant UUID used to scope all Valkey cache keys.
+// Required when WithCache is used so that cache entries are isolated per
+// tenant (ADR-112 Amendment 2 — tenant scoping).
+func WithTenantID(tenantID pgtype.UUID) ExtractorOption {
+	return func(e *Extractor) { e.tenantID = tenantID }
+}
+
 // NewExtractor creates an Extractor backed by the given AI gateway.
 func NewExtractor(gw AIGateway, opts ...ExtractorOption) *Extractor {
 	e := &Extractor{
@@ -91,7 +125,27 @@ type ExtractResult struct {
 // Extract calls the AI gateway with the scholarship prompt, parses the JSON
 // response, and validates it against the scholarship schema. It retries up to
 // maxRetries times when the LLM returns malformed JSON.
+//
+// When a Valkey client is configured (via WithCache), the extraction result
+// is cached under jc:intel:extraction_cache:{tenant_id}:{content_hash}
+// (24hr TTL) so identical source content skips the LLM call on subsequent
+// crawls (BUG-18 fix, valkey-keys-catalog Section INTEL, tenant-scoped per
+// ADR-112 Amendment 2).
 func (e *Extractor) Extract(ctx context.Context, schema schemas.EntitySchema, sourceURL, sourceType, sourceText string) (ExtractResult, error) {
+	// Check extraction cache (BUG-18 fix). The cache key is the SHA-256 of
+	// the source text + entity type, so identical content across re-crawls
+	// returns the cached extraction without an LLM call.
+	if e.rdb != nil {
+		cacheKey := e.extractionCacheKey(schema.EntityType, sourceText)
+		if cached, err := e.rdb.Get(ctx, cacheKey).Result(); err == nil {
+			var result ExtractResult
+			if err := json.Unmarshal([]byte(cached), &result); err == nil {
+				return result, nil
+			}
+			// Corrupt cache — fall through to LLM call.
+		}
+	}
+
 	prompt, err := buildPrompt(schema, sourceURL, sourceType, sourceText)
 	if err != nil {
 		return ExtractResult{}, err
@@ -122,10 +176,29 @@ func (e *Extractor) Extract(ctx context.Context, schema schemas.EntitySchema, so
 		}
 
 		cleaned, verrs := Validate(ext, schema)
-		return ExtractResult{Extraction: cleaned, Errors: verrs}, nil
+		result := ExtractResult{Extraction: cleaned, Errors: verrs}
+
+		// Cache the successful extraction (BUG-18 fix).
+		if e.rdb != nil {
+			if encoded, err := json.Marshal(result); err == nil {
+				e.rdb.Set(ctx, e.extractionCacheKey(schema.EntityType, sourceText), string(encoded), extractionCacheTTL)
+			}
+		}
+
+		return result, nil
 	}
 
-	return ExtractResult{}, fmt.Errorf("extractor: failed after %d attempts: %w", e.maxRetries+1, lastErr)
+	return ExtractResult{}, fmt.Errorf("extractor: %w (last error: %v)", ErrExtractionRetriesExhausted, lastErr)
+}
+
+// extractionCacheKey returns the Valkey cache key for an extraction result.
+// The key is jc:intel:extraction_cache:{tenant_id}:{content_hash} where
+// content_hash is the SHA-256 of the entity type + source text, ensuring
+// identical content across re-crawls hits the cache. The tenant_id scopes
+// the cache per tenant (ADR-112 Amendment 2).
+func (e *Extractor) extractionCacheKey(entityType, sourceText string) string {
+	h := sha256.Sum256([]byte(entityType + ":" + sourceText))
+	return "jc:intel:extraction_cache:" + e.tenantID.String() + ":" + hex.EncodeToString(h[:])
 }
 
 // stripFences removes surrounding markdown code fences (```json ... ```)
@@ -150,6 +223,15 @@ func stripFences(s string) string {
 // ErrEmptyContent is returned when the AI gateway returns an empty content
 // body that cannot be parsed.
 var ErrEmptyContent = errors.New("extractor: AI gateway returned empty content")
+
+// ErrExtractionRetriesExhausted is returned when the AI gateway returns
+// malformed JSON on every attempt up to maxRetries. Per the intelligence
+// design spec, this should route the intel record to REVIEW_REQUIRED
+// status rather than failing the Asynq task (which would retry the whole
+// task and waste tokens). The worker's HandleIntelExtract checks for this
+// sentinel and sets the record status to 'review_required' instead of
+// returning an error (BUG-16 fix).
+var ErrExtractionRetriesExhausted = errors.New("extractor: retries exhausted on malformed JSON")
 
 //go:embed prompts/scholarship.txt
 var scholarshipPrompt string

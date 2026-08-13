@@ -22,6 +22,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -169,6 +170,11 @@ type agentRateLimiterAdapter struct {
 // Incr increments the counter at key and returns the new value.
 func (a *agentRateLimiterAdapter) Incr(ctx context.Context, key string) (int64, error) {
 	return a.rdb.Incr(ctx, key).Result()
+}
+
+// IncrByFloat increments the float counter at key by increment and returns the new value.
+func (a *agentRateLimiterAdapter) IncrByFloat(ctx context.Context, key string, increment float64) (float64, error) {
+	return a.rdb.IncrByFloat(ctx, key, increment).Result()
 }
 
 // Expire sets the TTL on key in seconds.
@@ -870,12 +876,14 @@ type studioDraftProcessorAdapter struct {
 type studioProcessorService interface {
 	GetJob(ctx context.Context, tenantID, id pgtype.UUID) (studio.Job, error)
 	MarkJobGenerating(ctx context.Context, tenantID, jobID pgtype.UUID) error
-	MarkJobGenerated(ctx context.Context, tenantID, jobID, draftContentID, reviewID pgtype.UUID) error
+	MarkJobGenerated(ctx context.Context, tenantID, jobID, draftContentID pgtype.UUID) error
+	MarkJobRoutedToReview(ctx context.Context, tenantID, jobID, reviewID pgtype.UUID) error
 	MarkJobFailed(ctx context.Context, tenantID, jobID pgtype.UUID, errMsg string) error
 	MarkJobPublished(ctx context.Context, tenantID, jobID, draftContentID pgtype.UUID) error
 	ShouldAutoPublish(ctx context.Context, tenantID pgtype.UUID, contentType, guideCategory string) bool
 	RunBatch(ctx context.Context, tenantID, batchID pgtype.UUID) error
 	RetryFailed(ctx context.Context, tenantID, jobID pgtype.UUID) error
+	RetryBatchFailed(ctx context.Context, tenantID, batchID pgtype.UUID) (int, error)
 }
 
 // RunBatch delegates to the studio service.
@@ -886,6 +894,11 @@ func (a *studioDraftProcessorAdapter) RunBatch(ctx context.Context, tenantID, ba
 // RetryFailed delegates to the studio service.
 func (a *studioDraftProcessorAdapter) RetryFailed(ctx context.Context, tenantID, jobID pgtype.UUID) error {
 	return a.studio.RetryFailed(ctx, tenantID, jobID)
+}
+
+// RetryBatchFailed delegates to the studio service for batch-level retry.
+func (a *studioDraftProcessorAdapter) RetryBatchFailed(ctx context.Context, tenantID, batchID pgtype.UUID) (int, error) {
+	return a.studio.RetryBatchFailed(ctx, tenantID, batchID)
 }
 
 // GenerateJob runs the §75 single-job generation pipeline:
@@ -907,8 +920,15 @@ func (a *studioDraftProcessorAdapter) GenerateJob(ctx context.Context, tenantID,
 		return nil
 	}
 
-	// 1. Mark generating.
+	// 1. Mark generating (compare-and-swap: only succeeds if status is still
+	// 'queued'). If another worker already claimed this job, skip silently —
+	// this prevents duplicate draft generation from concurrent tasks.
 	if err := a.studio.MarkJobGenerating(ctx, tenantID, jobID); err != nil {
+		if errors.Is(err, studio.ErrJobAlreadyGenerating) {
+			slog.Info("studio: generate: job already claimed by another worker, skipping",
+				"job_id", jobID)
+			return nil
+		}
 		return fmt.Errorf("studio: generate: mark generating: %w", err)
 	}
 
@@ -971,8 +991,9 @@ func (a *studioDraftProcessorAdapter) GenerateJob(ctx context.Context, tenantID,
 		if _, perr := a.contentSvc.UpdateContentStatus(ctx, row.ID, tenantID, "published"); perr != nil {
 			slog.Warn("studio: generate: auto-publish failed, routing to review",
 				"job_id", jobID, "content_id", row.ID, "error", perr)
+			// Mark draft_ready first (ADR-076 §2 step 7), then route to review.
+			_ = a.studio.MarkJobGenerated(ctx, tenantID, jobID, row.ID)
 			a.createStudioReview(ctx, tenantID, row.ID, job.ContentType, fvJSON)
-			_ = a.studio.MarkJobGenerated(ctx, tenantID, jobID, row.ID, pgtype.UUID{})
 			return nil
 		}
 		if err := a.studio.MarkJobPublished(ctx, tenantID, jobID, row.ID); err != nil {
@@ -982,6 +1003,12 @@ func (a *studioDraftProcessorAdapter) GenerateJob(ctx context.Context, tenantID,
 		return nil
 	}
 
+	// Step 7 (ADR-076 §2): mark draft_ready with the draft_content_id.
+	if err := a.studio.MarkJobGenerated(ctx, tenantID, jobID, row.ID); err != nil {
+		return fmt.Errorf("studio: generate: mark generated: %w", err)
+	}
+
+	// Step 8 (ADR-076 §2): route to the HITL review queue.
 	var reviewID pgtype.UUID
 	if a.aiStore != nil {
 		review, rerr := a.aiStore.CreateHITLReview(ctx, ai.HITLReview{
@@ -993,14 +1020,15 @@ func (a *studioDraftProcessorAdapter) GenerateJob(ctx context.Context, tenantID,
 			Source:      ai.HITLSourceStudio,
 		})
 		if rerr != nil {
-			slog.Warn("studio: generate: create HITL review failed, draft remains",
+			slog.Warn("studio: generate: create HITL review failed, draft remains in draft_ready",
 				"job_id", jobID, "content_id", row.ID, "error", rerr)
 		} else {
 			reviewID = review.ID
+			if err := a.studio.MarkJobRoutedToReview(ctx, tenantID, jobID, reviewID); err != nil {
+				slog.Warn("studio: generate: mark routed to review failed",
+					"job_id", jobID, "review_id", reviewID, "error", err)
+			}
 		}
-	}
-	if err := a.studio.MarkJobGenerated(ctx, tenantID, jobID, row.ID, reviewID); err != nil {
-		return fmt.Errorf("studio: generate: mark generated: %w", err)
 	}
 	slog.Info("studio: generate: draft routed to review",
 		"job_id", jobID, "content_id", row.ID, "review_id", reviewID)

@@ -698,7 +698,7 @@ func (e *Executor) finalizeToolCall(ctx context.Context, p ExecuteParams, call T
 	logCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer cancel()
 
-	latency := int32(time.Since(start).Milliseconds())
+	latency := int32(time.Since(start).Milliseconds()) // #nosec G115 -- bounded by request duration (max ~24 days)
 
 	args := []byte(call.Arguments)
 	if len(args) == 0 {

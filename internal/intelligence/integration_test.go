@@ -67,6 +67,7 @@ type mockPromoterStore struct {
 	source     gen.IntelSource
 	existing   gen.Scholarship
 	hasExisting bool
+	countrySpaceID pgtype.UUID // BUG-005: country space id returned by GetCountrySpace
 
 	createContentCalls     []gen.CreateContentParams
 	createScholarshipCalls []gen.CreateScholarshipParams
@@ -75,28 +76,35 @@ type mockPromoterStore struct {
 	promotedCalls          []gen.UpdateIntelRecordPromotedParams
 }
 
-func (m *mockPromoterStore) GetIntelRecord(ctx context.Context, id pgtype.UUID) (gen.IntelRecord, error) {
+func (m *mockPromoterStore) GetIntelRecord(ctx context.Context, tenantID, id pgtype.UUID) (gen.IntelRecord, error) {
 	return m.record, nil
 }
 
-func (m *mockPromoterStore) GetIntelSource(ctx context.Context, id pgtype.UUID) (gen.IntelSource, error) {
+func (m *mockPromoterStore) GetIntelSource(ctx context.Context, tenantID, id pgtype.UUID) (gen.IntelSource, error) {
 	return m.source, nil
 }
 
-func (m *mockPromoterStore) GetScholarshipByIntelRecord(ctx context.Context, intelRecordID pgtype.UUID) (gen.Scholarship, error) {
+// GetCountrySpace returns the seeded country space id (BUG-005 fix). The
+// default zero value leaves country_space_id NULL, exercising the
+// best-effort resolution path.
+func (m *mockPromoterStore) GetCountrySpace(ctx context.Context, tenantID pgtype.UUID, countryCode string) (pgtype.UUID, error) {
+	return m.countrySpaceID, nil
+}
+
+func (m *mockPromoterStore) GetScholarshipByIntelRecord(ctx context.Context, tenantID, intelRecordID pgtype.UUID) (gen.Scholarship, error) {
 	if !m.hasExisting {
 		return gen.Scholarship{}, errors.New("pgx: no rows in result set")
 	}
 	return m.existing, nil
 }
 
-func (m *mockPromoterStore) CreateContent(ctx context.Context, arg gen.CreateContentParams) (gen.CreateContentRow, error) {
+func (m *mockPromoterStore) CreateContent(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateContentParams) (gen.CreateContentRow, error) {
 	m.createContentCalls = append(m.createContentCalls, arg)
 	id := pgtype.UUID{Bytes: uuid.New(), Valid: true}
 	return gen.CreateContentRow{ID: id, GuideCategory: arg.GuideCategory}, nil
 }
 
-func (m *mockPromoterStore) CreateScholarship(ctx context.Context, arg gen.CreateScholarshipParams) (gen.Scholarship, error) {
+func (m *mockPromoterStore) CreateScholarship(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateScholarshipParams) (gen.Scholarship, error) {
 	m.createScholarshipCalls = append(m.createScholarshipCalls, arg)
 	row := gen.Scholarship{
 		ID:                 pgtype.UUID{Bytes: uuid.New(), Valid: true},
@@ -109,19 +117,25 @@ func (m *mockPromoterStore) CreateScholarship(ctx context.Context, arg gen.Creat
 	return row, nil
 }
 
-func (m *mockPromoterStore) UpdateScholarship(ctx context.Context, arg gen.UpdateScholarshipParams) error {
+func (m *mockPromoterStore) UpdateScholarship(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateScholarshipParams) error {
 	m.updateScholarshipCalls = append(m.updateScholarshipCalls, arg)
 	return nil
 }
 
-func (m *mockPromoterStore) CreateIntelReviewLog(ctx context.Context, arg gen.CreateIntelReviewLogParams) error {
+func (m *mockPromoterStore) CreateIntelReviewLog(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateIntelReviewLogParams) error {
 	m.reviewLogCalls = append(m.reviewLogCalls, arg)
 	return nil
 }
 
-func (m *mockPromoterStore) UpdateIntelRecordPromoted(ctx context.Context, arg gen.UpdateIntelRecordPromotedParams) error {
+func (m *mockPromoterStore) UpdateIntelRecordPromoted(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateIntelRecordPromotedParams) error {
 	m.promotedCalls = append(m.promotedCalls, arg)
 	return nil
+}
+
+// WithTx runs fn with the mock itself as the TxStore (passthrough — no real
+// database in tests).
+func (m *mockPromoterStore) WithTx(ctx context.Context, fn func(promoter.TxStore) error) error {
+	return fn(m)
 }
 
 // ---------------------------------------------------------------------------
@@ -140,11 +154,24 @@ type mockRecordLister struct {
 	differentSource bool
 }
 
-func (m *mockRecordLister) GetIntelRecordByExternalKey(ctx context.Context, arg gen.GetIntelRecordByExternalKeyParams) (gen.IntelRecord, error) {
+func (m *mockRecordLister) GetIntelRecordByExternalKey(ctx context.Context, tenantID pgtype.UUID, arg gen.GetIntelRecordByExternalKeyParams) (gen.IntelRecord, error) {
 	if !m.found {
 		return gen.IntelRecord{}, pgx.ErrNoRows
 	}
 	return gen.IntelRecord{SourceID: arg.SourceID, ExternalKey: arg.ExternalKey}, nil
+}
+
+// ListIntelRecordsByExternalKey returns a cross-source lookup result for
+// the dedup CheckAcrossSources test path (BUG-20 fix). When differentSource
+// is true, it returns a record with a different source_id to simulate a
+// cross-source conflict.
+func (m *mockRecordLister) ListIntelRecordsByExternalKey(ctx context.Context, tenantID pgtype.UUID, externalKey string) ([]gen.IntelRecord, error) {
+	if !m.found || !m.differentSource {
+		return nil, nil
+	}
+	// Return a record from a different source.
+	otherSource := pgtype.UUID{Bytes: [16]byte{0xff}, Valid: true}
+	return []gen.IntelRecord{{SourceID: otherSource, ExternalKey: externalKey}}, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -539,7 +566,7 @@ func TestIntelChain_GateClassificationIntegration(t *testing.T) {
 	// --- Dedup: new record (no rows) vs update (same source re-extraction). ---
 	sourceID := newUUID()
 	newLister := &mockRecordLister{found: false}
-	dedupSvc := dedup.NewService(newLister)
+	dedupSvc := dedup.NewService(newLister, pgtype.UUID{Bytes: [16]byte{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1}, Valid: true})
 	dec, err := dedupSvc.Check(context.Background(), sourceID, "ext-key-1")
 	if err != nil {
 		t.Fatalf("dedup.Check (new): %v", err)
@@ -549,7 +576,7 @@ func TestIntelChain_GateClassificationIntegration(t *testing.T) {
 	}
 
 	updateLister := &mockRecordLister{found: true}
-	dedupSvc2 := dedup.NewService(updateLister)
+	dedupSvc2 := dedup.NewService(updateLister, pgtype.UUID{Bytes: [16]byte{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1}, Valid: true})
 	dec, err = dedupSvc2.Check(context.Background(), sourceID, "ext-key-1")
 	if err != nil {
 		t.Fatalf("dedup.Check (update): %v", err)

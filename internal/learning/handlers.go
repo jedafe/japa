@@ -34,6 +34,14 @@ type JSONLDResolver interface {
 	ResolveJSONLD(ctx context.Context, tenantID pgtype.UUID, contentType string, fields map[string]string) (json.RawMessage, error)
 }
 
+// RAGEntityIndexer is the subset of the RAG indexer that learning needs to
+// index track content into content_embeddings (§69/ADR-069). Implemented
+// by rag.Service; nil disables RAG indexing (graceful degradation).
+type RAGEntityIndexer interface {
+	IndexEntity(ctx context.Context, tenantID pgtype.UUID, entityType string, entityID pgtype.UUID, body, language string) error
+	PurgeEntity(ctx context.Context, tenantID pgtype.UUID, entityType string, entityID pgtype.UUID) error
+}
+
 // Handlers exposes HTTP endpoints for the learning platform. Each handler
 // reads tenant context from the request, parses input, delegates to the
 // store, and writes a JSON response. Guard clauses at the top of every
@@ -42,12 +50,60 @@ type Handlers struct {
 	store          *Store
 	AsynqClient    TaskEnqueueClient
 	jsonldResolver JSONLDResolver
+	ragIndexer     RAGEntityIndexer // nil disables RAG indexing (§69)
 }
 
 // NewHandlers creates a learning handler bound to the provided store. A nil
 // resolver is acceptable — JSON-LD is simply omitted when unavailable.
 func NewHandlers(store *Store, resolver JSONLDResolver) *Handlers {
 	return &Handlers{store: store, jsonldResolver: resolver}
+}
+
+// SetRAGIndexer injects the RAG indexer for embedding learning tracks into
+// content_embeddings (§69/ADR-069 BUG-001 fix). nil disables RAG indexing.
+func (h *Handlers) SetRAGIndexer(r RAGEntityIndexer) { h.ragIndexer = r }
+
+// indexTrackRAG fires-and-forgets a RAG indexing call for a learning track.
+// The body is the track title + description concatenated for embedding.
+// Errors are logged, never propagated (Rule 8).
+func (h *Handlers) indexTrackRAG(ctx context.Context, tenantID, trackID pgtype.UUID, title string, description *string, language string) {
+	if h.ragIndexer == nil {
+		return
+	}
+	text := title
+	if description != nil && *description != "" {
+		if text != "" {
+			text += "\n\n"
+		}
+		text += *description
+	}
+	if text == "" {
+		return
+	}
+	if language == "" {
+		language = "en"
+	}
+	go func() { // #nosec G118 -- fire-and-forget: request ctx is cancelled on HTTP return (Rule 8)
+		bgCtx := context.Background()
+		if err := h.ragIndexer.IndexEntity(bgCtx, tenantID, "learning_track", trackID, text, language); err != nil {
+			slog.Warn("learning: RAG index failed for track",
+				"track_id", trackID.String(), "error", err)
+		}
+	}()
+}
+
+// purgeTrackRAG fires-and-forgets a RAG purge for a deleted/unpublished track.
+func (h *Handlers) purgeTrackRAG(ctx context.Context, tenantID, trackID pgtype.UUID) {
+	if h.ragIndexer == nil {
+		return
+	}
+	go func() { // #nosec G118 -- fire-and-forget: request ctx is cancelled on HTTP return (Rule 8)
+		bgCtx := context.Background()
+		if err := h.ragIndexer.PurgeEntity(bgCtx, tenantID, "learning_track", trackID); err != nil {
+			slog.Warn("learning: RAG purge failed for track",
+				"track_id", trackID.String(), "error", err)
+		}
+	}()
 }
 
 // enqueueTrackCompletionUpdate enqueues an async track completion update task.
@@ -386,6 +442,12 @@ func (h *Handlers) CreateTrack(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// RAG indexing — fire-and-forget (§69/ADR-069 BUG-001 fix: learning
+	// tracks are part of the RAG corpus). Only index published tracks.
+	if input.IsPublished {
+		h.indexTrackRAG(r.Context(), t.ID, track.ID, input.Title, input.Description, "en")
+	}
+
 	writeJSON(w, http.StatusCreated, map[string]any{"data": track})
 }
 
@@ -418,6 +480,14 @@ func (h *Handlers) UpdateTrack(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// RAG re-indexing — fire-and-forget (§69/ADR-069 BUG-001 fix). Only
+	// published tracks are indexed; unpublished tracks are purged.
+	if input.IsPublished {
+		h.indexTrackRAG(r.Context(), t.ID, id, input.Title, input.Description, "en")
+	} else {
+		h.purgeTrackRAG(r.Context(), t.ID, id)
+	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": track})
 }
 
@@ -442,6 +512,10 @@ func (h *Handlers) DeleteTrack(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "db_error", "Failed to delete track")
 		return
 	}
+
+	// RAG purge — fire-and-forget (§69/ADR-069 BUG-001 fix: deleted tracks
+	// must not be retrievable in RAG).
+	h.purgeTrackRAG(r.Context(), t.ID, id)
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
 }
@@ -1133,7 +1207,7 @@ func parsePageSize(r *http.Request) int32 {
 	if n > MaxPageSize {
 		n = MaxPageSize
 	}
-	return int32(n)
+	return int32(n) // #nosec G109 G115 -- bounded by MaxPageSize check above
 }
 
 func parsePageSizeOffset(r *http.Request) int32 {
@@ -1141,7 +1215,7 @@ func parsePageSizeOffset(r *http.Request) int32 {
 	if n < 0 {
 		n = 0
 	}
-	return int32(n)
+	return int32(n) // #nosec G109 G115 -- bounded by non-negative check above
 }
 
 // ─── Admin Learning Extras (P5.6 — Task 14) ──────────────────────────────
@@ -1162,12 +1236,12 @@ func (h *Handlers) ListTrackEnrollments(w http.ResponseWriter, r *http.Request) 
 	limit, offset := int32(20), int32(0)
 	if v := r.URL.Query().Get("page_size"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 100 {
-			limit = int32(n)
+			limit = int32(n) // #nosec G109 G115 -- bounded by n <= 100 check above
 		}
 	}
 	if v := r.URL.Query().Get("page_offset"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
-			offset = int32(n)
+			offset = int32(n) // #nosec G109 G115 -- bounded by n >= 0 check above
 		}
 	}
 
@@ -1255,6 +1329,14 @@ func (h *Handlers) PublishTrack(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to publish track")
 		return
 	}
+
+	// RAG indexing — fire-and-forget (§69/ADR-069 BUG-001 fix: published
+	// learning tracks are part of the RAG corpus). Fetch the track text
+	// from the store for embedding.
+	if track, err := h.store.GetTrackByID(r.Context(), t.ID, trackID); err == nil && track != nil {
+		h.indexTrackRAG(r.Context(), t.ID, trackID, track.Title, track.Description, track.Language)
+	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": trackID.String(), "published": true}})
 }
 

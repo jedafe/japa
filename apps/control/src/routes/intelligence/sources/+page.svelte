@@ -85,16 +85,20 @@
 		load();
 	});
 
-	const categoryItems = $derived([
-		{ value: 'all', label: t('intel.filter_all_categories', 'All categories') },
-		{ value: 'scholarship', label: t('intel.category_scholarship', 'Scholarship') },
-		{ value: 'job', label: t('intel.category_job', 'Job') },
-		{ value: 'visa', label: t('intel.category_visa', 'Visa') },
-		{ value: 'fx', label: t('intel.category_fx', 'FX') },
-		{ value: 'remittance', label: t('intel.category_remittance', 'Remittance') },
-		{ value: 'news', label: t('intel.category_news', 'News') },
-		{ value: 'travel_alert', label: t('intel.category_travel_alert', 'Travel Alert') }
-	]);
+	const categoryItems = $derived.by(() => {
+		const items = [{ value: 'all', label: t('intel.filter_all_categories', 'All categories') }];
+		const seen = new Set<string>();
+		for (const s of sources) {
+			if (s.category && !seen.has(s.category)) {
+				seen.add(s.category);
+				items.push({
+					value: s.category,
+					label: t(`intel.category_${s.category}`, s.category)
+				});
+			}
+		}
+		return items;
+	});
 
 	let filtered = $derived(
 		sources

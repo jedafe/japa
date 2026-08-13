@@ -19,9 +19,11 @@ type StaticFetcher struct {
 	client *http.Client
 }
 
-// NewStaticFetcher returns a StaticFetcher with a 30s timeout.
+// NewStaticFetcher returns a StaticFetcher with a 30s timeout and SSRF-safe
+// transport (redirects to private IPs are blocked; response bodies are
+// capped at defaultMaxBodySize by the Fetch method).
 func NewStaticFetcher() *StaticFetcher {
-	return &StaticFetcher{client: &http.Client{Timeout: 30 * time.Second}}
+	return &StaticFetcher{client: NewSafeClient(30*time.Second, defaultMaxBodySize)}
 }
 
 // Fetch implements the Fetcher interface for static HTML sources.
@@ -38,7 +40,7 @@ func (f *StaticFetcher) Fetch(ctx context.Context, source sources.Source) (Fetch
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(NewMaxBodyReader(resp.Body, defaultMaxBodySize))
 	if err != nil {
 		return FetchResult{}, fmt.Errorf("static: read body: %w", err)
 	}

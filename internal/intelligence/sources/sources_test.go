@@ -1,6 +1,10 @@
 package sources
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/jackc/pgx/v5/pgtype"
+)
 
 func TestTrustLevelConstants(t *testing.T) {
 	if TrustLevelOfficial != 1 {
@@ -67,7 +71,7 @@ func TestCategoryConstants(t *testing.T) {
 // not-yet-wired error rather than panicking or silently succeeding.
 func TestCrawlNowStub(t *testing.T) {
 	svc := NewService(nil) // store is not touched by the stub
-	err := svc.CrawlNow(t.Context(), SourceID{})
+	err := svc.CrawlNow(t.Context(), pgtype.UUID{}, SourceID{})
 	if err == nil {
 		t.Fatal("CrawlNow: expected error, got nil")
 	}

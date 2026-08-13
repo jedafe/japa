@@ -129,6 +129,7 @@ var taskTier = func() map[string]string {
 		TypeAffiliateCreditCommission, // BUG-012: financial side effect → critical (§56)
 		TypeNotificationSendPush,      // §77 V2 — push delivery is user-facing-critical
 		TypeEmbassyDispatchAlerts,     // §91 — time-sensitive slot availability (ADR-099)
+		TypeIntelScheduleCrawls,       // §INTEL — cron entry point, must fire immediately (ADR-112)
 	} {
 		m[t] = QueueCritical
 	}
@@ -183,6 +184,16 @@ var taskTier = func() map[string]string {
 		TypeScamAlertNotifySubscribers,
 		// §51 Content Reports — notify moderation team of a new report, default tier.
 		TypeReportNotifyAdmin,
+		// §INTEL — ingestion spine tasks, default tier (ADR-112).
+		TypeIntelFetchSource,
+		TypeIntelDetectChanges,
+		TypeIntelExtract,
+		TypeIntelDedup,
+		TypeIntelPublishGate,
+		TypeIntelPromote,
+		TypeIntelPostPublish,
+		TypeIntelNotifyDiscoveries,
+		TypeIntelRetryFailedSource,
 	} {
 		m[t] = QueueDefault
 	}
@@ -240,6 +251,8 @@ var taskTier = func() map[string]string {
 		// weekly update prompt, low tier.
 		TypeVisaTimelineRefreshStats,
 		TypeVisaTimelinePromptUpdate,
+		// §INTEL — daily freshness decay cron, low tier (ADR-112).
+		TypeIntelRefreshFreshness,
 	} {
 		m[t] = QueueLow
 	}
@@ -275,6 +288,8 @@ func TaskTypeCatalog() []map[string]string {
 		{TypeDMNotifyRequest, "critical", "Notify DM request received"},
 		{TypeDMNotifyMessage, "critical", "Notify new DM message"},
 		{TypeNotificationSendPush, "critical", "Dispatch push notification to FCM/APNs for a device token (§77, ADR-074)"},
+		// §INTEL — cron entry point for intelligence crawl scheduling, critical tier (ADR-112).
+		{TypeIntelScheduleCrawls, "critical", "Cron entry point for intelligence crawl scheduling"},
 		// Default tier
 		{TypeEmailSend, "default", "Send transactional email"},
 		{TypeSearchIndexSync, "default", "Index entity in Meilisearch"},
@@ -323,6 +338,16 @@ func TaskTypeCatalog() []map[string]string {
 		{TypeCalendarSendReminders, "default", "Dispatch notifications to subscribers at 90/30/7-day marks before each published entry (§86)"},
 		// §87 Japa Stage Profiles (ADR-095) — stage-change recommendation fan-out, default tier.
 		{TypeJapaStageRecommend, "default", "Generate stage-transition recommendations on PATCH /me/japa-stage event (§87)"},
+		// §INTEL — intelligence pipeline tasks, default tier (ADR-112).
+		{TypeIntelFetchSource, "default", "Fetch raw document from a single intelligence source"},
+		{TypeIntelDetectChanges, "default", "Detect content changes vs prior crawl hash"},
+		{TypeIntelExtract, "default", "AI extraction of structured fields from raw document"},
+		{TypeIntelDedup, "default", "Dedup check via (source_id, external_key) uniqueness"},
+		{TypeIntelPublishGate, "default", "Confidence x trust-tier routing decision"},
+		{TypeIntelPromote, "default", "Promote intel record to scholarships + contents projection"},
+		{TypeIntelPostPublish, "default", "Post-publish fan-out: Meilisearch index + RAG embedding + event publish"},
+		{TypeIntelNotifyDiscoveries, "default", "Fan-out discovery notifications to country space followers"},
+		{TypeIntelRetryFailedSource, "default", "Manual retry trigger for a failed intelligence source"},
 		// Low tier
 		{TypeDigestEmail, "low", "Send digest email"},
 		{TypeSitemapGenerate, "low", "Generate sitemap XML"},
@@ -400,6 +425,8 @@ func TaskTypeCatalog() []map[string]string {
 		{TypeCalendarStalenessCheck, "low", "Mark recurring calendar entries as unverified when their staleness_check_due date has passed (§86)"},
 		// §85 Mutual Aid Board (ADR-093) — nightly expiry sweep, low tier.
 		{TypeMutualAidExpire, "low", "Expire mutual aid posts past their 30-day expires_at and notify owners 3 days before (§85)"},
+		// §INTEL — daily freshness decay cron, low tier (ADR-112).
+		{TypeIntelRefreshFreshness, "low", "Daily freshness decay + stale re-crawl enqueue"},
 	}
 
 	result := make([]map[string]string, len(tasks))

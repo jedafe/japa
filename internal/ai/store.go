@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -125,19 +126,35 @@ func (s *Store) RejectHITLReview(ctx context.Context, tenantID, reviewID, review
 	return nil
 }
 
-// ListPendingHITLReviews returns pending reviews for a tenant with offset pagination.
-func (s *Store) ListPendingHITLReviews(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]HITLReview, error) {
+// ListPendingHITLReviews returns pending reviews for a tenant with offset
+// pagination. When sourceFilter is non-empty, only reviews with that source
+// are returned (e.g. "studio" for the Studio tab, §75 Review Routing).
+func (s *Store) ListPendingHITLReviews(ctx context.Context, tenantID pgtype.UUID, sourceFilter string, limit, offset int32) ([]HITLReview, error) {
 	if limit <= 0 {
 		limit = 20
 	}
 
-	rows, err := s.read.Query(ctx, `
-		SELECT id, tenant_id, content_id, content_type, ai_output, status, created_at
-		FROM ai_hitl_reviews
-		WHERE tenant_id = $1 AND status = 'pending'
-		ORDER BY created_at DESC
-		LIMIT $2 OFFSET $3
-	`, tenantID, limit, offset)
+	var (
+		rows pgx.Rows
+		err  error
+	)
+	if sourceFilter != "" {
+		rows, err = s.read.Query(ctx, `
+			SELECT id, tenant_id, content_id, content_type, ai_output, status, source, created_at
+			FROM ai_hitl_reviews
+			WHERE tenant_id = $1 AND status = 'pending' AND source = $2
+			ORDER BY created_at DESC
+			LIMIT $3 OFFSET $4
+		`, tenantID, sourceFilter, limit, offset)
+	} else {
+		rows, err = s.read.Query(ctx, `
+			SELECT id, tenant_id, content_id, content_type, ai_output, status, source, created_at
+			FROM ai_hitl_reviews
+			WHERE tenant_id = $1 AND status = 'pending'
+			ORDER BY created_at DESC
+			LIMIT $2 OFFSET $3
+		`, tenantID, limit, offset)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("listing pending HITL reviews: %w", err)
 	}
@@ -149,7 +166,7 @@ func (s *Store) ListPendingHITLReviews(ctx context.Context, tenantID pgtype.UUID
 	for rows.Next() {
 		var r HITLReview
 		if err := rows.Scan(&r.ID, &r.TenantID, &r.ContentID, &r.ContentType,
-			&r.AIOutput, &r.Status, &r.CreatedAt); err != nil {
+			&r.AIOutput, &r.Status, &r.Source, &r.CreatedAt); err != nil {
 			return nil, fmt.Errorf("scanning HITL review: %w", err)
 		}
 
@@ -160,19 +177,30 @@ func (s *Store) ListPendingHITLReviews(ctx context.Context, tenantID pgtype.UUID
 }
 
 // CountPendingHITLReviews returns the total count of pending reviews for a
-// tenant (used for pagination metadata in the admin HITL queue).
-func (s *Store) CountPendingHITLReviews(ctx context.Context, tenantID pgtype.UUID) (int64, error) {
+// tenant (used for pagination metadata in the admin HITL queue). When
+// sourceFilter is non-empty, only reviews with that source are counted.
+func (s *Store) CountPendingHITLReviews(ctx context.Context, tenantID pgtype.UUID, sourceFilter string) (int64, error) {
 	if tenantID == (pgtype.UUID{}) {
 		return 0, errors.New("tenant_id is required")
 	}
 
 	var total int64
-	err := s.read.QueryRow(ctx, `
-		SELECT COUNT(*) FROM ai_hitl_reviews
-		WHERE tenant_id = $1 AND status = 'pending'
-	`, tenantID).Scan(&total)
-	if err != nil {
-		return 0, fmt.Errorf("counting pending HITL reviews: %w", err)
+	if sourceFilter != "" {
+		err := s.read.QueryRow(ctx, `
+			SELECT COUNT(*) FROM ai_hitl_reviews
+			WHERE tenant_id = $1 AND status = 'pending' AND source = $2
+		`, tenantID, sourceFilter).Scan(&total)
+		if err != nil {
+			return 0, fmt.Errorf("counting pending HITL reviews: %w", err)
+		}
+	} else {
+		err := s.read.QueryRow(ctx, `
+			SELECT COUNT(*) FROM ai_hitl_reviews
+			WHERE tenant_id = $1 AND status = 'pending'
+		`, tenantID).Scan(&total)
+		if err != nil {
+			return 0, fmt.Errorf("counting pending HITL reviews: %w", err)
+		}
 	}
 
 	return total, nil

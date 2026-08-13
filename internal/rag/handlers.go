@@ -147,6 +147,12 @@ func (h *Handlers) HandleStatus(w http.ResponseWriter, r *http.Request) {
 
 // HandlePurgeEntity handles DELETE /api/v1/admin/rag/entity/:type/:id —
 // purge all embeddings for a specific entity. Gated by ai.rag.manage.
+//
+// The :id parameter accepts either a UUID (purges a single entity) or the
+// sentinel "all" (purges every embedding for the given entity_type within
+// the tenant). The "all" sentinel supports the admin dashboard's by-type
+// aggregate purge, which operates at the entity-type level, not the
+// individual-entity level.
 func (h *Handlers) HandlePurgeEntity(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
@@ -163,13 +169,29 @@ func (h *Handlers) HandlePurgeEntity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	entityID, ok := scanUUIDParam(w, r, "id")
-	if !ok {
+	if h.service == nil {
+		writeError(w, http.StatusServiceUnavailable, "rag_unavailable", "RAG service not configured")
 		return
 	}
 
-	if h.service == nil {
-		writeError(w, http.StatusServiceUnavailable, "rag_unavailable", "RAG service not configured")
+	// Sentinel "all" → purge every embedding for this entity_type.
+	idParam := chi.URLParam(r, "id")
+	if idParam == "all" {
+		if err := h.service.PurgeEntityType(r.Context(), tenantID, entityType); err != nil {
+			slog.Error("rag: purge by type failed", "error", err, "entity_type", entityType)
+			writeError(w, http.StatusInternalServerError, "purge_failed", "Failed to purge entity type embeddings")
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"data": map[string]any{
+				"purged": true,
+			},
+		})
+		return
+	}
+
+	entityID, ok := scanUUIDParam(w, r, "id")
+	if !ok {
 		return
 	}
 
@@ -266,6 +288,48 @@ func (h *Handlers) HandleUpdateSettings(w http.ResponseWriter, r *http.Request) 
 			writeError(w, http.StatusBadRequest, "invalid_key", "Unknown setting key: "+key)
 			return
 		}
+
+		// Validate type + range per setting key (BUG-002 fix).
+		switch key {
+		case "enabled":
+			if _, ok := value.(bool); !ok {
+				writeError(w, http.StatusBadRequest, "invalid_value",
+					"rag.enabled must be a boolean")
+				return
+			}
+		case "embedding_model":
+			model, ok := value.(string)
+			if !ok || model == "" {
+				writeError(w, http.StatusBadRequest, "invalid_value",
+					"rag.embedding_model must be a non-empty string")
+				return
+			}
+		case "retrieval_top_k":
+			topK, ok := value.(float64)
+			if !ok {
+				writeError(w, http.StatusBadRequest, "invalid_value",
+					"rag.retrieval_top_k must be an integer")
+				return
+			}
+			if topK < 1 || topK > 50 || topK != float64(int(topK)) {
+				writeError(w, http.StatusBadRequest, "invalid_value",
+					"rag.retrieval_top_k must be an integer between 1 and 50")
+				return
+			}
+		case "chunk_max_tokens":
+			chunkMax, ok := value.(float64)
+			if !ok {
+				writeError(w, http.StatusBadRequest, "invalid_value",
+					"rag.chunk_max_tokens must be an integer")
+				return
+			}
+			if chunkMax < 50 || chunkMax > 2000 || chunkMax != float64(int(chunkMax)) {
+				writeError(w, http.StatusBadRequest, "invalid_value",
+					"rag.chunk_max_tokens must be an integer between 50 and 2000")
+				return
+			}
+		}
+
 		valueJSON, err := json.Marshal(value)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, "invalid_value", "Cannot serialize value for key: "+key)

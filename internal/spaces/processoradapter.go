@@ -727,24 +727,27 @@ func fetchWikidataEntity(ctx context.Context, qid string) (*wikidataUniversity, 
 		var countryObj struct {
 			ID string `json:"id"`
 		}
-		json.Unmarshal(claims[0].Mainsnak.Datavalue.Value, &countryObj)
-		uni.Country = countryObj.ID
+		if err := json.Unmarshal(claims[0].Mainsnak.Datavalue.Value, &countryObj); err == nil { // #nosec G104 -- best-effort Wikidata parse
+			uni.Country = countryObj.ID
+		}
 	}
 	// P571 = inception (time value: { "time": "+1891-00-00T00:00:00Z", ... })
 	if claims, ok := entity.Claims["P571"]; ok && len(claims) > 0 {
 		var timeObj struct {
 			Time string `json:"time"`
 		}
-		json.Unmarshal(claims[0].Mainsnak.Datavalue.Value, &timeObj)
-		uni.Founded = timeObj.Time
+		if err := json.Unmarshal(claims[0].Mainsnak.Datavalue.Value, &timeObj); err == nil { // #nosec G104 -- best-effort Wikidata parse
+			uni.Founded = timeObj.Time
+		}
 	}
 	// P2196 = students count (quantity value: { "amount": "+12345", ... })
 	if claims, ok := entity.Claims["P2196"]; ok && len(claims) > 0 {
 		var qtyObj struct {
 			Amount string `json:"amount"`
 		}
-		json.Unmarshal(claims[0].Mainsnak.Datavalue.Value, &qtyObj)
-		uni.Students = qtyObj.Amount
+		if err := json.Unmarshal(claims[0].Mainsnak.Datavalue.Value, &qtyObj); err == nil { // #nosec G104 -- best-effort Wikidata parse
+			uni.Students = qtyObj.Amount
+		}
 	}
 	// P856 = official website (string value)
 	if claims, ok := entity.Claims["P856"]; ok && len(claims) > 0 {

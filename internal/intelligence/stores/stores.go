@@ -7,6 +7,11 @@
 // that stamps each error with the "stores: <op>: %w" prefix so callers get a
 // consistent, traceable error chain.
 //
+// All queries are tenant-scoped (ADR-112 Amendment 2). Every wrapper method
+// takes a tenantID pgtype.UUID as its first argument (after ctx) and stamps it
+// into the sqlc query params, guaranteeing data isolation across tenants
+// regardless of what the caller populated in the params struct.
+//
 // Ref: docs/superpowers/specs/2026-08-12-japa-intelligence-system-design.md
 package stores
 
@@ -41,14 +46,30 @@ func NewStore(database *db.DB) *Store {
 	}
 }
 
+// WithTx executes fn inside a database transaction. If fn returns an error,
+// the transaction rolls back; otherwise it commits. The fn callback receives
+// a transactional *Store whose queries run against the transaction, so all
+// writes inside fn are atomic (BUG-01/02 fix: §6.2 transaction boundary).
+//
+// The transactional Store does not carry tenantID itself: the caller passes
+// tenantID to each method invoked inside fn, preserving the explicit
+// per-call tenant-scoping contract (ADR-112 Amendment 2).
+func (s *Store) WithTx(ctx context.Context, fn func(*Store) error) error {
+	return db.WithTx(ctx, s.pool.Writer, func(q *gen.Queries) error {
+		return fn(&Store{queries: q, pool: s.pool})
+	})
+}
+
 // ---------------------------------------------------------------------------
 // IntelRawDocuments
 // ---------------------------------------------------------------------------
 
 // CreateIntelRawDocument inserts a fetched raw document (headers + body) and
 // returns the persisted row, including its server-generated id and
-// retrieved_at timestamp.
-func (s *Store) CreateIntelRawDocument(ctx context.Context, arg gen.CreateIntelRawDocumentParams) (gen.IntelRawDocument, error) {
+// retrieved_at timestamp. The tenantID is stamped into the row regardless of
+// any value the caller set on arg.TenantID.
+func (s *Store) CreateIntelRawDocument(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateIntelRawDocumentParams) (gen.IntelRawDocument, error) {
+	arg.TenantID = tenantID
 	row, err := s.queries.CreateIntelRawDocument(ctx, arg)
 	if err != nil {
 		return gen.IntelRawDocument{}, fmt.Errorf("stores: create intel raw document: %w", err)
@@ -59,12 +80,29 @@ func (s *Store) CreateIntelRawDocument(ctx context.Context, arg gen.CreateIntelR
 // GetLatestIntelRawDocHash returns the content_hash of the most recently
 // retrieved raw document for a source. Callers use this to short-circuit
 // unchanged upstream content (dedup, Task 17).
-func (s *Store) GetLatestIntelRawDocHash(ctx context.Context, sourceID pgtype.UUID) (string, error) {
-	hash, err := s.queries.GetLatestIntelRawDocHash(ctx, sourceID)
+func (s *Store) GetLatestIntelRawDocHash(ctx context.Context, tenantID, sourceID pgtype.UUID) (string, error) {
+	hash, err := s.queries.GetLatestIntelRawDocHash(ctx, gen.GetLatestIntelRawDocHashParams{
+		TenantID: tenantID,
+		SourceID: sourceID,
+	})
 	if err != nil {
 		return "", fmt.Errorf("stores: get latest intel raw doc hash: %w", err)
 	}
 	return hash, nil
+}
+
+// GetIntelRawDocument fetches a single raw document by its primary key. Used
+// by the control panel moderation surface (raw content pane) to render the
+// fetched HTML/JSON/PDF body for reviewer inspection.
+func (s *Store) GetIntelRawDocument(ctx context.Context, tenantID, id pgtype.UUID) (gen.IntelRawDocument, error) {
+	row, err := s.queries.GetIntelRawDocument(ctx, gen.GetIntelRawDocumentParams{
+		TenantID: tenantID,
+		ID:       id,
+	})
+	if err != nil {
+		return gen.IntelRawDocument{}, fmt.Errorf("stores: get intel raw document: %w", err)
+	}
+	return row, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -74,12 +112,31 @@ func (s *Store) GetLatestIntelRawDocHash(ctx context.Context, sourceID pgtype.UU
 // GetIntelSource fetches a single intel source by its primary key. Used by the
 // promoter (Task 19) to resolve source_url, source_type, and trust_level for a
 // promoted projection row.
-func (s *Store) GetIntelSource(ctx context.Context, id pgtype.UUID) (gen.IntelSource, error) {
-	row, err := s.queries.GetIntelSource(ctx, id)
+func (s *Store) GetIntelSource(ctx context.Context, tenantID, id pgtype.UUID) (gen.IntelSource, error) {
+	row, err := s.queries.GetIntelSource(ctx, gen.GetIntelSourceParams{
+		TenantID: tenantID,
+		ID:       id,
+	})
 	if err != nil {
 		return gen.IntelSource{}, fmt.Errorf("stores: get intel source: %w", err)
 	}
 	return row, nil
+}
+
+// GetCountrySpace resolves the country-level geo space (§05) id for an ISO-3
+// country code via the existing GetSpaceByGeoCode query. Returns an invalid
+// pgtype.UUID (NULL) when no country space exists for the code so the caller
+// can leave scholarships.country_space_id nullable. BUG-005 fix (spec §455).
+func (s *Store) GetCountrySpace(ctx context.Context, tenantID pgtype.UUID, countryCode string) (pgtype.UUID, error) {
+	code := countryCode
+	row, err := s.queries.GetSpaceByGeoCode(ctx, gen.GetSpaceByGeoCodeParams{
+		GeoCode:  &code,
+		TenantID: tenantID,
+	})
+	if err != nil {
+		return pgtype.UUID{}, fmt.Errorf("stores: get country space: %w", err)
+	}
+	return row.ID, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -87,8 +144,10 @@ func (s *Store) GetIntelSource(ctx context.Context, id pgtype.UUID) (gen.IntelSo
 // ---------------------------------------------------------------------------
 
 // CreateIntelRecord inserts a newly extracted intel record in the
-// 'extracted' status and returns the persisted row.
-func (s *Store) CreateIntelRecord(ctx context.Context, arg gen.CreateIntelRecordParams) (gen.IntelRecord, error) {
+// 'extracted' status and returns the persisted row. The tenantID is stamped
+// into the row regardless of any value the caller set on arg.TenantID.
+func (s *Store) CreateIntelRecord(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateIntelRecordParams) (gen.IntelRecord, error) {
+	arg.TenantID = tenantID
 	row, err := s.queries.CreateIntelRecord(ctx, arg)
 	if err != nil {
 		return gen.IntelRecord{}, fmt.Errorf("stores: create intel record: %w", err)
@@ -97,8 +156,11 @@ func (s *Store) CreateIntelRecord(ctx context.Context, arg gen.CreateIntelRecord
 }
 
 // GetIntelRecord fetches a single intel record by its primary key.
-func (s *Store) GetIntelRecord(ctx context.Context, id pgtype.UUID) (gen.IntelRecord, error) {
-	row, err := s.queries.GetIntelRecord(ctx, id)
+func (s *Store) GetIntelRecord(ctx context.Context, tenantID, id pgtype.UUID) (gen.IntelRecord, error) {
+	row, err := s.queries.GetIntelRecord(ctx, gen.GetIntelRecordParams{
+		TenantID: tenantID,
+		ID:       id,
+	})
 	if err != nil {
 		return gen.IntelRecord{}, fmt.Errorf("stores: get intel record: %w", err)
 	}
@@ -107,8 +169,11 @@ func (s *Store) GetIntelRecord(ctx context.Context, id pgtype.UUID) (gen.IntelRe
 
 // GetIntelRecordByExternalKey fetches a single intel record by the
 // (source_id, external_key) natural key. Used by the dedup stage (Task 17)
-// to detect re-extractions of the same upstream entity.
-func (s *Store) GetIntelRecordByExternalKey(ctx context.Context, arg gen.GetIntelRecordByExternalKeyParams) (gen.IntelRecord, error) {
+// to detect re-extractions of the same upstream entity. The tenantID is
+// stamped into the query params regardless of any value the caller set on
+// arg.TenantID.
+func (s *Store) GetIntelRecordByExternalKey(ctx context.Context, tenantID pgtype.UUID, arg gen.GetIntelRecordByExternalKeyParams) (gen.IntelRecord, error) {
+	arg.TenantID = tenantID
 	row, err := s.queries.GetIntelRecordByExternalKey(ctx, arg)
 	if err != nil {
 		return gen.IntelRecord{}, fmt.Errorf("stores: get intel record by external key: %w", err)
@@ -116,9 +181,28 @@ func (s *Store) GetIntelRecordByExternalKey(ctx context.Context, arg gen.GetInte
 	return row, nil
 }
 
+// ListIntelRecordsByExternalKey fetches all intel records matching the given
+// external_key across ALL sources (within the tenant). Used by the dedup
+// stage's CheckAcrossSources (BUG-20 fix) to detect when the same upstream
+// entity has already been extracted from a different source — a cross-source
+// conflict that should be held for human review.
+func (s *Store) ListIntelRecordsByExternalKey(ctx context.Context, tenantID pgtype.UUID, externalKey string) ([]gen.IntelRecord, error) {
+	rows, err := s.queries.ListIntelRecordsByExternalKey(ctx, gen.ListIntelRecordsByExternalKeyParams{
+		TenantID:    tenantID,
+		ExternalKey: externalKey,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("stores: list intel records by external key: %w", err)
+	}
+	return rows, nil
+}
+
 // ListIntelRecordsByStatus returns a page of intel records filtered by
-// entity_type and status, newest extraction first.
-func (s *Store) ListIntelRecordsByStatus(ctx context.Context, arg gen.ListIntelRecordsByStatusParams) ([]gen.IntelRecord, error) {
+// entity_type and status, newest extraction first. The tenantID is stamped
+// into the query params regardless of any value the caller set on
+// arg.TenantID.
+func (s *Store) ListIntelRecordsByStatus(ctx context.Context, tenantID pgtype.UUID, arg gen.ListIntelRecordsByStatusParams) ([]gen.IntelRecord, error) {
+	arg.TenantID = tenantID
 	rows, err := s.queries.ListIntelRecordsByStatus(ctx, arg)
 	if err != nil {
 		return nil, fmt.Errorf("stores: list intel records by status: %w", err)
@@ -127,8 +211,10 @@ func (s *Store) ListIntelRecordsByStatus(ctx context.Context, arg gen.ListIntelR
 }
 
 // UpdateIntelRecordStatus sets the status of an intel record and stamps
-// last_verified_at to now().
-func (s *Store) UpdateIntelRecordStatus(ctx context.Context, arg gen.UpdateIntelRecordStatusParams) error {
+// last_verified_at to now(). The tenantID is stamped into the query params
+// regardless of any value the caller set on arg.TenantID.
+func (s *Store) UpdateIntelRecordStatus(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateIntelRecordStatusParams) error {
+	arg.TenantID = tenantID
 	if err := s.queries.UpdateIntelRecordStatus(ctx, arg); err != nil {
 		return fmt.Errorf("stores: update intel record status: %w", err)
 	}
@@ -137,8 +223,10 @@ func (s *Store) UpdateIntelRecordStatus(ctx context.Context, arg gen.UpdateIntel
 
 // UpdateIntelRecordFreshness sets the freshness score of an intel record and
 // automatically transitions the status to 'stale' when the score drops to
-// 40 or below.
-func (s *Store) UpdateIntelRecordFreshness(ctx context.Context, arg gen.UpdateIntelRecordFreshnessParams) error {
+// 40 or below. The tenantID is stamped into the query params regardless of
+// any value the caller set on arg.TenantID.
+func (s *Store) UpdateIntelRecordFreshness(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateIntelRecordFreshnessParams) error {
+	arg.TenantID = tenantID
 	if err := s.queries.UpdateIntelRecordFreshness(ctx, arg); err != nil {
 		return fmt.Errorf("stores: update intel record freshness: %w", err)
 	}
@@ -147,8 +235,10 @@ func (s *Store) UpdateIntelRecordFreshness(ctx context.Context, arg gen.UpdateIn
 
 // UpdateIntelRecordPromoted records the promoted projection row id for an
 // intel record and flips its status to 'published'. Used by the promoter
-// (Task 19).
-func (s *Store) UpdateIntelRecordPromoted(ctx context.Context, arg gen.UpdateIntelRecordPromotedParams) error {
+// (Task 19). The tenantID is stamped into the query params regardless of any
+// value the caller set on arg.TenantID.
+func (s *Store) UpdateIntelRecordPromoted(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateIntelRecordPromotedParams) error {
+	arg.TenantID = tenantID
 	if err := s.queries.UpdateIntelRecordPromoted(ctx, arg); err != nil {
 		return fmt.Errorf("stores: update intel record promoted: %w", err)
 	}
@@ -158,12 +248,32 @@ func (s *Store) UpdateIntelRecordPromoted(ctx context.Context, arg gen.UpdateInt
 // ListStaleIntelRecords returns up to limit published intel records whose
 // freshness score has decayed to 40 or below, for re-verification by the
 // freshness worker.
-func (s *Store) ListStaleIntelRecords(ctx context.Context, limit int32) ([]gen.IntelRecord, error) {
-	rows, err := s.queries.ListStaleIntelRecords(ctx, limit)
+func (s *Store) ListStaleIntelRecords(ctx context.Context, tenantID pgtype.UUID, limit int32) ([]gen.IntelRecord, error) {
+	rows, err := s.queries.ListStaleIntelRecords(ctx, gen.ListStaleIntelRecordsParams{
+		TenantID: tenantID,
+		Limit:    limit,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("stores: list stale intel records: %w", err)
 	}
 	return rows, nil
+}
+
+// CountPromotedIntelRecordsBySource returns the number of intel_records for a
+// source that have been promoted (promoted_record_id IS NOT NULL). The
+// source-delete handler uses this to enforce the spec §650 invariant
+// "promoted records preserved" — deleting a source with promoted records
+// would CASCADE-wipe the promoted scholarships + their contents guides
+// (BUG-004 fix).
+func (s *Store) CountPromotedIntelRecordsBySource(ctx context.Context, tenantID, sourceID pgtype.UUID) (int64, error) {
+	count, err := s.queries.CountPromotedIntelRecordsBySource(ctx, gen.CountPromotedIntelRecordsBySourceParams{
+		TenantID: tenantID,
+		SourceID: sourceID,
+	})
+	if err != nil {
+		return 0, fmt.Errorf("stores: count promoted intel records by source: %w", err)
+	}
+	return count, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -171,8 +281,11 @@ func (s *Store) ListStaleIntelRecords(ctx context.Context, limit int32) ([]gen.I
 // ---------------------------------------------------------------------------
 
 // CreateIntelReviewLog appends an audit entry to the intel review log for a
-// human-in-the-loop action (approve, reject, edit, override).
-func (s *Store) CreateIntelReviewLog(ctx context.Context, arg gen.CreateIntelReviewLogParams) error {
+// human-in-the-loop action (approve, reject, edit, override). The tenantID
+// is stamped into the row regardless of any value the caller set on
+// arg.TenantID.
+func (s *Store) CreateIntelReviewLog(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateIntelReviewLogParams) error {
+	arg.TenantID = tenantID
 	if err := s.queries.CreateIntelReviewLog(ctx, arg); err != nil {
 		return fmt.Errorf("stores: create intel review log: %w", err)
 	}
@@ -181,8 +294,11 @@ func (s *Store) CreateIntelReviewLog(ctx context.Context, arg gen.CreateIntelRev
 
 // ListIntelReviewLog returns the review history for an intel record,
 // newest action first.
-func (s *Store) ListIntelReviewLog(ctx context.Context, intelRecordID pgtype.UUID) ([]gen.IntelReviewLog, error) {
-	rows, err := s.queries.ListIntelReviewLog(ctx, intelRecordID)
+func (s *Store) ListIntelReviewLog(ctx context.Context, tenantID, intelRecordID pgtype.UUID) ([]gen.IntelReviewLog, error) {
+	rows, err := s.queries.ListIntelReviewLog(ctx, gen.ListIntelReviewLogParams{
+		TenantID:      tenantID,
+		IntelRecordID: intelRecordID,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("stores: list intel review log: %w", err)
 	}
@@ -194,8 +310,10 @@ func (s *Store) ListIntelReviewLog(ctx context.Context, intelRecordID pgtype.UUI
 // ---------------------------------------------------------------------------
 
 // CreateScholarship inserts a promoted scholarship projection row and
-// returns the persisted record.
-func (s *Store) CreateScholarship(ctx context.Context, arg gen.CreateScholarshipParams) (gen.Scholarship, error) {
+// returns the persisted record. The tenantID is stamped into the row
+// regardless of any value the caller set on arg.TenantID.
+func (s *Store) CreateScholarship(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateScholarshipParams) (gen.Scholarship, error) {
+	arg.TenantID = tenantID
 	row, err := s.queries.CreateScholarship(ctx, arg)
 	if err != nil {
 		return gen.Scholarship{}, fmt.Errorf("stores: create scholarship: %w", err)
@@ -204,8 +322,11 @@ func (s *Store) CreateScholarship(ctx context.Context, arg gen.CreateScholarship
 }
 
 // GetScholarship fetches a single scholarship by its primary key.
-func (s *Store) GetScholarship(ctx context.Context, id pgtype.UUID) (gen.Scholarship, error) {
-	row, err := s.queries.GetScholarship(ctx, id)
+func (s *Store) GetScholarship(ctx context.Context, tenantID, id pgtype.UUID) (gen.Scholarship, error) {
+	row, err := s.queries.GetScholarship(ctx, gen.GetScholarshipParams{
+		TenantID: tenantID,
+		ID:       id,
+	})
 	if err != nil {
 		return gen.Scholarship{}, fmt.Errorf("stores: get scholarship: %w", err)
 	}
@@ -215,8 +336,11 @@ func (s *Store) GetScholarship(ctx context.Context, id pgtype.UUID) (gen.Scholar
 // GetScholarshipByIntelRecord fetches the scholarship projection row
 // associated with a given intel record. Used by the promoter to check
 // whether a record has already been promoted.
-func (s *Store) GetScholarshipByIntelRecord(ctx context.Context, intelRecordID pgtype.UUID) (gen.Scholarship, error) {
-	row, err := s.queries.GetScholarshipByIntelRecord(ctx, intelRecordID)
+func (s *Store) GetScholarshipByIntelRecord(ctx context.Context, tenantID, intelRecordID pgtype.UUID) (gen.Scholarship, error) {
+	row, err := s.queries.GetScholarshipByIntelRecord(ctx, gen.GetScholarshipByIntelRecordParams{
+		TenantID:      tenantID,
+		IntelRecordID: intelRecordID,
+	})
 	if err != nil {
 		return gen.Scholarship{}, fmt.Errorf("stores: get scholarship by intel record: %w", err)
 	}
@@ -225,8 +349,11 @@ func (s *Store) GetScholarshipByIntelRecord(ctx context.Context, intelRecordID p
 
 // GetScholarshipByGuide fetches the scholarship projection row for a given
 // guide entry, if one has been promoted.
-func (s *Store) GetScholarshipByGuide(ctx context.Context, guideID pgtype.UUID) (gen.Scholarship, error) {
-	row, err := s.queries.GetScholarshipByGuide(ctx, guideID)
+func (s *Store) GetScholarshipByGuide(ctx context.Context, tenantID, guideID pgtype.UUID) (gen.Scholarship, error) {
+	row, err := s.queries.GetScholarshipByGuide(ctx, gen.GetScholarshipByGuideParams{
+		TenantID: tenantID,
+		GuideID:  guideID,
+	})
 	if err != nil {
 		return gen.Scholarship{}, fmt.Errorf("stores: get scholarship by guide: %w", err)
 	}
@@ -235,8 +362,11 @@ func (s *Store) GetScholarshipByGuide(ctx context.Context, guideID pgtype.UUID) 
 
 // GetScholarshipBySourceURL fetches a scholarship by its canonical
 // source_url. Used for dedup against existing promoted rows.
-func (s *Store) GetScholarshipBySourceURL(ctx context.Context, sourceURL string) (gen.Scholarship, error) {
-	row, err := s.queries.GetScholarshipBySourceURL(ctx, sourceURL)
+func (s *Store) GetScholarshipBySourceURL(ctx context.Context, tenantID pgtype.UUID, sourceURL string) (gen.Scholarship, error) {
+	row, err := s.queries.GetScholarshipBySourceURL(ctx, gen.GetScholarshipBySourceURLParams{
+		TenantID:  tenantID,
+		SourceUrl: sourceURL,
+	})
 	if err != nil {
 		return gen.Scholarship{}, fmt.Errorf("stores: get scholarship by source url: %w", err)
 	}
@@ -244,8 +374,11 @@ func (s *Store) GetScholarshipBySourceURL(ctx context.Context, sourceURL string)
 }
 
 // UpdateScholarship overwrites the mutable fields of a scholarship
-// projection row and stamps last_verified_at and updated_at to now().
-func (s *Store) UpdateScholarship(ctx context.Context, arg gen.UpdateScholarshipParams) error {
+// projection row and stamps last_verified_at and updated_at to now(). The
+// tenantID is stamped into the query params regardless of any value the
+// caller set on arg.TenantID.
+func (s *Store) UpdateScholarship(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateScholarshipParams) error {
+	arg.TenantID = tenantID
 	if err := s.queries.UpdateScholarship(ctx, arg); err != nil {
 		return fmt.Errorf("stores: update scholarship: %w", err)
 	}
@@ -253,17 +386,38 @@ func (s *Store) UpdateScholarship(ctx context.Context, arg gen.UpdateScholarship
 }
 
 // UpdateScholarshipFreshness sets the freshness score of a scholarship
-// projection row and stamps last_verified_at and updated_at to now().
-func (s *Store) UpdateScholarshipFreshness(ctx context.Context, arg gen.UpdateScholarshipFreshnessParams) error {
+// projection row and stamps last_verified_at and updated_at to now(). The
+// tenantID is stamped into the query params regardless of any value the
+// caller set on arg.TenantID.
+func (s *Store) UpdateScholarshipFreshness(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateScholarshipFreshnessParams) error {
+	arg.TenantID = tenantID
 	if err := s.queries.UpdateScholarshipFreshness(ctx, arg); err != nil {
 		return fmt.Errorf("stores: update scholarship freshness: %w", err)
 	}
 	return nil
 }
 
+// UpdateScholarshipEditorialOverrides merges admin-edited fields into the
+// scholarship's editorial_overrides JSONB and flips override_source to
+// 'editorial' (or 'mixed' if the row was previously 'auto'-overridden). This
+// is the persistence side of the "Approve with edits" / "Edit published"
+// moderation action (spec §6). The tenantID is stamped into the query params.
+func (s *Store) UpdateScholarshipEditorialOverrides(ctx context.Context, tenantID, id pgtype.UUID, overrides []byte) error {
+	if err := s.queries.UpdateScholarshipEditorialOverrides(ctx, gen.UpdateScholarshipEditorialOverridesParams{
+		TenantID: tenantID,
+		ID:       id,
+		EditorialOverrides: overrides,
+	}); err != nil {
+		return fmt.Errorf("stores: update scholarship editorial overrides: %w", err)
+	}
+	return nil
+}
+
 // ListScholarships returns a page of scholarships ordered by created_at
-// descending.
-func (s *Store) ListScholarships(ctx context.Context, arg gen.ListScholarshipsParams) ([]gen.Scholarship, error) {
+// descending. The tenantID is stamped into the query params regardless of
+// any value the caller set on arg.TenantID.
+func (s *Store) ListScholarships(ctx context.Context, tenantID pgtype.UUID, arg gen.ListScholarshipsParams) ([]gen.Scholarship, error) {
+	arg.TenantID = tenantID
 	rows, err := s.queries.ListScholarships(ctx, arg)
 	if err != nil {
 		return nil, fmt.Errorf("stores: list scholarships: %w", err)
@@ -271,9 +425,37 @@ func (s *Store) ListScholarships(ctx context.Context, arg gen.ListScholarshipsPa
 	return rows, nil
 }
 
+// ListScholarshipsKeyset returns a page of scholarships ordered by
+// (created_at DESC, id DESC), resuming after the (cursorCreatedAt, cursorID)
+// tuple for keyset pagination (spec §731-733, BUG-006 fix). When the cursor
+// timestamp is invalid (first page), the keyset clause is skipped.
+func (s *Store) ListScholarshipsKeyset(ctx context.Context, tenantID pgtype.UUID, arg gen.ListScholarshipsKeysetParams) ([]gen.Scholarship, error) {
+	arg.TenantID = tenantID
+	rows, err := s.queries.ListScholarshipsKeyset(ctx, arg)
+	if err != nil {
+		return nil, fmt.Errorf("stores: list scholarships keyset: %w", err)
+	}
+	return rows, nil
+}
+
+// ListScholarshipsBySpaces returns scholarships whose country_space_id is in
+// the given set, for the followed-countries radar feed (spec §739,
+// BUG-008b fix — replaces the per-space N+1 loop).
+func (s *Store) ListScholarshipsBySpaces(ctx context.Context, tenantID pgtype.UUID, arg gen.ListScholarshipsBySpacesParams) ([]gen.Scholarship, error) {
+	arg.TenantID = tenantID
+	rows, err := s.queries.ListScholarshipsBySpaces(ctx, arg)
+	if err != nil {
+		return nil, fmt.Errorf("stores: list scholarships by spaces: %w", err)
+	}
+	return rows, nil
+}
+
 // SearchScholarships runs the multi-filter search against the scholarships
-// projection. NULL filter values are treated as wildcards by the query.
-func (s *Store) SearchScholarships(ctx context.Context, arg gen.SearchScholarshipsParams) ([]gen.Scholarship, error) {
+// projection. NULL filter values are treated as wildcards by the query. The
+// tenantID is stamped into the query params regardless of any value the
+// caller set on arg.TenantID.
+func (s *Store) SearchScholarships(ctx context.Context, tenantID pgtype.UUID, arg gen.SearchScholarshipsParams) ([]gen.Scholarship, error) {
+	arg.TenantID = tenantID
 	rows, err := s.queries.SearchScholarships(ctx, arg)
 	if err != nil {
 		return nil, fmt.Errorf("stores: search scholarships: %w", err)
@@ -282,8 +464,10 @@ func (s *Store) SearchScholarships(ctx context.Context, arg gen.SearchScholarshi
 }
 
 // ListScholarshipsBySpace returns a page of scholarships for a given
-// country_space_id, newest first.
-func (s *Store) ListScholarshipsBySpace(ctx context.Context, arg gen.ListScholarshipsBySpaceParams) ([]gen.Scholarship, error) {
+// country_space_id, newest first. The tenantID is stamped into the query
+// params regardless of any value the caller set on arg.TenantID.
+func (s *Store) ListScholarshipsBySpace(ctx context.Context, tenantID pgtype.UUID, arg gen.ListScholarshipsBySpaceParams) ([]gen.Scholarship, error) {
+	arg.TenantID = tenantID
 	rows, err := s.queries.ListScholarshipsBySpace(ctx, arg)
 	if err != nil {
 		return nil, fmt.Errorf("stores: list scholarships by space: %w", err)
@@ -292,8 +476,10 @@ func (s *Store) ListScholarshipsBySpace(ctx context.Context, arg gen.ListScholar
 }
 
 // ListScholarshipsByCountry returns a page of scholarships for a given
-// country, newest first.
-func (s *Store) ListScholarshipsByCountry(ctx context.Context, arg gen.ListScholarshipsByCountryParams) ([]gen.Scholarship, error) {
+// country, newest first. The tenantID is stamped into the query params
+// regardless of any value the caller set on arg.TenantID.
+func (s *Store) ListScholarshipsByCountry(ctx context.Context, tenantID pgtype.UUID, arg gen.ListScholarshipsByCountryParams) ([]gen.Scholarship, error) {
+	arg.TenantID = tenantID
 	rows, err := s.queries.ListScholarshipsByCountry(ctx, arg)
 	if err != nil {
 		return nil, fmt.Errorf("stores: list scholarships by country: %w", err)
@@ -303,8 +489,8 @@ func (s *Store) ListScholarshipsByCountry(ctx context.Context, arg gen.ListSchol
 
 // CountScholarshipsByCountry returns the per-country scholarship counts,
 // used to populate the scholarship finder facet panel.
-func (s *Store) CountScholarshipsByCountry(ctx context.Context) ([]gen.CountScholarshipsByCountryRow, error) {
-	rows, err := s.queries.CountScholarshipsByCountry(ctx)
+func (s *Store) CountScholarshipsByCountry(ctx context.Context, tenantID pgtype.UUID) ([]gen.CountScholarshipsByCountryRow, error) {
+	rows, err := s.queries.CountScholarshipsByCountry(ctx, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("stores: count scholarships by country: %w", err)
 	}
@@ -317,8 +503,10 @@ func (s *Store) CountScholarshipsByCountry(ctx context.Context) ([]gen.CountScho
 
 // CreateContent inserts a contents row and returns the persisted projection.
 // Used by the promoter (Task 19) to create the guide entry that backs a
-// promoted scholarship projection row.
-func (s *Store) CreateContent(ctx context.Context, arg gen.CreateContentParams) (gen.CreateContentRow, error) {
+// promoted scholarship projection row. The tenantID is stamped into the row
+// regardless of any value the caller set on arg.TenantID.
+func (s *Store) CreateContent(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateContentParams) (gen.CreateContentRow, error) {
+	arg.TenantID = tenantID
 	row, err := s.queries.CreateContent(ctx, arg)
 	if err != nil {
 		return gen.CreateContentRow{}, fmt.Errorf("stores: create content: %w", err)

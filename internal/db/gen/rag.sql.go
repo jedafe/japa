@@ -86,6 +86,26 @@ func (q *Queries) DeleteContentEmbeddingsByEntity(ctx context.Context, arg Delet
 	return err
 }
 
+const deleteContentEmbeddingsByType = `-- name: DeleteContentEmbeddingsByType :exec
+
+DELETE FROM content_embeddings
+WHERE tenant_id = $1 AND entity_type = $2
+`
+
+type DeleteContentEmbeddingsByTypeParams struct {
+	TenantID   pgtype.UUID `json:"tenant_id"`
+	EntityType string      `json:"entity_type"`
+}
+
+// =====================================================================
+// Delete all chunks for every entity of a given type within a tenant.
+// Used by the admin by-type aggregate purge (DELETE /admin/rag/entity/:type/all).
+// =====================================================================
+func (q *Queries) DeleteContentEmbeddingsByType(ctx context.Context, arg DeleteContentEmbeddingsByTypeParams) error {
+	_, err := q.db.Exec(ctx, deleteContentEmbeddingsByType, arg.TenantID, arg.EntityType)
+	return err
+}
+
 const getContentEmbeddingStats = `-- name: GetContentEmbeddingStats :one
 
 SELECT
@@ -149,6 +169,96 @@ func (q *Queries) GetContentEmbeddingStatsByType(ctx context.Context, tenantID p
 	return items, nil
 }
 
+const listForumThreadIDsForReindex = `-- name: ListForumThreadIDsForReindex :many
+
+SELECT id, tenant_id FROM forum_threads
+WHERE tenant_id = $1
+  AND deleted_at IS NULL
+ORDER BY created_at DESC
+LIMIT $3 OFFSET $2
+`
+
+type ListForumThreadIDsForReindexParams struct {
+	TenantID   pgtype.UUID `json:"tenant_id"`
+	PageOffset int32       `json:"page_offset"`
+	PageLimit  int32       `json:"page_limit"`
+}
+
+type ListForumThreadIDsForReindexRow struct {
+	ID       pgtype.UUID `json:"id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+// =====================================================================
+// List all non-deleted forum thread IDs for a tenant (for full corpus
+// re-index). Forum threads are part of the RAG corpus (ADR-069 §2).
+// =====================================================================
+func (q *Queries) ListForumThreadIDsForReindex(ctx context.Context, arg ListForumThreadIDsForReindexParams) ([]ListForumThreadIDsForReindexRow, error) {
+	rows, err := q.db.Query(ctx, listForumThreadIDsForReindex, arg.TenantID, arg.PageOffset, arg.PageLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListForumThreadIDsForReindexRow
+	for rows.Next() {
+		var i ListForumThreadIDsForReindexRow
+		if err := rows.Scan(&i.ID, &i.TenantID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listLearningTrackIDsForReindex = `-- name: ListLearningTrackIDsForReindex :many
+
+SELECT id, tenant_id FROM learning_tracks
+WHERE tenant_id = $1
+  AND is_published = true
+ORDER BY created_at DESC
+LIMIT $3 OFFSET $2
+`
+
+type ListLearningTrackIDsForReindexParams struct {
+	TenantID   pgtype.UUID `json:"tenant_id"`
+	PageOffset int32       `json:"page_offset"`
+	PageLimit  int32       `json:"page_limit"`
+}
+
+type ListLearningTrackIDsForReindexRow struct {
+	ID       pgtype.UUID `json:"id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+// =====================================================================
+// List all published learning track IDs for a tenant (for full corpus
+// re-index). Learning tracks are part of the RAG corpus (ADR-069 §2).
+// Only published tracks are indexed; learning_tracks has no deleted_at
+// column (tracks are hard-deleted).
+// =====================================================================
+func (q *Queries) ListLearningTrackIDsForReindex(ctx context.Context, arg ListLearningTrackIDsForReindexParams) ([]ListLearningTrackIDsForReindexRow, error) {
+	rows, err := q.db.Query(ctx, listLearningTrackIDsForReindex, arg.TenantID, arg.PageOffset, arg.PageLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListLearningTrackIDsForReindexRow
+	for rows.Next() {
+		var i ListLearningTrackIDsForReindexRow
+		if err := rows.Scan(&i.ID, &i.TenantID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listPublishedContentIDsForReindex = `-- name: ListPublishedContentIDsForReindex :many
 
 SELECT id, tenant_id FROM contents
@@ -183,6 +293,50 @@ func (q *Queries) ListPublishedContentIDsForReindex(ctx context.Context, arg Lis
 	var items []ListPublishedContentIDsForReindexRow
 	for rows.Next() {
 		var i ListPublishedContentIDsForReindexRow
+		if err := rows.Scan(&i.ID, &i.TenantID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listSpaceIDsForReindex = `-- name: ListSpaceIDsForReindex :many
+
+SELECT id, tenant_id FROM spaces
+WHERE tenant_id = $1
+  AND status = 'active'
+ORDER BY created_at DESC
+LIMIT $3 OFFSET $2
+`
+
+type ListSpaceIDsForReindexParams struct {
+	TenantID   pgtype.UUID `json:"tenant_id"`
+	PageOffset int32       `json:"page_offset"`
+	PageLimit  int32       `json:"page_limit"`
+}
+
+type ListSpaceIDsForReindexRow struct {
+	ID       pgtype.UUID `json:"id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+// =====================================================================
+// List all active space IDs for a tenant (for full corpus re-index).
+// Spaces are part of the RAG corpus (ADR-069 §2).
+// =====================================================================
+func (q *Queries) ListSpaceIDsForReindex(ctx context.Context, arg ListSpaceIDsForReindexParams) ([]ListSpaceIDsForReindexRow, error) {
+	rows, err := q.db.Query(ctx, listSpaceIDsForReindex, arg.TenantID, arg.PageOffset, arg.PageLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListSpaceIDsForReindexRow
+	for rows.Next() {
+		var i ListSpaceIDsForReindexRow
 		if err := rows.Scan(&i.ID, &i.TenantID); err != nil {
 			return nil, err
 		}

@@ -83,7 +83,7 @@ func (s *Store) UpsertChunk(ctx context.Context, tenantID pgtype.UUID, entityTyp
 		TenantID:   tenantID,
 		EntityType: entityType,
 		EntityID:   entityID,
-		ChunkIndex: int32(chunk.Index),
+		ChunkIndex: int32(chunk.Index), // #nosec G115 -- chunk index, bounded by chunking logic
 		ChunkText:  chunk.Text,
 		Embedding:  &vec,
 		Language:   language,
@@ -101,6 +101,15 @@ func (s *Store) DeleteEntityEmbeddings(ctx context.Context, tenantID pgtype.UUID
 		TenantID:   tenantID,
 		EntityType: entityType,
 		EntityID:   entityID,
+	})
+}
+
+// DeleteEmbeddingsByType removes all chunks for every entity of the given
+// type within a tenant. Used by the admin by-type aggregate purge.
+func (s *Store) DeleteEmbeddingsByType(ctx context.Context, tenantID pgtype.UUID, entityType string) error {
+	return s.queries.DeleteContentEmbeddingsByType(ctx, gen.DeleteContentEmbeddingsByTypeParams{
+		TenantID:   tenantID,
+		EntityType: entityType,
 	})
 }
 
@@ -143,6 +152,69 @@ func (s *Store) ListPublishedContentIDs(ctx context.Context, tenantID pgtype.UUI
 		return nil, fmt.Errorf("rag: list published content IDs: %w", err)
 	}
 
+	results := make([]PublishedContentID, 0, len(rows))
+	for _, row := range rows {
+		results = append(results, PublishedContentID{
+			ID:       row.ID,
+			TenantID: row.TenantID,
+		})
+	}
+	return results, nil
+}
+
+// ListForumThreadIDs returns a batch of non-deleted forum thread IDs for
+// full corpus re-indexing (ADR-069 §2: forum threads are part of the corpus).
+func (s *Store) ListForumThreadIDs(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]PublishedContentID, error) {
+	rows, err := s.queries.ListForumThreadIDsForReindex(ctx, gen.ListForumThreadIDsForReindexParams{
+		TenantID:   tenantID,
+		PageLimit:  limit,
+		PageOffset: offset,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("rag: list forum thread IDs: %w", err)
+	}
+	results := make([]PublishedContentID, 0, len(rows))
+	for _, row := range rows {
+		results = append(results, PublishedContentID{
+			ID:       row.ID,
+			TenantID: row.TenantID,
+		})
+	}
+	return results, nil
+}
+
+// ListSpaceIDs returns a batch of active space IDs for full corpus
+// re-indexing (ADR-069 §2: spaces are part of the corpus).
+func (s *Store) ListSpaceIDs(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]PublishedContentID, error) {
+	rows, err := s.queries.ListSpaceIDsForReindex(ctx, gen.ListSpaceIDsForReindexParams{
+		TenantID:   tenantID,
+		PageLimit:  limit,
+		PageOffset: offset,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("rag: list space IDs: %w", err)
+	}
+	results := make([]PublishedContentID, 0, len(rows))
+	for _, row := range rows {
+		results = append(results, PublishedContentID{
+			ID:       row.ID,
+			TenantID: row.TenantID,
+		})
+	}
+	return results, nil
+}
+
+// ListLearningTrackIDs returns a batch of published learning track IDs for
+// full corpus re-indexing (ADR-069 §2: learning tracks are part of the corpus).
+func (s *Store) ListLearningTrackIDs(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]PublishedContentID, error) {
+	rows, err := s.queries.ListLearningTrackIDsForReindex(ctx, gen.ListLearningTrackIDsForReindexParams{
+		TenantID:   tenantID,
+		PageLimit:  limit,
+		PageOffset: offset,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("rag: list learning track IDs: %w", err)
+	}
 	results := make([]PublishedContentID, 0, len(rows))
 	for _, row := range rows {
 		results = append(results, PublishedContentID{

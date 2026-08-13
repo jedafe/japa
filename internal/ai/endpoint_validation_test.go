@@ -91,16 +91,17 @@ func TestValidateEndpoint_Invalid_Rejected(t *testing.T) {
 	}
 }
 
-func TestValidateEndpointAllowHTTP_HTTP_Allowed(t *testing.T) {
+func TestValidateEndpointAllowHTTP_HTTP_Loopback_Allowed(t *testing.T) {
 	t.Parallel()
 
-	// validateEndpointAllowHTTP permits HTTP for local dev proxies
-	// (Ollama, local test servers). Internal hosts are allowed with
-	// HTTP since HTTP is inherently non-production.
+	// validateEndpointAllowHTTP permits HTTP only to loopback addresses
+	// (localhost, 127.0.0.0/8, ::1) for local dev proxies (Ollama, local
+	// test servers). Non-loopback internal hosts are rejected for SSRF
+	// defense even with HTTP.
 	valid := []string{
 		"http://localhost:11434/v1/chat/completions",
 		"http://127.0.0.1:8080/v1/chat/completions",
-		"http://192.168.1.100:11434/v1/chat/completions",
+		"http://[::1]:8080/v1/chat/completions",
 		"https://api.openai.com/v1/chat/completions",
 	}
 	for _, url := range valid {
@@ -108,6 +109,29 @@ func TestValidateEndpointAllowHTTP_HTTP_Allowed(t *testing.T) {
 			t.Parallel()
 			if err := validateEndpointAllowHTTP(url); err != nil {
 				t.Errorf("validateEndpointAllowHTTP(%q) = %v, want nil", url, err)
+			}
+		})
+	}
+}
+
+func TestValidateEndpointAllowHTTP_HTTP_NonLoopbackInternal_Rejected(t *testing.T) {
+	t.Parallel()
+
+	// HTTP to non-loopback internal hosts must be rejected even with
+	// allowHTTP. This prevents SSRF to cloud metadata (169.254.169.254)
+	// and internal services (10.x, 172.16.x, 192.168.x) via HTTP.
+	internal := []string{
+		"http://169.254.169.254/latest/meta-data/", // cloud metadata
+		"http://10.0.0.1/v1/chat/completions",
+		"http://172.16.0.1/v1/chat/completions",
+		"http://192.168.1.100:11434/v1/chat/completions",
+		"http://0.0.0.0/v1/chat/completions",
+	}
+	for _, url := range internal {
+		t.Run(url, func(t *testing.T) {
+			t.Parallel()
+			if err := validateEndpointAllowHTTP(url); err == nil {
+				t.Errorf("validateEndpointAllowHTTP(%q) = nil, want error (non-loopback internal HTTP rejected)", url)
 			}
 		})
 	}
@@ -189,6 +213,40 @@ func TestIsInternalHost(t *testing.T) {
 			t.Parallel()
 			if got := isInternalHost(tc.host); got != tc.want {
 				t.Errorf("isInternalHost(%q) = %v, want %v", tc.host, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestIsLoopbackHost(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		host string
+		want bool
+	}{
+		// Loopback
+		{"localhost", true},
+		{"127.0.0.1", true},
+		{"127.0.0.2", true},
+		{"127.255.255.255", true},
+		{"::1", true},
+		{"myapp.localhost", true},
+		// Non-loopback internal (must return false)
+		{"10.0.0.1", false},
+		{"172.16.0.1", false},
+		{"192.168.1.1", false},
+		{"169.254.169.254", false},
+		{"0.0.0.0", false},
+		// Public
+		{"api.openai.com", false},
+		{"1.1.1.1", false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.host, func(t *testing.T) {
+			t.Parallel()
+			if got := isLoopbackHost(tc.host); got != tc.want {
+				t.Errorf("isLoopbackHost(%q) = %v, want %v", tc.host, got, tc.want)
 			}
 		})
 	}

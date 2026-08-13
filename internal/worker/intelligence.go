@@ -3,19 +3,38 @@ package worker
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/hibiken/asynq"
+	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/intelligence/changedetector"
 	"github.com/jedafe/japa/internal/intelligence/dedup"
 	"github.com/jedafe/japa/internal/intelligence/events"
 	"github.com/jedafe/japa/internal/intelligence/fetcher"
 	"github.com/jedafe/japa/internal/intelligence/scheduler"
+	"github.com/jedafe/japa/internal/intelligence/services"
 	"github.com/jedafe/japa/internal/intelligence/sources"
 	"github.com/jedafe/japa/internal/intelligence/stores"
 )
+
+// defaultIntelTenantID is the system tenant UUID used as the fallback tenant
+// for intelligence operations. Per ADR-112 Amendment 2, all intelligence
+// tables and Valkey keys are tenant-scoped. In a single-tenant deployment
+// (the current state), all intelligence data belongs to the default tenant
+// 00000000-0000-0000-0000-000000000001. The intel.* system_settings are
+// also seeded at this tenant level per migration 000431.
+var defaultIntelTenantID = func() pgtype.UUID {
+	var id pgtype.UUID
+	id.Bytes[15] = 1 // 00000000-0000-0000-0000-000000000001
+	id.Valid = true
+	return id
+}()
 
 // ---------------------------------------------------------------------------
 // Intelligence System (Section INTEL) — Asynq task handlers for the
@@ -88,6 +107,15 @@ type IntelExtractResult struct {
 	RawExtraction     []byte
 	ConfidenceOverall float32
 }
+
+// ErrIntelExtractionRetriesExhausted is the port-level sentinel returned by
+// the extractor adapter when the AI gateway returns malformed JSON on every
+// attempt up to maxRetries. The worker's HandleIntelExtract checks for this
+// and routes the record to REVIEW_REQUIRED instead of failing the task
+// (BUG-16 fix). The adapter wraps extractor.ErrExtractionRetriesExhausted
+// with this sentinel so the worker can detect it without importing the
+// extractor package.
+var ErrIntelExtractionRetriesExhausted = errors.New("intel: extraction retries exhausted")
 
 // Package-level dependencies for the intelligence handlers. All are nil until
 // RegisterIntelDependencies is called at server startup (Task 23).
@@ -167,38 +195,72 @@ func marshalPayload(v any) []byte {
 
 type intelSourcePayload struct {
 	SourceID string `json:"source_id"`
+	TenantID string `json:"tenant_id"`
 }
 
 type intelDetectChangesPayload struct {
-	SourceID string `json:"source_id"`
-	RawDocID string `json:"raw_doc_id"`
+	SourceID  string `json:"source_id"`
+	RawDocID  string `json:"raw_doc_id"`
+	PriorHash string `json:"prior_hash"`
+	TenantID  string `json:"tenant_id"`
 }
 
 type intelExtractPayload struct {
 	RecordID string `json:"record_id"`
 	RawDocID string `json:"raw_doc_id"`
+	TenantID string `json:"tenant_id"`
 }
 
 type intelRecordPayload struct {
 	RecordID string `json:"record_id"`
+	TenantID string `json:"tenant_id"`
 }
 
 type intelPostPublishPayload struct {
 	RecordID      string `json:"record_id"`
 	ScholarshipID string `json:"scholarship_id"`
+	TenantID      string `json:"tenant_id"`
 }
 
 type intelNotifyPayload struct {
 	ScholarshipID string `json:"scholarship_id"`
+	TenantID      string `json:"tenant_id"`
 }
 
 // ---------------------------------------------------------------------------
 // Handlers
 // ---------------------------------------------------------------------------
 
+// parseTenantID parses a tenant UUID from a payload string field. When the
+// payload does not carry a tenant_id (e.g. a legacy enqueued task), the
+// default system tenant is returned so the spine remains runnable during
+// the migration window. Per ADR-112 Amendment 2 all intelligence data is
+// tenant-scoped; new enqueues always include tenant_id.
+func parseTenantID(raw string) pgtype.UUID {
+	if raw == "" {
+		return defaultIntelTenantID
+	}
+	id, err := uuid.Parse(raw)
+	if err != nil {
+		return defaultIntelTenantID
+	}
+	return pgtype.UUID{Bytes: id, Valid: true}
+}
+
 // HandleIntelScheduleCrawls is the cron entry point for the ingestion spine.
 // It selects due sources via the scheduler and enqueues a fetch_source task
 // per due source (Section 4, step 1).
+//
+// BUG-11/12 fix: the batch size is read from system_settings
+// (intel.schedule_batch_size, default 50) instead of being hardcoded to 100.
+// The intel.enabled toggle is checked before any work — when false, the
+// handler returns nil immediately.
+//
+// BUG-13 fix: a distributed leader lock (jc:intel:scheduler_leader, SET NX
+// EX) prevents duplicate cron runs across multiple worker instances. Only
+// the instance that acquires the lock proceeds; others skip. The lock TTL
+// (5 minutes) is longer than the cron interval (15 minutes is the spec
+// default, but the actual interval is set by the Asynq scheduler config).
 func HandleIntelScheduleCrawls(ctx context.Context, t *asynq.Task) error {
 	slog.Info("task:intel:schedule_crawls")
 	if intelScheduler == nil {
@@ -206,7 +268,41 @@ func HandleIntelScheduleCrawls(ctx context.Context, t *asynq.Task) error {
 		return nil
 	}
 
-	due, err := intelScheduler.SelectDue(ctx, 100)
+	// BUG-12 fix: check intel.enabled toggle. Settings are tenant-scoped
+	// per ADR-112 Amendment 2; the default tenant is used for the cron.
+	if appSettings != nil {
+		enabled := appSettings.GetBoolOr(ctx, defaultIntelTenantID, "intel.enabled", true)
+		if !enabled {
+			slog.Info("task:intel:schedule_crawls: intel.enabled=false, skipping")
+			return nil
+		}
+	}
+
+	// BUG-13 fix: acquire leader lock to prevent duplicate cron runs across
+	// worker instances. The lock TTL (5 min) is shorter than the typical
+	// cron interval (15 min) so a crashed leader releases the lock quickly.
+	// The lock key is tenant-scoped per ADR-112 Amendment 2.
+	if rdb != nil {
+		leaderKey := fmt.Sprintf("jc:intel:scheduler_leader:%s", defaultIntelTenantID.String())
+		locked, err := rdb.SetNX(ctx, leaderKey, "1", 5*time.Minute).Result()
+		if err != nil {
+			return fmt.Errorf("task:intel:schedule_crawls: leader lock: %w", err)
+		}
+		if !locked {
+			slog.Info("task:intel:schedule_crawls: another instance holds the leader lock, skipping")
+			return nil
+		}
+		defer rdb.Del(ctx, leaderKey)
+	}
+
+	// BUG-11 fix: read batch size from system_settings (default 50 per
+	// system-settings-catalog Section INTEL) instead of hardcoding 100.
+	batchSize := 50
+	if appSettings != nil {
+		batchSize = appSettings.GetIntOr(ctx, defaultIntelTenantID, "intel.schedule_batch_size", 50)
+	}
+
+	due, err := intelScheduler.SelectDue(ctx, int32(batchSize))
 	if err != nil {
 		return fmt.Errorf("task:intel:schedule_crawls: select due: %w", err)
 	}
@@ -215,7 +311,10 @@ func HandleIntelScheduleCrawls(ctx context.Context, t *asynq.Task) error {
 		if !src.ID.Valid {
 			continue
 		}
-		payload := marshalPayload(intelSourcePayload{SourceID: src.ID.String()})
+		payload := marshalPayload(intelSourcePayload{
+			SourceID: src.ID.String(),
+			TenantID: defaultIntelTenantID.String(),
+		})
 		if payload != nil {
 			enqueueIntel(TypeIntelFetchSource, payload)
 		}
@@ -228,7 +327,7 @@ func HandleIntelScheduleCrawls(ctx context.Context, t *asynq.Task) error {
 // (Section 4, step 2).
 func HandleIntelFetchSource(ctx context.Context, t *asynq.Task) error {
 	slog.Info("task:intel:fetch_source")
-	if intelFetcher == nil || intelStores == nil {
+	if intelFetcher == nil || intelStores == nil || intelSourcesStore == nil {
 		slog.Warn("task:intel:fetch_source: dependencies not wired, skipping")
 		return nil
 	}
@@ -241,18 +340,77 @@ func HandleIntelFetchSource(ctx context.Context, t *asynq.Task) error {
 	if err != nil {
 		return fmt.Errorf("task:intel:fetch_source: %w", err)
 	}
+	tenantID := parseTenantID(p.TenantID)
 
-	// TODO(Task 23): select the fetcher adapter by source.crawl_method, run
-	// the fetch, persist the intel_raw_document via intelStores, then enqueue
-	// detect_changes with the new raw_doc_id. The adapter selection + raw-doc
-	// persistence wiring is completed in server.go.
-	slog.Info("task:intel:fetch_source: fetched", "source_id", sourceID.String())
+	// Load the source row to resolve crawl_method, source_url, and trust_level.
+	src, err := intelSourcesStore.Get(ctx, tenantID, sourceID)
+	if err != nil {
+		return fmt.Errorf("task:intel:fetch_source: load source: %w", err)
+	}
 
-	payload := marshalPayload(intelDetectChangesPayload{SourceID: p.SourceID})
+	// Capture the prior content hash BEFORE inserting the new raw doc so
+	// detect_changes can compare against the previous crawl, not the one we
+	// just persisted. An error here (no prior doc) degrades to empty string,
+	// which changedetector.Compare treats as DecisionFirstCrawl.
+	priorHash, _ := intelStores.GetLatestIntelRawDocHash(ctx, tenantID, sourceID)
+
+	// Dispatch to the composite fetcher (selects adapter by crawl_method).
+	result, err := intelFetcher.Fetch(ctx, src)
+	if err != nil {
+		// Record the failure on the source row so consecutive_failures
+		// increments and the retry_failed_source maintenance task can pick
+		// it up.
+		_ = intelSourcesStore.UpdateCrawlStatus(ctx, tenantID, gen.UpdateIntelSourceCrawlStatusParams{
+			ID:               sourceID,
+			Success:          false,
+			LastErrorMessage: strPtr(err.Error()),
+		})
+		return fmt.Errorf("task:intel:fetch_source: fetch: %w", err)
+	}
+
+	// Persist the raw document (headers + body + hash).
+	headersJSON, _ := json.Marshal(result.Headers)
+	rawDoc, err := intelStores.CreateIntelRawDocument(ctx, tenantID, gen.CreateIntelRawDocumentParams{
+		SourceID:    sourceID,
+		Url:         src.SourceUrl,
+		HttpStatus:  int32(result.HTTPStatus),
+		HttpHeaders: headersJSON,
+		ContentType: strPtr(result.ContentType),
+		Body:        result.Body,
+		ContentHash: result.ContentHash,
+	})
+	if err != nil {
+		return fmt.Errorf("task:intel:fetch_source: persist raw doc: %w", err)
+	}
+
+	// Stamp the source's crawl status as successful.
+	_ = intelSourcesStore.UpdateCrawlStatus(ctx, tenantID, gen.UpdateIntelSourceCrawlStatusParams{
+		ID:      sourceID,
+		Success: true,
+	})
+
+	slog.Info("task:intel:fetch_source: fetched",
+		"source_id", sourceID.String(), "raw_doc_id", rawDoc.ID.String(), "hash", result.ContentHash)
+
+	payload := marshalPayload(intelDetectChangesPayload{
+		SourceID:  p.SourceID,
+		RawDocID:  rawDoc.ID.String(),
+		PriorHash: priorHash,
+		TenantID:  p.TenantID,
+	})
 	if payload != nil {
 		enqueueIntel(TypeIntelDetectChanges, payload)
 	}
 	return nil
+}
+
+// strPtr returns a pointer to s. Used for nullable text columns
+// (last_error_message, content_type).
+func strPtr(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
 }
 
 // HandleIntelDetectChanges compares the freshly fetched content hash against
@@ -273,21 +431,44 @@ func HandleIntelDetectChanges(ctx context.Context, t *asynq.Task) error {
 	if err != nil {
 		return fmt.Errorf("task:intel:detect_changes: %w", err)
 	}
+	tenantID := parseTenantID(p.TenantID)
 
-	priorHash, err := intelStores.GetLatestIntelRawDocHash(ctx, sourceID)
+	// Load the freshly persisted raw document to get its content_hash.
+	rawDocID, err := scanUUID(p.RawDocID)
 	if err != nil {
-		return fmt.Errorf("task:intel:detect_changes: prior hash: %w", err)
+		return fmt.Errorf("task:intel:detect_changes: raw_doc_id: %w", err)
+	}
+	rawDoc, err := intelStores.GetIntelRawDocument(ctx, tenantID, rawDocID)
+	if err != nil {
+		return fmt.Errorf("task:intel:detect_changes: load raw doc: %w", err)
 	}
 
-	// TODO(Task 23): load the freshly persisted raw document, compare its
-	// content_hash to priorHash via changedetector.Compare, and only enqueue
-	// extract when the decision is changed. The raw-doc lookup wiring is
-	// completed in server.go.
-	slog.Info("task:intel:detect_changes: prior hash", "source_id", p.SourceID, "prior_hash", priorHash)
+	// Compare the new hash to the prior hash (passed from fetch_source).
+	decision := changedetector.Compare(rawDoc.ContentHash, p.PriorHash)
+	slog.Info("task:intel:detect_changes: decision",
+		"source_id", p.SourceID, "decision", decision.String(),
+		"new_hash", rawDoc.ContentHash, "prior_hash", p.PriorHash)
 
+	switch decision {
+	case changedetector.DecisionUnchanged:
+		// Content unchanged — update last_crawled_at only (already stamped by
+		// fetch_source) and stop the chain. No extraction needed.
+		_ = intelSourcesStore.MarkLastChanged(ctx, tenantID, sourceID)
+		return nil
+	case changedetector.DecisionChanged:
+		// Mark the source as having changed content so the promoter can
+		// detect re-extraction of an already-promoted record.
+		_ = intelSourcesStore.MarkLastChanged(ctx, tenantID, sourceID)
+	case changedetector.DecisionFirstCrawl:
+		// First crawl — no prior content to mark as changed.
+	}
+
+	// Enqueue extract with the raw doc id. The extract handler will load the
+	// raw doc text, run AI extraction, persist the intel_record, and pass the
+	// record id forward to dedup.
 	payload := marshalPayload(intelExtractPayload{
-		RecordID: p.RawDocID,
 		RawDocID: p.RawDocID,
+		TenantID: p.TenantID,
 	})
 	if payload != nil {
 		enqueueIntel(TypeIntelExtract, payload)
@@ -297,9 +478,15 @@ func HandleIntelDetectChanges(ctx context.Context, t *asynq.Task) error {
 
 // HandleIntelExtract runs AI extraction over the raw document and enqueues
 // dedup once a validated intel_record exists (Section 4, step 4).
+//
+// If the extractor returns ErrIntelExtractionRetriesExhausted (malformed
+// JSON on every attempt), the record is routed to REVIEW_REQUIRED status
+// and the task chain stops — the task returns nil (success) so Asynq does
+// not retry it and waste tokens. The record is visible in the review queue
+// for human inspection (BUG-16 fix).
 func HandleIntelExtract(ctx context.Context, t *asynq.Task) error {
 	slog.Info("task:intel:extract")
-	if intelExtractor == nil || intelStores == nil {
+	if intelExtractor == nil || intelStores == nil || intelSourcesStore == nil {
 		slog.Warn("task:intel:extract: dependencies not wired, skipping")
 		return nil
 	}
@@ -308,15 +495,85 @@ func HandleIntelExtract(ctx context.Context, t *asynq.Task) error {
 	if err := parsePayloadOrSkip(t, &p); err != nil {
 		return err
 	}
-	if _, err := scanUUID(p.RecordID); err != nil {
-		return fmt.Errorf("task:intel:extract: record_id: %w", err)
+	rawDocID, err := scanUUID(p.RawDocID)
+	if err != nil {
+		return fmt.Errorf("task:intel:extract: raw_doc_id: %w", err)
+	}
+	tenantID := parseTenantID(p.TenantID)
+
+	// Load the raw document to get the source text (body) and source id.
+	rawDoc, err := intelStores.GetIntelRawDocument(ctx, tenantID, rawDocID)
+	if err != nil {
+		return fmt.Errorf("task:intel:extract: load raw doc: %w", err)
 	}
 
-	// TODO(Task 23): load raw doc text + source URL/type, call
-	// intelExtractor.Extract, persist the resulting intel_record via
-	// intelStores.CreateIntelRecord, then enqueue dedup with the new record
-	// id. The extraction + persistence wiring is completed in server.go.
-	payload := marshalPayload(intelRecordPayload{RecordID: p.RecordID})
+	// Load the source to resolve source_url and source_type for the extractor.
+	src, err := intelSourcesStore.Get(ctx, tenantID, rawDoc.SourceID)
+	if err != nil {
+		return fmt.Errorf("task:intel:extract: load source: %w", err)
+	}
+
+	// Run AI extraction over the raw document body. The extractor adapter
+	// selects the scholarship schema internally and returns the marshalled
+	// extraction + aggregate confidence.
+	sourceText := string(rawDoc.Body)
+	result, extErr := intelExtractor.Extract(ctx, src.SourceUrl, src.SourceType, sourceText)
+	if extErr != nil {
+		if errors.Is(extErr, ErrIntelExtractionRetriesExhausted) {
+			slog.Warn("task:intel:extract: retries exhausted, routing to review", "raw_doc_id", p.RawDocID)
+			// No intel_record exists yet — create a stub record in
+			// review_required so the moderation queue shows it. The
+			// external_key is derived from the source URL + raw doc id hash
+			// so dedup can still detect it later.
+			record, cErr := intelStores.CreateIntelRecord(ctx, tenantID, gen.CreateIntelRecordParams{
+				SourceID:          rawDoc.SourceID,
+				RawDocumentID:     rawDocID,
+				EntityType:        "scholarship",
+				ExternalKey:       fmt.Sprintf("raw:%s", rawDocID.String()),
+				Extracted:         []byte(`{}`),
+				Confidence:        []byte(`{}`),
+				Evidence:          []byte(`{}`),
+				ConfidenceOverall: 0,
+			})
+			if cErr != nil {
+				return fmt.Errorf("task:intel:extract: create review record: %w", cErr)
+			}
+			if err := intelStores.UpdateIntelRecordStatus(ctx, tenantID, gen.UpdateIntelRecordStatusParams{
+				ID:     record.ID,
+				Status: "review_required",
+			}); err != nil {
+				return fmt.Errorf("task:intel:extract: set review status: %w", err)
+			}
+			return nil // do NOT retry — record is in the review queue
+		}
+		return fmt.Errorf("task:intel:extract: %w", extErr)
+	}
+
+	// Persist the intel_record. The external_key is derived from the source
+	// URL + content hash so dedup can detect same-source duplicates. The
+	// record is created with status='extracted' (the query default).
+	externalKey := fmt.Sprintf("%s|%s", src.SourceUrl, rawDoc.ContentHash)
+	record, err := intelStores.CreateIntelRecord(ctx, tenantID, gen.CreateIntelRecordParams{
+		SourceID:          rawDoc.SourceID,
+		RawDocumentID:     rawDocID,
+		EntityType:        "scholarship",
+		ExternalKey:       externalKey,
+		Extracted:         result.RawExtraction,
+		Confidence:        []byte(`{}`), // per-field confidence is inside Extracted
+		Evidence:          []byte(`{}`), // per-field evidence is inside Extracted
+		ConfidenceOverall: result.ConfidenceOverall,
+	})
+	if err != nil {
+		return fmt.Errorf("task:intel:extract: create record: %w", err)
+	}
+
+	slog.Info("task:intel:extract: extracted",
+		"record_id", record.ID.String(), "confidence", result.ConfidenceOverall)
+
+	payload := marshalPayload(intelRecordPayload{
+		RecordID: record.ID.String(),
+		TenantID: p.TenantID,
+	})
 	if payload != nil {
 		enqueueIntel(TypeIntelDedup, payload)
 	}
@@ -340,8 +597,9 @@ func HandleIntelDedup(ctx context.Context, t *asynq.Task) error {
 	if err != nil {
 		return fmt.Errorf("task:intel:dedup: %w", err)
 	}
+	tenantID := parseTenantID(p.TenantID)
 
-	record, err := intelStores.GetIntelRecord(ctx, recordID)
+	record, err := intelStores.GetIntelRecord(ctx, tenantID, recordID)
 	if err != nil {
 		return fmt.Errorf("task:intel:dedup: get record: %w", err)
 	}
@@ -352,16 +610,61 @@ func HandleIntelDedup(ctx context.Context, t *asynq.Task) error {
 	}
 	slog.Info("task:intel:dedup: result", "record_id", p.RecordID, "result", result.String())
 
-	payload := marshalPayload(intelRecordPayload{RecordID: p.RecordID})
+	// BUG-014 fix: cross-source conflict detection. When Check() returns
+	// New (no same-source record), also check whether a DIFFERENT source
+	// already claims the same external_key. If so, this is a cross-source
+	// conflict — route the record to review_required and stop the chain
+	// instead of silently creating a duplicate projection row.
+	// Ref: docs/superpowers/specs/2026-08-12-japa-intelligence-system-design.md §5 Conflict detection
+	if result == dedup.CheckResultNew {
+		crossResult, err := intelDedupService.CheckAcrossSources(ctx, record.SourceID, record.ExternalKey)
+		if err != nil {
+			return fmt.Errorf("task:intel:dedup: cross-source check: %w", err)
+		}
+		if crossResult == dedup.CheckResultConflict {
+			slog.Info("task:intel:dedup: cross-source conflict detected",
+				"record_id", p.RecordID, "external_key", record.ExternalKey)
+			if err := intelStores.UpdateIntelRecordStatus(ctx, tenantID, gen.UpdateIntelRecordStatusParams{
+				ID:     recordID,
+				Status: "review_required",
+			}); err != nil {
+				return fmt.Errorf("task:intel:dedup: set conflict review status: %w", err)
+			}
+			conflictNote := "cross-source conflict: same external_key from a different source"
+			if err := intelStores.CreateIntelReviewLog(ctx, tenantID, gen.CreateIntelReviewLogParams{
+				IntelRecordID: recordID,
+				ActorUserID:   pgtype.UUID{}, // system-generated, no human actor
+				Action:        "conflict_detected",
+				FieldChanges:  []byte(`[]`),
+				Note:          &conflictNote,
+			}); err != nil {
+				return fmt.Errorf("task:intel:dedup: write conflict review log: %w", err)
+			}
+			// Stop the chain — record is in the review queue for human action.
+			return nil
+		}
+	}
+
+	payload := marshalPayload(intelRecordPayload{
+		RecordID: p.RecordID,
+		TenantID: p.TenantID,
+	})
 	if payload != nil {
 		enqueueIntel(TypeIntelPublishGate, payload)
 	}
 	return nil
 }
 
-// HandleIntelPublishGate applies the confidence × trust-tier routing decision.
-// Auto-publish records enqueue promote; review-bound records get their status
-// set and stop here (Section 4, step 6).
+// HandleIntelPublishGate applies the confidence × trust-tier routing
+// decision. Auto-publish records enqueue promote; review-bound records get
+// their status set to 'review_required' and stop here; rejected records get
+// their status set to 'rejected' and stop here (Section 4, step 6).
+//
+// The confidence thresholds are read from system_settings per Rule 3:
+//   - intel.extraction_confidence_auto (default 0.85)
+//   - intel.extraction_confidence_review (default 0.50)
+//   - intel.extraction_confidence_reject (default 0.50)
+// The trust tier comes from the intel_source associated with the record.
 func HandleIntelPublishGate(ctx context.Context, t *asynq.Task) error {
 	slog.Info("task:intel:publish_gate")
 	if intelStores == nil {
@@ -377,22 +680,67 @@ func HandleIntelPublishGate(ctx context.Context, t *asynq.Task) error {
 	if err != nil {
 		return fmt.Errorf("task:intel:publish_gate: %w", err)
 	}
+	tenantID := parseTenantID(p.TenantID)
 
-	record, err := intelStores.GetIntelRecord(ctx, recordID)
+	record, err := intelStores.GetIntelRecord(ctx, tenantID, recordID)
 	if err != nil {
 		return fmt.Errorf("task:intel:publish_gate: get record: %w", err)
 	}
 
-	// TODO(Task 23): resolve the source's trust tier, call services.Classify
-	// with the record's confidence_overall, and branch on the GateDecision.
-	// Review-bound records get their status set via UpdateIntelRecordStatus
-	// and stop here; auto-publish records enqueue promote. The gate
-	// classification wiring is completed in server.go.
-	slog.Info("task:intel:publish_gate: routing", "record_id", p.RecordID, "confidence", record.ConfidenceOverall)
+	// Resolve the source to get its trust_level for the gate decision.
+	source, err := intelStores.GetIntelSource(ctx, tenantID, record.SourceID)
+	if err != nil {
+		return fmt.Errorf("task:intel:publish_gate: get source: %w", err)
+	}
 
-	payload := marshalPayload(intelRecordPayload{RecordID: p.RecordID})
-	if payload != nil {
-		enqueueIntel(TypeIntelPromote, payload)
+	// Read confidence thresholds from system_settings (Rule 3, BUG-07
+	// subagent finding). Defaults match system-settings-catalog Section
+	// INTEL.
+	autoThreshold := 0.85
+	reviewThreshold := 0.50
+	if appSettings != nil {
+		autoThreshold = appSettings.GetFloatOr(ctx, tenantID, "intel.extraction_confidence_auto", 0.85)
+		reviewThreshold = appSettings.GetFloatOr(ctx, tenantID, "intel.extraction_confidence_review", 0.50)
+	}
+
+	decision := services.Classify(services.GateInput{
+		ConfidenceOverall: float64(record.ConfidenceOverall),
+		TrustLevel:        source.TrustLevel,
+		AutoThreshold:     autoThreshold,
+		ReviewThreshold:   reviewThreshold,
+	})
+
+	switch decision {
+	case services.GateAutoPublish:
+		slog.Info("task:intel:publish_gate: auto-publish",
+			"record_id", p.RecordID, "confidence", record.ConfidenceOverall, "trust_level", source.TrustLevel)
+		payload := marshalPayload(intelRecordPayload{
+			RecordID: p.RecordID,
+			TenantID: p.TenantID,
+		})
+		if payload != nil {
+			enqueueIntel(TypeIntelPromote, payload)
+		}
+	case services.GateReviewRequired:
+		slog.Info("task:intel:publish_gate: review-required",
+			"record_id", p.RecordID, "confidence", record.ConfidenceOverall, "trust_level", source.TrustLevel)
+		if err := intelStores.UpdateIntelRecordStatus(ctx, tenantID, gen.UpdateIntelRecordStatusParams{
+			ID:     recordID,
+			Status: "review_required",
+		}); err != nil {
+			return fmt.Errorf("task:intel:publish_gate: set review status: %w", err)
+		}
+		// Stop the chain — record is in the review queue for human action.
+	case services.GateReject:
+		slog.Info("task:intel:publish_gate: rejected",
+			"record_id", p.RecordID, "confidence", record.ConfidenceOverall, "trust_level", source.TrustLevel)
+		if err := intelStores.UpdateIntelRecordStatus(ctx, tenantID, gen.UpdateIntelRecordStatusParams{
+			ID:     recordID,
+			Status: "rejected",
+		}); err != nil {
+			return fmt.Errorf("task:intel:publish_gate: set reject status: %w", err)
+		}
+		// Stop the chain — record is rejected, no promotion.
 	}
 	return nil
 }
@@ -431,6 +779,7 @@ func HandleIntelPromote(ctx context.Context, t *asynq.Task) error {
 	payload := marshalPayload(intelPostPublishPayload{
 		RecordID:      p.RecordID,
 		ScholarshipID: result.DomainID.String(),
+		TenantID:      p.TenantID,
 	})
 	if payload != nil {
 		enqueueIntel(TypeIntelPostPublish, payload)
@@ -457,26 +806,59 @@ func HandleIntelPostPublish(ctx context.Context, t *asynq.Task) error {
 		return fmt.Errorf("task:intel:post_publish: scholarship_id: %w", err)
 	}
 
-	// TODO(Task 23): index the scholarship in Meilisearch, generate the RAG
-	// embedding, then publish the scholarship.published domain event via
-	// intelEventPublisher. The indexing + embedding services are wired in
-	// server.go.
-	slog.Info("task:intel:post_publish: indexed + published",
+	// Publish the scholarship.published domain event. Downstream consumers
+	// (Meilisearch indexer, RAG embedding generator, notification fan-out)
+	// subscribe to this event and perform their respective side-effects.
+	// This is the event-driven architecture described in spec §6: the
+	// intelligence spine emits events, and indexing/search/notification
+	// services react to them without the spine needing direct references.
+	evtPayload, _ := json.Marshal(map[string]interface{}{
+		"scholarship_id": scholarshipID.String(),
+		"record_id":      p.RecordID,
+		"tenant_id":      p.TenantID,
+	})
+	if err := intelEventPublisher.Publish(ctx, events.DomainEvent{
+		Type:       "scholarship.published",
+		EntityType: "scholarship",
+		EntityID:   uuidPtr(scholarshipID),
+		Payload:    evtPayload,
+		OccurredAt: time.Now().UTC(),
+	}); err != nil {
+		return fmt.Errorf("task:intel:post_publish: publish event: %w", err)
+	}
+
+	slog.Info("task:intel:post_publish: event published",
 		"scholarship_id", scholarshipID.String())
 
-	payload := marshalPayload(intelNotifyPayload{ScholarshipID: p.ScholarshipID})
+	payload := marshalPayload(intelNotifyPayload{
+		ScholarshipID: p.ScholarshipID,
+		TenantID:      p.TenantID,
+	})
 	if payload != nil {
 		enqueueIntel(TypeIntelNotifyDiscoveries, payload)
 	}
 	return nil
 }
 
+// uuidPtr converts a pgtype.UUID to a google/uuid.UUID for the DomainEvent
+// EntityID field. Returns uuid.Nil if the input is invalid.
+func uuidPtr(id pgtype.UUID) uuid.UUID {
+	if !id.Valid {
+		return uuid.Nil
+	}
+	u, err := uuid.FromBytes(id.Bytes[:])
+	if err != nil {
+		return uuid.Nil
+	}
+	return u
+}
+
 // HandleIntelNotifyDiscoveries fans out discovery notifications to followers
 // of the scholarship's geo spaces (Section 4, step 9).
 func HandleIntelNotifyDiscoveries(ctx context.Context, t *asynq.Task) error {
 	slog.Info("task:intel:notify_discoveries")
-	if intelStores == nil {
-		slog.Warn("task:intel:notify_discoveries: store not wired, skipping")
+	if intelStores == nil || intelEventPublisher == nil {
+		slog.Warn("task:intel:notify_discoveries: dependencies not wired, skipping")
 		return nil
 	}
 
@@ -484,21 +866,59 @@ func HandleIntelNotifyDiscoveries(ctx context.Context, t *asynq.Task) error {
 	if err := parsePayloadOrSkip(t, &p); err != nil {
 		return err
 	}
-	if _, err := scanUUID(p.ScholarshipID); err != nil {
+	scholarshipID, err := scanUUID(p.ScholarshipID)
+	if err != nil {
 		return fmt.Errorf("task:intel:notify_discoveries: scholarship_id: %w", err)
 	}
+	tenantID := parseTenantID(p.TenantID)
 
-	// TODO(Task 23): resolve the follower audience for the scholarship's geo
-	// spaces and enqueue notification:dispatch_batch. The notification
-	// audience resolver is wired in server.go.
-	slog.Info("task:intel:notify_discoveries: enqueued follower notifications",
-		"scholarship_id", p.ScholarshipID)
+	// Load the scholarship to resolve its geo space ids. The notification
+	// system subscribes to the scholarship.discovered event and resolves
+	// the follower audience for those geo spaces internally — the spine
+	// does not need a direct reference to the follows service.
+	scholarship, err := intelStores.GetScholarship(ctx, tenantID, scholarshipID)
+	if err != nil {
+		return fmt.Errorf("task:intel:notify_discoveries: load scholarship: %w", err)
+	}
+
+	// Publish the scholarship.discovered event with the geo space id so
+	// the notification service can resolve followers of that space and
+	// create discovery notifications. This is the event-driven approach
+	// described in spec §7: the spine emits a discovery event, and the
+	// notification system reacts to it.
+	geoSpaceID := ""
+	if scholarship.CountrySpaceID.Valid {
+		geoSpaceID = scholarship.CountrySpaceID.String()
+	}
+	evtPayload, _ := json.Marshal(map[string]interface{}{
+		"scholarship_id":  scholarshipID.String(),
+		"country_space_id": geoSpaceID,
+		"country":         scholarship.Country,
+		"tenant_id":       p.TenantID,
+	})
+	if err := intelEventPublisher.Publish(ctx, events.DomainEvent{
+		Type:       "scholarship.discovered",
+		EntityType: "scholarship",
+		EntityID:   uuidPtr(scholarshipID),
+		Payload:    evtPayload,
+		OccurredAt: time.Now().UTC(),
+	}); err != nil {
+		return fmt.Errorf("task:intel:notify_discoveries: publish event: %w", err)
+	}
+
+	slog.Info("task:intel:notify_discoveries: discovery event published",
+		"scholarship_id", scholarshipID.String(), "country_space_id", geoSpaceID)
 	return nil
 }
 
-// HandleIntelRefreshFreshness is the cron entry point for freshness decay. It
-// decays freshness scores for stale intel records and re-enqueues fetch_source
-// for sources whose content is overdue (Section 4, maintenance).
+// HandleIntelRefreshFreshness is the cron entry point for freshness decay.
+// It decays freshness scores for stale intel records based on their
+// last_verified_at timestamp and re-enqueues fetch_source for sources
+// whose content is overdue (Section 4, maintenance).
+//
+// The freshness score is computed via services.FreshnessScore based on the
+// record's last_verified_at age. When the score drops to 40 or below, the
+// record is marked stale and the source is re-enqueued for a re-crawl.
 func HandleIntelRefreshFreshness(ctx context.Context, t *asynq.Task) error {
 	slog.Info("task:intel:refresh_freshness")
 	if intelStores == nil {
@@ -506,23 +926,54 @@ func HandleIntelRefreshFreshness(ctx context.Context, t *asynq.Task) error {
 		return nil
 	}
 
-	// No payload — processes all stale records.
-	stale, err := intelStores.ListStaleIntelRecords(ctx, 500)
+	// No payload — processes all stale records for the default tenant.
+	// Per ADR-112 Amendment 2, all intelligence data is tenant-scoped. The
+	// cron runs per-tenant; in a single-tenant deployment the default tenant
+	// is used. Multi-tenant deployments would enqueue one refresh task per
+	// tenant.
+	stale, err := intelStores.ListStaleIntelRecords(ctx, defaultIntelTenantID, 500)
 	if err != nil {
 		return fmt.Errorf("task:intel:refresh_freshness: list stale: %w", err)
 	}
+
+	now := time.Now()
+	reEnqueuedSources := make(map[string]bool) // dedup source re-enqueue
 
 	for _, record := range stale {
 		if !record.SourceID.Valid {
 			continue
 		}
-		// TODO(Task 23): apply services.FreshnessScore decay via
-		// intelStores.UpdateIntelRecordFreshness, then re-enqueue fetch_source
-		// for the source when the score crosses the stale threshold. The
-		// freshness decay wiring is completed in server.go.
-		slog.Info("task:intel:refresh_freshness: stale record",
-			"record_id", record.ID.String(), "freshness_score", record.FreshnessScore)
+
+		// Compute the decayed freshness score from last_verified_at.
+		newScore := int32(services.FreshnessScore(record.LastVerifiedAt.Time, now))
+
+		// Update the record's freshness score. The store method
+		// automatically transitions status to 'stale' when score <= 40.
+		if err := intelStores.UpdateIntelRecordFreshness(ctx, defaultIntelTenantID, gen.UpdateIntelRecordFreshnessParams{
+			ID:             record.ID,
+			FreshnessScore: newScore,
+		}); err != nil {
+			slog.Error("task:intel:refresh_freshness: update freshness failed",
+				"record_id", record.ID.String(), "error", err)
+			continue
+		}
+
+		// Re-enqueue fetch_source for the source (deduped — only once per
+		// source per freshness cycle, even if multiple records are stale).
+		sourceKey := record.SourceID.String()
+		if !reEnqueuedSources[sourceKey] {
+			reEnqueuedSources[sourceKey] = true
+			payload := marshalPayload(intelSourcePayload{
+				SourceID: sourceKey,
+				TenantID: defaultIntelTenantID.String(),
+			})
+			if payload != nil {
+				enqueueIntel(TypeIntelFetchSource, payload)
+			}
+		}
 	}
+	slog.Info("task:intel:refresh_freshness: processed",
+		"stale_records", len(stale), "re-enqueued_sources", len(reEnqueuedSources))
 	return nil
 }
 
@@ -544,13 +995,17 @@ func HandleIntelRetryFailedSource(ctx context.Context, t *asynq.Task) error {
 	if err != nil {
 		return fmt.Errorf("task:intel:retry_failed_source: %w", err)
 	}
+	tenantID := parseTenantID(p.TenantID)
 
 	// Verify the source exists before re-enqueuing the fetch.
-	if _, err := intelSourcesStore.Get(ctx, sourceID); err != nil {
+	if _, err := intelSourcesStore.Get(ctx, tenantID, sourceID); err != nil {
 		return fmt.Errorf("task:intel:retry_failed_source: get source: %w", err)
 	}
 
-	payload := marshalPayload(intelSourcePayload{SourceID: p.SourceID})
+	payload := marshalPayload(intelSourcePayload{
+		SourceID: p.SourceID,
+		TenantID: p.TenantID,
+	})
 	if payload != nil {
 		enqueueIntel(TypeIntelFetchSource, payload)
 	}

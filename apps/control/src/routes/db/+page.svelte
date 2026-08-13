@@ -557,6 +557,39 @@
 						</div>
 					</div>
 				</div>
+
+				{#if dbHealth.pools}
+					<div class="mt-6 overflow-hidden rounded-card border border-border-card bg-background shadow-card">
+						<div class="border-b border-border-card px-6 py-4">
+							<div class="flex items-center gap-2">
+								<Server class="h-4 w-4 text-accent-foreground" />
+								<h3 class="text-sm font-semibold text-foreground">{t('db.pool_status', 'Pool Status')}</h3>
+							</div>
+						</div>
+						<div class="px-6 py-4">
+							<div class="grid gap-4 sm:grid-cols-2">
+								<div class="flex items-center justify-between">
+									<span class="text-sm text-muted-foreground">{t('db.primary_pool', 'Primary (writer)')}</span>
+									<div class="flex items-center gap-2">
+										<StatusBadge status={dbHealth.pools.primary.reachable ? 'healthy' : 'critical'}>
+											{dbHealth.pools.primary.reachable ? t('db.reachable', 'Reachable') : t('db.unreachable', 'Unreachable')}
+										</StatusBadge>
+										<span class="text-xs font-mono text-muted-foreground">{dbHealth.pools.primary.latency_ms}ms</span>
+									</div>
+								</div>
+								<div class="flex items-center justify-between">
+									<span class="text-sm text-muted-foreground">{t('db.reader_pool', 'Reader (replica)')}</span>
+									<div class="flex items-center gap-2">
+										<StatusBadge status={dbHealth.pools.reader.reachable ? 'healthy' : 'critical'}>
+											{dbHealth.pools.reader.reachable ? t('db.reachable', 'Reachable') : t('db.unreachable', 'Unreachable')}
+										</StatusBadge>
+										<span class="text-xs font-mono text-muted-foreground">{dbHealth.pools.reader.latency_ms}ms</span>
+									</div>
+								</div>
+							</div>
+						</div>
+					</div>
+				{/if}
 			{:else}
 				<div class="rounded-card border border-border-card bg-background p-12 text-center shadow-card">
 					<Database class="mx-auto h-10 w-10 text-muted-foreground opacity-30" />

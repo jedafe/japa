@@ -1192,15 +1192,25 @@ func (h *Handlers) handlePersonaActionReview(ctx context.Context, id, tenantID, 
 		return true
 	}
 
+	// Update only status and reviewer_user_id. The feedback column stores
+	// the actionPayload JSON that DispatchAction reads to route the approved
+	// action to the correct existing endpoint (ADR-077 §5). Overwriting it
+	// with the admin's reason string would destroy the payload and the
+	// approved action would never dispatch (BUG-001). The reason is logged
+	// for audit purposes instead.
 	_, err = h.DB.Writer.Exec(ctx,
 		`UPDATE content_reviews
-		 SET status = $1, reviewer_user_id = $2, feedback = $3, updated_at = now()
-		 WHERE id = $4 AND tenant_id = $5 AND source = 'persona_action'`,
-		newCRStatus, reviewerID, reason, id, tenantID,
+		 SET status = $1, reviewer_user_id = $2, updated_at = now()
+		 WHERE id = $3 AND tenant_id = $4 AND source = 'persona_action'`,
+		newCRStatus, reviewerID, id, tenantID,
 	)
 	if err != nil {
 		slog.Error("moderation: persona action review update failed", "id", id, "error", err)
 		return true
+	}
+	if reason != "" {
+		slog.Info("moderation: persona action review reason",
+			"id", id.String(), "action", action, "reason", reason)
 	}
 
 	// On approve, enqueue persona:dispatch_action so the action is published

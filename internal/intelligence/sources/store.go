@@ -14,6 +14,11 @@ import (
 // It follows the same pattern as internal/scholarships/store.go: a thin
 // adapter that wraps each generated call with the "sources: <op>: %w"
 // error prefix so callers get a consistent, traceable error chain.
+//
+// All queries are tenant-scoped (ADR-112 Amendment 2). Every wrapper method
+// takes a tenantID pgtype.UUID as its first argument (after ctx) and stamps it
+// into the sqlc query params, guaranteeing data isolation across tenants
+// regardless of what the caller populated in the params struct.
 type Store struct {
 	queries *gen.Queries
 	pool    *db.DB
@@ -29,8 +34,10 @@ func NewStore(database *db.DB) *Store {
 	}
 }
 
-// Create inserts a new intel_sources row.
-func (s *Store) Create(ctx context.Context, arg gen.CreateIntelSourceParams) (Source, error) {
+// Create inserts a new intel_sources row. The tenantID is stamped into the
+// row regardless of any value the caller set on arg.TenantID.
+func (s *Store) Create(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateIntelSourceParams) (Source, error) {
+	arg.TenantID = tenantID
 	row, err := s.queries.CreateIntelSource(ctx, arg)
 	if err != nil {
 		return Source{}, fmt.Errorf("sources: create: %w", err)
@@ -39,8 +46,11 @@ func (s *Store) Create(ctx context.Context, arg gen.CreateIntelSourceParams) (So
 }
 
 // Get fetches a single source by its primary key.
-func (s *Store) Get(ctx context.Context, id SourceID) (Source, error) {
-	row, err := s.queries.GetIntelSource(ctx, id)
+func (s *Store) Get(ctx context.Context, tenantID pgtype.UUID, id SourceID) (Source, error) {
+	row, err := s.queries.GetIntelSource(ctx, gen.GetIntelSourceParams{
+		TenantID: tenantID,
+		ID:       id,
+	})
 	if err != nil {
 		return Source{}, fmt.Errorf("sources: get: %w", err)
 	}
@@ -48,16 +58,22 @@ func (s *Store) Get(ctx context.Context, id SourceID) (Source, error) {
 }
 
 // GetByURL fetches a single source by its canonical source_url.
-func (s *Store) GetByURL(ctx context.Context, sourceURL string) (Source, error) {
-	row, err := s.queries.GetIntelSourceByURL(ctx, sourceURL)
+func (s *Store) GetByURL(ctx context.Context, tenantID pgtype.UUID, sourceURL string) (Source, error) {
+	row, err := s.queries.GetIntelSourceByURL(ctx, gen.GetIntelSourceByURLParams{
+		TenantID:  tenantID,
+		SourceUrl: sourceURL,
+	})
 	if err != nil {
 		return Source{}, fmt.Errorf("sources: get by url: %w", err)
 	}
 	return row, nil
 }
 
-// List returns a page of sources ordered by created_at descending.
-func (s *Store) List(ctx context.Context, arg gen.ListIntelSourcesParams) ([]Source, error) {
+// List returns a page of sources ordered by created_at descending. The
+// tenantID is stamped into the query params regardless of any value the
+// caller set on arg.TenantID.
+func (s *Store) List(ctx context.Context, tenantID pgtype.UUID, arg gen.ListIntelSourcesParams) ([]Source, error) {
+	arg.TenantID = tenantID
 	rows, err := s.queries.ListIntelSources(ctx, arg)
 	if err != nil {
 		return nil, fmt.Errorf("sources: list: %w", err)
@@ -67,8 +83,11 @@ func (s *Store) List(ctx context.Context, arg gen.ListIntelSourcesParams) ([]Sou
 
 // ListByCategory returns enabled sources for a given category, ordered by
 // trust level then name.
-func (s *Store) ListByCategory(ctx context.Context, category string) ([]Source, error) {
-	rows, err := s.queries.ListIntelSourcesByCategory(ctx, category)
+func (s *Store) ListByCategory(ctx context.Context, tenantID pgtype.UUID, category string) ([]Source, error) {
+	rows, err := s.queries.ListIntelSourcesByCategory(ctx, gen.ListIntelSourcesByCategoryParams{
+		TenantID: tenantID,
+		Category: category,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("sources: list by category: %w", err)
 	}
@@ -77,8 +96,11 @@ func (s *Store) ListByCategory(ctx context.Context, category string) ([]Source, 
 
 // ListDue returns up to limit enabled sources whose crawl interval has
 // elapsed (or that have never been crawled), oldest-first.
-func (s *Store) ListDue(ctx context.Context, limit int32) ([]Source, error) {
-	rows, err := s.queries.ListDueIntelSources(ctx, limit)
+func (s *Store) ListDue(ctx context.Context, tenantID pgtype.UUID, limit int32) ([]Source, error) {
+	rows, err := s.queries.ListDueIntelSources(ctx, gen.ListDueIntelSourcesParams{
+		TenantID: tenantID,
+		Limit:    limit,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("sources: list due: %w", err)
 	}
@@ -86,10 +108,11 @@ func (s *Store) ListDue(ctx context.Context, limit int32) ([]Source, error) {
 }
 
 // UpdateEnabled toggles the enabled flag for a source.
-func (s *Store) UpdateEnabled(ctx context.Context, id SourceID, enabled bool) error {
+func (s *Store) UpdateEnabled(ctx context.Context, tenantID pgtype.UUID, id SourceID, enabled bool) error {
 	if err := s.queries.UpdateIntelSourceEnabled(ctx, gen.UpdateIntelSourceEnabledParams{
-		ID:      id,
-		Enabled: enabled,
+		TenantID: tenantID,
+		ID:       id,
+		Enabled:  enabled,
 	}); err != nil {
 		return fmt.Errorf("sources: update enabled: %w", err)
 	}
@@ -100,8 +123,11 @@ func (s *Store) UpdateEnabled(ctx context.Context, id SourceID, enabled bool) er
 // lastSuccessAt is stamped and consecutive_failures reset; on failure
 // lastErrorAt is stamped, the message stored, and the failure counter
 // incremented. The LastSuccessAt field on the params is a pgtype timestamp;
-// callers pass a non-zero value to indicate success.
-func (s *Store) UpdateCrawlStatus(ctx context.Context, arg gen.UpdateIntelSourceCrawlStatusParams) error {
+// callers pass a non-zero value to indicate success. The tenantID is stamped
+// into the query params regardless of any value the caller set on
+// arg.TenantID.
+func (s *Store) UpdateCrawlStatus(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateIntelSourceCrawlStatusParams) error {
+	arg.TenantID = tenantID
 	if err := s.queries.UpdateIntelSourceCrawlStatus(ctx, arg); err != nil {
 		return fmt.Errorf("sources: update crawl status: %w", err)
 	}
@@ -109,7 +135,10 @@ func (s *Store) UpdateCrawlStatus(ctx context.Context, arg gen.UpdateIntelSource
 }
 
 // UpdateRobotsPolicy replaces the cached robots.txt policy JSON for a source.
-func (s *Store) UpdateRobotsPolicy(ctx context.Context, arg gen.UpdateIntelSourceRobotsPolicyParams) error {
+// The tenantID is stamped into the query params regardless of any value the
+// caller set on arg.TenantID.
+func (s *Store) UpdateRobotsPolicy(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateIntelSourceRobotsPolicyParams) error {
+	arg.TenantID = tenantID
 	if err := s.queries.UpdateIntelSourceRobotsPolicy(ctx, arg); err != nil {
 		return fmt.Errorf("sources: update robots policy: %w", err)
 	}
@@ -118,8 +147,11 @@ func (s *Store) UpdateRobotsPolicy(ctx context.Context, arg gen.UpdateIntelSourc
 
 // MarkLastChanged stamps last_changed_at for a source, signalling that the
 // upstream content has changed since the previous crawl.
-func (s *Store) MarkLastChanged(ctx context.Context, id SourceID) error {
-	if err := s.queries.UpdateIntelSourceLastChanged(ctx, id); err != nil {
+func (s *Store) MarkLastChanged(ctx context.Context, tenantID pgtype.UUID, id SourceID) error {
+	if err := s.queries.UpdateIntelSourceLastChanged(ctx, gen.UpdateIntelSourceLastChangedParams{
+		TenantID: tenantID,
+		ID:       id,
+	}); err != nil {
 		return fmt.Errorf("sources: mark last changed: %w", err)
 	}
 	return nil
@@ -128,11 +160,27 @@ func (s *Store) MarkLastChanged(ctx context.Context, id SourceID) error {
 // Delete removes a source from the registry. Existing promoted records are
 // preserved by the database (the row is hard-deleted; promoted intel_records
 // keep their snapshot).
-func (s *Store) Delete(ctx context.Context, id SourceID) error {
-	if err := s.queries.DeleteIntelSource(ctx, id); err != nil {
+func (s *Store) Delete(ctx context.Context, tenantID pgtype.UUID, id SourceID) error {
+	if err := s.queries.DeleteIntelSource(ctx, gen.DeleteIntelSourceParams{
+		TenantID: tenantID,
+		ID:       id,
+	}); err != nil {
 		return fmt.Errorf("sources: delete: %w", err)
 	}
 	return nil
+}
+
+// Update edits the configurable fields of a source (name, domain, url,
+// category, trust level, crawl settings, license, usage restriction, enabled
+// toggle). Returns the updated row. The tenantID is stamped into the params
+// regardless of any value the caller set on arg.TenantID.
+func (s *Store) Update(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateIntelSourceParams) (Source, error) {
+	arg.TenantID = tenantID
+	row, err := s.queries.UpdateIntelSource(ctx, arg)
+	if err != nil {
+		return Source{}, fmt.Errorf("sources: update: %w", err)
+	}
+	return row, nil
 }
 
 // Compile-time guard that pgtype.UUID satisfies SourceID's underlying type.

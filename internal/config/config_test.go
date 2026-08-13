@@ -21,6 +21,7 @@ func TestLoad_ReadsEnvironmentVariables(t *testing.T) {
 	t.Setenv("JC_MEILISEARCH_URL", "http://test-meili:7700")
 	t.Setenv("JC_MEILISEARCH_KEY", "test-key")
 	t.Setenv("JC_GEOIP_DB_PATH", "/data/test.mmdb")
+	t.Setenv("JC_MAXMIND_ACCOUNT_ID", "test-account")
 	t.Setenv("JC_MAXMIND_LICENSE_KEY", "test-license")
 	t.Setenv("JC_GLITCHTIP_DSN", "https://test-dsn@example.com")
 	t.Setenv("JC_IMGPROXY_KEY", "test-imgproxy-key")
@@ -50,6 +51,7 @@ func TestLoad_ReadsEnvironmentVariables(t *testing.T) {
 		{"MeilisearchURL", cfg.MeilisearchURL, "http://test-meili:7700"},
 		{"MeilisearchKey", cfg.MeilisearchKey, "test-key"},
 		{"GeoIPDBPath", cfg.GeoIPDBPath, "/data/test.mmdb"},
+		{"MaxmindAccountID", cfg.MaxmindAccountID, "test-account"},
 		{"MaxmindLicenseKey", cfg.MaxmindLicenseKey, "test-license"},
 		{"GlitchtipDSN", cfg.GlitchtipDSN, "https://test-dsn@example.com"},
 		{"ImgproxyKey", cfg.ImgproxyKey, "test-imgproxy-key"},
@@ -234,6 +236,7 @@ func clearAllJCEnv(t *testing.T) {
 
 	for _, key := range []string{
 		"JC_DATABASE_URL",
+		"JC_DATABASE_READER_URL",
 		"JC_REDIS_ADDR",
 		"JC_MEILISEARCH_URL",
 		"JC_MEILISEARCH_KEY",

@@ -125,7 +125,7 @@ func (s *Service) AddThreadTagsBulk(ctx context.Context, tenantID, threadID pgty
 		seen[id.Bytes] = struct{}{}
 		unique = append(unique, id)
 	}
-	if existing+int32(len(unique)) > MaxTagsPerThread {
+	if existing+int32(len(unique)) > MaxTagsPerThread { // #nosec G115 -- len() of a deduped tag slice, bounded by MaxTagsPerThread
 		return fmt.Errorf("adding these tags would exceed the maximum of %d tags per thread", MaxTagsPerThread)
 	}
 

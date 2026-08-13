@@ -93,7 +93,18 @@ internal/intelligence/
 
 ## 3. Schema
 
-Five new tables, all global (no `tenant_id` — geo-space is the scoping dimension per the tenancy decision). All use Postgres 18, uuid PKs, `timestamptz`, mirroring JapaConnect conventions.
+Five new tables. **All tenant-scoped per ADR-112 Amendment 2 (2026-08-13)** —
+every table carries `tenant_id uuid NOT NULL REFERENCES tenants(id)`, every
+sqlc query filters by `tenant_id`, and every Valkey key includes `{tenant_id}`.
+The original "no `tenant_id` — geo-space is the scoping dimension" decision was
+reversed by Amendment 2 (see `.jeos/adr/ADR-112-intelligence-scholarships-table.md`
+Amendment 2 + migration `000432_intelligence_tenant_scoping`); tenant-scoping
+guarantees data isolation across tenants and consistency with the rest of the
+platform, with negligible overhead in a single-tenant deployment (constant
+`WHERE tenant_id = $X` filter, index-backed). Geo-space (`country_space_id`)
+remains the **geo-scoping** dimension for the radar feed; tenant_id is the
+**data-isolation** dimension. All use Postgres 18, uuid PKs, `timestamptz`,
+mirroring JapaConnect conventions.
 
 ### `intel_sources` — the Source Registry
 
@@ -721,7 +732,7 @@ The user-facing half. Three surfaces in v1 (main site, dashboard widget, notific
 
 ### API endpoints (new routes — added to §api-routes-catalog)
 
-All under `/api/v1/intel/`, all geo-scoped via the user's `current_geo_space_id` (or explicit `space_id` query param for browsing other countries). No `tenant_id` scoping — global platform data per the tenancy decision.
+All under `/api/v1/intel/`, all geo-scoped via the user's `current_geo_space_id` (or explicit `space_id` query param for browsing other countries). **Tenant-scoped per ADR-112 Amendment 2** — every query filters by the caller's `tenant_id` from context; in a single-tenant deployment all data belongs to the default tenant `00000000-0000-0000-0000-000000000001`. Geo-space is the geo-scoping dimension; tenant_id is the data-isolation dimension.
 
 ```text
 GET  /api/v1/intel/radar                    — radar feed for the user
