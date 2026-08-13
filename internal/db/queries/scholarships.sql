@@ -124,6 +124,12 @@ LIMIT @page_limit OFFSET @page_offset;
 -- Deadline check task: find saved scholarships needing reminders.
 -- Returns records where the deadline is within remind_before_days and
 -- no reminder has been sent yet (or was sent more than 1 day ago).
+--
+-- The deadline is read from the structured `scholarships` table
+-- (migration 429, ADR-112) via guide_id, replacing the previous
+-- custom_field_values lookup. The `deadline` date column is cast to
+-- text (YYYY-MM-DD) so the existing parseDeadlineValue/withinReminderWindow
+-- logic in service.go continues to work unchanged.
 -- =====================================================================
 
 -- name: FindScholarshipsNeedingReminders :many
@@ -134,17 +140,14 @@ SELECT
     ss.tenant_id,
     ss.remind_before_days,
     ss.last_reminded_at,
-    cfv.value_text AS deadline_value,
+    s.deadline::text AS deadline_value,
     c.title AS guide_title,
     c.slug  AS guide_slug
 FROM saved_scholarships ss
 JOIN contents c ON c.id = ss.guide_id
-JOIN custom_field_values cfv ON cfv.entity_id = ss.guide_id
-    AND cfv.entity_type = 'content'
-JOIN custom_fields cf ON cf.id = cfv.field_id
-    AND cf.key = 'application_deadline'
+JOIN scholarships s ON s.guide_id = ss.guide_id
 WHERE ss.tenant_id = @tenant_id
-  AND cfv.value_text IS NOT NULL
+  AND s.deadline IS NOT NULL
   AND (ss.last_reminded_at IS NULL OR ss.last_reminded_at < now() - interval '1 day')
 LIMIT @batch_limit;
 
