@@ -1,0 +1,99 @@
+import type { PageServerLoad } from './$types';
+import { apiContext, apiList, ApiError } from '$lib/server/api';
+import type { Space, ListMeta } from '$lib/types';
+import type { RadarItem } from '$lib/components/RadarItemRow.svelte';
+
+/**
+ * Japa Radar at /radar — the country-grouped intelligence feed (Phase 6,
+ * Task 25). SSR-fetches the caller's followed-countries feed plus the full
+ * country-space list so the page renders without a client round-trip and is
+ * indexable. Followed-countries feed is auth-gated (401 for guests → empty);
+ * the country browse list is public.
+ *
+ * Ref: japaconnect-engineering — Japa Intelligence System spec §7
+ *      ADR-058 (renders inside the unified app shell)
+ */
+const PAGE_SIZE = 20;
+
+export const load: PageServerLoad = async (event) => {
+	const ctx = apiContext(event);
+	const authed = !!event.locals.user;
+
+	// 1-based page index for the followed feed (matches the rest of the app).
+	const page = Math.max(1, parseInt(event.url.searchParams.get('page') ?? '1', 10) || 1);
+	const offset = (page - 1) * PAGE_SIZE;
+
+	// Country list — public. Filtered to level=country so the browse list
+	// only shows country spaces (the radar groups opportunities by country).
+	let countries: Space[] = [];
+	let countriesError = false;
+	try {
+		const params = new URLSearchParams();
+		params.set('level', 'country');
+		params.set('page_size', '100');
+		params.set('page_offset', '0');
+		const res = await apiList<Space>(ctx, `/spaces?${params.toString()}`);
+		countries = res.items;
+	} catch (err) {
+		if (err instanceof ApiError && err.status === 403) {
+			countriesError = false; // degrade to empty, not a hard error
+		} else {
+			countriesError = true;
+		}
+	}
+
+	// Followed-countries feed — auth-gated. Guests get an empty feed; the
+	// page renders the browse list only. Best-effort: any backend error
+	// degrades to an empty list rather than failing the whole page.
+	let followedItems: RadarItem[] = [];
+	let followedCount = 0;
+	let followedTotal = 0;
+	let intelUnavailable = false;
+	if (authed) {
+		try {
+			const params = new URLSearchParams();
+			params.set('page_size', String(PAGE_SIZE));
+			params.set('page_offset', String(offset));
+			const res = await apiList<RadarItem>(ctx, `/intel/radar/followed?${params.toString()}`);
+			followedItems = res.items;
+			const meta = res.meta as (ListMeta & { count?: number; followed_count?: number }) | undefined;
+			followedCount = meta?.count ?? followedItems.length;
+			followedTotal = meta?.followed_count ?? 0;
+		} catch (err) {
+			if (err instanceof ApiError && err.status === 503) {
+				intelUnavailable = true;
+			}
+			// 401 (token revoked mid-session) or any other error → empty feed.
+			followedItems = [];
+		}
+	}
+
+	// Resolve the caller's followed space IDs so the browse list can badge
+	// followed countries. The public radar feed emits `followed_space_ids` in
+	// its meta; we fetch a single-row page just to read that sidecar. Best-
+	// effort: any error degrades to an empty set (the page falls back to an
+	// optimistic toggle for the follow button state).
+	let followedSpaceIds: string[] = [];
+	if (authed && !intelUnavailable) {
+		try {
+			const res = await apiList<RadarItem>(ctx, `/intel/radar?page_size=1&page_offset=0`);
+			const meta = res.meta as (ListMeta & { followed_space_ids?: string[] }) | undefined;
+			followedSpaceIds = meta?.followed_space_ids ?? [];
+		} catch {
+			followedSpaceIds = [];
+		}
+	}
+
+	return {
+		countries,
+		countriesError,
+		followedItems,
+		followedCount,
+		followedTotal,
+		followedSpaceIds,
+		intelUnavailable,
+		authed,
+		pageSize: PAGE_SIZE,
+		currentPage: page
+	};
+};
