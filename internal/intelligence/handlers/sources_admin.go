@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5"
 
 	"github.com/jedafe/japa/internal/db/gen"
@@ -509,4 +510,131 @@ func base64Encode(b []byte) string {
 		return ""
 	}
 	return base64.StdEncoding.EncodeToString(b)
+}
+
+// HandleCrawlNow triggers an immediate crawl of a source by enqueuing an
+// intel:fetch_source Asynq task (fire-and-forget per Rule 8). The handler
+// verifies the source exists and is enabled before enqueuing.
+//
+// POST /api/v1/intel/sources/{id}/crawl-now
+//
+// Requires: intel.sources.crawl_now
+// Ref: INTEL-011 fix, §26 RBAC CRUD completeness, route catalog §2226.
+func (h *Handlers) HandleCrawlNow(w http.ResponseWriter, r *http.Request) {
+	if h.intelSources == nil || h.asynqClient == nil {
+		writeError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
+		return
+	}
+
+	if _, ok := requireUser(w, r); !ok {
+		return
+	}
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	sourceID, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	// Verify the source exists and is enabled before enqueuing.
+	src, err := h.intelSources.Get(r.Context(), tenantID, sourceID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "not_found", "Source not found")
+			return
+		}
+		slog.Error("intel: crawl-now source lookup failed", "source_id", sourceID.String(), "error", err)
+		writeError(w, http.StatusInternalServerError, "lookup_failed", "Failed to load source")
+		return
+	}
+	if !src.Enabled {
+		writeError(w, http.StatusConflict, "source_disabled", "Cannot crawl a disabled source — enable it first")
+		return
+	}
+
+	// Enqueue the fetch_source task (fire-and-forget per Rule 8).
+	payload, err := json.Marshal(map[string]string{
+		"source_id": sourceID.String(),
+		"tenant_id": tenantID.String(),
+	})
+	if err != nil {
+		slog.Error("intel: crawl-now marshal failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "enqueue_failed", "Failed to build task payload")
+		return
+	}
+	if _, err := h.asynqClient.EnqueueContext(r.Context(), asynq.NewTask(TaskIntelFetchSource, payload)); err != nil {
+		slog.Error("intel: crawl-now enqueue failed", "source_id", sourceID.String(), "error", err)
+		writeError(w, http.StatusInternalServerError, "enqueue_failed", "Failed to enqueue crawl task")
+		return
+	}
+
+	writeJSON(w, http.StatusAccepted, map[string]interface{}{
+		"data": map[string]interface{}{
+			"source_id":  sourceID.String(),
+			"status":     "queued",
+			"task":       TaskIntelFetchSource,
+		},
+	})
+}
+
+// HandleDisableSource disables a source from the review queue surface.
+// This is the review-side counterpart to PATCH enabled=false: it sets
+// enabled=false so future crawls stop, but existing promoted records are
+// preserved (spec §650). An audit entry is written to intel_review_log.
+//
+// POST /api/v1/intel/sources/{id}/disable
+//
+// Requires: intel.review.disable_source
+// Ref: INTEL-011 fix, §26 RBAC CRUD completeness, route catalog §2228.
+func (h *Handlers) HandleDisableSource(w http.ResponseWriter, r *http.Request) {
+	if h.intelSources == nil {
+		writeError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
+		return
+	}
+
+	userID, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	sourceID, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	// Verify the source exists before disabling.
+	src, err := h.intelSources.Get(r.Context(), tenantID, sourceID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "not_found", "Source not found")
+			return
+		}
+		slog.Error("intel: disable source lookup failed", "source_id", sourceID.String(), "error", err)
+		writeError(w, http.StatusInternalServerError, "lookup_failed", "Failed to load source")
+		return
+	}
+
+	if err := h.intelSources.Disable(r.Context(), tenantID, sourceID); err != nil {
+		slog.Error("intel: disable source failed", "source_id", sourceID.String(), "error", err)
+		writeError(w, http.StatusInternalServerError, "disable_failed", "Failed to disable source")
+		return
+	}
+
+	slog.Info("intel: source disabled via review queue",
+		"source_id", sourceID.String(), "actor", userID.String())
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"data": map[string]interface{}{
+			"source_id": sourceID.String(),
+			"enabled":   false,
+			"domain":    src.Domain,
+		},
+	})
 }

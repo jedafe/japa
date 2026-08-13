@@ -1,8 +1,8 @@
 // Package adsselfserve implements the Self-Serve Advertising surface
 // (Section 61, ADR-079). Verified organisations can create, fund, and manage
 // ad campaigns without admin involvement. Campaigns are paid upfront via
-// credits, then enter the existing content_reviews queue for admin creative
-// approval before going live.
+// credits, then enter the admin moderation queue via status = 'pending_review'
+// for admin creative approval before going live.
 //
 // Ref: japaconnect-engineering/sections/61-self-serve-ads.md
 //      japaconnect-engineering/adr/ADR-079-self-serve-ads.md

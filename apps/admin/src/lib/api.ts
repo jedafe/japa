@@ -1758,6 +1758,25 @@ export const scholarshipAdminApi = {
 	stats: () => api<unknown>(`/admin/scholarships/stats`),
 	deadlines: (params?: string) => api<unknown>(`/admin/scholarships/deadlines${params ? `?${params}` : ''}`),
 	reminderLog: (params?: string) => api<unknown>(`/admin/scholarships/reminder-log${params ? `?${params}` : ''}`),
+	list: (params?: string) => apiRaw<{ data: unknown[]; meta: { count: number; page_size: number; page_offset: number } }>(`/admin/scholarships${params ? `?${params}` : ''}`),
+	create: (body: Record<string, unknown>) => api<unknown>(`/admin/scholarships`, { method: 'POST', body }),
+	update: (id: string, body: Record<string, unknown>) => api<unknown>(`/admin/scholarships/${id}`, { method: 'PATCH', body }),
+	delete: (id: string) => api<unknown>(`/admin/scholarships/${id}`, { method: 'DELETE' }),
+};
+
+export const jobsAdminApi = {
+	list: (params?: string) => apiRaw<{ data: unknown[]; meta: { page: number; limit: number; total: number }; status_distribution: Record<string, number> }>(`/admin/jobs${params ? `?${params}` : ''}`),
+	update: (id: string, body: Record<string, unknown>) => api<unknown>(`/admin/jobs/${id}`, { method: 'PATCH', body }),
+	delete: (id: string) => api<unknown>(`/admin/jobs/${id}`, { method: 'DELETE' }),
+	toggleFeature: (id: string) => api<unknown>(`/admin/jobs/${id}/feature`, { method: 'PATCH', body: {} }),
+};
+
+export const intelReviewApi = {
+	queue: (params?: string) => apiRaw<{ data: unknown[] }>(`/intel/review/queue${params ? `?${params}` : ''}`),
+	approve: (id: string) => api<unknown>(`/intel/review/${id}/approve`, { method: 'POST', body: {} }),
+	reject: (id: string) => api<unknown>(`/intel/review/${id}/reject`, { method: 'POST', body: {} }),
+	edit: (id: string, body: Record<string, unknown>) => api<unknown>(`/intel/review/${id}/edit`, { method: 'PATCH', body }),
+	rawDocument: (id: string) => api<unknown>(`/intel/raw-documents/${id}`),
 };
 
 export const processingTrackerAdminApi = {

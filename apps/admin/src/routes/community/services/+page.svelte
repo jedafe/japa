@@ -23,6 +23,11 @@
 		created_at: string;
 		body?: string;
 		author_name?: string;
+		// ADR-088 AI generation columns
+		ai_generated?: boolean;
+		ai_model?: string;
+		hitl_reviewed_by?: string;
+		ai_generated_at?: string;
 	};
 
 	const canManage = $derived(hasPermission('service.verify'));
@@ -140,6 +145,7 @@
 			if (params.pageSize) qs.set('limit', String(params.pageSize));
 			if (params.q) qs.set('q', params.q);
 			if (params.sort) qs.set('sort', params.sort);
+			if (params.filter?.dest) qs.set('dest', params.filter.dest);
 			const result = await serviceDirectoryAdminApi.list(qs.toString());
 			if (result.ok && result.data) {
 				const envelope = result.data;

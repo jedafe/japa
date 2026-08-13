@@ -118,7 +118,7 @@ const (
 	TypeIntelPromote           = "intel:promote"             // default
 	TypeIntelPostPublish       = "intel:post_publish"        // default
 	TypeIntelNotifyDiscoveries = "intel:notify_discoveries"  // default
-	TypeIntelRefreshFreshness  = "intel:refresh_freshness"   // default (cron)
+	TypeIntelRefreshFreshness  = "intel:refresh_freshness"   // low (daily cron)
 	TypeIntelRetryFailedSource = "intel:retry_failed_source" // default
 )
 

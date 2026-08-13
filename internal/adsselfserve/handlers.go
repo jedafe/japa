@@ -85,6 +85,8 @@ func (h *Handlers) HandleCreateCampaign(w http.ResponseWriter, r *http.Request) 
 			writeError(w, http.StatusBadRequest, "slot_type_not_found", "The selected ad slot type was not found or has no rate")
 		case errors.Is(err, ErrDurationTooShort):
 			writeError(w, http.StatusBadRequest, "duration_too_short", err.Error())
+		case errors.Is(err, ErrInsufficientBalance):
+			writeError(w, http.StatusPaymentRequired, "insufficient_balance", err.Error())
 		default:
 			writeError(w, http.StatusBadRequest, "create_failed", err.Error())
 		}
@@ -295,11 +297,12 @@ func writeJSON(w http.ResponseWriter, status int, data interface{}) {
 }
 
 func writeError(w http.ResponseWriter, status int, code, message string) {
+	// Ref: japaconnect-engineering/conventions/api-response-format.md — the
+	// error envelope contains only `code` and `message` (no `status` field).
 	writeJSON(w, status, map[string]interface{}{
 		"error": map[string]interface{}{
 			"code":    code,
 			"message": message,
-			"status":  status,
 		},
 	})
 }

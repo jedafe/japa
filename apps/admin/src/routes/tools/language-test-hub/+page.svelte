@@ -213,6 +213,9 @@
 			if (params.sort) {
 				queryParts.push(`sort=${params.sort}`);
 			}
+			if (params.filter?.dest) {
+				queryParts.push(`dest=${encodeURIComponent(params.filter.dest)}`);
+			}
 			const result = await languageTestHubAdminApi.list(queryParts.join('&'));
 			if (result.ok) {
 				const body = result.data;

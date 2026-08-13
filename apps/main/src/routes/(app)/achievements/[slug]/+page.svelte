@@ -72,6 +72,24 @@
 
 	let deleting = $state(false);
 	let deleteError = $state<string | null>(null);
+	let reacting = $state(false);
+	let reactionError = $state<string | null>(null);
+
+	async function react(emoji: string) {
+		if (reacting) return;
+		reacting = true;
+		reactionError = null;
+		try {
+			const res = await api.post(`/content/${achievement.id}/reactions`, { reaction_key: emoji });
+			if (res.error) {
+				reactionError = res.error.message || t('achievements.reaction_error', 'Failed to react.');
+			}
+		} catch {
+			reactionError = t('achievements.reaction_error', 'Failed to react.');
+		} finally {
+			reacting = false;
+		}
+	}
 
 	async function deleteAchievement() {
 		if (deleting || !data.canEdit) return;
@@ -166,6 +184,29 @@
 				{achievement.view_count}
 			</span>
 		</div>
+
+		<!-- Curated reaction buttons (§89 Reaction Set) — the allowed set
+		     comes from the API response (achievement.allowed_reactions),
+		     populated from system_settings.achievement_reactions. -->
+		{#if achievement.allowed_reactions && achievement.allowed_reactions.length > 0}
+			<div class="mt-4 flex flex-wrap gap-2">
+				{#each achievement.allowed_reactions as r (r.emoji)}
+					<button
+						type="button"
+						onclick={() => react(r.emoji)}
+						disabled={reacting}
+						class="inline-flex items-center gap-1.5 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm transition-colors hover:border-[var(--color-primary)]/40 hover:bg-[var(--color-surface-subtle)] disabled:opacity-50"
+						title={r.label}
+					>
+						<span class="text-base">{r.emoji}</span>
+						<span class="text-xs font-medium text-[var(--color-text-subtle)]">{r.label}</span>
+					</button>
+				{/each}
+				{#if reactionError}
+					<span class="text-xs text-red-500">{reactionError}</span>
+				{/if}
+			</div>
+		{/if}
 
 		<!-- Body -->
 		<div class="prose mt-5 max-w-none whitespace-pre-wrap text-[var(--color-text)]">

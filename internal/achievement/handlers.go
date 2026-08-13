@@ -176,7 +176,7 @@ func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
 		viewerID = u.UserID
 	}
 
-	achievement, err := h.service.GetBySlug(r.Context(), slug, tenantID, viewerID)
+	achievement, err := h.service.GetBySlugWithReactions(r.Context(), slug, tenantID, viewerID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "achievement_not_found", "Achievement not found")

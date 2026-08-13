@@ -107,7 +107,7 @@ func (q *Queries) CountCOLCities(ctx context.Context, arg CountCOLCitiesParams) 
 const getCOLBaselineCity = `-- name: GetCOLBaselineCity :one
 
 SELECT
-    ci.id, ci.content_id, ci.tenant_id, ci.title, ci.description, ci.image_id, ci.geo_space_id, ci.position, ci.created_at, ci.type_id, ci.deleted_at, ci.is_baseline, ci.last_updated_at,
+    ci.id, ci.content_id, ci.tenant_id, ci.title, ci.description, ci.image_id, ci.geo_space_id, ci.position, ci.created_at, ci.type_id, ci.deleted_at, ci.is_baseline, ci.last_updated_at, ci.intel_record_id, ci.intel_cost_data, ci.confidence_overall, ci.verification_status, ci.freshness_score, ci.override_source, ci.editorial_overrides,
     s.name AS geo_space_name,
     s.slug AS geo_space_slug
 FROM comparison_items ci
@@ -125,21 +125,28 @@ type GetCOLBaselineCityParams struct {
 }
 
 type GetCOLBaselineCityRow struct {
-	ID            pgtype.UUID        `json:"id"`
-	ContentID     pgtype.UUID        `json:"content_id"`
-	TenantID      pgtype.UUID        `json:"tenant_id"`
-	Title         string             `json:"title"`
-	Description   *string            `json:"description"`
-	ImageID       pgtype.UUID        `json:"image_id"`
-	GeoSpaceID    pgtype.UUID        `json:"geo_space_id"`
-	Position      int32              `json:"position"`
-	CreatedAt     pgtype.Timestamptz `json:"created_at"`
-	TypeID        pgtype.UUID        `json:"type_id"`
-	DeletedAt     pgtype.Timestamptz `json:"deleted_at"`
-	IsBaseline    bool               `json:"is_baseline"`
-	LastUpdatedAt pgtype.Timestamptz `json:"last_updated_at"`
-	GeoSpaceName  *string            `json:"geo_space_name"`
-	GeoSpaceSlug  *string            `json:"geo_space_slug"`
+	ID                 pgtype.UUID        `json:"id"`
+	ContentID          pgtype.UUID        `json:"content_id"`
+	TenantID           pgtype.UUID        `json:"tenant_id"`
+	Title              string             `json:"title"`
+	Description        *string            `json:"description"`
+	ImageID            pgtype.UUID        `json:"image_id"`
+	GeoSpaceID         pgtype.UUID        `json:"geo_space_id"`
+	Position           int32              `json:"position"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	TypeID             pgtype.UUID        `json:"type_id"`
+	DeletedAt          pgtype.Timestamptz `json:"deleted_at"`
+	IsBaseline         bool               `json:"is_baseline"`
+	LastUpdatedAt      pgtype.Timestamptz `json:"last_updated_at"`
+	IntelRecordID      pgtype.UUID        `json:"intel_record_id"`
+	IntelCostData      []byte             `json:"intel_cost_data"`
+	ConfidenceOverall  float32            `json:"confidence_overall"`
+	VerificationStatus string             `json:"verification_status"`
+	FreshnessScore     int32              `json:"freshness_score"`
+	OverrideSource     string             `json:"override_source"`
+	EditorialOverrides []byte             `json:"editorial_overrides"`
+	GeoSpaceName       *string            `json:"geo_space_name"`
+	GeoSpaceSlug       *string            `json:"geo_space_slug"`
 }
 
 // =====================================================================
@@ -162,6 +169,13 @@ func (q *Queries) GetCOLBaselineCity(ctx context.Context, arg GetCOLBaselineCity
 		&i.DeletedAt,
 		&i.IsBaseline,
 		&i.LastUpdatedAt,
+		&i.IntelRecordID,
+		&i.IntelCostData,
+		&i.ConfidenceOverall,
+		&i.VerificationStatus,
+		&i.FreshnessScore,
+		&i.OverrideSource,
+		&i.EditorialOverrides,
 		&i.GeoSpaceName,
 		&i.GeoSpaceSlug,
 	)
@@ -241,7 +255,7 @@ func (q *Queries) GetCOLCitiesByIDs(ctx context.Context, arg GetCOLCitiesByIDsPa
 const getCOLCityByID = `-- name: GetCOLCityByID :one
 
 SELECT
-    ci.id, ci.content_id, ci.tenant_id, ci.title, ci.description, ci.image_id, ci.geo_space_id, ci.position, ci.created_at, ci.type_id, ci.deleted_at, ci.is_baseline, ci.last_updated_at,
+    ci.id, ci.content_id, ci.tenant_id, ci.title, ci.description, ci.image_id, ci.geo_space_id, ci.position, ci.created_at, ci.type_id, ci.deleted_at, ci.is_baseline, ci.last_updated_at, ci.intel_record_id, ci.intel_cost_data, ci.confidence_overall, ci.verification_status, ci.freshness_score, ci.override_source, ci.editorial_overrides,
     s.name AS geo_space_name,
     s.slug AS geo_space_slug
 FROM comparison_items ci
@@ -255,21 +269,28 @@ type GetCOLCityByIDParams struct {
 }
 
 type GetCOLCityByIDRow struct {
-	ID            pgtype.UUID        `json:"id"`
-	ContentID     pgtype.UUID        `json:"content_id"`
-	TenantID      pgtype.UUID        `json:"tenant_id"`
-	Title         string             `json:"title"`
-	Description   *string            `json:"description"`
-	ImageID       pgtype.UUID        `json:"image_id"`
-	GeoSpaceID    pgtype.UUID        `json:"geo_space_id"`
-	Position      int32              `json:"position"`
-	CreatedAt     pgtype.Timestamptz `json:"created_at"`
-	TypeID        pgtype.UUID        `json:"type_id"`
-	DeletedAt     pgtype.Timestamptz `json:"deleted_at"`
-	IsBaseline    bool               `json:"is_baseline"`
-	LastUpdatedAt pgtype.Timestamptz `json:"last_updated_at"`
-	GeoSpaceName  *string            `json:"geo_space_name"`
-	GeoSpaceSlug  *string            `json:"geo_space_slug"`
+	ID                 pgtype.UUID        `json:"id"`
+	ContentID          pgtype.UUID        `json:"content_id"`
+	TenantID           pgtype.UUID        `json:"tenant_id"`
+	Title              string             `json:"title"`
+	Description        *string            `json:"description"`
+	ImageID            pgtype.UUID        `json:"image_id"`
+	GeoSpaceID         pgtype.UUID        `json:"geo_space_id"`
+	Position           int32              `json:"position"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	TypeID             pgtype.UUID        `json:"type_id"`
+	DeletedAt          pgtype.Timestamptz `json:"deleted_at"`
+	IsBaseline         bool               `json:"is_baseline"`
+	LastUpdatedAt      pgtype.Timestamptz `json:"last_updated_at"`
+	IntelRecordID      pgtype.UUID        `json:"intel_record_id"`
+	IntelCostData      []byte             `json:"intel_cost_data"`
+	ConfidenceOverall  float32            `json:"confidence_overall"`
+	VerificationStatus string             `json:"verification_status"`
+	FreshnessScore     int32              `json:"freshness_score"`
+	OverrideSource     string             `json:"override_source"`
+	EditorialOverrides []byte             `json:"editorial_overrides"`
+	GeoSpaceName       *string            `json:"geo_space_name"`
+	GeoSpaceSlug       *string            `json:"geo_space_slug"`
 }
 
 // =====================================================================
@@ -292,6 +313,13 @@ func (q *Queries) GetCOLCityByID(ctx context.Context, arg GetCOLCityByIDParams) 
 		&i.DeletedAt,
 		&i.IsBaseline,
 		&i.LastUpdatedAt,
+		&i.IntelRecordID,
+		&i.IntelCostData,
+		&i.ConfidenceOverall,
+		&i.VerificationStatus,
+		&i.FreshnessScore,
+		&i.OverrideSource,
+		&i.EditorialOverrides,
 		&i.GeoSpaceName,
 		&i.GeoSpaceSlug,
 	)

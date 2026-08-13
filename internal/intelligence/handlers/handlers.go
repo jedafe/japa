@@ -35,13 +35,27 @@ import (
 // (which would create a cycle).
 const TaskIntelPromote = "intel:promote"
 
+// TaskIntelFetchSource is the Asynq task name the crawl-now handler
+// enqueues to trigger an immediate fetch of a source (INTEL-011 fix).
+// Mirrors worker.TypeIntelFetchSource without importing the worker package.
+const TaskIntelFetchSource = "intel:fetch_source"
+
+// SettingsReader is the minimal interface the handlers need to read
+// system_settings at runtime (Rule 3, INTEL-016). Defining it locally
+// avoids an import cycle on internal/config.
+type SettingsReader interface {
+	GetIntOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback int) int
+}
+
 // Handlers exposes the /api/v1/intel/* HTTP routes.
 type Handlers struct {
 	intelStores   *stores.Store
 	intelSources  *sources.Service
 	followsSvc    *follows.Service
 	scholarSvc    *scholarships.Service
-	asynqClient   *asynq.Client // enqueues intel:promote on review approve (BUG-003)
+	asynqClient   *asynq.Client  // enqueues intel:promote on review approve (BUG-003)
+	settings      SettingsReader // system_settings reader (INTEL-016); nil → hardcoded defaults
+	defaultTenant pgtype.UUID    // tenant ID for settings reads
 }
 
 // defaultIntelTenantID is the system tenant UUID used as a fallback for
@@ -68,26 +82,33 @@ func NewHandlers(
 	followsSvc *follows.Service,
 	scholarSvc *scholarships.Service,
 	asynqClient *asynq.Client,
+	settings SettingsReader,
+	defaultTenant pgtype.UUID,
 ) *Handlers {
 	return &Handlers{
-		intelStores:  intelStores,
-		intelSources: intelSources,
-		followsSvc:   followsSvc,
-		scholarSvc:   scholarSvc,
-		asynqClient:  asynqClient,
+		intelStores:   intelStores,
+		intelSources:  intelSources,
+		followsSvc:    followsSvc,
+		scholarSvc:    scholarSvc,
+		asynqClient:   asynqClient,
+		settings:      settings,
+		defaultTenant: defaultTenant,
 	}
 }
 
 // enqueueIntelPromote enqueues the intel:promote task for the given record
 // (fire-and-forget per Rule 8). BUG-003 fix: the spec §647 requires approve
 // to enqueue promotion; without it approved records are never published.
-func (h *Handlers) enqueueIntelPromote(ctx context.Context, tenantID, recordID pgtype.UUID) error {
+// INTEL-026 fix: the reviewer user ID is passed in the payload so the
+// promoter can stamp hitl_reviewed_by on the contents row.
+func (h *Handlers) enqueueIntelPromote(ctx context.Context, tenantID, recordID, reviewerUserID pgtype.UUID) error {
 	if h.asynqClient == nil {
 		return fmt.Errorf("intel: asynq client not configured")
 	}
 	payload, err := json.Marshal(map[string]string{
-		"record_id": recordID.String(),
-		"tenant_id": tenantID.String(),
+		"record_id":        recordID.String(),
+		"tenant_id":        tenantID.String(),
+		"reviewer_user_id": reviewerUserID.String(),
 	})
 	if err != nil {
 		return fmt.Errorf("intel: marshal promote payload: %w", err)
@@ -161,14 +182,24 @@ func scanUUIDParam(w http.ResponseWriter, r *http.Request, param string) (pgtype
 // back-compat for the legacy `limit` + `page` (1-based) pair. Returns a
 // 1-based page and a clamped page size so callers can compute
 // `offset = (page-1) * limit` unchanged.
-func parsePagination(r *http.Request) (int, int) {
+//
+// INTEL-016 fix: default and max page sizes are read from system_settings
+// (intel.radar.default_page_size, intel.radar.max_page_size) when the
+// handler has a settings reader; otherwise falls back to 20/100.
+func (h *Handlers) parsePagination(r *http.Request) (int, int) {
+	defaultSize := 20
+	maxSize := 100
+	if h.settings != nil {
+		defaultSize = h.settings.GetIntOr(r.Context(), h.defaultTenant, "intel.radar.default_page_size", 20)
+		maxSize = h.settings.GetIntOr(r.Context(), h.defaultTenant, "intel.radar.max_page_size", 100)
+	}
 	q := r.URL.Query()
 	pageSize, _ := strconv.Atoi(q.Get("page_size"))
 	if pageSize <= 0 {
 		pageSize, _ = strconv.Atoi(q.Get("limit"))
 	}
-	if pageSize <= 0 || pageSize > 100 {
-		pageSize = 20
+	if pageSize <= 0 || pageSize > maxSize {
+		pageSize = defaultSize
 	}
 	pageOffset, _ := strconv.Atoi(q.Get("page_offset"))
 	if pageOffset < 0 {

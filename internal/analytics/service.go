@@ -159,7 +159,8 @@ func (s *Service) GetEventCountsByType(ctx context.Context, tenantID pgtype.UUID
 // Materialized View Refresh
 // ---------------------------------------------------------------------------
 
-// RefreshViews triggers CONCURRENT refresh of all three materialized views.
+// RefreshViews triggers CONCURRENT refresh of all materialized views,
+// including the §40 base views and the §66 (ADR-084) advanced-analytics views.
 // This is typically invoked by the analytics:refresh_views Asynq task.
 func (s *Service) RefreshViews(ctx context.Context) error {
 	if err := s.store.RefreshDailyContentStatsView(ctx); err != nil {
@@ -182,6 +183,29 @@ func (s *Service) RefreshViews(ctx context.Context) error {
 	}
 
 	slog.Info("refreshed mv_user_engagement_stats")
+
+	// Section 66 (ADR-084) — Advanced Analytics materialized views.
+	// mv_top_content_* are refreshed hourly; mv_revenue_streams daily.
+	// Ref: sections/66-advanced-analytics.md
+	if err := s.store.RefreshTopContent7dView(ctx); err != nil {
+		slog.Error("refreshing mv_top_content_7d", "error", err)
+		return fmt.Errorf("refreshing top content 7d view: %w", err)
+	}
+	if err := s.store.RefreshTopContent30dView(ctx); err != nil {
+		slog.Error("refreshing mv_top_content_30d", "error", err)
+		return fmt.Errorf("refreshing top content 30d view: %w", err)
+	}
+	if err := s.store.RefreshTopContent90dView(ctx); err != nil {
+		slog.Error("refreshing mv_top_content_90d", "error", err)
+		return fmt.Errorf("refreshing top content 90d view: %w", err)
+	}
+	slog.Info("refreshed mv_top_content_7d/30d/90d")
+
+	if err := s.store.RefreshRevenueStreamsView(ctx); err != nil {
+		slog.Error("refreshing mv_revenue_streams", "error", err)
+		return fmt.Errorf("refreshing revenue streams view: %w", err)
+	}
+	slog.Info("refreshed mv_revenue_streams")
 
 	return nil
 }

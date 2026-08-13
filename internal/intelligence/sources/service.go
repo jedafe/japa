@@ -71,14 +71,17 @@ func (s *Service) Update(ctx context.Context, tenantID pgtype.UUID, arg gen.Upda
 	return s.store.Update(ctx, tenantID, arg)
 }
 
-// CrawlNow would enqueue an intel:fetch_source task for the source. The
-// Asynq wiring lands in Task 22; until then this is a stub so the service
-// surface is complete and callers can be written against it.
-//
-// TODO(task-22): wire Asynq enqueue of intel:fetch_source here.
+// CrawlNow is a no-op service method retained for API surface compatibility.
+// The actual crawl-now trigger is handled by the HTTP handler which enqueues
+// the intel:fetch_source Asynq task directly (INTEL-011 fix). This method
+// verifies the source exists and is enabled.
 func (s *Service) CrawlNow(ctx context.Context, tenantID pgtype.UUID, id SourceID) error {
-	_ = ctx
-	_ = tenantID
-	_ = id
-	return fmt.Errorf("sources: crawl-now not wired yet (Task 22)")
+	src, err := s.store.Get(ctx, tenantID, id)
+	if err != nil {
+		return fmt.Errorf("sources: crawl-now: load source: %w", err)
+	}
+	if !src.Enabled {
+		return fmt.Errorf("sources: crawl-now: source is disabled")
+	}
+	return nil
 }

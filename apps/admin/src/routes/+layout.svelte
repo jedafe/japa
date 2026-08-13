@@ -180,7 +180,9 @@
 		'/tools/attestation-guide': 'attestation_guide.manage',
 		'/tools/language-test-hub': 'language_test_hub.manage',
 		'/tools/tax-calculator': 'tax_calculator.manage',
-		'/tools/community-locator': 'community_locator.manage'
+		'/tools/community-locator': 'community_locator.manage',
+		// Intelligence review queue
+		'/intelligence/review': 'intel.review.view'
 	};
 
 	let requiredPermission = $derived.by(() => {

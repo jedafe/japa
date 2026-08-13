@@ -1,7 +1,7 @@
 import type { PageServerLoad } from './$types';
-import { apiContext, apiList, ApiError } from '$lib/server/api';
-import type { Space, ListMeta } from '$lib/types';
-import type { RadarItem } from '$lib/components/RadarItemRow.svelte';
+import { apiContext, apiList, apiRadarList, ApiError } from '$lib/server/api';
+import type { Space } from '$lib/types';
+import type { RadarItem } from '$lib/types';
 
 /**
  * Japa Radar at /radar — the country-grouped intelligence feed (Phase 6,
@@ -62,11 +62,14 @@ export const load: PageServerLoad = async (event) => {
 			const params = new URLSearchParams();
 			params.set('page_size', String(PAGE_SIZE));
 			params.set('page_offset', String(offset));
-			const res = await apiList<RadarItem>(ctx, `/intel/radar/followed?${params.toString()}`);
+			const res = await apiRadarList<RadarItem>(ctx, `/intel/radar/followed?${params.toString()}`);
 			followedItems = res.items;
-			const meta = res.meta as (ListMeta & { count?: number; followed_count?: number }) | undefined;
-			followedCount = meta?.count ?? followedItems.length;
-			followedTotal = meta?.followed_count ?? 0;
+			const meta = res.meta;
+			const countsByType = meta?.['counts_by_type'] as Record<string, number> | undefined;
+			followedCount = countsByType
+				? Object.values(countsByType).reduce((a, b) => a + b, 0)
+				: followedItems.length;
+			followedTotal = (meta?.['followed_space_ids'] as string[] | undefined)?.length ?? 0;
 		} catch (err) {
 			if (err instanceof ApiError && err.status === 503) {
 				intelUnavailable = true;
@@ -88,10 +91,13 @@ export const load: PageServerLoad = async (event) => {
 			params.set('page_offset', String(offset));
 			if (spaceId) params.set('space_id', spaceId);
 			else if (dest) params.set('country', dest);
-			const res = await apiList<RadarItem>(ctx, `/intel/radar?${params.toString()}`);
+			const res = await apiRadarList<RadarItem>(ctx, `/intel/radar?${params.toString()}`);
 			geoItems = res.items;
-			const meta = res.meta as (ListMeta & { count?: number }) | undefined;
-			geoCount = meta?.count ?? geoItems.length;
+			const meta = res.meta;
+			const countsByType = meta?.['counts_by_type'] as Record<string, number> | undefined;
+			geoCount = countsByType
+				? Object.values(countsByType).reduce((a, b) => a + b, 0)
+				: geoItems.length;
 		} catch (err) {
 			if (err instanceof ApiError && err.status === 503) {
 				intelUnavailable = true;
@@ -108,9 +114,8 @@ export const load: PageServerLoad = async (event) => {
 	let followedSpaceIds: string[] = [];
 	if (authed && !intelUnavailable) {
 		try {
-			const res = await apiList<RadarItem>(ctx, `/intel/radar?page_size=1&page_offset=0`);
-			const meta = res.meta as (ListMeta & { followed_space_ids?: string[] }) | undefined;
-			followedSpaceIds = meta?.followed_space_ids ?? [];
+			const res = await apiRadarList<RadarItem>(ctx, `/intel/radar?page_size=1&page_offset=0`);
+			followedSpaceIds = (res.meta?.['followed_space_ids'] as string[] | undefined) ?? [];
 		} catch {
 			followedSpaceIds = [];
 		}

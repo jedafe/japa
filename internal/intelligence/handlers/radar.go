@@ -20,24 +20,31 @@ import (
 	"github.com/jedafe/japa/internal/tenant"
 )
 
-// radarItem is the v1 radar feed item shape. In v1 the radar surfaces
-// promoted scholarships only; future domains (jobs, visa alerts) will be
-// unioned in via the same envelope once their projection tables exist.
+// radarItem is the v1 radar feed item shape. The radar surfaces promoted
+// entities from all intelligence domains (scholarships, jobs, visa routes,
+// housing guides, remittance rates, cost-of-living items) unioned into a
+// single feed. Domain-specific fields are surfaced via the common columns
+// (title, description, country, source_url, etc.); the Type field
+// identifies the domain.
 type radarItem struct {
-	ID                pgtype.UUID    `json:"id"`
-	Type              string         `json:"type"`
-	Title             string         `json:"title"`
-	Description       *string        `json:"description,omitempty"`
-	Country           string         `json:"country"`
-	University        *string        `json:"university,omitempty"`
-	DegreeLevel       *string        `json:"degree_level,omitempty"`
-	Deadline          pgtype.Date    `json:"deadline"`
-	ApplicationURL    *string        `json:"application_url,omitempty"`
-	ConfidenceOverall float32        `json:"confidence_overall"`
-	TrustLevel        int16          `json:"trust_level"`
-	FreshnessScore    int32          `json:"freshness_score"`
-	SourceURL         string         `json:"source_url"`
+	ID                pgtype.UUID        `json:"id"`
+	Type              string             `json:"type"`
+	Title             string             `json:"title"`
+	Description       *string            `json:"description,omitempty"`
+	Country           string             `json:"country"`
+	University        *string            `json:"university,omitempty"`
+	DegreeLevel       *string            `json:"degree_level,omitempty"`
+	Deadline          pgtype.Date        `json:"deadline"`
+	ApplicationURL    *string            `json:"application_url,omitempty"`
+	ConfidenceOverall float32            `json:"confidence_overall"`
+	TrustLevel        int16              `json:"trust_level"`
+	FreshnessScore    int32              `json:"freshness_score"`
+	SourceURL         string             `json:"source_url"`
 	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	// Saved is only populated in the detail handler (HandleRadarItemDetail)
+	// so the save button can seed its initial state. It is nil/omitted in
+	// list responses to avoid an N+1 saved-status check per item.
+	Saved *bool `json:"saved,omitempty"`
 }
 
 func scholarshipToRadarItem(s gen.Scholarship) radarItem {
@@ -56,6 +63,99 @@ func scholarshipToRadarItem(s gen.Scholarship) radarItem {
 		FreshnessScore:    s.FreshnessScore,
 		SourceURL:         s.SourceUrl,
 		CreatedAt:         s.CreatedAt,
+	}
+}
+
+// jobToRadarItem converts an intel_jobs row to a radarItem.
+func jobToRadarItem(j gen.IntelJob) radarItem {
+	return radarItem{
+		ID:                j.ID,
+		Type:              "job",
+		Title:             j.Title,
+		Description:       j.Description,
+		Country:           j.Country,
+		Deadline:          j.Deadline,
+		ApplicationURL:    j.ApplicationUrl,
+		ConfidenceOverall: j.ConfidenceOverall,
+		TrustLevel:        j.TrustLevel,
+		FreshnessScore:    j.FreshnessScore,
+		SourceURL:         j.SourceUrl,
+		CreatedAt:         j.CreatedAt,
+	}
+}
+
+// visaRouteToRadarItem converts a visa_routes row (with intel columns) to
+// a radarItem. The country is derived from the destination space; when
+// the space is not loaded, the country field is empty and the UI falls
+// back to the destination_space_id.
+func visaRouteToRadarItem(v gen.VisaRoute) radarItem {
+	govURL := v.GovSourceUrl
+	return radarItem{
+		ID:                v.ID,
+		Type:              "visa",
+		Title:             v.Name,
+		Description:       v.EligibilitySummary,
+		ApplicationURL:    &govURL,
+		ConfidenceOverall: v.ConfidenceOverall,
+		TrustLevel:        0,
+		FreshnessScore:    v.FreshnessScore,
+		SourceURL:         v.GovSourceUrl,
+		CreatedAt:         v.CreatedAt,
+	}
+}
+
+// housingGuideToRadarItem converts a housing_guides row (with intel
+// columns) to a radarItem.
+func housingGuideToRadarItem(h gen.HousingGuide) radarItem {
+	title := ""
+	if h.AccommodationType != nil {
+		title = *h.AccommodationType
+	}
+	return radarItem{
+		ID:                h.ID,
+		Type:              "housing",
+		Title:             title,
+		Description:       h.Tips,
+		ConfidenceOverall: h.ConfidenceOverall,
+		TrustLevel:        0,
+		FreshnessScore:    h.FreshnessScore,
+		SourceURL:         "",
+		CreatedAt:         h.CreatedAt,
+	}
+}
+
+// remittanceRateToRadarItem converts a remittance_rates row (with intel
+// columns) to a radarItem. The title is composed from the currency pair.
+func remittanceRateToRadarItem(r gen.RemittanceRate) radarItem {
+	title := r.SendCurrency + " → " + r.ReceiveCurrency
+	sourceURL := ""
+	if r.SourceUrl != nil {
+		sourceURL = *r.SourceUrl
+	}
+	return radarItem{
+		ID:                r.ID,
+		Type:              "remittance",
+		Title:             title,
+		ConfidenceOverall: r.ConfidenceOverall,
+		TrustLevel:        0,
+		FreshnessScore:    r.FreshnessScore,
+		SourceURL:         sourceURL,
+		CreatedAt:         r.FetchedAt,
+	}
+}
+
+// comparisonItemToRadarItem converts a comparison_items row (with intel
+// columns) to a radarItem for the cost_of_living domain.
+func comparisonItemToRadarItem(c gen.ComparisonItem) radarItem {
+	return radarItem{
+		ID:                c.ID,
+		Type:              "cost_of_living",
+		Title:             c.Title,
+		ConfidenceOverall: c.ConfidenceOverall,
+		TrustLevel:        0,
+		FreshnessScore:    c.FreshnessScore,
+		SourceURL:         "",
+		CreatedAt:         c.CreatedAt,
 	}
 }
 
@@ -128,10 +228,10 @@ func countByCountry(items []radarItem) map[string]int {
 	return counts
 }
 
-// HandleRadarFeed returns the geo-scoped radar feed. In v1 this is the set
-// of promoted scholarships filtered by the caller's space_id query param
-// (or country when space_id is absent). Anonymous callers get the global
-// feed (no space filter).
+// HandleRadarFeed returns the geo-scoped radar feed. The feed unions
+// promoted entities from all intelligence domains: scholarships, jobs,
+// visa routes, housing guides, remittance rates, and cost-of-living
+// items. Items are merged and sorted by created_at desc.
 //
 // GET /api/v1/intel/radar
 func (h *Handlers) HandleRadarFeed(w http.ResponseWriter, r *http.Request) {
@@ -147,29 +247,23 @@ func (h *Handlers) HandleRadarFeed(w http.ResponseWriter, r *http.Request) {
 	}
 
 	q := r.URL.Query()
-	page, limit := parsePagination(r)
+	page, limit := h.parsePagination(r)
 	offset := clampInt32((page - 1) * limit)
 
 	// BUG-006 fix: the spec §731-733 requires keyset pagination via ?cursor=.
-	// The cursor encodes (created_at, id). When present, decode it and use a
-	// keyset query (WHERE (created_at, id) < (cursor_ts, cursor_id)); when
-	// absent, fall back to offset pagination for the first page. The
-	// next_cursor is still returned so clients can resume.
 	cursorStr := q.Get("cursor")
 	cursorTS, cursorID, hasCursor := parseCursor(cursorStr)
 
 	spaceIDStr := q.Get("space_id")
 	country := q.Get("country")
+	domainFilter := q.Get("type") // optional domain filter (e.g. "job", "visa")
 
-	var rows []gen.Scholarship
+	// Fetch scholarships (existing logic).
+	var schRows []gen.Scholarship
 	var err error
-
 	switch {
 	case hasCursor:
-		// Keyset path: resume after the cursor item, ignoring space/country
-		// filters (the cursor already encodes the prior page's scope). This
-		// keeps the global feed paginating consistently.
-		rows, err = h.intelStores.ListScholarshipsKeyset(r.Context(), tenantID, gen.ListScholarshipsKeysetParams{
+		schRows, err = h.intelStores.ListScholarshipsKeyset(r.Context(), tenantID, gen.ListScholarshipsKeysetParams{
 			Column2: cursorTS,
 			ID:      cursorID,
 			Limit:   clampInt32(limit),
@@ -180,50 +274,131 @@ func (h *Handlers) HandleRadarFeed(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, "invalid_uuid", "Invalid space_id")
 			return
 		}
-		rows, err = h.intelStores.ListScholarshipsBySpace(r.Context(), tenantID, gen.ListScholarshipsBySpaceParams{
+		schRows, err = h.intelStores.ListScholarshipsBySpace(r.Context(), tenantID, gen.ListScholarshipsBySpaceParams{
 			CountrySpaceID: spaceID,
 			Limit:          clampInt32(limit),
 			Offset:         offset,
 		})
 	case country != "":
-		rows, err = h.intelStores.ListScholarshipsByCountry(r.Context(), tenantID, gen.ListScholarshipsByCountryParams{
+		schRows, err = h.intelStores.ListScholarshipsByCountry(r.Context(), tenantID, gen.ListScholarshipsByCountryParams{
 			Country: country,
 			Limit:   clampInt32(limit),
 			Offset:  offset,
 		})
 	default:
-		rows, err = h.intelStores.ListScholarships(r.Context(), tenantID, gen.ListScholarshipsParams{
+		schRows, err = h.intelStores.ListScholarships(r.Context(), tenantID, gen.ListScholarshipsParams{
 			Limit:  clampInt32(limit),
 			Offset: offset,
 		})
 	}
 	if err != nil {
-		slog.Error("intel: radar feed query failed", "error", err)
+		slog.Error("intel: radar feed scholarships query failed", "error", err)
 		writeError(w, http.StatusInternalServerError, "radar_feed_failed", "Failed to load radar feed")
 		return
 	}
 
-	items := make([]radarItem, 0, len(rows))
-	for _, s := range rows {
-		items = append(items, scholarshipToRadarItem(s))
+	items := make([]radarItem, 0, len(schRows))
+	if domainFilter == "" || domainFilter == "scholarship" {
+		for _, s := range schRows {
+			items = append(items, scholarshipToRadarItem(s))
+		}
 	}
 
-	// Keyset pagination: if the result set equals the limit, there may be
-	// more items. Encode the last item's (created_at, id) as the cursor.
-	hasMore := len(items) >= limit
+	// Union in the other domain tables. Each domain is fetched with its
+	// own keyset query and converted to radarItems. When a domain filter
+	// is active, only that domain is fetched. Errors from individual
+	// domains are logged but do not fail the whole feed (graceful
+	// degradation — a domain with no data or a transient error should
+	// not blank the entire radar).
+	if domainFilter == "" || domainFilter == "job" {
+		jobRows, jerr := h.intelStores.ListIntelJobsKeyset(r.Context(), tenantID, gen.ListIntelJobsKeysetParams{
+			Column2: cursorTS,
+			ID:      cursorID,
+			Limit:   clampInt32(limit),
+		})
+		if jerr != nil {
+			slog.Warn("intel: radar feed jobs query failed", "error", jerr)
+		} else {
+			for _, j := range jobRows {
+				items = append(items, jobToRadarItem(j))
+			}
+		}
+	}
+	if domainFilter == "" || domainFilter == "visa" {
+		vRows, verr := h.intelStores.ListVisaRoutesIntelKeyset(r.Context(), tenantID, gen.ListVisaRoutesIntelKeysetParams{
+			Column2: cursorTS,
+			ID:      cursorID,
+			Limit:   clampInt32(limit),
+		})
+		if verr != nil {
+			slog.Warn("intel: radar feed visa routes query failed", "error", verr)
+		} else {
+			for _, v := range vRows {
+				items = append(items, visaRouteToRadarItem(v))
+			}
+		}
+	}
+	if domainFilter == "" || domainFilter == "housing" {
+		hRows, herr := h.intelStores.ListHousingGuidesIntelKeyset(r.Context(), tenantID, gen.ListHousingGuidesIntelKeysetParams{
+			Column2: cursorTS,
+			ID:      cursorID,
+			Limit:   clampInt32(limit),
+		})
+		if herr != nil {
+			slog.Warn("intel: radar feed housing guides query failed", "error", herr)
+		} else {
+			for _, hg := range hRows {
+				items = append(items, housingGuideToRadarItem(hg))
+			}
+		}
+	}
+	if domainFilter == "" || domainFilter == "remittance" {
+		rRows, rerr := h.intelStores.ListRemittanceRatesIntelKeyset(r.Context(), tenantID, gen.ListRemittanceRatesIntelKeysetParams{
+			Column2: cursorTS,
+			ID:      cursorID,
+			Limit:   clampInt32(limit),
+		})
+		if rerr != nil {
+			slog.Warn("intel: radar feed remittance rates query failed", "error", rerr)
+		} else {
+			for _, rr := range rRows {
+				items = append(items, remittanceRateToRadarItem(rr))
+			}
+		}
+	}
+	if domainFilter == "" || domainFilter == "cost_of_living" {
+		cRows, cerr := h.intelStores.ListComparisonItemsIntelKeyset(r.Context(), tenantID, gen.ListComparisonItemsIntelKeysetParams{
+			Column2: cursorTS,
+			ID:      cursorID,
+			Limit:   clampInt32(limit),
+		})
+		if cerr != nil {
+			slog.Warn("intel: radar feed cost-of-living query failed", "error", cerr)
+		} else {
+			for _, c := range cRows {
+				items = append(items, comparisonItemToRadarItem(c))
+			}
+		}
+	}
+
+	// Sort the merged items by created_at desc (stable sort to preserve
+	// domain insertion order for same-timestamp items).
+	sortRadarItems(items)
+
+	// Trim to the page limit.
+	if len(items) > int(limit) {
+		items = items[:limit]
+	}
+
+	hasMore := len(items) >= int(limit)
 	nextCursor := ""
 	if hasMore && len(items) > 0 {
 		last := items[len(items)-1]
 		nextCursor = encodeCursor(last.CreatedAt, last.ID)
 	}
 
-	// Resolve the caller's followed space IDs so the UI can badge items
-	// whose country space the user follows. Best-effort: a failure
-	// degrades to an empty slice.
 	followedSpaces := h.resolveFollowedSpaceIDs(r.Context(), tenantID, userID)
 
-	// Spec envelope: {items, next_cursor, has_more, counts_by_type,
-	// counts_by_country, followed_space_ids} (BUG-03 fix, §3.3).
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"items":              items,
 		"next_cursor":        nextCursor,
@@ -232,6 +407,23 @@ func (h *Handlers) HandleRadarFeed(w http.ResponseWriter, r *http.Request) {
 		"counts_by_country":  countByCountry(items),
 		"followed_space_ids": followedSpaces,
 	})
+}
+
+// sortRadarItems sorts radar items by created_at descending (newest first).
+// Items with invalid created_at are placed last.
+func sortRadarItems(items []radarItem) {
+	for i := 1; i < len(items); i++ {
+		for j := i; j > 0; j-- {
+			if !items[j].CreatedAt.Valid {
+				break
+			}
+			if !items[j-1].CreatedAt.Valid || items[j].CreatedAt.Time.After(items[j-1].CreatedAt.Time) {
+				items[j], items[j-1] = items[j-1], items[j]
+			} else {
+				break
+			}
+		}
+	}
 }
 
 // HandleRadarCounts returns per-country scholarship counts for the dashboard
@@ -270,12 +462,15 @@ func (h *Handlers) HandleRadarCounts(w http.ResponseWriter, r *http.Request) {
 		byCountry[r.Country] = r.Count
 	}
 
-	// Spec envelope: {total_new, by_type, by_country} (BUG-04 fix, §3.3).
-	// In v1 all radar items are scholarships, so by_type has a single key.
+	// Spec envelope: {data: {total_new, by_type, by_country}} (INTEL-019 fix,
+	// §3.3 / api-response-format.md). In v1 all radar items are scholarships,
+	// so by_type has a single key.
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"total_new":  total,
-		"by_type":    map[string]int64{"scholarship": total},
-		"by_country": byCountry,
+		"data": map[string]interface{}{
+			"total_new":  total,
+			"by_type":    map[string]int64{"scholarship": total},
+			"by_country": byCountry,
+		},
 	})
 }
 
@@ -306,9 +501,15 @@ func (h *Handlers) HandleRadarFollowed(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, limit := parsePagination(r)
+	_, limit := h.parsePagination(r)
 
-	followed, err := h.followsSvc.GetFollowingByType(r.Context(), tenantID, userID, userID, follows.EntityTypeSpace, 100, 0)
+	// INTEL-016 fix: max followed spaces from system_settings (intel.radar.max_followed_spaces).
+	maxFollowed := 100
+	if h.settings != nil {
+		maxFollowed = h.settings.GetIntOr(r.Context(), h.defaultTenant, "intel.radar.max_followed_spaces", 100)
+	}
+
+	followed, err := h.followsSvc.GetFollowingByType(r.Context(), tenantID, userID, userID, follows.EntityTypeSpace, int32(maxFollowed), 0)
 	if err != nil {
 		slog.Error("intel: radar followed spaces lookup failed", "user_id", userID.String(), "error", err)
 		writeError(w, http.StatusInternalServerError, "followed_spaces_failed", "Failed to load followed spaces")
@@ -341,6 +542,27 @@ func (h *Handlers) HandleRadarFollowed(w http.ResponseWriter, r *http.Request) {
 	items := make([]radarItem, 0, len(rows))
 	for _, s := range rows {
 		items = append(items, scholarshipToRadarItem(s))
+	}
+
+	// Union in jobs from followed spaces (graceful degradation on error).
+	if len(spaceIDs) > 0 {
+		jobRows, jerr := h.intelStores.ListIntelJobsBySpaces(r.Context(), tenantID, gen.ListIntelJobsBySpacesParams{
+			Column2: spaceIDs,
+			Limit:   clampInt32(limit),
+		})
+		if jerr != nil {
+			slog.Warn("intel: radar followed jobs query failed", "error", jerr)
+		} else {
+			for _, j := range jobRows {
+				items = append(items, jobToRadarItem(j))
+			}
+		}
+	}
+
+	// Sort the merged items by created_at desc.
+	sortRadarItems(items)
+	if len(items) > int(limit) {
+		items = items[:limit]
 	}
 
 	hasMore := len(items) >= limit
@@ -408,8 +630,8 @@ func (h *Handlers) HandleRadarFollow(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"data": map[string]interface{}{
-			"space_id":    body.SpaceID,
-			"following":   followed,
+			"space_id":  body.SpaceID,
+			"following": followed,
 		},
 	})
 }
@@ -504,8 +726,24 @@ func (h *Handlers) HandleRadarItemDetail(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	item := scholarshipToRadarItem(s)
+
+	// Populate the Saved flag so the detail page's save button can seed
+	// its initial state. Only checked for authenticated users; guests get
+	// nil (omitted) and the button defaults to unsaved.
+	if h.scholarSvc != nil {
+		if uid, ok := optionalUser(w, r); ok {
+			saved, serr := h.scholarSvc.IsSavedScholarship(r.Context(), tenantID, uid, s.GuideID)
+			if serr != nil {
+				slog.Warn("intel: radar item saved-status check failed", "item_id", itemID.String(), "error", serr)
+			} else {
+				item.Saved = &saved
+			}
+		}
+	}
+
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"data": scholarshipToRadarItem(s),
+		"data": item,
 	})
 }
 
@@ -530,7 +768,7 @@ func (h *Handlers) HandleRadarSaved(w http.ResponseWriter, r *http.Request) {
 	}
 
 	status := r.URL.Query().Get("status")
-	page, limit := parsePagination(r)
+	page, limit := h.parsePagination(r)
 
 	rows, total, err := h.scholarSvc.ListSavedScholarships(r.Context(), tenantID, userID, status, page, limit)
 	if err != nil {

@@ -7,8 +7,8 @@
 	import { EmptyState } from '$lib/components/ui';
 	import { api } from '$lib/api/client';
 	import { requireAuthOrRedirect } from '$lib/auth/guest';
-	import RadarItemRow, { type RadarItem } from '$lib/components/RadarItemRow.svelte';
-	import type { Space } from '$lib/types';
+	import RadarItemRow from '$lib/components/RadarItemRow.svelte';
+	import type { Space, RadarItem } from '$lib/types';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -47,10 +47,11 @@
 	let followedSpaceIds = $state<Set<string>>(untrack(() => new Set(data.followedSpaceIds ?? [])));
 
 	// Group the followed feed by country so each followed country renders as
-	// a pinned section with its items beneath.
+	// a pinned section with its items beneath. Uses allFollowedItems (SSR +
+	// load-more) so paginated items appear in the grouped view.
 	const followedByCountry = $derived.by(() => {
 		const map = new Map<string, RadarItem[]>();
-		for (const item of followedItems) {
+		for (const item of allFollowedItems) {
 			const key = item.country || t('radar.uncategorized', 'Uncategorized');
 			const arr = map.get(key);
 			if (arr) arr.push(item);
@@ -68,20 +69,30 @@
 	);
 
 	// "Load more" — appends the next page of followed items client-side.
+	// The radar feed uses a non-standard envelope ({items, ...} per spec
+	// §739) — the array is under `items`, not `data`, so api.get (which
+	// reads body.data) cannot be used. We fetch directly and read `items`.
 	let loadingMore = $state(false);
 	let extraItems = $state<RadarItem[]>([]);
 	const allFollowedItems = $derived([...followedItems, ...extraItems]);
-	const hasMore = $derived(followedItems.length >= data.pageSize);
+	const hasMore = $derived(allFollowedItems.length >= data.pageSize);
 
 	async function loadMore() {
 		if (loadingMore || !authed) return;
 		loadingMore = true;
 		const nextOffset = allFollowedItems.length;
-		const res = await api.get<RadarItem[]>(
-			`/intel/radar/followed?page_size=${data.pageSize}&page_offset=${nextOffset}`
-		);
-		if (!res.error && res.data) {
-			extraItems = [...extraItems, ...res.data];
+		try {
+			const r = await fetch(
+				`/api/v1/intel/radar/followed?page_size=${data.pageSize}&page_offset=${nextOffset}`,
+				{ credentials: 'include' }
+			);
+			if (r.ok) {
+				const body = await r.json();
+				const items = (body?.items as RadarItem[] | undefined) ?? [];
+				extraItems = [...extraItems, ...items];
+			}
+		} catch {
+			// network error — keep existing items
 		}
 		loadingMore = false;
 	}
@@ -397,4 +408,15 @@
 			{/if}
 		</div>
 	{/if}
+
+	<!-- INTEL-024 fix: link to the public source directory -->
+	<div class="mt-8 border-t border-[var(--color-border)] pt-4">
+		<a
+			href="/radar/sources"
+			class="inline-flex items-center gap-1.5 text-xs text-[var(--color-muted)] transition-colors hover:text-[var(--color-text)]"
+		>
+			<Globe size={13} />
+			{t('radar.view_sources', 'View data sources')}
+		</a>
+	</div>
 </div>

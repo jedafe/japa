@@ -14,7 +14,8 @@ vi.mock('$lib/api', () => ({
 
 vi.mock('$lib/stores/permissions.svelte', () => ({
 	permissions: [],
-	hasPermission: vi.fn().mockReturnValue(true)
+	hasPermission: vi.fn().mockReturnValue(true),
+	getPermissionState: vi.fn().mockReturnValue([])
 }));
 
 describe('Bot Management +page.svelte', () => {

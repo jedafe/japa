@@ -11,9 +11,12 @@
 		id?: string;
 		url?: string;
 		content_type?: string;
-		body?: string;
-		fetched_at?: string;
-		status_code?: number;
+		// Backend returns body as base64 (body_b64), http_status, and
+		// retrieved_at per route catalog §2229. The prior interface used
+		// body/status_code/fetched_at which the backend never sent.
+		body_b64?: string;
+		http_status?: number;
+		retrieved_at?: string;
 		[hash: string]: unknown;
 	}
 
@@ -27,7 +30,18 @@
 
 	let copied = $state(false);
 
-	const body = $derived<string>(typeof doc?.body === 'string' ? doc.body : '');
+	// Decode the base64-encoded body. The backend sends body_b64 to preserve
+	// binary content (PDF bytes, etc.). Falls back to empty string when the
+	// field is absent or decoding fails.
+	const body = $derived.by<string>(() => {
+		const b64 = doc?.body_b64;
+		if (!b64 || typeof b64 !== 'string') return '';
+		try {
+			return atob(b64);
+		} catch {
+			return '';
+		}
+	});
 	const contentType = $derived<string>(doc?.content_type ?? '');
 
 	const isJson = $derived(
@@ -119,11 +133,11 @@
 				</div>
 				<div>
 					<dt class="text-muted-foreground font-medium uppercase">{t('intel.fetched_at', 'Fetched At')}</dt>
-					<dd class="text-foreground font-mono">{formatTime(doc.fetched_at)}</dd>
+					<dd class="text-foreground font-mono">{formatTime(doc.retrieved_at)}</dd>
 				</div>
 				<div>
 					<dt class="text-muted-foreground font-medium uppercase">{t('intel.status_code', 'Status')}</dt>
-					<dd class="text-foreground font-mono">{doc.status_code ?? '—'}</dd>
+					<dd class="text-foreground font-mono">{doc.http_status ?? '—'}</dd>
 				</div>
 			</dl>
 

@@ -130,6 +130,38 @@ export async function apiList<T>(
 	return { items: data ?? [], meta };
 }
 
+/**
+ * GET a radar-style list endpoint. The radar feed endpoints
+ * (GET /intel/radar, GET /intel/radar/followed) use a non-standard
+ * envelope per spec §739: {items, next_cursor, has_more, counts_by_type,
+ * counts_by_country, followed_space_ids} — the array is under `items`,
+ * not `data`. This helper reads `items` from the raw payload and passes
+ * through the sidecar fields as `meta` so callers can access counts and
+ * pagination state.
+ */
+export async function apiRadarList<T>(
+	ctx: ApiContext,
+	path: string
+): Promise<{ items: T[]; meta?: Record<string, unknown> }> {
+	// request() casts the raw JSON as ApiOk<T> = {data: T}, but the radar
+	// endpoint's raw payload IS the envelope (no `data` wrapper). Access
+	// the fields directly from the returned object.
+	const payload = await request<Record<string, unknown>>(ctx, 'GET', path);
+	const raw = payload as unknown as Record<string, unknown>;
+	const items = (raw['items'] as T[] | undefined) ?? [];
+	const meta: Record<string, unknown> = {};
+	for (const key of [
+		'next_cursor',
+		'has_more',
+		'counts_by_type',
+		'counts_by_country',
+		'followed_space_ids'
+	]) {
+		if (key in raw) meta[key] = raw[key];
+	}
+	return { items, meta };
+}
+
 export async function apiPost<T>(ctx: ApiContext, path: string, body?: unknown): Promise<T> {
 	const { data } = await request<T>(ctx, 'POST', path, body);
 	return data;

@@ -46,7 +46,14 @@
 		title: t('slot_types.title', 'Slot Types'),
 		description: t('slot_types.description', 'Manage ad placement slot types — define dimensions, display limits, and availability'),
 		createLabel: t('slot_types.create', 'Create Slot Type'),
-		createPermission: 'ad.campaign.manage',
+		// Ref: japaconnect-engineering/sections/25-ad-placement.md — the
+		// backend GET/POST/PUT/DELETE /admin/ads/slot-types* routes all
+		// require `ad.slot.manage` (server.go). Gate the UI with the same
+		// node so an authorized user sees the controls and an unauthorized
+		// one does not get a 403 on submit.
+		createPermission: 'ad.slot.manage',
+		editPermission: 'ad.slot.manage',
+		deletePermission: 'ad.slot.manage',
 		pageSize: 25,
 		columns: [
 			{

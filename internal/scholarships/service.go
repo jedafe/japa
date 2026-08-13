@@ -540,6 +540,23 @@ func (s *Service) DeleteSavedScholarship(ctx context.Context, tenantID, userID, 
 	})
 }
 
+// IsSavedScholarship checks whether the user has saved the given guide.
+// Returns false (not an error) when no saved-tracker row exists.
+func (s *Service) IsSavedScholarship(ctx context.Context, tenantID, userID, guideID pgtype.UUID) (bool, error) {
+	_, err := s.store.GetSavedScholarship(ctx, gen.GetSavedScholarshipParams{
+		TenantID: tenantID,
+		UserID:   userID,
+		GuideID:  guideID,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
+}
+
 // ListSavedScholarships returns a user's saved scholarships as
 // SavedScholarshipResponse rows (nested scholarship object). Each row
 // fetches the scholarship detail to populate the flat fields.

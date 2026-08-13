@@ -104,3 +104,6 @@ SELECT * FROM scholarships WHERE tenant_id = $1 AND country = $2 ORDER BY create
 
 -- name: CountScholarshipsByCountry :many
 SELECT country, count(*) as count FROM scholarships WHERE tenant_id = $1 GROUP BY country;
+
+-- name: DeleteScholarship :exec
+DELETE FROM scholarships WHERE tenant_id = $1 AND id = $2;

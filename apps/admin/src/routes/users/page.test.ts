@@ -30,6 +30,7 @@ vi.mock('$app/navigation', () => ({
 
 vi.mock('$lib/stores/permissions.svelte', () => ({
 	hasPermission: vi.fn().mockReturnValue(false),
+	getPermissionState: vi.fn().mockReturnValue([]),
 }));
 
 vi.mock('$lib/stores/i18n.svelte', () => ({

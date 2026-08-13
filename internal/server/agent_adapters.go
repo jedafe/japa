@@ -182,6 +182,13 @@ func (a *agentRateLimiterAdapter) Expire(ctx context.Context, key string, ttlSec
 	return a.rdb.Expire(ctx, key, time.Duration(ttlSeconds)*time.Second).Err()
 }
 
+// Get retrieves the string value at key. Returns the redis nil error
+// (valkeycompat.Nil) when the key does not exist — the caller treats any
+// error as "no value yet" and skips the budget check.
+func (a *agentRateLimiterAdapter) Get(ctx context.Context, key string) (string, error) {
+	return a.rdb.Get(ctx, key).Result()
+}
+
 // derefStr returns *s if s is non-nil, else "".
 func derefStr(s *string) string {
 	if s == nil {

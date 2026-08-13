@@ -35,13 +35,17 @@ type Store struct {
 	pool    *db.DB
 }
 
-// NewStore creates a stores backed by the given database. Reads and writes
-// both go through database.Reader (the primary DSN until a replica is
-// provisioned), matching the established scholarships and sources store
-// conventions.
+// NewStore creates a stores backed by the given database. The queries field
+// uses database.Writer (the primary) because the store performs both reads
+// and writes through s.queries — approve/reject/edit handlers call
+// UpdateIntelRecordStatus and UpdateIntelRecordEditorialOverrides directly
+// (not through WithTx). Using database.Reader (the read-only replica) for
+// these writes caused "cannot execute UPDATE in a read-only transaction"
+// errors (SQLSTATE 25006) on every review mutation. WithTx already uses
+// database.Writer, so transactional writes were unaffected.
 func NewStore(database *db.DB) *Store {
 	return &Store{
-		queries: gen.New(database.Reader),
+		queries: gen.New(database.Writer),
 		pool:    database,
 	}
 }
@@ -206,6 +210,20 @@ func (s *Store) ListIntelRecordsByStatus(ctx context.Context, tenantID pgtype.UU
 	rows, err := s.queries.ListIntelRecordsByStatus(ctx, arg)
 	if err != nil {
 		return nil, fmt.Errorf("stores: list intel records by status: %w", err)
+	}
+	return rows, nil
+}
+
+// ListIntelRecordsByStatusAll returns a page of intel records filtered by
+// status only (across all entity types), newest extraction first. Used by
+// the review-queue handler when no entity_type filter is supplied
+// (BUG-001 fix). The tenantID is stamped into the query params regardless
+// of any value the caller set on arg.TenantID.
+func (s *Store) ListIntelRecordsByStatusAll(ctx context.Context, tenantID pgtype.UUID, arg gen.ListIntelRecordsByStatusAllParams) ([]gen.IntelRecord, error) {
+	arg.TenantID = tenantID
+	rows, err := s.queries.ListIntelRecordsByStatusAll(ctx, arg)
+	if err != nil {
+		return nil, fmt.Errorf("stores: list intel records by status (all types): %w", err)
 	}
 	return rows, nil
 }
@@ -404,8 +422,8 @@ func (s *Store) UpdateScholarshipFreshness(ctx context.Context, tenantID pgtype.
 // moderation action (spec §6). The tenantID is stamped into the query params.
 func (s *Store) UpdateScholarshipEditorialOverrides(ctx context.Context, tenantID, id pgtype.UUID, overrides []byte) error {
 	if err := s.queries.UpdateScholarshipEditorialOverrides(ctx, gen.UpdateScholarshipEditorialOverridesParams{
-		TenantID: tenantID,
-		ID:       id,
+		TenantID:           tenantID,
+		ID:                 id,
 		EditorialOverrides: overrides,
 	}); err != nil {
 		return fmt.Errorf("stores: update scholarship editorial overrides: %w", err)
@@ -512,4 +530,211 @@ func (s *Store) CreateContent(ctx context.Context, tenantID pgtype.UUID, arg gen
 		return gen.CreateContentRow{}, fmt.Errorf("stores: create content: %w", err)
 	}
 	return row, nil
+}
+
+// ---------------------------------------------------------------------------
+// IntelJobs (domain projection for the jobs domain)
+// ---------------------------------------------------------------------------
+
+func (s *Store) CreateIntelJob(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateIntelJobParams) (gen.IntelJob, error) {
+	arg.TenantID = tenantID
+	row, err := s.queries.CreateIntelJob(ctx, arg)
+	if err != nil {
+		return gen.IntelJob{}, fmt.Errorf("stores: create intel job: %w", err)
+	}
+	return row, nil
+}
+
+func (s *Store) GetIntelJob(ctx context.Context, tenantID, id pgtype.UUID) (gen.IntelJob, error) {
+	row, err := s.queries.GetIntelJob(ctx, gen.GetIntelJobParams{TenantID: tenantID, ID: id})
+	if err != nil {
+		return gen.IntelJob{}, fmt.Errorf("stores: get intel job: %w", err)
+	}
+	return row, nil
+}
+
+func (s *Store) GetIntelJobByIntelRecord(ctx context.Context, tenantID, intelRecordID pgtype.UUID) (gen.IntelJob, error) {
+	row, err := s.queries.GetIntelJobByIntelRecord(ctx, gen.GetIntelJobByIntelRecordParams{TenantID: tenantID, IntelRecordID: intelRecordID})
+	if err != nil {
+		return gen.IntelJob{}, fmt.Errorf("stores: get intel job by intel record: %w", err)
+	}
+	return row, nil
+}
+
+func (s *Store) UpdateIntelJob(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateIntelJobParams) error {
+	arg.TenantID = tenantID
+	if err := s.queries.UpdateIntelJob(ctx, arg); err != nil {
+		return fmt.Errorf("stores: update intel job: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) ListIntelJobsKeyset(ctx context.Context, tenantID pgtype.UUID, arg gen.ListIntelJobsKeysetParams) ([]gen.IntelJob, error) {
+	arg.TenantID = tenantID
+	rows, err := s.queries.ListIntelJobsKeyset(ctx, arg)
+	if err != nil {
+		return nil, fmt.Errorf("stores: list intel jobs keyset: %w", err)
+	}
+	return rows, nil
+}
+
+func (s *Store) ListIntelJobsBySpaces(ctx context.Context, tenantID pgtype.UUID, arg gen.ListIntelJobsBySpacesParams) ([]gen.IntelJob, error) {
+	arg.TenantID = tenantID
+	rows, err := s.queries.ListIntelJobsBySpaces(ctx, arg)
+	if err != nil {
+		return nil, fmt.Errorf("stores: list intel jobs by spaces: %w", err)
+	}
+	return rows, nil
+}
+
+// ---------------------------------------------------------------------------
+// VisaRoutes (intelligence columns — domain projection for the visa domain)
+// ---------------------------------------------------------------------------
+
+func (s *Store) CreateVisaRouteIntel(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateVisaRouteIntelParams) (gen.VisaRoute, error) {
+	arg.TenantID = tenantID
+	row, err := s.queries.CreateVisaRouteIntel(ctx, arg)
+	if err != nil {
+		return gen.VisaRoute{}, fmt.Errorf("stores: create visa route intel: %w", err)
+	}
+	return row, nil
+}
+
+func (s *Store) GetVisaRouteByIntelRecord(ctx context.Context, tenantID, intelRecordID pgtype.UUID) (gen.VisaRoute, error) {
+	row, err := s.queries.GetVisaRouteByIntelRecord(ctx, gen.GetVisaRouteByIntelRecordParams{TenantID: tenantID, IntelRecordID: intelRecordID})
+	if err != nil {
+		return gen.VisaRoute{}, fmt.Errorf("stores: get visa route by intel record: %w", err)
+	}
+	return row, nil
+}
+
+func (s *Store) UpdateVisaRouteIntel(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateVisaRouteIntelParams) error {
+	arg.TenantID = tenantID
+	if err := s.queries.UpdateVisaRouteIntel(ctx, arg); err != nil {
+		return fmt.Errorf("stores: update visa route intel: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) ListVisaRoutesIntelKeyset(ctx context.Context, tenantID pgtype.UUID, arg gen.ListVisaRoutesIntelKeysetParams) ([]gen.VisaRoute, error) {
+	arg.TenantID = tenantID
+	rows, err := s.queries.ListVisaRoutesIntelKeyset(ctx, arg)
+	if err != nil {
+		return nil, fmt.Errorf("stores: list visa routes intel keyset: %w", err)
+	}
+	return rows, nil
+}
+
+// ---------------------------------------------------------------------------
+// HousingGuides (intelligence columns — domain projection for the housing domain)
+// ---------------------------------------------------------------------------
+
+func (s *Store) CreateHousingGuideIntel(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateHousingGuideIntelParams) (gen.HousingGuide, error) {
+	arg.TenantID = tenantID
+	row, err := s.queries.CreateHousingGuideIntel(ctx, arg)
+	if err != nil {
+		return gen.HousingGuide{}, fmt.Errorf("stores: create housing guide intel: %w", err)
+	}
+	return row, nil
+}
+
+func (s *Store) GetHousingGuideByIntelRecord(ctx context.Context, tenantID, intelRecordID pgtype.UUID) (gen.HousingGuide, error) {
+	row, err := s.queries.GetHousingGuideByIntelRecord(ctx, gen.GetHousingGuideByIntelRecordParams{TenantID: tenantID, IntelRecordID: intelRecordID})
+	if err != nil {
+		return gen.HousingGuide{}, fmt.Errorf("stores: get housing guide by intel record: %w", err)
+	}
+	return row, nil
+}
+
+func (s *Store) UpdateHousingGuideIntel(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateHousingGuideIntelParams) error {
+	arg.TenantID = tenantID
+	if err := s.queries.UpdateHousingGuideIntel(ctx, arg); err != nil {
+		return fmt.Errorf("stores: update housing guide intel: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) ListHousingGuidesIntelKeyset(ctx context.Context, tenantID pgtype.UUID, arg gen.ListHousingGuidesIntelKeysetParams) ([]gen.HousingGuide, error) {
+	arg.TenantID = tenantID
+	rows, err := s.queries.ListHousingGuidesIntelKeyset(ctx, arg)
+	if err != nil {
+		return nil, fmt.Errorf("stores: list housing guides intel keyset: %w", err)
+	}
+	return rows, nil
+}
+
+// ---------------------------------------------------------------------------
+// RemittanceRates (intelligence columns — domain projection for the remittance domain)
+// ---------------------------------------------------------------------------
+
+func (s *Store) CreateRemittanceRateIntel(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateRemittanceRateIntelParams) (gen.RemittanceRate, error) {
+	arg.TenantID = tenantID
+	row, err := s.queries.CreateRemittanceRateIntel(ctx, arg)
+	if err != nil {
+		return gen.RemittanceRate{}, fmt.Errorf("stores: create remittance rate intel: %w", err)
+	}
+	return row, nil
+}
+
+func (s *Store) GetRemittanceRateByIntelRecord(ctx context.Context, tenantID, intelRecordID pgtype.UUID) (gen.RemittanceRate, error) {
+	row, err := s.queries.GetRemittanceRateByIntelRecord(ctx, gen.GetRemittanceRateByIntelRecordParams{TenantID: tenantID, IntelRecordID: intelRecordID})
+	if err != nil {
+		return gen.RemittanceRate{}, fmt.Errorf("stores: get remittance rate by intel record: %w", err)
+	}
+	return row, nil
+}
+
+func (s *Store) UpdateRemittanceRateIntel(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateRemittanceRateIntelParams) error {
+	arg.TenantID = tenantID
+	if err := s.queries.UpdateRemittanceRateIntel(ctx, arg); err != nil {
+		return fmt.Errorf("stores: update remittance rate intel: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) ListRemittanceRatesIntelKeyset(ctx context.Context, tenantID pgtype.UUID, arg gen.ListRemittanceRatesIntelKeysetParams) ([]gen.RemittanceRate, error) {
+	arg.TenantID = tenantID
+	rows, err := s.queries.ListRemittanceRatesIntelKeyset(ctx, arg)
+	if err != nil {
+		return nil, fmt.Errorf("stores: list remittance rates intel keyset: %w", err)
+	}
+	return rows, nil
+}
+
+// ---------------------------------------------------------------------------
+// ComparisonItems (intelligence columns — domain projection for the cost_of_living domain)
+// ---------------------------------------------------------------------------
+
+func (s *Store) CreateComparisonItemIntel(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateComparisonItemIntelParams) (gen.ComparisonItem, error) {
+	arg.TenantID = tenantID
+	row, err := s.queries.CreateComparisonItemIntel(ctx, arg)
+	if err != nil {
+		return gen.ComparisonItem{}, fmt.Errorf("stores: create comparison item intel: %w", err)
+	}
+	return row, nil
+}
+
+func (s *Store) GetComparisonItemByIntelRecord(ctx context.Context, tenantID, intelRecordID pgtype.UUID) (gen.ComparisonItem, error) {
+	row, err := s.queries.GetComparisonItemByIntelRecord(ctx, gen.GetComparisonItemByIntelRecordParams{TenantID: tenantID, IntelRecordID: intelRecordID})
+	if err != nil {
+		return gen.ComparisonItem{}, fmt.Errorf("stores: get comparison item by intel record: %w", err)
+	}
+	return row, nil
+}
+
+func (s *Store) UpdateComparisonItemIntel(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateComparisonItemIntelParams) error {
+	arg.TenantID = tenantID
+	if err := s.queries.UpdateComparisonItemIntel(ctx, arg); err != nil {
+		return fmt.Errorf("stores: update comparison item intel: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) ListComparisonItemsIntelKeyset(ctx context.Context, tenantID pgtype.UUID, arg gen.ListComparisonItemsIntelKeysetParams) ([]gen.ComparisonItem, error) {
+	arg.TenantID = tenantID
+	rows, err := s.queries.ListComparisonItemsIntelKeyset(ctx, arg)
+	if err != nil {
+		return nil, fmt.Errorf("stores: list comparison items intel keyset: %w", err)
+	}
+	return rows, nil
 }

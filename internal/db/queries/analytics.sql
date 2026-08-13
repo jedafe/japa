@@ -110,6 +110,22 @@ REFRESH MATERIALIZED VIEW CONCURRENTLY mv_daily_space_stats;
 -- name: RefreshUserEngagementStatsView :exec
 REFRESH MATERIALIZED VIEW CONCURRENTLY mv_user_engagement_stats;
 
+-- Section 66 (ADR-084) — Advanced Analytics materialized views.
+-- All four are refreshed by the same analytics:refresh_views task (hourly)
+-- alongside the §40 base views. Each has a UNIQUE index so CONCURRENTLY
+-- is supported. Ref: sections/66-advanced-analytics.md
+-- name: RefreshTopContent7dView :exec
+REFRESH MATERIALIZED VIEW CONCURRENTLY mv_top_content_7d;
+
+-- name: RefreshTopContent30dView :exec
+REFRESH MATERIALIZED VIEW CONCURRENTLY mv_top_content_30d;
+
+-- name: RefreshTopContent90dView :exec
+REFRESH MATERIALIZED VIEW CONCURRENTLY mv_top_content_90d;
+
+-- name: RefreshRevenueStreamsView :exec
+REFRESH MATERIALIZED VIEW CONCURRENTLY mv_revenue_streams;
+
 -- =====================
 -- Dashboard Aggregates (from real tables)
 -- =====================

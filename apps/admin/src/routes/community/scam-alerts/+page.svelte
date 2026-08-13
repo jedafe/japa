@@ -26,6 +26,11 @@
 		reviewer_name?: string;
 		created_at: string;
 		updated_at?: string;
+		// ADR-088 AI generation columns
+		ai_generated?: boolean;
+		ai_model?: string;
+		hitl_reviewed_by?: string;
+		ai_generated_at?: string;
 	};
 
 	const canReview = $derived(hasPermission('scam_alert.review'));
@@ -182,6 +187,7 @@
 			if (params.page) qs.set('page', String(params.page));
 			if (params.pageSize) qs.set('limit', String(params.pageSize));
 			if (params.q) qs.set('q', params.q);
+			if (params.filter?.dest) qs.set('dest', params.filter.dest);
 			const result = await scamAlertAdminApi.listRaw(qs.toString());
 			if (result.ok) {
 				const data = (result.data.data as ScamAlertItem[]) ?? [];

@@ -67,9 +67,14 @@
 		id?: string;
 		url?: string;
 		content_type?: string;
-		body?: string;
-		fetched_at?: string;
-		status_code?: number;
+		// The backend returns the body as base64 (body_b64) to preserve
+		// binary content (PDF bytes, etc.) per route catalog §2229. The
+		// prior interface expected a plain `body` string and `status_code`/
+		// `fetched_at` field names that the backend never sent — contract
+		// drift fix.
+		body_b64?: string;
+		http_status?: number;
+		retrieved_at?: string;
 		[key: string]: unknown;
 	}
 
@@ -95,21 +100,20 @@
 		errorMessage = '';
 		actionMessage = '';
 
-		const recRes = await api<{ data?: IntelRecord } & Record<string, unknown>>(
+		const recRes = await api<IntelRecord[]>(
 			`/api/v1/intel/review/queue?page_size=100`
 		);
-		// The review queue returns a list; locate this record by id.
-		if (recRes.ok && Array.isArray(recRes.data?.data)) {
-			const found = (recRes.data!.data as IntelRecord[]).find((r) => r.id === recordId);
-			if (found) {
-				record = found;
-			} else {
-				// Fall back to a direct fetch if the record isn't in the queue page.
-				const direct = await api<{ data?: IntelRecord } & Record<string, unknown>>(
-					`/api/v1/intel/radar/feed/${recordId}`
-				);
-				record = (direct.ok && direct.data?.data) ? (direct.data.data as IntelRecord) : null;
-			}
+		// The review queue returns a list; locate this record by id. If the
+		// record is not in the queue (e.g., already approved/rejected), show
+		// the not-found state. The prior code fell back to /intel/radar/feed
+		// which returns a scholarship-shaped object, not an IntelRecord — the
+		// fields don't match (no source_id, raw_document_id, extracted, etc.)
+		// so the four-pane moderation view would break silently.
+		// The api() helper already unwraps the response `data` field, so
+		// recRes.data is the array directly.
+		if (recRes.ok && Array.isArray(recRes.data)) {
+			const found = (recRes.data as IntelRecord[]).find((r) => r.id === recordId);
+			record = found ?? null;
 		} else if (!recRes.ok) {
 			errorMessage = recRes.error;
 		}
@@ -131,30 +135,34 @@
 	}
 
 	async function loadSource(sourceId: string) {
-		const result = await api<{ data?: IntelSource[] } & Record<string, unknown>>(
-			'/api/v1/intel/sources?page_size=100'
+		// Fetch all sources (including disabled) to find the one for this
+		// record. There is no single-source GET endpoint, so we fetch the
+		// full list and find by id. include_disabled=true ensures disabled
+		// sources are still resolved (BUG-004 fix).
+		const result = await api<IntelSource[]>(
+			'/api/v1/intel/sources?page_size=100&include_disabled=true'
 		);
-		if (result.ok && Array.isArray(result.data?.data)) {
-			source = (result.data!.data as IntelSource[]).find((s) => s.id === sourceId) ?? null;
+		if (result.ok && Array.isArray(result.data)) {
+			source = (result.data as IntelSource[]).find((s) => s.id === sourceId) ?? null;
 		}
 	}
 
 	async function loadRawDoc(docId: string) {
 		// The raw document endpoint is best-effort; the pane handles absence.
-		const result = await api<{ data?: RawDocument } & Record<string, unknown>>(
+		const result = await api<RawDocument>(
 			`/api/v1/intel/raw-documents/${docId}`
 		);
-		if (result.ok && result.data?.data) {
-			rawDoc = result.data.data as RawDocument;
+		if (result.ok && result.data) {
+			rawDoc = result.data as RawDocument;
 		}
 	}
 
 	async function loadStructured(promotedId: string) {
-		const result = await api<{ data?: Record<string, unknown> } & Record<string, unknown>>(
+		const result = await api<Record<string, unknown>>(
 			`/api/v1/intel/scholarships/${promotedId}`
 		);
-		if (result.ok && result.data?.data) {
-			structuredRecord = result.data.data as Record<string, unknown>;
+		if (result.ok && result.data) {
+			structuredRecord = result.data as Record<string, unknown>;
 		}
 	}
 
@@ -190,8 +198,10 @@
 		const result = await api(`/api/v1/intel/review/${record.id}/approve`, { method: 'POST' });
 		actionLoading = null;
 		if (result.ok) {
-			notify('success', t('intel.approved_success', 'Record approved and queued for publication.'));
-			await loadAll();
+			// Redirect to the review queue after a successful approve. The
+			// record is no longer in the review_required queue, so reloading
+			// this page would show "Record not found" — confusing UX.
+			goto('/intelligence/review');
 		} else {
 			notify('error', result.error);
 		}
@@ -204,8 +214,8 @@
 		const result = await api(`/api/v1/intel/review/${record.id}/reject`, { method: 'POST' });
 		actionLoading = null;
 		if (result.ok) {
-			notify('success', t('intel.rejected_success', 'Record rejected.'));
-			await loadAll();
+			// Redirect to the review queue after a successful reject.
+			goto('/intelligence/review');
 		} else {
 			notify('error', result.error);
 		}
@@ -216,6 +226,10 @@
 		actionLoading = 'save';
 		actionMessage = '';
 		// Persist edits to the extracted blob via the review edit endpoint.
+		// The backend expects { fields: { fieldname: value, ... } } which it
+		// merges into editorial_overrides (route catalog §2243). The prior
+		// code sent { extracted: parsed } which the backend rejected with
+		// 'missing_field' — contract drift fix.
 		let parsed: unknown;
 		try {
 			parsed = editJson.trim() ? JSON.parse(editJson) : null;
@@ -224,9 +238,14 @@
 			notify('error', t('intel.invalid_json', 'Extracted fields must be valid JSON.'));
 			return;
 		}
+		if (parsed == null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+			actionLoading = null;
+			notify('error', t('intel.invalid_json', 'Extracted fields must be a JSON object.'));
+			return;
+		}
 		const result = await api(`/api/v1/intel/review/${record.id}/edit`, {
 			method: 'PATCH',
-			body: { extracted: parsed }
+			body: { fields: parsed as Record<string, unknown> }
 		});
 		actionLoading = null;
 		if (result.ok) {
@@ -445,7 +464,7 @@
 						<ListTree class="text-muted-foreground size-4" />
 						<h3 class="text-foreground text-sm font-semibold">{t('intel.structured_record', 'Structured Record')}</h3>
 					</div>
-					{#if canEdit && !editMode}
+					{#if canEdit && !editMode && record?.promoted_record_id}
 						<button
 							class="text-muted-foreground hover:bg-muted hover:text-foreground flex items-center gap-1 rounded-md px-2 py-1 text-xs transition-colors"
 							onclick={() => { editMode = true; editJson = structuredJson || safeStringify(record?.extracted); }}

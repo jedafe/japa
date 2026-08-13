@@ -105,7 +105,17 @@
 		{ value: 'fx', label: t('intel.category_fx', 'FX') },
 		{ value: 'remittance', label: t('intel.category_remittance', 'Remittance') },
 		{ value: 'news', label: t('intel.category_news', 'News') },
-		{ value: 'travel_alert', label: t('intel.category_travel_alert', 'Travel Alert') }
+		{ value: 'travel_alert', label: t('intel.category_travel_alert', 'Travel Alert') },
+		// INTEL-010 fix: add the 9 new domain categories (ADR-112 expansion).
+		{ value: 'housing', label: t('intel.category_housing', 'Housing') },
+		{ value: 'cost_of_living', label: t('intel.category_cost_of_living', 'Cost of Living') },
+		{ value: 'travel_routes', label: t('intel.category_travel_routes', 'Travel Routes') },
+		{ value: 'grants', label: t('intel.category_grants', 'Grants') },
+		{ value: 'admission', label: t('intel.category_admission', 'Admission') },
+		{ value: 'banking', label: t('intel.category_banking', 'Banking') },
+		{ value: 'work_career', label: t('intel.category_work_career', 'Work & Career') },
+		{ value: 'health_insurance', label: t('intel.category_health_insurance', 'Health Insurance') },
+		{ value: 'culture_lifestyle', label: t('intel.category_culture_lifestyle', 'Culture & Lifestyle') }
 	]);
 
 	const methodItems = $derived([

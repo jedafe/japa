@@ -87,8 +87,9 @@ The cache layer uses `internal/valkey/cachehelper.go` which provides:
   example showing how to configure it.
 
 ### Recommendations
-1. **Provision a read replica before launch** — set `JC_DATABASE_READER_URL`
-   env var to the replica DSN. No code changes needed — the wiring is done.
+1. **Provision a read replica before launch** — done locally (native Postgres on port 5434).
+   Set `JC_DATABASE_READER_URL` env var to the replica DSN. The local `.env` already
+   points to `postgresql://japa:japa@localhost:5434/japa?sslmode=disable`.
 2. **Audit for misplaced reads on Writer** — done for `internal/analytics/store.go`.
    Fixed `ResolveSecurityScanResult` (was using Reader pool for an UPDATE).
    All remaining `s.read.*` calls are reads; all `s.write.*` calls are writes.
@@ -146,7 +147,9 @@ Admin searches are low-traffic and benefit from pg_trgm indexes automatically.
 | Replica | Audit misplaced reads on Writer pool (analytics store) | 1 hour grep | ✅ Done |
 | Search | Route list-page ?q= to Meilisearch | Service + handler refactor | ✅ Done |
 | Middleware | SingleTenantMiddleware (eliminate per-request DB lookup) | Done | ✅ Done |
-| Replica | Provision read replica + set JC_DATABASE_READER_URL | Infra setup | 📋 Before launch |
+| UI | Remove tenant-management routes from control panel | server.go + layout + UI dir | ✅ Done |
+| Replica | Provision read replica + set JC_DATABASE_READER_URL | Native Postgres on port 5434 | ✅ Done |
+| Replica | Improve replication lag reporting (WAL lag + health) | control handlers + UI | ✅ Done |
 
 ### Priority order
 1. ✅ Drop 12 redundant indexes (done — migration 000433)
@@ -158,6 +161,8 @@ Admin searches are low-traffic and benefit from pg_trgm indexes automatically.
 7. ✅ Verify cache TTLs for jc:spam:censored and jc:coupon* (done — all have TTLs + invalidation)
 8. ✅ Fix misplaced read on Writer pool (done — analytics store ResolveSecurityScanResult fixed)
 9. ✅ Route list-page ?q= to Meilisearch (done — handler + content_searcher.go wired)
-10. 📋 Provision read replica before launch (set JC_DATABASE_READER_URL env var — no code change needed)
+10. ✅ Provision local read replica (done — native Postgres streaming replica on port 5434)
+11. ✅ Improve replication lag reporting (done — WAL lag bytes + healthy flag, avoids false alarms during idle periods)
+12. ✅ Remove tenant-management UI from control panel (done — /tenants routes, nav, and pages removed)
 
 

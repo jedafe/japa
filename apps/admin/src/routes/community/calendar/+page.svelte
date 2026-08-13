@@ -20,6 +20,11 @@
 		destination_space_id?: string;
 		origin_space_id?: string;
 		source_url?: string;
+		// ADR-088 AI generation columns
+		ai_generated?: boolean;
+		ai_model?: string;
+		hitl_reviewed_by?: string;
+		ai_generated_at?: string;
 	};
 
 	const canManage = $derived(hasPermission('calendar.review'));

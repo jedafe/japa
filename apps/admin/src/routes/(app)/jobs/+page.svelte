@@ -1,15 +1,15 @@
 <script lang="ts">
 	// /(app)/jobs — admin view of all job listings (Section 63, ADR-081).
-	// Read-only list with a feature-toggle state action.
+	// Full CRUD: list, edit, delete, feature-toggle.
 	// Ref: japaconnect-engineering/sections/63-jobs-board.md
-	import { EntityPage, type EntityPageConfig, type EntityPageController } from '$lib/components/entity';
+	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import { Modal } from '$lib/components/ui/modal';
 	import { Button } from '$lib/components/ui/button';
 	import { Card, CardContent, CardHeader } from '$lib/components/ui/card';
-	import { api, apiRaw } from '$lib/api';
+	import { jobsAdminApi } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
-	import { Star, Eye } from 'lucide-svelte';
+	import { Star, Eye, Pencil, Trash2 } from 'lucide-svelte';
 	import type { ActionItem, FilterDef } from '$lib/components/ui/data-table';
 
 	type JobListing = {
@@ -35,13 +35,12 @@
 	let statusDist = $state<StatusDist>({});
 
 	// ── Feature-toggle state action ─────
-	// EntityPage's confirm Modal only covers default delete; state actions keep
-	// page-local Modals, confirm calls API + controller.reload().
 	let entityController = $state<EntityPageController | undefined>(undefined);
 	let pageError = $state('');
 	let togglingId = $state('');
 	let showFeatureConfirm = $state(false);
 	let featureTarget = $state<JobListing | null>(null);
+	let bulkDeleting = $state(false);
 
 	function promptFeature(listing: JobListing) {
 		featureTarget = listing;
@@ -54,7 +53,7 @@
 		togglingId = featureTarget.id;
 		pageError = '';
 		try {
-			const result = await api(`/admin/jobs/${featureTarget.id}/feature`, { method: 'PATCH' });
+			const result = await jobsAdminApi.toggleFeature(featureTarget.id);
 			if (result.ok) {
 				showFeatureConfirm = false;
 				featureTarget = null;
@@ -69,19 +68,43 @@
 		}
 	}
 
+	// ── Bulk delete ─────
+	async function bulkDelete(ids: Set<string>) {
+		const idArr = Array.from(ids);
+		if (idArr.length === 0) return;
+		if (bulkDeleting) return; // in-flight guard
+		bulkDeleting = true;
+		pageError = '';
+		try {
+			await Promise.all(idArr.map((id) => jobsAdminApi.delete(id)));
+		} catch (e) {
+			pageError = e instanceof Error ? e.message : t('common.error', 'Failed to delete jobs');
+		} finally {
+			bulkDeleting = false;
+		}
+	}
+
 	// ── Row actions ─────
-	// Custom actions replace defaults, so View is included explicitly; feature
-	// toggle is permission-gated.
 	const rowActions = $derived.by<ActionItem[]>(() => {
 		const acts: ActionItem[] = [
 			{ label: t('common.view', 'View'), icon: Eye, onclick: (row: JobListing, ctx) => ctx?.openView(row) }
 		];
 		if (canManage) {
 			acts.push({
+				label: t('common.edit', 'Edit'),
+				icon: Pencil,
+				onclick: (row: JobListing, ctx) => ctx?.openEdit(row)
+			});
+			acts.push({
 				label: t('jobs.toggle_feature', 'Toggle Featured'),
 				icon: Star,
-				onclick: (row: JobListing) => promptFeature(row),
-				show: () => true
+				onclick: (row: JobListing) => promptFeature(row)
+			});
+			acts.push({
+				label: t('common.delete', 'Delete'),
+				icon: Trash2,
+				variant: 'destructive',
+				onclick: (row: JobListing, ctx) => ctx?.openDelete(row)
 			});
 		}
 		return acts;
@@ -100,6 +123,17 @@
 		}
 	];
 
+	// ── Editable fields ─────
+	const fields: FieldDef[] = [
+		{ key: 'title', label: t('jobs.title_col', 'Title'), type: 'text', required: true },
+		{ key: 'status', label: t('jobs.status', 'Status'), type: 'select', options: [
+			{ value: 'published', label: t('jobs.status_published', 'Published') },
+			{ value: 'archived', label: t('jobs.status_archived', 'Archived') },
+			{ value: 'draft', label: t('jobs.status_draft', 'Draft') }
+		] },
+		{ key: 'body', label: t('jobs.body', 'Body'), type: 'textarea' }
+	];
+
 	// Helper to read a custom field value from the listing's field_values map.
 	function field(row: JobListing, key: string): string {
 		return row.field_values?.[key] ?? '';
@@ -113,7 +147,10 @@
 	const config = $derived<EntityPageConfig>({
 		title: t('jobs.title', 'Jobs Board'),
 		description: t('jobs.description', 'Manage job listings and featured placements.'),
-		readonly: true,
+		createLabel: t('common.create', 'Create'),
+		createPermission: 'jobs.manage',
+		editPermission: 'jobs.manage',
+		deletePermission: 'jobs.manage',
 		pageSize: 25,
 		columns: [
 			{
@@ -177,25 +214,39 @@
 		],
 		filters,
 		actions: rowActions,
-		fields: [],
+		bulkActions: [
+			{
+				label: t('common.deleteSelected', 'Delete Selected'),
+				icon: Trash2,
+				variant: 'destructive',
+				onclick: bulkDelete
+			}
+		],
+		fields,
 		load: async ({ q, filter, page, pageSize }) => {
 			const params = new URLSearchParams();
 			if (q) params.set('q', q);
 			if (filter.status) params.set('status', filter.status);
 			if (page) params.set('page', String(page));
 			if (pageSize) params.set('limit', String(pageSize));
-			const result = await apiRaw<{ data: JobListing[]; meta?: { total?: number }; status_distribution?: StatusDist }>(
-				`/admin/jobs${params.toString() ? `?${params.toString()}` : ''}`
-			);
+			const result = await jobsAdminApi.list(params.toString());
 			if (result.ok) {
 				const body = result.data;
-				const data = body?.data ?? [];
+				const data = (body?.data as JobListing[]) ?? [];
 				statusDist = body?.status_distribution ?? {};
 				const total = body?.meta?.total ?? data.length;
 				const totalPages = total > 0 && pageSize ? Math.ceil(total / pageSize) : 1;
 				return { data, total, totalPages };
 			}
 			throw new Error(result.error ?? t('jobs.load_error', 'Failed to load job listings'));
+		},
+		update: async (id, body) => {
+			const result = await jobsAdminApi.update(id, body);
+			return result.ok ? { ok: true } : { ok: false, error: result.error };
+		},
+		remove: async (id) => {
+			const result = await jobsAdminApi.delete(id);
+			return result.ok ? { ok: true } : { ok: false, error: result.error };
 		},
 		viewSnippet: JobView
 	});

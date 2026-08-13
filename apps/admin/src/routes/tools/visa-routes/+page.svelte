@@ -276,6 +276,9 @@
 			if (params.filter?.status) {
 				queryParts.push(`status=${encodeURIComponent(params.filter.status)}`);
 			}
+			if (params.filter?.dest) {
+				queryParts.push(`dest=${encodeURIComponent(params.filter.dest)}`);
+			}
 			const queryString = queryParts.join('&');
 
 			const result = await visaRoutesAdminApi.listRaw(queryString);

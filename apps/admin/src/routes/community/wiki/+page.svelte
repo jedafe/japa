@@ -3,7 +3,7 @@
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import { Modal } from '$lib/components/ui/modal';
 	import { Button } from '$lib/components/ui/button';
-	import { wikiAdminApi } from '$lib/api';
+	import { wikiAdminApi, apiRaw } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { Eye, CheckCircle, XCircle } from 'lucide-svelte';
@@ -17,6 +17,11 @@
 		updated_at: string;
 		latest_revision_id?: string;
 		excerpt?: string;
+		// ADR-088 AI generation columns
+		ai_generated?: boolean;
+		ai_model?: string;
+		hitl_reviewed_by?: string;
+		ai_generated_at?: string;
 	};
 
 	const canManage = $derived(hasPermission('wiki.review'));
@@ -120,11 +125,22 @@
 		],
 		actions: rowActions,
 		fields,
-		load: async () => {
-			const result = await wikiAdminApi.list();
+		load: async (params) => {
+			const qs = new URLSearchParams();
+			if (params.page) qs.set('page', String(params.page));
+			if (params.pageSize) qs.set('limit', String(params.pageSize));
+			if (params.q) qs.set('q', params.q);
+			if (params.sort) qs.set('sort', params.sort);
+			if (params.filter?.dest) qs.set('dest', params.filter.dest);
+			const result = await apiRaw<{ data: WikiItem[]; pagination: { total: number } }>(
+				`/admin/wiki${qs.toString() ? `?${qs.toString()}` : ''}`
+			);
 			if (result.ok) {
-				const data = (result.data as WikiItem[]) ?? [];
-				return { data, total: data.length, totalPages: 1 };
+				const body = result.data as { data: WikiItem[]; pagination: { total: number } };
+				const data = body.data ?? [];
+				const total = body.pagination?.total ?? data.length;
+				const totalPages = Math.max(1, Math.ceil(total / (params.pageSize ?? 25)));
+				return { data, total, totalPages };
 			}
 			throw new Error(result.error ?? t('common.error', 'An error occurred'));
 		},

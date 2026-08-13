@@ -24,12 +24,15 @@ type Store struct {
 	pool    *db.DB
 }
 
-// NewStore creates a sources store backed by the given database. Reads and
-// writes both go through database.Reader (the primary DSN until a replica
-// is provisioned), matching the established scholarships store convention.
+// NewStore creates a sources store backed by the given database. The
+// queries field uses database.Writer (the primary) because the store
+// performs both reads and writes through s.queries — Create, UpdateEnabled,
+// UpdateCrawlStatus, UpdateRobotsPolicy, and Delete all run direct UPDATE/
+// INSERT/DELETE statements that fail on the read-only replica with
+// SQLSTATE 25006 ("cannot execute UPDATE in a read-only transaction").
 func NewStore(database *db.DB) *Store {
 	return &Store{
-		queries: gen.New(database.Reader),
+		queries: gen.New(database.Writer),
 		pool:    database,
 	}
 }
