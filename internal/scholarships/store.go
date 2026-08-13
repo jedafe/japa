@@ -23,10 +23,13 @@ type Store struct {
 	pool    *db.DB
 }
 
-// NewStore creates a scholarships store backed by the given database.
+// NewStore creates a scholarships store backed by the given database. The
+// queries field uses database.Writer (the primary) because the store performs
+// both reads and writes — admin CRUD handlers call CreateScholarship,
+// UpdateScholarship, and DeleteScholarship directly through s.queries.
 func NewStore(database *db.DB) *Store {
 	return &Store{
-		queries: gen.New(database.Reader),
+		queries: gen.New(database.Writer),
 		pool:    database,
 	}
 }
@@ -121,6 +124,65 @@ func (s *Store) FindNeedingReminders(ctx context.Context, arg gen.FindScholarshi
 func (s *Store) MarkReminderSent(ctx context.Context, id pgtype.UUID) error {
 	if err := s.queries.MarkScholarshipReminderSent(ctx, id); err != nil {
 		return fmt.Errorf("scholarships: mark reminder sent: %w", err)
+	}
+	return nil
+}
+
+// --- Admin CRUD methods ---
+
+// AdminListScholarships returns a paginated list of all scholarships for
+// the admin management page. The tenantID is stamped into the query params.
+func (s *Store) AdminListScholarships(ctx context.Context, tenantID pgtype.UUID, arg gen.ListScholarshipsParams) ([]gen.Scholarship, error) {
+	arg.TenantID = tenantID
+	rows, err := s.queries.ListScholarships(ctx, arg)
+	if err != nil {
+		return nil, fmt.Errorf("scholarships: admin list: %w", err)
+	}
+	return rows, nil
+}
+
+// AdminGetScholarship returns a single scholarship by ID for the admin
+// management page.
+func (s *Store) AdminGetScholarship(ctx context.Context, tenantID, id pgtype.UUID) (gen.Scholarship, error) {
+	row, err := s.queries.GetScholarship(ctx, gen.GetScholarshipParams{
+		TenantID: tenantID,
+		ID:       id,
+	})
+	if err != nil {
+		return gen.Scholarship{}, fmt.Errorf("scholarships: admin get: %w", err)
+	}
+	return row, nil
+}
+
+// AdminCreateScholarship creates a new scholarship record. The tenantID is
+// stamped into the query params.
+func (s *Store) AdminCreateScholarship(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateScholarshipParams) (gen.Scholarship, error) {
+	arg.TenantID = tenantID
+	row, err := s.queries.CreateScholarship(ctx, arg)
+	if err != nil {
+		return gen.Scholarship{}, fmt.Errorf("scholarships: admin create: %w", err)
+	}
+	return row, nil
+}
+
+// AdminUpdateScholarship updates an existing scholarship record. The
+// tenantID is stamped into the query params.
+func (s *Store) AdminUpdateScholarship(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateScholarshipParams) error {
+	arg.TenantID = tenantID
+	if err := s.queries.UpdateScholarship(ctx, arg); err != nil {
+		return fmt.Errorf("scholarships: admin update: %w", err)
+	}
+	return nil
+}
+
+// AdminDeleteScholarship deletes a scholarship record. The tenantID is
+// stamped into the query params for tenant isolation.
+func (s *Store) AdminDeleteScholarship(ctx context.Context, tenantID, id pgtype.UUID) error {
+	if err := s.queries.DeleteScholarship(ctx, gen.DeleteScholarshipParams{
+		TenantID: tenantID,
+		ID:       id,
+	}); err != nil {
+		return fmt.Errorf("scholarships: admin delete: %w", err)
 	}
 	return nil
 }

@@ -158,8 +158,11 @@
 		],
 		actions: rowActions,
 		fields,
-		load: async () => {
-			const result = await cvFormatterAdminApi.listStandards();
+		load: async (params) => {
+			const qs = new URLSearchParams();
+			if (params.filter?.dest) qs.set('dest', params.filter.dest);
+			const queryString = qs.toString();
+			const result = await cvFormatterAdminApi.listStandards(queryString ? `?${queryString}` : '');
 			if (result.ok) {
 				const data = (result.data as CVStandardRow[]) ?? [];
 				return { data, total: data.length, totalPages: 1 };

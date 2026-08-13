@@ -210,7 +210,7 @@
 	<!-- §89 Community Achievement Feed — sidebar widget showing latest
 	     achievements filed against this Space (country). Auto-hides when
 	     the feature is disabled or the space has no achievements. -->
-	<AchievementWidget spaceSlug={space.slug} />
+	<AchievementWidget spaceSlug={space.slug} spaceId={space.id} />
 
 	<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 		<h2 class="mb-2 flex items-center gap-2 text-sm font-medium text-[var(--color-text)]">

@@ -9,7 +9,8 @@ INSERT INTO contents (
     tenant_id, author_id, organization_id, space_id, content_type, title, slug, body, body_html,
     field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
     canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
-    status, visibility, read_time_minutes, publish_at, published_at, guide_category
+    status, visibility, read_time_minutes, publish_at, published_at, guide_category,
+    ai_generated, ai_model, ai_generated_at, hitl_reviewed_by, hitl_reviewed_at
 ) VALUES (
     @tenant_id, @author_id, sqlc.narg(organization_id), sqlc.narg(space_id), @content_type, @title, @slug, @body, @body_html,
     @field_values, sqlc.narg(content_hash), sqlc.narg(geo_space_id),
@@ -17,14 +18,17 @@ INSERT INTO contents (
     sqlc.narg(canonical_url), sqlc.narg(meta_title), sqlc.narg(meta_description),
     sqlc.narg(og_image_url), @seo_indexable,
     @status, @visibility, @read_time_minutes, sqlc.narg(publish_at), sqlc.narg(published_at),
-    sqlc.narg(guide_category)
+    sqlc.narg(guide_category),
+    COALESCE(sqlc.narg(ai_generated), false), sqlc.narg(ai_model), sqlc.narg(ai_generated_at),
+    sqlc.narg(hitl_reviewed_by), sqlc.narg(hitl_reviewed_at)
 )
 RETURNING id, tenant_id, author_id, organization_id, space_id, content_type, title, slug, body, body_html,
           field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
           canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
           status, visibility, is_locked, is_pinned, read_time_minutes,
           view_count, comment_count, share_count, reshare_count, publish_at, published_at,
-          created_at, updated_at, guide_category;
+          created_at, updated_at, guide_category,
+          ai_generated, ai_model, ai_generated_at, hitl_reviewed_by, hitl_reviewed_at;
 
 -- name: GetContentByID :one
 SELECT id, tenant_id, author_id, organization_id, space_id, content_type, title, slug, body, body_html,

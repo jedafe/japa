@@ -220,6 +220,7 @@
 			if (params.page) queryParts.push(`page_offset=${params.page}`);
 			if (params.pageSize) queryParts.push(`page_size=${params.pageSize}`);
 			if (params.q) queryParts.push(`q=${encodeURIComponent(params.q)}`);
+			if (params.filter?.dest) queryParts.push(`dest=${encodeURIComponent(params.filter.dest)}`);
 			const queryString = queryParts.length > 0 ? `?${queryParts.join('&')}` : '';
 			const result = await attestationGuideAdminApi.list(queryString);
 			if (result.ok) {

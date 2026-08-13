@@ -11,7 +11,7 @@
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasAnyPermission } from '$lib/stores/auth.svelte';
 	import { escapeHtml } from '$lib/utils';
-	import { Plus, Pencil, Trash2, Power, RefreshCw, Database } from 'lucide-svelte';
+	import { Plus, Pencil, Trash2, Power, RefreshCw, Database, Zap, Ban } from 'lucide-svelte';
 	import { Select } from 'bits-ui';
 
 	interface IntelSource {
@@ -43,6 +43,9 @@
 	// wildcard). Viewing the registry requires intel.sources.view.
 	const canView = $derived(hasAnyPermission(['intel.sources.view', 'intel.sources.*']));
 	const canManage = $derived(hasAnyPermission(['intel.sources.manage', 'intel.sources.*']));
+	// INTEL-018 fix: crawl-now and disable-source permissions.
+	const canCrawlNow = $derived(hasAnyPermission(['intel.sources.crawl_now', 'intel.sources.*']));
+	const canDisableSource = $derived(hasAnyPermission(['intel.review.disable_source', 'intel.review.*', 'intel.sources.*']));
 
 	let sources = $state<IntelSource[]>([]);
 	let loading = $state(true);
@@ -69,11 +72,15 @@
 	async function load() {
 		refreshing = true;
 		errorMessage = '';
-		const result = await api<{ data?: IntelSource[] } & Record<string, unknown>>(
-			'/api/v1/intel/sources?page_size=100'
+		// Use include_disabled=true so ALL sources (including disabled) are
+		// returned with full crawl-state fields. The public directory endpoint
+		// only returns enabled sources with a trimmed shape — the control panel
+		// needs disabled sources visible to re-enable them (BUG-004 fix).
+		const result = await api<IntelSource[]>(
+			'/api/v1/intel/sources?page_size=100&include_disabled=true'
 		);
 		if (result.ok) {
-			sources = Array.isArray(result.data?.data) ? (result.data!.data as IntelSource[]) : [];
+			sources = Array.isArray(result.data) ? (result.data as IntelSource[]) : [];
 		} else {
 			errorMessage = result.error;
 		}
@@ -193,28 +200,45 @@
 		}
 	];
 
-	const rowActions = $derived<DataTableRowAction[]>(
-		canManage
-			? [
-					{
-						label: t('intel.edit', 'Edit'),
-						icon: Pencil,
-						onClick: (row) => openEdit(row as unknown as IntelSource)
-					},
-					{
-						label: t('intel.toggle_enable', 'Toggle Enable'),
-						icon: Power,
-						onClick: (row) => toggleEnable(row as unknown as IntelSource)
-					},
-					{
-						label: t('common.delete', 'Delete'),
-						icon: Trash2,
-						variant: 'destructive',
-						onClick: (row) => openDelete(row as unknown as IntelSource)
-					}
-				]
-			: []
-	);
+	const rowActions = $derived.by<DataTableRowAction[]>(() => {
+		const acts: DataTableRowAction[] = [];
+		if (canCrawlNow) {
+			acts.push({
+				label: t('intel.crawl_now', 'Crawl Now'),
+				icon: Zap,
+				onClick: (row) => crawlNow(row as unknown as IntelSource)
+			});
+		}
+		if (canManage) {
+			acts.push({
+				label: t('intel.edit', 'Edit'),
+				icon: Pencil,
+				onClick: (row) => openEdit(row as unknown as IntelSource)
+			});
+			acts.push({
+				label: t('intel.toggle_enable', 'Toggle Enable'),
+				icon: Power,
+				onClick: (row) => toggleEnable(row as unknown as IntelSource)
+			});
+		}
+		if (canDisableSource) {
+			acts.push({
+				label: t('intel.disable_source', 'Disable Source'),
+				icon: Ban,
+				variant: 'destructive',
+				onClick: (row) => disableSource(row as unknown as IntelSource)
+			});
+		}
+		if (canManage) {
+			acts.push({
+				label: t('common.delete', 'Delete'),
+				icon: Trash2,
+				variant: 'destructive',
+				onClick: (row) => openDelete(row as unknown as IntelSource)
+			});
+		}
+		return acts;
+	});
 
 	const bulkActions = $derived<DataTableBulkAction[]>(
 		canManage
@@ -256,7 +280,7 @@
 			? `/api/v1/intel/sources/${editingSource!.id}`
 			: '/api/v1/intel/sources';
 		const method = isEdit ? 'PATCH' : 'POST';
-		const result = await api<{ data?: IntelSource } & Record<string, unknown>>(path, {
+		const result = await api<IntelSource>(path, {
 			method,
 			body: values
 		});
@@ -274,6 +298,23 @@
 			method: 'PATCH',
 			body: { enabled: !s.enabled }
 		});
+		if (result.ok) await load();
+		else errorMessage = result.error;
+	}
+
+	// INTEL-018 fix: crawl-now triggers an immediate fetch via intel:fetch_source.
+	async function crawlNow(s: IntelSource) {
+		const result = await api(`/api/v1/intel/sources/${s.id}/crawl-now`, { method: 'POST' });
+		if (result.ok) {
+			await load();
+		} else {
+			errorMessage = result.error;
+		}
+	}
+
+	// INTEL-018 fix: disable-source from the review queue surface.
+	async function disableSource(s: IntelSource) {
+		const result = await api(`/api/v1/intel/sources/${s.id}/disable`, { method: 'POST' });
 		if (result.ok) await load();
 		else errorMessage = result.error;
 	}

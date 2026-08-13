@@ -1084,24 +1084,63 @@ func (h *Handlers) DBHealthCheck(w http.ResponseWriter, r *http.Request) {
 	`).Scan(&activeConns, &idleConns, &maxConns)
 
 	// Replication.
+	// We report WAL lag in bytes from the primary's pg_stat_replication and
+	// the replay timestamp from the replica. The timestamp-based "lag_seconds"
+	// is unreliable during idle periods (it grows when no writes occur), so
+	// the health judgment is based on WAL lag bytes, not seconds.
 	type replicationInfo struct {
-		State      string  `json:"state"`
-		LagSeconds float64 `json:"lag_seconds"`
+		State       string  `json:"state"`
+		LagSeconds  float64 `json:"lag_seconds"`
+		LagBytes    int64   `json:"lag_bytes"`
+		LagPretty   string  `json:"lag_pretty"`
+		Healthy     bool    `json:"healthy"`
+		HealthyText string  `json:"healthy_text"`
 	}
 	var repl *replicationInfo
 	var isRecovery bool
-	var replLag float64
+	var replLagSeconds float64
 	err = h.DB.Reader.QueryRow(ctx, `
 		SELECT
 			pg_is_in_recovery(),
 			COALESCE(EXTRACT(EPOCH FROM (now() - pg_last_xact_replay_timestamp()))::float, 0)
-	`).Scan(&isRecovery, &replLag)
+	`).Scan(&isRecovery, &replLagSeconds)
 	if err == nil {
 		state := "primary"
 		if isRecovery {
 			state = "standby"
 		}
-		repl = &replicationInfo{State: state, LagSeconds: replLag}
+
+		// WAL lag from the primary's pg_stat_replication. This is the real
+		// measure of how far behind the replica is.
+		var lagBytes int64
+		_ = h.DB.Writer.QueryRow(ctx, `
+			SELECT COALESCE(pg_wal_lsn_diff(sent_lsn, replay_lsn), 0)
+			FROM pg_stat_replication
+			LIMIT 1
+		`).Scan(&lagBytes)
+
+		// Healthy if no replica is configured (single-node), or if WAL lag
+		// is under 100 MB. Timestamp lag is only concerning when there is
+		// actual WAL backlog.
+		const unhealthyLagBytes = 100 * 1024 * 1024 // 100 MB
+		healthy := lagBytes < unhealthyLagBytes
+		healthyText := "Replica is caught up or within safe lag"
+		if !healthy {
+			healthyText = "Replica lag exceeds 100 MB WAL backlog"
+		} else if lagBytes == 0 && !isRecovery {
+			healthyText = "Single-node database (no replica configured)"
+		} else if lagBytes == 0 {
+			healthyText = "Replica fully caught up (0 bytes WAL lag)"
+		}
+
+		repl = &replicationInfo{
+			State:       state,
+			LagSeconds:  replLagSeconds,
+			LagBytes:    lagBytes,
+			LagPretty:   humanizeBytes(lagBytes),
+			Healthy:     healthy,
+			HealthyText: healthyText,
+		}
 	}
 
 	// Slow queries (active queries running > 1s).
@@ -3526,4 +3565,18 @@ func (h *Handlers) saveBackupConfigs(r *http.Request, configs []backupConfigEntr
 		return err
 	}
 	return h.Valkey.Set(r.Context(), backupConfigsKey(r.Context()), string(data), 0).Err()
+}
+
+// humanizeBytes returns a human-readable string for a byte count.
+func humanizeBytes(b int64) string {
+	const unit = 1024
+	if b < unit {
+		return fmt.Sprintf("%d B", b)
+	}
+	div, exp := int64(unit), 0
+	for n := b / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %cB", float64(b)/float64(div), "KMGTPE"[exp])
 }

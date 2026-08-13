@@ -153,6 +153,20 @@ func (q *Queries) CreateScholarship(ctx context.Context, arg CreateScholarshipPa
 	return i, err
 }
 
+const deleteScholarship = `-- name: DeleteScholarship :exec
+DELETE FROM scholarships WHERE tenant_id = $1 AND id = $2
+`
+
+type DeleteScholarshipParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	ID       pgtype.UUID `json:"id"`
+}
+
+func (q *Queries) DeleteScholarship(ctx context.Context, arg DeleteScholarshipParams) error {
+	_, err := q.db.Exec(ctx, deleteScholarship, arg.TenantID, arg.ID)
+	return err
+}
+
 const getScholarship = `-- name: GetScholarship :one
 SELECT id, intel_record_id, guide_id, source_url, source_type, trust_level, title, description, country, country_space_id, university, degree_level, fields_of_study, eligible_countries, funding, deadline, application_url, required_documents, minimum_gpa, language_requirements, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, last_verified_at, created_at, updated_at, tenant_id FROM scholarships WHERE tenant_id = $1 AND id = $2
 `

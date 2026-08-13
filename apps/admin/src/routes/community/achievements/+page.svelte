@@ -23,6 +23,11 @@
 		origin_space_name?: string;
 		created_at: string;
 		published_at?: string;
+		// ADR-088 AI generation columns
+		ai_generated?: boolean;
+		ai_model?: string;
+		hitl_reviewed_by?: string;
+		ai_generated_at?: string;
 	};
 
 	const canManage = $derived(hasPermission('achievement.moderate'));
@@ -130,6 +135,7 @@
 			qs.set('limit', String(params.pageSize ?? 25));
 			if (params.q) qs.set('q', params.q);
 			if (params.sort) qs.set('sort', params.sort);
+			if (params.filter?.dest) qs.set('dest', params.filter.dest);
 			const result = await achievementAdminApi.list(qs.toString());
 			if (result.ok) {
 				const data = (result.data.data as AchievementItem[]) ?? [];

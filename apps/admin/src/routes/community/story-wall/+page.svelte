@@ -19,6 +19,11 @@
 		created_at: string;
 		body?: string;
 		body_html?: string;
+		// ADR-088 AI generation columns
+		ai_generated?: boolean;
+		ai_model?: string;
+		hitl_reviewed_by?: string;
+		ai_generated_at?: string;
 	};
 
 	const canManage = $derived(hasPermission('story.verify'));
@@ -141,6 +146,7 @@
 				if (sortKey === 'created_at') qp.set('sort', sortDir === 'asc' ? 'oldest' : 'latest');
 				else if (sortKey === 'title') qp.set('sort', 'title');
 			}
+			if (params.filter?.dest) qp.set('dest', params.filter.dest);
 			const result = await apiRaw<{ data: StoryItem[]; pagination: { total: number } }>(
 				`/admin/stories${qp.toString() ? `?${qp.toString()}` : ''}`
 			);

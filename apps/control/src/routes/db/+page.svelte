@@ -533,27 +533,65 @@
 		<!-- Replication Tab -->
 		<Tabs.Content value="replication">
 			{#if dbHealth.replication}
-				<div class="overflow-hidden rounded-card border border-border-card bg-background shadow-card">
-					<div class="border-b border-border-card px-6 py-4">
-						<div class="flex items-center gap-2">
-							<Database class="h-4 w-4 text-accent-foreground" />
-							<h3 class="text-sm font-semibold text-foreground">{t('db.replication')}</h3>
-						</div>
-					</div>
-					<div class="px-6 py-4">
-						<div class="grid gap-4 sm:grid-cols-2">
-							<div class="flex items-center justify-between">
-								<span class="text-sm text-muted-foreground">{t('db.replication_state')}</span>
-								<StatusBadge status={dbHealth.replication.state === 'primary' || dbHealth.replication.state === 'standby' ? 'healthy' : 'warning'}>
-									{dbHealth.replication.state}
+				<!-- Overall health banner -->
+				<div class="overflow-hidden rounded-card border shadow-card {dbHealth.replication.healthy ? 'border-emerald-500/30 bg-emerald-500/5' : 'border-destructive/30 bg-destructive/5'}">
+					<div class="px-6 py-5">
+						<div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+							<div class="flex items-start gap-4">
+								<div class="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-full {dbHealth.replication.healthy ? 'bg-emerald-500/15 text-emerald-600' : 'bg-destructive/15 text-destructive'}">
+									<Activity class="h-5 w-5" />
+								</div>
+								<div>
+									<h3 class="text-base font-semibold text-foreground">
+										{dbHealth.replication.healthy ? t('db.replication_healthy', 'Replication healthy') : t('db.replication_unhealthy', 'Replication unhealthy')}
+									</h3>
+									<p class="mt-1 max-w-2xl text-sm text-muted-foreground">
+										{dbHealth.replication.healthy_text}
+									</p>
+								</div>
+							</div>
+							<div class="shrink-0">
+								<StatusBadge status={dbHealth.replication.healthy ? 'healthy' : 'critical'}>
+									{dbHealth.replication.healthy ? t('db.healthy', 'Healthy') : t('db.unhealthy', 'Unhealthy')}
 								</StatusBadge>
 							</div>
-							<div class="flex items-center justify-between">
-								<span class="text-sm text-muted-foreground">{t('db.replication_lag')}</span>
-								<span class="text-sm font-mono {dbHealth.replication.lag_seconds > 5 ? 'text-destructive' : 'text-foreground'}">
-									{dbHealth.replication.lag_seconds?.toFixed(1)}s
-								</span>
-							</div>
+						</div>
+					</div>
+				</div>
+
+				<!-- Key metrics -->
+				<div class="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+					<MetricCard
+						label={t('db.replication_wal_lag', 'WAL lag')}
+						value={dbHealth.replication.lag_pretty}
+						subtitle={dbHealth.replication.lag_bytes === 0
+							? t('db.replication_fully_caught_up', 'Replica is fully caught up')
+							: t('db.replication_wal_lag_behind', 'WAL bytes waiting to be replayed')}
+						trend={dbHealth.replication.healthy ? 'down' : 'up'}
+					/>
+					<MetricCard
+						label={t('db.replication_state', 'Node role')}
+						value={dbHealth.replication.state}
+						subtitle={dbHealth.replication.state === 'standby'
+							? t('db.replication_reader_node', 'Read replica receiving WAL stream')
+							: t('db.replication_primary_node', 'Primary read-write database')}
+					/>
+					<MetricCard
+						label={t('db.replication_lag', 'Replay timestamp lag')}
+						value={`${dbHealth.replication.lag_seconds?.toFixed(1)}s`}
+						subtitle={t('db.replication_timestamp_note', 'Can be high during idle periods')}
+					/>
+				</div>
+
+				<!-- Explanation -->
+				<div class="mt-4 rounded-card border border-border-card bg-background px-5 py-4 shadow-card">
+					<div class="flex items-start gap-3">
+						<AlertTriangle class="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
+						<div>
+							<p class="text-sm font-medium text-foreground">{t('db.replication_how_to_read', 'How to read these numbers')}</p>
+							<p class="mt-1 text-sm text-muted-foreground">
+								{t('db.replication_explanation', 'WAL lag is the real measure of replication health: it shows how much data the replica has not yet replayed. Replay timestamp lag can grow artificially when the database is idle, because no new transactions have arrived to advance the timestamp. The health status above is based on WAL lag, not timestamp lag.')}
+							</p>
 						</div>
 					</div>
 				</div>

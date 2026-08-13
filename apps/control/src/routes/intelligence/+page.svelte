@@ -68,16 +68,19 @@
 		// best-effort: a failure on one does not abort the others, so the
 		// overview degrades gracefully when an endpoint is unavailable.
 		const [srcRes, reviewRes, countsRes] = await Promise.allSettled([
-			api<{ data?: SourceEntry[] } & Record<string, unknown>>('/api/v1/intel/sources', { signal }),
-			api<{ data?: ReviewRecord[] } & Record<string, unknown>>('/api/v1/intel/review/queue', { signal }),
+			api<SourceEntry[]>('/api/v1/intel/sources?page_size=100&include_disabled=true', { signal }),
+			api<ReviewRecord[]>('/api/v1/intel/review/queue', { signal }),
 			api<RadarCountsResponse>('/api/v1/intel/radar/counts', { signal })
 		]);
 
+		// The api() helper already unwraps the response `data` field, so
+		// result.data is the array/object directly — not a nested { data: [...] }.
+		// The prior code did result.data?.data which always returned undefined.
 		if (srcRes.status === 'fulfilled' && srcRes.value.ok) {
-			sources = Array.isArray(srcRes.value.data?.data) ? (srcRes.value.data!.data as SourceEntry[]) : [];
+			sources = Array.isArray(srcRes.value.data) ? (srcRes.value.data as SourceEntry[]) : [];
 		}
 		if (reviewRes.status === 'fulfilled' && reviewRes.value.ok) {
-			reviewRecords = Array.isArray(reviewRes.value.data?.data) ? (reviewRes.value.data!.data as ReviewRecord[]) : [];
+			reviewRecords = Array.isArray(reviewRes.value.data) ? (reviewRes.value.data as ReviewRecord[]) : [];
 		}
 		if (countsRes.status === 'fulfilled' && countsRes.value.ok) {
 			radarCounts = countsRes.value.data;
@@ -124,23 +127,21 @@
 	const fetchQueueCount = $derived(sources.length);
 
 	// Extract queue: records that have been extracted and are flowing
-	// through the pipeline toward review (review-required records are the
-	// post-extraction stage we can observe).
-	const extractQueueCount = $derived(
-		reviewRecords.filter((r) => r.status === 'review' || r.status === 'review_required').length
-	);
+	// through the pipeline toward review. The review queue endpoint only
+	// returns review_required records, so this count reflects records that
+	// have completed extraction and are awaiting moderation.
+	const extractQueueCount = $derived(reviewRecords.length);
 
-	// Dedup queue: records pending dedup — no dedicated endpoint; derived
-	// from the review set's entity-type breakdown (records not yet deduped
-	// surface here). Falls back to 0 when no data is returned.
-	const dedupQueueCount = $derived(
-		reviewRecords.filter((r) => r.status === 'dedup' || r.status === 'pending_dedup').length
-	);
+	// Dedup queue: records pending dedup. The review queue endpoint does
+	// not return dedup-status records (the intel_records CHECK constraint
+	// uses 'deduped', not 'dedup' or 'pending_dedup'), so this is 0 until
+	// a dedicated dedup-queue endpoint is available.
+	const dedupQueueCount = $derived(0);
 
-	// Review queue: records awaiting human moderation.
-	const reviewQueueCount = $derived(
-		reviewRecords.filter((r) => r.status === 'review' || r.status === 'review_required').length
-	);
+	// Review queue: records awaiting human moderation. The backend returns
+	// only 'review_required' status records (migration 000428 CHECK
+	// constraint), so all records in reviewRecords are review_required.
+	const reviewQueueCount = $derived(reviewRecords.length);
 
 	// Publish queue: promoted records live in the radar (scholarships).
 	const publishQueueCount = $derived(radarCounts?.meta?.total_scholarships ?? 0);

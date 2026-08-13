@@ -16,7 +16,8 @@ vi.mock('$lib/stores/auth.svelte', () => ({
 
 vi.mock('$lib/stores/permissions.svelte', () => ({
 	permissions: [],
-	hasPermission: vi.fn().mockReturnValue(false)
+	hasPermission: vi.fn().mockReturnValue(false),
+	getPermissionState: vi.fn().mockReturnValue([])
 }));
 
 vi.mock('$lib/stores/theme.svelte', () => ({

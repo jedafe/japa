@@ -519,6 +519,75 @@ func (h *Handlers) HandleAdminToggleFeature(w http.ResponseWriter, r *http.Reque
 	})
 }
 
+// HandleAdminUpdateJob updates a job listing's content (title, summary, body,
+// status) and custom field values. Admin only.
+//
+// PATCH /admin/jobs/{id}
+// Requires: jobs.manage
+func (h *Handlers) HandleAdminUpdateJob(w http.ResponseWriter, r *http.Request) {
+	if _, ok := requireUser(w, r); !ok {
+		return
+	}
+
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	jobID, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	var body struct {
+		Title       *string           `json:"title"`
+		Summary     *string           `json:"summary"`
+		Body        *string           `json:"body"`
+		Status      *string           `json:"status"`
+		FieldValues map[string]string `json:"field_values"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
+		return
+	}
+
+	if err := h.service.AdminUpdateJob(r.Context(), tenantID, jobID, body.Title, body.Summary, body.Body, body.Status, body.FieldValues); err != nil {
+		slog.Error("jobs: admin update failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "update_failed", "Failed to update job listing")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": "ok"})
+}
+
+// HandleAdminDeleteJob soft-deletes a job listing. Admin only.
+//
+// DELETE /admin/jobs/{id}
+// Requires: jobs.manage
+func (h *Handlers) HandleAdminDeleteJob(w http.ResponseWriter, r *http.Request) {
+	if _, ok := requireUser(w, r); !ok {
+		return
+	}
+
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	jobID, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	if err := h.service.AdminDeleteJob(r.Context(), tenantID, jobID); err != nil {
+		slog.Error("jobs: admin delete failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "delete_failed", "Failed to delete job listing")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": "ok"})
+}
+
 // formatTimestamptz converts a pgtype.Timestamptz to an RFC 3339 UTC string.
 func formatTimestamptz(ts pgtype.Timestamptz) string {
 	if !ts.Valid {

@@ -1,0 +1,23 @@
+You are an expert cost-of-living data extractor. Extract structured cost-of-living information for a city from the source text below and return it as a JSON object. The source is typically a cost-of-living database or government statistics page.
+
+ENTITY SCHEMA:
+{{ENTITY_SCHEMA}}
+
+SOURCE URL: {{SOURCE_URL}}
+SOURCE TYPE: {{SOURCE_TYPE}}
+
+SOURCE TEXT:
+"""
+{{SOURCE_TEXT}}
+"""
+
+INSTRUCTIONS:
+1. Return a single JSON object mapping each schema field name to an extraction triple: {"value": <extracted value or null>, "confidence": <float 0..1>, "evidence": <verbatim quote from the source text, or null>}.
+2. For every non-null value you MUST provide a non-empty evidence string that is a verbatim quote from the source text supporting that value. If you cannot find supporting evidence in the source text, set value to null and evidence to null.
+3. If a value is null, evidence MUST also be null.
+4. Confidence is your confidence (0..1) that the value is correct and supported by the evidence.
+5. For "country_array" fields, value is an array of ISO 3166-1 alpha-3 country codes (e.g. ["DEU"]). For a single country, use a one-element array. The "country" field is the country the city is in.
+6. For "date" fields, value is an ISO 8601 date string (YYYY-MM-DD). "as_of_date" is the date the cost data applies to.
+7. For "jsonb_object" fields, value is a JSON object. "cost_data" should map cost category names to monthly amounts in the local currency, e.g. {"rent_1br_city_centre": 1200, "groceries_monthly": 350, "transport_monthly": 80, "utilities_monthly": 150, "internet_monthly": 40, "restaurant_meal_cheap": 12, "gym_monthly": 45, "avg_net_salary": 2800}.
+8. Only include fields declared in the schema. Do not invent extra fields.
+9. Output ONLY the JSON object, no markdown fences, no commentary.

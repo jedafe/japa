@@ -23,6 +23,11 @@
 		generated_by?: string;
 		reviewed_by?: string;
 		created_at: string;
+		// ADR-088 AI generation columns
+		ai_generated?: boolean;
+		ai_model?: string;
+		hitl_reviewed_by?: string;
+		ai_generated_at?: string;
 	};
 
 	const canManage = $derived(hasPermission('digest.manage'));
@@ -151,6 +156,7 @@
 				if (sortDir) queryParts.push(`order=${sortDir === 'asc' ? 'asc' : 'desc'}`);
 			}
 			if (params.filter?.status) queryParts.push(`status=${encodeURIComponent(params.filter.status)}`);
+			if (params.filter?.dest) queryParts.push(`dest=${encodeURIComponent(params.filter.dest)}`);
 			const queryString = queryParts.join('&');
 
 			const result = await digestAdminApi.list(queryString);

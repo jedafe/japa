@@ -70,11 +70,12 @@ import (
 	"github.com/jedafe/japa/internal/housingguide"
 	"github.com/jedafe/japa/internal/i18n"
 	"github.com/jedafe/japa/internal/impersonation"
-	intel_handlers "github.com/jedafe/japa/internal/intelligence/handlers"
 	"github.com/jedafe/japa/internal/intelligence/dedup"
 	"github.com/jedafe/japa/internal/intelligence/events"
 	"github.com/jedafe/japa/internal/intelligence/extractor"
+	"github.com/jedafe/japa/internal/intelligence/extractor/schemas"
 	intel_fetcher "github.com/jedafe/japa/internal/intelligence/fetcher"
+	intel_handlers "github.com/jedafe/japa/internal/intelligence/handlers"
 	"github.com/jedafe/japa/internal/intelligence/promoter"
 	"github.com/jedafe/japa/internal/intelligence/scheduler"
 	"github.com/jedafe/japa/internal/intelligence/sources"
@@ -860,13 +861,35 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		return rbacStore.AddUserToGroup(ctx, tenantID, userID, groupID)
 	})
 	formTriggerDispatcher.SetNotifyAdmin(func(ctx context.Context, tenantID pgtype.UUID, title, body, actionURL string) error {
-		// Log the admin notification; a future enhancement can fan this out
-		// to tenant admins via the notification service once a
-		// ListTenantAdmins query is added. The trigger infrastructure is
-		// complete — this hook is the notification delivery channel.
+		// Fan out an in-app notification to every active user in the
+		// tenant's system super_admin group (Section 06 notify_admin
+		// trigger). Best-effort: a failure for one admin does not abort
+		// the others; the first error is returned so the trigger
+		// dispatcher can log it.
+		queries := gen.New(database.Reader)
+		adminIDs, err := queries.ListTenantAdminIDs(ctx, tenantID)
+		if err != nil {
+			slog.Error("customfields: notify_admin form trigger, listing tenant admins",
+				"tenant_id", tenantID.String(), "error", err)
+			return fmt.Errorf("notify_admin: listing tenant admins: %w", err)
+		}
 		slog.Info("customfields: notify_admin form trigger",
-			"tenant_id", tenantID.String(), "title", title)
-		return nil
+			"tenant_id", tenantID.String(), "title", title, "admin_count", len(adminIDs))
+		var systemID pgtype.UUID
+		var firstErr error
+		for _, adminID := range adminIDs {
+			if err := notificationService.CreateNotification(ctx, tenantID, adminID,
+				"admin_notification", "system", systemID,
+				"form_submission", systemID,
+				title, body, actionURL); err != nil {
+				slog.Warn("customfields: notify_admin delivery failed",
+					"tenant_id", tenantID.String(), "admin_id", adminID.String(), "error", err)
+				if firstErr == nil {
+					firstErr = err
+				}
+			}
+		}
+		return firstErr
 	})
 	// Wire the create_ticket trigger (Section 06 → Section 38): form
 	// submissions with a create_ticket trigger create a support ticket
@@ -1063,7 +1086,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	// Ref: japaconnect-engineering/sections/82-japa-planning-groups.md (ADR-090)
 	planningGroupStore := planninggroups.NewStore(database)
-	planningGroupService := planninggroups.NewService(planningGroupStore, settingsService)
+	planningGroupService := planninggroups.NewService(planningGroupStore, settingsService).
+		WithNotifier(notificationService)
 	planningGroupHandlers := planninggroups.NewHandlers(planningGroupService, settingsService)
 	// Register the service as the planning_group:expire /
 	// planning_group:checkin_reminder processor so the Asynq tasks are
@@ -1136,7 +1160,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	// Ref: japaconnect-engineering/sections/89-achievement-feed.md (ADR-097)
 	achievementStore := achievement.NewStore(database)
-	achievementService := achievement.NewService(achievementStore, contentService, settingsService)
+	achievementService := achievement.NewService(achievementStore, contentService, settingsService).
+		WithActivityEmitter(&achievementActivityEmitter{svc: walletService})
 	achievementHandlers := achievement.NewHandlers(achievementService, settingsService)
 
 	// Ref: japaconnect-engineering/sections/98-service-directory.md (ADR-106)
@@ -1233,6 +1258,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	adsSelfServeService := adsselfserve.NewService(adsSelfServeStore, settingsService)
 	adsSelfServeService.SetEnqueuer(taskEnqueuer)
 	adsSelfServeService.SetNotifier(adsNotificationAdapter{svc: notificationService})
+	adsSelfServeService.SetBalanceChecker(adsBalanceChecker{wallet: walletService, db: database})
 	adsSelfServeHandlers := adsselfserve.NewHandlers(adsSelfServeService)
 
 	// Ref: japaconnect-engineering/sections/77-flutter-mobile-app.md (ADR-074)
@@ -1534,39 +1560,97 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	// Extractor port adapter: wraps *extractor.Extractor so the worker
 	// package can call Extract without importing internal/ai (which would
-	// close the extractor → ai → auth → worker cycle). The adapter selects
-	// the scholarship schema internally; future entity types will branch
-	// on source_type here.
-	intelExtractor := extractor.NewExtractor(aiDispatcher, extractor.WithTenantID(defaultTenantID))
+	// close the extractor → ai → auth → worker cycle). The adapter looks
+	// up the entity schema by entityType from the schemas registry; the
+	// worker derives entityType from the source's category.
+	// Read the AI extraction model from system_settings (Rule 3, INTEL-007).
+	// This model is stamped on every AI-generated content row created by the
+	// promoters (ADR-088, INTEL-003).
+	intelExtractionModel := settingsService.GetStringOr(context.Background(), defaultTenantID, "intel.extraction_model", "gpt-4o-mini")
+	// Read max retries from system_settings (Rule 3, INTEL-012 fix).
+	intelExtractionMaxRetries := settingsService.GetIntOr(context.Background(), defaultTenantID, "intel.extraction_max_retries", 3)
+
+	intelExtractor := extractor.NewExtractor(aiDispatcher,
+		extractor.WithTenantID(defaultTenantID),
+		extractor.WithModel(intelExtractionModel),
+		extractor.WithMaxRetries(intelExtractionMaxRetries),
+	)
 	intelExtractorAdapter := &intelExtractorPortAdapter{ext: intelExtractor}
 
-	// Promoter port adapter: wraps *promoter.ScholarshipPromoter so the
-	// worker can call Promote without importing the promoter package
-	// (promoter → extractor → ai → auth → worker). The promoter store is
-	// wrapped in intelPromoterStoreAdapter to bridge the WithTx callback
-	// type between stores.Store and promoter.Store (BUG-01/02 fix).
-	intelPromoter := promoter.NewScholarshipPromoter(&intelPromoterStoreAdapter{Store: intelStores}, defaultTenantID, defaultTenantID)
-	intelPromoterAdapter := &intelPromoterPortAdapter{prom: intelPromoter}
+	// Promoter registry: one adapter per domain, keyed by entity_type.
+	// The worker's HandleIntelPromote dispatches to the correct promoter
+	// by the record's entity_type. Each domain has its own store adapter
+	// because the WithTx callback type differs per domain (the TxStore
+	// interface is domain-specific). The underlying *stores.Store is
+	// shared; only the WithTx bridge differs.
+	intelPromoters := map[string]worker.IntelPromoterPort{
+		schemas.EntityTypeScholarship: &intelPromoterPortAdapter{
+			prom: promoter.NewScholarshipPromoter(&intelPromoterStoreAdapter{Store: intelStores}, defaultTenantID, defaultTenantID, promoter.WithAIModel(intelExtractionModel)),
+		},
+		schemas.EntityTypeJob: &intelPromoterPortAdapter{
+			prom: promoter.NewJobPromoter(&intelJobPromoterStoreAdapter{Store: intelStores}, defaultTenantID, defaultTenantID, promoter.WithJobAIModel(intelExtractionModel)),
+		},
+		schemas.EntityTypeVisa: &intelPromoterPortAdapter{
+			prom: promoter.NewVisaPromoter(&intelVisaPromoterStoreAdapter{Store: intelStores}, defaultTenantID, defaultTenantID, promoter.WithVisaAIModel(intelExtractionModel)),
+		},
+		schemas.EntityTypeHousing: &intelPromoterPortAdapter{
+			prom: promoter.NewHousingPromoter(&intelHousingPromoterStoreAdapter{Store: intelStores}, defaultTenantID, defaultTenantID, promoter.WithHousingAIModel(intelExtractionModel)),
+		},
+		schemas.EntityTypeRemittance: &intelPromoterPortAdapter{
+			prom: promoter.NewRemittancePromoter(&intelRemittancePromoterStoreAdapter{Store: intelStores}, defaultTenantID),
+		},
+		schemas.EntityTypeCostOfLiving: &intelPromoterPortAdapter{
+			prom: promoter.NewCostOfLivingPromoter(&intelCostOfLivingPromoterStoreAdapter{Store: intelStores}, defaultTenantID),
+		},
+		// 7 pure guide content type domains — each creates a contents
+		// guide row with the appropriate guide_category. They share the
+		// GuideContentPromoter implementation with different entityType
+		// + guideCategory parameters.
+		schemas.EntityTypeTravelRoutes: &intelPromoterPortAdapter{
+			prom: promoter.NewGuideContentPromoter(&intelGuidePromoterStoreAdapter{Store: intelStores}, defaultTenantID, defaultTenantID, "travel_routes", "travel_routes", promoter.WithGuideContentAIModel(intelExtractionModel)),
+		},
+		schemas.EntityTypeGrants: &intelPromoterPortAdapter{
+			prom: promoter.NewGuideContentPromoter(&intelGuidePromoterStoreAdapter{Store: intelStores}, defaultTenantID, defaultTenantID, "grants", "grants", promoter.WithGuideContentAIModel(intelExtractionModel)),
+		},
+		schemas.EntityTypeAdmission: &intelPromoterPortAdapter{
+			prom: promoter.NewGuideContentPromoter(&intelGuidePromoterStoreAdapter{Store: intelStores}, defaultTenantID, defaultTenantID, "admission", "admission", promoter.WithGuideContentAIModel(intelExtractionModel)),
+		},
+		schemas.EntityTypeBanking: &intelPromoterPortAdapter{
+			prom: promoter.NewGuideContentPromoter(&intelGuidePromoterStoreAdapter{Store: intelStores}, defaultTenantID, defaultTenantID, "banking", "banking", promoter.WithGuideContentAIModel(intelExtractionModel)),
+		},
+		schemas.EntityTypeWorkCareer: &intelPromoterPortAdapter{
+			prom: promoter.NewGuideContentPromoter(&intelGuidePromoterStoreAdapter{Store: intelStores}, defaultTenantID, defaultTenantID, "work_career", "work_career", promoter.WithGuideContentAIModel(intelExtractionModel)),
+		},
+		schemas.EntityTypeHealthInsurance: &intelPromoterPortAdapter{
+			prom: promoter.NewGuideContentPromoter(&intelGuidePromoterStoreAdapter{Store: intelStores}, defaultTenantID, defaultTenantID, "health_insurance", "health_insurance", promoter.WithGuideContentAIModel(intelExtractionModel)),
+		},
+		schemas.EntityTypeCultureLifestyle: &intelPromoterPortAdapter{
+			prom: promoter.NewGuideContentPromoter(&intelGuidePromoterStoreAdapter{Store: intelStores}, defaultTenantID, defaultTenantID, "culture_lifestyle", "culture_lifestyle", promoter.WithGuideContentAIModel(intelExtractionModel)),
+		},
+	}
 
 	// Register the intelligence spine dependencies with the worker package
 	// so the 11 Asynq task handlers (schedule_crawls → notify_discoveries)
 	// can dispatch to the concrete services.
+	intelRobotsChecker := intel_fetcher.NewRobotsChecker(vkClient.Redis())
+	intelPreflightChecker := intel_fetcher.NewPreflightChecker(vkClient.Redis(), intelRobotsChecker, settingsService, defaultTenantID)
 	worker.RegisterIntelDependencies(
 		intelSourcesStore,
 		intelStores,
 		intelScheduler,
 		intelExtractorAdapter,
 		intelDedupService,
-		intelPromoterAdapter,
+		intelPromoters,
 		intelEventPublisher,
 		intel_fetcher.NewComposite(), // composite fetcher: dispatches by crawl_method (BUG-008 fix)
+		intelPreflightChecker,        // pre-flight: crawl lock, rate limit, robots.txt (INTEL-001/006 fix)
 		asynqClient,
 	)
 
 	// HTTP handlers for the /api/v1/intel/* routes. The radar reuses the
 	// existing follows service (entity_type "space") and scholarships
 	// service (saved-scholarship tracker) so no parallel tables are needed.
-	intelHandlers := intel_handlers.NewHandlers(intelStores, intelSourcesService, followService, scholarshipsService, asynqClient)
+	intelHandlers := intel_handlers.NewHandlers(intelStores, intelSourcesService, followService, scholarshipsService, asynqClient, settingsService, defaultTenantID)
 
 	// Admin Impersonation subsystem (Section 46).
 	impersonationStore := impersonation.NewStore(vkClient.Redis())
@@ -1778,6 +1862,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					`SELECT EXISTS(
 						SELECT 1 FROM user_moderation_actions
 						WHERE user_id = $1 AND action IN ('ban', 'suspension')
+						AND deleted_at IS NULL
 						AND (expires_at IS NULL OR expires_at > now())
 					)`, userID).Scan(&banned)
 				if err != nil || !banned {
@@ -1787,6 +1872,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				_ = database.Reader.QueryRow(ctx,
 					`SELECT expires_at FROM user_moderation_actions
 					WHERE user_id = $1 AND action IN ('ban', 'suspension')
+					AND deleted_at IS NULL
 					AND (expires_at IS NULL OR expires_at > now())
 					ORDER BY created_at DESC LIMIT 1`, userID).Scan(&expiresAt)
 
@@ -3333,7 +3419,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Get("/admin/data-imports/{id}", platformDataImportHandlers.HandleGetImport)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "gdpr.data_exports.view")).
 				Delete("/admin/data-imports/{id}", platformDataImportHandlers.HandleDeleteImport)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.moderate")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).
 				Get("/admin/deletions", adminHandlers.ListDeletedContents)
 
 			// Bot & Crawler Management routes (Section 43)
@@ -4794,6 +4880,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Get("/admin/jobs", jobsHandlers.HandleAdminListJobs)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "jobs.manage")).
 				Patch("/admin/jobs/{id}/feature", jobsHandlers.HandleAdminToggleFeature)
+			// Admin CRUD for job listings — jobs.manage
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "jobs.manage")).
+				Patch("/admin/jobs/{id}", jobsHandlers.HandleAdminUpdateJob)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "jobs.manage")).
+				Delete("/admin/jobs/{id}", jobsHandlers.HandleAdminDeleteJob)
 
 			// Section 64 — Advanced Gamification (ADR-082)
 			r.Get("/gamification/badges", gamificationHandlers.HandleListBadges)
@@ -5209,6 +5300,15 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Get("/admin/scholarships/deadlines", scholarshipsHandlers.HandleAdminUpcomingDeadlines)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "scholarship.manage")).
 				Get("/admin/scholarships/reminder-log", scholarshipsHandlers.HandleAdminReminderLog)
+			// Admin CRUD for scholarship records — scholarship.manage
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "scholarship.manage")).
+				Get("/admin/scholarships", scholarshipsHandlers.HandleAdminListScholarships)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "scholarship.manage")).
+				Post("/admin/scholarships", scholarshipsHandlers.HandleAdminCreateScholarship)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "scholarship.manage")).
+				Patch("/admin/scholarships/{id}", scholarshipsHandlers.HandleAdminUpdateScholarship)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "scholarship.manage")).
+				Delete("/admin/scholarships/{id}", scholarshipsHandlers.HandleAdminDeleteScholarship)
 
 			// Section INTEL — Intelligence System (radar + scholarships + sources)
 			// Radar feed + counts use OptionalAuth so anonymous users can
@@ -5248,6 +5348,14 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Patch("/intel/sources/{id}", intelHandlers.HandleUpdateSource)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "intel.sources.manage")).
 				Delete("/intel/sources/{id}", intelHandlers.HandleDeleteSource)
+			// Crawl-now — triggers an immediate fetch of a source (INTEL-011 fix).
+			// RBAC-gated by intel.sources.crawl_now (migration 000431).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "intel.sources.crawl_now")).
+				Post("/intel/sources/{id}/crawl-now", intelHandlers.HandleCrawlNow)
+			// Disable source from the review queue surface (INTEL-011 fix).
+			// RBAC-gated by intel.review.disable_source (migration 000431).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "intel.review.disable_source")).
+				Post("/intel/sources/{id}/disable", intelHandlers.HandleDisableSource)
 			// Raw document fetch — RBAC-gated by intel.review.view (control panel
 			// four-pane moderation raw content pane). BUG-003 fix.
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "intel.review.view")).
@@ -5576,21 +5684,6 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		r.Use(csrf.EnsureCookie(cfg.CookieDomain, cfg.IsProduction()))
 
 		r.Route("/control", func(r chi.Router) {
-			// Tenants
-			r.Get("/tenants", controlHandlers.ListTenants)
-			r.Post("/tenants", controlHandlers.CreateTenant)
-			r.Get("/tenants/{id}", controlHandlers.GetTenant)
-			r.Patch("/tenants/{id}", controlHandlers.UpdateTenant)
-			r.Delete("/tenants/{id}", controlHandlers.DeleteTenant)
-			r.Post("/tenants/{id}/suspend", controlHandlers.SuspendTenant)
-			r.Post("/tenants/{id}/unsuspend", controlHandlers.UnsuspendTenant)
-
-			// Per-tenant Settings
-			r.Get("/tenants/{id}/settings", controlHandlers.GetTenantSettings)
-			r.Patch("/tenants/{id}/settings", controlHandlers.UpdateTenantSettings)
-			r.Patch("/tenants/{id}/settings/{key}", controlHandlers.UpdateTenantSettingKey)
-			r.Post("/tenants/{id}/settings/{key}/reset", controlHandlers.ResetTenantSetting)
-
 			// System Settings
 			r.Get("/system-settings", controlHandlers.ListSystemSettings)
 			r.Patch("/system-settings", controlHandlers.UpdateSystemSettings)
@@ -5860,6 +5953,31 @@ func (a adsNotificationAdapter) DispatchNotification(
 	return err
 }
 
+// adsBalanceChecker adapts wallet.Service.GetBalance to the
+// adsselfserve.BalanceChecker interface. It resolves the org owner's user_id
+// and checks whether their credits balance covers the campaign cost.
+// Ref: japaconnect-engineering/sections/61-self-serve-ads.md (Payment & Escrow)
+type adsBalanceChecker struct {
+	wallet *wallet.Service
+	db     *db.DB
+}
+
+func (c adsBalanceChecker) HasSufficientCredits(ctx context.Context, tenantID, orgID pgtype.UUID, amount int) (bool, error) {
+	queries := gen.New(c.db.Reader)
+	org, err := queries.GetOrganizationByIDOnly(ctx, orgID)
+	if err != nil {
+		return false, fmt.Errorf("ads balance check: resolving org owner: %w", err)
+	}
+	if !org.OwnerUserID.Valid {
+		return false, fmt.Errorf("ads balance check: organization %s has no owner", orgID.String())
+	}
+	_, credits, err := c.wallet.GetBalance(ctx, tenantID, org.OwnerUserID)
+	if err != nil {
+		return false, fmt.Errorf("ads balance check: getting balance: %w", err)
+	}
+	return credits >= int64(amount), nil
+}
+
 // tagSlugResolverAdapter adapts tags.Service.ResolveTagSlugMap to the
 // content.TagSlugResolver interface, avoiding an import cycle (tags imports
 // content, so content cannot import tags directly).
@@ -5991,6 +6109,30 @@ type walletCacheInvalidator struct {
 func (w *walletCacheInvalidator) InvalidateCurrenciesCache(ctx context.Context, tenantID pgtype.UUID) error {
 	key := valkey.MustKey("wallet:currencies:%s", tenantID.String())
 	return w.vk.Del(ctx, key).Err()
+}
+
+// achievementActivityEmitter adapts *wallet.Service to the
+// achievement.ActivityEmitter interface so the achievement service can fire
+// achievement.created activity events for gamification badge counting
+// (§64/§89) without importing wallet directly (import cycle).
+type achievementActivityEmitter struct {
+	svc *wallet.Service
+}
+
+func (a *achievementActivityEmitter) EmitActivityEvent(ctx context.Context, tenantID, userID pgtype.UUID, input achievement.ActivityEventInput) (achievement.ActivityEvent, error) {
+	event, err := a.svc.EmitActivityEvent(ctx, tenantID, userID, wallet.EmitActivityEventInput{
+		ActivityKey: input.ActivityKey,
+		Reference:   input.Reference,
+		Payload:     input.Payload,
+	})
+	if err != nil {
+		return achievement.ActivityEvent{}, err
+	}
+	return achievement.ActivityEvent{ID: event.ID}, nil
+}
+
+func (a *achievementActivityEmitter) EnqueueProcessActivityEvent(ctx context.Context, eventID, tenantID pgtype.UUID) error {
+	return a.svc.EnqueueProcessActivityEvent(ctx, eventID, tenantID)
 }
 
 // StartWorker creates an Asynq worker server from the provided config,

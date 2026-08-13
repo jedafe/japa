@@ -70,9 +70,10 @@ type AccountDeletionRequest struct {
 }
 
 type AchievementMetum struct {
-	ID                 pgtype.UUID        `json:"id"`
-	TenantID           pgtype.UUID        `json:"tenant_id"`
-	ContentID          pgtype.UUID        `json:"content_id"`
+	ID        pgtype.UUID `json:"id"`
+	TenantID  pgtype.UUID `json:"tenant_id"`
+	ContentID pgtype.UUID `json:"content_id"`
+	// visa_approved|job_offer|university_accepted|arrived|one_year|citizenship|other
 	MilestoneType      string             `json:"milestone_type"`
 	DestinationSpaceID pgtype.UUID        `json:"destination_space_id"`
 	OriginSpaceID      pgtype.UUID        `json:"origin_space_id"`
@@ -755,19 +756,26 @@ type ComparisonDimension struct {
 }
 
 type ComparisonItem struct {
-	ID            pgtype.UUID        `json:"id"`
-	ContentID     pgtype.UUID        `json:"content_id"`
-	TenantID      pgtype.UUID        `json:"tenant_id"`
-	Title         string             `json:"title"`
-	Description   *string            `json:"description"`
-	ImageID       pgtype.UUID        `json:"image_id"`
-	GeoSpaceID    pgtype.UUID        `json:"geo_space_id"`
-	Position      int32              `json:"position"`
-	CreatedAt     pgtype.Timestamptz `json:"created_at"`
-	TypeID        pgtype.UUID        `json:"type_id"`
-	DeletedAt     pgtype.Timestamptz `json:"deleted_at"`
-	IsBaseline    bool               `json:"is_baseline"`
-	LastUpdatedAt pgtype.Timestamptz `json:"last_updated_at"`
+	ID                 pgtype.UUID        `json:"id"`
+	ContentID          pgtype.UUID        `json:"content_id"`
+	TenantID           pgtype.UUID        `json:"tenant_id"`
+	Title              string             `json:"title"`
+	Description        *string            `json:"description"`
+	ImageID            pgtype.UUID        `json:"image_id"`
+	GeoSpaceID         pgtype.UUID        `json:"geo_space_id"`
+	Position           int32              `json:"position"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	TypeID             pgtype.UUID        `json:"type_id"`
+	DeletedAt          pgtype.Timestamptz `json:"deleted_at"`
+	IsBaseline         bool               `json:"is_baseline"`
+	LastUpdatedAt      pgtype.Timestamptz `json:"last_updated_at"`
+	IntelRecordID      pgtype.UUID        `json:"intel_record_id"`
+	IntelCostData      []byte             `json:"intel_cost_data"`
+	ConfidenceOverall  float32            `json:"confidence_overall"`
+	VerificationStatus string             `json:"verification_status"`
+	FreshnessScore     int32              `json:"freshness_score"`
+	OverrideSource     string             `json:"override_source"`
+	EditorialOverrides []byte             `json:"editorial_overrides"`
 }
 
 type ComparisonTypeAccess struct {
@@ -856,6 +864,11 @@ type Content struct {
 	SeoIndexable    bool               `json:"seo_indexable"`
 	GuideCategory   *string            `json:"guide_category"`
 	AiExempt        bool               `json:"ai_exempt"`
+	AiGenerated     bool               `json:"ai_generated"`
+	AiModel         *string            `json:"ai_model"`
+	AiGeneratedAt   pgtype.Timestamptz `json:"ai_generated_at"`
+	HitlReviewedBy  pgtype.UUID        `json:"hitl_reviewed_by"`
+	HitlReviewedAt  pgtype.Timestamptz `json:"hitl_reviewed_at"`
 }
 
 // Tracks affiliate links found in content that are not registered in affiliate_providers. Used for moderation and revenue tracking.
@@ -1644,6 +1657,12 @@ type HousingGuide struct {
 	CreatedAt            pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
 	IsJapabotIndexed     *bool              `json:"is_japabot_indexed"`
+	IntelRecordID        pgtype.UUID        `json:"intel_record_id"`
+	ConfidenceOverall    float32            `json:"confidence_overall"`
+	VerificationStatus   string             `json:"verification_status"`
+	FreshnessScore       int32              `json:"freshness_score"`
+	OverrideSource       string             `json:"override_source"`
+	EditorialOverrides   []byte             `json:"editorial_overrides"`
 }
 
 // Aggregated periodic creator payout; rolls up revenue_splits (ADR-063).
@@ -1685,6 +1704,39 @@ type InstructorProfile struct {
 	ReviewedAt            pgtype.Timestamptz `json:"reviewed_at"`
 	CreatedAt             pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt             pgtype.Timestamptz `json:"updated_at"`
+}
+
+type IntelJob struct {
+	ID                 pgtype.UUID        `json:"id"`
+	TenantID           pgtype.UUID        `json:"tenant_id"`
+	IntelRecordID      pgtype.UUID        `json:"intel_record_id"`
+	GuideID            pgtype.UUID        `json:"guide_id"`
+	SourceUrl          string             `json:"source_url"`
+	SourceType         string             `json:"source_type"`
+	TrustLevel         int16              `json:"trust_level"`
+	Title              string             `json:"title"`
+	Description        *string            `json:"description"`
+	Country            string             `json:"country"`
+	CountrySpaceID     pgtype.UUID        `json:"country_space_id"`
+	City               *string            `json:"city"`
+	Employer           *string            `json:"employer"`
+	JobType            *string            `json:"job_type"`
+	ExperienceLevel    *string            `json:"experience_level"`
+	SalaryMin          pgtype.Numeric     `json:"salary_min"`
+	SalaryMax          pgtype.Numeric     `json:"salary_max"`
+	Currency           *string            `json:"currency"`
+	Skills             []string           `json:"skills"`
+	ApplicationUrl     *string            `json:"application_url"`
+	Deadline           pgtype.Date        `json:"deadline"`
+	Remote             *string            `json:"remote"`
+	ConfidenceOverall  float32            `json:"confidence_overall"`
+	VerificationStatus string             `json:"verification_status"`
+	FreshnessScore     int32              `json:"freshness_score"`
+	OverrideSource     string             `json:"override_source"`
+	EditorialOverrides []byte             `json:"editorial_overrides"`
+	LastVerifiedAt     pgtype.Timestamptz `json:"last_verified_at"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
 }
 
 type IntelRawDocument struct {
@@ -2886,18 +2938,24 @@ type RemittanceProvider struct {
 }
 
 type RemittanceRate struct {
-	ID              pgtype.UUID        `json:"id"`
-	TenantID        pgtype.UUID        `json:"tenant_id"`
-	ProviderID      pgtype.UUID        `json:"provider_id"`
-	SendCurrency    string             `json:"send_currency"`
-	ReceiveCurrency string             `json:"receive_currency"`
-	Rate            pgtype.Numeric     `json:"rate"`
-	FeeFlat         pgtype.Numeric     `json:"fee_flat"`
-	FeePct          pgtype.Numeric     `json:"fee_pct"`
-	TransferTime    *string            `json:"transfer_time"`
-	FetchedAt       pgtype.Timestamptz `json:"fetched_at"`
-	IsManual        bool               `json:"is_manual"`
-	SourceUrl       *string            `json:"source_url"`
+	ID                 pgtype.UUID        `json:"id"`
+	TenantID           pgtype.UUID        `json:"tenant_id"`
+	ProviderID         pgtype.UUID        `json:"provider_id"`
+	SendCurrency       string             `json:"send_currency"`
+	ReceiveCurrency    string             `json:"receive_currency"`
+	Rate               pgtype.Numeric     `json:"rate"`
+	FeeFlat            pgtype.Numeric     `json:"fee_flat"`
+	FeePct             pgtype.Numeric     `json:"fee_pct"`
+	TransferTime       *string            `json:"transfer_time"`
+	FetchedAt          pgtype.Timestamptz `json:"fetched_at"`
+	IsManual           bool               `json:"is_manual"`
+	SourceUrl          *string            `json:"source_url"`
+	IntelRecordID      pgtype.UUID        `json:"intel_record_id"`
+	ConfidenceOverall  float32            `json:"confidence_overall"`
+	VerificationStatus string             `json:"verification_status"`
+	FreshnessScore     int32              `json:"freshness_score"`
+	OverrideSource     string             `json:"override_source"`
+	EditorialOverrides []byte             `json:"editorial_overrides"`
 }
 
 type RemittanceRateAlert struct {
@@ -3816,6 +3874,12 @@ type VisaRoute struct {
 	CreatedAt            pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
 	IsJapabotIndexed     *bool              `json:"is_japabot_indexed"`
+	IntelRecordID        pgtype.UUID        `json:"intel_record_id"`
+	ConfidenceOverall    float32            `json:"confidence_overall"`
+	VerificationStatus   string             `json:"verification_status"`
+	FreshnessScore       int32              `json:"freshness_score"`
+	OverrideSource       string             `json:"override_source"`
+	EditorialOverrides   []byte             `json:"editorial_overrides"`
 }
 
 type VisaTimeline struct {

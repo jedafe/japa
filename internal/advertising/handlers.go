@@ -358,6 +358,24 @@ func (h *Handlers) ActivateCampaign(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Enqueue status notification so the advertiser is notified that their
+	// campaign was approved (§61 Asynq Tasks, ADR-079 §7). The notify task
+	// checks the campaign status and dispatches an "ad_campaign_approved"
+	// notification when status = active. Fire-and-forget per Rule 8.
+	if h.AsynqClient != nil {
+		notifyPayload, _ := json.Marshal(map[string]string{
+			"tenant_id":   tenantID.String(),
+			"campaign_id": id.String(),
+		})
+		if _, err := h.AsynqClient.Enqueue(
+			asynq.NewTask(worker.TypeAdsNotifyCampaignStatus, notifyPayload),
+			asynq.Queue(worker.QueueForTask(worker.TypeAdsNotifyCampaignStatus)),
+		); err != nil {
+			slog.Warn("ads: failed to enqueue notify task on activate",
+				"campaign_id", id.String(), "error", err)
+		}
+	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": campaign})
 }
 
@@ -478,7 +496,7 @@ func (h *Handlers) RejectCampaign(w http.ResponseWriter, r *http.Request) {
 // Ad Rendering Handler
 // ---------------------------------------------------------------------------
 
-// RenderSlot handles GET /api/v1/ads/render?slot={slot_name}.
+// RenderSlot handles GET /api/v1/ads/serve?slot={slot_name}.
 // Returns eligible campaigns for the given slot. Empty result when no match
 // — never a placeholder. Public (catalog: GET /ads/serve) — guests are served
 // the untargeted/default eligible set; usergroup-based targeting is not yet

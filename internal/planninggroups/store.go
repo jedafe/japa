@@ -517,6 +517,23 @@ WHERE id = $1 AND group_id = $2 AND user_id = $3 AND tenant_id = $4
 	return nil
 }
 
+// CountIncompleteMilestones returns the number of milestones for the given
+// user in the given group that are not yet completed. Used by the service
+// to detect "all milestones complete" after a milestone update (§82
+// Integration with §89 Achievement Feed).
+func (s *Store) CountIncompleteMilestones(ctx context.Context, groupID, userID, tenantID pgtype.UUID) (int64, error) {
+	const q = `
+SELECT count(*) FROM planning_group_milestones
+WHERE group_id = $1 AND user_id = $2 AND tenant_id = $3 AND completed = false
+`
+	var count int64
+	err := s.pool.Reader.QueryRow(ctx, q, groupID, userID, tenantID).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("planninggroups: count incomplete milestones: %w", err)
+	}
+	return count, nil
+}
+
 // CreateCheckin inserts a new weekly check-in for a user in a group.
 func (s *Store) CreateCheckin(ctx context.Context, groupID, userID, tenantID pgtype.UUID, note string) (PlanningGroupCheckin, error) {
 	const q = `

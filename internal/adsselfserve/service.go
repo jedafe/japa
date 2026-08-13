@@ -1,8 +1,8 @@
 // Package adsselfserve implements the Self-Serve Advertising surface
 // (Section 61, ADR-079). Verified organisations can create, fund, and manage
 // ad campaigns without admin involvement. Campaigns are paid upfront via
-// credits, then enter the existing content_reviews queue for admin creative
-// approval before going live.
+// credits, then enter the admin moderation queue via status = 'pending_review'
+// for admin creative approval before going live.
 //
 // Ref: japaconnect-engineering/sections/61-self-serve-ads.md
 //      japaconnect-engineering/adr/ADR-079-self-serve-ads.md
@@ -44,11 +44,12 @@ const (
 //
 // Ref: japaconnect-engineering/sections/61-self-serve-ads.md
 var (
-	ErrFeatureDisabled      = errors.New("adsselfserve: feature disabled")
+	ErrFeatureDisabled         = errors.New("adsselfserve: feature disabled")
 	ErrOrganizationNotVerified = errors.New("adsselfserve: organization_not_verified")
-	ErrNotOrgMember         = errors.New("adsselfserve: not_org_member")
-	ErrSlotTypeNotFound     = errors.New("adsselfserve: slot_type_not_found")
-	ErrDurationTooShort     = errors.New("adsselfserve: duration_too_short")
+	ErrNotOrgMember            = errors.New("adsselfserve: not_org_member")
+	ErrSlotTypeNotFound        = errors.New("adsselfserve: slot_type_not_found")
+	ErrDurationTooShort        = errors.New("adsselfserve: duration_too_short")
+	ErrInsufficientBalance     = errors.New("adsselfserve: insufficient_balance")
 )
 
 // TaskEnqueuer enqueues Asynq tasks fire-and-forget (Rule 8).
@@ -68,6 +69,15 @@ type Notifier interface {
 		subjectID pgtype.UUID,
 		subjectURL, actorName, actorAvatar string,
 	) error
+}
+
+// BalanceChecker verifies that an organization has sufficient credits to
+// fund a campaign before the campaign row is created. The actual deduction
+// remains fire-and-forget via wallet:deduct_credits (Rule 8), but this
+// synchronous check prevents unpaid campaigns from entering the review queue.
+// Injected from server.go to avoid an import cycle with the wallet package.
+type BalanceChecker interface {
+	HasSufficientCredits(ctx context.Context, tenantID, orgID pgtype.UUID, amount int) (bool, error)
 }
 
 // CreateCampaignInput is the request body for creating a self-serve campaign.
@@ -104,10 +114,11 @@ type SlotInfo struct {
 
 // Service implements the self-serve ads business logic.
 type Service struct {
-	store    *Store
-	settings *config.Settings
-	enqueuer TaskEnqueuer
-	notifier Notifier
+	store          *Store
+	settings       *config.Settings
+	enqueuer       TaskEnqueuer
+	notifier       Notifier
+	balanceChecker BalanceChecker
 }
 
 // NewService creates a self-serve ads service.
@@ -120,6 +131,10 @@ func (s *Service) SetEnqueuer(e TaskEnqueuer) { s.enqueuer = e }
 
 // SetNotifier injects the notification dispatcher for campaign status alerts.
 func (s *Service) SetNotifier(n Notifier) { s.notifier = n }
+
+// SetBalanceChecker injects the wallet balance checker used to verify
+// sufficient credits before campaign creation (§61 Payment & Escrow).
+func (s *Service) SetBalanceChecker(bc BalanceChecker) { s.balanceChecker = bc }
 
 // CalculateCost computes the total cost in credits for a campaign.
 // cost = flat_rate × duration_days.
@@ -205,6 +220,22 @@ func (s *Service) CreateCampaign(ctx context.Context, tenantID, orgID, userID pg
 	}
 
 	cost := CalculateCost(flatRate, input.DurationDays)
+
+	// Verify the org has sufficient credits BEFORE creating the campaign.
+	// The actual deduction remains fire-and-forget via wallet:deduct_credits
+	// (Rule 8), but this synchronous check prevents unpaid campaigns from
+	// entering the review queue. If the balance checker is not wired (nil),
+	// the check is skipped — backward-compatible with existing deployments.
+	// Ref: japaconnect-engineering/sections/61-self-serve-ads.md (Payment & Escrow)
+	if s.balanceChecker != nil {
+		sufficient, err := s.balanceChecker.HasSufficientCredits(ctx, tenantID, orgID, cost)
+		if err != nil {
+			return gen.AdCampaign{}, fmt.Errorf("adsselfserve: check wallet balance: %w", err)
+		}
+		if !sufficient {
+			return gen.AdCampaign{}, fmt.Errorf("%w: need %d credits for this campaign", ErrInsufficientBalance, cost)
+		}
+	}
 
 	var targetURL *string
 	if input.TargetURL != "" {

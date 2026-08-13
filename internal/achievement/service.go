@@ -10,6 +10,7 @@ package achievement
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"time"
@@ -55,10 +56,18 @@ type AchievementDTO struct {
 	DestSpaceID     string `json:"destination_space_id"`
 	DestSpaceName   string `json:"destination_space_name"`
 	DestSpaceCode   string `json:"destination_space_code,omitempty"`
-	IsAnonymous     bool   `json:"is_anonymous"`
-	AuthorID        string `json:"author_id,omitempty"`
-	AuthorName      string `json:"author_name,omitempty"`
-	AuthorAvatar    string `json:"author_avatar,omitempty"`
+	IsAnonymous     bool             `json:"is_anonymous"`
+	IsOwner         bool             `json:"is_owner,omitempty"`
+	AuthorID        string           `json:"author_id,omitempty"`
+	AuthorName      string           `json:"author_name,omitempty"`
+	AuthorAvatar    string           `json:"author_avatar,omitempty"`
+	AllowedReactions []ReactionItem  `json:"allowed_reactions,omitempty"`
+}
+
+// ReactionItem is a single curated reaction for achievement posts (§89).
+type ReactionItem struct {
+	Emoji string `json:"emoji"`
+	Label string `json:"label"`
 }
 
 // SubmitInput is the request body for POST /achievements.
@@ -81,11 +90,33 @@ type EditInput struct {
 	IsAnonymous        *bool   `json:"is_anonymous"`
 }
 
+// ActivityEmitter records an activity event and enqueues async processing.
+// Satisfied by *wallet.Service; declared here to avoid an import cycle
+// (wallet → worker → ... → achievement). Ref: §64 Gamification.
+type ActivityEmitter interface {
+	EmitActivityEvent(ctx context.Context, tenantID, userID pgtype.UUID, input ActivityEventInput) (ActivityEvent, error)
+	EnqueueProcessActivityEvent(ctx context.Context, eventID, tenantID pgtype.UUID) error
+}
+
+// ActivityEventInput mirrors wallet.EmitActivityEventInput. Declared here to
+// avoid importing wallet (import cycle).
+type ActivityEventInput struct {
+	ActivityKey string
+	Reference   string
+	Payload     map[string]interface{}
+}
+
+// ActivityEvent mirrors the minimal fields the emitter returns.
+type ActivityEvent struct {
+	ID pgtype.UUID
+}
+
 // Service holds the business logic for the Community Achievement Feed.
 type Service struct {
 	store    *Store
 	content  ContentService
 	settings *config.Settings
+	emitter  ActivityEmitter
 }
 
 // NewService creates an achievement service.
@@ -97,6 +128,10 @@ func NewService(store *Store, contentSvc ContentService, settings *config.Settin
 	}
 }
 
+// WithActivityEmitter attaches the wallet activity emitter used to fire
+// achievement.created events for gamification badge counting (§64/§89).
+func (s *Service) WithActivityEmitter(e ActivityEmitter) *Service { s.emitter = e; return s }
+
 // Enabled reads the achievement.enabled system_setting toggle (§89 feature
 // flag).
 func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
@@ -104,6 +139,33 @@ func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
 		return false
 	}
 	return s.settings.GetBoolOr(ctx, tenantID, "achievement.enabled", false)
+}
+
+// defaultReactions is the spec-defined curated reaction set (§89 Reaction
+// Set), used when system_settings.achievement_reactions is empty/unparseable.
+var defaultReactions = []ReactionItem{
+	{Emoji: "🎉", Label: "Celebrate"},
+	{Emoji: "🔥", Label: "Inspired"},
+	{Emoji: "💪", Label: "Motivated"},
+}
+
+// allowedReactions reads the curated achievement reaction set from
+// system_settings.achievement_reactions (JSONB array of {emoji, label}
+// pairs). Falls back to the spec defaults (🎉 🔥 💪) when the setting is
+// empty or unparseable. Ref: §89 Reaction Set.
+func (s *Service) allowedReactions(ctx context.Context, tenantID pgtype.UUID) []ReactionItem {
+	if s.settings == nil {
+		return defaultReactions
+	}
+	raw := s.settings.GetStringOr(ctx, tenantID, "achievement_reactions", "")
+	if raw == "" || raw == "[]" {
+		return defaultReactions
+	}
+	var items []ReactionItem
+	if err := json.Unmarshal([]byte(raw), &items); err != nil || len(items) == 0 {
+		return defaultReactions
+	}
+	return items
 }
 
 // ErrMissingMilestone is returned when a submission omits milestone_type.
@@ -164,6 +226,24 @@ func (s *Service) Submit(ctx context.Context, tenantID, authorID pgtype.UUID, in
 		return AchievementDTO{}, fmt.Errorf("achievement: create achievement_meta: %w", err)
 	}
 
+	// §64/§89 Gamification: fire achievement.created activity event so the
+	// wallet:process_activity_event task can award points and evaluate the
+	// "Community Voice" badge (activity_count: achievement.created, threshold
+	// 5). Best-effort — a failure logs a warning but does not abort the
+	// submission (Rule 8: fan-out is fire-and-forget).
+	if s.emitter != nil {
+		event, err := s.emitter.EmitActivityEvent(ctx, tenantID, authorID, ActivityEventInput{
+			ActivityKey: "achievement.created",
+			Reference:   contentRow.ID.String(),
+			Payload:     map[string]interface{}{"milestone_type": input.MilestoneType},
+		})
+		if err != nil {
+			slog.Warn("achievement: emit activity event failed", "content_id", contentRow.ID, "error", err)
+		} else if err := s.emitter.EnqueueProcessActivityEvent(ctx, event.ID, tenantID); err != nil {
+			slog.Warn("achievement: enqueue activity event failed", "content_id", contentRow.ID, "error", err)
+		}
+	}
+
 	return s.getAchievementDTOByID(ctx, contentRow.ID, tenantID, authorID)
 }
 
@@ -179,7 +259,18 @@ func (s *Service) GetBySlug(ctx context.Context, slug string, tenantID, viewerID
 		}
 		return AchievementDTO{}, fmt.Errorf("achievement: get by slug: %w", err)
 	}
-	return rowToDTO(row), nil
+	return rowToDTO(row, viewerID), nil
+}
+
+// GetBySlugWithReactions returns a single achievement by slug, populated
+// with the curated reaction set for the detail page UI (§89 Reaction Set).
+func (s *Service) GetBySlugWithReactions(ctx context.Context, slug string, tenantID, viewerID pgtype.UUID) (AchievementDTO, error) {
+	dto, err := s.GetBySlug(ctx, slug, tenantID, viewerID)
+	if err != nil {
+		return AchievementDTO{}, err
+	}
+	dto.AllowedReactions = s.allowedReactions(ctx, tenantID)
+	return dto, nil
 }
 
 // List returns a paginated, filtered list of published achievements.
@@ -207,7 +298,7 @@ func (s *Service) List(ctx context.Context, tenantID, destSpaceID pgtype.UUID, m
 
 	dtos := make([]AchievementDTO, 0, len(rows))
 	for _, r := range rows {
-		dtos = append(dtos, rowToDTO(r))
+		dtos = append(dtos, rowToDTO(r, pgtype.UUID{}))
 	}
 	return dtos, total, nil
 }
@@ -221,7 +312,7 @@ func (s *Service) ListBySpace(ctx context.Context, spaceSlug string, tenantID pg
 	}
 	dtos := make([]AchievementDTO, 0, len(rows))
 	for _, r := range rows {
-		dtos = append(dtos, rowToDTO(r))
+		dtos = append(dtos, rowToDTO(r, pgtype.UUID{}))
 	}
 	return dtos, nil
 }
@@ -350,7 +441,7 @@ func (s *Service) AdminList(ctx context.Context, tenantID pgtype.UUID, status, m
 
 	dtos := make([]AchievementDTO, 0, len(rows))
 	for _, r := range rows {
-		dtos = append(dtos, rowToDTO(r))
+		dtos = append(dtos, rowToDTO(r, pgtype.UUID{}))
 	}
 	return dtos, total, nil
 }
@@ -390,7 +481,7 @@ func (s *Service) getAchievementDTOByID(ctx context.Context, contentID, tenantID
 		}
 		return AchievementDTO{}, fmt.Errorf("achievement: get by id: %w", err)
 	}
-	return rowToDTO(row), nil
+	return rowToDTO(row, viewerID), nil
 }
 
 // getAchievementDTOByIDAdmin fetches an achievement by content_id regardless
@@ -404,7 +495,7 @@ func (s *Service) getAchievementDTOByIDAdmin(ctx context.Context, contentID, ten
 		}
 		return AchievementDTO{}, fmt.Errorf("achievement: get by id (admin): %w", err)
 	}
-	return rowToDTO(row), nil
+	return rowToDTO(row, pgtype.UUID{}), nil
 }
 
 // ErrNotOwner is returned when a user tries to edit or delete an achievement
@@ -412,8 +503,12 @@ func (s *Service) getAchievementDTOByIDAdmin(ctx context.Context, contentID, ten
 var ErrNotOwner = fmt.Errorf("not the achievement author")
 
 // rowToDTO converts an AchievementRow (joined query result) to an
-// AchievementDTO.
-func rowToDTO(r AchievementRow) AchievementDTO {
+// AchievementDTO. The viewerID is used to compute is_owner and to decide
+// whether author_id is exposed: per §89 Privacy, author_id is NOT exposed
+// when is_anonymous is true (user_id is retained internally only). The
+// is_owner boolean lets the frontend show edit/delete affordances for the
+// author without needing the raw author_id.
+func rowToDTO(r AchievementRow, viewerID pgtype.UUID) AchievementDTO {
 	dto := AchievementDTO{
 		ID:           r.ID.String(),
 		Title:        r.Title,
@@ -451,6 +546,7 @@ func rowToDTO(r AchievementRow) AchievementDTO {
 	if r.DestSpaceCode != nil {
 		dto.DestSpaceCode = *r.DestSpaceCode
 	}
+	// §89 Privacy: suppress author_name and author_avatar when anonymous.
 	if !r.IsAnonymous {
 		if r.AuthorName != nil {
 			dto.AuthorName = *r.AuthorName
@@ -459,7 +555,13 @@ func rowToDTO(r AchievementRow) AchievementDTO {
 			dto.AuthorAvatar = *r.AuthorAvatar
 		}
 	}
-	if r.AuthorID.Valid {
+	// §89 Privacy: author_id is NOT exposed when is_anonymous is true.
+	// The is_owner boolean lets the frontend gate edit/delete UI without
+	// the raw author_id.
+	if r.AuthorID.Valid && viewerID.Valid && r.AuthorID == viewerID {
+		dto.IsOwner = true
+	}
+	if r.AuthorID.Valid && !r.IsAnonymous {
 		dto.AuthorID = r.AuthorID.String()
 	}
 	return dto

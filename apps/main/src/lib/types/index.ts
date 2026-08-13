@@ -2802,9 +2802,16 @@ export interface Achievement {
 	destination_space_name: string;
 	destination_space_code?: string;
 	is_anonymous: boolean;
+	is_owner?: boolean;
 	author_id?: string;
 	author_name?: string;
 	author_avatar?: string;
+	allowed_reactions?: AchievementReaction[];
+}
+
+export interface AchievementReaction {
+	emoji: string;
+	label: string;
 }
 
 // --- Section 98: Service Directory ---
@@ -3294,6 +3301,8 @@ export interface RadarItem {
 	freshness_score: number;
 	source_url: string;
 	created_at?: string | null;
+	/** Only populated by the detail endpoint (GET /intel/radar/feed/:id). */
+	saved?: boolean | null;
 }
 
 /** Per-country scholarship count row from GET /intel/radar/counts. */

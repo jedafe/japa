@@ -16,6 +16,7 @@ import (
 	"github.com/jedafe/japa/internal/content"
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/intelligence/extractor"
+	"github.com/jedafe/japa/internal/intelligence/reviewerctx"
 )
 
 // Store is the persistence surface the ScholarshipPromoter needs.
@@ -71,6 +72,7 @@ type ScholarshipPromoter struct {
 	store    Store
 	tenantID pgtype.UUID // tenant the generated guide rows are stamped with
 	authorID pgtype.UUID // system/automation user credited as the guide author
+	aiModel  *string     // AI model used for extraction (ADR-088, INTEL-003)
 	now      func() time.Time
 }
 
@@ -82,6 +84,11 @@ func WithClock(fn func() time.Time) ScholarshipPromoterOption {
 	return func(p *ScholarshipPromoter) { p.now = fn }
 }
 
+// WithAIModel sets the AI model name stamped on created content rows (ADR-088).
+func WithAIModel(model string) ScholarshipPromoterOption {
+	return func(p *ScholarshipPromoter) { p.aiModel = &model }
+}
+
 // NewScholarshipPromoter creates a promoter backed by the given store. The
 // tenantID and authorID identify the tenant and system author stamped onto the
 // contents guide rows created by the create path.
@@ -90,6 +97,7 @@ func NewScholarshipPromoter(store Store, tenantID, authorID pgtype.UUID, opts ..
 		store:    store,
 		tenantID: tenantID,
 		authorID: authorID,
+		aiModel:  ptr("gpt-4o-mini"), // default from system-settings-catalog §INTEL
 		now:      time.Now,
 	}
 	for _, opt := range opts {
@@ -186,9 +194,17 @@ func (p *ScholarshipPromoter) createPath(ctx context.Context, record gen.IntelRe
 		GuideCategory:   ptr("scholarship"),
 		PublishAt:       pgtype.Timestamptz{Time: p.now(), Valid: true},
 		PublishedAt:     pgtype.Timestamptz{Time: p.now(), Valid: true},
+		AiGenerated:     true,      // ADR-088: mark as AI-generated (INTEL-003)
+		AiModel:         p.aiModel, // from intel.extraction_model system setting
+		AiGeneratedAt:   pgtype.Timestamptz{Time: p.now(), Valid: true},
 	}
-	scholarshipParams := buildCreateParams(record, source, pgtype.UUID{}, ext)        // guideID filled inside tx
-	scholarshipParams.CountrySpaceID = countrySpaceID // override the invalid pgtype.UUID{} default
+	// INTEL-026 fix: stamp hitl_reviewed_by when a human approved the record.
+	if reviewerID, ok := reviewerctx.ReviewerFromContext(ctx); ok {
+		contentParams.HitlReviewedBy = reviewerID
+		contentParams.HitlReviewedAt = pgtype.Timestamptz{Time: p.now(), Valid: true}
+	}
+	scholarshipParams := buildCreateParams(record, source, pgtype.UUID{}, ext) // guideID filled inside tx
+	scholarshipParams.CountrySpaceID = countrySpaceID                          // override the invalid pgtype.UUID{} default
 
 	var result PromoteResult
 	err := p.store.WithTx(ctx, func(tx TxStore) error {

@@ -196,6 +196,9 @@
 			if (params.sort) {
 				queryParts.push(`sort=${encodeURIComponent(params.sort)}`);
 			}
+			if (params.filter?.dest) {
+				queryParts.push(`dest=${encodeURIComponent(params.filter.dest)}`);
+			}
 			const queryString = queryParts.join('&');
 
 			const result = await arrivalChecklistAdminApi.listRaw(queryString);

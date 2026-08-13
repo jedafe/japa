@@ -89,8 +89,9 @@ func scholarshipToDetail(s gen.Scholarship) scholarshipDetail {
 // GET /api/v1/intel/scholarships
 //
 // Query params (per api-routes-catalog.md Section INTEL):
-//   country, eligible_country, degree_level, deadline_after, deadline_before,
-//   fields_of_study (CSV), funding_tuition, min_confidence, q, cursor, limit
+//
+//	country, eligible_country, degree_level, deadline_after, deadline_before,
+//	fields_of_study (CSV), funding_tuition, min_confidence, q, cursor, limit
 //
 // Deprecated aliases (backward compat): deadline_from→deadline_after,
 // deadline_to→deadline_before, field_of_study→fields_of_study.
@@ -109,9 +110,14 @@ func (h *Handlers) HandleSearchScholarships(w http.ResponseWriter, r *http.Reque
 	}
 
 	q := r.URL.Query()
-	page, limit := parsePagination(r)
-	if limit > 50 {
-		limit = 50 // spec: max 50
+	page, limit := h.parsePagination(r)
+	// INTEL-016 fix: max page size from system_settings (intel.scholarships.max_page_size).
+	maxScholarships := 50
+	if h.settings != nil {
+		maxScholarships = h.settings.GetIntOr(r.Context(), h.defaultTenant, "intel.scholarships.max_page_size", 50)
+	}
+	if limit > maxScholarships {
+		limit = maxScholarships
 	}
 	// BUG-007 fix: the prior code hardcoded Offset: 0, so only the first
 	// page was ever returned regardless of the cursor. parsePagination
@@ -264,7 +270,7 @@ func buildScholarshipFacets(items []radarItem) map[string]interface{} {
 		}
 	}
 	return map[string]interface{}{
-		"country":     countries,
+		"country":      countries,
 		"degree_level": degrees,
 	}
 }

@@ -99,6 +99,13 @@ SELECT * FROM intel_records WHERE tenant_id = $1 AND external_key = $2 ORDER BY 
 -- name: ListIntelRecordsByStatus :many
 SELECT * FROM intel_records WHERE tenant_id = $1 AND entity_type = $2 AND status = $3 ORDER BY extracted_at DESC LIMIT $4 OFFSET $5;
 
+-- name: ListIntelRecordsByStatusAll :many
+-- Lists intel records by status across ALL entity types (no entity_type
+-- filter). Used by the review-queue handler when no entity_type filter is
+-- supplied so job/visa/grant records awaiting review are not invisible
+-- (BUG-001 fix — the prior handler hardcoded entity_type='scholarship').
+SELECT * FROM intel_records WHERE tenant_id = $1 AND status = $2 ORDER BY extracted_at DESC LIMIT $3 OFFSET $4;
+
 -- name: UpdateIntelRecordStatus :exec
 UPDATE intel_records SET status = $3, last_verified_at = now() WHERE tenant_id = $1 AND id = $2;
 
@@ -128,4 +135,4 @@ VALUES ($1, $2, $3, $4, $5, $6);
 SELECT * FROM intel_review_log WHERE tenant_id = $1 AND intel_record_id = $2 ORDER BY created_at DESC;
 
 -- name: DeleteIntelReviewLogByActor :exec
-DELETE FROM intel_review_log WHERE actor_user_id = $1;
+DELETE FROM intel_review_log WHERE tenant_id = $1 AND actor_user_id = $2;

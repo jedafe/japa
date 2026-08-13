@@ -20,7 +20,9 @@
 	interface AdNetwork {
 		provider: 'adsense' | 'ezoic' | 'media_net' | 'custom';
 		name: string;
-		client_id: string;
+		// Backend GetAdNetworkConfig returns client_id as a nullable string
+		// (providers like Ezoic/custom may not use one).
+		client_id: string | null;
 		slot_mapping: Record<string, number>;
 		config: Record<string, unknown>;
 		priority: number;
@@ -92,10 +94,14 @@
 	});
 
 	// Fetch ad network config on mount.
+	// Ref: japaconnect-engineering/sections/25-ad-placement.md — public route
+	// GET /ads/networks/config. The `api` client already prefixes /api/v1, so
+	// the path must NOT include it (a double prefix resolves to
+	// /api/v1/api/v1/... and 404s).
 	$effect(() => {
 		void (async () => {
 			try {
-				const result = await api.get<AdNetwork[]>('/api/v1/ads/networks/config');
+				const result = await api.get<AdNetwork[]>('/ads/networks/config');
 				if (result.data && Array.isArray(result.data)) {
 					networks = result.data;
 				}

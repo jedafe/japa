@@ -210,7 +210,7 @@ export interface DbHealth {
 		primary: { role: string; reachable: boolean; latency_ms: number };
 		reader: { role: string; reachable: boolean; latency_ms: number };
 	};
-	replication?: { state: string; lag_seconds: number };
+	replication?: { state: string; lag_seconds: number; lag_bytes: number; lag_pretty: string; healthy: boolean; healthy_text: string };
 }
 
 export interface Deployment {

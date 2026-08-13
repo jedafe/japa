@@ -164,7 +164,8 @@ INSERT INTO contents (
     tenant_id, author_id, organization_id, space_id, content_type, title, slug, body, body_html,
     field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
     canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
-    status, visibility, read_time_minutes, publish_at, published_at, guide_category
+    status, visibility, read_time_minutes, publish_at, published_at, guide_category,
+    ai_generated, ai_model, ai_generated_at, hitl_reviewed_by, hitl_reviewed_at
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8, $9,
     $10, $11, $12,
@@ -172,14 +173,17 @@ INSERT INTO contents (
     $15, $16, $17,
     $18, $19,
     $20, $21, $22, $23, $24,
-    $25
+    $25,
+    COALESCE($26, false), $27, $28,
+    $29, $30
 )
 RETURNING id, tenant_id, author_id, organization_id, space_id, content_type, title, slug, body, body_html,
           field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
           canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
           status, visibility, is_locked, is_pinned, read_time_minutes,
           view_count, comment_count, share_count, reshare_count, publish_at, published_at,
-          created_at, updated_at, guide_category
+          created_at, updated_at, guide_category,
+          ai_generated, ai_model, ai_generated_at, hitl_reviewed_by, hitl_reviewed_at
 `
 
 type CreateContentParams struct {
@@ -208,6 +212,11 @@ type CreateContentParams struct {
 	PublishAt       pgtype.Timestamptz `json:"publish_at"`
 	PublishedAt     pgtype.Timestamptz `json:"published_at"`
 	GuideCategory   *string            `json:"guide_category"`
+	AiGenerated     interface{}        `json:"ai_generated"`
+	AiModel         *string            `json:"ai_model"`
+	AiGeneratedAt   pgtype.Timestamptz `json:"ai_generated_at"`
+	HitlReviewedBy  pgtype.UUID        `json:"hitl_reviewed_by"`
+	HitlReviewedAt  pgtype.Timestamptz `json:"hitl_reviewed_at"`
 }
 
 type CreateContentRow struct {
@@ -245,6 +254,11 @@ type CreateContentRow struct {
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
 	GuideCategory   *string            `json:"guide_category"`
+	AiGenerated     bool               `json:"ai_generated"`
+	AiModel         *string            `json:"ai_model"`
+	AiGeneratedAt   pgtype.Timestamptz `json:"ai_generated_at"`
+	HitlReviewedBy  pgtype.UUID        `json:"hitl_reviewed_by"`
+	HitlReviewedAt  pgtype.Timestamptz `json:"hitl_reviewed_at"`
 }
 
 // Content, revision, slug history, pinned posts, JSON-LD templates, and scores.
@@ -278,6 +292,11 @@ func (q *Queries) CreateContent(ctx context.Context, arg CreateContentParams) (C
 		arg.PublishAt,
 		arg.PublishedAt,
 		arg.GuideCategory,
+		arg.AiGenerated,
+		arg.AiModel,
+		arg.AiGeneratedAt,
+		arg.HitlReviewedBy,
+		arg.HitlReviewedAt,
 	)
 	var i CreateContentRow
 	err := row.Scan(
@@ -315,6 +334,11 @@ func (q *Queries) CreateContent(ctx context.Context, arg CreateContentParams) (C
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.GuideCategory,
+		&i.AiGenerated,
+		&i.AiModel,
+		&i.AiGeneratedAt,
+		&i.HitlReviewedBy,
+		&i.HitlReviewedAt,
 	)
 	return i, err
 }

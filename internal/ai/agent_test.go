@@ -21,6 +21,7 @@ package ai
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -140,6 +141,8 @@ type stubRateLimiter struct {
 	count    int64
 	expired  bool
 	failIncr bool
+	costVal  string // value returned by Get for the cost key; "" = not set
+	getErr   error  // error to return from Get; nil = return costVal
 }
 
 func (s *stubRateLimiter) Incr(ctx context.Context, key string) (int64, error) {
@@ -160,6 +163,13 @@ func (s *stubRateLimiter) IncrByFloat(ctx context.Context, key string, increment
 func (s *stubRateLimiter) Expire(ctx context.Context, key string, ttlSeconds int) error {
 	s.expired = true
 	return nil
+}
+
+func (s *stubRateLimiter) Get(ctx context.Context, key string) (string, error) {
+	if s.getErr != nil {
+		return "", s.getErr
+	}
+	return s.costVal, nil
 }
 
 // agentSettingsReader is a configurable SettingsReader for agent tests.
@@ -339,6 +349,105 @@ func TestHandleAgentRequest_RateLimiterFailsOpen(t *testing.T) {
 	ch, err := h.HandleAgentRequest(context.Background(), pgtype.UUID{}, pgtype.UUID{}, "test")
 	if err != nil {
 		t.Fatalf("expected request to proceed when rate limiter fails (fail-open), got error: %v", err)
+	}
+	events := collectEvents(t, ch)
+	if !hasEventType(events, EventSessionStart) {
+		t.Error("expected session_start event")
+	}
+}
+
+func TestHandleAgentRequest_DailyBudgetExceeded(t *testing.T) {
+	t.Parallel()
+
+	provider := &mockAgentProvider{name: "mock"}
+	// Cost accumulator returns 6.00 USD — above the default 5.00 budget.
+	rl := &stubRateLimiter{costVal: "6.00"}
+	h := newTestAgentHandler(t, provider,
+		WithAgentRateLimiter(rl),
+		WithAgentSettings(&agentSettingsReader{
+			floats: map[string]float64{"agent.daily_budget_usd": 5.00},
+		}),
+	)
+
+	_, err := h.HandleAgentRequest(context.Background(), pgtype.UUID{}, pgtype.UUID{}, "test")
+	if err == nil {
+		t.Fatal("expected budget exceeded error, got nil")
+	}
+	if !errors.Is(err, errAgentBudgetExceeded) {
+		t.Errorf("expected errAgentBudgetExceeded, got: %v", err)
+	}
+}
+
+func TestHandleAgentRequest_DailyBudgetWithinLimit(t *testing.T) {
+	t.Parallel()
+
+	provider := &mockAgentProvider{name: "mock"}
+	sessions := &stubSessionStore{}
+	// Cost accumulator returns 3.00 USD — below the 5.00 budget.
+	rl := &stubRateLimiter{costVal: "3.00"}
+	h := newTestAgentHandler(t, provider,
+		WithAgentRateLimiter(rl),
+		WithAgentSessions(sessions),
+		WithAgentSettings(&agentSettingsReader{
+			floats: map[string]float64{"agent.daily_budget_usd": 5.00},
+		}),
+	)
+
+	ch, err := h.HandleAgentRequest(context.Background(), pgtype.UUID{}, pgtype.UUID{}, "test")
+	if err != nil {
+		t.Fatalf("expected request to proceed within budget, got error: %v", err)
+	}
+	events := collectEvents(t, ch)
+	if !hasEventType(events, EventSessionStart) {
+		t.Error("expected session_start event")
+	}
+}
+
+func TestHandleAgentRequest_DailyBudgetDisabled(t *testing.T) {
+	t.Parallel()
+
+	provider := &mockAgentProvider{name: "mock"}
+	sessions := &stubSessionStore{}
+	// Budget set to 0 disables the check even though cost exceeds any
+	// reasonable limit.
+	rl := &stubRateLimiter{costVal: "999.00"}
+	h := newTestAgentHandler(t, provider,
+		WithAgentRateLimiter(rl),
+		WithAgentSessions(sessions),
+		WithAgentSettings(&agentSettingsReader{
+			floats: map[string]float64{"agent.daily_budget_usd": 0},
+		}),
+	)
+
+	ch, err := h.HandleAgentRequest(context.Background(), pgtype.UUID{}, pgtype.UUID{}, "test")
+	if err != nil {
+		t.Fatalf("expected request to proceed when budget disabled (0), got error: %v", err)
+	}
+	events := collectEvents(t, ch)
+	if !hasEventType(events, EventSessionStart) {
+		t.Error("expected session_start event")
+	}
+}
+
+func TestHandleAgentRequest_DailyBudgetGetFailsOpen(t *testing.T) {
+	t.Parallel()
+
+	provider := &mockAgentProvider{name: "mock"}
+	sessions := &stubSessionStore{}
+	// Valkey GET returns an error (e.g. redis.Nil on a fresh day) — the
+	// budget check should fail-open and let the request proceed.
+	rl := &stubRateLimiter{getErr: fmt.Errorf("redis nil")}
+	h := newTestAgentHandler(t, provider,
+		WithAgentRateLimiter(rl),
+		WithAgentSessions(sessions),
+		WithAgentSettings(&agentSettingsReader{
+			floats: map[string]float64{"agent.daily_budget_usd": 5.00},
+		}),
+	)
+
+	ch, err := h.HandleAgentRequest(context.Background(), pgtype.UUID{}, pgtype.UUID{}, "test")
+	if err != nil {
+		t.Fatalf("expected request to proceed when budget GET fails (fail-open), got error: %v", err)
 	}
 	events := collectEvents(t, ch)
 	if !hasEventType(events, EventSessionStart) {

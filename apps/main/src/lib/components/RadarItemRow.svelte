@@ -12,26 +12,10 @@
 	import { t } from '$lib/i18n';
 	import { GraduationCap, ExternalLink, Clock, ShieldCheck, ShieldAlert } from 'lucide-svelte';
 	import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
+	import type { RadarItem } from '$lib/types';
 
-	/** v1 radar feed item shape — mirrors the backend `radarItem` struct
-	 *  (internal/intelligence/handlers/radar.go). Kept in sync with the
-	 *  RadarItem interface exported from /routes/(app)/radar/+page.server.ts. */
-	export interface RadarItem {
-		id: string;
-		type: string;
-		title: string;
-		description?: string | null;
-		country: string;
-		university?: string | null;
-		degree_level?: string | null;
-		deadline?: string | null;
-		application_url?: string | null;
-		confidence_overall: number;
-		trust_level: number;
-		freshness_score: number;
-		source_url: string;
-		created_at?: string | null;
-	}
+	// Re-export so existing imports from this module keep working.
+	export type { RadarItem };
 
 	interface Props {
 		item: RadarItem;

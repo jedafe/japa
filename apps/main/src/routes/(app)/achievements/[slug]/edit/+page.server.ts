@@ -14,7 +14,6 @@ export const load: PageServerLoad = async (event) => {
 
 	const ctx = apiContext(event);
 	const slug = event.params.slug;
-	const currentUserId = event.locals.user.id;
 
 	let achievement: Achievement;
 	try {
@@ -27,8 +26,9 @@ export const load: PageServerLoad = async (event) => {
 	}
 
 	// Gate the UI: only the author sees the edit form. The backend also
-	// enforces ownership on PATCH, so this is defense-in-depth.
-	if (!achievement.author_id || achievement.author_id !== currentUserId) {
+	// enforces ownership on PATCH, so this is defense-in-depth. §89 Privacy:
+	// author_id is not exposed for anonymous posts; use is_owner instead.
+	if (!achievement.is_owner) {
 		throw error(403, { code: 'not_owner', message: 'You can only edit your own achievements' });
 	}
 

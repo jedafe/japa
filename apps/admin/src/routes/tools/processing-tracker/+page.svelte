@@ -166,6 +166,7 @@
 			if (params.pageSize) qs.set('limit', String(params.pageSize));
 			if (params.q) qs.set('q', params.q);
 			if (params.sort) qs.set('sort', params.sort);
+			if (params.filter?.dest) qs.set('dest', params.filter.dest);
 			const result = await processingTrackerAdminApi.list(qs.toString());
 			if (result.ok) {
 				const envelope = result.data as AdminListResponse;

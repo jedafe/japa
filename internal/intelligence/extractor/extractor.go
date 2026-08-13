@@ -236,11 +236,67 @@ var ErrExtractionRetriesExhausted = errors.New("extractor: retries exhausted on 
 //go:embed prompts/scholarship.txt
 var scholarshipPrompt string
 
+//go:embed prompts/job.txt
+var jobPrompt string
+
+//go:embed prompts/visa.txt
+var visaPrompt string
+
+//go:embed prompts/remittance.txt
+var remittancePrompt string
+
+//go:embed prompts/cost_of_living.txt
+var costOfLivingPrompt string
+
+//go:embed prompts/housing.txt
+var housingPrompt string
+
+//go:embed prompts/travel_routes.txt
+var travelRoutesPrompt string
+
+//go:embed prompts/grants.txt
+var grantsPrompt string
+
+//go:embed prompts/admission.txt
+var admissionPrompt string
+
+//go:embed prompts/banking.txt
+var bankingPrompt string
+
+//go:embed prompts/work_career.txt
+var workCareerPrompt string
+
+//go:embed prompts/health_insurance.txt
+var healthInsurancePrompt string
+
+//go:embed prompts/culture_lifestyle.txt
+var cultureLifestylePrompt string
+
+// promptTemplates maps entity_type → embedded prompt template. Adding a
+// domain = add a //go:embed line + an entry here. No buildPrompt code
+// change.
+var promptTemplates = map[string]string{
+	schemas.EntityTypeScholarship:      scholarshipPrompt,
+	schemas.EntityTypeJob:              jobPrompt,
+	schemas.EntityTypeVisa:             visaPrompt,
+	schemas.EntityTypeRemittance:       remittancePrompt,
+	schemas.EntityTypeCostOfLiving:     costOfLivingPrompt,
+	schemas.EntityTypeHousing:          housingPrompt,
+	schemas.EntityTypeTravelRoutes:     travelRoutesPrompt,
+	schemas.EntityTypeGrants:           grantsPrompt,
+	schemas.EntityTypeAdmission:        admissionPrompt,
+	schemas.EntityTypeBanking:          bankingPrompt,
+	schemas.EntityTypeWorkCareer:       workCareerPrompt,
+	schemas.EntityTypeHealthInsurance:  healthInsurancePrompt,
+	schemas.EntityTypeCultureLifestyle: cultureLifestylePrompt,
+}
+
 // buildPrompt loads the prompt template for the given entity schema and
-// substitutes the placeholders.
+// substitutes the placeholders. The template is selected by
+// schema.EntityType from the promptTemplates registry.
 func buildPrompt(schema schemas.EntitySchema, sourceURL, sourceType, sourceText string) (string, error) {
-	tmpl := scholarshipPrompt
-	if schema.EntityType != "scholarship" {
+	tmpl, ok := promptTemplates[schema.EntityType]
+	if !ok {
 		return "", fmt.Errorf("extractor: no prompt template for entity type %q", schema.EntityType)
 	}
 	schemaDesc := describeSchema(schema)
