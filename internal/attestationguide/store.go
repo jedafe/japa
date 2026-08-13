@@ -13,11 +13,13 @@
 // human-in-the-loop (HITL) approval step before publication.
 //
 // Ref: japaconnect-engineering/sections/97-attestation-guide.md
-//      japaconnect-engineering/adr/ADR-105-attestation-guide.md
+//
+//	japaconnect-engineering/adr/ADR-105-attestation-guide.md
 package attestationguide
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -39,11 +41,11 @@ const (
 
 // Pathway statuses (§97).
 const (
-	PathwayStatusDraft    = "draft"
-	PathwayStatusAIDraft  = "ai_draft"
-	PathwayStatusPending  = "pending"
+	PathwayStatusDraft     = "draft"
+	PathwayStatusAIDraft   = "ai_draft"
+	PathwayStatusPending   = "pending"
 	PathwayStatusPublished = "published"
-	PathwayStatusRejected = "rejected"
+	PathwayStatusRejected  = "rejected"
 )
 
 // Community update statuses (§97).
@@ -68,35 +70,35 @@ func NewStore(database *db.DB) *Store {
 
 // Pathway holds a single attestation_pathways row.
 type Pathway struct {
-	ID                     pgtype.UUID
-	TenantID               pgtype.UUID
-	DocumentType           string
-	IssuingSpaceID         pgtype.UUID
-	DestinationSpaceID     pgtype.UUID
-	ApostilleRequired      bool
-	PathwaySteps           []byte // JSON array of step objects
-	CommunityLastVerified  pgtype.Date
-	Status                 string
-	IsActive               bool
-	AIGenerated            bool
-	AIModel                *string
-	AIPromptHash           *string
-	HITLReviewedBy         pgtype.UUID
-	HITLReviewedAt         pgtype.Timestamptz
-	HITLReviewNotes        *string
-	IsJapabotIndexed       bool
-	CreatedAt              pgtype.Timestamptz
-	UpdatedAt              pgtype.Timestamptz
+	ID                    pgtype.UUID
+	TenantID              pgtype.UUID
+	DocumentType          string
+	IssuingSpaceID        pgtype.UUID
+	DestinationSpaceID    pgtype.UUID
+	ApostilleRequired     bool
+	PathwaySteps          []byte // JSON array of step objects
+	CommunityLastVerified pgtype.Date
+	Status                string
+	IsActive              bool
+	AIGenerated           bool
+	AIModel               *string
+	AIPromptHash          *string
+	HITLReviewedBy        pgtype.UUID
+	HITLReviewedAt        pgtype.Timestamptz
+	HITLReviewNotes       *string
+	IsJapabotIndexed      bool
+	CreatedAt             pgtype.Timestamptz
+	UpdatedAt             pgtype.Timestamptz
 }
 
 // PathwayRow is the joined result of attestation_pathways + spaces
 // (issuing + destination), returned by list and get-by-id queries.
 type PathwayRow struct {
 	Pathway
-	IssuingSpaceName     *string
-	IssuingSpaceCode     *string
-	DestSpaceName        *string
-	DestSpaceCode        *string
+	IssuingSpaceName *string
+	IssuingSpaceCode *string
+	DestSpaceName    *string
+	DestSpaceCode    *string
 }
 
 // CommunityUpdate holds a single attestation_community_updates row.
@@ -362,19 +364,23 @@ WHERE id = $1 AND tenant_id = $2
 }
 
 // ApprovePathway performs the HITL approval: sets hitl_reviewed_by,
-// hitl_reviewed_at = now(), status = 'published', and optionally records
-// review notes.
-func (s *Store) ApprovePathway(ctx context.Context, id, tenantID, reviewerID pgtype.UUID, notes *string) error {
+// hitl_reviewed_at = now(), status = 'published', recomputes
+// apostille_required from the Hague Convention lookup (BUG-002), and sets
+// community_last_verified = now()::date if it was NULL (BUG-003).
+// Optionally records review notes.
+func (s *Store) ApprovePathway(ctx context.Context, id, tenantID, reviewerID pgtype.UUID, apostilleRequired bool, notes *string) error {
 	const q = `
 UPDATE attestation_pathways
-SET hitl_reviewed_by   = $3,
-    hitl_reviewed_at   = now(),
-    hitl_review_notes  = $4,
-    status             = 'published',
-    updated_at         = now()
+SET hitl_reviewed_by        = $3,
+    hitl_reviewed_at        = now(),
+    hitl_review_notes      = $4,
+    status                 = 'published',
+    apostille_required     = $5,
+    community_last_verified = COALESCE(community_last_verified, now()::date),
+    updated_at             = now()
 WHERE id = $1 AND tenant_id = $2
 `
-	cmd, err := s.pool.Writer.Exec(ctx, q, id, tenantID, reviewerID, notes)
+	cmd, err := s.pool.Writer.Exec(ctx, q, id, tenantID, reviewerID, notes, apostilleRequired)
 	if err != nil {
 		return fmt.Errorf("attestationguide: approve pathway: %w", err)
 	}
@@ -431,6 +437,54 @@ WHERE u.id = $1
 	return nil
 }
 
+// ApplyApprovedUpdateToPathway patches the parent pathway's pathway_steps
+// JSONB with the approved community update values (fee_estimate /
+// turnaround_days at the given step_index) and bumps community_last_verified
+// to today (BUG-003 + BUG-004). If stepIndex is nil the steps are not patched
+// (general note update) but community_last_verified is still bumped.
+func (s *Store) ApplyApprovedUpdateToPathway(ctx context.Context, pathwayID, tenantID pgtype.UUID, stepIndex *int32, feeEstimate *string, turnaroundDays *int32) error {
+	// Load current pathway_steps so we can patch in Go (cleaner than nested
+	// jsonb_set SQL for conditional fields).
+	const loadQ = `SELECT pathway_steps FROM attestation_pathways WHERE id = $1 AND tenant_id = $2`
+	var steps []byte
+	if err := s.pool.Reader.QueryRow(ctx, loadQ, pathwayID, tenantID).Scan(&steps); err != nil {
+		return fmt.Errorf("attestationguide: apply update: load steps: %w", err)
+	}
+
+	if stepIndex != nil && len(steps) > 0 && string(steps) != "[]" {
+		var arr []map[string]any
+		if err := json.Unmarshal(steps, &arr); err == nil {
+			idx := int(*stepIndex)
+			if idx >= 0 && idx < len(arr) {
+				if feeEstimate != nil {
+					arr[idx]["fee_estimate"] = *feeEstimate
+				}
+				if turnaroundDays != nil {
+					arr[idx]["turnaround_days"] = *turnaroundDays
+				}
+			}
+			if patched, err := json.Marshal(arr); err == nil {
+				steps = patched
+			}
+		}
+	}
+
+	const q = `
+UPDATE attestation_pathways
+SET pathway_steps            = $3,
+    community_last_verified = now()::date,
+    updated_at              = now()
+WHERE id = $1 AND tenant_id = $2`
+	cmd, err := s.pool.Writer.Exec(ctx, q, pathwayID, tenantID, steps)
+	if err != nil {
+		return fmt.Errorf("attestationguide: apply update: %w", err)
+	}
+	if cmd.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+	return nil
+}
+
 // GetCommunityUpdateByID returns a single attestation_community_updates
 // row by its id, scoped through the parent pathway's tenant.
 func (s *Store) GetCommunityUpdateByID(ctx context.Context, id, tenantID pgtype.UUID) (CommunityUpdate, error) {
@@ -456,13 +510,96 @@ LIMIT 1
 	return u, nil
 }
 
+// ListCommunityUpdatesFilter holds filter parameters for listing community
+// updates in the admin moderation queue (BUG-005).
+type ListCommunityUpdatesFilter struct {
+	TenantID pgtype.UUID
+	Status   string // optional; default: pending
+	Limit    int32
+	Offset   int32
+}
+
+// ListCommunityUpdates returns a paginated list of attestation_community_updates
+// scoped to the tenant via the parent pathway. Used by the admin moderation
+// queue (GET /admin/attestation/updates — BUG-005).
+func (s *Store) ListCommunityUpdates(ctx context.Context, f ListCommunityUpdatesFilter) ([]CommunityUpdate, int64, error) {
+	var (
+		conditions = []string{"p.tenant_id = $1", "u.deleted_at IS NULL"}
+		args       = []any{f.TenantID}
+		argIdx     = 2
+	)
+	if f.Status != "" {
+		conditions = append(conditions, fmt.Sprintf("u.status = $%d", argIdx))
+		args = append(args, f.Status)
+		argIdx++
+	}
+	whereClause := strings.Join(conditions, " AND ")
+
+	limit := f.Limit
+	if limit <= 0 {
+		limit = 20
+	}
+	if limit > 100 {
+		limit = 100
+	}
+	offset := f.Offset
+	if offset < 0 {
+		offset = 0
+	}
+
+	listQuery := fmt.Sprintf(`
+SELECT u.id, u.pathway_id, u.user_id, u.step_index, u.fee_estimate,
+       u.turnaround_days, u.note, u.status, u.reviewed_by, u.created_at
+FROM attestation_community_updates u
+JOIN attestation_pathways p ON p.id = u.pathway_id
+WHERE %s
+ORDER BY u.created_at ASC
+LIMIT $%d OFFSET $%d
+`, whereClause, argIdx, argIdx+1)
+	args = append(args, limit, offset)
+
+	rows, err := s.pool.Reader.Query(ctx, listQuery, args...)
+	if err != nil {
+		return nil, 0, fmt.Errorf("attestationguide: list community updates: %w", err)
+	}
+	defer rows.Close()
+
+	var out []CommunityUpdate
+	for rows.Next() {
+		var u CommunityUpdate
+		if err := rows.Scan(
+			&u.ID, &u.PathwayID, &u.UserID, &u.StepIndex, &u.FeeEstimate,
+			&u.TurnaroundDays, &u.Note, &u.Status, &u.ReviewedBy, &u.CreatedAt,
+		); err != nil {
+			return nil, 0, fmt.Errorf("attestationguide: scan community update row: %w", err)
+		}
+		out = append(out, u)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("attestationguide: iterate community update rows: %w", err)
+	}
+
+	countQuery := fmt.Sprintf(`
+SELECT COUNT(*) FROM attestation_community_updates u
+JOIN attestation_pathways p ON p.id = u.pathway_id
+WHERE %s
+`, whereClause)
+	countArgs := args[:len(args)-2]
+	var total int64
+	if err := s.pool.Reader.QueryRow(ctx, countQuery, countArgs...).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("attestationguide: count community updates: %w", err)
+	}
+
+	return out, total, nil
+}
+
 // AdminListFilter holds filter parameters for the admin pathway list.
 type AdminListFilter struct {
 	TenantID           pgtype.UUID
-	Status             string // optional
-	DocumentType       string // optional
+	Status             string      // optional
+	DocumentType       string      // optional
 	DestinationSpaceID pgtype.UUID // optional
-	IsActive           *bool  // optional
+	IsActive           *bool       // optional
 	Limit              int32
 	Offset             int32
 }

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -36,6 +37,14 @@ type PermissionResolver interface {
 	HasPermission(ctx context.Context, userID, tenantID pgtype.UUID, permKey string) bool
 }
 
+// PermissionLister resolves the caller's full effective permission node set
+// (§26 RBAC wiring). Used by GetMyProfile to surface `permissions` on /me so
+// frontend pages can gate UI on the actual permission node (e.g.
+// `forum.ama.create`) instead of hardcoded role names (Rule 16).
+type PermissionLister interface {
+	UserPermissions(ctx context.Context, userID, tenantID pgtype.UUID) (map[string]bool, error)
+}
+
 // Handlers holds dependencies for user HTTP handlers.
 type Handlers struct {
 	Service *Service
@@ -50,6 +59,10 @@ type Handlers struct {
 	// content they don't own for editing. When nil, only the author can
 	// restore content via /me/content/{id}.
 	permResolver PermissionResolver
+	// permLister is an optional RBAC resolver used by GetMyProfile to
+	// surface the caller's effective permission nodes on /me (§26). When
+	// nil, the `permissions` field is omitted from the /me response.
+	permLister PermissionLister
 	// settings is used for configurable Nominatim URL/timeout (ADR-064a,
 	// Rule 3). Optional — when nil, compiled-in defaults are used.
 	settings geoSettingsReader
@@ -74,6 +87,14 @@ func NewHandlers(service *Service, resolver JSONLDResolver) *Handlers {
 // setup after the RBAC resolver is constructed.
 func (h *Handlers) SetPermissionResolver(r PermissionResolver) {
 	h.permResolver = r
+}
+
+// SetPermissionLister wires the RBAC permission lister used by GetMyProfile
+// to surface the caller's effective permission nodes on /me (§26). Called
+// once during server setup. When not wired, the `permissions` field is
+// omitted from the /me response.
+func (h *Handlers) SetPermissionLister(l PermissionLister) {
+	h.permLister = l
 }
 
 // SetSettings wires the config settings reader. Called once during server
@@ -198,6 +219,25 @@ func (h *Handlers) GetMyProfile(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		handleServiceError(w, err)
 		return
+	}
+
+	// Surface the caller's effective RBAC permission nodes on /me so frontend
+	// pages can gate UI on the actual permission node (e.g. `forum.ama.create`)
+	// instead of hardcoded role names (§26 RBAC wiring, Rule 16). Best-effort:
+	// a resolver failure degrades to omitting the field. The underlying
+	// GetUserContext is L1/L2-cached so this adds no DB load to the /me call.
+	if h.permLister != nil {
+		perms, pErr := h.permLister.UserPermissions(r.Context(), user.UserID, user.TenantID)
+		if pErr == nil && len(perms) > 0 {
+			keys := make([]string, 0, len(perms))
+			for k, v := range perms {
+				if v {
+					keys = append(keys, k)
+				}
+			}
+			sort.Strings(keys)
+			profile.EffectivePermissions = keys
+		}
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": profile})

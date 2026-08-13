@@ -233,6 +233,10 @@ var taskTier = func() map[string]string {
 		TypeMentorUpdateMeilisearch,
 		// §91 Embassy Appointment Alerter (ADR-099) — nightly sweep, low tier.
 		TypeEmbassyExpireChecks,
+		// §91 Embassy Appointment Alerter (ADR-099) — recurring poll
+		// scheduler runs every 5 min, low tier (enqueues default-tier
+		// embassy:poll tasks per embassy).
+		TypeEmbassySchedulePolls,
 		// §86 Community Calendar (ADR-094) — nightly staleness check, low tier.
 		TypeCalendarStalenessCheck,
 		// §85 Mutual Aid Board (ADR-093) — nightly expiry sweep, low tier.
@@ -396,6 +400,7 @@ func TaskTypeCatalog() []map[string]string {
 		{TypeEmbassyPoll, "default", "Poll a monitored embassy booking page for open appointment slots"},
 		{TypeEmbassyDispatchAlerts, "critical", "Dispatch notifications to users with a matching active appointment alert"},
 		{TypeEmbassyExpireChecks, "low", "Expire appointment alerts past their expires_at date"},
+		{TypeEmbassySchedulePolls, "low", "Enqueue embassy:poll tasks for active embassies whose poll interval has elapsed"},
 		{TypeCredentialsCheckLinks, "low", "HEAD-check regulatory_body_url on active credential pathways for 404s"},
 		// §90 Visa Route Comparison (ADR-098)
 		{TypeVisaRoutesCheckLinks, "low", "HEAD-check gov_source_url on active+published visa routes for 404s"},

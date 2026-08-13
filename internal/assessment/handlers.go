@@ -557,8 +557,13 @@ func (h *Handlers) HandleAdminListResults(w http.ResponseWriter, r *http.Request
 
 	page, limit := parsePageParams(r)
 	minScore, maxScore := parseScoreParams(r)
+	sortKey := r.URL.Query().Get("sort")
+	sortDir := r.URL.Query().Get("dir")
+	if sortDir == "" {
+		sortDir = r.URL.Query().Get("order")
+	}
 
-	results, total, err := h.service.AdminListResults(r.Context(), tenantID, minScore, maxScore, page, limit)
+	results, total, err := h.service.AdminListResults(r.Context(), tenantID, minScore, maxScore, page, limit, sortKey, sortDir)
 	if err != nil {
 		slog.Error("assessment: admin list results failed", "error", err)
 		writeError(w, http.StatusInternalServerError, "list_failed", "Failed to list results")

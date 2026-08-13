@@ -122,6 +122,10 @@
 	let sortKey = $state('created_at');
 	let sortDir = $state<'asc' | 'desc'>('desc');
 
+	// defaultPolicy returns the canonical default activity_policy defined in
+	// §68 (ADR-068). These are spec-defined schema defaults, not runtime data —
+	// the §68 section file is the source of truth for the default shape. Per
+	// Rule 1, the section file wins. Ref: japaconnect-engineering/sections/68-ai-personas.md
 	function defaultPolicy(): ActivityPolicy {
 		return {
 			actions_per_day: 10,

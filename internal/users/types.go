@@ -72,6 +72,12 @@ type UserProfileResponse struct {
 	// on /me so sidebar widgets can fetch geo-relevant content (Option A,
 	// ADR-064) without an extra round-trip. Empty string = not set.
 	CurrentGeoSpaceID string `json:"current_geo_space_id"`
+	// EffectivePermissions is the caller's resolved RBAC permission node set
+	// (e.g. "forum.ama.create", "content.edit_own"). Surfaced on /me so any
+	// frontend page can gate UI on the actual permission node instead of
+	// hardcoded role names (§26 RBAC wiring, Rule 16). Nil for public
+	// profiles (only populated by GetMyProfile). Sorted for stable output.
+	EffectivePermissions []string `json:"permissions,omitempty"`
 }
 
 // UserPreferencesResponse is the API response for user preferences.

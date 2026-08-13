@@ -57,22 +57,45 @@
 	let fetchingModels = $state(false);
 	let fetchModelsError = $state('');
 
-	const providerTypes = $derived([
-		{ value: 'xiaomi', label: t('ai_providers.type_xiaomi', 'Xiaomi MiMo'), baseUrlHint: 'Auto-selected from key prefix (tp- or sk-)' },
-		{ value: 'openai', label: t('ai_providers.type_openai', 'OpenAI-compatible'), baseUrlHint: 'https://api.openai.com/v1 — or OpenRouter: https://openrouter.ai/api/v1 — or Command Code: https://api.commandcode.ai/provider/v1' },
-		{ value: 'ollama', label: t('ai_providers.type_ollama', 'Ollama'), baseUrlHint: 'http://localhost:11434/v1' },
-		{ value: 'anthropic', label: t('ai_providers.type_anthropic', 'Anthropic (native)'), baseUrlHint: 'https://api.anthropic.com/v1 — or Command Code: https://api.commandcode.ai/provider/v1' },
-		{ value: 'devin', label: t('ai_providers.type_devin', 'Devin (Cognition)'), baseUrlHint: 'https://api.devin.ai/v3/organizations/org-xxxxx (include org ID!) — model field = devin_mode (normal/fast/lite/ultra/fusion)' },
-		{ value: 'cursor', label: t('ai_providers.type_cursor', 'Cursor (Anysphere)'), baseUrlHint: 'https://api.cursor.com/v1 (Basic auth, key from Cursor Dashboard)' },
-		{ value: 'custom', label: t('ai_providers.type_custom', 'Custom'), baseUrlHint: 'Any OpenAI-compatible /v1 endpoint' }
-	]);
+	// Provider type UI metadata — i18n labels and base URL hints keyed by
+	// provider_type. The list of valid types is fetched from the API
+	// (GET /control/ai-providers/types, Rule 16); this map supplies the
+	// human-readable label and hint for each known type.
+	const providerTypeMeta: Record<string, { label: string; baseUrlHint: string }> = {
+		xiaomi: { label: t('ai_providers.type_xiaomi', 'Xiaomi MiMo'), baseUrlHint: 'Auto-selected from key prefix (tp- or sk-)' },
+		openai: { label: t('ai_providers.type_openai', 'OpenAI-compatible'), baseUrlHint: 'https://api.openai.com/v1 — or OpenRouter: https://openrouter.ai/api/v1 — or Command Code: https://api.commandcode.ai/provider/v1' },
+		ollama: { label: t('ai_providers.type_ollama', 'Ollama'), baseUrlHint: 'http://localhost:11434/v1' },
+		anthropic: { label: t('ai_providers.type_anthropic', 'Anthropic (native)'), baseUrlHint: 'https://api.anthropic.com/v1 — or Command Code: https://api.commandcode.ai/provider/v1' },
+		devin: { label: t('ai_providers.type_devin', 'Devin (Cognition)'), baseUrlHint: 'https://api.devin.ai/v3/organizations/org-xxxxx (include org ID!) — model field = devin_mode (normal/fast/lite/ultra/fusion)' },
+		cursor: { label: t('ai_providers.type_cursor', 'Cursor (Anysphere)'), baseUrlHint: 'https://api.cursor.com/v1 (Basic auth, key from Cursor Dashboard)' },
+		custom: { label: t('ai_providers.type_custom', 'Custom'), baseUrlHint: 'Any OpenAI-compatible /v1 endpoint' }
+	};
 
-	const categoryOptions = $derived([
-		{ value: 'content_generation', label: t('ai_providers.cat_content_generation', 'Content Generation') },
-		{ value: 'chat', label: t('ai_providers.cat_chat', 'Chat (JapaBot)') },
-		{ value: 'embedding', label: t('ai_providers.cat_embedding', 'Embedding') },
-		{ value: 'moderation', label: t('ai_providers.cat_moderation', 'Moderation') }
-	]);
+	const categoryMeta: Record<string, string> = {
+		content_generation: t('ai_providers.cat_content_generation', 'Content Generation'),
+		chat: t('ai_providers.cat_chat', 'Chat (JapaBot)'),
+		embedding: t('ai_providers.cat_embedding', 'Embedding'),
+		moderation: t('ai_providers.cat_moderation', 'Moderation')
+	};
+
+	// Fetch valid provider types and categories from the API (Rule 16).
+	let apiProviderTypes = $state<string[]>([]);
+	let apiCategories = $state<string[]>([]);
+
+	let providerTypes = $derived(
+		apiProviderTypes.map((v) => ({
+			value: v,
+			label: providerTypeMeta[v]?.label ?? v,
+			baseUrlHint: providerTypeMeta[v]?.baseUrlHint ?? ''
+		}))
+	);
+
+	let categoryOptions = $derived(
+		apiCategories.map((v) => ({
+			value: v,
+			label: categoryMeta[v] ?? v
+		}))
+	);
 
 	$effect(() => {
 		load();
@@ -88,6 +111,13 @@
 			errorMessage = result.error;
 		}
 		loading = false;
+
+		// Fetch valid provider types and categories from the API (Rule 16).
+		const typesResult = await api<{ provider_types: string[]; categories: string[] }>('/control/ai-providers/types');
+		if (typesResult.ok && typesResult.data) {
+			apiProviderTypes = typesResult.data.provider_types ?? [];
+			apiCategories = typesResult.data.categories ?? [];
+		}
 	}
 
 	let filtered = $derived(

@@ -11,7 +11,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -311,41 +310,9 @@ func RevokeToken(ctx context.Context, jti string, expiresAt time.Time, vkClient 
 	return vkClient.Set(ctx, key, "1", ttl).Err()
 }
 
-// RevokeAllSessions revokes all active JWT sessions for a user by scanning
-// Valkey for JTIs matching the user prefix pattern. This is used after
-// password reset to force re-authentication on all devices.
-//
-// NOTE: This is a best-effort operation. JTIs that were issued but not yet
-// used (e.g., stored in a client that hasn't made a request) will not be
-// caught by this scan. The primary session invalidation path is through
-// the refresh token revocation in the database.
-func RevokeAllSessions(ctx context.Context, _ string, vkClient valkeycompat.Cmdable) error {
-	if vkClient == nil {
-		return nil
-	}
-
-	pattern := revocationKeyPrefix + "*"
-
-	var cursor uint64
-
-	for {
-		keys, nextCursor, err := vkClient.Scan(ctx, cursor, pattern, 100).Result()
-		if err != nil {
-			return fmt.Errorf("scanning revoked JTIs: %w", err)
-		}
-
-		for _, key := range keys {
-			// Best effort — individual key deletion failures are logged but not fatal.
-			if err := vkClient.Del(ctx, key).Err(); err != nil {
-				slog.Error("failed to delete revoked JTI", "error", err, "key", key)
-			}
-		}
-
-		cursor = nextCursor
-		if cursor == 0 {
-			break
-		}
-	}
-
-	return nil
-}
+// Note: per-user session revocation is handled by revoking refresh tokens in
+// the database (RevokeAllUserRefreshTokens) plus revoking the caller's
+// current access-token JTI via RevokeToken. There is no Valkey-side
+// "revoke all sessions by user" scan because JTIs are not indexed by user —
+// only revoked JTIs are stored (jc:revoked_jti:{jti}), and deleting those
+// keys would *un-revoke* already-revoked tokens.

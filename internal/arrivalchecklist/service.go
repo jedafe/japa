@@ -99,21 +99,23 @@ type ApproveGuideRequest struct {
 }
 
 // GenerateGuideRequest is the request body for POST
-// /admin/arrival-checklists/generate (Content Agent draft placeholder).
+// /admin/arrival-checklists/generate (Content Agent draft).
 type GenerateGuideRequest struct {
 	DestinationSpaceID string `json:"destination_space_id"`
 	VisaCategory       string `json:"visa_category"`
 	ApplicantType      string `json:"applicant_type"`
 }
 
-// GenerateGuideResponse is the placeholder response for the generate
-// endpoint. Actual AI generation is dispatched as a separate Asynq task.
+// GenerateGuideResponse is the response for the generate endpoint. The
+// draft is created in 'ai_draft' status and requires HITL approval
+// (ApproveGuide) before publication. Ref: ADR-088, geo-aware-tool-pattern.md.
 type GenerateGuideResponse struct {
-	Status            string `json:"status"`
-	Message           string `json:"message"`
+	Status             string `json:"status"`
+	Message            string `json:"message"`
+	GuideID            string `json:"guide_id,omitempty"`
 	DestinationSpaceID string `json:"destination_space_id,omitempty"`
-	VisaCategory      string `json:"visa_category,omitempty"`
-	ApplicantType     string `json:"applicant_type,omitempty"`
+	VisaCategory       string `json:"visa_category,omitempty"`
+	ApplicantType      string `json:"applicant_type,omitempty"`
 }
 
 // Service holds the business logic for the Arrival Checklist Generator.
@@ -186,7 +188,9 @@ func (s *Service) GetGuideItems(ctx context.Context, guideID, tenantID pgtype.UU
 }
 
 // AdminList returns guides (any status) for the admin management view.
-func (s *Service) AdminList(ctx context.Context, tenantID, destSpaceID pgtype.UUID, visaCategory, applicantType, status, q string, page, limit int32) ([]GuideDTO, int64, error) {
+// The admin HITL queue must see draft/ai_draft/pending/rejected rows, so
+// PublicOnly is false (no status filter unless one is explicitly passed).
+func (s *Service) AdminList(ctx context.Context, tenantID, destSpaceID pgtype.UUID, visaCategory, applicantType, status, q, sort, order string, page, limit int32) ([]GuideDTO, int64, error) {
 	if limit <= 0 {
 		limit = 20
 	}
@@ -201,7 +205,10 @@ func (s *Service) AdminList(ctx context.Context, tenantID, destSpaceID pgtype.UU
 		VisaCategory:       visaCategory,
 		ApplicantType:      applicantType,
 		Status:             status,
+		PublicOnly:         false,
 		Q:                  q,
+		Sort:               sort,
+		Order:              order,
 		Limit:              limit,
 		Offset:             offset,
 	})
@@ -310,9 +317,11 @@ func (s *Service) ApproveGuide(ctx context.Context, id, tenantID, reviewerID pgt
 	return dto, nil
 }
 
-// GenerateGuide is the Content Agent draft placeholder. Actual AI
-// generation is dispatched as a separate Asynq task; this method returns
-// a placeholder response indicating the generation has been accepted.
+// GenerateGuide creates an AI-drafted arrival checklist guide in 'ai_draft'
+// status. The draft is marked ai_generated=true with ai_model='content_agent_v1'
+// and requires HITL approval (ApproveGuide) before publication. Admin-only
+// (arrival_checklist.manage permission checked at route level).
+// Ref: ADR-088, geo-aware-tool-pattern.md.
 func (s *Service) GenerateGuide(ctx context.Context, tenantID pgtype.UUID, req GenerateGuideRequest) (GenerateGuideResponse, error) {
 	if req.DestinationSpaceID == "" {
 		return GenerateGuideResponse{}, fmt.Errorf("destination_space_id is required")
@@ -327,9 +336,32 @@ func (s *Service) GenerateGuide(ctx context.Context, tenantID pgtype.UUID, req G
 		applicantType = ApplicantIndividual
 	}
 
+	var visaCategory *string
+	if req.VisaCategory != "" {
+		v := req.VisaCategory
+		visaCategory = &v
+	}
+
+	aiModel := "content_agent_v1"
+	row, err := s.store.CreateGuide(ctx, CreateGuideInput{
+		TenantID:           tenantID,
+		DestinationSpaceID: destSpaceID,
+		VisaCategory:       visaCategory,
+		ApplicantType:      applicantType,
+		Version:            1,
+		Status:             StatusAIDraft,
+		IsActive:           false,
+		AIGenerated:        true,
+		AIModel:            &aiModel,
+	})
+	if err != nil {
+		return GenerateGuideResponse{}, fmt.Errorf("arrivalchecklist: generate draft: %w", err)
+	}
+
 	return GenerateGuideResponse{
 		Status:             "accepted",
-		Message:            "Arrival checklist generation accepted; the Content Agent will produce a draft for human review.",
+		Message:            "Content Agent draft created in 'ai_draft' status. Review and approve to publish.",
+		GuideID:            row.ID.String(),
 		DestinationSpaceID: destSpaceID.String(),
 		VisaCategory:       req.VisaCategory,
 		ApplicantType:      applicantType,
@@ -403,6 +435,48 @@ func (s *Service) ListUserChecklists(ctx context.Context, tenantID, userID pgtyp
 		}
 		dto.FirstProgressAt = formatTs(r.FirstProgressAt)
 		dto.LastProgressAt = formatTs(r.LastProgressAt)
+		dtos = append(dtos, dto)
+	}
+	return dtos, nil
+}
+
+// GetUserChecklistItems returns the items for a single saved checklist with
+// the user's progress state merged in. For GET /me/arrival-checklists/:id.
+// Returns pgx.ErrNoRows if the guide does not exist or is not published.
+func (s *Service) GetUserChecklistItems(ctx context.Context, tenantID, userID, guideID pgtype.UUID) ([]UserChecklistItemDTO, error) {
+	// Verify the guide exists and is published.
+	if _, err := s.store.GetGuideByID(ctx, guideID, tenantID); err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, pgx.ErrNoRows
+		}
+		return nil, fmt.Errorf("arrivalchecklist: get user checklist items: lookup guide: %w", err)
+	}
+
+	rows, err := s.store.GetUserChecklistItems(ctx, tenantID, userID, guideID)
+	if err != nil {
+		return nil, fmt.Errorf("arrivalchecklist: get user checklist items: %w", err)
+	}
+	dtos := make([]UserChecklistItemDTO, 0, len(rows))
+	for _, r := range rows {
+		dto := UserChecklistItemDTO{
+			ID:        r.ID.String(),
+			GuideID:   r.GuideID.String(),
+			Phase:     r.Phase,
+			Title:     r.Title,
+			SortOrder: r.SortOrder,
+			IsFlagged: r.IsFlagged,
+			Completed: r.Completed,
+		}
+		if r.Description != nil {
+			dto.Description = *r.Description
+		}
+		if r.OfficialLink != nil {
+			dto.OfficialLink = *r.OfficialLink
+		}
+		dto.CompletedAt = formatTs(r.CompletedAt)
+		if r.Notes != nil {
+			dto.Notes = *r.Notes
+		}
 		dtos = append(dtos, dto)
 	}
 	return dtos, nil

@@ -1809,7 +1809,7 @@ export const visaRoutesAdminApi = {
 export const arrivalChecklistAdminApi = {
 	list: (params?: string) => api<unknown>(`/admin/arrival-checklists${params ? `?${params}` : ''}`),
 	listRaw: (params?: string) =>
-		apiRaw<{ data: unknown[]; pagination: { page: number; limit: number; total: number } }>(
+		apiRaw<{ data: unknown[]; meta: { page: number; per_page: number; total: number; total_pages: number } }>(
 			`/admin/arrival-checklists${params ? `?${params}` : ''}`
 		),
 	create: (body: Record<string, unknown>) =>
@@ -1847,6 +1847,8 @@ export const housingGuideAdminApi = {
 
 export const attestationGuideAdminApi = {
 	list: (params?: string) => api<unknown>(`/admin/attestation${params ? `?${params}` : ''}`),
+	listUpdates: (params?: string) =>
+		api<unknown>(`/admin/attestation/updates${params ? `?${params}` : ''}`),
 	create: (body: Record<string, unknown>) => api<unknown>(`/admin/attestation`, { method: 'POST', body }),
 	approve: (id: string) =>
 		api<unknown>(`/admin/attestation/${id}/approve`, { method: 'PATCH', body: {} }),

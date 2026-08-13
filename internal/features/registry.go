@@ -67,7 +67,7 @@ var Registry = []Feature{
 	{Key: "feature.credential_checker", Label: "Professional Credential Checker", Default: false},
 	{Key: "feature.cv_formatter", Label: "CV Formatter", Default: false},
 	{Key: "feature.housing_guide", Label: "Housing Guide", Default: false},
-	{Key: "feature.attestation_guide", Label: "Attestation Guide", Default: false},
+	{Key: "attestation_guide.enabled", Label: "Attestation Guide", Default: false},
 	{Key: "feature.language_test_hub", Label: "Language Test Hub", Default: false},
 	{Key: "feature.tax_calculator", Label: "Tax Calculator", Default: false},
 	{Key: "feature.community_locator", Label: "Diaspora Community Locator", Default: false},

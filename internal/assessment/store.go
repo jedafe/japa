@@ -14,6 +14,7 @@ package assessment
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/jackc/pgx/v5/pgtype"
 
@@ -186,36 +187,135 @@ type AdminListAssessmentResultsRow struct {
 	SubmissionValues []byte
 }
 
+// adminAssessmentSortColumns maps sort keys to their qualified column names.
+// Only these columns may appear in the ORDER BY clause (SQLi guard). Mirrors
+// the digest store's allowedSortColumns pattern.
+var adminAssessmentSortColumns = map[string]string{
+	"total_score":     "ar.total_score",
+	"threshold_label": "ar.threshold_label",
+	"created_at":      "ar.created_at",
+	"username":        "u.username",
+}
+
+// AdminListAssessmentResultsFilter holds the parameters for the admin results
+// list query: score-range filter, pagination, and sort.
+type AdminListAssessmentResultsFilter struct {
+	TenantID  pgtype.UUID
+	MinScore int32
+	MaxScore int32
+	Offset   int32
+	Limit    int32
+	Sort     string // whitelisted key (total_score, threshold_label, created_at, username)
+	Order    string // "asc" or "desc" (default desc)
+}
+
 // AdminListAssessmentResults returns all users' assessment results for the
-// tenant, paginated and filterable by score range. Admin-only.
-func (s *Store) AdminListAssessmentResults(ctx context.Context, tenantID pgtype.UUID, minScore, maxScore, pageOffset, pageLimit int32) ([]AdminListAssessmentResultsRow, error) {
-	rows, err := s.queries.AdminListAssessmentResults(ctx, gen.AdminListAssessmentResultsParams{
-		TenantID:   tenantID,
-		MinScore:   minScore,
-		MaxScore:   maxScore,
-		PageOffset: pageOffset,
-		PageLimit:  pageLimit,
-	})
+// tenant, paginated, filterable by score range, and sortable by a whitelisted
+// column. Admin-only. Uses a hand-written query (not sqlc) so the ORDER BY
+// clause can be built from a sanitized sort key + direction.
+func (s *Store) AdminListAssessmentResults(ctx context.Context, f AdminListAssessmentResultsFilter) ([]AdminListAssessmentResultsRow, int64, error) {
+	var conditions []string
+	var args []any
+	argIdx := 1
+
+	conditions = append(conditions, fmt.Sprintf("ar.tenant_id = $%d", argIdx))
+	args = append(args, f.TenantID)
+	argIdx++
+
+	if f.MinScore != 0 {
+		conditions = append(conditions, fmt.Sprintf("ar.total_score >= $%d", argIdx))
+		args = append(args, f.MinScore)
+		argIdx++
+	}
+	if f.MaxScore != 0 {
+		conditions = append(conditions, fmt.Sprintf("ar.total_score <= $%d", argIdx))
+		args = append(args, f.MaxScore)
+		argIdx++
+	}
+
+	whereClause := strings.Join(conditions, " AND ")
+
+	// Build ORDER BY from whitelisted sort column + direction.
+	sortCol := adminAssessmentSortColumns[f.Sort]
+	if sortCol == "" {
+		sortCol = "ar.created_at"
+	}
+	orderDir := "DESC"
+	if strings.ToUpper(f.Order) == "ASC" {
+		orderDir = "ASC"
+	}
+
+	limit := f.Limit
+	if limit <= 0 {
+		limit = 20
+	}
+	if limit > 100 {
+		limit = 100
+	}
+	offset := f.Offset
+	if offset < 0 {
+		offset = 0
+	}
+
+	listQ := fmt.Sprintf(`
+SELECT
+    ar.id, ar.tenant_id, ar.user_id, ar.submission_id, ar.total_score,
+    ar.dimension_scores, ar.threshold_label, ar.roadmap_content, ar.created_at,
+    u.username AS username,
+    fs.field_values AS submission_values
+FROM assessment_results ar
+LEFT JOIN users u ON u.id = ar.user_id
+JOIN form_submissions fs ON fs.id = ar.submission_id
+WHERE %s
+ORDER BY %s %s, ar.id DESC
+LIMIT $%d OFFSET $%d`,
+		whereClause, sortCol, orderDir, argIdx, argIdx+1)
+	args = append(args, limit, offset)
+
+	rows, err := s.pool.Reader.Query(ctx, listQ, args...)
 	if err != nil {
-		return nil, fmt.Errorf("assessment: admin list results: %w", err)
+		return nil, 0, fmt.Errorf("assessment: admin list results: %w", err)
 	}
-	results := make([]AdminListAssessmentResultsRow, 0, len(rows))
-	for _, r := range rows {
-		results = append(results, AdminListAssessmentResultsRow{
-			ID:               r.ID,
-			TenantID:         r.TenantID,
-			UserID:           r.UserID,
-			SubmissionID:     r.SubmissionID,
-			TotalScore:       r.TotalScore,
-			DimensionScores:  r.DimensionScores,
-			ThresholdLabel:   r.ThresholdLabel,
-			RoadmapContent:   r.RoadmapContent,
-			CreatedAt:        r.CreatedAt,
-			Username:         r.Username,
-			SubmissionValues: r.SubmissionValues,
-		})
+	defer rows.Close()
+
+	results := make([]AdminListAssessmentResultsRow, 0)
+	for rows.Next() {
+		var r AdminListAssessmentResultsRow
+		if err := rows.Scan(
+			&r.ID, &r.TenantID, &r.UserID, &r.SubmissionID, &r.TotalScore,
+			&r.DimensionScores, &r.ThresholdLabel, &r.RoadmapContent, &r.CreatedAt,
+			&r.Username, &r.SubmissionValues,
+		); err != nil {
+			return nil, 0, fmt.Errorf("assessment: admin list results: scan: %w", err)
+		}
+		results = append(results, r)
 	}
-	return results, nil
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("assessment: admin list results: rows: %w", err)
+	}
+
+	// Count query for pagination total.
+	countConditions := conditions[:0]
+	countArgs := []any{f.TenantID}
+	if f.MinScore != 0 {
+		countConditions = append(countConditions, fmt.Sprintf("total_score >= $%d", len(countArgs)+1))
+		countArgs = append(countArgs, f.MinScore)
+	}
+	if f.MaxScore != 0 {
+		countConditions = append(countConditions, fmt.Sprintf("total_score <= $%d", len(countArgs)+1))
+		countArgs = append(countArgs, f.MaxScore)
+	}
+	countWhere := strings.Join(countConditions, " AND ")
+	if countWhere == "" {
+		countWhere = "tenant_id = $1"
+	}
+	countQ := fmt.Sprintf(`SELECT COUNT(*) FROM assessment_results WHERE %s`, countWhere)
+	var total int64
+	if err := s.pool.Reader.QueryRow(ctx, countQ, countArgs...).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("assessment: admin count results: %w", err)
+	}
+
+	return results, total, nil
 }
 
 // AdminCountAssessmentResults returns the total count of assessment results

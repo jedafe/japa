@@ -5,11 +5,14 @@
 // attestation_guide.enabled system_setting (§97, ADR-105).
 //
 // Ref: japaconnect-engineering/sections/97-attestation-guide.md
-//      japaconnect-engineering/adr/ADR-105-attestation-guide.md
+//
+//	japaconnect-engineering/adr/ADR-105-attestation-guide.md
 package attestationguide
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"time"
@@ -85,11 +88,13 @@ type CreateCommunityUpdateInput struct {
 }
 
 // GeneratePathwayInput is the request body for the Content Agent draft
-// endpoint (POST /admin/attestation/generate).
+// endpoint (POST /admin/attestation/generate). Per ADR-088, the body
+// includes a prompt field and the handler stores ai_prompt_hash = SHA256(prompt).
 type GeneratePathwayInput struct {
 	DocumentType       string `json:"document_type"`
 	IssuingSpaceID     string `json:"issuing_space_id"`
 	DestinationSpaceID string `json:"destination_space_id"`
+	Prompt             string `json:"prompt"`
 }
 
 // Service holds the business logic for the Attestation Guide.
@@ -113,6 +118,28 @@ func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
 		return false
 	}
 	return s.settings.GetBoolOr(ctx, tenantID, "attestation_guide.enabled", false)
+}
+
+// isHagueMember reports whether the destination space is a Hague Convention
+// member per the attestation_guide.hague_members system_setting (§97 Hague
+// Convention section). The setting is a JSON array of space IDs. Returns false
+// on any error (fail-safe: no apostille required if lookup fails).
+func (s *Service) isHagueMember(ctx context.Context, tenantID, destSpaceID pgtype.UUID) bool {
+	if s.settings == nil || !destSpaceID.Valid {
+		return false
+	}
+	raw := s.settings.GetStringOr(ctx, tenantID, "attestation_guide.hague_members", "[]")
+	var members []string
+	if err := json.Unmarshal([]byte(raw), &members); err != nil {
+		return false
+	}
+	destID := destSpaceID.String()
+	for _, m := range members {
+		if m == destID {
+			return true
+		}
+	}
+	return false
 }
 
 // List returns a paginated, filtered list of published attestation
@@ -187,12 +214,20 @@ func (s *Service) Create(ctx context.Context, tenantID pgtype.UUID, input Create
 		steps = []byte("[]")
 	}
 
+	// §97 Hague Convention: if apostille_required was not explicitly provided,
+	// derive it from the attestation_guide.hague_members system_setting based
+	// on the destination country. Fix BUG-002.
+	apostilleRequired := input.ApostilleRequired
+	if !apostilleRequired {
+		apostilleRequired = s.isHagueMember(ctx, tenantID, destSpaceID)
+	}
+
 	p := Pathway{
 		TenantID:           tenantID,
 		DocumentType:       input.DocumentType,
 		IssuingSpaceID:     issuingSpaceID,
 		DestinationSpaceID: destSpaceID,
-		ApostilleRequired:  input.ApostilleRequired,
+		ApostilleRequired:  apostilleRequired,
 		PathwaySteps:       steps,
 		Status:             input.Status,
 		IsActive:           true,
@@ -228,9 +263,11 @@ func (s *Service) Create(ctx context.Context, tenantID pgtype.UUID, input Create
 }
 
 // GenerateDraft creates an AI-drafted pathway in 'ai_draft' status with
-// empty pathway_steps. The pathway is marked ai_generated=true and
-// requires HITL approval (Approve) before publication. Admin-only
-// (attestation_guide.manage permission).
+// empty pathway_steps. The pathway is marked ai_generated=true, stores
+// ai_prompt_hash = SHA256(prompt) per ADR-088, and requires HITL approval
+// (Approve) before publication. The actual AI Gateway call (§20) is deferred
+// until the gateway is wired; the draft is created with empty steps for
+// the reviewer to fill. Admin-only (attestation_guide.manage permission).
 func (s *Service) GenerateDraft(ctx context.Context, tenantID pgtype.UUID, input GeneratePathwayInput) (PathwayDTO, error) {
 	if input.DocumentType == "" || input.IssuingSpaceID == "" || input.DestinationSpaceID == "" {
 		return PathwayDTO{}, fmt.Errorf("document_type, issuing_space_id, and destination_space_id are required")
@@ -247,17 +284,28 @@ func (s *Service) GenerateDraft(ctx context.Context, tenantID pgtype.UUID, input
 	}
 
 	aiModel := "content_agent_v1"
+	// BUG-007: compute ai_prompt_hash = SHA256(prompt) per ADR-088 for audit
+	// reproducibility, even though the AI Gateway call is not yet wired.
+	promptHash := ""
+	if input.Prompt != "" {
+		h := sha256.Sum256([]byte(input.Prompt))
+		promptHash = hex.EncodeToString(h[:])
+	}
+
 	p := Pathway{
 		TenantID:           tenantID,
 		DocumentType:       input.DocumentType,
 		IssuingSpaceID:     issuingSpaceID,
 		DestinationSpaceID: destSpaceID,
-		ApostilleRequired:  false, // to be determined by Hague Convention lookup at approve time
+		ApostilleRequired:  false, // determined by Hague Convention lookup at approve time
 		PathwaySteps:       []byte("[]"),
 		Status:             PathwayStatusAIDraft,
 		IsActive:           false, // not active until approved
 		AIGenerated:        true,
 		AIModel:            &aiModel,
+	}
+	if promptHash != "" {
+		p.AIPromptHash = &promptHash
 	}
 
 	created, err := s.store.CreatePathway(ctx, p)
@@ -274,20 +322,33 @@ func (s *Service) GenerateDraft(ctx context.Context, tenantID pgtype.UUID, input
 
 // Approve performs the HITL approval on an AI-drafted pathway. Sets
 // hitl_reviewed_by, hitl_reviewed_at = now(), status = 'published'.
-// Admin-only (attestation_guide.manage permission).
+// Also recomputes apostille_required from the Hague Convention lookup
+// (§97). Admin-only (attestation_guide.manage permission).
 func (s *Service) Approve(ctx context.Context, id, tenantID, reviewerID pgtype.UUID, notes string) (PathwayDTO, error) {
+	// Load the pathway to determine the destination country for the Hague
+	// Convention lookup (BUG-002/BUG-003).
+	row, err := s.store.GetPathwayByID(ctx, id, tenantID)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return PathwayDTO{}, pgx.ErrNoRows
+		}
+		return PathwayDTO{}, fmt.Errorf("attestationguide: approve: lookup: %w", err)
+	}
+
+	apostilleRequired := s.isHagueMember(ctx, tenantID, row.DestinationSpaceID)
+
 	var notesPtr *string
 	if notes != "" {
 		notesPtr = &notes
 	}
-	if err := s.store.ApprovePathway(ctx, id, tenantID, reviewerID, notesPtr); err != nil {
+	if err := s.store.ApprovePathway(ctx, id, tenantID, reviewerID, apostilleRequired, notesPtr); err != nil {
 		if err == pgx.ErrNoRows {
 			return PathwayDTO{}, pgx.ErrNoRows
 		}
 		return PathwayDTO{}, fmt.Errorf("attestationguide: approve: %w", err)
 	}
 
-	row, err := s.store.GetPathwayByID(ctx, id, tenantID)
+	row, err = s.store.GetPathwayByID(ctx, id, tenantID)
 	if err != nil {
 		return PathwayDTO{}, fmt.Errorf("attestationguide: approve: reload: %w", err)
 	}
@@ -327,7 +388,10 @@ func (s *Service) SubmitCommunityUpdate(ctx context.Context, pathwayID, tenantID
 }
 
 // ReviewCommunityUpdate approves or rejects a pending community update.
-// Admin-only (attestation_guide.manage permission).
+// On approval, the update's fee_estimate/turnaround_days are applied to the
+// parent pathway's pathway_steps at the step_index, and community_last_verified
+// is bumped (BUG-003 + BUG-004). Admin-only (attestation_guide.manage
+// permission).
 func (s *Service) ReviewCommunityUpdate(ctx context.Context, updateID, tenantID, reviewerID pgtype.UUID, approve bool) (CommunityUpdateDTO, error) {
 	status := UpdateStatusApproved
 	if !approve {
@@ -347,6 +411,15 @@ func (s *Service) ReviewCommunityUpdate(ctx context.Context, updateID, tenantID,
 		}
 		return CommunityUpdateDTO{}, fmt.Errorf("attestationguide: review update: reload: %w", err)
 	}
+
+	// BUG-003 + BUG-004: on approval, apply the update to the parent pathway
+	// (patch pathway_steps + bump community_last_verified).
+	if approve && row.PathwayID.Valid {
+		if err := s.store.ApplyApprovedUpdateToPathway(ctx, row.PathwayID, tenantID, row.StepIndex, row.FeeEstimate, row.TurnaroundDays); err != nil {
+			return CommunityUpdateDTO{}, fmt.Errorf("attestationguide: review update: apply: %w", err)
+		}
+	}
+
 	return communityUpdateToDTO(row), nil
 }
 
@@ -377,6 +450,37 @@ func (s *Service) AdminList(ctx context.Context, tenantID, destSpaceID pgtype.UU
 	dtos := make([]PathwayDTO, 0, len(rows))
 	for _, r := range rows {
 		dtos = append(dtos, pathwayRowToDTO(r))
+	}
+	return dtos, total, nil
+}
+
+// AdminListUpdates returns pending (or filtered) community updates for the
+// admin moderation queue (BUG-005). Admin-only (attestation_guide.manage).
+func (s *Service) AdminListUpdates(ctx context.Context, tenantID pgtype.UUID, status string, page, limit int32) ([]CommunityUpdateDTO, int64, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	if page <= 0 {
+		page = 1
+	}
+	offset := (page - 1) * limit
+	if status == "" {
+		status = UpdateStatusPending
+	}
+
+	rows, total, err := s.store.ListCommunityUpdates(ctx, ListCommunityUpdatesFilter{
+		TenantID: tenantID,
+		Status:   status,
+		Limit:    limit,
+		Offset:   offset,
+	})
+	if err != nil {
+		return nil, 0, fmt.Errorf("attestationguide: admin list updates: %w", err)
+	}
+
+	dtos := make([]CommunityUpdateDTO, 0, len(rows))
+	for _, r := range rows {
+		dtos = append(dtos, communityUpdateToDTO(r))
 	}
 	return dtos, total, nil
 }

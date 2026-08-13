@@ -202,6 +202,16 @@ func (h *Handlers) ListMyLinks(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	// Enrollment check: the RBAC gate (affiliate.links.manage) is now granted
+	// to all members via member_role (migration 000451), so the RBAC check
+	// alone can't distinguish enrolled from non-enrolled users. The service
+	// layer enrollment check here returns 403 for non-enrolled members, which
+	// the settings loader uses to show the enrollment CTA instead of the link
+	// list (BUG-002).
+	if _, err := h.Service.GetMember(r.Context(), user.UserID, tenantID); err != nil {
+		handleServiceError(w, err)
+		return
+	}
 	page := int32(parseQueryInt(r, "page", 1))
 	pageSize := int32(parseQueryInt(r, "page_size", DefaultPageSize))
 
@@ -333,6 +343,11 @@ func (h *Handlers) GetMyEarnings(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	// Enrollment check — same rationale as ListMyLinks (BUG-002).
+	if _, err := h.Service.GetMember(r.Context(), user.UserID, tenantID); err != nil {
+		handleServiceError(w, err)
+		return
+	}
 	earnings, err := h.Service.GetEarnings(r.Context(), user.UserID, tenantID)
 	if err != nil {
 		handleServiceError(w, err)
@@ -453,7 +468,7 @@ func (h *Handlers) ListMembersAdmin(w http.ResponseWriter, r *http.Request) {
 			"id": m.UserID.String(), "user_id": m.UserID.String(), "username": username,
 			"status": m.Status, "total_clicks": m.TotalClicks,
 			"total_conversions": m.TotalConversions,
-			"total_earned_credits": formatNumeric(m.TotalEarnedCredits),
+			"total_earned_credits": numericToFloat(m.TotalEarnedCredits),
 			"enrolled_at": m.EnrolledAt.Time,
 		})
 	}
@@ -533,7 +548,7 @@ func (h *Handlers) ListAllLinksAdmin(w http.ResponseWriter, r *http.Request) {
 			"product_type": row.ProductType, "code": row.Code, "description": row.Description,
 			"destination_url": row.DestinationUrl, "click_count": row.ClickCount,
 			"conversion_count": row.ConversionCount,
-			"total_earned": formatNumeric(row.TotalEarned),
+			"total_earned": numericToFloat(row.TotalEarned),
 			"is_active": row.IsActive, "created_at": row.CreatedAt.Time,
 		})
 	}

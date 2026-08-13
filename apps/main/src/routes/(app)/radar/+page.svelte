@@ -408,15 +408,4 @@
 			{/if}
 		</div>
 	{/if}
-
-	<!-- INTEL-024 fix: link to the public source directory -->
-	<div class="mt-8 border-t border-[var(--color-border)] pt-4">
-		<a
-			href="/radar/sources"
-			class="inline-flex items-center gap-1.5 text-xs text-[var(--color-muted)] transition-colors hover:text-[var(--color-text)]"
-		>
-			<Globe size={13} />
-			{t('radar.view_sources', 'View data sources')}
-		</a>
-	</div>
 </div>

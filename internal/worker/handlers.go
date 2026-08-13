@@ -39,6 +39,45 @@ import (
 	"github.com/jedafe/japa/internal/email"
 )
 
+// paymentPurposeToAffiliateProduct maps a payment purpose_type + purpose_id
+// to the corresponding affiliate product_type + product_id used in the
+// jc:aff_click attribution key (Section 56).
+//
+// The redirect handler stores the attribution key using the affiliate link's
+// product_type vocabulary (pro_subscription, course, general) and the link's
+// product_id (NULL for pro_subscription/general → "null", content_id for
+// course). The payment webhook, however, works with the payment's
+// purpose_type vocabulary (pro_membership, course_access, credit_purchase,
+// etc.) and the payment's purpose_id (subscription_id, content_id, etc.).
+//
+// Without this mapping, the attribution key stored by the redirect handler
+// (jc:aff_click:{user}:pro_subscription:null) would never match the key
+// looked up by the payment webhook (jc:aff_click:{user}:pro_membership:{sub_id}),
+// and commission would never be credited (BUG-001/003).
+//
+// Mapping:
+//   - pro_membership → pro_subscription, product_id = "null" (pro_subscription
+//     links have no product_id; the subscription_id is not part of the key)
+//   - course_access  → course, product_id = purpose_id (content_id matches)
+//   - everything else → general, product_id = "null"
+func paymentPurposeToAffiliateProduct(purposeType string, purposeID pgtype.UUID) (affProductType, affProductID string) {
+	affProductID = "null"
+	switch purposeType {
+	case "pro_membership":
+		affProductType = "pro_subscription"
+		// pro_subscription links have NULL product_id — the subscription_id
+		// is NOT part of the attribution key.
+	case "course_access":
+		affProductType = "course"
+		if purposeID.Valid {
+			affProductID = purposeID.String()
+		}
+	default:
+		affProductType = "general"
+	}
+	return
+}
+
 // ---------------------------------------------------------------------------
 // Package-level dependencies for database and cache access.
 // Call RegisterDBPool and RegisterRedis at startup before processing tasks.
@@ -483,12 +522,14 @@ func HandlePaymentWebhookProcess(ctx context.Context, t *asynq.Task) error {
 	// affiliate redirect.
 	if payload.Status == "succeeded" && taskEnqueuer != nil {
 		var linkCode string
-		productID := "null"
-		if p.PurposeID.Valid {
-			productID = p.PurposeID.String()
-		}
+		// Map the payment's purpose_type to the affiliate product_type
+		// vocabulary used in the jc:aff_click attribution key (BUG-001/003).
+		// The redirect handler stores the key with the affiliate link's
+		// product_type (pro_subscription, course, general), not the payment's
+		// purpose_type (pro_membership, course_access, etc.).
+		affProductType, affProductID := paymentPurposeToAffiliateProduct(p.PurposeType, p.PurposeID)
 		attrKey := valkey.MustKey("aff_click:%s:%s:%s",
-			p.UserID.String(), p.PurposeType, productID)
+			p.UserID.String(), affProductType, affProductID)
 		if rdb != nil {
 			if v, gErr := rdb.Get(ctx, attrKey).Result(); gErr == nil && v != "" {
 				linkCode = v
@@ -501,7 +542,7 @@ func HandlePaymentWebhookProcess(ctx context.Context, t *asynq.Task) error {
 			"amount":       p.Amount,
 			"link_code":    linkCode,
 			"purpose_type": p.PurposeType,
-			"product_id":   productID,
+			"product_id":   affProductID,
 		})
 		if err := taskEnqueuer.Enqueue(TypeAffiliateCreditCommission, commissionPayload); err != nil {
 			slog.Error("task:payment:process_webhook: failed to enqueue affiliate commission",
@@ -4865,10 +4906,17 @@ func HandleAffiliateCreditCommission(ctx context.Context, t *asynq.Task) error {
 	}
 
 	// Delete the attribution key so the same click can't be double-credited
-	// (Section 56 Commission Crediting).
+	// (Section 56 Commission Crediting). Use the same purpose_type→product_type
+	// mapping as the payment webhook (BUG-004) — the key was stored with the
+	// affiliate product_type, not the payment purpose_type.
 	if rdb != nil {
+		var purposeID pgtype.UUID
+		if payload.ProductID != "null" {
+			_ = purposeID.Scan(payload.ProductID)
+		}
+		affProductType, affProductID := paymentPurposeToAffiliateProduct(payload.PurposeType, purposeID)
 		attrKey := valkey.MustKey("aff_click:%s:%s:%s",
-			payload.UserID, payload.PurposeType, payload.ProductID)
+			payload.UserID, affProductType, affProductID)
 		if err := rdb.Del(ctx, attrKey).Err(); err != nil {
 			slog.Warn("affiliate:credit_commission: failed to delete attribution key",
 				"key", attrKey, "error", err)

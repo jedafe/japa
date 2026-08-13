@@ -106,7 +106,8 @@
 	let selectedLinkIds = $state<Set<string>>(new Set());
 	let bulkDeleting = $state(false);
 
-	// Filters (FilterPanel)
+	// Filters (FilterPanel) — values are passed as query params to the API
+	// for server-side filtering (BUG-006).
 	let memberFilterValue = $state<Record<string, string>>({});
 	let scanFilterValue = $state<Record<string, string>>({});
 	let commissionFilterValue = $state<Record<string, string>>({});
@@ -232,7 +233,7 @@
 			label: t('affiliate.credited', 'Credited'),
 			render: (value: boolean) => {
 				const cls = value ? 'bg-success/15 text-success border-success' : 'bg-warning/15 text-warning border-warning';
-				const label = value ? 'Yes' : 'Pending';
+				const label = value ? t('common.yes', 'Yes') : t('affiliate.pending', 'Pending');
 				return `<span class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${cls}">${label}</span>`;
 			}
 		},
@@ -274,10 +275,14 @@
 		{ label: t('common.delete_selected', 'Delete Selected'), icon: Trash2, variant: 'destructive', onclick: bulkDeleteLinks }
 	];
 
-	// Filtered data for tabs with filters
-	const filteredMembers = $derived(memberFilterValue.status ? members.filter((m) => m.status === memberFilterValue.status) : members);
-	const filteredScanResults = $derived(scanFilterValue.action_taken ? scanResults.filter((s) => s.action_taken === scanFilterValue.action_taken) : scanResults);
-	const filteredCommissions = $derived(commissionFilterValue.credited ? commissions.filter((c) => String(c.credited) === commissionFilterValue.credited) : commissions);
+	// Build query string from filter values for server-side filtering (BUG-006).
+	function buildParams(filters: Record<string, string>): string {
+		const params = new URLSearchParams();
+		for (const [k, v] of Object.entries(filters)) {
+			if (v) params.set(k, v);
+		}
+		return params.toString();
+	}
 
 	$effect(() => {
 		load();
@@ -291,28 +296,17 @@
 				const result = await affiliateProvidersAdminApi.list();
 				if (result.ok) {
 					providers = (Array.isArray(result.data) ? result.data : []) as AffiliateProvider[];
-					if (searchQuery) {
-						const q = searchQuery.toLowerCase();
-						providers = providers.filter((p) => p.name?.toLowerCase().includes(q) || (p.is_active ? 'active' : 'inactive').includes(q));
-					}
 				} else { error = result.error; }
 			} else if (activeTab === 'members') {
-				const result = await affiliateProgramAdminApi.members();
+				const params = buildParams(memberFilterValue);
+				const result = await affiliateProgramAdminApi.members(params);
 				if (result.ok) {
 					members = (Array.isArray(result.data) ? result.data : []) as AffiliateMember[];
-					if (searchQuery) {
-						const q = searchQuery.toLowerCase();
-						members = members.filter((m) => m.username?.toLowerCase().includes(q) || m.user_id?.toLowerCase().includes(q) || m.status?.toLowerCase().includes(q));
-					}
 				} else { error = result.error; }
 			} else if (activeTab === 'links') {
 				const result = await affiliateLinksAdminApi.list();
 				if (result.ok) {
 					links = (Array.isArray(result.data) ? result.data : []) as AffiliateLink[];
-					if (searchQuery) {
-						const q = searchQuery.toLowerCase();
-						links = links.filter((l) => l.username?.toLowerCase().includes(q) || l.code?.toLowerCase().includes(q) || l.destination_url?.toLowerCase().includes(q) || l.user_id?.toLowerCase().includes(q));
-					}
 				} else { error = result.error; }
 			} else if (activeTab === 'rates') {
 				const result = await affiliateProgramAdminApi.commissionRates();
@@ -321,13 +315,15 @@
 					rates = data?.rates ?? rates;
 				} else { error = result.error; }
 			} else if (activeTab === 'scanner') {
-				const result = await affiliateEnhancementsAdminApi.scanResults();
+				const params = buildParams(scanFilterValue);
+				const result = await affiliateEnhancementsAdminApi.scanResults(params);
 				if (result.ok) {
 					const data = result.data as any;
 					scanResults = (Array.isArray(data) ? data : []) as ScanResult[];
 				} else { error = result.error; }
 			} else if (activeTab === 'author_commissions') {
-				const result = await affiliateEnhancementsAdminApi.commissions();
+				const params = buildParams(commissionFilterValue);
+				const result = await affiliateEnhancementsAdminApi.commissions(params);
 				if (result.ok) {
 					const data = result.data as any;
 					commissions = (Array.isArray(data) ? data : []) as AuthorCommission[];
@@ -533,7 +529,7 @@
 			<CardContent class="p-0">
 				<DataTable
 					columns={memberColumns}
-					data={filteredMembers}
+					data={members}
 					pageSize={20}
 					emptyMessage={t('affiliate.no_members')}
 					searchable
@@ -600,7 +596,7 @@
 			<CardContent class="p-0">
 				<DataTable
 					columns={scanColumns}
-					data={filteredScanResults}
+					data={scanResults}
 					pageSize={20}
 					emptyMessage={t('affiliate.no_scan_results', 'No unregistered affiliate links detected')}
 					searchable
@@ -623,7 +619,7 @@
 				{/if}
 				<DataTable
 					columns={commissionColumns}
-					data={filteredCommissions}
+					data={commissions}
 					pageSize={20}
 					emptyMessage={t('affiliate.no_commissions', 'No author commissions recorded yet')}
 					searchable
