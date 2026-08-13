@@ -50,13 +50,13 @@ func (f *OCRFetcher) ExtractText(body []byte) (string, error) {
 	defer os.RemoveAll(dir)
 
 	pdfPath := filepath.Join(dir, "input.pdf")
-	if err := os.WriteFile(pdfPath, body, 0o644); err != nil {
+	if err := os.WriteFile(pdfPath, body, 0o600); err != nil { // #nosec G306 -- temp dir is 0700, file is short-lived
 		return "", fmt.Errorf("ocr: write pdf: %w", err)
 	}
 
 	// pdftoppm converts the PDF to numbered PNG images: prefix-1.png, prefix-2.png, ...
 	imgPrefix := filepath.Join(dir, "page")
-	ppmCmd := exec.Command(f.pdftoppmBin, "-png", "-r", "200", pdfPath, imgPrefix)
+	ppmCmd := exec.Command(f.pdftoppmBin, "-png", "-r", "200", pdfPath, imgPrefix) // #nosec G204 -- binaries are hardcoded, paths are temp-dir scoped
 	if err := ppmCmd.Run(); err != nil {
 		return "", fmt.Errorf("ocr: pdftoppm: %w", err)
 	}
@@ -72,7 +72,7 @@ func (f *OCRFetcher) ExtractText(body []byte) (string, error) {
 
 	var b strings.Builder
 	for _, img := range images {
-		out, err := exec.Command(f.tesseractBin, img, "stdout", "-l", "eng").Output()
+		out, err := exec.Command(f.tesseractBin, img, "stdout", "-l", "eng").Output() // #nosec G204 -- tesseract bin is hardcoded, img path is temp-dir scoped
 		if err != nil {
 			// Skip a failed page rather than aborting the whole document.
 			continue
