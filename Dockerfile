@@ -24,7 +24,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -o /japa-api ./cmd/api/
 # Stage 2: minimal runtime image
 FROM alpine:latest
 
-RUN apk --no-cache add ca-certificates
+RUN apk --no-cache add ca-certificates tesseract-ocr tesseract-ocr-data-eng poppler-utils
 
 WORKDIR /app
 
