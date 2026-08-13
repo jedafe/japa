@@ -39,9 +39,7 @@ func NormalizeForHash(body []byte, contentType string) string {
 
 func normalizeBody(body []byte, contentType string) []byte {
 	if strings.Contains(contentType, "text/html") {
-		// TODO in Task 15 (static adapter): use goquery to strip scripts/styles.
-		// For now, collapse whitespace as a baseline so NormalizeForHash works.
-		return []byte(strings.Join(strings.Fields(string(body)), " "))
+		return normalizeHTML(body)
 	}
 	return body
 }
