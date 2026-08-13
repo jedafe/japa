@@ -3270,3 +3270,48 @@ export interface CommunityOrg {
 	updated_at: string;
 }
 export interface CommunityOrgWithAi extends CommunityOrg, AiGenerationMeta {}
+
+/* --- Japa Intelligence System (§7 Japa Radar) --- */
+
+/**
+ * v1 radar feed item shape — mirrors the backend `radarItem` struct in
+ * internal/intelligence/handlers/radar.go. v1 surfaces promoted scholarships
+ * only; the shape is forward-compatible so future domains (jobs, visa alerts,
+ * FX updates) union in via the same envelope.
+ */
+export interface RadarItem {
+	id: string;
+	type: string;
+	title: string;
+	description?: string | null;
+	country: string;
+	university?: string | null;
+	degree_level?: string | null;
+	deadline?: string | null;
+	application_url?: string | null;
+	confidence_overall: number;
+	trust_level: number;
+	freshness_score: number;
+	source_url: string;
+	created_at?: string | null;
+}
+
+/** Per-country scholarship count row from GET /intel/radar/counts. */
+export interface RadarCountryCount {
+	country: string;
+	count: number;
+}
+
+/** Meta for GET /intel/radar/counts. */
+export interface RadarCountsMeta {
+	total_countries?: number;
+	total_scholarships?: number;
+}
+
+/** Meta for GET /intel/radar/followed. */
+export interface RadarFollowedMeta {
+	page_size?: number;
+	page_offset?: number;
+	count?: number;
+	followed_count?: number;
+}
