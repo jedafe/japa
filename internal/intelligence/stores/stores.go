@@ -68,6 +68,21 @@ func (s *Store) GetLatestIntelRawDocHash(ctx context.Context, sourceID pgtype.UU
 }
 
 // ---------------------------------------------------------------------------
+// IntelSources
+// ---------------------------------------------------------------------------
+
+// GetIntelSource fetches a single intel source by its primary key. Used by the
+// promoter (Task 19) to resolve source_url, source_type, and trust_level for a
+// promoted projection row.
+func (s *Store) GetIntelSource(ctx context.Context, id pgtype.UUID) (gen.IntelSource, error) {
+	row, err := s.queries.GetIntelSource(ctx, id)
+	if err != nil {
+		return gen.IntelSource{}, fmt.Errorf("stores: get intel source: %w", err)
+	}
+	return row, nil
+}
+
+// ---------------------------------------------------------------------------
 // IntelRecords
 // ---------------------------------------------------------------------------
 
@@ -294,4 +309,19 @@ func (s *Store) CountScholarshipsByCountry(ctx context.Context) ([]gen.CountScho
 		return nil, fmt.Errorf("stores: count scholarships by country: %w", err)
 	}
 	return rows, nil
+}
+
+// ---------------------------------------------------------------------------
+// Contents (guide projection)
+// ---------------------------------------------------------------------------
+
+// CreateContent inserts a contents row and returns the persisted projection.
+// Used by the promoter (Task 19) to create the guide entry that backs a
+// promoted scholarship projection row.
+func (s *Store) CreateContent(ctx context.Context, arg gen.CreateContentParams) (gen.CreateContentRow, error) {
+	row, err := s.queries.CreateContent(ctx, arg)
+	if err != nil {
+		return gen.CreateContentRow{}, fmt.Errorf("stores: create content: %w", err)
+	}
+	return row, nil
 }
