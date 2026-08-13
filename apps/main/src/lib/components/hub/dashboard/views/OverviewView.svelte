@@ -6,6 +6,7 @@
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import { FileText, Wallet, Bell, Users } from 'lucide-svelte';
 	import ReferralWidget from '$lib/components/referral/ReferralWidget.svelte';
+	import RadarCard from '$lib/components/RadarCard.svelte';
 
 	// Analytics fields match the backend MeAnalytics struct (§50):
 	// total_content, draft_content, published_content, total_bookmarks,
@@ -122,6 +123,9 @@
 			</span>
 		</a>
 	</div>
+
+	<!-- Japa Radar widget (Intelligence System §7) — followed-country opportunities -->
+	<RadarCard />
 
 	<DashboardPanel titleKey="dashboard.overview.recent">
 		{#if recent.length === 0}
