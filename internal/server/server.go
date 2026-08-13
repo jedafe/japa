@@ -70,6 +70,14 @@ import (
 	"github.com/jedafe/japa/internal/housingguide"
 	"github.com/jedafe/japa/internal/i18n"
 	"github.com/jedafe/japa/internal/impersonation"
+	intel_handlers "github.com/jedafe/japa/internal/intelligence/handlers"
+	"github.com/jedafe/japa/internal/intelligence/dedup"
+	"github.com/jedafe/japa/internal/intelligence/events"
+	"github.com/jedafe/japa/internal/intelligence/extractor"
+	"github.com/jedafe/japa/internal/intelligence/promoter"
+	"github.com/jedafe/japa/internal/intelligence/scheduler"
+	"github.com/jedafe/japa/internal/intelligence/sources"
+	intel_stores "github.com/jedafe/japa/internal/intelligence/stores"
 	"github.com/jedafe/japa/internal/interactions"
 	"github.com/jedafe/japa/internal/japastage"
 	"github.com/jedafe/japa/internal/jobs"
@@ -1496,6 +1504,51 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// that hasn't been wired to a real service yet. This ensures all Asynq
 	// task handlers degrade gracefully instead of crashing on a nil interface.
 	worker.RegisterNoopProcessors()
+
+	// Intelligence System (Section INTEL) — construct the spine stores,
+	// services, and HTTP handlers, then register the Asynq worker
+	// dependencies (including the extractor + promoter port adapters that
+	// break the import cycle documented in internal/worker/intelligence.go).
+	intelSourcesStore := sources.NewStore(database)
+	intelSourcesService := sources.NewService(intelSourcesStore)
+	intelStores := intel_stores.NewStore(database)
+	intelScheduler := scheduler.NewScheduler(&intelSchedulerSourceAdapter{store: intelSourcesStore}, vkClient.Redis())
+	intelDedupService := dedup.NewService(intelStores)
+	intelEventPublisher := events.NewAsynqEventPublisher(asynqClient)
+
+	// Extractor port adapter: wraps *extractor.Extractor so the worker
+	// package can call Extract without importing internal/ai (which would
+	// close the extractor → ai → auth → worker cycle). The adapter selects
+	// the scholarship schema internally; future entity types will branch
+	// on source_type here.
+	intelExtractor := extractor.NewExtractor(aiDispatcher)
+	intelExtractorAdapter := &intelExtractorPortAdapter{ext: intelExtractor}
+
+	// Promoter port adapter: wraps *promoter.ScholarshipPromoter so the
+	// worker can call Promote without importing the promoter package
+	// (promoter → extractor → ai → auth → worker).
+	intelPromoter := promoter.NewScholarshipPromoter(intelStores, defaultTenantID, defaultTenantID)
+	intelPromoterAdapter := &intelPromoterPortAdapter{prom: intelPromoter}
+
+	// Register the intelligence spine dependencies with the worker package
+	// so the 11 Asynq task handlers (schedule_crawls → notify_discoveries)
+	// can dispatch to the concrete services.
+	worker.RegisterIntelDependencies(
+		intelSourcesStore,
+		intelStores,
+		intelScheduler,
+		intelExtractorAdapter,
+		intelDedupService,
+		intelPromoterAdapter,
+		intelEventPublisher,
+		nil, // fetcher: the composite fetcher adapter is wired in a follow-up
+		asynqClient,
+	)
+
+	// HTTP handlers for the /api/v1/intel/* routes. The radar reuses the
+	// existing follows service (entity_type "space") and scholarships
+	// service (saved-scholarship tracker) so no parallel tables are needed.
+	intelHandlers := intel_handlers.NewHandlers(intelStores, intelSourcesService, followService, scholarshipsService)
 
 	// Admin Impersonation subsystem (Section 46).
 	impersonationStore := impersonation.NewStore(vkClient.Redis())
@@ -5127,6 +5180,43 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Get("/admin/scholarships/deadlines", scholarshipsHandlers.HandleAdminUpcomingDeadlines)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "scholarship.manage")).
 				Get("/admin/scholarships/reminder-log", scholarshipsHandlers.HandleAdminReminderLog)
+
+			// Section INTEL — Intelligence System (radar + scholarships + sources)
+			// Radar feed + counts use OptionalAuth so anonymous users can
+			// browse; follow/unfollow, saved, and save/unsave require auth.
+			// The scholarship search + detail routes mirror the §73 browse
+			// pattern (OptionalAuth). The source directory is public.
+			r.With(auth.OptionalAuth(kr, vkClient.Redis()), rbac.OptionalPermission(rbacResolver, "intel.radar.view")).
+				Get("/intel/radar", intelHandlers.HandleRadarFeed)
+			r.With(auth.OptionalAuth(kr, vkClient.Redis()), rbac.OptionalPermission(rbacResolver, "intel.radar.view")).
+				Get("/intel/radar/counts", intelHandlers.HandleRadarCounts)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "intel.radar.view")).
+				Get("/intel/radar/followed", intelHandlers.HandleRadarFollowed)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "intel.radar.view")).
+				Post("/intel/radar/follow", intelHandlers.HandleRadarFollow)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "intel.radar.view")).
+				Delete("/intel/radar/follow", intelHandlers.HandleRadarUnfollow)
+			r.With(auth.OptionalAuth(kr, vkClient.Redis()), rbac.OptionalPermission(rbacResolver, "intel.radar.view")).
+				Get("/intel/radar/feed/{item_id}", intelHandlers.HandleRadarItemDetail)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "intel.radar.view")).
+				Get("/intel/radar/saved", intelHandlers.HandleRadarSaved)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "intel.radar.view")).
+				Post("/intel/radar/save", intelHandlers.HandleRadarSave)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "intel.radar.view")).
+				Delete("/intel/radar/save/{item_id}", intelHandlers.HandleRadarUnsave)
+			r.With(auth.OptionalAuth(kr, vkClient.Redis()), rbac.OptionalPermission(rbacResolver, "intel.radar.view")).
+				Get("/intel/scholarships", intelHandlers.HandleSearchScholarships)
+			r.With(auth.OptionalAuth(kr, vkClient.Redis()), rbac.OptionalPermission(rbacResolver, "intel.radar.view")).
+				Get("/intel/scholarships/{id}", intelHandlers.HandleScholarshipDetail)
+			r.With(auth.OptionalAuth(kr, vkClient.Redis())).
+				Get("/intel/sources", intelHandlers.HandleSourcesDirectory)
+			// Review queue — RBAC-gated by intel.review.* (admin only).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "intel.review.view")).
+				Get("/intel/review/queue", intelHandlers.HandleReviewQueue)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "intel.review.approve")).
+				Post("/intel/review/{record_id}/approve", intelHandlers.HandleReviewApprove)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "intel.review.reject")).
+				Post("/intel/review/{record_id}/reject", intelHandlers.HandleReviewReject)
 
 			// Section 74 — Remittance Rate Tracker (ADR-075)
 			r.Get("/remittance/rates", remittanceHandlers.HandleGetRates)
