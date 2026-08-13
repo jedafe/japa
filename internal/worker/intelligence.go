@@ -57,12 +57,14 @@ import (
 // (worker → promoter → extractor → ai → auth → worker). Task 23's server.go
 // registers an adapter wrapping the concrete *promoter.ScholarshipPromoter.
 type intelPromoterPort interface {
-	Promote(ctx context.Context, recordID uuid.UUID) (intelPromoteResult, error)
+	Promote(ctx context.Context, recordID uuid.UUID) (IntelPromoteResult, error)
 	Entity() string
 }
 
-// intelPromoteResult mirrors promoter.PromoteResult.
-type intelPromoteResult struct {
+// IntelPromoteResult mirrors promoter.PromoteResult. Exported so the
+// server package can build port adapters that satisfy intelPromoterPort
+// from outside the worker package.
+type IntelPromoteResult struct {
 	DomainID      uuid.UUID
 	ContentID     uuid.UUID
 	Action        string
@@ -76,12 +78,13 @@ type intelPromoteResult struct {
 // schema internally and returns the marshalled extraction + aggregate
 // confidence.
 type intelExtractorPort interface {
-	Extract(ctx context.Context, sourceURL, sourceType, sourceText string) (intelExtractResult, error)
+	Extract(ctx context.Context, sourceURL, sourceType, sourceText string) (IntelExtractResult, error)
 }
 
-// intelExtractResult mirrors the fields the worker persists from
-// extractor.ExtractResult.
-type intelExtractResult struct {
+// IntelExtractResult mirrors the fields the worker persists from
+// extractor.ExtractResult. Exported so the server package can build port
+// adapters that satisfy intelExtractorPort from outside the worker package.
+type IntelExtractResult struct {
 	RawExtraction     []byte
 	ConfidenceOverall float32
 }
