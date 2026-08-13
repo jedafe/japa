@@ -13,10 +13,13 @@
 
 	interface Props {
 		spaceSlug: string;
+		/** Space UUID — used for the "View all" link's ?dest= filter (backend
+		 * expects a UUID, not a slug). Ref: §89 API Routes. */
+		spaceId: string;
 		/** Hide the widget when there are no achievements (default true). */
 		hideWhenEmpty?: boolean;
 	}
-	let { spaceSlug, hideWhenEmpty = true }: Props = $props();
+	let { spaceSlug, spaceId, hideWhenEmpty = true }: Props = $props();
 
 	let achievements = $state<Achievement[]>([]);
 	let loading = $state(true);
@@ -73,7 +76,7 @@
 			{/each}
 		</ul>
 		<a
-			href={`/achievements?dest=${encodeURIComponent(spaceSlug)}`}
+			href={`/achievements?dest=${encodeURIComponent(spaceId)}`}
 			class="mt-3 flex items-center justify-center gap-1 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-[var(--color-text-subtle)] transition-colors hover:bg-[var(--color-surface-subtle)]"
 		>
 			{t('achievements.widget_view_all', 'View all')}

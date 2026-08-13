@@ -172,7 +172,8 @@ func TestParsePagination(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			r := httptest.NewRequest("GET", "/?"+tc.query, nil)
-			page, limit := parsePagination(r)
+			h := &Handlers{} // nil settings → hardcoded defaults (20/100)
+			page, limit := h.parsePagination(r)
 			if page != tc.wantPage {
 				t.Errorf("page = %d, want %d", page, tc.wantPage)
 			}

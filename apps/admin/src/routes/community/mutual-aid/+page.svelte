@@ -16,6 +16,11 @@
 		status: string;
 		created_at: string;
 		description?: string;
+		// ADR-088 AI generation columns
+		ai_generated?: boolean;
+		ai_model?: string;
+		hitl_reviewed_by?: string;
+		ai_generated_at?: string;
 	};
 
 	const canManage = $derived(hasPermission('mutual_aid.moderate'));
@@ -119,6 +124,9 @@
 			if (params.q) queryParts.push(`q=${encodeURIComponent(params.q)}`);
 			if (params.sort) {
 				queryParts.push(`sort=${params.sort}`);
+			}
+			if (params.filter?.dest) {
+				queryParts.push(`dest=${encodeURIComponent(params.filter.dest)}`);
 			}
 			const qs = queryParts.join('&');
 			const result = await mutualAidAdminApi.list(qs);

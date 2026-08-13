@@ -1619,6 +1619,13 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 		//     to the placeholder. story_meta.hitl_reviewed_by → users(id)
 		//     ON DELETE SET NULL, so the admin reviewer reference is
 		//     nullified. Ref: §79 Community Story Wall, ADR-087.)
+		//   - achievement_meta (ON DELETE CASCADE from
+		//     achievement_meta.content_id → contents(id); the user's
+		//     achievement metadata is removed when the achievement content
+		//     is cascade-deleted or retained when reassigned to the
+		//     placeholder. achievement_meta has no user_id FK — the author
+		//     is on the contents row — so no additional nullification is
+		//     needed. Ref: §89 Community Achievement Feed, ADR-097.)
 		// Ref: japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
 
 		// Intelligence System (§INTEL, ADR-112) — delete the user's review
@@ -1626,7 +1633,10 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 		// reference in the intelligence tables; the spec §8 requires it be
 		// included in the erasure job. BUG-015 fix.
 		// Ref: docs/superpowers/specs/2026-08-12-japa-intelligence-system-design.md §8
-		if err := q.DeleteIntelReviewLogByActor(ctx, userID); err != nil {
+		if err := q.DeleteIntelReviewLogByActor(ctx, gen.DeleteIntelReviewLogByActorParams{
+			TenantID:    tenantID,
+			ActorUserID: userID,
+		}); err != nil {
 			return fmt.Errorf("deleting intel review log by actor: %w", err)
 		}
 

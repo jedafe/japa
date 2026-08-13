@@ -238,6 +238,19 @@ func (s *Service) RecommendForStage(ctx context.Context, userID, tenantID pgtype
 		}
 	}
 
+	// (4) Achievement Feed prompt (stage=relocated or settled, §89 enabled).
+	// Ref: §87 Integration — "stage advance to relocated or settled triggers
+	// an opt-in prompt to post to the achievement feed."
+	if (stage == "relocated" || stage == "settled") && s.notifier != nil &&
+		s.settings.GetBoolOr(ctx, tenantID, "achievement.enabled", false) {
+		zero := pgtype.UUID{}
+		title := "Share your milestone in the Achievement Feed"
+		body := "You've reached a major relocation milestone. Share your win with the community to inspire others on the same journey."
+		if err := s.notifier.CreateNotification(ctx, tenantID, userID, "japa_stage.achievement_prompt", "system", zero, "japa_stage", userID, title, body, "/achievements/new"); err != nil {
+			slog.Warn("japastage: achievement prompt notification failed", "error", err)
+		}
+	}
+
 	return nil
 }
 

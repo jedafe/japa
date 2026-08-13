@@ -13,8 +13,8 @@ import (
 	"github.com/jedafe/japa/internal/intelligence/extractor"
 	"github.com/jedafe/japa/internal/intelligence/extractor/schemas"
 	"github.com/jedafe/japa/internal/intelligence/promoter"
-	intel_stores "github.com/jedafe/japa/internal/intelligence/stores"
 	"github.com/jedafe/japa/internal/intelligence/sources"
+	intel_stores "github.com/jedafe/japa/internal/intelligence/stores"
 	"github.com/jedafe/japa/internal/worker"
 )
 
@@ -35,21 +35,26 @@ func (a *intelSchedulerSourceAdapter) ListDue(ctx context.Context, tenantID pgty
 // intelExtractorPortAdapter wraps *extractor.Extractor so it satisfies the
 // worker.intelExtractorPort interface without the worker package importing
 // internal/intelligence/extractor (which would close the cycle
-// extractor → ai → auth → worker). The adapter selects the scholarship
-// schema internally; future entity types will branch on sourceType here.
+// extractor → ai → auth → worker). The adapter looks up the entity schema
+// by entityType from the schemas registry; the worker derives entityType
+// from the source's category via schemas.CategoryToEntityType.
 type intelExtractorPortAdapter struct {
 	ext *extractor.Extractor
 }
 
-// Extract calls the underlying extractor with the scholarship schema and
-// returns the marshalled extraction + aggregate confidence in the shape
-// worker.IntelExtractResult expects. If the extractor returns
-// ErrExtractionRetriesExhausted, the error is wrapped with the worker's
-// port-level sentinel so HandleIntelExtract can detect it via errors.Is
-// and route the record to REVIEW_REQUIRED instead of failing the task
-// (BUG-16 fix).
-func (a *intelExtractorPortAdapter) Extract(ctx context.Context, sourceURL, sourceType, sourceText string) (worker.IntelExtractResult, error) {
-	result, err := a.ext.Extract(ctx, schemas.Scholarship, sourceURL, sourceType, sourceText)
+// Extract calls the underlying extractor with the schema for the given
+// entityType and returns the marshalled extraction + aggregate confidence
+// in the shape worker.IntelExtractResult expects. If the extractor
+// returns ErrExtractionRetriesExhausted, the error is wrapped with the
+// worker's port-level sentinel so HandleIntelExtract can detect it via
+// errors.Is and route the record to REVIEW_REQUIRED instead of failing
+// the task (BUG-16 fix).
+func (a *intelExtractorPortAdapter) Extract(ctx context.Context, entityType, sourceURL, sourceType, sourceText string) (worker.IntelExtractResult, error) {
+	schema, ok := schemas.ForEntityType(entityType)
+	if !ok {
+		return worker.IntelExtractResult{}, fmt.Errorf("intel: no schema registered for entity type %q", entityType)
+	}
+	result, err := a.ext.Extract(ctx, schema, sourceURL, sourceType, sourceText)
 	if err != nil {
 		if errors.Is(err, extractor.ErrExtractionRetriesExhausted) {
 			return worker.IntelExtractResult{}, fmt.Errorf("%w: %v", worker.ErrIntelExtractionRetriesExhausted, err)
@@ -66,11 +71,13 @@ func (a *intelExtractorPortAdapter) Extract(ctx context.Context, sourceURL, sour
 	}, nil
 }
 
-// intelPromoterPortAdapter wraps *promoter.ScholarshipPromoter so it
-// satisfies the worker.intelPromoterPort interface without the worker
-// package importing internal/intelligence/promoter.
+// intelPromoterPortAdapter wraps a promoter.Promoter so it satisfies the
+// worker.intelPromoterPort interface without the worker package importing
+// internal/intelligence/promoter. One adapter is registered per domain
+// (scholarship, job, visa, housing, remittance, cost_of_living, and the
+// 7 guide content types), keyed by Entity() in the promoter map.
 type intelPromoterPortAdapter struct {
-	prom *promoter.ScholarshipPromoter
+	prom promoter.Promoter
 }
 
 func (a *intelPromoterPortAdapter) Promote(ctx context.Context, recordID uuid.UUID) (worker.IntelPromoteResult, error) {
@@ -115,6 +122,80 @@ type intelPromoterStoreAdapter struct {
 }
 
 func (a *intelPromoterStoreAdapter) WithTx(ctx context.Context, fn func(promoter.TxStore) error) error {
+	return a.Store.WithTx(ctx, func(s *intel_stores.Store) error {
+		return fn(s)
+	})
+}
+
+// intelJobPromoterStoreAdapter wraps *stores.Store for the JobPromoter's
+// JobStore interface. The WithTx bridges func(*stores.Store) error →
+// func(promoter.JobTxStore) error.
+type intelJobPromoterStoreAdapter struct {
+	*intel_stores.Store
+}
+
+func (a *intelJobPromoterStoreAdapter) WithTx(ctx context.Context, fn func(promoter.JobTxStore) error) error {
+	return a.Store.WithTx(ctx, func(s *intel_stores.Store) error {
+		return fn(s)
+	})
+}
+
+// intelVisaPromoterStoreAdapter wraps *stores.Store for the VisaPromoter's
+// VisaStore interface.
+type intelVisaPromoterStoreAdapter struct {
+	*intel_stores.Store
+}
+
+func (a *intelVisaPromoterStoreAdapter) WithTx(ctx context.Context, fn func(promoter.VisaTxStore) error) error {
+	return a.Store.WithTx(ctx, func(s *intel_stores.Store) error {
+		return fn(s)
+	})
+}
+
+// intelHousingPromoterStoreAdapter wraps *stores.Store for the
+// HousingPromoter's HousingStore interface.
+type intelHousingPromoterStoreAdapter struct {
+	*intel_stores.Store
+}
+
+func (a *intelHousingPromoterStoreAdapter) WithTx(ctx context.Context, fn func(promoter.HousingTxStore) error) error {
+	return a.Store.WithTx(ctx, func(s *intel_stores.Store) error {
+		return fn(s)
+	})
+}
+
+// intelRemittancePromoterStoreAdapter wraps *stores.Store for the
+// RemittancePromoter's RemittanceStore interface.
+type intelRemittancePromoterStoreAdapter struct {
+	*intel_stores.Store
+}
+
+func (a *intelRemittancePromoterStoreAdapter) WithTx(ctx context.Context, fn func(promoter.RemittanceTxStore) error) error {
+	return a.Store.WithTx(ctx, func(s *intel_stores.Store) error {
+		return fn(s)
+	})
+}
+
+// intelCostOfLivingPromoterStoreAdapter wraps *stores.Store for the
+// CostOfLivingPromoter's CostOfLivingStore interface.
+type intelCostOfLivingPromoterStoreAdapter struct {
+	*intel_stores.Store
+}
+
+func (a *intelCostOfLivingPromoterStoreAdapter) WithTx(ctx context.Context, fn func(promoter.CostOfLivingTxStore) error) error {
+	return a.Store.WithTx(ctx, func(s *intel_stores.Store) error {
+		return fn(s)
+	})
+}
+
+// intelGuidePromoterStoreAdapter wraps *stores.Store for the
+// GuideContentPromoter's GuideContentStore interface (used by the 7 pure
+// guide content type domains).
+type intelGuidePromoterStoreAdapter struct {
+	*intel_stores.Store
+}
+
+func (a *intelGuidePromoterStoreAdapter) WithTx(ctx context.Context, fn func(promoter.GuideContentTxStore) error) error {
 	return a.Store.WithTx(ctx, func(s *intel_stores.Store) error {
 		return fn(s)
 	})

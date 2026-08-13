@@ -6,6 +6,7 @@
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { dateInputToStartOfDayISO, dateInputToEndOfDayISO } from '$lib/utils/date';
+	import { escapeHtml } from '$lib/utils/html';
 	import { SlideOver } from '$lib/components/ui/slide-over';
 	import { Button } from '$lib/components/ui/button';
 	import { Eye, Trash2 } from 'lucide-svelte';
@@ -139,7 +140,7 @@
 				key: 'code',
 				label: t('discounts.code', 'Code'),
 				sortable: true,
-				render: (v: string) => `<div class="flex items-center gap-2"><span class="font-mono text-sm font-medium text-foreground">${v}</span><button onclick="navigator.clipboard.writeText('${v}')" class="text-muted hover:text-foreground-alt" title="${t('discounts.copy_code', 'Copy code')}"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg></button></div>`
+				render: (v: string) => `<span class="font-mono text-sm font-medium text-foreground">${escapeHtml(String(v ?? ''))}</span>`
 			},
 			{
 				key: 'discount_value',

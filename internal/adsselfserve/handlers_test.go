@@ -184,6 +184,7 @@ func TestSentinelErrors(t *testing.T) {
 		{"not_org_member", ErrNotOrgMember},
 		{"slot_type_not_found", ErrSlotTypeNotFound},
 		{"duration_too_short", ErrDurationTooShort},
+		{"insufficient_balance", ErrInsufficientBalance},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

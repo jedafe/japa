@@ -127,8 +127,11 @@
 		],
 		actions: rowActions,
 		fields,
-		load: async () => {
-			const result = await housingGuideAdminApi.list();
+		load: async (params) => {
+			const qs = new URLSearchParams();
+			if (params.filter?.dest) qs.set('dest', params.filter.dest);
+			const queryString = qs.toString();
+			const result = await housingGuideAdminApi.list(queryString ? `?${queryString}` : '');
 			if (result.ok) {
 				const data = (result.data as HousingGuideItem[]) ?? [];
 				return { data, total: data.length, totalPages: 1 };

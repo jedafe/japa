@@ -135,6 +135,26 @@ func (s *Store) RefreshUserEngagementStatsView(ctx context.Context) error {
 	return s.write.RefreshUserEngagementStatsView(ctx)
 }
 
+// RefreshTopContent7dView refreshes the §66 top-content (7d) materialized view.
+func (s *Store) RefreshTopContent7dView(ctx context.Context) error {
+	return s.write.RefreshTopContent7dView(ctx)
+}
+
+// RefreshTopContent30dView refreshes the §66 top-content (30d) materialized view.
+func (s *Store) RefreshTopContent30dView(ctx context.Context) error {
+	return s.write.RefreshTopContent30dView(ctx)
+}
+
+// RefreshTopContent90dView refreshes the §66 top-content (90d) materialized view.
+func (s *Store) RefreshTopContent90dView(ctx context.Context) error {
+	return s.write.RefreshTopContent90dView(ctx)
+}
+
+// RefreshRevenueStreamsView refreshes the §66 revenue-streams materialized view.
+func (s *Store) RefreshRevenueStreamsView(ctx context.Context) error {
+	return s.write.RefreshRevenueStreamsView(ctx)
+}
+
 // CreateSecurityScanResult records a new security scan finding.
 func (s *Store) CreateSecurityScanResult(ctx context.Context, p gen.CreateSecurityScanResultParams) (gen.SecurityScanResult, error) {
 	return s.write.CreateSecurityScanResult(ctx, p)

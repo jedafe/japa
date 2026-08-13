@@ -111,16 +111,28 @@ var ErrGroupFull = fmt.Errorf("planning group is full")
 // already in.
 var ErrAlreadyMember = fmt.Errorf("already a member of this planning group")
 
+// Notifier is the interface used to dispatch planning-group notifications.
+// Satisfied by *notifications.Service; declared here to avoid an import
+// cycle. Ref: §82 Notifications & Gamification, §35 Notification System.
+type Notifier interface {
+	CreateNotification(ctx context.Context, tenantID, recipientID pgtype.UUID, nType, actorType string, actorID pgtype.UUID, subjectType string, subjectID pgtype.UUID, title, body, actionURL string) error
+}
+
 // Service holds the business logic for Japa Planning Groups.
 type Service struct {
 	store    *Store
 	settings *config.Settings
+	notifier Notifier
 }
 
 // NewService creates a planning-groups service.
 func NewService(store *Store, settings *config.Settings) *Service {
 	return &Service{store: store, settings: settings}
 }
+
+// WithNotifier attaches the notification dispatcher used by the
+// mission-complete celebration (§82 Integration with §89 Achievement Feed).
+func (s *Service) WithNotifier(n Notifier) *Service { s.notifier = n; return s }
 
 // Enabled reads the planning_group.enabled system_setting toggle (§82).
 func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
@@ -422,6 +434,10 @@ func (s *Service) ListMilestones(ctx context.Context, groupID, userID, tenantID 
 
 // UpdateMilestone updates the completed state of a milestone. The milestone
 // must belong to the given group and the requesting user (ownership check).
+// When marking a milestone as completed, the service checks whether all of
+// the user's milestones in the group are now complete; if so, it dispatches
+// a "Mission Complete" celebration notification with a prompt to share in
+// the Achievement Feed (§82 Integration with §89).
 func (s *Service) UpdateMilestone(ctx context.Context, milestoneID, groupID, userID, tenantID pgtype.UUID, completed bool) error {
 	if err := s.store.UpdateMilestone(ctx, milestoneID, groupID, userID, tenantID, completed); err != nil {
 		if err == pgx.ErrNoRows {
@@ -429,6 +445,25 @@ func (s *Service) UpdateMilestone(ctx context.Context, milestoneID, groupID, use
 		}
 		return fmt.Errorf("planninggroups: update milestone: %w", err)
 	}
+
+	// §82: on all milestones complete → celebration notification + prompt
+	// to share in Achievement Feed (§89). Only fires when the milestone was
+	// just marked complete and the achievement feature is enabled.
+	if completed && s.notifier != nil &&
+		s.settings.GetBoolOr(ctx, tenantID, "achievement.enabled", false) {
+		remaining, err := s.store.CountIncompleteMilestones(ctx, groupID, userID, tenantID)
+		if err != nil {
+			slog.Warn("planninggroups: count incomplete milestones failed", "error", err)
+		} else if remaining == 0 {
+			zero := pgtype.UUID{}
+			title := "Mission Complete! Share your win in the Achievement Feed"
+			body := "You've completed all your milestones in this planning group. Celebrate by sharing your achievement with the community."
+			if err := s.notifier.CreateNotification(ctx, tenantID, userID, "planning_group.mission_complete", "system", zero, "planning_group", groupID, title, body, "/achievements/new"); err != nil {
+				slog.Warn("planninggroups: mission complete notification failed", "error", err)
+			}
+		}
+	}
+
 	return nil
 }
 

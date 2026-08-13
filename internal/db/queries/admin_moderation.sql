@@ -198,6 +198,15 @@ SELECT u.id FROM users u
 JOIN user_group_memberships gm ON gm.user_id = u.id AND gm.tenant_id = u.tenant_id
 WHERE u.tenant_id = $1 AND u.status = 'active' AND gm.group_id = $2;
 
+-- name: ListTenantAdminIDs :many
+-- Returns active user IDs in the system super_admin group for a tenant.
+-- Used by the notify_admin form trigger (Section 06) to fan out admin
+-- notifications via the notification service. Scoped to the caller's tenant.
+SELECT u.id FROM users u
+JOIN user_group_memberships gm ON gm.user_id = u.id AND gm.tenant_id = u.tenant_id
+JOIN user_groups ug ON ug.id = gm.group_id AND ug.tenant_id = u.tenant_id
+WHERE u.tenant_id = $1 AND u.status = 'active' AND ug.slug = 'super_admin' AND ug.is_system = true;
+
 -- name: CreateBroadcastNotifications :exec
 INSERT INTO notifications (tenant_id, recipient_id, notification_type, actor_type, actor_id, title, body, created_at, updated_at)
 SELECT $1, unnest($2::uuid[]), 'system_announcement', 'system', $3, $4, $5, now(), now();

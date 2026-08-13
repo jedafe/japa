@@ -66,9 +66,12 @@
 		if (!campaign || impressionTracked) return;
 		impressionTracked = true;
 		try {
+			// Ref: japaconnect-engineering/sections/25-ad-placement.md
+			// POST /ads/events expects {events: [{campaign_id, event_type}]}.
+			// A bare object is rejected with 400 empty_events and the
+			// impression is never recorded.
 			await api.post('/ads/events', {
-				campaign_id: campaign.id,
-				event_type: 'impression'
+				events: [{ campaign_id: campaign.id, event_type: 'impression' }]
 			});
 		} catch {
 			// Fire-and-forget; impression failures are non-critical.
@@ -78,10 +81,9 @@
 	async function handleClick(e: MouseEvent): Promise<void> {
 		if (!campaign?.target_url) return;
 		e.preventDefault();
-		// Track click event (fire-and-forget).
+		// Track click event (fire-and-forget). Same {events: [...]} shape.
 		api.post('/ads/events', {
-			campaign_id: campaign.id,
-			event_type: 'click'
+			events: [{ campaign_id: campaign.id, event_type: 'click' }]
 		});
 		// Navigate to the target URL.
 		window.open(campaign.target_url, '_blank', 'noopener,noreferrer');

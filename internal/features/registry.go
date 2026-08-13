@@ -58,7 +58,7 @@ var Registry = []Feature{
 	{Key: "feature.calendar", Label: "Community Calendar", Default: false},
 	{Key: "feature.japa_stage", Label: "Japa Stage Progress Profiles", Default: false},
 	{Key: "feature.ama", Label: "Ask an Expat AMA", Default: false},
-	{Key: "feature.achievement", Label: "Community Achievement Feed", Default: false},
+	{Key: "achievement.enabled", Label: "Community Achievement Feed", Default: false},
 	{Key: "feature.service_directory", Label: "Service Directory", Default: false},
 	// V2 Functional Tools (§90–§97, §99–§101) — Phase 49
 	{Key: "feature.visa_routes", Label: "Visa Route Comparison", Default: false},

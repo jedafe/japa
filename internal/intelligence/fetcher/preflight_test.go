@@ -36,9 +36,30 @@ func startTestValkey(t *testing.T) valkeycompat.Cmdable {
 	return valkeycompat.NewAdapter(vk)
 }
 
+// mockSettings is a test-only SettingsReader that returns fixed values for
+// the two preflight config keys.
+type mockSettings struct {
+	crawlLockTTL    int
+	rateLimitPerMin int
+}
+
+func (m mockSettings) GetIntOr(_ context.Context, _ pgtype.UUID, key string, _ int) int {
+	switch key {
+	case "intel.crawl_lock_ttl_secs":
+		return m.crawlLockTTL
+	case "intel.ratelimit_default_per_min":
+		return m.rateLimitPerMin
+	default:
+		return 0
+	}
+}
+
 func newTestChecker(t *testing.T, crawlLockTTLSecs, rateLimitPerMin int) *PreflightChecker {
 	t.Helper()
-	return NewPreflightChecker(startTestValkey(t), crawlLockTTLSecs, rateLimitPerMin)
+	return NewPreflightChecker(startTestValkey(t), nil, mockSettings{
+		crawlLockTTL:    crawlLockTTLSecs,
+		rateLimitPerMin: rateLimitPerMin,
+	}, testTenantID())
 }
 
 func validUUID() pgtype.UUID {

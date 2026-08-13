@@ -109,6 +109,44 @@
 		class="space-y-4 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 sm:p-6"
 		novalidate
 	>
+		<!-- Geo-aware tool pattern: destination country selector is the first
+		     input (§89 Geo Awareness, geo-aware-tool-pattern.md). -->
+		<div class="grid gap-4 sm:grid-cols-2">
+			<div class="flex flex-col gap-1.5">
+				<label for="destination_country" class="text-sm font-medium text-[var(--color-text)]">
+					{t('achievements.field_destination', 'Destination country')}
+					<span class="text-red-500" aria-hidden="true">*</span>
+				</label>
+				<select
+					id="destination_country"
+					value={destinationSpaceId}
+					onchange={(e) => (destinationSpaceId = e.currentTarget.value)}
+					class={inputClass}
+				>
+					<option value="">{t('achievements.destination_placeholder', 'e.g. Canada')}</option>
+					{#each data.countries as c (c.id)}
+						<option value={c.id}>{c.name}</option>
+					{/each}
+				</select>
+			</div>
+			<div class="flex flex-col gap-1.5">
+				<label for="origin_country" class="text-sm font-medium text-[var(--color-text)]">
+					{t('achievements.field_origin', 'Origin country')}
+				</label>
+				<select
+					id="origin_country"
+					value={originSpaceId}
+					onchange={(e) => (originSpaceId = e.currentTarget.value)}
+					class={inputClass}
+				>
+					<option value="">{t('achievements.origin_placeholder', 'e.g. Nigeria')}</option>
+					{#each data.countries as c (c.id)}
+						<option value={c.id}>{c.name}</option>
+					{/each}
+				</select>
+			</div>
+		</div>
+
 		<div class="flex flex-col gap-1.5">
 			<label for="title" class="text-sm font-medium text-[var(--color-text)]">
 				{t('achievements.field_title', 'Title')}
@@ -154,42 +192,6 @@
 					<option value={opt.value}>{opt.label}</option>
 				{/each}
 			</select>
-		</div>
-
-		<div class="grid gap-4 sm:grid-cols-2">
-			<div class="flex flex-col gap-1.5">
-				<label for="destination_country" class="text-sm font-medium text-[var(--color-text)]">
-					{t('achievements.field_destination', 'Destination country')}
-					<span class="text-red-500" aria-hidden="true">*</span>
-				</label>
-				<select
-					id="destination_country"
-					value={destinationSpaceId}
-					onchange={(e) => (destinationSpaceId = e.currentTarget.value)}
-					class={inputClass}
-				>
-					<option value="">{t('achievements.destination_placeholder', 'e.g. Canada')}</option>
-					{#each data.countries as c (c.id)}
-						<option value={c.id}>{c.name}</option>
-					{/each}
-				</select>
-			</div>
-			<div class="flex flex-col gap-1.5">
-				<label for="origin_country" class="text-sm font-medium text-[var(--color-text)]">
-					{t('achievements.field_origin', 'Origin country')}
-				</label>
-				<select
-					id="origin_country"
-					value={originSpaceId}
-					onchange={(e) => (originSpaceId = e.currentTarget.value)}
-					class={inputClass}
-				>
-					<option value="">{t('achievements.origin_placeholder', 'e.g. Nigeria')}</option>
-					{#each data.countries as c (c.id)}
-						<option value={c.id}>{c.name}</option>
-					{/each}
-				</select>
-			</div>
 		</div>
 
 		<label class="flex cursor-pointer items-center gap-2 text-sm text-[var(--color-text-subtle)]">

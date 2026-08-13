@@ -54,11 +54,11 @@
 	async function load() {
 		refreshing = true;
 		errorMessage = '';
-		const result = await api<{ data?: IntelRecord[] } & Record<string, unknown>>(
+		const result = await api<IntelRecord[]>(
 			'/api/v1/intel/review/queue?page_size=100'
 		);
 		if (result.ok) {
-			records = Array.isArray(result.data?.data) ? (result.data!.data as IntelRecord[]) : [];
+			records = Array.isArray(result.data) ? (result.data as IntelRecord[]) : [];
 		} else {
 			errorMessage = result.error;
 		}

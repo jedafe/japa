@@ -8,6 +8,7 @@
 	import { goto } from "$app/navigation";
 	import { ArrowLeft, Save, Image as ImageIcon, X, Code, FileText, Type, Eye } from "lucide-svelte";
 	import MediaPickerModal from "$lib/components/ui/MediaPickerModal.svelte";
+	import { sanitizeHtml } from "$lib/utils/html";
 
 	// Ref: japaconnect-engineering/sections/25-ad-placement.md — the backend
 	// AdSlotType sqlc struct exposes `slot_name` and `max_display_per_page`
@@ -368,7 +369,7 @@
 								{#if previewBodyHtml}
 									<!-- eslint-disable-next-line svelte/no-at-html-tags -- preview only, content is admin-authored -->
 									<div class="text-sm leading-relaxed prose prose-sm max-w-none" style="color: var(--color-foreground)">
-										{@html previewBodyHtml}
+										{@html sanitizeHtml(previewBodyHtml)}
 									</div>
 								{/if}
 								{#if contentCta.trim()}

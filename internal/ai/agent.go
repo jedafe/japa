@@ -32,6 +32,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math/big"
+	"strconv"
 	"strings"
 	"time"
 
@@ -108,6 +109,7 @@ type RateLimiter interface {
 	Incr(ctx context.Context, key string) (int64, error)
 	IncrByFloat(ctx context.Context, key string, increment float64) (float64, error)
 	Expire(ctx context.Context, key string, ttlSeconds int) error
+	Get(ctx context.Context, key string) (string, error)
 }
 
 // ---------------------------------------------------------------------------
@@ -237,6 +239,7 @@ const (
 	defaultCostLimitUSD       = 0.50
 	defaultRateLimitPerDay    = 50
 	defaultCostPer1kTokensUSD = 0.002
+	defaultDailyBudgetUSD     = 5.00
 )
 
 // HandleAgentRequest runs the agent loop for a single user prompt. It
@@ -272,6 +275,13 @@ func (h *AgentHandler) HandleAgentRequest(ctx context.Context, userID, tenantID 
 	// --- Task 5.11: rate limiting (jc:agent:rate:{user_id}:{date}) ---
 	if err := h.checkRateLimit(ctx, userID, tenantID); err != nil {
 		return nil, errAgentRateLimited
+	}
+
+	// --- Guide §19: daily budget enforcement (jc:agent:cost:{user_id}:{date}) ---
+	// Rejects the request if the user's accumulated daily AI spend has
+	// reached agent.daily_budget_usd. A budget of 0 disables the check.
+	if err := h.checkDailyBudget(ctx, userID, tenantID); err != nil {
+		return nil, errAgentBudgetExceeded
 	}
 
 	// --- Task 5.05: resolve geo context from users.current_geo_space_id ---
@@ -727,6 +737,46 @@ func (h *AgentHandler) checkRateLimit(ctx context.Context, userID, tenantID pgty
 	limit := h.getIntSetting(ctx, tenantID, "agent.rate_limit_per_day", defaultRateLimitPerDay)
 	if int(count) > limit {
 		return fmt.Errorf("ai: daily agent rate limit exceeded (%d/%d)", count, limit)
+	}
+	return nil
+}
+
+// checkDailyBudget reads the jc:agent:cost:{user_id}:{date} accumulator and
+// rejects the request if the user's accumulated daily AI spend has reached
+// agent.daily_budget_usd (Guide §19 — budget enforcement). A budget of 0
+// disables the check. When the rate limiter is nil or the Valkey GET fails,
+// the check is skipped (fail-open) so a Valkey outage does not lock users
+// out of the agent — the per-request cost limit (agent.cost_limit_per_request_usd)
+// still applies as a per-session guard.
+func (h *AgentHandler) checkDailyBudget(ctx context.Context, userID, tenantID pgtype.UUID) error {
+	if h.rateLimiter == nil {
+		return nil
+	}
+
+	budget := h.getFloatSetting(ctx, tenantID, "agent.daily_budget_usd", defaultDailyBudgetUSD)
+	if budget <= 0 {
+		return nil // 0 = disabled
+	}
+
+	key := valkey.MustKey("agent:cost:%s:%s", userID.String(), time.Now().UTC().Format("2006-01-02"))
+	raw, err := h.rateLimiter.Get(ctx, key)
+	if err != nil {
+		// redis.Nil on a fresh day is expected — no cost accumulated yet.
+		// Any other error is a Valkey issue; fail-open so the agent stays
+		// usable. The per-request cost limit still guards the session.
+		return nil
+	}
+	if raw == "" {
+		return nil
+	}
+
+	total, err := strconv.ParseFloat(raw, 64)
+	if err != nil {
+		slog.Warn("ai: daily budget check, unparseable cost value", "key", key, "value", raw, "error", err)
+		return nil
+	}
+	if total >= budget {
+		return fmt.Errorf("ai: daily agent budget exceeded (%.4f/%.2f USD)", total, budget)
 	}
 	return nil
 }

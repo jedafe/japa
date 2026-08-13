@@ -10,27 +10,32 @@ import (
 )
 
 // DBStore implements the Querier interface using pgxpool.
+// Reads are routed through the reader pool; writes through the writer pool.
 type DBStore struct {
-	db      *db.DB
-	queries *gen.Queries
+	db    *db.DB
+	read  *gen.Queries
+	write *gen.Queries
 }
 
 // NewDBStore creates a DBStore backed by the given database.
 func NewDBStore(database *db.DB) *DBStore {
 	return &DBStore{
-		db:      database,
-		queries: gen.New(database.Reader),
+		db:    database,
+		read:  gen.New(database.Reader),
+		write: gen.New(database.Writer),
 	}
 }
 
 // Queries returns the sqlc-generated queries for direct access.
+// This returns the writer pool because auth handlers use it for both
+// reads and writes (e.g. UpdateLastLoginAt, CreateRefreshToken).
 func (s *DBStore) Queries() *gen.Queries {
-	return s.queries
+	return s.write
 }
 
 // GetUserByEmail looks up a user by email within a tenant.
 func (s *DBStore) GetUserByEmail(ctx context.Context, tenantID pgtype.UUID, email string) (*User, error) {
-	row, err := s.queries.GetUserByEmail(ctx, gen.GetUserByEmailParams{
+	row, err := s.read.GetUserByEmail(ctx, gen.GetUserByEmailParams{
 		TenantID: tenantID,
 		Email:    email,
 	})
@@ -58,7 +63,7 @@ func (s *DBStore) GetUserByEmail(ctx context.Context, tenantID pgtype.UUID, emai
 
 // GetRefreshToken retrieves a refresh token by its hash.
 func (s *DBStore) GetRefreshToken(ctx context.Context, tokenHash string) (*RefreshToken, error) {
-	row, err := s.queries.GetRefreshTokenByHashGlobal(ctx, tokenHash)
+	row, err := s.read.GetRefreshTokenByHashGlobal(ctx, tokenHash)
 	if err != nil {
 		return nil, fmt.Errorf("querying refresh token: %w", err)
 	}
@@ -75,13 +80,13 @@ func (s *DBStore) GetRefreshToken(ctx context.Context, tokenHash string) (*Refre
 
 // RevokeRefreshToken marks a refresh token as revoked.
 func (s *DBStore) RevokeRefreshToken(ctx context.Context, tokenHash string) error {
-	return s.queries.RevokeRefreshTokenByHash(ctx, tokenHash)
+	return s.write.RevokeRefreshTokenByHash(ctx, tokenHash)
 }
 
 // GetValidResetToken looks up a reset token by hash and returns the record
 // if it exists, is not expired, and has not been used.
 func (s *DBStore) GetValidResetToken(ctx context.Context, tokenHash string) (*ResetTokenRecord, error) {
-	row, err := s.queries.GetPasswordResetTokenByHashGlobal(ctx, tokenHash)
+	row, err := s.read.GetPasswordResetTokenByHashGlobal(ctx, tokenHash)
 	if err != nil {
 		return nil, fmt.Errorf("querying reset token: %w", err)
 	}
@@ -96,12 +101,12 @@ func (s *DBStore) GetValidResetToken(ctx context.Context, tokenHash string) (*Re
 
 // MarkResetTokenUsed sets the used_at timestamp on a reset token.
 func (s *DBStore) MarkResetTokenUsed(ctx context.Context, tokenHash string) error {
-	return s.queries.UsePasswordResetTokenByHash(ctx, tokenHash)
+	return s.write.UsePasswordResetTokenByHash(ctx, tokenHash)
 }
 
 // UpdateUserPassword updates the password hash for a user.
 func (s *DBStore) UpdateUserPassword(ctx context.Context, userID pgtype.UUID, passwordHash string) error {
-	return s.queries.UpdateUserPasswordByUserID(ctx, gen.UpdateUserPasswordByUserIDParams{
+	return s.write.UpdateUserPasswordByUserID(ctx, gen.UpdateUserPasswordByUserIDParams{
 		UserID:       userID,
 		PasswordHash: &passwordHash,
 	})
@@ -109,7 +114,7 @@ func (s *DBStore) UpdateUserPassword(ctx context.Context, userID pgtype.UUID, pa
 
 // GetValidVerificationToken looks up an email verification token by hash.
 func (s *DBStore) GetValidVerificationToken(ctx context.Context, tokenHash string) (*VerificationTokenRecord, error) {
-	row, err := s.queries.GetEmailVerificationByHashGlobal(ctx, tokenHash)
+	row, err := s.read.GetEmailVerificationByHashGlobal(ctx, tokenHash)
 	if err != nil {
 		return nil, fmt.Errorf("querying verification token: %w", err)
 	}
@@ -124,13 +129,13 @@ func (s *DBStore) GetValidVerificationToken(ctx context.Context, tokenHash strin
 
 // MarkEmailVerified sets email_verified_at on the users table.
 func (s *DBStore) MarkEmailVerified(ctx context.Context, userID pgtype.UUID) error {
-	return s.queries.MarkEmailVerifiedByUserID(ctx, userID)
+	return s.write.MarkEmailVerifiedByUserID(ctx, userID)
 }
 
 // GetRecentPasswordHashes returns the most recent N password hashes for a user,
 // ordered by creation time descending (newest first).
 func (s *DBStore) GetRecentPasswordHashes(ctx context.Context, userID pgtype.UUID, limit int) ([]string, error) {
-	rows, err := s.queries.GetRecentPasswordHashes(ctx, gen.GetRecentPasswordHashesParams{
+	rows, err := s.read.GetRecentPasswordHashes(ctx, gen.GetRecentPasswordHashesParams{
 		UserID:    userID,
 		HashLimit: int32(limit),
 	})
@@ -148,5 +153,5 @@ func (s *DBStore) GetRecentPasswordHashes(ctx context.Context, userID pgtype.UUI
 
 // IsUserInGroup checks if a user belongs to a group identified by slug.
 func (s *DBStore) IsUserInGroup(ctx context.Context, arg gen.IsUserInGroupParams) (bool, error) {
-	return s.queries.IsUserInGroup(ctx, arg)
+	return s.read.IsUserInGroup(ctx, arg)
 }

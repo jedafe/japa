@@ -240,11 +240,16 @@ func (q *Queries) CreateIntelSource(ctx context.Context, arg CreateIntelSourcePa
 }
 
 const deleteIntelReviewLogByActor = `-- name: DeleteIntelReviewLogByActor :exec
-DELETE FROM intel_review_log WHERE actor_user_id = $1
+DELETE FROM intel_review_log WHERE tenant_id = $1 AND actor_user_id = $2
 `
 
-func (q *Queries) DeleteIntelReviewLogByActor(ctx context.Context, actorUserID pgtype.UUID) error {
-	_, err := q.db.Exec(ctx, deleteIntelReviewLogByActor, actorUserID)
+type DeleteIntelReviewLogByActorParams struct {
+	TenantID    pgtype.UUID `json:"tenant_id"`
+	ActorUserID pgtype.UUID `json:"actor_user_id"`
+}
+
+func (q *Queries) DeleteIntelReviewLogByActor(ctx context.Context, arg DeleteIntelReviewLogByActorParams) error {
+	_, err := q.db.Exec(ctx, deleteIntelReviewLogByActor, arg.TenantID, arg.ActorUserID)
 	return err
 }
 
@@ -578,6 +583,63 @@ func (q *Queries) ListIntelRecordsByStatus(ctx context.Context, arg ListIntelRec
 	rows, err := q.db.Query(ctx, listIntelRecordsByStatus,
 		arg.TenantID,
 		arg.EntityType,
+		arg.Status,
+		arg.Limit,
+		arg.Offset,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []IntelRecord
+	for rows.Next() {
+		var i IntelRecord
+		if err := rows.Scan(
+			&i.ID,
+			&i.SourceID,
+			&i.RawDocumentID,
+			&i.EntityType,
+			&i.ExternalKey,
+			&i.Extracted,
+			&i.Confidence,
+			&i.Evidence,
+			&i.ConfidenceOverall,
+			&i.Status,
+			&i.FreshnessScore,
+			&i.GeoSpaceIds,
+			&i.ExtractedAt,
+			&i.LastVerifiedAt,
+			&i.PromotedRecordID,
+			&i.TenantID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listIntelRecordsByStatusAll = `-- name: ListIntelRecordsByStatusAll :many
+SELECT id, source_id, raw_document_id, entity_type, external_key, extracted, confidence, evidence, confidence_overall, status, freshness_score, geo_space_ids, extracted_at, last_verified_at, promoted_record_id, tenant_id FROM intel_records WHERE tenant_id = $1 AND status = $2 ORDER BY extracted_at DESC LIMIT $3 OFFSET $4
+`
+
+type ListIntelRecordsByStatusAllParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	Status   string      `json:"status"`
+	Limit    int32       `json:"limit"`
+	Offset   int32       `json:"offset"`
+}
+
+// Lists intel records by status across ALL entity types (no entity_type
+// filter). Used by the review-queue handler when no entity_type filter is
+// supplied so job/visa/grant records awaiting review are not invisible
+// (BUG-001 fix — the prior handler hardcoded entity_type='scholarship').
+func (q *Queries) ListIntelRecordsByStatusAll(ctx context.Context, arg ListIntelRecordsByStatusAllParams) ([]IntelRecord, error) {
+	rows, err := q.db.Query(ctx, listIntelRecordsByStatusAll,
+		arg.TenantID,
 		arg.Status,
 		arg.Limit,
 		arg.Offset,

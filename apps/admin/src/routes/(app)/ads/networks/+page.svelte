@@ -77,7 +77,7 @@
 					const colorMap: Record<string, string> = {
 						adsense: 'var(--color-primary)',
 						ezoic: 'var(--color-success)',
-						media_net: '#a855f7',
+						media_net: 'var(--color-info)',
 						custom: 'var(--color-muted)'
 					};
 					const c = colorMap[v] ?? 'var(--color-muted)';

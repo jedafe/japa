@@ -186,7 +186,7 @@ func (q *Queries) GetCorridors(ctx context.Context, tenantID pgtype.UUID) ([]Get
 
 const getLatestRatesForCorridor = `-- name: GetLatestRatesForCorridor :many
 SELECT DISTINCT ON (rr.provider_id)
-    rr.id, rr.tenant_id, rr.provider_id, rr.send_currency, rr.receive_currency, rr.rate, rr.fee_flat, rr.fee_pct, rr.transfer_time, rr.fetched_at, rr.is_manual, rr.source_url,
+    rr.id, rr.tenant_id, rr.provider_id, rr.send_currency, rr.receive_currency, rr.rate, rr.fee_flat, rr.fee_pct, rr.transfer_time, rr.fetched_at, rr.is_manual, rr.source_url, rr.intel_record_id, rr.confidence_overall, rr.verification_status, rr.freshness_score, rr.override_source, rr.editorial_overrides,
     rp.name   AS provider_name,
     rp.slug   AS provider_slug,
     rp.website_url AS provider_website
@@ -206,21 +206,27 @@ type GetLatestRatesForCorridorParams struct {
 }
 
 type GetLatestRatesForCorridorRow struct {
-	ID              pgtype.UUID        `json:"id"`
-	TenantID        pgtype.UUID        `json:"tenant_id"`
-	ProviderID      pgtype.UUID        `json:"provider_id"`
-	SendCurrency    string             `json:"send_currency"`
-	ReceiveCurrency string             `json:"receive_currency"`
-	Rate            pgtype.Numeric     `json:"rate"`
-	FeeFlat         pgtype.Numeric     `json:"fee_flat"`
-	FeePct          pgtype.Numeric     `json:"fee_pct"`
-	TransferTime    *string            `json:"transfer_time"`
-	FetchedAt       pgtype.Timestamptz `json:"fetched_at"`
-	IsManual        bool               `json:"is_manual"`
-	SourceUrl       *string            `json:"source_url"`
-	ProviderName    string             `json:"provider_name"`
-	ProviderSlug    string             `json:"provider_slug"`
-	ProviderWebsite *string            `json:"provider_website"`
+	ID                 pgtype.UUID        `json:"id"`
+	TenantID           pgtype.UUID        `json:"tenant_id"`
+	ProviderID         pgtype.UUID        `json:"provider_id"`
+	SendCurrency       string             `json:"send_currency"`
+	ReceiveCurrency    string             `json:"receive_currency"`
+	Rate               pgtype.Numeric     `json:"rate"`
+	FeeFlat            pgtype.Numeric     `json:"fee_flat"`
+	FeePct             pgtype.Numeric     `json:"fee_pct"`
+	TransferTime       *string            `json:"transfer_time"`
+	FetchedAt          pgtype.Timestamptz `json:"fetched_at"`
+	IsManual           bool               `json:"is_manual"`
+	SourceUrl          *string            `json:"source_url"`
+	IntelRecordID      pgtype.UUID        `json:"intel_record_id"`
+	ConfidenceOverall  float32            `json:"confidence_overall"`
+	VerificationStatus string             `json:"verification_status"`
+	FreshnessScore     int32              `json:"freshness_score"`
+	OverrideSource     string             `json:"override_source"`
+	EditorialOverrides []byte             `json:"editorial_overrides"`
+	ProviderName       string             `json:"provider_name"`
+	ProviderSlug       string             `json:"provider_slug"`
+	ProviderWebsite    *string            `json:"provider_website"`
 }
 
 func (q *Queries) GetLatestRatesForCorridor(ctx context.Context, arg GetLatestRatesForCorridorParams) ([]GetLatestRatesForCorridorRow, error) {
@@ -245,6 +251,12 @@ func (q *Queries) GetLatestRatesForCorridor(ctx context.Context, arg GetLatestRa
 			&i.FetchedAt,
 			&i.IsManual,
 			&i.SourceUrl,
+			&i.IntelRecordID,
+			&i.ConfidenceOverall,
+			&i.VerificationStatus,
+			&i.FreshnessScore,
+			&i.OverrideSource,
+			&i.EditorialOverrides,
 			&i.ProviderName,
 			&i.ProviderSlug,
 			&i.ProviderWebsite,
@@ -387,7 +399,7 @@ VALUES (
     $5, $6, $7, $8,
     $9, $10
 )
-RETURNING id, tenant_id, provider_id, send_currency, receive_currency, rate, fee_flat, fee_pct, transfer_time, fetched_at, is_manual, source_url
+RETURNING id, tenant_id, provider_id, send_currency, receive_currency, rate, fee_flat, fee_pct, transfer_time, fetched_at, is_manual, source_url, intel_record_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides
 `
 
 type InsertRemittanceRateParams struct {
@@ -433,6 +445,12 @@ func (q *Queries) InsertRemittanceRate(ctx context.Context, arg InsertRemittance
 		&i.FetchedAt,
 		&i.IsManual,
 		&i.SourceUrl,
+		&i.IntelRecordID,
+		&i.ConfidenceOverall,
+		&i.VerificationStatus,
+		&i.FreshnessScore,
+		&i.OverrideSource,
+		&i.EditorialOverrides,
 	)
 	return i, err
 }

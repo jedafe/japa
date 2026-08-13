@@ -23,7 +23,8 @@
 		CalendarDays, Newspaper, Award, Building2,
 		Route, ListChecks, BadgeCheck, Home,
 		FileCheck, Globe2, Calculator, MapPin,
-		CalendarClock, ClipboardCheck, Gauge, PiggyBank, Timer
+		CalendarClock, ClipboardCheck, Gauge, PiggyBank, Timer,
+		ScanSearch
 	} from "lucide-svelte";
 	import { clsx } from "clsx";
 	import { sidebarCollapsed } from "$lib/stores/sidebar.svelte";
@@ -182,6 +183,13 @@
 			{ path: "/tools/language-test-hub", label: t("nav.tools_language_test_hub", "Language Test Hub"), icon: Globe2, permission: "language_test_hub.manage" },
 			{ path: "/tools/tax-calculator", label: t("nav.tools_tax_calculator", "Tax Calculator"), icon: Calculator, permission: "tax_calculator.manage" },
 			{ path: "/tools/community-locator", label: t("nav.tools_community_locator", "Community Locator"), icon: MapPin, permission: "community_locator.manage" }
+		]
+	},
+	{
+		id: "intelligence",
+		label: t("nav.section.intelligence", "Intelligence"),
+		items: [
+			{ path: "/intelligence/review", label: t("nav.intel_review", "Review Queue"), icon: ScanSearch, permission: "intel.review.view" }
 		]
 	},
 	{

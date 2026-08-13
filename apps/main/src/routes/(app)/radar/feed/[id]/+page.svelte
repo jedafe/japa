@@ -17,12 +17,44 @@
 		ShieldCheck,
 		ShieldAlert,
 		Radar,
-		Clock
+		Clock,
+		Bookmark,
+		BookmarkCheck
 	} from 'lucide-svelte';
 	import type { RadarItem } from '$lib/types';
+	import { api } from '$lib/api/client';
+	import { invalidate } from '$app/navigation';
 
 	let { data } = $props();
 	const item = $derived(data.item as RadarItem);
+
+	// INTEL-017 fix: saved opportunities UI. The backend delegates to the
+	// §73 saved_scholarships tracker via POST/DELETE /intel/radar/save.
+	let saved = $state(false);
+	let saving = $state(false);
+
+	$effect(() => {
+		// Seed saved state from SSR if the backend includes it in the item.
+		saved = !!item.saved;
+	});
+
+	async function toggleSave() {
+		if (saving) return;
+		saving = true;
+		const wasSaved = saved;
+		saved = !wasSaved; // optimistic
+		let ok = false;
+		if (wasSaved) {
+			const res = await api.delete(`/intel/radar/save/${item.id}`);
+			ok = !res.error;
+		} else {
+			const res = await api.post(`/intel/radar/save`, { item_id: item.id });
+			ok = !res.error;
+		}
+		if (!ok) saved = wasSaved; // rollback
+		else await invalidate(`/api/v1/intel/radar/saved`);
+		saving = false;
+	}
 
 	// Trust tier 1 = highest (verified official source), 4 = lowest.
 	const trustPct = $derived(Math.max(0, Math.min(100, (4 - item.trust_level) * 25 + 25)));
@@ -80,14 +112,29 @@
 </svelte:head>
 
 <div class="mx-auto max-w-3xl px-4 py-6">
-	<!-- Back link -->
-	<a
-		href="/radar"
-		class="inline-flex items-center gap-1.5 text-sm text-[var(--color-muted)] transition-colors hover:text-[var(--color-text)]"
-	>
-		<ArrowLeft size={15} />
-		{t('radar.back')}
-	</a>
+	<!-- Back link + save button -->
+	<div class="flex items-center justify-between">
+		<a
+			href="/radar"
+			class="inline-flex items-center gap-1.5 text-sm text-[var(--color-muted)] transition-colors hover:text-[var(--color-text)]"
+		>
+			<ArrowLeft size={15} />
+			{t('radar.back')}
+		</a>
+		<button
+			onclick={toggleSave}
+			disabled={saving}
+			class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)] disabled:opacity-50"
+		>
+			{#if saved}
+				<BookmarkCheck size={14} class="text-[var(--color-primary)]" />
+				{t('radar.detail.saved', 'Saved')}
+			{:else}
+				<Bookmark size={14} />
+				{t('radar.detail.save', 'Save')}
+			{/if}
+		</button>
+	</div>
 
 	<article class="mt-5 overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)]">
 		<!-- Header band: type pill + country + verified status -->

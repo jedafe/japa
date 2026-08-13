@@ -1658,6 +1658,21 @@ func (h *Handlers) AddReaction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// §89 Reaction Set: achievement posts use a curated reaction set
+	// configured via system_settings.achievement_reactions (JSONB array of
+	// {emoji, label} pairs). When the content is an achievement, validate
+	// the reaction_key (emoji) against the curated set. If the setting is
+	// empty or unparseable, fall back to the spec defaults: 🎉 🔥 💪.
+	if h.settings != nil {
+		existing, err := h.Service.GetContent(r.Context(), contentID, tenantID)
+		if err == nil && existing.ContentType == TypeAchievement {
+			if !isAllowedAchievementReaction(r.Context(), h.settings, tenantID, input.ReactionKey) {
+				writeError(w, http.StatusBadRequest, "invalid_reaction_key", "This reaction is not available for achievement posts")
+				return
+			}
+		}
+	}
+
 	reaction, err := h.Service.AddReaction(r.Context(), tenantID, EntityContent, contentID, user.UserID, input.ReactionKey)
 	if err != nil {
 		// ON CONFLICT DO NOTHING returns ErrNoRows when the user already has
@@ -1683,6 +1698,41 @@ func (h *Handlers) AddReaction(w http.ResponseWriter, r *http.Request) {
 	h.enqueueEngagementUpdate("content", contentID, "vote", 1)
 
 	writeJSON(w, http.StatusCreated, map[string]any{"data": reaction})
+}
+
+// defaultAchievementReactions is the spec-defined curated reaction set for
+// achievement posts (§89 Reaction Set), used as a fallback when the
+// system_settings.achievement_reactions setting is empty or unparseable.
+var defaultAchievementReactions = []string{"🎉", "🔥", "💪"}
+
+// isAllowedAchievementReaction checks whether the given reaction_key (emoji)
+// is in the curated achievement reaction set. The set is read from
+// system_settings.achievement_reactions (JSONB array of {emoji, label}
+// pairs); if the setting is empty or unparseable, the spec defaults
+// (🎉 🔥 💪) are used. Ref: §89 Reaction Set.
+func isAllowedAchievementReaction(ctx context.Context, settings *config.Settings, tenantID pgtype.UUID, key string) bool {
+	raw := settings.GetStringOr(ctx, tenantID, "achievement_reactions", "")
+	if raw != "" && raw != "[]" {
+		var pairs []struct {
+			Emoji string `json:"emoji"`
+			Label string `json:"label"`
+		}
+		if err := json.Unmarshal([]byte(raw), &pairs); err == nil && len(pairs) > 0 {
+			for _, p := range pairs {
+				if p.Emoji == key {
+					return true
+				}
+			}
+			return false
+		}
+	}
+	// Fall back to spec defaults when the setting is empty/unparseable.
+	for _, k := range defaultAchievementReactions {
+		if k == key {
+			return true
+		}
+	}
+	return false
 }
 
 // RemoveReaction handles DELETE /api/v1/content/{id}/reactions/{key}.

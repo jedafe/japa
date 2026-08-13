@@ -1093,6 +1093,46 @@ func (q *Queries) RefreshDailySpaceStatsView(ctx context.Context) error {
 	return err
 }
 
+const refreshRevenueStreamsView = `-- name: RefreshRevenueStreamsView :exec
+REFRESH MATERIALIZED VIEW CONCURRENTLY mv_revenue_streams
+`
+
+func (q *Queries) RefreshRevenueStreamsView(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, refreshRevenueStreamsView)
+	return err
+}
+
+const refreshTopContent30dView = `-- name: RefreshTopContent30dView :exec
+REFRESH MATERIALIZED VIEW CONCURRENTLY mv_top_content_30d
+`
+
+func (q *Queries) RefreshTopContent30dView(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, refreshTopContent30dView)
+	return err
+}
+
+const refreshTopContent7dView = `-- name: RefreshTopContent7dView :exec
+REFRESH MATERIALIZED VIEW CONCURRENTLY mv_top_content_7d
+`
+
+// Section 66 (ADR-084) — Advanced Analytics materialized views.
+// All four are refreshed by the same analytics:refresh_views task (hourly)
+// alongside the §40 base views. Each has a UNIQUE index so CONCURRENTLY
+// is supported. Ref: sections/66-advanced-analytics.md
+func (q *Queries) RefreshTopContent7dView(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, refreshTopContent7dView)
+	return err
+}
+
+const refreshTopContent90dView = `-- name: RefreshTopContent90dView :exec
+REFRESH MATERIALIZED VIEW CONCURRENTLY mv_top_content_90d
+`
+
+func (q *Queries) RefreshTopContent90dView(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, refreshTopContent90dView)
+	return err
+}
+
 const refreshUserEngagementStatsView = `-- name: RefreshUserEngagementStatsView :exec
 REFRESH MATERIALIZED VIEW CONCURRENTLY mv_user_engagement_stats
 `
