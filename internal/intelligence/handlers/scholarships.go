@@ -87,10 +87,10 @@ func (h *Handlers) HandleSearchScholarships(w http.ResponseWriter, r *http.Reque
 
 	q := r.URL.Query()
 	page, limit := parsePagination(r)
-	offset := int32((page - 1) * limit)
+	offset := clampInt32((page - 1) * limit)
 
 	params := gen.SearchScholarshipsParams{
-		Limit:  int32(limit),
+		Limit:  clampInt32(limit),
 		Offset: offset,
 	}
 
