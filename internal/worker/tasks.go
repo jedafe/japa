@@ -106,6 +106,20 @@ const (
 
 	TypeScheduledPublishSweep = "content:publish_sweep"
 	TypeGdprRetentionSweep    = "gdpr:retention_sweep"
+
+	// ---- Intelligence System (Section INTEL) ----.
+
+	TypeIntelScheduleCrawls    = "intel:schedule_crawls"     // critical (cron)
+	TypeIntelFetchSource       = "intel:fetch_source"        // default
+	TypeIntelDetectChanges     = "intel:detect_changes"      // default
+	TypeIntelExtract           = "intel:extract"             // default
+	TypeIntelDedup             = "intel:dedup"               // default
+	TypeIntelPublishGate       = "intel:publish_gate"        // default
+	TypeIntelPromote           = "intel:promote"             // default
+	TypeIntelPostPublish       = "intel:post_publish"        // default
+	TypeIntelNotifyDiscoveries = "intel:notify_discoveries"  // default
+	TypeIntelRefreshFreshness  = "intel:refresh_freshness"   // default (cron)
+	TypeIntelRetryFailedSource = "intel:retry_failed_source" // default
 )
 
 // RegisterHandlers wires every task type constant to its handler function.
@@ -265,4 +279,17 @@ func RegisterHandlers(mux *asynq.ServeMux) {
 	// §83 Visa Timeline Tracker handlers (ADR-091).
 	mux.HandleFunc(TypeVisaTimelineRefreshStats, HandleVisaTimelineRefreshStats)
 	mux.HandleFunc(TypeVisaTimelinePromptUpdate, HandleVisaTimelinePromptUpdate)
+
+	// Intelligence System (Section INTEL) handlers — ingestion spine.
+	mux.HandleFunc(TypeIntelScheduleCrawls, HandleIntelScheduleCrawls)
+	mux.HandleFunc(TypeIntelFetchSource, HandleIntelFetchSource)
+	mux.HandleFunc(TypeIntelDetectChanges, HandleIntelDetectChanges)
+	mux.HandleFunc(TypeIntelExtract, HandleIntelExtract)
+	mux.HandleFunc(TypeIntelDedup, HandleIntelDedup)
+	mux.HandleFunc(TypeIntelPublishGate, HandleIntelPublishGate)
+	mux.HandleFunc(TypeIntelPromote, HandleIntelPromote)
+	mux.HandleFunc(TypeIntelPostPublish, HandleIntelPostPublish)
+	mux.HandleFunc(TypeIntelNotifyDiscoveries, HandleIntelNotifyDiscoveries)
+	mux.HandleFunc(TypeIntelRefreshFreshness, HandleIntelRefreshFreshness)
+	mux.HandleFunc(TypeIntelRetryFailedSource, HandleIntelRetryFailedSource)
 }
