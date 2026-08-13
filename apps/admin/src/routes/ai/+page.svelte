@@ -12,8 +12,8 @@
 	import { page as pageState } from '$app/state';
 	import { Switch } from 'bits-ui';
 
-	const canGenerate = $derived(hasPermission('ai.context.generate'));
-	const canReviewHitl = $derived(hasPermission('ai.context.review'));
+	const canGenerate = $derived(hasPermission('ai.generate'));
+	const canReviewHitl = $derived(hasPermission('ai.hitl.review'));
 
 	// ─── Generator State ──────────────────────────────────────────
 	let prompt = $state('');
@@ -24,14 +24,8 @@
 	let generateError = $state('');
 	let copied = $state(false);
 
-	let categories = $state<{ value: string; label: string; description: string }[]>([
-		{ value: 'blog_post', label: t('ai.category.blog_post', 'Blog Post'), description: t('ai.category.description.blog_post', 'Generate blog post content') },
-		{ value: 'forum_reply', label: t('ai.category.forum_reply', 'Forum Reply'), description: t('ai.category.description.forum_reply', 'Generate forum reply content') },
-		{ value: 'social_media', label: t('ai.category.social_media', 'Social Media'), description: t('ai.category.description.social_media', 'Generate social media content') },
-		{ value: 'email', label: t('ai.category.email', 'Email'), description: t('ai.category.description.email', 'Generate email content') },
-		{ value: 'summary', label: t('ai.category.summary', 'Summary'), description: t('ai.category.description.summary', 'Generate summary content') },
-		{ value: 'translation', label: t('ai.category.translation', 'Translation'), description: t('ai.category.description.translation', 'Generate translation content') }
-	]);
+	let categories = $state<{ value: string; label: string; description: string }[]>([]);
+	let categoriesLoading = $state(false);
 
 	let models = $state<{ value: string; label: string }[]>([
 		{ value: '', label: t('ai.model.default', 'Default') }
@@ -412,13 +406,17 @@
 
 	$effect(() => {
 		(async () => {
+			categoriesLoading = true;
 			try {
 				const cats = await aiApi.listCategories();
-				if (cats.ok && Array.isArray(cats.data) && cats.data.length > 0) {
+				if (cats.ok && Array.isArray(cats.data)) {
 					categories = cats.data;
 				}
 			} catch {
-				// Keep default categories
+				// Rule 16: no hardcoded category fallback. If the API fails,
+				// the categories selector stays empty.
+			} finally {
+				categoriesLoading = false;
 			}
 
 			try {

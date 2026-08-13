@@ -14,7 +14,8 @@
 //	PATCH /api/v1/admin/attestation/updates/:id     — approve/reject community update (admin, attestation_guide.manage)
 //
 // Ref: japaconnect-engineering/sections/97-attestation-guide.md
-//      japaconnect-engineering/adr/ADR-105-attestation-guide.md
+//
+//	japaconnect-engineering/adr/ADR-105-attestation-guide.md
 package attestationguide
 
 import (
@@ -203,9 +204,11 @@ func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
 }
 
 // HandleExportPDF handles GET /attestation/:id/export/pdf — returns the
-// pathway data as a downloadable JSON file (Content-Disposition: attachment)
-// so the client can render it to PDF. The response includes the full pathway
-// with steps, fees, and turnaround data. Public.
+// pathway data as a downloadable JSON file. The route is named /export/pdf
+// per §97/ADR-105 (which specify PDF export via §pdf); until a §pdf
+// rendering service is available, the handler returns the structured
+// pathway JSON so the client can render it to PDF. The Content-Disposition
+// filename uses .json to reflect the actual format. Public.
 func (h *Handlers) HandleExportPDF(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
@@ -346,6 +349,47 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"data": pathways,
+		"pagination": map[string]any{
+			"page":  page,
+			"limit": limit,
+			"total": total,
+		},
+	})
+}
+
+// HandleAdminListUpdates handles GET /admin/attestation/updates — lists
+// pending (or filtered) community updates for the moderation queue.
+// Admin-only (attestation_guide.manage permission checked at route
+// registration). Supports ?status=&page=&limit= (BUG-005).
+func (h *Handlers) HandleAdminListUpdates(w http.ResponseWriter, r *http.Request) {
+	if _, ok := requireUser(w, r); !ok {
+		return
+	}
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	if h.service == nil {
+		writeError(w, http.StatusServiceUnavailable, "attestation_guide_unavailable", "Attestation guide not configured")
+		return
+	}
+
+	status := r.URL.Query().Get("status")
+	page, limit := parsePageParams(r)
+	if limit > 100 {
+		limit = 100
+	}
+
+	updates, total, err := h.service.AdminListUpdates(r.Context(), tenantID, status, page, limit)
+	if err != nil {
+		slog.Error("attestationguide: admin list updates failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "admin_list_updates_failed", "Failed to list community updates")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data": updates,
 		"pagination": map[string]any{
 			"page":  page,
 			"limit": limit,

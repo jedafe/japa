@@ -14,11 +14,13 @@ INSERT INTO permissions (key, description) VALUES
     ('embassy_monitor.manage',       'Manage monitored embassy configs (admin+)')
 ON CONFLICT (key) DO NOTHING;
 
+-- Grant member+ nodes to all member+ roles (member, professional, agent,
+-- moderator, admin, super_admin) per §91 and the geo-aware tool pattern.
 INSERT INTO role_permissions (role_id, permission_id)
 SELECT ur.id, p.id
 FROM user_roles ur, permissions p
 WHERE ur.tenant_id = '00000000-0000-0000-0000-000000000001'
-  AND ur.slug IN ('member', 'super_admin')
+  AND ur.slug IN ('member', 'professional', 'agent', 'moderator', 'admin', 'super_admin')
   AND p.key IN ('appointment_alert.create','appointment_alert.manage_own')
 ON CONFLICT DO NOTHING;
 

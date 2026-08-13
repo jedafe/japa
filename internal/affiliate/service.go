@@ -466,6 +466,20 @@ func formatNumericPtr(n pgtype.Numeric) *string {
 	return &s
 }
 
+// numericToFloat converts a pgtype.Numeric to a float64 for JSON serialization
+// in admin endpoints where the frontend expects a number (not a formatted
+// string). Returns 0 for nil/invalid values (BUG-005).
+func numericToFloat(n pgtype.Numeric) float64 {
+	if !n.Valid {
+		return 0
+	}
+	f, err := n.Float64Value()
+	if err != nil || !f.Valid {
+		return 0
+	}
+	return f.Float64
+}
+
 // ── Helpers ─────────────────────────────────────────────────────────
 
 func paginate(page, pageSize int32) (limit, offset int32) {

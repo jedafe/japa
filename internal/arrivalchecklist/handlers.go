@@ -194,6 +194,43 @@ func (h *Handlers) HandleListMyChecklists(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusOK, map[string]any{"data": checklists})
 }
 
+// HandleGetMyChecklist handles GET /me/arrival-checklists/:id — returns
+// the items for a single saved checklist with the user's progress state
+// merged in. Auth required.
+func (h *Handlers) HandleGetMyChecklist(w http.ResponseWriter, r *http.Request) {
+	user, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+		writeError(w, http.StatusNotFound, "arrival_checklist_disabled", "Arrival checklist is not available")
+		return
+	}
+
+	guideID, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	items, err := h.service.GetUserChecklistItems(r.Context(), tenantID, user.UserID, guideID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "guide_not_found", "Arrival checklist guide not found")
+			return
+		}
+		slog.Error("arrivalchecklist: get my checklist failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "get_failed", "Failed to get checklist items")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": items})
+}
+
 // HandleStartChecklist handles POST /me/arrival-checklists — start a
 // checklist (save initial progress). Auth required.
 func (h *Handlers) HandleStartChecklist(w http.ResponseWriter, r *http.Request) {
@@ -316,25 +353,33 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	applicantType := r.URL.Query().Get("applicant_type")
 	status := r.URL.Query().Get("status")
 	q := r.URL.Query().Get("q")
+	sort := r.URL.Query().Get("sort")
+	order := r.URL.Query().Get("order")
 
 	page, limit := parsePageParams(r)
 	if limit > 200 {
 		limit = 200
 	}
 
-	guides, total, err := h.service.AdminList(r.Context(), tenantID, destSpaceID, visaCategory, applicantType, status, q, page, limit)
+	guides, total, err := h.service.AdminList(r.Context(), tenantID, destSpaceID, visaCategory, applicantType, status, q, sort, order, page, limit)
 	if err != nil {
 		slog.Error("arrivalchecklist: admin list failed", "error", err)
 		writeError(w, http.StatusInternalServerError, "admin_list_failed", "Failed to list guides")
 		return
 	}
 
+	totalPages := int64(0)
+	if limit > 0 {
+		totalPages = (total + int64(limit) - 1) / int64(limit)
+	}
+
 	writeJSON(w, http.StatusOK, map[string]any{
 		"data": guides,
-		"pagination": map[string]any{
-			"page":  page,
-			"limit": limit,
-			"total": total,
+		"meta": map[string]any{
+			"page":        page,
+			"per_page":    limit,
+			"total":       total,
+			"total_pages": totalPages,
 		},
 	})
 }

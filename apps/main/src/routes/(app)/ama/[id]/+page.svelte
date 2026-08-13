@@ -63,18 +63,40 @@
 	);
 	const description = $derived(session ? tiptapExcerpt(session.body, 160) : '');
 
-	// Host-only control: close the AMA by pushing the closes_at timestamp
-	// into the past via PATCH /forum/ama/{id}. The backend enforces the
-	// host permission. Ref: sections/88-ask-an-expat.md
+	// FAQPage JSON-LD for completed AMAs (§88 / §26). Each host reply that
+	// answered a top-level question becomes an `acceptedAnswer`. Only emitted
+	// once the AMA is closed (`!isLive`) — live sessions are not FAQ candidates.
+	const faqJsonLd = $derived.by(() => {
+		if (!session || isLive) return '';
+		const hostId = session.author_user_id;
+		if (!hostId) return '';
+		const questions = replies.filter(
+			(r) => !r.parent_reply_id && r.author_user_id !== hostId && !r.deleted_at
+		);
+		const faqs: { '@type': 'Question'; name: string; acceptedAnswer: { '@type': 'Answer'; text: string } }[] = [];
+		for (const q of questions) {
+			const answer = replies.find(
+				(r) => r.parent_reply_id === q.id && r.author_user_id === hostId && !r.deleted_at
+			);
+			if (!answer) continue;
+			faqs.push({
+				'@type': 'Question',
+				name: tiptapExcerpt(q.body, 160),
+				acceptedAnswer: { '@type': 'Answer', text: tiptapExcerpt(answer.body, 320) }
+			});
+		}
+		if (faqs.length === 0) return '';
+		return JSON.stringify({ '@context': 'https://schema.org', '@type': 'FAQPage', mainEntity: faqs });
+	});
+
+	// Host-only control: close the AMA via PATCH /forum/ama/{id}. The backend
+	// sets closes_at = now() server-side (no body needed) and enforces the
+	// host-or-moderator permission. Ref: sections/88-ask-an-expat.md
 	async function closeAma() {
 		if (!session || closing) return;
 		closing = true;
 		closeError = null;
-		const nowIso = new Date().toISOString();
-		const nextConfig: AmaConfig = { ...(cfg ?? {}), closes_at: nowIso };
-		const res = await api.patch<AMAThread>(`/forum/ama/${session.id}`, {
-			ama_config: nextConfig
-		});
+		const res = await api.patch<AMAThread>(`/forum/ama/${session.id}`, {});
 		closing = false;
 		if (res.error) {
 			closeError = res.error.message || t('ama.close_error', 'Failed to close the AMA.');
@@ -91,6 +113,9 @@
 	<meta property="og:description" content={description} />
 	<meta property="og:type" content="article" />
 	<meta property="og:url" content={page.url.href} />
+	{#if faqJsonLd}
+		{@html `<script type="application/ld+json">${faqJsonLd}</script>`}
+	{/if}
 </svelte:head>
 
 <div class="mx-auto w-full max-w-full px-4 py-6">
@@ -104,7 +129,7 @@
 	{#if data.loadError || !session}
 		<EmptyState
 			icon={MessageSquare}
-			title={t('ama.load_error_title', 'Failed to load AMA')}
+			title={t('ama.load_error_title_detail', 'Failed to load AMA')}
 			body={t('ama.load_error_body', 'Please try again later.')}
 		/>
 	{:else}

@@ -412,6 +412,28 @@ func (h *Handlers) FetchAIModels(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": models})
 }
+
+// GetAIProviderTypes handles GET /control/ai-providers/types.
+// Returns the valid provider_type values and dispatcher categories so the
+// control panel frontend can populate its selectors from the API (Rule 16)
+// instead of hardcoding enum values that must match the DB CHECK constraint.
+func (h *Handlers) GetAIProviderTypes(w http.ResponseWriter, _ *http.Request) {
+	types := make([]string, 0, len(validProviderTypes))
+	for t := range validProviderTypes {
+		types = append(types, t)
+	}
+	cats := make([]string, 0, len(validAICategories))
+	for c := range validAICategories {
+		cats = append(cats, c)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data": map[string]any{
+			"provider_types": types,
+			"categories":      cats,
+		},
+	})
+}
+
 // create/update/delete operations so changes take effect immediately without
 // a server restart.
 func (h *Handlers) reloadAIProviders(ctx context.Context, tenantID pgtype.UUID) {

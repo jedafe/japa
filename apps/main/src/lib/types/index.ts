@@ -54,6 +54,10 @@ export interface SessionUser {
 	display_name?: string | null;
 	avatar_url?: string | null;
 	groups?: string[];
+	/** Effective RBAC permission nodes resolved by the backend (§26). Present
+	 *  on /me so frontend pages gate UI on the actual node (e.g.
+	 *  `forum.ama.create`) instead of hardcoded role names (Rule 16). */
+	permissions?: string[];
 	primary_space?: SpaceRef | null;
 	/** UI preferences persisted via PATCH /me/account, e.g. nav_collapsed. */
 	ui?: { nav_collapsed?: boolean } & Record<string, unknown>;

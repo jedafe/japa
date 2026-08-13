@@ -659,6 +659,26 @@ func (s *Service) ProcessAccountDeletion(ctx context.Context, requestID pgtype.U
 		}
 	}
 
+	// 1f. Soft-delete the user's appointment_alerts during the anonymization
+	// phase (Section 91, ADR-099, ADR-014). The table has ON DELETE CASCADE
+	// from users(id) so rows are removed at hard-delete, but the user's
+	// appointment alert subscriptions reveal immigration intent (embassy +
+	// date range + visa category) and could fire notifications to a deleted
+	// account during the retention window. Soft-delete (not hard-delete) is
+	// correct because appointment_alerts are user content (Rule 11) and the
+	// nightly embassy:expire_checks sweep already transitions soft-deleted
+	// rows. Best-effort.
+	if step == deletionStepAnonymized {
+		if _, err := s.db.Writer.Exec(ctx, `
+			UPDATE appointment_alerts
+			SET deleted_at = now(), updated_at = now(), status = 'expired'
+			WHERE user_id = $1 AND tenant_id = $2 AND deleted_at IS NULL
+		`, request.UserID, request.TenantID); err != nil {
+			slog.Warn("failed to soft-delete appointment_alerts during deletion",
+				"user_id", request.UserID.String(), "error", err)
+		}
+	}
+
 	// 2. Revoke all refresh tokens (best-effort).
 	if step < deletionStepTokensRevoked {
 		if err := s.store.deleteUserTokens(ctx, gen.DeleteUserTokensParams{
@@ -1858,9 +1878,9 @@ type UserDataExport struct {
 	MentorSessions              []map[string]interface{} `json:"mentor_sessions"`        // §102 ADR-110
 	MentorReviews               []map[string]interface{} `json:"mentor_reviews"`         // §102 ADR-110
 	ProfessionalProfiles        []map[string]interface{} `json:"professional_profiles"`
-	ProfessionalRelocations     []map[string]interface{} `json:"professional_relocations"` // §33 child table
-	ProfessionalDocuments       []map[string]interface{} `json:"professional_documents"`   // §33 child table
-	ProfessionalVerifiers       []map[string]interface{} `json:"professional_verifiers"`   // §33 child table
+	ProfessionalRelocations     []map[string]interface{} `json:"professional_relocations"`         // §33 child table
+	ProfessionalDocuments       []map[string]interface{} `json:"professional_documents"`           // §33 child table
+	ProfessionalVerifiers       []map[string]interface{} `json:"professional_verifiers"`           // §33 child table
 	ProfessionalMemberships     []map[string]interface{} `json:"professional_profile_memberships"` // §33 memberships in others' profiles
 	ProfessionalInvitations     []map[string]interface{} `json:"professional_profile_invitations"` // §33 invitations sent to user's email
 	Organizations               []map[string]interface{} `json:"organizations"`
@@ -1883,9 +1903,9 @@ type UserDataExport struct {
 	CalendarEntries             []map[string]interface{} `json:"calendar_entries"`              // §86 BUG-025
 	CalendarSaves               []map[string]interface{} `json:"calendar_saves"`                // §86 BUG-025
 	CalendarSubscriptions       []map[string]interface{} `json:"calendar_subscriptions"`        // §86 BUG-025
-	MutualAidPosts              []map[string]interface{} `json:"mutual_aid_posts"`               // §85 BUG-005
-	ScamReports                 []map[string]interface{} `json:"scam_reports"`                   // §81
-	ScamAlertSubscriptions      []map[string]interface{} `json:"scam_alert_subscriptions"`       // §81
+	MutualAidPosts              []map[string]interface{} `json:"mutual_aid_posts"`              // §85 BUG-005
+	ScamReports                 []map[string]interface{} `json:"scam_reports"`                  // §81
+	ScamAlertSubscriptions      []map[string]interface{} `json:"scam_alert_subscriptions"`      // §81
 	CommunityOrganisations      []map[string]interface{} `json:"community_organisations"`       // §101 BUG-016
 	ComparisonItems             []map[string]interface{} `json:"comparison_items"`              // BUG-004
 	ComparisonDimensions        []map[string]interface{} `json:"comparison_dimensions"`         // BUG-004

@@ -203,6 +203,13 @@ func NewScheduler(cfg *Config) *asynq.Scheduler {
 	// handler but never enqueued, so expired alerts were never swept.
 	schedule("0 3 * * *", TypeEmbassyExpireChecks, 24*time.Hour)
 
+	// Recurring embassy poll scheduler — every 5 minutes (§91, ADR-099).
+	// Enqueues embassy:poll tasks for each active monitored embassy whose
+	// poll_interval_seconds has elapsed since last_polled_at. Low queue.
+	// This is the per-embassy poll loop: the scheduler fans out default-
+	// tier embassy:poll tasks, each of which scrapes one booking page.
+	schedule("*/5 * * * *", TypeEmbassySchedulePolls, 5*time.Minute)
+
 	// Weekly community digest generation — Sunday 22:00 UTC (§84, ADR-092).
 	// Assembles a new digest edition from platform analytics (top threads,
 	// new members, events, featured story, poll) for each active tenant.

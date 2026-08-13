@@ -54,6 +54,7 @@
 	let generateDocType = $state('');
 	let generateIssuingId = $state('');
 	let generateDestId = $state('');
+	let generatePrompt = $state('');
 	let generating = $state(false);
 
 	// Community updates list state
@@ -81,6 +82,7 @@
 		generateDocType = '';
 		generateIssuingId = '';
 		generateDestId = '';
+		generatePrompt = '';
 		showGenerateModal = true;
 	}
 
@@ -92,7 +94,8 @@
 			const result = await attestationGuideAdminApi.generate({
 				document_type: generateDocType.trim(),
 				issuing_space_id: generateIssuingId.trim(),
-				destination_space_id: generateDestId.trim()
+				destination_space_id: generateDestId.trim(),
+				prompt: generatePrompt.trim()
 			});
 			if (result.ok) {
 				showGenerateModal = false;
@@ -110,11 +113,11 @@
 	async function loadUpdates() {
 		loadingUpdates = true;
 		try {
-			const result = await attestationGuideAdminApi.list('?status=pending');
+			const result = await attestationGuideAdminApi.listUpdates('?status=pending');
 			if (result.ok) {
-				// The list endpoint returns pathways, not updates.
-				// Community updates are not separately listable via the current API.
-				// This is a known gap — the backend has no GET /admin/attestation/updates endpoint.
+				const resp = result.data as { data?: CommunityUpdateItem[] } | undefined;
+				updates = resp?.data ?? [];
+			} else {
 				updates = [];
 			}
 		} catch {
@@ -357,6 +360,17 @@
 				bind:value={generateDestId}
 				placeholder="UUID of the destination country space"
 			/>
+		</div>
+		<div>
+			<label for="gen-prompt" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('app.tools.generate_prompt', 'Prompt (optional)')}</label>
+			<textarea
+				id="gen-prompt"
+				class="w-full rounded-lg border p-3 text-sm"
+				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+				bind:value={generatePrompt}
+				placeholder={t('app.tools.generate_prompt_placeholder', 'Describe the attestation pathway for the AI to draft')}
+				rows="3"
+			></textarea>
 		</div>
 	</div>
 	<div class="mt-4 flex justify-end gap-2">

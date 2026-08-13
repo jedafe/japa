@@ -264,6 +264,7 @@
 	"embassy_alerter.visa_category_optional": "Visa category (optional)",
 	"embassy_alerter.visa_category_placeholder": "e.g. Tourist, Student",
 	"embassy_alerter.notifications": "Notifications",
+	"embassy_alerter.in_app": "In-app",
 	"embassy_alerter.email": "Email",
 	"embassy_alerter.push": "Push",
 

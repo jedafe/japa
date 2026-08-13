@@ -7,7 +7,6 @@
 	import { t } from '$lib/i18n';
 	import { i18n } from '$lib/i18n';
 	import { relativeTime } from '$lib/feed/time';
-	import { tiptapExcerpt } from '$lib/tiptap/serialize';
 	import { EmptyState, LoadingSkeleton } from '$lib/components/ui';
 	import type { AMAThread } from '$lib/types';
 	import type { PageData } from './$types';
@@ -33,20 +32,13 @@
 		t('ama.list_description', 'Live Ask Me Anything sessions with experienced members of the diaspora.')
 	);
 
-	const userGroups = $derived(page.data.user?.groups ?? []);
+	// Gate the "Start an AMA" button on the `forum.ama.create` RBAC node
+	// (§26 RBAC wiring, §88). The backend resolves the caller's effective
+	// permission set on /me and surfaces it as `permissions`; a custom role
+	// granted `forum.ama.create` now sees the button without the frontend
+	// hardcoding role names.
 	const canStart = $derived(
-		!!page.data.user &&
-			userGroups.some(
-				(g) =>
-					g === 'professional' ||
-					g === 'Professional' ||
-					g === 'agent' ||
-					g === 'Agent' ||
-					g === 'admin' ||
-					g === 'Admin' ||
-					g === 'super_admin' ||
-					g === 'Super Admin'
-			)
+		!!page.data.user && (page.data.user.permissions?.includes('forum.ama.create') ?? false)
 	);
 
 	function cursor(): string | null {
@@ -106,20 +98,6 @@
 		if (!cfg?.closes_at) return true;
 		return new Date(cfg.closes_at).getTime() > Date.now();
 	}
-
-	function faqJsonLd(): string {
-		const completed = sessions.filter((s) => !isLive(s));
-		if (completed.length === 0) return '';
-		const faqs = completed.slice(0, 10).map((s) => ({
-			'@type': 'Question',
-			name: s.title,
-			acceptedAnswer: {
-				'@type': 'Answer',
-				text: tiptapExcerpt(s.body, 200)
-			}
-		}));
-		return JSON.stringify({ '@context': 'https://schema.org', '@type': 'FAQPage', mainEntity: faqs });
-	}
 </script>
 
 <svelte:head>
@@ -128,9 +106,6 @@
 	<meta property="og:title" content={title} />
 	<meta property="og:description" content={description} />
 	<meta property="og:type" content="website" />
-	{#if faqJsonLd()}
-		{@html `<script type="application/ld+json">${faqJsonLd()}</script>`}
-	{/if}
 </svelte:head>
 
 <div class="mx-auto w-full max-w-full">

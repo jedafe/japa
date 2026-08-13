@@ -162,6 +162,7 @@ type EmbassyAlerterProcessor interface {
 	PollEmbassy(ctx context.Context, embassyID, tenantID pgtype.UUID) error
 	DispatchAlerts(ctx context.Context, embassySlug string, tenantID pgtype.UUID) error
 	ExpireAlerts(ctx context.Context) (int, error)
+	ScheduleDuePolls(ctx context.Context) (int, error)
 }
 
 // CalendarProcessor handles Community Calendar background tasks (§86, ADR-094).
@@ -342,6 +343,7 @@ const (
 	TypeEmbassyPoll           = "embassy:poll"
 	TypeEmbassyDispatchAlerts = "embassy:dispatch_alerts"
 	TypeEmbassyExpireChecks   = "embassy:expire_checks"
+	TypeEmbassySchedulePolls  = "embassy:schedule_polls"
 
 	// §86 Community Calendar (ADR-094).
 	// calendar:staleness_check runs nightly on the low queue, marking
@@ -1042,6 +1044,25 @@ func HandleEmbassyExpireChecks(ctx context.Context, _ *asynq.Task) error {
 		return fmt.Errorf("task:embassy:expire_checks: %w", err)
 	}
 	slog.Info("task:embassy:expire_checks: expired alerts", "count", n)
+	return nil
+}
+
+// HandleEmbassySchedulePolls enqueues embassy:poll tasks for all active
+// monitored embassies whose poll_interval_seconds has elapsed since
+// last_polled_at (§91, ADR-099). Runs every 5 minutes on the low queue so
+// each embassy is polled at its own configured interval.
+func HandleEmbassySchedulePolls(ctx context.Context, _ *asynq.Task) error {
+	if embassyAlerterProcessor == nil {
+		slog.Warn("task:embassy:schedule_polls: no processor registered, skipping")
+		return nil
+	}
+	n, err := embassyAlerterProcessor.ScheduleDuePolls(ctx)
+	if err != nil {
+		return fmt.Errorf("task:embassy:schedule_polls: %w", err)
+	}
+	if n > 0 {
+		slog.Info("task:embassy:schedule_polls: enqueued polls", "count", n)
+	}
 	return nil
 }
 

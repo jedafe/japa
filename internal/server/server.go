@@ -1178,11 +1178,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	appointmentAlertStore := appointmentalert.NewStore(database)
 	appointmentAlertService := appointmentalert.NewService(appointmentAlertStore, settingsService)
 	appointmentAlertService.SetEnqueuer(taskEnqueuer)
+	appointmentAlertService.SetNotifier(notificationService)
+	appointmentAlertService.SetCache(vkClient.Redis())
 	appointmentAlertHandlers := appointmentalert.NewHandlers(appointmentAlertService, settingsService)
 	// Register the service as the embassy alerter processor so the
 	// embassy:poll / embassy:dispatch_alerts / embassy:expire_checks Asynq
-	// tasks are handled (§91, ADR-099). Poll/dispatch are stubs until the
-	// scraper is implemented; ExpireAlerts is fully functional.
+	// tasks are handled (§91, ADR-099).
 	worker.RegisterEmbassyAlerterProcessor(appointmentAlertService)
 
 	arrivalChecklistStore := arrivalchecklist.NewStore(database)
@@ -1511,6 +1512,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Cache flusher for admin-only cache invalidation.
 	cacheFlusher := analytics.NewCacheFlusher(vkClient)
 	analyticsHandlers.SetCacheFlusher(cacheFlusher)
+	analyticsHandlers.SetRBAC(rbacResolver)      // BUG-ANALYTICS-03: inline owner-or-admin check for /content/{id}/analytics
 	analyticsHandlers.SetCache(vkClient.Redis()) // BUG-010: jc:cache:analytics:* read-through cache
 
 	// Register AI and moderation processor adapters so the ai:process_task
@@ -1685,6 +1687,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// tenant-scoped (non-author-scoped) fetch for super-admins and users
 	// with the `content.edit` permission node.
 	usersHandlers.SetPermissionResolver(rbacResolver)
+	// Wire the RBAC permission lister so GetMyProfile surfaces the caller's
+	// effective permission nodes on /me (§26 RBAC wiring). Frontend pages
+	// gate UI on the actual node (e.g. `forum.ama.create`) instead of
+	// hardcoded role names (Rule 16).
+	usersHandlers.SetPermissionLister(rbacResolver)
 	// ADR-064a: wire settings for configurable Nominatim URL/timeout
 	// (Rule 3: no hardcoded URLs or limits).
 	usersHandlers.SetSettings(settingsService)
@@ -5337,7 +5344,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Get("/intel/scholarships", intelHandlers.HandleSearchScholarships)
 			r.With(auth.OptionalAuth(kr, vkClient.Redis()), rbac.OptionalPermission(rbacResolver, "intel.radar.view")).
 				Get("/intel/scholarships/{id}", intelHandlers.HandleScholarshipDetail)
-			r.With(auth.OptionalAuth(kr, vkClient.Redis())).
+			// Sources directory — RBAC-gated by intel.sources.manage (control
+			// panel admin only). The source registry is admin data, not a public
+			// surface; extracted intelligence data is what the main app shows.
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "intel.sources.manage")).
 				Get("/intel/sources", intelHandlers.HandleSourcesDirectory)
 			// Sources CRUD — RBAC-gated by intel.sources.manage (control panel
 			// admin only). BUG-002 fix: the control panel calls these routes but
@@ -5450,6 +5460,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).
 					Get("/me/arrival-checklists", arrivalChecklistHandlers.HandleListMyChecklists)
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).
+					Get("/me/arrival-checklists/{id}", arrivalChecklistHandlers.HandleGetMyChecklist)
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).
 					Post("/me/arrival-checklists", arrivalChecklistHandlers.HandleStartChecklist)
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).
 					Patch("/me/arrival-checklists/{id}/items/{item_id}", arrivalChecklistHandlers.HandleTickItem)
@@ -5527,6 +5539,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Post("/attestation/{id}/updates", attestationGuideHandlers.HandleSubmitUpdate)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "attestation_guide.manage")).
 					Get("/admin/attestation", attestationGuideHandlers.HandleAdminList)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "attestation_guide.manage")).
+					Get("/admin/attestation/updates", attestationGuideHandlers.HandleAdminListUpdates)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "attestation_guide.manage")).
 					Post("/admin/attestation", attestationGuideHandlers.HandleAdminCreate)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "attestation_guide.manage")).
@@ -5757,19 +5771,33 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(rbac.RequirePermission(rbacResolver, "api.keys.analytics.view")).
 				Get("/api-keys/analytics", controlHandlers.GetAPIKeyAnalytics)
 
-			// AI Budget
-			r.Get("/ai-budget", controlHandlers.GetAIBudget)
-			r.Patch("/ai-budget", controlHandlers.UpdateAIBudget)
+			// AI Budget — granular RBAC (BUG-007: previously only control.panel.access).
+			// ai.budget.view gates the dashboard; ai.budget.manage gates the threshold update.
+			r.With(rbac.RequirePermission(rbacResolver, "ai.budget.view")).
+				Get("/ai-budget", controlHandlers.GetAIBudget)
+			r.With(rbac.RequirePermission(rbacResolver, "ai.budget.manage")).
+				Patch("/ai-budget", controlHandlers.UpdateAIBudget)
 
-			// AI Providers — super-admin CRUD for runtime-managed AI provider
-			// configs (migration 000269). Changes hot-reload the dispatcher.
-			r.Get("/ai-providers", controlHandlers.ListAIProviders)
-			r.Post("/ai-providers", controlHandlers.CreateAIProvider)
-			r.Post("/ai-providers/fetch-models", controlHandlers.FetchAIModels)
-			r.Get("/ai-providers/{id}", controlHandlers.GetAIProvider)
-			r.Patch("/ai-providers/{id}", controlHandlers.UpdateAIProvider)
-			r.Delete("/ai-providers/{id}", controlHandlers.DeleteAIProvider)
-			r.Post("/ai-providers/{id}/test", controlHandlers.TestAIProvider)
+			// AI Providers — granular RBAC (BUG-007: previously only control.panel.access).
+			// ai.providers.view gates list/get; ai.providers.manage gates create/update/delete/test.
+			// Super-admin CRUD for runtime-managed AI provider configs (migration 000269).
+			// Changes hot-reload the dispatcher.
+			r.With(rbac.RequirePermission(rbacResolver, "ai.providers.view")).
+				Get("/ai-providers", controlHandlers.ListAIProviders)
+			r.With(rbac.RequirePermission(rbacResolver, "ai.providers.view")).
+				Get("/ai-providers/types", controlHandlers.GetAIProviderTypes)
+			r.With(rbac.RequirePermission(rbacResolver, "ai.providers.manage")).
+				Post("/ai-providers", controlHandlers.CreateAIProvider)
+			r.With(rbac.RequirePermission(rbacResolver, "ai.providers.manage")).
+				Post("/ai-providers/fetch-models", controlHandlers.FetchAIModels)
+			r.With(rbac.RequirePermission(rbacResolver, "ai.providers.view")).
+				Get("/ai-providers/{id}", controlHandlers.GetAIProvider)
+			r.With(rbac.RequirePermission(rbacResolver, "ai.providers.manage")).
+				Patch("/ai-providers/{id}", controlHandlers.UpdateAIProvider)
+			r.With(rbac.RequirePermission(rbacResolver, "ai.providers.manage")).
+				Delete("/ai-providers/{id}", controlHandlers.DeleteAIProvider)
+			r.With(rbac.RequirePermission(rbacResolver, "ai.providers.manage")).
+				Post("/ai-providers/{id}/test", controlHandlers.TestAIProvider)
 
 			// Audit Log (full cross-tenant view)
 			r.Get("/audit-logs", controlHandlers.ListAuditLogs)

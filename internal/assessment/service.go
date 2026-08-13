@@ -366,9 +366,11 @@ func (s *Service) ListHistory(ctx context.Context, tenantID, userID pgtype.UUID,
 	return results, total, nil
 }
 
-// AdminListResults returns all users' assessment results, paginated and
-// optionally filtered by score range. minScore/maxScore of 0 means no filter.
-func (s *Service) AdminListResults(ctx context.Context, tenantID pgtype.UUID, minScore, maxScore, page, limit int32) ([]AdminListAssessmentResultsRow, int64, error) {
+// AdminListResults returns all users' assessment results, paginated,
+// optionally filtered by score range, and sorted by a whitelisted column.
+// minScore/maxScore of 0 means no filter. sort is a whitelisted key
+// (total_score, threshold_label, created_at, username); order is "asc"/"desc".
+func (s *Service) AdminListResults(ctx context.Context, tenantID pgtype.UUID, minScore, maxScore, page, limit int32, sort, order string) ([]AdminListAssessmentResultsRow, int64, error) {
 	if limit <= 0 {
 		limit = 20
 	}
@@ -377,14 +379,17 @@ func (s *Service) AdminListResults(ctx context.Context, tenantID pgtype.UUID, mi
 	}
 	offset := (page - 1) * limit
 
-	results, err := s.store.AdminListAssessmentResults(ctx, tenantID, minScore, maxScore, offset, limit)
+	results, total, err := s.store.AdminListAssessmentResults(ctx, AdminListAssessmentResultsFilter{
+		TenantID: tenantID,
+		MinScore: minScore,
+		MaxScore: maxScore,
+		Offset:   offset,
+		Limit:    limit,
+		Sort:     sort,
+		Order:    order,
+	})
 	if err != nil {
 		return nil, 0, fmt.Errorf("assessment: admin list: %w", err)
-	}
-
-	total, err := s.store.AdminCountAssessmentResults(ctx, tenantID, minScore, maxScore)
-	if err != nil {
-		return nil, 0, fmt.Errorf("assessment: admin count: %w", err)
 	}
 
 	return results, total, nil
