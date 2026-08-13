@@ -41,6 +41,7 @@
 		ShieldCheck,
 		Coins,
 		Cpu,
+		BrainCircuit,
 	} from 'lucide-svelte';
 	type LucideIcon = typeof LayoutDashboard;
 
@@ -188,7 +189,8 @@
 		{ href: '/ai-providers', icon: Cpu },
 		{ href: '/cron', icon: Clock },
 		{ href: '/deployments', icon: Rocket },
-		{ href: '/currencies', icon: Coins }
+		{ href: '/currencies', icon: Coins },
+		{ href: '/intelligence', icon: BrainCircuit }
 	];
 
 	const navKeyMap: Record<string, { label: string; tooltip: string; defaultLabel: string; defaultTooltip: string }> = {
@@ -212,6 +214,7 @@
 		'/backup-configs': { label: 'nav.backup_configs', tooltip: 'nav.backup_configs_tooltip', defaultLabel: 'Backup Configs', defaultTooltip: 'Database backup configuration' },
 		'/permission-nodes': { label: 'nav.permission_nodes', tooltip: 'nav.permission_nodes_tooltip', defaultLabel: 'Permission Nodes', defaultTooltip: 'RBAC permission key viewer' },
 		'/currencies': { label: 'nav.currencies', tooltip: 'nav.currencies_tooltip', defaultLabel: 'Currencies', defaultTooltip: 'Credit currency exchange rates' },
+		'/intelligence': { label: 'nav.intelligence', tooltip: 'nav.intelligence_tooltip', defaultLabel: 'Intelligence', defaultTooltip: 'Data intelligence pipeline & review' },
 	};
 
 	const nav = $derived.by(() => {
