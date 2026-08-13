@@ -1,0 +1,42 @@
+{
+  "status": "OK",
+  "data": {
+    "opportunityData": {
+      "opportunityDetails": [
+        {
+          "opportunityId": "123456",
+          "opportunityTitle": "JET Program Scholarship for International Students 2026",
+          "opportunityNumber": "JET-2026-001",
+          "agencyCode": "MOFA",
+          "opportunityStatus": "posted",
+          "postDate": "2026-01-15",
+          "closeDate": "2026-06-30",
+          "fundingInstrument": "Grant",
+          "category": "Education"
+        },
+        {
+          "opportunityId": "123457",
+          "opportunityTitle": "Monbukagakusho MEXT Scholarship 2026",
+          "opportunityNumber": "MEXT-2026-002",
+          "agencyCode": "MEXT",
+          "opportunityStatus": "posted",
+          "postDate": "2026-02-01",
+          "closeDate": "2026-05-31",
+          "fundingInstrument": "Scholarship",
+          "category": "Education"
+        },
+        {
+          "opportunityId": "123458",
+          "opportunityTitle": "Japan-World Bank Graduate Scholarship Program 2026",
+          "opportunityNumber": "JWBGSP-2026-003",
+          "agencyCode": "WB",
+          "opportunityStatus": "posted",
+          "postDate": "2026-01-20",
+          "closeDate": "2026-07-15",
+          "fundingInstrument": "Scholarship",
+          "category": "Education"
+        }
+      ]
+    }
+  }
+}
