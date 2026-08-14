@@ -56,6 +56,18 @@ var permanentlyExcludedTypes = map[string]bool{
 	"event":           true,
 	"job_listing":     true,
 	"service_listing": true,
+	// Tool table content types (Approach B, ADR-076 Amendment 1) — all
+	// require HITL review because they back immigration/financial/legal
+	// projection rows.
+	"housing_guide":             true,
+	"attestation_guide":         true,
+	"visa_route":                true,
+	"arrival_checklist":         true,
+	"credential_pathway":        true,
+	"language_test_requirement": true,
+	"tax_obligation_guide":      true,
+	"community_organisation":    true,
+	"wiki_page":                 true,
 }
 
 // IsHighStakes returns true if the guide category requires mandatory review.
