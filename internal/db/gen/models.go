@@ -744,6 +744,13 @@ type CommunityOrganisation struct {
 	HitlReviewedAt       pgtype.Timestamptz `json:"hitl_reviewed_at"`
 	HitlReviewNotes      *string            `json:"hitl_review_notes"`
 	IsJapabotIndexed     *bool              `json:"is_japabot_indexed"`
+	IntelRecordID        pgtype.UUID        `json:"intel_record_id"`
+	GuideID              pgtype.UUID        `json:"guide_id"`
+	ConfidenceOverall    float32            `json:"confidence_overall"`
+	VerificationStatus   string             `json:"verification_status"`
+	FreshnessScore       int32              `json:"freshness_score"`
+	OverrideSource       string             `json:"override_source"`
+	EditorialOverrides   []byte             `json:"editorial_overrides"`
 }
 
 type ComparisonDimension struct {
@@ -1908,6 +1915,13 @@ type LanguageTestRequirement struct {
 	CreatedAt          pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
 	IsJapabotIndexed   bool               `json:"is_japabot_indexed"`
+	IntelRecordID      pgtype.UUID        `json:"intel_record_id"`
+	GuideID            pgtype.UUID        `json:"guide_id"`
+	ConfidenceOverall  float32            `json:"confidence_overall"`
+	VerificationStatus string             `json:"verification_status"`
+	FreshnessScore     int32              `json:"freshness_score"`
+	OverrideSource     string             `json:"override_source"`
+	EditorialOverrides []byte             `json:"editorial_overrides"`
 }
 
 type LanguageTestResource struct {
@@ -3484,6 +3498,13 @@ type TaxObligationGuide struct {
 	HitlReviewNotes      *string            `json:"hitl_review_notes"`
 	CreatedAt            pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
+	IntelRecordID        pgtype.UUID        `json:"intel_record_id"`
+	GuideID              pgtype.UUID        `json:"guide_id"`
+	ConfidenceOverall    float32            `json:"confidence_overall"`
+	VerificationStatus   string             `json:"verification_status"`
+	FreshnessScore       int32              `json:"freshness_score"`
+	OverrideSource       string             `json:"override_source"`
+	EditorialOverrides   []byte             `json:"editorial_overrides"`
 }
 
 type TaxTreatyPair struct {
@@ -3989,19 +4010,26 @@ type WidgetConfiguration struct {
 }
 
 type WikiPage struct {
-	ID               pgtype.UUID        `json:"id"`
-	TenantID         pgtype.UUID        `json:"tenant_id"`
-	SpaceID          pgtype.UUID        `json:"space_id"`
-	Slug             string             `json:"slug"`
-	Title            string             `json:"title"`
-	Category         string             `json:"category"`
-	IsActive         bool               `json:"is_active"`
-	IsFeatured       bool               `json:"is_featured"`
-	IsLocked         bool               `json:"is_locked"`
-	CreatedBy        pgtype.UUID        `json:"created_by"`
-	CreatedAt        pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
-	IsJapabotIndexed *bool              `json:"is_japabot_indexed"`
+	ID                 pgtype.UUID        `json:"id"`
+	TenantID           pgtype.UUID        `json:"tenant_id"`
+	SpaceID            pgtype.UUID        `json:"space_id"`
+	Slug               string             `json:"slug"`
+	Title              string             `json:"title"`
+	Category           string             `json:"category"`
+	IsActive           bool               `json:"is_active"`
+	IsFeatured         bool               `json:"is_featured"`
+	IsLocked           bool               `json:"is_locked"`
+	CreatedBy          pgtype.UUID        `json:"created_by"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+	IsJapabotIndexed   *bool              `json:"is_japabot_indexed"`
+	IntelRecordID      pgtype.UUID        `json:"intel_record_id"`
+	GuideID            pgtype.UUID        `json:"guide_id"`
+	ConfidenceOverall  float32            `json:"confidence_overall"`
+	VerificationStatus string             `json:"verification_status"`
+	FreshnessScore     int32              `json:"freshness_score"`
+	OverrideSource     string             `json:"override_source"`
+	EditorialOverrides []byte             `json:"editorial_overrides"`
 }
 
 type WikiRevision struct {

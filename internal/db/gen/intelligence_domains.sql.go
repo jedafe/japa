@@ -11,6 +11,120 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const createCommunityOrganisationIntel = `-- name: CreateCommunityOrganisationIntel :one
+
+INSERT INTO community_organisations (
+  tenant_id, name, slug, org_type, origin_community, destination_space_id,
+  city_space_id, address, latitude, longitude, website_url,
+  meeting_frequency, contact_info, status, is_active,
+  intel_record_id, guide_id, confidence_overall, verification_status,
+  freshness_score, override_source, editorial_overrides
+) VALUES (
+  $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
+  $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22
+) RETURNING id, tenant_id, name, slug, org_type, origin_community, destination_space_id, city_space_id, address, latitude, longitude, website_url, meeting_frequency, contact_info, japaconnect_space_id, japaconnect_org_id, claim_status, is_verified, is_active, is_community_submitted, status, submitted_by, reviewed_by, reviewed_at, created_at, updated_at, deleted_at, ai_generated, ai_model, ai_prompt_hash, hitl_reviewed_by, hitl_reviewed_at, hitl_review_notes, is_japabot_indexed, intel_record_id, guide_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides
+`
+
+type CreateCommunityOrganisationIntelParams struct {
+	TenantID           pgtype.UUID    `json:"tenant_id"`
+	Name               string         `json:"name"`
+	Slug               string         `json:"slug"`
+	OrgType            string         `json:"org_type"`
+	OriginCommunity    string         `json:"origin_community"`
+	DestinationSpaceID pgtype.UUID    `json:"destination_space_id"`
+	CitySpaceID        pgtype.UUID    `json:"city_space_id"`
+	Address            *string        `json:"address"`
+	Latitude           pgtype.Numeric `json:"latitude"`
+	Longitude          pgtype.Numeric `json:"longitude"`
+	WebsiteUrl         *string        `json:"website_url"`
+	MeetingFrequency   *string        `json:"meeting_frequency"`
+	ContactInfo        *string        `json:"contact_info"`
+	Status             string         `json:"status"`
+	IsActive           bool           `json:"is_active"`
+	IntelRecordID      pgtype.UUID    `json:"intel_record_id"`
+	GuideID            pgtype.UUID    `json:"guide_id"`
+	ConfidenceOverall  float32        `json:"confidence_overall"`
+	VerificationStatus string         `json:"verification_status"`
+	FreshnessScore     int32          `json:"freshness_score"`
+	OverrideSource     string         `json:"override_source"`
+	EditorialOverrides []byte         `json:"editorial_overrides"`
+}
+
+// ===========================================================================
+// community_organisations (intelligence columns added by migration 000469)
+// ===========================================================================
+func (q *Queries) CreateCommunityOrganisationIntel(ctx context.Context, arg CreateCommunityOrganisationIntelParams) (CommunityOrganisation, error) {
+	row := q.db.QueryRow(ctx, createCommunityOrganisationIntel,
+		arg.TenantID,
+		arg.Name,
+		arg.Slug,
+		arg.OrgType,
+		arg.OriginCommunity,
+		arg.DestinationSpaceID,
+		arg.CitySpaceID,
+		arg.Address,
+		arg.Latitude,
+		arg.Longitude,
+		arg.WebsiteUrl,
+		arg.MeetingFrequency,
+		arg.ContactInfo,
+		arg.Status,
+		arg.IsActive,
+		arg.IntelRecordID,
+		arg.GuideID,
+		arg.ConfidenceOverall,
+		arg.VerificationStatus,
+		arg.FreshnessScore,
+		arg.OverrideSource,
+		arg.EditorialOverrides,
+	)
+	var i CommunityOrganisation
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.Name,
+		&i.Slug,
+		&i.OrgType,
+		&i.OriginCommunity,
+		&i.DestinationSpaceID,
+		&i.CitySpaceID,
+		&i.Address,
+		&i.Latitude,
+		&i.Longitude,
+		&i.WebsiteUrl,
+		&i.MeetingFrequency,
+		&i.ContactInfo,
+		&i.JapaconnectSpaceID,
+		&i.JapaconnectOrgID,
+		&i.ClaimStatus,
+		&i.IsVerified,
+		&i.IsActive,
+		&i.IsCommunitySubmitted,
+		&i.Status,
+		&i.SubmittedBy,
+		&i.ReviewedBy,
+		&i.ReviewedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DeletedAt,
+		&i.AiGenerated,
+		&i.AiModel,
+		&i.AiPromptHash,
+		&i.HitlReviewedBy,
+		&i.HitlReviewedAt,
+		&i.HitlReviewNotes,
+		&i.IsJapabotIndexed,
+		&i.IntelRecordID,
+		&i.GuideID,
+		&i.ConfidenceOverall,
+		&i.VerificationStatus,
+		&i.FreshnessScore,
+		&i.OverrideSource,
+		&i.EditorialOverrides,
+	)
+	return i, err
+}
+
 const createComparisonItemIntel = `-- name: CreateComparisonItemIntel :one
 
 INSERT INTO comparison_items (
@@ -302,6 +416,95 @@ func (q *Queries) CreateIntelJob(ctx context.Context, arg CreateIntelJobParams) 
 	return i, err
 }
 
+const createLanguageTestRequirementIntel = `-- name: CreateLanguageTestRequirementIntel :one
+
+INSERT INTO language_test_requirements (
+  tenant_id, destination_space_id, visa_category, test_id, minimum_score,
+  score_breakdown, notes, source_url, status, is_active,
+  intel_record_id, guide_id, confidence_overall, verification_status,
+  freshness_score, override_source, editorial_overrides
+) VALUES (
+  $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
+  $11, $12, $13, $14, $15, $16, $17
+) RETURNING id, tenant_id, destination_space_id, visa_category, test_id, minimum_score, score_breakdown, notes, source_url, status, is_active, ai_generated, ai_model, ai_prompt_hash, hitl_reviewed_by, hitl_reviewed_at, hitl_review_notes, created_at, updated_at, is_japabot_indexed, intel_record_id, guide_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides
+`
+
+type CreateLanguageTestRequirementIntelParams struct {
+	TenantID           pgtype.UUID `json:"tenant_id"`
+	DestinationSpaceID pgtype.UUID `json:"destination_space_id"`
+	VisaCategory       *string     `json:"visa_category"`
+	TestID             pgtype.UUID `json:"test_id"`
+	MinimumScore       string      `json:"minimum_score"`
+	ScoreBreakdown     []byte      `json:"score_breakdown"`
+	Notes              *string     `json:"notes"`
+	SourceUrl          *string     `json:"source_url"`
+	Status             string      `json:"status"`
+	IsActive           bool        `json:"is_active"`
+	IntelRecordID      pgtype.UUID `json:"intel_record_id"`
+	GuideID            pgtype.UUID `json:"guide_id"`
+	ConfidenceOverall  float32     `json:"confidence_overall"`
+	VerificationStatus string      `json:"verification_status"`
+	FreshnessScore     int32       `json:"freshness_score"`
+	OverrideSource     string      `json:"override_source"`
+	EditorialOverrides []byte      `json:"editorial_overrides"`
+}
+
+// ===========================================================================
+// language_test_requirements (intelligence columns added by migration 000469)
+// ===========================================================================
+func (q *Queries) CreateLanguageTestRequirementIntel(ctx context.Context, arg CreateLanguageTestRequirementIntelParams) (LanguageTestRequirement, error) {
+	row := q.db.QueryRow(ctx, createLanguageTestRequirementIntel,
+		arg.TenantID,
+		arg.DestinationSpaceID,
+		arg.VisaCategory,
+		arg.TestID,
+		arg.MinimumScore,
+		arg.ScoreBreakdown,
+		arg.Notes,
+		arg.SourceUrl,
+		arg.Status,
+		arg.IsActive,
+		arg.IntelRecordID,
+		arg.GuideID,
+		arg.ConfidenceOverall,
+		arg.VerificationStatus,
+		arg.FreshnessScore,
+		arg.OverrideSource,
+		arg.EditorialOverrides,
+	)
+	var i LanguageTestRequirement
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.DestinationSpaceID,
+		&i.VisaCategory,
+		&i.TestID,
+		&i.MinimumScore,
+		&i.ScoreBreakdown,
+		&i.Notes,
+		&i.SourceUrl,
+		&i.Status,
+		&i.IsActive,
+		&i.AiGenerated,
+		&i.AiModel,
+		&i.AiPromptHash,
+		&i.HitlReviewedBy,
+		&i.HitlReviewedAt,
+		&i.HitlReviewNotes,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.IsJapabotIndexed,
+		&i.IntelRecordID,
+		&i.GuideID,
+		&i.ConfidenceOverall,
+		&i.VerificationStatus,
+		&i.FreshnessScore,
+		&i.OverrideSource,
+		&i.EditorialOverrides,
+	)
+	return i, err
+}
+
 const createRemittanceRateIntel = `-- name: CreateRemittanceRateIntel :one
 
 INSERT INTO remittance_rates (
@@ -369,6 +572,95 @@ func (q *Queries) CreateRemittanceRateIntel(ctx context.Context, arg CreateRemit
 		&i.IsManual,
 		&i.SourceUrl,
 		&i.IntelRecordID,
+		&i.ConfidenceOverall,
+		&i.VerificationStatus,
+		&i.FreshnessScore,
+		&i.OverrideSource,
+		&i.EditorialOverrides,
+	)
+	return i, err
+}
+
+const createTaxObligationGuideIntel = `-- name: CreateTaxObligationGuideIntel :one
+
+INSERT INTO tax_obligation_guides (
+  tenant_id, origin_space_id, destination_space_id, employment_status,
+  residency_trigger, worldwide_income_taxed, first_year_obligations,
+  action_checklist, status, is_active,
+  intel_record_id, guide_id, confidence_overall, verification_status,
+  freshness_score, override_source, editorial_overrides
+) VALUES (
+  $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
+  $11, $12, $13, $14, $15, $16, $17
+) RETURNING id, tenant_id, origin_space_id, destination_space_id, employment_status, residency_trigger, worldwide_income_taxed, first_year_obligations, action_checklist, status, is_active, ai_generated, ai_model, ai_prompt_hash, hitl_reviewed_by, hitl_reviewed_at, hitl_review_notes, created_at, updated_at, intel_record_id, guide_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides
+`
+
+type CreateTaxObligationGuideIntelParams struct {
+	TenantID             pgtype.UUID `json:"tenant_id"`
+	OriginSpaceID        pgtype.UUID `json:"origin_space_id"`
+	DestinationSpaceID   pgtype.UUID `json:"destination_space_id"`
+	EmploymentStatus     string      `json:"employment_status"`
+	ResidencyTrigger     *string     `json:"residency_trigger"`
+	WorldwideIncomeTaxed *bool       `json:"worldwide_income_taxed"`
+	FirstYearObligations *string     `json:"first_year_obligations"`
+	ActionChecklist      []byte      `json:"action_checklist"`
+	Status               string      `json:"status"`
+	IsActive             bool        `json:"is_active"`
+	IntelRecordID        pgtype.UUID `json:"intel_record_id"`
+	GuideID              pgtype.UUID `json:"guide_id"`
+	ConfidenceOverall    float32     `json:"confidence_overall"`
+	VerificationStatus   string      `json:"verification_status"`
+	FreshnessScore       int32       `json:"freshness_score"`
+	OverrideSource       string      `json:"override_source"`
+	EditorialOverrides   []byte      `json:"editorial_overrides"`
+}
+
+// ===========================================================================
+// tax_obligation_guides (intelligence columns added by migration 000469)
+// ===========================================================================
+func (q *Queries) CreateTaxObligationGuideIntel(ctx context.Context, arg CreateTaxObligationGuideIntelParams) (TaxObligationGuide, error) {
+	row := q.db.QueryRow(ctx, createTaxObligationGuideIntel,
+		arg.TenantID,
+		arg.OriginSpaceID,
+		arg.DestinationSpaceID,
+		arg.EmploymentStatus,
+		arg.ResidencyTrigger,
+		arg.WorldwideIncomeTaxed,
+		arg.FirstYearObligations,
+		arg.ActionChecklist,
+		arg.Status,
+		arg.IsActive,
+		arg.IntelRecordID,
+		arg.GuideID,
+		arg.ConfidenceOverall,
+		arg.VerificationStatus,
+		arg.FreshnessScore,
+		arg.OverrideSource,
+		arg.EditorialOverrides,
+	)
+	var i TaxObligationGuide
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.OriginSpaceID,
+		&i.DestinationSpaceID,
+		&i.EmploymentStatus,
+		&i.ResidencyTrigger,
+		&i.WorldwideIncomeTaxed,
+		&i.FirstYearObligations,
+		&i.ActionChecklist,
+		&i.Status,
+		&i.IsActive,
+		&i.AiGenerated,
+		&i.AiModel,
+		&i.AiPromptHash,
+		&i.HitlReviewedBy,
+		&i.HitlReviewedAt,
+		&i.HitlReviewNotes,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.IntelRecordID,
+		&i.GuideID,
 		&i.ConfidenceOverall,
 		&i.VerificationStatus,
 		&i.FreshnessScore,
@@ -477,6 +769,144 @@ func (q *Queries) CreateVisaRouteIntel(ctx context.Context, arg CreateVisaRouteI
 		&i.OverrideSource,
 		&i.EditorialOverrides,
 		&i.GuideID,
+	)
+	return i, err
+}
+
+const createWikiPageIntel = `-- name: CreateWikiPageIntel :one
+
+INSERT INTO wiki_pages (
+  tenant_id, space_id, slug, title, category, is_active, is_featured,
+  is_locked, created_by,
+  intel_record_id, guide_id, confidence_overall, verification_status,
+  freshness_score, override_source, editorial_overrides
+) VALUES (
+  $1, $2, $3, $4, $5, $6, $7, $8, $9,
+  $10, $11, $12, $13, $14, $15, $16
+) RETURNING id, tenant_id, space_id, slug, title, category, is_active, is_featured, is_locked, created_by, created_at, updated_at, is_japabot_indexed, intel_record_id, guide_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides
+`
+
+type CreateWikiPageIntelParams struct {
+	TenantID           pgtype.UUID `json:"tenant_id"`
+	SpaceID            pgtype.UUID `json:"space_id"`
+	Slug               string      `json:"slug"`
+	Title              string      `json:"title"`
+	Category           string      `json:"category"`
+	IsActive           bool        `json:"is_active"`
+	IsFeatured         bool        `json:"is_featured"`
+	IsLocked           bool        `json:"is_locked"`
+	CreatedBy          pgtype.UUID `json:"created_by"`
+	IntelRecordID      pgtype.UUID `json:"intel_record_id"`
+	GuideID            pgtype.UUID `json:"guide_id"`
+	ConfidenceOverall  float32     `json:"confidence_overall"`
+	VerificationStatus string      `json:"verification_status"`
+	FreshnessScore     int32       `json:"freshness_score"`
+	OverrideSource     string      `json:"override_source"`
+	EditorialOverrides []byte      `json:"editorial_overrides"`
+}
+
+// ===========================================================================
+// wiki_pages (intelligence columns added by migration 000469)
+// ===========================================================================
+func (q *Queries) CreateWikiPageIntel(ctx context.Context, arg CreateWikiPageIntelParams) (WikiPage, error) {
+	row := q.db.QueryRow(ctx, createWikiPageIntel,
+		arg.TenantID,
+		arg.SpaceID,
+		arg.Slug,
+		arg.Title,
+		arg.Category,
+		arg.IsActive,
+		arg.IsFeatured,
+		arg.IsLocked,
+		arg.CreatedBy,
+		arg.IntelRecordID,
+		arg.GuideID,
+		arg.ConfidenceOverall,
+		arg.VerificationStatus,
+		arg.FreshnessScore,
+		arg.OverrideSource,
+		arg.EditorialOverrides,
+	)
+	var i WikiPage
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.SpaceID,
+		&i.Slug,
+		&i.Title,
+		&i.Category,
+		&i.IsActive,
+		&i.IsFeatured,
+		&i.IsLocked,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.IsJapabotIndexed,
+		&i.IntelRecordID,
+		&i.GuideID,
+		&i.ConfidenceOverall,
+		&i.VerificationStatus,
+		&i.FreshnessScore,
+		&i.OverrideSource,
+		&i.EditorialOverrides,
+	)
+	return i, err
+}
+
+const getCommunityOrganisationByIntelRecord = `-- name: GetCommunityOrganisationByIntelRecord :one
+SELECT id, tenant_id, name, slug, org_type, origin_community, destination_space_id, city_space_id, address, latitude, longitude, website_url, meeting_frequency, contact_info, japaconnect_space_id, japaconnect_org_id, claim_status, is_verified, is_active, is_community_submitted, status, submitted_by, reviewed_by, reviewed_at, created_at, updated_at, deleted_at, ai_generated, ai_model, ai_prompt_hash, hitl_reviewed_by, hitl_reviewed_at, hitl_review_notes, is_japabot_indexed, intel_record_id, guide_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides FROM community_organisations WHERE tenant_id = $1 AND intel_record_id = $2
+`
+
+type GetCommunityOrganisationByIntelRecordParams struct {
+	TenantID      pgtype.UUID `json:"tenant_id"`
+	IntelRecordID pgtype.UUID `json:"intel_record_id"`
+}
+
+func (q *Queries) GetCommunityOrganisationByIntelRecord(ctx context.Context, arg GetCommunityOrganisationByIntelRecordParams) (CommunityOrganisation, error) {
+	row := q.db.QueryRow(ctx, getCommunityOrganisationByIntelRecord, arg.TenantID, arg.IntelRecordID)
+	var i CommunityOrganisation
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.Name,
+		&i.Slug,
+		&i.OrgType,
+		&i.OriginCommunity,
+		&i.DestinationSpaceID,
+		&i.CitySpaceID,
+		&i.Address,
+		&i.Latitude,
+		&i.Longitude,
+		&i.WebsiteUrl,
+		&i.MeetingFrequency,
+		&i.ContactInfo,
+		&i.JapaconnectSpaceID,
+		&i.JapaconnectOrgID,
+		&i.ClaimStatus,
+		&i.IsVerified,
+		&i.IsActive,
+		&i.IsCommunitySubmitted,
+		&i.Status,
+		&i.SubmittedBy,
+		&i.ReviewedBy,
+		&i.ReviewedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DeletedAt,
+		&i.AiGenerated,
+		&i.AiModel,
+		&i.AiPromptHash,
+		&i.HitlReviewedBy,
+		&i.HitlReviewedAt,
+		&i.HitlReviewNotes,
+		&i.IsJapabotIndexed,
+		&i.IntelRecordID,
+		&i.GuideID,
+		&i.ConfidenceOverall,
+		&i.VerificationStatus,
+		&i.FreshnessScore,
+		&i.OverrideSource,
+		&i.EditorialOverrides,
 	)
 	return i, err
 }
@@ -705,6 +1135,50 @@ func (q *Queries) GetIntelJobBySourceURL(ctx context.Context, arg GetIntelJobByS
 	return i, err
 }
 
+const getLanguageTestRequirementByIntelRecord = `-- name: GetLanguageTestRequirementByIntelRecord :one
+SELECT id, tenant_id, destination_space_id, visa_category, test_id, minimum_score, score_breakdown, notes, source_url, status, is_active, ai_generated, ai_model, ai_prompt_hash, hitl_reviewed_by, hitl_reviewed_at, hitl_review_notes, created_at, updated_at, is_japabot_indexed, intel_record_id, guide_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides FROM language_test_requirements WHERE tenant_id = $1 AND intel_record_id = $2
+`
+
+type GetLanguageTestRequirementByIntelRecordParams struct {
+	TenantID      pgtype.UUID `json:"tenant_id"`
+	IntelRecordID pgtype.UUID `json:"intel_record_id"`
+}
+
+func (q *Queries) GetLanguageTestRequirementByIntelRecord(ctx context.Context, arg GetLanguageTestRequirementByIntelRecordParams) (LanguageTestRequirement, error) {
+	row := q.db.QueryRow(ctx, getLanguageTestRequirementByIntelRecord, arg.TenantID, arg.IntelRecordID)
+	var i LanguageTestRequirement
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.DestinationSpaceID,
+		&i.VisaCategory,
+		&i.TestID,
+		&i.MinimumScore,
+		&i.ScoreBreakdown,
+		&i.Notes,
+		&i.SourceUrl,
+		&i.Status,
+		&i.IsActive,
+		&i.AiGenerated,
+		&i.AiModel,
+		&i.AiPromptHash,
+		&i.HitlReviewedBy,
+		&i.HitlReviewedAt,
+		&i.HitlReviewNotes,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.IsJapabotIndexed,
+		&i.IntelRecordID,
+		&i.GuideID,
+		&i.ConfidenceOverall,
+		&i.VerificationStatus,
+		&i.FreshnessScore,
+		&i.OverrideSource,
+		&i.EditorialOverrides,
+	)
+	return i, err
+}
+
 const getRemittanceRateByIntelRecord = `-- name: GetRemittanceRateByIntelRecord :one
 SELECT id, tenant_id, provider_id, send_currency, receive_currency, rate, fee_flat, fee_pct, transfer_time, fetched_at, is_manual, source_url, intel_record_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides FROM remittance_rates WHERE tenant_id = $1 AND intel_record_id = $2
 `
@@ -731,6 +1205,49 @@ func (q *Queries) GetRemittanceRateByIntelRecord(ctx context.Context, arg GetRem
 		&i.IsManual,
 		&i.SourceUrl,
 		&i.IntelRecordID,
+		&i.ConfidenceOverall,
+		&i.VerificationStatus,
+		&i.FreshnessScore,
+		&i.OverrideSource,
+		&i.EditorialOverrides,
+	)
+	return i, err
+}
+
+const getTaxObligationGuideByIntelRecord = `-- name: GetTaxObligationGuideByIntelRecord :one
+SELECT id, tenant_id, origin_space_id, destination_space_id, employment_status, residency_trigger, worldwide_income_taxed, first_year_obligations, action_checklist, status, is_active, ai_generated, ai_model, ai_prompt_hash, hitl_reviewed_by, hitl_reviewed_at, hitl_review_notes, created_at, updated_at, intel_record_id, guide_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides FROM tax_obligation_guides WHERE tenant_id = $1 AND intel_record_id = $2
+`
+
+type GetTaxObligationGuideByIntelRecordParams struct {
+	TenantID      pgtype.UUID `json:"tenant_id"`
+	IntelRecordID pgtype.UUID `json:"intel_record_id"`
+}
+
+func (q *Queries) GetTaxObligationGuideByIntelRecord(ctx context.Context, arg GetTaxObligationGuideByIntelRecordParams) (TaxObligationGuide, error) {
+	row := q.db.QueryRow(ctx, getTaxObligationGuideByIntelRecord, arg.TenantID, arg.IntelRecordID)
+	var i TaxObligationGuide
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.OriginSpaceID,
+		&i.DestinationSpaceID,
+		&i.EmploymentStatus,
+		&i.ResidencyTrigger,
+		&i.WorldwideIncomeTaxed,
+		&i.FirstYearObligations,
+		&i.ActionChecklist,
+		&i.Status,
+		&i.IsActive,
+		&i.AiGenerated,
+		&i.AiModel,
+		&i.AiPromptHash,
+		&i.HitlReviewedBy,
+		&i.HitlReviewedAt,
+		&i.HitlReviewNotes,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.IntelRecordID,
+		&i.GuideID,
 		&i.ConfidenceOverall,
 		&i.VerificationStatus,
 		&i.FreshnessScore,
@@ -787,6 +1304,128 @@ func (q *Queries) GetVisaRouteByIntelRecord(ctx context.Context, arg GetVisaRout
 		&i.GuideID,
 	)
 	return i, err
+}
+
+const getWikiPageByIntelRecord = `-- name: GetWikiPageByIntelRecord :one
+SELECT id, tenant_id, space_id, slug, title, category, is_active, is_featured, is_locked, created_by, created_at, updated_at, is_japabot_indexed, intel_record_id, guide_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides FROM wiki_pages WHERE tenant_id = $1 AND intel_record_id = $2
+`
+
+type GetWikiPageByIntelRecordParams struct {
+	TenantID      pgtype.UUID `json:"tenant_id"`
+	IntelRecordID pgtype.UUID `json:"intel_record_id"`
+}
+
+func (q *Queries) GetWikiPageByIntelRecord(ctx context.Context, arg GetWikiPageByIntelRecordParams) (WikiPage, error) {
+	row := q.db.QueryRow(ctx, getWikiPageByIntelRecord, arg.TenantID, arg.IntelRecordID)
+	var i WikiPage
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.SpaceID,
+		&i.Slug,
+		&i.Title,
+		&i.Category,
+		&i.IsActive,
+		&i.IsFeatured,
+		&i.IsLocked,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.IsJapabotIndexed,
+		&i.IntelRecordID,
+		&i.GuideID,
+		&i.ConfidenceOverall,
+		&i.VerificationStatus,
+		&i.FreshnessScore,
+		&i.OverrideSource,
+		&i.EditorialOverrides,
+	)
+	return i, err
+}
+
+const listCommunityOrganisationsIntelKeyset = `-- name: ListCommunityOrganisationsIntelKeyset :many
+SELECT id, tenant_id, name, slug, org_type, origin_community, destination_space_id, city_space_id, address, latitude, longitude, website_url, meeting_frequency, contact_info, japaconnect_space_id, japaconnect_org_id, claim_status, is_verified, is_active, is_community_submitted, status, submitted_by, reviewed_by, reviewed_at, created_at, updated_at, deleted_at, ai_generated, ai_model, ai_prompt_hash, hitl_reviewed_by, hitl_reviewed_at, hitl_review_notes, is_japabot_indexed, intel_record_id, guide_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides FROM community_organisations
+WHERE tenant_id = $1
+  AND intel_record_id IS NOT NULL
+  AND ($2::timestamptz IS NULL
+       OR created_at < $2
+       OR (created_at = $2 AND id < $3))
+ORDER BY created_at DESC, id DESC
+LIMIT $4
+`
+
+type ListCommunityOrganisationsIntelKeysetParams struct {
+	TenantID pgtype.UUID        `json:"tenant_id"`
+	Column2  pgtype.Timestamptz `json:"column_2"`
+	ID       pgtype.UUID        `json:"id"`
+	Limit    int32              `json:"limit"`
+}
+
+func (q *Queries) ListCommunityOrganisationsIntelKeyset(ctx context.Context, arg ListCommunityOrganisationsIntelKeysetParams) ([]CommunityOrganisation, error) {
+	rows, err := q.db.Query(ctx, listCommunityOrganisationsIntelKeyset,
+		arg.TenantID,
+		arg.Column2,
+		arg.ID,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []CommunityOrganisation
+	for rows.Next() {
+		var i CommunityOrganisation
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.Name,
+			&i.Slug,
+			&i.OrgType,
+			&i.OriginCommunity,
+			&i.DestinationSpaceID,
+			&i.CitySpaceID,
+			&i.Address,
+			&i.Latitude,
+			&i.Longitude,
+			&i.WebsiteUrl,
+			&i.MeetingFrequency,
+			&i.ContactInfo,
+			&i.JapaconnectSpaceID,
+			&i.JapaconnectOrgID,
+			&i.ClaimStatus,
+			&i.IsVerified,
+			&i.IsActive,
+			&i.IsCommunitySubmitted,
+			&i.Status,
+			&i.SubmittedBy,
+			&i.ReviewedBy,
+			&i.ReviewedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.DeletedAt,
+			&i.AiGenerated,
+			&i.AiModel,
+			&i.AiPromptHash,
+			&i.HitlReviewedBy,
+			&i.HitlReviewedAt,
+			&i.HitlReviewNotes,
+			&i.IsJapabotIndexed,
+			&i.IntelRecordID,
+			&i.GuideID,
+			&i.ConfidenceOverall,
+			&i.VerificationStatus,
+			&i.FreshnessScore,
+			&i.OverrideSource,
+			&i.EditorialOverrides,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listComparisonItemsIntelKeyset = `-- name: ListComparisonItemsIntelKeyset :many
@@ -1064,6 +1703,77 @@ func (q *Queries) ListIntelJobsKeyset(ctx context.Context, arg ListIntelJobsKeys
 	return items, nil
 }
 
+const listLanguageTestRequirementsIntelKeyset = `-- name: ListLanguageTestRequirementsIntelKeyset :many
+SELECT id, tenant_id, destination_space_id, visa_category, test_id, minimum_score, score_breakdown, notes, source_url, status, is_active, ai_generated, ai_model, ai_prompt_hash, hitl_reviewed_by, hitl_reviewed_at, hitl_review_notes, created_at, updated_at, is_japabot_indexed, intel_record_id, guide_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides FROM language_test_requirements
+WHERE tenant_id = $1
+  AND intel_record_id IS NOT NULL
+  AND ($2::timestamptz IS NULL
+       OR created_at < $2
+       OR (created_at = $2 AND id < $3))
+ORDER BY created_at DESC, id DESC
+LIMIT $4
+`
+
+type ListLanguageTestRequirementsIntelKeysetParams struct {
+	TenantID pgtype.UUID        `json:"tenant_id"`
+	Column2  pgtype.Timestamptz `json:"column_2"`
+	ID       pgtype.UUID        `json:"id"`
+	Limit    int32              `json:"limit"`
+}
+
+func (q *Queries) ListLanguageTestRequirementsIntelKeyset(ctx context.Context, arg ListLanguageTestRequirementsIntelKeysetParams) ([]LanguageTestRequirement, error) {
+	rows, err := q.db.Query(ctx, listLanguageTestRequirementsIntelKeyset,
+		arg.TenantID,
+		arg.Column2,
+		arg.ID,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []LanguageTestRequirement
+	for rows.Next() {
+		var i LanguageTestRequirement
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.DestinationSpaceID,
+			&i.VisaCategory,
+			&i.TestID,
+			&i.MinimumScore,
+			&i.ScoreBreakdown,
+			&i.Notes,
+			&i.SourceUrl,
+			&i.Status,
+			&i.IsActive,
+			&i.AiGenerated,
+			&i.AiModel,
+			&i.AiPromptHash,
+			&i.HitlReviewedBy,
+			&i.HitlReviewedAt,
+			&i.HitlReviewNotes,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.IsJapabotIndexed,
+			&i.IntelRecordID,
+			&i.GuideID,
+			&i.ConfidenceOverall,
+			&i.VerificationStatus,
+			&i.FreshnessScore,
+			&i.OverrideSource,
+			&i.EditorialOverrides,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listRemittanceRatesIntelKeyset = `-- name: ListRemittanceRatesIntelKeyset :many
 SELECT id, tenant_id, provider_id, send_currency, receive_currency, rate, fee_flat, fee_pct, transfer_time, fetched_at, is_manual, source_url, intel_record_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides FROM remittance_rates
 WHERE tenant_id = $1
@@ -1110,6 +1820,76 @@ func (q *Queries) ListRemittanceRatesIntelKeyset(ctx context.Context, arg ListRe
 			&i.IsManual,
 			&i.SourceUrl,
 			&i.IntelRecordID,
+			&i.ConfidenceOverall,
+			&i.VerificationStatus,
+			&i.FreshnessScore,
+			&i.OverrideSource,
+			&i.EditorialOverrides,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listTaxObligationGuidesIntelKeyset = `-- name: ListTaxObligationGuidesIntelKeyset :many
+SELECT id, tenant_id, origin_space_id, destination_space_id, employment_status, residency_trigger, worldwide_income_taxed, first_year_obligations, action_checklist, status, is_active, ai_generated, ai_model, ai_prompt_hash, hitl_reviewed_by, hitl_reviewed_at, hitl_review_notes, created_at, updated_at, intel_record_id, guide_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides FROM tax_obligation_guides
+WHERE tenant_id = $1
+  AND intel_record_id IS NOT NULL
+  AND ($2::timestamptz IS NULL
+       OR created_at < $2
+       OR (created_at = $2 AND id < $3))
+ORDER BY created_at DESC, id DESC
+LIMIT $4
+`
+
+type ListTaxObligationGuidesIntelKeysetParams struct {
+	TenantID pgtype.UUID        `json:"tenant_id"`
+	Column2  pgtype.Timestamptz `json:"column_2"`
+	ID       pgtype.UUID        `json:"id"`
+	Limit    int32              `json:"limit"`
+}
+
+func (q *Queries) ListTaxObligationGuidesIntelKeyset(ctx context.Context, arg ListTaxObligationGuidesIntelKeysetParams) ([]TaxObligationGuide, error) {
+	rows, err := q.db.Query(ctx, listTaxObligationGuidesIntelKeyset,
+		arg.TenantID,
+		arg.Column2,
+		arg.ID,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []TaxObligationGuide
+	for rows.Next() {
+		var i TaxObligationGuide
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.OriginSpaceID,
+			&i.DestinationSpaceID,
+			&i.EmploymentStatus,
+			&i.ResidencyTrigger,
+			&i.WorldwideIncomeTaxed,
+			&i.FirstYearObligations,
+			&i.ActionChecklist,
+			&i.Status,
+			&i.IsActive,
+			&i.AiGenerated,
+			&i.AiModel,
+			&i.AiPromptHash,
+			&i.HitlReviewedBy,
+			&i.HitlReviewedAt,
+			&i.HitlReviewNotes,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.IntelRecordID,
+			&i.GuideID,
 			&i.ConfidenceOverall,
 			&i.VerificationStatus,
 			&i.FreshnessScore,
@@ -1200,6 +1980,126 @@ func (q *Queries) ListVisaRoutesIntelKeyset(ctx context.Context, arg ListVisaRou
 		return nil, err
 	}
 	return items, nil
+}
+
+const listWikiPagesIntelKeyset = `-- name: ListWikiPagesIntelKeyset :many
+SELECT id, tenant_id, space_id, slug, title, category, is_active, is_featured, is_locked, created_by, created_at, updated_at, is_japabot_indexed, intel_record_id, guide_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides FROM wiki_pages
+WHERE tenant_id = $1
+  AND intel_record_id IS NOT NULL
+  AND ($2::timestamptz IS NULL
+       OR created_at < $2
+       OR (created_at = $2 AND id < $3))
+ORDER BY created_at DESC, id DESC
+LIMIT $4
+`
+
+type ListWikiPagesIntelKeysetParams struct {
+	TenantID pgtype.UUID        `json:"tenant_id"`
+	Column2  pgtype.Timestamptz `json:"column_2"`
+	ID       pgtype.UUID        `json:"id"`
+	Limit    int32              `json:"limit"`
+}
+
+func (q *Queries) ListWikiPagesIntelKeyset(ctx context.Context, arg ListWikiPagesIntelKeysetParams) ([]WikiPage, error) {
+	rows, err := q.db.Query(ctx, listWikiPagesIntelKeyset,
+		arg.TenantID,
+		arg.Column2,
+		arg.ID,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []WikiPage
+	for rows.Next() {
+		var i WikiPage
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.SpaceID,
+			&i.Slug,
+			&i.Title,
+			&i.Category,
+			&i.IsActive,
+			&i.IsFeatured,
+			&i.IsLocked,
+			&i.CreatedBy,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.IsJapabotIndexed,
+			&i.IntelRecordID,
+			&i.GuideID,
+			&i.ConfidenceOverall,
+			&i.VerificationStatus,
+			&i.FreshnessScore,
+			&i.OverrideSource,
+			&i.EditorialOverrides,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const updateCommunityOrganisationIntel = `-- name: UpdateCommunityOrganisationIntel :exec
+UPDATE community_organisations
+SET name = $3, org_type = $4, origin_community = $5, address = $6,
+    latitude = $7, longitude = $8, website_url = $9, meeting_frequency = $10,
+    contact_info = $11, status = $12, is_active = $13,
+    confidence_overall = $14, verification_status = $15, freshness_score = $16,
+    override_source = $17, editorial_overrides = $18,
+    updated_at = now()
+WHERE tenant_id = $1 AND id = $2
+`
+
+type UpdateCommunityOrganisationIntelParams struct {
+	TenantID           pgtype.UUID    `json:"tenant_id"`
+	ID                 pgtype.UUID    `json:"id"`
+	Name               string         `json:"name"`
+	OrgType            string         `json:"org_type"`
+	OriginCommunity    string         `json:"origin_community"`
+	Address            *string        `json:"address"`
+	Latitude           pgtype.Numeric `json:"latitude"`
+	Longitude          pgtype.Numeric `json:"longitude"`
+	WebsiteUrl         *string        `json:"website_url"`
+	MeetingFrequency   *string        `json:"meeting_frequency"`
+	ContactInfo        *string        `json:"contact_info"`
+	Status             string         `json:"status"`
+	IsActive           bool           `json:"is_active"`
+	ConfidenceOverall  float32        `json:"confidence_overall"`
+	VerificationStatus string         `json:"verification_status"`
+	FreshnessScore     int32          `json:"freshness_score"`
+	OverrideSource     string         `json:"override_source"`
+	EditorialOverrides []byte         `json:"editorial_overrides"`
+}
+
+func (q *Queries) UpdateCommunityOrganisationIntel(ctx context.Context, arg UpdateCommunityOrganisationIntelParams) error {
+	_, err := q.db.Exec(ctx, updateCommunityOrganisationIntel,
+		arg.TenantID,
+		arg.ID,
+		arg.Name,
+		arg.OrgType,
+		arg.OriginCommunity,
+		arg.Address,
+		arg.Latitude,
+		arg.Longitude,
+		arg.WebsiteUrl,
+		arg.MeetingFrequency,
+		arg.ContactInfo,
+		arg.Status,
+		arg.IsActive,
+		arg.ConfidenceOverall,
+		arg.VerificationStatus,
+		arg.FreshnessScore,
+		arg.OverrideSource,
+		arg.EditorialOverrides,
+	)
+	return err
 }
 
 const updateComparisonItemIntel = `-- name: UpdateComparisonItemIntel :exec
@@ -1345,6 +2245,53 @@ func (q *Queries) UpdateIntelJob(ctx context.Context, arg UpdateIntelJobParams) 
 	return err
 }
 
+const updateLanguageTestRequirementIntel = `-- name: UpdateLanguageTestRequirementIntel :exec
+UPDATE language_test_requirements
+SET visa_category = $3, minimum_score = $4, score_breakdown = $5, notes = $6,
+    source_url = $7, status = $8, is_active = $9,
+    confidence_overall = $10, verification_status = $11, freshness_score = $12,
+    override_source = $13, editorial_overrides = $14,
+    updated_at = now()
+WHERE tenant_id = $1 AND id = $2
+`
+
+type UpdateLanguageTestRequirementIntelParams struct {
+	TenantID           pgtype.UUID `json:"tenant_id"`
+	ID                 pgtype.UUID `json:"id"`
+	VisaCategory       *string     `json:"visa_category"`
+	MinimumScore       string      `json:"minimum_score"`
+	ScoreBreakdown     []byte      `json:"score_breakdown"`
+	Notes              *string     `json:"notes"`
+	SourceUrl          *string     `json:"source_url"`
+	Status             string      `json:"status"`
+	IsActive           bool        `json:"is_active"`
+	ConfidenceOverall  float32     `json:"confidence_overall"`
+	VerificationStatus string      `json:"verification_status"`
+	FreshnessScore     int32       `json:"freshness_score"`
+	OverrideSource     string      `json:"override_source"`
+	EditorialOverrides []byte      `json:"editorial_overrides"`
+}
+
+func (q *Queries) UpdateLanguageTestRequirementIntel(ctx context.Context, arg UpdateLanguageTestRequirementIntelParams) error {
+	_, err := q.db.Exec(ctx, updateLanguageTestRequirementIntel,
+		arg.TenantID,
+		arg.ID,
+		arg.VisaCategory,
+		arg.MinimumScore,
+		arg.ScoreBreakdown,
+		arg.Notes,
+		arg.SourceUrl,
+		arg.Status,
+		arg.IsActive,
+		arg.ConfidenceOverall,
+		arg.VerificationStatus,
+		arg.FreshnessScore,
+		arg.OverrideSource,
+		arg.EditorialOverrides,
+	)
+	return err
+}
+
 const updateRemittanceRateIntel = `-- name: UpdateRemittanceRateIntel :exec
 UPDATE remittance_rates
 SET rate = $3, fee_flat = $4, fee_pct = $5, transfer_time = $6,
@@ -1376,6 +2323,53 @@ func (q *Queries) UpdateRemittanceRateIntel(ctx context.Context, arg UpdateRemit
 		arg.FeeFlat,
 		arg.FeePct,
 		arg.TransferTime,
+		arg.ConfidenceOverall,
+		arg.VerificationStatus,
+		arg.FreshnessScore,
+		arg.OverrideSource,
+		arg.EditorialOverrides,
+	)
+	return err
+}
+
+const updateTaxObligationGuideIntel = `-- name: UpdateTaxObligationGuideIntel :exec
+UPDATE tax_obligation_guides
+SET employment_status = $3, residency_trigger = $4, worldwide_income_taxed = $5,
+    first_year_obligations = $6, action_checklist = $7, status = $8, is_active = $9,
+    confidence_overall = $10, verification_status = $11, freshness_score = $12,
+    override_source = $13, editorial_overrides = $14,
+    updated_at = now()
+WHERE tenant_id = $1 AND id = $2
+`
+
+type UpdateTaxObligationGuideIntelParams struct {
+	TenantID             pgtype.UUID `json:"tenant_id"`
+	ID                   pgtype.UUID `json:"id"`
+	EmploymentStatus     string      `json:"employment_status"`
+	ResidencyTrigger     *string     `json:"residency_trigger"`
+	WorldwideIncomeTaxed *bool       `json:"worldwide_income_taxed"`
+	FirstYearObligations *string     `json:"first_year_obligations"`
+	ActionChecklist      []byte      `json:"action_checklist"`
+	Status               string      `json:"status"`
+	IsActive             bool        `json:"is_active"`
+	ConfidenceOverall    float32     `json:"confidence_overall"`
+	VerificationStatus   string      `json:"verification_status"`
+	FreshnessScore       int32       `json:"freshness_score"`
+	OverrideSource       string      `json:"override_source"`
+	EditorialOverrides   []byte      `json:"editorial_overrides"`
+}
+
+func (q *Queries) UpdateTaxObligationGuideIntel(ctx context.Context, arg UpdateTaxObligationGuideIntelParams) error {
+	_, err := q.db.Exec(ctx, updateTaxObligationGuideIntel,
+		arg.TenantID,
+		arg.ID,
+		arg.EmploymentStatus,
+		arg.ResidencyTrigger,
+		arg.WorldwideIncomeTaxed,
+		arg.FirstYearObligations,
+		arg.ActionChecklist,
+		arg.Status,
+		arg.IsActive,
 		arg.ConfidenceOverall,
 		arg.VerificationStatus,
 		arg.FreshnessScore,
@@ -1430,6 +2424,48 @@ func (q *Queries) UpdateVisaRouteIntel(ctx context.Context, arg UpdateVisaRouteI
 		arg.Restrictions,
 		arg.GovSourceUrl,
 		arg.SourceUrlLastChecked,
+		arg.ConfidenceOverall,
+		arg.VerificationStatus,
+		arg.FreshnessScore,
+		arg.OverrideSource,
+		arg.EditorialOverrides,
+	)
+	return err
+}
+
+const updateWikiPageIntel = `-- name: UpdateWikiPageIntel :exec
+UPDATE wiki_pages
+SET title = $3, category = $4, is_active = $5, is_featured = $6, is_locked = $7,
+    confidence_overall = $8, verification_status = $9, freshness_score = $10,
+    override_source = $11, editorial_overrides = $12,
+    updated_at = now()
+WHERE tenant_id = $1 AND id = $2
+`
+
+type UpdateWikiPageIntelParams struct {
+	TenantID           pgtype.UUID `json:"tenant_id"`
+	ID                 pgtype.UUID `json:"id"`
+	Title              string      `json:"title"`
+	Category           string      `json:"category"`
+	IsActive           bool        `json:"is_active"`
+	IsFeatured         bool        `json:"is_featured"`
+	IsLocked           bool        `json:"is_locked"`
+	ConfidenceOverall  float32     `json:"confidence_overall"`
+	VerificationStatus string      `json:"verification_status"`
+	FreshnessScore     int32       `json:"freshness_score"`
+	OverrideSource     string      `json:"override_source"`
+	EditorialOverrides []byte      `json:"editorial_overrides"`
+}
+
+func (q *Queries) UpdateWikiPageIntel(ctx context.Context, arg UpdateWikiPageIntelParams) error {
+	_, err := q.db.Exec(ctx, updateWikiPageIntel,
+		arg.TenantID,
+		arg.ID,
+		arg.Title,
+		arg.Category,
+		arg.IsActive,
+		arg.IsFeatured,
+		arg.IsLocked,
 		arg.ConfidenceOverall,
 		arg.VerificationStatus,
 		arg.FreshnessScore,
