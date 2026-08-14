@@ -46,10 +46,10 @@ func SetCookie(w http.ResponseWriter, domain string, secure bool) {
 		return
 	}
 	http.SetCookie(w, &http.Cookie{
-		Name:     CookieName,
-		Value:    token,
-		Path:     "/",
-		Domain:   domain,
+		Name:   CookieName,
+		Value:  token,
+		Path:   "/",
+		Domain: domain,
 		// MaxAge:0 keeps the cookie session-scoped (cleared when the browser
 		// closes). This is safe because EnsureCookie re-issues a fresh token on
 		// every /control request (and on /me), so the SPA never operates with a
@@ -83,6 +83,38 @@ func EnsureCookie(domain string, secure bool) func(http.Handler) http.Handler {
 // service-to-service and API-token clients working without a double-submit cookie.
 type ExemptFunc func(r *http.Request) bool
 
+// OriginAllowFunc reports whether the given Origin header value is an allowed
+// origin for this API. It is used by the Origin validation defense-in-depth
+// layer (see WithOriginCheck). The function should return false for empty
+// origins and disallowed origins, and true only for explicitly allowed origins
+// (e.g. the known frontend domains).
+type OriginAllowFunc func(origin string) bool
+
+// middlewareConfig holds optional CSRF middleware behaviour configured via
+// functional options.
+type middlewareConfig struct {
+	originAllowed OriginAllowFunc
+}
+
+// Option configures optional CSRF middleware behaviour.
+type Option func(*middlewareConfig)
+
+// WithOriginCheck adds Origin header validation as a defense-in-depth layer
+// against CSRF. When provided, mutating requests whose Origin header is present
+// but not allowed are rejected with 403 before the double-submit cookie check.
+// Requests without an Origin header (server-to-server, API clients) skip the
+// check and fall through to the normal double-submit validation.
+//
+// This protects against subdomain cookie injection attacks where an attacker
+// can set the csrf_token cookie on the victim's browser via a vulnerable
+// subdomain: even if both the cookie and header are forged to the same value,
+// the cross-site request carries a foreign Origin that this check rejects.
+func WithOriginCheck(fn OriginAllowFunc) Option {
+	return func(c *middlewareConfig) {
+		c.originAllowed = fn
+	}
+}
+
 // Middleware returns middleware enforcing the double-submit CSRF pattern for
 // mutating requests (POST/PATCH/PUT/DELETE) whose path matches one of
 // protectPrefixes. It requires the X-CSRF-Token header to equal the csrf_token
@@ -93,13 +125,20 @@ type ExemptFunc func(r *http.Request) bool
 // (see ExemptFunc). This is how API-token / service-to-service auth paths stay
 // out of scope.
 //
+// Optional behaviour can be configured with opts (see WithOriginCheck).
+//
 // Call with protectPrefixes such as []string{"/control/"} to scope
 // protection to the Control Panel (Critical finding C1). NOTE: the /control group
 // is mounted at the TOP LEVEL in internal/server/server.go (r.Route("/control", ...)
 // lives OUTSIDE the /api/v1 group), so the real request paths are "/control/...".
 // A "/api/v1/control/" prefix would never match and silently disable protection.
 // The set can be widened to all app routes once public POST endpoints are exempted.
-func Middleware(protectPrefixes []string, exempt ExemptFunc) func(http.Handler) http.Handler {
+func Middleware(protectPrefixes []string, exempt ExemptFunc, opts ...Option) func(http.Handler) http.Handler {
+	cfg := &middlewareConfig{}
+	for _, opt := range opts {
+		opt(cfg)
+	}
+
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if !isMutatingMethod(r.Method) {
@@ -113,6 +152,19 @@ func Middleware(protectPrefixes []string, exempt ExemptFunc) func(http.Handler) 
 			if exempt != nil && exempt(r) {
 				next.ServeHTTP(w, r)
 				return
+			}
+
+			// Defense-in-depth: reject mutating requests whose Origin header
+			// is present but not in the allowlist. A cross-site form POST or
+			// fetch carries the attacker's Origin, which this check blocks
+			// even if the double-submit cookie was forged via subdomain
+			// injection. Absent Origin headers (server-to-server, API clients
+			// that are already exempt) skip this check.
+			if cfg.originAllowed != nil {
+				if origin := r.Header.Get("Origin"); origin != "" && !cfg.originAllowed(origin) {
+					writeRejection(w)
+					return
+				}
 			}
 
 			cookie, err := r.Cookie(CookieName)

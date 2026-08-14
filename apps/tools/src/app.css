@@ -57,6 +57,11 @@
 	--accent: var(--color-surface-subtle);
 	--accent-foreground: var(--color-text);
 	--destructive: #dc2626;
+
+	/* Semantic status tokens (match main app — ADR-058 design language) */
+	--color-warning: #d97706;
+	--color-success: #16a34a;
+	--color-danger: #dc2626;
 }
 
 :root[data-theme='dark'] {
@@ -79,6 +84,11 @@
 
 	--border-input-hover: #3f3f46;
 	--destructive: #ef4444;
+
+	/* Semantic status tokens — dark mode (match main app) */
+	--color-warning: #f59e0b;
+	--color-success: #22c55e;
+	--color-danger: #ef4444;
 }
 
 /* Expose the semantic tokens as Tailwind color utilities (bg-surface, text-muted, …). */
@@ -101,6 +111,9 @@
 	--color-border-card: var(--border-card);
 	--color-accent: var(--accent);
 	--color-destructive: var(--destructive);
+	--color-warning: var(--color-warning);
+	--color-success: var(--color-success);
+	--color-danger: var(--color-danger);
 
 	--radius-card: 12px;
 

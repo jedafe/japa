@@ -191,6 +191,60 @@ ORDER BY name ASC
 	return out, nil
 }
 
+// GetProfessionByID returns a single profession by ID. Used by
+// GeneratePathwayDraft to build the AI generation prompt.
+func (s *Store) GetProfessionByID(ctx context.Context, id pgtype.UUID) (ProfessionRow, error) {
+	const q = `
+SELECT id, slug, name, category
+FROM credential_professions
+WHERE id = $1
+`
+	var r ProfessionRow
+	err := s.pool.Reader.QueryRow(ctx, q, id).Scan(&r.ID, &r.Slug, &r.Name, &r.Category)
+	if err != nil {
+		return ProfessionRow{}, fmt.Errorf("credentialchecker: get profession by id: %w", err)
+	}
+	return r, nil
+}
+
+// SpaceNameRow holds the name of a single space, used by GeneratePathwayDraft
+// to build the AI generation prompt.
+type SpaceNameRow struct {
+	ID   pgtype.UUID
+	Name string
+}
+
+// GetSpaceNames returns the names of the issuing and destination spaces
+// for the given IDs. Used by GeneratePathwayDraft to build the AI prompt.
+func (s *Store) GetSpaceNames(ctx context.Context, issuingSpaceID, destSpaceID pgtype.UUID) (issuingName, destName string, err error) {
+	const q = `
+SELECT id, name FROM spaces WHERE id = ANY($1)
+`
+	ids := []pgtype.UUID{issuingSpaceID, destSpaceID}
+	rows, err := s.pool.Reader.Query(ctx, q, ids)
+	if err != nil {
+		return "", "", fmt.Errorf("credentialchecker: get space names: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var r SpaceNameRow
+		if err := rows.Scan(&r.ID, &r.Name); err != nil {
+			return "", "", fmt.Errorf("credentialchecker: scan space name: %w", err)
+		}
+		if r.ID == issuingSpaceID {
+			issuingName = r.Name
+		}
+		if r.ID == destSpaceID {
+			destName = r.Name
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return "", "", fmt.Errorf("credentialchecker: iterate space names: %w", err)
+	}
+	return issuingName, destName, nil
+}
+
 // ListPathwaysFilter holds the filter parameters for listing pathways.
 type ListPathwaysFilter struct {
 	TenantID           pgtype.UUID
@@ -539,17 +593,18 @@ WHERE id = $1 AND tenant_id = $2
 }
 
 // CreateNote inserts a new credential_community_notes row and returns the
-// inserted id.
-func (s *Store) CreateNote(ctx context.Context, pathwayID, userID pgtype.UUID, note string) (pgtype.UUID, error) {
+// inserted id and created_at timestamp.
+func (s *Store) CreateNote(ctx context.Context, pathwayID, userID pgtype.UUID, note string) (pgtype.UUID, pgtype.Timestamptz, error) {
 	const q = `
 INSERT INTO credential_community_notes (pathway_id, user_id, note)
 VALUES ($1, $2, $3)
-RETURNING id
+RETURNING id, created_at
 `
 	var id pgtype.UUID
-	err := s.pool.Writer.QueryRow(ctx, q, pathwayID, userID, note).Scan(&id)
+	var createdAt pgtype.Timestamptz
+	err := s.pool.Writer.QueryRow(ctx, q, pathwayID, userID, note).Scan(&id, &createdAt)
 	if err != nil {
-		return pgtype.UUID{}, fmt.Errorf("credentialchecker: create note: %w", err)
+		return pgtype.UUID{}, pgtype.Timestamptz{}, fmt.Errorf("credentialchecker: create note: %w", err)
 	}
-	return id, nil
+	return id, createdAt, nil
 }

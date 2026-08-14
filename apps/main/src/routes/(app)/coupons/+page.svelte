@@ -3,6 +3,7 @@
 	import { t } from '$lib/i18n';
 	import { Ticket, BadgeCheck, Copy, ExternalLink } from 'lucide-svelte';
 	import { EmptyState } from '$lib/components/ui';
+	import { api } from '$lib/api/client';
 	import type { PageData } from './$types';
 	import type { Coupon } from '$lib/types';
 
@@ -27,11 +28,14 @@
 		if (c.discount_type === 'percent') {
 			return t('coupons.percent_off', '{n}% off').replace('{n}', String(c.discount_value ?? ''));
 		}
-		if (c.discount_type === 'fixed' || c.discount_type === 'amount') {
+		if (c.discount_type === 'fixed') {
 			const cur = c.currency ?? '';
 			return t('coupons.amount_off', '{cur}{n} off')
 				.replace('{cur}', cur)
 				.replace('{n}', String(c.discount_value ?? ''));
+		}
+		if (c.discount_type === 'free_shipping') {
+			return t('coupons.free_shipping', 'Free shipping');
 		}
 		if (c.discount_value !== undefined && c.discount_value !== null) {
 			return String(c.discount_value);
@@ -39,9 +43,16 @@
 		return '';
 	}
 
-	async function copyCode(code: string) {
+	// recordEvent fires-and-forgets a click/copy event to the backend (Section 55).
+	// Errors are silently ignored — event tracking must never block the UI.
+	function recordEvent(couponId: string, eventType: 'click' | 'copy') {
+		api.post(`/coupons/${couponId}/click`, { event_type: eventType }).catch(() => {});
+	}
+
+	async function copyCode(coupon: Coupon) {
 		try {
-			await navigator.clipboard.writeText(code);
+			await navigator.clipboard.writeText(coupon.code);
+			recordEvent(coupon.id, 'copy');
 		} catch {
 			// Clipboard may be unavailable; ignore silently.
 		}
@@ -127,7 +138,7 @@
 								onclick={(e) => {
 									e.preventDefault();
 									e.stopPropagation();
-									copyCode(coupon.code);
+									copyCode(coupon);
 								}}
 								class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] px-2.5 py-1.5 text-xs font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
 							>

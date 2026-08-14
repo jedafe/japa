@@ -755,6 +755,80 @@ func (q *Queries) InsertAffiliateContentCommission(ctx context.Context, arg Inse
 	return i, err
 }
 
+const listAffiliateCommissions = `-- name: ListAffiliateCommissions :many
+SELECT ac.id, ac.content_id, ac.author_user_id, ac.external_commission,
+       ac.author_share, ac.author_commission_pct, ac.event_description,
+       ac.credited, ac.created_at,
+       ap.name AS provider_name, u.username AS author_username
+FROM affiliate_content_commissions ac
+LEFT JOIN affiliate_providers ap ON ap.id = ac.provider_id
+LEFT JOIN users u ON u.id = ac.author_user_id
+WHERE ac.tenant_id = $1
+    AND ($2::bool IS NULL OR ac.credited = $2)
+ORDER BY ac.created_at DESC
+LIMIT $4 OFFSET $3
+`
+
+type ListAffiliateCommissionsParams struct {
+	TenantID   pgtype.UUID `json:"tenant_id"`
+	Credited   *bool       `json:"credited"`
+	PageOffset int32       `json:"page_offset"`
+	PageLimit  int32       `json:"page_limit"`
+}
+
+type ListAffiliateCommissionsRow struct {
+	ID                  pgtype.UUID        `json:"id"`
+	ContentID           pgtype.UUID        `json:"content_id"`
+	AuthorUserID        pgtype.UUID        `json:"author_user_id"`
+	ExternalCommission  pgtype.Numeric     `json:"external_commission"`
+	AuthorShare         pgtype.Numeric     `json:"author_share"`
+	AuthorCommissionPct pgtype.Numeric     `json:"author_commission_pct"`
+	EventDescription    *string            `json:"event_description"`
+	Credited            bool               `json:"credited"`
+	CreatedAt           pgtype.Timestamptz `json:"created_at"`
+	ProviderName        *string            `json:"provider_name"`
+	AuthorUsername      *string            `json:"author_username"`
+}
+
+// BE-LOW-002: replaces raw SQL in ListAffiliateCommissions handler.
+// Optional credited filter via sqlc.narg(). Joins provider name and author username.
+func (q *Queries) ListAffiliateCommissions(ctx context.Context, arg ListAffiliateCommissionsParams) ([]ListAffiliateCommissionsRow, error) {
+	rows, err := q.db.Query(ctx, listAffiliateCommissions,
+		arg.TenantID,
+		arg.Credited,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListAffiliateCommissionsRow
+	for rows.Next() {
+		var i ListAffiliateCommissionsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ContentID,
+			&i.AuthorUserID,
+			&i.ExternalCommission,
+			&i.AuthorShare,
+			&i.AuthorCommissionPct,
+			&i.EventDescription,
+			&i.Credited,
+			&i.CreatedAt,
+			&i.ProviderName,
+			&i.AuthorUsername,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listAffiliateLinkEvents = `-- name: ListAffiliateLinkEvents :many
 SELECT id, tenant_id, link_id, event_type, referrer_url, ip_hash,
     user_agent_hash, converted_payment_id, commission_amount, created_at
@@ -965,6 +1039,75 @@ func (q *Queries) ListAffiliateMembersFiltered(ctx context.Context, arg ListAffi
 	return items, nil
 }
 
+const listAffiliateScanResults = `-- name: ListAffiliateScanResults :many
+
+SELECT id, content_id, url, domain, detection_method, action_taken, created_at
+FROM content_affiliate_scan_results
+WHERE tenant_id = $1
+    AND ($2::text IS NULL OR domain = $2)
+    AND ($3::text IS NULL OR action_taken = $3)
+ORDER BY created_at DESC
+LIMIT $5 OFFSET $4
+`
+
+type ListAffiliateScanResultsParams struct {
+	TenantID    pgtype.UUID `json:"tenant_id"`
+	Domain      *string     `json:"domain"`
+	ActionTaken *string     `json:"action_taken"`
+	PageOffset  int32       `json:"page_offset"`
+	PageLimit   int32       `json:"page_limit"`
+}
+
+type ListAffiliateScanResultsRow struct {
+	ID              pgtype.UUID        `json:"id"`
+	ContentID       pgtype.UUID        `json:"content_id"`
+	Url             string             `json:"url"`
+	Domain          string             `json:"domain"`
+	DetectionMethod string             `json:"detection_method"`
+	ActionTaken     string             `json:"action_taken"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+}
+
+// =====================
+// Affiliate Enhancement Queries (Section 55 — BE-LOW-002)
+// Replaces raw SQL in coupons/handlers.go with sqlc-generated queries.
+// =====================
+// BE-LOW-002: replaces raw SQL in ListAffiliateScanResults handler.
+// Optional domain and action_taken filters via sqlc.narg().
+func (q *Queries) ListAffiliateScanResults(ctx context.Context, arg ListAffiliateScanResultsParams) ([]ListAffiliateScanResultsRow, error) {
+	rows, err := q.db.Query(ctx, listAffiliateScanResults,
+		arg.TenantID,
+		arg.Domain,
+		arg.ActionTaken,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListAffiliateScanResultsRow
+	for rows.Next() {
+		var i ListAffiliateScanResultsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ContentID,
+			&i.Url,
+			&i.Domain,
+			&i.DetectionMethod,
+			&i.ActionTaken,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listAllAffiliateLinks = `-- name: ListAllAffiliateLinks :many
 SELECT id, tenant_id, user_id, product_type, product_id, code, description,
     destination_url, click_count, conversion_count, total_earned, is_active, created_at
@@ -1118,6 +1261,37 @@ func (q *Queries) MarkAffiliateCommissionCredited(ctx context.Context, id pgtype
 	return result.RowsAffected(), nil
 }
 
+const reviewAffiliateScanResult = `-- name: ReviewAffiliateScanResult :execrows
+UPDATE content_affiliate_scan_results
+SET action_taken = $1, reviewed_by = $2,
+    reviewed_at = now(), notes = $3
+WHERE id = $4 AND tenant_id = $5
+`
+
+type ReviewAffiliateScanResultParams struct {
+	ActionTaken string      `json:"action_taken"`
+	ReviewedBy  pgtype.UUID `json:"reviewed_by"`
+	Notes       *string     `json:"notes"`
+	ID          pgtype.UUID `json:"id"`
+	TenantID    pgtype.UUID `json:"tenant_id"`
+}
+
+// BE-LOW-002: replaces raw SQL UPDATE in ReviewAffiliateScanResult handler.
+// Returns rows affected so the handler can distinguish 404 from success.
+func (q *Queries) ReviewAffiliateScanResult(ctx context.Context, arg ReviewAffiliateScanResultParams) (int64, error) {
+	result, err := q.db.Exec(ctx, reviewAffiliateScanResult,
+		arg.ActionTaken,
+		arg.ReviewedBy,
+		arg.Notes,
+		arg.ID,
+		arg.TenantID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const updateAffiliateLink = `-- name: UpdateAffiliateLink :one
 UPDATE user_affiliate_links
 SET description = $1, is_active = $2
@@ -1196,4 +1370,26 @@ func (q *Queries) UpdateAffiliateMemberStatus(ctx context.Context, arg UpdateAff
 		&i.Notes,
 	)
 	return i, err
+}
+
+const updateProviderAuthorCommission = `-- name: UpdateProviderAuthorCommission :execrows
+UPDATE affiliate_providers
+SET author_commission_pct = $1, updated_at = now()
+WHERE id = $2 AND tenant_id = $3
+`
+
+type UpdateProviderAuthorCommissionParams struct {
+	AuthorCommissionPct pgtype.Numeric `json:"author_commission_pct"`
+	ID                  pgtype.UUID    `json:"id"`
+	TenantID            pgtype.UUID    `json:"tenant_id"`
+}
+
+// BE-LOW-002: replaces raw SQL UPDATE in UpdateProviderAuthorCommission handler.
+// Returns rows affected so the handler can distinguish 404 from success.
+func (q *Queries) UpdateProviderAuthorCommission(ctx context.Context, arg UpdateProviderAuthorCommissionParams) (int64, error) {
+	result, err := q.db.Exec(ctx, updateProviderAuthorCommission, arg.AuthorCommissionPct, arg.ID, arg.TenantID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
