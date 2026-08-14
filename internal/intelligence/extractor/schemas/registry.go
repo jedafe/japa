@@ -39,19 +39,23 @@ const (
 // map is immutable after package load. Adding a domain = add a var here
 // and an entry in the registry.
 var registry = map[string]EntitySchema{
-	EntityTypeScholarship:      Scholarship,
-	EntityTypeJob:              Job,
-	EntityTypeVisa:             Visa,
-	EntityTypeRemittance:       Remittance,
-	EntityTypeCostOfLiving:     CostOfLiving,
-	EntityTypeHousing:          Housing,
-	EntityTypeTravelRoutes:     TravelRoutes,
-	EntityTypeGrants:           Grants,
-	EntityTypeAdmission:        Admission,
-	EntityTypeBanking:          Banking,
-	EntityTypeWorkCareer:       WorkCareer,
-	EntityTypeHealthInsurance:  HealthInsurance,
-	EntityTypeCultureLifestyle: CultureLifestyle,
+	EntityTypeScholarship:           Scholarship,
+	EntityTypeJob:                   Job,
+	EntityTypeVisa:                  Visa,
+	EntityTypeRemittance:            Remittance,
+	EntityTypeCostOfLiving:          CostOfLiving,
+	EntityTypeHousing:               Housing,
+	EntityTypeTravelRoutes:          TravelRoutes,
+	EntityTypeGrants:                Grants,
+	EntityTypeAdmission:             Admission,
+	EntityTypeBanking:               Banking,
+	EntityTypeWorkCareer:            WorkCareer,
+	EntityTypeHealthInsurance:       HealthInsurance,
+	EntityTypeCultureLifestyle:      CultureLifestyle,
+	EntityTypeWikiPage:              WikiPage,
+	EntityTypeLanguageTest:          LanguageTestRequirement,
+	EntityTypeTaxObligation:         TaxObligationGuide,
+	EntityTypeCommunityOrganisation: CommunityOrganisation,
 }
 
 // ForEntityType returns the registered EntitySchema for the given
@@ -106,6 +110,14 @@ func CategoryToEntityType(category string) string {
 		return EntityTypeHealthInsurance
 	case "culture_lifestyle":
 		return EntityTypeCultureLifestyle
+	case "wiki", "wiki_page":
+		return EntityTypeWikiPage
+	case "language_test", "language_test_requirement":
+		return EntityTypeLanguageTest
+	case "tax", "tax_obligation", "tax_obligation_guide":
+		return EntityTypeTaxObligation
+	case "community", "community_organisation", "diaspora":
+		return EntityTypeCommunityOrganisation
 	default:
 		return ""
 	}
