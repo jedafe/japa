@@ -4,7 +4,7 @@
 	import { communityLocatorAdminApi } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
-	import { Eye, CheckCircle, BadgeCheck } from 'lucide-svelte';
+	import { Eye, CheckCircle, BadgeCheck, Archive, Trash2 } from 'lucide-svelte';
 	import type { ActionItem } from '$lib/components/ui/data-table';
 
 	// CommunityItem matches the OrgDTO field names returned by the backend
@@ -75,6 +75,40 @@
 		}
 	}
 
+	async function archiveCommunity(item: CommunityItem) {
+		acting = true;
+		pageError = '';
+		try {
+			const result = await communityLocatorAdminApi.archive(item.id);
+			if (result.ok) {
+				entityController?.reload();
+			} else {
+				pageError = result.error ?? t('common.error', 'An error occurred');
+			}
+		} catch {
+			pageError = t('common.error', 'An error occurred');
+		} finally {
+			acting = false;
+		}
+	}
+
+	async function deleteCommunity(item: CommunityItem) {
+		acting = true;
+		pageError = '';
+		try {
+			const result = await communityLocatorAdminApi.delete(item.id);
+			if (result.ok) {
+				entityController?.reload();
+			} else {
+				pageError = result.error ?? t('common.error', 'An error occurred');
+			}
+		} catch {
+			pageError = t('common.error', 'An error occurred');
+		} finally {
+			acting = false;
+		}
+	}
+
 	// ── Row actions ─────────────────────────────────────────────────────────
 	const rowActions = $derived.by<ActionItem[]>(() => {
 		const acts: ActionItem[] = [
@@ -93,8 +127,18 @@
 				onclick: verifyCommunity,
 				show: (row: CommunityItem) => !row.is_verified && row.status === 'published'
 			});
-
-
+			acts.push({
+				label: t('common.archive', 'Archive'),
+				icon: Archive,
+				onclick: archiveCommunity,
+				show: (row: CommunityItem) => row.status === 'published'
+			});
+			acts.push({
+				label: t('common.delete', 'Delete'),
+				icon: Trash2,
+				onclick: deleteCommunity,
+				variant: 'destructive'
+			});
 		}
 		return acts;
 	});

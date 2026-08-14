@@ -55,6 +55,30 @@ func (q *Queries) AnonymizeAuditLogActor(ctx context.Context, arg AnonymizeAudit
 	return err
 }
 
+const anonymizeCommentsByAuthor = `-- name: AnonymizeCommentsByAuthor :exec
+UPDATE comments
+SET body = '"[deleted]"'::jsonb,
+    deleted_at = now(),
+    updated_at = now()
+WHERE author_user_id = $1 AND tenant_id = $2 AND deleted_at IS NULL
+`
+
+type AnonymizeCommentsByAuthorParams struct {
+	UserID   pgtype.UUID `json:"user_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+// GDPR-001: anonymize comments authored by the erased user. The
+// comments.author_user_id FK has ON DELETE SET NULL, so HardDeleteUser
+// will null it — but the comment body (TipTap JSON, potentially containing
+// PII and @mentions) must be cleared before the user is hard-deleted.
+// Sets body to a '[deleted]' JSON string and marks the comment as
+// soft-deleted so it is excluded from public queries. Ref: Section 15, ADR-014.
+func (q *Queries) AnonymizeCommentsByAuthor(ctx context.Context, arg AnonymizeCommentsByAuthorParams) error {
+	_, err := q.db.Exec(ctx, anonymizeCommentsByAuthor, arg.UserID, arg.TenantID)
+	return err
+}
+
 const anonymizeComparisonDimensionsByAuthor = `-- name: AnonymizeComparisonDimensionsByAuthor :execrows
 UPDATE comparison_dimensions cd
 SET label = '[anonymized]'

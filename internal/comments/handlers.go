@@ -186,6 +186,36 @@ func (h *Handlers) enqueueEngagementUpdate(entityType string, entityID pgtype.UU
 	}
 }
 
+// enqueueContentFanOut enqueues a content:fan_out_to_feeds task so a newly
+// created discussion thread appears in the author's followers' feeds
+// (Section 49 — Comment Thread Link Flow, BL-005). Fire-and-forget per Rule 8.
+func (h *Handlers) enqueueContentFanOut(contentID, tenantID, authorID, spaceID pgtype.UUID, contentType, fanOutType string) {
+	if h.asynqClient == nil {
+		return
+	}
+
+	payload, err := json.Marshal(map[string]interface{}{
+		"content_id":   contentID.String(),
+		"tenant_id":    tenantID.String(),
+		"author_id":    authorID.String(),
+		"space_id":     spaceID.String(),
+		"content_type": contentType,
+		"fan_out_type": fanOutType,
+	})
+	if err != nil {
+		slog.Warn("comments: failed to marshal fan-out payload", "error", err)
+		return
+	}
+
+	if _, err := h.asynqClient.Enqueue(
+		asynq.NewTask(worker.TypeContentFanOutToFeeds, payload),
+		asynq.Queue(worker.QueueForTask(worker.TypeContentFanOutToFeeds)),
+	); err != nil {
+		slog.Warn("comments: failed to enqueue fan-out task",
+			"content_id", contentID.String(), "error", err)
+	}
+}
+
 func parsePageSize(r *http.Request) int32 {
 	s := r.URL.Query().Get("page_size")
 	if s == "" {
@@ -308,6 +338,15 @@ func (h *Handlers) GetComment(w http.ResponseWriter, r *http.Request) {
 	comment, err := h.Service.GetComment(r.Context(), tenantID, commentID)
 	if err != nil {
 		handleServiceError(w, err)
+		return
+	}
+
+	// Section 49 — soft-deleted comments are not accessible via the API.
+	// The list queries already filter deleted_at IS NULL; the single-get
+	// endpoint must also reject deleted comments so the original body is
+	// never leaked (BL-004).
+	if comment.DeletedAt.Valid {
+		writeError(w, http.StatusNotFound, "not_found", "Comment not found")
 		return
 	}
 
@@ -478,10 +517,13 @@ func (h *Handlers) UpdateComment(w http.ResponseWriter, r *http.Request) {
 
 	// Dispatch @mention notifications for newly added mentions — fire-and-forget
 	// (Section 49 — comment:notify_mention → notification:dispatch_batch).
-	// The notification batch system deduplicates by (recipient, type, subject)
-	// so mentions that were already notified on create won't produce duplicates.
+	// Only mention notifications are dispatched on edit; content.comment and
+	// comment.reply are "new comment" events and should not fire on edit
+	// (BL-006). The notification batch system deduplicates by (recipient,
+	// type, subject) so mentions that were already notified on create won't
+	// produce duplicates.
 	if h.notifier != nil {
-		h.Service.DispatchCommentNotifications(r.Context(), tenantID, comment, h.notifier)
+		h.Service.DispatchMentionNotifications(r.Context(), tenantID, comment, h.notifier)
 	}
 
 	// GDPR / ADR-029: expose deleted_user_ids for frontend rendering.
@@ -554,6 +596,9 @@ func (h *Handlers) DeleteComment(w http.ResponseWriter, r *http.Request) {
 }
 
 // VoteComment handles POST /api/v1/comments/{id}/vote.
+//
+// Section 49 — comment voting (upvote/downvote) is forum-discussions-only.
+// Other content types use emoji reactions via /reactions (BL-002).
 func (h *Handlers) VoteComment(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
 	if !ok {
@@ -568,6 +613,19 @@ func (h *Handlers) VoteComment(w http.ResponseWriter, r *http.Request) {
 	commentID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		return
+	}
+
+	// Section 49: voting is only supported on forum discussion replies.
+	// Non-discussion content types use emoji reactions (Section 14).
+	isDiscussion, err := h.Service.IsCommentOnDiscussion(r.Context(), tenantID, commentID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	if !isDiscussion {
+		writeError(w, http.StatusBadRequest, "voting_not_supported",
+			"Voting is only supported on forum discussion replies")
 		return
 	}
 
@@ -595,22 +653,6 @@ func (h *Handlers) RemoveVote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	commentID, err := parseUUIDParam(r, "id")
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
-		return
-	}
-
-	if err := h.Service.RemoveCommentVote(r.Context(), commentID, user.UserID); err != nil {
-		handleServiceError(w, err)
-		return
-	}
-
-	writeJSON(w, http.StatusNoContent, nil)
-}
-
-// PinComment handles POST /api/v1/comments/{id}/pin.
-func (h *Handlers) PinComment(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
@@ -619,6 +661,42 @@ func (h *Handlers) PinComment(w http.ResponseWriter, r *http.Request) {
 	commentID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		return
+	}
+
+	if err := h.Service.RemoveCommentVote(r.Context(), tenantID, commentID, user.UserID); err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusNoContent, nil)
+}
+
+// PinComment handles POST /api/v1/comments/{id}/pin.
+//
+// Section 49 — pinning is allowed for moderators (comments.pin) OR the content
+// author. The route is wired with RequireAuth only; the own-vs-moderator
+// decision is made here at request time so a content author who doesn't hold
+// comments.pin can still pin comments on their own content (BL-003).
+func (h *Handlers) PinComment(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	commentID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		return
+	}
+
+	if !h.canPinComment(r, user.UserID, tenantID, commentID) {
+		writeError(w, http.StatusForbidden, "forbidden", "You do not have permission to pin this comment")
 		return
 	}
 
@@ -631,7 +709,14 @@ func (h *Handlers) PinComment(w http.ResponseWriter, r *http.Request) {
 }
 
 // UnpinComment handles DELETE /api/v1/comments/{id}/pin.
+//
+// Same author-or-moderator gate as PinComment (BL-003).
 func (h *Handlers) UnpinComment(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
@@ -643,12 +728,34 @@ func (h *Handlers) UnpinComment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !h.canPinComment(r, user.UserID, tenantID, commentID) {
+		writeError(w, http.StatusForbidden, "forbidden", "You do not have permission to unpin this comment")
+		return
+	}
+
 	if err := h.Service.UnpinComment(r.Context(), tenantID, commentID); err != nil {
 		handleServiceError(w, err)
 		return
 	}
 
 	writeJSON(w, http.StatusNoContent, nil)
+}
+
+// canPinComment returns true if the user holds comments.pin (moderator) or is
+// the author of the parent content (Section 49, BL-003).
+func (h *Handlers) canPinComment(r *http.Request, userID, tenantID, commentID pgtype.UUID) bool {
+	// Moderator path — comments.delete_any RBAC node.
+	if h.perms != nil && h.perms.HasPermission(r.Context(), userID, tenantID, "comments.pin") {
+		return true
+	}
+	// Content-author path — the author of the parent content may pin.
+	contentAuthorID, err := h.Service.GetCommentContentAuthorID(r.Context(), tenantID, commentID)
+	if err != nil {
+		slog.Warn("comments: failed to resolve content author for pin check",
+			"comment_id", commentID.String(), "error", err)
+		return false
+	}
+	return contentAuthorID.Valid && contentAuthorID.Bytes == userID.Bytes
 }
 
 // RemoveComment handles POST /api/v1/admin/comments/{id}/remove.
@@ -698,8 +805,6 @@ func handleServiceError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, errpkg.ErrMaxDepth):
 		writeError(w, http.StatusBadRequest, "depth_exceeded", err.Error())
-	case errors.Is(err, ErrEditWindowExpired):
-		writeError(w, http.StatusForbidden, "edit_window_expired", "The edit window for this comment has expired")
 	default:
 		errpkg.HandleServiceError(w, err)
 	}

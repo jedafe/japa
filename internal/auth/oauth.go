@@ -412,7 +412,7 @@ func (a *appleProvider) Exchange(ctx context.Context, code string) (*OAuthUserIn
 	}
 
 	// Exchange code for tokens
-	tokenURL := "https://appleid.apple.com/auth/token" //nolint:gosec // G101: Apple OAuth endpoint URL, not a credential
+	tokenURL := "https://appleid.apple.com/auth/token" // #nosec G101 -- Apple OAuth token endpoint URL, not a credential
 	params := url.Values{
 		"client_id":     {a.clientID},
 		"client_secret": {clientSecret},
@@ -711,7 +711,7 @@ func (f *facebookProvider) AuthURL(state string) string {
 
 func (f *facebookProvider) Exchange(ctx context.Context, code string) (*OAuthUserInfo, error) {
 	// Exchange code for access token
-	tokenURL := "https://graph.facebook.com/v18.0/oauth/access_token" //nolint:gosec // G101: Facebook OAuth endpoint URL, not a credential
+	tokenURL := "https://graph.facebook.com/v18.0/oauth/access_token" // #nosec G101 -- Facebook OAuth token endpoint URL, not a credential
 	params := url.Values{
 		"client_id":     {f.appID},
 		"client_secret": {f.appSecret},

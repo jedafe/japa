@@ -454,3 +454,111 @@ func TestIsTrustedProxy_IPv4MappedIPv6_Loopback(t *testing.T) {
 		t.Fatal("expected ::ffff:127.0.0.1 to be trusted (maps to loopback)")
 	}
 }
+
+// --- ForwardedBaseURL / ForwardedHost / ForwardedScheme tests (host-header injection fix) ---
+
+func TestForwardedBaseURL_TrustedProxy_UsesForwardedHost(t *testing.T) {
+	t.Parallel()
+
+	// Peer 10.0.0.5 is a trusted proxy. X-Forwarded-Host/Proto should be honoured.
+	r := requestWith("10.0.0.5:4321", map[string]string{
+		"X-Forwarded-Host":  "japaconnect.com",
+		"X-Forwarded-Proto": "https",
+	})
+
+	if got := ForwardedBaseURL(r, "http://localhost:8080"); got != "https://japaconnect.com" {
+		t.Fatalf("expected forwarded base URL from trusted proxy, got %q", got)
+	}
+}
+
+func TestForwardedBaseURL_UntrustedPeer_IgnoresForwardedHost(t *testing.T) {
+	t.Parallel()
+
+	// Peer 203.0.113.10 is NOT a trusted proxy. X-Forwarded-Host must be
+	// ignored — this is the host-header injection fix. Without it an
+	// attacker could send X-Forwarded-Host: evil.com and get password-reset
+	// / RSS links pointing to their domain.
+	r := requestWith("203.0.113.10:4321", map[string]string{
+		"X-Forwarded-Host":  "evil.com",
+		"X-Forwarded-Proto": "https",
+	})
+
+	if got := ForwardedBaseURL(r, "https://japaconnect.com"); got != "https://japaconnect.com" {
+		t.Fatalf("expected fallback (not spoofed host), got %q", got)
+	}
+}
+
+func TestForwardedBaseURL_TrustedProxy_NoHeaders_ReturnsFallback(t *testing.T) {
+	t.Parallel()
+
+	// Trusted peer but no forwarding headers → fallback.
+	r := requestWith("10.0.0.5:4321", nil)
+
+	if got := ForwardedBaseURL(r, "https://configured.example.com"); got != "https://configured.example.com" {
+		t.Fatalf("expected fallback when no forwarded headers, got %q", got)
+	}
+}
+
+func TestForwardedBaseURL_TrustedProxy_NoProto_DefaultsToHTTP(t *testing.T) {
+	t.Parallel()
+
+	// Trusted peer, X-Forwarded-Host present but no X-Forwarded-Proto and
+	// no TLS → scheme defaults to "http".
+	r := requestWith("10.0.0.5:4321", map[string]string{
+		"X-Forwarded-Host": "japaconnect.com",
+	})
+
+	if got := ForwardedBaseURL(r, "https://fallback.com"); got != "http://japaconnect.com" {
+		t.Fatalf("expected http scheme when no proto and no TLS, got %q", got)
+	}
+}
+
+func TestForwardedHost_UntrustedPeer_ReturnsEmpty(t *testing.T) {
+	t.Parallel()
+
+	r := requestWith("8.8.8.8:4321", map[string]string{
+		"X-Forwarded-Host": "evil.com",
+	})
+
+	if got := ForwardedHost(r); got != "" {
+		t.Fatalf("expected empty string from untrusted peer, got %q", got)
+	}
+}
+
+func TestForwardedHost_TrustedPeer_ReturnsHost(t *testing.T) {
+	t.Parallel()
+
+	r := requestWith("127.0.0.1:4321", map[string]string{
+		"X-Forwarded-Host": "  japaconnect.com  ",
+	})
+
+	if got := ForwardedHost(r); got != "japaconnect.com" {
+		t.Fatalf("expected trimmed forwarded host, got %q", got)
+	}
+}
+
+func TestForwardedScheme_UntrustedPeer_FallsBackToTLSState(t *testing.T) {
+	t.Parallel()
+
+	// Untrusted peer with spoofed X-Forwarded-Proto: https — must be ignored.
+	// No TLS → "http".
+	r := requestWith("203.0.113.10:4321", map[string]string{
+		"X-Forwarded-Proto": "https",
+	})
+
+	if got := ForwardedScheme(r); got != "http" {
+		t.Fatalf("expected http (untrusted peer, no TLS), got %q", got)
+	}
+}
+
+func TestForwardedScheme_TrustedPeer_UsesForwardedProto(t *testing.T) {
+	t.Parallel()
+
+	r := requestWith("10.0.0.5:4321", map[string]string{
+		"X-Forwarded-Proto": "https",
+	})
+
+	if got := ForwardedScheme(r); got != "https" {
+		t.Fatalf("expected https from trusted proxy forwarded proto, got %q", got)
+	}
+}

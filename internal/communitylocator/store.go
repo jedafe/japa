@@ -434,13 +434,16 @@ WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
 
 // AdminListFilter holds filter parameters for the admin moderation list.
 type AdminListFilter struct {
-	TenantID pgtype.UUID
-	Status   string // optional
-	Q        string // optional: search name
-	Sort     string // optional: column name (allow-listed)
-	Dir      string // optional: "asc" or "desc" (default "desc")
-	Limit    int32
-	Offset   int32
+	TenantID           pgtype.UUID
+	Status             string // optional
+	Q                  string // optional: search name
+	DestinationSpaceID pgtype.UUID // optional: geo-aware ?dest= filter
+	OriginCommunity    string // optional: filter by origin community
+	OrgType            string // optional: filter by organisation type
+	Sort               string // optional: column name (allow-listed)
+	Dir                string // optional: "asc" or "desc" (default "desc")
+	Limit              int32
+	Offset             int32
 }
 
 // adminSortColumns is the allow-list of sortable column names for the admin
@@ -485,6 +488,21 @@ func (s *Store) AdminList(ctx context.Context, f AdminListFilter) ([]OrgRow, int
 	if f.Status != "" {
 		conditions = append(conditions, fmt.Sprintf("co.status = $%d", argIdx))
 		args = append(args, f.Status)
+		argIdx++
+	}
+	if f.DestinationSpaceID.Valid {
+		conditions = append(conditions, fmt.Sprintf("co.destination_space_id = $%d", argIdx))
+		args = append(args, f.DestinationSpaceID)
+		argIdx++
+	}
+	if f.OriginCommunity != "" {
+		conditions = append(conditions, fmt.Sprintf("co.origin_community = $%d", argIdx))
+		args = append(args, f.OriginCommunity)
+		argIdx++
+	}
+	if f.OrgType != "" {
+		conditions = append(conditions, fmt.Sprintf("co.org_type = $%d", argIdx))
+		args = append(args, f.OrgType)
 		argIdx++
 	}
 	if f.Q != "" {
@@ -581,17 +599,62 @@ WHERE %s
 }
 
 // ApproveOrg publishes a community organisation: sets status='published',
-// records the reviewer and review timestamp. Only pending orgs can be
+// records the reviewer and review timestamp. For AI-generated entries
+// (ADR-088), also sets hitl_reviewed_by and hitl_reviewed_at — the
+// approve action IS the HITL review gate. Only pending orgs can be
 // approved (prevents re-approving already-published or archived orgs).
 func (s *Store) ApproveOrg(ctx context.Context, id, tenantID, reviewedBy pgtype.UUID) error {
 	const q = `
 UPDATE community_organisations
-SET status = 'published', reviewed_by = $3, reviewed_at = now(), updated_at = now()
+SET status = 'published',
+    reviewed_by = $3,
+    reviewed_at = now(),
+    hitl_reviewed_by = CASE WHEN ai_generated = true THEN $3 ELSE hitl_reviewed_by END,
+    hitl_reviewed_at = CASE WHEN ai_generated = true THEN now() ELSE hitl_reviewed_at END,
+    updated_at = now()
 WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL AND status = 'pending'
 `
 	cmd, err := s.pool.Writer.Exec(ctx, q, id, tenantID, reviewedBy)
 	if err != nil {
 		return fmt.Errorf("communitylocator: approve org: %w", err)
+	}
+	if cmd.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+	return nil
+}
+
+// ArchiveOrg archives a published community organisation: sets
+// status='archived', is_active=false. Only published orgs can be
+// archived.
+func (s *Store) ArchiveOrg(ctx context.Context, id, tenantID pgtype.UUID) error {
+	const q = `
+UPDATE community_organisations
+SET status = 'archived', is_active = false, updated_at = now()
+WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL AND status = 'published'
+`
+	cmd, err := s.pool.Writer.Exec(ctx, q, id, tenantID)
+	if err != nil {
+		return fmt.Errorf("communitylocator: archive org: %w", err)
+	}
+	if cmd.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+	return nil
+}
+
+// DeleteOrg soft-deletes a community organisation: sets deleted_at=now()
+// per Rule 11 (soft deletes only for user content). The org is excluded
+// from all list/get queries via the deleted_at IS NULL filter.
+func (s *Store) DeleteOrg(ctx context.Context, id, tenantID pgtype.UUID) error {
+	const q = `
+UPDATE community_organisations
+SET deleted_at = now(), is_active = false, updated_at = now()
+WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
+`
+	cmd, err := s.pool.Writer.Exec(ctx, q, id, tenantID)
+	if err != nil {
+		return fmt.Errorf("communitylocator: delete org: %w", err)
 	}
 	if cmd.RowsAffected() == 0 {
 		return pgx.ErrNoRows
