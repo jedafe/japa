@@ -12,6 +12,8 @@ package cvformatter
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -320,6 +322,10 @@ func (s *Service) CreateSession(ctx context.Context, tenantID, userID pgtype.UUI
 		aiModel = &input.AIModel
 	}
 
+	// ADR-088: compute SHA-256 of the input text for provenance tracking.
+	hash := sha256.Sum256([]byte(input.InputText))
+	promptHash := hex.EncodeToString(hash[:])
+
 	row, err := s.store.CreateSession(ctx, SessionInput{
 		TenantID:           tenantID,
 		UserID:             userID,
@@ -328,6 +334,7 @@ func (s *Service) CreateSession(ctx context.Context, tenantID, userID pgtype.UUI
 		InputText:          input.InputText,
 		OutputFormat:       outputFormat,
 		AIModel:            aiModel,
+		AIPromptHash:       &promptHash,
 	})
 	if err != nil {
 		return SessionDTO{}, fmt.Errorf("cvformatter: create session: %w", err)
