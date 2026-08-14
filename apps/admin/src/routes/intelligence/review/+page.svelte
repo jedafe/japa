@@ -151,7 +151,18 @@
 		language_test_requirement: 'language_test_requirement',
 		tax_obligation_guide: 'tax_obligation_guide',
 		community_organisation: 'community_organisation',
-		cost_of_living: 'comparison'
+		cost_of_living: 'comparison',
+		remittance: 'guide',
+		// Guide content types — these have no projection table; the
+		// guide_content promoter writes directly to contents. They map
+		// to the generic 'guide' Studio content type with their category.
+		travel_routes: 'guide',
+		grants: 'guide',
+		admission: 'guide',
+		banking: 'guide',
+		work_career: 'guide',
+		health_insurance: 'guide',
+		culture_lifestyle: 'guide'
 	};
 
 	function contentTypeForEntity(entityType: string): string {
@@ -251,7 +262,11 @@
 				{ value: 'banking', label: 'Banking' },
 				{ value: 'work_career', label: 'Work & Career' },
 				{ value: 'health_insurance', label: 'Health Insurance' },
-				{ value: 'culture_lifestyle', label: 'Culture & Lifestyle' }
+				{ value: 'culture_lifestyle', label: 'Culture & Lifestyle' },
+				{ value: 'wiki_page', label: 'Wiki Page' },
+				{ value: 'language_test_requirement', label: 'Language Test Requirement' },
+				{ value: 'tax_obligation_guide', label: 'Tax Obligation Guide' },
+				{ value: 'community_organisation', label: 'Community Organisation' }
 			]
 		}
 	];
