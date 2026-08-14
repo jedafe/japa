@@ -114,6 +114,19 @@ func parsePageParams(r *http.Request) (page, limit int32) {
 // Public handlers (browse — anonymous)
 // ---------------------------------------------------------------------------
 
+// HandleCategories handles GET /calendar/categories — returns the allowed
+// calendar categories from the calendar.categories system_setting.
+// BUG-009: categories are served via the API (Rule 16), not hardcoded in
+// the frontend.
+func (h *Handlers) HandleCategories(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+	cats := h.service.Categories(r.Context(), tenantID)
+	writeJSON(w, http.StatusOK, map[string]any{"data": cats})
+}
+
 // HandleList handles GET /calendar — list published calendar entries with
 // optional filters (dest, origin, category, from, to, view). Also accepts
 // ?destination_space_id= as legacy alias.
@@ -183,6 +196,47 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 			"page_size":   limit,
 			"page_offset": page,
 			"total":       total,
+		},
+	})
+}
+
+// HandleListSaved handles GET /me/calendar/saved — returns the calendar
+// entries saved by the authenticated user. §86 Integration: "Saved entries
+// appear on the user dashboard alongside visa checklists."
+func (h *Handlers) HandleListSaved(w http.ResponseWriter, r *http.Request) {
+	user, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	page, limit := parsePageParams(r)
+	if limit > 100 {
+		limit = 100
+	}
+
+	entries, total, err := h.service.ListSaved(r.Context(), user.UserID, tenantID, int(page), int(limit))
+	if err != nil {
+		slog.Error("calendar: list saved failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "list_saved_failed", "Failed to list saved calendar entries")
+		return
+	}
+
+	totalPages := int64(0)
+	if limit > 0 {
+		totalPages = (total + int64(limit) - 1) / int64(limit)
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data": entries,
+		"meta": map[string]any{
+			"page":        page,
+			"per_page":    limit,
+			"total":       total,
+			"total_pages": totalPages,
 		},
 	})
 }
@@ -553,4 +607,34 @@ func (h *Handlers) HandleAdminUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"updated": true}})
+}
+
+// HandleAdminDelete handles DELETE /admin/calendar/:id — soft-deletes a
+// calendar entry (Rule 11). Gated by calendar.manage (admin+).
+// Ref: japaconnect-engineering/sections/86-community-calendar.md
+// Ref: japaconnect-engineering/AGENTS.md Rule 11
+func (h *Handlers) HandleAdminDelete(w http.ResponseWriter, r *http.Request) {
+	if _, ok := requireUser(w, r); !ok {
+		return
+	}
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+	entryID, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	if err := h.service.AdminSoftDelete(r.Context(), entryID, tenantID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "entry_not_found", "Calendar entry not found")
+			return
+		}
+		slog.Error("calendar: admin delete failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "delete_failed", "Failed to delete calendar entry")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"deleted": true}})
 }

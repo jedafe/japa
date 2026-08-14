@@ -165,6 +165,88 @@ func projectScholarshipFields(r *ScholarshipResult) {
 	}
 }
 
+// populateScholarshipResult fills the flat top-level fields and the
+// field_values map on a ScholarshipResult from the `scholarships` table
+// columns (ADR-112). The field_values keys match the legacy
+// custom_field_values keys (countries_eligible, level_of_study,
+// application_deadline, application_link, provider_institution,
+// award_amount_usd, description) so the main app's `field()` helper and
+// the existing card badges continue to render without a frontend contract
+// change.
+func populateScholarshipResult(
+	r *ScholarshipResult,
+	country string,
+	degreeLevel *string,
+	deadline pgtype.Date,
+	applicationURL, university *string,
+	eligibleCountries []string,
+	funding []byte,
+	description *string,
+) {
+	fv := map[string]string{}
+	r.Country = country
+	if country != "" {
+		fv["countries_eligible"] = country
+	}
+	if degreeLevel != nil && *degreeLevel != "" {
+		r.LevelOfStudy = *degreeLevel
+		fv["level_of_study"] = *degreeLevel
+	}
+	if deadline.Valid {
+		ds := deadline.Time.Format("2006-01-02")
+		r.ApplicationDeadline = ds
+		fv["application_deadline"] = ds
+	}
+	if applicationURL != nil && *applicationURL != "" {
+		r.ApplicationURL = *applicationURL
+		fv["application_link"] = *applicationURL
+	}
+	if university != nil && *university != "" {
+		r.Institution = *university
+		fv["provider_institution"] = *university
+	}
+	if description != nil && *description != "" {
+		r.Description = *description
+		fv["description"] = *description
+	}
+	if len(eligibleCountries) > 0 {
+		fv["eligible_countries"] = strings.Join(eligibleCountries, ", ")
+	}
+	// Award amount: best-effort extraction from the funding jsonb
+	// `award_amount_usd` field. Backfilled rows have empty funding.
+	if len(funding) > 0 && string(funding) != "{}" {
+		var f map[string]interface{}
+		if err := json.Unmarshal(funding, &f); err == nil {
+			if v, ok := f["award_amount_usd"]; ok {
+				if amt, ok := toFloat(v); ok {
+					r.AwardAmountUSD = &amt
+					fv["award_amount_usd"] = strconv.FormatFloat(amt, 'f', -1, 64)
+				}
+			}
+		}
+	}
+	r.FieldValues = fv
+}
+
+// toFloat coerces a json-decoded value to float64.
+func toFloat(v interface{}) (float64, bool) {
+	switch n := v.(type) {
+	case float64:
+		return n, true
+	case int:
+		return float64(n), true
+	case int64:
+		return float64(n), true
+	case string:
+		f, err := strconv.ParseFloat(n, 64)
+		if err != nil {
+			return 0, false
+		}
+		return f, true
+	}
+	return 0, false
+}
+
 // IsValidStatus checks if a status value is valid.
 func IsValidStatus(status string) bool {
 	switch status {
@@ -199,8 +281,12 @@ func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
 func (s *Service) SetEnqueuer(e TaskEnqueuer) { s.enqueuer = e }
 
 // FindScholarships queries published scholarship guides with server-side
-// filtering on custom_field_values. Uses a direct pgx query for dynamic
-// filtering.
+// filtering. Per ADR-112 the structured fields live in the dedicated
+// `scholarships` table (country, degree_level, deadline, application_url,
+// university, eligible_countries, funding); the editorial wrapper (slug,
+// meta_description/summary) comes from the joined `contents` row. The
+// previous custom_field_values projection is no longer the source of
+// truth. Uses a direct pgx query for dynamic filtering.
 func (s *Service) FindScholarships(ctx context.Context, tenantID pgtype.UUID, filters ScholarshipFilters) ([]ScholarshipResult, int64, error) {
 	if filters.Limit <= 0 || filters.Limit > 100 {
 		filters.Limit = 20
@@ -210,8 +296,7 @@ func (s *Service) FindScholarships(ctx context.Context, tenantID pgtype.UUID, fi
 	}
 	offset := (filters.Page - 1) * filters.Limit
 
-	// Build dynamic WHERE clauses for custom_field_values filtering.
-	// Each filter adds an EXISTS subquery on custom_field_values.
+	// Build dynamic WHERE clauses against the `scholarships` table.
 	var conditions []string
 	var args []interface{}
 	argIdx := 1
@@ -220,48 +305,30 @@ func (s *Service) FindScholarships(ctx context.Context, tenantID pgtype.UUID, fi
 	tenantIdx := argIdx
 	argIdx++
 
-	conditions = append(conditions, fmt.Sprintf("c.tenant_id = $%d", tenantIdx))
-	conditions = append(conditions, "c.content_type = 'guide'")
-	conditions = append(conditions, "c.guide_category = 'scholarship'")
+	conditions = append(conditions, fmt.Sprintf("s.tenant_id = $%d", tenantIdx))
 	conditions = append(conditions, "c.status = 'published'")
 	conditions = append(conditions, "c.deleted_at IS NULL")
 
 	if filters.Country != "" {
-		conditions = append(conditions, fmt.Sprintf(`
-			EXISTS (
-				SELECT 1 FROM custom_field_values cfv
-				JOIN custom_fields cf ON cf.id = cfv.field_id
-				WHERE cfv.entity_id = c.id
-				  AND cf.key = 'countries_eligible'
-				  AND cfv.value_text ILIKE '%%' || $%d || '%%'
-			)`, argIdx))
+		conditions = append(conditions, fmt.Sprintf("s.country ILIKE '%%' || $%d || '%%'", argIdx))
 		args = append(args, filters.Country)
 		argIdx++
 	}
 
 	if filters.Level != "" {
-		conditions = append(conditions, fmt.Sprintf(`
-			EXISTS (
-				SELECT 1 FROM custom_field_values cfv
-				JOIN custom_fields cf ON cf.id = cfv.field_id
-				WHERE cfv.entity_id = c.id
-				  AND cf.key = 'level_of_study'
-				  AND cfv.value_text = $%d
-			)`, argIdx))
+		conditions = append(conditions, fmt.Sprintf("s.degree_level ILIKE '%%' || $%d || '%%'", argIdx))
 		args = append(args, filters.Level)
 		argIdx++
 	}
 
-	if filters.Renewable != nil {
-		conditions = append(conditions, fmt.Sprintf(`
-			EXISTS (
-				SELECT 1 FROM custom_field_values cfv
-				JOIN custom_fields cf ON cf.id = cfv.field_id
-				WHERE cfv.entity_id = c.id
-				  AND cf.key = 'is_renewable'
-				  AND cfv.value_bool = $%d
-			)`, argIdx))
-		args = append(args, *filters.Renewable)
+	if filters.DeadlineFrom != "" {
+		conditions = append(conditions, fmt.Sprintf("s.deadline >= $%d::date", argIdx))
+		args = append(args, filters.DeadlineFrom)
+		argIdx++
+	}
+	if filters.DeadlineTo != "" {
+		conditions = append(conditions, fmt.Sprintf("s.deadline <= $%d::date", argIdx))
+		args = append(args, filters.DeadlineTo)
 		argIdx++
 	}
 
@@ -271,101 +338,37 @@ func (s *Service) FindScholarships(ctx context.Context, tenantID pgtype.UUID, fi
 		argIdx++
 	}
 
-	// Amount + deadline range filters on custom_field_values. These were
-	// previously accepted by the API but never applied to the query.
-	if filters.MinAmount > 0 {
-		conditions = append(conditions, fmt.Sprintf(`
-			EXISTS (
-				SELECT 1 FROM custom_field_values cfv
-				JOIN custom_fields cf ON cf.id = cfv.field_id
-				WHERE cfv.entity_id = c.id
-				  AND cf.key = 'award_amount_usd'
-				  AND cfv.value_number >= $%d
-			)`, argIdx))
-		args = append(args, filters.MinAmount)
-		argIdx++
-	}
-	if filters.MaxAmount > 0 {
-		conditions = append(conditions, fmt.Sprintf(`
-			EXISTS (
-				SELECT 1 FROM custom_field_values cfv
-				JOIN custom_fields cf ON cf.id = cfv.field_id
-				WHERE cfv.entity_id = c.id
-				  AND cf.key = 'award_amount_usd'
-				  AND cfv.value_number <= $%d
-			)`, argIdx))
-		args = append(args, filters.MaxAmount)
-		argIdx++
-	}
-	if filters.DeadlineFrom != "" {
-		conditions = append(conditions, fmt.Sprintf(`
-			EXISTS (
-				SELECT 1 FROM custom_field_values cfv
-				JOIN custom_fields cf ON cf.id = cfv.field_id
-				WHERE cfv.entity_id = c.id
-				  AND cf.key = 'application_deadline'
-				  AND cfv.value_text >= $%d
-			)`, argIdx))
-		args = append(args, filters.DeadlineFrom)
-		argIdx++
-	}
-	if filters.DeadlineTo != "" {
-		conditions = append(conditions, fmt.Sprintf(`
-			EXISTS (
-				SELECT 1 FROM custom_field_values cfv
-				JOIN custom_fields cf ON cf.id = cfv.field_id
-				WHERE cfv.entity_id = c.id
-				  AND cf.key = 'application_deadline'
-				  AND cfv.value_text <= $%d
-			)`, argIdx))
-		args = append(args, filters.DeadlineTo)
-		argIdx++
-	}
-
-	// Sort order
+	// Sort order. `amount_desc` has no direct column on the scholarships
+	// table (award amount lives in the `funding` jsonb, which is empty for
+	// backfilled rows); fall back to created_at so the sort param is
+	// accepted without erroring.
 	var orderBy string
 	switch filters.Sort {
 	case "deadline_asc":
-		orderBy = `(SELECT cfv.value_text FROM custom_field_values cfv JOIN custom_fields cf ON cf.id = cfv.field_id WHERE cfv.entity_id = c.id AND cf.key = 'application_deadline') ASC NULLS LAST`
-	case "amount_desc":
-		orderBy = `(SELECT cfv.value_number FROM custom_field_values cfv JOIN custom_fields cf ON cf.id = cfv.field_id WHERE cfv.entity_id = c.id AND cf.key = 'award_amount_usd') DESC NULLS LAST`
+		orderBy = "s.deadline ASC NULLS LAST"
 	default:
-		orderBy = "c.created_at DESC"
+		orderBy = "s.created_at DESC"
 	}
 
 	whereClause := strings.Join(conditions, " AND ")
 
 	// Single query with COUNT(*) OVER() to get the total count and the
-	// page rows in one pass — avoids running the filter subqueries twice
-	// (BUG-016: previously a separate count query re-executed all EXISTS
-	// subqueries). The window function appends the full-result-set count
-	// to every row; we read it from the first row (it's identical across
+	// page rows in one pass. The window function appends the full-result
+	// count to every row; we read it from the first row (identical across
 	// rows in the same result set).
 	dataQuery := fmt.Sprintf(`
-		SELECT c.id, c.title, c.slug, c.meta_description,
-			COALESCE(
-				(SELECT json_object_agg(cf.key,
-					CASE
-						WHEN cfv.value_text IS NOT NULL THEN cfv.value_text
-						WHEN cfv.value_number IS NOT NULL THEN cfv.value_number::text
-						WHEN cfv.value_bool IS NOT NULL THEN cfv.value_bool::text
-						ELSE ''
-					END)
-				 FROM custom_field_values cfv
-				 JOIN custom_fields cf ON cf.id = cfv.field_id
-				 WHERE cfv.entity_id = c.id
-				   AND COALESCE(cfv.value_text, cfv.value_number::text, cfv.value_bool::text) != ''
-				), '{}'::json
-			) AS field_values,
-			COUNT(*) OVER() AS total_count
-		FROM contents c
+		SELECT s.id, s.guide_id, s.title, c.slug, c.meta_description,
+		       s.country, s.degree_level, s.deadline, s.application_url,
+		       s.university, s.eligible_countries, s.funding, s.description,
+		       COUNT(*) OVER() AS total_count
+		FROM scholarships s
+		JOIN contents c ON c.id = s.guide_id
 		WHERE %s
 		ORDER BY %s
 		LIMIT $%d OFFSET $%d`,
 		whereClause, orderBy, argIdx, argIdx+1)
 	args = append(args, filters.Limit, offset)
 
-	// Execute the combined query.
 	pool := s.store.pool.Reader
 	rows, err := pool.Query(ctx, dataQuery, args...)
 	if err != nil {
@@ -376,73 +379,98 @@ func (s *Service) FindScholarships(ctx context.Context, tenantID pgtype.UUID, fi
 	var results []ScholarshipResult
 	var total int64
 	for rows.Next() {
-		var r ScholarshipResult
-		var fieldValuesJSON []byte
-		var summary *string
-		var rowCount int64
-		if err := rows.Scan(&r.GuideID, &r.Title, &r.Slug, &summary, &fieldValuesJSON, &rowCount); err != nil {
+		var (
+			r                 ScholarshipResult
+			id                pgtype.UUID
+			guideID           pgtype.UUID
+			slug              *string
+			summary           *string
+			country           string
+			degreeLevel       *string
+			deadline          pgtype.Date
+			applicationURL    *string
+			university        *string
+			eligibleCountries []string
+			funding           []byte
+			description       *string
+			rowCount          int64
+		)
+		if err := rows.Scan(
+			&id, &guideID, &r.Title, &slug, &summary,
+			&country, &degreeLevel, &deadline, &applicationURL,
+			&university, &eligibleCountries, &funding, &description,
+			&rowCount,
+		); err != nil {
 			return nil, 0, fmt.Errorf("scholarships: scan row: %w", err)
 		}
-		// COUNT(*) OVER() is the same on every row; capture it from the
-		// first row. When the result set is empty the loop body never
-		// runs and total stays 0.
 		if rowCount > 0 {
 			total = rowCount
 		}
-		if summary != nil {
+		r.ID = pgtypeUUIDString(id)
+		r.GuideID = pgtypeUUIDString(guideID)
+		if slug != nil {
+			r.Slug = *slug
+		}
+		if summary != nil && *summary != "" {
 			r.Summary = *summary
+		} else if description != nil && *description != "" {
+			r.Summary = *description
 		}
-		if err := json.Unmarshal(fieldValuesJSON, &r.FieldValues); err != nil {
-			r.FieldValues = map[string]string{}
-		}
-		r.ID = r.GuideID
-		projectScholarshipFields(&r)
+		populateScholarshipResult(&r, country, degreeLevel, deadline, applicationURL, university, eligibleCountries, funding, description)
 		results = append(results, r)
 	}
 
 	return results, total, nil
 }
 
-// GetScholarshipDetail returns a single scholarship guide with all field values.
+// GetScholarshipDetail returns a single scholarship guide with all field
+// values. Per ADR-112 the structured fields are read from the `scholarships`
+// table joined with `contents` (editorial wrapper). A guide that has no row
+// in `scholarships` is not a finder-eligible scholarship and returns an error,
+// which SaveScholarship maps to ErrGuideNotFound.
 func (s *Service) GetScholarshipDetail(ctx context.Context, tenantID pgtype.UUID, guideID pgtype.UUID) (ScholarshipResult, error) {
 	query := `
-		SELECT c.id, c.title, c.slug, c.meta_description,
-			COALESCE(
-				(SELECT json_object_agg(cf.key,
-					CASE
-						WHEN cfv.value_text IS NOT NULL THEN cfv.value_text
-						WHEN cfv.value_number IS NOT NULL THEN cfv.value_number::text
-						WHEN cfv.value_bool IS NOT NULL THEN cfv.value_bool::text
-						ELSE ''
-					END)
-				 FROM custom_field_values cfv
-				 JOIN custom_fields cf ON cf.id = cfv.field_id
-				 WHERE cfv.entity_id = c.id
-				   AND COALESCE(cfv.value_text, cfv.value_number::text, cfv.value_bool::text) != ''
-				), '{}'::json
-			) AS field_values
-		FROM contents c
-		WHERE c.tenant_id = $1 AND c.id = $2
-		  AND c.content_type = 'guide' AND c.guide_category = 'scholarship'
+		SELECT s.id, s.guide_id, s.title, c.slug, c.meta_description,
+		       s.country, s.degree_level, s.deadline, s.application_url,
+		       s.university, s.eligible_countries, s.funding, s.description
+		FROM scholarships s
+		JOIN contents c ON c.id = s.guide_id
+		WHERE s.tenant_id = $1 AND s.guide_id = $2
 		  AND c.status = 'published' AND c.deleted_at IS NULL`
 
-	var r ScholarshipResult
-	var fieldValuesJSON []byte
-	var summary *string
-	err := s.store.pool.Reader.QueryRow(ctx, query, tenantID, guideID).Scan(
-		&r.GuideID, &r.Title, &r.Slug, &summary, &fieldValuesJSON,
+	var (
+		r                 ScholarshipResult
+		id                pgtype.UUID
+		gID               pgtype.UUID
+		slug              *string
+		summary           *string
+		country           string
+		degreeLevel       *string
+		deadline          pgtype.Date
+		applicationURL    *string
+		university        *string
+		eligibleCountries []string
+		funding           []byte
+		description       *string
 	)
-	if err != nil {
+	if err := s.store.pool.Reader.QueryRow(ctx, query, tenantID, guideID).Scan(
+		&id, &gID, &r.Title, &slug, &summary,
+		&country, &degreeLevel, &deadline, &applicationURL,
+		&university, &eligibleCountries, &funding, &description,
+	); err != nil {
 		return ScholarshipResult{}, fmt.Errorf("scholarships: get detail: %w", err)
 	}
-	if summary != nil {
+	r.ID = pgtypeUUIDString(id)
+	r.GuideID = pgtypeUUIDString(gID)
+	if slug != nil {
+		r.Slug = *slug
+	}
+	if summary != nil && *summary != "" {
 		r.Summary = *summary
+	} else if description != nil && *description != "" {
+		r.Summary = *description
 	}
-	if err := json.Unmarshal(fieldValuesJSON, &r.FieldValues); err != nil {
-		r.FieldValues = map[string]string{}
-	}
-	r.ID = r.GuideID
-	projectScholarshipFields(&r)
+	populateScholarshipResult(&r, country, degreeLevel, deadline, applicationURL, university, eligibleCountries, funding, description)
 	return r, nil
 }
 

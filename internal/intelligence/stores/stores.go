@@ -127,6 +127,22 @@ func (s *Store) GetIntelSource(ctx context.Context, tenantID, id pgtype.UUID) (g
 	return row, nil
 }
 
+// GetPersonaUserID resolves the backing user_id for an AI persona. Used by
+// promoters to stamp contents.author_id with the persona's bot user instead
+// of the invalid defaultTenantID (FK violation fix). Returns an invalid
+// pgtype.UUID when the persona does not exist so the caller can fall back
+// to the default author.
+func (s *Store) GetPersonaUserID(ctx context.Context, tenantID, personaID pgtype.UUID) (pgtype.UUID, error) {
+	row, err := s.queries.GetIntelPersonaUserID(ctx, gen.GetIntelPersonaUserIDParams{
+		TenantID: tenantID,
+		ID:       personaID,
+	})
+	if err != nil {
+		return pgtype.UUID{}, fmt.Errorf("stores: get persona user_id: %w", err)
+	}
+	return row, nil
+}
+
 // GetCountrySpace resolves the country-level geo space (§05) id for an ISO-3
 // country code via the existing GetSpaceByGeoCode query. Returns an invalid
 // pgtype.UUID (NULL) when no country space exists for the code so the caller

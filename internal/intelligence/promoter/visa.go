@@ -25,6 +25,7 @@ import (
 // row. WithTx runs the multi-table writes atomically (BUG-01/02 fix, §6.2
 // transaction boundary).
 type VisaStore interface {
+	PersonaResolver
 	GetIntelRecord(ctx context.Context, tenantID, id pgtype.UUID) (gen.IntelRecord, error)
 	GetIntelSource(ctx context.Context, tenantID, id pgtype.UUID) (gen.IntelSource, error)
 	GetVisaRouteByIntelRecord(ctx context.Context, tenantID, intelRecordID pgtype.UUID) (gen.VisaRoute, error)
@@ -150,9 +151,9 @@ func (p *VisaPromoter) visaCreatePath(ctx context.Context, record gen.IntelRecor
 	canonicalURL := source.SourceUrl
 
 	// Resolve the destination country's geo space (§05) so the space-scoped
-	// visa feed can match this route. The lookup is best-effort: when no
-	// country space exists for the extracted ISO-3 code,
-	// destination_space_id stays NULL. BUG-005 fix (spec §455).
+	// visa feed can match this route. visa_routes.destination_space_id is
+	// NOT NULL, so when no country space can be resolved we route the record
+	// back to review rather than failing the promotion. BUG-005 fix (spec §455).
 	countryCode := firstCountry(ext, "country")
 	var destinationSpaceID pgtype.UUID
 	if countryCode != "" {
@@ -160,10 +161,17 @@ func (p *VisaPromoter) visaCreatePath(ctx context.Context, record gen.IntelRecor
 			destinationSpaceID = id
 		}
 	}
+	if !destinationSpaceID.Valid {
+		return PromoteResult{Action: ActionReview}, fmt.Errorf(
+			"promoter: visa route requires a destination country space but none resolved for %q — routing to review",
+			countryCode,
+		)
+	}
 
 	contentParams := gen.CreateContentParams{
 		TenantID:        p.tenantID,
-		AuthorID:        p.authorID,
+		AuthorID:        resolveAuthorID(ctx, p.store, source, p.tenantID, p.authorID),
+		FieldValues:     []byte(`{}`),
 		ContentType:     "guide",
 		Title:           name,
 		Slug:            slug,
@@ -256,6 +264,7 @@ func (p *VisaPromoter) visaUpdatePath(ctx context.Context, record gen.IntelRecor
 	note := "automatic re-crawl update"
 	reviewLogParams := gen.CreateIntelReviewLogParams{
 		IntelRecordID: record.ID,
+		ActorUserID:   p.authorID,
 		Action:        "auto_update",
 		FieldChanges:  changesJSON,
 		Note:          &note,

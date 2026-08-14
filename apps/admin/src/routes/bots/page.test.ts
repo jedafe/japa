@@ -4,6 +4,7 @@ import Page from './+page.svelte';
 
 vi.mock('$lib/api', () => ({
 	api: vi.fn().mockRejectedValue(new Error('not connected')),
+	apiRaw: vi.fn().mockRejectedValue(new Error('not connected')),
 	botsAdminApiExtended: {
 		list: vi.fn().mockRejectedValue(new Error('not connected')),
 		create: vi.fn().mockRejectedValue(new Error('not connected')),

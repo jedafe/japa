@@ -37,13 +37,12 @@
 	const scholarships = $derived<Scholarship[]>(data.scholarships);
 	const disabled = $derived(data.disabled);
 	const authed = $derived(data.authed);
-	const savedScholarships = $state<SavedScholarship[]>(untrack(() => data.savedScholarships ?? []));
+	let savedScholarships = $state<SavedScholarship[]>(untrack(() => data.savedScholarships ?? []));
 
 	// Filter state — initialized from URL.
 	let q = $state(page.url.searchParams.get('q') ?? '');
 	let country = $state(page.url.searchParams.get('country') ?? '');
 	let level = $state(page.url.searchParams.get('level') ?? '');
-	let renewable = $state(page.url.searchParams.get('renewable') ?? '');
 	let savedIds = $state<Set<string>>(untrack(() => new Set(data.savedIds ?? [])));
 
 	// Application status options — driven by the backend's saved-scholarship
@@ -71,7 +70,6 @@
 		if (q) params.set('q', q);
 		if (country) params.set('country', country);
 		if (level) params.set('level', level);
-		if (renewable) params.set('renewable', renewable);
 		goto(`/scholarships?${params.toString()}`, { keepFocus: true });
 	}
 
@@ -79,11 +77,10 @@
 		q = '';
 		country = '';
 		level = '';
-		renewable = '';
 		goto('/scholarships');
 	}
 
-	const hasActiveFilters = $derived(!!q || !!country || !!level || !!renewable);
+	const hasActiveFilters = $derived(!!q || !!country || !!level);
 	// 1-based page (data.currentPage is 1-based); showing range is
 	// [(page-1)*size + 1, min(page*size, total)].
 	const showingStart = $derived((data.currentPage - 1) * data.pageSize + 1);
@@ -96,11 +93,31 @@
 			if (res.error) return;
 			savedIds.delete(s.guide_id);
 			savedIds = new Set(savedIds);
+			// Keep the Application Tracker list in sync with savedIds so
+			// unsaving removes the entry immediately without a reload.
+			savedScholarships = savedScholarships.filter((x) => x.guide_id !== s.guide_id);
 		} else {
 			const res = await api.post(`/scholarships/${s.guide_id}/save`);
 			if (res.error) return;
 			savedIds.add(s.guide_id);
 			savedIds = new Set(savedIds);
+			// Add a new tracker entry so the Application Tracker reflects
+			// the save immediately. Status defaults to 'saved' (backend
+			// default); the user can change it via the tracker select.
+			savedScholarships = [
+				...savedScholarships,
+				{
+					id: s.guide_id,
+					guide_id: s.guide_id,
+					title: s.title,
+					slug: s.slug,
+					summary: s.summary,
+					status: 'saved',
+					notes: '',
+					remind_before_days: null,
+					updated_at: new Date().toISOString()
+				}
+			];
 		}
 	}
 

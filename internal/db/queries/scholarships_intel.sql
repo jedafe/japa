@@ -38,6 +38,7 @@ SET title = $3, description = $4, country = $5, country_space_id = $6, universit
     deadline = $12, application_url = $13, required_documents = $14, minimum_gpa = $15,
     language_requirements = $16, confidence_overall = $17, verification_status = $18,
     freshness_score = $19, override_source = $20, editorial_overrides = $21,
+    source_url = $22, source_type = $23, trust_level = $24,
     last_verified_at = now(), updated_at = now()
 WHERE tenant_id = $1 AND id = $2;
 
@@ -58,6 +59,25 @@ WHERE tenant_id = $1 AND id = $2;
 
 -- name: ListScholarships :many
 SELECT * FROM scholarships WHERE tenant_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3;
+
+-- name: AdminListScholarships :many
+-- Admin management list with optional text search (q) and verification_status
+-- filter. q matches title, university, or country case-insensitively. Drives
+-- the /admin/scholarships list endpoint (Section 73).
+SELECT * FROM scholarships
+WHERE tenant_id = $1
+  AND ($2::text IS NULL OR $2 = '' OR title ILIKE '%' || $2 || '%' OR university ILIKE '%' || $2 || '%' OR country ILIKE '%' || $2 || '%')
+  AND ($3::text IS NULL OR $3 = '' OR verification_status = $3)
+ORDER BY created_at DESC
+LIMIT $4 OFFSET $5;
+
+-- name: AdminCountScholarships :one
+-- Total row count for the admin management list with the same q + status
+-- filter as AdminListScholarships, so the admin panel can compute total pages.
+SELECT COUNT(*) FROM scholarships
+WHERE tenant_id = $1
+  AND ($2::text IS NULL OR $2 = '' OR title ILIKE '%' || $2 || '%' OR university ILIKE '%' || $2 || '%' OR country ILIKE '%' || $2 || '%')
+  AND ($3::text IS NULL OR $3 = '' OR verification_status = $3);
 
 -- name: ListScholarshipsKeyset :many
 -- Keyset (cursor) pagination for the radar feed (spec §731-733). Resumes

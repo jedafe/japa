@@ -108,7 +108,7 @@ func (h *Handlers) CreateFolder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": folder})
+	writeJSON(w, http.StatusCreated, map[string]any{"data": folderResponseFromModel(folder)})
 }
 
 // UpdateFolder handles PATCH /api/v1/me/bookmark-folders/{id}.
@@ -162,7 +162,7 @@ func (h *Handlers) UpdateFolder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": folder})
+	writeJSON(w, http.StatusOK, map[string]any{"data": folderResponseFromModel(folder)})
 }
 
 // DeleteFolder handles DELETE /api/v1/me/bookmark-folders/{id}.

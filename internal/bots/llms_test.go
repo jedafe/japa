@@ -172,3 +172,28 @@ func TestGenerateLLMsFullTxt_EmptyData(t *testing.T) {
 		t.Error("should not have Spaces section when empty")
 	}
 }
+
+func TestContentURLPath(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		contentType string
+		slug        string
+		want        string
+	}{
+		{"blog_post", "my-post", "/blog/my-post"},
+		{"forum_thread", "my-thread", "/forum/my-thread"},
+		{"guide", "my-guide", "/blog/my-guide"},
+		{"discussion", "my-discussion", "/forum/my-discussion"},
+		{"comparison", "my-comparison", "/blog/my-comparison"},
+		{"unknown_type", "my-content", "/blog/my-content"},
+		{"", "no-type", "/blog/no-type"},
+	}
+
+	for _, tt := range tests {
+		got := contentURLPath(tt.contentType, tt.slug)
+		if got != tt.want {
+			t.Errorf("contentURLPath(%q, %q) = %q, want %q", tt.contentType, tt.slug, got, tt.want)
+		}
+	}
+}

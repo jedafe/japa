@@ -177,6 +177,11 @@ func sourceToFullEntry(s sources.Source) map[string]interface{} {
 	entry["last_success_at"] = s.LastSuccessAt
 	entry["last_error_at"] = s.LastErrorAt
 	entry["created_at"] = s.CreatedAt
+	if s.PersonaID.Valid {
+		entry["persona_id"] = s.PersonaID.String()
+	} else {
+		entry["persona_id"] = nil
+	}
 	return entry
 }
 

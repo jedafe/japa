@@ -2,7 +2,7 @@
 	// /bots — migrated to the EntityPage scaffold; declarative CRUD entity with
 	// is_system show-predicate on delete and bot_type/policy filters.
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
-	import { botsAdminApiExtended } from '$lib/api';
+	import { botsAdminApiExtended, apiRaw } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { Trash2, Eye, Pencil } from 'lucide-svelte';
@@ -152,17 +152,35 @@
 		],
 		actions,
 		fields,
-		load: async ({ q, filter }) => {
-			const result = await botsAdminApiExtended.list('page_size=100');
+		load: async ({ page, pageSize, q, filter }) => {
+			const params = new URLSearchParams({
+				page_size: String(pageSize),
+				page_offset: String((page - 1) * pageSize)
+			});
+			if (filter.bot_type) params.set('bot_type', filter.bot_type);
+			// Use apiRaw to access top-level total/total_pages alongside data.
+			const result = await apiRaw<{ data: Bot[]; total: number; total_pages: number }>(
+				`/admin/bots?${params.toString()}`
+			);
 			if (result.ok) {
-				let data = (Array.isArray(result.data) ? result.data : []) as Bot[];
-				if (filter.bot_type) data = data.filter((b) => b.bot_type === filter.bot_type);
-				if (filter.policy) data = data.filter((b) => b.policy === filter.policy);
+				const d = result.data;
+				let items = (d.data ?? []) as Bot[];
+				// policy filter and search are client-side (backend doesn't support them).
+				if (filter.policy) items = items.filter((b) => b.policy === filter.policy);
 				if (q) {
 					const lq = q.toLowerCase();
-					data = data.filter((b) => b.name.toLowerCase().includes(lq) || b.user_agent_pattern.toLowerCase().includes(lq) || b.bot_type.toLowerCase().includes(lq));
+					items = items.filter(
+						(b) =>
+							b.name.toLowerCase().includes(lq) ||
+							b.user_agent_pattern.toLowerCase().includes(lq) ||
+							b.bot_type.toLowerCase().includes(lq)
+					);
 				}
-				return { data, total: data.length, totalPages: 1 };
+				return {
+					data: items,
+					total: d.total ?? items.length,
+					totalPages: d.total_pages ?? 1
+				};
 			}
 			throw new Error(result.error ?? t('common.error', 'Failed to load bots'));
 		},

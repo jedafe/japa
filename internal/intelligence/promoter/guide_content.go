@@ -28,6 +28,7 @@ var _ = content.Slugify
 // intel_record itself carries the confidence/freshness/editorial_overrides
 // provenance.
 type GuideContentStore interface {
+	PersonaResolver
 	GetIntelRecord(ctx context.Context, tenantID, id pgtype.UUID) (gen.IntelRecord, error)
 	GetIntelSource(ctx context.Context, tenantID, id pgtype.UUID) (gen.IntelSource, error)
 	CreateContent(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateContentParams) (gen.CreateContentRow, error)
@@ -134,7 +135,8 @@ func (p *GuideContentPromoter) guideCreatePath(ctx context.Context, record gen.I
 
 	contentParams := gen.CreateContentParams{
 		TenantID:        p.tenantID,
-		AuthorID:        p.authorID,
+		AuthorID:        resolveAuthorID(ctx, p.store, source, p.tenantID, p.authorID),
+		FieldValues:     []byte(`{}`),
 		ContentType:     "guide",
 		Title:           title,
 		Slug:            slug,
@@ -195,6 +197,7 @@ func (p *GuideContentPromoter) guideUpdatePath(ctx context.Context, record gen.I
 	note := "automatic re-crawl update"
 	reviewLogParams := gen.CreateIntelReviewLogParams{
 		IntelRecordID: record.ID,
+		ActorUserID:   p.authorID,
 		Action:        "auto_update",
 		FieldChanges:  []byte(`[{"field":"body","from":"<previous>","to":"<updated>"}]`),
 		Note:          &note,

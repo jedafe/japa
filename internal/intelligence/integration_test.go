@@ -91,6 +91,12 @@ func (m *mockPromoterStore) GetCountrySpace(ctx context.Context, tenantID pgtype
 	return m.countrySpaceID, nil
 }
 
+// GetPersonaUserID returns an invalid UUID (no persona in the mock) so the
+// promoter falls back to the default authorID.
+func (m *mockPromoterStore) GetPersonaUserID(ctx context.Context, tenantID, personaID pgtype.UUID) (pgtype.UUID, error) {
+	return pgtype.UUID{}, nil
+}
+
 func (m *mockPromoterStore) GetScholarshipByIntelRecord(ctx context.Context, tenantID, intelRecordID pgtype.UUID) (gen.Scholarship, error) {
 	if !m.hasExisting {
 		return gen.Scholarship{}, errors.New("pgx: no rows in result set")

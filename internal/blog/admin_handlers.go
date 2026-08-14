@@ -66,6 +66,11 @@ func (h *Handlers) AdminCreatePost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// BUG-006: dispatch @mention notifications — fire-and-forget (BL-002,
+	// Section 15). The public CreatePost does this; the admin path must
+	// too, otherwise @mentions in admin-created posts are silently dropped.
+	h.dispatchMentionNotifications(r.Context(), tenantID, user.UserID, post.ID, post.SpaceID, input.Body)
+
 	writeJSON(w, http.StatusCreated, map[string]any{"data": post})
 }
 

@@ -6,6 +6,11 @@
 // users can save individual events and subscribe to category/destination
 // notifications.
 //
+// BUG-007: fixed-shape queries are now sqlc-generated (Rule 2). The
+// dynamic-filter queries (ListEntries, AdminListEntries,
+// UpcomingEntriesForReminders) remain hand-written pgx because sqlc
+// cannot express dynamic WHERE clauses or dynamic OR builders.
+//
 // Ref: japaconnect-engineering/sections/86-community-calendar.md
 //      japaconnect-engineering/adr/ADR-094-community-calendar.md
 package calendar
@@ -19,17 +24,26 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/jedafe/japa/internal/db"
+	"github.com/jedafe/japa/internal/db/gen"
 )
 
 // Store is the data-access layer for calendar_entries, calendar_saves,
-// and calendar_subscriptions.
+// and calendar_subscriptions. Fixed-shape queries use sqlc-generated
+// methods (read/write split); dynamic-filter queries use hand-written
+// pgx on the raw pool.
 type Store struct {
-	pool *db.DB
+	pool  *db.DB
+	read  *gen.Queries
+	write *gen.Queries
 }
 
 // NewStore creates a calendar store backed by the given database.
 func NewStore(database *db.DB) *Store {
-	return &Store{pool: database}
+	return &Store{
+		pool:  database,
+		read:  gen.New(database.Reader),
+		write: gen.New(database.Writer),
+	}
 }
 
 // CalendarEntry represents a single calendar_entries row.
@@ -45,58 +59,76 @@ type CalendarEntry struct {
 	EndsAt             pgtype.Timestamptz
 	IsRecurring        bool
 	RecurrencePattern  *string
-	SourceURL          *string
+	SourceURL          string // NOT NULL since 000378
 	Status             string // pending|published|archived|unverified (§86)
 	SubmittedBy        pgtype.UUID
 	ReviewedBy         pgtype.UUID
 	ReviewedAt         pgtype.Timestamptz
 	StalenessCheckDue  pgtype.Timestamptz
-	CreatedAt          pgtype.Timestamptz
-	UpdatedAt          pgtype.Timestamptz
-	DeletedAt          pgtype.Timestamptz
+	// ADR-088 universal AI content generation columns.
+	AiGenerated    bool
+	AiModel        *string
+	HitlReviewedBy pgtype.UUID
+	AiGeneratedAt  pgtype.Timestamptz
+	CreatedAt      pgtype.Timestamptz
+	UpdatedAt      pgtype.Timestamptz
+	DeletedAt      pgtype.Timestamptz
+}
+
+// fromGetRow converts a sqlc-generated CalendarGetEntryRow to CalendarEntry.
+func fromGetRow(r gen.CalendarGetEntryRow) CalendarEntry {
+	return CalendarEntry{
+		ID: r.ID, TenantID: r.TenantID, Title: r.Title, Description: r.Description,
+		Category: r.Category, DestinationSpaceID: r.DestinationSpaceID, OriginSpaceID: r.OriginSpaceID,
+		OccursAt: r.OccursAt, EndsAt: r.EndsAt, IsRecurring: r.IsRecurring, RecurrencePattern: r.RecurrencePattern,
+		SourceURL: r.SourceUrl, Status: r.Status, SubmittedBy: r.SubmittedBy, ReviewedBy: r.ReviewedBy, ReviewedAt: r.ReviewedAt,
+		StalenessCheckDue: r.StalenessCheckDue,
+		AiGenerated: r.AiGenerated, AiModel: r.AiModel, HitlReviewedBy: r.HitlReviewedBy, AiGeneratedAt: r.AiGeneratedAt,
+		CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt, DeletedAt: r.DeletedAt,
+	}
+}
+
+// fromSavedRow converts a sqlc-generated CalendarListSavedEntriesRow to CalendarEntry.
+func fromSavedRow(r gen.CalendarListSavedEntriesRow) CalendarEntry {
+	return CalendarEntry{
+		ID: r.ID, TenantID: r.TenantID, Title: r.Title, Description: r.Description,
+		Category: r.Category, DestinationSpaceID: r.DestinationSpaceID, OriginSpaceID: r.OriginSpaceID,
+		OccursAt: r.OccursAt, EndsAt: r.EndsAt, IsRecurring: r.IsRecurring, RecurrencePattern: r.RecurrencePattern,
+		SourceURL: r.SourceUrl, Status: r.Status, SubmittedBy: r.SubmittedBy, ReviewedBy: r.ReviewedBy, ReviewedAt: r.ReviewedAt,
+		StalenessCheckDue: r.StalenessCheckDue,
+		AiGenerated: r.AiGenerated, AiModel: r.AiModel, HitlReviewedBy: r.HitlReviewedBy, AiGeneratedAt: r.AiGeneratedAt,
+		CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt, DeletedAt: r.DeletedAt,
+	}
 }
 
 // CreateEntry inserts a new calendar entry with status='pending'.
 func (s *Store) CreateEntry(ctx context.Context, entry CalendarEntry) (pgtype.UUID, error) {
-	var entryID pgtype.UUID
-	err := s.pool.Writer.QueryRow(ctx, `
-INSERT INTO calendar_entries (
-    tenant_id, title, description, category,
-    destination_space_id, origin_space_id,
-    occurs_at, ends_at, is_recurring, recurrence_pattern,
-    source_url, status, submitted_by, staleness_check_due
-) VALUES (
-    $1, $2, $3, $4,
-    $5, $6,
-    $7, $8, $9, $10,
-    $11, 'pending', $12, $13
-)
-RETURNING id
-`,
-		entry.TenantID, entry.Title, entry.Description, entry.Category,
-		entry.DestinationSpaceID, entry.OriginSpaceID,
-		entry.OccursAt, entry.EndsAt, entry.IsRecurring, entry.RecurrencePattern,
-		entry.SourceURL, entry.SubmittedBy, entry.StalenessCheckDue,
-	).Scan(&entryID)
+	id, err := s.write.CalendarCreateEntry(ctx, gen.CalendarCreateEntryParams{
+		TenantID:           entry.TenantID,
+		Title:              entry.Title,
+		Description:        entry.Description,
+		Category:           entry.Category,
+		DestinationSpaceID: entry.DestinationSpaceID,
+		OriginSpaceID:      entry.OriginSpaceID,
+		OccursAt:           entry.OccursAt,
+		EndsAt:             entry.EndsAt,
+		IsRecurring:        entry.IsRecurring,
+		RecurrencePattern:  entry.RecurrencePattern,
+		SourceUrl:          entry.SourceURL,
+		SubmittedBy:        entry.SubmittedBy,
+		StalenessCheckDue:  entry.StalenessCheckDue,
+	})
 	if err != nil {
 		return pgtype.UUID{}, fmt.Errorf("calendar: create entry: %w", err)
 	}
-	return entryID, nil
+	return id, nil
 }
 
 // SetStalenessCheckDue sets staleness_check_due = occurs_at - 60 days for
 // recurring entries. Non-recurring entries get a NULL staleness_check_due.
 // Ref: §86 Staleness Management, ADR-094.
 func (s *Store) SetStalenessCheckDue(ctx context.Context, id pgtype.UUID) error {
-	_, err := s.pool.Writer.Exec(ctx, `
-UPDATE calendar_entries
-SET staleness_check_due = CASE
-    WHEN is_recurring THEN occurs_at - INTERVAL '60 days'
-    ELSE NULL
-END
-WHERE id = $1
-`, id)
-	if err != nil {
+	if err := s.write.CalendarSetStalenessCheckDue(ctx, id); err != nil {
 		return fmt.Errorf("calendar: set staleness_check_due: %w", err)
 	}
 	return nil
@@ -106,37 +138,61 @@ WHERE id = $1
 // staleness_check_due date has passed. Returns the count of flagged entries.
 // Ref: §86 Staleness Management — nightly Asynq task calendar:staleness_check.
 func (s *Store) FlagStaleEntries(ctx context.Context) (int64, error) {
-	cmd, err := s.pool.Writer.Exec(ctx, `
-UPDATE calendar_entries
-SET status = 'unverified', updated_at = now()
-WHERE staleness_check_due IS NOT NULL
-  AND staleness_check_due <= now()
-  AND status = 'published'
-  AND deleted_at IS NULL
-`)
+	n, err := s.write.CalendarFlagStaleEntries(ctx)
 	if err != nil {
 		return 0, fmt.Errorf("calendar: flag stale entries: %w", err)
 	}
-	return cmd.RowsAffected(), nil
+	return n, nil
 }
 
-// UpcomingEntriesForReminders returns published entries occurring within the
-// next `daysAhead` days that have subscribers. Used by calendar:send_reminders.
+// UpcomingEntriesForReminders returns published entries occurring at the
+// specified day-offset marks (e.g. 90/30/7 days from now) that have
+// subscribers. Used by calendar:send_reminders.
 // Ref: §86 — reminders fire at 90/30/7 days before each entry.
-func (s *Store) UpcomingEntriesForReminders(ctx context.Context, daysAhead int) ([]CalendarEntry, error) {
-	rows, err := s.pool.Reader.Query(ctx, `
+//
+// BUG-012: the SQL pre-filters to a 1-day-wide window around each mark so
+// the Go loop only processes entries that are actually due a reminder,
+// instead of loading the entire 90-day window and skipping most rows.
+// The window is [today + days, today + days + 1 day) so that a daily task
+// firing at any time of day catches entries whose occurs_at falls on the
+// target calendar day.
+//
+// This query uses a dynamic OR clause and cannot be expressed in sqlc.
+func (s *Store) UpcomingEntriesForReminders(ctx context.Context, dayMarks []int) ([]CalendarEntry, error) {
+	if len(dayMarks) == 0 {
+		return nil, nil
+	}
+	// Build a parameterised OR clause: occurs_at in [now()+d days, now()+(d+1) days)
+	// for each mark d. Args start at $1.
+	args := make([]any, 0, len(dayMarks)*2)
+	clauses := make([]string, 0, len(dayMarks))
+	argIdx := 1
+	for _, d := range dayMarks {
+		clauses = append(clauses, fmt.Sprintf(
+			"(e.occurs_at >= now() + make_interval(days => $%d) AND e.occurs_at < now() + make_interval(days => $%d))",
+			argIdx, argIdx+1,
+		))
+		args = append(args, d, d+1)
+		argIdx += 2
+	}
+	whereClause := strings.Join(clauses, " OR ")
+
+	query := fmt.Sprintf(`
 SELECT e.id, e.tenant_id, e.title, e.description, e.category,
        e.destination_space_id, e.origin_space_id,
        e.occurs_at, e.ends_at, e.is_recurring, e.recurrence_pattern,
        e.source_url, e.status, e.submitted_by, e.reviewed_by, e.reviewed_at,
-       e.staleness_check_due, e.created_at, e.updated_at, e.deleted_at
+       e.staleness_check_due,
+       e.ai_generated, e.ai_model, e.hitl_reviewed_by, e.ai_generated_at,
+       e.created_at, e.updated_at, e.deleted_at
 FROM calendar_entries e
 WHERE e.status = 'published'
   AND e.deleted_at IS NULL
-  AND e.occurs_at >= now()
-  AND e.occurs_at <= now() + make_interval(days => $1)
+  AND (%s)
 ORDER BY e.occurs_at ASC
-`, daysAhead)
+`, whereClause)
+
+	rows, err := s.pool.Reader.Query(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("calendar: upcoming entries: %w", err)
 	}
@@ -150,7 +206,9 @@ ORDER BY e.occurs_at ASC
 			&e.DestinationSpaceID, &e.OriginSpaceID,
 			&e.OccursAt, &e.EndsAt, &e.IsRecurring, &e.RecurrencePattern,
 			&e.SourceURL, &e.Status, &e.SubmittedBy, &e.ReviewedBy, &e.ReviewedAt,
-			&e.StalenessCheckDue, &e.CreatedAt, &e.UpdatedAt, &e.DeletedAt,
+			&e.StalenessCheckDue,
+			&e.AiGenerated, &e.AiModel, &e.HitlReviewedBy, &e.AiGeneratedAt,
+			&e.CreatedAt, &e.UpdatedAt, &e.DeletedAt,
 		); err != nil {
 			return nil, fmt.Errorf("calendar: scan upcoming entry: %w", err)
 		}
@@ -165,59 +223,31 @@ ORDER BY e.occurs_at ASC
 // SubscribersForEntry returns user IDs subscribed to the entry's
 // destination+category combination.
 func (s *Store) SubscribersForEntry(ctx context.Context, entry CalendarEntry) ([]pgtype.UUID, error) {
-	rows, err := s.pool.Reader.Query(ctx, `
-SELECT user_id FROM calendar_subscriptions
-WHERE tenant_id = $1
-  AND destination_space_id = $2
-  AND (category IS NULL OR category = $3 OR category = '')
-`, entry.TenantID, entry.DestinationSpaceID, entry.Category)
+	catPtr := &entry.Category
+	users, err := s.read.CalendarSubscribersForEntry(ctx, gen.CalendarSubscribersForEntryParams{
+		TenantID:           entry.TenantID,
+		DestinationSpaceID: entry.DestinationSpaceID,
+		Category:           catPtr,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("calendar: subscribers for entry: %w", err)
 	}
-	defer rows.Close()
-
-	var out []pgtype.UUID
-	for rows.Next() {
-		var uid pgtype.UUID
-		if err := rows.Scan(&uid); err != nil {
-			return nil, fmt.Errorf("calendar: scan subscriber: %w", err)
-		}
-		out = append(out, uid)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("calendar: iterate subscribers: %w", err)
-	}
-	return out, nil
+	return users, nil
 }
 
 // GetEntry returns a single published calendar entry by id and tenant.
 func (s *Store) GetEntry(ctx context.Context, id, tenantID pgtype.UUID) (CalendarEntry, error) {
-	const q = `
-SELECT id, tenant_id, title, description, category,
-       destination_space_id, origin_space_id,
-       occurs_at, ends_at, is_recurring, recurrence_pattern,
-       source_url, status, submitted_by, reviewed_by, reviewed_at,
-       staleness_check_due, created_at, updated_at, deleted_at
-FROM calendar_entries
-WHERE id = $1 AND tenant_id = $2 AND status = 'published'
-  AND deleted_at IS NULL
-LIMIT 1
-`
-	var e CalendarEntry
-	err := s.pool.Reader.QueryRow(ctx, q, id, tenantID).Scan(
-		&e.ID, &e.TenantID, &e.Title, &e.Description, &e.Category,
-		&e.DestinationSpaceID, &e.OriginSpaceID,
-		&e.OccursAt, &e.EndsAt, &e.IsRecurring, &e.RecurrencePattern,
-		&e.SourceURL, &e.Status, &e.SubmittedBy, &e.ReviewedBy, &e.ReviewedAt,
-		&e.StalenessCheckDue, &e.CreatedAt, &e.UpdatedAt, &e.DeletedAt,
-	)
+	row, err := s.read.CalendarGetEntry(ctx, gen.CalendarGetEntryParams{
+		ID:       id,
+		TenantID: tenantID,
+	})
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			return CalendarEntry{}, pgx.ErrNoRows
 		}
 		return CalendarEntry{}, fmt.Errorf("calendar: get entry: %w", err)
 	}
-	return e, nil
+	return fromGetRow(row), nil
 }
 
 // ListEntriesFilter holds filter parameters for the public entry list.
@@ -235,6 +265,8 @@ type ListEntriesFilter struct {
 // ListEntries returns published calendar entries matching the filter.
 // Uses COUNT(*) OVER() window function to return the total count in the
 // same query, avoiding a separate COUNT query (BUG-024).
+//
+// This query uses a dynamic WHERE clause and cannot be expressed in sqlc.
 func (s *Store) ListEntries(ctx context.Context, f ListEntriesFilter) ([]CalendarEntry, int64, error) {
 	var (
 		conditions []string
@@ -295,7 +327,9 @@ SELECT id, tenant_id, title, description, category,
        destination_space_id, origin_space_id,
        occurs_at, ends_at, is_recurring, recurrence_pattern,
        source_url, status, submitted_by, reviewed_by, reviewed_at,
-       staleness_check_due, created_at, updated_at, deleted_at,
+       staleness_check_due,
+       ai_generated, ai_model, hitl_reviewed_by, ai_generated_at,
+       created_at, updated_at, deleted_at,
        COUNT(*) OVER() AS total_count
 FROM calendar_entries
 WHERE %s
@@ -319,7 +353,9 @@ LIMIT $%d OFFSET $%d
 			&e.DestinationSpaceID, &e.OriginSpaceID,
 			&e.OccursAt, &e.EndsAt, &e.IsRecurring, &e.RecurrencePattern,
 			&e.SourceURL, &e.Status, &e.SubmittedBy, &e.ReviewedBy, &e.ReviewedAt,
-			&e.StalenessCheckDue, &e.CreatedAt, &e.UpdatedAt, &e.DeletedAt,
+			&e.StalenessCheckDue,
+			&e.AiGenerated, &e.AiModel, &e.HitlReviewedBy, &e.AiGeneratedAt,
+			&e.CreatedAt, &e.UpdatedAt, &e.DeletedAt,
 			&total,
 		); err != nil {
 			return nil, 0, fmt.Errorf("calendar: scan entry: %w", err)
@@ -335,12 +371,9 @@ LIMIT $%d OFFSET $%d
 
 // SaveEntry inserts a calendar_saves row (user bookmarks an event).
 func (s *Store) SaveEntry(ctx context.Context, userID, entryID, tenantID pgtype.UUID) error {
-	_, err := s.pool.Writer.Exec(ctx, `
-INSERT INTO calendar_saves (user_id, entry_id, tenant_id, saved_at)
-VALUES ($1, $2, $3, now())
-ON CONFLICT (user_id, entry_id) DO NOTHING
-`, userID, entryID, tenantID)
-	if err != nil {
+	if err := s.write.CalendarSaveEntry(ctx, gen.CalendarSaveEntryParams{
+		UserID: userID, EntryID: entryID, TenantID: tenantID,
+	}); err != nil {
 		return fmt.Errorf("calendar: save entry: %w", err)
 	}
 	return nil
@@ -348,24 +381,49 @@ ON CONFLICT (user_id, entry_id) DO NOTHING
 
 // UnsaveEntry deletes a calendar_saves row.
 func (s *Store) UnsaveEntry(ctx context.Context, userID, entryID, tenantID pgtype.UUID) error {
-	_, err := s.pool.Writer.Exec(ctx, `
-DELETE FROM calendar_saves
-WHERE user_id = $1 AND entry_id = $2 AND tenant_id = $3
-`, userID, entryID, tenantID)
-	if err != nil {
+	if err := s.write.CalendarUnsaveEntry(ctx, gen.CalendarUnsaveEntryParams{
+		UserID: userID, EntryID: entryID, TenantID: tenantID,
+	}); err != nil {
 		return fmt.Errorf("calendar: unsave entry: %w", err)
 	}
 	return nil
 }
 
+// ListSavedEntries returns the calendar entries saved by a given user,
+// joined via calendar_saves. Used by GET /me/calendar/saved (§86 Integration:
+// "Saved entries appear on the user dashboard alongside visa checklists.").
+// Only published, non-deleted entries are returned.
+func (s *Store) ListSavedEntries(ctx context.Context, userID, tenantID pgtype.UUID, limit, offset int) ([]CalendarEntry, int64, error) {
+	rows, err := s.read.CalendarListSavedEntries(ctx, gen.CalendarListSavedEntriesParams{
+		UserID:   userID,
+		TenantID: tenantID,
+		Limit:    int32(limit),
+		Offset:   int32(offset),
+	})
+	if err != nil {
+		return nil, 0, fmt.Errorf("calendar: list saved entries: %w", err)
+	}
+
+	out := make([]CalendarEntry, 0, len(rows))
+	var total int64
+	for _, r := range rows {
+		if total == 0 {
+			total = r.TotalCount
+		}
+		out = append(out, fromSavedRow(r))
+	}
+	return out, total, nil
+}
+
 // Subscribe inserts a calendar_subscriptions row.
 func (s *Store) Subscribe(ctx context.Context, userID, tenantID, destSpaceID pgtype.UUID, category string) error {
-	_, err := s.pool.Writer.Exec(ctx, `
-INSERT INTO calendar_subscriptions (user_id, tenant_id, destination_space_id, category, created_at)
-VALUES ($1, $2, $3, $4, now())
-ON CONFLICT (tenant_id, user_id, destination_space_id, category) DO NOTHING
-`, userID, tenantID, destSpaceID, category)
-	if err != nil {
+	catPtr := &category
+	if err := s.write.CalendarSubscribe(ctx, gen.CalendarSubscribeParams{
+		UserID:             userID,
+		TenantID:           tenantID,
+		DestinationSpaceID: destSpaceID,
+		Category:           catPtr,
+	}); err != nil {
 		return fmt.Errorf("calendar: subscribe: %w", err)
 	}
 	return nil
@@ -373,11 +431,13 @@ ON CONFLICT (tenant_id, user_id, destination_space_id, category) DO NOTHING
 
 // Unsubscribe deletes a calendar_subscriptions row.
 func (s *Store) Unsubscribe(ctx context.Context, userID, tenantID, destSpaceID pgtype.UUID, category string) error {
-	_, err := s.pool.Writer.Exec(ctx, `
-DELETE FROM calendar_subscriptions
-WHERE user_id = $1 AND tenant_id = $2 AND destination_space_id = $3 AND category = $4
-`, userID, tenantID, destSpaceID, category)
-	if err != nil {
+	catPtr := &category
+	if err := s.write.CalendarUnsubscribe(ctx, gen.CalendarUnsubscribeParams{
+		UserID:             userID,
+		TenantID:           tenantID,
+		DestinationSpaceID: destSpaceID,
+		Category:           catPtr,
+	}); err != nil {
 		return fmt.Errorf("calendar: unsubscribe: %w", err)
 	}
 	return nil
@@ -402,6 +462,9 @@ type AdminListEntriesFilter struct {
 // AdminListEntries returns all calendar entries (any status) for admin
 // management (paginated). Uses COUNT(*) OVER() window function to return
 // the total count in the same query (BUG-024).
+//
+// This query uses a dynamic WHERE clause + dynamic ORDER BY and cannot
+// be expressed in sqlc.
 func (s *Store) AdminListEntries(ctx context.Context, f AdminListEntriesFilter) ([]CalendarEntry, int64, error) {
 	var (
 		conditions []string
@@ -482,7 +545,9 @@ SELECT id, tenant_id, title, description, category,
        destination_space_id, origin_space_id,
        occurs_at, ends_at, is_recurring, recurrence_pattern,
        source_url, status, submitted_by, reviewed_by, reviewed_at,
-       staleness_check_due, created_at, updated_at, deleted_at,
+       staleness_check_due,
+       ai_generated, ai_model, hitl_reviewed_by, ai_generated_at,
+       created_at, updated_at, deleted_at,
        COUNT(*) OVER() AS total_count
 FROM calendar_entries
 WHERE %s
@@ -506,7 +571,9 @@ LIMIT $%d OFFSET $%d
 			&e.DestinationSpaceID, &e.OriginSpaceID,
 			&e.OccursAt, &e.EndsAt, &e.IsRecurring, &e.RecurrencePattern,
 			&e.SourceURL, &e.Status, &e.SubmittedBy, &e.ReviewedBy, &e.ReviewedAt,
-			&e.StalenessCheckDue, &e.CreatedAt, &e.UpdatedAt, &e.DeletedAt,
+			&e.StalenessCheckDue,
+			&e.AiGenerated, &e.AiModel, &e.HitlReviewedBy, &e.AiGeneratedAt,
+			&e.CreatedAt, &e.UpdatedAt, &e.DeletedAt,
 			&total,
 		); err != nil {
 			return nil, 0, fmt.Errorf("calendar: admin scan entry: %w", err)
@@ -523,15 +590,36 @@ LIMIT $%d OFFSET $%d
 // AdminUpdateEntry updates the status of a calendar entry and stamps the
 // reviewer. Valid statuses: published, archived, unverified.
 func (s *Store) AdminUpdateEntry(ctx context.Context, id, tenantID, reviewerID pgtype.UUID, status string) error {
-	cmd, err := s.pool.Writer.Exec(ctx, `
-UPDATE calendar_entries
-SET status = $3, reviewed_by = $4, reviewed_at = now(), updated_at = now()
-WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
-`, id, tenantID, status, reviewerID)
+	n, err := s.write.CalendarAdminUpdateEntry(ctx, gen.CalendarAdminUpdateEntryParams{
+		ID:         id,
+		TenantID:   tenantID,
+		Status:     status,
+		ReviewedBy: reviewerID,
+	})
 	if err != nil {
 		return fmt.Errorf("calendar: admin update entry: %w", err)
 	}
-	if cmd.RowsAffected() == 0 {
+	if n == 0 {
+		return pgx.ErrNoRows
+	}
+	return nil
+}
+
+// AdminSoftDeleteEntry soft-deletes a calendar entry by setting deleted_at.
+// Per Rule 11, user content (community-submitted entries) must be soft-deleted,
+// never hard-deleted. The entry remains in the DB for audit/GDPR purposes but
+// is excluded from all list/get queries (which filter deleted_at IS NULL).
+// Ref: japaconnect-engineering/sections/86-community-calendar.md
+// Ref: japaconnect-engineering/AGENTS.md Rule 11
+func (s *Store) AdminSoftDeleteEntry(ctx context.Context, id, tenantID pgtype.UUID) error {
+	n, err := s.write.CalendarAdminSoftDeleteEntry(ctx, gen.CalendarAdminSoftDeleteEntryParams{
+		ID:       id,
+		TenantID: tenantID,
+	})
+	if err != nil {
+		return fmt.Errorf("calendar: admin soft delete entry: %w", err)
+	}
+	if n == 0 {
 		return pgx.ErrNoRows
 	}
 	return nil

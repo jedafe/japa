@@ -9,7 +9,7 @@ RETURNING id, tenant_id, user_id, name, created_at, updated_at, position;
 
 -- name: ListBookmarkFoldersByUser :many
 SELECT bf.id, bf.tenant_id, bf.user_id, bf.name, bf.created_at, bf.updated_at,
-       COALESCE(bm.cnt, 0) AS bookmark_count
+       bf.position, COALESCE(bm.cnt, 0) AS bookmark_count
 FROM bookmark_folders bf
 LEFT JOIN (
     SELECT folder_id, COUNT(*) AS cnt

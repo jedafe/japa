@@ -27,9 +27,20 @@
 		id: string;
 		title: string;
 		deadline?: string;
-		days_until?: number;
+		days_until?: number | null;
 		status: string;
+		username?: string | null;
 	};
+
+	type ReminderLogEntry = {
+		id: string;
+		guide_title?: string;
+		username?: string | null;
+		status: string;
+		last_reminded_at?: string | null;
+	};
+
+	type StatusDistEntry = { status: string; count: number };
 
 	const canManage = $derived(hasPermission('scholarship.manage'));
 
@@ -38,9 +49,11 @@
 	let pageError = $state('');
 	let bulkDeleting = $state(false);
 	let stats = $state<Record<string, any>>({});
-	let reminderLogEntries = $state<any[]>([]);
+	let distribution = $state<StatusDistEntry[]>([]);
+	let reminderLogEntries = $state<ReminderLogEntry[]>([]);
+	let deadlineEntries = $state<DeadlineItem[]>([]);
 
-	// Load stats and reminder log on mount.
+	// Load stats, deadlines, and reminder log on mount.
 	$effect(() => {
 		void loadSummary();
 	});
@@ -48,22 +61,33 @@
 	async function loadSummary() {
 		pageError = '';
 		try {
-			const [statsRes, logRes] = await Promise.all([
+			const [statsRes, logRes, deadlinesRes] = await Promise.all([
 				scholarshipAdminApi.stats(),
-				scholarshipAdminApi.reminderLog('page_size=100')
+				scholarshipAdminApi.reminderLog('page_size=10'),
+				scholarshipAdminApi.deadlines('page_size=10')
 			]);
-			if (statsRes.ok) stats = (statsRes.data as Record<string, any>) ?? {};
-			if (logRes.ok) reminderLogEntries = (logRes.data as any[]) ?? [];
+			if (statsRes.ok) {
+				const s = (statsRes.data as Record<string, any>) ?? {};
+				// Distribution is an array, not a scalar — pull it out so it is
+				// rendered as a breakdown instead of a useless "—" stat card.
+				distribution = Array.isArray(s.distribution) ? (s.distribution as StatusDistEntry[]) : [];
+				delete s.distribution;
+				stats = s;
+			}
+			if (logRes.ok) reminderLogEntries = (logRes.data as ReminderLogEntry[]) ?? [];
+			if (deadlinesRes.ok) deadlineEntries = (deadlinesRes.data as DeadlineItem[]) ?? [];
 		} catch {
 			// Non-fatal: the CRUD list still loads via EntityPage.
 		}
 	}
 
-	// Stat card entries derived from the stats object.
+	// Stat card entries derived from the stats object (scalar values only —
+	// distribution is rendered separately as a per-status breakdown).
 	const statCards = $derived.by<Array<{ key: string; label: string; value: string }>>(() => {
 		const entries: Array<{ key: string; label: string; value: string }> = [];
 		const labels: Record<string, string> = {
-			total_scholarships: t('app.tools.col_total_scholarships', 'Total Scholarships'),
+			// Counts saved scholarships (user saves), not the catalog size.
+			total_scholarships: t('app.tools.col_total_saves', 'Total Saves'),
 			upcoming_deadlines: t('app.tools.col_upcoming_deadlines', 'Upcoming Deadlines'),
 			reminders_sent: t('app.tools.col_reminders_sent', 'Reminders Sent'),
 			unique_users: t('app.tools.col_unique_users', 'Unique Users')
@@ -77,6 +101,22 @@
 		}
 		return entries;
 	});
+
+	// Per-status badge classes for the distribution breakdown.
+	const statusBadgeClass = (status: string): string => {
+		const clsMap: Record<string, string> = {
+			saved: 'bg-muted text-muted-foreground border-border',
+			researching: 'bg-info/15 text-info border-info',
+			applied: 'bg-warning/15 text-warning border-warning',
+			accepted: 'bg-success/15 text-success border-success',
+			rejected: 'bg-danger/15 text-danger border-danger',
+			withdrawn: 'bg-muted text-muted-foreground border-border'
+		};
+		return clsMap[status] ?? 'bg-muted text-muted-foreground border-border';
+	};
+
+	const formatDateTime = (v?: string | null): string =>
+		v ? new Date(v).toLocaleString() : '—';
 
 	// ── Bulk delete ─────
 	async function bulkDelete(ids: Set<string>) {
@@ -252,6 +292,115 @@
 		{/each}
 	</div>
 {/if}
+
+<!-- ── Distribution breakdown + deadlines + reminder log ─────────────────── -->
+<div class="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-3">
+	<!-- Per-status distribution of saved scholarships -->
+	<div
+		class="rounded-lg border p-5"
+		style="border-color: var(--color-border); background: var(--color-surface)"
+	>
+		<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">
+			{t('app.tools.col_status_distribution', 'Status Distribution')}
+		</p>
+		{#if distribution.length > 0}
+			<ul class="mt-3 space-y-2">
+				{#each distribution as d (d.status)}
+					<li class="flex items-center justify-between">
+						<span
+							class="inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium {statusBadgeClass(d.status)}"
+						>
+							{d.status}
+						</span>
+						<span class="text-sm font-semibold" style="color: var(--color-foreground)">
+							{d.count.toLocaleString()}
+						</span>
+					</li>
+				{/each}
+			</ul>
+		{:else}
+			<p class="mt-3 text-sm" style="color: var(--color-muted)">
+				{t('app.tools.no_saved_scholarships', 'No saved scholarships yet.')}
+			</p>
+		{/if}
+	</div>
+
+	<!-- Upcoming deadlines -->
+	<div
+		class="rounded-lg border p-5"
+		style="border-color: var(--color-border); background: var(--color-surface)"
+	>
+		<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">
+			{t('app.tools.col_upcoming_deadlines', 'Upcoming Deadlines')}
+		</p>
+		{#if deadlineEntries.length > 0}
+			<ul class="mt-3 space-y-2">
+				{#each deadlineEntries as d (d.id)}
+					<li>
+						<div class="flex items-center justify-between gap-2">
+							<span class="truncate text-sm font-medium" style="color: var(--color-foreground)">
+								{d.title || '—'}
+							</span>
+							{#if d.days_until != null}
+								<span
+									class="shrink-0 rounded-md border px-1.5 py-0.5 text-xs font-medium {d.days_until <= 7
+										? 'bg-danger/15 text-danger border-danger'
+										: d.days_until <= 30
+											? 'bg-warning/15 text-warning border-warning'
+											: 'bg-muted text-muted-foreground border-border'}"
+								>
+									{d.days_until}d
+								</span>
+							{/if}
+						</div>
+						<p class="text-xs" style="color: var(--color-muted)">
+							{d.deadline ? new Date(d.deadline).toLocaleDateString() : '—'}{#if d.username} · {d.username}{/if}
+						</p>
+					</li>
+				{/each}
+			</ul>
+		{:else}
+			<p class="mt-3 text-sm" style="color: var(--color-muted)">
+				{t('app.tools.no_upcoming_deadlines', 'No upcoming deadlines.')}
+			</p>
+		{/if}
+	</div>
+
+	<!-- Reminder delivery log -->
+	<div
+		class="rounded-lg border p-5"
+		style="border-color: var(--color-border); background: var(--color-surface)"
+	>
+		<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">
+			{t('app.tools.col_reminder_log', 'Reminder Log')}
+		</p>
+		{#if reminderLogEntries.length > 0}
+			<ul class="mt-3 space-y-2">
+				{#each reminderLogEntries as r (r.id)}
+					<li>
+						<div class="flex items-center justify-between gap-2">
+							<span class="truncate text-sm font-medium" style="color: var(--color-foreground)">
+								{r.guide_title || '—'}
+							</span>
+							<span
+								class="shrink-0 rounded-md border px-1.5 py-0.5 text-xs font-medium {statusBadgeClass(r.status)}"
+							>
+								{r.status}
+							</span>
+						</div>
+						<p class="text-xs" style="color: var(--color-muted)">
+							{formatDateTime(r.last_reminded_at)}{#if r.username} · {r.username}{/if}
+						</p>
+					</li>
+				{/each}
+			</ul>
+		{:else}
+			<p class="mt-3 text-sm" style="color: var(--color-muted)">
+				{t('app.tools.no_reminders_sent', 'No reminders sent yet.')}
+			</p>
+		{/if}
+	</div>
+</div>
 
 <EntityPage {config} bind:controller={entityController} />
 

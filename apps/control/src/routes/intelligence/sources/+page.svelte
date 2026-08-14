@@ -29,12 +29,21 @@
 		source_license?: string | null;
 		usage_restriction?: string | null;
 		enabled: boolean;
+		persona_id?: string | null;
 		last_crawled_at?: string | null;
 		last_success_at?: string | null;
 		last_error_at?: string | null;
 		last_error_message?: string | null;
 		consecutive_failures?: number;
 		created_at?: string;
+	}
+
+	interface PersonaItem {
+		id: string;
+		profile_name: string;
+		profile_slug?: string;
+		backing_username?: string;
+		status?: string;
 	}
 
 	let {} = $props();
@@ -48,6 +57,12 @@
 	const canDisableSource = $derived(hasAnyPermission(['intel.review.disable_source', 'intel.review.*', 'intel.sources.*']));
 
 	let sources = $state<IntelSource[]>([]);
+	let personas = $state<PersonaItem[]>([]);
+	let personaNameById = $derived.by(() => {
+		const m = new Map<string, string>();
+		for (const p of personas) m.set(p.id, p.profile_name);
+		return m;
+	});
 	let loading = $state(true);
 	let refreshing = $state(false);
 	let errorMessage = $state('');
@@ -83,6 +98,17 @@
 			sources = Array.isArray(result.data) ? (result.data as IntelSource[]) : [];
 		} else {
 			errorMessage = result.error;
+		}
+		// Fetch the AI persona list so the table can resolve persona_id →
+		// profile name and the SourceForm dropdown can list them. The
+		// endpoint requires persona.view (ADR-068).
+		if (personas.length === 0) {
+			const presult = await api<PersonaItem[]>(
+				'/api/v1/admin/personas?status=active&page_size=200'
+			);
+			if (presult.ok) {
+				personas = Array.isArray(presult.data) ? (presult.data as PersonaItem[]) : [];
+			}
 		}
 		loading = false;
 		refreshing = false;
@@ -169,6 +195,16 @@
 			label: t('intel.field_category', 'Category'),
 			sortable: true,
 			render: (val) => `<span class="text-muted-foreground capitalize">${escapeHtml(val)}</span>`
+		},
+		{
+			key: 'persona_id',
+			label: t('intel.field_persona', 'Persona'),
+			sortable: false,
+			render: (val) => {
+				if (!val) return `<span class="text-muted-foreground text-xs">${t('intel.field_persona_none', 'No persona')}</span>`;
+				const name = personaNameById.get(val as string);
+				return `<span class="inline-flex items-center gap-1 text-xs font-medium text-violet-500"><span class="size-1.5 rounded-full bg-violet-500"></span>${escapeHtml(name ?? t('intel.persona_assigned', 'Assigned'))}</span>`;
+			}
 		},
 		{
 			key: 'crawl_method',
@@ -280,9 +316,16 @@
 			? `/api/v1/intel/sources/${editingSource!.id}`
 			: '/api/v1/intel/sources';
 		const method = isEdit ? 'PATCH' : 'POST';
+		// Build the body, only including persona_id when non-empty so the
+		// backend doesn't receive an empty string for a field that should
+		// be NULL when unassigned.
+		const body: Record<string, unknown> = { ...values };
+		if (!body.persona_id) {
+			delete body.persona_id;
+		}
 		const result = await api<IntelSource>(path, {
 			method,
-			body: values
+			body
 		});
 		formSaving = false;
 		if (result.ok) {
@@ -423,6 +466,7 @@
 	<SourceForm
 		bind:open={formOpen}
 		source={editingSource}
+		personas={personas}
 		saving={formSaving}
 		errorMessage={formError}
 		onSubmit={handleSubmit}

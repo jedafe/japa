@@ -19,6 +19,7 @@ import (
 // JobStore is the persistence surface the JobPromoter needs.
 // *stores.Store satisfies this interface; tests substitute a mock.
 type JobStore interface {
+	PersonaResolver
 	GetIntelRecord(ctx context.Context, tenantID, id pgtype.UUID) (gen.IntelRecord, error)
 	GetIntelSource(ctx context.Context, tenantID, id pgtype.UUID) (gen.IntelSource, error)
 	GetIntelJobByIntelRecord(ctx context.Context, tenantID, intelRecordID pgtype.UUID) (gen.IntelJob, error)
@@ -126,7 +127,8 @@ func (p *JobPromoter) jobCreatePath(ctx context.Context, record gen.IntelRecord,
 
 	contentParams := gen.CreateContentParams{
 		TenantID:        p.tenantID,
-		AuthorID:        p.authorID,
+		AuthorID:        resolveAuthorID(ctx, p.store, source, p.tenantID, p.authorID),
+		FieldValues:     []byte(`{}`),
 		ContentType:     "guide",
 		Title:           title,
 		Slug:            slug,
@@ -197,7 +199,7 @@ func (p *JobPromoter) jobUpdatePath(ctx context.Context, record gen.IntelRecord,
 		return PromoteResult{}, fmt.Errorf("promoter: marshal field changes: %w", err)
 	}
 	note := "automatic re-crawl update"
-	reviewLogParams := gen.CreateIntelReviewLogParams{IntelRecordID: record.ID, Action: "auto_update", FieldChanges: changesJSON, Note: &note}
+	reviewLogParams := gen.CreateIntelReviewLogParams{IntelRecordID: record.ID, ActorUserID: p.authorID, Action: "auto_update", FieldChanges: changesJSON, Note: &note}
 	var result PromoteResult
 	err = p.store.WithTx(ctx, func(tx JobTxStore) error {
 		if err := tx.UpdateIntelJob(ctx, p.tenantID, params); err != nil {

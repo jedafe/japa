@@ -8,8 +8,10 @@ package calendar
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -44,8 +46,13 @@ type CalendarEntryDTO struct {
 	SubmittedBy        string `json:"submitted_by,omitempty"`
 	ReviewedBy         string `json:"reviewed_by,omitempty"`
 	ReviewedAt         string `json:"reviewed_at,omitempty"`
-	CreatedAt          string `json:"created_at"`
-	UpdatedAt          string `json:"updated_at,omitempty"`
+	// ADR-088 universal AI content generation columns.
+	AiGenerated    bool   `json:"ai_generated"`
+	AiModel        string `json:"ai_model,omitempty"`
+	HitlReviewedBy string `json:"hitl_reviewed_by,omitempty"`
+	AiGeneratedAt  string `json:"ai_generated_at,omitempty"`
+	CreatedAt      string `json:"created_at"`
+	UpdatedAt      string `json:"updated_at,omitempty"`
 }
 
 // SubmitEntryInput is the request body for POST /calendar.
@@ -104,6 +111,68 @@ func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
 	return s.settings.GetBoolOr(ctx, tenantID, "calendar.enabled", false)
 }
 
+// CategoryOption is a single allowed calendar category (§86).
+// BUG-009: categories are served from the calendar.categories
+// system_setting (jsonb array of {value, label}) so they are
+// admin-configurable and consumed via the API (Rule 3, Rule 16).
+type CategoryOption struct {
+	Value string `json:"value"`
+	Label string `json:"label"`
+}
+
+// defaultCategories is the fallback when the system_setting is not set.
+var defaultCategories = []CategoryOption{
+	{Value: "visa_window", Label: "Visa window"},
+	{Value: "embassy_closure", Label: "Embassy closure"},
+	{Value: "application_deadline", Label: "Application deadline"},
+	{Value: "exam_window", Label: "Exam window"},
+	{Value: "immigration_office", Label: "Immigration office"},
+	{Value: "other", Label: "Other"},
+}
+
+// Categories returns the allowed calendar categories from the
+// calendar.categories system_setting, falling back to the default list.
+// The fallback also covers the case where the settings store is not
+// fully initialised (e.g. in unit tests with a zero-value Settings).
+func (s *Service) Categories(ctx context.Context, tenantID pgtype.UUID) []CategoryOption {
+	if s.settings == nil {
+		return defaultCategories
+	}
+	raw, err := s.safeGetSetting(ctx, tenantID, "calendar.categories")
+	if err != nil || raw == "" {
+		return defaultCategories
+	}
+	var cats []CategoryOption
+	if err := json.Unmarshal([]byte(raw), &cats); err != nil || len(cats) == 0 {
+		return defaultCategories
+	}
+	return cats
+}
+
+// safeGetSetting wraps Settings.GetSetting with a panic recover so that
+// a zero-value Settings (no DB pool) returns an error instead of crashing.
+// This keeps unit tests that construct NewService(nil, &config.Settings{})
+// working without a full DB harness.
+func (s *Service) safeGetSetting(ctx context.Context, tenantID pgtype.UUID, key string) (val string, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			val = ""
+			err = fmt.Errorf("settings: panic: %v", r)
+		}
+	}()
+	return s.settings.GetSetting(ctx, tenantID, key)
+}
+
+// ValidCategory checks whether a category value is in the allowed list.
+func (s *Service) ValidCategory(ctx context.Context, tenantID pgtype.UUID, category string) bool {
+	for _, c := range s.Categories(ctx, tenantID) {
+		if c.Value == category {
+			return true
+		}
+	}
+	return false
+}
+
 // List returns published calendar entries matching the given filters.
 func (s *Service) List(ctx context.Context, tenantID, destSpaceID, originSpaceID pgtype.UUID, category string, from, to pgtype.Timestamptz, page, limit int32) ([]CalendarEntryDTO, int64, error) {
 	if limit <= 0 {
@@ -156,12 +225,24 @@ func (s *Service) Submit(ctx context.Context, tenantID, userID pgtype.UUID, inpu
 	if input.Category == "" {
 		return "", fmt.Errorf("category is required")
 	}
+	// BUG-009: validate category against the dynamic calendar.categories
+	// system_setting list (Rule 3: no hardcoded config).
+	if !s.ValidCategory(ctx, tenantID, input.Category) {
+		return "", fmt.Errorf("invalid category: %s", input.Category)
+	}
 	if input.OccursAt == "" {
 		return "", fmt.Errorf("occurs_at is required")
 	}
 	// §86: "Every entry must include a verifiable official source link."
 	if input.SourceURL == "" {
 		return "", fmt.Errorf("source_url is required")
+	}
+	// BUG-011: validate source_url scheme is http or https to prevent
+	// stored XSS via javascript:/data: URIs rendered as <a href> in the
+	// frontend. Ref: japaconnect-engineering/sections/5.1-xss-prevention.md
+	parsedURL, err := url.Parse(input.SourceURL)
+	if err != nil || (parsedURL.Scheme != "http" && parsedURL.Scheme != "https") {
+		return "", fmt.Errorf("source_url must be a valid http or https URL")
 	}
 
 	occursAt, err := parseTimestamp(input.OccursAt)
@@ -201,7 +282,7 @@ func (s *Service) Submit(ctx context.Context, tenantID, userID pgtype.UUID, inpu
 		EndsAt:             endsAt,
 		IsRecurring:        input.IsRecurring,
 		SubmittedBy:        userID,
-		SourceURL:          &input.SourceURL,
+		SourceURL:          input.SourceURL,
 	}
 
 	if input.Description != "" {
@@ -211,17 +292,21 @@ func (s *Service) Submit(ctx context.Context, tenantID, userID pgtype.UUID, inpu
 		entry.RecurrencePattern = &input.RecurrencePattern
 	}
 
+	// BUG-002: compute staleness_check_due BEFORE insert so the entry is
+	// created with the correct value in a single write. For recurring entries
+	// the staleness check is due 60 days before the occurrence (§86 Staleness
+	// Management). Non-recurring entries get a NULL staleness_check_due.
+	if input.IsRecurring {
+		stalenessDue := pgtype.Timestamptz{
+			Time:  occursAt.Time.AddDate(0, 0, -60),
+			Valid: true,
+		}
+		entry.StalenessCheckDue = stalenessDue
+	}
+
 	entryID, err := s.store.CreateEntry(ctx, entry)
 	if err != nil {
 		return "", fmt.Errorf("calendar: submit: %w", err)
-	}
-
-	// BUG-006: set staleness_check_due = occurs_at - 60 days for recurring
-	// entries per §86 Staleness Management.
-	if input.IsRecurring {
-		if err := s.store.SetStalenessCheckDue(ctx, entryID); err != nil {
-			slog.Warn("calendar: submit: failed to set staleness_check_due", "entry_id", entryID, "error", err)
-		}
 	}
 
 	return entryID.String(), nil
@@ -241,6 +326,28 @@ func (s *Service) Unsave(ctx context.Context, userID, entryID, tenantID pgtype.U
 		return fmt.Errorf("calendar: unsave: %w", err)
 	}
 	return nil
+}
+
+// ListSaved returns the calendar entries saved by the given user.
+// Used by GET /me/calendar/saved (§86 Integration: "Saved entries appear on
+// the user dashboard alongside visa checklists.").
+func (s *Service) ListSaved(ctx context.Context, userID, tenantID pgtype.UUID, page, limit int) ([]CalendarEntryDTO, int64, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 20
+	}
+	if page < 1 {
+		page = 1
+	}
+	offset := (page - 1) * limit
+	entries, total, err := s.store.ListSavedEntries(ctx, userID, tenantID, limit, offset)
+	if err != nil {
+		return nil, 0, fmt.Errorf("calendar: list saved: %w", err)
+	}
+	dtos := make([]CalendarEntryDTO, 0, len(entries))
+	for _, e := range entries {
+		dtos = append(dtos, entryToDTO(e))
+	}
+	return dtos, total, nil
 }
 
 // Subscribe creates a category/destination subscription for the given user.
@@ -320,6 +427,20 @@ func (s *Service) AdminUpdate(ctx context.Context, id, tenantID, reviewerID pgty
 	return nil
 }
 
+// AdminSoftDelete soft-deletes a calendar entry (admin+). Per Rule 11, user
+// content is soft-deleted, never hard-deleted. Gated by calendar.manage.
+// Ref: japaconnect-engineering/sections/86-community-calendar.md
+// Ref: japaconnect-engineering/AGENTS.md Rule 11
+func (s *Service) AdminSoftDelete(ctx context.Context, id, tenantID pgtype.UUID) error {
+	if err := s.store.AdminSoftDeleteEntry(ctx, id, tenantID); err != nil {
+		if err == pgx.ErrNoRows {
+			return pgx.ErrNoRows
+		}
+		return fmt.Errorf("calendar: admin soft delete: %w", err)
+	}
+	return nil
+}
+
 // FlagStaleEntries is called by the calendar:staleness_check Asynq task.
 func (s *Service) FlagStaleEntries(ctx context.Context) (int64, error) {
 	n, err := s.store.FlagStaleEntries(ctx)
@@ -330,29 +451,29 @@ func (s *Service) FlagStaleEntries(ctx context.Context) (int64, error) {
 }
 
 // SendReminders is called by the calendar:send_reminders Asynq task.
-// It finds published entries occurring within the next 90 days and
-// dispatches reminder notifications to subscribers at the 90/30/7-day
-// marks per §86, ADR-094. Uses the notification system (§35) to create
-// in-app + email + push notifications based on user preferences.
+// It finds published entries occurring at the 90/30/7-day marks and
+// dispatches reminder notifications to subscribers per §86, ADR-094.
+// Uses the notification system (§35) to create in-app + email + push
+// notifications based on user preferences.
+//
+// BUG-012: the store now pre-filters in SQL to only entries at the
+// 90/30/7-day marks, so the Go loop only processes entries that are
+// actually due a reminder.
 func (s *Service) SendReminders(ctx context.Context) (int, error) {
-	entries, err := s.store.UpcomingEntriesForReminders(ctx, 90)
+	// §86, ADR-094: reminders fire at 90/30/7-day marks.
+	dayMarks := []int{90, 30, 7}
+	entries, err := s.store.UpcomingEntriesForReminders(ctx, dayMarks)
 	if err != nil {
 		return 0, fmt.Errorf("calendar: send reminders: %w", err)
 	}
 
 	dispatched := 0
 	for _, e := range entries {
-		// Calculate whole days until the event. Use UTC midnight-to-midnight
-		// to avoid firing at the wrong day due to time-of-day differences.
+		// Calculate whole days until the event for the notification body.
 		now := time.Now().UTC()
 		daysUntil := int(e.OccursAt.Time.UTC().Sub(now).Hours() / 24)
 		if daysUntil < 0 {
 			daysUntil = 0
-		}
-
-		// Only fire at the 90/30/7-day marks (§86, ADR-094).
-		if daysUntil != 90 && daysUntil != 30 && daysUntil != 7 {
-			continue
 		}
 
 		// Query subscribers for this entry's destination+category.
@@ -409,6 +530,8 @@ func entryToDTO(e CalendarEntry) CalendarEntryDTO {
 		Status:      e.Status,
 		OccursAt:    formatTs(e.OccursAt),
 		CreatedAt:   formatTs(e.CreatedAt),
+		// ADR-088 AI generation columns.
+		AiGenerated: e.AiGenerated,
 	}
 	if e.Description != nil {
 		dto.Description = *e.Description
@@ -422,17 +545,22 @@ func entryToDTO(e CalendarEntry) CalendarEntryDTO {
 	if e.RecurrencePattern != nil {
 		dto.RecurrencePattern = *e.RecurrencePattern
 	}
-	if e.SourceURL != nil {
-		dto.SourceURL = *e.SourceURL
-	}
+	dto.SourceURL = e.SourceURL
 	if e.SubmittedBy.Valid {
 		dto.SubmittedBy = e.SubmittedBy.String()
 	}
 	if e.ReviewedBy.Valid {
 		dto.ReviewedBy = e.ReviewedBy.String()
 	}
+	if e.AiModel != nil {
+		dto.AiModel = *e.AiModel
+	}
+	if e.HitlReviewedBy.Valid {
+		dto.HitlReviewedBy = e.HitlReviewedBy.String()
+	}
 	dto.EndsAt = formatTs(e.EndsAt)
 	dto.ReviewedAt = formatTs(e.ReviewedAt)
+	dto.AiGeneratedAt = formatTs(e.AiGeneratedAt)
 	dto.UpdatedAt = formatTs(e.UpdatedAt)
 	return dto
 }

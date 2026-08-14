@@ -57,6 +57,13 @@ func (m *mockStore) GetCountrySpace(ctx context.Context, tenantID pgtype.UUID, c
 	return m.countrySpaceID, nil
 }
 
+// GetPersonaUserID returns an invalid UUID (no persona in the mock) so the
+// promoter falls back to the default authorID. Tests that want to exercise
+// the persona resolution path can override this.
+func (m *mockStore) GetPersonaUserID(ctx context.Context, tenantID, personaID pgtype.UUID) (pgtype.UUID, error) {
+	return pgtype.UUID{}, nil
+}
+
 func (m *mockStore) CreateContent(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateContentParams) (gen.CreateContentRow, error) {
 	m.createContentCalls = append(m.createContentCalls, arg)
 	id := pgtype.UUID{Bytes: uuid.New(), Valid: true}

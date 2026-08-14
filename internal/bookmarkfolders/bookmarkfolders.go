@@ -10,6 +10,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -55,20 +56,50 @@ func (s *Service) CreateFolder(ctx context.Context, tenantID, userID pgtype.UUID
 	return folder, nil
 }
 
-// FolderListItem is a bookmark folder with its bookmark count.
-type FolderListItem struct {
-	ID            pgtype.UUID        `json:"id"`
-	TenantID      pgtype.UUID        `json:"tenant_id"`
-	UserID        pgtype.UUID        `json:"user_id"`
-	Name          string             `json:"name"`
-	CreatedAt     pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
-	BookmarkCount int64              `json:"bookmark_count"`
+// FolderResponse is the canonical API shape for a bookmark folder, returned
+// by every /me/bookmark-folders endpoint (list, create, update). It omits
+// tenant_id/user_id (the caller already knows their own identity — defense
+// in depth) and includes position + bookmark_count so the shape is identical
+// across List, Create, and Update (BF-04/BF-05).
+type FolderResponse struct {
+	ID            string `json:"id"`
+	Name          string `json:"name"`
+	Position      int32  `json:"position"`
+	BookmarkCount int64  `json:"bookmark_count"`
+	CreatedAt     string `json:"created_at"`
+	UpdatedAt     string `json:"updated_at"`
 }
 
-// ListFolders returns every bookmark folder for the user, alphabetically,
-// with a bookmark_count per folder (BL-011).
-func (s *Service) ListFolders(ctx context.Context, tenantID, userID pgtype.UUID) ([]FolderListItem, error) {
+// folderResponseFromRow builds a FolderResponse from a ListBookmarkFoldersByUserRow.
+func folderResponseFromRow(r gen.ListBookmarkFoldersByUserRow) FolderResponse {
+	return FolderResponse{
+		ID:            r.ID.String(),
+		Name:          r.Name,
+		Position:      r.Position,
+		BookmarkCount: r.BookmarkCount,
+		CreatedAt:     r.CreatedAt.Time.Format(time.RFC3339),
+		UpdatedAt:     r.UpdatedAt.Time.Format(time.RFC3339),
+	}
+}
+
+// folderResponseFromModel builds a FolderResponse from a BookmarkFolder model
+// (returned by Create/Update/Get). bookmark_count is 0 because the
+// single-row queries do not join bookmarks; the list endpoint is the source
+// of counts.
+func folderResponseFromModel(f gen.BookmarkFolder) FolderResponse {
+	return FolderResponse{
+		ID:            f.ID.String(),
+		Name:          f.Name,
+		Position:      f.Position,
+		BookmarkCount: 0,
+		CreatedAt:     f.CreatedAt.Time.Format(time.RFC3339),
+		UpdatedAt:     f.UpdatedAt.Time.Format(time.RFC3339),
+	}
+}
+
+// ListFolders returns every bookmark folder for the user, ordered by position
+// then name, with a bookmark_count per folder (BL-011).
+func (s *Service) ListFolders(ctx context.Context, tenantID, userID pgtype.UUID) ([]FolderResponse, error) {
 	rows, err := s.read.ListBookmarkFoldersByUser(ctx, gen.ListBookmarkFoldersByUserParams{
 		TenantID: tenantID,
 		UserID:   userID,
@@ -77,17 +108,9 @@ func (s *Service) ListFolders(ctx context.Context, tenantID, userID pgtype.UUID)
 		return nil, fmt.Errorf("listing bookmark folders: %w", err)
 	}
 
-	folders := make([]FolderListItem, len(rows))
+	folders := make([]FolderResponse, len(rows))
 	for i, r := range rows {
-		folders[i] = FolderListItem{
-			ID:            r.ID,
-			TenantID:      r.TenantID,
-			UserID:        r.UserID,
-			Name:          r.Name,
-			CreatedAt:     r.CreatedAt,
-			UpdatedAt:     r.UpdatedAt,
-			BookmarkCount: r.BookmarkCount,
-		}
+		folders[i] = folderResponseFromRow(r)
 	}
 
 	return folders, nil

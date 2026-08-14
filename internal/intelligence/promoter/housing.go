@@ -26,6 +26,7 @@ import (
 // perform their multi-table writes atomically (BUG-01/02 fix, §6.2
 // transaction boundary).
 type HousingStore interface {
+	PersonaResolver
 	GetIntelRecord(ctx context.Context, tenantID, id pgtype.UUID) (gen.IntelRecord, error)
 	GetIntelSource(ctx context.Context, tenantID, id pgtype.UUID) (gen.IntelSource, error)
 	GetHousingGuideByIntelRecord(ctx context.Context, tenantID, intelRecordID pgtype.UUID) (gen.HousingGuide, error)
@@ -173,7 +174,8 @@ func (p *HousingPromoter) housingCreatePath(ctx context.Context, record gen.Inte
 
 	contentParams := gen.CreateContentParams{
 		TenantID:        p.tenantID,
-		AuthorID:        p.authorID,
+		AuthorID:        resolveAuthorID(ctx, p.store, source, p.tenantID, p.authorID),
+		FieldValues:     []byte(`{}`),
 		ContentType:     "guide",
 		Title:           title,
 		Slug:            slug,
@@ -267,6 +269,7 @@ func (p *HousingPromoter) housingUpdatePath(ctx context.Context, record gen.Inte
 	note := "automatic re-crawl update"
 	reviewLogParams := gen.CreateIntelReviewLogParams{
 		IntelRecordID: record.ID,
+		ActorUserID:   p.authorID,
 		Action:        "auto_update",
 		FieldChanges:  changesJSON,
 		Note:          &note,
