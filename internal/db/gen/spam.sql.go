@@ -190,6 +190,29 @@ func (q *Queries) CreateUserBlock(ctx context.Context, arg CreateUserBlockParams
 	return err
 }
 
+const declinePendingDMRequestsBetweenUsers = `-- name: DeclinePendingDMRequestsBetweenUsers :exec
+UPDATE dm_requests
+SET status = 'declined', resolved_at = now()
+WHERE tenant_id = $3
+  AND status = 'pending'
+  AND ((requester_id = $1 AND recipient_id = $2)
+       OR (requester_id = $2 AND recipient_id = $1))
+`
+
+type DeclinePendingDMRequestsBetweenUsersParams struct {
+	RequesterID pgtype.UUID `json:"requester_id"`
+	RecipientID pgtype.UUID `json:"recipient_id"`
+	TenantID    pgtype.UUID `json:"tenant_id"`
+}
+
+// Marks pending DM requests between the two users as declined. Soft-updates
+// the status + resolved_at rather than hard-deleting (the request row is
+// needed for audit). Tenant-scoped per JEOS §9.
+func (q *Queries) DeclinePendingDMRequestsBetweenUsers(ctx context.Context, arg DeclinePendingDMRequestsBetweenUsersParams) error {
+	_, err := q.db.Exec(ctx, declinePendingDMRequestsBetweenUsers, arg.RequesterID, arg.RecipientID, arg.TenantID)
+	return err
+}
+
 const deleteCensoredWord = `-- name: DeleteCensoredWord :exec
 DELETE FROM censored_words
 WHERE id = $1 AND tenant_id = $2
@@ -202,6 +225,34 @@ type DeleteCensoredWordParams struct {
 
 func (q *Queries) DeleteCensoredWord(ctx context.Context, arg DeleteCensoredWordParams) error {
 	_, err := q.db.Exec(ctx, deleteCensoredWord, arg.ID, arg.TenantID)
+	return err
+}
+
+const deleteFollowsBetweenUsers = `-- name: DeleteFollowsBetweenUsers :exec
+
+DELETE FROM follows
+WHERE tenant_id = $3
+  AND entity_type = 'user'
+  AND ((follower_id = $1 AND entity_id = $2)
+       OR (follower_id = $2 AND entity_id = $1))
+`
+
+type DeleteFollowsBetweenUsersParams struct {
+	FollowerID pgtype.UUID `json:"follower_id"`
+	EntityID   pgtype.UUID `json:"entity_id"`
+	TenantID   pgtype.UUID `json:"tenant_id"`
+}
+
+// =====================
+// Block side-effects (BE-1 / Section 41 line 147)
+// Blocking a user also cancels any follow relationship (either direction) and
+// declines any pending DM request between the two users. These queries are
+// executed in the same transaction as CreateUserBlock.
+// =====================
+// Removes follow rows in both directions between two users
+// (entity_type='user'). Tenant-scoped per JEOS §9.
+func (q *Queries) DeleteFollowsBetweenUsers(ctx context.Context, arg DeleteFollowsBetweenUsersParams) error {
+	_, err := q.db.Exec(ctx, deleteFollowsBetweenUsers, arg.FollowerID, arg.EntityID, arg.TenantID)
 	return err
 }
 

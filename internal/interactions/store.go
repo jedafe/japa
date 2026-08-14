@@ -9,18 +9,56 @@ import (
 	"github.com/jedafe/japa/internal/db/gen"
 )
 
-// BlockUser idempotently blocks a user. Returns nil if already blocked.
+// BlockUser idempotently blocks a user and cancels side-effects per Section 41
+// line 147: "block a user (also cancels any DM/follow)". The block insert,
+// follow deletion (both directions), and pending DM request decline run in a
+// single transaction so a partial failure leaves no orphaned follow/DM.
 // Tenant-scoped per JEOS §9 (BUG-006). Ref: §41 — POST /users/:id/block.
 func (s *Service) BlockUser(ctx context.Context, tenantID, blockerID, blockedID pgtype.UUID) error {
 	if blockerID == blockedID {
 		return errors.New("cannot block yourself")
 	}
 
-	return s.write.CreateUserBlock(ctx, gen.CreateUserBlockParams{
+	tx, err := s.db.Writer.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("beginning block transaction: %w", err)
+	}
+	defer tx.Rollback(ctx) // no-op after commit
+
+	q := gen.New(tx)
+
+	// 1. Insert the block (idempotent — ON CONFLICT DO NOTHING).
+	if err := q.CreateUserBlock(ctx, gen.CreateUserBlockParams{
 		BlockerID: blockerID,
 		BlockedID: blockedID,
 		TenantID:  tenantID,
-	})
+	}); err != nil {
+		return fmt.Errorf("creating user block: %w", err)
+	}
+
+	// 2. Cancel follows in both directions (BE-1 / Section 41).
+	if err := q.DeleteFollowsBetweenUsers(ctx, gen.DeleteFollowsBetweenUsersParams{
+		FollowerID: blockerID,
+		EntityID:   blockedID,
+		TenantID:   tenantID,
+	}); err != nil {
+		return fmt.Errorf("deleting follows between users: %w", err)
+	}
+
+	// 3. Decline pending DM requests between the two users (BE-1 / Section 41).
+	if err := q.DeclinePendingDMRequestsBetweenUsers(ctx, gen.DeclinePendingDMRequestsBetweenUsersParams{
+		RequesterID: blockerID,
+		RecipientID: blockedID,
+		TenantID:    tenantID,
+	}); err != nil {
+		return fmt.Errorf("declining pending DM requests: %w", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("committing block transaction: %w", err)
+	}
+
+	return nil
 }
 
 // UnblockUser idempotently removes a user block. Returns nil if not blocked.
@@ -165,47 +203,10 @@ func (s *Service) ListMutedUsers(ctx context.Context, tenantID, userID pgtype.UU
 }
 
 // =====================
-// Space Mutes (Section 52)
+// Space Mutes (Section 52) — list only
 // =====================
-
-// MuteSpace mutes a space.
-// Invalidates the jc:muted_spaces:{tenant_id}:{user_id} Valkey cache (Section
-// 52 / VALKEY-001, BUG-003: tenant-scoped).
-func (s *Service) MuteSpace(ctx context.Context, tenantID, userID, spaceID pgtype.UUID) error {
-	if err := s.write.MuteSpace(ctx, gen.MuteSpaceParams{
-		TenantID: tenantID,
-		UserID:   userID,
-		SpaceID:  spaceID,
-	}); err != nil {
-		return err
-	}
-	s.invalidateMutedSpacesCache(ctx, tenantID, userID)
-	return nil
-}
-
-// UnmuteSpace removes a space mute.
-// Invalidates the jc:muted_spaces:{tenant_id}:{user_id} Valkey cache (Section
-// 52 / VALKEY-001, BUG-003: tenant-scoped).
-func (s *Service) UnmuteSpace(ctx context.Context, tenantID, userID, spaceID pgtype.UUID) error {
-	if err := s.write.UnmuteSpace(ctx, gen.UnmuteSpaceParams{
-		TenantID: tenantID,
-		UserID:   userID,
-		SpaceID:  spaceID,
-	}); err != nil {
-		return err
-	}
-	s.invalidateMutedSpacesCache(ctx, tenantID, userID)
-	return nil
-}
-
-// IsSpaceMuted checks if a space is muted.
-func (s *Service) IsSpaceMuted(ctx context.Context, tenantID, userID, spaceID pgtype.UUID) (bool, error) {
-	return s.read.IsSpaceMuted(ctx, gen.IsSpaceMutedParams{
-		TenantID: tenantID,
-		UserID:   userID,
-		SpaceID:  spaceID,
-	})
-}
+// Space mute/unmute *actions* and IsSpaceMuted live in internal/spaces, which
+// resolves the space by slug. This package only owns the list query below.
 
 // MutedSpaceInfo holds space-mute list entry data.
 type MutedSpaceInfo struct {

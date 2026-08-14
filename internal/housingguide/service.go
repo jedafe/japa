@@ -306,18 +306,13 @@ func (s *Service) Approve(ctx context.Context, id, tenantID, reviewerID pgtype.U
 		return GuideDTO{}, fmt.Errorf("housingguide: approve: fetch approved: %w", err)
 	}
 
-	// Enqueue a search index update so the newly published guide is
-	// searchable (fire-and-forget, Rule 8).
-	if s.enqueuer != nil {
-		go func() {
-			payload, _ := json.Marshal(map[string]any{
-				"guide_id":  id.String(),
-				"status":    "published",
-				"tenant_id": tenantID.String(),
-			})
-			_ = s.enqueuer.Enqueue("search:index_entity", payload)
-		}()
-	}
+	// Meilisearch indexing for housing_guides is not yet wired — there is no
+	// `housing_guide` entity type in the search indexer and no housing_guides
+	// Meilisearch index. When ADR-088 RAG indexing is extended to housing
+	// guides, enqueue `search:index_entity` here with payload
+	// {"entity_id": id, "entity_type": "housing_guide", "tenant_id": ...}
+	// and add a `housing_guide` case to worker.HandleSearchIndexSync.
+	// (fire-and-forget, Rule 8 — never block the request on fan-out.)
 
 	return rowToDTO(row), nil
 }
@@ -340,18 +335,8 @@ func (s *Service) Reject(ctx context.Context, id, tenantID, reviewerID pgtype.UU
 		return GuideDTO{}, fmt.Errorf("housingguide: reject: fetch rejected: %w", err)
 	}
 
-	// Enqueue a search index update to remove the rejected guide from
-	// search results (fire-and-forget, Rule 8).
-	if s.enqueuer != nil {
-		go func() {
-			payload, _ := json.Marshal(map[string]any{
-				"guide_id":  id.String(),
-				"status":    "rejected",
-				"tenant_id": tenantID.String(),
-			})
-			_ = s.enqueuer.Enqueue("search:index_entity", payload)
-		}()
-	}
+	// No Meilisearch index update — housing_guides is not yet indexed (see
+	// comment in Approve). When indexing is added, enqueue a delete here.
 
 	return rowToDTO(row), nil
 }

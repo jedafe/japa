@@ -33,6 +33,13 @@ type ContentService interface {
 	DeleteContent(ctx context.Context, id, tenantID pgtype.UUID) error
 }
 
+// FeatureChecker checks whether a feature flag is enabled for a tenant.
+// Satisfied by *features.Checker via structural typing — defined locally to
+// avoid importing the features package (keeps the dependency graph clean).
+type FeatureChecker interface {
+	IsEnabled(ctx context.Context, tenantID pgtype.UUID, key string) bool
+}
+
 // StoryDTO is the API response shape for a single story.
 type StoryDTO struct {
 	ID               string `json:"id"`
@@ -97,6 +104,7 @@ type Service struct {
 	store    *Store
 	content  ContentService
 	settings *config.Settings
+	checker  FeatureChecker
 }
 
 // NewService creates a story service.
@@ -108,8 +116,18 @@ func NewService(store *Store, contentSvc ContentService, settings *config.Settin
 	}
 }
 
-// Enabled reads the story.enabled system_setting toggle (§79 feature flag).
+// SetFeatureChecker injects the feature flag checker so Enabled can read the
+// feature_flags table (the single source of truth for feature reachability)
+// instead of system_settings. Falls back to system_settings when nil.
+func (s *Service) SetFeatureChecker(c FeatureChecker) { s.checker = c }
+
+// Enabled checks whether the story feature is enabled for the given tenant.
+// Delegates to the features.Checker (feature_flags table) when available,
+// falling back to system_settings for backward compatibility.
 func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
+	if s.checker != nil {
+		return s.checker.IsEnabled(ctx, tenantID, "story.enabled")
+	}
 	if s.settings == nil {
 		return false
 	}

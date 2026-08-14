@@ -10,6 +10,10 @@
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { Eye, CheckCircle, Sparkles, Plus } from 'lucide-svelte';
 	import type { ActionItem } from '$lib/components/ui/data-table';
+	import { onMount } from 'svelte';
+
+	type DestinationOption = { id: string; name: string; slug: string };
+	type TestOption = { id: string; slug: string; name: string };
 
 	type RequirementItem = {
 		id: string;
@@ -52,6 +56,39 @@
 	let createNotes = $state('');
 	let createSourceUrl = $state('');
 	let creating = $state(false);
+
+	// Geo-aware selector sources (ADR-088 geo-aware-tool-pattern).
+	// Destinations and tests are fetched from the API so the admin never
+	// types a raw UUID — the destination selector is the first input.
+	let destinations = $state<DestinationOption[]>([]);
+	let tests = $state<TestOption[]>([]);
+
+	onMount(async () => {
+		try {
+			const destResult = await languageTestHubAdminApi.listDestinations();
+			if (destResult.ok && Array.isArray(destResult.data)) {
+				destinations = (destResult.data as DestinationOption[]).map((d) => ({
+					id: d.id,
+					name: d.name,
+					slug: d.slug
+				}));
+			}
+		} catch {
+			destinations = [];
+		}
+		try {
+			const testResult = await languageTestHubAdminApi.listTests();
+			if (testResult.ok && Array.isArray(testResult.data)) {
+				tests = (testResult.data as TestOption[]).map((tt) => ({
+					id: tt.id,
+					slug: tt.slug,
+					name: tt.name
+				}));
+			}
+		} catch {
+			tests = [];
+		}
+	});
 
 	async function approveRequirement(item: RequirementItem) {
 		acting = true;
@@ -258,26 +295,32 @@
 <Modal bind:open={showGenerateModal} title={t('app.tools.generate_language_test', 'Generate Language Test Requirement')}>
 	<div class="space-y-4">
 		<div>
-			<label for="gen-dest" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('common.destination_space_id', 'Destination Space ID')}</label>
-			<input
+			<label for="gen-dest" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('language_test.destination', 'Destination')}</label>
+			<select
 				id="gen-dest"
-				type="text"
 				class="w-full rounded-lg border p-3 text-sm"
 				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
 				bind:value={generateDestSpaceId}
-				placeholder={t('common.destination_space_id_ph', 'UUID of the destination country space')}
-			/>
+			>
+				<option value="">{t('language_test.select_destination', 'Select destination...')}</option>
+				{#each destinations as d (d.id)}
+					<option value={d.id}>{d.name}</option>
+				{/each}
+			</select>
 		</div>
 		<div>
-			<label for="gen-test" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('common.test_slug', 'Test Slug')}</label>
-			<input
+			<label for="gen-test" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('common.test', 'Test')}</label>
+			<select
 				id="gen-test"
-				type="text"
 				class="w-full rounded-lg border p-3 text-sm"
 				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
 				bind:value={generateTestSlug}
-				placeholder={t('common.test_slug_ph', 'e.g. ielts, toefl, pte')}
-			/>
+			>
+				<option value="">{t('common.select_test', 'Select test...')}</option>
+				{#each tests as tt (tt.id)}
+					<option value={tt.slug}>{tt.name}</option>
+				{/each}
+			</select>
 		</div>
 		<div>
 			<label for="gen-visa" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('common.visa_category', 'Visa Category')}</label>
@@ -303,26 +346,32 @@
 <Modal bind:open={showCreateModal} title={t('common.create_requirement', 'Create Requirement')}>
 	<div class="space-y-4">
 		<div>
-			<label for="cr-dest" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('common.destination_space_id', 'Destination Space ID')} *</label>
-			<input
+			<label for="cr-dest" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('language_test.destination', 'Destination')} *</label>
+			<select
 				id="cr-dest"
-				type="text"
 				class="w-full rounded-lg border p-3 text-sm"
 				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
 				bind:value={createDestSpaceId}
-				placeholder={t('common.destination_space_id_ph', 'UUID of the destination country space')}
-			/>
+			>
+				<option value="">{t('language_test.select_destination', 'Select destination...')}</option>
+				{#each destinations as d (d.id)}
+					<option value={d.id}>{d.name}</option>
+				{/each}
+			</select>
 		</div>
 		<div>
-			<label for="cr-test" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('common.test_slug', 'Test Slug')} *</label>
-			<input
+			<label for="cr-test" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('common.test', 'Test')} *</label>
+			<select
 				id="cr-test"
-				type="text"
 				class="w-full rounded-lg border p-3 text-sm"
 				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
 				bind:value={createTestSlug}
-				placeholder={t('common.test_slug_ph', 'e.g. ielts, toefl, pte')}
-			/>
+			>
+				<option value="">{t('common.select_test', 'Select test...')}</option>
+				{#each tests as tt (tt.id)}
+					<option value={tt.slug}>{tt.name}</option>
+				{/each}
+			</select>
 		</div>
 		<div>
 			<label for="cr-score" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('common.minimum_score', 'Minimum Score')} *</label>

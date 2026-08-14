@@ -216,6 +216,7 @@ export const impersonationApi = {
 			active: boolean;
 			target_user_id: string | null;
 			expires_at: string | null;
+			target: { id: string; username: string; email: string } | null;
 		}>('/admin/impersonate/status'),
 };
 
@@ -1848,13 +1849,18 @@ export const credentialCheckerAdminApi = {
 };
 
 export const housingGuideAdminApi = {
-	list: (params?: string) => api<unknown>(`/admin/housing-guides${params ? `?${params}` : ''}`),
+	list: (params?: string) =>
+		apiRaw<{ data: unknown[]; pagination: { page: number; limit: number; total: number } }>(
+			`/admin/housing-guides${params ? `?${params}` : ''}`
+		),
 	create: (body: Record<string, unknown>) =>
 		api<unknown>(`/admin/housing-guides`, { method: 'POST', body }),
 	update: (id: string, body: Record<string, unknown>) =>
 		api<unknown>(`/admin/housing-guides/${id}`, { method: 'PATCH', body }),
 	approve: (id: string) =>
 		api<unknown>(`/admin/housing-guides/${id}/approve`, { method: 'PATCH', body: {} }),
+	reject: (id: string, body: { reason?: string } = {}) =>
+		api<unknown>(`/admin/housing-guides/${id}/reject`, { method: 'PATCH', body }),
 	generate: (body: Record<string, unknown>) =>
 		api<unknown>(`/admin/housing-guides/generate`, { method: 'POST', body }),
 };
@@ -1883,6 +1889,9 @@ export const languageTestHubAdminApi = {
 		api<unknown>(`/admin/language-tests/requirements/${id}/approve`, { method: 'PATCH', body: {} }),
 	generate: (body: Record<string, unknown>) =>
 		api<unknown>(`/admin/language-tests/requirements/generate`, { method: 'POST', body }),
+	// Geo-aware selector sources (ADR-088 geo-aware-tool-pattern).
+	listDestinations: () => api<unknown>(`/spaces?level=country`),
+	listTests: () => api<unknown>(`/language-tests`),
 };
 
 export const taxCalculatorAdminApi = {

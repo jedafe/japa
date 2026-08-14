@@ -326,72 +326,11 @@ func (h *Handlers) ListMutedUsers(w http.ResponseWriter, r *http.Request) {
 }
 
 // ---------------------------------------------------------------------------
-// Space Mutes (Section 52)
+// Space Mutes (Section 52) — list only
 // ---------------------------------------------------------------------------
-
-// MuteSpace handles POST /api/v1/spaces/{space_id}/mute.
-//
-//nolint:dupl // handler pattern is intentionally consistent with MuteUser
-func (h *Handlers) MuteSpace(w http.ResponseWriter, r *http.Request) {
-	user, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-
-	tenantID, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
-
-	spaceID, err := parseUUIDParam(r, "space_id")
-	if err != nil {
-		errpkg.WriteError(w, http.StatusBadRequest, "invalid_space_id", "Invalid space_id format")
-
-		return
-	}
-
-	if err := h.service.MuteSpace(r.Context(), tenantID, user.UserID, spaceID); err != nil {
-		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to mute space")
-
-		return
-	}
-
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
-		"data": map[string]any{"muted": true},
-	})
-}
-
-// UnmuteSpace handles DELETE /api/v1/spaces/{space_id}/mute.
-//
-//nolint:dupl // handler pattern is intentionally consistent with MuteUser
-func (h *Handlers) UnmuteSpace(w http.ResponseWriter, r *http.Request) {
-	user, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-
-	tenantID, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
-
-	spaceID, err := parseUUIDParam(r, "space_id")
-	if err != nil {
-		errpkg.WriteError(w, http.StatusBadRequest, "invalid_space_id", "Invalid space_id format")
-
-		return
-	}
-
-	if err := h.service.UnmuteSpace(r.Context(), tenantID, user.UserID, spaceID); err != nil {
-		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to unmute space")
-
-		return
-	}
-
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
-		"data": map[string]any{"muted": false},
-	})
-}
+// Space mute/unmute *actions* (POST/DELETE /spaces/{slug}/mute) are handled by
+// internal/spaces, which resolves the space by slug before calling the shared
+// sqlc queries. This package only owns the list endpoint below.
 
 // ListMutedSpaces handles GET /api/v1/me/muted-spaces.
 func (h *Handlers) ListMutedSpaces(w http.ResponseWriter, r *http.Request) {

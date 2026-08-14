@@ -3,7 +3,7 @@
 	import { page } from '$app/state';
 	import { untrack } from 'svelte';
 	import { invalidate } from '$app/navigation';
-	import { FileText, MessageSquare, Image, Heart, Users, Info, BarChart3, Award, Pin, Ban } from 'lucide-svelte';
+	import { FileText, MessageSquare, Image, Heart, Users, Info, BarChart3, Award, Pin, Ban, VolumeX, Compass } from 'lucide-svelte';
 	import { Chart, Svg, Bars, Axis, LineChart } from 'layerchart';
 	import SetSidebar from '$lib/components/shell/SetSidebar.svelte';
 	import ProfileHeader from '$lib/components/profile/ProfileHeader.svelte';
@@ -14,7 +14,7 @@
 	import { cardStyleFor, type CardStyleConfig } from '$lib/feed/cardStyle';
 	import type { ProfileAnalytics, ProfilePost, FeedItem, FollowerGrowthItem, TopContentItem } from '$lib/types';
 	import FeedCard from '$lib/components/feed/FeedCard.svelte';
-	import { blockUser, unblockUser } from '$lib/api/hub';
+	import { blockUser, unblockUser, muteUser, unmuteUser } from '$lib/api/hub';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -73,6 +73,35 @@
 			isBlocked = wasBlocked; // revert on error
 		} finally {
 			blockPending = false;
+		}
+	}
+
+	// FE-1: Mute/unmute toggle for the profile user. Mirrors the block
+	// toggle pattern — local state seeded from SSR, optimistic update,
+	// invalidate the muted-users list on success. Ref: Section 52.
+	let isMuted = $state(false);
+	let mutePending = $state(false);
+
+	$effect(() => {
+		isMuted = data.initiallyMuted;
+	});
+
+	async function toggleMute() {
+		if (mutePending) return;
+		mutePending = true;
+		const wasMuted = isMuted;
+		isMuted = !wasMuted; // optimistic
+		try {
+			if (wasMuted) {
+				await unmuteUser(user.id);
+			} else {
+				await muteUser(user.id);
+			}
+			await invalidate('/api/v1/me/muted-users');
+		} catch (e) {
+			isMuted = wasMuted; // revert on error
+		} finally {
+			mutePending = false;
 		}
 	}
 
@@ -185,8 +214,42 @@
 			<Ban class="h-4 w-4" />
 			{isBlocked ? t('profile.unblock', 'Unblock') : t('profile.block', 'Block')}
 		</button>
+		<button
+			type="button"
+			class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border px-3 py-1.5 text-sm font-medium transition-colors {isMuted
+				? 'border-[var(--color-warning)] text-[var(--color-warning)] hover:bg-[var(--color-warning)]/10'
+				: 'border-[var(--color-border)] text-[var(--color-muted)] hover:text-[var(--color-text)] hover:border-[var(--color-border-strong)]'}"
+			disabled={mutePending}
+			onclick={toggleMute}
+			aria-label={isMuted ? t('profile.unmute_user', 'Unmute user') : t('profile.mute_user', 'Mute user')}
+		>
+			<VolumeX class="h-4 w-4" />
+			{isMuted ? t('profile.unmute', 'Unmute') : t('profile.mute', 'Mute')}
+		</button>
 	{/if}
 </ProfileHeader>
+
+<!-- §87 — Japa Stage badge. Shown when the profile user has a public stage
+set. Best-effort: data.japaStage is null when the feature flag is off, the
+profile is private, or no stage is set. -->
+{#if data.japaStage?.stage}
+	<div class="mx-auto w-full max-w-full px-3 pt-3">
+		<a
+			href={`/japa-stage?stage=${data.japaStage.stage}`}
+			class="inline-flex items-center gap-2 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm transition-colors hover:bg-[var(--color-surface-subtle)]"
+		>
+			<Compass class="h-4 w-4 text-[var(--color-primary)]" />
+			<span class="font-medium text-[var(--color-text)]">
+				{t(`japa_stage.${data.japaStage.stage}`, data.japaStage.stage)}
+			</span>
+			{#if data.japaStage.destination_space_name}
+				<span class="text-[var(--color-text-subtle)]">
+					{t('japa_stage.dest', 'Destination')}: {data.japaStage.destination_space_name}
+				</span>
+			{/if}
+		</a>
+	</div>
+{/if}
 
 <UrlTabs {tabs} bind:value={activeTab} />
 

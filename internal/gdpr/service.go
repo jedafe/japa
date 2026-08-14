@@ -387,6 +387,52 @@ func (s *Service) ListPendingDataExportRequests(ctx context.Context, tenantID pg
 	return s.store.listPendingDataExportRequests(ctx, tenantID, limit)
 }
 
+// CleanupExpiredExports deletes files and nulls download URLs for completed
+// data export requests whose ExpiresAt has passed (BUG-GDPR-005, Section 19
+// time-limited download links). Called by the gdpr:retention_sweep cron.
+// Best-effort: file deletion failures log a warning but the DB row is still
+// expired so the download handler returns 404.
+func (s *Service) CleanupExpiredExports(ctx context.Context) error {
+	rq := s.store.read
+	if rq == nil {
+		return nil
+	}
+
+	expired, err := rq.ListExpiredDataExports(ctx)
+	if err != nil {
+		return fmt.Errorf("listing expired data exports: %w", err)
+	}
+
+	for _, e := range expired {
+		// Delete the file from storage (best-effort). The LocalStorage
+		// GetPath resolves the on-disk file; we remove it via os.Remove.
+		if s.storage != nil {
+			if path, pathErr := s.storage.GetPath(e.TenantID, e.ID); pathErr == nil {
+				if rmErr := os.Remove(path); rmErr != nil && !os.IsNotExist(rmErr) {
+					slog.Warn("gdpr: failed to delete expired export file",
+						"request_id", e.ID.String(), "error", rmErr)
+				}
+			}
+		}
+
+		// Null out the download URL and set status to 'expired' so the
+		// download handler returns 404 and the row is not re-cleaned.
+		if err := s.store.write.ExpireDataExport(ctx, gen.ExpireDataExportParams{
+			ID:       e.ID,
+			TenantID: e.TenantID,
+		}); err != nil {
+			slog.Warn("gdpr: failed to expire data export row",
+				"request_id", e.ID.String(), "error", err)
+		}
+	}
+
+	if len(expired) > 0 {
+		slog.Info("gdpr: cleaned up expired data exports", "count", len(expired))
+	}
+
+	return nil
+}
+
 // ---------------------------------------------------------------------------
 // Account Deletion
 // ---------------------------------------------------------------------------
@@ -861,6 +907,28 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 		}
 	}
 
+	// Defensive Honcho erasure (ADR-057: Honcho deletion is a mandatory
+	// prerequisite to physical row deletion). The automated pipeline
+	// (ProcessAccountDeletion) calls Honcho DeleteUser at step 4 before
+	// reaching this method at step 5. This admin-triggered path may be
+	// called on a user whose step 4 was skipped or failed, so we repeat
+	// the call here — it is idempotent (404 = already deleted = success).
+	// In production, a failure blocks the hard delete so AI context is
+	// never left behind after physical erasure. The call is outside the
+	// DB transaction below to avoid holding locks during an external API
+	// call (Bug Hunter's Guide §6.2).
+	if s.honchoEraser != nil {
+		if err := s.honchoEraser.DeleteUser(ctx, userID.String()); err != nil {
+			if strings.EqualFold(os.Getenv("JC_ENV"), "production") {
+				return fmt.Errorf("hard delete blocked: honcho erasure failed for user %s: %w", userID, err)
+			}
+			slog.Warn("hard delete: honcho erasure failed (non-production, proceeding)",
+				"user_id", userID.String(), "error", err)
+		}
+	} else if strings.EqualFold(os.Getenv("JC_ENV"), "production") {
+		return fmt.Errorf("hard delete blocked: honcho eraser not configured — required in production for user %s", userID)
+	}
+
 	// All four steps run in one transaction so a failure cannot leave the user
 	// half-erased (e.g. authorship reassigned but the user row still present).
 	if err := db.WithTx(ctx, s.db.Writer, func(q *gen.Queries) error {
@@ -1121,6 +1189,18 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 		// Delete user_blocks (user-owned config).
 		if err := q.DeleteUserBlocksByUser(ctx, userID); err != nil {
 			return fmt.Errorf("deleting user blocks: %w", err)
+		}
+
+		// BE-2: delete user_mutes where the user is the muter or muted party.
+		// Mute relationships are user-owned feed-filter config and must not
+		// survive anonymization. Ref: Section 52, Section 15.
+		if err := q.DeleteUserMutesByUser(ctx, userID); err != nil {
+			return fmt.Errorf("deleting user mutes: %w", err)
+		}
+
+		// BE-2: delete space_mutes for the user. Ref: Section 52, Section 15.
+		if err := q.DeleteSpaceMutesByUser(ctx, userID); err != nil {
+			return fmt.Errorf("deleting space mutes: %w", err)
 		}
 
 		// BUG-M006: delete notifications addressed to the erased user.
@@ -1444,6 +1524,19 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 			return fmt.Errorf("reassigning mutual_aid_posts user_id: %w", err)
 		}
 
+		// §99 Language Test Hub GDPR erasure (ADR-107).
+		// language_score_stories.user_id references users(id) with ON
+		// DELETE CASCADE. Score stories are community content (peer
+		// preparation experiences) and should survive erasure with a
+		// stable "deleted user" attribution, matching the mutual_aid_posts
+		// pattern. Soft-deleted stories (deleted_at IS NOT NULL) are left
+		// alone — they are already anonymised by the soft-delete pathway.
+		// Ref: japaconnect-engineering/sections/99-language-test-hub.md
+		//      japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
+		if _, err := s.db.Writer.Exec(ctx, `UPDATE language_score_stories SET user_id = $3 WHERE tenant_id = $2 AND user_id = $1 AND deleted_at IS NULL`, userID, tenantID, deletedUserPlaceholder); err != nil {
+			return fmt.Errorf("reassigning language_score_stories user_id: %w", err)
+		}
+
 		// §81 Scam Alert Board GDPR erasure (ADR-089).
 		// scam_reports.reporter_id references users(id) with ON DELETE SET
 		// NULL, so the final HardDeleteUser would nullify it. Reassign to the
@@ -1524,6 +1617,23 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 			return fmt.Errorf("reassigning community_organisations hitl_reviewed_by: %w", err)
 		}
 
+		// housing_guides.hitl_reviewed_by references users(id) with ON
+		// DELETE SET NULL (migration 000335). Reassign to the placeholder
+		// so the HITL audit trail preserves a stable "deleted user"
+		// attribution rather than an anonymous NULL, matching the
+		// platform-wide erasure convention (ADR-014) and the
+		// community_organisations pattern above.
+		// Ref: japaconnect-engineering/sections/96-housing-guide.md
+		//      japaconnect-engineering/adr/ADR-104-housing-guide.md
+		//      japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
+		if _, err := s.db.Writer.Exec(ctx, `
+			UPDATE housing_guides
+			SET hitl_reviewed_by = $3
+			WHERE tenant_id = $2 AND hitl_reviewed_by = $1
+		`, userID, tenantID, deletedUserPlaceholder); err != nil {
+			return fmt.Errorf("reassigning housing_guides hitl_reviewed_by: %w", err)
+		}
+
 		// BUG-017: Scrub PII from cv_format_sessions during the
 		// anonymization phase (§95, ADR-103, ADR-014). The table has
 		// ON DELETE CASCADE from users(id) so rows are removed at
@@ -1575,6 +1685,21 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 			WHERE tenant_id = $2 AND user_id = $1
 		`, userID, tenantID); err != nil {
 			return fmt.Errorf("deleting newsletter_subscribers for user: %w", err)
+		}
+
+		// BUG-JOBS-013: job_applications.applicant_id references users(id) ON
+		// DELETE CASCADE, so rows are removed at hard-delete, but employer_notes
+		// may contain applicant PII and the table must be explicitly listed for
+		// GDPR traceability (§15, Rule 11). Delete the user's applications in
+		// the anonymization phase so the PII is gone before the retention window
+		// closes. submission_id → form_submissions PII is handled separately
+		// (BUG-019). Ref: japaconnect-engineering/sections/63-jobs-board.md
+		//      japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
+		if _, err := s.db.Writer.Exec(ctx, `
+			DELETE FROM job_applications
+			WHERE tenant_id = $2 AND applicant_id = $1
+		`, userID, tenantID); err != nil {
+			return fmt.Errorf("deleting job_applications for user: %w", err)
 		}
 
 		// BUG-006/BUG-007: Scrub PII from ai_agent_sessions (and cascading
@@ -1928,6 +2053,7 @@ type UserDataExport struct {
 	ReferralsAsReferrer         []map[string]interface{} `json:"referrals_as_referrer"`         // §60 BUG-013
 	ReferralsAsReferee          []map[string]interface{} `json:"referrals_as_referee"`          // §60 BUG-013
 	ServiceListings             []map[string]interface{} `json:"service_listings"`              // §98 BUG-008
+	LanguageScoreStories        []map[string]interface{} `json:"language_score_stories"`        // §99 BUG-004
 	ExportMetadata              map[string]interface{}   `json:"export_metadata"`
 }
 
@@ -2523,6 +2649,31 @@ func (s *Service) collectUserData(ctx context.Context, userID, tenantID pgtype.U
 		}
 	} else {
 		slog.Warn("failed to collect mutual_aid_posts for export", "user_id", userID.String(), "error", err)
+	}
+
+	// BUG-004: export language_score_stories authored by the user so the
+	// GDPR data export includes their community score-story contributions.
+	// Ref: japaconnect-engineering/sections/99-language-test-hub.md
+	//      japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
+	if rows, err := s.db.Reader.Query(ctx, `
+		SELECT id, tenant_id, test_id, starting_level, final_score,
+		       destination_space_id, prep_duration_weeks, resources_used,
+		       advice, status, created_at
+		FROM language_score_stories
+		WHERE tenant_id = $2 AND user_id = $1 AND deleted_at IS NULL
+		ORDER BY created_at DESC
+	`, userID, tenantID); err == nil {
+		defer rows.Close()
+		for rows.Next() {
+			row := make(map[string]interface{})
+			cols, _ := rows.Values()
+			for i, col := range rows.FieldDescriptions() {
+				row[string(col.Name)] = cols[i]
+			}
+			export.LanguageScoreStories = append(export.LanguageScoreStories, row)
+		}
+	} else {
+		slog.Warn("failed to collect language_score_stories for export", "user_id", userID.String(), "error", err)
 	}
 
 	// §81: export scam_reports filed by the user + their scam-alert

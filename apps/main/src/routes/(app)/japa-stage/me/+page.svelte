@@ -26,11 +26,11 @@
 
 	const STAGE_COLORS: Record<JapaStage, string> = {
 		considering: 'var(--color-muted)',
-		planning: '#3b82f6',
-		preparing: '#8b5cf6',
-		applied: '#f59e0b',
-		approved: '#10b981',
-		relocated: '#06b6d4',
+		planning: 'var(--stage-planning)',
+		preparing: 'var(--stage-preparing)',
+		applied: 'var(--stage-applied)',
+		approved: 'var(--stage-approved)',
+		relocated: 'var(--stage-relocated)',
 		settled: 'var(--color-primary)'
 	};
 
@@ -67,6 +67,14 @@
 	const historyEntries = $derived(
 		(data.myStage?.history as Array<{ stage: JapaStage; dest_space_id?: string; set_at: string }> | undefined) ?? []
 	);
+
+	// Resolve a dest_space_id UUID to the destination name using the
+	// SSR-loaded countries list (avoids showing a raw UUID to the user).
+	function destName(id?: string): string {
+		if (!id) return '';
+		const c = data.countries.find((c) => c.id === id);
+		return c?.name ?? '';
+	}
 
 	async function submit(e: SubmitEvent) {
 		e.preventDefault();
@@ -234,7 +242,7 @@
 						></span>
 						<span class="font-medium text-[var(--color-text)]">{stageLabel(entry.stage)}</span>
 						{#if entry.dest_space_id}
-							<span class="text-[var(--color-text-subtle)]">→ {entry.dest_space_id}</span>
+							<span class="text-[var(--color-text-subtle)]">→ {destName(entry.dest_space_id) || t('japa_stage.dest_set', 'Destination set')}</span>
 						{/if}
 						<span class="ml-auto text-xs text-[var(--color-text-subtle)]">
 							<RelativeTime iso={entry.set_at} />

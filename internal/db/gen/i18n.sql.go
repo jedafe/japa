@@ -59,6 +59,21 @@ func (q *Queries) DeleteTranslation(ctx context.Context, arg DeleteTranslationPa
 	return err
 }
 
+const deleteTranslationsByLocale = `-- name: DeleteTranslationsByLocale :exec
+DELETE FROM translations
+WHERE tenant_id = $1 AND locale = $2
+`
+
+type DeleteTranslationsByLocaleParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	Locale   string      `json:"locale"`
+}
+
+func (q *Queries) DeleteTranslationsByLocale(ctx context.Context, arg DeleteTranslationsByLocaleParams) error {
+	_, err := q.db.Exec(ctx, deleteTranslationsByLocale, arg.TenantID, arg.Locale)
+	return err
+}
+
 const getTranslation = `-- name: GetTranslation :one
 SELECT id, locale, "key", value, context, created_at, updated_at
 FROM translations
@@ -84,6 +99,42 @@ type GetTranslationRow struct {
 func (q *Queries) GetTranslation(ctx context.Context, arg GetTranslationParams) (GetTranslationRow, error) {
 	row := q.db.QueryRow(ctx, getTranslation, arg.TenantID, arg.Locale, arg.Key)
 	var i GetTranslationRow
+	err := row.Scan(
+		&i.ID,
+		&i.Locale,
+		&i.Key,
+		&i.Value,
+		&i.Context,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getTranslationByID = `-- name: GetTranslationByID :one
+SELECT id, locale, "key", value, context, created_at, updated_at
+FROM translations
+WHERE tenant_id = $1 AND id = $2
+`
+
+type GetTranslationByIDParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	ID       pgtype.UUID `json:"id"`
+}
+
+type GetTranslationByIDRow struct {
+	ID        pgtype.UUID        `json:"id"`
+	Locale    string             `json:"locale"`
+	Key       string             `json:"key"`
+	Value     string             `json:"value"`
+	Context   *string            `json:"context"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) GetTranslationByID(ctx context.Context, arg GetTranslationByIDParams) (GetTranslationByIDRow, error) {
+	row := q.db.QueryRow(ctx, getTranslationByID, arg.TenantID, arg.ID)
+	var i GetTranslationByIDRow
 	err := row.Scan(
 		&i.ID,
 		&i.Locale,

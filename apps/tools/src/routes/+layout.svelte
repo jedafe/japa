@@ -6,7 +6,6 @@
 	import Footer from '$lib/components/shell/Footer.svelte';
 	import { theme } from '$lib/stores/theme.svelte';
 	import { seedCsrfToken } from '$lib/api/csrf.svelte';
-	import { i18n } from '$lib/i18n';
 	import { getTool } from '$lib/tools/registry';
 	import type { ToolSurface } from '$lib/types';
 	import type { LayoutData } from './$types';
@@ -20,10 +19,9 @@
 	});
 
 	// Seed the i18n locale from the SSR-resolved value (jc_locale cookie →
-	// i18n.default_language setting). Ref: §7 (i18n), ADR-013.
-	$effect(() => {
-		i18n.setLocale(data.locale);
-	});
+	// i18n.default_language setting). The store derives locale from
+	// `page.data.locale` — no manual setLocale() call needed (SSR-safe).
+	// Ref: §7 (i18n), ADR-013.
 
 	// Seed the browser-side CSRF token from server-rendered page data so the
 	// first client mutation already carries X-CSRF-Token without a boot fetch.

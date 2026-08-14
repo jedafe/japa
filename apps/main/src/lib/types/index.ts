@@ -2766,6 +2766,17 @@ export interface MemberStage {
 	updated_at?: string;
 }
 
+/** GET /users/:username/japa-stage — a single member's public japa stage. */
+export interface PublicJapaStage {
+	user_id: string;
+	username?: string;
+	stage?: string;
+	destination_space_id?: string;
+	destination_space_name?: string;
+	destination_space_code?: string;
+	updated_at?: string;
+}
+
 // --- Section 88: Ask an Expat (AMA) ---
 export interface AMAThread {
 	id: string;

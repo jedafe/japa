@@ -19,6 +19,13 @@
 
 	// The API already filters by auth/permissions, but guard against visibility
 	// drift so an 'authenticated' item never leaks to a guest and vice-versa.
+	// Cross-app routes (e.g. /login, which lives on the Main app) are rewritten
+	// to absolute Main-app URLs so they don't 404 on the Learn app.
+	function resolveItemUrl(url: string): string {
+		if (url === '/login') return loginUrl();
+		return url;
+	}
+
 	const items = $derived(
 		(menu?.items ?? []).filter((item: MenuItem) => {
 			if (item.visibility === 'authenticated') return !!user;
@@ -93,7 +100,7 @@
 			{@const active = isActive(item.url)}
 			<li>
 				<a
-					href={item.url}
+					href={resolveItemUrl(item.url)}
 					target={item.target}
 					title={collapsed ? item.label : undefined}
 					aria-current={active ? 'page' : undefined}

@@ -233,15 +233,20 @@ func (q *Queries) CreateJobApplication(ctx context.Context, arg CreateJobApplica
 
 const expireJobListingsPastDeadline = `-- name: ExpireJobListingsPastDeadline :execrows
 
-UPDATE contents
+UPDATE contents c
 SET status = 'archived', updated_at = now()
-WHERE tenant_id = $1
-  AND content_type = 'job_listing'
-  AND status = 'published'
-  AND id IN (
-    SELECT cfv.content_id
+WHERE c.tenant_id = $1
+  AND c.content_type = 'job_listing'
+  AND c.status = 'published'
+  AND c.deleted_at IS NULL
+  AND EXISTS (
+    SELECT 1
     FROM custom_field_values cfv
-    WHERE cfv.field_key = 'application_deadline'
+    JOIN custom_fields cf ON cf.id = cfv.field_id
+    WHERE cfv.entity_type = 'content'
+      AND cfv.entity_id = c.id
+      AND cf.tenant_id = c.tenant_id
+      AND cf.key = 'application_deadline'
       AND cfv.value_text IS NOT NULL
       AND cfv.value_text::timestamptz < now()
   )
@@ -253,6 +258,11 @@ WHERE tenant_id = $1
 // This is a direct SQL query rather than sqlc because it joins
 // contents with custom_field_values and updates status.
 // =====================================================================
+// Archive published job_listing content whose application_deadline custom
+// field value is in the past. custom_field_values is EAV: field_id →
+// custom_fields.id, entity_type='content', entity_id = contents.id. The
+// application_deadline field is field_type='date' and stored in value_text
+// (ISO date) so it is cast to timestamptz for comparison.
 func (q *Queries) ExpireJobListingsPastDeadline(ctx context.Context, tenantID pgtype.UUID) (int64, error) {
 	result, err := q.db.Exec(ctx, expireJobListingsPastDeadline, tenantID)
 	if err != nil {

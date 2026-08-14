@@ -3,12 +3,14 @@ package features
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"sync"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db"
 	errpkg "github.com/jedafe/japa/internal/errors"
@@ -23,14 +25,24 @@ const flagCacheTTL = 5 * time.Minute
 // flagCacheKeyPrefix namespaces all feature flag cache keys in Valkey.
 const flagCacheKeyPrefix = "jc:flags:"
 
+// FeatureChecker is the interface for checking whether a feature flag is
+// enabled for a given tenant. Services that need to verify their own feature
+// flag (e.g. story.Service.Enabled) should accept this interface rather than
+// reading system_settings directly, so that feature_flags remains the single
+// source of truth for feature reachability.
+type FeatureChecker interface {
+	IsEnabled(ctx context.Context, tenantID pgtype.UUID, key string) bool
+}
+
 // Checker resolves whether a feature is enabled for a given tenant.
 // It uses a two-tier cache: L1 (in-memory, 60s TTL for fast eviction) and
 // L2 (Valkey, 5min TTL for cross-instance consistency). When Valkey is
 // unavailable, it gracefully degrades to L1-only operation.
 type Checker struct {
-	db    *db.DB
-	cache *flagCache
-	vk    valkeycompat.Cmdable // nil when Valkey is unavailable (graceful degradation)
+	db       *db.DB
+	cache    *flagCache
+	vk       valkeycompat.Cmdable // nil when Valkey is unavailable (graceful degradation)
+	closeOnce sync.Once
 }
 
 // flagCacheEntry wraps a flag value with its creation time for TTL eviction.
@@ -68,21 +80,21 @@ func New(database *db.DB, vkClient valkeycompat.Cmdable) *Checker {
 }
 
 // Close stops the background cleanup goroutine and releases resources.
+// Safe to call concurrently — sync.Once prevents double-close panics.
 func (c *Checker) Close() {
-	if c.cache.done != nil {
-		select {
-		case <-c.cache.done:
-			// already closed
-		default:
+	c.closeOnce.Do(func() {
+		if c.cache.done != nil {
 			close(c.cache.done)
 		}
-	}
+	})
 }
 
 // IsEnabled checks if a feature is enabled for the tenant in context.
 // If the feature_flags table has no row for the key, the registry default
 // is used. The result is cached in L1 (in-memory) and L2 (Valkey).
 // Lookup order: L1 → L2 → DB. Results are cached at both layers.
+// On transient DB errors the default is returned for the current request
+// but NOT cached — the next request retries the DB.
 func (c *Checker) IsEnabled(ctx context.Context, tenantID pgtype.UUID, key string) bool {
 	tenantKey := tenantID.String()
 	if cached := c.cacheGet(tenantKey, key); cached != nil {
@@ -96,7 +108,17 @@ func (c *Checker) IsEnabled(ctx context.Context, tenantID pgtype.UUID, key strin
 	}
 
 	// DB — source of truth
-	enabled := c.queryEnabled(ctx, tenantID, key)
+	enabled, err := c.queryEnabled(ctx, tenantID, key)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		// Transient DB error (connection failure, context cancellation, etc.).
+		// Return the registry default for this request but do NOT cache it —
+		// caching a default from a failed query would poison the cache for
+		// up to 5 minutes (L2), silently flipping features on or off.
+		return enabled
+	}
+
+	// Success or ErrNoRows (legitimate "flag not set" → use default).
+	// Safe to cache at both layers.
 	c.cacheSet(tenantKey, key, enabled)
 	c.valkeySet(ctx, tenantKey, key, enabled)
 
@@ -109,7 +131,9 @@ func (c *Checker) IsEnabled(ctx context.Context, tenantID pgtype.UUID, key strin
 // tenant falls inside the rollout cohort (BL-013 / Section 42). This gives a
 // stable per-tenant-per-flag result: the same tenant always sees the same
 // outcome for a given flag until the percentage or enabled state changes.
-func (c *Checker) queryEnabled(ctx context.Context, tenantID pgtype.UUID, key string) bool {
+// Returns (default, ErrNoRows) when the flag is not set so the caller can
+// distinguish "not set" from a real DB error.
+func (c *Checker) queryEnabled(ctx context.Context, tenantID pgtype.UUID, key string) (bool, error) {
 	var enabled bool
 	var configBytes []byte
 
@@ -118,11 +142,14 @@ func (c *Checker) queryEnabled(ctx context.Context, tenantID pgtype.UUID, key st
 		WHERE key = $1 AND tenant_id = $2
 	`, key, tenantID).Scan(&enabled, &configBytes)
 	if err != nil {
-		return DefaultFor(key)
+		if !errors.Is(err, pgx.ErrNoRows) {
+			slog.Warn("features: query failed, using registry default", "key", key, "error", err)
+		}
+		return DefaultFor(key), err
 	}
 
 	if !enabled {
-		return false
+		return false, nil
 	}
 
 	// BL-013 / Section 42: gradual rollout. Parse the config blob for a
@@ -131,12 +158,12 @@ func (c *Checker) queryEnabled(ctx context.Context, tenantID pgtype.UUID, key st
 	if len(configBytes) > 0 {
 		if jsonErr := json.Unmarshal(configBytes, &cfg); jsonErr == nil {
 			if cfg.RolloutPercentage > 0 && cfg.RolloutPercentage < 100 {
-				return hashInRollout(tenantID, key, cfg.RolloutPercentage)
+				return hashInRollout(tenantID, key, cfg.RolloutPercentage), nil
 			}
 		}
 	}
 
-	return true
+	return true, nil
 }
 
 // hashInRollout deterministically decides whether a (tenantID, key) pair falls
@@ -309,10 +336,56 @@ func (fc *flagCache) cleanupLoop(maxAge time.Duration) {
 
 // GetAllEnabled returns a map of all feature keys to their enabled state
 // for the given tenant. Used by the frontend layout to get all flags at once.
+// Fetches all tenant flag rows in a single DB query instead of issuing one
+// query per registry key (eliminates the N+1 pattern on cold cache).
 func (c *Checker) GetAllEnabled(ctx context.Context, tenantID pgtype.UUID) map[string]bool {
 	result := make(map[string]bool)
+
+	// Start with registry defaults.
 	for _, f := range Registry {
-		result[f.Key] = c.IsEnabled(ctx, tenantID, f.Key)
+		result[f.Key] = f.Default
+	}
+
+	// Batch-fetch all tenant overrides in one round-trip, then overlay.
+	rows, err := c.db.Reader.Query(ctx, `
+		SELECT key, enabled, config FROM feature_flags
+		WHERE tenant_id = $1
+	`, tenantID)
+	if err != nil {
+		// On DB error, fall back to defaults (already set above).
+		slog.Warn("features: batch query failed, using registry defaults", "error", err)
+		return result
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var r struct {
+			Key      string
+			Enabled  bool
+			Config   []byte
+		}
+		if err := rows.Scan(&r.Key, &r.Enabled, &r.Config); err != nil {
+			slog.Warn("features: scanning batch row", "error", err)
+			continue
+		}
+
+		if !r.Enabled {
+			result[r.Key] = false
+			continue
+		}
+
+		// Check rollout percentage in the config blob.
+		var cfg FlagConfig
+		if len(r.Config) > 0 {
+			if jsonErr := json.Unmarshal(r.Config, &cfg); jsonErr == nil {
+				if cfg.RolloutPercentage > 0 && cfg.RolloutPercentage < 100 {
+					result[r.Key] = hashInRollout(tenantID, r.Key, cfg.RolloutPercentage)
+					continue
+				}
+			}
+		}
+
+		result[r.Key] = true
 	}
 
 	return result

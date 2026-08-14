@@ -24,11 +24,11 @@ func NewHandlers(checker *Checker) *Handlers {
 	return &Handlers{checker: checker}
 }
 
-// HandleGetFeatures handles GET /api/v1/features.
+// HandleGetFeatureFlags handles GET /api/v1/feature-flags.
 // Returns all feature flags and their enabled state for the current tenant.
 // This endpoint is public (no auth required) because the frontend layout
 // needs flags before the user logs in to render navigation correctly.
-func (h *Handlers) HandleGetFeatures(w http.ResponseWriter, r *http.Request) {
+func (h *Handlers) HandleGetFeatureFlags(w http.ResponseWriter, r *http.Request) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
@@ -81,8 +81,8 @@ func (h *Handlers) HandleSetFeatureFlag(w http.ResponseWriter, r *http.Request) 
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
-			"key":     flagName,
-			"enabled": input.Enabled,
+			"key":       flagName,
+			"isEnabled": input.Enabled,
 		},
 	})
 }
@@ -222,6 +222,9 @@ func (h *Handlers) CreateFeatureFlag(w http.ResponseWriter, r *http.Request) {
 	if cfg.Environment == "" {
 		cfg.Environment = "production"
 	}
+	if cfg.RolloutPercentage == 0 {
+		cfg.RolloutPercentage = 100
+	}
 
 	if err := h.checker.UpdateFlag(r.Context(), t.ID, key, input.IsEnabled, cfg, user.UserID); err != nil {
 		slog.Error("features: create failed", "key", key, "error", err)
@@ -284,6 +287,9 @@ func (h *Handlers) UpdateFeatureFlag(w http.ResponseWriter, r *http.Request) {
 	if cfg.Environment == "" {
 		cfg.Environment = "production"
 	}
+	if cfg.RolloutPercentage == 0 {
+		cfg.RolloutPercentage = 100
+	}
 
 	if err := h.checker.UpdateFlag(r.Context(), t.ID, flagName, input.IsEnabled, cfg, user.UserID); err != nil {
 		slog.Error("features: update failed", "key", flagName, "error", err)
@@ -343,8 +349,11 @@ type FeatureFlagInput struct {
 	RolloutPercentage int    `json:"rolloutPercentage"`
 }
 
-// humanizeFlagName turns a snake_case flag key into a readable Title Case label.
+// humanizeFlagName turns a dotted/snake_case flag key into a readable Title
+// Case label. Splits on both "." and "_" so keys like "feature.blog" and
+// "forum.ama.enabled" produce "Feature Blog" and "Forum Ama Enabled".
 func humanizeFlagName(name string) string {
+	name = strings.ReplaceAll(name, ".", "_")
 	parts := strings.Split(name, "_")
 	for i, p := range parts {
 		if p == "" {

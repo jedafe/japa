@@ -49,6 +49,10 @@ const (
 	// ExportCancelled is the export cancelled constant — set by
 	// CancelDataExportRequest when a user aborts a pending/processing export.
 	ExportCancelled ExportStatus = "cancelled"
+	// ExportExpired is the export expired constant — set by
+	// CleanupExpiredExports when the download link's ExpiresAt has passed
+	// (BUG-GDPR-005, Section 19 time-limited download links).
+	ExportExpired ExportStatus = "expired"
 )
 
 // DeletionStatus represents the lifecycle state of an account deletion request.

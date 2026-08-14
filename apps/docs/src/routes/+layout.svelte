@@ -2,7 +2,6 @@
 	import '../app.css';
 	import { onMount } from 'svelte';
 	import { theme } from '$lib/stores/theme.svelte';
-	import { i18n } from '$lib/i18n/store.svelte';
 	import { t } from '$lib/i18n';
 	import type { Snippet } from 'svelte';
 	import type { LayoutData } from './$types';
@@ -13,10 +12,8 @@
 	// hydration. The initial attribute is already on <html>, so there is no flash.
 	onMount(() => theme.init(data.theme));
 
-	// Sync the i18n locale with the server-resolved cookie value.
-	$effect(() => {
-		i18n.setLocale(data.locale);
-	});
+	// The i18n locale is derived from `page.data.locale` in the store — no
+	// manual setLocale() call needed (SSR-safe, no cross-request leakage).
 
 	// Apply the primary brand color from the control panel appearance settings.
 	let primaryColor = $derived(

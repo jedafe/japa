@@ -241,51 +241,6 @@ func (q *Queries) AnonymizeFormSubmissionsByUser(ctx context.Context, userID pgt
 	return result.RowsAffected(), nil
 }
 
-const anonymizeForumRepliesByAuthor = `-- name: AnonymizeForumRepliesByAuthor :exec
-UPDATE forum_replies
-SET body = '"[deleted]"'::jsonb,
-    is_anonymous = true,
-    updated_at = now()
-WHERE author_user_id = $1 AND tenant_id = $2 AND deleted_at IS NULL
-`
-
-type AnonymizeForumRepliesByAuthorParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-// BUG-010: anonymize forum replies authored by the erased user. Same
-// pattern as AnonymizeForumThreadsByAuthor. Ref: Section 15, ADR-014.
-func (q *Queries) AnonymizeForumRepliesByAuthor(ctx context.Context, arg AnonymizeForumRepliesByAuthorParams) error {
-	_, err := q.db.Exec(ctx, anonymizeForumRepliesByAuthor, arg.UserID, arg.TenantID)
-	return err
-}
-
-const anonymizeForumThreadsByAuthor = `-- name: AnonymizeForumThreadsByAuthor :exec
-UPDATE forum_threads
-SET body = '"[deleted]"'::jsonb,
-    is_anonymous = true,
-    updated_at = now()
-WHERE author_user_id = $1 AND tenant_id = $2 AND deleted_at IS NULL
-`
-
-type AnonymizeForumThreadsByAuthorParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-// BUG-010: anonymize forum threads authored by the erased user. The
-// forum_threads.author_user_id FK has ON DELETE SET NULL (migration 000467),
-// so HardDeleteUser will null it — but the body (TipTap JSON, potentially
-// containing PII and @mentions) must be cleared before the user is
-// hard-deleted. Sets body to a '[deleted]' JSON string and marks
-// is_anonymous=true so the thread survives with an "Anonymous" author.
-// Ref: Section 15, ADR-014.
-func (q *Queries) AnonymizeForumThreadsByAuthor(ctx context.Context, arg AnonymizeForumThreadsByAuthorParams) error {
-	_, err := q.db.Exec(ctx, anonymizeForumThreadsByAuthor, arg.UserID, arg.TenantID)
-	return err
-}
-
 const anonymizeInstructorPayoutsForInstructor = `-- name: AnonymizeInstructorPayoutsForInstructor :execrows
 UPDATE instructor_payouts ipo
 SET instructor_id = NULL
@@ -802,6 +757,18 @@ func (q *Queries) DeletePushSubscriptionsByUser(ctx context.Context, userID pgty
 	return err
 }
 
+const deleteSpaceMutesByUser = `-- name: DeleteSpaceMutesByUser :exec
+DELETE FROM space_mutes
+WHERE user_id = $1
+`
+
+// BE-2: delete space_mutes for the user during GDPR erasure. Space mutes are
+// user-owned feed-filter config. Ref: Section 52, Section 15.
+func (q *Queries) DeleteSpaceMutesByUser(ctx context.Context, userID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteSpaceMutesByUser, userID)
+	return err
+}
+
 const deleteSpacePinnedPostsByUser = `-- name: DeleteSpacePinnedPostsByUser :exec
 DELETE FROM space_pinned_posts WHERE pinned_by = $1
 `
@@ -881,6 +848,20 @@ type DeleteUserEmailVerificationsParams struct {
 // tokens are not recoverable during the retention window.
 func (q *Queries) DeleteUserEmailVerifications(ctx context.Context, arg DeleteUserEmailVerificationsParams) error {
 	_, err := q.db.Exec(ctx, deleteUserEmailVerifications, arg.UserID, arg.TenantID)
+	return err
+}
+
+const deleteUserMutesByUser = `-- name: DeleteUserMutesByUser :exec
+DELETE FROM user_mutes
+WHERE user_id = $1 OR muted_user_id = $1
+`
+
+// BE-2: delete user_mutes where the user is the muter or the muted party
+// during GDPR erasure. Mute relationships are user-owned config and must not
+// survive anonymization (the muted/muter UUID would reference an anonymized
+// user). Ref: Section 52, Section 15.
+func (q *Queries) DeleteUserMutesByUser(ctx context.Context, userID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteUserMutesByUser, userID)
 	return err
 }
 
@@ -991,6 +972,25 @@ type DeleteUserTokensParams struct {
 
 func (q *Queries) DeleteUserTokens(ctx context.Context, arg DeleteUserTokensParams) error {
 	_, err := q.db.Exec(ctx, deleteUserTokens, arg.UserID, arg.TenantID)
+	return err
+}
+
+const expireDataExport = `-- name: ExpireDataExport :exec
+UPDATE data_export_requests
+SET download_url = NULL,
+    status = 'expired'
+WHERE id = $1 AND tenant_id = $2
+`
+
+type ExpireDataExportParams struct {
+	ID       pgtype.UUID `json:"id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+// BUG-GDPR-005: null out the download URL and set status to 'expired' so
+// the download handler returns 404 and the file is not re-cleaned.
+func (q *Queries) ExpireDataExport(ctx context.Context, arg ExpireDataExportParams) error {
+	_, err := q.db.Exec(ctx, expireDataExport, arg.ID, arg.TenantID)
 	return err
 }
 
@@ -1405,34 +1405,6 @@ func (q *Queries) GdprExportUserApiKeys(ctx context.Context, arg GdprExportUserA
 	return data, err
 }
 
-const gdprExportUserBadges = `-- name: GdprExportUserBadges :one
-SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (
-    SELECT ub.id, ub.badge_id, bd.slug AS badge_slug, bd.name AS badge_name,
-           bd.description AS badge_description, ub.awarded_at, ub.awarded_by
-    FROM user_badges ub
-    JOIN badge_definitions bd ON bd.id = ub.badge_id
-    WHERE ub.user_id = $1 AND ub.tenant_id = $2
-    ORDER BY ub.awarded_at DESC
-) t
-`
-
-type GdprExportUserBadgesParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-// BUG-004: export user_badges rows for GDPR data export (§64, §19).
-// Includes the badge name/slug/description via a join so the export is
-// self-contained. awarded_by is included as a UUID reference (the admin
-// who manually awarded the badge, or NULL for system-awarded).
-func (q *Queries) GdprExportUserBadges(ctx context.Context, arg GdprExportUserBadgesParams) (interface{}, error) {
-	row := q.db.QueryRow(ctx, gdprExportUserBadges, arg.UserID, arg.TenantID)
-	var data interface{}
-	err := row.Scan(&data)
-	return data, err
-}
-
 const gdprExportUserBlocks = `-- name: GdprExportUserBlocks :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (
@@ -1552,34 +1524,6 @@ type GdprExportUserCalendarSubscriptionsParams struct {
 // §86: export calendar_subscriptions for the user (BUG-025).
 func (q *Queries) GdprExportUserCalendarSubscriptions(ctx context.Context, arg GdprExportUserCalendarSubscriptionsParams) (interface{}, error) {
 	row := q.db.QueryRow(ctx, gdprExportUserCalendarSubscriptions, arg.UserID, arg.TenantID)
-	var data interface{}
-	err := row.Scan(&data)
-	return data, err
-}
-
-const gdprExportUserChallengeProgress = `-- name: GdprExportUserChallengeProgress :one
-SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (
-    SELECT ucp.id, ucp.challenge_id, cd.slug AS challenge_slug, cd.name AS challenge_name,
-           cd.description AS challenge_description, ucp.current_count, cd.target_count,
-           ucp.completed, ucp.completed_at, ucp.reward_claimed
-    FROM user_challenge_progress ucp
-    JOIN challenge_definitions cd ON cd.id = ucp.challenge_id
-    WHERE ucp.user_id = $1 AND ucp.tenant_id = $2
-    ORDER BY ucp.completed ASC, cd.ends_at ASC NULLS FIRST
-) t
-`
-
-type GdprExportUserChallengeProgressParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-// BUG-004: export user_challenge_progress rows for GDPR data export
-// (§64, §19). Includes the challenge name/slug via a join so the export
-// is self-contained.
-func (q *Queries) GdprExportUserChallengeProgress(ctx context.Context, arg GdprExportUserChallengeProgressParams) (interface{}, error) {
-	row := q.db.QueryRow(ctx, gdprExportUserChallengeProgress, arg.UserID, arg.TenantID)
 	var data interface{}
 	err := row.Scan(&data)
 	return data, err
@@ -3127,6 +3071,45 @@ func (q *Queries) ListConsentsByTenant(ctx context.Context, arg ListConsentsByTe
 	return items, nil
 }
 
+const listExpiredDataExports = `-- name: ListExpiredDataExports :many
+SELECT id, tenant_id
+FROM data_export_requests
+WHERE status = 'completed'
+  AND expires_at IS NOT NULL
+  AND expires_at < now()
+  AND download_url IS NOT NULL
+ORDER BY expires_at ASC
+LIMIT 100
+`
+
+type ListExpiredDataExportsRow struct {
+	ID       pgtype.UUID `json:"id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+// BUG-GDPR-005: find completed data export requests whose ExpiresAt has
+// passed so the sweep can delete the file from storage and null out the
+// download URL. Section 19 requires time-limited download links.
+func (q *Queries) ListExpiredDataExports(ctx context.Context) ([]ListExpiredDataExportsRow, error) {
+	rows, err := q.db.Query(ctx, listExpiredDataExports)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListExpiredDataExportsRow
+	for rows.Next() {
+		var i ListExpiredDataExportsRow
+		if err := rows.Scan(&i.ID, &i.TenantID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listPendingDataExportRequests = `-- name: ListPendingDataExportRequests :many
 SELECT id, tenant_id, user_id, status, download_url, expires_at,
     completed_at, created_at
@@ -3239,7 +3222,7 @@ SELECT r.id, r.tenant_id
 FROM account_deletion_requests r
 LEFT JOIN system_settings s ON s.tenant_id = r.tenant_id AND s.key = 'gdpr.retention_days'
 WHERE r.status = 'retention_wait'
-  AND r.created_at + ((COALESCE(s.value->>0, '30'))::int || ' days')::interval <= now()
+  AND r.created_at + ((COALESCE(s.value->>0, '0'))::int || ' days')::interval <= now()
 ORDER BY r.created_at ASC
 LIMIT 100
 `
@@ -3249,6 +3232,10 @@ type ListRetentionWaitElapsedRow struct {
 	TenantID pgtype.UUID `json:"tenant_id"`
 }
 
+// BUG-GDPR-002 fix: COALESCE default must be '0' (immediate), not '30'.
+// ADR-057 and system-settings-catalog specify gdpr.retention_days
+// defaults to 0 (no waiting period). The previous '30' fallback caused
+// tenants without the explicit setting to wait 30 days instead of 0.
 func (q *Queries) ListRetentionWaitElapsed(ctx context.Context) ([]ListRetentionWaitElapsedRow, error) {
 	rows, err := q.db.Query(ctx, listRetentionWaitElapsed)
 	if err != nil {

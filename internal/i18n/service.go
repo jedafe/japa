@@ -233,6 +233,22 @@ func (s *Service) Delete(ctx context.Context, tenantID, id pgtype.UUID, locale s
 	return nil
 }
 
+// DeleteByLocale removes all translations for a locale and invalidates the cache.
+func (s *Service) DeleteByLocale(ctx context.Context, tenantID pgtype.UUID, locale string) error {
+	if err := s.store.DeleteByLocale(ctx, tenantID, locale); err != nil {
+		return err
+	}
+
+	s.cacheInvalidate(tenantID, locale)
+
+	return nil
+}
+
+// GetByID returns a single translation by its primary key.
+func (s *Service) GetByID(ctx context.Context, tenantID, id pgtype.UUID) (gen.GetTranslationByIDRow, error) {
+	return s.store.GetByID(ctx, tenantID, id)
+}
+
 // ListLocales returns all distinct locales for a tenant.
 func (s *Service) ListLocales(ctx context.Context, tenantID pgtype.UUID) ([]string, error) {
 	return s.store.ListLocales(ctx, tenantID)

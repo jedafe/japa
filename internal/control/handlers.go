@@ -27,6 +27,7 @@ import (
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/features"
+	"github.com/jedafe/japa/internal/honcho"
 	"github.com/jedafe/japa/internal/publicapi"
 	"github.com/jedafe/japa/internal/rbac"
 	"github.com/jedafe/japa/internal/spam"
@@ -36,11 +37,12 @@ import (
 	"github.com/jedafe/japa/internal/worker"
 )
 
-// HonchoHealthChecker checks Honcho service connectivity for the Control
-// Panel infrastructure health group (ADR-027). The honcho.Client satisfies
-// this interface.
+// HonchoHealthChecker checks Honcho service health for the Control Panel
+// application health group (ADR-027, Section 21 line 104). The honcho.Client
+// satisfies this interface. Health returns a report carrying connectivity
+// plus any sync-lag / store-size metrics the server exposes.
 type HonchoHealthChecker interface {
-	Health(ctx context.Context) error
+	Health(ctx context.Context) (*honcho.HealthReport, error)
 }
 
 // Handlers holds dependencies for control panel HTTP handlers.
@@ -822,6 +824,7 @@ func (h *Handlers) HealthCheck(w http.ResponseWriter, r *http.Request) {
 		Status    string `json:"status"`
 		LatencyMs int64  `json:"latency_ms"`
 		Message   string `json:"message,omitempty"`
+		Details   string `json:"details,omitempty"`
 	}
 
 	checkService := func(name string, fn func(context.Context) error) serviceStatus {
@@ -847,14 +850,6 @@ func (h *Handlers) HealthCheck(w http.ResponseWriter, r *http.Request) {
 		}))
 	}
 
-	// Honcho agent-memory service (ADR-027: Control Panel infrastructure
-	// health group — connectivity, same pattern as Meilisearch/Valkey).
-	if h.Honcho != nil {
-		infrastructure = append(infrastructure, checkService("Honcho", func(ctx context.Context) error {
-			return h.Honcho.Health(ctx)
-		}))
-	}
-
 	application := []serviceStatus{
 		checkService("API Server", func(_ context.Context) error {
 			return nil
@@ -866,6 +861,32 @@ func (h *Handlers) HealthCheck(w http.ResponseWriter, r *http.Request) {
 			_, err := h.MeiliSearch.HealthWithContext(ctx)
 			return err
 		}))
+	}
+
+	// Honcho agent-memory service (ADR-027: Control Panel application health
+	// group — Section 21 line 104 places honcho alongside go_api and
+	// meilisearch in the application group, not infrastructure). The health
+	// report carries sync-lag and store-size metrics when the server exposes
+	// them (Section 21 "details?: string").
+	if h.Honcho != nil {
+		start := time.Now()
+		report, err := h.Honcho.Health(ctx)
+		latency := time.Since(start).Milliseconds()
+		if err != nil {
+			application = append(application, serviceStatus{
+				Name: "Honcho", Status: "down", LatencyMs: latency, Message: err.Error(),
+			})
+		} else if !report.Healthy {
+			application = append(application, serviceStatus{
+				Name: "Honcho", Status: "down", LatencyMs: latency,
+				Message: report.Details,
+			})
+		} else {
+			application = append(application, serviceStatus{
+				Name: "Honcho", Status: "healthy", LatencyMs: latency,
+				Details: report.Details,
+			})
+		}
 	}
 
 	background := []serviceStatus{}
