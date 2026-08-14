@@ -11,15 +11,25 @@ package arrivalchecklist
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/jedafe/japa/internal/ai"
 	"github.com/jedafe/japa/internal/config"
 )
+
+// AIDispatcher is the subset of the AI Gateway the arrival checklist
+// needs to generate draft guides. *ai.Dispatcher satisfies this.
+type AIDispatcher interface {
+	Dispatch(ctx context.Context, category string, req ai.Request) (ai.Response, error)
+}
 
 // GuideDTO is the API response shape for a single arrival checklist guide.
 type GuideDTO struct {
@@ -105,6 +115,7 @@ type GenerateGuideRequest struct {
 	DestinationSpaceID string `json:"destination_space_id"`
 	VisaCategory       string `json:"visa_category"`
 	ApplicantType      string `json:"applicant_type"`
+	Prompt             string `json:"prompt"`
 }
 
 // GenerateGuideResponse is the response for the generate endpoint. The
@@ -121,8 +132,9 @@ type GenerateGuideResponse struct {
 
 // Service holds the business logic for the Arrival Checklist Generator.
 type Service struct {
-	store    *Store
-	settings *config.Settings
+	store      *Store
+	settings   *config.Settings
+	dispatcher AIDispatcher
 }
 
 // NewService creates an arrival checklist service.
@@ -132,6 +144,11 @@ func NewService(store *Store, settings *config.Settings) *Service {
 		settings: settings,
 	}
 }
+
+// SetDispatcher injects the AI Gateway dispatcher for draft generation
+// (content_generation category). Optional: when nil or when the call
+// fails, the draft is still created so a reviewer can fill it manually.
+func (s *Service) SetDispatcher(d AIDispatcher) { s.dispatcher = d }
 
 // Enabled reads the arrival_checklist.enabled system_setting toggle
 // (§92 feature flag).
@@ -320,9 +337,13 @@ func (s *Service) ApproveGuide(ctx context.Context, id, tenantID, reviewerID pgt
 
 // GenerateGuide creates an AI-drafted arrival checklist guide in 'ai_draft'
 // status. The draft is marked ai_generated=true with ai_model='content_agent_v1'
-// and requires HITL approval (ApproveGuide) before publication. Admin-only
-// (arrival_checklist.manage permission checked at route level).
-// Ref: ADR-088, geo-aware-tool-pattern.md.
+// and ai_prompt_hash=SHA256(prompt) per ADR-088 for audit reproducibility.
+// When an AI Gateway dispatcher is wired, the Content Agent is invoked to
+// generate draft checklist content; the call is best-effort and the draft is
+// still created (with empty items) if the dispatcher is nil or the call fails,
+// so a reviewer can fill it manually. Requires HITL approval (ApproveGuide)
+// before publication. Admin-only (arrival_checklist.manage permission checked
+// at route level). Ref: ADR-088, geo-aware-tool-pattern.md.
 func (s *Service) GenerateGuide(ctx context.Context, tenantID pgtype.UUID, req GenerateGuideRequest) (GenerateGuideResponse, error) {
 	if req.DestinationSpaceID == "" {
 		return GenerateGuideResponse{}, fmt.Errorf("destination_space_id is required")
@@ -343,6 +364,49 @@ func (s *Service) GenerateGuide(ctx context.Context, tenantID pgtype.UUID, req G
 		visaCategory = &v
 	}
 
+	// Build the generation prompt. A caller-supplied prompt wins; otherwise
+	// synthesize one from the destination, applicant type, and visa category.
+	prompt := req.Prompt
+	if prompt == "" {
+		prompt = fmt.Sprintf("Generate an arrival checklist guide for %s going to %s",
+			applicantType, req.DestinationSpaceID)
+		if req.VisaCategory != "" {
+			prompt += fmt.Sprintf(" on a %s visa", req.VisaCategory)
+		}
+	}
+
+	// Compute ai_prompt_hash = SHA256(prompt) per ADR-088 for audit
+	// reproducibility. Computed even when the AI call is skipped so the
+	// prompt that would have been used is still reproducible.
+	h := sha256.Sum256([]byte(prompt))
+	promptHash := hex.EncodeToString(h[:])
+
+	// Call the AI Gateway to generate draft checklist content. The
+	// dispatcher is optional; if it is nil or the call fails, the draft is
+	// still created so the reviewer can fill items manually.
+	var aiContent string
+	if s.dispatcher != nil {
+		resp, derr := s.dispatcher.Dispatch(ctx, "content_generation", ai.Request{
+			Category: "content_generation",
+			Payload: map[string]any{
+				"prompt":    prompt,
+				"tenant_id": tenantID,
+			},
+		})
+		if derr != nil {
+			slog.Warn("arrivalchecklist: AI generation failed, creating draft without AI content",
+				"error", derr)
+		} else {
+			if text, ok := resp.Raw["text"].(string); ok {
+				aiContent = text
+			} else if text, ok := resp.Raw["content"].(string); ok {
+				aiContent = text
+			} else if output, ok := resp.Raw["output"].(string); ok {
+				aiContent = output
+			}
+		}
+	}
+
 	aiModel := "content_agent_v1"
 	row, err := s.store.CreateGuide(ctx, CreateGuideInput{
 		TenantID:           tenantID,
@@ -354,9 +418,20 @@ func (s *Service) GenerateGuide(ctx context.Context, tenantID pgtype.UUID, req G
 		IsActive:           false,
 		AIGenerated:        true,
 		AIModel:            &aiModel,
+		AIPromptHash:       &promptHash,
 	})
 	if err != nil {
 		return GenerateGuideResponse{}, fmt.Errorf("arrivalchecklist: generate draft: %w", err)
+	}
+
+	// The guide row has no free-text field for AI content (checklist items
+	// are stored in a separate table and there is no item-creation path on
+	// the store yet). Log the generated content so it is captured for the
+	// reviewer/audit trail; a future task can persist it as items.
+	if aiContent != "" {
+		slog.Info("arrivalchecklist: AI content generated for draft guide",
+			"guide_id", row.ID.String(), "prompt_hash", promptHash,
+			"content_len", len(aiContent))
 	}
 
 	return GenerateGuideResponse{

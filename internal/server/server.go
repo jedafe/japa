@@ -1351,6 +1351,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// AI Core subsystem (Section 20 — AI Core).
 	aiDispatcher := ai.NewDispatcher()
 
+	// Wire the AI Gateway dispatcher into the arrival checklist service so
+	// GenerateGuide can invoke the Content Agent (content_generation) to
+	// draft checklist content. Best-effort: a nil/failed call still yields
+	// an ai_draft row for HITL review (ADR-088).
+	arrivalChecklistService.SetDispatcher(aiDispatcher)
+
 	// §102: wire the AI embedder into the mentorship service for
 	// mentor:generate_embedding tasks (ADR-110).
 	mentorshipService.SetEmbedder(ai.NewRAGEmbedder(aiDispatcher))
