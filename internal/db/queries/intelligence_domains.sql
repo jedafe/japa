@@ -211,3 +211,153 @@ WHERE tenant_id = $1
        OR (created_at = $2 AND id < $3))
 ORDER BY created_at DESC, id DESC
 LIMIT $4;
+
+-- ===========================================================================
+-- wiki_pages (intelligence columns added by migration 000469)
+-- ===========================================================================
+
+-- name: CreateWikiPageIntel :one
+INSERT INTO wiki_pages (
+  tenant_id, space_id, slug, title, category, is_active, is_featured,
+  is_locked, created_by,
+  intel_record_id, guide_id, confidence_overall, verification_status,
+  freshness_score, override_source, editorial_overrides
+) VALUES (
+  $1, $2, $3, $4, $5, $6, $7, $8, $9,
+  $10, $11, $12, $13, $14, $15, $16
+) RETURNING *;
+
+-- name: GetWikiPageByIntelRecord :one
+SELECT * FROM wiki_pages WHERE tenant_id = $1 AND intel_record_id = $2;
+
+-- name: UpdateWikiPageIntel :exec
+UPDATE wiki_pages
+SET title = $3, category = $4, is_active = $5, is_featured = $6, is_locked = $7,
+    confidence_overall = $8, verification_status = $9, freshness_score = $10,
+    override_source = $11, editorial_overrides = $12,
+    updated_at = now()
+WHERE tenant_id = $1 AND id = $2;
+
+-- name: ListWikiPagesIntelKeyset :many
+SELECT * FROM wiki_pages
+WHERE tenant_id = $1
+  AND intel_record_id IS NOT NULL
+  AND ($2::timestamptz IS NULL
+       OR created_at < $2
+       OR (created_at = $2 AND id < $3))
+ORDER BY created_at DESC, id DESC
+LIMIT $4;
+
+-- ===========================================================================
+-- language_test_requirements (intelligence columns added by migration 000469)
+-- ===========================================================================
+
+-- name: CreateLanguageTestRequirementIntel :one
+INSERT INTO language_test_requirements (
+  tenant_id, destination_space_id, visa_category, test_id, minimum_score,
+  score_breakdown, notes, source_url, status, is_active,
+  intel_record_id, guide_id, confidence_overall, verification_status,
+  freshness_score, override_source, editorial_overrides
+) VALUES (
+  $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
+  $11, $12, $13, $14, $15, $16, $17
+) RETURNING *;
+
+-- name: GetLanguageTestRequirementByIntelRecord :one
+SELECT * FROM language_test_requirements WHERE tenant_id = $1 AND intel_record_id = $2;
+
+-- name: UpdateLanguageTestRequirementIntel :exec
+UPDATE language_test_requirements
+SET visa_category = $3, minimum_score = $4, score_breakdown = $5, notes = $6,
+    source_url = $7, status = $8, is_active = $9,
+    confidence_overall = $10, verification_status = $11, freshness_score = $12,
+    override_source = $13, editorial_overrides = $14,
+    updated_at = now()
+WHERE tenant_id = $1 AND id = $2;
+
+-- name: ListLanguageTestRequirementsIntelKeyset :many
+SELECT * FROM language_test_requirements
+WHERE tenant_id = $1
+  AND intel_record_id IS NOT NULL
+  AND ($2::timestamptz IS NULL
+       OR created_at < $2
+       OR (created_at = $2 AND id < $3))
+ORDER BY created_at DESC, id DESC
+LIMIT $4;
+
+-- ===========================================================================
+-- tax_obligation_guides (intelligence columns added by migration 000469)
+-- ===========================================================================
+
+-- name: CreateTaxObligationGuideIntel :one
+INSERT INTO tax_obligation_guides (
+  tenant_id, origin_space_id, destination_space_id, employment_status,
+  residency_trigger, worldwide_income_taxed, first_year_obligations,
+  action_checklist, status, is_active,
+  intel_record_id, guide_id, confidence_overall, verification_status,
+  freshness_score, override_source, editorial_overrides
+) VALUES (
+  $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
+  $11, $12, $13, $14, $15, $16, $17
+) RETURNING *;
+
+-- name: GetTaxObligationGuideByIntelRecord :one
+SELECT * FROM tax_obligation_guides WHERE tenant_id = $1 AND intel_record_id = $2;
+
+-- name: UpdateTaxObligationGuideIntel :exec
+UPDATE tax_obligation_guides
+SET employment_status = $3, residency_trigger = $4, worldwide_income_taxed = $5,
+    first_year_obligations = $6, action_checklist = $7, status = $8, is_active = $9,
+    confidence_overall = $10, verification_status = $11, freshness_score = $12,
+    override_source = $13, editorial_overrides = $14,
+    updated_at = now()
+WHERE tenant_id = $1 AND id = $2;
+
+-- name: ListTaxObligationGuidesIntelKeyset :many
+SELECT * FROM tax_obligation_guides
+WHERE tenant_id = $1
+  AND intel_record_id IS NOT NULL
+  AND ($2::timestamptz IS NULL
+       OR created_at < $2
+       OR (created_at = $2 AND id < $3))
+ORDER BY created_at DESC, id DESC
+LIMIT $4;
+
+-- ===========================================================================
+-- community_organisations (intelligence columns added by migration 000469)
+-- ===========================================================================
+
+-- name: CreateCommunityOrganisationIntel :one
+INSERT INTO community_organisations (
+  tenant_id, name, slug, org_type, origin_community, destination_space_id,
+  city_space_id, address, latitude, longitude, website_url,
+  meeting_frequency, contact_info, status, is_active,
+  intel_record_id, guide_id, confidence_overall, verification_status,
+  freshness_score, override_source, editorial_overrides
+) VALUES (
+  $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
+  $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22
+) RETURNING *;
+
+-- name: GetCommunityOrganisationByIntelRecord :one
+SELECT * FROM community_organisations WHERE tenant_id = $1 AND intel_record_id = $2;
+
+-- name: UpdateCommunityOrganisationIntel :exec
+UPDATE community_organisations
+SET name = $3, org_type = $4, origin_community = $5, address = $6,
+    latitude = $7, longitude = $8, website_url = $9, meeting_frequency = $10,
+    contact_info = $11, status = $12, is_active = $13,
+    confidence_overall = $14, verification_status = $15, freshness_score = $16,
+    override_source = $17, editorial_overrides = $18,
+    updated_at = now()
+WHERE tenant_id = $1 AND id = $2;
+
+-- name: ListCommunityOrganisationsIntelKeyset :many
+SELECT * FROM community_organisations
+WHERE tenant_id = $1
+  AND intel_record_id IS NOT NULL
+  AND ($2::timestamptz IS NULL
+       OR created_at < $2
+       OR (created_at = $2 AND id < $3))
+ORDER BY created_at DESC, id DESC
+LIMIT $4;
