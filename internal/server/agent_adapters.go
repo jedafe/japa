@@ -1116,11 +1116,12 @@ func (a *studioDraftProcessorAdapter) GenerateJob(ctx context.Context, tenantID,
 	}
 
 	// Step 8 (ADR-076 §2): route to the HITL review queue.
-	targetTable := "contents"
-	if isToolTableType(job.ContentType) {
-		targetTable = toolTableTargetTable[job.ContentType]
-	}
-	a.routeToHITL(ctx, tenantID, jobID, row.ID, targetTable, job.ContentType, fvJSON)
+	// NOTE: this path is the contents-creation fallback. Tool-table types
+	// that successfully routed to their dedicated table returned early
+	// above (via tryToolTableRouting → routeToHITL). When we reach here
+	// the draft row lives in `contents`, so target_table must always be
+	// 'contents' — even for tool-table content types that fell back.
+	a.routeToHITL(ctx, tenantID, jobID, row.ID, "contents", job.ContentType, fvJSON)
 	return nil
 }
 
