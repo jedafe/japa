@@ -15,13 +15,21 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/jedafe/japa/internal/ai"
 	"github.com/jedafe/japa/internal/config"
 )
+
+// AIDispatcher is the subset of the AI Gateway the attestation guide
+// needs to generate draft pathways. *ai.Dispatcher satisfies this.
+type AIDispatcher interface {
+	Dispatch(ctx context.Context, category string, req ai.Request) (ai.Response, error)
+}
 
 // PathwayDTO is the API response shape for a single attestation pathway.
 type PathwayDTO struct {
@@ -99,8 +107,9 @@ type GeneratePathwayInput struct {
 
 // Service holds the business logic for the Attestation Guide.
 type Service struct {
-	store    *Store
-	settings *config.Settings
+	store      *Store
+	settings   *config.Settings
+	dispatcher AIDispatcher
 }
 
 // NewService creates an attestation guide service.
@@ -110,6 +119,10 @@ func NewService(store *Store, settings *config.Settings) *Service {
 		settings: settings,
 	}
 }
+
+// SetDispatcher injects the AI Gateway dispatcher for draft generation
+// (called at server wiring time).
+func (s *Service) SetDispatcher(d AIDispatcher) { s.dispatcher = d }
 
 // Enabled reads the attestation_guide.enabled system_setting toggle
 // (§97 feature flag).
@@ -262,12 +275,13 @@ func (s *Service) Create(ctx context.Context, tenantID pgtype.UUID, input Create
 	return pathwayRowToDTO(row), nil
 }
 
-// GenerateDraft creates an AI-drafted pathway in 'ai_draft' status with
-// empty pathway_steps. The pathway is marked ai_generated=true, stores
-// ai_prompt_hash = SHA256(prompt) per ADR-088, and requires HITL approval
-// (Approve) before publication. The actual AI Gateway call (§20) is deferred
-// until the gateway is wired; the draft is created with empty steps for
-// the reviewer to fill. Admin-only (attestation_guide.manage permission).
+// GenerateDraft creates an AI-drafted pathway in 'ai_draft' status. The
+// pathway is marked ai_generated=true, stores ai_prompt_hash = SHA256(prompt)
+// per ADR-088, and requires HITL approval (Approve) before publication. The
+// pathway_steps are populated via the AI Gateway (§20 content_generation
+// category); if the dispatcher is not wired or the call fails, the draft is
+// created with empty steps so the reviewer can fill them manually. Admin-only
+// (attestation_guide.manage permission).
 func (s *Service) GenerateDraft(ctx context.Context, tenantID pgtype.UUID, input GeneratePathwayInput) (PathwayDTO, error) {
 	if input.DocumentType == "" || input.IssuingSpaceID == "" || input.DestinationSpaceID == "" {
 		return PathwayDTO{}, fmt.Errorf("document_type, issuing_space_id, and destination_space_id are required")
@@ -283,13 +297,40 @@ func (s *Service) GenerateDraft(ctx context.Context, tenantID pgtype.UUID, input
 		return PathwayDTO{}, fmt.Errorf("invalid destination_space_id: %w", err)
 	}
 
+	// Build the generation prompt.
+	prompt := input.Prompt
+	if prompt == "" {
+		prompt = fmt.Sprintf("Generate an attestation pathway for document type '%s' from %s to %s",
+			input.DocumentType, input.IssuingSpaceID, input.DestinationSpaceID)
+	}
+
 	aiModel := "content_agent_v1"
 	// BUG-007: compute ai_prompt_hash = SHA256(prompt) per ADR-088 for audit
-	// reproducibility, even though the AI Gateway call is not yet wired.
+	// reproducibility.
 	promptHash := ""
-	if input.Prompt != "" {
-		h := sha256.Sum256([]byte(input.Prompt))
+	if prompt != "" {
+		h := sha256.Sum256([]byte(prompt))
 		promptHash = hex.EncodeToString(h[:])
+	}
+
+	// Call the AI Gateway to populate pathway_steps. The dispatcher is
+	// optional; if it is nil or the call fails, the draft is still created
+	// with empty steps so the reviewer can fill them manually.
+	pathwaySteps := []byte("[]")
+	if s.dispatcher != nil {
+		resp, derr := s.dispatcher.Dispatch(ctx, "content_generation", ai.Request{
+			Category: "content_generation",
+			Payload: map[string]any{
+				"prompt":    prompt,
+				"tenant_id": tenantID,
+			},
+		})
+		if derr != nil {
+			slog.Warn("attestationguide: AI generation failed, creating draft with empty steps",
+				"error", derr)
+		} else {
+			pathwaySteps = parsePathwayStepsFromAIResponse(resp)
+		}
 	}
 
 	p := Pathway{
@@ -298,7 +339,7 @@ func (s *Service) GenerateDraft(ctx context.Context, tenantID pgtype.UUID, input
 		IssuingSpaceID:     issuingSpaceID,
 		DestinationSpaceID: destSpaceID,
 		ApostilleRequired:  false, // determined by Hague Convention lookup at approve time
-		PathwaySteps:       []byte("[]"),
+		PathwaySteps:       pathwaySteps,
 		Status:             PathwayStatusAIDraft,
 		IsActive:           false, // not active until approved
 		AIGenerated:        true,
@@ -318,6 +359,25 @@ func (s *Service) GenerateDraft(ctx context.Context, tenantID pgtype.UUID, input
 		return PathwayDTO{}, fmt.Errorf("attestationguide: generate draft: reload: %w", err)
 	}
 	return pathwayRowToDTO(row), nil
+}
+
+// parsePathwayStepsFromAIResponse extracts pathway steps from the AI
+// gateway response. The response may contain structured JSON or plain
+// text; we wrap text into a single-step array for the reviewer to refine.
+func parsePathwayStepsFromAIResponse(resp ai.Response) []byte {
+	if text, ok := resp.Raw["text"].(string); ok && text != "" {
+		wrapped, _ := json.Marshal([]map[string]string{{"step": text}})
+		return wrapped
+	}
+	if text, ok := resp.Raw["content"].(string); ok && text != "" {
+		wrapped, _ := json.Marshal([]map[string]string{{"step": text}})
+		return wrapped
+	}
+	if output, ok := resp.Raw["output"].(string); ok && output != "" {
+		wrapped, _ := json.Marshal([]map[string]string{{"step": output}})
+		return wrapped
+	}
+	return []byte("[]")
 }
 
 // Approve performs the HITL approval on an AI-drafted pathway. Sets
