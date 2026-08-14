@@ -2,8 +2,11 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
+
+	"github.com/jackc/pgx/v5"
 
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/intelligence/sources"
@@ -390,5 +393,138 @@ func (h *Handlers) HandleReviewQueue(w http.ResponseWriter, r *http.Request) {
 			"page_offset": (page - 1) * limit,
 			"count":       len(rows),
 		},
+	})
+}
+
+// validIntelRecordStatuses mirrors the intel_records.status CHECK
+// constraint (migration 000428). Used to validate the ?status= query param
+// on the records list endpoint so an unknown value returns 400 rather than
+// a silently-empty result.
+var validIntelRecordStatuses = map[string]bool{
+	"extracted":       true,
+	"deduped":         true,
+	"auto_published":  true,
+	"review_required": true,
+	"approved":        true,
+	"rejected":        true,
+	"published":       true,
+	"stale":           true,
+}
+
+// HandleListIntelRecords lists intel records filtered by status (and
+// optionally entity_type), newest extraction first. Unlike
+// HandleReviewQueue (which is hardcoded to review_required), this endpoint
+// accepts an arbitrary ?status= value so the control panel can browse
+// records in any pipeline stage (approved, published, rejected, stale,
+// etc.). The control panel review list page and the intelligence overview
+// page both call this endpoint for non-review_required statuses.
+//
+// GET /api/v1/intel/records?status={status}&entity_type={type}
+//
+// Requires: intel.review.view
+// Ref: route catalog §2248 (intel records list), BUG-A fix.
+func (h *Handlers) HandleListIntelRecords(w http.ResponseWriter, r *http.Request) {
+	if h.intelStores == nil {
+		writeError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
+		return
+	}
+
+	if _, ok := requireTenant(w, r); !ok {
+		return
+	}
+	tenantID := tenant.IDFromContext(r.Context())
+	if !tenantID.Valid {
+		tenantID = defaultIntelTenantID
+	}
+
+	status := r.URL.Query().Get("status")
+	if status == "" {
+		status = "review_required"
+	}
+	if !validIntelRecordStatuses[status] {
+		writeError(w, http.StatusBadRequest, "invalid_status", "status must be one of: extracted, deduped, auto_published, review_required, approved, rejected, published, stale")
+		return
+	}
+
+	entityType := r.URL.Query().Get("entity_type")
+
+	page, limit := h.parsePagination(r)
+	offset := clampInt32((page - 1) * limit)
+
+	var rows []gen.IntelRecord
+	var err error
+	if entityType != "" {
+		rows, err = h.intelStores.ListIntelRecordsByStatus(r.Context(), tenantID, gen.ListIntelRecordsByStatusParams{
+			EntityType: entityType,
+			Status:     status,
+			Limit:      clampInt32(limit),
+			Offset:     offset,
+		})
+	} else {
+		rows, err = h.intelStores.ListIntelRecordsByStatusAll(r.Context(), tenantID, gen.ListIntelRecordsByStatusAllParams{
+			Status: status,
+			Limit:  clampInt32(limit),
+			Offset: offset,
+		})
+	}
+	if err != nil {
+		slog.Error("intel: records list failed", "status", status, "error", err)
+		writeError(w, http.StatusInternalServerError, "records_list_failed", "Failed to list intel records")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"data": rows,
+		"meta": map[string]interface{}{
+			"page_size":   limit,
+			"page_offset": (page - 1) * limit,
+			"count":       len(rows),
+			"status":      status,
+		},
+	})
+}
+
+// HandleGetIntelRecord returns a single intel record by id, regardless of
+// its current status. The control panel four-pane moderation detail page
+// uses this to render a record after it has been approved/rejected/published
+// — the prior approach scanned the review_required queue, so any record no
+// longer in that queue was unreachable (BUG-B fix).
+//
+// GET /api/v1/intel/records/{id}
+//
+// Requires: intel.review.view
+// Ref: route catalog §2249 (intel record detail), BUG-B fix.
+func (h *Handlers) HandleGetIntelRecord(w http.ResponseWriter, r *http.Request) {
+	if h.intelStores == nil {
+		writeError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
+		return
+	}
+
+	if _, ok := requireTenant(w, r); !ok {
+		return
+	}
+	tenantID := tenant.IDFromContext(r.Context())
+	if !tenantID.Valid {
+		tenantID = defaultIntelTenantID
+	}
+
+	recordID, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	rec, err := h.intelStores.GetIntelRecord(r.Context(), tenantID, recordID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "not_found", "Intel record not found")
+			return
+		}
+		slog.Error("intel: record lookup failed", "record_id", recordID.String(), "error", err)
+		writeError(w, http.StatusInternalServerError, "lookup_failed", "Failed to load intel record")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"data": rec,
 	})
 }

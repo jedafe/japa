@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
 	"strconv"
 	"time"
 
@@ -144,14 +145,26 @@ type SettingsProvider interface {
 }
 
 // NewService creates a Service backed by the given database pool.
-// All data access goes through the store, so the raw pool is not retained.
+// The push delivery client is built from JC_VAPID_* environment variables.
+// Prefer NewServiceWithConfig when a config.Config is available (Rule 3).
 func NewService(database *db.DB) *Service {
+	return NewServiceWithConfig(database, PushConfig{
+		PrivateKey: os.Getenv("JC_VAPID_PRIVATE_KEY"),
+		PublicKey:  os.Getenv("JC_VAPID_PUBLIC_KEY"),
+		Subject:    os.Getenv("JC_VAPID_SUBJECT"),
+	})
+}
+
+// NewServiceWithConfig creates a Service backed by the given database pool
+// and a PushConfig loaded by internal/config (Rule 3 — no ad-hoc os.Getenv).
+// Pass notifications.PushConfig fields from a *config.Config.
+func NewServiceWithConfig(database *db.DB, pushCfg PushConfig) *Service {
 	return &Service{
 		store: &Store{
 			read:  gen.New(database.Reader),
 			write: gen.New(database.Writer),
 		},
-		push:      NewPushDelivery(),
+		push:      NewPushDeliveryFromConfig(pushCfg),
 		pushStore: NewPushStore(database.Reader, database.Writer),
 	}
 }

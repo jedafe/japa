@@ -81,7 +81,7 @@
 		</button>
 
 		<span class="text-foreground px-2 text-xs font-medium">
-			Page {page + 1} of {totalPages}
+			{t('lib.components.ui.Pagination.page_of', 'Page {p} of {t}').replace('{p}', String(page + 1)).replace('{t}', String(totalPages))}
 		</span>
 
 		<button

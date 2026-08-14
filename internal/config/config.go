@@ -24,7 +24,7 @@ type Config struct {
 	DBMinConns               int32  // JC_DB_MIN_CONNS — min connections per pgxpool (0 = default 5)
 	DBMaxConnLifetimeMs      int    // JC_DB_MAX_CONN_LIFETIME_MS — max connection lifetime (0 = default 30m)
 	DBMaxConnIdleTimeMs      int    // JC_DB_MAX_CONN_IDLE_TIME_MS — max idle connection lifetime (0 = default 5m)
-	RedisAddr                string // JC_REDIS_ADDR — Valkey/Redis address for cache and Asynq queues
+	RedisAddr                string // JC_VALKEY_ADDR (canonical, per JEOS stack.yaml) → JC_REDIS_ADDR (legacy alias) — Valkey/Redis address for cache and Asynq queues
 	RedisPassword            string // JC_REDIS_PASSWORD — optional auth password for Valkey/Redis
 	RedisDB                  int    // JC_REDIS_DB — Valkey/Redis database number (0 default)
 	RedisPoolSize            int    // JC_REDIS_POOL_SIZE — connection pool size (0 = valkey-go default)
@@ -39,7 +39,16 @@ type Config struct {
 	GlitchtipDSN             string // JC_GLITCHTIP_DSN — GlitchTip DSN for error reporting
 	ImgproxyKey              string // JC_IMGPROXY_KEY — signing key for imgproxy URL generation
 	ImgproxySalt             string // JC_IMGPROXY_SALT — salt for imgproxy URL signing
-	ImgproxyBaseURL          string // JC_IMGPROXY_BASE_URL — base URL for the imgproxy service
+	ImgproxyBaseURL          string // JC_IMGPROXY_BASE_URL — public-facing base URL for the imgproxy service
+	ImgproxyInternalURL      string // JC_IMGPROXY_INTERNAL_URL — internal Docker-network URL for imgproxy (e.g. http://imgproxy:8099); empty = use ImgproxyBaseURL
+	S3Endpoint               string // JC_S3_ENDPOINT — S3-compatible object storage endpoint (SeaweedFS or compatible)
+	S3AccessKey              string // JC_S3_ACCESS_KEY — S3 access key
+	S3SecretKey              string // JC_S3_SECRET_KEY — S3 secret key
+	S3Bucket                 string // JC_S3_BUCKET — S3 bucket name for media storage
+	S3Region                 string // JC_S3_REGION — S3 region (placeholder; SeaweedFS ignores this)
+	VAPIDPublicKey           string // JC_VAPID_PUBLIC_KEY — VAPID public key for WebPush notifications
+	VAPIDPrivateKey          string // JC_VAPID_PRIVATE_KEY — VAPID private key for WebPush notifications
+	VAPIDSubject             string // JC_VAPID_SUBJECT — VAPID subject (mailto: or https: URL) for WebPush
 	HonchoURL                string // JC_HONCHO_URL — Honcho agent memory service URL
 	ClamAVAddr               string // JC_CLAMAV_ADDR — ClamAV daemon address (host:port), default localhost:3310
 	ReleaseSHA               string // JC_RELEASE_SHA — git commit SHA, used for release tracking
@@ -105,7 +114,7 @@ func Load() (Config, error) {
 		DBMinConns:               int32(getEnvInt("JC_DB_MIN_CONNS", 0)),
 		DBMaxConnLifetimeMs:      getEnvInt("JC_DB_MAX_CONN_LIFETIME_MS", 0),
 		DBMaxConnIdleTimeMs:      getEnvInt("JC_DB_MAX_CONN_IDLE_TIME_MS", 0),
-		RedisAddr:                os.Getenv("JC_REDIS_ADDR"),
+		RedisAddr:                getEnvWithFallback("JC_VALKEY_ADDR", "JC_REDIS_ADDR"),
 		RedisPassword:            os.Getenv("JC_REDIS_PASSWORD"),
 		RedisDB:                  getEnvInt("JC_REDIS_DB", 0),
 		RedisPoolSize:            getEnvInt("JC_REDIS_POOL_SIZE", 0),
@@ -121,6 +130,15 @@ func Load() (Config, error) {
 		ImgproxyKey:              os.Getenv("JC_IMGPROXY_KEY"),
 		ImgproxySalt:             os.Getenv("JC_IMGPROXY_SALT"),
 		ImgproxyBaseURL:          os.Getenv("JC_IMGPROXY_BASE_URL"),
+		ImgproxyInternalURL:      os.Getenv("JC_IMGPROXY_INTERNAL_URL"),
+		S3Endpoint:               os.Getenv("JC_S3_ENDPOINT"),
+		S3AccessKey:              os.Getenv("JC_S3_ACCESS_KEY"),
+		S3SecretKey:              os.Getenv("JC_S3_SECRET_KEY"),
+		S3Bucket:                 os.Getenv("JC_S3_BUCKET"),
+		S3Region:                 os.Getenv("JC_S3_REGION"),
+		VAPIDPublicKey:           os.Getenv("JC_VAPID_PUBLIC_KEY"),
+		VAPIDPrivateKey:          os.Getenv("JC_VAPID_PRIVATE_KEY"),
+		VAPIDSubject:             os.Getenv("JC_VAPID_SUBJECT"),
 		HonchoURL:                os.Getenv("JC_HONCHO_URL"),
 		ClamAVAddr:               os.Getenv("JC_CLAMAV_ADDR"),
 		ReleaseSHA:               os.Getenv("JC_RELEASE_SHA"),
@@ -188,6 +206,13 @@ func applyDefaults(cfg *Config) error {
 
 	if cfg.ImgproxyBaseURL == "" {
 		cfg.ImgproxyBaseURL = "http://localhost:8099"
+	}
+
+	// When no internal imgproxy URL is configured, route internal requests
+	// through the public base URL so callers can use ImgproxyInternalURL
+	// unconditionally without a nil/empty check.
+	if cfg.ImgproxyInternalURL == "" {
+		cfg.ImgproxyInternalURL = cfg.ImgproxyBaseURL
 	}
 
 	if cfg.HonchoURL == "" {
