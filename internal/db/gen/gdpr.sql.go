@@ -241,6 +241,51 @@ func (q *Queries) AnonymizeFormSubmissionsByUser(ctx context.Context, userID pgt
 	return result.RowsAffected(), nil
 }
 
+const anonymizeForumRepliesByAuthor = `-- name: AnonymizeForumRepliesByAuthor :exec
+UPDATE forum_replies
+SET body = '"[deleted]"'::jsonb,
+    is_anonymous = true,
+    updated_at = now()
+WHERE author_user_id = $1 AND tenant_id = $2 AND deleted_at IS NULL
+`
+
+type AnonymizeForumRepliesByAuthorParams struct {
+	UserID   pgtype.UUID `json:"user_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+// BUG-010: anonymize forum replies authored by the erased user. Same
+// pattern as AnonymizeForumThreadsByAuthor. Ref: Section 15, ADR-014.
+func (q *Queries) AnonymizeForumRepliesByAuthor(ctx context.Context, arg AnonymizeForumRepliesByAuthorParams) error {
+	_, err := q.db.Exec(ctx, anonymizeForumRepliesByAuthor, arg.UserID, arg.TenantID)
+	return err
+}
+
+const anonymizeForumThreadsByAuthor = `-- name: AnonymizeForumThreadsByAuthor :exec
+UPDATE forum_threads
+SET body = '"[deleted]"'::jsonb,
+    is_anonymous = true,
+    updated_at = now()
+WHERE author_user_id = $1 AND tenant_id = $2 AND deleted_at IS NULL
+`
+
+type AnonymizeForumThreadsByAuthorParams struct {
+	UserID   pgtype.UUID `json:"user_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+// BUG-010: anonymize forum threads authored by the erased user. The
+// forum_threads.author_user_id FK has ON DELETE SET NULL (migration 000467),
+// so HardDeleteUser will null it — but the body (TipTap JSON, potentially
+// containing PII and @mentions) must be cleared before the user is
+// hard-deleted. Sets body to a '[deleted]' JSON string and marks
+// is_anonymous=true so the thread survives with an "Anonymous" author.
+// Ref: Section 15, ADR-014.
+func (q *Queries) AnonymizeForumThreadsByAuthor(ctx context.Context, arg AnonymizeForumThreadsByAuthorParams) error {
+	_, err := q.db.Exec(ctx, anonymizeForumThreadsByAuthor, arg.UserID, arg.TenantID)
+	return err
+}
+
 const anonymizeInstructorPayoutsForInstructor = `-- name: AnonymizeInstructorPayoutsForInstructor :execrows
 UPDATE instructor_payouts ipo
 SET instructor_id = NULL
@@ -1360,6 +1405,34 @@ func (q *Queries) GdprExportUserApiKeys(ctx context.Context, arg GdprExportUserA
 	return data, err
 }
 
+const gdprExportUserBadges = `-- name: GdprExportUserBadges :one
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (
+    SELECT ub.id, ub.badge_id, bd.slug AS badge_slug, bd.name AS badge_name,
+           bd.description AS badge_description, ub.awarded_at, ub.awarded_by
+    FROM user_badges ub
+    JOIN badge_definitions bd ON bd.id = ub.badge_id
+    WHERE ub.user_id = $1 AND ub.tenant_id = $2
+    ORDER BY ub.awarded_at DESC
+) t
+`
+
+type GdprExportUserBadgesParams struct {
+	UserID   pgtype.UUID `json:"user_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+// BUG-004: export user_badges rows for GDPR data export (§64, §19).
+// Includes the badge name/slug/description via a join so the export is
+// self-contained. awarded_by is included as a UUID reference (the admin
+// who manually awarded the badge, or NULL for system-awarded).
+func (q *Queries) GdprExportUserBadges(ctx context.Context, arg GdprExportUserBadgesParams) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportUserBadges, arg.UserID, arg.TenantID)
+	var data interface{}
+	err := row.Scan(&data)
+	return data, err
+}
+
 const gdprExportUserBlocks = `-- name: GdprExportUserBlocks :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (
@@ -1479,6 +1552,34 @@ type GdprExportUserCalendarSubscriptionsParams struct {
 // §86: export calendar_subscriptions for the user (BUG-025).
 func (q *Queries) GdprExportUserCalendarSubscriptions(ctx context.Context, arg GdprExportUserCalendarSubscriptionsParams) (interface{}, error) {
 	row := q.db.QueryRow(ctx, gdprExportUserCalendarSubscriptions, arg.UserID, arg.TenantID)
+	var data interface{}
+	err := row.Scan(&data)
+	return data, err
+}
+
+const gdprExportUserChallengeProgress = `-- name: GdprExportUserChallengeProgress :one
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (
+    SELECT ucp.id, ucp.challenge_id, cd.slug AS challenge_slug, cd.name AS challenge_name,
+           cd.description AS challenge_description, ucp.current_count, cd.target_count,
+           ucp.completed, ucp.completed_at, ucp.reward_claimed
+    FROM user_challenge_progress ucp
+    JOIN challenge_definitions cd ON cd.id = ucp.challenge_id
+    WHERE ucp.user_id = $1 AND ucp.tenant_id = $2
+    ORDER BY ucp.completed ASC, cd.ends_at ASC NULLS FIRST
+) t
+`
+
+type GdprExportUserChallengeProgressParams struct {
+	UserID   pgtype.UUID `json:"user_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+// BUG-004: export user_challenge_progress rows for GDPR data export
+// (§64, §19). Includes the challenge name/slug via a join so the export
+// is self-contained.
+func (q *Queries) GdprExportUserChallengeProgress(ctx context.Context, arg GdprExportUserChallengeProgressParams) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportUserChallengeProgress, arg.UserID, arg.TenantID)
 	var data interface{}
 	err := row.Scan(&data)
 	return data, err

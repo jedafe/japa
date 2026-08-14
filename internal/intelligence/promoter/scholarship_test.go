@@ -25,11 +25,10 @@ type mockStore struct {
 	countrySpaceID pgtype.UUID // BUG-005: country space id returned by GetCountrySpace
 
 	// recorded calls
-	createContentCalls     []gen.CreateContentParams
 	createScholarshipCalls []gen.CreateScholarshipParams
 	updateScholarshipCalls []gen.UpdateScholarshipParams
 	reviewLogCalls         []gen.CreateIntelReviewLogParams
-	promotedCalls          []gen.UpdateIntelRecordPromotedParams
+	statusCalls            []gen.UpdateIntelRecordStatusParams
 
 	// return values for the last scholarship read
 	lastScholarship gen.Scholarship
@@ -64,12 +63,6 @@ func (m *mockStore) GetPersonaUserID(ctx context.Context, tenantID, personaID pg
 	return pgtype.UUID{}, nil
 }
 
-func (m *mockStore) CreateContent(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateContentParams) (gen.CreateContentRow, error) {
-	m.createContentCalls = append(m.createContentCalls, arg)
-	id := pgtype.UUID{Bytes: uuid.New(), Valid: true}
-	return gen.CreateContentRow{ID: id, GuideCategory: arg.GuideCategory}, nil
-}
-
 func (m *mockStore) CreateScholarship(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateScholarshipParams) (gen.Scholarship, error) {
 	m.createScholarshipCalls = append(m.createScholarshipCalls, arg)
 	row := gen.Scholarship{
@@ -102,8 +95,8 @@ func (m *mockStore) CreateIntelReviewLog(ctx context.Context, tenantID pgtype.UU
 	return nil
 }
 
-func (m *mockStore) UpdateIntelRecordPromoted(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateIntelRecordPromotedParams) error {
-	m.promotedCalls = append(m.promotedCalls, arg)
+func (m *mockStore) UpdateIntelRecordStatus(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateIntelRecordStatusParams) error {
+	m.statusCalls = append(m.statusCalls, arg)
 	return nil
 }
 
@@ -265,10 +258,6 @@ func TestScholarshipPromoter_UpdateRespectsEditorialOverrides(t *testing.T) {
 		t.Errorf("field_changes must record title change; got %+v", changes)
 	}
 
-	// No content row should be created on the update path.
-	if len(store.createContentCalls) != 0 {
-		t.Errorf("update path must not create content rows; got %d", len(store.createContentCalls))
-	}
 	// No create-scholarship call on the update path.
 	if len(store.createScholarshipCalls) != 0 {
 		t.Errorf("update path must not create scholarships; got %d", len(store.createScholarshipCalls))
@@ -335,8 +324,8 @@ func TestScholarshipPromoter_NoChangeBumpsFreshness(t *testing.T) {
 	}
 }
 
-// TestScholarshipPromoter_CreatePath inserts content + scholarship + marks the
-// intel record promoted.
+// TestScholarshipPromoter_CreatePath inserts the scholarship projection row
+// and marks the intel record as 'extracted' (awaiting Studio promotion).
 func TestScholarshipPromoter_CreatePath(t *testing.T) {
 	recordID := pgtype.UUID{Bytes: uuid.New(), Valid: true}
 	sourceID := pgtype.UUID{Bytes: uuid.New(), Valid: true}
@@ -371,33 +360,25 @@ func TestScholarshipPromoter_CreatePath(t *testing.T) {
 	if res.Action != ActionCreated {
 		t.Fatalf("Action = %q, want %q", res.Action, ActionCreated)
 	}
-	if len(store.createContentCalls) != 1 {
-		t.Fatalf("expected 1 CreateContent call, got %d", len(store.createContentCalls))
-	}
-	cc := store.createContentCalls[0]
-	if cc.ContentType != "guide" {
-		t.Errorf("content_type = %q, want %q", cc.ContentType, "guide")
-	}
-	if cc.GuideCategory == nil || *cc.GuideCategory != "scholarship" {
-		t.Errorf("guide_category = %v, want %q", cc.GuideCategory, "scholarship")
-	}
-	if cc.Status != "published" {
-		t.Errorf("status = %q, want %q", cc.Status, "published")
-	}
-	if cc.CanonicalUrl == nil || *cc.CanonicalUrl != "https://example.org/new" {
-		t.Errorf("canonical_url = %v, want source url", cc.CanonicalUrl)
-	}
-	if cc.ContentHash == nil || *cc.ContentHash == "" {
-		t.Errorf("content_hash must be computed per Rule 12")
+	// No contents row should be created — Studio generates it later.
+	if res.ContentID != uuid.Nil {
+		t.Errorf("ContentID = %v, want uuid.Nil (no contents row under Approach B)", res.ContentID)
 	}
 	if len(store.createScholarshipCalls) != 1 {
 		t.Fatalf("expected 1 CreateScholarship call, got %d", len(store.createScholarshipCalls))
 	}
-	if len(store.promotedCalls) != 1 {
-		t.Fatalf("expected 1 UpdateIntelRecordPromoted call, got %d", len(store.promotedCalls))
+	// guide_id must be NULL (invalid) on the create path.
+	if store.createScholarshipCalls[0].GuideID.Valid {
+		t.Errorf("guide_id must be NULL on create path; got valid %v", store.createScholarshipCalls[0].GuideID)
 	}
-	if store.promotedCalls[0].ID != recordID {
-		t.Errorf("promoted record id mismatch")
+	if len(store.statusCalls) != 1 {
+		t.Fatalf("expected 1 UpdateIntelRecordStatus call, got %d", len(store.statusCalls))
+	}
+	if store.statusCalls[0].Status != "extracted" {
+		t.Errorf("status = %q, want %q", store.statusCalls[0].Status, "extracted")
+	}
+	if store.statusCalls[0].ID != recordID {
+		t.Errorf("status call record id mismatch")
 	}
 }
 

@@ -82,29 +82,35 @@ func (q *Queries) DeleteFollowByID(ctx context.Context, id pgtype.UUID) error {
 }
 
 const deleteFollowsByEntity = `-- name: DeleteFollowsByEntity :exec
-DELETE FROM follows WHERE entity_type = $1 AND entity_id = $2
+DELETE FROM follows WHERE tenant_id = $1 AND entity_type = $2 AND entity_id = $3
 `
 
 type DeleteFollowsByEntityParams struct {
+	TenantID   pgtype.UUID `json:"tenant_id"`
 	EntityType string      `json:"entity_type"`
 	EntityID   pgtype.UUID `json:"entity_id"`
 }
 
 func (q *Queries) DeleteFollowsByEntity(ctx context.Context, arg DeleteFollowsByEntityParams) error {
-	_, err := q.db.Exec(ctx, deleteFollowsByEntity, arg.EntityType, arg.EntityID)
+	_, err := q.db.Exec(ctx, deleteFollowsByEntity, arg.TenantID, arg.EntityType, arg.EntityID)
 	return err
 }
 
 const deleteFollowsByFollower = `-- name: DeleteFollowsByFollower :exec
 
-DELETE FROM follows WHERE follower_id = $1
+DELETE FROM follows WHERE tenant_id = $1 AND follower_id = $2
 `
+
+type DeleteFollowsByFollowerParams struct {
+	TenantID   pgtype.UUID `json:"tenant_id"`
+	FollowerID pgtype.UUID `json:"follower_id"`
+}
 
 // =====================
 // Cleanup
 // =====================
-func (q *Queries) DeleteFollowsByFollower(ctx context.Context, followerID pgtype.UUID) error {
-	_, err := q.db.Exec(ctx, deleteFollowsByFollower, followerID)
+func (q *Queries) DeleteFollowsByFollower(ctx context.Context, arg DeleteFollowsByFollowerParams) error {
+	_, err := q.db.Exec(ctx, deleteFollowsByFollower, arg.TenantID, arg.FollowerID)
 	return err
 }
 

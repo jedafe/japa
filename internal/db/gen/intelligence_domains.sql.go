@@ -88,11 +88,11 @@ INSERT INTO housing_guides (
   search_platforms, landlord_requirements, rent_ranges, scam_categories,
   tips, status, is_active,
   intel_record_id, confidence_overall, verification_status, freshness_score,
-  override_source, editorial_overrides
+  override_source, editorial_overrides, guide_id
 ) VALUES (
   $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-  $11, $12, $13, $14, $15, $16, $17
-) RETURNING id, tenant_id, destination_space_id, city_space_id, accommodation_type, search_platforms, landlord_requirements, rent_ranges, scam_categories, tips, status, is_active, ai_generated, ai_model, ai_prompt_hash, hitl_reviewed_by, hitl_reviewed_at, hitl_review_notes, last_verified_at, created_at, updated_at, is_japabot_indexed, intel_record_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides
+  $11, $12, $13, $14, $15, $16, $17, $18
+) RETURNING id, tenant_id, destination_space_id, city_space_id, accommodation_type, search_platforms, landlord_requirements, rent_ranges, scam_categories, tips, status, is_active, ai_generated, ai_model, ai_prompt_hash, hitl_reviewed_by, hitl_reviewed_at, hitl_review_notes, last_verified_at, created_at, updated_at, is_japabot_indexed, intel_record_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, guide_id
 `
 
 type CreateHousingGuideIntelParams struct {
@@ -113,6 +113,7 @@ type CreateHousingGuideIntelParams struct {
 	FreshnessScore       int32       `json:"freshness_score"`
 	OverrideSource       string      `json:"override_source"`
 	EditorialOverrides   []byte      `json:"editorial_overrides"`
+	GuideID              pgtype.UUID `json:"guide_id"`
 }
 
 // ===========================================================================
@@ -137,6 +138,7 @@ func (q *Queries) CreateHousingGuideIntel(ctx context.Context, arg CreateHousing
 		arg.FreshnessScore,
 		arg.OverrideSource,
 		arg.EditorialOverrides,
+		arg.GuideID,
 	)
 	var i HousingGuide
 	err := row.Scan(
@@ -168,6 +170,7 @@ func (q *Queries) CreateHousingGuideIntel(ctx context.Context, arg CreateHousing
 		&i.FreshnessScore,
 		&i.OverrideSource,
 		&i.EditorialOverrides,
+		&i.GuideID,
 	)
 	return i, err
 }
@@ -382,11 +385,11 @@ INSERT INTO visa_routes (
   eligibility_summary, requirements_json, typical_fee_usd, path_to_pr,
   renewal_terms, restrictions, gov_source_url, status, is_active,
   intel_record_id, confidence_overall, verification_status, freshness_score,
-  override_source, editorial_overrides
+  override_source, editorial_overrides, guide_id
 ) VALUES (
   $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-  $11, $12, $13, $14, $15, $16, $17, $18, $19, $20
-) RETURNING id, tenant_id, destination_space_id, visa_category, name, slug, eligibility_summary, requirements_json, typical_fee_usd, path_to_pr, renewal_terms, restrictions, gov_source_url, source_url_last_checked, status, is_active, ai_generated, ai_model, ai_prompt_hash, hitl_reviewed_by, hitl_reviewed_at, hitl_review_notes, created_at, updated_at, is_japabot_indexed, intel_record_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides
+  $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21
+) RETURNING id, tenant_id, destination_space_id, visa_category, name, slug, eligibility_summary, requirements_json, typical_fee_usd, path_to_pr, renewal_terms, restrictions, gov_source_url, source_url_last_checked, status, is_active, ai_generated, ai_model, ai_prompt_hash, hitl_reviewed_by, hitl_reviewed_at, hitl_review_notes, created_at, updated_at, is_japabot_indexed, intel_record_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, guide_id
 `
 
 type CreateVisaRouteIntelParams struct {
@@ -410,6 +413,7 @@ type CreateVisaRouteIntelParams struct {
 	FreshnessScore     int32          `json:"freshness_score"`
 	OverrideSource     string         `json:"override_source"`
 	EditorialOverrides []byte         `json:"editorial_overrides"`
+	GuideID            pgtype.UUID    `json:"guide_id"`
 }
 
 // ===========================================================================
@@ -437,6 +441,7 @@ func (q *Queries) CreateVisaRouteIntel(ctx context.Context, arg CreateVisaRouteI
 		arg.FreshnessScore,
 		arg.OverrideSource,
 		arg.EditorialOverrides,
+		arg.GuideID,
 	)
 	var i VisaRoute
 	err := row.Scan(
@@ -471,6 +476,7 @@ func (q *Queries) CreateVisaRouteIntel(ctx context.Context, arg CreateVisaRouteI
 		&i.FreshnessScore,
 		&i.OverrideSource,
 		&i.EditorialOverrides,
+		&i.GuideID,
 	)
 	return i, err
 }
@@ -513,7 +519,7 @@ func (q *Queries) GetComparisonItemByIntelRecord(ctx context.Context, arg GetCom
 }
 
 const getHousingGuideByIntelRecord = `-- name: GetHousingGuideByIntelRecord :one
-SELECT id, tenant_id, destination_space_id, city_space_id, accommodation_type, search_platforms, landlord_requirements, rent_ranges, scam_categories, tips, status, is_active, ai_generated, ai_model, ai_prompt_hash, hitl_reviewed_by, hitl_reviewed_at, hitl_review_notes, last_verified_at, created_at, updated_at, is_japabot_indexed, intel_record_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides FROM housing_guides WHERE tenant_id = $1 AND intel_record_id = $2
+SELECT id, tenant_id, destination_space_id, city_space_id, accommodation_type, search_platforms, landlord_requirements, rent_ranges, scam_categories, tips, status, is_active, ai_generated, ai_model, ai_prompt_hash, hitl_reviewed_by, hitl_reviewed_at, hitl_review_notes, last_verified_at, created_at, updated_at, is_japabot_indexed, intel_record_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, guide_id FROM housing_guides WHERE tenant_id = $1 AND intel_record_id = $2
 `
 
 type GetHousingGuideByIntelRecordParams struct {
@@ -553,6 +559,7 @@ func (q *Queries) GetHousingGuideByIntelRecord(ctx context.Context, arg GetHousi
 		&i.FreshnessScore,
 		&i.OverrideSource,
 		&i.EditorialOverrides,
+		&i.GuideID,
 	)
 	return i, err
 }
@@ -734,7 +741,7 @@ func (q *Queries) GetRemittanceRateByIntelRecord(ctx context.Context, arg GetRem
 }
 
 const getVisaRouteByIntelRecord = `-- name: GetVisaRouteByIntelRecord :one
-SELECT id, tenant_id, destination_space_id, visa_category, name, slug, eligibility_summary, requirements_json, typical_fee_usd, path_to_pr, renewal_terms, restrictions, gov_source_url, source_url_last_checked, status, is_active, ai_generated, ai_model, ai_prompt_hash, hitl_reviewed_by, hitl_reviewed_at, hitl_review_notes, created_at, updated_at, is_japabot_indexed, intel_record_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides FROM visa_routes WHERE tenant_id = $1 AND intel_record_id = $2
+SELECT id, tenant_id, destination_space_id, visa_category, name, slug, eligibility_summary, requirements_json, typical_fee_usd, path_to_pr, renewal_terms, restrictions, gov_source_url, source_url_last_checked, status, is_active, ai_generated, ai_model, ai_prompt_hash, hitl_reviewed_by, hitl_reviewed_at, hitl_review_notes, created_at, updated_at, is_japabot_indexed, intel_record_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, guide_id FROM visa_routes WHERE tenant_id = $1 AND intel_record_id = $2
 `
 
 type GetVisaRouteByIntelRecordParams struct {
@@ -777,6 +784,7 @@ func (q *Queries) GetVisaRouteByIntelRecord(ctx context.Context, arg GetVisaRout
 		&i.FreshnessScore,
 		&i.OverrideSource,
 		&i.EditorialOverrides,
+		&i.GuideID,
 	)
 	return i, err
 }
@@ -846,7 +854,7 @@ func (q *Queries) ListComparisonItemsIntelKeyset(ctx context.Context, arg ListCo
 }
 
 const listHousingGuidesIntelKeyset = `-- name: ListHousingGuidesIntelKeyset :many
-SELECT id, tenant_id, destination_space_id, city_space_id, accommodation_type, search_platforms, landlord_requirements, rent_ranges, scam_categories, tips, status, is_active, ai_generated, ai_model, ai_prompt_hash, hitl_reviewed_by, hitl_reviewed_at, hitl_review_notes, last_verified_at, created_at, updated_at, is_japabot_indexed, intel_record_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides FROM housing_guides
+SELECT id, tenant_id, destination_space_id, city_space_id, accommodation_type, search_platforms, landlord_requirements, rent_ranges, scam_categories, tips, status, is_active, ai_generated, ai_model, ai_prompt_hash, hitl_reviewed_by, hitl_reviewed_at, hitl_review_notes, last_verified_at, created_at, updated_at, is_japabot_indexed, intel_record_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, guide_id FROM housing_guides
 WHERE tenant_id = $1
   AND intel_record_id IS NOT NULL
   AND ($2::timestamptz IS NULL
@@ -906,6 +914,7 @@ func (q *Queries) ListHousingGuidesIntelKeyset(ctx context.Context, arg ListHous
 			&i.FreshnessScore,
 			&i.OverrideSource,
 			&i.EditorialOverrides,
+			&i.GuideID,
 		); err != nil {
 			return nil, err
 		}
@@ -1118,7 +1127,7 @@ func (q *Queries) ListRemittanceRatesIntelKeyset(ctx context.Context, arg ListRe
 }
 
 const listVisaRoutesIntelKeyset = `-- name: ListVisaRoutesIntelKeyset :many
-SELECT id, tenant_id, destination_space_id, visa_category, name, slug, eligibility_summary, requirements_json, typical_fee_usd, path_to_pr, renewal_terms, restrictions, gov_source_url, source_url_last_checked, status, is_active, ai_generated, ai_model, ai_prompt_hash, hitl_reviewed_by, hitl_reviewed_at, hitl_review_notes, created_at, updated_at, is_japabot_indexed, intel_record_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides FROM visa_routes
+SELECT id, tenant_id, destination_space_id, visa_category, name, slug, eligibility_summary, requirements_json, typical_fee_usd, path_to_pr, renewal_terms, restrictions, gov_source_url, source_url_last_checked, status, is_active, ai_generated, ai_model, ai_prompt_hash, hitl_reviewed_by, hitl_reviewed_at, hitl_review_notes, created_at, updated_at, is_japabot_indexed, intel_record_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, guide_id FROM visa_routes
 WHERE tenant_id = $1
   AND intel_record_id IS NOT NULL
   AND ($2::timestamptz IS NULL
@@ -1181,6 +1190,7 @@ func (q *Queries) ListVisaRoutesIntelKeyset(ctx context.Context, arg ListVisaRou
 			&i.FreshnessScore,
 			&i.OverrideSource,
 			&i.EditorialOverrides,
+			&i.GuideID,
 		); err != nil {
 			return nil, err
 		}

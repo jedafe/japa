@@ -596,6 +596,66 @@ func (q *Queries) LeaderboardAllTime(ctx context.Context, arg LeaderboardAllTime
 	return items, nil
 }
 
+const leaderboardAllTimeForSpace = `-- name: LeaderboardAllTimeForSpace :many
+SELECT
+    wl.user_id,
+    SUM(CASE WHEN wl.operation = 'credit' THEN wl.amount ELSE -wl.amount END) AS lifetime_points,
+    u.username,
+    u.profile_type
+FROM wallet_ledger wl
+JOIN users u ON u.id = wl.user_id
+JOIN space_members sm ON sm.user_id = wl.user_id
+    AND sm.space_id = $1
+    AND sm.tenant_id = wl.tenant_id
+WHERE wl.tenant_id = $2
+  AND wl.ledger_type = 'points'
+  AND u.is_bot = false
+  AND u.status = 'active'
+GROUP BY wl.user_id, u.username, u.profile_type
+ORDER BY lifetime_points DESC
+LIMIT $3
+`
+
+type LeaderboardAllTimeForSpaceParams struct {
+	SpaceID  pgtype.UUID `json:"space_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+	TopN     int32       `json:"top_n"`
+}
+
+type LeaderboardAllTimeForSpaceRow struct {
+	UserID         pgtype.UUID `json:"user_id"`
+	LifetimePoints int64       `json:"lifetime_points"`
+	Username       string      `json:"username"`
+	ProfileType    string      `json:"profile_type"`
+}
+
+// BUG-006: space-scoped all_time leaderboard. Filters to users who are
+// members of the given space (§64 "Scope: global or space:{space_id}").
+func (q *Queries) LeaderboardAllTimeForSpace(ctx context.Context, arg LeaderboardAllTimeForSpaceParams) ([]LeaderboardAllTimeForSpaceRow, error) {
+	rows, err := q.db.Query(ctx, leaderboardAllTimeForSpace, arg.SpaceID, arg.TenantID, arg.TopN)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []LeaderboardAllTimeForSpaceRow
+	for rows.Next() {
+		var i LeaderboardAllTimeForSpaceRow
+		if err := rows.Scan(
+			&i.UserID,
+			&i.LifetimePoints,
+			&i.Username,
+			&i.ProfileType,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const leaderboardByPeriod = `-- name: LeaderboardByPeriod :many
 SELECT
     pe.user_id,
@@ -636,6 +696,73 @@ func (q *Queries) LeaderboardByPeriod(ctx context.Context, arg LeaderboardByPeri
 	var items []LeaderboardByPeriodRow
 	for rows.Next() {
 		var i LeaderboardByPeriodRow
+		if err := rows.Scan(
+			&i.UserID,
+			&i.PeriodPoints,
+			&i.Username,
+			&i.ProfileType,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const leaderboardByPeriodForSpace = `-- name: LeaderboardByPeriodForSpace :many
+SELECT
+    pe.user_id,
+    SUM((pe.meta->>'points')::int) AS period_points,
+    u.username,
+    u.profile_type
+FROM platform_events pe
+JOIN users u ON u.id = pe.user_id
+JOIN space_members sm ON sm.user_id = pe.user_id
+    AND sm.space_id = $1
+    AND sm.tenant_id = pe.tenant_id
+WHERE pe.tenant_id = $2
+  AND pe.event_type = 'wallet.points_earned'
+  AND pe.created_at >= $3
+  AND u.is_bot = false
+  AND u.status = 'active'
+GROUP BY pe.user_id, u.username, u.profile_type
+ORDER BY period_points DESC
+LIMIT $4
+`
+
+type LeaderboardByPeriodForSpaceParams struct {
+	SpaceID  pgtype.UUID        `json:"space_id"`
+	TenantID pgtype.UUID        `json:"tenant_id"`
+	FromDate pgtype.Timestamptz `json:"from_date"`
+	TopN     int32              `json:"top_n"`
+}
+
+type LeaderboardByPeriodForSpaceRow struct {
+	UserID       pgtype.UUID `json:"user_id"`
+	PeriodPoints int64       `json:"period_points"`
+	Username     string      `json:"username"`
+	ProfileType  string      `json:"profile_type"`
+}
+
+// BUG-006: space-scoped period leaderboard. Filters to users who are
+// members of the given space (§64).
+func (q *Queries) LeaderboardByPeriodForSpace(ctx context.Context, arg LeaderboardByPeriodForSpaceParams) ([]LeaderboardByPeriodForSpaceRow, error) {
+	rows, err := q.db.Query(ctx, leaderboardByPeriodForSpace,
+		arg.SpaceID,
+		arg.TenantID,
+		arg.FromDate,
+		arg.TopN,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []LeaderboardByPeriodForSpaceRow
+	for rows.Next() {
+		var i LeaderboardByPeriodForSpaceRow
 		if err := rows.Scan(
 			&i.UserID,
 			&i.PeriodPoints,
