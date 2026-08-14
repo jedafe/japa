@@ -9,6 +9,7 @@
 	import { hasAnyPermission } from '$lib/stores/auth.svelte';
 	import { escapeHtml } from '$lib/utils';
 	import { goto } from '$app/navigation';
+	import { page as pageStore } from '$app/state';
 	import { RefreshCw, Eye, CheckCircle2, XCircle, ClipboardList } from 'lucide-svelte';
 	import { Select } from 'bits-ui';
 
@@ -51,12 +52,31 @@
 
 	let actionLoading = $state<string | null>(null);
 
+	// Status filter: read from URL query param ?status=. Defaults to
+	// 'review_required' (the standard review queue). Supported values:
+	// review_required, approved, published, rejected, extracted, stale.
+	const statusFilter = $derived(pageStore.url.searchParams.get('status') || 'review_required');
+
+	const statusLabels: Record<string, string> = {
+		review_required: 'Review Required',
+		approved: 'Approved',
+		published: 'Published',
+		rejected: 'Rejected',
+		extracted: 'Extracted',
+		stale: 'Stale'
+	};
+
+	const statusIsReviewable = $derived(statusFilter === 'review_required');
+
 	async function load() {
 		refreshing = true;
 		errorMessage = '';
-		const result = await api<IntelRecord[]>(
-			'/api/v1/intel/review/queue?page_size=100'
-		);
+		// When status is review_required, use the dedicated review queue
+		// endpoint. For other statuses, use the generic records endpoint.
+		const endpoint = statusFilter === 'review_required'
+			? '/api/v1/intel/review/queue?page_size=100'
+			: `/api/v1/intel/records?status=${statusFilter}&page_size=100`;
+		const result = await api<IntelRecord[]>(endpoint);
 		if (result.ok) {
 			records = Array.isArray(result.data) ? (result.data as IntelRecord[]) : [];
 		} else {
@@ -66,7 +86,10 @@
 		refreshing = false;
 	}
 
+	// Reload when the status filter changes (URL query param changes).
 	$effect(() => {
+		// Track statusFilter so the effect re-runs when it changes.
+		statusFilter;
 		load();
 	});
 
@@ -158,20 +181,20 @@
 		{
 			label: t('intel.approve', 'Approve'),
 			icon: CheckCircle2,
-			hidden: () => !canApprove,
+			hidden: () => !canApprove || !statusIsReviewable,
 			onClick: (row) => approveRecord((row as unknown as IntelRecord).id)
 		},
 		{
 			label: t('intel.reject', 'Reject'),
 			icon: XCircle,
 			variant: 'destructive',
-			hidden: () => !canReject,
+			hidden: () => !canReject || !statusIsReviewable,
 			onClick: (row) => rejectRecord((row as unknown as IntelRecord).id)
 		}
 	]);
 
 	const bulkActions = $derived<DataTableBulkAction[]>(
-		canApprove
+		canApprove && statusIsReviewable
 			? [
 					{
 						label: t('intel.approve_selected', 'Approve selected'),
@@ -211,8 +234,10 @@
 </script>
 
 <PageHeader
-	title={t('intel.review_title', 'Review Queue')}
-	description={t('intel.review_desc', 'Records extracted by the pipeline awaiting human moderation before publication.')}
+	title={statusFilter === 'review_required' ? t('intel.review_title', 'Review Queue') : `${statusLabels[statusFilter] ?? statusFilter} Records`}
+	description={statusFilter === 'review_required'
+		? t('intel.review_desc', 'Records extracted by the pipeline awaiting human moderation before publication.')
+		: `Intelligence records with status: ${statusLabels[statusFilter] ?? statusFilter}`}
 />
 
 {#if !canView}
@@ -241,6 +266,37 @@
 							{#each entityItems as e}
 								<Select.Item class="data-highlighted:bg-accent rounded-9px flex h-9 cursor-pointer items-center px-3 text-sm outline-none" value={e.value} label={e.label}>
 									{e.label}
+								</Select.Item>
+							{/each}
+						</Select.Viewport>
+					</Select.Content>
+				</Select.Portal>
+			</Select.Root>
+			<!-- Status filter: updates the URL query param so the page reloads with the new status. -->
+			<Select.Root
+				type="single"
+				value={statusFilter}
+				onValueChange={(v) => {
+					if (v !== undefined) {
+						const url = new URL(window.location.href);
+						if (v === 'review_required') {
+							url.searchParams.delete('status');
+						} else {
+							url.searchParams.set('status', v);
+						}
+						goto(url.pathname + url.search, { replaceState: false });
+					}
+				}}
+			>
+				<Select.Trigger class="border-border-input bg-background text-foreground h-input rounded-9px border px-3 text-sm transition-colors hover:border-border-input-hover focus:border-border-input-hover focus:shadow-date-field-focus">
+					<span class="truncate">{statusLabels[statusFilter] ?? statusFilter}</span>
+				</Select.Trigger>
+				<Select.Portal>
+					<Select.Content class="border-border-input bg-background shadow-popover z-50 rounded-xl border">
+						<Select.Viewport class="p-1">
+							{#each Object.entries(statusLabels) as [value, label]}
+								<Select.Item class="data-highlighted:bg-accent rounded-9px flex h-9 cursor-pointer items-center px-3 text-sm outline-none" {value} {label}>
+									{label}
 								</Select.Item>
 							{/each}
 						</Select.Viewport>

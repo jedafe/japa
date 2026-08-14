@@ -28,6 +28,8 @@
 		initialDimensions?: ComparisonDimension[];
 		/** Admin-defined comparison types (Section 30) for the type selector. */
 		comparisonTypes?: ComparisonType[];
+	/** Valid dimension types from GET /comparisons/dimension-types (Rule 16). */
+	dimensionTypes?: { value: string; label: string }[];
 		/** Rich-text body HTML (introduction/context above the comparison table). */
 		bodyHtml?: string;
 		/** Callback when the body HTML changes (drives autosave). */
@@ -46,6 +48,7 @@
 		initialItems = [],
 		initialDimensions = [],
 		comparisonTypes = [],
+		dimensionTypes = [],
 		bodyHtml = '',
 		onhtml,
 		defaultEditor = 'block',
@@ -53,10 +56,14 @@
 		onedit
 	}: Props = $props();
 
-	// Dimension types per Section 30 spec: text | rating | boolean | number | currency.
-	// The backend validates against this exact set (internal/comparison/comparison.go).
-	const DIMENSION_TYPES = ['text', 'rating', 'boolean', 'number', 'currency'] as const;
-	type DimensionType = (typeof DIMENSION_TYPES)[number];
+	// Dimension types from the API (GET /comparisons/dimension-types, Rule 16).
+	// Falls back to the spec-defined defaults if the API call failed.
+	const DIMENSION_TYPES = $derived(
+		dimensionTypes.length > 0
+			? dimensionTypes.map((d) => d.value)
+			: ['text', 'rating', 'boolean', 'number', 'currency']
+	);
+	type DimensionType = string;
 
 	// Seed from the draft's existing items/dimensions when provided (e.g.
 	// restoring a comparison draft created by the /compare/new wizard).

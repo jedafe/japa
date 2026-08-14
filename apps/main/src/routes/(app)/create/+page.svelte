@@ -47,6 +47,7 @@
 		draftTags={data.draftTags}
 		comparisonDetail={data.comparisonDetail}
 		comparisonTypes={data.comparisonTypes}
+		dimensionTypes={data.dimensionTypes}
 		coverMedia={data.coverMedia}
 		draftSeriesId={data.draftSeriesId}
 		user={data.user}

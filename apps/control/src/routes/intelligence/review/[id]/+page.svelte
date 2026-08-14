@@ -100,20 +100,18 @@
 		errorMessage = '';
 		actionMessage = '';
 
-		const recRes = await api<IntelRecord[]>(
-			`/api/v1/intel/review/queue?page_size=100`
+		// Fetch the single record directly by id (BUG-B fix). The prior
+		// approach fetched the entire review_required queue and scanned for
+		// the id, which meant any record no longer in that queue (approved,
+		// rejected, published, stale) was unreachable from the detail page —
+		// clicking a row in the published/approved/rejected list showed
+		// "Record not found". The dedicated GET /intel/records/{id} endpoint
+		// returns the record regardless of status.
+		const recRes = await api<IntelRecord>(
+			`/api/v1/intel/records/${recordId}`
 		);
-		// The review queue returns a list; locate this record by id. If the
-		// record is not in the queue (e.g., already approved/rejected), show
-		// the not-found state. The prior code fell back to /intel/radar/feed
-		// which returns a scholarship-shaped object, not an IntelRecord — the
-		// fields don't match (no source_id, raw_document_id, extracted, etc.)
-		// so the four-pane moderation view would break silently.
-		// The api() helper already unwraps the response `data` field, so
-		// recRes.data is the array directly.
-		if (recRes.ok && Array.isArray(recRes.data)) {
-			const found = (recRes.data as IntelRecord[]).find((r) => r.id === recordId);
-			record = found ?? null;
+		if (recRes.ok && recRes.data) {
+			record = recRes.data as IntelRecord;
 		} else if (!recRes.ok) {
 			errorMessage = recRes.error;
 		}

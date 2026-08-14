@@ -922,26 +922,37 @@ func (h *Handlers) GetContent(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Visibility gate: unauthenticated users may only view published
-	// content. Drafts, scheduled, archived, and removed content require
-	// authentication (and the author/admin permission for non-public
-	// statuses). Ref: Section 14 — public content SSR.
-	if user := auth.FromContext(r.Context()); user == nil {
-		if content.Status != StatusPublished {
+	// Visibility gate (§5.3 RBAC / §14 public content SSR):
+	//   - Published content is visible to everyone (authed or not).
+	//   - Non-published content (draft, scheduled, archived, in_review) is
+	//     only visible to the author or a user holding content.edit_any
+	//     (admins/moderators). Without this, any authenticated user could
+	//     read another user's drafts by guessing the slug.
+	if content.Status != StatusPublished {
+		user := auth.FromContext(r.Context())
+		if user == nil {
 			writeError(w, http.StatusNotFound, "not_found", "Content not found")
 			return
 		}
+		isAuthor := content.AuthorID.Valid && content.AuthorID.Bytes == user.UserID.Bytes
+		if !isAuthor {
+			canEditAny := false
+			if resolver := rbac.FromContext(r.Context()); resolver != nil {
+				canEditAny = resolver.HasPermission(r.Context(), user.UserID, user.TenantID, "content.edit_any") ||
+					resolver.IsSuperAdmin(r.Context(), user.UserID, user.TenantID)
+			}
+			if !canEditAny {
+				writeError(w, http.StatusNotFound, "not_found", "Content not found")
+				return
+			}
+		}
 	}
 
-	// Increment view count (fire-and-forget, don't fail the request on error).
-	if err := h.Service.IncrementContentView(r.Context(), content.ID, tenantID); err != nil {
-		slog.Error("incrementing content view", "error", err, "content_id", content.ID.String())
-	}
-
-	// Increment engagement view for velocity scoring (fire-and-forget).
-	if err := h.Service.IncrementEngagementView(r.Context(), content.ID); err != nil {
-		slog.Error("incrementing engagement view", "error", err, "content_id", content.ID.String())
-	}
+	// View tracking is handled by the dedicated POST /content/{id}/view
+	// endpoint (§14 — rate-limited, once per user/session per hour with
+	// DB-level dedup via user_content_views PK). The GET handler must NOT
+	// increment view counts — doing so inflates counts with no dedup on
+	// every page load and double-counts when the frontend also calls /view.
 
 	// JSON-LD structured data (Section 14 / Section 26). Resolve the
 	// admin-managed template matching the content's own content_type,
@@ -2370,16 +2381,32 @@ func (h *Handlers) ListContentTypes(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Built-in v1 content types per Section 14. "question" is not listed
+	// in the spec — forum Q&A uses the separate forum_threads table, not
+	// contents with content_type='question'. The seo/trending packages
+	// retain defensive handling for legacy "question" rows.
 	types := []map[string]any{
 		{"value": "discussion", "label": "Discussion"},
 		{"value": "blog_post", "label": "Blog Post"},
 		{"value": "page", "label": "Page"},
 		{"value": "comparison", "label": "Comparison"},
-		{"value": "question", "label": "Question"},
 		{"value": "guide", "label": "Guide", "has_category": true, "categories": guideCategories},
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": types})
+}
+
+// GetVisibilityOptions handles GET /api/v1/content/visibility-options —
+// returns the valid visibility values for content (Section 14). The frontend
+// uses this to populate visibility selectors instead of hardcoding the values
+// (Rule 16).
+func (h *Handlers) GetVisibilityOptions(w http.ResponseWriter, r *http.Request) {
+	options := []map[string]string{
+		{"value": VisibilityPublic, "label": "Public"},
+		{"value": VisibilityMembers, "label": "Members"},
+		{"value": VisibilityPrivate, "label": "Private"},
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": options})
 }
 
 // UpdateContentSpaces handles PATCH /content/{id}/spaces — replaces the

@@ -21,21 +21,28 @@ type PushDelivery struct {
 	enabled    bool
 }
 
-// NewPushDelivery creates a PushDelivery from environment variables.
-// If JC_VAPID_PRIVATE_KEY or JC_VAPID_PUBLIC_KEY are empty, push is disabled.
-// Keys are validated for correct VAPID format (base64url-encoded P-256
-// ECDSA keys); invalid keys disable push with a warning log.
-func NewPushDelivery() *PushDelivery {
-	privKey := os.Getenv("JC_VAPID_PRIVATE_KEY")
-	pubKey := os.Getenv("JC_VAPID_PUBLIC_KEY")
+// PushConfig holds the VAPID configuration loaded by internal/config from
+// JC_VAPID_* environment variables. Zero PrivateKey/PublicKey disables
+// push delivery (graceful degradation).
+type PushConfig struct {
+	PrivateKey string // JC_VAPID_PRIVATE_KEY — base64url-encoded P-256 scalar
+	PublicKey  string // JC_VAPID_PUBLIC_KEY — base64url-encoded uncompressed P-256 point
+	Subject    string // JC_VAPID_SUBJECT — mailto: or https: URL
+}
 
-	subject := os.Getenv("JC_VAPID_SUBJECT")
+// NewPushDeliveryFromConfig creates a PushDelivery from a PushConfig (loaded
+// by internal/config). If PrivateKey or PublicKey are empty, push is disabled.
+// Keys are validated for correct VAPID format (base64url-encoded P-256
+// ECDSA keys); invalid keys disable push with a warning log. Empty Subject
+// defaults to "mailto:noreply@example.com".
+func NewPushDeliveryFromConfig(c PushConfig) *PushDelivery {
+	subject := c.Subject
 	if subject == "" {
 		// Default to a generic subject if not configured
 		subject = "mailto:noreply@example.com"
 	}
 
-	if privKey == "" || pubKey == "" {
+	if c.PrivateKey == "" || c.PublicKey == "" {
 		slog.Warn("push_delivery: VAPID keys not configured, push notifications disabled")
 		return &PushDelivery{enabled: false}
 	}
@@ -44,17 +51,32 @@ func NewPushDelivery() *PushDelivery {
 	// Private key: base64url-encoded 32-byte P-256 scalar.
 	// Public key: base64url-encoded 65-byte uncompressed P-256 point
 	// (0x04 prefix + 32 bytes X + 32 bytes Y).
-	if err := validateVAPIDKeys(privKey, pubKey); err != nil {
+	if err := validateVAPIDKeys(c.PrivateKey, c.PublicKey); err != nil {
 		slog.Error("push_delivery: invalid VAPID key format, push notifications disabled", "error", err)
 		return &PushDelivery{enabled: false}
 	}
 
 	return &PushDelivery{
-		privateKey: privKey,
-		publicKey:  pubKey,
+		privateKey: c.PrivateKey,
+		publicKey:  c.PublicKey,
 		subject:    subject,
 		enabled:    true,
 	}
+}
+
+// NewPushDelivery creates a PushDelivery from environment variables.
+// If JC_VAPID_PRIVATE_KEY or JC_VAPID_PUBLIC_KEY are empty, push is disabled.
+//
+// Deprecated: prefer NewPushDeliveryFromConfig with a config.Config loaded
+// by internal/config (Rule 3). This wrapper is retained for backward
+// compatibility with callers that have not yet been wired with config
+// injection (e.g. standalone tools, tests).
+func NewPushDelivery() *PushDelivery {
+	return NewPushDeliveryFromConfig(PushConfig{
+		PrivateKey: os.Getenv("JC_VAPID_PRIVATE_KEY"),
+		PublicKey:  os.Getenv("JC_VAPID_PUBLIC_KEY"),
+		Subject:    os.Getenv("JC_VAPID_SUBJECT"),
+	})
 }
 
 // validateVAPIDKeys checks that the provided VAPID keys are correctly

@@ -351,6 +351,7 @@ export const comparisonAdminApi = {
 			slug?: string;
 			description?: string;
 			icon?: string;
+			field_group_id?: string;
 			item_label?: string;
 		}
 	) => api<ComparisonType>(`/comparisons/types/${id}`, { method: 'PATCH', body }),
@@ -363,6 +364,10 @@ export const comparisonAdminApi = {
 		body: { user_group_id: string; can_create: boolean; can_fill: boolean; ai_can_fill: boolean }
 	) => api<{ updated: boolean }>(`/comparisons/types/${id}/access`, { method: 'PUT', body }),
 	listFieldGroups: () => api<CustomFieldGroupOption[]>('/custom-field-groups'),
+	// Dimension types from GET /comparisons/dimension-types (Rule 16).
+	getDimensionTypes: () => api<{ value: string; label: string }[]>('/comparisons/dimension-types'),
+	// Visibility options from GET /content/visibility-options (Rule 16).
+	getVisibilityOptions: () => api<{ value: string; label: string }[]>('/content/visibility-options'),
 	// Comparison content CRUD (Section 30 — actual comparison articles).
 	listComparisons: (params?: string) =>
 		api<ComparisonEntry[]>(`/comparisons${params ? `?${params}` : ''}`),

@@ -7,6 +7,7 @@ package media
 
 import (
 	"context"
+	"os"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db"
@@ -62,11 +63,26 @@ type Service struct {
 }
 
 // NewService creates a Service backed by the given database pool.
+// The S3 client is built from JC_S3_* environment variables. Prefer
+// NewServiceWithConfig when a config.Config is available (Rule 3).
 func NewService(database *db.DB) *Service {
+	return NewServiceWithConfig(database, S3Config{
+		Endpoint:  os.Getenv("JC_S3_ENDPOINT"),
+		AccessKey: os.Getenv("JC_S3_ACCESS_KEY"),
+		SecretKey: os.Getenv("JC_S3_SECRET_KEY"),
+		Region:    os.Getenv("JC_S3_REGION"),
+		Bucket:    os.Getenv("JC_S3_BUCKET"),
+	})
+}
+
+// NewServiceWithConfig creates a Service backed by the given database pool
+// and an S3Config loaded by internal/config (Rule 3 — no ad-hoc os.Getenv).
+// Pass media.S3Config fields from a *config.Config.
+func NewServiceWithConfig(database *db.DB, s3cfg S3Config) *Service {
 	return &Service{
 		store: NewStore(gen.New(database.Reader), gen.New(database.Writer), database.Reader, database.Writer),
 		db:    database,
-		s3:    NewS3Client(),
+		s3:    NewS3ClientFromConfig(s3cfg),
 	}
 }
 

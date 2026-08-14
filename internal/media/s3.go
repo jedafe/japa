@@ -18,11 +18,8 @@ import (
 )
 
 // S3Client provides S3-compatible presigned URL generation for SeaweedFS.
-// It reads configuration from environment variables:
-//   - JC_S3_ENDPOINT: S3 endpoint (e.g., "http://localhost:8333")
-//   - JC_S3_ACCESS_KEY: S3 access key
-//   - JC_S3_SECRET_KEY: S3 secret key
-//   - JC_S3_REGION: S3 region (default "us-east-1")
+// Configuration is supplied via S3Config (loaded by internal/config from
+// JC_S3_* environment variables, Rule 3 — no ad-hoc os.Getenv in callers).
 type S3Client struct {
 	endpoint   string
 	accessKey  string
@@ -32,40 +29,66 @@ type S3Client struct {
 	httpClient *http.Client
 }
 
-// NewS3Client creates an S3 client from environment variables.
-// Returns nil if required env vars are missing (graceful degradation).
-func NewS3Client() *S3Client {
-	endpoint := os.Getenv("JC_S3_ENDPOINT")
-	accessKey := os.Getenv("JC_S3_ACCESS_KEY")
-	secretKey := os.Getenv("JC_S3_SECRET_KEY")
+// S3Config holds the S3-compatible storage configuration loaded by
+// internal/config from JC_S3_* environment variables. Zero values trigger
+// graceful degradation (NewS3ClientFromConfig returns nil).
+type S3Config struct {
+	Endpoint  string // JC_S3_ENDPOINT — S3 endpoint (e.g., "http://localhost:8333")
+	AccessKey string // JC_S3_ACCESS_KEY — S3 access key
+	SecretKey string // JC_S3_SECRET_KEY — S3 secret key
+	Region    string // JC_S3_REGION — S3 region (default "us-east-1")
+	Bucket    string // JC_S3_BUCKET — bucket name (default DefaultBucket)
+}
 
-	if endpoint == "" || accessKey == "" || secretKey == "" {
+// NewS3ClientFromConfig creates an S3 client from an S3Config (loaded by
+// internal/config). Returns nil if Endpoint, AccessKey, or SecretKey are
+// missing (graceful degradation — callers fall back to local serve paths).
+// Empty Region defaults to "us-east-1"; empty Bucket defaults to DefaultBucket.
+func NewS3ClientFromConfig(c S3Config) *S3Client {
+	if c.Endpoint == "" || c.AccessKey == "" || c.SecretKey == "" {
 		slog.Warn("s3 client not configured, presigned URLs will use fallback paths",
-			"endpoint_set", endpoint != "",
-			"access_key_set", accessKey != "",
-			"secret_key_set", secretKey != "")
+			"endpoint_set", c.Endpoint != "",
+			"access_key_set", c.AccessKey != "",
+			"secret_key_set", c.SecretKey != "")
 
 		return nil
 	}
 
-	region := os.Getenv("JC_S3_REGION")
+	region := c.Region
 	if region == "" {
 		region = "us-east-1"
 	}
 
-	bucket := os.Getenv("JC_S3_BUCKET")
+	bucket := c.Bucket
 	if bucket == "" {
 		bucket = DefaultBucket
 	}
 
 	return &S3Client{
-		endpoint:   strings.TrimRight(endpoint, "/"),
-		accessKey:  accessKey,
-		secretKey:  secretKey,
+		endpoint:   strings.TrimRight(c.Endpoint, "/"),
+		accessKey:  c.AccessKey,
+		secretKey:  c.SecretKey,
 		region:     region,
 		bucket:     bucket,
 		httpClient: &http.Client{Timeout: 30 * time.Second},
 	}
+}
+
+// NewS3Client creates an S3 client from environment variables.
+// Returns nil if required env vars are missing (graceful degradation).
+//
+// Deprecated: prefer NewS3ClientFromConfig with a config.Config loaded by
+// internal/config (Rule 3). This wrapper is retained for backward
+// compatibility with callers that have not yet been wired with config
+// injection (e.g. standalone tools, tests).
+func NewS3Client() *S3Client {
+	return NewS3ClientFromConfig(S3Config{
+		Endpoint:  os.Getenv("JC_S3_ENDPOINT"),
+		AccessKey: os.Getenv("JC_S3_ACCESS_KEY"),
+		SecretKey: os.Getenv("JC_S3_SECRET_KEY"),
+		Region:    os.Getenv("JC_S3_REGION"),
+		Bucket:    os.Getenv("JC_S3_BUCKET"),
+	})
 }
 
 // PresignPut generates a presigned PUT URL for uploading a file to S3.

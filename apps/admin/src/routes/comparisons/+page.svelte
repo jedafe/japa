@@ -14,6 +14,7 @@
 
 	let comparisons = $state<ComparisonEntry[]>([]);
 	let types = $state<ComparisonType[]>([]);
+	let visibilityOptions = $state<{ value: string; label: string }[]>([]);
 	let loading = $state(true);
 	let errorMessage = $state('');
 	let searchQuery = $state('');
@@ -32,11 +33,17 @@
 	const canEditComparison = $derived(hasPermission('comparison.edit_any') || hasPermission('comparison.edit_own'));
 	const canDeleteComparison = $derived(hasPermission('comparison.delete_any') || hasPermission('comparison.delete_own'));
 
-	const visibilityOptions = [
-		{ value: 'public', label: t('comparisons.vis_public') },
-		{ value: 'members', label: t('comparisons.vis_members') },
-		{ value: 'private', label: t('comparisons.vis_private') }
-	];
+	// Visibility options from GET /content/visibility-options (Rule 16).
+	// Falls back to spec defaults if the API call failed.
+	const visibilityOptionsResolved = $derived(
+		visibilityOptions.length > 0
+			? visibilityOptions
+			: [
+					{ value: 'public', label: t('comparisons.vis_public') },
+					{ value: 'members', label: t('comparisons.vis_members') },
+					{ value: 'private', label: t('comparisons.vis_private') }
+				]
+	);
 
 	const columns = [
 		{ key: 'title', label: t('comparisons.col_title'), sortable: true },
@@ -44,7 +51,7 @@
 		{
 			key: 'visibility',
 			label: t('comparisons.col_visibility'),
-			render: (v: string) => `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium ${v === 'public' ? 'bg-success/15 text-success dark:text-success' : v === 'members' ? 'bg-muted/15 text-muted dark:text-muted' : 'bg-danger/15 text-danger dark:text-danger'}">${visibilityOptions.find((o) => o.value === v)?.label ?? v}</span>`
+			render: (v: string) => `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium ${v === 'public' ? 'bg-success/15 text-success dark:text-success' : v === 'members' ? 'bg-muted/15 text-muted dark:text-muted' : 'bg-danger/15 text-danger dark:text-danger'}">${visibilityOptionsResolved.find((o) => o.value === v)?.label ?? v}</span>`
 		},
 		{
 			key: 'status',
@@ -111,9 +118,10 @@
 		loading = true;
 		errorMessage = '';
 		try {
-			const [compResult, typesResult] = await Promise.all([
+			const [compResult, typesResult, visResult] = await Promise.all([
 				comparisonAdminApi.listComparisons(),
-				comparisonAdminApi.listTypes()
+				comparisonAdminApi.listTypes(),
+				comparisonAdminApi.getVisibilityOptions()
 			]);
 			if (compResult.ok) {
 				comparisons = compResult.data ?? [];
@@ -122,6 +130,12 @@
 			}
 			if (typesResult.ok) {
 				types = typesResult.data ?? [];
+			}
+			if (visResult.ok && visResult.data) {
+				visibilityOptions = visResult.data.map((o) => ({
+					value: o.value,
+					label: t(`comparisons.vis_${o.value}`, o.label)
+				}));
 			}
 		} catch {
 			errorMessage = t('common.error');
@@ -261,7 +275,7 @@
 			</div>
 			<div>
 				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('comparisons.col_visibility')}</p>
-				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{visibilityOptions.find((o) => o.value === viewTarget!.visibility)?.label ?? viewTarget!.visibility}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{visibilityOptionsResolved.find((o) => o.value === viewTarget!.visibility)?.label ?? viewTarget!.visibility}</p>
 			</div>
 			<div>
 				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('comparisons.col_status')}</p>
@@ -312,7 +326,7 @@
 		<div>
 			<label for="cmp-vis" class="mb-1 block text-sm font-medium">{t('comparisons.col_visibility')}</label>
 			<select id="cmp-vis" bind:value={visibility} class="w-full rounded-lg border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-background); color: var(--color-foreground)">
-				{#each visibilityOptions as opt (opt.value)}
+				{#each visibilityOptionsResolved as opt (opt.value)}
 					<option value={opt.value}>{opt.label}</option>
 				{/each}
 			</select>
@@ -344,7 +358,7 @@
 		<div>
 			<label for="cmp-edit-vis" class="mb-1 block text-sm font-medium">{t('comparisons.col_visibility')}</label>
 			<select id="cmp-edit-vis" bind:value={visibility} class="w-full rounded-lg border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-background); color: var(--color-foreground)">
-				{#each visibilityOptions as opt (opt.value)}
+				{#each visibilityOptionsResolved as opt (opt.value)}
 					<option value={opt.value}>{opt.label}</option>
 				{/each}
 			</select>
