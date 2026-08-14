@@ -9,8 +9,9 @@
 	import { Tabs } from '$lib/components/ui/tabs';
 	import { SlideOver } from '$lib/components/ui/slide-over';
 	import type { ActionItem } from '$lib/components/ui/data-table';
-	import { Wand, Plus, RefreshCw, BarChart3, RotateCcw, X, Eye } from 'lucide-svelte';
+	import { Wand, Plus, RefreshCw, BarChart3, RotateCcw, X, Eye, Link2 } from 'lucide-svelte';
 	import { api, apiRaw } from '$lib/api';
+	import { page } from '$app/state';
 
 	type StudioJob = {
 		id: string;
@@ -96,7 +97,8 @@
 		topic_prompt: '',
 		guide_category: '',
 		target_space_id: '',
-		target_tags: ''
+		target_tags: '',
+		intel_record_id: ''
 	});
 
 	const tabs = $derived([
@@ -286,7 +288,7 @@
 		saving = true;
 		message = '';
 		try {
-			const body = {
+			const body: Record<string, unknown> = {
 				persona_id: newJob.persona_id,
 				content_type: newJob.content_type,
 				topic_prompt: newJob.topic_prompt,
@@ -294,12 +296,15 @@
 				target_space_id: newJob.target_space_id || undefined,
 				target_tags: newJob.target_tags ? newJob.target_tags.split(',').map((s: string) => s.trim()).filter(Boolean) : []
 			};
+			if (newJob.intel_record_id) {
+				body.intel_record_id = newJob.intel_record_id;
+			}
 			const result = await api('/admin/studio/jobs', { method: 'POST', body });
 			if (result.ok) {
 				messageType = 'success';
 				message = t('studio.create_success', 'Studio job created.');
 				createJobSlideOverOpen = false;
-				newJob = { persona_id: '', content_type: '', topic_prompt: '', guide_category: '', target_space_id: '', target_tags: '' };
+				newJob = { persona_id: '', content_type: '', topic_prompt: '', guide_category: '', target_space_id: '', target_tags: '', intel_record_id: '' };
 				load();
 			} else {
 				messageType = 'error';
@@ -488,6 +493,24 @@
 		}
 	];
 
+	// Pre-fill the create-job form when navigated from the Intelligence
+	// review page with ?intel_record_id=...&content_type=...&topic_prompt=...
+	$effect(() => {
+		const params = page.url.searchParams;
+		const intelRecordID = params.get('intel_record_id');
+		if (!intelRecordID) return;
+		newJob.intel_record_id = intelRecordID;
+		const ct = params.get('content_type');
+		if (ct) newJob.content_type = ct;
+		const topic = params.get('topic_prompt');
+		if (topic) newJob.topic_prompt = topic;
+		// Open the create-job slide-over and load options (personas, types).
+		loadCreateOptions();
+		createJobSlideOverOpen = true;
+		// Clean the URL so a refresh doesn't re-trigger the pre-fill.
+		history.replaceState({}, '', '/studio');
+	});
+
 	load();
 </script>
 
@@ -644,6 +667,15 @@
 		title={t('studio.create_job_title', 'Create Studio Job')}
 	>
 		<div class="space-y-3">
+			{#if newJob.intel_record_id}
+				<div class="flex items-center gap-2 rounded-md border p-2 text-xs" style="border-color: var(--color-primary); background: color-mix(in srgb, var(--color-primary) 8%, transparent)">
+					<Link2 class="h-3.5 w-3.5 shrink-0" style="color: var(--color-primary)" />
+					<span style="color: var(--color-foreground)">
+						{t('studio.linked_intel_record', 'Linked to Intel Record')}:
+						<span class="font-mono">{newJob.intel_record_id.slice(0, 8)}</span>
+					</span>
+				</div>
+			{/if}
 			<div>
 				<label for="studio-persona" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('studio.persona', 'Persona')}</label>
 				<select id="studio-persona" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={newJob.persona_id}>
