@@ -751,8 +751,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	affiliateService := affiliate.NewServiceWithEnqueuer(database, taskEnqueuer)
 	affiliateService.SetSettings(settingsService) // SETTING-002/003: configurable commission/limits
 	affiliateHandlers := affiliate.NewHandlers(affiliateService)
-	affiliateHandlers.AsynqClient = asynqClient
-	affiliateHandlers.Cache = vkClient.Redis() // jc:aff_dedup + jc:aff_click (Section 56)
+		affiliateHandlers.AsynqClient = asynqClient
+		affiliateHandlers.Cache = vkClient.Redis() // jc:aff_dedup + jc:aff_click (Section 56)
 
 	// i18n Translation System.
 	i18nService := i18n.NewService(database)
@@ -1074,11 +1074,13 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Ref: japaconnect-engineering/sections/79-community-story-wall.md (ADR-087)
 	storyStore := story.NewStore(database)
 	storyService := story.NewService(storyStore, contentService, settingsService)
+	storyService.SetFeatureChecker(featureChecker)
 	storyHandlers := story.NewHandlers(storyService, settingsService)
 
 	// Ref: japaconnect-engineering/sections/80-destination-wiki.md (ADR-088)
 	wikiStore := wiki.NewStore(database)
 	wikiService := wiki.NewService(wikiStore, settingsService)
+	wikiService.SetFeatureChecker(featureChecker)
 	wikiHandlers := wiki.NewHandlers(wikiService, settingsService)
 	// B4/B5: wire the reputation (points) checker and RBAC resolver so the
 	// wiki.edit submission gate can enforce wiki.min_reputation_to_edit and
@@ -1089,6 +1091,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Ref: japaconnect-engineering/sections/81-scam-alert-board.md (ADR-089)
 	scamAlertStore := scamalert.NewStore(database)
 	scamAlertService := scamalert.NewService(scamAlertStore, settingsService)
+	scamAlertService.SetFeatureChecker(featureChecker)
 	scamAlertHandlers := scamalert.NewHandlers(scamAlertService, settingsService)
 	// Wire the Asynq enqueuer for fire-and-forget notification fan-out on
 	// report confirmation (Rule 8), the notification service for
@@ -1126,6 +1129,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Ref: japaconnect-engineering/sections/84-community-digest-widget.md (ADR-092)
 	digestStore := digest.NewStore(database)
 	digestService := digest.NewService(digestStore, settingsService)
+	digestService.SetFeatureChecker(featureChecker)
 	digestService.SetEnqueuer(taskEnqueuer)
 	digestService.SetValkey(vkClient.Redis())
 	digestService.SetEmailDispatcher(emailDispatcher)
@@ -1351,12 +1355,6 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// AI Core subsystem (Section 20 — AI Core).
 	aiDispatcher := ai.NewDispatcher()
 
-	// Wire the AI Gateway dispatcher into the arrival checklist service so
-	// GenerateGuide can invoke the Content Agent (content_generation) to
-	// draft checklist content. Best-effort: a nil/failed call still yields
-	// an ai_draft row for HITL review (ADR-088).
-	arrivalChecklistService.SetDispatcher(aiDispatcher)
-
 	// §102: wire the AI embedder into the mentorship service for
 	// mentor:generate_embedding tasks (ADR-110).
 	mentorshipService.SetEmbedder(ai.NewRAGEmbedder(aiDispatcher))
@@ -1398,6 +1396,13 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		dispatcher:   aiDispatcher,
 		intelStore:   intelStores,
 	})
+
+	// §97: wire the AI Gateway dispatcher into the attestation guide so
+	// GenerateDraft can populate pathway_steps via the content_generation
+	// category (ADR-088). The dispatcher is optional; GenerateDraft falls
+	// back to empty steps if it is nil or the call fails.
+	attestationGuideService.SetDispatcher(aiDispatcher)
+
 	aiHandlers := ai.NewHandlers(aiDispatcher, aiStore)
 	aiHandlers.SetHonchoClient(honcho.NewClient(cfg.HonchoURL))
 	aiHandlers.SetSettings(settingsService) // Rule 3: ai.japabot_enabled global toggle
@@ -2072,7 +2077,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 			// Feature flags endpoint (public - frontend needs flags to
 			// render navigation, no auth required)
-			r.Get("/feature-flags", featureHandlers.HandleGetFeatures)
+			r.Get("/feature-flags", featureHandlers.HandleGetFeatureFlags)
 
 			// Feature flags admin toggle (requires auth + RBAC permission)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.feature_flags.manage")).
@@ -2409,10 +2414,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.pin")).
 				Delete("/content/{id}/pin", contentHandlers.UnpinContent)
 			// Reactions (require auth + permission)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.reactions.add")).Post("/content/{id}/reactions", contentHandlers.AddReaction)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.reactions.remove")).Delete("/content/{id}/reactions/{key}", contentHandlers.RemoveReaction)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/content/{id}/reactions", contentHandlers.ListReactions)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/content/{id}/reactions/me", contentHandlers.ListUserReactions)
+			r.With(features.Gate(featureChecker, "feature.reactions")).Group(func(r chi.Router) {
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.reactions.add")).Post("/content/{id}/reactions", contentHandlers.AddReaction)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.reactions.remove")).Delete("/content/{id}/reactions/{key}", contentHandlers.RemoveReaction)
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/content/{id}/reactions", contentHandlers.ListReactions)
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/content/{id}/reactions/me", contentHandlers.ListUserReactions)
+			})
 			// Content → series lookup (auth-required). Returns the series_id
 			// for a content item so the editor can restore the series selector.
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/content/{id}/series", blogHandlers.GetContentSeries)
@@ -2465,10 +2472,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "link_preview.fetch")).Get("/link-preview", linkPreviewHandlers.Fetch)
 
 			// Content Bookmarks (Section 14 — Content System API)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "bookmarks.create")).Post("/content/{id}/bookmark", contentHandlers.AddBookmark)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "bookmarks.create")).Delete("/content/{id}/bookmark", contentHandlers.RemoveBookmark)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/content/{id}/bookmark", contentHandlers.GetBookmarkStatus)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "bookmarks.create")).Patch("/content/{id}/bookmark/folder", contentHandlers.MoveBookmark)
+			r.With(features.Gate(featureChecker, "feature.bookmarks")).Group(func(r chi.Router) {
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "bookmarks.create")).Post("/content/{id}/bookmark", contentHandlers.AddBookmark)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "bookmarks.create")).Delete("/content/{id}/bookmark", contentHandlers.RemoveBookmark)
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/content/{id}/bookmark", contentHandlers.GetBookmarkStatus)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "bookmarks.create")).Patch("/content/{id}/bookmark/folder", contentHandlers.MoveBookmark)
+			})
 
 			// Content Tags (Section 14 — Content System API)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/content/{id}/tags", contentHandlers.ListContentTags)
@@ -2521,15 +2530,17 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 			// Follow System routes (Section 31 — Follow System)
 			// M5: rate-limit all follow mutation routes to prevent follow spam.
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "follows.toggle"), mw.RateLimit(vkClient.Redis(), "moderate")).Post("/follows", followHandlers.ToggleFollow)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/following", followHandlers.ListMyFollowing)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/followers", followHandlers.ListMyFollowers)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/followed-tags", followHandlers.ListMyFollowedTags)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/users/{user_id}/followers", followHandlers.GetFollowers)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/users/{user_id}/following", followHandlers.GetFollowing)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/users/{user_id}/mutual/{other_user_id}", followHandlers.CheckMutual)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/users/{user_id}/follow-status", followHandlers.GetFollowStatus)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/spaces/{space_id}/followers", followHandlers.GetFollowers)
+			r.With(features.Gate(featureChecker, "feature.follow")).Group(func(r chi.Router) {
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "follows.toggle"), mw.RateLimit(vkClient.Redis(), "moderate")).Post("/follows", followHandlers.ToggleFollow)
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/following", followHandlers.ListMyFollowing)
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/followers", followHandlers.ListMyFollowers)
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/followed-tags", followHandlers.ListMyFollowedTags)
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/users/{user_id}/followers", followHandlers.GetFollowers)
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/users/{user_id}/following", followHandlers.GetFollowing)
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/users/{user_id}/mutual/{other_user_id}", followHandlers.CheckMutual)
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/users/{user_id}/follow-status", followHandlers.GetFollowStatus)
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/spaces/{space_id}/followers", followHandlers.GetFollowers)
+			})
 
 			// User Blocks (Section 41 — user-facing, non-admin)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "interactions.block.manage")).Post("/users/{user_id}/block", interactionsHandlers.BlockUser)
@@ -2545,25 +2556,27 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/muted-spaces", interactionsHandlers.ListMutedSpaces)
 
 			// Notification System routes (Section 35 — Notification System)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/notifications", notificationHandlers.ListNotifications)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/notifications/unread-count", notificationHandlers.GetUnreadCount)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/me/notifications/{id}/read", notificationHandlers.MarkAsRead)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/me/notifications/read-all", notificationHandlers.MarkAllAsRead)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Delete("/me/notifications/{id}", notificationHandlers.DeleteNotification)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/notification-preferences", notificationHandlers.GetPreferences)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Patch("/me/notification-preferences", notificationHandlers.UpdatePreferences)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Patch("/me/notification-preferences/{type}", notificationHandlers.UpdatePreference)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/notification-types", notificationHandlers.ListNotificationTypes)
-
-			// Push Subscription routes (public VAPID key, authenticated subscribe/unsubscribe)
-			// catalog: POST /me/push-tokens, DELETE /me/push-tokens/:id
-			r.Get("/push/vapid-key", notificationHandlers.HandleGetVAPIDKey)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/me/push-tokens", notificationHandlers.HandlePushSubscribe)
-			// BUG-005: catalog route is DELETE /me/push-tokens/:id (path-param id).
-			// The {id} variant is registered below (Task 28 me-additions block) and
-			// uses HandlePushUnsubscribeByID. This body-endpoint variant is kept for
-			// backward compatibility with older clients that key by endpoint.
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Delete("/me/push-tokens", notificationHandlers.HandlePushUnsubscribe)
+			r.With(features.Gate(featureChecker, "feature.notifications")).Group(func(r chi.Router) {
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/notifications", notificationHandlers.ListNotifications)
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/notifications/unread-count", notificationHandlers.GetUnreadCount)
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/me/notifications/{id}/read", notificationHandlers.MarkAsRead)
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/me/notifications/read-all", notificationHandlers.MarkAllAsRead)
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).Delete("/me/notifications/{id}", notificationHandlers.DeleteNotification)
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/notification-preferences", notificationHandlers.GetPreferences)
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).Patch("/me/notification-preferences", notificationHandlers.UpdatePreferences)
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).Patch("/me/notification-preferences/{type}", notificationHandlers.UpdatePreference)
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/notification-types", notificationHandlers.ListNotificationTypes)
+	
+				// Push Subscription routes (public VAPID key, authenticated subscribe/unsubscribe)
+				// catalog: POST /me/push-tokens, DELETE /me/push-tokens/:id
+				r.Get("/push/vapid-key", notificationHandlers.HandleGetVAPIDKey)
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/me/push-tokens", notificationHandlers.HandlePushSubscribe)
+				// BUG-005: catalog route is DELETE /me/push-tokens/:id (path-param id).
+				// The {id} variant is registered below (Task 28 me-additions block) and
+				// uses HandlePushUnsubscribeByID. This body-endpoint variant is kept for
+				// backward compatibility with older clients that key by endpoint.
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).Delete("/me/push-tokens", notificationHandlers.HandlePushUnsubscribe)
+			})
 
 			// Feed routes (Section 32 — Activity Feed / Timeline)
 			r.Get("/feed/card-style", feedHandlers.GetCardStyle)                                            // public — no auth required
@@ -3371,51 +3384,54 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Delete("/admin/ads/networks/{id}", adHandlers.DeleteAdNetwork)
 
 			// Ticket System routes (Section 38 — Ticket System)
+			// Feature-flagged via features.Gate (returns 404 when disabled, ADR-042).
 			// User portal (catalog: /tickets, /me/tickets)
-			r.Get("/ticket-types", ticketHandlers.ListTicketTypes)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tickets.submit")).
-				Post("/tickets", ticketHandlers.CreateTicket)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tickets.view_own")).
-				Get("/me/tickets", ticketHandlers.ListMyTickets)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tickets.view_own")).
-				Get("/me/tickets/{id}", ticketHandlers.GetMyTicket)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tickets.submit")).
-				Post("/me/tickets/{id}/comments", ticketHandlers.AddReply)
-
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tickets.view_own")).
-				Post("/me/tickets/{id}/attachments", ticketHandlers.AddAttachment)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tickets.view_own")).
-				Get("/me/tickets/{id}/attachments", ticketHandlers.ListAttachments)
-
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tickets.view_all")).
-				Get("/admin/tickets", ticketHandlers.ListTickets)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tickets.view_all")).
-				Get("/admin/tickets/{id}", ticketHandlers.GetTicket)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tickets.manage")).
-				Patch("/admin/tickets/{id}", ticketHandlers.UpdateTicket)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tickets.comment.internal")).
-				Post("/admin/tickets/{id}/notes", ticketHandlers.AddInternalNote)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tickets.view_all")).
-				Get("/admin/tickets/{id}/events", ticketHandlers.GetTicketEvents)
-			// Catalog: /admin/tickets/:id/comments accepts { body, is_internal }
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tickets.comment.internal")).
-				Post("/admin/tickets/{id}/comments", ticketHandlers.AddInternalNote)
-			// Delete ticket (admin, spam/test only)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tickets.admin")).
-				Delete("/admin/tickets/{id}", ticketHandlers.DeleteTicket)
-			// Resolve ticket
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tickets.manage")).
-				Post("/admin/tickets/{id}/resolve", ticketHandlers.ResolveTicket)
-
-			// Ticket type management
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tickets.type.manage")).
-				Get("/admin/ticket-types", ticketHandlers.ListTicketTypes)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tickets.type.manage")).
-				Post("/admin/ticket-types", ticketHandlers.CreateTicketType)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tickets.type.manage")).
-				Put("/admin/ticket-types/{id}", ticketHandlers.UpdateTicketType)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tickets.type.manage")).
-				Delete("/admin/ticket-types/{id}", ticketHandlers.DeleteTicketType)
+			r.With(features.Gate(featureChecker, "feature.tickets")).Group(func(r chi.Router) {
+				r.Get("/ticket-types", ticketHandlers.ListTicketTypes)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tickets.submit")).
+					Post("/tickets", ticketHandlers.CreateTicket)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tickets.view_own")).
+					Get("/me/tickets", ticketHandlers.ListMyTickets)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tickets.view_own")).
+					Get("/me/tickets/{id}", ticketHandlers.GetMyTicket)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tickets.submit")).
+					Post("/me/tickets/{id}/comments", ticketHandlers.AddReply)
+	
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tickets.view_own")).
+					Post("/me/tickets/{id}/attachments", ticketHandlers.AddAttachment)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tickets.view_own")).
+					Get("/me/tickets/{id}/attachments", ticketHandlers.ListAttachments)
+	
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tickets.view_all")).
+					Get("/admin/tickets", ticketHandlers.ListTickets)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tickets.view_all")).
+					Get("/admin/tickets/{id}", ticketHandlers.GetTicket)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tickets.manage")).
+					Patch("/admin/tickets/{id}", ticketHandlers.UpdateTicket)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tickets.comment.internal")).
+					Post("/admin/tickets/{id}/notes", ticketHandlers.AddInternalNote)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tickets.view_all")).
+					Get("/admin/tickets/{id}/events", ticketHandlers.GetTicketEvents)
+				// Catalog: /admin/tickets/:id/comments accepts { body, is_internal }
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tickets.comment.internal")).
+					Post("/admin/tickets/{id}/comments", ticketHandlers.AddInternalNote)
+				// Delete ticket (admin, spam/test only)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tickets.admin")).
+					Delete("/admin/tickets/{id}", ticketHandlers.DeleteTicket)
+				// Resolve ticket
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tickets.manage")).
+					Post("/admin/tickets/{id}/resolve", ticketHandlers.ResolveTicket)
+	
+				// Ticket type management
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tickets.type.manage")).
+					Get("/admin/ticket-types", ticketHandlers.ListTicketTypes)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tickets.type.manage")).
+					Post("/admin/ticket-types", ticketHandlers.CreateTicketType)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tickets.type.manage")).
+					Put("/admin/ticket-types/{id}", ticketHandlers.UpdateTicketType)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tickets.type.manage")).
+					Delete("/admin/ticket-types/{id}", ticketHandlers.DeleteTicketType)
+			})
 
 			// i18n Translation management (admin) — catalog: /admin/i18n/*.
 			// NOTE: Upsert/UpsertBatch are MANUAL value-setting handlers, not the
@@ -4082,52 +4098,56 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// ── User Affiliate Program (Section 56) ────────────────────
 
 			// Public program info
-			r.Get("/affiliate-program", affiliateHandlers.GetProgramInfo)
-
-			// Enrollment (auth + affiliate.program.enroll — Section 56 RBAC)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "affiliate.program.enroll")).
-				Post("/affiliate-program/enroll", affiliateHandlers.Enroll)
-
-			// User's own affiliate links (auth + affiliate.links.manage)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "affiliate.links.manage")).
-				Get("/me/affiliate-links", affiliateHandlers.ListMyLinks)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "affiliate.links.manage")).
-				Post("/me/affiliate-links", affiliateHandlers.CreateMyLink)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "affiliate.links.manage")).
-				Get("/me/affiliate-links/{id}", affiliateHandlers.GetMyLink)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "affiliate.links.manage")).
-				Patch("/me/affiliate-links/{id}", affiliateHandlers.UpdateMyLink)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "affiliate.links.manage")).
-				Delete("/me/affiliate-links/{id}", affiliateHandlers.DeleteMyLink)
-
-			// Earnings summary (auth + affiliate.links.manage)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "affiliate.links.manage")).
-				Get("/me/affiliate-earnings", affiliateHandlers.GetMyEarnings)
-
-			// Affiliate redirect (public — no auth)
-			r.Get("/r/{code}", affiliateHandlers.Redirect)
-
-			// Admin: affiliate program management
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "affiliate.admin.view")).
-				Get("/admin/affiliate-program/members", affiliateHandlers.ListMembersAdmin)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "affiliate.admin.manage")).
-				Patch("/admin/affiliate-program/members/{user_id}", affiliateHandlers.UpdateMemberStatusAdmin)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "affiliate.admin.view")).
-				Get("/admin/affiliate-links", affiliateHandlers.ListAllLinksAdmin)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "affiliate.admin.manage")).
-				Delete("/admin/affiliate-links/{id}", affiliateHandlers.DeleteLinkAdmin)
+			r.With(features.Gate(featureChecker, "feature.affiliate_program")).Group(func(r chi.Router) {
+				r.Get("/affiliate-program", affiliateHandlers.GetProgramInfo)
+	
+				// Enrollment (auth + affiliate.program.enroll — Section 56 RBAC)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "affiliate.program.enroll")).
+					Post("/affiliate-program/enroll", affiliateHandlers.Enroll)
+	
+				// User's own affiliate links (auth + affiliate.links.manage)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "affiliate.links.manage")).
+					Get("/me/affiliate-links", affiliateHandlers.ListMyLinks)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "affiliate.links.manage")).
+					Post("/me/affiliate-links", affiliateHandlers.CreateMyLink)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "affiliate.links.manage")).
+					Get("/me/affiliate-links/{id}", affiliateHandlers.GetMyLink)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "affiliate.links.manage")).
+					Patch("/me/affiliate-links/{id}", affiliateHandlers.UpdateMyLink)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "affiliate.links.manage")).
+					Delete("/me/affiliate-links/{id}", affiliateHandlers.DeleteMyLink)
+	
+				// Earnings summary (auth + affiliate.links.manage)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "affiliate.links.manage")).
+					Get("/me/affiliate-earnings", affiliateHandlers.GetMyEarnings)
+	
+				// Affiliate redirect (public — no auth)
+				r.Get("/r/{code}", affiliateHandlers.Redirect)
+	
+				// Admin: affiliate program management
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "affiliate.admin.view")).
+					Get("/admin/affiliate-program/members", affiliateHandlers.ListMembersAdmin)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "affiliate.admin.manage")).
+					Patch("/admin/affiliate-program/members/{user_id}", affiliateHandlers.UpdateMemberStatusAdmin)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "affiliate.admin.view")).
+					Get("/admin/affiliate-links", affiliateHandlers.ListAllLinksAdmin)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "affiliate.admin.manage")).
+					Delete("/admin/affiliate-links/{id}", affiliateHandlers.DeleteLinkAdmin)
+			})
 
 			// Referral Program admin routes (Section 34 — Referral)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "referral.manage")).
-				Get("/admin/referral/program", referralHandlers.GetProgram)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "referral.manage")).
-				Put("/admin/referral/program", referralHandlers.UpdateProgram)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "referral.manage")).
-				Get("/admin/referral/referrals", referralHandlers.ListReferrals)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "referral.manage")).
-				Get("/admin/referral/referrals/{id}", referralHandlers.GetReferral)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "referral.manage")).
-				Delete("/admin/referral/referrals/{id}", referralHandlers.DeleteReferral)
+			r.With(features.Gate(featureChecker, "feature.referral")).Group(func(r chi.Router) {
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "referral.manage")).
+					Get("/admin/referral/program", referralHandlers.GetProgram)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "referral.manage")).
+					Put("/admin/referral/program", referralHandlers.UpdateProgram)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "referral.manage")).
+					Get("/admin/referral/referrals", referralHandlers.ListReferrals)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "referral.manage")).
+					Get("/admin/referral/referrals/{id}", referralHandlers.GetReferral)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "referral.manage")).
+					Delete("/admin/referral/referrals/{id}", referralHandlers.DeleteReferral)
+			})
 
 			// Mentorship admin routes (Section 35 — Mentorship)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "mentorship.admin")).
@@ -4816,10 +4836,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Post("/admin/content/{id}/restore", adminHandlers.RestoreContent)
 
 			// Task 24: Affiliate admin commission rates
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "affiliate.admin.manage")).
-				Get("/admin/affiliate-program/commission-rates", affiliateHandlers.GetCommissionRates)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "affiliate.admin.manage")).
-				Patch("/admin/affiliate-program/commission-rates", affiliateHandlers.UpdateCommissionRates)
+			r.With(features.Gate(featureChecker, "feature.affiliate_program")).Group(func(r chi.Router) {
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "affiliate.admin.manage")).
+					Get("/admin/affiliate-program/commission-rates", affiliateHandlers.GetCommissionRates)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "affiliate.admin.manage")).
+						Patch("/admin/affiliate-program/commission-rates", affiliateHandlers.UpdateCommissionRates)
+			})
 
 			// Affiliate enhancements: author revenue sharing + unregistered link detection
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "affiliate.admin.manage")).
