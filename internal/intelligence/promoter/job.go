@@ -4,16 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"html"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/jedafe/japa/internal/content"
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/intelligence/extractor"
-	"github.com/jedafe/japa/internal/intelligence/reviewerctx"
 )
 
 // JobStore is the persistence surface the JobPromoter needs.
@@ -25,8 +22,7 @@ type JobStore interface {
 	GetIntelJobByIntelRecord(ctx context.Context, tenantID, intelRecordID pgtype.UUID) (gen.IntelJob, error)
 	CreateIntelJob(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateIntelJobParams) (gen.IntelJob, error)
 	UpdateIntelJob(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateIntelJobParams) error
-	CreateContent(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateContentParams) (gen.CreateContentRow, error)
-	UpdateIntelRecordPromoted(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateIntelRecordPromotedParams) error
+	UpdateIntelRecordStatus(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateIntelRecordStatusParams) error
 	CreateIntelReviewLog(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateIntelReviewLogParams) error
 	GetCountrySpace(ctx context.Context, tenantID pgtype.UUID, countryCode string) (pgtype.UUID, error)
 	WithTx(ctx context.Context, fn func(JobTxStore) error) error
@@ -34,17 +30,18 @@ type JobStore interface {
 
 // JobTxStore is the subset of JobStore needed inside a transaction.
 type JobTxStore interface {
-	CreateContent(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateContentParams) (gen.CreateContentRow, error)
 	CreateIntelJob(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateIntelJobParams) (gen.IntelJob, error)
-	UpdateIntelRecordPromoted(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateIntelRecordPromotedParams) error
+	UpdateIntelRecordStatus(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateIntelRecordStatusParams) error
 	UpdateIntelJob(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateIntelJobParams) error
 	CreateIntelReviewLog(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateIntelReviewLogParams) error
 }
 
 // JobPromoter promotes job intel_records into the intel_jobs projection
-// table plus a contents guide entry. It implements the editorial-override
-// invariant: on the update path, any field in editorial_overrides is left
-// untouched so a human edit always wins over a re-crawl.
+// table. It implements the editorial-override invariant: on the update
+// path, any field in editorial_overrides is left untouched so a human edit
+// always wins over a re-crawl. The contents guide row is NO LONGER created
+// here — Studio generates it from the extraction data via intel_record_id
+// (ADR-076 Amendment 1).
 type JobPromoter struct {
 	store    JobStore
 	tenantID pgtype.UUID
@@ -107,16 +104,11 @@ func (p *JobPromoter) Promote(ctx context.Context, recordID uuid.UUID) (PromoteR
 	return p.jobUpdatePath(ctx, record, existing, ext)
 }
 
+// jobCreatePath inserts the intel_jobs projection row and flips the intel
+// record to 'extracted' status. The contents guide row is NO LONGER created
+// here — Studio generates it from the extraction data via intel_record_id
+// (ADR-076 Amendment 1).
 func (p *JobPromoter) jobCreatePath(ctx context.Context, record gen.IntelRecord, source gen.IntelSource, ext extractor.Extraction) (PromoteResult, error) {
-	title := stringField(ext, "title")
-	if title == "" {
-		title = source.Name
-	}
-	body := bodyFromJobExtraction(ext, title)
-	slug := content.Slugify(title)
-	hash := content.ComputeContentHash(body)
-	canonicalURL := source.SourceUrl
-
 	countryCode := firstCountry(ext, "country")
 	var countrySpaceID pgtype.UUID
 	if countryCode != "" {
@@ -125,59 +117,32 @@ func (p *JobPromoter) jobCreatePath(ctx context.Context, record gen.IntelRecord,
 		}
 	}
 
-	contentParams := gen.CreateContentParams{
-		TenantID:        p.tenantID,
-		AuthorID:        resolveAuthorID(ctx, p.store, source, p.tenantID, p.authorID),
-		FieldValues:     []byte(`{}`),
-		ContentType:     "guide",
-		Title:           title,
-		Slug:            slug,
-		Body:            body,
-		BodyHtml:        "<p>" + html.EscapeString(body) + "</p>",
-		ContentHash:     &hash,
-		CanonicalUrl:    &canonicalURL,
-		Status:          "published",
-		Visibility:      "public",
-		SeoIndexable:    true,
-		ReadTimeMinutes: content.ComputeReadTime(body),
-		GuideCategory:   ptr("work_career"),
-		PublishAt:       pgtype.Timestamptz{Time: p.now(), Valid: true},
-		PublishedAt:     pgtype.Timestamptz{Time: p.now(), Valid: true},
-		AiGenerated:     true,      // ADR-088: mark as AI-generated (INTEL-003)
-		AiModel:         p.aiModel, // from intel.extraction_model system setting
-		AiGeneratedAt:   pgtype.Timestamptz{Time: p.now(), Valid: true},
-	}
-	// INTEL-026 fix: stamp hitl_reviewed_by when a human approved the record.
-	if reviewerID, ok := reviewerctx.ReviewerFromContext(ctx); ok {
-		contentParams.HitlReviewedBy = reviewerID
-		contentParams.HitlReviewedAt = pgtype.Timestamptz{Time: p.now(), Valid: true}
-	}
-	jobParams := buildJobCreateParams(record, source, pgtype.UUID{}, ext)
+	jobParams := buildJobCreateParams(record, source, pgtype.UUID{}, ext) // guide_id NULL — Studio fills it later
 	jobParams.CountrySpaceID = countrySpaceID
 
 	var result PromoteResult
 	err := p.store.WithTx(ctx, func(tx JobTxStore) error {
-		contentRow, err := tx.CreateContent(ctx, p.tenantID, contentParams)
-		if err != nil {
-			return fmt.Errorf("promoter: create guide content: %w", err)
-		}
-		jobParams.GuideID = contentRow.ID
 		job, err := tx.CreateIntelJob(ctx, p.tenantID, jobParams)
 		if err != nil {
 			return fmt.Errorf("promoter: create job: %w", err)
 		}
-		if err := tx.UpdateIntelRecordPromoted(ctx, p.tenantID, gen.UpdateIntelRecordPromotedParams{
-			ID:               record.ID,
-			PromotedRecordID: job.ID,
+		if err := tx.UpdateIntelRecordStatus(ctx, p.tenantID, gen.UpdateIntelRecordStatusParams{
+			ID:     record.ID,
+			Status: "extracted",
 		}); err != nil {
-			return fmt.Errorf("promoter: mark intel record promoted: %w", err)
+			return fmt.Errorf("promoter: mark intel record extracted: %w", err)
 		}
-		result = PromoteResult{DomainID: pgToUUID(job.ID), ContentID: pgToUUID(contentRow.ID), Action: ActionCreated}
+		result = PromoteResult{DomainID: pgToUUID(job.ID), ContentID: uuid.Nil, Action: ActionCreated}
 		return nil
 	})
 	return result, err
 }
 
+// jobUpdatePath applies the new extraction to the existing intel_jobs row,
+// skipping any field present in editorial_overrides, and records an
+// auto_update review-log entry when fields actually change. ContentID is
+// derived from existing.GuideID, which may be NULL (uuid.Nil) when Studio
+// has not yet generated the editorial guide row (ADR-076 Amendment 1).
 func (p *JobPromoter) jobUpdatePath(ctx context.Context, record gen.IntelRecord, existing gen.IntelJob, ext extractor.Extraction) (PromoteResult, error) {
 	overrides, err := parseOverrideKeys(existing.EditorialOverrides)
 	if err != nil {
@@ -381,11 +346,4 @@ func marshalJobFieldChanges(existing gen.IntelJob, params gen.UpdateIntelJobPara
 		changes = append(changes, fc)
 	}
 	return json.Marshal(changes)
-}
-
-func bodyFromJobExtraction(ext extractor.Extraction, title string) string {
-	if desc := stringField(ext, "description_summary"); desc != "" {
-		return desc
-	}
-	return title
 }
