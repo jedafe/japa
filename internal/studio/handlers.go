@@ -14,6 +14,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
+	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/personas"
 	"github.com/jedafe/japa/internal/tenant"
 )
@@ -24,10 +25,18 @@ type personaLister interface {
 	ListPersonas(ctx context.Context, tenantID pgtype.UUID, status, q, sort, dir string, limit, offset int32) ([]personas.PersonaListItem, int64, error)
 }
 
+// intelRecordGetter is the subset of the intelligence store needed to
+// validate that an intel_record_id provided to the create-job API exists
+// and belongs to the same tenant.
+type intelRecordGetter interface {
+	GetIntelRecord(ctx context.Context, tenantID, id pgtype.UUID) (gen.IntelRecord, error)
+}
+
 // Handlers holds the HTTP handlers for the studio admin API.
 type Handlers struct {
-	svc      *Service
-	personas personaLister
+	svc        *Service
+	personas   personaLister
+	intelStore intelRecordGetter
 }
 
 // NewHandlers creates Handlers wrapping the given service.
@@ -38,6 +47,10 @@ func NewHandlers(svc *Service) *Handlers {
 // SetPersonaService injects the personas service for the studio persona
 // dropdown endpoint (called at server wiring time).
 func (h *Handlers) SetPersonaService(p personaLister) { h.personas = p }
+
+// SetIntelStore injects the intelligence store for intel_record_id
+// validation on the create-job endpoint (called at server wiring time).
+func (h *Handlers) SetIntelStore(s intelRecordGetter) { h.intelStore = s }
 
 func (h *Handlers) writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
@@ -151,6 +164,14 @@ func (h *Handlers) HandleCreateJob(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
 		h.writeError(w, http.StatusBadRequest, "bad_json", "invalid request body")
 		return
+	}
+
+	// Approach B: validate intel_record_id if provided (optional field).
+	if in.IntelRecordID.Valid && h.intelStore != nil {
+		if _, err := h.intelStore.GetIntelRecord(r.Context(), tenantID, in.IntelRecordID); err != nil {
+			h.writeError(w, http.StatusBadRequest, "intel_record_not_found", "intel_record_id does not exist or does not belong to this tenant")
+			return
+		}
 	}
 
 	job, err := h.svc.CreateJob(r.Context(), tenantID, user.UserID, in)
