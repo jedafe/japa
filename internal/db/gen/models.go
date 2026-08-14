@@ -1122,6 +1122,7 @@ type CredentialPathway struct {
 	CreatedAt              pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt              pgtype.Timestamptz `json:"updated_at"`
 	IsJapabotIndexed       *bool              `json:"is_japabot_indexed"`
+	GuideID                pgtype.UUID        `json:"guide_id"`
 }
 
 type CredentialProfession struct {
@@ -1667,6 +1668,7 @@ type HousingGuide struct {
 	FreshnessScore       int32              `json:"freshness_score"`
 	OverrideSource       string             `json:"override_source"`
 	EditorialOverrides   []byte             `json:"editorial_overrides"`
+	GuideID              pgtype.UUID        `json:"guide_id"`
 }
 
 // Aggregated periodic creator payout; rolls up revenue_splits (ADR-063).
@@ -3379,6 +3381,7 @@ type StudioJob struct {
 	ErrorMessage   *string            `json:"error_message"`
 	CreatedBy      pgtype.UUID        `json:"created_by"`
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	IntelRecordID  pgtype.UUID        `json:"intel_record_id"`
 }
 
 type Subscription struct {
@@ -3885,6 +3888,7 @@ type VisaRoute struct {
 	FreshnessScore       int32              `json:"freshness_score"`
 	OverrideSource       string             `json:"override_source"`
 	EditorialOverrides   []byte             `json:"editorial_overrides"`
+	GuideID              pgtype.UUID        `json:"guide_id"`
 }
 
 type VisaTimeline struct {

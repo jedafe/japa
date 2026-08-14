@@ -75,10 +75,10 @@ INSERT INTO visa_routes (
   eligibility_summary, requirements_json, typical_fee_usd, path_to_pr,
   renewal_terms, restrictions, gov_source_url, status, is_active,
   intel_record_id, confidence_overall, verification_status, freshness_score,
-  override_source, editorial_overrides
+  override_source, editorial_overrides, guide_id
 ) VALUES (
   $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-  $11, $12, $13, $14, $15, $16, $17, $18, $19, $20
+  $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21
 ) RETURNING *;
 
 -- name: GetVisaRouteByIntelRecord :one
@@ -114,10 +114,10 @@ INSERT INTO housing_guides (
   search_platforms, landlord_requirements, rent_ranges, scam_categories,
   tips, status, is_active,
   intel_record_id, confidence_overall, verification_status, freshness_score,
-  override_source, editorial_overrides
+  override_source, editorial_overrides, guide_id
 ) VALUES (
   $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-  $11, $12, $13, $14, $15, $16, $17
+  $11, $12, $13, $14, $15, $16, $17, $18
 ) RETURNING *;
 
 -- name: GetHousingGuideByIntelRecord :one
