@@ -1154,6 +1154,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Ref: japaconnect-engineering/sections/85-mutual-aid-board.md (ADR-093)
 	mutualAidStore := mutualaid.NewStore(database)
 	mutualAidService := mutualaid.NewService(mutualAidStore, settingsService)
+	mutualAidService.SetNotifier(notificationService)
 	mutualAidHandlers := mutualaid.NewHandlers(mutualAidService, settingsService)
 	// Wire RBAC resolver for post_type-specific permission checks
 	// (create_need, create_skill_swap) and wallet service for the
@@ -1762,6 +1763,15 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		intelPreflightChecker,        // pre-flight: crawl lock, rate limit, robots.txt (INTEL-001/006 fix)
 		asynqClient,
 	)
+
+	// ADR-076 Amendment 1: wire the Studio auto-promote port so
+	// HandleIntelPromote can auto-create Studio jobs for high-confidence
+	// extracted records when studio.auto_promote_intel_records is true.
+	worker.RegisterIntelStudioAutoPromoter(&studioAutoPromoterAdapter{
+		svc:      studioService,
+		settings: settingsService,
+		authorID: intelDefaultAuthorID,
+	})
 
 	// HTTP handlers for the /api/v1/intel/* routes. The radar reuses the
 	// existing follows service (entity_type "space") and scholarships
@@ -5843,9 +5853,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Provider bounce/complaint webhook (§62 Compliance, ADR-080 §4).
 			// Authenticated via X-Webhook-Secret shared secret, not user auth.
 			r.Post("/newsletter/webhook", newsletterHandlers.HandleWebhook)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).
+			// Subscriber preferences — gated by newsletter.subscribe (§62 RBAC,
+			// ADR-080 §6: "subscribe/unsubscribe own email").
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "newsletter.subscribe")).
 				Get("/newsletter/preferences", newsletterHandlers.HandleGetPreferences)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "newsletter.subscribe")).
 				Patch("/newsletter/preferences", newsletterHandlers.HandleUpdatePreferences)
 			// Admin newsletter stats (Section 62).
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "newsletter.manage")).
