@@ -751,8 +751,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	affiliateService := affiliate.NewServiceWithEnqueuer(database, taskEnqueuer)
 	affiliateService.SetSettings(settingsService) // SETTING-002/003: configurable commission/limits
 	affiliateHandlers := affiliate.NewHandlers(affiliateService)
-		affiliateHandlers.AsynqClient = asynqClient
-		affiliateHandlers.Cache = vkClient.Redis() // jc:aff_dedup + jc:aff_click (Section 56)
+	affiliateHandlers.AsynqClient = asynqClient
+	affiliateHandlers.Cache = vkClient.Redis() // jc:aff_dedup + jc:aff_click (Section 56)
 
 	// i18n Translation System.
 	i18nService := i18n.NewService(database)
@@ -1690,6 +1690,18 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		schemas.EntityTypeCultureLifestyle: &intelPromoterPortAdapter{
 			prom: promoter.NewGuideContentPromoter(&intelGuidePromoterStoreAdapter{Store: intelStores}, defaultTenantID, intelDefaultAuthorID, "culture_lifestyle", "culture_lifestyle", promoter.WithGuideContentAIModel(intelExtractionModel)),
 		},
+		schemas.EntityTypeWikiPage: &intelPromoterPortAdapter{
+			prom: promoter.NewWikiPromoter(&intelWikiPromoterStoreAdapter{Store: intelStores}, defaultTenantID, intelDefaultAuthorID, promoter.WithWikiAIModel(intelExtractionModel)),
+		},
+		schemas.EntityTypeLanguageTest: &intelPromoterPortAdapter{
+			prom: promoter.NewLanguageTestPromoter(&intelLanguageTestPromoterStoreAdapter{Store: intelStores}, defaultTenantID, intelDefaultAuthorID, promoter.WithLanguageTestAIModel(intelExtractionModel)),
+		},
+		schemas.EntityTypeTaxObligation: &intelPromoterPortAdapter{
+			prom: promoter.NewTaxPromoter(&intelTaxPromoterStoreAdapter{Store: intelStores}, defaultTenantID, intelDefaultAuthorID, promoter.WithTaxAIModel(intelExtractionModel)),
+		},
+		schemas.EntityTypeCommunityOrganisation: &intelPromoterPortAdapter{
+			prom: promoter.NewCommunityOrgPromoter(&intelCommunityOrgPromoterStoreAdapter{Store: intelStores}, defaultTenantID, intelDefaultAuthorID, promoter.WithCommunityOrgAIModel(intelExtractionModel)),
+		},
 	}
 
 	// Register the intelligence spine dependencies with the worker package
@@ -2567,7 +2579,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).Patch("/me/notification-preferences", notificationHandlers.UpdatePreferences)
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).Patch("/me/notification-preferences/{type}", notificationHandlers.UpdatePreference)
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/notification-types", notificationHandlers.ListNotificationTypes)
-	
+
 				// Push Subscription routes (public VAPID key, authenticated subscribe/unsubscribe)
 				// catalog: POST /me/push-tokens, DELETE /me/push-tokens/:id
 				r.Get("/push/vapid-key", notificationHandlers.HandleGetVAPIDKey)
@@ -3397,12 +3409,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Get("/me/tickets/{id}", ticketHandlers.GetMyTicket)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tickets.submit")).
 					Post("/me/tickets/{id}/comments", ticketHandlers.AddReply)
-	
+
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tickets.view_own")).
 					Post("/me/tickets/{id}/attachments", ticketHandlers.AddAttachment)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tickets.view_own")).
 					Get("/me/tickets/{id}/attachments", ticketHandlers.ListAttachments)
-	
+
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tickets.view_all")).
 					Get("/admin/tickets", ticketHandlers.ListTickets)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tickets.view_all")).
@@ -3422,7 +3434,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				// Resolve ticket
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tickets.manage")).
 					Post("/admin/tickets/{id}/resolve", ticketHandlers.ResolveTicket)
-	
+
 				// Ticket type management
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tickets.type.manage")).
 					Get("/admin/ticket-types", ticketHandlers.ListTicketTypes)
@@ -4101,11 +4113,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Public program info
 			r.With(features.Gate(featureChecker, "feature.affiliate_program")).Group(func(r chi.Router) {
 				r.Get("/affiliate-program", affiliateHandlers.GetProgramInfo)
-	
+
 				// Enrollment (auth + affiliate.program.enroll — Section 56 RBAC)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "affiliate.program.enroll")).
 					Post("/affiliate-program/enroll", affiliateHandlers.Enroll)
-	
+
 				// User's own affiliate links (auth + affiliate.links.manage)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "affiliate.links.manage")).
 					Get("/me/affiliate-links", affiliateHandlers.ListMyLinks)
@@ -4117,14 +4129,14 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Patch("/me/affiliate-links/{id}", affiliateHandlers.UpdateMyLink)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "affiliate.links.manage")).
 					Delete("/me/affiliate-links/{id}", affiliateHandlers.DeleteMyLink)
-	
+
 				// Earnings summary (auth + affiliate.links.manage)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "affiliate.links.manage")).
 					Get("/me/affiliate-earnings", affiliateHandlers.GetMyEarnings)
-	
+
 				// Affiliate redirect (public — no auth)
 				r.Get("/r/{code}", affiliateHandlers.Redirect)
-	
+
 				// Admin: affiliate program management
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "affiliate.admin.view")).
 					Get("/admin/affiliate-program/members", affiliateHandlers.ListMembersAdmin)
@@ -4841,7 +4853,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "affiliate.admin.manage")).
 					Get("/admin/affiliate-program/commission-rates", affiliateHandlers.GetCommissionRates)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "affiliate.admin.manage")).
-						Patch("/admin/affiliate-program/commission-rates", affiliateHandlers.UpdateCommissionRates)
+					Patch("/admin/affiliate-program/commission-rates", affiliateHandlers.UpdateCommissionRates)
 			})
 
 			// Affiliate enhancements: author revenue sharing + unregistered link detection

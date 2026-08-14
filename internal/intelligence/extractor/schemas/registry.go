@@ -16,19 +16,23 @@ package schemas
 // category on intel_sources.category maps to one of these via
 // CategoryToEntityType.
 const (
-	EntityTypeScholarship      = "scholarship"
-	EntityTypeJob              = "job"
-	EntityTypeVisa             = "visa"
-	EntityTypeRemittance       = "remittance"
-	EntityTypeCostOfLiving     = "cost_of_living"
-	EntityTypeHousing          = "housing"
-	EntityTypeTravelRoutes     = "travel_routes"
-	EntityTypeGrants           = "grants"
-	EntityTypeAdmission        = "admission"
-	EntityTypeBanking          = "banking"
-	EntityTypeWorkCareer       = "work_career"
-	EntityTypeHealthInsurance  = "health_insurance"
-	EntityTypeCultureLifestyle = "culture_lifestyle"
+	EntityTypeScholarship           = "scholarship"
+	EntityTypeJob                   = "job"
+	EntityTypeVisa                  = "visa"
+	EntityTypeRemittance            = "remittance"
+	EntityTypeCostOfLiving          = "cost_of_living"
+	EntityTypeHousing               = "housing"
+	EntityTypeTravelRoutes          = "travel_routes"
+	EntityTypeGrants                = "grants"
+	EntityTypeAdmission             = "admission"
+	EntityTypeBanking               = "banking"
+	EntityTypeWorkCareer            = "work_career"
+	EntityTypeHealthInsurance       = "health_insurance"
+	EntityTypeCultureLifestyle      = "culture_lifestyle"
+	EntityTypeWikiPage              = "wiki_page"
+	EntityTypeLanguageTest          = "language_test_requirement"
+	EntityTypeTaxObligation         = "tax_obligation_guide"
+	EntityTypeCommunityOrganisation = "community_organisation"
 )
 
 // registry maps entity_type → EntitySchema. Populated by init() so the

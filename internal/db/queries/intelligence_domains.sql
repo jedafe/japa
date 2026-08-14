@@ -285,6 +285,13 @@ WHERE tenant_id = $1
 ORDER BY created_at DESC, id DESC
 LIMIT $4;
 
+-- name: GetLanguageTestByName :one
+-- language_tests is a global reference table (no tenant_id), so the
+-- tenantID parameter is accepted for interface consistency but not used
+-- in the filter. The promoter resolves the language_tests(id) FK from a
+-- test_name extracted as free text.
+SELECT * FROM language_tests WHERE name = $1 LIMIT 1;
+
 -- ===========================================================================
 -- tax_obligation_guides (intelligence columns added by migration 000469)
 -- ===========================================================================
