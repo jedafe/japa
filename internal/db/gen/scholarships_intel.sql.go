@@ -11,6 +11,104 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const adminCountScholarships = `-- name: AdminCountScholarships :one
+SELECT COUNT(*) FROM scholarships
+WHERE tenant_id = $1
+  AND ($2::text IS NULL OR $2 = '' OR title ILIKE '%' || $2 || '%' OR university ILIKE '%' || $2 || '%' OR country ILIKE '%' || $2 || '%')
+  AND ($3::text IS NULL OR $3 = '' OR verification_status = $3)
+`
+
+type AdminCountScholarshipsParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	Column2  string      `json:"column_2"`
+	Column3  string      `json:"column_3"`
+}
+
+// Total row count for the admin management list with the same q + status
+// filter as AdminListScholarships, so the admin panel can compute total pages.
+func (q *Queries) AdminCountScholarships(ctx context.Context, arg AdminCountScholarshipsParams) (int64, error) {
+	row := q.db.QueryRow(ctx, adminCountScholarships, arg.TenantID, arg.Column2, arg.Column3)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const adminListScholarships = `-- name: AdminListScholarships :many
+SELECT id, intel_record_id, guide_id, source_url, source_type, trust_level, title, description, country, country_space_id, university, degree_level, fields_of_study, eligible_countries, funding, deadline, application_url, required_documents, minimum_gpa, language_requirements, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, last_verified_at, created_at, updated_at, tenant_id FROM scholarships
+WHERE tenant_id = $1
+  AND ($2::text IS NULL OR $2 = '' OR title ILIKE '%' || $2 || '%' OR university ILIKE '%' || $2 || '%' OR country ILIKE '%' || $2 || '%')
+  AND ($3::text IS NULL OR $3 = '' OR verification_status = $3)
+ORDER BY created_at DESC
+LIMIT $4 OFFSET $5
+`
+
+type AdminListScholarshipsParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	Column2  string      `json:"column_2"`
+	Column3  string      `json:"column_3"`
+	Limit    int32       `json:"limit"`
+	Offset   int32       `json:"offset"`
+}
+
+// Admin management list with optional text search (q) and verification_status
+// filter. q matches title, university, or country case-insensitively. Drives
+// the /admin/scholarships list endpoint (Section 73).
+func (q *Queries) AdminListScholarships(ctx context.Context, arg AdminListScholarshipsParams) ([]Scholarship, error) {
+	rows, err := q.db.Query(ctx, adminListScholarships,
+		arg.TenantID,
+		arg.Column2,
+		arg.Column3,
+		arg.Limit,
+		arg.Offset,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Scholarship
+	for rows.Next() {
+		var i Scholarship
+		if err := rows.Scan(
+			&i.ID,
+			&i.IntelRecordID,
+			&i.GuideID,
+			&i.SourceUrl,
+			&i.SourceType,
+			&i.TrustLevel,
+			&i.Title,
+			&i.Description,
+			&i.Country,
+			&i.CountrySpaceID,
+			&i.University,
+			&i.DegreeLevel,
+			&i.FieldsOfStudy,
+			&i.EligibleCountries,
+			&i.Funding,
+			&i.Deadline,
+			&i.ApplicationUrl,
+			&i.RequiredDocuments,
+			&i.MinimumGpa,
+			&i.LanguageRequirements,
+			&i.ConfidenceOverall,
+			&i.VerificationStatus,
+			&i.FreshnessScore,
+			&i.OverrideSource,
+			&i.EditorialOverrides,
+			&i.LastVerifiedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.TenantID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const countScholarshipsByCountry = `-- name: CountScholarshipsByCountry :many
 SELECT country, count(*) as count FROM scholarships WHERE tenant_id = $1 GROUP BY country
 `
@@ -780,6 +878,7 @@ SET title = $3, description = $4, country = $5, country_space_id = $6, universit
     deadline = $12, application_url = $13, required_documents = $14, minimum_gpa = $15,
     language_requirements = $16, confidence_overall = $17, verification_status = $18,
     freshness_score = $19, override_source = $20, editorial_overrides = $21,
+    source_url = $22, source_type = $23, trust_level = $24,
     last_verified_at = now(), updated_at = now()
 WHERE tenant_id = $1 AND id = $2
 `
@@ -806,6 +905,9 @@ type UpdateScholarshipParams struct {
 	FreshnessScore       int32          `json:"freshness_score"`
 	OverrideSource       string         `json:"override_source"`
 	EditorialOverrides   []byte         `json:"editorial_overrides"`
+	SourceUrl            string         `json:"source_url"`
+	SourceType           string         `json:"source_type"`
+	TrustLevel           int16          `json:"trust_level"`
 }
 
 func (q *Queries) UpdateScholarship(ctx context.Context, arg UpdateScholarshipParams) error {
@@ -831,6 +933,9 @@ func (q *Queries) UpdateScholarship(ctx context.Context, arg UpdateScholarshipPa
 		arg.FreshnessScore,
 		arg.OverrideSource,
 		arg.EditorialOverrides,
+		arg.SourceUrl,
+		arg.SourceType,
+		arg.TrustLevel,
 	)
 	return err
 }

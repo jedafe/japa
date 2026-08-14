@@ -105,6 +105,32 @@ func TestHandleAdminUpdate_Unauthorized(t *testing.T) {
 	}
 }
 
+// TestHandleAdminDelete_Unauthorized verifies the admin delete endpoint requires auth.
+// BUG-008: soft-delete admin endpoint gated by calendar.manage.
+func TestHandleAdminDelete_Unauthorized(t *testing.T) {
+	h := NewHandlers(nil, nil)
+	req := httptest.NewRequest(http.MethodDelete, "/admin/calendar/00000000-0000-0000-0000-000000000000", nil)
+	rr := httptest.NewRecorder()
+	h.HandleAdminDelete(rr, req)
+
+	if rr.Code != http.StatusUnauthorized {
+		t.Errorf("HandleAdminDelete without auth = %d, want %d", rr.Code, http.StatusUnauthorized)
+	}
+}
+
+// TestHandleListSaved_Unauthorized verifies the saved-list endpoint requires auth.
+// BUG-003: /me/calendar/saved endpoint for user dashboard.
+func TestHandleListSaved_Unauthorized(t *testing.T) {
+	h := NewHandlers(nil, nil)
+	req := httptest.NewRequest(http.MethodGet, "/me/calendar/saved", nil)
+	rr := httptest.NewRecorder()
+	h.HandleListSaved(rr, req)
+
+	if rr.Code != http.StatusUnauthorized {
+		t.Errorf("HandleListSaved without auth = %d, want %d", rr.Code, http.StatusUnauthorized)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // parsePageParams tests — verifies page_size/page_offset and legacy aliases.
 // ---------------------------------------------------------------------------
@@ -207,5 +233,50 @@ func TestSubmit_RejectsEmptyCategory(t *testing.T) {
 	})
 	if err == nil {
 		t.Error("Submit with empty category should return error")
+	}
+}
+
+// TestSubmit_RejectsJavaScriptScheme verifies the service rejects
+// source_url with a javascript: scheme (BUG-011 XSS prevention).
+func TestSubmit_RejectsJavaScriptScheme(t *testing.T) {
+	svc := NewService(nil, &config.Settings{})
+	_, err := svc.Submit(nil, pgtype.UUID{}, pgtype.UUID{}, SubmitEntryInput{
+		Title:     "Test Event",
+		Category:  "visa_window",
+		SourceURL: "javascript:alert(1)",
+	})
+	if err == nil {
+		t.Error("Submit with javascript: source_url should return error")
+	}
+}
+
+// TestSubmit_RejectsDataScheme verifies the service rejects source_url
+// with a data: scheme (BUG-011 XSS prevention).
+func TestSubmit_RejectsDataScheme(t *testing.T) {
+	svc := NewService(nil, &config.Settings{})
+	_, err := svc.Submit(nil, pgtype.UUID{}, pgtype.UUID{}, SubmitEntryInput{
+		Title:     "Test Event",
+		Category:  "visa_window",
+		SourceURL: "data:text/html,<script>alert(1)</script>",
+	})
+	if err == nil {
+		t.Error("Submit with data: source_url should return error")
+	}
+}
+
+// TestSubmit_AcceptsHTTPSScheme verifies the service accepts a valid
+// https source_url (BUG-011 positive case).
+func TestSubmit_AcceptsHTTPSScheme(t *testing.T) {
+	svc := NewService(nil, &config.Settings{})
+	// Submit will fail at the store layer (nil store), but it should pass
+	// the source_url validation and fail later — we check the error is NOT
+	// the source_url validation error.
+	_, err := svc.Submit(nil, pgtype.UUID{}, pgtype.UUID{}, SubmitEntryInput{
+		Title:     "Test Event",
+		Category:  "visa_window",
+		SourceURL: "https://example.com/official-source",
+	})
+	if err != nil && err.Error() == "source_url must be a valid http or https URL" {
+		t.Error("Submit with valid https source_url should not fail scheme validation")
 	}
 }

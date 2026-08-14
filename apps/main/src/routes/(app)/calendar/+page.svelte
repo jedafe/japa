@@ -33,15 +33,14 @@
 		)
 	);
 
-	// Schema-defined category enum (Rule 16 — no hardcoded data arrays).
-	const categories: { value: CalendarCategory; label: string }[] = [
-		{ value: 'visa_window', label: t('calendar.cat_visa_window', 'Visa window') },
-		{ value: 'embassy_closure', label: t('calendar.cat_embassy_closure', 'Embassy closure') },
-		{ value: 'application_deadline', label: t('calendar.cat_application_deadline', 'Application deadline') },
-		{ value: 'exam_window', label: t('calendar.cat_exam_window', 'Exam window') },
-		{ value: 'immigration_office', label: t('calendar.cat_immigration_office', 'Immigration office') },
-		{ value: 'other', label: t('calendar.cat_other', 'Other') }
-	];
+	// BUG-009: categories come from the API (calendar.categories system_setting),
+	// not a hardcoded array (Rule 16). The server load fetches GET /calendar/categories.
+	const categories: { value: CalendarCategory; label: string }[] = $derived(
+		(data.categories ?? []).map((c: { value: string; label: string }) => ({
+			value: c.value as CalendarCategory,
+			label: c.label
+		}))
+	);
 
 	const views = [
 		{ value: 'list', label: t('calendar.view_list', 'List') },

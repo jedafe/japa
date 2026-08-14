@@ -637,7 +637,7 @@ ORDER BY created_at DESC
 LIMIT 50;
 
 -- name: ListPublishedContentForLLMsTxt :many
-SELECT title, slug
+SELECT title, slug, content_type
 FROM contents
 WHERE tenant_id = @tenant_id AND status = 'published' AND visibility = 'public'
 ORDER BY created_at DESC

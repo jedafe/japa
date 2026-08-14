@@ -1,7 +1,7 @@
 // Ref: japaconnect-engineering/sections/86-community-calendar.md
 import type { PageServerLoad } from './$types';
 import { redirect } from '@sveltejs/kit';
-import { apiContext, apiList } from '$lib/server/api';
+import { apiContext, apiGet, apiList } from '$lib/server/api';
 import type { Space } from '$lib/types';
 
 export const load: PageServerLoad = async (event) => {
@@ -19,5 +19,14 @@ export const load: PageServerLoad = async (event) => {
 		countries = [];
 	}
 
-	return { countries };
+	// BUG-009: fetch categories from the API (calendar.categories system_setting).
+	let categories: { value: string; label: string }[] = [];
+	try {
+		const resp = await apiGet<{ data: { value: string; label: string }[] }>(ctx, '/calendar/categories');
+		categories = resp.data ?? [];
+	} catch {
+		categories = [];
+	}
+
+	return { countries, categories };
 };

@@ -14,7 +14,7 @@
 	import { t } from '$lib/i18n';
 	import { api } from '$lib/api/client';
 	import { Radar, ShieldCheck, ShieldAlert, CalendarClock, ArrowRight } from 'lucide-svelte';
-	import type { RadarItem, RadarCountryCount } from '$lib/types';
+	import type { RadarItem, RadarCountsResponse } from '$lib/types';
 
 	let loading = $state(true);
 	let followedItems = $state<RadarItem[]>([]);
@@ -27,12 +27,13 @@
 
 	async function load() {
 		loading = true;
-		// Counts endpoint (lightweight) — per-country scholarship counts. We
-		// sum them for the global total shown as a secondary stat. Best-effort:
-		// a failure degrades to 0 rather than failing the widget.
-		const countsRes = await api.get<RadarCountryCount[]>('/intel/radar/counts');
+		// Counts endpoint (lightweight) — total_new is the global scholarship
+		// total shown as a secondary stat. Best-effort: a failure degrades to
+		// 0 rather than failing the widget. Ref: HandleRadarCounts returns
+		// {total_new, by_type, by_country} (not a per-country array).
+		const countsRes = await api.get<RadarCountsResponse>('/intel/radar/counts');
 		if (countsRes.data) {
-			allTotal = countsRes.data.reduce((sum, r) => sum + (r.count ?? 0), 0);
+			allTotal = countsRes.data.total_new ?? 0;
 		}
 		// 503 from either endpoint means the intelligence system is not
 		// configured — collapse the widget entirely.
@@ -46,13 +47,30 @@
 		// a generous page so the count reflects the real followed total (capped
 		// at 100, which is plenty for a dashboard summary); the first three
 		// rows become the teaser list.
-		const followedRes = await api.get<RadarItem[]>('/intel/radar/followed?page_size=100');
-		if (followedRes.error?.status === 503) {
+		//
+		// The radar feed uses a non-standard envelope ({items, ...} per spec
+		// §739) — the array is under `items`, not `data`, so api.get (which
+		// reads body.data) cannot be used. We fetch directly and read `items`,
+		// mirroring the radar page's loadMore pattern.
+		let followedUnavailable = false;
+		try {
+			const r = await fetch('/api/v1/intel/radar/followed?page_size=100', {
+				credentials: 'include'
+			});
+			if (r.status === 503) {
+				followedUnavailable = true;
+			} else if (r.ok) {
+				const body = await r.json();
+				followedItems = (body?.items as RadarItem[] | undefined) ?? [];
+			}
+		} catch {
+			// network error — keep empty list
+		}
+		if (followedUnavailable) {
 			unavailable = true;
 			loading = false;
 			return;
 		}
-		followedItems = followedRes.data ?? [];
 		followedTotal = followedItems.length;
 		loading = false;
 	}

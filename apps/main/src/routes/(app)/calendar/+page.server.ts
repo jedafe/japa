@@ -1,6 +1,6 @@
 // Ref: japaconnect-engineering/sections/86-community-calendar.md
 import type { PageServerLoad } from './$types';
-import { apiContext, apiList } from '$lib/server/api';
+import { apiContext, apiGet, apiList } from '$lib/server/api';
 import type { CalendarEntry, CalendarCategory, Space } from '$lib/types';
 
 /**
@@ -10,15 +10,6 @@ import type { CalendarEntry, CalendarCategory, Space } from '$lib/types';
  * On error, degrades to an empty list with loadError: true.
  */
 const PAGE_SIZE = 20;
-
-const VALID_CATEGORIES: CalendarCategory[] = [
-	'visa_window',
-	'embassy_closure',
-	'application_deadline',
-	'exam_window',
-	'immigration_office',
-	'other'
-];
 
 const VALID_VIEWS = ['list', 'month', 'week'] as const;
 type CalendarView = (typeof VALID_VIEWS)[number];
@@ -33,12 +24,20 @@ export const load: PageServerLoad = async (event) => {
 	const to = event.url.searchParams.get('to') ?? '';
 	const viewRaw = event.url.searchParams.get('view') ?? 'list';
 
-	const category = VALID_CATEGORIES.includes(categoryRaw as CalendarCategory)
-		? (categoryRaw as CalendarCategory)
-		: '';
 	const view: CalendarView = VALID_VIEWS.includes(viewRaw as CalendarView)
 		? (viewRaw as CalendarView)
 		: 'list';
+
+	// BUG-009: fetch categories from the API (calendar.categories system_setting).
+	let categories: { value: string; label: string }[] = [];
+	try {
+		const resp = await apiGet<{ data: { value: string; label: string }[] }>(ctx, '/calendar/categories');
+		categories = resp.data ?? [];
+	} catch {
+		categories = [];
+	}
+	const validCategoryValues = new Set(categories.map((c) => c.value));
+	const category = validCategoryValues.has(categoryRaw) ? categoryRaw : '';
 
 	let countries: Space[] = [];
 	try {
@@ -56,11 +55,12 @@ export const load: PageServerLoad = async (event) => {
 
 	try {
 		const { items } = await apiList<CalendarEntry>(ctx, `/calendar?${params.toString()}`);
-		return { entries: items, countries, authed, pageSize: PAGE_SIZE, loadError: false, filters: { dest, category, from, to, view } };
+		return { entries: items, countries, categories, authed, pageSize: PAGE_SIZE, loadError: false, filters: { dest, category, from, to, view } };
 	} catch {
 		return {
 			entries: [] as CalendarEntry[],
 			countries,
+			categories,
 			authed,
 			pageSize: PAGE_SIZE,
 			loadError: true,

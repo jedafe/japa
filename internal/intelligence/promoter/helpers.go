@@ -5,26 +5,78 @@
 package promoter
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"math/big"
 	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/intelligence/extractor"
 )
 
+// PersonaResolver is the minimal interface a promoter store needs to resolve
+// an AI persona's backing user_id. All promoter Store interfaces embed this
+// so the createPath can resolve the source's persona → author_id.
+type PersonaResolver interface {
+	GetPersonaUserID(ctx context.Context, tenantID, personaID pgtype.UUID) (pgtype.UUID, error)
+}
+
+// resolveAuthorID resolves the author_id for a promoted content row. If the
+// source has a persona_id, it looks up the persona's backing user_id and
+// uses that as the author. If the persona lookup fails or the source has no
+// persona, it falls back to the promoter's default authorID. This fixes the
+// FK violation where defaultTenantID was used as contents.author_id.
+func resolveAuthorID(ctx context.Context, resolver PersonaResolver, source gen.IntelSource, tenantID, fallbackAuthorID pgtype.UUID) pgtype.UUID {
+	if !source.PersonaID.Valid {
+		return fallbackAuthorID
+	}
+	userID, err := resolver.GetPersonaUserID(ctx, tenantID, source.PersonaID)
+	if err != nil || !userID.Valid {
+		slog.Warn("promoter: persona user_id lookup failed, using fallback author",
+			"persona_id", source.PersonaID.String(),
+			"error", err)
+		return fallbackAuthorID
+	}
+	return userID
+}
+
 // parseExtractionShared decodes the raw extracted JSON blob into an
 // extractor.Extraction map. Shared across all domain promoters.
+// Handles both the current format ({field: {value, confidence, evidence}})
+// and the legacy format ({field: "plain string value"}) by wrapping bare
+// values into FieldExtraction{Value: v}.
 func parseExtractionShared(raw []byte) (extractor.Extraction, error) {
 	if len(raw) == 0 {
 		return extractor.Extraction{}, nil
 	}
 	var ext extractor.Extraction
-	if err := json.Unmarshal(raw, &ext); err != nil {
-		return nil, err
+	if err := json.Unmarshal(raw, &ext); err == nil {
+		return ext, nil
+	}
+	// Fallback: try legacy format where values are plain strings/scalars
+	// instead of {value, confidence, evidence} objects.
+	var legacy map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &legacy); err != nil {
+		return nil, fmt.Errorf("parse extraction: %w", err)
+	}
+	ext = make(extractor.Extraction, len(legacy))
+	for k, rawVal := range legacy {
+		var fe extractor.FieldExtraction
+		if err := json.Unmarshal(rawVal, &fe); err == nil && fe.Value != nil {
+			ext[k] = fe
+			continue
+		}
+		// Bare scalar — wrap it.
+		var scalar any
+		if err := json.Unmarshal(rawVal, &scalar); err != nil {
+			continue
+		}
+		ext[k] = extractor.FieldExtraction{Value: scalar, Confidence: 0.5}
 	}
 	return ext, nil
 }

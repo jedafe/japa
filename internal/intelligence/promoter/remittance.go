@@ -207,6 +207,7 @@ func (p *RemittancePromoter) remittanceUpdatePath(ctx context.Context, record ge
 	note := "automatic re-crawl update"
 	reviewLogParams := gen.CreateIntelReviewLogParams{
 		IntelRecordID: record.ID,
+		ActorUserID:   p.authorID,
 		Action:        "auto_update",
 		FieldChanges:  changesJSON,
 		Note:          &note,

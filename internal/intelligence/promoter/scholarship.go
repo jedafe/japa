@@ -28,6 +28,7 @@ import (
 // their multi-table writes atomically (BUG-01/02 fix, §6.2 transaction
 // boundary).
 type Store interface {
+	PersonaResolver
 	GetIntelRecord(ctx context.Context, tenantID, id pgtype.UUID) (gen.IntelRecord, error)
 	GetIntelSource(ctx context.Context, tenantID, id pgtype.UUID) (gen.IntelSource, error)
 	GetScholarshipByIntelRecord(ctx context.Context, tenantID, intelRecordID pgtype.UUID) (gen.Scholarship, error)
@@ -179,7 +180,8 @@ func (p *ScholarshipPromoter) createPath(ctx context.Context, record gen.IntelRe
 
 	contentParams := gen.CreateContentParams{
 		TenantID:        p.tenantID,
-		AuthorID:        p.authorID,
+		AuthorID:        resolveAuthorID(ctx, p.store, source, p.tenantID, p.authorID),
+		FieldValues:     []byte(`{}`),
 		ContentType:     "guide",
 		Title:           title,
 		Slug:            slug,
@@ -272,6 +274,7 @@ func (p *ScholarshipPromoter) updatePath(ctx context.Context, record gen.IntelRe
 	note := "automatic re-crawl update"
 	reviewLogParams := gen.CreateIntelReviewLogParams{
 		IntelRecordID: record.ID,
+		ActorUserID:   p.authorID,
 		Action:        "auto_update",
 		FieldChanges:  changesJSON,
 		Note:          &note,
@@ -314,14 +317,14 @@ func buildCreateParams(record gen.IntelRecord, source gen.IntelSource, guideID p
 		CountrySpaceID:       pgtype.UUID{}, // resolved by the geo worker, not the promoter
 		University:           stringPtrField(ext, "university"),
 		DegreeLevel:          stringPtrField(ext, "degree_level"),
-		FieldsOfStudy:        stringSliceField(ext, "fields_of_study"),
-		EligibleCountries:    stringSliceField(ext, "eligible_countries"),
-		Funding:              jsonbField(ext, "funding"),
+		FieldsOfStudy:        orEmptySlice(stringSliceField(ext, "fields_of_study")),
+		EligibleCountries:    orEmptySlice(stringSliceField(ext, "eligible_countries")),
+		Funding:              orEmptyJSON(jsonbField(ext, "funding")),
 		Deadline:             dateField(ext, "deadline"),
 		ApplicationUrl:       stringPtrField(ext, "application_url"),
-		RequiredDocuments:    stringSliceField(ext, "required_documents"),
+		RequiredDocuments:    orEmptySlice(stringSliceField(ext, "required_documents")),
 		MinimumGpa:           numericField(ext, "minimum_gpa"),
-		LanguageRequirements: jsonbField(ext, "language_requirements"),
+		LanguageRequirements: orEmptyJSON(jsonbField(ext, "language_requirements")),
 		ConfidenceOverall:    record.ConfidenceOverall,
 		// spec §530: create path stamps 'verified' + 'ingestion'. The
 		// scholarships CHECK constraint (migration 000429) only allows
@@ -404,21 +407,21 @@ func buildUpdateParams(existing gen.Scholarship, ext extractor.Extraction, overr
 	// fields_of_study
 	if _, ov := overrides["fields_of_study"]; !ov {
 		if v := stringSliceField(ext, "fields_of_study"); !stringSliceEqual(v, existing.FieldsOfStudy) {
-			params.FieldsOfStudy = v
+			params.FieldsOfStudy = orEmptySlice(v)
 			changed = append(changed, "fields_of_study")
 		}
 	}
 	// eligible_countries
 	if _, ov := overrides["eligible_countries"]; !ov {
 		if v := stringSliceField(ext, "eligible_countries"); !stringSliceEqual(v, existing.EligibleCountries) {
-			params.EligibleCountries = v
+			params.EligibleCountries = orEmptySlice(v)
 			changed = append(changed, "eligible_countries")
 		}
 	}
 	// funding
 	if _, ov := overrides["funding"]; !ov {
 		if v := jsonbField(ext, "funding"); !bytesEqual(v, existing.Funding) {
-			params.Funding = v
+			params.Funding = orEmptyJSON(v)
 			changed = append(changed, "funding")
 		}
 	}
@@ -439,7 +442,7 @@ func buildUpdateParams(existing gen.Scholarship, ext extractor.Extraction, overr
 	// required_documents
 	if _, ov := overrides["required_documents"]; !ov {
 		if v := stringSliceField(ext, "required_documents"); !stringSliceEqual(v, existing.RequiredDocuments) {
-			params.RequiredDocuments = v
+			params.RequiredDocuments = orEmptySlice(v)
 			changed = append(changed, "required_documents")
 		}
 	}
@@ -453,7 +456,7 @@ func buildUpdateParams(existing gen.Scholarship, ext extractor.Extraction, overr
 	// language_requirements
 	if _, ov := overrides["language_requirements"]; !ov {
 		if v := jsonbField(ext, "language_requirements"); !bytesEqual(v, existing.LanguageRequirements) {
-			params.LanguageRequirements = v
+			params.LanguageRequirements = orEmptyJSON(v)
 			changed = append(changed, "language_requirements")
 		}
 	}
@@ -466,14 +469,25 @@ func buildUpdateParams(existing gen.Scholarship, ext extractor.Extraction, overr
 // ---------------------------------------------------------------------------
 
 func parseExtraction(raw []byte) (extractor.Extraction, error) {
-	if len(raw) == 0 {
-		return extractor.Extraction{}, nil
+	return parseExtractionShared(raw)
+}
+
+// orEmptySlice returns s if non-nil/non-empty, or []string{} otherwise.
+// Prevents NULL insertion into NOT NULL array columns with DEFAULT '{}'.
+func orEmptySlice(s []string) []string {
+	if s == nil {
+		return []string{}
 	}
-	var ext extractor.Extraction
-	if err := json.Unmarshal(raw, &ext); err != nil {
-		return nil, err
+	return s
+}
+
+// orEmptyJSON returns b if non-nil, or []byte(`{}`) otherwise.
+// Prevents NULL insertion into NOT NULL jsonb columns with DEFAULT '{}'.
+func orEmptyJSON(b []byte) []byte {
+	if b == nil {
+		return []byte(`{}`)
 	}
-	return ext, nil
+	return b
 }
 
 // stringField returns the string form of an extraction field, or "".

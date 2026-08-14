@@ -165,6 +165,31 @@ func TestMatchBotsByUserAgent(t *testing.T) {
 	}
 }
 
+func TestMatchBotsByUserAgent_SpecificityOrdering(t *testing.T) {
+	t.Parallel()
+
+	// "Bot" is a short generic pattern that matches many UAs; "Googlebot" is
+	// more specific. The longer pattern must come first so the middleware
+	// picks the most specific match.
+	bots := []gen.KnownBot{
+		{Name: "Generic Bot", UserAgentPattern: "Bot", BotType: "unknown", Policy: "allow"},
+		{Name: "Googlebot", UserAgentPattern: "Googlebot", BotType: "search_engine", Policy: "allow"},
+	}
+
+	matched := matchBotsByUserAgent(bots, "Mozilla/5.0 (compatible; Googlebot/2.1)")
+	if len(matched) != 2 {
+		t.Fatalf("expected 2 matches, got %d", len(matched))
+	}
+
+	if matched[0].Name != "Googlebot" {
+		t.Errorf("expected most specific (Googlebot) first, got %s", matched[0].Name)
+	}
+
+	if matched[1].Name != "Generic Bot" {
+		t.Errorf("expected less specific (Generic Bot) second, got %s", matched[1].Name)
+	}
+}
+
 func TestAllBotTypes_NoDuplicates(t *testing.T) {
 	t.Parallel()
 

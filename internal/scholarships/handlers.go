@@ -444,8 +444,10 @@ func parsePagination(r *http.Request) (int, int) {
 
 // --- Admin CRUD handlers ---
 
-// HandleAdminListScholarships returns a paginated list of all scholarships
-// for the admin management page. Supports search via the `q` query param.
+// HandleAdminListScholarships returns a paginated, filtered list of all
+// scholarships for the admin management page. Supports text search via the
+// `q` query param (title/university/country) and status filter via
+// `verification_status`.
 //
 // GET /admin/scholarships
 // Requires: scholarship.manage
@@ -458,15 +460,30 @@ func (h *Handlers) HandleAdminListScholarships(w http.ResponseWriter, r *http.Re
 		return
 	}
 
+	q := r.URL.Query()
 	page, limit := parsePagination(r)
 	offset := (page - 1) * limit
 
-	rows, err := h.svc.store.AdminListScholarships(r.Context(), tenantID, gen.ListScholarshipsParams{
-		Limit:  int32(limit),
-		Offset: int32(offset),
+	search := q.Get("q")
+	status := q.Get("verification_status")
+
+	rows, err := h.svc.store.AdminListScholarships(r.Context(), tenantID, gen.AdminListScholarshipsParams{
+		Column2: search,
+		Column3: status,
+		Limit:   int32(limit),
+		Offset:  int32(offset),
 	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "list_failed", "Failed to list scholarships")
+		return
+	}
+
+	total, err := h.svc.store.AdminCountScholarships(r.Context(), tenantID, gen.AdminCountScholarshipsParams{
+		Column2: search,
+		Column3: status,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "list_failed", "Failed to count scholarships")
 		return
 	}
 
@@ -475,7 +492,7 @@ func (h *Handlers) HandleAdminListScholarships(w http.ResponseWriter, r *http.Re
 		"meta": map[string]interface{}{
 			"page_size":   limit,
 			"page_offset": offset,
-			"count":       len(rows),
+			"count":       total,
 		},
 	})
 }
@@ -678,6 +695,9 @@ func (h *Handlers) HandleAdminUpdateScholarship(w http.ResponseWriter, r *http.R
 		ApplicationUrl    *string          `json:"application_url"`
 		RequiredDocuments []string         `json:"required_documents"`
 		LanguageReqs      json.RawMessage  `json:"language_requirements"`
+		SourceUrl         *string          `json:"source_url"`
+		SourceType        *string          `json:"source_type"`
+		TrustLevel        *int16           `json:"trust_level"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
@@ -686,27 +706,30 @@ func (h *Handlers) HandleAdminUpdateScholarship(w http.ResponseWriter, r *http.R
 
 	// Merge: use provided values or fall back to existing.
 	arg := gen.UpdateScholarshipParams{
-		TenantID:           tenantID,
-		ID:                 id,
-		Title:              existing.Title,
-		Description:        existing.Description,
-		Country:            existing.Country,
-		CountrySpaceID:     existing.CountrySpaceID,
-		University:         existing.University,
-		DegreeLevel:        existing.DegreeLevel,
-		FieldsOfStudy:      existing.FieldsOfStudy,
-		EligibleCountries:  existing.EligibleCountries,
-		Funding:            existing.Funding,
-		Deadline:           existing.Deadline,
-		ApplicationUrl:     existing.ApplicationUrl,
-		RequiredDocuments:  existing.RequiredDocuments,
-		MinimumGpa:         existing.MinimumGpa,
+		TenantID:             tenantID,
+		ID:                   id,
+		Title:                existing.Title,
+		Description:          existing.Description,
+		Country:              existing.Country,
+		CountrySpaceID:       existing.CountrySpaceID,
+		University:           existing.University,
+		DegreeLevel:          existing.DegreeLevel,
+		FieldsOfStudy:        existing.FieldsOfStudy,
+		EligibleCountries:    existing.EligibleCountries,
+		Funding:              existing.Funding,
+		Deadline:             existing.Deadline,
+		ApplicationUrl:       existing.ApplicationUrl,
+		RequiredDocuments:    existing.RequiredDocuments,
+		MinimumGpa:           existing.MinimumGpa,
 		LanguageRequirements: existing.LanguageRequirements,
-		ConfidenceOverall:  existing.ConfidenceOverall,
-		VerificationStatus: existing.VerificationStatus,
-		FreshnessScore:     existing.FreshnessScore,
-		OverrideSource:     "editorial",
-		EditorialOverrides: existing.EditorialOverrides,
+		ConfidenceOverall:    existing.ConfidenceOverall,
+		VerificationStatus:   existing.VerificationStatus,
+		FreshnessScore:       existing.FreshnessScore,
+		OverrideSource:       "editorial",
+		EditorialOverrides:   existing.EditorialOverrides,
+		SourceUrl:            existing.SourceUrl,
+		SourceType:           existing.SourceType,
+		TrustLevel:           existing.TrustLevel,
 	}
 
 	if body.Title != nil {
@@ -748,13 +771,28 @@ func (h *Handlers) HandleAdminUpdateScholarship(w http.ResponseWriter, r *http.R
 	if body.LanguageReqs != nil {
 		arg.LanguageRequirements = body.LanguageReqs
 	}
+	if body.SourceUrl != nil && *body.SourceUrl != "" {
+		arg.SourceUrl = *body.SourceUrl
+	}
+	if body.SourceType != nil && *body.SourceType != "" {
+		arg.SourceType = *body.SourceType
+	}
+	if body.TrustLevel != nil {
+		arg.TrustLevel = *body.TrustLevel
+	}
 
 	if err := h.svc.store.AdminUpdateScholarship(r.Context(), tenantID, arg); err != nil {
 		writeError(w, http.StatusInternalServerError, "update_failed", "Failed to update scholarship")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{"data": "ok"})
+	// Re-fetch so the admin panel receives the updated row.
+	updated, err := h.svc.store.AdminGetScholarship(r.Context(), tenantID, id)
+	if err != nil {
+		writeJSON(w, http.StatusOK, map[string]interface{}{"data": "ok"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"data": updated})
 }
 
 // HandleAdminDeleteScholarship deletes a scholarship record.

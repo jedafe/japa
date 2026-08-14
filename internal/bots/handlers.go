@@ -123,13 +123,17 @@ func (h *Handlers) ListKnownBots(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	bots, err := h.Service.ListKnownBots(r.Context(), tenantID, botType, parsePageSize(r), parseOffset(r))
+	result, err := h.Service.ListKnownBotsWithCount(r.Context(), tenantID, botType, parsePageSize(r), parseOffset(r))
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": bots})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data":        result.Data,
+		"total":       result.Total,
+		"total_pages": result.TotalPages,
+	})
 }
 
 // GetKnownBot returns a single known bot by ID.

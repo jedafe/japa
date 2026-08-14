@@ -11,6 +11,24 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const countKnownBots = `-- name: CountKnownBots :one
+SELECT count(*) FROM known_bots
+WHERE tenant_id = $1
+  AND ($2 = '' OR bot_type = $2)
+`
+
+type CountKnownBotsParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	BotType  interface{} `json:"bot_type"`
+}
+
+func (q *Queries) CountKnownBots(ctx context.Context, arg CountKnownBotsParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countKnownBots, arg.TenantID, arg.BotType)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createKnownBot = `-- name: CreateKnownBot :one
 
 

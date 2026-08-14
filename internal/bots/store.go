@@ -3,6 +3,7 @@ package bots
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -69,6 +70,20 @@ func (s *Store) listKnownBots(ctx context.Context, tenantID pgtype.UUID, botType
 	return rows, nil
 }
 
+// countKnownBots returns the total number of bots for the tenant, optionally
+// filtered by bot_type. Used for pagination metadata in the list handler.
+func (s *Store) countKnownBots(ctx context.Context, tenantID pgtype.UUID, botType string) (int64, error) {
+	count, err := s.read.CountKnownBots(ctx, gen.CountKnownBotsParams{
+		TenantID: tenantID,
+		BotType:  botType,
+	})
+	if err != nil {
+		return 0, fmt.Errorf("counting known bots: %w", err)
+	}
+
+	return count, nil
+}
+
 //nolint:unused // reserved for future features
 func (s *Store) updateKnownBot(ctx context.Context, p gen.UpdateKnownBotParams) (gen.KnownBot, error) {
 	row, err := s.write.UpdateKnownBot(ctx, p)
@@ -109,6 +124,8 @@ func (s *Store) getBotsByUserAgent(ctx context.Context, tenantID pgtype.UUID, us
 
 // matchBotsByUserAgent performs in-memory pattern matching against the
 // bot registry. This is more flexible than SQL ILIKE for complex patterns.
+// Results are ordered by pattern specificity (longest pattern first) so the
+// first element is the most specific match — e.g. "Googlebot" wins over "Bot".
 func matchBotsByUserAgent(bots []gen.KnownBot, userAgent string) []KnownBot {
 	ua := strings.ToLower(userAgent)
 
@@ -126,6 +143,12 @@ func matchBotsByUserAgent(bots []gen.KnownBot, userAgent string) []KnownBot {
 			})
 		}
 	}
+
+	// Sort by pattern length descending so the most specific (longest) match
+	// is first. This makes matched[0] the best pick for the middleware.
+	sort.Slice(matched, func(i, j int) bool {
+		return len(matched[i].UserAgentPattern) > len(matched[j].UserAgentPattern)
+	})
 
 	return matched
 }
@@ -173,6 +196,27 @@ func (s *Store) GetAllBots(ctx context.Context, tenantID pgtype.UUID) ([]KnownBo
 	return result, nil
 }
 
+// contentURLPath maps a content_type + slug to the canonical frontend URL path
+// used in LLMS.txt link generation. Each content type has a distinct route
+// prefix in the main SvelteKit app (apps/main/src/routes).
+// Ref: japaconnect-engineering/sections/43-bot-crawler-management.md
+func contentURLPath(contentType, slug string) string {
+	switch contentType {
+	case "blog_post":
+		return "/blog/" + slug
+	case "forum_thread":
+		return "/forum/" + slug
+	case "guide":
+		return "/blog/" + slug
+	case "discussion":
+		return "/forum/" + slug
+	case "comparison":
+		return "/blog/" + slug
+	default:
+		return "/blog/" + slug
+	}
+}
+
 // GetLLMsData fetches the data needed for llms-full.txt generation:
 // recent published posts, top tags, and active public spaces.
 // Ref: japaconnect-engineering/sections/43-bot-crawler-management.md
@@ -184,7 +228,7 @@ func (s *Store) GetLLMsData(ctx context.Context, tenantID pgtype.UUID) (LLMsData
 
 	recentPosts := make([]Link, 0, len(posts))
 	for _, p := range posts {
-		recentPosts = append(recentPosts, Link{Title: p.Title, URL: p.Slug})
+		recentPosts = append(recentPosts, Link{Title: p.Title, URL: contentURLPath(p.ContentType, p.Slug)})
 	}
 
 	tags, err := s.read.ListTagsByTenant(ctx, tenantID)
@@ -194,7 +238,7 @@ func (s *Store) GetLLMsData(ctx context.Context, tenantID pgtype.UUID) (LLMsData
 
 	tagLinks := make([]Link, 0, len(tags))
 	for _, tg := range tags {
-		tagLinks = append(tagLinks, Link{Title: tg.Name, URL: tg.Slug})
+		tagLinks = append(tagLinks, Link{Title: tg.Name, URL: "/tags/" + tg.Slug})
 	}
 
 	spaces, err := s.read.ListSpacesByTenant(ctx, gen.ListSpacesByTenantParams{
@@ -207,7 +251,7 @@ func (s *Store) GetLLMsData(ctx context.Context, tenantID pgtype.UUID) (LLMsData
 
 	spaceLinks := make([]Link, 0, len(spaces))
 	for _, sp := range spaces {
-		spaceLinks = append(spaceLinks, Link{Title: sp.Name, URL: sp.Slug})
+		spaceLinks = append(spaceLinks, Link{Title: sp.Name, URL: "/spaces/" + sp.Slug})
 	}
 
 	return LLMsData{

@@ -954,6 +954,490 @@ func (h *AuthHandlers) logFailedLoginAudit(ctx context.Context, tenantID pgtype.
 		slog.Warn("failed to write login_failed audit log", "error", err)
 	}
 }
+func rateLimitCheck(ctx context.Context, rdb valkeycompat.Cmdable, key string, maxRequests int, window time.Duration) (bool, error) {
+	if rdb == nil {
+		return true, nil
+	}
 
-// deviceName extracts a human-readable device label from the User-Agent
-// header, truncated to 255 chars. Return
+	pipe := rdb.Pipeline()
+	incrCmd := pipe.Incr(ctx, key)
+	pipe.Expire(ctx, key, window+time.Second)
+
+	if _, err := pipe.Exec(ctx); err != nil {
+		// Valkey unreachable — degrade gracefully, allow the request.
+		return true, err
+	}
+
+	return incrCmd.Val() <= int64(maxRequests), nil
+}
+
+// HandleForgotPassword handles POST /api/v1/auth/forgot-password.
+// Always returns 200 to prevent email enumeration. Rate limited to 3 requests per 10 minutes per email.
+func (h *AuthHandlers) HandleForgotPassword(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Email string `json:"email"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		return
+	}
+
+	req.Email = strings.TrimSpace(strings.ToLower(req.Email))
+	if req.Email == "" {
+		writeError(w, http.StatusBadRequest, "missing_fields", "Email is required")
+		return
+	}
+
+	// Per-email rate limit: 3 requests per 10 minutes. Prevents a single
+	// email address from being used to flood the reset-email queue.
+	if h.VKClient != nil {
+		emailKey := valkey.MustKey("jc:ratelimit:forgot_password:%s", req.Email)
+
+		ok, err := rateLimitCheck(r.Context(), h.VKClient.Redis(), emailKey, 3, 10*time.Minute)
+		if err != nil {
+			slog.Error("forgot password: rate limit check failed, allowing request", "error", err)
+		}
+
+		if !ok {
+			writeError(w, http.StatusTooManyRequests, "rate_limit_exceeded", "Too many password reset requests. Please try again later.")
+			return
+		}
+	}
+
+	t := tenant.FromContext(r.Context())
+	if t == nil {
+		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		return
+	}
+
+	// Always return 200 to prevent email enumeration — whether the user exists or not.
+	defer func() {
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"data": map[string]string{
+				"message": "If an account with that email exists, a reset link has been sent.",
+			},
+		})
+	}()
+
+	user, err := h.DB.GetUserByEmail(r.Context(), t.ID, req.Email)
+	if err != nil || user == nil {
+		// Silently return success — don't reveal whether the email exists.
+		return
+	}
+
+	// Only generate tokens for active users with a password (not OAuth-only).
+	if user.Status != "active" || !user.PasswordHash.Valid {
+		return
+	}
+
+	token, hash, err := GenerateResetToken()
+	if err != nil {
+		slog.Error("forgot-password: failed to generate token", "error", err)
+		errpkg.CaptureException(fmt.Errorf("forgot-password: generate token: %w", err))
+		return
+	}
+
+	expiresAt := time.Now().Add(ResetTokenTTL)
+	if err := h.Queries.CreatePasswordResetToken(r.Context(), gen.CreatePasswordResetTokenParams{
+		TenantID:  t.ID,
+		UserID:    user.ID,
+		TokenHash: hash,
+		ExpiresAt: pgtype.Timestamptz{Time: expiresAt, Valid: true},
+	}); err != nil {
+		slog.Error("forgot-password: failed to store token", "error", err)
+		errpkg.CaptureException(fmt.Errorf("forgot-password: store token: %w", err))
+		return
+	}
+
+	// Build the base URL from the request to support any deployment domain.
+	scheme := "https"
+	if r.TLS == nil && !strings.HasPrefix(r.Header.Get("X-Forwarded-Proto"), "https") {
+		scheme = "http"
+	}
+
+	baseURL := fmt.Sprintf("%s://%s", scheme, r.Host)
+
+	// Render the HTML email body.
+	siteName := h.SiteName
+	if siteName == "" {
+		siteName = "App"
+	}
+
+	supportURL := h.SupportURL
+	if supportURL == "" {
+		supportURL = baseURL + "/support"
+	}
+
+	htmlBody, err := email.RenderPasswordResetEmail(email.TemplateData{
+		SiteName:   siteName,
+		SiteURL:    baseURL,
+		UserName:   user.Username,
+		ActionURL:  fmt.Sprintf("%s/auth/reset-password?token=%s", baseURL, token),
+		Expiry:     "1 hour",
+		SupportURL: supportURL,
+	})
+	if err != nil {
+		slog.Error("forgot-password: failed to render email template", "error", err)
+		return
+	}
+
+	// Enqueue email delivery — best effort, failures are logged.
+	h.enqueueEmail(user.Email, "Reset Your Password", htmlBody, true)
+}
+
+// HandleResetPasswordPage handles GET /api/v1/auth/reset-password.
+// Validates the token and returns whether it's valid without consuming it.
+func (h *AuthHandlers) HandleResetPasswordPage(w http.ResponseWriter, r *http.Request) {
+	token := r.URL.Query().Get("token")
+	if token == "" {
+		writeError(w, http.StatusBadRequest, "missing_token", "Token query parameter is required")
+		return
+	}
+
+	tokenHash := hashRefreshToken(token)
+
+	rec, err := h.DB.GetValidResetToken(r.Context(), tokenHash)
+	if err != nil || rec == nil {
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"data": map[string]interface{}{"valid": false},
+		})
+
+		return
+	}
+
+	// Check expiry and whether it's been used.
+	if time.Now().After(rec.ExpiresAt) || rec.UsedAt.Valid {
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"data": map[string]interface{}{"valid": false},
+		})
+
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"data": map[string]interface{}{"valid": true},
+	})
+}
+
+// HandleResetPassword handles POST /api/v1/auth/reset-password.
+// Validates the token, updates the password, and invalidates all sessions.
+func (h *AuthHandlers) HandleResetPassword(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Token       string `json:"token"`
+		NewPassword string `json:"new_password"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		return
+	}
+
+	if req.Token == "" || req.NewPassword == "" {
+		writeError(w, http.StatusBadRequest, "missing_fields", "Token and new_password are required")
+		return
+	}
+
+	if err := ValidatePassword(req.NewPassword, h.Policy); err != nil {
+		// Check if this is a breach error — different error code for monitoring.
+		var breached *BreachedError
+		if errors.As(err, &breached) {
+			slog.Warn(
+				"password reset blocked: breached password",
+				"token_prefix", req.Token[:min(8, len(req.Token))],
+				"breach_count", breached.Count,
+			)
+			writeError(w, http.StatusBadRequest, "password_breached",
+				"This password has appeared in a data breach and cannot be used. Please choose a different password.")
+
+			return
+		}
+
+		writeError(w, http.StatusBadRequest, "weak_password", err.Error())
+
+		return
+	}
+
+	tokenHash := hashRefreshToken(req.Token)
+
+	rec, err := h.DB.GetValidResetToken(r.Context(), tokenHash)
+	if err != nil || rec == nil {
+		writeError(w, http.StatusUnauthorized, "invalid_token", "Invalid or expired reset token")
+		return
+	}
+
+	if time.Now().After(rec.ExpiresAt) {
+		writeError(w, http.StatusUnauthorized, "expired_token", "Reset token has expired")
+		return
+	}
+
+	if rec.UsedAt.Valid {
+		writeError(w, http.StatusUnauthorized, "used_token", "Reset token has already been used")
+		return
+	}
+
+	// Check password history before allowing the reset.
+	if err := CheckPasswordHistory(r.Context(), h.DB, rec.UserID, req.NewPassword, h.Policy); err != nil {
+		var reused *PasswordReusedError
+		if errors.As(err, &reused) {
+			slog.Warn(
+				"password reset blocked: reused password",
+				"token_prefix", req.Token[:min(8, len(req.Token))],
+			)
+			writeError(w, http.StatusBadRequest, "password_reused",
+				"New password cannot be the same as a recent password. Please choose a different password.")
+
+			return
+		}
+	}
+
+	// Mark the token as used before updating the password.
+	if err := h.DB.MarkResetTokenUsed(r.Context(), tokenHash); err != nil {
+		slog.Error("reset-password: failed to mark token used", "error", err)
+		errpkg.CaptureException(fmt.Errorf("reset-password: mark token used: %w", err))
+		writeError(w, http.StatusInternalServerError, "token_error", "Failed to process reset token")
+
+		return
+	}
+
+	passwordHash, err := HashPassword(req.NewPassword)
+	if err != nil {
+		errpkg.CaptureException(fmt.Errorf("reset-password: hash password: %w", err))
+		writeError(w, http.StatusInternalServerError, "hash_error", "Failed to secure password")
+		return
+	}
+
+	if err := h.DB.UpdateUserPassword(r.Context(), rec.UserID, passwordHash); err != nil {
+		slog.Error("reset-password: failed to update password", "error", err)
+		errpkg.CaptureException(fmt.Errorf("reset-password: update password: %w", err))
+		writeError(w, http.StatusInternalServerError, "update_failed", "Failed to update password")
+
+		return
+	}
+
+	// Record the new password in history to prevent reuse.
+	if err := h.Queries.InsertPasswordHistory(r.Context(), gen.InsertPasswordHistoryParams{
+		TenantID:     rec.TenantID,
+		UserID:       rec.UserID,
+		PasswordHash: passwordHash,
+	}); err != nil {
+		slog.Warn("reset-password: failed to record password history", "error", err)
+	}
+
+	// Invalidate all sessions for this user.
+	if err := InvalidateAllUserSessions(r.Context(), h.Queries, rec.UserID, rec.TenantID); err != nil {
+		slog.Error("reset-password: failed to invalidate sessions", "user_id", rec.UserID.String(), "error", err)
+	}
+
+	// Audit log: record the password reset action.
+	// Ref: §02 "Audit log: 'user.password_reset'"
+	if h.Database != nil {
+		meta, _ := json.Marshal(map[string]string{"user_id": rec.UserID.String()})
+		_, err := h.Database.Writer.Exec(r.Context(), `
+			INSERT INTO audit_logs (tenant_id, action_type, target_type, metadata)
+			VALUES ($1, 'user.password_reset', 'user', $2::jsonb)
+		`, rec.TenantID, meta)
+		if err != nil {
+			slog.Warn("reset-password: failed to write audit log", "error", err)
+		}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"data": map[string]string{
+			"message": "Password has been reset. Please log in with your new password.",
+		},
+	})
+}
+
+// HandleVerifyEmail handles GET /api/v1/auth/verify-email.
+// Validates the verification token and marks the email as verified.
+func (h *AuthHandlers) HandleVerifyEmail(w http.ResponseWriter, r *http.Request) {
+	token := r.URL.Query().Get("token")
+	if token == "" {
+		writeError(w, http.StatusBadRequest, "missing_token", "Token query parameter is required")
+		return
+	}
+
+	tokenHash := hashRefreshToken(token)
+
+	rec, err := h.DB.GetValidVerificationToken(r.Context(), tokenHash)
+	if err != nil || rec == nil {
+		writeError(w, http.StatusUnauthorized, "invalid_token", "Invalid or expired verification token")
+		return
+	}
+
+	if time.Now().After(rec.ExpiresAt) {
+		writeError(w, http.StatusUnauthorized, "expired_token", "Verification token has expired")
+		return
+	}
+
+	if rec.VerifiedAt.Valid {
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"data": map[string]string{
+				"message": "Email has already been verified.",
+			},
+		})
+
+		return
+	}
+
+	if err := h.DB.MarkEmailVerified(r.Context(), rec.UserID); err != nil {
+		slog.Error("verify-email: failed to mark verified", "error", err)
+		writeError(w, http.StatusInternalServerError, "verify_failed", "Failed to verify email")
+
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"data": map[string]string{
+			"message": "Email has been verified successfully.",
+		},
+	})
+}
+
+// HandleResendVerification handles POST /api/v1/auth/resend-verification.
+// Generates a new verification token and enqueues an email. Rate limited to 1 request per 5 minutes per email.
+func (h *AuthHandlers) HandleResendVerification(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Email string `json:"email"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		return
+	}
+
+	req.Email = strings.TrimSpace(strings.ToLower(req.Email))
+	if req.Email == "" {
+		writeError(w, http.StatusBadRequest, "missing_fields", "Email is required")
+		return
+	}
+
+	// Per-email rate limit: 1 request per 5 minutes. Prevents a single
+	// email address from being used to flood the verification-email queue.
+	if h.VKClient != nil {
+		emailKey := valkey.MustKey("jc:ratelimit:resend_verification:%s", req.Email)
+
+		ok, err := rateLimitCheck(r.Context(), h.VKClient.Redis(), emailKey, 1, 5*time.Minute)
+		if err != nil {
+			slog.Error("resend verification: rate limit check failed, allowing request", "error", err)
+		}
+
+		if !ok {
+			writeError(w, http.StatusTooManyRequests, "rate_limit_exceeded", "Too many verification email requests. Please try again later.")
+			return
+		}
+	}
+
+	t := tenant.FromContext(r.Context())
+	if t == nil {
+		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		return
+	}
+
+	// Always return 200 to prevent email enumeration.
+	defer func() {
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"data": map[string]string{
+				"message": "If an account with that email exists and is unverified, a new verification link has been sent.",
+			},
+		})
+	}()
+
+	user, err := h.DB.GetUserByEmail(r.Context(), t.ID, req.Email)
+	if err != nil || user == nil {
+		return
+	}
+
+	// Don't resend if already verified.
+	if user.Status != "active" {
+		return
+	}
+
+	token, hash, err := GenerateVerificationToken()
+	if err != nil {
+		slog.Error("resend-verification: failed to generate token", "error", err)
+		return
+	}
+
+	// Invalidate previous unverified tokens before issuing a new one.
+	// Ref: §02 "POST /auth/resend-verification → invalidates previous unverified token"
+	if err := h.Queries.InvalidateUserEmailVerifications(r.Context(), gen.InvalidateUserEmailVerificationsParams{
+		UserID:   user.ID,
+		TenantID: t.ID,
+	}); err != nil {
+		slog.Error("resend-verification: failed to invalidate previous tokens", "error", err)
+	}
+
+	expiresAt := time.Now().Add(VerificationTokenTTL)
+	if err := h.Queries.CreateEmailVerification(r.Context(), gen.CreateEmailVerificationParams{
+		TenantID:  t.ID,
+		UserID:    user.ID,
+		Email:     user.Email,
+		TokenHash: hash,
+		ExpiresAt: pgtype.Timestamptz{Time: expiresAt, Valid: true},
+	}); err != nil {
+		slog.Error("resend-verification: failed to store token", "error", err)
+		return
+	}
+
+	// Build the base URL from the request to support any deployment domain.
+	scheme := "https"
+	if r.TLS == nil && !strings.HasPrefix(r.Header.Get("X-Forwarded-Proto"), "https") {
+		scheme = "http"
+	}
+
+	baseURL := fmt.Sprintf("%s://%s", scheme, r.Host)
+
+	// Render the HTML email body.
+	siteName := h.SiteName
+	if siteName == "" {
+		siteName = "App"
+	}
+
+	supportURL := h.SupportURL
+	if supportURL == "" {
+		supportURL = baseURL + "/support"
+	}
+
+	htmlBody, err := email.RenderEmailVerification(email.TemplateData{
+		SiteName:   siteName,
+		SiteURL:    baseURL,
+		UserName:   user.Username,
+		ActionURL:  fmt.Sprintf("%s/auth/verify-email?token=%s", baseURL, token),
+		Expiry:     "24 hours",
+		SupportURL: supportURL,
+	})
+	if err != nil {
+		slog.Error("resend-verification: failed to render email template", "error", err)
+		return
+	}
+
+	h.enqueueEmail(user.Email, "Verify Your Email", htmlBody, true)
+}
+
+// enqueueEmail enqueues an email delivery task via Asynq. Failures are logged but not returned.
+// When isHTML is true, the worker sends the body as text/html; otherwise as text/plain.
+func (h *AuthHandlers) enqueueEmail(to, subject, body string, isHTML bool) {
+	if h.AsynqClient == nil {
+		slog.Warn("auth: enqueueEmail called without asynq client", "to", to)
+		return
+	}
+
+	payload, err := json.Marshal(map[string]any{
+		"to":      to,
+		"subject": subject,
+		"body":    body,
+		"html":    isHTML,
+	})
+	if err != nil {
+		slog.Error("auth: failed to marshal email payload", "error", err)
+		return
+	}
+
+	task := asynq.NewTask(worker.TypeEmailSend, payload)
+	// Use QueueForTask to route to the correct tier (default for emails).
+	if _, err := h.AsynqClient.Enqueue(task, asynq.Queue(worker.QueueForTask(worker.TypeEmailSend)), asynq.Unique(1*time.Hour)); err != nil {
+		slog.Error("auth: failed to enqueue email", "to", to, "error", err)
+	}
+}

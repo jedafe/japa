@@ -11,6 +11,7 @@ import (
 
 	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/jedafe/japa/internal/db/gen"
 )
@@ -32,6 +33,7 @@ type handleSourceCreateBody struct {
 	AttributionRequired bool    `json:"attribution_required"`
 	UsageRestriction    *string `json:"usage_restriction"`
 	Enabled             *bool   `json:"enabled"`
+	PersonaID           *string `json:"persona_id"` // optional: AI persona to attribute promoted content to
 }
 
 // HandleCreateSource creates a new intel source. The body carries the
@@ -104,6 +106,14 @@ func (h *Handlers) HandleCreateSource(w http.ResponseWriter, r *http.Request) {
 		UsageRestriction:    body.UsageRestriction,
 		ProviderConfig:      []byte(`{}`),
 		Enabled:             enabled,
+	}
+	if body.PersonaID != nil && *body.PersonaID != "" {
+		var pid pgtype.UUID
+		if err := pid.Scan(*body.PersonaID); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_persona_id", "persona_id must be a valid UUID")
+			return
+		}
+		params.PersonaID = pid
 	}
 
 	src, err := h.intelSources.Create(r.Context(), tenantID, params)
@@ -233,6 +243,20 @@ func (h *Handlers) HandleUpdateSource(w http.ResponseWriter, r *http.Request) {
 	}
 	if body.Enabled != nil {
 		params.Enabled = *body.Enabled
+	}
+	// persona_id: override only when the JSON key was present and non-empty.
+	// The COALESCE in the sqlc query keeps the existing value when the arg
+	// is NULL (Valid: false), so clearing to NULL is not supported via PATCH.
+	if rawPID, present := presence["persona_id"]; present {
+		var pidStr string
+		if err := json.Unmarshal(rawPID, &pidStr); err == nil && pidStr != "" {
+			var pid pgtype.UUID
+			if err := pid.Scan(pidStr); err != nil {
+				writeError(w, http.StatusBadRequest, "invalid_persona_id", "persona_id must be a valid UUID")
+				return
+			}
+			params.PersonaID = pid
+		}
 	}
 
 	src, err := h.intelSources.Update(r.Context(), tenantID, params)

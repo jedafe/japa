@@ -130,15 +130,29 @@ func (s *Store) MarkReminderSent(ctx context.Context, id pgtype.UUID) error {
 
 // --- Admin CRUD methods ---
 
-// AdminListScholarships returns a paginated list of all scholarships for
-// the admin management page. The tenantID is stamped into the query params.
-func (s *Store) AdminListScholarships(ctx context.Context, tenantID pgtype.UUID, arg gen.ListScholarshipsParams) ([]gen.Scholarship, error) {
+// AdminListScholarships returns a paginated, filtered list of scholarships for
+// the admin management page. q is an optional case-insensitive search over
+// title/university/country; status is an optional verification_status filter.
+// The tenantID is stamped into the query params.
+func (s *Store) AdminListScholarships(ctx context.Context, tenantID pgtype.UUID, arg gen.AdminListScholarshipsParams) ([]gen.Scholarship, error) {
 	arg.TenantID = tenantID
-	rows, err := s.queries.ListScholarships(ctx, arg)
+	rows, err := s.queries.AdminListScholarships(ctx, arg)
 	if err != nil {
 		return nil, fmt.Errorf("scholarships: admin list: %w", err)
 	}
 	return rows, nil
+}
+
+// AdminCountScholarships returns the total row count for the admin management
+// list with the same q + status filter as AdminListScholarships, so the admin
+// panel can compute total pages.
+func (s *Store) AdminCountScholarships(ctx context.Context, tenantID pgtype.UUID, arg gen.AdminCountScholarshipsParams) (int64, error) {
+	arg.TenantID = tenantID
+	count, err := s.queries.AdminCountScholarships(ctx, arg)
+	if err != nil {
+		return 0, fmt.Errorf("scholarships: admin count: %w", err)
+	}
+	return count, nil
 }
 
 // AdminGetScholarship returns a single scholarship by ID for the admin
@@ -175,9 +189,27 @@ func (s *Store) AdminUpdateScholarship(ctx context.Context, tenantID pgtype.UUID
 	return nil
 }
 
-// AdminDeleteScholarship deletes a scholarship record. The tenantID is
-// stamped into the query params for tenant isolation.
+// AdminDeleteScholarship deletes a scholarship record and soft-deletes the
+// guide content row it referenced (Rule 11 — user content is soft-deleted, never
+// hard-deleted). The tenantID is stamped into the query params for tenant
+// isolation. The guide content row is soft-deleted so it stops appearing in the
+// finder and content listings without losing audit history.
 func (s *Store) AdminDeleteScholarship(ctx context.Context, tenantID, id pgtype.UUID) error {
+	sch, err := s.queries.GetScholarship(ctx, gen.GetScholarshipParams{
+		TenantID: tenantID,
+		ID:       id,
+	})
+	if err != nil {
+		return fmt.Errorf("scholarships: admin delete (get): %w", err)
+	}
+	if sch.GuideID.Valid {
+		if err := s.queries.DeleteContent(ctx, gen.DeleteContentParams{
+			ID:       sch.GuideID,
+			TenantID: tenantID,
+		}); err != nil {
+			return fmt.Errorf("scholarships: admin delete (soft-delete guide): %w", err)
+		}
+	}
 	if err := s.queries.DeleteScholarship(ctx, gen.DeleteScholarshipParams{
 		TenantID: tenantID,
 		ID:       id,

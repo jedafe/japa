@@ -477,6 +477,7 @@ export interface Bookmark {
 export interface BookmarkFolder {
 	id: string;
 	name: string;
+	position?: number;
 	bookmark_count?: number;
 	created_at: string;
 	updated_at?: string;
