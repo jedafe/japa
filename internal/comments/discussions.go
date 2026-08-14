@@ -86,11 +86,21 @@ type StartConversationInput struct {
 	ThreadID pgtype.UUID
 }
 
+// StartConversationResult holds the cross-link plus the newly created thread
+// (when one was created). CreatedThread is zero-valued (ID.Valid == false)
+// when an existing thread was linked instead.
+type StartConversationResult struct {
+	Link          gen.ContentThreadLink
+	CreatedThread gen.CreateContentRow
+}
+
 // StartConversation creates a discussion thread derived from the blog/content
 // (or links an existing thread when ThreadID is supplied) and records the
-// content_thread_links cross-link. Returns the linked thread id.
-func (s *Service) StartConversation(ctx context.Context, tenantID, contentID, userID pgtype.UUID, input StartConversationInput) (gen.ContentThreadLink, error) {
+// content_thread_links cross-link. Returns the link and the newly created
+// thread (if any).
+func (s *Service) StartConversation(ctx context.Context, tenantID, contentID, userID pgtype.UUID, input StartConversationInput) (StartConversationResult, error) {
 	var threadID pgtype.UUID
+	var createdThread gen.CreateContentRow
 
 	if input.ThreadID.Valid {
 		// Validate the existing thread exists in the same tenant before linking.
@@ -98,7 +108,7 @@ func (s *Service) StartConversation(ctx context.Context, tenantID, contentID, us
 			ID:       input.ThreadID,
 			TenantID: tenantID,
 		}); err != nil {
-			return gen.ContentThreadLink{}, fmt.Errorf("resolving existing thread: %w", err)
+			return StartConversationResult{}, fmt.Errorf("resolving existing thread: %w", err)
 		}
 		threadID = input.ThreadID
 	} else {
@@ -108,7 +118,7 @@ func (s *Service) StartConversation(ctx context.Context, tenantID, contentID, us
 			TenantID: tenantID,
 		})
 		if err != nil {
-			return gen.ContentThreadLink{}, fmt.Errorf("fetching content to derive discussion: %w", err)
+			return StartConversationResult{}, fmt.Errorf("fetching content to derive discussion: %w", err)
 		}
 
 		title := "Discussing: " + blog.Title
@@ -127,9 +137,10 @@ func (s *Service) StartConversation(ctx context.Context, tenantID, contentID, us
 			Visibility: blog.Visibility,
 		})
 		if err != nil {
-			return gen.ContentThreadLink{}, fmt.Errorf("creating discussion thread: %w", err)
+			return StartConversationResult{}, fmt.Errorf("creating discussion thread: %w", err)
 		}
 		threadID = thread.ID
+		createdThread = thread
 	}
 
 	link, err := s.write.CreateContentThreadLink(ctx, gen.CreateContentThreadLinkParams{
@@ -138,10 +149,10 @@ func (s *Service) StartConversation(ctx context.Context, tenantID, contentID, us
 		ThreadID:  threadID,
 	})
 	if err != nil {
-		return gen.ContentThreadLink{}, fmt.Errorf("creating content thread link: %w", err)
+		return StartConversationResult{}, fmt.Errorf("creating content thread link: %w", err)
 	}
 
-	return link, nil
+	return StartConversationResult{Link: link, CreatedThread: createdThread}, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -219,7 +230,7 @@ func (h *Handlers) StartConversation(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	link, err := h.Service.StartConversation(r.Context(), tenantID, contentID, user.UserID, in)
+	result, err := h.Service.StartConversation(r.Context(), tenantID, contentID, user.UserID, in)
 	if err != nil {
 		// GetContentByID returns ErrNotFound / pgx.ErrNoRows when the thread/content is missing.
 		if errors.Is(err, errpkg.ErrNotFound) || errors.Is(err, pgx.ErrNoRows) {
@@ -230,9 +241,19 @@ func (h *Handlers) StartConversation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Section 49 — fan out the new discussion thread to the author's
+	// followers' feeds (BL-005). Only when a new thread was created (not
+	// when linking an existing one). Fire-and-forget per Rule 8.
+	if result.CreatedThread.ID.Valid {
+		h.enqueueContentFanOut(
+			result.CreatedThread.ID, tenantID, user.UserID,
+			result.CreatedThread.SpaceID, "discussion", "followers",
+		)
+	}
+
 	writeJSON(w, http.StatusCreated, map[string]any{"data": map[string]any{
-		"id":         link.ID,
-		"thread_id":  link.ThreadID,
-		"link_count": link.LinkCount,
+		"id":         result.Link.ID,
+		"thread_id":  result.Link.ThreadID,
+		"link_count": result.Link.LinkCount,
 	}})
 }

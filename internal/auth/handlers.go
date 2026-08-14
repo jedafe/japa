@@ -47,6 +47,7 @@ type AuthHandlers struct { //nolint:revive // stuttering type name preserved for
 	VKClient     *valkey.Client   // Valkey client for per-email rate limiting
 	Settings     SettingsReader   // Hot-reloadable system settings for auth token TTLs
 	SiteName     string           // Brand name for email templates (e.g. "JapaConnect")
+	SiteURL      string           // Public site base URL (JC_SITE_URL) for email links — never derived from request Host
 	SupportURL   string           // Support page URL for email footers
 	CookieDomain  string // Cookie domain for cross-subdomain sharing (e.g. ".example.com"), empty = exact host
 	SecureCookies bool   // When true, session/CSRF cookies are marked Secure (production / TLS)
@@ -55,6 +56,25 @@ type AuthHandlers struct { //nolint:revive // stuttering type name preserved for
 
 // SetReferralCapturer injects the referral capture dependency (§60, ADR-078).
 func (h *AuthHandlers) SetReferralCapturer(rc ReferralCapturer) { h.ReferralCapturer = rc }
+
+// baseURL returns the public-facing base URL for email links (password reset,
+// email verification). It prefers the configured SiteURL (JC_SITE_URL), which
+// is a server-side value that cannot be influenced by the client. When SiteURL
+// is not configured, it falls back to a trusted-proxy-gated derivation from
+// X-Forwarded-Host / X-Forwarded-Proto via clientip.ForwardedBaseURL.
+//
+// This prevents host-header / password-reset link poisoning (CWE-601): the
+// previous implementation derived the base URL from r.Host (the client-
+// controllable Host header) and an unvalidated X-Forwarded-Proto, allowing an
+// attacker to send Host: evil.com and capture the reset token when the victim
+// clicked the link in the email.
+func (h *AuthHandlers) baseURL(r *http.Request) string {
+	if h.SiteURL != "" {
+		return h.SiteURL
+	}
+
+	return clientip.ForwardedBaseURL(r, clientip.ForwardedScheme(r)+"://"+r.Host)
+}
 
 // Querier is the interface for database operations needed by auth handlers.
 type Querier interface {
@@ -283,7 +303,7 @@ func (h *AuthHandlers) Register(w http.ResponseWriter, r *http.Request) {
 		HttpOnly: true,
 		Secure:   h.SecureCookies,
 		SameSite: http.SameSiteStrictMode,
-	})
+	}) // #nosec G124 -- Secure is set via h.SecureCookies (true in production); gosec can't verify the struct field statically
 
 	writeJSON(w, http.StatusCreated, map[string]interface{}{
 		"data": map[string]interface{}{
@@ -489,7 +509,7 @@ func (h *AuthHandlers) Login(w http.ResponseWriter, r *http.Request) {
 		HttpOnly: true,
 		Secure:   h.SecureCookies,
 		SameSite: http.SameSiteStrictMode,
-	})
+	}) // #nosec G124 -- Secure is set via h.SecureCookies (true in production); gosec can't verify the struct field statically
 
 	// Issue the double-submit CSRF cookie so the SPA can include it as the
 	// X-CSRF-Token header on subsequent mutating requests (audit finding C1).
@@ -639,7 +659,7 @@ func (h *AuthHandlers) Refresh(w http.ResponseWriter, r *http.Request) {
 		HttpOnly: true,
 		Secure:   h.SecureCookies,
 		SameSite: http.SameSiteStrictMode,
-	})
+	}) // #nosec G124 -- Secure is set via h.SecureCookies (true in production); gosec can't verify the struct field statically
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"data": map[string]interface{}{
@@ -758,7 +778,7 @@ func (h *AuthHandlers) VerifyLoginChallenge(w http.ResponseWriter, r *http.Reque
 		HttpOnly: true,
 		Secure:   h.SecureCookies,
 		SameSite: http.SameSiteStrictMode,
-	})
+	}) // #nosec G124 -- Secure is set via h.SecureCookies (true in production); gosec can't verify the struct field statically
 
 	csrf.SetCookie(w, h.CookieDomain, h.SecureCookies)
 
@@ -875,7 +895,7 @@ func (h *AuthHandlers) ConsumeBackupCode(w http.ResponseWriter, r *http.Request)
 		HttpOnly: true,
 		Secure:   h.SecureCookies,
 		SameSite: http.SameSiteStrictMode,
-	})
+	}) // #nosec G124 -- Secure is set via h.SecureCookies (true in production); gosec can't verify the struct field statically
 
 	csrf.SetCookie(w, h.CookieDomain, h.SecureCookies)
 
@@ -922,7 +942,7 @@ func (h *AuthHandlers) Logout(w http.ResponseWriter, r *http.Request) {
 		HttpOnly: true,
 		Secure:   h.SecureCookies,
 		SameSite: http.SameSiteStrictMode,
-	})
+	}) // #nosec G124 -- Secure is set via h.SecureCookies (true in production); gosec can't verify the struct field statically
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"data": map[string]string{"status": "logged_out"},
@@ -1050,13 +1070,9 @@ func (h *AuthHandlers) HandleForgotPassword(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	// Build the base URL from the request to support any deployment domain.
-	scheme := "https"
-	if r.TLS == nil && !strings.HasPrefix(r.Header.Get("X-Forwarded-Proto"), "https") {
-		scheme = "http"
-	}
-
-	baseURL := fmt.Sprintf("%s://%s", scheme, r.Host)
+	// Build the base URL from the server-configured SiteURL (CWE-601 fix).
+	// See baseURL doc for the host-header injection rationale.
+	baseURL := h.baseURL(r)
 
 	// Render the HTML email body.
 	siteName := h.SiteName
@@ -1381,13 +1397,8 @@ func (h *AuthHandlers) HandleResendVerification(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	// Build the base URL from the request to support any deployment domain.
-	scheme := "https"
-	if r.TLS == nil && !strings.HasPrefix(r.Header.Get("X-Forwarded-Proto"), "https") {
-		scheme = "http"
-	}
-
-	baseURL := fmt.Sprintf("%s://%s", scheme, r.Host)
+	// Build the base URL from the server-configured SiteURL (CWE-601 fix).
+	baseURL := h.baseURL(r)
 
 	// Render the HTML email body.
 	siteName := h.SiteName

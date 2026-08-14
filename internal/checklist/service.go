@@ -122,9 +122,9 @@ type AdminProgressRow struct {
 
 // CompletionStat is a per-guide completion aggregate for the admin stats route.
 type CompletionStat struct {
-	GuideID              string `json:"guide_id"`
-	TotalUsers           int64  `json:"total_users"`
-	UsersWithCompletions int64  `json:"users_with_completions"`
+	GuideID                 string `json:"guide_id"`
+	TotalUsers              int64  `json:"total_users"`
+	UsersWithAnyCompletion  int64  `json:"users_with_any_completion"`
 }
 
 // Service holds the business logic for the visa document checklist.
@@ -547,9 +547,9 @@ func (s *Service) AdminCompletionStats(ctx context.Context, tenantID pgtype.UUID
 	out := make([]CompletionStat, 0, len(rows))
 	for _, r := range rows {
 		out = append(out, CompletionStat{
-			GuideID:              r.GuideID.String(),
-			TotalUsers:           r.TotalUsers,
-			UsersWithCompletions: r.UsersWithCompletions,
+			GuideID:                r.GuideID.String(),
+			TotalUsers:             r.TotalUsers,
+			UsersWithAnyCompletion: r.UsersWithAnyCompletion,
 		})
 	}
 	return out, nil

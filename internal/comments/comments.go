@@ -5,7 +5,6 @@ package comments
 
 import (
 	"context"
-	"errors"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db"
@@ -13,14 +12,10 @@ import (
 	"github.com/jedafe/japa/internal/mentions"
 )
 
-// ErrEditWindowExpired is returned when the author tries to edit a comment
-// after the `comments.edit_window_minutes` window has elapsed (BL-009 /
-// Section 49). The sqlc UpdateComment query already enforces author-only
-// edits, so this check only applies to the author.
-var ErrEditWindowExpired = errors.New("comment edit window has expired")
-
 // defaultEditWindowMinutes is the fallback for comments.edit_window_minutes
-// when the setting is unset or no settings reader is wired (BL-009).
+// when the setting is unset or no settings reader is wired (BL-001). Edits
+// within this window are "clean" (no is_edited mark); edits after are still
+// allowed but marked as edited per Section 49.
 const defaultEditWindowMinutes = 60
 
 // settingsReader is the subset of *config.Settings the comments service needs

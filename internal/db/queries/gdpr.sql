@@ -503,6 +503,19 @@ DELETE FROM tag_moderators WHERE user_id = @user_id AND tenant_id = @tenant_id;
 -- ticket_comments.user_id has no CASCADE; delete the user's ticket comments.
 DELETE FROM ticket_comments WHERE user_id = @user_id;
 
+-- name: AnonymizeCommentsByAuthor :exec
+-- GDPR-001: anonymize comments authored by the erased user. The
+-- comments.author_user_id FK has ON DELETE SET NULL, so HardDeleteUser
+-- will null it — but the comment body (TipTap JSON, potentially containing
+-- PII and @mentions) must be cleared before the user is hard-deleted.
+-- Sets body to a '[deleted]' JSON string and marks the comment as
+-- soft-deleted so it is excluded from public queries. Ref: Section 15, ADR-014.
+UPDATE comments
+SET body = '"[deleted]"'::jsonb,
+    deleted_at = now(),
+    updated_at = now()
+WHERE author_user_id = @user_id AND tenant_id = @tenant_id AND deleted_at IS NULL;
+
 -- name: NullifyTicketEventsUser :exec
 -- ticket_events.user_id is nullable and is an audit trail; nullify the actor, keep the event.
 UPDATE ticket_events SET user_id = NULL WHERE user_id = @user_id;

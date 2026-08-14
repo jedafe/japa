@@ -397,4 +397,43 @@ func (m *mockOAuthStore) GetUserByEmail(_ context.Context, _ pgtype.UUID, email 
 }
 
 var errAccountNotFound = errors.New("oauth account not found")
+
+// --- safeRedirectPath tests (open-redirect prevention, CWE-601) ---
+
+func TestSafeRedirectPath(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		path string
+		want string
+	}{
+		{"empty defaults to root", "", "/"},
+		{"normal relative path", "/dashboard", "/dashboard"},
+		{"nested relative path", "/onboarding/step-2", "/onboarding/step-2"},
+		{"root path", "/", "/"},
+		{"protocol-relative http", "//evil.com", "/"},
+		{"protocol-relative https", "//https://evil.com", "/"},
+		{"absolute http URL", "http://evil.com", "/"},
+		{"absolute https URL", "https://evil.com/path", "/"},
+		{"no leading slash", "dashboard", "/"},
+		{"backslash not treated as path", "\\evil.com", "/"},
+		{"data URI", "data:text/html,<script>", "/"},
+		{"javascript URI", "javascript:alert(1)", "/"},
+		{"path with query string", "/login?next=/dashboard", "/login?next=/dashboard"},
+		{"path with fragment", "/dashboard#section", "/dashboard#section"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := safeRedirectPath(tt.path)
+			if got != tt.want {
+				t.Fatalf("safeRedirectPath(%q) = %q, want %q", tt.path, got, tt.want)
+			}
+		})
+	}
+}
+
 var errUserNotFound = errors.New("user not found")

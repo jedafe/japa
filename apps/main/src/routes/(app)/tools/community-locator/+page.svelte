@@ -23,6 +23,8 @@
 	import { EmptyState, LoadingSkeleton, SelectField } from '$lib/components/ui';
 	import { api } from '$lib/api/client';
 	import type { CommunityOrgWithAi, GeoSpaceOption } from '$lib/types';
+	import OrgMap from '$lib/components/tools/OrgMap.svelte';
+	import 'leaflet/dist/leaflet.css';
 	import type { PageData } from './$types';
 
 	/**
@@ -49,6 +51,10 @@
 	let orgTypeFilter = $state('');
 	let loading = $state(false);
 	let expandedId = $state<string | null>(null);
+
+	// City list for the submit form — loaded from the API when a
+	// destination is selected (Rule 16: data from API, not hardcoded).
+	let cities = $state<GeoSpaceOption[]>([]);
 
 	// Submit-new-org form state (toggle section)
 	let showSubmitForm = $state(false);
@@ -98,15 +104,33 @@
 		else orgs = [];
 	}
 
+	// BUG-B20: Load cities from the API when a destination is selected,
+	// so the submit form's city field is a select populated from
+	// /spaces?level=city&parent={destId} instead of a raw UUID text input.
+	async function loadCities(destId: string) {
+		if (!destId) {
+			cities = [];
+			return;
+		}
+		try {
+			const res = await api.get<GeoSpaceOption[]>(`/spaces?level=city&parent=${destId}`);
+			cities = res.data ?? [];
+		} catch {
+			cities = [];
+		}
+	}
+
 	function onDestChange(id: string) {
 		selectedDestId = id;
 		expandedId = null;
+		form.city_space_id = '';
 		// Update URL for shareability.
 		const url = new URL(page.url);
 		if (id) url.searchParams.set('dest', id);
 		else url.searchParams.delete('dest');
 		history.replaceState({}, '', url);
 		loadOrgs();
+		loadCities(id);
 	}
 
 	function toggleExpand(id: string) {
@@ -185,6 +209,9 @@
 	onMount(() => {
 		if (selectedDestId && orgs.length === 0) {
 			loadOrgs();
+		}
+		if (selectedDestId) {
+			loadCities(selectedDestId);
 		}
 	});
 </script>
@@ -294,6 +321,12 @@
 					/>
 				</div>
 
+				{#if filteredOrgs.some((o) => o.latitude != null && o.longitude != null)}
+					<div class="mb-6">
+						<OrgMap orgs={filteredOrgs} />
+					</div>
+				{/if}
+
 				<!-- Add organisation toggle -->
 				<div class="mb-6 flex items-center justify-between">
 					<h2 class="text-sm font-semibold text-[var(--color-muted)] uppercase tracking-wide">
@@ -351,13 +384,20 @@
 								<label for="form-org-type" class="block text-sm font-medium text-[var(--color-text)] mb-1">
 									{t('community_locator.field_org_type', 'Organisation type')} *
 								</label>
-								<input
+								<select
 									id="form-org-type"
-									type="text"
 									bind:value={form.org_type}
-									placeholder={t('community_locator.field_org_type_placeholder', 'e.g. Cultural, Religious, Social')}
 									class="w-full px-3 py-2 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius)] text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none"
-								/>
+								>
+									<option value="">{t('common.select', 'Select…')}</option>
+									<option value="cultural_association">{t('community_locator.type_cultural_association', 'Cultural Association')}</option>
+									<option value="church">{t('community_locator.type_church', 'Church')}</option>
+									<option value="mosque">{t('community_locator.type_mosque', 'Mosque')}</option>
+									<option value="professional_network">{t('community_locator.type_professional_network', 'Professional Network')}</option>
+									<option value="student_union">{t('community_locator.type_student_union', 'Student Union')}</option>
+									<option value="informal_group">{t('community_locator.type_informal_group', 'Informal Group')}</option>
+									<option value="other">{t('community_locator.type_other', 'Other')}</option>
+								</select>
 							</div>
 							<div>
 								<label for="form-origin" class="block text-sm font-medium text-[var(--color-text)] mb-1">
@@ -367,19 +407,28 @@
 									id="form-origin"
 									type="text"
 									bind:value={form.origin_community}
+									placeholder={t('community_locator.field_origin_community_placeholder', 'e.g. Nigerian, Ghanaian, West African')}
 									class="w-full px-3 py-2 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius)] text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none"
 								/>
 							</div>
 							<div>
 								<label for="form-city" class="block text-sm font-medium text-[var(--color-text)] mb-1">
-									{t('community_locator.field_city', 'City space ID')}
+									{t('community_locator.field_city', 'City')}
 								</label>
-								<input
+								<select
 									id="form-city"
-									type="text"
 									bind:value={form.city_space_id}
-									class="w-full px-3 py-2 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius)] text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none"
-								/>
+									disabled={cities.length === 0}
+									class="w-full px-3 py-2 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius)] text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none disabled:opacity-50"
+								>
+									<option value="">{t('community_locator.select_city', 'Select a city…')}</option>
+									{#each cities as city (city.id)}
+										<option value={city.id}>{city.name}</option>
+									{/each}
+								</select>
+								{#if cities.length === 0 && selectedDestId}
+									<p class="text-xs text-[var(--color-muted)] mt-1">{t('community_locator.no_cities', 'No cities configured for this destination.')}</p>
+								{/if}
 							</div>
 							<div class="sm:col-span-2">
 								<label for="form-address" class="block text-sm font-medium text-[var(--color-text)] mb-1">
@@ -553,6 +602,21 @@
 												{t('community_locator.claim_status', 'Claim status:')} {org.claim_status}
 											</span>
 										</div>
+
+									{#if org.claim_status === 'claimed' && org.japaconnect_space_id}
+										<div class="pt-2 border-t border-[var(--color-border)] mt-2">
+											<p class="text-xs font-medium uppercase tracking-wider text-[var(--color-muted)] mb-1">
+												{t('community_locator.space_integration', 'JapaConnect Space')}
+											</p>
+											<a
+												href={`/spaces/${org.japaconnect_space_id}`}
+												class="inline-flex items-center gap-1.5 text-sm text-[var(--color-primary)] hover:underline"
+											>
+												<Users size={14} />
+												{t('community_locator.view_space', 'View Space — posts, members & events')}
+											</a>
+										</div>
+									{/if}
 
 										<!-- Claim button -->
 										<div class="pt-2">

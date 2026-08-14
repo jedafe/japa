@@ -320,7 +320,7 @@ func (h *Handlers) HandleClaim(w http.ResponseWriter, r *http.Request) {
 // HandleAdminList handles GET /admin/community-locator — moderation queue
 // listing all community organisations (any status). Admin-only
 // (community_locator.review permission checked at route registration).
-// Supports ?status=&q=&sort=&dir=&page=&limit=.
+// Supports ?dest=&origin=&type=&status=&q=&sort=&dir=&page=&limit=.
 func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
@@ -335,6 +335,17 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Geo-aware filter: ?dest= (destination space ID).
+	var destSpaceID pgtype.UUID
+	if v := r.URL.Query().Get("dest"); v != "" {
+		if err := destSpaceID.Scan(v); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid destination space ID")
+			return
+		}
+	}
+
+	originCommunity := r.URL.Query().Get("origin")
+	orgType := r.URL.Query().Get("type")
 	status := r.URL.Query().Get("status")
 	q := r.URL.Query().Get("q")
 	sort := r.URL.Query().Get("sort")
@@ -345,7 +356,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 		limit = 200
 	}
 
-	orgs, total, err := h.service.AdminList(r.Context(), tenantID, status, q, sort, dir, page, limit)
+	orgs, total, err := h.service.AdminList(r.Context(), tenantID, destSpaceID, originCommunity, orgType, status, q, sort, dir, page, limit)
 	if err != nil {
 		slog.Error("communitylocator: admin list failed", "error", err)
 		writeError(w, http.StatusInternalServerError, "admin_list_failed", "Failed to list community organisations")
@@ -484,4 +495,129 @@ func (h *Handlers) HandleAdminResolveClaim(w http.ResponseWriter, r *http.Reques
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": org})
+}
+
+// HandleAdminGenerate handles POST /admin/community-locator/generate —
+// create an AI-generated draft community organisation entry (ADR-088
+// universal AI content generation). Admin-only (community_locator.manage
+// permission checked at route registration). The draft enters the HITL
+// review queue and is not visible to end users until approved.
+func (h *Handlers) HandleAdminGenerate(w http.ResponseWriter, r *http.Request) {
+	user, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	if h.service == nil {
+		writeError(w, http.StatusServiceUnavailable, "community_locator_unavailable", "Community locator not configured")
+		return
+	}
+
+	var input GenerateInput
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		return
+	}
+
+	if input.Name == "" {
+		writeError(w, http.StatusBadRequest, "missing_name", "Name is required")
+		return
+	}
+	if input.DestinationSpaceID == "" {
+		writeError(w, http.StatusBadRequest, "missing_destination_space_id", "destination_space_id is required")
+		return
+	}
+
+	// AI model identifier — in a full implementation this comes from the
+	// §20 AI Gateway response. For now, record a placeholder that
+	// indicates the draft was admin-initiated for AI generation.
+	aiModel := "admin-draft"
+
+	org, err := h.service.Generate(r.Context(), tenantID, user.UserID, input, aiModel)
+	if err != nil {
+		if errors.Is(err, ErrDuplicateSlug) {
+			writeError(w, http.StatusConflict, "duplicate_slug", "An organisation with this slug already exists")
+			return
+		}
+		slog.Error("communitylocator: admin generate failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "generate_failed", "Failed to generate community organisation draft")
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, map[string]any{"data": org})
+}
+
+// HandleAdminArchive handles PATCH /admin/community-locator/:id/archive —
+// archive a published community organisation. Admin-only
+// (community_locator.manage permission checked at route registration).
+// Sets status='archived', is_active=false.
+func (h *Handlers) HandleAdminArchive(w http.ResponseWriter, r *http.Request) {
+	if _, ok := requireUser(w, r); !ok {
+		return
+	}
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+	id, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	if h.service == nil {
+		writeError(w, http.StatusServiceUnavailable, "community_locator_unavailable", "Community locator not configured")
+		return
+	}
+
+	org, err := h.service.ArchiveOrg(r.Context(), id, tenantID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "org_not_found", "Community organisation not found")
+			return
+		}
+		slog.Error("communitylocator: admin archive failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "archive_failed", "Failed to archive community organisation")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": org})
+}
+
+// HandleAdminDelete handles DELETE /admin/community-locator/:id —
+// soft-delete a community organisation. Admin-only
+// (community_locator.manage permission checked at route registration).
+// Sets deleted_at=now() per Rule 11 (soft deletes only for user content).
+func (h *Handlers) HandleAdminDelete(w http.ResponseWriter, r *http.Request) {
+	if _, ok := requireUser(w, r); !ok {
+		return
+	}
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+	id, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	if h.service == nil {
+		writeError(w, http.StatusServiceUnavailable, "community_locator_unavailable", "Community locator not configured")
+		return
+	}
+
+	if err := h.service.DeleteOrg(r.Context(), id, tenantID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "org_not_found", "Community organisation not found")
+			return
+		}
+		slog.Error("communitylocator: admin delete failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "delete_failed", "Failed to delete community organisation")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"deleted": true}})
 }

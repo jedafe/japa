@@ -288,6 +288,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		Policy:        auth.DefaultPasswordPolicy(),
 		VKClient:      vkClient,
 		SiteName:      cfg.SiteName,
+		SiteURL:       cfg.SiteURL,
 		SupportURL:    cfg.SiteURL + "/support",
 		CookieDomain:  cfg.CookieDomain,
 		SecureCookies: cfg.IsProduction(),
@@ -1053,6 +1054,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Ref: japaconnect-engineering/sections/70-visa-checklist.md (ADR-070)
 	checklistStore := checklist.NewStore(database)
 	checklistService := checklist.NewService(checklistStore, settingsService)
+	checklistService.SetEnqueuer(taskEnqueuer) // wallet:award_points on full completion (§28)
 	checklistHandlers := checklist.NewHandlers(checklistService, settingsService)
 
 	// Ref: japaconnect-engineering/sections/79-community-story-wall.md (ADR-087)
@@ -1627,10 +1629,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			prom: promoter.NewHousingPromoter(&intelHousingPromoterStoreAdapter{Store: intelStores}, defaultTenantID, intelDefaultAuthorID, promoter.WithHousingAIModel(intelExtractionModel)),
 		},
 		schemas.EntityTypeRemittance: &intelPromoterPortAdapter{
-			prom: promoter.NewRemittancePromoter(&intelRemittancePromoterStoreAdapter{Store: intelStores}, defaultTenantID),
+			prom: promoter.NewRemittancePromoter(&intelRemittancePromoterStoreAdapter{Store: intelStores}, defaultTenantID, intelDefaultAuthorID),
 		},
 		schemas.EntityTypeCostOfLiving: &intelPromoterPortAdapter{
-			prom: promoter.NewCostOfLivingPromoter(&intelCostOfLivingPromoterStoreAdapter{Store: intelStores}, defaultTenantID),
+			prom: promoter.NewCostOfLivingPromoter(&intelCostOfLivingPromoterStoreAdapter{Store: intelStores}, defaultTenantID, intelDefaultAuthorID),
 		},
 		// 7 pure guide content type domains — each creates a contents
 		// guide row with the appropriate guide_category. They share the
@@ -2470,10 +2472,13 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "comments.vote")).Post("/comments/{id}/vote", commentsHandlers.VoteComment)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "comments.vote")).Delete("/comments/{id}/vote", commentsHandlers.RemoveVote)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "reports.submit")).Post("/comments/{id}/report", reportsHandlers.ReportComment)
-			// BUG-002: pin node is comments.pin (Section 49), not content.pin.
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "comments.pin")).
+			// BL-003: pin/unpin route is RequireAuth only; the handler resolves
+			// moderator (comments.pin) vs content-author at request time so a
+			// content author who doesn't hold comments.pin can still pin comments
+			// on their own content (Section 49).
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).
 				Post("/comments/{id}/pin", commentsHandlers.PinComment)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "comments.pin")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).
 				Delete("/comments/{id}/pin", commentsHandlers.UnpinComment)
 
 			// Follow System routes (Section 31 — Follow System)
@@ -5040,18 +5045,21 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Get("/admin/participation/stats", participationHandlers.HandleStats)
 
 			// Section 70 — Visa Document Checklist Generator (ADR-070)
-			r.Get("/checklist/selector", checklistHandlers.HandleSelector)
-			r.Get("/checklist/{guide_id}", checklistHandlers.HandleGetItems)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "checklist.use")).
-				Get("/checklist/{guide_id}/progress", checklistHandlers.HandleGetProgress)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "checklist.use")).
-				Patch("/checklist/{guide_id}/progress/{item_key}", checklistHandlers.HandleUpdateProgress)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "checklist.use")).
-				Delete("/checklist/{guide_id}/progress", checklistHandlers.HandleResetProgress)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "checklist.manage")).
-				Get("/admin/checklist/progress", checklistHandlers.HandleAdminListProgress)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "checklist.manage")).
-				Get("/admin/checklist/completion-stats", checklistHandlers.HandleAdminCompletionStats)
+			// Feature-flagged via features.Gate (returns 404 when disabled, ADR-042).
+			r.With(features.Gate(featureChecker, "checklist.enabled")).Group(func(r chi.Router) {
+				r.Get("/checklist/selector", checklistHandlers.HandleSelector)
+				r.Get("/checklist/{guide_id}", checklistHandlers.HandleGetItems)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "checklist.use")).
+					Get("/checklist/{guide_id}/progress", checklistHandlers.HandleGetProgress)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "checklist.use")).
+					Patch("/checklist/{guide_id}/progress/{item_key}", checklistHandlers.HandleUpdateProgress)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "checklist.use")).
+					Delete("/checklist/{guide_id}/progress", checklistHandlers.HandleResetProgress)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "checklist.manage")).
+					Get("/admin/checklist/progress", checklistHandlers.HandleAdminListProgress)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "checklist.manage")).
+					Get("/admin/checklist/completion-stats", checklistHandlers.HandleAdminCompletionStats)
+			})
 
 			// Section 79 — Community Story Wall (ADR-087)
 			// Feature-flagged via features.Gate (returns 404 when disabled, ADR-042).
@@ -5642,6 +5650,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Patch("/admin/community-locator/{id}/verify", communityLocatorHandlers.HandleAdminVerify)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "community_locator.manage")).
 					Patch("/admin/community-locator/{id}/claim/{claim_id}", communityLocatorHandlers.HandleAdminResolveClaim)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "community_locator.manage")).
+				Post("/admin/community-locator/generate", communityLocatorHandlers.HandleAdminGenerate)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "community_locator.manage")).
+				Patch("/admin/community-locator/{id}/archive", communityLocatorHandlers.HandleAdminArchive)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "community_locator.manage")).
+				Delete("/admin/community-locator/{id}", communityLocatorHandlers.HandleAdminDelete)
 			})
 
 			// Section 61 — Self-Serve Advertising (ADR-079)

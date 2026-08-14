@@ -179,3 +179,61 @@ func peerIP(r *http.Request) string {
 
 	return host
 }
+
+// ForwardedBaseURL returns the public-facing base URL (scheme://host) for the
+// request, honouring X-Forwarded-Host and X-Forwarded-Proto only when the
+// immediate peer is a trusted proxy. When the peer is untrusted (a direct
+// client connection), or when no forwarding headers are present, the fallback
+// is returned unchanged.
+//
+// This applies the same trusted-proxy gate as FromRequest: X-Forwarded-Host
+// and X-Forwarded-Proto are client-controlled headers that anyone can set.
+// Honoring them unconditionally enables host-header injection — an attacker
+// sends X-Forwarded-Host: evil.com and RSS feed links, password-reset links,
+// or other generated URLs point to a domain they control. Every consumer that
+// builds a public URL from forwarding headers must route through this helper
+// (or ForwardedScheme/ForwardedHost) so the trusted-proxy model is enforced
+// consistently.
+//
+// The scheme defaults to "https" when X-Forwarded-Proto is absent and the
+// request was received over TLS; otherwise "http". This matches the behaviour
+// of the previous inline implementations in blog/rss/auth handlers.
+func ForwardedBaseURL(r *http.Request, fallback string) string {
+	host := ForwardedHost(r)
+	if host == "" {
+		return fallback
+	}
+
+	return ForwardedScheme(r) + "://" + host
+}
+
+// ForwardedHost returns the X-Forwarded-Host value when the immediate peer is
+// a trusted proxy; otherwise it returns an empty string so callers fall back
+// to a configured or peer-derived value.
+func ForwardedHost(r *http.Request) string {
+	peer := peerIP(r)
+	if peer == "" || !IsTrustedProxy(net.ParseIP(peer)) {
+		return ""
+	}
+
+	return strings.TrimSpace(r.Header.Get("X-Forwarded-Host"))
+}
+
+// ForwardedScheme returns the transport scheme for the request, honouring
+// X-Forwarded-Proto only when the immediate peer is a trusted proxy. When the
+// header is absent or the peer is untrusted, it falls back to "https" when the
+// request was received over TLS, otherwise "http".
+func ForwardedScheme(r *http.Request) string {
+	peer := peerIP(r)
+	if peer != "" && IsTrustedProxy(net.ParseIP(peer)) {
+		if proto := strings.TrimSpace(r.Header.Get("X-Forwarded-Proto")); proto != "" {
+			return proto
+		}
+	}
+
+	if r.TLS != nil {
+		return "https"
+	}
+
+	return "http"
+}

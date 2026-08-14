@@ -197,47 +197,57 @@ func TestServeRSSFeed(t *testing.T) {
 	}
 }
 
-// TestResolveSiteURL verifies that X-Forwarded-Host is preferred over
-// the fallback URL, and that the scheme is derived correctly.
+// TestResolveSiteURL verifies that X-Forwarded-Host is honoured only from a
+// trusted proxy peer, and that the fallback is used otherwise (host-header
+// injection fix).
 func TestResolveSiteURL(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name     string
-		host     string
-		proto    string
-		tls      bool
-		fallback string
-		want     string
+		name       string
+		remoteAddr string // RemoteAddr of the immediate peer
+		host       string // X-Forwarded-Host header value
+		proto      string // X-Forwarded-Proto header value
+		fallback   string
+		want       string
 	}{
 		{
-			name:     "with X-Forwarded-Host and https proto",
-			host:     "japaconnect.com",
-			proto:    "https",
-			fallback: "http://localhost:8080",
-			want:     "https://japaconnect.com",
+			name:       "trusted proxy with X-Forwarded-Host and https proto",
+			remoteAddr: "10.0.0.5:4321", // 10.0.0.0/8 is a default trusted CIDR
+			host:       "japaconnect.com",
+			proto:      "https",
+			fallback:   "http://localhost:8080",
+			want:       "https://japaconnect.com",
 		},
 		{
-			name:     "with X-Forwarded-Host and no proto, no TLS",
-			host:     "japaconnect.com",
-			proto:    "",
-			tls:      false,
-			fallback: "http://localhost:8080",
-			want:     "http://japaconnect.com",
+			name:       "trusted proxy with X-Forwarded-Host, no proto, no TLS",
+			remoteAddr: "10.0.0.5:4321",
+			host:       "japaconnect.com",
+			proto:      "",
+			fallback:   "http://localhost:8080",
+			want:       "http://japaconnect.com",
 		},
 		{
-			name:     "with X-Forwarded-Host and no proto, TLS",
-			host:     "japaconnect.com",
-			proto:    "",
-			tls:      true,
-			fallback: "http://localhost:8080",
-			want:     "https://japaconnect.com",
+			name:       "untrusted peer ignores X-Forwarded-Host (host-header injection fix)",
+			remoteAddr: "203.0.113.10:4321", // not a trusted proxy
+			host:       "evil.com",
+			proto:      "https",
+			fallback:   "https://japaconnect.com",
+			want:       "https://japaconnect.com",
 		},
 		{
-			name:     "without X-Forwarded-Host uses fallback",
-			host:     "",
-			fallback: "http://localhost:8080",
-			want:     "http://localhost:8080",
+			name:       "trusted proxy without X-Forwarded-Host uses fallback",
+			remoteAddr: "10.0.0.5:4321",
+			host:       "",
+			fallback:   "http://localhost:8080",
+			want:       "http://localhost:8080",
+		},
+		{
+			name:       "untrusted peer without headers uses fallback",
+			remoteAddr: "203.0.113.10:4321",
+			host:       "",
+			fallback:   "http://localhost:8080",
+			want:       "http://localhost:8080",
 		},
 	}
 
@@ -246,18 +256,12 @@ func TestResolveSiteURL(t *testing.T) {
 			t.Parallel()
 
 			req := httptest.NewRequest(http.MethodGet, "/", nil)
+			req.RemoteAddr = tt.remoteAddr
 			if tt.host != "" {
 				req.Header.Set("X-Forwarded-Host", tt.host)
 			}
 			if tt.proto != "" {
 				req.Header.Set("X-Forwarded-Proto", tt.proto)
-			}
-			req.TLS = nil
-			if tt.tls {
-				// Simulate TLS by setting a non-nil TLS state.
-				// Since httptest.NewRequest doesn't easily set TLS,
-				// we rely on the proto header for the TLS case.
-				req.Header.Set("X-Forwarded-Proto", "https")
 			}
 
 			got := resolveSiteURL(req, tt.fallback)

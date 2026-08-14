@@ -69,6 +69,7 @@ type RemittanceTxStore interface {
 type RemittancePromoter struct {
 	store    RemittanceStore
 	tenantID pgtype.UUID // tenant the projection rows are stamped with
+	authorID pgtype.UUID // system/automation user for review-log actor
 	now      func() time.Time
 }
 
@@ -84,8 +85,8 @@ func WithRemittanceClock(fn func() time.Time) RemittancePromoterOption {
 // tenantID identifies the tenant stamped onto the remittance_rates rows
 // created by the create path. No authorID is needed because remittance does
 // not create a contents guide row.
-func NewRemittancePromoter(store RemittanceStore, tenantID pgtype.UUID, opts ...RemittancePromoterOption) *RemittancePromoter {
-	p := &RemittancePromoter{store: store, tenantID: tenantID, now: time.Now}
+func NewRemittancePromoter(store RemittanceStore, tenantID, authorID pgtype.UUID, opts ...RemittancePromoterOption) *RemittancePromoter {
+	p := &RemittancePromoter{store: store, tenantID: tenantID, authorID: authorID, now: time.Now}
 	for _, opt := range opts {
 		opt(p)
 	}

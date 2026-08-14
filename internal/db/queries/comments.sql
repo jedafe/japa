@@ -82,8 +82,19 @@ ORDER BY c.vote_score DESC, c.created_at ASC
 LIMIT @page_limit OFFSET @page_offset;
 
 -- name: UpdateComment :one
+-- Section 49 — edit after the edit window: marks is_edited = true and stamps
+-- edited_at. Used when comments.edit_window_minutes has elapsed since creation.
 UPDATE comments
 SET body = @body, is_edited = true, edited_at = now(), updated_at = now()
+WHERE id = @id AND tenant_id = @tenant_id AND author_user_id = @author_user_id AND deleted_at IS NULL
+RETURNING *;
+
+-- name: UpdateCommentUnmarked :one
+-- Section 49 — edit within the edit window (grace period): does NOT set
+-- is_edited so the comment shows no "edited" indicator. Used when the edit
+-- occurs within comments.edit_window_minutes of creation.
+UPDATE comments
+SET body = @body, updated_at = now()
 WHERE id = @id AND tenant_id = @tenant_id AND author_user_id = @author_user_id AND deleted_at IS NULL
 RETURNING *;
 
@@ -144,17 +155,17 @@ RETURNING id, tenant_id, comment_id, user_id, value, created_at;
 
 -- name: DeleteCommentVote :exec
 DELETE FROM comment_votes
-WHERE comment_id = @comment_id AND user_id = @user_id;
+WHERE comment_id = @comment_id AND user_id = @user_id AND tenant_id = @tenant_id;
 
 -- name: RecalculateCommentVoteScore :exec
 UPDATE comments
 SET vote_score = COALESCE((
     SELECT SUM(cv.value)::int
     FROM comment_votes cv
-    WHERE cv.comment_id = @comment_id
+    WHERE cv.comment_id = @comment_id AND cv.tenant_id = @tenant_id
 ), 0),
 updated_at = now()
-WHERE id = @comment_id;
+WHERE id = @comment_id AND tenant_id = @tenant_id;
 
 -- name: GetCommentVote :one
 SELECT id, tenant_id, comment_id, user_id, value, created_at
