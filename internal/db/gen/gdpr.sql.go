@@ -267,6 +267,28 @@ func (q *Queries) AnonymizeInstructorPayoutsForInstructor(ctx context.Context, a
 	return result.RowsAffected(), nil
 }
 
+const anonymizeMentorshipConnections = `-- name: AnonymizeMentorshipConnections :exec
+UPDATE mentorship_connections
+SET goals = NULL, updated_at = now()
+WHERE tenant_id = $1 AND (mentor_id = $2 OR mentee_id = $2)
+`
+
+type AnonymizeMentorshipConnectionsParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	UserID   pgtype.UUID `json:"user_id"`
+}
+
+// Scrubs PII (goals — the mentee's free-text stated goals) from
+// mentorship_connections where the user is mentor or mentee during the GDPR
+// retention window (§102, ADR-014). The connection rows themselves are
+// retained for audit until HardDeleteUser cascades via ON DELETE CASCADE;
+// only the goals text is cleared so it is not recoverable during the
+// retention window. Best-effort: a failure logs a warning but does not abort.
+func (q *Queries) AnonymizeMentorshipConnections(ctx context.Context, arg AnonymizeMentorshipConnectionsParams) error {
+	_, err := q.db.Exec(ctx, anonymizeMentorshipConnections, arg.TenantID, arg.UserID)
+	return err
+}
+
 const anonymizeRevenueSplitsForInstructor = `-- name: AnonymizeRevenueSplitsForInstructor :execrows
 UPDATE revenue_splits rs
 SET instructor_id = NULL
@@ -3649,6 +3671,30 @@ type ReassignDataExportRequestUserParams struct {
 // data_export_requests.user_id is NOT NULL; reassign to placeholder to preserve the export audit trail.
 func (q *Queries) ReassignDataExportRequestUser(ctx context.Context, arg ReassignDataExportRequestUserParams) error {
 	_, err := q.db.Exec(ctx, reassignDataExportRequestUser, arg.TargetUserID, arg.UserID, arg.TenantID)
+	return err
+}
+
+const reassignMediaUploader = `-- name: ReassignMediaUploader :exec
+UPDATE media SET uploader_user_id = $1
+WHERE uploader_user_id = $2 AND tenant_id = $3
+`
+
+type ReassignMediaUploaderParams struct {
+	TargetUserID pgtype.UUID `json:"target_user_id"`
+	UserID       pgtype.UUID `json:"user_id"`
+	TenantID     pgtype.UUID `json:"tenant_id"`
+}
+
+// BUG-009: reassign media uploader before user deletion so the user's
+// uploaded media survives the hard delete (Rule 11 — soft-delete only for
+// user content; only account:deletion_cleanup may hard-delete). Without
+// this, ON DELETE CASCADE on media.uploader_user_id physically deletes the
+// user's media rows, breaking featured/header images on posts whose
+// authorship was reassigned to the placeholder. The placeholder UUID is
+// resolved by hardDeleteUser (gdpr.deleted_user_placeholder_uuid setting).
+// Ref: japaconnect-engineering/sections/34-media-system.md, ADR-014.
+func (q *Queries) ReassignMediaUploader(ctx context.Context, arg ReassignMediaUploaderParams) error {
+	_, err := q.db.Exec(ctx, reassignMediaUploader, arg.TargetUserID, arg.UserID, arg.TenantID)
 	return err
 }
 

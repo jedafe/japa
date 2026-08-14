@@ -227,12 +227,22 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	totalPages := int64(0)
+	if limit > 0 {
+		totalPages = (total + int64(limit) - 1) / int64(limit)
+	}
+
+	// Geo-aware tool pattern response envelope: { data, meta: { page,
+	// per_page, total, total_pages } }. The frontend apiList helper reads
+	// `meta` (not `pagination`), so emitting `meta` is required for the
+	// pagination nav to render. BUG-006.
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": posts,
-		"pagination": map[string]any{
-			"page":  page,
-			"limit": limit,
-			"total": total,
+		"meta": map[string]any{
+			"page":        page,
+			"per_page":    limit,
+			"total":       total,
+			"total_pages": totalPages,
 		},
 	})
 }
@@ -313,6 +323,13 @@ func (h *Handlers) HandleCreate(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_category", "Category is required")
 		return
 	}
+	// BUG-014: validate category against the §85 enum before hitting the
+	// DB CHECK constraint — otherwise an invalid value surfaces as a raw
+	// 500 instead of a structured 400.
+	if !IsValidCategory(input.Category) {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_category", "Invalid category")
+		return
+	}
 	if input.Description == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_description", "Description is required")
 		return
@@ -385,6 +402,12 @@ func (h *Handlers) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 	var input UpdatePostRequest
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		return
+	}
+
+	// BUG-014: validate category against the §85 enum when provided.
+	if input.Category != nil && *input.Category != "" && !IsValidCategory(*input.Category) {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_category", "Invalid category")
 		return
 	}
 
@@ -660,12 +683,21 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	totalPages := int64(0)
+	if limit > 0 {
+		totalPages = (total + int64(limit) - 1) / int64(limit)
+	}
+
+	// Geo-aware tool pattern admin list envelope: { data, meta: { page,
+	// per_page, total, total_pages } }. The admin EntityPage reads
+	// `meta.total` / `meta.total_pages` for pagination. BUG-007.
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": posts,
-		"pagination": map[string]any{
-			"page":  page,
-			"limit": limit,
-			"total": total,
+		"meta": map[string]any{
+			"page":        page,
+			"per_page":    limit,
+			"total":       total,
+			"total_pages": totalPages,
 		},
 	})
 }

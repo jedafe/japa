@@ -276,6 +276,17 @@ SET display_name = 'Deleted User',
     updated_at = now()
 WHERE user_id = @user_id AND tenant_id = @tenant_id;
 
+-- name: AnonymizeMentorshipConnections :exec
+-- Scrubs PII (goals — the mentee's free-text stated goals) from
+-- mentorship_connections where the user is mentor or mentee during the GDPR
+-- retention window (§102, ADR-014). The connection rows themselves are
+-- retained for audit until HardDeleteUser cascades via ON DELETE CASCADE;
+-- only the goals text is cleared so it is not recoverable during the
+-- retention window. Best-effort: a failure logs a warning but does not abort.
+UPDATE mentorship_connections
+SET goals = NULL, updated_at = now()
+WHERE tenant_id = @tenant_id AND (mentor_id = @user_id OR mentee_id = @user_id);
+
 -- name: AnonymizeAffiliateLinkEvents :exec
 -- Scrubs PII (ip_hash, user_agent_hash) from affiliate_link_events owned by
 -- the deleted user's affiliate links during the GDPR retention window
@@ -370,6 +381,18 @@ WHERE author_user_id = @user_id AND tenant_id = @tenant_id;
 -- content_reviews.reviewer_user_id destroys all review records.
 UPDATE content_reviews SET reviewer_user_id = @target_user_id
 WHERE reviewer_user_id = @user_id AND tenant_id = @tenant_id;
+
+-- name: ReassignMediaUploader :exec
+-- BUG-009: reassign media uploader before user deletion so the user's
+-- uploaded media survives the hard delete (Rule 11 — soft-delete only for
+-- user content; only account:deletion_cleanup may hard-delete). Without
+-- this, ON DELETE CASCADE on media.uploader_user_id physically deletes the
+-- user's media rows, breaking featured/header images on posts whose
+-- authorship was reassigned to the placeholder. The placeholder UUID is
+-- resolved by hardDeleteUser (gdpr.deleted_user_placeholder_uuid setting).
+-- Ref: japaconnect-engineering/sections/34-media-system.md, ADR-014.
+UPDATE media SET uploader_user_id = @target_user_id
+WHERE uploader_user_id = @user_id AND tenant_id = @tenant_id;
 
 -- name: NullifyPaymentUserRefs :exec
 -- Nulls payment-related user references for financial audit trail preservation.

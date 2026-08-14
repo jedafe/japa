@@ -557,6 +557,18 @@ func (s *Service) ProcessAccountDeletion(ctx context.Context, requestID pgtype.U
 			slog.Warn("failed to anonymize user profile during deletion",
 				"user_id", request.UserID.String(), "error", err)
 		}
+		// Scrub PII (goals) from mentorship_connections where the user is
+		// mentor or mentee (§102, ADR-014). The connection rows are retained
+		// for audit until HardDeleteUser cascades; only the goals text is
+		// cleared so it is not recoverable during the retention window.
+		// Best-effort: a failure logs a warning but does not abort.
+		if err := s.store.anonymizeMentorshipConnections(ctx, gen.AnonymizeMentorshipConnectionsParams{
+			UserID:   request.UserID,
+			TenantID: request.TenantID,
+		}); err != nil {
+			slog.Warn("failed to anonymize mentorship connections during deletion",
+				"user_id", request.UserID.String(), "error", err)
+		}
 		// Scrub PII (ip_hash, user_agent_hash) from affiliate_link_events
 		// owned by the user's affiliate links (Section 56, ADR-014). The
 		// events are retained for commission audit; only tracking hashes are
@@ -961,6 +973,20 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 			TargetUserID: deletedUserPlaceholder,
 		}); err != nil {
 			return fmt.Errorf("reassigning content review reviewer: %w", err)
+		}
+
+		// BUG-009: reassign media uploader to preserve user-uploaded media
+		// (Rule 11 — soft-delete only for user content; only
+		// account:deletion_cleanup may hard-delete). Without this, ON DELETE
+		// CASCADE on media.uploader_user_id physically deletes the user's
+		// media rows, breaking featured/header images on posts whose
+		// authorship was reassigned to the placeholder. Ref: §34, ADR-014.
+		if err := q.ReassignMediaUploader(ctx, gen.ReassignMediaUploaderParams{
+			UserID:       userID,
+			TenantID:     tenantID,
+			TargetUserID: deletedUserPlaceholder,
+		}); err != nil {
+			return fmt.Errorf("reassigning media uploader: %w", err)
 		}
 
 		// 2. Nullify payment user references (financial audit trail survives).

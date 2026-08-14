@@ -163,7 +163,14 @@ func IdempotencyMiddleware(rdb valkeycompat.Cmdable, settings idempotencySetting
 
 			ttlHours := idempotencyTTLDefault
 			if settings != nil {
-				ttlHours = settings.GetIntOr(ctx, defaultTenantUUID, "api.idempotency_ttl_hours", idempotencyTTLDefault)
+				// Use the authenticated user's tenant so tenant-specific
+				// settings are honoured. Falls back to the default tenant
+				// for anonymous callers (callerID is the client IP).
+				tenantID := defaultTenantUUID
+				if user := auth.FromContext(ctx); user != nil && user.TenantID.Valid {
+					tenantID = user.TenantID
+				}
+				ttlHours = settings.GetIntOr(ctx, tenantID, "api.idempotency_ttl_hours", idempotencyTTLDefault)
 			}
 			ttl := time.Duration(ttlHours) * time.Hour
 

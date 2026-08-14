@@ -70,7 +70,7 @@ func (s *Service) ListMenus(ctx context.Context, tenantID pgtype.UUID, q, placem
 	if total%limit > 0 {
 		totalPages++
 	}
-	return &ListMenusResponse{Items: menus, Page: offset / limit, TotalPages: totalPages, Total: total}, nil
+	return &ListMenusResponse{Items: menus, Page: (offset / limit) + 1, TotalPages: totalPages, Total: total}, nil
 }
 
 func (s *Service) GetMenu(ctx context.Context, id, tenantID pgtype.UUID) (*MenuResponse, error) {
@@ -221,6 +221,13 @@ func (s *Service) CreateMenuItem(ctx context.Context, tenantID pgtype.UUID, inpu
 	if err := menuID.Scan(input.MenuID); err != nil {
 		return gen.CreateMenuItemRow{}, fmt.Errorf("invalid menu_id: %w", err)
 	}
+	// Verify the parent menu exists and belongs to the tenant before
+	// creating the item. Without this, a non-existent menu_id hits the FK
+	// constraint and surfaces as a generic 500 instead of 404 (Rule 5).
+	// Ref: ADR-054.
+	if _, err := s.store.getMenuByID(ctx, menuID, tenantID); err != nil {
+		return gen.CreateMenuItemRow{}, err
+	}
 	var parentID pgtype.UUID
 	if input.ParentID != nil {
 		if err := parentID.Scan(*input.ParentID); err != nil {
@@ -260,11 +267,18 @@ func (s *Service) UpdateMenuItem(ctx context.Context, id, tenantID pgtype.UUID, 
 	if !ValidVisibility(input.Visibility) {
 		return gen.UpdateMenuItemRow{}, ErrInvalidVisibility
 	}
-	if !ValidStatus(input.Status) {
-		return gen.UpdateMenuItemRow{}, ErrInvalidStatus
-	}
 	if !ValidTarget(input.Target) {
 		return gen.UpdateMenuItemRow{}, ErrInvalidTarget
+	}
+	// Default empty status to "active", matching CreateMenuItem's behavior.
+	// Without this, a PATCH that omits status is rejected with 400 while
+	// POST defaults it — an API inconsistency. Ref: ADR-054.
+	status := input.Status
+	if status == "" {
+		status = string(StatusActive)
+	}
+	if !ValidStatus(status) {
+		return gen.UpdateMenuItemRow{}, ErrInvalidStatus
 	}
 	var parentID pgtype.UUID
 	if input.ParentID != nil {
@@ -296,13 +310,20 @@ func (s *Service) UpdateMenuItem(ctx context.Context, id, tenantID pgtype.UUID, 
 		Target:           input.Target,
 		IsAdSlot:         input.IsAdSlot,
 		AdSlotConfig:     adConfig,
-		Status:           input.Status,
+		Status:           status,
 		RequiredGroupIds: groupIDsJSON,
 	})
 }
 
 func (s *Service) DeleteMenuItem(ctx context.Context, id, tenantID pgtype.UUID) error {
 	return s.store.deleteMenuItem(ctx, id, tenantID)
+}
+
+// GetMenuItem returns a single menu item by ID, scoped to the tenant.
+// Used by handlers to verify an item belongs to a specific menu before
+// performing scoped operations (update/delete/reorder). Ref: ADR-054.
+func (s *Service) GetMenuItem(ctx context.Context, id, tenantID pgtype.UUID) (gen.GetMenuItemRow, error) {
+	return s.store.getMenuItem(ctx, id, tenantID)
 }
 
 type ReorderInput struct {

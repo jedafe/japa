@@ -44,7 +44,34 @@ const (
 	StatusExpired   = "expired"
 	StatusRemoved   = "removed"
 	StatusFulfilled = "fulfilled"
+
+	// Categories per §85 (mirrors the CHECK constraint added in 000410).
+	CategoryHousing   = "housing"
+	CategoryTransport = "transport"
+	CategoryDocuments = "documents"
+	CategoryJobSearch = "job_search"
+	CategoryLanguage  = "language"
+	CategorySocial    = "social"
+	CategoryOther     = "other"
 )
+
+// validCategories is the set of categories allowed by §85 and enforced by
+// the mutual_aid_posts_category_check constraint (migration 000410).
+var validCategories = map[string]struct{}{
+	CategoryHousing:   {},
+	CategoryTransport: {},
+	CategoryDocuments: {},
+	CategoryJobSearch: {},
+	CategoryLanguage:  {},
+	CategorySocial:    {},
+	CategoryOther:     {},
+}
+
+// IsValidCategory reports whether c is one of the §85 categories.
+func IsValidCategory(c string) bool {
+	_, ok := validCategories[c]
+	return ok
+}
 
 // Post is a single mutual_aid_posts row.
 type Post struct {
@@ -148,7 +175,9 @@ RETURNING id, tenant_id, user_id, post_type, category, title, description,
 	return p, nil
 }
 
-// GetPost returns a single active (deleted_at IS NULL) post by id.
+// GetPost returns a single publicly-visible post by id. A post is publicly
+// visible only when not soft-deleted AND not moderated/removed (BUG-009).
+// Removed posts are reachable via the admin endpoints, not the public one.
 func (s *Store) GetPost(ctx context.Context, id, tenantID pgtype.UUID) (PostRow, error) {
 	const q = `
 SELECT m.id, m.tenant_id, m.user_id, m.post_type, m.category, m.title,
@@ -163,6 +192,7 @@ LEFT JOIN user_profiles up ON up.user_id = m.user_id
 LEFT JOIN spaces ds ON ds.id = m.destination_space_id
 LEFT JOIN spaces cs ON cs.id = m.city_space_id
 WHERE m.id = $1 AND m.tenant_id = $2 AND m.deleted_at IS NULL
+  AND m.status <> 'removed'
 LIMIT 1
 `
 	var r PostRow

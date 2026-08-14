@@ -38,7 +38,12 @@
 	}: Props = $props();
 
 	const MAX_DEPTH = 6;
-	const bodyHtml = $derived(tiptapBodyToHtml(reply.body, { deletedUserIds }));
+	const bodyHtml = $derived(
+		tiptapBodyToHtml(reply.body, {
+			deletedUserIds,
+			deletedUserLabel: t('mentions.deleted_user', '[deleted user]')
+		})
+	);
 	const time = $derived(relativeTime(reply.created_at, new Date(), i18n.locale));
 	const authorLabel = $derived(
 		reply.is_anonymous

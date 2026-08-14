@@ -116,3 +116,7 @@ export const blockUser = (id: string) => api.post(`/users/${id}/block`);
 export const muteUser = (id: string) => api.post(`/users/${id}/mute`);
 export const unmuteUser = (id: string) => api.delete(`/users/${id}/mute`);
 export const unmuteSpace = (slug: string) => api.delete(`/spaces/${slug}/mute`);
+
+/* ---- newsletter preferences (Section 62, ADR-080) ---- */
+export const patchNewsletterPreferences = (v: { digest_enabled?: boolean; campaign_enabled?: boolean }) =>
+	api.patch<{ digest_enabled: boolean; campaign_enabled: boolean }>('/newsletter/preferences', v);

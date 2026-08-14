@@ -1,5 +1,5 @@
 import { apiGet, apiList, ApiError, type ApiContext } from '$lib/server/api';
-import type { MeProfile, PrivacySettings, AffiliateEarnings, GeoCountry, NotificationPreference } from '$lib/types';
+import type { MeProfile, PrivacySettings, AffiliateEarnings, GeoCountry, NotificationPreference, MentorProfile } from '$lib/types';
 
 /**
  * Server-only loader registry — one entry per settings section that needs
@@ -58,6 +58,13 @@ export const SETTINGS_LOADERS: Record<string, (ctx: ApiContext) => Promise<unkno
 	connected: async (ctx) => (await apiList<unknown>(ctx, '/me/connected-accounts')).items,
 	notifications: (ctx) =>
 		apiGet<NotificationPreference[]>(ctx, '/me/notification-preferences'),
+	// Section 62 / ADR-080: newsletter subscriber preferences (digest +
+	// campaign toggles). Best-effort: degrades to null when the user is not
+	// subscribed or the feature is disabled, so the section can render a
+	// subscribe CTA instead of the toggles.
+	newsletter: async (ctx) => ({
+		preferences: await apiGet<unknown>(ctx, '/newsletter/preferences').catch(() => null)
+	}),
 	'api-keys': async (ctx) => (await apiList<unknown>(ctx, '/me/api-keys')).items,
 	affiliate: async (ctx) => {
 		// GET /affiliate-program — public program info (commission rates, T&Cs,
@@ -100,5 +107,14 @@ export const SETTINGS_LOADERS: Record<string, (ctx: ApiContext) => Promise<unkno
 		// GET /wallet/currencies — currency symbols for price formatting (Rule 16).
 		currencies: await apiGet<unknown[]>(ctx, '/wallet/currencies').catch(() => [])
 	}),
-	danger: async () => null
+	danger: async () => null,
+
+	// §102 Mentorship Matching (ADR-110): mentor settings — toggle is_mentor,
+	// set capacity, areas, bio. GET /me/mentor-profile returns the caller's
+	// mentor columns on user_profiles. Best-effort: degrades to null when
+	// the user lacks the mentorship.become_mentor permission or the feature
+	// is disabled (the section renders a permission/disabled notice).
+	mentorship: async (ctx) => ({
+		profile: await apiGet<MentorProfile>(ctx, '/me/mentor-profile').catch(() => null)
+	})
 };

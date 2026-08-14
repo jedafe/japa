@@ -726,6 +726,19 @@ func (s *Store) anonymizeUserProfile(ctx context.Context, p gen.AnonymizeUserPro
 	return nil
 }
 
+// anonymizeMentorshipConnections scrubs PII (goals — the mentee's free-text
+// stated goals) from mentorship_connections where the user is mentor or
+// mentee during the GDPR retention window (§102, ADR-014). The connection
+// rows are retained for audit until HardDeleteUser cascades; only the goals
+// text is cleared. Best-effort.
+func (s *Store) anonymizeMentorshipConnections(ctx context.Context, p gen.AnonymizeMentorshipConnectionsParams) error {
+	if err := s.write.AnonymizeMentorshipConnections(ctx, p); err != nil {
+		return fmt.Errorf("anonymizing mentorship connections: %w", err)
+	}
+
+	return nil
+}
+
 // anonymizeAffiliateLinkEvents scrubs ip_hash/user_agent_hash PII from
 // affiliate_link_events owned by the deleted user's affiliate links (Section
 // 56, ADR-014). Best-effort: callers log a warning on failure but do not

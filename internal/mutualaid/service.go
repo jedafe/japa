@@ -70,15 +70,32 @@ type RespondRequest struct {
 	Message string `json:"message"`
 }
 
+// Notifier is the interface used by the mutual aid service to dispatch
+// expiry-approaching notifications. It is satisfied by
+// *notifications.Service. Defined here (rather than importing notifications
+// directly) to avoid an import cycle: notifications → worker → mutualaid.
+// Ref: japaconnect-engineering/sections/35-notification-system.md
+type Notifier interface {
+	CreateNotification(ctx context.Context, tenantID, recipientID pgtype.UUID, nType, actorType string, actorID pgtype.UUID, subjectType string, subjectID pgtype.UUID, title, body, actionURL string) error
+}
+
 // Service holds the business logic for the Mutual Aid Board.
 type Service struct {
 	store    *Store
 	settings *config.Settings
+	notifier Notifier
 }
 
 // NewService creates a mutual aid service.
 func NewService(store *Store, settings *config.Settings) *Service {
 	return &Service{store: store, settings: settings}
+}
+
+// SetNotifier injects the notification service used to dispatch 3-day-prior
+// expiry notifications (§85). Optional — when nil, ExpirePosts skips the
+// notification step but still expires posts.
+func (s *Service) SetNotifier(n Notifier) {
+	s.notifier = n
 }
 
 // Create inserts a new mutual aid post. Auth required (permission checked at
@@ -346,8 +363,45 @@ func (s *Service) ExpirePosts(ctx context.Context) (int64, error) {
 	if err != nil {
 		return 0, fmt.Errorf("mutualaid: expire: %w", err)
 	}
-	// TODO: send 3-day-prior notifications via the notification service
-	// once the notifier is wired (s.notifier.NotifyExpiringPost).
+	// BUG-004: send 3-day-prior expiry notifications to owners of active
+	// posts that will expire within the next 72 hours. §85 requires the
+	// nightly task to notify owners three days before expiry. Failures
+	// here are logged but do not fail the task — expiry already succeeded.
+	if s.notifier != nil {
+		const withinHours = 72
+		expiring, err := s.store.PostsExpiringSoon(ctx, withinHours)
+		if err != nil {
+			slog.Warn("mutualaid: expiring-soon lookup failed", "error", err)
+		} else {
+			zeroUUID := pgtype.UUID{}
+			for _, p := range expiring {
+				if !p.UserID.Valid || !p.TenantID.Valid {
+					continue
+				}
+				title := "Your mutual aid post expires soon"
+				body := "Your mutual aid post \"" + p.Title + "\" will expire in less than 3 days. Renew it to keep it visible."
+				actionURL := "/mutual-aid/" + p.ID.String()
+				if err := s.notifier.CreateNotification(
+					ctx,
+					p.TenantID,
+					p.UserID,
+					"mutual_aid_expiring",
+					"system",
+					zeroUUID,
+					"mutual_aid_post",
+					p.ID,
+					title,
+					body,
+					actionURL,
+				); err != nil {
+					slog.Warn("mutualaid: expiry notification failed",
+						"post_id", p.ID.String(),
+						"user_id", p.UserID.String(),
+						"error", err)
+				}
+			}
+		}
+	}
 	return n, nil
 }
 

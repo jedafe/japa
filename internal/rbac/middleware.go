@@ -25,7 +25,7 @@ func RequirePermission(resolver *RBAC, permKey string) func(http.Handler) http.H
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			user := auth.FromContext(r.Context())
-			if user == nil {
+			if user == nil || !user.UserID.Valid {
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusUnauthorized)
 				_, _ = w.Write([]byte(`{"error":{"code":"unauthenticated","message":"Authentication required"}}`))
@@ -70,7 +70,7 @@ func RequireAnyPermission(resolver *RBAC, permKeys ...string) func(http.Handler)
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			user := auth.FromContext(r.Context())
-			if user == nil {
+			if user == nil || !user.UserID.Valid {
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusUnauthorized)
 				_, _ = w.Write([]byte(`{"error":{"code":"unauthenticated","message":"Authentication required"}}`))
@@ -116,7 +116,7 @@ func RequirePermissionWithInvalidation(resolver *RBAC, permKey string) func(http
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			user := auth.FromContext(r.Context())
-			if user == nil {
+			if user == nil || !user.UserID.Valid {
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusUnauthorized)
 				_, _ = w.Write([]byte(`{"error":{"code":"unauthenticated","message":"Authentication required"}}`))
@@ -175,10 +175,11 @@ func OptionalPermission(resolver *RBAC, permKey string) func(http.Handler) http.
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			user := auth.FromContext(r.Context())
-			// Guests pass through — the directory is public for SEO and
-			// anonymous browsing. The permission only gates authed users
-			// whose groups have had the node revoked.
-			if user == nil {
+			// Guests (no user or invalid user ID) pass through — the
+			// directory is public for SEO and anonymous browsing. The
+			// permission only gates authed users whose groups have had
+			// the node revoked.
+			if user == nil || !user.UserID.Valid {
 				next.ServeHTTP(w, r)
 				return
 			}
@@ -237,7 +238,7 @@ func RequireSpacePermission(resolver *RBAC, permKey string) func(http.Handler) h
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			user := auth.FromContext(r.Context())
-			if user == nil {
+			if user == nil || !user.UserID.Valid {
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusUnauthorized)
 				_, _ = w.Write([]byte(`{"error":{"code":"unauthenticated","message":"Authentication required"}}`))

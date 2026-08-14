@@ -588,9 +588,15 @@
 	}
 
 	// ── Page-local upload flow (preserved from legacy) ────────────────────
+	// Default user_group_id for admin uploads: the super_admin system group
+	// (00000000-0000-0000-0000-000000000010, seeded in migration 000006).
+	// Admin-uploaded media defaults to admin-only visibility instead of
+	// universal, so an admin's uploads are not exposed to all users unless
+	// the admin explicitly chooses "Universal (all users)".
+	const SUPER_ADMIN_GROUP_ID = '00000000-0000-0000-0000-000000000010';
 	let showUploadModal = $state(false);
 	let uploadFiles = $state<File[]>([]);
-	let uploadUserGroupId = $state('');
+	let uploadUserGroupId = $state(SUPER_ADMIN_GROUP_ID);
 	let uploadAltText = $state('');
 	let uploadSubmitting = $state(false);
 	let uploadProgress = $state<{ current: number; total: number; filename: string } | null>(null);
@@ -626,7 +632,7 @@
 
 	function openUploadModal() {
 		uploadFiles = [];
-		uploadUserGroupId = '';
+		uploadUserGroupId = SUPER_ADMIN_GROUP_ID;
 		uploadAltText = '';
 		uploadProgress = null;
 		uploadModalTab = 'upload';
@@ -1055,8 +1061,9 @@
 					bind:value={uploadUserGroupId}
 					class="w-full rounded-lg border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
 				>
+					<option value={SUPER_ADMIN_GROUP_ID}>{t('app.media.upload_admin_only', 'Visible to admin')}</option>
 					<option value="">{t('app.media.upload_universal', 'Universal (all users)')}</option>
-					{#each userGroups as group (group)}
+					{#each userGroups.filter((g) => g.id !== SUPER_ADMIN_GROUP_ID) as group (group)}
 						<option value={group.id}>{group.name}</option>
 					{/each}
 				</select>

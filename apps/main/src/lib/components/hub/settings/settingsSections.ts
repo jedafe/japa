@@ -4,6 +4,7 @@ import ProfileSection from './sections/ProfileSection.svelte';
 import AccountSection from './sections/AccountSection.svelte';
 import PrivacySection from './sections/PrivacySection.svelte';
 import NotificationsSection from './sections/NotificationsSection.svelte';
+import NewsletterSection from './sections/NewsletterSection.svelte';
 import ConnectedSection from './sections/ConnectedSection.svelte';
 import AffiliateSection from './sections/AffiliateSection.svelte';
 import WalletSection from './sections/WalletSection.svelte';
@@ -15,6 +16,7 @@ import DangerSection from './sections/DangerSection.svelte';
 import LanguageSection from './sections/LanguageSection.svelte';
 import DataPrivacySection from './sections/DataPrivacySection.svelte';
 import LocationSection from './sections/LocationSection.svelte';
+import MentorSection from './sections/MentorSection.svelte';
 
 /**
  * Client meta for one settings section. `component` is null for sections
@@ -40,12 +42,14 @@ export const SETTINGS_SECTIONS: SectionMeta[] = [
 	{ slug: 'privacy', labelKey: 'settings.nav.privacy', icon: 'lock', group: 'account', backendReady: true, component: PrivacySection },
 	{ slug: 'language', labelKey: 'settings.nav.language', icon: 'globe', group: 'account', backendReady: true, component: LanguageSection },
 	{ slug: 'location', labelKey: 'settings.nav.location', icon: 'map-pin', group: 'account', backendReady: true, component: LocationSection },
+	{ slug: 'mentorship', labelKey: 'settings.nav.mentorship', icon: 'graduation-cap', group: 'account', backendReady: true, component: MentorSection },
 	{ slug: 'data-privacy', labelKey: 'settings.nav.data_privacy', icon: 'shield-check', group: 'account', backendReady: true, component: DataPrivacySection },
 	{ slug: 'security', labelKey: 'settings.nav.security', icon: 'shield', group: 'security', backendReady: true, component: SecuritySection },
 	{ slug: 'sessions', labelKey: 'settings.nav.sessions', icon: 'monitor', group: 'security', backendReady: true, component: SessionsSection },
 	{ slug: 'connected', labelKey: 'settings.nav.connected', icon: 'link', group: 'security', backendReady: true, component: ConnectedSection },
 	{ slug: 'devices', labelKey: 'settings.nav.devices', icon: 'smartphone', group: 'security', backendReady: false, component: null },
 	{ slug: 'notifications', labelKey: 'settings.nav.notifications', icon: 'bell', group: 'notifications', backendReady: true, component: NotificationsSection },
+	{ slug: 'newsletter', labelKey: 'settings.nav.newsletter', icon: 'mail', group: 'notifications', backendReady: true, component: NewsletterSection },
 	{ slug: 'api-keys', labelKey: 'settings.nav.api_keys', icon: 'key', group: 'developer', backendReady: true, component: ApiKeysSection },
 	{ slug: 'affiliate', labelKey: 'settings.nav.affiliate', icon: 'share-2', group: 'developer', backendReady: true, component: AffiliateSection },
 	{ slug: 'wallet', labelKey: 'settings.nav.wallet', icon: 'wallet', group: 'billing', backendReady: true, component: WalletSection },

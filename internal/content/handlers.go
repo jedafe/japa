@@ -585,26 +585,37 @@ func (h *Handlers) enqueueLinkPreview(url, blockID string, tenantID pgtype.UUID)
 // hrefURLRegex extracts http(s) URLs from href attributes in HTML.
 var hrefURLRegex = regexp.MustCompile(`(?i)href="(https?://[^"]+)"`)
 
+// dataURLRegex extracts http(s) URLs from data-url attributes in HTML.
+// Link preview nodes are stored as <div data-type="link-preview"
+// data-url="https://..."> and use data-url, not href (BUG-004).
+var dataURLRegex = regexp.MustCompile(`(?i)data-url="(https?://[^"]+)"`)
+
 // enqueueLinkPreviewsForBody extracts external http(s) URLs from the HTML
 // body and enqueues a link preview fetch task for each. Fire-and-forget
 // (Section 15 — external links get async OG/oEmbed scrape). Called after
 // content create/update so previews are cached for editor display.
+// BUG-004: also extracts URLs from data-url attributes used by link
+// preview block nodes, not just href attributes on inline links.
 func (h *Handlers) enqueueLinkPreviewsForBody(bodyHTML string, contentID, tenantID pgtype.UUID) {
 	if h.AsynqClient == nil || bodyHTML == "" {
 		return
 	}
 
-	matches := hrefURLRegex.FindAllStringSubmatch(bodyHTML, -1)
-	seen := make(map[string]bool, len(matches))
+	seen := make(map[string]bool)
 	blockID := contentID.String()
 
-	for _, m := range matches {
-		url := m[1]
-		if seen[url] {
+	// Extract URLs from both href (inline links) and data-url (link preview
+	// block nodes) attributes. Deduplicate across both sources.
+	allMatches := [][]string{}
+	allMatches = append(allMatches, hrefURLRegex.FindAllStringSubmatch(bodyHTML, -1)...)
+	allMatches = append(allMatches, dataURLRegex.FindAllStringSubmatch(bodyHTML, -1)...)
+	for _, m := range allMatches {
+		u := m[1]
+		if seen[u] {
 			continue
 		}
-		seen[url] = true
-		h.enqueueLinkPreview(url, blockID, tenantID)
+		seen[u] = true
+		h.enqueueLinkPreview(u, blockID, tenantID)
 	}
 }
 

@@ -291,6 +291,25 @@ SELECT user_id, mentor_embedding
 FROM user_profiles
 WHERE tenant_id = @tenant_id AND user_id = @user_id AND is_mentor = true;
 
+-- name: GetUserEmbedding :one
+-- Get any user's mentor_embedding vector (for match scoring on the discovery
+-- page). Unlike GetMentorEmbedding, this does NOT require is_mentor = true —
+-- a mentee who is also a mentor will have an embedding from their own bio.
+-- Returns NULL for users without an embedding (service falls back to
+-- keyword-only scoring, §102).
+SELECT user_id, mentor_embedding
+FROM user_profiles
+WHERE tenant_id = @tenant_id AND user_id = @user_id;
+
+-- name: GetMenteeDestinationSpaceID :one
+-- Get the authenticated user's destination space ID (japa_stage_dest_space_id,
+-- §87) for use as the default ?dest= filter on the mentor discovery page
+-- (§102 Geo Awareness: "The mentee's profile destination_country_id is
+-- injected as a default filter when logged in, with no UI action required").
+SELECT user_id, japa_stage_dest_space_id AS destination_space_id
+FROM user_profiles
+WHERE tenant_id = @tenant_id AND user_id = @user_id;
+
 -- name: ListMentorsWithEmbeddings :many
 -- Get all mentors with their embeddings for batch Meilisearch sync.
 SELECT up.user_id, up.mentor_embedding, up.is_mentor, up.mentor_areas,

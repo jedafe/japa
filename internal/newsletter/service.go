@@ -146,32 +146,6 @@ func (s *Service) WebhookSecret(_ context.Context) string {
 	return os.Getenv("JC_NEWSLETTER_WEBHOOK_SECRET")
 }
 
-// GetAllSubscriberEmails returns all subscriber emails opted into campaigns
-// for a tenant (status = 'subscribed' AND campaign_enabled = true).
-func (s *Service) GetAllSubscriberEmails(ctx context.Context, tenantID pgtype.UUID) ([]string, error) {
-	rows, err := s.db.Reader.Query(ctx, `
-		SELECT email FROM newsletter_subscribers
-		WHERE tenant_id = $1 AND status = 'subscribed' AND campaign_enabled = true
-	`, tenantID)
-	if err != nil {
-		return nil, fmt.Errorf("listing subscriber emails: %w", err)
-	}
-	defer rows.Close()
-
-	var emails []string
-
-	for rows.Next() {
-		var email string
-		if err := rows.Scan(&email); err != nil {
-			return nil, fmt.Errorf("scanning subscriber email: %w", err)
-		}
-
-		emails = append(emails, email)
-	}
-
-	return emails, rows.Err()
-}
-
 // EnqueueNewsletterSend enqueues a newsletter_send Asynq task. The worker
 // re-fetches the campaign and resolves segment-aware recipients from the
 // DB, so only the IDs are carried in the payload (§62, ADR-080 §3).
@@ -206,43 +180,14 @@ func (s *Service) EnqueueNewsletterSend(_ context.Context, campaignID, tenantID 
 // Subscriber Operations
 // ---------------------------------------------------------------------------
 
-// ListSubscribers returns all newsletter subscribers for the tenant.
-func (s *Service) ListSubscribers(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]Subscriber, error) {
-	rows, err := s.db.Reader.Query(ctx, `
-		SELECT id, tenant_id, email, user_id, status, digest_enabled, campaign_enabled,
-		       subscribed_at, unsubscribed_at, source, created_at
-		FROM newsletter_subscribers
-		WHERE tenant_id = $1
-		ORDER BY subscribed_at DESC
-		LIMIT $2 OFFSET $3
-	`, tenantID, limit, offset)
-	if err != nil {
-		return nil, fmt.Errorf("listing newsletter subscribers: %w", err)
-	}
-	defer rows.Close()
-
-	var out []Subscriber
-	for rows.Next() {
-		var s Subscriber
-		if err := rows.Scan(
-			&s.ID, &s.TenantID, &s.Email, &s.UserID, &s.Status,
-			&s.DigestEnabled, &s.CampaignEnabled,
-			&s.SubscribedAt, &s.UnsubscribedAt, &s.Source, &s.CreatedAt,
-		); err != nil {
-			return nil, fmt.Errorf("scanning newsletter subscriber: %w", err)
-		}
-		out = append(out, s)
-	}
-	return out, rows.Err()
-}
-
 // ListSubscribersFiltered returns newsletter subscribers for the tenant,
-// optionally filtered by status (§62 admin route ?status=). Uses the
-// AdminListSubscribers sqlc query which supports status filtering.
-func (s *Service) ListSubscribersFiltered(ctx context.Context, tenantID pgtype.UUID, status string, limit, offset int32) ([]gen.NewsletterSubscriber, error) {
+// optionally filtered by status and email search (§62 admin route
+// ?status=&search=). Uses the AdminListSubscribers sqlc query.
+func (s *Service) ListSubscribersFiltered(ctx context.Context, tenantID pgtype.UUID, status, search string, limit, offset int32) ([]gen.NewsletterSubscriber, error) {
 	return s.queries.AdminListSubscribers(ctx, gen.AdminListSubscribersParams{
 		TenantID:   tenantID,
 		Status:     status,
+		Search:     search,
 		PageLimit:  limit,
 		PageOffset: offset,
 	})
@@ -324,39 +269,6 @@ func (s *Service) CreateSubscriber(ctx context.Context, tenantID pgtype.UUID, em
 // ---------------------------------------------------------------------------
 // Campaign Operations
 // ---------------------------------------------------------------------------
-
-// ListCampaigns returns all newsletter campaigns for the tenant.
-func (s *Service) ListCampaigns(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]Campaign, error) {
-	rows, err := s.db.Reader.Query(ctx, `
-		SELECT id, tenant_id, name, subject, html, preview_text, body, segment, segment_id,
-		       status, scheduled_at, sent_at, recipient_count, open_count, click_count,
-		       created_by, created_at, updated_at
-		FROM newsletter_campaigns
-		WHERE tenant_id = $1
-		ORDER BY created_at DESC
-		LIMIT $2 OFFSET $3
-	`, tenantID, limit, offset)
-	if err != nil {
-		return nil, fmt.Errorf("listing newsletter campaigns: %w", err)
-	}
-	defer rows.Close()
-
-	var campaigns []Campaign
-
-	for rows.Next() {
-		var c Campaign
-		if err := rows.Scan(&c.ID, &c.TenantID, &c.Name, &c.Subject, &c.HTML, &c.PreviewText,
-			&c.Body, &c.Segment, &c.SegmentID, &c.Status, &c.ScheduledAt, &c.SentAt,
-			&c.RecipientCount, &c.OpenCount, &c.ClickCount, &c.CreatedBy, &c.CreatedAt,
-			&c.UpdatedAt); err != nil {
-			return nil, fmt.Errorf("scanning newsletter campaign: %w", err)
-		}
-
-		campaigns = append(campaigns, c)
-	}
-
-	return campaigns, rows.Err()
-}
 
 // GetCampaign returns a single newsletter campaign by ID.
 func (s *Service) GetCampaign(ctx context.Context, tenantID, id pgtype.UUID) (Campaign, error) {
@@ -474,6 +386,7 @@ func (s *Service) UpdateCampaign(ctx context.Context, tenantID, id pgtype.UUID, 
 		ID:          id,
 		Name:        input.Name,
 		Subject:     input.Subject,
+		Html:        input.HTML,
 		PreviewText: input.PreviewText,
 		Body:        body,
 		Segment:     input.Segment,
@@ -483,17 +396,6 @@ func (s *Service) UpdateCampaign(ctx context.Context, tenantID, id pgtype.UUID, 
 	})
 	if err != nil {
 		return gen.NewsletterCampaign{}, fmt.Errorf("updating newsletter campaign %s: %w", id, err)
-	}
-
-	// If html is provided, update it via raw SQL (the V2 sqlc query doesn't
-	// include the legacy html column).
-	if input.HTML != nil {
-		if _, err := s.db.Writer.Exec(ctx, `
-			UPDATE newsletter_campaigns SET html = $3, updated_at = now()
-			WHERE tenant_id = $1 AND id = $2
-		`, tenantID, id, *input.HTML); err != nil {
-			return gen.NewsletterCampaign{}, fmt.Errorf("updating newsletter campaign html %s: %w", id, err)
-		}
 	}
 
 	return campaign, nil
@@ -511,21 +413,30 @@ func (s *Service) Unsubscribe(ctx context.Context, tenantID pgtype.UUID, email s
 	})
 }
 
-// UnsubscribeByToken unsubscribes a subscriber via a one-click unsubscribe token.
+// UnsubscribeByToken unsubscribes a subscriber via a one-click unsubscribe
+// token. The token is single-use: it is deleted after a successful
+// unsubscribe. The UnsubscribeByID query is a :one returning the updated
+// row, so a tenant mismatch (token belongs to a different tenant's
+// subscriber) yields a "no rows" error rather than a silent no-op (§62).
 func (s *Service) UnsubscribeByToken(ctx context.Context, tenantID pgtype.UUID, token string) error {
 	tokenRow, err := s.queries.GetUnsubscribeToken(ctx, token)
 	if err != nil {
 		return fmt.Errorf("newsletter: get unsubscribe token: %w", err)
 	}
 
-	if err := s.queries.UnsubscribeByID(ctx, gen.UnsubscribeByIDParams{
+	if _, err := s.queries.UnsubscribeByID(ctx, gen.UnsubscribeByIDParams{
 		TenantID: tenantID,
 		ID:       tokenRow.SubscriberID,
 	}); err != nil {
-		return fmt.Errorf("newsletter: unsubscribe by id: %w", err)
+		return fmt.Errorf("newsletter: unsubscribe by id (tenant mismatch or not found): %w", err)
 	}
 
-	_ = s.queries.DeleteUnsubscribeToken(ctx, token)
+	// Delete the token to enforce single-use semantics. A failure here means
+	// the token could be reused — return the error so the caller can retry
+	// or alert, rather than silently leaving the token valid.
+	if err := s.queries.DeleteUnsubscribeToken(ctx, token); err != nil {
+		return fmt.Errorf("newsletter: delete unsubscribe token (single-use): %w", err)
+	}
 	return nil
 }
 
@@ -593,31 +504,9 @@ type CreateCampaignInput struct {
 	ScheduledAt *time.Time      `json:"scheduled_at"`
 }
 
-// SendCampaign sends a campaign immediately via the newsletter:send task.
-func (s *Service) SendCampaign(ctx context.Context, tenantID, campaignID pgtype.UUID) error {
-	if err := s.queries.MarkCampaignSending(ctx, gen.MarkCampaignSendingParams{
-		TenantID: tenantID,
-		ID:       campaignID,
-	}); err != nil {
-		return fmt.Errorf("newsletter: mark campaign sending: %w", err)
-	}
-
-	if s.client != nil {
-		payload, _ := json.Marshal(map[string]interface{}{
-			"tenant_id":   tenantID.String(),
-			"campaign_id": campaignID.String(),
-		})
-		task := asynq.NewTask(worker.TypeNewsletterSend, payload)
-		if _, err := s.client.Enqueue(task, asynq.Queue(worker.QueueForTask(worker.TypeNewsletterSend))); err != nil {
-			slog.Warn("newsletter: enqueue send failed", "error", err)
-		}
-	}
-
-	return nil
-}
-
-// AdminListSubscribers returns paginated subscribers for admin oversight.
-func (s *Service) AdminListSubscribers(ctx context.Context, tenantID pgtype.UUID, status string, page, limit int) ([]gen.NewsletterSubscriber, int64, error) {
+// AdminListSubscribers returns paginated subscribers for admin oversight,
+// optionally filtered by status and email search (§62 admin route).
+func (s *Service) AdminListSubscribers(ctx context.Context, tenantID pgtype.UUID, status, search string, page, limit int) ([]gen.NewsletterSubscriber, int64, error) {
 	if limit <= 0 || limit > 100 {
 		limit = 20
 	}
@@ -629,6 +518,7 @@ func (s *Service) AdminListSubscribers(ctx context.Context, tenantID pgtype.UUID
 	rows, err := s.queries.AdminListSubscribers(ctx, gen.AdminListSubscribersParams{
 		TenantID:   tenantID,
 		Status:     status,
+		Search:     search,
 		PageLimit:  int32(limit),
 		PageOffset: offset,
 	})
@@ -639,6 +529,7 @@ func (s *Service) AdminListSubscribers(ctx context.Context, tenantID pgtype.UUID
 	total, err := s.queries.AdminCountSubscribers(ctx, gen.AdminCountSubscribersParams{
 		TenantID: tenantID,
 		Status:   status,
+		Search:   search,
 	})
 	if err != nil {
 		return nil, 0, fmt.Errorf("newsletter: admin count subscribers: %w", err)
@@ -696,6 +587,34 @@ func (s *Service) MarkComplained(ctx context.Context, tenantID pgtype.UUID, emai
 	return s.queries.MarkComplained(ctx, gen.MarkComplainedParams{
 		TenantID: tenantID,
 		Email:    email,
+	})
+}
+
+// IncrementCampaignOpens increments the open_count for a campaign (from
+// email provider webhook engagement events). The campaignID is a UUID string
+// scanned into pgtype.UUID (§62 schema: open_count).
+func (s *Service) IncrementCampaignOpens(ctx context.Context, tenantID pgtype.UUID, campaignID string) error {
+	var id pgtype.UUID
+	if err := id.Scan(campaignID); err != nil {
+		return fmt.Errorf("newsletter: invalid campaign_id: %w", err)
+	}
+	return s.queries.IncrementCampaignOpens(ctx, gen.IncrementCampaignOpensParams{
+		TenantID: tenantID,
+		ID:       id,
+	})
+}
+
+// IncrementCampaignClicks increments the click_count for a campaign (from
+// email provider webhook engagement events). The campaignID is a UUID string
+// scanned into pgtype.UUID (§62 schema: click_count).
+func (s *Service) IncrementCampaignClicks(ctx context.Context, tenantID pgtype.UUID, campaignID string) error {
+	var id pgtype.UUID
+	if err := id.Scan(campaignID); err != nil {
+		return fmt.Errorf("newsletter: invalid campaign_id: %w", err)
+	}
+	return s.queries.IncrementCampaignClicks(ctx, gen.IncrementCampaignClicksParams{
+		TenantID: tenantID,
+		ID:       id,
 	})
 }
 

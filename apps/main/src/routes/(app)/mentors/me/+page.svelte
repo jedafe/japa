@@ -2,7 +2,7 @@
 	// Ref: japaconnect-engineering/sections/102-mentorship-matching.md
 	import { untrack } from 'svelte';
 	import { t, i18n } from '$lib/i18n';
-	import { invalidateAll } from '$app/navigation';
+	import { invalidateAll, goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import {
 		GraduationCap,
@@ -138,13 +138,37 @@
 		if (res.error) {
 			actionError =
 				res.error.message || t('mentors.action_error', 'Action failed. Please try again.');
+			return null;
+		}
+		await invalidateAll();
+		return res.data ?? null;
+	}
+
+	async function deleteConnection(connId: string, endpoint: string) {
+		if (pendingConnId) return;
+		pendingConnId = connId;
+		actionError = null;
+		const res = await api.delete<MentorshipConnection>(endpoint);
+		pendingConnId = null;
+		if (res.error) {
+			actionError =
+				res.error.message || t('mentors.action_error', 'Action failed. Please try again.');
 			return;
 		}
 		await invalidateAll();
 	}
 
 	async function acceptConnection(id: string) {
-		await patchConnection(id, `/me/mentorship/incoming/${id}/accept`);
+		const conn = await patchConnection(id, `/me/mentorship/incoming/${id}/accept`);
+		// §102 / ADR-110: backend auto-opens a DM thread on accept. Navigate
+		// the user to that DM so they can start messaging immediately.
+		if (conn) {
+			const otherUsername =
+				conn.mentee_id === currentUserId ? conn.mentor_username : conn.mentee_username;
+			if (otherUsername) {
+				goto(`/messages?u=${encodeURIComponent(otherUsername)}`);
+			}
+		}
 	}
 
 	async function rejectConnection(id: string) {
@@ -152,7 +176,16 @@
 		await patchConnection(id, `/me/mentorship/incoming/${id}/decline`);
 	}
 
-	async function cancelConnection(id: string) {
+	async function cancelOutgoingPending(id: string) {
+		// §102: pending outgoing requests are cancelled via
+		// DELETE /me/mentorship/outgoing/:id (not PATCH /mentorship/:id/cancel,
+		// which is for active connections only).
+		await deleteConnection(id, `/me/mentorship/outgoing/${id}`);
+	}
+
+	async function cancelActiveConnection(id: string) {
+		// §102: active connections are cancelled via
+		// PATCH /mentorship/:id/cancel.
 		await patchConnection(id, `/mentorship/${id}/cancel`);
 	}
 
@@ -374,13 +407,23 @@
 										</p>
 									</div>
 
-									<!-- Actions: mentee may cancel pending/active, or mark active completed -->
+									<!-- Actions: mentee may cancel pending (DELETE) or active (PATCH cancel) -->
 									<div class="flex shrink-0 flex-wrap items-center gap-2">
-										{#if conn.status === 'pending' || conn.status === 'active'}
+										{#if conn.status === 'pending'}
 											<button
 												type="button"
 												disabled={pendingConnId === conn.id}
-												onclick={() => cancelConnection(conn.id)}
+												onclick={() => cancelOutgoingPending(conn.id)}
+												class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-[var(--color-text-subtle)] transition-colors hover:bg-[var(--color-surface-subtle)] disabled:opacity-50"
+											>
+												<Ban size={13} />
+												{t('mentors.me_cancel', 'Cancel')}
+											</button>
+										{:else if conn.status === 'active'}
+											<button
+												type="button"
+												disabled={pendingConnId === conn.id}
+												onclick={() => cancelActiveConnection(conn.id)}
 												class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-[var(--color-text-subtle)] transition-colors hover:bg-[var(--color-surface-subtle)] disabled:opacity-50"
 											>
 												<Ban size={13} />
@@ -495,7 +538,7 @@
 												<button
 													type="button"
 													disabled={pendingConnId === conn.id}
-													onclick={() => cancelConnection(conn.id)}
+													onclick={() => cancelActiveConnection(conn.id)}
 													class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-[var(--color-text-subtle)] transition-colors hover:bg-[var(--color-surface-subtle)] disabled:opacity-50"
 												>
 													<Ban size={13} />

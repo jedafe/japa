@@ -5,7 +5,7 @@
 	import { ArrowLeft, Send } from 'lucide-svelte';
 	import { api } from '$lib/api/client';
 	import { untrack } from 'svelte';
-	import type { MutualAidPost, MutualAidPostType, MutualAidCategory, Space } from '$lib/types';
+	import type { MutualAidPost, MutualAidPostType, MutualAidCategory } from '$lib/types';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -26,42 +26,15 @@
 	let category = $state<MutualAidCategory>(untrack(() => (post.category as MutualAidCategory) ?? 'housing'));
 	let title = $state(untrack(() => post.title ?? ''));
 	let description = $state(untrack(() => post.description ?? ''));
+	// BUG-005: destination/city are read-only on edit — the backend
+	// UpdatePostRequest only accepts category/title/description. Kept as
+	// state only to seed the disabled select's selected option.
 	let destinationSpaceId = $state(untrack(() => post.destination_space_id ?? ''));
-	let citySpaceId = $state(untrack(() => post.city_space_id ?? ''));
 	let submitting = $state(false);
 	let error = $state<string | null>(null);
 
-	// City list — loaded when a destination country is selected (BUG-011).
-	let cities = $state<Space[]>([]);
-	let loadingCities = $state(false);
-	let initialDestLoaded = $state(false);
-
-	// When the destination changes, fetch the city list for that country.
-	$effect(() => {
-		const destId = destinationSpaceId;
-		if (!destId) {
-			cities = [];
-			if (initialDestLoaded) citySpaceId = '';
-			return;
-		}
-		if (initialDestLoaded) citySpaceId = '';
-		loadingCities = true;
-		api
-			.get<{ items: Space[] }>(`/spaces?level=city&parent=${destId}`)
-			.then((res) => {
-				cities = res.data?.items ?? [];
-			})
-			.catch(() => {
-				cities = [];
-			})
-			.finally(() => {
-				loadingCities = false;
-				initialDestLoaded = true;
-			});
-	});
-
 	const canSubmit = $derived(
-		title.trim().length > 0 && description.trim().length > 0 && destinationSpaceId.length > 0 && !submitting
+		title.trim().length > 0 && description.trim().length > 0 && !submitting
 	);
 
 	async function submit(e: SubmitEvent) {
@@ -70,12 +43,9 @@
 		submitting = true;
 		error = null;
 		const res = await api.patch<MutualAidPost>(`/mutual-aid/${post.id}`, {
-			post_type: postType,
 			category,
 			title: title.trim(),
-			description: description.trim(),
-			destination_space_id: destinationSpaceId,
-			city_space_id: citySpaceId || undefined
+			description: description.trim()
 		});
 		submitting = false;
 		if (res.error) {
@@ -174,16 +144,18 @@
 			></textarea>
 		</div>
 
-		<!-- Destination country -->
+		<!-- Destination country (read-only — destination cannot be changed
+		     after creation; the backend UpdatePostRequest only accepts
+		     category/title/description. BUG-005.) -->
 		<div class="flex flex-col gap-1.5">
 			<label for="destination_country" class="text-sm font-medium text-[var(--color-text)]">
 				{t('mutual_aid.field_destination', 'Destination country')}
-				<span class="text-red-500" aria-hidden="true">*</span>
 			</label>
 			<select
 				id="destination_country"
-				bind:value={destinationSpaceId}
-				class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none"
+				value={destinationSpaceId}
+				disabled
+				class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-3 py-2 text-sm text-[var(--color-text-muted)]"
 			>
 				<option value="">{t('mutual_aid.field_destination_placeholder', 'Select a country')}</option>
 				{#each data.countries as country (country.id)}
@@ -192,26 +164,18 @@
 			</select>
 		</div>
 
-		<!-- City (optional — populated from /spaces?level=city&parent=<dest>) -->
+		<!-- City (read-only — same reason as destination. BUG-005.) -->
 		<div class="flex flex-col gap-1.5">
 			<label for="city" class="text-sm font-medium text-[var(--color-text)]">
 				{t('mutual_aid.field_city', 'City')}
 			</label>
-			<select
+			<input
 				id="city"
-				bind:value={citySpaceId}
-				disabled={!destinationSpaceId || loadingCities}
-				class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none disabled:opacity-50"
-			>
-				<option value="">
-					{loadingCities
-						? t('common.loading', 'Loading…')
-						: t('mutual_aid.field_city_placeholder', 'Select a city (optional)')}
-				</option>
-				{#each cities as c (c.id)}
-					<option value={c.id}>{c.name}</option>
-				{/each}
-			</select>
+				type="text"
+				value={post.city_space_name ?? ''}
+				disabled
+				class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-3 py-2 text-sm text-[var(--color-text-muted)]"
+			/>
 		</div>
 
 		<!-- Submit -->

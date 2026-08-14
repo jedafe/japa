@@ -1336,6 +1336,11 @@ export const mentorshipAdminApiExtended = {
 		api<unknown>(`/admin/mentorship/programs/${id}`, { method: 'DELETE' }),
 	updateMatch: (id: string, body: Record<string, unknown>) =>
 		api<unknown>(`/admin/mentorship/matches/${id}`, { method: 'PATCH', body }),
+	// §102 Mentorship Matching (ADR-110) — connections management.
+	listConnections: (params?: string) =>
+		api<unknown>(`/admin/mentorship/connections${params ? `?${params}` : ''}`),
+	updateConnection: (id: string, body: Record<string, unknown>) =>
+		api<unknown>(`/admin/mentorship/connections/${id}`, { method: 'PATCH', body }),
 };
 
 export const pageBuilderAdminApiExtended = {
@@ -1682,7 +1687,12 @@ export const planningGroupAdminApi = {
 };
 
 export const mutualAidAdminApi = {
-	list: (params?: string) => api<unknown>(`/admin/mutual-aid${params ? `?${params}` : ''}`),
+	// BUG-007: use apiRaw so the full response body (including `meta` with
+	// total/total_pages) is available for pagination. The backend emits
+	// { data: [...], meta: { page, per_page, total, total_pages } } per the
+	// geo-aware tool pattern admin list envelope.
+	list: (params?: string) =>
+		apiRaw<{ data: unknown[]; meta: { page?: number; per_page?: number; total?: number; total_pages?: number } }>(`/admin/mutual-aid${params ? `?${params}` : ''}`),
 	updateStatus: (id: string, body: { status: string }) =>
 		api<unknown>(`/admin/mutual-aid/${id}/status`, { method: 'PATCH', body }),
 };

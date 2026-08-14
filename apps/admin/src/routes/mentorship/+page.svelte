@@ -33,12 +33,27 @@
 		updated_at: string;
 	};
 
+	// §102 Mentorship Matching (ADR-110) — connection type.
+	type Connection = {
+		id: string;
+		mentor_id: string;
+		mentor_username?: string;
+		mentee_id: string;
+		mentee_username?: string;
+		status: string;
+		goals?: string | null;
+		created_at: string;
+		updated_at: string;
+	};
+
 	const MATCH_STATUSES = ['active', 'completed', 'cancelled'] as const;
+	const CONNECTION_STATUSES = ['pending', 'active', 'completed', 'cancelled', 'declined'] as const;
 
 	let activeTab = $state('programs');
 	const tabs = [
 		{ value: 'programs', label: t('app.mentorship.tabs.programs', 'Programs') },
-		{ value: 'matches', label: t('app.mentorship.tabs.matches', 'Matches') }
+		{ value: 'matches', label: t('app.mentorship.tabs.matches', 'Matches') },
+		{ value: 'connections', label: t('app.mentorship.tabs.connections', 'Connections') }
 	];
 
 	const canManageMentorship = hasPermission('mentorship.admin');
@@ -280,6 +295,90 @@
 		},
 		viewSnippet: MatchView
 	};
+
+	// ── Connections EntityPage (§102 ADR-110) ────────────────────────────
+
+	let connectionController = $state<EntityPageController | undefined>(undefined);
+	let connectionPageError = $state('');
+
+	const connectionFields: FieldDef[] = [
+		{
+			key: 'status',
+			label: t('app.mentorship.columns.status', 'Status'),
+			type: 'select',
+			options: CONNECTION_STATUSES.map((s) => ({ value: s, label: s }))
+		}
+	];
+
+	const connectionConfig: EntityPageConfig = {
+		title: t('app.mentorship.tabs.connections', 'Connections'),
+		description: t(
+			'app.mentorship.connections_description',
+			'View and override mentorship connections (§102)'
+		),
+		createPermission: 'mentorship.manage',
+		editPermission: 'mentorship.manage',
+		readonly: !hasPermission('mentorship.manage'),
+		pageSize: 15,
+		columns: [
+			{
+				key: 'mentor_username',
+				label: t('app.mentorship.columns.mentor', 'Mentor'),
+				sortable: true,
+				render: (_: any, row: Connection) =>
+					`<span class="font-medium text-foreground">${row.mentor_username ? '@' + row.mentor_username : row.mentor_id}</span>`
+			},
+			{
+				key: 'mentee_username',
+				label: t('app.mentorship.columns.mentee', 'Mentee'),
+				sortable: true,
+				render: (_: any, row: Connection) =>
+					`<span class="font-medium text-foreground">${row.mentee_username ? '@' + row.mentee_username : row.mentee_id}</span>`
+			},
+			{
+				key: 'status',
+				label: t('app.mentorship.columns.status', 'Status'),
+				sortable: true,
+				render: (v: string) => `<span class="font-medium">${v}</span>`
+			},
+			{
+				key: 'created_at',
+				label: t('app.mentorship.columns.created', 'Created'),
+				sortable: true,
+				render: (v: string) => `<span class="text-muted">${new Date(v).toLocaleDateString()}</span>`
+			}
+		],
+		filters: [
+			{
+				key: 'status',
+				label: t('app.mentorship.columns.status', 'Status'),
+				options: CONNECTION_STATUSES.map((s) => ({ value: s, label: s }))
+			}
+		],
+		fields: connectionFields,
+		load: async ({ q, sort, filter }) => {
+			const params = new URLSearchParams();
+			if (q) params.set('q', q);
+			if (sort) {
+				params.set('sort', sort);
+			}
+			if (filter.status) params.set('status', filter.status);
+			const result = await mentorshipApi.listConnections(params.toString() || undefined);
+			if (result.ok) {
+				const data = (result.data as Connection[]) ?? [];
+				return { data, total: data.length, totalPages: 1 };
+			}
+			throw new Error(
+				result.error ?? t('app.mentorship.error.load_connections_failed', 'Failed to load connections')
+			);
+		},
+		update: async (id, body) => {
+			const result = await mentorshipApi.updateConnection(id, body);
+			if (result.ok) return { ok: true };
+			return { ok: false, error: result.error ?? 'Failed to update connection' };
+		},
+		viewSnippet: ConnectionView
+	};
 </script>
 
 <svelte:head>
@@ -302,6 +401,13 @@
 		</div>
 	{/if}
 	<EntityPage config={matchConfig} bind:controller={matchController} />
+{:else if activeTab === 'connections'}
+	{#if connectionPageError}
+		<div class="mb-4 rounded-lg border border-danger/30 bg-danger/10 p-3 text-sm text-danger">
+			{connectionPageError}
+		</div>
+	{/if}
+	<EntityPage config={connectionConfig} bind:controller={connectionController} />
 {/if}
 
 <!-- ── Snippets ─────────────────────────────────────────────────────────── -->
@@ -357,6 +463,33 @@
 			<p class="text-xs font-medium uppercase tracking-wider text-muted">{t('app.mentorship.columns.status', 'Status')}</p>
 			<p class="mt-1 text-sm font-medium text-foreground">{row.status}</p>
 		</div>
+		<div>
+			<p class="text-xs font-medium uppercase tracking-wider text-muted">{t('app.mentorship.columns.created', 'Created')}</p>
+			<p class="mt-1 text-sm font-medium text-foreground">{new Date(row.created_at).toLocaleString()}</p>
+		</div>
+	</div>
+{/snippet}
+
+{#snippet ConnectionView({ row }: { row: Connection })}
+	<div class="space-y-4">
+		<div>
+			<p class="text-xs font-medium uppercase tracking-wider text-muted">{t('app.mentorship.columns.mentor', 'Mentor')}</p>
+			<p class="mt-1 text-sm font-medium text-foreground">{row.mentor_username ? `@${row.mentor_username}` : row.mentor_id}</p>
+		</div>
+		<div>
+			<p class="text-xs font-medium uppercase tracking-wider text-muted">{t('app.mentorship.columns.mentee', 'Mentee')}</p>
+			<p class="mt-1 text-sm font-medium text-foreground">{row.mentee_username ? `@${row.mentee_username}` : row.mentee_id}</p>
+		</div>
+		<div>
+			<p class="text-xs font-medium uppercase tracking-wider text-muted">{t('app.mentorship.columns.status', 'Status')}</p>
+			<p class="mt-1 text-sm font-medium text-foreground">{row.status}</p>
+		</div>
+		{#if row.goals}
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider text-muted">{t('app.mentorship.field.goals', 'Goals')}</p>
+				<p class="mt-1 text-sm font-medium text-foreground">{row.goals}</p>
+			</div>
+		{/if}
 		<div>
 			<p class="text-xs font-medium uppercase tracking-wider text-muted">{t('app.mentorship.columns.created', 'Created')}</p>
 			<p class="mt-1 text-sm font-medium text-foreground">{new Date(row.created_at).toLocaleString()}</p>

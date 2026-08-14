@@ -304,6 +304,7 @@ type AiHitlReview struct {
 	ReviewedAt    pgtype.Timestamptz `json:"reviewed_at"`
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
 	Source        string             `json:"source"`
+	TargetTable   string             `json:"target_table"`
 }
 
 type AiPersona struct {

@@ -48,9 +48,15 @@ export const load: PageServerLoad = async (event) => {
 	}
 
 	let replies: ForumReply[] = [];
+	let replyDeletedUserIds: string[] | null = null;
 	try {
-		const { items } = await apiList<ForumReply>(ctx, `/forum/${thread.id}/replies`);
-		replies = items;
+		// BUG-001: use the full envelope to capture deleted_user_ids emitted
+		// by ListReplies for erased-mention redaction in reply bodies
+		// (Section 15 / ADR-029). The thread envelope's deleted_user_ids only
+		// covers the thread body — replies may mention different erased users.
+		const repliesEnvelope = await apiGetEnvelope<ForumReply[]>(ctx, `/forum/${thread.id}/replies`);
+		replies = repliesEnvelope.data ?? [];
+		replyDeletedUserIds = repliesEnvelope.deleted_user_ids ?? null;
 	} catch {
 		// A failed reply fetch must not blank the thread; render with no replies.
 		replies = [];
@@ -94,6 +100,13 @@ export const load: PageServerLoad = async (event) => {
 	const currentUserId = event.locals.user?.id ?? null;
 	const canSolve = backendCanSolve || (authed && currentUserId === thread.author_user_id);
 
+	// BUG-001: merge erased-user IDs from the thread body and reply bodies so
+	// the frontend redacts mentions of erased users in both (Section 15 / ADR-029).
+	const mergedDeletedUserIds =
+		deletedUserIds || replyDeletedUserIds
+			? Array.from(new Set([...(deletedUserIds ?? []), ...(replyDeletedUserIds ?? [])]))
+			: null;
+
 	return {
 		thread,
 		replies,
@@ -106,7 +119,7 @@ export const load: PageServerLoad = async (event) => {
 		isBookmarked,
 		bookmarkId,
 		jsonLd,
-		deletedUserIds,
+		deletedUserIds: mergedDeletedUserIds,
 		acceptedReplyId: thread.solved ? null : null
 	};
 };
