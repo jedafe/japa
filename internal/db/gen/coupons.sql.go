@@ -463,8 +463,13 @@ func (q *Queries) GetAffiliateProviderBySlug(ctx context.Context, arg GetAffilia
 const getAffiliateProviderForRender = `-- name: GetAffiliateProviderForRender :one
 SELECT id, base_url, tracking_param, tracking_value, is_active
 FROM affiliate_providers
-WHERE id = $1 AND is_active = true
+WHERE id = $1 AND tenant_id = $2 AND is_active = true
 `
+
+type GetAffiliateProviderForRenderParams struct {
+	ID       pgtype.UUID `json:"id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
 
 type GetAffiliateProviderForRenderRow struct {
 	ID            pgtype.UUID `json:"id"`
@@ -474,8 +479,9 @@ type GetAffiliateProviderForRenderRow struct {
 	IsActive      bool        `json:"is_active"`
 }
 
-func (q *Queries) GetAffiliateProviderForRender(ctx context.Context, id pgtype.UUID) (GetAffiliateProviderForRenderRow, error) {
-	row := q.db.QueryRow(ctx, getAffiliateProviderForRender, id)
+// BE-LOW-001: tenant-scoped render resolution.
+func (q *Queries) GetAffiliateProviderForRender(ctx context.Context, arg GetAffiliateProviderForRenderParams) (GetAffiliateProviderForRenderRow, error) {
+	row := q.db.QueryRow(ctx, getAffiliateProviderForRender, arg.ID, arg.TenantID)
 	var i GetAffiliateProviderForRenderRow
 	err := row.Scan(
 		&i.ID,
@@ -644,8 +650,13 @@ SELECT c.id, c.title, c.code, c.discount_type, c.discount_value,
     ap.name AS provider_name, ap.slug AS provider_slug, ap.logo_media_id AS provider_logo_media_id
 FROM coupons c
 LEFT JOIN affiliate_providers ap ON ap.id = c.provider_id
-WHERE c.id = $1
+WHERE c.id = $1 AND c.tenant_id = $2
 `
+
+type GetCouponForRenderParams struct {
+	ID       pgtype.UUID `json:"id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
 
 type GetCouponForRenderRow struct {
 	ID                  pgtype.UUID        `json:"id"`
@@ -664,8 +675,11 @@ type GetCouponForRenderRow struct {
 // =====================
 // Render Helpers
 // =====================
-func (q *Queries) GetCouponForRender(ctx context.Context, id pgtype.UUID) (GetCouponForRenderRow, error) {
-	row := q.db.QueryRow(ctx, getCouponForRender, id)
+// BE-LOW-001: tenant-scoped so a render request cannot resolve a coupon
+// from another tenant. The InternalGuard on the render routes is defense-
+// in-depth; this query is the primary tenant isolation control.
+func (q *Queries) GetCouponForRender(ctx context.Context, arg GetCouponForRenderParams) (GetCouponForRenderRow, error) {
+	row := q.db.QueryRow(ctx, getCouponForRender, arg.ID, arg.TenantID)
 	var i GetCouponForRenderRow
 	err := row.Scan(
 		&i.ID,
@@ -1120,12 +1134,13 @@ func (q *Queries) UpdateAffiliateProvider(ctx context.Context, arg UpdateAffilia
 const updateCoupon = `-- name: UpdateCoupon :one
 UPDATE coupons
 SET title = $1, description = $2, code = $3,
-    discount_type = $4, discount_value = $5,
-    currency = $6, terms_url = $7,
-    referral_url = $8, is_verified = $9,
-    status = $10, valid_from = $11,
-    expires_at = $12, updated_at = now()
-WHERE id = $13 AND tenant_id = $14
+    provider_id = $4,
+    discount_type = $5, discount_value = $6,
+    currency = $7, terms_url = $8,
+    referral_url = $9, is_verified = $10,
+    status = $11, valid_from = $12,
+    expires_at = $13, updated_at = now()
+WHERE id = $14 AND tenant_id = $15
 RETURNING id, tenant_id, provider_id, coupon_type, title, description, code,
     discount_type, discount_value, currency, terms_url, referral_url,
     is_verified, status, valid_from, expires_at, total_clicks, total_copies,
@@ -1136,6 +1151,7 @@ type UpdateCouponParams struct {
 	Title         string             `json:"title"`
 	Description   *string            `json:"description"`
 	Code          string             `json:"code"`
+	ProviderID    pgtype.UUID        `json:"provider_id"`
 	DiscountType  *string            `json:"discount_type"`
 	DiscountValue pgtype.Numeric     `json:"discount_value"`
 	Currency      *string            `json:"currency"`
@@ -1154,6 +1170,7 @@ func (q *Queries) UpdateCoupon(ctx context.Context, arg UpdateCouponParams) (Cou
 		arg.Title,
 		arg.Description,
 		arg.Code,
+		arg.ProviderID,
 		arg.DiscountType,
 		arg.DiscountValue,
 		arg.Currency,

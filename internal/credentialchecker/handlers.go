@@ -105,13 +105,12 @@ func parsePageParams(r *http.Request) (page, limit int32) {
 // HandleListProfessions handles GET /credentials/professions — list all
 // credential professions. Public.
 func (h *Handlers) HandleListProfessions(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
-	if !ok {
+	if _, ok := requireTenant(w, r); !ok {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "credential_checker_disabled", "Credential checker is not available")
+	if h.service == nil {
+		writeError(w, http.StatusServiceUnavailable, "credential_checker_unavailable", "Credential checker not configured")
 		return
 	}
 
@@ -134,8 +133,8 @@ func (h *Handlers) HandleListPathways(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "credential_checker_disabled", "Credential checker is not available")
+	if h.service == nil {
+		writeError(w, http.StatusServiceUnavailable, "credential_checker_unavailable", "Credential checker not configured")
 		return
 	}
 
@@ -183,8 +182,8 @@ func (h *Handlers) HandleGetPathway(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "credential_checker_disabled", "Credential checker is not available")
+	if h.service == nil {
+		writeError(w, http.StatusServiceUnavailable, "credential_checker_unavailable", "Credential checker not configured")
 		return
 	}
 
@@ -224,8 +223,8 @@ func (h *Handlers) HandleCreateNote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "credential_checker_disabled", "Credential checker is not available")
+	if h.service == nil {
+		writeError(w, http.StatusServiceUnavailable, "credential_checker_unavailable", "Credential checker not configured")
 		return
 	}
 
@@ -324,8 +323,8 @@ func (h *Handlers) HandleAdminCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "credential_checker_disabled", "Credential checker is not available")
+	if h.service == nil {
+		writeError(w, http.StatusServiceUnavailable, "credential_checker_unavailable", "Credential checker not configured")
 		return
 	}
 
@@ -370,8 +369,8 @@ func (h *Handlers) HandleAdminGenerate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "credential_checker_disabled", "Credential checker is not available")
+	if h.service == nil {
+		writeError(w, http.StatusServiceUnavailable, "credential_checker_unavailable", "Credential checker not configured")
 		return
 	}
 
@@ -421,8 +420,8 @@ func (h *Handlers) HandleAdminUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "credential_checker_disabled", "Credential checker is not available")
+	if h.service == nil {
+		writeError(w, http.StatusServiceUnavailable, "credential_checker_unavailable", "Credential checker not configured")
 		return
 	}
 
@@ -465,8 +464,8 @@ func (h *Handlers) HandleAdminApprove(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "credential_checker_disabled", "Credential checker is not available")
+	if h.service == nil {
+		writeError(w, http.StatusServiceUnavailable, "credential_checker_unavailable", "Credential checker not configured")
 		return
 	}
 

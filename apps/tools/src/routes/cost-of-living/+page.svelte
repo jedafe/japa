@@ -198,9 +198,12 @@
 			</div>
 		{:else if matrix}
 			{#if isStale}
-				<div class="mb-4 p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg flex items-center gap-2">
-					<Icon name="alert-triangle" size={18} class="text-yellow-600 dark:text-yellow-400 flex-shrink-0" />
-					<p class="text-sm text-yellow-700 dark:text-yellow-300">
+				<div
+					class="mb-4 p-3 rounded-lg flex items-center gap-2"
+					style="background: color-mix(in srgb, var(--color-warning) 10%, transparent); border: 1px solid var(--color-warning)"
+				>
+					<Icon name="alert-triangle" size={18} class="flex-shrink-0" style="color: var(--color-warning)" />
+					<p class="text-sm" style="color: var(--color-warning)">
 						{t('col.stale_warning', 'Some city data may be outdated. Values are curated manually and updated periodically.')}
 					</p>
 				</div>

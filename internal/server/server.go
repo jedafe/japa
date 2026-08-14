@@ -1557,6 +1557,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	cvFormatterService.SetAIDispatcher(&cvFormatterAIDispatcher{dispatcher: aiDispatcher})
 	worker.RegisterCvFormatterProcessor(cvFormatterService)
 
+	// Wire the AI Gateway dispatcher into the credential checker service
+	// so GeneratePathwayDraft can call the Content Agent (§20, ADR-088).
+	credentialCheckerService.SetAIDispatcher(&credentialCheckerAIDispatcher{dispatcher: aiDispatcher})
+
 	moderationProcessorAdapter := spam.NewWorkerAdapter(spamPipeline)
 	worker.RegisterModerationProcessor(moderationProcessorAdapter)
 
@@ -1968,12 +1972,24 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// otherwise break. The public /auth/* subtree (login, register,
 			// password reset) is also exempt: those endpoints are reached before
 			// any token cookie exists and are not state-changing on behalf of an
-			// already-authenticated session. Safe GET/OPTIONS pass through.
+			// already-authenticated session. Public form submissions
+			// (/forms/{id}/submissions) and payment provider webhooks
+			// (/payments/webhook/*) are exempt: the former accepts anonymous
+			// submissions, the latter authenticates via webhook signatures, not
+			// cookies. Admin form CRUD (PATCH/DELETE /forms/{id}) is NOT exempt.
+			// Safe GET/OPTIONS pass through.
+			//
+			// WithOriginCheck adds Origin header validation as defense-in-depth:
+			// a cross-site request carries a foreign Origin that is rejected
+			// even if the double-submit cookie was forged via subdomain
+			// injection. Same-origin SPA requests and exempt API clients
+			// (no Origin header) are unaffected.
 			r.Use(csrf.Middleware([]string{"/"}, func(r *http.Request) bool {
 				return csrf.IsNonCookieAuthenticated(r) ||
 					strings.HasPrefix(r.URL.Path, "/api/v1/auth/") ||
-					strings.HasPrefix(r.URL.Path, "/api/v1/forms/")
-			}))
+					(strings.HasPrefix(r.URL.Path, "/api/v1/forms/") && strings.HasSuffix(r.URL.Path, "/submissions")) ||
+					strings.HasPrefix(r.URL.Path, "/api/v1/payments/webhook/")
+			}, csrf.WithOriginCheck(mw.IsOriginAllowed)))
 
 			// Impersonation middleware (SEC-002) — injects impersonated identity
 			// into request context when an active impersonation session exists.
@@ -5258,8 +5274,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Get("/admin/calendar", calendarHandlers.HandleAdminList)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "calendar.review")).
 					Patch("/admin/calendar/{id}", calendarHandlers.HandleAdminUpdate)
-			// BUG-001/BUG-008: soft-delete admin endpoint gated by calendar.manage (admin+).
-			// Per Rule 11, user content is soft-deleted, never hard-deleted.
+					// BUG-001/BUG-008: soft-delete admin endpoint gated by calendar.manage (admin+).
+					// Per Rule 11, user content is soft-deleted, never hard-deleted.
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "calendar.manage")).
 					Delete("/admin/calendar/{id}", calendarHandlers.HandleAdminDelete)
 			})
@@ -5341,8 +5357,15 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Get("/admin/assessment/stats", assessmentHandlers.HandleAdminStats)
 
 			// Section 72 — Cost of Living Calculator (ADR-072)
-			r.Get("/calculator/cost-of-living/cities", costOfLivingHandlers.HandleListCities)
-			r.Get("/calculator/cost-of-living/compare", costOfLivingHandlers.HandleCompare)
+			// Public browse routes use OptionalAuth + OptionalPermission so anonymous
+			// users can access the calculator (ADR-072 §7: "all users including
+			// anonymous") while authed users whose roles have had col_calculator.use
+			// revoked are denied (403). This makes the seeded col_calculator.use node
+			// a real killswitch instead of dead — same pattern as scholarship.browse.
+			r.With(auth.OptionalAuth(kr, vkClient.Redis()), rbac.OptionalPermission(rbacResolver, "col_calculator.use")).
+				Get("/calculator/cost-of-living/cities", costOfLivingHandlers.HandleListCities)
+			r.With(auth.OptionalAuth(kr, vkClient.Redis()), rbac.OptionalPermission(rbacResolver, "col_calculator.use")).
+				Get("/calculator/cost-of-living/compare", costOfLivingHandlers.HandleCompare)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "col_calculator.manage")).
 				Get("/admin/calculator/cost-of-living/stats", costOfLivingHandlers.HandleAdminStats)
 
@@ -5682,12 +5705,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Patch("/admin/community-locator/{id}/verify", communityLocatorHandlers.HandleAdminVerify)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "community_locator.manage")).
 					Patch("/admin/community-locator/{id}/claim/{claim_id}", communityLocatorHandlers.HandleAdminResolveClaim)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "community_locator.manage")).
-				Post("/admin/community-locator/generate", communityLocatorHandlers.HandleAdminGenerate)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "community_locator.manage")).
-				Patch("/admin/community-locator/{id}/archive", communityLocatorHandlers.HandleAdminArchive)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "community_locator.manage")).
-				Delete("/admin/community-locator/{id}", communityLocatorHandlers.HandleAdminDelete)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "community_locator.manage")).
+					Post("/admin/community-locator/generate", communityLocatorHandlers.HandleAdminGenerate)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "community_locator.manage")).
+					Patch("/admin/community-locator/{id}/archive", communityLocatorHandlers.HandleAdminArchive)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "community_locator.manage")).
+					Delete("/admin/community-locator/{id}", communityLocatorHandlers.HandleAdminDelete)
 			})
 
 			// Section 61 — Self-Serve Advertising (ADR-079)
@@ -5774,7 +5797,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		// outside the /api/v1 group), so real request paths are "/control/...", NOT
 		// "/api/v1/control/...". The prefix MUST be "/control/" or protection is silently
 		// never applied.
-		r.Use(csrf.Middleware([]string{"/control/"}, csrf.IsNonCookieAuthenticated))
+		// WithOriginCheck adds defense-in-depth Origin validation (see /api/v1 group).
+		r.Use(csrf.Middleware([]string{"/control/"}, csrf.IsNonCookieAuthenticated, csrf.WithOriginCheck(mw.IsOriginAllowed)))
 		// Audit finding M1: (re)issue the csrf_token cookie for control-panel
 		// requests so the SPA always has a valid double-submit token available.
 		r.Use(csrf.EnsureCookie(cfg.CookieDomain, cfg.IsProduction()))
@@ -6359,8 +6383,8 @@ type couponRenderAdapter struct {
 	svc *coupons.Service
 }
 
-func (a *couponRenderAdapter) ResolveCouponForRender(ctx context.Context, id pgtype.UUID) (*renderer.CouponRenderResult, error) {
-	c, err := a.svc.ResolveCouponForRender(ctx, id)
+func (a *couponRenderAdapter) ResolveCouponForRender(ctx context.Context, tenantID, id pgtype.UUID) (*renderer.CouponRenderResult, error) {
+	c, err := a.svc.ResolveCouponForRender(ctx, tenantID, id)
 	if err != nil {
 		return nil, err
 	}
@@ -6386,8 +6410,8 @@ type affiliateLinkRenderAdapter struct {
 	svc *coupons.Service
 }
 
-func (a *affiliateLinkRenderAdapter) ResolveAffiliateLinkForRender(ctx context.Context, providerID pgtype.UUID, originalURL string) (*renderer.AffiliateLinkRenderResult, error) {
-	r, err := a.svc.ResolveAffiliateLinkForRender(ctx, providerID, originalURL)
+func (a *affiliateLinkRenderAdapter) ResolveAffiliateLinkForRender(ctx context.Context, tenantID, providerID pgtype.UUID, originalURL string) (*renderer.AffiliateLinkRenderResult, error) {
+	r, err := a.svc.ResolveAffiliateLinkForRender(ctx, tenantID, providerID, originalURL)
 	if err != nil {
 		return nil, err
 	}

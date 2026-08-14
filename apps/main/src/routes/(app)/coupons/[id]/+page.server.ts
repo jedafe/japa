@@ -7,7 +7,7 @@ import type { Coupon } from '$lib/types';
  * Coupon detail at /coupons/{id} — public, SSR. Shows the full coupon with
  * code, discount, provider, terms and a CTA to the referral URL.
  *
- * Ref: japaconnect-engineering/sections/21-coupons.md
+ * Ref: japaconnect-engineering/sections/55-coupons-external-affiliates.md
  */
 export const load: PageServerLoad = async (event) => {
 	const ctx = apiContext(event);

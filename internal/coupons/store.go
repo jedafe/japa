@@ -126,18 +126,38 @@ func (s *Store) createCouponEvent(ctx context.Context, e gen.CreateCouponEventPa
 
 // ── Render Helpers ──────────────────────────────────────────────────
 
-func (s *Store) getCouponForRender(ctx context.Context, id pgtype.UUID) (gen.GetCouponForRenderRow, error) {
-	return s.read.GetCouponForRender(ctx, id)
+func (s *Store) getCouponForRender(ctx context.Context, id, tenantID pgtype.UUID) (gen.GetCouponForRenderRow, error) {
+	return s.read.GetCouponForRender(ctx, gen.GetCouponForRenderParams{ID: id, TenantID: tenantID})
 }
 
-func (s *Store) getAffiliateProviderForRender(ctx context.Context, id pgtype.UUID) (gen.GetAffiliateProviderForRenderRow, error) {
-	return s.read.GetAffiliateProviderForRender(ctx, id)
+func (s *Store) getAffiliateProviderForRender(ctx context.Context, id, tenantID pgtype.UUID) (gen.GetAffiliateProviderForRenderRow, error) {
+	return s.read.GetAffiliateProviderForRender(ctx, gen.GetAffiliateProviderForRenderParams{ID: id, TenantID: tenantID})
 }
 
 // ── Count ───────────────────────────────────────────────────────────
 
 func (s *Store) countCouponsByTenant(ctx context.Context, tenantID pgtype.UUID) (int64, error) {
 	return s.read.CountCouponsByTenant(ctx, tenantID)
+}
+
+// ── Affiliate Enhancement Queries (BE-LOW-002) ─────────────────────
+// These methods wrap sqlc-generated queries, replacing the raw SQL that
+// was previously inlined in the handlers.
+
+func (s *Store) listAffiliateScanResults(ctx context.Context, arg gen.ListAffiliateScanResultsParams) ([]gen.ListAffiliateScanResultsRow, error) {
+	return s.read.ListAffiliateScanResults(ctx, arg)
+}
+
+func (s *Store) reviewAffiliateScanResult(ctx context.Context, arg gen.ReviewAffiliateScanResultParams) (int64, error) {
+	return s.write.ReviewAffiliateScanResult(ctx, arg)
+}
+
+func (s *Store) listAffiliateCommissions(ctx context.Context, arg gen.ListAffiliateCommissionsParams) ([]gen.ListAffiliateCommissionsRow, error) {
+	return s.read.ListAffiliateCommissions(ctx, arg)
+}
+
+func (s *Store) updateProviderAuthorCommission(ctx context.Context, arg gen.UpdateProviderAuthorCommissionParams) (int64, error) {
+	return s.write.UpdateProviderAuthorCommission(ctx, arg)
 }
 
 // ── Error helpers ───────────────────────────────────────────────────

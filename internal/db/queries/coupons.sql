@@ -141,6 +141,7 @@ LIMIT @page_limit OFFSET @page_offset;
 -- name: UpdateCoupon :one
 UPDATE coupons
 SET title = @title, description = sqlc.narg(description), code = @code,
+    provider_id = sqlc.narg(provider_id),
     discount_type = sqlc.narg(discount_type), discount_value = sqlc.narg(discount_value),
     currency = sqlc.narg(currency), terms_url = sqlc.narg(terms_url),
     referral_url = sqlc.narg(referral_url), is_verified = @is_verified,
@@ -211,17 +212,21 @@ WHERE coupon_id = @coupon_id AND event_type = @event_type;
 -- =====================
 
 -- name: GetCouponForRender :one
+-- BE-LOW-001: tenant-scoped so a render request cannot resolve a coupon
+-- from another tenant. The InternalGuard on the render routes is defense-
+-- in-depth; this query is the primary tenant isolation control.
 SELECT c.id, c.title, c.code, c.discount_type, c.discount_value,
     c.referral_url, c.status, c.expires_at,
     ap.name AS provider_name, ap.slug AS provider_slug, ap.logo_media_id AS provider_logo_media_id
 FROM coupons c
 LEFT JOIN affiliate_providers ap ON ap.id = c.provider_id
-WHERE c.id = @id;
+WHERE c.id = @id AND c.tenant_id = @tenant_id;
 
 -- name: GetAffiliateProviderForRender :one
+-- BE-LOW-001: tenant-scoped render resolution.
 SELECT id, base_url, tracking_param, tracking_value, is_active
 FROM affiliate_providers
-WHERE id = @id AND is_active = true;
+WHERE id = @id AND tenant_id = @tenant_id AND is_active = true;
 
 -- name: CountCouponsByTenant :one
 SELECT COUNT(*) AS count

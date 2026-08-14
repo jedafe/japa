@@ -11,8 +11,12 @@ package credentialchecker
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -155,8 +159,9 @@ type GeneratePathwayResponse struct {
 
 // Service holds the business logic for the Credential Checker.
 type Service struct {
-	store    *Store
-	settings *config.Settings
+	store       *Store
+	settings    *config.Settings
+	aiDispatcher AIDispatcher
 }
 
 // NewService creates a credential checker service.
@@ -167,13 +172,32 @@ func NewService(store *Store, settings *config.Settings) *Service {
 	}
 }
 
-// Enabled reads the credential_checker.enabled system_setting toggle
-// (§94 feature flag).
-func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
-	if s.settings == nil {
-		return false
-	}
-	return s.settings.GetBoolOr(ctx, tenantID, "credential_checker.enabled", false)
+// SetAIDispatcher injects the AI Gateway dispatcher used by
+// GeneratePathwayDraft to call the Content Agent (§20, ADR-088).
+// Called after NewService once the dispatcher is available.
+func (s *Service) SetAIDispatcher(d AIDispatcher) { s.aiDispatcher = d }
+
+// AIDispatcher is the subset of *ai.Dispatcher the credential checker
+// service calls to generate pathway drafts. Local interface to avoid
+// importing internal/ai (which would create an import cycle).
+// Ref: §20, ADR-088 — same pattern as cvformatter.AIDispatcher.
+type AIDispatcher interface {
+	Dispatch(ctx context.Context, category string, req AIRequest) (AIResponse, error)
+	HasCategory(category string) bool
+}
+
+// AIRequest is the provider-agnostic request envelope passed to the AI
+// dispatcher. The adapter in internal/server converts this to ai.Request.
+type AIRequest struct {
+	SystemPrompt string
+	UserPrompt   string
+}
+
+// AIResponse is the provider-agnostic response envelope returned by the
+// AI dispatcher.
+type AIResponse struct {
+	Text  string
+	Model string
 }
 
 // ListProfessions returns all credential professions as DTOs.
@@ -423,7 +447,7 @@ func (s *Service) CreateNote(ctx context.Context, pathwayID, tenantID, userID pg
 		return CommunityNoteDTO{}, pgx.ErrNoRows
 	}
 
-	id, err := s.store.CreateNote(ctx, pathwayID, userID, note)
+	id, createdAt, err := s.store.CreateNote(ctx, pathwayID, userID, note)
 	if err != nil {
 		return CommunityNoteDTO{}, fmt.Errorf("credentialchecker: create note: %w", err)
 	}
@@ -435,14 +459,20 @@ func (s *Service) CreateNote(ctx context.Context, pathwayID, tenantID, userID pg
 		Note:      note,
 		Upvotes:   0,
 		Status:    StatusPublished,
+		CreatedAt: formatTs(createdAt),
 	}, nil
 }
 
 // GeneratePathwayDraft creates an AI-drafted credential pathway in
-// 'ai_draft' status. The pathway is marked ai_generated=true with
-// ai_model='content_agent_v1' and requires HITL approval (ApprovePathway)
+// 'ai_draft' status via the AI Gateway Content Agent (§20, ADR-088).
+// The draft is marked ai_generated=true with ai_model and ai_prompt_hash
+// set from the generation call. It requires HITL approval (ApprovePathway)
 // before publication. Admin-only (credential_checker.manage permission
-// checked at route level). Ref: ADR-088, geo-aware-tool-pattern.md.
+// checked at route level). Ref: §20, ADR-088, geo-aware-tool-pattern.md.
+//
+// If no AI provider is registered for the "content_generation" category,
+// the method gracefully falls back to placeholder content so the draft
+// can still be created and reviewed manually (§21 stub-degradation).
 func (s *Service) GeneratePathwayDraft(ctx context.Context, tenantID pgtype.UUID, req GeneratePathwayRequest) (GeneratePathwayResponse, error) {
 	var issuingSpaceID pgtype.UUID
 	if err := issuingSpaceID.Scan(req.IssuingSpaceID); err != nil {
@@ -454,25 +484,98 @@ func (s *Service) GeneratePathwayDraft(ctx context.Context, tenantID pgtype.UUID
 		return GeneratePathwayResponse{}, fmt.Errorf("invalid destination_space_id: %w", err)
 	}
 
+	// Fetch profession and space names to build a rich prompt.
+	prof, err := s.store.GetProfessionByID(ctx, req.ProfessionID)
+	if err != nil {
+		return GeneratePathwayResponse{}, fmt.Errorf("credentialchecker: generate draft: get profession: %w", err)
+	}
+	issuingName, destName, err := s.store.GetSpaceNames(ctx, issuingSpaceID, destSpaceID)
+	if err != nil {
+		return GeneratePathwayResponse{}, fmt.Errorf("credentialchecker: generate draft: get space names: %w", err)
+	}
+
+	// Build the prompt for the Content Agent (§20).
+	systemPrompt := `You are a Content Agent for a professional credential recognition checker.
+Generate a concise, factual pathway description for recognizing a professional credential
+in the destination country. Include the regulatory body name, recognition pathway type,
+timeline estimate, cost estimate, and a step-by-step description.
+Respond with ONLY a JSON object (no markdown fences) in this format:
+{"regulatory_body": "...", "pathway_type": "...", "pathway_description": "...", "timeline_estimate": "...", "cost_estimate_usd": "..."}`
+
+	userPrompt := fmt.Sprintf(
+		"Profession: %s\nIssuing country: %s\nDestination country: %s\n\nGenerate the credential recognition pathway.",
+		prof.Name, issuingName, destName,
+	)
+
+	// Compute ai_prompt_hash = SHA256(prompt) for audit reproducibility (ADR-088).
+	promptForHash := systemPrompt + "\n" + userPrompt
+	promptHash := computePromptHash(promptForHash)
+
+	// Defaults — used when no AI provider is registered (graceful fallback).
 	aiModel := "content_agent_v1"
+	regulatoryBody := "AI-generated — pending review"
+	pathwayType := PathwayDirect
+	pathwayDescription := "AI-generated pathway description — pending HITL review."
+
+	// Call the AI Gateway if a content_generation provider is registered.
+	if s.aiDispatcher != nil && s.aiDispatcher.HasCategory("content_generation") {
+		resp, err := s.aiDispatcher.Dispatch(ctx, "content_generation", AIRequest{
+			SystemPrompt: systemPrompt,
+			UserPrompt:   userPrompt,
+		})
+		if err != nil {
+			slog.Warn("credentialchecker: AI dispatch failed, using placeholder",
+				"error", err, "profession_id", req.ProfessionID)
+		} else if resp.Text != "" {
+			// Try to parse the JSON response; fall back to raw text as description.
+			if parsed, ok := parseAIPathwayResponse(resp.Text); ok {
+				if parsed.RegulatoryBody != "" {
+					regulatoryBody = parsed.RegulatoryBody
+				}
+				if parsed.PathwayType != "" {
+					pathwayType = parsed.PathwayType
+				}
+				if parsed.PathwayDescription != "" {
+					pathwayDescription = parsed.PathwayDescription
+				}
+			} else {
+				pathwayDescription = resp.Text
+			}
+			if resp.Model != "" {
+				aiModel = resp.Model
+			}
+		}
+	} else {
+		slog.Info("credentialchecker: no content_generation provider, using placeholder draft",
+			"profession_id", req.ProfessionID)
+	}
+
 	input := CreatePathwayInput{
 		TenantID:           tenantID,
 		ProfessionID:       req.ProfessionID,
 		IssuingSpaceID:     issuingSpaceID,
 		DestinationSpaceID: destSpaceID,
-		RegulatoryBody:     "AI-generated — pending review",
-		PathwayType:        PathwayDirect,
-		PathwayDescription: "AI-generated pathway description — pending HITL review.",
+		RegulatoryBody:     regulatoryBody,
+		PathwayType:        pathwayType,
+		PathwayDescription: pathwayDescription,
 		Status:             StatusAIDraft,
 		IsActive:           false,
 		AIGenerated:        true,
 		AIModel:            &aiModel,
+		AIPromptHash:       &promptHash,
 	}
 
 	id, err := s.store.CreatePathway(ctx, input)
 	if err != nil {
 		return GeneratePathwayResponse{}, fmt.Errorf("credentialchecker: generate draft: %w", err)
 	}
+
+	slog.Info("credentialchecker: content agent draft created",
+		"tenant_id", tenantID,
+		"pathway_id", id.String(),
+		"profession_id", req.ProfessionID,
+		"ai_model", aiModel,
+	)
 
 	return GeneratePathwayResponse{
 		Status:             "accepted",
@@ -482,6 +585,49 @@ func (s *Service) GeneratePathwayDraft(ctx context.Context, tenantID pgtype.UUID
 		IssuingSpaceID:     req.IssuingSpaceID,
 		DestinationSpaceID: req.DestinationSpaceID,
 	}, nil
+}
+
+// computePromptHash returns the hex-encoded SHA-256 of the prompt string
+// for audit reproducibility (ADR-088).
+func computePromptHash(prompt string) string {
+	sum := sha256.Sum256([]byte(prompt))
+	return hex.EncodeToString(sum[:])
+}
+
+// aiPathwayResponse is the JSON shape the Content Agent is asked to return.
+type aiPathwayResponse struct {
+	RegulatoryBody     string `json:"regulatory_body"`
+	PathwayType        string `json:"pathway_type"`
+	PathwayDescription string `json:"pathway_description"`
+	TimelineEstimate   string `json:"timeline_estimate"`
+	CostEstimateUSD    string `json:"cost_estimate_usd"`
+}
+
+// parseAIPathwayResponse attempts to parse the AI response as JSON.
+// Returns false if the response is not valid JSON (caller falls back
+// to using the raw text as the pathway description).
+func parseAIPathwayResponse(text string) (aiPathwayResponse, bool) {
+	text = cleanJSONResponse(text)
+	var r aiPathwayResponse
+	if err := json.Unmarshal([]byte(text), &r); err != nil {
+		return aiPathwayResponse{}, false
+	}
+	return r, true
+}
+
+// cleanJSONResponse strips markdown code fences from an AI response
+// so it can be parsed as JSON.
+func cleanJSONResponse(text string) string {
+	text = strings.TrimSpace(text)
+	if strings.HasPrefix(text, "```json") {
+		text = strings.TrimPrefix(text, "```json")
+	} else if strings.HasPrefix(text, "```") {
+		text = strings.TrimPrefix(text, "```")
+	}
+	if strings.HasSuffix(text, "```") {
+		text = text[:len(text)-3]
+	}
+	return strings.TrimSpace(text)
 }
 
 // AdminListPathways returns all pathways (any status) for the admin

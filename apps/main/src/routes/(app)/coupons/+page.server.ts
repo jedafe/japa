@@ -6,7 +6,7 @@ import type { Coupon } from '$lib/types';
  * Coupons index at /coupons — public, SSR, indexable. Lists active tenant
  * coupons with provider info; each card links to /coupons/{id}.
  *
- * Ref: japaconnect-engineering/sections/21-coupons.md
+ * Ref: japaconnect-engineering/sections/55-coupons-external-affiliates.md
  */
 const PAGE_SIZE = 24;
 
