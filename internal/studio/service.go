@@ -301,17 +301,21 @@ func (s *Service) enqueueGeneration(ctx context.Context, job Job) error {
 	if s.enqueuer == nil {
 		return fmt.Errorf("studio: no enqueuer configured")
 	}
-	payload, err := json.Marshal(map[string]string{
+	payload := map[string]any{
 		"job_id":       job.ID.String(),
 		"tenant_id":    job.TenantID.String(),
 		"persona_id":   job.PersonaID.String(),
 		"content_type": job.ContentType,
 		"topic_prompt": job.TopicPrompt,
-	})
+	}
+	if job.IntelRecordID.Valid {
+		payload["intel_record_id"] = job.IntelRecordID.String()
+	}
+	payloadJSON, err := json.Marshal(payload)
 	if err != nil {
 		return fmt.Errorf("studio: marshal payload: %w", err)
 	}
-	if err := s.enqueuer.Enqueue("content:generate_draft", payload); err != nil {
+	if err := s.enqueuer.Enqueue("content:generate_draft", payloadJSON); err != nil {
 		return fmt.Errorf("studio: enqueue: %w", err)
 	}
 	return nil
