@@ -75,6 +75,7 @@ type mockPromoterStore struct {
 	updateScholarshipCalls []gen.UpdateScholarshipParams
 	reviewLogCalls         []gen.CreateIntelReviewLogParams
 	promotedCalls          []gen.UpdateIntelRecordPromotedParams
+	statusCalls            []gen.UpdateIntelRecordStatusParams
 }
 
 func (m *mockPromoterStore) GetIntelRecord(ctx context.Context, tenantID, id pgtype.UUID) (gen.IntelRecord, error) {
@@ -136,6 +137,11 @@ func (m *mockPromoterStore) CreateIntelReviewLog(ctx context.Context, tenantID p
 
 func (m *mockPromoterStore) UpdateIntelRecordPromoted(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateIntelRecordPromotedParams) error {
 	m.promotedCalls = append(m.promotedCalls, arg)
+	return nil
+}
+
+func (m *mockPromoterStore) UpdateIntelRecordStatus(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateIntelRecordStatusParams) error {
+	m.statusCalls = append(m.statusCalls, arg)
 	return nil
 }
 
@@ -441,8 +447,9 @@ func TestIntelChain_EditorialOverrideIntegration(t *testing.T) {
 }
 
 // TestIntelChain_EditorialOverrideCreatePath verifies the promoter create
-// path: when no existing scholarship exists, a content guide row + scholarship
-// row are inserted and the intel record is marked promoted.
+// path: when no existing scholarship exists, a scholarship projection row is
+// inserted and the intel record is marked 'extracted' (Approach B — no
+// contents row is created by the promoter; Studio owns editorial content).
 func TestIntelChain_EditorialOverrideCreatePath(t *testing.T) {
 	recordID := newUUID()
 	sourceID := newUUID()
@@ -474,17 +481,22 @@ func TestIntelChain_EditorialOverrideCreatePath(t *testing.T) {
 	if res.Action != promoter.ActionCreated {
 		t.Fatalf("Action = %q, want %q", res.Action, promoter.ActionCreated)
 	}
-	if len(store.createContentCalls) != 1 {
-		t.Fatalf("expected 1 CreateContent call, got %d", len(store.createContentCalls))
+	// Approach B: promoter must NOT create a contents row.
+	if len(store.createContentCalls) != 0 {
+		t.Fatalf("expected 0 CreateContent calls (Approach B), got %d", len(store.createContentCalls))
 	}
 	if len(store.createScholarshipCalls) != 1 {
 		t.Fatalf("expected 1 CreateScholarship call, got %d", len(store.createScholarshipCalls))
 	}
-	if len(store.promotedCalls) != 1 {
-		t.Fatalf("expected 1 UpdateIntelRecordPromoted call, got %d", len(store.promotedCalls))
+	// Approach B: promoter sets status to 'extracted', not 'promoted'.
+	if len(store.statusCalls) != 1 {
+		t.Fatalf("expected 1 UpdateIntelRecordStatus call, got %d", len(store.statusCalls))
 	}
-	if store.promotedCalls[0].ID != recordID {
-		t.Errorf("promoted record id mismatch")
+	if store.statusCalls[0].ID != recordID {
+		t.Errorf("status update record id mismatch")
+	}
+	if store.statusCalls[0].Status != "extracted" {
+		t.Errorf("status = %q, want %q", store.statusCalls[0].Status, "extracted")
 	}
 }
 
