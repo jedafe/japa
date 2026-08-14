@@ -11,15 +11,25 @@ package languagetesthub
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/jedafe/japa/internal/ai"
 	"github.com/jedafe/japa/internal/config"
 )
+
+// AIDispatcher is the contract the service uses to call the §20 AI Gateway
+// for Content Agent draft generation. *ai.Dispatcher satisfies this.
+type AIDispatcher interface {
+	Dispatch(ctx context.Context, category string, req ai.Request) (ai.Response, error)
+}
 
 // TestDTO is the API response shape for a single language test.
 type TestDTO struct {
@@ -130,8 +140,9 @@ type ApproveRequirementRequest struct {
 
 // Service holds the business logic for the Language Test Preparation Hub.
 type Service struct {
-	store    *Store
-	settings *config.Settings
+	store      *Store
+	settings   *config.Settings
+	dispatcher AIDispatcher
 }
 
 // NewService creates a language test hub service.
@@ -141,6 +152,11 @@ func NewService(store *Store, settings *config.Settings) *Service {
 		settings: settings,
 	}
 }
+
+// SetDispatcher injects the AI Gateway dispatcher for Content Agent draft
+// generation (ADR-088). If unset, GenerateDraft still creates an ai_draft
+// row with empty fields for the reviewer to fill manually.
+func (s *Service) SetDispatcher(d AIDispatcher) { s.dispatcher = d }
 
 // Enabled reads the language_test_hub.enabled system_setting toggle
 // (§99 feature flag).
@@ -374,6 +390,128 @@ func (s *Service) CreateRequirement(ctx context.Context, tenantID pgtype.UUID, i
 		return RequirementDTO{}, fmt.Errorf("languagetesthub: create requirement: %w", err)
 	}
 	return requirementRowToDTO(row), nil
+}
+
+// GenerateDraft creates an AI-drafted requirement in 'ai_draft' status via
+// the §20 AI Gateway (ADR-088 Content Agent draft endpoint pattern). The
+// draft is NOT visible to end users and requires HITL approval before
+// publication. If the dispatcher is nil or the call fails, the draft is
+// still created with empty minimum_score/score_breakdown so the reviewer
+// can fill them manually.
+func (s *Service) GenerateDraft(ctx context.Context, tenantID pgtype.UUID, input GenerateRequirementRequest) (RequirementDTO, error) {
+	if input.DestinationSpaceID == "" {
+		return RequirementDTO{}, fmt.Errorf("destination_space_id is required")
+	}
+	if input.TestSlug == "" {
+		return RequirementDTO{}, fmt.Errorf("test_slug is required")
+	}
+
+	var destSpaceID pgtype.UUID
+	if err := destSpaceID.Scan(input.DestinationSpaceID); err != nil {
+		return RequirementDTO{}, fmt.Errorf("languagetesthub: generate draft: invalid destination_space_id: %w", err)
+	}
+
+	test, err := s.store.GetTestBySlug(ctx, input.TestSlug)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return RequirementDTO{}, pgx.ErrNoRows
+		}
+		return RequirementDTO{}, fmt.Errorf("languagetesthub: generate draft: get test: %w", err)
+	}
+
+	prompt := fmt.Sprintf("Generate the minimum %s score requirement for destination %s", test.Name, input.DestinationSpaceID)
+	if input.VisaCategory != "" {
+		prompt = fmt.Sprintf("Generate the minimum %s score requirement for destination %s, visa category %s", test.Name, input.DestinationSpaceID, input.VisaCategory)
+	}
+	promptHash := sha256Hex(prompt)
+
+	aiModel := "content_agent_v1"
+	minimumScore := ""
+	var scoreBreakdown []byte
+	var notes *string
+	var sourceURL *string
+
+	if s.dispatcher != nil {
+		resp, derr := s.dispatcher.Dispatch(ctx, "content_generation", ai.Request{
+			Category: "content_generation",
+			Payload: map[string]any{
+				"prompt":    prompt,
+				"tenant_id": tenantID,
+			},
+		})
+		if derr != nil {
+			slog.Warn("languagetesthub: AI generation failed, creating draft with empty fields",
+				"error", derr)
+		} else {
+			minimumScore, scoreBreakdown, notes, sourceURL = parseRequirementFromAIResponse(resp)
+		}
+	}
+
+	var visaCategory *string
+	if input.VisaCategory != "" {
+		v := input.VisaCategory
+		visaCategory = &v
+	}
+	if scoreBreakdown == nil {
+		scoreBreakdown = []byte("null")
+	}
+
+	row, err := s.store.CreateRequirement(ctx, CreateRequirementInput{
+		TenantID:           tenantID,
+		DestinationSpaceID: destSpaceID,
+		VisaCategory:       visaCategory,
+		TestID:             test.ID,
+		MinimumScore:       minimumScore,
+		ScoreBreakdown:     scoreBreakdown,
+		Notes:              notes,
+		SourceURL:          sourceURL,
+		Status:             StatusAIDraft,
+		IsActive:           false, // not active until approved
+		AIGenerated:        true,
+		AIModel:            &aiModel,
+		AIPromptHash:       &promptHash,
+	})
+	if err != nil {
+		return RequirementDTO{}, fmt.Errorf("languagetesthub: generate draft: create: %w", err)
+	}
+	return requirementRowToDTO(row), nil
+}
+
+// sha256Hex returns the hex-encoded SHA-256 of the input (ADR-088 audit
+// reproducibility).
+func sha256Hex(s string) string {
+	h := sha256.Sum256([]byte(s))
+	return hex.EncodeToString(h[:])
+}
+
+// parseRequirementFromAIResponse extracts the minimum score, score
+// breakdown jsonb, notes, and source URL from an AI Gateway response. The
+// response may carry structured JSON or plain text; text is placed in
+// minimum_score and the raw payload in notes for the reviewer to refine.
+func parseRequirementFromAIResponse(resp ai.Response) (string, []byte, *string, *string) {
+	minimumScore := ""
+	var scoreBreakdown []byte
+	var notes *string
+	var sourceURL *string
+
+	if text, ok := resp.Raw["text"].(string); ok && text != "" {
+		minimumScore = text
+	}
+	if text, ok := resp.Raw["content"].(string); ok && text != "" && minimumScore == "" {
+		minimumScore = text
+	}
+	if sb, ok := resp.Raw["score_breakdown"]; ok {
+		if b, err := json.Marshal(sb); err == nil {
+			scoreBreakdown = b
+		}
+	}
+	if n, ok := resp.Raw["notes"].(string); ok && n != "" {
+		notes = &n
+	}
+	if u, ok := resp.Raw["source_url"].(string); ok && u != "" {
+		sourceURL = &u
+	}
+	return minimumScore, scoreBreakdown, notes, sourceURL
 }
 
 // ApproveRequirement marks a requirement as reviewed and published by an

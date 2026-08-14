@@ -27,6 +27,15 @@ DO UPDATE SET value = EXCLUDED.value, context = EXCLUDED.context, updated_at = n
 DELETE FROM translations
 WHERE tenant_id = @tenant_id AND id = @id;
 
+-- name: DeleteTranslationsByLocale :exec
+DELETE FROM translations
+WHERE tenant_id = @tenant_id AND locale = @locale;
+
+-- name: GetTranslationByID :one
+SELECT id, locale, "key", value, context, created_at, updated_at
+FROM translations
+WHERE tenant_id = @tenant_id AND id = @id;
+
 -- name: ListTranslationLocales :many
 SELECT DISTINCT locale
 FROM translations

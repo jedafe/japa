@@ -450,13 +450,38 @@ ORDER BY created_at ASC
 LIMIT 50;
 
 -- name: ListRetentionWaitElapsed :many
+-- BUG-GDPR-002 fix: COALESCE default must be '0' (immediate), not '30'.
+-- ADR-057 and system-settings-catalog specify gdpr.retention_days
+-- defaults to 0 (no waiting period). The previous '30' fallback caused
+-- tenants without the explicit setting to wait 30 days instead of 0.
 SELECT r.id, r.tenant_id
 FROM account_deletion_requests r
 LEFT JOIN system_settings s ON s.tenant_id = r.tenant_id AND s.key = 'gdpr.retention_days'
 WHERE r.status = 'retention_wait'
-  AND r.created_at + ((COALESCE(s.value->>0, '30'))::int || ' days')::interval <= now()
+  AND r.created_at + ((COALESCE(s.value->>0, '0'))::int || ' days')::interval <= now()
 ORDER BY r.created_at ASC
 LIMIT 100;
+
+-- name: ListExpiredDataExports :many
+-- BUG-GDPR-005: find completed data export requests whose ExpiresAt has
+-- passed so the sweep can delete the file from storage and null out the
+-- download URL. Section 19 requires time-limited download links.
+SELECT id, tenant_id
+FROM data_export_requests
+WHERE status = 'completed'
+  AND expires_at IS NOT NULL
+  AND expires_at < now()
+  AND download_url IS NOT NULL
+ORDER BY expires_at ASC
+LIMIT 100;
+
+-- name: ExpireDataExport :exec
+-- BUG-GDPR-005: null out the download URL and set status to 'expired' so
+-- the download handler returns 404 and the file is not re-cleaned.
+UPDATE data_export_requests
+SET download_url = NULL,
+    status = 'expired'
+WHERE id = $1 AND tenant_id = $2;
 
 -- name: PruneAuditLogs :exec
 -- Per-tenant retention via system_settings 'audit.log_retention_days'
@@ -1160,6 +1185,20 @@ DELETE FROM user_dm_settings WHERE user_id = @user_id AND tenant_id = @tenant_id
 -- GDPR erasure. Block relationships are user-owned config.
 DELETE FROM user_blocks
 WHERE blocker_id = @user_id OR blocked_id = @user_id;
+
+-- name: DeleteUserMutesByUser :exec
+-- BE-2: delete user_mutes where the user is the muter or the muted party
+-- during GDPR erasure. Mute relationships are user-owned config and must not
+-- survive anonymization (the muted/muter UUID would reference an anonymized
+-- user). Ref: Section 52, Section 15.
+DELETE FROM user_mutes
+WHERE user_id = @user_id OR muted_user_id = @user_id;
+
+-- name: DeleteSpaceMutesByUser :exec
+-- BE-2: delete space_mutes for the user during GDPR erasure. Space mutes are
+-- user-owned feed-filter config. Ref: Section 52, Section 15.
+DELETE FROM space_mutes
+WHERE user_id = @user_id;
 
 -- name: DeleteNotificationsByUser :exec
 -- BUG-M006: delete notifications addressed to the erased user during GDPR

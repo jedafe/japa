@@ -15,9 +15,10 @@
 		active: boolean;
 		target_user_id: string | null;
 		expires_at: string | null;
+		target: { id: string; username: string; email: string } | null;
 	};
 
-	let status = $state<Status>({ active: false, target_user_id: null, expires_at: null });
+	let status = $state<Status>({ active: false, target_user_id: null, expires_at: null, target: null });
 	let ending = $state(false);
 	let pollTimer: ReturnType<typeof setInterval> | undefined;
 
@@ -39,7 +40,7 @@
 		ending = true;
 		try {
 			await impersonationApi.end();
-			status = { active: false, target_user_id: null, expires_at: null };
+			status = { active: false, target_user_id: null, expires_at: null, target: null };
 			// Restore the admin's own session in-place (re-fetches /me +
 			// /me/permissions) then navigate to admin root. invalidateAll
 			// triggers the layout's reactive dependencies so the permission-
@@ -89,7 +90,7 @@
 			<ShieldAlert class="h-4 w-4 shrink-0" />
 			<span>
 				{t('impersonate.banner_text', 'Viewing as')}
-				<strong>{status.target_user_id ?? '—'}</strong>
+				<strong>{status.target?.username ?? status.target_user_id ?? '—'}</strong>
 			</span>
 			{#if remainingMinutes !== null}
 				<span class="text-xs opacity-80">

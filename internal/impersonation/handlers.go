@@ -52,6 +52,8 @@ func handleServiceError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, ErrTargetIsAdmin):
 		errpkg.WriteError(w, http.StatusForbidden, "cannot_impersonate_admin", "Cannot impersonate an admin-level user")
+	case errors.Is(err, ErrTargetNotFound):
+		errpkg.WriteError(w, http.StatusNotFound, "target_user_not_found", "Target user not found")
 	case errors.Is(err, ErrNoActiveSession):
 		errpkg.WriteError(w, http.StatusNotFound, "no_active_session", "No active impersonation session")
 	default:
@@ -155,14 +157,21 @@ func (h *Handlers) EndImpersonation(w http.ResponseWriter, r *http.Request) {
 
 // GetImpersonationStatus returns the current impersonation state.
 // GET /api/v1/admin/impersonate/status.
-// Response per Section 46: {"active":bool,"target_user_id":"uuid|null","expires_at":"ISO8601|null"}.
+// Response per Section 46: {"active":bool,"target_user_id":"uuid|null","expires_at":"ISO8601|null","target":{id,username,email}|null}.
+// The target profile is included so the UI banner can display the
+// username instead of a raw UUID (Section 46 "UI Banner").
 func (h *Handlers) GetImpersonationStatus(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
 	if !ok {
 		return
 	}
 
-	targetID, active, ttlSeconds, err := h.Service.GetImpersonationStatus(r.Context(), user.UserID)
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	targetID, active, ttlSeconds, target, err := h.Service.GetImpersonationStatusWithTarget(r.Context(), tenantID, user.UserID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -182,11 +191,19 @@ func (h *Handlers) GetImpersonationStatus(w http.ResponseWriter, r *http.Request
 		targetUserID = nil
 	}
 
+	var targetProfile any
+	if active && target != nil {
+		targetProfile = target
+	} else {
+		targetProfile = nil
+	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
 			"active":         active,
 			"target_user_id": targetUserID,
 			"expires_at":     expiresAt,
+			"target":         targetProfile,
 		},
 	})
 }

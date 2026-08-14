@@ -342,5 +342,25 @@
 	"language_test.seo_title": "Language Test Hub — Required Scores & Prep Resources",
 	"language_test.level_ph": "e.g. B1",
 	"language_test.resources_ph": "e.g. IELTS Liz, YouTube, Cambridge books",
-	"language_test.score_ph": "e.g. 7.5"
+	"language_test.score_ph": "e.g. 7.5",
+
+	"housing_guide.title": "Housing Guide",
+	"housing_guide.subtitle": "Find safe housing abroad — platforms, landlord requirements, rent ranges, and scam warnings.",
+	"housing_guide.seo_title": "Housing Guide — JapaConnect Tools",
+	"housing_guide.seo_description": "Destination-specific housing guides — platforms, landlord requirements, rent ranges, scam categories, and tips for finding safe housing abroad.",
+	"housing_guide.destination": "Destination country",
+	"housing_guide.select_destination": "Select a destination",
+	"housing_guide.select_destination_desc": "Choose a country to see housing guides for that destination.",
+	"housing_guide.no_destinations": "No destinations available",
+	"housing_guide.no_destinations_desc": "Housing guide data hasn't been configured yet. Please check back later.",
+	"housing_guide.no_guides": "No housing guides",
+	"housing_guide.no_guides_desc": "No housing guides have been published for this destination yet.",
+	"housing_guide.last_verified": "Last verified:",
+	"housing_guide.search_platforms": "Search platforms",
+	"housing_guide.landlord_requirements": "Landlord requirements",
+	"housing_guide.rent_ranges": "Rent ranges",
+	"housing_guide.scam_categories": "Scam categories",
+	"housing_guide.tips": "Tips",
+	"housing_guide.reviewed_by": "Reviewed by",
+	"housing_guide.anon_hint": "Sign in to save your progress."
 }

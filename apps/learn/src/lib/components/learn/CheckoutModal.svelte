@@ -23,6 +23,7 @@
 	let discountCode = $state('');
 	let discountApplied = $state<{ code: string; amount_kobo: number } | null>(null);
 	let error = $state<string | null>(null);
+	let applying = $state(false);
 
 	const displayPrice = $derived(formatPriceKobo(track.price_kobo));
 	const finalPrice = $derived(
@@ -30,12 +31,14 @@
 	);
 
 	async function applyDiscount() {
-		if (!discountCode.trim()) return;
+		if (!discountCode.trim() || applying) return;
+		applying = true;
 		error = null;
 		const r = await api.post<{ code: string; discount_kobo: number }>(
 			`/payments/discount-codes/validate`,
 			{ code: discountCode.trim(), purpose_type: 'course_access', purpose_id: track.id }
 		);
+		applying = false;
 		if (r.data) {
 			discountApplied = { code: r.data.code, amount_kobo: r.data.discount_kobo };
 		} else if (r.error) {
@@ -146,10 +149,11 @@
 						/>
 						<button
 							type="button"
+							disabled={applying}
 							onclick={applyDiscount}
-							class="rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-2 text-sm font-medium text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
+							class="rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-2 text-sm font-medium text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)] disabled:opacity-50"
 						>
-							{t('common.apply', 'Apply')}
+							{applying ? t('common.processing', 'Processing...') : t('common.apply', 'Apply')}
 						</button>
 					</div>
 					{#if discountApplied}

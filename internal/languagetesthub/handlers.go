@@ -27,6 +27,7 @@ import (
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
@@ -34,18 +35,55 @@ import (
 	"github.com/jedafe/japa/internal/config"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/tenant"
+	"github.com/jedafe/japa/internal/worker"
 )
+
+// TaskEnqueueClient is the interface for enqueueing background tasks.
+type TaskEnqueueClient interface {
+	Enqueue(task *asynq.Task, opts ...asynq.Option) (*asynq.TaskInfo, error)
+}
 
 // Handlers exposes the Language Test Preparation Hub endpoints.
 type Handlers struct {
-	service  *Service
-	settings *config.Settings
+	service     *Service
+	settings    *config.Settings
+	asynqClient TaskEnqueueClient
 }
 
 // NewHandlers creates language test hub handlers bound to the provided
 // service.
 func NewHandlers(service *Service, settings *config.Settings) *Handlers {
 	return &Handlers{service: service, settings: settings}
+}
+
+// SetAsynqClient injects the Asynq client for enqueueing background tasks
+// (e.g. Meilisearch index sync on requirement approval).
+func (h *Handlers) SetAsynqClient(c TaskEnqueueClient) { h.asynqClient = c }
+
+// enqueueSearchIndex enqueues an async task to sync a language test
+// requirement to the Meilisearch language_test_requirements index
+// (ADR-088 JapaBot Indexability). operation is "index" or "delete".
+func (h *Handlers) enqueueSearchIndex(reqID, tenantID pgtype.UUID, operation string) {
+	if h.asynqClient == nil {
+		return
+	}
+	payload, err := json.Marshal(map[string]string{
+		"entity_id":   reqID.String(),
+		"entity_type": "language_test_requirement",
+		"tenant_id":   tenantID.String(),
+		"operation":   operation,
+	})
+	if err != nil {
+		slog.Warn("languagetesthub: failed to marshal search index payload", "error", err)
+		return
+	}
+	if _, err := h.asynqClient.Enqueue(
+		asynq.NewTask(worker.TypeSearchIndexSync, payload),
+		asynq.Queue(worker.QueueForTask(worker.TypeSearchIndexSync)),
+	); err != nil {
+		slog.Warn("languagetesthub: failed to enqueue search index task",
+			"req_id", reqID.String(), "error", err)
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -468,15 +506,17 @@ func (h *Handlers) HandleAdminCreateRequirement(w http.ResponseWriter, r *http.R
 }
 
 // HandleAdminGenerateRequirement handles POST
-// /admin/language-tests/requirements/generate — Content Agent draft
-// placeholder. Admin-only (language_test_hub.manage permission checked at
-// route registration). Returns 202 Accepted with a placeholder response;
-// the actual Content Agent integration is wired separately.
+// /admin/language-tests/requirements/generate — creates an AI-drafted
+// requirement in 'ai_draft' status via the §20 AI Gateway (ADR-088
+// Content Agent draft endpoint pattern). The draft is NOT visible to end
+// users and requires HITL approval before publication. Admin-only
+// (language_test_hub.manage permission checked at route registration).
 func (h *Handlers) HandleAdminGenerateRequirement(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-	if _, ok := requireTenant(w, r); !ok {
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
 		return
 	}
 
@@ -500,22 +540,21 @@ func (h *Handlers) HandleAdminGenerateRequirement(w http.ResponseWriter, r *http
 		return
 	}
 
-	// Placeholder: the Content Agent draft generation is performed
-	// asynchronously. This endpoint acknowledges the request and returns
-	// a draft envelope that the admin can review before persisting.
+	draft, err := h.service.GenerateDraft(r.Context(), tenantID, input)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			errpkg.WriteError(w, http.StatusNotFound, "test_not_found", "Language test not found")
+			return
+		}
+		slog.Error("languagetesthub: admin generate requirement failed", "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "generate_failed", "Failed to generate requirement draft")
+		return
+	}
+
 	errpkg.WriteJSON(w, http.StatusAccepted, map[string]any{
-		"data": map[string]any{
-			"status":               StatusAIDraft,
-			"destination_space_id": input.DestinationSpaceID,
-			"visa_category":        input.VisaCategory,
-			"test_slug":            input.TestSlug,
-			"minimum_score":        "",
-			"score_breakdown":      nil,
-			"notes":                "",
-			"source_url":           "",
-			"ai_generated":         true,
-			"message":              "Content Agent draft generation queued; review the draft before publishing.",
-		},
+		"data":    draft,
+		"status":  "accepted",
+		"message": "AI draft requirement created in 'ai_draft' status. Review and approve via PATCH /admin/language-tests/requirements/:id/approve before publication.",
 	})
 }
 
@@ -557,6 +596,11 @@ func (h *Handlers) HandleAdminApproveRequirement(w http.ResponseWriter, r *http.
 		errpkg.WriteError(w, http.StatusInternalServerError, "approve_failed", "Failed to approve requirement")
 		return
 	}
+
+	// Enqueue Meilisearch index sync so JapaBot RAG retrieval picks up the
+	// newly published, HITL-reviewed requirement (ADR-088 JapaBot
+	// Indexability). Fire-and-forget per Rule 8.
+	h.enqueueSearchIndex(id, tenantID, "index")
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{

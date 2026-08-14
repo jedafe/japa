@@ -16,6 +16,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
@@ -628,6 +629,126 @@ func (ix *Indexer) IndexOrganization(ctx context.Context, orgID, tenantID [16]by
 
 	slog.Info("search:index: organization indexed", "org_id", doc.ID, "name", doc.Name)
 	return nil
+}
+
+// ---------------------------------------------------------------------------
+// Language Test Requirement Indexer (§99, ADR-107, ADR-088 JapaBot Indexability)
+// ---------------------------------------------------------------------------
+
+// languageTestRequirementDocument is the shape stored in the
+// language_test_requirements index. Only rows with is_japabot_indexed = true
+// (status=published AND is_active AND hitl_reviewed_by IS NOT NULL) are
+// indexed so JapaBot RAG retrieval never surfaces unreviewed content.
+type languageTestRequirementDocument struct {
+	ID                 string   `json:"id"`
+	TenantID           string   `json:"tenant_id"`
+	TestSlug           string   `json:"test_slug"`
+	TestName           string   `json:"title"`
+	MinimumScore       string   `json:"excerpt"`
+	DestinationSpaceID string   `json:"destination_space_id"`
+	VisaCategory       string   `json:"visa_category"`
+	IsJapabotIndexed   bool     `json:"is_japabot_indexed"`
+	Status             string   `json:"status"`
+	URL                string   `json:"url"`
+}
+
+// IndexLanguageTestRequirement fetches a language_test_requirements row
+// and upserts it into the language_test_requirements index. Rows that are
+// not JapaBot-indexable (is_japabot_indexed = false) are deleted from the
+// index so stale drafts/rejected rows do not surface in RAG retrieval.
+// Ref: japaconnect-engineering/sections/99-language-test-hub.md
+//      japaconnect-engineering/adr/ADR-107-language-test-hub.md
+func (ix *Indexer) IndexLanguageTestRequirement(ctx context.Context, reqID, tenantID [16]byte) error {
+	if ix.client == nil {
+		slog.Warn("search:index: no meilisearch client, skipping")
+		return nil
+	}
+	if ix.pool == nil {
+		return fmt.Errorf("search:index: no database pool for language_test_requirements fetch")
+	}
+
+	row, err := ix.fetchLanguageTestRequirement(ctx, reqID, tenantID)
+	if err != nil {
+		return fmt.Errorf("fetching language_test_requirement for index: %w", err)
+	}
+	if row == nil {
+		// Row not found or soft-deleted — remove from index.
+		return ix.DeleteDocument(ctx, IndexLanguageTestReqs, reqID)
+	}
+	if !row.isJapabotIndexed {
+		// Not indexable (draft/rejected/inactive/unreviewed) — remove.
+		return ix.DeleteDocument(ctx, IndexLanguageTestReqs, reqID)
+	}
+
+	doc := languageTestRequirementDocument{
+		ID:                 row.id,
+		TenantID:           row.tenantID,
+		TestSlug:           row.testSlug,
+		TestName:           row.testName,
+		MinimumScore:       row.minimumScore,
+		DestinationSpaceID: row.destinationSpaceID,
+		VisaCategory:       row.visaCategory,
+		IsJapabotIndexed:   true,
+		Status:             row.status,
+		URL:                "/language-tests/" + row.testSlug,
+	}
+
+	docs := []languageTestRequirementDocument{doc}
+	if _, err := ix.client.Index(IndexLanguageTestReqs).AddDocumentsWithContext(ctx, &docs, nil); err != nil {
+		return fmt.Errorf("indexing language_test_requirement %s: %w", doc.ID, err)
+	}
+
+	slog.Info("search:index: language_test_requirement indexed", "id", doc.ID, "test", doc.TestSlug)
+	return nil
+}
+
+// languageTestReqRow is the scanned shape for the direct pgx query.
+type languageTestReqRow struct {
+	id               string
+	tenantID         string
+	testSlug         string
+	testName         string
+	minimumScore     string
+	destinationSpaceID string
+	visaCategory     string
+	status           string
+	isJapabotIndexed bool
+}
+
+// fetchLanguageTestRequirement reads a single requirement row joined with
+// its language_tests parent. Uses the pool directly because the
+// languagetesthub feature has no sqlc-generated queries.
+func (ix *Indexer) fetchLanguageTestRequirement(ctx context.Context, reqID, tenantID [16]byte) (*languageTestReqRow, error) {
+	conn, err := ix.pool.Reader.Acquire(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("acquiring connection: %w", err)
+	}
+	defer conn.Release()
+
+	var r languageTestReqRow
+	var visaCategory *string
+	err = conn.QueryRow(ctx, `
+		SELECT r.id, r.tenant_id, lt.slug, lt.name,
+		       r.minimum_score, r.destination_space_id,
+		       r.visa_category, r.status, r.is_japabot_indexed
+		FROM language_test_requirements r
+		JOIN language_tests lt ON lt.id = r.test_id
+		WHERE r.id = $1 AND r.tenant_id = $2
+	`, reqID, tenantID).Scan(
+		&r.id, &r.tenantID, &r.testSlug, &r.testName,
+		&r.minimumScore, &r.destinationSpaceID,
+		&visaCategory, &r.status, &r.isJapabotIndexed,
+	)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, nil
+		}
+		return nil, err
+	}
+	if visaCategory != nil {
+		r.visaCategory = *visaCategory
+	}
+	return &r, nil
 }
 
 // ---------------------------------------------------------------------------

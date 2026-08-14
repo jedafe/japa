@@ -7,7 +7,6 @@
 	import { api } from '$lib/api/client';
 	import { realtime } from '$lib/realtime/realtime.svelte';
 	import { theme } from '$lib/stores/theme.svelte';
-	import { i18n } from '$lib/i18n';
 	import { seedCsrfToken } from '$lib/api/csrf.svelte';
 	import '../app.css';
 	import type { LayoutData } from './$types';
@@ -19,9 +18,8 @@
 	$effect(() => {
 		theme.init(data.theme);
 	});
-	$effect(() => {
-		i18n.setLocale(data.locale);
-	});
+	// The i18n locale is derived from `page.data.locale` in the store — no
+	// manual setLocale() call needed (SSR-safe, no cross-request leakage).
 
 	// Seed the browser-side CSRF token from server-rendered page data so the
 	// first client mutation already carries X-CSRF-Token without a boot fetch.

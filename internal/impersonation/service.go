@@ -2,10 +2,10 @@ package impersonation
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
-	"strings"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -19,6 +19,10 @@ var ErrTargetIsAdmin = errors.New("cannot impersonate admin-level users")
 // ErrNoActiveSession is returned by EndImpersonation when no impersonation
 // session is active for the admin. Handlers should map it to HTTP 404.
 var ErrNoActiveSession = errors.New("no active impersonation session")
+
+// ErrTargetNotFound is returned by StartImpersonation when the target user
+// does not exist in the database. Handlers should map it to HTTP 404.
+var ErrTargetNotFound = errors.New("target user not found")
 
 // AdminCapabilityChecker is the RBAC resolver interface used to detect
 // admin-level users. Implemented by *rbac.RBAC.
@@ -50,6 +54,16 @@ func (s *Service) SetRBAC(rbac AdminCapabilityChecker) { s.rbac = rbac }
 // Valkey key with a 30-minute TTL. A failed audit log write aborts the
 // impersonation — we never proceed without an audit trail.
 func (s *Service) StartImpersonation(ctx context.Context, tenantID, adminID, targetUserID pgtype.UUID, ipAddress string) error {
+	// Verify the target user exists before proceeding. Section 46 implies
+	// the target must be a real non-admin user. Without this check, an admin
+	// could start impersonating a non-existent UUID, leaving a dangling
+	// Valkey key that breaks downstream handlers using EffectiveUserID.
+	if _, err := s.GetTargetProfile(ctx, tenantID, targetUserID); err != nil {
+		slog.Warn("impersonation refused: target user not found",
+			"admin_id", adminID.String(), "target_id", targetUserID.String(), "error", err)
+		return ErrTargetNotFound
+	}
+
 	// Safety: refuse to impersonate any user with admin-level permissions.
 	// Section 46: "A user with admin.impersonate cannot impersonate another
 	// user who holds any admin-level role."
@@ -126,7 +140,9 @@ func (s *Service) EndImpersonation(ctx context.Context, tenantID, adminID pgtype
 
 // GetImpersonationStatus returns the impersonated user ID, whether an
 // impersonation is active, and the remaining TTL in seconds (for computing
-// expires_at per Section 46 status response contract).
+// expires_at per Section 46 status response contract). When active, the
+// target's username is also fetched so the UI banner can display a
+// human-readable name instead of a raw UUID (Section 46 "UI Banner").
 func (s *Service) GetImpersonationStatus(ctx context.Context, adminID pgtype.UUID) (string, bool, int64, error) {
 	targetID, err := s.store.GetImpersonation(ctx, adminID)
 	if err != nil {
@@ -140,6 +156,37 @@ func (s *Service) GetImpersonationStatus(ctx context.Context, adminID pgtype.UUI
 	ttlSeconds, _ := s.store.TTLImpersonation(ctx, adminID)
 
 	return targetID, true, ttlSeconds, nil
+}
+
+// GetImpersonationStatusWithTarget is like GetImpersonationStatus but also
+// returns the target's public profile (username, email) when an impersonation
+// is active. Used by the status handler so the UI banner can display the
+// target's username instead of a raw UUID (Section 46 "UI Banner").
+// tenantID is required to fetch the profile; if the profile lookup fails,
+// a nil profile is returned (the session is still active).
+func (s *Service) GetImpersonationStatusWithTarget(ctx context.Context, tenantID, adminID pgtype.UUID) (string, bool, int64, *TargetProfile, error) {
+	targetID, active, ttlSeconds, err := s.GetImpersonationStatus(ctx, adminID)
+	if err != nil {
+		return "", false, 0, nil, err
+	}
+
+	if !active {
+		return "", false, 0, nil, nil
+	}
+
+	var targetUUID pgtype.UUID
+	if err := targetUUID.Scan(targetID); err != nil {
+		// Corrupt Valkey value — return active but no profile.
+		return targetID, true, ttlSeconds, nil, nil
+	}
+
+	profile, profileErr := s.GetTargetProfile(ctx, tenantID, targetUUID)
+	if profileErr != nil {
+		slog.Warn("impersonation status: failed to fetch target profile",
+			"error", profileErr, "target_id", targetID)
+	}
+
+	return targetID, true, ttlSeconds, profile, nil
 }
 
 // IsAdmin reports whether the given user holds any admin-level capability.
@@ -156,16 +203,17 @@ func (s *Service) IsAdmin(ctx context.Context, userID, tenantID pgtype.UUID) boo
 
 // auditLog inserts a row into audit_logs for an impersonation action.
 // impersonatedUserID may be nil for actions that don't have a target.
-// metadata is serialized to JSON. ipAddress is the client IP from
-// clientip.FromRequest (Section 46 handler pattern includes IPAddress).
+// metadata is serialized to JSON via encoding/json (safe against injection).
+// ipAddress is the client IP from clientip.FromRequest; an empty string is
+// passed as NULL so the inet column doesn't reject it (Section 46).
 func (s *Service) auditLog(ctx context.Context, tenantID, adminID pgtype.UUID, impersonatedUserID *string, actionType, ipAddress string, metadata map[string]string) error {
-	metaJSON := "{}"
+	metaJSON := []byte("{}")
 	if len(metadata) > 0 {
-		parts := make([]string, 0, len(metadata))
-		for k, v := range metadata {
-			parts = append(parts, fmt.Sprintf(`"%s":"%s"`, k, v))
+		encoded, err := json.Marshal(metadata)
+		if err != nil {
+			return fmt.Errorf("audit log metadata marshal: %w", err)
 		}
-		metaJSON = "{" + strings.Join(parts, ",") + "}"
+		metaJSON = encoded
 	}
 
 	var impersonatedArg any
@@ -173,10 +221,16 @@ func (s *Service) auditLog(ctx context.Context, tenantID, adminID pgtype.UUID, i
 		impersonatedArg = *impersonatedUserID
 	}
 
+	// Pass nil for empty ipAddress so PostgreSQL doesn't reject ''::inet.
+	var ipArg any
+	if ipAddress != "" {
+		ipArg = ipAddress
+	}
+
 	_, err := s.dbPool.Exec(ctx, `
 		INSERT INTO audit_logs (tenant_id, actor_user_id, impersonated_user_id, action_type, target_type, target_id, metadata, ip_address)
 		VALUES ($1, $2, $3, $4, 'user', $3, $5::jsonb, $6::inet)
-	`, tenantID, adminID, impersonatedArg, actionType, metaJSON, ipAddress)
+	`, tenantID, adminID, impersonatedArg, actionType, metaJSON, ipArg)
 	if err != nil {
 		return fmt.Errorf("audit log insert: %w", err)
 	}

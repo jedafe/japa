@@ -92,11 +92,19 @@ type GeneratePageInput struct {
 	Category  string `json:"category"`
 }
 
+// FeatureChecker checks whether a feature flag is enabled for a tenant.
+// Satisfied by *features.Checker via structural typing — defined locally to
+// avoid importing the features package (keeps the dependency graph clean).
+type FeatureChecker interface {
+	IsEnabled(ctx context.Context, tenantID pgtype.UUID, key string) bool
+}
+
 // Service holds the business logic for the Destination Wiki.
 type Service struct {
 	store    *Store
 	settings *config.Settings
 	vk       valkeycompat.Cmdable
+	checker  FeatureChecker
 }
 
 // NewService creates a wiki service.
@@ -104,12 +112,22 @@ func NewService(store *Store, settings *config.Settings) *Service {
 	return &Service{store: store, settings: settings}
 }
 
+// SetFeatureChecker injects the feature flag checker so Enabled can read the
+// feature_flags table (the single source of truth for feature reachability)
+// instead of system_settings. Falls back to system_settings when nil.
+func (s *Service) SetFeatureChecker(c FeatureChecker) { s.checker = c }
+
 // SetValkey injects the Valkey client used for the jc:wiki_edit_lock lock
 // (B6: soft edit lock preventing concurrent wiki edits, §80 / valkey-keys-catalog).
 func (s *Service) SetValkey(vk valkeycompat.Cmdable) { s.vk = vk }
 
-// Enabled reads the wiki.enabled system_setting toggle.
+// Enabled checks whether the wiki feature is enabled for the given tenant.
+// Delegates to the features.Checker (feature_flags table) when available,
+// falling back to system_settings for backward compatibility.
 func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
+	if s.checker != nil {
+		return s.checker.IsEnabled(ctx, tenantID, "wiki.enabled")
+	}
 	if s.settings == nil {
 		return false
 	}

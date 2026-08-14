@@ -106,3 +106,53 @@ func TestRegistryHasNoDuplicates(t *testing.T) {
 		seen[f.Key] = true
 	}
 }
+
+func TestRegistryHasChecklistEnabled(t *testing.T) {
+	t.Parallel()
+
+	if _, ok := registryLookup("checklist.enabled"); !ok {
+		t.Error("checklist.enabled must be in the registry — it is used by features.Gate in the server")
+	}
+}
+
+func TestChecker_CloseIsIdempotent(t *testing.T) {
+	t.Parallel()
+
+	c := &Checker{
+		cache: &flagCache{
+			entries: make(map[string]map[string]*flagCacheEntry),
+			done:    make(chan struct{}),
+		},
+	}
+	// Calling Close multiple times must not panic.
+	c.Close()
+	c.Close()
+	c.Close()
+}
+
+func TestHumanizeFlagName(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"feature.blog", "Feature Blog"},
+		{"feature.dm", "Feature Dm"},
+		{"feature.ai_content_gen", "Feature Ai Content Gen"},
+		{"story.enabled", "Story Enabled"},
+		{"forum.ama.enabled", "Forum Ama Enabled"},
+		{"checklist.enabled", "Checklist Enabled"},
+		{"", ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			t.Parallel()
+			got := humanizeFlagName(tt.input)
+			if got != tt.want {
+				t.Errorf("humanizeFlagName(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}

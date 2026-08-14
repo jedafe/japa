@@ -106,7 +106,7 @@
 	});
 
 	// $derived so the suggestions re-render when the locale changes (the t()
-	// calls read i18n.locale, a $state). A plain const would freeze the strings
+	// calls read i18n.locale, a $derived). A plain const would freeze the strings
 	// at first render in whatever locale was active then.
 	const suggestions = $derived([
 		t('japabot.suggestion_1', 'What documents do I need for a UK student visa?'),

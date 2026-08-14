@@ -16,6 +16,7 @@
 	let earnings = $state<EarningsSummary | null>(null);
 	let payouts = $state<Payout[]>([]);
 	let loading = $state(true);
+	let submittingTrackId = $state<string | null>(null);
 
 	$effect(() => {
 		(async () => {
@@ -53,6 +54,14 @@
 			default:
 				return PenLine;
 		}
+	}
+
+	async function submitTrack(id: string) {
+		if (submittingTrackId) return;
+		submittingTrackId = id;
+		await api.post(`/learn/university/my/tracks/${id}/submit`);
+		submittingTrackId = null;
+		goto('/dashboard/instructor');
 	}
 
 	function submissionStatusColor(status: string): string {
@@ -204,15 +213,11 @@
 									{#if tr.submission_status === 'draft' || tr.submission_status === 'rejected'}
 										<button
 											type="button"
-											class="rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1 text-xs font-medium text-[var(--color-primary-contrast)] hover:bg-[var(--color-primary-hover)]"
-											onclick={() => {
-												(async () => {
-													await api.post(`/learn/university/my/tracks/${tr.id}/submit`);
-													goto('/dashboard/instructor');
-												})();
-											}}
+											disabled={submittingTrackId === tr.id}
+											class="rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1 text-xs font-medium text-[var(--color-primary-contrast)] hover:bg-[var(--color-primary-hover)] disabled:opacity-50"
+											onclick={() => submitTrack(tr.id)}
 										>
-											{t('university.submit_course')}
+											{submittingTrackId === tr.id ? t('common.processing', 'Processing...') : t('university.submit_course')}
 										</button>
 									{/if}
 								</div>

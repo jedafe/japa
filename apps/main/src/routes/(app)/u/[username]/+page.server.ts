@@ -13,7 +13,8 @@ import type {
 	EarnedBadge,
 	Badge,
 	FollowerGrowthItem,
-	TopContentItem
+	TopContentItem,
+	PublicJapaStage
 } from '$lib/types';
 
 /**
@@ -72,12 +73,23 @@ export const load: PageServerLoad = async (event) => {
 					.catch(() => false)
 			: Promise.resolve(false);
 
+	// FE-1: hydrate the mute button's initial state on SSR. Fetches the
+	// per-user mute-status endpoint. Only fetch when the viewer is
+	// authenticated and viewing someone else's profile. Best-effort: a
+	// failure degrades to `false` (not muted). Ref: Section 52.
+	const initiallyMuted =
+		!isOwnProfile && event.locals.user
+			? apiGet<{ muted: boolean }>(ctx, `/users/${userId}/mute-status`)
+				.then((r) => r.muted)
+				.catch(() => false)
+			: Promise.resolve(false);
+
 	// Tab data — each degrades to an empty list on failure (a missing tab must
 	// never blank the whole profile). Each tab fetches its dedicated
 	// /users/{id}/<tab> endpoint (JEOS api-routes-catalog §334–340).
 	// Phase 18.01a — analytics time-series (follower growth + top content) for
 	// the LayerChart visualizations on the owner-only analytics tab. Ref: ADR-059.
-	const [posts, replies, media, spaces, certificates, likes, analytics, isFollowing, badges, allBadges, followerGrowth, topContent, isBlocked] = await Promise.all([
+	const [posts, replies, media, spaces, certificates, likes, analytics, isFollowing, badges, allBadges, followerGrowth, topContent, isBlocked, isMuted, japaStage] = await Promise.all([
 		apiList<ProfilePost>(ctx, `/users/${userId}/content`).then((r) => r.items).catch(() => []),
 		apiList<ProfileReply>(ctx, `/users/${userId}/replies`).then((r) => r.items).catch(() => []),
 		apiList<ProfileMedia>(ctx, `/users/${userId}/media`).then((r) => r.items).catch(() => []),
@@ -106,7 +118,13 @@ export const load: PageServerLoad = async (event) => {
 		isOwnProfile
 			? apiList<TopContentItem>(ctx, '/me/analytics/content?page_size=10').then((r) => r.items).catch(() => [])
 			: Promise.resolve([] as TopContentItem[]),
-		initiallyBlocked
+		initiallyBlocked,
+		initiallyMuted,
+		// §87 — public japa stage. Best-effort: degrades to null when the
+		// feature flag is off, the profile is private, or the user has no
+		// stage set. The route returns an empty DTO (no stage field) when
+		// is_public is false, so we treat a missing stage as "no badge".
+		apiGet<PublicJapaStage>(ctx, `/users/${username}/japa-stage`).catch(() => null)
 	]);
 
 	return {
@@ -114,6 +132,7 @@ export const load: PageServerLoad = async (event) => {
 		isOwnProfile,
 		initiallyFollowing: isFollowing,
 		initiallyBlocked: isBlocked,
+		initiallyMuted: isMuted,
 		posts,
 		replies,
 		media,
@@ -125,6 +144,7 @@ export const load: PageServerLoad = async (event) => {
 		allBadges,
 		followerGrowth,
 		topContent,
+		japaStage,
 		jsonLd
 	};
 };

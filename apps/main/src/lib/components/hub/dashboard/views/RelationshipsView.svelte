@@ -3,7 +3,7 @@
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
-	import { unfollowUser, leaveSpace, unfollowTag, unblockUser } from '$lib/api/hub';
+	import { unfollowUser, leaveSpace, unfollowTag, unblockUser, unmuteUser, unmuteSpace } from '$lib/api/hub';
 	import { optimisticAction } from '$lib/components/hub/optimisticAction';
 	import { invalidate } from '$app/navigation';
 	import MetricCard from '$lib/components/hub/MetricCard.svelte';
@@ -22,12 +22,16 @@
 	}
 	interface Space { id: string; slug?: string; name?: string; }
 	interface BlockedUser { blocked_id: string; username?: string; display_name?: string; created_at?: string; }
+	interface MutedUser { muted_user_id: string; username?: string; display_name?: string; created_at?: string; }
+	interface MutedSpace { space_id: string; space_name?: string; space_slug?: string; created_at?: string; }
 
 	interface RelationshipsData {
 		following: FollowedEntity[];
 		spaces: Space[];
 		tags: FollowedEntity[];
 		blocked?: BlockedUser[];
+		mutedUsers?: MutedUser[];
+		mutedSpaces?: MutedSpace[];
 	}
 
 	let { data }: { data: unknown } = $props();
@@ -36,6 +40,8 @@
 	let spaces = $state<Space[]>(untrack(() => rel?.spaces ?? []));
 	let tags = $state<FollowedEntity[]>(untrack(() => rel?.tags ?? []));
 	let blocked = $state<BlockedUser[]>(untrack(() => rel?.blocked ?? []));
+	let mutedUsers = $state<MutedUser[]>(untrack(() => rel?.mutedUsers ?? []));
+	let mutedSpaces = $state<MutedSpace[]>(untrack(() => rel?.mutedSpaces ?? []));
 
 	const activeTab = $derived(page.url.searchParams.get('tab') ?? 'following');
 
@@ -43,7 +49,9 @@
 		{ key: 'following', labelKey: 'dashboard.relationships.tab_following' },
 		{ key: 'spaces', labelKey: 'dashboard.relationships.tab_spaces' },
 		{ key: 'tags', labelKey: 'dashboard.relationships.tab_tags' },
-		{ key: 'blocked', labelKey: 'dashboard.relationships.tab_blocked' }
+		{ key: 'blocked', labelKey: 'dashboard.relationships.tab_blocked' },
+		{ key: 'muted-users', labelKey: 'dashboard.relationships.tab_muted_users' },
+		{ key: 'muted-spaces', labelKey: 'dashboard.relationships.tab_muted_spaces' }
 	];
 
 	function switchTab(key: string) {
@@ -84,6 +92,24 @@
 			call: () => unblockUser(id)
 		});
 		await invalidate('/api/v1/me/blocked-users');
+	}
+
+	async function doUnmuteUser(id: string) {
+		await optimisticAction({
+			apply: () => (mutedUsers = mutedUsers.filter((u) => u.muted_user_id !== id)),
+			rollback: () => (mutedUsers = rel?.mutedUsers ?? []),
+			call: () => unmuteUser(id)
+		});
+		await invalidate('/api/v1/me/muted-users');
+	}
+
+	async function doUnmuteSpace(slug: string) {
+		await optimisticAction({
+			apply: () => (mutedSpaces = mutedSpaces.filter((s) => s.space_slug !== slug)),
+			rollback: () => (mutedSpaces = rel?.mutedSpaces ?? []),
+			call: () => unmuteSpace(slug)
+		});
+		await invalidate('/api/v1/me/muted-spaces');
 	}
 </script>
 
@@ -175,6 +201,40 @@
 						</a>
 						<button type="button" class="text-xs text-[var(--color-muted)] hover:text-[var(--color-danger)]" onclick={() => doUnblockUser(user.blocked_id)}>
 							{t('dashboard.relationships.unblock')}
+						</button>
+					</li>
+				{/each}
+			</ul>
+		{/if}
+	{:else if activeTab === 'muted-users'}
+		{#if mutedUsers.length === 0}
+			<EmptyState icon={Users} title={t('dashboard.relationships.muted_users_empty', 'You haven\'t muted anyone')} />
+		{:else}
+			<ul class="space-y-2">
+				{#each mutedUsers as user (user.muted_user_id)}
+					<li class="flex items-center justify-between rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3">
+						<a href="/u/{user.username ?? user.muted_user_id}" class="text-sm font-medium text-[var(--color-text)] hover:underline">
+							{user.display_name ?? user.username ?? user.muted_user_id}
+						</a>
+						<button type="button" class="text-xs text-[var(--color-muted)] hover:text-[var(--color-text)]" onclick={() => doUnmuteUser(user.muted_user_id)}>
+							{t('dashboard.relationships.unmute', 'Unmute')}
+						</button>
+					</li>
+				{/each}
+			</ul>
+		{/if}
+	{:else if activeTab === 'muted-spaces'}
+		{#if mutedSpaces.length === 0}
+			<EmptyState icon={Users} title={t('dashboard.relationships.muted_spaces_empty', 'You haven\'t muted any spaces')} />
+		{:else}
+			<ul class="space-y-2">
+				{#each mutedSpaces as space (space.space_id)}
+					<li class="flex items-center justify-between rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3">
+						<a href="/spaces/{space.space_slug ?? space.space_id}" class="text-sm font-medium text-[var(--color-text)] hover:underline">
+							{space.space_name ?? space.space_slug ?? space.space_id}
+						</a>
+						<button type="button" class="text-xs text-[var(--color-muted)] hover:text-[var(--color-text)]" onclick={() => doUnmuteSpace(space.space_slug ?? space.space_id)}>
+							{t('dashboard.relationships.unmute', 'Unmute')}
 						</button>
 					</li>
 				{/each}

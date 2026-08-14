@@ -27,6 +27,7 @@ const (
 	IndexLearningTracks    = "learning_tracks"    // Japa University marketplace courses (ADR-063)
 	IndexDocPages          = "doc_pages"          // documentation pages (SEARCH-001)
 	IndexOrganizations     = "organizations"      // verified orgs/businesses (Section 54)
+	IndexLanguageTestReqs  = "language_test_requirements" // §99 language test score requirements (JapaBot RAG)
 )
 
 // PrimaryKey is the primary key used by every Meilisearch index. All
@@ -44,6 +45,7 @@ var allIndexes = []string{
 	IndexLearningTracks,
 	IndexDocPages,
 	IndexOrganizations,
+	IndexLanguageTestReqs,
 }
 
 // filterableAttributesByIndex declares which attributes each index exposes
@@ -59,6 +61,7 @@ var filterableAttributesByIndex = map[string][]string{
 	IndexLearningTracks:    {"tenant_id", "difficulty", "category", "language", "relevant_countries", "is_free"},
 	IndexDocPages:          {"tenant_id", "audience", "review_status"},
 	IndexOrganizations:     {"tenant_id", "org_type", "verified", "status", "country_code"},
+	IndexLanguageTestReqs:  {"tenant_id", "test_slug", "destination_space_id", "visa_category", "is_japabot_indexed"},
 }
 
 // NewClient creates a Meilisearch client and ensures every search index

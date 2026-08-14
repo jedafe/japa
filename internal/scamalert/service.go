@@ -89,6 +89,13 @@ type TaskEnqueuer interface {
 	Enqueue(taskType string, payload []byte, opts ...interface{}) error
 }
 
+// FeatureChecker checks whether a feature flag is enabled for a tenant.
+// Satisfied by *features.Checker via structural typing — defined locally to
+// avoid importing the features package (keeps the dependency graph clean).
+type FeatureChecker interface {
+	IsEnabled(ctx context.Context, tenantID pgtype.UUID, key string) bool
+}
+
 // Task name constants for Asynq tasks enqueued by this service.
 const (
 	TaskNotifySubscribers = "scam_alert:notify_subscribers"
@@ -102,6 +109,7 @@ type Service struct {
 	notifier Notifier
 	awarder  BadgeAwarder
 	enqueuer TaskEnqueuer
+	checker  FeatureChecker
 }
 
 // NewService creates a scam-alert service.
@@ -122,8 +130,18 @@ func (s *Service) SetBadgeAwarder(b BadgeAwarder) { s.awarder = b }
 // (Rule 8). Called once at startup.
 func (s *Service) SetEnqueuer(e TaskEnqueuer) { s.enqueuer = e }
 
-// Enabled reads the scam_alert.enabled system_setting toggle (§81 feature flag).
+// SetFeatureChecker injects the feature flag checker so Enabled can read the
+// feature_flags table (the single source of truth for feature reachability)
+// instead of system_settings. Falls back to system_settings when nil.
+func (s *Service) SetFeatureChecker(c FeatureChecker) { s.checker = c }
+
+// Enabled checks whether the scam_alert feature is enabled for the given
+// tenant. Delegates to the features.Checker (feature_flags table) when
+// available, falling back to system_settings for backward compatibility.
 func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
+	if s.checker != nil {
+		return s.checker.IsEnabled(ctx, tenantID, "scam_alert.enabled")
+	}
 	if s.settings == nil {
 		return false
 	}

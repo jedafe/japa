@@ -49,6 +49,13 @@ type EmailDispatcher interface {
 	Dispatch(ctx context.Context, req email.EmailRequest) (email.EmailResponse, error)
 }
 
+// FeatureChecker checks whether a feature flag is enabled for a tenant.
+// Satisfied by *features.Checker via structural typing — defined locally to
+// avoid importing the features package (keeps the dependency graph clean).
+type FeatureChecker interface {
+	IsEnabled(ctx context.Context, tenantID pgtype.UUID, key string) bool
+}
+
 // DigestEditionDTO is the API response shape for a digest edition (listing).
 type DigestEditionDTO struct {
 	ID           string `json:"id"`
@@ -81,6 +88,7 @@ type Service struct {
 	enqueuer        TaskEnqueuer
 	vk              valkeycompat.Cmdable
 	emailDispatcher EmailDispatcher
+	checker         FeatureChecker
 }
 
 // NewService creates a digest service.
@@ -107,8 +115,18 @@ func (s *Service) SetValkey(vk valkeycompat.Cmdable) { s.vk = vk }
 // §62 Newsletter infrastructure via the ADR-015 marketing provider).
 func (s *Service) SetEmailDispatcher(d EmailDispatcher) { s.emailDispatcher = d }
 
-// Enabled reads the digest.enabled system_setting toggle.
+// SetFeatureChecker injects the feature flag checker so Enabled can read the
+// feature_flags table (the single source of truth for feature reachability)
+// instead of system_settings. Falls back to system_settings when nil.
+func (s *Service) SetFeatureChecker(c FeatureChecker) { s.checker = c }
+
+// Enabled checks whether the digest feature is enabled for the given tenant.
+// Delegates to the features.Checker (feature_flags table) when available,
+// falling back to system_settings for backward compatibility.
 func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
+	if s.checker != nil {
+		return s.checker.IsEnabled(ctx, tenantID, "digest.enabled")
+	}
 	if s.settings == nil {
 		return false
 	}

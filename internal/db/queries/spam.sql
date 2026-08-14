@@ -173,6 +173,33 @@ SELECT EXISTS(
 ) AS blocked;
 
 -- =====================
+-- Block side-effects (BE-1 / Section 41 line 147)
+-- Blocking a user also cancels any follow relationship (either direction) and
+-- declines any pending DM request between the two users. These queries are
+-- executed in the same transaction as CreateUserBlock.
+-- =====================
+
+-- name: DeleteFollowsBetweenUsers :exec
+-- Removes follow rows in both directions between two users
+-- (entity_type='user'). Tenant-scoped per JEOS §9.
+DELETE FROM follows
+WHERE tenant_id = $3
+  AND entity_type = 'user'
+  AND ((follower_id = $1 AND entity_id = $2)
+       OR (follower_id = $2 AND entity_id = $1));
+
+-- name: DeclinePendingDMRequestsBetweenUsers :exec
+-- Marks pending DM requests between the two users as declined. Soft-updates
+-- the status + resolved_at rather than hard-deleting (the request row is
+-- needed for audit). Tenant-scoped per JEOS §9.
+UPDATE dm_requests
+SET status = 'declined', resolved_at = now()
+WHERE tenant_id = $3
+  AND status = 'pending'
+  AND ((requester_id = $1 AND recipient_id = $2)
+       OR (requester_id = $2 AND recipient_id = $1));
+
+-- =====================
 -- Censored Words
 -- =====================
 

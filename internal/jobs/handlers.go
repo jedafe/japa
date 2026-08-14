@@ -33,10 +33,11 @@ import (
 )
 
 // createJobListingRequest is the JSON body for POST /org/{org_id}/jobs.
+// Summary is intentionally absent — the contents table has no summary column
+// (JOBS-004/015); a display summary is derived from body at read time.
 type createJobListingRequest struct {
 	Title       string            `json:"title"`
 	Slug        string            `json:"slug"`
-	Summary     string            `json:"summary"`
 	Body        string            `json:"body"`
 	FieldValues map[string]string `json:"field_values"`
 	PublishedAt *string           `json:"published_at,omitempty"`
@@ -123,7 +124,7 @@ func (h *Handlers) HandleFindJobs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service != nil && !h.service.IsEnabled(r.Context(), tenantID) {
-		errpkg.WriteError(w, http.StatusForbidden, "jobs_disabled", "Jobs board is disabled")
+		errpkg.WriteError(w, http.StatusNotFound, "jobs_disabled", "Jobs board is not available")
 		return
 	}
 
@@ -273,9 +274,11 @@ func (h *Handlers) HandleMyApplications(w http.ResponseWriter, r *http.Request) 
 }
 
 // HandleListOrgJobs handles GET /api/v1/org/:org_id/jobs — lists the org's
-// published job listings. Auth required (org admin / jobs.post).
+// published job listings. Auth required (org admin / jobs.post). The caller
+// must be a member of the org with an editor-or-above role (JOBS-012).
 func (h *Handlers) HandleListOrgJobs(w http.ResponseWriter, r *http.Request) {
-	if _, ok := requireUser(w, r); !ok {
+	user, ok := requireUser(w, r)
+	if !ok {
 		return
 	}
 
@@ -286,6 +289,19 @@ func (h *Handlers) HandleListOrgJobs(w http.ResponseWriter, r *http.Request) {
 
 	orgID, ok := scanUUIDParam(w, r, "org_id")
 	if !ok {
+		return
+	}
+
+	// JOBS-012: jobs.post is granted to the default member role, so verify
+	// the caller actually belongs to this org with an editor-or-above role.
+	member, err := h.service.IsOrgMember(r.Context(), user.UserID, orgID, OrgJobEditorRoles)
+	if err != nil {
+		slog.Error("jobs: org membership check failed", "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "org_check_failed", "Failed to verify org membership")
+		return
+	}
+	if !member {
+		errpkg.WriteError(w, http.StatusForbidden, "not_org_member", "You are not a member of this organization")
 		return
 	}
 
@@ -310,7 +326,8 @@ func (h *Handlers) HandleListOrgJobs(w http.ResponseWriter, r *http.Request) {
 
 // HandleCreateJobListing handles POST /api/v1/org/:org_id/jobs — creates a
 // job_listing content with custom field values. Auth required (org admin /
-// jobs.post).
+// jobs.post). The caller must be an editor-or-above member of the org
+// (JOBS-012).
 func (h *Handlers) HandleCreateJobListing(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
 	if !ok {
@@ -327,6 +344,18 @@ func (h *Handlers) HandleCreateJobListing(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	// JOBS-012: verify org membership (editor-or-above) before creating.
+	member, err := h.service.IsOrgMember(r.Context(), user.UserID, orgID, OrgJobEditorRoles)
+	if err != nil {
+		slog.Error("jobs: org membership check failed", "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "org_check_failed", "Failed to verify org membership")
+		return
+	}
+	if !member {
+		errpkg.WriteError(w, http.StatusForbidden, "not_org_member", "You are not a member of this organization")
+		return
+	}
+
 	var req createJobListingRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
@@ -338,7 +367,7 @@ func (h *Handlers) HandleCreateJobListing(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	listing, err := h.service.CreateJobListing(r.Context(), tenantID, orgID, user.UserID, req.Title, req.Slug, req.Summary, req.Body, req.FieldValues)
+	listing, err := h.service.CreateJobListing(r.Context(), tenantID, orgID, user.UserID, req.Title, req.Slug, "", req.Body, req.FieldValues)
 	if err != nil {
 		slog.Error("jobs: create listing failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "create_listing_failed", "Failed to create job listing")
@@ -351,9 +380,11 @@ func (h *Handlers) HandleCreateJobListing(w http.ResponseWriter, r *http.Request
 }
 
 // HandleListJobApplications handles GET /api/v1/org/:org_id/jobs/:id/applications
-// — employer view of applications for a job. Auth required (org admin).
+// — employer view of applications for a job. Auth required (org admin). The
+// caller must be an admin of the org that owns the job (JOBS-012).
 func (h *Handlers) HandleListJobApplications(w http.ResponseWriter, r *http.Request) {
-	if _, ok := requireUser(w, r); !ok {
+	user, ok := requireUser(w, r)
+	if !ok {
 		return
 	}
 
@@ -362,8 +393,20 @@ func (h *Handlers) HandleListJobApplications(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
+	orgID, ok := scanUUIDParam(w, r, "org_id")
+	if !ok {
+		return
+	}
+
 	jobID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
+		return
+	}
+
+	// JOBS-012: verify the caller is an admin of the org and the job
+	// actually belongs to that org (prevents reaching applications via a
+	// different org's ID).
+	if !requireOrgJobAdmin(w, r, h, user.UserID, tenantID, orgID, jobID) {
 		return
 	}
 
@@ -395,9 +438,11 @@ type updateStatusRequest struct {
 
 // HandleUpdateApplicationStatus handles PATCH
 // /api/v1/org/:org_id/jobs/:id/applications/:app_id — update application
-// status. Auth required (org admin).
+// status. Auth required (org admin). The caller must be an admin of the org
+// that owns the job (JOBS-012).
 func (h *Handlers) HandleUpdateApplicationStatus(w http.ResponseWriter, r *http.Request) {
-	if _, ok := requireUser(w, r); !ok {
+	user, ok := requireUser(w, r)
+	if !ok {
 		return
 	}
 
@@ -406,8 +451,23 @@ func (h *Handlers) HandleUpdateApplicationStatus(w http.ResponseWriter, r *http.
 		return
 	}
 
+	orgID, ok := scanUUIDParam(w, r, "org_id")
+	if !ok {
+		return
+	}
+
+	jobID, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
 	appID, ok := scanUUIDParam(w, r, "app_id")
 	if !ok {
+		return
+	}
+
+	// JOBS-012: verify org admin + job ownership before mutating.
+	if !requireOrgJobAdmin(w, r, h, user.UserID, tenantID, orgID, jobID) {
 		return
 	}
 
@@ -437,6 +497,34 @@ func (h *Handlers) HandleUpdateApplicationStatus(w http.ResponseWriter, r *http.
 			"status_updated_at": formatTimestamptz(app.StatusUpdatedAt),
 		},
 	})
+}
+
+// requireOrgJobAdmin verifies the user is an admin of the org and that the
+// job belongs to that org. It writes the appropriate error response and
+// returns false on failure. Used by the application list/update handlers
+// (JOBS-012).
+func requireOrgJobAdmin(w http.ResponseWriter, r *http.Request, h *Handlers, userID, tenantID, orgID, jobID pgtype.UUID) bool {
+	member, err := h.service.IsOrgMember(r.Context(), userID, orgID, OrgJobAdminRoles)
+	if err != nil {
+		slog.Error("jobs: org admin check failed", "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "org_check_failed", "Failed to verify org membership")
+		return false
+	}
+	if !member {
+		errpkg.WriteError(w, http.StatusForbidden, "not_org_admin", "You are not an admin of this organization")
+		return false
+	}
+	owns, err := h.service.JobBelongsToOrg(r.Context(), tenantID, jobID, orgID)
+	if err != nil {
+		slog.Error("jobs: job ownership check failed", "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "org_check_failed", "Failed to verify job ownership")
+		return false
+	}
+	if !owns {
+		errpkg.WriteError(w, http.StatusNotFound, "job_not_found", "Job not found in this organization")
+		return false
+	}
+	return true
 }
 
 // HandleAdminListJobs handles GET /api/v1/admin/jobs — admin view of all job

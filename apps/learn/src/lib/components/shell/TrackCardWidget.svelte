@@ -23,6 +23,7 @@
 	let error = $state<string | null>(null);
 
 	$effect(() => {
+		let cancelled = false;
 		(async () => {
 			loading = true;
 			error = null;
@@ -31,6 +32,7 @@
 			// widget shows something useful instead of "Loading track…".
 			if (trackSlug) {
 				const r = await api.get<TrackSummary>(`/learn/university/tracks/${trackSlug}`);
+				if (cancelled) return;
 				loading = false;
 				if (r.data) {
 					track = r.data;
@@ -39,12 +41,14 @@
 				}
 			} else {
 				const r = await api.get<TrackSummary[]>('/learn/university/catalog');
+				if (cancelled) return;
 				loading = false;
 				if (r.data && r.data.length > 0) {
 					track = r.data[0];
 				}
 			}
 		})();
+		return () => { cancelled = true; };
 	});
 </script>
 
