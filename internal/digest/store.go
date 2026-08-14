@@ -7,7 +7,8 @@
 // before publication.
 //
 // Ref: japaconnect-engineering/sections/84-community-digest.md
-//      japaconnect-engineering/adr/ADR-092-community-digest.md
+//
+//	japaconnect-engineering/adr/ADR-092-community-digest.md
 package digest
 
 import (
@@ -299,10 +300,10 @@ func (s *Store) ListActiveTenantIDs(ctx context.Context) ([]pgtype.UUID, error) 
 // DigestContent is the JSON shape stored in digest_editions.content. Each
 // section is assembled by AssembleDigestContent per §84 generation logic.
 type DigestContent struct {
-	TopThreads  []DigestThread  `json:"top_threads"`
-	NewMembers  []DigestMember  `json:"new_members"`
-	UpcomingEvents []DigestEvent `json:"upcoming_events"`
-	FeaturedStory *DigestStory  `json:"featured_story,omitempty"`
+	TopThreads     []DigestThread `json:"top_threads"`
+	NewMembers     []DigestMember `json:"new_members"`
+	UpcomingEvents []DigestEvent  `json:"upcoming_events"`
+	FeaturedStory  *DigestStory   `json:"featured_story,omitempty"`
 }
 
 // DigestThread is a top forum thread summary.
@@ -346,7 +347,7 @@ func (s *Store) AssembleDigestContent(ctx context.Context, tenantID, spaceID pgt
 	// in the past 7 days (§84).
 	var (
 		threadsQ strings.Builder
-		tArgs   []any
+		tArgs    []any
 	)
 	threadsQ.WriteString(`
 SELECT ft.title, ft.slug, ft.vote_score, ft.reply_count

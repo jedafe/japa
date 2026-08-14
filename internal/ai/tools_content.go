@@ -287,15 +287,15 @@ func ContentReadPrivacyTarget(ctx context.Context, args json.RawMessage, tenantI
 // _ai_provenance into the FieldValues JSONB. Status is intentionally not
 // accepted — the agent always creates draft content (§103).
 type contentCreateArgs struct {
-	Title          string            `json:"title"`
-	Body           string            `json:"body"`
-	ContentType    string            `json:"content_type"`
-	AuthorID       string            `json:"author_id"`
-	GeoSpaceID     string            `json:"geo_space_id,omitempty"`
-	SpaceID        string            `json:"space_id,omitempty"`
-	GuideCategory  string            `json:"guide_category,omitempty"`
-	FieldValues    map[string]any    `json:"field_values,omitempty"`
-	Provenance     *aiProvenanceArgs `json:"_ai_provenance,omitempty"`
+	Title         string            `json:"title"`
+	Body          string            `json:"body"`
+	ContentType   string            `json:"content_type"`
+	AuthorID      string            `json:"author_id"`
+	GeoSpaceID    string            `json:"geo_space_id,omitempty"`
+	SpaceID       string            `json:"space_id,omitempty"`
+	GuideCategory string            `json:"guide_category,omitempty"`
+	FieldValues   map[string]any    `json:"field_values,omitempty"`
+	Provenance    *aiProvenanceArgs `json:"_ai_provenance,omitempty"`
 }
 
 // aiProvenanceArgs is the provenance metadata injected into field_values.
@@ -415,15 +415,15 @@ func ContentCreateHandler(deps *ToolDeps) ToolHandler {
 // ContentCreateInput is the provider-agnostic input for content creation,
 // mirroring the subset of content.CreateContentInput the agent needs.
 type ContentCreateInput struct {
-	AuthorID       pgtype.UUID
-	SpaceID        pgtype.UUID
-	ContentType    string
-	Title          string
-	Body           string
-	FieldValues    []byte
-	GeoSpaceID     pgtype.UUID
-	Status         string
-	GuideCategory  string
+	AuthorID      pgtype.UUID
+	SpaceID       pgtype.UUID
+	ContentType   string
+	Title         string
+	Body          string
+	FieldValues   []byte
+	GeoSpaceID    pgtype.UUID
+	Status        string
+	GuideCategory string
 }
 
 // ContentCreateRow is the provider-agnostic return shape, mirroring the

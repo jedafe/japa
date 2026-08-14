@@ -3,7 +3,8 @@
 // wiki.enabled system_setting (§80).
 //
 // Ref: japaconnect-engineering/sections/80-destination-wiki.md
-//      japaconnect-engineering/adr/ADR-088-destination-wiki.md
+//
+//	japaconnect-engineering/adr/ADR-088-destination-wiki.md
 package wiki
 
 import (
@@ -24,16 +25,16 @@ import (
 
 // WikiPageDTO is the API response shape for a wiki page (index listing).
 type WikiPageDTO struct {
-	ID             string `json:"id"`
-	SpaceID        string `json:"space_id"`
-	Slug           string `json:"slug"`
-	Title          string `json:"title"`
-	Category       string `json:"category"`
-	IsFeatured     bool   `json:"is_featured"`
-	IsLocked       bool   `json:"is_locked"`
-	UpdatedAt      string `json:"updated_at"`
-	SpaceSlug      string `json:"space_slug,omitempty"`
-	SpaceName      string `json:"space_name,omitempty"`
+	ID         string `json:"id"`
+	SpaceID    string `json:"space_id"`
+	Slug       string `json:"slug"`
+	Title      string `json:"title"`
+	Category   string `json:"category"`
+	IsFeatured bool   `json:"is_featured"`
+	IsLocked   bool   `json:"is_locked"`
+	UpdatedAt  string `json:"updated_at"`
+	SpaceSlug  string `json:"space_slug,omitempty"`
+	SpaceName  string `json:"space_name,omitempty"`
 }
 
 // AdminWikiPageDTO extends WikiPageDTO with the latest revision metadata
@@ -59,21 +60,21 @@ type WikiPageDetailDTO struct {
 
 // WikiRevisionDTO is the API response shape for a revision.
 type WikiRevisionDTO struct {
-	ID              string          `json:"id"`
-	Status          string          `json:"status"`
-	Content         json.RawMessage `json:"content,omitempty"`
-	Summary         string          `json:"summary,omitempty"`
-	AiGenerated     bool            `json:"ai_generated"`
-	SubmittedBy     string          `json:"submitted_by,omitempty"`
-	ReviewedBy      string          `json:"reviewed_by,omitempty"`
-	ReviewedAt      string          `json:"reviewed_at,omitempty"`
-	CreatedAt       string          `json:"created_at"`
+	ID          string          `json:"id"`
+	Status      string          `json:"status"`
+	Content     json.RawMessage `json:"content,omitempty"`
+	Summary     string          `json:"summary,omitempty"`
+	AiGenerated bool            `json:"ai_generated"`
+	SubmittedBy string          `json:"submitted_by,omitempty"`
+	ReviewedBy  string          `json:"reviewed_by,omitempty"`
+	ReviewedAt  string          `json:"reviewed_at,omitempty"`
+	CreatedAt   string          `json:"created_at"`
 }
 
 // SubmitRevisionInput is the request body for POST /wiki/:space_slug/:page_slug/revisions.
 type SubmitRevisionInput struct {
-	Content  json.RawMessage `json:"content"`
-	Summary  string          `json:"summary"`
+	Content json.RawMessage `json:"content"`
+	Summary string          `json:"summary"`
 }
 
 // UpdatePageInput is the request body for PATCH /admin/wiki/:page_id.

@@ -68,9 +68,9 @@ func TestAPIFetcher_Fetch(t *testing.T) {
 	cfg, _ := json.Marshal(APIProviderConfig{Endpoint: srv.URL, Path: "data.opportunityData.opportunityDetails"})
 	f := NewAPIFetcher()
 	res, err := f.Fetch(context.Background(), sources.Source{
-		SourceUrl:       srv.URL,
-		CrawlMethod:     "api",
-		ProviderConfig:  cfg,
+		SourceUrl:      srv.URL,
+		CrawlMethod:    "api",
+		ProviderConfig: cfg,
 	})
 	if err != nil {
 		t.Fatalf("fetch: %v", err)

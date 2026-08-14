@@ -11,9 +11,9 @@ import (
 
 // mockGateway is a test double for the AIGateway interface.
 type mockGateway struct {
-	resp   ai.ChatWithToolsResponse
-	err    error
-	calls  int
+	resp    ai.ChatWithToolsResponse
+	err     error
+	calls   int
 	lastReq ai.ChatWithToolsRequest
 }
 

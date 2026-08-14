@@ -32,28 +32,28 @@ type TestDTO struct {
 
 // RequirementDTO is the API response shape for a single requirement.
 type RequirementDTO struct {
-	ID                 string `json:"id"`
-	DestinationSpaceID string `json:"destination_space_id"`
-	DestSpaceName      string `json:"destination_space_name,omitempty"`
-	DestSpaceCode      string `json:"destination_space_code,omitempty"`
-	VisaCategory       string `json:"visa_category,omitempty"`
+	ID                 string      `json:"id"`
+	DestinationSpaceID string      `json:"destination_space_id"`
+	DestSpaceName      string      `json:"destination_space_name,omitempty"`
+	DestSpaceCode      string      `json:"destination_space_code,omitempty"`
+	VisaCategory       string      `json:"visa_category,omitempty"`
 	TestID             pgtype.UUID `json:"test_id"`
 	TestSlug           string      `json:"test_slug"`
 	TestName           string      `json:"test_name"`
 	MinimumScore       string      `json:"minimum_score"`
-	ScoreBreakdown     any    `json:"score_breakdown,omitempty"`
-	Notes              string `json:"notes,omitempty"`
-	SourceURL          string `json:"source_url,omitempty"`
-	Status             string `json:"status"`
-	IsActive           bool   `json:"is_active"`
-	AIGenerated        bool   `json:"ai_generated"`
-	AIModel            string `json:"ai_model,omitempty"`
-	AIPromptHash       string `json:"ai_prompt_hash,omitempty"`
-	HITLReviewedBy     string `json:"hitl_reviewed_by,omitempty"`
-	HITLReviewedAt     string `json:"hitl_reviewed_at,omitempty"`
-	HITLReviewNotes    string `json:"hitl_review_notes,omitempty"`
-	CreatedAt          string `json:"created_at"`
-	UpdatedAt          string `json:"updated_at"`
+	ScoreBreakdown     any         `json:"score_breakdown,omitempty"`
+	Notes              string      `json:"notes,omitempty"`
+	SourceURL          string      `json:"source_url,omitempty"`
+	Status             string      `json:"status"`
+	IsActive           bool        `json:"is_active"`
+	AIGenerated        bool        `json:"ai_generated"`
+	AIModel            string      `json:"ai_model,omitempty"`
+	AIPromptHash       string      `json:"ai_prompt_hash,omitempty"`
+	HITLReviewedBy     string      `json:"hitl_reviewed_by,omitempty"`
+	HITLReviewedAt     string      `json:"hitl_reviewed_at,omitempty"`
+	HITLReviewNotes    string      `json:"hitl_review_notes,omitempty"`
+	CreatedAt          string      `json:"created_at"`
+	UpdatedAt          string      `json:"updated_at"`
 }
 
 // ResourceDTO is the API response shape for a single prep resource.
@@ -61,11 +61,11 @@ type ResourceDTO struct {
 	ID              string      `json:"id"`
 	TestID          pgtype.UUID `json:"test_id"`
 	Title           string      `json:"title"`
-	ResourceURL     string `json:"resource_url"`
-	ResourceType    string `json:"resource_type,omitempty"`
-	CommunityRating string `json:"community_rating,omitempty"`
-	RatingCount     int32  `json:"rating_count"`
-	CreatedAt       string `json:"created_at"`
+	ResourceURL     string      `json:"resource_url"`
+	ResourceType    string      `json:"resource_type,omitempty"`
+	CommunityRating string      `json:"community_rating,omitempty"`
+	RatingCount     int32       `json:"rating_count"`
+	CreatedAt       string      `json:"created_at"`
 }
 
 // ScoreStoryDTO is the API response shape for a single score story.
@@ -74,15 +74,15 @@ type ScoreStoryDTO struct {
 	UserID             string      `json:"user_id"`
 	TestID             pgtype.UUID `json:"test_id"`
 	StartingLevel      string      `json:"starting_level,omitempty"`
-	FinalScore         string   `json:"final_score"`
-	DestinationSpaceID string   `json:"destination_space_id,omitempty"`
-	DestSpaceName      string   `json:"destination_space_name,omitempty"`
-	PrepDurationWeeks  int32    `json:"prep_duration_weeks,omitempty"`
-	ResourcesUsed      []string `json:"resources_used,omitempty"`
-	Advice             string   `json:"advice,omitempty"`
-	Status             string   `json:"status"`
-	CreatedAt          string   `json:"created_at"`
-	AuthorName         string   `json:"author_name,omitempty"`
+	FinalScore         string      `json:"final_score"`
+	DestinationSpaceID string      `json:"destination_space_id,omitempty"`
+	DestSpaceName      string      `json:"destination_space_name,omitempty"`
+	PrepDurationWeeks  int32       `json:"prep_duration_weeks,omitempty"`
+	ResourcesUsed      []string    `json:"resources_used,omitempty"`
+	Advice             string      `json:"advice,omitempty"`
+	Status             string      `json:"status"`
+	CreatedAt          string      `json:"created_at"`
+	AuthorName         string      `json:"author_name,omitempty"`
 }
 
 // CreateRequirementRequest is the request body for POST

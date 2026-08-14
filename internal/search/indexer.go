@@ -661,23 +661,23 @@ func (ix *Indexer) DeleteDocument(ctx context.Context, indexName string, id [16]
 // geo-aware filtering (ADR-064): a visitor in "NG" can filter to courses
 // relevant to Nigeria.
 type learningTrackDocument struct {
-	ID                 string   `json:"id"`
-	TenantID           string   `json:"tenant_id"`
-	Title              string   `json:"title"`
-	Slug               string   `json:"slug"`
-	Description        string   `json:"description"`
-	Difficulty         string   `json:"difficulty"`
-	Category           string   `json:"category"`
-	Language           string   `json:"language"`
-	InstructorName     string   `json:"instructor_name"`
-	PriceKobo          *int64   `json:"price_kobo"`
-	Currency           string   `json:"currency"`
-	IsFree             bool     `json:"is_free"`
-	TotalEnrolled      int32    `json:"total_enrolled"`
-	AvgRating          float64  `json:"avg_rating"`
-	ReviewCount        int32    `json:"review_count"`
-	RelevantCountries  []string `json:"relevant_countries"`
-	URL                string   `json:"url"`
+	ID                string   `json:"id"`
+	TenantID          string   `json:"tenant_id"`
+	Title             string   `json:"title"`
+	Slug              string   `json:"slug"`
+	Description       string   `json:"description"`
+	Difficulty        string   `json:"difficulty"`
+	Category          string   `json:"category"`
+	Language          string   `json:"language"`
+	InstructorName    string   `json:"instructor_name"`
+	PriceKobo         *int64   `json:"price_kobo"`
+	Currency          string   `json:"currency"`
+	IsFree            bool     `json:"is_free"`
+	TotalEnrolled     int32    `json:"total_enrolled"`
+	AvgRating         float64  `json:"avg_rating"`
+	ReviewCount       int32    `json:"review_count"`
+	RelevantCountries []string `json:"relevant_countries"`
+	URL               string   `json:"url"`
 }
 
 // IndexLearningTrack fetches a published marketplace track and upserts it
@@ -807,15 +807,15 @@ const reindexBatchSize = 500
 
 // ReindexSummary records the outcome of a bulk reindex run per entity type.
 type ReindexSummary struct {
-	Content      int `json:"content"`
-	ForumThread  int `json:"forum_thread"`
-	Space        int `json:"space"`
-	User         int `json:"user"`
-	Tag          int `json:"tag"`
+	Content       int `json:"content"`
+	ForumThread   int `json:"forum_thread"`
+	Space         int `json:"space"`
+	User          int `json:"user"`
+	Tag           int `json:"tag"`
 	LearningTrack int `json:"learning_track"`
-	DocPage      int `json:"doc_page"`
-	Organization int `json:"organization"`
-	Errors       int `json:"errors"`
+	DocPage       int `json:"doc_page"`
+	Organization  int `json:"organization"`
+	Errors        int `json:"errors"`
 }
 
 // ReindexAll iterates every entity for the given tenant and upserts it into

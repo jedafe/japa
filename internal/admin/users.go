@@ -34,7 +34,7 @@ func (h *Handlers) CreateUser(w http.ResponseWriter, r *http.Request) {
 
 	var input CreateUserRequest
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
 		return
 	}
 
@@ -42,18 +42,18 @@ func (h *Handlers) CreateUser(w http.ResponseWriter, r *http.Request) {
 	input.Username = strings.TrimSpace(input.Username)
 
 	if input.Email == "" || input.Username == "" || input.Password == "" {
-		writeError(w, http.StatusBadRequest, "validation", "email, username, and password are required")
+		errpkg.WriteError(w, http.StatusBadRequest, "validation", "email, username, and password are required")
 		return
 	}
 
 	if err := auth.ValidatePassword(input.Password, auth.DefaultPasswordPolicy()); err != nil {
-		writeError(w, http.StatusBadRequest, "password_policy", err.Error())
+		errpkg.WriteError(w, http.StatusBadRequest, "password_policy", err.Error())
 		return
 	}
 
 	passwordHash, err := auth.HashPassword(input.Password)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "password_error", "Failed to hash password")
+		errpkg.WriteError(w, http.StatusInternalServerError, "password_error", "Failed to hash password")
 		return
 	}
 
@@ -66,10 +66,10 @@ func (h *Handlers) CreateUser(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		if errors.Is(err, errpkg.ErrDuplicate) {
-			writeError(w, http.StatusConflict, "email_exists", "A user with this email already exists")
+			errpkg.WriteError(w, http.StatusConflict, "email_exists", "A user with this email already exists")
 			return
 		}
-		writeError(w, http.StatusInternalServerError, "create_error", "Failed to create user")
+		errpkg.WriteError(w, http.StatusInternalServerError, "create_error", "Failed to create user")
 		return
 	}
 
@@ -80,7 +80,7 @@ func (h *Handlers) CreateUser(w http.ResponseWriter, r *http.Request) {
 		// Non-fatal: password history is a security enhancement, not a blocker.
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{
 		"data": map[string]any{
 			"id":       userID.String(),
 			"email":    input.Email,
@@ -102,13 +102,13 @@ func (h *Handlers) HardDeleteUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.GDPR == nil {
-		writeError(w, http.StatusInternalServerError, "not_configured", "Hard delete is not configured")
+		errpkg.WriteError(w, http.StatusInternalServerError, "not_configured", "Hard delete is not configured")
 		return
 	}
 
 	var userID pgtype.UUID
 	if err := userID.Scan(chi.URLParam(r, "id")); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid user ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid user ID")
 		return
 	}
 
@@ -118,20 +118,20 @@ func (h *Handlers) HardDeleteUser(w http.ResponseWriter, r *http.Request) {
 		UserID:   userID,
 	})
 	if err != nil {
-		writeError(w, http.StatusNotFound, "not_found", "User not found")
+		errpkg.WriteError(w, http.StatusNotFound, "not_found", "User not found")
 		return
 	}
 	if user.Status != "deleted" {
-		writeError(w, http.StatusBadRequest, "not_deleted", "User must be soft-deleted before hard delete")
+		errpkg.WriteError(w, http.StatusBadRequest, "not_deleted", "User must be soft-deleted before hard delete")
 		return
 	}
 
 	if err := h.GDPR.HardDeleteUser(r.Context(), userID, tenantID); err != nil {
-		writeError(w, http.StatusInternalServerError, "hard_delete_error", "Failed to hard delete user")
+		errpkg.WriteError(w, http.StatusInternalServerError, "hard_delete_error", "Failed to hard delete user")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"id":      userID.String(),
 		"status":  "hard_deleted",
 		"message": "User permanently erased",

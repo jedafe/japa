@@ -22,6 +22,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/jedafe/japa/internal/auth"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/follows"
 	"github.com/jedafe/japa/internal/intelligence/sources"
 	"github.com/jedafe/japa/internal/intelligence/stores"
@@ -121,26 +122,10 @@ func (h *Handlers) enqueueIntelPromote(ctx context.Context, tenantID, recordID, 
 
 // --- shared helpers ---
 
-func writeJSON(w http.ResponseWriter, status int, data interface{}) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(data)
-}
-
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, map[string]interface{}{
-		"error": map[string]interface{}{
-			"code":    code,
-			"message": message,
-			"status":  status,
-		},
-	})
-}
-
 func requireUser(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	u := auth.FromContext(r.Context())
 	if u == nil || !u.UserID.Valid {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return pgtype.UUID{}, false
 	}
 	return u.UserID, true
@@ -157,7 +142,7 @@ func optionalUser(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	id := tenant.IDFromContext(r.Context())
 	if !id.Valid {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
 	return id, true
@@ -166,12 +151,12 @@ func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 func scanUUIDParam(w http.ResponseWriter, r *http.Request, param string) (pgtype.UUID, bool) {
 	raw := chi.URLParam(r, param)
 	if raw == "" {
-		writeError(w, http.StatusBadRequest, "missing_param", param+" is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_param", param+" is required")
 		return pgtype.UUID{}, false
 	}
 	var id pgtype.UUID
 	if err := id.Scan(raw); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_uuid", "Invalid "+param)
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_uuid", "Invalid "+param)
 		return pgtype.UUID{}, false
 	}
 	return id, true

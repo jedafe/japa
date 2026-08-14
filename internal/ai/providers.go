@@ -23,19 +23,19 @@ import (
 // API key is stored encrypted (api_key_encrypted) and never sent to the
 // frontend in plaintext — the JSON response uses api_key_masked instead.
 type ProviderConfig struct {
-	ID               pgtype.UUID   `json:"id"`
-	TenantID         pgtype.UUID   `json:"tenant_id"`
-	Name             string        `json:"name"`
-	ProviderType     string        `json:"provider_type"`
-	APIKeyEncrypted  string        `json:"-"` // never serialized to JSON
-	APIKeyMasked     string        `json:"api_key_masked"` // derived, read-only
-	BaseURL          string        `json:"base_url"`
-	Model            string        `json:"model"`
-	Categories       []string      `json:"categories"`
-	Priority         int           `json:"priority"`
-	Enabled          bool          `json:"enabled"`
-	CreatedAt        time.Time     `json:"created_at"`
-	UpdatedAt        time.Time     `json:"updated_at"`
+	ID              pgtype.UUID `json:"id"`
+	TenantID        pgtype.UUID `json:"tenant_id"`
+	Name            string      `json:"name"`
+	ProviderType    string      `json:"provider_type"`
+	APIKeyEncrypted string      `json:"-"`              // never serialized to JSON
+	APIKeyMasked    string      `json:"api_key_masked"` // derived, read-only
+	BaseURL         string      `json:"base_url"`
+	Model           string      `json:"model"`
+	Categories      []string    `json:"categories"`
+	Priority        int         `json:"priority"`
+	Enabled         bool        `json:"enabled"`
+	CreatedAt       time.Time   `json:"created_at"`
+	UpdatedAt       time.Time   `json:"updated_at"`
 }
 
 // ProviderStore provides DB access for the ai_providers table.

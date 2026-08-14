@@ -6,7 +6,8 @@
 // (Section 26), and enqueues import:fetch_media for each imported item.
 //
 // Ref: japaconnect-engineering/sections/65-content-import.md
-//      japaconnect-engineering/adr/ADR-083-content-import.md
+//
+//	japaconnect-engineering/adr/ADR-083-content-import.md
 package contentimport
 
 import (
@@ -77,8 +78,8 @@ type RSSItem struct {
 // ImportError records a single item that failed to import.
 type ImportError struct {
 	ItemTitle string `json:"item_title"`
-	URL      string `json:"url"`
-	Error    string `json:"error"`
+	URL       string `json:"url"`
+	Error     string `json:"error"`
 }
 
 // TaskEnqueuer is the minimal interface for enqueueing Asynq tasks.
@@ -606,7 +607,7 @@ func (s *Service) ParseRSSFeed(ctx context.Context, feedURL string) ([]RSSItem, 
 // Uses encoding/xml from the standard library.
 func parseRSSXML(data []byte) ([]RSSItem, error) {
 	type rssChannel struct {
-		Title string    `xml:"title"`
+		Title string       `xml:"title"`
 		Items []rssXMLItem `xml:"item"`
 	}
 	type rssDoc struct {
@@ -652,10 +653,10 @@ type rssXMLItem struct {
 // parseAtomXML parses an Atom feed as a fallback.
 func parseAtomXML(data []byte) ([]RSSItem, error) {
 	type atomEntry struct {
-		Title   string `xml:"title"`
-		Link    string `xml:"link"`
-		Summary string `xml:"summary"`
-		Content string `xml:"content"`
+		Title     string `xml:"title"`
+		Link      string `xml:"link"`
+		Summary   string `xml:"summary"`
+		Content   string `xml:"content"`
 		Published string `xml:"published"`
 	}
 	type atomFeed struct {

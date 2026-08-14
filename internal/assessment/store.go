@@ -8,7 +8,8 @@
 // assessment operations. No business logic lives here.
 //
 // Ref: japaconnect-engineering/sections/71-readiness-assessment.md
-//      japaconnect-engineering/adr/ADR-071-japa-readiness-assessment.md
+//
+//	japaconnect-engineering/adr/ADR-071-japa-readiness-assessment.md
 package assessment
 
 import (
@@ -200,7 +201,7 @@ var adminAssessmentSortColumns = map[string]string{
 // AdminListAssessmentResultsFilter holds the parameters for the admin results
 // list query: score-range filter, pagination, and sort.
 type AdminListAssessmentResultsFilter struct {
-	TenantID  pgtype.UUID
+	TenantID pgtype.UUID
 	MinScore int32
 	MaxScore int32
 	Offset   int32

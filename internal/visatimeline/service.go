@@ -3,7 +3,8 @@
 // moderation. Feature-flagged via visa_timeline.enabled system_setting (§83).
 //
 // Ref: japaconnect-engineering/sections/83-visa-timeline-tracker.md
-//      japaconnect-engineering/adr/ADR-091-visa-timeline-tracker.md
+//
+//	japaconnect-engineering/adr/ADR-091-visa-timeline-tracker.md
 package visatimeline
 
 import (
@@ -20,18 +21,18 @@ import (
 
 // TimelineDTO is the API response shape for a single timeline.
 type TimelineDTO struct {
-	ID                 string          `json:"id"`
-	UserID             string          `json:"user_id"`
-	OriginSpaceID      string          `json:"origin_space_id,omitempty"`
-	DestinationSpaceID string          `json:"destination_space_id"`
-	VisaCategory       string          `json:"visa_category"`
-	Consulate          string          `json:"consulate,omitempty"`
-	ApplicationMethod  string          `json:"application_method,omitempty"`
-	Outcome            string          `json:"outcome,omitempty"`
-	IsShared           bool            `json:"is_shared"`
-	AnonymisedAt       string          `json:"anonymised_at,omitempty"`
-	CreatedAt          string          `json:"created_at"`
-	UpdatedAt          string          `json:"updated_at"`
+	ID                 string         `json:"id"`
+	UserID             string         `json:"user_id"`
+	OriginSpaceID      string         `json:"origin_space_id,omitempty"`
+	DestinationSpaceID string         `json:"destination_space_id"`
+	VisaCategory       string         `json:"visa_category"`
+	Consulate          string         `json:"consulate,omitempty"`
+	ApplicationMethod  string         `json:"application_method,omitempty"`
+	Outcome            string         `json:"outcome,omitempty"`
+	IsShared           bool           `json:"is_shared"`
+	AnonymisedAt       string         `json:"anonymised_at,omitempty"`
+	CreatedAt          string         `json:"created_at"`
+	UpdatedAt          string         `json:"updated_at"`
 	Milestones         []MilestoneDTO `json:"milestones,omitempty"`
 }
 

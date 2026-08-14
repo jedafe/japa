@@ -55,8 +55,8 @@ func TestValidProductTypes(t *testing.T) {
 	}
 	expected := map[string]bool{
 		"pro_subscription": true,
-		"course":          true,
-		"general":         true,
+		"course":           true,
+		"general":          true,
 	}
 	for _, pt := range types {
 		if !expected[pt] {

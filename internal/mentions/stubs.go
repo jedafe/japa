@@ -11,7 +11,7 @@ import (
 // DBCheckers is a production implementation of BlockChecker, SpaceMemberChecker,
 // and UserStatusChecker backed by the database.
 type DBCheckers struct {
-	read  *gen.Queries
+	read *gen.Queries
 }
 
 // NewDBCheckers creates a DBCheckers backed by the given database reader pool.

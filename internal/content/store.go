@@ -165,9 +165,9 @@ func (s *Service) createContent(ctx context.Context, readQ, writeQ *gen.Queries,
 
 	s.emitWebhook(ctx, tenantID, "content.created", map[string]any{
 		"content_id": content.ID,
-		"slug":        content.Slug,
-		"title":       content.Title,
-		"author_id":   content.AuthorID,
+		"slug":       content.Slug,
+		"title":      content.Title,
+		"author_id":  content.AuthorID,
 	})
 
 	return content, nil
@@ -468,9 +468,9 @@ func (s *Service) UpdateContent(ctx context.Context, id, tenantID, editedBy pgty
 
 	s.emitWebhook(ctx, tenantID, "content.updated", map[string]any{
 		"content_id": content.ID,
-		"slug":        content.Slug,
-		"title":       content.Title,
-		"actor_id":    editedBy,
+		"slug":       content.Slug,
+		"title":      content.Title,
+		"actor_id":   editedBy,
 	})
 
 	return content, nil
@@ -503,9 +503,9 @@ func (s *Service) UpdateContentStatus(ctx context.Context, id, tenantID pgtype.U
 		}
 		s.emitWebhook(ctx, tenantID, "content.published", map[string]any{
 			"content_id": content.ID,
-			"slug":        content.Slug,
-			"title":       content.Title,
-			"actor_id":    content.AuthorID,
+			"slug":       content.Slug,
+			"title":      content.Title,
+			"actor_id":   content.AuthorID,
 		})
 	}
 
@@ -632,9 +632,9 @@ func (s *Service) DeleteContent(ctx context.Context, id, tenantID pgtype.UUID) e
 
 	s.emitWebhook(ctx, tenantID, "content.deleted", map[string]any{
 		"content_id": id,
-		"slug":        existing.Slug,
-		"title":       existing.Title,
-		"actor_id":    existing.AuthorID,
+		"slug":       existing.Slug,
+		"title":      existing.Title,
+		"actor_id":   existing.AuthorID,
 	})
 
 	return nil
@@ -1163,9 +1163,9 @@ func (s *Service) ListBookmarksByFolder(ctx context.Context, tenantID, userID, f
 		limit = DefaultPageSize
 	}
 	bms, err := s.read.ListBookmarksByFolder(ctx, gen.ListBookmarksByFolderParams{
-		UserID:   userID,
-		TenantID: tenantID,
-		FolderID: folderID,
+		UserID:     userID,
+		TenantID:   tenantID,
+		FolderID:   folderID,
 		PageLimit:  limit,
 		PageOffset: offset,
 	})

@@ -9,6 +9,16 @@ import (
 	"testing"
 )
 
+// errorResponse mirrors the canonical error envelope for test decoding.
+type errorResponse struct {
+	Error errorBody `json:"error"`
+}
+
+type errorBody struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+}
+
 // mockPinger is a test double for the Pinger interface. It returns a
 // configurable error from Ping so tests can simulate both a healthy and
 // an unhealthy database without a real PostgreSQL connection.

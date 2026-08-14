@@ -10,7 +10,8 @@
 //	PUT    /api/v1/admin/settings/rag           — update RAG settings
 //
 // Ref: japaconnect-engineering/sections/69-rag-knowledge-layer.md
-//      japaconnect-engineering/adr/ADR-069-japabot-rag-knowledge-layer.md
+//
+//	japaconnect-engineering/adr/ADR-069-japabot-rag-knowledge-layer.md
 package rag
 
 import (
@@ -22,6 +23,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/config"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/tenant"
 )
 
@@ -40,24 +42,10 @@ func NewHandlers(service *Service, settings *config.Settings) *Handlers {
 // Shared helpers (same pattern as university/handlers.go)
 // ---------------------------------------------------------------------------
 
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	if err := json.NewEncoder(w).Encode(v); err != nil {
-		slog.Error("rag: encode response", "error", err)
-	}
-}
-
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, map[string]any{
-		"error": map[string]string{"code": code, "message": message},
-	})
-}
-
 func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
 	return t.ID, true
@@ -66,7 +54,7 @@ func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	u := auth.FromContext(r.Context())
 	if u == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
 	return u, true
@@ -75,7 +63,7 @@ func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUse
 func scanUUIDParam(w http.ResponseWriter, r *http.Request, name string) (pgtype.UUID, bool) {
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, name)); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid "+name)
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid "+name)
 		return pgtype.UUID{}, false
 	}
 	return id, true
@@ -99,17 +87,17 @@ func (h *Handlers) HandleReindex(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil {
-		writeError(w, http.StatusServiceUnavailable, "rag_unavailable", "RAG service not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "rag_unavailable", "RAG service not configured")
 		return
 	}
 
 	if err := h.service.QueueReindex(r.Context(), tenantID); err != nil {
 		slog.Error("rag: reindex failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "reindex_failed", "Failed to queue re-index")
+		errpkg.WriteError(w, http.StatusInternalServerError, "reindex_failed", "Failed to queue re-index")
 		return
 	}
 
-	writeJSON(w, http.StatusAccepted, map[string]any{
+	errpkg.WriteJSON(w, http.StatusAccepted, map[string]any{
 		"data": map[string]any{
 			"status": "queued",
 		},
@@ -129,18 +117,18 @@ func (h *Handlers) HandleStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil {
-		writeError(w, http.StatusServiceUnavailable, "rag_unavailable", "RAG service not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "rag_unavailable", "RAG service not configured")
 		return
 	}
 
 	stats, err := h.service.GetStats(r.Context(), tenantID)
 	if err != nil {
 		slog.Error("rag: status failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "stats_failed", "Failed to get RAG stats")
+		errpkg.WriteError(w, http.StatusInternalServerError, "stats_failed", "Failed to get RAG stats")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": stats,
 	})
 }
@@ -165,12 +153,12 @@ func (h *Handlers) HandlePurgeEntity(w http.ResponseWriter, r *http.Request) {
 
 	entityType := chi.URLParam(r, "type")
 	if entityType == "" {
-		writeError(w, http.StatusBadRequest, "missing_type", "Entity type is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_type", "Entity type is required")
 		return
 	}
 
 	if h.service == nil {
-		writeError(w, http.StatusServiceUnavailable, "rag_unavailable", "RAG service not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "rag_unavailable", "RAG service not configured")
 		return
 	}
 
@@ -179,10 +167,10 @@ func (h *Handlers) HandlePurgeEntity(w http.ResponseWriter, r *http.Request) {
 	if idParam == "all" {
 		if err := h.service.PurgeEntityType(r.Context(), tenantID, entityType); err != nil {
 			slog.Error("rag: purge by type failed", "error", err, "entity_type", entityType)
-			writeError(w, http.StatusInternalServerError, "purge_failed", "Failed to purge entity type embeddings")
+			errpkg.WriteError(w, http.StatusInternalServerError, "purge_failed", "Failed to purge entity type embeddings")
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{
+		errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 			"data": map[string]any{
 				"purged": true,
 			},
@@ -197,11 +185,11 @@ func (h *Handlers) HandlePurgeEntity(w http.ResponseWriter, r *http.Request) {
 
 	if err := h.service.PurgeEntity(r.Context(), tenantID, entityType, entityID); err != nil {
 		slog.Error("rag: purge failed", "error", err, "entity_type", entityType)
-		writeError(w, http.StatusInternalServerError, "purge_failed", "Failed to purge entity embeddings")
+		errpkg.WriteError(w, http.StatusInternalServerError, "purge_failed", "Failed to purge entity embeddings")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
 			"purged": true,
 		},
@@ -222,19 +210,19 @@ func (h *Handlers) HandleGetSettings(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.settings == nil {
-		writeError(w, http.StatusServiceUnavailable, "settings_unavailable", "Settings service not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "settings_unavailable", "Settings service not configured")
 		return
 	}
 
 	ctx := r.Context()
 	settings := map[string]any{
-		"rag.enabled":         h.settings.GetBoolOr(ctx, tenantID, "rag.enabled", true),
-		"rag.embedding_model": h.settings.GetStringOr(ctx, tenantID, "rag.embedding_model", "text-embedding-3-small"),
-		"rag.retrieval_top_k": h.settings.GetIntOr(ctx, tenantID, "rag.retrieval_top_k", 5),
+		"rag.enabled":          h.settings.GetBoolOr(ctx, tenantID, "rag.enabled", true),
+		"rag.embedding_model":  h.settings.GetStringOr(ctx, tenantID, "rag.embedding_model", "text-embedding-3-small"),
+		"rag.retrieval_top_k":  h.settings.GetIntOr(ctx, tenantID, "rag.retrieval_top_k", 5),
 		"rag.chunk_max_tokens": h.settings.GetIntOr(ctx, tenantID, "rag.chunk_max_tokens", 400),
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": settings,
 	})
 }
@@ -246,7 +234,8 @@ func (h *Handlers) HandleGetSettings(w http.ResponseWriter, r *http.Request) {
 // map of key→value pairs using the short key (without the "rag." prefix),
 // matching the pattern of the generic admin settings PUT handler.
 // Ref: japaconnect-engineering/sections/69-rag-knowledge-layer.md
-//      japaconnect-engineering/conventions/system-settings-catalog.md
+//
+//	japaconnect-engineering/conventions/system-settings-catalog.md
 func (h *Handlers) HandleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
@@ -258,26 +247,26 @@ func (h *Handlers) HandleUpdateSettings(w http.ResponseWriter, r *http.Request) 
 	}
 
 	if h.settings == nil {
-		writeError(w, http.StatusServiceUnavailable, "settings_unavailable", "Settings service not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "settings_unavailable", "Settings service not configured")
 		return
 	}
 
 	var updates map[string]any
 	if err := json.NewDecoder(r.Body).Decode(&updates); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
 		return
 	}
 
 	if len(updates) == 0 {
-		writeError(w, http.StatusBadRequest, "empty_body", "No settings provided")
+		errpkg.WriteError(w, http.StatusBadRequest, "empty_body", "No settings provided")
 		return
 	}
 
 	// Validate keys against the four allowed RAG settings.
 	validKeys := map[string]bool{
-		"enabled":         true,
-		"embedding_model": true,
-		"retrieval_top_k": true,
+		"enabled":          true,
+		"embedding_model":  true,
+		"retrieval_top_k":  true,
 		"chunk_max_tokens": true,
 	}
 
@@ -285,7 +274,7 @@ func (h *Handlers) HandleUpdateSettings(w http.ResponseWriter, r *http.Request) 
 	pending := make(map[string][]byte, len(updates))
 	for key, value := range updates {
 		if !validKeys[key] {
-			writeError(w, http.StatusBadRequest, "invalid_key", "Unknown setting key: "+key)
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_key", "Unknown setting key: "+key)
 			return
 		}
 
@@ -293,38 +282,38 @@ func (h *Handlers) HandleUpdateSettings(w http.ResponseWriter, r *http.Request) 
 		switch key {
 		case "enabled":
 			if _, ok := value.(bool); !ok {
-				writeError(w, http.StatusBadRequest, "invalid_value",
+				errpkg.WriteError(w, http.StatusBadRequest, "invalid_value",
 					"rag.enabled must be a boolean")
 				return
 			}
 		case "embedding_model":
 			model, ok := value.(string)
 			if !ok || model == "" {
-				writeError(w, http.StatusBadRequest, "invalid_value",
+				errpkg.WriteError(w, http.StatusBadRequest, "invalid_value",
 					"rag.embedding_model must be a non-empty string")
 				return
 			}
 		case "retrieval_top_k":
 			topK, ok := value.(float64)
 			if !ok {
-				writeError(w, http.StatusBadRequest, "invalid_value",
+				errpkg.WriteError(w, http.StatusBadRequest, "invalid_value",
 					"rag.retrieval_top_k must be an integer")
 				return
 			}
 			if topK < 1 || topK > 50 || topK != float64(int(topK)) {
-				writeError(w, http.StatusBadRequest, "invalid_value",
+				errpkg.WriteError(w, http.StatusBadRequest, "invalid_value",
 					"rag.retrieval_top_k must be an integer between 1 and 50")
 				return
 			}
 		case "chunk_max_tokens":
 			chunkMax, ok := value.(float64)
 			if !ok {
-				writeError(w, http.StatusBadRequest, "invalid_value",
+				errpkg.WriteError(w, http.StatusBadRequest, "invalid_value",
 					"rag.chunk_max_tokens must be an integer")
 				return
 			}
 			if chunkMax < 50 || chunkMax > 2000 || chunkMax != float64(int(chunkMax)) {
-				writeError(w, http.StatusBadRequest, "invalid_value",
+				errpkg.WriteError(w, http.StatusBadRequest, "invalid_value",
 					"rag.chunk_max_tokens must be an integer between 50 and 2000")
 				return
 			}
@@ -332,7 +321,7 @@ func (h *Handlers) HandleUpdateSettings(w http.ResponseWriter, r *http.Request) 
 
 		valueJSON, err := json.Marshal(value)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_value", "Cannot serialize value for key: "+key)
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_value", "Cannot serialize value for key: "+key)
 			return
 		}
 		pending["rag."+key] = valueJSON
@@ -340,9 +329,9 @@ func (h *Handlers) HandleUpdateSettings(w http.ResponseWriter, r *http.Request) 
 
 	if err := h.settings.UpdateSettingsBatch(ctx, tenantID, pending); err != nil {
 		slog.Error("rag: failed to save settings", "error", err)
-		writeError(w, http.StatusInternalServerError, "db_error", "Failed to save settings")
+		errpkg.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to save settings")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": nil})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": nil})
 }

@@ -4,7 +4,8 @@
 // (§96, ADR-104).
 //
 // Ref: japaconnect-engineering/sections/96-housing-guide.md
-//      japaconnect-engineering/adr/ADR-104-housing-guide.md
+//
+//	japaconnect-engineering/adr/ADR-104-housing-guide.md
 package housingguide
 
 import (

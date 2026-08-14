@@ -401,7 +401,7 @@ func (s *Service) ListSpacesByType(ctx context.Context, tenantID, spaceTypeID pg
 
 // ListSpacesByTypePaginated returns a page of spaces of the given type,
 // filtered by optional search and geo_code, with server-side pagination and
-// optional sort ('' = newest, 'name', 'members', 'followers', 'posts').
+// optional sort (” = newest, 'name', 'members', 'followers', 'posts').
 func (s *Service) ListSpacesByTypePaginated(ctx context.Context, tenantID, spaceTypeID pgtype.UUID, search, geoCode, sort string, limit, offset int32) ([]gen.ListSpacesByTypePaginatedRow, error) {
 	spaces, err := s.read.ListSpacesByTypePaginated(ctx, gen.ListSpacesByTypePaginatedParams{
 		TenantID:    tenantID,

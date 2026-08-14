@@ -14,9 +14,9 @@ import (
 
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/pgvector/pgvector-go"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/pgvector/pgvector-go"
 )
 
 // ErrProgramNotFound is returned when a mentorship program does not exist.
@@ -64,12 +64,12 @@ type Match struct {
 
 // Service coordinates mentorship program and match management.
 type Service struct {
-	read              *gen.Queries
-	write             *gen.Queries
-	enqueuer          TaskEnqueuer
-	dmCreator         DMCreator
-	settings          SettingsProvider
-	embedder          Embedder
+	read               *gen.Queries
+	write              *gen.Queries
+	enqueuer           TaskEnqueuer
+	dmCreator          DMCreator
+	settings           SettingsProvider
+	embedder           Embedder
 	meilisearchIndexer MeilisearchIndexer
 }
 
@@ -911,8 +911,8 @@ func (s *Service) AdminUpdateConnection(ctx context.Context, tenantID, connID pg
 func (s *Service) UpdateMentorEmbedding(ctx context.Context, tenantID, userID pgtype.UUID, embedding []float32) error {
 	vec := pgvector.NewVector(embedding)
 	return s.write.UpdateMentorEmbedding(ctx, gen.UpdateMentorEmbeddingParams{
-		TenantID: tenantID,
-		UserID:   userID,
+		TenantID:  tenantID,
+		UserID:    userID,
 		Embedding: &vec,
 	})
 }

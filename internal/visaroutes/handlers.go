@@ -14,7 +14,8 @@
 //	DELETE /api/v1/admin/visa-routes/:id        — deactivate route (visa_routes.manage)
 //
 // Ref: japaconnect-engineering/sections/90-visa-route-comparison.md
-//      japaconnect-engineering/adr/ADR-098-visa-route-comparison.md
+//
+//	japaconnect-engineering/adr/ADR-098-visa-route-comparison.md
 package visaroutes
 
 import (
@@ -31,6 +32,7 @@ import (
 
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/config"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/tenant"
 )
 
@@ -53,24 +55,10 @@ func NewHandlers(service *Service, settings *config.Settings) *Handlers {
 // Shared helpers (same pattern as servicedir/handlers.go)
 // ---------------------------------------------------------------------------
 
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	if err := json.NewEncoder(w).Encode(v); err != nil {
-		slog.Error("visaroutes: encode response", "error", err)
-	}
-}
-
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, map[string]any{
-		"error": map[string]string{"code": code, "message": message},
-	})
-}
-
 func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
 	return t.ID, true
@@ -79,7 +67,7 @@ func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	u := auth.FromContext(r.Context())
 	if u == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
 	return u, true
@@ -88,7 +76,7 @@ func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUse
 func scanUUIDParam(w http.ResponseWriter, r *http.Request, name string) (pgtype.UUID, bool) {
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, name)); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid "+name)
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid "+name)
 		return pgtype.UUID{}, false
 	}
 	return id, true
@@ -123,14 +111,14 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "visa_routes_disabled", "Visa routes are not available")
+		errpkg.WriteError(w, http.StatusNotFound, "visa_routes_disabled", "Visa routes are not available")
 		return
 	}
 
 	var destSpaceID pgtype.UUID
 	if v := r.URL.Query().Get("dest"); v != "" {
 		if err := destSpaceID.Scan(v); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid destination space ID")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid destination space ID")
 			return
 		}
 	}
@@ -150,11 +138,11 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 	routes, total, err := h.service.List(r.Context(), tenantID, destSpaceID, profession, education, experienceYears, page, limit)
 	if err != nil {
 		slog.Error("visaroutes: list failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "list_failed", "Failed to list visa routes")
+		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list visa routes")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": routes,
 		"pagination": map[string]any{
 			"page":  page,
@@ -173,23 +161,23 @@ func (h *Handlers) HandleCompare(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "visa_routes_disabled", "Visa routes are not available")
+		errpkg.WriteError(w, http.StatusNotFound, "visa_routes_disabled", "Visa routes are not available")
 		return
 	}
 
 	idsParam := r.URL.Query().Get("ids")
 	if idsParam == "" {
-		writeError(w, http.StatusBadRequest, "missing_ids", "ids query parameter is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_ids", "ids query parameter is required")
 		return
 	}
 
 	parts := strings.Split(idsParam, ",")
 	if len(parts) == 0 {
-		writeError(w, http.StatusBadRequest, "missing_ids", "At least one route id is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_ids", "At least one route id is required")
 		return
 	}
 	if len(parts) > maxCompareIDs {
-		writeError(w, http.StatusBadRequest, "too_many_ids", "A maximum of 4 route ids can be compared")
+		errpkg.WriteError(w, http.StatusBadRequest, "too_many_ids", "A maximum of 4 route ids can be compared")
 		return
 	}
 
@@ -201,24 +189,24 @@ func (h *Handlers) HandleCompare(w http.ResponseWriter, r *http.Request) {
 		}
 		var id pgtype.UUID
 		if err := id.Scan(p); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid route id: "+p)
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid route id: "+p)
 			return
 		}
 		ids = append(ids, id)
 	}
 	if len(ids) == 0 {
-		writeError(w, http.StatusBadRequest, "missing_ids", "At least one route id is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_ids", "At least one route id is required")
 		return
 	}
 
 	routes, err := h.service.Compare(r.Context(), tenantID, ids)
 	if err != nil {
 		slog.Error("visaroutes: compare failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "compare_failed", "Failed to compare visa routes")
+		errpkg.WriteError(w, http.StatusInternalServerError, "compare_failed", "Failed to compare visa routes")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": routes})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": routes})
 }
 
 // HandleGet handles GET /visa-routes/:id — single published+active visa
@@ -230,7 +218,7 @@ func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "visa_routes_disabled", "Visa routes are not available")
+		errpkg.WriteError(w, http.StatusNotFound, "visa_routes_disabled", "Visa routes are not available")
 		return
 	}
 
@@ -242,15 +230,15 @@ func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
 	route, err := h.service.GetByID(r.Context(), id, tenantID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "route_not_found", "Visa route not found")
+			errpkg.WriteError(w, http.StatusNotFound, "route_not_found", "Visa route not found")
 			return
 		}
 		slog.Error("visaroutes: get by id failed", "id", id, "error", err)
-		writeError(w, http.StatusInternalServerError, "get_failed", "Failed to get visa route")
+		errpkg.WriteError(w, http.StatusInternalServerError, "get_failed", "Failed to get visa route")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": route})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": route})
 }
 
 // ---------------------------------------------------------------------------
@@ -270,14 +258,14 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil {
-		writeError(w, http.StatusServiceUnavailable, "visa_routes_unavailable", "Visa routes not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "visa_routes_unavailable", "Visa routes not configured")
 		return
 	}
 
 	var destSpaceID pgtype.UUID
 	if v := r.URL.Query().Get("dest"); v != "" {
 		if err := destSpaceID.Scan(v); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid destination space ID")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid destination space ID")
 			return
 		}
 	}
@@ -302,11 +290,11 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	routes, total, err := h.service.AdminList(r.Context(), tenantID, destSpaceID, status, visaCategory, q, activePtr, page, limit)
 	if err != nil {
 		slog.Error("visaroutes: admin list failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "admin_list_failed", "Failed to list visa routes")
+		errpkg.WriteError(w, http.StatusInternalServerError, "admin_list_failed", "Failed to list visa routes")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": routes,
 		"pagination": map[string]any{
 			"page":  page,
@@ -329,41 +317,41 @@ func (h *Handlers) HandleAdminCreate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil {
-		writeError(w, http.StatusServiceUnavailable, "visa_routes_unavailable", "Visa routes not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "visa_routes_unavailable", "Visa routes not configured")
 		return
 	}
 
 	var input CreateRouteInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
 
 	if input.Name == "" {
-		writeError(w, http.StatusBadRequest, "missing_name", "name is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_name", "name is required")
 		return
 	}
 	if input.VisaCategory == "" {
-		writeError(w, http.StatusBadRequest, "missing_visa_category", "visa_category is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_visa_category", "visa_category is required")
 		return
 	}
 	if input.DestinationSpaceID == "" {
-		writeError(w, http.StatusBadRequest, "missing_destination", "destination_space_id is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_destination", "destination_space_id is required")
 		return
 	}
 	if input.GovSourceURL == "" {
-		writeError(w, http.StatusBadRequest, "missing_gov_source_url", "gov_source_url is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_gov_source_url", "gov_source_url is required")
 		return
 	}
 
 	route, err := h.service.Create(r.Context(), tenantID, input)
 	if err != nil {
 		slog.Error("visaroutes: admin create failed", "error", err, "user_id", user.UserID)
-		writeError(w, http.StatusInternalServerError, "create_failed", "Failed to create visa route")
+		errpkg.WriteError(w, http.StatusInternalServerError, "create_failed", "Failed to create visa route")
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": route})
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": route})
 }
 
 // HandleAdminUpdate handles PATCH /admin/visa-routes/:id — update an
@@ -382,28 +370,28 @@ func (h *Handlers) HandleAdminUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil {
-		writeError(w, http.StatusServiceUnavailable, "visa_routes_unavailable", "Visa routes not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "visa_routes_unavailable", "Visa routes not configured")
 		return
 	}
 
 	var input UpdateRouteInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
 
 	route, err := h.service.Update(r.Context(), id, tenantID, input)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "route_not_found", "Visa route not found")
+			errpkg.WriteError(w, http.StatusNotFound, "route_not_found", "Visa route not found")
 			return
 		}
 		slog.Error("visaroutes: admin update failed", "id", id, "error", err)
-		writeError(w, http.StatusInternalServerError, "update_failed", "Failed to update visa route")
+		errpkg.WriteError(w, http.StatusInternalServerError, "update_failed", "Failed to update visa route")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": route})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": route})
 }
 
 // HandleAdminApprove handles PATCH /admin/visa-routes/:id/approve — mark a
@@ -423,7 +411,7 @@ func (h *Handlers) HandleAdminApprove(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil {
-		writeError(w, http.StatusServiceUnavailable, "visa_routes_unavailable", "Visa routes not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "visa_routes_unavailable", "Visa routes not configured")
 		return
 	}
 
@@ -433,15 +421,15 @@ func (h *Handlers) HandleAdminApprove(w http.ResponseWriter, r *http.Request) {
 
 	if err := h.service.Approve(r.Context(), id, tenantID, user.UserID, input); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "route_not_found", "Visa route not found")
+			errpkg.WriteError(w, http.StatusNotFound, "route_not_found", "Visa route not found")
 			return
 		}
 		slog.Error("visaroutes: admin approve failed", "id", id, "error", err)
-		writeError(w, http.StatusInternalServerError, "approve_failed", "Failed to approve visa route")
+		errpkg.WriteError(w, http.StatusInternalServerError, "approve_failed", "Failed to approve visa route")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"approved": true}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"approved": true}})
 }
 
 // HandleAdminGenerate handles POST /admin/visa-routes/generate — Content
@@ -459,29 +447,29 @@ func (h *Handlers) HandleAdminGenerate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "visa_routes_disabled", "Visa routes are not available")
+		errpkg.WriteError(w, http.StatusNotFound, "visa_routes_disabled", "Visa routes are not available")
 		return
 	}
 
 	var input GenerateRouteRequest
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
 
 	if input.DestinationSpaceID == "" {
-		writeError(w, http.StatusBadRequest, "missing_destination_space_id", "destination_space_id is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_destination_space_id", "destination_space_id is required")
 		return
 	}
 
 	result, err := h.service.GenerateDraft(r.Context(), tenantID, input)
 	if err != nil {
 		slog.Error("visaroutes: admin generate failed", "error", err, "user_id", user.UserID)
-		writeError(w, http.StatusInternalServerError, "generate_failed", "Failed to queue draft generation")
+		errpkg.WriteError(w, http.StatusInternalServerError, "generate_failed", "Failed to queue draft generation")
 		return
 	}
 
-	writeJSON(w, http.StatusAccepted, map[string]any{"data": result})
+	errpkg.WriteJSON(w, http.StatusAccepted, map[string]any{"data": result})
 }
 
 // HandleAdminDelete handles DELETE /admin/visa-routes/:id — soft-deactivate
@@ -500,19 +488,19 @@ func (h *Handlers) HandleAdminDelete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil {
-		writeError(w, http.StatusServiceUnavailable, "visa_routes_unavailable", "Visa routes not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "visa_routes_unavailable", "Visa routes not configured")
 		return
 	}
 
 	if err := h.service.Deactivate(r.Context(), id, tenantID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "route_not_found", "Visa route not found")
+			errpkg.WriteError(w, http.StatusNotFound, "route_not_found", "Visa route not found")
 			return
 		}
 		slog.Error("visaroutes: admin delete failed", "id", id, "error", err)
-		writeError(w, http.StatusInternalServerError, "delete_failed", "Failed to deactivate visa route")
+		errpkg.WriteError(w, http.StatusInternalServerError, "delete_failed", "Failed to deactivate visa route")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"deactivated": true}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"deactivated": true}})
 }

@@ -181,7 +181,7 @@ func (s *Service) scanWeakPasswordSettings(ctx context.Context, tenantID pgtype.
 
 	if minLength < 8 {
 		meta, _ := json.Marshal(map[string]any{
-			"min_length": minLength,
+			"min_length":  minLength,
 			"recommended": 8,
 		})
 
@@ -217,8 +217,8 @@ func (s *Service) scanExcessiveAPIKeys(ctx context.Context, tenantID pgtype.UUID
 
 	if count > 20 {
 		meta, _ := json.Marshal(map[string]any{
-			"key_count":     count,
-			"issue":         "no_expiration",
+			"key_count":      count,
+			"issue":          "no_expiration",
 			"recommendation": "Set expiration dates on API keys",
 		})
 

@@ -23,9 +23,9 @@ type PermissionResolver interface {
 
 // Service provides business logic for navigating menus and managing items.
 type Service struct {
-	store    *Store
-	db       *db.DB
-	perms    PermissionResolver
+	store *Store
+	db    *db.DB
+	perms PermissionResolver
 }
 
 // NewService constructs a menus Service without RBAC permission resolution
@@ -173,34 +173,34 @@ func (s *Service) DeleteMenu(ctx context.Context, id, tenantID pgtype.UUID) erro
 // ── Menu Item CRUD ────────────────────────────────────────────────────
 
 type CreateMenuItemInput struct {
-	MenuID           string         `json:"menu_id"`
-	ParentID         *string        `json:"parent_id"`
-	Label            string         `json:"label"`
-	URL              string         `json:"url"`
-	Icon             *string        `json:"icon"`
-	SortOrder        int            `json:"sort_order"`
-	PermissionNode   *string        `json:"permission_node"`
-	RequiredGroupIDs []string       `json:"required_group_ids"`
-	Visibility       string         `json:"visibility"`
-	Target           string         `json:"target"`
-	IsAdSlot         bool           `json:"is_ad_slot"`
+	MenuID           string          `json:"menu_id"`
+	ParentID         *string         `json:"parent_id"`
+	Label            string          `json:"label"`
+	URL              string          `json:"url"`
+	Icon             *string         `json:"icon"`
+	SortOrder        int             `json:"sort_order"`
+	PermissionNode   *string         `json:"permission_node"`
+	RequiredGroupIDs []string        `json:"required_group_ids"`
+	Visibility       string          `json:"visibility"`
+	Target           string          `json:"target"`
+	IsAdSlot         bool            `json:"is_ad_slot"`
 	AdSlotConfig     json.RawMessage `json:"ad_slot_config"`
-	Status           string         `json:"status"`
+	Status           string          `json:"status"`
 }
 
 type UpdateMenuItemInput struct {
-	Label            string  `json:"label"`
-	URL              string  `json:"url"`
-	Icon             *string `json:"icon"`
-	ParentID         *string `json:"parent_id"`
-	SortOrder        int     `json:"sort_order"`
-	PermissionNode   *string `json:"permission_node"`
-	RequiredGroupIDs []string `json:"required_group_ids"`
-	Visibility       string  `json:"visibility"`
-	Target           string  `json:"target"`
-	IsAdSlot         bool    `json:"is_ad_slot"`
+	Label            string          `json:"label"`
+	URL              string          `json:"url"`
+	Icon             *string         `json:"icon"`
+	ParentID         *string         `json:"parent_id"`
+	SortOrder        int             `json:"sort_order"`
+	PermissionNode   *string         `json:"permission_node"`
+	RequiredGroupIDs []string        `json:"required_group_ids"`
+	Visibility       string          `json:"visibility"`
+	Target           string          `json:"target"`
+	IsAdSlot         bool            `json:"is_ad_slot"`
 	AdSlotConfig     json.RawMessage `json:"ad_slot_config"`
-	Status           string  `json:"status"`
+	Status           string          `json:"status"`
 }
 
 func (s *Service) CreateMenuItem(ctx context.Context, tenantID pgtype.UUID, input CreateMenuItemInput) (gen.CreateMenuItemRow, error) {

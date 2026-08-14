@@ -15,8 +15,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
-	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/db/gen"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/tenant"
 	"github.com/jedafe/japa/internal/valkey"
 	"github.com/valkey-io/valkey-go/valkeycompat"
@@ -124,7 +124,7 @@ func (h *Handlers) SetKeyRotation(kr *auth.KeyRotation) {
 func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
 
@@ -135,28 +135,11 @@ func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype
 func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	user := auth.FromContext(r.Context())
 	if user == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
 
 	return user, true
-}
-
-// writeJSON serializes the given value as JSON and writes it to the response.
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-
-	if err := json.NewEncoder(w).Encode(v); err != nil {
-		slog.Warn("json encode error", "error", err)
-	}
-}
-
-// writeError writes a JSON error response following the JapaConnect API format.
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, map[string]any{
-		"error": map[string]string{"code": code, "message": message},
-	})
 }
 
 // handleServiceError translates a Service-layer error into the appropriate
@@ -240,7 +223,7 @@ func (h *Handlers) GetMyProfile(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": profile})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": profile})
 }
 
 // GetUserByUsername handles GET /api/v1/users/{username}.
@@ -252,7 +235,7 @@ func (h *Handlers) GetUserByUsername(w http.ResponseWriter, r *http.Request) {
 
 	username := chi.URLParam(r, "username")
 	if username == "" {
-		writeError(w, http.StatusBadRequest, "missing_username", "Username is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_username", "Username is required")
 		return
 	}
 
@@ -275,7 +258,7 @@ func (h *Handlers) GetUserByUsername(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	writeJSON(w, http.StatusOK, resp)
+	errpkg.WriteJSON(w, http.StatusOK, resp)
 }
 
 // profileJSONLDFields builds the {{field_key}} → value map for interpolating
@@ -316,7 +299,7 @@ func (h *Handlers) UpdateMyProfile(w http.ResponseWriter, r *http.Request) {
 
 	var req UpdateProfileRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
 		return
 	}
 
@@ -332,7 +315,7 @@ func (h *Handlers) UpdateMyProfile(w http.ResponseWriter, r *http.Request) {
 		h.invalidateVisitorCache(r.Context(), user)
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "updated"}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "updated"}})
 }
 
 // invalidateVisitorCache deletes the VisitorContext and recommendations
@@ -359,7 +342,7 @@ func (h *Handlers) ListUsers(w http.ResponseWriter, r *http.Request) {
 	// Admin-only: only super_admin group members may list users.
 	user := auth.FromContext(r.Context())
 	if user == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
 
@@ -375,7 +358,7 @@ func (h *Handlers) ListUsers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": result})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": result})
 }
 
 // ListPublicUsers handles GET /api/v1/users — public, tenant-scoped, PII-safe.
@@ -385,7 +368,8 @@ func (h *Handlers) ListUsers(w http.ResponseWriter, r *http.Request) {
 // filter: personal/business/organisation), page_size (default 20, max 100),
 // page_offset (default 0). Returns {data: items, meta: {total, page, total_pages}}.
 // Ref: japaconnect-engineering/sections/02-authentication-sessions.md
-//      japaconnect-engineering/sections/19-privacy-gdpr.md (search_indexable opt-out)
+//
+//	japaconnect-engineering/sections/19-privacy-gdpr.md (search_indexable opt-out)
 func (h *Handlers) ListPublicUsers(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -406,7 +390,7 @@ func (h *Handlers) ListPublicUsers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": result.Items,
 		"meta": map[string]any{
 			"total":       result.Total,
@@ -456,7 +440,7 @@ func (h *Handlers) GetUserModerationConfig(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	if user := auth.FromContext(r.Context()); user == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
 
@@ -466,7 +450,7 @@ func (h *Handlers) GetUserModerationConfig(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": cfg})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": cfg})
 }
 
 // ListUserSessions handles GET /api/v1/admin/users/{id}/sessions.
@@ -477,13 +461,13 @@ func (h *Handlers) ListUserSessions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if user := auth.FromContext(r.Context()); user == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
 
 	var userID pgtype.UUID
 	if err := userID.Scan(chi.URLParam(r, "id")); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid user ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid user ID")
 		return
 	}
 
@@ -494,7 +478,7 @@ func (h *Handlers) ListUserSessions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": sessions})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": sessions})
 }
 
 // GetAdminUser handles GET /api/v1/admin/users/{id}.
@@ -507,7 +491,7 @@ func (h *Handlers) GetAdminUser(w http.ResponseWriter, r *http.Request) {
 
 	var userID pgtype.UUID
 	if err := userID.Scan(chi.URLParam(r, "id")); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid user ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid user ID")
 		return
 	}
 
@@ -517,7 +501,7 @@ func (h *Handlers) GetAdminUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": profile})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": profile})
 }
 
 // ListUserActivity handles GET /api/v1/admin/users/{id}/activity.
@@ -528,13 +512,13 @@ func (h *Handlers) ListUserActivity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if user := auth.FromContext(r.Context()); user == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
 
 	var userID pgtype.UUID
 	if err := userID.Scan(chi.URLParam(r, "id")); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid user ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid user ID")
 		return
 	}
 
@@ -554,7 +538,7 @@ func (h *Handlers) ListUserActivity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": activity})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": activity})
 }
 
 // DeleteUser handles DELETE /api/v1/admin/users/{id}.
@@ -566,13 +550,13 @@ func (h *Handlers) DeleteUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if user := auth.FromContext(r.Context()); user == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
 
 	var userID pgtype.UUID
 	if err := userID.Scan(chi.URLParam(r, "id")); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid user ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid user ID")
 		return
 	}
 
@@ -594,7 +578,7 @@ func (h *Handlers) DeleteUser(w http.ResponseWriter, r *http.Request) {
 		_ = h.Redis.Del(r.Context(), valkey.MustKey("perm:%s", userID.String())).Err()
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"id": userID.String(), "status": "deleted"}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"id": userID.String(), "status": "deleted"}})
 }
 
 // UpdateProfileType handles PATCH /api/v1/admin/users/{id}/profile-type.
@@ -605,13 +589,13 @@ func (h *Handlers) UpdateProfileType(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if user := auth.FromContext(r.Context()); user == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
 
 	var userID pgtype.UUID
 	if err := userID.Scan(chi.URLParam(r, "id")); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid user ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid user ID")
 		return
 	}
 
@@ -619,13 +603,13 @@ func (h *Handlers) UpdateProfileType(w http.ResponseWriter, r *http.Request) {
 		ProfileType string `json:"profile_type"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
 		return
 	}
 
 	validTypes := map[string]bool{"personal": true, "business": true, "organisation": true}
 	if !validTypes[req.ProfileType] {
-		writeError(w, http.StatusBadRequest, "invalid_type", "profile_type must be personal, business, or organisation")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_type", "profile_type must be personal, business, or organisation")
 		return
 	}
 
@@ -634,7 +618,7 @@ func (h *Handlers) UpdateProfileType(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"id": userID.String(), "profile_type": req.ProfileType}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"id": userID.String(), "profile_type": req.ProfileType}})
 }
 
 // ---------------------------------------------------------------------------
@@ -654,7 +638,7 @@ func (h *Handlers) GetMyPreferences(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": prefs})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": prefs})
 }
 
 // UpdateMyPreferences handles PUT /api/v1/users/me/preferences.
@@ -666,7 +650,7 @@ func (h *Handlers) UpdateMyPreferences(w http.ResponseWriter, r *http.Request) {
 
 	var req UpdatePreferencesRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
 		return
 	}
 
@@ -675,7 +659,7 @@ func (h *Handlers) UpdateMyPreferences(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "updated"}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "updated"}})
 }
 
 // UpdateMyContentCountry handles PATCH /api/v1/me/preferences/content-country.
@@ -692,13 +676,13 @@ func (h *Handlers) UpdateMyContentCountry(w http.ResponseWriter, r *http.Request
 		Country string `json:"country"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
 		return
 	}
 
 	country := strings.ToUpper(strings.TrimSpace(body.Country))
 	if country != "" && len(country) != 2 {
-		writeError(w, http.StatusBadRequest, "invalid_country", "Country must be a 2-letter ISO code")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_country", "Country must be a 2-letter ISO code")
 		return
 	}
 
@@ -711,7 +695,7 @@ func (h *Handlers) UpdateMyContentCountry(w http.ResponseWriter, r *http.Request
 	// so the next request picks up the new preference immediately (ADR-064a).
 	h.invalidateVisitorCache(r.Context(), user)
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]string{
 			"status":          "updated",
 			"content_country": country,
@@ -741,7 +725,7 @@ func (h *Handlers) UpdateMyLocation(w http.ResponseWriter, r *http.Request) {
 		SpaceID   *string  `json:"space_id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
 		return
 	}
 
@@ -752,14 +736,14 @@ func (h *Handlers) UpdateMyLocation(w http.ResponseWriter, r *http.Request) {
 	case body.SpaceID != nil && *body.SpaceID != "":
 		id, err := uuid.Parse(*body.SpaceID)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_space_id", "space_id must be a valid UUID")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_space_id", "space_id must be a valid UUID")
 			return
 		}
 		spaceID = pgtype.UUID{Bytes: id, Valid: true}
 		// Validate that the space exists and is a geo space (country/state/city
 		// level) — prevents users from setting a non-geo space as their location.
 		if !h.Service.store.isValidGeoSpace(r.Context(), tenantID, spaceID) {
-			writeError(w, http.StatusBadRequest, "not_a_geo_space", "The selected space is not a geo space (country/state/city)")
+			errpkg.WriteError(w, http.StatusBadRequest, "not_a_geo_space", "The selected space is not a geo space (country/state/city)")
 			return
 		}
 
@@ -772,7 +756,7 @@ func (h *Handlers) UpdateMyLocation(w http.ResponseWriter, r *http.Request) {
 		cityName, stateName, countryCode, err := reverseGeocode(r.Context(), h.settings, tenantID, *body.Latitude, *body.Longitude)
 		if err != nil {
 			slog.Warn("reverse geocode failed", "error", err, "lat", *body.Latitude, "lng", *body.Longitude)
-			writeError(w, http.StatusBadGateway, "geocode_failed", "Could not resolve coordinates to a location")
+			errpkg.WriteError(w, http.StatusBadGateway, "geocode_failed", "Could not resolve coordinates to a location")
 			return
 		}
 		if countryCode != "" {
@@ -815,12 +799,12 @@ func (h *Handlers) UpdateMyLocation(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		if !spaceID.Valid {
-			writeError(w, http.StatusNotFound, "no_matching_space", "No geo space found for this location")
+			errpkg.WriteError(w, http.StatusNotFound, "no_matching_space", "No geo space found for this location")
 			return
 		}
 
 	default:
-		writeError(w, http.StatusBadRequest, "missing_location", "Provide either latitude/longitude or space_id")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_location", "Provide either latitude/longitude or space_id")
 		return
 	}
 
@@ -832,7 +816,7 @@ func (h *Handlers) UpdateMyLocation(w http.ResponseWriter, r *http.Request) {
 	// Invalidate the VisitorContext and recommendations cache (ADR-064a).
 	h.invalidateVisitorCache(r.Context(), user)
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
 			"status":   "updated",
 			"space_id": spaceID.String(),
@@ -857,7 +841,7 @@ func (h *Handlers) GetMyLocation(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			// No profile row yet — return empty location, not an error.
-			writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
+			errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
 				"space_id":     nil,
 				"city":         nil,
 				"country":      nil,
@@ -867,7 +851,7 @@ func (h *Handlers) GetMyLocation(w http.ResponseWriter, r *http.Request) {
 		}
 		// Real DB error — surface it.
 		slog.Warn("get current geo space failed", "error", err, "user_id", user.UserID.String())
-		writeError(w, http.StatusInternalServerError, "internal_error", "Could not retrieve location")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Could not retrieve location")
 		return
 	}
 
@@ -890,7 +874,7 @@ func (h *Handlers) GetMyLocation(w http.ResponseWriter, r *http.Request) {
 		data["country_code"] = *geoSpace.CountryGeoCode
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": data})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": data})
 }
 
 // GetUserAnalytics handles GET /users/{id}/analytics — the profile Analytics
@@ -901,7 +885,8 @@ func (h *Handlers) GetMyLocation(w http.ResponseWriter, r *http.Request) {
 // {id} user's published+public content plus follower/following counts.
 //
 // Ref: japaconnect-engineering/sections/33-professional-profiles.md
-//      japaconnect-engineering/conventions/api-routes-catalog.md §342
+//
+//	japaconnect-engineering/conventions/api-routes-catalog.md §342
 func (h *Handlers) GetUserAnalytics(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
 	if !ok {
@@ -915,14 +900,14 @@ func (h *Handlers) GetUserAnalytics(w http.ResponseWriter, r *http.Request) {
 
 	var userID pgtype.UUID
 	if err := userID.Scan(chi.URLParam(r, "id")); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_user_id", "Invalid user ID format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_user_id", "Invalid user ID format")
 		return
 	}
 
 	// Owner-only: analytics is a self-dashboard. Guests are blocked by
 	// RequireAuth on the route; other authenticated users are blocked here.
 	if userID != user.UserID {
-		writeError(w, http.StatusForbidden, "analytics_forbidden", "You can only view your own analytics")
+		errpkg.WriteError(w, http.StatusForbidden, "analytics_forbidden", "You can only view your own analytics")
 		return
 	}
 
@@ -932,13 +917,13 @@ func (h *Handlers) GetUserAnalytics(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "user_not_found", "User not found")
+			errpkg.WriteError(w, http.StatusNotFound, "user_not_found", "User not found")
 			return
 		}
 		slog.Error("users: GetUserAnalytics failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "analytics_error", "Failed to load analytics")
+		errpkg.WriteError(w, http.StatusInternalServerError, "analytics_error", "Failed to load analytics")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": stats})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": stats})
 }

@@ -242,8 +242,8 @@ func (s *Store) GetLLMsData(ctx context.Context, tenantID pgtype.UUID) (LLMsData
 	}
 
 	spaces, err := s.read.ListSpacesByTenant(ctx, gen.ListSpacesByTenantParams{
-		TenantID:      tenantID,
-		ViewerUserID:  pgtype.UUID{},
+		TenantID:     tenantID,
+		ViewerUserID: pgtype.UUID{},
 	})
 	if err != nil {
 		return LLMsData{}, fmt.Errorf("listing spaces for llms: %w", err)

@@ -12,7 +12,8 @@
 // and HITL approval.
 //
 // Ref: japaconnect-engineering/sections/100-tax-calculator.md
-//      japaconnect-engineering/adr/ADR-108-tax-calculator.md
+//
+//	japaconnect-engineering/adr/ADR-108-tax-calculator.md
 package taxcalculator
 
 import (
@@ -36,11 +37,11 @@ const (
 
 // Guide statuses (§100).
 const (
-	GuideStatusDraft    = "draft"
-	GuideStatusAIDraft  = "ai_draft"
-	GuideStatusPending  = "pending"
+	GuideStatusDraft     = "draft"
+	GuideStatusAIDraft   = "ai_draft"
+	GuideStatusPending   = "pending"
 	GuideStatusPublished = "published"
-	GuideStatusRejected = "rejected"
+	GuideStatusRejected  = "rejected"
 )
 
 // Store is the data-access layer for tax_treaty_pairs and
@@ -99,13 +100,13 @@ type TreatyRow struct {
 
 // ListGuidesFilter holds the filter parameters for listing published guides.
 type ListGuidesFilter struct {
-	TenantID          pgtype.UUID
+	TenantID           pgtype.UUID
 	DestinationSpaceID pgtype.UUID // optional
-	OriginSpaceID     pgtype.UUID // optional
-	EmploymentStatus  string      // optional
-	OnlyActive        bool        // default true for public list
-	Limit             int32
-	Offset            int32
+	OriginSpaceID      pgtype.UUID // optional
+	EmploymentStatus   string      // optional
+	OnlyActive         bool        // default true for public list
+	Limit              int32
+	Offset             int32
 }
 
 // ListGuides returns a paginated, filtered list of tax obligation guides.
@@ -285,19 +286,19 @@ LIMIT 1
 // CreateGuideInput holds the fields needed to insert a new
 // tax_obligation_guides row.
 type CreateGuideInput struct {
-	TenantID            pgtype.UUID
-	OriginSpaceID       pgtype.UUID
-	DestinationSpaceID  pgtype.UUID
-	EmploymentStatus    string
-	ResidencyTrigger    *string
+	TenantID             pgtype.UUID
+	OriginSpaceID        pgtype.UUID
+	DestinationSpaceID   pgtype.UUID
+	EmploymentStatus     string
+	ResidencyTrigger     *string
 	WorldwideIncomeTaxed *bool
 	FirstYearObligations *string
-	ActionChecklist     []byte // JSONB
-	Status              string
-	IsActive            bool
-	AIGenerated         bool
-	AIModel             *string
-	AIPromptHash        *string
+	ActionChecklist      []byte // JSONB
+	Status               string
+	IsActive             bool
+	AIGenerated          bool
+	AIModel              *string
+	AIPromptHash         *string
 }
 
 // CreateGuide inserts a new tax_obligation_guides row and returns the
@@ -446,12 +447,12 @@ WHERE id = $1 AND tenant_id = $2
 // TreatyUpsertInput holds the fields for creating or updating a
 // tax_treaty_pairs row via upsert.
 type TreatyUpsertInput struct {
-	TenantID          pgtype.UUID
-	OriginSpaceID     pgtype.UUID
+	TenantID           pgtype.UUID
+	OriginSpaceID      pgtype.UUID
 	DestinationSpaceID pgtype.UUID
-	TreatyExists      bool
-	TreatySummary     *string
-	TreatySourceURL   *string
+	TreatyExists       bool
+	TreatySummary      *string
+	TreatySourceURL    *string
 }
 
 // CreateOrUpdateTreaty upserts a tax_treaty_pairs row keyed by
@@ -488,14 +489,14 @@ RETURNING id
 
 // AdminListFilter holds filter parameters for the admin guide list.
 type AdminListFilter struct {
-	TenantID          pgtype.UUID
-	Status            string // optional
-	EmploymentStatus  string // optional
+	TenantID           pgtype.UUID
+	Status             string      // optional
+	EmploymentStatus   string      // optional
 	DestinationSpaceID pgtype.UUID // optional
-	OriginSpaceID     pgtype.UUID // optional
-	Q                 string // optional: search summary/obligations
-	Limit             int32
-	Offset            int32
+	OriginSpaceID      pgtype.UUID // optional
+	Q                  string      // optional: search summary/obligations
+	Limit              int32
+	Offset             int32
 }
 
 // AdminList returns all guides (any status) for the admin management view.

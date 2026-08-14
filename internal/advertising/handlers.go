@@ -17,9 +17,9 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/hibiken/asynq"
-	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/tenant"
 	"github.com/jedafe/japa/internal/worker"
 )
@@ -93,7 +93,7 @@ func parseUUIDParam(r *http.Request, param string) (pgtype.UUID, error) {
 func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
 
@@ -104,7 +104,7 @@ func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype
 func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	user := auth.FromContext(r.Context())
 	if user == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
 
@@ -116,16 +116,6 @@ func handleServiceError(w http.ResponseWriter, err error) {
 	errpkg.HandleServiceError(w, err)
 }
 
-// writeJSON serializes the given value as JSON and writes it to the response.
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-
-	if err := json.NewEncoder(w).Encode(v); err != nil {
-		slog.Warn("json encode error", "error", err)
-	}
-}
-
 // nonNilSlice replaces a nil slice with an empty, non-nil slice so the JSON
 // encoder emits `[]` instead of `null` (§6.2 — nil slice serialized as null
 // breaks frontends that read `.items`/`.length` on the response data).
@@ -134,13 +124,6 @@ func nonNilSlice[T any](s []T) []T {
 		return []T{}
 	}
 	return s
-}
-
-// writeError writes a JSON error response following the JapaConnect API format.
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, map[string]any{
-		"error": map[string]string{"code": code, "message": message},
-	})
 }
 
 // parsePageSize extracts and clamps the page_size query parameter.
@@ -208,22 +191,22 @@ func (h *Handlers) CreateCampaign(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if input.Name == "" {
-		writeError(w, http.StatusBadRequest, "missing_name", "name is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_name", "name is required")
 		return
 	}
 
 	if input.SlotTypeName == "" {
-		writeError(w, http.StatusBadRequest, "missing_slot_type_name", "slot_type_name is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_slot_type_name", "slot_type_name is required")
 		return
 	}
 
 	if input.Content == nil {
-		writeError(w, http.StatusBadRequest, "missing_content", "content is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_content", "content is required")
 		return
 	}
 
@@ -234,7 +217,7 @@ func (h *Handlers) CreateCampaign(w http.ResponseWriter, r *http.Request) {
 
 		startDate, err = time.Parse(time.RFC3339, input.StartDate)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_start_date", "Invalid start_date format")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_start_date", "Invalid start_date format")
 			return
 		}
 	}
@@ -244,7 +227,7 @@ func (h *Handlers) CreateCampaign(w http.ResponseWriter, r *http.Request) {
 	if input.EndDate != "" {
 		t, err := time.Parse(time.RFC3339, input.EndDate)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_end_date", "Invalid end_date format")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_end_date", "Invalid end_date format")
 			return
 		}
 
@@ -256,7 +239,7 @@ func (h *Handlers) CreateCampaign(w http.ResponseWriter, r *http.Request) {
 	for _, sid := range input.TargetSpaceIDs {
 		var u pgtype.UUID
 		if err := u.Scan(sid); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_target_space_id", "Invalid target_space_ids format")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_target_space_id", "Invalid target_space_ids format")
 			return
 		}
 		targetSpaceIDs = append(targetSpaceIDs, u)
@@ -280,7 +263,7 @@ func (h *Handlers) CreateCampaign(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": campaign})
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": campaign})
 }
 
 // GetCampaign handles GET /api/v1/admin/advertising/campaigns/{id}.
@@ -297,7 +280,7 @@ func (h *Handlers) GetCampaign(w http.ResponseWriter, r *http.Request) {
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid campaign ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid campaign ID")
 		return
 	}
 
@@ -307,7 +290,7 @@ func (h *Handlers) GetCampaign(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": campaign})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": campaign})
 }
 
 // ListCampaigns handles GET /api/v1/admin/advertising/campaigns.
@@ -331,7 +314,7 @@ func (h *Handlers) ListCampaigns(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": nonNilSlice(campaigns)})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": nonNilSlice(campaigns)})
 }
 
 // ActivateCampaign handles POST /api/v1/admin/advertising/campaigns/{id}/activate.
@@ -348,7 +331,7 @@ func (h *Handlers) ActivateCampaign(w http.ResponseWriter, r *http.Request) {
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid campaign ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid campaign ID")
 		return
 	}
 
@@ -376,7 +359,7 @@ func (h *Handlers) ActivateCampaign(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": campaign})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": campaign})
 }
 
 // PauseCampaign handles POST /api/v1/admin/advertising/campaigns/{id}/pause.
@@ -393,7 +376,7 @@ func (h *Handlers) PauseCampaign(w http.ResponseWriter, r *http.Request) {
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid campaign ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid campaign ID")
 		return
 	}
 
@@ -403,7 +386,7 @@ func (h *Handlers) PauseCampaign(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": campaign})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": campaign})
 }
 
 // EndCampaign handles POST /api/v1/admin/advertising/campaigns/{id}/end.
@@ -420,7 +403,7 @@ func (h *Handlers) EndCampaign(w http.ResponseWriter, r *http.Request) {
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid campaign ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid campaign ID")
 		return
 	}
 
@@ -430,7 +413,7 @@ func (h *Handlers) EndCampaign(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": campaign})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": campaign})
 }
 
 // RejectCampaign handles POST /api/v1/admin/ads/campaigns/{id}/reject.
@@ -451,7 +434,7 @@ func (h *Handlers) RejectCampaign(w http.ResponseWriter, r *http.Request) {
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid campaign ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid campaign ID")
 		return
 	}
 
@@ -489,7 +472,7 @@ func (h *Handlers) RejectCampaign(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": campaign})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": campaign})
 }
 
 // ---------------------------------------------------------------------------
@@ -509,7 +492,7 @@ func (h *Handlers) RenderSlot(w http.ResponseWriter, r *http.Request) {
 
 	slotName := r.URL.Query().Get("slot")
 	if slotName == "" {
-		writeError(w, http.StatusBadRequest, "missing_slot", "slot query parameter is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_slot", "slot query parameter is required")
 		return
 	}
 
@@ -527,7 +510,7 @@ func (h *Handlers) RenderSlot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": campaigns})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": campaigns})
 }
 
 // ---------------------------------------------------------------------------
@@ -553,12 +536,12 @@ func (h *Handlers) IngestEvents(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if len(input.Events) == 0 {
-		writeError(w, http.StatusBadRequest, "empty_events", "events array is empty")
+		errpkg.WriteError(w, http.StatusBadRequest, "empty_events", "events array is empty")
 		return
 	}
 
@@ -589,7 +572,7 @@ func (h *Handlers) IngestEvents(w http.ResponseWriter, r *http.Request) {
 		ingested++
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
 			"ingested": ingested,
 			"total":    len(input.Events),
@@ -622,7 +605,7 @@ func (h *Handlers) ListSlotTypes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": nonNilSlice(slotTypes)})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": nonNilSlice(slotTypes)})
 }
 
 // CreateSlotType handles POST /api/v1/admin/advertising/slot-types.
@@ -643,12 +626,12 @@ func (h *Handlers) CreateSlotType(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if input.Name == "" {
-		writeError(w, http.StatusBadRequest, "missing_name", "name is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_name", "name is required")
 		return
 	}
 
@@ -661,7 +644,7 @@ func (h *Handlers) CreateSlotType(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": slotType})
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": slotType})
 }
 
 // UpdateSlotType handles PUT /api/v1/admin/advertising/slot-types/{id}.
@@ -678,7 +661,7 @@ func (h *Handlers) UpdateSlotType(w http.ResponseWriter, r *http.Request) {
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid slot type ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid slot type ID")
 		return
 	}
 
@@ -688,7 +671,7 @@ func (h *Handlers) UpdateSlotType(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
@@ -701,7 +684,7 @@ func (h *Handlers) UpdateSlotType(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": slotType})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": slotType})
 }
 
 // DeleteSlotType handles DELETE /api/v1/admin/advertising/slot-types/{id}.
@@ -718,7 +701,7 @@ func (h *Handlers) DeleteSlotType(w http.ResponseWriter, r *http.Request) {
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid slot type ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid slot type ID")
 		return
 	}
 
@@ -727,7 +710,7 @@ func (h *Handlers) DeleteSlotType(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
 }
 
 // DeleteCampaign handles DELETE /api/v1/admin/advertising/campaigns/{id}.
@@ -744,7 +727,7 @@ func (h *Handlers) DeleteCampaign(w http.ResponseWriter, r *http.Request) {
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid campaign ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid campaign ID")
 		return
 	}
 
@@ -753,7 +736,7 @@ func (h *Handlers) DeleteCampaign(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
 }
 
 // GetCampaignStats handles GET /api/v1/admin/advertising/campaigns/{id}/stats.
@@ -770,7 +753,7 @@ func (h *Handlers) GetCampaignStats(w http.ResponseWriter, r *http.Request) {
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid campaign ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid campaign ID")
 		return
 	}
 
@@ -780,7 +763,7 @@ func (h *Handlers) GetCampaignStats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": stats})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": stats})
 }
 
 // ---------------------------------------------------------------------------
@@ -808,29 +791,29 @@ func (h *Handlers) CreateBoost(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if input.OrganizationID == "" {
-		writeError(w, http.StatusBadRequest, "missing_organization_id", "organization_id is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_organization_id", "organization_id is required")
 		return
 	}
 
 	if input.CampaignID == "" {
-		writeError(w, http.StatusBadRequest, "missing_campaign_id", "campaign_id is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_campaign_id", "campaign_id is required")
 		return
 	}
 
 	var organizationID pgtype.UUID
 	if err := organizationID.Scan(input.OrganizationID); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_organization_id", "Invalid organization_id")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_organization_id", "Invalid organization_id")
 		return
 	}
 
 	var campaignID pgtype.UUID
 	if err := campaignID.Scan(input.CampaignID); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_campaign_id", "Invalid campaign_id")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_campaign_id", "Invalid campaign_id")
 		return
 	}
 
@@ -841,7 +824,7 @@ func (h *Handlers) CreateBoost(w http.ResponseWriter, r *http.Request) {
 
 		startDate, err = time.Parse(time.RFC3339, input.StartDate)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_start_date", "Invalid start_date format")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_start_date", "Invalid start_date format")
 			return
 		}
 	}
@@ -851,7 +834,7 @@ func (h *Handlers) CreateBoost(w http.ResponseWriter, r *http.Request) {
 	if input.EndDate != "" {
 		t, err := time.Parse(time.RFC3339, input.EndDate)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_end_date", "Invalid end_date format")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_end_date", "Invalid end_date format")
 			return
 		}
 
@@ -870,7 +853,7 @@ func (h *Handlers) CreateBoost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": boost})
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": boost})
 }
 
 // ListBoosts handles GET /api/v1/admin/advertising/boosts?organization_id={id}.
@@ -887,13 +870,13 @@ func (h *Handlers) ListBoosts(w http.ResponseWriter, r *http.Request) {
 
 	orgIDStr := r.URL.Query().Get("organization_id")
 	if orgIDStr == "" {
-		writeError(w, http.StatusBadRequest, "missing_organization_id", "organization_id query parameter is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_organization_id", "organization_id query parameter is required")
 		return
 	}
 
 	var organizationID pgtype.UUID
 	if err := organizationID.Scan(orgIDStr); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_organization_id", "Invalid organization_id")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_organization_id", "Invalid organization_id")
 		return
 	}
 
@@ -903,7 +886,7 @@ func (h *Handlers) ListBoosts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": nonNilSlice(boosts)})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": nonNilSlice(boosts)})
 }
 
 // ListActiveBoosts handles GET /api/v1/admin/advertising/boosts/active.
@@ -924,7 +907,7 @@ func (h *Handlers) ListActiveBoosts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": nonNilSlice(boosts)})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": nonNilSlice(boosts)})
 }
 
 // EndBoost handles POST /api/v1/admin/advertising/boosts/{id}/end.
@@ -941,7 +924,7 @@ func (h *Handlers) EndBoost(w http.ResponseWriter, r *http.Request) {
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid boost ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid boost ID")
 		return
 	}
 
@@ -951,7 +934,7 @@ func (h *Handlers) EndBoost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": boost})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": boost})
 }
 
 // UpdateBoost handles PATCH /api/v1/admin/ads/boosts/{id}.
@@ -968,7 +951,7 @@ func (h *Handlers) UpdateBoost(w http.ResponseWriter, r *http.Request) {
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid boost ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid boost ID")
 		return
 	}
 
@@ -977,7 +960,7 @@ func (h *Handlers) UpdateBoost(w http.ResponseWriter, r *http.Request) {
 		EndDate *string `json:"end_date"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
@@ -985,7 +968,7 @@ func (h *Handlers) UpdateBoost(w http.ResponseWriter, r *http.Request) {
 	if input.EndDate != nil && *input.EndDate != "" {
 		t, perr := time.Parse(time.RFC3339, *input.EndDate)
 		if perr != nil {
-			writeError(w, http.StatusBadRequest, "invalid_end_date", "Invalid end_date format")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_end_date", "Invalid end_date format")
 			return
 		}
 		endDate = &t
@@ -997,7 +980,7 @@ func (h *Handlers) UpdateBoost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": boost})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": boost})
 }
 
 // DeleteBoost handles DELETE /api/v1/admin/ads/boosts/{id}.
@@ -1014,7 +997,7 @@ func (h *Handlers) DeleteBoost(w http.ResponseWriter, r *http.Request) {
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid boost ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid boost ID")
 		return
 	}
 
@@ -1040,7 +1023,7 @@ func (h *Handlers) UpdateCampaign(w http.ResponseWriter, r *http.Request) {
 	}
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid campaign ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid campaign ID")
 		return
 	}
 	var input struct {
@@ -1048,7 +1031,7 @@ func (h *Handlers) UpdateCampaign(w http.ResponseWriter, r *http.Request) {
 		Budget *int64 `json:"budget"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 	campaign, err := h.Service.UpdateCampaignDetails(r.Context(), id, tenantID, input.Name, input.Budget)
@@ -1056,7 +1039,7 @@ func (h *Handlers) UpdateCampaign(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": campaign})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": campaign})
 }
 
 // GetSlotType handles GET /admin/ads/slot-types/:id.
@@ -1071,7 +1054,7 @@ func (h *Handlers) GetSlotType(w http.ResponseWriter, r *http.Request) {
 	}
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid slot type ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid slot type ID")
 		return
 	}
 	slotType, err := h.Service.GetSlotType(r.Context(), id, tenantID)
@@ -1079,7 +1062,7 @@ func (h *Handlers) GetSlotType(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": slotType})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": slotType})
 }
 
 // ---------------------------------------------------------------------------
@@ -1100,7 +1083,7 @@ func (h *Handlers) CreateAdNetwork(w http.ResponseWriter, r *http.Request) {
 
 	var input CreateAdNetworkInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
@@ -1110,7 +1093,7 @@ func (h *Handlers) CreateAdNetwork(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": network})
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": network})
 }
 
 // ListAdNetworks lists all ad networks for the tenant.
@@ -1134,7 +1117,7 @@ func (h *Handlers) ListAdNetworks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": nonNilSlice(networks),
 		"meta": map[string]any{"total": total, "page_offset": offset, "page_size": pageSize},
 	})
@@ -1154,7 +1137,7 @@ func (h *Handlers) GetAdNetwork(w http.ResponseWriter, r *http.Request) {
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ad network ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ad network ID")
 		return
 	}
 
@@ -1164,7 +1147,7 @@ func (h *Handlers) GetAdNetwork(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": network})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": network})
 }
 
 // UpdateAdNetwork updates an existing ad network.
@@ -1181,13 +1164,13 @@ func (h *Handlers) UpdateAdNetwork(w http.ResponseWriter, r *http.Request) {
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ad network ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ad network ID")
 		return
 	}
 
 	var input UpdateAdNetworkInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
@@ -1197,7 +1180,7 @@ func (h *Handlers) UpdateAdNetwork(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": network})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": network})
 }
 
 // DeleteAdNetwork deletes an ad network by ID.
@@ -1214,7 +1197,7 @@ func (h *Handlers) DeleteAdNetwork(w http.ResponseWriter, r *http.Request) {
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ad network ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ad network ID")
 		return
 	}
 
@@ -1223,7 +1206,7 @@ func (h *Handlers) DeleteAdNetwork(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
 }
 
 // ---------------------------------------------------------------------------
@@ -1235,7 +1218,7 @@ func (h *Handlers) GetAdNetworkConfig(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	t := tenant.FromContext(ctx)
 	if t == nil {
-		writeError(w, http.StatusBadRequest, "missing_tenant", "tenant not found")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_tenant", "tenant not found")
 		return
 	}
 	tenantID := t.ID
@@ -1267,5 +1250,5 @@ func (h *Handlers) GetAdNetworkConfig(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": nonNilSlice(safe)})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": nonNilSlice(safe)})
 }

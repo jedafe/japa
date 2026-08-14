@@ -6,7 +6,8 @@
 // system_setting (§94).
 //
 // Ref: japaconnect-engineering/sections/94-professional-credential-checker.md
-//      japaconnect-engineering/adr/ADR-102-credential-checker.md
+//
+//	japaconnect-engineering/adr/ADR-102-credential-checker.md
 package credentialchecker
 
 import (
@@ -35,36 +36,36 @@ type ProfessionDTO struct {
 
 // PathwayDTO is the API response shape for a single credential pathway.
 type PathwayDTO struct {
-	ID                       string `json:"id"`
-	ProfessionID             pgtype.UUID `json:"profession_id"`
-	ProfessionSlug           string `json:"profession_slug"`
-	ProfessionName           string `json:"profession_name"`
-	ProfessionCategory       string `json:"profession_category,omitempty"`
-	IssuingSpaceID           string `json:"issuing_space_id"`
-	IssuingSpaceName         string `json:"issuing_space_name,omitempty"`
-	IssuingSpaceCode         string `json:"issuing_space_code,omitempty"`
-	DestinationSpaceID       string `json:"destination_space_id"`
-	DestinationSpaceName     string `json:"destination_space_name,omitempty"`
-	DestinationSpaceCode     string `json:"destination_space_code,omitempty"`
-	RegulatoryBody           string `json:"regulatory_body"`
-	RegulatoryBodyURL        string `json:"regulatory_body_url,omitempty"`
-	PathwayType              string `json:"pathway_type"`
-	TimelineEstimate         string `json:"timeline_estimate,omitempty"`
-	CostEstimateUSD          string `json:"cost_estimate_usd,omitempty"`
-	PathwayDescription       string `json:"pathway_description"`
-	OfficialApplicationURL   string `json:"official_application_url,omitempty"`
-	SourceURLLastChecked     string `json:"source_url_last_checked,omitempty"`
-	Status                   string `json:"status"`
-	IsActive                 bool   `json:"is_active"`
-	AIGenerated              bool   `json:"ai_generated"`
-	AIModel                  string `json:"ai_model,omitempty"`
-	AIPromptHash             string `json:"ai_prompt_hash,omitempty"`
-	HITLReviewedBy           string `json:"hitl_reviewed_by,omitempty"`
-	HITLReviewedAt           string `json:"hitl_reviewed_at,omitempty"`
-	HITLReviewNotes          string `json:"hitl_review_notes,omitempty"`
-	IsJapabotIndexed         bool   `json:"is_japabot_indexed"`
-	CreatedAt                string `json:"created_at"`
-	UpdatedAt                string `json:"updated_at"`
+	ID                     string      `json:"id"`
+	ProfessionID           pgtype.UUID `json:"profession_id"`
+	ProfessionSlug         string      `json:"profession_slug"`
+	ProfessionName         string      `json:"profession_name"`
+	ProfessionCategory     string      `json:"profession_category,omitempty"`
+	IssuingSpaceID         string      `json:"issuing_space_id"`
+	IssuingSpaceName       string      `json:"issuing_space_name,omitempty"`
+	IssuingSpaceCode       string      `json:"issuing_space_code,omitempty"`
+	DestinationSpaceID     string      `json:"destination_space_id"`
+	DestinationSpaceName   string      `json:"destination_space_name,omitempty"`
+	DestinationSpaceCode   string      `json:"destination_space_code,omitempty"`
+	RegulatoryBody         string      `json:"regulatory_body"`
+	RegulatoryBodyURL      string      `json:"regulatory_body_url,omitempty"`
+	PathwayType            string      `json:"pathway_type"`
+	TimelineEstimate       string      `json:"timeline_estimate,omitempty"`
+	CostEstimateUSD        string      `json:"cost_estimate_usd,omitempty"`
+	PathwayDescription     string      `json:"pathway_description"`
+	OfficialApplicationURL string      `json:"official_application_url,omitempty"`
+	SourceURLLastChecked   string      `json:"source_url_last_checked,omitempty"`
+	Status                 string      `json:"status"`
+	IsActive               bool        `json:"is_active"`
+	AIGenerated            bool        `json:"ai_generated"`
+	AIModel                string      `json:"ai_model,omitempty"`
+	AIPromptHash           string      `json:"ai_prompt_hash,omitempty"`
+	HITLReviewedBy         string      `json:"hitl_reviewed_by,omitempty"`
+	HITLReviewedAt         string      `json:"hitl_reviewed_at,omitempty"`
+	HITLReviewNotes        string      `json:"hitl_review_notes,omitempty"`
+	IsJapabotIndexed       bool        `json:"is_japabot_indexed"`
+	CreatedAt              string      `json:"created_at"`
+	UpdatedAt              string      `json:"updated_at"`
 }
 
 // CommunityNoteDTO is the API response shape for a single community note.
@@ -89,21 +90,21 @@ type PathwayDetailDTO struct {
 // CreatePathwayRequest is the request body for POST /admin/credentials.
 type CreatePathwayRequest struct {
 	ProfessionID           pgtype.UUID `json:"profession_id"`
-	IssuingSpaceID         string `json:"issuing_space_id"`
-	DestinationSpaceID     string `json:"destination_space_id"`
-	RegulatoryBody         string `json:"regulatory_body"`
-	RegulatoryBodyURL      string `json:"regulatory_body_url"`
-	PathwayType            string `json:"pathway_type"`
-	TimelineEstimate       string `json:"timeline_estimate"`
-	CostEstimateUSD        string `json:"cost_estimate_usd"`
-	PathwayDescription     string `json:"pathway_description"`
-	OfficialApplicationURL string `json:"official_application_url"`
-	SourceURLLastChecked   string `json:"source_url_last_checked"`
-	Status                 string `json:"status"`
-	IsActive               *bool  `json:"is_active"`
-	AIGenerated            *bool  `json:"ai_generated"`
-	AIModel                string `json:"ai_model"`
-	AIPromptHash           string `json:"ai_prompt_hash"`
+	IssuingSpaceID         string      `json:"issuing_space_id"`
+	DestinationSpaceID     string      `json:"destination_space_id"`
+	RegulatoryBody         string      `json:"regulatory_body"`
+	RegulatoryBodyURL      string      `json:"regulatory_body_url"`
+	PathwayType            string      `json:"pathway_type"`
+	TimelineEstimate       string      `json:"timeline_estimate"`
+	CostEstimateUSD        string      `json:"cost_estimate_usd"`
+	PathwayDescription     string      `json:"pathway_description"`
+	OfficialApplicationURL string      `json:"official_application_url"`
+	SourceURLLastChecked   string      `json:"source_url_last_checked"`
+	Status                 string      `json:"status"`
+	IsActive               *bool       `json:"is_active"`
+	AIGenerated            *bool       `json:"ai_generated"`
+	AIModel                string      `json:"ai_model"`
+	AIPromptHash           string      `json:"ai_prompt_hash"`
 }
 
 // UpdatePathwayRequest is the request body for PATCH /admin/credentials/:id.
@@ -112,18 +113,18 @@ type CreatePathwayRequest struct {
 // column computed from status + is_active and cannot be updated directly.
 type UpdatePathwayRequest struct {
 	ProfessionID           *pgtype.UUID `json:"profession_id"`
-	IssuingSpaceID         *string `json:"issuing_space_id"`
-	DestinationSpaceID     *string `json:"destination_space_id"`
-	RegulatoryBody         *string `json:"regulatory_body"`
-	RegulatoryBodyURL      *string `json:"regulatory_body_url"`
-	PathwayType            *string `json:"pathway_type"`
-	TimelineEstimate       *string `json:"timeline_estimate"`
-	CostEstimateUSD        *string `json:"cost_estimate_usd"`
-	PathwayDescription     *string `json:"pathway_description"`
-	OfficialApplicationURL *string `json:"official_application_url"`
-	SourceURLLastChecked   *string `json:"source_url_last_checked"`
-	Status                 *string `json:"status"`
-	IsActive               *bool   `json:"is_active"`
+	IssuingSpaceID         *string      `json:"issuing_space_id"`
+	DestinationSpaceID     *string      `json:"destination_space_id"`
+	RegulatoryBody         *string      `json:"regulatory_body"`
+	RegulatoryBodyURL      *string      `json:"regulatory_body_url"`
+	PathwayType            *string      `json:"pathway_type"`
+	TimelineEstimate       *string      `json:"timeline_estimate"`
+	CostEstimateUSD        *string      `json:"cost_estimate_usd"`
+	PathwayDescription     *string      `json:"pathway_description"`
+	OfficialApplicationURL *string      `json:"official_application_url"`
+	SourceURLLastChecked   *string      `json:"source_url_last_checked"`
+	Status                 *string      `json:"status"`
+	IsActive               *bool        `json:"is_active"`
 }
 
 // CreateNoteRequest is the request body for POST /credentials/:id/notes.
@@ -149,18 +150,18 @@ type GeneratePathwayRequest struct {
 // generation endpoint. Returns the created pathway ID so the admin can
 // navigate to the draft for HITL review.
 type GeneratePathwayResponse struct {
-	Status             string       `json:"status"`
-	Message            string       `json:"message"`
-	PathwayID          string       `json:"pathway_id,omitempty"`
-	ProfessionID       pgtype.UUID  `json:"profession_id,omitempty"`
-	IssuingSpaceID     string       `json:"issuing_space_id,omitempty"`
-	DestinationSpaceID string       `json:"destination_space_id,omitempty"`
+	Status             string      `json:"status"`
+	Message            string      `json:"message"`
+	PathwayID          string      `json:"pathway_id,omitempty"`
+	ProfessionID       pgtype.UUID `json:"profession_id,omitempty"`
+	IssuingSpaceID     string      `json:"issuing_space_id,omitempty"`
+	DestinationSpaceID string      `json:"destination_space_id,omitempty"`
 }
 
 // Service holds the business logic for the Credential Checker.
 type Service struct {
-	store       *Store
-	settings    *config.Settings
+	store        *Store
+	settings     *config.Settings
 	aiDispatcher AIDispatcher
 }
 

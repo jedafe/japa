@@ -5,7 +5,8 @@
 // No flight or hotel inventory is stored.
 //
 // Ref: japaconnect-engineering/sections/67-travel-search.md
-//      japaconnect-engineering/adr/ADR-085-travel-search.md
+//
+//	japaconnect-engineering/adr/ADR-085-travel-search.md
 package travel
 
 import (

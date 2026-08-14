@@ -5,6 +5,11 @@
 -- the database to the post-000100 state.
 --
 -- The 11 original countries (from 000100): NG, GB, CA, US, IE, DE, NL, ZA, AE, GH, FR.
+--
+-- Note: creator_user_id was added by 000402 and is not available when this
+-- down migration runs (000402.down runs first in reverse order). The
+-- tenant_id + level + slug/geo_code filters are sufficient to identify
+-- system-seeded rows.
 
 -- Remove parent relationships for states added by 000286
 DELETE FROM space_parent_spaces
@@ -45,12 +50,10 @@ WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
   AND slug NOT LIKE 'za-%'
   AND slug NOT LIKE 'ae-%'
   AND slug NOT LIKE 'gh-%'
-  AND slug NOT LIKE 'fr-%'
-  AND creator_user_id IS NULL;
+  AND slug NOT LIKE 'fr-%';
 
 -- Remove country-level spaces added by 000286 (not the original 11)
 DELETE FROM spaces
 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
   AND level = 'country'
-  AND geo_code NOT IN ('NG','GB','CA','US','IE','DE','NL','ZA','AE','GH','FR')
-  AND creator_user_id IS NULL;
+  AND geo_code NOT IN ('NG','GB','CA','US','IE','DE','NL','ZA','AE','GH','FR');

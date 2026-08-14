@@ -58,13 +58,13 @@ const (
 // drops to 0.80 — content that only triggers rules will not be blocked
 // unless the rule signals are strong enough on their own.
 var DefaultWeights = map[string]float64{
-	"ip_reputation":   0.20,
-	"rate_limit":      0.15,
-	"content_hash":    0.15,
-	"censored_words":  0.10,
-	"link_analysis":   0.10,
-	"user_age":        0.05,
-	"content_length":  0.05,
+	"ip_reputation":     0.20,
+	"rate_limit":        0.15,
+	"content_hash":      0.15,
+	"censored_words":    0.10,
+	"link_analysis":     0.10,
+	"user_age":          0.05,
+	"content_length":    0.05,
 	"ai_classification": 0.20,
 }
 

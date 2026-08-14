@@ -18,9 +18,9 @@ import (
 // Valkey under jc:intel:robots:{tenant_id}:{domain} (1hr TTL per
 // valkey-keys-catalog, tenant-scoped per ADR-112 Amendment 2).
 type RobotsPolicy struct {
-	Allowed          bool     `json:"allowed"`
-	CrawlDelaySecs   int      `json:"crawl_delay_secs"`
-	DisallowedPaths  []string `json:"disallowed_paths"`
+	Allowed         bool     `json:"allowed"`
+	CrawlDelaySecs  int      `json:"crawl_delay_secs"`
+	DisallowedPaths []string `json:"disallowed_paths"`
 }
 
 // RobotsChecker fetches and caches robots.txt policies per domain. It

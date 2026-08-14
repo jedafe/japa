@@ -60,18 +60,18 @@ func (p *OpenverseProvider) Search(ctx context.Context, query string, page, perP
 	var raw struct {
 		ResultCount int `json:"result_count"`
 		PageCount   int `json:"page_count"`
-		Results      []struct {
-			ID            string `json:"id"`
-			Title         string `json:"title"`
-			Thumbnail     string `json:"thumbnail"`
-			URL           string `json:"url"`
-			Width         int    `json:"width"`
-			Height        int    `json:"height"`
-			License       string `json:"license"`
-			LicenseURL    string `json:"license_url"`
+		Results     []struct {
+			ID             string `json:"id"`
+			Title          string `json:"title"`
+			Thumbnail      string `json:"thumbnail"`
+			URL            string `json:"url"`
+			Width          int    `json:"width"`
+			Height         int    `json:"height"`
+			License        string `json:"license"`
+			LicenseURL     string `json:"license_url"`
 			LicenseVersion string `json:"license_version"`
-			Creator       string `json:"creator"`
-			CreatorURL    string `json:"creator_url"`
+			Creator        string `json:"creator"`
+			CreatorURL     string `json:"creator_url"`
 		} `json:"results"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
@@ -87,8 +87,8 @@ func (p *OpenverseProvider) Search(ctx context.Context, query string, page, perP
 			FullURL:         r.URL,
 			Width:           r.Width,
 			Height:          r.Height,
-			Photographer:     r.Creator,
-			PhotographerURL:  r.CreatorURL,
+			Photographer:    r.Creator,
+			PhotographerURL: r.CreatorURL,
 			License:         normalizeLicense(r.License),
 			LicenseURL:      r.LicenseURL,
 			Description:     r.Title,
@@ -123,16 +123,16 @@ func (p *OpenverseProvider) GetByID(ctx context.Context, photoID string) (*Stock
 	}
 
 	var raw struct {
-		ID             string `json:"id"`
-		Title          string `json:"title"`
-		Thumbnail      string `json:"thumbnail"`
-		URL            string `json:"url"`
-		Width          int    `json:"width"`
-		Height         int    `json:"height"`
-		License        string `json:"license"`
-		LicenseURL     string `json:"license_url"`
-		Creator        string `json:"creator"`
-		CreatorURL     string `json:"creator_url"`
+		ID         string `json:"id"`
+		Title      string `json:"title"`
+		Thumbnail  string `json:"thumbnail"`
+		URL        string `json:"url"`
+		Width      int    `json:"width"`
+		Height     int    `json:"height"`
+		License    string `json:"license"`
+		LicenseURL string `json:"license_url"`
+		Creator    string `json:"creator"`
+		CreatorURL string `json:"creator_url"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
 		return nil, fmt.Errorf("decoding openverse photo: %w", err)
@@ -145,8 +145,8 @@ func (p *OpenverseProvider) GetByID(ctx context.Context, photoID string) (*Stock
 		FullURL:         raw.URL,
 		Width:           raw.Width,
 		Height:          raw.Height,
-		Photographer:     raw.Creator,
-		PhotographerURL:  raw.CreatorURL,
+		Photographer:    raw.Creator,
+		PhotographerURL: raw.CreatorURL,
 		License:         normalizeLicense(raw.License),
 		LicenseURL:      raw.LicenseURL,
 		Description:     raw.Title,
@@ -193,11 +193,11 @@ func (p *OpenverseProvider) Download(ctx context.Context, photoID string) (*Down
 	return &DownloadedPhoto{
 		Data:            data,
 		Filename:        filename,
-		Photographer:     photo.Photographer,
-		PhotographerURL:  photo.PhotographerURL,
+		Photographer:    photo.Photographer,
+		PhotographerURL: photo.PhotographerURL,
 		License:         photo.License,
 		LicenseURL:      photo.LicenseURL,
-		ProviderPhotoID:  photoID,
+		ProviderPhotoID: photoID,
 	}, nil
 }
 

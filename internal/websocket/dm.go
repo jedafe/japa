@@ -218,10 +218,10 @@ func (s *DMStore) GetPendingMessageRequests(ctx context.Context, tenantID, recip
 	}
 
 	return s.read.GetPendingMessageRequests(ctx, gen.GetPendingMessageRequestsParams{
-		TenantID:   tenantID,
+		TenantID:    tenantID,
 		RecipientID: recipientID,
-		PageLimit:  limit,
-		PageOffset: offset,
+		PageLimit:   limit,
+		PageOffset:  offset,
 	})
 }
 
@@ -274,7 +274,7 @@ func (s *DMStore) IsMutualFollow(ctx context.Context, tenantID, initiatorID, rec
 func (s *DMStore) UpsertUserDMPrivacy(ctx context.Context, tenantID, userID pgtype.UUID, privacy string) error {
 	return s.write.UpsertUserDMPrivacy(ctx, gen.UpsertUserDMPrivacyParams{
 		UserID:    userID,
-		TenantID: tenantID,
+		TenantID:  tenantID,
 		DmPrivacy: privacy,
 	})
 }
@@ -336,8 +336,8 @@ type DMPrivacyResult struct {
 
 // DMService provides DM operations with business logic.
 type DMService struct {
-	store      *DMStore
-	hub        *Hub
+	store       *DMStore
+	hub         *Hub
 	AsynqClient *asynq.Client
 }
 
@@ -348,8 +348,8 @@ func NewDMService(store *DMStore, hub *Hub) *DMService {
 
 // DM privacy / block sentinel errors per Section 48.
 var (
-	ErrDMBlocked          = errors.New("dm blocked by user_blocks")
-	ErrDMPrivacyNobody    = errors.New("recipient does not accept new DM conversations")
+	ErrDMBlocked           = errors.New("dm blocked by user_blocks")
+	ErrDMPrivacyNobody     = errors.New("recipient does not accept new DM conversations")
 	ErrDMNotMutualFollower = errors.New("recipient only accepts DMs from mutual followers")
 )
 
@@ -644,15 +644,15 @@ func (s *DMService) HandleMessageRequest(ctx context.Context, tenantID, conversa
 
 // MessageRequestInfo is the API response for a pending DM request item.
 type MessageRequestInfo struct {
-	ID                 string  `json:"id"`
-	ConversationID     *string `json:"conversation_id,omitempty"`
-	RequesterID        string  `json:"requester_id"`
-	RequesterUsername   string  `json:"requester_username"`
+	ID                   string  `json:"id"`
+	ConversationID       *string `json:"conversation_id,omitempty"`
+	RequesterID          string  `json:"requester_id"`
+	RequesterUsername    string  `json:"requester_username"`
 	RequesterDisplayName string  `json:"requester_display_name"`
-	RequesterAvatarURL  *string `json:"requester_avatar_url,omitempty"`
-	PreviewMessage     string  `json:"preview_message"`
-	Status             string  `json:"status"`
-	CreatedAt          string  `json:"created_at"`
+	RequesterAvatarURL   *string `json:"requester_avatar_url,omitempty"`
+	PreviewMessage       string  `json:"preview_message"`
+	Status               string  `json:"status"`
+	CreatedAt            string  `json:"created_at"`
 }
 
 // GetPendingMessageRequests returns pending DM requests for a recipient
@@ -668,12 +668,12 @@ func (s *DMService) GetPendingMessageRequests(ctx context.Context, tenantID, rec
 	infos := make([]MessageRequestInfo, len(rows))
 	for i, r := range rows {
 		infos[i] = MessageRequestInfo{
-			ID:                  r.ID.String(),
-			RequesterID:         r.RequesterID.String(),
-			RequesterUsername:   r.RequesterUsername,
-			PreviewMessage:      r.PreviewMessage,
-			Status:              r.Status,
-			CreatedAt:           r.CreatedAt.Time.String(),
+			ID:                r.ID.String(),
+			RequesterID:       r.RequesterID.String(),
+			RequesterUsername: r.RequesterUsername,
+			PreviewMessage:    r.PreviewMessage,
+			Status:            r.Status,
+			CreatedAt:         r.CreatedAt.Time.String(),
 		}
 		if r.RequesterDisplayName != nil {
 			infos[i].RequesterDisplayName = *r.RequesterDisplayName

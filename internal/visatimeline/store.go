@@ -8,7 +8,8 @@
 // private) of their own timeline.
 //
 // Ref: japaconnect-engineering/sections/83-visa-timeline-tracker.md
-//      japaconnect-engineering/adr/ADR-091-visa-timeline-tracker.md
+//
+//	japaconnect-engineering/adr/ADR-091-visa-timeline-tracker.md
 package visatimeline
 
 import (
@@ -71,27 +72,27 @@ type Milestone struct {
 
 // ProcessingStat holds a single visa_processing_stats row.
 type ProcessingStat struct {
-	ID                pgtype.UUID
-	TenantID          pgtype.UUID
-	OriginSpaceID     pgtype.UUID
+	ID                 pgtype.UUID
+	TenantID           pgtype.UUID
+	OriginSpaceID      pgtype.UUID
 	DestinationSpaceID pgtype.UUID
-	VisaCategory      string
-	Consulate         *string
-	PeriodStart       pgtype.Timestamptz
-	SampleCount       int32
-	AvgDays           *float64
-	MedianDays        *float64
-	P10Days           *float64
-	P90Days           *float64
-	RefreshedAt       pgtype.Timestamptz
+	VisaCategory       string
+	Consulate          *string
+	PeriodStart        pgtype.Timestamptz
+	SampleCount        int32
+	AvgDays            *float64
+	MedianDays         *float64
+	P10Days            *float64
+	P90Days            *float64
+	RefreshedAt        pgtype.Timestamptz
 }
 
 // TrendPoint is one month in the monthly trend series.
 type TrendPoint struct {
-	PeriodStart  pgtype.Timestamptz
-	SampleCount  int32
-	AvgDays      *float64
-	MedianDays   *float64
+	PeriodStart pgtype.Timestamptz
+	SampleCount int32
+	AvgDays     *float64
+	MedianDays  *float64
 }
 
 // CreateTimeline inserts a new visa_timelines row and returns the created row.
@@ -524,14 +525,14 @@ ORDER BY period_start ASC
 
 // AdminListFilter holds filter parameters for the admin moderation list.
 type AdminListFilter struct {
-	TenantID          pgtype.UUID
-	UserID            pgtype.UUID // optional: filter by submitter
+	TenantID           pgtype.UUID
+	UserID             pgtype.UUID // optional: filter by submitter
 	DestinationSpaceID pgtype.UUID // optional
-	VisaCategory      string      // optional
-	Outcome           string      // optional
-	Q                 string      // optional: search visa_category/consulate
-	Limit             int32
-	Offset            int32
+	VisaCategory       string      // optional
+	Outcome            string      // optional
+	Q                  string      // optional: search visa_category/consulate
+	Limit              int32
+	Offset             int32
 }
 
 // AdminList returns all timelines (any share state) for the moderation queue.

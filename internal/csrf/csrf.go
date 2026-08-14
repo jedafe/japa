@@ -12,10 +12,11 @@ import (
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/hex"
-	"encoding/json"
 	"log/slog"
 	"net/http"
 	"strings"
+
+	errpkg "github.com/jedafe/japa/internal/errors"
 )
 
 const (
@@ -222,7 +223,7 @@ func TokenHandler(domain string, secure bool) http.HandlerFunc {
 		// Reuse the existing cookie value if present so concurrent /csrf calls
 		// don't clobber each other's tokens.
 		if existing, err := r.Cookie(CookieName); err == nil && existing.Value != "" {
-			writeJSON(w, http.StatusOK, map[string]any{
+			errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 				"data": map[string]any{"csrfToken": existing.Value},
 			})
 			return
@@ -230,7 +231,7 @@ func TokenHandler(domain string, secure bool) http.HandlerFunc {
 		token, err := GenerateToken()
 		if err != nil {
 			slog.Error("csrf: generate token", "error", err)
-			writeError(w, http.StatusInternalServerError, "csrf_token_error", "failed to issue CSRF token")
+			errpkg.WriteError(w, http.StatusInternalServerError, "csrf_token_error", "failed to issue CSRF token")
 			return
 		}
 		http.SetCookie(w, &http.Cookie{
@@ -243,30 +244,10 @@ func TokenHandler(domain string, secure bool) http.HandlerFunc {
 			Secure:   secure,
 			SameSite: http.SameSiteLaxMode,
 		})
-		writeJSON(w, http.StatusOK, map[string]any{
+		errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 			"data": map[string]any{"csrfToken": token},
 		})
 	}
-}
-
-// writeJSON writes a JSON response with the given status code.
-func writeJSON(w http.ResponseWriter, code int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(code)
-	_ = json.NewEncoder(w).Encode(v)
-}
-
-// writeError writes the standard error envelope used across the API.
-func writeError(w http.ResponseWriter, code int, codeStr, message string) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(code)
-	_ = json.NewEncoder(w).Encode(map[string]any{
-		"error": map[string]any{
-			"code":    codeStr,
-			"message": message,
-			"status":  code,
-		},
-	})
 }
 
 // isMutatingMethod reports whether an HTTP method changes server state and thus
@@ -294,5 +275,5 @@ func pathHasPrefix(path string, prefixes []string) bool {
 // CSRF token, using the same error envelope as writeError for consistency
 // (conventions/api-response-format.md).
 func writeRejection(w http.ResponseWriter) {
-	writeError(w, http.StatusForbidden, "csrf_token_invalid", "Invalid or missing CSRF token")
+	errpkg.WriteError(w, http.StatusForbidden, "csrf_token_invalid", "Invalid or missing CSRF token")
 }

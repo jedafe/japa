@@ -97,8 +97,6 @@ func TestSlidingWindowRateLimit_ResponseHeaders(t *testing.T) {
 		t.Skip("Valkey not available, skipping integration test")
 	}
 
-
-
 	ctx := t.Context()
 	prefix := "test_headers_" + time.Now().Format("150405")
 
@@ -138,8 +136,6 @@ func TestSlidingWindowRateLimit_UnlimitedTierBypasses(t *testing.T) {
 		t.Skip("Valkey not available, skipping integration test")
 	}
 
-
-
 	handler := SlidingWindowRateLimit(rdb)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -169,8 +165,6 @@ func TestSlidingWindowRateLimit_NilKeyPassesThrough(t *testing.T) {
 	if rdb == nil {
 		t.Skip("Valkey not available, skipping integration test")
 	}
-
-
 
 	handler := SlidingWindowRateLimit(rdb)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)

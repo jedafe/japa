@@ -123,13 +123,13 @@ type PaymentCreateInput struct {
 
 // PaymentCreateResult mirrors gen.Payment fields needed by the wallet.
 type PaymentCreateResult struct {
-	ID           string
-	Provider     string
-	ProviderRef  string
-	CheckoutURL  string
-	Status       string
-	Amount       int64
-	Currency     string
+	ID          string
+	Provider    string
+	ProviderRef string
+	CheckoutURL string
+	Status      string
+	Amount      int64
+	Currency    string
 }
 
 // SetSettings injects the global system_settings reader (AUDIT-BE2-SETTING-007/008).

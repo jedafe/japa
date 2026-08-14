@@ -16,8 +16,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/pquerna/otp/totp"
 	"github.com/jedafe/japa/internal/crypto"
+	"github.com/pquerna/otp/totp"
 )
 
 // defaultTOTPIssuer is the fallback issuer label shown in authenticator apps.

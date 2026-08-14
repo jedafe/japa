@@ -41,20 +41,20 @@ func (s *Service) SetEnqueuer(e TaskEnqueuer) { s.enqueuer = e }
 // review, regardless of studio.auto_publish_types. Hardcoded per §75 — not
 // configurable.
 var highStakesCategories = map[string]bool{
-	"visa":            true,
-	"banking":         true,
-	"grants":          true,
+	"visa":             true,
+	"banking":          true,
+	"grants":           true,
 	"health_insurance": true,
-	"admission":       true,
+	"admission":        true,
 }
 
 // permanentlyExcludedTypes are content types that can never auto-publish.
 var permanentlyExcludedTypes = map[string]bool{
-	"blog_post":      true,
-	"guide":          true,
-	"comparison":     true,
-	"event":          true,
-	"job_listing":    true,
+	"blog_post":       true,
+	"guide":           true,
+	"comparison":      true,
+	"event":           true,
+	"job_listing":     true,
 	"service_listing": true,
 }
 
@@ -243,10 +243,10 @@ func (s *Service) GetStats(ctx context.Context, tenantID pgtype.UUID) (StudioSta
 
 // ContentTypeInfo describes a content type available in the studio.
 type ContentTypeInfo struct {
-	Type           string   `json:"type"`
-	Label          string   `json:"label"`
+	Type            string   `json:"type"`
+	Label           string   `json:"label"`
 	GuideCategories []string `json:"guide_categories,omitempty"`
-	CanAutoPublish bool     `json:"can_auto_publish"`
+	CanAutoPublish  bool     `json:"can_auto_publish"`
 }
 
 // ContentTypeResponse wraps the content types list with studio configuration

@@ -73,7 +73,7 @@
 							<span class="page-title">{page.title}</span>
 							<span class="page-meta">
 								{#if page.review_status === 'published'}
-									<span class="badge published">published</span>
+									<span class="badge published">{t('page.status_published')}</span>
 								{:else}
 									<span class="badge">{page.review_status}</span>
 								{/if}

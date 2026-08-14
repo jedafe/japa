@@ -336,10 +336,10 @@ func (s *Service) CreateGuideCategory(ctx context.Context, tenantID pgtype.UUID,
 	}
 
 	_, err = q.CreateAssignment(ctx, gen.CreateAssignmentParams{
-		GroupID:      group.ID,
-		EntityClass:  "content_type:guide:" + input.Slug,
-		EntityID:     pgtype.UUID{},
-		Position:     0,
+		GroupID:     group.ID,
+		EntityClass: "content_type:guide:" + input.Slug,
+		EntityID:    pgtype.UUID{},
+		Position:    0,
 	})
 	if err != nil {
 		return GuideCategory{}, fmt.Errorf("creating assignment: %w", err)

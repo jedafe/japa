@@ -3,7 +3,8 @@
 // table-driven status validation tests.
 //
 // Ref: japaconnect-engineering/sections/63-jobs-board.md
-//      japaconnect-engineering/adr/ADR-081-jobs-board.md
+//
+//	japaconnect-engineering/adr/ADR-081-jobs-board.md
 package jobs
 
 import (

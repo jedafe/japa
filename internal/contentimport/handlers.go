@@ -14,7 +14,8 @@
 // checks are applied by the RBAC middleware at the route registration site.
 //
 // Ref: japaconnect-engineering/sections/65-content-import.md
-//      japaconnect-engineering/adr/ADR-083-content-import.md
+//
+//	japaconnect-engineering/adr/ADR-083-content-import.md
 package contentimport
 
 import (
@@ -31,6 +32,7 @@ import (
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/db/gen"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/tenant"
 )
 
@@ -49,24 +51,10 @@ func NewHandlers(service *Service, settings *config.Settings) *Handlers {
 // Shared helpers (same pattern as rag/handlers.go)
 // ---------------------------------------------------------------------------
 
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	if err := json.NewEncoder(w).Encode(v); err != nil {
-		slog.Error("contentimport: encode response", "error", err)
-	}
-}
-
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, map[string]any{
-		"error": map[string]string{"code": code, "message": message},
-	})
-}
-
 func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
 	return t.ID, true
@@ -75,7 +63,7 @@ func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	u := auth.FromContext(r.Context())
 	if u == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
 	return u, true
@@ -84,7 +72,7 @@ func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUse
 func scanUUIDParam(w http.ResponseWriter, r *http.Request, name string) (pgtype.UUID, bool) {
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, name)); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid "+name)
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid "+name)
 		return pgtype.UUID{}, false
 	}
 	return id, true
@@ -171,41 +159,41 @@ func (h *Handlers) HandleStartImport(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil {
-		writeError(w, http.StatusServiceUnavailable, "import_unavailable", "Import service not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "import_unavailable", "Import service not configured")
 		return
 	}
 
 	var req startImportRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if !isValidSourceType(req.SourceType) {
-		writeError(w, http.StatusBadRequest, "invalid_source_type",
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_source_type",
 			"source_type must be one of: medium, substack, rss, zip")
 		return
 	}
 
 	if req.SourceType != SourceTypeZIP && req.SourceURL == "" {
-		writeError(w, http.StatusBadRequest, "missing_source_url",
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_source_url",
 			"source_url is required for RSS-based imports")
 		return
 	}
 
 	if msg := validateSourceURL(req.SourceURL); msg != "" {
-		writeError(w, http.StatusBadRequest, "invalid_source_url", msg)
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_source_url", msg)
 		return
 	}
 
 	imp, err := h.service.StartImport(r.Context(), tenantID, user.UserID, req.SourceType, req.SourceURL)
 	if err != nil {
 		slog.Error("contentimport: start failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "import_start_failed", "Failed to start import")
+		errpkg.WriteError(w, http.StatusInternalServerError, "import_start_failed", "Failed to start import")
 		return
 	}
 
-	writeJSON(w, http.StatusAccepted, map[string]any{
+	errpkg.WriteJSON(w, http.StatusAccepted, map[string]any{
 		"data": serializeImport(imp),
 	})
 }
@@ -224,7 +212,7 @@ func (h *Handlers) HandleListImports(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil {
-		writeError(w, http.StatusServiceUnavailable, "import_unavailable", "Import service not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "import_unavailable", "Import service not configured")
 		return
 	}
 
@@ -233,11 +221,11 @@ func (h *Handlers) HandleListImports(w http.ResponseWriter, r *http.Request) {
 	imports, total, err := h.service.ListUserImports(r.Context(), tenantID, user.UserID, page, limit)
 	if err != nil {
 		slog.Error("contentimport: list failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "import_list_failed", "Failed to list imports")
+		errpkg.WriteError(w, http.StatusInternalServerError, "import_list_failed", "Failed to list imports")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": serializeImports(imports),
 		"pagination": map[string]any{
 			"page":  page,
@@ -249,9 +237,9 @@ func (h *Handlers) HandleListImports(w http.ResponseWriter, r *http.Request) {
 
 // sourceTypeResponse describes a single allowed import source type.
 type sourceTypeResponse struct {
-	Value        string `json:"value"`
-	Label        string `json:"label"`
-	RequiresURL  bool   `json:"requires_url"`
+	Value       string `json:"value"`
+	Label       string `json:"label"`
+	RequiresURL bool   `json:"requires_url"`
 }
 
 // allowedSourceTypes is the canonical list of import source types the
@@ -272,7 +260,7 @@ func (h *Handlers) HandleListImportSources(w http.ResponseWriter, r *http.Reques
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": allowedSourceTypes,
 	})
 }
@@ -292,7 +280,7 @@ func (h *Handlers) HandleGetImport(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil {
-		writeError(w, http.StatusServiceUnavailable, "import_unavailable", "Import service not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "import_unavailable", "Import service not configured")
 		return
 	}
 
@@ -303,17 +291,17 @@ func (h *Handlers) HandleGetImport(w http.ResponseWriter, r *http.Request) {
 
 	imp, err := h.service.GetImport(r.Context(), tenantID, importID)
 	if err != nil {
-		writeError(w, http.StatusNotFound, "import_not_found", "Import not found")
+		errpkg.WriteError(w, http.StatusNotFound, "import_not_found", "Import not found")
 		return
 	}
 
 	// Ensure the import belongs to the authenticated user.
 	if imp.UserID != user.UserID {
-		writeError(w, http.StatusNotFound, "import_not_found", "Import not found")
+		errpkg.WriteError(w, http.StatusNotFound, "import_not_found", "Import not found")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": serializeImport(imp),
 	})
 }
@@ -333,52 +321,52 @@ func (h *Handlers) HandleAdminStartImport(w http.ResponseWriter, r *http.Request
 	}
 
 	if h.service == nil {
-		writeError(w, http.StatusServiceUnavailable, "import_unavailable", "Import service not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "import_unavailable", "Import service not configured")
 		return
 	}
 
 	var req adminStartImportRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if req.UserID == "" {
-		writeError(w, http.StatusBadRequest, "missing_user_id", "user_id is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_user_id", "user_id is required")
 		return
 	}
 
 	var targetUserID pgtype.UUID
 	if err := targetUserID.Scan(req.UserID); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_user_id", "user_id must be a valid UUID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_user_id", "user_id must be a valid UUID")
 		return
 	}
 
 	if !isValidSourceType(req.SourceType) {
-		writeError(w, http.StatusBadRequest, "invalid_source_type",
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_source_type",
 			"source_type must be one of: medium, substack, rss, zip")
 		return
 	}
 
 	if req.SourceType != SourceTypeZIP && req.SourceURL == "" {
-		writeError(w, http.StatusBadRequest, "missing_source_url",
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_source_url",
 			"source_url is required for RSS-based imports")
 		return
 	}
 
 	if msg := validateSourceURL(req.SourceURL); msg != "" {
-		writeError(w, http.StatusBadRequest, "invalid_source_url", msg)
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_source_url", msg)
 		return
 	}
 
 	imp, err := h.service.StartImport(r.Context(), tenantID, targetUserID, req.SourceType, req.SourceURL)
 	if err != nil {
 		slog.Error("contentimport: admin start failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "import_start_failed", "Failed to start import")
+		errpkg.WriteError(w, http.StatusInternalServerError, "import_start_failed", "Failed to start import")
 		return
 	}
 
-	writeJSON(w, http.StatusAccepted, map[string]any{
+	errpkg.WriteJSON(w, http.StatusAccepted, map[string]any{
 		"data": serializeImport(imp),
 	})
 }
@@ -397,7 +385,7 @@ func (h *Handlers) HandleAdminListImports(w http.ResponseWriter, r *http.Request
 	}
 
 	if h.service == nil {
-		writeError(w, http.StatusServiceUnavailable, "import_unavailable", "Import service not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "import_unavailable", "Import service not configured")
 		return
 	}
 
@@ -407,11 +395,11 @@ func (h *Handlers) HandleAdminListImports(w http.ResponseWriter, r *http.Request
 	imports, total, err := h.service.AdminListImports(r.Context(), tenantID, status, page, limit)
 	if err != nil {
 		slog.Error("contentimport: admin list failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "import_list_failed", "Failed to list imports")
+		errpkg.WriteError(w, http.StatusInternalServerError, "import_list_failed", "Failed to list imports")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": serializeAdminImports(imports),
 		"pagination": map[string]any{
 			"page":   page,
@@ -436,7 +424,7 @@ func (h *Handlers) HandleAdminRetryImport(w http.ResponseWriter, r *http.Request
 	}
 
 	if h.service == nil {
-		writeError(w, http.StatusServiceUnavailable, "import_unavailable", "Import service not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "import_unavailable", "Import service not configured")
 		return
 	}
 
@@ -448,11 +436,11 @@ func (h *Handlers) HandleAdminRetryImport(w http.ResponseWriter, r *http.Request
 	imp, err := h.service.RetryImport(r.Context(), tenantID, importID)
 	if err != nil {
 		slog.Error("contentimport: retry failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "import_retry_failed", "Failed to retry import")
+		errpkg.WriteError(w, http.StatusInternalServerError, "import_retry_failed", "Failed to retry import")
 		return
 	}
 
-	writeJSON(w, http.StatusAccepted, map[string]any{
+	errpkg.WriteJSON(w, http.StatusAccepted, map[string]any{
 		"data": serializeImport(imp),
 	})
 }

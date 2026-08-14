@@ -184,7 +184,7 @@ func parseUUIDParam(r *http.Request, param string) (pgtype.UUID, error) {
 func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
 
@@ -196,7 +196,7 @@ func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype
 func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	user := auth.FromContext(r.Context())
 	if user == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
 
@@ -208,31 +208,14 @@ func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.Au
 func handleServiceError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, ErrDuplicateContent):
-		writeError(w, http.StatusConflict, "duplicate_content", "Content with this body already exists")
+		errpkg.WriteError(w, http.StatusConflict, "duplicate_content", "Content with this body already exists")
 	case errors.Is(err, ErrOrgPostForbidden):
-		writeError(w, http.StatusForbidden, "org_post_forbidden", "Not authorized to post as this organization")
+		errpkg.WriteError(w, http.StatusForbidden, "org_post_forbidden", "Not authorized to post as this organization")
 	case errors.Is(err, ErrEditWindowExpired):
-		writeError(w, http.StatusForbidden, "edit_window_expired", "The edit window for this content has expired")
+		errpkg.WriteError(w, http.StatusForbidden, "edit_window_expired", "The edit window for this content has expired")
 	default:
 		errpkg.HandleServiceError(w, err)
 	}
-}
-
-// writeJSON serializes the given value as JSON and writes it to the response.
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-
-	if err := json.NewEncoder(w).Encode(v); err != nil {
-		slog.Warn("json encode error", "error", err)
-	}
-}
-
-// writeError writes a JSON error response following the JapaConnect API format.
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, map[string]any{
-		"error": map[string]string{"code": code, "message": message},
-	})
 }
 
 // parsePageSize extracts and clamps the page_size query parameter.
@@ -692,12 +675,12 @@ func (h *Handlers) CreateContent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if input.Title == "" {
-		writeError(w, http.StatusBadRequest, "missing_title", "Title is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_title", "Title is required")
 		return
 	}
 
@@ -732,7 +715,7 @@ func (h *Handlers) CreateContent(w http.ResponseWriter, r *http.Request) {
 			minLength = h.settings.GetIntOr(r.Context(), tenantID, "content.min_length", defaultMinLength)
 		}
 		if len(strings.TrimSpace(body)) < minLength {
-			writeError(w, http.StatusBadRequest, "body_too_short",
+			errpkg.WriteError(w, http.StatusBadRequest, "body_too_short",
 				fmt.Sprintf("Content body must be at least %d characters", minLength))
 			return
 		}
@@ -761,7 +744,7 @@ func (h *Handlers) CreateContent(w http.ResponseWriter, r *http.Request) {
 
 	if input.SpaceID != nil && *input.SpaceID != "" {
 		if err := createInput.SpaceID.Scan(*input.SpaceID); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_space_id", "Invalid space_id format")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_space_id", "Invalid space_id format")
 			return
 		}
 
@@ -771,11 +754,11 @@ func (h *Handlers) CreateContent(w http.ResponseWriter, r *http.Request) {
 		if h.spaceChecker != nil {
 			allowed, err := h.spaceChecker.CanPostInSpace(r.Context(), createInput.SpaceID, user.UserID, tenantID)
 			if err != nil {
-				writeError(w, http.StatusInternalServerError, "internal_error", "Failed to check space posting permission")
+				errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to check space posting permission")
 				return
 			}
 			if !allowed {
-				writeError(w, http.StatusForbidden, "space_post_denied",
+				errpkg.WriteError(w, http.StatusForbidden, "space_post_denied",
 					"You do not have permission to post in this space")
 				return
 			}
@@ -784,40 +767,40 @@ func (h *Handlers) CreateContent(w http.ResponseWriter, r *http.Request) {
 
 	if input.OrganizationID != nil && *input.OrganizationID != "" {
 		if err := createInput.OrganizationID.Scan(*input.OrganizationID); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_organization_id", "Invalid organization_id format")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_organization_id", "Invalid organization_id format")
 			return
 		}
 	}
 
 	if input.GeoSpaceID != nil && *input.GeoSpaceID != "" {
 		if err := createInput.GeoSpaceID.Scan(*input.GeoSpaceID); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_geo_space_id", "Invalid geo_space_id format")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_geo_space_id", "Invalid geo_space_id format")
 			return
 		}
 	}
 
 	if input.HeaderImageID != nil && *input.HeaderImageID != "" {
 		if err := createInput.HeaderImageID.Scan(*input.HeaderImageID); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_header_image_id", "Invalid header_image_id format")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_header_image_id", "Invalid header_image_id format")
 			return
 		}
 	}
 
 	if input.FeaturedImageID != nil && *input.FeaturedImageID != "" {
 		if err := createInput.FeaturedImageID.Scan(*input.FeaturedImageID); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_featured_image_id", "Invalid featured_image_id format")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_featured_image_id", "Invalid featured_image_id format")
 			return
 		}
 	}
 
 	if input.PublishAt != nil && *input.PublishAt != "" {
 		if err := createInput.PublishAt.Scan(*input.PublishAt); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_publish_at", "Invalid publish_at format")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_publish_at", "Invalid publish_at format")
 			return
 		}
 		// Validate that publish_at is in the future.
 		if createInput.PublishAt.Valid && createInput.PublishAt.Time.Before(time.Now()) {
-			writeError(w, http.StatusBadRequest, "publish_at_in_past", "publish_at must be in the future")
+			errpkg.WriteError(w, http.StatusBadRequest, "publish_at_in_past", "publish_at must be in the future")
 			return
 		}
 	}
@@ -835,7 +818,7 @@ func (h *Handlers) CreateContent(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			slog.Warn("spam check failed", "error", err)
 		} else if spamResult.Blocked {
-			writeError(w, http.StatusForbidden, "content_blocked", "Content blocked by safety filters")
+			errpkg.WriteError(w, http.StatusForbidden, "content_blocked", "Content blocked by safety filters")
 			return
 		} else if spamResult.Flagged {
 			createInput.Status = StatusPending // hold for moderation review
@@ -845,7 +828,7 @@ func (h *Handlers) CreateContent(w http.ResponseWriter, r *http.Request) {
 	content, err := h.Service.CreateContent(r.Context(), tenantID, createInput)
 	if err != nil {
 		if errors.Is(err, ErrOrgPostForbidden) {
-			writeError(w, http.StatusForbidden, "org_post_forbidden", "You are not authorized to post as this organization")
+			errpkg.WriteError(w, http.StatusForbidden, "org_post_forbidden", "You are not authorized to post as this organization")
 			return
 		}
 		handleServiceError(w, err)
@@ -893,7 +876,7 @@ func (h *Handlers) CreateContent(w http.ResponseWriter, r *http.Request) {
 	// (Section 15 — external links get async OG/oEmbed scrape, BUG-003).
 	h.enqueueLinkPreviewsForBody(input.BodyHtml, content.ID, tenantID)
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": content})
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": content})
 }
 
 // GetContent handles GET /api/v1/content/{slug}.
@@ -905,7 +888,7 @@ func (h *Handlers) GetContent(w http.ResponseWriter, r *http.Request) {
 
 	slug := chi.URLParam(r, "slug")
 	if slug == "" {
-		writeError(w, http.StatusBadRequest, "missing_slug", "Slug is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_slug", "Slug is required")
 		return
 	}
 
@@ -931,7 +914,7 @@ func (h *Handlers) GetContent(w http.ResponseWriter, r *http.Request) {
 	if content.Status != StatusPublished {
 		user := auth.FromContext(r.Context())
 		if user == nil {
-			writeError(w, http.StatusNotFound, "not_found", "Content not found")
+			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Content not found")
 			return
 		}
 		isAuthor := content.AuthorID.Valid && content.AuthorID.Bytes == user.UserID.Bytes
@@ -942,7 +925,7 @@ func (h *Handlers) GetContent(w http.ResponseWriter, r *http.Request) {
 					resolver.IsSuperAdmin(r.Context(), user.UserID, user.TenantID)
 			}
 			if !canEditAny {
-				writeError(w, http.StatusNotFound, "not_found", "Content not found")
+				errpkg.WriteError(w, http.StatusNotFound, "not_found", "Content not found")
 				return
 			}
 		}
@@ -989,7 +972,7 @@ func (h *Handlers) GetContent(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	writeJSON(w, http.StatusOK, resp)
+	errpkg.WriteJSON(w, http.StatusOK, resp)
 }
 
 // contentJSONLDFields builds the {{field_key}} → value map for interpolating
@@ -1038,7 +1021,7 @@ func (h *Handlers) ListContent(w http.ResponseWriter, r *http.Request) {
 	var cursor pgtype.Timestamptz
 	if cs := r.URL.Query().Get("cursor"); cs != "" {
 		if err := cursor.Scan(cs); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_cursor", "Invalid cursor timestamp")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_cursor", "Invalid cursor timestamp")
 			return
 		}
 	}
@@ -1055,7 +1038,7 @@ func (h *Handlers) ListContent(w http.ResponseWriter, r *http.Request) {
 	if spaceIDStr != "" {
 		var spaceID pgtype.UUID
 		if err := spaceID.Scan(spaceIDStr); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_space_id", "Invalid space_id format")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_space_id", "Invalid space_id format")
 			return
 		}
 
@@ -1081,7 +1064,7 @@ func (h *Handlers) ListContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": contents})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": contents})
 }
 
 // UpdateContent handles PATCH /api/v1/content/{id}.
@@ -1098,7 +1081,7 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
@@ -1126,7 +1109,7 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
@@ -1145,7 +1128,7 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 			minLength = h.settings.GetIntOr(r.Context(), tenantID, "content.min_length", defaultMinLength)
 		}
 		if len(strings.TrimSpace(body)) < minLength {
-			writeError(w, http.StatusBadRequest, "body_too_short",
+			errpkg.WriteError(w, http.StatusBadRequest, "body_too_short",
 				fmt.Sprintf("Content body must be at least %d characters", minLength))
 			return
 		}
@@ -1179,40 +1162,40 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 
 	if input.GeoSpaceID != nil && *input.GeoSpaceID != "" {
 		if err := updateInput.GeoSpaceID.Scan(*input.GeoSpaceID); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_geo_space_id", "Invalid geo_space_id format")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_geo_space_id", "Invalid geo_space_id format")
 			return
 		}
 	}
 
 	if input.OrganizationID != nil && *input.OrganizationID != "" {
 		if err := updateInput.OrganizationID.Scan(*input.OrganizationID); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_organization_id", "Invalid organization_id format")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_organization_id", "Invalid organization_id format")
 			return
 		}
 	}
 
 	if input.HeaderImageID != nil && *input.HeaderImageID != "" {
 		if err := updateInput.HeaderImageID.Scan(*input.HeaderImageID); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_header_image_id", "Invalid header_image_id format")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_header_image_id", "Invalid header_image_id format")
 			return
 		}
 	}
 
 	if input.FeaturedImageID != nil && *input.FeaturedImageID != "" {
 		if err := updateInput.FeaturedImageID.Scan(*input.FeaturedImageID); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_featured_image_id", "Invalid featured_image_id format")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_featured_image_id", "Invalid featured_image_id format")
 			return
 		}
 	}
 
 	if input.PublishAt != nil && *input.PublishAt != "" {
 		if err := updateInput.PublishAt.Scan(*input.PublishAt); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_publish_at", "Invalid publish_at format")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_publish_at", "Invalid publish_at format")
 			return
 		}
 		// Validate that publish_at is in the future when setting a new schedule.
 		if updateInput.PublishAt.Valid && updateInput.PublishAt.Time.Before(time.Now()) {
-			writeError(w, http.StatusBadRequest, "publish_at_in_past", "publish_at must be in the future")
+			errpkg.WriteError(w, http.StatusBadRequest, "publish_at_in_past", "publish_at must be in the future")
 			return
 		}
 	}
@@ -1231,7 +1214,7 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 	content, err := h.Service.UpdateContent(r.Context(), id, tenantID, user.UserID, updateInput, bypassEditWindow)
 	if err != nil {
 		if errors.Is(err, ErrOrgPostForbidden) {
-			writeError(w, http.StatusForbidden, "org_post_forbidden", "You are not authorized to edit as this organization")
+			errpkg.WriteError(w, http.StatusForbidden, "org_post_forbidden", "You are not authorized to edit as this organization")
 			return
 		}
 		handleServiceError(w, err)
@@ -1272,7 +1255,7 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 	// (Section 15 — external links get async OG/oEmbed scrape, BUG-003).
 	h.enqueueLinkPreviewsForBody(input.BodyHtml, id, tenantID)
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": content})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": content})
 }
 
 // DeleteContent handles DELETE /api/v1/content/{id}.
@@ -1284,7 +1267,7 @@ func (h *Handlers) DeleteContent(w http.ResponseWriter, r *http.Request) {
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
@@ -1301,7 +1284,7 @@ func (h *Handlers) DeleteContent(w http.ResponseWriter, r *http.Request) {
 	// rows"). Fire-and-forget — errors are logged, never propagated.
 	worker.PurgeRAGEntity(r.Context(), tenantID, "content", id)
 
-	writeJSON(w, http.StatusNoContent, nil)
+	errpkg.WriteJSON(w, http.StatusNoContent, nil)
 }
 
 // ---------------------------------------------------------------------------
@@ -1323,7 +1306,7 @@ func (h *Handlers) PublishContent(w http.ResponseWriter, r *http.Request) {
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
@@ -1349,7 +1332,7 @@ func (h *Handlers) PublishContent(w http.ResponseWriter, r *http.Request) {
 		h.enqueueRSSRegenerate(tenantID)
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": updated})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": updated})
 }
 
 // ArchiveContent handles POST /api/v1/content/{id}/archive.
@@ -1367,7 +1350,7 @@ func (h *Handlers) ArchiveContent(w http.ResponseWriter, r *http.Request) {
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
@@ -1381,7 +1364,7 @@ func (h *Handlers) ArchiveContent(w http.ResponseWriter, r *http.Request) {
 	// is no longer published must not be retrievable in RAG). Fire-and-forget.
 	worker.PurgeRAGEntity(r.Context(), tenantID, "content", id)
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": updated})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": updated})
 }
 
 // ScheduleContent handles POST /api/v1/content/{id}/schedule. Sets
@@ -1396,7 +1379,7 @@ func (h *Handlers) ScheduleContent(w http.ResponseWriter, r *http.Request) {
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
@@ -1405,12 +1388,12 @@ func (h *Handlers) ScheduleContent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if input.PublishAt.IsZero() || input.PublishAt.Before(time.Now()) {
-		writeError(w, http.StatusBadRequest, "publish_at_in_past", "publish_at must be in the future")
+		errpkg.WriteError(w, http.StatusBadRequest, "publish_at_in_past", "publish_at must be in the future")
 		return
 	}
 
@@ -1422,7 +1405,7 @@ func (h *Handlers) ScheduleContent(w http.ResponseWriter, r *http.Request) {
 
 	h.enqueueScheduledPublish(id, tenantID, input.PublishAt)
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": updated})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": updated})
 }
 
 // RecordContentView handles POST /api/v1/content/{id}/view.
@@ -1439,7 +1422,7 @@ func (h *Handlers) RecordContentView(w http.ResponseWriter, r *http.Request) {
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
@@ -1478,7 +1461,7 @@ func (h *Handlers) RecordContentView(w http.ResponseWriter, r *http.Request) {
 	// Enqueue async engagement count update — fire-and-forget.
 	h.enqueueEngagementUpdate("content", id, "view", 1)
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"recorded": true}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"recorded": true}})
 }
 
 // GetContentShareCount handles GET /api/v1/content/{id}/share-count.
@@ -1490,7 +1473,7 @@ func (h *Handlers) GetContentShareCount(w http.ResponseWriter, r *http.Request) 
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
@@ -1500,7 +1483,7 @@ func (h *Handlers) GetContentShareCount(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]int32{"share_count": count}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]int32{"share_count": count}})
 }
 
 // enqueueScheduledPublish enqueues the scheduled_publish Asynq task to fire
@@ -1538,7 +1521,7 @@ func (h *Handlers) enqueueScheduledPublish(contentID, tenantID pgtype.UUID, publ
 func (h *Handlers) ListRevisions(w http.ResponseWriter, r *http.Request) {
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
@@ -1548,7 +1531,7 @@ func (h *Handlers) ListRevisions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": revisions})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": revisions})
 }
 
 // ---------------------------------------------------------------------------
@@ -1570,7 +1553,7 @@ func (h *Handlers) PinContent(w http.ResponseWriter, r *http.Request) {
 
 	contentID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
@@ -1580,18 +1563,18 @@ func (h *Handlers) PinContent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if input.SpaceID == "" {
-		writeError(w, http.StatusBadRequest, "missing_space_id", "space_id is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_space_id", "space_id is required")
 		return
 	}
 
 	var spaceID pgtype.UUID
 	if err := spaceID.Scan(input.SpaceID); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_space_id", "Invalid space_id format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_space_id", "Invalid space_id format")
 		return
 	}
 
@@ -1601,7 +1584,7 @@ func (h *Handlers) PinContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": pin})
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": pin})
 }
 
 // UnpinContent handles DELETE /api/v1/content/{id}/pin.
@@ -1609,19 +1592,19 @@ func (h *Handlers) PinContent(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) UnpinContent(w http.ResponseWriter, r *http.Request) {
 	contentID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
 	spaceIDStr := r.URL.Query().Get("space_id")
 	if spaceIDStr == "" {
-		writeError(w, http.StatusBadRequest, "missing_space_id", "space_id query parameter is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_space_id", "space_id query parameter is required")
 		return
 	}
 
 	var spaceID pgtype.UUID
 	if err := spaceID.Scan(spaceIDStr); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_space_id", "Invalid space_id format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_space_id", "Invalid space_id format")
 		return
 	}
 
@@ -1630,7 +1613,7 @@ func (h *Handlers) UnpinContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusNoContent, nil)
+	errpkg.WriteJSON(w, http.StatusNoContent, nil)
 }
 
 // ---------------------------------------------------------------------------
@@ -1651,7 +1634,7 @@ func (h *Handlers) AddReaction(w http.ResponseWriter, r *http.Request) {
 
 	contentID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
@@ -1660,12 +1643,12 @@ func (h *Handlers) AddReaction(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if input.ReactionKey == "" {
-		writeError(w, http.StatusBadRequest, "missing_reaction_key", "reaction_key is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_reaction_key", "reaction_key is required")
 		return
 	}
 
@@ -1678,7 +1661,7 @@ func (h *Handlers) AddReaction(w http.ResponseWriter, r *http.Request) {
 		existing, err := h.Service.GetContent(r.Context(), contentID, tenantID)
 		if err == nil && existing.ContentType == TypeAchievement {
 			if !isAllowedAchievementReaction(r.Context(), h.settings, tenantID, input.ReactionKey) {
-				writeError(w, http.StatusBadRequest, "invalid_reaction_key", "This reaction is not available for achievement posts")
+				errpkg.WriteError(w, http.StatusBadRequest, "invalid_reaction_key", "This reaction is not available for achievement posts")
 				return
 			}
 		}
@@ -1689,7 +1672,7 @@ func (h *Handlers) AddReaction(w http.ResponseWriter, r *http.Request) {
 		// ON CONFLICT DO NOTHING returns ErrNoRows when the user already has
 		// this reaction — treat as idempotent success, not a 404.
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
+			errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
 				"tenant_id":       tenantID,
 				"entity_type":     EntityContent,
 				"entity_id":       contentID,
@@ -1708,7 +1691,7 @@ func (h *Handlers) AddReaction(w http.ResponseWriter, r *http.Request) {
 	// Fire-and-forget per Rule 8. Ref: Section 32, Guide §21.
 	h.enqueueEngagementUpdate("content", contentID, "vote", 1)
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": reaction})
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": reaction})
 }
 
 // defaultAchievementReactions is the spec-defined curated reaction set for
@@ -1760,7 +1743,7 @@ func (h *Handlers) RemoveReaction(w http.ResponseWriter, r *http.Request) {
 
 	contentID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
@@ -1771,7 +1754,7 @@ func (h *Handlers) RemoveReaction(w http.ResponseWriter, r *http.Request) {
 		reactionKey = r.URL.Query().Get("key")
 	}
 	if reactionKey == "" {
-		writeError(w, http.StatusBadRequest, "missing_key", "Reaction key is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_key", "Reaction key is required")
 		return
 	}
 
@@ -1784,7 +1767,7 @@ func (h *Handlers) RemoveReaction(w http.ResponseWriter, r *http.Request) {
 	// Fire-and-forget per Rule 8. Ref: Section 32, Guide §21.
 	h.enqueueEngagementUpdate("content", contentID, "vote", -1)
 
-	writeJSON(w, http.StatusNoContent, nil)
+	errpkg.WriteJSON(w, http.StatusNoContent, nil)
 }
 
 // ListReactions handles GET /api/v1/content/{id}/reactions.
@@ -1796,7 +1779,7 @@ func (h *Handlers) ListReactions(w http.ResponseWriter, r *http.Request) {
 
 	contentID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
@@ -1806,7 +1789,7 @@ func (h *Handlers) ListReactions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": counts})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": counts})
 }
 
 // ListUserReactions handles GET /api/v1/content/{id}/reactions/me.
@@ -1825,7 +1808,7 @@ func (h *Handlers) ListUserReactions(w http.ResponseWriter, r *http.Request) {
 
 	contentID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
@@ -1835,7 +1818,7 @@ func (h *Handlers) ListUserReactions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": reactions})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": reactions})
 }
 
 // ---------------------------------------------------------------------------
@@ -1897,7 +1880,7 @@ func (h *Handlers) ListJSONLDTemplates(w http.ResponseWriter, r *http.Request) {
 		out = append(out, toJSONLDResponse(t))
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": out})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": out})
 }
 
 // UpsertJSONLDTemplate handles PUT /api/v1/content/jsonld-templates.
@@ -1914,12 +1897,12 @@ func (h *Handlers) UpsertJSONLDTemplate(w http.ResponseWriter, r *http.Request) 
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if input.ContentType == "" {
-		writeError(w, http.StatusBadRequest, "missing_content_type", "content_type is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_content_type", "content_type is required")
 		return
 	}
 
@@ -1929,7 +1912,7 @@ func (h *Handlers) UpsertJSONLDTemplate(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": toJSONLDResponse(tmpl)})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": toJSONLDResponse(tmpl)})
 }
 
 // DeleteJSONLDTemplate handles DELETE /api/v1/content/jsonld-templates/{id}.
@@ -1943,7 +1926,7 @@ func (h *Handlers) DeleteJSONLDTemplate(w http.ResponseWriter, r *http.Request) 
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
@@ -1952,7 +1935,7 @@ func (h *Handlers) DeleteJSONLDTemplate(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"deleted": true}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"deleted": true}})
 }
 
 // ---------------------------------------------------------------------------
@@ -1973,7 +1956,7 @@ func (h *Handlers) AddBookmark(w http.ResponseWriter, r *http.Request) {
 
 	contentID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
@@ -1983,20 +1966,20 @@ func (h *Handlers) AddBookmark(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	var folderID pgtype.UUID
 	if input.FolderID != "" {
 		if err := folderID.Scan(input.FolderID); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_folder_id", "Invalid folder_id format")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_folder_id", "Invalid folder_id format")
 			return
 		}
 		// Validate folder ownership (BL-013): the folder must belong to the
 		// caller and tenant before associating a bookmark with it.
 		if err := h.Service.ValidateFolderOwnership(r.Context(), folderID, tenantID, user.UserID); err != nil {
-			writeError(w, http.StatusNotFound, "folder_not_found", "Bookmark folder not found")
+			errpkg.WriteError(w, http.StatusNotFound, "folder_not_found", "Bookmark folder not found")
 			return
 		}
 	}
@@ -2011,7 +1994,7 @@ func (h *Handlers) AddBookmark(w http.ResponseWriter, r *http.Request) {
 	// bookmark count. Fire-and-forget per Rule 8. Ref: Section 32, Guide §21.
 	h.enqueueEngagementUpdate("content", contentID, "bookmark", 1)
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": bm})
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": bm})
 }
 
 // RemoveBookmark handles DELETE /api/v1/content/{id}/bookmark.
@@ -2028,7 +2011,7 @@ func (h *Handlers) RemoveBookmark(w http.ResponseWriter, r *http.Request) {
 
 	contentID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
@@ -2041,7 +2024,7 @@ func (h *Handlers) RemoveBookmark(w http.ResponseWriter, r *http.Request) {
 	// Fire-and-forget per Rule 8. Ref: Section 32, Guide §21.
 	h.enqueueEngagementUpdate("content", contentID, "bookmark", -1)
 
-	writeJSON(w, http.StatusNoContent, nil)
+	errpkg.WriteJSON(w, http.StatusNoContent, nil)
 }
 
 // ListBookmarks handles GET /api/v1/content/{id}/bookmark/status.
@@ -2053,7 +2036,7 @@ func (h *Handlers) GetBookmarkStatus(w http.ResponseWriter, r *http.Request) {
 
 	contentID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
@@ -2063,7 +2046,7 @@ func (h *Handlers) GetBookmarkStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"bookmarked": bookmarked}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"bookmarked": bookmarked}})
 }
 
 // MoveBookmark handles PATCH /api/v1/content/{id}/bookmark/folder.
@@ -2082,7 +2065,7 @@ func (h *Handlers) MoveBookmark(w http.ResponseWriter, r *http.Request) {
 
 	contentID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
@@ -2091,19 +2074,19 @@ func (h *Handlers) MoveBookmark(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	var folderID pgtype.UUID
 	if input.FolderID != "" {
 		if err := folderID.Scan(input.FolderID); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_folder_id", "Invalid folder_id format")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_folder_id", "Invalid folder_id format")
 			return
 		}
 		// Validate folder ownership (BL-013).
 		if err := h.Service.ValidateFolderOwnership(r.Context(), folderID, tenantID, user.UserID); err != nil {
-			writeError(w, http.StatusNotFound, "folder_not_found", "Bookmark folder not found")
+			errpkg.WriteError(w, http.StatusNotFound, "folder_not_found", "Bookmark folder not found")
 			return
 		}
 	}
@@ -2113,7 +2096,7 @@ func (h *Handlers) MoveBookmark(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"folder_id": input.FolderID}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"folder_id": input.FolderID}})
 }
 
 // ---------------------------------------------------------------------------
@@ -2124,7 +2107,7 @@ func (h *Handlers) MoveBookmark(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) ListContentTags(w http.ResponseWriter, r *http.Request) {
 	contentID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
@@ -2134,7 +2117,7 @@ func (h *Handlers) ListContentTags(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": tags})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": tags})
 }
 
 // AddContentTag handles POST /api/v1/content/{id}/tags.
@@ -2153,7 +2136,7 @@ func (h *Handlers) AddContentTag(w http.ResponseWriter, r *http.Request) {
 
 	contentID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
@@ -2163,7 +2146,7 @@ func (h *Handlers) AddContentTag(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
@@ -2171,14 +2154,14 @@ func (h *Handlers) AddContentTag(w http.ResponseWriter, r *http.Request) {
 	var tagIDs []pgtype.UUID
 	if len(input.TagSlugs) > 0 {
 		if h.tagResolver == nil {
-			writeError(w, http.StatusServiceUnavailable, "tag_resolver_unavailable", "Tag slug resolution is not configured")
+			errpkg.WriteError(w, http.StatusServiceUnavailable, "tag_resolver_unavailable", "Tag slug resolution is not configured")
 			return
 		}
 		// Get-or-create: user-typed slugs that don't exist yet are auto-
 		// created as tenant-scoped tags (Section 14 — composer flow).
 		slugMap, err := h.tagResolver.GetOrCreateTagSlugs(r.Context(), tenantID, input.TagSlugs)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_tag_slugs", "One or more tag slugs could not be resolved")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_tag_slugs", "One or more tag slugs could not be resolved")
 			return
 		}
 		for _, slug := range input.TagSlugs {
@@ -2190,17 +2173,17 @@ func (h *Handlers) AddContentTag(w http.ResponseWriter, r *http.Request) {
 		// Legacy single tag_id support (backward compatibility).
 		var tagID pgtype.UUID
 		if err := tagID.Scan(input.TagID); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_tag_id", "Invalid tag_id format")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_tag_id", "Invalid tag_id format")
 			return
 		}
 		tagIDs = append(tagIDs, tagID)
 	} else {
-		writeError(w, http.StatusBadRequest, "missing_tags", "tag_slugs or tag_id is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_tags", "tag_slugs or tag_id is required")
 		return
 	}
 
 	if len(tagIDs) == 0 {
-		writeError(w, http.StatusBadRequest, "no_valid_tags", "No valid tags provided")
+		errpkg.WriteError(w, http.StatusBadRequest, "no_valid_tags", "No valid tags provided")
 		return
 	}
 
@@ -2215,7 +2198,7 @@ func (h *Handlers) AddContentTag(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if len(existing)+len(tagIDs) > maxTags {
-		writeError(w, http.StatusBadRequest, "too_many_tags", "Content would exceed the maximum number of tags")
+		errpkg.WriteError(w, http.StatusBadRequest, "too_many_tags", "Content would exceed the maximum number of tags")
 		return
 	}
 
@@ -2230,7 +2213,7 @@ func (h *Handlers) AddContentTag(w http.ResponseWriter, r *http.Request) {
 
 	_ = user // permission check handled by middleware
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": map[string]int{"added": added}})
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": map[string]int{"added": added}})
 }
 
 // RemoveContentTag handles DELETE /api/v1/content/{id}/tags/{tagId}.
@@ -2246,7 +2229,7 @@ func (h *Handlers) RemoveContentTag(w http.ResponseWriter, r *http.Request) {
 
 	contentID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
@@ -2254,7 +2237,7 @@ func (h *Handlers) RemoveContentTag(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		// Not a valid UUID — try slug resolution if a resolver is wired.
 		if h.tagResolver == nil {
-			writeError(w, http.StatusBadRequest, "invalid_tag_id", "Invalid tag ID format")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_tag_id", "Invalid tag ID format")
 			return
 		}
 		tenantID, ok := h.requireTenant(w, r)
@@ -2264,13 +2247,13 @@ func (h *Handlers) RemoveContentTag(w http.ResponseWriter, r *http.Request) {
 		slug := chi.URLParam(r, "tagId")
 		slugMap, rerr := h.tagResolver.ResolveTagSlugs(r.Context(), tenantID, []string{slug})
 		if rerr != nil {
-			writeError(w, http.StatusBadRequest, "invalid_tag_slug", "Tag slug could not be resolved")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_tag_slug", "Tag slug could not be resolved")
 			return
 		}
 		var found bool
 		tagID, found = slugMap[slug]
 		if !found {
-			writeError(w, http.StatusNotFound, "tag_not_found", "Tag not found")
+			errpkg.WriteError(w, http.StatusNotFound, "tag_not_found", "Tag not found")
 			return
 		}
 	}
@@ -2280,7 +2263,7 @@ func (h *Handlers) RemoveContentTag(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusNoContent, nil)
+	errpkg.WriteJSON(w, http.StatusNoContent, nil)
 }
 
 // ---------------------------------------------------------------------------
@@ -2301,7 +2284,7 @@ func (h *Handlers) ShareContent(w http.ResponseWriter, r *http.Request) {
 
 	contentID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
@@ -2310,7 +2293,7 @@ func (h *Handlers) ShareContent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
@@ -2323,7 +2306,7 @@ func (h *Handlers) ShareContent(w http.ResponseWriter, r *http.Request) {
 	// Enqueue async engagement count update — fire-and-forget.
 	h.enqueueEngagementUpdate("content", contentID, "share", 1)
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": share})
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": share})
 }
 
 // GetRelatedContent handles GET /api/v1/content/{id}/related.
@@ -2335,7 +2318,7 @@ func (h *Handlers) GetRelatedContent(w http.ResponseWriter, r *http.Request) {
 
 	contentID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
@@ -2347,7 +2330,7 @@ func (h *Handlers) GetRelatedContent(w http.ResponseWriter, r *http.Request) {
 	// Get the content's embedding from content_scores.
 	score, err := h.Service.GetContentScore(r.Context(), contentID)
 	if err != nil || score.RelevanceEmbedding == nil {
-		writeJSON(w, http.StatusOK, map[string]any{"data": []any{}})
+		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": []any{}})
 		return
 	}
 
@@ -2357,7 +2340,7 @@ func (h *Handlers) GetRelatedContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": contents})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": contents})
 }
 
 // ListContentTypes handles GET /content-types — returns available content types.
@@ -2393,7 +2376,7 @@ func (h *Handlers) ListContentTypes(w http.ResponseWriter, r *http.Request) {
 		{"value": "guide", "label": "Guide", "has_category": true, "categories": guideCategories},
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": types})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": types})
 }
 
 // GetVisibilityOptions handles GET /api/v1/content/visibility-options —
@@ -2406,7 +2389,7 @@ func (h *Handlers) GetVisibilityOptions(w http.ResponseWriter, r *http.Request) 
 		{"value": VisibilityMembers, "label": "Members"},
 		{"value": VisibilityPrivate, "label": "Private"},
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": options})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": options})
 }
 
 // UpdateContentSpaces handles PATCH /content/{id}/spaces — replaces the
@@ -2426,29 +2409,29 @@ func (h *Handlers) UpdateContentSpaces(w http.ResponseWriter, r *http.Request) {
 
 	contentID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
 	var input struct {
-		PrimarySpaceID    string   `json:"primary_space_id"`
+		PrimarySpaceID     string   `json:"primary_space_id"`
 		AdditionalSpaceIDs []string `json:"additional_space_ids"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if input.PrimarySpaceID == "" {
-		writeError(w, http.StatusBadRequest, "missing_primary_space",
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_primary_space",
 			"A primary_space_id is required")
 		return
 	}
 
 	var primarySpaceID pgtype.UUID
 	if err := primarySpaceID.Scan(input.PrimarySpaceID); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_primary_space_id",
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_primary_space_id",
 			"Invalid primary_space_id format")
 		return
 	}
@@ -2463,7 +2446,7 @@ func (h *Handlers) UpdateContentSpaces(w http.ResponseWriter, r *http.Request) {
 	// Ensure the caller is the author (admins with content.edit_any
 	// bypass this via the RBAC layer's _any scope).
 	if existing.AuthorID.Valid && existing.AuthorID.Bytes != user.UserID.Bytes {
-		writeError(w, http.StatusForbidden, "not_author",
+		errpkg.WriteError(w, http.StatusForbidden, "not_author",
 			"Only the author can update space assignments")
 		return
 	}
@@ -2472,7 +2455,7 @@ func (h *Handlers) UpdateContentSpaces(w http.ResponseWriter, r *http.Request) {
 	for _, sidStr := range input.AdditionalSpaceIDs {
 		var sid pgtype.UUID
 		if err := sid.Scan(sidStr); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_space_id",
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_space_id",
 				fmt.Sprintf("Invalid space_id format: %s", sidStr))
 			return
 		}
@@ -2483,12 +2466,12 @@ func (h *Handlers) UpdateContentSpaces(w http.ResponseWriter, r *http.Request) {
 		slog.Error("updating content spaces",
 			"error", err, "content_id", contentID.String(),
 			"user_id", user.UserID.String())
-		writeError(w, http.StatusInternalServerError, "internal_error",
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error",
 			"Failed to update space assignments")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{"updated": true},
 	})
 }

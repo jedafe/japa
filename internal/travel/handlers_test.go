@@ -2,7 +2,8 @@
 // the pure-function affiliate injection and hash helpers.
 //
 // Ref: japaconnect-engineering/sections/67-travel-search.md
-//      japaconnect-engineering/adr/ADR-085-travel-search.md
+//
+//	japaconnect-engineering/adr/ADR-085-travel-search.md
 package travel
 
 import (
@@ -100,9 +101,9 @@ func TestInjectAffiliateParams(t *testing.T) {
 			},
 		},
 		{
-			name:       "empty booking URL returns empty",
-			bookingURL: "",
-			affiliate:  json.RawMessage(`{"aid":"12345"}`),
+			name:        "empty booking URL returns empty",
+			bookingURL:  "",
+			affiliate:   json.RawMessage(`{"aid":"12345"}`),
 			wantContain: []string{""},
 		},
 		{

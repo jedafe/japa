@@ -8,16 +8,16 @@ func TestIsSpaceIndexable(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name          string
-		members       int
-		posts         int
-		forums        int
-		questions     int
-		minMembers    int
-		minPosts      int
-		minForums     int
-		minQuestions  int
-		want          bool
+		name         string
+		members      int
+		posts        int
+		forums       int
+		questions    int
+		minMembers   int
+		minPosts     int
+		minForums    int
+		minQuestions int
+		want         bool
 	}{
 		{"meets defaults", 10, 5, 3, 2, 0, 0, 0, 0, true},
 		{"below min members", 0, 5, 3, 2, 0, 0, 0, 0, false},

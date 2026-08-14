@@ -5,7 +5,7 @@ package changedetector
 type Decision int
 
 const (
-	DecisionChanged   Decision = iota // proceed to extraction
+	DecisionChanged    Decision = iota // proceed to extraction
 	DecisionUnchanged                  // skip extraction, update last_crawled_at only
 	DecisionFirstCrawl                 // no prior hash, proceed to extraction
 )

@@ -29,6 +29,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/clientip"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/tenant"
 )
 
@@ -51,25 +52,10 @@ func NewHandlers(service *Service) *Handlers {
 // Shared helpers
 // ---------------------------------------------------------------------------
 
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-
-	if err := json.NewEncoder(w).Encode(v); err != nil {
-		slog.Warn("json encode error", "error", err)
-	}
-}
-
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, map[string]any{
-		"error": map[string]string{"code": code, "message": message},
-	})
-}
-
 func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
 
@@ -123,12 +109,12 @@ func parseOffset(r *http.Request) int32 {
 func scanUUIDParam(w http.ResponseWriter, r *http.Request, param string) (pgtype.UUID, bool) {
 	raw := chi.URLParam(r, param)
 	if raw == "" {
-		writeError(w, http.StatusBadRequest, "missing_param", param+" is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_param", param+" is required")
 		return pgtype.UUID{}, false
 	}
 	var id pgtype.UUID
 	if err := id.Scan(raw); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_uuid", "Invalid "+param)
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_uuid", "Invalid "+param)
 		return pgtype.UUID{}, false
 	}
 	return id, true
@@ -149,12 +135,12 @@ func (h *Handlers) GetProgram(w http.ResponseWriter, r *http.Request) {
 	program, err := h.Service.GetProgram(r.Context(), tenantID)
 	if err != nil {
 		slog.Error("getting referral program", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to get program")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to get program")
 
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": program})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": program})
 }
 
 // UpdateProgram updates the referral program settings.
@@ -175,19 +161,19 @@ func (h *Handlers) UpdateProgram(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
 		return
 	}
 
 	program, err := h.Service.UpdateProgram(r.Context(), tenantID, input.ReferrerRewardCents, input.RefereeRewardCents, input.MaxReferrals, input.CookieDays, input.IsActive, input.Description)
 	if err != nil {
 		slog.Error("updating referral program", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to update program")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update program")
 
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": program})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": program})
 }
 
 // ListReferrals returns all referrals for the tenant (legacy).
@@ -204,12 +190,12 @@ func (h *Handlers) ListReferrals(w http.ResponseWriter, r *http.Request) {
 	referrals, err := h.Service.ListReferrals(r.Context(), tenantID, limit, offset)
 	if err != nil {
 		slog.Error("listing referrals", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list referrals")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list referrals")
 
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": referrals})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": referrals})
 }
 
 // GetReferral returns a single referral by ID (legacy).
@@ -222,17 +208,17 @@ func (h *Handlers) GetReferral(w http.ResponseWriter, r *http.Request) {
 
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid referral ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid referral ID")
 		return
 	}
 
 	referral, err := h.Service.GetReferral(r.Context(), tenantID, id)
 	if err != nil {
-		writeError(w, http.StatusNotFound, "not_found", "Referral not found")
+		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Referral not found")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": referral})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": referral})
 }
 
 // DeleteReferral soft-deletes a referral by setting status to 'rejected'.
@@ -245,17 +231,17 @@ func (h *Handlers) DeleteReferral(w http.ResponseWriter, r *http.Request) {
 
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid referral ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid referral ID")
 		return
 	}
 
 	if err := h.Service.DeleteReferral(r.Context(), tenantID, id); err != nil {
 		slog.Error("deleting referral", "error", err)
-		writeError(w, http.StatusNotFound, "not_found", "Referral not found")
+		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Referral not found")
 		return
 	}
 
-	writeJSON(w, http.StatusNoContent, nil)
+	errpkg.WriteJSON(w, http.StatusNoContent, nil)
 }
 
 // ---------------------------------------------------------------------------
@@ -271,22 +257,22 @@ func (h *Handlers) HandleGetMyCode(w http.ResponseWriter, r *http.Request) {
 	}
 	u := auth.FromContext(r.Context())
 	if u == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
 
 	// Global killswitch (referral.enabled, ADR-078 §60).
 	if !h.Service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "referral_disabled", "Referral program is not available")
+		errpkg.WriteError(w, http.StatusNotFound, "referral_disabled", "Referral program is not available")
 		return
 	}
 
 	stats, err := h.Service.GetReferralStats(r.Context(), tenantID, u.UserID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "stats_failed", err.Error())
+		errpkg.WriteError(w, http.StatusInternalServerError, "stats_failed", err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, stats)
+	errpkg.WriteJSON(w, http.StatusOK, stats)
 }
 
 // HandleRedirect handles the public /r/:code redirect with click tracking.
@@ -294,7 +280,7 @@ func (h *Handlers) HandleGetMyCode(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) HandleRedirect(w http.ResponseWriter, r *http.Request) {
 	code := chi.URLParam(r, "code")
 	if code == "" {
-		writeError(w, http.StatusBadRequest, "missing_param", "code is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_param", "code is required")
 		return
 	}
 
@@ -343,13 +329,13 @@ func (h *Handlers) HandleMyHistory(w http.ResponseWriter, r *http.Request) {
 	}
 	u := auth.FromContext(r.Context())
 	if u == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
 
 	// Global killswitch (referral.enabled, ADR-078 §60).
 	if !h.Service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "referral_disabled", "Referral program is not available")
+		errpkg.WriteError(w, http.StatusNotFound, "referral_disabled", "Referral program is not available")
 		return
 	}
 
@@ -359,10 +345,10 @@ func (h *Handlers) HandleMyHistory(w http.ResponseWriter, r *http.Request) {
 
 	rows, total, err := h.Service.ListReferralHistory(r.Context(), tenantID, u.UserID, status, page, limit)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "list_failed", err.Error())
+		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"referrals": rows,
 		"total":     total,
 	})
@@ -376,7 +362,7 @@ func (h *Handlers) HandleAdminListReferrals(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	if auth.FromContext(r.Context()) == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
 
@@ -386,10 +372,10 @@ func (h *Handlers) HandleAdminListReferrals(w http.ResponseWriter, r *http.Reque
 
 	rows, total, err := h.Service.AdminListReferrals(r.Context(), tenantID, status, page, limit)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "list_failed", err.Error())
+		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"referrals": rows,
 		"total":     total,
 	})
@@ -403,7 +389,7 @@ func (h *Handlers) HandleAdminResolveFlagged(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	if auth.FromContext(r.Context()) == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
 
@@ -416,19 +402,19 @@ func (h *Handlers) HandleAdminResolveFlagged(w http.ResponseWriter, r *http.Requ
 		Action string `json:"action"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
 		return
 	}
 	if body.Action == "" {
-		writeError(w, http.StatusBadRequest, "missing_fields", "action is required (credit or reject)")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_fields", "action is required (credit or reject)")
 		return
 	}
 
 	if err := h.Service.AdminResolveFlagged(r.Context(), tenantID, referralID, body.Action); err != nil {
-		writeError(w, http.StatusBadRequest, "resolve_failed", err.Error())
+		errpkg.WriteError(w, http.StatusBadRequest, "resolve_failed", err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"resolved": true})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"resolved": true})
 }
 
 // HandleAdminReferralStats returns referral stats by status.
@@ -439,16 +425,16 @@ func (h *Handlers) HandleAdminReferralStats(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	if auth.FromContext(r.Context()) == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
 
 	stats, err := h.Service.AdminReferralStats(r.Context(), tenantID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "stats_failed", err.Error())
+		errpkg.WriteError(w, http.StatusInternalServerError, "stats_failed", err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"stats": stats})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"stats": stats})
 }
 
 // HandleAdminFlagged returns the flagged referral queue.
@@ -459,7 +445,7 @@ func (h *Handlers) HandleAdminFlagged(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if auth.FromContext(r.Context()) == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
 
@@ -468,10 +454,10 @@ func (h *Handlers) HandleAdminFlagged(w http.ResponseWriter, r *http.Request) {
 
 	rows, total, err := h.Service.AdminListFlagged(r.Context(), tenantID, page, limit)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "list_failed", err.Error())
+		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"flagged": rows,
 		"total":   total,
 	})

@@ -26,22 +26,10 @@ func NewHandlers(service *Service) *Handlers {
 func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
 	return t.ID, true
-}
-
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(v)
-}
-
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, map[string]any{
-		"error": map[string]string{"code": code, "message": message},
-	})
 }
 
 func handleServiceError(w http.ResponseWriter, err error) {
@@ -99,7 +87,7 @@ func (h *Handlers) ListWidgets(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data":        widgets,
 		"total":       total,
 		"total_pages": totalPages(total, limit),
@@ -117,7 +105,7 @@ func (h *Handlers) GetWidget(w http.ResponseWriter, r *http.Request) {
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
@@ -127,7 +115,7 @@ func (h *Handlers) GetWidget(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": widget})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": widget})
 }
 
 // CreateWidget handles POST /api/v1/admin/widgets.
@@ -139,7 +127,7 @@ func (h *Handlers) CreateWidget(w http.ResponseWriter, r *http.Request) {
 
 	var input CreateWidgetInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
 		return
 	}
 
@@ -149,7 +137,7 @@ func (h *Handlers) CreateWidget(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": widget})
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": widget})
 }
 
 // UpdateWidget handles PATCH /api/v1/admin/widgets/{id}.
@@ -161,13 +149,13 @@ func (h *Handlers) UpdateWidget(w http.ResponseWriter, r *http.Request) {
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
 	var input UpdateWidgetInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
 		return
 	}
 
@@ -177,7 +165,7 @@ func (h *Handlers) UpdateWidget(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": widget})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": widget})
 }
 
 // DeleteWidget handles DELETE /api/v1/admin/widgets/{id}.
@@ -189,7 +177,7 @@ func (h *Handlers) DeleteWidget(w http.ResponseWriter, r *http.Request) {
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
@@ -198,7 +186,7 @@ func (h *Handlers) DeleteWidget(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"deleted": true}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"deleted": true}})
 }
 
 // RenderWidget handles GET /api/v1/widgets/{id} — public endpoint that returns
@@ -209,7 +197,7 @@ func (h *Handlers) RenderWidget(w http.ResponseWriter, r *http.Request) {
 	// row itself). No auth required per Section 16.
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
@@ -224,7 +212,7 @@ func (h *Handlers) RenderWidget(w http.ResponseWriter, r *http.Request) {
 	} else {
 		w.Header().Set("X-Cache", "MISS")
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": rendered})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": rendered})
 }
 
 // RequireAuth is a no-op middleware placeholder for documentation — the public

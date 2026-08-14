@@ -34,7 +34,7 @@ func deleteByID(w http.ResponseWriter, r *http.Request, entityName string, delet
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid "+entityName+" ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid "+entityName+" ID")
 		return
 	}
 
@@ -45,7 +45,7 @@ func deleteByID(w http.ResponseWriter, r *http.Request, entityName string, delet
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
 }
 
 // Handlers holds dependencies for spam admin HTTP handlers.
@@ -80,21 +80,6 @@ func (h *Handlers) invalidateCensoredCache(ctx context.Context, tenantID pgtype.
 }
 
 // --- helpers ---
-
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-
-	if err := json.NewEncoder(w).Encode(v); err != nil {
-		slog.Warn("json encode error", "error", err)
-	}
-}
-
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, map[string]any{
-		"error": map[string]string{"code": code, "message": message},
-	})
-}
 
 func parsePageSize(r *http.Request) int32 {
 	s := r.URL.Query().Get("page_size")
@@ -172,7 +157,7 @@ func parseUUIDParam(r *http.Request, param string) (pgtype.UUID, error) {
 func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
 
@@ -182,7 +167,7 @@ func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	user := auth.FromContext(r.Context())
 	if user == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
 
@@ -217,7 +202,7 @@ func (h *Handlers) ListIPBlocks(w http.ResponseWriter, r *http.Request) {
 	blocks, err := h.Store.ListIPBlocksPaginated(r.Context(), tenantID, limit, offset, blockType)
 	if err != nil {
 		slog.Error("listing ip blocks", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list IP blocks")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list IP blocks")
 
 		return
 	}
@@ -225,7 +210,7 @@ func (h *Handlers) ListIPBlocks(w http.ResponseWriter, r *http.Request) {
 	count, err := h.Store.CountIPBlocks(r.Context(), tenantID, blockType)
 	if err != nil {
 		slog.Error("counting ip blocks", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to count IP blocks")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to count IP blocks")
 
 		return
 	}
@@ -235,7 +220,7 @@ func (h *Handlers) ListIPBlocks(w http.ResponseWriter, r *http.Request) {
 		totalPages = (count + limit - 1) / limit
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data":        blocks,
 		"total":       count,
 		"page":        offset / limit,
@@ -263,29 +248,29 @@ func (h *Handlers) CreateIPBlock(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if input.CIDR == "" {
-		writeError(w, http.StatusBadRequest, "missing_cidr", "cidr is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_cidr", "cidr is required")
 		return
 	}
 
 	if input.BlockType == "" {
-		writeError(w, http.StatusBadRequest, "missing_block_type", "block_type is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_block_type", "block_type is required")
 		return
 	}
 
 	if !IsValidBlockType(input.BlockType) {
-		writeError(w, http.StatusBadRequest, "invalid_block_type", "block_type must be one of: full, registration, posting, api")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_block_type", "block_type must be one of: full, registration, posting, api")
 		return
 	}
 
 	var expiresAt pgtype.Timestamptz
 	if input.ExpiresAt != "" {
 		if err := expiresAt.Scan(input.ExpiresAt); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_expires_at", "expires_at must be a valid timestamp")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_expires_at", "expires_at must be a valid timestamp")
 			return
 		}
 	}
@@ -305,7 +290,7 @@ func (h *Handlers) CreateIPBlock(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": block})
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": block})
 }
 
 // UpdateIPBlock handles PATCH /admin/spam/ip-blocks/{id}.
@@ -322,7 +307,7 @@ func (h *Handlers) UpdateIPBlock(w http.ResponseWriter, r *http.Request) {
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid IP block ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid IP block ID")
 		return
 	}
 
@@ -334,12 +319,12 @@ func (h *Handlers) UpdateIPBlock(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if input.BlockType != nil && !IsValidBlockType(*input.BlockType) {
-		writeError(w, http.StatusBadRequest, "invalid_block_type", "block_type must be one of: full, registration, posting, api")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_block_type", "block_type must be one of: full, registration, posting, api")
 		return
 	}
 
@@ -348,7 +333,7 @@ func (h *Handlers) UpdateIPBlock(w http.ResponseWriter, r *http.Request) {
 	if input.ExpiresAt != nil && *input.ExpiresAt != "" {
 		var ts pgtype.Timestamptz
 		if err := ts.Scan(*input.ExpiresAt); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_expires_at", "expires_at must be a valid timestamp")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_expires_at", "expires_at must be a valid timestamp")
 			return
 		}
 
@@ -369,7 +354,7 @@ func (h *Handlers) UpdateIPBlock(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": block})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": block})
 }
 
 // DeleteIPBlock handles DELETE /admin/spam/ip-blocks/{id}.
@@ -403,7 +388,7 @@ func (h *Handlers) ListCensoredWords(w http.ResponseWriter, r *http.Request) {
 	words, err := h.Store.ListCensoredWordsPaginated(r.Context(), tenantID, limit, offset, action)
 	if err != nil {
 		slog.Error("listing censored words", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list censored words")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list censored words")
 
 		return
 	}
@@ -411,7 +396,7 @@ func (h *Handlers) ListCensoredWords(w http.ResponseWriter, r *http.Request) {
 	count, err := h.Store.CountCensoredWords(r.Context(), tenantID, action)
 	if err != nil {
 		slog.Error("counting censored words", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to count censored words")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to count censored words")
 
 		return
 	}
@@ -421,7 +406,7 @@ func (h *Handlers) ListCensoredWords(w http.ResponseWriter, r *http.Request) {
 		totalPages = (count + limit - 1) / limit
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data":        words,
 		"total":       count,
 		"page":        offset / limit,
@@ -447,27 +432,27 @@ func (h *Handlers) CreateCensoredWord(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if input.Pattern == "" {
-		writeError(w, http.StatusBadRequest, "missing_pattern", "pattern is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_pattern", "pattern is required")
 		return
 	}
 
 	if input.Action == "" {
-		writeError(w, http.StatusBadRequest, "missing_action", "action is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_action", "action is required")
 		return
 	}
 
 	if !IsValidCensorAction(input.Action) {
-		writeError(w, http.StatusBadRequest, "invalid_action", "action must be one of: block, replace, flag")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_action", "action must be one of: block, replace, flag")
 		return
 	}
 
 	if input.Action == CensorActionReplace && (input.Replacement == nil || *input.Replacement == "") {
-		writeError(w, http.StatusBadRequest, "missing_replacement", "replacement is required when action is replace")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_replacement", "replacement is required when action is replace")
 		return
 	}
 
@@ -486,7 +471,7 @@ func (h *Handlers) CreateCensoredWord(w http.ResponseWriter, r *http.Request) {
 
 	h.invalidateCensoredCache(r.Context(), tenantID)
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": word})
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": word})
 }
 
 // UpdateCensoredWord handles PATCH /admin/spam/censored-words/{id}.
@@ -502,7 +487,7 @@ func (h *Handlers) UpdateCensoredWord(w http.ResponseWriter, r *http.Request) {
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid censored word ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid censored word ID")
 		return
 	}
 
@@ -513,17 +498,17 @@ func (h *Handlers) UpdateCensoredWord(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if input.Action != nil && !IsValidCensorAction(*input.Action) {
-		writeError(w, http.StatusBadRequest, "invalid_action", "action must be one of: block, replace, flag")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_action", "action must be one of: block, replace, flag")
 		return
 	}
 
 	if input.Action != nil && *input.Action == CensorActionReplace && (input.Replacement == nil || *input.Replacement == "") {
-		writeError(w, http.StatusBadRequest, "missing_replacement", "replacement is required when action is replace")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_replacement", "replacement is required when action is replace")
 		return
 	}
 
@@ -541,7 +526,7 @@ func (h *Handlers) UpdateCensoredWord(w http.ResponseWriter, r *http.Request) {
 
 	h.invalidateCensoredCache(r.Context(), tenantID)
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": word})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": word})
 }
 
 // DeleteCensoredWord handles DELETE /admin/spam/censored-words/{id}.
@@ -557,7 +542,7 @@ func (h *Handlers) DeleteCensoredWord(w http.ResponseWriter, r *http.Request) {
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid censored word ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid censored word ID")
 		return
 	}
 
@@ -570,7 +555,7 @@ func (h *Handlers) DeleteCensoredWord(w http.ResponseWriter, r *http.Request) {
 
 	h.invalidateCensoredCache(r.Context(), tenantID)
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
 }
 
 // ---------------------------------------------------------------------------
@@ -596,7 +581,7 @@ func (h *Handlers) ListUserBlocks(w http.ResponseWriter, r *http.Request) {
 	blocks, err := h.Store.ListAllUserBlocksPaginated(r.Context(), tenantID, limit, offset)
 	if err != nil {
 		slog.Error("listing user blocks", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list user blocks")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list user blocks")
 
 		return
 	}
@@ -604,7 +589,7 @@ func (h *Handlers) ListUserBlocks(w http.ResponseWriter, r *http.Request) {
 	count, err := h.Store.CountAllUserBlocks(r.Context(), tenantID)
 	if err != nil {
 		slog.Error("counting user blocks", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to count user blocks")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to count user blocks")
 
 		return
 	}
@@ -614,7 +599,7 @@ func (h *Handlers) ListUserBlocks(w http.ResponseWriter, r *http.Request) {
 		totalPages = (count + limit - 1) / limit
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data":        blocks,
 		"total":       count,
 		"page":        offset / limit,
@@ -635,13 +620,13 @@ func (h *Handlers) DeleteUserBlock(w http.ResponseWriter, r *http.Request) {
 
 	blockerID, err := parseUUIDParam(r, "blockerId")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_blocker_id", "Invalid blocker ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_blocker_id", "Invalid blocker ID")
 		return
 	}
 
 	blockedID, err := parseUUIDParam(r, "blockedId")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_blocked_id", "Invalid blocked ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_blocked_id", "Invalid blocked ID")
 		return
 	}
 
@@ -652,5 +637,5 @@ func (h *Handlers) DeleteUserBlock(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
 }

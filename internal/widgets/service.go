@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/valkey-io/valkey-go/valkeycompat"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/valkey-io/valkey-go/valkeycompat"
 )
 
 // Service orchestrates widget CRUD and rendering with Valkey caching.

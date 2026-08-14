@@ -17,6 +17,7 @@ import (
 
 	"github.com/jedafe/japa/internal/bots"
 	"github.com/jedafe/japa/internal/db/gen"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/tenant"
 	"github.com/jedafe/japa/internal/valkey"
 	"github.com/valkey-io/valkey-go/valkeycompat"
@@ -170,8 +171,8 @@ type urlEntry struct {
 // sitemapindex is the root XML element for a sitemap index (Section 26 —
 // root /sitemap.xml links to sub-sitemaps, not a flat urlset).
 type sitemapindex struct {
-	XMLName xml.Name      `xml:"sitemapindex"`
-	Xmlns   string        `xml:"xmlns,attr"`
+	XMLName  xml.Name       `xml:"sitemapindex"`
+	Xmlns    string         `xml:"xmlns,attr"`
 	Sitemaps []sitemapEntry `xml:"sitemap"`
 }
 
@@ -291,7 +292,7 @@ func (h *SitemapHandler) ServeContentSitemap(w http.ResponseWriter, r *http.Requ
 	}
 	rows, err := h.queries.ListPublishedSlugsForSitemap(r.Context(), t.ID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to generate sitemap")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to generate sitemap")
 		return
 	}
 	cfg := h.sitemapQualityConfig(r.Context(), t.ID)
@@ -354,7 +355,7 @@ func (h *SitemapHandler) ServeSpacesSitemap(w http.ResponseWriter, r *http.Reque
 		 WHERE s.tenant_id = $1 AND s.status = 'active' AND s.deleted_at IS NULL
 		 ORDER BY s.updated_at DESC`, t.ID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to generate sitemap")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to generate sitemap")
 		return
 	}
 	defer rows.Close()
@@ -390,7 +391,7 @@ func (h *SitemapHandler) ServeTagsSitemap(w http.ResponseWriter, r *http.Request
 	rows, err := h.reader.Query(r.Context(),
 		`SELECT slug FROM tags WHERE tenant_id = $1 ORDER BY name`, t.ID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to generate sitemap")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to generate sitemap")
 		return
 	}
 	defer rows.Close()
@@ -428,7 +429,7 @@ func (h *SitemapHandler) ServeUsersSitemap(w http.ResponseWriter, r *http.Reques
 		   AND COALESCE(ug.allow_search_indexing, true) = true
 		 ORDER BY u.updated_at DESC`, t.ID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to generate sitemap")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to generate sitemap")
 		return
 	}
 	defer rows.Close()
@@ -453,10 +454,10 @@ func (h *SitemapHandler) ServeUsersSitemap(w http.ResponseWriter, r *http.Reques
 // imageURLSet is a urlset with the image namespace, for image sitemaps.
 // Ref: japaconnect-engineering/sections/26-seo-performance.md (image sitemaps)
 type imageURLSet struct {
-	XMLName xml.Name       `xml:"urlset"`
-	Xmlns   string         `xml:"xmlns,attr"`
-	XmlnsImage string      `xml:"xmlns:image,attr"`
-	URLs    []imageURLEntry `xml:"url"`
+	XMLName    xml.Name        `xml:"urlset"`
+	Xmlns      string          `xml:"xmlns,attr"`
+	XmlnsImage string          `xml:"xmlns:image,attr"`
+	URLs       []imageURLEntry `xml:"url"`
 }
 
 // imageURLEntry is a url entry with optional image sub-elements.
@@ -498,7 +499,7 @@ func (h *SitemapHandler) ServeImagesSitemap(w http.ResponseWriter, r *http.Reque
 		   AND m.deleted_at IS NULL AND m.confirmed = true
 		 ORDER BY c.updated_at DESC`, t.ID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to generate image sitemap")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to generate image sitemap")
 		return
 	}
 	defer rows.Close()
@@ -599,8 +600,8 @@ func (h *SitemapHandler) writeXML(w http.ResponseWriter, entries []urlEntry) {
 //   - og_image_url -> og_image_url (caller may resolve featured_image fallback)
 //   - canonical_url -> canonical_url (self-referencing fallback handled by caller)
 //   - robots_meta  -> "noindex,nofollow" for private visibility,
-//                     "noindex,follow" when seo_indexable = false,
-//                     "index,follow" otherwise
+//     "noindex,follow" when seo_indexable = false,
+//     "index,follow" otherwise
 //   - json_ld_type -> @type extracted from the active content_type_jsonld_templates row
 //
 // Score: 100 minus 12 points per issue (floor 0). The admin SPA renders the
@@ -609,7 +610,7 @@ func (h *SitemapHandler) ValidateSEO(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusInternalServerError, "tenant_unavailable", "No tenant available")
+		errpkg.WriteError(w, http.StatusInternalServerError, "tenant_unavailable", "No tenant available")
 		return
 	}
 
@@ -654,7 +655,7 @@ func (h *SitemapHandler) ValidateSEO(w http.ResponseWriter, r *http.Request) {
 		&metaTitle, &metaDesc, &ogImageURL, &canonicalURL, &ogTitle, &ogDescription, &jsonldTemplate,
 	)
 	if err != nil {
-		writeError(w, http.StatusNotFound, "not_found", "Content not found")
+		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Content not found")
 		return
 	}
 
@@ -782,7 +783,7 @@ func (h *SitemapHandler) ValidateSEO(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"data": map[string]any{
-			"id":              contentID,
+			"id":               contentID,
 			"type":             contentType,
 			"title":            title,
 			"slug":             slug,

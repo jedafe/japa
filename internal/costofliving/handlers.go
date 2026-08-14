@@ -8,11 +8,11 @@
 //	GET /api/v1/admin/calculator/cost-of-living/stats — admin stats
 //
 // Ref: japaconnect-engineering/sections/72-cost-of-living.md
-//      japaconnect-engineering/adr/ADR-072-cost-of-living-calculator.md
+//
+//	japaconnect-engineering/adr/ADR-072-cost-of-living-calculator.md
 package costofliving
 
 import (
-	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -23,6 +23,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/config"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/tenant"
 )
 
@@ -41,24 +42,10 @@ func NewHandlers(service *Service, settings *config.Settings) *Handlers {
 // Shared helpers (same pattern as rag/handlers.go)
 // ---------------------------------------------------------------------------
 
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	if err := json.NewEncoder(w).Encode(v); err != nil {
-		slog.Error("costofliving: encode response", "error", err)
-	}
-}
-
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, map[string]any{
-		"error": map[string]string{"code": code, "message": message},
-	})
-}
-
 func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
 	return t.ID, true
@@ -67,7 +54,7 @@ func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	u := auth.FromContext(r.Context())
 	if u == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
 	return u, true
@@ -76,7 +63,7 @@ func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUse
 func scanUUIDParam(w http.ResponseWriter, r *http.Request, name string) (pgtype.UUID, bool) {
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, name)); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid "+name)
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid "+name)
 		return pgtype.UUID{}, false
 	}
 	return id, true
@@ -87,7 +74,7 @@ func scanUUIDParam(w http.ResponseWriter, r *http.Request, name string) (pgtype.
 func parseCityIDs(w http.ResponseWriter, r *http.Request) ([]pgtype.UUID, bool) {
 	raw := strings.TrimSpace(r.URL.Query().Get("city_ids"))
 	if raw == "" {
-		writeError(w, http.StatusBadRequest, "missing_city_ids", "city_ids query parameter is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_city_ids", "city_ids query parameter is required")
 		return nil, false
 	}
 	parts := strings.Split(raw, ",")
@@ -99,13 +86,13 @@ func parseCityIDs(w http.ResponseWriter, r *http.Request) ([]pgtype.UUID, bool) 
 		}
 		var id pgtype.UUID
 		if err := id.Scan(p); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_city_id", "Invalid city ID: "+p)
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_city_id", "Invalid city ID: "+p)
 			return nil, false
 		}
 		ids = append(ids, id)
 	}
 	if len(ids) == 0 {
-		writeError(w, http.StatusBadRequest, "missing_city_ids", "At least one city ID is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_city_ids", "At least one city ID is required")
 		return nil, false
 	}
 	return ids, true
@@ -147,7 +134,7 @@ func (h *Handlers) HandleListCities(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil {
-		writeError(w, http.StatusServiceUnavailable, "calculator_unavailable", "Cost of living service not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "calculator_unavailable", "Cost of living service not configured")
 		return
 	}
 
@@ -157,15 +144,15 @@ func (h *Handlers) HandleListCities(w http.ResponseWriter, r *http.Request) {
 	resp, err := h.service.ListCities(r.Context(), tenantID, search, page, limit)
 	if err != nil {
 		if errors.Is(err, ErrCalculatorDisabled) {
-			writeError(w, http.StatusNotFound, "col_calculator_disabled", "Cost of Living Calculator is not available")
+			errpkg.WriteError(w, http.StatusNotFound, "col_calculator_disabled", "Cost of Living Calculator is not available")
 			return
 		}
 		slog.Error("costofliving: list cities failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "list_cities_failed", "Failed to list cities")
+		errpkg.WriteError(w, http.StatusInternalServerError, "list_cities_failed", "Failed to list cities")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": resp})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": resp})
 }
 
 // HandleCompare handles GET /api/v1/calculator/cost-of-living/compare —
@@ -178,7 +165,7 @@ func (h *Handlers) HandleCompare(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil {
-		writeError(w, http.StatusServiceUnavailable, "calculator_unavailable", "Cost of living service not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "calculator_unavailable", "Cost of living service not configured")
 		return
 	}
 
@@ -190,20 +177,20 @@ func (h *Handlers) HandleCompare(w http.ResponseWriter, r *http.Request) {
 	matrix, err := h.service.CompareCities(r.Context(), tenantID, cityIDs)
 	if err != nil {
 		if errors.Is(err, ErrCalculatorDisabled) {
-			writeError(w, http.StatusNotFound, "col_calculator_disabled", "Cost of Living Calculator is not available")
+			errpkg.WriteError(w, http.StatusNotFound, "col_calculator_disabled", "Cost of Living Calculator is not available")
 			return
 		}
 		slog.Error("costofliving: compare failed", "error", err)
 		// Distinguish the max_cities violation for a clearer client error.
 		if strings.Contains(err.Error(), "too many cities") {
-			writeError(w, http.StatusBadRequest, "too_many_cities", err.Error())
+			errpkg.WriteError(w, http.StatusBadRequest, "too_many_cities", err.Error())
 			return
 		}
-		writeError(w, http.StatusInternalServerError, "compare_failed", "Failed to compare cities")
+		errpkg.WriteError(w, http.StatusInternalServerError, "compare_failed", "Failed to compare cities")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": matrix})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": matrix})
 }
 
 // HandleAdminStats handles GET /api/v1/admin/calculator/cost-of-living/stats —
@@ -220,7 +207,7 @@ func (h *Handlers) HandleAdminStats(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil {
-		writeError(w, http.StatusServiceUnavailable, "calculator_unavailable", "Cost of living service not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "calculator_unavailable", "Cost of living service not configured")
 		return
 	}
 
@@ -229,9 +216,9 @@ func (h *Handlers) HandleAdminStats(w http.ResponseWriter, r *http.Request) {
 	resp, err := h.service.AdminStats(r.Context(), tenantID, page, limit)
 	if err != nil {
 		slog.Error("costofliving: admin stats failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "stats_failed", "Failed to get admin stats")
+		errpkg.WriteError(w, http.StatusInternalServerError, "stats_failed", "Failed to get admin stats")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": resp})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": resp})
 }

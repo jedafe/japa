@@ -5,7 +5,8 @@
 // creation (§88 Notifications / §35 reuse).
 //
 // Ref: japaconnect-engineering/sections/88-ask-an-expat.md
-//      japaconnect-engineering/adr/ADR-096-ask-an-expat.md
+//
+//	japaconnect-engineering/adr/ADR-096-ask-an-expat.md
 package ama
 
 import (
@@ -42,25 +43,25 @@ type AMAThreadDTO struct {
 // amaConfigShape is the JSONB structure stored in forum_threads.ama_config.
 // closes_at is computed by the service from open_duration_hours when absent.
 type amaConfigShape struct {
-	OpenDurationHours       *int    `json:"open_duration_hours,omitempty"`
-	QuestionApprovalRequired *bool  `json:"question_approval_required,omitempty"`
-	ClosesAt                *string `json:"closes_at,omitempty"`
-	HostProfession          string  `json:"host_profession,omitempty"`
-	HostDestCountryID       string  `json:"host_dest_country_id,omitempty"`
-	HostYearsAbroad         *int    `json:"host_years_abroad,omitempty"`
+	OpenDurationHours        *int    `json:"open_duration_hours,omitempty"`
+	QuestionApprovalRequired *bool   `json:"question_approval_required,omitempty"`
+	ClosesAt                 *string `json:"closes_at,omitempty"`
+	HostProfession           string  `json:"host_profession,omitempty"`
+	HostDestCountryID        string  `json:"host_dest_country_id,omitempty"`
+	HostYearsAbroad          *int    `json:"host_years_abroad,omitempty"`
 }
 
 // CreateAMAInput is the validated payload for creating an AMA session.
 type CreateAMAInput struct {
-	Title        string
-	Slug         string
-	Body         []byte
-	SpaceID      pgtype.UUID
-	IsAnonymous  bool
-	HostProfession    string
-	HostDestCountryID string
-	HostYearsAbroad   *int
-	OpenDurationHours *int
+	Title                    string
+	Slug                     string
+	Body                     []byte
+	SpaceID                  pgtype.UUID
+	IsAnonymous              bool
+	HostProfession           string
+	HostDestCountryID        string
+	HostYearsAbroad          *int
+	OpenDurationHours        *int
 	QuestionApprovalRequired *bool
 }
 
@@ -171,10 +172,10 @@ func (s *Service) CreateAMA(ctx context.Context, tenantID, authorUserID pgtype.U
 
 	// Compute closes_at from open_duration_hours (default 48) when not set.
 	cfg := amaConfigShape{
-		HostProfession:    in.HostProfession,
-		HostDestCountryID: in.HostDestCountryID,
-		HostYearsAbroad:   in.HostYearsAbroad,
-		OpenDurationHours: in.OpenDurationHours,
+		HostProfession:           in.HostProfession,
+		HostDestCountryID:        in.HostDestCountryID,
+		HostYearsAbroad:          in.HostYearsAbroad,
+		OpenDurationHours:        in.OpenDurationHours,
 		QuestionApprovalRequired: in.QuestionApprovalRequired,
 	}
 	hours := 48

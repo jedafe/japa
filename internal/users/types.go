@@ -41,24 +41,24 @@ type UpdatePreferencesRequest struct {
 
 // UserProfileResponse is the API response for a user profile.
 type UserProfileResponse struct {
-	ID                       string   `json:"id"`
-	Email                    string   `json:"email"`
-	Username                 string   `json:"username"`
-	DisplayName              *string  `json:"display_name"`
-	AvatarURL                *string  `json:"avatar_url"`
-	AvatarMediaID            *string  `json:"avatar_media_id"`
-	CoverURL                 *string  `json:"cover_url"`
-	HeaderMediaID            *string  `json:"header_media_id"`
-	Bio                      *string  `json:"bio"`
-	Timezone                 *string  `json:"timezone"`
-	ProfileType              string   `json:"profile_type"`
-	Status                   string   `json:"status"`
-	FollowerCount            int32    `json:"follower_count"`
-	UserGroupName            string   `json:"user_group_name"`
-	Groups                   []string `json:"groups"`
-	LastLoginAt              *string  `json:"last_login_at"`
-	CreatedAt                string   `json:"created_at"`
-	UpdatedAt                string   `json:"updated_at"`
+	ID            string   `json:"id"`
+	Email         string   `json:"email"`
+	Username      string   `json:"username"`
+	DisplayName   *string  `json:"display_name"`
+	AvatarURL     *string  `json:"avatar_url"`
+	AvatarMediaID *string  `json:"avatar_media_id"`
+	CoverURL      *string  `json:"cover_url"`
+	HeaderMediaID *string  `json:"header_media_id"`
+	Bio           *string  `json:"bio"`
+	Timezone      *string  `json:"timezone"`
+	ProfileType   string   `json:"profile_type"`
+	Status        string   `json:"status"`
+	FollowerCount int32    `json:"follower_count"`
+	UserGroupName string   `json:"user_group_name"`
+	Groups        []string `json:"groups"`
+	LastLoginAt   *string  `json:"last_login_at"`
+	CreatedAt     string   `json:"created_at"`
+	UpdatedAt     string   `json:"updated_at"`
 	// ContentCountryPreference is the user's geo-aware feed personalization
 	// country (ADR-064). Surfaced on /me so the feed header can render the
 	// inline "Showing: [Country] · Change" control without an extra fetch.

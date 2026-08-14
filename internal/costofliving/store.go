@@ -8,7 +8,8 @@
 // and contains no business logic.
 //
 // Ref: japaconnect-engineering/sections/72-cost-of-living.md
-//      japaconnect-engineering/adr/ADR-072-cost-of-living-calculator.md
+//
+//	japaconnect-engineering/adr/ADR-072-cost-of-living-calculator.md
 package costofliving
 
 import (

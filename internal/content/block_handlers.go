@@ -8,13 +8,15 @@ package content
 
 import (
 	"net/http"
+
+	errpkg "github.com/jedafe/japa/internal/errors"
 )
 
 // ListBlockTypes handles GET /api/v1/page-builder/block-types.
 // It returns the full block template registry.
 func (h *Handlers) ListBlockTypes(w http.ResponseWriter, _ *http.Request) {
 	templates := GetBlockTemplates()
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
 			"block_types": templates,
 		},

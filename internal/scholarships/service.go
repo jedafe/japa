@@ -2,7 +2,8 @@
 // (Section 73, ADR-073).
 //
 // Ref: japaconnect-engineering/sections/73-scholarship-finder.md
-//      japaconnect-engineering/adr/ADR-073-scholarship-finder.md
+//
+//	japaconnect-engineering/adr/ADR-073-scholarship-finder.md
 package scholarships
 
 import (
@@ -28,12 +29,12 @@ var ErrGuideNotFound = errors.New("scholarships: guide not found or not a publis
 
 // Status constants for saved scholarship tracker.
 const (
-	StatusSaved        = "saved"
-	StatusResearching  = "researching"
-	StatusApplied      = "applied"
-	StatusAccepted     = "accepted"
-	StatusRejected     = "rejected"
-	StatusWithdrawn    = "withdrawn"
+	StatusSaved       = "saved"
+	StatusResearching = "researching"
+	StatusApplied     = "applied"
+	StatusAccepted    = "accepted"
+	StatusRejected    = "rejected"
+	StatusWithdrawn   = "withdrawn"
 )
 
 // Task name constants. The deadline-reminder worker dispatches
@@ -75,23 +76,23 @@ type ScholarshipFilters struct {
 //
 // Ref: japaconnect-engineering/sections/73-scholarship-finder.md
 type ScholarshipResult struct {
-	GuideID            string            `json:"guide_id"`
-	ID                 string            `json:"id"`
-	Title              string            `json:"title"`
-	Slug               string            `json:"slug"`
-	Summary            string            `json:"summary"`
-	Description        string            `json:"description"`
-	Institution        string            `json:"institution"`
-	Country            string            `json:"country"`
-	LevelOfStudy       string            `json:"level_of_study"`
-	AwardAmountUSD     *float64          `json:"award_amount_usd"`
-	IsRenewable        *bool             `json:"is_renewable"`
-	ApplicationDeadline string           `json:"application_deadline"`
-	ApplicationURL     string            `json:"application_url"`
-	Eligibility        string            `json:"eligibility"`
-	HowToApply         string            `json:"how_to_apply"`
-	ContactEmail       string            `json:"contact_email"`
-	FieldValues        map[string]string `json:"field_values"`
+	GuideID             string            `json:"guide_id"`
+	ID                  string            `json:"id"`
+	Title               string            `json:"title"`
+	Slug                string            `json:"slug"`
+	Summary             string            `json:"summary"`
+	Description         string            `json:"description"`
+	Institution         string            `json:"institution"`
+	Country             string            `json:"country"`
+	LevelOfStudy        string            `json:"level_of_study"`
+	AwardAmountUSD      *float64          `json:"award_amount_usd"`
+	IsRenewable         *bool             `json:"is_renewable"`
+	ApplicationDeadline string            `json:"application_deadline"`
+	ApplicationURL      string            `json:"application_url"`
+	Eligibility         string            `json:"eligibility"`
+	HowToApply          string            `json:"how_to_apply"`
+	ContactEmail        string            `json:"contact_email"`
+	FieldValues         map[string]string `json:"field_values"`
 }
 
 // SavedScholarshipResponse is the saved-tracker row shape returned by
@@ -99,36 +100,36 @@ type ScholarshipResult struct {
 // flat ScholarshipResult shape so the tools app can read
 // `item.scholarship.id`, `item.scholarship.title`, etc.
 type SavedScholarshipResponse struct {
-	ID               string             `json:"id"`
-	Scholarship      ScholarshipResult  `json:"scholarship"`
-	Status           string             `json:"status"`
-	Notes            string             `json:"notes"`
-	RemindBeforeDays int32              `json:"remind_before_days"`
-	LastRemindedAt   string             `json:"last_reminded_at"`
-	CreatedAt        string             `json:"created_at"`
-	UpdatedAt        string             `json:"updated_at"`
+	ID               string            `json:"id"`
+	Scholarship      ScholarshipResult `json:"scholarship"`
+	Status           string            `json:"status"`
+	Notes            string            `json:"notes"`
+	RemindBeforeDays int32             `json:"remind_before_days"`
+	LastRemindedAt   string            `json:"last_reminded_at"`
+	CreatedAt        string            `json:"created_at"`
+	UpdatedAt        string            `json:"updated_at"`
 }
 
 // AdminDeadlineItem is a single row in the admin upcoming-deadlines report,
 // shaped for the admin panel's DeadlineItem contract.
 type AdminDeadlineItem struct {
-	ID           string  `json:"id"`
-	Title        string  `json:"title"`
-	Deadline     string  `json:"deadline"`
-	DaysUntil    *int    `json:"days_until"`
-	Status       string  `json:"status"`
-	GuideID      string  `json:"guide_id"`
-	UserID       string  `json:"user_id"`
-	Username     string  `json:"username"`
+	ID        string `json:"id"`
+	Title     string `json:"title"`
+	Deadline  string `json:"deadline"`
+	DaysUntil *int   `json:"days_until"`
+	Status    string `json:"status"`
+	GuideID   string `json:"guide_id"`
+	UserID    string `json:"user_id"`
+	Username  string `json:"username"`
 }
 
 // AdminStats is the aggregate stats payload for the admin panel.
 type AdminStats struct {
-	TotalScholarships  int64                       `json:"total_scholarships"`
-	UpcomingDeadlines  int64                       `json:"upcoming_deadlines"`
-	RemindersSent      int64                       `json:"reminders_sent"`
-	UniqueUsers        int64                       `json:"unique_users"`
-	Distribution       []gen.AdminScholarshipStatusDistributionRow `json:"distribution"`
+	TotalScholarships int64                                       `json:"total_scholarships"`
+	UpcomingDeadlines int64                                       `json:"upcoming_deadlines"`
+	RemindersSent     int64                                       `json:"reminders_sent"`
+	UniqueUsers       int64                                       `json:"unique_users"`
+	Distribution      []gen.AdminScholarshipStatusDistributionRow `json:"distribution"`
 }
 
 // projectScholarshipFields populates the flat top-level fields on a
@@ -598,10 +599,10 @@ func (s *Service) ListSavedScholarships(ctx context.Context, tenantID, userID pg
 	offset := int32((page - 1) * limit)
 
 	rows, err := s.store.ListSavedScholarships(ctx, gen.ListSavedScholarshipsParams{
-		TenantID:  tenantID,
-		UserID:    userID,
-		Status:    status,
-		PageLimit: int32(limit),
+		TenantID:   tenantID,
+		UserID:     userID,
+		Status:     status,
+		PageLimit:  int32(limit),
 		PageOffset: offset,
 	})
 	if err != nil {

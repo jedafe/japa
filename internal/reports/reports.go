@@ -277,7 +277,7 @@ func (s *Service) ResolveTargetUser(ctx context.Context, entityType string, enti
 func (s *Service) WarnUser(ctx context.Context, userID pgtype.UUID, reason string) error {
 	return s.write.CreateUserWarning(ctx, gen.CreateUserWarningParams{
 		UserID: userID,
-		Reason:  &reason,
+		Reason: &reason,
 	})
 }
 
@@ -286,8 +286,8 @@ func (s *Service) WarnUser(ctx context.Context, userID pgtype.UUID, reason strin
 // updates users.status to 'banned' so the ban is reflected in list queries.
 func (s *Service) BanUser(ctx context.Context, userID pgtype.UUID, reason string) error {
 	if err := s.write.CreateUserBan(ctx, gen.CreateUserBanParams{
-		UserID: userID,
-		Reason: &reason,
+		UserID:  userID,
+		Reason:  &reason,
 		Column3: 0,
 	}); err != nil {
 		return err

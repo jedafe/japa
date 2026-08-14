@@ -12,7 +12,8 @@
 //	PATCH /api/v1/admin/arrival-checklists/:id           — update guide (admin, arrival_checklist.manage)
 //
 // Ref: japaconnect-engineering/sections/92-arrival-checklist.md
-//      japaconnect-engineering/adr/ADR-100-arrival-checklist.md
+//
+//	japaconnect-engineering/adr/ADR-100-arrival-checklist.md
 package arrivalchecklist
 
 import (
@@ -28,6 +29,7 @@ import (
 
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/config"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/tenant"
 )
 
@@ -47,24 +49,10 @@ func NewHandlers(service *Service, settings *config.Settings) *Handlers {
 // Shared helpers (same pattern as servicedir/handlers.go)
 // ---------------------------------------------------------------------------
 
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	if err := json.NewEncoder(w).Encode(v); err != nil {
-		slog.Error("arrivalchecklist: encode response", "error", err)
-	}
-}
-
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, map[string]any{
-		"error": map[string]string{"code": code, "message": message},
-	})
-}
-
 func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
 	return t.ID, true
@@ -73,7 +61,7 @@ func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	u := auth.FromContext(r.Context())
 	if u == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
 	return u, true
@@ -82,7 +70,7 @@ func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUse
 func scanUUIDParam(w http.ResponseWriter, r *http.Request, name string) (pgtype.UUID, bool) {
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, name)); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid "+name)
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid "+name)
 		return pgtype.UUID{}, false
 	}
 	return id, true
@@ -117,18 +105,18 @@ func (h *Handlers) HandleSelector(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "arrival_checklist_disabled", "Arrival checklist is not available")
+		errpkg.WriteError(w, http.StatusNotFound, "arrival_checklist_disabled", "Arrival checklist is not available")
 		return
 	}
 
 	selectors, err := h.service.ListSelectors(r.Context(), tenantID)
 	if err != nil {
 		slog.Error("arrivalchecklist: selector failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "selector_failed", "Failed to list selectors")
+		errpkg.WriteError(w, http.StatusInternalServerError, "selector_failed", "Failed to list selectors")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": selectors})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": selectors})
 }
 
 // HandleGetGuide handles GET /arrival-checklist/:guide_id — returns the
@@ -140,7 +128,7 @@ func (h *Handlers) HandleGetGuide(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "arrival_checklist_disabled", "Arrival checklist is not available")
+		errpkg.WriteError(w, http.StatusNotFound, "arrival_checklist_disabled", "Arrival checklist is not available")
 		return
 	}
 
@@ -152,15 +140,15 @@ func (h *Handlers) HandleGetGuide(w http.ResponseWriter, r *http.Request) {
 	items, err := h.service.GetGuideItems(r.Context(), guideID, tenantID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "guide_not_found", "Arrival checklist guide not found")
+			errpkg.WriteError(w, http.StatusNotFound, "guide_not_found", "Arrival checklist guide not found")
 			return
 		}
 		slog.Error("arrivalchecklist: get guide items failed", "guide_id", guideID, "error", err)
-		writeError(w, http.StatusInternalServerError, "get_failed", "Failed to get checklist items")
+		errpkg.WriteError(w, http.StatusInternalServerError, "get_failed", "Failed to get checklist items")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": items})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": items})
 }
 
 // ---------------------------------------------------------------------------
@@ -180,18 +168,18 @@ func (h *Handlers) HandleListMyChecklists(w http.ResponseWriter, r *http.Request
 	}
 
 	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "arrival_checklist_disabled", "Arrival checklist is not available")
+		errpkg.WriteError(w, http.StatusNotFound, "arrival_checklist_disabled", "Arrival checklist is not available")
 		return
 	}
 
 	checklists, err := h.service.ListUserChecklists(r.Context(), tenantID, user.UserID)
 	if err != nil {
 		slog.Error("arrivalchecklist: list my checklists failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "list_failed", "Failed to list checklists")
+		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list checklists")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": checklists})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": checklists})
 }
 
 // HandleGetMyChecklist handles GET /me/arrival-checklists/:id — returns
@@ -208,7 +196,7 @@ func (h *Handlers) HandleGetMyChecklist(w http.ResponseWriter, r *http.Request) 
 	}
 
 	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "arrival_checklist_disabled", "Arrival checklist is not available")
+		errpkg.WriteError(w, http.StatusNotFound, "arrival_checklist_disabled", "Arrival checklist is not available")
 		return
 	}
 
@@ -220,15 +208,15 @@ func (h *Handlers) HandleGetMyChecklist(w http.ResponseWriter, r *http.Request) 
 	items, err := h.service.GetUserChecklistItems(r.Context(), tenantID, user.UserID, guideID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "guide_not_found", "Arrival checklist guide not found")
+			errpkg.WriteError(w, http.StatusNotFound, "guide_not_found", "Arrival checklist guide not found")
 			return
 		}
 		slog.Error("arrivalchecklist: get my checklist failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "get_failed", "Failed to get checklist items")
+		errpkg.WriteError(w, http.StatusInternalServerError, "get_failed", "Failed to get checklist items")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": items})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": items})
 }
 
 // HandleStartChecklist handles POST /me/arrival-checklists — start a
@@ -244,33 +232,33 @@ func (h *Handlers) HandleStartChecklist(w http.ResponseWriter, r *http.Request) 
 	}
 
 	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "arrival_checklist_disabled", "Arrival checklist is not available")
+		errpkg.WriteError(w, http.StatusNotFound, "arrival_checklist_disabled", "Arrival checklist is not available")
 		return
 	}
 
 	var input StartChecklistRequest
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
 
 	if input.GuideID == "" {
-		writeError(w, http.StatusBadRequest, "missing_guide_id", "guide_id is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_guide_id", "guide_id is required")
 		return
 	}
 
 	guide, err := h.service.StartChecklist(r.Context(), tenantID, user.UserID, input)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "guide_not_found", "Arrival checklist guide not found")
+			errpkg.WriteError(w, http.StatusNotFound, "guide_not_found", "Arrival checklist guide not found")
 			return
 		}
 		slog.Error("arrivalchecklist: start checklist failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "start_failed", "Failed to start checklist")
+		errpkg.WriteError(w, http.StatusInternalServerError, "start_failed", "Failed to start checklist")
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": guide})
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": guide})
 }
 
 // HandleTickItem handles PATCH /me/arrival-checklists/:id/items/:item_id —
@@ -292,32 +280,32 @@ func (h *Handlers) HandleTickItem(w http.ResponseWriter, r *http.Request) {
 
 	itemID := chi.URLParam(r, "item_id")
 	if itemID == "" {
-		writeError(w, http.StatusBadRequest, "missing_item_id", "item_id is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_item_id", "item_id is required")
 		return
 	}
 
 	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "arrival_checklist_disabled", "Arrival checklist is not available")
+		errpkg.WriteError(w, http.StatusNotFound, "arrival_checklist_disabled", "Arrival checklist is not available")
 		return
 	}
 
 	var input TickItemRequest
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil && err.Error() != "EOF" {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
 
 	if err := h.service.TickItem(r.Context(), tenantID, user.UserID, guideID, itemID, input); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "guide_not_found", "Arrival checklist guide not found")
+			errpkg.WriteError(w, http.StatusNotFound, "guide_not_found", "Arrival checklist guide not found")
 			return
 		}
 		slog.Error("arrivalchecklist: tick item failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "tick_failed", "Failed to update item")
+		errpkg.WriteError(w, http.StatusInternalServerError, "tick_failed", "Failed to update item")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"updated": true}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"updated": true}})
 }
 
 // ---------------------------------------------------------------------------
@@ -337,14 +325,14 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil {
-		writeError(w, http.StatusServiceUnavailable, "arrival_checklist_unavailable", "Arrival checklist not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "arrival_checklist_unavailable", "Arrival checklist not configured")
 		return
 	}
 
 	var destSpaceID pgtype.UUID
 	if v := r.URL.Query().Get("dest"); v != "" {
 		if err := destSpaceID.Scan(v); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid destination space ID")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid destination space ID")
 			return
 		}
 	}
@@ -364,7 +352,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	guides, total, err := h.service.AdminList(r.Context(), tenantID, destSpaceID, visaCategory, applicantType, status, q, sort, order, page, limit)
 	if err != nil {
 		slog.Error("arrivalchecklist: admin list failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "admin_list_failed", "Failed to list guides")
+		errpkg.WriteError(w, http.StatusInternalServerError, "admin_list_failed", "Failed to list guides")
 		return
 	}
 
@@ -373,7 +361,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 		totalPages = (total + int64(limit) - 1) / int64(limit)
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": guides,
 		"meta": map[string]any{
 			"page":        page,
@@ -397,29 +385,29 @@ func (h *Handlers) HandleAdminCreate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil {
-		writeError(w, http.StatusServiceUnavailable, "arrival_checklist_unavailable", "Arrival checklist not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "arrival_checklist_unavailable", "Arrival checklist not configured")
 		return
 	}
 
 	var input CreateGuideRequest
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
 
 	if input.DestinationSpaceID == "" {
-		writeError(w, http.StatusBadRequest, "missing_destination", "destination_space_id is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_destination", "destination_space_id is required")
 		return
 	}
 
 	guide, err := h.service.CreateGuide(r.Context(), tenantID, input)
 	if err != nil {
 		slog.Error("arrivalchecklist: admin create failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "create_failed", "Failed to create guide")
+		errpkg.WriteError(w, http.StatusInternalServerError, "create_failed", "Failed to create guide")
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": guide})
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": guide})
 }
 
 // HandleAdminGenerate handles POST /admin/arrival-checklists/generate —
@@ -436,29 +424,29 @@ func (h *Handlers) HandleAdminGenerate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil {
-		writeError(w, http.StatusServiceUnavailable, "arrival_checklist_unavailable", "Arrival checklist not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "arrival_checklist_unavailable", "Arrival checklist not configured")
 		return
 	}
 
 	var input GenerateGuideRequest
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
 
 	if input.DestinationSpaceID == "" {
-		writeError(w, http.StatusBadRequest, "missing_destination", "destination_space_id is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_destination", "destination_space_id is required")
 		return
 	}
 
 	resp, err := h.service.GenerateGuide(r.Context(), tenantID, input)
 	if err != nil {
 		slog.Error("arrivalchecklist: admin generate failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "generate_failed", "Failed to accept generation request")
+		errpkg.WriteError(w, http.StatusInternalServerError, "generate_failed", "Failed to accept generation request")
 		return
 	}
 
-	writeJSON(w, http.StatusAccepted, map[string]any{"data": resp})
+	errpkg.WriteJSON(w, http.StatusAccepted, map[string]any{"data": resp})
 }
 
 // HandleAdminApprove handles PATCH /admin/arrival-checklists/:id/approve
@@ -479,28 +467,28 @@ func (h *Handlers) HandleAdminApprove(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil {
-		writeError(w, http.StatusServiceUnavailable, "arrival_checklist_unavailable", "Arrival checklist not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "arrival_checklist_unavailable", "Arrival checklist not configured")
 		return
 	}
 
 	var input ApproveGuideRequest
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil && err.Error() != "EOF" {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
 
 	guide, err := h.service.ApproveGuide(r.Context(), id, tenantID, user.UserID, input)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "guide_not_found", "Arrival checklist guide not found")
+			errpkg.WriteError(w, http.StatusNotFound, "guide_not_found", "Arrival checklist guide not found")
 			return
 		}
 		slog.Error("arrivalchecklist: admin approve failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "approve_failed", "Failed to approve guide")
+		errpkg.WriteError(w, http.StatusInternalServerError, "approve_failed", "Failed to approve guide")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": guide})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": guide})
 }
 
 // HandleAdminUpdate handles PATCH /admin/arrival-checklists/:id — update
@@ -520,26 +508,26 @@ func (h *Handlers) HandleAdminUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil {
-		writeError(w, http.StatusServiceUnavailable, "arrival_checklist_unavailable", "Arrival checklist not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "arrival_checklist_unavailable", "Arrival checklist not configured")
 		return
 	}
 
 	var input UpdateGuideRequest
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
 
 	guide, err := h.service.UpdateGuide(r.Context(), id, tenantID, input)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "guide_not_found", "Arrival checklist guide not found")
+			errpkg.WriteError(w, http.StatusNotFound, "guide_not_found", "Arrival checklist guide not found")
 			return
 		}
 		slog.Error("arrivalchecklist: admin update failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "update_failed", "Failed to update guide")
+		errpkg.WriteError(w, http.StatusInternalServerError, "update_failed", "Failed to update guide")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": guide})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": guide})
 }

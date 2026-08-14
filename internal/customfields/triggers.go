@@ -49,7 +49,7 @@ type TriggerDispatcher struct {
 // emailSender) are wired via Set* methods after construction.
 func NewTriggerDispatcher(service *Service) *TriggerDispatcher {
 	return &TriggerDispatcher{
-		service:   service,
+		service:    service,
 		httpClient: &http.Client{Timeout: 10 * time.Second},
 	}
 }

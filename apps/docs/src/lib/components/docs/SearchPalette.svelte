@@ -140,9 +140,9 @@
 					{/each}
 				</ul>
 				<div class="footer">
-					<span class="kbd-hint"><CornerDownLeft size={12} /> enter</span>
-					<span class="kbd-hint">↑↓ navigate</span>
-					<span class="kbd-hint">esc close</span>
+					<span class="kbd-hint"><CornerDownLeft size={12} /> {t('search.kbd_enter')}</span>
+					<span class="kbd-hint">{t('search.kbd_navigate')}</span>
+					<span class="kbd-hint">{t('search.kbd_close')}</span>
 				</div>
 			{/if}
 		</div>

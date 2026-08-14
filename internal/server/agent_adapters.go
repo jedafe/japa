@@ -962,9 +962,9 @@ func (a *studioDraftProcessorAdapter) GenerateJob(ctx context.Context, tenantID,
 	// 4. Build field_values with _ai_provenance (ADR-088 universal AI
 	// content generation pattern).
 	provenance := map[string]any{
-		"ai_generated":   true,
-		"ai_persona_id":  job.PersonaID.String(),
-		"source":         "studio",
+		"ai_generated":    true,
+		"ai_persona_id":   job.PersonaID.String(),
+		"source":          "studio",
 		"original_prompt": job.TopicPrompt,
 	}
 	if len(job.TargetTags) > 0 {
@@ -1042,7 +1042,6 @@ func (a *studioDraftProcessorAdapter) GenerateJob(ctx context.Context, tenantID,
 	return nil
 }
 
-
 // studioGenerateBody synthesizes a draft body via the AI gateway, weaving in
 // the persona voice prompt when present.
 func (a *studioDraftProcessorAdapter) studioGenerateBody(ctx context.Context, tenantID pgtype.UUID, job studio.Job, persona gen.GetAIPersonaByIDRow) (string, error) {
@@ -1091,5 +1090,3 @@ func (a *studioDraftProcessorAdapter) createStudioReview(ctx context.Context, te
 		slog.Warn("studio: create HITL review failed", "content_id", contentID, "error", err)
 	}
 }
-
-

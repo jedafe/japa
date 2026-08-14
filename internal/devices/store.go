@@ -4,7 +4,8 @@
 // pushes to active tokens.
 //
 // Ref: japaconnect-engineering/sections/77-flutter-mobile-app.md
-//      japaconnect-engineering/adr/ADR-074-screen-contract.md
+//
+//	japaconnect-engineering/adr/ADR-074-screen-contract.md
 package devices
 
 import (

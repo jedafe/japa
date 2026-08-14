@@ -31,6 +31,7 @@ import (
 
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/config"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/tenant"
 )
 
@@ -50,24 +51,10 @@ func NewHandlers(service *Service, settings *config.Settings) *Handlers {
 // Shared helpers (same pattern as servicedir/handlers.go)
 // ---------------------------------------------------------------------------
 
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	if err := json.NewEncoder(w).Encode(v); err != nil {
-		slog.Error("appointmentalert: encode response", "error", err)
-	}
-}
-
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, map[string]any{
-		"error": map[string]string{"code": code, "message": message},
-	})
-}
-
 func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
 	return t.ID, true
@@ -76,7 +63,7 @@ func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	u := auth.FromContext(r.Context())
 	if u == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
 	return u, true
@@ -85,7 +72,7 @@ func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUse
 func scanUUIDParam(w http.ResponseWriter, r *http.Request, name string) (pgtype.UUID, bool) {
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, name)); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid "+name)
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid "+name)
 		return pgtype.UUID{}, false
 	}
 	return id, true
@@ -120,14 +107,14 @@ func (h *Handlers) HandleListEmbassies(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "appointment_alert_disabled", "Appointment alerts are not available")
+		errpkg.WriteError(w, http.StatusNotFound, "appointment_alert_disabled", "Appointment alerts are not available")
 		return
 	}
 
 	var destSpaceID pgtype.UUID
 	if v := r.URL.Query().Get("dest"); v != "" {
 		if err := destSpaceID.Scan(v); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid destination space ID")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid destination space ID")
 			return
 		}
 	}
@@ -137,11 +124,11 @@ func (h *Handlers) HandleListEmbassies(w http.ResponseWriter, r *http.Request) {
 	embassies, total, err := h.service.ListEmbassies(r.Context(), tenantID, destSpaceID, true, page, limit, "", "", "")
 	if err != nil {
 		slog.Error("appointmentalert: list embassies failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "list_failed", "Failed to list embassies")
+		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list embassies")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": embassies,
 		"pagination": map[string]any{
 			"page":  page,
@@ -169,7 +156,7 @@ func (h *Handlers) HandleListMyAlerts(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "appointment_alert_disabled", "Appointment alerts are not available")
+		errpkg.WriteError(w, http.StatusNotFound, "appointment_alert_disabled", "Appointment alerts are not available")
 		return
 	}
 
@@ -179,11 +166,11 @@ func (h *Handlers) HandleListMyAlerts(w http.ResponseWriter, r *http.Request) {
 	alerts, total, err := h.service.ListUserAlerts(r.Context(), tenantID, user.UserID, status, page, limit)
 	if err != nil {
 		slog.Error("appointmentalert: list my alerts failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "list_failed", "Failed to list alerts")
+		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list alerts")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": alerts,
 		"pagination": map[string]any{
 			"page":  page,
@@ -207,37 +194,37 @@ func (h *Handlers) HandleCreateMyAlert(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "appointment_alert_disabled", "Appointment alerts are not available")
+		errpkg.WriteError(w, http.StatusNotFound, "appointment_alert_disabled", "Appointment alerts are not available")
 		return
 	}
 
 	var input CreateAlertInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
 
 	if input.EmbassySlug == "" {
-		writeError(w, http.StatusBadRequest, "missing_embassy_slug", "embassy_slug is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_embassy_slug", "embassy_slug is required")
 		return
 	}
 	if input.DestinationSpaceID == "" {
-		writeError(w, http.StatusBadRequest, "missing_destination_space_id", "destination_space_id is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_destination_space_id", "destination_space_id is required")
 		return
 	}
 	if input.DateRangeStart == "" || input.DateRangeEnd == "" {
-		writeError(w, http.StatusBadRequest, "missing_date_range", "date_range_start and date_range_end are required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_date_range", "date_range_start and date_range_end are required")
 		return
 	}
 
 	alert, err := h.service.CreateAlert(r.Context(), tenantID, user.UserID, input)
 	if err != nil {
 		slog.Error("appointmentalert: create alert failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "create_failed", "Failed to create alert")
+		errpkg.WriteError(w, http.StatusInternalServerError, "create_failed", "Failed to create alert")
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": alert})
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": alert})
 }
 
 // HandleUpdateMyAlert handles PATCH /me/appointment-alerts/:id — pause,
@@ -258,32 +245,32 @@ func (h *Handlers) HandleUpdateMyAlert(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "appointment_alert_disabled", "Appointment alerts are not available")
+		errpkg.WriteError(w, http.StatusNotFound, "appointment_alert_disabled", "Appointment alerts are not available")
 		return
 	}
 
 	var input UpdateAlertInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
 
 	alert, err := h.service.UpdateAlert(r.Context(), alertID, tenantID, user.UserID, input)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "alert_not_found", "Alert not found")
+			errpkg.WriteError(w, http.StatusNotFound, "alert_not_found", "Alert not found")
 			return
 		}
 		if errors.Is(err, ErrNotOwner) {
-			writeError(w, http.StatusForbidden, "not_owner", "You can only manage your own alerts")
+			errpkg.WriteError(w, http.StatusForbidden, "not_owner", "You can only manage your own alerts")
 			return
 		}
 		slog.Error("appointmentalert: update alert failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "update_failed", "Failed to update alert")
+		errpkg.WriteError(w, http.StatusInternalServerError, "update_failed", "Failed to update alert")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": alert})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": alert})
 }
 
 // HandleDeleteMyAlert handles DELETE /me/appointment-alerts/:id — delete
@@ -304,21 +291,21 @@ func (h *Handlers) HandleDeleteMyAlert(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "appointment_alert_disabled", "Appointment alerts are not available")
+		errpkg.WriteError(w, http.StatusNotFound, "appointment_alert_disabled", "Appointment alerts are not available")
 		return
 	}
 
 	if err := h.service.DeleteAlert(r.Context(), alertID, tenantID, user.UserID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "alert_not_found", "Alert not found")
+			errpkg.WriteError(w, http.StatusNotFound, "alert_not_found", "Alert not found")
 			return
 		}
 		if errors.Is(err, ErrNotOwner) {
-			writeError(w, http.StatusForbidden, "not_owner", "You can only manage your own alerts")
+			errpkg.WriteError(w, http.StatusForbidden, "not_owner", "You can only manage your own alerts")
 			return
 		}
 		slog.Error("appointmentalert: delete alert failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "delete_failed", "Failed to delete alert")
+		errpkg.WriteError(w, http.StatusInternalServerError, "delete_failed", "Failed to delete alert")
 		return
 	}
 
@@ -344,21 +331,21 @@ func (h *Handlers) HandleAdminListEmbassies(w http.ResponseWriter, r *http.Reque
 	}
 
 	if h.service == nil {
-		writeError(w, http.StatusServiceUnavailable, "appointment_alert_unavailable", "Appointment alerter not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "appointment_alert_unavailable", "Appointment alerter not configured")
 		return
 	}
 
 	// Feature-flag gate: return 404 (not 403) when the feature is disabled,
 	// consistent with the public endpoints (§91, feature-flag-naming.md).
 	if !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "appointment_alert_disabled", "Appointment alerts are not available")
+		errpkg.WriteError(w, http.StatusNotFound, "appointment_alert_disabled", "Appointment alerts are not available")
 		return
 	}
 
 	var destSpaceID pgtype.UUID
 	if v := r.URL.Query().Get("dest"); v != "" {
 		if err := destSpaceID.Scan(v); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid destination space ID")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid destination space ID")
 			return
 		}
 	}
@@ -387,11 +374,11 @@ func (h *Handlers) HandleAdminListEmbassies(w http.ResponseWriter, r *http.Reque
 	embassies, total, err := h.service.ListEmbassies(r.Context(), tenantID, destSpaceID, activeOnly, page, limit, search, sortBy, sortOrder)
 	if err != nil {
 		slog.Error("appointmentalert: admin list embassies failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "admin_list_failed", "Failed to list embassies")
+		errpkg.WriteError(w, http.StatusInternalServerError, "admin_list_failed", "Failed to list embassies")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": embassies,
 		"pagination": map[string]any{
 			"page":  page,
@@ -414,41 +401,41 @@ func (h *Handlers) HandleAdminCreateEmbassy(w http.ResponseWriter, r *http.Reque
 	}
 
 	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "appointment_alert_disabled", "Appointment alerts are not available")
+		errpkg.WriteError(w, http.StatusNotFound, "appointment_alert_disabled", "Appointment alerts are not available")
 		return
 	}
 
 	var input CreateEmbassyInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
 
 	if input.Slug == "" {
-		writeError(w, http.StatusBadRequest, "missing_slug", "slug is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_slug", "slug is required")
 		return
 	}
 	if input.Name == "" {
-		writeError(w, http.StatusBadRequest, "missing_name", "name is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_name", "name is required")
 		return
 	}
 	if input.BookingURL == "" {
-		writeError(w, http.StatusBadRequest, "missing_booking_url", "booking_url is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_booking_url", "booking_url is required")
 		return
 	}
 	if input.DestinationSpaceID == "" {
-		writeError(w, http.StatusBadRequest, "missing_destination_space_id", "destination_space_id is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_destination_space_id", "destination_space_id is required")
 		return
 	}
 
 	embassy, err := h.service.CreateEmbassy(r.Context(), tenantID, input)
 	if err != nil {
 		slog.Error("appointmentalert: admin create embassy failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "create_failed", "Failed to create embassy monitor")
+		errpkg.WriteError(w, http.StatusInternalServerError, "create_failed", "Failed to create embassy monitor")
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": embassy})
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": embassy})
 }
 
 // HandleAdminUpdateEmbassy handles PATCH /admin/embassies/:id — update a
@@ -468,28 +455,28 @@ func (h *Handlers) HandleAdminUpdateEmbassy(w http.ResponseWriter, r *http.Reque
 	}
 
 	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "appointment_alert_disabled", "Appointment alerts are not available")
+		errpkg.WriteError(w, http.StatusNotFound, "appointment_alert_disabled", "Appointment alerts are not available")
 		return
 	}
 
 	var input UpdateEmbassyInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
 
 	embassy, err := h.service.UpdateEmbassy(r.Context(), embassyID, tenantID, input)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "embassy_not_found", "Embassy not found")
+			errpkg.WriteError(w, http.StatusNotFound, "embassy_not_found", "Embassy not found")
 			return
 		}
 		slog.Error("appointmentalert: admin update embassy failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "update_failed", "Failed to update embassy config")
+		errpkg.WriteError(w, http.StatusInternalServerError, "update_failed", "Failed to update embassy config")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": embassy})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": embassy})
 }
 
 // HandleAdminPollEmbassy handles POST /admin/embassies/:id/poll — trigger
@@ -511,21 +498,21 @@ func (h *Handlers) HandleAdminPollEmbassy(w http.ResponseWriter, r *http.Request
 	}
 
 	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "appointment_alert_disabled", "Appointment alerts are not available")
+		errpkg.WriteError(w, http.StatusNotFound, "appointment_alert_disabled", "Appointment alerts are not available")
 		return
 	}
 
 	if err := h.service.TriggerPoll(r.Context(), embassyID, tenantID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "embassy_not_found", "Embassy not found")
+			errpkg.WriteError(w, http.StatusNotFound, "embassy_not_found", "Embassy not found")
 			return
 		}
 		slog.Error("appointmentalert: admin poll embassy failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "poll_failed", "Failed to trigger poll")
+		errpkg.WriteError(w, http.StatusInternalServerError, "poll_failed", "Failed to trigger poll")
 		return
 	}
 
-	writeJSON(w, http.StatusAccepted, map[string]any{
+	errpkg.WriteJSON(w, http.StatusAccepted, map[string]any{
 		"data": map[string]any{
 			"status":     "poll_triggered",
 			"embassy_id": embassyID.String(),

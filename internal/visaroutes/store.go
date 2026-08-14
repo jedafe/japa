@@ -11,7 +11,8 @@
 // hitl_reviewed_at, hitl_review_notes) follow ADR-088.
 //
 // Ref: japaconnect-engineering/sections/90-visa-route-comparison.md
-//      japaconnect-engineering/adr/ADR-098-visa-route-comparison.md
+//
+//	japaconnect-engineering/adr/ADR-098-visa-route-comparison.md
 package visaroutes
 
 import (
@@ -81,13 +82,13 @@ type RouteRow struct {
 
 // ListFilter holds the filter parameters for public listing.
 type ListFilter struct {
-	TenantID          pgtype.UUID
+	TenantID           pgtype.UUID
 	DestinationSpaceID pgtype.UUID // optional
-	Profession        string       // optional: filter requirements_json
-	Education         string       // optional: filter requirements_json
-	ExperienceYears   int32        // optional: filter requirements_json
-	Limit             int32
-	Offset            int32
+	Profession         string      // optional: filter requirements_json
+	Education          string      // optional: filter requirements_json
+	ExperienceYears    int32       // optional: filter requirements_json
+	Limit              int32
+	Offset             int32
 }
 
 // List returns published, active visa routes for the public listing,
@@ -301,14 +302,14 @@ ORDER BY vr.name ASC
 
 // AdminListFilter holds filter parameters for the admin list.
 type AdminListFilter struct {
-	TenantID          pgtype.UUID
+	TenantID           pgtype.UUID
 	DestinationSpaceID pgtype.UUID // optional
-	Status            string       // optional
-	IsActive          *bool        // optional
-	VisaCategory      string       // optional
-	Q                 string       // optional: search name
-	Limit             int32
-	Offset            int32
+	Status             string      // optional
+	IsActive           *bool       // optional
+	VisaCategory       string      // optional
+	Q                  string      // optional: search name
+	Limit              int32
+	Offset             int32
 }
 
 // AdminList returns all visa routes (any status, active or inactive) for
@@ -424,24 +425,24 @@ SELECT COUNT(*) FROM visa_routes vr WHERE %s
 
 // CreateRoute holds the fields for inserting a new visa route.
 type CreateRoute struct {
-	TenantID            pgtype.UUID
-	DestinationSpaceID  pgtype.UUID
-	VisaCategory        string
-	Name                string
-	Slug                string
-	EligibilitySummary  *string
-	RequirementsJSON    []byte
-	TypicalFeeUSD       *float64
-	PathToPR            *string
-	RenewalTerms        *string
-	Restrictions        *string
-	GovSourceURL        string
+	TenantID             pgtype.UUID
+	DestinationSpaceID   pgtype.UUID
+	VisaCategory         string
+	Name                 string
+	Slug                 string
+	EligibilitySummary   *string
+	RequirementsJSON     []byte
+	TypicalFeeUSD        *float64
+	PathToPR             *string
+	RenewalTerms         *string
+	Restrictions         *string
+	GovSourceURL         string
 	SourceURLLastChecked pgtype.Date
-	Status              string
-	IsActive            bool
-	AIGenerated         bool
-	AIModel             *string
-	AIPromptHash        *string
+	Status               string
+	IsActive             bool
+	AIGenerated          bool
+	AIModel              *string
+	AIPromptHash         *string
 }
 
 // Create inserts a new visa route and returns the created row.
@@ -481,23 +482,23 @@ RETURNING id
 // UpdateRoute holds the mutable fields for a PATCH update. Only non-nil
 // fields are applied.
 type UpdateRoute struct {
-	DestinationSpaceID  *pgtype.UUID
-	VisaCategory        *string
-	Name                *string
-	Slug                *string
-	EligibilitySummary  *string
-	RequirementsJSON    []byte
-	TypicalFeeUSD       *float64
-	PathToPR            *string
-	RenewalTerms        *string
-	Restrictions        *string
-	GovSourceURL        *string
+	DestinationSpaceID   *pgtype.UUID
+	VisaCategory         *string
+	Name                 *string
+	Slug                 *string
+	EligibilitySummary   *string
+	RequirementsJSON     []byte
+	TypicalFeeUSD        *float64
+	PathToPR             *string
+	RenewalTerms         *string
+	Restrictions         *string
+	GovSourceURL         *string
 	SourceURLLastChecked *pgtype.Date
-	Status              *string
-	IsActive            *bool
-	AIGenerated         *bool
-	AIModel             *string
-	AIPromptHash        *string
+	Status               *string
+	IsActive             *bool
+	AIGenerated          *bool
+	AIModel              *string
+	AIPromptHash         *string
 }
 
 // Update applies a partial update to a visa route and returns the

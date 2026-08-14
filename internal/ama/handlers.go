@@ -14,7 +14,8 @@
 // one-active-per-host and cooldown rate limits are enforced in the service.
 //
 // Ref: japaconnect-engineering/sections/88-ask-an-expat.md
-//      japaconnect-engineering/adr/ADR-096-ask-an-expat.md
+//
+//	japaconnect-engineering/adr/ADR-096-ask-an-expat.md
 package ama
 
 import (
@@ -29,6 +30,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/jedafe/japa/internal/auth"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/tenant"
 )
 
@@ -42,24 +44,10 @@ func NewHandlers(service *Service) *Handlers {
 	return &Handlers{service: service}
 }
 
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	if err := json.NewEncoder(w).Encode(v); err != nil {
-		slog.Error("ama: encode response", "error", err)
-	}
-}
-
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, map[string]any{
-		"error": map[string]string{"code": code, "message": message},
-	})
-}
-
 func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
 	return t.ID, true
@@ -68,7 +56,7 @@ func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	u := auth.FromContext(r.Context())
 	if u == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
 	return u, true
@@ -77,7 +65,7 @@ func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUse
 func scanUUIDParam(w http.ResponseWriter, r *http.Request, name string) (pgtype.UUID, bool) {
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, name)); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid "+name)
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid "+name)
 		return pgtype.UUID{}, false
 	}
 	return id, true
@@ -125,11 +113,11 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 	dtos, err := h.service.ListActive(r.Context(), tenantID, dest, profession, pageSize, cursor)
 	if err != nil {
 		slog.Error("ama: list failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "list_failed", "Failed to list AMA sessions")
+		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list AMA sessions")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": dtos})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": dtos})
 }
 
 // HandleGet handles GET /forum/ama/:id — single AMA thread.
@@ -146,15 +134,15 @@ func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
 	thread, err := h.service.GetByID(r.Context(), threadID, tenantID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "ama_not_found", "AMA thread not found")
+			errpkg.WriteError(w, http.StatusNotFound, "ama_not_found", "AMA thread not found")
 			return
 		}
 		slog.Error("ama: get failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "get_failed", "Failed to get AMA thread")
+		errpkg.WriteError(w, http.StatusInternalServerError, "get_failed", "Failed to get AMA thread")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": thread})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": thread})
 }
 
 // HandleCreate handles POST /forum/ama — create an AMA session.
@@ -184,23 +172,23 @@ func (h *Handlers) HandleCreate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if input.Title == "" {
-		writeError(w, http.StatusBadRequest, "missing_title", "Title is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_title", "Title is required")
 		return
 	}
 	if input.Slug == "" {
-		writeError(w, http.StatusBadRequest, "missing_slug", "Slug is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_slug", "Slug is required")
 		return
 	}
 
 	var spaceID pgtype.UUID
 	if input.SpaceID != nil {
 		if err := spaceID.Scan(*input.SpaceID); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_space_id", "Invalid space_id format")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_space_id", "Invalid space_id format")
 			return
 		}
 	}
@@ -222,21 +210,21 @@ func (h *Handlers) HandleCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": dto})
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": dto})
 }
 
 // handleCreateError maps service errors to the standard error envelope.
 func handleCreateError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, ErrActiveAMAExists):
-		writeError(w, http.StatusConflict, "ama_active_exists", "You already have an active AMA session.")
+		errpkg.WriteError(w, http.StatusConflict, "ama_active_exists", "You already have an active AMA session.")
 	case errors.Is(err, ErrAMACooldown):
-		writeError(w, http.StatusTooManyRequests, "ama_cooldown", "The AMA cooldown period has not elapsed.")
+		errpkg.WriteError(w, http.StatusTooManyRequests, "ama_cooldown", "The AMA cooldown period has not elapsed.")
 	case errors.Is(err, ErrCloseForbidden):
-		writeError(w, http.StatusForbidden, "close_forbidden", "Only the host or a moderator may close this AMA.")
+		errpkg.WriteError(w, http.StatusForbidden, "close_forbidden", "Only the host or a moderator may close this AMA.")
 	default:
 		slog.Error("ama: create failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "create_failed", "Failed to create AMA session")
+		errpkg.WriteError(w, http.StatusInternalServerError, "create_failed", "Failed to create AMA session")
 	}
 }
 
@@ -261,17 +249,17 @@ func (h *Handlers) HandleClose(w http.ResponseWriter, r *http.Request) {
 	err := h.service.CloseAMA(r.Context(), threadID, tenantID, user.UserID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "ama_not_found", "AMA thread not found")
+			errpkg.WriteError(w, http.StatusNotFound, "ama_not_found", "AMA thread not found")
 			return
 		}
 		if errors.Is(err, ErrCloseForbidden) {
-			writeError(w, http.StatusForbidden, "close_forbidden", "Only the host or a moderator may close this AMA.")
+			errpkg.WriteError(w, http.StatusForbidden, "close_forbidden", "Only the host or a moderator may close this AMA.")
 			return
 		}
 		slog.Error("ama: close failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "close_failed", "Failed to close AMA session")
+		errpkg.WriteError(w, http.StatusInternalServerError, "close_failed", "Failed to close AMA session")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"closed": true}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"closed": true}})
 }

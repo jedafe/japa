@@ -364,8 +364,8 @@ func fetchGitHubEmail(ctx context.Context, accessToken string) string {
 // appleJWKS caches Apple's public keys used for ID token signature verification.
 // Keys auto-refresh every hour with a mutex-guarded on-demand fetch.
 var (
-	appleJWKS     map[string]interface{}
-	appleJWKSMu   sync.RWMutex
+	appleJWKS          map[string]interface{}
+	appleJWKSMu        sync.RWMutex
 	appleJWKSFetchedAt time.Time
 )
 

@@ -18,11 +18,11 @@ import (
 	"github.com/jedafe/japa/internal/control"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/rbac"
 	"github.com/jedafe/japa/internal/tenant"
 	"github.com/valkey-io/valkey-go/valkeycompat"
 )
-
 
 // SettingDef defines the metadata for a single setting within a category.
 type SettingDef struct {
@@ -178,9 +178,9 @@ var defaultSettings = map[string]SettingCategory{
 			{Key: "logo_url", Label: "Logo URL", Type: "media", Accept: "image/*"},
 			{Key: "favicon_url", Label: "Favicon URL", Type: "media", Accept: "image/*"},
 			{
-				Key:   "auth_brand_slides",
-				Label: "Auth Brand Slides",
-				Type:  "brand-slides",
+				Key:         "auth_brand_slides",
+				Label:       "Auth Brand Slides",
+				Type:        "brand-slides",
 				Description: "Carousel slides for the login/signup brand panel. Pick images from the media library and add a headline + subheading per slide.",
 				Value: []map[string]string{
 					{"image": "/brand/kigali-airplane-window.jpg", "headline": "Connecting the diaspora,", "subheading": "one journey at a time"},
@@ -425,21 +425,6 @@ var settingCategoryOrder = []string{
 // Helpers
 // ---------------------------------------------------------------------------
 
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-
-	if err := json.NewEncoder(w).Encode(v); err != nil {
-		slog.Warn("json encode error", "error", err)
-	}
-}
-
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, map[string]any{
-		"error": map[string]string{"code": code, "message": message},
-	})
-}
-
 // invalidateLinkPreviewCache removes all cached link previews so that an
 // updated domain blacklist takes effect immediately instead of after the 24h TTL.
 func invalidateLinkPreviewCache(ctx context.Context, vk valkeycompat.Cmdable) {
@@ -464,7 +449,7 @@ func invalidateLinkPreviewCache(ctx context.Context, vk valkeycompat.Cmdable) {
 func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
 
@@ -475,7 +460,7 @@ func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	user := auth.FromContext(r.Context())
 	if user == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
 
@@ -509,7 +494,7 @@ func (h *Handlers) ListSettings(w http.ResponseWriter, r *http.Request) {
 		tenantID,
 	)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "db_error", "Failed to load settings")
+		errpkg.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to load settings")
 		return
 	}
 	defer rows.Close()
@@ -561,7 +546,7 @@ func (h *Handlers) ListSettings(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": result})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": result})
 }
 
 // ---------------------------------------------------------------------------
@@ -584,26 +569,26 @@ func (h *Handlers) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 
 	category := chi.URLParam(r, "category")
 	if category == "" {
-		writeError(w, http.StatusBadRequest, "missing_category", "Category is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_category", "Category is required")
 		return
 	}
 
 	// Validate that the category exists in our schema.
 	def, ok := defaultSettings[category]
 	if !ok {
-		writeError(w, http.StatusNotFound, "invalid_category", "Unknown settings category: "+category)
+		errpkg.WriteError(w, http.StatusNotFound, "invalid_category", "Unknown settings category: "+category)
 		return
 	}
 
 	// Parse the request body as key-value pairs.
 	var updates map[string]any
 	if err := json.NewDecoder(r.Body).Decode(&updates); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
 		return
 	}
 
 	if len(updates) == 0 {
-		writeError(w, http.StatusBadRequest, "empty_body", "No settings provided")
+		errpkg.WriteError(w, http.StatusBadRequest, "empty_body", "No settings provided")
 		return
 	}
 
@@ -623,12 +608,12 @@ func (h *Handlers) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 	isPublic := make(map[string]bool, len(updates))
 	for key, value := range updates {
 		if !validKeys[key] {
-			writeError(w, http.StatusBadRequest, "invalid_key", "Unknown setting key: "+key)
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_key", "Unknown setting key: "+key)
 			return
 		}
 		valueJSON, err := json.Marshal(value)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_value", "Cannot serialize value for key: "+key)
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_value", "Cannot serialize value for key: "+key)
 			return
 		}
 		fullKey := category + "." + key
@@ -638,7 +623,7 @@ func (h *Handlers) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 
 	if err := h.Settings.UpdateSettingsBatchWithPublic(ctx, tenantID, pending, isPublic); err != nil {
 		slog.Error("admin: failed to save settings", "category", category, "error", err)
-		writeError(w, http.StatusInternalServerError, "db_error", "Failed to save settings")
+		errpkg.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to save settings")
 		return
 	}
 
@@ -648,7 +633,7 @@ func (h *Handlers) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 		invalidateLinkPreviewCache(r.Context(), h.Valkey)
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]string{
 			"status":   "saved",
 			"category": category,

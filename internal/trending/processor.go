@@ -32,21 +32,21 @@ var trendingWindows = []struct {
 // values so behaviour is unchanged when settings are absent.
 type scoringConfig struct {
 	// Content/User velocity weights (BUG-002: HN gravity formula).
-	ViewsWeight      float64
-	CommentsWeight   float64
-	VotesWeight      float64
-	BookmarksWeight  float64
-	SharesWeight     float64
-	Gravity          float64 // HN gravity exponent (default 1.8, ADR-032)
+	ViewsWeight     float64
+	CommentsWeight  float64
+	VotesWeight     float64
+	BookmarksWeight float64
+	SharesWeight    float64
+	Gravity         float64 // HN gravity exponent (default 1.8, ADR-032)
 
 	// Tag trending weights.
 	TagFollowerWeight float64
 	TagContentWeight  float64
 
 	// Space trending weights.
-	SpaceMemberWeight  float64
-	SpacePostWeight    float64
-	SpaceRecentWeight  float64
+	SpaceMemberWeight float64
+	SpacePostWeight   float64
+	SpaceRecentWeight float64
 
 	// Expiry durations (hours) per window.
 	Expiry24hHours int
@@ -276,7 +276,9 @@ func (p *Processor) computeForTenant(ctx context.Context, tenantID [16]byte) (in
 
 // computeContentTrending computes velocity scores for published content.
 // BUG-002: uses the Section 32 HN gravity formula:
-//   velocity = engagement / (hours_old + 2)^gravity
+//
+//	velocity = engagement / (hours_old + 2)^gravity
+//
 // where gravity comes from system_settings (default 1.8, ADR-032).
 // BUG-001: geoScope is nil for global or a country code string for geo-scoped.
 // BUG-016: weights are configurable via system_settings.

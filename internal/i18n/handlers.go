@@ -82,7 +82,7 @@ func parseUUIDParam(r *http.Request, param string) (pgtype.UUID, error) {
 func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
 
@@ -91,23 +91,6 @@ func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 
 func handleServiceError(w http.ResponseWriter, err error) {
 	errpkg.HandleServiceError(w, err)
-}
-
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-
-	if v != nil {
-		if err := json.NewEncoder(w).Encode(v); err != nil {
-			slog.Warn("json encode error", "error", err)
-		}
-	}
-}
-
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, map[string]any{
-		"error": map[string]string{"code": code, "message": message},
-	})
 }
 
 // ---------------------------------------------------------------------------
@@ -124,7 +107,7 @@ func (h *Handlers) ListByLocale(w http.ResponseWriter, r *http.Request) {
 
 	locale := r.URL.Query().Get("locale")
 	if locale == "" {
-		writeError(w, http.StatusBadRequest, "missing_locale", "locale query parameter is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_locale", "locale query parameter is required")
 		return
 	}
 
@@ -157,7 +140,7 @@ func (h *Handlers) ListByLocale(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": items})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": items})
 }
 
 // ListLocales returns distinct locales with counts.
@@ -174,7 +157,7 @@ func (h *Handlers) ListLocales(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": counts})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": counts})
 }
 
 // Upsert handles create/update of a single translation.
@@ -193,22 +176,22 @@ func (h *Handlers) Upsert(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if input.Locale == "" {
-		writeError(w, http.StatusBadRequest, "missing_locale", "locale is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_locale", "locale is required")
 		return
 	}
 
 	if input.Key == "" {
-		writeError(w, http.StatusBadRequest, "missing_key", "key is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_key", "key is required")
 		return
 	}
 
 	if input.Value == "" {
-		writeError(w, http.StatusBadRequest, "missing_value", "value is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_value", "value is required")
 		return
 	}
 
@@ -217,7 +200,7 @@ func (h *Handlers) Upsert(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{
 		"locale": input.Locale,
 		"key":    input.Key,
 		"value":  input.Value,
@@ -242,12 +225,12 @@ func (h *Handlers) UpsertBatch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if len(input.Translations) == 0 {
-		writeError(w, http.StatusBadRequest, "missing_translations", "translations array is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_translations", "translations array is required")
 		return
 	}
 
@@ -266,7 +249,7 @@ func (h *Handlers) UpsertBatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]int{"upserted": len(items)},
 	})
 }
@@ -281,7 +264,7 @@ func (h *Handlers) Delete(w http.ResponseWriter, r *http.Request) {
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid translation ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid translation ID")
 		return
 	}
 
@@ -290,7 +273,7 @@ func (h *Handlers) Delete(w http.ResponseWriter, r *http.Request) {
 	// the locale alongside the ID in the request path.
 	locale := r.URL.Query().Get("locale")
 	if locale == "" {
-		writeError(w, http.StatusBadRequest, "missing_locale", "locale query parameter is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_locale", "locale query parameter is required")
 		return
 	}
 
@@ -317,7 +300,7 @@ func (h *Handlers) GetLocaleTranslations(w http.ResponseWriter, r *http.Request)
 	// Catalog route param is :lang_code (was :locale).
 	locale := chi.URLParam(r, "lang_code")
 	if locale == "" {
-		writeError(w, http.StatusBadRequest, "missing_locale", "locale is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_locale", "locale is required")
 		return
 	}
 
@@ -327,7 +310,7 @@ func (h *Handlers) GetLocaleTranslations(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"locale": locale,
 		"data":   data,
 	})
@@ -347,5 +330,5 @@ func (h *Handlers) HandleListPublicLocales(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": locales})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": locales})
 }

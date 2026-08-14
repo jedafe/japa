@@ -3,7 +3,8 @@
 // HTML-to-TipTap conversion tests per the testing expectations.
 //
 // Ref: japaconnect-engineering/sections/65-content-import.md
-//      japaconnect-engineering/adr/ADR-083-content-import.md
+//
+//	japaconnect-engineering/adr/ADR-083-content-import.md
 package contentimport
 
 import (

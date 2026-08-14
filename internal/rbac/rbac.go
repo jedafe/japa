@@ -183,7 +183,7 @@ func (r *RBAC) HasSpacePermission(ctx context.Context, userID, tenantID, spaceID
 func (r *RBAC) IsSuperAdmin(ctx context.Context, userID, tenantID pgtype.UUID) bool {
 	inGroup, err := r.read.IsUserInGroup(ctx, gen.IsUserInGroupParams{
 		TenantID:  tenantID,
-		UserID:   userID,
+		UserID:    userID,
 		GroupSlug: SystemGroupSuperAdmin,
 	})
 	if err != nil {

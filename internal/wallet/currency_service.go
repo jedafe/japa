@@ -33,8 +33,8 @@ type PurchaseCreditsResult struct {
 	PaymentID      string `json:"payment_id"`
 	Provider       string `json:"provider"`
 	Currency       string `json:"currency"`
-	FiatAmount     int64  `json:"fiat_amount"`      // minor units (kobo/cents)
-	CreditsToGrant int    `json:"credits_to_grant"` // credit_amount + bonus_credits
+	FiatAmount     int64  `json:"fiat_amount"`            // minor units (kobo/cents)
+	CreditsToGrant int    `json:"credits_to_grant"`       // credit_amount + bonus_credits
 	CheckoutURL    string `json:"checkout_url,omitempty"` // provider checkout URL (if external)
 }
 

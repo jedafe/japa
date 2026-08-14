@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/valkey"
 	"github.com/valkey-io/valkey-go/valkeycompat"
 )
@@ -106,7 +107,7 @@ func SlidingWindowRateLimitWithSettings(rdb valkeycompat.Cmdable, sr rateLimitSe
 			if count > int64(limit) {
 				retryAfter := strconv.FormatInt(int64(windowSize.Seconds()), 10)
 				w.Header().Set("Retry-After", retryAfter)
-				writeError(w, http.StatusTooManyRequests, "rate_limit_exceeded",
+				errpkg.WriteError(w, http.StatusTooManyRequests, "rate_limit_exceeded",
 					"Rate limit exceeded. Please retry after "+retryAfter+" seconds.")
 
 				return

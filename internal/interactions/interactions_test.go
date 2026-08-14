@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	errpkg "github.com/jedafe/japa/internal/errors"
 )
 
 // ---------------------------------------------------------------------------
@@ -20,7 +21,7 @@ func TestWriteJSON(t *testing.T) {
 	t.Parallel()
 
 	rr := httptest.NewRecorder()
-	writeJSON(rr, http.StatusOK, map[string]any{"data": "ok"})
+	errpkg.WriteJSON(rr, http.StatusOK, map[string]any{"data": "ok"})
 
 	if rr.Code != http.StatusOK {
 		t.Errorf("status = %d, want %d", rr.Code, http.StatusOK)
@@ -45,7 +46,7 @@ func TestWriteError(t *testing.T) {
 	t.Parallel()
 
 	rr := httptest.NewRecorder()
-	writeError(rr, http.StatusNotFound, "not_found", "Resource not found")
+	errpkg.WriteError(rr, http.StatusNotFound, "not_found", "Resource not found")
 
 	if rr.Code != http.StatusNotFound {
 		t.Errorf("status = %d, want %d", rr.Code, http.StatusNotFound)

@@ -191,7 +191,6 @@ func uuidPtrFromBytes(b [16]byte) *string {
 	return &s
 }
 
-
 func TestAPIPlaygroundHandler(t *testing.T) {
 	t.Parallel()
 

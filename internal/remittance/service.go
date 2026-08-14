@@ -4,7 +4,8 @@
 // It reads remittance.* system_settings via the hot-reloadable config.Settings.
 //
 // Ref: japaconnect-engineering/sections/74-remittance-tracker.md
-//      japaconnect-engineering/adr/ADR-075-remittance-rate-tracker.md
+//
+//	japaconnect-engineering/adr/ADR-075-remittance-rate-tracker.md
 package remittance
 
 import (
@@ -136,9 +137,9 @@ type RateInfo struct {
 // BestRate is the JSON-serialisable representation of the best rate for a
 // corridor — the provider with the highest effective receive amount.
 type BestRate struct {
-	ProviderID   string  `json:"provider_id"`
-	ProviderName string  `json:"provider_name"`
-	Rate         float64 `json:"rate"`
+	ProviderID    string  `json:"provider_id"`
+	ProviderName  string  `json:"provider_name"`
+	Rate          float64 `json:"rate"`
 	ReceiveAmount float64 `json:"receive_amount"`
 }
 
@@ -182,15 +183,15 @@ type AlertInfo struct {
 
 // ProviderCalculation is a single provider's result in the calculator output.
 type ProviderCalculation struct {
-	ProviderID     string  `json:"provider_id"`
-	ProviderName   string  `json:"provider_name"`
-	Rate           float64 `json:"rate"`
-	ReceiveAmount  float64 `json:"receive_amount"`
-	FeeFlat        float64 `json:"fee_flat"`
-	FeePct         float64 `json:"fee_pct"`
-	TotalFees      float64 `json:"total_fees"`
-	EffectiveRate  float64 `json:"effective_rate"`
-	TransferTime   string  `json:"transfer_time,omitempty"`
+	ProviderID    string  `json:"provider_id"`
+	ProviderName  string  `json:"provider_name"`
+	Rate          float64 `json:"rate"`
+	ReceiveAmount float64 `json:"receive_amount"`
+	FeeFlat       float64 `json:"fee_flat"`
+	FeePct        float64 `json:"fee_pct"`
+	TotalFees     float64 `json:"total_fees"`
+	EffectiveRate float64 `json:"effective_rate"`
+	TransferTime  string  `json:"transfer_time,omitempty"`
 }
 
 // CalculateResult is the output of the send-amount calculator: ranked
@@ -198,12 +199,12 @@ type ProviderCalculation struct {
 // parameters (send_amount, send_currency, receive_currency) so the frontend
 // can render the result without echoing the request separately.
 type CalculateResult struct {
-	SendAmount       float64               `json:"send_amount"`
-	SendCurrency     string                `json:"send_currency"`
-	ReceiveCurrency  string                `json:"receive_currency"`
-	Results          []ProviderCalculation `json:"results"`
-	BestProviderID   string                `json:"best_provider_id,omitempty"`
-	BestReceiveAmount float64              `json:"best_receive_amount,omitempty"`
+	SendAmount        float64               `json:"send_amount"`
+	SendCurrency      string                `json:"send_currency"`
+	ReceiveCurrency   string                `json:"receive_currency"`
+	Results           []ProviderCalculation `json:"results"`
+	BestProviderID    string                `json:"best_provider_id,omitempty"`
+	BestReceiveAmount float64               `json:"best_receive_amount,omitempty"`
 }
 
 // ---------------------------------------------------------------------------

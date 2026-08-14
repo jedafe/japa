@@ -18,17 +18,17 @@ const PubSubChannel = "jc:ws:broadcast"
 // target user or space ID (and the tenant ID for space-scoped delivery) so
 // that receiving instances can dispatch it to the correct local subscribers.
 type PubSubMessage struct {
-	Type          string      `json:"type"`
-	TargetUserID  string      `json:"target_user_id,omitempty"`
-	TargetTenantID string     `json:"target_tenant_id,omitempty"`
-	TargetSpaceID string      `json:"target_space_id,omitempty"`
+	Type           string `json:"type"`
+	TargetUserID   string `json:"target_user_id,omitempty"`
+	TargetTenantID string `json:"target_tenant_id,omitempty"`
+	TargetSpaceID  string `json:"target_space_id,omitempty"`
 	// TenantBroadcast is true for a tenant-scoped broadcast (e.g. presence).
 	// It distinguishes a tenant broadcast (deliver to every client in the
 	// tenant) from a space-scoped delivery (TargetSpaceID set) which happens
 	// to also carry TargetTenantID for tenant scoping. Without this flag a
 	// tenant broadcast with no space/user target would fall through to the
 	// global BroadcastToAll path and leak across tenants (Rule 4).
-	TenantBroadcast bool      `json:"tenant_broadcast,omitempty"`
+	TenantBroadcast bool        `json:"tenant_broadcast,omitempty"`
 	Payload         interface{} `json:"payload"`
 }
 

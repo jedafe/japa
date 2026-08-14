@@ -479,9 +479,9 @@ func (s *Service) GetUnresolvedCriticalFindings(ctx context.Context, tenantID pg
 
 // RevenueAnalytics holds the admin revenue analytics response.
 type RevenueAnalytics struct {
-	TotalRevenue        int64                      `json:"total_revenue"`
-	MonthlyRevenue      int64                      `json:"monthly_revenue"`
-	ActiveSubscriptions int32                      `json:"active_subscriptions"`
+	TotalRevenue        int64                       `json:"total_revenue"`
+	MonthlyRevenue      int64                       `json:"monthly_revenue"`
+	ActiveSubscriptions int32                       `json:"active_subscriptions"`
 	Periods             []gen.GetRevenueByPeriodRow `json:"periods"`
 }
 

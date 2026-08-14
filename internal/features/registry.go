@@ -31,8 +31,8 @@ var Registry = []Feature{
 	{Key: "feature.reactions", Label: "Reactions", Default: true},
 	{Key: "feature.bookmarks", Label: "Bookmarks", Default: true},
 	{Key: "feature.ratings_reviews", Label: "Ratings & Reviews", Default: true},
-	{Key: "feature.mentorship", Label: "Mentorship Matching", Default: false},
-	{Key: "feature.mentorship_comparison", Label: "Mentorship Comparison", Default: false},
+	{Key: "mentorship.enabled", Label: "Mentorship Matching", Default: false},
+	{Key: "mentorship.comparison", Label: "Mentorship Comparison", Default: false},
 	// Professional features
 	{Key: "feature.professional", Label: "Professional Profiles", Default: true},
 	// Commerce features
@@ -47,30 +47,31 @@ var Registry = []Feature{
 	// AI features
 	{Key: "feature.japabot", Label: "JapaBot AI Chat", Default: false},
 	{Key: "feature.ai_content_gen", Label: "AI Content Generation", Default: false},
-	// V2 Community Features (§79–§89, §98)
-	{Key: "feature.story", Label: "Community Story Wall", Default: false},
-	{Key: "feature.wiki", Label: "Destination Wiki", Default: false},
-	{Key: "feature.scam_alert", Label: "Scam Alert Board", Default: false},
-	{Key: "feature.planning_group", Label: "Japa Planning Groups", Default: false},
-	{Key: "feature.visa_timeline", Label: "Visa Timeline Tracker", Default: false},
-	{Key: "feature.digest", Label: "Community Digest Widget", Default: false},
+	// V2 Community Features (§79–§89, §98) — keys renamed by migration 000404
+	// from feature.{name} to {domain}.enabled per conventions/feature-flag-naming.md.
+	{Key: "story.enabled", Label: "Community Story Wall", Default: false},
+	{Key: "wiki.enabled", Label: "Destination Wiki", Default: false},
+	{Key: "scam_alert.enabled", Label: "Scam Alert Board", Default: false},
+	{Key: "planning_group.enabled", Label: "Japa Planning Groups", Default: false},
+	{Key: "visa_timeline.enabled", Label: "Visa Timeline Tracker", Default: false},
+	{Key: "digest.enabled", Label: "Community Digest Widget", Default: false},
 	{Key: "mutual_aid.enabled", Label: "Mutual Aid Board", Default: false},
-	{Key: "feature.calendar", Label: "Community Calendar", Default: false},
-	{Key: "feature.japa_stage", Label: "Japa Stage Progress Profiles", Default: false},
-	{Key: "feature.ama", Label: "Ask an Expat AMA", Default: false},
+	{Key: "calendar.enabled", Label: "Community Calendar", Default: false},
+	{Key: "japa_stage.enabled", Label: "Japa Stage Progress Profiles", Default: false},
+	{Key: "forum.ama.enabled", Label: "Ask an Expat AMA", Default: false},
 	{Key: "achievement.enabled", Label: "Community Achievement Feed", Default: false},
-	{Key: "feature.service_directory", Label: "Service Directory", Default: false},
+	{Key: "service_directory.enabled", Label: "Service Directory", Default: false},
 	// V2 Functional Tools (§90–§97, §99–§101) — Phase 49
-	{Key: "feature.visa_routes", Label: "Visa Route Comparison", Default: false},
-	{Key: "feature.appointment_alert", Label: "Embassy Appointment Alerter", Default: false},
-	{Key: "feature.arrival_checklist", Label: "Arrival Checklist", Default: false},
-	{Key: "feature.credential_checker", Label: "Professional Credential Checker", Default: false},
-	{Key: "feature.cv_formatter", Label: "CV Formatter", Default: false},
-	{Key: "feature.housing_guide", Label: "Housing Guide", Default: false},
+	{Key: "visa_routes.enabled", Label: "Visa Route Comparison", Default: false},
+	{Key: "appointment_alert.enabled", Label: "Embassy Appointment Alerter", Default: false},
+	{Key: "arrival_checklist.enabled", Label: "Arrival Checklist", Default: false},
+	{Key: "credential_checker.enabled", Label: "Professional Credential Checker", Default: false},
+	{Key: "cv_formatter.enabled", Label: "CV Formatter", Default: false},
+	{Key: "housing_guide.enabled", Label: "Housing Guide", Default: false},
 	{Key: "attestation_guide.enabled", Label: "Attestation Guide", Default: false},
-	{Key: "feature.language_test_hub", Label: "Language Test Hub", Default: false},
-	{Key: "feature.tax_calculator", Label: "Tax Calculator", Default: false},
-	{Key: "feature.community_locator", Label: "Diaspora Community Locator", Default: false},
+	{Key: "language_test_hub.enabled", Label: "Language Test Hub", Default: false},
+	{Key: "tax_calculator.enabled", Label: "Tax Calculator", Default: false},
+	{Key: "community_locator.enabled", Label: "Diaspora Community Locator", Default: false},
 }
 
 // DefaultFor returns the default enabled state for a feature key.

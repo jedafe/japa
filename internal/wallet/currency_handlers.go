@@ -11,6 +11,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/geoip"
 	"github.com/jedafe/japa/internal/visitor"
 )
@@ -32,7 +33,7 @@ func (h *Handlers) ListCurrencies(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": currencies})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": currencies})
 }
 
 // ListCreditPacks handles GET /api/v1/wallet/credit-packs.
@@ -49,7 +50,7 @@ func (h *Handlers) ListCreditPacks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": packs})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": packs})
 }
 
 // ---------------------------------------------------------------------------
@@ -67,13 +68,13 @@ func (h *Handlers) SetPreferredCurrency(w http.ResponseWriter, r *http.Request) 
 		CurrencyCode string `json:"currency_code"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	code := strings.ToUpper(strings.TrimSpace(input.CurrencyCode))
 	if code == "" {
-		writeError(w, http.StatusBadRequest, "missing_currency_code", "currency_code is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_currency_code", "currency_code is required")
 		return
 	}
 
@@ -82,7 +83,7 @@ func (h *Handlers) SetPreferredCurrency(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"preferred_currency": code}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"preferred_currency": code}})
 }
 
 // ---------------------------------------------------------------------------
@@ -102,7 +103,7 @@ func (h *Handlers) ControlListCurrencies(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": currencies})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": currencies})
 }
 
 // ControlCreateCurrency handles POST /control/wallet/currencies.
@@ -112,37 +113,37 @@ func (h *Handlers) ControlCreateCurrency(w http.ResponseWriter, r *http.Request)
 	}
 
 	var input struct {
-		Code            string `json:"code"`
-		Name            string `json:"name"`
-		Symbol          string `json:"symbol"`
-		CreditsPerUnit  int    `json:"credits_per_unit"`
-		Position        int    `json:"position"`
-		Reason          string `json:"reason"`
+		Code           string `json:"code"`
+		Name           string `json:"name"`
+		Symbol         string `json:"symbol"`
+		CreditsPerUnit int    `json:"credits_per_unit"`
+		Position       int    `json:"position"`
+		Reason         string `json:"reason"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	code := strings.ToUpper(strings.TrimSpace(input.Code))
 	if len(code) != 3 {
-		writeError(w, http.StatusBadRequest, "invalid_code", "Currency code must be a 3-letter ISO 4217 code")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_code", "Currency code must be a 3-letter ISO 4217 code")
 		return
 	}
 	if input.Name == "" {
-		writeError(w, http.StatusBadRequest, "missing_name", "name is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_name", "name is required")
 		return
 	}
 	if input.Symbol == "" {
-		writeError(w, http.StatusBadRequest, "missing_symbol", "symbol is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_symbol", "symbol is required")
 		return
 	}
 	if input.CreditsPerUnit <= 0 {
-		writeError(w, http.StatusBadRequest, "invalid_credits_per_unit", "credits_per_unit must be positive")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_credits_per_unit", "credits_per_unit must be positive")
 		return
 	}
 	if input.Reason == "" {
-		writeError(w, http.StatusBadRequest, "missing_reason", "reason is required for currency adjustments (Section 58)")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_reason", "reason is required for currency adjustments (Section 58)")
 		return
 	}
 
@@ -158,7 +159,7 @@ func (h *Handlers) ControlCreateCurrency(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": currency})
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": currency})
 }
 
 // ControlUpdateCurrency handles PATCH /control/wallet/currencies/{code}.
@@ -169,25 +170,25 @@ func (h *Handlers) ControlUpdateCurrency(w http.ResponseWriter, r *http.Request)
 
 	code := strings.ToUpper(chi.URLParam(r, "code"))
 	if code == "" {
-		writeError(w, http.StatusBadRequest, "missing_code", "Currency code is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_code", "Currency code is required")
 		return
 	}
 
 	var input struct {
-		Name            string `json:"name"`
-		Symbol          string `json:"symbol"`
-		CreditsPerUnit  int    `json:"credits_per_unit"`
-		IsActive        *bool  `json:"is_active"`
-		Position        int    `json:"position"`
-		Reason          string `json:"reason"`
+		Name           string `json:"name"`
+		Symbol         string `json:"symbol"`
+		CreditsPerUnit int    `json:"credits_per_unit"`
+		IsActive       *bool  `json:"is_active"`
+		Position       int    `json:"position"`
+		Reason         string `json:"reason"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if input.Reason == "" {
-		writeError(w, http.StatusBadRequest, "missing_reason", "reason is required for currency adjustments (Section 58)")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_reason", "reason is required for currency adjustments (Section 58)")
 		return
 	}
 
@@ -209,7 +210,7 @@ func (h *Handlers) ControlUpdateCurrency(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": currency})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": currency})
 }
 
 // ControlDeleteCurrency handles DELETE /control/wallet/currencies/{code}.
@@ -221,7 +222,7 @@ func (h *Handlers) ControlDeleteCurrency(w http.ResponseWriter, r *http.Request)
 
 	code := strings.ToUpper(chi.URLParam(r, "code"))
 	if code == "" {
-		writeError(w, http.StatusBadRequest, "missing_code", "Currency code is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_code", "Currency code is required")
 		return
 	}
 
@@ -231,7 +232,7 @@ func (h *Handlers) ControlDeleteCurrency(w http.ResponseWriter, r *http.Request)
 	}
 	_ = json.NewDecoder(r.Body).Decode(&input)
 	if input.Reason == "" {
-		writeError(w, http.StatusBadRequest, "missing_reason", "reason is required for currency adjustments (Section 58)")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_reason", "reason is required for currency adjustments (Section 58)")
 		return
 	}
 
@@ -243,7 +244,7 @@ func (h *Handlers) ControlDeleteCurrency(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
 			"code":            code,
 			"is_active":       false,
@@ -269,7 +270,7 @@ func (h *Handlers) AdminListCreditPacks(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": packs})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": packs})
 }
 
 // AdminCreateCreditPack handles POST /api/v1/admin/wallet/credit-packs.
@@ -280,24 +281,24 @@ func (h *Handlers) AdminCreateCreditPack(w http.ResponseWriter, r *http.Request)
 	}
 
 	var input struct {
-		Name          string `json:"name"`
-		Description   string `json:"description"`
-		CreditAmount  int    `json:"credit_amount"`
-		BonusCredits  int    `json:"bonus_credits"`
-		MinUserLevel  string `json:"min_user_level"`
-		Position      int    `json:"position"`
+		Name         string `json:"name"`
+		Description  string `json:"description"`
+		CreditAmount int    `json:"credit_amount"`
+		BonusCredits int    `json:"bonus_credits"`
+		MinUserLevel string `json:"min_user_level"`
+		Position     int    `json:"position"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if input.Name == "" {
-		writeError(w, http.StatusBadRequest, "missing_name", "name is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_name", "name is required")
 		return
 	}
 	if input.CreditAmount <= 0 {
-		writeError(w, http.StatusBadRequest, "invalid_credit_amount", "credit_amount must be positive")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_credit_amount", "credit_amount must be positive")
 		return
 	}
 
@@ -311,20 +312,20 @@ func (h *Handlers) AdminCreateCreditPack(w http.ResponseWriter, r *http.Request)
 	}
 
 	pack, err := h.Service.createCreditPack(r.Context(), gen.CreateCreditPackParams{
-		TenantID:      tenantID,
-		Name:          input.Name,
-		Description:   description,
-		CreditAmount:  int32(input.CreditAmount),
-		BonusCredits:  int32(input.BonusCredits),
-		MinUserLevel:  minUserLevel,
-		Position:      int32(input.Position),
+		TenantID:     tenantID,
+		Name:         input.Name,
+		Description:  description,
+		CreditAmount: int32(input.CreditAmount),
+		BonusCredits: int32(input.BonusCredits),
+		MinUserLevel: minUserLevel,
+		Position:     int32(input.Position),
 	})
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": pack})
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": pack})
 }
 
 // AdminUpdateCreditPack handles PATCH /api/v1/admin/wallet/credit-packs/{id}.
@@ -336,21 +337,21 @@ func (h *Handlers) AdminUpdateCreditPack(w http.ResponseWriter, r *http.Request)
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid credit pack ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid credit pack ID")
 		return
 	}
 
 	var input struct {
-		Name          string `json:"name"`
-		Description   string `json:"description"`
-		CreditAmount  int    `json:"credit_amount"`
-		BonusCredits  int    `json:"bonus_credits"`
-		MinUserLevel  string `json:"min_user_level"`
-		IsActive      *bool  `json:"is_active"`
-		Position      int    `json:"position"`
+		Name         string `json:"name"`
+		Description  string `json:"description"`
+		CreditAmount int    `json:"credit_amount"`
+		BonusCredits int    `json:"bonus_credits"`
+		MinUserLevel string `json:"min_user_level"`
+		IsActive     *bool  `json:"is_active"`
+		Position     int    `json:"position"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
@@ -384,7 +385,7 @@ func (h *Handlers) AdminUpdateCreditPack(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": pack})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": pack})
 }
 
 // AdminDeleteCreditPack handles DELETE /api/v1/admin/wallet/credit-packs/{id}.
@@ -397,7 +398,7 @@ func (h *Handlers) AdminDeleteCreditPack(w http.ResponseWriter, r *http.Request)
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid credit pack ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid credit pack ID")
 		return
 	}
 
@@ -406,7 +407,7 @@ func (h *Handlers) AdminDeleteCreditPack(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": id, "is_active": false}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": id, "is_active": false}})
 }
 
 // ---------------------------------------------------------------------------
@@ -464,7 +465,7 @@ func (h *Handlers) AdminListCreditPurchases(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": purchases})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": purchases})
 }
 
 // ---------------------------------------------------------------------------
@@ -491,12 +492,12 @@ func (h *Handlers) PurchaseCredits(w http.ResponseWriter, r *http.Request) {
 		Provider     string `json:"provider"` // optional: paystack, stripe, etc.
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if input.CreditAmount <= 0 && input.PackID == "" {
-		writeError(w, http.StatusBadRequest, "missing_amount", "credit_amount or pack_id is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_amount", "credit_amount or pack_id is required")
 		return
 	}
 
@@ -520,12 +521,12 @@ func (h *Handlers) PurchaseCredits(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		if errors.Is(err, errCreditPurchaseDisabled) {
-			writeError(w, http.StatusForbidden, "credit_purchase_disabled", "Credit purchasing is currently disabled")
+			errpkg.WriteError(w, http.StatusForbidden, "credit_purchase_disabled", "Credit purchasing is currently disabled")
 			return
 		}
 		handleServiceError(w, err)
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": result})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": result})
 }

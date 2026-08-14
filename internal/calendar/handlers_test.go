@@ -3,7 +3,8 @@
 // and table-driven tests for parsePageParams.
 //
 // Ref: japaconnect-engineering/sections/86-community-calendar.md
-//      japaconnect-engineering/adr/ADR-094-community-calendar.md
+//
+//	japaconnect-engineering/adr/ADR-094-community-calendar.md
 package calendar
 
 import (
@@ -199,9 +200,9 @@ func TestParsePageParams_InvalidValues(t *testing.T) {
 func TestSubmit_RejectsEmptySourceURL(t *testing.T) {
 	svc := NewService(nil, &config.Settings{})
 	_, err := svc.Submit(nil, pgtype.UUID{}, pgtype.UUID{}, SubmitEntryInput{
-		Title:       "Test Event",
-		Category:    "visa_window",
-		SourceURL:   "",
+		Title:     "Test Event",
+		Category:  "visa_window",
+		SourceURL: "",
 	})
 	if err == nil {
 		t.Error("Submit with empty source_url should return error")
@@ -213,8 +214,8 @@ func TestSubmit_RejectsEmptySourceURL(t *testing.T) {
 func TestSubmit_RejectsEmptyTitle(t *testing.T) {
 	svc := NewService(nil, &config.Settings{})
 	_, err := svc.Submit(nil, pgtype.UUID{}, pgtype.UUID{}, SubmitEntryInput{
-		Title:    "",
-		Category: "visa_window",
+		Title:     "",
+		Category:  "visa_window",
 		SourceURL: "https://example.com",
 	})
 	if err == nil {
@@ -227,8 +228,8 @@ func TestSubmit_RejectsEmptyTitle(t *testing.T) {
 func TestSubmit_RejectsEmptyCategory(t *testing.T) {
 	svc := NewService(nil, &config.Settings{})
 	_, err := svc.Submit(nil, pgtype.UUID{}, pgtype.UUID{}, SubmitEntryInput{
-		Title:    "Test Event",
-		Category: "",
+		Title:     "Test Event",
+		Category:  "",
 		SourceURL: "https://example.com",
 	})
 	if err == nil {

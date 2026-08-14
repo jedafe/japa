@@ -567,9 +567,9 @@ type mockDMServiceForTyping struct {
 }
 
 type mockTypingCall struct {
-	tenantID      string
+	tenantID       string
 	conversationID string
-	userID        string
+	userID         string
 }
 
 func (m *mockDMServiceForTyping) GetOtherParticipant(_ context.Context, tenantID, conversationID, userID pgtype.UUID) (pgtype.UUID, error) {
@@ -590,10 +590,10 @@ func TestHandleTypingEventBroadcastsToOtherParticipant(t *testing.T) {
 	t.Parallel()
 
 	const (
-		senderID   = "11111111-1111-1111-1111-111111111111"
+		senderID    = "11111111-1111-1111-1111-111111111111"
 		recipientID = "22222222-2222-2222-2222-222222222222"
-		tenantID   = "33333333-3333-3333-3333-333333333333"
-		convID     = "44444444-4444-4444-4444-444444444444"
+		tenantID    = "33333333-3333-3333-3333-333333333333"
+		convID      = "44444444-4444-4444-4444-444444444444"
 	)
 
 	hub := NewHub()
@@ -619,7 +619,7 @@ func TestHandleTypingEventBroadcastsToOtherParticipant(t *testing.T) {
 		Type: EventTyping,
 		Payload: map[string]interface{}{
 			"conversation_id": convID,
-			"is_typing":        true,
+			"is_typing":       true,
 		},
 	})
 
@@ -657,8 +657,8 @@ func TestHandleTypingEventNonParticipantSilentlyDrops(t *testing.T) {
 
 	const (
 		recipientID = "22222222-2222-2222-2222-222222222222"
-		tenantID   = "33333333-3333-3333-3333-333333333333"
-		convID     = "44444444-4444-4444-4444-444444444444"
+		tenantID    = "33333333-3333-3333-3333-333333333333"
+		convID      = "44444444-4444-4444-4444-444444444444"
 	)
 
 	hub := NewHub()
@@ -685,7 +685,7 @@ func TestHandleTypingEventNonParticipantSilentlyDrops(t *testing.T) {
 		Type: EventTyping,
 		Payload: map[string]interface{}{
 			"conversation_id": convID,
-			"is_typing":        true,
+			"is_typing":       true,
 		},
 	})
 

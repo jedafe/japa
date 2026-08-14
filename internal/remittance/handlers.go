@@ -25,7 +25,8 @@
 //	POST   /api/v1/admin/remittance/providers/:id/fetch    — trigger fetch
 //
 // Ref: japaconnect-engineering/sections/74-remittance-tracker.md
-//      japaconnect-engineering/adr/ADR-075-remittance-rate-tracker.md
+//
+//	japaconnect-engineering/adr/ADR-075-remittance-rate-tracker.md
 package remittance
 
 import (
@@ -41,6 +42,7 @@ import (
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/crypto"
 	"github.com/jedafe/japa/internal/db/gen"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/tenant"
 )
 
@@ -71,24 +73,10 @@ func NewHandlers(service *Service, settings *config.Settings) *Handlers {
 // Shared helpers (same pattern as rag/handlers.go)
 // ---------------------------------------------------------------------------
 
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	if err := json.NewEncoder(w).Encode(v); err != nil {
-		slog.Error("remittance: encode response", "error", err)
-	}
-}
-
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, map[string]any{
-		"error": map[string]string{"code": code, "message": message},
-	})
-}
-
 func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
 	return t.ID, true
@@ -97,7 +85,7 @@ func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	u := auth.FromContext(r.Context())
 	if u == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
 	return u, true
@@ -106,7 +94,7 @@ func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUse
 func scanUUIDParam(w http.ResponseWriter, r *http.Request, name string) (pgtype.UUID, bool) {
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, name)); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid "+name)
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid "+name)
 		return pgtype.UUID{}, false
 	}
 	return id, true
@@ -127,23 +115,23 @@ func (h *Handlers) HandleGetRates(w http.ResponseWriter, r *http.Request) {
 	send := r.URL.Query().Get("send")
 	receive := r.URL.Query().Get("receive")
 	if send == "" || receive == "" {
-		writeError(w, http.StatusBadRequest, "missing_params", "send and receive query params are required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_params", "send and receive query params are required")
 		return
 	}
 
 	if h.service == nil {
-		writeError(w, http.StatusServiceUnavailable, "remittance_unavailable", "Remittance service not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "remittance_unavailable", "Remittance service not configured")
 		return
 	}
 
 	rates, err := h.service.GetRates(r.Context(), tenantID, send, receive)
 	if err != nil {
 		slog.Error("remittance: get rates failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "rates_failed", "Failed to get rates")
+		errpkg.WriteError(w, http.StatusInternalServerError, "rates_failed", "Failed to get rates")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": rates,
 	})
 }
@@ -160,29 +148,29 @@ func (h *Handlers) HandleCalculate(w http.ResponseWriter, r *http.Request) {
 	receive := r.URL.Query().Get("receive")
 	sendAmountStr := r.URL.Query().Get("send_amount")
 	if send == "" || receive == "" || sendAmountStr == "" {
-		writeError(w, http.StatusBadRequest, "missing_params", "send_amount, send, and receive query params are required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_params", "send_amount, send, and receive query params are required")
 		return
 	}
 
 	sendAmount, err := strconv.ParseFloat(sendAmountStr, 64)
 	if err != nil || sendAmount <= 0 {
-		writeError(w, http.StatusBadRequest, "invalid_send_amount", "send_amount must be a positive number")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_send_amount", "send_amount must be a positive number")
 		return
 	}
 
 	if h.service == nil {
-		writeError(w, http.StatusServiceUnavailable, "remittance_unavailable", "Remittance service not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "remittance_unavailable", "Remittance service not configured")
 		return
 	}
 
 	result, err := h.service.Calculate(r.Context(), tenantID, sendAmount, send, receive)
 	if err != nil {
 		slog.Error("remittance: calculate failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "calculate_failed", "Failed to calculate")
+		errpkg.WriteError(w, http.StatusInternalServerError, "calculate_failed", "Failed to calculate")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": result,
 	})
 }
@@ -198,7 +186,7 @@ func (h *Handlers) HandleGetHistory(w http.ResponseWriter, r *http.Request) {
 	send := r.URL.Query().Get("send")
 	receive := r.URL.Query().Get("receive")
 	if send == "" || receive == "" {
-		writeError(w, http.StatusBadRequest, "missing_params", "send and receive query params are required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_params", "send and receive query params are required")
 		return
 	}
 
@@ -210,18 +198,18 @@ func (h *Handlers) HandleGetHistory(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil {
-		writeError(w, http.StatusServiceUnavailable, "remittance_unavailable", "Remittance service not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "remittance_unavailable", "Remittance service not configured")
 		return
 	}
 
 	points, err := h.service.GetHistory(r.Context(), tenantID, send, receive, days)
 	if err != nil {
 		slog.Error("remittance: get history failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "history_failed", "Failed to get history")
+		errpkg.WriteError(w, http.StatusInternalServerError, "history_failed", "Failed to get history")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": points,
 	})
 }
@@ -235,18 +223,18 @@ func (h *Handlers) HandleGetProviders(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil {
-		writeError(w, http.StatusServiceUnavailable, "remittance_unavailable", "Remittance service not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "remittance_unavailable", "Remittance service not configured")
 		return
 	}
 
 	providers, err := h.service.GetProviders(r.Context(), tenantID, true)
 	if err != nil {
 		slog.Error("remittance: get providers failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "providers_failed", "Failed to get providers")
+		errpkg.WriteError(w, http.StatusInternalServerError, "providers_failed", "Failed to get providers")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": providers,
 	})
 }
@@ -260,18 +248,18 @@ func (h *Handlers) HandleGetCorridors(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil {
-		writeError(w, http.StatusServiceUnavailable, "remittance_unavailable", "Remittance service not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "remittance_unavailable", "Remittance service not configured")
 		return
 	}
 
 	corridors, err := h.service.GetCorridors(r.Context(), tenantID)
 	if err != nil {
 		slog.Error("remittance: get corridors failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "corridors_failed", "Failed to get corridors")
+		errpkg.WriteError(w, http.StatusInternalServerError, "corridors_failed", "Failed to get corridors")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": corridors,
 	})
 }
@@ -293,18 +281,18 @@ func (h *Handlers) HandleListAlerts(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil {
-		writeError(w, http.StatusServiceUnavailable, "remittance_unavailable", "Remittance service not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "remittance_unavailable", "Remittance service not configured")
 		return
 	}
 
 	alerts, err := h.service.ListUserAlerts(r.Context(), tenantID, user.UserID)
 	if err != nil {
 		slog.Error("remittance: list alerts failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "alerts_failed", "Failed to list alerts")
+		errpkg.WriteError(w, http.StatusInternalServerError, "alerts_failed", "Failed to list alerts")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": alerts,
 	})
 }
@@ -329,28 +317,28 @@ func (h *Handlers) HandleCreateAlert(w http.ResponseWriter, r *http.Request) {
 		Direction  string  `json:"direction"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if body.Send == "" || body.Receive == "" || body.TargetRate <= 0 || body.Direction == "" {
-		writeError(w, http.StatusBadRequest, "missing_params", "send, receive, target_rate, and direction are required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_params", "send, receive, target_rate, and direction are required")
 		return
 	}
 
 	if h.service == nil {
-		writeError(w, http.StatusServiceUnavailable, "remittance_unavailable", "Remittance service not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "remittance_unavailable", "Remittance service not configured")
 		return
 	}
 
 	alert, err := h.service.CreateAlert(r.Context(), tenantID, user.UserID, body.Send, body.Receive, body.Direction, body.TargetRate)
 	if err != nil {
 		slog.Error("remittance: create alert failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "create_alert_failed", "Failed to create alert")
+		errpkg.WriteError(w, http.StatusInternalServerError, "create_alert_failed", "Failed to create alert")
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{
 		"data": alert,
 	})
 }
@@ -379,23 +367,23 @@ func (h *Handlers) HandleUpdateAlert(w http.ResponseWriter, r *http.Request) {
 		IsActive   *bool    `json:"is_active"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if h.service == nil {
-		writeError(w, http.StatusServiceUnavailable, "remittance_unavailable", "Remittance service not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "remittance_unavailable", "Remittance service not configured")
 		return
 	}
 
 	alert, err := h.service.UpdateAlert(r.Context(), tenantID, user.UserID, alertID, body.TargetRate, body.Direction, body.IsActive)
 	if err != nil {
 		slog.Error("remittance: update alert failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "update_alert_failed", "Failed to update alert")
+		errpkg.WriteError(w, http.StatusInternalServerError, "update_alert_failed", "Failed to update alert")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": alert,
 	})
 }
@@ -418,17 +406,17 @@ func (h *Handlers) HandleDeleteAlert(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil {
-		writeError(w, http.StatusServiceUnavailable, "remittance_unavailable", "Remittance service not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "remittance_unavailable", "Remittance service not configured")
 		return
 	}
 
 	if err := h.service.DeleteAlert(r.Context(), tenantID, user.UserID, alertID); err != nil {
 		slog.Error("remittance: delete alert failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "delete_alert_failed", "Failed to delete alert")
+		errpkg.WriteError(w, http.StatusInternalServerError, "delete_alert_failed", "Failed to delete alert")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{"deleted": true},
 	})
 }
@@ -469,18 +457,18 @@ func (h *Handlers) HandleAdminListProviders(w http.ResponseWriter, r *http.Reque
 	}
 
 	if h.service == nil {
-		writeError(w, http.StatusServiceUnavailable, "remittance_unavailable", "Remittance service not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "remittance_unavailable", "Remittance service not configured")
 		return
 	}
 
 	providers, total, err := h.service.ListProvidersPaginated(r.Context(), tenantID, activeOnly, limit, offset)
 	if err != nil {
 		slog.Error("remittance: admin list providers failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "providers_failed", "Failed to list providers")
+		errpkg.WriteError(w, http.StatusInternalServerError, "providers_failed", "Failed to list providers")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": providers,
 		"pagination": map[string]any{
 			"total":  total,
@@ -504,26 +492,26 @@ func (h *Handlers) HandleAdminCreateProvider(w http.ResponseWriter, r *http.Requ
 	}
 
 	var body struct {
-		Name         string `json:"name"`
-		Slug         string `json:"slug"`
-		WebsiteURL   *string `json:"website_url"`
-		DataSource   string `json:"data_source"`
+		Name         string          `json:"name"`
+		Slug         string          `json:"slug"`
+		WebsiteURL   *string         `json:"website_url"`
+		DataSource   string          `json:"data_source"`
 		APIConfig    json.RawMessage `json:"api_config"`
-		IsActive     bool   `json:"is_active"`
-		DisplayOrder int32  `json:"display_order"`
+		IsActive     bool            `json:"is_active"`
+		DisplayOrder int32           `json:"display_order"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if body.Name == "" || body.Slug == "" || body.DataSource == "" {
-		writeError(w, http.StatusBadRequest, "missing_params", "name, slug, and data_source are required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_params", "name, slug, and data_source are required")
 		return
 	}
 
 	if h.service == nil {
-		writeError(w, http.StatusServiceUnavailable, "remittance_unavailable", "Remittance service not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "remittance_unavailable", "Remittance service not configured")
 		return
 	}
 
@@ -532,7 +520,7 @@ func (h *Handlers) HandleAdminCreateProvider(w http.ResponseWriter, r *http.Requ
 		enc, err := crypto.EncryptJSON(body.APIConfig)
 		if err != nil {
 			slog.Error("remittance: failed to encrypt api_config", "error", err)
-			writeError(w, http.StatusInternalServerError, "encryption_failed", "Failed to encrypt provider credentials")
+			errpkg.WriteError(w, http.StatusInternalServerError, "encryption_failed", "Failed to encrypt provider credentials")
 			return
 		}
 		apiConfig = enc
@@ -550,11 +538,11 @@ func (h *Handlers) HandleAdminCreateProvider(w http.ResponseWriter, r *http.Requ
 	})
 	if err != nil {
 		slog.Error("remittance: admin create provider failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "create_provider_failed", "Failed to create provider")
+		errpkg.WriteError(w, http.StatusInternalServerError, "create_provider_failed", "Failed to create provider")
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{
 		"data": provider,
 	})
 }
@@ -578,19 +566,19 @@ func (h *Handlers) HandleAdminUpdateProvider(w http.ResponseWriter, r *http.Requ
 	}
 
 	var body struct {
-		Name         *string `json:"name"`
-		WebsiteURL   *string `json:"website_url"`
+		Name         *string         `json:"name"`
+		WebsiteURL   *string         `json:"website_url"`
 		APIConfig    json.RawMessage `json:"api_config"`
-		IsActive     *bool   `json:"is_active"`
-		DisplayOrder *int32  `json:"display_order"`
+		IsActive     *bool           `json:"is_active"`
+		DisplayOrder *int32          `json:"display_order"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if h.service == nil {
-		writeError(w, http.StatusServiceUnavailable, "remittance_unavailable", "Remittance service not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "remittance_unavailable", "Remittance service not configured")
 		return
 	}
 
@@ -599,7 +587,7 @@ func (h *Handlers) HandleAdminUpdateProvider(w http.ResponseWriter, r *http.Requ
 		enc, err := crypto.EncryptJSON(body.APIConfig)
 		if err != nil {
 			slog.Error("remittance: failed to encrypt api_config", "error", err)
-			writeError(w, http.StatusInternalServerError, "encryption_failed", "Failed to encrypt provider credentials")
+			errpkg.WriteError(w, http.StatusInternalServerError, "encryption_failed", "Failed to encrypt provider credentials")
 			return
 		}
 		apiConfig = enc
@@ -616,11 +604,11 @@ func (h *Handlers) HandleAdminUpdateProvider(w http.ResponseWriter, r *http.Requ
 	})
 	if err != nil {
 		slog.Error("remittance: admin update provider failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "update_provider_failed", "Failed to update provider")
+		errpkg.WriteError(w, http.StatusInternalServerError, "update_provider_failed", "Failed to update provider")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": provider,
 	})
 }
@@ -653,40 +641,40 @@ func (h *Handlers) HandleAdminInsertManualRate(w http.ResponseWriter, r *http.Re
 		SourceURL       *string `json:"source_url"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if body.SendCurrency == "" || body.ReceiveCurrency == "" || body.Rate <= 0 {
-		writeError(w, http.StatusBadRequest, "missing_params", "send_currency, receive_currency, and rate are required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_params", "send_currency, receive_currency, and rate are required")
 		return
 	}
 
 	if h.service == nil {
-		writeError(w, http.StatusServiceUnavailable, "remittance_unavailable", "Remittance service not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "remittance_unavailable", "Remittance service not configured")
 		return
 	}
 
 	rate, err := h.service.InsertManualRate(r.Context(), tenantID, providerID, body.SendCurrency, body.ReceiveCurrency, body.Rate, body.FeeFlat, body.FeePct, body.TransferTime, body.SourceURL)
 	if err != nil {
 		slog.Error("remittance: admin insert manual rate failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "insert_rate_failed", "Failed to insert manual rate")
+		errpkg.WriteError(w, http.StatusInternalServerError, "insert_rate_failed", "Failed to insert manual rate")
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{
 		"data": map[string]any{
-			"id":              rate.ID.String(),
-			"provider_id":     rate.ProviderID.String(),
-			"send_currency":   rate.SendCurrency,
+			"id":               rate.ID.String(),
+			"provider_id":      rate.ProviderID.String(),
+			"send_currency":    rate.SendCurrency,
 			"receive_currency": rate.ReceiveCurrency,
-			"rate":            numericToFloat64(rate.Rate),
-			"fee_flat":        numericToFloat64(rate.FeeFlat),
-			"fee_pct":         numericToFloat64(rate.FeePct),
-			"transfer_time":   ptrString(rate.TransferTime),
-			"fetched_at":      rfc3339(rate.FetchedAt),
-			"is_manual":       rate.IsManual,
-			"source_url":      ptrString(rate.SourceUrl),
+			"rate":             numericToFloat64(rate.Rate),
+			"fee_flat":         numericToFloat64(rate.FeeFlat),
+			"fee_pct":          numericToFloat64(rate.FeePct),
+			"transfer_time":    ptrString(rate.TransferTime),
+			"fetched_at":       rfc3339(rate.FetchedAt),
+			"is_manual":        rate.IsManual,
+			"source_url":       ptrString(rate.SourceUrl),
 		},
 	})
 }
@@ -710,17 +698,17 @@ func (h *Handlers) HandleAdminTriggerFetch(w http.ResponseWriter, r *http.Reques
 	}
 
 	if h.service == nil {
-		writeError(w, http.StatusServiceUnavailable, "remittance_unavailable", "Remittance service not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "remittance_unavailable", "Remittance service not configured")
 		return
 	}
 
 	if err := h.service.TriggerFetch(r.Context(), tenantID, providerID); err != nil {
 		slog.Error("remittance: admin trigger fetch failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "fetch_failed", "Failed to trigger fetch")
+		errpkg.WriteError(w, http.StatusInternalServerError, "fetch_failed", "Failed to trigger fetch")
 		return
 	}
 
-	writeJSON(w, http.StatusAccepted, map[string]any{
+	errpkg.WriteJSON(w, http.StatusAccepted, map[string]any{
 		"data": map[string]any{
 			"status": "queued",
 		},

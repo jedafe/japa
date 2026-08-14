@@ -124,7 +124,7 @@ func (h *Handlers) computeErasedMentionIDs(ctx context.Context, tenantID pgtype.
 func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
 
@@ -135,26 +135,11 @@ func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype
 func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	user := auth.FromContext(r.Context())
 	if user == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
 
 	return user, true
-}
-
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-
-	if err := json.NewEncoder(w).Encode(v); err != nil {
-		slog.Warn("json encode error", "error", err)
-	}
-}
-
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, map[string]any{
-		"error": map[string]string{"code": code, "message": message},
-	})
 }
 
 // enqueueEngagementUpdate enqueues an async content engagement count update
@@ -256,7 +241,7 @@ func (h *Handlers) ListComments(w http.ResponseWriter, r *http.Request) {
 
 	contentID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
@@ -282,7 +267,7 @@ func (h *Handlers) ListComments(w http.ResponseWriter, r *http.Request) {
 	if parentIDStr != "" {
 		var parentID pgtype.UUID
 		if err := parentID.Scan(parentIDStr); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_parent_id", "Invalid parent_id format")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_parent_id", "Invalid parent_id format")
 			return
 		}
 
@@ -292,7 +277,7 @@ func (h *Handlers) ListComments(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		writeJSON(w, http.StatusOK, map[string]any{"data": replies})
+		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": replies})
 
 		return
 	}
@@ -319,7 +304,7 @@ func (h *Handlers) ListComments(w http.ResponseWriter, r *http.Request) {
 		}
 		resp["deleted_user_ids"] = erasedIDs
 	}
-	writeJSON(w, http.StatusOK, resp)
+	errpkg.WriteJSON(w, http.StatusOK, resp)
 }
 
 // GetComment handles GET /api/v1/comments/{id}.
@@ -331,7 +316,7 @@ func (h *Handlers) GetComment(w http.ResponseWriter, r *http.Request) {
 
 	commentID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid comment ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid comment ID")
 		return
 	}
 
@@ -346,7 +331,7 @@ func (h *Handlers) GetComment(w http.ResponseWriter, r *http.Request) {
 	// endpoint must also reject deleted comments so the original body is
 	// never leaked (BL-004).
 	if comment.DeletedAt.Valid {
-		writeError(w, http.StatusNotFound, "not_found", "Comment not found")
+		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Comment not found")
 		return
 	}
 
@@ -355,7 +340,7 @@ func (h *Handlers) GetComment(w http.ResponseWriter, r *http.Request) {
 	if erasedIDs := h.computeErasedMentionIDs(r.Context(), tenantID, comment.Body); len(erasedIDs) > 0 {
 		resp["deleted_user_ids"] = erasedIDs
 	}
-	writeJSON(w, http.StatusOK, resp)
+	errpkg.WriteJSON(w, http.StatusOK, resp)
 }
 
 // CreateComment handles POST /api/v1/content/{id}/comments.
@@ -372,7 +357,7 @@ func (h *Handlers) CreateComment(w http.ResponseWriter, r *http.Request) {
 
 	contentID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
@@ -383,12 +368,12 @@ func (h *Handlers) CreateComment(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if len(input.Body) == 0 {
-		writeError(w, http.StatusBadRequest, "missing_body", "Comment body is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_body", "Comment body is required")
 		return
 	}
 
@@ -400,7 +385,7 @@ func (h *Handlers) CreateComment(w http.ResponseWriter, r *http.Request) {
 
 	if input.ParentID != nil && *input.ParentID != "" {
 		if err := createInput.ParentID.Scan(*input.ParentID); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_parent_id", "Invalid parent_id format")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_parent_id", "Invalid parent_id format")
 			return
 		}
 	}
@@ -418,7 +403,7 @@ func (h *Handlers) CreateComment(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			slog.Warn("spam check failed", "error", err)
 		} else if spamResult.Blocked {
-			writeError(w, http.StatusForbidden, "content_blocked", "Content blocked by safety filters")
+			errpkg.WriteError(w, http.StatusForbidden, "content_blocked", "Content blocked by safety filters")
 			return
 		}
 	}
@@ -444,7 +429,7 @@ func (h *Handlers) CreateComment(w http.ResponseWriter, r *http.Request) {
 				slog.Warn("comments: space perm check failed",
 					"space_id", spaceID.String(), "error", err)
 			} else if !allowed {
-				writeError(w, http.StatusForbidden, "space_permission_denied",
+				errpkg.WriteError(w, http.StatusForbidden, "space_permission_denied",
 					"You do not have permission to comment in this space")
 				return
 			}
@@ -474,7 +459,7 @@ func (h *Handlers) CreateComment(w http.ResponseWriter, r *http.Request) {
 	// per Rule 8. Ref: Section 32, Guide §21.
 	h.enqueueEngagementUpdate("content", contentID, "comment", 1)
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": comment})
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": comment})
 }
 
 // UpdateComment handles PATCH /api/v1/comments/{id}.
@@ -491,7 +476,7 @@ func (h *Handlers) UpdateComment(w http.ResponseWriter, r *http.Request) {
 
 	commentID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
@@ -500,12 +485,12 @@ func (h *Handlers) UpdateComment(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if len(input.Body) == 0 {
-		writeError(w, http.StatusBadRequest, "missing_body", "Comment body is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_body", "Comment body is required")
 		return
 	}
 
@@ -531,7 +516,7 @@ func (h *Handlers) UpdateComment(w http.ResponseWriter, r *http.Request) {
 	if erasedIDs := h.computeErasedMentionIDs(r.Context(), tenantID, comment.Body); len(erasedIDs) > 0 {
 		resp["deleted_user_ids"] = erasedIDs
 	}
-	writeJSON(w, http.StatusOK, resp)
+	errpkg.WriteJSON(w, http.StatusOK, resp)
 }
 
 // DeleteComment handles DELETE /api/v1/comments/{id}.
@@ -554,7 +539,7 @@ func (h *Handlers) DeleteComment(w http.ResponseWriter, r *http.Request) {
 
 	commentID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
@@ -576,14 +561,14 @@ func (h *Handlers) DeleteComment(w http.ResponseWriter, r *http.Request) {
 			handleServiceError(w, err)
 			return
 		}
-		writeJSON(w, http.StatusNoContent, nil)
+		errpkg.WriteJSON(w, http.StatusNoContent, nil)
 		return
 	}
 
 	// Moderator path — comments.delete_any. Requires the RBAC checker; when
 	// not wired, deny (test-only default).
 	if h.perms == nil || !h.perms.HasPermission(r.Context(), user.UserID, tenantID, "comments.delete_any") {
-		writeError(w, http.StatusForbidden, "forbidden", "You can only delete your own comments")
+		errpkg.WriteError(w, http.StatusForbidden, "forbidden", "You can only delete your own comments")
 		return
 	}
 
@@ -592,7 +577,7 @@ func (h *Handlers) DeleteComment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusNoContent, nil)
+	errpkg.WriteJSON(w, http.StatusNoContent, nil)
 }
 
 // VoteComment handles POST /api/v1/comments/{id}/vote.
@@ -612,7 +597,7 @@ func (h *Handlers) VoteComment(w http.ResponseWriter, r *http.Request) {
 
 	commentID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
@@ -624,7 +609,7 @@ func (h *Handlers) VoteComment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !isDiscussion {
-		writeError(w, http.StatusBadRequest, "voting_not_supported",
+		errpkg.WriteError(w, http.StatusBadRequest, "voting_not_supported",
 			"Voting is only supported on forum discussion replies")
 		return
 	}
@@ -634,7 +619,7 @@ func (h *Handlers) VoteComment(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
@@ -643,7 +628,7 @@ func (h *Handlers) VoteComment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"voted": true}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"voted": true}})
 }
 
 // RemoveVote handles DELETE /api/v1/comments/{id}/vote.
@@ -660,7 +645,7 @@ func (h *Handlers) RemoveVote(w http.ResponseWriter, r *http.Request) {
 
 	commentID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
@@ -669,7 +654,7 @@ func (h *Handlers) RemoveVote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusNoContent, nil)
+	errpkg.WriteJSON(w, http.StatusNoContent, nil)
 }
 
 // PinComment handles POST /api/v1/comments/{id}/pin.
@@ -691,12 +676,12 @@ func (h *Handlers) PinComment(w http.ResponseWriter, r *http.Request) {
 
 	commentID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
 	if !h.canPinComment(r, user.UserID, tenantID, commentID) {
-		writeError(w, http.StatusForbidden, "forbidden", "You do not have permission to pin this comment")
+		errpkg.WriteError(w, http.StatusForbidden, "forbidden", "You do not have permission to pin this comment")
 		return
 	}
 
@@ -705,7 +690,7 @@ func (h *Handlers) PinComment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"pinned": true}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"pinned": true}})
 }
 
 // UnpinComment handles DELETE /api/v1/comments/{id}/pin.
@@ -724,12 +709,12 @@ func (h *Handlers) UnpinComment(w http.ResponseWriter, r *http.Request) {
 
 	commentID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
 	if !h.canPinComment(r, user.UserID, tenantID, commentID) {
-		writeError(w, http.StatusForbidden, "forbidden", "You do not have permission to unpin this comment")
+		errpkg.WriteError(w, http.StatusForbidden, "forbidden", "You do not have permission to unpin this comment")
 		return
 	}
 
@@ -738,7 +723,7 @@ func (h *Handlers) UnpinComment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusNoContent, nil)
+	errpkg.WriteJSON(w, http.StatusNoContent, nil)
 }
 
 // canPinComment returns true if the user holds comments.pin (moderator) or is
@@ -776,7 +761,7 @@ func (h *Handlers) RemoveComment(w http.ResponseWriter, r *http.Request) {
 
 	commentID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid comment ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid comment ID")
 		return
 	}
 
@@ -786,7 +771,7 @@ func (h *Handlers) RemoveComment(w http.ResponseWriter, r *http.Request) {
 	// Body is optional — a moderator may remove without a reason.
 	if r.Body != nil && r.ContentLength != 0 {
 		if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 			return
 		}
 	}
@@ -796,7 +781,7 @@ func (h *Handlers) RemoveComment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"removed": true}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"removed": true}})
 }
 
 // handleServiceError translates a Service-layer error into the appropriate HTTP
@@ -804,7 +789,7 @@ func (h *Handlers) RemoveComment(w http.ResponseWriter, r *http.Request) {
 func handleServiceError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, errpkg.ErrMaxDepth):
-		writeError(w, http.StatusBadRequest, "depth_exceeded", err.Error())
+		errpkg.WriteError(w, http.StatusBadRequest, "depth_exceeded", err.Error())
 	default:
 		errpkg.HandleServiceError(w, err)
 	}

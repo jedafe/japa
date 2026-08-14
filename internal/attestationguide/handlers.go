@@ -31,6 +31,7 @@ import (
 
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/config"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/tenant"
 )
 
@@ -50,24 +51,10 @@ func NewHandlers(service *Service, settings *config.Settings) *Handlers {
 // Shared helpers (same pattern as servicedir/handlers.go)
 // ---------------------------------------------------------------------------
 
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	if err := json.NewEncoder(w).Encode(v); err != nil {
-		slog.Error("attestationguide: encode response", "error", err)
-	}
-}
-
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, map[string]any{
-		"error": map[string]any{"code": code, "message": message, "status": status},
-	})
-}
-
 func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
 	return t.ID, true
@@ -76,7 +63,7 @@ func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	u := auth.FromContext(r.Context())
 	if u == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
 	return u, true
@@ -85,7 +72,7 @@ func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUse
 func scanUUIDParam(w http.ResponseWriter, r *http.Request, name string) (pgtype.UUID, bool) {
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, name)); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid "+name)
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid "+name)
 		return pgtype.UUID{}, false
 	}
 	return id, true
@@ -130,14 +117,14 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "attestation_guide_disabled", "Attestation guide is not available")
+		errpkg.WriteError(w, http.StatusNotFound, "attestation_guide_disabled", "Attestation guide is not available")
 		return
 	}
 
 	var destSpaceID pgtype.UUID
 	if v := r.URL.Query().Get("dest"); v != "" {
 		if err := destSpaceID.Scan(v); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid destination space ID")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid destination space ID")
 			return
 		}
 	}
@@ -145,7 +132,7 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 	var issuingSpaceID pgtype.UUID
 	if v := r.URL.Query().Get("issuing"); v != "" {
 		if err := issuingSpaceID.Scan(v); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid issuing space ID")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid issuing space ID")
 			return
 		}
 	}
@@ -157,11 +144,11 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 	pathways, total, err := h.service.List(r.Context(), tenantID, destSpaceID, issuingSpaceID, documentType, page, limit)
 	if err != nil {
 		slog.Error("attestationguide: list failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "list_failed", "Failed to list attestation pathways")
+		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list attestation pathways")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": pathways,
 		"pagination": map[string]any{
 			"page":  page,
@@ -180,7 +167,7 @@ func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "attestation_guide_disabled", "Attestation guide is not available")
+		errpkg.WriteError(w, http.StatusNotFound, "attestation_guide_disabled", "Attestation guide is not available")
 		return
 	}
 
@@ -192,15 +179,15 @@ func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
 	pathway, err := h.service.GetByID(r.Context(), id, tenantID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "pathway_not_found", "Attestation pathway not found")
+			errpkg.WriteError(w, http.StatusNotFound, "pathway_not_found", "Attestation pathway not found")
 			return
 		}
 		slog.Error("attestationguide: get by id failed", "id", id, "error", err)
-		writeError(w, http.StatusInternalServerError, "get_failed", "Failed to get attestation pathway")
+		errpkg.WriteError(w, http.StatusInternalServerError, "get_failed", "Failed to get attestation pathway")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": pathway})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": pathway})
 }
 
 // HandleExportPDF handles GET /attestation/:id/export/pdf — returns the
@@ -216,7 +203,7 @@ func (h *Handlers) HandleExportPDF(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "attestation_guide_disabled", "Attestation guide is not available")
+		errpkg.WriteError(w, http.StatusNotFound, "attestation_guide_disabled", "Attestation guide is not available")
 		return
 	}
 
@@ -228,11 +215,11 @@ func (h *Handlers) HandleExportPDF(w http.ResponseWriter, r *http.Request) {
 	pathway, err := h.service.GetByID(r.Context(), id, tenantID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "pathway_not_found", "Attestation pathway not found")
+			errpkg.WriteError(w, http.StatusNotFound, "pathway_not_found", "Attestation pathway not found")
 			return
 		}
 		slog.Error("attestationguide: export pdf get failed", "id", id, "error", err)
-		writeError(w, http.StatusInternalServerError, "get_failed", "Failed to get attestation pathway")
+		errpkg.WriteError(w, http.StatusInternalServerError, "get_failed", "Failed to get attestation pathway")
 		return
 	}
 
@@ -269,28 +256,28 @@ func (h *Handlers) HandleSubmitUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "attestation_guide_disabled", "Attestation guide is not available")
+		errpkg.WriteError(w, http.StatusNotFound, "attestation_guide_disabled", "Attestation guide is not available")
 		return
 	}
 
 	var input CreateCommunityUpdateInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
 
 	update, err := h.service.SubmitCommunityUpdate(r.Context(), pathwayID, tenantID, user.UserID, input)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "pathway_not_found", "Attestation pathway not found")
+			errpkg.WriteError(w, http.StatusNotFound, "pathway_not_found", "Attestation pathway not found")
 			return
 		}
 		slog.Error("attestationguide: submit update failed", "error", err, "user_id", user.UserID)
-		writeError(w, http.StatusInternalServerError, "submit_failed", "Failed to submit community update")
+		errpkg.WriteError(w, http.StatusInternalServerError, "submit_failed", "Failed to submit community update")
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": update})
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": update})
 }
 
 // ---------------------------------------------------------------------------
@@ -312,7 +299,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil {
-		writeError(w, http.StatusServiceUnavailable, "attestation_guide_unavailable", "Attestation guide not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "attestation_guide_unavailable", "Attestation guide not configured")
 		return
 	}
 
@@ -322,7 +309,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	var destSpaceID pgtype.UUID
 	if v := r.URL.Query().Get("dest"); v != "" {
 		if err := destSpaceID.Scan(v); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid destination space ID")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid destination space ID")
 			return
 		}
 	}
@@ -343,11 +330,11 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	pathways, total, err := h.service.AdminList(r.Context(), tenantID, destSpaceID, status, documentType, activePtr, page, limit)
 	if err != nil {
 		slog.Error("attestationguide: admin list failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "admin_list_failed", "Failed to list attestation pathways")
+		errpkg.WriteError(w, http.StatusInternalServerError, "admin_list_failed", "Failed to list attestation pathways")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": pathways,
 		"pagination": map[string]any{
 			"page":  page,
@@ -371,7 +358,7 @@ func (h *Handlers) HandleAdminListUpdates(w http.ResponseWriter, r *http.Request
 	}
 
 	if h.service == nil {
-		writeError(w, http.StatusServiceUnavailable, "attestation_guide_unavailable", "Attestation guide not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "attestation_guide_unavailable", "Attestation guide not configured")
 		return
 	}
 
@@ -384,11 +371,11 @@ func (h *Handlers) HandleAdminListUpdates(w http.ResponseWriter, r *http.Request
 	updates, total, err := h.service.AdminListUpdates(r.Context(), tenantID, status, page, limit)
 	if err != nil {
 		slog.Error("attestationguide: admin list updates failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "admin_list_updates_failed", "Failed to list community updates")
+		errpkg.WriteError(w, http.StatusInternalServerError, "admin_list_updates_failed", "Failed to list community updates")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": updates,
 		"pagination": map[string]any{
 			"page":  page,
@@ -411,37 +398,37 @@ func (h *Handlers) HandleAdminCreate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "attestation_guide_disabled", "Attestation guide is not available")
+		errpkg.WriteError(w, http.StatusNotFound, "attestation_guide_disabled", "Attestation guide is not available")
 		return
 	}
 
 	var input CreatePathwayInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
 
 	if input.DocumentType == "" {
-		writeError(w, http.StatusBadRequest, "missing_document_type", "document_type is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_document_type", "document_type is required")
 		return
 	}
 	if input.IssuingSpaceID == "" {
-		writeError(w, http.StatusBadRequest, "missing_issuing_space_id", "issuing_space_id is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_issuing_space_id", "issuing_space_id is required")
 		return
 	}
 	if input.DestinationSpaceID == "" {
-		writeError(w, http.StatusBadRequest, "missing_destination_space_id", "destination_space_id is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_destination_space_id", "destination_space_id is required")
 		return
 	}
 
 	pathway, err := h.service.Create(r.Context(), tenantID, input)
 	if err != nil {
 		slog.Error("attestationguide: admin create failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "create_failed", "Failed to create attestation pathway")
+		errpkg.WriteError(w, http.StatusInternalServerError, "create_failed", "Failed to create attestation pathway")
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": pathway})
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": pathway})
 }
 
 // HandleAdminGenerate handles POST /admin/attestation/generate — creates
@@ -459,29 +446,29 @@ func (h *Handlers) HandleAdminGenerate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "attestation_guide_disabled", "Attestation guide is not available")
+		errpkg.WriteError(w, http.StatusNotFound, "attestation_guide_disabled", "Attestation guide is not available")
 		return
 	}
 
 	var input GeneratePathwayInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
 
 	if input.DocumentType == "" || input.IssuingSpaceID == "" || input.DestinationSpaceID == "" {
-		writeError(w, http.StatusBadRequest, "missing_params", "document_type, issuing_space_id, and destination_space_id are required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_params", "document_type, issuing_space_id, and destination_space_id are required")
 		return
 	}
 
 	pathway, err := h.service.GenerateDraft(r.Context(), tenantID, input)
 	if err != nil {
 		slog.Error("attestationguide: admin generate failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "generate_failed", "Failed to generate attestation pathway draft")
+		errpkg.WriteError(w, http.StatusInternalServerError, "generate_failed", "Failed to generate attestation pathway draft")
 		return
 	}
 
-	writeJSON(w, http.StatusAccepted, map[string]any{
+	errpkg.WriteJSON(w, http.StatusAccepted, map[string]any{
 		"data":    pathway,
 		"status":  "accepted",
 		"message": "AI draft pathway created in 'ai_draft' status. Review and approve via PATCH /admin/attestation/:id/approve before publication.",
@@ -508,7 +495,7 @@ func (h *Handlers) HandleAdminApprove(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil {
-		writeError(w, http.StatusServiceUnavailable, "attestation_guide_unavailable", "Attestation guide not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "attestation_guide_unavailable", "Attestation guide not configured")
 		return
 	}
 
@@ -527,15 +514,15 @@ func (h *Handlers) HandleAdminApprove(w http.ResponseWriter, r *http.Request) {
 	pathway, err := h.service.Approve(r.Context(), id, tenantID, user.UserID, notes)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "pathway_not_found", "Attestation pathway not found")
+			errpkg.WriteError(w, http.StatusNotFound, "pathway_not_found", "Attestation pathway not found")
 			return
 		}
 		slog.Error("attestationguide: admin approve failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "approve_failed", "Failed to approve attestation pathway")
+		errpkg.WriteError(w, http.StatusInternalServerError, "approve_failed", "Failed to approve attestation pathway")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": pathway})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": pathway})
 }
 
 // HandleAdminReviewUpdate handles PATCH /admin/attestation/updates/:id —
@@ -557,7 +544,7 @@ func (h *Handlers) HandleAdminReviewUpdate(w http.ResponseWriter, r *http.Reques
 	}
 
 	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "attestation_guide_disabled", "Attestation guide is not available")
+		errpkg.WriteError(w, http.StatusNotFound, "attestation_guide_disabled", "Attestation guide is not available")
 		return
 	}
 
@@ -565,24 +552,24 @@ func (h *Handlers) HandleAdminReviewUpdate(w http.ResponseWriter, r *http.Reques
 		Approve *bool `json:"approve"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
 	if body.Approve == nil {
-		writeError(w, http.StatusBadRequest, "missing_approve", "approve field is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_approve", "approve field is required")
 		return
 	}
 
 	update, err := h.service.ReviewCommunityUpdate(r.Context(), updateID, tenantID, user.UserID, *body.Approve)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "update_not_found", "Community update not found")
+			errpkg.WriteError(w, http.StatusNotFound, "update_not_found", "Community update not found")
 			return
 		}
 		slog.Error("attestationguide: admin review update failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "review_failed", "Failed to review community update")
+		errpkg.WriteError(w, http.StatusInternalServerError, "review_failed", "Failed to review community update")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": update})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": update})
 }

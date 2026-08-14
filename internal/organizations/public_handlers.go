@@ -7,8 +7,9 @@ import (
 	"strings"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/jedafe/japa/internal/auth"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/auth"
+	errpkg "github.com/jedafe/japa/internal/errors"
 )
 
 // GetPublicOrganization handles GET /organizations/{slug} (public). Returns the
@@ -39,15 +40,15 @@ func (h *Handlers) GetPublicOrganization(w http.ResponseWriter, r *http.Request)
 			}
 			isMember, err := h.service.IsMember(r.Context(), org.ID, user.UserID)
 			if err != nil || !isMember {
-				writeError(w, http.StatusForbidden, "forbidden", "You are not a member of this organization")
+				errpkg.WriteError(w, http.StatusForbidden, "forbidden", "You are not a member of this organization")
 				return
 			}
-			writeJSON(w, http.StatusOK, map[string]any{"data": org})
+			errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": org})
 			return
 		}
 		// Guest requesting by UUID: fall through to 404 (guests must use the
 		// public slug path, which returns the lean DTO for active orgs only).
-		writeError(w, http.StatusNotFound, "not_found", "Organization not found")
+		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Organization not found")
 		return
 	}
 
@@ -83,7 +84,7 @@ func (h *Handlers) GetPublicOrganization(w http.ResponseWriter, r *http.Request)
 		}
 	}
 
-	writeJSON(w, http.StatusOK, resp)
+	errpkg.WriteJSON(w, http.StatusOK, resp)
 }
 
 // ListPublicMembers handles GET /organizations/{id}/members (public). The
@@ -95,7 +96,7 @@ func (h *Handlers) ListPublicMembers(w http.ResponseWriter, r *http.Request) {
 	}
 	orgID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid organization ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid organization ID")
 		return
 	}
 
@@ -104,7 +105,7 @@ func (h *Handlers) ListPublicMembers(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": toOrgMembers(rows)})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": toOrgMembers(rows)})
 }
 
 // ListPublicOrganizations handles GET /organizations (public): active orgs,
@@ -142,7 +143,7 @@ func (h *Handlers) ListPublicOrganizations(w http.ResponseWriter, r *http.Reques
 		}
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": toPublicOrgList(rows),
 		"meta": map[string]any{
 			"total":       total,

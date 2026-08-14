@@ -4,7 +4,8 @@
 // via tax_calculator.enabled system_setting (§100).
 //
 // Ref: japaconnect-engineering/sections/100-tax-calculator.md
-//      japaconnect-engineering/adr/ADR-108-tax-calculator.md
+//
+//	japaconnect-engineering/adr/ADR-108-tax-calculator.md
 package taxcalculator
 
 import (
@@ -64,15 +65,15 @@ type TreatyDTO struct {
 
 // CreateGuideRequest is the request body for POST /admin/tax-calculator/guides.
 type CreateGuideRequest struct {
-	OriginSpaceID       string          `json:"origin_space_id"`
-	DestinationSpaceID  string          `json:"destination_space_id"`
-	EmploymentStatus    string          `json:"employment_status"`
-	ResidencyTrigger    string          `json:"residency_trigger"`
-	WorldwideIncomeTaxed *bool          `json:"worldwide_income_taxed"`
-	FirstYearObligations string         `json:"first_year_obligations"`
-	ActionChecklist     json.RawMessage `json:"action_checklist"`
-	Status              string          `json:"status"`
-	IsActive            *bool           `json:"is_active"`
+	OriginSpaceID        string          `json:"origin_space_id"`
+	DestinationSpaceID   string          `json:"destination_space_id"`
+	EmploymentStatus     string          `json:"employment_status"`
+	ResidencyTrigger     string          `json:"residency_trigger"`
+	WorldwideIncomeTaxed *bool           `json:"worldwide_income_taxed"`
+	FirstYearObligations string          `json:"first_year_obligations"`
+	ActionChecklist      json.RawMessage `json:"action_checklist"`
+	Status               string          `json:"status"`
+	IsActive             *bool           `json:"is_active"`
 }
 
 // UpdateGuideRequest is the request body for PATCH /admin/tax-calculator/guides/:id.
@@ -213,12 +214,12 @@ func (s *Service) CreateGuide(ctx context.Context, tenantID pgtype.UUID, req Cre
 	}
 
 	in := CreateGuideInput{
-		TenantID:            tenantID,
-		OriginSpaceID:       originSpaceID,
-		DestinationSpaceID:  destSpaceID,
-		EmploymentStatus:    req.EmploymentStatus,
-		ActionChecklist:     checklist,
-		Status:              req.Status,
+		TenantID:           tenantID,
+		OriginSpaceID:      originSpaceID,
+		DestinationSpaceID: destSpaceID,
+		EmploymentStatus:   req.EmploymentStatus,
+		ActionChecklist:    checklist,
+		Status:             req.Status,
 	}
 	if req.ResidencyTrigger != "" {
 		in.ResidencyTrigger = &req.ResidencyTrigger
@@ -330,18 +331,18 @@ func (s *Service) GenerateGuide(ctx context.Context, tenantID pgtype.UUID, req G
 	aiModel := "content_agent_v1"
 
 	row, err := s.store.CreateGuide(ctx, CreateGuideInput{
-		TenantID:           tenantID,
-		OriginSpaceID:      originSpaceID,
-		DestinationSpaceID: destSpaceID,
-		EmploymentStatus:   req.EmploymentStatus,
-		ResidencyTrigger:   strPtr("AI-generated — pending review"),
+		TenantID:             tenantID,
+		OriginSpaceID:        originSpaceID,
+		DestinationSpaceID:   destSpaceID,
+		EmploymentStatus:     req.EmploymentStatus,
+		ResidencyTrigger:     strPtr("AI-generated — pending review"),
 		FirstYearObligations: strPtr("AI-generated first-year obligations — pending HITL review."),
-		ActionChecklist:    []byte("[]"),
-		Status:             GuideStatusAIDraft,
-		IsActive:           false,
-		AIGenerated:        true,
-		AIModel:            &aiModel,
-		AIPromptHash:       &promptHash,
+		ActionChecklist:      []byte("[]"),
+		Status:               GuideStatusAIDraft,
+		IsActive:             false,
+		AIGenerated:          true,
+		AIModel:              &aiModel,
+		AIPromptHash:         &promptHash,
 	})
 	if err != nil {
 		return GenerateGuideResult{}, fmt.Errorf("taxcalculator: generate guide: %w", err)
@@ -460,15 +461,15 @@ func normalizeChecklist(raw json.RawMessage) ([]byte, error) {
 // guideRowToDTO converts a GuideRow into a GuideDTO.
 func guideRowToDTO(r GuideRow) GuideDTO {
 	dto := GuideDTO{
-		ID:               r.ID.String(),
-		OriginSpaceID:    r.OriginSpaceID.String(),
+		ID:                 r.ID.String(),
+		OriginSpaceID:      r.OriginSpaceID.String(),
 		DestinationSpaceID: r.DestinationSpaceID.String(),
-		EmploymentStatus: r.EmploymentStatus,
-		Status:           r.Status,
-		IsActive:         r.IsActive,
-		AIGenerated:      r.AIGenerated,
-		CreatedAt:        formatTs(r.CreatedAt),
-		UpdatedAt:        formatTs(r.UpdatedAt),
+		EmploymentStatus:   r.EmploymentStatus,
+		Status:             r.Status,
+		IsActive:           r.IsActive,
+		AIGenerated:        r.AIGenerated,
+		CreatedAt:          formatTs(r.CreatedAt),
+		UpdatedAt:          formatTs(r.UpdatedAt),
 	}
 	if r.OriginSpaceName != nil {
 		dto.OriginSpaceName = *r.OriginSpaceName
@@ -507,12 +508,12 @@ func guideRowToDTO(r GuideRow) GuideDTO {
 // treatyRowToDTO converts a TreatyRow into a TreatyDTO.
 func treatyRowToDTO(r TreatyRow) TreatyDTO {
 	dto := TreatyDTO{
-		ID:               r.ID.String(),
-		OriginSpaceID:    r.OriginSpaceID.String(),
+		ID:                 r.ID.String(),
+		OriginSpaceID:      r.OriginSpaceID.String(),
 		DestinationSpaceID: r.DestinationSpaceID.String(),
-		TreatyExists:     r.TreatyExists,
-		CreatedAt:        formatTs(r.CreatedAt),
-		UpdatedAt:        formatTs(r.UpdatedAt),
+		TreatyExists:       r.TreatyExists,
+		CreatedAt:          formatTs(r.CreatedAt),
+		UpdatedAt:          formatTs(r.UpdatedAt),
 	}
 	if r.OriginSpaceName != nil {
 		dto.OriginSpaceName = *r.OriginSpaceName

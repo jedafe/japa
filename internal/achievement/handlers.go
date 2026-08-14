@@ -12,7 +12,8 @@
 //	GET    /api/v1/admin/achievements            — moderation queue (auth, achievement.moderate)
 //
 // Ref: japaconnect-engineering/sections/89-community-achievement-feed.md
-//      japaconnect-engineering/adr/ADR-097-community-achievement-feed.md
+//
+//	japaconnect-engineering/adr/ADR-097-community-achievement-feed.md
 package achievement
 
 import (
@@ -28,6 +29,7 @@ import (
 
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/config"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/tenant"
 )
 
@@ -46,24 +48,10 @@ func NewHandlers(service *Service, settings *config.Settings) *Handlers {
 // Shared helpers (same pattern as story/handlers.go)
 // ---------------------------------------------------------------------------
 
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	if err := json.NewEncoder(w).Encode(v); err != nil {
-		slog.Error("achievement: encode response", "error", err)
-	}
-}
-
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, map[string]any{
-		"error": map[string]string{"code": code, "message": message},
-	})
-}
-
 func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
 	return t.ID, true
@@ -72,7 +60,7 @@ func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	u := auth.FromContext(r.Context())
 	if u == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
 	return u, true
@@ -81,7 +69,7 @@ func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUse
 func scanUUIDParam(w http.ResponseWriter, r *http.Request, name string) (pgtype.UUID, bool) {
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, name)); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid "+name)
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid "+name)
 		return pgtype.UUID{}, false
 	}
 	return id, true
@@ -116,14 +104,14 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "achievement_disabled", "Achievement feed is not available")
+		errpkg.WriteError(w, http.StatusNotFound, "achievement_disabled", "Achievement feed is not available")
 		return
 	}
 
 	var destSpaceID pgtype.UUID
 	if v := r.URL.Query().Get("dest"); v != "" {
 		if err := destSpaceID.Scan(v); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid destination space ID")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid destination space ID")
 			return
 		}
 	}
@@ -135,11 +123,11 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 	achievements, total, err := h.service.List(r.Context(), tenantID, destSpaceID, milestoneType, sort, page, limit)
 	if err != nil {
 		slog.Error("achievement: list failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "list_failed", "Failed to list achievements")
+		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list achievements")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": achievements,
 		"pagination": map[string]any{
 			"page":  page,
@@ -159,13 +147,13 @@ func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "achievement_disabled", "Achievement feed is not available")
+		errpkg.WriteError(w, http.StatusNotFound, "achievement_disabled", "Achievement feed is not available")
 		return
 	}
 
 	slug := chi.URLParam(r, "slug")
 	if slug == "" {
-		writeError(w, http.StatusBadRequest, "missing_slug", "Achievement slug is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_slug", "Achievement slug is required")
 		return
 	}
 
@@ -179,15 +167,15 @@ func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
 	achievement, err := h.service.GetBySlugWithReactions(r.Context(), slug, tenantID, viewerID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "achievement_not_found", "Achievement not found")
+			errpkg.WriteError(w, http.StatusNotFound, "achievement_not_found", "Achievement not found")
 			return
 		}
 		slog.Error("achievement: get by slug failed", "slug", slug, "error", err)
-		writeError(w, http.StatusInternalServerError, "get_failed", "Failed to get achievement")
+		errpkg.WriteError(w, http.StatusInternalServerError, "get_failed", "Failed to get achievement")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": achievement})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": achievement})
 }
 
 // ---------------------------------------------------------------------------
@@ -207,41 +195,41 @@ func (h *Handlers) HandleSubmit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "achievement_disabled", "Achievement feed is not available")
+		errpkg.WriteError(w, http.StatusNotFound, "achievement_disabled", "Achievement feed is not available")
 		return
 	}
 
 	var input SubmitInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
 
 	if input.Title == "" {
-		writeError(w, http.StatusBadRequest, "missing_title", "Title is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_title", "Title is required")
 		return
 	}
 	if input.DestinationSpaceID == "" {
-		writeError(w, http.StatusBadRequest, "missing_destination", "Destination space ID is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_destination", "Destination space ID is required")
 		return
 	}
 	if input.MilestoneType == "" {
-		writeError(w, http.StatusBadRequest, "missing_milestone_type", "Milestone type is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_milestone_type", "Milestone type is required")
 		return
 	}
 
 	achievement, err := h.service.Submit(r.Context(), tenantID, user.UserID, input)
 	if err != nil {
 		if errors.Is(err, ErrMissingMilestone) {
-			writeError(w, http.StatusBadRequest, "missing_milestone_type", "Milestone type is required")
+			errpkg.WriteError(w, http.StatusBadRequest, "missing_milestone_type", "Milestone type is required")
 			return
 		}
 		slog.Error("achievement: submit failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "submit_failed", "Failed to submit achievement")
+		errpkg.WriteError(w, http.StatusInternalServerError, "submit_failed", "Failed to submit achievement")
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": achievement})
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": achievement})
 }
 
 // HandleEdit handles PATCH /achievements/:id — edit own achievement. Auth
@@ -261,32 +249,32 @@ func (h *Handlers) HandleEdit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "achievement_disabled", "Achievement feed is not available")
+		errpkg.WriteError(w, http.StatusNotFound, "achievement_disabled", "Achievement feed is not available")
 		return
 	}
 
 	var input EditInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
 
 	achievement, err := h.service.EditOwn(r.Context(), contentID, tenantID, user.UserID, input)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "achievement_not_found", "Achievement not found")
+			errpkg.WriteError(w, http.StatusNotFound, "achievement_not_found", "Achievement not found")
 			return
 		}
 		if errors.Is(err, ErrNotOwner) {
-			writeError(w, http.StatusForbidden, "not_owner", "You can only edit your own achievements")
+			errpkg.WriteError(w, http.StatusForbidden, "not_owner", "You can only edit your own achievements")
 			return
 		}
 		slog.Error("achievement: edit failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "edit_failed", "Failed to edit achievement")
+		errpkg.WriteError(w, http.StatusInternalServerError, "edit_failed", "Failed to edit achievement")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": achievement})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": achievement})
 }
 
 // HandleDelete handles DELETE /achievements/:id — delete own achievement. Auth
@@ -307,25 +295,25 @@ func (h *Handlers) HandleDelete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "achievement_disabled", "Achievement feed is not available")
+		errpkg.WriteError(w, http.StatusNotFound, "achievement_disabled", "Achievement feed is not available")
 		return
 	}
 
 	if err := h.service.DeleteOwn(r.Context(), contentID, tenantID, user.UserID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "achievement_not_found", "Achievement not found")
+			errpkg.WriteError(w, http.StatusNotFound, "achievement_not_found", "Achievement not found")
 			return
 		}
 		if errors.Is(err, ErrNotOwner) {
-			writeError(w, http.StatusForbidden, "not_owner", "You can only delete your own achievements")
+			errpkg.WriteError(w, http.StatusForbidden, "not_owner", "You can only delete your own achievements")
 			return
 		}
 		slog.Error("achievement: delete failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "delete_failed", "Failed to delete achievement")
+		errpkg.WriteError(w, http.StatusInternalServerError, "delete_failed", "Failed to delete achievement")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"deleted": true}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"deleted": true}})
 }
 
 // ---------------------------------------------------------------------------
@@ -341,13 +329,13 @@ func (h *Handlers) HandleListBySpace(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "achievement_disabled", "Achievement feed is not available")
+		errpkg.WriteError(w, http.StatusNotFound, "achievement_disabled", "Achievement feed is not available")
 		return
 	}
 
 	spaceSlug := chi.URLParam(r, "slug")
 	if spaceSlug == "" {
-		writeError(w, http.StatusBadRequest, "missing_slug", "Space slug is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_slug", "Space slug is required")
 		return
 	}
 
@@ -361,11 +349,11 @@ func (h *Handlers) HandleListBySpace(w http.ResponseWriter, r *http.Request) {
 	achievements, err := h.service.ListBySpace(r.Context(), spaceSlug, tenantID, limit)
 	if err != nil {
 		slog.Error("achievement: list by space failed", "space_slug", spaceSlug, "error", err)
-		writeError(w, http.StatusInternalServerError, "list_by_space_failed", "Failed to list achievements for space")
+		errpkg.WriteError(w, http.StatusInternalServerError, "list_by_space_failed", "Failed to list achievements for space")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": achievements})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": achievements})
 }
 
 // ---------------------------------------------------------------------------
@@ -385,7 +373,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil {
-		writeError(w, http.StatusServiceUnavailable, "achievement_unavailable", "Achievement service not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "achievement_unavailable", "Achievement service not configured")
 		return
 	}
 
@@ -401,11 +389,11 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	achievements, total, err := h.service.AdminList(r.Context(), tenantID, status, milestoneType, q, page, limit)
 	if err != nil {
 		slog.Error("achievement: admin list failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "admin_list_failed", "Failed to list achievements")
+		errpkg.WriteError(w, http.StatusInternalServerError, "admin_list_failed", "Failed to list achievements")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": achievements,
 		"pagination": map[string]any{
 			"page":  page,
@@ -435,26 +423,26 @@ func (h *Handlers) HandleAdminSetStatus(w http.ResponseWriter, r *http.Request) 
 		Status string `json:"status"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
 	if input.Status == "" {
-		writeError(w, http.StatusBadRequest, "missing_status", "Status is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_status", "Status is required")
 		return
 	}
 
 	achievement, err := h.service.AdminSetStatus(r.Context(), contentID, tenantID, input.Status)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "achievement_not_found", "Achievement not found")
+			errpkg.WriteError(w, http.StatusNotFound, "achievement_not_found", "Achievement not found")
 			return
 		}
 		slog.Error("achievement: admin set status failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "admin_set_status_failed", "Failed to update achievement status")
+		errpkg.WriteError(w, http.StatusInternalServerError, "admin_set_status_failed", "Failed to update achievement status")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": achievement})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": achievement})
 }
 
 // HandleAdminDelete handles DELETE /admin/achievements/:id — soft-delete
@@ -475,13 +463,13 @@ func (h *Handlers) HandleAdminDelete(w http.ResponseWriter, r *http.Request) {
 
 	if err := h.service.AdminDelete(r.Context(), contentID, tenantID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "achievement_not_found", "Achievement not found")
+			errpkg.WriteError(w, http.StatusNotFound, "achievement_not_found", "Achievement not found")
 			return
 		}
 		slog.Error("achievement: admin delete failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "admin_delete_failed", "Failed to delete achievement")
+		errpkg.WriteError(w, http.StatusInternalServerError, "admin_delete_failed", "Failed to delete achievement")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"deleted": true}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"deleted": true}})
 }

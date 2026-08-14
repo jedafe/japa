@@ -216,10 +216,10 @@ func (s *Service) UpdateMemberStatus(ctx context.Context, userID, tenantID pgtyp
 // ── Link Operations ─────────────────────────────────────────────────
 
 type CreateLinkInput struct {
-	ProductType    string        `json:"product_type"`
-	ProductID      *pgtype.UUID  `json:"product_id,omitempty"`
-	Description    *string       `json:"description,omitempty"`
-	DestinationURL string        `json:"destination_url"`
+	ProductType    string       `json:"product_type"`
+	ProductID      *pgtype.UUID `json:"product_id,omitempty"`
+	Description    *string      `json:"description,omitempty"`
+	DestinationURL string       `json:"destination_url"`
 }
 
 func (s *Service) CreateLink(ctx context.Context, tenantID, userID pgtype.UUID, input CreateLinkInput) (gen.UserAffiliateLink, error) {
@@ -382,12 +382,12 @@ type EarningsByProduct struct {
 }
 
 type RecentEvent struct {
-	ID            string  `json:"id"`
-	EventType     string  `json:"event_type"`
-	Commission    *string `json:"commission_amount,omitempty"`
-	CreatedAt     string  `json:"created_at"`
-	LinkCode      string  `json:"link_code"`
-	ProductType   string  `json:"product_type"`
+	ID          string  `json:"id"`
+	EventType   string  `json:"event_type"`
+	Commission  *string `json:"commission_amount,omitempty"`
+	CreatedAt   string  `json:"created_at"`
+	LinkCode    string  `json:"link_code"`
+	ProductType string  `json:"product_type"`
 }
 
 func (s *Service) GetEarnings(ctx context.Context, userID, tenantID pgtype.UUID) (*EarningsSummary, error) {
@@ -416,8 +416,8 @@ func (s *Service) GetEarnings(ctx context.Context, userID, tenantID pgtype.UUID)
 		re[i] = RecentEvent{
 			ID: row.ID.String(), EventType: row.EventType,
 			Commission: formatNumericPtr(row.CommissionAmount),
-			CreatedAt: row.CreatedAt.Time.Format(time.RFC3339),
-			LinkCode: row.LinkCode, ProductType: row.ProductType,
+			CreatedAt:  row.CreatedAt.Time.Format(time.RFC3339),
+			LinkCode:   row.LinkCode, ProductType: row.ProductType,
 		}
 	}
 
@@ -427,7 +427,7 @@ func (s *Service) GetEarnings(ctx context.Context, userID, tenantID pgtype.UUID)
 	return &EarningsSummary{
 		TotalClicks: totalClicks, TotalConversions: totalConversions,
 		TotalEarned: formatNumeric(earnings.TotalEarned),
-		ByProduct: bp, RecentEvents: re,
+		ByProduct:   bp, RecentEvents: re,
 	}, nil
 }
 

@@ -222,14 +222,14 @@ func genSidebarToJSON(row gen.Sidebar) SidebarJSON {
 		App:              row.App,
 		Position:         row.Position,
 		Slug:             row.Slug,
-		Name:              row.Name,
-		PagePattern:       row.PagePattern,
-		Visibility:        row.Visibility,
-		RequiredGroupIDs:  []string{},
-		Status:            row.Status,
-		Widgets:           []SidebarWidgetJSON{},
-		CreatedAt:         timestampToISO(row.CreatedAt),
-		UpdatedAt:         timestampToISO(row.UpdatedAt),
+		Name:             row.Name,
+		PagePattern:      row.PagePattern,
+		Visibility:       row.Visibility,
+		RequiredGroupIDs: []string{},
+		Status:           row.Status,
+		Widgets:          []SidebarWidgetJSON{},
+		CreatedAt:        timestampToISO(row.CreatedAt),
+		UpdatedAt:        timestampToISO(row.UpdatedAt),
 	}
 	if len(row.RequiredGroupIds) > 0 && string(row.RequiredGroupIds) != "null" {
 		var ids []string

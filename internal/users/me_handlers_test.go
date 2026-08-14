@@ -348,4 +348,3 @@ func TestGetMyContent_InvalidID(t *testing.T) {
 		t.Errorf("error code = %v, want invalid_id", errObj["code"])
 	}
 }
-

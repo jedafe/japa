@@ -73,10 +73,10 @@ func (s *Service) CreateReview(ctx context.Context, tenantID, reviewerUserID pgt
 	}
 
 	s.emitWebhook(ctx, tenantID, "review.created", map[string]any{
-		"review_id":    review.ID,
-		"reviewee_id":  review.EntityID,
-		"reviewer_id":  review.ReviewerUserID,
-		"rating":       review.Rating,
+		"review_id":   review.ID,
+		"reviewee_id": review.EntityID,
+		"reviewer_id": review.ReviewerUserID,
+		"rating":      review.Rating,
 	})
 
 	return review, nil

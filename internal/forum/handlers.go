@@ -20,8 +20,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
-	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/db/gen"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/mentions"
 	"github.com/jedafe/japa/internal/seo"
 	"github.com/jedafe/japa/internal/tenant"
@@ -148,7 +148,7 @@ func parseUUIDParam(r *http.Request, param string) (pgtype.UUID, error) {
 func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
 
@@ -159,7 +159,7 @@ func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype
 func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	user := auth.FromContext(r.Context())
 	if user == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
 
@@ -170,27 +170,10 @@ func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.Au
 func handleServiceError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, ErrTooManyTags):
-		writeError(w, http.StatusConflict, "too_many_tags", err.Error())
+		errpkg.WriteError(w, http.StatusConflict, "too_many_tags", err.Error())
 	default:
 		errpkg.HandleServiceError(w, err)
 	}
-}
-
-// writeJSON serializes the given value as JSON and writes it to the response.
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-
-	if err := json.NewEncoder(w).Encode(v); err != nil {
-		slog.Warn("json encode error", "error", err)
-	}
-}
-
-// writeError writes a JSON error response following the JapaConnect API format.
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, map[string]any{
-		"error": map[string]string{"code": code, "message": message},
-	})
 }
 
 // parsePageSize extracts and clamps the page_size query parameter.
@@ -255,38 +238,38 @@ func (h *Handlers) CreateThread(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if input.Title == "" {
-		writeError(w, http.StatusBadRequest, "missing_title", "Title is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_title", "Title is required")
 		return
 	}
 
 	if input.Slug == "" {
-		writeError(w, http.StatusBadRequest, "missing_slug", "Slug is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_slug", "Slug is required")
 		return
 	}
 
 	var spaceID, contentID, parentReplyID pgtype.UUID
 	if input.SpaceID != nil {
 		if err := spaceID.Scan(*input.SpaceID); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_space_id", "Invalid space_id format")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_space_id", "Invalid space_id format")
 			return
 		}
 	}
 
 	if input.ContentID != nil {
 		if err := contentID.Scan(*input.ContentID); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_content_id", "Invalid content_id format")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_content_id", "Invalid content_id format")
 			return
 		}
 	}
 
 	if input.ParentReplyID != nil {
 		if err := parentReplyID.Scan(*input.ParentReplyID); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_parent_reply_id", "Invalid parent_reply_id format")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_parent_reply_id", "Invalid parent_reply_id format")
 			return
 		}
 	}
@@ -320,7 +303,7 @@ func (h *Handlers) CreateThread(w http.ResponseWriter, r *http.Request) {
 	// are part of the RAG corpus).
 	h.indexThreadRAG(r.Context(), tenantID, thread.ID, input.Title, input.Body)
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": thread})
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": thread})
 }
 
 // ListThreads handles GET /api/v1/forum/threads.
@@ -344,7 +327,7 @@ func (h *Handlers) ListThreads(w http.ResponseWriter, r *http.Request) {
 	case spaceIDStr != "":
 		var spaceID pgtype.UUID
 		if err := spaceID.Scan(spaceIDStr); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_space_id", "Invalid space_id")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_space_id", "Invalid space_id")
 			return
 		}
 
@@ -354,12 +337,12 @@ func (h *Handlers) ListThreads(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		writeJSON(w, http.StatusOK, map[string]any{"data": threads})
+		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": threads})
 
 	case authorIDStr != "":
 		var authorID pgtype.UUID
 		if err := authorID.Scan(authorIDStr); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_author_id", "Invalid author_id")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_author_id", "Invalid author_id")
 			return
 		}
 
@@ -369,12 +352,12 @@ func (h *Handlers) ListThreads(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		writeJSON(w, http.StatusOK, map[string]any{"data": threads})
+		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": threads})
 
 	case tagIDStr != "":
 		var tagID pgtype.UUID
 		if err := tagID.Scan(tagIDStr); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_tag_id", "Invalid tag_id")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_tag_id", "Invalid tag_id")
 			return
 		}
 
@@ -384,14 +367,14 @@ func (h *Handlers) ListThreads(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		writeJSON(w, http.StatusOK, map[string]any{"data": threads})
+		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": threads})
 
 	case tagSlug != "":
 		// Resolve the slug to a tag ID, then filter threads by that tag.
 		// Ref: japaconnect-engineering/sections/08-forum-qa-solved.md (?tag=slug)
 		tag, err := h.Service.GetTagBySlug(r.Context(), tagSlug, tenantID)
 		if err != nil {
-			writeError(w, http.StatusNotFound, "tag_not_found", "Tag not found")
+			errpkg.WriteError(w, http.StatusNotFound, "tag_not_found", "Tag not found")
 			return
 		}
 
@@ -401,7 +384,7 @@ func (h *Handlers) ListThreads(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		writeJSON(w, http.StatusOK, map[string]any{"data": threads})
+		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": threads})
 
 	default:
 		// List all public threads for the tenant regardless of auth — the
@@ -414,7 +397,7 @@ func (h *Handlers) ListThreads(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		writeJSON(w, http.StatusOK, map[string]any{"data": threads})
+		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": threads})
 	}
 }
 
@@ -427,7 +410,7 @@ func (h *Handlers) GetThread(w http.ResponseWriter, r *http.Request) {
 
 	slug := chi.URLParam(r, "slug")
 	if slug == "" {
-		writeError(w, http.StatusBadRequest, "missing_slug", "Slug is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_slug", "Slug is required")
 		return
 	}
 
@@ -555,7 +538,7 @@ func (h *Handlers) GetThread(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	writeJSON(w, http.StatusOK, response)
+	errpkg.WriteJSON(w, http.StatusOK, response)
 }
 
 // dispatchMentionNotifications extracts @mentioned users from a forum thread
@@ -636,15 +619,15 @@ func (h *Handlers) resolveQAPageJSONLD(
 ) any {
 	isSolved := answerBody != ""
 	fields := map[string]string{
-		"title":                          thread.Title,
-		"body":                           questionBody,
-		"answer_count":                   strconv.Itoa(int(thread.ReplyCount)),
-		"accepted_answer_body":           answerBody,
-		"accepted_answer_author":         answerAuthor,
-		"accepted_answer_created_at":     answerCreatedAt,
-		"accepted_answer_upvotes":        answerUpvotes,
-		"author_name":                    authorName,
-		"created_at":                     tsString(thread.CreatedAt),
+		"title":                      thread.Title,
+		"body":                       questionBody,
+		"answer_count":               strconv.Itoa(int(thread.ReplyCount)),
+		"accepted_answer_body":       answerBody,
+		"accepted_answer_author":     answerAuthor,
+		"accepted_answer_created_at": answerCreatedAt,
+		"accepted_answer_upvotes":    answerUpvotes,
+		"author_name":                authorName,
+		"created_at":                 tsString(thread.CreatedAt),
 	}
 
 	if h.jsonldResolver != nil {
@@ -695,7 +678,7 @@ func (h *Handlers) UpdateThread(w http.ResponseWriter, r *http.Request) {
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid thread ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid thread ID")
 		return
 	}
 
@@ -706,7 +689,7 @@ func (h *Handlers) UpdateThread(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
@@ -719,7 +702,7 @@ func (h *Handlers) UpdateThread(w http.ResponseWriter, r *http.Request) {
 	// RAG re-indexing — fire-and-forget (§69/ADR-069 BUG-001 fix).
 	h.indexThreadRAG(r.Context(), tenantID, id, input.Title, input.Body)
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": thread})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": thread})
 }
 
 // DeleteThread handles DELETE /api/v1/forum/threads/{id}.
@@ -736,7 +719,7 @@ func (h *Handlers) DeleteThread(w http.ResponseWriter, r *http.Request) {
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid thread ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid thread ID")
 		return
 	}
 
@@ -749,7 +732,7 @@ func (h *Handlers) DeleteThread(w http.ResponseWriter, r *http.Request) {
 	// must not be retrievable in RAG).
 	h.purgeThreadRAG(r.Context(), tenantID, id)
 
-	writeJSON(w, http.StatusNoContent, nil)
+	errpkg.WriteJSON(w, http.StatusNoContent, nil)
 }
 
 // SolveThread handles POST /api/v1/forum/threads/{id}/solve.
@@ -766,7 +749,7 @@ func (h *Handlers) SolveThread(w http.ResponseWriter, r *http.Request) {
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid thread ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid thread ID")
 		return
 	}
 
@@ -775,7 +758,7 @@ func (h *Handlers) SolveThread(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "solved"}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "solved"}})
 }
 
 // UnsolveThread handles DELETE /api/v1/forum/threads/{id}/solve.
@@ -793,7 +776,7 @@ func (h *Handlers) UnsolveThread(w http.ResponseWriter, r *http.Request) {
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid thread ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid thread ID")
 		return
 	}
 
@@ -802,7 +785,7 @@ func (h *Handlers) UnsolveThread(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "unsolved"}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "unsolved"}})
 }
 
 // ---------------------------------------------------------------------------
@@ -823,7 +806,7 @@ func (h *Handlers) CreateReply(w http.ResponseWriter, r *http.Request) {
 
 	threadID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_thread_id", "Invalid thread ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_thread_id", "Invalid thread ID")
 		return
 	}
 
@@ -834,14 +817,14 @@ func (h *Handlers) CreateReply(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	var parentReplyID pgtype.UUID
 	if input.ParentReplyID != nil {
 		if err := parentReplyID.Scan(*input.ParentReplyID); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_parent_reply_id", "Invalid parent_reply_id format")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_parent_reply_id", "Invalid parent_reply_id format")
 			return
 		}
 	}
@@ -864,7 +847,7 @@ func (h *Handlers) CreateReply(w http.ResponseWriter, r *http.Request) {
 	}
 	h.dispatchMentionNotifications(r.Context(), tenantID, user.UserID, reply.ID, replySpaceID, input.Body, "mention.comment")
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": reply})
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": reply})
 }
 
 // ListReplies handles GET /api/v1/forum/threads/{id}/replies.
@@ -876,7 +859,7 @@ func (h *Handlers) ListReplies(w http.ResponseWriter, r *http.Request) {
 
 	threadID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_thread_id", "Invalid thread ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_thread_id", "Invalid thread ID")
 		return
 	}
 
@@ -888,7 +871,7 @@ func (h *Handlers) ListReplies(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": replies})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": replies})
 }
 
 // UpdateReply handles PATCH /api/v1/forum/replies/{id}.
@@ -905,7 +888,7 @@ func (h *Handlers) UpdateReply(w http.ResponseWriter, r *http.Request) {
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid reply ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid reply ID")
 		return
 	}
 
@@ -914,7 +897,7 @@ func (h *Handlers) UpdateReply(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
@@ -924,7 +907,7 @@ func (h *Handlers) UpdateReply(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": reply})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": reply})
 }
 
 // DeleteReply handles DELETE /api/v1/forum/replies/{id}.
@@ -941,7 +924,7 @@ func (h *Handlers) DeleteReply(w http.ResponseWriter, r *http.Request) {
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid reply ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid reply ID")
 		return
 	}
 
@@ -950,7 +933,7 @@ func (h *Handlers) DeleteReply(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusNoContent, nil)
+	errpkg.WriteJSON(w, http.StatusNoContent, nil)
 }
 
 // ---------------------------------------------------------------------------
@@ -976,28 +959,28 @@ func (h *Handlers) Vote(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if input.EntityType == "" {
-		writeError(w, http.StatusBadRequest, "missing_entity_type", "entity_type is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_entity_type", "entity_type is required")
 		return
 	}
 
 	if input.EntityID == "" {
-		writeError(w, http.StatusBadRequest, "missing_entity_id", "entity_id is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_entity_id", "entity_id is required")
 		return
 	}
 
 	if input.Value != VoteDown && input.Value != VoteUp {
-		writeError(w, http.StatusBadRequest, "invalid_vote_value", "value must be -1 or 1")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_vote_value", "value must be -1 or 1")
 		return
 	}
 
 	var entityID pgtype.UUID
 	if err := entityID.Scan(input.EntityID); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_entity_id", "Invalid entity_id")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_entity_id", "Invalid entity_id")
 		return
 	}
 
@@ -1011,7 +994,7 @@ func (h *Handlers) Vote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": vote})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": vote})
 }
 
 // VoteOnThread handles POST /api/v1/forum/{id}/vote.
@@ -1031,7 +1014,7 @@ func (h *Handlers) VoteOnThread(w http.ResponseWriter, r *http.Request) {
 
 	entityID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid entity ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid entity ID")
 		return
 	}
 
@@ -1041,7 +1024,7 @@ func (h *Handlers) VoteOnThread(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
@@ -1050,12 +1033,12 @@ func (h *Handlers) VoteOnThread(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if input.EntityType != EntityTypeThread && input.EntityType != EntityTypeReply {
-		writeError(w, http.StatusBadRequest, "invalid_entity_type", "entity_type must be 'thread' or 'reply'")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_entity_type", "entity_type must be 'thread' or 'reply'")
 		return
 	}
 
 	if input.Value != VoteDown && input.Value != VoteUp {
-		writeError(w, http.StatusBadRequest, "invalid_vote_value", "value must be -1 or 1")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_vote_value", "value must be -1 or 1")
 		return
 	}
 
@@ -1069,7 +1052,7 @@ func (h *Handlers) VoteOnThread(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": vote})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": vote})
 }
 
 // RemoveThreadVote handles DELETE /api/v1/forum/{id}/vote.
@@ -1088,7 +1071,7 @@ func (h *Handlers) RemoveThreadVote(w http.ResponseWriter, r *http.Request) {
 
 	entityID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid entity ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid entity ID")
 		return
 	}
 
@@ -1098,7 +1081,7 @@ func (h *Handlers) RemoveThreadVote(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if entityType != EntityTypeThread && entityType != EntityTypeReply {
-		writeError(w, http.StatusBadRequest, "invalid_entity_type", "entity_type must be 'thread' or 'reply'")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_entity_type", "entity_type must be 'thread' or 'reply'")
 		return
 	}
 
@@ -1107,7 +1090,7 @@ func (h *Handlers) RemoveThreadVote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusNoContent, nil)
+	errpkg.WriteJSON(w, http.StatusNoContent, nil)
 }
 
 // ---------------------------------------------------------------------------
@@ -1133,23 +1116,23 @@ func (h *Handlers) AddBookmark(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if input.EntityType == "" {
-		writeError(w, http.StatusBadRequest, "missing_entity_type", "entity_type is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_entity_type", "entity_type is required")
 		return
 	}
 
 	if input.EntityID == "" {
-		writeError(w, http.StatusBadRequest, "missing_entity_id", "entity_id is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_entity_id", "entity_id is required")
 		return
 	}
 
 	var entityID pgtype.UUID
 	if err := entityID.Scan(input.EntityID); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_entity_id", "Invalid entity_id")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_entity_id", "Invalid entity_id")
 		return
 	}
 
@@ -1159,7 +1142,7 @@ func (h *Handlers) AddBookmark(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": bm})
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": bm})
 }
 
 // RemoveBookmark handles DELETE /api/v1/forum/bookmarks/{id}.
@@ -1178,7 +1161,7 @@ func (h *Handlers) RemoveBookmark(w http.ResponseWriter, r *http.Request) {
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid bookmark ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid bookmark ID")
 		return
 	}
 
@@ -1187,7 +1170,7 @@ func (h *Handlers) RemoveBookmark(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusNoContent, nil)
+	errpkg.WriteJSON(w, http.StatusNoContent, nil)
 }
 
 // ListBookmarks handles GET /api/v1/forum/bookmarks.
@@ -1211,7 +1194,7 @@ func (h *Handlers) ListBookmarks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": bookmarks})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": bookmarks})
 }
 
 // parsePageSizeOffset extracts the page_offset query parameter.
@@ -1252,35 +1235,35 @@ func (h *Handlers) CreatePoll(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if input.ThreadID == "" {
-		writeError(w, http.StatusBadRequest, "missing_thread_id", "thread_id is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_thread_id", "thread_id is required")
 		return
 	}
 
 	if input.Question == "" {
-		writeError(w, http.StatusBadRequest, "missing_question", "question is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_question", "question is required")
 		return
 	}
 
 	if len(input.Options) < 2 {
-		writeError(w, http.StatusBadRequest, "insufficient_options", "At least 2 options required")
+		errpkg.WriteError(w, http.StatusBadRequest, "insufficient_options", "At least 2 options required")
 		return
 	}
 
 	var threadID pgtype.UUID
 	if err := threadID.Scan(input.ThreadID); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_thread_id", "Invalid thread_id")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_thread_id", "Invalid thread_id")
 		return
 	}
 
 	var closeAt pgtype.Timestamptz
 	if input.CloseAt != nil {
 		if err := closeAt.Scan(*input.CloseAt); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_close_at", "Invalid close_at date format")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_close_at", "Invalid close_at date format")
 			return
 		}
 	}
@@ -1302,7 +1285,7 @@ func (h *Handlers) CreatePoll(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": poll})
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": poll})
 }
 
 // VotePoll handles POST /api/v1/forum/polls/{id}/vote.
@@ -1314,7 +1297,7 @@ func (h *Handlers) VotePoll(w http.ResponseWriter, r *http.Request) {
 
 	pollID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_poll_id", "Invalid poll ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_poll_id", "Invalid poll ID")
 		return
 	}
 
@@ -1323,18 +1306,18 @@ func (h *Handlers) VotePoll(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if input.OptionID == "" {
-		writeError(w, http.StatusBadRequest, "missing_option_id", "option_id is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_option_id", "option_id is required")
 		return
 	}
 
 	var optionID pgtype.UUID
 	if err := optionID.Scan(input.OptionID); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_option_id", "Invalid option_id")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_option_id", "Invalid option_id")
 		return
 	}
 
@@ -1343,14 +1326,14 @@ func (h *Handlers) VotePoll(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "voted"}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "voted"}})
 }
 
 // GetPoll handles GET /api/v1/forum/polls/{id}.
 func (h *Handlers) GetPoll(w http.ResponseWriter, r *http.Request) {
 	pollID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_poll_id", "Invalid poll ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_poll_id", "Invalid poll ID")
 		return
 	}
 
@@ -1366,7 +1349,7 @@ func (h *Handlers) GetPoll(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
 			"poll":    poll,
 			"results": results,
@@ -1385,7 +1368,7 @@ func (h *Handlers) CreatePollForThread(w http.ResponseWriter, r *http.Request) {
 
 	threadID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_thread_id", "Invalid thread ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_thread_id", "Invalid thread ID")
 		return
 	}
 
@@ -1400,24 +1383,24 @@ func (h *Handlers) CreatePollForThread(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if input.Question == "" {
-		writeError(w, http.StatusBadRequest, "missing_question", "question is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_question", "question is required")
 		return
 	}
 
 	if len(input.Options) < 2 {
-		writeError(w, http.StatusBadRequest, "insufficient_options", "At least 2 options required")
+		errpkg.WriteError(w, http.StatusBadRequest, "insufficient_options", "At least 2 options required")
 		return
 	}
 
 	var closeAt pgtype.Timestamptz
 	if input.CloseAt != nil {
 		if err := closeAt.Scan(*input.CloseAt); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_close_at", "Invalid close_at date format")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_close_at", "Invalid close_at date format")
 			return
 		}
 	}
@@ -1439,7 +1422,7 @@ func (h *Handlers) CreatePollForThread(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": poll})
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": poll})
 }
 
 // VotePollOption handles POST /api/v1/poll-options/{id}/vote.
@@ -1453,7 +1436,7 @@ func (h *Handlers) VotePollOption(w http.ResponseWriter, r *http.Request) {
 
 	optionID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_option_id", "Invalid poll option ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_option_id", "Invalid poll option ID")
 		return
 	}
 
@@ -1462,7 +1445,7 @@ func (h *Handlers) VotePollOption(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "voted"}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "voted"}})
 }
 
 // RetractPollVoteHandler handles DELETE /api/v1/poll-options/{id}/vote.
@@ -1476,7 +1459,7 @@ func (h *Handlers) RetractPollVoteHandler(w http.ResponseWriter, r *http.Request
 
 	optionID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_option_id", "Invalid poll option ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_option_id", "Invalid poll option ID")
 		return
 	}
 
@@ -1485,7 +1468,7 @@ func (h *Handlers) RetractPollVoteHandler(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	writeJSON(w, http.StatusNoContent, nil)
+	errpkg.WriteJSON(w, http.StatusNoContent, nil)
 }
 
 // ---------------------------------------------------------------------------
@@ -1514,31 +1497,31 @@ func (h *Handlers) CreateTag(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if input.Name == "" {
-		writeError(w, http.StatusBadRequest, "missing_name", "Name is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_name", "Name is required")
 		return
 	}
 
 	if input.Slug == "" {
-		writeError(w, http.StatusBadRequest, "missing_slug", "Slug is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_slug", "Slug is required")
 		return
 	}
 
 	var coverImageID, moderatorUserID pgtype.UUID
 	if input.CoverImageID != nil {
 		if err := coverImageID.Scan(*input.CoverImageID); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_cover_image_id", "Invalid cover_image_id format")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_cover_image_id", "Invalid cover_image_id format")
 			return
 		}
 	}
 
 	if input.ModeratorUserID != nil {
 		if err := moderatorUserID.Scan(*input.ModeratorUserID); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_moderator_user_id", "Invalid moderator_user_id format")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_moderator_user_id", "Invalid moderator_user_id format")
 			return
 		}
 	}
@@ -1556,7 +1539,7 @@ func (h *Handlers) CreateTag(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": tag})
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": tag})
 }
 
 // ListTags handles GET /api/v1/forum/tags.
@@ -1575,7 +1558,7 @@ func (h *Handlers) ListTags(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": tags})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": tags})
 }
 
 // GetTagBySlug handles GET /api/v1/forum/tags/{slug}.
@@ -1587,7 +1570,7 @@ func (h *Handlers) GetTagBySlug(w http.ResponseWriter, r *http.Request) {
 
 	slug := chi.URLParam(r, "slug")
 	if slug == "" {
-		writeError(w, http.StatusBadRequest, "missing_slug", "Slug is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_slug", "Slug is required")
 		return
 	}
 
@@ -1597,7 +1580,7 @@ func (h *Handlers) GetTagBySlug(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": tag})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": tag})
 }
 
 // UpdateTag handles PATCH /api/v1/forum/tags/{id}.
@@ -1614,7 +1597,7 @@ func (h *Handlers) UpdateTag(w http.ResponseWriter, r *http.Request) {
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid tag ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid tag ID")
 		return
 	}
 
@@ -1628,21 +1611,21 @@ func (h *Handlers) UpdateTag(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	var coverImageID, moderatorUserID pgtype.UUID
 	if input.CoverImageID != nil {
 		if err := coverImageID.Scan(*input.CoverImageID); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_cover_image_id", "Invalid cover image ID")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_cover_image_id", "Invalid cover image ID")
 			return
 		}
 	}
 
 	if input.ModeratorUserID != nil {
 		if err := moderatorUserID.Scan(*input.ModeratorUserID); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_moderator_user_id", "Invalid moderator user ID")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_moderator_user_id", "Invalid moderator user ID")
 			return
 		}
 	}
@@ -1660,7 +1643,7 @@ func (h *Handlers) UpdateTag(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": tag})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": tag})
 }
 
 // DeleteTag handles DELETE /api/v1/forum/tags/{id}.
@@ -1677,7 +1660,7 @@ func (h *Handlers) DeleteTag(w http.ResponseWriter, r *http.Request) {
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid tag ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid tag ID")
 		return
 	}
 
@@ -1686,7 +1669,7 @@ func (h *Handlers) DeleteTag(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusNoContent, nil)
+	errpkg.WriteJSON(w, http.StatusNoContent, nil)
 }
 
 // AddThreadTag handles POST /api/v1/forum/threads/{id}/tags/{tagId}.
@@ -1698,13 +1681,13 @@ func (h *Handlers) AddThreadTag(w http.ResponseWriter, r *http.Request) {
 
 	threadID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_thread_id", "Invalid thread ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_thread_id", "Invalid thread ID")
 		return
 	}
 
 	tagID, err := parseUUIDParam(r, "tagId")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_tag_id", "Invalid tag ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_tag_id", "Invalid tag ID")
 		return
 	}
 
@@ -1713,7 +1696,7 @@ func (h *Handlers) AddThreadTag(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "added"}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "added"}})
 }
 
 // AddThreadTagsBulk handles POST /api/v1/forum/{id}/tags.
@@ -1727,7 +1710,7 @@ func (h *Handlers) AddThreadTagsBulk(w http.ResponseWriter, r *http.Request) {
 
 	threadID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_thread_id", "Invalid thread ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_thread_id", "Invalid thread ID")
 		return
 	}
 
@@ -1736,12 +1719,12 @@ func (h *Handlers) AddThreadTagsBulk(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if len(input.TagIDs) == 0 {
-		writeError(w, http.StatusBadRequest, "missing_tag_ids", "tag_ids array is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_tag_ids", "tag_ids array is required")
 		return
 	}
 
@@ -1749,7 +1732,7 @@ func (h *Handlers) AddThreadTagsBulk(w http.ResponseWriter, r *http.Request) {
 	for _, idStr := range input.TagIDs {
 		var id pgtype.UUID
 		if err := id.Scan(idStr); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_tag_id", "Invalid tag_id in list")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_tag_id", "Invalid tag_id in list")
 			return
 		}
 		tagIDs = append(tagIDs, id)
@@ -1760,7 +1743,7 @@ func (h *Handlers) AddThreadTagsBulk(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "added"}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "added"}})
 }
 
 // RemoveThreadTag handles DELETE /api/v1/forum/threads/{id}/tags/{tagId}.
@@ -1772,13 +1755,13 @@ func (h *Handlers) RemoveThreadTag(w http.ResponseWriter, r *http.Request) {
 
 	threadID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_thread_id", "Invalid thread ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_thread_id", "Invalid thread ID")
 		return
 	}
 
 	tagID, err := parseUUIDParam(r, "tagId")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_tag_id", "Invalid tag ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_tag_id", "Invalid tag ID")
 		return
 	}
 
@@ -1787,7 +1770,7 @@ func (h *Handlers) RemoveThreadTag(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusNoContent, nil)
+	errpkg.WriteJSON(w, http.StatusNoContent, nil)
 }
 
 // ListThreadTags handles GET /api/v1/forum/{id}/tags.
@@ -1797,7 +1780,7 @@ func (h *Handlers) RemoveThreadTag(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) ListThreadTags(w http.ResponseWriter, r *http.Request) {
 	threadID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_thread_id", "Invalid thread ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_thread_id", "Invalid thread ID")
 		return
 	}
 
@@ -1807,5 +1790,5 @@ func (h *Handlers) ListThreadTags(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": tags})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": tags})
 }

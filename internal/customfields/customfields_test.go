@@ -9,7 +9,18 @@ import (
 	"testing"
 
 	"github.com/go-chi/chi/v5"
+	errpkg "github.com/jedafe/japa/internal/errors"
 )
+
+// errorResponse mirrors the canonical error envelope for test decoding.
+type errorResponse struct {
+	Error errorBody `json:"error"`
+}
+
+type errorBody struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+}
 
 // requestWithURLParam builds a request whose chi route context carries the
 // given URL parameter, mimicking what the chi router injects during routing.
@@ -206,7 +217,7 @@ func TestWriteJSON(t *testing.T) {
 	t.Parallel()
 
 	rr := httptest.NewRecorder()
-	writeJSON(rr, http.StatusCreated, map[string]string{"status": "ok"})
+	errpkg.WriteJSON(rr, http.StatusCreated, map[string]string{"status": "ok"})
 
 	if rr.Code != http.StatusCreated {
 		t.Errorf("status = %d, want %d", rr.Code, http.StatusCreated)
@@ -230,7 +241,7 @@ func TestWriteError(t *testing.T) {
 	t.Parallel()
 
 	rr := httptest.NewRecorder()
-	writeError(rr, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+	errpkg.WriteError(rr, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
 
 	if rr.Code != http.StatusBadRequest {
 		t.Errorf("status = %d, want %d", rr.Code, http.StatusBadRequest)

@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/db/gen"
+	errpkg "github.com/jedafe/japa/internal/errors"
 )
 
 // ---------------------------------------------------------------------------
@@ -31,7 +32,7 @@ func (h *Handlers) AssignModerator(w http.ResponseWriter, r *http.Request) {
 
 	user := auth.FromContext(r.Context())
 	if user == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
 
@@ -41,7 +42,7 @@ func (h *Handlers) AssignModerator(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
 		return
 	}
 
@@ -49,7 +50,7 @@ func (h *Handlers) AssignModerator(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case strings.TrimSpace(req.UserID) != "":
 		if err := targetUserID.Scan(req.UserID); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid user_id format")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid user_id format")
 			return
 		}
 	case strings.TrimSpace(req.Username) != "":
@@ -64,7 +65,7 @@ func (h *Handlers) AssignModerator(w http.ResponseWriter, r *http.Request) {
 			// message instead of a generic 500 (HandleServiceError does not
 			// recognise the non-sentinel error).
 			if strings.Contains(usernameErr.Error(), "user not found") {
-				writeError(w, http.StatusNotFound, "user_not_found", "No user with that username was found")
+				errpkg.WriteError(w, http.StatusNotFound, "user_not_found", "No user with that username was found")
 				return
 			}
 			slog.Error("spaces: AssignModerator username resolution failed", "username", req.Username, "error", usernameErr)
@@ -72,7 +73,7 @@ func (h *Handlers) AssignModerator(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	default:
-		writeError(w, http.StatusBadRequest, "missing_fields", "user_id or username is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_fields", "user_id or username is required")
 		return
 	}
 
@@ -98,7 +99,7 @@ func (h *Handlers) AssignModerator(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if !isMember {
-			writeError(w, http.StatusBadRequest, "not_a_member",
+			errpkg.WriteError(w, http.StatusBadRequest, "not_a_member",
 				"Target user must be a member of the space before being assigned as a moderator")
 			return
 		}
@@ -121,7 +122,7 @@ func (h *Handlers) AssignModerator(w http.ResponseWriter, r *http.Request) {
 	// immediately (the middleware only flushed the CALLER's cache).
 	h.invalidateTargetPermCache(r.Context(), targetUserID)
 
-	writeJSON(w, http.StatusCreated, map[string]any{
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{
 		"data": map[string]any{
 			"space_id":    space.ID,
 			"user_id":     targetUserID,
@@ -140,7 +141,7 @@ func (h *Handlers) RemoveModerator(w http.ResponseWriter, r *http.Request) {
 
 	userID, err := parseUUIDParam(r, "userId")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid user ID format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid user ID format")
 		return
 	}
 
@@ -153,7 +154,7 @@ func (h *Handlers) RemoveModerator(w http.ResponseWriter, r *http.Request) {
 	// spaces.moderate.assigned node is revoked immediately.
 	h.invalidateTargetPermCache(r.Context(), userID)
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "removed"}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "removed"}})
 }
 
 // ListModerators handles GET /api/v1/spaces/{slug}/moderators.
@@ -170,7 +171,7 @@ func (h *Handlers) ListModerators(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": mods})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": mods})
 }
 
 // AdminListModerators handles GET /api/v1/admin/spaces/{id}/moderators.
@@ -182,7 +183,7 @@ func (h *Handlers) AdminListModerators(w http.ResponseWriter, r *http.Request) {
 
 	spaceID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid space ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid space ID")
 		return
 	}
 
@@ -198,7 +199,7 @@ func (h *Handlers) AdminListModerators(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": mods})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": mods})
 }
 
 // AdminAssignModerator handles POST /api/v1/admin/spaces/{id}/moderators.
@@ -211,13 +212,13 @@ func (h *Handlers) AdminAssignModerator(w http.ResponseWriter, r *http.Request) 
 	}
 	user := auth.FromContext(r.Context())
 	if user == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
 
 	spaceID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid space ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid space ID")
 		return
 	}
 
@@ -232,7 +233,7 @@ func (h *Handlers) AdminAssignModerator(w http.ResponseWriter, r *http.Request) 
 		Username string `json:"username"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
 		return
 	}
 
@@ -240,7 +241,7 @@ func (h *Handlers) AdminAssignModerator(w http.ResponseWriter, r *http.Request) 
 	switch {
 	case req.UserID != "":
 		if err := targetUserID.Scan(req.UserID); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid user_id format")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid user_id format")
 			return
 		}
 	case req.Username != "":
@@ -250,7 +251,7 @@ func (h *Handlers) AdminAssignModerator(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 	default:
-		writeError(w, http.StatusBadRequest, "missing_fields", "user_id or username is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_fields", "user_id or username is required")
 		return
 	}
 
@@ -268,7 +269,7 @@ func (h *Handlers) AdminAssignModerator(w http.ResponseWriter, r *http.Request) 
 	// Rule 6: invalidate the TARGET user's permission cache.
 	h.invalidateTargetPermCache(r.Context(), targetUserID)
 
-	writeJSON(w, http.StatusCreated, map[string]any{
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{
 		"data": map[string]any{
 			"space_id": space.ID.String(),
 			"user_id":  targetUserID.String(),
@@ -283,13 +284,13 @@ func (h *Handlers) AdminRemoveModerator(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	if user := auth.FromContext(r.Context()); user == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
 
 	spaceID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid space ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid space ID")
 		return
 	}
 
@@ -303,12 +304,12 @@ func (h *Handlers) AdminRemoveModerator(w http.ResponseWriter, r *http.Request) 
 	switch {
 	case chi.URLParam(r, "moderator_id") != "":
 		if err := targetUserID.Scan(chi.URLParam(r, "moderator_id")); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid moderator_id format")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid moderator_id format")
 			return
 		}
 	case chi.URLParam(r, "userId") != "":
 		if err := targetUserID.Scan(chi.URLParam(r, "userId")); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid userId format")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid userId format")
 			return
 		}
 	case chi.URLParam(r, "username") != "":
@@ -318,7 +319,7 @@ func (h *Handlers) AdminRemoveModerator(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 	default:
-		writeError(w, http.StatusBadRequest, "missing_fields", "userId or username is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_fields", "userId or username is required")
 		return
 	}
 
@@ -330,7 +331,7 @@ func (h *Handlers) AdminRemoveModerator(w http.ResponseWriter, r *http.Request) 
 	// Rule 6: invalidate the removed moderator's permission cache.
 	h.invalidateTargetPermCache(r.Context(), targetUserID)
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
 			"space_id": space.ID.String(),
 			"user_id":  targetUserID.String(),

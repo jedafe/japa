@@ -289,8 +289,8 @@ func TestSanitizeHTML_LinkPreviewDataURLXSSBlocked(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name    string
-		input   string
+		name     string
+		input    string
 		wantKept bool
 	}{
 		{"safe https url", `<div data-type="link-preview" data-url="https://example.com"></div>`, true},

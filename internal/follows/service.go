@@ -163,7 +163,8 @@ func (s *Service) GetFollow(ctx context.Context, tenantID, followerID pgtype.UUI
 // avoid a DB hit on every profile page render. On cache miss or when Valkey
 // is not wired, falls back to the store query and populates the cache.
 // Ref: japaconnect-engineering/sections/31-follow-system.md
-//      conventions/valkey-keys-catalog.md (Follow System section)
+//
+//	conventions/valkey-keys-catalog.md (Follow System section)
 func (s *Service) IsFollowing(ctx context.Context, tenantID, followerID pgtype.UUID, entityType string, entityID pgtype.UUID) (bool, error) {
 	// L3: try Valkey cache first (best-effort — never block on cache).
 	if s.vk != nil {

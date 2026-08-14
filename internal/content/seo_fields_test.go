@@ -82,15 +82,15 @@ func TestCreateContentJSON_ParsesSeoFields(t *testing.T) {
 	}`
 
 	var input struct {
-		ContentType     string          `json:"content_type"`
-		Title           string          `json:"title"`
-		BodyHtml        string          `json:"body_html"`
-		FeaturedImageID *string         `json:"featured_image_id"`
-		MetaTitle       *string         `json:"meta_title"`
-		MetaDescription *string         `json:"meta_description"`
-		OgImageUrl      *string         `json:"og_image_url"`
-		SeoIndexable    *bool           `json:"seo_indexable"`
-		Visibility      string          `json:"visibility"`
+		ContentType     string  `json:"content_type"`
+		Title           string  `json:"title"`
+		BodyHtml        string  `json:"body_html"`
+		FeaturedImageID *string `json:"featured_image_id"`
+		MetaTitle       *string `json:"meta_title"`
+		MetaDescription *string `json:"meta_description"`
+		OgImageUrl      *string `json:"og_image_url"`
+		SeoIndexable    *bool   `json:"seo_indexable"`
+		Visibility      string  `json:"visibility"`
 	}
 
 	if err := json.Unmarshal([]byte(body), &input); err != nil {

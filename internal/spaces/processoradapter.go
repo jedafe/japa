@@ -99,9 +99,9 @@ type UniversityLogoEnqueuer interface {
 // to the spaces service's auto-population logic.
 type ProcessorAdapter struct {
 	svc          *Service
-	customFields CustomFieldsEnricher    // nil = skip custom field enrichment
-	uniEnqueuer  UniversityLogoEnqueuer  // nil = skip logo fetch enqueue
-	systemUserID pgtype.UUID             // for media attribution in university:fetch_logo
+	customFields CustomFieldsEnricher   // nil = skip custom field enrichment
+	uniEnqueuer  UniversityLogoEnqueuer // nil = skip logo fetch enqueue
+	systemUserID pgtype.UUID            // for media attribution in university:fetch_logo
 }
 
 // NewProcessorAdapter creates a ProcessorAdapter backed by the given spaces service.
@@ -430,9 +430,9 @@ func (a *ProcessorAdapter) enrichUniversityFields(ctx context.Context, space *ge
 		yearNum := pgtype.Numeric{}
 		_ = yearNum.Scan(strconv.Itoa(year))
 		if _, err := a.customFields.UpsertFieldValue(ctx, gen.UpsertCustomFieldValueParams{
-			FieldID:    fieldID,
-			EntityType: "space",
-			EntityID:   space.ID,
+			FieldID:     fieldID,
+			EntityType:  "space",
+			EntityID:    space.ID,
 			ValueNumber: yearNum,
 		}); err != nil {
 			slog.Warn("space:auto_populate — failed to upsert founded_year",
@@ -447,9 +447,9 @@ func (a *ProcessorAdapter) enrichUniversityFields(ctx context.Context, space *ge
 		popNum := pgtype.Numeric{}
 		_ = popNum.Scan(strconv.Itoa(pop))
 		if _, err := a.customFields.UpsertFieldValue(ctx, gen.UpsertCustomFieldValueParams{
-			FieldID:    fieldID,
-			EntityType: "space",
-			EntityID:   space.ID,
+			FieldID:     fieldID,
+			EntityType:  "space",
+			EntityID:    space.ID,
 			ValueNumber: popNum,
 		}); err != nil {
 			slog.Warn("space:auto_populate — failed to upsert student_population",

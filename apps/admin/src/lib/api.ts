@@ -1175,11 +1175,11 @@ export const formsAdminApi = {
 	listSubmissions: (id: string, params?: string) =>
 		api<unknown>(`/forms/${id}/submissions${params ? `?${params}` : ''}`),
 	getSubmission: (id: string, subId: string) =>
-		api<unknown>(`/forms/${id}/submissions/${subId}`),
+		api<unknown>(`/admin/forms/${id}/submissions/${subId}`),
 	updateSubmission: (id: string, subId: string, body: Record<string, unknown>) =>
-		api<unknown>(`/forms/${id}/submissions/${subId}`, { method: 'PATCH', body }),
+		api<unknown>(`/admin/forms/${id}/submissions/${subId}`, { method: 'PATCH', body }),
 	deleteSubmission: (id: string, subId: string) =>
-		api<{ deleted: boolean }>(`/forms/${id}/submissions/${subId}`, { method: 'DELETE' }),
+		api<{ deleted: boolean }>(`/admin/forms/${id}/submissions/${subId}`, { method: 'DELETE' }),
 	// Trigger CRUD (gracefully handles 404 if backend not yet wired)
 	listTriggers: (formId: string) =>
 		api<unknown>(`/forms/${formId}/triggers`),
@@ -1793,6 +1793,10 @@ export const processingTrackerAdminApi = {
 
 export const cvFormatterAdminApi = {
 	listStandards: (params?: string) => api<unknown>(`/admin/cv-formatter/standards${params ? `?${params}` : ''}`),
+	listStandardsRaw: (params?: string) =>
+		apiRaw<{ data: unknown[]; pagination: { page: number; limit: number; total: number; total_pages: number } }>(
+			`/admin/cv-formatter/standards${params ? `?${params}` : ''}`
+		),
 	upsertStandard: (body: Record<string, unknown>) =>
 		api<unknown>(`/admin/cv-formatter/standards`, { method: 'POST', body }),
 	listDestinations: () => api<unknown>(`/spaces?level=country`),

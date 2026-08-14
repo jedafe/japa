@@ -11,7 +11,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -54,7 +53,7 @@ func parseUUIDParam(r *http.Request, param string) (pgtype.UUID, error) {
 func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
 
@@ -65,7 +64,7 @@ func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype
 func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	user := auth.FromContext(r.Context())
 	if user == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
 
@@ -96,30 +95,13 @@ func handleServiceError(w http.ResponseWriter, err error) {
 func (h *Handlers) verifyOwnership(w http.ResponseWriter, r *http.Request, user *auth.AuthenticatedUser, verify func() error) bool {
 	if err := verify(); err != nil {
 		if errors.Is(err, ErrNotOwner) {
-			writeError(w, http.StatusForbidden, "not_owner", "You can only modify your own comparisons")
+			errpkg.WriteError(w, http.StatusForbidden, "not_owner", "You can only modify your own comparisons")
 			return true
 		}
 		handleServiceError(w, err)
 		return true
 	}
 	return false
-}
-
-// writeJSON serializes the given value as JSON and writes it to the response.
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-
-	if err := json.NewEncoder(w).Encode(v); err != nil {
-		slog.Warn("json encode error", "error", err)
-	}
-}
-
-// writeError writes a JSON error response following the JapaConnect API format.
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, map[string]any{
-		"error": map[string]string{"code": code, "message": message},
-	})
 }
 
 // parsePageSize extracts and clamps the page_size query parameter.
@@ -182,29 +164,29 @@ func (h *Handlers) CreateComparisonType(w http.ResponseWriter, r *http.Request) 
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if input.Name == "" {
-		writeError(w, http.StatusBadRequest, "missing_name", "name is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_name", "name is required")
 		return
 	}
 
 	if input.Slug == "" {
-		writeError(w, http.StatusBadRequest, "missing_slug", "slug is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_slug", "slug is required")
 		return
 	}
 
 	if input.FieldGroupID == "" {
-		writeError(w, http.StatusBadRequest, "missing_field_group_id", "field_group_id is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_field_group_id", "field_group_id is required")
 		return
 	}
 
 	var fieldGroupID pgtype.UUID
 	if input.FieldGroupID != "" {
 		if err := fieldGroupID.Scan(input.FieldGroupID); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_field_group_id", "Invalid field_group_id")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_field_group_id", "Invalid field_group_id")
 			return
 		}
 	}
@@ -227,7 +209,7 @@ func (h *Handlers) CreateComparisonType(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": result})
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": result})
 }
 
 // ListComparisonTypes handles GET /api/v1/comparisons/types.
@@ -251,7 +233,7 @@ func (h *Handlers) ListComparisonTypes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": types})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": types})
 }
 
 // ListComparisons handles GET /api/v1/comparisons — a public page of
@@ -273,7 +255,7 @@ func (h *Handlers) ListComparisons(w http.ResponseWriter, r *http.Request) {
 	// type filter: accept either type_id (uuid) or type (slug) and resolve to id.
 	if v := q.Get("type_id"); v != "" {
 		if err := filter.TypeID.Scan(v); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_type_id", "Invalid type_id")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_type_id", "Invalid type_id")
 			return
 		}
 	} else if v := q.Get("type"); v != "" {
@@ -287,7 +269,7 @@ func (h *Handlers) ListComparisons(w http.ResponseWriter, r *http.Request) {
 
 	if v := q.Get("space_id"); v != "" {
 		if err := filter.SpaceID.Scan(v); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_space_id", "Invalid space_id")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_space_id", "Invalid space_id")
 			return
 		}
 	}
@@ -298,7 +280,7 @@ func (h *Handlers) ListComparisons(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": comparisons})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": comparisons})
 }
 
 // GetComparisonType handles GET /api/v1/comparisons/types/{slug}.
@@ -315,7 +297,7 @@ func (h *Handlers) GetComparisonType(w http.ResponseWriter, r *http.Request) {
 
 	slug := chi.URLParam(r, "slug")
 	if slug == "" {
-		writeError(w, http.StatusBadRequest, "missing_slug", "slug is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_slug", "slug is required")
 		return
 	}
 
@@ -325,7 +307,7 @@ func (h *Handlers) GetComparisonType(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": result})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": result})
 }
 
 // UpdateComparisonType handles PATCH /api/v1/comparisons/types/{id}.
@@ -342,7 +324,7 @@ func (h *Handlers) UpdateComparisonType(w http.ResponseWriter, r *http.Request) 
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid comparison type ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid comparison type ID")
 		return
 	}
 
@@ -356,19 +338,19 @@ func (h *Handlers) UpdateComparisonType(w http.ResponseWriter, r *http.Request) 
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if input.Name == "" {
-		writeError(w, http.StatusBadRequest, "missing_name", "name is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_name", "name is required")
 		return
 	}
 
 	var fieldGroupID pgtype.UUID
 	if input.FieldGroupID != "" {
 		if err := fieldGroupID.Scan(input.FieldGroupID); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_field_group_id", "Invalid field_group_id")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_field_group_id", "Invalid field_group_id")
 			return
 		}
 	}
@@ -386,7 +368,7 @@ func (h *Handlers) UpdateComparisonType(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": result})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": result})
 }
 
 // DeleteComparisonType handles DELETE /api/v1/comparisons/types/{id}.
@@ -403,7 +385,7 @@ func (h *Handlers) DeleteComparisonType(w http.ResponseWriter, r *http.Request) 
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid comparison type ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid comparison type ID")
 		return
 	}
 
@@ -412,7 +394,7 @@ func (h *Handlers) DeleteComparisonType(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	writeJSON(w, http.StatusNoContent, nil)
+	errpkg.WriteJSON(w, http.StatusNoContent, nil)
 }
 
 // ---------------------------------------------------------------------------
@@ -433,7 +415,7 @@ func (h *Handlers) SetComparisonTypeAccess(w http.ResponseWriter, r *http.Reques
 
 	typeID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid comparison type ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid comparison type ID")
 		return
 	}
 
@@ -445,7 +427,7 @@ func (h *Handlers) SetComparisonTypeAccess(w http.ResponseWriter, r *http.Reques
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
@@ -454,7 +436,7 @@ func (h *Handlers) SetComparisonTypeAccess(w http.ResponseWriter, r *http.Reques
 	var userGroupID pgtype.UUID
 	if input.UserGroupID != "" {
 		if err := userGroupID.Scan(input.UserGroupID); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_user_group_id", "Invalid user_group_id")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_user_group_id", "Invalid user_group_id")
 			return
 		}
 	}
@@ -469,7 +451,7 @@ func (h *Handlers) SetComparisonTypeAccess(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "updated"}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "updated"}})
 }
 
 // ListComparisonTypeAccess handles GET /api/v1/comparisons/types/{id}/access.
@@ -486,7 +468,7 @@ func (h *Handlers) ListComparisonTypeAccess(w http.ResponseWriter, r *http.Reque
 
 	typeID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid comparison type ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid comparison type ID")
 		return
 	}
 
@@ -496,7 +478,7 @@ func (h *Handlers) ListComparisonTypeAccess(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": access})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": access})
 }
 
 // ---------------------------------------------------------------------------
@@ -530,19 +512,19 @@ func (h *Handlers) CreateComparison(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if input.Title == "" {
-		writeError(w, http.StatusBadRequest, "missing_title", "title is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_title", "title is required")
 		return
 	}
 
 	var spaceID pgtype.UUID
 	if input.SpaceID != "" {
 		if err := spaceID.Scan(input.SpaceID); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_space_id", "Invalid space_id")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_space_id", "Invalid space_id")
 			return
 		}
 	}
@@ -550,7 +532,7 @@ func (h *Handlers) CreateComparison(w http.ResponseWriter, r *http.Request) {
 	var typeID pgtype.UUID
 	if input.TypeID != "" {
 		if err := typeID.Scan(input.TypeID); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_type_id", "Invalid type_id")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_type_id", "Invalid type_id")
 			return
 		}
 	}
@@ -578,7 +560,7 @@ func (h *Handlers) CreateComparison(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": result})
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": result})
 }
 
 // GetComparison handles GET /api/v1/comparisons/{id}. The {id} segment may
@@ -609,12 +591,12 @@ func (h *Handlers) GetComparison(w http.ResponseWriter, r *http.Request) {
 	if detail.Status != "published" || detail.Visibility != "public" {
 		user := auth.FromContext(r.Context())
 		if user == nil || (detail.AuthorID.Valid && user.UserID != detail.AuthorID) {
-			writeError(w, http.StatusNotFound, "not_found", "Comparison not found")
+			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Comparison not found")
 			return
 		}
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": detail})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": detail})
 }
 
 // UpdateComparison handles PATCH /api/v1/comparisons/{id} — updates the
@@ -636,7 +618,7 @@ func (h *Handlers) UpdateComparison(w http.ResponseWriter, r *http.Request) {
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid comparison ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid comparison ID")
 		return
 	}
 
@@ -648,12 +630,12 @@ func (h *Handlers) UpdateComparison(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if input.Title == "" {
-		writeError(w, http.StatusBadRequest, "missing_title", "title is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_title", "title is required")
 		return
 	}
 
@@ -666,14 +648,14 @@ func (h *Handlers) UpdateComparison(w http.ResponseWriter, r *http.Request) {
 	}, hasAnyPermission(r, user, "comparison.edit_any"))
 	if err != nil {
 		if errors.Is(err, ErrNotOwner) {
-			writeError(w, http.StatusForbidden, "not_owner", "You can only update your own comparisons")
+			errpkg.WriteError(w, http.StatusForbidden, "not_owner", "You can only update your own comparisons")
 			return
 		}
 		handleServiceError(w, err)
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": result})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": result})
 }
 
 // DeleteComparison handles DELETE /api/v1/comparisons/{id} — soft-deletes the
@@ -694,20 +676,20 @@ func (h *Handlers) DeleteComparison(w http.ResponseWriter, r *http.Request) {
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid comparison ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid comparison ID")
 		return
 	}
 
 	if err := h.Service.DeleteComparison(r.Context(), id, tenantID, user.UserID, hasAnyPermission(r, user, "comparison.delete_any")); err != nil {
 		if errors.Is(err, ErrNotOwner) {
-			writeError(w, http.StatusForbidden, "not_owner", "You can only delete your own comparisons")
+			errpkg.WriteError(w, http.StatusForbidden, "not_owner", "You can only delete your own comparisons")
 			return
 		}
 		handleServiceError(w, err)
 		return
 	}
 
-	writeJSON(w, http.StatusNoContent, nil)
+	errpkg.WriteJSON(w, http.StatusNoContent, nil)
 }
 
 // GetComparisonMatrix handles GET /api/v1/comparisons/{id}/matrix. The {id}
@@ -736,7 +718,7 @@ func (h *Handlers) GetComparisonMatrix(w http.ResponseWriter, r *http.Request) {
 	if detail.Status != "published" || detail.Visibility != "public" {
 		user := auth.FromContext(r.Context())
 		if user == nil || (detail.AuthorID.Valid && user.UserID != detail.AuthorID) {
-			writeError(w, http.StatusNotFound, "not_found", "Comparison not found")
+			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Comparison not found")
 			return
 		}
 	}
@@ -747,7 +729,7 @@ func (h *Handlers) GetComparisonMatrix(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": matrix})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": matrix})
 }
 
 // ---------------------------------------------------------------------------
@@ -768,7 +750,7 @@ func (h *Handlers) CreateComparisonItem(w http.ResponseWriter, r *http.Request) 
 
 	contentID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid comparison ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid comparison ID")
 		return
 	}
 
@@ -781,26 +763,26 @@ func (h *Handlers) CreateComparisonItem(w http.ResponseWriter, r *http.Request) 
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if input.Title == "" {
-		writeError(w, http.StatusBadRequest, "missing_title", "title is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_title", "title is required")
 		return
 	}
 
 	var imageID, geoSpaceID pgtype.UUID
 	if input.ImageID != "" {
 		if err := imageID.Scan(input.ImageID); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_image_id", "Invalid image ID")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_image_id", "Invalid image ID")
 			return
 		}
 	}
 
 	if input.GeoSpaceID != "" {
 		if err := geoSpaceID.Scan(input.GeoSpaceID); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_geo_space_id", "Invalid geo space ID")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_geo_space_id", "Invalid geo space ID")
 			return
 		}
 	}
@@ -818,7 +800,7 @@ func (h *Handlers) CreateComparisonItem(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": item})
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": item})
 }
 
 // UpdateComparisonItem handles PATCH /api/v1/comparisons/items/{id}.
@@ -835,7 +817,7 @@ func (h *Handlers) UpdateComparisonItem(w http.ResponseWriter, r *http.Request) 
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid item ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid item ID")
 		return
 	}
 
@@ -854,26 +836,26 @@ func (h *Handlers) UpdateComparisonItem(w http.ResponseWriter, r *http.Request) 
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if input.Title == "" {
-		writeError(w, http.StatusBadRequest, "missing_title", "title is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_title", "title is required")
 		return
 	}
 
 	var imageID, geoSpaceID pgtype.UUID
 	if input.ImageID != "" {
 		if err := imageID.Scan(input.ImageID); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_image_id", "Invalid image ID")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_image_id", "Invalid image ID")
 			return
 		}
 	}
 
 	if input.GeoSpaceID != "" {
 		if err := geoSpaceID.Scan(input.GeoSpaceID); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_geo_space_id", "Invalid geo space ID")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_geo_space_id", "Invalid geo space ID")
 			return
 		}
 	}
@@ -890,7 +872,7 @@ func (h *Handlers) UpdateComparisonItem(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": item})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": item})
 }
 
 // DeleteComparisonItem handles DELETE /api/v1/comparisons/items/{id}.
@@ -907,7 +889,7 @@ func (h *Handlers) DeleteComparisonItem(w http.ResponseWriter, r *http.Request) 
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid item ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid item ID")
 		return
 	}
 
@@ -922,7 +904,7 @@ func (h *Handlers) DeleteComparisonItem(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	writeJSON(w, http.StatusNoContent, nil)
+	errpkg.WriteJSON(w, http.StatusNoContent, nil)
 }
 
 // ---------------------------------------------------------------------------
@@ -943,7 +925,7 @@ func (h *Handlers) CreateComparisonDimension(w http.ResponseWriter, r *http.Requ
 
 	contentID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid comparison ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid comparison ID")
 		return
 	}
 
@@ -960,22 +942,22 @@ func (h *Handlers) CreateComparisonDimension(w http.ResponseWriter, r *http.Requ
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if input.Label == "" {
-		writeError(w, http.StatusBadRequest, "missing_label", "label is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_label", "label is required")
 		return
 	}
 
 	if input.DimensionType == "" {
-		writeError(w, http.StatusBadRequest, "missing_dimension_type", "dimension_type is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_dimension_type", "dimension_type is required")
 		return
 	}
 
 	if !IsValidDimensionType(input.DimensionType) {
-		writeError(w, http.StatusBadRequest, "invalid_dimension_type", "Invalid dimension type")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_dimension_type", "Invalid dimension type")
 		return
 	}
 
@@ -990,7 +972,7 @@ func (h *Handlers) CreateComparisonDimension(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": dim})
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": dim})
 }
 
 // UpdateComparisonDimension handles PATCH /api/v1/comparisons/dimensions/{id}.
@@ -1007,7 +989,7 @@ func (h *Handlers) UpdateComparisonDimension(w http.ResponseWriter, r *http.Requ
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid dimension ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid dimension ID")
 		return
 	}
 
@@ -1024,17 +1006,17 @@ func (h *Handlers) UpdateComparisonDimension(w http.ResponseWriter, r *http.Requ
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if input.Label == "" {
-		writeError(w, http.StatusBadRequest, "missing_label", "label is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_label", "label is required")
 		return
 	}
 
 	if !IsValidDimensionType(input.DimensionType) {
-		writeError(w, http.StatusBadRequest, "invalid_dimension_type", "Invalid dimension type")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_dimension_type", "Invalid dimension type")
 		return
 	}
 
@@ -1048,7 +1030,7 @@ func (h *Handlers) UpdateComparisonDimension(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": dim})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": dim})
 }
 
 // DeleteComparisonDimension handles DELETE /api/v1/comparisons/dimensions/{id}.
@@ -1065,7 +1047,7 @@ func (h *Handlers) DeleteComparisonDimension(w http.ResponseWriter, r *http.Requ
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid dimension ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid dimension ID")
 		return
 	}
 
@@ -1080,7 +1062,7 @@ func (h *Handlers) DeleteComparisonDimension(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	writeJSON(w, http.StatusNoContent, nil)
+	errpkg.WriteJSON(w, http.StatusNoContent, nil)
 }
 
 // ---------------------------------------------------------------------------
@@ -1101,7 +1083,7 @@ func (h *Handlers) UpsertComparisonValues(w http.ResponseWriter, r *http.Request
 
 	dimensionID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid dimension ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid dimension ID")
 		return
 	}
 
@@ -1121,7 +1103,7 @@ func (h *Handlers) UpsertComparisonValues(w http.ResponseWriter, r *http.Request
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
@@ -1130,7 +1112,7 @@ func (h *Handlers) UpsertComparisonValues(w http.ResponseWriter, r *http.Request
 	for _, v := range input.Values {
 		var itemID pgtype.UUID
 		if err := itemID.Scan(v.ItemID); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_item_id", "Invalid item_id")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_item_id", "Invalid item_id")
 			return
 		}
 		inputs = append(inputs, UpsertComparisonValueInput{
@@ -1148,7 +1130,7 @@ func (h *Handlers) UpsertComparisonValues(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": results})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": results})
 }
 
 // ReorderComparisonItems handles POST /api/v1/comparisons/{id}/items/reorder
@@ -1171,7 +1153,7 @@ func (h *Handlers) ReorderComparisonItems(w http.ResponseWriter, r *http.Request
 
 	comparisonID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid comparison ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid comparison ID")
 		return
 	}
 
@@ -1192,12 +1174,12 @@ func (h *Handlers) ReorderComparisonItems(w http.ResponseWriter, r *http.Request
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if len(input.OrderedItemIDs) == 0 && len(input.Items) == 0 {
-		writeError(w, http.StatusBadRequest, "empty_reorder", "ordered_item_ids (or items) must not be empty")
+		errpkg.WriteError(w, http.StatusBadRequest, "empty_reorder", "ordered_item_ids (or items) must not be empty")
 		return
 	}
 
@@ -1208,7 +1190,7 @@ func (h *Handlers) ReorderComparisonItems(w http.ResponseWriter, r *http.Request
 		for idx, id := range input.OrderedItemIDs {
 			var itemID pgtype.UUID
 			if err := itemID.Scan(id); err != nil {
-				writeError(w, http.StatusBadRequest, "invalid_item_id", "Invalid item id: "+id)
+				errpkg.WriteError(w, http.StatusBadRequest, "invalid_item_id", "Invalid item id: "+id)
 				return
 			}
 			ids = append(ids, itemID)
@@ -1218,7 +1200,7 @@ func (h *Handlers) ReorderComparisonItems(w http.ResponseWriter, r *http.Request
 			handleServiceError(w, err)
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"reordered": true}})
+		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"reordered": true}})
 		return
 	}
 
@@ -1228,7 +1210,7 @@ func (h *Handlers) ReorderComparisonItems(w http.ResponseWriter, r *http.Request
 	for _, item := range input.Items {
 		var itemID pgtype.UUID
 		if err := itemID.Scan(item.ID); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_item_id", "Invalid item id: "+item.ID)
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_item_id", "Invalid item id: "+item.ID)
 			return
 		}
 		ids = append(ids, itemID)
@@ -1239,7 +1221,7 @@ func (h *Handlers) ReorderComparisonItems(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"reordered": true}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"reordered": true}})
 }
 
 // AutoGenerateDimensions handles POST /api/v1/comparisons/auto-dimensions.
@@ -1260,7 +1242,7 @@ func (h *Handlers) GetDimensionTypes(w http.ResponseWriter, r *http.Request) {
 		{"value": DimensionTypeNumber, "label": "Number"},
 		{"value": DimensionTypeCurrency, "label": "Currency"},
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": types})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": types})
 }
 
 func (h *Handlers) AutoGenerateDimensions(w http.ResponseWriter, r *http.Request) {
@@ -1268,17 +1250,17 @@ func (h *Handlers) AutoGenerateDimensions(w http.ResponseWriter, r *http.Request
 		Items []string `json:"items"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if len(input.Items) < 2 {
-		writeError(w, http.StatusBadRequest, "insufficient_items", "At least 2 items are required")
+		errpkg.WriteError(w, http.StatusBadRequest, "insufficient_items", "At least 2 items are required")
 		return
 	}
 
 	dimensions := suggestDimensions(input.Items)
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"dimensions": dimensions}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"dimensions": dimensions}})
 }
 
 // suggestDimensions returns a deterministic set of comparison dimensions

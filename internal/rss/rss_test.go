@@ -277,34 +277,34 @@ func TestHTMLToTextExcerpt(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name    string
-		input   string
+		name     string
+		input    string
 		maxRunes int
-		want    string
+		want     string
 	}{
 		{
-			name:    "strips HTML tags",
-			input:   "<p>Hello <strong>World</strong></p>",
+			name:     "strips HTML tags",
+			input:    "<p>Hello <strong>World</strong></p>",
 			maxRunes: 300,
-			want:    "Hello World",
+			want:     "Hello World",
 		},
 		{
-			name:    "truncates with ellipsis",
-			input:   "<p>" + strings.Repeat("a", 400) + "</p>",
+			name:     "truncates with ellipsis",
+			input:    "<p>" + strings.Repeat("a", 400) + "</p>",
 			maxRunes: 10,
-			want:    "aaaaaaaaaa…",
+			want:     "aaaaaaaaaa…",
 		},
 		{
-			name:    "collapses whitespace",
-			input:   "<p>Hello\n\n  World</p>",
+			name:     "collapses whitespace",
+			input:    "<p>Hello\n\n  World</p>",
 			maxRunes: 300,
-			want:    "Hello World",
+			want:     "Hello World",
 		},
 		{
-			name:    "empty input",
-			input:   "",
+			name:     "empty input",
+			input:    "",
 			maxRunes: 300,
-			want:    "",
+			want:     "",
 		},
 	}
 

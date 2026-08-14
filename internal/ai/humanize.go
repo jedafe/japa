@@ -39,9 +39,9 @@ const (
 // to steer the model toward more natural output. Kept intentionally short to
 // avoid inflating token usage on every request.
 var humanizeInstructions = map[HumanizeLevel]string{
-	HumanizeLow: "Write in a natural, conversational tone. Avoid overly formal or robotic phrasing. Prefer active voice.",
+	HumanizeLow:    "Write in a natural, conversational tone. Avoid overly formal or robotic phrasing. Prefer active voice.",
 	HumanizeMedium: "Write as a real person would. Use contractions, varied sentence length, and a conversational tone. Avoid list-heavy, formulaic, or robotic patterns. Prefer active voice and natural transitions.",
-	HumanizeHigh: "Write as if you are a real person speaking naturally. Use casual language, contractions, idioms, occasional first-person voice, and varied rhythm. Avoid any robotic, formulaic, or overly structured patterns. Sound human, not generated.",
+	HumanizeHigh:   "Write as if you are a real person speaking naturally. Use casual language, contractions, idioms, occasional first-person voice, and varied rhythm. Avoid any robotic, formulaic, or overly structured patterns. Sound human, not generated.",
 }
 
 // PayloadHumanize extracts the humanization request from a provider payload.
