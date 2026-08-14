@@ -820,6 +820,18 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Inject system_settings provider for Rule 3 compliance
 	// (media.max_upload_mb, media.allowed_video_types, media.cdn.base_url).
 	mediaService.SetSettings(settingsService)
+	// Rebuild the S3 client from media.storage.* system_settings when the
+	// operator has configured storage via the Control Panel (Section 34).
+	// When the settings are absent the env-var-based client is retained.
+	mediaService.ReconfigureS3FromSettings(context.Background(), defaultTenantID)
+	// Wire the admin-configurable CDN base URL (media.cdn.base_url) into the
+	// package-level media.MediaURL so all callers (tags, blog, feed, widgets,
+	// seo) honour the system_setting without each needing a *media.Service.
+	// Section 34 — CDN & S3-Compatible Object Storage. Resolved against the
+	// default tenant because the CDN prefix is platform-wide.
+	media.SetCDNBaseURLResolver(func() string {
+		return settingsService.GetStringOr(context.Background(), defaultTenantID, "media.cdn.base_url", "")
+	})
 	mediaHandlers := media.NewHandlers(mediaService)
 	// Inject RBAC resolver for in-handler permission checks (media.video.upload).
 	mediaHandlers.SetPermissionChecker(rbacResolver)
@@ -1331,6 +1343,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	mentorshipService := mentorship.NewService(database)
 	mentorshipService.SetEnqueuer(taskEnqueuer)
 	mentorshipService.SetSettingsProvider(settingsService)
+	mentorshipService.SetEventTracker(analyticsEventTrackerAdapter{analyticsService})
 	mentorshipHandlers := mentorship.NewHandlers(mentorshipService)
 
 	// Page Builder subsystem (Section 16 — Page Builder admin CRUD).
@@ -1390,13 +1403,25 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// StudioProcessor so content:generate_draft, studio:run_batch, and
 	// studio:retry_failed run the real pipeline instead of a no-op.
 	worker.RegisterStudioProcessor(&studioDraftProcessorAdapter{
-		studio:       studioService,
-		contentSvc:   contentService,
-		aiStore:      aiStore,
-		personaStore: personasStore,
-		dispatcher:   aiDispatcher,
-		intelStore:   intelStores,
+		studio:          studioService,
+		contentSvc:      contentService,
+		aiStore:         aiStore,
+		personaStore:    personasStore,
+		dispatcher:      aiDispatcher,
+		intelStore:      intelStores,
+		arrivalSvc:      arrivalChecklistService,
+		communityOrgSvc: communityLocatorService,
+		attestationSvc:  attestationGuideService,
+		languageTestSvc: languageTestHubService,
+		taxSvc:          taxCalculatorService,
+		credentialSvc:   credentialCheckerService,
 	})
+
+	// Wire the intelligence store into the Studio handlers so the
+	// create-job endpoint can validate intel_record_id ownership (ADR-076
+	// Amendment 1). Without this, the Promote-to-Studio flow accepts
+	// intel_record_id values without verifying they belong to the tenant.
+	studioHandlers.SetIntelStore(intelStores)
 
 	// §97: wire the AI Gateway dispatcher into the attestation guide so
 	// GenerateDraft can populate pathway_steps via the content_generation
@@ -1503,6 +1528,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	agentDeps.Users = &agentUsersAdapter{svc: agentUsersSvc}
 	agentDeps.CustomFieldDefs = cfService
 	agentDeps.ContentLifecycle = contentService
+	// Phase 9: tools registry for tools.list / tools.read handlers. The
+	// adapter queries per-tool tables directly via the reader pool so the
+	// ai package does not import each tool package.
+	agentDeps.ToolsRegistry = newAgentToolsRegistry(database.Reader)
 
 	agentRegistry := ai.NewToolHandlerRegistry()
 	ai.RegisterPhase4Tools(agentRegistry, agentDeps)
@@ -1926,8 +1955,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		// When S3/SeaweedFS is not configured, InitiateUpload returns a fallback
 		// presigned URL at /seaweedfs/upload/... which the client PUTs to. This
 		// handler writes the raw bytes to the local filesystem so ServeMedia can
-		// serve them back. No auth required — the presigned URL is self-authorizing.
-		r.Put("/seaweedfs/upload/{bucket}/*", mediaHandlers.SeaweedFSUpload)
+		// serve them back. BUG-007: gated behind auth.RequireAuth so an
+		// unauthenticated attacker cannot write arbitrary files into any bucket
+		// directory. The client already holds a session from InitiateUpload.
+		r.With(auth.RequireAuth(kr, vkClient.Redis())).Put("/seaweedfs/upload/{bucket}/*", mediaHandlers.SeaweedFSUpload)
 
 		// API Playground & OpenAPI Spec (Section 44 — docs subdomain)
 		r.Get("/docs/api/playground", docsHandlers.APIPlaygroundHandler)
@@ -2499,7 +2530,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "moderate")).Post("/content/render", renderHandler)
 
 			// Link preview routes (Section 15 — Link Preview Fetch, BUG-008 RBAC gate)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "link_preview.fetch")).Get("/link-preview", linkPreviewHandlers.Fetch)
+			// BUG-007: tight rate limit (10 req/min per user) — the endpoint
+			// triggers server-side external fetches, so it must be throttled
+			// to prevent authenticated abuse (server-side fetch amplification).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "link_preview.fetch"), mw.RateLimit(vkClient.Redis(), "tight")).Get("/link-preview", linkPreviewHandlers.Fetch)
 
 			// Content Bookmarks (Section 14 — Content System API)
 			r.With(features.Gate(featureChecker, "feature.bookmarks")).Group(func(r chi.Router) {

@@ -47,6 +47,12 @@ type HITLReview struct {
 	Source     string     `json:"source,omitempty"`
 	CreatedAt  time.Time  `json:"created_at"`
 	ReviewedAt *time.Time `json:"reviewed_at,omitempty"`
+	// TargetTable identifies which table the reviewed record lives in.
+	// Defaults to 'contents' for backward compatibility. When the review
+	// targets a tool table draft (housing_guides, visa_routes, etc.), this
+	// is set to the tool table name and ContentID holds the record's UUID.
+	// Added by migration 000477 (ADR-076 Amendment 1, Approach B).
+	TargetTable string `json:"target_table,omitempty"`
 }
 
 // HITL source constants (migration 000395 CHECK constraint).
@@ -69,18 +75,22 @@ func (s *Store) CreateHITLReview(ctx context.Context, review HITLReview) (HITLRe
 	if source == "" {
 		source = HITLSourceManual
 	}
+	targetTable := review.TargetTable
+	if targetTable == "" {
+		targetTable = "contents"
+	}
 
 	var result HITLReview
 
 	err := s.write.QueryRow(
 		ctx, `
 		INSERT INTO ai_hitl_reviews
-			(tenant_id, content_id, content_type, ai_output, status, source)
-		VALUES ($1, $2, $3, $4, $5, $6)
-		RETURNING id, tenant_id, content_id, content_type, ai_output, status, source, created_at
-	`, review.TenantID, review.ContentID, review.ContentType, review.AIOutput, review.Status, source,
+			(tenant_id, content_id, content_type, ai_output, status, source, target_table)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		RETURNING id, tenant_id, content_id, content_type, ai_output, status, source, target_table, created_at
+	`, review.TenantID, review.ContentID, review.ContentType, review.AIOutput, review.Status, source, targetTable,
 	).Scan(&result.ID, &result.TenantID, &result.ContentID, &result.ContentType,
-		&result.AIOutput, &result.Status, &result.Source, &result.CreatedAt)
+		&result.AIOutput, &result.Status, &result.Source, &result.TargetTable, &result.CreatedAt)
 	if err != nil {
 		return HITLReview{}, fmt.Errorf("creating HITL review: %w", err)
 	}
@@ -140,7 +150,7 @@ func (s *Store) ListPendingHITLReviews(ctx context.Context, tenantID pgtype.UUID
 	)
 	if sourceFilter != "" {
 		rows, err = s.read.Query(ctx, `
-			SELECT id, tenant_id, content_id, content_type, ai_output, status, source, created_at
+			SELECT id, tenant_id, content_id, content_type, ai_output, status, source, target_table, created_at
 			FROM ai_hitl_reviews
 			WHERE tenant_id = $1 AND status = 'pending' AND source = $2
 			ORDER BY created_at DESC
@@ -148,7 +158,7 @@ func (s *Store) ListPendingHITLReviews(ctx context.Context, tenantID pgtype.UUID
 		`, tenantID, sourceFilter, limit, offset)
 	} else {
 		rows, err = s.read.Query(ctx, `
-			SELECT id, tenant_id, content_id, content_type, ai_output, status, source, created_at
+			SELECT id, tenant_id, content_id, content_type, ai_output, status, source, target_table, created_at
 			FROM ai_hitl_reviews
 			WHERE tenant_id = $1 AND status = 'pending'
 			ORDER BY created_at DESC
@@ -166,7 +176,7 @@ func (s *Store) ListPendingHITLReviews(ctx context.Context, tenantID pgtype.UUID
 	for rows.Next() {
 		var r HITLReview
 		if err := rows.Scan(&r.ID, &r.TenantID, &r.ContentID, &r.ContentType,
-			&r.AIOutput, &r.Status, &r.Source, &r.CreatedAt); err != nil {
+			&r.AIOutput, &r.Status, &r.Source, &r.TargetTable, &r.CreatedAt); err != nil {
 			return nil, fmt.Errorf("scanning HITL review: %w", err)
 		}
 

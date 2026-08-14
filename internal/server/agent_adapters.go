@@ -29,14 +29,20 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/ai"
+	"github.com/jedafe/japa/internal/arrivalchecklist"
+	"github.com/jedafe/japa/internal/attestationguide"
 	"github.com/jedafe/japa/internal/comparison"
+	"github.com/jedafe/japa/internal/communitylocator"
 	"github.com/jedafe/japa/internal/content"
+	"github.com/jedafe/japa/internal/credentialchecker"
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/docs"
+	"github.com/jedafe/japa/internal/languagetesthub"
 	"github.com/jedafe/japa/internal/learning"
 	"github.com/jedafe/japa/internal/menus"
 	"github.com/jedafe/japa/internal/rag"
 	"github.com/jedafe/japa/internal/studio"
+	"github.com/jedafe/japa/internal/taxcalculator"
 	"github.com/jedafe/japa/internal/users"
 	"github.com/jedafe/japa/internal/worker"
 	"github.com/valkey-io/valkey-go/valkeycompat"
@@ -884,6 +890,68 @@ type studioDraftProcessorAdapter struct {
 	personaStore personaUserIDResolver
 	dispatcher   aiDispatcherPort
 	intelStore   intelRecordLoader
+	// Tool table services for Approach B routing (ADR-076 Amendment 1).
+	// When a Studio job has a tool-table content type, GenerateJob routes
+	// to the corresponding service instead of creating a contents row.
+	arrivalSvc       arrivalDraftGenerator
+	communityOrgSvc  communityOrgDraftGenerator
+	attestationSvc   attestationDraftGenerator
+	languageTestSvc  languageTestDraftGenerator
+	taxSvc           taxDraftGenerator
+	credentialSvc    credentialDraftGenerator
+}
+
+// arrivalDraftGenerator is the subset of *arrivalchecklist.Service needed
+// for Studio routing (Approach B).
+type arrivalDraftGenerator interface {
+	GenerateGuide(ctx context.Context, tenantID pgtype.UUID, req arrivalchecklist.GenerateGuideRequest) (arrivalchecklist.GenerateGuideResponse, error)
+}
+
+// communityOrgDraftGenerator is the subset of *communitylocator.Service.
+type communityOrgDraftGenerator interface {
+	Generate(ctx context.Context, tenantID, generatedBy pgtype.UUID, input communitylocator.GenerateInput, aiModel string) (communitylocator.OrgDTO, error)
+}
+
+// attestationDraftGenerator is the subset of *attestationguide.Service.
+type attestationDraftGenerator interface {
+	GenerateDraft(ctx context.Context, tenantID pgtype.UUID, input attestationguide.GeneratePathwayInput) (attestationguide.PathwayDTO, error)
+}
+
+// languageTestDraftGenerator is the subset of *languagetesthub.Service.
+type languageTestDraftGenerator interface {
+	GenerateDraft(ctx context.Context, tenantID pgtype.UUID, input languagetesthub.GenerateRequirementRequest) (languagetesthub.RequirementDTO, error)
+}
+
+// taxDraftGenerator is the subset of *taxcalculator.Service.
+type taxDraftGenerator interface {
+	GenerateGuide(ctx context.Context, tenantID pgtype.UUID, req taxcalculator.GenerateGuideRequest) (taxcalculator.GenerateGuideResult, error)
+}
+
+// credentialDraftGenerator is the subset of *credentialchecker.Service.
+type credentialDraftGenerator interface {
+	GeneratePathwayDraft(ctx context.Context, tenantID pgtype.UUID, req credentialchecker.GeneratePathwayRequest) (credentialchecker.GeneratePathwayResponse, error)
+}
+
+// toolTableTargetTable maps tool-table content types to their backing
+// PostgreSQL table name for HITL review routing (migration 000477).
+var toolTableTargetTable = map[string]string{
+	"housing_guide":            "housing_guides",
+	"attestation_guide":        "attestation_pathways",
+	"visa_route":               "visa_routes",
+	"arrival_checklist":        "arrival_checklist_guides",
+	"credential_pathway":       "credential_pathways",
+	"language_test_requirement": "language_test_requirements",
+	"tax_obligation_guide":     "tax_obligation_guides",
+	"community_organisation":   "community_organisations",
+	"wiki_page":                "wiki_pages",
+	"calendar_entry":           "calendar_entries",
+}
+
+// isToolTableType returns true if the content type should route to a
+// dedicated tool table instead of the contents table.
+func isToolTableType(contentType string) bool {
+	_, ok := toolTableTargetTable[contentType]
+	return ok
 }
 
 // studioProcessorService is the subset of *studio.Service the adapter calls.
@@ -996,7 +1064,21 @@ func (a *studioDraftProcessorAdapter) GenerateJob(ctx context.Context, tenantID,
 		return fmt.Errorf("studio: generate: encode field values: %w", err)
 	}
 
-	// 5. Create the contents row with status='draft'.
+	// 5. Route to the appropriate table based on content type.
+	// Tool-table types (Approach B, ADR-076 Amendment 1) route to their
+	// dedicated tool service. If the tool service call fails (e.g. missing
+	// required fields not available in the Studio job), fall through to
+	// contents creation as a safe default.
+	if isToolTableType(job.ContentType) {
+		if draftID, targetTable, routed, rerr := a.tryToolTableRouting(ctx, tenantID, jobID, job, persona, body, extractionContext); rerr == nil && routed {
+			a.routeToHITL(ctx, tenantID, jobID, draftID, targetTable, job.ContentType, fvJSON)
+			return nil
+		}
+		slog.Info("studio: generate: tool table routing fell back to contents",
+			"job_id", jobID, "content_type", job.ContentType)
+	}
+
+	// 5b. Create the contents row with status='draft' (default path).
 	row, err := a.contentSvc.CreateContent(ctx, tenantID, content.CreateContentInput{
 		AuthorID:      persona.UserID,
 		SpaceID:       job.TargetSpaceID,
@@ -1017,7 +1099,6 @@ func (a *studioDraftProcessorAdapter) GenerateJob(ctx context.Context, tenantID,
 		if _, perr := a.contentSvc.UpdateContentStatus(ctx, row.ID, tenantID, "published"); perr != nil {
 			slog.Warn("studio: generate: auto-publish failed, routing to review",
 				"job_id", jobID, "content_id", row.ID, "error", perr)
-			// Mark draft_ready first (ADR-076 §2 step 7), then route to review.
 			_ = a.studio.MarkJobGenerated(ctx, tenantID, jobID, row.ID)
 			a.createStudioReview(ctx, tenantID, row.ID, job.ContentType, fvJSON)
 			return nil
@@ -1035,30 +1116,196 @@ func (a *studioDraftProcessorAdapter) GenerateJob(ctx context.Context, tenantID,
 	}
 
 	// Step 8 (ADR-076 §2): route to the HITL review queue.
-	var reviewID pgtype.UUID
-	if a.aiStore != nil {
-		review, rerr := a.aiStore.CreateHITLReview(ctx, ai.HITLReview{
-			TenantID:    tenantID,
-			ContentID:   row.ID,
-			ContentType: job.ContentType,
-			AIOutput:    fvJSON,
-			Status:      ai.HITLStatusPending,
-			Source:      ai.HITLSourceStudio,
-		})
-		if rerr != nil {
-			slog.Warn("studio: generate: create HITL review failed, draft remains in draft_ready",
-				"job_id", jobID, "content_id", row.ID, "error", rerr)
-		} else {
-			reviewID = review.ID
-			if err := a.studio.MarkJobRoutedToReview(ctx, tenantID, jobID, reviewID); err != nil {
-				slog.Warn("studio: generate: mark routed to review failed",
-					"job_id", jobID, "review_id", reviewID, "error", err)
-			}
+	targetTable := "contents"
+	if isToolTableType(job.ContentType) {
+		targetTable = toolTableTargetTable[job.ContentType]
+	}
+	a.routeToHITL(ctx, tenantID, jobID, row.ID, targetTable, job.ContentType, fvJSON)
+	return nil
+}
+
+// tryToolTableRouting attempts to route a Studio job to its dedicated tool
+// service (Approach B). Returns (draftID, targetTable, routed, error).
+// When routed is false and error is nil, the caller should fall back to
+// contents creation.
+func (a *studioDraftProcessorAdapter) tryToolTableRouting(
+	ctx context.Context,
+	tenantID, jobID pgtype.UUID,
+	job studio.Job,
+	persona gen.GetAIPersonaByIDRow,
+	body, extractionContext string,
+) (pgtype.UUID, string, bool, error) {
+	destSpaceStr := ""
+	if job.TargetSpaceID.Valid {
+		destSpaceStr = job.TargetSpaceID.String()
+	}
+	visaCat := derefStr(job.GuideCategory)
+	promptWithCtx := job.TopicPrompt
+	if extractionContext != "" {
+		promptWithCtx += "\n\nStructured data from external source:\n" + extractionContext
+	}
+
+	switch job.ContentType {
+	case "arrival_checklist":
+		if a.arrivalSvc == nil {
+			return pgtype.UUID{}, "", false, nil
 		}
+		resp, err := a.arrivalSvc.GenerateGuide(ctx, tenantID, arrivalchecklist.GenerateGuideRequest{
+			DestinationSpaceID: destSpaceStr,
+			VisaCategory:       visaCat,
+			ApplicantType:      arrivalchecklist.ApplicantIndividual,
+			Prompt:             promptWithCtx,
+		})
+		if err != nil {
+			slog.Warn("studio: arrival_checklist routing failed, falling back to contents",
+				"job_id", jobID, "error", err)
+			return pgtype.UUID{}, "", false, nil
+		}
+		var id pgtype.UUID
+		_ = id.Scan(resp.GuideID)
+		return id, "arrival_checklist_guides", true, nil
+
+	case "community_organisation":
+		if a.communityOrgSvc == nil {
+			return pgtype.UUID{}, "", false, nil
+		}
+		aiModel := "content_agent_v1"
+		org, err := a.communityOrgSvc.Generate(ctx, tenantID, persona.UserID, communitylocator.GenerateInput{
+			Prompt:             promptWithCtx,
+			DestinationSpaceID: destSpaceStr,
+		}, aiModel)
+		if err != nil {
+			slog.Warn("studio: community_organisation routing failed, falling back to contents",
+				"job_id", jobID, "error", err)
+			return pgtype.UUID{}, "", false, nil
+		}
+		var id pgtype.UUID
+		_ = id.Scan(org.ID)
+		return id, "community_organisations", true, nil
+
+	case "attestation_guide":
+		if a.attestationSvc == nil || destSpaceStr == "" {
+			return pgtype.UUID{}, "", false, nil
+		}
+		// Attestation needs document_type + issuing_space_id. Parse from
+		// guide_category and topic_prompt where possible; fall back if not.
+		docType := visaCat
+		if docType == "" {
+			return pgtype.UUID{}, "", false, nil
+		}
+		dto, err := a.attestationSvc.GenerateDraft(ctx, tenantID, attestationguide.GeneratePathwayInput{
+			DocumentType:       docType,
+			IssuingSpaceID:     destSpaceStr,
+			DestinationSpaceID: destSpaceStr,
+			Prompt:             promptWithCtx,
+		})
+		if err != nil {
+			slog.Warn("studio: attestation_guide routing failed, falling back to contents",
+				"job_id", jobID, "error", err)
+			return pgtype.UUID{}, "", false, nil
+		}
+		var id pgtype.UUID
+		_ = id.Scan(dto.ID)
+		return id, "attestation_pathways", true, nil
+
+	case "language_test_requirement":
+		if a.languageTestSvc == nil || destSpaceStr == "" {
+			return pgtype.UUID{}, "", false, nil
+		}
+		// Language test needs test_slug. Parse from guide_category.
+		testSlug := visaCat
+		if testSlug == "" {
+			return pgtype.UUID{}, "", false, nil
+		}
+		dto, err := a.languageTestSvc.GenerateDraft(ctx, tenantID, languagetesthub.GenerateRequirementRequest{
+			DestinationSpaceID: destSpaceStr,
+			VisaCategory:       visaCat,
+			TestSlug:           testSlug,
+		})
+		if err != nil {
+			slog.Warn("studio: language_test_requirement routing failed, falling back to contents",
+				"job_id", jobID, "error", err)
+			return pgtype.UUID{}, "", false, nil
+		}
+		var id pgtype.UUID
+		_ = id.Scan(dto.ID)
+		return id, "language_test_requirements", true, nil
+
+	case "tax_obligation_guide":
+		if a.taxSvc == nil || destSpaceStr == "" {
+			return pgtype.UUID{}, "", false, nil
+		}
+		// Tax needs origin_space_id + employment_status. Use defaults.
+		result, err := a.taxSvc.GenerateGuide(ctx, tenantID, taxcalculator.GenerateGuideRequest{
+			OriginSpaceID:      destSpaceStr,
+			DestinationSpaceID: destSpaceStr,
+			EmploymentStatus:   "employed",
+			Prompt:             promptWithCtx,
+		})
+		if err != nil {
+			slog.Warn("studio: tax_obligation_guide routing failed, falling back to contents",
+				"job_id", jobID, "error", err)
+			return pgtype.UUID{}, "", false, nil
+		}
+		var id pgtype.UUID
+		_ = id.Scan(result.GuideID)
+		return id, "tax_obligation_guides", true, nil
+
+	case "credential_pathway":
+		if a.credentialSvc == nil || destSpaceStr == "" {
+			return pgtype.UUID{}, "", false, nil
+		}
+		// Credential needs profession_id (UUID) — can't be mapped from
+		// Studio job fields. Fall back to contents.
+		return pgtype.UUID{}, "", false, nil
+
+	default:
+		// housing_guide, visa_route, wiki_page, calendar_entry: these
+		// either have placeholder GenerateDraft methods or no draft
+		// method. Fall back to contents creation.
+		return pgtype.UUID{}, "", false, nil
+	}
+}
+
+// routeToHITL marks the job as generated and creates a HITL review with
+// the appropriate target_table (migration 000477, ADR-076 Amendment 1).
+func (a *studioDraftProcessorAdapter) routeToHITL(
+	ctx context.Context,
+	tenantID, jobID, draftID pgtype.UUID,
+	targetTable, contentType string,
+	fvJSON []byte,
+) {
+	if err := a.studio.MarkJobGenerated(ctx, tenantID, jobID, draftID); err != nil {
+		slog.Warn("studio: generate: mark generated failed",
+			"job_id", jobID, "draft_id", draftID, "error", err)
+		return
+	}
+
+	if a.aiStore == nil {
+		return
+	}
+
+	review, rerr := a.aiStore.CreateHITLReview(ctx, ai.HITLReview{
+		TenantID:    tenantID,
+		ContentID:   draftID,
+		ContentType: contentType,
+		AIOutput:    fvJSON,
+		Status:      ai.HITLStatusPending,
+		Source:      ai.HITLSourceStudio,
+		TargetTable: targetTable,
+	})
+	if rerr != nil {
+		slog.Warn("studio: generate: create HITL review failed, draft remains in draft_ready",
+			"job_id", jobID, "draft_id", draftID, "target_table", targetTable, "error", rerr)
+		return
+	}
+	if err := a.studio.MarkJobRoutedToReview(ctx, tenantID, jobID, review.ID); err != nil {
+		slog.Warn("studio: generate: mark routed to review failed",
+			"job_id", jobID, "review_id", review.ID, "error", err)
 	}
 	slog.Info("studio: generate: draft routed to review",
-		"job_id", jobID, "content_id", row.ID, "review_id", reviewID)
-	return nil
+		"job_id", jobID, "draft_id", draftID,
+		"target_table", targetTable, "review_id", review.ID)
 }
 
 // studioGenerateBody synthesizes a draft body via the AI gateway, weaving in

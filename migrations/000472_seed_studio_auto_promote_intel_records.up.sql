@@ -7,8 +7,8 @@
 
 BEGIN;
 
-INSERT INTO system_settings (tenant_id, key, value)
-VALUES ('00000000-0000-0000-0000-000000000001', 'studio.auto_promote_intel_records', '"false"')
+INSERT INTO system_settings (tenant_id, key, value, is_public)
+VALUES ('00000000-0000-0000-0000-000000000001', 'studio.auto_promote_intel_records', '"false"', false)
 ON CONFLICT (tenant_id, key) DO NOTHING;
 
 COMMIT;
