@@ -1,6 +1,7 @@
 package menus
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -93,6 +94,8 @@ func parsePageOffset(r *http.Request) int32 {
 func handleServiceError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, ErrMenuNotFound), errors.Is(err, ErrMenuItemNotFound):
+		errpkg.WriteError(w, http.StatusNotFound, "not_found", err.Error())
+	case errors.Is(err, ErrMenuItemNotInMenu):
 		errpkg.WriteError(w, http.StatusNotFound, "not_found", err.Error())
 	case errors.Is(err, ErrInvalidPlacement), errors.Is(err, ErrInvalidVisibility),
 		errors.Is(err, ErrInvalidStatus), errors.Is(err, ErrInvalidTarget):
@@ -260,9 +263,20 @@ func (h *Handlers) UpdateMenuItem(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	menuID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid menu ID")
+		return
+	}
 	id, err := parseUUIDParam(r, "itemId")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid menu item ID")
+		return
+	}
+	// Verify the item belongs to the menu {id} in the path before updating.
+	// Without this, an admin could update an item from a different menu by
+	// its itemId — a cross-menu authorization gap. Ref: ADR-054.
+	if err := h.requireItemInMenu(r.Context(), id, menuID, tenantID, w); err != nil {
 		return
 	}
 	var input UpdateMenuItemInput
@@ -287,9 +301,19 @@ func (h *Handlers) DeleteMenuItem(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	menuID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid menu ID")
+		return
+	}
 	id, err := parseUUIDParam(r, "itemId")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid menu item ID")
+		return
+	}
+	// Verify the item belongs to the menu {id} in the path before deleting.
+	// Ref: ADR-054.
+	if err := h.requireItemInMenu(r.Context(), id, menuID, tenantID, w); err != nil {
 		return
 	}
 	if err := h.Service.DeleteMenuItem(r.Context(), id, tenantID); err != nil {
@@ -304,6 +328,11 @@ func (h *Handlers) ReorderMenuItems(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	menuID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid menu ID")
+		return
+	}
 	var input ReorderInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
@@ -313,11 +342,40 @@ func (h *Handlers) ReorderMenuItems(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "items array is required")
 		return
 	}
+	// Verify every item belongs to the menu {id} in the path before
+	// reordering. Without this, items from a different menu could be
+	// reordered in one call. Ref: ADR-054.
+	for _, ri := range input.Items {
+		var itemID pgtype.UUID
+		if err := itemID.Scan(ri.ID); err != nil {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid item ID")
+			return
+		}
+		if err := h.requireItemInMenu(r.Context(), itemID, menuID, tenantID, w); err != nil {
+			return
+		}
+	}
 	if err := h.Service.ReorderMenuItems(r.Context(), tenantID, input.Items); err != nil {
 		handleServiceError(w, err)
 		return
 	}
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "reordered"}})
+}
+
+// requireItemInMenu verifies that the item with the given ID belongs to the
+// menu with the given menuID (and tenant). On mismatch it writes a 404 and
+// returns a non-nil error so the caller can return early. Ref: ADR-054.
+func (h *Handlers) requireItemInMenu(ctx context.Context, itemID, menuID, tenantID pgtype.UUID, w http.ResponseWriter) error {
+	item, err := h.Service.GetMenuItem(ctx, itemID, tenantID)
+	if err != nil {
+		handleServiceError(w, err)
+		return err
+	}
+	if item.MenuID != menuID {
+		handleServiceError(w, ErrMenuItemNotInMenu)
+		return ErrMenuItemNotInMenu
+	}
+	return nil
 }
 
 // ── Public Resolution ───────────────────────────────────────────────────

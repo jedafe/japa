@@ -51,8 +51,7 @@
 	];
 
 	const sortOptions = [
-		{ value: 'latest', label: 'Latest' },
-		{ value: 'nearest', label: 'Nearest' }
+		{ value: 'latest', label: 'Latest' }
 	];
 
 	const title = $derived(t('mutual_aid.list_title', 'Mutual Aid — JapaConnect'));

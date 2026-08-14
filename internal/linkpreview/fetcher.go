@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"syscall"
 	"time"
@@ -298,13 +299,29 @@ func (f *Fetcher) fetchAndParse(ctx context.Context, rawURL string, tenantID pgt
 		return nil, fmt.Errorf("HTTP %d", resp.StatusCode)
 	}
 
+	// BUG-005: Only parse HTML responses. Non-HTML content (PDF, image,
+	// JSON, etc.) would produce garbage previews from the HTML parser.
+	contentType := resp.Header.Get("Content-Type")
+	if contentType != "" && !strings.Contains(strings.ToLower(contentType), "html") {
+		return nil, fmt.Errorf("unsupported content type: %s", contentType)
+	}
+
 	// Limit response size to 1MB
 	limited := io.LimitReader(resp.Body, 1<<20)
 
-	return parseOGTags(limited, rawURL)
+	// BUG-002: Use the final URL after redirects as the base for resolving
+	// relative URLs in OG tags. resp.Request.URL is the last URL fetched.
+	baseURL := rawURL
+	if resp.Request != nil && resp.Request.URL != nil {
+		baseURL = resp.Request.URL.String()
+	}
+
+	return parseOGTags(limited, baseURL)
 }
 
-// parseOGTags extracts Open Graph meta tags from HTML.
+// parseOGTags extracts Open Graph meta tags from HTML. The rawURL is the
+// final URL after redirects, used as the base for resolving relative URLs
+// in og:image and favicon href attributes (BUG-001).
 func parseOGTags(r io.Reader, rawURL string) (*Preview, error) {
 	doc, err := html.Parse(r)
 	if err != nil {
@@ -312,6 +329,22 @@ func parseOGTags(r io.Reader, rawURL string) (*Preview, error) {
 	}
 
 	preview := &Preview{URL: rawURL}
+
+	// base is the parsed base URL for resolving relative image/favicon URLs.
+	base, baseErr := url.Parse(rawURL)
+
+	// resolveURL resolves a potentially relative URL against the page base.
+	// If the base URL is invalid or the value is empty, returns the raw value.
+	resolveURL := func(val string) string {
+		if val == "" || baseErr != nil {
+			return val
+		}
+		ref, err := url.Parse(val)
+		if err != nil {
+			return val
+		}
+		return base.ResolveReference(ref).String()
+	}
 
 	var walk func(*html.Node)
 	walk = func(n *html.Node) {
@@ -334,9 +367,17 @@ func parseOGTags(r io.Reader, rawURL string) (*Preview, error) {
 			case "og:description", "description":
 				preview.Description = content
 			case "og:image":
-				preview.Image = content
+				preview.Image = resolveURL(content)
 			case "og:site_name":
 				preview.SiteName = content
+			}
+		}
+
+		// BUG-006: Fall back to <title> tag when og:title is missing.
+		// Many older sites lack OG tags but have a <title> element.
+		if n.Type == html.ElementNode && n.Data == "title" {
+			if preview.Title == "" && n.FirstChild != nil && n.FirstChild.Type == html.TextNode {
+				preview.Title = strings.TrimSpace(n.FirstChild.Data)
 			}
 		}
 
@@ -354,7 +395,7 @@ func parseOGTags(r io.Reader, rawURL string) (*Preview, error) {
 			}
 
 			if rel == "icon" || rel == "shortcut icon" {
-				preview.Favicon = href
+				preview.Favicon = resolveURL(href)
 			}
 		}
 

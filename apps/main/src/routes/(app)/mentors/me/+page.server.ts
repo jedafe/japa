@@ -1,5 +1,5 @@
 // Ref: japaconnect-engineering/sections/102-mentorship-matching.md
-import { redirect } from '@sveltejs/kit';
+import { error, redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiGet, apiList } from '$lib/server/api';
 import type { MentorProfile, MentorshipConnection } from '$lib/types';
@@ -9,10 +9,16 @@ import type { MentorProfile, MentorshipConnection } from '$lib/types';
  * profile (GET /me/mentor-profile) plus outgoing (GET /me/mentorship/outgoing)
  * and incoming (GET /me/mentorship/incoming) connections. Each call is wrapped
  * in try/catch so a single failing endpoint never blanks the page.
+ * Feature-flagged via `mentorship.enabled` (§102): 404 when disabled.
  */
 export const load: PageServerLoad = async (event) => {
 	if (!event.locals.user) {
 		throw redirect(307, `/login?redirect=${encodeURIComponent(event.url.pathname)}`);
+	}
+
+	const { features } = await event.parent();
+	if (!features['mentorship.enabled']) {
+		throw error(404, { code: 'feature_disabled', message: 'Mentorship is not available' });
 	}
 
 	const ctx = apiContext(event);

@@ -31,7 +31,12 @@
 	const authorLabel = $derived(comment.display_name || comment.username || t('forum.member', 'Member'));
 	const isAuthor = $derived(!!currentUserId && currentUserId === comment.author_user_id);
 	const beyondMaxDepth = $derived(depth >= MAX_DEPTH);
-	const bodyHtml = $derived(tiptapBodyToHtml(comment.body, { deletedUserIds }));
+	const bodyHtml = $derived(
+		tiptapBodyToHtml(comment.body, {
+			deletedUserIds,
+			deletedUserLabel: t('mentions.deleted_user', '[deleted user]')
+		})
+	);
 
 	// Vote state (optimistic + rollback). The backend uses upsert semantics;
 	// DELETE /comments/{id}/vote retracts. We track the user's current vote

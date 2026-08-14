@@ -99,10 +99,16 @@ func toMediaResponse(m *gen.Medium, url string) MediaResponse {
 }
 
 // toMediaResponses transforms a slice of gen.Medium into API response format.
+// BUG-008: resolves the imgproxy config (key/salt/baseURL) once for the
+// entire batch instead of re-reading env vars and re-decoding hex on every
+// item. The HMAC itself is still computed per-item (unavoidable — each URL
+// has a unique signature), but the config resolution overhead is amortized.
 func toMediaResponses(items []gen.Medium, svc *Service) []MediaResponse {
 	result := make([]MediaResponse, len(items))
+	cfg := loadMediaURLConfig()
 	for i := range items {
-		result[i] = toMediaResponse(&items[i], svc.GetMediaURL(&items[i], ImageProxyOpts{}))
+		url := mediaURLWithConfig(items[i].StorageBucket, items[i].StoragePath, ImageProxyOpts{}, cfg)
+		result[i] = toMediaResponse(&items[i], url)
 	}
 	return result
 }
@@ -370,7 +376,7 @@ func (h *Handlers) InitiateUpload(w http.ResponseWriter, r *http.Request) {
 // ConfirmUpload handles POST /api/v1/media/confirm/{id}.
 // Response: { "data": { "confirmed": true } }.
 func (h *Handlers) ConfirmUpload(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireUser(w, r)
+	user, ok := h.requireUser(w, r)
 	if !ok {
 		return
 	}
@@ -385,7 +391,9 @@ func (h *Handlers) ConfirmUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.service.ConfirmUpload(r.Context(), tenantID, mediaID); err != nil {
+	// BUG-004: pass the uploader ID so ConfirmUpload can verify only the
+	// user who initiated the upload can confirm it (§34 two-step upload).
+	if err := h.service.ConfirmUpload(r.Context(), tenantID, mediaID, user.UserID); err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "confirm_error", "Failed to confirm upload")
 		return
 	}
@@ -477,7 +485,7 @@ func isVideoMIME(mimeType string) bool {
 // GetMedia handles GET /api/v1/media/{id}.
 // Response: { "data": { ... } }.
 func (h *Handlers) GetMedia(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireUser(w, r)
+	user, ok := h.requireUser(w, r)
 	if !ok {
 		return
 	}
@@ -500,6 +508,20 @@ func (h *Handlers) GetMedia(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		errpkg.WriteError(w, http.StatusNotFound, "media_not_found", "Media not found")
 		return
+	}
+
+	// BUG-006: the route is gated on media.library.view_own, which implies
+	// own-library scope. Enforce that the caller is the uploader unless they
+	// hold media.view_all (admin/moderator). Return 404 (not 403) so
+	// existence is not leaked to unauthorized users, consistent with the
+	// store's ownership-scoped methods.
+	if m.UploaderUserID != user.UserID {
+		canViewAll := h.perms != nil &&
+			h.perms.HasPermission(r.Context(), user.UserID, tenantID, "media.view_all")
+		if !canViewAll {
+			errpkg.WriteError(w, http.StatusNotFound, "media_not_found", "Media not found")
+			return
+		}
 	}
 
 	// Generate imgproxy URL on serialization (never cached).
@@ -969,8 +991,8 @@ func (h *Handlers) AdminUpload(w http.ResponseWriter, r *http.Request) {
 	}
 	defer file.Close()
 
-	if header.Size > MaxFileSizeBytes {
-		errpkg.WriteError(w, http.StatusRequestEntityTooLarge, "file_too_large", "File exceeds 50MB limit")
+	if header.Size > h.service.MaxUploadBytes(r.Context(), tenantID) {
+		errpkg.WriteError(w, http.StatusRequestEntityTooLarge, "file_too_large", "File exceeds the configured upload size limit")
 		return
 	}
 

@@ -325,6 +325,33 @@ func (q *Queries) GetActiveOrPendingConnection(ctx context.Context, arg GetActiv
 	return id, err
 }
 
+const getMenteeDestinationSpaceID = `-- name: GetMenteeDestinationSpaceID :one
+SELECT user_id, japa_stage_dest_space_id AS destination_space_id
+FROM user_profiles
+WHERE tenant_id = $1 AND user_id = $2
+`
+
+type GetMenteeDestinationSpaceIDParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	UserID   pgtype.UUID `json:"user_id"`
+}
+
+type GetMenteeDestinationSpaceIDRow struct {
+	UserID             pgtype.UUID `json:"user_id"`
+	DestinationSpaceID pgtype.UUID `json:"destination_space_id"`
+}
+
+// Get the authenticated user's destination space ID (japa_stage_dest_space_id,
+// §87) for use as the default ?dest= filter on the mentor discovery page
+// (§102 Geo Awareness: "The mentee's profile destination_country_id is
+// injected as a default filter when logged in, with no UI action required").
+func (q *Queries) GetMenteeDestinationSpaceID(ctx context.Context, arg GetMenteeDestinationSpaceIDParams) (GetMenteeDestinationSpaceIDRow, error) {
+	row := q.db.QueryRow(ctx, getMenteeDestinationSpaceID, arg.TenantID, arg.UserID)
+	var i GetMenteeDestinationSpaceIDRow
+	err := row.Scan(&i.UserID, &i.DestinationSpaceID)
+	return i, err
+}
+
 const getMentorByUsername = `-- name: GetMentorByUsername :one
 SELECT up.user_id, up.tenant_id, up.is_mentor, up.mentor_capacity,
        up.active_mentee_count, up.mentor_areas, up.mentor_bio, up.mentor_since,
@@ -569,6 +596,34 @@ func (q *Queries) GetMentorshipProgram(ctx context.Context, arg GetMentorshipPro
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
+	return i, err
+}
+
+const getUserEmbedding = `-- name: GetUserEmbedding :one
+SELECT user_id, mentor_embedding
+FROM user_profiles
+WHERE tenant_id = $1 AND user_id = $2
+`
+
+type GetUserEmbeddingParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	UserID   pgtype.UUID `json:"user_id"`
+}
+
+type GetUserEmbeddingRow struct {
+	UserID          pgtype.UUID      `json:"user_id"`
+	MentorEmbedding *pgvector.Vector `json:"mentor_embedding"`
+}
+
+// Get any user's mentor_embedding vector (for match scoring on the discovery
+// page). Unlike GetMentorEmbedding, this does NOT require is_mentor = true —
+// a mentee who is also a mentor will have an embedding from their own bio.
+// Returns NULL for users without an embedding (service falls back to
+// keyword-only scoring, §102).
+func (q *Queries) GetUserEmbedding(ctx context.Context, arg GetUserEmbeddingParams) (GetUserEmbeddingRow, error) {
+	row := q.db.QueryRow(ctx, getUserEmbedding, arg.TenantID, arg.UserID)
+	var i GetUserEmbeddingRow
+	err := row.Scan(&i.UserID, &i.MentorEmbedding)
 	return i, err
 }
 

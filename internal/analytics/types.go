@@ -43,6 +43,14 @@ const (
 	EventFollowCreated EventType = "follow.created"
 	// EventShareClicked is the event share clicked.
 	EventShareClicked EventType = "share.clicked"
+	// EventMentorView is the event mentor profile page viewed (§102).
+	EventMentorView EventType = "mentor_view"
+	// EventMentorshipRequestSent is the event mentorship request submitted (§102).
+	EventMentorshipRequestSent EventType = "mentorship_request_sent"
+	// EventMentorshipAccepted is the event mentorship request accepted (§102).
+	EventMentorshipAccepted EventType = "mentorship_accepted"
+	// EventMentorshipCompleted is the event mentorship connection completed (§102).
+	EventMentorshipCompleted EventType = "mentorship_completed"
 )
 
 // ValidEventTypes returns all recognised event types.
@@ -65,6 +73,10 @@ func ValidEventTypes() []EventType {
 		EventTicketSubmitted,
 		EventFollowCreated,
 		EventShareClicked,
+		EventMentorView,
+		EventMentorshipRequestSent,
+		EventMentorshipAccepted,
+		EventMentorshipCompleted,
 	}
 }
 

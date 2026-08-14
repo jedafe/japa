@@ -12,6 +12,7 @@ import "errors"
 var (
 	ErrMenuNotFound      = errors.New("menu not found")
 	ErrMenuItemNotFound  = errors.New("menu item not found")
+	ErrMenuItemNotInMenu = errors.New("menu item does not belong to this menu")
 	ErrInvalidPlacement  = errors.New("invalid placement; must be sidebar or bottom_bar")
 	ErrInvalidVisibility = errors.New("invalid visibility; must be all, authenticated, or guest")
 	ErrInvalidStatus     = errors.New("invalid status; must be active or inactive")
