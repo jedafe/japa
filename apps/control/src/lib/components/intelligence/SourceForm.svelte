@@ -22,6 +22,7 @@
 		source_license: string;
 		usage_restriction: string;
 		enabled: boolean;
+		persona_id: string;
 	}
 
 	interface SourceLike {
@@ -39,17 +40,28 @@
 		source_license?: string | null;
 		usage_restriction?: string | null;
 		enabled: boolean;
+		persona_id?: string | null;
+	}
+
+	export interface PersonaItem {
+		id: string;
+		profile_name: string;
+		profile_slug?: string;
+		backing_username?: string;
+		status?: string;
 	}
 
 	let {
 		open = $bindable(false),
 		source = null as SourceLike | null,
+		personas = [] as PersonaItem[],
 		saving = false,
 		errorMessage = '',
 		onSubmit
 	}: {
 		open: boolean;
 		source?: SourceLike | null;
+		personas?: PersonaItem[];
 		saving?: boolean;
 		errorMessage?: string;
 		onSubmit: (values: SourceFormValues) => void;
@@ -68,7 +80,8 @@
 		attribution_required: false,
 		source_license: '',
 		usage_restriction: '',
-		enabled: true
+		enabled: true,
+		persona_id: ''
 	};
 
 	let form = $state<SourceFormValues>({ ...empty });
@@ -90,7 +103,8 @@
 					attribution_required: !!source.attribution_required,
 					source_license: source.source_license ?? '',
 					usage_restriction: source.usage_restriction ?? '',
-					enabled: !!source.enabled
+					enabled: !!source.enabled,
+					persona_id: source.persona_id ?? ''
 				};
 			} else {
 				form = { ...empty };
@@ -142,6 +156,27 @@
 
 	const isEdit = $derived(!!source?.id);
 	const valid = $derived(form.name.trim().length > 0 && form.source_url.trim().length > 0);
+
+	// Sentinel for the "No persona" option. Bits UI Select doesn't treat
+	// empty string "" as a real selectable value, so we use "__none__" and
+	// convert back to "" on submit.
+	const NONE_PERSONA = '__none__';
+	// The Select binds to this derived value — it's the persona_id or the
+	// sentinel when empty so the dropdown can show the "No persona" item as
+	// selected.
+	let selectPersona = $derived(form.persona_id || NONE_PERSONA);
+	// Display text for the trigger — resolves the UUID to the persona's
+	// profile name. Select.Value can't resolve labels from dynamic items
+	// reliably, so we render the text ourselves.
+	let personaDisplay = $derived.by(() => {
+		if (!form.persona_id) return t('intel.field_persona_none', 'No persona (use system default)');
+		const p = personas.find((x) => x.id === form.persona_id);
+		return p?.profile_name ?? form.persona_id;
+	});
+
+	function onPersonaChange(v: string | undefined) {
+		form.persona_id = !v || v === NONE_PERSONA ? '' : v;
+	}
 
 	function submit(e: SubmitEvent) {
 		e.preventDefault();
@@ -317,6 +352,36 @@
 						<label for="sf-restriction" class={labelClass}>{t('intel.field_usage_restriction', 'Usage Restriction')}</label>
 						<input id="sf-restriction" type="text" bind:value={form.usage_restriction} class={inputClass} placeholder="non-commercial" />
 					</div>
+				</div>
+
+				<div>
+					<label for="sf-persona" class={labelClass}>{t('intel.field_persona', 'AI Persona')}</label>
+					<Select.Root
+						type="single"
+						value={selectPersona}
+						onValueChange={onPersonaChange}
+					>
+						<Select.Trigger class={inputClass}>
+							<span class="truncate">{personaDisplay}</span>
+						</Select.Trigger>
+						<Select.Portal>
+							<Select.Content class="border-border-input bg-background shadow-popover z-50 rounded-xl border">
+								<Select.Viewport class="p-1">
+									<Select.Item class="data-highlighted:bg-accent rounded-9px flex h-9 cursor-pointer items-center px-3 text-sm outline-none" value={NONE_PERSONA} label={t('intel.field_persona_none', 'No persona (use system default)')}>
+										{t('intel.field_persona_none', 'No persona (use system default)')}
+									</Select.Item>
+									{#each personas as p}
+										<Select.Item class="data-highlighted:bg-accent rounded-9px flex h-9 cursor-pointer items-center px-3 text-sm outline-none" value={p.id} label={p.profile_name}>
+											{p.profile_name}
+										</Select.Item>
+									{/each}
+								</Select.Viewport>
+							</Select.Content>
+						</Select.Portal>
+					</Select.Root>
+					<p class="text-muted-foreground mt-1 text-xs">
+						{t('intel.field_persona_hint', "The persona's backing bot user will be credited as the author of content promoted from this source.")}
+					</p>
 				</div>
 
 				<div class="flex items-center gap-6">

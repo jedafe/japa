@@ -1685,6 +1685,8 @@ export const calendarAdminApi = {
 	list: (params?: string) => api<unknown>(`/admin/calendar${params ? `?${params}` : ''}`),
 	update: (id: string, body: Record<string, unknown>) =>
 		api<unknown>(`/admin/calendar/${id}`, { method: 'PATCH', body }),
+	// BUG-008: soft-delete (calendar.manage, admin+).
+	delete: (id: string) => api<unknown>(`/admin/calendar/${id}`, { method: 'DELETE' }),
 };
 
 export const achievementAdminApi = {

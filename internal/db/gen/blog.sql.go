@@ -571,13 +571,20 @@ SELECT bsp.series_id
 FROM blog_series_posts bsp
 JOIN blog_series bs ON bs.id = bsp.series_id AND bs.deleted_at IS NULL
 WHERE bsp.content_id = $1
+  AND bs.tenant_id = $2
 `
+
+type GetSeriesForContentParams struct {
+	ContentID pgtype.UUID `json:"content_id"`
+	TenantID  pgtype.UUID `json:"tenant_id"`
+}
 
 // Returns the series_id for a given content_id, or no rows if the content
 // is not part of any series. Used by the editor load to restore the series
-// selector when editing existing content.
-func (q *Queries) GetSeriesForContent(ctx context.Context, contentID pgtype.UUID) (pgtype.UUID, error) {
-	row := q.db.QueryRow(ctx, getSeriesForContent, contentID)
+// selector when editing existing content. BUG-009: tenant-scoped to
+// prevent cross-tenant information disclosure.
+func (q *Queries) GetSeriesForContent(ctx context.Context, arg GetSeriesForContentParams) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, getSeriesForContent, arg.ContentID, arg.TenantID)
 	var series_id pgtype.UUID
 	err := row.Scan(&series_id)
 	return series_id, err
@@ -915,6 +922,7 @@ WHERE cf.tenant_id = $1
   AND (cf.featured_until IS NULL OR cf.featured_until > now())
   AND c.status = 'published'
   AND c.deleted_at IS NULL
+  AND c.content_type = 'blog_post'
 ORDER BY cf.featured_order ASC
 LIMIT $3 OFFSET $2
 `
@@ -1099,6 +1107,7 @@ WHERE cr.tenant_id = $1
   AND cr.status = 'pending'
   AND cr.deleted_at IS NULL
   AND c.deleted_at IS NULL
+  AND c.content_type = 'blog_post'
 ORDER BY cr.created_at ASC
 LIMIT $3 OFFSET $2
 `

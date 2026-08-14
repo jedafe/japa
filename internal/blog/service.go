@@ -144,9 +144,9 @@ func (s *Service) ListPostsInSeries(ctx context.Context, seriesID, tenantID pgty
 
 // GetSeriesForContent returns the series_id for a given content_id, or
 // pgx.ErrNoRows if the content is not part of any series. Used by the
-// editor load to restore the series selector.
-func (s *Service) GetSeriesForContent(ctx context.Context, contentID pgtype.UUID) (pgtype.UUID, error) {
-	return s.store.getSeriesForContent(ctx, contentID)
+// editor load to restore the series selector. BUG-009: tenant-scoped.
+func (s *Service) GetSeriesForContent(ctx context.Context, contentID, tenantID pgtype.UUID) (pgtype.UUID, error) {
+	return s.store.getSeriesForContent(ctx, contentID, tenantID)
 }
 
 // ReorderPostsInSeries updates the position of a post within a series.

@@ -6,7 +6,7 @@
 	import { calendarAdminApi } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
-	import { Eye, CheckCircle, XCircle } from 'lucide-svelte';
+	import { Eye, CheckCircle, XCircle, Trash2 } from 'lucide-svelte';
 	import type { ActionItem } from '$lib/components/ui/data-table';
 
 	type CalendarItem = {
@@ -28,6 +28,8 @@
 	};
 
 	const canManage = $derived(hasPermission('calendar.review'));
+	// BUG-001/BUG-008: calendar.manage (admin+) gates the soft-delete action.
+	const canDelete = $derived(hasPermission('calendar.manage'));
 
 	// ── State ───────────────────────────────────────────────────────────────
 	let entityController = $state<EntityPageController | undefined>(undefined);
@@ -36,6 +38,9 @@
 	let actionTarget = $state<CalendarItem | null>(null);
 	let showRejectModal = $state(false);
 	let rejectReason = $state('');
+	// BUG-008: soft-delete confirm modal state.
+	let showDeleteModal = $state(false);
+	let deleteTarget = $state<CalendarItem | null>(null);
 
 	function openReject(item: CalendarItem) {
 		actionTarget = item;
@@ -81,6 +86,32 @@
 		}
 	}
 
+	// BUG-008: soft-delete entry (calendar.manage, admin+). Per Rule 11, user
+	// content is soft-deleted, never hard-deleted.
+	function openDelete(item: CalendarItem) {
+		deleteTarget = item;
+		showDeleteModal = true;
+	}
+
+	async function confirmDelete() {
+		if (!deleteTarget) return;
+		acting = true;
+		pageError = '';
+		try {
+			const result = await calendarAdminApi.delete(deleteTarget.id);
+			if (result.ok) {
+				showDeleteModal = false;
+				entityController?.reload();
+			} else {
+				pageError = result.error ?? t('common.error', 'An error occurred');
+			}
+		} catch {
+			pageError = t('common.error', 'An error occurred');
+		} finally {
+			acting = false;
+		}
+	}
+
 	// ── Row actions ─────────────────────────────────────────────────────────
 	const rowActions = $derived.by<ActionItem[]>(() => {
 		const acts: ActionItem[] = [
@@ -98,6 +129,16 @@
 				icon: XCircle,
 				variant: 'destructive',
 				onclick: openReject,
+				show: () => true
+			});
+		}
+		// BUG-008: soft-delete (calendar.manage, admin+).
+		if (canDelete) {
+			acts.push({
+				label: t('common.delete', 'Delete'),
+				icon: Trash2,
+				variant: 'destructive',
+				onclick: openDelete,
 				show: () => true
 			});
 		}
@@ -217,6 +258,21 @@
 		<Button variant="ghost" onclick={() => (showRejectModal = false)}>{t('common.cancel', 'Cancel')}</Button>
 		<Button variant="destructive" onclick={confirmReject} disabled={acting}>
 			{acting ? t('app.calendar.rejecting', 'Rejecting...') : t('app.calendar.reject', 'Reject')}
+		</Button>
+	</div>
+</Modal>
+
+<!-- ── Delete confirmation modal (BUG-008: soft-delete, calendar.manage) ─── -->
+<Modal bind:open={showDeleteModal} title={t('app.calendar.modal_delete_event', 'Delete Event')}>
+	<div class="space-y-4">
+		<p class="text-sm" style="color: var(--color-foreground)">
+			{t('app.calendar.delete_confirm', 'Are you sure you want to delete "{title}"? This will hide it from the public calendar.').replace('{title}', deleteTarget?.title ?? '')}
+		</p>
+	</div>
+	<div class="mt-4 flex justify-end gap-2">
+		<Button variant="ghost" onclick={() => (showDeleteModal = false)}>{t('common.cancel', 'Cancel')}</Button>
+		<Button variant="destructive" onclick={confirmDelete} disabled={acting}>
+			{acting ? t('app.calendar.deleting', 'Deleting...') : t('common.delete', 'Delete')}
 		</Button>
 	</div>
 </Modal>

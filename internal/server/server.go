@@ -1579,6 +1579,34 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	)
 	intelExtractorAdapter := &intelExtractorPortAdapter{ext: intelExtractor}
 
+	// Resolve the fallback author ID for intelligence promoters. The
+	// intel.default_persona_id system setting points to an AI persona whose
+	// backing bot user (is_bot=true) is stamped as contents.author_id when a
+	// source has no explicit persona_id. Falls back to the super admin user
+	// if the setting is missing or the persona lookup fails — the fallback
+	// must be a valid users(id) row to avoid the FK violation on
+	// contents.author_id (BUG: the prior code passed defaultTenantID, which
+	// is a tenant UUID, not a user UUID).
+	intelDefaultAuthorID := defaultTenantID // worst-case fallback (fixed below)
+	if personaIDStr := settingsService.GetStringOr(context.Background(), defaultTenantID, "intel.default_persona_id", ""); personaIDStr != "" {
+		var personaID pgtype.UUID
+		if err := personaID.Scan(personaIDStr); err == nil && personaID.Valid {
+			if userID, err := intelStores.GetPersonaUserID(context.Background(), defaultTenantID, personaID); err == nil && userID.Valid {
+				intelDefaultAuthorID = userID
+			} else {
+				slog.Warn("server: intel.default_persona_id resolve failed, falling back to super admin", "error", err)
+			}
+		}
+	}
+	if intelDefaultAuthorID == defaultTenantID {
+		// Final fallback: use the super admin user (seeded by migration 000124).
+		if sysUID, err := lookupSystemUserID(context.Background(), database); err == nil && sysUID.Valid {
+			intelDefaultAuthorID = sysUID
+		} else {
+			slog.Error("server: could not resolve super admin user for intel promoter fallback", "error", err)
+		}
+	}
+
 	// Promoter registry: one adapter per domain, keyed by entity_type.
 	// The worker's HandleIntelPromote dispatches to the correct promoter
 	// by the record's entity_type. Each domain has its own store adapter
@@ -1587,16 +1615,16 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// shared; only the WithTx bridge differs.
 	intelPromoters := map[string]worker.IntelPromoterPort{
 		schemas.EntityTypeScholarship: &intelPromoterPortAdapter{
-			prom: promoter.NewScholarshipPromoter(&intelPromoterStoreAdapter{Store: intelStores}, defaultTenantID, defaultTenantID, promoter.WithAIModel(intelExtractionModel)),
+			prom: promoter.NewScholarshipPromoter(&intelPromoterStoreAdapter{Store: intelStores}, defaultTenantID, intelDefaultAuthorID, promoter.WithAIModel(intelExtractionModel)),
 		},
 		schemas.EntityTypeJob: &intelPromoterPortAdapter{
-			prom: promoter.NewJobPromoter(&intelJobPromoterStoreAdapter{Store: intelStores}, defaultTenantID, defaultTenantID, promoter.WithJobAIModel(intelExtractionModel)),
+			prom: promoter.NewJobPromoter(&intelJobPromoterStoreAdapter{Store: intelStores}, defaultTenantID, intelDefaultAuthorID, promoter.WithJobAIModel(intelExtractionModel)),
 		},
 		schemas.EntityTypeVisa: &intelPromoterPortAdapter{
-			prom: promoter.NewVisaPromoter(&intelVisaPromoterStoreAdapter{Store: intelStores}, defaultTenantID, defaultTenantID, promoter.WithVisaAIModel(intelExtractionModel)),
+			prom: promoter.NewVisaPromoter(&intelVisaPromoterStoreAdapter{Store: intelStores}, defaultTenantID, intelDefaultAuthorID, promoter.WithVisaAIModel(intelExtractionModel)),
 		},
 		schemas.EntityTypeHousing: &intelPromoterPortAdapter{
-			prom: promoter.NewHousingPromoter(&intelHousingPromoterStoreAdapter{Store: intelStores}, defaultTenantID, defaultTenantID, promoter.WithHousingAIModel(intelExtractionModel)),
+			prom: promoter.NewHousingPromoter(&intelHousingPromoterStoreAdapter{Store: intelStores}, defaultTenantID, intelDefaultAuthorID, promoter.WithHousingAIModel(intelExtractionModel)),
 		},
 		schemas.EntityTypeRemittance: &intelPromoterPortAdapter{
 			prom: promoter.NewRemittancePromoter(&intelRemittancePromoterStoreAdapter{Store: intelStores}, defaultTenantID),
@@ -1609,25 +1637,25 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		// GuideContentPromoter implementation with different entityType
 		// + guideCategory parameters.
 		schemas.EntityTypeTravelRoutes: &intelPromoterPortAdapter{
-			prom: promoter.NewGuideContentPromoter(&intelGuidePromoterStoreAdapter{Store: intelStores}, defaultTenantID, defaultTenantID, "travel_routes", "travel_routes", promoter.WithGuideContentAIModel(intelExtractionModel)),
+			prom: promoter.NewGuideContentPromoter(&intelGuidePromoterStoreAdapter{Store: intelStores}, defaultTenantID, intelDefaultAuthorID, "travel_routes", "travel_routes", promoter.WithGuideContentAIModel(intelExtractionModel)),
 		},
 		schemas.EntityTypeGrants: &intelPromoterPortAdapter{
-			prom: promoter.NewGuideContentPromoter(&intelGuidePromoterStoreAdapter{Store: intelStores}, defaultTenantID, defaultTenantID, "grants", "grants", promoter.WithGuideContentAIModel(intelExtractionModel)),
+			prom: promoter.NewGuideContentPromoter(&intelGuidePromoterStoreAdapter{Store: intelStores}, defaultTenantID, intelDefaultAuthorID, "grants", "grants", promoter.WithGuideContentAIModel(intelExtractionModel)),
 		},
 		schemas.EntityTypeAdmission: &intelPromoterPortAdapter{
-			prom: promoter.NewGuideContentPromoter(&intelGuidePromoterStoreAdapter{Store: intelStores}, defaultTenantID, defaultTenantID, "admission", "admission", promoter.WithGuideContentAIModel(intelExtractionModel)),
+			prom: promoter.NewGuideContentPromoter(&intelGuidePromoterStoreAdapter{Store: intelStores}, defaultTenantID, intelDefaultAuthorID, "admission", "admission", promoter.WithGuideContentAIModel(intelExtractionModel)),
 		},
 		schemas.EntityTypeBanking: &intelPromoterPortAdapter{
-			prom: promoter.NewGuideContentPromoter(&intelGuidePromoterStoreAdapter{Store: intelStores}, defaultTenantID, defaultTenantID, "banking", "banking", promoter.WithGuideContentAIModel(intelExtractionModel)),
+			prom: promoter.NewGuideContentPromoter(&intelGuidePromoterStoreAdapter{Store: intelStores}, defaultTenantID, intelDefaultAuthorID, "banking", "banking", promoter.WithGuideContentAIModel(intelExtractionModel)),
 		},
 		schemas.EntityTypeWorkCareer: &intelPromoterPortAdapter{
-			prom: promoter.NewGuideContentPromoter(&intelGuidePromoterStoreAdapter{Store: intelStores}, defaultTenantID, defaultTenantID, "work_career", "work_career", promoter.WithGuideContentAIModel(intelExtractionModel)),
+			prom: promoter.NewGuideContentPromoter(&intelGuidePromoterStoreAdapter{Store: intelStores}, defaultTenantID, intelDefaultAuthorID, "work_career", "work_career", promoter.WithGuideContentAIModel(intelExtractionModel)),
 		},
 		schemas.EntityTypeHealthInsurance: &intelPromoterPortAdapter{
-			prom: promoter.NewGuideContentPromoter(&intelGuidePromoterStoreAdapter{Store: intelStores}, defaultTenantID, defaultTenantID, "health_insurance", "health_insurance", promoter.WithGuideContentAIModel(intelExtractionModel)),
+			prom: promoter.NewGuideContentPromoter(&intelGuidePromoterStoreAdapter{Store: intelStores}, defaultTenantID, intelDefaultAuthorID, "health_insurance", "health_insurance", promoter.WithGuideContentAIModel(intelExtractionModel)),
 		},
 		schemas.EntityTypeCultureLifestyle: &intelPromoterPortAdapter{
-			prom: promoter.NewGuideContentPromoter(&intelGuidePromoterStoreAdapter{Store: intelStores}, defaultTenantID, defaultTenantID, "culture_lifestyle", "culture_lifestyle", promoter.WithGuideContentAIModel(intelExtractionModel)),
+			prom: promoter.NewGuideContentPromoter(&intelGuidePromoterStoreAdapter{Store: intelStores}, defaultTenantID, intelDefaultAuthorID, "culture_lifestyle", "culture_lifestyle", promoter.WithGuideContentAIModel(intelExtractionModel)),
 		},
 	}
 
@@ -3593,9 +3621,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Delete("/me/bookmarks/{id}", usersHandlers.DeleteMyBookmark)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/organizations", orgHandlers.ListMyOrganizations)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/bookmark-folders", bookmarkFoldersHandlers.ListFolders)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/me/bookmark-folders", bookmarkFoldersHandlers.CreateFolder)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Patch("/me/bookmark-folders/{id}", bookmarkFoldersHandlers.UpdateFolder)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Delete("/me/bookmark-folders/{id}", bookmarkFoldersHandlers.DeleteFolder)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "bookmarks.manage")).Post("/me/bookmark-folders", bookmarkFoldersHandlers.CreateFolder)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "bookmarks.manage")).Patch("/me/bookmark-folders/{id}", bookmarkFoldersHandlers.UpdateFolder)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "bookmarks.manage")).Delete("/me/bookmark-folders/{id}", bookmarkFoldersHandlers.DeleteFolder)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/analytics", usersHandlers.GetMyAnalytics)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/analytics/content", usersHandlers.GetMyContentAnalytics)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/analytics/followers", usersHandlers.GetMyFollowerGrowth)
@@ -5184,6 +5212,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 			// Section 86 — Community Calendar (ADR-094)
 			r.With(features.Gate(featureChecker, "calendar.enabled")).Group(func(r chi.Router) {
+				r.Get("/calendar/categories", calendarHandlers.HandleCategories)
 				r.Get("/calendar", calendarHandlers.HandleList)
 				r.Get("/calendar/{id}", calendarHandlers.HandleGet)
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).
@@ -5196,10 +5225,17 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Delete("/calendar/subscribe", calendarHandlers.HandleUnsubscribe)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "calendar.submit")).
 					Post("/calendar", calendarHandlers.HandleSubmit)
+				// BUG-003: /me/calendar/saved — user dashboard saved entries (§86 Integration).
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).
+					Get("/me/calendar/saved", calendarHandlers.HandleListSaved)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "calendar.review")).
 					Get("/admin/calendar", calendarHandlers.HandleAdminList)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "calendar.review")).
 					Patch("/admin/calendar/{id}", calendarHandlers.HandleAdminUpdate)
+			// BUG-001/BUG-008: soft-delete admin endpoint gated by calendar.manage (admin+).
+			// Per Rule 11, user content is soft-deleted, never hard-deleted.
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "calendar.manage")).
+					Delete("/admin/calendar/{id}", calendarHandlers.HandleAdminDelete)
 			})
 
 			// Section 87 — Japa Stage Progress Profiles (ADR-095)

@@ -607,6 +607,7 @@ func HandleIntelExtract(ctx context.Context, t *asynq.Task) error {
 			Confidence:        []byte(`{}`),
 			Evidence:          []byte(`{}`),
 			ConfidenceOverall: 0,
+			GeoSpaceIds:       []pgtype.UUID{},
 		})
 		if cErr != nil {
 			return fmt.Errorf("task:intel:extract: create review record: %w", cErr)
@@ -638,6 +639,7 @@ func HandleIntelExtract(ctx context.Context, t *asynq.Task) error {
 				Confidence:        []byte(`{}`),
 				Evidence:          []byte(`{}`),
 				ConfidenceOverall: 0,
+				GeoSpaceIds:       []pgtype.UUID{},
 			})
 			if cErr != nil {
 				return fmt.Errorf("task:intel:extract: create review record: %w", cErr)
@@ -666,6 +668,7 @@ func HandleIntelExtract(ctx context.Context, t *asynq.Task) error {
 		Confidence:        []byte(`{}`), // per-field confidence is inside Extracted
 		Evidence:          []byte(`{}`), // per-field evidence is inside Extracted
 		ConfidenceOverall: result.ConfidenceOverall,
+		GeoSpaceIds:       []pgtype.UUID{},
 	})
 	if err != nil {
 		return fmt.Errorf("task:intel:extract: create record: %w", err)

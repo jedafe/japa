@@ -6,8 +6,8 @@
 -- by tenant_id to guarantee data isolation across tenants.
 
 -- name: CreateIntelSource :one
-INSERT INTO intel_sources (tenant_id, name, domain, source_url, category, source_type, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, enabled)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+INSERT INTO intel_sources (tenant_id, name, domain, source_url, category, source_type, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, enabled, persona_id)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, sqlc.narg(persona_id))
 RETURNING *;
 
 -- name: GetIntelSource :one
@@ -67,6 +67,7 @@ SET name = $3,
     attribution_required = $13,
     usage_restriction = $14,
     enabled = $15,
+    persona_id = COALESCE(sqlc.narg(persona_id), persona_id),
     updated_at = now()
 WHERE tenant_id = $1 AND id = $2
 RETURNING *;
@@ -136,3 +137,10 @@ SELECT * FROM intel_review_log WHERE tenant_id = $1 AND intel_record_id = $2 ORD
 
 -- name: DeleteIntelReviewLogByActor :exec
 DELETE FROM intel_review_log WHERE tenant_id = $1 AND actor_user_id = $2;
+
+-- name: GetIntelPersonaUserID :one
+-- Resolves the backing user_id for an AI persona attached to an intel source.
+-- Used by promoters to stamp contents.author_id with the persona's bot user.
+SELECT ap.user_id
+FROM ai_personas ap
+WHERE ap.tenant_id = $1 AND ap.id = $2;

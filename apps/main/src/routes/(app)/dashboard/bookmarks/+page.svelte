@@ -12,6 +12,7 @@
 	import { Bookmark as BookmarkIcon, ExternalLink, FolderPlus, Trash2, Loader2, Folder, Pencil, Check, X } from 'lucide-svelte';
 	import type { Bookmark, BookmarkFolder } from '$lib/types';
 	import { untrack } from 'svelte';
+	import { goto } from '$app/navigation';
 
 	let { data } = $props();
 	let bookmarks = $state<Bookmark[]>(untrack(() => data.bookmarks ?? []));
@@ -23,21 +24,46 @@
 	let deletingFolderId = $state<string | null>(null);
 	let folderError = $state('');
 	let removingBookmarkId = $state<string | null>(null);
+	let loadingBookmarks = $state(false);
 
 	// Rename state
 	let editingFolderId = $state<string | null>(null);
 	let editFolderName = $state('');
 	let renamingFolder = $state(false);
 
+	// Re-fetch bookmarks client-side with the folder_id filter (BL-002).
+	// The server load() only runs on full navigation; switching folders from
+	// the sidebar must call the API directly so the list reflects the filter
+	// without a full page reload. Mirrors the learn app pattern.
+	async function loadBookmarks(folderId: string | null) {
+		loadingBookmarks = true;
+		folderError = '';
+		const path = folderId
+			? `/me/bookmarks?folder_id=${encodeURIComponent(folderId)}`
+			: '/me/bookmarks';
+		const res = await api.get<Bookmark[]>(path);
+		loadingBookmarks = false;
+		if (res.data) {
+			bookmarks = res.data;
+		} else if (res.error) {
+			folderError = res.error.message ?? t('bookmarks.folder_error', 'Failed to load bookmarks');
+		}
+	}
+
 	function selectFolder(id: string | null) {
 		activeFolder = id;
+		// Re-fetch the filtered list immediately so the UI updates.
+		loadBookmarks(id);
+		// Sync the URL via goto so a reload preserves the selected folder.
+		// goto to the same path with a changed query re-runs load(), but the
+		// local bookmarks state is already updated by loadBookmarks above.
 		const url = new URL(window.location.href);
 		if (id) {
 			url.searchParams.set('folder', id);
 		} else {
 			url.searchParams.delete('folder');
 		}
-		window.history.pushState({}, '', url);
+		goto(url.pathname + url.search, { keepFocus: true, noScroll: true, replaceState: false });
 	}
 
 	function entityUrl(b: Bookmark): string {
@@ -249,7 +275,16 @@
 
 		<!-- Bookmark list -->
 		<div>
-			{#if bookmarks.length === 0}
+			{#if loadingBookmarks}
+				<div class="space-y-2">
+					{#each Array(3) as _}
+						<div class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+							<div class="h-5 w-3/4 animate-pulse rounded bg-[var(--color-surface-subtle)]"></div>
+							<div class="mt-2 h-4 w-1/3 animate-pulse rounded bg-[var(--color-surface-subtle)]"></div>
+						</div>
+					{/each}
+				</div>
+			{:else if bookmarks.length === 0}
 				<EmptyState
 					icon={BookmarkIcon}
 					title={t('bookmarks.empty_title', 'No bookmarks yet')}

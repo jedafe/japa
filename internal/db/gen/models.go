@@ -616,6 +616,10 @@ type CalendarEntry struct {
 	CreatedAt          pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
 	DeletedAt          pgtype.Timestamptz `json:"deleted_at"`
+	AiGenerated        bool               `json:"ai_generated"`
+	AiModel            *string            `json:"ai_model"`
+	HitlReviewedBy     pgtype.UUID        `json:"hitl_reviewed_by"`
+	AiGeneratedAt      pgtype.Timestamptz `json:"ai_generated_at"`
 }
 
 type CalendarSafe struct {
@@ -1808,6 +1812,7 @@ type IntelSource struct {
 	CreatedAt           pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
 	TenantID            pgtype.UUID        `json:"tenant_id"`
+	PersonaID           pgtype.UUID        `json:"persona_id"`
 }
 
 type IpBlock struct {

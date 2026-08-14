@@ -150,8 +150,12 @@ func (s *Store) getContentTenantID(ctx context.Context, contentID pgtype.UUID) (
 // getSeriesForContent returns the series_id for a given content_id, or
 // pg.ErrNoRows if the content is not part of any series. Used by the editor
 // load to restore the series selector when editing existing content.
-func (s *Store) getSeriesForContent(ctx context.Context, contentID pgtype.UUID) (pgtype.UUID, error) {
-	return s.read.GetSeriesForContent(ctx, contentID)
+// BUG-009: tenant-scoped to prevent cross-tenant information disclosure.
+func (s *Store) getSeriesForContent(ctx context.Context, contentID, tenantID pgtype.UUID) (pgtype.UUID, error) {
+	return s.read.GetSeriesForContent(ctx, gen.GetSeriesForContentParams{
+		ContentID: contentID,
+		TenantID:  tenantID,
+	})
 }
 
 func (s *Store) reorderSeriesPosts(ctx context.Context, seriesID, contentID pgtype.UUID, position int32) error {

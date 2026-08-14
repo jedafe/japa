@@ -91,7 +91,7 @@ func (q *Queries) GetBookmarkFolder(ctx context.Context, arg GetBookmarkFolderPa
 
 const listBookmarkFoldersByUser = `-- name: ListBookmarkFoldersByUser :many
 SELECT bf.id, bf.tenant_id, bf.user_id, bf.name, bf.created_at, bf.updated_at,
-       COALESCE(bm.cnt, 0) AS bookmark_count
+       bf.position, COALESCE(bm.cnt, 0) AS bookmark_count
 FROM bookmark_folders bf
 LEFT JOIN (
     SELECT folder_id, COUNT(*) AS cnt
@@ -115,6 +115,7 @@ type ListBookmarkFoldersByUserRow struct {
 	Name          string             `json:"name"`
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+	Position      int32              `json:"position"`
 	BookmarkCount int64              `json:"bookmark_count"`
 }
 
@@ -134,6 +135,7 @@ func (q *Queries) ListBookmarkFoldersByUser(ctx context.Context, arg ListBookmar
 			&i.Name,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.Position,
 			&i.BookmarkCount,
 		); err != nil {
 			return nil, err

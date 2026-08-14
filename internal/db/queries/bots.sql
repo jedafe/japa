@@ -24,6 +24,11 @@ ORDER BY name ASC
 LIMIT @page_size
 OFFSET @page_offset;
 
+-- name: CountKnownBots :one
+SELECT count(*) FROM known_bots
+WHERE tenant_id = $1
+  AND (@bot_type = '' OR bot_type = @bot_type);
+
 -- name: UpdateKnownBot :one
 UPDATE known_bots
 SET name = $3,

@@ -231,6 +231,7 @@ func (p *CostOfLivingPromoter) costOfLivingUpdatePath(ctx context.Context, recor
 	note := "automatic re-crawl update"
 	reviewLogParams := gen.CreateIntelReviewLogParams{
 		IntelRecordID: record.ID,
+		ActorUserID:   p.authorID,
 		Action:        "auto_update",
 		FieldChanges:  changesJSON,
 		Note:          &note,

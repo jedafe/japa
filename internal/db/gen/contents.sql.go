@@ -2527,7 +2527,7 @@ func (q *Queries) ListPublishedContentForDigest(ctx context.Context, tenantID pg
 }
 
 const listPublishedContentForLLMsTxt = `-- name: ListPublishedContentForLLMsTxt :many
-SELECT title, slug
+SELECT title, slug, content_type
 FROM contents
 WHERE tenant_id = $1 AND status = 'published' AND visibility = 'public'
 ORDER BY created_at DESC
@@ -2535,8 +2535,9 @@ LIMIT 1000
 `
 
 type ListPublishedContentForLLMsTxtRow struct {
-	Title string `json:"title"`
-	Slug  string `json:"slug"`
+	Title       string `json:"title"`
+	Slug        string `json:"slug"`
+	ContentType string `json:"content_type"`
 }
 
 func (q *Queries) ListPublishedContentForLLMsTxt(ctx context.Context, tenantID pgtype.UUID) ([]ListPublishedContentForLLMsTxtRow, error) {
@@ -2548,7 +2549,7 @@ func (q *Queries) ListPublishedContentForLLMsTxt(ctx context.Context, tenantID p
 	var items []ListPublishedContentForLLMsTxtRow
 	for rows.Next() {
 		var i ListPublishedContentForLLMsTxtRow
-		if err := rows.Scan(&i.Title, &i.Slug); err != nil {
+		if err := rows.Scan(&i.Title, &i.Slug, &i.ContentType); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

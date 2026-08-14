@@ -343,6 +343,7 @@ export interface Bookmark {
 export interface BookmarkFolder {
 	id: string;
 	name: string;
+	position?: number;
 	bookmark_count?: number;
 	created_at: string;
 	updated_at?: string;
@@ -2718,6 +2719,11 @@ export interface CalendarEntry {
 	submitted_by?: string;
 	reviewed_by?: string;
 	reviewed_at?: string;
+	// ADR-088 universal AI content generation columns.
+	ai_generated?: boolean;
+	ai_model?: string;
+	hitl_reviewed_by?: string;
+	ai_generated_at?: string;
 	created_at: string;
 	updated_at?: string;
 }
@@ -3313,6 +3319,17 @@ export interface RadarItem {
 export interface RadarCountryCount {
 	country: string;
 	count: number;
+}
+
+/**
+ * Response body for GET /intel/radar/counts (unwrapped from the {data: ...}
+ * envelope by the API client). Ref: internal/intelligence/handlers/radar.go
+ * HandleRadarCounts — {total_new, by_type, by_country}.
+ */
+export interface RadarCountsResponse {
+	total_new: number;
+	by_type: Record<string, number>;
+	by_country: Record<string, number>;
 }
 
 /** Meta for GET /intel/radar/counts. */

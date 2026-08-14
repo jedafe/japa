@@ -14,15 +14,14 @@
 	// Auth is required to submit. The app layout exposes `user` in page.data.
 	const authed = $derived(!!page.data.user);
 
-	// Schema-defined category enum (Rule 16 — no hardcoded data arrays).
-	const categories: { value: CalendarCategory; label: string }[] = [
-		{ value: 'visa_window', label: t('calendar.cat_visa_window', 'Visa window') },
-		{ value: 'embassy_closure', label: t('calendar.cat_embassy_closure', 'Embassy closure') },
-		{ value: 'application_deadline', label: t('calendar.cat_application_deadline', 'Application deadline') },
-		{ value: 'exam_window', label: t('calendar.cat_exam_window', 'Exam window') },
-		{ value: 'immigration_office', label: t('calendar.cat_immigration_office', 'Immigration office') },
-		{ value: 'other', label: t('calendar.cat_other', 'Other') }
-	];
+	// BUG-009: categories come from the API (calendar.categories system_setting),
+	// not a hardcoded array (Rule 16). The server load fetches GET /calendar/categories.
+	const categories: { value: CalendarCategory; label: string }[] = $derived(
+		(data.categories ?? []).map((c: { value: string; label: string }) => ({
+			value: c.value as CalendarCategory,
+			label: c.label
+		}))
+	);
 
 	let title = $state('');
 	let description = $state('');
@@ -67,8 +66,13 @@
 			return;
 		}
 		// source_url is REQUIRED and must be a verifiable official source.
+		// BUG-011: validate scheme is http/https to prevent javascript: XSS.
 		try {
-			new URL(sourceUrl.trim());
+			const parsed = new URL(sourceUrl.trim());
+			if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+				errorMsg = t('calendar.new.error_invalid_url', 'Please enter a valid source URL.');
+				return;
+			}
 		} catch {
 			errorMsg = t('calendar.new.error_invalid_url', 'Please enter a valid source URL.');
 			return;
@@ -137,6 +141,34 @@
 				</p>
 			{/if}
 
+			<!-- BUG-004: Destination / Origin FIRST per geo-aware tool pattern
+			     (§86 Geo Awareness — destination country is the primary data
+			     axis and must be the first UI input). -->
+			<div class="grid gap-4 sm:grid-cols-2">
+				<div>
+					<label for="destination_country" class="mb-1.5 block text-sm font-medium text-[var(--color-text)]">
+						{t('calendar.new.label_destination', 'Destination country')} <span class="text-red-500" aria-hidden="true">*</span>
+					</label>
+					<select id="destination_country" bind:value={destinationSpaceId} class={inputClass}>
+						<option value="">{t('calendar.new.placeholder_destination', 'Select a country')}</option>
+						{#each data.countries as country (country.id)}
+							<option value={country.id}>{country.name}</option>
+						{/each}
+					</select>
+				</div>
+				<div>
+					<label for="origin_country" class="mb-1.5 block text-sm font-medium text-[var(--color-text)]">
+						{t('calendar.new.label_origin', 'Origin country (optional)')}
+					</label>
+					<select id="origin_country" bind:value={originSpaceId} class={inputClass}>
+						<option value="">{t('calendar.new.placeholder_origin', 'Leave blank for all origins')}</option>
+						{#each data.countries as country (country.id)}
+							<option value={country.id}>{country.name}</option>
+						{/each}
+					</select>
+				</div>
+			</div>
+
 			<!-- Title -->
 			<div>
 				<label for="title" class="mb-1.5 block text-sm font-medium text-[var(--color-text)]">
@@ -176,32 +208,6 @@
 					placeholder={t('calendar.new.placeholder_description', 'Add details about this event…')}
 					class={inputClass}
 				></textarea>
-			</div>
-
-			<!-- Destination / Origin -->
-			<div class="grid gap-4 sm:grid-cols-2">
-				<div>
-					<label for="destination_country" class="mb-1.5 block text-sm font-medium text-[var(--color-text)]">
-						{t('calendar.new.label_destination', 'Destination country')} <span class="text-red-500" aria-hidden="true">*</span>
-					</label>
-					<select id="destination_country" bind:value={destinationSpaceId} class={inputClass}>
-						<option value="">{t('calendar.new.placeholder_destination', 'Select a country')}</option>
-						{#each data.countries as country (country.id)}
-							<option value={country.id}>{country.name}</option>
-						{/each}
-					</select>
-				</div>
-				<div>
-					<label for="origin_country" class="mb-1.5 block text-sm font-medium text-[var(--color-text)]">
-						{t('calendar.new.label_origin', 'Origin country (optional)')}
-					</label>
-					<select id="origin_country" bind:value={originSpaceId} class={inputClass}>
-						<option value="">{t('calendar.new.placeholder_origin', 'Leave blank for all origins')}</option>
-						{#each data.countries as country (country.id)}
-							<option value={country.id}>{country.name}</option>
-						{/each}
-					</select>
-				</div>
 			</div>
 
 			<!-- Dates -->

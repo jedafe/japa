@@ -156,6 +156,53 @@ func (s *Service) ListKnownBots(ctx context.Context, tenantID pgtype.UUID, botTy
 	return result, nil
 }
 
+// ListKnownBotsResult holds the paginated list response with total count.
+type ListKnownBotsResult struct {
+	Data       []BotResponse `json:"data"`
+	Total      int64         `json:"total"`
+	TotalPages int           `json:"total_pages"`
+}
+
+// ListKnownBotsWithCount returns bots for the tenant with pagination metadata
+// (total count and total_pages). The frontend DataTable uses these for
+// server-side pagination.
+// Ref: japaconnect-engineering/sections/43-bot-crawler-management.md
+func (s *Service) ListKnownBotsWithCount(ctx context.Context, tenantID pgtype.UUID, botType string, pageSize, offset int32) (ListKnownBotsResult, error) {
+	bots, err := s.store.listKnownBots(ctx, tenantID, botType, pageSize, offset)
+	if err != nil {
+		return ListKnownBotsResult{}, fmt.Errorf("list known bots: %w", err)
+	}
+
+	total, err := s.store.countKnownBots(ctx, tenantID, botType)
+	if err != nil {
+		return ListKnownBotsResult{}, fmt.Errorf("count known bots: %w", err)
+	}
+
+	result := make([]BotResponse, len(bots))
+	for i, b := range bots {
+		result[i] = botToResponse(b)
+	}
+
+	ps := int(pageSize)
+	if ps <= 0 {
+		ps = DefaultPageSize
+	}
+
+	totalPages := int(total) / ps
+	if int(total)%ps != 0 {
+		totalPages++
+	}
+	if totalPages == 0 && len(result) > 0 {
+		totalPages = 1
+	}
+
+	return ListKnownBotsResult{
+		Data:       result,
+		Total:      total,
+		TotalPages: totalPages,
+	}, nil
+}
+
 // UpdateKnownBot modifies an existing bot entry.
 func (s *Service) UpdateKnownBot(ctx context.Context, tenantID, botID pgtype.UUID, input UpdateKnownBotInput) (BotResponse, error) {
 	bot, err := s.store.updateKnownBot(ctx, gen.UpdateKnownBotParams{

@@ -208,6 +208,27 @@ func (h *Handlers) dispatchMentionNotifications(
 	}
 }
 
+// verifyBlogPostContent fetches the content row for the given ID and
+// verifies it is a blog_post (content_type). Returns an error if the
+// content is missing or is not a blog post. Used by ApproveReview,
+// RejectReview, and FeaturePost to prevent the blog-specific endpoints
+// from acting on non-blog content that shares the content_reviews or
+// content_featured tables (BUG-002/BUG-004).
+func (h *Handlers) verifyBlogPostContent(ctx context.Context, contentID, tenantID pgtype.UUID) error {
+	existing, err := h.content.GetContent(ctx, contentID, tenantID)
+	if err != nil {
+		return err
+	}
+	if existing.ContentType != contentTypeBlogPost {
+		return errWrongContentType
+	}
+	return nil
+}
+
+// errWrongContentType is returned when a blog-specific endpoint receives
+// a content_id that does not belong to a blog_post.
+var errWrongContentType = errors.New("not a blog post")
+
 // enqueueRSSRegenerate enqueues the rss:regenerate task for a tenant (C6).
 // Fire-and-forget: errors are logged but never propagated (Rule 8).
 func (h *Handlers) enqueueRSSRegenerate(tenantID pgtype.UUID) {
@@ -744,13 +765,20 @@ func (h *Handlers) GetContentSeries(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
 	contentID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_content_id", "Invalid content ID")
 		return
 	}
 
-	seriesID, err := h.Service.GetSeriesForContent(r.Context(), contentID)
+	// BUG-009: pass tenantID so the query is tenant-scoped, preventing
+	// cross-tenant information disclosure via series membership probing.
+	seriesID, err := h.Service.GetSeriesForContent(r.Context(), contentID, tenantID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"series_id": nil}})
@@ -1017,6 +1045,23 @@ func (h *Handlers) ApproveReview(w http.ResponseWriter, r *http.Request) {
 	// Body is optional — approve can be called with empty body.
 	_ = json.NewDecoder(r.Body).Decode(&input)
 
+	// BUG-002: verify the review belongs to a blog_post before acting.
+	// content_reviews is shared by ads, persona actions, and studio; the
+	// blog review-queue must not publish non-blog content.
+	existingReview, err := h.Service.GetReview(r.Context(), id, tenantID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	if vErr := h.verifyBlogPostContent(r.Context(), existingReview.ContentID, tenantID); vErr != nil {
+		if errors.Is(vErr, errWrongContentType) {
+			writeError(w, http.StatusBadRequest, "wrong_content_type", "Not a blog post")
+			return
+		}
+		handleServiceError(w, vErr)
+		return
+	}
+
 	review, err := h.Service.UpdateReviewStatus(r.Context(), id, tenantID, user.UserID, ReviewStatusApproved, input.Feedback)
 	if err != nil {
 		handleServiceError(w, err)
@@ -1064,6 +1109,21 @@ func (h *Handlers) RejectReview(w http.ResponseWriter, r *http.Request) {
 	feedback := input.Feedback
 	if feedback == "" {
 		feedback = input.Reason
+	}
+
+	// BUG-002: verify the review belongs to a blog_post before acting.
+	existingReview, err := h.Service.GetReview(r.Context(), id, tenantID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	if vErr := h.verifyBlogPostContent(r.Context(), existingReview.ContentID, tenantID); vErr != nil {
+		if errors.Is(vErr, errWrongContentType) {
+			writeError(w, http.StatusBadRequest, "wrong_content_type", "Not a blog post")
+			return
+		}
+		handleServiceError(w, vErr)
+		return
 	}
 
 	review, err := h.Service.UpdateReviewStatus(r.Context(), id, tenantID, user.UserID, ReviewStatusRejected, feedback)
@@ -1115,6 +1175,19 @@ func (h *Handlers) FeaturePost(w http.ResponseWriter, r *http.Request) {
 	var contentID pgtype.UUID
 	if err := contentID.Scan(input.ContentID); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_content_id", "Invalid content_id")
+		return
+	}
+
+	// BUG-004: verify the content is a blog_post before featuring it.
+	// content_featured is a generic junction; without this check an admin
+	// with blog.feature could feature forum threads, pages, or any other
+	// content type, which would then appear in the blog featured tab.
+	if vErr := h.verifyBlogPostContent(r.Context(), contentID, tenantID); vErr != nil {
+		if errors.Is(vErr, errWrongContentType) {
+			writeError(w, http.StatusBadRequest, "wrong_content_type", "Not a blog post")
+			return
+		}
+		handleServiceError(w, vErr)
 		return
 	}
 
@@ -1500,13 +1573,13 @@ func (h *Handlers) ListPosts(w http.ResponseWriter, r *http.Request) {
 
 	posts, err := h.Service.ListPublishedBlogPosts(r.Context(), tenantID, limit, offset)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list blog posts")
+		handleServiceError(w, err)
 		return
 	}
 
 	total, err := h.Service.CountPublishedBlogPosts(r.Context(), tenantID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to count blog posts")
+		handleServiceError(w, err)
 		return
 	}
 

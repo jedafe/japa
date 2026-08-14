@@ -84,6 +84,7 @@ reindex
 meilisearch
 seed
 bin/japa-api
+/japa-api
 
 # Agent/tool artifacts — never commit
 .playwright-cli/
