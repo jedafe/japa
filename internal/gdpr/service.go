@@ -1064,6 +1064,18 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 			return fmt.Errorf("deleting ticket comments: %w", err)
 		}
 
+		// GDPR-001: anonymize comments authored by the erased user. The
+		// comments.author_user_id FK has ON DELETE SET NULL so HardDeleteUser
+		// will null it, but the comment body (TipTap JSON, potentially
+		// containing PII and @mentions) must be cleared before the user is
+		// hard-deleted. Ref: Section 15, ADR-014.
+		if err := q.AnonymizeCommentsByAuthor(ctx, gen.AnonymizeCommentsByAuthorParams{
+			UserID:   userID,
+			TenantID: tenantID,
+		}); err != nil {
+			return fmt.Errorf("anonymizing comments: %w", err)
+		}
+
 		// BUG-024: DM erasure — anonymize DM content and reassign participant
 		// references to the placeholder so the conversation survives for the
 		// other participant. Without these steps, the CASCADE on users(id)

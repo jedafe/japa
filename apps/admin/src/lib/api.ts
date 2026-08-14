@@ -1897,6 +1897,12 @@ export const communityLocatorAdminApi = {
 		api<unknown>(`/admin/community-locator/${id}/verify`, { method: 'PATCH', body: {} }),
 	resolveClaim: (id: string, claimId: string, body: Record<string, unknown>) =>
 		api<unknown>(`/admin/community-locator/${id}/claim/${claimId}`, { method: 'PATCH', body }),
+	generate: (body: Record<string, unknown>) =>
+		api<unknown>(`/admin/community-locator/generate`, { method: 'POST', body }),
+	archive: (id: string) =>
+		api<unknown>(`/admin/community-locator/${id}/archive`, { method: 'PATCH', body: {} }),
+	delete: (id: string) =>
+		api<unknown>(`/admin/community-locator/${id}`, { method: 'DELETE' }),
 };
 
 export const digestAdminApi = {

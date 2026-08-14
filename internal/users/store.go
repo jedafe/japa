@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -388,9 +389,15 @@ func (s *Store) insertPasswordHistory(ctx context.Context, tenantID, userID pgty
 // Implements auth.PasswordHistoryReader so ChangePassword can reuse the auth
 // package's CheckPasswordHistory helper.
 func (s *Store) GetRecentPasswordHashes(ctx context.Context, userID pgtype.UUID, limit int) ([]string, error) {
+	if limit < 0 {
+		limit = 0
+	} else if limit > math.MaxInt32 {
+		limit = math.MaxInt32
+	}
+
 	return s.read.GetRecentPasswordHashes(ctx, gen.GetRecentPasswordHashesParams{
 		UserID:    userID,
-		HashLimit: int32(limit),
+		HashLimit: int32(limit), // #nosec G115 -- bounded by the MaxInt32 check above
 	})
 }
 

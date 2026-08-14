@@ -190,16 +190,17 @@ func (q *Queries) CreateContentThreadLink(ctx context.Context, arg CreateContent
 
 const deleteCommentVote = `-- name: DeleteCommentVote :exec
 DELETE FROM comment_votes
-WHERE comment_id = $1 AND user_id = $2
+WHERE comment_id = $1 AND user_id = $2 AND tenant_id = $3
 `
 
 type DeleteCommentVoteParams struct {
 	CommentID pgtype.UUID `json:"comment_id"`
 	UserID    pgtype.UUID `json:"user_id"`
+	TenantID  pgtype.UUID `json:"tenant_id"`
 }
 
 func (q *Queries) DeleteCommentVote(ctx context.Context, arg DeleteCommentVoteParams) error {
-	_, err := q.db.Exec(ctx, deleteCommentVote, arg.CommentID, arg.UserID)
+	_, err := q.db.Exec(ctx, deleteCommentVote, arg.CommentID, arg.UserID, arg.TenantID)
 	return err
 }
 
@@ -931,14 +932,19 @@ UPDATE comments
 SET vote_score = COALESCE((
     SELECT SUM(cv.value)::int
     FROM comment_votes cv
-    WHERE cv.comment_id = $1
+    WHERE cv.comment_id = $1 AND cv.tenant_id = $2
 ), 0),
 updated_at = now()
-WHERE id = $1
+WHERE id = $1 AND tenant_id = $2
 `
 
-func (q *Queries) RecalculateCommentVoteScore(ctx context.Context, commentID pgtype.UUID) error {
-	_, err := q.db.Exec(ctx, recalculateCommentVoteScore, commentID)
+type RecalculateCommentVoteScoreParams struct {
+	CommentID pgtype.UUID `json:"comment_id"`
+	TenantID  pgtype.UUID `json:"tenant_id"`
+}
+
+func (q *Queries) RecalculateCommentVoteScore(ctx context.Context, arg RecalculateCommentVoteScoreParams) error {
+	_, err := q.db.Exec(ctx, recalculateCommentVoteScore, arg.CommentID, arg.TenantID)
 	return err
 }
 
@@ -1048,8 +1054,60 @@ type UpdateCommentParams struct {
 	AuthorUserID pgtype.UUID `json:"author_user_id"`
 }
 
+// Section 49 — edit after the edit window: marks is_edited = true and stamps
+// edited_at. Used when comments.edit_window_minutes has elapsed since creation.
 func (q *Queries) UpdateComment(ctx context.Context, arg UpdateCommentParams) (Comment, error) {
 	row := q.db.QueryRow(ctx, updateComment,
+		arg.Body,
+		arg.ID,
+		arg.TenantID,
+		arg.AuthorUserID,
+	)
+	var i Comment
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.ContentID,
+		&i.AuthorUserID,
+		&i.ParentID,
+		&i.Body,
+		&i.Depth,
+		&i.VoteScore,
+		&i.IsPinned,
+		&i.IsEdited,
+		&i.EditedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DeletedAt,
+		&i.IsAnonymous,
+		&i.ReplyCount,
+		&i.AuthorProfileID,
+		&i.Status,
+		&i.RemovedBy,
+		&i.RemovedReason,
+	)
+	return i, err
+}
+
+const updateCommentUnmarked = `-- name: UpdateCommentUnmarked :one
+UPDATE comments
+SET body = $1, updated_at = now()
+WHERE id = $2 AND tenant_id = $3 AND author_user_id = $4 AND deleted_at IS NULL
+RETURNING id, tenant_id, content_id, author_user_id, parent_id, body, depth, vote_score, is_pinned, is_edited, edited_at, created_at, updated_at, deleted_at, is_anonymous, reply_count, author_profile_id, status, removed_by, removed_reason
+`
+
+type UpdateCommentUnmarkedParams struct {
+	Body         []byte      `json:"body"`
+	ID           pgtype.UUID `json:"id"`
+	TenantID     pgtype.UUID `json:"tenant_id"`
+	AuthorUserID pgtype.UUID `json:"author_user_id"`
+}
+
+// Section 49 — edit within the edit window (grace period): does NOT set
+// is_edited so the comment shows no "edited" indicator. Used when the edit
+// occurs within comments.edit_window_minutes of creation.
+func (q *Queries) UpdateCommentUnmarked(ctx context.Context, arg UpdateCommentUnmarkedParams) (Comment, error) {
+	row := q.db.QueryRow(ctx, updateCommentUnmarked,
 		arg.Body,
 		arg.ID,
 		arg.TenantID,

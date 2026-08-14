@@ -91,10 +91,13 @@ func (h *OAuthHandlers) HandleInitiate(w http.ResponseWriter, r *http.Request) {
 		HttpOnly: true,
 		Secure:   h.SecureCookies,
 		SameSite: http.SameSiteLaxMode,
-	})
+	}) // #nosec G124 -- Secure is set via h.SecureCookies (true in production); gosec can't verify the struct field statically
 
 	// Store the requested redirect path so the callback can forward the user
 	// to the right frontend page after success. Defaults to "/".
+	// The path is validated by safeRedirectPath to prevent open-redirect
+	// attacks (CWE-601): an attacker could set redirect=//evil.com and
+	// send the victim to an external host after OAuth login.
 	redirect := r.URL.Query().Get("redirect")
 	if redirect == "" {
 		var body struct {
@@ -106,9 +109,7 @@ func (h *OAuthHandlers) HandleInitiate(w http.ResponseWriter, r *http.Request) {
 			redirect = body.Redirect
 		}
 	}
-	if redirect == "" {
-		redirect = "/"
-	}
+	redirect = safeRedirectPath(redirect)
 
 	http.SetCookie(w, &http.Cookie{
 		Name:     oauthRedirectCookie,
@@ -119,7 +120,7 @@ func (h *OAuthHandlers) HandleInitiate(w http.ResponseWriter, r *http.Request) {
 		HttpOnly: true,
 		Secure:   h.SecureCookies,
 		SameSite: http.SameSiteLaxMode,
-	})
+	}) // #nosec G124 -- Secure is set via h.SecureCookies (true in production); gosec can't verify the struct field statically
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]string{"auth_url": provider.AuthURL(state)},
@@ -155,9 +156,11 @@ func (h *OAuthHandlers) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Clear the state + redirect cookies (read redirect before clearing).
+	// Re-validate the path even though it was validated at initiation —
+	// the cookie could have been tampered with between the two requests.
 	redirectPath := "/"
 	if rc, err := r.Cookie(oauthRedirectCookie); err == nil && rc.Value != "" {
-		redirectPath = rc.Value
+		redirectPath = safeRedirectPath(rc.Value)
 	}
 	h.clearOAuthCookies(w)
 
@@ -377,7 +380,7 @@ func (h *OAuthHandlers) issueSessionAndRedirect(w http.ResponseWriter, r *http.R
 		HttpOnly: true,
 		Secure:   h.SecureCookies,
 		SameSite: http.SameSiteLaxMode,
-	})
+	}) // #nosec G124 -- Secure is set via h.SecureCookies (true in production); gosec can't verify the struct field statically
 
 	// jc_refresh: refresh token, scoped to /api/v1 so /me/sessions can identify
 	// the current session. HttpOnly + Secure + SameSite=Strict mitigates CSRF/XSS.
@@ -390,19 +393,22 @@ func (h *OAuthHandlers) issueSessionAndRedirect(w http.ResponseWriter, r *http.R
 		HttpOnly: true,
 		Secure:   h.SecureCookies,
 		SameSite: http.SameSiteStrictMode,
-	})
+	}) // #nosec G124 -- Secure is set via h.SecureCookies (true in production); gosec can't verify the struct field statically
 
 	h.redirectToFrontend(w, r, redirectPath)
 }
 
-// redirectToFrontend sends a 302 to the frontend base + path.
+// redirectToFrontend sends a 302 to the frontend base + path. The path
+// is validated by safeRedirectPath at both initiation (when stored in the
+// cookie) and callback (when read back), ensuring it is a relative site
+// path and not an open-redirect vector.
 func (h *OAuthHandlers) redirectToFrontend(w http.ResponseWriter, r *http.Request, path string) {
 	base := strings.TrimRight(h.FrontendBaseURL, "/")
 	if base == "" {
 		base = "/"
 	}
 	target := base + path
-	http.Redirect(w, r, target, http.StatusFound)
+	http.Redirect(w, r, target, http.StatusFound) // #nosec G710 -- path is validated by safeRedirectPath at both initiation and callback
 }
 
 // redirectOAuthError redirects to the frontend login page with an error code.
@@ -427,11 +433,36 @@ func (h *OAuthHandlers) clearOAuthCookies(w http.ResponseWriter) {
 			HttpOnly: true,
 			Secure:   h.SecureCookies,
 			SameSite: http.SameSiteLaxMode,
-		})
+		}) // #nosec G124 -- Secure is set via h.SecureCookies (true in production); gosec can't verify the struct field statically
 	}
 }
 
 // RequireAuthRoute wraps RequireAuth for convenience in route registration.
 func RequireAuthRoute(kr *KeyRotation, vkClient valkeycompat.Cmdable) func(http.Handler) http.Handler {
 	return RequireAuth(kr, vkClient)
+}
+
+// safeRedirectPath validates that a user-supplied redirect path is safe to
+// use in a post-OAuth redirect. It must be a relative site path: start with
+// a single "/", not "//" (protocol-relative URL), and not be an absolute URL
+// (scheme://). This prevents open-redirect attacks (CWE-601) where an
+// attacker sets redirect=//evil.com and the victim is sent to evil.com after
+// a successful OAuth login.
+func safeRedirectPath(path string) string {
+	if path == "" {
+		return "/"
+	}
+
+	// Must start with "/" and not "//" (protocol-relative).
+	if !strings.HasPrefix(path, "/") || strings.HasPrefix(path, "//") {
+		return "/"
+	}
+
+	// Reject absolute URLs (scheme://...) — these would be redirected to
+	// an external host.
+	if strings.Contains(path, "://") {
+		return "/"
+	}
+
+	return path
 }

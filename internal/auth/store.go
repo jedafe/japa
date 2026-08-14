@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"fmt"
+	"math"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db"
@@ -135,9 +136,15 @@ func (s *DBStore) MarkEmailVerified(ctx context.Context, userID pgtype.UUID) err
 // GetRecentPasswordHashes returns the most recent N password hashes for a user,
 // ordered by creation time descending (newest first).
 func (s *DBStore) GetRecentPasswordHashes(ctx context.Context, userID pgtype.UUID, limit int) ([]string, error) {
+	if limit < 0 {
+		limit = 0
+	} else if limit > math.MaxInt32 {
+		limit = math.MaxInt32
+	}
+
 	rows, err := s.read.GetRecentPasswordHashes(ctx, gen.GetRecentPasswordHashesParams{
 		UserID:    userID,
-		HashLimit: int32(limit),
+		HashLimit: int32(limit), // #nosec G115 -- bounded by the MaxInt32 check above
 	})
 	if err != nil {
 		return nil, fmt.Errorf("querying password history: %w", err)

@@ -162,7 +162,7 @@ func (p *VisaPromoter) visaCreatePath(ctx context.Context, record gen.IntelRecor
 		}
 	}
 	if !destinationSpaceID.Valid {
-		return PromoteResult{Action: ActionReview}, fmt.Errorf(
+		return PromoteResult{}, fmt.Errorf(
 			"promoter: visa route requires a destination country space but none resolved for %q — routing to review",
 			countryCode,
 		)

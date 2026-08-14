@@ -209,6 +209,69 @@ func (s *Service) DispatchCommentNotifications(ctx context.Context, tenantID pgt
 	}
 }
 
+// DispatchMentionNotifications fires only @mention notifications for a comment
+// edit (BL-006). Unlike DispatchCommentNotifications, this skips the
+// content.comment and comment.reply notifications which are "new comment"
+// events and should not fire on edit. The notification batch system
+// deduplicates by (recipient, type, subject), so newly added mentions on edit
+// are dispatched while pre-existing mentions are suppressed.
+func (s *Service) DispatchMentionNotifications(ctx context.Context, tenantID pgtype.UUID, comment gen.Comment, dispatcher NotificationDispatcher) {
+	if dispatcher == nil {
+		return
+	}
+
+	mentionedUsers, err := mentions.ExtractMentions(comment.Body)
+	if err != nil {
+		return
+	}
+
+	if s.mentionCheckers != nil {
+		content, err := s.read.GetContentByID(ctx, gen.GetContentByIDParams{
+			ID:       comment.ContentID,
+			TenantID: tenantID,
+		})
+		if err != nil {
+			slog.Warn("comments: failed to fetch content for mention filtering",
+				"content_id", comment.ContentID.String(), "error", err)
+		} else {
+			isPrivateSpace := false
+			if content.SpaceID.Valid {
+				space, err := s.read.GetSpaceByID(ctx, gen.GetSpaceByIDParams{
+					ID:       content.SpaceID,
+					TenantID: tenantID,
+				})
+				if err == nil && space.Visibility != "public" {
+					isPrivateSpace = true
+				}
+			}
+
+			mentionedUsers, err = mentions.FilterMentions(
+				ctx, mentionedUsers, tenantID, comment.AuthorUserID, content.SpaceID, isPrivateSpace,
+				s.mentionCheckers, s.mentionCheckers, s.mentionCheckers,
+			)
+			if err != nil {
+				slog.Warn("comments: FilterMentions returned unexpected error",
+					"comment_id", comment.ID.String(), "error", err)
+			}
+		}
+	}
+
+	for _, m := range mentionedUsers {
+		if m.EntityType != "user" || !m.ID.Valid || m.ID == comment.AuthorUserID {
+			continue
+		}
+		if err := dispatcher.DispatchNotification(
+			ctx, tenantID, m.ID,
+			"mention.comment", "",
+			comment.AuthorUserID,
+			"comment", comment.ID,
+			"", "", "",
+		); err != nil {
+			slog.Warn("comments: failed to dispatch mention.comment notification on edit", "user_id", m.ID.String(), "error", err)
+		}
+	}
+}
+
 // GetContentSpaceID returns the space_id of the content that a comment is
 // posted on. Returns pgtype.UUID{} with Valid=false if the content has no
 // space. Used by the handler to enforce the space's commenting_perm and
@@ -222,6 +285,49 @@ func (s *Service) GetContentSpaceID(ctx context.Context, tenantID, contentID pgt
 		return pgtype.UUID{}, fmt.Errorf("getting content for space_id: %w", err)
 	}
 	return content.SpaceID, nil
+}
+
+// IsCommentOnDiscussion returns true when the comment's parent content has
+// content_type = 'discussion'. Section 49: comment voting (upvote/downvote)
+// is forum-discussions-only; other content types use emoji reactions (Section
+// 14). Used by VoteComment to enforce the constraint (BL-002).
+func (s *Service) IsCommentOnDiscussion(ctx context.Context, tenantID, commentID pgtype.UUID) (bool, error) {
+	comment, err := s.read.GetComment(ctx, gen.GetCommentParams{
+		ID:       commentID,
+		TenantID: tenantID,
+	})
+	if err != nil {
+		return false, fmt.Errorf("getting comment for content-type check: %w", err)
+	}
+	content, err := s.read.GetContentByID(ctx, gen.GetContentByIDParams{
+		ID:       comment.ContentID,
+		TenantID: tenantID,
+	})
+	if err != nil {
+		return false, fmt.Errorf("getting content for content-type check: %w", err)
+	}
+	return content.ContentType == "discussion", nil
+}
+
+// GetCommentContentAuthorID returns the author_user_id of the parent content
+// for the given comment. Used by PinComment to allow the content author to
+// pin comments on their own content (Section 49, BL-003).
+func (s *Service) GetCommentContentAuthorID(ctx context.Context, tenantID, commentID pgtype.UUID) (pgtype.UUID, error) {
+	comment, err := s.read.GetComment(ctx, gen.GetCommentParams{
+		ID:       commentID,
+		TenantID: tenantID,
+	})
+	if err != nil {
+		return pgtype.UUID{}, fmt.Errorf("getting comment for content author check: %w", err)
+	}
+	content, err := s.read.GetContentByID(ctx, gen.GetContentByIDParams{
+		ID:       comment.ContentID,
+		TenantID: tenantID,
+	})
+	if err != nil {
+		return pgtype.UUID{}, fmt.Errorf("getting content for content author check: %w", err)
+	}
+	return content.AuthorID, nil
 }
 
 func (s *Service) GetComment(ctx context.Context, tenantID, commentID pgtype.UUID) (gen.GetCommentRow, error) {
@@ -359,12 +465,14 @@ func (s *Service) ListRepliesByParent(ctx context.Context, tenantID, parentID pg
 }
 
 // UpdateComment updates a comment's body. Only the author can edit (enforced
-// by the sqlc UpdateComment WHERE clause). The edit is rejected if the
-// `comments.edit_window_minutes` window has elapsed since creation (BL-009).
+// by the sqlc WHERE clause). Section 49 Edit Window: edits are ALWAYS allowed
+// — within the `comments.edit_window_minutes` grace period the edit is
+// "clean" (is_edited not set); after the window the edit still succeeds but
+// is_edited = true and edited_at are stamped (BL-001).
 func (s *Service) UpdateComment(ctx context.Context, tenantID, commentID, userID pgtype.UUID, body []byte) (gen.Comment, error) {
-	// Edit-window enforcement (BL-009 / Section 49). Fetch the comment first
+	// Edit-window threshold (BL-001 / Section 49). Fetch the comment first
 	// to read created_at. GetComment joins users/user_profiles, so it returns
-	// a GetCommentRow; we only need the CreatedAt + AuthorUserID fields.
+	// a GetCommentRow; we only need the CreatedAt field.
 	existing, err := s.read.GetComment(ctx, gen.GetCommentParams{
 		ID:       commentID,
 		TenantID: tenantID,
@@ -373,20 +481,34 @@ func (s *Service) UpdateComment(ctx context.Context, tenantID, commentID, userID
 		return gen.Comment{}, fmt.Errorf("getting comment for edit-window check: %w", err)
 	}
 
-	// Only enforce the window for the author. The sqlc query already rejects
-	// non-authors (no rows), so this guard is belt-and-suspenders.
-	if existing.AuthorUserID.Valid && existing.AuthorUserID.Bytes == userID.Bytes &&
-		existing.CreatedAt.Valid {
+	// Determine whether this edit falls within the grace period. The sqlc
+	// queries already reject non-authors (no rows), so the author check is
+	// belt-and-suspenders.
+	withinWindow := true
+	if existing.CreatedAt.Valid {
 		windowMinutes := defaultEditWindowMinutes
 		if s.settings != nil {
 			windowMinutes = s.settings.GetIntOr(ctx, tenantID, "comments.edit_window_minutes", defaultEditWindowMinutes)
 		}
 		if windowMinutes > 0 {
 			deadline := existing.CreatedAt.Time.Add(time.Duration(windowMinutes) * time.Minute)
-			if time.Now().After(deadline) {
-				return gen.Comment{}, ErrEditWindowExpired
-			}
+			withinWindow = time.Now().Before(deadline)
 		}
+	}
+
+	// Within the window: clean edit (no is_edited mark).
+	// After the window: edit still allowed, but is_edited + edited_at stamped.
+	if withinWindow {
+		comment, err := s.write.UpdateCommentUnmarked(ctx, gen.UpdateCommentUnmarkedParams{
+			ID:           commentID,
+			TenantID:     tenantID,
+			AuthorUserID: userID,
+			Body:         body,
+		})
+		if err != nil {
+			return gen.Comment{}, fmt.Errorf("updating comment: %w", err)
+		}
+		return comment, nil
 	}
 
 	comment, err := s.write.UpdateComment(ctx, gen.UpdateCommentParams{
@@ -500,7 +622,10 @@ func (s *Service) VoteComment(ctx context.Context, tenantID, commentID, userID p
 		return fmt.Errorf("voting on comment: %w", err)
 	}
 
-	if err := s.write.RecalculateCommentVoteScore(ctx, commentID); err != nil {
+	if err := s.write.RecalculateCommentVoteScore(ctx, gen.RecalculateCommentVoteScoreParams{
+		CommentID: commentID,
+		TenantID:  tenantID,
+	}); err != nil {
 		return fmt.Errorf("recalculating comment vote score: %w", err)
 	}
 
@@ -508,15 +633,20 @@ func (s *Service) VoteComment(ctx context.Context, tenantID, commentID, userID p
 }
 
 // RemoveCommentVote removes a user's vote and recalculates the score.
-func (s *Service) RemoveCommentVote(ctx context.Context, commentID, userID pgtype.UUID) error {
+// Tenant-scoped per Guide §4.2/§9 (SEC-001).
+func (s *Service) RemoveCommentVote(ctx context.Context, tenantID, commentID, userID pgtype.UUID) error {
 	if err := s.write.DeleteCommentVote(ctx, gen.DeleteCommentVoteParams{
+		TenantID:  tenantID,
 		CommentID: commentID,
 		UserID:    userID,
 	}); err != nil {
 		return fmt.Errorf("removing comment vote: %w", err)
 	}
 
-	if err := s.write.RecalculateCommentVoteScore(ctx, commentID); err != nil {
+	if err := s.write.RecalculateCommentVoteScore(ctx, gen.RecalculateCommentVoteScoreParams{
+		CommentID: commentID,
+		TenantID:  tenantID,
+	}); err != nil {
 		return fmt.Errorf("recalculating comment vote score: %w", err)
 	}
 

@@ -12,6 +12,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"regexp"
 	"strings"
 	"time"
@@ -124,6 +125,12 @@ var validOrgTypes = map[string]bool{
 // Submit creates a new community organisation submission. The row is
 // created with status='pending' (awaiting admin review). Auth required
 // (community_locator.submit permission checked at route level).
+//
+// Per §101/ADR-109: when the submitter provides an address but no
+// coordinates, the service forward-geocodes the address via Nominatim
+// to populate latitude/longitude. If geocoding fails, the submission
+// proceeds without coordinates (the org is still valid, just without a
+// map pin).
 func (s *Service) Submit(ctx context.Context, tenantID, userID pgtype.UUID, input SubmitInput) (OrgDTO, error) {
 	if input.Name == "" {
 		return OrgDTO{}, fmt.Errorf("name is required")
@@ -170,6 +177,21 @@ func (s *Service) Submit(ctx context.Context, tenantID, userID pgtype.UUID, inpu
 		}
 	}
 
+	// BUG-B03: Forward-geocode the address via Nominatim when the
+	// submitter provides an address but no coordinates (§101/ADR-109).
+	// If geocoding fails, proceed without coordinates — the submission
+	// is still valid.
+	lat := input.Latitude
+	lng := input.Longitude
+	if input.Address != "" && lat == 0 && lng == 0 {
+		if result, err := forwardGeocode(ctx, s.settings, tenantID, input.Address); err == nil {
+			lat = result.Latitude
+			lng = result.Longitude
+		} else {
+			slog.Warn("communitylocator: forward geocode failed, proceeding without coordinates", "error", err, "address", input.Address)
+		}
+	}
+
 	in := CreateOrgInput{
 		TenantID:             tenantID,
 		Name:                 input.Name,
@@ -186,12 +208,10 @@ func (s *Service) Submit(ctx context.Context, tenantID, userID pgtype.UUID, inpu
 	if input.Address != "" {
 		in.Address = &input.Address
 	}
-	if input.Latitude != 0 {
-		lat := input.Latitude
+	if lat != 0 {
 		in.Latitude = &lat
 	}
-	if input.Longitude != 0 {
-		lng := input.Longitude
+	if lng != 0 {
 		in.Longitude = &lng
 	}
 	if input.WebsiteURL != "" {
@@ -218,6 +238,149 @@ func (s *Service) Submit(ctx context.Context, tenantID, userID pgtype.UUID, inpu
 	row, err := s.store.GetByID(ctx, id, tenantID)
 	if err != nil {
 		return OrgDTO{}, fmt.Errorf("communitylocator: submit: fetch created: %w", err)
+	}
+	return rowToDTO(row), nil
+}
+
+// GenerateInput is the request body for POST /admin/community-locator/generate
+// (ADR-088 universal AI content generation). The admin provides a prompt
+// and destination; the service creates an ai_draft entry. The actual AI
+// call goes through the §20 AI Gateway — this method creates the draft
+// row and returns it for the HITL review queue. The AI content is
+// populated by a separate step (or inline if the gateway is available).
+type GenerateInput struct {
+	Prompt               string `json:"prompt"`
+	DestinationSpaceID   string `json:"destination_space_id"`
+	OriginCommunity      string `json:"origin_community"`
+	OrgType              string `json:"org_type"`
+	Name                 string `json:"name"`
+	CitySpaceID          string `json:"city_space_id"`
+	Address              string `json:"address"`
+	WebsiteURL           string `json:"website_url"`
+	MeetingFrequency     string `json:"meeting_frequency"`
+	ContactInfo          string `json:"contact_info"`
+	JapaconnectSpaceID   string `json:"japaconnect_space_id"`
+	JapaconnectOrgID     string `json:"japaconnect_org_id"`
+}
+
+// Generate creates an AI-generated draft community organisation entry
+// (ADR-088). The draft is created with status='pending', ai_generated=true,
+// and the AI model recorded. The entry enters the HITL review queue and
+// is not visible to end users until an admin approves it via ApproveOrg.
+//
+// The actual AI text generation is handled by the §20 AI Gateway; this
+// method records the draft with the admin-supplied content and metadata.
+// In a full implementation, the AI Gateway would populate the content
+// fields from the prompt; here we accept the admin's structured input
+// as the AI-generated draft.
+func (s *Service) Generate(ctx context.Context, tenantID, generatedBy pgtype.UUID, input GenerateInput, aiModel string) (OrgDTO, error) {
+	if input.Name == "" {
+		return OrgDTO{}, fmt.Errorf("name is required")
+	}
+	if input.DestinationSpaceID == "" {
+		return OrgDTO{}, fmt.Errorf("destination_space_id is required")
+	}
+	if input.OrgType != "" && !validOrgTypes[input.OrgType] {
+		return OrgDTO{}, fmt.Errorf("invalid org_type: %s", input.OrgType)
+	}
+
+	var destSpaceID pgtype.UUID
+	if err := destSpaceID.Scan(input.DestinationSpaceID); err != nil {
+		return OrgDTO{}, fmt.Errorf("invalid destination_space_id: %w", err)
+	}
+
+	var citySpaceID pgtype.UUID
+	if input.CitySpaceID != "" {
+		if err := citySpaceID.Scan(input.CitySpaceID); err != nil {
+			return OrgDTO{}, fmt.Errorf("invalid city_space_id: %w", err)
+		}
+	}
+
+	var japaconnectSpaceID pgtype.UUID
+	if input.JapaconnectSpaceID != "" {
+		if err := japaconnectSpaceID.Scan(input.JapaconnectSpaceID); err != nil {
+			return OrgDTO{}, fmt.Errorf("invalid japaconnect_space_id: %w", err)
+		}
+	}
+
+	var japaconnectOrgID pgtype.UUID
+	if input.JapaconnectOrgID != "" {
+		if err := japaconnectOrgID.Scan(input.JapaconnectOrgID); err != nil {
+			return OrgDTO{}, fmt.Errorf("invalid japaconnect_org_id: %w", err)
+		}
+	}
+
+	slug := slugify(input.Name)
+
+	// Forward-geocode the address if provided (same as Submit).
+	lat := 0.0
+	lng := 0.0
+	if input.Address != "" {
+		if result, err := forwardGeocode(ctx, s.settings, tenantID, input.Address); err == nil {
+			lat = result.Latitude
+			lng = result.Longitude
+		} else {
+			slog.Warn("communitylocator: generate forward geocode failed", "error", err)
+		}
+	}
+
+	orgType := input.OrgType
+	if orgType == "" {
+		orgType = OrgTypeOther
+	}
+	originCommunity := input.OriginCommunity
+	if originCommunity == "" {
+		originCommunity = "African"
+	}
+
+	in := CreateOrgInput{
+		TenantID:             tenantID,
+		Name:                 input.Name,
+		Slug:                 slug,
+		OrgType:              orgType,
+		OriginCommunity:      originCommunity,
+		DestinationSpaceID:   destSpaceID,
+		CitySpaceID:          citySpaceID,
+		JapaconnectSpaceID:   japaconnectSpaceID,
+		JapaconnectOrgID:     japaconnectOrgID,
+		IsCommunitySubmitted: false,
+		SubmittedBy:          generatedBy,
+		AiGenerated:          true,
+	}
+	if input.Address != "" {
+		in.Address = &input.Address
+	}
+	if lat != 0 {
+		in.Latitude = &lat
+	}
+	if lng != 0 {
+		in.Longitude = &lng
+	}
+	if input.WebsiteURL != "" {
+		in.WebsiteURL = &input.WebsiteURL
+	}
+	if input.MeetingFrequency != "" {
+		in.MeetingFrequency = &input.MeetingFrequency
+	}
+	if input.ContactInfo != "" {
+		in.ContactInfo = &input.ContactInfo
+	}
+	if aiModel != "" {
+		in.AiModel = &aiModel
+	}
+
+	id, err := s.store.CreateOrg(ctx, in)
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return OrgDTO{}, ErrDuplicateSlug
+		}
+		return OrgDTO{}, fmt.Errorf("communitylocator: generate: %w", err)
+	}
+
+	row, err := s.store.GetByID(ctx, id, tenantID)
+	if err != nil {
+		return OrgDTO{}, fmt.Errorf("communitylocator: generate: fetch created: %w", err)
 	}
 	return rowToDTO(row), nil
 }
@@ -289,8 +452,9 @@ func (s *Service) InitiateClaim(ctx context.Context, id, tenantID pgtype.UUID) e
 }
 
 // AdminList returns all community organisations (any status) for the
-// moderation queue.
-func (s *Service) AdminList(ctx context.Context, tenantID pgtype.UUID, status, q, sort, dir string, page, limit int32) ([]OrgDTO, int64, error) {
+// moderation queue. Supports filtering by destination (geo-aware
+// pattern), origin community, org type, status, and free-text search.
+func (s *Service) AdminList(ctx context.Context, tenantID, destSpaceID pgtype.UUID, originCommunity, orgType, status, q, sort, dir string, page, limit int32) ([]OrgDTO, int64, error) {
 	if limit <= 0 {
 		limit = 20
 	}
@@ -300,13 +464,16 @@ func (s *Service) AdminList(ctx context.Context, tenantID pgtype.UUID, status, q
 	offset := (page - 1) * limit
 
 	rows, total, err := s.store.AdminList(ctx, AdminListFilter{
-		TenantID: tenantID,
-		Status:   status,
-		Q:        q,
-		Sort:     sort,
-		Dir:      dir,
-		Limit:    limit,
-		Offset:   offset,
+		TenantID:           tenantID,
+		Status:             status,
+		Q:                  q,
+		DestinationSpaceID: destSpaceID,
+		OriginCommunity:    originCommunity,
+		OrgType:            orgType,
+		Sort:               sort,
+		Dir:                dir,
+		Limit:              limit,
+		Offset:             offset,
 	})
 	if err != nil {
 		return nil, 0, fmt.Errorf("communitylocator: admin list: %w", err)
@@ -321,7 +488,9 @@ func (s *Service) AdminList(ctx context.Context, tenantID pgtype.UUID, status, q
 
 // ApproveOrg publishes a community organisation (admin,
 // community_locator.review). Sets status='published', reviewed_by, and
-// reviewed_at.
+// reviewed_at. For AI-generated entries (ADR-088), also sets
+// hitl_reviewed_by and hitl_reviewed_at — the approve action IS the
+// HITL review gate.
 func (s *Service) ApproveOrg(ctx context.Context, id, tenantID, reviewedBy pgtype.UUID) (OrgDTO, error) {
 	if err := s.store.ApproveOrg(ctx, id, tenantID, reviewedBy); err != nil {
 		if err == pgx.ErrNoRows {
@@ -334,6 +503,37 @@ func (s *Service) ApproveOrg(ctx context.Context, id, tenantID, reviewedBy pgtyp
 		return OrgDTO{}, fmt.Errorf("communitylocator: approve org: fetch: %w", err)
 	}
 	return rowToDTO(row), nil
+}
+
+// ArchiveOrg archives a published community organisation (admin,
+// community_locator.manage). Sets status='archived'. Only published
+// orgs can be archived.
+func (s *Service) ArchiveOrg(ctx context.Context, id, tenantID pgtype.UUID) (OrgDTO, error) {
+	if err := s.store.ArchiveOrg(ctx, id, tenantID); err != nil {
+		if err == pgx.ErrNoRows {
+			return OrgDTO{}, pgx.ErrNoRows
+		}
+		return OrgDTO{}, fmt.Errorf("communitylocator: archive org: %w", err)
+	}
+	row, err := s.store.GetByID(ctx, id, tenantID)
+	if err != nil {
+		return OrgDTO{}, fmt.Errorf("communitylocator: archive org: fetch: %w", err)
+	}
+	return rowToDTO(row), nil
+}
+
+// DeleteOrg soft-deletes a community organisation (admin,
+// community_locator.manage). Sets deleted_at=now() per Rule 11. The
+// org is excluded from all list/get queries via the deleted_at IS NULL
+// filter.
+func (s *Service) DeleteOrg(ctx context.Context, id, tenantID pgtype.UUID) error {
+	if err := s.store.DeleteOrg(ctx, id, tenantID); err != nil {
+		if err == pgx.ErrNoRows {
+			return pgx.ErrNoRows
+		}
+		return fmt.Errorf("communitylocator: delete org: %w", err)
+	}
+	return nil
 }
 
 // VerifyOrg marks a community organisation as verified (admin,

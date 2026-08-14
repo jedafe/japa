@@ -204,19 +204,12 @@ func (s *Store) ListChecklistProgress(ctx context.Context, tenantID, userID, gui
 // item_key. Used by UpsertProgress to resolve the existing completed state
 // for a note-only PATCH (where completed is nil in the request body).
 func (s *Store) GetSingleProgress(ctx context.Context, tenantID, userID, guideID pgtype.UUID, itemKey string) (gen.ChecklistProgress, error) {
-	const q = `
-SELECT * FROM checklist_progress
-WHERE tenant_id = $1 AND user_id = $2 AND guide_id = $3 AND item_key = $4
-LIMIT 1
-`
-	var row gen.ChecklistProgress
-	if err := s.pool.Reader.QueryRow(ctx, q, tenantID, userID, guideID, itemKey).Scan(
-		&row.ID, &row.TenantID, &row.UserID, &row.GuideID, &row.ItemKey,
-		&row.Completed, &row.CompletedAt, &row.Notes, &row.CreatedAt, &row.UpdatedAt,
-	); err != nil {
-		return gen.ChecklistProgress{}, err
-	}
-	return row, nil
+	return s.queries.GetSingleChecklistProgress(ctx, gen.GetSingleChecklistProgressParams{
+		TenantID: tenantID,
+		UserID:   userID,
+		GuideID:  guideID,
+		ItemKey:  itemKey,
+	})
 }
 
 // UpsertChecklistProgress marks a single item complete/incomplete + note.

@@ -7,7 +7,7 @@ package auth
 
 import (
 	"bufio"
-	"crypto/sha1" //nolint:gosec // G401/G505: SHA-1 required by HIBP k-Anonymity API — cannot use SHA-256
+	"crypto/sha1" // #nosec G401 G505 -- SHA-1 required by HIBP k-Anonymity API; cannot use SHA-256
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -173,7 +173,7 @@ func CheckPasswordBreach(password string) (isBreached bool, count int, err error
 
 // sha1Hash returns the lowercase hex-encoded SHA-1 digest of the input string.
 func sha1Hash(s string) string {
-	h := sha1.New() //nolint:gosec // G401: SHA-1 required by HIBP k-Anonymity API
+	h := sha1.New() // #nosec G401 -- SHA-1 required by HIBP k-Anonymity API
 	h.Write([]byte(s))
 
 	return hex.EncodeToString(h.Sum(nil))

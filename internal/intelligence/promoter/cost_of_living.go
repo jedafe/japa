@@ -68,6 +68,7 @@ type CostOfLivingTxStore interface {
 type CostOfLivingPromoter struct {
 	store    CostOfLivingStore
 	tenantID pgtype.UUID // tenant the projection rows are stamped with
+	authorID pgtype.UUID // system/automation user for review-log actor
 	now      func() time.Time
 }
 
@@ -82,10 +83,11 @@ func WithCostOfLivingClock(fn func() time.Time) CostOfLivingPromoterOption {
 // NewCostOfLivingPromoter creates a promoter backed by the given store. The
 // tenantID identifies the tenant stamped onto the comparison_items rows
 // created by the create path.
-func NewCostOfLivingPromoter(store CostOfLivingStore, tenantID pgtype.UUID, opts ...CostOfLivingPromoterOption) *CostOfLivingPromoter {
+func NewCostOfLivingPromoter(store CostOfLivingStore, tenantID, authorID pgtype.UUID, opts ...CostOfLivingPromoterOption) *CostOfLivingPromoter {
 	p := &CostOfLivingPromoter{
 		store:    store,
 		tenantID: tenantID,
+		authorID: authorID,
 		now:      time.Now,
 	}
 	for _, opt := range opts {

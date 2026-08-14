@@ -23,6 +23,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
+	"github.com/jedafe/japa/internal/clientip"
 	"github.com/jedafe/japa/internal/content"
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/media"
@@ -1327,26 +1328,23 @@ func (h *Handlers) ReorderFeatured(w http.ResponseWriter, r *http.Request) {
 // populated by the rss:regenerate worker task. Falls back to live DB generation
 // when the cache is empty or Redis is unavailable.
 // BUG-006: respects X-Forwarded-Host to generate public-facing URLs instead
-// of the internal backend port.
+// of the internal backend port. Forwarding headers are gated by the
+// trusted-proxy model (clientip.ForwardedBaseURL) to prevent host-header
+// injection.
 func (h *Handlers) GetRSSFeed(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	// Resolve the public-facing site URL. Prefer X-Forwarded-Host (set by
-	// the frontend proxy) over the configured JC_SITE_URL so RSS links
-	// point to the frontend, not the internal backend port.
-	siteURL := h.siteURL
-	if fwdHost := strings.TrimSpace(r.Header.Get("X-Forwarded-Host")); fwdHost != "" {
-		scheme := "https"
-		if r.Header.Get("X-Forwarded-Proto") != "" {
-			scheme = r.Header.Get("X-Forwarded-Proto")
-		} else if r.TLS == nil {
-			scheme = "http"
-		}
-		siteURL = scheme + "://" + fwdHost
-	}
+	// Resolve the public-facing site URL. X-Forwarded-Host/Proto are
+	// honoured only when the immediate peer is a trusted proxy
+	// (JC_TRUSTED_PROXIES) — otherwise an attacker could spoof
+	// X-Forwarded-Host: evil.com and inject their domain into RSS feed
+	// links (host-header injection). Falls back to the configured
+	// JC_SITE_URL (h.siteURL) when the peer is untrusted or no forwarding
+	// headers are present.
+	siteURL := clientip.ForwardedBaseURL(r, h.siteURL)
 
 	// RSS-001: use a blog-specific cache key. The universal feed cache
 	// (jc:cache:feed:rss:{tenant_id}) is populated by the worker from

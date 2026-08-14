@@ -17,11 +17,11 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/clientip"
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/rss/model"
 	"github.com/jedafe/japa/internal/tenant"
@@ -304,21 +304,14 @@ func writeError(w http.ResponseWriter, status int, code, message string) {
 	})
 }
 
-// resolveSiteURL returns the public-facing site URL. It prefers
-// X-Forwarded-Host (set by the frontend proxy) over the configured
-// JC_SITE_URL so RSS links point to the frontend, not the internal
-// backend port. BUG-006 equivalent fix for universal feeds.
+// resolveSiteURL returns the public-facing site URL. X-Forwarded-Host/Proto
+// are honoured only when the immediate peer is a trusted proxy
+// (JC_TRUSTED_PROXIES) — otherwise an attacker could spoof
+// X-Forwarded-Host: evil.com and inject their domain into RSS feed links
+// (host-header injection). Falls back to the configured JC_SITE_URL when the
+// peer is untrusted or no forwarding headers are present.
 func resolveSiteURL(r *http.Request, fallback string) string {
-	if fwdHost := strings.TrimSpace(r.Header.Get("X-Forwarded-Host")); fwdHost != "" {
-		scheme := "https"
-		if proto := r.Header.Get("X-Forwarded-Proto"); proto != "" {
-			scheme = proto
-		} else if r.TLS == nil {
-			scheme = "http"
-		}
-		return scheme + "://" + fwdHost
-	}
-	return fallback
+	return clientip.ForwardedBaseURL(r, fallback)
 }
 
 // feedItemsFromAllRows converts ListRSSFeedItemsRow to RSS items.
