@@ -14,7 +14,9 @@
 		ArrowRight,
 		Database,
 		Globe,
-		ListChecks
+		ListChecks,
+		CheckCircle2,
+		ExternalLink
 	} from 'lucide-svelte';
 	import { goto } from '$app/navigation';
 
@@ -38,13 +40,10 @@
 		crawl_frequency_mins?: number;
 	}
 
-	interface RadarCountRow {
-		country?: string;
-		count?: number;
-	}
-	interface RadarCountsResponse {
-		data?: RadarCountRow[];
-		meta?: { total_countries?: number; total_scholarships?: number };
+	interface RadarCountsData {
+		total_new?: number;
+		by_type?: Record<string, number>;
+		by_country?: Record<string, number>;
 	}
 
 	interface ReviewRecord {
@@ -53,9 +52,23 @@
 		entity_type: string;
 	}
 
+	interface IntelRecord {
+		id: string;
+		status: string;
+		entity_type: string;
+		source_id: string;
+		extracted?: Record<string, unknown> | string;
+		confidence_overall?: number;
+		promoted_record_id?: string | null;
+		extracted_at?: string | null;
+		last_verified_at?: string | null;
+	}
+
 	let sources = $state<SourceEntry[]>([]);
 	let reviewRecords = $state<ReviewRecord[]>([]);
-	let radarCounts = $state<RadarCountsResponse | null>(null);
+	let radarCounts = $state<RadarCountsData | null>(null);
+	let promotedRecords = $state<IntelRecord[]>([]);
+	let approvedRecords = $state<IntelRecord[]>([]);
 	let loading = $state(true);
 	let refreshing = $state(false);
 	let errorMessage = $state('');
@@ -67,15 +80,14 @@
 		// Fetch the three intelligence endpoints in parallel. Each is
 		// best-effort: a failure on one does not abort the others, so the
 		// overview degrades gracefully when an endpoint is unavailable.
-		const [srcRes, reviewRes, countsRes] = await Promise.allSettled([
+		const [srcRes, reviewRes, countsRes, promotedRes, approvedRes] = await Promise.allSettled([
 			api<SourceEntry[]>('/api/v1/intel/sources?page_size=100&include_disabled=true', { signal }),
 			api<ReviewRecord[]>('/api/v1/intel/review/queue', { signal }),
-			api<RadarCountsResponse>('/api/v1/intel/radar/counts', { signal })
+			api<RadarCountsData>('/api/v1/intel/radar/counts', { signal }),
+			api<IntelRecord[]>('/api/v1/intel/records?status=published&page_size=50', { signal }),
+			api<IntelRecord[]>('/api/v1/intel/records?status=approved&page_size=50', { signal })
 		]);
 
-		// The api() helper already unwraps the response `data` field, so
-		// result.data is the array/object directly — not a nested { data: [...] }.
-		// The prior code did result.data?.data which always returned undefined.
 		if (srcRes.status === 'fulfilled' && srcRes.value.ok) {
 			sources = Array.isArray(srcRes.value.data) ? (srcRes.value.data as SourceEntry[]) : [];
 		}
@@ -85,13 +97,19 @@
 		if (countsRes.status === 'fulfilled' && countsRes.value.ok) {
 			radarCounts = countsRes.value.data;
 		}
+		if (promotedRes.status === 'fulfilled' && promotedRes.value.ok) {
+			promotedRecords = Array.isArray(promotedRes.value.data) ? (promotedRes.value.data as IntelRecord[]) : [];
+		}
+		if (approvedRes.status === 'fulfilled' && approvedRes.value.ok) {
+			approvedRecords = Array.isArray(approvedRes.value.data) ? (approvedRes.value.data as IntelRecord[]) : [];
+		}
 
 		// Surface the first non-abort error so the operator knows something
 		// is wrong, but only if every endpoint failed.
-		const failed = [srcRes, reviewRes, countsRes].filter(
+		const failed = [srcRes, reviewRes, countsRes, promotedRes, approvedRes].filter(
 			(r) => r.status === 'rejected' || (r.status === 'fulfilled' && !r.value.ok)
 		);
-		if (failed.length === 3) {
+		if (failed.length === 5) {
 			const first = failed[0];
 			errorMessage =
 				first.status === 'fulfilled' && !first.value.ok
@@ -132,19 +150,18 @@
 	// have completed extraction and are awaiting moderation.
 	const extractQueueCount = $derived(reviewRecords.length);
 
-	// Dedup queue: records pending dedup. The review queue endpoint does
-	// not return dedup-status records (the intel_records CHECK constraint
-	// uses 'deduped', not 'dedup' or 'pending_dedup'), so this is 0 until
-	// a dedicated dedup-queue endpoint is available.
-	const dedupQueueCount = $derived(0);
+	// Dedup queue: records that have been approved but not yet promoted.
+	// These are records in 'approved' status waiting for the intel:promote
+	// task to project them into domain tables.
+	const dedupQueueCount = $derived(approvedRecords.length);
 
 	// Review queue: records awaiting human moderation. The backend returns
 	// only 'review_required' status records (migration 000428 CHECK
 	// constraint), so all records in reviewRecords are review_required.
 	const reviewQueueCount = $derived(reviewRecords.length);
 
-	// Publish queue: promoted records live in the radar (scholarships).
-	const publishQueueCount = $derived(radarCounts?.meta?.total_scholarships ?? 0);
+	// Publish queue: promoted records that are live in domain projections.
+	const publishQueueCount = $derived(promotedRecords.length);
 
 	// Freshness queue: sources whose last crawl is stale relative to their
 	// crawl interval (computed from source metadata, not hardcoded).
@@ -160,7 +177,10 @@
 	});
 
 	const enabledSources = $derived(sources.filter((s) => s.enabled).length);
-	const countriesCovered = $derived(radarCounts?.meta?.total_countries ?? 0);
+	// Countries covered: count of distinct countries in the radar counts.
+	const countriesCovered = $derived(
+		radarCounts?.by_country ? Object.keys(radarCounts.by_country).length : 0
+	);
 
 	interface QueueCard {
 		key: string;
@@ -188,16 +208,17 @@
 			count: extractQueueCount,
 			icon: Sparkles,
 			accent: 'text-violet-500',
-			href: '/intelligence/review',
+			href: '/intelligence/review?status=review_required',
 			subtitle: t('intel.queue_extract_sub', 'Records post-extraction')
 		},
 		{
 			key: 'dedup',
-			label: t('intel.queue_dedup', 'Dedup Queue'),
+			label: t('intel.queue_dedup', 'Approved Queue'),
 			count: dedupQueueCount,
 			icon: Copy,
 			accent: 'text-cyan-500',
-			subtitle: t('intel.queue_dedup_sub', 'Records pending dedup')
+			href: '/intelligence/review?status=approved',
+			subtitle: t('intel.queue_dedup_sub', 'Approved, awaiting promotion')
 		},
 		{
 			key: 'review',
@@ -205,7 +226,7 @@
 			count: reviewQueueCount,
 			icon: Eye,
 			accent: 'text-amber-500',
-			href: '/intelligence/review',
+			href: '/intelligence/review?status=review_required',
 			subtitle: t('intel.queue_review_sub', 'Records awaiting moderation')
 		},
 		{
@@ -214,6 +235,7 @@
 			count: publishQueueCount,
 			icon: Rocket,
 			accent: 'text-emerald-500',
+			href: '/intelligence/review?status=published',
 			subtitle: t('intel.queue_publish_sub', 'Promoted records live')
 		},
 		{
@@ -231,6 +253,79 @@
 		if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
 		if (n >= 1_000) return (n / 1_000).toFixed(1) + 'K';
 		return n.toLocaleString();
+	}
+
+	// Entity-type breakdown of promoted records for the list section.
+	const promotedByType = $derived.by(() => {
+		const map: Record<string, number> = {};
+		for (const r of promotedRecords) {
+			map[r.entity_type] = (map[r.entity_type] ?? 0) + 1;
+		}
+		return map;
+	});
+
+	// Extract a display title from the intel record's extracted JSON blob.
+	function recordTitle(rec: IntelRecord): string {
+		if (!rec.extracted) return rec.entity_type;
+		let raw: Record<string, unknown> | null = null;
+		if (typeof rec.extracted === 'string') {
+			try { raw = JSON.parse(rec.extracted); } catch { /* ignore */ }
+		} else if (typeof rec.extracted === 'object') {
+			raw = rec.extracted as Record<string, unknown>;
+		}
+		if (raw) {
+			for (const key of ['title', 'name', 'program', 'scholarship_name', 'job_title']) {
+				const v = raw[key];
+				if (typeof v === 'string' && v.trim()) return v;
+				if (v && typeof v === 'object' && 'value' in v) {
+					const val = (v as { value: unknown }).value;
+					if (typeof val === 'string' && val.trim()) return val;
+				}
+			}
+		}
+		return `${rec.entity_type} record`;
+	}
+
+	function recordEntityTypeLabel(et: string): string {
+		const labels: Record<string, string> = {
+			scholarship: 'Scholarship', job: 'Job', visa: 'Visa',
+			housing: 'Housing', remittance: 'Remittance', cost_of_living: 'Cost of Living',
+			guide: 'Guide', news: 'News', community: 'Community', mentorship: 'Mentorship'
+		};
+		return labels[et] ?? et;
+	}
+
+	function recordEntityTypeColor(et: string): string {
+		const colors: Record<string, string> = {
+			scholarship: 'bg-emerald-500/15 text-emerald-400',
+			job: 'bg-sky-500/15 text-sky-400',
+			visa: 'bg-violet-500/15 text-violet-400',
+			housing: 'bg-amber-500/15 text-amber-400',
+			remittance: 'bg-cyan-500/15 text-cyan-400',
+			cost_of_living: 'bg-rose-500/15 text-rose-400',
+			guide: 'bg-indigo-500/15 text-indigo-400'
+		};
+		return colors[et] ?? 'bg-muted text-muted-foreground';
+	}
+
+	function formatDate(s?: string | null): string {
+		if (!s) return '';
+		const d = new Date(s);
+		if (isNaN(d.getTime())) return '';
+		return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+	}
+
+	// Build the Main app URL for cross-app links. In dev, the Control app
+	// runs on port 3002 and the Main app on port 3000. In production, both
+	// are served from the same domain (e.g. japaconnect.com) so a relative
+	// /scholarships path works. We detect dev by checking if the port is
+	// 3002 and swap to 3000.
+	function mainAppUrl(path: string): string {
+		const origin = window.location.origin;
+		if (origin.includes(':3002')) {
+			return origin.replace(':3002', ':3000') + path;
+		}
+		return origin + path;
 	}
 </script>
 
@@ -280,7 +375,14 @@
 				<button
 					type="button"
 					class="border-border-card bg-background-alt shadow-card group flex items-center gap-4 rounded-xl border p-4 text-left transition-colors hover:border-border-input-hover {q.href ? 'cursor-pointer' : 'cursor-default'}"
-					onclick={() => q.href && goto(q.href)}
+					onclick={() => {
+						if (!q.href) return;
+						if (q.href.startsWith('#')) {
+							document.querySelector(q.href)?.scrollIntoView({ behavior: 'smooth' });
+						} else {
+							goto(q.href);
+						}
+					}}
 					aria-label={q.label}
 				>
 					<div class="flex size-11 shrink-0 items-center justify-center rounded-xl bg-muted">
@@ -324,6 +426,98 @@
 			</div>
 		</div>
 	</div>
+
+	<!-- Promoted records list -->
+	{#if !loading}
+		<div id="promoted-records" class="mt-6 scroll-mt-4">
+			<div class="mb-3 flex items-center justify-between">
+				<div class="flex items-center gap-2">
+					<CheckCircle2 class="text-emerald-500 size-5" />
+					<h2 class="text-foreground text-lg font-semibold">
+						{t('intel.promoted_records', 'Promoted Records')}
+					</h2>
+					<span class="bg-emerald-500/15 text-emerald-400 rounded-full px-2 py-0.5 text-xs font-medium">
+						{promotedRecords.length}
+					</span>
+				</div>
+				{#if Object.keys(promotedByType).length > 0}
+					<div class="flex flex-wrap gap-2">
+						{#each Object.entries(promotedByType) as [type, count]}
+							<span class="rounded-full px-2.5 py-0.5 text-xs font-medium {recordEntityTypeColor(type)}">
+								{recordEntityTypeLabel(type)}: {count}
+							</span>
+						{/each}
+					</div>
+				{/if}
+			</div>
+
+			{#if promotedRecords.length === 0}
+				<div class="border-border-card bg-background-alt rounded-xl border p-8 text-center">
+					<Rocket class="text-muted-foreground mx-auto mb-2 size-8" />
+					<p class="text-muted-foreground text-sm">
+						{t('intel.no_promoted', 'No promoted records yet. Approve records in the review queue to promote them.')}
+					</p>
+					<a
+						href="/intelligence/review"
+						class="text-emerald-500 hover:text-emerald-400 mt-2 inline-flex items-center gap-1 text-sm font-medium"
+					>
+						{t('intel.open_review_queue', 'Open Review Queue')}
+						<ArrowRight class="size-3.5" />
+					</a>
+				</div>
+			{:else}
+				<div class="border-border-card bg-background-alt overflow-hidden rounded-xl border">
+					<div class="divide-y divide-border-card">
+						{#each promotedRecords.slice(0, 20) as rec (rec.id)}
+							<div class="hover:bg-muted/50 flex items-center gap-3 px-4 py-3 transition-colors">
+								<div class="flex size-9 shrink-0 items-center justify-center rounded-lg {recordEntityTypeColor(rec.entity_type)}">
+									<span class="text-xs font-bold uppercase">{rec.entity_type.slice(0, 2)}</span>
+								</div>
+								<div class="min-w-0 flex-1">
+									<p class="text-foreground truncate text-sm font-medium">
+										{recordTitle(rec)}
+									</p>
+									<div class="text-muted-foreground mt-0.5 flex items-center gap-2 text-xs">
+										<span class="rounded-full px-2 py-0.5 {recordEntityTypeColor(rec.entity_type)}">
+											{recordEntityTypeLabel(rec.entity_type)}
+										</span>
+										{#if rec.confidence_overall != null}
+											<span>Confidence: {(rec.confidence_overall * 100).toFixed(0)}%</span>
+										{/if}
+										{#if rec.extracted_at}
+											<span>Promoted: {formatDate(rec.extracted_at)}</span>
+										{/if}
+									</div>
+								</div>
+								<div class="flex shrink-0 items-center gap-2">
+									<span class="bg-emerald-500/15 text-emerald-400 flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium">
+										<CheckCircle2 class="size-3" />
+										Published
+									</span>
+									{#if rec.entity_type === 'scholarship'}
+										<a
+											href={mainAppUrl('/scholarships')}
+											target="_blank"
+											rel="noopener"
+											class="text-muted-foreground hover:text-foreground transition-colors"
+											title="View on public site"
+										>
+											<ExternalLink class="size-4" />
+										</a>
+									{/if}
+								</div>
+							</div>
+						{/each}
+					</div>
+					{#if promotedRecords.length > 20}
+						<div class="border-t-border-card text-muted-foreground border-t px-4 py-2.5 text-center text-xs">
+							Showing 20 of {promotedRecords.length} promoted records
+						</div>
+					{/if}
+				</div>
+			{/if}
+		</div>
+	{/if}
 
 	<!-- Quick links -->
 	<div class="mt-6 flex flex-wrap gap-3">

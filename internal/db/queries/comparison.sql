@@ -33,7 +33,7 @@ LIMIT @page_limit OFFSET @page_offset;
 -- name: UpdateComparisonType :one
 UPDATE comparison_type_definitions
 SET name = @name, slug = sqlc.narg(slug), description = sqlc.narg(description), icon = sqlc.narg(icon),
-    item_label = @item_label
+    field_group_id = sqlc.narg(field_group_id), item_label = @item_label
 WHERE id = @id AND tenant_id = @tenant_id
 RETURNING id, tenant_id, name, slug, description, icon, field_group_id, item_label, is_system, created_at;
 
@@ -57,8 +57,9 @@ SET can_create = EXCLUDED.can_create,
 SELECT cta.type_id, cta.user_group_id, cta.can_create, cta.can_fill, cta.ai_can_fill,
        ug.name AS group_name
 FROM comparison_type_access cta
+JOIN comparison_type_definitions ctd ON ctd.id = cta.type_id
 LEFT JOIN user_groups ug ON ug.id = cta.user_group_id
-WHERE cta.type_id = @type_id;
+WHERE cta.type_id = @type_id AND ctd.tenant_id = @tenant_id;
 
 -- name: DeleteComparisonTypeAccess :exec
 DELETE FROM comparison_type_access
@@ -159,8 +160,7 @@ INSERT INTO comparison_values (
 ON CONFLICT (dimension_id, item_id) DO UPDATE
 SET value = EXCLUDED.value,
     value_rating = EXCLUDED.value_rating,
-    value_boolean = EXCLUDED.value_boolean,
-    created_at = now()
+    value_boolean = EXCLUDED.value_boolean
 RETURNING dimension_id, item_id, tenant_id, value, value_rating, value_boolean, created_at, metadata;
 
 -- name: UpsertComparisonValueWithMetadata :one
@@ -179,8 +179,7 @@ ON CONFLICT (dimension_id, item_id) DO UPDATE
 SET value = EXCLUDED.value,
     value_rating = EXCLUDED.value_rating,
     value_boolean = EXCLUDED.value_boolean,
-    metadata = COALESCE(EXCLUDED.metadata, comparison_values.metadata),
-    created_at = now()
+    metadata = COALESCE(EXCLUDED.metadata, comparison_values.metadata)
 RETURNING dimension_id, item_id, tenant_id, value, value_rating, value_boolean, created_at, metadata;
 
 -- name: ListComparisonValuesByDimension :many

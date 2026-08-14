@@ -673,9 +673,15 @@ const listComparisonTypeAccess = `-- name: ListComparisonTypeAccess :many
 SELECT cta.type_id, cta.user_group_id, cta.can_create, cta.can_fill, cta.ai_can_fill,
        ug.name AS group_name
 FROM comparison_type_access cta
+JOIN comparison_type_definitions ctd ON ctd.id = cta.type_id
 LEFT JOIN user_groups ug ON ug.id = cta.user_group_id
-WHERE cta.type_id = $1
+WHERE cta.type_id = $1 AND ctd.tenant_id = $2
 `
+
+type ListComparisonTypeAccessParams struct {
+	TypeID   pgtype.UUID `json:"type_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
 
 type ListComparisonTypeAccessRow struct {
 	TypeID      pgtype.UUID `json:"type_id"`
@@ -686,8 +692,8 @@ type ListComparisonTypeAccessRow struct {
 	GroupName   *string     `json:"group_name"`
 }
 
-func (q *Queries) ListComparisonTypeAccess(ctx context.Context, typeID pgtype.UUID) ([]ListComparisonTypeAccessRow, error) {
-	rows, err := q.db.Query(ctx, listComparisonTypeAccess, typeID)
+func (q *Queries) ListComparisonTypeAccess(ctx context.Context, arg ListComparisonTypeAccessParams) ([]ListComparisonTypeAccessRow, error) {
+	rows, err := q.db.Query(ctx, listComparisonTypeAccess, arg.TypeID, arg.TenantID)
 	if err != nil {
 		return nil, err
 	}
@@ -1148,19 +1154,20 @@ func (q *Queries) UpdateComparisonItem(ctx context.Context, arg UpdateComparison
 const updateComparisonType = `-- name: UpdateComparisonType :one
 UPDATE comparison_type_definitions
 SET name = $1, slug = $2, description = $3, icon = $4,
-    item_label = $5
-WHERE id = $6 AND tenant_id = $7
+    field_group_id = $5, item_label = $6
+WHERE id = $7 AND tenant_id = $8
 RETURNING id, tenant_id, name, slug, description, icon, field_group_id, item_label, is_system, created_at
 `
 
 type UpdateComparisonTypeParams struct {
-	Name        string      `json:"name"`
-	Slug        *string     `json:"slug"`
-	Description *string     `json:"description"`
-	Icon        *string     `json:"icon"`
-	ItemLabel   string      `json:"item_label"`
-	ID          pgtype.UUID `json:"id"`
-	TenantID    pgtype.UUID `json:"tenant_id"`
+	Name         string      `json:"name"`
+	Slug         *string     `json:"slug"`
+	Description  *string     `json:"description"`
+	Icon         *string     `json:"icon"`
+	FieldGroupID pgtype.UUID `json:"field_group_id"`
+	ItemLabel    string      `json:"item_label"`
+	ID           pgtype.UUID `json:"id"`
+	TenantID     pgtype.UUID `json:"tenant_id"`
 }
 
 type UpdateComparisonTypeRow struct {
@@ -1182,6 +1189,7 @@ func (q *Queries) UpdateComparisonType(ctx context.Context, arg UpdateComparison
 		arg.Slug,
 		arg.Description,
 		arg.Icon,
+		arg.FieldGroupID,
 		arg.ItemLabel,
 		arg.ID,
 		arg.TenantID,
@@ -1213,8 +1221,7 @@ INSERT INTO comparison_values (
 ON CONFLICT (dimension_id, item_id) DO UPDATE
 SET value = EXCLUDED.value,
     value_rating = EXCLUDED.value_rating,
-    value_boolean = EXCLUDED.value_boolean,
-    created_at = now()
+    value_boolean = EXCLUDED.value_boolean
 RETURNING dimension_id, item_id, tenant_id, value, value_rating, value_boolean, created_at, metadata
 `
 
@@ -1264,8 +1271,7 @@ ON CONFLICT (dimension_id, item_id) DO UPDATE
 SET value = EXCLUDED.value,
     value_rating = EXCLUDED.value_rating,
     value_boolean = EXCLUDED.value_boolean,
-    metadata = COALESCE(EXCLUDED.metadata, comparison_values.metadata),
-    created_at = now()
+    metadata = COALESCE(EXCLUDED.metadata, comparison_values.metadata)
 RETURNING dimension_id, item_id, tenant_id, value, value_rating, value_boolean, created_at, metadata
 `
 

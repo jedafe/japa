@@ -48,6 +48,8 @@
 		comparisonDetail?: ComparisonDetail | null;
 		/** Admin-defined comparison types (Section 30) for the type selector. */
 		comparisonTypes?: ComparisonType[];
+		/** Valid dimension types from GET /comparisons/dimension-types (Rule 16). */
+		dimensionTypes?: { value: string; label: string }[];
 		/** Cover image media asset restored from GET /media/{featured_image_id}
 		 *  so the CoverUploader shows the preview when editing existing content. */
 		coverMedia?: MediaAsset | null;
@@ -60,7 +62,7 @@
 		maxTags?: number;
 	}
 
-	let { types, spaces, fieldGroups, series = $bindable(), organizations, draft, draftTags = [], comparisonDetail = null, comparisonTypes = [], coverMedia = null, draftSeriesId = null, user, defaultEditor = 'block', maxTags = 5 }: Props = $props();
+	let { types, spaces, fieldGroups, series = $bindable(), organizations, draft, draftTags = [], comparisonDetail = null, comparisonTypes = [], dimensionTypes = [], coverMedia = null, draftSeriesId = null, user, defaultEditor = 'block', maxTags = 5 }: Props = $props();
 
 	// ---- form state ----
 	let selectedType = $state<TypeEntry>(
@@ -335,7 +337,8 @@
 				onEnsureContent={ensureContentId}
 				initialItems={comparisonDetail?.items ?? []}
 				initialDimensions={comparisonDetail?.dimensions ?? []}
-				comparisonTypes={comparisonTypes}
+				{comparisonTypes}
+				{dimensionTypes}
 				{bodyHtml}
 				onhtml={(v) => { bodyHtml = v; }}
 				{defaultEditor}

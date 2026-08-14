@@ -19,7 +19,10 @@ func main() {
 	if dbURL == "" {
 		log.Fatal("JC_DATABASE_URL not set")
 	}
-	redisAddr := os.Getenv("JC_REDIS_ADDR")
+	redisAddr := os.Getenv("JC_VALKEY_ADDR")
+	if redisAddr == "" {
+		redisAddr = os.Getenv("JC_REDIS_ADDR")
+	}
 	if redisAddr == "" {
 		redisAddr = "localhost:6379"
 	}

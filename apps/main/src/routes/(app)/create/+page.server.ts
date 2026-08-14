@@ -25,7 +25,7 @@ export const load: PageServerLoad = async (event) => {
 	const ctx = apiContext(event);
 	const draftId = event.url.searchParams.get('draft');
 
-	const [typesRes, flagsRes, spacesRes, groupsRes, seriesRes, orgsRes, compTypesRes] =
+	const [typesRes, flagsRes, spacesRes, groupsRes, seriesRes, orgsRes, compTypesRes, dimTypesRes] =
 		await Promise.allSettled([
 			apiList<ContentTypeMeta>(ctx, '/content-types'),
 			apiGet<Record<string, boolean>>(ctx, '/feature-flags'),
@@ -37,7 +37,10 @@ export const load: PageServerLoad = async (event) => {
 			apiList<ComposerOrganization>(ctx, '/me/organizations'),
 			// Comparison types (Section 30) — for the type selector in the
 			// comparison editor. Empty list = "General (no type)" only.
-			apiList<ComparisonType>(ctx, '/comparisons/types?page_size=50')
+			apiList<ComparisonType>(ctx, '/comparisons/types?page_size=50'),
+			// Dimension types (Section 30) — for the dimension type selector
+			// in the ComparisonBuilder (Rule 16 — no hardcoded enums).
+			apiList<{ value: string; label: string }>(ctx, '/comparisons/dimension-types')
 		]);
 
 	const rawTypes = typesRes.status === 'fulfilled' ? typesRes.value.items : [];
@@ -57,6 +60,7 @@ export const load: PageServerLoad = async (event) => {
 	const series = seriesRes.status === 'fulfilled' ? seriesRes.value.items : [];
 	const organizations = orgsRes.status === 'fulfilled' ? orgsRes.value.items : [];
 	const comparisonTypes = compTypesRes.status === 'fulfilled' ? compTypesRes.value.items : [];
+	const dimensionTypes = dimTypesRes.status === 'fulfilled' ? dimTypesRes.value.items : [];
 
 	let draft: ContentRecord | null = null;
 	let comparisonDetail: ComparisonDetail | null = null;
@@ -145,6 +149,7 @@ export const load: PageServerLoad = async (event) => {
 		draftTags,
 		comparisonDetail,
 		comparisonTypes,
+		dimensionTypes,
 		coverMedia,
 		draftSeriesId,
 		loadError: typesRes.status === 'rejected'

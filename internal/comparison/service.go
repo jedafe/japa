@@ -478,6 +478,10 @@ func (s *Service) GetComparisonDetail(ctx context.Context, id, tenantID pgtype.U
 // a slug and looked up via the content service (Section 30 —
 // GET /api/v1/comparisons/:slug).
 //
+// The slug path verifies that the resolved content row has
+// content_type='comparison' so that a blog post or forum thread slug cannot
+// leak through the comparison API (BUG-001).
+//
 // Ref: japaconnect-engineering/sections/30-generic-comparison-system.md
 func (s *Service) ResolveComparisonContentID(ctx context.Context, identifier string, tenantID pgtype.UUID) (pgtype.UUID, error) {
 	// Fast path: identifier is a UUID.
@@ -487,21 +491,29 @@ func (s *Service) ResolveComparisonContentID(ctx context.Context, identifier str
 	}
 
 	// Slug path: look up the content row by slug, scoped to the tenant.
-	content, err := s.contentSvc.GetContentBySlug(ctx, identifier, tenantID)
+	contentRow, err := s.contentSvc.GetContentBySlug(ctx, identifier, tenantID)
 	if err != nil {
 		return pgtype.UUID{}, fmt.Errorf("resolving comparison identifier %q: %w", identifier, err)
 	}
 
-	return content.ID, nil
+	// Verify the resolved content is actually a comparison — without this
+	// check, any content slug (blog, forum, etc.) would resolve as a
+	// comparison and leak through this API (BUG-001).
+	if contentRow.ContentType != content.TypeComparison {
+		return pgtype.UUID{}, fmt.Errorf("resolving comparison identifier %q: %w", identifier, pgx.ErrNoRows)
+	}
+
+	return contentRow.ID, nil
 }
 
 // UpdateComparisonTypeInput holds parameters for updating a comparison type.
 type UpdateComparisonTypeInput struct {
-	Name        string
-	Slug        string
-	Description string
-	Icon        string
-	ItemLabel   string
+	Name         string
+	Slug         string
+	Description  string
+	Icon         string
+	FieldGroupID pgtype.UUID
+	ItemLabel    string
 }
 
 // UpdateComparisonType updates an existing comparison type.
@@ -526,13 +538,14 @@ func (s *Service) UpdateComparisonType(ctx context.Context, id, tenantID pgtype.
 	}
 
 	return s.store.updateComparisonType(ctx, gen.UpdateComparisonTypeParams{
-		ID:          id,
-		TenantID:    tenantID,
-		Name:        input.Name,
-		Slug:        slug,
-		Description: description,
-		Icon:        icon,
-		ItemLabel:   input.ItemLabel,
+		ID:           id,
+		TenantID:     tenantID,
+		Name:         input.Name,
+		Slug:         slug,
+		Description:  description,
+		Icon:         icon,
+		FieldGroupID: input.FieldGroupID,
+		ItemLabel:    input.ItemLabel,
 	})
 }
 
@@ -546,6 +559,50 @@ var ErrComparisonTypeInUse = errors.New("comparison type is in use by existing c
 // verify ownership so a user with _own permission cannot modify another
 // user's comparison. Ref: §5.3 RBAC escape, BUG-002.
 var ErrNotOwner = errors.New("only the author can modify this comparison")
+
+// VerifyComparisonOwnership checks that the given user is the author of the
+// comparison identified by contentID, or that bypassOwnership is true (set
+// when the caller has comparison.edit_any). Returns ErrNotOwner if the user
+// is not the author and bypass is false. Ref: §5.3 RBAC escape, BUG-003.
+func (s *Service) VerifyComparisonOwnership(ctx context.Context, contentID, userID, tenantID pgtype.UUID, bypassOwnership bool) error {
+	if bypassOwnership {
+		return nil
+	}
+	existing, err := s.contentSvc.GetContent(ctx, contentID, tenantID)
+	if err != nil {
+		return fmt.Errorf("getting comparison for ownership check: %w", err)
+	}
+	if existing.AuthorID.Valid && existing.AuthorID.Bytes != userID.Bytes {
+		return ErrNotOwner
+	}
+	return nil
+}
+
+// VerifyComparisonItemOwnership resolves the parent comparison from an item
+// ID and then verifies ownership. Ref: §5.3 RBAC escape, BUG-003.
+func (s *Service) VerifyComparisonItemOwnership(ctx context.Context, itemID, userID, tenantID pgtype.UUID, bypassOwnership bool) error {
+	if bypassOwnership {
+		return nil
+	}
+	item, err := s.store.getComparisonItemByID(ctx, itemID, tenantID)
+	if err != nil {
+		return fmt.Errorf("getting comparison item for ownership check: %w", err)
+	}
+	return s.VerifyComparisonOwnership(ctx, item.ContentID, userID, tenantID, false)
+}
+
+// VerifyComparisonDimensionOwnership resolves the parent comparison from a
+// dimension ID and then verifies ownership. Ref: §5.3 RBAC escape, BUG-003.
+func (s *Service) VerifyComparisonDimensionOwnership(ctx context.Context, dimensionID, userID, tenantID pgtype.UUID, bypassOwnership bool) error {
+	if bypassOwnership {
+		return nil
+	}
+	dim, err := s.store.getComparisonDimensionByID(ctx, dimensionID, tenantID)
+	if err != nil {
+		return fmt.Errorf("getting comparison dimension for ownership check: %w", err)
+	}
+	return s.VerifyComparisonOwnership(ctx, dim.ContentID, userID, tenantID, false)
+}
 
 // DeleteComparisonType removes a comparison type and its cascaded children.
 // It refuses to delete a type that is still referenced by comparison_items
@@ -605,7 +662,7 @@ func (s *Service) ListComparisonTypeAccess(ctx context.Context, typeID, tenantID
 		return nil, fmt.Errorf("verifying comparison type ownership: %w", err)
 	}
 
-	return s.store.listComparisonTypeAccess(ctx, typeID)
+	return s.store.listComparisonTypeAccess(ctx, typeID, tenantID)
 }
 
 // DeleteComparisonTypeAccess removes an access entry for a user group.
@@ -693,6 +750,38 @@ func (s *Service) DeleteComparisonItem(ctx context.Context, id, tenantID pgtype.
 // ReorderComparisonItem changes the position of a comparison item.
 func (s *Service) ReorderComparisonItem(ctx context.Context, id, contentID, tenantID pgtype.UUID, position int32) error {
 	return s.store.reorderComparisonItems(ctx, id, contentID, tenantID, position)
+}
+
+// BatchReorderComparisonItems updates positions for all items in a comparison
+// in a single pgx.Batch round-trip, avoiding N individual UPDATE queries
+// (BUG-004). Each (id, position) pair is queued as a separate statement but
+// sent to the database in one network round-trip.
+func (s *Service) BatchReorderComparisonItems(ctx context.Context, contentID, tenantID pgtype.UUID, ids []pgtype.UUID, positions []int32) error {
+	if len(ids) != len(positions) {
+		return fmt.Errorf("ids and positions length mismatch")
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+
+	const reorderSQL = `UPDATE comparison_items SET position = $1
+WHERE id = $2 AND content_id = $3 AND tenant_id = $4 AND deleted_at IS NULL`
+
+	batch := &pgx.Batch{}
+	for i, id := range ids {
+		batch.Queue(reorderSQL, positions[i], id, contentID, tenantID)
+	}
+
+	br := s.db.Writer.SendBatch(ctx, batch)
+	defer br.Close()
+
+	for range ids {
+		if _, err := br.Exec(); err != nil {
+			return fmt.Errorf("batch reorder item: %w", err)
+		}
+	}
+
+	return nil
 }
 
 // ---------------------------------------------------------------------------
@@ -823,8 +912,7 @@ func (s *Service) BatchUpsertComparisonValues(ctx context.Context, tenantID, dim
 ON CONFLICT (dimension_id, item_id) DO UPDATE
 SET value = EXCLUDED.value,
     value_rating = EXCLUDED.value_rating,
-    value_boolean = EXCLUDED.value_boolean,
-    created_at = now()
+    value_boolean = EXCLUDED.value_boolean
 RETURNING dimension_id, item_id, tenant_id, value, value_rating, value_boolean, created_at`
 
 	batch := &pgx.Batch{}

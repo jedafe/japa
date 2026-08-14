@@ -105,8 +105,11 @@ func (s *Store) setComparisonTypeAccess(ctx context.Context, p gen.SetComparison
 }
 
 //nolint:unused // reserved for future features
-func (s *Store) listComparisonTypeAccess(ctx context.Context, typeID pgtype.UUID) ([]gen.ListComparisonTypeAccessRow, error) {
-	rows, err := s.read.ListComparisonTypeAccess(ctx, typeID)
+func (s *Store) listComparisonTypeAccess(ctx context.Context, typeID, tenantID pgtype.UUID) ([]gen.ListComparisonTypeAccessRow, error) {
+	rows, err := s.read.ListComparisonTypeAccess(ctx, gen.ListComparisonTypeAccessParams{
+		TypeID:   typeID,
+		TenantID: tenantID,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("listing comparison type access: %w", err)
 	}

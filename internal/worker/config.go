@@ -28,7 +28,7 @@ const (
 // Config holds the configuration needed to create Asynq server and client
 // instances. All fields map to JC_ environment variables.
 type Config struct {
-	RedisAddr     string // JC_REDIS_ADDR — host:port of the Valkey/Redis instance
+	RedisAddr     string // JC_VALKEY_ADDR (canonical) → JC_REDIS_ADDR (legacy alias) — host:port of the Valkey/Redis instance
 	RedisPassword string // JC_REDIS_PASSWORD — optional auth password
 	RedisDB       int    // JC_REDIS_DB — database number (0 default)
 
@@ -49,7 +49,7 @@ type Config struct {
 // the corresponding JC_ variables before calling this function.
 func DefaultConfig() *Config {
 	return &Config{
-		RedisAddr:           getEnv("JC_REDIS_ADDR", "localhost:6379"),
+		RedisAddr:           getEnvWithFallback("JC_VALKEY_ADDR", "JC_REDIS_ADDR", "localhost:6379"),
 		RedisPassword:       getEnv("JC_REDIS_PASSWORD", ""),
 		RedisDB:             getEnvInt("JC_REDIS_DB", 0),
 		CriticalConcurrency: getEnvInt("JC_WORKER_CRITICAL_CONCURRENCY", 10),
