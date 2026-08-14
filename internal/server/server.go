@@ -1402,6 +1402,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// category (ADR-088). The dispatcher is optional; GenerateDraft falls
 	// back to empty steps if it is nil or the call fails.
 	attestationGuideService.SetDispatcher(aiDispatcher)
+	arrivalChecklistService.SetDispatcher(aiDispatcher)
 
 	aiHandlers := ai.NewHandlers(aiDispatcher, aiStore)
 	aiHandlers.SetHonchoClient(honcho.NewClient(cfg.HonchoURL))
