@@ -200,3 +200,51 @@ func (a *intelGuidePromoterStoreAdapter) WithTx(ctx context.Context, fn func(pro
 		return fn(s)
 	})
 }
+
+// intelWikiPromoterStoreAdapter wraps *stores.Store for the WikiPromoter's
+// WikiStore interface.
+type intelWikiPromoterStoreAdapter struct {
+	*intel_stores.Store
+}
+
+func (a *intelWikiPromoterStoreAdapter) WithTx(ctx context.Context, fn func(promoter.WikiTxStore) error) error {
+	return a.Store.WithTx(ctx, func(s *intel_stores.Store) error {
+		return fn(s)
+	})
+}
+
+// intelLanguageTestPromoterStoreAdapter wraps *stores.Store for the
+// LanguageTestPromoter's LanguageTestStore interface.
+type intelLanguageTestPromoterStoreAdapter struct {
+	*intel_stores.Store
+}
+
+func (a *intelLanguageTestPromoterStoreAdapter) WithTx(ctx context.Context, fn func(promoter.LanguageTestTxStore) error) error {
+	return a.Store.WithTx(ctx, func(s *intel_stores.Store) error {
+		return fn(s)
+	})
+}
+
+// intelTaxPromoterStoreAdapter wraps *stores.Store for the TaxPromoter's
+// TaxStore interface.
+type intelTaxPromoterStoreAdapter struct {
+	*intel_stores.Store
+}
+
+func (a *intelTaxPromoterStoreAdapter) WithTx(ctx context.Context, fn func(promoter.TaxTxStore) error) error {
+	return a.Store.WithTx(ctx, func(s *intel_stores.Store) error {
+		return fn(s)
+	})
+}
+
+// intelCommunityOrgPromoterStoreAdapter wraps *stores.Store for the
+// CommunityOrgPromoter's CommunityOrgStore interface.
+type intelCommunityOrgPromoterStoreAdapter struct {
+	*intel_stores.Store
+}
+
+func (a *intelCommunityOrgPromoterStoreAdapter) WithTx(ctx context.Context, fn func(promoter.CommunityOrgTxStore) error) error {
+	return a.Store.WithTx(ctx, func(s *intel_stores.Store) error {
+		return fn(s)
+	})
+}

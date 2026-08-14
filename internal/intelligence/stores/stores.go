@@ -754,3 +754,131 @@ func (s *Store) ListComparisonItemsIntelKeyset(ctx context.Context, tenantID pgt
 	}
 	return rows, nil
 }
+
+// ---------------------------------------------------------------------------
+// WikiPages (intelligence columns — domain projection for the wiki domain)
+// ---------------------------------------------------------------------------
+
+func (s *Store) CreateWikiPageIntel(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateWikiPageIntelParams) (gen.WikiPage, error) {
+	arg.TenantID = tenantID
+	row, err := s.queries.CreateWikiPageIntel(ctx, arg)
+	if err != nil {
+		return gen.WikiPage{}, fmt.Errorf("stores: create wiki page intel: %w", err)
+	}
+	return row, nil
+}
+
+func (s *Store) GetWikiPageByIntelRecord(ctx context.Context, tenantID, intelRecordID pgtype.UUID) (gen.WikiPage, error) {
+	row, err := s.queries.GetWikiPageByIntelRecord(ctx, gen.GetWikiPageByIntelRecordParams{TenantID: tenantID, IntelRecordID: intelRecordID})
+	if err != nil {
+		return gen.WikiPage{}, fmt.Errorf("stores: get wiki page by intel record: %w", err)
+	}
+	return row, nil
+}
+
+func (s *Store) UpdateWikiPageIntel(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateWikiPageIntelParams) error {
+	arg.TenantID = tenantID
+	if err := s.queries.UpdateWikiPageIntel(ctx, arg); err != nil {
+		return fmt.Errorf("stores: update wiki page intel: %w", err)
+	}
+	return nil
+}
+
+// ---------------------------------------------------------------------------
+// LanguageTestRequirements (intelligence columns — domain projection for the language test domain)
+// ---------------------------------------------------------------------------
+
+func (s *Store) CreateLanguageTestRequirementIntel(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateLanguageTestRequirementIntelParams) (gen.LanguageTestRequirement, error) {
+	arg.TenantID = tenantID
+	row, err := s.queries.CreateLanguageTestRequirementIntel(ctx, arg)
+	if err != nil {
+		return gen.LanguageTestRequirement{}, fmt.Errorf("stores: create language test requirement intel: %w", err)
+	}
+	return row, nil
+}
+
+func (s *Store) GetLanguageTestRequirementByIntelRecord(ctx context.Context, tenantID, intelRecordID pgtype.UUID) (gen.LanguageTestRequirement, error) {
+	row, err := s.queries.GetLanguageTestRequirementByIntelRecord(ctx, gen.GetLanguageTestRequirementByIntelRecordParams{TenantID: tenantID, IntelRecordID: intelRecordID})
+	if err != nil {
+		return gen.LanguageTestRequirement{}, fmt.Errorf("stores: get language test requirement by intel record: %w", err)
+	}
+	return row, nil
+}
+
+func (s *Store) UpdateLanguageTestRequirementIntel(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateLanguageTestRequirementIntelParams) error {
+	arg.TenantID = tenantID
+	if err := s.queries.UpdateLanguageTestRequirementIntel(ctx, arg); err != nil {
+		return fmt.Errorf("stores: update language test requirement intel: %w", err)
+	}
+	return nil
+}
+
+// GetLanguageTestByName resolves the language_tests(id) FK from a test name
+// extracted as free text. language_tests is a global reference table (no
+// tenant_id), so the tenantID is accepted for interface consistency with the
+// promoter store contract but is not used in the query filter.
+func (s *Store) GetLanguageTestByName(ctx context.Context, tenantID pgtype.UUID, name string) (gen.LanguageTest, error) {
+	row, err := s.queries.GetLanguageTestByName(ctx, name)
+	if err != nil {
+		return gen.LanguageTest{}, fmt.Errorf("stores: get language test by name: %w", err)
+	}
+	return row, nil
+}
+
+// ---------------------------------------------------------------------------
+// TaxObligationGuides (intelligence columns — domain projection for the tax domain)
+// ---------------------------------------------------------------------------
+
+func (s *Store) CreateTaxObligationGuideIntel(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateTaxObligationGuideIntelParams) (gen.TaxObligationGuide, error) {
+	arg.TenantID = tenantID
+	row, err := s.queries.CreateTaxObligationGuideIntel(ctx, arg)
+	if err != nil {
+		return gen.TaxObligationGuide{}, fmt.Errorf("stores: create tax obligation guide intel: %w", err)
+	}
+	return row, nil
+}
+
+func (s *Store) GetTaxObligationGuideByIntelRecord(ctx context.Context, tenantID, intelRecordID pgtype.UUID) (gen.TaxObligationGuide, error) {
+	row, err := s.queries.GetTaxObligationGuideByIntelRecord(ctx, gen.GetTaxObligationGuideByIntelRecordParams{TenantID: tenantID, IntelRecordID: intelRecordID})
+	if err != nil {
+		return gen.TaxObligationGuide{}, fmt.Errorf("stores: get tax obligation guide by intel record: %w", err)
+	}
+	return row, nil
+}
+
+func (s *Store) UpdateTaxObligationGuideIntel(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateTaxObligationGuideIntelParams) error {
+	arg.TenantID = tenantID
+	if err := s.queries.UpdateTaxObligationGuideIntel(ctx, arg); err != nil {
+		return fmt.Errorf("stores: update tax obligation guide intel: %w", err)
+	}
+	return nil
+}
+
+// ---------------------------------------------------------------------------
+// CommunityOrganisations (intelligence columns — domain projection for the community org domain)
+// ---------------------------------------------------------------------------
+
+func (s *Store) CreateCommunityOrganisationIntel(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateCommunityOrganisationIntelParams) (gen.CommunityOrganisation, error) {
+	arg.TenantID = tenantID
+	row, err := s.queries.CreateCommunityOrganisationIntel(ctx, arg)
+	if err != nil {
+		return gen.CommunityOrganisation{}, fmt.Errorf("stores: create community organisation intel: %w", err)
+	}
+	return row, nil
+}
+
+func (s *Store) GetCommunityOrganisationByIntelRecord(ctx context.Context, tenantID, intelRecordID pgtype.UUID) (gen.CommunityOrganisation, error) {
+	row, err := s.queries.GetCommunityOrganisationByIntelRecord(ctx, gen.GetCommunityOrganisationByIntelRecordParams{TenantID: tenantID, IntelRecordID: intelRecordID})
+	if err != nil {
+		return gen.CommunityOrganisation{}, fmt.Errorf("stores: get community organisation by intel record: %w", err)
+	}
+	return row, nil
+}
+
+func (s *Store) UpdateCommunityOrganisationIntel(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateCommunityOrganisationIntelParams) error {
+	arg.TenantID = tenantID
+	if err := s.queries.UpdateCommunityOrganisationIntel(ctx, arg); err != nil {
+		return fmt.Errorf("stores: update community organisation intel: %w", err)
+	}
+	return nil
+}

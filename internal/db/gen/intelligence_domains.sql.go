@@ -1135,6 +1135,29 @@ func (q *Queries) GetIntelJobBySourceURL(ctx context.Context, arg GetIntelJobByS
 	return i, err
 }
 
+const getLanguageTestByName = `-- name: GetLanguageTestByName :one
+SELECT id, slug, name, official_url, validity_months, created_at, updated_at FROM language_tests WHERE name = $1 LIMIT 1
+`
+
+// language_tests is a global reference table (no tenant_id), so the
+// tenantID parameter is accepted for interface consistency but not used
+// in the filter. The promoter resolves the language_tests(id) FK from a
+// test_name extracted as free text.
+func (q *Queries) GetLanguageTestByName(ctx context.Context, name string) (LanguageTest, error) {
+	row := q.db.QueryRow(ctx, getLanguageTestByName, name)
+	var i LanguageTest
+	err := row.Scan(
+		&i.ID,
+		&i.Slug,
+		&i.Name,
+		&i.OfficialUrl,
+		&i.ValidityMonths,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const getLanguageTestRequirementByIntelRecord = `-- name: GetLanguageTestRequirementByIntelRecord :one
 SELECT id, tenant_id, destination_space_id, visa_category, test_id, minimum_score, score_breakdown, notes, source_url, status, is_active, ai_generated, ai_model, ai_prompt_hash, hitl_reviewed_by, hitl_reviewed_at, hitl_review_notes, created_at, updated_at, is_japabot_indexed, intel_record_id, guide_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides FROM language_test_requirements WHERE tenant_id = $1 AND intel_record_id = $2
 `
