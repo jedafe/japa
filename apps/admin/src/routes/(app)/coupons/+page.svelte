@@ -1,10 +1,12 @@
 <script lang="ts">
 	// /coupons — migrated to the EntityPage scaffold; declarative CRUD entity with date conversion.
+	// Ref: japaconnect-engineering/sections/55-coupons-external-affiliates.md
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
-	import { couponsAdminApiExtended } from '$lib/api';
+	import { couponsAdminApiExtended, affiliateProvidersAdminApi } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { Trash2 } from 'lucide-svelte';
 	import { dateInputToStartOfDayISO, dateInputToEndOfDayISO, isoTimestampToDateInput } from '$lib/utils/date';
+	import { onMount } from 'svelte';
 
 	type Coupon = {
 		id: string;
@@ -28,9 +30,28 @@
 		created_at: string;
 	};
 
+	type Provider = {
+		id: string;
+		name: string;
+		slug: string;
+	};
+
 	let entityController = $state<EntityPageController | undefined>(undefined);
 	let pageError = $state('');
 	let bulkDeleting = $state(false);
+	let providerOptions = $state<Array<{ value: string; label: string }>>([]);
+
+	// Load affiliate providers for the provider_id select (Section 55 — provider linkage).
+	onMount(async () => {
+		try {
+			const res = await affiliateProvidersAdminApi.list('page_size=100');
+			if (res.ok && Array.isArray(res.data)) {
+				providerOptions = (res.data as Provider[]).map((p) => ({ value: p.id, label: p.name }));
+			}
+		} catch {
+			// Providers list is best-effort; the select will just be empty.
+		}
+	});
 
 	async function bulkDelete(ids: Set<string>) {
 		const idArr = Array.from(ids);
@@ -58,12 +79,20 @@
 		{ value: 'internal', label: t('coupons.internal', 'Internal (Platform)') }
 	];
 
+	const statusFilterOptions = [
+		{ value: 'active', label: t('coupons.active', 'Active') },
+		{ value: 'expired', label: t('coupons.expired', 'Expired') },
+		{ value: 'suspended', label: t('coupons.suspended', 'Suspended') }
+	];
+
 	// `is_active` is derived from `status`; `valid_from`/`expires_at` are converted
 	// to date-input format in `load` so EntityForm's date inputs seed correctly.
-	const fields: FieldDef[] = [
+	// `provider_id` and `is_verified` are included per Section 55 (provider linkage + verify).
+	let fields = $derived<FieldDef[]>([
 		{ key: 'title', label: t('coupons.title_field', 'Title'), type: 'text', required: true, placeholder: 'e.g. 20% off Remitly — first transfer' },
 		{ key: 'code', label: t('coupons.code', 'Code'), type: 'text', required: true },
 		{ key: 'coupon_type', label: t('coupons.coupon_type', 'Coupon Type'), type: 'select', options: couponTypeOptions },
+		{ key: 'provider_id', label: t('coupons.provider', 'Provider'), type: 'select', options: providerOptions },
 		{ key: 'discount_type', label: t('coupons.type', 'Discount Type'), type: 'select', options: discountTypeOptions },
 		{ key: 'discount_value', label: t('coupons.value', 'Value'), type: 'number' },
 		{ key: 'currency', label: t('coupons.currency', 'Currency'), type: 'text', placeholder: 'e.g. NGN, USD' },
@@ -72,8 +101,9 @@
 		{ key: 'terms_url', label: t('coupons.terms_url', 'Terms URL'), type: 'url' },
 		{ key: 'valid_from', label: t('coupons.valid_from', 'Valid From'), type: 'date' },
 		{ key: 'expires_at', label: t('coupons.valid_until', 'Valid Until'), type: 'date' },
+		{ key: 'is_verified', label: t('coupons.verified', 'Verified'), type: 'checkbox' },
 		{ key: 'is_active', label: t('coupons.active', 'Active'), type: 'checkbox' }
-	];
+	]);
 
 	const config: EntityPageConfig = {
 		title: t('coupons.title', 'Coupons'),
@@ -90,12 +120,14 @@
 				sortable: true,
 				render: (v: number, row: Coupon) => {
 					if (v == null) return '—';
-					return row.discount_type === 'percent' ? `${v}%` : `${v} credits`;
+					if (row.discount_type === 'percent') return `${v}%`;
+					if (row.discount_type === 'free_shipping') return t('coupons.free_shipping', 'Free Shipping');
+					return `${v} ${row.currency ?? ''}`.trim();
 				}
 			},
 			{
 				key: 'total_clicks',
-				label: t('coupons.used', 'Used'),
+				label: t('coupons.clicks', 'Clicks'),
 				sortable: true,
 				render: (v: number) => `${v ?? 0}`
 			},
@@ -107,6 +139,10 @@
 			},
 			{ key: 'status', label: t('common.status', 'Status'), sortable: true }
 		],
+		filters: [
+			{ key: 'status', label: t('common.status', 'Status'), options: statusFilterOptions },
+			{ key: 'coupon_type', label: t('coupons.coupon_type', 'Coupon Type'), options: couponTypeOptions }
+		],
 		bulkActions: [
 			{
 				label: t('common.deleteSelected', 'Delete Selected'),
@@ -116,11 +152,17 @@
 			}
 		],
 		fields,
-		load: async ({ q, page, pageSize }) => {
+		load: async ({ q, page, pageSize, sort, filter }) => {
 			const params = new URLSearchParams();
 			if (q) params.set('q', q);
 			if (page) params.set('page', String(page));
 			if (pageSize) params.set('page_size', String(pageSize));
+			if (filter.status) params.set('status', filter.status);
+			if (filter.coupon_type) params.set('coupon_type', filter.coupon_type);
+			// EntityPage emits sort as "key:dir"; the backend ignores sort for now
+			// (fixed ORDER BY created_at DESC), but we pass it for forward-compat.
+			const sortKey = sort ? sort.split(':')[0] : '';
+			if (sortKey) params.set('sort', sortKey);
 			const result = await couponsAdminApiExtended.list(params.toString() || undefined);
 			if (result.ok) {
 				const raw = (result.data as Coupon[]) ?? [];
@@ -145,8 +187,10 @@
 				coupon_type: body.coupon_type ?? 'external',
 				discount_type: body.discount_type ?? 'percent',
 				discount_value: body.discount_value ? Number(body.discount_value) : null,
+				is_verified: !!body.is_verified,
 				status: body.is_active ? 'active' : 'suspended'
 			};
+			if (body.provider_id) payload.provider_id = String(body.provider_id);
 			if (body.currency) payload.currency = String(body.currency).trim();
 			if (body.description) payload.description = String(body.description).trim();
 			if (body.referral_url) payload.referral_url = String(body.referral_url).trim();
@@ -163,8 +207,10 @@
 				coupon_type: body.coupon_type ?? 'external',
 				discount_type: body.discount_type ?? 'percent',
 				discount_value: body.discount_value ? Number(body.discount_value) : null,
+				is_verified: !!body.is_verified,
 				status: body.is_active ? 'active' : 'suspended'
 			};
+			if (body.provider_id) payload.provider_id = String(body.provider_id);
 			if (body.currency) payload.currency = String(body.currency).trim();
 			if (body.description) payload.description = String(body.description).trim();
 			if (body.referral_url) payload.referral_url = String(body.referral_url).trim();
@@ -211,6 +257,12 @@
 			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('coupons.coupon_type', 'Type')}</p>
 			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.coupon_type}</p>
 		</div>
+		{#if row.provider_name}
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('coupons.provider', 'Provider')}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.provider_name}</p>
+			</div>
+		{/if}
 		{#if row.description}
 			<div>
 				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('coupons.description_field', 'Description')}</p>
@@ -220,7 +272,7 @@
 		<div>
 			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('coupons.discount', 'Discount')}</p>
 			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">
-				{row.discount_type === 'percent' ? `${row.discount_value}%` : row.discount_type === 'free_shipping' ? t('coupons.free_shipping', 'Free Shipping') : `${row.discount_value} ${row.currency ?? 'credits'}`}
+				{row.discount_type === 'percent' ? `${row.discount_value}%` : row.discount_type === 'free_shipping' ? t('coupons.free_shipping', 'Free Shipping') : `${row.discount_value ?? ''} ${row.currency ?? ''}`.trim()}
 			</p>
 		</div>
 		{#if row.referral_url}
@@ -236,8 +288,12 @@
 			</div>
 		{/if}
 		<div>
-			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('coupons.used', 'Used')}</p>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('coupons.clicks', 'Clicks')}</p>
 			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.total_clicks ?? 0}</p>
+		</div>
+		<div>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('coupons.copies', 'Copies')}</p>
+			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.total_copies ?? 0}</p>
 		</div>
 		<div>
 			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('coupons.verified', 'Verified')}</p>

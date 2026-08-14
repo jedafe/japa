@@ -5,11 +5,12 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
+	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/tenant"
 )
@@ -444,13 +445,19 @@ func (h *Handlers) DeleteCouponAdmin(w http.ResponseWriter, r *http.Request) {
 // ── Render Helpers ──────────────────────────────────────────────────
 
 // RenderCoupon handles GET /api/v1/render/coupon/:id
+// BE-LOW-001: tenant-scoped — the tenant context from the request ensures
+// a render request cannot resolve a coupon from another tenant.
 func (h *Handlers) RenderCoupon(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid coupon ID")
 		return
 	}
-	rendered, err := h.Service.ResolveCouponForRender(r.Context(), id)
+	rendered, err := h.Service.ResolveCouponForRender(r.Context(), tenantID, id)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -459,7 +466,13 @@ func (h *Handlers) RenderCoupon(w http.ResponseWriter, r *http.Request) {
 }
 
 // RenderAffiliateLink handles GET /api/v1/render/affiliate-link
+// BE-LOW-001: tenant-scoped — the tenant context from the request ensures
+// a render request cannot resolve a provider from another tenant.
 func (h *Handlers) RenderAffiliateLink(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
 	providerIDStr := r.URL.Query().Get("provider_id")
 	originalURL := r.URL.Query().Get("url")
 	if providerIDStr == "" || originalURL == "" {
@@ -471,7 +484,7 @@ func (h *Handlers) RenderAffiliateLink(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_provider_id", "Invalid provider ID")
 		return
 	}
-	rendered, err := h.Service.ResolveAffiliateLinkForRender(r.Context(), providerID, originalURL)
+	rendered, err := h.Service.ResolveAffiliateLinkForRender(r.Context(), tenantID, providerID, originalURL)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -495,6 +508,7 @@ func parseQueryUUID(r *http.Request, key string) *pgtype.UUID {
 // ─── Affiliate Enhancement Handlers ─────────────────────────────────
 
 // ListAffiliateScanResults handles GET /admin/affiliate/scan-results
+// BE-LOW-002: uses sqlc-generated query instead of raw SQL.
 func (h *Handlers) ListAffiliateScanResults(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -503,53 +517,31 @@ func (h *Handlers) ListAffiliateScanResults(w http.ResponseWriter, r *http.Reque
 	page := int32(parseQueryInt(r, "page", 1))
 	pageSize := int32(parseQueryInt(r, "page_size", DefaultPageSize))
 	limit, offset := paginate(page, pageSize)
-	domainFilter := parseQueryString(r, "domain")
-	actionFilter := parseQueryString(r, "action")
 
-	var rows pgx.Rows
-	var err error
-	if domainFilter != nil {
-		rows, err = h.Service.db.Reader.Query(r.Context(),
-			"SELECT id, content_id, url, domain, detection_method, action_taken, created_at "+
-				"FROM content_affiliate_scan_results WHERE tenant_id = $1 AND domain = $2 ORDER BY created_at DESC LIMIT $3 OFFSET $4",
-			tenantID, *domainFilter, limit, offset)
-	} else if actionFilter != nil {
-		rows, err = h.Service.db.Reader.Query(r.Context(),
-			"SELECT id, content_id, url, domain, detection_method, action_taken, created_at "+
-				"FROM content_affiliate_scan_results WHERE tenant_id = $1 AND action_taken = $2 ORDER BY created_at DESC LIMIT $3 OFFSET $4",
-			tenantID, *actionFilter, limit, offset)
-	} else {
-		rows, err = h.Service.db.Reader.Query(r.Context(),
-			"SELECT id, content_id, url, domain, detection_method, action_taken, created_at "+
-				"FROM content_affiliate_scan_results WHERE tenant_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3",
-			tenantID, limit, offset)
-	}
+	rows, err := h.Service.store.listAffiliateScanResults(r.Context(), gen.ListAffiliateScanResultsParams{
+		TenantID:    tenantID,
+		Domain:      parseQueryString(r, "domain"),
+		ActionTaken: parseQueryString(r, "action"),
+		PageLimit:   limit,
+		PageOffset:  offset,
+	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "query_error", "Failed to query scan results")
 		return
 	}
-	defer rows.Close()
-	var results []map[string]any
-	for rows.Next() {
-		var id, contentID pgtype.UUID
-		var url, domain, method, action string
-		var createdAt pgtype.Timestamptz
-		if err := rows.Scan(&id, &contentID, &url, &domain, &method, &action, &createdAt); err != nil {
-			continue
-		}
+	results := make([]map[string]any, 0, len(rows))
+	for _, row := range rows {
 		results = append(results, map[string]any{
-			"id": id.String(), "content_id": contentID.String(), "url": url,
-			"domain": domain, "detection_method": method, "action_taken": action,
-			"created_at": createdAt.Time,
+			"id": row.ID.String(), "content_id": row.ContentID.String(), "url": row.Url,
+			"domain": row.Domain, "detection_method": row.DetectionMethod, "action_taken": row.ActionTaken,
+			"created_at": row.CreatedAt.Time,
 		})
-	}
-	if results == nil {
-		results = []map[string]any{}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": results, "page": page, "page_size": pageSize})
 }
 
 // ReviewAffiliateScanResult handles PATCH /admin/affiliate/scan-results/{id}
+// BE-LOW-002: uses sqlc-generated query instead of raw SQL.
 func (h *Handlers) ReviewAffiliateScanResult(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -573,15 +565,22 @@ func (h *Handlers) ReviewAffiliateScanResult(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	var reviewerID pgtype.UUID
-	reviewerID.Scan(user.UserID)
-	tag, err := h.Service.db.Writer.Exec(r.Context(),
-		"UPDATE content_affiliate_scan_results SET action_taken = $1, reviewed_by = $2, reviewed_at = now(), notes = $3 WHERE id = $4 AND tenant_id = $5",
-		input.Action, reviewerID, input.Notes, id, tenantID)
+	if err := reviewerID.Scan(user.UserID); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_user_id", "Invalid reviewer ID")
+		return
+	}
+	rowsAffected, err := h.Service.store.reviewAffiliateScanResult(r.Context(), gen.ReviewAffiliateScanResultParams{
+		ActionTaken: input.Action,
+		ReviewedBy:  reviewerID,
+		Notes:       input.Notes,
+		ID:          id,
+		TenantID:    tenantID,
+	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "update_failed", "Failed to review scan result")
 		return
 	}
-	if tag.RowsAffected() == 0 {
+	if rowsAffected == 0 {
 		writeError(w, http.StatusNotFound, "scan_result_not_found", "Scan result not found")
 		return
 	}
@@ -589,6 +588,7 @@ func (h *Handlers) ReviewAffiliateScanResult(w http.ResponseWriter, r *http.Requ
 }
 
 // ListAffiliateCommissions handles GET /admin/affiliate/commissions
+// BE-LOW-002: uses sqlc-generated query instead of raw SQL.
 func (h *Handlers) ListAffiliateCommissions(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -597,71 +597,51 @@ func (h *Handlers) ListAffiliateCommissions(w http.ResponseWriter, r *http.Reque
 	page := int32(parseQueryInt(r, "page", 1))
 	pageSize := int32(parseQueryInt(r, "page_size", DefaultPageSize))
 	limit, offset := paginate(page, pageSize)
-	creditedFilter := parseQueryString(r, "credited")
 
-	var rows pgx.Rows
-	var err error
-	if creditedFilter != nil {
-		var credited bool
-		switch *creditedFilter {
+	// Parse optional credited filter into a *bool for the sqlc narg.
+	var creditedFilter *bool
+	if raw := parseQueryString(r, "credited"); raw != nil {
+		switch *raw {
 		case "true", "1":
-			credited = true
+			t := true
+			creditedFilter = &t
 		case "false", "0":
-			credited = false
+			f := false
+			creditedFilter = &f
 		default:
 			writeError(w, http.StatusBadRequest, "invalid_filter", "credited must be 'true' or 'false'")
 			return
 		}
-		rows, err = h.Service.db.Reader.Query(r.Context(),
-			"SELECT ac.id, ac.content_id, ac.author_user_id, ac.external_commission, ac.author_share, "+
-				"ac.author_commission_pct, ac.event_description, ac.credited, ac.created_at, ap.name, u.username "+
-				"FROM affiliate_content_commissions ac "+
-				"LEFT JOIN affiliate_providers ap ON ap.id = ac.provider_id "+
-				"LEFT JOIN users u ON u.id = ac.author_user_id "+
-				"WHERE ac.tenant_id = $1 AND ac.credited = $2 ORDER BY ac.created_at DESC LIMIT $3 OFFSET $4",
-			tenantID, credited, limit, offset)
-	} else {
-		rows, err = h.Service.db.Reader.Query(r.Context(),
-			"SELECT ac.id, ac.content_id, ac.author_user_id, ac.external_commission, ac.author_share, "+
-				"ac.author_commission_pct, ac.event_description, ac.credited, ac.created_at, ap.name, u.username "+
-				"FROM affiliate_content_commissions ac "+
-				"LEFT JOIN affiliate_providers ap ON ap.id = ac.provider_id "+
-				"LEFT JOIN users u ON u.id = ac.author_user_id "+
-				"WHERE ac.tenant_id = $1 ORDER BY ac.created_at DESC LIMIT $2 OFFSET $3",
-			tenantID, limit, offset)
 	}
+
+	rows, err := h.Service.store.listAffiliateCommissions(r.Context(), gen.ListAffiliateCommissionsParams{
+		TenantID:   tenantID,
+		Credited:   creditedFilter,
+		PageLimit:  limit,
+		PageOffset: offset,
+	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "query_error", "Failed to query commissions")
 		return
 	}
-	defer rows.Close()
-	var results []map[string]any
-	for rows.Next() {
-		var id, contentID, authorUserID pgtype.UUID
-		var extComm, authorShare, pct float64
-		var desc *string
-		var credited bool
-		var createdAt pgtype.Timestamptz
-		var providerName, username *string
-		if err := rows.Scan(&id, &contentID, &authorUserID,
-			&extComm, &authorShare, &pct, &desc, &credited, &createdAt, &providerName, &username); err != nil {
-			continue
-		}
+	results := make([]map[string]any, 0, len(rows))
+	for _, row := range rows {
+		extCommF, _ := row.ExternalCommission.Float64Value()
+		authorShareF, _ := row.AuthorShare.Float64Value()
+		pctF, _ := row.AuthorCommissionPct.Float64Value()
 		results = append(results, map[string]any{
-			"id": id.String(), "content_id": contentID.String(),
-			"author_user_id": authorUserID.String(), "author_username": username,
-			"provider_name": providerName,
-			"external_commission": extComm, "author_share": authorShare,
-			"author_commission_pct": pct, "credited": credited, "created_at": createdAt.Time,
+			"id": row.ID.String(), "content_id": row.ContentID.String(),
+			"author_user_id": row.AuthorUserID.String(), "author_username": row.AuthorUsername,
+			"provider_name":       row.ProviderName,
+			"external_commission": extCommF.Float64, "author_share": authorShareF.Float64,
+			"author_commission_pct": pctF.Float64, "credited": row.Credited, "created_at": row.CreatedAt.Time,
 		})
-	}
-	if results == nil {
-		results = []map[string]any{}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": results, "page": page, "page_size": pageSize})
 }
 
 // UpdateProviderAuthorCommission handles PATCH /admin/affiliate/providers/{id}/author-commission
+// BE-LOW-002: uses sqlc-generated query instead of raw SQL.
 func (h *Handlers) UpdateProviderAuthorCommission(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -683,14 +663,16 @@ func (h *Handlers) UpdateProviderAuthorCommission(w http.ResponseWriter, r *http
 		writeError(w, http.StatusBadRequest, "invalid_pct", "Percentage must be 0-100")
 		return
 	}
-	tag, err := h.Service.db.Writer.Exec(r.Context(),
-		"UPDATE affiliate_providers SET author_commission_pct = $1 WHERE id = $2 AND tenant_id = $3",
-		input.AuthorCommissionPct, id, tenantID)
+	rowsAffected, err := h.Service.store.updateProviderAuthorCommission(r.Context(), gen.UpdateProviderAuthorCommissionParams{
+		AuthorCommissionPct: numericFromFloat(input.AuthorCommissionPct),
+		ID:                  id,
+		TenantID:            tenantID,
+	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "update_failed", "Failed to update author commission percentage")
 		return
 	}
-	if tag.RowsAffected() == 0 {
+	if rowsAffected == 0 {
 		writeError(w, http.StatusNotFound, "provider_not_found", "Affiliate provider not found")
 		return
 	}
@@ -750,6 +732,20 @@ func (h *Handlers) RecordAffiliateCommission(w http.ResponseWriter, r *http.Requ
 		EventDescription:   input.EventDescription,
 	})
 	if err != nil {
+		// Distinguish not-found (content or provider missing) from internal errors.
+		errMsg := err.Error()
+		if strings.Contains(errMsg, "content not found") {
+			writeError(w, http.StatusNotFound, "content_not_found", "Content not found")
+			return
+		}
+		if strings.Contains(errMsg, "provider not found") {
+			writeError(w, http.StatusNotFound, "provider_not_found", "Affiliate provider not found")
+			return
+		}
+		if strings.Contains(errMsg, "no author_id") {
+			writeError(w, http.StatusBadRequest, "no_author", "Content has no author")
+			return
+		}
 		errpkg.CaptureException(err)
 		writeError(w, http.StatusInternalServerError, "record_failed", "Failed to record commission")
 		return

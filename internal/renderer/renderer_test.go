@@ -209,9 +209,9 @@ func TestBuildCouponWidgetHTML_Suspended(t *testing.T) {
 func TestBuildCouponWidgetHTML_Active(t *testing.T) {
 	t.Parallel()
 	c := &CouponRenderResult{
-		Title:   "20% off Remitly",
-		Code:    "JAPA20",
-		Status:  "active",
+		Title:         "20% off Remitly",
+		Code:          "JAPA20",
+		Status:        "active",
 		DiscountType:  strPtr("percent"),
 		DiscountValue: strPtr("20"),
 		ReferralURL:   strPtr("https://remitly.com/?ref=japa20"),
@@ -265,13 +265,13 @@ func TestBuildCouponWidgetHTML_DataURIRejected(t *testing.T) {
 func TestBuildCouponWidgetHTML_CompactMode(t *testing.T) {
 	t.Parallel()
 	c := &CouponRenderResult{
-		Title:          "Compact coupon",
-		Code:           "CMP",
-		Status:         "active",
-		DiscountType:   strPtr("percent"),
-		DiscountValue:  strPtr("50"),
-		ProviderName:   strPtr("TestProvider"),
-		ExpiresAt:      strPtr("2026-12-31T23:59:59Z"),
+		Title:         "Compact coupon",
+		Code:          "CMP",
+		Status:        "active",
+		DiscountType:  strPtr("percent"),
+		DiscountValue: strPtr("50"),
+		ProviderName:  strPtr("TestProvider"),
+		ExpiresAt:     strPtr("2026-12-31T23:59:59Z"),
 	}
 	html := buildCouponWidgetHTML(c, "compact")
 	if !strings.Contains(html, "coupon-card-compact") {
@@ -292,12 +292,12 @@ func TestBuildCouponWidgetHTML_CompactMode(t *testing.T) {
 func TestBuildCouponWidgetHTML_FullMode(t *testing.T) {
 	t.Parallel()
 	c := &CouponRenderResult{
-		Title:          "Full coupon",
-		Code:           "FULL",
-		Status:         "active",
-		DiscountType:   strPtr("percent"),
-		DiscountValue:  strPtr("50"),
-		ProviderName:   strPtr("TestProvider"),
+		Title:         "Full coupon",
+		Code:          "FULL",
+		Status:        "active",
+		DiscountType:  strPtr("percent"),
+		DiscountValue: strPtr("50"),
+		ProviderName:  strPtr("TestProvider"),
 	}
 	html := buildCouponWidgetHTML(c, "full")
 	if strings.Contains(html, "coupon-card-compact") {
@@ -370,7 +370,7 @@ func TestIsExternalLink(t *testing.T) {
 func TestResolveCouponEmbedsAndAffiliateLinks_NilResolvers(t *testing.T) {
 	t.Parallel()
 	input := `<p>hello world</p>`
-	out := resolveCouponEmbedsAndAffiliateLinks(context.Background(), input, nil, nil)
+	out := resolveCouponEmbedsAndAffiliateLinks(context.Background(), pgtype.UUID{}, input, nil, nil)
 	if out != input {
 		t.Fatalf("expected unchanged input when resolvers are nil, got: %s", out)
 	}
@@ -380,14 +380,14 @@ func TestResolveCouponEmbedsAndAffiliateLinks_CouponEmbed(t *testing.T) {
 	t.Parallel()
 	mock := &mockCouponResolver{
 		result: &CouponRenderResult{
-			Title:   "Test Coupon",
-			Code:    "TEST123",
-			Status:  "active",
+			Title:       "Test Coupon",
+			Code:        "TEST123",
+			Status:      "active",
 			ReferralURL: strPtr("https://example.com/deal"),
 		},
 	}
 	input := `<div data-type="coupon-embed" data-coupon-id="550e8400-e29b-41d4-a716-446655440000"></div>`
-	out := resolveCouponEmbedsAndAffiliateLinks(context.Background(), input, mock, nil)
+	out := resolveCouponEmbedsAndAffiliateLinks(context.Background(), pgtype.UUID{}, input, mock, nil)
 	if !strings.Contains(out, "Test Coupon") {
 		t.Fatalf("expected coupon title in output, got: %s", out)
 	}
@@ -407,7 +407,7 @@ func TestResolveCouponEmbedsAndAffiliateLinks_AffiliateLink(t *testing.T) {
 		},
 	}
 	input := `<a href="https://booking.com/hotel" data-affiliate-provider-id="550e8400-e29b-41d4-a716-446655440000">Book hotel</a>`
-	out := resolveCouponEmbedsAndAffiliateLinks(context.Background(), input, nil, mock)
+	out := resolveCouponEmbedsAndAffiliateLinks(context.Background(), pgtype.UUID{}, input, nil, mock)
 	if !strings.Contains(out, "https://booking.com/hotel?ref=japa20") {
 		t.Fatalf("expected rewritten href with tracking params, got: %s", out)
 	}
@@ -421,7 +421,7 @@ func TestResolveCouponEmbedsAndAffiliateLinks_AffiliateLinkNoProviderID(t *testi
 		},
 	}
 	input := `<a href="https://booking.com/hotel">Book hotel</a>`
-	out := resolveCouponEmbedsAndAffiliateLinks(context.Background(), input, nil, mock)
+	out := resolveCouponEmbedsAndAffiliateLinks(context.Background(), pgtype.UUID{}, input, nil, mock)
 	// Link without data-affiliate-provider-id should be left unchanged.
 	if strings.Contains(out, "should-not-appear") {
 		t.Fatalf("link without provider_id should not be rewritten, got: %s", out)
@@ -435,16 +435,16 @@ func TestResolveCouponEmbedsAndAffiliateLinks_DisplayMode(t *testing.T) {
 	t.Parallel()
 	mock := &mockCouponResolver{
 		result: &CouponRenderResult{
-			Title:          "Compact Test",
-			Code:           "CMP",
-			Status:         "active",
-			DiscountType:   strPtr("percent"),
-			DiscountValue:  strPtr("50"),
-			ProviderName:   strPtr("Provider"),
+			Title:         "Compact Test",
+			Code:          "CMP",
+			Status:        "active",
+			DiscountType:  strPtr("percent"),
+			DiscountValue: strPtr("50"),
+			ProviderName:  strPtr("Provider"),
 		},
 	}
 	input := `<div data-type="coupon-embed" data-coupon-id="550e8400-e29b-41d4-a716-446655440000" data-display-mode="compact"></div>`
-	out := resolveCouponEmbedsAndAffiliateLinks(context.Background(), input, mock, nil)
+	out := resolveCouponEmbedsAndAffiliateLinks(context.Background(), pgtype.UUID{}, input, mock, nil)
 	if !strings.Contains(out, "coupon-card-compact") {
 		t.Fatalf("expected compact class in output, got: %s", out)
 	}
@@ -478,7 +478,7 @@ type mockCouponResolver struct {
 	err    error
 }
 
-func (m *mockCouponResolver) ResolveCouponForRender(ctx context.Context, id pgtype.UUID) (*CouponRenderResult, error) {
+func (m *mockCouponResolver) ResolveCouponForRender(ctx context.Context, tenantID, id pgtype.UUID) (*CouponRenderResult, error) {
 	if m.err != nil {
 		return nil, m.err
 	}
@@ -490,7 +490,7 @@ type mockAffiliateResolver struct {
 	err    error
 }
 
-func (m *mockAffiliateResolver) ResolveAffiliateLinkForRender(ctx context.Context, providerID pgtype.UUID, originalURL string) (*AffiliateLinkRenderResult, error) {
+func (m *mockAffiliateResolver) ResolveAffiliateLinkForRender(ctx context.Context, tenantID, providerID pgtype.UUID, originalURL string) (*AffiliateLinkRenderResult, error) {
 	if m.err != nil {
 		return nil, m.err
 	}

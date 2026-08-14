@@ -1830,7 +1830,10 @@ export const arrivalChecklistAdminApi = {
 };
 
 export const credentialCheckerAdminApi = {
-	list: (params?: string) => api<unknown>(`/admin/credentials${params ? `?${params}` : ''}`),
+	list: (params?: string) =>
+		apiRaw<{ data: unknown[]; pagination: { page: number; limit: number; total: number } }>(
+			`/admin/credentials${params ? `?${params}` : ''}`
+		),
 	create: (body: Record<string, unknown>) => api<unknown>(`/admin/credentials`, { method: 'POST', body }),
 	update: (id: string, body: Record<string, unknown>) =>
 		api<unknown>(`/admin/credentials/${id}`, { method: 'PATCH', body }),

@@ -3,6 +3,7 @@
 	import { t } from '$lib/i18n';
 	import { Ticket, BadgeCheck, Copy, ExternalLink, Clock } from 'lucide-svelte';
 	import { EmptyState } from '$lib/components/ui';
+	import { api } from '$lib/api/client';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -34,21 +35,30 @@
 	const discountLabel = $derived(
 		coupon.discount_type === 'percent'
 			? t('coupon.percent_off', '{n}% off').replace('{n}', String(coupon.discount_value ?? ''))
-			: coupon.discount_type === 'fixed' || coupon.discount_type === 'amount'
+			: coupon.discount_type === 'fixed'
 				? t('coupon.amount_off', '{cur}{n} off')
 						.replace('{cur}', coupon.currency ?? '')
 						.replace('{n}', String(coupon.discount_value ?? ''))
-				: coupon.discount_value !== undefined && coupon.discount_value !== null
-					? String(coupon.discount_value)
-					: ''
+				: coupon.discount_type === 'free_shipping'
+					? t('coupon.free_shipping', 'Free shipping')
+					: coupon.discount_value !== undefined && coupon.discount_value !== null
+						? String(coupon.discount_value)
+						: ''
 	);
 
 	let copied = $state(false);
+
+	// recordEvent fires-and-forgets a click/copy event to the backend (Section 55).
+	// Errors are silently ignored — event tracking must never block the UI.
+	function recordEvent(eventType: 'click' | 'copy') {
+		api.post(`/coupons/${coupon.id}/click`, { event_type: eventType }).catch(() => {});
+	}
 
 	async function copyCode() {
 		try {
 			await navigator.clipboard.writeText(coupon.code);
 			copied = true;
+			recordEvent('copy');
 			setTimeout(() => (copied = false), 2000);
 		} catch {
 			// Clipboard may be unavailable; ignore silently.
@@ -151,6 +161,7 @@
 						href={coupon.referral_url}
 						target="_blank"
 						rel="noopener noreferrer nofollow"
+						onclick={() => recordEvent('click')}
 						class="inline-flex items-center gap-2 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)]"
 					>
 						<ExternalLink size={16} />

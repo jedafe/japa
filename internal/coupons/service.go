@@ -60,9 +60,9 @@ func (n *noopEnqueuer) Enqueue(_ string, _ []byte, _ ...interface{}) error { ret
 // ── Provider Operations ─────────────────────────────────────────────
 
 type CreateProviderInput struct {
-	Name, Slug, ProviderType string
-	Description              *string
-	LogoMediaID              *pgtype.UUID
+	Name, Slug, ProviderType              string
+	Description                           *string
+	LogoMediaID                           *pgtype.UUID
 	BaseURL, TrackingParam, TrackingValue *string
 	CommissionRate                        *pgtype.Numeric
 	IsActive, IsFeatured                  bool
@@ -254,6 +254,7 @@ func (s *Service) UpdateCoupon(ctx context.Context, id, tenantID pgtype.UUID, in
 	}
 	c, err := s.store.updateCoupon(ctx, gen.UpdateCouponParams{
 		ID: id, TenantID: tenantID, Title: input.Title, Description: input.Description, Code: input.Code,
+		ProviderID:   toNullableUUID(input.ProviderID),
 		DiscountType: input.DiscountType, DiscountValue: toNullableNumeric(input.DiscountValue),
 		Currency: input.Currency, TermsUrl: input.TermsURL, ReferralUrl: input.ReferralURL,
 		IsVerified: input.IsVerified, Status: input.Status,
@@ -337,8 +338,8 @@ type RenderedCoupon struct {
 	Status         string  `json:"status"`
 }
 
-func (s *Service) ResolveCouponForRender(ctx context.Context, id pgtype.UUID) (*RenderedCoupon, error) {
-	r, err := s.store.getCouponForRender(ctx, id)
+func (s *Service) ResolveCouponForRender(ctx context.Context, tenantID, id pgtype.UUID) (*RenderedCoupon, error) {
+	r, err := s.store.getCouponForRender(ctx, id, tenantID)
 	if err != nil {
 		if isNoRows(err) {
 			return nil, ErrCouponNotFound
@@ -365,8 +366,8 @@ type RenderedAffiliateLink struct {
 	ResolvedURL   string `json:"resolved_url"`
 }
 
-func (s *Service) ResolveAffiliateLinkForRender(ctx context.Context, providerID pgtype.UUID, originalURL string) (*RenderedAffiliateLink, error) {
-	r, err := s.store.getAffiliateProviderForRender(ctx, providerID)
+func (s *Service) ResolveAffiliateLinkForRender(ctx context.Context, tenantID, providerID pgtype.UUID, originalURL string) (*RenderedAffiliateLink, error) {
+	r, err := s.store.getAffiliateProviderForRender(ctx, providerID, tenantID)
 	if err != nil {
 		if isNoRows(err) {
 			return nil, ErrProviderNotFound
@@ -517,14 +518,14 @@ func (s *Service) RecordAffiliateCommission(ctx context.Context, tenantID pgtype
 
 	// 4. Insert the commission row.
 	commission, err := s.store.write.InsertAffiliateContentCommission(ctx, gen.InsertAffiliateContentCommissionParams{
-		TenantID:             tenantID,
-		ContentID:            in.ContentID,
-		ProviderID:           in.ProviderID,
-		AuthorUserID:         content.AuthorID,
-		ExternalCommission:   numericFromFloat(in.ExternalCommission),
-		AuthorShare:          numericFromFloat(authorShare),
-		AuthorCommissionPct:  numericFromFloat(authorPct),
-		EventDescription:     in.EventDescription,
+		TenantID:            tenantID,
+		ContentID:           in.ContentID,
+		ProviderID:          in.ProviderID,
+		AuthorUserID:        content.AuthorID,
+		ExternalCommission:  numericFromFloat(in.ExternalCommission),
+		AuthorShare:         numericFromFloat(authorShare),
+		AuthorCommissionPct: numericFromFloat(authorPct),
+		EventDescription:    in.EventDescription,
 	})
 	if err != nil {
 		return gen.AffiliateContentCommission{}, fmt.Errorf("affiliate: insert commission: %w", err)

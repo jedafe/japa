@@ -320,3 +320,49 @@ WHERE is_active = true
       SELECT user_id FROM affiliate_program_members
       WHERE status IN ('suspended', 'banned')
   );
+
+-- =====================
+-- Affiliate Enhancement Queries (Section 55 — BE-LOW-002)
+-- Replaces raw SQL in coupons/handlers.go with sqlc-generated queries.
+-- =====================
+
+-- name: ListAffiliateScanResults :many
+-- BE-LOW-002: replaces raw SQL in ListAffiliateScanResults handler.
+-- Optional domain and action_taken filters via sqlc.narg().
+SELECT id, content_id, url, domain, detection_method, action_taken, created_at
+FROM content_affiliate_scan_results
+WHERE tenant_id = @tenant_id
+    AND (sqlc.narg(domain)::text IS NULL OR domain = sqlc.narg(domain))
+    AND (sqlc.narg(action_taken)::text IS NULL OR action_taken = sqlc.narg(action_taken))
+ORDER BY created_at DESC
+LIMIT @page_limit OFFSET @page_offset;
+
+-- name: ReviewAffiliateScanResult :execrows
+-- BE-LOW-002: replaces raw SQL UPDATE in ReviewAffiliateScanResult handler.
+-- Returns rows affected so the handler can distinguish 404 from success.
+UPDATE content_affiliate_scan_results
+SET action_taken = @action_taken, reviewed_by = sqlc.narg(reviewed_by),
+    reviewed_at = now(), notes = sqlc.narg(notes)
+WHERE id = @id AND tenant_id = @tenant_id;
+
+-- name: ListAffiliateCommissions :many
+-- BE-LOW-002: replaces raw SQL in ListAffiliateCommissions handler.
+-- Optional credited filter via sqlc.narg(). Joins provider name and author username.
+SELECT ac.id, ac.content_id, ac.author_user_id, ac.external_commission,
+       ac.author_share, ac.author_commission_pct, ac.event_description,
+       ac.credited, ac.created_at,
+       ap.name AS provider_name, u.username AS author_username
+FROM affiliate_content_commissions ac
+LEFT JOIN affiliate_providers ap ON ap.id = ac.provider_id
+LEFT JOIN users u ON u.id = ac.author_user_id
+WHERE ac.tenant_id = @tenant_id
+    AND (sqlc.narg(credited)::bool IS NULL OR ac.credited = sqlc.narg(credited))
+ORDER BY ac.created_at DESC
+LIMIT @page_limit OFFSET @page_offset;
+
+-- name: UpdateProviderAuthorCommission :execrows
+-- BE-LOW-002: replaces raw SQL UPDATE in UpdateProviderAuthorCommission handler.
+-- Returns rows affected so the handler can distinguish 404 from success.
+UPDATE affiliate_providers
+SET author_commission_pct = @author_commission_pct, updated_at = now()
+WHERE id = @id AND tenant_id = @tenant_id;

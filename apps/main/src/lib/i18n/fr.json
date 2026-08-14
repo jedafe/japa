@@ -224,6 +224,7 @@
 	"col.overall_index": "Indice global du coût",
 	"col.select_cities": "Sélectionnez jusqu'à 3 villes",
 	"col.select_more": "Sélectionnez au moins 2 villes à comparer",
+	"col.stale_warning": "Certaines données de ville peuvent être obsolètes. Les valeurs sont curatées manuellement et mises à jour périodiquement.",
 	"col.untitled_city": "Ville sans nom",
 	"comments.cancel": "Annuler",
 	"comments.collapse": "Replier",

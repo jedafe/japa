@@ -239,7 +239,10 @@
 				<EmptyState icon={Calculator} title={t('col.load_error', 'Could not load comparison')} body={error} />
 			{:else if matrix}
 				{#if isStale}
-					<div class="mb-4 rounded-[var(--radius-card)] border border-yellow-300 bg-yellow-50 px-4 py-3 text-sm text-yellow-800 dark:border-yellow-700 dark:bg-yellow-900/20 dark:text-yellow-300">
+					<div
+						class="mb-4 rounded-[var(--radius-card)] border px-4 py-3 text-sm"
+						style="border-color: var(--color-warning); background: color-mix(in srgb, var(--color-warning) 10%, transparent); color: var(--color-warning)"
+					>
 						{t('col.stale_warning', 'Some city data may be outdated. Values are curated manually and updated periodically.')}
 					</div>
 				{/if}

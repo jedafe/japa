@@ -449,3 +449,130 @@ func TestTokenHandlerThenMiddlewareAccepts(t *testing.T) {
 		t.Errorf("issued token was rejected by middleware (status %d)", rec.Code)
 	}
 }
+
+// TestMiddlewareOriginCheckRejectsForeignOrigin verifies that a mutating
+// request with a foreign Origin header is rejected by the Origin validation
+// defense-in-depth layer, even when the double-submit cookie and header match.
+// This catches subdomain cookie injection attacks where an attacker can forge
+// both the cookie and header to the same value.
+func TestMiddlewareOriginCheckRejectsForeignOrigin(t *testing.T) {
+	t.Parallel()
+
+	called := false
+	allowed := func(origin string) bool { return origin == "https://japaconnect.com" }
+	handler := Middleware([]string{"/control/"}, nil, WithOriginCheck(allowed))(okHandler(&called))
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, testPath, nil)
+	req.AddCookie(&http.Cookie{Name: CookieName, Value: "matching-token"})
+	req.Header.Set(HeaderName, "matching-token")
+	req.Header.Set("Origin", "https://evil.com")
+
+	handler.ServeHTTP(rec, req)
+
+	if called {
+		t.Error("next handler ran despite foreign Origin")
+	}
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("status = %d, want 403 for foreign Origin", rec.Code)
+	}
+}
+
+// TestMiddlewareOriginCheckAcceptsAllowedOrigin verifies that a mutating
+// request with an allowed Origin header passes the Origin check and is
+// evaluated by the normal double-submit cookie validation.
+func TestMiddlewareOriginCheckAcceptsAllowedOrigin(t *testing.T) {
+	t.Parallel()
+
+	called := false
+	allowed := func(origin string) bool { return origin == "https://japaconnect.com" }
+	handler := Middleware([]string{"/control/"}, nil, WithOriginCheck(allowed))(okHandler(&called))
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, testPath, nil)
+	req.AddCookie(&http.Cookie{Name: CookieName, Value: "matching-token"})
+	req.Header.Set(HeaderName, "matching-token")
+	req.Header.Set("Origin", "https://japaconnect.com")
+
+	handler.ServeHTTP(rec, req)
+
+	if !called {
+		t.Errorf("next handler was not called for allowed Origin (status %d)", rec.Code)
+	}
+	if rec.Code != http.StatusOK {
+		t.Errorf("status = %d, want 200 for allowed Origin", rec.Code)
+	}
+}
+
+// TestMiddlewareOriginCheckAbsentOriginPasses verifies that a mutating
+// request without an Origin header (server-to-server, API clients) skips
+// the Origin check and falls through to the normal double-submit validation.
+func TestMiddlewareOriginCheckAbsentOriginPasses(t *testing.T) {
+	t.Parallel()
+
+	called := false
+	allowed := func(origin string) bool { return false } // reject all origins
+	handler := Middleware([]string{"/control/"}, nil, WithOriginCheck(allowed))(okHandler(&called))
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, testPath, nil)
+	req.AddCookie(&http.Cookie{Name: CookieName, Value: "matching-token"})
+	req.Header.Set(HeaderName, "matching-token")
+	// No Origin header — should skip Origin check and pass the double-submit check.
+
+	handler.ServeHTTP(rec, req)
+
+	if !called {
+		t.Errorf("next handler was not called when Origin is absent (status %d)", rec.Code)
+	}
+	if rec.Code != http.StatusOK {
+		t.Errorf("status = %d, want 200 when Origin is absent", rec.Code)
+	}
+}
+
+// TestMiddlewareOriginCheckSkipsExempt verifies that the Origin check is
+// skipped for exempt requests (e.g. Bearer token auth), which may carry a
+// foreign or absent Origin header (API clients, service-to-service).
+func TestMiddlewareOriginCheckSkipsExempt(t *testing.T) {
+	t.Parallel()
+
+	called := false
+	allowed := func(origin string) bool { return false } // reject all origins
+	handler := Middleware([]string{"/control/"}, IsNonCookieAuthenticated, WithOriginCheck(allowed))(okHandler(&called))
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, testPath, nil)
+	req.Header.Set("Authorization", "Bearer token")
+	req.Header.Set("Origin", "https://evil.com")
+
+	handler.ServeHTTP(rec, req)
+
+	if !called {
+		t.Error("exempt request with foreign Origin was rejected by Origin check")
+	}
+	if rec.Code != http.StatusOK {
+		t.Errorf("status = %d, want 200 for exempt request", rec.Code)
+	}
+}
+
+// TestMiddlewareOriginCheckForeignOriginNoCookie verifies that a foreign
+// Origin is rejected even when no csrf cookie is present. Without the Origin
+// check, a no-cookie request passes through (intended for unauthenticated
+// requests). The Origin check adds an extra layer: a cross-site request
+// with a foreign Origin is blocked regardless of cookie state.
+func TestMiddlewareOriginCheckForeignOriginNoCookie(t *testing.T) {
+	t.Parallel()
+
+	called := false
+	allowed := func(origin string) bool { return origin == "https://japaconnect.com" }
+	handler := Middleware([]string{"/control/"}, nil, WithOriginCheck(allowed))(okHandler(&called))
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, testPath, nil)
+	req.Header.Set("Origin", "https://evil.com")
+	// No csrf cookie — without Origin check this would pass through.
+
+	handler.ServeHTTP(rec, req)
+
+	if called {
+		t.Error("next handler ran despite foreign Origin and no cookie")
+	}
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("status = %d, want 403 for foreign Origin", rec.Code)
+	}
+}

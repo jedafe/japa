@@ -224,6 +224,7 @@
 	"col.overall_index": "Overall Cost Index",
 	"col.select_cities": "Select up to 3 cities",
 	"col.select_more": "Select at least 2 cities to compare",
+	"col.stale_warning": "Some city data may be outdated. Values are curated manually and updated periodically.",
 	"col.untitled_city": "Untitled city",
 	"comments.cancel": "Cancel",
 	"comments.collapse": "Collapse",
