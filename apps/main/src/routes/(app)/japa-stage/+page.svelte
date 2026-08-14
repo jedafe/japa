@@ -27,14 +27,14 @@
 		'settled'
 	];
 
-	// Per-stage badge colours (CSS variables only).
+	// Per-stage badge colours (CSS custom properties — dark-mode-aware).
 	const STAGE_COLORS: Record<JapaStage, string> = {
 		considering: 'var(--color-muted)',
-		planning: '#3b82f6',
-		preparing: '#8b5cf6',
-		applied: '#f59e0b',
-		approved: '#10b981',
-		relocated: '#06b6d4',
+		planning: 'var(--stage-planning)',
+		preparing: 'var(--stage-preparing)',
+		applied: 'var(--stage-applied)',
+		approved: 'var(--stage-approved)',
+		relocated: 'var(--stage-relocated)',
 		settled: 'var(--color-primary)'
 	};
 
@@ -236,12 +236,18 @@
 			href="/u/{m.username}"
 			class="flex items-start gap-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3 transition-colors hover:bg-[var(--color-surface-subtle)]"
 		>
-			<img
-				src={m.avatar_url ?? `https://api.dicebear.com/7.x/initials/svg?seed=${m.username}`}
-				alt={m.username}
-				class="h-10 w-10 shrink-0 rounded-full object-cover"
-				loading="lazy"
-			/>
+			<span class="grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-full bg-[var(--color-surface-subtle)] text-[var(--color-muted)]">
+				{#if m.avatar_url}
+					<img
+						src={m.avatar_url}
+						alt={m.username}
+						class="h-full w-full object-cover"
+						loading="lazy"
+					/>
+				{:else}
+					<Users size={20} />
+				{/if}
+			</span>
 			<div class="min-w-0 flex-1">
 				<p class="truncate text-sm font-semibold text-[var(--color-text)]">@{m.username}</p>
 				<span

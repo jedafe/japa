@@ -313,9 +313,11 @@ func (s *Store) CreateGuide(ctx context.Context, input CreateGuideInput) (pgtype
 	if rentRanges == nil {
 		rentRanges = []byte("{}")
 	}
+	// Per ADR-088, admin-created guides enter as 'draft' and require HITL
+	// approval before publishing. Only the Approve handler sets 'published'.
 	status := input.Status
 	if status == "" {
-		status = StatusPublished
+		status = StatusDraft
 	}
 
 	const q = `
@@ -457,8 +459,10 @@ WHERE id = $1 AND tenant_id = $2
 	return nil
 }
 
-// RejectGuide rejects a pending housing guide, setting its status to
-// 'rejected' and recording the reviewer and review notes.
+// RejectGuide rejects a housing guide, setting its status to 'rejected'
+// and recording the reviewer and review notes. A guide may be rejected
+// from any non-published, non-rejected status (draft, ai_draft, pending)
+// per the ADR-088 lifecycle.
 func (s *Store) RejectGuide(ctx context.Context, id, tenantID, reviewerID pgtype.UUID, notes *string) error {
 	const q = `
 UPDATE housing_guides
@@ -467,7 +471,8 @@ SET hitl_reviewed_by = $3,
     hitl_review_notes = $4,
     status = 'rejected',
     updated_at = now()
-WHERE id = $1 AND tenant_id = $2 AND status = 'pending_review'
+WHERE id = $1 AND tenant_id = $2
+  AND status IN ('draft', 'ai_draft', 'pending')
 `
 	cmd, err := s.pool.Writer.Exec(ctx, q, id, tenantID, reviewerID, notes)
 	if err != nil {

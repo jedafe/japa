@@ -9,6 +9,7 @@
 package i18n
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -18,6 +19,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/ai"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/tenant"
 	"github.com/jedafe/japa/internal/worker"
@@ -28,10 +30,18 @@ type TaskEnqueueClient interface {
 	Enqueue(task *asynq.Task, opts ...asynq.Option) (*asynq.TaskInfo, error)
 }
 
+// AIDispatcher is the contract for synchronous AI translation of a single
+// string. The wiring layer passes the real ai.Dispatcher; tests can pass a
+// stub.
+type AIDispatcher interface {
+	Dispatch(ctx context.Context, category string, req ai.Request) (ai.Response, error)
+}
+
 // Handlers holds dependencies for translation HTTP handlers.
 type Handlers struct {
-	Service     *Service
-	AsynqClient TaskEnqueueClient
+	Service      *Service
+	AsynqClient  TaskEnqueueClient
+	AIDispatcher AIDispatcher
 }
 
 // NewHandlers creates Handlers with the given Service.
@@ -283,6 +293,184 @@ func (h *Handlers) Delete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// DeleteByLocale removes all translations for a locale.
+// DELETE /admin/i18n/languages/{locale}.
+func (h *Handlers) DeleteByLocale(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	locale := chi.URLParam(r, "locale")
+	if locale == "" {
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_locale", "locale path parameter is required")
+		return
+	}
+
+	if err := h.Service.DeleteByLocale(r.Context(), tenantID, locale); err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// TranslateString translates a single translation string via the AI gateway
+// into the requested target locale and upserts the result.
+// POST /admin/i18n/strings/{id}/translate — body: {"target_locale": "fr"}.
+func (h *Handlers) TranslateString(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	if h.AIDispatcher == nil {
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "ai_unavailable", "AI translation is not configured")
+		return
+	}
+
+	id, err := parseUUIDParam(r, "id")
+	if err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid translation ID")
+		return
+	}
+
+	var input struct {
+		TargetLocale string `json:"target_locale"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+
+	if input.TargetLocale == "" {
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_target_locale", "target_locale is required")
+		return
+	}
+
+	// Fetch the source string by ID.
+	src, err := h.Service.GetByID(r.Context(), tenantID, id)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	// Don't translate into the same locale.
+	if src.Locale == input.TargetLocale {
+		errpkg.WriteError(w, http.StatusBadRequest, "same_locale", "Source and target locales are identical")
+		return
+	}
+
+	// Dispatch to the AI gateway (content_generation category).
+	resp, err := h.AIDispatcher.Dispatch(r.Context(), "content_generation", ai.Request{
+		Category: "content_generation",
+		Payload: map[string]any{
+			"prompt":         "Translate the following text to locale " + input.TargetLocale + ". Return only the translation, no explanation.\n\n" + src.Value,
+			"task":           "translate",
+			"target_locale":  input.TargetLocale,
+			"source_locale":  src.Locale,
+			"translation_key": src.Key,
+		},
+	})
+	if err != nil {
+		slog.Error("i18n: AI translate failed", "key", src.Key, "error", err)
+		errpkg.WriteError(w, http.StatusBadGateway, "ai_error", "AI translation failed")
+		return
+	}
+
+	translated := extractAITranslationText(resp)
+	if translated == "" {
+		errpkg.WriteError(w, http.StatusBadGateway, "ai_empty", "AI returned an empty translation")
+		return
+	}
+
+	// Upsert the translated value into the target locale.
+	if err := h.Service.Upsert(r.Context(), tenantID, input.TargetLocale, src.Key, translated, src.Context); err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{
+		"locale": input.TargetLocale,
+		"key":    src.Key,
+		"value":  translated,
+	}})
+}
+
+// AITranslateBatch enqueues a background task to AI-translate all missing
+// strings from the source locale into the target locale. Fire-and-forget
+// per Rule 8 — returns 202 immediately.
+// POST /admin/i18n/strings/ai-translate-batch — body: {"source_locale":"en","target_locale":"fr"}.
+func (h *Handlers) AITranslateBatch(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	var input struct {
+		SourceLocale string `json:"source_locale"`
+		TargetLocale string `json:"target_locale"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+
+	if input.SourceLocale == "" {
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_source_locale", "source_locale is required")
+		return
+	}
+
+	if input.TargetLocale == "" {
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_target_locale", "target_locale is required")
+		return
+	}
+
+	if input.SourceLocale == input.TargetLocale {
+		errpkg.WriteError(w, http.StatusBadRequest, "same_locale", "Source and target locales are identical")
+		return
+	}
+
+	// Enqueue the fire-and-forget AI translate task (Rule 8).
+	h.enqueueTranslatePack("", input.SourceLocale, input.TargetLocale, tenantID)
+
+	errpkg.WriteJSON(w, http.StatusAccepted, map[string]any{
+		"data": map[string]string{
+			"status":        "queued",
+			"source_locale": input.SourceLocale,
+			"target_locale": input.TargetLocale,
+		},
+	})
+}
+
+// extractAITranslationText pulls the translated text out of an AI Response.
+// Mirrors ai.extractReplyText: checks "reply" first, then choices[].message.content.
+func extractAITranslationText(resp ai.Response) string {
+	if resp.Raw == nil {
+		return ""
+	}
+
+	if s, ok := resp.Raw["reply"].(string); ok {
+		return s
+	}
+
+	if rawChoices, ok := resp.Raw["choices"]; ok {
+		if choices, ok := rawChoices.([]any); ok && len(choices) > 0 {
+			if first, ok := choices[0].(map[string]any); ok {
+				if msg, ok := first["message"].(map[string]any); ok {
+					if content, ok := msg["content"].(string); ok {
+						return content
+					}
+				}
+			}
+		}
+	}
+
+	return ""
 }
 
 // ---------------------------------------------------------------------------

@@ -312,3 +312,100 @@ func TestRequestsCarryContext(t *testing.T) {
 		t.Error("DeleteUser with cancelled context error = nil, want error")
 	}
 }
+
+func TestHealthConnectivityOnly(t *testing.T) {
+	t.Parallel()
+
+	// The current Honcho /health endpoint returns {"status":"ok"} with no
+	// metrics — the report should be healthy with nil SyncLag/StoreSize.
+	client := newTestClient(t, func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"status":"ok"}`))
+	})
+
+	report, err := client.Health(t.Context())
+	if err != nil {
+		t.Fatalf("Health: %v", err)
+	}
+	if !report.Healthy {
+		t.Error("report.Healthy = false, want true")
+	}
+	if report.SyncLag != nil {
+		t.Errorf("report.SyncLag = %v, want nil", *report.SyncLag)
+	}
+	if report.StoreSize != nil {
+		t.Errorf("report.StoreSize = %v, want nil", *report.StoreSize)
+	}
+	if report.Details == "" {
+		t.Error("report.Details = empty, want non-empty")
+	}
+}
+
+func TestHealthWithMetrics(t *testing.T) {
+	t.Parallel()
+
+	// A future Honcho version might include metrics in /health. The client
+	// should extract them from any of the known field names.
+	client := newTestClient(t, func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"status":"ok","pending_work_units":12,"total_users":3456}`))
+	})
+
+	report, err := client.Health(t.Context())
+	if err != nil {
+		t.Fatalf("Health: %v", err)
+	}
+	if !report.Healthy {
+		t.Error("report.Healthy = false, want true")
+	}
+	if report.SyncLag == nil || *report.SyncLag != 12 {
+		t.Errorf("report.SyncLag = %v, want 12", report.SyncLag)
+	}
+	if report.StoreSize == nil || *report.StoreSize != 3456 {
+		t.Errorf("report.StoreSize = %v, want 3456", report.StoreSize)
+	}
+	if report.Details == "" {
+		t.Error("report.Details = empty, want non-empty")
+	}
+}
+
+func TestHealthUnhealthyStatus(t *testing.T) {
+	t.Parallel()
+
+	client := newTestClient(t, func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"status":"unhealthy"}`))
+	})
+
+	report, err := client.Health(t.Context())
+	if err != nil {
+		t.Fatalf("Health: %v", err)
+	}
+	if report.Healthy {
+		t.Error("report.Healthy = true, want false")
+	}
+}
+
+func TestHealthServerError(t *testing.T) {
+	t.Parallel()
+
+	client := newTestClient(t, statusHandler(http.StatusInternalServerError))
+
+	if _, err := client.Health(t.Context()); err == nil {
+		t.Error("Health() on 500 error = nil, want error")
+	}
+}
+
+func TestHealthNonJSONBody(t *testing.T) {
+	t.Parallel()
+
+	// A non-JSON body should not cause an error — connectivity is confirmed.
+	client := newTestClient(t, func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`OK`))
+	})
+
+	report, err := client.Health(t.Context())
+	if err != nil {
+		t.Fatalf("Health: %v", err)
+	}
+	if !report.Healthy {
+		t.Error("report.Healthy = false, want true")
+	}
+}

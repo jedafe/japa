@@ -5,12 +5,17 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"testing"
 
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/clientip"
+	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/tenant"
 )
 
 func TestFromContext_NoGeoData(t *testing.T) {
@@ -278,5 +283,431 @@ func TestExtractMMDB_NoMMDBInArchive(t *testing.T) {
 	err := extractMMDB(&buf, outPath)
 	if err == nil {
 		t.Fatal("expected error for archive with no .mmdb file")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Handler tests — verify the HTTP error envelopes and response contracts
+// described in Section 37 (IsValid semantics, 404 geo_not_available, 400
+// invalid_ip vs 404, 503 geoip_not_loaded, suggested_spaces algorithm).
+// ---------------------------------------------------------------------------
+
+// mockSpacesService is a test double for the SpacesService interface.
+type mockSpacesService struct {
+	countries []gen.ListSpacesByLevelRow
+	states    []gen.ListStatesByCountryGeoCodeRow
+	cities    []gen.ListCitiesByStateIDRow
+
+	countryByGeo gen.GetSpaceByGeoCodeRow
+	countryErr   error
+
+	cityByName gen.FindCitySpaceByNameRow
+	cityErr    error
+
+	listErr error
+}
+
+func (m *mockSpacesService) ListSpacesByLevel(_ context.Context, _ pgtype.UUID, _ string) ([]gen.ListSpacesByLevelRow, error) {
+	if m.listErr != nil {
+		return nil, m.listErr
+	}
+	return m.countries, nil
+}
+
+func (m *mockSpacesService) ListStatesByCountryCode(_ context.Context, _ pgtype.UUID, _ string) ([]gen.ListStatesByCountryGeoCodeRow, error) {
+	if m.listErr != nil {
+		return nil, m.listErr
+	}
+	return m.states, nil
+}
+
+func (m *mockSpacesService) ListCitiesByState(_ context.Context, _, _ pgtype.UUID) ([]gen.ListCitiesByStateIDRow, error) {
+	if m.listErr != nil {
+		return nil, m.listErr
+	}
+	return m.cities, nil
+}
+
+func (m *mockSpacesService) GetSpaceByGeoCode(_ context.Context, _ pgtype.UUID, _ string) (gen.GetSpaceByGeoCodeRow, error) {
+	return m.countryByGeo, m.countryErr
+}
+
+func (m *mockSpacesService) FindCitySpaceByName(_ context.Context, _ pgtype.UUID, _ string) (gen.FindCitySpaceByNameRow, error) {
+	return m.cityByName, m.cityErr
+}
+
+// withGeoContext injects a GeoContext into the request context, simulating
+// the GeoIPMiddleware.
+func withGeoContext(r *http.Request, gc GeoContext) *http.Request {
+	ctx := context.WithValue(r.Context(), GeoContextKey, gc)
+	return r.WithContext(ctx)
+}
+
+// withTenant injects a Tenant into the request context.
+func withTenant(r *http.Request) *http.Request {
+	t := &tenant.Tenant{}
+	t.ID.Scan("00000000-0000-0000-0000-000000000001")
+	ctx := context.WithValue(r.Context(), tenant.TenantContextKey, t)
+	return r.WithContext(ctx)
+}
+
+func TestHandleGeoMe_NotAvailable(t *testing.T) {
+	t.Parallel()
+
+	h := NewHandlers(&Reader{}, &mockSpacesService{})
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/geo/me", nil)
+	req = withGeoContext(req, GeoContext{IsValid: false})
+	rec := httptest.NewRecorder()
+
+	h.HandleGeoMe(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want 404", rec.Code)
+	}
+
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshalling body: %v", err)
+	}
+
+	errObj, ok := body["error"].(map[string]any)
+	if !ok {
+		t.Fatal("expected error envelope")
+	}
+
+	if errObj["code"] != "geo_not_available" {
+		t.Errorf("error code = %v, want geo_not_available", errObj["code"])
+	}
+}
+
+func TestHandleGeoMe_Valid(t *testing.T) {
+	t.Parallel()
+
+	svc := &mockSpacesService{
+		countryErr: errors.New("not found"),
+		cityErr:    errors.New("not found"),
+	}
+	h := NewHandlers(&Reader{}, svc)
+
+	gc := GeoContext{
+		CountryCode: "NG",
+		CountryName: "Nigeria",
+		City:        "Lagos",
+		Subdivision: "Lagos State",
+		TimeZone:    "Africa/Lagos",
+		Latitude:    6.5,
+		Longitude:   3.4,
+		IsValid:     true,
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/geo/me", nil)
+	req = withGeoContext(req, gc)
+	req = withTenant(req)
+	rec := httptest.NewRecorder()
+
+	h.HandleGeoMe(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("status = %d, want 200", rec.Code)
+	}
+
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshalling body: %v", err)
+	}
+
+	data, ok := body["data"].(map[string]any)
+	if !ok {
+		t.Fatal("expected data envelope")
+	}
+
+	// Verify the contract fields per Section 37.
+	if data["country_code"] != "NG" {
+		t.Errorf("country_code = %v, want NG", data["country_code"])
+	}
+	if data["country_name"] != "Nigeria" {
+		t.Errorf("country_name = %v, want Nigeria", data["country_name"])
+	}
+	if data["state"] != "Lagos State" {
+		t.Errorf("state = %v, want Lagos State", data["state"])
+	}
+	if data["city"] != "Lagos" {
+		t.Errorf("city = %v, want Lagos", data["city"])
+	}
+	if data["is_vpn"] != false {
+		t.Errorf("is_vpn = %v, want false", data["is_vpn"])
+	}
+
+	// suggested_spaces must be an empty array (never null) when both
+	// lookups miss.
+	spaces, ok := data["suggested_spaces"].([]any)
+	if !ok {
+		t.Fatalf("suggested_spaces = %T, want []any", data["suggested_spaces"])
+	}
+	if len(spaces) != 0 {
+		t.Errorf("suggested_spaces len = %d, want 0", len(spaces))
+	}
+
+	// is_valid must NOT be present in the serialized response (json:"-").
+	if _, exists := data["is_valid"]; exists {
+		t.Error("is_valid must not be serialized")
+	}
+}
+
+func TestHandleGeoMe_SuggestedSpaces(t *testing.T) {
+	t.Parallel()
+
+	geoCode := "NG"
+	countryName := "Nigeria"
+	svc := &mockSpacesService{
+		countryByGeo: gen.GetSpaceByGeoCodeRow{
+			Name:        countryName,
+			Slug:        "nigeria",
+			Level:       "country",
+			GeoCode:     &geoCode,
+			MemberCount: 100,
+			PostCount:   50,
+		},
+		cityByName: gen.FindCitySpaceByNameRow{
+			Name:        "Lagos",
+			Slug:        "lagos",
+			Level:       "city",
+			MemberCount: 30,
+			PostCount:   20,
+		},
+	}
+	h := NewHandlers(&Reader{}, svc)
+
+	gc := GeoContext{
+		CountryCode: "NG",
+		CountryName: "Nigeria",
+		City:        "Lagos",
+		IsValid:     true,
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/geo/me", nil)
+	req = withGeoContext(req, gc)
+	req = withTenant(req)
+	rec := httptest.NewRecorder()
+
+	h.HandleGeoMe(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("status = %d, want 200", rec.Code)
+	}
+
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshalling body: %v", err)
+	}
+
+	data := body["data"].(map[string]any)
+	spaces := data["suggested_spaces"].([]any)
+	if len(spaces) != 2 {
+		t.Fatalf("suggested_spaces len = %d, want 2", len(spaces))
+	}
+
+	// Country space must be first, city space second (Section 37 ordering).
+	country := spaces[0].(map[string]any)
+	if country["name"] != "Nigeria" || country["level"] != "country" {
+		t.Errorf("first suggested space = %v, want Nigeria/country", country)
+	}
+
+	city := spaces[1].(map[string]any)
+	if city["name"] != "Lagos" || city["level"] != "city" {
+		t.Errorf("second suggested space = %v, want Lagos/city", city)
+	}
+}
+
+func TestHandleGeoLookup_MissingIP(t *testing.T) {
+	t.Parallel()
+
+	h := NewHandlers(&Reader{}, &mockSpacesService{})
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/geo/lookup", nil)
+	rec := httptest.NewRecorder()
+
+	h.HandleGeoLookup(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400", rec.Code)
+	}
+
+	var body map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &body)
+	errObj := body["error"].(map[string]any)
+	if errObj["code"] != "missing_ip" {
+		t.Errorf("error code = %v, want missing_ip", errObj["code"])
+	}
+}
+
+func TestHandleGeoLookup_InvalidIP(t *testing.T) {
+	t.Parallel()
+
+	h := NewHandlers(&Reader{}, &mockSpacesService{})
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/geo/lookup?ip=not-an-ip", nil)
+	rec := httptest.NewRecorder()
+
+	h.HandleGeoLookup(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400", rec.Code)
+	}
+
+	var body map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &body)
+	errObj := body["error"].(map[string]any)
+	if errObj["code"] != "invalid_ip" {
+		t.Errorf("error code = %v, want invalid_ip", errObj["code"])
+	}
+}
+
+func TestHandleGeoLookup_NotLoaded(t *testing.T) {
+	t.Parallel()
+
+	h := NewHandlers(&Reader{}, &mockSpacesService{})
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/geo/lookup?ip=8.8.8.8", nil)
+	rec := httptest.NewRecorder()
+
+	h.HandleGeoLookup(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Errorf("status = %d, want 503", rec.Code)
+	}
+
+	var body map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &body)
+	errObj := body["error"].(map[string]any)
+	if errObj["code"] != "geoip_not_loaded" {
+		t.Errorf("error code = %v, want geoip_not_loaded", errObj["code"])
+	}
+}
+
+func TestHandleGeoDetect_NotAvailable(t *testing.T) {
+	t.Parallel()
+
+	h := NewHandlers(&Reader{}, &mockSpacesService{})
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/geo/detect", nil)
+	req = withGeoContext(req, GeoContext{IsValid: false})
+	rec := httptest.NewRecorder()
+
+	h.HandleGeoDetect(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want 404", rec.Code)
+	}
+}
+
+func TestHandleGeoDetect_Valid(t *testing.T) {
+	t.Parallel()
+
+	h := NewHandlers(&Reader{}, &mockSpacesService{})
+	gc := GeoContext{
+		CountryName: "Nigeria",
+		Subdivision: "Lagos State",
+		City:        "Lagos",
+		IsValid:     true,
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/geo/detect", nil)
+	req = withGeoContext(req, gc)
+	rec := httptest.NewRecorder()
+
+	h.HandleGeoDetect(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("status = %d, want 200", rec.Code)
+	}
+
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshalling body: %v", err)
+	}
+
+	data := body["data"].(map[string]any)
+	if data["country"] != "Nigeria" {
+		t.Errorf("country = %v, want Nigeria", data["country"])
+	}
+	if data["state"] != "Lagos State" {
+		t.Errorf("state = %v, want Lagos State", data["state"])
+	}
+	if data["city"] != "Lagos" {
+		t.Errorf("city = %v, want Lagos", data["city"])
+	}
+}
+
+func TestHandleListCountries_NoTenant(t *testing.T) {
+	t.Parallel()
+
+	h := NewHandlers(&Reader{}, &mockSpacesService{})
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/geo/countries", nil)
+	rec := httptest.NewRecorder()
+
+	h.HandleListCountries(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Errorf("status = %d, want 503", rec.Code)
+	}
+
+	var body map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &body)
+	errObj := body["error"].(map[string]any)
+	if errObj["code"] != "tenant_unavailable" {
+		t.Errorf("error code = %v, want tenant_unavailable", errObj["code"])
+	}
+}
+
+func TestHandleListCountries_Valid(t *testing.T) {
+	t.Parallel()
+
+	geoCode := "NG"
+	desc := "Most populous country in Africa"
+	svc := &mockSpacesService{
+		countries: []gen.ListSpacesByLevelRow{
+			{
+				Name:        "Nigeria",
+				Slug:        "nigeria",
+				Level:       "country",
+				GeoCode:     &geoCode,
+				Description: &desc,
+				MemberCount: 100,
+				PostCount:   50,
+			},
+		},
+	}
+	h := NewHandlers(&Reader{}, svc)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/geo/countries", nil)
+	req = withTenant(req)
+	rec := httptest.NewRecorder()
+
+	h.HandleListCountries(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("status = %d, want 200", rec.Code)
+	}
+
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshalling body: %v", err)
+	}
+
+	data := body["data"].([]any)
+	if len(data) != 1 {
+		t.Fatalf("data len = %d, want 1", len(data))
+	}
+
+	country := data[0].(map[string]any)
+	if country["name"] != "Nigeria" {
+		t.Errorf("name = %v, want Nigeria", country["name"])
+	}
+	if country["geo_code"] != "NG" {
+		t.Errorf("geo_code = %v, want NG", country["geo_code"])
+	}
+	// Internal fields must not leak.
+	if _, exists := country["tenant_id"]; exists {
+		t.Error("tenant_id must not be serialized")
+	}
+	if _, exists := country["wiki_content"]; exists {
+		t.Error("wiki_content must not be serialized")
 	}
 }

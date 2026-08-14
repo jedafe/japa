@@ -125,10 +125,16 @@ LIMIT 1
 	return r, nil
 }
 
-// UpdateStage updates japa_stage, japa_stage_dest_space_id,
+// UpdateStage upserts japa_stage, japa_stage_dest_space_id,
 // japa_stage_is_public (when isPublic is non-nil), and
 // japa_stage_updated_at, and appends a transition record to the
 // japa_stage_history jsonb array. destSpaceID may be NULL to clear it.
+//
+// The upsert (INSERT ... ON CONFLICT DO UPDATE) ensures a user without an
+// existing user_profiles row — e.g. a newly registered member who has not
+// yet visited profile settings — can still set their japa stage. CreateUser
+// (auth.sql) only inserts into `users`; no trigger auto-creates the profile
+// row, so a plain UPDATE would affect 0 rows and 404.
 //
 // The history record uses the spec key `set_at` (§87:
 // `japa_stage_history: [{stage, dest_country_id, set_at}]`); the
@@ -136,19 +142,30 @@ LIMIT 1
 // are spaces with level='country' — no geo_countries table exists).
 func (s *Store) UpdateStage(ctx context.Context, userID, tenantID pgtype.UUID, stage string, destSpaceID pgtype.UUID, isPublic *bool) error {
 	const q = `
-UPDATE user_profiles
-SET japa_stage = $3,
-    japa_stage_dest_space_id = $4,
-    japa_stage_updated_at = now(),
-    japa_stage_is_public = CASE WHEN $5::bool IS NULL THEN japa_stage_is_public ELSE $5::bool END,
-    japa_stage_history = japa_stage_history || jsonb_build_array(
+INSERT INTO user_profiles (tenant_id, user_id, japa_stage, japa_stage_dest_space_id, japa_stage_updated_at, japa_stage_is_public, japa_stage_history)
+VALUES (
+    $2, $1, $3, $4, now(),
+    COALESCE($5::bool, true),
+    jsonb_build_array(
         jsonb_build_object(
             'stage', $3,
             'dest_space_id', CASE WHEN $4::uuid IS NULL THEN 'null'::jsonb ELSE to_jsonb($4::uuid) END,
             'set_at', to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')
         )
     )
-WHERE user_id = $1 AND tenant_id = $2
+)
+ON CONFLICT (tenant_id, user_id) DO UPDATE SET
+    japa_stage = EXCLUDED.japa_stage,
+    japa_stage_dest_space_id = EXCLUDED.japa_stage_dest_space_id,
+    japa_stage_updated_at = now(),
+    japa_stage_is_public = CASE WHEN $5::bool IS NULL THEN user_profiles.japa_stage_is_public ELSE $5::bool END,
+    japa_stage_history = user_profiles.japa_stage_history || jsonb_build_array(
+        jsonb_build_object(
+            'stage', $3,
+            'dest_space_id', CASE WHEN $4::uuid IS NULL THEN 'null'::jsonb ELSE to_jsonb($4::uuid) END,
+            'set_at', to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')
+        )
+    )
 `
 	cmd, err := s.pool.Writer.Exec(ctx, q, userID, tenantID, stage, destSpaceID, isPublic)
 	if err != nil {

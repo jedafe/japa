@@ -1265,6 +1265,11 @@ type CvFormatSession struct {
 	TokensUsed         *int32             `json:"tokens_used"`
 	CreatedAt          pgtype.Timestamptz `json:"created_at"`
 	ExpiresAt          pgtype.Timestamptz `json:"expires_at"`
+	AiGenerated        bool               `json:"ai_generated"`
+	AiPromptHash       *string            `json:"ai_prompt_hash"`
+	HitlReviewedBy     pgtype.UUID        `json:"hitl_reviewed_by"`
+	HitlReviewedAt     pgtype.Timestamptz `json:"hitl_reviewed_at"`
+	HitlReviewNotes    *string            `json:"hitl_review_notes"`
 }
 
 type CvStandard struct {

@@ -381,7 +381,8 @@ var defaultSettings = map[string]SettingCategory{
 		Key:   "gdpr",
 		Label: "GDPR",
 		Settings: []SettingDef{
-			{Key: "deletion_grace_days", Label: "Deletion Grace Period (days)", Type: "number"},
+			// BUG-GDPR-006: deletion_grace_days removed — superseded by
+			// retention_days (ADR-057). No code reads it.
 			{Key: "export_expiry_days", Label: "Export Expiry (days)", Type: "number"},
 			{Key: "hard_delete_enabled", Label: "Enable Hard Delete", Type: "toggle"},
 			{Key: "retention_days", Label: "Retention Days", Type: "number", Description: "0 = immediate"},

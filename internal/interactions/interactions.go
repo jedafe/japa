@@ -44,12 +44,8 @@ func mutedUsersKey(tenantID, userID pgtype.UUID) string {
 	return valkey.MustKey("muted_users:%s:%s", tenantID.String(), userID.String())
 }
 
-// mutedSpacesKey returns the tenant-scoped Valkey key for a user's
-// muted-spaces SET (BUG-003: previously jc:muted_spaces:{user_id} without
-// tenant scope).
-func mutedSpacesKey(tenantID, userID pgtype.UUID) string {
-	return valkey.MustKey("muted_spaces:%s:%s", tenantID.String(), userID.String())
-}
+// mutedSpacesKey is owned by internal/spaces (space mute actions are
+// slug-resolved there). This package only caches muted-*user* SETs.
 
 // invalidateMutedUsersCache deletes the muted-users SET cache for the user.
 // Called after mute/unmute so the next read refetches from the DB.
@@ -60,16 +56,6 @@ func (s *Service) invalidateMutedUsersCache(ctx context.Context, tenantID, userI
 	if err := s.vk.Del(ctx, mutedUsersKey(tenantID, userID)).Err(); err != nil {
 		// Cache invalidation failure is non-fatal — the TTL will eventually
 		// refresh; worst case is a stale mute list for up to 10 minutes.
-		return
-	}
-}
-
-// invalidateMutedSpacesCache deletes the muted-spaces SET cache for the user.
-func (s *Service) invalidateMutedSpacesCache(ctx context.Context, tenantID, userID pgtype.UUID) {
-	if s.vk == nil {
-		return
-	}
-	if err := s.vk.Del(ctx, mutedSpacesKey(tenantID, userID)).Err(); err != nil {
 		return
 	}
 }

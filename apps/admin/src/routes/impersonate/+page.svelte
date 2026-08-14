@@ -18,9 +18,10 @@
 		active: boolean;
 		target_user_id: string | null;
 		expires_at: string | null;
+		target: { id: string; username: string; email: string } | null;
 	};
 
-	let status = $state<ImpersonationStatus>({ active: false, target_user_id: null, expires_at: null });
+	let status = $state<ImpersonationStatus>({ active: false, target_user_id: null, expires_at: null, target: null });
 	let loading = $state(true);
 	let ending = $state(false);
 	let showEndConfirm = $state(false);
@@ -54,7 +55,7 @@
 			const result = await impersonationApi.end();
 			if (result.ok) {
 				success = t('impersonate.ended', 'Impersonation ended');
-				status = { active: false, target_user_id: null, expires_at: null };
+				status = { active: false, target_user_id: null, expires_at: null, target: null };
 				setTimeout(() => (success = ''), 3000);
 			} else {
 				error = t('impersonate.end_error', 'Failed to end impersonation');
@@ -123,8 +124,11 @@
 								{t('impersonate.active', 'Impersonating')}
 							</p>
 							<p class="text-sm text-muted-foreground">
-								{t('impersonate.impersonating_user', 'You are currently impersonating {username}').replace('{username}', status.target_user_id ?? '—')}
+								{t('impersonate.impersonating_user', 'You are currently impersonating {username}').replace('{username}', status.target?.username ?? status.target_user_id ?? '—')}
 							</p>
+							{#if status.target?.email}
+								<p class="mt-1 text-xs text-muted-foreground">{status.target.email}</p>
+							{/if}
 							{#if status.target_user_id}
 								<p class="mt-1 font-mono text-xs text-muted-foreground">{status.target_user_id}</p>
 							{/if}

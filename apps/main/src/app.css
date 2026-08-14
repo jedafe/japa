@@ -35,6 +35,13 @@
 	--chart-4: #f59e0b;
 	--chart-5: #ec4899;
 
+	/* Japa Stage progression colours (§87) — semantic, dark-mode-aware */
+	--stage-planning: #3b82f6;
+	--stage-preparing: #8b5cf6;
+	--stage-applied: #f59e0b;
+	--stage-approved: #10b981;
+	--stage-relocated: #06b6d4;
+
 	/* Shape + layout */
 	--radius: 8px;
 	--radius-card: 12px;
@@ -80,6 +87,13 @@
 	--chart-3: #4ade80;
 	--chart-4: #fbbf24;
 	--chart-5: #f472b6;
+
+	/* Japa Stage progression colours (§87) — dark-mode-adjusted */
+	--stage-planning: #60a5fa;
+	--stage-preparing: #a78bfa;
+	--stage-applied: #fbbf24;
+	--stage-approved: #34d399;
+	--stage-relocated: #22d3ee;
 
 	--border-input-hover: #3f3f46;
 	--destructive: #ef4444;

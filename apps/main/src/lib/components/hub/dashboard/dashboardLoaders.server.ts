@@ -53,7 +53,11 @@ export const DASHBOARD_LOADERS: Record<string, (ctx: ApiContext, params?: Dashbo
 		following: (await apiList<unknown>(ctx, '/me/following').catch(() => ({ items: [] }))).items,
 		spaces: (await apiList<unknown>(ctx, '/me/spaces').catch(() => ({ items: [] }))).items,
 		tags: (await apiList<unknown>(ctx, '/me/followed-tags').catch(() => ({ items: [] }))).items,
-		blocked: (await apiList<unknown>(ctx, '/me/blocked-users').catch(() => ({ items: [] }))).items
+		blocked: (await apiList<unknown>(ctx, '/me/blocked-users').catch(() => ({ items: [] }))).items,
+		// FE-2: muted users + spaces (Section 52). Best-effort — degrades to
+		// empty list on failure.
+		mutedUsers: (await apiList<unknown>(ctx, '/me/muted-users').catch(() => ({ items: [] }))).items,
+		mutedSpaces: (await apiList<unknown>(ctx, '/me/muted-spaces').catch(() => ({ items: [] }))).items
 	}),
 	learning: async (ctx) => (await apiList<unknown>(ctx, '/me/enrollments').catch(() => ({ items: [] }))).items,
 	certificates: async (ctx) => (await apiList<unknown>(ctx, '/me/certificates').catch(() => ({ items: [] }))).items,

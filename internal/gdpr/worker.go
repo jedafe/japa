@@ -28,3 +28,9 @@ func (a *WorkerAdapter) ProcessAccountDeletion(ctx context.Context, requestID [1
 	id := pgtype.UUID{Bytes: requestID, Valid: true}
 	return a.Service.ProcessAccountDeletion(ctx, id)
 }
+
+// CleanupExpiredExports deletes files and nulls download URLs for completed
+// data export requests whose ExpiresAt has passed (BUG-GDPR-005).
+func (a *WorkerAdapter) CleanupExpiredExports(ctx context.Context) error {
+	return a.Service.CleanupExpiredExports(ctx)
+}

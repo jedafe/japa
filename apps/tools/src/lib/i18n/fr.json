@@ -342,5 +342,25 @@
 	"language_test.seo_title": "Centre de Tests de Langue — Scores Requis & Ressources de Prépa",
 	"language_test.level_ph": "ex. B1",
 	"language_test.resources_ph": "ex. IELTS Liz, YouTube, livres Cambridge",
-	"language_test.score_ph": "ex. 7.5"
+	"language_test.score_ph": "ex. 7.5",
+
+	"housing_guide.title": "Guide du logement",
+	"housing_guide.subtitle": "Trouvez un logement sûr à l'étranger — plateformes, exigences des propriétaires, fourchettes de loyers et avertissements sur les arnaques.",
+	"housing_guide.seo_title": "Guide du logement — Outils JapaConnect",
+	"housing_guide.seo_description": "Guides du logement par destination — plateformes, exigences des propriétaires, fourchettes de loyers, catégories d'arnaques et conseils pour trouver un logement sûr à l'étranger.",
+	"housing_guide.destination": "Pays de destination",
+	"housing_guide.select_destination": "Sélectionnez une destination",
+	"housing_guide.select_destination_desc": "Choisissez un pays pour voir les guides du logement pour cette destination.",
+	"housing_guide.no_destinations": "Aucune destination disponible",
+	"housing_guide.no_destinations_desc": "Les données du guide du logement n'ont pas encore été configurées. Veuillez revenir plus tard.",
+	"housing_guide.no_guides": "Aucun guide du logement",
+	"housing_guide.no_guides_desc": "Aucun guide du logement n'a été publié pour cette destination pour le moment.",
+	"housing_guide.last_verified": "Dernière vérification :",
+	"housing_guide.search_platforms": "Plateformes de recherche",
+	"housing_guide.landlord_requirements": "Exigences des propriétaires",
+	"housing_guide.rent_ranges": "Fourchettes de loyers",
+	"housing_guide.scam_categories": "Catégories d'arnaques",
+	"housing_guide.tips": "Conseils",
+	"housing_guide.reviewed_by": "Révisé par",
+	"housing_guide.anon_hint": "Connectez-vous pour enregistrer votre progression."
 }

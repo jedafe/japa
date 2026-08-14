@@ -250,7 +250,7 @@
 
 	{#if lesson.next_lesson}
 		<a
-			href="/tracks/{track.slug}/${lesson.next_lesson.module_slug}/${lesson.next_lesson.slug}"
+			href="/tracks/{track.slug}/{lesson.next_lesson.module_slug}/{lesson.next_lesson.slug}"
 			class="block rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 hover:bg-[var(--color-surface-subtle)]"
 		>
 			<p class="mb-1 text-xs text-[var(--color-muted)]">{t('learn.up_next')}</p>
@@ -537,7 +537,7 @@
 
 			{#if lesson.next_lesson}
 				<a
-					href="/tracks/{track.slug}/{lesson.next_lesson.module_slug}/${lesson.next_lesson.slug}"
+					href="/tracks/{track.slug}/{lesson.next_lesson.module_slug}/{lesson.next_lesson.slug}"
 					class="inline-flex items-center gap-1 text-sm font-medium text-[var(--color-primary)] hover:underline"
 				>
 					{t('learn.next_lesson')} <ArrowRight size={16} />

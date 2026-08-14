@@ -118,7 +118,9 @@ var settingsCatalog = map[string]settingMeta{
 	"i18n.default_language":  {Type: "string", DefaultValue: "en", Description: "Platform default language.", Public: true, Panel: "admin"},
 	"i18n.enabled_languages": {Type: "csv", DefaultValue: "en,fr", Description: "Comma-separated active language codes.", Public: true, Panel: "admin"},
 	// GDPR
-	"gdpr.deletion_grace_days":           {Type: "int", DefaultValue: "30", Description: "Days before hard deletion after request.", Panel: "admin"},
+	// BUG-GDPR-006: gdpr.deletion_grace_days removed — superseded by
+	// gdpr.retention_days (ADR-057). No code reads it; keeping it in the
+	// UI misled admins into thinking it controlled the retention window.
 	"gdpr.export_expiry_days":            {Type: "int", DefaultValue: "7", Description: "Days before export download link expires.", Panel: "admin"},
 	"gdpr.hard_delete_enabled":           {Type: "bool", DefaultValue: "false", Description: "Enable physical user erasure after anonymization (ADR-057).", Panel: "admin"},
 	"gdpr.retention_days":                {Type: "int", DefaultValue: "0", Description: "Days after anonymization before hard delete (0 = immediate, ADR-057).", Panel: "admin"},

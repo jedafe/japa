@@ -805,6 +805,11 @@ func HandleGdprRetentionSweep(ctx context.Context, _ *asynq.Task) error {
 	}
 
 	if len(requestIDs) == 0 && reenqueued == 0 {
+		// No retention_wait or stale pending work, but still run the
+		// expired export cleanup (BUG-GDPR-005) before exiting.
+		if err := gdprProcessor.CleanupExpiredExports(ctx); err != nil {
+			slog.Error("task:gdpr:retention_sweep: expired export cleanup failed", "error", err)
+		}
 		return nil
 	}
 
@@ -815,6 +820,13 @@ func HandleGdprRetentionSweep(ctx context.Context, _ *asynq.Task) error {
 			continue
 		}
 		completed++
+	}
+
+	// Sweep 3: Clean up expired data export files (BUG-GDPR-005, Section 19).
+	// Deletes files from storage and nulls download URLs for completed
+	// exports whose ExpiresAt has passed.
+	if err := gdprProcessor.CleanupExpiredExports(ctx); err != nil {
+		slog.Error("task:gdpr:retention_sweep: expired export cleanup failed", "error", err)
 	}
 
 	slog.Info("task:gdpr:retention_sweep: sweep complete",
@@ -1088,6 +1100,8 @@ func HandleSearchIndexSync(ctx context.Context, t *asynq.Task) error {
 			indexName = "doc_pages"
 		} else if entityType == "organization" {
 			indexName = "organizations"
+		} else if entityType == "language_test_requirement" {
+			indexName = "language_test_requirements"
 		}
 		return searchIndexer.DeleteDocument(ctx, indexName, entityID.Bytes)
 	}
@@ -1109,6 +1123,8 @@ func HandleSearchIndexSync(ctx context.Context, t *asynq.Task) error {
 		return searchIndexer.IndexDocPage(ctx, entityID.Bytes, tenantID.Bytes)
 	case "organization":
 		return searchIndexer.IndexOrganization(ctx, entityID.Bytes, tenantID.Bytes)
+	case "language_test_requirement":
+		return searchIndexer.IndexLanguageTestRequirement(ctx, entityID.Bytes, tenantID.Bytes)
 	default:
 		slog.Warn("task:search:index_entity: unknown entity type, skipping", "entity_type", entityType)
 		return nil

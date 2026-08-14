@@ -1389,9 +1389,9 @@ SELECT e.id, e.tenant_id, e.user_id, e.track_id, e.access_type, e.progress_pct,
        COALESCE(lp_stats.lessons_completed, 0) AS lessons_completed,
        COALESCE(lp_stats.lessons_total, 0) AS lessons_total,
        lp_stats.last_activity_at,
-       nl.next_lesson_slug,
-       nl.next_lesson_title,
-       nl.next_lesson_module_slug
+       COALESCE(nl.next_lesson_slug, '') AS next_lesson_slug,
+       COALESCE(nl.next_lesson_title, '') AS next_lesson_title,
+       COALESCE(nl.next_lesson_module_slug, '') AS next_lesson_module_slug
 FROM enrollments e
 JOIN learning_tracks lt ON lt.id = e.track_id
 LEFT JOIN media m ON m.id = lt.cover_media_id

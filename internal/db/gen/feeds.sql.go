@@ -1104,9 +1104,9 @@ func (q *Queries) UpdateContentScore(ctx context.Context, arg UpdateContentScore
 const updateVelocityScores = `-- name: UpdateVelocityScores :exec
 UPDATE content_scores cs
 SET velocity_score = CASE
-    WHEN c.published_at IS NOT NULL
+    WHEN c.published_at IS NOT NULL AND EXTRACT(EPOCH FROM (now() - c.published_at)) > 0
     THEN GREATEST(0, (cs.vote_score * 2 + cs.comment_count + cs.view_count / 100.0)::numeric
-         / POWER((EXTRACT(EPOCH FROM (now() - c.published_at)) / 3600.0) + 2, $1))
+         / POWER(EXTRACT(EPOCH FROM (now() - c.published_at)) / 3600.0, $1))
     ELSE 0
 END,
 last_scored_at = now()
@@ -1126,10 +1126,8 @@ type UpdateVelocityScoresParams struct {
 // Batch update velocity scores for published content < 30 days old.
 // velocity = (vote_score * 2 + comment_count + view_count / 100) /
 //
-//	((hours_since_publish + 2) ^ gravity)
+//	(hours_since_publish ^ gravity)
 //
-// The +2 matches Section 32 L115-118 and prevents division by zero for
-// very fresh posts without distorting the score curve.
 // gravity is passed as a parameter so it can be hot-reloaded from
 // system_settings (feed.velocity.gravity, default 1.8).
 func (q *Queries) UpdateVelocityScores(ctx context.Context, arg UpdateVelocityScoresParams) error {

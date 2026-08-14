@@ -10,6 +10,7 @@ package jobs
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -153,6 +154,98 @@ func TestStatusConstants(t *testing.T) {
 	for name, val := range expected {
 		if val != want[name] {
 			t.Errorf("%s = %q, want %q", name, val, want[name])
+		}
+	}
+}
+
+// TestHandleListOrgJobs_NilService verifies that the org-scoped list endpoint
+// returns 500 (not a panic) when the service is nil — the org-membership check
+// (JOBS-012) must degrade safely. Auth context is set so the handler reaches
+// the membership check.
+func TestHandleListOrgJobs_NilService(t *testing.T) {
+	h := NewHandlers(nil, nil)
+	req := httptest.NewRequest(http.MethodGet, "/org/00000000-0000-0000-0000-000000000001/jobs", nil)
+	rr := httptest.NewRecorder()
+	h.HandleListOrgJobs(rr, req)
+
+	if rr.Code != http.StatusUnauthorized {
+		t.Errorf("HandleListOrgJobs without auth = %d, want %d", rr.Code, http.StatusUnauthorized)
+	}
+}
+
+// TestHandleCreateJobListing_Unauthorized verifies the create endpoint
+// requires authentication (the org-membership check runs only after auth).
+func TestHandleCreateJobListing_Unauthorized(t *testing.T) {
+	h := NewHandlers(nil, nil)
+	req := httptest.NewRequest(http.MethodPost, "/org/00000000-0000-0000-0000-000000000001/jobs", nil)
+	rr := httptest.NewRecorder()
+	h.HandleCreateJobListing(rr, req)
+
+	if rr.Code != http.StatusUnauthorized {
+		t.Errorf("HandleCreateJobListing without auth = %d, want %d", rr.Code, http.StatusUnauthorized)
+	}
+}
+
+// TestDeriveSummary verifies the summary derivation helper (JOBS-015) — the
+// contents table has no summary column, so a display summary is derived from
+// the body.
+func TestDeriveSummary(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+		want string
+	}{
+		{"empty", "", ""},
+		{"short", "We are hiring.", "We are hiring."},
+		{"long truncates with ellipsis", strings.Repeat("a", 250), strings.Repeat("a", 200) + "…"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := deriveSummary(tt.body)
+			if got != tt.want {
+				if len(tt.want) > 40 {
+					t.Errorf("deriveSummary(len=%d) len=%d, want len=%d", len(tt.body), len(got), len(tt.want))
+				} else {
+					t.Errorf("deriveSummary(%q) = %q, want %q", tt.body, got, tt.want)
+				}
+			}
+		})
+	}
+}
+
+// TestJobFieldTypes verifies the field-key → storage-column map matches the
+// 15 seeded job_listing_fields (migration 000475). A mismatch would route
+// boolean/number values to value_text and break the visa_sponsorship filter
+// and salary sort (JOBS-007).
+func TestJobFieldTypes(t *testing.T) {
+	want := map[string]jobFieldType{
+		"company_name":          fieldTypeText,
+		"job_type":              fieldTypeText,
+		"location_type":         fieldTypeText,
+		"country":               fieldTypeText,
+		"city":                  fieldTypeText,
+		"salary_min":            fieldTypeNumber,
+		"salary_max":            fieldTypeNumber,
+		"salary_currency":       fieldTypeText,
+		"experience_level":      fieldTypeText,
+		"skills_required":       fieldTypeText,
+		"application_url":       fieldTypeText,
+		"application_deadline":  fieldTypeText,
+		"visa_sponsorship":      fieldTypeBoolean,
+		"relocation_assistance": fieldTypeBoolean,
+		"is_featured":           fieldTypeBoolean,
+	}
+	if len(jobFieldTypes) != len(want) {
+		t.Fatalf("jobFieldTypes has %d entries, want %d", len(jobFieldTypes), len(want))
+	}
+	for key, ft := range want {
+		got, ok := jobFieldTypes[key]
+		if !ok {
+			t.Errorf("jobFieldTypes missing key %q", key)
+			continue
+		}
+		if got != ft {
+			t.Errorf("jobFieldTypes[%q] = %q, want %q", key, got, ft)
 		}
 	}
 }

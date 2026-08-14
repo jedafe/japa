@@ -110,3 +110,28 @@ func (s *Store) Delete(ctx context.Context, tenantID, id pgtype.UUID) error {
 
 	return nil
 }
+
+// DeleteByLocale removes all translations for a given locale.
+func (s *Store) DeleteByLocale(ctx context.Context, tenantID pgtype.UUID, locale string) error {
+	if err := s.write.DeleteTranslationsByLocale(ctx, gen.DeleteTranslationsByLocaleParams{
+		TenantID: tenantID,
+		Locale:   locale,
+	}); err != nil {
+		return fmt.Errorf("deleting translations by locale: %w", err)
+	}
+
+	return nil
+}
+
+// GetByID returns a single translation by its primary key.
+func (s *Store) GetByID(ctx context.Context, tenantID, id pgtype.UUID) (gen.GetTranslationByIDRow, error) {
+	row, err := s.read.GetTranslationByID(ctx, gen.GetTranslationByIDParams{
+		TenantID: tenantID,
+		ID:       id,
+	})
+	if err != nil {
+		return gen.GetTranslationByIDRow{}, fmt.Errorf("getting translation by id: %w", err)
+	}
+
+	return row, nil
+}

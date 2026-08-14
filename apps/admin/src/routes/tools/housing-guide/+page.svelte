@@ -1,24 +1,35 @@
 <script lang="ts">
 	// /tools/housing-guide — admin HITL review queue for AI-generated housing guides.
+	// Ref: §96 (Housing Guide), ADR-088 (universal AI content generation).
+	import { onMount } from 'svelte';
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import { Modal } from '$lib/components/ui/modal';
 	import { Button } from '$lib/components/ui/button';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
-	import { Eye, CheckCircle, Sparkles } from 'lucide-svelte';
+	import { Eye, CheckCircle, XCircle, Sparkles } from 'lucide-svelte';
 	import type { ActionItem } from '$lib/components/ui/data-table';
-	import { housingGuideAdminApi } from '$lib/api';
+	import { housingGuideAdminApi, api } from '$lib/api';
 
+	// GuideDTO fields from internal/housingguide/service.go (GuideDTO).
 	type HousingGuideItem = {
 		id: string;
-		title: string;
-		dest_country: string;
+		destination_space_id: string;
+		destination_space_name?: string | null;
+		city_space_name?: string | null;
+		accommodation_type?: string | null;
 		status: string;
+		is_active: boolean;
 		ai_generated: boolean;
-		updated_at?: string;
-		summary?: string;
-		content?: string;
+		ai_model?: string | null;
+		last_verified_at?: string | null;
+		hitl_reviewed_at?: string | null;
+		reviewer_name?: string | null;
+		created_at: string;
+		updated_at: string;
 	};
+
+	type GeoSpaceOption = { id: string; name: string };
 
 	const canManage = $derived(hasPermission('housing_guide.manage'));
 
@@ -27,24 +38,52 @@
 	let pageError = $state('');
 	let acting = $state(false);
 
+	// ── Destination country list (geo-aware selector source, Rule 16) ───────
+	// The public /spaces?level=country endpoint returns country-level spaces
+	// for the destination selector. The admin SPA calls it directly (it is
+	// gated by optional auth + directory.spaces.view, which admins have).
+	let destinations = $state<GeoSpaceOption[]>([]);
+	onMount(async () => {
+		try {
+			const res = await api<GeoSpaceOption[]>('/spaces?level=country');
+			if (res.ok && Array.isArray(res.data)) {
+				destinations = (res.data as GeoSpaceOption[]).map((s) => ({ id: s.id, name: s.name }));
+			}
+		} catch {
+			destinations = [];
+		}
+	});
+
 	// ── Generate modal state ────────────────────────────────────────────────
 	let showGenerateModal = $state(false);
-	let generateDestCountry = $state('');
-	let generateTopic = $state('');
+	let generateDestSpaceId = $state('');
+	let generateAccommodationType = $state('');
+
+	const accommodationTypes = [
+		{ value: 'private_rental', label: 'Private rental' },
+		{ value: 'flatshare', label: 'Flatshare' },
+		{ value: 'student', label: 'Student' },
+		{ value: 'employer_provided', label: 'Employer-provided' },
+		{ value: 'all', label: 'All' }
+	];
 
 	function openGenerate() {
-		generateDestCountry = '';
-		generateTopic = '';
+		generateDestSpaceId = '';
+		generateAccommodationType = '';
 		showGenerateModal = true;
 	}
 
 	async function confirmGenerate() {
+		if (!generateDestSpaceId) {
+			pageError = t('app.tools.dest_country_placeholder', 'Select a destination country');
+			return;
+		}
 		acting = true;
 		pageError = '';
 		try {
 			const result = await housingGuideAdminApi.generate({
-				dest_country: generateDestCountry,
-				topic: generateTopic
+				destination_space_id: generateDestSpaceId,
+				accommodation_type: generateAccommodationType
 			});
 			if (result.ok) {
 				showGenerateModal = false;
@@ -76,6 +115,23 @@
 		}
 	}
 
+	async function rejectItem(item: HousingGuideItem) {
+		acting = true;
+		pageError = '';
+		try {
+			const result = await housingGuideAdminApi.reject(item.id);
+			if (result.ok) {
+				entityController?.reload();
+			} else {
+				pageError = result.error ?? t('common.error', 'An error occurred');
+			}
+		} catch {
+			pageError = t('common.error', 'An error occurred');
+		} finally {
+			acting = false;
+		}
+	}
+
 	// ── Row actions ─────────────────────────────────────────────────────────
 	const rowActions = $derived.by<ActionItem[]>(() => {
 		const acts: ActionItem[] = [
@@ -86,7 +142,14 @@
 				label: t('common.approve', 'Approve'),
 				icon: CheckCircle,
 				onclick: approveItem,
-				show: () => true
+				show: (row: HousingGuideItem) => row.status !== 'published'
+			});
+			acts.push({
+				label: t('common.reject', 'Reject'),
+				icon: XCircle,
+				onclick: rejectItem,
+				variant: 'destructive',
+				show: (row: HousingGuideItem) => row.status !== 'published' && row.status !== 'rejected'
 			});
 		}
 		return acts;
@@ -94,9 +157,8 @@
 
 	// `fields` is required by EntityPageConfig; readonly page so the form is never shown, but kept for shape completeness.
 	const fields: FieldDef[] = [
-		{ key: 'title', label: t('app.tools.col_title', 'Title'), type: 'text' },
-		{ key: 'dest_country', label: t('app.tools.col_dest_country', 'Destination Country'), type: 'text' },
-		{ key: 'summary', label: t('app.tools.col_summary', 'Summary'), type: 'textarea' }
+		{ key: 'destination_space_id', label: t('app.tools.col_dest_country', 'Destination Country'), type: 'text' },
+		{ key: 'accommodation_type', label: t('app.tools.col_accommodation_type', 'Accommodation Type'), type: 'text' }
 	];
 
 	const config = $derived<EntityPageConfig>({
@@ -105,8 +167,19 @@
 		readonly: true,
 		pageSize: 25,
 		columns: [
-			{ key: 'title', label: t('app.tools.col_title', 'Title'), sortable: true },
-			{ key: 'dest_country', label: t('app.tools.col_dest_country', 'Destination'), sortable: true },
+			{
+				key: 'destination_space_name',
+				label: t('app.tools.col_dest_country', 'Destination'),
+				sortable: true,
+				render: (value: string) => value || '—'
+			},
+			{ key: 'city_space_name', label: t('app.tools.col_city', 'City'), render: (value: string) => value || '—' },
+			{
+				key: 'accommodation_type',
+				label: t('app.tools.col_accommodation_type', 'Type'),
+				sortable: true,
+				render: (value: string) => value || '—'
+			},
 			{
 				key: 'status',
 				label: t('app.tools.col_status', 'Status'),
@@ -119,6 +192,12 @@
 				render: (value: boolean) => (value ? t('common.yes', 'Yes') : t('common.no', 'No'))
 			},
 			{
+				key: 'last_verified_at',
+				label: t('app.tools.col_last_verified', 'Last verified'),
+				sortable: true,
+				render: (value: string) => (value ? new Date(value).toLocaleDateString() : '—')
+			},
+			{
 				key: 'updated_at',
 				label: t('app.tools.col_updated_at', 'Updated'),
 				sortable: true,
@@ -128,13 +207,29 @@
 		actions: rowActions,
 		fields,
 		load: async (params) => {
+			// Forward all DataTable state to the backend so server-side
+			// pagination/sort/search/filter works (geo-aware-tool-pattern.md
+			// "Tool-Specific Admin List Pattern": filter+sort+paginate, no
+			// infinite scroll). The backend HandleAdminList supports
+			// ?page=&limit=&status=&type=&dest=&city=&q=&active=.
 			const qs = new URLSearchParams();
+			qs.set('page', String(params.page + 1)); // backend is 1-based
+			qs.set('limit', String(params.pageSize));
+			if (params.q) qs.set('q', params.q);
+			if (params.sort) {
+				qs.set('sort', params.sort);
+				// The backend orders by created_at/updated_at desc; the
+				// direction is implicit. We still forward the key.
+			}
 			if (params.filter?.dest) qs.set('dest', params.filter.dest);
-			const queryString = qs.toString();
-			const result = await housingGuideAdminApi.list(queryString ? `?${queryString}` : '');
+			if (params.filter?.status) qs.set('status', params.filter.status);
+			if (params.filter?.type) qs.set('type', params.filter.type);
+			const result = await housingGuideAdminApi.list(`?${qs.toString()}`);
 			if (result.ok) {
-				const data = (result.data as HousingGuideItem[]) ?? [];
-				return { data, total: data.length, totalPages: 1 };
+				const data = (result.data.data as HousingGuideItem[]) ?? [];
+				const total = result.data.pagination?.total ?? data.length;
+				const totalPages = Math.max(1, Math.ceil(total / params.pageSize));
+				return { data, total, totalPages };
 			}
 			throw new Error(result.error ?? t('common.error', 'An error occurred'));
 		},
@@ -171,24 +266,31 @@
 	<div class="space-y-4">
 		<div>
 			<label for="gen-dest-country" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('app.tools.col_dest_country', 'Destination Country')}</label>
-			<input
+			<select
 				id="gen-dest-country"
 				class="w-full rounded-lg border p-3 text-sm"
 				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
-				bind:value={generateDestCountry}
-				placeholder={t('app.tools.dest_country_placeholder', 'e.g. Japan')}
-			/>
+				bind:value={generateDestSpaceId}
+			>
+				<option value="">{t('app.tools.dest_country_placeholder', 'Select a destination country')}</option>
+				{#each destinations as d (d.id)}
+					<option value={d.id}>{d.name}</option>
+				{/each}
+			</select>
 		</div>
 		<div>
-			<label for="gen-topic" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('app.tools.topic_prompt', 'Topic / Prompt')}</label>
-			<textarea
-				id="gen-topic"
+			<label for="gen-accommodation-type" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('app.tools.col_accommodation_type', 'Accommodation Type')}</label>
+			<select
+				id="gen-accommodation-type"
 				class="w-full rounded-lg border p-3 text-sm"
 				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
-				rows="4"
-				bind:value={generateTopic}
-				placeholder={t('app.tools.topic_placeholder', 'Describe what the housing guide should cover...')}
-			></textarea>
+				bind:value={generateAccommodationType}
+			>
+				<option value="">{t('app.tools.all_types', 'All types')}</option>
+				{#each accommodationTypes as at (at.value)}
+					<option value={at.value}>{at.label}</option>
+				{/each}
+			</select>
 		</div>
 	</div>
 	<div class="mt-4 flex justify-end gap-2">
@@ -203,12 +305,16 @@
 {#snippet HousingGuideView({ row }: { row: HousingGuideItem })}
 	<div class="space-y-4">
 		<div>
-			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.tools.col_title', 'Title')}</p>
-			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.title}</p>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.tools.col_dest_country', 'Destination Country')}</p>
+			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.destination_space_name || '—'}</p>
 		</div>
 		<div>
-			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.tools.col_dest_country', 'Destination Country')}</p>
-			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.dest_country || '—'}</p>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.tools.col_city', 'City')}</p>
+			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.city_space_name || '—'}</p>
+		</div>
+		<div>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.tools.col_accommodation_type', 'Accommodation Type')}</p>
+			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.accommodation_type || '—'}</p>
 		</div>
 		<div>
 			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.tools.col_status', 'Status')}</p>
@@ -219,12 +325,18 @@
 			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.ai_generated ? t('common.yes', 'Yes') : t('common.no', 'No')}</p>
 		</div>
 		<div>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.tools.col_last_verified', 'Last verified')}</p>
+			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.last_verified_at ? new Date(row.last_verified_at).toLocaleDateString() : '—'}</p>
+		</div>
+		<div>
 			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.tools.col_updated_at', 'Updated')}</p>
 			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.updated_at ? new Date(row.updated_at).toLocaleString() : '—'}</p>
 		</div>
-		<div>
-			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.tools.col_summary', 'Summary')}</p>
-			<p class="mt-1 text-sm" style="color: var(--color-foreground)">{row.summary || '—'}</p>
-		</div>
+		{#if row.reviewer_name}
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.tools.col_reviewer', 'Reviewer')}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.reviewer_name}</p>
+			</div>
+		{/if}
 	</div>
 {/snippet}

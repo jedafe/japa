@@ -47,6 +47,8 @@ var Registry = []Feature{
 	// AI features
 	{Key: "feature.japabot", Label: "JapaBot AI Chat", Default: false},
 	{Key: "feature.ai_content_gen", Label: "AI Content Generation", Default: false},
+	// Section 70 — Visa Document Checklist Generator (ADR-070).
+	{Key: "checklist.enabled", Label: "Visa Document Checklist", Default: false},
 	// V2 Community Features (§79–§89, §98) — keys renamed by migration 000404
 	// from feature.{name} to {domain}.enabled per conventions/feature-flag-naming.md.
 	{Key: "story.enabled", Label: "Community Story Wall", Default: false},
@@ -95,4 +97,15 @@ func AllKeys() []string {
 	}
 
 	return keys
+}
+
+// registryLookup returns the Feature entry for a key and true if found,
+// or a zero Feature and false if the key is not in the registry.
+func registryLookup(key string) (Feature, bool) {
+	for _, f := range Registry {
+		if f.Key == key {
+			return f, true
+		}
+	}
+	return Feature{}, false
 }

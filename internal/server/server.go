@@ -998,6 +998,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Ref: japaconnect-engineering/sections/63-jobs-board.md (ADR-081)
 	jobsStore := jobs.NewStore(database)
 	jobsService := jobs.NewService(jobsStore, settingsService)
+	jobsService.SetEnqueuer(taskEnqueuer) // jobs:notify_application_status (§63, ADR-081)
 	jobsHandlers := jobs.NewHandlers(jobsService, settingsService)
 
 	// Ref: japaconnect-engineering/sections/64-gamification.md (ADR-082)
@@ -1403,12 +1404,23 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// back to empty steps if it is nil or the call fails.
 	attestationGuideService.SetDispatcher(aiDispatcher)
 	arrivalChecklistService.SetDispatcher(aiDispatcher)
+	languageTestHubService.SetDispatcher(aiDispatcher)
+	// §99: wire the Asynq client so the approve handler can enqueue
+	// Meilisearch index sync for JapaBot RAG retrieval (ADR-088).
+	languageTestHubHandlers.SetAsynqClient(asynqClient)
 
 	aiHandlers := ai.NewHandlers(aiDispatcher, aiStore)
 	aiHandlers.SetHonchoClient(honcho.NewClient(cfg.HonchoURL))
 	aiHandlers.SetSettings(settingsService) // Rule 3: ai.japabot_enabled global toggle
 	aiHandlers.SetRBAC(rbacResolver)        // ADR-025: ai.context.* category node checks
 	aiHandlers.AsynqClient = asynqClient
+
+	// Wire the AI dispatcher into the i18n handlers + processor adapter so
+	// POST /admin/i18n/strings/{id}/translate and the
+	// i18n:translate_language_pack Asynq task actually translate via the AI
+	// gateway instead of copying source values verbatim (BE-i18n-001/002/003).
+	i18nHandlers.AIDispatcher = aiDispatcher
+	i18nTranslateAdapter.SetAIDispatcher(aiDispatcher)
 
 	aiToolRegistry := ai.NewToolRegistry(database)
 
@@ -2016,12 +2028,6 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					strings.HasPrefix(r.URL.Path, "/api/v1/payments/webhook/")
 			}, csrf.WithOriginCheck(mw.IsOriginAllowed)))
 
-			// Impersonation middleware (SEC-002) — injects impersonated identity
-			// into request context when an active impersonation session exists.
-			// Runs after auth + bot detection so the impersonator is authenticated
-			// first, then the impersonated user's identity is swapped in.
-			r.Use(impersonation.ImpersonationMiddleware(impersonationStore))
-
 			// TOTP-for-admin enforcement (SEC-006) — when the
 			// "security.totp_required_for_admin" setting is enabled, admin-level
 			// users (per rbac.HasAdminCapability) without an active TOTP
@@ -2035,6 +2041,14 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// without each route needing its own OptionalAuth wrapper. Per-route
 			// RequireAuth guards still enforce 401 on protected endpoints.
 			r.Use(auth.OptionalAuth(kr, vkClient.Redis()))
+
+			// Impersonation middleware (SEC-002) — injects impersonated identity
+			// into request context when an active impersonation session exists.
+			// Must run AFTER OptionalAuth so the admin's identity is populated in
+			// context before the Valkey lookup. Skips /api/v1/admin/ routes so the
+			// admin can still manage impersonation sessions with their real identity
+			// (Section 46: "wraps all non-admin routes").
+			r.Use(impersonation.ImpersonationMiddleware(impersonationStore))
 
 			// VisitorContext resolver (ADR-064) — resolves the effective
 			// content country for geo-aware feed/search personalization. Runs
@@ -2330,10 +2344,13 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), spaces.SpaceResolver(spaceService), mw.RateLimit(vkClient.Redis(), "moderate")).
 				Delete("/spaces/{slug}/follow", spaceHandlers.ToggleFollow)
 
-			// Space mute/unmute (Section 52)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), spaces.SpaceResolver(spaceService)).
+			// Space mute/unmute (Section 52). BE-3: enforce
+			// interactions.mute.manage — the same node that guards user mutes
+			// (Section 41 line 176). Mute-status is a read-only check and
+			// stays behind RequireAuth only.
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), spaces.SpaceResolver(spaceService), rbac.RequirePermission(rbacResolver, "interactions.mute.manage")).
 				Post("/spaces/{slug}/mute", spaceHandlers.MuteSpace)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), spaces.SpaceResolver(spaceService)).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), spaces.SpaceResolver(spaceService), rbac.RequirePermission(rbacResolver, "interactions.mute.manage")).
 				Delete("/spaces/{slug}/mute", spaceHandlers.UnmuteSpace)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), spaces.SpaceResolver(spaceService)).
 				Get("/spaces/{slug}/mute-status", spaceHandlers.GetMuteStatus)
@@ -3447,11 +3464,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			})
 
 			// i18n Translation management (admin) — catalog: /admin/i18n/*.
-			// NOTE: Upsert/UpsertBatch are MANUAL value-setting handlers, not the
-			// catalog's AI-driven POST /admin/i18n/strings/:key/translate or
-			// /ai-translate-batch (no AI dispatcher call exists here) — kept under
-			// the /strings prefix as documented manual-upsert extras rather than
-			// mislabeled as the AI routes, which remain unimplemented (P5).
+			// Manual CRUD + AI-driven translate routes. The AI translate
+			// routes (POST .../translate, POST .../ai-translate-batch) are
+			// registered further below alongside the other Task-25 routes.
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "i18n.manage")).
 				Get("/admin/i18n/strings", i18nHandlers.ListByLocale)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "i18n.manage")).
@@ -3462,6 +3477,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Post("/admin/i18n/strings/batch", i18nHandlers.UpsertBatch)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "i18n.manage")).
 				Delete("/admin/i18n/strings/{id}", i18nHandlers.Delete)
+			// Delete an entire locale and all its translations (BE-i18n-004).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "i18n.manage")).
+				Delete("/admin/i18n/languages/{locale}", i18nHandlers.DeleteByLocale)
 
 			// i18n public endpoints (no auth) — catalog: /i18n/packs, /i18n/packs/:lang_code
 			r.Get("/i18n/packs", i18nHandlers.HandleListPublicLocales)
