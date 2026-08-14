@@ -337,13 +337,16 @@ func (s *Service) ApproveGuide(ctx context.Context, id, tenantID, reviewerID pgt
 
 // GenerateGuide creates an AI-drafted arrival checklist guide in 'ai_draft'
 // status. The draft is marked ai_generated=true with ai_model='content_agent_v1'
-// and ai_prompt_hash=SHA256(prompt) per ADR-088 for audit reproducibility.
-// When an AI Gateway dispatcher is wired, the Content Agent is invoked to
-// generate draft checklist content; the call is best-effort and the draft is
-// still created (with empty items) if the dispatcher is nil or the call fails,
-// so a reviewer can fill it manually. Requires HITL approval (ApproveGuide)
-// before publication. Admin-only (arrival_checklist.manage permission checked
-// at route level). Ref: ADR-088, geo-aware-tool-pattern.md.
+// and requires HITL approval (ApproveGuide) before publication. Admin-only
+// (arrival_checklist.manage permission checked at route level).
+//
+// When an AI dispatcher is wired (SetDispatcher), the method calls the AI
+// Gateway via the "content_generation" category to draft checklist content
+// from the destination, visa category, applicant type, and optional custom
+// prompt. The SHA-256 of the prompt is stored as ai_prompt_hash for audit.
+// If the dispatcher is nil or the call fails, the draft is still created so
+// a reviewer can fill it manually (graceful degradation).
+// Ref: ADR-088, geo-aware-tool-pattern.md.
 func (s *Service) GenerateGuide(ctx context.Context, tenantID pgtype.UUID, req GenerateGuideRequest) (GenerateGuideResponse, error) {
 	if req.DestinationSpaceID == "" {
 		return GenerateGuideResponse{}, fmt.Errorf("destination_space_id is required")
@@ -364,45 +367,64 @@ func (s *Service) GenerateGuide(ctx context.Context, tenantID pgtype.UUID, req G
 		visaCategory = &v
 	}
 
-	// Build the generation prompt. A caller-supplied prompt wins; otherwise
-	// synthesize one from the destination, applicant type, and visa category.
+	// Build the prompt sent to the Content Agent. The destination space id,
+	// visa category, applicant type, and an optional caller-supplied prompt
+	// are combined into a single string the gateway can route to the model.
 	prompt := req.Prompt
 	if prompt == "" {
-		prompt = fmt.Sprintf("Generate an arrival checklist guide for %s going to %s",
-			applicantType, req.DestinationSpaceID)
-		if req.VisaCategory != "" {
-			prompt += fmt.Sprintf(" on a %s visa", req.VisaCategory)
-		}
+		prompt = fmt.Sprintf(
+			"Generate an arrival checklist guide for destination_space_id=%s, visa_category=%s, applicant_type=%s.",
+			req.DestinationSpaceID, req.VisaCategory, applicantType,
+		)
+	} else {
+		prompt = fmt.Sprintf(
+			"%s\nContext: destination_space_id=%s, visa_category=%s, applicant_type=%s.",
+			prompt, req.DestinationSpaceID, req.VisaCategory, applicantType,
+		)
 	}
 
-	// Compute ai_prompt_hash = SHA256(prompt) per ADR-088 for audit
-	// reproducibility. Computed even when the AI call is skipped so the
-	// prompt that would have been used is still reproducible.
-	h := sha256.Sum256([]byte(prompt))
-	promptHash := hex.EncodeToString(h[:])
+	// ai_prompt_hash = SHA256(prompt) for audit traceability.
+	sum := sha256.Sum256([]byte(prompt))
+	promptHash := hex.EncodeToString(sum[:])
 
-	// Call the AI Gateway to generate draft checklist content. The
-	// dispatcher is optional; if it is nil or the call fails, the draft is
-	// still created so the reviewer can fill items manually.
+	// Call the AI Gateway (content_generation category) when a dispatcher
+	// is wired. Failures are non-fatal: the draft is still created so a
+	// reviewer can fill it manually.
 	var aiContent string
 	if s.dispatcher != nil {
-		resp, derr := s.dispatcher.Dispatch(ctx, "content_generation", ai.Request{
+		resp, aiErr := s.dispatcher.Dispatch(ctx, "content_generation", ai.Request{
 			Category: "content_generation",
 			Payload: map[string]any{
-				"prompt":    prompt,
-				"tenant_id": tenantID,
+				"prompt":     prompt,
+				"tenant_id":  tenantID,
+				"guide_type": "arrival_checklist",
 			},
 		})
-		if derr != nil {
-			slog.Warn("arrivalchecklist: AI generation failed, creating draft without AI content",
-				"error", derr)
+		if aiErr != nil {
+			slog.Warn("arrivalchecklist: AI Gateway dispatch failed; creating manual draft",
+				"err", aiErr,
+				"destination_space_id", req.DestinationSpaceID,
+				"visa_category", req.VisaCategory,
+				"applicant_type", applicantType,
+			)
 		} else {
-			if text, ok := resp.Raw["text"].(string); ok {
-				aiContent = text
-			} else if text, ok := resp.Raw["content"].(string); ok {
-				aiContent = text
-			} else if output, ok := resp.Raw["output"].(string); ok {
-				aiContent = output
+			// The gateway may return the generated text under any of the
+			// common keys depending on the backing provider.
+			if t, ok := resp.Raw["text"].(string); ok {
+				aiContent = t
+			} else if t, ok := resp.Raw["content"].(string); ok {
+				aiContent = t
+			} else if t, ok := resp.Raw["output"].(string); ok {
+				aiContent = t
+			}
+			if aiContent != "" {
+				slog.Info("arrivalchecklist: AI Gateway generated draft content",
+					"destination_space_id", req.DestinationSpaceID,
+					"visa_category", req.VisaCategory,
+					"applicant_type", applicantType,
+					"prompt_hash", promptHash,
+					"content_len", len(aiContent),
+				)
 			}
 		}
 	}
@@ -422,16 +444,6 @@ func (s *Service) GenerateGuide(ctx context.Context, tenantID pgtype.UUID, req G
 	})
 	if err != nil {
 		return GenerateGuideResponse{}, fmt.Errorf("arrivalchecklist: generate draft: %w", err)
-	}
-
-	// The guide row has no free-text field for AI content (checklist items
-	// are stored in a separate table and there is no item-creation path on
-	// the store yet). Log the generated content so it is captured for the
-	// reviewer/audit trail; a future task can persist it as items.
-	if aiContent != "" {
-		slog.Info("arrivalchecklist: AI content generated for draft guide",
-			"guide_id", row.ID.String(), "prompt_hash", promptHash,
-			"content_len", len(aiContent))
 	}
 
 	return GenerateGuideResponse{
