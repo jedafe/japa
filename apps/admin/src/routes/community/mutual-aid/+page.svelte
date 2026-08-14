@@ -131,10 +131,11 @@
 			const qs = queryParts.join('&');
 			const result = await mutualAidAdminApi.list(qs);
 			if (result.ok) {
-				const resp = result.data as { items?: MutualAidItem[]; meta?: { total?: number; total_pages?: number } };
-				const data = resp.items ?? (Array.isArray(resp) ? (resp as MutualAidItem[]) : []);
-				const total = resp.meta?.total ?? data.length;
-				const totalPages = resp.meta?.total_pages ?? Math.max(1, Math.ceil(total / (params.pageSize ?? 25)));
+				// BUG-007: apiRaw returns the full body { data, meta }.
+				const body = result.data as { data?: MutualAidItem[]; meta?: { total?: number; total_pages?: number } };
+				const data = body.data ?? (Array.isArray(body) ? (body as MutualAidItem[]) : []);
+				const total = body.meta?.total ?? data.length;
+				const totalPages = body.meta?.total_pages ?? Math.max(1, Math.ceil(total / (params.pageSize ?? 25)));
 				return { data, total, totalPages };
 			}
 			throw new Error(result.error ?? t('common.error', 'An error occurred'));

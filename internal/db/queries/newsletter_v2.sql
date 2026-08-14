@@ -33,10 +33,11 @@ UPDATE newsletter_subscribers
 SET status = 'unsubscribed', unsubscribed_at = now()
 WHERE tenant_id = @tenant_id AND email = @email;
 
--- name: UnsubscribeByID :exec
+-- name: UnsubscribeByID :one
 UPDATE newsletter_subscribers
 SET status = 'unsubscribed', unsubscribed_at = now()
-WHERE tenant_id = @tenant_id AND id = @id;
+WHERE tenant_id = @tenant_id AND id = @id
+RETURNING *;
 
 -- name: UpdatePreferences :one
 UPDATE newsletter_subscribers
@@ -80,6 +81,7 @@ DELETE FROM newsletter_unsubscribe_tokens WHERE token = @token;
 SELECT * FROM newsletter_subscribers
 WHERE tenant_id = @tenant_id
   AND (@status::text = '' OR status = @status)
+  AND (@search::text = '' OR email ILIKE '%' || @search || '%')
 ORDER BY subscribed_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
@@ -87,7 +89,8 @@ LIMIT @page_limit OFFSET @page_offset;
 SELECT COUNT(*) AS count
 FROM newsletter_subscribers
 WHERE tenant_id = @tenant_id
-  AND (@status::text = '' OR status = @status);
+  AND (@status::text = '' OR status = @status)
+  AND (@search::text = '' OR email ILIKE '%' || @search || '%');
 
 -- name: AdminSubscriberStats :many
 SELECT status, COUNT(*) AS count
@@ -116,6 +119,7 @@ UPDATE newsletter_campaigns
 SET
     name          = COALESCE(sqlc.narg(name), name),
     subject       = COALESCE(sqlc.narg(subject), subject),
+    html          = COALESCE(sqlc.narg(html), html),
     preview_text  = COALESCE(sqlc.narg(preview_text), preview_text),
     body          = COALESCE(sqlc.narg(body), body),
     segment       = COALESCE(sqlc.narg(segment), segment),

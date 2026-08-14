@@ -21,6 +21,7 @@ package newsletter
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"log/slog"
 	"math"
@@ -32,6 +33,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
+	"github.com/jedafe/japa/internal/content"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/tenant"
 )
@@ -188,15 +190,14 @@ func (h *Handlers) Subscribe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// The Subscribe query is an upsert (ON CONFLICT DO UPDATE), so a
-	// re-subscribe for an existing email returns the re-activated row with
-	// status='subscribed' rather than a duplicate error. Return 200 for
-	// re-subscribes (existing row) and 201 for new subscribers.
-	status := http.StatusCreated
-	if subscriber.UnsubscribedAt.Valid || subscriber.SubscribedAt.Valid {
-		status = http.StatusOK
-	}
-	errpkg.WriteJSON(w, status, map[string]any{"data": subscriber})
+	// The Subscribe query is an upsert (ON CONFLICT DO UPDATE), so the
+	// operation is idempotent: a re-subscribe re-activates the existing row
+	// with status='subscribed' and unsubscribed_at=NULL. Because the upsert
+	// always sets subscribed_at=now() (NOT NULL DEFAULT now()), the row's
+	// SubscribedAt is always valid and cannot be used to distinguish a new
+	// insert from a re-subscribe. Return 200 for the idempotent success —
+	// the subscriber is subscribed either way.
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": subscriber})
 }
 
 // isValidEmail performs a basic RFC-5321 email format check. The canonical
@@ -289,6 +290,16 @@ func (h *Handlers) CreateSubscriber(w http.ResponseWriter, r *http.Request) {
 		input.Source = SourceImport
 	}
 
+	// Validate the source field against the allowed enum (§62 schema CHECK).
+	switch input.Source {
+	case SourceSignup, SourceOnboarding, SourceFooter, SourceImport, SourceAPI:
+		// allowed
+	default:
+		errpkg.WriteError(w, http.StatusBadRequest, "validation_error",
+			"source must be one of: signup, onboarding, footer, import, api")
+		return
+	}
+
 	subscriber, err := h.Service.CreateSubscriber(r.Context(), tenantID, input.Email, nil, input.Source)
 	if err != nil {
 		slog.Error("creating newsletter subscriber", "error", err)
@@ -359,6 +370,7 @@ func (h *Handlers) ListSubscribers(w http.ResponseWriter, r *http.Request) {
 	limit := parsePageSize(r)
 	offset := parseOffset(r)
 	status := r.URL.Query().Get("status")
+	search := strings.TrimSpace(r.URL.Query().Get("search"))
 
 	// Validate the status filter against the allowed enum if provided.
 	if status != "" {
@@ -372,7 +384,7 @@ func (h *Handlers) ListSubscribers(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	subscribers, err := h.Service.ListSubscribersFiltered(r.Context(), tenantID, status, limit, offset)
+	subscribers, err := h.Service.ListSubscribersFiltered(r.Context(), tenantID, status, search, limit, offset)
 	if err != nil {
 		slog.Error("listing newsletter subscribers", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list subscribers")
@@ -403,18 +415,38 @@ func (h *Handlers) DeleteSubscriber(w http.ResponseWriter, r *http.Request) {
 // Admin Handlers — Newsletter Campaigns
 // ---------------------------------------------------------------------------
 
-// ListCampaigns returns all newsletter campaigns for the tenant.
-// GET /admin/newsletter/campaigns.
+// ListCampaigns returns newsletter campaigns for the tenant with pagination.
+// GET /admin/newsletter/campaigns?page_size=&offset=&status=
+// Returns the standard paginated envelope {items, total, total_pages} so the
+// admin DataTable can render serverSide pagination (§22, ADR-080 §3).
 func (h *Handlers) ListCampaigns(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	limit := parsePageSize(r)
-	offset := parseOffset(r)
+	limit := int(parsePageSize(r))
+	offset := int(parseOffset(r))
+	status := r.URL.Query().Get("status")
 
-	campaigns, err := h.Service.ListCampaigns(r.Context(), tenantID, limit, offset)
+	// Validate the status filter against the allowed enum if provided.
+	if status != "" {
+		switch status {
+		case CampaignDraft, CampaignScheduled, CampaignSending, CampaignSent, CampaignCancelled:
+			// allowed
+		default:
+			errpkg.WriteError(w, http.StatusBadRequest, "validation_error",
+				"status must be one of: draft, scheduled, sending, sent, cancelled")
+			return
+		}
+	}
+
+	page := 1
+	if limit > 0 {
+		page = (offset / limit) + 1
+	}
+
+	campaigns, total, err := h.Service.AdminListCampaigns(r.Context(), tenantID, status, page, limit)
 	if err != nil {
 		slog.Error("listing newsletter campaigns", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list campaigns")
@@ -422,7 +454,18 @@ func (h *Handlers) ListCampaigns(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": campaigns})
+	totalPages := int32(1)
+	if limit > 0 && total > 0 {
+		totalPages = int32((total + int64(limit) - 1) / int64(limit)) //nolint:gosec // bounded
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
+		"data": map[string]any{
+			"items":       campaigns,
+			"total":       total,
+			"total_pages": totalPages,
+		},
+	})
 }
 
 // GetCampaign returns a single newsletter campaign by ID.
@@ -466,9 +509,35 @@ func (h *Handlers) CreateCampaign(w http.ResponseWriter, r *http.Request) {
 		input.Segment = SegmentAll
 	}
 
+	// Validate the segment against the allowed enum (§62 schema CHECK).
+	switch input.Segment {
+	case SegmentAll, SegmentSpace, SegmentTag, SegmentProSubscribers:
+		// allowed
+	default:
+		errpkg.WriteError(w, http.StatusBadRequest, "validation_error",
+			"segment must be one of: all, space, tag, pro_subscribers")
+		return
+	}
+
+	// Require segment_id when segment targets a space or tag (§62/ADR-080 §3).
+	// Without it the worker falls back to 'all' → silent send-to-everyone.
+	if (input.Segment == SegmentSpace || input.Segment == SegmentTag) && input.SegmentID == "" {
+		errpkg.WriteError(w, http.StatusBadRequest, "validation_error",
+			"segment_id is required when segment is 'space' or 'tag'")
+		return
+	}
+
 	// If body is not provided but html is, wrap html in a jsonb body.
 	if len(input.Body) == 0 && input.HTML != "" {
 		input.Body = json.RawMessage(`{"html":` + jsonString(input.HTML) + `}`)
+	}
+
+	// Sanitize the HTML body server-side before storage to prevent stored
+	// XSS in email (§5.1/§14). Client-side regex sanitization is bypassable;
+	// the canonical allowlist-based content.SanitizeHTML is the source of
+	// truth for acceptable tags/attributes.
+	if input.HTML != "" {
+		input.HTML = content.SanitizeHTML(input.HTML)
 	}
 
 	campaign, err := h.Service.CreateCampaign(r.Context(), tenantID, u.UserID, input)
@@ -517,6 +586,43 @@ func (h *Handlers) UpdateCampaign(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
 		return
+	}
+
+	// Sanitize HTML server-side before storage (§5.1/§14, mirrors CreateCampaign).
+	if body.HTML != nil && *body.HTML != "" {
+		sanitized := content.SanitizeHTML(*body.HTML)
+		body.HTML = &sanitized
+	}
+
+	// Validate status transitions against the §62 state machine when a new
+	// status is provided. Allowed transitions:
+	//   draft ↔ scheduled
+	//   draft/scheduled → sending (only via the send endpoint, not PATCH)
+	//   sending → sent (only via the worker, not PATCH)
+	//   draft/scheduled/sending → cancelled
+	// The PATCH endpoint may not jump to 'sending' or 'sent' directly —
+	// those transitions are owned by the send endpoint and worker.
+	if body.Status != nil && *body.Status != "" {
+		existing, err := h.Service.GetCampaign(r.Context(), tenantID, id)
+		if err != nil {
+			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Campaign not found")
+			return
+		}
+		next := *body.Status
+		allowed := false
+		switch next {
+		case CampaignDraft:
+			allowed = existing.Status == CampaignScheduled
+		case CampaignScheduled:
+			allowed = existing.Status == CampaignDraft
+		case CampaignCancelled:
+			allowed = existing.Status == CampaignDraft || existing.Status == CampaignScheduled || existing.Status == CampaignSending
+		}
+		if !allowed {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_status_transition",
+				"cannot transition campaign from '"+existing.Status+"' to '"+next+"' via PATCH")
+			return
+		}
 	}
 
 	campaign, err := h.Service.UpdateCampaign(r.Context(), tenantID, id, UpdateCampaignInput{
@@ -598,6 +704,12 @@ func (h *Handlers) HandleSendCampaign(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Global killswitch (newsletter.enabled, ADR-080 §62).
+	if !h.Service.Enabled(r.Context(), tenantID) {
+		errpkg.WriteError(w, http.StatusNotFound, "newsletter_disabled", "Newsletter is not available")
+		return
+	}
+
 	// Fetch the campaign and verify it's in a sendable state.
 	campaign, err := h.Service.GetCampaign(r.Context(), tenantID, id)
 	if err != nil {
@@ -610,23 +722,27 @@ func (h *Handlers) HandleSendCampaign(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Update campaign status to 'sending'.
+	// Enqueue the newsletter send task FIRST so a failure does not leave the
+	// campaign stuck in 'sending' forever (§62, ADR-080 §3). The worker
+	// re-fetches the campaign and resolves segment-aware recipients from the
+	// DB, so the handler does not need to pre-fetch the recipient list.
+	if err := h.Service.EnqueueNewsletterSend(r.Context(), id, tenantID); err != nil {
+		slog.Error("enqueuing newsletter send", "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to enqueue newsletter send")
+
+		return
+	}
+
+	// Only after a successful enqueue, transition the campaign to 'sending'.
+	// If this status update fails, the worker still processes the enqueued
+	// task (idempotent on campaign ID), so the send is not lost — the
+	// campaign row just lags behind and can be reconciled manually.
 	sendingStatus := CampaignSending
 	if _, err := h.Service.UpdateCampaign(r.Context(), tenantID, id, UpdateCampaignInput{
 		Status: &sendingStatus,
 	}); err != nil {
 		slog.Error("updating campaign status to sending", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update campaign status")
-
-		return
-	}
-
-	// Enqueue the newsletter send task. The worker re-fetches the campaign
-	// and resolves segment-aware recipients from the DB (§62, ADR-080 §3),
-	// so the handler does not need to pre-fetch the recipient list.
-	if err := h.Service.EnqueueNewsletterSend(r.Context(), id, tenantID); err != nil {
-		slog.Error("enqueuing newsletter send", "error", err)
-		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to enqueue newsletter send")
 
 		return
 	}
@@ -767,15 +883,18 @@ func (h *Handlers) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Shared-secret auth: the provider echoes a secret set in config.
+	// Use constant-time comparison to avoid timing side channels (§5.2).
 	expected := r.Header.Get("X-Webhook-Secret")
-	if expected == "" || expected != h.Service.WebhookSecret(r.Context()) {
+	want := h.Service.WebhookSecret(r.Context())
+	if expected == "" || want == "" || subtle.ConstantTimeCompare([]byte(expected), []byte(want)) != 1 {
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Invalid webhook secret")
 		return
 	}
 
 	var payload struct {
-		EventType string `json:"event_type"` // "bounce" | "complaint" | "delivered" | "open" | "click"
-		Email     string `json:"email"`
+		EventType  string `json:"event_type"`  // "bounce" | "complaint" | "delivered" | "open" | "click"
+		Email      string `json:"email"`
+		CampaignID string `json:"campaign_id"` // optional — required for open/click attribution
 	}
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
@@ -800,8 +919,23 @@ func (h *Handlers) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to mark complained")
 			return
 		}
-	case "delivered", "open", "click":
-		// No status change needed; provider engagement events are out of
+	case "open":
+		// Increment the campaign's open_count for engagement analytics (§62
+		// schema: open_count/click_count). Requires campaign_id in the
+		// payload; if absent, acknowledge to avoid provider retries but log.
+		if payload.CampaignID == "" {
+			slog.Warn("newsletter webhook: open event missing campaign_id", "email", payload.Email)
+		} else if err := h.Service.IncrementCampaignOpens(r.Context(), tenantID, payload.CampaignID); err != nil {
+			slog.Error("newsletter webhook: increment opens", "campaign_id", payload.CampaignID, "error", err)
+		}
+	case "click":
+		if payload.CampaignID == "" {
+			slog.Warn("newsletter webhook: click event missing campaign_id", "email", payload.Email)
+		} else if err := h.Service.IncrementCampaignClicks(r.Context(), tenantID, payload.CampaignID); err != nil {
+			slog.Error("newsletter webhook: increment clicks", "campaign_id", payload.CampaignID, "error", err)
+		}
+	case "delivered":
+		// No status change needed; provider delivery events are out of
 		// scope for the subscriber status machine. Acknowledge to avoid
 		// provider retries.
 	default:

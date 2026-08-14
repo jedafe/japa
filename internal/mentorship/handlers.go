@@ -45,6 +45,7 @@ import (
 	"github.com/jedafe/japa/internal/auth"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/tenant"
+	"github.com/pgvector/pgvector-go"
 )
 
 const (
@@ -363,6 +364,10 @@ func parsePage(r *http.Request) (int32, int32) {
 
 // ListMentors discovers mentors with optional destination and area filters.
 // GET /api/v1/mentors?dest=&areas=&sort=match|newest|capacity&page=
+// When sort=match and the user is authenticated with a profile embedding,
+// uses pgvector cosine similarity for bio-based match scoring (§102 ADR-110).
+// When dest is empty and the user is authenticated, injects the user's
+// profile destination as the default filter (§102 Geo Awareness).
 func (h *Handlers) ListMentors(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -389,7 +394,27 @@ func (h *Handlers) ListMentors(w http.ResponseWriter, r *http.Request) {
 		sort = "newest"
 	}
 
-	mentors, err := h.Service.ListMentors(r.Context(), tenantID, destSpaceID, areas, sort, nil, limit, offset)
+	// §102 Geo Awareness: when dest is empty and the user is authenticated,
+	// inject the user's profile destination as the default filter.
+	if !destSpaceID.Valid {
+		if u := auth.FromContext(r.Context()); u != nil {
+			if defaultDest, _ := h.Service.GetMenteeDestinationSpaceID(r.Context(), tenantID, u.UserID); defaultDest.Valid {
+				destSpaceID = defaultDest
+			}
+		}
+	}
+
+	// §102 match scoring: when sort=match and the user is authenticated,
+	// fetch the mentee's embedding for pgvector cosine similarity. Falls
+	// back to keyword-only scoring when no embedding is available.
+	var menteeEmbedding *pgvector.Vector
+	if sort == "match" {
+		if u := auth.FromContext(r.Context()); u != nil {
+			menteeEmbedding, _ = h.Service.GetMenteeEmbedding(r.Context(), tenantID, u.UserID)
+		}
+	}
+
+	mentors, err := h.Service.ListMentors(r.Context(), tenantID, destSpaceID, areas, sort, menteeEmbedding, limit, offset)
 	if err != nil {
 		slog.Error("listing mentors", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list mentors")

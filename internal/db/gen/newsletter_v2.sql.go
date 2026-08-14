@@ -35,15 +35,17 @@ SELECT COUNT(*) AS count
 FROM newsletter_subscribers
 WHERE tenant_id = $1
   AND ($2::text = '' OR status = $2)
+  AND ($3::text = '' OR email ILIKE '%' || $3 || '%')
 `
 
 type AdminCountSubscribersParams struct {
 	TenantID pgtype.UUID `json:"tenant_id"`
 	Status   string      `json:"status"`
+	Search   string      `json:"search"`
 }
 
 func (q *Queries) AdminCountSubscribers(ctx context.Context, arg AdminCountSubscribersParams) (int64, error) {
-	row := q.db.QueryRow(ctx, adminCountSubscribers, arg.TenantID, arg.Status)
+	row := q.db.QueryRow(ctx, adminCountSubscribers, arg.TenantID, arg.Status, arg.Search)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -113,13 +115,15 @@ const adminListSubscribers = `-- name: AdminListSubscribers :many
 SELECT id, tenant_id, email, user_id, status, created_at, digest_enabled, campaign_enabled, subscribed_at, unsubscribed_at, source FROM newsletter_subscribers
 WHERE tenant_id = $1
   AND ($2::text = '' OR status = $2)
+  AND ($3::text = '' OR email ILIKE '%' || $3 || '%')
 ORDER BY subscribed_at DESC
-LIMIT $4 OFFSET $3
+LIMIT $5 OFFSET $4
 `
 
 type AdminListSubscribersParams struct {
 	TenantID   pgtype.UUID `json:"tenant_id"`
 	Status     string      `json:"status"`
+	Search     string      `json:"search"`
 	PageOffset int32       `json:"page_offset"`
 	PageLimit  int32       `json:"page_limit"`
 }
@@ -131,6 +135,7 @@ func (q *Queries) AdminListSubscribers(ctx context.Context, arg AdminListSubscri
 	rows, err := q.db.Query(ctx, adminListSubscribers,
 		arg.TenantID,
 		arg.Status,
+		arg.Search,
 		arg.PageOffset,
 		arg.PageLimit,
 	)
@@ -847,10 +852,11 @@ func (q *Queries) Unsubscribe(ctx context.Context, arg UnsubscribeParams) error 
 	return err
 }
 
-const unsubscribeByID = `-- name: UnsubscribeByID :exec
+const unsubscribeByID = `-- name: UnsubscribeByID :one
 UPDATE newsletter_subscribers
 SET status = 'unsubscribed', unsubscribed_at = now()
 WHERE tenant_id = $1 AND id = $2
+RETURNING id, tenant_id, email, user_id, status, created_at, digest_enabled, campaign_enabled, subscribed_at, unsubscribed_at, source
 `
 
 type UnsubscribeByIDParams struct {
@@ -858,9 +864,23 @@ type UnsubscribeByIDParams struct {
 	ID       pgtype.UUID `json:"id"`
 }
 
-func (q *Queries) UnsubscribeByID(ctx context.Context, arg UnsubscribeByIDParams) error {
-	_, err := q.db.Exec(ctx, unsubscribeByID, arg.TenantID, arg.ID)
-	return err
+func (q *Queries) UnsubscribeByID(ctx context.Context, arg UnsubscribeByIDParams) (NewsletterSubscriber, error) {
+	row := q.db.QueryRow(ctx, unsubscribeByID, arg.TenantID, arg.ID)
+	var i NewsletterSubscriber
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.Email,
+		&i.UserID,
+		&i.Status,
+		&i.CreatedAt,
+		&i.DigestEnabled,
+		&i.CampaignEnabled,
+		&i.SubscribedAt,
+		&i.UnsubscribedAt,
+		&i.Source,
+	)
+	return i, err
 }
 
 const updateCampaign = `-- name: UpdateCampaign :one
@@ -868,19 +888,21 @@ UPDATE newsletter_campaigns
 SET
     name          = COALESCE($1, name),
     subject       = COALESCE($2, subject),
-    preview_text  = COALESCE($3, preview_text),
-    body          = COALESCE($4, body),
-    segment       = COALESCE($5, segment),
-    segment_id    = COALESCE($6, segment_id),
-    status        = COALESCE($7, status),
-    scheduled_at  = COALESCE($8, scheduled_at)
-WHERE tenant_id = $9 AND id = $10
+    html          = COALESCE($3, html),
+    preview_text  = COALESCE($4, preview_text),
+    body          = COALESCE($5, body),
+    segment       = COALESCE($6, segment),
+    segment_id    = COALESCE($7, segment_id),
+    status        = COALESCE($8, status),
+    scheduled_at  = COALESCE($9, scheduled_at)
+WHERE tenant_id = $10 AND id = $11
 RETURNING id, tenant_id, name, subject, html, status, sent_at, created_at, updated_at, preview_text, body, segment, segment_id, scheduled_at, recipient_count, open_count, click_count, created_by
 `
 
 type UpdateCampaignParams struct {
 	Name        *string            `json:"name"`
 	Subject     *string            `json:"subject"`
+	Html        *string            `json:"html"`
 	PreviewText *string            `json:"preview_text"`
 	Body        []byte             `json:"body"`
 	Segment     *string            `json:"segment"`
@@ -895,6 +917,7 @@ func (q *Queries) UpdateCampaign(ctx context.Context, arg UpdateCampaignParams) 
 	row := q.db.QueryRow(ctx, updateCampaign,
 		arg.Name,
 		arg.Subject,
+		arg.Html,
 		arg.PreviewText,
 		arg.Body,
 		arg.Segment,

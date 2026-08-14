@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { t } from '$lib/i18n';
+	import { api } from '$lib/api/client';
 	import { ArrowRight, Clock, Compass, Eye, MessageCircle, PenLine, Search, Users } from 'lucide-svelte';
 	import type { FeedItem } from '$lib/types';
 	import type { ContentArticle } from '$lib/types/content';
@@ -26,10 +27,31 @@
 
 	let email = $state('');
 	let subscribed = $state(false);
+	let subscribing = $state(false);
+	let subscribeError = $state('');
 
-	function subscribe(e: SubmitEvent) {
+	// Ref: japaconnect-engineering/sections/62-newsletter-digest.md (POST /newsletter/subscribe)
+	// Rule 16: calls the backend API — no local-only state mutation.
+	async function subscribe(e: SubmitEvent) {
 		e.preventDefault();
-		if (email.trim()) subscribed = true;
+		if (subscribing) return;
+		const trimmed = email.trim();
+		if (!trimmed) return;
+		subscribing = true;
+		subscribeError = '';
+		try {
+			const res = await api.post<{ status?: string }>('/newsletter/subscribe', { email: trimmed, source: 'footer' });
+			if (res.error) {
+				subscribeError = res.error.message ?? t('landing.newsletter_error', 'Something went wrong. Please try again.');
+			} else {
+				subscribed = true;
+				email = '';
+			}
+		} catch {
+			subscribeError = t('landing.newsletter_error', 'Something went wrong. Please try again.');
+		} finally {
+			subscribing = false;
+		}
 	}
 </script>
 
@@ -171,12 +193,16 @@
 						bind:value={email}
 						placeholder={t('landing.newsletter_placeholder', 'your@email.com')}
 						required
-						class="flex-1 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-2.5 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none"
+						disabled={subscribing}
+						class="flex-1 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-2.5 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none disabled:opacity-50"
 					/>
-					<button type="submit" class="rounded-[var(--radius)] bg-[var(--color-primary)] px-5 py-2.5 text-sm font-semibold text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)]">
-						{t('landing.newsletter_subscribe', 'Subscribe')}
+					<button type="submit" disabled={subscribing} class="rounded-[var(--radius)] bg-[var(--color-primary)] px-5 py-2.5 text-sm font-semibold text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)] disabled:opacity-50">
+						{subscribing ? t('common.submitting', 'Submitting…') : t('landing.newsletter_subscribe', 'Subscribe')}
 					</button>
 				</form>
+				{#if subscribeError}
+					<p class="mt-3 text-sm text-[var(--color-danger)]">{subscribeError}</p>
+				{/if}
 			{/if}
 		</div>
 	</section>

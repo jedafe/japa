@@ -108,12 +108,11 @@
 			newsletterMessage = { kind: 'error', text: t('sidebar.newsletter_error') };
 			return;
 		}
-		if (res.data?.status === 'already_subscribed') {
-			newsletterMessage = { kind: 'info', text: t('sidebar.newsletter_already') };
-		} else {
-			newsletterMessage = { kind: 'success', text: t('sidebar.newsletter_success') };
-			newsletterEmail = '';
-		}
+		// The backend returns the subscriber object with status='subscribed'
+		// for both new and re-subscribes (idempotent upsert, §62). There is
+		// no 'already_subscribed' status code — treat any success as subscribed.
+		newsletterMessage = { kind: 'success', text: t('sidebar.newsletter_success') };
+		newsletterEmail = '';
 	}
 
 	$effect(() => {

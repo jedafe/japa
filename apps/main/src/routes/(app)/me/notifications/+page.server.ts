@@ -8,9 +8,11 @@ import type { PageServerLoad } from './$types';
  * preferences live in the settings hub at /settings/notifications
  * (NotificationsSection.svelte, §35). Redirect there.
  *
- * The newsletter preferences page has been moved to /me/newsletter.
+ * Newsletter preferences (digest/campaign toggles) live in the settings hub
+ * at /settings/newsletter (NewsletterSection.svelte, §62/ADR-080).
  *
  * Ref: japaconnect-engineering/sections/35-notification-system.md
+ *      japaconnect-engineering/sections/62-newsletter-digest.md
  *      japaconnect-engineering/sections/50-user-dashboard-settings.md
  */
 export const load: PageServerLoad = async () => {

@@ -145,6 +145,48 @@
 				</p>
 			{/if}
 
+			<!-- Destination country (first input per geo-aware tool pattern —
+			     BUG-010. The destination selector is always the first UI
+			     input on geo-aware create forms.) -->
+			<div class="flex flex-col gap-1.5">
+				<label for="destination_country" class="text-sm font-medium text-[var(--color-text)]">
+					{t('mutual_aid.field_destination', 'Destination country')}
+					<span class="text-red-500" aria-hidden="true">*</span>
+				</label>
+				<select
+					id="destination_country"
+					bind:value={destinationSpaceId}
+					class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none"
+				>
+					<option value="">{t('mutual_aid.field_destination_placeholder', 'Select a country')}</option>
+					{#each data.countries as country (country.id)}
+						<option value={country.id}>{country.name}</option>
+					{/each}
+				</select>
+			</div>
+
+			<!-- City (optional — populated from /spaces?level=city&parent=<dest>) -->
+			<div class="flex flex-col gap-1.5">
+				<label for="city" class="text-sm font-medium text-[var(--color-text)]">
+					{t('mutual_aid.field_city', 'City')}
+				</label>
+				<select
+					id="city"
+					bind:value={citySpaceId}
+					disabled={!destinationSpaceId || loadingCities}
+					class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none disabled:opacity-50"
+				>
+					<option value="">
+						{loadingCities
+							? t('common.loading', 'Loading…')
+							: t('mutual_aid.field_city_placeholder', 'Select a city (optional)')}
+					</option>
+					{#each cities as c (c.id)}
+						<option value={c.id}>{c.name}</option>
+					{/each}
+				</select>
+			</div>
+
 			<!-- Post type -->
 			<div class="flex flex-col gap-1.5">
 				<label for="post_type" class="text-sm font-medium text-[var(--color-text)]">
@@ -208,46 +250,6 @@
 					placeholder={t('mutual_aid.field_description_placeholder', 'Provide details about your request or offer…')}
 					class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] placeholder:text-[var(--color-muted)] focus:border-[var(--color-primary)] focus:outline-none"
 				></textarea>
-			</div>
-
-			<!-- Destination country -->
-			<div class="flex flex-col gap-1.5">
-				<label for="destination_country" class="text-sm font-medium text-[var(--color-text)]">
-					{t('mutual_aid.field_destination', 'Destination country')}
-					<span class="text-red-500" aria-hidden="true">*</span>
-				</label>
-				<select
-					id="destination_country"
-					bind:value={destinationSpaceId}
-					class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none"
-				>
-					<option value="">{t('mutual_aid.field_destination_placeholder', 'Select a country')}</option>
-					{#each data.countries as country (country.id)}
-						<option value={country.id}>{country.name}</option>
-					{/each}
-				</select>
-			</div>
-
-			<!-- City (optional — populated from /spaces?level=city&parent=<dest>) -->
-			<div class="flex flex-col gap-1.5">
-				<label for="city" class="text-sm font-medium text-[var(--color-text)]">
-					{t('mutual_aid.field_city', 'City')}
-				</label>
-				<select
-					id="city"
-					bind:value={citySpaceId}
-					disabled={!destinationSpaceId || loadingCities}
-					class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none disabled:opacity-50"
-				>
-					<option value="">
-						{loadingCities
-							? t('common.loading', 'Loading…')
-							: t('mutual_aid.field_city_placeholder', 'Select a city (optional)')}
-					</option>
-					{#each cities as c (c.id)}
-						<option value={c.id}>{c.name}</option>
-					{/each}
-				</select>
 			</div>
 
 			<!-- Submit -->

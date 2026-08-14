@@ -871,7 +871,38 @@ func (h *Handlers) ListReplies(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": replies})
+	// GDPR / ADR-029: compute erased-mention IDs across all reply bodies so
+	// the frontend can render @[deleted user] for mentions of erased users
+	// in replies (Section 15). The thread-body deleted_user_ids exposed by
+	// GetThread only covers the thread body — replies may mention different
+	// erased users. Best-effort: a failure logs a warning but does not fail
+	// the request.
+	resp := map[string]any{"data": replies}
+	if h.mentionCheckers != nil {
+		erasedSet := make(map[string]struct{})
+		for _, reply := range replies {
+			if len(reply.Body) == 0 {
+				continue
+			}
+			erased, err := mentions.ComputeErasedMentionIDs(r.Context(), reply.Body, tenantID, h.mentionCheckers)
+			if err != nil {
+				slog.Warn("forum: ComputeErasedMentionIDs failed for reply",
+					"reply_id", reply.ID.String(), "error", err)
+				continue
+			}
+			for _, id := range erased {
+				erasedSet[id] = struct{}{}
+			}
+		}
+		if len(erasedSet) > 0 {
+			erasedIDs := make([]string, 0, len(erasedSet))
+			for id := range erasedSet {
+				erasedIDs = append(erasedIDs, id)
+			}
+			resp["deleted_user_ids"] = erasedIDs
+		}
+	}
+	errpkg.WriteJSON(w, http.StatusOK, resp)
 }
 
 // UpdateReply handles PATCH /api/v1/forum/replies/{id}.

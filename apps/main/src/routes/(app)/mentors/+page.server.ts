@@ -1,4 +1,5 @@
 // Ref: japaconnect-engineering/sections/102-mentorship-matching.md
+import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiList } from '$lib/server/api';
 import type { Mentor, Space } from '$lib/types';
@@ -7,10 +8,18 @@ import type { Mentor, Space } from '$lib/types';
  * Mentor discovery at /mentors — lists mentors with optional destination and
  * areas filters and a sort (match | newest | capacity). Passes through all
  * query params to GET /mentors so the backend filters/sorts server-side.
+ *
+ * Feature-flagged via `mentorship.enabled` (§102): returns 404 (not 403)
+ * when the feature is disabled, matching the backend features.Gate behavior.
  */
 const PAGE_SIZE = 20;
 
 export const load: PageServerLoad = async (event) => {
+	const { features } = await event.parent();
+	if (!features['mentorship.enabled']) {
+		throw error(404, { code: 'feature_disabled', message: 'Mentorship is not available' });
+	}
+
 	const ctx = apiContext(event);
 	const authed = !!event.locals.user;
 

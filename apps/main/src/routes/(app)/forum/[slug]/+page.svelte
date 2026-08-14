@@ -23,7 +23,12 @@
 	const deletedUserIds = $derived(
 		data.deletedUserIds ? new Set<string>(data.deletedUserIds as string[]) : undefined
 	);
-	const bodyHtml = $derived(tiptapBodyToHtml(thread.body, { deletedUserIds }));
+	const bodyHtml = $derived(
+		tiptapBodyToHtml(thread.body, {
+			deletedUserIds,
+			deletedUserLabel: t('mentions.deleted_user', '[deleted user]')
+		})
+	);
 	const time = $derived(relativeTime(thread.created_at, new Date(), i18n.locale));
 	const authorLabel = $derived(
 		thread.is_anonymous

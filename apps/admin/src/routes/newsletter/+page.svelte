@@ -37,9 +37,11 @@
 		sent_at?: string;
 		sentAt?: string;
 		recipient_count?: number;
+		open_count?: number;
+		click_count?: number;
+		// Derived display fields (computed client-side from open_count/recipient_count).
 		openRate?: number;
-		open_rate?: number;
-		click_rate?: number;
+		clickRate?: number;
 		created_at: string;
 	};
 
@@ -62,6 +64,12 @@
 	let pageError = $state('');
 	let filterValue = $state<Record<string, string>>({});
 	let searchQuery = $state('');
+
+	// Campaigns server-side pagination state (§22, ADR-080 §3).
+	let campaignPage = $state(0);
+	let campaignPageSize = $state(20);
+	let campaignTotal = $state(0);
+	let campaignTotalPages = $state(1);
 
 	// Campaign creation Modal (page-local — form with HTML textarea)
 	let showCreateModal = $state(false);
@@ -104,6 +112,14 @@
 		{ value: 'unsubscribed', label: t('app.newsletter.status_unsubscribed', 'Unsubscribed') },
 		{ value: 'bounced', label: t('app.newsletter.status_bounced', 'Bounced') },
 		{ value: 'complained', label: t('app.newsletter.status_complained', 'Complained') }
+	];
+
+	const campaignStatusOptions = [
+		{ value: 'draft', label: t('app.newsletter.status_draft', 'Draft') },
+		{ value: 'scheduled', label: t('app.newsletter.status_scheduled', 'Scheduled') },
+		{ value: 'sending', label: t('app.newsletter.status_sending', 'Sending') },
+		{ value: 'sent', label: t('app.newsletter.status_sent', 'Sent') },
+		{ value: 'cancelled', label: t('app.newsletter.status_cancelled', 'Cancelled') }
 	];
 
 	const subscriberColumns = [
@@ -175,7 +191,7 @@
 			label: t('app.newsletter.col_open_rate', 'Open Rate'),
 			sortable: true,
 			render: (v: number, row: any) => {
-				const rate = v ?? row.open_rate ?? 0;
+				const rate = v ?? row.openRate ?? 0;
 				return `<span class="font-medium">${rate.toFixed(1)}%</span>`;
 			}
 		}
@@ -233,14 +249,50 @@
 	async function loadCampaigns() {
 		loading = true;
 		try {
-			const result = await api<Campaign[]>('/admin/newsletter/campaigns');
+			// Server-side pagination: send page_size + offset so the backend
+			// returns the paginated envelope {items, total, total_pages}
+			// instead of silently truncating at the default page size (§22).
+			const params = new URLSearchParams({
+				page_size: String(campaignPageSize),
+				offset: String(campaignPage * campaignPageSize)
+			});
+			if (filterValue.campaign_status) params.set('status', filterValue.campaign_status);
+
+			const result = await api<{ items: Campaign[]; total: number; total_pages: number } | Campaign[]>(
+				`/admin/newsletter/campaigns?${params.toString()}`
+			);
 			if (result.ok) {
-				campaigns = result.data ?? [];
-				stats.campaigns = campaigns.length;
+				const d = result.data;
+				// Support both the paginated envelope and a plain array (fallback).
+				const items = Array.isArray(d) ? d : (d?.items ?? []);
+				const total = Array.isArray(d) ? d.length : (d?.total ?? 0);
+				const totalPages = Array.isArray(d) ? 1 : (d?.total_pages ?? 1);
+
+				// Compute derived open/click rates from the raw counters returned
+				// by the backend (open_count/click_count/recipient_count). The
+				// backend never returns a pre-computed rate — §62 schema.
+				campaigns = items.map((c) => {
+					const recipients = c.recipient_count ?? 0;
+					const openRate = recipients > 0 ? ((c.open_count ?? 0) / recipients) * 100 : 0;
+					const clickRate = recipients > 0 ? ((c.click_count ?? 0) / recipients) * 100 : 0;
+					return { ...c, openRate, clickRate };
+				});
+				campaignTotal = total;
+				campaignTotalPages = totalPages;
+				stats.campaigns = total;
 			}
 		} catch (e) { pageError = e instanceof Error ? e.message : t('app.newsletter.error_load_campaigns', 'Failed to load campaigns'); } finally {
 			loading = false;
 		}
+	}
+
+	function handleCampaignPageChange(p: number) {
+		campaignPage = p;
+	}
+
+	function handleCampaignPageSizeChange(s: number) {
+		campaignPageSize = s;
+		campaignPage = 0;
 	}
 
 	async function loadStats() {
@@ -249,14 +301,14 @@
 			if (result.ok && result.data) {
 				const totalSubscribers = result.data.reduce((sum, s) => sum + s.count, 0);
 				stats.subscribers = totalSubscribers;
-				// Calculate average open/click rates from campaigns
+				// Average open/click rates are derived from the per-campaign
+				// counters (open_count/click_count/recipient_count) computed
+				// in loadCampaigns — the backend does not return pre-computed
+				// rates (§62 schema).
 				const sentCampaigns = campaigns.filter((c) => c.status === 'sent');
 				if (sentCampaigns.length > 0) {
-					const totalRecipients = sentCampaigns.reduce((sum, c) => sum + (c.recipient_count ?? 0), 0);
-					// open_count and click_count would come from the campaign objects
-					// For now, derive from campaign data if available
-					stats.avgOpenRate = totalRecipients > 0 ? (sentCampaigns.reduce((sum, c) => sum + (c.open_rate ?? 0), 0) / sentCampaigns.length) : 0;
-					stats.avgClickRate = totalRecipients > 0 ? (sentCampaigns.reduce((sum, c) => sum + (c.click_rate ?? 0), 0) / sentCampaigns.length) : 0;
+					stats.avgOpenRate = sentCampaigns.reduce((sum, c) => sum + (c.openRate ?? 0), 0) / sentCampaigns.length;
+					stats.avgClickRate = sentCampaigns.reduce((sum, c) => sum + (c.clickRate ?? 0), 0) / sentCampaigns.length;
 				}
 			}
 		} catch (e) { pageError = e instanceof Error ? e.message : t('app.newsletter.error_load_stats', 'Failed to load stats'); }
@@ -285,7 +337,11 @@
 
 	async function sendCampaign(id: string) {
 		try {
-			await api(`/admin/newsletter/campaigns/${id}/send`, { method: 'POST' });
+			const result = await api(`/admin/newsletter/campaigns/${id}/send`, { method: 'POST' });
+			if (!result.ok) {
+				pageError = result.error ?? t('app.newsletter.error_send_campaign', 'Failed to send campaign');
+				return;
+			}
 			loadCampaigns();
 		} catch (e) { pageError = e instanceof Error ? e.message : t('app.newsletter.error_send_campaign', 'Failed to send campaign'); }
 	}
@@ -350,13 +406,27 @@
 		}
 	});
 
-	// Reload when tab changes
+	// Reload when tab changes. The campaigns tab is handled by the
+	// pagination effect below (which also fires when activeTab changes to
+	// 'campaigns' because it reads activeTab in its condition) — omitting it
+	// here avoids a double fetch.
 	$effect(() => {
 		void activeTab;
 		if (initialized) {
 			if (activeTab === 'subscribers') loadSubscribers();
-			else if (activeTab === 'campaigns') loadCampaigns();
 			else if (activeTab === 'analytics') { loadCampaigns(); loadStats(); }
+		}
+	});
+
+	// Reload campaigns when server-side pagination state, status filter, or
+	// tab activation changes (§22). The filterValue.campaign_status dependency
+	// triggers a reload when the user applies the campaign status filter.
+	$effect(() => {
+		void campaignPage;
+		void campaignPageSize;
+		void filterValue.campaign_status;
+		if (initialized && activeTab === 'campaigns') {
+			loadCampaigns();
 		}
 	});
 
@@ -439,11 +509,20 @@
 				<DataTable
 					columns={campaignColumns}
 					data={campaigns}
-					pageSize={10}
+					serverSide
+					page={campaignPage}
+					pageSize={campaignPageSize}
+					totalRows={campaignTotal}
+					totalPages={campaignTotalPages}
+					onpagechange={handleCampaignPageChange}
+					onpagesizechange={handleCampaignPageSizeChange}
 					{loading}
 					selectable={canManageNewsletter}
 					bind:selectedIds={selectedCampaignIds}
 					emptyMessage={t('app.newsletter.empty_campaigns', 'No campaigns yet')}
+					filters={[{ key: 'campaign_status', label: t('app.newsletter.filter_status', 'Status'), options: campaignStatusOptions }]}
+					bind:filterValue
+					onfilterapply={() => { campaignPage = 0; }}
 					actions={campaignActions}
 					bulkActionsList={canManageNewsletter ? campaignBulkActions : undefined}
 				/>
@@ -484,8 +563,8 @@
 								.filter((c) => c.status === 'sent')
 								.map((c) => ({
 									name: c.subject ?? c.name ?? 'Untitled',
-									open_rate: c.open_rate ?? c.openRate ?? 0,
-									click_rate: c.click_rate ?? 0
+									open_rate: c.openRate ?? 0,
+									click_rate: c.clickRate ?? 0
 								}))}
 							x="name"
 							y="open_rate"

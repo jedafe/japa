@@ -105,7 +105,7 @@
 		{ key: 'is_active', label: t('coupons.active', 'Active'), type: 'checkbox' }
 	]);
 
-	const config: EntityPageConfig = {
+	const config = $derived<EntityPageConfig>({
 		title: t('coupons.title', 'Coupons'),
 		description: t('coupons.description', 'Manage discount coupons'),
 		createLabel: t('coupons.create', 'Create Coupon'),
@@ -225,7 +225,7 @@
 			return res.ok ? { ok: true } : { ok: false, error: res.error };
 		},
 		viewSnippet: CouponView
-	};
+	});
 </script>
 
 <svelte:head>

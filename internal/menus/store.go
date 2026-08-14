@@ -3,8 +3,11 @@ package menus
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
 )
@@ -48,6 +51,9 @@ func (s *Store) countMenus(ctx context.Context, tenantID pgtype.UUID, q, placeme
 func (s *Store) getMenuByID(ctx context.Context, id, tenantID pgtype.UUID) (gen.Menu, error) {
 	row, err := s.read.GetMenuByID(ctx, gen.GetMenuByIDParams{ID: id, TenantID: tenantID})
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return gen.Menu{}, ErrMenuNotFound
+		}
 		return gen.Menu{}, fmt.Errorf("getting menu: %w", err)
 	}
 	return row, nil
@@ -56,6 +62,9 @@ func (s *Store) getMenuByID(ctx context.Context, id, tenantID pgtype.UUID) (gen.
 func (s *Store) getMenuBySlug(ctx context.Context, tenantID pgtype.UUID, slug string) (gen.Menu, error) {
 	row, err := s.read.GetMenuBySlugForTenant(ctx, gen.GetMenuBySlugForTenantParams{TenantID: tenantID, Slug: slug})
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return gen.Menu{}, ErrMenuNotFound
+		}
 		return gen.Menu{}, fmt.Errorf("getting menu by slug: %w", err)
 	}
 	return row, nil
@@ -64,6 +73,13 @@ func (s *Store) getMenuBySlug(ctx context.Context, tenantID pgtype.UUID, slug st
 func (s *Store) createMenu(ctx context.Context, p gen.CreateMenuParams) (gen.Menu, error) {
 	row, err := s.write.CreateMenu(ctx, p)
 	if err != nil {
+		// Map unique violation on (tenant_id, slug) to ErrDuplicateSlug so
+		// the handler returns 409 already_exists instead of 500 (Rule 5).
+		// Ref: ADR-054; matches the pattern in internal/sidebars/store.go.
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return gen.Menu{}, ErrDuplicateSlug
+		}
 		return gen.Menu{}, fmt.Errorf("creating menu: %w", err)
 	}
 	return row, nil
@@ -72,6 +88,9 @@ func (s *Store) createMenu(ctx context.Context, p gen.CreateMenuParams) (gen.Men
 func (s *Store) updateMenu(ctx context.Context, p gen.UpdateMenuParams) (gen.Menu, error) {
 	row, err := s.write.UpdateMenu(ctx, p)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return gen.Menu{}, ErrMenuNotFound
+		}
 		return gen.Menu{}, fmt.Errorf("updating menu: %w", err)
 	}
 	return row, nil
@@ -97,6 +116,9 @@ func (s *Store) listMenuItems(ctx context.Context, tenantID, menuID pgtype.UUID)
 func (s *Store) getMenuItem(ctx context.Context, id, tenantID pgtype.UUID) (gen.GetMenuItemRow, error) {
 	row, err := s.read.GetMenuItem(ctx, gen.GetMenuItemParams{ID: id, TenantID: tenantID})
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return gen.GetMenuItemRow{}, ErrMenuItemNotFound
+		}
 		return gen.GetMenuItemRow{}, fmt.Errorf("getting menu item: %w", err)
 	}
 	return row, nil

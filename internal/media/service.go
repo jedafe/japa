@@ -21,6 +21,21 @@ import (
 // media.max_upload_mb is not configured in system_settings (50 MB).
 const MaxFileSizeBytes int64 = 50 * 1024 * 1024
 
+// MaxUploadBytes returns the effective maximum upload size in bytes,
+// consulting the media.max_upload_mb system_setting (Rule 3) and falling
+// back to MaxFileSizeBytes (50 MB) when unset or the settings provider is
+// not wired. Shared by InitiateUpload, DirectUpload, StoreFromBytes, and
+// AdminUpload so every upload path honours the same configurable limit.
+func (s *Service) MaxUploadBytes(ctx context.Context, tenantID pgtype.UUID) int64 {
+	maxBytes := MaxFileSizeBytes
+	if s.settings != nil {
+		if maxMB := s.settings.GetIntOr(ctx, tenantID, "media.max_upload_mb", 50); maxMB > 0 {
+			maxBytes = int64(maxMB) * 1024 * 1024
+		}
+	}
+	return maxBytes
+}
+
 // ErrMediaNotFound is returned when a media item does not exist or does not
 // belong to the requesting user. The handler maps this to 404 to avoid
 // leaking existence information to unauthorized users.
@@ -67,13 +82,7 @@ func (s *Service) InitiateUpload(ctx context.Context, tenantID, uploaderID pgtyp
 
 	// Max upload size from system_settings 'media.max_upload_mb' (Rule 3).
 	// Falls back to MaxFileSizeBytes (50 MB) when settings are not configured.
-	maxBytes := MaxFileSizeBytes
-	if s.settings != nil {
-		maxMB := s.settings.GetIntOr(ctx, tenantID, "media.max_upload_mb", 50)
-		if maxMB > 0 {
-			maxBytes = int64(maxMB) * 1024 * 1024
-		}
-	}
+	maxBytes := s.MaxUploadBytes(ctx, tenantID)
 
 	if fileSize > maxBytes {
 		return UploadResult{}, fmt.Errorf("file too large: %d bytes exceeds limit of %d bytes", fileSize, maxBytes)
@@ -132,11 +141,23 @@ func (s *Service) InitiateUpload(ctx context.Context, tenantID, uploaderID pgtyp
 // the client-claimed MIME type by reading the first 512 bytes and calling
 // http.DetectContentType. A mismatch rejects the upload to prevent MIME
 // spoofing (e.g. an executable renamed to .jpg).
-func (s *Service) ConfirmUpload(ctx context.Context, tenantID, mediaID pgtype.UUID) error {
+//
+// BUG-004: the uploaderID parameter enforces that only the user who
+// initiated the upload can confirm it. Without this, any authenticated
+// user in the same tenant could confirm another user's media ID by
+// guessing it. The presigned URL is single-use, but the confirm endpoint
+// itself must be uploader-scoped per §34 two-step upload.
+func (s *Service) ConfirmUpload(ctx context.Context, tenantID, mediaID, uploaderID pgtype.UUID) error {
 	// Fetch the media record to get storage_path and claimed MIME type.
 	m, err := s.store.GetMediaByID(ctx, mediaID, tenantID)
 	if err != nil {
 		return fmt.Errorf("media not found: %w", err)
+	}
+
+	// BUG-004: verify the confirming user is the uploader. Return a generic
+	// "not found" error so existence is not leaked to unauthorized users.
+	if m.UploaderUserID != uploaderID {
+		return ErrMediaNotFound
 	}
 
 	// Fetch the first 512 bytes from object storage for content inspection.
@@ -561,13 +582,7 @@ func (s *Service) StoreFromBytes(ctx context.Context, tenantID, uploaderID pgtyp
 		return pgtype.UUID{}, errors.New("data is empty")
 	}
 	// Max upload size from system_settings 'media.max_upload_mb' (Rule 3).
-	maxBytes := MaxFileSizeBytes
-	if s.settings != nil {
-		maxMB := s.settings.GetIntOr(ctx, tenantID, "media.max_upload_mb", 50)
-		if maxMB > 0 {
-			maxBytes = int64(maxMB) * 1024 * 1024
-		}
-	}
+	maxBytes := s.MaxUploadBytes(ctx, tenantID)
 	if int64(len(data)) > maxBytes {
 		return pgtype.UUID{}, fmt.Errorf("data too large: %d bytes exceeds limit of %d bytes", len(data), maxBytes)
 	}

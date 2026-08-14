@@ -99,10 +99,15 @@ func EditLockMiddleware(rdb valkeycompat.Cmdable, settings editLockSettingsReade
 			// Read TTL from system settings with fallback to the default.
 			// The fallback (90) matches editLockTTLDefault and the
 			// valkey-keys-catalog.md entry (90s) for audit conformance
-			// (AUDIT-BE-028).
+			// (AUDIT-BE-028). Use the authenticated user's tenant so
+			// tenant-specific settings are honoured.
 			ttl := editLockTTLDefault
 			if settings != nil {
-				ttl = time.Duration(settings.GetIntOr(ctx, defaultTenantUUID, "content.edit_lock_ttl_seconds", 90)) * time.Second
+				tenantID := defaultTenantUUID
+				if user != nil && user.TenantID.Valid {
+					tenantID = user.TenantID
+				}
+				ttl = time.Duration(settings.GetIntOr(ctx, tenantID, "content.edit_lock_ttl_seconds", 90)) * time.Second
 			}
 
 			if r.Method == http.MethodDelete {
@@ -244,6 +249,12 @@ func handleEditLockAcquire(ctx context.Context, w http.ResponseWriter, r *http.R
 // handles the standard REST pattern /api/v1/{type}/{id} as well as
 // nested routes like /api/v1/posts/{id}/comments/{cid} where the innermost
 // resource is what matters for edit locking.
+//
+// The final segment is validated via isLikelyContentID to avoid locking
+// on action/collection routes where the last segment is an action name
+// (e.g. /api/v1/content/{id}/publish, /api/v1/posts/{id}/comments).
+// Without this check, POST /posts/{id}/comments would acquire a spurious
+// lock keyed on "{id}:comments", blocking concurrent comment creation.
 func extractContentFromPath(path string) (contentType, contentID string) {
 	trimmed := strings.Trim(path, "/")
 	if trimmed == "" {
@@ -257,5 +268,27 @@ func extractContentFromPath(path string) (contentType, contentID string) {
 		return "", ""
 	}
 
-	return segments[len(segments)-2], segments[len(segments)-1]
+	ct, id := segments[len(segments)-2], segments[len(segments)-1]
+	if !isLikelyContentID(id) {
+		return "", ""
+	}
+
+	return ct, id
+}
+
+// isLikelyContentID reports whether a path segment looks like a resource
+// identifier rather than an action or collection name. Resource IDs in
+// this API are UUIDs (containing hyphens) or slugs (containing hyphens
+// or digits). Pure-alphabetic segments like "comments", "publish",
+// "vote", "archive" are action/collection names and are rejected.
+func isLikelyContentID(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, c := range s {
+		if c == '-' || (c >= '0' && c <= '9') {
+			return true
+		}
+	}
+	return false
 }

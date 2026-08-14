@@ -121,20 +121,33 @@ export const confirmMedia = (id: string) => api.post<MediaAsset>(`/media/confirm
  * Returns the caller's own uploaded media, paginated. Used by the
  * MediaLibraryModal component to let users pick from existing uploads
  * instead of re-uploading. Optional filters: type (image|video|…), q
- * (filename search), page (1-based). */
+ * (filename search), page_size/page_offset (server-side pagination). */
 export interface ListMyMediaParams {
 	type?: string;
 	q?: string;
-	page?: number;
+	page_size?: number;
+	page_offset?: number;
+}
+export interface ListMyMediaResult {
+	items: MediaAsset[];
+	total: number;
+	total_pages: number;
 }
 export const listMyMedia = (params: ListMyMediaParams = {}) => {
 	const qs = new URLSearchParams();
 	if (params.type) qs.set('type', params.type);
 	if (params.q) qs.set('q', params.q);
-	if (params.page) qs.set('page', String(params.page));
+	if (params.page_size) qs.set('page_size', String(params.page_size));
+	if (params.page_offset) qs.set('page_offset', String(params.page_offset));
 	const suffix = qs.toString() ? `?${qs.toString()}` : '';
 	return api.get<MediaAsset[]>(`/me/media${suffix}`);
 };
+
+/* ---- media metadata + delete (PATCH/DELETE /media/{id} — §34) ---- */
+export const updateMedia = (id: string, body: { alt_text?: string; caption?: string }) =>
+	api.patch<MediaAsset>(`/media/${id}`, body);
+
+export const deleteMedia = (id: string) => api.delete<MediaAsset>(`/media/${id}`);
 
 /* ---- trigger search ---- */
 export async function searchHits(

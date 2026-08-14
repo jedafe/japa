@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"sync"
 )
 
 // ImageProxyOpts controls how imgproxy resizes and formats the image.
@@ -18,30 +19,107 @@ type ImageProxyOpts struct {
 	Format       string // "webp", "png", "jpg"
 }
 
-// MediaURL generates an imgproxy HMAC-SHA256 signed URL for a media item.
-// Called on every serialization — NEVER cached in DB.
-// Falls back to a local serving endpoint when imgproxy is not configured
-// or when the key/salt are invalid hex (security: never sign with an empty key).
-func MediaURL(storageBucket, storagePath string, opts ImageProxyOpts) string { //nolint:revive // stuttering type name preserved for API compatibility
-	key := os.Getenv("JC_IMGPROXY_KEY")
-	salt := os.Getenv("JC_IMGPROXY_SALT")
-	baseURL := os.Getenv("JC_IMGPROXY_BASE_URL")
+// cdnBaseURLResolver returns the admin-configurable CDN base URL
+// (system_settings key `media.cdn.base_url`). When non-empty it overrides
+// JC_IMGPROXY_BASE_URL so an operator can front imgproxy with Cloudflare
+// without a redeploy (Section 34 — CDN & S3-Compatible Object Storage).
+// The hook is wired once at server startup via SetCDNBaseURLResolver.
+var cdnBaseURLResolver func() string
 
-	// Fallback to local serving endpoint when imgproxy is not configured.
-	if key == "" || salt == "" || baseURL == "" {
-		return "/api/v1/media/serve/" + storageBucket + "/" + storagePath
-	}
+// SetCDNBaseURLResolver wires the system_settings-backed resolver for
+// `media.cdn.base_url`. Called once during server wiring. Passing nil
+// restores the env-var-only behaviour.
+func SetCDNBaseURLResolver(fn func() string) {
+	cdnBaseURLResolver = fn
+}
 
-	keyBytes, err := hex.DecodeString(key)
-	if err != nil {
-		slog.Error("imgproxy: JC_IMGPROXY_KEY is not valid hex — falling back to local serve",
-			"error", err)
-		return "/api/v1/media/serve/" + storageBucket + "/" + storagePath
+// mediaBaseURL resolves the imgproxy/CDN base URL per Section 34:
+//  1. system_settings `media.cdn.base_url` (admin-configurable, hot-reloadable)
+//  2. JC_IMGPROXY_BASE_URL env var (server-only fallback)
+//
+// Rule 3 — no hardcoded config. The settings hook is optional; when unset
+// the env var is used, preserving backward compatibility.
+func mediaBaseURL() string {
+	if cdnBaseURLResolver != nil {
+		if cdnURL := cdnBaseURLResolver(); cdnURL != "" {
+			return cdnURL
+		}
 	}
-	saltBytes, err := hex.DecodeString(salt)
-	if err != nil {
-		slog.Error("imgproxy: JC_IMGPROXY_SALT is not valid hex — falling back to local serve",
-			"error", err)
+	return os.Getenv("JC_IMGPROXY_BASE_URL")
+}
+
+// mediaURLKeySalt caches the hex-decoded imgproxy key and salt. Env vars
+// are immutable at runtime so the decode is done once via sync.Once
+// (BUG-008: avoids re-decoding on every MediaURL call in a batch).
+var (
+	keySaltOnce sync.Once
+	keySalt     struct {
+		keyBytes, saltBytes []byte
+		valid               bool
+	}
+)
+
+// loadKeySalt decodes JC_IMGPROXY_KEY and JC_IMGPROXY_SALT once and caches
+// the result. Subsequent calls return the cached bytes without re-reading
+// env vars or re-decoding hex.
+func loadKeySalt() ([]byte, []byte, bool) {
+	keySaltOnce.Do(func() {
+		key := os.Getenv("JC_IMGPROXY_KEY")
+		salt := os.Getenv("JC_IMGPROXY_SALT")
+		if key == "" || salt == "" {
+			keySalt.valid = false
+			return
+		}
+		kb, err := hex.DecodeString(key)
+		if err != nil {
+			slog.Error("imgproxy: JC_IMGPROXY_KEY is not valid hex — falling back to local serve",
+				"error", err)
+			keySalt.valid = false
+			return
+		}
+		sb, err := hex.DecodeString(salt)
+		if err != nil {
+			slog.Error("imgproxy: JC_IMGPROXY_SALT is not valid hex — falling back to local serve",
+				"error", err)
+			keySalt.valid = false
+			return
+		}
+		keySalt.keyBytes = kb
+		keySalt.saltBytes = sb
+		keySalt.valid = true
+	})
+	return keySalt.keyBytes, keySalt.saltBytes, keySalt.valid
+}
+
+// mediaURLConfig is the resolved imgproxy configuration for a batch of
+// MediaURL calls. The key/salt are decoded once (env vars are immutable);
+// the baseURL is resolved fresh per batch because it may be hot-reloaded
+// from system_settings (media.cdn.base_url).
+type mediaURLConfig struct {
+	keyBytes  []byte
+	saltBytes []byte
+	baseURL   string
+	valid     bool
+}
+
+// loadMediaURLConfig resolves the imgproxy config once for a batch of
+// MediaURL calls (BUG-008: avoids re-reading env vars and re-decoding hex
+// on every item in a list response).
+func loadMediaURLConfig() mediaURLConfig {
+	kb, sb, valid := loadKeySalt()
+	return mediaURLConfig{
+		keyBytes:  kb,
+		saltBytes: sb,
+		baseURL:   mediaBaseURL(),
+		valid:     valid,
+	}
+}
+
+// mediaURLWithConfig generates a signed imgproxy URL using a pre-resolved
+// config. Used by batch helpers (toMediaResponses) to amortize env var
+// reads and hex decoding across all items in a list (BUG-008).
+func mediaURLWithConfig(storageBucket, storagePath string, opts ImageProxyOpts, cfg mediaURLConfig) string {
+	if !cfg.valid || cfg.baseURL == "" {
 		return "/api/v1/media/serve/" + storageBucket + "/" + storagePath
 	}
 
@@ -72,9 +150,17 @@ func MediaURL(storageBucket, storagePath string, opts ImageProxyOpts) string { /
 	path := fmt.Sprintf("/rs:%s:%d:%d/plain/%s@%s",
 		resizingType, width, height, encoded, format)
 
-	mac := hmac.New(sha256.New, keyBytes)
-	mac.Write(append(saltBytes, []byte(path)...))
+	mac := hmac.New(sha256.New, cfg.keyBytes)
+	mac.Write(append(cfg.saltBytes, []byte(path)...))
 	sig := base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
 
-	return baseURL + "/" + sig + path
+	return cfg.baseURL + "/" + sig + path
+}
+
+// MediaURL generates an imgproxy HMAC-SHA256 signed URL for a media item.
+// Called on every serialization — NEVER cached in DB.
+// Falls back to a local serving endpoint when imgproxy is not configured
+// or when the key/salt are invalid hex (security: never sign with an empty key).
+func MediaURL(storageBucket, storagePath string, opts ImageProxyOpts) string { //nolint:revive // stuttering type name preserved for API compatibility
+	return mediaURLWithConfig(storageBucket, storagePath, opts, loadMediaURLConfig())
 }

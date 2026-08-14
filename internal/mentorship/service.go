@@ -71,6 +71,7 @@ type Service struct {
 	settings           SettingsProvider
 	embedder           Embedder
 	meilisearchIndexer MeilisearchIndexer
+	tracker            EventTracker
 }
 
 // NewService creates a Service backed by the given database pool.
@@ -261,6 +262,12 @@ type MeilisearchIndexer interface {
 	IndexUser(ctx context.Context, userID, tenantID [16]byte) error
 }
 
+// EventTracker records platform analytics events (§102 analytics events).
+// The analytics.Service satisfies this via an adapter.
+type EventTracker interface {
+	TrackEvent(ctx context.Context, tenantID, userID pgtype.UUID, eventType, entityType string, entityID pgtype.UUID, meta map[string]any) error
+}
+
 // MentorProfile is the current user's mentor settings.
 type MentorProfile struct {
 	UserID            pgtype.UUID        `json:"user_id"`
@@ -335,6 +342,20 @@ func (s *Service) SetEmbedder(e Embedder) { s.embedder = e }
 
 // SetMeilisearchIndexer wires the Meilisearch indexer for mentor:update_meilisearch tasks.
 func (s *Service) SetMeilisearchIndexer(mi MeilisearchIndexer) { s.meilisearchIndexer = mi }
+
+// SetEventTracker wires the analytics event tracker for §102 analytics events.
+func (s *Service) SetEventTracker(t EventTracker) { s.tracker = t }
+
+// trackEvent is a best-effort analytics event emitter (§102). Failures are
+// logged but never abort the caller's operation.
+func (s *Service) trackEvent(ctx context.Context, tenantID, userID pgtype.UUID, eventType, entityType string, entityID pgtype.UUID, meta map[string]any) {
+	if s.tracker == nil {
+		return
+	}
+	if err := s.tracker.TrackEvent(ctx, tenantID, userID, eventType, entityType, entityID, meta); err != nil {
+		slog.Warn("mentorship: track event", "event_type", eventType, "error", err)
+	}
+}
 
 // GetMentorProfile returns the current user's mentor profile settings.
 // GET /api/v1/me/mentor-profile
@@ -448,6 +469,10 @@ func (s *Service) GetMentorByUsername(ctx context.Context, tenantID pgtype.UUID,
 		return MentorSummary{}, ErrMentorNotFound
 	}
 
+	// §102 analytics: mentor_view { mentor_username }
+	s.trackEvent(ctx, tenantID, row.UserID, "mentor_view", "user", row.UserID,
+		map[string]any{"mentor_username": row.Username})
+
 	return mentorSummaryFromRow(row.UserID, row.TenantID, row.IsMentor, row.MentorCapacity,
 		row.ActiveMenteeCount, row.MentorAreas, row.MentorBio, row.MentorSince,
 		row.DisplayName, row.AvatarUrl, row.Username, 0), nil
@@ -532,6 +557,38 @@ func (s *Service) ListMentors(ctx context.Context, tenantID pgtype.UUID, destSpa
 	}
 
 	return mentors, nil
+}
+
+// GetMenteeEmbedding fetches the authenticated user's mentor_embedding for
+// use as the mentee_goal_embedding in match scoring (§102). Returns nil when
+// the user has no embedding (non-mentor or mentor without a bio) — the caller
+// falls back to keyword-only scoring (weight = 1.0).
+func (s *Service) GetMenteeEmbedding(ctx context.Context, tenantID, userID pgtype.UUID) (*pgvector.Vector, error) {
+	row, err := s.read.GetUserEmbedding(ctx, gen.GetUserEmbeddingParams{
+		TenantID: tenantID,
+		UserID:   userID,
+	})
+	if err != nil {
+		return nil, nil // best-effort: fall back to keyword-only on error
+	}
+	return row.MentorEmbedding, nil
+}
+
+// GetMenteeDestinationSpaceID fetches the authenticated user's
+// destination_space_id from user_profiles for use as the default ?dest=
+// filter on the discovery page (§102 Geo Awareness: "The mentee's profile
+// destination_country_id is injected as a default filter when logged in,
+// with no UI action required"). Returns pgtype.UUID{} (invalid) when no
+// destination is set.
+func (s *Service) GetMenteeDestinationSpaceID(ctx context.Context, tenantID, userID pgtype.UUID) (pgtype.UUID, error) {
+	row, err := s.read.GetMenteeDestinationSpaceID(ctx, gen.GetMenteeDestinationSpaceIDParams{
+		TenantID: tenantID,
+		UserID:   userID,
+	})
+	if err != nil {
+		return pgtype.UUID{}, nil // best-effort: no default filter on error
+	}
+	return row.DestinationSpaceID, nil
 }
 
 // sortMentorsByKeywordMatch sorts mentors in-place by the §102 keyword
@@ -624,6 +681,11 @@ func (s *Service) CreateConnection(ctx context.Context, tenantID, mentorID, ment
 		}
 		return Connection{}, fmt.Errorf("creating mentorship connection: %w", err)
 	}
+
+	// §102 analytics: mentorship_request_sent { mentor_username }
+	// The mentee (menteeID) is the actor; the mentor is the entity.
+	s.trackEvent(ctx, tenantID, menteeID, "mentorship_request_sent", "mentorship_connection", conn.ID,
+		map[string]any{"mentor_id": mentorID.String()})
 
 	return connectionFromModel(conn), nil
 }
@@ -761,6 +823,11 @@ func (s *Service) AcceptConnection(ctx context.Context, tenantID, mentorID, conn
 	// active_mentee_count changed (pending → active) → sync Meilisearch (§102).
 	s.enqueueUpdateMeilisearch(ctx, tenantID, conn.MentorID)
 
+	// §102 analytics: mentorship_accepted { mentor_username }
+	// The mentor (mentorID) is the actor.
+	s.trackEvent(ctx, tenantID, mentorID, "mentorship_accepted", "mentorship_connection", conn.ID,
+		map[string]any{"mentee_id": conn.MenteeID.String()})
+
 	return connectionFromModel(conn), nil
 }
 
@@ -817,6 +884,9 @@ func (s *Service) CompleteConnection(ctx context.Context, tenantID, userID, conn
 
 	// active_mentee_count changed (active → completed) → sync Meilisearch (§102).
 	s.enqueueUpdateMeilisearch(ctx, tenantID, conn.MentorID)
+
+	// §102 analytics: mentorship_completed { connection_id }
+	s.trackEvent(ctx, tenantID, userID, "mentorship_completed", "mentorship_connection", conn.ID, nil)
 
 	return connectionFromModel(conn), nil
 }

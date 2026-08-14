@@ -16,6 +16,8 @@
 	const meta = $derived(data.meta);
 	const totalPages = $derived(meta?.total_pages ?? 1);
 	const currentPage = $derived(data.filters.page);
+	// §102: comparison UI is gated by the mentorship.comparison feature flag.
+	const comparisonEnabled = $derived(page.data.features?.['mentorship.comparison'] === true);
 
 	// Filter bar state — seeded from the server-provided filter values.
 	let dest = $state(untrack(() => data.filters.dest));
@@ -291,16 +293,18 @@
 								>
 									{t('mentors.request', 'Request Mentorship')}
 								</a>
-								<label class="inline-flex items-center gap-1.5 text-xs text-[var(--color-text-subtle)]">
-									<input
-										type="checkbox"
-										checked={selected}
-										onchange={() => toggleCompare(mentor)}
-										disabled={!selected && selectedIds.size >= MAX_COMPARE}
-										class="h-4 w-4 rounded border-[var(--color-border)]"
-									/>
-									{t('mentors.compare_select', 'Compare')}
-								</label>
+								{#if comparisonEnabled}
+									<label class="inline-flex items-center gap-1.5 text-xs text-[var(--color-text-subtle)]">
+										<input
+											type="checkbox"
+											checked={selected}
+											onchange={() => toggleCompare(mentor)}
+											disabled={!selected && selectedIds.size >= MAX_COMPARE}
+											class="h-4 w-4 rounded border-[var(--color-border)]"
+										/>
+										{t('mentors.compare_select', 'Compare')}
+									</label>
+								{/if}
 							</div>
 						</div>
 					</div>
@@ -308,7 +312,7 @@
 			</div>
 
 			<!-- Compare bar -->
-			{#if selectedIds.size > 0}
+			{#if comparisonEnabled && selectedIds.size > 0}
 				<div class="sticky bottom-3 mt-4 flex items-center justify-between rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-2.5 shadow-sm">
 					<span class="text-sm text-[var(--color-text-subtle)]">
 						{selectedIds.size}/{MAX_COMPARE} {t('mentors.compare_selected', 'selected')}

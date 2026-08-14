@@ -141,14 +141,17 @@ function renderMarks(text: string, marks: PMMark[] | undefined): string {
 /** Serialize a single TipTap node to an HTML string.
  * @param deleted Optional set of erased user IDs — mentions of these
  *   users render as `@[deleted user]` (Section 15 / ADR-029).
+ * @param deletedLabel Optional localized placeholder for erased users
+ *   (defaults to "[deleted user]"). Callers should pass the i18n-sourced
+ *   label so the placeholder respects the active locale (Rule 16 / §18).
  */
-function renderNode(node: PMNode, deleted?: Set<string>): string {
+function renderNode(node: PMNode, deleted?: Set<string>, deletedLabel?: string): string {
 	// Text node — apply marks.
 	if (typeof node.text === 'string') {
 		return renderMarks(node.text, node.marks);
 	}
 
-	const inner = (node.content ?? []).map((n) => renderNode(n, deleted)).join('');
+	const inner = (node.content ?? []).map((n) => renderNode(n, deleted, deletedLabel)).join('');
 
 	switch (node.type) {
 		case 'doc':
@@ -190,10 +193,12 @@ function renderNode(node: PMNode, deleted?: Set<string>): string {
 		case 'mention':
 		case 'japaMention': {
 			// Section 15 / ADR-029: a mention of an erased user renders as
-			// `@[deleted user]` with no link.
+			// `@[deleted user]` with no link. The label is localized by the
+			// caller via deletedLabel (Rule 16 / §18).
 			const mentionId = String(node.attrs?.id ?? '');
 			if (deleted && deleted.has(mentionId)) {
-				return '<span class="mention mention-deleted">@[deleted user]</span>';
+				const label = deletedLabel || '[deleted user]';
+				return `<span class="mention mention-deleted">@${escapeHtml(label)}</span>`;
 			}
 			const label = escapeHtml(String(node.attrs?.label ?? ''));
 			const handle = escapeAttr(String(node.attrs?.handle ?? ''));
@@ -247,19 +252,23 @@ function renderNode(node: PMNode, deleted?: Set<string>): string {
  *   - deletedUserIds: Set of user UUIDs whose accounts have been erased.
  *     Mentions of these users render as `@[deleted user]` with no link
  *     (Section 15 / ADR-029).
+ *   - deletedUserLabel: Localized placeholder label for erased users
+ *     (defaults to "[deleted user]"). Pass the i18n-sourced string so the
+ *     placeholder respects the active locale (Rule 16 / §18).
  */
 export function tiptapToHtml(
 	doc: TipTapDoc | PMNode[] | null,
-	opts?: { deletedUserIds?: Set<string> }
+	opts?: { deletedUserIds?: Set<string>; deletedUserLabel?: string }
 ): string {
 	if (!doc) return '';
 	const deleted = opts?.deletedUserIds;
+	const deletedLabel = opts?.deletedUserLabel;
 	// The backend may store the body as a bare array of nodes (no `doc` wrapper)
 	// or as a full TipTap document. Handle both.
 	if (Array.isArray(doc)) {
-		return doc.map((n) => renderNode(n, deleted)).join('');
+		return doc.map((n) => renderNode(n, deleted, deletedLabel)).join('');
 	}
-	return renderNode(doc, deleted);
+	return renderNode(doc, deleted, deletedLabel);
 }
 
 /** Decode a base64 TipTap body and serialize to HTML in one call.
@@ -267,7 +276,7 @@ export function tiptapToHtml(
  */
 export function tiptapBodyToHtml(
 	b64: string | null | undefined,
-	opts?: { deletedUserIds?: Set<string> }
+	opts?: { deletedUserIds?: Set<string>; deletedUserLabel?: string }
 ): string {
 	return tiptapToHtml(decodeTipTapDoc(b64), opts);
 }

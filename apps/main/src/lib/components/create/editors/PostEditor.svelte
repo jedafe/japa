@@ -482,11 +482,20 @@
 		const text = e.clipboardData?.getData('text/plain') ?? '';
 		const trimmed = text.trim();
 		if (!/^https?:\/\/\S+$/i.test(trimmed)) return;
+		// BUG-003: HTML-escape the URL before interpolating into the
+		// data-url attribute, matching the escaping in linkPreviewNode.ts
+		// renderMarkdown. Without this, a URL containing " or < could break
+		// out of the attribute and inject arbitrary HTML into the editor.
+		const escaped = trimmed
+			.replace(/&/g, '&amp;')
+			.replace(/"/g, '&quot;')
+			.replace(/</g, '&lt;')
+			.replace(/>/g, '&gt;');
 		// Insert the placeholder HTML at the cursor position in the textarea.
 		const ta = e.currentTarget as HTMLTextAreaElement;
 		const start = ta.selectionStart;
 		const end = ta.selectionEnd;
-		const placeholder = `\n\n<div data-type="link-preview" data-url="${trimmed}"></div>\n\n`;
+		const placeholder = `\n\n<div data-type="link-preview" data-url="${escaped}"></div>\n\n`;
 		e.preventDefault();
 		markdownSource = markdownSource.slice(0, start) + placeholder + markdownSource.slice(end);
 		markdownDirty = true;

@@ -91,3 +91,34 @@ func NewServiceWithConfig(database *db.DB, s3cfg S3Config) *Service {
 func (s *Service) SetSettings(sp SettingsProvider) {
 	s.settings = sp
 }
+
+// ReconfigureS3FromSettings rebuilds the S3 client from the admin-configurable
+// media.storage.* system_settings (Section 34 — CDN & S3-Compatible Object
+// Storage). When the settings provider is nil or the endpoint/access_key/
+// secret_key are empty, the existing env-var-based client (if any) is retained
+// so callers degrade gracefully. Call once after SetSettings during server
+// wiring; the settings are hot-reloadable so a subsequent call picks up
+// Control Panel changes.
+func (s *Service) ReconfigureS3FromSettings(ctx context.Context, tenantID pgtype.UUID) {
+	if s.settings == nil {
+		return
+	}
+
+	endpoint := s.settings.GetStringOr(ctx, tenantID, "media.storage.endpoint", "")
+	accessKey := s.settings.GetStringOr(ctx, tenantID, "media.storage.access_key", "")
+	secretKey := s.settings.GetStringOr(ctx, tenantID, "media.storage.secret_key", "")
+	if endpoint == "" || accessKey == "" || secretKey == "" {
+		// Not configured via settings — keep the env-var-based client.
+		return
+	}
+
+	region := s.settings.GetStringOr(ctx, tenantID, "media.storage.region", "us-east-1")
+	bucket := s.settings.GetStringOr(ctx, tenantID, "media.storage.bucket", DefaultBucket)
+	s.s3 = NewS3ClientFromConfig(S3Config{
+		Endpoint:  endpoint,
+		AccessKey: accessKey,
+		SecretKey: secretKey,
+		Region:    region,
+		Bucket:    bucket,
+	})
+}
