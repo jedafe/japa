@@ -362,19 +362,63 @@ func (q *Queries) DeleteForumBookmarkByID(ctx context.Context, arg DeleteForumBo
 	return err
 }
 
+const deleteForumPollVoteByOptionUser = `-- name: DeleteForumPollVoteByOptionUser :exec
+DELETE FROM forum_poll_votes
+WHERE option_id = $1 AND user_id = $2
+`
+
+type DeleteForumPollVoteByOptionUserParams struct {
+	OptionID pgtype.UUID `json:"option_id"`
+	UserID   pgtype.UUID `json:"user_id"`
+}
+
+// Deletes a user's vote on a specific option. Used by multi-select poll
+// vote retraction (DELETE /poll-options/{id}/vote retracts one option,
+// not all). Ref: Section 08 Polls (BUG-002 fix).
+func (q *Queries) DeleteForumPollVoteByOptionUser(ctx context.Context, arg DeleteForumPollVoteByOptionUserParams) error {
+	_, err := q.db.Exec(ctx, deleteForumPollVoteByOptionUser, arg.OptionID, arg.UserID)
+	return err
+}
+
+const deleteForumPollVoteByPollUser = `-- name: DeleteForumPollVoteByPollUser :exec
+DELETE FROM forum_poll_votes
+WHERE poll_id = $1 AND user_id = $2
+`
+
+type DeleteForumPollVoteByPollUserParams struct {
+	PollID pgtype.UUID `json:"poll_id"`
+	UserID pgtype.UUID `json:"user_id"`
+}
+
+// Deletes all of a user's votes on a poll. Used by single-select vote
+// replacement (delete the old vote, insert the new one) and by poll vote
+// retraction. Ref: Section 08 Polls (BUG-002 fix).
+func (q *Queries) DeleteForumPollVoteByPollUser(ctx context.Context, arg DeleteForumPollVoteByPollUserParams) error {
+	_, err := q.db.Exec(ctx, deleteForumPollVoteByPollUser, arg.PollID, arg.UserID)
+	return err
+}
+
 const deleteForumVote = `-- name: DeleteForumVote :exec
 DELETE FROM forum_votes
-WHERE user_id = $1 AND entity_type = $2 AND entity_id = $3
+WHERE tenant_id = $1 AND user_id = $2 AND entity_type = $3 AND entity_id = $4
 `
 
 type DeleteForumVoteParams struct {
+	TenantID   pgtype.UUID `json:"tenant_id"`
 	UserID     pgtype.UUID `json:"user_id"`
 	EntityType string      `json:"entity_type"`
 	EntityID   pgtype.UUID `json:"entity_id"`
 }
 
+// Tenant-scoped vote deletion (BUG-003 fix: was missing tenant_id filter,
+// allowing cross-tenant vote deletion). Ref: §9 Multi-tenancy.
 func (q *Queries) DeleteForumVote(ctx context.Context, arg DeleteForumVoteParams) error {
-	_, err := q.db.Exec(ctx, deleteForumVote, arg.UserID, arg.EntityType, arg.EntityID)
+	_, err := q.db.Exec(ctx, deleteForumVote,
+		arg.TenantID,
+		arg.UserID,
+		arg.EntityType,
+		arg.EntityID,
+	)
 	return err
 }
 
@@ -949,6 +993,25 @@ func (q *Queries) GetForumThreadSpaceIDByID(ctx context.Context, id pgtype.UUID)
 	return space_id, err
 }
 
+const getForumThreadTenantAndSpaceByID = `-- name: GetForumThreadTenantAndSpaceByID :one
+SELECT tenant_id, space_id FROM forum_threads WHERE id = $1 AND deleted_at IS NULL
+`
+
+type GetForumThreadTenantAndSpaceByIDRow struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	SpaceID  pgtype.UUID `json:"space_id"`
+}
+
+// Returns tenant_id and space_id for a thread by ID (no tenant filter).
+// Used by broadcastPollResults where the tenant is not in the request
+// context (BUG-004 fix). Ref: Section 10 WebSocket events.
+func (q *Queries) GetForumThreadTenantAndSpaceByID(ctx context.Context, id pgtype.UUID) (GetForumThreadTenantAndSpaceByIDRow, error) {
+	row := q.db.QueryRow(ctx, getForumThreadTenantAndSpaceByID, id)
+	var i GetForumThreadTenantAndSpaceByIDRow
+	err := row.Scan(&i.TenantID, &i.SpaceID)
+	return i, err
+}
+
 const getForumVote = `-- name: GetForumVote :one
 SELECT id, tenant_id, user_id, entity_type, entity_id, value, created_at
 FROM forum_votes
@@ -1387,9 +1450,16 @@ SELECT ft.id, ft.tenant_id, ft.name, ft.slug, ft.description, ft.rules,
        ft.cover_image_id, ft.follower_count, ft.moderator_user_id, ft.created_at
 FROM forum_thread_tags ftt
 JOIN forum_tags ft ON ft.id = ftt.tag_id
+JOIN forum_threads fth ON fth.id = ftt.thread_id
 WHERE ftt.thread_id = $1 AND ft.deleted_at IS NULL
+  AND fth.tenant_id = $2
 ORDER BY ft.name ASC
 `
+
+type ListForumThreadTagsParams struct {
+	ThreadID pgtype.UUID `json:"thread_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
 
 type ListForumThreadTagsRow struct {
 	ID              pgtype.UUID        `json:"id"`
@@ -1405,10 +1475,10 @@ type ListForumThreadTagsRow struct {
 }
 
 // Lists the tags attached to a thread, joining forum_tags for details.
-// Excludes soft-deleted tags. Ref: Section 08 (tags are first-class on
-// discussions) — GET /forum/{id}/tags.
-func (q *Queries) ListForumThreadTags(ctx context.Context, threadID pgtype.UUID) ([]ListForumThreadTagsRow, error) {
-	rows, err := q.db.Query(ctx, listForumThreadTags, threadID)
+// Excludes soft-deleted tags. Tenant-scoped to prevent cross-tenant tag
+// listing (BUG-008 fix). Ref: Section 08 + §9 Multi-tenancy.
+func (q *Queries) ListForumThreadTags(ctx context.Context, arg ListForumThreadTagsParams) ([]ListForumThreadTagsRow, error) {
+	rows, err := q.db.Query(ctx, listForumThreadTags, arg.ThreadID, arg.TenantID)
 	if err != nil {
 		return nil, err
 	}
@@ -2650,8 +2720,6 @@ func (q *Queries) UpsertForumVote(ctx context.Context, arg UpsertForumVoteParams
 const voteForumPoll = `-- name: VoteForumPoll :one
 INSERT INTO forum_poll_votes (poll_id, option_id, user_id)
 VALUES ($1, $2, $3)
-ON CONFLICT (poll_id, user_id) DO UPDATE
-    SET option_id = $2
 RETURNING id, poll_id, option_id, user_id, created_at
 `
 
@@ -2661,6 +2729,12 @@ type VoteForumPollParams struct {
 	UserID   pgtype.UUID `json:"user_id"`
 }
 
+// Single-select poll vote: replaces the user's existing vote on this poll
+// with the new option. The caller must delete the prior vote first via
+// DeleteForumPollVoteByPollUser (the UNIQUE(option_id, user_id) constraint
+// from migration 000465 prevents duplicate same-option votes but does not
+// prevent multiple options per poll, so single-select enforcement is at
+// the application layer).
 func (q *Queries) VoteForumPoll(ctx context.Context, arg VoteForumPollParams) (ForumPollVote, error) {
 	row := q.db.QueryRow(ctx, voteForumPoll, arg.PollID, arg.OptionID, arg.UserID)
 	var i ForumPollVote
@@ -2672,4 +2746,24 @@ func (q *Queries) VoteForumPoll(ctx context.Context, arg VoteForumPollParams) (F
 		&i.CreatedAt,
 	)
 	return i, err
+}
+
+const voteForumPollMulti = `-- name: VoteForumPollMulti :exec
+INSERT INTO forum_poll_votes (poll_id, option_id, user_id)
+VALUES ($1, $2, $3)
+ON CONFLICT (option_id, user_id) DO NOTHING
+`
+
+type VoteForumPollMultiParams struct {
+	PollID   pgtype.UUID `json:"poll_id"`
+	OptionID pgtype.UUID `json:"option_id"`
+	UserID   pgtype.UUID `json:"user_id"`
+}
+
+// Multi-select poll vote: inserts a vote for one option. ON CONFLICT
+// (option_id, user_id) DO NOTHING prevents voting on the same option twice.
+// Multiple options per poll are allowed. Ref: Section 08 Polls.
+func (q *Queries) VoteForumPollMulti(ctx context.Context, arg VoteForumPollMultiParams) error {
+	_, err := q.db.Exec(ctx, voteForumPollMulti, arg.PollID, arg.OptionID, arg.UserID)
+	return err
 }

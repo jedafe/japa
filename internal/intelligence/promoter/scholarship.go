@@ -13,10 +13,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/jedafe/japa/internal/content"
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/intelligence/extractor"
-	"github.com/jedafe/japa/internal/intelligence/reviewerctx"
 )
 
 // Store is the persistence surface the ScholarshipPromoter needs.
@@ -34,8 +32,7 @@ type Store interface {
 	GetScholarshipByIntelRecord(ctx context.Context, tenantID, intelRecordID pgtype.UUID) (gen.Scholarship, error)
 	CreateScholarship(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateScholarshipParams) (gen.Scholarship, error)
 	UpdateScholarship(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateScholarshipParams) error
-	CreateContent(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateContentParams) (gen.CreateContentRow, error)
-	UpdateIntelRecordPromoted(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateIntelRecordPromotedParams) error
+	UpdateIntelRecordStatus(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateIntelRecordStatusParams) error
 	CreateIntelReviewLog(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateIntelReviewLogParams) error
 	// GetCountrySpace resolves the country-level geo space (§05) id for an
 	// ISO-3 country code, so the promoter can stamp scholarships.country_space_id.
@@ -51,9 +48,8 @@ type Store interface {
 // interface (via WithTx's callback), and the test mock satisfies it
 // directly.
 type TxStore interface {
-	CreateContent(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateContentParams) (gen.CreateContentRow, error)
 	CreateScholarship(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateScholarshipParams) (gen.Scholarship, error)
-	UpdateIntelRecordPromoted(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateIntelRecordPromotedParams) error
+	UpdateIntelRecordStatus(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateIntelRecordStatusParams) error
 	UpdateScholarship(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateScholarshipParams) error
 	CreateIntelReviewLog(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateIntelReviewLogParams) error
 }
@@ -64,7 +60,9 @@ type TxStore interface {
 const freshScore int32 = 100
 
 // ScholarshipPromoter promotes scholarship intel_records into the
-// scholarships projection table plus the contents guide entry that backs it.
+// scholarships projection table. Under Approach B (ADR-076 Amendment 1) it
+// writes ONLY the projection row — the contents guide entry is generated
+// later by the AI Content Studio via intel_record_id.
 //
 // It implements the editorial-override-respect invariant: on the update path,
 // any field present in scholarships.editorial_overrides is left untouched so a
@@ -91,8 +89,8 @@ func WithAIModel(model string) ScholarshipPromoterOption {
 }
 
 // NewScholarshipPromoter creates a promoter backed by the given store. The
-// tenantID and authorID identify the tenant and system author stamped onto the
-// contents guide rows created by the create path.
+// tenantID and authorID identify the tenant and system author used for
+// review-log actor stamps on the update path.
 func NewScholarshipPromoter(store Store, tenantID, authorID pgtype.UUID, opts ...ScholarshipPromoterOption) *ScholarshipPromoter {
 	p := &ScholarshipPromoter{
 		store:    store,
@@ -115,8 +113,9 @@ func (p *ScholarshipPromoter) Entity() string { return "scholarship" }
 var ErrNotScholarship = errors.New("promoter: intel record is not a scholarship")
 
 // Promote maps the intel record identified by recordID to a scholarships
-// projection row, creating it (plus its backing guide entry) or updating it
-// in place while respecting editorial overrides.
+// projection row, creating it or updating it in place while respecting
+// editorial overrides. The contents guide entry is NOT created here —
+// Studio generates it from the extraction data (ADR-076 Amendment 1).
 func (p *ScholarshipPromoter) Promote(ctx context.Context, recordID uuid.UUID) (PromoteResult, error) {
 	pgID := uuidToPg(recordID)
 
@@ -151,20 +150,11 @@ func (p *ScholarshipPromoter) Promote(ctx context.Context, recordID uuid.UUID) (
 	return p.updatePath(ctx, record, existing, ext)
 }
 
-// createPath inserts the contents guide entry, the scholarships projection row,
-// and flips the intel record to 'published' with the promoted row id. All
-// three writes run inside a single transaction so a failure in any one
-// rolls back the others — no orphaned content rows (BUG-01 fix, §6.2).
+// createPath inserts the scholarships projection row and flips the intel
+// record to 'extracted' status (awaiting Studio editorial promotion).
+// The contents guide row is NO LONGER created here — Studio generates it
+// from the extraction data via intel_record_id (ADR-076 Amendment 1).
 func (p *ScholarshipPromoter) createPath(ctx context.Context, record gen.IntelRecord, source gen.IntelSource, ext extractor.Extraction) (PromoteResult, error) {
-	title := stringField(ext, "title")
-	if title == "" {
-		title = source.Name // fall back to the source name rather than failing
-	}
-	body := bodyFromExtraction(ext, title)
-	slug := content.Slugify(title)
-	hash := content.ComputeContentHash(body)
-	canonicalURL := source.SourceUrl
-
 	// Resolve the destination country's geo space (§05) so the space-scoped
 	// radar feed (ListScholarshipsBySpace) can match this scholarship. The
 	// lookup is best-effort: when no country space exists for the extracted
@@ -178,56 +168,24 @@ func (p *ScholarshipPromoter) createPath(ctx context.Context, record gen.IntelRe
 		}
 	}
 
-	contentParams := gen.CreateContentParams{
-		TenantID:        p.tenantID,
-		AuthorID:        resolveAuthorID(ctx, p.store, source, p.tenantID, p.authorID),
-		FieldValues:     []byte(`{}`),
-		ContentType:     "guide",
-		Title:           title,
-		Slug:            slug,
-		Body:            body,
-		BodyHtml:        bodyHTML(body),
-		ContentHash:     &hash,
-		CanonicalUrl:    &canonicalURL,
-		Status:          "published",
-		Visibility:      "public",
-		SeoIndexable:    true,
-		ReadTimeMinutes: content.ComputeReadTime(body),
-		GuideCategory:   ptr("scholarship"),
-		PublishAt:       pgtype.Timestamptz{Time: p.now(), Valid: true},
-		PublishedAt:     pgtype.Timestamptz{Time: p.now(), Valid: true},
-		AiGenerated:     true,      // ADR-088: mark as AI-generated (INTEL-003)
-		AiModel:         p.aiModel, // from intel.extraction_model system setting
-		AiGeneratedAt:   pgtype.Timestamptz{Time: p.now(), Valid: true},
-	}
-	// INTEL-026 fix: stamp hitl_reviewed_by when a human approved the record.
-	if reviewerID, ok := reviewerctx.ReviewerFromContext(ctx); ok {
-		contentParams.HitlReviewedBy = reviewerID
-		contentParams.HitlReviewedAt = pgtype.Timestamptz{Time: p.now(), Valid: true}
-	}
-	scholarshipParams := buildCreateParams(record, source, pgtype.UUID{}, ext) // guideID filled inside tx
+	scholarshipParams := buildCreateParams(record, source, pgtype.UUID{}, ext) // guide_id NULL — Studio fills it later
 	scholarshipParams.CountrySpaceID = countrySpaceID                          // override the invalid pgtype.UUID{} default
 
 	var result PromoteResult
 	err := p.store.WithTx(ctx, func(tx TxStore) error {
-		contentRow, err := tx.CreateContent(ctx, p.tenantID, contentParams)
-		if err != nil {
-			return fmt.Errorf("promoter: create guide content: %w", err)
-		}
-		scholarshipParams.GuideID = contentRow.ID
 		scholarship, err := tx.CreateScholarship(ctx, p.tenantID, scholarshipParams)
 		if err != nil {
 			return fmt.Errorf("promoter: create scholarship: %w", err)
 		}
-		if err := tx.UpdateIntelRecordPromoted(ctx, p.tenantID, gen.UpdateIntelRecordPromotedParams{
-			ID:               record.ID,
-			PromotedRecordID: scholarship.ID,
+		if err := tx.UpdateIntelRecordStatus(ctx, p.tenantID, gen.UpdateIntelRecordStatusParams{
+			ID:     record.ID,
+			Status: "extracted",
 		}); err != nil {
-			return fmt.Errorf("promoter: mark intel record promoted: %w", err)
+			return fmt.Errorf("promoter: mark intel record extracted: %w", err)
 		}
 		result = PromoteResult{
 			DomainID:  pgToUUID(scholarship.ID),
-			ContentID: pgToUUID(contentRow.ID),
+			ContentID: uuid.Nil, // no contents row — Studio generates it later
 			Action:    ActionCreated,
 		}
 		return nil
@@ -261,7 +219,7 @@ func (p *ScholarshipPromoter) updatePath(ctx context.Context, record gen.IntelRe
 		}
 		return PromoteResult{
 			DomainID:  pgToUUID(existing.ID),
-			ContentID: pgToUUID(existing.GuideID),
+			ContentID: pgToUUID(existing.GuideID), // uuid.Nil when Studio hasn't generated the guide yet
 			Action:    ActionVerified,
 		}, nil
 	}
@@ -290,7 +248,7 @@ func (p *ScholarshipPromoter) updatePath(ctx context.Context, record gen.IntelRe
 		}
 		result = PromoteResult{
 			DomainID:      pgToUUID(existing.ID),
-			ContentID:     pgToUUID(existing.GuideID),
+			ContentID:     pgToUUID(existing.GuideID), // uuid.Nil when Studio hasn't generated the guide yet
 			Action:        ActionUpdated,
 			ChangedFields: changed,
 		}
@@ -818,20 +776,9 @@ func jsonOrNull(b []byte) any {
 // Content body helpers
 // ---------------------------------------------------------------------------
 
-// bodyFromExtraction builds the guide body text from the AI-summarized
-// description, falling back to the title when no summary was extracted.
-func bodyFromExtraction(ext extractor.Extraction, title string) string {
-	if desc := stringField(ext, "description_summary"); desc != "" {
-		return desc
-	}
-	if title == "" {
-		return ""
-	}
-	return title
-}
-
 // bodyHTML renders a minimal HTML wrapper around the plain-text body. The
 // body column is the source of truth; body_html is a best-effort render.
+// Shared with other promoters (e.g. visa) that still create contents rows.
 func bodyHTML(body string) string {
 	if body == "" {
 		return ""
