@@ -16,6 +16,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -388,9 +389,11 @@ func (s *Service) GenerateGuide(ctx context.Context, tenantID pgtype.UUID, req G
 	promptHash := hex.EncodeToString(sum[:])
 
 	// Call the AI Gateway (content_generation category) when a dispatcher
-	// is wired. Failures are non-fatal: the draft is still created so a
-	// reviewer can fill it manually.
-	var aiContent string
+	// is wired. If the dispatcher is nil (tests), the draft is created
+	// with no items. If the dispatcher is wired and the call fails, the
+	// generation fails hard — the admin should retry rather than receive
+	// an empty draft.
+	var checklistItems []CreateItemInput
 	if s.dispatcher != nil {
 		resp, aiErr := s.dispatcher.Dispatch(ctx, "content_generation", ai.Request{
 			Category: "content_generation",
@@ -401,32 +404,16 @@ func (s *Service) GenerateGuide(ctx context.Context, tenantID pgtype.UUID, req G
 			},
 		})
 		if aiErr != nil {
-			slog.Warn("arrivalchecklist: AI Gateway dispatch failed; creating manual draft",
-				"err", aiErr,
-				"destination_space_id", req.DestinationSpaceID,
-				"visa_category", req.VisaCategory,
-				"applicant_type", applicantType,
-			)
-		} else {
-			// The gateway may return the generated text under any of the
-			// common keys depending on the backing provider.
-			if t, ok := resp.Raw["text"].(string); ok {
-				aiContent = t
-			} else if t, ok := resp.Raw["content"].(string); ok {
-				aiContent = t
-			} else if t, ok := resp.Raw["output"].(string); ok {
-				aiContent = t
-			}
-			if aiContent != "" {
-				slog.Info("arrivalchecklist: AI Gateway generated draft content",
-					"destination_space_id", req.DestinationSpaceID,
-					"visa_category", req.VisaCategory,
-					"applicant_type", applicantType,
-					"prompt_hash", promptHash,
-					"content_len", len(aiContent),
-				)
-			}
+			return GenerateGuideResponse{}, fmt.Errorf("arrivalchecklist: AI generation failed: %w", aiErr)
 		}
+		checklistItems = parseChecklistItemsFromAIResponse(resp)
+		slog.Info("arrivalchecklist: AI Gateway generated draft items",
+			"destination_space_id", req.DestinationSpaceID,
+			"visa_category", req.VisaCategory,
+			"applicant_type", applicantType,
+			"prompt_hash", promptHash,
+			"item_count", len(checklistItems),
+		)
 	}
 
 	aiModel := "content_agent_v1"
@@ -446,6 +433,17 @@ func (s *Service) GenerateGuide(ctx context.Context, tenantID pgtype.UUID, req G
 		return GenerateGuideResponse{}, fmt.Errorf("arrivalchecklist: generate draft: %w", err)
 	}
 
+	// Create the AI-generated checklist items for the new guide.
+	if len(checklistItems) > 0 {
+		for i := range checklistItems {
+			checklistItems[i].GuideID = row.ID
+		}
+		if err := s.store.CreateItems(ctx, checklistItems); err != nil {
+			slog.Warn("arrivalchecklist: create items failed, guide draft remains",
+				"guide_id", row.ID, "error", err)
+		}
+	}
+
 	return GenerateGuideResponse{
 		Status:             "accepted",
 		Message:            "Content Agent draft created in 'ai_draft' status. Review and approve to publish.",
@@ -454,6 +452,84 @@ func (s *Service) GenerateGuide(ctx context.Context, tenantID pgtype.UUID, req G
 		VisaCategory:       req.VisaCategory,
 		ApplicantType:      applicantType,
 	}, nil
+}
+
+// parseChecklistItemsFromAIResponse extracts checklist items from the AI
+// gateway response. The response may contain a structured "items" array or
+// plain text; plain text is wrapped into a single item per line.
+func parseChecklistItemsFromAIResponse(resp ai.Response) []CreateItemInput {
+	// Structured: {"items": [{"phase": "day_1_7", "title": "...", "description": "..."}, ...]}
+	if itemsRaw, ok := resp.Raw["items"]; ok {
+		if b, err := json.Marshal(itemsRaw); err == nil {
+			var parsed []struct {
+				Phase        string `json:"phase"`
+				Title        string `json:"title"`
+				Description  string `json:"description"`
+				OfficialLink string `json:"official_link"`
+			}
+			if json.Unmarshal(b, &parsed) == nil {
+				result := make([]CreateItemInput, 0, len(parsed))
+				for i, p := range parsed {
+					if p.Title == "" || p.Phase == "" {
+						continue
+					}
+					item := CreateItemInput{
+						Phase:     p.Phase,
+						Title:     p.Title,
+						SortOrder: int32(i),
+					}
+					if p.Description != "" {
+						item.Description = &p.Description
+					}
+					if p.OfficialLink != "" {
+						item.OfficialLink = &p.OfficialLink
+					}
+					result = append(result, item)
+				}
+				return result
+			}
+		}
+	}
+	// Fallback: plain text under text/content/output — split into items.
+	var text string
+	if t, ok := resp.Raw["text"].(string); ok {
+		text = t
+	} else if t, ok := resp.Raw["content"].(string); ok {
+		text = t
+	} else if t, ok := resp.Raw["output"].(string); ok {
+		text = t
+	}
+	if text == "" {
+		return nil
+	}
+	lines := strings.Split(strings.TrimSpace(text), "\n")
+	result := make([]CreateItemInput, 0, len(lines))
+	for i, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		// Strip common list markers (-, *, 1.).
+		line = strings.TrimPrefix(line, "- ")
+		line = strings.TrimPrefix(line, "* ")
+		if idx := strings.Index(line, ". "); idx >= 0 && idx < 4 {
+			line = line[idx+2:]
+		}
+		phase := "ongoing"
+		if i < 5 {
+			phase = "day_1_7"
+		} else if i < 12 {
+			phase = "week_2_4"
+		} else if i < 20 {
+			phase = "month_1_3"
+		}
+		result = append(result, CreateItemInput{
+			Phase:     phase,
+			Title:     line,
+			SortOrder: int32(i),
+		})
+	}
+	return result
 }
 
 // UserChecklistDTO is the API response for a user's saved arrival checklist

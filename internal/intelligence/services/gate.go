@@ -26,6 +26,7 @@ var highStakesEntityTypes = map[string]bool{
 	"banking":          true, // financial
 	"grants":           true, // grants
 	"health_insurance": true, // health
+	"admission":        true, // immigration/admissions (ADR-088)
 }
 
 // isHighStakes returns true if the entity type is in the high-stakes set

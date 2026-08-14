@@ -15,7 +15,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -314,8 +313,10 @@ func (s *Service) GenerateDraft(ctx context.Context, tenantID pgtype.UUID, input
 	}
 
 	// Call the AI Gateway to populate pathway_steps. The dispatcher is
-	// optional; if it is nil or the call fails, the draft is still created
-	// with empty steps so the reviewer can fill them manually.
+	// optional (nil during tests); if it is nil, the draft is created with
+	// empty steps. If the dispatcher is wired and the call fails, the
+	// generation fails hard — the admin should retry rather than receive
+	// an empty draft they must manually fill.
 	pathwaySteps := []byte("[]")
 	if s.dispatcher != nil {
 		resp, derr := s.dispatcher.Dispatch(ctx, "content_generation", ai.Request{
@@ -326,11 +327,9 @@ func (s *Service) GenerateDraft(ctx context.Context, tenantID pgtype.UUID, input
 			},
 		})
 		if derr != nil {
-			slog.Warn("attestationguide: AI generation failed, creating draft with empty steps",
-				"error", derr)
-		} else {
-			pathwaySteps = parsePathwayStepsFromAIResponse(resp)
+			return PathwayDTO{}, fmt.Errorf("attestationguide: AI generation failed: %w", derr)
 		}
+		pathwaySteps = parsePathwayStepsFromAIResponse(resp)
 	}
 
 	p := Pathway{

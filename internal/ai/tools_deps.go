@@ -554,6 +554,35 @@ type ToolDeps struct {
 	Users            UsersService            // nil → user tools return "not configured"
 	CustomFieldDefs  CustomFieldDefsService  // nil → field/group definition tools return "not configured"
 	ContentLifecycle ContentLifecycleService // nil → content.delete/list/publish return "not configured"
+
+	// ToolsRegistry provides read access to the per-tool tables
+	// (scholarships, visa_routes, housing_guides, etc.) for the
+	// tools.list / tools.read AI Agent handlers. nil → tools handlers
+	// return "not configured".
+	ToolsRegistry ToolsRegistryService
+}
+
+// ToolsRegistryService is the subset of the per-tool services the
+// tools.list / tools.read AI Agent handlers call. The wiring layer
+// (internal/server) adapts the real per-tool services into this
+// interface so the ai package does not import internal/scholarships,
+// internal/visaroutes, etc.
+//
+// Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Tools app tools)
+// Ref: japaconnect-engineering/sections/78-tools-web-surface.md
+type ToolsRegistryService interface {
+	// ListTools returns the catalog of available Japa tools with counts.
+	ListTools(ctx context.Context, tenantID pgtype.UUID) ([]ToolCatalogEntry, error)
+	// ReadTool reads a single record from a tool table by type + ID.
+	ReadTool(ctx context.Context, tenantID pgtype.UUID, toolType, id string) (map[string]any, error)
+}
+
+// ToolCatalogEntry describes a single Japa tool in the registry catalog.
+type ToolCatalogEntry struct {
+	ToolType string `json:"tool_type"`
+	Label    string `json:"label"`
+	Count    int64  `json:"count"`
+	Category string `json:"category"`
 }
 
 // NewToolDeps creates an empty ToolDeps. Fields are set directly or via the
@@ -620,6 +649,12 @@ func (d *ToolDeps) WithCustomFieldDefs(s CustomFieldDefsService) *ToolDeps {
 // WithContentLifecycle injects the content lifecycle service (Phase 9).
 func (d *ToolDeps) WithContentLifecycle(s ContentLifecycleService) *ToolDeps {
 	d.ContentLifecycle = s
+	return d
+}
+
+// WithToolsRegistry injects the tools registry service (Phase 9 tools.list/read).
+func (d *ToolDeps) WithToolsRegistry(s ToolsRegistryService) *ToolDeps {
+	d.ToolsRegistry = s
 	return d
 }
 

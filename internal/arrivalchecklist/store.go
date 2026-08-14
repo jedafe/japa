@@ -398,6 +398,41 @@ RETURNING id, tenant_id, destination_space_id, visa_category, applicant_type,
 	return r, nil
 }
 
+// CreateItemInput holds the fields for a single arrival_checklist_items row.
+type CreateItemInput struct {
+	GuideID               pgtype.UUID
+	Phase                 string
+	Title                 string
+	Description           *string
+	OfficialLink          *string
+	OriginCountryModifier []byte // JSONB
+	SortOrder             int32
+	IsFlagged             bool
+}
+
+// CreateItems batch-inserts arrival_checklist_items rows for a guide.
+// Called after GenerateGuide creates the parent guide row with AI-generated
+// checklist items parsed from the AI Gateway response.
+func (s *Store) CreateItems(ctx context.Context, items []CreateItemInput) error {
+	if len(items) == 0 {
+		return nil
+	}
+	const q = `
+INSERT INTO arrival_checklist_items
+    (guide_id, phase, title, description, official_link, origin_country_modifier, sort_order, is_flagged)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`
+	batch := s.pool.Writer
+	for i, item := range items {
+		if _, err := batch.Exec(ctx, q,
+			item.GuideID, item.Phase, item.Title, item.Description,
+			item.OfficialLink, item.OriginCountryModifier, item.SortOrder, item.IsFlagged,
+		); err != nil {
+			return fmt.Errorf("arrivalchecklist: create item %d: %w", i, err)
+		}
+	}
+	return nil
+}
+
 // UpdateGuideInput holds the mutable fields for a guide update. Only
 // non-nil fields are applied.
 type UpdateGuideInput struct {
