@@ -16,10 +16,12 @@ import (
 // CostOfLivingStore is the persistence surface the CostOfLivingPromoter
 // needs. *stores.Store satisfies this interface; tests substitute a mock.
 //
-// Unlike the scholarship/job promoters, the cost-of-living promoter writes
-// to the comparison_items table (ALTERed with intel columns by migration
-// 000447) and does NOT create a contents guide row — it only creates the
-// comparison_items projection row.
+// Under Approach B (ADR-076 Amendment 1), the cost-of-living promoter
+// writes to the comparison_items table (ALTERed with intel columns by
+// migration 000447, content_id made nullable by migration 000476) and
+// does NOT create a contents guide row — Studio owns editorial content.
+// After successful projection, the intel record is marked status='extracted'
+// so the admin can promote it to Studio for editorial generation.
 //
 // WithTx runs a callback inside a transaction. The callback receives a
 // CostOfLivingTxStore — a narrower interface that only exposes the write
@@ -32,7 +34,7 @@ type CostOfLivingStore interface {
 	GetComparisonItemByIntelRecord(ctx context.Context, tenantID, intelRecordID pgtype.UUID) (gen.ComparisonItem, error)
 	CreateComparisonItemIntel(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateComparisonItemIntelParams) (gen.ComparisonItem, error)
 	UpdateComparisonItemIntel(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateComparisonItemIntelParams) error
-	UpdateIntelRecordPromoted(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateIntelRecordPromotedParams) error
+	UpdateIntelRecordStatus(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateIntelRecordStatusParams) error
 	CreateIntelReviewLog(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateIntelReviewLogParams) error
 	// GetCountrySpace resolves the country-level geo space (§05) id for an
 	// ISO-3 country code, so the promoter can stamp comparison_items.geo_space_id.
@@ -49,14 +51,16 @@ type CostOfLivingStore interface {
 // test mock satisfies it directly.
 type CostOfLivingTxStore interface {
 	CreateComparisonItemIntel(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateComparisonItemIntelParams) (gen.ComparisonItem, error)
-	UpdateIntelRecordPromoted(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateIntelRecordPromotedParams) error
+	UpdateIntelRecordStatus(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateIntelRecordStatusParams) error
 	UpdateComparisonItemIntel(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateComparisonItemIntelParams) error
 	CreateIntelReviewLog(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateIntelReviewLogParams) error
 }
 
 // CostOfLivingPromoter promotes cost_of_living intel_records into the
-// comparison_items projection table. Unlike scholarships/jobs, it does not
-// create a contents guide row — it only creates the comparison_items row.
+// comparison_items projection table. Under Approach B (ADR-076 Amendment 1),
+// it does NOT create a contents guide row — Studio owns editorial content.
+// After successful projection, the intel record is marked status='extracted'
+// so the admin can promote it to Studio for editorial generation.
 //
 // It implements the editorial-override-respect invariant: on the update
 // path, any field present in comparison_items.editorial_overrides is left
@@ -105,9 +109,10 @@ var ErrNotCostOfLiving = fmt.Errorf("promoter: intel record is not a cost_of_liv
 
 // Promote maps the intel record identified by recordID to a comparison_items
 // projection row, creating it or updating it in place while respecting
-// editorial overrides. Unlike the scholarship/job promoters, no contents
-// guide row is created — the cost-of-living domain only projects into
-// comparison_items.
+// editorial overrides. Under Approach B, no contents guide row is created
+// — the promoter only writes the comparison_items projection and marks
+// the intel record status='extracted'. Studio generates the editorial
+// comparison article when the admin promotes the record.
 func (p *CostOfLivingPromoter) Promote(ctx context.Context, recordID uuid.UUID) (PromoteResult, error) {
 	pgID := uuidToPg(recordID)
 
@@ -143,9 +148,9 @@ func (p *CostOfLivingPromoter) Promote(ctx context.Context, recordID uuid.UUID) 
 }
 
 // costOfLivingCreatePath inserts the comparison_items projection row and
-// flips the intel record to 'published' with the promoted row id. Both
-// writes run inside a single transaction so a failure in either rolls back
-// the other — no orphaned projection rows (BUG-01 fix, §6.2).
+// marks the intel record status='extracted' (Approach B). Both writes run
+// inside a single transaction so a failure in either rolls back the other
+// — no orphaned projection rows (BUG-01 fix, §6.2).
 func (p *CostOfLivingPromoter) costOfLivingCreatePath(ctx context.Context, record gen.IntelRecord, source gen.IntelSource, ext extractor.Extraction) (PromoteResult, error) {
 	// The title is the city name; fall back to the source name rather than
 	// failing the promotion when no city was extracted.
@@ -175,15 +180,18 @@ func (p *CostOfLivingPromoter) costOfLivingCreatePath(ctx context.Context, recor
 		if err != nil {
 			return fmt.Errorf("promoter: create comparison item: %w", err)
 		}
-		if err := tx.UpdateIntelRecordPromoted(ctx, p.tenantID, gen.UpdateIntelRecordPromotedParams{
-			ID:               record.ID,
-			PromotedRecordID: item.ID,
+		if err := tx.UpdateIntelRecordStatus(ctx, p.tenantID, gen.UpdateIntelRecordStatusParams{
+			TenantID: p.tenantID,
+			ID:       record.ID,
+			Status:   "extracted",
 		}); err != nil {
-			return fmt.Errorf("promoter: mark intel record promoted: %w", err)
+			return fmt.Errorf("promoter: mark intel record extracted: %w", err)
 		}
 		result = PromoteResult{
 			DomainID: pgToUUID(item.ID),
 			Action:   ActionCreated,
+			// Approach B: no contents row created by the promoter.
+			ContentID: uuid.Nil,
 		}
 		return nil
 	})
