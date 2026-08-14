@@ -270,6 +270,19 @@ func (s *Service) ListContentTypes(ctx context.Context, tenantID pgtype.UUID) Co
 		{Type: "event", Label: "Event", CanAutoPublish: false},
 		{Type: "job_listing", Label: "Job Listing", CanAutoPublish: false},
 		{Type: "service_listing", Label: "Service Listing", CanAutoPublish: false},
+		// Tool-table content types (Approach B, ADR-076 Amendment 1).
+		// These generate editorial content for dedicated projection tables.
+		// None can auto-publish — all require HITL review.
+		{Type: "housing_guide", Label: "Housing Guide", CanAutoPublish: false},
+		{Type: "attestation_guide", Label: "Attestation Guide", CanAutoPublish: false},
+		{Type: "visa_route", Label: "Visa Route", CanAutoPublish: false},
+		{Type: "arrival_checklist", Label: "Arrival Checklist", CanAutoPublish: false},
+		{Type: "credential_pathway", Label: "Credential Pathway", CanAutoPublish: false},
+		{Type: "language_test_requirement", Label: "Language Test Requirement", CanAutoPublish: false},
+		{Type: "tax_obligation_guide", Label: "Tax Obligation Guide", CanAutoPublish: false},
+		{Type: "community_organisation", Label: "Community Organisation", CanAutoPublish: false},
+		{Type: "wiki_page", Label: "Wiki Page", CanAutoPublish: false},
+		{Type: "calendar_entry", Label: "Calendar Entry", CanAutoPublish: false},
 	}
 
 	// Filter by auto_publish_types setting.
