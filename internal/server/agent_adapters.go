@@ -871,12 +871,19 @@ func (a *agentUsersAdapter) UpdateProfile(ctx context.Context, tenantID, userID 
 // lives in the wiring layer (internal/server) so the worker package does not
 // import internal/studio, internal/content, internal/ai, or internal/personas
 // (which would create cycles).
+// intelRecordLoader is the subset of the intelligence store needed to
+// load extraction context for Studio generation (Approach B).
+type intelRecordLoader interface {
+	GetIntelRecord(ctx context.Context, tenantID, id pgtype.UUID) (gen.IntelRecord, error)
+}
+
 type studioDraftProcessorAdapter struct {
 	studio       studioProcessorService
 	contentSvc   *content.Service
 	aiStore      *ai.Store
 	personaStore personaUserIDResolver
 	dispatcher   aiDispatcherPort
+	intelStore   intelRecordLoader
 }
 
 // studioProcessorService is the subset of *studio.Service the adapter calls.
@@ -946,10 +953,22 @@ func (a *studioDraftProcessorAdapter) GenerateJob(ctx context.Context, tenantID,
 		return fmt.Errorf("studio: generate: resolve persona: %w", err)
 	}
 
+	// Approach B: load intel_record extraction as factual grounding context.
+	var extractionContext string
+	if job.IntelRecordID.Valid && a.intelStore != nil {
+		record, rerr := a.intelStore.GetIntelRecord(ctx, tenantID, job.IntelRecordID)
+		if rerr == nil && len(record.Extracted) > 0 {
+			extractionContext = string(record.Extracted)
+		} else if rerr != nil {
+			slog.Warn("studio: generate: load intel_record failed, generating without extraction context",
+				"job_id", jobID, "intel_record_id", job.IntelRecordID, "error", rerr)
+		}
+	}
+
 	// 3. Generate the draft body via the AI gateway.
 	body := job.TopicPrompt
 	if a.dispatcher != nil {
-		generated, gerr := a.studioGenerateBody(ctx, tenantID, job, persona)
+		generated, gerr := a.studioGenerateBody(ctx, tenantID, job, persona, extractionContext)
 		if gerr != nil {
 			_ = a.studio.MarkJobFailed(ctx, tenantID, jobID, "AI generation failed: "+gerr.Error())
 			return fmt.Errorf("studio: generate: body: %w", gerr)
@@ -1044,13 +1063,16 @@ func (a *studioDraftProcessorAdapter) GenerateJob(ctx context.Context, tenantID,
 
 // studioGenerateBody synthesizes a draft body via the AI gateway, weaving in
 // the persona voice prompt when present.
-func (a *studioDraftProcessorAdapter) studioGenerateBody(ctx context.Context, tenantID pgtype.UUID, job studio.Job, persona gen.GetAIPersonaByIDRow) (string, error) {
+func (a *studioDraftProcessorAdapter) studioGenerateBody(ctx context.Context, tenantID pgtype.UUID, job studio.Job, persona gen.GetAIPersonaByIDRow, extractionContext string) (string, error) {
 	prompt := fmt.Sprintf("Generate a %s draft about: %s", job.ContentType, job.TopicPrompt)
 	if persona.VoicePrompt != nil && *persona.VoicePrompt != "" {
 		prompt = fmt.Sprintf("Voice: %s\n\n%s", *persona.VoicePrompt, prompt)
 	}
 	if job.GuideCategory != nil && *job.GuideCategory != "" {
 		prompt += fmt.Sprintf("\nGuide category: %s", *job.GuideCategory)
+	}
+	if extractionContext != "" {
+		prompt += fmt.Sprintf("\n\nStructured data from external source (use as factual grounding for the article):\n%s", extractionContext)
 	}
 	resp, err := a.dispatcher.Dispatch(ctx, "content_generation", ai.Request{
 		Category: "content_generation",

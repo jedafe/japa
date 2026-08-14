@@ -1378,6 +1378,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	spamPipeline.SetClassifier(spam.NewAIClassifier(aiDispatcher))
 
 	aiStore := ai.NewStore(database.Reader, database.Writer)
+	intelStores := intel_stores.NewStore(database)
 
 	// Register the full §75 generation pipeline adapter (persona voice →
 	// AI gateway → draft content → HITL review / auto-publish) as the
@@ -1389,6 +1390,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		aiStore:      aiStore,
 		personaStore: personasStore,
 		dispatcher:   aiDispatcher,
+		intelStore:   intelStores,
 	})
 	aiHandlers := ai.NewHandlers(aiDispatcher, aiStore)
 	aiHandlers.SetHonchoClient(honcho.NewClient(cfg.HonchoURL))
@@ -1575,7 +1577,6 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// break the import cycle documented in internal/worker/intelligence.go).
 	intelSourcesStore := sources.NewStore(database)
 	intelSourcesService := sources.NewService(intelSourcesStore)
-	intelStores := intel_stores.NewStore(database)
 	intelScheduler := scheduler.NewScheduler(&intelSchedulerSourceAdapter{store: intelSourcesStore, tenantID: defaultTenantID}, vkClient.Redis(), defaultTenantID)
 	intelDedupService := dedup.NewService(intelStores, defaultTenantID)
 	intelEventPublisher := events.NewAsynqEventPublisher(asynqClient)
