@@ -89,6 +89,12 @@ type SessionRow struct {
 	TokensUsed         *int32
 	CreatedAt          pgtype.Timestamptz
 	ExpiresAt          pgtype.Timestamptz
+	// ADR-088 provenance columns (migration 000473).
+	AIGenerated       bool
+	AIPromptHash      *string
+	HITLReviewedBy    pgtype.UUID
+	HITLReviewedAt    pgtype.Timestamptz
+	HITLReviewNotes   *string
 }
 
 // ListStandards returns all cv_standards rows joined with destination
@@ -234,6 +240,7 @@ type SessionInput struct {
 	InputText          string
 	OutputFormat       string
 	AIModel            *string
+	AIPromptHash       *string // SHA-256 of input_text (ADR-088)
 }
 
 // CreateSession inserts a new cv_format_sessions row with status='pending'
@@ -247,22 +254,27 @@ func (s *Store) CreateSession(ctx context.Context, input SessionInput) (SessionR
 	const q = `
 INSERT INTO cv_format_sessions (
     tenant_id, user_id, origin_space_id, destination_space_id,
-    input_text, output_format, status, ai_model
-) VALUES ($1, $2, $3, $4, $5, $6, 'pending', $7)
+    input_text, output_format, status, ai_model,
+    ai_generated, ai_prompt_hash
+) VALUES ($1, $2, $3, $4, $5, $6, 'pending', $7, true, $8)
 RETURNING id, tenant_id, user_id, origin_space_id, destination_space_id,
           input_text, output_text, output_format, status, ai_model,
-          tokens_used, created_at, expires_at
+          tokens_used, created_at, expires_at,
+          ai_generated, ai_prompt_hash, hitl_reviewed_by,
+          hitl_reviewed_at, hitl_review_notes
 `
 	var r SessionRow
 	err := s.pool.Writer.QueryRow(ctx, q,
 		input.TenantID, input.UserID, input.OriginSpaceID,
 		input.DestinationSpaceID, input.InputText, outputFormat,
-		input.AIModel,
+		input.AIModel, input.AIPromptHash,
 	).Scan(
 		&r.ID, &r.TenantID, &r.UserID, &r.OriginSpaceID,
 		&r.DestinationSpaceID, &r.InputText, &r.OutputText,
 		&r.OutputFormat, &r.Status, &r.AIModel, &r.TokensUsed,
 		&r.CreatedAt, &r.ExpiresAt,
+		&r.AIGenerated, &r.AIPromptHash, &r.HITLReviewedBy,
+		&r.HITLReviewedAt, &r.HITLReviewNotes,
 	)
 	if err != nil {
 		return SessionRow{}, fmt.Errorf("cvformatter: create session: %w", err)
@@ -275,7 +287,9 @@ func (s *Store) GetSessionByID(ctx context.Context, id pgtype.UUID) (SessionRow,
 	const q = `
 SELECT id, tenant_id, user_id, origin_space_id, destination_space_id,
        input_text, output_text, output_format, status, ai_model,
-       tokens_used, created_at, expires_at
+       tokens_used, created_at, expires_at,
+       ai_generated, ai_prompt_hash, hitl_reviewed_by,
+       hitl_reviewed_at, hitl_review_notes
 FROM cv_format_sessions
 WHERE id = $1
 `
@@ -285,6 +299,8 @@ WHERE id = $1
 		&r.DestinationSpaceID, &r.InputText, &r.OutputText,
 		&r.OutputFormat, &r.Status, &r.AIModel, &r.TokensUsed,
 		&r.CreatedAt, &r.ExpiresAt,
+		&r.AIGenerated, &r.AIPromptHash, &r.HITLReviewedBy,
+		&r.HITLReviewedAt, &r.HITLReviewNotes,
 	)
 	if err != nil {
 		if err == pgx.ErrNoRows {
