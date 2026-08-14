@@ -43,6 +43,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/tenant"
 )
 
@@ -65,25 +66,10 @@ func NewHandlers(service *Service) *Handlers {
 // Shared helpers
 // ---------------------------------------------------------------------------
 
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-
-	if err := json.NewEncoder(w).Encode(v); err != nil {
-		slog.Warn("json encode error", "error", err)
-	}
-}
-
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, map[string]any{
-		"error": map[string]string{"code": code, "message": message},
-	})
-}
-
 func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
 
@@ -140,12 +126,12 @@ func (h *Handlers) ListPrograms(w http.ResponseWriter, r *http.Request) {
 	programs, err := h.Service.ListPrograms(r.Context(), tenantID, limit, offset)
 	if err != nil {
 		slog.Error("listing mentorship programs", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list programs")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list programs")
 
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": programs})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": programs})
 }
 
 // GetProgram returns a single mentorship program by ID.
@@ -158,17 +144,17 @@ func (h *Handlers) GetProgram(w http.ResponseWriter, r *http.Request) {
 
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid program ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid program ID")
 		return
 	}
 
 	program, err := h.Service.GetProgram(r.Context(), tenantID, id)
 	if err != nil {
-		writeError(w, http.StatusNotFound, "not_found", "Program not found")
+		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Program not found")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": program})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": program})
 }
 
 // CreateProgram creates a new mentorship program.
@@ -186,12 +172,12 @@ func (h *Handlers) CreateProgram(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
 		return
 	}
 
 	if input.Name == "" {
-		writeError(w, http.StatusBadRequest, "validation_error", "name is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "name is required")
 		return
 	}
 
@@ -203,12 +189,12 @@ func (h *Handlers) CreateProgram(w http.ResponseWriter, r *http.Request) {
 	program, err := h.Service.CreateProgram(r.Context(), tenantID, input.Name, input.Description, isActive)
 	if err != nil {
 		slog.Error("creating mentorship program", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to create program")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to create program")
 
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": program})
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": program})
 }
 
 // UpdateProgram updates an existing mentorship program.
@@ -221,7 +207,7 @@ func (h *Handlers) UpdateProgram(w http.ResponseWriter, r *http.Request) {
 
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid program ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid program ID")
 		return
 	}
 
@@ -232,19 +218,19 @@ func (h *Handlers) UpdateProgram(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
 		return
 	}
 
 	program, err := h.Service.UpdateProgram(r.Context(), tenantID, id, input.Name, input.Description, input.IsActive)
 	if err != nil {
 		slog.Error("updating mentorship program", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to update program")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update program")
 
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": program})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": program})
 }
 
 // ---------------------------------------------------------------------------
@@ -265,12 +251,12 @@ func (h *Handlers) ListMatches(w http.ResponseWriter, r *http.Request) {
 	matches, err := h.Service.ListMatches(r.Context(), tenantID, limit, offset)
 	if err != nil {
 		slog.Error("listing mentorship matches", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list matches")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list matches")
 
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": matches})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": matches})
 }
 
 // UpdateMatch updates a mentor-mentee match status.
@@ -283,7 +269,7 @@ func (h *Handlers) UpdateMatch(w http.ResponseWriter, r *http.Request) {
 
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid match ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid match ID")
 		return
 	}
 
@@ -292,24 +278,24 @@ func (h *Handlers) UpdateMatch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
 		return
 	}
 
 	if input.Status == nil {
-		writeError(w, http.StatusBadRequest, "validation_error", "status is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "status is required")
 		return
 	}
 
 	match, err := h.Service.UpdateMatch(r.Context(), tenantID, id, *input.Status)
 	if err != nil {
 		slog.Error("updating mentorship match", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to update match")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update match")
 
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": match})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": match})
 }
 
 // DeleteProgram deletes a mentorship program.
@@ -322,23 +308,23 @@ func (h *Handlers) DeleteProgram(w http.ResponseWriter, r *http.Request) {
 
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid program ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid program ID")
 		return
 	}
 
 	if err := h.Service.DeleteProgram(r.Context(), tenantID, id); err != nil {
 		if errors.Is(err, ErrProgramNotFound) {
-			writeError(w, http.StatusNotFound, "not_found", "Program not found")
+			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Program not found")
 			return
 		}
 
 		slog.Error("deleting mentorship program", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to delete program")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to delete program")
 
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"deleted": true}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"deleted": true}})
 }
 
 // =====================================================================
@@ -349,7 +335,7 @@ func (h *Handlers) DeleteProgram(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) requireAuthUser(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	u := auth.FromContext(r.Context())
 	if u == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return pgtype.UUID{}, false
 	}
 
@@ -388,7 +374,7 @@ func (h *Handlers) ListMentors(w http.ResponseWriter, r *http.Request) {
 	var destSpaceID pgtype.UUID
 	if v := r.URL.Query().Get("dest"); v != "" {
 		if err := destSpaceID.Scan(v); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_dest", "Invalid destination space ID")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_dest", "Invalid destination space ID")
 			return
 		}
 	}
@@ -406,11 +392,11 @@ func (h *Handlers) ListMentors(w http.ResponseWriter, r *http.Request) {
 	mentors, err := h.Service.ListMentors(r.Context(), tenantID, destSpaceID, areas, sort, nil, limit, offset)
 	if err != nil {
 		slog.Error("listing mentors", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list mentors")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list mentors")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": mentors})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": mentors})
 }
 
 // GetMentorByUsername returns a mentor's public profile.
@@ -423,22 +409,22 @@ func (h *Handlers) GetMentorByUsername(w http.ResponseWriter, r *http.Request) {
 
 	username := chi.URLParam(r, "username")
 	if username == "" {
-		writeError(w, http.StatusBadRequest, "missing_username", "Username is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_username", "Username is required")
 		return
 	}
 
 	mentor, err := h.Service.GetMentorByUsername(r.Context(), tenantID, username)
 	if err != nil {
 		if errors.Is(err, ErrMentorNotFound) {
-			writeError(w, http.StatusNotFound, "mentor_not_found", "Mentor not found")
+			errpkg.WriteError(w, http.StatusNotFound, "mentor_not_found", "Mentor not found")
 			return
 		}
 		slog.Error("getting mentor by username", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to get mentor")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to get mentor")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": mentor})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": mentor})
 }
 
 // CompareMentors returns up to 4 mentors for the comparison endpoint.
@@ -451,13 +437,13 @@ func (h *Handlers) CompareMentors(w http.ResponseWriter, r *http.Request) {
 
 	idsStr := r.URL.Query().Get("ids")
 	if idsStr == "" {
-		writeError(w, http.StatusBadRequest, "missing_ids", "ids parameter is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_ids", "ids parameter is required")
 		return
 	}
 
 	idStrs := strings.Split(idsStr, ",")
 	if len(idStrs) > 4 {
-		writeError(w, http.StatusBadRequest, "too_many_ids", "Maximum 4 mentors can be compared")
+		errpkg.WriteError(w, http.StatusBadRequest, "too_many_ids", "Maximum 4 mentors can be compared")
 		return
 	}
 
@@ -465,7 +451,7 @@ func (h *Handlers) CompareMentors(w http.ResponseWriter, r *http.Request) {
 	for _, s := range idStrs {
 		var id pgtype.UUID
 		if err := id.Scan(strings.TrimSpace(s)); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid mentor ID: "+s)
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid mentor ID: "+s)
 			return
 		}
 		userIDs = append(userIDs, id)
@@ -474,11 +460,11 @@ func (h *Handlers) CompareMentors(w http.ResponseWriter, r *http.Request) {
 	mentors, err := h.Service.GetMentorsByIDs(r.Context(), tenantID, userIDs)
 	if err != nil {
 		slog.Error("comparing mentors", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to compare mentors")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to compare mentors")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": mentors})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": mentors})
 }
 
 // GetMyMentorProfile returns the current user's mentor profile settings.
@@ -497,11 +483,11 @@ func (h *Handlers) GetMyMentorProfile(w http.ResponseWriter, r *http.Request) {
 	profile, err := h.Service.GetMentorProfile(r.Context(), tenantID, userID)
 	if err != nil {
 		slog.Error("getting mentor profile", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to get mentor profile")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to get mentor profile")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": profile})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": profile})
 }
 
 // UpdateMyMentorProfile toggles is_mentor and sets capacity/areas/bio.
@@ -518,14 +504,14 @@ func (h *Handlers) UpdateMyMentorProfile(w http.ResponseWriter, r *http.Request)
 	}
 
 	var input struct {
-		IsMentor       *bool   `json:"is_mentor,omitempty"`
-		MentorCapacity *int16  `json:"mentor_capacity,omitempty"`
+		IsMentor       *bool    `json:"is_mentor,omitempty"`
+		MentorCapacity *int16   `json:"mentor_capacity,omitempty"`
 		MentorAreas    []string `json:"mentor_areas,omitempty"`
-		MentorBio      *string `json:"mentor_bio,omitempty"`
+		MentorBio      *string  `json:"mentor_bio,omitempty"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
 		return
 	}
 
@@ -533,16 +519,16 @@ func (h *Handlers) UpdateMyMentorProfile(w http.ResponseWriter, r *http.Request)
 		input.IsMentor, input.MentorCapacity, input.MentorAreas, input.MentorBio)
 	if err != nil {
 		if errors.Is(err, ErrCapacityExceeded) {
-			writeError(w, http.StatusBadRequest, "capacity_exceeded",
+			errpkg.WriteError(w, http.StatusBadRequest, "capacity_exceeded",
 				"mentor_capacity exceeds the platform max_capacity setting")
 			return
 		}
 		slog.Error("updating mentor profile", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to update mentor profile")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update mentor profile")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": profile})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": profile})
 }
 
 // RequestMentorship creates a new mentorship request.
@@ -565,25 +551,25 @@ func (h *Handlers) RequestMentorship(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
 		return
 	}
 
 	if input.MentorID == "" {
-		writeError(w, http.StatusBadRequest, "validation_error", "mentor_id is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "mentor_id is required")
 		return
 	}
 
 	var mentorID pgtype.UUID
 	if err := mentorID.Scan(input.MentorID); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_mentor_id", "Invalid mentor ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_mentor_id", "Invalid mentor ID")
 		return
 	}
 
 	var destSpaceID pgtype.UUID
 	if input.DestinationSpaceID != nil && *input.DestinationSpaceID != "" {
 		if err := destSpaceID.Scan(*input.DestinationSpaceID); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_dest", "Invalid destination space ID")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_dest", "Invalid destination space ID")
 			return
 		}
 	}
@@ -592,18 +578,18 @@ func (h *Handlers) RequestMentorship(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		switch {
 		case errors.Is(err, ErrCannotSelfMentor):
-			writeError(w, http.StatusBadRequest, "cannot_self_mentor", "Cannot request mentorship from yourself")
+			errpkg.WriteError(w, http.StatusBadRequest, "cannot_self_mentor", "Cannot request mentorship from yourself")
 		case errors.Is(err, ErrDuplicateRequest):
-			writeError(w, http.StatusConflict, "duplicate_request",
+			errpkg.WriteError(w, http.StatusConflict, "duplicate_request",
 				"A pending request to this mentor already exists")
 		default:
 			slog.Error("creating mentorship connection", "error", err)
-			writeError(w, http.StatusInternalServerError, "internal_error", "Failed to create mentorship request")
+			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to create mentorship request")
 		}
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": conn})
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": conn})
 }
 
 // ListOutgoingConnections lists requests sent by the current user (as mentee).
@@ -625,11 +611,11 @@ func (h *Handlers) ListOutgoingConnections(w http.ResponseWriter, r *http.Reques
 	conns, err := h.Service.ListOutgoingConnections(r.Context(), tenantID, userID, status, limit, offset)
 	if err != nil {
 		slog.Error("listing outgoing connections", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list outgoing connections")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list outgoing connections")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": conns})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": conns})
 }
 
 // CancelOutgoingConnection cancels a pending request by the mentee.
@@ -647,21 +633,21 @@ func (h *Handlers) CancelOutgoingConnection(w http.ResponseWriter, r *http.Reque
 
 	var connID pgtype.UUID
 	if err := connID.Scan(chi.URLParam(r, "id")); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid connection ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid connection ID")
 		return
 	}
 
 	if err := h.Service.CancelOutgoingConnection(r.Context(), tenantID, userID, connID); err != nil {
 		if errors.Is(err, ErrConnectionNotFound) {
-			writeError(w, http.StatusNotFound, "not_found", "Connection not found or not pending")
+			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Connection not found or not pending")
 			return
 		}
 		slog.Error("cancelling outgoing connection", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to cancel connection")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to cancel connection")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"cancelled": true}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"cancelled": true}})
 }
 
 // ListIncomingConnections lists requests received by the current user (as mentor).
@@ -683,11 +669,11 @@ func (h *Handlers) ListIncomingConnections(w http.ResponseWriter, r *http.Reques
 	conns, err := h.Service.ListIncomingConnections(r.Context(), tenantID, userID, status, limit, offset)
 	if err != nil {
 		slog.Error("listing incoming connections", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list incoming connections")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list incoming connections")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": conns})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": conns})
 }
 
 // AcceptConnection accepts a pending mentorship request.
@@ -706,7 +692,7 @@ func (h *Handlers) AcceptConnection(w http.ResponseWriter, r *http.Request) {
 
 	var connID pgtype.UUID
 	if err := connID.Scan(chi.URLParam(r, "id")); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid connection ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid connection ID")
 		return
 	}
 
@@ -714,17 +700,17 @@ func (h *Handlers) AcceptConnection(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		switch {
 		case errors.Is(err, ErrConnectionNotFound):
-			writeError(w, http.StatusNotFound, "not_found", "Connection not found or not pending")
+			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Connection not found or not pending")
 		case errors.Is(err, ErrNotAuthorized):
-			writeError(w, http.StatusForbidden, "forbidden", "Only the mentor can accept this request")
+			errpkg.WriteError(w, http.StatusForbidden, "forbidden", "Only the mentor can accept this request")
 		default:
 			slog.Error("accepting connection", "error", err)
-			writeError(w, http.StatusInternalServerError, "internal_error", "Failed to accept connection")
+			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to accept connection")
 		}
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": conn})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": conn})
 }
 
 // DeclineConnection declines a pending mentorship request.
@@ -743,7 +729,7 @@ func (h *Handlers) DeclineConnection(w http.ResponseWriter, r *http.Request) {
 
 	var connID pgtype.UUID
 	if err := connID.Scan(chi.URLParam(r, "id")); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid connection ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid connection ID")
 		return
 	}
 
@@ -751,17 +737,17 @@ func (h *Handlers) DeclineConnection(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		switch {
 		case errors.Is(err, ErrConnectionNotFound):
-			writeError(w, http.StatusNotFound, "not_found", "Connection not found or not pending")
+			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Connection not found or not pending")
 		case errors.Is(err, ErrNotAuthorized):
-			writeError(w, http.StatusForbidden, "forbidden", "Only the mentor can decline this request")
+			errpkg.WriteError(w, http.StatusForbidden, "forbidden", "Only the mentor can decline this request")
 		default:
 			slog.Error("declining connection", "error", err)
-			writeError(w, http.StatusInternalServerError, "internal_error", "Failed to decline connection")
+			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to decline connection")
 		}
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": conn})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": conn})
 }
 
 // CompleteConnection completes an active connection.
@@ -780,7 +766,7 @@ func (h *Handlers) CompleteConnection(w http.ResponseWriter, r *http.Request) {
 
 	var connID pgtype.UUID
 	if err := connID.Scan(chi.URLParam(r, "id")); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid connection ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid connection ID")
 		return
 	}
 
@@ -788,17 +774,17 @@ func (h *Handlers) CompleteConnection(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		switch {
 		case errors.Is(err, ErrConnectionNotFound):
-			writeError(w, http.StatusNotFound, "not_found", "Connection not found or not active")
+			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Connection not found or not active")
 		case errors.Is(err, ErrNotAuthorized):
-			writeError(w, http.StatusForbidden, "forbidden", "Only a participant can complete this connection")
+			errpkg.WriteError(w, http.StatusForbidden, "forbidden", "Only a participant can complete this connection")
 		default:
 			slog.Error("completing connection", "error", err)
-			writeError(w, http.StatusInternalServerError, "internal_error", "Failed to complete connection")
+			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to complete connection")
 		}
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": conn})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": conn})
 }
 
 // CancelConnection cancels an active connection.
@@ -817,7 +803,7 @@ func (h *Handlers) CancelConnection(w http.ResponseWriter, r *http.Request) {
 
 	var connID pgtype.UUID
 	if err := connID.Scan(chi.URLParam(r, "id")); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid connection ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid connection ID")
 		return
 	}
 
@@ -828,7 +814,7 @@ func (h *Handlers) CancelConnection(w http.ResponseWriter, r *http.Request) {
 	// Body is optional for cancel.
 	if r.ContentLength > 0 {
 		if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
 			return
 		}
 	}
@@ -837,17 +823,17 @@ func (h *Handlers) CancelConnection(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		switch {
 		case errors.Is(err, ErrConnectionNotFound):
-			writeError(w, http.StatusNotFound, "not_found", "Connection not found or not active")
+			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Connection not found or not active")
 		case errors.Is(err, ErrNotAuthorized):
-			writeError(w, http.StatusForbidden, "forbidden", "Only a participant can cancel this connection")
+			errpkg.WriteError(w, http.StatusForbidden, "forbidden", "Only a participant can cancel this connection")
 		default:
 			slog.Error("cancelling connection", "error", err)
-			writeError(w, http.StatusInternalServerError, "internal_error", "Failed to cancel connection")
+			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to cancel connection")
 		}
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": conn})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": conn})
 }
 
 // ListAllConnections lists all connections for admin.
@@ -872,11 +858,11 @@ func (h *Handlers) ListAllConnections(w http.ResponseWriter, r *http.Request) {
 	conns, err := h.Service.ListAllConnections(r.Context(), tenantID, status, mentorID, menteeID, limit, offset)
 	if err != nil {
 		slog.Error("listing all connections", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list connections")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list connections")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": conns})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": conns})
 }
 
 // AdminUpdateConnection allows an admin to override a connection's status.
@@ -889,7 +875,7 @@ func (h *Handlers) AdminUpdateConnection(w http.ResponseWriter, r *http.Request)
 
 	var connID pgtype.UUID
 	if err := connID.Scan(chi.URLParam(r, "id")); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid connection ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid connection ID")
 		return
 	}
 
@@ -898,25 +884,25 @@ func (h *Handlers) AdminUpdateConnection(w http.ResponseWriter, r *http.Request)
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
 		return
 	}
 
 	if input.Status == nil {
-		writeError(w, http.StatusBadRequest, "validation_error", "status is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "status is required")
 		return
 	}
 
 	conn, err := h.Service.AdminUpdateConnection(r.Context(), tenantID, connID, *input.Status)
 	if err != nil {
 		if errors.Is(err, ErrConnectionNotFound) {
-			writeError(w, http.StatusNotFound, "not_found", "Connection not found")
+			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Connection not found")
 			return
 		}
 		slog.Error("admin updating connection", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to update connection")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update connection")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": conn})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": conn})
 }

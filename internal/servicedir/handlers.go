@@ -13,7 +13,8 @@
 //	PATCH /api/v1/admin/services/:id/claim/:claim_id — resolve claim (auth, service.verify)
 //
 // Ref: japaconnect-engineering/sections/98-service-directory.md
-//      japaconnect-engineering/adr/ADR-106-service-directory.md
+//
+//	japaconnect-engineering/adr/ADR-106-service-directory.md
 package servicedir
 
 import (
@@ -29,6 +30,7 @@ import (
 
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/config"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/tenant"
 )
 
@@ -48,24 +50,10 @@ func NewHandlers(service *Service, settings *config.Settings) *Handlers {
 // Shared helpers (same pattern as story/handlers.go)
 // ---------------------------------------------------------------------------
 
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	if err := json.NewEncoder(w).Encode(v); err != nil {
-		slog.Error("servicedir: encode response", "error", err)
-	}
-}
-
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, map[string]any{
-		"error": map[string]string{"code": code, "message": message},
-	})
-}
-
 func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
 	return t.ID, true
@@ -74,7 +62,7 @@ func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	u := auth.FromContext(r.Context())
 	if u == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
 	return u, true
@@ -83,7 +71,7 @@ func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUse
 func scanUUIDParam(w http.ResponseWriter, r *http.Request, name string) (pgtype.UUID, bool) {
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, name)); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid "+name)
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid "+name)
 		return pgtype.UUID{}, false
 	}
 	return id, true
@@ -118,14 +106,14 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "service_directory_disabled", "Service directory is not available")
+		errpkg.WriteError(w, http.StatusNotFound, "service_directory_disabled", "Service directory is not available")
 		return
 	}
 
 	var destSpaceID pgtype.UUID
 	if v := r.URL.Query().Get("dest"); v != "" {
 		if err := destSpaceID.Scan(v); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid destination space ID")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid destination space ID")
 			return
 		}
 	}
@@ -133,7 +121,7 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 	var citySpaceID pgtype.UUID
 	if v := r.URL.Query().Get("city"); v != "" {
 		if err := citySpaceID.Scan(v); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid city space ID")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid city space ID")
 			return
 		}
 	}
@@ -155,11 +143,11 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 	services, total, err := h.service.List(r.Context(), tenantID, destSpaceID, citySpaceID, serviceCategory, originCommunity, verifiedPtr, sort, page, limit)
 	if err != nil {
 		slog.Error("servicedir: list failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "list_failed", "Failed to list services")
+		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list services")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": services,
 		"pagination": map[string]any{
 			"page":  page,
@@ -177,28 +165,28 @@ func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "service_directory_disabled", "Service directory is not available")
+		errpkg.WriteError(w, http.StatusNotFound, "service_directory_disabled", "Service directory is not available")
 		return
 	}
 
 	slug := chi.URLParam(r, "slug")
 	if slug == "" {
-		writeError(w, http.StatusBadRequest, "missing_slug", "Service slug is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_slug", "Service slug is required")
 		return
 	}
 
 	service, err := h.service.GetBySlug(r.Context(), slug, tenantID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "service_not_found", "Service not found")
+			errpkg.WriteError(w, http.StatusNotFound, "service_not_found", "Service not found")
 			return
 		}
 		slog.Error("servicedir: get by slug failed", "slug", slug, "error", err)
-		writeError(w, http.StatusInternalServerError, "get_failed", "Failed to get service")
+		errpkg.WriteError(w, http.StatusInternalServerError, "get_failed", "Failed to get service")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": service})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": service})
 }
 
 // ---------------------------------------------------------------------------
@@ -218,33 +206,33 @@ func (h *Handlers) HandleCreate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "service_directory_disabled", "Service directory is not available")
+		errpkg.WriteError(w, http.StatusNotFound, "service_directory_disabled", "Service directory is not available")
 		return
 	}
 
 	var input CreateServiceInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
 
 	if input.Title == "" {
-		writeError(w, http.StatusBadRequest, "missing_title", "Title is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_title", "Title is required")
 		return
 	}
 
 	service, err := h.service.Create(r.Context(), tenantID, user.UserID, input)
 	if err != nil {
 		if errors.Is(err, ErrInvalidCategory) {
-			writeError(w, http.StatusBadRequest, "invalid_category", "service_category must be one of immigration_legal|relocation|finance|education|health|community|other")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_category", "service_category must be one of immigration_legal|relocation|finance|education|health|community|other")
 			return
 		}
 		slog.Error("servicedir: create failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "create_failed", "Failed to create service listing")
+		errpkg.WriteError(w, http.StatusInternalServerError, "create_failed", "Failed to create service listing")
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": service})
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": service})
 }
 
 // HandleEdit handles PATCH /services/:id — edit own service listing. Auth
@@ -267,30 +255,30 @@ func (h *Handlers) HandleEdit(w http.ResponseWriter, r *http.Request) {
 
 	var input EditServiceInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
 
 	service, err := h.service.EditOwn(r.Context(), contentID, tenantID, user.UserID, input)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "service_not_found", "Service not found")
+			errpkg.WriteError(w, http.StatusNotFound, "service_not_found", "Service not found")
 			return
 		}
 		if errors.Is(err, ErrNotOwner) {
-			writeError(w, http.StatusForbidden, "not_owner", "You can only edit your own service listings")
+			errpkg.WriteError(w, http.StatusForbidden, "not_owner", "You can only edit your own service listings")
 			return
 		}
 		if errors.Is(err, ErrInvalidCategory) {
-			writeError(w, http.StatusBadRequest, "invalid_category", "service_category must be one of immigration_legal|relocation|finance|education|health|community|other")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_category", "service_category must be one of immigration_legal|relocation|finance|education|health|community|other")
 			return
 		}
 		slog.Error("servicedir: edit failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "edit_failed", "Failed to edit service listing")
+		errpkg.WriteError(w, http.StatusInternalServerError, "edit_failed", "Failed to edit service listing")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": service})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": service})
 }
 
 // HandleClaim handles POST /services/:id/claim — initiate an organization
@@ -311,7 +299,7 @@ func (h *Handlers) HandleClaim(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "service_directory_disabled", "Service directory is not available")
+		errpkg.WriteError(w, http.StatusNotFound, "service_directory_disabled", "Service directory is not available")
 		return
 	}
 
@@ -319,31 +307,31 @@ func (h *Handlers) HandleClaim(w http.ResponseWriter, r *http.Request) {
 		OrgID string `json:"org_id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
 	if body.OrgID == "" {
-		writeError(w, http.StatusBadRequest, "missing_org_id", "org_id is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_org_id", "org_id is required")
 		return
 	}
 
 	var orgID pgtype.UUID
 	if err := orgID.Scan(body.OrgID); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid org_id")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid org_id")
 		return
 	}
 
 	if err := h.service.Claim(r.Context(), contentID, tenantID, orgID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "service_not_found", "Service not found")
+			errpkg.WriteError(w, http.StatusNotFound, "service_not_found", "Service not found")
 			return
 		}
 		slog.Error("servicedir: claim failed", "error", err, "user_id", user.UserID)
-		writeError(w, http.StatusInternalServerError, "claim_failed", "Failed to initiate claim")
+		errpkg.WriteError(w, http.StatusInternalServerError, "claim_failed", "Failed to initiate claim")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"claim_status": ClaimStatusPending}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"claim_status": ClaimStatusPending}})
 }
 
 // ---------------------------------------------------------------------------
@@ -365,7 +353,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil {
-		writeError(w, http.StatusServiceUnavailable, "service_directory_unavailable", "Service directory not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "service_directory_unavailable", "Service directory not configured")
 		return
 	}
 
@@ -390,11 +378,11 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	services, total, err := h.service.AdminList(r.Context(), tenantID, status, claimStatus, serviceCategory, q, verifiedPtr, page, limit)
 	if err != nil {
 		slog.Error("servicedir: admin list failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "admin_list_failed", "Failed to list services")
+		errpkg.WriteError(w, http.StatusInternalServerError, "admin_list_failed", "Failed to list services")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": services,
 		"pagination": map[string]any{
 			"page":  page,
@@ -425,7 +413,7 @@ func (h *Handlers) HandleAdminVerify(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil {
-		writeError(w, http.StatusServiceUnavailable, "service_directory_unavailable", "Service directory not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "service_directory_unavailable", "Service directory not configured")
 		return
 	}
 
@@ -439,15 +427,15 @@ func (h *Handlers) HandleAdminVerify(w http.ResponseWriter, r *http.Request) {
 
 	if err := h.service.AdminVerify(r.Context(), contentID, tenantID, user.UserID, verificationType); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "service_not_found", "Service not found")
+			errpkg.WriteError(w, http.StatusNotFound, "service_not_found", "Service not found")
 			return
 		}
 		slog.Error("servicedir: admin verify failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "verify_failed", "Failed to verify service")
+		errpkg.WriteError(w, http.StatusInternalServerError, "verify_failed", "Failed to verify service")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"verified": true, "verification_type": verificationType, "verified_by": user.UserID.String()}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"verified": true, "verification_type": verificationType, "verified_by": user.UserID.String()}})
 }
 
 // HandleAdminResolveClaim handles PATCH /admin/services/:id/claim/:claim_id
@@ -472,7 +460,7 @@ func (h *Handlers) HandleAdminResolveClaim(w http.ResponseWriter, r *http.Reques
 	}
 
 	if h.service == nil {
-		writeError(w, http.StatusServiceUnavailable, "service_directory_unavailable", "Service directory not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "service_directory_unavailable", "Service directory not configured")
 		return
 	}
 
@@ -480,21 +468,21 @@ func (h *Handlers) HandleAdminResolveClaim(w http.ResponseWriter, r *http.Reques
 		Approve *bool `json:"approve"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
 	if body.Approve == nil {
-		writeError(w, http.StatusBadRequest, "missing_approve", "approve field is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_approve", "approve field is required")
 		return
 	}
 
 	if err := h.service.AdminResolveClaim(r.Context(), contentID, tenantID, orgID, *body.Approve); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "service_not_found", "Service not found")
+			errpkg.WriteError(w, http.StatusNotFound, "service_not_found", "Service not found")
 			return
 		}
 		slog.Error("servicedir: admin resolve claim failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "resolve_claim_failed", "Failed to resolve claim")
+		errpkg.WriteError(w, http.StatusInternalServerError, "resolve_claim_failed", "Failed to resolve claim")
 		return
 	}
 
@@ -502,5 +490,5 @@ func (h *Handlers) HandleAdminResolveClaim(w http.ResponseWriter, r *http.Reques
 	if !*body.Approve {
 		claimStatus = ClaimStatusRejected
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"claim_status": claimStatus}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"claim_status": claimStatus}})
 }

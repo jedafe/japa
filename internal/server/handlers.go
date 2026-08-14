@@ -8,10 +8,10 @@ package server
 
 import (
 	"context"
-	"encoding/json"
-	"log/slog"
 	"net/http"
 	"time"
+
+	errtracking "github.com/jedafe/japa/internal/errors"
 )
 
 // Pinger is the dependency the readiness check needs from the database.
@@ -43,7 +43,7 @@ func NewHandler(db Pinger) *Handler {
 // restart the process; a failing liveness check means "this process is
 // stuck and needs to be killed.".
 func (h *Handler) HealthCheck(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	errtracking.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
 // ReadinessCheck is the readiness probe. It pings the database to verify
@@ -58,52 +58,12 @@ func (h *Handler) ReadinessCheck(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	if err := h.db.Ping(ctx); err != nil {
-		writeError(w, http.StatusServiceUnavailable, "db_unavailable", "database is not ready")
+		errtracking.WriteError(w, http.StatusServiceUnavailable, "db_unavailable", "database is not ready")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]string{
+	errtracking.WriteJSON(w, http.StatusOK, map[string]string{
 		"status":   "ok",
 		"database": "connected",
-	})
-}
-
-// errorResponse is the JSON body returned for error responses.
-// It follows the JapaConnect API error format:
-// {"error": {"code": "...", "message": "..."}}.
-type errorResponse struct {
-	Error errorBody `json:"error"`
-}
-
-type errorBody struct {
-	Code    string `json:"code"`
-	Message string `json:"message"`
-}
-
-// writeJSON serializes the given value as JSON and writes it to the
-// response with the given status code. It sets the Content-Type header
-// to application/json. If serialization fails it writes a 500 error
-// instead of leaving the client hanging.
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-
-	if err := json.NewEncoder(w).Encode(v); err != nil {
-		// The status header is already written, so the status code cannot be
-		// changed — the failure is logged so a truncated response is
-		// diagnosable instead of invisible.
-		slog.Error("encoding JSON response", "error", err, "status", status)
-	}
-}
-
-// writeError writes a JSON error response following the JapaConnect API
-// error format. The code is a machine-readable string the frontend can
-// switch on; the message is a human-readable explanation.
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, errorResponse{
-		Error: errorBody{
-			Code:    code,
-			Message: message,
-		},
 	})
 }

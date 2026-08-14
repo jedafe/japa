@@ -3,7 +3,8 @@
 // max_cities enforcement cases.
 //
 // Ref: japaconnect-engineering/sections/72-cost-of-living.md
-//      japaconnect-engineering/adr/ADR-072-cost-of-living-calculator.md
+//
+//	japaconnect-engineering/adr/ADR-072-cost-of-living-calculator.md
 package costofliving
 
 import (
@@ -14,8 +15,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 // TestHandleAdminStats_Unauthorized verifies that the admin stats endpoint

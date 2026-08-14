@@ -14,7 +14,8 @@
 //	DELETE /api/v1/admin/scam-alerts/:id/pin      — unpin report (auth, scam_alert.pin)
 //
 // Ref: japaconnect-engineering/sections/81-scam-alert-board.md
-//      japaconnect-engineering/adr/ADR-089-scam-alert-board.md
+//
+//	japaconnect-engineering/adr/ADR-089-scam-alert-board.md
 package scamalert
 
 import (
@@ -30,6 +31,7 @@ import (
 
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/config"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/tenant"
 )
 
@@ -48,24 +50,10 @@ func NewHandlers(service *Service, settings *config.Settings) *Handlers {
 // Shared helpers (same pattern as story/handlers.go)
 // ---------------------------------------------------------------------------
 
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	if err := json.NewEncoder(w).Encode(v); err != nil {
-		slog.Error("scamalert: encode response", "error", err)
-	}
-}
-
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, map[string]any{
-		"error": map[string]string{"code": code, "message": message},
-	})
-}
-
 func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
 	return t.ID, true
@@ -74,7 +62,7 @@ func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	u := auth.FromContext(r.Context())
 	if u == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
 	return u, true
@@ -83,7 +71,7 @@ func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUse
 func scanUUIDParam(w http.ResponseWriter, r *http.Request, name string) (pgtype.UUID, bool) {
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, name)); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid "+name)
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid "+name)
 		return pgtype.UUID{}, false
 	}
 	return id, true
@@ -118,7 +106,7 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "scam_alert_disabled", "Scam alert board is not available")
+		errpkg.WriteError(w, http.StatusNotFound, "scam_alert_disabled", "Scam alert board is not available")
 		return
 	}
 
@@ -130,7 +118,7 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 	}
 	if destParam != "" {
 		if err := destSpaceID.Scan(destParam); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid destination space ID")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid destination space ID")
 			return
 		}
 	}
@@ -141,11 +129,11 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 	reports, total, err := h.service.List(r.Context(), tenantID, destSpaceID, scamType, page, limit)
 	if err != nil {
 		slog.Error("scamalert: list failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "list_failed", "Failed to list scam reports")
+		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list scam reports")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": reports,
 		"pagination": map[string]any{
 			"page":  page,
@@ -163,7 +151,7 @@ func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "scam_alert_disabled", "Scam alert board is not available")
+		errpkg.WriteError(w, http.StatusNotFound, "scam_alert_disabled", "Scam alert board is not available")
 		return
 	}
 
@@ -175,15 +163,15 @@ func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
 	report, err := h.service.Get(r.Context(), tenantID, id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "report_not_found", "Scam report not found")
+			errpkg.WriteError(w, http.StatusNotFound, "report_not_found", "Scam report not found")
 			return
 		}
 		slog.Error("scamalert: get failed", "id", id, "error", err)
-		writeError(w, http.StatusInternalServerError, "get_failed", "Failed to get scam report")
+		errpkg.WriteError(w, http.StatusInternalServerError, "get_failed", "Failed to get scam report")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": report})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": report})
 }
 
 // ---------------------------------------------------------------------------
@@ -200,26 +188,26 @@ func (h *Handlers) HandleSubmit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "scam_alert_disabled", "Scam alert board is not available")
+		errpkg.WriteError(w, http.StatusNotFound, "scam_alert_disabled", "Scam alert board is not available")
 		return
 	}
 
 	var input SubmitReportInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
 
 	if input.ScamType == "" {
-		writeError(w, http.StatusBadRequest, "missing_scam_type", "Scam type is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_scam_type", "Scam type is required")
 		return
 	}
 	if input.DestinationSpaceID == "" {
-		writeError(w, http.StatusBadRequest, "missing_destination", "Destination space ID is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_destination", "Destination space ID is required")
 		return
 	}
 	if input.Description == "" {
-		writeError(w, http.StatusBadRequest, "missing_description", "Description is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_description", "Description is required")
 		return
 	}
 
@@ -231,7 +219,7 @@ func (h *Handlers) HandleSubmit(w http.ResponseWriter, r *http.Request) {
 	} else {
 		// Anonymous submission — only allowed when the setting is enabled.
 		if !h.service.AnonymousReportsAllowed(r.Context(), tenantID) {
-			writeError(w, http.StatusUnauthorized, "anonymous_disabled", "Authentication required to submit a scam report")
+			errpkg.WriteError(w, http.StatusUnauthorized, "anonymous_disabled", "Authentication required to submit a scam report")
 			return
 		}
 	}
@@ -239,19 +227,19 @@ func (h *Handlers) HandleSubmit(w http.ResponseWriter, r *http.Request) {
 	report, err := h.service.Submit(r.Context(), tenantID, reporterID, input)
 	if err != nil {
 		if errors.Is(err, ErrInvalidScamType) {
-			writeError(w, http.StatusBadRequest, "invalid_scam_type", "Scam type must be one of: fraudulent_agent, fake_job, housing_fraud, fake_scholarship, whatsapp_telegram, other")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_scam_type", "Scam type must be one of: fraudulent_agent, fake_job, housing_fraud, fake_scholarship, whatsapp_telegram, other")
 			return
 		}
 		if errors.Is(err, ErrInvalidPlatform) {
-			writeError(w, http.StatusBadRequest, "invalid_platform", "Platform must be one of: whatsapp, instagram, linkedin, email, website, other")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_platform", "Platform must be one of: whatsapp, instagram, linkedin, email, website, other")
 			return
 		}
 		slog.Error("scamalert: submit failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "submit_failed", "Failed to submit scam report")
+		errpkg.WriteError(w, http.StatusInternalServerError, "submit_failed", "Failed to submit scam report")
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": report})
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": report})
 }
 
 // ---------------------------------------------------------------------------
@@ -276,7 +264,7 @@ func (h *Handlers) HandleSubscribe(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "scam_alert_disabled", "Scam alert board is not available")
+		errpkg.WriteError(w, http.StatusNotFound, "scam_alert_disabled", "Scam alert board is not available")
 		return
 	}
 
@@ -284,27 +272,27 @@ func (h *Handlers) HandleSubscribe(w http.ResponseWriter, r *http.Request) {
 	report, err := h.service.Get(r.Context(), tenantID, id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "report_not_found", "Scam report not found")
+			errpkg.WriteError(w, http.StatusNotFound, "report_not_found", "Scam report not found")
 			return
 		}
 		slog.Error("scamalert: subscribe get failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "get_failed", "Failed to get scam report")
+		errpkg.WriteError(w, http.StatusInternalServerError, "get_failed", "Failed to get scam report")
 		return
 	}
 
 	var destSpaceID pgtype.UUID
 	if err := destSpaceID.Scan(report.DestinationSpaceID); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_destination", "Report has no valid destination space")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_destination", "Report has no valid destination space")
 		return
 	}
 
 	if err := h.service.Subscribe(r.Context(), user.UserID, tenantID, destSpaceID); err != nil {
 		slog.Error("scamalert: subscribe failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "subscribe_failed", "Failed to subscribe")
+		errpkg.WriteError(w, http.StatusInternalServerError, "subscribe_failed", "Failed to subscribe")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"subscribed": true}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"subscribed": true}})
 }
 
 // HandleUnsubscribe handles DELETE /scam-alerts/:id/subscribe — unsubscribe
@@ -325,7 +313,7 @@ func (h *Handlers) HandleUnsubscribe(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "scam_alert_disabled", "Scam alert board is not available")
+		errpkg.WriteError(w, http.StatusNotFound, "scam_alert_disabled", "Scam alert board is not available")
 		return
 	}
 
@@ -333,27 +321,27 @@ func (h *Handlers) HandleUnsubscribe(w http.ResponseWriter, r *http.Request) {
 	report, err := h.service.Get(r.Context(), tenantID, id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "report_not_found", "Scam report not found")
+			errpkg.WriteError(w, http.StatusNotFound, "report_not_found", "Scam report not found")
 			return
 		}
 		slog.Error("scamalert: unsubscribe get failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "get_failed", "Failed to get scam report")
+		errpkg.WriteError(w, http.StatusInternalServerError, "get_failed", "Failed to get scam report")
 		return
 	}
 
 	var destSpaceID pgtype.UUID
 	if err := destSpaceID.Scan(report.DestinationSpaceID); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_destination", "Report has no valid destination space")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_destination", "Report has no valid destination space")
 		return
 	}
 
 	if err := h.service.Unsubscribe(r.Context(), user.UserID, tenantID, destSpaceID); err != nil {
 		slog.Error("scamalert: unsubscribe failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "unsubscribe_failed", "Failed to unsubscribe")
+		errpkg.WriteError(w, http.StatusInternalServerError, "unsubscribe_failed", "Failed to unsubscribe")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"subscribed": false}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"subscribed": false}})
 }
 
 // ---------------------------------------------------------------------------
@@ -373,7 +361,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil {
-		writeError(w, http.StatusServiceUnavailable, "scam_alert_unavailable", "Scam alert service not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "scam_alert_unavailable", "Scam alert service not configured")
 		return
 	}
 
@@ -388,7 +376,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	}
 	if destParam != "" {
 		if err := destSpaceID.Scan(destParam); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid destination space ID")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid destination space ID")
 			return
 		}
 	}
@@ -401,11 +389,11 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	reports, total, err := h.service.AdminList(r.Context(), tenantID, status, destSpaceID, scamType, page, limit)
 	if err != nil {
 		slog.Error("scamalert: admin list failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "admin_list_failed", "Failed to list scam reports")
+		errpkg.WriteError(w, http.StatusInternalServerError, "admin_list_failed", "Failed to list scam reports")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": reports,
 		"pagination": map[string]any{
 			"page":  page,
@@ -433,36 +421,36 @@ func (h *Handlers) HandleReview(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil {
-		writeError(w, http.StatusServiceUnavailable, "scam_alert_unavailable", "Scam alert service not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "scam_alert_unavailable", "Scam alert service not configured")
 		return
 	}
 
 	var input ReviewInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
 
 	if input.Status != "confirmed" && input.Status != "debunked" && input.Status != "duplicate" {
-		writeError(w, http.StatusBadRequest, "invalid_status", "Status must be 'confirmed', 'debunked', or 'duplicate'")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_status", "Status must be 'confirmed', 'debunked', or 'duplicate'")
 		return
 	}
 
 	if err := h.service.Review(r.Context(), id, tenantID, input.Status, input.ModeratorNote, user.UserID); err != nil {
 		if errors.Is(err, ErrInvalidStatus) {
-			writeError(w, http.StatusBadRequest, "invalid_status", "Status must be 'confirmed', 'debunked', or 'duplicate'")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_status", "Status must be 'confirmed', 'debunked', or 'duplicate'")
 			return
 		}
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "report_not_found", "Scam report not found")
+			errpkg.WriteError(w, http.StatusNotFound, "report_not_found", "Scam report not found")
 			return
 		}
 		slog.Error("scamalert: review failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "review_failed", "Failed to review scam report")
+		errpkg.WriteError(w, http.StatusInternalServerError, "review_failed", "Failed to review scam report")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"status": input.Status}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"status": input.Status}})
 }
 
 // HandlePin handles POST /admin/scam-alerts/:id/pin — pin a confirmed report
@@ -482,7 +470,7 @@ func (h *Handlers) HandlePin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil {
-		writeError(w, http.StatusServiceUnavailable, "scam_alert_unavailable", "Scam alert service not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "scam_alert_unavailable", "Scam alert service not configured")
 		return
 	}
 
@@ -490,31 +478,31 @@ func (h *Handlers) HandlePin(w http.ResponseWriter, r *http.Request) {
 		SpaceID string `json:"space_id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
 	if body.SpaceID == "" {
-		writeError(w, http.StatusBadRequest, "missing_space_id", "space_id is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_space_id", "space_id is required")
 		return
 	}
 
 	var spaceID pgtype.UUID
 	if err := spaceID.Scan(body.SpaceID); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid space_id")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid space_id")
 		return
 	}
 
 	if err := h.service.Pin(r.Context(), id, tenantID, spaceID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "report_not_found", "Confirmed scam report not found")
+			errpkg.WriteError(w, http.StatusNotFound, "report_not_found", "Confirmed scam report not found")
 			return
 		}
 		slog.Error("scamalert: pin failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "pin_failed", "Failed to pin scam report")
+		errpkg.WriteError(w, http.StatusInternalServerError, "pin_failed", "Failed to pin scam report")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"pinned": true}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"pinned": true}})
 }
 
 // HandleUnpin handles DELETE /admin/scam-alerts/:id/pin — remove the pin
@@ -534,19 +522,19 @@ func (h *Handlers) HandleUnpin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil {
-		writeError(w, http.StatusServiceUnavailable, "scam_alert_unavailable", "Scam alert service not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "scam_alert_unavailable", "Scam alert service not configured")
 		return
 	}
 
 	if err := h.service.Unpin(r.Context(), id, tenantID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "report_not_found", "Scam report not found")
+			errpkg.WriteError(w, http.StatusNotFound, "report_not_found", "Scam report not found")
 			return
 		}
 		slog.Error("scamalert: unpin failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "unpin_failed", "Failed to unpin scam report")
+		errpkg.WriteError(w, http.StatusInternalServerError, "unpin_failed", "Failed to unpin scam report")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"pinned": false}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"pinned": false}})
 }

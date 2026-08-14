@@ -2,13 +2,13 @@
 // (Section 66, ADR-084).
 //
 // Ref: japaconnect-engineering/sections/66-advanced-analytics.md
-//      japaconnect-engineering/adr/ADR-084-advanced-analytics.md
+//
+//	japaconnect-engineering/adr/ADR-084-advanced-analytics.md
 package advancedanalytics
 
 import (
 	"context"
 	"encoding/csv"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -20,6 +20,7 @@ import (
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/db/gen"
+	errpkg "github.com/jedafe/japa/internal/errors"
 )
 
 // Period constants.
@@ -289,10 +290,10 @@ func (h *Handlers) HandleTopContent(w http.ResponseWriter, r *http.Request) {
 
 	rows, err := h.svc.GetTopContent(r.Context(), user.TenantID, period, contentType, limit)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "query_failed", err.Error())
+		errpkg.WriteError(w, http.StatusInternalServerError, "query_failed", err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]interface{}{"content": rows})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{"content": rows})
 }
 
 // HandleRevenueStreams returns revenue breakdown.
@@ -310,10 +311,10 @@ func (h *Handlers) HandleRevenueStreams(w http.ResponseWriter, r *http.Request) 
 
 	rows, err := h.svc.GetRevenueStreams(r.Context(), user.TenantID, period)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "query_failed", err.Error())
+		errpkg.WriteError(w, http.StatusInternalServerError, "query_failed", err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]interface{}{"revenue": rows})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{"revenue": rows})
 }
 
 // HandleAdPerformance returns ad campaign aggregate stats.
@@ -329,10 +330,10 @@ func (h *Handlers) HandleAdPerformance(w http.ResponseWriter, r *http.Request) {
 
 	rows, err := h.svc.GetAdPerformance(r.Context(), user.TenantID, status, limit)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "query_failed", err.Error())
+		errpkg.WriteError(w, http.StatusInternalServerError, "query_failed", err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]interface{}{"ads": rows})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{"ads": rows})
 }
 
 // HandleNewsletterEngagement returns newsletter open/click rates.
@@ -347,17 +348,17 @@ func (h *Handlers) HandleNewsletterEngagement(w http.ResponseWriter, r *http.Req
 
 	campaigns, err := h.svc.GetNewsletterEngagement(r.Context(), user.TenantID, limit)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "query_failed", err.Error())
+		errpkg.WriteError(w, http.StatusInternalServerError, "query_failed", err.Error())
 		return
 	}
 
 	lists, err := h.svc.GetSubscriberGrowth(r.Context(), user.TenantID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "query_failed", err.Error())
+		errpkg.WriteError(w, http.StatusInternalServerError, "query_failed", err.Error())
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"campaigns": campaigns,
 		"lists":     lists,
 	})
@@ -375,10 +376,10 @@ func (h *Handlers) HandleRetention(w http.ResponseWriter, r *http.Request) {
 
 	rows, err := h.svc.GetRetentionCohorts(r.Context(), user.TenantID, limit)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "query_failed", err.Error())
+		errpkg.WriteError(w, http.StatusInternalServerError, "query_failed", err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]interface{}{"cohorts": rows})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{"cohorts": rows})
 }
 
 // HandleExport exports analytics as CSV.
@@ -392,13 +393,13 @@ func (h *Handlers) HandleExport(w http.ResponseWriter, r *http.Request) {
 	metric := r.URL.Query().Get("metric")
 	period := r.URL.Query().Get("period")
 	if metric == "" {
-		writeError(w, http.StatusBadRequest, "missing_param", "metric is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_param", "metric is required")
 		return
 	}
 
 	csvData, _, err := h.svc.ExportCSV(r.Context(), user.TenantID, metric, period)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "export_failed", err.Error())
+		errpkg.WriteError(w, http.StatusBadRequest, "export_failed", err.Error())
 		return
 	}
 
@@ -410,29 +411,13 @@ func (h *Handlers) HandleExport(w http.ResponseWriter, r *http.Request) {
 
 // --- shared helpers ---
 
-func writeJSON(w http.ResponseWriter, status int, data interface{}) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(data)
-}
-
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, map[string]interface{}{
-		"error": map[string]interface{}{
-			"code":    code,
-			"message": message,
-			"status":  status,
-		},
-	})
-}
-
 // requireAuthUser extracts the authenticated user from the request context
 // using the auth middleware's context key. Returns the AuthenticatedUser and
 // writes a 401 error + false if no authenticated user is present.
 func requireAuthUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	u := auth.FromContext(r.Context())
 	if u == nil || !u.UserID.Valid || !u.TenantID.Valid {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
 	return u, true

@@ -7,7 +7,8 @@
 // (referrer/referee reward cents, max referrals, cookie days).
 //
 // Ref: japaconnect-engineering/sections/60-referral-system.md
-//      japaconnect-engineering/adr/ADR-078-referral-system.md
+//
+//	japaconnect-engineering/adr/ADR-078-referral-system.md
 package referral
 
 import (

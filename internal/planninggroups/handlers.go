@@ -35,6 +35,7 @@ import (
 
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/config"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/tenant"
 )
 
@@ -53,24 +54,10 @@ func NewHandlers(service *Service, settings *config.Settings) *Handlers {
 // Shared helpers (same pattern as story/handlers.go, wiki/handlers.go)
 // ---------------------------------------------------------------------------
 
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	if err := json.NewEncoder(w).Encode(v); err != nil {
-		slog.Error("planninggroups: encode response", "error", err)
-	}
-}
-
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, map[string]any{
-		"error": map[string]string{"code": code, "message": message},
-	})
-}
-
 func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
 	return t.ID, true
@@ -79,7 +66,7 @@ func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	u := auth.FromContext(r.Context())
 	if u == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
 	return u, true
@@ -97,11 +84,11 @@ func (h *Handlers) requireMembership(w http.ResponseWriter, r *http.Request, gro
 	isMember, err := h.service.IsMember(r.Context(), groupID, user.UserID, tenantID)
 	if err != nil {
 		slog.Error("planninggroups: membership check failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "membership_check_failed", "Failed to verify membership")
+		errpkg.WriteError(w, http.StatusInternalServerError, "membership_check_failed", "Failed to verify membership")
 		return nil, false
 	}
 	if !isMember {
-		writeError(w, http.StatusForbidden, "not_member", "You must be a member of this group to perform this action")
+		errpkg.WriteError(w, http.StatusForbidden, "not_member", "You must be a member of this group to perform this action")
 		return nil, false
 	}
 	return user, true
@@ -110,7 +97,7 @@ func (h *Handlers) requireMembership(w http.ResponseWriter, r *http.Request, gro
 func scanUUIDParam(w http.ResponseWriter, r *http.Request, name string) (pgtype.UUID, bool) {
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, name)); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid "+name)
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid "+name)
 		return pgtype.UUID{}, false
 	}
 	return id, true
@@ -145,7 +132,7 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "planning_groups_disabled", "Planning groups are not available")
+		errpkg.WriteError(w, http.StatusNotFound, "planning_groups_disabled", "Planning groups are not available")
 		return
 	}
 
@@ -157,7 +144,7 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 	}
 	if destParam != "" {
 		if err := destSpaceID.Scan(destParam); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid destination space ID")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid destination space ID")
 			return
 		}
 	}
@@ -168,11 +155,11 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 	groups, total, err := h.service.List(r.Context(), tenantID, destSpaceID, visaCategory, page, limit)
 	if err != nil {
 		slog.Error("planninggroups: list failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "list_failed", "Failed to list planning groups")
+		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list planning groups")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": groups,
 		"pagination": map[string]any{
 			"page":  page,
@@ -190,7 +177,7 @@ func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "planning_groups_disabled", "Planning groups are not available")
+		errpkg.WriteError(w, http.StatusNotFound, "planning_groups_disabled", "Planning groups are not available")
 		return
 	}
 
@@ -202,15 +189,15 @@ func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
 	group, err := h.service.Get(r.Context(), groupID, tenantID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "group_not_found", "Planning group not found")
+			errpkg.WriteError(w, http.StatusNotFound, "group_not_found", "Planning group not found")
 			return
 		}
 		slog.Error("planninggroups: get failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "get_failed", "Failed to get planning group")
+		errpkg.WriteError(w, http.StatusInternalServerError, "get_failed", "Failed to get planning group")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": group})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": group})
 }
 
 // ---------------------------------------------------------------------------
@@ -230,33 +217,33 @@ func (h *Handlers) HandleCreate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "planning_groups_disabled", "Planning groups are not available")
+		errpkg.WriteError(w, http.StatusNotFound, "planning_groups_disabled", "Planning groups are not available")
 		return
 	}
 
 	var input CreateGroupInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
 
 	if input.Name == "" {
-		writeError(w, http.StatusBadRequest, "missing_name", "Name is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_name", "Name is required")
 		return
 	}
 	if input.DestinationSpaceID == "" {
-		writeError(w, http.StatusBadRequest, "missing_destination", "Destination space ID is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_destination", "Destination space ID is required")
 		return
 	}
 
 	group, err := h.service.Create(r.Context(), tenantID, user.UserID, input)
 	if err != nil {
 		slog.Error("planninggroups: create failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "create_failed", "Failed to create planning group")
+		errpkg.WriteError(w, http.StatusInternalServerError, "create_failed", "Failed to create planning group")
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": group})
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": group})
 }
 
 // HandleJoin handles POST /planning-groups/:id/join — join a planning group.
@@ -276,7 +263,7 @@ func (h *Handlers) HandleJoin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "planning_groups_disabled", "Planning groups are not available")
+		errpkg.WriteError(w, http.StatusNotFound, "planning_groups_disabled", "Planning groups are not available")
 		return
 	}
 
@@ -288,21 +275,21 @@ func (h *Handlers) HandleJoin(w http.ResponseWriter, r *http.Request) {
 	if err := h.service.Join(r.Context(), groupID, user.UserID, tenantID, body.DepartureDate); err != nil {
 		switch {
 		case errors.Is(err, pgx.ErrNoRows):
-			writeError(w, http.StatusNotFound, "group_not_found", "Planning group not found")
+			errpkg.WriteError(w, http.StatusNotFound, "group_not_found", "Planning group not found")
 		case errors.Is(err, ErrGroupNotOpen):
-			writeError(w, http.StatusForbidden, "group_not_open", "This planning group is invite-only")
+			errpkg.WriteError(w, http.StatusForbidden, "group_not_open", "This planning group is invite-only")
 		case errors.Is(err, ErrGroupFull):
-			writeError(w, http.StatusConflict, "group_full", "This planning group is at capacity")
+			errpkg.WriteError(w, http.StatusConflict, "group_full", "This planning group is at capacity")
 		case errors.Is(err, ErrAlreadyMember):
-			writeError(w, http.StatusConflict, "already_member", "You are already a member of this group")
+			errpkg.WriteError(w, http.StatusConflict, "already_member", "You are already a member of this group")
 		default:
 			slog.Error("planninggroups: join failed", "error", err)
-			writeError(w, http.StatusInternalServerError, "join_failed", "Failed to join planning group")
+			errpkg.WriteError(w, http.StatusInternalServerError, "join_failed", "Failed to join planning group")
 		}
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"joined": true}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"joined": true}})
 }
 
 // HandleInvite handles POST /planning-groups/:id/invite — invite a user to
@@ -323,7 +310,7 @@ func (h *Handlers) HandleInvite(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "planning_groups_disabled", "Planning groups are not available")
+		errpkg.WriteError(w, http.StatusNotFound, "planning_groups_disabled", "Planning groups are not available")
 		return
 	}
 
@@ -331,17 +318,17 @@ func (h *Handlers) HandleInvite(w http.ResponseWriter, r *http.Request) {
 		UserID string `json:"user_id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
 	if body.UserID == "" {
-		writeError(w, http.StatusBadRequest, "missing_user_id", "user_id is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_user_id", "user_id is required")
 		return
 	}
 
 	var inviteeID pgtype.UUID
 	if err := inviteeID.Scan(body.UserID); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_user_id", "Invalid user_id")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_user_id", "Invalid user_id")
 		return
 	}
 
@@ -349,32 +336,32 @@ func (h *Handlers) HandleInvite(w http.ResponseWriter, r *http.Request) {
 	group, err := h.service.Get(r.Context(), groupID, tenantID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "group_not_found", "Planning group not found")
+			errpkg.WriteError(w, http.StatusNotFound, "group_not_found", "Planning group not found")
 			return
 		}
 		slog.Error("planninggroups: invite: get failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "invite_failed", "Failed to invite user")
+		errpkg.WriteError(w, http.StatusInternalServerError, "invite_failed", "Failed to invite user")
 		return
 	}
 	if group.OwnerID != user.UserID.String() {
-		writeError(w, http.StatusForbidden, "not_owner", "Only the group owner can invite users")
+		errpkg.WriteError(w, http.StatusForbidden, "not_owner", "Only the group owner can invite users")
 		return
 	}
 
 	if err := h.service.InviteMember(r.Context(), groupID, inviteeID, tenantID); err != nil {
 		switch {
 		case errors.Is(err, pgx.ErrNoRows):
-			writeError(w, http.StatusNotFound, "group_not_found", "Planning group not found")
+			errpkg.WriteError(w, http.StatusNotFound, "group_not_found", "Planning group not found")
 		case errors.Is(err, ErrGroupFull):
-			writeError(w, http.StatusConflict, "group_full", "This planning group is at capacity")
+			errpkg.WriteError(w, http.StatusConflict, "group_full", "This planning group is at capacity")
 		default:
 			slog.Error("planninggroups: invite failed", "error", err)
-			writeError(w, http.StatusInternalServerError, "invite_failed", "Failed to invite user")
+			errpkg.WriteError(w, http.StatusInternalServerError, "invite_failed", "Failed to invite user")
 		}
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"invited": true}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"invited": true}})
 }
 
 // HandleLeave handles DELETE /planning-groups/:id/leave — leave a group.
@@ -394,21 +381,21 @@ func (h *Handlers) HandleLeave(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "planning_groups_disabled", "Planning groups are not available")
+		errpkg.WriteError(w, http.StatusNotFound, "planning_groups_disabled", "Planning groups are not available")
 		return
 	}
 
 	if err := h.service.Leave(r.Context(), groupID, user.UserID, tenantID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "membership_not_found", "You are not a member of this group")
+			errpkg.WriteError(w, http.StatusNotFound, "membership_not_found", "You are not a member of this group")
 			return
 		}
 		slog.Error("planninggroups: leave failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "leave_failed", "Failed to leave planning group")
+		errpkg.WriteError(w, http.StatusInternalServerError, "leave_failed", "Failed to leave planning group")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"left": true}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"left": true}})
 }
 
 // HandleGetMembers handles GET /planning-groups/:id/members — list members.
@@ -424,7 +411,7 @@ func (h *Handlers) HandleGetMembers(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "planning_groups_disabled", "Planning groups are not available")
+		errpkg.WriteError(w, http.StatusNotFound, "planning_groups_disabled", "Planning groups are not available")
 		return
 	}
 
@@ -435,11 +422,11 @@ func (h *Handlers) HandleGetMembers(w http.ResponseWriter, r *http.Request) {
 	members, err := h.service.GetMembers(r.Context(), groupID, tenantID)
 	if err != nil {
 		slog.Error("planninggroups: get members failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "members_failed", "Failed to get group members")
+		errpkg.WriteError(w, http.StatusInternalServerError, "members_failed", "Failed to get group members")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": members})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": members})
 }
 
 // ---------------------------------------------------------------------------
@@ -463,32 +450,32 @@ func (h *Handlers) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "planning_groups_disabled", "Planning groups are not available")
+		errpkg.WriteError(w, http.StatusNotFound, "planning_groups_disabled", "Planning groups are not available")
 		return
 	}
 
 	var input UpdateGroupInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
 
 	group, err := h.service.UpdateOwn(r.Context(), groupID, tenantID, user.UserID, input)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "group_not_found", "Planning group not found")
+			errpkg.WriteError(w, http.StatusNotFound, "group_not_found", "Planning group not found")
 			return
 		}
 		if errors.Is(err, ErrNotOwner) {
-			writeError(w, http.StatusForbidden, "not_owner", "You can only update your own planning groups")
+			errpkg.WriteError(w, http.StatusForbidden, "not_owner", "You can only update your own planning groups")
 			return
 		}
 		slog.Error("planninggroups: update failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "update_failed", "Failed to update planning group")
+		errpkg.WriteError(w, http.StatusInternalServerError, "update_failed", "Failed to update planning group")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": group})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": group})
 }
 
 // HandleDelete handles DELETE /planning-groups/:id — delete own group. Auth
@@ -509,25 +496,25 @@ func (h *Handlers) HandleDelete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "planning_groups_disabled", "Planning groups are not available")
+		errpkg.WriteError(w, http.StatusNotFound, "planning_groups_disabled", "Planning groups are not available")
 		return
 	}
 
 	if err := h.service.DeleteOwn(r.Context(), groupID, tenantID, user.UserID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "group_not_found", "Planning group not found")
+			errpkg.WriteError(w, http.StatusNotFound, "group_not_found", "Planning group not found")
 			return
 		}
 		if errors.Is(err, ErrNotOwner) {
-			writeError(w, http.StatusForbidden, "not_owner", "You can only delete your own planning groups")
+			errpkg.WriteError(w, http.StatusForbidden, "not_owner", "You can only delete your own planning groups")
 			return
 		}
 		slog.Error("planninggroups: delete failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "delete_failed", "Failed to delete planning group")
+		errpkg.WriteError(w, http.StatusInternalServerError, "delete_failed", "Failed to delete planning group")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"deleted": true}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"deleted": true}})
 }
 
 // ---------------------------------------------------------------------------
@@ -548,7 +535,7 @@ func (h *Handlers) HandleListMilestones(w http.ResponseWriter, r *http.Request) 
 	}
 
 	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "planning_groups_disabled", "Planning groups are not available")
+		errpkg.WriteError(w, http.StatusNotFound, "planning_groups_disabled", "Planning groups are not available")
 		return
 	}
 
@@ -560,11 +547,11 @@ func (h *Handlers) HandleListMilestones(w http.ResponseWriter, r *http.Request) 
 	milestones, err := h.service.ListMilestones(r.Context(), groupID, user.UserID, tenantID)
 	if err != nil {
 		slog.Error("planninggroups: list milestones failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "list_milestones_failed", "Failed to list milestones")
+		errpkg.WriteError(w, http.StatusInternalServerError, "list_milestones_failed", "Failed to list milestones")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": milestones})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": milestones})
 }
 
 // HandleCreateMilestone handles POST /planning-groups/:id/milestones — create
@@ -580,7 +567,7 @@ func (h *Handlers) HandleCreateMilestone(w http.ResponseWriter, r *http.Request)
 	}
 
 	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "planning_groups_disabled", "Planning groups are not available")
+		errpkg.WriteError(w, http.StatusNotFound, "planning_groups_disabled", "Planning groups are not available")
 		return
 	}
 
@@ -593,22 +580,22 @@ func (h *Handlers) HandleCreateMilestone(w http.ResponseWriter, r *http.Request)
 		Title string `json:"title"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
 	if body.Title == "" {
-		writeError(w, http.StatusBadRequest, "missing_title", "Title is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_title", "Title is required")
 		return
 	}
 
 	milestone, err := h.service.CreateMilestone(r.Context(), groupID, user.UserID, tenantID, body.Title)
 	if err != nil {
 		slog.Error("planninggroups: create milestone failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "create_milestone_failed", "Failed to create milestone")
+		errpkg.WriteError(w, http.StatusInternalServerError, "create_milestone_failed", "Failed to create milestone")
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": milestone})
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": milestone})
 }
 
 // HandleUpdateMilestone handles PATCH /planning-groups/:id/milestones/:mid —
@@ -633,7 +620,7 @@ func (h *Handlers) HandleUpdateMilestone(w http.ResponseWriter, r *http.Request)
 	}
 
 	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "planning_groups_disabled", "Planning groups are not available")
+		errpkg.WriteError(w, http.StatusNotFound, "planning_groups_disabled", "Planning groups are not available")
 		return
 	}
 
@@ -641,21 +628,21 @@ func (h *Handlers) HandleUpdateMilestone(w http.ResponseWriter, r *http.Request)
 		Completed bool `json:"completed"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
 
 	if err := h.service.UpdateMilestone(r.Context(), milestoneID, groupID, user.UserID, tenantID, body.Completed); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "milestone_not_found", "Milestone not found")
+			errpkg.WriteError(w, http.StatusNotFound, "milestone_not_found", "Milestone not found")
 			return
 		}
 		slog.Error("planninggroups: update milestone failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "update_milestone_failed", "Failed to update milestone")
+		errpkg.WriteError(w, http.StatusInternalServerError, "update_milestone_failed", "Failed to update milestone")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"updated": true}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"updated": true}})
 }
 
 // ---------------------------------------------------------------------------
@@ -676,7 +663,7 @@ func (h *Handlers) HandleListCheckins(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "planning_groups_disabled", "Planning groups are not available")
+		errpkg.WriteError(w, http.StatusNotFound, "planning_groups_disabled", "Planning groups are not available")
 		return
 	}
 
@@ -687,11 +674,11 @@ func (h *Handlers) HandleListCheckins(w http.ResponseWriter, r *http.Request) {
 	checkins, err := h.service.ListCheckins(r.Context(), groupID, tenantID)
 	if err != nil {
 		slog.Error("planninggroups: list checkins failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "list_checkins_failed", "Failed to list check-ins")
+		errpkg.WriteError(w, http.StatusInternalServerError, "list_checkins_failed", "Failed to list check-ins")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": checkins})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": checkins})
 }
 
 // HandleCreateCheckin handles POST /planning-groups/:id/checkins — create a
@@ -707,7 +694,7 @@ func (h *Handlers) HandleCreateCheckin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "planning_groups_disabled", "Planning groups are not available")
+		errpkg.WriteError(w, http.StatusNotFound, "planning_groups_disabled", "Planning groups are not available")
 		return
 	}
 
@@ -720,22 +707,22 @@ func (h *Handlers) HandleCreateCheckin(w http.ResponseWriter, r *http.Request) {
 		Note string `json:"note"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
 	if body.Note == "" {
-		writeError(w, http.StatusBadRequest, "missing_note", "Note is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_note", "Note is required")
 		return
 	}
 
 	checkin, err := h.service.CreateCheckin(r.Context(), groupID, user.UserID, tenantID, body.Note)
 	if err != nil {
 		slog.Error("planninggroups: create checkin failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "create_checkin_failed", "Failed to create check-in")
+		errpkg.WriteError(w, http.StatusInternalServerError, "create_checkin_failed", "Failed to create check-in")
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": checkin})
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": checkin})
 }
 
 // ---------------------------------------------------------------------------
@@ -755,18 +742,18 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "planning_groups_disabled", "Planning groups are not available")
+		errpkg.WriteError(w, http.StatusNotFound, "planning_groups_disabled", "Planning groups are not available")
 		return
 	}
 
 	groups, err := h.service.AdminListGroups(r.Context(), tenantID)
 	if err != nil {
 		slog.Error("planninggroups: admin list failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "admin_list_failed", "Failed to list planning groups")
+		errpkg.WriteError(w, http.StatusInternalServerError, "admin_list_failed", "Failed to list planning groups")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": groups})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": groups})
 }
 
 // HandleAdminExtend handles POST /admin/planning-groups/:id/extend — extend
@@ -786,7 +773,7 @@ func (h *Handlers) HandleAdminExtend(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "planning_groups_disabled", "Planning groups are not available")
+		errpkg.WriteError(w, http.StatusNotFound, "planning_groups_disabled", "Planning groups are not available")
 		return
 	}
 
@@ -794,23 +781,23 @@ func (h *Handlers) HandleAdminExtend(w http.ResponseWriter, r *http.Request) {
 		ExpiresAt string `json:"expires_at"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
 	if body.ExpiresAt == "" {
-		writeError(w, http.StatusBadRequest, "missing_expires_at", "expires_at is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_expires_at", "expires_at is required")
 		return
 	}
 
 	if err := h.service.AdminExtendExpiry(r.Context(), groupID, tenantID, body.ExpiresAt); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "group_not_found", "Planning group not found")
+			errpkg.WriteError(w, http.StatusNotFound, "group_not_found", "Planning group not found")
 			return
 		}
 		slog.Error("planninggroups: admin extend failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "extend_failed", "Failed to extend planning group expiry")
+		errpkg.WriteError(w, http.StatusInternalServerError, "extend_failed", "Failed to extend planning group expiry")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"extended": true}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"extended": true}})
 }

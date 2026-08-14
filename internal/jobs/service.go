@@ -4,7 +4,8 @@
 // notifications.
 //
 // Ref: japaconnect-engineering/sections/63-jobs-board.md
-//      japaconnect-engineering/adr/ADR-081-jobs-board.md
+//
+//	japaconnect-engineering/adr/ADR-081-jobs-board.md
 package jobs
 
 import (
@@ -26,12 +27,12 @@ import (
 // Application status constants — match the CHECK constraint on
 // job_applications.status.
 const (
-	StatusApplied    = "applied"
-	StatusReviewing  = "reviewing"
+	StatusApplied     = "applied"
+	StatusReviewing   = "reviewing"
 	StatusShortlisted = "shortlisted"
-	StatusRejected   = "rejected"
-	StatusOffered    = "offered"
-	StatusWithdrawn  = "withdrawn"
+	StatusRejected    = "rejected"
+	StatusOffered     = "offered"
+	StatusWithdrawn   = "withdrawn"
 )
 
 // validStatuses is the set of statuses accepted by the CHECK constraint.
@@ -77,12 +78,12 @@ type JobFilters struct {
 
 // JobResult is a single job listing in the finder results.
 type JobResult struct {
-	ID           string            `json:"id"`
-	Title        string            `json:"title"`
-	Slug         string            `json:"slug"`
-	Summary      string            `json:"summary"`
-	FieldValues  map[string]string `json:"field_values"`
-	PublishedAt  string            `json:"published_at"`
+	ID          string            `json:"id"`
+	Title       string            `json:"title"`
+	Slug        string            `json:"slug"`
+	Summary     string            `json:"summary"`
+	FieldValues map[string]string `json:"field_values"`
+	PublishedAt string            `json:"published_at"`
 }
 
 // JobDetail is a single job listing with all its custom field values.
@@ -115,17 +116,17 @@ type AdminJobListing struct {
 
 // ApplicationResult is a single application record in API responses.
 type ApplicationResult struct {
-	ID              string  `json:"id"`
-	JobID           string  `json:"job_id"`
-	JobTitle        string  `json:"job_title,omitempty"`
-	JobSlug         string  `json:"job_slug,omitempty"`
-	ApplicantID     string  `json:"applicant_id,omitempty"`
-	ApplicantUsername string `json:"applicant_username,omitempty"`
-	ApplicantEmail  string  `json:"applicant_email,omitempty"`
-	Status          string  `json:"status"`
-	EmployerNotes   *string `json:"employer_notes,omitempty"`
-	AppliedAt       string  `json:"applied_at"`
-	StatusUpdatedAt string  `json:"status_updated_at,omitempty"`
+	ID                string  `json:"id"`
+	JobID             string  `json:"job_id"`
+	JobTitle          string  `json:"job_title,omitempty"`
+	JobSlug           string  `json:"job_slug,omitempty"`
+	ApplicantID       string  `json:"applicant_id,omitempty"`
+	ApplicantUsername string  `json:"applicant_username,omitempty"`
+	ApplicantEmail    string  `json:"applicant_email,omitempty"`
+	Status            string  `json:"status"`
+	EmployerNotes     *string `json:"employer_notes,omitempty"`
+	AppliedAt         string  `json:"applied_at"`
+	StatusUpdatedAt   string  `json:"status_updated_at,omitempty"`
 }
 
 // Service holds the business logic for the Jobs Board.
@@ -1079,11 +1080,11 @@ func (s *Service) AdminDeleteJob(ctx context.Context, tenantID, jobID pgtype.UUI
 // ApplicationResult.
 func applicationResultFromUserRow(row gen.ListUserJobApplicationsRow) ApplicationResult {
 	r := ApplicationResult{
-		ID:        row.ID.String(),
-		JobID:     row.JobID.String(),
-		JobTitle:  row.JobTitle,
-		JobSlug:   row.JobSlug,
-		Status:    row.Status,
+		ID:            row.ID.String(),
+		JobID:         row.JobID.String(),
+		JobTitle:      row.JobTitle,
+		JobSlug:       row.JobSlug,
+		Status:        row.Status,
 		EmployerNotes: row.EmployerNotes,
 	}
 	if row.AppliedAt.Valid {
@@ -1099,13 +1100,13 @@ func applicationResultFromUserRow(row gen.ListUserJobApplicationsRow) Applicatio
 // ApplicationResult.
 func applicationResultFromJobRow(row gen.ListJobApplicationsByJobRow) ApplicationResult {
 	r := ApplicationResult{
-		ID:               row.ID.String(),
-		JobID:            row.JobID.String(),
-		ApplicantID:      row.ApplicantID.String(),
+		ID:                row.ID.String(),
+		JobID:             row.JobID.String(),
+		ApplicantID:       row.ApplicantID.String(),
 		ApplicantUsername: row.ApplicantUsername,
-		ApplicantEmail:   row.ApplicantEmail,
-		Status:           row.Status,
-		EmployerNotes:    row.EmployerNotes,
+		ApplicantEmail:    row.ApplicantEmail,
+		Status:            row.Status,
+		EmployerNotes:     row.EmployerNotes,
 	}
 	if row.AppliedAt.Valid {
 		r.AppliedAt = row.AppliedAt.Time.UTC().Format("2006-01-02T15:04:05Z07:00")
@@ -1120,13 +1121,13 @@ func applicationResultFromJobRow(row gen.ListJobApplicationsByJobRow) Applicatio
 // ApplicationResult.
 func applicationResultFromAdminRow(row gen.AdminListJobApplicationsRow) ApplicationResult {
 	r := ApplicationResult{
-		ID:               row.ID.String(),
-		JobID:            row.JobID.String(),
-		ApplicantID:      row.ApplicantID.String(),
+		ID:                row.ID.String(),
+		JobID:             row.JobID.String(),
+		ApplicantID:       row.ApplicantID.String(),
 		ApplicantUsername: row.ApplicantUsername,
-		JobTitle:         row.JobTitle,
-		Status:           row.Status,
-		EmployerNotes:    row.EmployerNotes,
+		JobTitle:          row.JobTitle,
+		Status:            row.Status,
+		EmployerNotes:     row.EmployerNotes,
 	}
 	if row.AppliedAt.Valid {
 		r.AppliedAt = row.AppliedAt.Time.UTC().Format("2006-01-02T15:04:05Z07:00")

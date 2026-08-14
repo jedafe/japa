@@ -12,7 +12,8 @@
 // cannot express dynamic WHERE clauses or dynamic OR builders.
 //
 // Ref: japaconnect-engineering/sections/86-community-calendar.md
-//      japaconnect-engineering/adr/ADR-094-community-calendar.md
+//
+//	japaconnect-engineering/adr/ADR-094-community-calendar.md
 package calendar
 
 import (
@@ -83,7 +84,7 @@ func fromGetRow(r gen.CalendarGetEntryRow) CalendarEntry {
 		OccursAt: r.OccursAt, EndsAt: r.EndsAt, IsRecurring: r.IsRecurring, RecurrencePattern: r.RecurrencePattern,
 		SourceURL: r.SourceUrl, Status: r.Status, SubmittedBy: r.SubmittedBy, ReviewedBy: r.ReviewedBy, ReviewedAt: r.ReviewedAt,
 		StalenessCheckDue: r.StalenessCheckDue,
-		AiGenerated: r.AiGenerated, AiModel: r.AiModel, HitlReviewedBy: r.HitlReviewedBy, AiGeneratedAt: r.AiGeneratedAt,
+		AiGenerated:       r.AiGenerated, AiModel: r.AiModel, HitlReviewedBy: r.HitlReviewedBy, AiGeneratedAt: r.AiGeneratedAt,
 		CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt, DeletedAt: r.DeletedAt,
 	}
 }
@@ -96,7 +97,7 @@ func fromSavedRow(r gen.CalendarListSavedEntriesRow) CalendarEntry {
 		OccursAt: r.OccursAt, EndsAt: r.EndsAt, IsRecurring: r.IsRecurring, RecurrencePattern: r.RecurrencePattern,
 		SourceURL: r.SourceUrl, Status: r.Status, SubmittedBy: r.SubmittedBy, ReviewedBy: r.ReviewedBy, ReviewedAt: r.ReviewedAt,
 		StalenessCheckDue: r.StalenessCheckDue,
-		AiGenerated: r.AiGenerated, AiModel: r.AiModel, HitlReviewedBy: r.HitlReviewedBy, AiGeneratedAt: r.AiGeneratedAt,
+		AiGenerated:       r.AiGenerated, AiModel: r.AiModel, HitlReviewedBy: r.HitlReviewedBy, AiGeneratedAt: r.AiGeneratedAt,
 		CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt, DeletedAt: r.DeletedAt,
 	}
 }

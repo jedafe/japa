@@ -8,6 +8,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	errpkg "github.com/jedafe/japa/internal/errors"
 )
 
 // ---------------------------------------------------------------------------
@@ -32,18 +33,18 @@ func (h *Handlers) AddParentSpace(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
 		return
 	}
 
 	if strings.TrimSpace(req.ParentSpaceID) == "" {
-		writeError(w, http.StatusBadRequest, "missing_fields", "parent_space_id is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_fields", "parent_space_id is required")
 		return
 	}
 
 	var parentID pgtype.UUID
 	if err := parentID.Scan(req.ParentSpaceID); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid parent_space_id format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid parent_space_id format")
 		return
 	}
 	// Verify the parent space exists and belongs to the same tenant.
@@ -57,7 +58,7 @@ func (h *Handlers) AddParentSpace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{
 		"data": map[string]any{
 			"space_id":        space.ID,
 			"parent_space_id": parentID,
@@ -75,13 +76,13 @@ func (h *Handlers) RemoveParentSpace(w http.ResponseWriter, r *http.Request) {
 
 	parentID, err := parseUUIDParam(r, "parentId")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid parent ID format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid parent ID format")
 		return
 	}
 
 	if err := h.Service.RemoveParentSpace(r.Context(), space.ID, parentID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "not_found", "Parent relationship not found")
+			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Parent relationship not found")
 			return
 		}
 
@@ -90,7 +91,7 @@ func (h *Handlers) RemoveParentSpace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "removed"}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "removed"}})
 }
 
 // ListParentSpaces handles GET /api/v1/spaces/{slug}/parents.
@@ -112,7 +113,7 @@ func (h *Handlers) ListParentSpaces(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": parents})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": parents})
 }
 
 // SuggestParentSpaces handles GET /spaces/suggest-parents.
@@ -123,12 +124,12 @@ func (h *Handlers) SuggestParentSpaces(w http.ResponseWriter, r *http.Request) {
 	}
 	rows, err := h.Service.read.SuggestParentSpaces(r.Context(), tenantID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to suggest parents")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to suggest parents")
 		return
 	}
 	spaces := make([]map[string]any, 0, len(rows))
 	for _, r := range rows {
 		spaces = append(spaces, map[string]any{"id": r.ID, "name": r.Name, "slug": r.Slug})
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": spaces})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": spaces})
 }

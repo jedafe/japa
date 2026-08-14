@@ -10,7 +10,8 @@
 // gamification:expire_challenges task.
 //
 // Ref: japaconnect-engineering/sections/64-gamification.md
-//      japaconnect-engineering/adr/ADR-082-advanced-gamification.md
+//
+//	japaconnect-engineering/adr/ADR-082-advanced-gamification.md
 package gamification
 
 import (

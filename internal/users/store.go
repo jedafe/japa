@@ -314,7 +314,8 @@ func (s *Store) listUsers(ctx context.Context, tenantID pgtype.UUID, search, sta
 // listPublicUsers returns a paginated, PII-safe list of active, search-indexable
 // users for the public directory at GET /users. Filters by username or display_name
 // and optionally by profile_type. Ref: japaconnect-engineering/sections/02-authentication-sessions.md
-//      japaconnect-engineering/sections/19-privacy-gdpr.md (search_indexable opt-out)
+//
+//	japaconnect-engineering/sections/19-privacy-gdpr.md (search_indexable opt-out)
 func (s *Store) listPublicUsers(ctx context.Context, tenantID pgtype.UUID, search, profileType string, limit, offset int32) ([]gen.ListPublicUsersRow, error) {
 	rows, err := s.read.ListPublicUsers(ctx, gen.ListPublicUsersParams{
 		TenantID:    tenantID,

@@ -33,10 +33,16 @@ type errorBody struct {
 // WriteJSON serializes the given value as JSON and writes it to the
 // response with the given status code. It sets the Content-Type header
 // to application/json. If serialization fails it logs the error so a
-// truncated response is diagnosable.
+// truncated response is diagnosable. A nil value produces no body — this
+// is correct for 204 No Content and other nil-body responses, avoiding
+// the incorrect "null" payload that json.Encode would emit.
 func WriteJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
+
+	if v == nil {
+		return
+	}
 
 	if err := json.NewEncoder(w).Encode(v); err != nil {
 		slog.Error("encoding JSON response", "error", err, "status", status)

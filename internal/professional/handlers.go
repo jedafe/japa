@@ -41,7 +41,7 @@ func listProfileSubEntities(w http.ResponseWriter, r *http.Request, h *Handlers,
 
 	profileID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid profile ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid profile ID")
 		return
 	}
 
@@ -54,7 +54,7 @@ func listProfileSubEntities(w http.ResponseWriter, r *http.Request, h *Handlers,
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": items})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": items})
 }
 
 const defaultPageSize int32 = 20
@@ -97,7 +97,7 @@ func parseUUIDParam(r *http.Request, param string) (pgtype.UUID, error) {
 func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
 
@@ -108,7 +108,7 @@ func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype
 func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	user := auth.FromContext(r.Context())
 	if user == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
 
@@ -119,27 +119,10 @@ func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.Au
 func handleServiceError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, ErrUpgradeToBusinessRequired):
-		writeError(w, http.StatusForbidden, "upgrade_to_business_required", "You must upgrade to a business profile to create professional profiles")
+		errpkg.WriteError(w, http.StatusForbidden, "upgrade_to_business_required", "You must upgrade to a business profile to create professional profiles")
 	default:
 		errpkg.HandleServiceError(w, err)
 	}
-}
-
-// writeJSON serializes the given value as JSON and writes it to the response.
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-
-	if err := json.NewEncoder(w).Encode(v); err != nil {
-		slog.Warn("json encode error", "error", err)
-	}
-}
-
-// writeError writes a JSON error response following the JapaConnect API format.
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, map[string]any{
-		"error": map[string]string{"code": code, "message": message},
-	})
 }
 
 // parsePageSize extracts and clamps the page_size query parameter.
@@ -182,7 +165,7 @@ func parsePageSizeOffset(r *http.Request) int32 {
 func (h *Handlers) checkProfileOwnerOrAdmin(w http.ResponseWriter, r *http.Request, profileID pgtype.UUID, user *auth.AuthenticatedUser, tenantID pgtype.UUID) bool {
 	isOwner, err := h.Service.IsOwner(r.Context(), profileID, user.UserID, tenantID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to check ownership")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to check ownership")
 		return false
 	}
 
@@ -195,7 +178,7 @@ func (h *Handlers) checkProfileOwnerOrAdmin(w http.ResponseWriter, r *http.Reque
 		return true
 	}
 
-	writeError(w, http.StatusForbidden, "forbidden", "You do not own this profile")
+	errpkg.WriteError(w, http.StatusForbidden, "forbidden", "You do not own this profile")
 
 	return false
 }
@@ -224,24 +207,24 @@ func (h *Handlers) CreateProfessionalProfileType(w http.ResponseWriter, r *http.
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if input.Name == "" {
-		writeError(w, http.StatusBadRequest, "missing_name", "name is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_name", "name is required")
 		return
 	}
 
 	if input.Slug == "" {
-		writeError(w, http.StatusBadRequest, "missing_slug", "slug is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_slug", "slug is required")
 		return
 	}
 
 	var fieldGroupID pgtype.UUID
 	if input.FieldGroupID != "" {
 		if err := fieldGroupID.Scan(input.FieldGroupID); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_field_group_id", "Invalid field_group_id")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_field_group_id", "Invalid field_group_id")
 			return
 		}
 	}
@@ -257,7 +240,7 @@ func (h *Handlers) CreateProfessionalProfileType(w http.ResponseWriter, r *http.
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": result})
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": result})
 }
 
 // ListProfessionalProfileTypes handles GET /api/v1/professional-profiles/types.
@@ -281,7 +264,7 @@ func (h *Handlers) ListProfessionalProfileTypes(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": types})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": types})
 }
 
 // GetProfessionalProfileType handles GET /api/v1/professional-profiles/types/{slug}.
@@ -298,7 +281,7 @@ func (h *Handlers) GetProfessionalProfileType(w http.ResponseWriter, r *http.Req
 
 	slug := chi.URLParam(r, "slug")
 	if slug == "" {
-		writeError(w, http.StatusBadRequest, "missing_slug", "slug is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_slug", "slug is required")
 		return
 	}
 
@@ -308,7 +291,7 @@ func (h *Handlers) GetProfessionalProfileType(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": result})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": result})
 }
 
 // UpdateProfessionalProfileType handles PATCH /api/v1/professional-profiles/types/{id}.
@@ -325,7 +308,7 @@ func (h *Handlers) UpdateProfessionalProfileType(w http.ResponseWriter, r *http.
 
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid profile type ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid profile type ID")
 		return
 	}
 
@@ -336,19 +319,19 @@ func (h *Handlers) UpdateProfessionalProfileType(w http.ResponseWriter, r *http.
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if input.Name == "" {
-		writeError(w, http.StatusBadRequest, "missing_name", "name is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_name", "name is required")
 		return
 	}
 
 	var fieldGroupID pgtype.UUID
 	if input.FieldGroupID != "" {
 		if err := fieldGroupID.Scan(input.FieldGroupID); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_field_group_id", "Invalid field_group_id")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_field_group_id", "Invalid field_group_id")
 			return
 		}
 	}
@@ -363,7 +346,7 @@ func (h *Handlers) UpdateProfessionalProfileType(w http.ResponseWriter, r *http.
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": result})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": result})
 }
 
 // DeleteProfessionalProfileType handles DELETE /api/v1/professional-profiles/types/{id}.
@@ -380,7 +363,7 @@ func (h *Handlers) DeleteProfessionalProfileType(w http.ResponseWriter, r *http.
 
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid profile type ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid profile type ID")
 		return
 	}
 
@@ -389,7 +372,7 @@ func (h *Handlers) DeleteProfessionalProfileType(w http.ResponseWriter, r *http.
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
 }
 
 // ---------------------------------------------------------------------------
@@ -450,7 +433,7 @@ func (h *Handlers) CreateProfessionalProfile(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": result})
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": result})
 }
 
 // createProfileInput is the decoded JSON body for CreateProfessionalProfile.
@@ -471,22 +454,22 @@ type createProfileInput struct {
 func decodeCreateProfileInput(w http.ResponseWriter, r *http.Request) (createProfileInput, bool) {
 	var input createProfileInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return input, false
 	}
 
 	if input.Name == "" {
-		writeError(w, http.StatusBadRequest, "missing_name", "name is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_name", "name is required")
 		return input, false
 	}
 
 	if input.Slug == "" {
-		writeError(w, http.StatusBadRequest, "missing_slug", "slug is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_slug", "slug is required")
 		return input, false
 	}
 
 	if input.TypeID == "" {
-		writeError(w, http.StatusBadRequest, "missing_type_id", "type_id is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_type_id", "type_id is required")
 		return input, false
 	}
 
@@ -497,7 +480,7 @@ func decodeCreateProfileInput(w http.ResponseWriter, r *http.Request) (createPro
 func parseRequiredUUID(w http.ResponseWriter, value, fieldName string) (pgtype.UUID, bool) {
 	var id pgtype.UUID
 	if err := id.Scan(value); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_"+fieldName, "Invalid "+fieldName)
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_"+fieldName, "Invalid "+fieldName)
 		return pgtype.UUID{}, false
 	}
 
@@ -512,7 +495,7 @@ func parseOptionalUUID(w http.ResponseWriter, value, fieldName string) (pgtype.U
 
 	var id pgtype.UUID
 	if err := id.Scan(value); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_"+fieldName, "Invalid "+fieldName+" format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_"+fieldName, "Invalid "+fieldName+" format")
 		return pgtype.UUID{}, false
 	}
 
@@ -541,7 +524,7 @@ func (h *Handlers) ListProfessionalProfiles(w http.ResponseWriter, r *http.Reque
 	if ownerID != "" {
 		var oid pgtype.UUID
 		if err := oid.Scan(ownerID); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_owner_user_id", "Invalid owner_user_id")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_owner_user_id", "Invalid owner_user_id")
 			return
 		}
 
@@ -551,7 +534,7 @@ func (h *Handlers) ListProfessionalProfiles(w http.ResponseWriter, r *http.Reque
 			return
 		}
 
-		writeJSON(w, http.StatusOK, map[string]any{"data": profiles})
+		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": profiles})
 
 		return
 	}
@@ -559,7 +542,7 @@ func (h *Handlers) ListProfessionalProfiles(w http.ResponseWriter, r *http.Reque
 	if typeID != "" {
 		var tid pgtype.UUID
 		if err := tid.Scan(typeID); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_type_id", "Invalid type_id")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_type_id", "Invalid type_id")
 			return
 		}
 
@@ -569,7 +552,7 @@ func (h *Handlers) ListProfessionalProfiles(w http.ResponseWriter, r *http.Reque
 			return
 		}
 
-		writeJSON(w, http.StatusOK, map[string]any{"data": profiles})
+		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": profiles})
 
 		return
 	}
@@ -578,7 +561,7 @@ func (h *Handlers) ListProfessionalProfiles(w http.ResponseWriter, r *http.Reque
 	// requested by an admin with the professional_profile.member.manage node.
 	user := auth.FromContext(r.Context())
 	if user == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
 
@@ -590,7 +573,7 @@ func (h *Handlers) ListProfessionalProfiles(w http.ResponseWriter, r *http.Reque
 			return
 		}
 
-		writeJSON(w, http.StatusOK, map[string]any{"data": profiles})
+		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": profiles})
 		return
 	}
 
@@ -600,7 +583,7 @@ func (h *Handlers) ListProfessionalProfiles(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": profiles})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": profiles})
 }
 
 // GetProfessionalProfile handles GET /api/v1/professional-profiles/{slug}.
@@ -611,7 +594,7 @@ func (h *Handlers) GetProfessionalProfile(w http.ResponseWriter, r *http.Request
 
 	slug := chi.URLParam(r, "slug")
 	if slug == "" {
-		writeError(w, http.StatusBadRequest, "missing_slug", "slug is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_slug", "slug is required")
 		return
 	}
 
@@ -621,7 +604,7 @@ func (h *Handlers) GetProfessionalProfile(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": result})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": result})
 }
 
 // UpdateProfessionalProfile handles PATCH /api/v1/professional-profiles/{id}.
@@ -638,7 +621,7 @@ func (h *Handlers) UpdateProfessionalProfile(w http.ResponseWriter, r *http.Requ
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid profile ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid profile ID")
 		return
 	}
 
@@ -659,26 +642,26 @@ func (h *Handlers) UpdateProfessionalProfile(w http.ResponseWriter, r *http.Requ
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if input.Name == "" {
-		writeError(w, http.StatusBadRequest, "missing_name", "name is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_name", "name is required")
 		return
 	}
 
 	var logoMediaID, headerMediaID pgtype.UUID
 	if input.LogoMediaID != "" {
 		if err := logoMediaID.Scan(input.LogoMediaID); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_logo_media_id", "Invalid logo media ID format")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_logo_media_id", "Invalid logo media ID format")
 			return
 		}
 	}
 
 	if input.HeaderMediaID != "" {
 		if err := headerMediaID.Scan(input.HeaderMediaID); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_header_media_id", "Invalid header media ID format")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_header_media_id", "Invalid header media ID format")
 			return
 		}
 	}
@@ -699,7 +682,7 @@ func (h *Handlers) UpdateProfessionalProfile(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": result})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": result})
 }
 
 // DeleteProfessionalProfile handles DELETE /api/v1/professional-profiles/{id}.
@@ -716,7 +699,7 @@ func (h *Handlers) DeleteProfessionalProfile(w http.ResponseWriter, r *http.Requ
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid profile ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid profile ID")
 		return
 	}
 
@@ -729,7 +712,7 @@ func (h *Handlers) DeleteProfessionalProfile(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	writeJSON(w, http.StatusNoContent, nil)
+	errpkg.WriteJSON(w, http.StatusNoContent, nil)
 }
 
 // ---------------------------------------------------------------------------
@@ -750,7 +733,7 @@ func (h *Handlers) AddMember(w http.ResponseWriter, r *http.Request) {
 
 	profileID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid profile ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid profile ID")
 		return
 	}
 
@@ -764,18 +747,18 @@ func (h *Handlers) AddMember(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if input.UserID == "" {
-		writeError(w, http.StatusBadRequest, "missing_user_id", "user_id is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_user_id", "user_id is required")
 		return
 	}
 
 	var memberUserID pgtype.UUID
 	if err := memberUserID.Scan(input.UserID); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_user_id", "Invalid user_id")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_user_id", "Invalid user_id")
 		return
 	}
 
@@ -787,7 +770,7 @@ func (h *Handlers) AddMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": map[string]string{"status": "added"}})
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": map[string]string{"status": "added"}})
 }
 
 // RemoveMember handles DELETE /api/v1/professional-profiles/{id}/members/{userId}.
@@ -804,7 +787,7 @@ func (h *Handlers) RemoveMember(w http.ResponseWriter, r *http.Request) {
 
 	profileID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid profile ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid profile ID")
 		return
 	}
 
@@ -812,7 +795,7 @@ func (h *Handlers) RemoveMember(w http.ResponseWriter, r *http.Request) {
 	// owner/admin authorization.
 	userID, err := parseUUIDParam(r, "userId")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_user_id", "Invalid user ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_user_id", "Invalid user ID")
 		return
 	}
 
@@ -827,7 +810,7 @@ func (h *Handlers) RemoveMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusNoContent, nil)
+	errpkg.WriteJSON(w, http.StatusNoContent, nil)
 }
 
 // ListMembers handles GET /api/v1/professional-profiles/{id}/members.
@@ -844,7 +827,7 @@ func (h *Handlers) ListMembers(w http.ResponseWriter, r *http.Request) {
 
 	profileID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid profile ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid profile ID")
 		return
 	}
 
@@ -854,7 +837,7 @@ func (h *Handlers) ListMembers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": members})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": members})
 }
 
 // UpdateMemberRole handles PATCH /api/v1/professional-profiles/{id}/members/{userId}.
@@ -871,7 +854,7 @@ func (h *Handlers) UpdateMemberRole(w http.ResponseWriter, r *http.Request) {
 
 	profileID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid profile ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid profile ID")
 		return
 	}
 
@@ -881,7 +864,7 @@ func (h *Handlers) UpdateMemberRole(w http.ResponseWriter, r *http.Request) {
 
 	userID, err := parseUUIDParam(r, "userId")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_user_id", "Invalid user ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_user_id", "Invalid user ID")
 		return
 	}
 
@@ -890,12 +873,12 @@ func (h *Handlers) UpdateMemberRole(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if input.Role == "" {
-		writeError(w, http.StatusBadRequest, "missing_role", "role is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_role", "role is required")
 		return
 	}
 
@@ -904,7 +887,7 @@ func (h *Handlers) UpdateMemberRole(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "updated"}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "updated"}})
 }
 
 // ---------------------------------------------------------------------------
@@ -925,7 +908,7 @@ func (h *Handlers) CreateInvitation(w http.ResponseWriter, r *http.Request) {
 
 	profileID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid profile ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid profile ID")
 		return
 	}
 
@@ -939,12 +922,12 @@ func (h *Handlers) CreateInvitation(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if input.Email == "" {
-		writeError(w, http.StatusBadRequest, "missing_email", "email is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_email", "email is required")
 		return
 	}
 
@@ -957,7 +940,7 @@ func (h *Handlers) CreateInvitation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": inv})
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": inv})
 }
 
 // ListInvitations handles GET /api/v1/professional-profiles/{id}/invitations.
@@ -974,7 +957,7 @@ func (h *Handlers) ListInvitations(w http.ResponseWriter, r *http.Request) {
 
 	profileID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid profile ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid profile ID")
 		return
 	}
 
@@ -988,7 +971,7 @@ func (h *Handlers) ListInvitations(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": invitations})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": invitations})
 }
 
 // AcceptInvitation handles POST /api/v1/professional-profiles/invitations/{token}/accept.
@@ -1005,7 +988,7 @@ func (h *Handlers) AcceptInvitation(w http.ResponseWriter, r *http.Request) {
 
 	token := chi.URLParam(r, "token")
 	if token == "" {
-		writeError(w, http.StatusBadRequest, "missing_token", "token is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_token", "token is required")
 		return
 	}
 
@@ -1014,7 +997,7 @@ func (h *Handlers) AcceptInvitation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "accepted"}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "accepted"}})
 }
 
 // ---------------------------------------------------------------------------
@@ -1035,7 +1018,7 @@ func (h *Handlers) GetAuthorContext(w http.ResponseWriter, r *http.Request) {
 
 	profileID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid profile ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid profile ID")
 		return
 	}
 
@@ -1045,7 +1028,7 @@ func (h *Handlers) GetAuthorContext(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": authorCtx})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": authorCtx})
 }
 
 // ---------------------------------------------------------------------------
@@ -1117,7 +1100,7 @@ func (h *Handlers) CreateRelocation(w http.ResponseWriter, r *http.Request) {
 
 	profileID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid profile ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid profile ID")
 		return
 	}
 
@@ -1133,12 +1116,12 @@ func (h *Handlers) CreateRelocation(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if input.Country == "" {
-		writeError(w, http.StatusBadRequest, "missing_country", "country is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_country", "country is required")
 		return
 	}
 
@@ -1153,7 +1136,7 @@ func (h *Handlers) CreateRelocation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": relocation})
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": relocation})
 }
 
 // UpdateRelocation handles PATCH /api/v1/professional-profiles/relocations/{relocationId}.
@@ -1170,7 +1153,7 @@ func (h *Handlers) UpdateRelocation(w http.ResponseWriter, r *http.Request) {
 
 	relocationID, err := parseUUIDParam(r, "relocationId")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_relocation_id", "Invalid relocation ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_relocation_id", "Invalid relocation ID")
 		return
 	}
 
@@ -1192,7 +1175,7 @@ func (h *Handlers) UpdateRelocation(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
@@ -1207,7 +1190,7 @@ func (h *Handlers) UpdateRelocation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": relocation})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": relocation})
 }
 
 // DeleteRelocation handles DELETE /api/v1/professional-profiles/relocations/{relocationId}.
@@ -1224,7 +1207,7 @@ func (h *Handlers) DeleteRelocation(w http.ResponseWriter, r *http.Request) {
 
 	relocationID, err := parseUUIDParam(r, "relocationId")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_relocation_id", "Invalid relocation ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_relocation_id", "Invalid relocation ID")
 		return
 	}
 
@@ -1243,7 +1226,7 @@ func (h *Handlers) DeleteRelocation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"deleted": true}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"deleted": true}})
 }
 
 // ---------------------------------------------------------------------------
@@ -1264,7 +1247,7 @@ func (h *Handlers) CreateDocument(w http.ResponseWriter, r *http.Request) {
 
 	profileID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid profile ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid profile ID")
 		return
 	}
 
@@ -1280,17 +1263,17 @@ func (h *Handlers) CreateDocument(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if input.Title == "" {
-		writeError(w, http.StatusBadRequest, "missing_title", "title is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_title", "title is required")
 		return
 	}
 
 	if input.DocumentType == "" {
-		writeError(w, http.StatusBadRequest, "missing_document_type", "document_type is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_document_type", "document_type is required")
 		return
 	}
 
@@ -1305,7 +1288,7 @@ func (h *Handlers) CreateDocument(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": document})
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": document})
 }
 
 // UpdateDocument handles PATCH /api/v1/professional-profiles/documents/{documentId}.
@@ -1322,7 +1305,7 @@ func (h *Handlers) UpdateDocument(w http.ResponseWriter, r *http.Request) {
 
 	documentID, err := parseUUIDParam(r, "documentId")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_document_id", "Invalid document ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_document_id", "Invalid document ID")
 		return
 	}
 
@@ -1344,7 +1327,7 @@ func (h *Handlers) UpdateDocument(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
@@ -1359,7 +1342,7 @@ func (h *Handlers) UpdateDocument(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": document})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": document})
 }
 
 // DeleteDocument handles DELETE /api/v1/professional-profiles/documents/{documentId}.
@@ -1376,7 +1359,7 @@ func (h *Handlers) DeleteDocument(w http.ResponseWriter, r *http.Request) {
 
 	documentID, err := parseUUIDParam(r, "documentId")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_document_id", "Invalid document ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_document_id", "Invalid document ID")
 		return
 	}
 
@@ -1395,7 +1378,7 @@ func (h *Handlers) DeleteDocument(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"deleted": true}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"deleted": true}})
 }
 
 // ---------------------------------------------------------------------------
@@ -1416,7 +1399,7 @@ func (h *Handlers) CreateVerifier(w http.ResponseWriter, r *http.Request) {
 
 	profileID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid profile ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid profile ID")
 		return
 	}
 
@@ -1430,18 +1413,18 @@ func (h *Handlers) CreateVerifier(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if input.UserID == "" {
-		writeError(w, http.StatusBadRequest, "missing_user_id", "user_id is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_user_id", "user_id is required")
 		return
 	}
 
 	var verifierUserID pgtype.UUID
 	if err := verifierUserID.Scan(input.UserID); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_user_id", "Invalid user_id")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_user_id", "Invalid user_id")
 		return
 	}
 
@@ -1454,7 +1437,7 @@ func (h *Handlers) CreateVerifier(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": verifier})
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": verifier})
 }
 
 // DeleteVerifier handles DELETE /api/v1/professional-profiles/verifiers/{verifierId}.
@@ -1471,7 +1454,7 @@ func (h *Handlers) DeleteVerifier(w http.ResponseWriter, r *http.Request) {
 
 	verifierID, err := parseUUIDParam(r, "verifierId")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_verifier_id", "Invalid verifier ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_verifier_id", "Invalid verifier ID")
 		return
 	}
 
@@ -1490,14 +1473,14 @@ func (h *Handlers) DeleteVerifier(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusNoContent, nil)
+	errpkg.WriteJSON(w, http.StatusNoContent, nil)
 }
 
 // ToggleFollow handles POST/DELETE /api/v1/profiles/{id}/follow.
 func (h *Handlers) ToggleFollow(w http.ResponseWriter, r *http.Request) {
 	profileID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
@@ -1513,16 +1496,16 @@ func (h *Handlers) ToggleFollow(w http.ResponseWriter, r *http.Request) {
 
 	following, err := h.follows.ToggleFollow(r.Context(), tenantID, user.UserID, entityTypeProfessionalProfile, profileID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to toggle follow")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to toggle follow")
 		return
 	}
 
 	if r.Method == http.MethodDelete {
-		writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"following": false}})
+		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"following": false}})
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"following": following}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"following": following}})
 }
 
 // ─── P5.6 Professional Profile Extras ─────────────────────────────────────
@@ -1536,7 +1519,7 @@ func (h *Handlers) VerifyProfile(w http.ResponseWriter, r *http.Request) {
 
 	profileID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid profile ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid profile ID")
 		return
 	}
 
@@ -1545,7 +1528,7 @@ func (h *Handlers) VerifyProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": profileID.String(), "verified": true}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": profileID.String(), "verified": true}})
 }
 
 // UnverifyProfile handles DELETE /admin/profiles/:id/verify (P5.6).
@@ -1557,7 +1540,7 @@ func (h *Handlers) UnverifyProfile(w http.ResponseWriter, r *http.Request) {
 
 	profileID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid profile ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid profile ID")
 		return
 	}
 
@@ -1566,7 +1549,7 @@ func (h *Handlers) UnverifyProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusNoContent, nil)
+	errpkg.WriteJSON(w, http.StatusNoContent, nil)
 }
 
 // ListProfileContent handles GET /profiles/:id/content (P5.6).
@@ -1578,7 +1561,7 @@ func (h *Handlers) ListProfileContent(w http.ResponseWriter, r *http.Request) {
 
 	profileID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid profile ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid profile ID")
 		return
 	}
 
@@ -1588,9 +1571,9 @@ func (h *Handlers) ListProfileContent(w http.ResponseWriter, r *http.Request) {
 	content, err := h.Service.ListProfileContent(r.Context(), tenantID, profileID, limit, offset)
 	if err != nil {
 		slog.Error("professional: list profile content", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list profile content")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list profile content")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": content})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": content})
 }

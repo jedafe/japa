@@ -36,7 +36,7 @@ type Client struct {
 	UserID         string
 	TenantID       string
 	Send           chan []byte
-	SpaceIDs       map[string]bool       // subscribed spaces
+	SpaceIDs       map[string]bool                    // subscribed spaces
 	SessionChecker func(userID, tenantID string) bool // BUG-018: re-validate session on pong
 }
 

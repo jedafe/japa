@@ -32,8 +32,8 @@ const (
 	AutonomyModeAutonomous = "autonomous"
 	AutonomyModeQueued     = "queued"
 
-	StatusActive = "active"
-	StatusPaused = "paused"
+	StatusActive  = "active"
+	StatusPaused  = "paused"
 	StatusRetired = "retired"
 )
 
@@ -454,11 +454,11 @@ func (s *Service) ListPersonas(ctx context.Context, tenantID pgtype.UUID, status
 
 // UpdatePersonaInput holds the optional fields for a persona update.
 type UpdatePersonaInput struct {
-	DisclosureMode  *string
-	AutonomyMode    *string
-	VoicePrompt     *string
-	ActivityPolicy  *ActivityPolicy
-	Status          *string
+	DisclosureMode *string
+	AutonomyMode   *string
+	VoicePrompt    *string
+	ActivityPolicy *ActivityPolicy
+	Status         *string
 }
 
 // UpdatePersona updates a persona's config (activity_policy, modes, status,

@@ -4,7 +4,8 @@
 // GenerateRoadmap.
 //
 // Ref: japaconnect-engineering/sections/71-readiness-assessment.md
-//      japaconnect-engineering/adr/ADR-071-japa-readiness-assessment.md
+//
+//	japaconnect-engineering/adr/ADR-071-japa-readiness-assessment.md
 package assessment
 
 import (
@@ -177,13 +178,13 @@ func TestClassifyScore_EmptyThresholds(t *testing.T) {
 // the weakest dimensions first, ordered by priority.
 func TestGenerateRoadmap(t *testing.T) {
 	scoringConfig := ScoringConfig{
-		MaxScore: 100,
+		MaxScore:   100,
 		Thresholds: testThresholds,
 		DimensionWeights: map[string]float64{
-			"financial":            0.3,
-			"language":             0.2,
-			"qualifications":       0.2,
-			"visa_eligibility":     0.15,
+			"financial":             0.3,
+			"language":              0.2,
+			"qualifications":        0.2,
+			"visa_eligibility":      0.15,
 			"destination_knowledge": 0.15,
 		},
 	}
@@ -235,7 +236,7 @@ func TestGenerateRoadmap(t *testing.T) {
 // dimension (lowest score) gets the first roadmap steps.
 func TestGenerateRoadmap_WeakestDimensionFirst(t *testing.T) {
 	scoringConfig := ScoringConfig{
-		MaxScore: 100,
+		MaxScore:   100,
 		Thresholds: testThresholds,
 	}
 

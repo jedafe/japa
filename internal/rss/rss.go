@@ -13,7 +13,6 @@ package rss
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -23,6 +22,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/clientip"
 	"github.com/jedafe/japa/internal/db/gen"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/rss/model"
 	"github.com/jedafe/japa/internal/tenant"
 	"github.com/jedafe/japa/internal/valkey"
@@ -102,7 +102,7 @@ func (h *Handlers) SetRedis(r CacheClient) {
 func (h *Handlers) HandleFeed(w http.ResponseWriter, r *http.Request) {
 	tenantID := tenant.IDFromContext(r.Context())
 	if tenantID == (pgtype.UUID{}) {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return
 	}
 
@@ -128,7 +128,7 @@ func (h *Handlers) HandleFeed(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		slog.Error("rss: query feed", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Internal server error")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Internal server error")
 		return
 	}
 
@@ -163,7 +163,7 @@ func (h *Handlers) serveCachedOrLive(
 
 	items, err := render()
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Internal server error")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Internal server error")
 		return
 	}
 
@@ -187,13 +187,13 @@ func (h *Handlers) serveCachedOrLive(
 func (h *Handlers) HandleSpaceFeed(w http.ResponseWriter, r *http.Request) {
 	slug := chi.URLParam(r, "slug")
 	if slug == "" {
-		writeError(w, http.StatusBadRequest, "missing_field", "Space slug is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_field", "Space slug is required")
 		return
 	}
 
 	tenantID := tenant.IDFromContext(r.Context())
 	if tenantID == (pgtype.UUID{}) {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return
 	}
 
@@ -223,13 +223,13 @@ func (h *Handlers) HandleSpaceFeed(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) HandleTagFeed(w http.ResponseWriter, r *http.Request) {
 	slug := chi.URLParam(r, "slug")
 	if slug == "" {
-		writeError(w, http.StatusBadRequest, "missing_field", "Tag slug is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_field", "Tag slug is required")
 		return
 	}
 
 	tenantID := tenant.IDFromContext(r.Context())
 	if tenantID == (pgtype.UUID{}) {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return
 	}
 
@@ -259,13 +259,13 @@ func (h *Handlers) HandleTagFeed(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) HandleUserFeed(w http.ResponseWriter, r *http.Request) {
 	username := chi.URLParam(r, "username")
 	if username == "" {
-		writeError(w, http.StatusBadRequest, "missing_field", "Username is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_field", "Username is required")
 		return
 	}
 
 	tenantID := tenant.IDFromContext(r.Context())
 	if tenantID == (pgtype.UUID{}) {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return
 	}
 
@@ -294,15 +294,6 @@ func (h *Handlers) HandleUserFeed(w http.ResponseWriter, r *http.Request) {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-// writeError writes a JSON error response in the JapaConnect API format.
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(map[string]any{
-		"error": map[string]string{"code": code, "message": message},
-	})
-}
 
 // resolveSiteURL returns the public-facing site URL. X-Forwarded-Host/Proto
 // are honoured only when the immediate peer is a trusted proxy

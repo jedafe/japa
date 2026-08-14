@@ -396,12 +396,12 @@ func (s *Service) getPromotedRecommendations(ctx context.Context, tenantID pgtyp
 			continue
 		}
 		recs = append(recs, OnboardingRecommendation{
-			Type:      "space",
-			ID:        space.ID.String(),
-			Name:      space.Name,
-			Slug:      space.Slug,
-			Reason:    "promoted",
-			Score:     1.0,
+			Type:   "space",
+			ID:     space.ID.String(),
+			Name:   space.Name,
+			Slug:   space.Slug,
+			Reason: "promoted",
+			Score:  1.0,
 		})
 	}
 
@@ -419,12 +419,12 @@ func (s *Service) getPromotedRecommendations(ctx context.Context, tenantID pgtyp
 			continue
 		}
 		recs = append(recs, OnboardingRecommendation{
-			Type:      "user",
-			ID:        user.ID.String(),
-			Name:      user.Username,
-			Slug:      user.Username,
-			Reason:    "promoted",
-			Score:     1.0,
+			Type:   "user",
+			ID:     user.ID.String(),
+			Name:   user.Username,
+			Slug:   user.Username,
+			Reason: "promoted",
+			Score:  1.0,
 		})
 	}
 
@@ -433,10 +433,11 @@ func (s *Service) getPromotedRecommendations(ctx context.Context, tenantID pgtyp
 
 // stepDataFields holds the extracted onboarding step data.
 // Field names match what the frontend wizard sends in step_data:
-//   Step 1: name, japa_status, current_location
-//   Step 2: destination, primary_goal
-//   Step 3: tags (array of tag slugs — used for interest-based recommendations)
-//   Step 4: follows (array of space/user IDs)
+//
+//	Step 1: name, japa_status, current_location
+//	Step 2: destination, primary_goal
+//	Step 3: tags (array of tag slugs — used for interest-based recommendations)
+//	Step 4: follows (array of space/user IDs)
 type stepDataFields struct {
 	Name            string   `json:"name"`
 	JapaStatus      string   `json:"japa_status"`

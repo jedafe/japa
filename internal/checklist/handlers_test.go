@@ -3,7 +3,8 @@
 // and table-driven tests for the slugifyItemKey helper.
 //
 // Ref: japaconnect-engineering/sections/70-visa-checklist.md
-//      japaconnect-engineering/adr/ADR-070-visa-document-checklist-generator.md
+//
+//	japaconnect-engineering/adr/ADR-070-visa-document-checklist-generator.md
 package checklist
 
 import (

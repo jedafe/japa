@@ -12,7 +12,8 @@
 //	GET   /api/v1/admin/checklist/completion-stats         — completion rates by guide (admin)
 //
 // Ref: japaconnect-engineering/sections/70-visa-checklist.md
-//      japaconnect-engineering/adr/ADR-070-visa-document-checklist-generator.md
+//
+//	japaconnect-engineering/adr/ADR-070-visa-document-checklist-generator.md
 package checklist
 
 import (
@@ -26,6 +27,7 @@ import (
 
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/config"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/tenant"
 )
 
@@ -44,24 +46,10 @@ func NewHandlers(service *Service, settings *config.Settings) *Handlers {
 // Shared helpers (same pattern as rag/handlers.go)
 // ---------------------------------------------------------------------------
 
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	if err := json.NewEncoder(w).Encode(v); err != nil {
-		slog.Error("checklist: encode response", "error", err)
-	}
-}
-
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, map[string]any{
-		"error": map[string]string{"code": code, "message": message},
-	})
-}
-
 func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
 	return t.ID, true
@@ -70,7 +58,7 @@ func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	u := auth.FromContext(r.Context())
 	if u == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
 	return u, true
@@ -79,7 +67,7 @@ func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUse
 func scanUUIDParam(w http.ResponseWriter, r *http.Request, name string) (pgtype.UUID, bool) {
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, name)); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid "+name)
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid "+name)
 		return pgtype.UUID{}, false
 	}
 	return id, true
@@ -115,23 +103,23 @@ func (h *Handlers) HandleSelector(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil {
-		writeError(w, http.StatusServiceUnavailable, "checklist_unavailable", "Checklist service not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "checklist_unavailable", "Checklist service not configured")
 		return
 	}
 
 	if !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusForbidden, "checklist_disabled", "Checklist tool is disabled")
+		errpkg.WriteError(w, http.StatusForbidden, "checklist_disabled", "Checklist tool is disabled")
 		return
 	}
 
 	result, err := h.service.GetSelector(r.Context(), tenantID)
 	if err != nil {
 		slog.Error("checklist: selector failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "selector_failed", "Failed to get selector options")
+		errpkg.WriteError(w, http.StatusInternalServerError, "selector_failed", "Failed to get selector options")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": result})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": result})
 }
 
 // HandleGetItems handles GET /checklist/{guide_id} — the checklist guide
@@ -150,23 +138,23 @@ func (h *Handlers) HandleGetItems(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil {
-		writeError(w, http.StatusServiceUnavailable, "checklist_unavailable", "Checklist service not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "checklist_unavailable", "Checklist service not configured")
 		return
 	}
 
 	if !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusForbidden, "checklist_disabled", "Checklist tool is disabled")
+		errpkg.WriteError(w, http.StatusForbidden, "checklist_disabled", "Checklist tool is disabled")
 		return
 	}
 
 	guide, err := h.service.GetGuide(r.Context(), tenantID, guideID)
 	if err != nil {
 		slog.Error("checklist: get guide failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "items_failed", "Failed to get checklist items")
+		errpkg.WriteError(w, http.StatusInternalServerError, "items_failed", "Failed to get checklist items")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": guide})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": guide})
 }
 
 // ---------------------------------------------------------------------------
@@ -190,18 +178,18 @@ func (h *Handlers) HandleGetProgress(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil {
-		writeError(w, http.StatusServiceUnavailable, "checklist_unavailable", "Checklist service not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "checklist_unavailable", "Checklist service not configured")
 		return
 	}
 
 	items, err := h.service.GetProgress(r.Context(), tenantID, user.UserID, guideID)
 	if err != nil {
 		slog.Error("checklist: get progress failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "progress_failed", "Failed to get progress")
+		errpkg.WriteError(w, http.StatusInternalServerError, "progress_failed", "Failed to get progress")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": items})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": items})
 }
 
 // updateProgressBody is the PATCH request body for marking an item. Both
@@ -233,29 +221,29 @@ func (h *Handlers) HandleUpdateProgress(w http.ResponseWriter, r *http.Request) 
 
 	itemKey := chi.URLParam(r, "item_key")
 	if itemKey == "" {
-		writeError(w, http.StatusBadRequest, "missing_item_key", "Item key is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_item_key", "Item key is required")
 		return
 	}
 
 	var body updateProgressBody
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
 
 	if h.service == nil {
-		writeError(w, http.StatusServiceUnavailable, "checklist_unavailable", "Checklist service not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "checklist_unavailable", "Checklist service not configured")
 		return
 	}
 
 	row, err := h.service.UpsertProgress(r.Context(), tenantID, user.UserID, guideID, itemKey, body.Completed, body.Notes)
 	if err != nil {
 		slog.Error("checklist: update progress failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "update_failed", "Failed to update progress")
+		errpkg.WriteError(w, http.StatusInternalServerError, "update_failed", "Failed to update progress")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
 			"id":           row.ID.String(),
 			"item_key":     row.ItemKey,
@@ -284,17 +272,17 @@ func (h *Handlers) HandleResetProgress(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil {
-		writeError(w, http.StatusServiceUnavailable, "checklist_unavailable", "Checklist service not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "checklist_unavailable", "Checklist service not configured")
 		return
 	}
 
 	if err := h.service.ResetProgress(r.Context(), tenantID, user.UserID, guideID); err != nil {
 		slog.Error("checklist: reset progress failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "reset_failed", "Failed to reset progress")
+		errpkg.WriteError(w, http.StatusInternalServerError, "reset_failed", "Failed to reset progress")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"reset": true}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"reset": true}})
 }
 
 // ---------------------------------------------------------------------------
@@ -313,21 +301,21 @@ func (h *Handlers) HandleAdminListProgress(w http.ResponseWriter, r *http.Reques
 	}
 
 	if h.service == nil {
-		writeError(w, http.StatusServiceUnavailable, "checklist_unavailable", "Checklist service not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "checklist_unavailable", "Checklist service not configured")
 		return
 	}
 
 	var guideID pgtype.UUID
 	if v := r.URL.Query().Get("guide_id"); v != "" {
 		if err := guideID.Scan(v); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid guide_id")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid guide_id")
 			return
 		}
 	}
 	var userID pgtype.UUID
 	if v := r.URL.Query().Get("user_id"); v != "" {
 		if err := userID.Scan(v); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid user_id")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid user_id")
 			return
 		}
 	}
@@ -337,11 +325,11 @@ func (h *Handlers) HandleAdminListProgress(w http.ResponseWriter, r *http.Reques
 	rows, total, err := h.service.AdminListProgress(r.Context(), tenantID, guideID, userID, page, limit)
 	if err != nil {
 		slog.Error("checklist: admin list progress failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "admin_list_failed", "Failed to list progress")
+		errpkg.WriteError(w, http.StatusInternalServerError, "admin_list_failed", "Failed to list progress")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": rows,
 		"pagination": map[string]any{
 			"page":  page,
@@ -363,7 +351,7 @@ func (h *Handlers) HandleAdminCompletionStats(w http.ResponseWriter, r *http.Req
 	}
 
 	if h.service == nil {
-		writeError(w, http.StatusServiceUnavailable, "checklist_unavailable", "Checklist service not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "checklist_unavailable", "Checklist service not configured")
 		return
 	}
 
@@ -372,11 +360,11 @@ func (h *Handlers) HandleAdminCompletionStats(w http.ResponseWriter, r *http.Req
 	stats, err := h.service.AdminCompletionStats(r.Context(), tenantID, page, limit)
 	if err != nil {
 		slog.Error("checklist: admin completion stats failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "stats_failed", "Failed to get completion stats")
+		errpkg.WriteError(w, http.StatusInternalServerError, "stats_failed", "Failed to get completion stats")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": stats,
 		"pagination": map[string]any{
 			"page":  page,

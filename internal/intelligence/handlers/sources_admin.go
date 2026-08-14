@@ -14,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/jedafe/japa/internal/db/gen"
+	errpkg "github.com/jedafe/japa/internal/errors"
 )
 
 // handleSourceCreateBody is the JSON body for POST /api/v1/intel/sources.
@@ -45,7 +46,7 @@ type handleSourceCreateBody struct {
 // Requires: intel.sources.manage
 func (h *Handlers) HandleCreateSource(w http.ResponseWriter, r *http.Request) {
 	if h.intelSources == nil {
-		writeError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
 		return
 	}
 
@@ -60,15 +61,15 @@ func (h *Handlers) HandleCreateSource(w http.ResponseWriter, r *http.Request) {
 
 	var body handleSourceCreateBody
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
 		return
 	}
 	if body.Name == "" || body.SourceURL == "" || body.Category == "" || body.CrawlMethod == "" {
-		writeError(w, http.StatusBadRequest, "missing_field", "name, source_url, category, and crawl_method are required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_field", "name, source_url, category, and crawl_method are required")
 		return
 	}
 	if body.TrustLevel < 1 || body.TrustLevel > 4 {
-		writeError(w, http.StatusBadRequest, "invalid_trust_level", "trust_level must be 1-4")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_trust_level", "trust_level must be 1-4")
 		return
 	}
 
@@ -110,7 +111,7 @@ func (h *Handlers) HandleCreateSource(w http.ResponseWriter, r *http.Request) {
 	if body.PersonaID != nil && *body.PersonaID != "" {
 		var pid pgtype.UUID
 		if err := pid.Scan(*body.PersonaID); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_persona_id", "persona_id must be a valid UUID")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_persona_id", "persona_id must be a valid UUID")
 			return
 		}
 		params.PersonaID = pid
@@ -119,12 +120,12 @@ func (h *Handlers) HandleCreateSource(w http.ResponseWriter, r *http.Request) {
 	src, err := h.intelSources.Create(r.Context(), tenantID, params)
 	if err != nil {
 		slog.Error("intel: create source failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "create_failed", "Failed to create source")
+		errpkg.WriteError(w, http.StatusInternalServerError, "create_failed", "Failed to create source")
 		return
 	}
 
 	_ = userID // actor available for audit logging if needed
-	writeJSON(w, http.StatusCreated, map[string]interface{}{
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]interface{}{
 		"data": sourceToDirectoryEntry(src),
 	})
 }
@@ -138,7 +139,7 @@ func (h *Handlers) HandleCreateSource(w http.ResponseWriter, r *http.Request) {
 // Requires: intel.sources.manage
 func (h *Handlers) HandleUpdateSource(w http.ResponseWriter, r *http.Request) {
 	if h.intelSources == nil {
-		writeError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
 		return
 	}
 
@@ -160,11 +161,11 @@ func (h *Handlers) HandleUpdateSource(w http.ResponseWriter, r *http.Request) {
 	existing, err := h.intelSources.Get(r.Context(), tenantID, sourceID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "not_found", "Source not found")
+			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Source not found")
 			return
 		}
 		slog.Error("intel: update source lookup failed", "source_id", sourceID.String(), "error", err)
-		writeError(w, http.StatusInternalServerError, "lookup_failed", "Failed to load source")
+		errpkg.WriteError(w, http.StatusInternalServerError, "lookup_failed", "Failed to load source")
 		return
 	}
 
@@ -174,17 +175,17 @@ func (h *Handlers) HandleUpdateSource(w http.ResponseWriter, r *http.Request) {
 	// struct for the remaining fields.
 	rawBody, err := io.ReadAll(r.Body)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Failed to read request body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Failed to read request body")
 		return
 	}
 	var presence map[string]json.RawMessage
 	if err := json.Unmarshal(rawBody, &presence); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
 		return
 	}
 	var body handleSourceCreateBody
 	if err := json.Unmarshal(rawBody, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
 		return
 	}
 
@@ -252,7 +253,7 @@ func (h *Handlers) HandleUpdateSource(w http.ResponseWriter, r *http.Request) {
 		if err := json.Unmarshal(rawPID, &pidStr); err == nil && pidStr != "" {
 			var pid pgtype.UUID
 			if err := pid.Scan(pidStr); err != nil {
-				writeError(w, http.StatusBadRequest, "invalid_persona_id", "persona_id must be a valid UUID")
+				errpkg.WriteError(w, http.StatusBadRequest, "invalid_persona_id", "persona_id must be a valid UUID")
 				return
 			}
 			params.PersonaID = pid
@@ -262,11 +263,11 @@ func (h *Handlers) HandleUpdateSource(w http.ResponseWriter, r *http.Request) {
 	src, err := h.intelSources.Update(r.Context(), tenantID, params)
 	if err != nil {
 		slog.Error("intel: update source failed", "source_id", sourceID.String(), "error", err)
-		writeError(w, http.StatusInternalServerError, "update_failed", "Failed to update source")
+		errpkg.WriteError(w, http.StatusInternalServerError, "update_failed", "Failed to update source")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"data": sourceToDirectoryEntry(src),
 	})
 }
@@ -288,7 +289,7 @@ func (h *Handlers) HandleUpdateSource(w http.ResponseWriter, r *http.Request) {
 // Requires: intel.sources.manage
 func (h *Handlers) HandleDeleteSource(w http.ResponseWriter, r *http.Request) {
 	if h.intelSources == nil || h.intelStores == nil {
-		writeError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
 		return
 	}
 
@@ -309,22 +310,22 @@ func (h *Handlers) HandleDeleteSource(w http.ResponseWriter, r *http.Request) {
 	promoted, err := h.intelStores.CountPromotedIntelRecordsBySource(r.Context(), tenantID, sourceID)
 	if err != nil {
 		slog.Error("intel: delete source promoted-count failed", "source_id", sourceID.String(), "error", err)
-		writeError(w, http.StatusInternalServerError, "delete_failed", "Failed to verify source safety")
+		errpkg.WriteError(w, http.StatusInternalServerError, "delete_failed", "Failed to verify source safety")
 		return
 	}
 	if promoted > 0 {
-		writeError(w, http.StatusConflict, "source_has_promoted_records",
+		errpkg.WriteError(w, http.StatusConflict, "source_has_promoted_records",
 			"Cannot delete a source with promoted records — disable it instead (PATCH enabled=false) to preserve published content.")
 		return
 	}
 
 	if err := h.intelSources.Delete(r.Context(), tenantID, sourceID); err != nil {
 		slog.Error("intel: delete source failed", "source_id", sourceID.String(), "error", err)
-		writeError(w, http.StatusInternalServerError, "delete_failed", "Failed to delete source")
+		errpkg.WriteError(w, http.StatusInternalServerError, "delete_failed", "Failed to delete source")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"data": map[string]interface{}{"deleted": true},
 	})
 }
@@ -339,7 +340,7 @@ func (h *Handlers) HandleDeleteSource(w http.ResponseWriter, r *http.Request) {
 // Requires: intel.review.view
 func (h *Handlers) HandleGetRawDocument(w http.ResponseWriter, r *http.Request) {
 	if h.intelStores == nil {
-		writeError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
 		return
 	}
 
@@ -359,18 +360,18 @@ func (h *Handlers) HandleGetRawDocument(w http.ResponseWriter, r *http.Request) 
 	doc, err := h.intelStores.GetIntelRawDocument(r.Context(), tenantID, docID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "not_found", "Raw document not found")
+			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Raw document not found")
 			return
 		}
 		slog.Error("intel: raw document lookup failed", "doc_id", docID.String(), "error", err)
-		writeError(w, http.StatusInternalServerError, "lookup_failed", "Failed to load raw document")
+		errpkg.WriteError(w, http.StatusInternalServerError, "lookup_failed", "Failed to load raw document")
 		return
 	}
 
 	// Catalog §2229 contract: "body as base64, headers, hash". The prior
 	// response omitted http_headers (a jsonb column) — the four-pane
 	// moderation raw-content pane needs them to reproduce the fetch context.
-	writeJSON(w, http.StatusOK, map[string]interface{}{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"data": map[string]interface{}{
 			"id":           pgUUIDString(doc.ID),
 			"source_id":    pgUUIDString(doc.SourceID),
@@ -397,7 +398,7 @@ func (h *Handlers) HandleGetRawDocument(w http.ResponseWriter, r *http.Request) 
 // Requires: intel.review.edit
 func (h *Handlers) HandleReviewEdit(w http.ResponseWriter, r *http.Request) {
 	if h.intelStores == nil {
-		writeError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
 		return
 	}
 
@@ -420,22 +421,22 @@ func (h *Handlers) HandleReviewEdit(w http.ResponseWriter, r *http.Request) {
 		Note   string                     `json:"note"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
 		return
 	}
 	if len(body.Fields) == 0 {
-		writeError(w, http.StatusBadRequest, "missing_field", "fields is required and must not be empty")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_field", "fields is required and must not be empty")
 		return
 	}
 
 	// Resolve the intel record → its promoted scholarship projection row.
 	if _, err := h.intelStores.GetIntelRecord(r.Context(), tenantID, recordID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "not_found", "Intel record not found")
+			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Intel record not found")
 			return
 		}
 		slog.Error("intel: review edit record lookup failed", "record_id", recordID.String(), "error", err)
-		writeError(w, http.StatusInternalServerError, "lookup_failed", "Failed to load intel record")
+		errpkg.WriteError(w, http.StatusInternalServerError, "lookup_failed", "Failed to load intel record")
 		return
 	}
 
@@ -443,11 +444,11 @@ func (h *Handlers) HandleReviewEdit(w http.ResponseWriter, r *http.Request) {
 	scholarship, err := h.intelStores.GetScholarshipByIntelRecord(r.Context(), tenantID, recordID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "not_found", "Scholarship projection not found for this record")
+			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Scholarship projection not found for this record")
 			return
 		}
 		slog.Error("intel: review edit scholarship lookup failed", "record_id", recordID.String(), "error", err)
-		writeError(w, http.StatusInternalServerError, "lookup_failed", "Failed to load scholarship")
+		errpkg.WriteError(w, http.StatusInternalServerError, "lookup_failed", "Failed to load scholarship")
 		return
 	}
 
@@ -455,7 +456,7 @@ func (h *Handlers) HandleReviewEdit(w http.ResponseWriter, r *http.Request) {
 
 	if err := h.intelStores.UpdateScholarshipEditorialOverrides(r.Context(), tenantID, scholarship.ID, merged); err != nil {
 		slog.Error("intel: review edit apply failed", "scholarship_id", pgUUIDString(scholarship.ID), "error", err)
-		writeError(w, http.StatusInternalServerError, "edit_failed", "Failed to apply editorial edits")
+		errpkg.WriteError(w, http.StatusInternalServerError, "edit_failed", "Failed to apply editorial edits")
 		return
 	}
 
@@ -483,11 +484,11 @@ func (h *Handlers) HandleReviewEdit(w http.ResponseWriter, r *http.Request) {
 		Note:          &note,
 	}); err != nil {
 		slog.Error("intel: review edit log write failed", "record_id", recordID.String(), "error", err)
-		writeError(w, http.StatusInternalServerError, "review_log_failed", "Failed to write review log")
+		errpkg.WriteError(w, http.StatusInternalServerError, "review_log_failed", "Failed to write review log")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"data": map[string]interface{}{
 			"record_id":       recordID.String(),
 			"scholarship_id":  pgUUIDString(scholarship.ID),
@@ -546,7 +547,7 @@ func base64Encode(b []byte) string {
 // Ref: INTEL-011 fix, §26 RBAC CRUD completeness, route catalog §2226.
 func (h *Handlers) HandleCrawlNow(w http.ResponseWriter, r *http.Request) {
 	if h.intelSources == nil || h.asynqClient == nil {
-		writeError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
 		return
 	}
 
@@ -567,15 +568,15 @@ func (h *Handlers) HandleCrawlNow(w http.ResponseWriter, r *http.Request) {
 	src, err := h.intelSources.Get(r.Context(), tenantID, sourceID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "not_found", "Source not found")
+			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Source not found")
 			return
 		}
 		slog.Error("intel: crawl-now source lookup failed", "source_id", sourceID.String(), "error", err)
-		writeError(w, http.StatusInternalServerError, "lookup_failed", "Failed to load source")
+		errpkg.WriteError(w, http.StatusInternalServerError, "lookup_failed", "Failed to load source")
 		return
 	}
 	if !src.Enabled {
-		writeError(w, http.StatusConflict, "source_disabled", "Cannot crawl a disabled source — enable it first")
+		errpkg.WriteError(w, http.StatusConflict, "source_disabled", "Cannot crawl a disabled source — enable it first")
 		return
 	}
 
@@ -586,20 +587,20 @@ func (h *Handlers) HandleCrawlNow(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		slog.Error("intel: crawl-now marshal failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "enqueue_failed", "Failed to build task payload")
+		errpkg.WriteError(w, http.StatusInternalServerError, "enqueue_failed", "Failed to build task payload")
 		return
 	}
 	if _, err := h.asynqClient.EnqueueContext(r.Context(), asynq.NewTask(TaskIntelFetchSource, payload)); err != nil {
 		slog.Error("intel: crawl-now enqueue failed", "source_id", sourceID.String(), "error", err)
-		writeError(w, http.StatusInternalServerError, "enqueue_failed", "Failed to enqueue crawl task")
+		errpkg.WriteError(w, http.StatusInternalServerError, "enqueue_failed", "Failed to enqueue crawl task")
 		return
 	}
 
-	writeJSON(w, http.StatusAccepted, map[string]interface{}{
+	errpkg.WriteJSON(w, http.StatusAccepted, map[string]interface{}{
 		"data": map[string]interface{}{
-			"source_id":  sourceID.String(),
-			"status":     "queued",
-			"task":       TaskIntelFetchSource,
+			"source_id": sourceID.String(),
+			"status":    "queued",
+			"task":      TaskIntelFetchSource,
 		},
 	})
 }
@@ -615,7 +616,7 @@ func (h *Handlers) HandleCrawlNow(w http.ResponseWriter, r *http.Request) {
 // Ref: INTEL-011 fix, §26 RBAC CRUD completeness, route catalog §2228.
 func (h *Handlers) HandleDisableSource(w http.ResponseWriter, r *http.Request) {
 	if h.intelSources == nil {
-		writeError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
 		return
 	}
 
@@ -637,24 +638,24 @@ func (h *Handlers) HandleDisableSource(w http.ResponseWriter, r *http.Request) {
 	src, err := h.intelSources.Get(r.Context(), tenantID, sourceID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "not_found", "Source not found")
+			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Source not found")
 			return
 		}
 		slog.Error("intel: disable source lookup failed", "source_id", sourceID.String(), "error", err)
-		writeError(w, http.StatusInternalServerError, "lookup_failed", "Failed to load source")
+		errpkg.WriteError(w, http.StatusInternalServerError, "lookup_failed", "Failed to load source")
 		return
 	}
 
 	if err := h.intelSources.Disable(r.Context(), tenantID, sourceID); err != nil {
 		slog.Error("intel: disable source failed", "source_id", sourceID.String(), "error", err)
-		writeError(w, http.StatusInternalServerError, "disable_failed", "Failed to disable source")
+		errpkg.WriteError(w, http.StatusInternalServerError, "disable_failed", "Failed to disable source")
 		return
 	}
 
 	slog.Info("intel: source disabled via review queue",
 		"source_id", sourceID.String(), "actor", userID.String())
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"data": map[string]interface{}{
 			"source_id": sourceID.String(),
 			"enabled":   false,

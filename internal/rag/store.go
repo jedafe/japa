@@ -7,7 +7,8 @@
 // embedding — never embed raw JSON markup.
 //
 // Ref: japaconnect-engineering/sections/69-rag-knowledge-layer.md
-//      japaconnect-engineering/adr/ADR-069-japabot-rag-knowledge-layer.md
+//
+//	japaconnect-engineering/adr/ADR-069-japabot-rag-knowledge-layer.md
 package rag
 
 import (
@@ -25,9 +26,9 @@ import (
 
 // EntityType constants — the set of indexable on-platform content types.
 const (
-	EntityTypeContent      = "content"
-	EntityTypeForumThread  = "forum_thread"
-	EntityTypeSpace        = "space"
+	EntityTypeContent       = "content"
+	EntityTypeForumThread   = "forum_thread"
+	EntityTypeSpace         = "space"
 	EntityTypeLearningTrack = "learning_track"
 )
 
@@ -287,9 +288,9 @@ func (s *Store) SearchGeoFiltered(ctx context.Context, tenantID pgtype.UUID, que
 
 // IndexStats holds aggregate statistics about the embedding index.
 type IndexStats struct {
-	TotalChunks   int64  `json:"total_chunks"`
-	TotalEntities int64  `json:"total_entities"`
-	LastIndexedAt string `json:"last_indexed_at"`
+	TotalChunks   int64             `json:"total_chunks"`
+	TotalEntities int64             `json:"total_entities"`
+	LastIndexedAt string            `json:"last_indexed_at"`
 	ByType        []EntityTypeStats `json:"by_type"`
 }
 

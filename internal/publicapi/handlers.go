@@ -3,7 +3,6 @@ package publicapi
 import (
 	"encoding/json"
 	"errors"
-	"log/slog"
 	"math"
 	"net/http"
 	"strconv"
@@ -58,7 +57,7 @@ func parseUUIDParam(r *http.Request, param string) (pgtype.UUID, error) {
 func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
 
@@ -68,7 +67,7 @@ func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype
 func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	user := auth.FromContext(r.Context())
 	if user == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
 
@@ -77,32 +76,6 @@ func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.Au
 
 func handleServiceError(w http.ResponseWriter, err error) {
 	errpkg.HandleServiceError(w, err)
-}
-
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-
-	if v != nil {
-		if err := json.NewEncoder(w).Encode(v); err != nil {
-			slog.Warn("json encode error", "error", err)
-		}
-	}
-}
-
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	docsURL := siteURL + "/docs#section/Errors"
-	if siteURL == "" {
-		docsURL = "/docs#section/Errors"
-	}
-	writeJSON(w, status, map[string]any{
-		"error": map[string]any{
-			"code":    code,
-			"message": message,
-			"status":  status,
-			"docs":    docsURL,
-		},
-	})
 }
 
 func parsePageSize(r *http.Request, defaultSize, maxSize int32) int32 {
@@ -153,7 +126,7 @@ func (h *Handlers) ListKeys(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": keys})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": keys})
 }
 
 // CreateKey generates a new API key and returns it once.
@@ -171,12 +144,12 @@ func (h *Handlers) CreateKey(w http.ResponseWriter, r *http.Request) {
 
 	var input CreateAPIKeyInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
 		return
 	}
 
 	if input.Name == "" {
-		writeError(w, http.StatusBadRequest, "validation_error", "name is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "name is required")
 		return
 	}
 
@@ -186,7 +159,7 @@ func (h *Handlers) CreateKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": resp})
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": resp})
 }
 
 // RevokeKey soft-deletes an API key.
@@ -199,7 +172,7 @@ func (h *Handlers) RevokeKey(w http.ResponseWriter, r *http.Request) {
 
 	keyID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid key ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid key ID")
 		return
 	}
 
@@ -208,7 +181,7 @@ func (h *Handlers) RevokeKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]string{"status": "revoked"},
 	})
 }
@@ -224,7 +197,7 @@ func (h *Handlers) RotateKey(w http.ResponseWriter, r *http.Request) {
 
 	keyID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid key ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid key ID")
 		return
 	}
 
@@ -234,7 +207,7 @@ func (h *Handlers) RotateKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": resp})
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": resp})
 }
 
 // ---------------------------------------------------------------------------
@@ -258,7 +231,7 @@ func (h *Handlers) ListAllKeys(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": keys})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": keys})
 }
 
 // SuspendKey suspends an API key (admin action).
@@ -271,7 +244,7 @@ func (h *Handlers) SuspendKey(w http.ResponseWriter, r *http.Request) {
 
 	keyID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid key ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid key ID")
 		return
 	}
 
@@ -280,13 +253,13 @@ func (h *Handlers) SuspendKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]string{"status": "suspended"},
 	})
 }
 
 // UnsuspendKey re-activates a suspended API key (admin action).
-// DELETE /api/v1/admin/api-keys/:id/suspend. 
+// DELETE /api/v1/admin/api-keys/:id/suspend.
 func (h *Handlers) UnsuspendKey(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireUser(w, r)
 	if !ok {
@@ -295,7 +268,7 @@ func (h *Handlers) UnsuspendKey(w http.ResponseWriter, r *http.Request) {
 
 	keyID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid key ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid key ID")
 		return
 	}
 
@@ -304,7 +277,7 @@ func (h *Handlers) UnsuspendKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]string{"status": "active"},
 	})
 }
@@ -319,7 +292,7 @@ func (h *Handlers) DeleteKeyPermanently(w http.ResponseWriter, r *http.Request) 
 
 	keyID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid key ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid key ID")
 		return
 	}
 
@@ -328,7 +301,7 @@ func (h *Handlers) DeleteKeyPermanently(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]string{"status": "deleted"},
 	})
 }
@@ -343,7 +316,7 @@ func (h *Handlers) UpdateAPIKeyStatus(w http.ResponseWriter, r *http.Request) {
 
 	keyID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid key ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid key ID")
 		return
 	}
 
@@ -355,7 +328,7 @@ func (h *Handlers) UpdateAPIKeyStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
 		return
 	}
 
@@ -363,7 +336,7 @@ func (h *Handlers) UpdateAPIKeyStatus(w http.ResponseWriter, r *http.Request) {
 	if input.Status != "" {
 		validStatuses := map[string]bool{"active": true, "suspended": true, "revoked": true}
 		if !validStatuses[input.Status] {
-			writeError(w, http.StatusBadRequest, "invalid_status", "Status must be active, suspended, or revoked")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_status", "Status must be active, suspended, or revoked")
 			return
 		}
 	}
@@ -378,7 +351,7 @@ func (h *Handlers) UpdateAPIKeyStatus(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		if errors.Is(err, ErrNoFieldsToUpdate) {
-			writeError(w, http.StatusBadRequest, "validation_error", "No fields to update")
+			errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "No fields to update")
 			return
 		}
 		handleServiceError(w, err)
@@ -386,11 +359,11 @@ func (h *Handlers) UpdateAPIKeyStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if rowsAffected == 0 {
-		writeError(w, http.StatusNotFound, "not_found", "API key not found")
+		errpkg.WriteError(w, http.StatusNotFound, "not_found", "API key not found")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]string{"id": keyID.String()},
 	})
 }
@@ -408,17 +381,17 @@ func (h *Handlers) DeleteKeysPermanently(w http.ResponseWriter, r *http.Request)
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
 		return
 	}
 
 	if len(input.IDs) == 0 {
-		writeError(w, http.StatusBadRequest, "validation_error", "ids is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "ids is required")
 		return
 	}
 
 	if len(input.IDs) > 100 {
-		writeError(w, http.StatusBadRequest, "validation_error", "Maximum 100 keys per batch")
+		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "Maximum 100 keys per batch")
 		return
 	}
 
@@ -426,7 +399,7 @@ func (h *Handlers) DeleteKeysPermanently(w http.ResponseWriter, r *http.Request)
 	for _, idStr := range input.IDs {
 		var id pgtype.UUID
 		if err := id.Scan(idStr); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid key ID: "+idStr)
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid key ID: "+idStr)
 			return
 		}
 		keyIDs = append(keyIDs, id)
@@ -437,7 +410,7 @@ func (h *Handlers) DeleteKeysPermanently(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
 			"deleted": len(keyIDs),
 		},
@@ -458,7 +431,7 @@ func (h *Handlers) ListAllowedIPs(w http.ResponseWriter, r *http.Request) {
 
 	keyID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid key ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid key ID")
 		return
 	}
 
@@ -468,7 +441,7 @@ func (h *Handlers) ListAllowedIPs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": entries})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": entries})
 }
 
 // AddAllowedIP adds an IP or CIDR range to an API key's allowlist.
@@ -481,7 +454,7 @@ func (h *Handlers) AddAllowedIP(w http.ResponseWriter, r *http.Request) {
 
 	keyID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid key ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid key ID")
 		return
 	}
 
@@ -491,12 +464,12 @@ func (h *Handlers) AddAllowedIP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
 		return
 	}
 
 	if input.CIDR == "" {
-		writeError(w, http.StatusBadRequest, "validation_error", "cidr is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "cidr is required")
 		return
 	}
 
@@ -505,7 +478,7 @@ func (h *Handlers) AddAllowedIP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{
 		"data": map[string]string{"status": "added"},
 	})
 }
@@ -520,13 +493,13 @@ func (h *Handlers) RemoveAllowedIP(w http.ResponseWriter, r *http.Request) {
 
 	keyID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid key ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid key ID")
 		return
 	}
 
 	ipID, err := parseUUIDParam(r, "ipId")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_ip_id", "Invalid IP allowlist entry ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_ip_id", "Invalid IP allowlist entry ID")
 		return
 	}
 
@@ -535,7 +508,7 @@ func (h *Handlers) RemoveAllowedIP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]string{"status": "removed"},
 	})
 }
@@ -550,7 +523,7 @@ func (h *Handlers) GetAPIKey(w http.ResponseWriter, r *http.Request) {
 	}
 	keyID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid key ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid key ID")
 		return
 	}
 	key, err := h.Service.GetOwnAPIKey(r.Context(), user.UserID, keyID)
@@ -558,7 +531,7 @@ func (h *Handlers) GetAPIKey(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err) // pgx.ErrNoRows → 404, other → 500 (PUB-013)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": key})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": key})
 }
 
 // UpdateAPIKey handles PATCH /me/api-keys/:id — updates an API key (P5.6).
@@ -575,18 +548,18 @@ func (h *Handlers) UpdateAPIKey(w http.ResponseWriter, r *http.Request) {
 	}
 	keyID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid key ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid key ID")
 		return
 	}
 	var input struct {
 		Name string `json:"name"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 	if input.Name == "" {
-		writeError(w, http.StatusBadRequest, "validation_error", "name is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "name is required")
 		return
 	}
 	rowsAffected, err := h.Service.UpdateOwnAPIKeyName(r.Context(), user.UserID, keyID, input.Name)
@@ -595,10 +568,10 @@ func (h *Handlers) UpdateAPIKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if rowsAffected == 0 {
-		writeError(w, http.StatusNotFound, "not_found", "API key not found")
+		errpkg.WriteError(w, http.StatusNotFound, "not_found", "API key not found")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"id": keyID.String()}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"id": keyID.String()}})
 }
 
 // ---------------------------------------------------------------------------
@@ -611,19 +584,19 @@ func (h *Handlers) UpdateAPIKey(w http.ResponseWriter, r *http.Request) {
 // GetContentByID handles GET /api/v1/content/:id — returns a single content item.
 func (h *Handlers) GetContentByID(w http.ResponseWriter, r *http.Request) {
 	if h.Queries == nil {
-		writeError(w, http.StatusServiceUnavailable, "not_ready", "Public API not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "not_ready", "Public API not configured")
 		return
 	}
 
 	keyCtx := APIKeyFromContext(r.Context())
 	if keyCtx == nil {
-		writeError(w, http.StatusUnauthorized, "api_key_required", "X-API-Key header is required")
+		errpkg.WriteError(w, http.StatusUnauthorized, "api_key_required", "X-API-Key header is required")
 		return
 	}
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid content ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid content ID")
 		return
 	}
 
@@ -636,19 +609,19 @@ func (h *Handlers) GetContentByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": content})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": content})
 }
 
 // ListSpaces handles GET /api/v1/spaces — returns a paginated list of spaces.
 func (h *Handlers) ListSpaces(w http.ResponseWriter, r *http.Request) {
 	if h.Queries == nil {
-		writeError(w, http.StatusServiceUnavailable, "not_ready", "Public API not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "not_ready", "Public API not configured")
 		return
 	}
 
 	keyCtx := APIKeyFromContext(r.Context())
 	if keyCtx == nil {
-		writeError(w, http.StatusUnauthorized, "api_key_required", "X-API-Key header is required")
+		errpkg.WriteError(w, http.StatusUnauthorized, "api_key_required", "X-API-Key header is required")
 		return
 	}
 
@@ -661,25 +634,25 @@ func (h *Handlers) ListSpaces(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": spaces})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": spaces})
 }
 
 // GetSpaceBySlug handles GET /api/v1/spaces/:slug — returns a single space.
 func (h *Handlers) GetSpaceBySlug(w http.ResponseWriter, r *http.Request) {
 	if h.Queries == nil {
-		writeError(w, http.StatusServiceUnavailable, "not_ready", "Public API not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "not_ready", "Public API not configured")
 		return
 	}
 
 	keyCtx := APIKeyFromContext(r.Context())
 	if keyCtx == nil {
-		writeError(w, http.StatusUnauthorized, "api_key_required", "X-API-Key header is required")
+		errpkg.WriteError(w, http.StatusUnauthorized, "api_key_required", "X-API-Key header is required")
 		return
 	}
 
 	slug := chi.URLParam(r, "slug")
 	if slug == "" {
-		writeError(w, http.StatusBadRequest, "missing_slug", "Slug is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_slug", "Slug is required")
 		return
 	}
 
@@ -692,19 +665,19 @@ func (h *Handlers) GetSpaceBySlug(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": space})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": space})
 }
 
 // ListTags handles GET /api/v1/tags — returns a paginated list of tags.
 func (h *Handlers) ListTags(w http.ResponseWriter, r *http.Request) {
 	if h.Queries == nil {
-		writeError(w, http.StatusServiceUnavailable, "not_ready", "Public API not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "not_ready", "Public API not configured")
 		return
 	}
 
 	keyCtx := APIKeyFromContext(r.Context())
 	if keyCtx == nil {
-		writeError(w, http.StatusUnauthorized, "api_key_required", "X-API-Key header is required")
+		errpkg.WriteError(w, http.StatusUnauthorized, "api_key_required", "X-API-Key header is required")
 		return
 	}
 
@@ -714,25 +687,25 @@ func (h *Handlers) ListTags(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": tags})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": tags})
 }
 
 // GetUserByID handles GET /api/v1/users/:id — returns a single user profile.
 func (h *Handlers) GetUserByID(w http.ResponseWriter, r *http.Request) {
 	if h.Queries == nil {
-		writeError(w, http.StatusServiceUnavailable, "not_ready", "Public API not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "not_ready", "Public API not configured")
 		return
 	}
 
 	keyCtx := APIKeyFromContext(r.Context())
 	if keyCtx == nil {
-		writeError(w, http.StatusUnauthorized, "api_key_required", "X-API-Key header is required")
+		errpkg.WriteError(w, http.StatusUnauthorized, "api_key_required", "X-API-Key header is required")
 		return
 	}
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid user ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid user ID")
 		return
 	}
 
@@ -745,25 +718,25 @@ func (h *Handlers) GetUserByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": user})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": user})
 }
 
 // SearchContent handles GET /api/v1/search — searches content by title.
 func (h *Handlers) SearchContent(w http.ResponseWriter, r *http.Request) {
 	if h.Service == nil {
-		writeError(w, http.StatusServiceUnavailable, "not_ready", "Public API not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "not_ready", "Public API not configured")
 		return
 	}
 
 	keyCtx := APIKeyFromContext(r.Context())
 	if keyCtx == nil {
-		writeError(w, http.StatusUnauthorized, "api_key_required", "X-API-Key header is required")
+		errpkg.WriteError(w, http.StatusUnauthorized, "api_key_required", "X-API-Key header is required")
 		return
 	}
 
 	q := r.URL.Query().Get("q")
 	if q == "" {
-		writeError(w, http.StatusBadRequest, "missing_query", "q parameter is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_query", "q parameter is required")
 		return
 	}
 
@@ -776,20 +749,20 @@ func (h *Handlers) SearchContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": results})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": results})
 }
 
 // GetMyProfile handles GET /api/v1/me — returns the authenticated user's profile.
 // Requires api.read.me scope on the API key.
 func (h *Handlers) GetMyProfile(w http.ResponseWriter, r *http.Request) {
 	if h.Queries == nil {
-		writeError(w, http.StatusServiceUnavailable, "not_ready", "Public API not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "not_ready", "Public API not configured")
 		return
 	}
 
 	keyCtx := APIKeyFromContext(r.Context())
 	if keyCtx == nil {
-		writeError(w, http.StatusUnauthorized, "api_key_required", "X-API-Key header is required")
+		errpkg.WriteError(w, http.StatusUnauthorized, "api_key_required", "X-API-Key header is required")
 		return
 	}
 
@@ -802,7 +775,7 @@ func (h *Handlers) GetMyProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": user})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": user})
 }
 
 // ListContent handles GET /api/v1/public/content — returns a paginated list
@@ -810,13 +783,13 @@ func (h *Handlers) GetMyProfile(w http.ResponseWriter, r *http.Request) {
 // Ref: japaconnect-engineering/sections/47-public-api-developer-portal.md
 func (h *Handlers) ListContent(w http.ResponseWriter, r *http.Request) {
 	if h.Service == nil {
-		writeError(w, http.StatusServiceUnavailable, "not_ready", "Public API not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "not_ready", "Public API not configured")
 		return
 	}
 
 	keyCtx := APIKeyFromContext(r.Context())
 	if keyCtx == nil {
-		writeError(w, http.StatusUnauthorized, "api_key_required", "X-API-Key header is required")
+		errpkg.WriteError(w, http.StatusUnauthorized, "api_key_required", "X-API-Key header is required")
 		return
 	}
 
@@ -829,7 +802,7 @@ func (h *Handlers) ListContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data":   results,
 		"limit":  limit,
 		"offset": offset,
@@ -841,19 +814,19 @@ func (h *Handlers) ListContent(w http.ResponseWriter, r *http.Request) {
 // Ref: japaconnect-engineering/sections/47-public-api-developer-portal.md
 func (h *Handlers) ListContentComments(w http.ResponseWriter, r *http.Request) {
 	if h.Queries == nil {
-		writeError(w, http.StatusServiceUnavailable, "not_ready", "Public API not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "not_ready", "Public API not configured")
 		return
 	}
 
 	keyCtx := APIKeyFromContext(r.Context())
 	if keyCtx == nil {
-		writeError(w, http.StatusUnauthorized, "api_key_required", "X-API-Key header is required")
+		errpkg.WriteError(w, http.StatusUnauthorized, "api_key_required", "X-API-Key header is required")
 		return
 	}
 
 	contentID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid content ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid content ID")
 		return
 	}
 
@@ -871,7 +844,7 @@ func (h *Handlers) ListContentComments(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data":   comments,
 		"limit":  limit,
 		"offset": offset,
@@ -883,13 +856,13 @@ func (h *Handlers) ListContentComments(w http.ResponseWriter, r *http.Request) {
 // Ref: japaconnect-engineering/sections/47-public-api-developer-portal.md
 func (h *Handlers) ListUsers(w http.ResponseWriter, r *http.Request) {
 	if h.Queries == nil {
-		writeError(w, http.StatusServiceUnavailable, "not_ready", "Public API not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "not_ready", "Public API not configured")
 		return
 	}
 
 	keyCtx := APIKeyFromContext(r.Context())
 	if keyCtx == nil {
-		writeError(w, http.StatusUnauthorized, "api_key_required", "X-API-Key header is required")
+		errpkg.WriteError(w, http.StatusUnauthorized, "api_key_required", "X-API-Key header is required")
 		return
 	}
 
@@ -910,7 +883,7 @@ func (h *Handlers) ListUsers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data":   users,
 		"limit":  limit,
 		"offset": offset,
@@ -922,19 +895,19 @@ func (h *Handlers) ListUsers(w http.ResponseWriter, r *http.Request) {
 // Ref: japaconnect-engineering/sections/47-public-api-developer-portal.md
 func (h *Handlers) GetTagBySlug(w http.ResponseWriter, r *http.Request) {
 	if h.Queries == nil {
-		writeError(w, http.StatusServiceUnavailable, "not_ready", "Public API not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "not_ready", "Public API not configured")
 		return
 	}
 
 	keyCtx := APIKeyFromContext(r.Context())
 	if keyCtx == nil {
-		writeError(w, http.StatusUnauthorized, "api_key_required", "X-API-Key header is required")
+		errpkg.WriteError(w, http.StatusUnauthorized, "api_key_required", "X-API-Key header is required")
 		return
 	}
 
 	slug := chi.URLParam(r, "slug")
 	if slug == "" {
-		writeError(w, http.StatusBadRequest, "missing_slug", "Slug is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_slug", "Slug is required")
 		return
 	}
 
@@ -947,7 +920,7 @@ func (h *Handlers) GetTagBySlug(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": tag})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": tag})
 }
 
 // ---------------------------------------------------------------------------
@@ -971,13 +944,13 @@ func parseTrendingWindow(r *http.Request) string {
 // Ref: japaconnect-engineering/sections/47-public-api-developer-portal.md
 func (h *Handlers) GetTrendingContentHandler(w http.ResponseWriter, r *http.Request) {
 	if h.Queries == nil {
-		writeError(w, http.StatusServiceUnavailable, "not_ready", "Public API not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "not_ready", "Public API not configured")
 		return
 	}
 
 	keyCtx := APIKeyFromContext(r.Context())
 	if keyCtx == nil {
-		writeError(w, http.StatusUnauthorized, "api_key_required", "X-API-Key header is required")
+		errpkg.WriteError(w, http.StatusUnauthorized, "api_key_required", "X-API-Key header is required")
 		return
 	}
 
@@ -999,19 +972,19 @@ func (h *Handlers) GetTrendingContentHandler(w http.ResponseWriter, r *http.Requ
 		rows = []gen.GetTrendingContentRow{}
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": rows})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": rows})
 }
 
 // GetTrendingTagsHandler handles GET /api/v1/trending/tags.
 func (h *Handlers) GetTrendingTagsHandler(w http.ResponseWriter, r *http.Request) {
 	if h.Queries == nil {
-		writeError(w, http.StatusServiceUnavailable, "not_ready", "Public API not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "not_ready", "Public API not configured")
 		return
 	}
 
 	keyCtx := APIKeyFromContext(r.Context())
 	if keyCtx == nil {
-		writeError(w, http.StatusUnauthorized, "api_key_required", "X-API-Key header is required")
+		errpkg.WriteError(w, http.StatusUnauthorized, "api_key_required", "X-API-Key header is required")
 		return
 	}
 
@@ -1033,19 +1006,19 @@ func (h *Handlers) GetTrendingTagsHandler(w http.ResponseWriter, r *http.Request
 		rows = []gen.GetTrendingTagsRow{}
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": rows})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": rows})
 }
 
 // GetTrendingSpacesHandler handles GET /api/v1/trending/spaces.
 func (h *Handlers) GetTrendingSpacesHandler(w http.ResponseWriter, r *http.Request) {
 	if h.Queries == nil {
-		writeError(w, http.StatusServiceUnavailable, "not_ready", "Public API not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "not_ready", "Public API not configured")
 		return
 	}
 
 	keyCtx := APIKeyFromContext(r.Context())
 	if keyCtx == nil {
-		writeError(w, http.StatusUnauthorized, "api_key_required", "X-API-Key header is required")
+		errpkg.WriteError(w, http.StatusUnauthorized, "api_key_required", "X-API-Key header is required")
 		return
 	}
 
@@ -1067,19 +1040,19 @@ func (h *Handlers) GetTrendingSpacesHandler(w http.ResponseWriter, r *http.Reque
 		rows = []gen.GetTrendingSpacesRow{}
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": rows})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": rows})
 }
 
 // GetTrendingUsersHandler handles GET /api/v1/trending/users.
 func (h *Handlers) GetTrendingUsersHandler(w http.ResponseWriter, r *http.Request) {
 	if h.Queries == nil {
-		writeError(w, http.StatusServiceUnavailable, "not_ready", "Public API not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "not_ready", "Public API not configured")
 		return
 	}
 
 	keyCtx := APIKeyFromContext(r.Context())
 	if keyCtx == nil {
-		writeError(w, http.StatusUnauthorized, "api_key_required", "X-API-Key header is required")
+		errpkg.WriteError(w, http.StatusUnauthorized, "api_key_required", "X-API-Key header is required")
 		return
 	}
 
@@ -1101,7 +1074,7 @@ func (h *Handlers) GetTrendingUsersHandler(w http.ResponseWriter, r *http.Reques
 		rows = []gen.GetTrendingUsersRow{}
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": rows})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": rows})
 }
 
 // GetAPIKeyAnalytics returns aggregate analytics for all API keys (admin view).
@@ -1118,5 +1091,5 @@ func (h *Handlers) GetAPIKeyAnalytics(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": analytics})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": analytics})
 }

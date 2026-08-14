@@ -14,7 +14,8 @@
 //	GET    /api/v1/admin/wiki                              — admin list (auth, wiki.manage)
 //
 // Ref: japaconnect-engineering/sections/80-destination-wiki.md
-//      japaconnect-engineering/adr/ADR-088-destination-wiki.md
+//
+//	japaconnect-engineering/adr/ADR-088-destination-wiki.md
 package wiki
 
 import (
@@ -31,6 +32,7 @@ import (
 
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/config"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/tenant"
 )
 
@@ -86,24 +88,10 @@ func (h *Handlers) SetRAGIndexer(ri ragIndexer) {
 	h.rag = ri
 }
 
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	if err := json.NewEncoder(w).Encode(v); err != nil {
-		slog.Error("wiki: encode response", "error", err)
-	}
-}
-
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, map[string]any{
-		"error": map[string]string{"code": code, "message": message},
-	})
-}
-
 func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
 	return t.ID, true
@@ -112,7 +100,7 @@ func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	u := auth.FromContext(r.Context())
 	if u == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
 	return u, true
@@ -121,7 +109,7 @@ func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUse
 func scanUUIDParam(w http.ResponseWriter, r *http.Request, name string) (pgtype.UUID, bool) {
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, name)); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid "+name)
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid "+name)
 		return pgtype.UUID{}, false
 	}
 	return id, true
@@ -160,33 +148,33 @@ func (h *Handlers) HandleGetIndex(w http.ResponseWriter, r *http.Request) {
 	if destParam := r.URL.Query().Get("dest"); destParam != "" {
 		var destSpaceID pgtype.UUID
 		if err := destSpaceID.Scan(destParam); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid destination space ID")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid destination space ID")
 			return
 		}
 		pages, err := h.service.GetWikiIndexByDestSpaceID(r.Context(), tenantID, destSpaceID)
 		if err != nil {
 			slog.Error("wiki: index by dest failed", "error", err)
-			writeError(w, http.StatusInternalServerError, "index_failed", "Failed to get wiki index")
+			errpkg.WriteError(w, http.StatusInternalServerError, "index_failed", "Failed to get wiki index")
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"data": pages})
+		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": pages})
 		return
 	}
 
 	spaceSlug := chi.URLParam(r, "space_slug")
 	if spaceSlug == "" {
-		writeError(w, http.StatusBadRequest, "missing_slug", "Space slug or ?dest= is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_slug", "Space slug or ?dest= is required")
 		return
 	}
 
 	pages, err := h.service.GetWikiIndex(r.Context(), tenantID, spaceSlug)
 	if err != nil {
 		slog.Error("wiki: index failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "index_failed", "Failed to get wiki index")
+		errpkg.WriteError(w, http.StatusInternalServerError, "index_failed", "Failed to get wiki index")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": pages})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": pages})
 }
 
 // HandleGetPage handles GET /wiki/:space_slug/:page_slug — single wiki page
@@ -200,22 +188,22 @@ func (h *Handlers) HandleGetPage(w http.ResponseWriter, r *http.Request) {
 	spaceSlug := chi.URLParam(r, "space_slug")
 	pageSlug := chi.URLParam(r, "page_slug")
 	if spaceSlug == "" || pageSlug == "" {
-		writeError(w, http.StatusBadRequest, "missing_slug", "Space and page slugs are required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_slug", "Space and page slugs are required")
 		return
 	}
 
 	page, err := h.service.GetWikiPage(r.Context(), tenantID, spaceSlug, pageSlug)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "page_not_found", "Wiki page not found")
+			errpkg.WriteError(w, http.StatusNotFound, "page_not_found", "Wiki page not found")
 			return
 		}
 		slog.Error("wiki: get page failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "get_failed", "Failed to get wiki page")
+		errpkg.WriteError(w, http.StatusInternalServerError, "get_failed", "Failed to get wiki page")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": page})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": page})
 }
 
 // HandleGetHistory handles GET /wiki/:space_slug/:page_slug/history —
@@ -229,7 +217,7 @@ func (h *Handlers) HandleGetHistory(w http.ResponseWriter, r *http.Request) {
 	spaceSlug := chi.URLParam(r, "space_slug")
 	pageSlug := chi.URLParam(r, "page_slug")
 	if spaceSlug == "" || pageSlug == "" {
-		writeError(w, http.StatusBadRequest, "missing_slug", "Space and page slugs are required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_slug", "Space and page slugs are required")
 		return
 	}
 
@@ -237,15 +225,15 @@ func (h *Handlers) HandleGetHistory(w http.ResponseWriter, r *http.Request) {
 	revs, total, err := h.service.GetRevisionHistory(r.Context(), tenantID, spaceSlug, pageSlug, page, limit)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "page_not_found", "Wiki page not found")
+			errpkg.WriteError(w, http.StatusNotFound, "page_not_found", "Wiki page not found")
 			return
 		}
 		slog.Error("wiki: history failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "history_failed", "Failed to get revision history")
+		errpkg.WriteError(w, http.StatusInternalServerError, "history_failed", "Failed to get revision history")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": revs,
 		"pagination": map[string]any{
 			"page":  page,
@@ -280,7 +268,7 @@ func (h *Handlers) HandleSubmitRevision(w http.ResponseWriter, r *http.Request) 
 	spaceSlug := chi.URLParam(r, "space_slug")
 	pageSlug := chi.URLParam(r, "page_slug")
 	if spaceSlug == "" || pageSlug == "" {
-		writeError(w, http.StatusBadRequest, "missing_slug", "Space and page slugs are required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_slug", "Space and page slugs are required")
 		return
 	}
 
@@ -291,7 +279,7 @@ func (h *Handlers) HandleSubmitRevision(w http.ResponseWriter, r *http.Request) 
 		isMod := h.perms.HasPermission(r.Context(), user.UserID, tenantID, "wiki.review") ||
 			h.perms.HasPermission(r.Context(), user.UserID, tenantID, "wiki.manage")
 		if !isMod {
-			writeError(w, http.StatusForbidden, "community_edits_disabled",
+			errpkg.WriteError(w, http.StatusForbidden, "community_edits_disabled",
 				"Community edits are currently disabled for this wiki")
 			return
 		}
@@ -306,12 +294,12 @@ func (h *Handlers) HandleSubmitRevision(w http.ResponseWriter, r *http.Request) 
 			points, err := h.points.GetPointsBalance(r.Context(), tenantID, user.UserID)
 			if err != nil {
 				slog.Error("wiki: reputation check failed", "error", err)
-				writeError(w, http.StatusInternalServerError, "reputation_check_failed",
+				errpkg.WriteError(w, http.StatusInternalServerError, "reputation_check_failed",
 					"Failed to verify reputation")
 				return
 			}
 			if points < int64(threshold) {
-				writeError(w, http.StatusForbidden, "insufficient_reputation",
+				errpkg.WriteError(w, http.StatusForbidden, "insufficient_reputation",
 					"You need more reputation to edit this wiki page")
 				return
 			}
@@ -320,35 +308,35 @@ func (h *Handlers) HandleSubmitRevision(w http.ResponseWriter, r *http.Request) 
 
 	var input SubmitRevisionInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
 
 	if len(input.Content) == 0 {
-		writeError(w, http.StatusBadRequest, "missing_content", "Content is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_content", "Content is required")
 		return
 	}
 
 	revID, err := h.service.SubmitRevision(r.Context(), tenantID, user.UserID, spaceSlug, pageSlug, input)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "page_not_found", "Wiki page not found")
+			errpkg.WriteError(w, http.StatusNotFound, "page_not_found", "Wiki page not found")
 			return
 		}
 		if errors.Is(err, ErrPageLocked) {
-			writeError(w, http.StatusForbidden, "page_locked", "This wiki page is locked to mod-only edits")
+			errpkg.WriteError(w, http.StatusForbidden, "page_locked", "This wiki page is locked to mod-only edits")
 			return
 		}
 		if errors.Is(err, ErrEditInProgress) {
-			writeError(w, http.StatusConflict, "edit_in_progress", "A wiki edit is already in progress for this page")
+			errpkg.WriteError(w, http.StatusConflict, "edit_in_progress", "A wiki edit is already in progress for this page")
 			return
 		}
 		slog.Error("wiki: submit revision failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "submit_failed", "Failed to submit revision")
+		errpkg.WriteError(w, http.StatusInternalServerError, "submit_failed", "Failed to submit revision")
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{
 		"data": map[string]any{
 			"revision_id": revID,
 			"status":      "pending",
@@ -389,7 +377,7 @@ func (h *Handlers) HandleApproveRevision(w http.ResponseWriter, r *http.Request)
 	content, err := h.service.ApproveRevision(r.Context(), revID, pageID, tenantID, user.UserID, body.Notes)
 	if err != nil {
 		slog.Error("wiki: approve failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "approve_failed", "Failed to approve revision")
+		errpkg.WriteError(w, http.StatusInternalServerError, "approve_failed", "Failed to approve revision")
 		return
 	}
 
@@ -406,7 +394,7 @@ func (h *Handlers) HandleApproveRevision(w http.ResponseWriter, r *http.Request)
 		}()
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"approved": true}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"approved": true}})
 }
 
 // HandleRejectRevision handles POST /admin/wiki/:page_id/revisions/:id/reject.
@@ -438,11 +426,11 @@ func (h *Handlers) HandleRejectRevision(w http.ResponseWriter, r *http.Request) 
 
 	if err := h.service.RejectRevision(r.Context(), revID, tenantID, user.UserID, notes); err != nil {
 		slog.Error("wiki: reject failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "reject_failed", "Failed to reject revision")
+		errpkg.WriteError(w, http.StatusInternalServerError, "reject_failed", "Failed to reject revision")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"rejected": true}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"rejected": true}})
 }
 
 // HandleUpdatePage handles PATCH /admin/wiki/:page_id — lock/unlock, feature,
@@ -465,7 +453,7 @@ func (h *Handlers) HandleUpdatePage(w http.ResponseWriter, r *http.Request) {
 
 	var input UpdatePageInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
 
@@ -473,7 +461,7 @@ func (h *Handlers) HandleUpdatePage(w http.ResponseWriter, r *http.Request) {
 	// wiki.manage (§80 defines wiki.lock as a distinct permission node).
 	if input.IsLocked != nil && h.perms != nil {
 		if !h.perms.HasPermission(r.Context(), user.UserID, tenantID, "wiki.lock") {
-			writeError(w, http.StatusForbidden, "lock_permission_required",
+			errpkg.WriteError(w, http.StatusForbidden, "lock_permission_required",
 				"Locking/unlocking wiki pages requires the wiki.lock permission")
 			return
 		}
@@ -481,15 +469,15 @@ func (h *Handlers) HandleUpdatePage(w http.ResponseWriter, r *http.Request) {
 
 	if err := h.service.UpdatePage(r.Context(), pageID, tenantID, input); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "page_not_found", "Wiki page not found")
+			errpkg.WriteError(w, http.StatusNotFound, "page_not_found", "Wiki page not found")
 			return
 		}
 		slog.Error("wiki: update page failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "update_failed", "Failed to update wiki page")
+		errpkg.WriteError(w, http.StatusInternalServerError, "update_failed", "Failed to update wiki page")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"updated": true}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"updated": true}})
 }
 
 // HandleGenerate handles POST /admin/wiki/generate — create a stub wiki page
@@ -509,48 +497,48 @@ func (h *Handlers) HandleGenerate(w http.ResponseWriter, r *http.Request) {
 
 	var input GeneratePageInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
 
 	if input.SpaceSlug == "" || input.PageSlug == "" || input.Title == "" {
-		writeError(w, http.StatusBadRequest, "missing_fields", "space_slug, page_slug, and title are required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_fields", "space_slug, page_slug, and title are required")
 		return
 	}
 
 	pageID, err := h.service.GeneratePage(r.Context(), tenantID, user.UserID, input)
 	if err != nil {
 		if errors.Is(err, ErrSpaceNotFound) {
-			writeError(w, http.StatusNotFound, "space_not_found", "Destination space not found")
+			errpkg.WriteError(w, http.StatusNotFound, "space_not_found", "Destination space not found")
 			return
 		}
 		if errors.Is(err, ErrPageExists) {
 			// Idempotent: page already exists. Return 200 with the slug so the
 			// caller can still trigger an AI draft for the existing page.
-			writeJSON(w, http.StatusOK, map[string]any{
+			errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 				"data": map[string]any{
-					"status":      "already_exists",
-					"space_slug":  input.SpaceSlug,
-					"page_slug":   input.PageSlug,
-					"title":       input.Title,
-					"category":    input.Category,
+					"status":     "already_exists",
+					"space_slug": input.SpaceSlug,
+					"page_slug":  input.PageSlug,
+					"title":      input.Title,
+					"category":   input.Category,
 				},
 			})
 			return
 		}
 		slog.Error("wiki: generate failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "generate_failed", "Failed to generate wiki page")
+		errpkg.WriteError(w, http.StatusInternalServerError, "generate_failed", "Failed to generate wiki page")
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{
 		"data": map[string]any{
-			"status":      "created",
-			"page_id":     pageID,
-			"space_slug":  input.SpaceSlug,
-			"page_slug":   input.PageSlug,
-			"title":       input.Title,
-			"category":    input.Category,
+			"status":     "created",
+			"page_id":    pageID,
+			"space_slug": input.SpaceSlug,
+			"page_slug":  input.PageSlug,
+			"title":      input.Title,
+			"category":   input.Category,
 		},
 	})
 }
@@ -568,7 +556,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	var spaceID pgtype.UUID
 	if v := r.URL.Query().Get("space_id"); v != "" {
 		if err := spaceID.Scan(v); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid space_id")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid space_id")
 			return
 		}
 	}
@@ -592,11 +580,11 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	pages, total, err := h.service.AdminListPages(r.Context(), tenantID, spaceID, category, q, lockedPtr, page, limit)
 	if err != nil {
 		slog.Error("wiki: admin list failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "admin_list_failed", "Failed to list wiki pages")
+		errpkg.WriteError(w, http.StatusInternalServerError, "admin_list_failed", "Failed to list wiki pages")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": pages,
 		"pagination": map[string]any{
 			"page":  page,

@@ -13,7 +13,8 @@
 // not a setting.
 //
 // Ref: japaconnect-engineering/sections/76-participation-orchestration.md
-//      japaconnect-engineering/adr/ADR-077-participation-orchestration.md
+//
+//	japaconnect-engineering/adr/ADR-077-participation-orchestration.md
 package participation
 
 import (
@@ -115,9 +116,9 @@ func (s *Service) SetDispatcher(d ActionDispatcher) { s.dispatcher = d }
 // highStakesCategories are the guide categories that always require human
 // review, regardless of autonomy_mode. Hardcoded per §76 — not configurable.
 var highStakesCategories = map[string]bool{
-	"visa":            true,
-	"banking":         true,
-	"grants":          true,
+	"visa":             true,
+	"banking":          true,
+	"grants":           true,
 	"health_insurance": true,
 }
 

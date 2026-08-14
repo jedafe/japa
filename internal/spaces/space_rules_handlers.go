@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/jedafe/japa/internal/db/gen"
+	errpkg "github.com/jedafe/japa/internal/errors"
 )
 
 // ---------------------------------------------------------------------------
@@ -29,7 +30,7 @@ func (h *Handlers) ListSpaceRules(w http.ResponseWriter, r *http.Request) {
 		rules = []gen.SpaceRule{}
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": rules})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": rules})
 }
 
 // CreateSpaceRule handles POST /api/v1/spaces/{slug}/rules.
@@ -46,12 +47,12 @@ func (h *Handlers) CreateSpaceRule(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
 		return
 	}
 
 	if strings.TrimSpace(req.Title) == "" || strings.TrimSpace(req.Body) == "" {
-		writeError(w, http.StatusBadRequest, "missing_fields", "Title and body are required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_fields", "Title and body are required")
 		return
 	}
 
@@ -66,7 +67,7 @@ func (h *Handlers) CreateSpaceRule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": rule})
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": rule})
 }
 
 // UpdateSpaceRule handles PATCH /api/v1/spaces/{slug}/rules/{ruleId}.
@@ -78,7 +79,7 @@ func (h *Handlers) UpdateSpaceRule(w http.ResponseWriter, r *http.Request) {
 
 	ruleID, err := parseUUIDParam(r, "ruleId")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid rule ID format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid rule ID format")
 		return
 	}
 
@@ -89,12 +90,12 @@ func (h *Handlers) UpdateSpaceRule(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
 		return
 	}
 
 	if strings.TrimSpace(req.Title) == "" || strings.TrimSpace(req.Body) == "" {
-		writeError(w, http.StatusBadRequest, "missing_fields", "Title and body are required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_fields", "Title and body are required")
 		return
 	}
 
@@ -110,7 +111,7 @@ func (h *Handlers) UpdateSpaceRule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": rule})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": rule})
 }
 
 // DeleteSpaceRule handles DELETE /api/v1/spaces/{slug}/rules/{ruleId}.
@@ -122,7 +123,7 @@ func (h *Handlers) DeleteSpaceRule(w http.ResponseWriter, r *http.Request) {
 
 	ruleID, err := parseUUIDParam(r, "ruleId")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid rule ID format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid rule ID format")
 		return
 	}
 
@@ -131,5 +132,5 @@ func (h *Handlers) DeleteSpaceRule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
 }

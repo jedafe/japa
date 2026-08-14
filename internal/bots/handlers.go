@@ -10,14 +10,13 @@ package bots
 import (
 	"encoding/json"
 	"errors"
-	"log/slog"
 	"math"
 	"net/http"
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
-	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jackc/pgx/v5/pgtype"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/tenant"
 )
 
@@ -47,7 +46,7 @@ func parseUUIDParam(r *http.Request, param string) (pgtype.UUID, error) {
 func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
 
@@ -56,23 +55,6 @@ func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype
 
 func handleServiceError(w http.ResponseWriter, err error) {
 	errpkg.HandleServiceError(w, err)
-}
-
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-
-	if v != nil {
-		if err := json.NewEncoder(w).Encode(v); err != nil {
-			slog.Warn("json encode error", "error", err)
-		}
-	}
-}
-
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, map[string]any{
-		"error": map[string]string{"code": code, "message": message},
-	})
 }
 
 func parsePageSize(r *http.Request) int32 {
@@ -119,7 +101,7 @@ func (h *Handlers) ListKnownBots(w http.ResponseWriter, r *http.Request) {
 
 	botType := r.URL.Query().Get("bot_type")
 	if botType != "" && !IsBotType(botType) {
-		writeError(w, http.StatusBadRequest, "invalid_bot_type", "Invalid bot type")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_bot_type", "Invalid bot type")
 		return
 	}
 
@@ -129,7 +111,7 @@ func (h *Handlers) ListKnownBots(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data":        result.Data,
 		"total":       result.Total,
 		"total_pages": result.TotalPages,
@@ -146,7 +128,7 @@ func (h *Handlers) GetKnownBot(w http.ResponseWriter, r *http.Request) {
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid bot ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid bot ID")
 		return
 	}
 
@@ -156,7 +138,7 @@ func (h *Handlers) GetKnownBot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": bot})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": bot})
 }
 
 // CreateKnownBot creates a new known bot entry.
@@ -176,18 +158,18 @@ func (h *Handlers) CreateKnownBot(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
 		return
 	}
 
 	// Validate required fields
 	if input.Name == "" {
-		writeError(w, http.StatusBadRequest, "validation_error", "name is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "name is required")
 		return
 	}
 
 	if input.UserAgentPattern == "" {
-		writeError(w, http.StatusBadRequest, "validation_error", "user_agent_pattern is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "user_agent_pattern is required")
 		return
 	}
 
@@ -197,7 +179,7 @@ func (h *Handlers) CreateKnownBot(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !IsBotType(input.BotType) {
-		writeError(w, http.StatusBadRequest, "invalid_bot_type", "Invalid bot type")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_bot_type", "Invalid bot type")
 		return
 	}
 
@@ -207,7 +189,7 @@ func (h *Handlers) CreateKnownBot(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !IsPolicy(input.Policy) {
-		writeError(w, http.StatusBadRequest, "invalid_policy", "Invalid policy")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_policy", "Invalid policy")
 		return
 	}
 
@@ -223,7 +205,7 @@ func (h *Handlers) CreateKnownBot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": bot})
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": bot})
 }
 
 // UpdateKnownBot updates an existing known bot entry.
@@ -236,7 +218,7 @@ func (h *Handlers) UpdateKnownBot(w http.ResponseWriter, r *http.Request) {
 
 	botID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid bot ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid bot ID")
 		return
 	}
 
@@ -249,27 +231,27 @@ func (h *Handlers) UpdateKnownBot(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
 		return
 	}
 
 	if input.Name == "" {
-		writeError(w, http.StatusBadRequest, "validation_error", "name is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "name is required")
 		return
 	}
 
 	if input.UserAgentPattern == "" {
-		writeError(w, http.StatusBadRequest, "validation_error", "user_agent_pattern is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "user_agent_pattern is required")
 		return
 	}
 
 	if !IsBotType(input.BotType) {
-		writeError(w, http.StatusBadRequest, "invalid_bot_type", "Invalid bot type")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_bot_type", "Invalid bot type")
 		return
 	}
 
 	if !IsPolicy(input.Policy) {
-		writeError(w, http.StatusBadRequest, "invalid_policy", "Invalid policy")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_policy", "Invalid policy")
 		return
 	}
 
@@ -285,7 +267,7 @@ func (h *Handlers) UpdateKnownBot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": bot})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": bot})
 }
 
 // DeleteKnownBot removes a known bot entry.
@@ -298,7 +280,7 @@ func (h *Handlers) DeleteKnownBot(w http.ResponseWriter, r *http.Request) {
 
 	botID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid bot ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid bot ID")
 		return
 	}
 
@@ -307,5 +289,5 @@ func (h *Handlers) DeleteKnownBot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
 }

@@ -38,12 +38,12 @@ func NewStore(database *db.DB) *Store {
 
 // Track represents track.
 type Track struct {
-	ID           pgtype.UUID  `json:"id"`
-	TenantID     pgtype.UUID  `json:"tenant_id"`
-	Title        string       `json:"title"`
-	Slug         string       `json:"slug"`
-	Description  *string      `json:"description,omitempty"`
-	Difficulty   string       `json:"difficulty"`
+	ID          pgtype.UUID `json:"id"`
+	TenantID    pgtype.UUID `json:"tenant_id"`
+	Title       string      `json:"title"`
+	Slug        string      `json:"slug"`
+	Description *string     `json:"description,omitempty"`
+	Difficulty  string      `json:"difficulty"`
 	/** Level is an alias for Difficulty, matching the frontend TrackSummary.level
 	 *  contract (ADR-060). Always equal to Difficulty. */
 	Level        string       `json:"level"`
@@ -321,11 +321,11 @@ type LessonSummary struct {
 // (ADR-060): modules carry their lessons so the curriculum accordion renders
 // from a single fetch.
 type ModuleWithLessons struct {
-	ID          pgtype.UUID    `json:"id"`
-	Slug        string         `json:"slug"`
-	Title       string         `json:"title"`
-	Description *string        `json:"description,omitempty"`
-	SortOrder   int32          `json:"sort_order"`
+	ID          pgtype.UUID     `json:"id"`
+	Slug        string          `json:"slug"`
+	Title       string          `json:"title"`
+	Description *string         `json:"description,omitempty"`
+	SortOrder   int32           `json:"sort_order"`
 	Lessons     []LessonSummary `json:"lessons"`
 }
 
@@ -350,18 +350,18 @@ type InstructorRef struct {
 // prerequisites) are included as optional JSON keys so the frontend contract is
 // stable; they serialize as null/omitted until the corresponding migrations land.
 type TrackDetail struct {
-	ID           pgtype.UUID        `json:"id"`
-	TenantID     pgtype.UUID        `json:"tenant_id"`
-	Title        string             `json:"title"`
-	Slug         string             `json:"slug"`
-	Description  *string            `json:"description,omitempty"`
-	Difficulty   string             `json:"difficulty"`
-	Level        string             `json:"level"`
-	CoverMediaID *pgtype.UUID       `json:"cover_media_id,omitempty"`
-	IsPublished  bool               `json:"is_published"`
-	SortOrder    int32              `json:"sort_order"`
-	CreatedAt    time.Time          `json:"created_at"`
-	UpdatedAt    time.Time          `json:"updated_at"`
+	ID           pgtype.UUID         `json:"id"`
+	TenantID     pgtype.UUID         `json:"tenant_id"`
+	Title        string              `json:"title"`
+	Slug         string              `json:"slug"`
+	Description  *string             `json:"description,omitempty"`
+	Difficulty   string              `json:"difficulty"`
+	Level        string              `json:"level"`
+	CoverMediaID *pgtype.UUID        `json:"cover_media_id,omitempty"`
+	IsPublished  bool                `json:"is_published"`
+	SortOrder    int32               `json:"sort_order"`
+	CreatedAt    time.Time           `json:"created_at"`
+	UpdatedAt    time.Time           `json:"updated_at"`
 	Modules      []ModuleWithLessons `json:"modules"`
 	// Marketplace / enrollment fields (migration 000166).
 	PriceKobo               *int64  `json:"price_kobo,omitempty"`
@@ -732,27 +732,27 @@ type Lesson struct {
 
 // CreateLessonInput represents create lesson input.
 type CreateLessonInput struct {
-	Title           string       `json:"title"`
-	Slug            string       `json:"slug"`
-	LessonType      string       `json:"lesson_type"`
-	Content         *string      `json:"content,omitempty"`
-	MediaID         pgtype.UUID  `json:"media_id"`
-	DurationMinutes *int32       `json:"duration_minutes,omitempty"`
-	SortOrder       int32        `json:"sort_order"`
-	IsPublished     bool         `json:"is_published"`
-	IsPreview       bool         `json:"is_preview"`
+	Title           string      `json:"title"`
+	Slug            string      `json:"slug"`
+	LessonType      string      `json:"lesson_type"`
+	Content         *string     `json:"content,omitempty"`
+	MediaID         pgtype.UUID `json:"media_id"`
+	DurationMinutes *int32      `json:"duration_minutes,omitempty"`
+	SortOrder       int32       `json:"sort_order"`
+	IsPublished     bool        `json:"is_published"`
+	IsPreview       bool        `json:"is_preview"`
 }
 
 // UpdateLessonInput represents update lesson input.
 type UpdateLessonInput struct {
-	Title           string       `json:"title"`
-	LessonType      string       `json:"lesson_type"`
-	Content         *string      `json:"content,omitempty"`
-	MediaID         pgtype.UUID  `json:"media_id"`
-	DurationMinutes *int32       `json:"duration_minutes,omitempty"`
-	SortOrder       int32        `json:"sort_order"`
-	IsPublished     bool         `json:"is_published"`
-	IsPreview       *bool        `json:"is_preview,omitempty"`
+	Title           string      `json:"title"`
+	LessonType      string      `json:"lesson_type"`
+	Content         *string     `json:"content,omitempty"`
+	MediaID         pgtype.UUID `json:"media_id"`
+	DurationMinutes *int32      `json:"duration_minutes,omitempty"`
+	SortOrder       int32       `json:"sort_order"`
+	IsPublished     bool        `json:"is_published"`
+	IsPreview       *bool       `json:"is_preview,omitempty"`
 }
 
 // buildLesson assembles a Lesson from the individual learning_lessons column
@@ -877,9 +877,9 @@ func (s *Store) GetLessonBySlug(ctx context.Context, tenantID, moduleID pgtype.U
 // LessonNavRef is a reference to an adjacent lesson for prev/next navigation
 // in the lesson player (ADR-060).
 type LessonNavRef struct {
-	Slug        string `json:"slug"`
-	Title       string `json:"title"`
-	ModuleSlug  string `json:"module_slug"`
+	Slug       string `json:"slug"`
+	Title      string `json:"title"`
+	ModuleSlug string `json:"module_slug"`
 }
 
 // LessonDetail is the enriched lesson response for the lesson player
@@ -1386,18 +1386,18 @@ type Enrollment struct {
 	ID          pgtype.UUID `json:"id"`
 	UserID      pgtype.UUID `json:"user_id"`
 	TrackID     pgtype.UUID `json:"track_id"`
-	AccessType string      `json:"access_type"`
+	AccessType  string      `json:"access_type"`
 	ProgressPct float64     `json:"progress_pct"`
 	EnrolledAt  time.Time   `json:"enrolled_at"`
 	CompletedAt *time.Time  `json:"completed_at,omitempty"`
 	// Enriched fields — populated by ListEnrollmentsByUser.
-	TrackSlug        string       `json:"track_slug,omitempty"`
-	TrackTitle       string       `json:"track_title,omitempty"`
-	ThumbnailURL     *string      `json:"thumbnail_url,omitempty"`
-	Level            string       `json:"level,omitempty"`
-	LessonsCompleted int32        `json:"lessons_completed,omitempty"`
-	LessonsTotal     int32        `json:"lessons_total,omitempty"`
-	LastActivityAt   *time.Time   `json:"last_activity_at,omitempty"`
+	TrackSlug        string        `json:"track_slug,omitempty"`
+	TrackTitle       string        `json:"track_title,omitempty"`
+	ThumbnailURL     *string       `json:"thumbnail_url,omitempty"`
+	Level            string        `json:"level,omitempty"`
+	LessonsCompleted int32         `json:"lessons_completed,omitempty"`
+	LessonsTotal     int32         `json:"lessons_total,omitempty"`
+	LastActivityAt   *time.Time    `json:"last_activity_at,omitempty"`
 	NextLesson       *LessonNavRef `json:"next_lesson,omitempty"`
 }
 
@@ -1539,24 +1539,24 @@ func (s *Store) UpdateEnrollmentProgress(ctx context.Context, userID, trackID pg
 
 // EnrollmentRow holds an enrollment with joined user info.
 type EnrollmentRow struct {
-	ID           pgtype.UUID        `json:"id"`
-	TenantID     pgtype.UUID        `json:"tenant_id"`
-	UserID       pgtype.UUID        `json:"user_id"`
-	TrackID      pgtype.UUID        `json:"track_id"`
-	AccessType   string             `json:"access_type"`
-	ProgressPct  pgtype.Numeric     `json:"progress_pct"`
-	EnrolledAt   pgtype.Timestamptz `json:"enrolled_at"`
-	CompletedAt  pgtype.Timestamptz `json:"completed_at"`
-	Username     string             `json:"username"`
-	DisplayName  string             `json:"display_name"`
+	ID          pgtype.UUID        `json:"id"`
+	TenantID    pgtype.UUID        `json:"tenant_id"`
+	UserID      pgtype.UUID        `json:"user_id"`
+	TrackID     pgtype.UUID        `json:"track_id"`
+	AccessType  string             `json:"access_type"`
+	ProgressPct pgtype.Numeric     `json:"progress_pct"`
+	EnrolledAt  pgtype.Timestamptz `json:"enrolled_at"`
+	CompletedAt pgtype.Timestamptz `json:"completed_at"`
+	Username    string             `json:"username"`
+	DisplayName string             `json:"display_name"`
 }
 
 // ListEnrollmentsByTrack returns paginated enrollments for a track with user info.
 func (s *Store) ListEnrollmentsByTrack(ctx context.Context, tenantID, trackID pgtype.UUID, limit, offset int32) ([]EnrollmentRow, error) {
 	rows, err := s.read.ListEnrollmentsByTrackID(ctx, gen.ListEnrollmentsByTrackIDParams{
-		TenantID:  tenantID,
-		TrackID:   trackID,
-		PageLimit: limit,
+		TenantID:   tenantID,
+		TrackID:    trackID,
+		PageLimit:  limit,
 		PageOffset: offset,
 	})
 	if err != nil {
@@ -1613,10 +1613,10 @@ func (s *Store) GetQuizQuestions(ctx context.Context, tenantID, lessonID pgtype.
 
 	for _, r := range rows {
 		questions = append(questions, QuizQuestion{
-			ID:          r.ID,
-			LessonID:    r.LessonID,
-			Question:    r.Question,
-			Options:     r.Options,
+			ID:       r.ID,
+			LessonID: r.LessonID,
+			Question: r.Question,
+			Options:  r.Options,
 			// Answer and Explanation intentionally omitted — the public
 			// quiz endpoint must not reveal correct answers.
 			Position: r.Position,

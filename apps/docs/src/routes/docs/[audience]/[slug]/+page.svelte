@@ -91,7 +91,7 @@
 			{/if}
 			<h1>{data.page.title}</h1>
 			{#if data.page.ai_generated}
-				<span class="ai-flag">AI-assisted draft</span>
+				<span class="ai-flag">{t('page.ai_assisted_draft')}</span>
 			{/if}
 			{#if data.locale === 'fr' && data.page.content_lang === 'en'}
 				<div class="translation-notice">

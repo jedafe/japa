@@ -15,8 +15,8 @@ const pixabayAPI = "https://pixabay.com/api"
 
 // PixabayProvider implements StockProvider for Pixabay (pixabay.com/api/docs).
 type PixabayProvider struct {
-	apiKey  string
-	client  *http.Client
+	apiKey string
+	client *http.Client
 }
 
 func NewPixabayProvider(apiKey string) *PixabayProvider {
@@ -81,8 +81,8 @@ func (p *PixabayProvider) Search(ctx context.Context, query string, page, perPag
 			FullURL:         r.LargeImageURL,
 			Width:           r.ImageWidth,
 			Height:          r.ImageHeight,
-			Photographer:     r.User,
-			PhotographerURL:  fmt.Sprintf("https://pixabay.com/users/%s-%d/", r.User, r.ID),
+			Photographer:    r.User,
+			PhotographerURL: fmt.Sprintf("https://pixabay.com/users/%s-%d/", r.User, r.ID),
 			Description:     r.Tags,
 		})
 	}
@@ -145,8 +145,8 @@ func (p *PixabayProvider) GetByID(ctx context.Context, photoID string) (*StockPh
 		FullURL:         h.LargeImageURL,
 		Width:           h.ImageWidth,
 		Height:          h.ImageHeight,
-		Photographer:     h.User,
-		PhotographerURL:  fmt.Sprintf("https://pixabay.com/users/%s-%d/", h.User, h.ID),
+		Photographer:    h.User,
+		PhotographerURL: fmt.Sprintf("https://pixabay.com/users/%s-%d/", h.User, h.ID),
 		Description:     h.Tags,
 	}, nil
 }
@@ -178,12 +178,12 @@ func (p *PixabayProvider) Download(ctx context.Context, photoID string) (*Downlo
 	}
 
 	return &DownloadedPhoto{
-		Data:             data,
-		Filename:         photoID + ".jpg",
-		Photographer:     photo.Photographer,
-		PhotographerURL:  photo.PhotographerURL,
-		License:          "pixabay",
-		LicenseURL:       "https://pixabay.com/service/license/",
-		ProviderPhotoID:  photoID,
+		Data:            data,
+		Filename:        photoID + ".jpg",
+		Photographer:    photo.Photographer,
+		PhotographerURL: photo.PhotographerURL,
+		License:         "pixabay",
+		LicenseURL:      "https://pixabay.com/service/license/",
+		ProviderPhotoID: photoID,
 	}, nil
 }

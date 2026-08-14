@@ -381,27 +381,27 @@ func (s *Store) BulkSoftDeleteMediaOwn(ctx context.Context, tenantID, uploaderID
 
 // QuarantinedMedia holds the full media row including quarantine fields.
 type QuarantinedMedia struct {
-	ID               pgtype.UUID         `json:"id"`
-	TenantID         pgtype.UUID         `json:"tenant_id"`
-	UploaderUserID   pgtype.UUID         `json:"uploader_user_id"`
-	OriginalFilename string              `json:"original_filename"`
-	MimeType         string              `json:"mime_type"`
-	FileSizeBytes    int64               `json:"file_size_bytes"`
-	WidthPx          *int32              `json:"width_px,omitempty"`
-	HeightPx         *int32              `json:"height_px,omitempty"`
-	DurationSecs     pgtype.Numeric      `json:"duration_secs,omitempty"`
-	StoragePath      string              `json:"storage_path"`
-	StorageBucket    string              `json:"storage_bucket"`
-	AltText          *string             `json:"alt_text,omitempty"`
-	Caption          *string             `json:"caption,omitempty"`
-	Confirmed        bool                `json:"confirmed"`
-	DeletedAt        pgtype.Timestamptz  `json:"deleted_at,omitempty"`
-	QuarantineReason *string             `json:"quarantine_reason,omitempty"`
-	QuarantinedAt    pgtype.Timestamptz  `json:"quarantined_at,omitempty"`
-	ReviewedBy       pgtype.UUID         `json:"reviewed_by,omitempty"`
-	ReviewedAt       pgtype.Timestamptz  `json:"reviewed_at,omitempty"`
-	CreatedAt        pgtype.Timestamptz  `json:"created_at"`
-	UserGroupID      pgtype.UUID         `json:"user_group_id,omitempty"`
+	ID               pgtype.UUID        `json:"id"`
+	TenantID         pgtype.UUID        `json:"tenant_id"`
+	UploaderUserID   pgtype.UUID        `json:"uploader_user_id"`
+	OriginalFilename string             `json:"original_filename"`
+	MimeType         string             `json:"mime_type"`
+	FileSizeBytes    int64              `json:"file_size_bytes"`
+	WidthPx          *int32             `json:"width_px,omitempty"`
+	HeightPx         *int32             `json:"height_px,omitempty"`
+	DurationSecs     pgtype.Numeric     `json:"duration_secs,omitempty"`
+	StoragePath      string             `json:"storage_path"`
+	StorageBucket    string             `json:"storage_bucket"`
+	AltText          *string            `json:"alt_text,omitempty"`
+	Caption          *string            `json:"caption,omitempty"`
+	Confirmed        bool               `json:"confirmed"`
+	DeletedAt        pgtype.Timestamptz `json:"deleted_at,omitempty"`
+	QuarantineReason *string            `json:"quarantine_reason,omitempty"`
+	QuarantinedAt    pgtype.Timestamptz `json:"quarantined_at,omitempty"`
+	ReviewedBy       pgtype.UUID        `json:"reviewed_by,omitempty"`
+	ReviewedAt       pgtype.Timestamptz `json:"reviewed_at,omitempty"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	UserGroupID      pgtype.UUID        `json:"user_group_id,omitempty"`
 }
 
 // ScanMediaRow holds the minimal fields needed for virus scanning.
@@ -524,8 +524,8 @@ func (s *Store) ListQuarantined(ctx context.Context, tenantID pgtype.UUID, limit
 	}
 
 	rows, err := s.read.ListQuarantinedMedia(ctx, gen.ListQuarantinedMediaParams{
-		TenantID:  tenantID,
-		PageLimit: limit,
+		TenantID:   tenantID,
+		PageLimit:  limit,
 		PageOffset: offset,
 	})
 	if err != nil {

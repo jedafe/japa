@@ -20,6 +20,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/db/gen"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/tenant"
 	"github.com/jedafe/japa/internal/worker"
 )
@@ -135,9 +136,9 @@ func toQuarantinedMediaResponses(items []QuarantinedMedia, svc *Service) []Media
 	result := make([]MediaResponse, len(items))
 	for i := range items {
 		result[i] = toQuarantinedMediaResponse(&items[i], svc.GetMediaURL(&gen.Medium{
-			ID:             items[i].ID,
-			StoragePath:    items[i].StoragePath,
-			StorageBucket:  items[i].StorageBucket,
+			ID:            items[i].ID,
+			StoragePath:   items[i].StoragePath,
+			StorageBucket: items[i].StorageBucket,
 		}, ImageProxyOpts{}))
 	}
 	return result
@@ -147,7 +148,7 @@ func toQuarantinedMediaResponses(items []QuarantinedMedia, svc *Service) []Media
 func parseMediaID(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_media_id", "Invalid media ID format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_media_id", "Invalid media ID format")
 		return pgtype.UUID{}, false
 	}
 
@@ -195,7 +196,7 @@ type permissionChecker interface {
 
 // Handlers holds dependencies for media HTTP handlers.
 type Handlers struct {
-	service    *Service
+	service     *Service
 	AsynqClient *asynq.Client
 	// perms is optional — when set, InitiateUpload checks media.video.upload
 	// for video MIME types per Section 34.
@@ -217,7 +218,7 @@ func (h *Handlers) SetPermissionChecker(pc permissionChecker) {
 func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
 
@@ -228,28 +229,11 @@ func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype
 func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	user := auth.FromContext(r.Context())
 	if user == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
 
 	return user, true
-}
-
-// writeJSON serializes the given value as JSON and writes it to the response.
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-
-	if err := json.NewEncoder(w).Encode(v); err != nil {
-		slog.Warn("json encode error", "error", err)
-	}
-}
-
-// writeError writes a JSON error response following the JapaConnect API format.
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, map[string]any{
-		"error": map[string]string{"code": code, "message": message},
-	})
 }
 
 // parsePageSize extracts and clamps the page_size query parameter.
@@ -317,27 +301,27 @@ func (h *Handlers) InitiateUpload(w http.ResponseWriter, r *http.Request) {
 		// MaxBytesError is returned when the body exceeds the limit.
 		maxBytesError := &http.MaxBytesError{}
 		if errors.As(err, &maxBytesError) {
-			writeError(w, http.StatusRequestEntityTooLarge, "body_too_large", "Request body exceeds 50MB limit")
+			errpkg.WriteError(w, http.StatusRequestEntityTooLarge, "body_too_large", "Request body exceeds 50MB limit")
 			return
 		}
 
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 
 		return
 	}
 
 	if input.Filename == "" {
-		writeError(w, http.StatusBadRequest, "missing_filename", "filename is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_filename", "filename is required")
 		return
 	}
 
 	if input.MimeType == "" {
-		writeError(w, http.StatusBadRequest, "missing_mime_type", "mime_type is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_mime_type", "mime_type is required")
 		return
 	}
 
 	if input.FileSize <= 0 {
-		writeError(w, http.StatusBadRequest, "invalid_file_size", "file_size must be positive")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_file_size", "file_size must be positive")
 		return
 	}
 
@@ -346,7 +330,7 @@ func (h *Handlers) InitiateUpload(w http.ResponseWriter, r *http.Request) {
 	// are accepted. The actual content inspection via http.DetectContentType
 	// happens at ConfirmUpload time when the file bytes are available.
 	if !IsAllowedMIMETypeForContext(input.MimeType, UploadContextMedia) {
-		writeError(w, http.StatusBadRequest, "unsupported_mime_type",
+		errpkg.WriteError(w, http.StatusBadRequest, "unsupported_mime_type",
 			"MIME type '"+input.MimeType+"' is not allowed for media uploads")
 		return
 	}
@@ -356,7 +340,7 @@ func (h *Handlers) InitiateUpload(w http.ResponseWriter, r *http.Request) {
 	// "image/png" for a file named "virus.exe".
 	if extMIME := MIMETypeFromExtension(input.Filename); extMIME != "" {
 		if CanonicalMIMEType(extMIME) != CanonicalMIMEType(input.MimeType) {
-			writeError(w, http.StatusBadRequest, "mime_extension_mismatch",
+			errpkg.WriteError(w, http.StatusBadRequest, "mime_extension_mismatch",
 				"Declared MIME type '"+input.MimeType+"' does not match file extension '"+filepath.Ext(input.Filename)+"'")
 			return
 		}
@@ -368,7 +352,7 @@ func (h *Handlers) InitiateUpload(w http.ResponseWriter, r *http.Request) {
 	// gate for video content specifically (MEDIA-007).
 	if isVideoMIME(CanonicalMIMEType(input.MimeType)) && h.perms != nil {
 		if !h.perms.HasPermission(r.Context(), user.UserID, tenantID, "media.video.upload") {
-			writeError(w, http.StatusForbidden, "video_upload_forbidden",
+			errpkg.WriteError(w, http.StatusForbidden, "video_upload_forbidden",
 				"You do not have permission to upload video files")
 			return
 		}
@@ -376,11 +360,11 @@ func (h *Handlers) InitiateUpload(w http.ResponseWriter, r *http.Request) {
 
 	result, err := h.service.InitiateUpload(r.Context(), tenantID, user.UserID, input.Filename, input.MimeType, input.FileSize)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "upload_error", err.Error())
+		errpkg.WriteError(w, http.StatusBadRequest, "upload_error", err.Error())
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": result})
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": result})
 }
 
 // ConfirmUpload handles POST /api/v1/media/confirm/{id}.
@@ -402,14 +386,14 @@ func (h *Handlers) ConfirmUpload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.service.ConfirmUpload(r.Context(), tenantID, mediaID); err != nil {
-		writeError(w, http.StatusInternalServerError, "confirm_error", "Failed to confirm upload")
+		errpkg.WriteError(w, http.StatusInternalServerError, "confirm_error", "Failed to confirm upload")
 		return
 	}
 
 	// Enqueue background processing tasks — fire-and-forget.
 	h.enqueueMediaTasks(r.Context(), tenantID, mediaID)
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"confirmed": true}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"confirmed": true}})
 }
 
 // enqueueMediaTasks enqueues image/video processing and virus scan tasks
@@ -447,9 +431,9 @@ func (h *Handlers) enqueueMediaTasks(ctx context.Context, tenantID, mediaID pgty
 	switch {
 	case isImageMIME(mimeType):
 		processPayload, _ := json.Marshal(map[string]string{
-			"media_id":   mediaIDStr,
-			"tenant_id":  tenantIDStr,
-			"operation":  "optimize",
+			"media_id":  mediaIDStr,
+			"tenant_id": tenantIDStr,
+			"operation": "optimize",
 		})
 		if _, err := h.AsynqClient.Enqueue(
 			asynq.NewTask(worker.TypeImageProcessing, processPayload),
@@ -460,9 +444,9 @@ func (h *Handlers) enqueueMediaTasks(ctx context.Context, tenantID, mediaID pgty
 		}
 	case isVideoMIME(mimeType):
 		processPayload, _ := json.Marshal(map[string]string{
-			"media_id":   mediaIDStr,
-			"tenant_id":  tenantIDStr,
-			"operation":  "transcode",
+			"media_id":  mediaIDStr,
+			"tenant_id": tenantIDStr,
+			"operation": "transcode",
 		})
 		if _, err := h.AsynqClient.Enqueue(
 			asynq.NewTask(worker.TypeVideoProcessing, processPayload),
@@ -508,19 +492,19 @@ func (h *Handlers) GetMedia(w http.ResponseWriter, r *http.Request) {
 	var mediaID pgtype.UUID
 
 	if err := mediaID.Scan(idStr); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_media_id", "Invalid media ID format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_media_id", "Invalid media ID format")
 		return
 	}
 
 	m, err := h.service.GetMedia(r.Context(), tenantID, mediaID)
 	if err != nil {
-		writeError(w, http.StatusNotFound, "media_not_found", "Media not found")
+		errpkg.WriteError(w, http.StatusNotFound, "media_not_found", "Media not found")
 		return
 	}
 
 	// Generate imgproxy URL on serialization (never cached).
 	url := h.service.GetMediaURL(&m, ImageProxyOpts{})
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": toMediaResponse(&m, url),
 	})
 }
@@ -560,11 +544,11 @@ func (h *Handlers) updateMetadataHandler(w http.ResponseWriter, r *http.Request,
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		maxBytesError := &http.MaxBytesError{}
 		if errors.As(err, &maxBytesError) {
-			writeError(w, http.StatusRequestEntityTooLarge, "body_too_large", "Request body exceeds 10MB limit")
+			errpkg.WriteError(w, http.StatusRequestEntityTooLarge, "body_too_large", "Request body exceeds 10MB limit")
 			return
 		}
 
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 
 		return
 	}
@@ -572,7 +556,7 @@ func (h *Handlers) updateMetadataHandler(w http.ResponseWriter, r *http.Request,
 	var userGroupID pgtype.UUID
 	if input.UserGroupID != nil && *input.UserGroupID != "" {
 		if err := userGroupID.Scan(*input.UserGroupID); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_user_group_id", "Invalid user_group_id format")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_user_group_id", "Invalid user_group_id format")
 			return
 		}
 	}
@@ -580,18 +564,18 @@ func (h *Handlers) updateMetadataHandler(w http.ResponseWriter, r *http.Request,
 	if ownOnly {
 		// User-facing update — scoped to the uploader (MEDIA-003).
 		if err := h.service.UpdateMetadataOwn(r.Context(), tenantID, user.UserID, mediaID, input.AltText, input.Caption, input.Width, input.Height, input.Duration, userGroupID); err != nil {
-			writeError(w, http.StatusNotFound, "media_not_found", "Media not found")
+			errpkg.WriteError(w, http.StatusNotFound, "media_not_found", "Media not found")
 			return
 		}
 	} else {
 		// Admin update — no ownership filter (gated by media.edit_any).
 		if err := h.service.UpdateMetadata(r.Context(), tenantID, mediaID, input.AltText, input.Caption, input.Width, input.Height, input.Duration, userGroupID); err != nil {
-			writeError(w, http.StatusInternalServerError, "update_error", "Failed to update media")
+			errpkg.WriteError(w, http.StatusInternalServerError, "update_error", "Failed to update media")
 			return
 		}
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"updated": true}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"updated": true}})
 }
 
 // UpdateMetadata handles PATCH /api/v1/media/{id}.
@@ -626,11 +610,11 @@ func (h *Handlers) DeleteMedia(w http.ResponseWriter, r *http.Request) {
 	// Use the ownership-scoped delete so a user with media.delete_own can
 	// only delete their own uploads (MEDIA-001).
 	if err := h.service.DeleteMediaOwn(r.Context(), tenantID, user.UserID, mediaID); err != nil {
-		writeError(w, http.StatusNotFound, "media_not_found", "Media not found")
+		errpkg.WriteError(w, http.StatusNotFound, "media_not_found", "Media not found")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"deleted": true}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"deleted": true}})
 }
 
 // AdminDeleteMedia handles DELETE /admin/media/{id}.
@@ -652,11 +636,11 @@ func (h *Handlers) AdminDeleteMedia(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.service.DeleteMedia(r.Context(), tenantID, mediaID); err != nil {
-		writeError(w, http.StatusInternalServerError, "delete_error", "Failed to delete media")
+		errpkg.WriteError(w, http.StatusInternalServerError, "delete_error", "Failed to delete media")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"deleted": true}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"deleted": true}})
 }
 
 // ListMedia handles GET /api/v1/media.
@@ -681,7 +665,7 @@ func (h *Handlers) ListMedia(w http.ResponseWriter, r *http.Request) {
 	if uidStr := r.URL.Query().Get("uploader_id"); uidStr != "" {
 		var uid pgtype.UUID
 		if err := uid.Scan(uidStr); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_uploader_id", "Invalid uploader_id format")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_uploader_id", "Invalid uploader_id format")
 			return
 		}
 
@@ -710,7 +694,7 @@ func (h *Handlers) ListMedia(w http.ResponseWriter, r *http.Request) {
 
 	items, total, err := h.service.ListMedia(r.Context(), tenantID, uploaderID, mimeType, query, status, flagged, limit, offset)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "list_error", "Failed to load media")
+		errpkg.WriteError(w, http.StatusInternalServerError, "list_error", "Failed to load media")
 		return
 	}
 
@@ -722,7 +706,7 @@ func (h *Handlers) ListMedia(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data":        toMediaResponses(items, h.service),
 		"total":       total,
 		"total_pages": totalPages,
@@ -767,7 +751,7 @@ func (h *Handlers) ListMyMedia(w http.ResponseWriter, r *http.Request) {
 
 	items, total, err := h.service.ListMedia(r.Context(), tenantID, &user.UserID, mimeType, query, status, flagged, limit, offset)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "list_error", "Failed to load media")
+		errpkg.WriteError(w, http.StatusInternalServerError, "list_error", "Failed to load media")
 		return
 	}
 
@@ -779,7 +763,7 @@ func (h *Handlers) ListMyMedia(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data":        toMediaResponses(items, h.service),
 		"total":       total,
 		"total_pages": totalPages,
@@ -795,7 +779,7 @@ func (h *Handlers) ListByUser(w http.ResponseWriter, r *http.Request) {
 
 	var uploaderID pgtype.UUID
 	if err := uploaderID.Scan(chi.URLParam(r, "id")); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_user_id", "Invalid user ID format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_user_id", "Invalid user ID format")
 		return
 	}
 
@@ -804,11 +788,11 @@ func (h *Handlers) ListByUser(w http.ResponseWriter, r *http.Request) {
 
 	items, total, err := h.service.ListByUser(r.Context(), tenantID, uploaderID, limit, offset)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "list_error", "Failed to load media")
+		errpkg.WriteError(w, http.StatusInternalServerError, "list_error", "Failed to load media")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": toMediaResponses(items, h.service),
 		"meta": map[string]any{"total": total, "page_size": limit, "page_offset": offset},
 	})
@@ -824,7 +808,7 @@ func (h *Handlers) ListByOrganization(w http.ResponseWriter, r *http.Request) {
 
 	var orgID pgtype.UUID
 	if err := orgID.Scan(chi.URLParam(r, "id")); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_org_id", "Invalid organization ID format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_org_id", "Invalid organization ID format")
 		return
 	}
 
@@ -833,11 +817,11 @@ func (h *Handlers) ListByOrganization(w http.ResponseWriter, r *http.Request) {
 
 	items, total, err := h.service.ListByOrganization(r.Context(), tenantID, orgID, limit, offset)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "list_error", "Failed to load media")
+		errpkg.WriteError(w, http.StatusInternalServerError, "list_error", "Failed to load media")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": toMediaResponses(items, h.service),
 		"meta": map[string]any{"total": total, "page_size": limit, "page_offset": offset},
 	})
@@ -865,11 +849,11 @@ func (h *Handlers) ListQuarantined(w http.ResponseWriter, r *http.Request) {
 
 	items, err := h.service.ListQuarantined(r.Context(), tenantID, limit, offset)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "list_quarantined_error", "Failed to load quarantined media")
+		errpkg.WriteError(w, http.StatusInternalServerError, "list_quarantined_error", "Failed to load quarantined media")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": toQuarantinedMediaResponses(items, h.service)})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": toQuarantinedMediaResponses(items, h.service)})
 }
 
 // ApproveQuarantined handles POST /admin/media/{id}/approve.
@@ -881,11 +865,11 @@ func (h *Handlers) ApproveQuarantined(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.service.ApproveMedia(r.Context(), mediaID, tenantID, userID); err != nil {
-		writeError(w, http.StatusInternalServerError, "approve_error", "Failed to approve media")
+		errpkg.WriteError(w, http.StatusInternalServerError, "approve_error", "Failed to approve media")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "approved"}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "approved"}})
 }
 
 // RejectQuarantined handles POST /admin/media/{id}/reject.
@@ -897,11 +881,11 @@ func (h *Handlers) RejectQuarantined(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.service.RejectMedia(r.Context(), mediaID, tenantID, userID); err != nil {
-		writeError(w, http.StatusInternalServerError, "reject_error", "Failed to reject media")
+		errpkg.WriteError(w, http.StatusInternalServerError, "reject_error", "Failed to reject media")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "rejected"}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "rejected"}})
 }
 
 // AdminUpdateMetadata handles PATCH /admin/media/{id}.
@@ -934,12 +918,12 @@ func (h *Handlers) AdminUpdateMediaStatus(w http.ResponseWriter, r *http.Request
 		Status string `json:"status"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if input.Status != "approved" && input.Status != "rejected" && input.Status != "quarantined" {
-		writeError(w, http.StatusBadRequest, "invalid_status", "Status must be approved, rejected, or quarantined")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_status", "Status must be approved, rejected, or quarantined")
 		return
 	}
 
@@ -951,11 +935,11 @@ func (h *Handlers) AdminUpdateMediaStatus(w http.ResponseWriter, r *http.Request
 	}
 
 	if err := h.service.AdminUpdateStatus(r.Context(), tenantID, mediaID, user.UserID, confirmed, quarantineReason); err != nil {
-		writeError(w, http.StatusInternalServerError, "status_update_error", "Failed to update media status")
+		errpkg.WriteError(w, http.StatusInternalServerError, "status_update_error", "Failed to update media status")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": input.Status}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": input.Status}})
 }
 
 // AdminUpload handles POST /admin/media/upload — direct multipart upload for admin.
@@ -974,19 +958,19 @@ func (h *Handlers) AdminUpload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := r.ParseMultipartForm(MaxMediaUploadBody); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_form", "Invalid multipart form")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_form", "Invalid multipart form")
 		return
 	}
 
 	file, header, err := r.FormFile("file")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "missing_file", "file is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_file", "file is required")
 		return
 	}
 	defer file.Close()
 
 	if header.Size > MaxFileSizeBytes {
-		writeError(w, http.StatusRequestEntityTooLarge, "file_too_large", "File exceeds 50MB limit")
+		errpkg.WriteError(w, http.StatusRequestEntityTooLarge, "file_too_large", "File exceeds 50MB limit")
 		return
 	}
 
@@ -999,7 +983,7 @@ func (h *Handlers) AdminUpload(w http.ResponseWriter, r *http.Request) {
 	contentType := http.DetectContentType(sniffBuf[:n])
 	// Rewind so the full file is copied below.
 	if _, err := file.Seek(0, io.SeekStart); err != nil {
-		writeError(w, http.StatusInternalServerError, "seek_error", "Failed to read file")
+		errpkg.WriteError(w, http.StatusInternalServerError, "seek_error", "Failed to read file")
 		return
 	}
 
@@ -1024,32 +1008,32 @@ func (h *Handlers) AdminUpload(w http.ResponseWriter, r *http.Request) {
 
 	localPath := filepath.Join("data", "media", DefaultBucket, storagePath)
 	if err := os.MkdirAll(filepath.Dir(localPath), 0o755); err != nil {
-		writeError(w, http.StatusInternalServerError, "dir_error", "Failed to create upload directory")
+		errpkg.WriteError(w, http.StatusInternalServerError, "dir_error", "Failed to create upload directory")
 		return
 	}
 
 	dst, err := os.Create(localPath)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "file_error", "Failed to create file")
+		errpkg.WriteError(w, http.StatusInternalServerError, "file_error", "Failed to create file")
 		return
 	}
 	defer dst.Close()
 
 	written, err := io.Copy(dst, file)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "write_error", "Failed to write file")
+		errpkg.WriteError(w, http.StatusInternalServerError, "write_error", "Failed to write file")
 		return
 	}
 
 	mediaID, err := h.service.DirectUpload(r.Context(), tenantID, user.UserID, header.Filename, contentType, written, localPath, storagePath)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "db_error", "Failed to save media record")
+		errpkg.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to save media record")
 		return
 	}
 
 	h.enqueueMediaTasks(r.Context(), tenantID, mediaID)
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
 			"media_id": mediaID.String(),
 			"url":      "/api/v1/media/serve/" + DefaultBucket + "/" + storagePath,
@@ -1081,17 +1065,17 @@ func (h *Handlers) BulkDelete(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		maxBytesError := &http.MaxBytesError{}
 		if errors.As(err, &maxBytesError) {
-			writeError(w, http.StatusRequestEntityTooLarge, "body_too_large", "Request body exceeds 10MB limit")
+			errpkg.WriteError(w, http.StatusRequestEntityTooLarge, "body_too_large", "Request body exceeds 10MB limit")
 			return
 		}
 
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 
 		return
 	}
 
 	if len(input.MediaIDs) == 0 {
-		writeError(w, http.StatusBadRequest, "missing_media_ids", "media_ids is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_media_ids", "media_ids is required")
 		return
 	}
 
@@ -1100,7 +1084,7 @@ func (h *Handlers) BulkDelete(w http.ResponseWriter, r *http.Request) {
 	for _, idStr := range input.MediaIDs {
 		var id pgtype.UUID
 		if err := id.Scan(idStr); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_media_id", "Invalid media ID format: "+idStr)
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_media_id", "Invalid media ID format: "+idStr)
 			return
 		}
 
@@ -1110,11 +1094,11 @@ func (h *Handlers) BulkDelete(w http.ResponseWriter, r *http.Request) {
 	// Use the ownership-scoped bulk delete so a user with media.delete_own
 	// can only delete their own uploads (MEDIA-002).
 	if err := h.service.BulkDeleteOwn(r.Context(), tenantID, user.UserID, ids); err != nil {
-		writeError(w, http.StatusInternalServerError, "bulk_delete_error", "Failed to delete media")
+		errpkg.WriteError(w, http.StatusInternalServerError, "bulk_delete_error", "Failed to delete media")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]int{"deleted": len(ids)},
 	})
 }
@@ -1127,13 +1111,13 @@ func (h *Handlers) ServeMedia(w http.ResponseWriter, r *http.Request) {
 	storagePath := chi.URLParam(r, "*") // catch-all for path
 
 	if bucket == "" || storagePath == "" {
-		writeError(w, http.StatusBadRequest, "invalid_path", "Invalid media path")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_path", "Invalid media path")
 		return
 	}
 
 	localPath, err := resolveMediaPath(bucket, storagePath)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_path", "Invalid media path")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_path", "Invalid media path")
 		return
 	}
 
@@ -1219,19 +1203,19 @@ func (h *Handlers) SeaweedFSUpload(w http.ResponseWriter, r *http.Request) {
 	storagePath := chi.URLParam(r, "*") // catch-all
 
 	if bucket == "" || storagePath == "" {
-		writeError(w, http.StatusBadRequest, "invalid_path", "Invalid upload path")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_path", "Invalid upload path")
 		return
 	}
 
 	localPath, err := resolveMediaPath(bucket, storagePath)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_path", "Invalid upload path")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_path", "Invalid upload path")
 		return
 	}
 
 	if err := os.MkdirAll(filepath.Dir(localPath), 0o755); err != nil {
 		slog.Warn("seaweedfs upload: failed to create directory", "path", localPath, "error", err)
-		writeError(w, http.StatusInternalServerError, "dir_error", "Failed to create upload directory")
+		errpkg.WriteError(w, http.StatusInternalServerError, "dir_error", "Failed to create upload directory")
 		return
 	}
 
@@ -1241,7 +1225,7 @@ func (h *Handlers) SeaweedFSUpload(w http.ResponseWriter, r *http.Request) {
 	dst, err := os.Create(localPath)
 	if err != nil {
 		slog.Warn("seaweedfs upload: failed to create file", "path", localPath, "error", err)
-		writeError(w, http.StatusInternalServerError, "file_error", "Failed to create file")
+		errpkg.WriteError(w, http.StatusInternalServerError, "file_error", "Failed to create file")
 		return
 	}
 	defer dst.Close()
@@ -1249,7 +1233,7 @@ func (h *Handlers) SeaweedFSUpload(w http.ResponseWriter, r *http.Request) {
 	written, err := io.Copy(dst, r.Body)
 	if err != nil {
 		slog.Warn("seaweedfs upload: failed to write file", "path", localPath, "error", err)
-		writeError(w, http.StatusInternalServerError, "write_error", "Failed to write file")
+		errpkg.WriteError(w, http.StatusInternalServerError, "write_error", "Failed to write file")
 		return
 	}
 

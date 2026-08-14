@@ -87,7 +87,7 @@ func (h *Handlers) enqueueRecordClick(linkID pgtype.UUID, ipHash, uaHash, referr
 func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	user := auth.FromContext(r.Context())
 	if user == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
 	return user, true
@@ -96,7 +96,7 @@ func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.Au
 func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "Tenant context not available")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "Tenant context not available")
 		return pgtype.UUID{}, false
 	}
 	return t.ID, true
@@ -122,40 +122,26 @@ func parseQueryInt(r *http.Request, key string, defaultVal int) int {
 	return n
 }
 
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	if v != nil {
-		json.NewEncoder(w).Encode(v)
-	}
-}
-
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, map[string]any{
-		"error": map[string]string{"code": code, "message": message},
-	})
-}
-
 func handleServiceError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, ErrMemberNotFound), errors.Is(err, ErrLinkNotFound):
-		writeError(w, http.StatusNotFound, "not_found", err.Error())
+		errpkg.WriteError(w, http.StatusNotFound, "not_found", err.Error())
 	case errors.Is(err, ErrAlreadyEnrolled):
-		writeError(w, http.StatusConflict, "already_enrolled", err.Error())
+		errpkg.WriteError(w, http.StatusConflict, "already_enrolled", err.Error())
 	case errors.Is(err, ErrNotEnrolled), errors.Is(err, ErrMemberSuspended):
-		writeError(w, http.StatusForbidden, "forbidden", err.Error())
+		errpkg.WriteError(w, http.StatusForbidden, "forbidden", err.Error())
 	case errors.Is(err, ErrTooManyLinks):
-		writeError(w, http.StatusConflict, "too_many_links", err.Error())
+		errpkg.WriteError(w, http.StatusConflict, "too_many_links", err.Error())
 	case errors.Is(err, ErrFeatureDisabled):
-		writeError(w, http.StatusForbidden, "feature_disabled", err.Error())
+		errpkg.WriteError(w, http.StatusForbidden, "feature_disabled", err.Error())
 	case errors.Is(err, ErrAccountTooNew):
-		writeError(w, http.StatusForbidden, "account_too_new", err.Error())
+		errpkg.WriteError(w, http.StatusForbidden, "account_too_new", err.Error())
 	case errors.Is(err, ErrLinkNotActive):
-		writeError(w, http.StatusNotFound, "link_not_active", err.Error())
+		errpkg.WriteError(w, http.StatusNotFound, "link_not_active", err.Error())
 	case errors.Is(err, ErrInvalidProductType):
-		writeError(w, http.StatusBadRequest, "invalid_product_type", err.Error())
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_product_type", err.Error())
 	case errors.Is(err, errpkg.ErrRequired):
-		writeError(w, http.StatusBadRequest, "validation_error", err.Error())
+		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", err.Error())
 	default:
 		errpkg.HandleServiceError(w, err)
 	}
@@ -166,7 +152,7 @@ func handleServiceError(w http.ResponseWriter, err error) {
 // GetProgramInfo handles GET /api/v1/affiliate-program
 func (h *Handlers) GetProgramInfo(w http.ResponseWriter, r *http.Request) {
 	info := h.Service.GetProgramInfo(r.Context())
-	writeJSON(w, http.StatusOK, map[string]any{"data": info})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": info})
 }
 
 // Enroll handles POST /api/v1/affiliate-program/enroll
@@ -187,7 +173,7 @@ func (h *Handlers) Enroll(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, map[string]any{"data": member})
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": member})
 }
 
 // ── User Link Routes ────────────────────────────────────────────────
@@ -220,7 +206,7 @@ func (h *Handlers) ListMyLinks(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": links})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": links})
 }
 
 // CreateMyLink handles POST /api/v1/me/affiliate-links
@@ -235,15 +221,15 @@ func (h *Handlers) CreateMyLink(w http.ResponseWriter, r *http.Request) {
 	}
 	var input CreateLinkInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
 	if input.ProductType == "" {
-		writeError(w, http.StatusBadRequest, "missing_field", "product_type is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_field", "product_type is required")
 		return
 	}
 	if input.DestinationURL == "" {
-		writeError(w, http.StatusBadRequest, "missing_field", "destination_url is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_field", "destination_url is required")
 		return
 	}
 
@@ -252,7 +238,7 @@ func (h *Handlers) CreateMyLink(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, map[string]any{"data": link})
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": link})
 }
 
 // GetMyLink handles GET /api/v1/me/affiliate-links/:id
@@ -267,7 +253,7 @@ func (h *Handlers) GetMyLink(w http.ResponseWriter, r *http.Request) {
 	}
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid link ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid link ID")
 		return
 	}
 	link, err := h.Service.GetLink(r.Context(), id, tenantID)
@@ -276,10 +262,10 @@ func (h *Handlers) GetMyLink(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if link.UserID != user.UserID {
-		writeError(w, http.StatusForbidden, "forbidden", "You can only view your own links")
+		errpkg.WriteError(w, http.StatusForbidden, "forbidden", "You can only view your own links")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": link})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": link})
 }
 
 // UpdateMyLink handles PATCH /api/v1/me/affiliate-links/:id
@@ -294,12 +280,12 @@ func (h *Handlers) UpdateMyLink(w http.ResponseWriter, r *http.Request) {
 	}
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid link ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid link ID")
 		return
 	}
 	var input UpdateLinkInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
 
@@ -308,7 +294,7 @@ func (h *Handlers) UpdateMyLink(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": link})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": link})
 }
 
 // DeleteMyLink handles DELETE /api/v1/me/affiliate-links/:id
@@ -323,14 +309,14 @@ func (h *Handlers) DeleteMyLink(w http.ResponseWriter, r *http.Request) {
 	}
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid link ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid link ID")
 		return
 	}
 	if err := h.Service.DeleteLink(r.Context(), id, user.UserID, tenantID); err != nil {
 		handleServiceError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusNoContent, nil)
+	errpkg.WriteJSON(w, http.StatusNoContent, nil)
 }
 
 // GetMyEarnings handles GET /api/v1/me/affiliate-earnings
@@ -353,7 +339,7 @@ func (h *Handlers) GetMyEarnings(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": earnings})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": earnings})
 }
 
 // ── Redirect Handler ────────────────────────────────────────────────
@@ -458,7 +444,7 @@ func (h *Handlers) ListMembersAdmin(w http.ResponseWriter, r *http.Request) {
 
 	members, err := h.Service.store.listMembersFiltered(r.Context(), tenantID, statusFilter, limit, offset)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "query_error", "Failed to query members")
+		errpkg.WriteError(w, http.StatusInternalServerError, "query_error", "Failed to query members")
 		return
 	}
 	results := make([]map[string]any, 0, len(members))
@@ -467,12 +453,12 @@ func (h *Handlers) ListMembersAdmin(w http.ResponseWriter, r *http.Request) {
 		results = append(results, map[string]any{
 			"id": m.UserID.String(), "user_id": m.UserID.String(), "username": username,
 			"status": m.Status, "total_clicks": m.TotalClicks,
-			"total_conversions": m.TotalConversions,
+			"total_conversions":    m.TotalConversions,
 			"total_earned_credits": numericToFloat(m.TotalEarnedCredits),
-			"enrolled_at": m.EnrolledAt.Time,
+			"enrolled_at":          m.EnrolledAt.Time,
 		})
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": results})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": results})
 }
 
 // UpdateMemberStatusAdmin handles PATCH /api/v1/admin/affiliate-program/members/:user_id
@@ -483,16 +469,16 @@ func (h *Handlers) UpdateMemberStatusAdmin(w http.ResponseWriter, r *http.Reques
 	}
 	userID, err := parseUUIDParam(r, "user_id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid user ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid user ID")
 		return
 	}
 	var input UpdateMemberStatusInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
 	if input.Status == "" {
-		writeError(w, http.StatusBadRequest, "missing_field", "status is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_field", "status is required")
 		return
 	}
 
@@ -501,7 +487,7 @@ func (h *Handlers) UpdateMemberStatusAdmin(w http.ResponseWriter, r *http.Reques
 		handleServiceError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": member})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": member})
 }
 
 // ListAllLinksAdmin handles GET /api/v1/admin/affiliate-links
@@ -538,7 +524,7 @@ func (h *Handlers) ListAllLinksAdmin(w http.ResponseWriter, r *http.Request) {
 
 	rows, err := h.Service.store.listAllLinksFiltered(r.Context(), params)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "query_error", "Failed to query links")
+		errpkg.WriteError(w, http.StatusInternalServerError, "query_error", "Failed to query links")
 		return
 	}
 	results := make([]map[string]any, 0, len(rows))
@@ -548,11 +534,11 @@ func (h *Handlers) ListAllLinksAdmin(w http.ResponseWriter, r *http.Request) {
 			"product_type": row.ProductType, "code": row.Code, "description": row.Description,
 			"destination_url": row.DestinationUrl, "click_count": row.ClickCount,
 			"conversion_count": row.ConversionCount,
-			"total_earned": numericToFloat(row.TotalEarned),
-			"is_active": row.IsActive, "created_at": row.CreatedAt.Time,
+			"total_earned":     numericToFloat(row.TotalEarned),
+			"is_active":        row.IsActive, "created_at": row.CreatedAt.Time,
 		})
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": results})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": results})
 }
 
 // DeleteLinkAdmin handles DELETE /api/v1/admin/affiliate-links/:id
@@ -567,14 +553,14 @@ func (h *Handlers) DeleteLinkAdmin(w http.ResponseWriter, r *http.Request) {
 	}
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid link ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid link ID")
 		return
 	}
 	if err := h.Service.store.deactivateLinkAdmin(r.Context(), id, tenantID); err != nil {
 		handleServiceError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusNoContent, nil)
+	errpkg.WriteJSON(w, http.StatusNoContent, nil)
 }
 
 // ── Internal helpers ────────────────────────────────────────────────
@@ -593,7 +579,7 @@ var _ = fmt.Sprintf
 // GetCommissionRates handles GET /admin/affiliate-program/commission-rates.
 func (h *Handlers) GetCommissionRates(w http.ResponseWriter, r *http.Request) {
 	info := h.Service.GetProgramInfo(r.Context())
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
 		"rates": info.CommissionRates,
 	}})
 }
@@ -617,11 +603,11 @@ func (h *Handlers) UpdateCommissionRates(w http.ResponseWriter, r *http.Request)
 		Course     *float64 `json:"course"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 	if h.Service.settings == nil {
-		writeError(w, http.StatusServiceUnavailable, "settings_unavailable", "Settings provider not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "settings_unavailable", "Settings provider not configured")
 		return
 	}
 	ctx := r.Context()
@@ -643,5 +629,5 @@ func (h *Handlers) UpdateCommissionRates(w http.ResponseWriter, r *http.Request)
 			return
 		}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"updated": true}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"updated": true}})
 }

@@ -10,7 +10,7 @@ BEGIN;
 
 -- Revoke the four new nodes from super_admin and member.
 DELETE FROM role_permissions rp
-USING permissions p, roles r
+USING permissions p, user_roles r
 WHERE rp.permission_id = p.id
   AND rp.role_id = r.id
   AND p.key IN ('agent.use', 'agent.draft_request', 'agent.external_search', 'content.assign_author')

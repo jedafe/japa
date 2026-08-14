@@ -12,7 +12,8 @@
 //	POST  /api/v1/admin/tax-calculator/treaties       — create/update treaty pair (auth, tax_calculator.manage)
 //
 // Ref: japaconnect-engineering/sections/100-tax-calculator.md
-//      japaconnect-engineering/adr/ADR-108-tax-calculator.md
+//
+//	japaconnect-engineering/adr/ADR-108-tax-calculator.md
 package taxcalculator
 
 import (
@@ -28,6 +29,7 @@ import (
 
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/config"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/tenant"
 )
 
@@ -47,24 +49,10 @@ func NewHandlers(service *Service, settings *config.Settings) *Handlers {
 // Shared helpers (same pattern as servicedir/handlers.go)
 // ---------------------------------------------------------------------------
 
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	if err := json.NewEncoder(w).Encode(v); err != nil {
-		slog.Error("taxcalculator: encode response", "error", err)
-	}
-}
-
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, map[string]any{
-		"error": map[string]string{"code": code, "message": message},
-	})
-}
-
 func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
 	return t.ID, true
@@ -73,7 +61,7 @@ func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	u := auth.FromContext(r.Context())
 	if u == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
 	return u, true
@@ -82,7 +70,7 @@ func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUse
 func scanUUIDParam(w http.ResponseWriter, r *http.Request, name string) (pgtype.UUID, bool) {
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, name)); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid "+name)
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid "+name)
 		return pgtype.UUID{}, false
 	}
 	return id, true
@@ -117,14 +105,14 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "tax_calculator_disabled", "Tax calculator is not available")
+		errpkg.WriteError(w, http.StatusNotFound, "tax_calculator_disabled", "Tax calculator is not available")
 		return
 	}
 
 	var destSpaceID pgtype.UUID
 	if v := r.URL.Query().Get("dest"); v != "" {
 		if err := destSpaceID.Scan(v); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid destination space ID")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid destination space ID")
 			return
 		}
 	}
@@ -132,7 +120,7 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 	var originSpaceID pgtype.UUID
 	if v := r.URL.Query().Get("origin"); v != "" {
 		if err := originSpaceID.Scan(v); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid origin space ID")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid origin space ID")
 			return
 		}
 	}
@@ -144,11 +132,11 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 	guides, total, err := h.service.List(r.Context(), tenantID, destSpaceID, originSpaceID, employmentStatus, page, limit)
 	if err != nil {
 		slog.Error("taxcalculator: list failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "list_failed", "Failed to list tax guides")
+		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list tax guides")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": guides,
 		"pagination": map[string]any{
 			"page":  page,
@@ -167,32 +155,32 @@ func (h *Handlers) HandleTreaty(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "tax_calculator_disabled", "Tax calculator is not available")
+		errpkg.WriteError(w, http.StatusNotFound, "tax_calculator_disabled", "Tax calculator is not available")
 		return
 	}
 
 	destStr := r.URL.Query().Get("dest")
 	originStr := r.URL.Query().Get("origin")
 	if destStr == "" || originStr == "" {
-		writeError(w, http.StatusBadRequest, "missing_params", "dest and origin query params are required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_params", "dest and origin query params are required")
 		return
 	}
 
 	var destSpaceID pgtype.UUID
 	if err := destSpaceID.Scan(destStr); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid destination space ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid destination space ID")
 		return
 	}
 	var originSpaceID pgtype.UUID
 	if err := originSpaceID.Scan(originStr); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid origin space ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid origin space ID")
 		return
 	}
 
 	treaty, err := h.service.GetTreaty(r.Context(), tenantID, originSpaceID, destSpaceID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeJSON(w, http.StatusOK, map[string]any{
+			errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 				"data": map[string]any{
 					"origin_space_id":      originStr,
 					"destination_space_id": destStr,
@@ -203,11 +191,11 @@ func (h *Handlers) HandleTreaty(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		slog.Error("taxcalculator: treaty lookup failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "treaty_lookup_failed", "Failed to look up treaty")
+		errpkg.WriteError(w, http.StatusInternalServerError, "treaty_lookup_failed", "Failed to look up treaty")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": treaty})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": treaty})
 }
 
 // ---------------------------------------------------------------------------
@@ -228,7 +216,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil {
-		writeError(w, http.StatusServiceUnavailable, "tax_calculator_unavailable", "Tax calculator not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "tax_calculator_unavailable", "Tax calculator not configured")
 		return
 	}
 
@@ -253,11 +241,11 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	guides, treaties, total, err := h.service.AdminList(r.Context(), tenantID, status, employmentStatus, q, destSpaceID, originSpaceID, page, limit)
 	if err != nil {
 		slog.Error("taxcalculator: admin list failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "admin_list_failed", "Failed to list tax guides")
+		errpkg.WriteError(w, http.StatusInternalServerError, "admin_list_failed", "Failed to list tax guides")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
 			"guides":   guides,
 			"treaties": treaties,
@@ -283,24 +271,24 @@ func (h *Handlers) HandleCreateGuide(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "tax_calculator_disabled", "Tax calculator is not available")
+		errpkg.WriteError(w, http.StatusNotFound, "tax_calculator_disabled", "Tax calculator is not available")
 		return
 	}
 
 	var input CreateGuideRequest
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
 
 	guide, err := h.service.CreateGuide(r.Context(), tenantID, input)
 	if err != nil {
 		slog.Error("taxcalculator: create guide failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "create_failed", "Failed to create tax guide")
+		errpkg.WriteError(w, http.StatusInternalServerError, "create_failed", "Failed to create tax guide")
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": guide})
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": guide})
 }
 
 // HandleGenerateGuide handles POST /admin/tax-calculator/guides/generate —
@@ -316,23 +304,23 @@ func (h *Handlers) HandleGenerateGuide(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "tax_calculator_disabled", "Tax calculator is not available")
+		errpkg.WriteError(w, http.StatusNotFound, "tax_calculator_disabled", "Tax calculator is not available")
 		return
 	}
 
 	var input GenerateGuideRequest
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
 
 	result, err := h.service.GenerateGuide(r.Context(), tenantID, input)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "generate_failed", err.Error())
+		errpkg.WriteError(w, http.StatusBadRequest, "generate_failed", err.Error())
 		return
 	}
 
-	writeJSON(w, http.StatusAccepted, map[string]any{"data": result})
+	errpkg.WriteJSON(w, http.StatusAccepted, map[string]any{"data": result})
 }
 
 // HandleApproveGuide handles PATCH /admin/tax-calculator/guides/:id/approve
@@ -353,7 +341,7 @@ func (h *Handlers) HandleApproveGuide(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "tax_calculator_disabled", "Tax calculator is not available")
+		errpkg.WriteError(w, http.StatusNotFound, "tax_calculator_disabled", "Tax calculator is not available")
 		return
 	}
 
@@ -364,15 +352,15 @@ func (h *Handlers) HandleApproveGuide(w http.ResponseWriter, r *http.Request) {
 	guide, err := h.service.ApproveGuide(r.Context(), id, tenantID, user.UserID, input)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "guide_not_found", "Tax guide not found")
+			errpkg.WriteError(w, http.StatusNotFound, "guide_not_found", "Tax guide not found")
 			return
 		}
 		slog.Error("taxcalculator: approve guide failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "approve_failed", "Failed to approve tax guide")
+		errpkg.WriteError(w, http.StatusInternalServerError, "approve_failed", "Failed to approve tax guide")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": guide})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": guide})
 }
 
 // HandleUpsertTreaty handles POST /admin/tax-calculator/treaties — create
@@ -388,22 +376,22 @@ func (h *Handlers) HandleUpsertTreaty(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "tax_calculator_disabled", "Tax calculator is not available")
+		errpkg.WriteError(w, http.StatusNotFound, "tax_calculator_disabled", "Tax calculator is not available")
 		return
 	}
 
 	var input UpsertTreatyRequest
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
 
 	treaty, err := h.service.UpsertTreaty(r.Context(), tenantID, input)
 	if err != nil {
 		slog.Error("taxcalculator: upsert treaty failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "upsert_treaty_failed", "Failed to create or update treaty")
+		errpkg.WriteError(w, http.StatusInternalServerError, "upsert_treaty_failed", "Failed to create or update treaty")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": treaty})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": treaty})
 }

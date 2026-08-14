@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/jedafe/japa/internal/db/gen"
+	errpkg "github.com/jedafe/japa/internal/errors"
 )
 
 // ListByAuthor returns the user's comments on published+public content (with
@@ -49,7 +50,7 @@ func (h *Handlers) ListByAuthor(w http.ResponseWriter, r *http.Request) {
 
 	var authorID pgtype.UUID
 	if err := authorID.Scan(chi.URLParam(r, "id")); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_user_id", "Invalid user ID format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_user_id", "Invalid user ID format")
 		return
 	}
 
@@ -64,11 +65,11 @@ func (h *Handlers) ListByAuthor(w http.ResponseWriter, r *http.Request) {
 
 	items, total, err := h.Service.ListByAuthor(r.Context(), tenantID, authorID, limit, offset)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "list_error", "Failed to list replies")
+		errpkg.WriteError(w, http.StatusInternalServerError, "list_error", "Failed to list replies")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": toReplyCards(items),
 		"meta": map[string]any{"total": total, "page_size": limit, "page_offset": offset},
 	})

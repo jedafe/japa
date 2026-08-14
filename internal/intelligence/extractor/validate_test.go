@@ -117,8 +117,8 @@ func TestValidate_EnumInvalidValue(t *testing.T) {
 
 func TestValidate_DateCoercion(t *testing.T) {
 	ext := Extraction{
-		"title":   {Value: "Test", Confidence: 0.9, Evidence: strPtr("excerpt")},
-		"country": {Value: []any{"USA"}, Confidence: 0.9, Evidence: strPtr("excerpt")},
+		"title":    {Value: "Test", Confidence: 0.9, Evidence: strPtr("excerpt")},
+		"country":  {Value: []any{"USA"}, Confidence: 0.9, Evidence: strPtr("excerpt")},
 		"deadline": {Value: "2027-03-15", Confidence: 0.9, Evidence: strPtr("deadline March 15 2027")},
 	}
 	cleaned, errs := Validate(ext, schemas.Scholarship)

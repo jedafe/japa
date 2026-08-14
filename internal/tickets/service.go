@@ -522,9 +522,9 @@ func (s *Service) UpdateTicketSubject(ctx context.Context, id, tenantID pgtype.U
 	}
 
 	ticket, err := s.store.updateTicketSubject(ctx, gen.UpdateTicketSubjectParams{
-		ID:        id,
-		TenantID:  tenantID,
-		Subject:   input.Subject,
+		ID:       id,
+		TenantID: tenantID,
+		Subject:  input.Subject,
 	})
 	if err != nil {
 		return gen.Ticket{}, fmt.Errorf("updating ticket subject: %w", err)

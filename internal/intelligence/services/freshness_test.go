@@ -9,9 +9,9 @@ func TestFreshnessScore(t *testing.T) {
 	now := time.Date(2026, 8, 12, 12, 0, 0, 0, time.UTC)
 
 	tests := []struct {
-		name      string
+		name       string
 		verifiedAt time.Time
-		want      int
+		want       int
 	}{
 		{"now -> 100", now, 100},
 		{"1 day ago -> 100", now.Add(-24 * time.Hour), 100},

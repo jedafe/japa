@@ -148,8 +148,8 @@ func GenerateBreadcrumbListJSONLD(items []BreadcrumbItem) map[string]interface{}
 		elements = append(elements, entry)
 	}
 	return map[string]interface{}{
-		"@context":         "https://schema.org",
-		"@type":            "BreadcrumbList",
-		"itemListElement":  elements,
+		"@context":        "https://schema.org",
+		"@type":           "BreadcrumbList",
+		"itemListElement": elements,
 	}
 }

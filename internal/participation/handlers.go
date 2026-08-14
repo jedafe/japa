@@ -5,7 +5,6 @@
 package participation
 
 import (
-	"encoding/json"
 	"net/http"
 	"strconv"
 	"strings"
@@ -16,6 +15,7 @@ import (
 
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/db"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/tenant"
 	"github.com/jedafe/japa/internal/valkey"
 )
@@ -72,7 +72,7 @@ func NewHandlers(database *db.DB, service *Service, settings *config.Settings, v
 func (h *Handlers) HandleQueue(w http.ResponseWriter, r *http.Request) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]any{
+		errpkg.WriteJSON(w, http.StatusServiceUnavailable, map[string]any{
 			"error": map[string]any{"code": "tenant_unavailable", "message": "No tenant available", "status": 503},
 		})
 		return
@@ -95,7 +95,7 @@ func (h *Handlers) HandleQueue(w http.ResponseWriter, r *http.Request) {
 		countArgs = append(countArgs, search)
 	}
 	if err := h.database.Reader.QueryRow(r.Context(), countQuery, countArgs...).Scan(&total); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]any{
+		errpkg.WriteJSON(w, http.StatusInternalServerError, map[string]any{
 			"error": map[string]any{"code": "queue_count_failed", "message": err.Error(), "status": 500},
 		})
 		return
@@ -134,7 +134,7 @@ func (h *Handlers) HandleQueue(w http.ResponseWriter, r *http.Request) {
 
 	rows, err := h.database.Reader.Query(r.Context(), listQuery, listArgs...)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]any{
+		errpkg.WriteJSON(w, http.StatusInternalServerError, map[string]any{
 			"error": map[string]any{"code": "queue_query_failed", "message": err.Error(), "status": 500},
 		})
 		return
@@ -158,7 +158,7 @@ func (h *Handlers) HandleQueue(w http.ResponseWriter, r *http.Request) {
 		totalPages = (total + pageSize - 1) / pageSize
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": QueueResponse{
 			Items:      items,
 			Total:      total,
@@ -177,7 +177,7 @@ func (h *Handlers) HandleQueue(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) HandleStats(w http.ResponseWriter, r *http.Request) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]any{
+		errpkg.WriteJSON(w, http.StatusServiceUnavailable, map[string]any{
 			"error": map[string]any{"code": "tenant_unavailable", "message": "No tenant available", "status": 503},
 		})
 		return
@@ -206,7 +206,7 @@ func (h *Handlers) HandleStats(w http.ResponseWriter, r *http.Request) {
 		globalCap = h.settings.GetIntOr(r.Context(), t.ID, "participation.global_daily_cap", 500)
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": StatsResponse{
 			SyntheticActionsToday: syntheticToday,
 			GlobalDailyCap:        globalCap,
@@ -246,11 +246,4 @@ func parseSort(r *http.Request, allowed map[string]bool, defaultCol, defaultDir 
 		dir = defaultDir
 	}
 	return col, dir
-}
-
-// writeJSON writes a JSON response.
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(v)
 }

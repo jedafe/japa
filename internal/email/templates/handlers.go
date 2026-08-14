@@ -67,7 +67,7 @@ var testEmailLimiter = &testEmailRateLimiter{windows: make(map[string]*rateLimit
 func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "Tenant context not available")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "Tenant context not available")
 		return pgtype.UUID{}, false
 	}
 	return t.ID, true
@@ -108,26 +108,12 @@ func parsePageOffset(r *http.Request) int32 {
 	return int32(n)
 }
 
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	if v != nil {
-		json.NewEncoder(w).Encode(v)
-	}
-}
-
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, map[string]any{
-		"error": map[string]string{"code": code, "message": message},
-	})
-}
-
 func handleServiceError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, ErrTemplateNotFound):
-		writeError(w, http.StatusNotFound, "not_found", err.Error())
+		errpkg.WriteError(w, http.StatusNotFound, "not_found", err.Error())
 	case errors.Is(err, errpkg.ErrRequired):
-		writeError(w, http.StatusBadRequest, "validation_error", err.Error())
+		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", err.Error())
 	default:
 		errpkg.HandleServiceError(w, err)
 	}
@@ -149,7 +135,7 @@ func (h *Handlers) ListTemplates(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": result})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": result})
 }
 
 func (h *Handlers) GetTemplate(w http.ResponseWriter, r *http.Request) {
@@ -159,7 +145,7 @@ func (h *Handlers) GetTemplate(w http.ResponseWriter, r *http.Request) {
 	}
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid template ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid template ID")
 		return
 	}
 	tmpl, err := h.Service.GetTemplate(r.Context(), id, tenantID)
@@ -167,7 +153,7 @@ func (h *Handlers) GetTemplate(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": tmpl})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": tmpl})
 }
 
 func (h *Handlers) UpdateTemplate(w http.ResponseWriter, r *http.Request) {
@@ -177,7 +163,7 @@ func (h *Handlers) UpdateTemplate(w http.ResponseWriter, r *http.Request) {
 	}
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid template ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid template ID")
 		return
 	}
 	var input struct {
@@ -187,7 +173,7 @@ func (h *Handlers) UpdateTemplate(w http.ResponseWriter, r *http.Request) {
 		IsActive      bool   `json:"is_active"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
 		return
 	}
 	tmpl, err := h.Service.UpdateTemplate(r.Context(), id, tenantID, input.Subject, input.HtmlBody, input.PlainTextBody, input.IsActive)
@@ -195,7 +181,7 @@ func (h *Handlers) UpdateTemplate(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": tmpl})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": tmpl})
 }
 
 func (h *Handlers) ResetTemplate(w http.ResponseWriter, r *http.Request) {
@@ -205,14 +191,14 @@ func (h *Handlers) ResetTemplate(w http.ResponseWriter, r *http.Request) {
 	}
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid template ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid template ID")
 		return
 	}
 	if err := h.Service.ResetTemplate(r.Context(), id, tenantID); err != nil {
 		handleServiceError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "reset"}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "reset"}})
 }
 
 func (h *Handlers) TestTemplate(w http.ResponseWriter, r *http.Request) {
@@ -240,25 +226,25 @@ func (h *Handlers) TestTemplate(w http.ResponseWriter, r *http.Request) {
 			allowed = testEmailLimiter.Allow(key, 3, 1*time.Minute)
 		}
 		if !allowed {
-			writeError(w, http.StatusTooManyRequests, "rate_limit_exceeded", "Too many test email requests. Please try again later.")
+			errpkg.WriteError(w, http.StatusTooManyRequests, "rate_limit_exceeded", "Too many test email requests. Please try again later.")
 			return
 		}
 	}
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid template ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid template ID")
 		return
 	}
 	var input struct {
 		Email string `json:"email"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
 		return
 	}
 	if input.Email == "" {
-		writeError(w, http.StatusBadRequest, "validation_error", "email is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "email is required")
 		return
 	}
 	tmpl, err := h.Service.GetTemplate(r.Context(), id, tenantID)
@@ -279,12 +265,12 @@ func (h *Handlers) TestTemplate(w http.ResponseWriter, r *http.Request) {
 		task := asynq.NewTask("email:send", body)
 		if _, err := h.AsynqClient.Enqueue(task, asynq.Queue("default"), asynq.MaxRetry(3)); err != nil {
 			slog.Error("test_template: failed to enqueue email", "error", err)
-			writeError(w, http.StatusInternalServerError, "enqueue_failed", "Failed to queue test email")
+			errpkg.WriteError(w, http.StatusInternalServerError, "enqueue_failed", "Failed to queue test email")
 			return
 		}
 	}
 
-	writeJSON(w, http.StatusAccepted, map[string]any{
+	errpkg.WriteJSON(w, http.StatusAccepted, map[string]any{
 		"data": map[string]string{
 			"status":  "queued",
 			"message": "Test email queued for delivery to " + input.Email,

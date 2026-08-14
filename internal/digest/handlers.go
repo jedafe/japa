@@ -12,7 +12,8 @@
 //	POST  /api/v1/admin/digest/generate      — trigger generation (auth, digest.manage)
 //
 // Ref: japaconnect-engineering/sections/84-community-digest.md
-//      japaconnect-engineering/adr/ADR-092-community-digest.md
+//
+//	japaconnect-engineering/adr/ADR-092-community-digest.md
 package digest
 
 import (
@@ -28,6 +29,7 @@ import (
 
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/config"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/tenant"
 )
 
@@ -42,24 +44,10 @@ func NewHandlers(service *Service, settings *config.Settings) *Handlers {
 	return &Handlers{service: service, settings: settings}
 }
 
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	if err := json.NewEncoder(w).Encode(v); err != nil {
-		slog.Error("digest: encode response", "error", err)
-	}
-}
-
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, map[string]any{
-		"error": map[string]string{"code": code, "message": message},
-	})
-}
-
 func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
 	return t.ID, true
@@ -68,7 +56,7 @@ func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	u := auth.FromContext(r.Context())
 	if u == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
 	return u, true
@@ -77,7 +65,7 @@ func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUse
 func scanUUIDParam(w http.ResponseWriter, r *http.Request, name string) (pgtype.UUID, bool) {
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, name)); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid "+name)
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid "+name)
 		return pgtype.UUID{}, false
 	}
 	return id, true
@@ -118,7 +106,7 @@ func (h *Handlers) HandleGetLatest(w http.ResponseWriter, r *http.Request) {
 	}
 	if destParam != "" {
 		if err := spaceID.Scan(destParam); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid destination space ID")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid destination space ID")
 			return
 		}
 	}
@@ -126,15 +114,15 @@ func (h *Handlers) HandleGetLatest(w http.ResponseWriter, r *http.Request) {
 	edition, err := h.service.GetLatest(r.Context(), tenantID, spaceID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "no_digest", "No published digest available")
+			errpkg.WriteError(w, http.StatusNotFound, "no_digest", "No published digest available")
 			return
 		}
 		slog.Error("digest: get latest failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "get_latest_failed", "Failed to get latest digest")
+		errpkg.WriteError(w, http.StatusInternalServerError, "get_latest_failed", "Failed to get latest digest")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": edition})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": edition})
 }
 
 // HandleGet handles GET /digest/:id — single published digest (public).
@@ -151,15 +139,15 @@ func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
 	edition, err := h.service.Get(r.Context(), tenantID, id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "digest_not_found", "Digest edition not found")
+			errpkg.WriteError(w, http.StatusNotFound, "digest_not_found", "Digest edition not found")
 			return
 		}
 		slog.Error("digest: get failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "get_failed", "Failed to get digest edition")
+		errpkg.WriteError(w, http.StatusInternalServerError, "get_failed", "Failed to get digest edition")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": edition})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": edition})
 }
 
 // ---------------------------------------------------------------------------
@@ -192,7 +180,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	}
 	if spaceParam := r.URL.Query().Get("space_id"); spaceParam != "" {
 		if err := f.SpaceID.Scan(spaceParam); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid space_id")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid space_id")
 			return
 		}
 	}
@@ -200,11 +188,11 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	editions, total, err := h.service.AdminList(r.Context(), f, page, limit)
 	if err != nil {
 		slog.Error("digest: admin list failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "admin_list_failed", "Failed to list digest editions")
+		errpkg.WriteError(w, http.StatusInternalServerError, "admin_list_failed", "Failed to list digest editions")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": editions,
 		"pagination": map[string]any{
 			"page":  page,
@@ -231,15 +219,15 @@ func (h *Handlers) HandleAdminGet(w http.ResponseWriter, r *http.Request) {
 	edition, err := h.service.AdminGet(r.Context(), tenantID, id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "digest_not_found", "Digest edition not found")
+			errpkg.WriteError(w, http.StatusNotFound, "digest_not_found", "Digest edition not found")
 			return
 		}
 		slog.Error("digest: admin get failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "admin_get_failed", "Failed to get digest edition")
+		errpkg.WriteError(w, http.StatusInternalServerError, "admin_get_failed", "Failed to get digest edition")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": edition})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": edition})
 }
 
 // HandleAdminUpdate handles PATCH /admin/digest/:id — edit draft content.
@@ -258,26 +246,26 @@ func (h *Handlers) HandleAdminUpdate(w http.ResponseWriter, r *http.Request) {
 
 	var input UpdateEditionInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
 
 	if len(input.Content) == 0 {
-		writeError(w, http.StatusBadRequest, "missing_content", "Content is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_content", "Content is required")
 		return
 	}
 
 	if err := h.service.AdminUpdate(r.Context(), tenantID, id, input.Content); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "digest_not_found", "Digest edition not found or not editable")
+			errpkg.WriteError(w, http.StatusNotFound, "digest_not_found", "Digest edition not found or not editable")
 			return
 		}
 		slog.Error("digest: admin update failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "update_failed", "Failed to update digest edition")
+		errpkg.WriteError(w, http.StatusInternalServerError, "update_failed", "Failed to update digest edition")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"updated": true}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"updated": true}})
 }
 
 // HandleAdminPublish handles POST /admin/digest/:id/publish — publish edition.
@@ -297,15 +285,15 @@ func (h *Handlers) HandleAdminPublish(w http.ResponseWriter, r *http.Request) {
 
 	if err := h.service.AdminPublish(r.Context(), tenantID, user.UserID, id); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "digest_not_found", "Digest edition not found or not publishable")
+			errpkg.WriteError(w, http.StatusNotFound, "digest_not_found", "Digest edition not found or not publishable")
 			return
 		}
 		slog.Error("digest: admin publish failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "publish_failed", "Failed to publish digest edition")
+		errpkg.WriteError(w, http.StatusInternalServerError, "publish_failed", "Failed to publish digest edition")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"published": true}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"published": true}})
 }
 
 // HandleAdminGenerate handles POST /admin/digest/generate — trigger digest
@@ -324,11 +312,11 @@ func (h *Handlers) HandleAdminGenerate(w http.ResponseWriter, r *http.Request) {
 	status, err := h.service.AdminGenerate(r.Context(), tenantID)
 	if err != nil {
 		slog.Error("digest: admin generate failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "generate_failed", "Failed to trigger digest generation")
+		errpkg.WriteError(w, http.StatusInternalServerError, "generate_failed", "Failed to trigger digest generation")
 		return
 	}
 
-	writeJSON(w, http.StatusAccepted, map[string]any{
+	errpkg.WriteJSON(w, http.StatusAccepted, map[string]any{
 		"data": map[string]any{
 			"status": status,
 		},

@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import { ThumbsUp, ThumbsDown } from 'lucide-svelte';
 	import { t } from '$lib/i18n';
 
@@ -18,9 +17,16 @@
 	const storageKey = $derived(`jc:docs:vote:${pageId}`);
 
 	// Load saved vote from localStorage after hydration (browser-only).
-	onMount(() => {
+	// Uses $effect keyed on pageId so the vote resets on client-side
+	// navigation (same route, different params) — onMount only runs once
+	// per component instance and would leave the previous page's vote
+	// displayed after a page change.
+	$effect(() => {
+		// Track pageId so the effect re-runs when it changes.
+		const _pageId = pageId;
+		vote = null;
 		try {
-			const saved = localStorage.getItem(storageKey);
+			const saved = localStorage.getItem(`jc:docs:vote:${_pageId}`);
 			if (saved === 'up' || saved === 'down') vote = saved;
 		} catch {
 			// localStorage unavailable (private browsing, etc.)

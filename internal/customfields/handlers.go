@@ -129,34 +129,6 @@ func (h *Handlers) SetSettings(s SettingsReader) { h.settings = s }
 // in production; tests may omit it.
 func (h *Handlers) SetRichTextSanitizer(s RichTextSanitizer) { h.richTextSanitizer = s }
 
-// errorResponse is the JSON body returned for error responses, following the
-// JapaConnect API error format: {"error": {"code": "...", "message": "..."}}.
-type errorResponse struct {
-	Error errorBody `json:"error"`
-}
-
-type errorBody struct {
-	Code    string `json:"code"`
-	Message string `json:"message"`
-}
-
-// writeJSON serializes v as JSON and writes it with the given status code.
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-
-	if err := json.NewEncoder(w).Encode(v); err != nil {
-		slog.Warn("json encode error", "error", err)
-	}
-}
-
-// writeError writes a JSON error response in the JapaConnect API format.
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, errorResponse{
-		Error: errorBody{Code: code, Message: message},
-	})
-}
-
 // parseUUIDParam extracts a URL parameter and scans it into a pgtype.UUID.
 func parseUUIDParam(r *http.Request, param string) (pgtype.UUID, error) {
 	var id pgtype.UUID
@@ -173,7 +145,7 @@ func parseUUIDParam(r *http.Request, param string) (pgtype.UUID, error) {
 func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
 
@@ -466,7 +438,7 @@ func (h *Handlers) ListFieldGroups(w http.ResponseWriter, r *http.Request) {
 	}
 	paged := enriched[start:end]
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": paged,
 		"meta": map[string]any{
 			"page":        page,
@@ -483,7 +455,7 @@ func (h *Handlers) ListFieldGroups(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) GetFieldGroup(w http.ResponseWriter, r *http.Request) {
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
@@ -511,7 +483,7 @@ func (h *Handlers) GetFieldGroup(w http.ResponseWriter, r *http.Request) {
 		fieldSummaries = append(fieldSummaries, toFieldSummaryFromGroup(f))
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{"group": group, "fields": fieldSummaries},
 	})
 }
@@ -526,12 +498,12 @@ func (h *Handlers) CreateFieldGroup(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
 		return
 	}
 
 	if strings.TrimSpace(req.Name) == "" || strings.TrimSpace(req.Slug) == "" {
-		writeError(w, http.StatusBadRequest, "missing_fields", "Name and slug are required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_fields", "Name and slug are required")
 		return
 	}
 
@@ -546,7 +518,7 @@ func (h *Handlers) CreateFieldGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": group})
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": group})
 }
 
 // CreateFieldGroupAdmin handles POST /api/v1/admin/field-groups. Unlike the
@@ -563,12 +535,12 @@ func (h *Handlers) CreateFieldGroupAdmin(w http.ResponseWriter, r *http.Request)
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
 		return
 	}
 
 	if strings.TrimSpace(req.Name) == "" {
-		writeError(w, http.StatusBadRequest, "missing_fields", "Name is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_fields", "Name is required")
 		return
 	}
 
@@ -611,7 +583,7 @@ func (h *Handlers) CreateFieldGroupAdmin(w http.ResponseWriter, r *http.Request)
 		}
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": group})
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": group})
 }
 
 // slugify converts a display name into a URL-safe slug (lowercase, hyphen-
@@ -643,7 +615,7 @@ func slugify(name string) string {
 func (h *Handlers) UpdateFieldGroup(w http.ResponseWriter, r *http.Request) {
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
@@ -653,12 +625,12 @@ func (h *Handlers) UpdateFieldGroup(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
 		return
 	}
 
 	if strings.TrimSpace(req.Name) == "" {
-		writeError(w, http.StatusBadRequest, "missing_fields", "Name is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_fields", "Name is required")
 		return
 	}
 
@@ -673,14 +645,14 @@ func (h *Handlers) UpdateFieldGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": group})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": group})
 }
 
 // DeleteFieldGroup handles DELETE /api/v1/custom-field-groups/{id}.
 func (h *Handlers) DeleteFieldGroup(w http.ResponseWriter, r *http.Request) {
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
@@ -694,7 +666,7 @@ func (h *Handlers) DeleteFieldGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
 }
 
 // ---------------------------------------------------------------------------
@@ -733,7 +705,7 @@ func marshalOptions(opts []FieldOption) ([]byte, error) {
 func (h *Handlers) ListFieldsByGroup(w http.ResponseWriter, r *http.Request) {
 	groupID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
@@ -755,46 +727,46 @@ func (h *Handlers) ListFieldsByGroup(w http.ResponseWriter, r *http.Request) {
 		fieldSummaries = append(fieldSummaries, toFieldSummaryFromGroup(f))
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": fieldSummaries})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": fieldSummaries})
 }
 
 // CreateField handles POST /api/v1/custom-field-groups/{id}/fields.
 func (h *Handlers) CreateField(w http.ResponseWriter, r *http.Request) {
 	groupID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
 	var req fieldRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
 		return
 	}
 
 	if strings.TrimSpace(req.Label) == "" || strings.TrimSpace(req.Key) == "" {
-		writeError(w, http.StatusBadRequest, "missing_fields", "Label and key are required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_fields", "Label and key are required")
 		return
 	}
 
 	if !IsValidFieldType(req.FieldType) {
-		writeError(w, http.StatusBadRequest, "invalid_field_type", "Unsupported field type")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_field_type", "Unsupported field type")
 		return
 	}
 
 	if msg, ok := ValidOptionsShape(req.FieldType, req.Options); !ok {
-		writeError(w, http.StatusBadRequest, "invalid_options", msg)
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_options", msg)
 		return
 	}
 
 	if (req.FieldType == FieldTypeSelect || req.FieldType == FieldTypeMultiselect) && len(req.Options) == 0 {
-		writeError(w, http.StatusBadRequest, "missing_options", "Select and multiselect fields require options")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_options", "Select and multiselect fields require options")
 		return
 	}
 
 	optionsBytes, err := marshalOptions(req.Options)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_options", "Field options are not valid JSON")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_options", "Field options are not valid JSON")
 		return
 	}
 
@@ -826,7 +798,7 @@ func (h *Handlers) CreateField(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": field})
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": field})
 }
 
 // UpdateField handles PATCH /api/v1/custom-fields/{id}. Key and group_id are
@@ -848,39 +820,39 @@ func (h *Handlers) UpdateFieldInGroup(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) updateFieldByParam(w http.ResponseWriter, r *http.Request, idParam string) {
 	id, err := parseUUIDParam(r, idParam)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
 	var req fieldRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
 		return
 	}
 
 	if strings.TrimSpace(req.Label) == "" {
-		writeError(w, http.StatusBadRequest, "missing_fields", "Label is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_fields", "Label is required")
 		return
 	}
 
 	if !IsValidFieldType(req.FieldType) {
-		writeError(w, http.StatusBadRequest, "invalid_field_type", "Unsupported field type")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_field_type", "Unsupported field type")
 		return
 	}
 
 	if msg, ok := ValidOptionsShape(req.FieldType, req.Options); !ok {
-		writeError(w, http.StatusBadRequest, "invalid_options", msg)
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_options", msg)
 		return
 	}
 
 	if (req.FieldType == FieldTypeSelect || req.FieldType == FieldTypeMultiselect) && len(req.Options) == 0 {
-		writeError(w, http.StatusBadRequest, "missing_options", "Select and multiselect fields require options")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_options", "Select and multiselect fields require options")
 		return
 	}
 
 	optionsBytes, err := marshalOptions(req.Options)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_options", "Field options are not valid JSON")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_options", "Field options are not valid JSON")
 		return
 	}
 
@@ -910,7 +882,7 @@ func (h *Handlers) updateFieldByParam(w http.ResponseWriter, r *http.Request, id
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": field})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": field})
 }
 
 // DeleteField handles DELETE /api/v1/custom-fields/{id}.
@@ -929,7 +901,7 @@ func (h *Handlers) DeleteFieldInGroup(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) deleteFieldByParam(w http.ResponseWriter, r *http.Request, idParam string) {
 	id, err := parseUUIDParam(r, idParam)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
@@ -943,7 +915,7 @@ func (h *Handlers) deleteFieldByParam(w http.ResponseWriter, r *http.Request, id
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
 }
 
 // ReorderFields handles POST /api/v1/admin/field-groups/{id}/fields/reorder
@@ -954,7 +926,7 @@ func (h *Handlers) deleteFieldByParam(w http.ResponseWriter, r *http.Request, id
 func (h *Handlers) ReorderFields(w http.ResponseWriter, r *http.Request) {
 	groupID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
@@ -971,7 +943,7 @@ func (h *Handlers) ReorderFields(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
 		return
 	}
 
@@ -985,7 +957,7 @@ func (h *Handlers) ReorderFields(w http.ResponseWriter, r *http.Request) {
 		for i, idStr := range req.OrderedFieldIDs {
 			var fieldID pgtype.UUID
 			if err := fieldID.Scan(idStr); err != nil {
-				writeError(w, http.StatusBadRequest, "invalid_field_id", "Invalid field id: "+idStr)
+				errpkg.WriteError(w, http.StatusBadRequest, "invalid_field_id", "Invalid field id: "+idStr)
 				return
 			}
 			if err := h.Service.UpdateFieldPosition(r.Context(), fieldID, groupID, tenantID, int32(i)); err != nil {
@@ -993,7 +965,7 @@ func (h *Handlers) ReorderFields(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"reordered": true}})
+		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"reordered": true}})
 		return
 	}
 
@@ -1001,7 +973,7 @@ func (h *Handlers) ReorderFields(w http.ResponseWriter, r *http.Request) {
 	for _, f := range req.Fields {
 		var fieldID pgtype.UUID
 		if err := fieldID.Scan(f.ID); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_field_id", "Invalid field id: "+f.ID)
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_field_id", "Invalid field id: "+f.ID)
 			return
 		}
 
@@ -1011,7 +983,7 @@ func (h *Handlers) ReorderFields(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"reordered": true}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"reordered": true}})
 }
 
 // ---------------------------------------------------------------------------
@@ -1026,7 +998,7 @@ func (h *Handlers) ListFieldValues(w http.ResponseWriter, r *http.Request) {
 
 	var entityID pgtype.UUID
 	if err := entityID.Scan(chi.URLParam(r, "entity_id")); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid entity ID format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid entity ID format")
 		return
 	}
 
@@ -1050,7 +1022,7 @@ func (h *Handlers) ListFieldValues(w http.ResponseWriter, r *http.Request) {
 				handleServiceError(w, err)
 				return
 			}
-			writeJSON(w, http.StatusOK, map[string]any{"data": values})
+			errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": values})
 			return
 		}
 	}
@@ -1061,7 +1033,7 @@ func (h *Handlers) ListFieldValues(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": values})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": values})
 }
 
 // SetFieldValue handles PUT /api/v1/custom-field-values. For platform_embed
@@ -1080,19 +1052,19 @@ func (h *Handlers) SetFieldValue(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
 		return
 	}
 
 	var fieldID pgtype.UUID
 	if err := fieldID.Scan(req.FieldID); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid field ID format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid field ID format")
 		return
 	}
 
 	var entityID pgtype.UUID
 	if err := entityID.Scan(req.EntityID); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid entity ID format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid entity ID format")
 		return
 	}
 
@@ -1104,7 +1076,7 @@ func (h *Handlers) SetFieldValue(w http.ResponseWriter, r *http.Request) {
 	var numeric pgtype.Numeric
 	if req.ValueNumber != "" {
 		if err := numeric.Scan(string(req.ValueNumber)); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_value", "value_number is not a valid number")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_value", "value_number is not a valid number")
 			return
 		}
 	}
@@ -1114,7 +1086,7 @@ func (h *Handlers) SetFieldValue(w http.ResponseWriter, r *http.Request) {
 	if req.ValueDate != "" {
 		t, err := time.Parse(time.RFC3339, req.ValueDate)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_value", "value_date must be RFC 3339 format")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_value", "value_date must be RFC 3339 format")
 			return
 		}
 
@@ -1128,7 +1100,7 @@ func (h *Handlers) SetFieldValue(w http.ResponseWriter, r *http.Request) {
 
 		jsonBytes, err = json.Marshal(req.ValueJson)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_value", "value_json is not serializable")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_value", "value_json is not serializable")
 			return
 		}
 	}
@@ -1154,7 +1126,7 @@ func (h *Handlers) SetFieldValue(w http.ResponseWriter, r *http.Request) {
 					return
 				}
 				if !canEdit {
-					writeError(w, http.StatusForbidden, "field_not_editable", "You do not have permission to edit this custom field")
+					errpkg.WriteError(w, http.StatusForbidden, "field_not_editable", "You do not have permission to edit this custom field")
 					return
 				}
 			}
@@ -1167,27 +1139,27 @@ func (h *Handlers) SetFieldValue(w http.ResponseWriter, r *http.Request) {
 		switch expectedCol {
 		case "value_text":
 			if req.ValueNumber != "" || req.ValueBool != nil || req.ValueDate != "" || req.ValueJson != nil {
-				writeError(w, http.StatusBadRequest, "invalid_value", fmt.Sprintf("Field type %q writes to %s — received a value for a different column", field.FieldType, expectedCol))
+				errpkg.WriteError(w, http.StatusBadRequest, "invalid_value", fmt.Sprintf("Field type %q writes to %s — received a value for a different column", field.FieldType, expectedCol))
 				return
 			}
 		case "value_number":
 			if req.ValueText != nil || req.ValueBool != nil || req.ValueDate != "" || req.ValueJson != nil {
-				writeError(w, http.StatusBadRequest, "invalid_value", fmt.Sprintf("Field type %q writes to %s — received a value for a different column", field.FieldType, expectedCol))
+				errpkg.WriteError(w, http.StatusBadRequest, "invalid_value", fmt.Sprintf("Field type %q writes to %s — received a value for a different column", field.FieldType, expectedCol))
 				return
 			}
 		case "value_bool":
 			if req.ValueText != nil || req.ValueNumber != "" || req.ValueDate != "" || req.ValueJson != nil {
-				writeError(w, http.StatusBadRequest, "invalid_value", fmt.Sprintf("Field type %q writes to %s — received a value for a different column", field.FieldType, expectedCol))
+				errpkg.WriteError(w, http.StatusBadRequest, "invalid_value", fmt.Sprintf("Field type %q writes to %s — received a value for a different column", field.FieldType, expectedCol))
 				return
 			}
 		case "value_date":
 			if req.ValueText != nil || req.ValueNumber != "" || req.ValueBool != nil || req.ValueJson != nil {
-				writeError(w, http.StatusBadRequest, "invalid_value", fmt.Sprintf("Field type %q writes to %s — received a value for a different column", field.FieldType, expectedCol))
+				errpkg.WriteError(w, http.StatusBadRequest, "invalid_value", fmt.Sprintf("Field type %q writes to %s — received a value for a different column", field.FieldType, expectedCol))
 				return
 			}
 		case "value_json":
 			if req.ValueText != nil || req.ValueNumber != "" || req.ValueBool != nil || req.ValueDate != "" {
-				writeError(w, http.StatusBadRequest, "invalid_value", fmt.Sprintf("Field type %q writes to %s — received a value for a different column", field.FieldType, expectedCol))
+				errpkg.WriteError(w, http.StatusBadRequest, "invalid_value", fmt.Sprintf("Field type %q writes to %s — received a value for a different column", field.FieldType, expectedCol))
 				return
 			}
 		}
@@ -1198,7 +1170,7 @@ func (h *Handlers) SetFieldValue(w http.ResponseWriter, r *http.Request) {
 	// allowing test setups that only exercise value storage.
 	if h.Embed != nil && field.FieldType == FieldTypePlatformEmbed && req.ValueText != nil && *req.ValueText != "" {
 		if _, err := h.Embed.Resolve(r.Context(), *req.ValueText, field.EmbedPlatforms); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_embed", "The provided URL is not a valid embed for this field")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_embed", "The provided URL is not a valid embed for this field")
 			return
 		}
 	}
@@ -1207,7 +1179,7 @@ func (h *Handlers) SetFieldValue(w http.ResponseWriter, r *http.Request) {
 	if req.ValueText != nil && *req.ValueText != "" {
 		fd := fieldDef{Label: field.Label, Key: field.Key, FieldType: field.FieldType, Options: field.Options, IsRequired: field.IsRequired}
 		if msg, ok := validateTextValue(fd, *req.ValueText); !ok {
-			writeError(w, http.StatusBadRequest, "invalid_value", msg)
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_value", msg)
 			return
 		}
 	}
@@ -1216,7 +1188,7 @@ func (h *Handlers) SetFieldValue(w http.ResponseWriter, r *http.Request) {
 	if req.ValueJson != nil && (field.FieldType == FieldTypeSelect || field.FieldType == FieldTypeMultiselect) {
 		fd := fieldDef{Label: field.Label, Key: field.Key, FieldType: field.FieldType, Options: field.Options, IsRequired: field.IsRequired}
 		if msg, ok := validateSelectValue(fd, req.ValueJson); !ok {
-			writeError(w, http.StatusBadRequest, "invalid_value", msg)
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_value", msg)
 			return
 		}
 	}
@@ -1243,7 +1215,7 @@ func (h *Handlers) SetFieldValue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": value})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": value})
 }
 
 // ---------------------------------------------------------------------------
@@ -1263,7 +1235,7 @@ func (h *Handlers) SetFieldValue(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) ListFieldPermissions(w http.ResponseWriter, r *http.Request) {
 	fieldID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
@@ -1273,13 +1245,13 @@ func (h *Handlers) ListFieldPermissions(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": perms})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": perms})
 }
 
 func (h *Handlers) SetFieldPermission(w http.ResponseWriter, r *http.Request) {
 	fieldID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
@@ -1290,13 +1262,13 @@ func (h *Handlers) SetFieldPermission(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
 		return
 	}
 
 	var groupID pgtype.UUID
 	if err := groupID.Scan(req.UserGroupID); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid user group ID format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid user group ID format")
 		return
 	}
 
@@ -1315,7 +1287,7 @@ func (h *Handlers) SetFieldPermission(w http.ResponseWriter, r *http.Request) {
 	// 5-minute TTL).
 	h.Service.InvalidateFieldPermissionCacheForGroup(r.Context(), groupID)
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "set"}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "set"}})
 }
 
 // DeleteFieldPermission handles DELETE /api/v1/custom-fields/{id}/permissions.
@@ -1325,7 +1297,7 @@ func (h *Handlers) SetFieldPermission(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) DeleteFieldPermission(w http.ResponseWriter, r *http.Request) {
 	fieldID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
@@ -1334,13 +1306,13 @@ func (h *Handlers) DeleteFieldPermission(w http.ResponseWriter, r *http.Request)
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
 		return
 	}
 
 	var groupID pgtype.UUID
 	if err := groupID.Scan(req.UserGroupID); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid user group ID format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid user group ID format")
 		return
 	}
 
@@ -1353,7 +1325,7 @@ func (h *Handlers) DeleteFieldPermission(w http.ResponseWriter, r *http.Request)
 	// affected group.
 	h.Service.InvalidateFieldPermissionCacheForGroup(r.Context(), groupID)
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
 }
 
 // ---------------------------------------------------------------------------
@@ -1372,7 +1344,7 @@ func (h *Handlers) ListForms(w http.ResponseWriter, r *http.Request) {
 	if spaceIDStr := r.URL.Query().Get("space_id"); spaceIDStr != "" {
 		var spaceID pgtype.UUID
 		if err := spaceID.Scan(spaceIDStr); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_space_id", "Invalid space ID format")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_space_id", "Invalid space ID format")
 			return
 		}
 
@@ -1382,7 +1354,7 @@ func (h *Handlers) ListForms(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		writeJSON(w, http.StatusOK, map[string]any{"data": forms})
+		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": forms})
 		return
 	}
 
@@ -1407,7 +1379,7 @@ func (h *Handlers) ListForms(w http.ResponseWriter, r *http.Request) {
 		forms = filtered
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": forms})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": forms})
 }
 
 // GetForm handles GET /api/v1/forms/{id}. It returns the form together with
@@ -1416,7 +1388,7 @@ func (h *Handlers) ListForms(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) GetForm(w http.ResponseWriter, r *http.Request) {
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
@@ -1543,7 +1515,7 @@ func (h *Handlers) GetForm(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Return all form fields including slug, status etc.
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
 			"id":              form.ID,
 			"name":            form.Name,
@@ -1577,12 +1549,12 @@ func (h *Handlers) CreateForm(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
 		return
 	}
 
 	if strings.TrimSpace(req.Name) == "" || strings.TrimSpace(req.Slug) == "" {
-		writeError(w, http.StatusBadRequest, "missing_fields", "Name and slug are required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_fields", "Name and slug are required")
 		return
 	}
 
@@ -1615,7 +1587,7 @@ func (h *Handlers) CreateForm(w http.ResponseWriter, r *http.Request) {
 	// Auto-create a backing field group so the admin UI can manage fields.
 	_ = h.Service.EnsureFormGroup(r.Context(), tenantID, form.ID, req.Name, req.Slug)
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": form})
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": form})
 }
 
 // CreateSpaceForm handles POST /api/v1/spaces/{spaceId}/forms.
@@ -1624,7 +1596,7 @@ func (h *Handlers) CreateForm(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) CreateSpaceForm(w http.ResponseWriter, r *http.Request) {
 	spaceID, err := parseUUIDParam(r, "spaceId")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_space_id", "Invalid space ID format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_space_id", "Invalid space ID format")
 		return
 	}
 
@@ -1646,17 +1618,17 @@ func (h *Handlers) CreateSpaceForm(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
 		return
 	}
 
 	if strings.TrimSpace(req.Name) == "" {
-		writeError(w, http.StatusBadRequest, "missing_fields", "Name is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_fields", "Name is required")
 		return
 	}
 
 	if len(req.Fields) == 0 {
-		writeError(w, http.StatusBadRequest, "missing_fields", "At least one field is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_fields", "At least one field is required")
 		return
 	}
 
@@ -1693,7 +1665,7 @@ func (h *Handlers) CreateSpaceForm(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if !IsValidFieldType(ft) {
-			writeError(w, http.StatusBadRequest, "invalid_field_type", "Unsupported field type: "+f.Type)
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_field_type", "Unsupported field type: "+f.Type)
 			return
 		}
 
@@ -1732,7 +1704,7 @@ func (h *Handlers) CreateSpaceForm(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{
 		"data": map[string]any{"id": form.ID, "slug": form.Slug},
 	})
 }
@@ -1742,7 +1714,7 @@ func (h *Handlers) CreateSpaceForm(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) UpdateForm(w http.ResponseWriter, r *http.Request) {
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
@@ -1757,12 +1729,12 @@ func (h *Handlers) UpdateForm(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
 		return
 	}
 
 	if strings.TrimSpace(req.Name) == "" {
-		writeError(w, http.StatusBadRequest, "missing_fields", "Name is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_fields", "Name is required")
 		return
 	}
 
@@ -1802,14 +1774,14 @@ func (h *Handlers) UpdateForm(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": form})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": form})
 }
 
 // DeleteForm handles DELETE /api/v1/forms/{id}.
 func (h *Handlers) DeleteForm(w http.ResponseWriter, r *http.Request) {
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
@@ -1823,7 +1795,7 @@ func (h *Handlers) DeleteForm(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
 }
 
 // EnsureFormGroup handles POST /api/v1/forms/{id}/ensure-field-group.
@@ -1832,7 +1804,7 @@ func (h *Handlers) DeleteForm(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) EnsureFormGroup(w http.ResponseWriter, r *http.Request) {
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
@@ -1857,7 +1829,7 @@ func (h *Handlers) EnsureFormGroup(w http.ResponseWriter, r *http.Request) {
 
 	// Return the field_group_id
 	fieldGroupID := h.Service.GetFormGroupID(r.Context(), id)
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
 			"field_group_id": fieldGroupID,
 		},
@@ -1882,7 +1854,7 @@ func (h *Handlers) GetFormEmbed(w http.ResponseWriter, r *http.Request) {
 
 	slug := chi.URLParam(r, "slug")
 	if slug == "" {
-		writeError(w, http.StatusBadRequest, "missing_slug", "slug is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_slug", "slug is required")
 		return
 	}
 
@@ -1977,7 +1949,7 @@ func (h *Handlers) GetFormEmbed(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
 			"id":                     form.ID,
 			"slug":                   form.Slug,
@@ -2013,7 +1985,7 @@ func (h *Handlers) GetFormEmbed(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) SubmitForm(w http.ResponseWriter, r *http.Request) {
 	formID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
@@ -2023,13 +1995,13 @@ func (h *Handlers) SubmitForm(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
 		return
 	}
 
 	fieldValues, err := json.Marshal(req.FieldValues)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "field_values could not be serialized")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "field_values could not be serialized")
 		return
 	}
 
@@ -2070,13 +2042,13 @@ func (h *Handlers) SubmitForm(w http.ResponseWriter, r *http.Request) {
 	// definitions, validation is skipped (lenient posture for legacy forms).
 	if req.FieldValues != nil {
 		if msg, ok := h.validateFormSubmission(r.Context(), formID, tenantID, req.FieldValues); !ok {
-			writeError(w, http.StatusBadRequest, "invalid_field_values", msg)
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_field_values", msg)
 			return
 		}
 		// Re-marshal in case rich_text values were sanitized in-place.
 		fieldValues, err = json.Marshal(req.FieldValues)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_body", "field_values could not be serialized after validation")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "field_values could not be serialized after validation")
 			return
 		}
 	}
@@ -2109,7 +2081,7 @@ func (h *Handlers) SubmitForm(w http.ResponseWriter, r *http.Request) {
 
 		h.enqueueFormTriggers(formID, tenantID, submission.ID, userID, fieldValues)
 
-		writeJSON(w, http.StatusCreated, map[string]any{
+		errpkg.WriteJSON(w, http.StatusCreated, map[string]any{
 			"data": map[string]any{"id": submission.ID, "status": "new"},
 		})
 		return
@@ -2117,12 +2089,12 @@ func (h *Handlers) SubmitForm(w http.ResponseWriter, r *http.Request) {
 
 	// Paid submission — payment_method is required.
 	if req.PaymentMethod == "" {
-		writeError(w, http.StatusBadRequest, "payment_required", "This form requires a payment method ('credit' or 'paystack' or 'stripe')")
+		errpkg.WriteError(w, http.StatusBadRequest, "payment_required", "This form requires a payment method ('credit' or 'paystack' or 'stripe')")
 		return
 	}
 
 	if !hasUser {
-		writeError(w, http.StatusUnauthorized, "auth_required", "Authentication is required for paid form submissions")
+		errpkg.WriteError(w, http.StatusUnauthorized, "auth_required", "Authentication is required for paid form submissions")
 		return
 	}
 
@@ -2130,7 +2102,7 @@ func (h *Handlers) SubmitForm(w http.ResponseWriter, r *http.Request) {
 	case payments.ProviderCredit:
 		// Deduct credits from the user's wallet synchronously.
 		if h.wallet == nil {
-			writeError(w, http.StatusInternalServerError, "wallet_unavailable", "Wallet service is not configured")
+			errpkg.WriteError(w, http.StatusInternalServerError, "wallet_unavailable", "Wallet service is not configured")
 			return
 		}
 
@@ -2142,7 +2114,7 @@ func (h *Handlers) SubmitForm(w http.ResponseWriter, r *http.Request) {
 			PurposeID:   formID.String(),
 		})
 		if spendErr != nil {
-			writeError(w, http.StatusPaymentRequired, "insufficient_credits", "Insufficient credits to pay the submission fee")
+			errpkg.WriteError(w, http.StatusPaymentRequired, "insufficient_credits", "Insufficient credits to pay the submission fee")
 			return
 		}
 
@@ -2162,14 +2134,14 @@ func (h *Handlers) SubmitForm(w http.ResponseWriter, r *http.Request) {
 
 		h.enqueueFormTriggers(formID, tenantID, submission.ID, userID, fieldValues)
 
-		writeJSON(w, http.StatusCreated, map[string]any{
+		errpkg.WriteJSON(w, http.StatusCreated, map[string]any{
 			"data": map[string]any{"id": submission.ID, "status": "new"},
 		})
 
 	case payments.ProviderPaystack, payments.ProviderStripe:
 		// Create a payment intent via the gateway.
 		if h.payments == nil {
-			writeError(w, http.StatusInternalServerError, "payments_unavailable", "Payments service is not configured")
+			errpkg.WriteError(w, http.StatusInternalServerError, "payments_unavailable", "Payments service is not configured")
 			return
 		}
 
@@ -2185,7 +2157,7 @@ func (h *Handlers) SubmitForm(w http.ResponseWriter, r *http.Request) {
 			},
 		})
 		if pErr != nil {
-			writeError(w, http.StatusInternalServerError, "payment_intent_failed", "Failed to create payment intent")
+			errpkg.WriteError(w, http.StatusInternalServerError, "payment_intent_failed", "Failed to create payment intent")
 			return
 		}
 
@@ -2212,7 +2184,7 @@ func (h *Handlers) SubmitForm(w http.ResponseWriter, r *http.Request) {
 		// Do NOT enqueue triggers yet — the webhook will confirm payment and
 		// update the submission to 'new', at which point triggers fire.
 
-		writeJSON(w, http.StatusCreated, map[string]any{
+		errpkg.WriteJSON(w, http.StatusCreated, map[string]any{
 			"data": map[string]any{
 				"id":           submission.ID,
 				"status":       "pending_payment",
@@ -2222,7 +2194,7 @@ func (h *Handlers) SubmitForm(w http.ResponseWriter, r *http.Request) {
 		})
 
 	default:
-		writeError(w, http.StatusBadRequest, "invalid_payment_method", "payment_method must be 'credit', 'paystack', or 'stripe'")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_payment_method", "payment_method must be 'credit', 'paystack', or 'stripe'")
 	}
 }
 
@@ -2555,7 +2527,7 @@ func validateSelectValue(field fieldDef, valueJson map[string]any) (string, bool
 func (h *Handlers) ListFormSubmissions(w http.ResponseWriter, r *http.Request) {
 	formID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
@@ -2609,7 +2581,7 @@ func (h *Handlers) ListFormSubmissions(w http.ResponseWriter, r *http.Request) {
 		total = 0
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data":  submissions,
 		"total": total,
 	})
@@ -2619,13 +2591,13 @@ func (h *Handlers) ListFormSubmissions(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) GetFormSubmission(w http.ResponseWriter, r *http.Request) {
 	formID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
 	id, err := parseUUIDParam(r, "sub_id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
@@ -2641,11 +2613,11 @@ func (h *Handlers) GetFormSubmission(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if submission.FormID != formID {
-		writeError(w, http.StatusNotFound, "not_found", "Resource not found")
+		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Resource not found")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": submission})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": submission})
 }
 
 // UpdateFormSubmission handles PATCH /api/v1/admin/forms/{id}/submissions/{sub_id}.
@@ -2654,13 +2626,13 @@ func (h *Handlers) GetFormSubmission(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) UpdateFormSubmission(w http.ResponseWriter, r *http.Request) {
 	formID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
 	id, err := parseUUIDParam(r, "sub_id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
@@ -2669,12 +2641,12 @@ func (h *Handlers) UpdateFormSubmission(w http.ResponseWriter, r *http.Request) 
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
 		return
 	}
 
 	if strings.TrimSpace(req.Status) == "" {
-		writeError(w, http.StatusBadRequest, "missing_fields", "Status is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_fields", "Status is required")
 		return
 	}
 
@@ -2690,7 +2662,7 @@ func (h *Handlers) UpdateFormSubmission(w http.ResponseWriter, r *http.Request) 
 	}
 
 	if submission.FormID != formID {
-		writeError(w, http.StatusNotFound, "not_found", "Resource not found")
+		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Resource not found")
 		return
 	}
 
@@ -2700,20 +2672,20 @@ func (h *Handlers) UpdateFormSubmission(w http.ResponseWriter, r *http.Request) 
 	}
 
 	submission.Status = req.Status
-	writeJSON(w, http.StatusOK, map[string]any{"data": submission})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": submission})
 }
 
 // DeleteFormSubmission handles DELETE /api/v1/admin/forms/{id}/submissions/{sub_id}.
 func (h *Handlers) DeleteFormSubmission(w http.ResponseWriter, r *http.Request) {
 	formID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
 	id, err := parseUUIDParam(r, "sub_id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
@@ -2729,7 +2701,7 @@ func (h *Handlers) DeleteFormSubmission(w http.ResponseWriter, r *http.Request) 
 	}
 
 	if submission.FormID != formID {
-		writeError(w, http.StatusNotFound, "not_found", "Resource not found")
+		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Resource not found")
 		return
 	}
 
@@ -2738,7 +2710,7 @@ func (h *Handlers) DeleteFormSubmission(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
 }
 
 // ---------------------------------------------------------------------------
@@ -2760,7 +2732,7 @@ var validTriggerTypes = map[string]bool{
 func (h *Handlers) ListFormTriggers(w http.ResponseWriter, r *http.Request) {
 	formID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
@@ -2770,14 +2742,14 @@ func (h *Handlers) ListFormTriggers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": triggers})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": triggers})
 }
 
 // CreateFormTrigger handles POST /forms/{id}/triggers — creates a new trigger.
 func (h *Handlers) CreateFormTrigger(w http.ResponseWriter, r *http.Request) {
 	formID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
@@ -2788,12 +2760,12 @@ func (h *Handlers) CreateFormTrigger(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
 		return
 	}
 
 	if !validTriggerTypes[req.TriggerType] {
-		writeError(w, http.StatusBadRequest, "invalid_trigger_type",
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_trigger_type",
 			"trigger_type must be one of: assign_user_group, send_email, send_webhook, create_ticket, notify_admin")
 		return
 	}
@@ -2813,20 +2785,20 @@ func (h *Handlers) CreateFormTrigger(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": trigger})
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": trigger})
 }
 
 // UpdateFormTrigger handles PATCH /forms/{id}/triggers/{triggerId}.
 func (h *Handlers) UpdateFormTrigger(w http.ResponseWriter, r *http.Request) {
 	formID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
 	triggerID, err := parseUUIDParam(r, "triggerId")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
@@ -2837,12 +2809,12 @@ func (h *Handlers) UpdateFormTrigger(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
 		return
 	}
 
 	if !validTriggerTypes[req.TriggerType] {
-		writeError(w, http.StatusBadRequest, "invalid_trigger_type",
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_trigger_type",
 			"trigger_type must be one of: assign_user_group, send_email, send_webhook, create_ticket, notify_admin")
 		return
 	}
@@ -2863,20 +2835,20 @@ func (h *Handlers) UpdateFormTrigger(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": trigger})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": trigger})
 }
 
 // DeleteFormTrigger handles DELETE /forms/{id}/triggers/{triggerId}.
 func (h *Handlers) DeleteFormTrigger(w http.ResponseWriter, r *http.Request) {
 	formID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
 	triggerID, err := parseUUIDParam(r, "triggerId")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
@@ -2885,7 +2857,7 @@ func (h *Handlers) DeleteFormTrigger(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
 }
 
 // ReorderFormTriggers handles POST /forms/{id}/triggers/reorder — updates the
@@ -2893,7 +2865,7 @@ func (h *Handlers) DeleteFormTrigger(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) ReorderFormTriggers(w http.ResponseWriter, r *http.Request) {
 	formID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
@@ -2902,12 +2874,12 @@ func (h *Handlers) ReorderFormTriggers(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
 		return
 	}
 
 	if len(req.TriggerIDs) == 0 {
-		writeError(w, http.StatusBadRequest, "invalid_body", "trigger_ids must not be empty")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "trigger_ids must not be empty")
 		return
 	}
 
@@ -2915,7 +2887,7 @@ func (h *Handlers) ReorderFormTriggers(w http.ResponseWriter, r *http.Request) {
 	for _, idStr := range req.TriggerIDs {
 		var id pgtype.UUID
 		if err := id.Scan(idStr); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid trigger ID format")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid trigger ID format")
 			return
 		}
 		triggerIDs = append(triggerIDs, id)
@@ -2926,7 +2898,7 @@ func (h *Handlers) ReorderFormTriggers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "reordered"}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "reordered"}})
 }
 
 // ListFormSteps handles GET /forms/{id}/steps — returns the steps configured on
@@ -2935,7 +2907,7 @@ func (h *Handlers) ReorderFormTriggers(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) ListFormSteps(w http.ResponseWriter, r *http.Request) {
 	formID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
@@ -2965,7 +2937,7 @@ func (h *Handlers) ListFormSteps(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": result})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": result})
 }
 
 // CreateFormStep handles POST /forms/{id}/steps — adds a new step to a
@@ -2973,7 +2945,7 @@ func (h *Handlers) ListFormSteps(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) CreateFormStep(w http.ResponseWriter, r *http.Request) {
 	formID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
@@ -2995,12 +2967,12 @@ func (h *Handlers) CreateFormStep(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
 		return
 	}
 
 	if strings.TrimSpace(req.Title) == "" {
-		writeError(w, http.StatusBadRequest, "invalid_body", "title must not be empty")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "title must not be empty")
 		return
 	}
 
@@ -3018,7 +2990,7 @@ func (h *Handlers) CreateFormStep(w http.ResponseWriter, r *http.Request) {
 	// immediately add fields to it via the existing field-group endpoints.
 	fieldGroupID := h.Service.GetStepFormGroupID(r.Context(), step.ID)
 
-	writeJSON(w, http.StatusCreated, map[string]any{
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{
 		"data": map[string]any{
 			"id":             step.ID,
 			"form_id":        step.FormID,
@@ -3034,13 +3006,13 @@ func (h *Handlers) CreateFormStep(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) UpdateFormStep(w http.ResponseWriter, r *http.Request) {
 	formID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
 	stepID, err := parseUUIDParam(r, "stepId")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
@@ -3050,12 +3022,12 @@ func (h *Handlers) UpdateFormStep(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
 		return
 	}
 
 	if strings.TrimSpace(req.Title) == "" {
-		writeError(w, http.StatusBadRequest, "invalid_body", "title must not be empty")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "title must not be empty")
 		return
 	}
 
@@ -3070,20 +3042,20 @@ func (h *Handlers) UpdateFormStep(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": step})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": step})
 }
 
 // DeleteFormStep handles DELETE /forms/{id}/steps/{stepId}.
 func (h *Handlers) DeleteFormStep(w http.ResponseWriter, r *http.Request) {
 	formID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
 	stepID, err := parseUUIDParam(r, "stepId")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
@@ -3092,7 +3064,7 @@ func (h *Handlers) DeleteFormStep(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
 }
 
 // ReorderFormSteps handles POST /forms/{id}/steps/reorder — updates the
@@ -3100,7 +3072,7 @@ func (h *Handlers) DeleteFormStep(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) ReorderFormSteps(w http.ResponseWriter, r *http.Request) {
 	formID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
@@ -3109,12 +3081,12 @@ func (h *Handlers) ReorderFormSteps(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
 		return
 	}
 
 	if len(req.StepIDs) == 0 {
-		writeError(w, http.StatusBadRequest, "invalid_body", "step_ids must not be empty")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "step_ids must not be empty")
 		return
 	}
 
@@ -3122,7 +3094,7 @@ func (h *Handlers) ReorderFormSteps(w http.ResponseWriter, r *http.Request) {
 	for _, idStr := range req.StepIDs {
 		var id pgtype.UUID
 		if err := id.Scan(idStr); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid step ID format")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid step ID format")
 			return
 		}
 		stepIDs = append(stepIDs, id)
@@ -3133,7 +3105,7 @@ func (h *Handlers) ReorderFormSteps(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "reordered"}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "reordered"}})
 }
 
 // ListEntityTypes handles GET /custom-field-entity-types — returns available
@@ -3159,7 +3131,7 @@ func (h *Handlers) ListEntityTypes(w http.ResponseWriter, r *http.Request) {
 			{"value": "ticket_type", "label": "Ticket Type"},
 			{"value": "form", "label": "Form"},
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"data": fallback})
+		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": fallback})
 		return
 	}
 
@@ -3171,7 +3143,7 @@ func (h *Handlers) ListEntityTypes(w http.ResponseWriter, r *http.Request) {
 			"label": t.Label,
 		})
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": result})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": result})
 }
 
 // ---------------------------------------------------------------------------
@@ -3278,7 +3250,7 @@ func (h *Handlers) ListEntityTypesAdmin(w http.ResponseWriter, r *http.Request) 
 	}
 	paged := types[start:end]
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": paged,
 		"meta": map[string]any{
 			"page":        page,
@@ -3303,12 +3275,12 @@ func (h *Handlers) CreateEntityType(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
 		return
 	}
 
 	if req.Value == "" || req.Label == "" {
-		writeError(w, http.StatusBadRequest, "invalid_body", "value and label are required")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "value and label are required")
 		return
 	}
 
@@ -3323,14 +3295,14 @@ func (h *Handlers) CreateEntityType(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": et})
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": et})
 }
 
 // UpdateEntityType handles PATCH /admin/custom-field-entity-types/{id}.
 func (h *Handlers) UpdateEntityType(w http.ResponseWriter, r *http.Request) {
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
@@ -3345,12 +3317,12 @@ func (h *Handlers) UpdateEntityType(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
 		return
 	}
 
 	if req.Label == "" {
-		writeError(w, http.StatusBadRequest, "invalid_body", "label is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "label is required")
 		return
 	}
 
@@ -3365,7 +3337,7 @@ func (h *Handlers) UpdateEntityType(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": et})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": et})
 }
 
 // DeleteEntityType handles DELETE /admin/custom-field-entity-types/{id}.
@@ -3373,7 +3345,7 @@ func (h *Handlers) UpdateEntityType(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) DeleteEntityType(w http.ResponseWriter, r *http.Request) {
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
@@ -3387,7 +3359,7 @@ func (h *Handlers) DeleteEntityType(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
 }
 
 // ---------------------------------------------------------------------------
@@ -3405,7 +3377,7 @@ func (h *Handlers) ListGuideCategoriesAdmin(w http.ResponseWriter, r *http.Reque
 		handleServiceError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": cats})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": cats})
 }
 
 // CreateGuideCategoryAdmin handles POST /admin/guide-categories.
@@ -3422,11 +3394,11 @@ func (h *Handlers) CreateGuideCategoryAdmin(w http.ResponseWriter, r *http.Reque
 		Label string `json:"label"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
 		return
 	}
 	if req.Slug == "" || req.Label == "" {
-		writeError(w, http.StatusBadRequest, "invalid_body", "slug and label are required")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "slug and label are required")
 		return
 	}
 	cat, err := h.Service.CreateGuideCategory(r.Context(), tenantID, CreateGuideCategoryInput{
@@ -3437,7 +3409,7 @@ func (h *Handlers) CreateGuideCategoryAdmin(w http.ResponseWriter, r *http.Reque
 		handleServiceError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, map[string]any{"data": cat})
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": cat})
 }
 
 // DeleteGuideCategoryAdmin handles DELETE /admin/guide-categories/{slug}.
@@ -3449,12 +3421,12 @@ func (h *Handlers) DeleteGuideCategoryAdmin(w http.ResponseWriter, r *http.Reque
 	}
 	slug := chi.URLParam(r, "slug")
 	if slug == "" {
-		writeError(w, http.StatusBadRequest, "invalid_slug", "Slug is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_slug", "Slug is required")
 		return
 	}
 	if err := h.Service.DeleteGuideCategory(r.Context(), tenantID, slug); err != nil {
 		handleServiceError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
 }

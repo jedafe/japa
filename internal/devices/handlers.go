@@ -12,6 +12,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/jedafe/japa/internal/auth"
+	errpkg "github.com/jedafe/japa/internal/errors"
 )
 
 // Handlers exposes the device token HTTP routes.
@@ -32,7 +33,7 @@ func (h *Handlers) HandleRegisterDevice(w http.ResponseWriter, r *http.Request) 
 
 	var input RegisterDeviceInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
 		return
 	}
 
@@ -41,7 +42,7 @@ func (h *Handlers) HandleRegisterDevice(w http.ResponseWriter, r *http.Request) 
 		writeDeviceError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, map[string]interface{}{"data": info})
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]interface{}{"data": info})
 }
 
 // HandleDeregisterDevice removes a device token.
@@ -54,7 +55,7 @@ func (h *Handlers) HandleDeregisterDevice(w http.ResponseWriter, r *http.Request
 
 	deviceID := chi.URLParam(r, "device_id")
 	if deviceID == "" {
-		writeError(w, http.StatusBadRequest, "missing_param", "device_id is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_param", "device_id is required")
 		return
 	}
 
@@ -62,7 +63,7 @@ func (h *Handlers) HandleDeregisterDevice(w http.ResponseWriter, r *http.Request
 		writeDeviceError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]interface{}{"data": map[string]bool{"deregistered": true}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{"data": map[string]bool{"deregistered": true}})
 }
 
 // HandleListDevices returns the user's registered devices.
@@ -82,7 +83,7 @@ func (h *Handlers) HandleListDevices(w http.ResponseWriter, r *http.Request) {
 	if devices == nil {
 		devices = []DeviceInfo{}
 	}
-	writeJSON(w, http.StatusOK, map[string]interface{}{"data": devices})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{"data": devices})
 }
 
 // HandleAdminTestPush sends a test push to a device.
@@ -97,11 +98,11 @@ func (h *Handlers) HandleAdminTestPush(w http.ResponseWriter, r *http.Request) {
 		DeviceID string `json:"device_id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
 		return
 	}
 	if body.DeviceID == "" {
-		writeError(w, http.StatusBadRequest, "missing_fields", "device_id is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_fields", "device_id is required")
 		return
 	}
 
@@ -109,7 +110,7 @@ func (h *Handlers) HandleAdminTestPush(w http.ResponseWriter, r *http.Request) {
 		writeDeviceError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]interface{}{"data": map[string]bool{"sent": true}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{"data": map[string]bool{"sent": true}})
 }
 
 // --- shared helpers ---
@@ -121,26 +122,10 @@ func (h *Handlers) HandleAdminTestPush(w http.ResponseWriter, r *http.Request) {
 func requireAuth(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	user := auth.FromContext(r.Context())
 	if user == nil || !user.UserID.Valid || !user.TenantID.Valid {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
 	return user, true
-}
-
-func writeJSON(w http.ResponseWriter, status int, data interface{}) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(data)
-}
-
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, map[string]interface{}{
-		"error": map[string]interface{}{
-			"code":    code,
-			"message": message,
-			"status":  status,
-		},
-	})
 }
 
 // writeDeviceError maps a devices service error to the standard error envelope
@@ -150,18 +135,18 @@ func writeError(w http.ResponseWriter, status int, code, message string) {
 func writeDeviceError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, ErrMissingFields):
-		writeError(w, http.StatusBadRequest, "missing_fields", "device_id and token are required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_fields", "device_id and token are required")
 	case errors.Is(err, ErrInvalidPlatform):
-		writeError(w, http.StatusBadRequest, "invalid_platform", err.Error())
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_platform", err.Error())
 	case errors.Is(err, ErrDeviceNotFound):
-		writeError(w, http.StatusNotFound, "device_not_found", "Device not found")
+		errpkg.WriteError(w, http.StatusNotFound, "device_not_found", "Device not found")
 	case errors.Is(err, ErrPushDisabled):
-		writeError(w, http.StatusForbidden, "push_disabled", "Push notifications are disabled")
+		errpkg.WriteError(w, http.StatusForbidden, "push_disabled", "Push notifications are disabled")
 	case errors.Is(err, ErrNoDispatcher):
-		writeError(w, http.StatusServiceUnavailable, "push_unavailable", "Push delivery is not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "push_unavailable", "Push delivery is not configured")
 	case errors.Is(err, ErrNoActiveTokens):
-		writeError(w, http.StatusNotFound, "no_active_tokens", "No active device tokens for user")
+		errpkg.WriteError(w, http.StatusNotFound, "no_active_tokens", "No active device tokens for user")
 	default:
-		writeError(w, http.StatusBadRequest, "device_error", err.Error())
+		errpkg.WriteError(w, http.StatusBadRequest, "device_error", err.Error())
 	}
 }

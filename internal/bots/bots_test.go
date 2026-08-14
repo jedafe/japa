@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	errpkg "github.com/jedafe/japa/internal/errors"
 )
 
 // ---------------------------------------------------------------------------
@@ -100,7 +102,7 @@ func TestWriteJSON(t *testing.T) {
 	t.Parallel()
 
 	w := httptest.NewRecorder()
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 
 	if w.Code != http.StatusOK {
 		t.Errorf("expected status 200, got %d", w.Code)
@@ -124,7 +126,7 @@ func TestWriteError(t *testing.T) {
 	t.Parallel()
 
 	w := httptest.NewRecorder()
-	writeError(w, http.StatusBadRequest, "invalid_input", "Bad request")
+	errpkg.WriteError(w, http.StatusBadRequest, "invalid_input", "Bad request")
 
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("expected status 400, got %d", w.Code)

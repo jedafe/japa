@@ -26,6 +26,7 @@ import (
 	"github.com/jedafe/japa/internal/clientip"
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/db/gen"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/tenant"
 	"github.com/jedafe/japa/internal/valkey"
 	"github.com/jedafe/japa/internal/visitor"
@@ -220,7 +221,7 @@ var featureSlugs = map[string]bool{
 func (h *Handlers) GetRecommendations(w http.ResponseWriter, r *http.Request) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]any{
+		errpkg.WriteJSON(w, http.StatusServiceUnavailable, map[string]any{
 			"error": map[string]string{"code": "tenant_unavailable", "message": "No tenant available"},
 		})
 
@@ -305,7 +306,7 @@ func (h *Handlers) GetRecommendations(w http.ResponseWriter, r *http.Request) {
 	resp.Tools = sliceItems(resp.Tools, limit)
 	resp.Features = sliceItems(resp.Features, limit)
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": resp})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": resp})
 }
 
 // resolveLimit parses the ?limit query param and clamps it to the configured
@@ -479,7 +480,7 @@ func (h *Handlers) serveFromCache(ctx context.Context, key string, limit int, w 
 
 	resp.Tools = sliceItems(resp.Tools, limit)
 	resp.Features = sliceItems(resp.Features, limit)
-	writeJSON(w, http.StatusOK, map[string]any{"data": resp})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": resp})
 
 	return true
 }
@@ -649,14 +650,4 @@ func toolURL(slug string, configURLs map[string]string) string {
 	}
 
 	return "/tools/" + slug
-}
-
-// writeJSON serializes the given value as JSON and writes it to the response.
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-
-	if err := json.NewEncoder(w).Encode(v); err != nil {
-		slog.Warn("recommendations: json encode error", "error", err)
-	}
 }

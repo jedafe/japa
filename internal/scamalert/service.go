@@ -4,7 +4,8 @@
 // when scam_alert.anonymous_reports is enabled.
 //
 // Ref: japaconnect-engineering/sections/81-scam-alert-board.md
-//      japaconnect-engineering/adr/ADR-089-scam-alert-board.md
+//
+//	japaconnect-engineering/adr/ADR-089-scam-alert-board.md
 package scamalert
 
 import (

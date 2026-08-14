@@ -8,11 +8,11 @@ package content
 
 // Block categories used to group blocks in the editor picker.
 const (
-	BlockCategoryLayout      = "layout"
-	BlockCategoryContent     = "content"
-	BlockCategoryMedia       = "media"
-	BlockCategoryInteractive = "interactive"
-	BlockCategoryData        = "data"
+	BlockCategoryLayout       = "layout"
+	BlockCategoryContent      = "content"
+	BlockCategoryMedia        = "media"
+	BlockCategoryInteractive  = "interactive"
+	BlockCategoryData         = "data"
 	BlockCategoryMonetization = "monetization"
 )
 
@@ -212,13 +212,13 @@ func newDefaultRegistry() *BlockTemplateRegistry {
 				Description: "Live countdown timer with days, hours, minutes, and seconds display",
 				Icon:        "timer",
 				DefaultProps: map[string]any{
-					"target_datetime":  "",
-					"title":            "",
-					"show_days":        true,
-					"show_hours":       true,
-					"show_minutes":     true,
-					"show_seconds":     true,
-					"expired_message":  "Event has started!",
+					"target_datetime": "",
+					"title":           "",
+					"show_days":       true,
+					"show_hours":      true,
+					"show_minutes":    true,
+					"show_seconds":    true,
+					"expired_message": "Event has started!",
 				},
 				Category: BlockCategoryInteractive,
 			},
@@ -241,10 +241,10 @@ func newDefaultRegistry() *BlockTemplateRegistry {
 				Description: "Arrange blocks side-by-side in a responsive multi-column grid layout",
 				Icon:        "layout-grid",
 				DefaultProps: map[string]any{
-					"columns": 2,
-					"gap":     16,
-					"align":   "start",
-					"stack":   true,
+					"columns":  2,
+					"gap":      16,
+					"align":    "start",
+					"stack":    true,
 					"children": []any{},
 				},
 				Category: BlockCategoryLayout,
@@ -270,10 +270,10 @@ func newDefaultRegistry() *BlockTemplateRegistry {
 				Description: "Data-source-driven dynamic block backed by a widget_configurations record (Section 16)",
 				Icon:        "layout-dashboard",
 				DefaultProps: map[string]any{
-					"widget_id":    "",
-					"layout":       "grid",
-					"columns":      3,
-					"heading":      "",
+					"widget_id":     "",
+					"layout":        "grid",
+					"columns":       3,
+					"heading":       "",
 					"view_all_href": "",
 				},
 				Category: BlockCategoryData,

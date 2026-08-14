@@ -8,7 +8,8 @@
 // visibility toggles, and a public directory filtered by stage.
 //
 // Ref: japaconnect-engineering/sections/87-japa-stage-progress-profiles.md
-//      japaconnect-engineering/adr/ADR-095-japa-stage-progress-profiles.md
+//
+//	japaconnect-engineering/adr/ADR-095-japa-stage-progress-profiles.md
 package japastage
 
 import (

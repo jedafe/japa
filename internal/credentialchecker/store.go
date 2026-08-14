@@ -12,7 +12,8 @@
 // share lived experience alongside the official pathway data.
 //
 // Ref: japaconnect-engineering/sections/94-professional-credential-checker.md
-//      japaconnect-engineering/adr/ADR-102-credential-checker.md
+//
+//	japaconnect-engineering/adr/ADR-102-credential-checker.md
 package credentialchecker
 
 import (

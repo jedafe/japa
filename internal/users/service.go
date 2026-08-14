@@ -517,7 +517,8 @@ func (s *Service) ListUsers(ctx context.Context, tenantID pgtype.UUID, search, s
 // are ordered by follower_count DESC so the directory surfaces prominent
 // users first. Returns items + pagination metadata (total, page, total_pages).
 // Ref: japaconnect-engineering/sections/02-authentication-sessions.md
-//      japaconnect-engineering/sections/19-privacy-gdpr.md (search_indexable opt-out)
+//
+//	japaconnect-engineering/sections/19-privacy-gdpr.md (search_indexable opt-out)
 func (s *Service) ListPublicUsers(ctx context.Context, tenantID pgtype.UUID, search, profileType string, limit, offset int32) (*PublicUserListResponse, error) {
 	if limit <= 0 {
 		limit = 20
@@ -593,11 +594,11 @@ func (s *Service) GetPrivacySettings(ctx context.Context, tenantID, userID pgtyp
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return &PrivacySettings{
-				DmPrivacy:         "everyone",
-				ProfileVisibility: "public",
-				SearchIndexable:   true,
-				ShowOnlineStatus:  true,
-				ShowActivity:      true,
+				DmPrivacy:          "everyone",
+				ProfileVisibility:  "public",
+				SearchIndexable:    true,
+				ShowOnlineStatus:   true,
+				ShowActivity:       true,
 				ShowPointsPublicly: false, // default false — user must opt in (Section 28)
 			}, nil
 		}
@@ -605,11 +606,11 @@ func (s *Service) GetPrivacySettings(ctx context.Context, tenantID, userID pgtyp
 	}
 
 	return &PrivacySettings{
-		DmPrivacy:         settings.DmPrivacy,
-		ProfileVisibility: settings.ProfileVisibility,
-		SearchIndexable:   settings.SearchIndexable,
-		ShowOnlineStatus:  settings.ShowOnlineStatus,
-		ShowActivity:      settings.ShowActivity,
+		DmPrivacy:          settings.DmPrivacy,
+		ProfileVisibility:  settings.ProfileVisibility,
+		SearchIndexable:    settings.SearchIndexable,
+		ShowOnlineStatus:   settings.ShowOnlineStatus,
+		ShowActivity:       settings.ShowActivity,
 		ShowPointsPublicly: settings.ShowPointsPublicly,
 	}, nil
 }

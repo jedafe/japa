@@ -32,6 +32,7 @@ import (
 
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/config"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/tenant"
 )
 
@@ -51,24 +52,10 @@ func NewHandlers(service *Service, settings *config.Settings) *Handlers {
 // Shared helpers (same pattern as servicedir/handlers.go)
 // ---------------------------------------------------------------------------
 
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	if err := json.NewEncoder(w).Encode(v); err != nil {
-		slog.Error("languagetesthub: encode response", "error", err)
-	}
-}
-
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, map[string]any{
-		"error": map[string]string{"code": code, "message": message},
-	})
-}
-
 func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
 	return t.ID, true
@@ -77,7 +64,7 @@ func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	u := auth.FromContext(r.Context())
 	if u == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
 	return u, true
@@ -86,7 +73,7 @@ func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUse
 func scanUUIDParam(w http.ResponseWriter, r *http.Request, name string) (pgtype.UUID, bool) {
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, name)); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid "+name)
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid "+name)
 		return pgtype.UUID{}, false
 	}
 	return id, true
@@ -120,18 +107,18 @@ func (h *Handlers) HandleListTests(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "language_test_hub_disabled", "Language test hub is not available")
+		errpkg.WriteError(w, http.StatusNotFound, "language_test_hub_disabled", "Language test hub is not available")
 		return
 	}
 
 	tests, err := h.service.ListTests(r.Context())
 	if err != nil {
 		slog.Error("languagetesthub: list tests failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "list_failed", "Failed to list language tests")
+		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list language tests")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": tests})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": tests})
 }
 
 // HandleListRequirements handles GET /language-tests/requirements —
@@ -144,14 +131,14 @@ func (h *Handlers) HandleListRequirements(w http.ResponseWriter, r *http.Request
 	}
 
 	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "language_test_hub_disabled", "Language test hub is not available")
+		errpkg.WriteError(w, http.StatusNotFound, "language_test_hub_disabled", "Language test hub is not available")
 		return
 	}
 
 	var destSpaceID pgtype.UUID
 	if v := r.URL.Query().Get("dest"); v != "" {
 		if err := destSpaceID.Scan(v); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid destination space ID")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid destination space ID")
 			return
 		}
 	}
@@ -161,11 +148,11 @@ func (h *Handlers) HandleListRequirements(w http.ResponseWriter, r *http.Request
 	requirements, err := h.service.ListRequirements(r.Context(), tenantID, destSpaceID, visaCategory)
 	if err != nil {
 		slog.Error("languagetesthub: list requirements failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "list_failed", "Failed to list requirements")
+		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list requirements")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": requirements})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": requirements})
 }
 
 // HandleGetTest handles GET /language-tests/:test_slug — test hub page
@@ -178,42 +165,42 @@ func (h *Handlers) HandleGetTest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "language_test_hub_disabled", "Language test hub is not available")
+		errpkg.WriteError(w, http.StatusNotFound, "language_test_hub_disabled", "Language test hub is not available")
 		return
 	}
 
 	slug := chi.URLParam(r, "test_slug")
 	if slug == "" {
-		writeError(w, http.StatusBadRequest, "missing_slug", "Test slug is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_slug", "Test slug is required")
 		return
 	}
 
 	test, err := h.service.GetTestBySlug(r.Context(), slug)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "test_not_found", "Language test not found")
+			errpkg.WriteError(w, http.StatusNotFound, "test_not_found", "Language test not found")
 			return
 		}
 		slog.Error("languagetesthub: get test failed", "slug", slug, "error", err)
-		writeError(w, http.StatusInternalServerError, "get_failed", "Failed to get language test")
+		errpkg.WriteError(w, http.StatusInternalServerError, "get_failed", "Failed to get language test")
 		return
 	}
 
 	resources, err := h.service.ListResources(r.Context(), tenantID, test.ID, 1, 5)
 	if err != nil {
 		slog.Error("languagetesthub: get test resources failed", "slug", slug, "error", err)
-		writeError(w, http.StatusInternalServerError, "get_failed", "Failed to get language test")
+		errpkg.WriteError(w, http.StatusInternalServerError, "get_failed", "Failed to get language test")
 		return
 	}
 
 	stories, err := h.service.ListStories(r.Context(), tenantID, test.ID, pgtype.UUID{}, 1, 5)
 	if err != nil {
 		slog.Error("languagetesthub: get test stories failed", "slug", slug, "error", err)
-		writeError(w, http.StatusInternalServerError, "get_failed", "Failed to get language test")
+		errpkg.WriteError(w, http.StatusInternalServerError, "get_failed", "Failed to get language test")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
 			"test":              test,
 			"resources_summary": resources,
@@ -231,24 +218,24 @@ func (h *Handlers) HandleListResources(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "language_test_hub_disabled", "Language test hub is not available")
+		errpkg.WriteError(w, http.StatusNotFound, "language_test_hub_disabled", "Language test hub is not available")
 		return
 	}
 
 	slug := chi.URLParam(r, "test_slug")
 	if slug == "" {
-		writeError(w, http.StatusBadRequest, "missing_slug", "Test slug is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_slug", "Test slug is required")
 		return
 	}
 
 	test, err := h.service.GetTestBySlug(r.Context(), slug)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "test_not_found", "Language test not found")
+			errpkg.WriteError(w, http.StatusNotFound, "test_not_found", "Language test not found")
 			return
 		}
 		slog.Error("languagetesthub: list resources get test failed", "slug", slug, "error", err)
-		writeError(w, http.StatusInternalServerError, "get_failed", "Failed to get resources")
+		errpkg.WriteError(w, http.StatusInternalServerError, "get_failed", "Failed to get resources")
 		return
 	}
 
@@ -257,11 +244,11 @@ func (h *Handlers) HandleListResources(w http.ResponseWriter, r *http.Request) {
 	resources, err := h.service.ListResources(r.Context(), tenantID, test.ID, page, limit)
 	if err != nil {
 		slog.Error("languagetesthub: list resources failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "list_failed", "Failed to list resources")
+		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list resources")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": resources,
 		"pagination": map[string]any{
 			"page":  page,
@@ -279,31 +266,31 @@ func (h *Handlers) HandleListStories(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "language_test_hub_disabled", "Language test hub is not available")
+		errpkg.WriteError(w, http.StatusNotFound, "language_test_hub_disabled", "Language test hub is not available")
 		return
 	}
 
 	slug := chi.URLParam(r, "test_slug")
 	if slug == "" {
-		writeError(w, http.StatusBadRequest, "missing_slug", "Test slug is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_slug", "Test slug is required")
 		return
 	}
 
 	test, err := h.service.GetTestBySlug(r.Context(), slug)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "test_not_found", "Language test not found")
+			errpkg.WriteError(w, http.StatusNotFound, "test_not_found", "Language test not found")
 			return
 		}
 		slog.Error("languagetesthub: list stories get test failed", "slug", slug, "error", err)
-		writeError(w, http.StatusInternalServerError, "get_failed", "Failed to get stories")
+		errpkg.WriteError(w, http.StatusInternalServerError, "get_failed", "Failed to get stories")
 		return
 	}
 
 	var destSpaceID pgtype.UUID
 	if v := r.URL.Query().Get("dest"); v != "" {
 		if err := destSpaceID.Scan(v); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid destination space ID")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid destination space ID")
 			return
 		}
 	}
@@ -313,11 +300,11 @@ func (h *Handlers) HandleListStories(w http.ResponseWriter, r *http.Request) {
 	stories, err := h.service.ListStories(r.Context(), tenantID, test.ID, destSpaceID, page, limit)
 	if err != nil {
 		slog.Error("languagetesthub: list stories failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "list_failed", "Failed to list stories")
+		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list stories")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": stories,
 		"pagination": map[string]any{
 			"page":  page,
@@ -340,39 +327,39 @@ func (h *Handlers) HandleCreateStory(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "language_test_hub_disabled", "Language test hub is not available")
+		errpkg.WriteError(w, http.StatusNotFound, "language_test_hub_disabled", "Language test hub is not available")
 		return
 	}
 
 	slug := chi.URLParam(r, "test_slug")
 	if slug == "" {
-		writeError(w, http.StatusBadRequest, "missing_slug", "Test slug is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_slug", "Test slug is required")
 		return
 	}
 
 	var input CreateStoryRequest
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
 
 	if input.FinalScore == "" {
-		writeError(w, http.StatusBadRequest, "missing_final_score", "final_score is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_final_score", "final_score is required")
 		return
 	}
 
 	story, err := h.service.CreateStory(r.Context(), tenantID, user.UserID, slug, input)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "test_not_found", "Language test not found")
+			errpkg.WriteError(w, http.StatusNotFound, "test_not_found", "Language test not found")
 			return
 		}
 		slog.Error("languagetesthub: create story failed", "error", err, "user_id", user.UserID)
-		writeError(w, http.StatusInternalServerError, "create_failed", "Failed to submit score story")
+		errpkg.WriteError(w, http.StatusInternalServerError, "create_failed", "Failed to submit score story")
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": story})
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": story})
 }
 
 // ---------------------------------------------------------------------------
@@ -393,7 +380,7 @@ func (h *Handlers) HandleAdminListRequirements(w http.ResponseWriter, r *http.Re
 	}
 
 	if h.service == nil {
-		writeError(w, http.StatusServiceUnavailable, "language_test_hub_unavailable", "Language test hub not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "language_test_hub_unavailable", "Language test hub not configured")
 		return
 	}
 
@@ -403,7 +390,7 @@ func (h *Handlers) HandleAdminListRequirements(w http.ResponseWriter, r *http.Re
 	var destSpaceID pgtype.UUID
 	if v := r.URL.Query().Get("dest"); v != "" {
 		if err := destSpaceID.Scan(v); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid destination space ID")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid destination space ID")
 			return
 		}
 	}
@@ -416,11 +403,11 @@ func (h *Handlers) HandleAdminListRequirements(w http.ResponseWriter, r *http.Re
 	requirements, total, err := h.service.AdminListRequirements(r.Context(), tenantID, destSpaceID, status, q, page, limit)
 	if err != nil {
 		slog.Error("languagetesthub: admin list requirements failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "admin_list_failed", "Failed to list requirements")
+		errpkg.WriteError(w, http.StatusInternalServerError, "admin_list_failed", "Failed to list requirements")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": requirements,
 		"pagination": map[string]any{
 			"page":  page,
@@ -443,41 +430,41 @@ func (h *Handlers) HandleAdminCreateRequirement(w http.ResponseWriter, r *http.R
 	}
 
 	if h.service == nil {
-		writeError(w, http.StatusServiceUnavailable, "language_test_hub_unavailable", "Language test hub not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "language_test_hub_unavailable", "Language test hub not configured")
 		return
 	}
 
 	var input CreateRequirementRequest
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
 
 	if input.DestinationSpaceID == "" {
-		writeError(w, http.StatusBadRequest, "missing_destination", "destination_space_id is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_destination", "destination_space_id is required")
 		return
 	}
 	if input.TestSlug == "" {
-		writeError(w, http.StatusBadRequest, "missing_test_slug", "test_slug is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_test_slug", "test_slug is required")
 		return
 	}
 	if input.MinimumScore == "" {
-		writeError(w, http.StatusBadRequest, "missing_minimum_score", "minimum_score is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_minimum_score", "minimum_score is required")
 		return
 	}
 
 	requirement, err := h.service.CreateRequirement(r.Context(), tenantID, input)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "test_not_found", "Language test not found")
+			errpkg.WriteError(w, http.StatusNotFound, "test_not_found", "Language test not found")
 			return
 		}
 		slog.Error("languagetesthub: admin create requirement failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "create_failed", "Failed to create requirement")
+		errpkg.WriteError(w, http.StatusInternalServerError, "create_failed", "Failed to create requirement")
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": requirement})
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": requirement})
 }
 
 // HandleAdminGenerateRequirement handles POST
@@ -494,29 +481,29 @@ func (h *Handlers) HandleAdminGenerateRequirement(w http.ResponseWriter, r *http
 	}
 
 	if h.service == nil {
-		writeError(w, http.StatusServiceUnavailable, "language_test_hub_unavailable", "Language test hub not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "language_test_hub_unavailable", "Language test hub not configured")
 		return
 	}
 
 	var input GenerateRequirementRequest
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
 
 	if input.DestinationSpaceID == "" {
-		writeError(w, http.StatusBadRequest, "missing_destination", "destination_space_id is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_destination", "destination_space_id is required")
 		return
 	}
 	if input.TestSlug == "" {
-		writeError(w, http.StatusBadRequest, "missing_test_slug", "test_slug is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_test_slug", "test_slug is required")
 		return
 	}
 
 	// Placeholder: the Content Agent draft generation is performed
 	// asynchronously. This endpoint acknowledges the request and returns
 	// a draft envelope that the admin can review before persisting.
-	writeJSON(w, http.StatusAccepted, map[string]any{
+	errpkg.WriteJSON(w, http.StatusAccepted, map[string]any{
 		"data": map[string]any{
 			"status":               StatusAIDraft,
 			"destination_space_id": input.DestinationSpaceID,
@@ -551,7 +538,7 @@ func (h *Handlers) HandleAdminApproveRequirement(w http.ResponseWriter, r *http.
 	}
 
 	if h.service == nil {
-		writeError(w, http.StatusServiceUnavailable, "language_test_hub_unavailable", "Language test hub not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "language_test_hub_unavailable", "Language test hub not configured")
 		return
 	}
 
@@ -563,15 +550,15 @@ func (h *Handlers) HandleAdminApproveRequirement(w http.ResponseWriter, r *http.
 
 	if err := h.service.ApproveRequirement(r.Context(), id, tenantID, user.UserID, body.ReviewNotes); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "requirement_not_found", "Requirement not found")
+			errpkg.WriteError(w, http.StatusNotFound, "requirement_not_found", "Requirement not found")
 			return
 		}
 		slog.Error("languagetesthub: admin approve requirement failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "approve_failed", "Failed to approve requirement")
+		errpkg.WriteError(w, http.StatusInternalServerError, "approve_failed", "Failed to approve requirement")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
 			"id":               id.String(),
 			"status":           StatusPublished,

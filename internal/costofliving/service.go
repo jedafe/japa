@@ -4,7 +4,8 @@
 // ratios vs the baseline city and a weighted Overall Cost Index.
 //
 // Ref: japaconnect-engineering/sections/72-cost-of-living.md
-//      japaconnect-engineering/adr/ADR-072-cost-of-living-calculator.md
+//
+//	japaconnect-engineering/adr/ADR-072-cost-of-living-calculator.md
 package costofliving
 
 import (
@@ -39,12 +40,12 @@ var ErrCalculatorDisabled = fmt.Errorf("costofliving: calculator disabled")
 // CityData is a single city row in the comparison matrix. Values maps
 // dimension key (dimension_id string) → raw value as stored (text).
 type CityData struct {
-	ID          string            `json:"id"`
-	Title       string            `json:"title"`
-	GeoSpaceName string           `json:"geo_space_name"`
-	IsBaseline  bool              `json:"is_baseline"`
-	LastUpdated string            `json:"last_updated"`
-	Values      map[string]string `json:"values"`
+	ID           string            `json:"id"`
+	Title        string            `json:"title"`
+	GeoSpaceName string            `json:"geo_space_name"`
+	IsBaseline   bool              `json:"is_baseline"`
+	LastUpdated  string            `json:"last_updated"`
+	Values       map[string]string `json:"values"`
 }
 
 // CategoryData is a single cost category (dimension) across all cities.
@@ -60,22 +61,22 @@ type CategoryData struct {
 // ComparisonMatrix is the full comparison result returned by CompareCities.
 // OverallIndex maps city ID → weighted Overall Cost Index (1.0 = baseline).
 type ComparisonMatrix struct {
-	Cities        []CityData            `json:"cities"`
-	Categories    []CategoryData        `json:"categories"`
-	BaselineCityID string               `json:"baseline_city_id"`
-	OverallIndex  map[string]float64    `json:"overall_index"`
+	Cities         []CityData         `json:"cities"`
+	Categories     []CategoryData     `json:"categories"`
+	BaselineCityID string             `json:"baseline_city_id"`
+	OverallIndex   map[string]float64 `json:"overall_index"`
 }
 
 // CityListItem is a single city in the paginated list response.
 type CityListItem struct {
-	ID           string  `json:"id"`
-	Title        string  `json:"title"`
-	Description  string  `json:"description"`
-	GeoSpaceName string  `json:"geo_space_name"`
-	GeoSpaceSlug string  `json:"geo_space_slug"`
-	IsBaseline   bool    `json:"is_baseline"`
-	LastUpdated  string  `json:"last_updated"`
-	Position     int32   `json:"position"`
+	ID           string `json:"id"`
+	Title        string `json:"title"`
+	Description  string `json:"description"`
+	GeoSpaceName string `json:"geo_space_name"`
+	GeoSpaceSlug string `json:"geo_space_slug"`
+	IsBaseline   bool   `json:"is_baseline"`
+	LastUpdated  string `json:"last_updated"`
+	Position     int32  `json:"position"`
 }
 
 // CitiesListResponse is the paginated list response for ListCities.
@@ -88,13 +89,13 @@ type CitiesListResponse struct {
 
 // AdminStatsItem is a single city row in the admin stats report.
 type AdminStatsItem struct {
-	CityID           string `json:"city_id"`
-	CityName         string `json:"city_name"`
-	IsBaseline       bool   `json:"is_baseline"`
-	LastUpdated      string `json:"last_updated"`
-	IsStale          bool   `json:"is_stale"`
-	TotalDimensions  int64  `json:"total_dimensions"`
-	FilledDimensions int64  `json:"filled_dimensions"`
+	CityID           string  `json:"city_id"`
+	CityName         string  `json:"city_name"`
+	IsBaseline       bool    `json:"is_baseline"`
+	LastUpdated      string  `json:"last_updated"`
+	IsStale          bool    `json:"is_stale"`
+	TotalDimensions  int64   `json:"total_dimensions"`
+	FilledDimensions int64   `json:"filled_dimensions"`
 	CompletenessPct  float64 `json:"completeness_pct"`
 }
 

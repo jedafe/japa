@@ -663,16 +663,16 @@ func (r *Renderer) renderForumThreads(ctx context.Context, w Widget) (json.RawMe
 			return nil, fmt.Errorf("scanning forum_threads: %w", err)
 		}
 		items = append(items, map[string]any{
-			"id":            id,
-			"title":         title,
-			"slug":          slug,
-			"author_id":     authorUserID,
-			"space_id":      spaceID,
-			"solved":        solved,
-			"vote_score":    voteScore,
-			"reply_count":   replyCount,
-			"view_count":    viewCount,
-			"created_at":    createdAt,
+			"id":          id,
+			"title":       title,
+			"slug":        slug,
+			"author_id":   authorUserID,
+			"space_id":    spaceID,
+			"solved":      solved,
+			"vote_score":  voteScore,
+			"reply_count": replyCount,
+			"view_count":  viewCount,
+			"created_at":  createdAt,
 		})
 	}
 	return json.Marshal(items)
@@ -847,13 +847,13 @@ func (r *Renderer) renderLearningTracks(ctx context.Context, w Widget) (json.Raw
 			return nil, fmt.Errorf("scanning learning_tracks: %w", err)
 		}
 		item := map[string]any{
-			"id":            id,
-			"title":         title,
-			"slug":          slug,
-			"description":   description,
-			"difficulty":    difficulty,
+			"id":             id,
+			"title":          title,
+			"slug":           slug,
+			"description":    description,
+			"difficulty":     difficulty,
 			"cover_media_id": coverMediaID,
-			"sort_order":    sortOrder,
+			"sort_order":     sortOrder,
 		}
 		if url := coverImageURL(coverBucket, coverPath); url != "" {
 			item["cover_image_url"] = url
@@ -906,14 +906,14 @@ func (r *Renderer) renderCommunityDigest(ctx context.Context, w Widget) (json.Ra
 			_ = json.Unmarshal(content, &contentJSON)
 		}
 		items = append(items, map[string]any{
-			"id":           id,
-			"space_id":     spaceID,
-			"cadence":      cadence,
-			"status":       status,
+			"id":            id,
+			"space_id":      spaceID,
+			"cadence":       cadence,
+			"status":        status,
 			"scheduled_for": scheduledFor,
-			"published_at": publishedAt,
-			"content":      contentJSON,
-			"email_sent":   emailSent,
+			"published_at":  publishedAt,
+			"content":       contentJSON,
+			"email_sent":    emailSent,
 		})
 	}
 	return json.Marshal(items)
@@ -959,15 +959,15 @@ func (r *Renderer) renderReviews(ctx context.Context, w Widget) (json.RawMessage
 			return nil, fmt.Errorf("scanning reviews: %w", err)
 		}
 		items = append(items, map[string]any{
-			"id":               id,
-			"entity_type":      entityType,
-			"entity_id":        entityID,
-			"reviewer_id":      reviewerUserID,
+			"id":                id,
+			"entity_type":       entityType,
+			"entity_id":         entityID,
+			"reviewer_id":       reviewerUserID,
 			"reviewer_username": reviewerUsername,
-			"rating":           rating,
-			"title":            title,
-			"body":             body,
-			"created_at":       createdAt,
+			"rating":            rating,
+			"title":             title,
+			"body":              body,
+			"created_at":        createdAt,
 		})
 	}
 	return json.Marshal(items)
@@ -1061,15 +1061,15 @@ func (r *Renderer) renderProfessionalProfiles(ctx context.Context, w Widget) (js
 			return nil, fmt.Errorf("scanning professional_profiles: %w", err)
 		}
 		items = append(items, map[string]any{
-			"id":            id,
-			"owner_user_id": ownerUserID,
-			"type_id":       typeID,
-			"name":          name,
-			"slug":          slug,
-			"tagline":       tagline,
-			"description":   description,
-			"website_url":   websiteURL,
-			"verified":      verified,
+			"id":             id,
+			"owner_user_id":  ownerUserID,
+			"type_id":        typeID,
+			"name":           name,
+			"slug":           slug,
+			"tagline":        tagline,
+			"description":    description,
+			"website_url":    websiteURL,
+			"verified":       verified,
 			"follower_count": followerCount,
 		})
 	}
@@ -1121,17 +1121,17 @@ func (r *Renderer) renderCommunityOrganisations(ctx context.Context, w Widget) (
 			return nil, fmt.Errorf("scanning community_organisations: %w", err)
 		}
 		items = append(items, map[string]any{
-			"id":                    id,
-			"name":                  name,
-			"slug":                  slug,
-			"org_type":              orgType,
-			"origin_community":      originCommunity,
-			"destination_space_id":  destSpaceID,
-			"city_space_id":         citySpaceID,
-			"address":               address,
-			"website_url":           websiteURL,
-			"is_verified":           isVerified,
-			"is_active":             isActive,
+			"id":                   id,
+			"name":                 name,
+			"slug":                 slug,
+			"org_type":             orgType,
+			"origin_community":     originCommunity,
+			"destination_space_id": destSpaceID,
+			"city_space_id":        citySpaceID,
+			"address":              address,
+			"website_url":          websiteURL,
+			"is_verified":          isVerified,
+			"is_active":            isActive,
 		})
 	}
 	return json.Marshal(items)
@@ -1202,10 +1202,10 @@ func (r *Renderer) renderMentorSpotlight(ctx context.Context, w Widget) (json.Ra
 // Ref: §62 Newsletter.
 func (r *Renderer) renderNewsletterSignup(ctx context.Context, w Widget) (json.RawMessage, error) {
 	var c struct {
-		ListID    string `json:"list_id"`
-		Heading   string `json:"heading"`
-		Subtext   string `json:"subtext"`
-		ButtonText string `json:"button_text"`
+		ListID      string `json:"list_id"`
+		Heading     string `json:"heading"`
+		Subtext     string `json:"subtext"`
+		ButtonText  string `json:"button_text"`
 		Placeholder string `json:"placeholder"`
 	}
 	if len(w.Config) > 0 {

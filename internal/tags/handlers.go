@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"strconv"
 	"time"
@@ -16,6 +15,7 @@ import (
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/content"
 	"github.com/jedafe/japa/internal/db/gen"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/follows"
 	"github.com/jedafe/japa/internal/media"
 	"github.com/jedafe/japa/internal/tenant"
@@ -35,9 +35,9 @@ type PermCacheInvalidator interface {
 // content and follows services directly (no import cycle: neither imports
 // this package) rather than through an adapter interface.
 type Handlers struct {
-	service *Service
-	content *content.Service
-	follows *follows.Service
+	service   *Service
+	content   *content.Service
+	follows   *follows.Service
 	permCache PermCacheInvalidator
 }
 
@@ -70,7 +70,7 @@ func (h *Handlers) invalidateTargetPermCache(ctx context.Context, targetUserID p
 func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
 
@@ -81,7 +81,7 @@ func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype
 func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	user := auth.FromContext(r.Context())
 	if user == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
 
@@ -103,13 +103,13 @@ func parseUUIDParam(r *http.Request, param string) (pgtype.UUID, error) {
 func (h *Handlers) resolveTag(w http.ResponseWriter, r *http.Request, tenantID pgtype.UUID) (gen.GetTagBySlugRow, bool) {
 	slug := chi.URLParam(r, "slug")
 	if slug == "" {
-		writeError(w, http.StatusBadRequest, "missing_slug", "Tag slug is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_slug", "Tag slug is required")
 		return gen.GetTagBySlugRow{}, false
 	}
 
 	tag, err := h.service.GetTagBySlug(r.Context(), tenantID, slug)
 	if err != nil {
-		writeError(w, http.StatusNotFound, "not_found", "Tag not found")
+		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Tag not found")
 		return gen.GetTagBySlugRow{}, false
 	}
 
@@ -154,7 +154,7 @@ func (h *Handlers) ListTags(w http.ResponseWriter, r *http.Request) {
 		PageLimit:       limit,
 	})
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list tags")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list tags")
 		return
 	}
 
@@ -164,7 +164,7 @@ func (h *Handlers) ListTags(w http.ResponseWriter, r *http.Request) {
 		MinContentCount: minContentCount,
 	})
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to count tags")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to count tags")
 		return
 	}
 
@@ -182,7 +182,7 @@ func (h *Handlers) ListTags(w http.ResponseWriter, r *http.Request) {
 		enriched = append(enriched, row)
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data":        enriched,
 		"total":       count,
 		"page":        offset / limit, // 0-based page index (offset is always a multiple of limit from parsePageOffset)
@@ -205,7 +205,7 @@ func (h *Handlers) GetTag(w http.ResponseWriter, r *http.Request) {
 	row := structToMap(tag)
 	row["logo_url"] = resolveLogoURL(tag.LogoStoragePath, tag.LogoStorageBucket)
 	row["cover_url"] = resolveLogoURL(tag.CoverStoragePath, tag.CoverStorageBucket)
-	writeJSON(w, http.StatusOK, map[string]any{"data": row})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": row})
 }
 
 // GetTagContent handles GET /api/v1/tags/{slug}/content — published content
@@ -226,7 +226,7 @@ func (h *Handlers) GetTagContent(w http.ResponseWriter, r *http.Request) {
 	if c := r.URL.Query().Get("cursor"); c != "" {
 		t, err := time.Parse(time.RFC3339, c)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_cursor", "cursor must be an RFC3339 timestamp")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_cursor", "cursor must be an RFC3339 timestamp")
 			return
 		}
 
@@ -237,7 +237,7 @@ func (h *Handlers) GetTagContent(w http.ResponseWriter, r *http.Request) {
 
 	items, err := h.content.ListContentByTag(r.Context(), tenantID, tag.ID, cursor, limit)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list tagged content")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list tagged content")
 		return
 	}
 
@@ -247,39 +247,39 @@ func (h *Handlers) GetTagContent(w http.ResponseWriter, r *http.Request) {
 	result := make([]map[string]any, 0, len(items))
 	for _, c := range items {
 		row := map[string]any{
-			"id":                  c.ID,
-			"tenant_id":           c.TenantID,
-			"author_id":           c.AuthorID,
-			"space_id":            c.SpaceID,
-			"content_type":        c.ContentType,
-			"title":               c.Title,
-			"slug":                c.Slug,
-			"body":                c.Body,
-			"body_html":           c.BodyHtml,
-			"field_values":        c.FieldValues,
-			"content_hash":        c.ContentHash,
-			"geo_space_id":        c.GeoSpaceID,
-			"header_image_id":     c.HeaderImageID,
-			"featured_image_id":   c.FeaturedImageID,
-			"canonical_url":       c.CanonicalUrl,
-			"meta_title":          c.MetaTitle,
-			"meta_description":    c.MetaDescription,
-			"og_image_url":        c.OgImageUrl,
-			"seo_indexable":       c.SeoIndexable,
-			"status":              c.Status,
-			"visibility":          c.Visibility,
-			"is_locked":           c.IsLocked,
-			"is_pinned":           c.IsPinned,
-			"read_time_minutes":   c.ReadTimeMinutes,
-			"view_count":          c.ViewCount,
-			"comment_count":       c.CommentCount,
-			"share_count":         c.ShareCount,
-			"reshare_count":       c.ReshareCount,
-			"publish_at":          c.PublishAt,
-			"published_at":        c.PublishedAt,
-			"created_at":          c.CreatedAt,
-			"updated_at":          c.UpdatedAt,
-			"featured_image_url":  "",
+			"id":                 c.ID,
+			"tenant_id":          c.TenantID,
+			"author_id":          c.AuthorID,
+			"space_id":           c.SpaceID,
+			"content_type":       c.ContentType,
+			"title":              c.Title,
+			"slug":               c.Slug,
+			"body":               c.Body,
+			"body_html":          c.BodyHtml,
+			"field_values":       c.FieldValues,
+			"content_hash":       c.ContentHash,
+			"geo_space_id":       c.GeoSpaceID,
+			"header_image_id":    c.HeaderImageID,
+			"featured_image_id":  c.FeaturedImageID,
+			"canonical_url":      c.CanonicalUrl,
+			"meta_title":         c.MetaTitle,
+			"meta_description":   c.MetaDescription,
+			"og_image_url":       c.OgImageUrl,
+			"seo_indexable":      c.SeoIndexable,
+			"status":             c.Status,
+			"visibility":         c.Visibility,
+			"is_locked":          c.IsLocked,
+			"is_pinned":          c.IsPinned,
+			"read_time_minutes":  c.ReadTimeMinutes,
+			"view_count":         c.ViewCount,
+			"comment_count":      c.CommentCount,
+			"share_count":        c.ShareCount,
+			"reshare_count":      c.ReshareCount,
+			"publish_at":         c.PublishAt,
+			"published_at":       c.PublishedAt,
+			"created_at":         c.CreatedAt,
+			"updated_at":         c.UpdatedAt,
+			"featured_image_url": "",
 		}
 		if c.CoverStorageBucket != nil && c.CoverStoragePath != nil &&
 			*c.CoverStorageBucket != "" && *c.CoverStoragePath != "" {
@@ -288,7 +288,7 @@ func (h *Handlers) GetTagContent(w http.ResponseWriter, r *http.Request) {
 		result = append(result, row)
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": result})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": result})
 }
 
 // ToggleTagFollow handles POST/DELETE /api/v1/tags/{slug}/follow.
@@ -310,11 +310,11 @@ func (h *Handlers) ToggleTagFollow(w http.ResponseWriter, r *http.Request) {
 
 	following, err := h.follows.ToggleFollow(r.Context(), tenantID, user.UserID, follows.EntityTypeTag, tag.ID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to toggle tag follow")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to toggle tag follow")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"following": following}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"following": following}})
 }
 
 // GetTagFollowers handles GET /api/v1/tags/{slug}/followers.
@@ -341,11 +341,11 @@ func (h *Handlers) GetTagFollowers(w http.ResponseWriter, r *http.Request) {
 
 	followers, err := h.follows.GetFollowers(r.Context(), tenantID, callerID, follows.EntityTypeTag, tag.ID, limit, offset)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to get tag followers")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to get tag followers")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": followers})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": followers})
 }
 
 // parsePageSize extracts and clamps the page_size query parameter.
@@ -387,23 +387,6 @@ func parsePageOffset(r *http.Request) int32 {
 	}
 
 	return int32(v)
-}
-
-// writeJSON serializes the given value as JSON and writes it to the response.
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-
-	if err := json.NewEncoder(w).Encode(v); err != nil {
-		slog.Warn("json encode error", "error", err)
-	}
-}
-
-// writeError writes a JSON error response following the JapaConnect API format.
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, map[string]any{
-		"error": map[string]string{"code": code, "message": message},
-	})
 }
 
 // resolveLogoURL constructs a serve URL from the media storage path/bucket
@@ -448,24 +431,24 @@ func (h *Handlers) CreateTag(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var input struct {
-		Name         string  `json:"name"`
-		Slug         string  `json:"slug"`
-		Description  *string `json:"description"`
-		Rules        *string `json:"rules"`
-		CoverMediaID string  `json:"cover_media_id"`
-		Color        *string `json:"color"`
+		Name         string          `json:"name"`
+		Slug         string          `json:"slug"`
+		Description  *string         `json:"description"`
+		Rules        *string         `json:"rules"`
+		CoverMediaID string          `json:"cover_media_id"`
+		Color        *string         `json:"color"`
 		IsSystem     bool            `json:"is_system"`
 		LogoMediaID  string          `json:"logo_media_id"`
 		FieldValues  json.RawMessage `json:"field_values"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if input.Name == "" {
-		writeError(w, http.StatusBadRequest, "missing_name", "name is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_name", "name is required")
 		return
 	}
 
@@ -489,7 +472,7 @@ func (h *Handlers) CreateTag(w http.ResponseWriter, r *http.Request) {
 	// Validate color format if provided (must be a valid hex color).
 	if input.Color != nil && *input.Color != "" {
 		if !isValidHexColor(*input.Color) {
-			writeError(w, http.StatusBadRequest, "invalid_color", "color must be a valid hex color (e.g. #3b82f6)")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_color", "color must be a valid hex color (e.g. #3b82f6)")
 			return
 		}
 	}
@@ -497,7 +480,7 @@ func (h *Handlers) CreateTag(w http.ResponseWriter, r *http.Request) {
 	var logoMediaID pgtype.UUID
 	if input.LogoMediaID != "" {
 		if err := logoMediaID.Scan(input.LogoMediaID); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_logo_media_id", "logo_media_id must be a valid UUID")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_logo_media_id", "logo_media_id must be a valid UUID")
 			return
 		}
 	}
@@ -505,7 +488,7 @@ func (h *Handlers) CreateTag(w http.ResponseWriter, r *http.Request) {
 	var coverMediaID pgtype.UUID
 	if input.CoverMediaID != "" {
 		if err := coverMediaID.Scan(input.CoverMediaID); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_cover_media_id", "cover_media_id must be a valid UUID")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_cover_media_id", "cover_media_id must be a valid UUID")
 			return
 		}
 	}
@@ -524,14 +507,14 @@ func (h *Handlers) CreateTag(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
-			writeError(w, http.StatusConflict, "duplicate_slug", "A tag with this slug already exists")
+			errpkg.WriteError(w, http.StatusConflict, "duplicate_slug", "A tag with this slug already exists")
 			return
 		}
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to create tag")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to create tag")
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": tag})
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": tag})
 }
 
 // UpdateTag handles PATCH /api/v1/admin/tags/{id}.
@@ -543,7 +526,7 @@ func (h *Handlers) UpdateTag(w http.ResponseWriter, r *http.Request) {
 
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
@@ -560,12 +543,12 @@ func (h *Handlers) UpdateTag(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if input.Name == "" {
-		writeError(w, http.StatusBadRequest, "missing_name", "name is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_name", "name is required")
 		return
 	}
 
@@ -588,7 +571,7 @@ func (h *Handlers) UpdateTag(w http.ResponseWriter, r *http.Request) {
 
 	if input.Color != nil && *input.Color != "" {
 		if !isValidHexColor(*input.Color) {
-			writeError(w, http.StatusBadRequest, "invalid_color", "color must be a valid hex color (e.g. #3b82f6)")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_color", "color must be a valid hex color (e.g. #3b82f6)")
 			return
 		}
 	}
@@ -596,7 +579,7 @@ func (h *Handlers) UpdateTag(w http.ResponseWriter, r *http.Request) {
 	var logoMediaID pgtype.UUID
 	if input.LogoMediaID != nil && *input.LogoMediaID != "" {
 		if err := logoMediaID.Scan(*input.LogoMediaID); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_logo_media_id", "logo_media_id must be a valid UUID")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_logo_media_id", "logo_media_id must be a valid UUID")
 			return
 		}
 	}
@@ -604,7 +587,7 @@ func (h *Handlers) UpdateTag(w http.ResponseWriter, r *http.Request) {
 	var coverMediaID pgtype.UUID
 	if input.CoverMediaID != nil && *input.CoverMediaID != "" {
 		if err := coverMediaID.Scan(*input.CoverMediaID); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_cover_media_id", "cover_media_id must be a valid UUID")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_cover_media_id", "cover_media_id must be a valid UUID")
 			return
 		}
 	}
@@ -616,7 +599,7 @@ func (h *Handlers) UpdateTag(w http.ResponseWriter, r *http.Request) {
 	} else {
 		existing, err := h.service.GetTagByID(r.Context(), id, tenantID)
 		if err != nil {
-			writeError(w, http.StatusNotFound, "not_found", "Tag not found")
+			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Tag not found")
 			return
 		}
 		isSystem = existing.IsSystem
@@ -636,14 +619,14 @@ func (h *Handlers) UpdateTag(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
-			writeError(w, http.StatusConflict, "duplicate_slug", "A tag with this slug already exists")
+			errpkg.WriteError(w, http.StatusConflict, "duplicate_slug", "A tag with this slug already exists")
 			return
 		}
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to update tag")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update tag")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": tag})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": tag})
 }
 
 // DeleteTag handles DELETE /api/v1/admin/tags/{id}.
@@ -656,38 +639,38 @@ func (h *Handlers) DeleteTag(w http.ResponseWriter, r *http.Request) {
 
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
 	// Guard 1: Check if tag is a system tag (cannot be deleted).
 	tag, err := h.service.GetTagByID(r.Context(), id, tenantID)
 	if err != nil {
-		writeError(w, http.StatusNotFound, "not_found", "Tag not found")
+		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Tag not found")
 		return
 	}
 	if tag.IsSystem {
-		writeError(w, http.StatusForbidden, "system_tag_protected", "System tags cannot be deleted")
+		errpkg.WriteError(w, http.StatusForbidden, "system_tag_protected", "System tags cannot be deleted")
 		return
 	}
 
 	// Guard 2: Check if any content is tagged with this tag.
 	contentCount, err := h.service.CountContentByTag(r.Context(), id)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to check tag usage")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to check tag usage")
 		return
 	}
 	if contentCount > 0 {
-		writeError(w, http.StatusConflict, "tag_in_use", "Tag is in use by content and cannot be deleted")
+		errpkg.WriteError(w, http.StatusConflict, "tag_in_use", "Tag is in use by content and cannot be deleted")
 		return
 	}
 
 	if err := h.service.DeleteTag(r.Context(), id, tenantID); err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to delete tag")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to delete tag")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"deleted": true}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"deleted": true}})
 }
 
 // isValidHexColor checks if a string is a valid CSS hex color (#RGB or #RRGGBB).
@@ -716,13 +699,13 @@ func (h *Handlers) ListTagModerators(w http.ResponseWriter, r *http.Request) {
 
 	tagID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid tag ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid tag ID")
 		return
 	}
 
 	rows, err := h.service.ListTagModerators(r.Context(), tagID, tenantID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list tag moderators")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list tag moderators")
 		return
 	}
 
@@ -735,7 +718,7 @@ func (h *Handlers) ListTagModerators(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": moderators})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": moderators})
 }
 
 // AddTagModerator handles POST /api/v1/admin/tags/:id/moderators (Section 49).
@@ -752,7 +735,7 @@ func (h *Handlers) AddTagModerator(w http.ResponseWriter, r *http.Request) {
 
 	tagID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid tag ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid tag ID")
 		return
 	}
 
@@ -761,7 +744,7 @@ func (h *Handlers) AddTagModerator(w http.ResponseWriter, r *http.Request) {
 		Username string `json:"username"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
@@ -769,17 +752,17 @@ func (h *Handlers) AddTagModerator(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case input.UserID != "":
 		if err := userID.Scan(input.UserID); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_user_id", "Invalid user ID")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_user_id", "Invalid user ID")
 			return
 		}
 	case input.Username != "":
 		userID, err = h.service.GetUserIDByUsername(r.Context(), tenantID, input.Username)
 		if err != nil {
-			writeError(w, http.StatusNotFound, "user_not_found", "User not found")
+			errpkg.WriteError(w, http.StatusNotFound, "user_not_found", "User not found")
 			return
 		}
 	default:
-		writeError(w, http.StatusBadRequest, "missing_fields", "user_id or username is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_fields", "user_id or username is required")
 		return
 	}
 
@@ -791,7 +774,7 @@ func (h *Handlers) AddTagModerator(w http.ResponseWriter, r *http.Request) {
 		AssignedByUserID: user.UserID,
 	})
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to add tag moderator")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to add tag moderator")
 		return
 	}
 
@@ -799,7 +782,7 @@ func (h *Handlers) AddTagModerator(w http.ResponseWriter, r *http.Request) {
 	// assigned tag moderator's permissions are visible immediately.
 	h.invalidateTargetPermCache(r.Context(), userID)
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": map[string]any{
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": map[string]any{
 		"tag_id":   row.TagID,
 		"user_id":  row.UserID,
 		"added_at": row.CreatedAt,
@@ -815,18 +798,18 @@ func (h *Handlers) RemoveTagModerator(w http.ResponseWriter, r *http.Request) {
 
 	tagID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid tag ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid tag ID")
 		return
 	}
 
 	var userID pgtype.UUID
 	if err := userID.Scan(chi.URLParam(r, "userId")); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_user_id", "Invalid user ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_user_id", "Invalid user ID")
 		return
 	}
 
 	if err := h.service.RemoveTagModerator(r.Context(), tagID, userID, tenantID); err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to remove tag moderator")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to remove tag moderator")
 		return
 	}
 
@@ -834,5 +817,5 @@ func (h *Handlers) RemoveTagModerator(w http.ResponseWriter, r *http.Request) {
 	// tag moderation permissions are revoked immediately.
 	h.invalidateTargetPermCache(r.Context(), userID)
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"removed": true}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"removed": true}})
 }

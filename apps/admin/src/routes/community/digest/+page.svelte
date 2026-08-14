@@ -2,10 +2,11 @@
 	// /community/digest — admin HITL review queue for community digests (§84).
 	// Lists digest editions with server-side pagination, filter, and sort.
 	// Admin can publish drafts/reviews and trigger manual generation.
+	import { onMount } from 'svelte';
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import { Modal } from '$lib/components/ui/modal';
 	import { Button } from '$lib/components/ui/button';
-	import { digestAdminApi } from '$lib/api';
+	import { digestAdminApi, spacesAdminApi } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { Eye, CheckCircle, Sparkles } from 'lucide-svelte';
@@ -37,6 +38,25 @@
 	let pageError = $state('');
 	let acting = $state(false);
 	let showGenerateModal = $state(false);
+
+	// Destination Spaces for the dest filter (§84 Geo Awareness). Loaded once
+	// on mount from /admin/spaces?level=country so the filter options are
+	// driven by the backend (Rule 16 — no hardcoded lists).
+	type SpaceOption = { id: string; name: string };
+	let destOptions = $state<SpaceOption[]>([]);
+	onMount(async () => {
+		try {
+			const res = await spacesAdminApi.list('?level=country&limit=200');
+			if (res.ok && Array.isArray(res.data)) {
+				destOptions = (res.data as Array<{ id: string; name: string }>).map((s) => ({
+					id: s.id,
+					name: s.name
+				}));
+			}
+		} catch {
+			// Non-fatal — the dest filter simply stays empty.
+		}
+	});
 
 	async function publishDigest(item: DigestItem) {
 		acting = true;
@@ -98,7 +118,7 @@
 		{ key: 'status', label: t('app.digest.col_status', 'Status'), type: 'text' }
 	];
 
-	const filters: FilterDef[] = [
+	const filters = $derived<FilterDef[]>([
 		{
 			key: 'status',
 			label: t('app.digest.col_status', 'Status'),
@@ -108,8 +128,13 @@
 				{ value: 'published', label: t('app.digest.status_published', 'Published') },
 				{ value: 'cancelled', label: t('app.digest.status_cancelled', 'Cancelled') }
 			]
+		},
+		{
+			key: 'dest',
+			label: t('app.digest.col_destination', 'Destination'),
+			options: destOptions.map((s) => ({ value: s.id, label: s.name }))
 		}
-	];
+	]);
 
 	const config = $derived<EntityPageConfig>({
 		title: t('app.digest.review_queue_heading', 'Digest Review Queue'),

@@ -14,7 +14,8 @@
 //	PATCH /api/v1/admin/credentials/:id/approve  — HITL approve (admin, credential_checker.manage)
 //
 // Ref: japaconnect-engineering/sections/94-professional-credential-checker.md
-//      japaconnect-engineering/adr/ADR-102-credential-checker.md
+//
+//	japaconnect-engineering/adr/ADR-102-credential-checker.md
 package credentialchecker
 
 import (
@@ -30,6 +31,7 @@ import (
 
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/config"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/tenant"
 )
 
@@ -45,24 +47,10 @@ func NewHandlers(service *Service, settings *config.Settings) *Handlers {
 	return &Handlers{service: service, settings: settings}
 }
 
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	if err := json.NewEncoder(w).Encode(v); err != nil {
-		slog.Error("credentialchecker: encode response", "error", err)
-	}
-}
-
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, map[string]any{
-		"error": map[string]string{"code": code, "message": message},
-	})
-}
-
 func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
 	return t.ID, true
@@ -71,7 +59,7 @@ func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	u := auth.FromContext(r.Context())
 	if u == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
 	return u, true
@@ -80,7 +68,7 @@ func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUse
 func scanUUIDParam(w http.ResponseWriter, r *http.Request, name string) (pgtype.UUID, bool) {
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, name)); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid "+name)
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid "+name)
 		return pgtype.UUID{}, false
 	}
 	return id, true
@@ -110,18 +98,18 @@ func (h *Handlers) HandleListProfessions(w http.ResponseWriter, r *http.Request)
 	}
 
 	if h.service == nil {
-		writeError(w, http.StatusServiceUnavailable, "credential_checker_unavailable", "Credential checker not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "credential_checker_unavailable", "Credential checker not configured")
 		return
 	}
 
 	professions, err := h.service.ListProfessions(r.Context())
 	if err != nil {
 		slog.Error("credentialchecker: list professions failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "list_failed", "Failed to list professions")
+		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list professions")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": professions})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": professions})
 }
 
 // HandleListPathways handles GET /credentials — lookup credential pathways
@@ -134,14 +122,14 @@ func (h *Handlers) HandleListPathways(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil {
-		writeError(w, http.StatusServiceUnavailable, "credential_checker_unavailable", "Credential checker not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "credential_checker_unavailable", "Credential checker not configured")
 		return
 	}
 
 	var destSpaceID pgtype.UUID
 	if v := r.URL.Query().Get("dest"); v != "" {
 		if err := destSpaceID.Scan(v); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid destination space ID")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid destination space ID")
 			return
 		}
 	}
@@ -149,7 +137,7 @@ func (h *Handlers) HandleListPathways(w http.ResponseWriter, r *http.Request) {
 	var issuingSpaceID pgtype.UUID
 	if v := r.URL.Query().Get("issuing"); v != "" {
 		if err := issuingSpaceID.Scan(v); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid issuing space ID")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid issuing space ID")
 			return
 		}
 	}
@@ -160,11 +148,11 @@ func (h *Handlers) HandleListPathways(w http.ResponseWriter, r *http.Request) {
 	pathways, total, err := h.service.ListPathways(r.Context(), tenantID, destSpaceID, issuingSpaceID, professionID, page, limit)
 	if err != nil {
 		slog.Error("credentialchecker: list pathways failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "list_failed", "Failed to list pathways")
+		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list pathways")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": pathways,
 		"pagination": map[string]any{
 			"page":  page,
@@ -183,7 +171,7 @@ func (h *Handlers) HandleGetPathway(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil {
-		writeError(w, http.StatusServiceUnavailable, "credential_checker_unavailable", "Credential checker not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "credential_checker_unavailable", "Credential checker not configured")
 		return
 	}
 
@@ -195,15 +183,15 @@ func (h *Handlers) HandleGetPathway(w http.ResponseWriter, r *http.Request) {
 	detail, err := h.service.GetPathway(r.Context(), id, tenantID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "pathway_not_found", "Pathway not found")
+			errpkg.WriteError(w, http.StatusNotFound, "pathway_not_found", "Pathway not found")
 			return
 		}
 		slog.Error("credentialchecker: get pathway failed", "id", id, "error", err)
-		writeError(w, http.StatusInternalServerError, "get_failed", "Failed to get pathway")
+		errpkg.WriteError(w, http.StatusInternalServerError, "get_failed", "Failed to get pathway")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": detail})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": detail})
 }
 
 // HandleCreateNote handles POST /credentials/:id/notes — submit a
@@ -224,33 +212,33 @@ func (h *Handlers) HandleCreateNote(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil {
-		writeError(w, http.StatusServiceUnavailable, "credential_checker_unavailable", "Credential checker not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "credential_checker_unavailable", "Credential checker not configured")
 		return
 	}
 
 	var input CreateNoteRequest
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
 
 	if input.Note == "" {
-		writeError(w, http.StatusBadRequest, "missing_note", "note is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_note", "note is required")
 		return
 	}
 
 	note, err := h.service.CreateNote(r.Context(), pathwayID, tenantID, user.UserID, input.Note)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "pathway_not_found", "Pathway not found")
+			errpkg.WriteError(w, http.StatusNotFound, "pathway_not_found", "Pathway not found")
 			return
 		}
 		slog.Error("credentialchecker: create note failed", "error", err, "user_id", user.UserID)
-		writeError(w, http.StatusInternalServerError, "create_failed", "Failed to submit note")
+		errpkg.WriteError(w, http.StatusInternalServerError, "create_failed", "Failed to submit note")
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": note})
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": note})
 }
 
 // HandleAdminList handles GET /admin/credentials — manage pathways
@@ -266,14 +254,14 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil {
-		writeError(w, http.StatusServiceUnavailable, "credential_checker_unavailable", "Credential checker not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "credential_checker_unavailable", "Credential checker not configured")
 		return
 	}
 
 	var destSpaceID pgtype.UUID
 	if v := r.URL.Query().Get("dest"); v != "" {
 		if err := destSpaceID.Scan(v); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid destination space ID")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid destination space ID")
 			return
 		}
 	}
@@ -281,7 +269,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	var issuingSpaceID pgtype.UUID
 	if v := r.URL.Query().Get("issuing"); v != "" {
 		if err := issuingSpaceID.Scan(v); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid issuing space ID")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid issuing space ID")
 			return
 		}
 	}
@@ -297,11 +285,11 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	pathways, total, err := h.service.AdminListPathways(r.Context(), tenantID, destSpaceID, issuingSpaceID, professionID, status, page, limit)
 	if err != nil {
 		slog.Error("credentialchecker: admin list failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "admin_list_failed", "Failed to list pathways")
+		errpkg.WriteError(w, http.StatusInternalServerError, "admin_list_failed", "Failed to list pathways")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": pathways,
 		"pagination": map[string]any{
 			"page":  page,
@@ -324,37 +312,37 @@ func (h *Handlers) HandleAdminCreate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil {
-		writeError(w, http.StatusServiceUnavailable, "credential_checker_unavailable", "Credential checker not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "credential_checker_unavailable", "Credential checker not configured")
 		return
 	}
 
 	var input CreatePathwayRequest
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
 
 	if input.RegulatoryBody == "" {
-		writeError(w, http.StatusBadRequest, "missing_regulatory_body", "regulatory_body is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_regulatory_body", "regulatory_body is required")
 		return
 	}
 	if input.PathwayDescription == "" {
-		writeError(w, http.StatusBadRequest, "missing_pathway_description", "pathway_description is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_pathway_description", "pathway_description is required")
 		return
 	}
 	if input.PathwayType == "" {
-		writeError(w, http.StatusBadRequest, "missing_pathway_type", "pathway_type is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_pathway_type", "pathway_type is required")
 		return
 	}
 
 	pathway, err := h.service.CreatePathway(r.Context(), tenantID, input)
 	if err != nil {
 		slog.Error("credentialchecker: admin create failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "create_failed", "Failed to create pathway")
+		errpkg.WriteError(w, http.StatusInternalServerError, "create_failed", "Failed to create pathway")
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": pathway})
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": pathway})
 }
 
 // HandleAdminGenerate handles POST /admin/credentials/generate — Content
@@ -370,37 +358,37 @@ func (h *Handlers) HandleAdminGenerate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil {
-		writeError(w, http.StatusServiceUnavailable, "credential_checker_unavailable", "Credential checker not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "credential_checker_unavailable", "Credential checker not configured")
 		return
 	}
 
 	var input GeneratePathwayRequest
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
 
 	if !input.ProfessionID.Valid {
-		writeError(w, http.StatusBadRequest, "missing_profession_id", "profession_id is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_profession_id", "profession_id is required")
 		return
 	}
 	if input.IssuingSpaceID == "" {
-		writeError(w, http.StatusBadRequest, "missing_issuing_space_id", "issuing_space_id is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_issuing_space_id", "issuing_space_id is required")
 		return
 	}
 	if input.DestinationSpaceID == "" {
-		writeError(w, http.StatusBadRequest, "missing_destination_space_id", "destination_space_id is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_destination_space_id", "destination_space_id is required")
 		return
 	}
 
 	resp, err := h.service.GeneratePathwayDraft(r.Context(), tenantID, input)
 	if err != nil {
 		slog.Error("credentialchecker: admin generate failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "generate_failed", "Failed to queue draft generation")
+		errpkg.WriteError(w, http.StatusInternalServerError, "generate_failed", "Failed to queue draft generation")
 		return
 	}
 
-	writeJSON(w, http.StatusAccepted, map[string]any{"data": resp})
+	errpkg.WriteJSON(w, http.StatusAccepted, map[string]any{"data": resp})
 }
 
 // HandleAdminUpdate handles PATCH /admin/credentials/:id — update a
@@ -421,28 +409,28 @@ func (h *Handlers) HandleAdminUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil {
-		writeError(w, http.StatusServiceUnavailable, "credential_checker_unavailable", "Credential checker not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "credential_checker_unavailable", "Credential checker not configured")
 		return
 	}
 
 	var input UpdatePathwayRequest
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
 
 	pathway, err := h.service.UpdatePathway(r.Context(), id, tenantID, input)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "pathway_not_found", "Pathway not found")
+			errpkg.WriteError(w, http.StatusNotFound, "pathway_not_found", "Pathway not found")
 			return
 		}
 		slog.Error("credentialchecker: admin update failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "update_failed", "Failed to update pathway")
+		errpkg.WriteError(w, http.StatusInternalServerError, "update_failed", "Failed to update pathway")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": pathway})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": pathway})
 }
 
 // HandleAdminApprove handles PATCH /admin/credentials/:id/approve — HITL
@@ -465,7 +453,7 @@ func (h *Handlers) HandleAdminApprove(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil {
-		writeError(w, http.StatusServiceUnavailable, "credential_checker_unavailable", "Credential checker not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "credential_checker_unavailable", "Credential checker not configured")
 		return
 	}
 
@@ -476,13 +464,13 @@ func (h *Handlers) HandleAdminApprove(w http.ResponseWriter, r *http.Request) {
 	pathway, err := h.service.ApprovePathway(r.Context(), id, tenantID, user.UserID, body.ReviewNotes)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "pathway_not_found", "Pathway not found")
+			errpkg.WriteError(w, http.StatusNotFound, "pathway_not_found", "Pathway not found")
 			return
 		}
 		slog.Error("credentialchecker: admin approve failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "approve_failed", "Failed to approve pathway")
+		errpkg.WriteError(w, http.StatusInternalServerError, "approve_failed", "Failed to approve pathway")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": pathway})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": pathway})
 }

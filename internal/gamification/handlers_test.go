@@ -4,7 +4,8 @@
 // expectations.
 //
 // Ref: japaconnect-engineering/sections/64-gamification.md
-//      japaconnect-engineering/adr/ADR-082-advanced-gamification.md
+//
+//	japaconnect-engineering/adr/ADR-082-advanced-gamification.md
 package gamification
 
 import (
@@ -132,11 +133,11 @@ func TestHandleAdminCreateChallenge_Unauthorized(t *testing.T) {
 // with valid and invalid scope values.
 func TestLeaderboardScopeValidation(t *testing.T) {
 	tests := []struct {
-		name           string
-		scope          string
-		wantScopeType  string
-		wantSpaceID    string
-		wantOK         bool
+		name          string
+		scope         string
+		wantScopeType string
+		wantSpaceID   string
+		wantOK        bool
 	}{
 		{
 			name:          "global scope",

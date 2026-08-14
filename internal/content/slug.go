@@ -23,7 +23,8 @@ var multipleHyphens = regexp.MustCompile(`-{2,}`)
 // whitespaceRun matches any run of whitespace characters (spaces, tabs,
 // newlines) for collapsing to a single space during content_hash
 // normalisation. Ref: Rule 12 / §14 — hex(sha256(strip_markdown(body)
-//   .trim().replaceAll(/\s+/g, ' ').toLowerCase()))
+//
+//	.trim().replaceAll(/\s+/g, ' ').toLowerCase()))
 var whitespaceRun = regexp.MustCompile(`\s+`)
 
 // leadingTrailingHyphens matches hyphens at the start or end of a string.
@@ -135,7 +136,9 @@ func ComputeReadTime(body string) int32 {
 // ComputeContentHash returns a SHA-256 hex digest of the normalised body.
 // Used to detect duplicate content and skip no-op revisions.
 // Ref: Rule 12 / §14 / §41 — hex(sha256(strip_markdown(body)
-//   .trim().replaceAll(/\s+/g, ' ').toLowerCase()))
+//
+//	.trim().replaceAll(/\s+/g, ' ').toLowerCase()))
+//
 // The body passed in is already markdown-stripped via SanitizeText before
 // this function is called, so we only need to trim, collapse whitespace,
 // and lowercase.

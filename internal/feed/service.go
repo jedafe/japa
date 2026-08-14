@@ -12,8 +12,8 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
-	vkcache "github.com/jedafe/japa/internal/valkey"
 	"github.com/jedafe/japa/internal/media"
+	vkcache "github.com/jedafe/japa/internal/valkey"
 	"github.com/jedafe/japa/internal/worker"
 )
 
@@ -494,7 +494,9 @@ func profileRowsToItems(rows []gen.GetProfileFeedRow) []FeedItem {
 // This Go helper mirrors the SQL formula in feeds.sql (UpdateVelocityScores)
 // so the cron-written content_scores.velocity_score and any in-process
 // computation agree. Formula:
-//   (vote_score*2 + comment_count + view_count/100) / hours^gravity
+//
+//	(vote_score*2 + comment_count + view_count/100) / hours^gravity
+//
 // Ref: japaconnect-engineering/sections/32-activity-feed-timeline.md
 func ComputeVelocity(voteScore, commentCount, viewCount, bookmarkCount int32, hoursOld float64) float64 {
 	// Match the SQL formula: vote*2 + comment + view/100.

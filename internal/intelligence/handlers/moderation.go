@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/jedafe/japa/internal/db/gen"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/intelligence/sources"
 	"github.com/jedafe/japa/internal/tenant"
 )
@@ -66,7 +67,7 @@ func sourceToDirectoryEntry(s sources.Source) sourceDirectoryEntry {
 // GET /api/v1/intel/sources
 func (h *Handlers) HandleSourcesDirectory(w http.ResponseWriter, r *http.Request) {
 	if h.intelSources == nil {
-		writeError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
 		return
 	}
 
@@ -95,7 +96,7 @@ func (h *Handlers) HandleSourcesDirectory(w http.ResponseWriter, r *http.Request
 	}
 	if err != nil {
 		slog.Error("intel: sources directory list failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "sources_list_failed", "Failed to list sources")
+		errpkg.WriteError(w, http.StatusInternalServerError, "sources_list_failed", "Failed to list sources")
 		return
 	}
 
@@ -107,7 +108,7 @@ func (h *Handlers) HandleSourcesDirectory(w http.ResponseWriter, r *http.Request
 		for _, s := range rows {
 			fullEntries = append(fullEntries, sourceToFullEntry(s))
 		}
-		writeJSON(w, http.StatusOK, map[string]interface{}{
+		errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
 			"data": fullEntries,
 			"meta": map[string]interface{}{
 				"page_size":   limit,
@@ -127,7 +128,7 @@ func (h *Handlers) HandleSourcesDirectory(w http.ResponseWriter, r *http.Request
 		entries = append(entries, sourceToDirectoryEntry(s))
 	}
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"data": entries,
 		"meta": map[string]interface{}{
 			"page_size":   limit,
@@ -197,7 +198,7 @@ func sourceToFullEntry(s sources.Source) map[string]interface{} {
 // POST /api/v1/intel/review/{record_id}/approve
 func (h *Handlers) HandleReviewApprove(w http.ResponseWriter, r *http.Request) {
 	if h.intelStores == nil {
-		writeError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
 		return
 	}
 
@@ -228,7 +229,7 @@ func (h *Handlers) HandleReviewApprove(w http.ResponseWriter, r *http.Request) {
 		Status: "approved",
 	}); err != nil {
 		slog.Error("intel: approve status update failed", "record_id", recordID.String(), "error", err)
-		writeError(w, http.StatusInternalServerError, "approve_failed", "Failed to approve record")
+		errpkg.WriteError(w, http.StatusInternalServerError, "approve_failed", "Failed to approve record")
 		return
 	}
 
@@ -245,7 +246,7 @@ func (h *Handlers) HandleReviewApprove(w http.ResponseWriter, r *http.Request) {
 		Note:          &note,
 	}); err != nil {
 		slog.Error("intel: approve review log write failed", "record_id", recordID.String(), "error", err)
-		writeError(w, http.StatusInternalServerError, "review_log_failed", "Failed to write review log")
+		errpkg.WriteError(w, http.StatusInternalServerError, "review_log_failed", "Failed to write review log")
 		return
 	}
 
@@ -259,7 +260,7 @@ func (h *Handlers) HandleReviewApprove(w http.ResponseWriter, r *http.Request) {
 		slog.Error("intel: approve enqueue promote failed", "record_id", recordID.String(), "error", err)
 	}
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"data": map[string]interface{}{
 			"record_id": recordID.String(),
 			"status":    "approved",
@@ -274,7 +275,7 @@ func (h *Handlers) HandleReviewApprove(w http.ResponseWriter, r *http.Request) {
 // POST /api/v1/intel/review/{record_id}/reject
 func (h *Handlers) HandleReviewReject(w http.ResponseWriter, r *http.Request) {
 	if h.intelStores == nil {
-		writeError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
 		return
 	}
 
@@ -305,7 +306,7 @@ func (h *Handlers) HandleReviewReject(w http.ResponseWriter, r *http.Request) {
 		Status: "rejected",
 	}); err != nil {
 		slog.Error("intel: reject status update failed", "record_id", recordID.String(), "error", err)
-		writeError(w, http.StatusInternalServerError, "reject_failed", "Failed to reject record")
+		errpkg.WriteError(w, http.StatusInternalServerError, "reject_failed", "Failed to reject record")
 		return
 	}
 
@@ -322,11 +323,11 @@ func (h *Handlers) HandleReviewReject(w http.ResponseWriter, r *http.Request) {
 		Note:          &note,
 	}); err != nil {
 		slog.Error("intel: reject review log write failed", "record_id", recordID.String(), "error", err)
-		writeError(w, http.StatusInternalServerError, "review_log_failed", "Failed to write review log")
+		errpkg.WriteError(w, http.StatusInternalServerError, "review_log_failed", "Failed to write review log")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"data": map[string]interface{}{
 			"record_id": recordID.String(),
 			"status":    "rejected",
@@ -338,7 +339,7 @@ func (h *Handlers) HandleReviewReject(w http.ResponseWriter, r *http.Request) {
 // GET /api/v1/intel/review/queue
 func (h *Handlers) HandleReviewQueue(w http.ResponseWriter, r *http.Request) {
 	if h.intelStores == nil {
-		writeError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
 		return
 	}
 
@@ -382,11 +383,11 @@ func (h *Handlers) HandleReviewQueue(w http.ResponseWriter, r *http.Request) {
 	}
 	if err != nil {
 		slog.Error("intel: review queue list failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "review_queue_failed", "Failed to load review queue")
+		errpkg.WriteError(w, http.StatusInternalServerError, "review_queue_failed", "Failed to load review queue")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"data": rows,
 		"meta": map[string]interface{}{
 			"page_size":   limit,
@@ -425,7 +426,7 @@ var validIntelRecordStatuses = map[string]bool{
 // Ref: route catalog §2248 (intel records list), BUG-A fix.
 func (h *Handlers) HandleListIntelRecords(w http.ResponseWriter, r *http.Request) {
 	if h.intelStores == nil {
-		writeError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
 		return
 	}
 
@@ -442,7 +443,7 @@ func (h *Handlers) HandleListIntelRecords(w http.ResponseWriter, r *http.Request
 		status = "review_required"
 	}
 	if !validIntelRecordStatuses[status] {
-		writeError(w, http.StatusBadRequest, "invalid_status", "status must be one of: extracted, deduped, auto_published, review_required, approved, rejected, published, stale")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_status", "status must be one of: extracted, deduped, auto_published, review_required, approved, rejected, published, stale")
 		return
 	}
 
@@ -469,11 +470,11 @@ func (h *Handlers) HandleListIntelRecords(w http.ResponseWriter, r *http.Request
 	}
 	if err != nil {
 		slog.Error("intel: records list failed", "status", status, "error", err)
-		writeError(w, http.StatusInternalServerError, "records_list_failed", "Failed to list intel records")
+		errpkg.WriteError(w, http.StatusInternalServerError, "records_list_failed", "Failed to list intel records")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"data": rows,
 		"meta": map[string]interface{}{
 			"page_size":   limit,
@@ -496,7 +497,7 @@ func (h *Handlers) HandleListIntelRecords(w http.ResponseWriter, r *http.Request
 // Ref: route catalog §2249 (intel record detail), BUG-B fix.
 func (h *Handlers) HandleGetIntelRecord(w http.ResponseWriter, r *http.Request) {
 	if h.intelStores == nil {
-		writeError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
 		return
 	}
 
@@ -516,15 +517,15 @@ func (h *Handlers) HandleGetIntelRecord(w http.ResponseWriter, r *http.Request) 
 	rec, err := h.intelStores.GetIntelRecord(r.Context(), tenantID, recordID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "not_found", "Intel record not found")
+			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Intel record not found")
 			return
 		}
 		slog.Error("intel: record lookup failed", "record_id", recordID.String(), "error", err)
-		writeError(w, http.StatusInternalServerError, "lookup_failed", "Failed to load intel record")
+		errpkg.WriteError(w, http.StatusInternalServerError, "lookup_failed", "Failed to load intel record")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"data": rec,
 	})
 }

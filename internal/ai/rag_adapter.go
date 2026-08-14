@@ -4,7 +4,8 @@
 // without depending on the ai package directly.
 //
 // Ref: japaconnect-engineering/sections/69-rag-knowledge-layer.md
-//      japaconnect-engineering/adr/ADR-069-japabot-rag-knowledge-layer.md
+//
+//	japaconnect-engineering/adr/ADR-069-japabot-rag-knowledge-layer.md
 package ai
 
 import "context"

@@ -313,8 +313,8 @@ func (a *AssessmentAdapter) CleanupAnonymousResults(ctx context.Context, retenti
 // ScholarshipAdapter adapts the tenant-scoped scholarships.Service to the
 // cross-tenant ScholarshipProcessor interface.
 type ScholarshipAdapter struct {
-	svc  *scholarships.Service
-	db   *db.DB
+	svc   *scholarships.Service
+	db    *db.DB
 	notif *notifications.Service
 }
 

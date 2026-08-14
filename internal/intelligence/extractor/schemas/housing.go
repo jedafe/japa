@@ -9,7 +9,7 @@ var Housing = EntitySchema{
 	EntityType: EntityTypeHousing,
 	Fields: []FieldSpec{
 		{Name: "country", Type: "country_array", Required: true}, // destination ISO-3, 1-element
-		{Name: "city", Type: "string", Required: false}, // nullable → country-level guide
+		{Name: "city", Type: "string", Required: false},          // nullable → country-level guide
 		{Name: "accommodation_type", Type: "string", Required: false, EnumValues: []string{"private_rental", "flatshare", "student", "employer_provided", "all"}},
 		{Name: "search_platforms", Type: "jsonb_object", Required: false}, // [{name, url, description}]
 		{Name: "landlord_requirements", Type: "string", Required: false},

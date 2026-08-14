@@ -75,7 +75,7 @@ type Config struct {
 	StripeSecretKey          string // JC_STRIPE_SECRET_KEY — Stripe API secret key (sk_live_... / sk_test_...)
 	StripeWebhookSecret      string // JC_STRIPE_WEBHOOK_SECRET — Stripe webhook signing secret (whsec_...)
 	NOWPaymentsIPNSecret     string // JC_NOWPAYMENTS_IPN_SECRET — NOWPayments IPN HMAC secret (also used as API key)
-	PaystackSecretKey          string // JC_PAYSTACK_SECRET_KEY — Paystack webhook HMAC secret
+	PaystackSecretKey        string // JC_PAYSTACK_SECRET_KEY — Paystack webhook HMAC secret
 	XiaomiAPIKey             string // JC_XIAOMI_API_KEY — Xiaomi MiMo API key (tp- for Token Plan, sk- for Pay-as-you-go)
 	CORSOrigins              string // JC_CORS_ORIGINS — comma-separated allowed CORS origins for production
 	CookieDomain             string // JC_COOKIE_DOMAIN — cookie domain for cross-subdomain session sharing (e.g. ".example.com")
@@ -165,7 +165,7 @@ func Load() (Config, error) {
 		StripeSecretKey:          os.Getenv("JC_STRIPE_SECRET_KEY"),
 		StripeWebhookSecret:      os.Getenv("JC_STRIPE_WEBHOOK_SECRET"),
 		NOWPaymentsIPNSecret:     os.Getenv("JC_NOWPAYMENTS_IPN_SECRET"),
-		PaystackSecretKey:          os.Getenv("JC_PAYSTACK_SECRET_KEY"),
+		PaystackSecretKey:        os.Getenv("JC_PAYSTACK_SECRET_KEY"),
 		XiaomiAPIKey:             os.Getenv("JC_XIAOMI_API_KEY"),
 		CORSOrigins:              os.Getenv("JC_CORS_ORIGINS"),
 		CookieDomain:             os.Getenv("JC_COOKIE_DOMAIN"),

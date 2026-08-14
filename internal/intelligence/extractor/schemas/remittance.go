@@ -10,7 +10,7 @@ var Remittance = EntitySchema{
 	EntityType: EntityTypeRemittance,
 	Fields: []FieldSpec{
 		{Name: "provider_name", Type: "string", Required: true},
-		{Name: "send_currency", Type: "string", Required: true},  // ISO 4217
+		{Name: "send_currency", Type: "string", Required: true},    // ISO 4217
 		{Name: "receive_currency", Type: "string", Required: true}, // ISO 4217
 		{Name: "rate", Type: "numeric", Required: true},
 		{Name: "fee_flat", Type: "numeric", Required: false},

@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/jedafe/japa/internal/content"
+	errpkg "github.com/jedafe/japa/internal/errors"
 )
 
 // AdminCreatePost handles POST /api/v1/admin/blog — creates a blog post
@@ -32,12 +33,12 @@ func (h *Handlers) AdminCreatePost(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if input.Title == "" {
-		writeError(w, http.StatusBadRequest, "missing_title", "Title is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_title", "Title is required")
 		return
 	}
 
@@ -62,7 +63,7 @@ func (h *Handlers) AdminCreatePost(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		slog.Error("failed to create blog post (admin)", "error", err, "title", input.Title, "slug", input.Slug)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to create blog post")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to create blog post")
 		return
 	}
 
@@ -71,7 +72,7 @@ func (h *Handlers) AdminCreatePost(w http.ResponseWriter, r *http.Request) {
 	// too, otherwise @mentions in admin-created posts are silently dropped.
 	h.dispatchMentionNotifications(r.Context(), tenantID, user.UserID, post.ID, post.SpaceID, input.Body)
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": post})
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": post})
 }
 
 // AdminUpdatePost handles PATCH /api/v1/admin/blog/{id} — updates a blog
@@ -90,7 +91,7 @@ func (h *Handlers) AdminUpdatePost(w http.ResponseWriter, r *http.Request) {
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
@@ -104,7 +105,7 @@ func (h *Handlers) AdminUpdatePost(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
@@ -131,9 +132,9 @@ func (h *Handlers) AdminUpdatePost(w http.ResponseWriter, r *http.Request) {
 	post, err := h.content.UpdateContent(r.Context(), id, tenantID, user.UserID, updateInput, true)
 	if err != nil {
 		slog.Error("failed to update blog post (admin)", "error", err, "id", id)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to update blog post")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update blog post")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": post})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": post})
 }

@@ -11,6 +11,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/tenant"
 )
 
@@ -71,7 +72,7 @@ func TestWriteJSON(t *testing.T) {
 	t.Parallel()
 
 	w := httptest.NewRecorder()
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 
 	if w.Code != http.StatusOK {
 		t.Errorf("status = %d, want %d", w.Code, http.StatusOK)
@@ -95,7 +96,7 @@ func TestWriteError(t *testing.T) {
 	t.Parallel()
 
 	w := httptest.NewRecorder()
-	writeError(w, http.StatusBadRequest, "test_code", "test message")
+	errpkg.WriteError(w, http.StatusBadRequest, "test_code", "test message")
 
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("status = %d, want %d", w.Code, http.StatusBadRequest)

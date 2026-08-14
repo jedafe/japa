@@ -12,7 +12,8 @@
 //	POST /api/v1/admin/cv-formatter/standards     — create/update standard (admin, cv_formatter.manage)
 //
 // Ref: japaconnect-engineering/sections/95-cv-formatter.md
-//      japaconnect-engineering/adr/ADR-103-cv-formatter.md
+//
+//	japaconnect-engineering/adr/ADR-103-cv-formatter.md
 package cvformatter
 
 import (
@@ -28,6 +29,7 @@ import (
 
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/config"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/tenant"
 )
 
@@ -47,24 +49,10 @@ func NewHandlers(service *Service, settings *config.Settings) *Handlers {
 // Shared helpers (same pattern as servicedir/handlers.go)
 // ---------------------------------------------------------------------------
 
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	if err := json.NewEncoder(w).Encode(v); err != nil {
-		slog.Error("cvformatter: encode response", "error", err)
-	}
-}
-
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, map[string]any{
-		"error": map[string]string{"code": code, "message": message},
-	})
-}
-
 func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
 	return t.ID, true
@@ -73,7 +61,7 @@ func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	u := auth.FromContext(r.Context())
 	if u == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
 	return u, true
@@ -82,7 +70,7 @@ func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUse
 func scanUUIDParam(w http.ResponseWriter, r *http.Request, name string) (pgtype.UUID, bool) {
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, name)); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid "+name)
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid "+name)
 		return pgtype.UUID{}, false
 	}
 	return id, true
@@ -119,14 +107,14 @@ func (h *Handlers) HandleListStandards(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "cv_formatter_disabled", "CV formatter is not available")
+		errpkg.WriteError(w, http.StatusNotFound, "cv_formatter_disabled", "CV formatter is not available")
 		return
 	}
 
 	standards, err := h.service.ListStandards(r.Context())
 	if err != nil {
 		slog.Error("cvformatter: list standards failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "list_failed", "Failed to list standards")
+		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list standards")
 		return
 	}
 
@@ -134,7 +122,7 @@ func (h *Handlers) HandleListStandards(w http.ResponseWriter, r *http.Request) {
 	if destParam := r.URL.Query().Get("dest"); destParam != "" {
 		var destSpaceID pgtype.UUID
 		if err := destSpaceID.Scan(destParam); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid destination space ID")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid destination space ID")
 			return
 		}
 		filtered := make([]StandardDTO, 0, 1)
@@ -143,11 +131,11 @@ func (h *Handlers) HandleListStandards(w http.ResponseWriter, r *http.Request) {
 				filtered = append(filtered, s)
 			}
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"data": filtered})
+		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": filtered})
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": standards})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": standards})
 }
 
 // HandleGetStandard handles GET /cv-formatter/standards/:dest — single
@@ -159,7 +147,7 @@ func (h *Handlers) HandleGetStandard(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "cv_formatter_disabled", "CV formatter is not available")
+		errpkg.WriteError(w, http.StatusNotFound, "cv_formatter_disabled", "CV formatter is not available")
 		return
 	}
 
@@ -171,15 +159,15 @@ func (h *Handlers) HandleGetStandard(w http.ResponseWriter, r *http.Request) {
 	standard, err := h.service.GetStandardByDest(r.Context(), destSpaceID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "standard_not_found", "CV standard not found for this destination")
+			errpkg.WriteError(w, http.StatusNotFound, "standard_not_found", "CV standard not found for this destination")
 			return
 		}
 		slog.Error("cvformatter: get standard failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "get_failed", "Failed to get standard")
+		errpkg.WriteError(w, http.StatusInternalServerError, "get_failed", "Failed to get standard")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": standard})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": standard})
 }
 
 // ---------------------------------------------------------------------------
@@ -202,43 +190,43 @@ func (h *Handlers) HandleFormat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "cv_formatter_disabled", "CV formatter is not available")
+		errpkg.WriteError(w, http.StatusNotFound, "cv_formatter_disabled", "CV formatter is not available")
 		return
 	}
 
 	var input FormatInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
 
 	if input.DestinationSpaceID == "" {
-		writeError(w, http.StatusBadRequest, "missing_destination", "destination_space_id is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_destination", "destination_space_id is required")
 		return
 	}
 	if input.InputText == "" {
-		writeError(w, http.StatusBadRequest, "missing_input", "input_text is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_input", "input_text is required")
 		return
 	}
 
 	if err := h.service.CheckQuota(r.Context(), user.UserID, tenantID); err != nil {
 		if errors.Is(err, ErrQuotaExceeded) {
-			writeError(w, http.StatusTooManyRequests, "quota_exceeded", "Monthly CV formatting quota reached")
+			errpkg.WriteError(w, http.StatusTooManyRequests, "quota_exceeded", "Monthly CV formatting quota reached")
 			return
 		}
 		slog.Error("cvformatter: quota check failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "quota_check_failed", "Failed to check quota")
+		errpkg.WriteError(w, http.StatusInternalServerError, "quota_check_failed", "Failed to check quota")
 		return
 	}
 
 	session, err := h.service.CreateSession(r.Context(), tenantID, user.UserID, input)
 	if err != nil {
 		slog.Error("cvformatter: create session failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "create_failed", "Failed to create format session")
+		errpkg.WriteError(w, http.StatusInternalServerError, "create_failed", "Failed to create format session")
 		return
 	}
 
-	writeJSON(w, http.StatusAccepted, map[string]any{"data": session})
+	errpkg.WriteJSON(w, http.StatusAccepted, map[string]any{"data": session})
 }
 
 // ---------------------------------------------------------------------------
@@ -262,27 +250,27 @@ func (h *Handlers) HandleGetSession(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "cv_formatter_disabled", "CV formatter is not available")
+		errpkg.WriteError(w, http.StatusNotFound, "cv_formatter_disabled", "CV formatter is not available")
 		return
 	}
 
 	row, err := h.service.GetSession(r.Context(), sessionID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "session_not_found", "Format session not found")
+			errpkg.WriteError(w, http.StatusNotFound, "session_not_found", "Format session not found")
 			return
 		}
 		slog.Error("cvformatter: get session failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "get_failed", "Failed to get session")
+		errpkg.WriteError(w, http.StatusInternalServerError, "get_failed", "Failed to get session")
 		return
 	}
 
 	if row.UserID != user.UserID {
-		writeError(w, http.StatusForbidden, "not_owner", "You can only access your own format sessions")
+		errpkg.WriteError(w, http.StatusForbidden, "not_owner", "You can only access your own format sessions")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": sessionRowToDTO(row)})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": sessionRowToDTO(row)})
 }
 
 // HandleDownload handles GET /cv-formatter/sessions/:id/download —
@@ -305,33 +293,33 @@ func (h *Handlers) HandleDownload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "cv_formatter_disabled", "CV formatter is not available")
+		errpkg.WriteError(w, http.StatusNotFound, "cv_formatter_disabled", "CV formatter is not available")
 		return
 	}
 
 	row, err := h.service.GetSession(r.Context(), sessionID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "session_not_found", "Format session not found")
+			errpkg.WriteError(w, http.StatusNotFound, "session_not_found", "Format session not found")
 			return
 		}
 		slog.Error("cvformatter: download get session failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "get_failed", "Failed to get session")
+		errpkg.WriteError(w, http.StatusInternalServerError, "get_failed", "Failed to get session")
 		return
 	}
 
 	if row.UserID != user.UserID {
-		writeError(w, http.StatusForbidden, "not_owner", "You can only access your own format sessions")
+		errpkg.WriteError(w, http.StatusForbidden, "not_owner", "You can only access your own format sessions")
 		return
 	}
 
 	if row.Status != SessionStatusComplete {
-		writeError(w, http.StatusConflict, "not_ready", "Session output is not ready (status: "+row.Status+")")
+		errpkg.WriteError(w, http.StatusConflict, "not_ready", "Session output is not ready (status: "+row.Status+")")
 		return
 	}
 
 	if row.OutputText == nil {
-		writeError(w, http.StatusConflict, "no_output", "Session has no output text")
+		errpkg.WriteError(w, http.StatusConflict, "no_output", "Session has no output text")
 		return
 	}
 
@@ -364,7 +352,7 @@ func (h *Handlers) HandleAdminListStandards(w http.ResponseWriter, r *http.Reque
 	}
 
 	if h.service == nil {
-		writeError(w, http.StatusServiceUnavailable, "cv_formatter_unavailable", "CV formatter not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "cv_formatter_unavailable", "CV formatter not configured")
 		return
 	}
 
@@ -374,11 +362,11 @@ func (h *Handlers) HandleAdminListStandards(w http.ResponseWriter, r *http.Reque
 	standards, err := h.service.ListStandards(r.Context())
 	if err != nil {
 		slog.Error("cvformatter: admin list standards failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "list_failed", "Failed to list standards")
+		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list standards")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": standards})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": standards})
 }
 
 // HandleAdminUpsertStandard handles POST /admin/cv-formatter/standards —
@@ -393,27 +381,27 @@ func (h *Handlers) HandleAdminUpsertStandard(w http.ResponseWriter, r *http.Requ
 	}
 
 	if h.service == nil {
-		writeError(w, http.StatusServiceUnavailable, "cv_formatter_unavailable", "CV formatter not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "cv_formatter_unavailable", "CV formatter not configured")
 		return
 	}
 
 	var input StandardInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
 
 	if input.DestinationSpaceID == "" {
-		writeError(w, http.StatusBadRequest, "missing_destination", "destination_space_id is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_destination", "destination_space_id is required")
 		return
 	}
 
 	standard, err := h.service.UpsertStandard(r.Context(), input)
 	if err != nil {
 		slog.Error("cvformatter: admin upsert standard failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "upsert_failed", "Failed to create or update standard")
+		errpkg.WriteError(w, http.StatusInternalServerError, "upsert_failed", "Failed to create or update standard")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": standard})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": standard})
 }

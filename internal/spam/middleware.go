@@ -20,11 +20,11 @@ import (
 // the scope of the block:
 //   - "full"         → 403 Forbidden on every request (global block).
 //   - "registration" → stored in context; enforced by the registration
-//                      route group via RequireNotIPBlocked("registration").
+//     route group via RequireNotIPBlocked("registration").
 //   - "posting"      → stored in context; enforced by the content/comment
-//                      creation route group via RequireNotIPBlocked("posting").
+//     creation route group via RequireNotIPBlocked("posting").
 //   - "api"          → stored in context; enforced by the API-key route
-//                      group via RequireNotIPBlocked("api").
+//     group via RequireNotIPBlocked("api").
 //
 // The middleware extracts the real client IP via clientip.FromRequest, which
 // honours X-Forwarded-For / X-Real-IP only when the immediate peer is a

@@ -128,9 +128,9 @@ func TestDecryptInvalidFormat(t *testing.T) {
 		input   string
 		wantErr bool
 	}{
-		{"no colons", "justastring", true},                // fail closed
-		{"two colons wrong version", "v2:abc:def", true},  // fail closed
-		{"empty", "", true},                                // fail closed
+		{"no colons", "justastring", true},               // fail closed
+		{"two colons wrong version", "v2:abc:def", true}, // fail closed
+		{"empty", "", true},                              // fail closed
 		{"four colons wrong version", "v2:k1:abc:def", true},
 		{"keyid format bad hex nonce", "v1:aaaaaaaa:zzzz:def", true},
 		{"keyid format bad hex ciphertext", "v1:aaaaaaaa:abcd:zzzz", true},

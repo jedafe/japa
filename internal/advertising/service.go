@@ -534,19 +534,19 @@ func maskAPIKey(key string) string {
 // responses. The encrypted API key is never serialized; instead a masked
 // version is derived for admin display.
 type AdNetworkDTO struct {
-	ID              pgtype.UUID        `json:"id"`
-	TenantID        pgtype.UUID        `json:"tenant_id"`
-	Provider        string             `json:"provider"`
-	Name            string             `json:"name"`
-	ClientID        *string            `json:"client_id"`
-	APIKeyMasked    string             `json:"api_key_masked"`
-	HasAPIKey       bool               `json:"has_api_key"`
-	SlotMapping     json.RawMessage    `json:"slot_mapping"`
-	Config          json.RawMessage    `json:"config"`
-	IsActive        bool               `json:"is_active"`
-	Priority        int32              `json:"priority"`
-	CreatedAt       pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+	ID           pgtype.UUID        `json:"id"`
+	TenantID     pgtype.UUID        `json:"tenant_id"`
+	Provider     string             `json:"provider"`
+	Name         string             `json:"name"`
+	ClientID     *string            `json:"client_id"`
+	APIKeyMasked string             `json:"api_key_masked"`
+	HasAPIKey    bool               `json:"has_api_key"`
+	SlotMapping  json.RawMessage    `json:"slot_mapping"`
+	Config       json.RawMessage    `json:"config"`
+	IsActive     bool               `json:"is_active"`
+	Priority     int32              `json:"priority"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
 }
 
 // toAdNetworkDTO converts a raw AdNetwork (with encrypted api_key) to a safe

@@ -15,7 +15,8 @@ import (
 // import config (avoids an import cycle); *config.Settings satisfies it
 // structurally.
 // Ref: japaconnect-engineering/sections/26-seo-performance.md
-//      conventions/system-settings-catalog.md (i18n.enabled_languages)
+//
+//	conventions/system-settings-catalog.md (i18n.enabled_languages)
 type hreflangSettingsReader interface {
 	GetStringOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback string) string
 }

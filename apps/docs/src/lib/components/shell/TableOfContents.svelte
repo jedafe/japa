@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import { t } from '$lib/i18n';
 	import type { TocHeading } from '$lib/tiptap/serialize';
 
@@ -11,9 +10,13 @@
 
 	let activeId = $state<string>('');
 
-	onMount(() => {
+	// ADR-060: IntersectionObserver (never scroll listeners), with cleanup.
+	// Uses $effect keyed on headings so the observer re-initializes on
+	// client-side navigation (same route, different params) — onMount only
+	// runs once per component instance and would leave the observer pointing
+	// at stale DOM elements after a page change.
+	$effect(() => {
 		if (headings.length === 0) return;
-		// ADR-060: IntersectionObserver (never scroll listeners), with cleanup.
 		const observer = new IntersectionObserver(
 			(entries) => {
 				// Pick the topmost intersecting heading as active.

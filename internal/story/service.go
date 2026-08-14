@@ -5,7 +5,8 @@
 // system_setting (§79).
 //
 // Ref: japaconnect-engineering/sections/79-community-story-wall.md
-//      japaconnect-engineering/adr/ADR-087-community-story-wall.md
+//
+//	japaconnect-engineering/adr/ADR-087-community-story-wall.md
 package story
 
 import (
@@ -352,13 +353,13 @@ func (s *Service) AdminList(ctx context.Context, tenantID pgtype.UUID, status, q
 	}
 
 	rows, total, err := s.store.AdminListStories(ctx, AdminListStoriesFilter{
-		TenantID:  tenantID,
-		Status:    status,
-		Verified:  verified,
-		Q:         q,
-		Sort:      sort,
-		Limit:     pageSize,
-		Offset:    pageOffset,
+		TenantID: tenantID,
+		Status:   status,
+		Verified: verified,
+		Q:        q,
+		Sort:     sort,
+		Limit:    pageSize,
+		Offset:   pageOffset,
 	})
 	if err != nil {
 		return nil, 0, fmt.Errorf("story: admin list: %w", err)

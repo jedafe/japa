@@ -11,7 +11,8 @@
 // and an organization claim workflow.
 //
 // Ref: japaconnect-engineering/sections/101-diaspora-community-locator.md
-//      japaconnect-engineering/adr/ADR-109-community-locator.md
+//
+//	japaconnect-engineering/adr/ADR-109-community-locator.md
 package communitylocator
 
 import (
@@ -96,12 +97,12 @@ type OrgRow struct {
 	ReviewedBy           pgtype.UUID
 	ReviewedAt           pgtype.Timestamptz
 	// ADR-088 universal AI content generation columns.
-	AiGenerated     bool
-	AiModel         *string
-	AiPromptHash    *string
-	HitlReviewedBy  pgtype.UUID
-	HitlReviewedAt  pgtype.Timestamptz
-	HitlReviewNotes *string
+	AiGenerated      bool
+	AiModel          *string
+	AiPromptHash     *string
+	HitlReviewedBy   pgtype.UUID
+	HitlReviewedAt   pgtype.Timestamptz
+	HitlReviewNotes  *string
 	IsJapabotIndexed bool
 	CreatedAt        pgtype.Timestamptz
 	UpdatedAt        pgtype.Timestamptz
@@ -435,13 +436,13 @@ WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
 // AdminListFilter holds filter parameters for the admin moderation list.
 type AdminListFilter struct {
 	TenantID           pgtype.UUID
-	Status             string // optional
-	Q                  string // optional: search name
+	Status             string      // optional
+	Q                  string      // optional: search name
 	DestinationSpaceID pgtype.UUID // optional: geo-aware ?dest= filter
-	OriginCommunity    string // optional: filter by origin community
-	OrgType            string // optional: filter by organisation type
-	Sort               string // optional: column name (allow-listed)
-	Dir                string // optional: "asc" or "desc" (default "desc")
+	OriginCommunity    string      // optional: filter by origin community
+	OrgType            string      // optional: filter by organisation type
+	Sort               string      // optional: column name (allow-listed)
+	Dir                string      // optional: "asc" or "desc" (default "desc")
 	Limit              int32
 	Offset             int32
 }
@@ -450,15 +451,15 @@ type AdminListFilter struct {
 // list. Values map to the qualified SQL column expression. This prevents SQL
 // injection through the sort parameter.
 var adminSortColumns = map[string]string{
-	"name":        "co.name",
-	"created_at":  "co.created_at",
-	"updated_at":  "co.updated_at",
-	"status":      "co.status",
-	"org_type":    "co.org_type",
-	"origin_community": "co.origin_community",
+	"name":                   "co.name",
+	"created_at":             "co.created_at",
+	"updated_at":             "co.updated_at",
+	"status":                 "co.status",
+	"org_type":               "co.org_type",
+	"origin_community":       "co.origin_community",
 	"destination_space_name": "ds.name",
-	"claim_status": "co.claim_status",
-	"is_verified":  "co.is_verified",
+	"claim_status":           "co.claim_status",
+	"is_verified":            "co.is_verified",
 }
 
 // adminSortDir returns "ASC" or "DESC" for the given direction string.

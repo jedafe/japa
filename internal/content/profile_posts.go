@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/jedafe/japa/internal/db/gen"
+	errpkg "github.com/jedafe/japa/internal/errors"
 )
 
 // htmlTagPattern matches HTML tags for stripping when building excerpts.
@@ -46,7 +47,7 @@ func (h *Handlers) ListByAuthor(w http.ResponseWriter, r *http.Request) {
 
 	var authorID pgtype.UUID
 	if err := authorID.Scan(chi.URLParam(r, "id")); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_user_id", "Invalid user ID format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_user_id", "Invalid user ID format")
 		return
 	}
 
@@ -62,11 +63,11 @@ func (h *Handlers) ListByAuthor(w http.ResponseWriter, r *http.Request) {
 	items, err := h.Service.ListPublishedByAuthor(r.Context(), tenantID, authorID, limit, offset)
 	if err != nil {
 		slog.Error("content: ListByAuthor failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "list_error", "Failed to list content")
+		errpkg.WriteError(w, http.StatusInternalServerError, "list_error", "Failed to list content")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": toPostCards(items)})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": toPostCards(items)})
 }
 
 // OrgRef is the lean org reference embedded in an org-attributed PostCard so
@@ -191,7 +192,7 @@ func (h *Handlers) ListByOrganization(w http.ResponseWriter, r *http.Request) {
 
 	var orgID pgtype.UUID
 	if err := orgID.Scan(chi.URLParam(r, "id")); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_org_id", "Invalid organization ID format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_org_id", "Invalid organization ID format")
 		return
 	}
 
@@ -205,11 +206,11 @@ func (h *Handlers) ListByOrganization(w http.ResponseWriter, r *http.Request) {
 
 	items, err := h.Service.ListPublishedByOrganization(r.Context(), tenantID, orgID, limit, offset)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "list_error", "Failed to list content")
+		errpkg.WriteError(w, http.StatusInternalServerError, "list_error", "Failed to list content")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": toOrgPostCards(items)})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": toOrgPostCards(items)})
 }
 
 func toOrgPostCards(items []gen.ListPublishedContentByOrganizationRow) []PostCard {

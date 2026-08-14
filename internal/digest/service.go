@@ -1,9 +1,10 @@
 // Package digest — service.go orchestrates digest edition browsing, draft
 // editing, publication, and generation triggers. Feature-flagged via
-// feature.digest (feature_flags gate) and digest.email system_setting (§84).
+// digest.enabled (feature_flags gate) and digest.email system_setting (§84).
 //
 // Ref: japaconnect-engineering/sections/84-community-digest.md
-//      japaconnect-engineering/adr/ADR-092-community-digest.md
+//
+//	japaconnect-engineering/adr/ADR-092-community-digest.md
 package digest
 
 import (
@@ -50,16 +51,16 @@ type EmailDispatcher interface {
 
 // DigestEditionDTO is the API response shape for a digest edition (listing).
 type DigestEditionDTO struct {
-	ID          string `json:"id"`
-	SpaceID     string `json:"space_id,omitempty"`
-	Cadence     string `json:"cadence"`
-	Status      string `json:"status"`
+	ID           string `json:"id"`
+	SpaceID      string `json:"space_id,omitempty"`
+	Cadence      string `json:"cadence"`
+	Status       string `json:"status"`
 	ScheduledFor string `json:"scheduled_for,omitempty"`
-	PublishedAt string `json:"published_at,omitempty"`
-	EmailSent   bool   `json:"email_sent"`
-	GeneratedBy string `json:"generated_by,omitempty"`
-	ReviewedBy  string `json:"reviewed_by,omitempty"`
-	CreatedAt   string `json:"created_at"`
+	PublishedAt  string `json:"published_at,omitempty"`
+	EmailSent    bool   `json:"email_sent"`
+	GeneratedBy  string `json:"generated_by,omitempty"`
+	ReviewedBy   string `json:"reviewed_by,omitempty"`
+	CreatedAt    string `json:"created_at"`
 }
 
 // DigestEditionDetailDTO is the full digest edition with content.
@@ -75,10 +76,10 @@ type UpdateEditionInput struct {
 
 // Service holds the business logic for the Community Digest.
 type Service struct {
-	store          *Store
-	settings       *config.Settings
-	enqueuer       TaskEnqueuer
-	vk             valkeycompat.Cmdable
+	store           *Store
+	settings        *config.Settings
+	enqueuer        TaskEnqueuer
+	vk              valkeycompat.Cmdable
 	emailDispatcher EmailDispatcher
 }
 
@@ -309,13 +310,13 @@ func (s *Service) generateForTenant(ctx context.Context, tenantID, spaceID pgtyp
 	}
 
 	editionID, err := s.store.CreateEdition(ctx, DigestEdition{
-		TenantID:    tenantID,
-		SpaceID:     spaceID,
-		Cadence:     "weekly",
-		Status:      "draft",
+		TenantID:     tenantID,
+		SpaceID:      spaceID,
+		Cadence:      "weekly",
+		Status:       "draft",
 		ScheduledFor: pgtype.Timestamptz{Time: time.Now().Add(24 * time.Hour), Valid: true},
-		Content:     content,
-		GeneratedBy: "system",
+		Content:      content,
+		GeneratedBy:  "system",
 	})
 	if err != nil {
 		return fmt.Errorf("digest: generate: create edition: %w", err)
@@ -386,7 +387,7 @@ func (s *Service) SendEditionEmail(ctx context.Context, editionID, tenantID pgty
 			Subject:  subject,
 			Body:     body,
 			IsHTML:   true,
-			Category: "marketing",
+			Category: "transactional",
 			Headers:  headers,
 		}); err != nil {
 			slog.Warn("task:digest:send_email: send failed", "recipient", recipient, "error", err)
@@ -473,7 +474,7 @@ func renderDigestEmail(content []byte, baseURL string) string {
 		return "<div style=\"font-family: sans-serif;\"><h2>Weekly Community Digest</h2></div>"
 	}
 	data := struct {
-		BaseURL        string
+		BaseURL string
 		DigestContent
 	}{BaseURL: baseURL, DigestContent: c}
 	var body strings.Builder
@@ -555,4 +556,3 @@ func formatTs(t pgtype.Timestamptz) string {
 	}
 	return t.Time.UTC().Format(time.RFC3339)
 }
-

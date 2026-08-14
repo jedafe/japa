@@ -11,7 +11,8 @@
 // spaces(id).
 //
 // Ref: japaconnect-engineering/sections/92-arrival-checklist.md
-//      japaconnect-engineering/adr/ADR-100-arrival-checklist.md
+//
+//	japaconnect-engineering/adr/ADR-100-arrival-checklist.md
 package arrivalchecklist
 
 import (
@@ -35,19 +36,19 @@ const (
 
 // Guide statuses (§92).
 const (
-	StatusDraft    = "draft"
-	StatusAIDraft  = "ai_draft"
-	StatusPending  = "pending"
+	StatusDraft     = "draft"
+	StatusAIDraft   = "ai_draft"
+	StatusPending   = "pending"
 	StatusPublished = "published"
-	StatusRejected = "rejected"
+	StatusRejected  = "rejected"
 )
 
 // Arrival phases (§92).
 const (
-	PhaseDay1To7  = "day_1_7"
-	PhaseWeek2To4 = "week_2_4"
+	PhaseDay1To7   = "day_1_7"
+	PhaseWeek2To4  = "week_2_4"
 	PhaseMonth1To3 = "month_1_3"
-	PhaseOngoing  = "ongoing"
+	PhaseOngoing   = "ongoing"
 )
 
 // Store is the data-access layer for arrival_checklist_guides and
@@ -124,14 +125,14 @@ type ListGuidesFilter struct {
 	// PublicOnly, when true, forces status='published' regardless of Status.
 	// Used by the public selector/guide endpoints; the admin list sets it
 	// false so the HITL queue can see draft/ai_draft/pending/rejected rows.
-	PublicOnly         bool
-	IsActive           *bool       // optional
-	AIGenerated        *bool       // optional
-	Q                  string      // optional search on destination name
-	Sort               string      // optional: created_at|updated_at|status|destination (default updated_at)
-	Order              string      // optional: asc|desc (default desc)
-	Limit              int32
-	Offset             int32
+	PublicOnly  bool
+	IsActive    *bool  // optional
+	AIGenerated *bool  // optional
+	Q           string // optional search on destination name
+	Sort        string // optional: created_at|updated_at|status|destination (default updated_at)
+	Order       string // optional: asc|desc (default desc)
+	Limit       int32
+	Offset      int32
 }
 
 // allowedSortColumns maps the frontend sort keys to qualified SQL columns.

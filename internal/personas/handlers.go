@@ -23,8 +23,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/auth"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/tenant"
 )
 
@@ -42,24 +42,10 @@ func NewHandlers(service *Service) *Handlers {
 // Shared helpers (same pattern as university/handlers.go, rag/handlers.go)
 // ---------------------------------------------------------------------------
 
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	if err := json.NewEncoder(w).Encode(v); err != nil {
-		slog.Error("personas: encode response", "error", err)
-	}
-}
-
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, map[string]any{
-		"error": map[string]string{"code": code, "message": message},
-	})
-}
-
 func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
 	return t.ID, true
@@ -68,7 +54,7 @@ func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	u := auth.FromContext(r.Context())
 	if u == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
 	return u, true
@@ -77,7 +63,7 @@ func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUse
 func scanUUIDParam(w http.ResponseWriter, r *http.Request, name string) (pgtype.UUID, bool) {
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, name)); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid "+name)
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid "+name)
 		return pgtype.UUID{}, false
 	}
 	return id, true
@@ -149,7 +135,7 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil {
-		writeError(w, http.StatusServiceUnavailable, "personas_unavailable", "Persona service not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "personas_unavailable", "Persona service not configured")
 		return
 	}
 
@@ -186,7 +172,7 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": items,
 		"meta": map[string]int64{"total": total, "limit": int64(limit), "offset": int64(offset)},
 	})
@@ -207,17 +193,17 @@ func (h *Handlers) HandleCreate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil {
-		writeError(w, http.StatusServiceUnavailable, "personas_unavailable", "Persona service not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "personas_unavailable", "Persona service not configured")
 		return
 	}
 
 	var inputs []PersonaInput
 	if err := json.NewDecoder(r.Body).Decode(&inputs); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid request body — expected a JSON array")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body — expected a JSON array")
 		return
 	}
 	if len(inputs) == 0 {
-		writeError(w, http.StatusBadRequest, "empty_batch", "At least one persona is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "empty_batch", "At least one persona is required")
 		return
 	}
 
@@ -227,20 +213,20 @@ func (h *Handlers) HandleCreate(w http.ResponseWriter, r *http.Request) {
 		// provisioning failures (422 generic). Validation errors are wrapped
 		// with errpkg.ErrInvalid in the service layer (BUG-013).
 		if errors.Is(err, errpkg.ErrInvalid) {
-			writeError(w, http.StatusBadRequest, "validation_error", err.Error())
+			errpkg.WriteError(w, http.StatusBadRequest, "validation_error", err.Error())
 			return
 		}
 		slog.Error("personas: provisioning failed", "error", err, "admin_user_id", user.UserID.String())
 		// Standard error envelope per api-response-format.md (BUG-002).
 		// The transaction is all-or-nothing, so no personas were committed.
-		writeError(w, http.StatusUnprocessableEntity, "provisioning_failed",
+		errpkg.WriteError(w, http.StatusUnprocessableEntity, "provisioning_failed",
 			"Mass provisioning failed — no personas were committed (transaction rolled back)")
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{
-		"data":    results,
-		"meta":    map[string]int{"count": len(results)},
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{
+		"data": results,
+		"meta": map[string]int{"count": len(results)},
 	})
 }
 
@@ -256,7 +242,7 @@ func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil {
-		writeError(w, http.StatusServiceUnavailable, "personas_unavailable", "Persona service not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "personas_unavailable", "Persona service not configured")
 		return
 	}
 
@@ -272,7 +258,7 @@ func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": detail})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": detail})
 }
 
 // HandleUpdate handles PATCH /admin/personas/{id} — update activity_policy,
@@ -287,7 +273,7 @@ func (h *Handlers) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil {
-		writeError(w, http.StatusServiceUnavailable, "personas_unavailable", "Persona service not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "personas_unavailable", "Persona service not configured")
 		return
 	}
 
@@ -304,7 +290,7 @@ func (h *Handlers) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 		Status         *string         `json:"status"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
 		return
 	}
 
@@ -323,7 +309,7 @@ func (h *Handlers) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": persona})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": persona})
 }
 
 // HandleActivity handles GET /admin/personas/{id}/activity — paginated
@@ -339,7 +325,7 @@ func (h *Handlers) HandleActivity(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil {
-		writeError(w, http.StatusServiceUnavailable, "personas_unavailable", "Persona service not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "personas_unavailable", "Persona service not configured")
 		return
 	}
 
@@ -357,7 +343,7 @@ func (h *Handlers) HandleActivity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": entries,
 		"meta": map[string]int64{"total": total, "limit": int64(limit), "offset": int64(offset)},
 	})

@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/jedafe/japa/internal/db/gen"
+	errpkg "github.com/jedafe/japa/internal/errors"
 )
 
 // ListContentLikedByUser returns published+public content the given user has
@@ -40,7 +41,7 @@ func (h *Handlers) ListLikedByUser(w http.ResponseWriter, r *http.Request) {
 
 	var userID pgtype.UUID
 	if err := userID.Scan(chi.URLParam(r, "id")); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_user_id", "Invalid user ID format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_user_id", "Invalid user ID format")
 		return
 	}
 
@@ -55,12 +56,12 @@ func (h *Handlers) ListLikedByUser(w http.ResponseWriter, r *http.Request) {
 
 	rows, err := h.Service.ListContentLikedByUser(r.Context(), tenantID, userID, limit, offset)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "list_error", "Failed to list liked content")
+		errpkg.WriteError(w, http.StatusInternalServerError, "list_error", "Failed to list liked content")
 		return
 	}
 	if rows == nil {
 		rows = []gen.ListContentLikedByUserRow{}
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": rows})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": rows})
 }

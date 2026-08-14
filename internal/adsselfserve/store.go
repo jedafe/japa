@@ -5,7 +5,8 @@
 // for admin creative approval before going live.
 //
 // Ref: japaconnect-engineering/sections/61-self-serve-ads.md
-//      japaconnect-engineering/adr/ADR-079-self-serve-ads.md
+//
+//	japaconnect-engineering/adr/ADR-079-self-serve-ads.md
 package adsselfserve
 
 import (

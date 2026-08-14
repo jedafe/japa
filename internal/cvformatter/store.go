@@ -10,7 +10,8 @@
 // endpoint.
 //
 // Ref: japaconnect-engineering/sections/95-cv-formatter.md
-//      japaconnect-engineering/adr/ADR-103-cv-formatter.md
+//
+//	japaconnect-engineering/adr/ADR-103-cv-formatter.md
 package cvformatter
 
 import (
@@ -25,10 +26,10 @@ import (
 
 // Photo policies (§95).
 const (
-	PhotoPolicyRequired        = "required"
-	PhotoPolicyOptional        = "optional"
-	PhotoPolicyNotRecommended  = "not_recommended"
-	PhotoPolicyProhibited      = "prohibited"
+	PhotoPolicyRequired       = "required"
+	PhotoPolicyOptional       = "optional"
+	PhotoPolicyNotRecommended = "not_recommended"
+	PhotoPolicyProhibited     = "prohibited"
 )
 
 // Session statuses (§95).

@@ -4,7 +4,8 @@
 // document data store. Per-user progress is persisted in checklist_progress.
 //
 // Ref: japaconnect-engineering/sections/70-visa-checklist.md
-//      japaconnect-engineering/adr/ADR-070-visa-document-checklist-generator.md
+//
+//	japaconnect-engineering/adr/ADR-070-visa-document-checklist-generator.md
 package checklist
 
 import (
@@ -38,8 +39,8 @@ func NewStore(database *db.DB) *Store {
 // VisaGuideField holds a single field value extracted from a published visa
 // guide's custom_field_values row.
 type VisaGuideField struct {
-	GuideID  pgtype.UUID
-	FieldKey string
+	GuideID   pgtype.UUID
+	FieldKey  string
 	ValueText string
 	ValueJSON []byte
 }
@@ -200,6 +201,7 @@ func (s *Store) ListChecklistProgress(ctx context.Context, tenantID, userID, gui
 		GuideID:  guideID,
 	})
 }
+
 // GetSingleProgress returns a single progress row for a user + guide +
 // item_key. Used by UpsertProgress to resolve the existing completed state
 // for a note-only PATCH (where completed is nil in the request body).

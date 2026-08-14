@@ -14,7 +14,8 @@
 //	GET   /api/v1/admin/assessment/stats       — score distribution, completion rate (admin)
 //
 // Ref: japaconnect-engineering/sections/71-readiness-assessment.md
-//      japaconnect-engineering/adr/ADR-071-japa-readiness-assessment.md
+//
+//	japaconnect-engineering/adr/ADR-071-japa-readiness-assessment.md
 package assessment
 
 import (
@@ -31,6 +32,7 @@ import (
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/db/gen"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/tenant"
 )
 
@@ -49,24 +51,10 @@ func NewHandlers(service *Service, settings *config.Settings) *Handlers {
 // Shared helpers (same pattern as rag/handlers.go)
 // ---------------------------------------------------------------------------
 
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	if err := json.NewEncoder(w).Encode(v); err != nil {
-		slog.Error("assessment: encode response", "error", err)
-	}
-}
-
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, map[string]any{
-		"error": map[string]string{"code": code, "message": message},
-	})
-}
-
 func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
 	return t.ID, true
@@ -75,7 +63,7 @@ func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	u := auth.FromContext(r.Context())
 	if u == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
 	return u, true
@@ -84,7 +72,7 @@ func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUse
 func scanUUIDParam(w http.ResponseWriter, r *http.Request, name string) (pgtype.UUID, bool) {
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, name)); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid "+name)
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid "+name)
 		return pgtype.UUID{}, false
 	}
 	return id, true
@@ -137,14 +125,14 @@ func (h *Handlers) HandleGetAssessment(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil {
-		writeError(w, http.StatusServiceUnavailable, "assessment_unavailable", "Assessment service not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "assessment_unavailable", "Assessment service not configured")
 		return
 	}
 
 	// Check the global toggle (assessment.enabled).
 	if h.settings != nil {
 		if enabled := h.settings.GetBoolOr(r.Context(), tenantID, "assessment.enabled", true); !enabled {
-			writeError(w, http.StatusNotFound, "assessment_disabled", "Assessment is not available")
+			errpkg.WriteError(w, http.StatusNotFound, "assessment_disabled", "Assessment is not available")
 			return
 		}
 	}
@@ -152,7 +140,7 @@ func (h *Handlers) HandleGetAssessment(w http.ResponseWriter, r *http.Request) {
 	form, err := h.service.GetActiveAssessment(r.Context(), tenantID)
 	if err != nil {
 		slog.Error("assessment: get active failed", "error", err)
-		writeError(w, http.StatusNotFound, "no_active_assessment", "No active assessment form found")
+		errpkg.WriteError(w, http.StatusNotFound, "no_active_assessment", "No active assessment form found")
 		return
 	}
 
@@ -169,7 +157,7 @@ func (h *Handlers) HandleGetAssessment(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
 			"id":            form.ID,
 			"name":          form.Name,
@@ -182,8 +170,8 @@ func (h *Handlers) HandleGetAssessment(w http.ResponseWriter, r *http.Request) {
 			"thresholds":    thresholds,
 			"fields":        form.Fields,
 			"scoring_config": map[string]any{
-				"max_score":   form.ScoringConfig.MaxScore,
-				"thresholds":  thresholds,
+				"max_score":  form.ScoringConfig.MaxScore,
+				"thresholds": thresholds,
 			},
 		},
 	})
@@ -199,13 +187,13 @@ func (h *Handlers) HandleSubmit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil {
-		writeError(w, http.StatusServiceUnavailable, "assessment_unavailable", "Assessment service not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "assessment_unavailable", "Assessment service not configured")
 		return
 	}
 
 	if h.settings != nil {
 		if enabled := h.settings.GetBoolOr(r.Context(), tenantID, "assessment.enabled", true); !enabled {
-			writeError(w, http.StatusNotFound, "assessment_disabled", "Assessment is not available")
+			errpkg.WriteError(w, http.StatusNotFound, "assessment_disabled", "Assessment is not available")
 			return
 		}
 	}
@@ -214,11 +202,11 @@ func (h *Handlers) HandleSubmit(w http.ResponseWriter, r *http.Request) {
 		FieldValues json.RawMessage `json:"field_values"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 	if len(body.FieldValues) == 0 {
-		writeError(w, http.StatusBadRequest, "missing_field_values", "field_values is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_field_values", "field_values is required")
 		return
 	}
 
@@ -226,13 +214,13 @@ func (h *Handlers) HandleSubmit(w http.ResponseWriter, r *http.Request) {
 	form, err := h.service.GetActiveAssessment(r.Context(), tenantID)
 	if err != nil {
 		slog.Error("assessment: submit: get form failed", "error", err)
-		writeError(w, http.StatusNotFound, "no_active_assessment", "No active assessment form found")
+		errpkg.WriteError(w, http.StatusNotFound, "no_active_assessment", "No active assessment form found")
 		return
 	}
 
 	var formID pgtype.UUID
 	if err := formID.Scan(form.ID); err != nil {
-		writeError(w, http.StatusInternalServerError, "invalid_form_id", "Failed to parse form ID")
+		errpkg.WriteError(w, http.StatusInternalServerError, "invalid_form_id", "Failed to parse form ID")
 		return
 	}
 
@@ -246,11 +234,11 @@ func (h *Handlers) HandleSubmit(w http.ResponseWriter, r *http.Request) {
 	submissionID, err := h.service.SubmitAssessment(r.Context(), tenantID, userID, formID, body.FieldValues)
 	if err != nil {
 		slog.Error("assessment: submit failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "submission_failed", "Failed to create submission")
+		errpkg.WriteError(w, http.StatusInternalServerError, "submission_failed", "Failed to create submission")
 		return
 	}
 
-	writeJSON(w, http.StatusAccepted, map[string]any{
+	errpkg.WriteJSON(w, http.StatusAccepted, map[string]any{
 		"data": map[string]any{
 			"submission_id": submissionID.String(),
 			"status":        "queued",
@@ -268,7 +256,7 @@ func (h *Handlers) HandleGetResult(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil {
-		writeError(w, http.StatusServiceUnavailable, "assessment_unavailable", "Assessment service not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "assessment_unavailable", "Assessment service not configured")
 		return
 	}
 
@@ -280,7 +268,7 @@ func (h *Handlers) HandleGetResult(w http.ResponseWriter, r *http.Request) {
 	result, err := h.service.GetResult(r.Context(), tenantID, resultID)
 	if err != nil {
 		slog.Error("assessment: get result failed", "error", err)
-		writeError(w, http.StatusNotFound, "result_not_found", "Assessment result not found")
+		errpkg.WriteError(w, http.StatusNotFound, "result_not_found", "Assessment result not found")
 		return
 	}
 
@@ -296,12 +284,12 @@ func (h *Handlers) HandleGetResult(w http.ResponseWriter, r *http.Request) {
 		// routes are gated by RBAC middleware at registration; here we
 		// check ownership for the public route.
 		if u.UserID.Bytes != result.UserID.Bytes {
-			writeError(w, http.StatusForbidden, "forbidden", "You do not have access to this result")
+			errpkg.WriteError(w, http.StatusForbidden, "forbidden", "You do not have access to this result")
 			return
 		}
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": shapeResult(result)})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": shapeResult(result)})
 }
 
 // HandleGetResultBySubmission handles GET
@@ -321,7 +309,7 @@ func (h *Handlers) HandleGetResultBySubmission(w http.ResponseWriter, r *http.Re
 	}
 
 	if h.service == nil {
-		writeError(w, http.StatusServiceUnavailable, "assessment_unavailable", "Assessment service not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "assessment_unavailable", "Assessment service not configured")
 		return
 	}
 
@@ -334,13 +322,13 @@ func (h *Handlers) HandleGetResultBySubmission(w http.ResponseWriter, r *http.Re
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			// Not scored yet — tell the client to keep polling.
-			writeJSON(w, http.StatusAccepted, map[string]any{
+			errpkg.WriteJSON(w, http.StatusAccepted, map[string]any{
 				"data": map[string]any{"status": "pending"},
 			})
 			return
 		}
 		slog.Error("assessment: get result by submission failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "result_lookup_failed", "Failed to look up result")
+		errpkg.WriteError(w, http.StatusInternalServerError, "result_lookup_failed", "Failed to look up result")
 		return
 	}
 
@@ -352,12 +340,12 @@ func (h *Handlers) HandleGetResultBySubmission(w http.ResponseWriter, r *http.Re
 			return
 		}
 		if u.UserID.Bytes != result.UserID.Bytes {
-			writeError(w, http.StatusForbidden, "forbidden", "You do not have access to this result")
+			errpkg.WriteError(w, http.StatusForbidden, "forbidden", "You do not have access to this result")
 			return
 		}
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": shapeResult(result)})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": shapeResult(result)})
 }
 
 // shapeResult builds the public JSON shape for an assessment result, parsing
@@ -409,7 +397,7 @@ func (h *Handlers) HandleHistory(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil {
-		writeError(w, http.StatusServiceUnavailable, "assessment_unavailable", "Assessment service not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "assessment_unavailable", "Assessment service not configured")
 		return
 	}
 
@@ -418,7 +406,7 @@ func (h *Handlers) HandleHistory(w http.ResponseWriter, r *http.Request) {
 	results, total, err := h.service.ListHistory(r.Context(), tenantID, u.UserID, page, limit)
 	if err != nil {
 		slog.Error("assessment: history failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "history_failed", "Failed to get history")
+		errpkg.WriteError(w, http.StatusInternalServerError, "history_failed", "Failed to get history")
 		return
 	}
 
@@ -433,7 +421,7 @@ func (h *Handlers) HandleHistory(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": items,
 		"pagination": map[string]any{
 			"page":  page,
@@ -461,19 +449,19 @@ func (h *Handlers) HandleAdminGetForm(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil {
-		writeError(w, http.StatusServiceUnavailable, "assessment_unavailable", "Assessment service not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "assessment_unavailable", "Assessment service not configured")
 		return
 	}
 
 	form, err := h.service.GetActiveAssessment(r.Context(), tenantID)
 	if err != nil {
 		slog.Error("assessment: admin get form failed", "error", err)
-		writeError(w, http.StatusNotFound, "no_active_assessment", "No active assessment form found")
+		errpkg.WriteError(w, http.StatusNotFound, "no_active_assessment", "No active assessment form found")
 		return
 	}
 
 	// Admin response includes the full scoring_config (weights + thresholds).
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": form,
 	})
 }
@@ -491,7 +479,7 @@ func (h *Handlers) HandleAdminUpdateForm(w http.ResponseWriter, r *http.Request)
 	}
 
 	if h.service == nil {
-		writeError(w, http.StatusServiceUnavailable, "assessment_unavailable", "Assessment service not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "assessment_unavailable", "Assessment service not configured")
 		return
 	}
 
@@ -499,11 +487,11 @@ func (h *Handlers) HandleAdminUpdateForm(w http.ResponseWriter, r *http.Request)
 		ScoringConfig json.RawMessage `json:"scoring_config"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 	if len(body.ScoringConfig) == 0 {
-		writeError(w, http.StatusBadRequest, "missing_scoring_config", "scoring_config is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_scoring_config", "scoring_config is required")
 		return
 	}
 
@@ -511,24 +499,24 @@ func (h *Handlers) HandleAdminUpdateForm(w http.ResponseWriter, r *http.Request)
 	form, err := h.service.GetActiveAssessment(r.Context(), tenantID)
 	if err != nil {
 		slog.Error("assessment: admin update: get form failed", "error", err)
-		writeError(w, http.StatusNotFound, "no_active_assessment", "No active assessment form found")
+		errpkg.WriteError(w, http.StatusNotFound, "no_active_assessment", "No active assessment form found")
 		return
 	}
 
 	var formID pgtype.UUID
 	if err := formID.Scan(form.ID); err != nil {
-		writeError(w, http.StatusInternalServerError, "invalid_form_id", "Failed to parse form ID")
+		errpkg.WriteError(w, http.StatusInternalServerError, "invalid_form_id", "Failed to parse form ID")
 		return
 	}
 
 	updated, err := h.service.UpdateFormScoring(r.Context(), tenantID, formID, body.ScoringConfig)
 	if err != nil {
 		slog.Error("assessment: admin update form failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "update_failed", "Failed to update scoring config")
+		errpkg.WriteError(w, http.StatusInternalServerError, "update_failed", "Failed to update scoring config")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
 			"id":             updated.ID.String(),
 			"form_type":      updated.FormType,
@@ -551,7 +539,7 @@ func (h *Handlers) HandleAdminListResults(w http.ResponseWriter, r *http.Request
 	}
 
 	if h.service == nil {
-		writeError(w, http.StatusServiceUnavailable, "assessment_unavailable", "Assessment service not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "assessment_unavailable", "Assessment service not configured")
 		return
 	}
 
@@ -566,7 +554,7 @@ func (h *Handlers) HandleAdminListResults(w http.ResponseWriter, r *http.Request
 	results, total, err := h.service.AdminListResults(r.Context(), tenantID, minScore, maxScore, page, limit, sortKey, sortDir)
 	if err != nil {
 		slog.Error("assessment: admin list results failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "list_failed", "Failed to list results")
+		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list results")
 		return
 	}
 
@@ -591,7 +579,7 @@ func (h *Handlers) HandleAdminListResults(w http.ResponseWriter, r *http.Request
 		})
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": items,
 		"pagination": map[string]any{
 			"page":      page,
@@ -616,21 +604,21 @@ func (h *Handlers) HandleAdminStats(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil {
-		writeError(w, http.StatusServiceUnavailable, "assessment_unavailable", "Assessment service not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "assessment_unavailable", "Assessment service not configured")
 		return
 	}
 
 	distribution, err := h.service.AdminScoreDistribution(r.Context(), tenantID)
 	if err != nil {
 		slog.Error("assessment: admin stats: distribution failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "stats_failed", "Failed to get score distribution")
+		errpkg.WriteError(w, http.StatusInternalServerError, "stats_failed", "Failed to get score distribution")
 		return
 	}
 
 	completion, err := h.service.AdminCompletionStats(r.Context(), tenantID)
 	if err != nil {
 		slog.Error("assessment: admin stats: completion failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "stats_failed", "Failed to get completion stats")
+		errpkg.WriteError(w, http.StatusInternalServerError, "stats_failed", "Failed to get completion stats")
 		return
 	}
 
@@ -648,7 +636,7 @@ func (h *Handlers) HandleAdminStats(w http.ResponseWriter, r *http.Request) {
 		completionRate = float64(completion.TotalScored) / float64(completion.TotalSubmissions) * 100.0
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
 			"score_distribution": distributionItems,
 			"completion": map[string]any{

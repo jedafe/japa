@@ -3,7 +3,8 @@
 // (§90). Feature-flagged via visa_routes.enabled system_setting.
 //
 // Ref: japaconnect-engineering/sections/90-visa-route-comparison.md
-//      japaconnect-engineering/adr/ADR-098-visa-route-comparison.md
+//
+//	japaconnect-engineering/adr/ADR-098-visa-route-comparison.md
 package visaroutes
 
 import (
@@ -21,33 +22,33 @@ import (
 
 // RouteDTO is the API response shape for a single visa route.
 type RouteDTO struct {
-	ID                    string `json:"id"`
-	TenantID              string `json:"tenant_id,omitempty"`
-	DestinationSpaceID    string `json:"destination_space_id"`
-	DestinationSpaceName  string `json:"destination_space_name,omitempty"`
-	DestinationSpaceCode  string `json:"destination_space_code,omitempty"`
-	VisaCategory          string `json:"visa_category"`
-	Name                  string `json:"name"`
-	Slug                  string `json:"slug"`
-	EligibilitySummary    string `json:"eligibility_summary,omitempty"`
-	Requirements          any    `json:"requirements,omitempty"`
-	TypicalFeeUSD         any    `json:"typical_fee_usd,omitempty"`
-	PathToPR              string `json:"path_to_pr,omitempty"`
-	RenewalTerms          string `json:"renewal_terms,omitempty"`
-	Restrictions          string `json:"restrictions,omitempty"`
-	GovSourceURL          string `json:"gov_source_url"`
-	SourceURLLastChecked  string `json:"source_url_last_checked,omitempty"`
-	Status                string `json:"status"`
-	IsActive              bool   `json:"is_active"`
-	AIGenerated           bool   `json:"ai_generated"`
-	AIModel               string `json:"ai_model,omitempty"`
-	AIPromptHash          string `json:"ai_prompt_hash,omitempty"`
-	HITLReviewedBy        string `json:"hitl_reviewed_by,omitempty"`
-	HITLReviewedAt        string `json:"hitl_reviewed_at,omitempty"`
-	HITLReviewNotes       string `json:"hitl_review_notes,omitempty"`
-	IsJapabotIndexed      bool   `json:"is_japabot_indexed"`
-	CreatedAt             string `json:"created_at"`
-	UpdatedAt             string `json:"updated_at"`
+	ID                   string `json:"id"`
+	TenantID             string `json:"tenant_id,omitempty"`
+	DestinationSpaceID   string `json:"destination_space_id"`
+	DestinationSpaceName string `json:"destination_space_name,omitempty"`
+	DestinationSpaceCode string `json:"destination_space_code,omitempty"`
+	VisaCategory         string `json:"visa_category"`
+	Name                 string `json:"name"`
+	Slug                 string `json:"slug"`
+	EligibilitySummary   string `json:"eligibility_summary,omitempty"`
+	Requirements         any    `json:"requirements,omitempty"`
+	TypicalFeeUSD        any    `json:"typical_fee_usd,omitempty"`
+	PathToPR             string `json:"path_to_pr,omitempty"`
+	RenewalTerms         string `json:"renewal_terms,omitempty"`
+	Restrictions         string `json:"restrictions,omitempty"`
+	GovSourceURL         string `json:"gov_source_url"`
+	SourceURLLastChecked string `json:"source_url_last_checked,omitempty"`
+	Status               string `json:"status"`
+	IsActive             bool   `json:"is_active"`
+	AIGenerated          bool   `json:"ai_generated"`
+	AIModel              string `json:"ai_model,omitempty"`
+	AIPromptHash         string `json:"ai_prompt_hash,omitempty"`
+	HITLReviewedBy       string `json:"hitl_reviewed_by,omitempty"`
+	HITLReviewedAt       string `json:"hitl_reviewed_at,omitempty"`
+	HITLReviewNotes      string `json:"hitl_review_notes,omitempty"`
+	IsJapabotIndexed     bool   `json:"is_japabot_indexed"`
+	CreatedAt            string `json:"created_at"`
+	UpdatedAt            string `json:"updated_at"`
 }
 
 // CreateRouteInput is the request body for POST /admin/visa-routes.

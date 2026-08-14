@@ -8,7 +8,8 @@
 // SubscribersForEntry.
 //
 // Ref: japaconnect-engineering/sections/86-community-calendar.md
-//      japaconnect-engineering/adr/ADR-094-community-calendar.md
+//
+//	japaconnect-engineering/adr/ADR-094-community-calendar.md
 package calendar
 
 import (

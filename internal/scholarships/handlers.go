@@ -12,11 +12,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/content"
 	"github.com/jedafe/japa/internal/db/gen"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/tenant"
 )
 
@@ -38,7 +39,7 @@ func (h *Handlers) HandleFindScholarships(w http.ResponseWriter, r *http.Request
 
 	// Global killswitch (scholarship_finder.enabled, ADR-073 §73).
 	if !h.svc.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "scholarship_finder_disabled", "Scholarship Finder is not available")
+		errpkg.WriteError(w, http.StatusNotFound, "scholarship_finder_disabled", "Scholarship Finder is not available")
 		return
 	}
 
@@ -87,13 +88,13 @@ func (h *Handlers) HandleFindScholarships(w http.ResponseWriter, r *http.Request
 
 	results, total, err := h.svc.FindScholarships(r.Context(), tenantID, filters)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "search_failed", err.Error())
+		errpkg.WriteError(w, http.StatusInternalServerError, "search_failed", err.Error())
 		return
 	}
 	if results == nil {
 		results = []ScholarshipResult{}
 	}
-	writeJSON(w, http.StatusOK, map[string]interface{}{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"data": results,
 		"meta": map[string]interface{}{
 			"total":       total,
@@ -113,7 +114,7 @@ func (h *Handlers) HandleScholarshipDetail(w http.ResponseWriter, r *http.Reques
 
 	// Global killswitch (scholarship_finder.enabled, ADR-073 §73).
 	if !h.svc.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "scholarship_finder_disabled", "Scholarship Finder is not available")
+		errpkg.WriteError(w, http.StatusNotFound, "scholarship_finder_disabled", "Scholarship Finder is not available")
 		return
 	}
 
@@ -124,10 +125,10 @@ func (h *Handlers) HandleScholarshipDetail(w http.ResponseWriter, r *http.Reques
 
 	result, err := h.svc.GetScholarshipDetail(r.Context(), tenantID, guideID)
 	if err != nil {
-		writeError(w, http.StatusNotFound, "not_found", "Scholarship not found")
+		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Scholarship not found")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]interface{}{"data": result})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{"data": result})
 }
 
 // HandleSaveScholarship saves a scholarship to the user's tracker.
@@ -145,7 +146,7 @@ func (h *Handlers) HandleSaveScholarship(w http.ResponseWriter, r *http.Request)
 
 	// Global killswitch (scholarship_finder.enabled, ADR-073 §73).
 	if !h.svc.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "scholarship_finder_disabled", "Scholarship Finder is not available")
+		errpkg.WriteError(w, http.StatusNotFound, "scholarship_finder_disabled", "Scholarship Finder is not available")
 		return
 	}
 
@@ -157,13 +158,13 @@ func (h *Handlers) HandleSaveScholarship(w http.ResponseWriter, r *http.Request)
 	saved, err := h.svc.SaveScholarship(r.Context(), tenantID, userID, guideID)
 	if err != nil {
 		if errors.Is(err, ErrGuideNotFound) {
-			writeError(w, http.StatusNotFound, "guide_not_found", err.Error())
+			errpkg.WriteError(w, http.StatusNotFound, "guide_not_found", err.Error())
 			return
 		}
-		writeError(w, http.StatusBadRequest, "save_failed", err.Error())
+		errpkg.WriteError(w, http.StatusBadRequest, "save_failed", err.Error())
 		return
 	}
-	writeJSON(w, http.StatusCreated, map[string]interface{}{
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]interface{}{
 		"data": map[string]interface{}{
 			"id":                 pgtypeUUIDString(saved.ID),
 			"guide_id":           pgtypeUUIDString(saved.GuideID),
@@ -196,16 +197,16 @@ func (h *Handlers) HandleUpdateSavedScholarship(w http.ResponseWriter, r *http.R
 		RemindBeforeDays *int32  `json:"remind_before_days"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
 		return
 	}
 
 	saved, err := h.svc.UpdateSavedScholarship(r.Context(), tenantID, userID, guideID, body.Status, body.Notes, body.RemindBeforeDays)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "update_failed", err.Error())
+		errpkg.WriteError(w, http.StatusBadRequest, "update_failed", err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]interface{}{"data": saved})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{"data": saved})
 }
 
 // HandleDeleteSavedScholarship removes a scholarship from the tracker.
@@ -226,10 +227,10 @@ func (h *Handlers) HandleDeleteSavedScholarship(w http.ResponseWriter, r *http.R
 	}
 
 	if err := h.svc.DeleteSavedScholarship(r.Context(), tenantID, userID, guideID); err != nil {
-		writeError(w, http.StatusBadRequest, "delete_failed", err.Error())
+		errpkg.WriteError(w, http.StatusBadRequest, "delete_failed", err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]interface{}{"data": map[string]interface{}{"deleted": true}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{"data": map[string]interface{}{"deleted": true}})
 }
 
 // HandleListSavedScholarships lists the user's saved scholarships.
@@ -250,13 +251,13 @@ func (h *Handlers) HandleListSavedScholarships(w http.ResponseWriter, r *http.Re
 
 	rows, total, err := h.svc.ListSavedScholarships(r.Context(), tenantID, userID, status, page, limit)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "list_failed", err.Error())
+		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", err.Error())
 		return
 	}
 	if rows == nil {
 		rows = []SavedScholarshipResponse{}
 	}
-	writeJSON(w, http.StatusOK, map[string]interface{}{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"data": rows,
 		"meta": map[string]interface{}{
 			"total":       total,
@@ -282,10 +283,10 @@ func (h *Handlers) HandleAdminStatusDistribution(w http.ResponseWriter, r *http.
 
 	stats, err := h.svc.AdminStats(r.Context(), tenantID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "stats_failed", err.Error())
+		errpkg.WriteError(w, http.StatusInternalServerError, "stats_failed", err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]interface{}{"data": stats})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{"data": stats})
 }
 
 // HandleAdminTopSaved returns admin top-saved report.
@@ -303,13 +304,13 @@ func (h *Handlers) HandleAdminTopSaved(w http.ResponseWriter, r *http.Request) {
 	page, limit := parsePagination(r)
 	rows, err := h.svc.AdminTopSaved(r.Context(), tenantID, page, limit)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "report_failed", err.Error())
+		errpkg.WriteError(w, http.StatusInternalServerError, "report_failed", err.Error())
 		return
 	}
 	if rows == nil {
 		rows = []gen.AdminScholarshipTopSavedRow{}
 	}
-	writeJSON(w, http.StatusOK, map[string]interface{}{"data": rows})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{"data": rows})
 }
 
 // HandleAdminUpcomingDeadlines returns admin upcoming deadlines report
@@ -329,13 +330,13 @@ func (h *Handlers) HandleAdminUpcomingDeadlines(w http.ResponseWriter, r *http.R
 	page, limit := parsePagination(r)
 	rows, err := h.svc.AdminDeadlines(r.Context(), tenantID, page, limit)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "report_failed", err.Error())
+		errpkg.WriteError(w, http.StatusInternalServerError, "report_failed", err.Error())
 		return
 	}
 	if rows == nil {
 		rows = []AdminDeadlineItem{}
 	}
-	writeJSON(w, http.StatusOK, map[string]interface{}{"data": rows})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{"data": rows})
 }
 
 // HandleAdminReminderLog returns admin reminder delivery history.
@@ -353,32 +354,16 @@ func (h *Handlers) HandleAdminReminderLog(w http.ResponseWriter, r *http.Request
 	page, limit := parsePagination(r)
 	rows, err := h.svc.AdminReminderLog(r.Context(), tenantID, page, limit)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "report_failed", err.Error())
+		errpkg.WriteError(w, http.StatusInternalServerError, "report_failed", err.Error())
 		return
 	}
 	if rows == nil {
 		rows = []gen.AdminScholarshipReminderLogRow{}
 	}
-	writeJSON(w, http.StatusOK, map[string]interface{}{"data": rows})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{"data": rows})
 }
 
 // --- shared helpers ---
-
-func writeJSON(w http.ResponseWriter, status int, data interface{}) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(data)
-}
-
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, map[string]interface{}{
-		"error": map[string]interface{}{
-			"code":    code,
-			"message": message,
-			"status":  status,
-		},
-	})
-}
 
 type tenantCtxKey struct{}
 type userCtxKey struct{}
@@ -386,7 +371,7 @@ type userCtxKey struct{}
 func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	id := tenant.IDFromContext(r.Context())
 	if !id.Valid {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
 	return id, true
@@ -395,7 +380,7 @@ func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 func requireUser(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	u := auth.FromContext(r.Context())
 	if u == nil || !u.UserID.Valid {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return pgtype.UUID{}, false
 	}
 	return u.UserID, true
@@ -404,12 +389,12 @@ func requireUser(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 func scanUUIDParam(w http.ResponseWriter, r *http.Request, param string) (pgtype.UUID, bool) {
 	raw := chi.URLParam(r, param)
 	if raw == "" {
-		writeError(w, http.StatusBadRequest, "missing_param", param+" is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_param", param+" is required")
 		return pgtype.UUID{}, false
 	}
 	var id pgtype.UUID
 	if err := id.Scan(raw); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_uuid", "Invalid "+param)
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_uuid", "Invalid "+param)
 		return pgtype.UUID{}, false
 	}
 	return id, true
@@ -474,7 +459,7 @@ func (h *Handlers) HandleAdminListScholarships(w http.ResponseWriter, r *http.Re
 		Offset:  int32(offset),
 	})
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "list_failed", "Failed to list scholarships")
+		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list scholarships")
 		return
 	}
 
@@ -483,11 +468,11 @@ func (h *Handlers) HandleAdminListScholarships(w http.ResponseWriter, r *http.Re
 		Column3: status,
 	})
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "list_failed", "Failed to count scholarships")
+		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to count scholarships")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"data": rows,
 		"meta": map[string]interface{}{
 			"page_size":   limit,
@@ -533,15 +518,15 @@ func (h *Handlers) HandleAdminCreateScholarship(w http.ResponseWriter, r *http.R
 		TrustLevel        int16           `json:"trust_level"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
 		return
 	}
 	if body.Title == "" {
-		writeError(w, http.StatusBadRequest, "missing_field", "title is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_field", "title is required")
 		return
 	}
 	if body.Country == "" {
-		writeError(w, http.StatusBadRequest, "missing_field", "country is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_field", "country is required")
 		return
 	}
 
@@ -549,7 +534,7 @@ func (h *Handlers) HandleAdminCreateScholarship(w http.ResponseWriter, r *http.R
 	var deadline pgtype.Date
 	if body.Deadline != nil && *body.Deadline != "" {
 		if err := deadline.Scan(*body.Deadline); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_deadline", "Invalid deadline date format")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_deadline", "Invalid deadline date format")
 			return
 		}
 	}
@@ -591,10 +576,10 @@ func (h *Handlers) HandleAdminCreateScholarship(w http.ResponseWriter, r *http.R
 	contentRow, err := h.svc.store.queries.CreateContent(r.Context(), contentParams)
 	if err != nil {
 		if strings.Contains(err.Error(), "duplicate") {
-			writeError(w, http.StatusConflict, "duplicate_content", "A scholarship with this content already exists")
+			errpkg.WriteError(w, http.StatusConflict, "duplicate_content", "A scholarship with this content already exists")
 			return
 		}
-		writeError(w, http.StatusInternalServerError, "create_failed", "Failed to create scholarship guide content")
+		errpkg.WriteError(w, http.StatusInternalServerError, "create_failed", "Failed to create scholarship guide content")
 		return
 	}
 
@@ -650,11 +635,11 @@ func (h *Handlers) HandleAdminCreateScholarship(w http.ResponseWriter, r *http.R
 
 	sch, err := h.svc.store.AdminCreateScholarship(r.Context(), tenantID, arg)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "create_failed", "Failed to create scholarship")
+		errpkg.WriteError(w, http.StatusInternalServerError, "create_failed", "Failed to create scholarship")
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]interface{}{"data": sch})
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]interface{}{"data": sch})
 }
 
 // HandleAdminUpdateScholarship updates an existing scholarship record.
@@ -678,29 +663,29 @@ func (h *Handlers) HandleAdminUpdateScholarship(w http.ResponseWriter, r *http.R
 	// Load existing record to merge with updates.
 	existing, err := h.svc.store.AdminGetScholarship(r.Context(), tenantID, id)
 	if err != nil {
-		writeError(w, http.StatusNotFound, "not_found", "Scholarship not found")
+		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Scholarship not found")
 		return
 	}
 
 	var body struct {
-		Title             *string          `json:"title"`
-		Description       *string          `json:"description"`
-		Country           *string          `json:"country"`
-		University        *string          `json:"university"`
-		DegreeLevel       *string          `json:"degree_level"`
-		FieldsOfStudy     []string         `json:"fields_of_study"`
-		EligibleCountries []string         `json:"eligible_countries"`
-		Funding           json.RawMessage  `json:"funding"`
-		Deadline          *string          `json:"deadline"`
-		ApplicationUrl    *string          `json:"application_url"`
-		RequiredDocuments []string         `json:"required_documents"`
-		LanguageReqs      json.RawMessage  `json:"language_requirements"`
-		SourceUrl         *string          `json:"source_url"`
-		SourceType        *string          `json:"source_type"`
-		TrustLevel        *int16           `json:"trust_level"`
+		Title             *string         `json:"title"`
+		Description       *string         `json:"description"`
+		Country           *string         `json:"country"`
+		University        *string         `json:"university"`
+		DegreeLevel       *string         `json:"degree_level"`
+		FieldsOfStudy     []string        `json:"fields_of_study"`
+		EligibleCountries []string        `json:"eligible_countries"`
+		Funding           json.RawMessage `json:"funding"`
+		Deadline          *string         `json:"deadline"`
+		ApplicationUrl    *string         `json:"application_url"`
+		RequiredDocuments []string        `json:"required_documents"`
+		LanguageReqs      json.RawMessage `json:"language_requirements"`
+		SourceUrl         *string         `json:"source_url"`
+		SourceType        *string         `json:"source_type"`
+		TrustLevel        *int16          `json:"trust_level"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
 		return
 	}
 
@@ -782,17 +767,17 @@ func (h *Handlers) HandleAdminUpdateScholarship(w http.ResponseWriter, r *http.R
 	}
 
 	if err := h.svc.store.AdminUpdateScholarship(r.Context(), tenantID, arg); err != nil {
-		writeError(w, http.StatusInternalServerError, "update_failed", "Failed to update scholarship")
+		errpkg.WriteError(w, http.StatusInternalServerError, "update_failed", "Failed to update scholarship")
 		return
 	}
 
 	// Re-fetch so the admin panel receives the updated row.
 	updated, err := h.svc.store.AdminGetScholarship(r.Context(), tenantID, id)
 	if err != nil {
-		writeJSON(w, http.StatusOK, map[string]interface{}{"data": "ok"})
+		errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{"data": "ok"})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]interface{}{"data": updated})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{"data": updated})
 }
 
 // HandleAdminDeleteScholarship deletes a scholarship record.
@@ -814,9 +799,9 @@ func (h *Handlers) HandleAdminDeleteScholarship(w http.ResponseWriter, r *http.R
 	}
 
 	if err := h.svc.store.AdminDeleteScholarship(r.Context(), tenantID, id); err != nil {
-		writeError(w, http.StatusInternalServerError, "delete_failed", "Failed to delete scholarship")
+		errpkg.WriteError(w, http.StatusInternalServerError, "delete_failed", "Failed to delete scholarship")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{"data": "ok"})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{"data": "ok"})
 }

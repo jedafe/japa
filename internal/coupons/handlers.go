@@ -30,7 +30,7 @@ func NewHandlers(service *Service) *Handlers {
 func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	user := auth.FromContext(r.Context())
 	if user == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
 	return user, true
@@ -39,7 +39,7 @@ func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.Au
 func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "Tenant context not available")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "Tenant context not available")
 		return pgtype.UUID{}, false
 	}
 	return t.ID, true
@@ -73,32 +73,18 @@ func parseQueryString(r *http.Request, key string) *string {
 	return &v
 }
 
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	if v != nil {
-		json.NewEncoder(w).Encode(v)
-	}
-}
-
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, map[string]any{
-		"error": map[string]string{"code": code, "message": message},
-	})
-}
-
 func handleServiceError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, ErrCouponNotFound), errors.Is(err, ErrProviderNotFound):
-		writeError(w, http.StatusNotFound, "not_found", err.Error())
+		errpkg.WriteError(w, http.StatusNotFound, "not_found", err.Error())
 	case errors.Is(err, ErrProviderHasCoupons):
-		writeError(w, http.StatusConflict, "provider_has_coupons", err.Error())
+		errpkg.WriteError(w, http.StatusConflict, "provider_has_coupons", err.Error())
 	case errors.Is(err, ErrCouponAlreadyExists):
-		writeError(w, http.StatusConflict, "already_exists", err.Error())
+		errpkg.WriteError(w, http.StatusConflict, "already_exists", err.Error())
 	case errors.Is(err, errpkg.ErrDuplicate):
-		writeError(w, http.StatusConflict, "already_exists", "Resource already exists")
+		errpkg.WriteError(w, http.StatusConflict, "already_exists", "Resource already exists")
 	case errors.Is(err, errpkg.ErrRequired):
-		writeError(w, http.StatusBadRequest, "validation_error", err.Error())
+		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", err.Error())
 	default:
 		errpkg.HandleServiceError(w, err)
 	}
@@ -127,7 +113,7 @@ func (h *Handlers) ListPublicCoupons(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": coupons})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": coupons})
 }
 
 // GetCoupon handles GET /api/v1/coupons/:id
@@ -138,7 +124,7 @@ func (h *Handlers) GetCoupon(w http.ResponseWriter, r *http.Request) {
 	}
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid coupon ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid coupon ID")
 		return
 	}
 	coupon, err := h.Service.GetCoupon(r.Context(), id, tenantID)
@@ -146,7 +132,7 @@ func (h *Handlers) GetCoupon(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": coupon})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": coupon})
 }
 
 // RecordCouponClick handles POST /api/v1/coupons/:id/click
@@ -157,7 +143,7 @@ func (h *Handlers) RecordCouponClick(w http.ResponseWriter, r *http.Request) {
 	}
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid coupon ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid coupon ID")
 		return
 	}
 	// Verify the coupon exists (tenant-scoped) before recording the event so
@@ -171,11 +157,11 @@ func (h *Handlers) RecordCouponClick(w http.ResponseWriter, r *http.Request) {
 		ContentID *pgtype.UUID `json:"content_id,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
 	if input.EventType != "click" && input.EventType != "copy" {
-		writeError(w, http.StatusBadRequest, "invalid_event_type", "event_type must be 'click' or 'copy'")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_event_type", "event_type must be 'click' or 'copy'")
 		return
 	}
 
@@ -188,7 +174,7 @@ func (h *Handlers) RecordCouponClick(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusAccepted, map[string]any{"data": map[string]string{"status": "recorded"}})
+	errpkg.WriteJSON(w, http.StatusAccepted, map[string]any{"data": map[string]string{"status": "recorded"}})
 }
 
 // ── Admin Affiliate Provider Routes ─────────────────────────────────
@@ -207,7 +193,7 @@ func (h *Handlers) ListProviders(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": providers})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": providers})
 }
 
 // CreateProvider handles POST /api/v1/admin/affiliate-providers
@@ -218,15 +204,15 @@ func (h *Handlers) CreateProvider(w http.ResponseWriter, r *http.Request) {
 	}
 	var input CreateProviderInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
 	if input.Name == "" {
-		writeError(w, http.StatusBadRequest, "missing_field", "name is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_field", "name is required")
 		return
 	}
 	if input.Slug == "" {
-		writeError(w, http.StatusBadRequest, "missing_field", "slug is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_field", "slug is required")
 		return
 	}
 	if input.ProviderType == "" {
@@ -239,7 +225,7 @@ func (h *Handlers) CreateProvider(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, map[string]any{"data": provider})
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": provider})
 }
 
 // GetProvider handles GET /api/v1/admin/affiliate-providers/:id
@@ -250,7 +236,7 @@ func (h *Handlers) GetProvider(w http.ResponseWriter, r *http.Request) {
 	}
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid provider ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid provider ID")
 		return
 	}
 	provider, err := h.Service.GetProvider(r.Context(), id, tenantID)
@@ -258,7 +244,7 @@ func (h *Handlers) GetProvider(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": provider})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": provider})
 }
 
 // UpdateProvider handles PATCH /api/v1/admin/affiliate-providers/:id
@@ -269,16 +255,16 @@ func (h *Handlers) UpdateProvider(w http.ResponseWriter, r *http.Request) {
 	}
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid provider ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid provider ID")
 		return
 	}
 	var input UpdateProviderInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
 	if input.Name == "" {
-		writeError(w, http.StatusBadRequest, "missing_field", "name is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_field", "name is required")
 		return
 	}
 
@@ -287,7 +273,7 @@ func (h *Handlers) UpdateProvider(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": provider})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": provider})
 }
 
 // DeleteProvider handles DELETE /api/v1/admin/affiliate-providers/:id
@@ -298,14 +284,14 @@ func (h *Handlers) DeleteProvider(w http.ResponseWriter, r *http.Request) {
 	}
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid provider ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid provider ID")
 		return
 	}
 	if err := h.Service.DeleteProvider(r.Context(), id, tenantID); err != nil {
 		handleServiceError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusNoContent, nil)
+	errpkg.WriteJSON(w, http.StatusNoContent, nil)
 }
 
 // ── Admin Coupon Routes ─────────────────────────────────────────────
@@ -331,7 +317,7 @@ func (h *Handlers) ListCouponsAdmin(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": coupons})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": coupons})
 }
 
 // CreateCouponAdmin handles POST /api/v1/admin/coupons
@@ -346,15 +332,15 @@ func (h *Handlers) CreateCouponAdmin(w http.ResponseWriter, r *http.Request) {
 	}
 	var input CreateCouponInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
 	if input.Title == "" {
-		writeError(w, http.StatusBadRequest, "missing_field", "title is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_field", "title is required")
 		return
 	}
 	if input.Code == "" {
-		writeError(w, http.StatusBadRequest, "missing_field", "code is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_field", "code is required")
 		return
 	}
 	if input.CouponType == "" {
@@ -369,7 +355,7 @@ func (h *Handlers) CreateCouponAdmin(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, map[string]any{"data": coupon})
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": coupon})
 }
 
 // GetCouponAdmin handles GET /api/v1/admin/coupons/:id
@@ -380,7 +366,7 @@ func (h *Handlers) GetCouponAdmin(w http.ResponseWriter, r *http.Request) {
 	}
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid coupon ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid coupon ID")
 		return
 	}
 	coupon, err := h.Service.GetCoupon(r.Context(), id, tenantID)
@@ -388,7 +374,7 @@ func (h *Handlers) GetCouponAdmin(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": coupon})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": coupon})
 }
 
 // UpdateCouponAdmin handles PATCH /api/v1/admin/coupons/:id
@@ -399,20 +385,20 @@ func (h *Handlers) UpdateCouponAdmin(w http.ResponseWriter, r *http.Request) {
 	}
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid coupon ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid coupon ID")
 		return
 	}
 	var input UpdateCouponInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
 	if input.Title == "" {
-		writeError(w, http.StatusBadRequest, "missing_field", "title is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_field", "title is required")
 		return
 	}
 	if input.Code == "" {
-		writeError(w, http.StatusBadRequest, "missing_field", "code is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_field", "code is required")
 		return
 	}
 
@@ -421,7 +407,7 @@ func (h *Handlers) UpdateCouponAdmin(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": coupon})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": coupon})
 }
 
 // DeleteCouponAdmin handles DELETE /api/v1/admin/coupons/:id
@@ -432,14 +418,14 @@ func (h *Handlers) DeleteCouponAdmin(w http.ResponseWriter, r *http.Request) {
 	}
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid coupon ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid coupon ID")
 		return
 	}
 	if err := h.Service.DeleteCoupon(r.Context(), id, tenantID); err != nil {
 		handleServiceError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusNoContent, nil)
+	errpkg.WriteJSON(w, http.StatusNoContent, nil)
 }
 
 // ── Render Helpers ──────────────────────────────────────────────────
@@ -454,7 +440,7 @@ func (h *Handlers) RenderCoupon(w http.ResponseWriter, r *http.Request) {
 	}
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid coupon ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid coupon ID")
 		return
 	}
 	rendered, err := h.Service.ResolveCouponForRender(r.Context(), tenantID, id)
@@ -462,7 +448,7 @@ func (h *Handlers) RenderCoupon(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": rendered})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": rendered})
 }
 
 // RenderAffiliateLink handles GET /api/v1/render/affiliate-link
@@ -476,12 +462,12 @@ func (h *Handlers) RenderAffiliateLink(w http.ResponseWriter, r *http.Request) {
 	providerIDStr := r.URL.Query().Get("provider_id")
 	originalURL := r.URL.Query().Get("url")
 	if providerIDStr == "" || originalURL == "" {
-		writeError(w, http.StatusBadRequest, "missing_params", "url and provider_id are required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_params", "url and provider_id are required")
 		return
 	}
 	var providerID pgtype.UUID
 	if err := providerID.Scan(providerIDStr); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_provider_id", "Invalid provider ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_provider_id", "Invalid provider ID")
 		return
 	}
 	rendered, err := h.Service.ResolveAffiliateLinkForRender(r.Context(), tenantID, providerID, originalURL)
@@ -489,7 +475,7 @@ func (h *Handlers) RenderAffiliateLink(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": rendered})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": rendered})
 }
 
 // parseQueryUUID is a helper to parse a UUID query parameter.
@@ -526,7 +512,7 @@ func (h *Handlers) ListAffiliateScanResults(w http.ResponseWriter, r *http.Reque
 		PageOffset:  offset,
 	})
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "query_error", "Failed to query scan results")
+		errpkg.WriteError(w, http.StatusInternalServerError, "query_error", "Failed to query scan results")
 		return
 	}
 	results := make([]map[string]any, 0, len(rows))
@@ -537,7 +523,7 @@ func (h *Handlers) ListAffiliateScanResults(w http.ResponseWriter, r *http.Reque
 			"created_at": row.CreatedAt.Time,
 		})
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": results, "page": page, "page_size": pageSize})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": results, "page": page, "page_size": pageSize})
 }
 
 // ReviewAffiliateScanResult handles PATCH /admin/affiliate/scan-results/{id}
@@ -553,7 +539,7 @@ func (h *Handlers) ReviewAffiliateScanResult(w http.ResponseWriter, r *http.Requ
 	}
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid scan result ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid scan result ID")
 		return
 	}
 	var input struct {
@@ -561,12 +547,12 @@ func (h *Handlers) ReviewAffiliateScanResult(w http.ResponseWriter, r *http.Requ
 		Notes  *string `json:"notes"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
 	var reviewerID pgtype.UUID
 	if err := reviewerID.Scan(user.UserID); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_user_id", "Invalid reviewer ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_user_id", "Invalid reviewer ID")
 		return
 	}
 	rowsAffected, err := h.Service.store.reviewAffiliateScanResult(r.Context(), gen.ReviewAffiliateScanResultParams{
@@ -577,14 +563,14 @@ func (h *Handlers) ReviewAffiliateScanResult(w http.ResponseWriter, r *http.Requ
 		TenantID:    tenantID,
 	})
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "update_failed", "Failed to review scan result")
+		errpkg.WriteError(w, http.StatusInternalServerError, "update_failed", "Failed to review scan result")
 		return
 	}
 	if rowsAffected == 0 {
-		writeError(w, http.StatusNotFound, "scan_result_not_found", "Scan result not found")
+		errpkg.WriteError(w, http.StatusNotFound, "scan_result_not_found", "Scan result not found")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"updated": true}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"updated": true}})
 }
 
 // ListAffiliateCommissions handles GET /admin/affiliate/commissions
@@ -609,7 +595,7 @@ func (h *Handlers) ListAffiliateCommissions(w http.ResponseWriter, r *http.Reque
 			f := false
 			creditedFilter = &f
 		default:
-			writeError(w, http.StatusBadRequest, "invalid_filter", "credited must be 'true' or 'false'")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_filter", "credited must be 'true' or 'false'")
 			return
 		}
 	}
@@ -621,7 +607,7 @@ func (h *Handlers) ListAffiliateCommissions(w http.ResponseWriter, r *http.Reque
 		PageOffset: offset,
 	})
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "query_error", "Failed to query commissions")
+		errpkg.WriteError(w, http.StatusInternalServerError, "query_error", "Failed to query commissions")
 		return
 	}
 	results := make([]map[string]any, 0, len(rows))
@@ -637,7 +623,7 @@ func (h *Handlers) ListAffiliateCommissions(w http.ResponseWriter, r *http.Reque
 			"author_commission_pct": pctF.Float64, "credited": row.Credited, "created_at": row.CreatedAt.Time,
 		})
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": results, "page": page, "page_size": pageSize})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": results, "page": page, "page_size": pageSize})
 }
 
 // UpdateProviderAuthorCommission handles PATCH /admin/affiliate/providers/{id}/author-commission
@@ -649,18 +635,18 @@ func (h *Handlers) UpdateProviderAuthorCommission(w http.ResponseWriter, r *http
 	}
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid provider ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid provider ID")
 		return
 	}
 	var input struct {
 		AuthorCommissionPct float64 `json:"author_commission_pct"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
 	if input.AuthorCommissionPct < 0 || input.AuthorCommissionPct > 100 {
-		writeError(w, http.StatusBadRequest, "invalid_pct", "Percentage must be 0-100")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_pct", "Percentage must be 0-100")
 		return
 	}
 	rowsAffected, err := h.Service.store.updateProviderAuthorCommission(r.Context(), gen.UpdateProviderAuthorCommissionParams{
@@ -669,14 +655,14 @@ func (h *Handlers) UpdateProviderAuthorCommission(w http.ResponseWriter, r *http
 		TenantID:            tenantID,
 	})
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "update_failed", "Failed to update author commission percentage")
+		errpkg.WriteError(w, http.StatusInternalServerError, "update_failed", "Failed to update author commission percentage")
 		return
 	}
 	if rowsAffected == 0 {
-		writeError(w, http.StatusNotFound, "provider_not_found", "Affiliate provider not found")
+		errpkg.WriteError(w, http.StatusNotFound, "provider_not_found", "Affiliate provider not found")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"updated": true}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"updated": true}})
 }
 
 // RecordAffiliateCommission handles POST /admin/affiliate/commissions.
@@ -704,24 +690,24 @@ func (h *Handlers) RecordAffiliateCommission(w http.ResponseWriter, r *http.Requ
 		EventDescription   *string `json:"event_description,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
 
 	var providerID pgtype.UUID
 	if err := providerID.Scan(input.ProviderID); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_provider_id", "Invalid provider_id")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_provider_id", "Invalid provider_id")
 		return
 	}
 
 	var contentID pgtype.UUID
 	if err := contentID.Scan(input.ContentID); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_content_id", "Invalid content_id")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_content_id", "Invalid content_id")
 		return
 	}
 
 	if input.ExternalCommission <= 0 {
-		writeError(w, http.StatusBadRequest, "invalid_commission", "External commission must be positive")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_commission", "External commission must be positive")
 		return
 	}
 
@@ -735,21 +721,21 @@ func (h *Handlers) RecordAffiliateCommission(w http.ResponseWriter, r *http.Requ
 		// Distinguish not-found (content or provider missing) from internal errors.
 		errMsg := err.Error()
 		if strings.Contains(errMsg, "content not found") {
-			writeError(w, http.StatusNotFound, "content_not_found", "Content not found")
+			errpkg.WriteError(w, http.StatusNotFound, "content_not_found", "Content not found")
 			return
 		}
 		if strings.Contains(errMsg, "provider not found") {
-			writeError(w, http.StatusNotFound, "provider_not_found", "Affiliate provider not found")
+			errpkg.WriteError(w, http.StatusNotFound, "provider_not_found", "Affiliate provider not found")
 			return
 		}
 		if strings.Contains(errMsg, "no author_id") {
-			writeError(w, http.StatusBadRequest, "no_author", "Content has no author")
+			errpkg.WriteError(w, http.StatusBadRequest, "no_author", "Content has no author")
 			return
 		}
 		errpkg.CaptureException(err)
-		writeError(w, http.StatusInternalServerError, "record_failed", "Failed to record commission")
+		errpkg.WriteError(w, http.StatusInternalServerError, "record_failed", "Failed to record commission")
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": commission})
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": commission})
 }

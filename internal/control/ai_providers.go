@@ -10,6 +10,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/ai"
+	errpkg "github.com/jedafe/japa/internal/errors"
 )
 
 // ---------------------------------------------------------------------------
@@ -46,18 +47,18 @@ func (h *Handlers) ListAIProviders(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.ProviderStore == nil {
-		writeJSON(w, http.StatusOK, map[string]any{"data": []any{}})
+		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": []any{}})
 		return
 	}
 
 	providers, err := h.ProviderStore.ListProviders(r.Context(), tenantID)
 	if err != nil {
 		slog.Error("control: list ai providers", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list AI providers")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list AI providers")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": providers})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": providers})
 }
 
 // GetAIProvider handles GET /control/ai-providers/{id}.
@@ -69,22 +70,22 @@ func (h *Handlers) GetAIProvider(w http.ResponseWriter, r *http.Request) {
 
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid provider ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid provider ID")
 		return
 	}
 
 	if h.ProviderStore == nil {
-		writeError(w, http.StatusServiceUnavailable, "no_provider_store", "Provider store not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "no_provider_store", "Provider store not configured")
 		return
 	}
 
 	provider, err := h.ProviderStore.GetProvider(r.Context(), tenantID, id)
 	if err != nil {
-		writeError(w, http.StatusNotFound, "not_found", "Provider not found")
+		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Provider not found")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": provider})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": provider})
 }
 
 // CreateAIProvider handles POST /control/ai-providers.
@@ -95,7 +96,7 @@ func (h *Handlers) CreateAIProvider(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.ProviderStore == nil {
-		writeError(w, http.StatusServiceUnavailable, "no_provider_store", "Provider store not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "no_provider_store", "Provider store not configured")
 		return
 	}
 
@@ -111,28 +112,28 @@ func (h *Handlers) CreateAIProvider(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if input.Name == "" {
-		writeError(w, http.StatusBadRequest, "validation_error", "name is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "name is required")
 		return
 	}
 
 	if !validProviderTypes[input.ProviderType] {
-		writeError(w, http.StatusBadRequest, "validation_error", "invalid provider_type")
+		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "invalid provider_type")
 		return
 	}
 
 	if len(input.Categories) == 0 {
-		writeError(w, http.StatusBadRequest, "validation_error", "at least one category is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "at least one category is required")
 		return
 	}
 
 	for _, cat := range input.Categories {
 		if !validAICategories[cat] {
-			writeError(w, http.StatusBadRequest, "validation_error", "invalid category: "+cat)
+			errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "invalid category: "+cat)
 			return
 		}
 	}
@@ -155,14 +156,14 @@ func (h *Handlers) CreateAIProvider(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		slog.Error("control: create ai provider", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to create AI provider")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to create AI provider")
 		return
 	}
 
 	// Hot-reload the dispatcher so the new provider is immediately available.
 	h.reloadAIProviders(r.Context(), tenantID)
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": provider})
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": provider})
 }
 
 // UpdateAIProvider handles PATCH /control/ai-providers/{id}.
@@ -174,12 +175,12 @@ func (h *Handlers) UpdateAIProvider(w http.ResponseWriter, r *http.Request) {
 
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid provider ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid provider ID")
 		return
 	}
 
 	if h.ProviderStore == nil {
-		writeError(w, http.StatusServiceUnavailable, "no_provider_store", "Provider store not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "no_provider_store", "Provider store not configured")
 		return
 	}
 
@@ -195,12 +196,12 @@ func (h *Handlers) UpdateAIProvider(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if input.ProviderType != nil && !validProviderTypes[*input.ProviderType] {
-		writeError(w, http.StatusBadRequest, "validation_error", "invalid provider_type")
+		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "invalid provider_type")
 		return
 	}
 
@@ -208,12 +209,12 @@ func (h *Handlers) UpdateAIProvider(w http.ResponseWriter, r *http.Request) {
 	// We detect presence by checking if the raw body contains the key.
 	if input.Categories != nil {
 		if len(input.Categories) == 0 {
-			writeError(w, http.StatusBadRequest, "validation_error", "at least one category is required")
+			errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "at least one category is required")
 			return
 		}
 		for _, cat := range input.Categories {
 			if !validAICategories[cat] {
-				writeError(w, http.StatusBadRequest, "validation_error", "invalid category: "+cat)
+				errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "invalid category: "+cat)
 				return
 			}
 		}
@@ -238,14 +239,14 @@ func (h *Handlers) UpdateAIProvider(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		slog.Error("control: update ai provider", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to update AI provider")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update AI provider")
 		return
 	}
 
 	// Hot-reload the dispatcher so the updated config takes effect immediately.
 	h.reloadAIProviders(r.Context(), tenantID)
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": provider})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": provider})
 }
 
 // DeleteAIProvider handles DELETE /control/ai-providers/{id}.
@@ -257,29 +258,29 @@ func (h *Handlers) DeleteAIProvider(w http.ResponseWriter, r *http.Request) {
 
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid provider ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid provider ID")
 		return
 	}
 
 	if h.ProviderStore == nil {
-		writeError(w, http.StatusServiceUnavailable, "no_provider_store", "Provider store not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "no_provider_store", "Provider store not configured")
 		return
 	}
 
 	if err := h.ProviderStore.DeleteProvider(r.Context(), tenantID, id); err != nil {
 		if strings.Contains(err.Error(), "not_found") {
-			writeError(w, http.StatusNotFound, "not_found", "Provider not found")
+			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Provider not found")
 			return
 		}
 		slog.Error("control: delete ai provider", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to delete AI provider")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to delete AI provider")
 		return
 	}
 
 	// Hot-reload the dispatcher so the removed provider is unregistered.
 	h.reloadAIProviders(r.Context(), tenantID)
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
 }
 
 // TestAIProvider handles POST /control/ai-providers/{id}/test.
@@ -292,36 +293,36 @@ func (h *Handlers) TestAIProvider(w http.ResponseWriter, r *http.Request) {
 
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid provider ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid provider ID")
 		return
 	}
 
 	if h.ProviderStore == nil {
-		writeError(w, http.StatusServiceUnavailable, "no_provider_store", "Provider store not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "no_provider_store", "Provider store not configured")
 		return
 	}
 
 	provider, err := h.ProviderStore.GetProvider(r.Context(), tenantID, id)
 	if err != nil {
-		writeError(w, http.StatusNotFound, "not_found", "Provider not found")
+		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Provider not found")
 		return
 	}
 
 	apiKey, err := h.ProviderStore.GetDecryptedAPIKey(r.Context(), tenantID, id)
 	if err != nil {
 		slog.Error("control: test ai provider: decrypt key", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to decrypt API key")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to decrypt API key")
 		return
 	}
 
 	if apiKey == "" {
-		writeError(w, http.StatusBadRequest, "no_api_key", "This provider has no API key configured")
+		errpkg.WriteError(w, http.StatusBadRequest, "no_api_key", "This provider has no API key configured")
 		return
 	}
 
 	p, err := ai.NewProviderFromConfig(provider, apiKey)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "unsupported_type", err.Error())
+		errpkg.WriteError(w, http.StatusBadRequest, "unsupported_type", err.Error())
 		return
 	}
 
@@ -334,7 +335,7 @@ func (h *Handlers) TestAIProvider(w http.ResponseWriter, r *http.Request) {
 		},
 	})
 	if err != nil {
-		writeJSON(w, http.StatusOK, map[string]any{
+		errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 			"data": map[string]any{
 				"status":  "failed",
 				"message": err.Error(),
@@ -343,7 +344,7 @@ func (h *Handlers) TestAIProvider(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
 			"status":       "success",
 			"provider_ref": resp.ProviderRef,
@@ -370,12 +371,12 @@ func (h *Handlers) FetchAIModels(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if !validProviderTypes[input.ProviderType] {
-		writeError(w, http.StatusBadRequest, "validation_error", "invalid provider_type")
+		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "invalid provider_type")
 		return
 	}
 
@@ -383,7 +384,7 @@ func (h *Handlers) FetchAIModels(w http.ResponseWriter, r *http.Request) {
 	// meaning "use the stored key". But for this inline fetch, we need
 	// a key. If empty, return an error prompting the user to enter one.
 	if input.APIKey == "" {
-		writeError(w, http.StatusBadRequest, "no_api_key", "Enter an API key to fetch available models")
+		errpkg.WriteError(w, http.StatusBadRequest, "no_api_key", "Enter an API key to fetch available models")
 		return
 	}
 
@@ -395,14 +396,14 @@ func (h *Handlers) FetchAIModels(w http.ResponseWriter, r *http.Request) {
 	}
 	p, err := ai.NewProviderFromConfig(cfg, input.APIKey)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "unsupported_type", err.Error())
+		errpkg.WriteError(w, http.StatusBadRequest, "unsupported_type", err.Error())
 		return
 	}
 
 	models, err := p.FetchModels(r.Context())
 	if err != nil {
 		slog.Warn("control: fetch ai models", "error", err, "type", input.ProviderType)
-		writeJSON(w, http.StatusOK, map[string]any{
+		errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 			"data":    []any{},
 			"error":   err.Error(),
 			"warning": "Could not fetch models — you can still type the model name manually.",
@@ -410,7 +411,7 @@ func (h *Handlers) FetchAIModels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": models})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": models})
 }
 
 // GetAIProviderTypes handles GET /control/ai-providers/types.
@@ -426,10 +427,10 @@ func (h *Handlers) GetAIProviderTypes(w http.ResponseWriter, _ *http.Request) {
 	for c := range validAICategories {
 		cats = append(cats, c)
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
 			"provider_types": types,
-			"categories":      cats,
+			"categories":     cats,
 		},
 	})
 }

@@ -5,7 +5,8 @@
 // available and manual admin curation as fallback.
 //
 // Ref: japaconnect-engineering/sections/74-remittance-tracker.md
-//      japaconnect-engineering/adr/ADR-075-remittance-rate-tracker.md
+//
+//	japaconnect-engineering/adr/ADR-075-remittance-rate-tracker.md
 package remittance
 
 import (

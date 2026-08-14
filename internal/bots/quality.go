@@ -8,9 +8,9 @@ package bots
 // Ref: japaconnect-engineering/sections/43-bot-crawler-management.md
 type SitemapQualityConfig struct {
 	// Space-level gates.
-	MinMembers  int
-	MinPosts    int
-	MinForums   int
+	MinMembers   int
+	MinPosts     int
+	MinForums    int
 	MinQuestions int
 	// Content-level fallback word count (used when no per-type threshold is set).
 	MinWords int
@@ -43,6 +43,7 @@ type SitemapQualityConfig struct {
 //   - seo.sitemap.forum_min_replies    → 1
 //   - seo.sitemap.question_min_answers → 1
 //   - seo.sitemap.discussion_min_comments → 0
+//
 // Ref: japaconnect-engineering/sections/43-bot-crawler-management.md
 func DefaultSitemapQualityConfig() SitemapQualityConfig {
 	return SitemapQualityConfig{
@@ -117,17 +118,17 @@ func IsContentIndexable(status, visibility string, wordCount, minWords int, allo
 // IsContentIndexable that applies per-type word count and engagement
 // thresholds per Section 43.
 type ContentIndexableInput struct {
-	ContentType    string // "blog_post", "forum_thread", "discussion", "guide", "comparison"
-	Status         string
-	Visibility     string
-	WordCount      int
-	CommentCount   int
-	ShareCount     int
-	ReactionCount  int
-	ReplyCount     int // forum_threads only
-	IsQuestion     bool // true for forum threads that are questions
-	Solved         bool // true if the question has been answered
-	SeoIndexable   bool // per-content seo_indexable flag
+	ContentType   string // "blog_post", "forum_thread", "discussion", "guide", "comparison"
+	Status        string
+	Visibility    string
+	WordCount     int
+	CommentCount  int
+	ShareCount    int
+	ReactionCount int
+	ReplyCount    int  // forum_threads only
+	IsQuestion    bool // true for forum threads that are questions
+	Solved        bool // true if the question has been answered
+	SeoIndexable  bool // per-content seo_indexable flag
 }
 
 // IsContentIndexableByType applies the full Section 43 quality gate with

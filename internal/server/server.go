@@ -2447,7 +2447,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// register a 503 stub so the route is reachable but reports
 			// the service is unavailable instead of nil-dereferencing.
 			renderHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				writeError(w, http.StatusServiceUnavailable, "renderer_disabled", "Content rendering is temporarily unavailable")
+				errtracking.WriteError(w, http.StatusServiceUnavailable, "renderer_disabled", "Content rendering is temporarily unavailable")
 			})
 			if rendererHandlers != nil {
 				renderHandler = rendererHandlers.Render

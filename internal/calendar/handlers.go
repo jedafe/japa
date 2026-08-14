@@ -14,7 +14,8 @@
 //	PATCH  /api/v1/admin/calendar/:id     — approve/archive/flag (auth, calendar.review)
 //
 // Ref: japaconnect-engineering/sections/86-community-calendar.md
-//      japaconnect-engineering/adr/ADR-094-community-calendar.md
+//
+//	japaconnect-engineering/adr/ADR-094-community-calendar.md
 package calendar
 
 import (
@@ -30,6 +31,7 @@ import (
 
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/config"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/tenant"
 )
 
@@ -44,24 +46,10 @@ func NewHandlers(service *Service, settings *config.Settings) *Handlers {
 	return &Handlers{service: service, settings: settings}
 }
 
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	if err := json.NewEncoder(w).Encode(v); err != nil {
-		slog.Error("calendar: encode response", "error", err)
-	}
-}
-
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, map[string]any{
-		"error": map[string]string{"code": code, "message": message},
-	})
-}
-
 func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
 	return t.ID, true
@@ -70,7 +58,7 @@ func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	u := auth.FromContext(r.Context())
 	if u == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
 	return u, true
@@ -79,7 +67,7 @@ func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUse
 func scanUUIDParam(w http.ResponseWriter, r *http.Request, name string) (pgtype.UUID, bool) {
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, name)); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid "+name)
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid "+name)
 		return pgtype.UUID{}, false
 	}
 	return id, true
@@ -124,7 +112,7 @@ func (h *Handlers) HandleCategories(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	cats := h.service.Categories(r.Context(), tenantID)
-	writeJSON(w, http.StatusOK, map[string]any{"data": cats})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": cats})
 }
 
 // HandleList handles GET /calendar — list published calendar entries with
@@ -143,7 +131,7 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 	}
 	if destParam != "" {
 		if err := destSpaceID.Scan(destParam); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid destination space ID")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid destination space ID")
 			return
 		}
 	}
@@ -155,7 +143,7 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 	}
 	if originParam != "" {
 		if err := originSpaceID.Scan(originParam); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid origin space ID")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid origin space ID")
 			return
 		}
 	}
@@ -166,7 +154,7 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 	if v := r.URL.Query().Get("from"); v != "" {
 		ts, err := parseTimestamp(v)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_date", "Invalid from date")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_date", "Invalid from date")
 			return
 		}
 		from = ts
@@ -174,7 +162,7 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 	if v := r.URL.Query().Get("to"); v != "" {
 		ts, err := parseTimestamp(v)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_date", "Invalid to date")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_date", "Invalid to date")
 			return
 		}
 		to = ts
@@ -185,11 +173,11 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 	entries, total, err := h.service.List(r.Context(), tenantID, destSpaceID, originSpaceID, category, from, to, page, limit)
 	if err != nil {
 		slog.Error("calendar: list failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "list_failed", "Failed to list calendar entries")
+		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list calendar entries")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": entries,
 		"pagination": map[string]any{
 			"page":        page,
@@ -221,7 +209,7 @@ func (h *Handlers) HandleListSaved(w http.ResponseWriter, r *http.Request) {
 	entries, total, err := h.service.ListSaved(r.Context(), user.UserID, tenantID, int(page), int(limit))
 	if err != nil {
 		slog.Error("calendar: list saved failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "list_saved_failed", "Failed to list saved calendar entries")
+		errpkg.WriteError(w, http.StatusInternalServerError, "list_saved_failed", "Failed to list saved calendar entries")
 		return
 	}
 
@@ -230,7 +218,7 @@ func (h *Handlers) HandleListSaved(w http.ResponseWriter, r *http.Request) {
 		totalPages = (total + int64(limit) - 1) / int64(limit)
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": entries,
 		"meta": map[string]any{
 			"page":        page,
@@ -256,15 +244,15 @@ func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
 	entry, err := h.service.Get(r.Context(), entryID, tenantID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "entry_not_found", "Calendar entry not found")
+			errpkg.WriteError(w, http.StatusNotFound, "entry_not_found", "Calendar entry not found")
 			return
 		}
 		slog.Error("calendar: get failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "get_failed", "Failed to get calendar entry")
+		errpkg.WriteError(w, http.StatusInternalServerError, "get_failed", "Failed to get calendar entry")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": entry})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": entry})
 }
 
 // ---------------------------------------------------------------------------
@@ -286,36 +274,36 @@ func (h *Handlers) HandleSubmit(w http.ResponseWriter, r *http.Request) {
 
 	var input SubmitEntryInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
 
 	if input.Title == "" {
-		writeError(w, http.StatusBadRequest, "missing_title", "Title is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_title", "Title is required")
 		return
 	}
 	if input.Category == "" {
-		writeError(w, http.StatusBadRequest, "missing_category", "Category is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_category", "Category is required")
 		return
 	}
 	if input.OccursAt == "" {
-		writeError(w, http.StatusBadRequest, "missing_occurs_at", "occurs_at is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_occurs_at", "occurs_at is required")
 		return
 	}
 	// §86: source_url is required ("verifiable official source link").
 	if input.SourceURL == "" {
-		writeError(w, http.StatusBadRequest, "missing_source_url", "source_url is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_source_url", "source_url is required")
 		return
 	}
 
 	entryID, err := h.service.Submit(r.Context(), tenantID, user.UserID, input)
 	if err != nil {
 		slog.Error("calendar: submit failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "submit_failed", "Failed to submit calendar entry")
+		errpkg.WriteError(w, http.StatusInternalServerError, "submit_failed", "Failed to submit calendar entry")
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{
 		"data": map[string]any{
 			"id":     entryID,
 			"status": "pending",
@@ -340,11 +328,11 @@ func (h *Handlers) HandleSave(w http.ResponseWriter, r *http.Request) {
 
 	if err := h.service.Save(r.Context(), user.UserID, entryID, tenantID); err != nil {
 		slog.Error("calendar: save failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "save_failed", "Failed to save calendar entry")
+		errpkg.WriteError(w, http.StatusInternalServerError, "save_failed", "Failed to save calendar entry")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"saved": true}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"saved": true}})
 }
 
 // HandleUnsave handles DELETE /calendar/:id/save — remove a bookmark.
@@ -364,11 +352,11 @@ func (h *Handlers) HandleUnsave(w http.ResponseWriter, r *http.Request) {
 
 	if err := h.service.Unsave(r.Context(), user.UserID, entryID, tenantID); err != nil {
 		slog.Error("calendar: unsave failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "unsave_failed", "Failed to unsave calendar entry")
+		errpkg.WriteError(w, http.StatusInternalServerError, "unsave_failed", "Failed to unsave calendar entry")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"saved": false}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"saved": false}})
 }
 
 // HandleSubscribe handles POST /calendar/subscribe — subscribe to a
@@ -385,7 +373,7 @@ func (h *Handlers) HandleSubscribe(w http.ResponseWriter, r *http.Request) {
 
 	var input SubscribeInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
 
@@ -396,23 +384,23 @@ func (h *Handlers) HandleSubscribe(w http.ResponseWriter, r *http.Request) {
 		destStr = input.DestinationCountry
 	}
 	if destStr == "" {
-		writeError(w, http.StatusBadRequest, "missing_destination", "destination_space_id is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_destination", "destination_space_id is required")
 		return
 	}
 
 	var destSpaceID pgtype.UUID
 	if err := destSpaceID.Scan(destStr); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid destination_space_id")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid destination_space_id")
 		return
 	}
 
 	if err := h.service.Subscribe(r.Context(), user.UserID, tenantID, destSpaceID, input.Category); err != nil {
 		slog.Error("calendar: subscribe failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "subscribe_failed", "Failed to subscribe")
+		errpkg.WriteError(w, http.StatusInternalServerError, "subscribe_failed", "Failed to subscribe")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"subscribed": true}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"subscribed": true}})
 }
 
 // HandleUnsubscribe handles DELETE /calendar/subscribe — remove a
@@ -456,21 +444,21 @@ func (h *Handlers) HandleUnsubscribe(w http.ResponseWriter, r *http.Request) {
 	var destSpaceID pgtype.UUID
 	if destParam != "" {
 		if err := destSpaceID.Scan(destParam); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid destination space ID")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid destination space ID")
 			return
 		}
 	} else {
-		writeError(w, http.StatusBadRequest, "missing_destination", "dest or destination_space_id is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_destination", "dest or destination_space_id is required")
 		return
 	}
 
 	if err := h.service.Unsubscribe(r.Context(), user.UserID, tenantID, destSpaceID, category); err != nil {
 		slog.Error("calendar: unsubscribe failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "unsubscribe_failed", "Failed to unsubscribe")
+		errpkg.WriteError(w, http.StatusInternalServerError, "unsubscribe_failed", "Failed to unsubscribe")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"subscribed": false}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"subscribed": false}})
 }
 
 // ---------------------------------------------------------------------------
@@ -496,7 +484,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	}
 	if destParam != "" {
 		if err := destSpaceID.Scan(destParam); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid destination space ID")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid destination space ID")
 			return
 		}
 	}
@@ -508,7 +496,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	}
 	if originParam != "" {
 		if err := originSpaceID.Scan(originParam); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid origin space ID")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid origin space ID")
 			return
 		}
 	}
@@ -526,7 +514,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	if v := r.URL.Query().Get("from"); v != "" {
 		ts, err := parseTimestamp(v)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_date", "Invalid from date")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_date", "Invalid from date")
 			return
 		}
 		from = ts
@@ -534,7 +522,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	if v := r.URL.Query().Get("to"); v != "" {
 		ts, err := parseTimestamp(v)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_date", "Invalid to date")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_date", "Invalid to date")
 			return
 		}
 		to = ts
@@ -548,7 +536,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	entries, total, err := h.service.AdminList(r.Context(), tenantID, destSpaceID, originSpaceID, category, status, q, from, to, sort, order, page, limit)
 	if err != nil {
 		slog.Error("calendar: admin list failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "admin_list_failed", "Failed to list calendar entries")
+		errpkg.WriteError(w, http.StatusInternalServerError, "admin_list_failed", "Failed to list calendar entries")
 		return
 	}
 
@@ -558,7 +546,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Geo-aware tool pattern response envelope: { data, meta: { page, per_page, total, total_pages } }
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": entries,
 		"meta": map[string]any{
 			"page":        page,
@@ -587,26 +575,26 @@ func (h *Handlers) HandleAdminUpdate(w http.ResponseWriter, r *http.Request) {
 
 	var input AdminUpdateEntryInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
 
 	if input.Status == "" {
-		writeError(w, http.StatusBadRequest, "missing_status", "status is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_status", "status is required")
 		return
 	}
 
 	if err := h.service.AdminUpdate(r.Context(), entryID, tenantID, user.UserID, input.Status); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "entry_not_found", "Calendar entry not found")
+			errpkg.WriteError(w, http.StatusNotFound, "entry_not_found", "Calendar entry not found")
 			return
 		}
 		slog.Error("calendar: admin update failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "update_failed", "Failed to update calendar entry")
+		errpkg.WriteError(w, http.StatusInternalServerError, "update_failed", "Failed to update calendar entry")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"updated": true}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"updated": true}})
 }
 
 // HandleAdminDelete handles DELETE /admin/calendar/:id — soft-deletes a
@@ -628,13 +616,13 @@ func (h *Handlers) HandleAdminDelete(w http.ResponseWriter, r *http.Request) {
 
 	if err := h.service.AdminSoftDelete(r.Context(), entryID, tenantID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "entry_not_found", "Calendar entry not found")
+			errpkg.WriteError(w, http.StatusNotFound, "entry_not_found", "Calendar entry not found")
 			return
 		}
 		slog.Error("calendar: admin delete failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "delete_failed", "Failed to delete calendar entry")
+		errpkg.WriteError(w, http.StatusInternalServerError, "delete_failed", "Failed to delete calendar entry")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"deleted": true}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"deleted": true}})
 }
