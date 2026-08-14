@@ -4,17 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"html"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/jedafe/japa/internal/content"
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/intelligence/extractor"
-	"github.com/jedafe/japa/internal/intelligence/reviewerctx"
 )
 
 // HousingStore is the persistence surface the HousingPromoter needs.
@@ -32,8 +29,7 @@ type HousingStore interface {
 	GetHousingGuideByIntelRecord(ctx context.Context, tenantID, intelRecordID pgtype.UUID) (gen.HousingGuide, error)
 	CreateHousingGuideIntel(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateHousingGuideIntelParams) (gen.HousingGuide, error)
 	UpdateHousingGuideIntel(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateHousingGuideIntelParams) error
-	CreateContent(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateContentParams) (gen.CreateContentRow, error)
-	UpdateIntelRecordPromoted(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateIntelRecordPromotedParams) error
+	UpdateIntelRecordStatus(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateIntelRecordStatusParams) error
 	CreateIntelReviewLog(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateIntelReviewLogParams) error
 	// GetCountrySpace resolves the country-level geo space (§05) id for an
 	// ISO-3 country code, so the promoter can stamp
@@ -50,18 +46,18 @@ type HousingStore interface {
 // this interface (via WithTx's callback), and the test mock satisfies it
 // directly.
 type HousingTxStore interface {
-	CreateContent(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateContentParams) (gen.CreateContentRow, error)
 	CreateHousingGuideIntel(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateHousingGuideIntelParams) (gen.HousingGuide, error)
-	UpdateIntelRecordPromoted(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateIntelRecordPromotedParams) error
+	UpdateIntelRecordStatus(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateIntelRecordStatusParams) error
 	UpdateHousingGuideIntel(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateHousingGuideIntelParams) error
 	CreateIntelReviewLog(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateIntelReviewLogParams) error
 }
 
 // HousingPromoter promotes housing intel_records into the housing_guides
-// projection table plus the contents guide entry that backs it
-// (guide_category='accommodation'). It implements the editorial-override
-// invariant: on the update path, any field present in editorial_overrides is
-// left untouched so a human edit always wins over a re-crawl.
+// projection table. It implements the editorial-override invariant: on the
+// update path, any field present in editorial_overrides is left untouched so
+// a human edit always wins over a re-crawl. The contents guide row is NO
+// LONGER created here — Studio generates it from the extraction data via
+// intel_record_id (ADR-076 Amendment 1).
 type HousingPromoter struct {
 	store    HousingStore
 	tenantID pgtype.UUID
@@ -85,7 +81,7 @@ func WithHousingAIModel(model string) HousingPromoterOption {
 
 // NewHousingPromoter creates a promoter backed by the given store. The
 // tenantID and authorID identify the tenant and system author stamped onto
-// the contents guide rows created by the create path.
+// the housing_guides projection rows created by the create path.
 func NewHousingPromoter(store HousingStore, tenantID, authorID pgtype.UUID, opts ...HousingPromoterOption) *HousingPromoter {
 	p := &HousingPromoter{store: store, tenantID: tenantID, authorID: authorID, aiModel: ptr("gpt-4o-mini"), now: time.Now}
 	for _, opt := range opts {
@@ -102,8 +98,8 @@ func (p *HousingPromoter) Entity() string { return "housing" }
 var ErrNotHousing = fmt.Errorf("promoter: intel record is not a housing")
 
 // Promote maps the intel record identified by recordID to a housing_guides
-// projection row, creating it (plus its backing guide entry) or updating it
-// in place while respecting editorial overrides.
+// projection row, creating it or updating it in place while respecting
+// editorial overrides.
 func (p *HousingPromoter) Promote(ctx context.Context, recordID uuid.UUID) (PromoteResult, error) {
 	pgID := uuidToPg(recordID)
 
@@ -138,18 +134,13 @@ func (p *HousingPromoter) Promote(ctx context.Context, recordID uuid.UUID) (Prom
 	return p.housingUpdatePath(ctx, record, existing, ext)
 }
 
-// housingCreatePath inserts the contents guide entry, the housing_guides
-// projection row, and flips the intel record to 'published' with the promoted
-// row id. All three writes run inside a single transaction so a failure in
-// any one rolls back the others — no orphaned content rows (BUG-01 fix,
+// housingCreatePath inserts the housing_guides projection row and flips the
+// intel record to 'extracted' status. The contents guide row is NO LONGER
+// created here — Studio generates it from the extraction data via
+// intel_record_id (ADR-076 Amendment 1). Both writes run inside a single
+// transaction so a failure in either rolls back the other (BUG-01 fix,
 // §6.2).
 func (p *HousingPromoter) housingCreatePath(ctx context.Context, record gen.IntelRecord, source gen.IntelSource, ext extractor.Extraction) (PromoteResult, error) {
-	title := housingTitle(ext, source.Name)
-	body := bodyFromHousingExtraction(ext, title)
-	slug := content.Slugify(title)
-	hash := content.ComputeContentHash(body)
-	canonicalURL := source.SourceUrl
-
 	// Resolve the destination country's geo space (§05) so the space-scoped
 	// feed can match this housing guide. The lookup is best-effort: when no
 	// country space exists for the extracted ISO-3 code,
@@ -172,58 +163,25 @@ func (p *HousingPromoter) housingCreatePath(ctx context.Context, record gen.Inte
 		}
 	}
 
-	contentParams := gen.CreateContentParams{
-		TenantID:        p.tenantID,
-		AuthorID:        resolveAuthorID(ctx, p.store, source, p.tenantID, p.authorID),
-		FieldValues:     []byte(`{}`),
-		ContentType:     "guide",
-		Title:           title,
-		Slug:            slug,
-		Body:            body,
-		BodyHtml:        "<p>" + html.EscapeString(body) + "</p>",
-		ContentHash:     &hash,
-		CanonicalUrl:    &canonicalURL,
-		Status:          "published",
-		Visibility:      "public",
-		SeoIndexable:    true,
-		ReadTimeMinutes: content.ComputeReadTime(body),
-		GuideCategory:   ptr("accommodation"),
-		PublishAt:       pgtype.Timestamptz{Time: p.now(), Valid: true},
-		PublishedAt:     pgtype.Timestamptz{Time: p.now(), Valid: true},
-		AiGenerated:     true,      // ADR-088: mark as AI-generated (INTEL-003)
-		AiModel:         p.aiModel, // from intel.extraction_model system setting
-		AiGeneratedAt:   pgtype.Timestamptz{Time: p.now(), Valid: true},
-	}
-	// INTEL-026 fix: stamp hitl_reviewed_by when a human approved the record.
-	if reviewerID, ok := reviewerctx.ReviewerFromContext(ctx); ok {
-		contentParams.HitlReviewedBy = reviewerID
-		contentParams.HitlReviewedAt = pgtype.Timestamptz{Time: p.now(), Valid: true}
-	}
 	housingParams := buildHousingCreateParams(record, ext)
 	housingParams.DestinationSpaceID = destinationSpaceID
 	housingParams.CitySpaceID = citySpaceID
 
 	var result PromoteResult
 	err := p.store.WithTx(ctx, func(tx HousingTxStore) error {
-		contentRow, err := tx.CreateContent(ctx, p.tenantID, contentParams)
-		if err != nil {
-			return fmt.Errorf("promoter: create guide content: %w", err)
-		}
-		// housing_guides has no guide_id FK; the content row is linked
-		// implicitly via intel_record_id and exists for the guide catalog.
 		housing, err := tx.CreateHousingGuideIntel(ctx, p.tenantID, housingParams)
 		if err != nil {
 			return fmt.Errorf("promoter: create housing guide: %w", err)
 		}
-		if err := tx.UpdateIntelRecordPromoted(ctx, p.tenantID, gen.UpdateIntelRecordPromotedParams{
-			ID:               record.ID,
-			PromotedRecordID: housing.ID,
+		if err := tx.UpdateIntelRecordStatus(ctx, p.tenantID, gen.UpdateIntelRecordStatusParams{
+			ID:     record.ID,
+			Status: "extracted",
 		}); err != nil {
-			return fmt.Errorf("promoter: mark intel record promoted: %w", err)
+			return fmt.Errorf("promoter: mark intel record extracted: %w", err)
 		}
 		result = PromoteResult{
 			DomainID:  pgToUUID(housing.ID),
-			ContentID: pgToUUID(contentRow.ID),
+			ContentID: uuid.Nil,
 			Action:    ActionCreated,
 		}
 		return nil
