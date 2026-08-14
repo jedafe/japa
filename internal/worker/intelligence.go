@@ -124,19 +124,34 @@ type IntelExtractResult struct {
 // extractor package.
 var ErrIntelExtractionRetriesExhausted = errors.New("intel: extraction retries exhausted")
 
+// IntelStudioAutoPromoter is the port through which the intelligence spine
+// auto-creates Studio jobs for high-confidence extracted records (ADR-076
+// Amendment 1). Declared locally to avoid the worker → studio import cycle.
+// server.go registers an adapter wrapping *studio.Service.
+//
+// Ref: japaconnect-engineering/sections/75-ai-content-studio.md
+type IntelStudioAutoPromoter interface {
+	// AutoPromoteIntelRecord creates a Studio job grounded by the given
+	// intel_record_id. extractedJSON is the raw intel_records.extracted
+	// payload (used to derive a topic prompt). entityType maps to the
+	// Studio content_type.
+	AutoPromoteIntelRecord(ctx context.Context, tenantID, recordID pgtype.UUID, entityType string, extractedJSON []byte) error
+}
+
 // Package-level dependencies for the intelligence handlers. All are nil until
 // RegisterIntelDependencies is called at server startup (Task 23).
 var (
-	intelSourcesStore   *sources.Store
-	intelStores         *stores.Store
-	intelScheduler      *scheduler.Scheduler
-	intelExtractor      intelExtractorPort
-	intelDedupService   *dedup.Service
-	intelPromoters      map[string]IntelPromoterPort // keyed by entity_type
-	intelEventPublisher events.DomainEventPublisher
-	intelFetcher        fetcher.Fetcher
-	intelPreflight      *fetcher.PreflightChecker
-	intelAsynqClient    *asynq.Client
+	intelSourcesStore      *sources.Store
+	intelStores            *stores.Store
+	intelScheduler         *scheduler.Scheduler
+	intelExtractor         intelExtractorPort
+	intelDedupService      *dedup.Service
+	intelPromoters         map[string]IntelPromoterPort // keyed by entity_type
+	intelEventPublisher    events.DomainEventPublisher
+	intelFetcher           fetcher.Fetcher
+	intelPreflight         *fetcher.PreflightChecker
+	intelAsynqClient       *asynq.Client
+	intelStudioAutoPromote IntelStudioAutoPromoter
 )
 
 // RegisterIntelDependencies wires the intelligence spine services into the
@@ -172,6 +187,15 @@ func RegisterIntelDependencies(
 	intelFetcher = f
 	intelPreflight = preflight
 	intelAsynqClient = client
+}
+
+// RegisterIntelStudioAutoPromoter wires the Studio auto-promote port so
+// HandleIntelPromote can auto-create Studio jobs for high-confidence
+// extracted records when studio.auto_promote_intel_records is true
+// (ADR-076 Amendment 1). Called from server.go after RegisterIntelDependencies.
+// Pass nil to disable auto-promote (the default).
+func RegisterIntelStudioAutoPromoter(p IntelStudioAutoPromoter) {
+	intelStudioAutoPromote = p
 }
 
 // enqueueIntel enqueues a follow-up intelligence task on the shared Asynq
@@ -920,6 +944,39 @@ func HandleIntelPromote(ctx context.Context, t *asynq.Task) error {
 	slog.Info("task:intel:promote: promoted",
 		"record_id", p.RecordID, "entity_type", record.EntityType,
 		"action", result.Action, "domain_id", result.DomainID)
+
+	// ADR-076 Amendment 1: auto-promote high-confidence extracted records
+	// to Studio jobs for editorial generation. Gated by the
+	// studio.auto_promote_intel_records system setting (default false)
+	// and the intel.extraction_confidence_auto threshold. Only records
+	// whose promoter returned ContentID=uuid.Nil are eligible — that
+	// signals a projection-table write (Approach B) where Studio owns
+	// the editorial contents row. The guide_content promoter returns a
+	// real ContentID (it writes contents directly) and is skipped.
+	if intelStudioAutoPromote != nil && result.ContentID == uuid.Nil {
+		autoPromoteEnabled := false
+		if appSettings != nil {
+			autoPromoteEnabled = appSettings.GetBoolOr(ctx, tenantID, "studio.auto_promote_intel_records", false)
+		}
+		if autoPromoteEnabled {
+			autoThreshold := 0.85
+			if appSettings != nil {
+				autoThreshold = appSettings.GetFloatOr(ctx, tenantID, "intel.extraction_confidence_auto", 0.85)
+			}
+			if float64(record.ConfidenceOverall) >= autoThreshold {
+				if err := intelStudioAutoPromote.AutoPromoteIntelRecord(ctx, tenantID, recordID, record.EntityType, record.Extracted); err != nil {
+					slog.Warn("task:intel:promote: auto-promote to studio failed",
+						"record_id", p.RecordID, "entity_type", record.EntityType, "error", err)
+					// Non-fatal: the record is already 'extracted' and
+					// can be manually promoted via the admin review UI.
+				} else {
+					slog.Info("task:intel:promote: auto-promoted to studio",
+						"record_id", p.RecordID, "entity_type", record.EntityType,
+						"confidence", record.ConfidenceOverall)
+				}
+			}
+		}
+	}
 
 	payload := marshalPayload(intelPostPublishPayload{Version: intelPayloadVersion,
 		RecordID:   p.RecordID,

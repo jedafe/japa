@@ -9,12 +9,14 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/intelligence/extractor"
 	"github.com/jedafe/japa/internal/intelligence/extractor/schemas"
 	"github.com/jedafe/japa/internal/intelligence/promoter"
 	"github.com/jedafe/japa/internal/intelligence/sources"
 	intel_stores "github.com/jedafe/japa/internal/intelligence/stores"
+	"github.com/jedafe/japa/internal/studio"
 	"github.com/jedafe/japa/internal/worker"
 )
 
@@ -247,4 +249,104 @@ func (a *intelCommunityOrgPromoterStoreAdapter) WithTx(ctx context.Context, fn f
 	return a.Store.WithTx(ctx, func(s *intel_stores.Store) error {
 		return fn(s)
 	})
+}
+
+// ---------------------------------------------------------------------------
+// Studio auto-promote adapter (ADR-076 Amendment 1)
+// ---------------------------------------------------------------------------
+
+// intelEntityTypeToStudioContentType maps an intel_records.entity_type to
+// the Studio content_type used when auto-promoting a high-confidence
+// extracted record. Mirrors the ENTITY_TO_CONTENT_TYPE map in the admin
+// review page. Entity types that map to "" are skipped (no Studio content
+// type — e.g. guide_content types whose promoter already wrote contents).
+var intelEntityTypeToStudioContentType = map[string]string{
+	"scholarship":                "guide",
+	"job":                        "job_listing",
+	"visa":                       "visa_route",
+	"housing":                    "housing_guide",
+	"wiki_page":                  "wiki_page",
+	"language_test_requirement":  "language_test_requirement",
+	"tax_obligation_guide":       "tax_obligation_guide",
+	"community_organisation":     "community_organisation",
+	"cost_of_living":             "comparison",
+	"remittance":                 "guide",
+	// guide_content entity types are intentionally omitted: their promoter
+	// writes the contents row directly and returns a real ContentID, so
+	// the worker's auto-promote gate (ContentID == uuid.Nil) already skips
+	// them before reaching the adapter.
+}
+
+// studioAutoPromoterAdapter wraps *studio.Service so it satisfies the
+// worker.IntelStudioAutoPromoter port without the worker package importing
+// internal/studio (which would close the cycle
+// worker → studio → config → ... → worker). The adapter resolves the
+// default persona from studio.default_persona_id, maps the entity_type to
+// a Studio content_type, derives a topic prompt from the extracted JSON,
+// and calls CreateJob with the intel_record_id set for grounding.
+type studioAutoPromoterAdapter struct {
+	svc      *studio.Service
+	settings *config.Settings
+	authorID pgtype.UUID // system user stamped as created_by
+}
+
+// AutoPromoteIntelRecord creates a Studio job grounded by the given
+// intel_record_id. It is called by HandleIntelPromote when
+// studio.auto_promote_intel_records is true and the record's confidence
+// meets the intel.extraction_confidence_auto threshold.
+func (a *studioAutoPromoterAdapter) AutoPromoteIntelRecord(ctx context.Context, tenantID, recordID pgtype.UUID, entityType string, extractedJSON []byte) error {
+	contentType, ok := intelEntityTypeToStudioContentType[entityType]
+	if !ok || contentType == "" {
+		return nil // unmapped entity type — skip silently
+	}
+
+	topic := deriveTopicFromExtraction(extractedJSON)
+	if topic == "" {
+		topic = fmt.Sprintf("Auto-promoted %s from intelligence", entityType)
+	}
+
+	// Resolve the default persona (studio.default_persona_id, §75).
+	var personaID pgtype.UUID
+	if a.settings != nil {
+		if pidStr := a.settings.GetStringOr(ctx, tenantID, "studio.default_persona_id", ""); pidStr != "" {
+			_ = personaID.Scan(pidStr)
+		}
+	}
+
+	_, err := a.svc.CreateJob(ctx, tenantID, a.authorID, studio.CreateJobInput{
+		PersonaID:     personaID,
+		ContentType:   contentType,
+		TopicPrompt:   topic,
+		IntelRecordID: recordID,
+	})
+	return err
+}
+
+// deriveTopicFromExtraction parses the extracted JSON payload and returns
+// a human-readable topic prompt. It prefers "title", then "name", then
+// falls back to "" (the caller substitutes a default). Mirrors the
+// topicPromptForRecord logic in the admin review page.
+func deriveTopicFromExtraction(extractedJSON []byte) string {
+	if len(extractedJSON) == 0 {
+		return ""
+	}
+	// The extracted payload is a map of field_name → {value, confidence,
+	// evidence}. We only need the "value" of "title" or "name".
+	var fields map[string]struct {
+		Value any `json:"value"`
+	}
+	if err := json.Unmarshal(extractedJSON, &fields); err != nil {
+		return ""
+	}
+	if f, ok := fields["title"]; ok {
+		if s, ok := f.Value.(string); ok && s != "" {
+			return s
+		}
+	}
+	if f, ok := fields["name"]; ok {
+		if s, ok := f.Value.(string); ok && s != "" {
+			return s
+		}
+	}
+	return ""
 }
