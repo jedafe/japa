@@ -27,6 +27,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/jedafe/japa/internal/db/gen"
+	errpkg "github.com/jedafe/japa/internal/errors"
 )
 
 // --- shared test helpers ---
@@ -52,13 +53,12 @@ func requestWithURLParam(method, target, param, value, body string) *http.Reques
 	return r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, rctx))
 }
 
-// errorEnvelope mirrors the {error:{code,message,status}} shape written by
-// writeError so tests can decode without depending on map typing.
+// errorEnvelope mirrors the {error:{code,message}} shape written by
+// errpkg.WriteError so tests can decode without depending on map typing.
 type errorEnvelope struct {
 	Error struct {
 		Code    string `json:"code"`
 		Message string `json:"message"`
-		Status  int    `json:"status"`
 	} `json:"error"`
 }
 
@@ -76,9 +76,6 @@ func assertIntelUnavailable(t *testing.T, rr *httptest.ResponseRecorder) {
 	}
 	if env.Error.Code != "intel_unavailable" {
 		t.Errorf("error.code = %q, want intel_unavailable", env.Error.Code)
-	}
-	if env.Error.Status != http.StatusServiceUnavailable {
-		t.Errorf("error.status = %d, want %d", env.Error.Status, http.StatusServiceUnavailable)
 	}
 	if env.Error.Message == "" {
 		t.Error("error.message is empty, want a human-readable message")
@@ -106,7 +103,7 @@ func ptrString(s string) *string { return &s }
 
 func TestWriteJSON(t *testing.T) {
 	rr := httptest.NewRecorder()
-	writeJSON(rr, http.StatusOK, map[string]interface{}{"ok": true})
+	errpkg.WriteJSON(rr, http.StatusOK, map[string]interface{}{"ok": true})
 
 	if rr.Code != http.StatusOK {
 		t.Errorf("status = %d, want %d", rr.Code, http.StatusOK)
@@ -125,7 +122,7 @@ func TestWriteJSON(t *testing.T) {
 
 func TestWriteError(t *testing.T) {
 	rr := httptest.NewRecorder()
-	writeError(rr, http.StatusBadRequest, "invalid_uuid", "Invalid item_id")
+	errpkg.WriteError(rr, http.StatusBadRequest, "invalid_uuid", "Invalid item_id")
 
 	if rr.Code != http.StatusBadRequest {
 		t.Errorf("status = %d, want %d", rr.Code, http.StatusBadRequest)
@@ -142,9 +139,6 @@ func TestWriteError(t *testing.T) {
 	}
 	if env.Error.Message != "Invalid item_id" {
 		t.Errorf("error.message = %q, want %q", env.Error.Message, "Invalid item_id")
-	}
-	if env.Error.Status != http.StatusBadRequest {
-		t.Errorf("error.status = %d, want %d", env.Error.Status, http.StatusBadRequest)
 	}
 }
 

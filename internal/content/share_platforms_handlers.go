@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
+	errpkg "github.com/jedafe/japa/internal/errors"
 )
 
 // ---------------------------------------------------------------------------
@@ -24,7 +25,7 @@ func (h *Handlers) ListSharePlatforms(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": platforms})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": platforms})
 }
 
 // ListEnabledSharePlatforms handles GET /api/v1/share-platforms/enabled (public).
@@ -41,7 +42,7 @@ func (h *Handlers) ListEnabledSharePlatforms(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": platforms})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": platforms})
 }
 
 // CreateSharePlatform handles POST /api/v1/share-platforms.
@@ -62,22 +63,22 @@ func (h *Handlers) CreateSharePlatform(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if input.Key == "" {
-		writeError(w, http.StatusBadRequest, "missing_key", "Key is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_key", "Key is required")
 		return
 	}
 
 	if input.Label == "" {
-		writeError(w, http.StatusBadRequest, "missing_label", "Label is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_label", "Label is required")
 		return
 	}
 
 	if input.UrlTemplate == "" {
-		writeError(w, http.StatusBadRequest, "missing_url_template", "url_template is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_url_template", "url_template is required")
 		return
 	}
 
@@ -87,7 +88,7 @@ func (h *Handlers) CreateSharePlatform(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": p})
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": p})
 }
 
 // UpdateSharePlatform handles PATCH /api/v1/share-platforms/{key}.
@@ -99,7 +100,7 @@ func (h *Handlers) UpdateSharePlatform(w http.ResponseWriter, r *http.Request) {
 
 	key := chi.URLParam(r, "key")
 	if key == "" {
-		writeError(w, http.StatusBadRequest, "missing_key", "Key is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_key", "Key is required")
 		return
 	}
 
@@ -113,17 +114,17 @@ func (h *Handlers) UpdateSharePlatform(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if input.Label == "" {
-		writeError(w, http.StatusBadRequest, "missing_label", "Label is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_label", "Label is required")
 		return
 	}
 
 	if input.UrlTemplate == "" {
-		writeError(w, http.StatusBadRequest, "missing_url_template", "url_template is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_url_template", "url_template is required")
 		return
 	}
 
@@ -133,7 +134,7 @@ func (h *Handlers) UpdateSharePlatform(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": p})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": p})
 }
 
 // DeleteSharePlatform handles DELETE /api/v1/share-platforms/{key}.
@@ -145,7 +146,7 @@ func (h *Handlers) DeleteSharePlatform(w http.ResponseWriter, r *http.Request) {
 
 	key := chi.URLParam(r, "key")
 	if key == "" {
-		writeError(w, http.StatusBadRequest, "missing_key", "Key is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_key", "Key is required")
 		return
 	}
 
@@ -154,5 +155,5 @@ func (h *Handlers) DeleteSharePlatform(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusNoContent, nil)
+	errpkg.WriteJSON(w, http.StatusNoContent, nil)
 }

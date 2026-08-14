@@ -5,7 +5,8 @@
 // the arrival_checklist.enabled system_setting (§92, ADR-100).
 //
 // Ref: japaconnect-engineering/sections/92-arrival-checklist.md
-//      japaconnect-engineering/adr/ADR-100-arrival-checklist.md
+//
+//	japaconnect-engineering/adr/ADR-100-arrival-checklist.md
 package arrivalchecklist
 
 import (
@@ -544,16 +545,16 @@ func (s *Service) getGuideDTOByID(ctx context.Context, id, tenantID pgtype.UUID)
 // guideRowToDTO converts a GuideRow to a GuideDTO.
 func guideRowToDTO(r GuideRow) GuideDTO {
 	dto := GuideDTO{
-		ID:            r.ID.String(),
-		ApplicantType: r.ApplicantType,
-		Version:       r.Version,
-		Status:        r.Status,
-		IsActive:      r.IsActive,
-		AIGenerated:   r.AIGenerated,
+		ID:               r.ID.String(),
+		ApplicantType:    r.ApplicantType,
+		Version:          r.Version,
+		Status:           r.Status,
+		IsActive:         r.IsActive,
+		AIGenerated:      r.AIGenerated,
 		IsJapabotIndexed: r.IsJapabotIndexed,
-		CreatedAt:     formatTs(r.CreatedAt),
-		UpdatedAt:     formatTs(r.UpdatedAt),
-		HITLReviewedAt: formatTs(r.HITLReviewedAt),
+		CreatedAt:        formatTs(r.CreatedAt),
+		UpdatedAt:        formatTs(r.UpdatedAt),
+		HITLReviewedAt:   formatTs(r.HITLReviewedAt),
 	}
 	if r.DestinationSpaceID.Valid {
 		dto.DestinationSpaceID = r.DestinationSpaceID.String()

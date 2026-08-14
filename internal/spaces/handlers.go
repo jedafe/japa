@@ -59,12 +59,12 @@ type RAGEntityIndexer interface {
 }
 
 type Handlers struct {
-	Service *Service
-	Unread  *UnreadCounter
-	content ContentService
-	follows FollowToggleService
-	permCache PermCacheInvalidator
-	media    MediaResolver // nil = logo_url omitted from responses
+	Service    *Service
+	Unread     *UnreadCounter
+	content    ContentService
+	follows    FollowToggleService
+	permCache  PermCacheInvalidator
+	media      MediaResolver    // nil = logo_url omitted from responses
 	ragIndexer RAGEntityIndexer // nil disables RAG indexing (§69)
 }
 
@@ -203,7 +203,7 @@ func parseUUIDParam(r *http.Request, param string) (pgtype.UUID, error) {
 func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
 
@@ -223,7 +223,7 @@ func handleServiceError(w http.ResponseWriter, err error) {
 func spaceFromContext(w http.ResponseWriter, r *http.Request) (*gen.GetSpaceBySlugRow, bool) {
 	space := FromContext(r.Context())
 	if space == nil {
-		writeError(w, http.StatusNotFound, "space_not_found", "Space not found")
+		errpkg.WriteError(w, http.StatusNotFound, "space_not_found", "Space not found")
 		return nil, false
 	}
 

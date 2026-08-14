@@ -6,6 +6,8 @@
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { api, apiRaw } from '$lib/api';
+	import { getAccessToken } from '$lib/api/token';
+	import { PUBLIC_JC_API_URL } from '$env/static/public';
 	import PageHeader from '$lib/components/layout/page-header.svelte';
 	import { Card, CardContent } from '$lib/components/ui/card';
 	import { Select } from '$lib/components/ui/select';
@@ -31,6 +33,7 @@
 	let pageError = $state('');
 	let pageSuccess = $state('');
 	let summaryData = $state<DataExport[]>([]);
+	let summaryTotal = $state(0);
 	let bulkDeleting = $state(false);
 	let saving = $state(false);
 
@@ -56,6 +59,7 @@
 		);
 		if (result.ok) {
 			summaryData = Array.isArray(result.data.data) ? result.data.data : [];
+			summaryTotal = result.data.pagination?.total ?? summaryData.length;
 		}
 	}
 
@@ -95,6 +99,47 @@
 			pageError = e instanceof Error ? e.message : t('app.data_exports.msg_delete_failed', 'Failed to delete export');
 		} finally {
 			bulkDeleting = false;
+		}
+	}
+
+	// ── Authenticated file download ───────────────────────────────────────
+	// The backend returns fileUrl as a relative API path
+	// (/api/v1/admin/data-exports/{id}/download), but the admin SPA is served
+	// from a different origin than the API and a raw <a href> cannot attach
+	// the Bearer token. Fetch the file via an authenticated request and
+	// trigger a blob download instead.
+	let downloading = $state(false);
+
+	async function downloadExport(row: DataExport) {
+		if (downloading) return;
+		downloading = true;
+		pageError = '';
+		try {
+			const url = `${PUBLIC_JC_API_URL}/api/v1/admin/data-exports/${row.id}/download`;
+			const token = getAccessToken();
+			const res = await fetch(url, {
+				credentials: 'include',
+				headers: token ? { Authorization: `Bearer ${token}` } : {}
+			});
+			if (!res.ok) {
+				pageError = t('app.data_exports.msg_download_failed', 'Failed to download export file');
+				return;
+			}
+			const blob = await res.blob();
+			const objUrl = URL.createObjectURL(blob);
+			const a = document.createElement('a');
+			a.href = objUrl;
+			const cd = res.headers.get('Content-Disposition');
+			const match = cd?.match(/filename="(.+?)"/);
+			a.download = match?.[1] ?? `${row.name}.${row.format}`;
+			document.body.appendChild(a);
+			a.click();
+			document.body.removeChild(a);
+			URL.revokeObjectURL(objUrl);
+		} catch (e) {
+			pageError = e instanceof Error ? e.message : t('app.data_exports.msg_download_failed', 'Failed to download export file');
+		} finally {
+			downloading = false;
 		}
 	}
 
@@ -274,7 +319,7 @@
 				<div class="flex items-center justify-between">
 					<div>
 						<p class="text-sm font-medium text-muted">{t('app.data_exports.total_exports', 'Total Exports')}</p>
-						<p class="text-2xl font-bold text-foreground">{summaryData.length}</p>
+						<p class="text-2xl font-bold text-foreground">{summaryTotal}</p>
 					</div>
 					<div class="rounded-lg bg-primary-100 p-3">
 						<Download class="h-6 w-6 text-primary-600" />
@@ -397,9 +442,15 @@
 			{/if}
 			{#if row.status === 'completed' && row.fileUrl}
 				<div class="col-span-2">
-					<a href={row.fileUrl} class="inline-flex items-center gap-1 text-sm font-medium" style="color: var(--color-primary)" download>
-						<FileDown class="h-3.5 w-3.5" /> {t('app.data_exports.detail_download', 'Download file')}
-					</a>
+					<button
+						type="button"
+						class="inline-flex items-center gap-1 text-sm font-medium disabled:opacity-50"
+						style="color: var(--color-primary)"
+						onclick={() => downloadExport(row)}
+						disabled={downloading}
+					>
+						<FileDown class="h-3.5 w-3.5" /> {downloading ? t('app.data_exports.detail_downloading', 'Downloading…') : t('app.data_exports.detail_download', 'Download file')}
+					</button>
 				</div>
 			{/if}
 			{#if row.errorMessage}

@@ -30,7 +30,7 @@ func TestWriteJSON(t *testing.T) {
 	t.Parallel()
 
 	rr := httptest.NewRecorder()
-	writeJSON(rr, http.StatusOK, map[string]any{"data": "ok"})
+	errpkg.WriteJSON(rr, http.StatusOK, map[string]any{"data": "ok"})
 
 	if rr.Code != http.StatusOK {
 		t.Errorf("status = %d, want %d", rr.Code, http.StatusOK)
@@ -55,7 +55,7 @@ func TestWriteError(t *testing.T) {
 	t.Parallel()
 
 	rr := httptest.NewRecorder()
-	writeError(rr, http.StatusBadRequest, "missing_body", "Comment body is required")
+	errpkg.WriteError(rr, http.StatusBadRequest, "missing_body", "Comment body is required")
 
 	if rr.Code != http.StatusBadRequest {
 		t.Errorf("status = %d, want %d", rr.Code, http.StatusBadRequest)

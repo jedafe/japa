@@ -18,18 +18,18 @@ import (
 // It records every call so tests can assert on the exact write sequence.
 type mockStore struct {
 	// seed data
-	record    gen.IntelRecord
-	source    gen.IntelSource
-	existing  gen.Scholarship
-	hasExisting bool
+	record         gen.IntelRecord
+	source         gen.IntelSource
+	existing       gen.Scholarship
+	hasExisting    bool
 	countrySpaceID pgtype.UUID // BUG-005: country space id returned by GetCountrySpace
 
 	// recorded calls
-	createContentCalls   []gen.CreateContentParams
+	createContentCalls     []gen.CreateContentParams
 	createScholarshipCalls []gen.CreateScholarshipParams
 	updateScholarshipCalls []gen.UpdateScholarshipParams
-	reviewLogCalls       []gen.CreateIntelReviewLogParams
-	promotedCalls        []gen.UpdateIntelRecordPromotedParams
+	reviewLogCalls         []gen.CreateIntelReviewLogParams
+	promotedCalls          []gen.UpdateIntelRecordPromotedParams
 
 	// return values for the last scholarship read
 	lastScholarship gen.Scholarship
@@ -73,11 +73,11 @@ func (m *mockStore) CreateContent(ctx context.Context, tenantID pgtype.UUID, arg
 func (m *mockStore) CreateScholarship(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateScholarshipParams) (gen.Scholarship, error) {
 	m.createScholarshipCalls = append(m.createScholarshipCalls, arg)
 	row := gen.Scholarship{
-		ID:             pgtype.UUID{Bytes: uuid.New(), Valid: true},
-		IntelRecordID:  arg.IntelRecordID,
-		GuideID:        arg.GuideID,
-		Title:          arg.Title,
-		Deadline:       arg.Deadline,
+		ID:                 pgtype.UUID{Bytes: uuid.New(), Valid: true},
+		IntelRecordID:      arg.IntelRecordID,
+		GuideID:            arg.GuideID,
+		Title:              arg.Title,
+		Deadline:           arg.Deadline,
 		EditorialOverrides: arg.EditorialOverrides,
 	}
 	m.lastScholarship = row
@@ -88,10 +88,10 @@ func (m *mockStore) UpdateScholarship(ctx context.Context, tenantID pgtype.UUID,
 	m.updateScholarshipCalls = append(m.updateScholarshipCalls, arg)
 	// Reflect the update into lastScholarship so tests can assert final state.
 	m.lastScholarship = gen.Scholarship{
-		ID:             arg.ID,
-		Title:          arg.Title,
-		Description:    arg.Description,
-		Deadline:       arg.Deadline,
+		ID:                 arg.ID,
+		Title:              arg.Title,
+		Description:        arg.Description,
+		Deadline:           arg.Deadline,
 		EditorialOverrides: arg.EditorialOverrides,
 	}
 	return nil
@@ -178,15 +178,15 @@ func TestScholarshipPromoter_UpdateRespectsEditorialOverrides(t *testing.T) {
 			TrustLevel: 5,
 		},
 		existing: gen.Scholarship{
-			ID:                scholarshipID,
-			IntelRecordID:     recordID,
-			GuideID:           guideID,
-			SourceUrl:         "https://example.org/mext-2027",
-			Title:             "MEXT Scholarship 2027",
-			Country:           "JP",
-			Deadline:          humanDeadline,
+			ID:                 scholarshipID,
+			IntelRecordID:      recordID,
+			GuideID:            guideID,
+			SourceUrl:          "https://example.org/mext-2027",
+			Title:              "MEXT Scholarship 2027",
+			Country:            "JP",
+			Deadline:           humanDeadline,
 			EditorialOverrides: []byte(`{"deadline":"2027-12-31"}`),
-			FreshnessScore:    40,
+			FreshnessScore:     40,
 		},
 		hasExisting: true,
 	}
@@ -284,8 +284,8 @@ func TestScholarshipPromoter_NoChangeBumpsFreshness(t *testing.T) {
 	scholarshipID := pgtype.UUID{Bytes: uuid.New(), Valid: true}
 
 	ext := extractor.Extraction{
-		"title":  {Value: "Monbukagakusho Scholarship"},
-		"country": {Value: []any{"JP"}},
+		"title":    {Value: "Monbukagakusho Scholarship"},
+		"country":  {Value: []any{"JP"}},
 		"deadline": {Value: "2027-09-01"},
 	}
 
@@ -298,13 +298,13 @@ func TestScholarshipPromoter_NoChangeBumpsFreshness(t *testing.T) {
 		},
 		source: gen.IntelSource{ID: sourceID, SourceUrl: "https://example.org/m", SourceType: "official", TrustLevel: 4},
 		existing: gen.Scholarship{
-			ID:                scholarshipID,
-			IntelRecordID:     recordID,
-			Title:             "Monbukagakusho Scholarship",
-			Country:           "JP",
-			Deadline:          mustDate(t, "2027-09-01"),
+			ID:                 scholarshipID,
+			IntelRecordID:      recordID,
+			Title:              "Monbukagakusho Scholarship",
+			Country:            "JP",
+			Deadline:           mustDate(t, "2027-09-01"),
 			EditorialOverrides: []byte(`{}`),
-			FreshnessScore:    30,
+			FreshnessScore:     30,
 		},
 		hasExisting: true,
 	}
@@ -355,7 +355,7 @@ func TestScholarshipPromoter_CreatePath(t *testing.T) {
 			EntityType: "scholarship",
 			Extracted:  extractionJSON(t, ext),
 		},
-		source: gen.IntelSource{ID: sourceID, SourceUrl: "https://example.org/new", SourceType: "official", TrustLevel: 3},
+		source:      gen.IntelSource{ID: sourceID, SourceUrl: "https://example.org/new", SourceType: "official", TrustLevel: 3},
 		hasExisting: false,
 	}
 

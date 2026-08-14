@@ -142,6 +142,7 @@ export const sensitiveKeys: string[] = [
     'media.storage.secret_key',
     // V2 push notification secrets (§77, ADR-074)
     'push.fcm_server_key',
+    'push.fcm_service_account',
     'push.apns_key_id',
     'push.apns_team_id',
     'push.apns_private_key',

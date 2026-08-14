@@ -2,7 +2,6 @@ package geoip
 
 import (
 	"context"
-	"encoding/json"
 	"log/slog"
 	"net"
 	"net/http"
@@ -10,6 +9,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/tenant"
 )
 
@@ -76,7 +76,7 @@ func NewHandlers(reader *Reader, spacesService SpacesService) *Handlers {
 func (h *Handlers) HandleGeoMe(w http.ResponseWriter, r *http.Request) {
 	geo := FromContext(r.Context())
 	if !geo.IsValid {
-		writeError(w, http.StatusNotFound, "geo_not_available", "Geolocation data not available for this request")
+		errpkg.WriteError(w, http.StatusNotFound, "geo_not_available", "Geolocation data not available for this request")
 		return
 	}
 
@@ -95,7 +95,7 @@ func (h *Handlers) HandleGeoMe(w http.ResponseWriter, r *http.Request) {
 		"is_vpn": false,
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": resp})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": resp})
 }
 
 // HandleGeoLookup resolves an arbitrary IP address (admin only).
@@ -105,7 +105,7 @@ func (h *Handlers) HandleGeoMe(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) HandleGeoLookup(w http.ResponseWriter, r *http.Request) {
 	ip := r.URL.Query().Get("ip")
 	if ip == "" {
-		writeError(w, http.StatusBadRequest, "missing_ip", "ip query parameter is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_ip", "ip query parameter is required")
 		return
 	}
 
@@ -117,18 +117,18 @@ func (h *Handlers) HandleGeoLookup(w http.ResponseWriter, r *http.Request) {
 	// 400 lookup_failed for a valid-format IP like 10.0.0.1, which violated
 	// the IsValid semantics in Section 37.
 	if net.ParseIP(ip) == nil {
-		writeError(w, http.StatusBadRequest, "invalid_ip", "ip query parameter is not a valid IP address")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_ip", "ip query parameter is not a valid IP address")
 		return
 	}
 
 	if !h.reader.IsLoaded() {
-		writeError(w, http.StatusServiceUnavailable, "geoip_not_loaded", "GeoIP database not loaded")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "geoip_not_loaded", "GeoIP database not loaded")
 		return
 	}
 
 	geo := h.reader.Lookup(ip)
 	if !geo.IsValid {
-		writeError(w, http.StatusNotFound, "geo_not_available", "No geolocation data for this IP address")
+		errpkg.WriteError(w, http.StatusNotFound, "geo_not_available", "No geolocation data for this IP address")
 		return
 	}
 
@@ -144,7 +144,7 @@ func (h *Handlers) HandleGeoLookup(w http.ResponseWriter, r *http.Request) {
 		"is_vpn": false,
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": resp})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": resp})
 }
 
 // HandleGeoDetect resolves the current request IP to a locale (catalog: GET
@@ -155,11 +155,11 @@ func (h *Handlers) HandleGeoLookup(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) HandleGeoDetect(w http.ResponseWriter, r *http.Request) {
 	geo := FromContext(r.Context())
 	if !geo.IsValid {
-		writeError(w, http.StatusNotFound, "geo_not_available", "Geolocation data not available for this request")
+		errpkg.WriteError(w, http.StatusNotFound, "geo_not_available", "Geolocation data not available for this request")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]string{
 			"country": geo.CountryName,
 			"state":   geo.Subdivision,
@@ -174,13 +174,13 @@ func (h *Handlers) HandleGeoDetect(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) HandleListCountries(w http.ResponseWriter, r *http.Request) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return
 	}
 
 	countries, err := h.spaces.ListSpacesByLevel(r.Context(), t.ID, "country")
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list countries")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list countries")
 		return
 	}
 
@@ -189,7 +189,7 @@ func (h *Handlers) HandleListCountries(w http.ResponseWriter, r *http.Request) {
 		out = append(out, projectGeoSpace(c.ID, c.Name, c.Slug, c.Level, c.GeoCode, c.Description, c.MemberCount, c.PostCount, c.FollowerCount))
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": out})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": out})
 }
 
 // HandleListStates returns the state/province spaces for a country, looked
@@ -199,19 +199,19 @@ func (h *Handlers) HandleListCountries(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) HandleListStates(w http.ResponseWriter, r *http.Request) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return
 	}
 
 	code := chi.URLParam(r, "code")
 	if code == "" {
-		writeError(w, http.StatusBadRequest, "missing_code", "country code is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_code", "country code is required")
 		return
 	}
 
 	states, err := h.spaces.ListStatesByCountryCode(r.Context(), t.ID, code)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list states")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list states")
 		return
 	}
 
@@ -220,7 +220,7 @@ func (h *Handlers) HandleListStates(w http.ResponseWriter, r *http.Request) {
 		out = append(out, projectGeoSpace(s.ID, s.Name, s.Slug, s.Level, s.GeoCode, s.Description, s.MemberCount, s.PostCount, s.FollowerCount))
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": out})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": out})
 }
 
 // HandleListCities returns the city spaces for a state.
@@ -229,7 +229,7 @@ func (h *Handlers) HandleListStates(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) HandleListCities(w http.ResponseWriter, r *http.Request) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return
 	}
 
@@ -237,13 +237,13 @@ func (h *Handlers) HandleListCities(w http.ResponseWriter, r *http.Request) {
 
 	var stateID pgtype.UUID
 	if err := stateID.Scan(stateIDStr); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid state id format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid state id format")
 		return
 	}
 
 	cities, err := h.spaces.ListCitiesByState(r.Context(), t.ID, stateID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list cities")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list cities")
 		return
 	}
 
@@ -252,7 +252,7 @@ func (h *Handlers) HandleListCities(w http.ResponseWriter, r *http.Request) {
 		out = append(out, projectGeoSpace(c.ID, c.Name, c.Slug, c.Level, c.GeoCode, c.Description, c.MemberCount, c.PostCount, c.FollowerCount))
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": out})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": out})
 }
 
 // suggestedSpaces runs the deterministic /geo/me suggested_spaces algorithm
@@ -350,20 +350,3 @@ func projectGeoSpace(
 // ---------------------------------------------------------------------------
 // JSON response helpers
 // ---------------------------------------------------------------------------
-
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-
-	if v != nil {
-		if err := json.NewEncoder(w).Encode(v); err != nil {
-			slog.Warn("geoip: json encode error", "error", err)
-		}
-	}
-}
-
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, map[string]any{
-		"error": map[string]string{"code": code, "message": message},
-	})
-}

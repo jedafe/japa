@@ -7,7 +7,8 @@
 // current content.
 //
 // Ref: japaconnect-engineering/sections/80-destination-wiki.md
-//      japaconnect-engineering/adr/ADR-088-destination-wiki.md
+//
+//	japaconnect-engineering/adr/ADR-088-destination-wiki.md
 package wiki
 
 import (
@@ -67,23 +68,23 @@ type AdminWikiPageWithSpace struct {
 
 // WikiRevision represents a single revision row.
 type WikiRevision struct {
-	ID                pgtype.UUID
-	TenantID          pgtype.UUID
-	WikiPageID        pgtype.UUID
-	Content           []byte // TipTap JSON
-	Summary           *string
-	Status            string // pending|approved|rejected
-	SubmittedBy       pgtype.UUID
-	ReviewedBy        pgtype.UUID
-	ReviewedAt        pgtype.Timestamptz
-	AiGenerated       bool
-	AiModel           *string
-	AiPromptHash      *string
-	HitlReviewedBy    pgtype.UUID
-	HitlReviewedAt    pgtype.Timestamptz
-	HitlReviewNotes   *string
-	CreatedAt         pgtype.Timestamptz
-	SubmittedByName   *string
+	ID              pgtype.UUID
+	TenantID        pgtype.UUID
+	WikiPageID      pgtype.UUID
+	Content         []byte // TipTap JSON
+	Summary         *string
+	Status          string // pending|approved|rejected
+	SubmittedBy     pgtype.UUID
+	ReviewedBy      pgtype.UUID
+	ReviewedAt      pgtype.Timestamptz
+	AiGenerated     bool
+	AiModel         *string
+	AiPromptHash    *string
+	HitlReviewedBy  pgtype.UUID
+	HitlReviewedAt  pgtype.Timestamptz
+	HitlReviewNotes *string
+	CreatedAt       pgtype.Timestamptz
+	SubmittedByName *string
 }
 
 // GetWikiPageBySlug returns a wiki page by space slug + page slug.
@@ -442,13 +443,13 @@ RETURNING id
 
 // AdminListPagesFilter holds filter parameters for the admin page list.
 type AdminListPagesFilter struct {
-	TenantID  pgtype.UUID
-	SpaceID   pgtype.UUID
-	Category  string
-	IsLocked  *bool
-	Q         string
-	Limit     int32
-	Offset    int32
+	TenantID pgtype.UUID
+	SpaceID  pgtype.UUID
+	Category string
+	IsLocked *bool
+	Q        string
+	Limit    int32
+	Offset   int32
 }
 
 // AdminListPages returns all wiki pages for admin management (paginated).

@@ -32,7 +32,7 @@ func NewHandlers(service *Service) *Handlers {
 func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	user := auth.FromContext(r.Context())
 	if user == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
 
@@ -42,7 +42,7 @@ func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.Au
 func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
 	return t.ID, true
@@ -51,29 +51,12 @@ func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype
 func handleServiceError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, ErrTargetIsAdmin):
-		writeError(w, http.StatusForbidden, "cannot_impersonate_admin", "Cannot impersonate an admin-level user")
+		errpkg.WriteError(w, http.StatusForbidden, "cannot_impersonate_admin", "Cannot impersonate an admin-level user")
 	case errors.Is(err, ErrNoActiveSession):
-		writeError(w, http.StatusNotFound, "no_active_session", "No active impersonation session")
+		errpkg.WriteError(w, http.StatusNotFound, "no_active_session", "No active impersonation session")
 	default:
 		errpkg.HandleServiceError(w, err)
 	}
-}
-
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-
-	if v != nil {
-		if err := json.NewEncoder(w).Encode(v); err != nil {
-			slog.Warn("json encode error", "error", err)
-		}
-	}
-}
-
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, map[string]any{
-		"error": map[string]string{"code": code, "message": message},
-	})
 }
 
 // ---------------------------------------------------------------------------
@@ -99,18 +82,18 @@ func (h *Handlers) StartImpersonation(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
 		return
 	}
 
 	if input.UserID == "" {
-		writeError(w, http.StatusBadRequest, "validation_error", "user_id is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "user_id is required")
 		return
 	}
 
 	var targetUserID pgtype.UUID
 	if err := targetUserID.Scan(input.UserID); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_user_id", "Invalid user_id format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_user_id", "Invalid user_id format")
 		return
 	}
 
@@ -132,7 +115,7 @@ func (h *Handlers) StartImpersonation(w http.ResponseWriter, r *http.Request) {
 	expiresAt := time.Now().Add(DefaultImpersonationTTL).UTC().Format(time.RFC3339)
 	sessionKey := valkey.MustKey("impersonate:%s", user.UserID.String())
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
 			"session_key": sessionKey,
 			"expires_at":  expiresAt,
@@ -162,10 +145,10 @@ func (h *Handlers) EndImpersonation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
-			"status":     "impersonation_ended",
-			"target_id":  targetID,
+			"status":    "impersonation_ended",
+			"target_id": targetID,
 		},
 	})
 }
@@ -199,7 +182,7 @@ func (h *Handlers) GetImpersonationStatus(w http.ResponseWriter, r *http.Request
 		targetUserID = nil
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
 			"active":         active,
 			"target_user_id": targetUserID,

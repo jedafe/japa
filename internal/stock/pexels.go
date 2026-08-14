@@ -15,8 +15,8 @@ const pexelsAPI = "https://api.pexels.com/v1"
 
 // PexelsProvider implements StockProvider for Pexels (pexels.com/api).
 type PexelsProvider struct {
-	apiKey  string
-	client  *http.Client
+	apiKey string
+	client *http.Client
 }
 
 func NewPexelsProvider(apiKey string) *PexelsProvider {
@@ -57,17 +57,17 @@ func (p *PexelsProvider) Search(ctx context.Context, query string, page, perPage
 		Page         int `json:"page"`
 		PerPage      int `json:"per_page"`
 		Photos       []struct {
-			ID     int    `json:"id"`
-			Width  int    `json:"width"`
-			Height int    `json:"height"`
+			ID     int `json:"id"`
+			Width  int `json:"width"`
+			Height int `json:"height"`
 			Src    struct {
-				Medium    string `json:"medium"`
-				Large     string `json:"large"`
-				Original  string `json:"original"`
+				Medium   string `json:"medium"`
+				Large    string `json:"large"`
+				Original string `json:"original"`
 			} `json:"src"`
-			Photographer      string `json:"photographer"`
-			PhotographerURL   string `json:"photographer_url"`
-			Alt               string `json:"alt"`
+			Photographer    string `json:"photographer"`
+			PhotographerURL string `json:"photographer_url"`
+			Alt             string `json:"alt"`
 		} `json:"photos"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
@@ -83,8 +83,8 @@ func (p *PexelsProvider) Search(ctx context.Context, query string, page, perPage
 			FullURL:         r.Src.Original,
 			Width:           r.Width,
 			Height:          r.Height,
-			Photographer:     r.Photographer,
-			PhotographerURL:  r.PhotographerURL,
+			Photographer:    r.Photographer,
+			PhotographerURL: r.PhotographerURL,
 			Description:     r.Alt,
 		})
 	}
@@ -117,17 +117,17 @@ func (p *PexelsProvider) GetByID(ctx context.Context, photoID string) (*StockPho
 	}
 
 	var raw struct {
-		ID     int    `json:"id"`
-		Width  int    `json:"width"`
-		Height int    `json:"height"`
+		ID     int `json:"id"`
+		Width  int `json:"width"`
+		Height int `json:"height"`
 		Src    struct {
 			Medium   string `json:"medium"`
 			Large    string `json:"large"`
 			Original string `json:"original"`
 		} `json:"src"`
-		Photographer      string `json:"photographer"`
-		PhotographerURL   string `json:"photographer_url"`
-		Alt               string `json:"alt"`
+		Photographer    string `json:"photographer"`
+		PhotographerURL string `json:"photographer_url"`
+		Alt             string `json:"alt"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
 		return nil, fmt.Errorf("decoding pexels photo: %w", err)
@@ -140,8 +140,8 @@ func (p *PexelsProvider) GetByID(ctx context.Context, photoID string) (*StockPho
 		FullURL:         raw.Src.Original,
 		Width:           raw.Width,
 		Height:          raw.Height,
-		Photographer:     raw.Photographer,
-		PhotographerURL:  raw.PhotographerURL,
+		Photographer:    raw.Photographer,
+		PhotographerURL: raw.PhotographerURL,
 		Description:     raw.Alt,
 	}, nil
 }
@@ -173,12 +173,12 @@ func (p *PexelsProvider) Download(ctx context.Context, photoID string) (*Downloa
 	}
 
 	return &DownloadedPhoto{
-		Data:             data,
-		Filename:         photoID + ".jpg",
-		Photographer:     photo.Photographer,
-		PhotographerURL:  photo.PhotographerURL,
-		License:          "pexels",
-		LicenseURL:       "https://www.pexels.com/license/",
-		ProviderPhotoID:  photoID,
+		Data:            data,
+		Filename:        photoID + ".jpg",
+		Photographer:    photo.Photographer,
+		PhotographerURL: photo.PhotographerURL,
+		License:         "pexels",
+		LicenseURL:      "https://www.pexels.com/license/",
+		ProviderPhotoID: photoID,
 	}, nil
 }

@@ -13,7 +13,8 @@
 //	PATCH /api/v1/admin/jobs/:id/feature                  — toggle featured
 //
 // Ref: japaconnect-engineering/sections/63-jobs-board.md
-//      japaconnect-engineering/adr/ADR-081-jobs-board.md
+//
+//	japaconnect-engineering/adr/ADR-081-jobs-board.md
 package jobs
 
 import (
@@ -27,17 +28,18 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/config"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/tenant"
 )
 
 // createJobListingRequest is the JSON body for POST /org/{org_id}/jobs.
 type createJobListingRequest struct {
-	Title           string            `json:"title"`
-	Slug            string            `json:"slug"`
-	Summary         string            `json:"summary"`
-	Body            string            `json:"body"`
-	FieldValues     map[string]string `json:"field_values"`
-	PublishedAt     *string           `json:"published_at,omitempty"`
+	Title       string            `json:"title"`
+	Slug        string            `json:"slug"`
+	Summary     string            `json:"summary"`
+	Body        string            `json:"body"`
+	FieldValues map[string]string `json:"field_values"`
+	PublishedAt *string           `json:"published_at,omitempty"`
 }
 
 // Handlers exposes the Jobs Board HTTP endpoints.
@@ -55,24 +57,10 @@ func NewHandlers(service *Service, settings *config.Settings) *Handlers {
 // Shared helpers (same pattern as rag/handlers.go)
 // ---------------------------------------------------------------------------
 
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	if err := json.NewEncoder(w).Encode(v); err != nil {
-		slog.Error("jobs: encode response", "error", err)
-	}
-}
-
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, map[string]any{
-		"error": map[string]string{"code": code, "message": message},
-	})
-}
-
 func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
 	return t.ID, true
@@ -81,7 +69,7 @@ func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	u := auth.FromContext(r.Context())
 	if u == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
 	return u, true
@@ -90,7 +78,7 @@ func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUse
 func scanUUIDParam(w http.ResponseWriter, r *http.Request, name string) (pgtype.UUID, bool) {
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, name)); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid "+name)
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid "+name)
 		return pgtype.UUID{}, false
 	}
 	return id, true
@@ -135,7 +123,7 @@ func (h *Handlers) HandleFindJobs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service != nil && !h.service.IsEnabled(r.Context(), tenantID) {
-		writeError(w, http.StatusForbidden, "jobs_disabled", "Jobs board is disabled")
+		errpkg.WriteError(w, http.StatusForbidden, "jobs_disabled", "Jobs board is disabled")
 		return
 	}
 
@@ -164,11 +152,11 @@ func (h *Handlers) HandleFindJobs(w http.ResponseWriter, r *http.Request) {
 	results, total, err := h.service.FindJobs(r.Context(), tenantID, filters)
 	if err != nil {
 		slog.Error("jobs: find failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "jobs_find_failed", "Failed to search jobs")
+		errpkg.WriteError(w, http.StatusInternalServerError, "jobs_find_failed", "Failed to search jobs")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": results,
 		"meta": map[string]any{
 			"page":  page,
@@ -187,18 +175,18 @@ func (h *Handlers) HandleJobDetail(w http.ResponseWriter, r *http.Request) {
 
 	slug := chi.URLParam(r, "slug")
 	if slug == "" {
-		writeError(w, http.StatusBadRequest, "missing_slug", "Job slug is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_slug", "Job slug is required")
 		return
 	}
 
 	detail, err := h.service.GetJobDetail(r.Context(), tenantID, slug)
 	if err != nil {
 		slog.Error("jobs: detail failed", "error", err, "slug", slug)
-		writeError(w, http.StatusNotFound, "job_not_found", "Job not found")
+		errpkg.WriteError(w, http.StatusNotFound, "job_not_found", "Job not found")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": detail,
 	})
 }
@@ -234,15 +222,15 @@ func (h *Handlers) HandleApply(w http.ResponseWriter, r *http.Request) {
 	app, err := h.service.ApplyToJob(r.Context(), tenantID, jobID, user.UserID, req.SubmissionID)
 	if err != nil {
 		if err == ErrDuplicateApplication {
-			writeError(w, http.StatusConflict, "already_applied", "You have already applied to this job")
+			errpkg.WriteError(w, http.StatusConflict, "already_applied", "You have already applied to this job")
 			return
 		}
 		slog.Error("jobs: apply failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "apply_failed", "Failed to submit application")
+		errpkg.WriteError(w, http.StatusInternalServerError, "apply_failed", "Failed to submit application")
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{
 		"data": map[string]any{
 			"id":         app.ID.String(),
 			"job_id":     app.JobID.String(),
@@ -270,11 +258,11 @@ func (h *Handlers) HandleMyApplications(w http.ResponseWriter, r *http.Request) 
 	results, total, err := h.service.ListUserApplications(r.Context(), tenantID, user.UserID, page, limit)
 	if err != nil {
 		slog.Error("jobs: my applications failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "applications_list_failed", "Failed to list applications")
+		errpkg.WriteError(w, http.StatusInternalServerError, "applications_list_failed", "Failed to list applications")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": results,
 		"meta": map[string]any{
 			"page":  page,
@@ -306,11 +294,11 @@ func (h *Handlers) HandleListOrgJobs(w http.ResponseWriter, r *http.Request) {
 	results, total, err := h.service.ListOrgJobs(r.Context(), tenantID, orgID, page, limit)
 	if err != nil {
 		slog.Error("jobs: list org jobs failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "org_jobs_list_failed", "Failed to list org jobs")
+		errpkg.WriteError(w, http.StatusInternalServerError, "org_jobs_list_failed", "Failed to list org jobs")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": results,
 		"meta": map[string]any{
 			"page":  page,
@@ -341,23 +329,23 @@ func (h *Handlers) HandleCreateJobListing(w http.ResponseWriter, r *http.Request
 
 	var req createJobListingRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
 
 	if req.Title == "" {
-		writeError(w, http.StatusBadRequest, "missing_title", "Job title is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_title", "Job title is required")
 		return
 	}
 
 	listing, err := h.service.CreateJobListing(r.Context(), tenantID, orgID, user.UserID, req.Title, req.Slug, req.Summary, req.Body, req.FieldValues)
 	if err != nil {
 		slog.Error("jobs: create listing failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "create_listing_failed", "Failed to create job listing")
+		errpkg.WriteError(w, http.StatusInternalServerError, "create_listing_failed", "Failed to create job listing")
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{
 		"data": listing,
 	})
 }
@@ -385,11 +373,11 @@ func (h *Handlers) HandleListJobApplications(w http.ResponseWriter, r *http.Requ
 	results, total, err := h.service.ListJobApplications(r.Context(), tenantID, jobID, status, page, limit)
 	if err != nil {
 		slog.Error("jobs: list job applications failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "applications_list_failed", "Failed to list applications")
+		errpkg.WriteError(w, http.StatusInternalServerError, "applications_list_failed", "Failed to list applications")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": results,
 		"meta": map[string]any{
 			"page":  page,
@@ -425,23 +413,23 @@ func (h *Handlers) HandleUpdateApplicationStatus(w http.ResponseWriter, r *http.
 
 	var req updateStatusRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
 
 	if !IsValidStatus(req.Status) {
-		writeError(w, http.StatusBadRequest, "invalid_status", "Invalid status value")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_status", "Invalid status value")
 		return
 	}
 
 	app, err := h.service.UpdateApplicationStatus(r.Context(), tenantID, appID, req.Status, req.EmployerNotes)
 	if err != nil {
 		slog.Error("jobs: update status failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "update_failed", "Failed to update application status")
+		errpkg.WriteError(w, http.StatusInternalServerError, "update_failed", "Failed to update application status")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
 			"id":                app.ID.String(),
 			"status":            app.Status,
@@ -469,14 +457,14 @@ func (h *Handlers) HandleAdminListJobs(w http.ResponseWriter, r *http.Request) {
 	results, total, err := h.service.AdminListJobs(r.Context(), tenantID, status, page, limit)
 	if err != nil {
 		slog.Error("jobs: admin list jobs failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "admin_list_failed", "Failed to list job listings")
+		errpkg.WriteError(w, http.StatusInternalServerError, "admin_list_failed", "Failed to list job listings")
 		return
 	}
 
 	// Include listing status distribution for the admin dashboard.
 	dist, _ := h.service.AdminJobStatusDistribution(r.Context(), tenantID)
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": results,
 		"meta": map[string]any{
 			"page":  page,
@@ -507,13 +495,13 @@ func (h *Handlers) HandleAdminToggleFeature(w http.ResponseWriter, r *http.Reque
 	featured, err := h.service.ToggleFeature(r.Context(), tenantID, jobID)
 	if err != nil {
 		slog.Error("jobs: toggle feature failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "feature_toggle_failed", "Failed to toggle featured status")
+		errpkg.WriteError(w, http.StatusInternalServerError, "feature_toggle_failed", "Failed to toggle featured status")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
-			"id":         jobID.String(),
+			"id":          jobID.String(),
 			"is_featured": featured,
 		},
 	})
@@ -547,17 +535,17 @@ func (h *Handlers) HandleAdminUpdateJob(w http.ResponseWriter, r *http.Request) 
 		FieldValues map[string]string `json:"field_values"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
 		return
 	}
 
 	if err := h.service.AdminUpdateJob(r.Context(), tenantID, jobID, body.Title, body.Summary, body.Body, body.Status, body.FieldValues); err != nil {
 		slog.Error("jobs: admin update failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "update_failed", "Failed to update job listing")
+		errpkg.WriteError(w, http.StatusInternalServerError, "update_failed", "Failed to update job listing")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": "ok"})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": "ok"})
 }
 
 // HandleAdminDeleteJob soft-deletes a job listing. Admin only.
@@ -581,11 +569,11 @@ func (h *Handlers) HandleAdminDeleteJob(w http.ResponseWriter, r *http.Request) 
 
 	if err := h.service.AdminDeleteJob(r.Context(), tenantID, jobID); err != nil {
 		slog.Error("jobs: admin delete failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "delete_failed", "Failed to delete job listing")
+		errpkg.WriteError(w, http.StatusInternalServerError, "delete_failed", "Failed to delete job listing")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": "ok"})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": "ok"})
 }
 
 // formatTimestamptz converts a pgtype.Timestamptz to an RFC 3339 UTC string.

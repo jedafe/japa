@@ -8,7 +8,8 @@
 // filing, and analytics from the Content Type System (§14).
 //
 // Ref: japaconnect-engineering/sections/79-community-story-wall.md
-//      japaconnect-engineering/adr/ADR-087-community-story-wall.md
+//
+//	japaconnect-engineering/adr/ADR-087-community-story-wall.md
 package story
 
 import (
@@ -195,15 +196,15 @@ WHERE content_id = $1 AND tenant_id = $2
 
 // ListStoriesFilter holds the filter parameters for listing stories.
 type ListStoriesFilter struct {
-	TenantID           pgtype.UUID
-	OriginSpaceID      pgtype.UUID // optional
-	DestSpaceID        pgtype.UUID // optional
-	VisaCategory       string      // optional
-	Profession         string      // optional
-	Sort               string      // "top" | "latest" (default: latest)
-	Status             string      // filter by status (default: published)
-	Limit              int32
-	Offset             int32
+	TenantID      pgtype.UUID
+	OriginSpaceID pgtype.UUID // optional
+	DestSpaceID   pgtype.UUID // optional
+	VisaCategory  string      // optional
+	Profession    string      // optional
+	Sort          string      // "top" | "latest" (default: latest)
+	Status        string      // filter by status (default: published)
+	Limit         int32
+	Offset        int32
 }
 
 // ListStories returns a paginated, filtered list of published stories.
@@ -387,13 +388,13 @@ LIMIT 1
 
 // AdminListStoriesFilter holds filter parameters for the admin moderation list.
 type AdminListStoriesFilter struct {
-	TenantID  pgtype.UUID
-	Status    string // optional: filter by content status
-	Verified  *bool  // optional: filter by verified state
-	Q         string // optional: search title
-	Sort      string // "latest" (default), "oldest", "title"
-	Limit     int32
-	Offset    int32
+	TenantID pgtype.UUID
+	Status   string // optional: filter by content status
+	Verified *bool  // optional: filter by verified state
+	Q        string // optional: search title
+	Sort     string // "latest" (default), "oldest", "title"
+	Limit    int32
+	Offset   int32
 }
 
 // AdminListStories returns all stories (any status) for the moderation queue.

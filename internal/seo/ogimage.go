@@ -3,7 +3,6 @@ package seo
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"image"
 	"image/color"
 	"image/png"
@@ -21,6 +20,7 @@ import (
 	"golang.org/x/image/font/opentype"
 	"golang.org/x/image/math/fixed"
 
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/tenant"
 	"github.com/jedafe/japa/internal/valkey"
 )
@@ -167,7 +167,7 @@ func (h *OGImageHandler) ServeOGImage(w http.ResponseWriter, r *http.Request) {
 	var buf bytes.Buffer
 	if err := png.Encode(&buf, img); err != nil {
 		slog.Error("og-image: png encode failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to generate image")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to generate image")
 		return
 	}
 
@@ -189,15 +189,6 @@ func (h *OGImageHandler) ServeOGImage(w http.ResponseWriter, r *http.Request) {
 	if _, err := w.Write(buf.Bytes()); err != nil {
 		slog.Warn("og-image: write failed", "error", err)
 	}
-}
-
-// writeError writes a JSON error response in the JapaConnect API format.
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(map[string]any{
-		"error": map[string]string{"code": code, "message": message},
-	})
 }
 
 // generateOGImage creates a 1200x630 OG image with real font rendering.

@@ -7,7 +7,8 @@
 // fulfilled).
 //
 // Ref: japaconnect-engineering/sections/85-mutual-aid-board.md
-//      japaconnect-engineering/adr/ADR-093-mutual-aid-board.md
+//
+//	japaconnect-engineering/adr/ADR-093-mutual-aid-board.md
 package mutualaid
 
 import (
@@ -68,12 +69,12 @@ type Post struct {
 // returned by list and get queries.
 type PostRow struct {
 	Post
-	AuthorName         *string
-	AuthorAvatar       *string
-	DestSpaceName      *string
-	DestSpaceCode      *string
-	CitySpaceName      *string
-	CitySpaceCode      *string
+	AuthorName    *string
+	AuthorAvatar  *string
+	DestSpaceName *string
+	DestSpaceCode *string
+	CitySpaceName *string
+	CitySpaceCode *string
 }
 
 // CreatePostInput holds the fields for inserting a new post.
@@ -100,10 +101,10 @@ type UpdatePostInput struct {
 // ListPostsFilter holds the filter parameters for listing active posts.
 type ListPostsFilter struct {
 	TenantID           pgtype.UUID
-	PostType           string        // optional: need | offer | skill_swap
-	Category           string        // optional
-	DestinationSpaceID pgtype.UUID   // optional
-	CitySpaceID        pgtype.UUID   // optional
+	PostType           string      // optional: need | offer | skill_swap
+	Category           string      // optional
+	DestinationSpaceID pgtype.UUID // optional
+	CitySpaceID        pgtype.UUID // optional
 	Limit              int32
 	Offset             int32
 }

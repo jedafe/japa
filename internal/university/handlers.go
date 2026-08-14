@@ -3,16 +3,15 @@ package university
 import (
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"strconv"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/db/gen"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/tenant"
 )
 
@@ -32,24 +31,10 @@ func NewHandlers(service *Service) *Handlers {
 // Shared helpers
 // ---------------------------------------------------------------------------
 
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	if err := json.NewEncoder(w).Encode(v); err != nil {
-		slog.Error("university: encode response", "error", err)
-	}
-}
-
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, map[string]any{
-		"error": map[string]string{"code": code, "message": message},
-	})
-}
-
 func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
 	return t.ID, true
@@ -58,7 +43,7 @@ func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	u := auth.FromContext(r.Context())
 	if u == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
 	return u, true
@@ -67,7 +52,7 @@ func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUse
 func scanUUIDParam(w http.ResponseWriter, r *http.Request, name string) (pgtype.UUID, bool) {
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, name)); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid "+name)
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid "+name)
 		return pgtype.UUID{}, false
 	}
 	return id, true
@@ -144,7 +129,7 @@ func (h *Handlers) Apply(w http.ResponseWriter, r *http.Request) {
 
 	var in ApplyInput
 	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
 		return
 	}
 
@@ -153,7 +138,7 @@ func (h *Handlers) Apply(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, map[string]any{"data": prof})
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": prof})
 }
 
 // GetMyInstructorProfile handles GET /learn/university/instructor/me.
@@ -180,25 +165,25 @@ func (h *Handlers) GetMyInstructorProfile(w http.ResponseWriter, r *http.Request
 	var profID pgtype.UUID
 	_ = profID.Scan(prof.ID)
 	summary, _ := h.service.store.DashboardSummary(r.Context(), tenantID, profID)
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
-		"id":                  prof.ID,
-		"tenant_id":           prof.TenantID,
-		"user_id":             prof.UserID,
-		"display_name":        prof.DisplayName,
-		"headline":            prof.Headline,
-		"bio":                 prof.Bio,
-		"social_links":        prof.SocialLinks,
-		"tier":                prof.Tier,
-		"status":              prof.Status,
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
+		"id":                      prof.ID,
+		"tenant_id":               prof.TenantID,
+		"user_id":                 prof.UserID,
+		"display_name":            prof.DisplayName,
+		"headline":                prof.Headline,
+		"bio":                     prof.Bio,
+		"social_links":            prof.SocialLinks,
+		"tier":                    prof.Tier,
+		"status":                  prof.Status,
 		"commission_pct_override": prof.CommissionPct,
-		"kyc_status":          prof.KycStatus,
-		"application_note":    prof.ApplicationNote,
-		"reviewed_at":         prof.ReviewedAt,
-		"created_at":          prof.CreatedAt,
-		"updated_at":          prof.UpdatedAt,
-		"total_enrolled":      summary.TotalEnrolled,
-		"total_revenue_kobo":  summary.TotalRevenueKobo,
-		"courses_count":       summary.CoursesCount,
+		"kyc_status":              prof.KycStatus,
+		"application_note":        prof.ApplicationNote,
+		"reviewed_at":             prof.ReviewedAt,
+		"created_at":              prof.CreatedAt,
+		"updated_at":              prof.UpdatedAt,
+		"total_enrolled":          summary.TotalEnrolled,
+		"total_revenue_kobo":      summary.TotalRevenueKobo,
+		"courses_count":           summary.CoursesCount,
 	}})
 }
 
@@ -221,7 +206,7 @@ func (h *Handlers) UpdateMyInstructorProfile(w http.ResponseWriter, r *http.Requ
 		PayoutMethod json.RawMessage `json:"payout_method"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
 		return
 	}
 
@@ -241,7 +226,7 @@ func (h *Handlers) UpdateMyInstructorProfile(w http.ResponseWriter, r *http.Requ
 		handleServiceError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": prof})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": prof})
 }
 
 // ---------------------------------------------------------------------------
@@ -272,7 +257,7 @@ func (h *Handlers) GetPublicInstructor(w http.ResponseWriter, r *http.Request) {
 		live = append(live, trackFromPublishedRow(t))
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
 			"instructor": prof,
 			"tracks":     live,
@@ -311,7 +296,7 @@ func (h *Handlers) ListMyTracks(w http.ResponseWriter, r *http.Request) {
 	for _, row := range rows {
 		tracks = append(tracks, trackFromGetRow(row))
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": tracks})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": tracks})
 }
 
 // CreateMyTrack handles POST /learn/university/my/tracks.
@@ -331,7 +316,7 @@ func (h *Handlers) CreateMyTrack(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if prof.Status != "approved" {
-		writeError(w, http.StatusForbidden, "not_approved_instructor", "Only approved instructors may create tracks")
+		errpkg.WriteError(w, http.StatusForbidden, "not_approved_instructor", "Only approved instructors may create tracks")
 		return
 	}
 
@@ -349,13 +334,13 @@ func (h *Handlers) CreateMyTrack(w http.ResponseWriter, r *http.Request) {
 		SubscriptionEligible *bool   `json:"subscription_eligible"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
 		return
 	}
 
 	// BL-016: validate price_kobo is non-negative when set.
 	if body.PriceKobo != nil && *body.PriceKobo < 0 {
-		writeError(w, http.StatusBadRequest, "invalid_price", "price_kobo must be non-negative")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_price", "price_kobo must be non-negative")
 		return
 	}
 
@@ -385,7 +370,7 @@ func (h *Handlers) CreateMyTrack(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, map[string]any{"data": track})
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": track})
 }
 
 // UpdateMyTrack handles PATCH /learn/university/my/tracks/{id}.
@@ -422,13 +407,13 @@ func (h *Handlers) UpdateMyTrack(w http.ResponseWriter, r *http.Request) {
 		SubscriptionEligible *bool   `json:"subscription_eligible"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
 		return
 	}
 
 	// BL-016: validate price_kobo is non-negative when set.
 	if body.PriceKobo != nil && *body.PriceKobo < 0 {
-		writeError(w, http.StatusBadRequest, "invalid_price", "price_kobo must be non-negative")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_price", "price_kobo must be non-negative")
 		return
 	}
 
@@ -455,7 +440,7 @@ func (h *Handlers) UpdateMyTrack(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": track})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": track})
 }
 
 // SubmitMyTrack handles POST /learn/university/my/tracks/{id}/submit.
@@ -484,7 +469,7 @@ func (h *Handlers) SubmitMyTrack(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": track})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": track})
 }
 
 // GetMyTrackStats handles GET /learn/university/my/tracks/{id}/stats.
@@ -514,7 +499,7 @@ func (h *Handlers) GetMyTrackStats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !track.InstructorID.Valid || track.InstructorID.String() != prof.ID.String() {
-		writeError(w, http.StatusForbidden, "not_track_owner", "You do not own this track")
+		errpkg.WriteError(w, http.StatusForbidden, "not_track_owner", "You do not own this track")
 		return
 	}
 
@@ -555,7 +540,7 @@ func (h *Handlers) GetMyTrackStats(w http.ResponseWriter, r *http.Request) {
 	}
 
 	totalRevenue := summary.OpenKobo + summary.PaidKobo
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
 			"track_id":            trackID.String(),
 			"total_enrolled":      track.TotalEnrolled,
@@ -600,7 +585,7 @@ func (h *Handlers) ListCatalog(w http.ResponseWriter, r *http.Request) {
 	for _, row := range rows {
 		items = append(items, catalogTrackFromRow(row))
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": items,
 		"meta": map[string]int64{"total": total, "limit": int64(limit), "offset": int64(offset)},
 	})
@@ -614,7 +599,7 @@ func (h *Handlers) GetCatalogTrack(w http.ResponseWriter, r *http.Request) {
 	}
 	slug := chi.URLParam(r, "slug")
 	if slug == "" {
-		writeError(w, http.StatusBadRequest, "missing_slug", "Track slug is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_slug", "Track slug is required")
 		return
 	}
 
@@ -625,7 +610,7 @@ func (h *Handlers) GetCatalogTrack(w http.ResponseWriter, r *http.Request) {
 	}
 	// Map through CatalogTrackDetailFromRow to add the `level` JSON alias for
 	// the frontend TrackDetail.level contract (ADR-060).
-	writeJSON(w, http.StatusOK, map[string]any{"data": CatalogTrackDetailFromRow(track)})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": CatalogTrackDetailFromRow(track)})
 }
 
 // ---------------------------------------------------------------------------
@@ -669,7 +654,7 @@ func (h *Handlers) GetMyEarnings(w http.ResponseWriter, r *http.Request) {
 	}
 
 	totalEarned := summary.OpenKobo + summary.PaidKobo
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
 		"total_earned_kobo":   totalEarned,
 		"total_paid_out_kobo": summary.PaidKobo,
 		"pending_kobo":        summary.OpenKobo,
@@ -707,19 +692,19 @@ func (h *Handlers) GetMyPayouts(w http.ResponseWriter, r *http.Request) {
 	for _, p := range payouts {
 		items = append(items, payoutFromRow(p))
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": items})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": items})
 }
 
 // payoutDTO is the clean API-facing payout record (BUG-006).
 type payoutDTO struct {
-	ID           string     `json:"id"`
-	AmountKobo   int64      `json:"amount_kobo"`
-	Status       string     `json:"status"`
-	PeriodStart  string     `json:"period_start"`
-	PeriodEnd    string     `json:"period_end"`
-	RequestedAt  time.Time  `json:"requested_at"`
-	ProcessedAt  *time.Time `json:"processed_at,omitempty"`
-	Currency     string     `json:"currency"`
+	ID          string     `json:"id"`
+	AmountKobo  int64      `json:"amount_kobo"`
+	Status      string     `json:"status"`
+	PeriodStart string     `json:"period_start"`
+	PeriodEnd   string     `json:"period_end"`
+	RequestedAt time.Time  `json:"requested_at"`
+	ProcessedAt *time.Time `json:"processed_at,omitempty"`
+	Currency    string     `json:"currency"`
 }
 
 func payoutFromRow(p gen.InstructorPayout) payoutDTO {
@@ -769,7 +754,7 @@ func (h *Handlers) AdminListInstructors(w http.ResponseWriter, r *http.Request) 
 	for _, row := range rows {
 		profiles = append(profiles, profileFromRow(row))
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": profiles,
 		"meta": map[string]int64{"total": total, "limit": int64(limit), "offset": int64(offset)},
 	})
@@ -801,7 +786,7 @@ func (h *Handlers) AdminApproveInstructor(w http.ResponseWriter, r *http.Request
 		handleServiceError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": prof})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": prof})
 }
 
 // AdminRejectInstructor handles POST /admin/university/instructors/{id}/reject.
@@ -824,7 +809,7 @@ func (h *Handlers) AdminRejectInstructor(w http.ResponseWriter, r *http.Request)
 		handleServiceError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": prof})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": prof})
 }
 
 // AdminSuspendInstructor handles POST /admin/university/instructors/{id}/suspend.
@@ -847,7 +832,7 @@ func (h *Handlers) AdminSuspendInstructor(w http.ResponseWriter, r *http.Request
 		handleServiceError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": prof})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": prof})
 }
 
 // AdminReinstateInstructor handles POST /admin/university/instructors/{id}/reinstate.
@@ -870,7 +855,7 @@ func (h *Handlers) AdminReinstateInstructor(w http.ResponseWriter, r *http.Reque
 		handleServiceError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": prof})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": prof})
 }
 
 // AdminDeleteInstructor handles DELETE /admin/university/instructors/{id}.
@@ -889,7 +874,7 @@ func (h *Handlers) AdminDeleteInstructor(w http.ResponseWriter, r *http.Request)
 		handleServiceError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
 }
 
 // ---------------------------------------------------------------------------
@@ -914,7 +899,7 @@ func (h *Handlers) AdminListPendingTracks(w http.ResponseWriter, r *http.Request
 	if rows == nil {
 		rows = []gen.ListPendingUniversityTracksRow{}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": rows})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": rows})
 }
 
 // AdminApproveTrack handles POST /admin/university/tracks/{id}/approve.
@@ -933,7 +918,7 @@ func (h *Handlers) AdminApproveTrack(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": track})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": track})
 }
 
 // AdminListPayouts handles GET /admin/university/payouts.
@@ -956,7 +941,7 @@ func (h *Handlers) AdminListPayouts(w http.ResponseWriter, r *http.Request) {
 	if payouts == nil {
 		payouts = []gen.ListInstructorPayoutsByStatusRow{}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": payouts})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": payouts})
 }
 
 // AdminGetPayout handles GET /admin/university/payouts/{id}.
@@ -975,7 +960,7 @@ func (h *Handlers) AdminGetPayout(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": payout})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": payout})
 }
 
 // AdminProcessPayout handles POST /admin/university/payouts/{id}/process.
@@ -998,7 +983,7 @@ func (h *Handlers) AdminProcessPayout(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": payout})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": payout})
 }
 
 // AdminListRevenueSplits handles GET /admin/university/revenue-splits.
@@ -1053,8 +1038,8 @@ func (h *Handlers) AdminListRevenueSplits(w http.ResponseWriter, r *http.Request
 	if limit > 0 {
 		page = offset/limit + 1
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
-		"data":  splits,
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
+		"data": splits,
 		"meta": map[string]any{"total": total, "page": page, "limit": limit},
 	})
 }
@@ -1076,7 +1061,7 @@ func (h *Handlers) AdminGetRevenueSplit(w http.ResponseWriter, r *http.Request) 
 		handleServiceError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": split})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": split})
 }
 
 // trackFromGetRow maps a ListUniversityTracksByInstructorRow into the Track DTO.
@@ -1085,12 +1070,12 @@ func trackFromGetRow(r gen.ListUniversityTracksByInstructorRow) Track {
 		ID: r.ID.String(), Title: r.Title, Slug: r.Slug, Description: r.Description,
 		Difficulty: r.Difficulty, Currency: r.Currency, Language: r.Language,
 		TotalEnrolled: r.TotalEnrolled, IsPublished: r.IsPublished,
-		IsPublishedToUniversity:   r.IsPublishedToUniversity,
-		SubmissionStatus:          r.UniversitySubmissionStatus,
-		TotalRevenueKobo:          r.TotalRevenueKobo,
-		RejectionReason:           r.UniversityRejectionReason,
-		ThumbnailURL:              r.ThumbnailUrl,
-		CreatedAt:                 r.CreatedAt.Time, UpdatedAt: r.UpdatedAt.Time,
+		IsPublishedToUniversity: r.IsPublishedToUniversity,
+		SubmissionStatus:        r.UniversitySubmissionStatus,
+		TotalRevenueKobo:        r.TotalRevenueKobo,
+		RejectionReason:         r.UniversityRejectionReason,
+		ThumbnailURL:            r.ThumbnailUrl,
+		CreatedAt:               r.CreatedAt.Time, UpdatedAt: r.UpdatedAt.Time,
 	}
 	if r.CoverMediaID.Valid {
 		s := r.CoverMediaID.String()
@@ -1124,11 +1109,11 @@ func trackFromPublishedRow(r gen.ListPublishedTracksByInstructorRow) Track {
 		ID: r.ID.String(), Title: r.Title, Slug: r.Slug, Description: r.Description,
 		Difficulty: r.Difficulty, Currency: r.Currency, Language: r.Language,
 		TotalEnrolled: r.TotalEnrolled, IsPublished: r.IsPublished,
-		IsPublishedToUniversity:   r.IsPublishedToUniversity,
-		SubmissionStatus:          r.UniversitySubmissionStatus,
-		RejectionReason:           r.UniversityRejectionReason,
-		ThumbnailURL:              r.ThumbnailUrl,
-		CreatedAt:                 r.CreatedAt.Time, UpdatedAt: r.UpdatedAt.Time,
+		IsPublishedToUniversity: r.IsPublishedToUniversity,
+		SubmissionStatus:        r.UniversitySubmissionStatus,
+		RejectionReason:         r.UniversityRejectionReason,
+		ThumbnailURL:            r.ThumbnailUrl,
+		CreatedAt:               r.CreatedAt.Time, UpdatedAt: r.UpdatedAt.Time,
 	}
 	if r.CoverMediaID.Valid {
 		s := r.CoverMediaID.String()
@@ -1186,7 +1171,7 @@ func (h *Handlers) AdminListAllTracks(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": rows,
 		"meta": map[string]int64{"total": total, "limit": int64(limit), "offset": int64(offset)},
 	})
@@ -1214,7 +1199,7 @@ func (h *Handlers) AdminRejectTrack(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": track})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": track})
 }
 
 // AdminFailPayout handles POST /admin/university/payouts/{id}/fail.
@@ -1239,7 +1224,7 @@ func (h *Handlers) AdminFailPayout(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": payout})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": payout})
 }
 
 // AdminUpdateInstructor handles PATCH /admin/university/instructors/{id}.
@@ -1259,7 +1244,7 @@ func (h *Handlers) AdminUpdateInstructor(w http.ResponseWriter, r *http.Request)
 		CommissionOverride *float64 `json:"commission_pct_override"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
 		return
 	}
 
@@ -1281,7 +1266,7 @@ func (h *Handlers) AdminUpdateInstructor(w http.ResponseWriter, r *http.Request)
 		handleServiceError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": profileFromRow(prof)})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": profileFromRow(prof)})
 }
 
 // AdminFeatureTrack handles POST /admin/university/tracks/{id}/feature.
@@ -1312,7 +1297,7 @@ func (h *Handlers) AdminFeatureTrack(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": track})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": track})
 }
 
 // ---------------------------------------------------------------------------
@@ -1348,9 +1333,9 @@ func (h *Handlers) AdminListCategories(w http.ResponseWriter, r *http.Request) {
 	if limit > 0 {
 		page = offset/limit + 1
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
-		"data":  rows,
-		"meta":  map[string]any{"total": total, "page": page, "limit": limit},
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
+		"data": rows,
+		"meta": map[string]any{"total": total, "page": page, "limit": limit},
 	})
 }
 
@@ -1367,11 +1352,11 @@ func (h *Handlers) AdminCreateCategory(w http.ResponseWriter, r *http.Request) {
 		IsActive  *bool  `json:"is_active"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
 	if body.Slug == "" || body.Name == "" {
-		writeError(w, http.StatusBadRequest, "missing_fields", "slug and name are required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_fields", "slug and name are required")
 		return
 	}
 	sortOrder := int32(0)
@@ -1387,7 +1372,7 @@ func (h *Handlers) AdminCreateCategory(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, map[string]any{"data": cat})
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": cat})
 }
 
 // AdminGetCategory handles GET /admin/university/categories/{id}.
@@ -1405,7 +1390,7 @@ func (h *Handlers) AdminGetCategory(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": cat})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": cat})
 }
 
 // AdminUpdateCategory handles PATCH /admin/university/categories/{id}.
@@ -1425,7 +1410,7 @@ func (h *Handlers) AdminUpdateCategory(w http.ResponseWriter, r *http.Request) {
 		IsActive  *bool   `json:"is_active"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
 	cat, err := h.service.store.UpdateTrackCategory(r.Context(), tenantID, id, body.Name, body.Slug, body.SortOrder, body.IsActive)
@@ -1433,7 +1418,7 @@ func (h *Handlers) AdminUpdateCategory(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": cat})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": cat})
 }
 
 // AdminDeleteCategory handles DELETE /admin/university/categories/{id}.
@@ -1459,7 +1444,7 @@ func (h *Handlers) AdminDeleteCategory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if count > 0 {
-		writeError(w, http.StatusConflict, "category_in_use",
+		errpkg.WriteError(w, http.StatusConflict, "category_in_use",
 			fmt.Sprintf("Cannot delete category '%s': %d track(s) still reference it. Reassign or clear those tracks first.", cat.Slug, count))
 		return
 	}
@@ -1467,7 +1452,7 @@ func (h *Handlers) AdminDeleteCategory(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"deleted": true, "id": id}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"deleted": true, "id": id}})
 }
 
 // PublicListActiveCategories handles GET /learn/university/categories.
@@ -1485,5 +1470,5 @@ func (h *Handlers) PublicListActiveCategories(w http.ResponseWriter, r *http.Req
 	if rows == nil {
 		rows = []gen.ListActiveUniversityTrackCategoriesRow{}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": rows})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": rows})
 }

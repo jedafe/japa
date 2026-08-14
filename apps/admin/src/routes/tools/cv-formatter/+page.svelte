@@ -161,11 +161,17 @@
 		load: async (params) => {
 			const qs = new URLSearchParams();
 			if (params.filter?.dest) qs.set('dest', params.filter.dest);
+			qs.set('page', String(params.page ?? 1));
+			qs.set('limit', String(params.pageSize ?? 25));
 			const queryString = qs.toString();
-			const result = await cvFormatterAdminApi.listStandards(queryString ? `?${queryString}` : '');
+			const result = await cvFormatterAdminApi.listStandardsRaw(`?${queryString}`);
 			if (result.ok) {
-				const data = (result.data as CVStandardRow[]) ?? [];
-				return { data, total: data.length, totalPages: 1 };
+				const data = (result.data.data as CVStandardRow[]) ?? [];
+				return {
+					data,
+					total: result.data.pagination?.total ?? data.length,
+					totalPages: result.data.pagination?.total_pages ?? 1
+				};
 			}
 			throw new Error(result.error ?? t('common.error', 'An error occurred'));
 		},

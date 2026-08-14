@@ -62,17 +62,17 @@ type WebhookEndpointWithSecret struct {
 // WebhookEndpointResponse is the JSON-safe representation of a webhook endpoint.
 // The secret is never included (§12: "secret shown once" — only on create).
 type WebhookEndpointResponse struct {
-	ID         string    `json:"id"`
-	TenantID   string    `json:"tenant_id"`
-	Name       string    `json:"name"`
-	URL        string    `json:"url"`
-	EventTypes []string  `json:"event_types"`
-	Status     string    `json:"status"`
-	IsActive   bool      `json:"is_active"`
+	ID         string     `json:"id"`
+	TenantID   string     `json:"tenant_id"`
+	Name       string     `json:"name"`
+	URL        string     `json:"url"`
+	EventTypes []string   `json:"event_types"`
+	Status     string     `json:"status"`
+	IsActive   bool       `json:"is_active"`
 	VerifiedAt *time.Time `json:"verified_at"`
-	CreatedBy  string    `json:"created_by"`
-	CreatedAt  time.Time `json:"created_at"`
-	UpdatedAt  time.Time `json:"updated_at"`
+	CreatedBy  string     `json:"created_by"`
+	CreatedAt  time.Time  `json:"created_at"`
+	UpdatedAt  time.Time  `json:"updated_at"`
 }
 
 // WebhookEndpointCreateResponse is returned only from POST /admin/webhooks and

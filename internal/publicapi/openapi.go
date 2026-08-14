@@ -33,8 +33,8 @@ func GetPublicOpenAPISpec(siteURL string, siteName string) map[string]any {
 					"description": "API key obtained from the Developer Portal. Prefixed with jc_live_ (production) or jc_test_ (sandbox).",
 				},
 			},
-			"schemas":         buildPublicSchemas(),
-			"responses":       buildPublicResponses(),
+			"schemas":   buildPublicSchemas(),
+			"responses": buildPublicResponses(),
 		},
 	}
 }
@@ -46,21 +46,21 @@ func GetPublicOpenAPISpec(siteURL string, siteName string) map[string]any {
 // these actual paths.
 func buildPublicPaths() map[string]any {
 	return map[string]any{
-		"/public/spaces":            spacesPath(),
-		"/public/spaces/{slug}":     spaceBySlugPath(),
-		"/public/content":           contentListPath(),
-		"/public/content/{id}":      contentByIDPath(),
+		"/public/spaces":                spacesPath(),
+		"/public/spaces/{slug}":         spaceBySlugPath(),
+		"/public/content":               contentListPath(),
+		"/public/content/{id}":          contentByIDPath(),
 		"/public/content/{id}/comments": contentCommentsPath(),
-		"/public/users":             usersListPath(),
-		"/public/users/{id}":        userByIDPath(),
-		"/public/tags":              tagsPath(),
-		"/public/tags/{slug}":       tagBySlugPath(),
-		"/public/search":            searchPath(),
-		"/public/me":                mePath(),
-		"/public/trending/content":  trendingEndpoint("Trending content", "Retrieve trending content snapshots scored by recent engagement."),
-		"/public/trending/tags":     trendingEndpoint("Trending tags", "Retrieve trending tag snapshots scored by recent follower growth."),
-		"/public/trending/spaces":   trendingEndpoint("Trending spaces", "Retrieve trending space snapshots scored by recent member activity."),
-		"/public/trending/users":    trendingEndpoint("Trending users", "Retrieve trending user snapshots scored by recent engagement."),
+		"/public/users":                 usersListPath(),
+		"/public/users/{id}":            userByIDPath(),
+		"/public/tags":                  tagsPath(),
+		"/public/tags/{slug}":           tagBySlugPath(),
+		"/public/search":                searchPath(),
+		"/public/me":                    mePath(),
+		"/public/trending/content":      trendingEndpoint("Trending content", "Retrieve trending content snapshots scored by recent engagement."),
+		"/public/trending/tags":         trendingEndpoint("Trending tags", "Retrieve trending tag snapshots scored by recent follower growth."),
+		"/public/trending/spaces":       trendingEndpoint("Trending spaces", "Retrieve trending space snapshots scored by recent member activity."),
+		"/public/trending/users":        trendingEndpoint("Trending users", "Retrieve trending user snapshots scored by recent engagement."),
 	}
 }
 
@@ -140,7 +140,7 @@ func contentCommentsPath() map[string]any {
 			"summary":     "List content comments",
 			"description": "Retrieve top-level published comments for a content item, ordered by pinned then vote score.",
 			"tags":        []any{"Content"},
-			"parameters": append([]any{uuidPathParam("id", "Content ID")}, paginationParams("comments")...),
+			"parameters":  append([]any{uuidPathParam("id", "Content ID")}, paginationParams("comments")...),
 			"responses": map[string]any{
 				"200": paginatedResponse("List of comments", "Comment"),
 				"401": refResponse("Unauthorized"),
@@ -425,13 +425,13 @@ func buildPublicSchemas() map[string]any {
 		"Space": map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"id":          map[string]any{"type": "string", "format": "uuid"},
-				"name":        map[string]any{"type": "string"},
-				"slug":        map[string]any{"type": "string"},
-				"description": map[string]any{"type": "string"},
+				"id":           map[string]any{"type": "string", "format": "uuid"},
+				"name":         map[string]any{"type": "string"},
+				"slug":         map[string]any{"type": "string"},
+				"description":  map[string]any{"type": "string"},
 				"member_count": map[string]any{"type": "integer"},
-				"created_at":  map[string]any{"type": "string", "format": "date-time"},
-				"updated_at":  map[string]any{"type": "string", "format": "date-time"},
+				"created_at":   map[string]any{"type": "string", "format": "date-time"},
+				"updated_at":   map[string]any{"type": "string", "format": "date-time"},
 			},
 		},
 		"Content": map[string]any{
@@ -453,12 +453,12 @@ func buildPublicSchemas() map[string]any {
 		"User": map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"id":         map[string]any{"type": "string", "format": "uuid"},
-				"username":   map[string]any{"type": "string"},
+				"id":           map[string]any{"type": "string", "format": "uuid"},
+				"username":     map[string]any{"type": "string"},
 				"display_name": map[string]any{"type": "string"},
-				"avatar_url": map[string]any{"type": "string", "format": "uri"},
-				"bio":        map[string]any{"type": "string"},
-				"created_at": map[string]any{"type": "string", "format": "date-time"},
+				"avatar_url":   map[string]any{"type": "string", "format": "uri"},
+				"bio":          map[string]any{"type": "string"},
+				"created_at":   map[string]any{"type": "string", "format": "date-time"},
 			},
 		},
 		"Tag": map[string]any{
@@ -484,11 +484,11 @@ func buildPublicSchemas() map[string]any {
 		"TrendingItem": map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"id":      map[string]any{"type": "string", "format": "uuid"},
-				"name":    map[string]any{"type": "string"},
-				"score":   map[string]any{"type": "number", "format": "float", "description": "Trending score"},
-				"slug":    map[string]any{"type": "string"},
-				"meta":    map[string]any{"type": "object", "description": "Additional metadata varies by entity type"},
+				"id":    map[string]any{"type": "string", "format": "uuid"},
+				"name":  map[string]any{"type": "string"},
+				"score": map[string]any{"type": "number", "format": "float", "description": "Trending score"},
+				"slug":  map[string]any{"type": "string"},
+				"meta":  map[string]any{"type": "object", "description": "Additional metadata varies by entity type"},
 			},
 		},
 		"Error": map[string]any{

@@ -3,7 +3,8 @@
 // routes and table-driven tests for the staleness check and calculator.
 //
 // Ref: japaconnect-engineering/sections/74-remittance-tracker.md
-//      japaconnect-engineering/adr/ADR-075-remittance-rate-tracker.md
+//
+//	japaconnect-engineering/adr/ADR-075-remittance-rate-tracker.md
 package remittance
 
 import (

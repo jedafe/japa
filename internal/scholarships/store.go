@@ -4,7 +4,8 @@
 // and deadline reminder pipeline.
 //
 // Ref: japaconnect-engineering/sections/73-scholarship-finder.md
-//      japaconnect-engineering/adr/ADR-073-scholarship-finder.md
+//
+//	japaconnect-engineering/adr/ADR-073-scholarship-finder.md
 package scholarships
 
 import (

@@ -95,7 +95,7 @@ func (h *Handlers) enqueueSearchIndex(pageID, tenantID pgtype.UUID, operation st
 func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
 
@@ -114,18 +114,18 @@ func (h *Handlers) checkAudienceGate(w http.ResponseWriter, r *http.Request, ten
 
 	user := auth.FromContext(r.Context())
 	if user == nil {
-		writeError(w, http.StatusForbidden, "audience_forbidden", "This documentation section requires authentication")
+		errpkg.WriteError(w, http.StatusForbidden, "audience_forbidden", "This documentation section requires authentication")
 		return false
 	}
 
 	if h.rbac == nil {
 		// Fallback: deny if no RBAC resolver configured (defensive).
-		writeError(w, http.StatusForbidden, "audience_forbidden", "Access denied")
+		errpkg.WriteError(w, http.StatusForbidden, "audience_forbidden", "Access denied")
 		return false
 	}
 
 	if !h.rbac.HasPermission(r.Context(), user.UserID, tenantID, requiredPerm) {
-		writeError(w, http.StatusForbidden, "audience_forbidden", "You do not have access to this documentation section")
+		errpkg.WriteError(w, http.StatusForbidden, "audience_forbidden", "You do not have access to this documentation section")
 		return false
 	}
 
@@ -158,28 +158,11 @@ func (h *Handlers) accessibleAudiences(r *http.Request, tenantID pgtype.UUID) []
 
 // requireUser resolves the authenticated user from the request context.
 
-// writeJSON serializes the given value as JSON and writes it to the response.
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-
-	if err := json.NewEncoder(w).Encode(v); err != nil {
-		slog.Warn("json encode error", "error", err)
-	}
-}
-
-// writeError writes a JSON error response following the JapaConnect API format.
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, map[string]any{
-		"error": map[string]string{"code": code, "message": message},
-	})
-}
-
 // handleServiceError translates a Service-layer error into the appropriate HTTP response.
 func handleServiceError(w http.ResponseWriter, err error) {
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) && pgErr.Code == "23505" {
-		writeError(w, http.StatusConflict, "already_exists", "Resource already exists")
+		errpkg.WriteError(w, http.StatusConflict, "already_exists", "Resource already exists")
 		return
 	}
 
@@ -203,7 +186,7 @@ func (h *Handlers) ListDocPages(w http.ResponseWriter, r *http.Request) {
 
 	audience := chi.URLParam(r, "audience")
 	if !ValidAudiences[audience] {
-		writeError(w, http.StatusBadRequest, "invalid_audience", "Invalid audience section")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_audience", "Invalid audience section")
 		return
 	}
 
@@ -217,7 +200,7 @@ func (h *Handlers) ListDocPages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": pages})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": pages})
 }
 
 // GetDocPage handles GET /api/v1/docs/{audience}/{slug}.
@@ -232,7 +215,7 @@ func (h *Handlers) GetDocPage(w http.ResponseWriter, r *http.Request) {
 	slug := chi.URLParam(r, "slug")
 
 	if !ValidAudiences[audience] {
-		writeError(w, http.StatusBadRequest, "invalid_audience", "Invalid audience section")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_audience", "Invalid audience section")
 		return
 	}
 
@@ -246,7 +229,7 @@ func (h *Handlers) GetDocPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": page})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": page})
 }
 
 // ListDocNav handles GET /api/v1/docs/nav.
@@ -266,7 +249,7 @@ func (h *Handlers) ListDocNav(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": nav})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": nav})
 }
 
 // SearchDocPages handles GET /api/v1/docs/search?q=&audience=&limit=.
@@ -281,13 +264,13 @@ func (h *Handlers) SearchDocPages(w http.ResponseWriter, r *http.Request) {
 
 	q := strings.TrimSpace(r.URL.Query().Get("q"))
 	if q == "" {
-		writeError(w, http.StatusBadRequest, "missing_query", "Query parameter q is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_query", "Query parameter q is required")
 		return
 	}
 
 	audience := strings.TrimSpace(r.URL.Query().Get("audience"))
 	if audience != "" && !ValidAudiences[audience] {
-		writeError(w, http.StatusBadRequest, "invalid_audience", "Invalid audience section")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_audience", "Invalid audience section")
 		return
 	}
 
@@ -300,7 +283,7 @@ func (h *Handlers) SearchDocPages(w http.ResponseWriter, r *http.Request) {
 			allowedSet[a] = true
 		}
 		if !allowedSet[audience] {
-			writeError(w, http.StatusForbidden, "audience_forbidden", "You do not have access to this documentation section")
+			errpkg.WriteError(w, http.StatusForbidden, "audience_forbidden", "You do not have access to this documentation section")
 			return
 		}
 		allowed = []string{audience}
@@ -319,7 +302,7 @@ func (h *Handlers) SearchDocPages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": results})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": results})
 }
 
 // ---------------------------------------------------------------------------
@@ -337,7 +320,7 @@ func (h *Handlers) ListAllDocPages(w http.ResponseWriter, r *http.Request) {
 	audience := r.URL.Query().Get("audience")
 	if audience != "" {
 		if !ValidAudiences[audience] {
-			writeError(w, http.StatusBadRequest, "invalid_audience", "Invalid audience section")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_audience", "Invalid audience section")
 			return
 		}
 
@@ -347,7 +330,7 @@ func (h *Handlers) ListAllDocPages(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		writeJSON(w, http.StatusOK, map[string]any{"data": pages})
+		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": pages})
 		return
 	}
 
@@ -357,7 +340,7 @@ func (h *Handlers) ListAllDocPages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": pages})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": pages})
 }
 
 // CreateDocPage handles POST /api/v1/admin/docs/pages.
@@ -369,12 +352,12 @@ func (h *Handlers) CreateDocPage(w http.ResponseWriter, r *http.Request) {
 
 	var req CreateDocPageRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
 		return
 	}
 
 	if req.Title == "" || req.Slug == "" || req.Audience == "" {
-		writeError(w, http.StatusBadRequest, "missing_fields", "title, slug, and audience are required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_fields", "title, slug, and audience are required")
 		return
 	}
 
@@ -392,11 +375,11 @@ func (h *Handlers) CreateDocPage(w http.ResponseWriter, r *http.Request) {
 	page, fetchErr := h.Service.GetDocPageByID(r.Context(), tenantID, pageID)
 	if fetchErr != nil {
 		// Page was created but we can't fetch it — return minimal success.
-		writeJSON(w, http.StatusCreated, map[string]any{"data": map[string]any{"id": pageID.String(), "status": "created", "slug": req.Slug, "audience": req.Audience}})
+		errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": map[string]any{"id": pageID.String(), "status": "created", "slug": req.Slug, "audience": req.Audience}})
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": page})
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": page})
 }
 
 // GetAdminDocPage handles GET /api/v1/admin/docs/pages/{id}.
@@ -409,7 +392,7 @@ func (h *Handlers) GetAdminDocPage(w http.ResponseWriter, r *http.Request) {
 
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid page ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid page ID")
 		return
 	}
 
@@ -419,7 +402,7 @@ func (h *Handlers) GetAdminDocPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": page})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": page})
 }
 
 // UpdateDocPage handles PATCH /api/v1/admin/docs/pages/{id}.
@@ -431,20 +414,20 @@ func (h *Handlers) UpdateDocPage(w http.ResponseWriter, r *http.Request) {
 
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid page ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid page ID")
 		return
 	}
 
 	var req UpdateDocPageRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
 		return
 	}
 
 	// Title is required only when content is being updated (not for status-only
 	// toggles like approve/publish which use dedicated handlers).
 	if req.Title == "" && req.Content != nil {
-		writeError(w, http.StatusBadRequest, "missing_fields", "title is required when updating content")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_fields", "title is required when updating content")
 		return
 	}
 
@@ -456,7 +439,7 @@ func (h *Handlers) UpdateDocPage(w http.ResponseWriter, r *http.Request) {
 	// SEARCH-001: enqueue Meilisearch index sync for the updated doc page.
 	h.enqueueSearchIndex(id, tenantID, "index")
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "updated"}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "updated"}})
 }
 
 // ApproveDocPage handles POST /api/v1/admin/docs/pages/{id}/approve.
@@ -469,13 +452,13 @@ func (h *Handlers) ApproveDocPage(w http.ResponseWriter, r *http.Request) {
 
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid page ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid page ID")
 		return
 	}
 
 	user := auth.FromContext(r.Context())
 	if user == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
 
@@ -485,7 +468,7 @@ func (h *Handlers) ApproveDocPage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.enqueueSearchIndex(id, tenantID, "index")
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "approved"}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "approved"}})
 }
 
 // PublishDocPage handles POST /api/v1/admin/docs/pages/{id}/publish.
@@ -498,13 +481,13 @@ func (h *Handlers) PublishDocPage(w http.ResponseWriter, r *http.Request) {
 
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid page ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid page ID")
 		return
 	}
 
 	user := auth.FromContext(r.Context())
 	if user == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
 
@@ -514,7 +497,7 @@ func (h *Handlers) PublishDocPage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.enqueueSearchIndex(id, tenantID, "index")
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "published"}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "published"}})
 }
 
 // DeleteDocPage handles DELETE /api/v1/admin/docs/{id}.
@@ -526,7 +509,7 @@ func (h *Handlers) DeleteDocPage(w http.ResponseWriter, r *http.Request) {
 
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid page ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid page ID")
 		return
 	}
 
@@ -538,7 +521,7 @@ func (h *Handlers) DeleteDocPage(w http.ResponseWriter, r *http.Request) {
 	// SEARCH-001: enqueue Meilisearch document deletion for the removed doc page.
 	h.enqueueSearchIndex(id, tenantID, "delete")
 
-	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 }
 
 // ---------------------------------------------------------------------------

@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/db/gen"
+	errpkg "github.com/jedafe/japa/internal/errors"
 )
 
 // ListSpaceContent handles GET /api/v1/spaces/{slug}/content — content
@@ -33,31 +34,31 @@ func (h *Handlers) ListSpaceContent(w http.ResponseWriter, r *http.Request) {
 		offset := parsePageSizeOffset(r)
 		items, err := h.content.SearchContentsBySpace(r.Context(), tenantID, space.ID, q, limit, offset)
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, "internal_error", "Failed to search space content")
+			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to search space content")
 			return
 		}
 		if items == nil {
 			items = []gen.SearchContentsBySpaceRow{}
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"data": items})
+		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": items})
 		return
 	}
 
 	var cursor pgtype.Timestamptz
 	if cs := r.URL.Query().Get("cursor"); cs != "" {
 		if err := cursor.Scan(cs); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_cursor", "Invalid cursor timestamp")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_cursor", "Invalid cursor timestamp")
 			return
 		}
 	}
 
 	items, err := h.content.ListContentsBySpace(r.Context(), tenantID, space.ID, cursor, limit)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list space content")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list space content")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": items})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": items})
 }
 
 // ListPinned handles GET /api/v1/spaces/{slug}/pinned.
@@ -69,11 +70,11 @@ func (h *Handlers) ListPinned(w http.ResponseWriter, r *http.Request) {
 
 	pins, err := h.content.ListPinnedContent(r.Context(), space.ID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list pinned content")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list pinned content")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": pins})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": pins})
 }
 
 // AddPinned handles POST /api/v1/spaces/{slug}/pinned — pins a content item
@@ -91,7 +92,7 @@ func (h *Handlers) AddPinned(w http.ResponseWriter, r *http.Request) {
 
 	user := auth.FromContext(r.Context())
 	if user == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
 
@@ -101,28 +102,28 @@ func (h *Handlers) AddPinned(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if input.ContentID == "" {
-		writeError(w, http.StatusBadRequest, "missing_content_id", "content_id is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_content_id", "content_id is required")
 		return
 	}
 
 	var contentID pgtype.UUID
 	if err := contentID.Scan(input.ContentID); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_content_id", "Invalid content_id")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_content_id", "Invalid content_id")
 		return
 	}
 
 	pin, err := h.content.PinContent(r.Context(), tenantID, space.ID, contentID, user.UserID, input.Position)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to pin content")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to pin content")
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": pin})
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": pin})
 }
 
 // RemovePinned handles DELETE /api/v1/spaces/{slug}/pinned/{content_id}.
@@ -134,30 +135,30 @@ func (h *Handlers) RemovePinned(w http.ResponseWriter, r *http.Request) {
 
 	var contentID pgtype.UUID
 	if err := contentID.Scan(chi.URLParam(r, "content_id")); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_content_id", "Invalid content_id")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_content_id", "Invalid content_id")
 		return
 	}
 
 	if err := h.content.UnpinContent(r.Context(), space.ID, contentID); err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to unpin content")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to unpin content")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"unpinned": true}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"unpinned": true}})
 }
 
 // ReorderPinned handles POST /admin/spaces/:id/pinned/reorder.
 func (h *Handlers) ReorderPinned(w http.ResponseWriter, r *http.Request) {
 	spaceID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", err.Error())
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", err.Error())
 		return
 	}
 	var input struct {
 		Order []string `json:"order"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
@@ -165,7 +166,7 @@ func (h *Handlers) ReorderPinned(w http.ResponseWriter, r *http.Request) {
 	for _, contentIDStr := range input.Order {
 		var contentID pgtype.UUID
 		if scanErr := contentID.Scan(contentIDStr); scanErr != nil {
-			writeError(w, http.StatusBadRequest, "invalid_content_id", "Invalid content ID: "+contentIDStr)
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_content_id", "Invalid content ID: "+contentIDStr)
 			return
 		}
 		contentIDs = append(contentIDs, contentID)
@@ -173,8 +174,8 @@ func (h *Handlers) ReorderPinned(w http.ResponseWriter, r *http.Request) {
 
 	if err := h.Service.ReorderPinned(r.Context(), spaceID, contentIDs); err != nil {
 		slog.Error("reordering pinned content", "error", err, "space_id", spaceID.String())
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to reorder pinned content")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to reorder pinned content")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"reordered": true}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"reordered": true}})
 }

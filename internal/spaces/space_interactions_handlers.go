@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/jedafe/japa/internal/auth"
+	errpkg "github.com/jedafe/japa/internal/errors"
 )
 
 // =====================
@@ -25,7 +26,7 @@ func (h *Handlers) ToggleFollow(w http.ResponseWriter, r *http.Request) {
 
 	user := auth.FromContext(r.Context())
 	if user == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
 
@@ -49,7 +50,7 @@ func (h *Handlers) ToggleFollow(w http.ResponseWriter, r *http.Request) {
 	// the user is now following, false when now unfollowed. Hardcoding false
 	// on DELETE would misreport the state when the user wasn't following
 	// before (the toggle follows them but the response says false).
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"following": followed}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"following": followed}})
 }
 
 // =====================
@@ -70,7 +71,7 @@ func (h *Handlers) MuteSpace(w http.ResponseWriter, r *http.Request) {
 
 	user := auth.FromContext(r.Context())
 	if user == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
 
@@ -79,7 +80,7 @@ func (h *Handlers) MuteSpace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"muted": true}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"muted": true}})
 }
 
 // UnmuteSpace handles DELETE /api/v1/spaces/{slug}/mute.
@@ -96,7 +97,7 @@ func (h *Handlers) UnmuteSpace(w http.ResponseWriter, r *http.Request) {
 
 	user := auth.FromContext(r.Context())
 	if user == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
 
@@ -105,7 +106,7 @@ func (h *Handlers) UnmuteSpace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"muted": false}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"muted": false}})
 }
 
 // GetMuteStatus handles GET /api/v1/spaces/{slug}/mute-status.
@@ -122,7 +123,7 @@ func (h *Handlers) GetMuteStatus(w http.ResponseWriter, r *http.Request) {
 
 	user := auth.FromContext(r.Context())
 	if user == nil {
-		writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"muted": false}})
+		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"muted": false}})
 		return
 	}
 
@@ -132,5 +133,5 @@ func (h *Handlers) GetMuteStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"muted": muted}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"muted": muted}})
 }

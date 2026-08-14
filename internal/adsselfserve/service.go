@@ -5,7 +5,8 @@
 // for admin creative approval before going live.
 //
 // Ref: japaconnect-engineering/sections/61-self-serve-ads.md
-//      japaconnect-engineering/adr/ADR-079-self-serve-ads.md
+//
+//	japaconnect-engineering/adr/ADR-079-self-serve-ads.md
 package adsselfserve
 
 import (
@@ -170,7 +171,8 @@ func (s *Service) ListSlots(ctx context.Context, tenantID pgtype.UUID) ([]SlotIn
 // create campaign, deduct credits, enqueue notification, enter review queue.
 //
 // Ref: japaconnect-engineering/sections/61-self-serve-ads.md (Review Gate)
-//      japaconnect-engineering/adr/ADR-079-self-serve-ads.md §3
+//
+//	japaconnect-engineering/adr/ADR-079-self-serve-ads.md §3
 func (s *Service) CreateCampaign(ctx context.Context, tenantID, orgID, userID pgtype.UUID, input CreateCampaignInput) (gen.AdCampaign, error) {
 	enabled, err := s.settings.GetSettingBool(ctx, tenantID, "ads.self_serve_enabled")
 	if err == nil && !enabled {
@@ -265,20 +267,20 @@ func (s *Service) CreateCampaign(ctx context.Context, tenantID, orgID, userID pg
 	}
 
 	campaign, err := s.store.CreateCampaign(ctx, gen.CreateSelfServeAdCampaignParams{
-		TenantID:           tenantID,
-		OrganizationID:     orgID,
-		Name:               input.Name,
-		SlotTypeID:         slotTypeID,
-		Content:            input.Content,
-		TargetUrl:          targetURL,
-		BudgetCredits:      int32(cost),
-		FlatRate:           int32(flatRate),
+		TenantID:            tenantID,
+		OrganizationID:      orgID,
+		Name:                input.Name,
+		SlotTypeID:          slotTypeID,
+		Content:             input.Content,
+		TargetUrl:           targetURL,
+		BudgetCredits:       int32(cost),
+		FlatRate:            int32(flatRate),
 		FrequencyCapPerUser: freqCap,
-		StartDate:          startDate,
-		EndDate:            endDate,
-		TargetGeo:          input.TargetGeo,
-		TargetSpaceIds:     targetSpaceIDs,
-		CreatedBy:          userID,
+		StartDate:           startDate,
+		EndDate:             endDate,
+		TargetGeo:           input.TargetGeo,
+		TargetSpaceIds:      targetSpaceIDs,
+		CreatedBy:           userID,
 	})
 	if err != nil {
 		return gen.AdCampaign{}, fmt.Errorf("adsselfserve: create campaign: %w", err)
@@ -296,11 +298,11 @@ func (s *Service) CreateCampaign(ctx context.Context, tenantID, orgID, userID pg
 	// Deduct credits from org wallet (fire-and-forget per Rule 8).
 	if s.enqueuer != nil {
 		payload, _ := json.Marshal(map[string]interface{}{
-			"tenant_id":      tenantID.String(),
+			"tenant_id":       tenantID.String(),
 			"organization_id": orgID.String(),
-			"amount":         cost,
-			"campaign_id":    campaign.ID.String(),
-			"reason":         "ad_campaign_funding",
+			"amount":          cost,
+			"campaign_id":     campaign.ID.String(),
+			"reason":          "ad_campaign_funding",
 		})
 		if err := s.enqueuer.Enqueue(TaskDeductCredits, payload); err != nil {
 			slog.Warn("adsselfserve: enqueue deduct credits failed", "error", err)
@@ -308,9 +310,9 @@ func (s *Service) CreateCampaign(ctx context.Context, tenantID, orgID, userID pg
 
 		// Enqueue notification.
 		notifyPayload, _ := json.Marshal(map[string]string{
-			"campaign_id":  campaign.ID.String(),
+			"campaign_id":     campaign.ID.String(),
 			"organization_id": orgID.String(),
-			"status":       StatusPendingReview,
+			"status":          StatusPendingReview,
 		})
 		if err := s.enqueuer.Enqueue(TaskNotifyCampaignStatus, notifyPayload); err != nil {
 			slog.Warn("adsselfserve: enqueue notify failed", "error", err)
@@ -430,7 +432,8 @@ func (s *Service) RefundCampaignCredits(ctx context.Context, tenantID, campaignI
 // ads:notify_campaign_status worker task.
 //
 // Ref: japaconnect-engineering/sections/61-self-serve-ads.md (Asynq Tasks)
-//      japaconnect-engineering/adr/ADR-079-self-serve-ads.md §7
+//
+//	japaconnect-engineering/adr/ADR-079-self-serve-ads.md §7
 func (s *Service) NotifyCampaignStatus(ctx context.Context, tenantID, campaignID pgtype.UUID) error {
 	campaign, err := s.store.GetCampaignForRefund(ctx, tenantID, campaignID)
 	if err != nil {

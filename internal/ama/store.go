@@ -6,7 +6,8 @@
 // internal/db/queries/ama.sql — no raw SQL is used (Rule 2).
 //
 // Ref: japaconnect-engineering/sections/88-ask-an-expat.md
-//      japaconnect-engineering/adr/ADR-096-ask-an-expat.md
+//
+//	japaconnect-engineering/adr/ADR-096-ask-an-expat.md
 package ama
 
 import (
@@ -42,17 +43,17 @@ func NewStore(database *db.DB) *Store {
 // list/get queries. AuthorUsername and AuthorAvatarUrl are interface{} because
 // sqlc types them as such (CASE WHEN ... THEN NULL ELSE ... END).
 type AMAThread struct {
-	ID            pgtype.UUID
-	TenantID      pgtype.UUID
-	Title         string
-	Slug          string
-	Body          []byte
-	AmaConfig     []byte
-	AuthorUserID  pgtype.UUID
-	AuthorName    string
-	AuthorAvatar  string
-	CreatedAt     pgtype.Timestamptz
-	UpdatedAt     pgtype.Timestamptz
+	ID           pgtype.UUID
+	TenantID     pgtype.UUID
+	Title        string
+	Slug         string
+	Body         []byte
+	AmaConfig    []byte
+	AuthorUserID pgtype.UUID
+	AuthorName   string
+	AuthorAvatar string
+	CreatedAt    pgtype.Timestamptz
+	UpdatedAt    pgtype.Timestamptz
 }
 
 // CreateAMAParams holds the fields needed to insert an AMA thread.

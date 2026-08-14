@@ -40,6 +40,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/valkey"
 )
 
@@ -192,11 +193,11 @@ func (h *AgentHTTPHandlers) HandleAgent(w http.ResponseWriter, r *http.Request) 
 		ConversationID string `json:"conversation_id,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
 		return
 	}
 	if input.Prompt == "" {
-		writeError(w, http.StatusBadRequest, "validation_error", "prompt is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "prompt is required")
 		return
 	}
 
@@ -251,20 +252,20 @@ func (h *AgentHTTPHandlers) HandleAgent(w http.ResponseWriter, r *http.Request) 
 func writeAgentError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, errAgentDisabled):
-		writeError(w, http.StatusForbidden, "agent_disabled", "The AI agent is currently disabled")
+		errpkg.WriteError(w, http.StatusForbidden, "agent_disabled", "The AI agent is currently disabled")
 	case errors.Is(err, errAgentNoPermission):
-		writeError(w, http.StatusForbidden, "agent_permission_required", "You do not have permission to use the AI agent")
+		errpkg.WriteError(w, http.StatusForbidden, "agent_permission_required", "You do not have permission to use the AI agent")
 	case errors.Is(err, errAgentRateLimited):
-		writeError(w, http.StatusTooManyRequests, "rate_limited", "Daily agent request limit exceeded")
+		errpkg.WriteError(w, http.StatusTooManyRequests, "rate_limited", "Daily agent request limit exceeded")
 	case errors.Is(err, errAgentBudgetExceeded):
-		writeError(w, http.StatusPaymentRequired, "budget_exceeded", "Daily AI spend budget exceeded")
+		errpkg.WriteError(w, http.StatusPaymentRequired, "budget_exceeded", "Daily AI spend budget exceeded")
 	case errors.Is(err, errAgentEmptyPrompt):
-		writeError(w, http.StatusBadRequest, "validation_error", "prompt is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "prompt is required")
 	case errors.Is(err, errAgentNotConfigured):
-		writeError(w, http.StatusServiceUnavailable, "agent_not_configured", "The AI agent is not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "agent_not_configured", "The AI agent is not configured")
 	default:
 		slog.Warn("ai: agent request failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "agent_error", "The agent request could not be started")
+		errpkg.WriteError(w, http.StatusInternalServerError, "agent_error", "The agent request could not be started")
 	}
 }
 
@@ -307,7 +308,7 @@ func (h *AgentHTTPHandlers) HandleGetCapabilities(w http.ResponseWriter, r *http
 	// summary as geo_context.
 	_, geoSummary := h.agent.resolveGeoContext(r.Context(), user.UserID, tenantID)
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
 			"tools":       tools,
 			"geo_context": geoSummary,
@@ -343,7 +344,7 @@ func (h *AgentHTTPHandlers) HandleListSessions(w http.ResponseWriter, r *http.Re
 	})
 	if err != nil {
 		slog.Warn("ai: listing agent sessions", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list agent sessions")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list agent sessions")
 		return
 	}
 
@@ -353,11 +354,11 @@ func (h *AgentHTTPHandlers) HandleListSessions(w http.ResponseWriter, r *http.Re
 	})
 	if err != nil {
 		slog.Warn("ai: counting agent sessions", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to count agent sessions")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to count agent sessions")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": sessionsToJSON(sessions),
 		"meta": map[string]any{
 			"total":       total,
@@ -397,11 +398,11 @@ func (h *AgentHTTPHandlers) HandleGetSession(w http.ResponseWriter, r *http.Requ
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "session_not_found", "Agent session not found")
+			errpkg.WriteError(w, http.StatusNotFound, "session_not_found", "Agent session not found")
 			return
 		}
 		slog.Warn("ai: getting agent session", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to retrieve agent session")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to retrieve agent session")
 		return
 	}
 
@@ -411,11 +412,11 @@ func (h *AgentHTTPHandlers) HandleGetSession(w http.ResponseWriter, r *http.Requ
 	})
 	if err != nil {
 		slog.Warn("ai: listing agent tool calls", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to retrieve tool call log")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to retrieve tool call log")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
 			"session":    sessionToJSON(session),
 			"tool_calls": toolCallsToJSON(toolCalls),
@@ -456,16 +457,16 @@ func (h *AgentHTTPHandlers) HandleCancelSession(w http.ResponseWriter, r *http.R
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "session_not_found", "Agent session not found")
+			errpkg.WriteError(w, http.StatusNotFound, "session_not_found", "Agent session not found")
 			return
 		}
 		slog.Warn("ai: getting agent session for cancel", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to retrieve agent session")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to retrieve agent session")
 		return
 	}
 
 	if session.Status != "running" {
-		writeError(w, http.StatusConflict, "session_not_running", "Session is not running and cannot be cancelled")
+		errpkg.WriteError(w, http.StatusConflict, "session_not_running", "Session is not running and cannot be cancelled")
 		return
 	}
 
@@ -492,7 +493,7 @@ func (h *AgentHTTPHandlers) HandleCancelSession(w http.ResponseWriter, r *http.R
 			// The session completed between the ownership check and the
 			// cancel — it is no longer running. The Valkey flag was set
 			// but the loop already exited. Report the actual state.
-			writeError(w, http.StatusConflict, "session_not_running",
+			errpkg.WriteError(w, http.StatusConflict, "session_not_running",
 				"Session is not running and cannot be cancelled")
 			return
 		}
@@ -501,7 +502,7 @@ func (h *AgentHTTPHandlers) HandleCancelSession(w http.ResponseWriter, r *http.R
 		// since the cancellation signal was delivered.
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]string{"status": "cancelled"},
 	})
 }
@@ -535,22 +536,22 @@ func (h *AgentHTTPHandlers) HandleReassignAuthor(w http.ResponseWriter, r *http.
 		Reason      string `json:"reason,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
 		return
 	}
 	if input.NewAuthorID == "" {
-		writeError(w, http.StatusBadRequest, "validation_error", "new_author_id is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "new_author_id is required")
 		return
 	}
 
 	newAuthorID, err := scanUUID(input.NewAuthorID)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "validation_error", "new_author_id must be a valid UUID")
+		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "new_author_id must be a valid UUID")
 		return
 	}
 
 	if h.content == nil {
-		writeError(w, http.StatusServiceUnavailable, "content_store_unavailable", "Content store not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "content_store_unavailable", "Content store not configured")
 		return
 	}
 
@@ -562,11 +563,11 @@ func (h *AgentHTTPHandlers) HandleReassignAuthor(w http.ResponseWriter, r *http.
 		UserID:   newAuthorID,
 	}); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusBadRequest, "invalid_author", "Target author not found in this tenant")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_author", "Target author not found in this tenant")
 			return
 		}
 		slog.Warn("ai: verifying target author", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to verify target author")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to verify target author")
 		return
 	}
 
@@ -578,11 +579,11 @@ func (h *AgentHTTPHandlers) HandleReassignAuthor(w http.ResponseWriter, r *http.
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "content_not_found", "Content not found")
+			errpkg.WriteError(w, http.StatusNotFound, "content_not_found", "Content not found")
 			return
 		}
 		slog.Warn("ai: reading content for reassign", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to read content")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to read content")
 		return
 	}
 
@@ -592,7 +593,7 @@ func (h *AgentHTTPHandlers) HandleReassignAuthor(w http.ResponseWriter, r *http.
 	updatedFieldValues, err := mergeAuthorProvenance(current.FieldValues, user.UserID, input.Reason)
 	if err != nil {
 		slog.Warn("ai: merging author provenance", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to update authorship provenance")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update authorship provenance")
 		return
 	}
 
@@ -604,15 +605,15 @@ func (h *AgentHTTPHandlers) HandleReassignAuthor(w http.ResponseWriter, r *http.
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "content_not_found", "Content not found")
+			errpkg.WriteError(w, http.StatusNotFound, "content_not_found", "Content not found")
 			return
 		}
 		slog.Warn("ai: reassigning content author", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to reassign author")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to reassign author")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
 			"content_id":    updated.ID,
 			"author_id":     updated.AuthorID,
@@ -718,11 +719,11 @@ func (h *AgentHTTPHandlers) HandleGetAIPrivacy(w http.ResponseWriter, r *http.Re
 	})
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		slog.Warn("ai: reading user ai_exempt", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to read privacy status")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to read privacy status")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
 			"profile_ai_exempt": profileExempt,
 		},
@@ -754,17 +755,17 @@ func (h *AgentHTTPHandlers) HandleSetAIPrivacy(w http.ResponseWriter, r *http.Re
 		AIExempt   bool   `json:"ai_exempt"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
 		return
 	}
 	if input.EntityID == "" {
-		writeError(w, http.StatusBadRequest, "validation_error", "entity_id is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "entity_id is required")
 		return
 	}
 
 	entityID, err := scanUUID(input.EntityID)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "validation_error", "entity_id must be a valid UUID")
+		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "entity_id must be a valid UUID")
 		return
 	}
 
@@ -772,7 +773,7 @@ func (h *AgentHTTPHandlers) HandleSetAIPrivacy(w http.ResponseWriter, r *http.Re
 	case "profile":
 		// A user may only set the profile exemption on their own user row.
 		if entityID != user.UserID {
-			writeError(w, http.StatusForbidden, "not_owner", "You can only set AI privacy on your own profile")
+			errpkg.WriteError(w, http.StatusForbidden, "not_owner", "You can only set AI privacy on your own profile")
 			return
 		}
 		row, err := h.sessions.SetUserAIExempt(r.Context(), gen.SetUserAIExemptParams{
@@ -782,14 +783,14 @@ func (h *AgentHTTPHandlers) HandleSetAIPrivacy(w http.ResponseWriter, r *http.Re
 		})
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
-				writeError(w, http.StatusNotFound, "user_not_found", "User not found")
+				errpkg.WriteError(w, http.StatusNotFound, "user_not_found", "User not found")
 				return
 			}
 			slog.Warn("ai: setting user ai_exempt", "error", err)
-			writeError(w, http.StatusInternalServerError, "internal_error", "Failed to set privacy exemption")
+			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to set privacy exemption")
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
+		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
 			"entity_type": "profile",
 			"entity_id":   row.ID,
 			"ai_exempt":   row.AiExempt,
@@ -798,7 +799,7 @@ func (h *AgentHTTPHandlers) HandleSetAIPrivacy(w http.ResponseWriter, r *http.Re
 	case "content":
 		// Verify ownership: the content's author_id must match the user.
 		if h.content == nil {
-			writeError(w, http.StatusServiceUnavailable, "content_store_unavailable", "Content store not configured")
+			errpkg.WriteError(w, http.StatusServiceUnavailable, "content_store_unavailable", "Content store not configured")
 			return
 		}
 		current, err := h.content.GetContentByID(r.Context(), gen.GetContentByIDParams{
@@ -807,15 +808,15 @@ func (h *AgentHTTPHandlers) HandleSetAIPrivacy(w http.ResponseWriter, r *http.Re
 		})
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
-				writeError(w, http.StatusNotFound, "content_not_found", "Content not found")
+				errpkg.WriteError(w, http.StatusNotFound, "content_not_found", "Content not found")
 				return
 			}
 			slog.Warn("ai: reading content for privacy", "error", err)
-			writeError(w, http.StatusInternalServerError, "internal_error", "Failed to read content")
+			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to read content")
 			return
 		}
 		if current.AuthorID != user.UserID {
-			writeError(w, http.StatusForbidden, "not_owner", "You can only set AI privacy on your own content")
+			errpkg.WriteError(w, http.StatusForbidden, "not_owner", "You can only set AI privacy on your own content")
 			return
 		}
 		row, err := h.sessions.SetContentAIExempt(r.Context(), gen.SetContentAIExemptParams{
@@ -825,14 +826,14 @@ func (h *AgentHTTPHandlers) HandleSetAIPrivacy(w http.ResponseWriter, r *http.Re
 		})
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
-				writeError(w, http.StatusNotFound, "content_not_found", "Content not found")
+				errpkg.WriteError(w, http.StatusNotFound, "content_not_found", "Content not found")
 				return
 			}
 			slog.Warn("ai: setting content ai_exempt", "error", err)
-			writeError(w, http.StatusInternalServerError, "internal_error", "Failed to set privacy exemption")
+			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to set privacy exemption")
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
+		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
 			"entity_type": "content",
 			"entity_id":   row.ID,
 			"ai_exempt":   row.AiExempt,
@@ -853,16 +854,16 @@ func (h *AgentHTTPHandlers) HandleSetAIPrivacy(w http.ResponseWriter, r *http.Re
 		})
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
-				writeError(w, http.StatusNotFound, "field_value_not_found", "Custom field value not found")
+				errpkg.WriteError(w, http.StatusNotFound, "field_value_not_found", "Custom field value not found")
 				return
 			}
 			slog.Warn("ai: reading cfv entity for ownership check", "error", err)
-			writeError(w, http.StatusInternalServerError, "internal_error", "Failed to verify ownership")
+			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to verify ownership")
 			return
 		}
 
 		if !cfvEntityOwnedByUser(entity, user.UserID, tenantID, h.content, r.Context()) {
-			writeError(w, http.StatusForbidden, "not_owner",
+			errpkg.WriteError(w, http.StatusForbidden, "not_owner",
 				"You can only set AI privacy on your own data")
 			return
 		}
@@ -874,21 +875,21 @@ func (h *AgentHTTPHandlers) HandleSetAIPrivacy(w http.ResponseWriter, r *http.Re
 		})
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
-				writeError(w, http.StatusNotFound, "field_value_not_found", "Custom field value not found")
+				errpkg.WriteError(w, http.StatusNotFound, "field_value_not_found", "Custom field value not found")
 				return
 			}
 			slog.Warn("ai: setting cfv ai_exempt", "error", err)
-			writeError(w, http.StatusInternalServerError, "internal_error", "Failed to set privacy exemption")
+			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to set privacy exemption")
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
+		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
 			"entity_type": "custom_field_value",
 			"entity_id":   row.ID,
 			"ai_exempt":   row.AiExempt,
 		}})
 
 	default:
-		writeError(w, http.StatusBadRequest, "validation_error",
+		errpkg.WriteError(w, http.StatusBadRequest, "validation_error",
 			"entity_type must be 'profile', 'content', or 'custom_field_value'")
 	}
 }
@@ -917,7 +918,7 @@ func (h *AgentHTTPHandlers) HandleAdminListSessions(w http.ResponseWriter, r *ht
 	})
 	if err != nil {
 		slog.Warn("ai: admin listing agent sessions", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list agent sessions")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list agent sessions")
 		return
 	}
 
@@ -927,11 +928,11 @@ func (h *AgentHTTPHandlers) HandleAdminListSessions(w http.ResponseWriter, r *ht
 	})
 	if err != nil {
 		slog.Warn("ai: admin counting agent sessions", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to count agent sessions")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to count agent sessions")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": sessionsToJSON(sessions),
 		"meta": map[string]any{
 			"total":         total,
@@ -961,11 +962,11 @@ func (h *AgentHTTPHandlers) HandleAdminGetSession(w http.ResponseWriter, r *http
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "session_not_found", "Agent session not found")
+			errpkg.WriteError(w, http.StatusNotFound, "session_not_found", "Agent session not found")
 			return
 		}
 		slog.Warn("ai: admin getting agent session", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to retrieve agent session")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to retrieve agent session")
 		return
 	}
 
@@ -975,11 +976,11 @@ func (h *AgentHTTPHandlers) HandleAdminGetSession(w http.ResponseWriter, r *http
 	})
 	if err != nil {
 		slog.Warn("ai: admin listing tool calls", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to retrieve tool call log")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to retrieve tool call log")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
 			"session":    sessionToJSON(session),
 			"tool_calls": toolCallsToJSON(toolCalls),
@@ -1008,11 +1009,11 @@ func (h *AgentHTTPHandlers) HandleAdminToolStats(w http.ResponseWriter, r *http.
 	})
 	if err != nil {
 		slog.Warn("ai: admin tool stats", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to retrieve tool statistics")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to retrieve tool statistics")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": toolStatsToJSON(stats)})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": toolStatsToJSON(stats)})
 }
 
 // HandleAdminCostReport returns a cost breakdown by user for the tenant,
@@ -1035,11 +1036,11 @@ func (h *AgentHTTPHandlers) HandleAdminCostReport(w http.ResponseWriter, r *http
 	})
 	if err != nil {
 		slog.Warn("ai: admin cost report", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to retrieve cost report")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to retrieve cost report")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": costReportToJSON(report)})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": costReportToJSON(report)})
 }
 
 // ---------------------------------------------------------------------------
@@ -1090,20 +1091,20 @@ func (h *AgentHTTPHandlers) HandleCompareEntities(w http.ResponseWriter, r *http
 
 	var input compareEntitiesRequest
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
 		return
 	}
 	if input.EntityType == "" {
-		writeError(w, http.StatusBadRequest, "validation_error", "entity_type is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "entity_type is required")
 		return
 	}
 	if len(input.EntityIDs) == 0 {
-		writeError(w, http.StatusBadRequest, "validation_error", "entity_ids is required (at least one)")
+		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "entity_ids is required (at least one)")
 		return
 	}
 
 	if h.engine == nil {
-		writeError(w, http.StatusServiceUnavailable, "engine_unavailable", "Comparison engine is not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "engine_unavailable", "Comparison engine is not configured")
 		return
 	}
 
@@ -1113,7 +1114,7 @@ func (h *AgentHTTPHandlers) HandleCompareEntities(w http.ResponseWriter, r *http
 	)
 	if err != nil {
 		slog.Warn("ai: classifying comparison request", "error", err)
-		writeError(w, http.StatusInternalServerError, "classification_failed", "Failed to classify comparison request")
+		errpkg.WriteError(w, http.StatusInternalServerError, "classification_failed", "Failed to classify comparison request")
 		return
 	}
 
@@ -1183,7 +1184,7 @@ func (h *AgentHTTPHandlers) HandleCompareEntities(w http.ResponseWriter, r *http
 		})
 		if createErr != nil {
 			slog.Warn("ai: creating comparison content for compare-entities", "error", createErr)
-			writeError(w, http.StatusInternalServerError, "create_failed", "Failed to create comparison content")
+			errpkg.WriteError(w, http.StatusInternalServerError, "create_failed", "Failed to create comparison content")
 			return
 		}
 		resp["content_id"] = uuidString(res.ContentID)
@@ -1202,7 +1203,7 @@ func (h *AgentHTTPHandlers) HandleCompareEntities(w http.ResponseWriter, r *http
 		}
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": resp})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": resp})
 }
 
 // buildComparisonQuery constructs a RAG query string from the entity type +
@@ -1383,12 +1384,12 @@ func costReportToJSON(rows []gen.GetAgentCostReportRow) []map[string]any {
 func parseURLUUID(w http.ResponseWriter, r *http.Request, param string) (pgtype.UUID, bool) {
 	raw := chi.URLParam(r, param)
 	if raw == "" {
-		writeError(w, http.StatusBadRequest, "validation_error", param+" is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", param+" is required")
 		return pgtype.UUID{}, false
 	}
 	var id pgtype.UUID
 	if err := id.Scan(raw); err != nil {
-		writeError(w, http.StatusBadRequest, "validation_error", param+" must be a valid UUID")
+		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", param+" must be a valid UUID")
 		return pgtype.UUID{}, false
 	}
 	return id, true
@@ -1404,7 +1405,7 @@ func parseDateRange(w http.ResponseWriter, r *http.Request) (pgtype.Timestamptz,
 	if raw := r.URL.Query().Get("from"); raw != "" {
 		t, err := time.Parse("2006-01-02", raw)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, "validation_error", "'from' must be YYYY-MM-DD")
+			errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "'from' must be YYYY-MM-DD")
 			return pgtype.Timestamptz{}, pgtype.Timestamptz{}, false
 		}
 		from = pgtype.Timestamptz{Time: t, Valid: true}
@@ -1412,7 +1413,7 @@ func parseDateRange(w http.ResponseWriter, r *http.Request) (pgtype.Timestamptz,
 	if raw := r.URL.Query().Get("to"); raw != "" {
 		t, err := time.Parse("2006-01-02", raw)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, "validation_error", "'to' must be YYYY-MM-DD")
+			errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "'to' must be YYYY-MM-DD")
 			return pgtype.Timestamptz{}, pgtype.Timestamptz{}, false
 		}
 		// 'to' is exclusive — use the start of the next day so a single

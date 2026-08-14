@@ -12,7 +12,8 @@
 //	GET    /api/v1/admin/stories               — moderation queue (auth, story.verify)
 //
 // Ref: japaconnect-engineering/sections/79-community-story-wall.md
-//      japaconnect-engineering/adr/ADR-087-community-story-wall.md
+//
+//	japaconnect-engineering/adr/ADR-087-community-story-wall.md
 package story
 
 import (
@@ -28,6 +29,7 @@ import (
 
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/config"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/rbac"
 	"github.com/jedafe/japa/internal/tenant"
 )
@@ -47,24 +49,10 @@ func NewHandlers(service *Service, settings *config.Settings) *Handlers {
 // Shared helpers (same pattern as checklist/handlers.go)
 // ---------------------------------------------------------------------------
 
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	if err := json.NewEncoder(w).Encode(v); err != nil {
-		slog.Error("story: encode response", "error", err)
-	}
-}
-
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, map[string]any{
-		"error": map[string]string{"code": code, "message": message},
-	})
-}
-
 func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
 	return t.ID, true
@@ -73,7 +61,7 @@ func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	u := auth.FromContext(r.Context())
 	if u == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
 	return u, true
@@ -82,7 +70,7 @@ func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUse
 func scanUUIDParam(w http.ResponseWriter, r *http.Request, name string) (pgtype.UUID, bool) {
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, name)); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid "+name)
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid "+name)
 		return pgtype.UUID{}, false
 	}
 	return id, true
@@ -131,21 +119,21 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "story_disabled", "Story wall is not available")
+		errpkg.WriteError(w, http.StatusNotFound, "story_disabled", "Story wall is not available")
 		return
 	}
 
 	var originSpaceID pgtype.UUID
 	if v := r.URL.Query().Get("origin"); v != "" {
 		if err := originSpaceID.Scan(v); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid origin space ID")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid origin space ID")
 			return
 		}
 	}
 	var destSpaceID pgtype.UUID
 	if v := r.URL.Query().Get("dest"); v != "" {
 		if err := destSpaceID.Scan(v); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid destination space ID")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid destination space ID")
 			return
 		}
 	}
@@ -158,11 +146,11 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 	stories, total, err := h.service.List(r.Context(), tenantID, originSpaceID, destSpaceID, visaCategory, profession, sort, pageSize, pageOffset)
 	if err != nil {
 		slog.Error("story: list failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "list_failed", "Failed to list stories")
+		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list stories")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": stories,
 		"pagination": map[string]any{
 			"page_size":   pageSize,
@@ -180,28 +168,28 @@ func (h *Handlers) HandleGetBySlug(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "story_disabled", "Story wall is not available")
+		errpkg.WriteError(w, http.StatusNotFound, "story_disabled", "Story wall is not available")
 		return
 	}
 
 	slug := chi.URLParam(r, "slug")
 	if slug == "" {
-		writeError(w, http.StatusBadRequest, "missing_slug", "Story slug is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_slug", "Story slug is required")
 		return
 	}
 
 	story, err := h.service.GetBySlug(r.Context(), slug, tenantID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "story_not_found", "Story not found")
+			errpkg.WriteError(w, http.StatusNotFound, "story_not_found", "Story not found")
 			return
 		}
 		slog.Error("story: get by slug failed", "slug", slug, "error", err)
-		writeError(w, http.StatusInternalServerError, "get_failed", "Failed to get story")
+		errpkg.WriteError(w, http.StatusInternalServerError, "get_failed", "Failed to get story")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": story})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": story})
 }
 
 // ---------------------------------------------------------------------------
@@ -221,33 +209,33 @@ func (h *Handlers) HandleSubmit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "story_disabled", "Story wall is not available")
+		errpkg.WriteError(w, http.StatusNotFound, "story_disabled", "Story wall is not available")
 		return
 	}
 
 	var input SubmitStoryInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
 
 	if input.Title == "" {
-		writeError(w, http.StatusBadRequest, "missing_title", "Title is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_title", "Title is required")
 		return
 	}
 	if input.DestinationSpaceID == "" {
-		writeError(w, http.StatusBadRequest, "missing_destination", "Destination space ID is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_destination", "Destination space ID is required")
 		return
 	}
 
 	story, err := h.service.Submit(r.Context(), tenantID, user.UserID, input)
 	if err != nil {
 		slog.Error("story: submit failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "submit_failed", "Failed to submit story")
+		errpkg.WriteError(w, http.StatusInternalServerError, "submit_failed", "Failed to submit story")
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": story})
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": story})
 }
 
 // HandleEdit handles PATCH /stories/:id — edit own story. Auth required
@@ -267,32 +255,32 @@ func (h *Handlers) HandleEdit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "story_disabled", "Story wall is not available")
+		errpkg.WriteError(w, http.StatusNotFound, "story_disabled", "Story wall is not available")
 		return
 	}
 
 	var input EditStoryInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
 
 	story, err := h.service.EditOwn(r.Context(), contentID, tenantID, user.UserID, input, hasPermission(r, user, "story.edit_any"))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "story_not_found", "Story not found")
+			errpkg.WriteError(w, http.StatusNotFound, "story_not_found", "Story not found")
 			return
 		}
 		if errors.Is(err, ErrNotOwner) {
-			writeError(w, http.StatusForbidden, "not_owner", "You can only edit your own stories")
+			errpkg.WriteError(w, http.StatusForbidden, "not_owner", "You can only edit your own stories")
 			return
 		}
 		slog.Error("story: edit failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "edit_failed", "Failed to edit story")
+		errpkg.WriteError(w, http.StatusInternalServerError, "edit_failed", "Failed to edit story")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": story})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": story})
 }
 
 // HandleDelete handles DELETE /stories/:id — delete own story. Auth required
@@ -313,25 +301,25 @@ func (h *Handlers) HandleDelete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "story_disabled", "Story wall is not available")
+		errpkg.WriteError(w, http.StatusNotFound, "story_disabled", "Story wall is not available")
 		return
 	}
 
 	if err := h.service.DeleteOwn(r.Context(), contentID, tenantID, user.UserID, hasPermission(r, user, "story.delete_any")); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "story_not_found", "Story not found")
+			errpkg.WriteError(w, http.StatusNotFound, "story_not_found", "Story not found")
 			return
 		}
 		if errors.Is(err, ErrNotOwner) {
-			writeError(w, http.StatusForbidden, "not_owner", "You can only delete your own stories")
+			errpkg.WriteError(w, http.StatusForbidden, "not_owner", "You can only delete your own stories")
 			return
 		}
 		slog.Error("story: delete failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "delete_failed", "Failed to delete story")
+		errpkg.WriteError(w, http.StatusInternalServerError, "delete_failed", "Failed to delete story")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"deleted": true}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"deleted": true}})
 }
 
 // ---------------------------------------------------------------------------
@@ -356,21 +344,21 @@ func (h *Handlers) HandleVerify(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil {
-		writeError(w, http.StatusServiceUnavailable, "story_unavailable", "Story service not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "story_unavailable", "Story service not configured")
 		return
 	}
 
 	if err := h.service.Verify(r.Context(), contentID, tenantID, user.UserID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "story_not_found", "Story not found")
+			errpkg.WriteError(w, http.StatusNotFound, "story_not_found", "Story not found")
 			return
 		}
 		slog.Error("story: verify failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "verify_failed", "Failed to verify story")
+		errpkg.WriteError(w, http.StatusInternalServerError, "verify_failed", "Failed to verify story")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"verified": true}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"verified": true}})
 }
 
 // HandleAdminList handles GET /admin/stories — moderation queue listing all
@@ -386,7 +374,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil {
-		writeError(w, http.StatusServiceUnavailable, "story_unavailable", "Story service not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "story_unavailable", "Story service not configured")
 		return
 	}
 
@@ -410,11 +398,11 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	stories, total, err := h.service.AdminList(r.Context(), tenantID, status, q, verifiedPtr, sort, pageSize, pageOffset)
 	if err != nil {
 		slog.Error("story: admin list failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "admin_list_failed", "Failed to list stories")
+		errpkg.WriteError(w, http.StatusInternalServerError, "admin_list_failed", "Failed to list stories")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": stories,
 		"pagination": map[string]any{
 			"page_size":   pageSize,
@@ -442,20 +430,20 @@ func (h *Handlers) HandleAdminDelete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil {
-		writeError(w, http.StatusServiceUnavailable, "story_unavailable", "Story service not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "story_unavailable", "Story service not configured")
 		return
 	}
 
 	// bypassOwnership=true: admin with story.delete_any can delete any story.
 	if err := h.service.DeleteOwn(r.Context(), contentID, tenantID, user.UserID, true); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "story_not_found", "Story not found")
+			errpkg.WriteError(w, http.StatusNotFound, "story_not_found", "Story not found")
 			return
 		}
 		slog.Error("story: admin delete failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "delete_failed", "Failed to delete story")
+		errpkg.WriteError(w, http.StatusInternalServerError, "delete_failed", "Failed to delete story")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"deleted": true}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"deleted": true}})
 }

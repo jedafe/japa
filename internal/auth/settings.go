@@ -8,6 +8,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	errpkg "github.com/jedafe/japa/internal/errors"
 )
 
 // DefaultRefreshTokenTTL is the fallback refresh token TTL when the system setting
@@ -140,7 +141,7 @@ func RequireTOTPForAdmin(
 				return
 			}
 			if !enrolled {
-				writeError(w, http.StatusForbidden, "totp_required", "Admin access requires two-factor authentication enrollment")
+				errpkg.WriteError(w, http.StatusForbidden, "totp_required", "Admin access requires two-factor authentication enrollment")
 				return
 			}
 

@@ -41,9 +41,12 @@ func TestAllKeys(t *testing.T) {
 		t.Errorf("AllKeys() returned %d keys, registry has %d", len(keys), len(Registry))
 	}
 
+	// V1 keys use the "feature.{name}" format (locked, Section 42).
+	// V2 keys use the "{domain}.enabled" or "{domain}.{sub}" format per
+	// conventions/feature-flag-naming.md and migration 000404.
 	for _, k := range keys {
-		if !strings.HasPrefix(k, "feature.") {
-			t.Errorf("key %q does not start with 'feature.'", k)
+		if !strings.HasPrefix(k, "feature.") && !strings.Contains(k, ".") {
+			t.Errorf("key %q does not follow V1 (feature.*) or V2 ({domain}.*) convention", k)
 		}
 	}
 }

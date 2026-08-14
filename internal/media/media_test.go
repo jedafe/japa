@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgtype"
+	errpkg "github.com/jedafe/japa/internal/errors"
 )
 
 // mustUUID scans a UUID string into a pgtype.UUID, failing the test on error.
@@ -219,7 +220,7 @@ func TestWriteJSON(t *testing.T) {
 	t.Parallel()
 
 	rr := httptest.NewRecorder()
-	writeJSON(rr, http.StatusCreated, map[string]string{"status": "ok"})
+	errpkg.WriteJSON(rr, http.StatusCreated, map[string]string{"status": "ok"})
 
 	if rr.Code != http.StatusCreated {
 		t.Errorf("status = %d, want %d", rr.Code, http.StatusCreated)
@@ -243,7 +244,7 @@ func TestWriteError(t *testing.T) {
 	t.Parallel()
 
 	rr := httptest.NewRecorder()
-	writeError(rr, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+	errpkg.WriteError(rr, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 
 	if rr.Code != http.StatusBadRequest {
 		t.Errorf("status = %d, want %d", rr.Code, http.StatusBadRequest)

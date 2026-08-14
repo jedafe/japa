@@ -11,15 +11,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"strconv"
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/rbac"
 	"github.com/jedafe/japa/internal/tenant"
 	vkcache "github.com/jedafe/japa/internal/valkey"
@@ -35,7 +34,7 @@ const analyticsCacheTTL = 5 * time.Minute
 type Handlers struct {
 	Service      *Service
 	CacheFlusher *CacheFlusher
-	rbacResolver *rbac.RBAC          // nil disables inline permission checks (tests)
+	rbacResolver *rbac.RBAC           // nil disables inline permission checks (tests)
 	cache        valkeycompat.Cmdable // nil disables caching (tests)
 }
 
@@ -73,7 +72,7 @@ func analyticsCacheKey(tenantID pgtype.UUID, endpoint, period string) string {
 func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
 
@@ -83,7 +82,7 @@ func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype
 func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	user := auth.FromContext(r.Context())
 	if user == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
 
@@ -92,23 +91,6 @@ func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.Au
 
 func handleServiceError(w http.ResponseWriter, err error) {
 	errpkg.HandleServiceError(w, err)
-}
-
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-
-	if v != nil {
-		if err := json.NewEncoder(w).Encode(v); err != nil {
-			slog.Warn("json encode error", "error", err)
-		}
-	}
-}
-
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, map[string]any{
-		"error": map[string]string{"code": code, "message": message},
-	})
 }
 
 func parsePageSize(r *http.Request) int32 {
@@ -176,14 +158,14 @@ func (h *Handlers) TrackEvent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
 		return
 	}
 
 	var entityID pgtype.UUID
 	if input.EntityID != "" {
 		if err := entityID.Scan(input.EntityID); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_entity_id", "Invalid entity_id")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_entity_id", "Invalid entity_id")
 			return
 		}
 	}
@@ -202,7 +184,7 @@ func (h *Handlers) TrackEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": event})
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": event})
 }
 
 // GetUserDashboard handles GET /api/v1/analytics/dashboard.
@@ -225,7 +207,7 @@ func (h *Handlers) GetUserDashboard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": dashboard})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": dashboard})
 }
 
 // ---------------------------------------------------------------------------
@@ -244,7 +226,7 @@ func (h *Handlers) GetAdminOverview(w http.ResponseWriter, r *http.Request) {
 
 	from, to, err := resolveWindow(r, 30)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_range", err.Error())
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_range", err.Error())
 		return
 	}
 
@@ -262,7 +244,7 @@ func (h *Handlers) GetAdminOverview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": dashboard})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": dashboard})
 }
 
 // resolveWindow determines the analytics [from, to] window for a request.
@@ -365,7 +347,7 @@ func (h *Handlers) ListEvents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": events})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": events})
 }
 
 // ListSecurityScanResults handles GET /api/v1/admin/analytics/security.
@@ -388,7 +370,7 @@ func (h *Handlers) ListSecurityScanResults(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": results})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": results})
 }
 
 // ResolveSecurityScanResult handles POST /api/v1/admin/analytics/security/{id}/resolve.
@@ -400,7 +382,7 @@ func (h *Handlers) ResolveSecurityScanResult(w http.ResponseWriter, r *http.Requ
 
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid scan result ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid scan result ID")
 		return
 	}
 
@@ -409,7 +391,7 @@ func (h *Handlers) ResolveSecurityScanResult(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "resolved"}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "resolved"}})
 }
 
 // RefreshViews handles POST /api/v1/admin/analytics/refresh.
@@ -424,7 +406,7 @@ func (h *Handlers) RefreshViews(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusAccepted, map[string]any{"data": map[string]string{"status": "refresh_queued"}})
+	errpkg.WriteJSON(w, http.StatusAccepted, map[string]any{"data": map[string]string{"status": "refresh_queued"}})
 }
 
 // RunSecurityScan handles POST /api/v1/admin/analytics/security/scan.
@@ -439,7 +421,7 @@ func (h *Handlers) RunSecurityScan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusAccepted, map[string]any{"data": map[string]string{"status": "scan_queued"}})
+	errpkg.WriteJSON(w, http.StatusAccepted, map[string]any{"data": map[string]string{"status": "scan_queued"}})
 }
 
 // HandleCacheFlush handles POST /api/v1/admin/analytics/cache/flush.
@@ -449,7 +431,7 @@ func (h *Handlers) RunSecurityScan(w http.ResponseWriter, r *http.Request) {
 // scopes are restricted to the caller's tenant keys.
 func (h *Handlers) HandleCacheFlush(w http.ResponseWriter, r *http.Request) {
 	if h.CacheFlusher == nil {
-		writeError(w, http.StatusServiceUnavailable, "cache_unavailable", "Cache flusher not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "cache_unavailable", "Cache flusher not configured")
 		return
 	}
 
@@ -463,7 +445,7 @@ func (h *Handlers) HandleCacheFlush(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
 		return
 	}
 
@@ -474,11 +456,11 @@ func (h *Handlers) HandleCacheFlush(w http.ResponseWriter, r *http.Request) {
 
 	deleted, err := h.CacheFlusher.FlushCache(r.Context(), scope, tenantID.String())
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "flush_error", "Failed to flush cache")
+		errpkg.WriteError(w, http.StatusInternalServerError, "flush_error", "Failed to flush cache")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
 			"status":  "flushed",
 			"scope":   scope,
@@ -506,7 +488,7 @@ func (h *Handlers) GetRevenueAnalytics(w http.ResponseWriter, r *http.Request) {
 
 	from, to, err := resolveWindow(r, 90)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_range", err.Error())
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_range", err.Error())
 		return
 	}
 
@@ -531,7 +513,7 @@ func (h *Handlers) GetRevenueAnalytics(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
 		"total_revenue":        result.TotalRevenue / 100,
 		"monthly_revenue":      result.MonthlyRevenue / 100,
 		"active_subscriptions": result.ActiveSubscriptions,
@@ -550,7 +532,7 @@ func (h *Handlers) GetSearchAnalytics(w http.ResponseWriter, r *http.Request) {
 
 	from, to, err := resolveWindow(r, 30)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_range", err.Error())
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_range", err.Error())
 		return
 	}
 
@@ -594,7 +576,7 @@ func (h *Handlers) GetSearchAnalytics(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": searchResults})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": searchResults})
 }
 
 // GetSpaceAnalytics handles GET /admin/analytics/spaces (P5.6).
@@ -606,7 +588,7 @@ func (h *Handlers) GetSpaceAnalytics(w http.ResponseWriter, r *http.Request) {
 
 	from, to, err := resolveWindow(r, 30)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_range", err.Error())
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_range", err.Error())
 		return
 	}
 
@@ -644,7 +626,7 @@ func (h *Handlers) GetSpaceAnalytics(w http.ResponseWriter, r *http.Request) {
 		spaces = append(spaces, *s)
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": spaces})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": spaces})
 }
 
 // GetUserAnalytics handles GET /admin/analytics/users (P5.6).
@@ -660,7 +642,7 @@ func (h *Handlers) GetUserAnalytics(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": ua})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": ua})
 }
 
 // GetContentAnalytics handles GET /content/:id/analytics (P5.6).
@@ -681,14 +663,14 @@ func (h *Handlers) GetContentAnalytics(w http.ResponseWriter, r *http.Request) {
 
 	var contentID pgtype.UUID
 	if err := contentID.Scan(chi.URLParam(r, "id")); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid content ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid content ID")
 		return
 	}
 
 	// BUG-ANALYTICS-03 fix: verify the caller is the content owner or an admin.
 	authorID, err := h.Service.store.GetContentAuthorID(r.Context(), contentID, tenantID)
 	if err != nil {
-		writeError(w, http.StatusNotFound, "content_not_found", "Content not found")
+		errpkg.WriteError(w, http.StatusNotFound, "content_not_found", "Content not found")
 		return
 	}
 
@@ -697,14 +679,14 @@ func (h *Handlers) GetContentAnalytics(w http.ResponseWriter, r *http.Request) {
 		// general auth group (not an admin group), so the permission check is
 		// done inline here. Ref: api-routes-catalog.md — owner and admin only.
 		if h.rbacResolver == nil || !h.rbacResolver.HasPermission(r.Context(), user.UserID, tenantID, "analytics.admin") {
-			writeError(w, http.StatusForbidden, "analytics_forbidden", "Only the content owner or an admin can view analytics")
+			errpkg.WriteError(w, http.StatusForbidden, "analytics_forbidden", "Only the content owner or an admin can view analytics")
 			return
 		}
 	}
 
 	from, to, err := resolveWindow(r, 30)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_range", err.Error())
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_range", err.Error())
 		return
 	}
 
@@ -729,7 +711,7 @@ func (h *Handlers) GetContentAnalytics(w http.ResponseWriter, r *http.Request) {
 		uniqueViewers += int64(s.UniqueViewers)
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
 		"views":          views,
 		"reactions":      reactions,
 		"comments":       comments,
@@ -747,7 +729,7 @@ func (h *Handlers) GetAdminContentAnalytics(w http.ResponseWriter, r *http.Reque
 
 	from, to, err := resolveWindow(r, 30)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_range", err.Error())
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_range", err.Error())
 		return
 	}
 
@@ -786,5 +768,5 @@ func (h *Handlers) GetAdminContentAnalytics(w http.ResponseWriter, r *http.Reque
 		"total_unique_viewers": totalUniqueViewers,
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": result})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": result})
 }

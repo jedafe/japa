@@ -69,9 +69,9 @@ type InviteMemberInput struct {
 
 // ClaimOwnershipInput is the input for claiming ownership.
 type ClaimOwnershipInput struct {
-	EvidenceURL       string         `json:"evidence_url,omitempty"`
-	Notes             string         `json:"notes,omitempty"`
-	FormSubmissionID  *pgtype.UUID   `json:"form_submission_id,omitempty"`
+	EvidenceURL      string       `json:"evidence_url,omitempty"`
+	Notes            string       `json:"notes,omitempty"`
+	FormSubmissionID *pgtype.UUID `json:"form_submission_id,omitempty"`
 }
 
 // ReviewClaimInput is the input for reviewing a claim.
@@ -690,10 +690,10 @@ func (s *Service) ReviewOwnershipClaim(ctx context.Context, claimID, tenantID, r
 	}
 	if eventType != "" {
 		s.emitWebhook(ctx, tenantID, eventType, map[string]any{
-			"claim_id":     claimID,
-			"entity_type":  "organization",
-			"entity_id":    claim.OrganizationID,
-			"status":       input.Status,
+			"claim_id":    claimID,
+			"entity_type": "organization",
+			"entity_id":   claim.OrganizationID,
+			"status":      input.Status,
 		})
 	}
 

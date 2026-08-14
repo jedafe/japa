@@ -7,7 +7,8 @@
 // review; low-stakes types may auto-publish per studio.auto_publish_types.
 //
 // Ref: japaconnect-engineering/sections/75-ai-content-studio.md
-//      japaconnect-engineering/adr/ADR-076-ai-content-studio.md
+//
+//	japaconnect-engineering/adr/ADR-076-ai-content-studio.md
 package studio
 
 import (

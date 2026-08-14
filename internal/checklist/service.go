@@ -5,7 +5,8 @@
 // checklist.* system_settings via the hot-reloadable config.Settings.
 //
 // Ref: japaconnect-engineering/sections/70-visa-checklist.md
-//      japaconnect-engineering/adr/ADR-070-visa-document-checklist-generator.md
+//
+//	japaconnect-engineering/adr/ADR-070-visa-document-checklist-generator.md
 package checklist
 
 import (
@@ -94,9 +95,9 @@ type CountryOption struct {
 // published visa guide so the frontend can jump straight to its checklist.
 type VisaTypeOption struct {
 	// Value is the visa_type custom field value, e.g. "student", "work".
-	Value    string `json:"value"`
-	Label    string `json:"label"`
-	GuideID  string `json:"guide_id"`
+	Value   string `json:"value"`
+	Label   string `json:"label"`
+	GuideID string `json:"guide_id"`
 }
 
 // SelectorResult is the payload for GET /checklist/selector — origin country
@@ -122,9 +123,9 @@ type AdminProgressRow struct {
 
 // CompletionStat is a per-guide completion aggregate for the admin stats route.
 type CompletionStat struct {
-	GuideID                 string `json:"guide_id"`
-	TotalUsers              int64  `json:"total_users"`
-	UsersWithAnyCompletion  int64  `json:"users_with_any_completion"`
+	GuideID                string `json:"guide_id"`
+	TotalUsers             int64  `json:"total_users"`
+	UsersWithAnyCompletion int64  `json:"users_with_any_completion"`
 }
 
 // Service holds the business logic for the visa document checklist.

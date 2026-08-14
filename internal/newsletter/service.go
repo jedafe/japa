@@ -4,7 +4,8 @@
 // and weekly digest support.
 //
 // Ref: japaconnect-engineering/sections/62-newsletter-digest.md
-//      japaconnect-engineering/adr/ADR-080-newsletter-digest.md
+//
+//	japaconnect-engineering/adr/ADR-080-newsletter-digest.md
 package newsletter
 
 import (
@@ -241,9 +242,9 @@ func (s *Service) ListSubscribers(ctx context.Context, tenantID pgtype.UUID, lim
 func (s *Service) ListSubscribersFiltered(ctx context.Context, tenantID pgtype.UUID, status string, limit, offset int32) ([]gen.NewsletterSubscriber, error) {
 	return s.queries.AdminListSubscribers(ctx, gen.AdminListSubscribersParams{
 		TenantID:   tenantID,
-		Status:      status,
-		PageLimit:   limit,
-		PageOffset:  offset,
+		Status:     status,
+		PageLimit:  limit,
+		PageOffset: offset,
 	})
 }
 

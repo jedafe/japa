@@ -2,7 +2,6 @@ package onboarding
 
 import (
 	"encoding/json"
-	"log/slog"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -26,7 +25,7 @@ func NewHandlers(service *Service) *Handlers {
 func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
 
@@ -37,28 +36,11 @@ func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype
 func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	user := auth.FromContext(r.Context())
 	if user == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
 
 	return user, true
-}
-
-// writeJSON serializes the given value as JSON and writes it to the response.
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-
-	if err := json.NewEncoder(w).Encode(v); err != nil {
-		slog.Warn("json encode error", "error", err)
-	}
-}
-
-// writeError writes a JSON error response following the JapaConnect API format.
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, map[string]any{
-		"error": map[string]string{"code": code, "message": message},
-	})
 }
 
 // handleServiceError translates a Service-layer error into the appropriate
@@ -89,7 +71,7 @@ func (h *Handlers) GetStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": status})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": status})
 }
 
 // UpdateStep handles PUT /api/v1/onboarding/step.
@@ -106,7 +88,7 @@ func (h *Handlers) UpdateStep(w http.ResponseWriter, r *http.Request) {
 
 	var req UpdateStepRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
 		return
 	}
 
@@ -115,7 +97,7 @@ func (h *Handlers) UpdateStep(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "updated"}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "updated"}})
 }
 
 // Complete handles POST /api/v1/onboarding/complete.
@@ -135,7 +117,7 @@ func (h *Handlers) Complete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "completed"}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "completed"}})
 }
 
 // GetRecommendations handles GET /api/v1/onboarding/recommendations.
@@ -156,7 +138,7 @@ func (h *Handlers) GetRecommendations(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": recs})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": recs})
 }
 
 // DismissTour handles POST /api/v1/onboarding/tour/dismiss.
@@ -176,7 +158,7 @@ func (h *Handlers) DismissTour(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "dismissed"}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "dismissed"}})
 }
 
 // GetOptions handles GET /api/v1/onboarding/options.
@@ -185,7 +167,7 @@ func (h *Handlers) DismissTour(w http.ResponseWriter, r *http.Request) {
 // the canonical machine-readable keys stored in step_data; the frontend
 // resolves the label_key via i18n for display.
 func (h *Handlers) GetOptions(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": OnboardingOptionsResponse{
 			JapaStatuses: []OnboardingOption{
 				{Value: "newly_japa", LabelKey: "onboarding.status_newly_japa"},
@@ -226,7 +208,7 @@ func (h *Handlers) GetAdminSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": settings})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": settings})
 }
 
 // UpdateAdminSettings handles PUT /admin/onboarding/settings.
@@ -238,7 +220,7 @@ func (h *Handlers) UpdateAdminSettings(w http.ResponseWriter, r *http.Request) {
 
 	var req UpdateOnboardingSettingsRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
 		return
 	}
 
@@ -247,7 +229,7 @@ func (h *Handlers) UpdateAdminSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "updated"}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "updated"}})
 }
 
 // ListTemplates handles GET /admin/onboarding/templates.
@@ -263,7 +245,7 @@ func (h *Handlers) ListTemplates(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": templates})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": templates})
 }
 
 // GetTemplate handles GET /admin/onboarding/templates/:id.
@@ -275,7 +257,7 @@ func (h *Handlers) GetTemplate(w http.ResponseWriter, r *http.Request) {
 
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid template ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid template ID")
 		return
 	}
 
@@ -285,7 +267,7 @@ func (h *Handlers) GetTemplate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": template})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": template})
 }
 
 // CreateTemplate handles POST /admin/onboarding/templates.
@@ -297,12 +279,12 @@ func (h *Handlers) CreateTemplate(w http.ResponseWriter, r *http.Request) {
 
 	var req CreateTemplateRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
 		return
 	}
 
 	if req.Name == "" {
-		writeError(w, http.StatusBadRequest, "missing_fields", "Name is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_fields", "Name is required")
 		return
 	}
 
@@ -312,7 +294,7 @@ func (h *Handlers) CreateTemplate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": template})
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": template})
 }
 
 // UpdateTemplate handles PATCH /admin/onboarding/templates/:id.
@@ -324,13 +306,13 @@ func (h *Handlers) UpdateTemplate(w http.ResponseWriter, r *http.Request) {
 
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid template ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid template ID")
 		return
 	}
 
 	var req UpdateTemplateRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
 		return
 	}
 
@@ -339,7 +321,7 @@ func (h *Handlers) UpdateTemplate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "updated"}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "updated"}})
 }
 
 // DeleteTemplate handles DELETE /admin/onboarding/templates/:id.
@@ -351,7 +333,7 @@ func (h *Handlers) DeleteTemplate(w http.ResponseWriter, r *http.Request) {
 
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid template ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid template ID")
 		return
 	}
 
@@ -360,5 +342,5 @@ func (h *Handlers) DeleteTemplate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
 }

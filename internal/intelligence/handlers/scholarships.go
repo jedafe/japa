@@ -14,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/jedafe/japa/internal/db/gen"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/tenant"
 )
 
@@ -97,7 +98,7 @@ func scholarshipToDetail(s gen.Scholarship) scholarshipDetail {
 // deadline_to→deadline_before, field_of_study→fields_of_study.
 func (h *Handlers) HandleSearchScholarships(w http.ResponseWriter, r *http.Request) {
 	if h.intelStores == nil {
-		writeError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
 		return
 	}
 
@@ -179,7 +180,7 @@ func (h *Handlers) HandleSearchScholarships(w http.ResponseWriter, r *http.Reque
 	rows, err := h.intelStores.SearchScholarships(r.Context(), tenantID, params)
 	if err != nil {
 		slog.Error("intel: scholarship search failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "search_failed", "Failed to search scholarships")
+		errpkg.WriteError(w, http.StatusInternalServerError, "search_failed", "Failed to search scholarships")
 		return
 	}
 
@@ -206,7 +207,7 @@ func (h *Handlers) HandleSearchScholarships(w http.ResponseWriter, r *http.Reque
 
 	// Spec envelope: {items, next_cursor, has_more, facets} (BUG-05 fix,
 	// §3.3).
-	writeJSON(w, http.StatusOK, map[string]interface{}{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"items":       items,
 		"next_cursor": nextCursor,
 		"has_more":    hasMore,
@@ -280,7 +281,7 @@ func buildScholarshipFacets(items []radarItem) map[string]interface{} {
 // GET /api/v1/intel/scholarships/{id}
 func (h *Handlers) HandleScholarshipDetail(w http.ResponseWriter, r *http.Request) {
 	if h.intelStores == nil {
-		writeError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
 		return
 	}
 
@@ -300,15 +301,15 @@ func (h *Handlers) HandleScholarshipDetail(w http.ResponseWriter, r *http.Reques
 	s, err := h.intelStores.GetScholarship(r.Context(), tenantID, scholarshipID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "not_found", "Scholarship not found")
+			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Scholarship not found")
 			return
 		}
 		slog.Error("intel: scholarship detail lookup failed", "id", scholarshipID.String(), "error", err)
-		writeError(w, http.StatusInternalServerError, "lookup_failed", "Failed to load scholarship")
+		errpkg.WriteError(w, http.StatusInternalServerError, "lookup_failed", "Failed to load scholarship")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"data": scholarshipToDetail(s),
 	})
 }

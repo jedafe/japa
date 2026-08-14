@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
+	errpkg "github.com/jedafe/japa/internal/errors"
 )
 
 // ListReactionTypes handles GET /api/v1/reaction-types.
@@ -20,7 +21,7 @@ func (h *Handlers) ListReactionTypes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": types})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": types})
 }
 
 // CreateReactionType handles POST /api/v1/reaction-types.
@@ -39,22 +40,22 @@ func (h *Handlers) CreateReactionType(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if input.Key == "" {
-		writeError(w, http.StatusBadRequest, "missing_key", "Key is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_key", "Key is required")
 		return
 	}
 
 	if input.Emoji == "" {
-		writeError(w, http.StatusBadRequest, "missing_emoji", "Emoji is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_emoji", "Emoji is required")
 		return
 	}
 
 	if input.Label == "" {
-		writeError(w, http.StatusBadRequest, "missing_label", "Label is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_label", "Label is required")
 		return
 	}
 
@@ -64,7 +65,7 @@ func (h *Handlers) CreateReactionType(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": rt})
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": rt})
 }
 
 // UpdateReactionType handles PATCH /api/v1/reaction-types/{key}.
@@ -76,7 +77,7 @@ func (h *Handlers) UpdateReactionType(w http.ResponseWriter, r *http.Request) {
 
 	key := chi.URLParam(r, "key")
 	if key == "" {
-		writeError(w, http.StatusBadRequest, "missing_key", "Key is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_key", "Key is required")
 		return
 	}
 
@@ -88,17 +89,17 @@ func (h *Handlers) UpdateReactionType(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if input.Emoji == "" {
-		writeError(w, http.StatusBadRequest, "missing_emoji", "Emoji is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_emoji", "Emoji is required")
 		return
 	}
 
 	if input.Label == "" {
-		writeError(w, http.StatusBadRequest, "missing_label", "Label is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_label", "Label is required")
 		return
 	}
 
@@ -108,7 +109,7 @@ func (h *Handlers) UpdateReactionType(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": rt})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": rt})
 }
 
 // DeleteReactionType handles DELETE /api/v1/reaction-types/{key}.
@@ -120,7 +121,7 @@ func (h *Handlers) DeleteReactionType(w http.ResponseWriter, r *http.Request) {
 
 	key := chi.URLParam(r, "key")
 	if key == "" {
-		writeError(w, http.StatusBadRequest, "missing_key", "Key is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_key", "Key is required")
 		return
 	}
 
@@ -129,5 +130,5 @@ func (h *Handlers) DeleteReactionType(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusNoContent, nil)
+	errpkg.WriteJSON(w, http.StatusNoContent, nil)
 }

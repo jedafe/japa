@@ -7,7 +7,8 @@
 // new confirmed scam alerts are posted.
 //
 // Ref: japaconnect-engineering/sections/81-scam-alert-board.md
-//      japaconnect-engineering/adr/ADR-089-scam-alert-board.md
+//
+//	japaconnect-engineering/adr/ADR-089-scam-alert-board.md
 package scamalert
 
 import (
@@ -35,35 +36,35 @@ func NewStore(database *db.DB) *Store {
 
 // ScamReport holds a single row from the scam_reports table.
 type ScamReport struct {
-	ID                 pgtype.UUID
-	TenantID           pgtype.UUID
-	ReporterID         pgtype.UUID
-	ScamType           string
-	DestinationSpaceID pgtype.UUID
-	OriginSpaceID      pgtype.UUID
-	OriginCommunity    *string
-	PlatformUsed       *string
-	ApproximateDate    pgtype.Date
-	AmountRange        *string
-	Description        string
+	ID                    pgtype.UUID
+	TenantID              pgtype.UUID
+	ReporterID            pgtype.UUID
+	ScamType              string
+	DestinationSpaceID    pgtype.UUID
+	OriginSpaceID         pgtype.UUID
+	OriginCommunity       *string
+	PlatformUsed          *string
+	ApproximateDate       pgtype.Date
+	AmountRange           *string
+	Description           string
 	ReportedToAuthorities bool
-	Status             string
-	ModeratorNote      *string
-	IsPinned           bool
-	PinnedSpaceID      pgtype.UUID
-	ReviewedBy         pgtype.UUID
-	ReviewedAt         pgtype.Timestamptz
-	CreatedAt          pgtype.Timestamptz
-	UpdatedAt          pgtype.Timestamptz
-	DeletedAt          pgtype.Timestamptz
+	Status                string
+	ModeratorNote         *string
+	IsPinned              bool
+	PinnedSpaceID         pgtype.UUID
+	ReviewedBy            pgtype.UUID
+	ReviewedAt            pgtype.Timestamptz
+	CreatedAt             pgtype.Timestamptz
+	UpdatedAt             pgtype.Timestamptz
+	DeletedAt             pgtype.Timestamptz
 }
 
 // ScamReportRow is the joined result of scam_reports + spaces (destination +
 // origin) + users (reporter name), returned by list and get queries.
 type ScamReportRow struct {
 	ScamReport
-	DestSpaceName  *string
-	DestSpaceCode  *string
+	DestSpaceName   *string
+	DestSpaceCode   *string
 	OriginSpaceName *string
 	OriginSpaceCode *string
 	ReporterName    *string
@@ -310,9 +311,9 @@ WHERE id = $1 AND tenant_id = $2 AND status = 'confirmed'
 // AdminListReportsFilter holds filter parameters for the admin moderation list.
 type AdminListReportsFilter struct {
 	TenantID           pgtype.UUID
-	Status             string // optional: pending|confirmed|rejected
+	Status             string      // optional: pending|confirmed|rejected
 	DestinationSpaceID pgtype.UUID // optional
-	ScamType           string // optional
+	ScamType           string      // optional
 	Limit              int32
 	Offset             int32
 }

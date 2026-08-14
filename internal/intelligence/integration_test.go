@@ -8,7 +8,8 @@
 // Redis — every persistence boundary is stubbed.
 //
 // Ref: docs/superpowers/specs/2026-08-12-japa-intelligence-system-design.md
-//      Task 29 — integration tests (end-to-end task chain).
+//
+//	Task 29 — integration tests (end-to-end task chain).
 package intelligence_test
 
 import (
@@ -63,10 +64,10 @@ func (m *mockAIGateway) ChatWithTools(ctx context.Context, category string, req 
 // mockPromoterStore is an in-memory implementation of promoter.Store. It
 // records every write so integration tests can assert on the exact sequence.
 type mockPromoterStore struct {
-	record     gen.IntelRecord
-	source     gen.IntelSource
-	existing   gen.Scholarship
-	hasExisting bool
+	record         gen.IntelRecord
+	source         gen.IntelSource
+	existing       gen.Scholarship
+	hasExisting    bool
 	countrySpaceID pgtype.UUID // BUG-005: country space id returned by GetCountrySpace
 
 	createContentCalls     []gen.CreateContentParams
@@ -460,7 +461,7 @@ func TestIntelChain_EditorialOverrideCreatePath(t *testing.T) {
 			EntityType: "scholarship",
 			Extracted:  extractionJSON(t, ext),
 		},
-		source: gen.IntelSource{ID: sourceID, SourceUrl: "https://example.org/new", SourceType: "official", TrustLevel: 3},
+		source:      gen.IntelSource{ID: sourceID, SourceUrl: "https://example.org/new", SourceType: "official", TrustLevel: 3},
 		hasExisting: false,
 	}
 
@@ -572,7 +573,7 @@ func TestIntelChain_GateClassificationIntegration(t *testing.T) {
 	// --- Dedup: new record (no rows) vs update (same source re-extraction). ---
 	sourceID := newUUID()
 	newLister := &mockRecordLister{found: false}
-	dedupSvc := dedup.NewService(newLister, pgtype.UUID{Bytes: [16]byte{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1}, Valid: true})
+	dedupSvc := dedup.NewService(newLister, pgtype.UUID{Bytes: [16]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}, Valid: true})
 	dec, err := dedupSvc.Check(context.Background(), sourceID, "ext-key-1")
 	if err != nil {
 		t.Fatalf("dedup.Check (new): %v", err)
@@ -582,7 +583,7 @@ func TestIntelChain_GateClassificationIntegration(t *testing.T) {
 	}
 
 	updateLister := &mockRecordLister{found: true}
-	dedupSvc2 := dedup.NewService(updateLister, pgtype.UUID{Bytes: [16]byte{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1}, Valid: true})
+	dedupSvc2 := dedup.NewService(updateLister, pgtype.UUID{Bytes: [16]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}, Valid: true})
 	dec, err = dedupSvc2.Check(context.Background(), sourceID, "ext-key-1")
 	if err != nil {
 		t.Fatalf("dedup.Check (update): %v", err)
@@ -607,7 +608,7 @@ func TestIntelChain_GateClassificationIntegration(t *testing.T) {
 			EntityType: "scholarship",
 			Extracted:  extractionJSON(t, ext),
 		},
-		source:     gen.IntelSource{ID: promoterSourceID, SourceUrl: "https://example.org/r", SourceType: "official", TrustLevel: 2},
+		source:      gen.IntelSource{ID: promoterSourceID, SourceUrl: "https://example.org/r", SourceType: "official", TrustLevel: 2},
 		hasExisting: false,
 	}
 	p := promoter.NewScholarshipPromoter(createStore, newUUID(), newUUID())

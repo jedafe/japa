@@ -25,6 +25,7 @@ import (
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/features"
 	"github.com/jedafe/japa/internal/publicapi"
 	"github.com/jedafe/japa/internal/rbac"
@@ -165,18 +166,18 @@ func (h *Handlers) ListTenants(w http.ResponseWriter, r *http.Request) {
 	tenants, err := h.Service.ListTenants(r.Context(), statusFilter, limit, offset)
 	if err != nil {
 		slog.Error("control: list tenants", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list tenants")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list tenants")
 		return
 	}
 
 	total, err := h.Service.CountTenants(r.Context(), statusFilter)
 	if err != nil {
 		slog.Error("control: count tenants", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to count tenants")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to count tenants")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data":   tenants,
 		"total":  total,
 		"limit":  limit,
@@ -191,11 +192,11 @@ func (h *Handlers) CreateTenant(w http.ResponseWriter, r *http.Request) {
 		Domain *string `json:"domain"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 	if input.Name == "" || input.Slug == "" {
-		writeError(w, http.StatusBadRequest, "missing_fields", "name and slug are required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_fields", "name and slug are required")
 		return
 	}
 	tenant, err := h.Service.CreateTenant(r.Context(), CreateTenantInput{
@@ -205,31 +206,31 @@ func (h *Handlers) CreateTenant(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		slog.Error("control: create tenant", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to create tenant")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to create tenant")
 		return
 	}
-	writeJSON(w, http.StatusCreated, map[string]any{"data": tenant})
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": tenant})
 }
 
 func (h *Handlers) GetTenant(w http.ResponseWriter, r *http.Request) {
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid tenant ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid tenant ID")
 		return
 	}
 	tenant, err := h.Service.GetTenant(r.Context(), id)
 	if err != nil {
 		slog.Error("control: get tenant", "error", err)
-		writeError(w, http.StatusNotFound, "not_found", "Tenant not found")
+		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Tenant not found")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": tenant})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": tenant})
 }
 
 func (h *Handlers) UpdateTenant(w http.ResponseWriter, r *http.Request) {
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid tenant ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid tenant ID")
 		return
 	}
 	var input struct {
@@ -237,7 +238,7 @@ func (h *Handlers) UpdateTenant(w http.ResponseWriter, r *http.Request) {
 		Domain *string `json:"domain"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 	tenant, err := h.Service.UpdateTenant(r.Context(), id, UpdateTenantInput{
@@ -246,22 +247,22 @@ func (h *Handlers) UpdateTenant(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		slog.Error("control: update tenant", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to update tenant")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update tenant")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": tenant})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": tenant})
 }
 
 func (h *Handlers) DeleteTenant(w http.ResponseWriter, r *http.Request) {
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid tenant ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid tenant ID")
 		return
 	}
 	tenant, err := h.Service.DeleteTenant(r.Context(), id)
 	if err != nil {
 		slog.Error("control: delete tenant", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to delete tenant")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to delete tenant")
 		return
 	}
 	h.auditTenantAction(r, "tenant.delete", id)
@@ -284,39 +285,39 @@ func (h *Handlers) DeleteTenant(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": tenant})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": tenant})
 }
 
 func (h *Handlers) SuspendTenant(w http.ResponseWriter, r *http.Request) {
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid tenant ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid tenant ID")
 		return
 	}
 	tenant, err := h.Service.SuspendTenant(r.Context(), id)
 	if err != nil {
 		slog.Error("control: suspend tenant", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to suspend tenant")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to suspend tenant")
 		return
 	}
 	h.auditTenantAction(r, "tenant.suspend", id)
-	writeJSON(w, http.StatusOK, map[string]any{"data": tenant})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": tenant})
 }
 
 func (h *Handlers) UnsuspendTenant(w http.ResponseWriter, r *http.Request) {
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid tenant ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid tenant ID")
 		return
 	}
 	tenant, err := h.Service.UnsuspendTenant(r.Context(), id)
 	if err != nil {
 		slog.Error("control: unsuspend tenant", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to unsuspend tenant")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to unsuspend tenant")
 		return
 	}
 	h.auditTenantAction(r, "tenant.unsuspend", id)
-	writeJSON(w, http.StatusOK, map[string]any{"data": tenant})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": tenant})
 }
 
 // ---------------------------------------------------------------------------
@@ -334,7 +335,7 @@ func (h *Handlers) ListSystemSettings(w http.ResponseWriter, r *http.Request) {
 	)
 	if err != nil {
 		slog.Error("control: list system settings", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list settings")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list settings")
 		return
 	}
 	defer rows.Close()
@@ -417,7 +418,7 @@ func (h *Handlers) ListSystemSettings(w http.ResponseWriter, r *http.Request) {
 			Options:      opts,
 		})
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": settings})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": settings})
 }
 
 func (h *Handlers) UpdateSystemSettings(w http.ResponseWriter, r *http.Request) {
@@ -427,7 +428,7 @@ func (h *Handlers) UpdateSystemSettings(w http.ResponseWriter, r *http.Request) 
 	}
 	var input map[string]any
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 	for key, value := range input {
@@ -470,14 +471,14 @@ func (h *Handlers) UpdateSystemSettings(w http.ResponseWriter, r *http.Request) 
 		)
 		if err != nil {
 			slog.Error("control: update system setting", "key", key, "error", err)
-			writeError(w, http.StatusInternalServerError, "internal_error", "Failed to update setting: "+key)
+			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update setting: "+key)
 			return
 		}
 	}
 	if h.Settings != nil {
 		h.Settings.InvalidateSettings(r.Context(), tenantID)
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "updated"}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "updated"}})
 }
 
 func (h *Handlers) UpdateSystemSetting(w http.ResponseWriter, r *http.Request) {
@@ -487,7 +488,7 @@ func (h *Handlers) UpdateSystemSetting(w http.ResponseWriter, r *http.Request) {
 	}
 	key := chi.URLParam(r, "key")
 	if key == "" {
-		writeError(w, http.StatusBadRequest, "missing_key", "Setting key is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_key", "Setting key is required")
 		return
 	}
 	var input struct {
@@ -495,7 +496,7 @@ func (h *Handlers) UpdateSystemSetting(w http.ResponseWriter, r *http.Request) {
 		IsPublic *bool `json:"is_public"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 	// The value column is jsonb — json.Marshal produces the correct JSON
@@ -515,13 +516,13 @@ func (h *Handlers) UpdateSystemSetting(w http.ResponseWriter, r *http.Request) {
 	)
 	if err != nil {
 		slog.Error("control: update system setting", "key", key, "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to update setting")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update setting")
 		return
 	}
 	if h.Settings != nil {
 		h.Settings.InvalidateSettings(r.Context(), tenantID)
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"key": key, "status": "updated"}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"key": key, "status": "updated"}})
 }
 
 func (h *Handlers) ResetSystemSetting(w http.ResponseWriter, r *http.Request) {
@@ -531,7 +532,7 @@ func (h *Handlers) ResetSystemSetting(w http.ResponseWriter, r *http.Request) {
 	}
 	key := chi.URLParam(r, "key")
 	if key == "" {
-		writeError(w, http.StatusBadRequest, "missing_key", "Setting key is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_key", "Setting key is required")
 		return
 	}
 	tag, err := h.DB.Writer.Exec(r.Context(),
@@ -540,7 +541,7 @@ func (h *Handlers) ResetSystemSetting(w http.ResponseWriter, r *http.Request) {
 	)
 	if err != nil {
 		slog.Error("control: reset system setting", "key", key, "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to reset setting")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to reset setting")
 		return
 	}
 	if h.Settings != nil {
@@ -554,10 +555,10 @@ func (h *Handlers) ResetSystemSetting(w http.ResponseWriter, r *http.Request) {
 	}
 	if tag.RowsAffected() == 0 {
 		// Setting didn't exist in DB (already at default). Return the default value.
-		writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"key": key, "value": defaultValue, "default_value": defaultValue}})
+		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"key": key, "value": defaultValue, "default_value": defaultValue}})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"key": key, "value": defaultValue, "default_value": defaultValue}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"key": key, "value": defaultValue, "default_value": defaultValue}})
 }
 
 // ---------------------------------------------------------------------------
@@ -568,7 +569,7 @@ func (h *Handlers) ResetSystemSetting(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) GetTenantSettings(w http.ResponseWriter, r *http.Request) {
 	tenantID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid tenant ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid tenant ID")
 		return
 	}
 	rows, err := h.DB.Reader.Query(r.Context(),
@@ -577,7 +578,7 @@ func (h *Handlers) GetTenantSettings(w http.ResponseWriter, r *http.Request) {
 	)
 	if err != nil {
 		slog.Error("control: get tenant settings", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list settings")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list settings")
 		return
 	}
 	defer rows.Close()
@@ -656,19 +657,19 @@ func (h *Handlers) GetTenantSettings(w http.ResponseWriter, r *http.Request) {
 			Options:      opts,
 		})
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": settings})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": settings})
 }
 
 // UpdateTenantSettings handles PATCH /control/tenants/:id/settings (bulk).
 func (h *Handlers) UpdateTenantSettings(w http.ResponseWriter, r *http.Request) {
 	tenantID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid tenant ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid tenant ID")
 		return
 	}
 	var input map[string]any
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 	for key, value := range input {
@@ -706,26 +707,26 @@ func (h *Handlers) UpdateTenantSettings(w http.ResponseWriter, r *http.Request) 
 		)
 		if err != nil {
 			slog.Error("control: update tenant setting", "key", key, "error", err)
-			writeError(w, http.StatusInternalServerError, "internal_error", "Failed to update setting: "+key)
+			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update setting: "+key)
 			return
 		}
 	}
 	if h.Settings != nil {
 		h.Settings.InvalidateSettings(r.Context(), tenantID)
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "updated"}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "updated"}})
 }
 
 // UpdateTenantSettingKey handles PATCH /control/tenants/:id/settings/:key.
 func (h *Handlers) UpdateTenantSettingKey(w http.ResponseWriter, r *http.Request) {
 	tenantID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid tenant ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid tenant ID")
 		return
 	}
 	key := chi.URLParam(r, "key")
 	if key == "" {
-		writeError(w, http.StatusBadRequest, "missing_key", "Setting key is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_key", "Setting key is required")
 		return
 	}
 	var input struct {
@@ -733,7 +734,7 @@ func (h *Handlers) UpdateTenantSettingKey(w http.ResponseWriter, r *http.Request
 		IsPublic *bool `json:"is_public"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 	data, _ := json.Marshal(input.Value)
@@ -744,7 +745,7 @@ func (h *Handlers) UpdateTenantSettingKey(w http.ResponseWriter, r *http.Request
 		)
 		if err != nil {
 			slog.Error("control: update tenant setting key", "key", key, "error", err)
-			writeError(w, http.StatusInternalServerError, "internal_error", "Failed to update setting")
+			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update setting")
 			return
 		}
 	} else {
@@ -754,26 +755,26 @@ func (h *Handlers) UpdateTenantSettingKey(w http.ResponseWriter, r *http.Request
 		)
 		if err != nil {
 			slog.Error("control: update tenant setting key", "key", key, "error", err)
-			writeError(w, http.StatusInternalServerError, "internal_error", "Failed to update setting")
+			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update setting")
 			return
 		}
 	}
 	if h.Settings != nil {
 		h.Settings.InvalidateSettings(r.Context(), tenantID)
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"key": key, "status": "updated"}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"key": key, "status": "updated"}})
 }
 
 // ResetTenantSetting handles POST /control/tenants/:id/settings/:key/reset.
 func (h *Handlers) ResetTenantSetting(w http.ResponseWriter, r *http.Request) {
 	tenantID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid tenant ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid tenant ID")
 		return
 	}
 	key := chi.URLParam(r, "key")
 	if key == "" {
-		writeError(w, http.StatusBadRequest, "missing_key", "Setting key is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_key", "Setting key is required")
 		return
 	}
 	tag, err := h.DB.Writer.Exec(r.Context(),
@@ -782,7 +783,7 @@ func (h *Handlers) ResetTenantSetting(w http.ResponseWriter, r *http.Request) {
 	)
 	if err != nil {
 		slog.Error("control: reset tenant setting", "key", key, "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to reset setting")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to reset setting")
 		return
 	}
 	if h.Settings != nil {
@@ -793,10 +794,10 @@ func (h *Handlers) ResetTenantSetting(w http.ResponseWriter, r *http.Request) {
 		defaultValue = meta.DefaultValue
 	}
 	if tag.RowsAffected() == 0 {
-		writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"key": key, "value": defaultValue, "default_value": defaultValue}})
+		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"key": key, "value": defaultValue, "default_value": defaultValue}})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"key": key, "value": defaultValue, "default_value": defaultValue}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"key": key, "value": defaultValue, "default_value": defaultValue}})
 }
 
 // ---------------------------------------------------------------------------
@@ -896,7 +897,7 @@ func (h *Handlers) HealthCheck(w http.ResponseWriter, r *http.Request) {
 		}),
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
 			"infrastructure": infrastructure,
 			"application":    application,
@@ -922,7 +923,7 @@ func (h *Handlers) DBHealthCheck(w http.ResponseWriter, r *http.Request) {
 
 	if readerErr != nil && writerErr != nil {
 		slog.Error("control: db health check", "reader_error", readerErr, "writer_error", writerErr)
-		writeJSON(w, http.StatusServiceUnavailable, map[string]any{
+		errpkg.WriteJSON(w, http.StatusServiceUnavailable, map[string]any{
 			"data": map[string]any{"status": "unhealthy", "error": readerErr.Error()},
 		})
 		return
@@ -1192,7 +1193,7 @@ func (h *Handlers) DBHealthCheck(w http.ResponseWriter, r *http.Request) {
 		WHERE query NOT LIKE '%pg_stat_statements%'
 	`).Scan(&avgQueryTimeMs)
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
 			"connected":         readerErr == nil || writerErr == nil,
 			"version":           version,
@@ -1243,7 +1244,7 @@ func (h *Handlers) DBVacuum(w http.ResponseWriter, r *http.Request) {
 		if err := dec.Decode(&payload); err != nil {
 			// io.EOF means an empty body — that's fine, use zero values.
 			if !errors.Is(err, io.EOF) {
-				writeError(w, http.StatusBadRequest, "invalid_request_body", "Malformed JSON body")
+				errpkg.WriteError(w, http.StatusBadRequest, "invalid_request_body", "Malformed JSON body")
 				return
 			}
 		}
@@ -1254,16 +1255,16 @@ func (h *Handlers) DBVacuum(w http.ResponseWriter, r *http.Request) {
 		payload.Version = 1 // current payload schema version
 		payloadBytes, err := json.Marshal(payload)
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, "internal_error", "Failed to encode vacuum payload")
+			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to encode vacuum payload")
 			return
 		}
 		task := asynq.NewTask(worker.TypeDBManualVacuum, payloadBytes)
 		if _, err := h.Client.Enqueue(task, asynq.Queue(worker.QueueForTask(worker.TypeDBManualVacuum))); err != nil {
 			slog.Error("control: failed to enqueue db vacuum task", "error", err)
-			writeError(w, http.StatusInternalServerError, "internal_error", "Failed to enqueue vacuum task")
+			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to enqueue vacuum task")
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "enqueued"}})
+		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "enqueued"}})
 		return
 	}
 
@@ -1274,10 +1275,10 @@ func (h *Handlers) DBVacuum(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	if err := h.DB.Vacuum(vacuumCtx, payload.TableName, payload.Full); err != nil {
 		slog.Error("control: db vacuum", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to run VACUUM")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to run VACUUM")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "completed"}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "completed"}})
 }
 
 // ---------------------------------------------------------------------------
@@ -1286,7 +1287,7 @@ func (h *Handlers) DBVacuum(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handlers) QueueStats(w http.ResponseWriter, r *http.Request) {
 	if h.Inspector == nil {
-		writeJSON(w, http.StatusOK, map[string]any{
+		errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 			"data": map[string]any{
 				"queues":              []any{},
 				"total_pending":       0,
@@ -1349,7 +1350,7 @@ func (h *Handlers) QueueStats(w http.ResponseWriter, r *http.Request) {
 		queues = []queueInfo{}
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
 			"queues":              queues,
 			"total_pending":       totalPending,
@@ -1363,7 +1364,7 @@ func (h *Handlers) QueueStats(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handlers) ListDLQ(w http.ResponseWriter, r *http.Request) {
 	if h.Inspector == nil {
-		writeJSON(w, http.StatusOK, map[string]any{"data": []any{}})
+		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": []any{}})
 		return
 	}
 
@@ -1389,14 +1390,14 @@ func (h *Handlers) ListDLQ(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": tasks})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": tasks})
 }
 
 // ListQueueTasks returns recent tasks for a specific queue across all states
 // (pending, active, scheduled, retry, archived, completed).
 func (h *Handlers) ListQueueTasks(w http.ResponseWriter, r *http.Request) {
 	if h.Inspector == nil {
-		writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
+		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
 			"pending": []any{}, "active": []any{}, "scheduled": []any{},
 			"retry": []any{}, "archived": []any{}, "completed": []any{},
 		}})
@@ -1405,7 +1406,7 @@ func (h *Handlers) ListQueueTasks(w http.ResponseWriter, r *http.Request) {
 
 	queueName := chi.URLParam(r, "queue_name")
 	if queueName == "" {
-		writeError(w, http.StatusBadRequest, "missing_queue", "queue_name is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_queue", "queue_name is required")
 		return
 	}
 
@@ -1456,7 +1457,7 @@ func (h *Handlers) ListQueueTasks(w http.ResponseWriter, r *http.Request) {
 	archived, _ := h.Inspector.ListArchivedTasks(queueName)
 	completed, _ := h.Inspector.ListCompletedTasks(queueName)
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
 			"pending":   summarize(pending, "pending"),
 			"active":    summarize(active, "active"),
@@ -1470,7 +1471,7 @@ func (h *Handlers) ListQueueTasks(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handlers) RetryDLQTask(w http.ResponseWriter, r *http.Request) {
 	if h.Inspector == nil {
-		writeError(w, http.StatusServiceUnavailable, "no_inspector", "Inspector not available")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "no_inspector", "Inspector not available")
 		return
 	}
 
@@ -1480,11 +1481,11 @@ func (h *Handlers) RetryDLQTask(w http.ResponseWriter, r *http.Request) {
 		if err := h.Inspector.RunTask(queueName, taskID); err != nil {
 			continue
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": taskID, "status": "retried"}})
+		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": taskID, "status": "retried"}})
 		return
 	}
 
-	writeError(w, http.StatusNotFound, "task_not_found", "Task not found in any DLQ")
+	errpkg.WriteError(w, http.StatusNotFound, "task_not_found", "Task not found in any DLQ")
 }
 
 // RetryQueueTask retries a specific task within a named queue.
@@ -1492,32 +1493,32 @@ func (h *Handlers) RetryDLQTask(w http.ResponseWriter, r *http.Request) {
 // pending. Wired at POST /control/queue/{queue_name}/tasks/{task_id}/retry.
 func (h *Handlers) RetryQueueTask(w http.ResponseWriter, r *http.Request) {
 	if h.Inspector == nil {
-		writeError(w, http.StatusServiceUnavailable, "no_inspector", "Inspector not available")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "no_inspector", "Inspector not available")
 		return
 	}
 
 	queueName := chi.URLParam(r, "queue_name")
 	if queueName == "" {
-		writeError(w, http.StatusBadRequest, "missing_queue", "queue_name is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_queue", "queue_name is required")
 		return
 	}
 
 	taskID := chi.URLParam(r, "task_id")
 	if taskID == "" {
-		writeError(w, http.StatusBadRequest, "missing_task", "task_id is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_task", "task_id is required")
 		return
 	}
 
 	if err := h.Inspector.RunTask(queueName, taskID); err != nil {
-		writeError(w, http.StatusNotFound, "task_not_found", "Task not found in queue")
+		errpkg.WriteError(w, http.StatusNotFound, "task_not_found", "Task not found in queue")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": taskID, "status": "retried"}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": taskID, "status": "retried"}})
 }
 
 func (h *Handlers) DiscardDLQTask(w http.ResponseWriter, r *http.Request) {
 	if h.Inspector == nil {
-		writeError(w, http.StatusServiceUnavailable, "no_inspector", "Inspector not available")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "no_inspector", "Inspector not available")
 		return
 	}
 
@@ -1527,16 +1528,16 @@ func (h *Handlers) DiscardDLQTask(w http.ResponseWriter, r *http.Request) {
 		if err := h.Inspector.DeleteTask(queueName, taskID); err != nil {
 			continue
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": taskID, "status": "discarded"}})
+		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": taskID, "status": "discarded"}})
 		return
 	}
 
-	writeError(w, http.StatusNotFound, "task_not_found", "Task not found in any DLQ")
+	errpkg.WriteError(w, http.StatusNotFound, "task_not_found", "Task not found in any DLQ")
 }
 
 func (h *Handlers) DiscardAllDLQ(w http.ResponseWriter, r *http.Request) {
 	if h.Inspector == nil {
-		writeError(w, http.StatusServiceUnavailable, "no_inspector", "Inspector not available")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "no_inspector", "Inspector not available")
 		return
 	}
 
@@ -1554,7 +1555,7 @@ func (h *Handlers) DiscardAllDLQ(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"discarded": totalDiscarded}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"discarded": totalDiscarded}})
 }
 
 // ---------------------------------------------------------------------------
@@ -1575,7 +1576,7 @@ type cacheStatsResponse struct {
 
 func (h *Handlers) CacheStats(w http.ResponseWriter, r *http.Request) {
 	if h.Valkey == nil {
-		writeJSON(w, http.StatusOK, map[string]any{
+		errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 			"data": map[string]any{
 				"message": "Valkey client not configured",
 			},
@@ -1587,7 +1588,7 @@ func (h *Handlers) CacheStats(w http.ResponseWriter, r *http.Request) {
 	info, err := h.Valkey.Info(ctx, "memory").Result()
 	if err != nil {
 		slog.Error("control: cache stats", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to fetch cache stats")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to fetch cache stats")
 		return
 	}
 
@@ -1611,7 +1612,7 @@ func (h *Handlers) CacheStats(w http.ResponseWriter, r *http.Request) {
 		TotalKeys:     totalKeys,
 		TotalMemoryMB: totalMemoryMB,
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": stats})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": stats})
 }
 
 func parseValkeyMemory(info string) float64 {
@@ -1719,7 +1720,7 @@ func (h *Handlers) FlushCache(w http.ResponseWriter, r *http.Request) {
 	if ok && h.Settings != nil {
 		h.Settings.InvalidateSettings(r.Context(), tenantID)
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{"message": "Permission and settings cache flushed"},
 	})
 }
@@ -1736,10 +1737,10 @@ func (h *Handlers) SecurityOverview(w http.ResponseWriter, r *http.Request) {
 	blocks, err := h.SpamStore.GetActiveIPBlocks(r.Context(), tenantID)
 	if err != nil {
 		slog.Error("control: security overview", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to fetch security overview")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to fetch security overview")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
 			"active_ip_blocks": len(blocks),
 		},
@@ -1754,10 +1755,10 @@ func (h *Handlers) ListIPBlocks(w http.ResponseWriter, r *http.Request) {
 	blocks, err := h.SpamStore.ListIPBlocks(r.Context(), tenantID, 200, pgtype.Timestamptz{})
 	if err != nil {
 		slog.Error("control: list ip blocks", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list IP blocks")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list IP blocks")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": blocks})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": blocks})
 }
 
 func (h *Handlers) ListSecurityScanResults(w http.ResponseWriter, r *http.Request) {
@@ -1796,7 +1797,7 @@ func (h *Handlers) ListSecurityScanResults(w http.ResponseWriter, r *http.Reques
 	)
 	if err != nil {
 		slog.Error("control: list security scan results", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list security scan results")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list security scan results")
 		return
 	}
 	defer rows.Close()
@@ -1834,7 +1835,7 @@ func (h *Handlers) ListSecurityScanResults(w http.ResponseWriter, r *http.Reques
 		totalPages = 1
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
 			"results":     results,
 			"page":        page,
@@ -1850,7 +1851,7 @@ func (h *Handlers) TriggerSecurityScan(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.Client == nil {
-		writeError(w, http.StatusServiceUnavailable, "queue_unavailable", "Task queue not available")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "queue_unavailable", "Task queue not available")
 		return
 	}
 
@@ -1858,7 +1859,7 @@ func (h *Handlers) TriggerSecurityScan(w http.ResponseWriter, r *http.Request) {
 		"tenant_id": tenantID.String(),
 	})
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to create scan task")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to create scan task")
 		return
 	}
 
@@ -1869,11 +1870,11 @@ func (h *Handlers) TriggerSecurityScan(w http.ResponseWriter, r *http.Request) {
 	info, err := h.Client.Enqueue(task)
 	if err != nil {
 		slog.Error("control: trigger security scan", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to enqueue security scan")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to enqueue security scan")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
 			"task_id": info.ID,
 			"status":  "enqueued",
@@ -1896,11 +1897,11 @@ func (h *Handlers) CreateIPBlock(w http.ResponseWriter, r *http.Request) {
 		Reason    *string `json:"reason"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 	if input.CIDR == "" || input.BlockType == "" {
-		writeError(w, http.StatusBadRequest, "missing_fields", "cidr and block_type are required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_fields", "cidr and block_type are required")
 		return
 	}
 	block, err := h.SpamStore.CreateIPBlock(r.Context(), spam.CreateIPBlockInput{
@@ -1912,10 +1913,10 @@ func (h *Handlers) CreateIPBlock(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		slog.Error("control: create ip block", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to create IP block")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to create IP block")
 		return
 	}
-	writeJSON(w, http.StatusCreated, map[string]any{"data": block})
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": block})
 }
 
 func (h *Handlers) DeleteIPBlock(w http.ResponseWriter, r *http.Request) {
@@ -1925,15 +1926,15 @@ func (h *Handlers) DeleteIPBlock(w http.ResponseWriter, r *http.Request) {
 	}
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid IP block ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid IP block ID")
 		return
 	}
 	if err := h.SpamStore.DeleteIPBlock(r.Context(), id, tenantID); err != nil {
 		slog.Error("control: delete ip block", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to delete IP block")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to delete IP block")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
 }
 
 // ---------------------------------------------------------------------------
@@ -2013,7 +2014,7 @@ func (h *Handlers) GetAIBudget(w http.ResponseWriter, r *http.Request) {
 
 	alertTriggered := threshold > 0 && monthToDateCost >= threshold
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
 			"month_to_date_cost":   monthToDateCost,
 			"budget_threshold_usd": threshold,
@@ -2037,11 +2038,11 @@ func (h *Handlers) UpdateAIBudget(w http.ResponseWriter, r *http.Request) {
 		BudgetThresholdUSD *float64 `json:"budget_threshold_usd"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 	if input.BudgetThresholdUSD == nil || *input.BudgetThresholdUSD < 0 {
-		writeError(w, http.StatusBadRequest, "invalid_threshold", "budget_threshold_usd must be a non-negative number")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_threshold", "budget_threshold_usd must be a non-negative number")
 		return
 	}
 
@@ -2052,7 +2053,7 @@ func (h *Handlers) UpdateAIBudget(w http.ResponseWriter, r *http.Request) {
 		tenantID, aiBudgetThresholdKey, string(data),
 	); err != nil {
 		slog.Error("control: update ai budget", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to update AI budget threshold")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update AI budget threshold")
 		return
 	}
 	if h.Settings != nil {
@@ -2090,7 +2091,7 @@ func (h *Handlers) UpdateAIBudget(w http.ResponseWriter, r *http.Request) {
 
 	alertTriggered := threshold > 0 && monthToDateCost >= threshold
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
 			"month_to_date_cost":   monthToDateCost,
 			"budget_threshold_usd": threshold,
@@ -2206,7 +2207,7 @@ func (h *Handlers) ListAuditLogs(w http.ResponseWriter, r *http.Request) {
 	rows, err := h.DB.Reader.Query(r.Context(), query, args...)
 	if err != nil {
 		slog.Error("control: list audit logs", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list audit logs")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list audit logs")
 		return
 	}
 	defer rows.Close()
@@ -2229,7 +2230,7 @@ func (h *Handlers) ListAuditLogs(w http.ResponseWriter, r *http.Request) {
 	if logs == nil {
 		logs = []auditLog{}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": logs})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": logs})
 }
 
 // auditLogDefaultRetentionDays is the fallback retention window for an
@@ -2246,18 +2247,18 @@ const auditLogDefaultRetentionDays = 365
 func (h *Handlers) DeleteAuditLog(w http.ResponseWriter, r *http.Request) {
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid audit log ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid audit log ID")
 		return
 	}
 
 	q := gen.New(h.DB.Writer)
 	if err := q.DeleteAuditLog(r.Context(), id); err != nil {
 		slog.Error("control: delete audit log", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to delete audit log")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to delete audit log")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{"id": id.String(), "status": "deleted"},
 	})
 }
@@ -2282,7 +2283,7 @@ func (h *Handlers) ClearAuditLogs(w http.ResponseWriter, r *http.Request) {
 	var input AuditLogClearInput
 	if body, _ := io.ReadAll(r.Body); len(body) > 0 {
 		if err := json.Unmarshal(body, &input); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 			return
 		}
 	}
@@ -2295,7 +2296,7 @@ func (h *Handlers) ClearAuditLogs(w http.ResponseWriter, r *http.Request) {
 	case input.Before != nil && *input.Before != "":
 		ts, err := time.Parse(time.RFC3339, *input.Before)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_before", "before must be an RFC3339 timestamp")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_before", "before must be an RFC3339 timestamp")
 			return
 		}
 		where = "created_at < $1"
@@ -2326,11 +2327,11 @@ func (h *Handlers) ClearAuditLogs(w http.ResponseWriter, r *http.Request) {
 	tag, err := h.DB.Writer.Exec(r.Context(), query, args...)
 	if err != nil {
 		slog.Error("control: clear audit logs", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to clear audit logs")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to clear audit logs")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{"cleared": tag.RowsAffected()},
 	})
 }
@@ -2340,7 +2341,7 @@ func (h *Handlers) ClearAuditLogs(w http.ResponseWriter, r *http.Request) {
 // ---------------------------------------------------------------------------
 
 func (h *Handlers) ListDeployments(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": []map[string]any{
 			{
 				"version":     "1.0.0",
@@ -2473,14 +2474,14 @@ func (h *Handlers) ListCronJobs(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": jobs})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": jobs})
 }
 
 // CreateCronJob handles POST /api/v1/control/cron/jobs.
 // Creates a custom cron entry stored in Valkey. The worker process picks it up.
 func (h *Handlers) CreateCronJob(w http.ResponseWriter, r *http.Request) {
 	if h.Valkey == nil {
-		writeError(w, http.StatusServiceUnavailable, "no_valkey", "Valkey not available")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "no_valkey", "Valkey not available")
 		return
 	}
 	var input struct {
@@ -2489,11 +2490,11 @@ func (h *Handlers) CreateCronJob(w http.ResponseWriter, r *http.Request) {
 		Payload string `json:"payload"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 	if input.Type == "" || input.Spec == "" {
-		writeError(w, http.StatusBadRequest, "missing_fields", "type and spec are required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_fields", "type and spec are required")
 		return
 	}
 	// L5: Validate payload JSON if provided (defense in depth — the
@@ -2501,7 +2502,7 @@ func (h *Handlers) CreateCronJob(w http.ResponseWriter, r *http.Request) {
 	if input.Payload != "" {
 		var js any
 		if json.Unmarshal([]byte(input.Payload), &js) != nil {
-			writeError(w, http.StatusBadRequest, "invalid_payload", "Payload must be valid JSON")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_payload", "Payload must be valid JSON")
 			return
 		}
 	}
@@ -2511,16 +2512,16 @@ func (h *Handlers) CreateCronJob(w http.ResponseWriter, r *http.Request) {
 	entry := cronCustomEntry{Type: input.Type, Spec: input.Spec, Payload: input.Payload}
 	data, err := json.Marshal(entry)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "marshal_error", "Failed to encode entry")
+		errpkg.WriteError(w, http.StatusInternalServerError, "marshal_error", "Failed to encode entry")
 		return
 	}
 	if err := h.Valkey.HSet(r.Context(), cronCustomKey(r.Context()), id, string(data)).Err(); err != nil {
 		slog.Error("control: create cron job", "error", err)
-		writeError(w, http.StatusInternalServerError, "redis_error", "Failed to save cron job")
+		errpkg.WriteError(w, http.StatusInternalServerError, "redis_error", "Failed to save cron job")
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{
 		"data": map[string]any{"id": id, "type": entry.Type, "spec": entry.Spec},
 	})
 }
@@ -2529,24 +2530,24 @@ func (h *Handlers) CreateCronJob(w http.ResponseWriter, r *http.Request) {
 // Updates a custom cron entry in Valkey.
 func (h *Handlers) UpdateCronJob(w http.ResponseWriter, r *http.Request) {
 	if h.Valkey == nil {
-		writeError(w, http.StatusServiceUnavailable, "no_valkey", "Valkey not available")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "no_valkey", "Valkey not available")
 		return
 	}
 	id := chi.URLParam(r, "id")
 	if id == "" {
-		writeError(w, http.StatusBadRequest, "missing_id", "Job ID is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_id", "Job ID is required")
 		return
 	}
 
 	// Only custom entries can be edited
 	raw, err := h.Valkey.HGet(r.Context(), cronCustomKey(r.Context()), id).Result()
 	if err != nil {
-		writeError(w, http.StatusNotFound, "not_found", "Cron job not found (only custom jobs can be edited)")
+		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Cron job not found (only custom jobs can be edited)")
 		return
 	}
 	var existing cronCustomEntry
 	if json.Unmarshal([]byte(raw), &existing) != nil {
-		writeError(w, http.StatusInternalServerError, "decode_error", "Failed to read existing entry")
+		errpkg.WriteError(w, http.StatusInternalServerError, "decode_error", "Failed to read existing entry")
 		return
 	}
 
@@ -2556,7 +2557,7 @@ func (h *Handlers) UpdateCronJob(w http.ResponseWriter, r *http.Request) {
 		Payload *string `json:"payload"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 	if input.Type != nil {
@@ -2570,29 +2571,29 @@ func (h *Handlers) UpdateCronJob(w http.ResponseWriter, r *http.Request) {
 		if *input.Payload != "" {
 			var js any
 			if json.Unmarshal([]byte(*input.Payload), &js) != nil {
-				writeError(w, http.StatusBadRequest, "invalid_payload", "Payload must be valid JSON")
+				errpkg.WriteError(w, http.StatusBadRequest, "invalid_payload", "Payload must be valid JSON")
 				return
 			}
 		}
 		existing.Payload = *input.Payload
 	}
 	if existing.Type == "" || existing.Spec == "" {
-		writeError(w, http.StatusBadRequest, "missing_fields", "type and spec cannot be empty")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_fields", "type and spec cannot be empty")
 		return
 	}
 
 	data, err := json.Marshal(existing)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "marshal_error", "Failed to encode entry")
+		errpkg.WriteError(w, http.StatusInternalServerError, "marshal_error", "Failed to encode entry")
 		return
 	}
 	if err := h.Valkey.HSet(r.Context(), cronCustomKey(r.Context()), id, string(data)).Err(); err != nil {
 		slog.Error("control: update cron job", "error", err)
-		writeError(w, http.StatusInternalServerError, "redis_error", "Failed to update cron job")
+		errpkg.WriteError(w, http.StatusInternalServerError, "redis_error", "Failed to update cron job")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{"id": id, "type": existing.Type, "spec": existing.Spec},
 	})
 }
@@ -2601,12 +2602,12 @@ func (h *Handlers) UpdateCronJob(w http.ResponseWriter, r *http.Request) {
 // Deletes a custom cron entry from Valkey or pauses a system entry (soft-delete).
 func (h *Handlers) DeleteCronJob(w http.ResponseWriter, r *http.Request) {
 	if h.Valkey == nil {
-		writeError(w, http.StatusServiceUnavailable, "no_valkey", "Valkey not available")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "no_valkey", "Valkey not available")
 		return
 	}
 	id := chi.URLParam(r, "id")
 	if id == "" {
-		writeError(w, http.StatusBadRequest, "missing_id", "Job ID is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_id", "Job ID is required")
 		return
 	}
 
@@ -2614,11 +2615,11 @@ func (h *Handlers) DeleteCronJob(w http.ResponseWriter, r *http.Request) {
 	deleted, err := h.Valkey.HDel(r.Context(), cronCustomKey(r.Context()), id).Result()
 	if err != nil {
 		slog.Error("control: delete cron job", "error", err)
-		writeError(w, http.StatusInternalServerError, "redis_error", "Failed to delete cron job")
+		errpkg.WriteError(w, http.StatusInternalServerError, "redis_error", "Failed to delete cron job")
 		return
 	}
 	if deleted > 0 {
-		writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": id, "status": "deleted"}})
+		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": id, "status": "deleted"}})
 		return
 	}
 
@@ -2626,11 +2627,11 @@ func (h *Handlers) DeleteCronJob(w http.ResponseWriter, r *http.Request) {
 	// Instead, mark as paused so it won't run.
 	if err := h.Valkey.SAdd(r.Context(), cronPausedKey(r.Context()), id).Err(); err != nil {
 		slog.Error("control: pause system cron job", "error", err)
-		writeError(w, http.StatusInternalServerError, "redis_error", "Failed to pause system cron job")
+		errpkg.WriteError(w, http.StatusInternalServerError, "redis_error", "Failed to pause system cron job")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{"id": id, "status": "paused", "note": "System jobs cannot be deleted; entry has been paused instead."},
 	})
 }
@@ -2638,12 +2639,12 @@ func (h *Handlers) DeleteCronJob(w http.ResponseWriter, r *http.Request) {
 // PauseCronJob handles POST /api/v1/control/cron/jobs/{id}/pause.
 func (h *Handlers) PauseCronJob(w http.ResponseWriter, r *http.Request) {
 	if h.Valkey == nil {
-		writeError(w, http.StatusServiceUnavailable, "no_valkey", "Valkey not available")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "no_valkey", "Valkey not available")
 		return
 	}
 	id := chi.URLParam(r, "id")
 	if id == "" {
-		writeError(w, http.StatusBadRequest, "missing_id", "Job ID is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_id", "Job ID is required")
 		return
 	}
 
@@ -2655,10 +2656,10 @@ func (h *Handlers) PauseCronJob(w http.ResponseWriter, r *http.Request) {
 			data, _ := json.Marshal(ce)
 			if err := h.Valkey.HSet(r.Context(), cronCustomKey(r.Context()), id, string(data)).Err(); err != nil {
 				slog.Error("control: pause custom cron job", "error", err)
-				writeError(w, http.StatusInternalServerError, "redis_error", "Failed to pause cron job")
+				errpkg.WriteError(w, http.StatusInternalServerError, "redis_error", "Failed to pause cron job")
 				return
 			}
-			writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": id, "status": "paused"}})
+			errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": id, "status": "paused"}})
 			return
 		}
 	}
@@ -2666,21 +2667,21 @@ func (h *Handlers) PauseCronJob(w http.ResponseWriter, r *http.Request) {
 	// System entry — add to paused set
 	if err := h.Valkey.SAdd(r.Context(), cronPausedKey(r.Context()), id).Err(); err != nil {
 		slog.Error("control: pause system cron job", "error", err)
-		writeError(w, http.StatusInternalServerError, "redis_error", "Failed to pause cron job")
+		errpkg.WriteError(w, http.StatusInternalServerError, "redis_error", "Failed to pause cron job")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": id, "status": "paused"}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": id, "status": "paused"}})
 }
 
 // UnpauseCronJob handles POST /api/v1/control/cron/jobs/{id}/unpause.
 func (h *Handlers) UnpauseCronJob(w http.ResponseWriter, r *http.Request) {
 	if h.Valkey == nil {
-		writeError(w, http.StatusServiceUnavailable, "no_valkey", "Valkey not available")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "no_valkey", "Valkey not available")
 		return
 	}
 	id := chi.URLParam(r, "id")
 	if id == "" {
-		writeError(w, http.StatusBadRequest, "missing_id", "Job ID is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_id", "Job ID is required")
 		return
 	}
 
@@ -2692,10 +2693,10 @@ func (h *Handlers) UnpauseCronJob(w http.ResponseWriter, r *http.Request) {
 			data, _ := json.Marshal(ce)
 			if err := h.Valkey.HSet(r.Context(), cronCustomKey(r.Context()), id, string(data)).Err(); err != nil {
 				slog.Error("control: unpause custom cron job", "error", err)
-				writeError(w, http.StatusInternalServerError, "redis_error", "Failed to unpause cron job")
+				errpkg.WriteError(w, http.StatusInternalServerError, "redis_error", "Failed to unpause cron job")
 				return
 			}
-			writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": id, "status": "active"}})
+			errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": id, "status": "active"}})
 			return
 		}
 	}
@@ -2703,28 +2704,28 @@ func (h *Handlers) UnpauseCronJob(w http.ResponseWriter, r *http.Request) {
 	// System entry — remove from paused set
 	if err := h.Valkey.SRem(r.Context(), cronPausedKey(r.Context()), id).Err(); err != nil {
 		slog.Error("control: unpause system cron job", "error", err)
-		writeError(w, http.StatusInternalServerError, "redis_error", "Failed to unpause cron job")
+		errpkg.WriteError(w, http.StatusInternalServerError, "redis_error", "Failed to unpause cron job")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": id, "status": "active"}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": id, "status": "active"}})
 }
 
 // TriggerCronJob handles POST /api/v1/control/cron/jobs/{id}/trigger.
 // Enqueues the scheduler entry's task immediately (one-off run).
 func (h *Handlers) TriggerCronJob(w http.ResponseWriter, r *http.Request) {
 	if h.Client == nil {
-		writeError(w, http.StatusServiceUnavailable, "no_client", "Asynq client not available")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "no_client", "Asynq client not available")
 		return
 	}
 	if h.Inspector == nil {
-		writeError(w, http.StatusServiceUnavailable, "no_inspector", "Asynq inspector not available")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "no_inspector", "Asynq inspector not available")
 		return
 	}
 
 	id := chi.URLParam(r, "id")
 	entries, err := h.Inspector.SchedulerEntries()
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "scheduler_error", "Failed to load cron jobs")
+		errpkg.WriteError(w, http.StatusInternalServerError, "scheduler_error", "Failed to load cron jobs")
 		return
 	}
 
@@ -2733,10 +2734,10 @@ func (h *Handlers) TriggerCronJob(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		if _, err := h.Client.Enqueue(e.Task, asynq.Queue(worker.QueueForTask(e.Task.Type()))); err != nil {
-			writeError(w, http.StatusInternalServerError, "enqueue_error", "Failed to trigger cron job")
+			errpkg.WriteError(w, http.StatusInternalServerError, "enqueue_error", "Failed to trigger cron job")
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": e.ID, "status": "enqueued"}})
+		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": e.ID, "status": "enqueued"}})
 		return
 	}
 
@@ -2747,23 +2748,23 @@ func (h *Handlers) TriggerCronJob(w http.ResponseWriter, r *http.Request) {
 			if json.Unmarshal([]byte(raw), &ce) == nil && ce.Type != "" {
 				task := asynq.NewTask(ce.Type, []byte(ce.Payload))
 				if _, err := h.Client.Enqueue(task, asynq.Queue(worker.QueueForTask(ce.Type))); err != nil {
-					writeError(w, http.StatusInternalServerError, "enqueue_error", "Failed to trigger cron job")
+					errpkg.WriteError(w, http.StatusInternalServerError, "enqueue_error", "Failed to trigger cron job")
 					return
 				}
-				writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": id, "status": "enqueued"}})
+				errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": id, "status": "enqueued"}})
 				return
 			}
 		}
 	}
 
-	writeError(w, http.StatusNotFound, "not_found", "Cron job not found")
+	errpkg.WriteError(w, http.StatusNotFound, "not_found", "Cron job not found")
 }
 
 // ListTaskTypes handles GET /control/task-types — returns the full Asynq task
 // type catalog with name, tier, and description for the cron job editor UI.
 func (h *Handlers) ListTaskTypes(w http.ResponseWriter, r *http.Request) {
 	taskTypes := worker.TaskTypeCatalog()
-	writeJSON(w, http.StatusOK, map[string]any{"data": taskTypes})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": taskTypes})
 }
 
 // ListSchedulePresets handles GET /control/cron/schedule-presets — returns
@@ -2784,25 +2785,11 @@ func (h *Handlers) ListSchedulePresets(w http.ResponseWriter, r *http.Request) {
 		{"value": "custom", "label": "Custom cron expression...", "cron": ""},
 	}
 	tiers := []string{"critical", "default", "low"}
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
 			"presets": presets,
 			"tiers":   tiers,
 		},
-	})
-}
-
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	if err := json.NewEncoder(w).Encode(v); err != nil {
-		slog.Warn("control: json encode error", "error", err)
-	}
-}
-
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, map[string]any{
-		"error": map[string]string{"code": code, "message": message},
 	})
 }
 
@@ -2839,7 +2826,7 @@ func (h *Handlers) auditTenantAction(r *http.Request, actionType string, targetI
 func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
 	return t.ID, true
@@ -2848,7 +2835,7 @@ func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 func requireUser(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	u := auth.FromContext(r.Context())
 	if u == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return pgtype.UUID{}, false
 	}
 	return u.UserID, true
@@ -2871,7 +2858,7 @@ func (h *Handlers) ListPermissionNodes(w http.ResponseWriter, r *http.Request) {
 		`SELECT key, description FROM permissions ORDER BY key`)
 	if err != nil {
 		slog.Error("control: list permission nodes", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list permission nodes")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list permission nodes")
 		return
 	}
 	defer rows.Close()
@@ -2888,7 +2875,7 @@ func (h *Handlers) ListPermissionNodes(w http.ResponseWriter, r *http.Request) {
 		}
 		nodes = append(nodes, n)
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": nodes})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": nodes})
 }
 
 // ---------------------------------------------------------------------------
@@ -2923,42 +2910,42 @@ func oauthClientsKey(ctx context.Context) string {
 
 func (h *Handlers) ListOAuthClients(w http.ResponseWriter, r *http.Request) {
 	if h.Valkey == nil {
-		writeJSON(w, http.StatusOK, map[string]any{"data": []any{}})
+		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": []any{}})
 		return
 	}
 	raw, err := h.Valkey.Get(r.Context(), oauthClientsKey(r.Context())).Result()
 	if err != nil || raw == "" {
-		writeJSON(w, http.StatusOK, map[string]any{"data": []any{}})
+		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": []any{}})
 		return
 	}
 	var clients []oauthClientEntry
 	if json.Unmarshal([]byte(raw), &clients) != nil {
-		writeJSON(w, http.StatusOK, map[string]any{"data": []any{}})
+		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": []any{}})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": clients})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": clients})
 }
 
 // ListOAuthProviders handles GET /control/oauth-providers — returns the list of
 // OAuth providers supported by the engine (google, github, apple, facebook).
 func (h *Handlers) ListOAuthProviders(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{"data": supportedOAuthProviders})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": supportedOAuthProviders})
 }
 
 func (h *Handlers) GetOAuthClient(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	if id == "" {
-		writeError(w, http.StatusBadRequest, "missing_id", "id is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_id", "id is required")
 		return
 	}
 	clients := h.loadOAuthClients(r)
 	for _, c := range clients {
 		if c.ID == id {
-			writeJSON(w, http.StatusOK, map[string]any{"data": c})
+			errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": c})
 			return
 		}
 	}
-	writeError(w, http.StatusNotFound, "not_found", "OAuth client not found")
+	errpkg.WriteError(w, http.StatusNotFound, "not_found", "OAuth client not found")
 }
 
 func (h *Handlers) CreateOAuthClient(w http.ResponseWriter, r *http.Request) {
@@ -2970,11 +2957,11 @@ func (h *Handlers) CreateOAuthClient(w http.ResponseWriter, r *http.Request) {
 		RedirectURI  string `json:"redirect_uri"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 	if input.Name == "" || input.Provider == "" || input.ClientID == "" || input.ClientSecret == "" {
-		writeError(w, http.StatusBadRequest, "missing_fields", "name, provider, client_id, and client_secret are required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_fields", "name, provider, client_id, and client_secret are required")
 		return
 	}
 	// Validate provider against the supported list.
@@ -2986,7 +2973,7 @@ func (h *Handlers) CreateOAuthClient(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if !providerValid {
-		writeError(w, http.StatusBadRequest, "invalid_provider", "Unsupported OAuth provider: "+input.Provider)
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_provider", "Unsupported OAuth provider: "+input.Provider)
 		return
 	}
 	clients := h.loadOAuthClients(r)
@@ -3002,16 +2989,16 @@ func (h *Handlers) CreateOAuthClient(w http.ResponseWriter, r *http.Request) {
 	}
 	clients = append(clients, entry)
 	if err := h.saveOAuthClients(r, clients); err != nil {
-		writeError(w, http.StatusInternalServerError, "save_error", "Failed to save OAuth client")
+		errpkg.WriteError(w, http.StatusInternalServerError, "save_error", "Failed to save OAuth client")
 		return
 	}
-	writeJSON(w, http.StatusCreated, map[string]any{"data": entry})
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": entry})
 }
 
 func (h *Handlers) UpdateOAuthClient(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	if id == "" {
-		writeError(w, http.StatusBadRequest, "missing_id", "id is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_id", "id is required")
 		return
 	}
 	var input struct {
@@ -3021,7 +3008,7 @@ func (h *Handlers) UpdateOAuthClient(w http.ResponseWriter, r *http.Request) {
 		Enabled      *bool   `json:"enabled"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 	clients := h.loadOAuthClients(r)
@@ -3040,20 +3027,20 @@ func (h *Handlers) UpdateOAuthClient(w http.ResponseWriter, r *http.Request) {
 				clients[i].Enabled = *input.Enabled
 			}
 			if err := h.saveOAuthClients(r, clients); err != nil {
-				writeError(w, http.StatusInternalServerError, "save_error", "Failed to update OAuth client")
+				errpkg.WriteError(w, http.StatusInternalServerError, "save_error", "Failed to update OAuth client")
 				return
 			}
-			writeJSON(w, http.StatusOK, map[string]any{"data": clients[i]})
+			errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": clients[i]})
 			return
 		}
 	}
-	writeError(w, http.StatusNotFound, "not_found", "OAuth client not found")
+	errpkg.WriteError(w, http.StatusNotFound, "not_found", "OAuth client not found")
 }
 
 func (h *Handlers) DeleteOAuthClient(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	if id == "" {
-		writeError(w, http.StatusBadRequest, "missing_id", "id is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_id", "id is required")
 		return
 	}
 	clients := h.loadOAuthClients(r)
@@ -3061,20 +3048,20 @@ func (h *Handlers) DeleteOAuthClient(w http.ResponseWriter, r *http.Request) {
 		if c.ID == id {
 			clients = append(clients[:i], clients[i+1:]...)
 			if err := h.saveOAuthClients(r, clients); err != nil {
-				writeError(w, http.StatusInternalServerError, "save_error", "Failed to delete OAuth client")
+				errpkg.WriteError(w, http.StatusInternalServerError, "save_error", "Failed to delete OAuth client")
 				return
 			}
-			writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
+			errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
 			return
 		}
 	}
-	writeError(w, http.StatusNotFound, "not_found", "OAuth client not found")
+	errpkg.WriteError(w, http.StatusNotFound, "not_found", "OAuth client not found")
 }
 
 func (h *Handlers) RotateOAuthClientSecret(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	if id == "" {
-		writeError(w, http.StatusBadRequest, "missing_id", "id is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_id", "id is required")
 		return
 	}
 	clients := h.loadOAuthClients(r)
@@ -3083,14 +3070,14 @@ func (h *Handlers) RotateOAuthClientSecret(w http.ResponseWriter, r *http.Reques
 			// Generate a new random secret (32 hex chars).
 			clients[i].ClientSecret = fmt.Sprintf("sec_%x", time.Now().UnixNano())
 			if err := h.saveOAuthClients(r, clients); err != nil {
-				writeError(w, http.StatusInternalServerError, "save_error", "Failed to rotate secret")
+				errpkg.WriteError(w, http.StatusInternalServerError, "save_error", "Failed to rotate secret")
 				return
 			}
-			writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"id": id, "status": "rotated"}})
+			errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"id": id, "status": "rotated"}})
 			return
 		}
 	}
-	writeError(w, http.StatusNotFound, "not_found", "OAuth client not found")
+	errpkg.WriteError(w, http.StatusNotFound, "not_found", "OAuth client not found")
 }
 
 func (h *Handlers) loadOAuthClients(r *http.Request) []oauthClientEntry {
@@ -3214,18 +3201,18 @@ func (h *Handlers) ListExtensions(w http.ResponseWriter, r *http.Request) {
 		ext.Enabled = enabled
 		result = append(result, ext)
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": result})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": result})
 }
 
 func (h *Handlers) UpdateExtension(w http.ResponseWriter, r *http.Request) {
 	key := chi.URLParam(r, "key")
 	if key == "" {
-		writeError(w, http.StatusBadRequest, "missing_key", "Extension key is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_key", "Extension key is required")
 		return
 	}
 	ext := findExtension(key)
 	if ext == nil {
-		writeError(w, http.StatusNotFound, "extension_not_found", "Unknown extension or tool")
+		errpkg.WriteError(w, http.StatusNotFound, "extension_not_found", "Unknown extension or tool")
 		return
 	}
 	tenantID, ok := requireTenant(w, r)
@@ -3237,7 +3224,7 @@ func (h *Handlers) UpdateExtension(w http.ResponseWriter, r *http.Request) {
 		Version *string `json:"version"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 	if input.Enabled != nil {
@@ -3250,25 +3237,25 @@ func (h *Handlers) UpdateExtension(w http.ResponseWriter, r *http.Request) {
 			`INSERT INTO system_settings (tenant_id, key, value, updated_at) VALUES ($1, $2, $3, NOW()) ON CONFLICT (tenant_id, key) DO UPDATE SET value = $3, updated_at = NOW()`,
 			tenantID, settingKey, val); err != nil {
 			slog.Error("control: update extension", "error", err)
-			writeError(w, http.StatusInternalServerError, "internal_error", "Failed to update extension")
+			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update extension")
 			return
 		}
 		if h.Settings != nil {
 			h.Settings.InvalidateSettings(r.Context(), tenantID)
 		}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"key": key, "status": "updated"}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"key": key, "status": "updated"}})
 }
 
 func (h *Handlers) EnableExtension(w http.ResponseWriter, r *http.Request) {
 	key := chi.URLParam(r, "key")
 	if key == "" {
-		writeError(w, http.StatusBadRequest, "missing_key", "Extension key is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_key", "Extension key is required")
 		return
 	}
 	ext := findExtension(key)
 	if ext == nil {
-		writeError(w, http.StatusNotFound, "extension_not_found", "Unknown extension or tool")
+		errpkg.WriteError(w, http.StatusNotFound, "extension_not_found", "Unknown extension or tool")
 		return
 	}
 	tenantID, ok := requireTenant(w, r)
@@ -3279,24 +3266,24 @@ func (h *Handlers) EnableExtension(w http.ResponseWriter, r *http.Request) {
 	if _, err := h.DB.Writer.Exec(r.Context(),
 		`INSERT INTO system_settings (tenant_id, key, value, updated_at) VALUES ($1, $2, 'true', NOW()) ON CONFLICT (tenant_id, key) DO UPDATE SET value = 'true', updated_at = NOW()`,
 		tenantID, settingKey); err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to enable extension")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to enable extension")
 		return
 	}
 	if h.Settings != nil {
 		h.Settings.InvalidateSettings(r.Context(), tenantID)
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"key": key, "status": "enabled"}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"key": key, "status": "enabled"}})
 }
 
 func (h *Handlers) DisableExtension(w http.ResponseWriter, r *http.Request) {
 	key := chi.URLParam(r, "key")
 	if key == "" {
-		writeError(w, http.StatusBadRequest, "missing_key", "Extension key is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_key", "Extension key is required")
 		return
 	}
 	ext := findExtension(key)
 	if ext == nil {
-		writeError(w, http.StatusNotFound, "extension_not_found", "Unknown extension or tool")
+		errpkg.WriteError(w, http.StatusNotFound, "extension_not_found", "Unknown extension or tool")
 		return
 	}
 	tenantID, ok := requireTenant(w, r)
@@ -3307,13 +3294,13 @@ func (h *Handlers) DisableExtension(w http.ResponseWriter, r *http.Request) {
 	if _, err := h.DB.Writer.Exec(r.Context(),
 		`INSERT INTO system_settings (tenant_id, key, value, updated_at) VALUES ($1, $2, 'false', NOW()) ON CONFLICT (tenant_id, key) DO UPDATE SET value = 'false', updated_at = NOW()`,
 		tenantID, settingKey); err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to disable extension")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to disable extension")
 		return
 	}
 	if h.Settings != nil {
 		h.Settings.InvalidateSettings(r.Context(), tenantID)
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"key": key, "status": "disabled"}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"key": key, "status": "disabled"}})
 }
 
 // findExtension returns the knownExtensions entry for the given key, or nil.
@@ -3368,31 +3355,31 @@ func backupConfigsKey(ctx context.Context) string {
 
 func (h *Handlers) ListBackupConfigs(w http.ResponseWriter, r *http.Request) {
 	if h.Valkey == nil {
-		writeJSON(w, http.StatusOK, map[string]any{"data": []any{}})
+		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": []any{}})
 		return
 	}
 	raw, err := h.Valkey.Get(r.Context(), backupConfigsKey(r.Context())).Result()
 	if err != nil || raw == "" {
-		writeJSON(w, http.StatusOK, map[string]any{"data": []any{}})
+		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": []any{}})
 		return
 	}
 	var configs []backupConfigEntry
 	if json.Unmarshal([]byte(raw), &configs) != nil {
-		writeJSON(w, http.StatusOK, map[string]any{"data": []any{}})
+		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": []any{}})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": configs})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": configs})
 }
 
 // ListBackupTargets handles GET /control/backup-targets — returns the list of
 // components that can be included in a backup.
 func (h *Handlers) ListBackupTargets(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{"data": supportedBackupTargets})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": supportedBackupTargets})
 }
 
 func (h *Handlers) CreateBackupConfig(w http.ResponseWriter, r *http.Request) {
 	if h.Valkey == nil {
-		writeError(w, http.StatusServiceUnavailable, "no_valkey", "Valkey not available")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "no_valkey", "Valkey not available")
 		return
 	}
 	var input struct {
@@ -3404,11 +3391,11 @@ func (h *Handlers) CreateBackupConfig(w http.ResponseWriter, r *http.Request) {
 		RetentionDays int      `json:"retention_days"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 	if input.Name == "" || input.Schedule == "" {
-		writeError(w, http.StatusBadRequest, "missing_fields", "name and schedule are required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_fields", "name and schedule are required")
 		return
 	}
 	// Validate backup targets.
@@ -3418,7 +3405,7 @@ func (h *Handlers) CreateBackupConfig(w http.ResponseWriter, r *http.Request) {
 	}
 	for _, t := range input.WhatToBackup {
 		if !validTargets[t] {
-			writeError(w, http.StatusBadRequest, "invalid_target", "Unknown backup target: "+t)
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_target", "Unknown backup target: "+t)
 			return
 		}
 	}
@@ -3440,16 +3427,16 @@ func (h *Handlers) CreateBackupConfig(w http.ResponseWriter, r *http.Request) {
 	}
 	configs = append(configs, entry)
 	if err := h.saveBackupConfigs(r, configs); err != nil {
-		writeError(w, http.StatusInternalServerError, "save_error", "Failed to save backup config")
+		errpkg.WriteError(w, http.StatusInternalServerError, "save_error", "Failed to save backup config")
 		return
 	}
-	writeJSON(w, http.StatusCreated, map[string]any{"data": entry})
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": entry})
 }
 
 func (h *Handlers) UpdateBackupConfig(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	if id == "" {
-		writeError(w, http.StatusBadRequest, "missing_id", "id is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_id", "id is required")
 		return
 	}
 	var input struct {
@@ -3461,7 +3448,7 @@ func (h *Handlers) UpdateBackupConfig(w http.ResponseWriter, r *http.Request) {
 		Enabled       *bool    `json:"enabled"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 	configs := h.loadBackupConfigs(r)
@@ -3486,20 +3473,20 @@ func (h *Handlers) UpdateBackupConfig(w http.ResponseWriter, r *http.Request) {
 				configs[i].Enabled = *input.Enabled
 			}
 			if err := h.saveBackupConfigs(r, configs); err != nil {
-				writeError(w, http.StatusInternalServerError, "save_error", "Failed to update backup config")
+				errpkg.WriteError(w, http.StatusInternalServerError, "save_error", "Failed to update backup config")
 				return
 			}
-			writeJSON(w, http.StatusOK, map[string]any{"data": configs[i]})
+			errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": configs[i]})
 			return
 		}
 	}
-	writeError(w, http.StatusNotFound, "not_found", "Backup config not found")
+	errpkg.WriteError(w, http.StatusNotFound, "not_found", "Backup config not found")
 }
 
 func (h *Handlers) DeleteBackupConfig(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	if id == "" {
-		writeError(w, http.StatusBadRequest, "missing_id", "id is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_id", "id is required")
 		return
 	}
 	configs := h.loadBackupConfigs(r)
@@ -3507,24 +3494,24 @@ func (h *Handlers) DeleteBackupConfig(w http.ResponseWriter, r *http.Request) {
 		if c.ID == id {
 			configs = append(configs[:i], configs[i+1:]...)
 			if err := h.saveBackupConfigs(r, configs); err != nil {
-				writeError(w, http.StatusInternalServerError, "save_error", "Failed to delete backup config")
+				errpkg.WriteError(w, http.StatusInternalServerError, "save_error", "Failed to delete backup config")
 				return
 			}
-			writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
+			errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
 			return
 		}
 	}
-	writeError(w, http.StatusNotFound, "not_found", "Backup config not found")
+	errpkg.WriteError(w, http.StatusNotFound, "not_found", "Backup config not found")
 }
 
 func (h *Handlers) TriggerBackup(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	if id == "" {
-		writeError(w, http.StatusBadRequest, "missing_id", "id is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_id", "id is required")
 		return
 	}
 	if h.Client == nil {
-		writeError(w, http.StatusServiceUnavailable, "queue_unavailable", "Task queue not available")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "queue_unavailable", "Task queue not available")
 		return
 	}
 	configs := h.loadBackupConfigs(r)
@@ -3534,11 +3521,11 @@ func (h *Handlers) TriggerBackup(w http.ResponseWriter, r *http.Request) {
 			if err := h.saveBackupConfigs(r, configs); err != nil {
 				slog.Error("control: trigger backup update last_run", "error", err)
 			}
-			writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"id": id, "status": "triggered"}})
+			errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"id": id, "status": "triggered"}})
 			return
 		}
 	}
-	writeError(w, http.StatusNotFound, "not_found", "Backup config not found")
+	errpkg.WriteError(w, http.StatusNotFound, "not_found", "Backup config not found")
 }
 
 func (h *Handlers) loadBackupConfigs(r *http.Request) []backupConfigEntry {

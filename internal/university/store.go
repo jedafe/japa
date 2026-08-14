@@ -253,28 +253,28 @@ func (s *Store) Delete(ctx context.Context, tenantID, id pgtype.UUID) (gen.Delet
 
 // Track is the API-facing marketplace track record.
 type Track struct {
-	ID                        string     `json:"id"`
-	Title                     string     `json:"title"`
-	Slug                      string     `json:"slug"`
-	Description               *string    `json:"description,omitempty"`
-	Difficulty                string     `json:"difficulty"`
-	CoverMediaID              *string    `json:"cover_media_id,omitempty"`
-	InstructorID              *string    `json:"instructor_id,omitempty"`
-	PriceKobo                 *int64     `json:"price_kobo,omitempty"`
-	Currency                  string     `json:"currency"`
-	Category                  *string    `json:"category,omitempty"`
-	Language                  string     `json:"language"`
-	TotalEnrolled             int32      `json:"total_enrolled"`
-	IsPublished               bool       `json:"is_published"`
-	IsPublishedToUniversity   bool       `json:"is_published_to_university"`
-	SubmissionStatus          string     `json:"submission_status"`
-	SubmittedAt               *time.Time `json:"submitted_at,omitempty"`
-	ReviewedAt                *time.Time `json:"reviewed_at,omitempty"`
-	RejectionReason           *string    `json:"rejection_reason,omitempty"`
-	TotalRevenueKobo          int64      `json:"total_revenue_kobo"`
-	ThumbnailURL              *string    `json:"thumbnail_url,omitempty"`
-	CreatedAt                 time.Time  `json:"created_at"`
-	UpdatedAt                 time.Time  `json:"updated_at"`
+	ID                      string     `json:"id"`
+	Title                   string     `json:"title"`
+	Slug                    string     `json:"slug"`
+	Description             *string    `json:"description,omitempty"`
+	Difficulty              string     `json:"difficulty"`
+	CoverMediaID            *string    `json:"cover_media_id,omitempty"`
+	InstructorID            *string    `json:"instructor_id,omitempty"`
+	PriceKobo               *int64     `json:"price_kobo,omitempty"`
+	Currency                string     `json:"currency"`
+	Category                *string    `json:"category,omitempty"`
+	Language                string     `json:"language"`
+	TotalEnrolled           int32      `json:"total_enrolled"`
+	IsPublished             bool       `json:"is_published"`
+	IsPublishedToUniversity bool       `json:"is_published_to_university"`
+	SubmissionStatus        string     `json:"submission_status"`
+	SubmittedAt             *time.Time `json:"submitted_at,omitempty"`
+	ReviewedAt              *time.Time `json:"reviewed_at,omitempty"`
+	RejectionReason         *string    `json:"rejection_reason,omitempty"`
+	TotalRevenueKobo        int64      `json:"total_revenue_kobo"`
+	ThumbnailURL            *string    `json:"thumbnail_url,omitempty"`
+	CreatedAt               time.Time  `json:"created_at"`
+	UpdatedAt               time.Time  `json:"updated_at"`
 }
 
 func trackFromRow(r gen.GetUniversityTrackByIDRow) Track {
@@ -282,10 +282,10 @@ func trackFromRow(r gen.GetUniversityTrackByIDRow) Track {
 		ID: r.ID.String(), Title: r.Title, Slug: r.Slug, Description: r.Description,
 		Difficulty: r.Difficulty, Currency: r.Currency, Language: r.Language,
 		TotalEnrolled: r.TotalEnrolled, IsPublished: r.IsPublished,
-		IsPublishedToUniversity:   r.IsPublishedToUniversity,
-		SubmissionStatus:          r.UniversitySubmissionStatus,
-		RejectionReason:           r.UniversityRejectionReason,
-		CreatedAt:                 r.CreatedAt.Time, UpdatedAt: r.UpdatedAt.Time,
+		IsPublishedToUniversity: r.IsPublishedToUniversity,
+		SubmissionStatus:        r.UniversitySubmissionStatus,
+		RejectionReason:         r.UniversityRejectionReason,
+		CreatedAt:               r.CreatedAt.Time, UpdatedAt: r.UpdatedAt.Time,
 	}
 	if r.CoverMediaID.Valid {
 		s := r.CoverMediaID.String()
@@ -315,11 +315,11 @@ func trackFromRow(r gen.GetUniversityTrackByIDRow) Track {
 
 // CatalogTrack is a marketplace catalog row with instructor + rating.
 type CatalogTrack struct {
-	ID                   string  `json:"id"`
-	Title                string  `json:"title"`
-	Slug                 string  `json:"slug"`
-	Description          *string `json:"description,omitempty"`
-	Difficulty           string  `json:"difficulty"`
+	ID          string  `json:"id"`
+	Title       string  `json:"title"`
+	Slug        string  `json:"slug"`
+	Description *string `json:"description,omitempty"`
+	Difficulty  string  `json:"difficulty"`
 	/** Level is an alias for Difficulty, matching the frontend TrackSummary.level
 	 *  contract (ADR-060). Always equal to Difficulty. */
 	Level                string  `json:"level"`
@@ -430,7 +430,7 @@ func CatalogTrackDetailFromRow(r gen.GetUniversityTrackBySlugRow) CatalogTrackDe
 		PriceKobo: r.PriceKobo, Currency: r.Currency, Category: r.Category,
 		Language: r.Language, TotalEnrolled: r.TotalEnrolled,
 		SubscriptionEligible: r.SubscriptionEligible,
-		IsPublished: r.IsPublished, IsPublishedToUniversity: r.IsPublishedToUniversity,
+		IsPublished:          r.IsPublished, IsPublishedToUniversity: r.IsPublishedToUniversity,
 		CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
 		InstructorName: r.InstructorName, InstructorHeadline: r.InstructorHeadline,
 		InstructorTier: r.InstructorTier, AvgRating: r.AvgRating, ReviewCount: r.ReviewCount,
@@ -635,13 +635,13 @@ func (s *Store) GetRevenueSplitByID(ctx context.Context, tenantID, id pgtype.UUI
 // viewer list endpoint (ADR-063 §9). A nil/zero value on any field means
 // "no filter on this column".
 type ListRevenueSplitsFilter struct {
-	InstructorID pgtype.UUID // empty = all instructors
-	TrackID      pgtype.UUID // empty = all tracks
-	Source        string      // "" = both purchase and pro_stream
-	PayoutID     pgtype.UUID // empty = both open and stamped splits
+	InstructorID pgtype.UUID        // empty = all instructors
+	TrackID      pgtype.UUID        // empty = all tracks
+	Source       string             // "" = both purchase and pro_stream
+	PayoutID     pgtype.UUID        // empty = both open and stamped splits
 	FromTs       pgtype.Timestamptz // zero = no lower bound
 	ToTs         pgtype.Timestamptz // zero = no upper bound
-	SpaceID      pgtype.UUID // empty = all spaces (ADR-063 per-university view)
+	SpaceID      pgtype.UUID        // empty = all spaces (ADR-063 per-university view)
 }
 
 // ListRevenueSplits returns a tenant-wide paginated list of immutable

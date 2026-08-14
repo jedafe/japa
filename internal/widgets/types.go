@@ -16,15 +16,15 @@ import (
 
 // Widget is a widget_configurations row.
 type Widget struct {
-	ID           pgtype.UUID      `json:"id"`
-	TenantID     pgtype.UUID      `json:"tenant_id"`
-	Name         string           `json:"name"`
-	WidgetType   string           `json:"widget_type"`
-	Config       json.RawMessage  `json:"config"`
-	CacheTTLSecs int32            `json:"cache_ttl_secs"`
-	IsActive     bool             `json:"is_active"`
-	CreatedAt    time.Time        `json:"created_at"`
-	UpdatedAt    time.Time        `json:"updated_at"`
+	ID           pgtype.UUID     `json:"id"`
+	TenantID     pgtype.UUID     `json:"tenant_id"`
+	Name         string          `json:"name"`
+	WidgetType   string          `json:"widget_type"`
+	Config       json.RawMessage `json:"config"`
+	CacheTTLSecs int32           `json:"cache_ttl_secs"`
+	IsActive     bool            `json:"is_active"`
+	CreatedAt    time.Time       `json:"created_at"`
+	UpdatedAt    time.Time       `json:"updated_at"`
 }
 
 // CreateWidgetInput is the body for POST /admin/widgets.
@@ -70,10 +70,10 @@ var ValidWidgetTypes = []string{
 	"custom_html",
 	// --- Extended: content-curation types ---
 	"featured_content", // queries content_featured (admin-pinned posts)
-	"blog_posts",        // contents WHERE content_type='blog'
-	"forum_threads",     // forum_threads table (hot/recent discussions)
-	"job_listings",      // contents WHERE content_type='job_listing'
-	"achievements",      // contents + achievement_meta (visa approvals, etc.)
+	"blog_posts",       // contents WHERE content_type='blog'
+	"forum_threads",    // forum_threads table (hot/recent discussions)
+	"job_listings",     // contents WHERE content_type='job_listing'
+	"achievements",     // contents + achievement_meta (visa approvals, etc.)
 	// --- Extended: domain-specific types ---
 	"learning_tracks",         // learning_tracks table
 	"community_digest",        // digest_editions table (§84)

@@ -361,8 +361,8 @@ func (s *Service) ReorderSidebarWidgets(ctx context.Context, tenantID pgtype.UUI
 
 // ResolveResponse is the response for the public resolve endpoint.
 type ResolveResponse struct {
-	Sidebar *SidebarJSON          `json:"sidebar"`
-	Widgets []SidebarWidgetJSON   `json:"widgets"`
+	Sidebar *SidebarJSON        `json:"sidebar"`
+	Widgets []SidebarWidgetJSON `json:"widgets"`
 }
 
 // Resolve finds the best-matching sidebar for (app, position, path) and returns

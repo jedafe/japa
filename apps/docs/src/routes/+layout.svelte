@@ -3,6 +3,7 @@
 	import { onMount } from 'svelte';
 	import { theme } from '$lib/stores/theme.svelte';
 	import { i18n } from '$lib/i18n/store.svelte';
+	import { t } from '$lib/i18n';
 	import type { Snippet } from 'svelte';
 	import type { LayoutData } from './$types';
 
@@ -32,7 +33,7 @@
 	href="#main-content"
 	class="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-[100] focus:rounded-[var(--radius)] focus:bg-[var(--color-primary)] focus:px-3 focus:py-1.5 focus:text-white"
 >
-	Skip to content
+	{t('a11y.skip_to_content')}
 </a>
 
 <svelte:head>

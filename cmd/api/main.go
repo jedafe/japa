@@ -54,10 +54,11 @@ func run() error {
 	// writes go to the primary (db.NewWithReplica). When it is empty,
 	// both pools point at the primary (db.NewWithConfig).
 	poolCfg := db.PoolConfig{
-		MaxConns:        cfg.DBMaxConns,
-		MinConns:        cfg.DBMinConns,
-		MaxConnLifetime: time.Duration(cfg.DBMaxConnLifetimeMs) * time.Millisecond,
-		MaxConnIdleTime: time.Duration(cfg.DBMaxConnIdleTimeMs) * time.Millisecond,
+		MaxConns:          cfg.DBMaxConns,
+		MinConns:          cfg.DBMinConns,
+		MaxConnLifetime:   time.Duration(cfg.DBMaxConnLifetimeMs) * time.Millisecond,
+		MaxConnIdleTime:   time.Duration(cfg.DBMaxConnIdleTimeMs) * time.Millisecond,
+		HealthCheckPeriod: time.Duration(cfg.DBHealthCheckMs) * time.Millisecond,
 	}
 	var database *db.DB
 	if cfg.DatabaseReaderURL != "" {

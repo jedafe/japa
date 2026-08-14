@@ -17,7 +17,8 @@ import (
 // adapter (ADR-048) that returns presigned URLs.
 //
 // Ref: japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
-//      japaconnect-engineering/sections/67-platform-data-portability.md
+//
+//	japaconnect-engineering/sections/67-platform-data-portability.md
 type Storage interface {
 	// Store persists the export file and returns a download URL marker plus
 	// the file size in bytes. The filename is derived deterministically from

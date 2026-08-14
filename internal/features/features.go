@@ -11,6 +11,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/tenant"
 	"github.com/valkey-io/valkey-go/valkeycompat"
 )
@@ -424,12 +425,12 @@ func Gate(checker *Checker, key string) func(http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			t := tenant.FromContext(r.Context())
 			if t == nil {
-				writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+				errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 				return
 			}
 
 			if !checker.IsEnabled(r.Context(), t.ID, key) {
-				writeError(w, http.StatusNotFound, "feature_disabled", "This feature is not available")
+				errpkg.WriteError(w, http.StatusNotFound, "feature_disabled", "This feature is not available")
 				return
 			}
 

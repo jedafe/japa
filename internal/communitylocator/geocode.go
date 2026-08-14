@@ -8,7 +8,8 @@
 // key). Coordinates stored as NUMERIC(9,6) lat/lng."
 //
 // Ref: japaconnect-engineering/sections/101-diaspora-community-locator.md
-//      japaconnect-engineering/adr/ADR-109-community-locator.md
+//
+//	japaconnect-engineering/adr/ADR-109-community-locator.md
 package communitylocator
 
 import (

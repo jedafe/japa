@@ -6,7 +6,8 @@
 // preserving SEO credit via <link rel="canonical"> (Section 26).
 //
 // Ref: japaconnect-engineering/sections/65-content-import.md
-//      japaconnect-engineering/adr/ADR-083-content-import.md
+//
+//	japaconnect-engineering/adr/ADR-083-content-import.md
 package contentimport
 
 import (

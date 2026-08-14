@@ -83,7 +83,7 @@ func TestComputeVelocity(t *testing.T) {
 			voteScore:     50,
 			commentCount:  20,
 			viewCount:     500,
-			bookmarkCount:  10,
+			bookmarkCount: 10,
 			hoursOld:      24,
 			want:          (50*2 + 20 + 500.0/100) / math.Pow(24, 1.8), // =125 / 24^1.8
 		},

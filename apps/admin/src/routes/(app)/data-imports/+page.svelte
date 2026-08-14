@@ -64,7 +64,7 @@
 	// ── Summary cards (page-local, above EntityPage) ──────────────────────
 	async function loadSummary() {
 		const result = await apiRaw<{ data: DataImport[]; pagination: { total: number } }>(
-			'/admin/data-imports?page_size=100&page_offset=1'
+			'/admin/data-imports?page_size=100&page_offset=0'
 		);
 		if (result.ok) {
 			summaryData = Array.isArray(result.data.data) ? result.data.data : [];
@@ -199,7 +199,7 @@
 		load: async ({ q, sort, filter, page, pageSize }) => {
 			const params = new URLSearchParams();
 			params.set('page_size', String(pageSize || 25));
-			params.set('page_offset', String(page || 1));
+			params.set('page_offset', String(((page || 1) - 1) * (pageSize || 25)));
 			if (filter.status) params.set('status', filter.status);
 			if (filter.type) params.set('type', filter.type);
 			if (q) params.set('q', q);

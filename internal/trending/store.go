@@ -19,7 +19,7 @@ type Store struct {
 func NewStore(database *db.DB) *Store {
 	return &Store{
 		queries: gen.New(database.Writer),
-		db:     database,
+		db:      database,
 	}
 }
 
@@ -27,7 +27,7 @@ func NewStore(database *db.DB) *Store {
 func NewStoreWithReader(database *db.DB) *Store {
 	return &Store{
 		queries: gen.New(database.Reader),
-		db:     database,
+		db:      database,
 	}
 }
 

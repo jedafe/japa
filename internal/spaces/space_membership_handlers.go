@@ -5,6 +5,7 @@ import (
 	"strconv"
 
 	"github.com/jedafe/japa/internal/auth"
+	errpkg "github.com/jedafe/japa/internal/errors"
 )
 
 // ---------------------------------------------------------------------------
@@ -21,7 +22,7 @@ func (h *Handlers) ToggleSpaceMembership(w http.ResponseWriter, r *http.Request)
 
 	user := auth.FromContext(r.Context())
 	if user == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
 
@@ -58,7 +59,7 @@ func (h *Handlers) ToggleSpaceMembership(w http.ResponseWriter, r *http.Request)
 				handleServiceError(w, err)
 				return
 			}
-			writeJSON(w, http.StatusAccepted, map[string]any{
+			errpkg.WriteJSON(w, http.StatusAccepted, map[string]any{
 				"data": map[string]any{
 					"joined":       false,
 					"pending":      true,
@@ -67,7 +68,7 @@ func (h *Handlers) ToggleSpaceMembership(w http.ResponseWriter, r *http.Request)
 			})
 			return
 		case JoiningInvite:
-			writeError(w, http.StatusForbidden, "invite_only",
+			errpkg.WriteError(w, http.StatusForbidden, "invite_only",
 				"This space is invite-only; you cannot join without an invitation")
 			return
 		default:
@@ -90,7 +91,7 @@ func (h *Handlers) ToggleSpaceMembership(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
 			"joined":       !isMember,
 			"member_count": memberCount,
@@ -108,7 +109,7 @@ func (h *Handlers) Leave(w http.ResponseWriter, r *http.Request) {
 
 	user := auth.FromContext(r.Context())
 	if user == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
 
@@ -127,7 +128,7 @@ func (h *Handlers) Leave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"left": true}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"left": true}})
 }
 
 // ---------------------------------------------------------------------------
@@ -156,7 +157,7 @@ func (h *Handlers) ListMembers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": members})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": members})
 }
 
 // parsePageSize extracts and clamps the page_size query parameter.

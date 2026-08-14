@@ -4,7 +4,8 @@
 // mutual_aid.enabled system_setting.
 //
 // Ref: japaconnect-engineering/sections/85-mutual-aid-board.md
-//      japaconnect-engineering/adr/ADR-093-mutual-aid-board.md
+//
+//	japaconnect-engineering/adr/ADR-093-mutual-aid-board.md
 package mutualaid
 
 import (
@@ -357,14 +358,14 @@ var ErrNotOwner = fmt.Errorf("not the post author")
 // rowToDTO converts a PostRow (joined query result) to a PostDTO.
 func rowToDTO(r PostRow) PostDTO {
 	dto := PostDTO{
-		ID:                 r.ID.String(),
-		PostType:           r.PostType,
-		Title:              r.Title,
-		IsFulfilled:        r.IsFulfilled,
-		Status:             r.Status,
-		ExpiresAt:          formatTs(r.ExpiresAt),
-		CreatedAt:          formatTs(r.CreatedAt),
-		UpdatedAt:          formatTs(r.UpdatedAt),
+		ID:          r.ID.String(),
+		PostType:    r.PostType,
+		Title:       r.Title,
+		IsFulfilled: r.IsFulfilled,
+		Status:      r.Status,
+		ExpiresAt:   formatTs(r.ExpiresAt),
+		CreatedAt:   formatTs(r.CreatedAt),
+		UpdatedAt:   formatTs(r.UpdatedAt),
 	}
 	if r.Category != nil {
 		dto.Category = *r.Category

@@ -11,7 +11,8 @@
 // analytics from the Content Type System (§14).
 //
 // Ref: japaconnect-engineering/sections/98-service-directory.md
-//      japaconnect-engineering/adr/ADR-106-service-directory.md
+//
+//	japaconnect-engineering/adr/ADR-106-service-directory.md
 package servicedir
 
 import (
@@ -84,56 +85,14 @@ func NewStore(database *db.DB) *Store {
 
 // ServiceMeta holds the structured fields for a single service listing.
 type ServiceMeta struct {
-	ID                  pgtype.UUID
-	TenantID            pgtype.UUID
-	ContentID           pgtype.UUID
-	OrgID               pgtype.UUID
-	ServiceCategory     *string
-	DestinationSpaceID  pgtype.UUID
-	CitySpaceID         pgtype.UUID
-	OriginCommunities   []string // §98 schema: text[]
-	IsRemote            bool
-	WebsiteURL          *string
-	BookingURL          *string
-	PriceRange          *string
-	IsVerified          bool
-	VerificationType    *string
-	ClaimStatus         *string
-	ClaimedByOrgID      pgtype.UUID
-	VerifiedBy          pgtype.UUID
-	VerifiedAt          pgtype.Timestamptz
-	CreatedAt           pgtype.Timestamptz
-	UpdatedAt           pgtype.Timestamptz
-}
-
-// ServiceRow is the joined result of contents + service_listing_meta +
-// spaces + organizations, returned by list and get-by-slug queries.
-type ServiceRow struct {
 	ID                 pgtype.UUID
 	TenantID           pgtype.UUID
-	AuthorID           pgtype.UUID
-	Title              string
-	Slug               string
-	Body               string
-	BodyHTML           string
-	Status             string
-	Visibility         string
-	ViewCount          int32
-	CommentCount       int32
-	PublishedAt        pgtype.Timestamptz
-	CreatedAt          pgtype.Timestamptz
-	UpdatedAt          pgtype.Timestamptz
+	ContentID          pgtype.UUID
 	OrgID              pgtype.UUID
-	OrgName            *string
-	OrgSlug            *string
 	ServiceCategory    *string
-	DestSpaceID        pgtype.UUID
-	DestSpaceName      *string
-	DestSpaceCode      *string
+	DestinationSpaceID pgtype.UUID
 	CitySpaceID        pgtype.UUID
-	CitySpaceName      *string
-	CitySpaceCode      *string
-	OriginCommunities  []string
+	OriginCommunities  []string // §98 schema: text[]
 	IsRemote           bool
 	WebsiteURL         *string
 	BookingURL         *string
@@ -142,11 +101,53 @@ type ServiceRow struct {
 	VerificationType   *string
 	ClaimStatus        *string
 	ClaimedByOrgID     pgtype.UUID
-	ClaimedOrgName     *string
 	VerifiedBy         pgtype.UUID
 	VerifiedAt         pgtype.Timestamptz
-	AuthorName         *string
-	AuthorAvatar       *string
+	CreatedAt          pgtype.Timestamptz
+	UpdatedAt          pgtype.Timestamptz
+}
+
+// ServiceRow is the joined result of contents + service_listing_meta +
+// spaces + organizations, returned by list and get-by-slug queries.
+type ServiceRow struct {
+	ID                pgtype.UUID
+	TenantID          pgtype.UUID
+	AuthorID          pgtype.UUID
+	Title             string
+	Slug              string
+	Body              string
+	BodyHTML          string
+	Status            string
+	Visibility        string
+	ViewCount         int32
+	CommentCount      int32
+	PublishedAt       pgtype.Timestamptz
+	CreatedAt         pgtype.Timestamptz
+	UpdatedAt         pgtype.Timestamptz
+	OrgID             pgtype.UUID
+	OrgName           *string
+	OrgSlug           *string
+	ServiceCategory   *string
+	DestSpaceID       pgtype.UUID
+	DestSpaceName     *string
+	DestSpaceCode     *string
+	CitySpaceID       pgtype.UUID
+	CitySpaceName     *string
+	CitySpaceCode     *string
+	OriginCommunities []string
+	IsRemote          bool
+	WebsiteURL        *string
+	BookingURL        *string
+	PriceRange        *string
+	IsVerified        bool
+	VerificationType  *string
+	ClaimStatus       *string
+	ClaimedByOrgID    pgtype.UUID
+	ClaimedOrgName    *string
+	VerifiedBy        pgtype.UUID
+	VerifiedAt        pgtype.Timestamptz
+	AuthorName        *string
+	AuthorAvatar      *string
 }
 
 // CreateMeta inserts a new service_listing_meta row linked to a contents row.

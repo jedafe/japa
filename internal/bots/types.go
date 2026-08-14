@@ -17,16 +17,16 @@ type BotType string
 const (
 	// BotTypeSearchEngine is the bot type search engine constant.
 	BotTypeSearchEngine BotType = "search_engine"
- // BotTypeAILLM is the bot type a i l l m.
-	BotTypeAILLM        BotType = "ai_llm"
- // BotTypeSocial is the bot type social.
-	BotTypeSocial       BotType = "social"
- // BotTypeMonitoring is the bot type monitoring.
-	BotTypeMonitoring   BotType = "monitoring"
- // BotTypeScraper is the bot type scraper.
-	BotTypeScraper      BotType = "scraper"
- // BotTypeUnknown is the bot type unknown.
-	BotTypeUnknown      BotType = "unknown"
+	// BotTypeAILLM is the bot type a i l l m.
+	BotTypeAILLM BotType = "ai_llm"
+	// BotTypeSocial is the bot type social.
+	BotTypeSocial BotType = "social"
+	// BotTypeMonitoring is the bot type monitoring.
+	BotTypeMonitoring BotType = "monitoring"
+	// BotTypeScraper is the bot type scraper.
+	BotTypeScraper BotType = "scraper"
+	// BotTypeUnknown is the bot type unknown.
+	BotTypeUnknown BotType = "unknown"
 )
 
 // BotPolicy determines how a bot is treated when crawling the site.
@@ -35,9 +35,9 @@ type BotPolicy string
 const (
 	// PolicyAllow is the policy allow constant.
 	PolicyAllow BotPolicy = "allow"
- // PolicyBlock is the policy block.
+	// PolicyBlock is the policy block.
 	PolicyBlock BotPolicy = "block"
- // PolicyLimit is the policy limit.
+	// PolicyLimit is the policy limit.
 	PolicyLimit BotPolicy = "limit"
 )
 

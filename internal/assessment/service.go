@@ -5,7 +5,8 @@
 // (assessment:score_submission, wallet:award_points) fire-and-forget.
 //
 // Ref: japaconnect-engineering/sections/71-readiness-assessment.md
-//      japaconnect-engineering/adr/ADR-071-japa-readiness-assessment.md
+//
+//	japaconnect-engineering/adr/ADR-071-japa-readiness-assessment.md
 package assessment
 
 import (
@@ -25,9 +26,9 @@ import (
 
 // Task type constants — must match the Section 11 Asynq task catalog.
 const (
-	TaskScoreSubmission   = "assessment:score_submission"
-	TaskCleanupAnonymous  = "assessment:cleanup_anonymous"
-	TaskAwardPoints       = "wallet:award_points"
+	TaskScoreSubmission  = "assessment:score_submission"
+	TaskCleanupAnonymous = "assessment:cleanup_anonymous"
+	TaskAwardPoints      = "wallet:award_points"
 )
 
 // TaskEnqueuer is the minimal interface for enqueueing Asynq tasks.

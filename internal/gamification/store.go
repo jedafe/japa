@@ -8,7 +8,8 @@
 // Valkey caching (jc:leaderboard:{tenant_id}:{scope}:{period}, 1hr TTL).
 //
 // Ref: japaconnect-engineering/sections/64-gamification.md
-//      japaconnect-engineering/adr/ADR-082-advanced-gamification.md
+//
+//	japaconnect-engineering/adr/ADR-082-advanced-gamification.md
 package gamification
 
 import (

@@ -50,60 +50,60 @@ func TestResolveArchetype(t *testing.T) {
 	origin, dest := defaultMarketSets()
 
 	tests := []struct {
-		name            string
-		current         string
-		stage           string
-		destination     string
-		wantArchetype   string
-		wantCountry     string
-		wantConfidence  float32
+		name           string
+		current        string
+		stage          string
+		destination    string
+		wantArchetype  string
+		wantCountry    string
+		wantConfidence float32
 	}{
 		// origin_visitor: current is an origin market, not settled.
 		{
-			name: "origin market no destination",
+			name:    "origin market no destination",
 			current: "NG", stage: "planning", destination: "",
 			wantArchetype: ArchetypeOriginVisitor, wantCountry: "NG", wantConfidence: 0.8,
 		},
 		{
-			name: "origin market with destination",
+			name:    "origin market with destination",
 			current: "NG", stage: "planning", destination: "GB",
 			wantArchetype: ArchetypeOriginVisitor, wantCountry: "GB", wantConfidence: 0.8,
 		},
 		{
-			name: "origin market but settled becomes diaspora",
+			name:    "origin market but settled becomes diaspora",
 			current: "NG", stage: "settled", destination: "",
 			wantArchetype: ArchetypeDiaspora, wantCountry: "NG", wantConfidence: 0.85,
 		},
 		// diaspora: current is a destination market.
 		{
-			name: "destination market not settled",
+			name:    "destination market not settled",
 			current: "GB", stage: "newly_japa", destination: "",
 			wantArchetype: ArchetypeDiaspora, wantCountry: "GB", wantConfidence: 0.85,
 		},
 		{
-			name: "destination market and settled (highest confidence)",
+			name:    "destination market and settled (highest confidence)",
 			current: "US", stage: "settled", destination: "",
 			wantArchetype: ArchetypeDiaspora, wantCountry: "US", wantConfidence: 0.95,
 		},
 		{
-			name: "settled in non-destination country still diaspora",
+			name:    "settled in non-destination country still diaspora",
 			current: "BR", stage: "settled", destination: "",
 			wantArchetype: ArchetypeDiaspora, wantCountry: "BR", wantConfidence: 0.85,
 		},
 		// global_traveler: neither pattern.
 		{
-			name: "non-market non-settled",
+			name:    "non-market non-settled",
 			current: "BR", stage: "planning", destination: "",
 			wantArchetype: ArchetypeGlobalTraveler, wantCountry: "BR", wantConfidence: 0.5,
 		},
 		{
-			name: "no current country (no GeoIP)",
+			name:    "no current country (no GeoIP)",
 			current: "", stage: "", destination: "",
 			wantArchetype: ArchetypeGlobalTraveler, wantCountry: "", wantConfidence: 0.5,
 		},
 		// Guest in origin market with no stage → origin_visitor.
 		{
-			name: "guest in origin market",
+			name:    "guest in origin market",
 			current: "KE", stage: "", destination: "",
 			wantArchetype: ArchetypeOriginVisitor, wantCountry: "KE", wantConfidence: 0.8,
 		},
@@ -139,9 +139,9 @@ func TestNormalizeCountry(t *testing.T) {
 		{"  gb  ", "GB"},
 		{"NG", "NG"},
 		{"", ""},
-		{"NGA", ""},   // 3 letters invalid
-		{"N", ""},      // 1 letter invalid
-		{"n-g", ""},    // hyphen invalid
+		{"NGA", ""}, // 3 letters invalid
+		{"N", ""},   // 1 letter invalid
+		{"n-g", ""}, // hyphen invalid
 	}
 	for _, tt := range tests {
 		if got := normalizeCountry(tt.in); got != tt.want {

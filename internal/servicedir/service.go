@@ -5,7 +5,8 @@
 // Feature-flagged via service_directory.enabled system_setting (§98).
 //
 // Ref: japaconnect-engineering/sections/98-service-directory.md
-//      japaconnect-engineering/adr/ADR-106-service-directory.md
+//
+//	japaconnect-engineering/adr/ADR-106-service-directory.md
 package servicedir
 
 import (
@@ -36,43 +37,43 @@ type ContentService interface {
 
 // ServiceDTO is the API response shape for a single service listing.
 type ServiceDTO struct {
-	ID               string   `json:"id"`
-	Title            string   `json:"title"`
-	Slug             string   `json:"slug"`
-	Body             string   `json:"body"`
-	BodyHTML         string   `json:"body_html"`
-	Status           string   `json:"status"`
-	Visibility       string   `json:"visibility"`
-	ViewCount        int32    `json:"view_count"`
-	CommentCount     int32    `json:"comment_count"`
-	PublishedAt      string   `json:"published_at"`
-	CreatedAt        string   `json:"created_at"`
-	UpdatedAt        string   `json:"updated_at"`
-	OrgID            string   `json:"org_id,omitempty"`
-	OrgName          string   `json:"org_name,omitempty"`
-	OrgSlug          string   `json:"org_slug,omitempty"`
-	ServiceCategory  string   `json:"service_category,omitempty"`
-	DestSpaceID      string   `json:"destination_space_id,omitempty"`
-	DestSpaceName    string   `json:"destination_space_name,omitempty"`
-	DestSpaceCode    string   `json:"destination_space_code,omitempty"`
-	CitySpaceID      string   `json:"city_space_id,omitempty"`
-	CitySpaceName    string   `json:"city_space_name,omitempty"`
-	CitySpaceCode    string   `json:"city_space_code,omitempty"`
+	ID                string   `json:"id"`
+	Title             string   `json:"title"`
+	Slug              string   `json:"slug"`
+	Body              string   `json:"body"`
+	BodyHTML          string   `json:"body_html"`
+	Status            string   `json:"status"`
+	Visibility        string   `json:"visibility"`
+	ViewCount         int32    `json:"view_count"`
+	CommentCount      int32    `json:"comment_count"`
+	PublishedAt       string   `json:"published_at"`
+	CreatedAt         string   `json:"created_at"`
+	UpdatedAt         string   `json:"updated_at"`
+	OrgID             string   `json:"org_id,omitempty"`
+	OrgName           string   `json:"org_name,omitempty"`
+	OrgSlug           string   `json:"org_slug,omitempty"`
+	ServiceCategory   string   `json:"service_category,omitempty"`
+	DestSpaceID       string   `json:"destination_space_id,omitempty"`
+	DestSpaceName     string   `json:"destination_space_name,omitempty"`
+	DestSpaceCode     string   `json:"destination_space_code,omitempty"`
+	CitySpaceID       string   `json:"city_space_id,omitempty"`
+	CitySpaceName     string   `json:"city_space_name,omitempty"`
+	CitySpaceCode     string   `json:"city_space_code,omitempty"`
 	OriginCommunities []string `json:"origin_communities,omitempty"`
-	IsRemote         bool     `json:"is_remote"`
-	WebsiteURL       string   `json:"website_url,omitempty"`
-	BookingURL       string   `json:"booking_url,omitempty"`
-	PriceRange       string   `json:"price_range,omitempty"`
-	IsVerified       bool     `json:"is_verified"`
-	VerificationType string   `json:"verification_type,omitempty"`
-	ClaimStatus      string   `json:"claim_status,omitempty"`
-	ClaimedByOrgID   string   `json:"claimed_by_org_id,omitempty"`
-	ClaimedOrgName   string   `json:"claimed_org_name,omitempty"`
-	VerifiedBy       string   `json:"verified_by,omitempty"`
-	VerifiedAt       string   `json:"verified_at,omitempty"`
-	AuthorID         string   `json:"author_id,omitempty"`
-	AuthorName       string   `json:"author_name,omitempty"`
-	AuthorAvatar     string   `json:"author_avatar,omitempty"`
+	IsRemote          bool     `json:"is_remote"`
+	WebsiteURL        string   `json:"website_url,omitempty"`
+	BookingURL        string   `json:"booking_url,omitempty"`
+	PriceRange        string   `json:"price_range,omitempty"`
+	IsVerified        bool     `json:"is_verified"`
+	VerificationType  string   `json:"verification_type,omitempty"`
+	ClaimStatus       string   `json:"claim_status,omitempty"`
+	ClaimedByOrgID    string   `json:"claimed_by_org_id,omitempty"`
+	ClaimedOrgName    string   `json:"claimed_org_name,omitempty"`
+	VerifiedBy        string   `json:"verified_by,omitempty"`
+	VerifiedAt        string   `json:"verified_at,omitempty"`
+	AuthorID          string   `json:"author_id,omitempty"`
+	AuthorName        string   `json:"author_name,omitempty"`
+	AuthorAvatar      string   `json:"author_avatar,omitempty"`
 }
 
 // CreateServiceInput is the request body for POST /services.
@@ -190,14 +191,14 @@ func (s *Service) Create(ctx context.Context, tenantID, authorID pgtype.UUID, in
 	}
 
 	meta := ServiceMeta{
-		TenantID:          tenantID,
-		ContentID:         contentRow.ID,
-		OrgID:             orgID,
+		TenantID:           tenantID,
+		ContentID:          contentRow.ID,
+		OrgID:              orgID,
 		DestinationSpaceID: destSpaceID,
-		CitySpaceID:       citySpaceID,
-		OriginCommunities: originCommunities,
-		IsRemote:          input.IsRemote,
-		IsVerified:        false,
+		CitySpaceID:        citySpaceID,
+		OriginCommunities:  originCommunities,
+		IsRemote:           input.IsRemote,
+		IsVerified:         false,
 	}
 	if input.ServiceCategory != "" {
 		meta.ServiceCategory = &input.ServiceCategory

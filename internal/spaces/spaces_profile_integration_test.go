@@ -23,10 +23,10 @@ func TestListByMemberUser_OnlyPublicActiveSpaces(t *testing.T) {
 	tenantID := testdb.NewTenant(t, database)
 	userID := testdb.SeedUser(t, database, tenantID, testdb.UserOpts{Username: "spaces-tab-user"})
 
-	publicSpace := testdb.SeedSpaceMembership(t, database, tenantID, userID, testdb.SpaceOpts{})            // public/active
-	_ = testdb.SeedSpaceMembership(t, database, tenantID, userID, testdb.SpaceOpts{Visibility: "members"})  // excluded
-	_ = testdb.SeedSpaceMembership(t, database, tenantID, userID, testdb.SpaceOpts{Visibility: "private"})  // excluded
-	_ = testdb.SeedSpaceMembership(t, database, tenantID, userID, testdb.SpaceOpts{Status: "archived"})     // excluded (non-active)
+	publicSpace := testdb.SeedSpaceMembership(t, database, tenantID, userID, testdb.SpaceOpts{})           // public/active
+	_ = testdb.SeedSpaceMembership(t, database, tenantID, userID, testdb.SpaceOpts{Visibility: "members"}) // excluded
+	_ = testdb.SeedSpaceMembership(t, database, tenantID, userID, testdb.SpaceOpts{Visibility: "private"}) // excluded
+	_ = testdb.SeedSpaceMembership(t, database, tenantID, userID, testdb.SpaceOpts{Status: "archived"})    // excluded (non-active)
 
 	svc := NewService(database)
 	h := NewHandlers(svc, nil, nil)

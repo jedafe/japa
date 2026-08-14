@@ -14,7 +14,8 @@
 // Assessment (§87 Stage-Based Recommendations).
 //
 // Ref: japaconnect-engineering/sections/87-japa-stage-progress-profiles.md
-//      japaconnect-engineering/adr/ADR-095-japa-stage-profiles.md
+//
+//	japaconnect-engineering/adr/ADR-095-japa-stage-profiles.md
 package japastage
 
 import (
@@ -31,15 +32,16 @@ import (
 
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/config"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/tenant"
 	"github.com/jedafe/japa/internal/worker"
 )
 
 // Handlers exposes the japa stage profile endpoints.
 type Handlers struct {
-	service      *Service
-	settings     *config.Settings
-	asynqClient  *asynq.Client
+	service     *Service
+	settings    *config.Settings
+	asynqClient *asynq.Client
 }
 
 // NewHandlers creates japa stage handlers bound to the provided service.
@@ -53,24 +55,10 @@ func NewHandlers(service *Service, settings *config.Settings, asynqClient *asynq
 // Shared helpers (same pattern as story/handlers.go)
 // ---------------------------------------------------------------------------
 
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	if err := json.NewEncoder(w).Encode(v); err != nil {
-		slog.Error("japastage: encode response", "error", err)
-	}
-}
-
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, map[string]any{
-		"error": map[string]string{"code": code, "message": message},
-	})
-}
-
 func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
 	return t.ID, true
@@ -79,7 +67,7 @@ func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	u := auth.FromContext(r.Context())
 	if u == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
 	return u, true
@@ -123,28 +111,28 @@ func (h *Handlers) HandleGetByUsername(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "japa_stage_disabled", "Japa stage profiles are not available")
+		errpkg.WriteError(w, http.StatusNotFound, "japa_stage_disabled", "Japa stage profiles are not available")
 		return
 	}
 
 	username := chi.URLParam(r, "username")
 	if username == "" {
-		writeError(w, http.StatusBadRequest, "missing_username", "Username is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_username", "Username is required")
 		return
 	}
 
 	profile, err := h.service.GetByUsername(r.Context(), tenantID, username)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "profile_not_found", "Profile not found")
+			errpkg.WriteError(w, http.StatusNotFound, "profile_not_found", "Profile not found")
 			return
 		}
 		slog.Error("japastage: get by username failed", "username", username, "error", err)
-		writeError(w, http.StatusInternalServerError, "get_failed", "Failed to get japa stage profile")
+		errpkg.WriteError(w, http.StatusInternalServerError, "get_failed", "Failed to get japa stage profile")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": profile})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": profile})
 }
 
 // HandleListByStage handles GET /members/by-stage — public directory of
@@ -157,17 +145,17 @@ func (h *Handlers) HandleListByStage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "japa_stage_disabled", "Japa stage profiles are not available")
+		errpkg.WriteError(w, http.StatusNotFound, "japa_stage_disabled", "Japa stage profiles are not available")
 		return
 	}
 
 	stage := r.URL.Query().Get("stage")
 	if stage == "" {
-		writeError(w, http.StatusBadRequest, "missing_stage", "Stage query parameter is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_stage", "Stage query parameter is required")
 		return
 	}
 	if !ValidStage(stage) {
-		writeError(w, http.StatusBadRequest, "invalid_stage", "Invalid stage; must be one of: "+JoinStages())
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_stage", "Invalid stage; must be one of: "+JoinStages())
 		return
 	}
 
@@ -177,7 +165,7 @@ func (h *Handlers) HandleListByStage(w http.ResponseWriter, r *http.Request) {
 	members, total, err := h.service.ListByStage(r.Context(), tenantID, stage, dest, page, limit)
 	if err != nil {
 		slog.Error("japastage: list by stage failed", "stage", stage, "error", err)
-		writeError(w, http.StatusInternalServerError, "list_failed", "Failed to list members by stage")
+		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list members by stage")
 		return
 	}
 
@@ -187,7 +175,7 @@ func (h *Handlers) HandleListByStage(w http.ResponseWriter, r *http.Request) {
 	if limit > 0 && total > 0 {
 		totalPages = (total + int64(limit) - 1) / int64(limit)
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": members,
 		"meta": map[string]any{
 			"page":        page,
@@ -215,22 +203,22 @@ func (h *Handlers) HandleGetOwn(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "japa_stage_disabled", "Japa stage profiles are not available")
+		errpkg.WriteError(w, http.StatusNotFound, "japa_stage_disabled", "Japa stage profiles are not available")
 		return
 	}
 
 	profile, err := h.service.GetOwn(r.Context(), user.UserID, tenantID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "profile_not_found", "Profile not found")
+			errpkg.WriteError(w, http.StatusNotFound, "profile_not_found", "Profile not found")
 			return
 		}
 		slog.Error("japastage: get own failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "get_failed", "Failed to get japa stage profile")
+		errpkg.WriteError(w, http.StatusInternalServerError, "get_failed", "Failed to get japa stage profile")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": profile})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": profile})
 }
 
 // HandleUpdateOwn handles PATCH /me/japa-stage — update the authenticated
@@ -249,33 +237,33 @@ func (h *Handlers) HandleUpdateOwn(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "japa_stage_disabled", "Japa stage profiles are not available")
+		errpkg.WriteError(w, http.StatusNotFound, "japa_stage_disabled", "Japa stage profiles are not available")
 		return
 	}
 
 	var input UpdateStageInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
 
 	if input.Stage == "" {
-		writeError(w, http.StatusBadRequest, "missing_stage", "Stage is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_stage", "Stage is required")
 		return
 	}
 	if !ValidStage(input.Stage) {
-		writeError(w, http.StatusBadRequest, "invalid_stage", "Invalid stage; must be one of: "+JoinStages())
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_stage", "Invalid stage; must be one of: "+JoinStages())
 		return
 	}
 
 	profile, err := h.service.UpdateOwn(r.Context(), user.UserID, tenantID, input)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "profile_not_found", "Profile not found")
+			errpkg.WriteError(w, http.StatusNotFound, "profile_not_found", "Profile not found")
 			return
 		}
 		slog.Error("japastage: update own failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "update_failed", "Failed to update japa stage")
+		errpkg.WriteError(w, http.StatusInternalServerError, "update_failed", "Failed to update japa stage")
 		return
 	}
 
@@ -284,9 +272,9 @@ func (h *Handlers) HandleUpdateOwn(w http.ResponseWriter, r *http.Request) {
 	// duplicate PATCH within the same minute does not double-dispatch.
 	if h.asynqClient != nil {
 		payload, _ := json.Marshal(map[string]any{
-			"user_id":          user.UserID.String(),
-			"tenant_id":        tenantID.String(),
-			"stage":            input.Stage,
+			"user_id":              user.UserID.String(),
+			"tenant_id":            tenantID.String(),
+			"stage":                input.Stage,
 			"destination_space_id": input.DestSpaceID,
 		})
 		task := asynq.NewTask(worker.TypeJapaStageRecommend, payload)
@@ -301,5 +289,5 @@ func (h *Handlers) HandleUpdateOwn(w http.ResponseWriter, r *http.Request) {
 		slog.Warn("japastage: asynq client nil, skipping japa_stage:recommend fan-out")
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": profile})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": profile})
 }

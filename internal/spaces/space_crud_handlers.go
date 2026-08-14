@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/db/gen"
+	errpkg "github.com/jedafe/japa/internal/errors"
 )
 
 // ---------------------------------------------------------------------------
@@ -51,14 +52,14 @@ func (h *Handlers) ListSpaces(w http.ResponseWriter, r *http.Request) {
 	case q.Get("type") != "":
 		var spaceTypeID pgtype.UUID
 		if scanErr := spaceTypeID.Scan(q.Get("type")); scanErr != nil {
-			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid type filter format")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid type filter format")
 			return
 		}
 		spaces, err = h.Service.ListSpacesByType(r.Context(), tenantID, spaceTypeID)
 	case q.Get("parent") != "":
 		var parentID pgtype.UUID
 		if scanErr := parentID.Scan(q.Get("parent")); scanErr != nil {
-			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid parent filter format")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid parent filter format")
 			return
 		}
 		spaces, err = h.Service.ListChildSpaces(r.Context(), tenantID, parentID)
@@ -94,7 +95,7 @@ func (h *Handlers) ListSpaces(w http.ResponseWriter, r *http.Request) {
 	// wired) get an empty logo_url and the frontend renders a fallback icon.
 	items := h.spacesWithLogoURL(r.Context(), tenantID, spaces)
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": items,
 		"meta": map[string]any{
 			"total":       total,
@@ -295,7 +296,7 @@ func (h *Handlers) AdminListSpaces(w http.ResponseWriter, r *http.Request) {
 		totalPages = int32((total + int64(limit) - 1) / int64(limit)) // #nosec G115 -- bounded by total/limit division
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
 			"items":       spaces,
 			"total":       total,
@@ -315,7 +316,7 @@ func (h *Handlers) ListMySpaces(w http.ResponseWriter, r *http.Request) {
 
 	user := auth.FromContext(r.Context())
 	if user == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
 
@@ -336,7 +337,7 @@ func (h *Handlers) ListMySpaces(w http.ResponseWriter, r *http.Request) {
 			handleServiceError(w, lerr)
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"data": spaces})
+		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": spaces})
 		return
 	}
 
@@ -346,7 +347,7 @@ func (h *Handlers) ListMySpaces(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": spaces})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": spaces})
 }
 
 // ListByMemberUser handles GET /users/{id}/spaces — the public profile Spaces
@@ -360,7 +361,7 @@ func (h *Handlers) ListByMemberUser(w http.ResponseWriter, r *http.Request) {
 
 	var userID pgtype.UUID
 	if err := userID.Scan(chi.URLParam(r, "id")); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_user_id", "Invalid user ID format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_user_id", "Invalid user ID format")
 		return
 	}
 
@@ -373,7 +374,7 @@ func (h *Handlers) ListByMemberUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": toSpaceCards(spaces)})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": toSpaceCards(spaces)})
 }
 
 // SpaceCard is the lean public shape for the profile Spaces tab — only the
@@ -424,7 +425,7 @@ func (h *Handlers) ListMyModeratedSpaces(w http.ResponseWriter, r *http.Request)
 
 	user := auth.FromContext(r.Context())
 	if user == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
 
@@ -434,7 +435,7 @@ func (h *Handlers) ListMyModeratedSpaces(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": spaces})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": spaces})
 }
 
 // ListMyOwnedSpaces handles GET /api/v1/me/spaces/owned — every space the
@@ -448,7 +449,7 @@ func (h *Handlers) ListMyOwnedSpaces(w http.ResponseWriter, r *http.Request) {
 
 	user := auth.FromContext(r.Context())
 	if user == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
 
@@ -458,7 +459,7 @@ func (h *Handlers) ListMyOwnedSpaces(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": spaces})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": spaces})
 }
 
 // GetSpace handles GET /api/v1/spaces/{slug}. It returns the space together
@@ -466,7 +467,7 @@ func (h *Handlers) ListMyOwnedSpaces(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) GetSpace(w http.ResponseWriter, r *http.Request) {
 	slug := chi.URLParam(r, "slug")
 	if slug == "" {
-		writeError(w, http.StatusBadRequest, "missing_slug", "Space slug is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_slug", "Space slug is required")
 		return
 	}
 
@@ -523,7 +524,7 @@ func (h *Handlers) GetSpace(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
 			"space":        space,
 			"rules":        rules,
@@ -541,7 +542,7 @@ func (h *Handlers) GetSpace(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) AdminGetSpace(w http.ResponseWriter, r *http.Request) {
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
@@ -565,7 +566,7 @@ func (h *Handlers) AdminGetSpace(w http.ResponseWriter, r *http.Request) {
 		rules = []gen.SpaceRule{}
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{"space": space, "rules": rules},
 	})
 }
@@ -587,18 +588,18 @@ func (h *Handlers) CreateSpace(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
 		return
 	}
 
 	if strings.TrimSpace(req.Name) == "" || strings.TrimSpace(req.Slug) == "" ||
 		strings.TrimSpace(req.SpaceTypeID) == "" || strings.TrimSpace(req.Level) == "" {
-		writeError(w, http.StatusBadRequest, "missing_fields", "Name, slug, space_type_id, and level are required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_fields", "Name, slug, space_type_id, and level are required")
 		return
 	}
 
 	if !IsValidLevel(req.Level) {
-		writeError(w, http.StatusBadRequest, "invalid_level", "Level must be country, state, city, custom, or global")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_level", "Level must be country, state, city, custom, or global")
 		return
 	}
 
@@ -607,7 +608,7 @@ func (h *Handlers) CreateSpace(w http.ResponseWriter, r *http.Request) {
 	// Primary spaces (country/state/city) are themselves parents and need no
 	// parent linkage. Global spaces have no geo parent at all.
 	if req.Level == LevelCustom && len(req.ParentSpaceIDs) == 0 && req.ParentID == "" {
-		writeError(w, http.StatusBadRequest, "missing_parent",
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_parent",
 			"Custom spaces must belong to at least one primary space (country, state, or city)")
 		return
 	}
@@ -619,7 +620,7 @@ func (h *Handlers) CreateSpace(w http.ResponseWriter, r *http.Request) {
 
 	user := auth.FromContext(r.Context())
 	if user == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
 
@@ -631,7 +632,7 @@ func (h *Handlers) CreateSpace(w http.ResponseWriter, r *http.Request) {
 			"user_id", user.UserID.String(), "error", err)
 		// Fail open — don't block creation on a quota lookup failure.
 	} else if maxSpaces == 0 {
-		writeError(w, http.StatusForbidden, "quota_exceeded",
+		errpkg.WriteError(w, http.StatusForbidden, "quota_exceeded",
 			"Your account is not allowed to create spaces")
 		return
 	} else if maxSpaces > 0 {
@@ -640,7 +641,7 @@ func (h *Handlers) CreateSpace(w http.ResponseWriter, r *http.Request) {
 			slog.Warn("create space: failed to count owned spaces",
 				"user_id", user.UserID.String(), "error", err)
 		} else if currentCount >= maxSpaces {
-			writeError(w, http.StatusForbidden, "quota_exceeded",
+			errpkg.WriteError(w, http.StatusForbidden, "quota_exceeded",
 				"You have reached the maximum number of spaces you can create")
 			return
 		}
@@ -648,14 +649,14 @@ func (h *Handlers) CreateSpace(w http.ResponseWriter, r *http.Request) {
 
 	var spaceTypeID pgtype.UUID
 	if err := spaceTypeID.Scan(req.SpaceTypeID); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid space_type_id format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid space_type_id format")
 		return
 	}
 
 	var parentID pgtype.UUID
 	if req.ParentID != "" {
 		if err := parentID.Scan(req.ParentID); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid parent_id format")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid parent_id format")
 			return
 		}
 	}
@@ -667,7 +668,7 @@ func (h *Handlers) CreateSpace(w http.ResponseWriter, r *http.Request) {
 	for _, psidStr := range req.ParentSpaceIDs {
 		var psid pgtype.UUID
 		if err := psid.Scan(psidStr); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid parent_space_id format")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid parent_space_id format")
 			return
 		}
 		parent, err := h.Service.GetSpace(r.Context(), psid, tenantID)
@@ -676,7 +677,7 @@ func (h *Handlers) CreateSpace(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if parent.Level != LevelCountry && parent.Level != LevelState && parent.Level != LevelCity {
-			writeError(w, http.StatusBadRequest, "invalid_parent",
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_parent",
 				"Parent spaces must be primary (country, state, or city)")
 			return
 		}
@@ -689,7 +690,7 @@ func (h *Handlers) CreateSpace(w http.ResponseWriter, r *http.Request) {
 	if req.PresetName != "" {
 		preset, err := h.Service.GetPermissionPreset(r.Context(), req.PresetName, tenantID)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_preset", "Preset not found")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_preset", "Preset not found")
 			return
 		}
 
@@ -737,7 +738,7 @@ func (h *Handlers) CreateSpace(w http.ResponseWriter, r *http.Request) {
 	}
 	h.indexSpaceRAG(r.Context(), tenantID, space.ID, req.Name, desc, nil)
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": space})
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": space})
 }
 
 // UpdateSpace handles PATCH /api/v1/spaces/{id}. It loads the existing space
@@ -746,7 +747,7 @@ func (h *Handlers) CreateSpace(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) UpdateSpace(w http.ResponseWriter, r *http.Request) {
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
@@ -778,32 +779,32 @@ func (h *Handlers) UpdateSpace(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
 		return
 	}
 	// Validate each provided permission axis individually.
 	if req.Visibility != "" && !validVisibility[req.Visibility] {
-		writeError(w, http.StatusBadRequest, "invalid_permission_axes", "Invalid visibility value")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_permission_axes", "Invalid visibility value")
 		return
 	}
 
 	if req.PostingPerm != "" && !validPostingPerm[req.PostingPerm] {
-		writeError(w, http.StatusBadRequest, "invalid_permission_axes", "Invalid posting_perm value")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_permission_axes", "Invalid posting_perm value")
 		return
 	}
 
 	if req.ReplyingPerm != "" && !validPostingPerm[req.ReplyingPerm] {
-		writeError(w, http.StatusBadRequest, "invalid_permission_axes", "Invalid replying_perm value")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_permission_axes", "Invalid replying_perm value")
 		return
 	}
 
 	if req.CommentingPerm != "" && !validPostingPerm[req.CommentingPerm] {
-		writeError(w, http.StatusBadRequest, "invalid_permission_axes", "Invalid commenting_perm value")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_permission_axes", "Invalid commenting_perm value")
 		return
 	}
 
 	if req.JoiningPerm != "" && !validJoiningPerm[req.JoiningPerm] {
-		writeError(w, http.StatusBadRequest, "invalid_permission_axes", "Invalid joining_perm value")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_permission_axes", "Invalid joining_perm value")
 		return
 	}
 
@@ -888,7 +889,7 @@ func (h *Handlers) UpdateSpace(w http.ResponseWriter, r *http.Request) {
 	// ["a","b"] = set). Uses a dedicated query to avoid NULL on NOT NULL column.
 	if req.Keywords != nil {
 		if err := h.Service.UpdateSpaceKeywords(r.Context(), id, tenantID, req.Keywords); err != nil {
-			writeError(w, http.StatusInternalServerError, "keywords_update_failed", "Failed to update keywords")
+			errpkg.WriteError(w, http.StatusInternalServerError, "keywords_update_failed", "Failed to update keywords")
 			return
 		}
 	}
@@ -898,7 +899,7 @@ func (h *Handlers) UpdateSpace(w http.ResponseWriter, r *http.Request) {
 	if req.LogoMediaID != "" {
 		var logoUUID pgtype.UUID
 		if err := logoUUID.Scan(req.LogoMediaID); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_logo_media_id", "Invalid logo_media_id format")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_logo_media_id", "Invalid logo_media_id format")
 			return
 		}
 		logoSpace, lErr := h.Service.UpdateSpaceLogoMediaID(r.Context(), gen.UpdateSpaceLogoMediaIDParams{
@@ -907,7 +908,7 @@ func (h *Handlers) UpdateSpace(w http.ResponseWriter, r *http.Request) {
 			TenantID:    tenantID,
 		})
 		if lErr != nil {
-			writeError(w, http.StatusInternalServerError, "logo_update_failed", "Failed to update logo")
+			errpkg.WriteError(w, http.StatusInternalServerError, "logo_update_failed", "Failed to update logo")
 			return
 		}
 		result = logoSpace
@@ -920,7 +921,7 @@ func (h *Handlers) UpdateSpace(w http.ResponseWriter, r *http.Request) {
 		var headerUUID pgtype.UUID
 		if *req.HeaderImageID != "" {
 			if err := headerUUID.Scan(*req.HeaderImageID); err != nil {
-				writeError(w, http.StatusBadRequest, "invalid_header_image_id", "Invalid header_image_id format")
+				errpkg.WriteError(w, http.StatusBadRequest, "invalid_header_image_id", "Invalid header_image_id format")
 				return
 			}
 		}
@@ -930,7 +931,7 @@ func (h *Handlers) UpdateSpace(w http.ResponseWriter, r *http.Request) {
 			TenantID:      tenantID,
 		})
 		if hErr != nil {
-			writeError(w, http.StatusInternalServerError, "header_update_failed", "Failed to update header image")
+			errpkg.WriteError(w, http.StatusInternalServerError, "header_update_failed", "Failed to update header image")
 			return
 		}
 		result = headerSpace
@@ -947,14 +948,14 @@ func (h *Handlers) UpdateSpace(w http.ResponseWriter, r *http.Request) {
 	}
 	h.indexSpaceRAG(r.Context(), tenantID, spaceID, name, updDesc, req.Keywords)
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": result})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": result})
 }
 
 // DeleteSpace handles DELETE /api/v1/spaces/{id}.
 func (h *Handlers) DeleteSpace(w http.ResponseWriter, r *http.Request) {
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
@@ -975,5 +976,5 @@ func (h *Handlers) DeleteSpace(w http.ResponseWriter, r *http.Request) {
 	// must not be retrievable in RAG).
 	h.purgeSpaceRAG(r.Context(), tenantID, id)
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
 }

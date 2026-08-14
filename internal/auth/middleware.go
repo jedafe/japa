@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/jackc/pgx/v5/pgtype"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/valkey-io/valkey-go/valkeycompat"
 )
 
@@ -37,37 +38,37 @@ func RequireAuth(kr *KeyRotation, vkClient valkeycompat.Cmdable) func(http.Handl
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			authHeader := r.Header.Get("Authorization")
 			if authHeader == "" {
-				writeError(w, http.StatusUnauthorized, "missing_token", "Authorization header is required")
+				errpkg.WriteError(w, http.StatusUnauthorized, "missing_token", "Authorization header is required")
 				return
 			}
 
 			parts := strings.SplitN(authHeader, " ", 2)
 			if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
-				writeError(w, http.StatusUnauthorized, "invalid_auth_scheme", "Expected: Bearer <token>")
+				errpkg.WriteError(w, http.StatusUnauthorized, "invalid_auth_scheme", "Expected: Bearer <token>")
 				return
 			}
 
 			claims, err := kr.ValidateAccessToken(parts[1])
 			if err != nil {
-				writeError(w, http.StatusUnauthorized, "invalid_token", "Token is invalid or expired")
+				errpkg.WriteError(w, http.StatusUnauthorized, "invalid_token", "Token is invalid or expired")
 				return
 			}
 
 			// Check if this specific token has been revoked.
 			if IsTokenRevoked(r.Context(), claims.JTI, vkClient) {
-				writeError(w, http.StatusUnauthorized, "token_revoked", "Token has been revoked")
+				errpkg.WriteError(w, http.StatusUnauthorized, "token_revoked", "Token has been revoked")
 				return
 			}
 
 			var userID pgtype.UUID
 			if err := userID.Scan(claims.UserID); err != nil {
-				writeError(w, http.StatusUnauthorized, "invalid_token", "Token contains invalid user ID")
+				errpkg.WriteError(w, http.StatusUnauthorized, "invalid_token", "Token contains invalid user ID")
 				return
 			}
 
 			var tenantID pgtype.UUID
 			if err := tenantID.Scan(claims.TenantID); err != nil {
-				writeError(w, http.StatusUnauthorized, "invalid_token", "Token contains invalid tenant ID")
+				errpkg.WriteError(w, http.StatusUnauthorized, "invalid_token", "Token contains invalid tenant ID")
 				return
 			}
 

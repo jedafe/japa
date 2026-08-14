@@ -57,7 +57,7 @@ func (h *OAuthHandlers) HandleInitiate(w http.ResponseWriter, r *http.Request) {
 	if h.Settings != nil {
 		if t := tenant.FromContext(r.Context()); t != nil {
 			if allowed, err := h.Settings.GetSettingBool(r.Context(), t.ID, "users.allow_social_login"); err == nil && !allowed {
-				writeError(w, http.StatusForbidden, "social_login_disabled",
+				errpkg.WriteError(w, http.StatusForbidden, "social_login_disabled",
 					"Social login is disabled for this tenant")
 				return
 			}
@@ -68,7 +68,7 @@ func (h *OAuthHandlers) HandleInitiate(w http.ResponseWriter, r *http.Request) {
 
 	provider := h.Config.NewProvider(providerName)
 	if provider == nil {
-		writeError(w, http.StatusBadRequest, "unsupported_provider",
+		errpkg.WriteError(w, http.StatusBadRequest, "unsupported_provider",
 			"OAuth provider is not configured or not supported")
 		return
 	}
@@ -76,7 +76,7 @@ func (h *OAuthHandlers) HandleInitiate(w http.ResponseWriter, r *http.Request) {
 	state, err := GenerateOAuthState()
 	if err != nil {
 		slog.Error("generate OAuth state", "error", err)
-		writeError(w, http.StatusInternalServerError, "state_error", "Failed to initiate OAuth")
+		errpkg.WriteError(w, http.StatusInternalServerError, "state_error", "Failed to initiate OAuth")
 
 		return
 	}
@@ -122,7 +122,7 @@ func (h *OAuthHandlers) HandleInitiate(w http.ResponseWriter, r *http.Request) {
 		SameSite: http.SameSiteLaxMode,
 	}) // #nosec G124 -- Secure is set via h.SecureCookies (true in production); gosec can't verify the struct field statically
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]string{"auth_url": provider.AuthURL(state)},
 	})
 }

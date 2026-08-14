@@ -10,6 +10,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/crypto"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/rbac"
 	"github.com/jedafe/japa/internal/tenant"
 )
@@ -27,27 +28,11 @@ func NewStockHandlers(svc *Service) *StockHandlers {
 	return &StockHandlers{svc: svc}
 }
 
-// writeJSON serializes the given value as JSON and writes it to the response.
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	if err := json.NewEncoder(w).Encode(v); err != nil {
-		slog.Warn("stock: json encode error", "error", err)
-	}
-}
-
-// writeError writes a JSON error response following the JapaConnect API format.
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, map[string]any{
-		"error": map[string]string{"code": code, "message": message},
-	})
-}
-
 // requireUser resolves the authenticated user from the request context.
 func (h *StockHandlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	user := auth.FromContext(r.Context())
 	if user == nil {
-		writeError(w, http.StatusUnauthorized, "unauthenticated", "Authentication required")
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthenticated", "Authentication required")
 		return nil, false
 	}
 	return user, true
@@ -57,7 +42,7 @@ func (h *StockHandlers) requireUser(w http.ResponseWriter, r *http.Request) (*au
 func (h *StockHandlers) requireTenant(w http.ResponseWriter, r *http.Request) (*tenant.Tenant, bool) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return nil, false
 	}
 	return t, true
@@ -96,7 +81,7 @@ func (h *StockHandlers) ListProviders(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"providers": result}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"providers": result}})
 }
 
 // Search searches stock photos across available providers.
@@ -107,13 +92,13 @@ func (h *StockHandlers) Search(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !hasPermission(r, "media.stock.search") {
-		writeError(w, http.StatusForbidden, "forbidden", "media.stock.search permission required")
+		errpkg.WriteError(w, http.StatusForbidden, "forbidden", "media.stock.search permission required")
 		return
 	}
 
 	q := r.URL.Query().Get("q")
 	if q == "" {
-		writeError(w, http.StatusBadRequest, "missing_query", "query parameter 'q' is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_query", "query parameter 'q' is required")
 		return
 	}
 
@@ -130,7 +115,7 @@ func (h *StockHandlers) Search(w http.ResponseWriter, r *http.Request) {
 	// RBAC filter: if user doesn't have media.stock.providers, only allow openverse.
 	hasProviders := hasPermission(r, "media.stock.providers")
 	if !hasProviders && provider != "" && provider != "openverse" {
-		writeError(w, http.StatusForbidden, "provider_unavailable", "Provider not available without media.stock.providers permission")
+		errpkg.WriteError(w, http.StatusForbidden, "provider_unavailable", "Provider not available without media.stock.providers permission")
 		return
 	}
 	if !hasProviders && provider == "" {
@@ -140,11 +125,11 @@ func (h *StockHandlers) Search(w http.ResponseWriter, r *http.Request) {
 	result, err := h.svc.Search(r.Context(), q, provider, page, perPage)
 	if err != nil {
 		slog.Error("stock: search failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "search_error", "Failed to search stock")
+		errpkg.WriteError(w, http.StatusInternalServerError, "search_error", "Failed to search stock")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": result})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": result})
 }
 
 // GetPhoto returns metadata for a single stock photo.
@@ -155,34 +140,34 @@ func (h *StockHandlers) GetPhoto(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !hasPermission(r, "media.stock.search") {
-		writeError(w, http.StatusForbidden, "forbidden", "media.stock.search permission required")
+		errpkg.WriteError(w, http.StatusForbidden, "forbidden", "media.stock.search permission required")
 		return
 	}
 
 	providerName := chi.URLParam(r, "provider")
 	photoID := chi.URLParam(r, "id")
 	if providerName == "" || photoID == "" {
-		writeError(w, http.StatusBadRequest, "missing_params", "provider and id are required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_params", "provider and id are required")
 		return
 	}
 
 	// RBAC: non-openverse providers require media.stock.providers.
 	if providerName != "openverse" && !hasPermission(r, "media.stock.providers") {
-		writeError(w, http.StatusForbidden, "provider_unavailable", "Provider not available without media.stock.providers permission")
+		errpkg.WriteError(w, http.StatusForbidden, "provider_unavailable", "Provider not available without media.stock.providers permission")
 		return
 	}
 
 	photo, err := h.svc.GetPhoto(r.Context(), providerName, photoID)
 	if err != nil {
 		if errors.Is(err, ErrProviderUnavailable) {
-			writeError(w, http.StatusNotFound, "provider_unavailable", err.Error())
+			errpkg.WriteError(w, http.StatusNotFound, "provider_unavailable", err.Error())
 			return
 		}
-		writeError(w, http.StatusNotFound, "photo_not_found", err.Error())
+		errpkg.WriteError(w, http.StatusNotFound, "photo_not_found", err.Error())
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": photo})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": photo})
 }
 
 // ImportPhoto downloads a stock photo and stores it in the media library.
@@ -196,7 +181,7 @@ func (h *StockHandlers) ImportPhoto(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !hasPermission(r, "media.stock.import") {
-		writeError(w, http.StatusForbidden, "forbidden", "media.stock.import permission required")
+		errpkg.WriteError(w, http.StatusForbidden, "forbidden", "media.stock.import permission required")
 		return
 	}
 
@@ -210,30 +195,30 @@ func (h *StockHandlers) ImportPhoto(w http.ResponseWriter, r *http.Request) {
 		ID       string `json:"id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if body.Provider == "" || body.ID == "" {
-		writeError(w, http.StatusBadRequest, "missing_params", "provider and id are required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_params", "provider and id are required")
 		return
 	}
 
 	// RBAC: provider != openverse requires media.stock.providers.
 	// (media.stock.import is enforced at the route level by RequirePermission.)
 	if body.Provider != "openverse" && !hasPermission(r, "media.stock.providers") {
-		writeError(w, http.StatusForbidden, "provider_unavailable", "Provider requires media.stock.providers permission")
+		errpkg.WriteError(w, http.StatusForbidden, "provider_unavailable", "Provider requires media.stock.providers permission")
 		return
 	}
 
 	mediaID, err := h.svc.ImportPhoto(r.Context(), t.ID, user.UserID, body.Provider, body.ID)
 	if err != nil {
 		slog.Error("stock: import failed", "error", err, "provider", body.Provider, "photo_id", body.ID)
-		writeError(w, http.StatusInternalServerError, "import_error", "Failed to import photo")
+		errpkg.WriteError(w, http.StatusInternalServerError, "import_error", "Failed to import photo")
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{
 		"data": map[string]string{"media_id": mediaID.String()},
 	})
 }
@@ -247,7 +232,7 @@ func (h *StockHandlers) ImportPhoto(w http.ResponseWriter, r *http.Request) {
 func (h *StockHandlers) AdminListProviders(w http.ResponseWriter, r *http.Request) {
 	rows, err := h.svc.ListAllProviders(r.Context())
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "list_error", "Failed to list providers")
+		errpkg.WriteError(w, http.StatusInternalServerError, "list_error", "Failed to list providers")
 		return
 	}
 
@@ -263,7 +248,7 @@ func (h *StockHandlers) AdminListProviders(w http.ResponseWriter, r *http.Reques
 		})
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"providers": result}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"providers": result}})
 }
 
 // AdminPatchProvider toggles enabled status or updates the API key.
@@ -273,7 +258,7 @@ func (h *StockHandlers) AdminPatchProvider(w http.ResponseWriter, r *http.Reques
 
 	providerName := chi.URLParam(r, "name")
 	if providerName == "" {
-		writeError(w, http.StatusBadRequest, "missing_provider", "provider name is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_provider", "provider name is required")
 		return
 	}
 
@@ -282,17 +267,17 @@ func (h *StockHandlers) AdminPatchProvider(w http.ResponseWriter, r *http.Reques
 		APIKey  *string `json:"api_key,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if body.Enabled != nil {
 		if err := h.svc.store.ToggleProvider(r.Context(), providerName, *body.Enabled); err != nil {
 			if errors.Is(err, ErrProviderNotFound) {
-				writeError(w, http.StatusNotFound, "provider_not_found", "Stock provider not found")
+				errpkg.WriteError(w, http.StatusNotFound, "provider_not_found", "Stock provider not found")
 				return
 			}
-			writeError(w, http.StatusInternalServerError, "toggle_error", "Failed to toggle provider")
+			errpkg.WriteError(w, http.StatusInternalServerError, "toggle_error", "Failed to toggle provider")
 			return
 		}
 	}
@@ -301,15 +286,15 @@ func (h *StockHandlers) AdminPatchProvider(w http.ResponseWriter, r *http.Reques
 		encrypted, err := crypto.Encrypt(*body.APIKey)
 		if err != nil {
 			slog.Error("stock: failed to encrypt API key", "provider", providerName, "error", err)
-			writeError(w, http.StatusInternalServerError, "encrypt_error", "Failed to encrypt API key")
+			errpkg.WriteError(w, http.StatusInternalServerError, "encrypt_error", "Failed to encrypt API key")
 			return
 		}
 		if err := h.svc.store.SetAPIKey(r.Context(), providerName, encrypted); err != nil {
 			if errors.Is(err, ErrProviderNotFound) {
-				writeError(w, http.StatusNotFound, "provider_not_found", "Stock provider not found")
+				errpkg.WriteError(w, http.StatusNotFound, "provider_not_found", "Stock provider not found")
 				return
 			}
-			writeError(w, http.StatusInternalServerError, "update_error", "Failed to update provider")
+			errpkg.WriteError(w, http.StatusInternalServerError, "update_error", "Failed to update provider")
 			return
 		}
 	}
@@ -319,7 +304,7 @@ func (h *StockHandlers) AdminPatchProvider(w http.ResponseWriter, r *http.Reques
 		slog.Warn("stock: failed to reload providers after admin update", "error", err)
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "ok"}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "ok"}})
 }
 
 // displayName maps a provider identifier to a human-readable display name.

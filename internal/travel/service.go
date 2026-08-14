@@ -5,8 +5,9 @@
 // (jc:travel:search:{hash}, configurable TTL, default 5 min).
 //
 // Ref: japaconnect-engineering/sections/67-travel-search.md
-//      japaconnect-engineering/adr/ADR-085-travel-search.md
-//      japaconnect-engineering/adr/ADR-009-render-time-affiliate-processing.md
+//
+//	japaconnect-engineering/adr/ADR-085-travel-search.md
+//	japaconnect-engineering/adr/ADR-009-render-time-affiliate-processing.md
 package travel
 
 import (
@@ -94,16 +95,16 @@ type FlightResult struct {
 // HotelResult is a single hotel offer returned by the provider API, with
 // affiliate tracking params injected into BookingURL at render time.
 type HotelResult struct {
-	Provider    string  `json:"provider"`
-	Name        string  `json:"name"`
-	Price       float64 `json:"price"`
-	Currency    string  `json:"currency"`
-	CheckIn     string  `json:"check_in"`
-	CheckOut    string  `json:"check_out"`
-	StarRating  int     `json:"star_rating"`
-	Address     string  `json:"address"`
-	ImageURL    string  `json:"image_url"`
-	BookingURL  string  `json:"booking_url"`
+	Provider   string  `json:"provider"`
+	Name       string  `json:"name"`
+	Price      float64 `json:"price"`
+	Currency   string  `json:"currency"`
+	CheckIn    string  `json:"check_in"`
+	CheckOut   string  `json:"check_out"`
+	StarRating int     `json:"star_rating"`
+	Address    string  `json:"address"`
+	ImageURL   string  `json:"image_url"`
+	BookingURL string  `json:"booking_url"`
 }
 
 // SearchResponse is the envelope returned to the client. Results is a slice
@@ -727,5 +728,3 @@ func decryptAPIConfig(p gen.TravelProvider) (json.RawMessage, error) {
 	}
 	return json.RawMessage(decrypted), nil
 }
-
-

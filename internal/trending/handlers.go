@@ -8,17 +8,15 @@ package trending
 
 import (
 	"context"
-	"encoding/json"
-	"log/slog"
 	"net/http"
 	"strconv"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
-	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/db/gen"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/tenant"
 	vkcache "github.com/jedafe/japa/internal/valkey"
 	"github.com/jedafe/japa/internal/visitor"
@@ -60,7 +58,7 @@ func (h *Handlers) SetCache(c valkey.Client) {
 func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
 
@@ -70,28 +68,11 @@ func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype
 func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	user := auth.FromContext(r.Context())
 	if user == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
 
 	return user, true
-}
-
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-
-	if v != nil {
-		if err := json.NewEncoder(w).Encode(v); err != nil {
-			slog.Warn("json encode error", "error", err)
-		}
-	}
-}
-
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, map[string]any{
-		"error": map[string]string{"code": code, "message": message},
-	})
 }
 
 func handleServiceError(w http.ResponseWriter, err error) {
@@ -253,7 +234,7 @@ func (h *Handlers) GetTrendingContent(w http.ResponseWriter, r *http.Request) {
 		data = data[:limit]
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": data})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": data})
 }
 
 // GetTrendingTags handles GET /api/v1/trending/tags.
@@ -299,7 +280,7 @@ func (h *Handlers) GetTrendingTags(w http.ResponseWriter, r *http.Request) {
 		data = data[:limit]
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": data})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": data})
 }
 
 // GetTrendingSpaces handles GET /api/v1/trending/spaces.
@@ -374,7 +355,7 @@ func (h *Handlers) GetTrendingSpaces(w http.ResponseWriter, r *http.Request) {
 		data = data[:limit]
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": data})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": data})
 }
 
 // GetTrendingUsers handles GET /api/v1/trending/users.
@@ -397,7 +378,7 @@ func (h *Handlers) GetTrendingUsers(w http.ResponseWriter, r *http.Request) {
 		data = []gen.GetTrendingUsersRow{}
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": data})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": data})
 }
 
 // ---------------------------------------------------------------------------
@@ -441,7 +422,7 @@ func (h *Handlers) GetSuggestedUsers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": data})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": data})
 }
 
 // GetSuggestedSpaces handles GET /api/v1/suggestions/spaces.
@@ -481,7 +462,7 @@ func (h *Handlers) GetSuggestedSpaces(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": data})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": data})
 }
 
 // GetSuggestedTags handles GET /api/v1/suggestions/tags.
@@ -509,7 +490,7 @@ func (h *Handlers) GetSuggestedTags(w http.ResponseWriter, r *http.Request) {
 		data = []gen.GetSuggestedTagsRow{}
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": data})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": data})
 }
 
 // GetSuggestedContent handles GET /api/v1/suggestions/content.
@@ -548,5 +529,5 @@ func (h *Handlers) GetSuggestedContent(w http.ResponseWriter, r *http.Request) {
 		data = []gen.GetSuggestedContentRow{}
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": data})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": data})
 }

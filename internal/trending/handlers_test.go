@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/jackc/pgx/v5"
+	errpkg "github.com/jedafe/japa/internal/errors"
 )
 
 func TestParseLimit(t *testing.T) {
@@ -89,7 +90,7 @@ func TestWriteJSON(t *testing.T) {
 	t.Parallel()
 
 	rec := httptest.NewRecorder()
-	writeJSON(rec, http.StatusCreated, map[string]any{"ok": true})
+	errpkg.WriteJSON(rec, http.StatusCreated, map[string]any{"ok": true})
 
 	if rec.Code != http.StatusCreated {
 		t.Errorf("status = %d, want 201", rec.Code)
@@ -113,7 +114,7 @@ func TestWriteJSONNilBody(t *testing.T) {
 	t.Parallel()
 
 	rec := httptest.NewRecorder()
-	writeJSON(rec, http.StatusNoContent, nil)
+	errpkg.WriteJSON(rec, http.StatusNoContent, nil)
 
 	if rec.Code != http.StatusNoContent {
 		t.Errorf("status = %d, want 204", rec.Code)
@@ -150,7 +151,7 @@ func TestWriteError(t *testing.T) {
 	t.Parallel()
 
 	rec := httptest.NewRecorder()
-	writeError(rec, http.StatusBadRequest, "bad_request", "Bad input")
+	errpkg.WriteError(rec, http.StatusBadRequest, "bad_request", "Bad input")
 
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("status = %d, want 400", rec.Code)

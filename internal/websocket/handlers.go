@@ -13,6 +13,7 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	mw "github.com/jedafe/japa/internal/middleware"
 	"github.com/jedafe/japa/internal/spam"
 	"github.com/jedafe/japa/internal/valkey"
@@ -81,29 +82,12 @@ func (h *Handlers) requireUser(r *http.Request) (*auth.AuthenticatedUser, bool) 
 	return user, true
 }
 
-// writeJSON serializes the given value as JSON and writes it to the response.
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-
-	if err := json.NewEncoder(w).Encode(v); err != nil {
-		slog.Warn("json encode error", "error", err)
-	}
-}
-
-// writeError writes a JSON error response following the JapaConnect API format.
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, map[string]any{
-		"error": map[string]string{"code": code, "message": message},
-	})
-}
-
 // GetWSTicket mints a short-lived WS ticket.
 // POST /api/v1/auth/ws-ticket.
 func (h *Handlers) GetWSTicket(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(r)
 	if !ok {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
 
@@ -113,7 +97,7 @@ func (h *Handlers) GetWSTicket(w http.ResponseWriter, r *http.Request) {
 	ticket, err := h.service.store.CreateWSTicket(ctx, user.UserID, user.TenantID)
 	if err != nil {
 		slog.Error("creating ws ticket", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to create ticket")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to create ticket")
 
 		return
 	}
@@ -134,13 +118,13 @@ func (h *Handlers) GetWSTicket(w http.ResponseWriter, r *http.Request) {
 		if err := h.vkClient.Redis().HSet(vctx, valkey.MustKey("ws_ticket:%s", ticket.ID.String()),
 			ticketFields, 60*time.Second).Err(); err != nil {
 			slog.Error("caching ws ticket", "error", err, "user_id", user.UserID.String())
-			writeError(w, http.StatusInternalServerError, "internal_error", "Failed to create ticket")
+			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to create ticket")
 
 			return
 		}
 	}
 
-	writeJSON(w, http.StatusOK, map[string]string{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]string{
 		"ticket": ticket.ID.String(),
 	})
 }
@@ -150,13 +134,13 @@ func (h *Handlers) GetWSTicket(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 	ticketStr := r.URL.Query().Get("ticket")
 	if ticketStr == "" {
-		writeError(w, http.StatusBadRequest, "missing_ticket", "Ticket query parameter is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_ticket", "Ticket query parameter is required")
 		return
 	}
 
 	var ticketID pgtype.UUID
 	if err := ticketID.Scan(ticketStr); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_ticket", "Invalid ticket format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_ticket", "Invalid ticket format")
 		return
 	}
 
@@ -198,7 +182,7 @@ func (h *Handlers) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 	if !userID.Valid {
 		ticket, err := h.service.store.GetWSTicketForRedemption(ctx, ticketID)
 		if err != nil {
-			writeError(w, http.StatusUnauthorized, "invalid_ticket", "Ticket not found or expired")
+			errpkg.WriteError(w, http.StatusUnauthorized, "invalid_ticket", "Ticket not found or expired")
 			return
 		}
 		userID = ticket.UserID
@@ -208,7 +192,7 @@ func (h *Handlers) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 	// Mark ticket as used in DB, validating tenant_id alongside user_id so a
 	// ticket minted in tenant A cannot be consumed in tenant B (BUG-019).
 	if _, err := h.service.store.UseWSTicket(ctx, ticketID, userID, tenantID); err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to consume ticket")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to consume ticket")
 		return
 	}
 
@@ -257,7 +241,7 @@ func (h *Handlers) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 // GET /api/v1/ws/online.
 func (h *Handlers) GetOnlineUsers(w http.ResponseWriter, _ *http.Request) {
 	users := h.hub.GetOnlineUsers()
-	writeJSON(w, http.StatusOK, map[string]any{"data": users})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": users})
 }
 
 // readPump reads messages from the WebSocket connection.

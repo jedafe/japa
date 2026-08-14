@@ -4,7 +4,8 @@
 // config.Settings and caches retrieval results in Valkey (jc:rag:query:{hash}).
 //
 // Ref: japaconnect-engineering/sections/69-rag-knowledge-layer.md
-//      japaconnect-engineering/adr/ADR-069-japabot-rag-knowledge-layer.md
+//
+//	japaconnect-engineering/adr/ADR-069-japabot-rag-knowledge-layer.md
 package rag
 
 import (
@@ -40,11 +41,11 @@ type TaskEnqueuer interface {
 
 // Service holds the business logic for the RAG knowledge layer.
 type Service struct {
-	store     *Store
-	settings  *config.Settings
-	embedder  EmbeddingGenerator
-	enqueuer  TaskEnqueuer
-	cache     ValkeyCache // nil = caching disabled
+	store    *Store
+	settings *config.Settings
+	embedder EmbeddingGenerator
+	enqueuer TaskEnqueuer
+	cache    ValkeyCache // nil = caching disabled
 }
 
 // NewService creates a RAG service.
@@ -78,10 +79,10 @@ func ragQueryCacheKey(tenantID pgtype.UUID, queryEmbedding []float32, language s
 	for _, f := range queryEmbedding {
 		bits := math.Float32bits(f)
 		var buf [4]byte
-		buf[0] = byte(bits)          // #nosec G115 -- bit extraction, no overflow
-		buf[1] = byte(bits >> 8)     // #nosec G115 -- bit extraction, no overflow
-		buf[2] = byte(bits >> 16)    // #nosec G115 -- bit extraction, no overflow
-		buf[3] = byte(bits >> 24)    // #nosec G115 -- bit extraction, no overflow
+		buf[0] = byte(bits)       // #nosec G115 -- bit extraction, no overflow
+		buf[1] = byte(bits >> 8)  // #nosec G115 -- bit extraction, no overflow
+		buf[2] = byte(bits >> 16) // #nosec G115 -- bit extraction, no overflow
+		buf[3] = byte(bits >> 24) // #nosec G115 -- bit extraction, no overflow
 		h.Write(buf[:])
 	}
 	h.Write([]byte(language))
@@ -317,9 +318,9 @@ func (s *Service) QueueReindex(ctx context.Context, tenantID pgtype.UUID) error 
 	// fire-and-forget IndexEntity calls in background goroutines. The HTTP
 	// response returns immediately after enumeration; the actual embedding
 	// work happens asynchronously.
-	go s.reindexForumThreads(tenantID)    // #nosec G118 -- fire-and-forget: request ctx is cancelled on HTTP return (Rule 8)
-	go s.reindexSpaces(tenantID)          // #nosec G118 -- fire-and-forget: request ctx is cancelled on HTTP return (Rule 8)
-	go s.reindexLearningTracks(tenantID)  // #nosec G118 -- fire-and-forget: request ctx is cancelled on HTTP return (Rule 8)
+	go s.reindexForumThreads(tenantID)   // #nosec G118 -- fire-and-forget: request ctx is cancelled on HTTP return (Rule 8)
+	go s.reindexSpaces(tenantID)         // #nosec G118 -- fire-and-forget: request ctx is cancelled on HTTP return (Rule 8)
+	go s.reindexLearningTracks(tenantID) // #nosec G118 -- fire-and-forget: request ctx is cancelled on HTTP return (Rule 8)
 
 	return nil
 }

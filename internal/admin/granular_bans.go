@@ -10,6 +10,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/middleware"
 	"github.com/jedafe/japa/internal/rbac"
 	"github.com/jedafe/japa/internal/valkey"
@@ -53,31 +54,31 @@ func (h *Handlers) RestrictUser(w http.ResponseWriter, r *http.Request) {
 
 	var uid pgtype.UUID
 	if err := uid.Scan(chi.URLParam(r, "id")); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid user ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid user ID")
 		return
 	}
 
 	var input RestrictUserRequest
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
 		return
 	}
 
 	if len(input.Operations) == 0 {
-		writeError(w, http.StatusBadRequest, "validation", "At least one operation is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "validation", "At least one operation is required")
 		return
 	}
 
 	seconds, ok := durationMap[input.Duration]
 	if !ok {
-		writeError(w, http.StatusBadRequest, "invalid_duration", "Duration must be one of: 1h, 2h, 6h, 12h, 1d, 7d, 30d, permanent")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_duration", "Duration must be one of: 1h, 2h, 6h, 12h, 1d, 7d, 30d, permanent")
 		return
 	}
 
 	var actorID pgtype.UUID
 	if err := actorID.Scan(actor.UserID.String()); err != nil {
 		slog.Error("restrict: invalid actor id", "error", err, "actor_id", actor.UserID.String())
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to restrict user")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to restrict user")
 
 		return
 	}
@@ -85,7 +86,7 @@ func (h *Handlers) RestrictUser(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	for _, op := range input.Operations {
 		if !validOperations[op] {
-			writeError(w, http.StatusBadRequest, "invalid_operation", "Invalid operation: "+op)
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_operation", "Invalid operation: "+op)
 			return
 		}
 		// Soft-delete any existing active restriction for this user+operation first.
@@ -95,7 +96,7 @@ func (h *Handlers) RestrictUser(w http.ResponseWriter, r *http.Request) {
 		}); err != nil {
 			slog.Error("restrict: failed to soft-delete existing operation ban",
 				"error", err, "user_id", uid.String(), "operation", op)
-			writeError(w, http.StatusInternalServerError, "internal_error", "Failed to restrict user")
+			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to restrict user")
 
 			return
 		}
@@ -108,7 +109,7 @@ func (h *Handlers) RestrictUser(w http.ResponseWriter, r *http.Request) {
 			IssuedBy:  actorID,
 		}); err != nil {
 			slog.Error("restrict: failed to create operation ban", "error", err, "user_id", uid.String(), "operation", op)
-			writeError(w, http.StatusInternalServerError, "internal_error", "Failed to restrict user")
+			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to restrict user")
 			return
 		}
 	}
@@ -119,7 +120,7 @@ func (h *Handlers) RestrictUser(w http.ResponseWriter, r *http.Request) {
 		ID:     uid,
 	}); err != nil {
 		slog.Error("restrict: failed to update user status", "error", err, "user_id", uid.String())
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to restrict user")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to restrict user")
 
 		return
 	}
@@ -127,7 +128,7 @@ func (h *Handlers) RestrictUser(w http.ResponseWriter, r *http.Request) {
 	// Invalidate caches so the new restrictions take effect immediately.
 	h.invalidateUserAccessCaches(ctx, uid, restrictionsCacheKey(uid), banCacheKey(uid))
 
-	writeJSON(w, http.StatusCreated, map[string]any{
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{
 		"user_id":    uid.String(),
 		"operations": input.Operations,
 		"duration":   input.Duration,
@@ -140,13 +141,13 @@ func (h *Handlers) RestrictUser(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) LiftRestriction(w http.ResponseWriter, r *http.Request) {
 	var uid pgtype.UUID
 	if err := uid.Scan(chi.URLParam(r, "id")); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid user ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid user ID")
 		return
 	}
 
 	op := chi.URLParam(r, "operation")
 	if !validOperations[op] {
-		writeError(w, http.StatusBadRequest, "invalid_operation", "Invalid operation: "+op)
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_operation", "Invalid operation: "+op)
 		return
 	}
 
@@ -154,7 +155,7 @@ func (h *Handlers) LiftRestriction(w http.ResponseWriter, r *http.Request) {
 		UserID:    uid,
 		Operation: gen.BanOperation(op),
 	}); err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to lift restriction")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to lift restriction")
 		return
 	}
 
@@ -176,7 +177,7 @@ func (h *Handlers) LiftRestriction(w http.ResponseWriter, r *http.Request) {
 
 	h.invalidateUserAccessCaches(r.Context(), uid, restrictionsCacheKey(uid))
 
-	writeJSON(w, http.StatusOK, map[string]any{"user_id": uid.String(), "operation": op, "lifted": true})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"user_id": uid.String(), "operation": op, "lifted": true})
 }
 
 // LiftAllRestrictions handles DELETE /admin/users/{id}/restrict.
@@ -184,12 +185,12 @@ func (h *Handlers) LiftRestriction(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) LiftAllRestrictions(w http.ResponseWriter, r *http.Request) {
 	var uid pgtype.UUID
 	if err := uid.Scan(chi.URLParam(r, "id")); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid user ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid user ID")
 		return
 	}
 
 	if err := h.Queries.LiftAllOperationBans(r.Context(), uid); err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to lift restrictions")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to lift restrictions")
 		return
 	}
 
@@ -203,7 +204,7 @@ func (h *Handlers) LiftAllRestrictions(w http.ResponseWriter, r *http.Request) {
 
 	h.invalidateUserAccessCaches(r.Context(), uid, restrictionsCacheKey(uid))
 
-	writeJSON(w, http.StatusOK, map[string]any{"user_id": uid.String(), "lifted_all": true})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"user_id": uid.String(), "lifted_all": true})
 }
 
 // ListRestrictions handles GET /admin/users/{id}/restrictions.
@@ -211,13 +212,13 @@ func (h *Handlers) LiftAllRestrictions(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) ListRestrictions(w http.ResponseWriter, r *http.Request) {
 	var uid pgtype.UUID
 	if err := uid.Scan(chi.URLParam(r, "id")); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid user ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid user ID")
 		return
 	}
 
 	rows, err := h.Queries.ListActiveOperationBans(r.Context(), uid)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list restrictions")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list restrictions")
 		return
 	}
 
@@ -241,7 +242,7 @@ func (h *Handlers) ListRestrictions(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": items})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": items})
 }
 
 // SuspendUserRequest is the body for POST /admin/users/{id}/suspend.
@@ -263,13 +264,13 @@ func (h *Handlers) SuspendUser(w http.ResponseWriter, r *http.Request) {
 
 	var uid pgtype.UUID
 	if err := uid.Scan(chi.URLParam(r, "id")); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid user ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid user ID")
 		return
 	}
 
 	var input SuspendUserRequest
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
 		return
 	}
 
@@ -282,7 +283,7 @@ func (h *Handlers) SuspendUser(w http.ResponseWriter, r *http.Request) {
 		Reason:   &input.Reason,
 	}); err != nil {
 		slog.Error("suspend: failed to create suspension record", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to suspend user")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to suspend user")
 		return
 	}
 
@@ -305,14 +306,14 @@ func (h *Handlers) SuspendUser(w http.ResponseWriter, r *http.Request) {
 		ID:     uid,
 	}); err != nil {
 		slog.Error("suspend: failed to update user status", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to update user status")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update user status")
 		return
 	}
 
 	// 4. Invalidate all caches.
 	h.invalidateUserAccessCaches(ctx, uid, restrictionsCacheKey(uid), banCacheKey(uid))
 
-	writeJSON(w, http.StatusCreated, map[string]any{
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{
 		"user_id": uid.String(),
 		"status":  "suspended",
 		"reason":  input.Reason,
@@ -327,10 +328,10 @@ type WarnUserTypedRequest struct {
 
 // violationToOperations maps violation types to operations to auto-restrict.
 var violationToOperations = map[string][]string{
-	"spam":            {"post", "comment"},
-	"harassment":      {"message", "comment"},
-	"misinformation":  {"post", "blog"},
-	"hate_speech":     {"post", "comment", "discussion"},
+	"spam":           {"post", "comment"},
+	"harassment":     {"message", "comment"},
+	"misinformation": {"post", "blog"},
+	"hate_speech":    {"post", "comment", "discussion"},
 }
 
 // WarnUserTyped handles POST /admin/users/{id}/warn with violation_type.
@@ -347,18 +348,18 @@ func (h *Handlers) WarnUserTyped(w http.ResponseWriter, r *http.Request) {
 
 	var uid pgtype.UUID
 	if err := uid.Scan(chi.URLParam(r, "id")); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid user ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid user ID")
 		return
 	}
 
 	var input WarnUserTypedRequest
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
 		return
 	}
 
 	if input.ViolationType == "" {
-		writeError(w, http.StatusBadRequest, "validation", "violation_type is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "validation", "violation_type is required")
 		return
 	}
 
@@ -371,7 +372,7 @@ func (h *Handlers) WarnUserTyped(w http.ResponseWriter, r *http.Request) {
 		Reason:        &input.Reason,
 		ViolationType: &input.ViolationType,
 	}); err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to issue warning")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to issue warning")
 		return
 	}
 
@@ -383,7 +384,7 @@ func (h *Handlers) WarnUserTyped(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("warn: failed to count warnings for auto-escalation",
 			"error", err, "user_id", uid.String(), "violation_type", input.ViolationType)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to issue warning")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to issue warning")
 
 		return
 	}
@@ -415,7 +416,7 @@ func (h *Handlers) WarnUserTyped(w http.ResponseWriter, r *http.Request) {
 			"operations", ops)
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{
 		"user_id":         uid.String(),
 		"violation_type":  input.ViolationType,
 		"warning_count":   count,
@@ -430,7 +431,9 @@ func banCacheKey(uid pgtype.UUID) string { return valkey.MustKey("ban:%s", uid.S
 
 // restrictionsCacheKey returns the Valkey key holding a user's cached
 // per-operation restrictions.
-func restrictionsCacheKey(uid pgtype.UUID) string { return valkey.MustKey("restrictions:%s", uid.String()) }
+func restrictionsCacheKey(uid pgtype.UUID) string {
+	return valkey.MustKey("restrictions:%s", uid.String())
+}
 
 // invalidateUserAccessCaches drops the cached RBAC permission set plus the
 // given Valkey keys for a user after a moderation action. Failures are logged

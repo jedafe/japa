@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/db/gen"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/tenant"
 )
 
@@ -30,24 +31,10 @@ func NewHandlers(service *Service) *Handlers {
 // Shared helpers (same pattern as contentimport/handlers.go)
 // ---------------------------------------------------------------------------
 
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	if err := json.NewEncoder(w).Encode(v); err != nil {
-		slog.Error("dataexport: encode response", "error", err)
-	}
-}
-
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, map[string]any{
-		"error": map[string]string{"code": code, "message": message},
-	})
-}
-
 func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
 	return t.ID, true
@@ -56,7 +43,7 @@ func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	u := auth.FromContext(r.Context())
 	if u == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
 	return u, true
@@ -65,7 +52,7 @@ func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUse
 func scanUUIDParam(w http.ResponseWriter, r *http.Request, name string) (pgtype.UUID, bool) {
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, name)); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid "+name)
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid "+name)
 		return pgtype.UUID{}, false
 	}
 	return id, true
@@ -136,16 +123,16 @@ func (h *Handlers) HandleCreateExport(w http.ResponseWriter, r *http.Request) {
 
 	var req createExportRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if req.Name == "" {
-		writeError(w, http.StatusBadRequest, "missing_name", "name is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_name", "name is required")
 		return
 	}
 	if !ValidExportType(req.Type) {
-		writeError(w, http.StatusBadRequest, "invalid_type",
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_type",
 			"type must be one of: users, posts, comments, orders, transactions, analytics, moderation")
 		return
 	}
@@ -155,7 +142,7 @@ func (h *Handlers) HandleCreateExport(w http.ResponseWriter, r *http.Request) {
 	if req.Format == "" {
 		req.Format = FormatCSV
 	} else if !ImplementedFormat(req.Format) {
-		writeError(w, http.StatusBadRequest, "unsupported_format",
+		errpkg.WriteError(w, http.StatusBadRequest, "unsupported_format",
 			"format must be one of: csv, json (xlsx is not yet implemented)")
 		return
 	}
@@ -163,11 +150,11 @@ func (h *Handlers) HandleCreateExport(w http.ResponseWriter, r *http.Request) {
 	exp, err := h.service.CreateExport(r.Context(), tenantID, user.UserID, req.Name, req.Type, req.Format, req.IncludeMetadata)
 	if err != nil {
 		slog.Error("dataexport: create failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "export_create_failed", "Failed to create export")
+		errpkg.WriteError(w, http.StatusInternalServerError, "export_create_failed", "Failed to create export")
 		return
 	}
 
-	writeJSON(w, http.StatusAccepted, map[string]any{"data": serializeExport(exp)})
+	errpkg.WriteJSON(w, http.StatusAccepted, map[string]any{"data": serializeExport(exp)})
 }
 
 // HandleListExports handles GET /api/v1/admin/data-exports — list all exports.
@@ -187,11 +174,11 @@ func (h *Handlers) HandleListExports(w http.ResponseWriter, r *http.Request) {
 	exports, total, err := h.service.ListExports(r.Context(), tenantID, status, page, limit)
 	if err != nil {
 		slog.Error("dataexport: list failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "export_list_failed", "Failed to list exports")
+		errpkg.WriteError(w, http.StatusInternalServerError, "export_list_failed", "Failed to list exports")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": serializeExports(exports),
 		"pagination": map[string]any{
 			"page_size":   limit,
@@ -223,15 +210,15 @@ func (h *Handlers) HandleGetExport(w http.ResponseWriter, r *http.Request) {
 		// Distinguish "not found" from a real DB failure so 5xx errors are
 		// not masked as 404s (BUG-009).
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "export_not_found", "Export not found")
+			errpkg.WriteError(w, http.StatusNotFound, "export_not_found", "Export not found")
 		} else {
 			slog.Error("dataexport: get failed", "error", err)
-			writeError(w, http.StatusInternalServerError, "export_get_failed", "Failed to fetch export")
+			errpkg.WriteError(w, http.StatusInternalServerError, "export_get_failed", "Failed to fetch export")
 		}
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": serializeExport(exp)})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": serializeExport(exp)})
 }
 
 // HandleDeleteExport handles DELETE /api/v1/admin/data-exports/:id.
@@ -252,11 +239,11 @@ func (h *Handlers) HandleDeleteExport(w http.ResponseWriter, r *http.Request) {
 
 	if err := h.service.DeleteExport(r.Context(), id, tenantID); err != nil {
 		slog.Error("dataexport: delete failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "export_delete_failed", "Failed to delete export")
+		errpkg.WriteError(w, http.StatusInternalServerError, "export_delete_failed", "Failed to delete export")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
 }
 
 // HandleDownloadExport handles GET /api/v1/admin/data-exports/:id/download —
@@ -280,10 +267,10 @@ func (h *Handlers) HandleDownloadExport(w http.ResponseWriter, r *http.Request) 
 	filePath, err := h.service.GetFilePath(r.Context(), id, tenantID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "export_not_found", "Export not found")
+			errpkg.WriteError(w, http.StatusNotFound, "export_not_found", "Export not found")
 		} else {
 			slog.Error("dataexport: download path failed", "error", err)
-			writeError(w, http.StatusNotFound, "file_not_available", "Export file not available")
+			errpkg.WriteError(w, http.StatusNotFound, "file_not_available", "Export file not available")
 		}
 		return
 	}
@@ -291,7 +278,7 @@ func (h *Handlers) HandleDownloadExport(w http.ResponseWriter, r *http.Request) 
 	// Determine content type from the export format.
 	exp, err := h.service.GetExport(r.Context(), id, tenantID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "export_get_failed", "Failed to fetch export")
+		errpkg.WriteError(w, http.StatusInternalServerError, "export_get_failed", "Failed to fetch export")
 		return
 	}
 	contentType := "application/octet-stream"

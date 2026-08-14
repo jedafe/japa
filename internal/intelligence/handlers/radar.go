@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/jedafe/japa/internal/db/gen"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/follows"
 	"github.com/jedafe/japa/internal/scholarships"
 	"github.com/jedafe/japa/internal/tenant"
@@ -236,7 +237,7 @@ func countByCountry(items []radarItem) map[string]int {
 // GET /api/v1/intel/radar
 func (h *Handlers) HandleRadarFeed(w http.ResponseWriter, r *http.Request) {
 	if h.intelStores == nil {
-		writeError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
 		return
 	}
 
@@ -271,7 +272,7 @@ func (h *Handlers) HandleRadarFeed(w http.ResponseWriter, r *http.Request) {
 	case spaceIDStr != "":
 		var spaceID pgtype.UUID
 		if e := spaceID.Scan(spaceIDStr); e != nil {
-			writeError(w, http.StatusBadRequest, "invalid_uuid", "Invalid space_id")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_uuid", "Invalid space_id")
 			return
 		}
 		schRows, err = h.intelStores.ListScholarshipsBySpace(r.Context(), tenantID, gen.ListScholarshipsBySpaceParams{
@@ -293,7 +294,7 @@ func (h *Handlers) HandleRadarFeed(w http.ResponseWriter, r *http.Request) {
 	}
 	if err != nil {
 		slog.Error("intel: radar feed scholarships query failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "radar_feed_failed", "Failed to load radar feed")
+		errpkg.WriteError(w, http.StatusInternalServerError, "radar_feed_failed", "Failed to load radar feed")
 		return
 	}
 
@@ -399,7 +400,7 @@ func (h *Handlers) HandleRadarFeed(w http.ResponseWriter, r *http.Request) {
 
 	followedSpaces := h.resolveFollowedSpaceIDs(r.Context(), tenantID, userID)
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"items":              items,
 		"next_cursor":        nextCursor,
 		"has_more":           hasMore,
@@ -433,7 +434,7 @@ func sortRadarItems(items []radarItem) {
 // GET /api/v1/intel/radar/counts
 func (h *Handlers) HandleRadarCounts(w http.ResponseWriter, r *http.Request) {
 	if h.intelStores == nil {
-		writeError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
 		return
 	}
 
@@ -448,7 +449,7 @@ func (h *Handlers) HandleRadarCounts(w http.ResponseWriter, r *http.Request) {
 	rows, err := h.intelStores.CountScholarshipsByCountry(r.Context(), tenantID)
 	if err != nil {
 		slog.Error("intel: radar counts query failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "counts_failed", "Failed to load radar counts")
+		errpkg.WriteError(w, http.StatusInternalServerError, "counts_failed", "Failed to load radar counts")
 		return
 	}
 	if rows == nil {
@@ -465,7 +466,7 @@ func (h *Handlers) HandleRadarCounts(w http.ResponseWriter, r *http.Request) {
 	// Spec envelope: {data: {total_new, by_type, by_country}} (INTEL-019 fix,
 	// §3.3 / api-response-format.md). In v1 all radar items are scholarships,
 	// so by_type has a single key.
-	writeJSON(w, http.StatusOK, map[string]interface{}{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"data": map[string]interface{}{
 			"total_new":  total,
 			"by_type":    map[string]int64{"scholarship": total},
@@ -488,7 +489,7 @@ func (h *Handlers) HandleRadarCounts(w http.ResponseWriter, r *http.Request) {
 // GET /api/v1/intel/radar/followed
 func (h *Handlers) HandleRadarFollowed(w http.ResponseWriter, r *http.Request) {
 	if h.intelStores == nil || h.followsSvc == nil {
-		writeError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
 		return
 	}
 
@@ -512,7 +513,7 @@ func (h *Handlers) HandleRadarFollowed(w http.ResponseWriter, r *http.Request) {
 	followed, err := h.followsSvc.GetFollowingByType(r.Context(), tenantID, userID, userID, follows.EntityTypeSpace, int32(maxFollowed), 0)
 	if err != nil {
 		slog.Error("intel: radar followed spaces lookup failed", "user_id", userID.String(), "error", err)
-		writeError(w, http.StatusInternalServerError, "followed_spaces_failed", "Failed to load followed spaces")
+		errpkg.WriteError(w, http.StatusInternalServerError, "followed_spaces_failed", "Failed to load followed spaces")
 		return
 	}
 
@@ -534,7 +535,7 @@ func (h *Handlers) HandleRadarFollowed(w http.ResponseWriter, r *http.Request) {
 		})
 		if err != nil {
 			slog.Error("intel: radar followed union query failed", "error", err)
-			writeError(w, http.StatusInternalServerError, "followed_feed_failed", "Failed to load followed feed")
+			errpkg.WriteError(w, http.StatusInternalServerError, "followed_feed_failed", "Failed to load followed feed")
 			return
 		}
 	}
@@ -573,7 +574,7 @@ func (h *Handlers) HandleRadarFollowed(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Radar envelope (spec §739), NOT the generic {data, meta} envelope.
-	writeJSON(w, http.StatusOK, map[string]interface{}{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"items":              items,
 		"next_cursor":        nextCursor,
 		"has_more":           hasMore,
@@ -590,7 +591,7 @@ func (h *Handlers) HandleRadarFollowed(w http.ResponseWriter, r *http.Request) {
 // POST /api/v1/intel/radar/follow
 func (h *Handlers) HandleRadarFollow(w http.ResponseWriter, r *http.Request) {
 	if h.followsSvc == nil {
-		writeError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
 		return
 	}
 
@@ -607,28 +608,28 @@ func (h *Handlers) HandleRadarFollow(w http.ResponseWriter, r *http.Request) {
 		SpaceID string `json:"space_id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
 		return
 	}
 	if body.SpaceID == "" {
-		writeError(w, http.StatusBadRequest, "missing_param", "space_id is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_param", "space_id is required")
 		return
 	}
 
 	var spaceID pgtype.UUID
 	if err := spaceID.Scan(body.SpaceID); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_uuid", "Invalid space_id")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_uuid", "Invalid space_id")
 		return
 	}
 
 	followed, err := h.followsSvc.ToggleFollow(r.Context(), tenantID, userID, follows.EntityTypeSpace, spaceID)
 	if err != nil {
 		slog.Error("intel: radar follow failed", "space_id", body.SpaceID, "error", err)
-		writeError(w, http.StatusBadRequest, "follow_failed", "Failed to follow space")
+		errpkg.WriteError(w, http.StatusBadRequest, "follow_failed", "Failed to follow space")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"data": map[string]interface{}{
 			"space_id":  body.SpaceID,
 			"following": followed,
@@ -644,7 +645,7 @@ func (h *Handlers) HandleRadarFollow(w http.ResponseWriter, r *http.Request) {
 // DELETE /api/v1/intel/radar/follow
 func (h *Handlers) HandleRadarUnfollow(w http.ResponseWriter, r *http.Request) {
 	if h.followsSvc == nil {
-		writeError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
 		return
 	}
 
@@ -668,23 +669,23 @@ func (h *Handlers) HandleRadarUnfollow(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if spaceIDStr == "" {
-		writeError(w, http.StatusBadRequest, "missing_param", "space_id is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_param", "space_id is required")
 		return
 	}
 	var spaceID pgtype.UUID
 	if err := spaceID.Scan(spaceIDStr); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_uuid", "Invalid space_id")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_uuid", "Invalid space_id")
 		return
 	}
 
 	followed, err := h.followsSvc.ToggleFollow(r.Context(), tenantID, userID, follows.EntityTypeSpace, spaceID)
 	if err != nil {
 		slog.Error("intel: radar unfollow failed", "space_id", spaceIDStr, "error", err)
-		writeError(w, http.StatusBadRequest, "unfollow_failed", "Failed to unfollow space")
+		errpkg.WriteError(w, http.StatusBadRequest, "unfollow_failed", "Failed to unfollow space")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"data": map[string]interface{}{
 			"space_id":  spaceIDStr,
 			"following": followed,
@@ -698,7 +699,7 @@ func (h *Handlers) HandleRadarUnfollow(w http.ResponseWriter, r *http.Request) {
 // GET /api/v1/intel/radar/feed/{item_id}
 func (h *Handlers) HandleRadarItemDetail(w http.ResponseWriter, r *http.Request) {
 	if h.intelStores == nil {
-		writeError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
 		return
 	}
 
@@ -718,11 +719,11 @@ func (h *Handlers) HandleRadarItemDetail(w http.ResponseWriter, r *http.Request)
 	s, err := h.intelStores.GetScholarship(r.Context(), tenantID, itemID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "not_found", "Radar item not found")
+			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Radar item not found")
 			return
 		}
 		slog.Error("intel: radar item detail lookup failed", "item_id", itemID.String(), "error", err)
-		writeError(w, http.StatusInternalServerError, "lookup_failed", "Failed to load radar item")
+		errpkg.WriteError(w, http.StatusInternalServerError, "lookup_failed", "Failed to load radar item")
 		return
 	}
 
@@ -742,7 +743,7 @@ func (h *Handlers) HandleRadarItemDetail(w http.ResponseWriter, r *http.Request)
 		}
 	}
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"data": item,
 	})
 }
@@ -754,7 +755,7 @@ func (h *Handlers) HandleRadarItemDetail(w http.ResponseWriter, r *http.Request)
 // GET /api/v1/intel/radar/saved
 func (h *Handlers) HandleRadarSaved(w http.ResponseWriter, r *http.Request) {
 	if h.scholarSvc == nil {
-		writeError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
 		return
 	}
 
@@ -773,14 +774,14 @@ func (h *Handlers) HandleRadarSaved(w http.ResponseWriter, r *http.Request) {
 	rows, total, err := h.scholarSvc.ListSavedScholarships(r.Context(), tenantID, userID, status, page, limit)
 	if err != nil {
 		slog.Error("intel: radar saved list failed", "user_id", userID.String(), "error", err)
-		writeError(w, http.StatusInternalServerError, "saved_list_failed", "Failed to load saved opportunities")
+		errpkg.WriteError(w, http.StatusInternalServerError, "saved_list_failed", "Failed to load saved opportunities")
 		return
 	}
 	if rows == nil {
 		rows = []scholarships.SavedScholarshipResponse{}
 	}
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"data": rows,
 		"meta": map[string]interface{}{
 			"total":       total,
@@ -797,7 +798,7 @@ func (h *Handlers) HandleRadarSaved(w http.ResponseWriter, r *http.Request) {
 // POST /api/v1/intel/radar/save
 func (h *Handlers) HandleRadarSave(w http.ResponseWriter, r *http.Request) {
 	if h.scholarSvc == nil || h.intelStores == nil {
-		writeError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
 		return
 	}
 
@@ -814,17 +815,17 @@ func (h *Handlers) HandleRadarSave(w http.ResponseWriter, r *http.Request) {
 		ItemID string `json:"item_id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
 		return
 	}
 	if body.ItemID == "" {
-		writeError(w, http.StatusBadRequest, "missing_param", "item_id is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_param", "item_id is required")
 		return
 	}
 
 	var itemID pgtype.UUID
 	if err := itemID.Scan(body.ItemID); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_uuid", "Invalid item_id")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_uuid", "Invalid item_id")
 		return
 	}
 
@@ -833,26 +834,26 @@ func (h *Handlers) HandleRadarSave(w http.ResponseWriter, r *http.Request) {
 	s, err := h.intelStores.GetScholarship(r.Context(), tenantID, itemID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "not_found", "Radar item not found")
+			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Radar item not found")
 			return
 		}
 		slog.Error("intel: radar save lookup failed", "item_id", itemID.String(), "error", err)
-		writeError(w, http.StatusInternalServerError, "lookup_failed", "Failed to load radar item")
+		errpkg.WriteError(w, http.StatusInternalServerError, "lookup_failed", "Failed to load radar item")
 		return
 	}
 
 	saved, err := h.scholarSvc.SaveScholarship(r.Context(), tenantID, userID, s.GuideID)
 	if err != nil {
 		if errors.Is(err, scholarships.ErrGuideNotFound) {
-			writeError(w, http.StatusNotFound, "guide_not_found", "Guide not found for this opportunity")
+			errpkg.WriteError(w, http.StatusNotFound, "guide_not_found", "Guide not found for this opportunity")
 			return
 		}
 		slog.Error("intel: radar save failed", "item_id", itemID.String(), "error", err)
-		writeError(w, http.StatusBadRequest, "save_failed", "Failed to save opportunity")
+		errpkg.WriteError(w, http.StatusBadRequest, "save_failed", "Failed to save opportunity")
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]interface{}{
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]interface{}{
 		"data": map[string]interface{}{
 			"id":                 pgUUIDString(saved.ID),
 			"guide_id":           pgUUIDString(saved.GuideID),
@@ -869,7 +870,7 @@ func (h *Handlers) HandleRadarSave(w http.ResponseWriter, r *http.Request) {
 // DELETE /api/v1/intel/radar/save/{item_id}
 func (h *Handlers) HandleRadarUnsave(w http.ResponseWriter, r *http.Request) {
 	if h.scholarSvc == nil || h.intelStores == nil {
-		writeError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
 		return
 	}
 
@@ -890,21 +891,21 @@ func (h *Handlers) HandleRadarUnsave(w http.ResponseWriter, r *http.Request) {
 	s, err := h.intelStores.GetScholarship(r.Context(), tenantID, itemID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "not_found", "Radar item not found")
+			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Radar item not found")
 			return
 		}
 		slog.Error("intel: radar unsave lookup failed", "item_id", itemID.String(), "error", err)
-		writeError(w, http.StatusInternalServerError, "lookup_failed", "Failed to load radar item")
+		errpkg.WriteError(w, http.StatusInternalServerError, "lookup_failed", "Failed to load radar item")
 		return
 	}
 
 	if err := h.scholarSvc.DeleteSavedScholarship(r.Context(), tenantID, userID, s.GuideID); err != nil {
 		slog.Error("intel: radar unsave failed", "item_id", itemID.String(), "error", err)
-		writeError(w, http.StatusBadRequest, "unsave_failed", "Failed to unsave opportunity")
+		errpkg.WriteError(w, http.StatusBadRequest, "unsave_failed", "Failed to unsave opportunity")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"data": map[string]interface{}{"deleted": true},
 	})
 }

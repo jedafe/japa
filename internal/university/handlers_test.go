@@ -13,9 +13,9 @@ func TestScanOptionalUUIDParam(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name    string
-		query   string
-		wantOK  bool
+		name     string
+		query    string
+		wantOK   bool
 		wantZero bool
 	}{
 		{name: "absent", query: "", wantOK: false, wantZero: true},
@@ -107,10 +107,10 @@ func TestParsePaginationRevenueSplits(t *testing.T) {
 	// The audit viewer uses the shared parsePagination helper; verify the
 	// page/limit interaction the handler relies on for the meta.page calc.
 	tests := []struct {
-		name        string
-		query       string
-		wantLimit   int32
-		wantOffset  int32
+		name       string
+		query      string
+		wantLimit  int32
+		wantOffset int32
 	}{
 		{name: "defaults", query: "", wantLimit: 20, wantOffset: 0},
 		{name: "page 1", query: "?page=1&limit=10", wantLimit: 10, wantOffset: 0},

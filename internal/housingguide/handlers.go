@@ -12,7 +12,8 @@
 //	PATCH /api/v1/admin/housing-guides/:id/approve — HITL approve (housing_guide.manage)
 //
 // Ref: japaconnect-engineering/sections/96-housing-guide.md
-//      japaconnect-engineering/adr/ADR-104-housing-guide.md
+//
+//	japaconnect-engineering/adr/ADR-104-housing-guide.md
 package housingguide
 
 import (
@@ -28,6 +29,7 @@ import (
 
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/config"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/tenant"
 )
 
@@ -47,24 +49,10 @@ func NewHandlers(service *Service, settings *config.Settings) *Handlers {
 // Shared helpers (same pattern as servicedir/handlers.go)
 // ---------------------------------------------------------------------------
 
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	if err := json.NewEncoder(w).Encode(v); err != nil {
-		slog.Error("housingguide: encode response", "error", err)
-	}
-}
-
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, map[string]any{
-		"error": map[string]string{"code": code, "message": message},
-	})
-}
-
 func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
 	return t.ID, true
@@ -73,7 +61,7 @@ func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	u := auth.FromContext(r.Context())
 	if u == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
 	return u, true
@@ -82,7 +70,7 @@ func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUse
 func scanUUIDParam(w http.ResponseWriter, r *http.Request, name string) (pgtype.UUID, bool) {
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, name)); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid "+name)
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid "+name)
 		return pgtype.UUID{}, false
 	}
 	return id, true
@@ -117,14 +105,14 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "housing_guide_disabled", "Housing guide is not available")
+		errpkg.WriteError(w, http.StatusNotFound, "housing_guide_disabled", "Housing guide is not available")
 		return
 	}
 
 	var destSpaceID pgtype.UUID
 	if v := r.URL.Query().Get("dest"); v != "" {
 		if err := destSpaceID.Scan(v); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid destination space ID")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid destination space ID")
 			return
 		}
 	}
@@ -132,7 +120,7 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 	var citySpaceID pgtype.UUID
 	if v := r.URL.Query().Get("city"); v != "" {
 		if err := citySpaceID.Scan(v); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid city space ID")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid city space ID")
 			return
 		}
 	}
@@ -143,11 +131,11 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 	guides, total, err := h.service.List(r.Context(), tenantID, destSpaceID, citySpaceID, accommodationType, page, limit)
 	if err != nil {
 		slog.Error("housingguide: list failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "list_failed", "Failed to list housing guides")
+		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list housing guides")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": guides,
 		"pagination": map[string]any{
 			"page":  page,
@@ -166,7 +154,7 @@ func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "housing_guide_disabled", "Housing guide is not available")
+		errpkg.WriteError(w, http.StatusNotFound, "housing_guide_disabled", "Housing guide is not available")
 		return
 	}
 
@@ -178,15 +166,15 @@ func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
 	guide, err := h.service.GetByID(r.Context(), id, tenantID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "guide_not_found", "Housing guide not found")
+			errpkg.WriteError(w, http.StatusNotFound, "guide_not_found", "Housing guide not found")
 			return
 		}
 		slog.Error("housingguide: get by id failed", "id", id, "error", err)
-		writeError(w, http.StatusInternalServerError, "get_failed", "Failed to get housing guide")
+		errpkg.WriteError(w, http.StatusInternalServerError, "get_failed", "Failed to get housing guide")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": guide})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": guide})
 }
 
 // ---------------------------------------------------------------------------
@@ -208,7 +196,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil {
-		writeError(w, http.StatusServiceUnavailable, "housing_guide_unavailable", "Housing guide not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "housing_guide_unavailable", "Housing guide not configured")
 		return
 	}
 
@@ -219,7 +207,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	var destSpaceID pgtype.UUID
 	if v := r.URL.Query().Get("dest"); v != "" {
 		if err := destSpaceID.Scan(v); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid destination space ID")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid destination space ID")
 			return
 		}
 	}
@@ -227,7 +215,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	var citySpaceID pgtype.UUID
 	if v := r.URL.Query().Get("city"); v != "" {
 		if err := citySpaceID.Scan(v); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid city space ID")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid city space ID")
 			return
 		}
 	}
@@ -248,11 +236,11 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	guides, total, err := h.service.AdminList(r.Context(), tenantID, status, accommodationType, q, destSpaceID, citySpaceID, activePtr, page, limit)
 	if err != nil {
 		slog.Error("housingguide: admin list failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "admin_list_failed", "Failed to list housing guides")
+		errpkg.WriteError(w, http.StatusInternalServerError, "admin_list_failed", "Failed to list housing guides")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": guides,
 		"pagination": map[string]any{
 			"page":  page,
@@ -275,29 +263,29 @@ func (h *Handlers) HandleAdminCreate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "housing_guide_disabled", "Housing guide is not available")
+		errpkg.WriteError(w, http.StatusNotFound, "housing_guide_disabled", "Housing guide is not available")
 		return
 	}
 
 	var input CreateGuideRequest
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
 
 	if input.DestinationSpaceID == "" {
-		writeError(w, http.StatusBadRequest, "missing_destination_space_id", "destination_space_id is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_destination_space_id", "destination_space_id is required")
 		return
 	}
 
 	guide, err := h.service.Create(r.Context(), tenantID, input)
 	if err != nil {
 		slog.Error("housingguide: admin create failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "create_failed", "Failed to create housing guide")
+		errpkg.WriteError(w, http.StatusInternalServerError, "create_failed", "Failed to create housing guide")
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": guide})
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": guide})
 }
 
 // HandleAdminGenerate handles POST /admin/housing-guides/generate —
@@ -314,29 +302,29 @@ func (h *Handlers) HandleAdminGenerate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "housing_guide_disabled", "Housing guide is not available")
+		errpkg.WriteError(w, http.StatusNotFound, "housing_guide_disabled", "Housing guide is not available")
 		return
 	}
 
 	var input GenerateGuideRequest
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
 
 	if input.DestinationSpaceID == "" {
-		writeError(w, http.StatusBadRequest, "missing_destination_space_id", "destination_space_id is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_destination_space_id", "destination_space_id is required")
 		return
 	}
 
 	result, err := h.service.GenerateDraft(r.Context(), tenantID, input)
 	if err != nil {
 		slog.Error("housingguide: admin generate failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "generate_failed", "Failed to queue draft generation")
+		errpkg.WriteError(w, http.StatusInternalServerError, "generate_failed", "Failed to queue draft generation")
 		return
 	}
 
-	writeJSON(w, http.StatusAccepted, map[string]any{"data": result})
+	errpkg.WriteJSON(w, http.StatusAccepted, map[string]any{"data": result})
 }
 
 // HandleAdminUpdate handles PATCH /admin/housing-guides/:id — update an
@@ -356,28 +344,28 @@ func (h *Handlers) HandleAdminUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "housing_guide_disabled", "Housing guide is not available")
+		errpkg.WriteError(w, http.StatusNotFound, "housing_guide_disabled", "Housing guide is not available")
 		return
 	}
 
 	var input UpdateGuideRequest
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
 
 	guide, err := h.service.Update(r.Context(), id, tenantID, input)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "guide_not_found", "Housing guide not found")
+			errpkg.WriteError(w, http.StatusNotFound, "guide_not_found", "Housing guide not found")
 			return
 		}
 		slog.Error("housingguide: admin update failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "update_failed", "Failed to update housing guide")
+		errpkg.WriteError(w, http.StatusInternalServerError, "update_failed", "Failed to update housing guide")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": guide})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": guide})
 }
 
 // HandleAdminApprove handles PATCH /admin/housing-guides/:id/approve —
@@ -399,28 +387,28 @@ func (h *Handlers) HandleAdminApprove(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "housing_guide_disabled", "Housing guide is not available")
+		errpkg.WriteError(w, http.StatusNotFound, "housing_guide_disabled", "Housing guide is not available")
 		return
 	}
 
 	var input ApproveGuideRequest
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil && err.Error() != "EOF" {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
 
 	guide, err := h.service.Approve(r.Context(), id, tenantID, user.UserID, input)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "guide_not_found", "Housing guide not found")
+			errpkg.WriteError(w, http.StatusNotFound, "guide_not_found", "Housing guide not found")
 			return
 		}
 		slog.Error("housingguide: admin approve failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "approve_failed", "Failed to approve housing guide")
+		errpkg.WriteError(w, http.StatusInternalServerError, "approve_failed", "Failed to approve housing guide")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": guide})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": guide})
 }
 
 // HandleAdminReject rejects a pending housing guide (admin HITL).
@@ -439,7 +427,7 @@ func (h *Handlers) HandleAdminReject(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "housing_guide_disabled", "Housing guide is not available")
+		errpkg.WriteError(w, http.StatusNotFound, "housing_guide_disabled", "Housing guide is not available")
 		return
 	}
 
@@ -447,20 +435,20 @@ func (h *Handlers) HandleAdminReject(w http.ResponseWriter, r *http.Request) {
 		Reason string `json:"reason"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil && err.Error() != "EOF" {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
 
 	guide, err := h.service.Reject(r.Context(), id, tenantID, user.UserID, input.Reason)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "guide_not_found", "Housing guide not found or not pending review")
+			errpkg.WriteError(w, http.StatusNotFound, "guide_not_found", "Housing guide not found or not pending review")
 			return
 		}
 		slog.Error("housingguide: admin reject failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "reject_failed", "Failed to reject housing guide")
+		errpkg.WriteError(w, http.StatusInternalServerError, "reject_failed", "Failed to reject housing guide")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": guide})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": guide})
 }

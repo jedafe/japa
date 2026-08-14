@@ -168,7 +168,7 @@ func (h *Handlers) ListDiscussions(w http.ResponseWriter, r *http.Request) {
 
 	contentID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
@@ -186,7 +186,7 @@ func (h *Handlers) ListDiscussions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": discussions,
 		"meta": map[string]any{"total": total, "page_size": limit, "page_offset": offset},
 	})
@@ -206,7 +206,7 @@ func (h *Handlers) StartConversation(w http.ResponseWriter, r *http.Request) {
 
 	contentID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
@@ -217,7 +217,7 @@ func (h *Handlers) StartConversation(w http.ResponseWriter, r *http.Request) {
 	// Body is optional (omitting thread_id creates a new discussion).
 	if r.Body != nil && r.ContentLength != 0 {
 		if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 			return
 		}
 	}
@@ -225,7 +225,7 @@ func (h *Handlers) StartConversation(w http.ResponseWriter, r *http.Request) {
 	var in StartConversationInput
 	if input.ThreadID != nil && *input.ThreadID != "" {
 		if err := in.ThreadID.Scan(*input.ThreadID); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_thread_id", "Invalid thread_id format")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_thread_id", "Invalid thread_id format")
 			return
 		}
 	}
@@ -234,7 +234,7 @@ func (h *Handlers) StartConversation(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		// GetContentByID returns ErrNotFound / pgx.ErrNoRows when the thread/content is missing.
 		if errors.Is(err, errpkg.ErrNotFound) || errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "not_found", "Content or thread not found")
+			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Content or thread not found")
 			return
 		}
 		handleServiceError(w, err)
@@ -251,7 +251,7 @@ func (h *Handlers) StartConversation(w http.ResponseWriter, r *http.Request) {
 		)
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": map[string]any{
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": map[string]any{
 		"id":         result.Link.ID,
 		"thread_id":  result.Link.ThreadID,
 		"link_count": result.Link.LinkCount,

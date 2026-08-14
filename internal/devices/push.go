@@ -42,8 +42,8 @@ import (
 
 // FCM service-account JSON subset (only the fields we need).
 type fcmServiceAccount struct {
-	ProjectID  string `json:"project_id"`
-	PrivateKey string `json:"private_key"`
+	ProjectID   string `json:"project_id"`
+	PrivateKey  string `json:"private_key"`
 	ClientEmail string `json:"client_email"`
 }
 
@@ -65,13 +65,13 @@ type CompositeDispatcher struct {
 }
 
 type apnsState struct {
-	mu        sync.Mutex
-	jwt       string
-	jwtExp    time.Time
+	mu     sync.Mutex
+	jwt    string
+	jwtExp time.Time
 }
 
 type fcmState struct {
-	cache     fcmTokenCache
+	cache fcmTokenCache
 }
 
 // NewCompositeDispatcher creates a dispatcher that reads FCM/APNs credentials
@@ -105,9 +105,9 @@ func (d *CompositeDispatcher) Dispatch(ctx context.Context, tenantID pgtype.UUID
 // --- APNs ---
 
 const (
-	apnsURL     = "https://api.push.apple.com"
+	apnsURL        = "https://api.push.apple.com"
 	apnsURLSandbox = "https://api.sandbox.push.apple.com"
-	apnsJWTLead = 30 * time.Second // refresh JWT 30s before expiry
+	apnsJWTLead    = 30 * time.Second // refresh JWT 30s before expiry
 )
 
 func (d *CompositeDispatcher) dispatchAPNs(ctx context.Context, tenantID pgtype.UUID, deviceToken string, payload PushPayload) error {

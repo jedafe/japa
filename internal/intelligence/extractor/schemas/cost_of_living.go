@@ -10,8 +10,8 @@ package schemas
 var CostOfLiving = EntitySchema{
 	EntityType: EntityTypeCostOfLiving,
 	Fields: []FieldSpec{
-		{Name: "city", Type: "string", Required: true}, // city name
-		{Name: "country", Type: "country_array", Required: true}, // ISO-3, 1-element
+		{Name: "city", Type: "string", Required: true},            // city name
+		{Name: "country", Type: "country_array", Required: true},  // ISO-3, 1-element
 		{Name: "cost_data", Type: "jsonb_object", Required: true}, // {rent_1br_city_centre, groceries_monthly, ...}
 		{Name: "source_url", Type: "string", Required: true},
 		{Name: "as_of_date", Type: "date", Required: true},

@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/db/gen"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/tenant"
 )
 
@@ -27,24 +28,10 @@ func NewHandlers(service *Service) *Handlers {
 // Shared helpers
 // ---------------------------------------------------------------------------
 
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	if err := json.NewEncoder(w).Encode(v); err != nil {
-		slog.Error("dataimport: encode response", "error", err)
-	}
-}
-
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, map[string]any{
-		"error": map[string]string{"code": code, "message": message},
-	})
-}
-
 func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
 	return t.ID, true
@@ -53,7 +40,7 @@ func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	u := auth.FromContext(r.Context())
 	if u == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
 	return u, true
@@ -62,7 +49,7 @@ func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUse
 func scanUUIDParam(w http.ResponseWriter, r *http.Request, name string) (pgtype.UUID, bool) {
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, name)); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid "+name)
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid "+name)
 		return pgtype.UUID{}, false
 	}
 	return id, true
@@ -95,11 +82,11 @@ func parsePagination(r *http.Request) (int, int) {
 
 // createImportRequest is the JSON body for POST /admin/data-imports.
 type createImportRequest struct {
-	Name       string `json:"name"`
-	Type       string `json:"type"`
-	Format     string `json:"format"`
-	FileURL    string `json:"file_url"`
-	Mode       string `json:"mode"`
+	Name    string `json:"name"`
+	Type    string `json:"type"`
+	Format  string `json:"format"`
+	FileURL string `json:"file_url"`
+	Mode    string `json:"mode"`
 }
 
 // HandleCreateImport handles POST /api/v1/admin/data-imports — create a new
@@ -116,16 +103,16 @@ func (h *Handlers) HandleCreateImport(w http.ResponseWriter, r *http.Request) {
 
 	var req createImportRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if req.Name == "" {
-		writeError(w, http.StatusBadRequest, "missing_name", "name is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_name", "name is required")
 		return
 	}
 	if !ValidImportType(req.Type) {
-		writeError(w, http.StatusBadRequest, "invalid_type",
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_type",
 			"type must be one of: users, posts, comments, orders, transactions, analytics, moderation")
 		return
 	}
@@ -139,11 +126,11 @@ func (h *Handlers) HandleCreateImport(w http.ResponseWriter, r *http.Request) {
 	imp, err := h.service.CreateImport(r.Context(), tenantID, user.UserID, req.Name, req.Type, req.Format, req.FileURL, req.Mode)
 	if err != nil {
 		slog.Error("dataimport: create failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "import_create_failed", "Failed to create import")
+		errpkg.WriteError(w, http.StatusInternalServerError, "import_create_failed", "Failed to create import")
 		return
 	}
 
-	writeJSON(w, http.StatusAccepted, map[string]any{"data": serializeImport(imp)})
+	errpkg.WriteJSON(w, http.StatusAccepted, map[string]any{"data": serializeImport(imp)})
 }
 
 // HandleListImports handles GET /api/v1/admin/data-imports.
@@ -163,11 +150,11 @@ func (h *Handlers) HandleListImports(w http.ResponseWriter, r *http.Request) {
 	imports, total, err := h.service.ListImports(r.Context(), tenantID, status, page, limit)
 	if err != nil {
 		slog.Error("dataimport: list failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "import_list_failed", "Failed to list imports")
+		errpkg.WriteError(w, http.StatusInternalServerError, "import_list_failed", "Failed to list imports")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": serializeImports(imports),
 		"pagination": map[string]any{
 			"page_size":   limit,
@@ -196,11 +183,11 @@ func (h *Handlers) HandleGetImport(w http.ResponseWriter, r *http.Request) {
 
 	imp, err := h.service.GetImport(r.Context(), id, tenantID)
 	if err != nil {
-		writeError(w, http.StatusNotFound, "import_not_found", "Import not found")
+		errpkg.WriteError(w, http.StatusNotFound, "import_not_found", "Import not found")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": serializeImport(imp)})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": serializeImport(imp)})
 }
 
 // HandleDeleteImport handles DELETE /api/v1/admin/data-imports/:id.
@@ -221,11 +208,11 @@ func (h *Handlers) HandleDeleteImport(w http.ResponseWriter, r *http.Request) {
 
 	if err := h.service.DeleteImport(r.Context(), id, tenantID); err != nil {
 		slog.Error("dataimport: delete failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "import_delete_failed", "Failed to delete import")
+		errpkg.WriteError(w, http.StatusInternalServerError, "import_delete_failed", "Failed to delete import")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
 }
 
 // ---------------------------------------------------------------------------
@@ -233,19 +220,19 @@ func (h *Handlers) HandleDeleteImport(w http.ResponseWriter, r *http.Request) {
 // ---------------------------------------------------------------------------
 
 type importResponse struct {
-	ID           string `json:"id"`
-	Name         string `json:"name"`
-	Type         string `json:"type"`
-	Format       string `json:"format"`
-	Status       string `json:"status"`
-	FileURL      string `json:"fileUrl"`
-	TotalRows    int32  `json:"totalRows"`
-	ImportedRows int32  `json:"importedRows"`
-	FailedRows   int32  `json:"failedRows"`
-	ErrorLog     any    `json:"errorLog"`
-	Mode         string `json:"mode"`
-	CreatedBy    string `json:"createdBy"`
-	CreatedAt    string `json:"createdAt"`
+	ID           string  `json:"id"`
+	Name         string  `json:"name"`
+	Type         string  `json:"type"`
+	Format       string  `json:"format"`
+	Status       string  `json:"status"`
+	FileURL      string  `json:"fileUrl"`
+	TotalRows    int32   `json:"totalRows"`
+	ImportedRows int32   `json:"importedRows"`
+	FailedRows   int32   `json:"failedRows"`
+	ErrorLog     any     `json:"errorLog"`
+	Mode         string  `json:"mode"`
+	CreatedBy    string  `json:"createdBy"`
+	CreatedAt    string  `json:"createdAt"`
 	CompletedAt  *string `json:"completedAt"`
 }
 

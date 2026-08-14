@@ -65,9 +65,9 @@ func (s *Service) StartImpersonation(ctx context.Context, tenantID, adminID, tar
 	existing, _ := s.store.GetImpersonation(ctx, adminID)
 	if existing != "" {
 		if err := s.auditLog(ctx, tenantID, adminID, &existing, "impersonate.terminate_previous", ipAddress, map[string]string{
-			"admin_id":         adminID.String(),
-			"previous_target":  existing,
-			"new_target":       targetUserID.String(),
+			"admin_id":        adminID.String(),
+			"previous_target": existing,
+			"new_target":      targetUserID.String(),
 		}); err != nil {
 			return fmt.Errorf("abort impersonation: terminate_previous audit log failed: %w", err)
 		}

@@ -32,6 +32,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/tenant"
 )
 
@@ -44,7 +45,7 @@ const (
 func extractTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusBadRequest, "missing_tenant", "Tenant ID required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_tenant", "Tenant ID required")
 		return pgtype.UUID{}, false
 	}
 
@@ -55,7 +56,7 @@ func extractTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 func requireID(w http.ResponseWriter, r *http.Request, paramName, entityName string) (pgtype.UUID, bool) {
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, paramName)); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid "+entityName+" ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid "+entityName+" ID")
 		return pgtype.UUID{}, false
 	}
 
@@ -76,11 +77,11 @@ func getByID[T any](w http.ResponseWriter, r *http.Request, entityName string, f
 
 	result, err := fetchFn(r.Context(), tenantID, id)
 	if err != nil {
-		writeError(w, http.StatusNotFound, "not_found", entityName+" not found")
+		errpkg.WriteError(w, http.StatusNotFound, "not_found", entityName+" not found")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": result})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": result})
 }
 
 // deleteByID is a shared helper for DELETE /{entity}/{id} handlers.
@@ -97,12 +98,12 @@ func deleteByID(w http.ResponseWriter, r *http.Request, entityName string, delet
 
 	if err := deleteFn(r.Context(), tenantID, id); err != nil {
 		slog.Error("deleting newsletter "+entityName, "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to delete "+entityName)
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to delete "+entityName)
 
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
 }
 
 // Handlers holds dependencies for newsletter admin HTTP handlers.
@@ -131,7 +132,7 @@ func (h *Handlers) Subscribe(w http.ResponseWriter, r *http.Request) {
 
 	// Global killswitch (newsletter.enabled, ADR-080 §62).
 	if !h.Service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "newsletter_disabled", "Newsletter is not available")
+		errpkg.WriteError(w, http.StatusNotFound, "newsletter_disabled", "Newsletter is not available")
 		return
 	}
 
@@ -141,18 +142,18 @@ func (h *Handlers) Subscribe(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
 		return
 	}
 
 	email := strings.TrimSpace(input.Email)
 	if email == "" {
-		writeError(w, http.StatusBadRequest, "validation_error", "email is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "email is required")
 		return
 	}
 
 	if !isValidEmail(email) {
-		writeError(w, http.StatusBadRequest, "validation_error", "A valid email is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "A valid email is required")
 		return
 	}
 
@@ -169,7 +170,7 @@ func (h *Handlers) Subscribe(w http.ResponseWriter, r *http.Request) {
 	case SourceSignup, SourceOnboarding, SourceFooter:
 		// allowed
 	default:
-		writeError(w, http.StatusBadRequest, "validation_error",
+		errpkg.WriteError(w, http.StatusBadRequest, "validation_error",
 			"source must be one of: signup, onboarding, footer")
 		return
 	}
@@ -183,7 +184,7 @@ func (h *Handlers) Subscribe(w http.ResponseWriter, r *http.Request) {
 	subscriber, err := h.Service.CreateSubscriber(r.Context(), tenantID, email, userID, source)
 	if err != nil {
 		slog.Error("creating newsletter subscriber (public)", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to subscribe")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to subscribe")
 		return
 	}
 
@@ -195,7 +196,7 @@ func (h *Handlers) Subscribe(w http.ResponseWriter, r *http.Request) {
 	if subscriber.UnsubscribedAt.Valid || subscriber.SubscribedAt.Valid {
 		status = http.StatusOK
 	}
-	writeJSON(w, status, map[string]any{"data": subscriber})
+	errpkg.WriteJSON(w, status, map[string]any{"data": subscriber})
 }
 
 // isValidEmail performs a basic RFC-5321 email format check. The canonical
@@ -214,25 +215,10 @@ func isValidEmail(s string) bool {
 // Shared helpers
 // ---------------------------------------------------------------------------
 
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-
-	if err := json.NewEncoder(w).Encode(v); err != nil {
-		slog.Warn("json encode error", "error", err)
-	}
-}
-
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, map[string]any{
-		"error": map[string]string{"code": code, "message": message},
-	})
-}
-
 func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
 
@@ -289,12 +275,12 @@ func (h *Handlers) CreateSubscriber(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
 		return
 	}
 
 	if input.Email == "" {
-		writeError(w, http.StatusBadRequest, "validation_error", "email is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "email is required")
 		return
 	}
 
@@ -306,12 +292,12 @@ func (h *Handlers) CreateSubscriber(w http.ResponseWriter, r *http.Request) {
 	subscriber, err := h.Service.CreateSubscriber(r.Context(), tenantID, input.Email, nil, input.Source)
 	if err != nil {
 		slog.Error("creating newsletter subscriber", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to create subscriber")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to create subscriber")
 
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": subscriber})
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": subscriber})
 }
 
 // ImportSubscribers bulk-imports subscribers from a list of emails.
@@ -328,12 +314,12 @@ func (h *Handlers) ImportSubscribers(w http.ResponseWriter, r *http.Request) {
 		Emails []string `json:"emails"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
 		return
 	}
 
 	if len(input.Emails) == 0 {
-		writeError(w, http.StatusBadRequest, "validation_error", "emails is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "emails is required")
 		return
 	}
 
@@ -353,7 +339,7 @@ func (h *Handlers) ImportSubscribers(w http.ResponseWriter, r *http.Request) {
 		imported++
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]int{
 			"imported": imported,
 			"skipped":  skipped,
@@ -380,7 +366,7 @@ func (h *Handlers) ListSubscribers(w http.ResponseWriter, r *http.Request) {
 		case StatusSubscribed, StatusUnsubscribed, StatusBounced, StatusComplained:
 			// allowed
 		default:
-			writeError(w, http.StatusBadRequest, "validation_error",
+			errpkg.WriteError(w, http.StatusBadRequest, "validation_error",
 				"status must be one of: subscribed, unsubscribed, bounced, complained")
 			return
 		}
@@ -389,12 +375,12 @@ func (h *Handlers) ListSubscribers(w http.ResponseWriter, r *http.Request) {
 	subscribers, err := h.Service.ListSubscribersFiltered(r.Context(), tenantID, status, limit, offset)
 	if err != nil {
 		slog.Error("listing newsletter subscribers", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list subscribers")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list subscribers")
 
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": subscribers})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": subscribers})
 }
 
 // GetSubscriber returns a single newsletter subscriber by ID.
@@ -431,12 +417,12 @@ func (h *Handlers) ListCampaigns(w http.ResponseWriter, r *http.Request) {
 	campaigns, err := h.Service.ListCampaigns(r.Context(), tenantID, limit, offset)
 	if err != nil {
 		slog.Error("listing newsletter campaigns", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list campaigns")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list campaigns")
 
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": campaigns})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": campaigns})
 }
 
 // GetCampaign returns a single newsletter campaign by ID.
@@ -456,23 +442,23 @@ func (h *Handlers) CreateCampaign(w http.ResponseWriter, r *http.Request) {
 	}
 	u := auth.FromContext(r.Context())
 	if u == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
 
 	var input CreateCampaignInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
 		return
 	}
 
 	if input.Name == "" {
-		writeError(w, http.StatusBadRequest, "validation_error", "name is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "name is required")
 		return
 	}
 
 	if input.Subject == "" {
-		writeError(w, http.StatusBadRequest, "validation_error", "subject is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "subject is required")
 		return
 	}
 
@@ -488,12 +474,12 @@ func (h *Handlers) CreateCampaign(w http.ResponseWriter, r *http.Request) {
 	campaign, err := h.Service.CreateCampaign(r.Context(), tenantID, u.UserID, input)
 	if err != nil {
 		slog.Error("creating newsletter campaign", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to create campaign")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to create campaign")
 
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": campaign})
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": campaign})
 }
 
 // jsonString encodes s as a JSON string (including quotes).
@@ -512,24 +498,24 @@ func (h *Handlers) UpdateCampaign(w http.ResponseWriter, r *http.Request) {
 
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid campaign ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid campaign ID")
 		return
 	}
 
 	var body struct {
-		Name        *string          `json:"name,omitempty"`
-		Subject     *string          `json:"subject,omitempty"`
-		HTML        *string          `json:"html,omitempty"`
-		PreviewText *string          `json:"preview_text,omitempty"`
-		Body        json.RawMessage  `json:"body,omitempty"`
-		Segment     *string          `json:"segment,omitempty"`
-		SegmentID   *string          `json:"segment_id,omitempty"`
-		Status      *string          `json:"status,omitempty"`
-		ScheduledAt *time.Time       `json:"scheduled_at,omitempty"`
+		Name        *string         `json:"name,omitempty"`
+		Subject     *string         `json:"subject,omitempty"`
+		HTML        *string         `json:"html,omitempty"`
+		PreviewText *string         `json:"preview_text,omitempty"`
+		Body        json.RawMessage `json:"body,omitempty"`
+		Segment     *string         `json:"segment,omitempty"`
+		SegmentID   *string         `json:"segment_id,omitempty"`
+		Status      *string         `json:"status,omitempty"`
+		ScheduledAt *time.Time      `json:"scheduled_at,omitempty"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
 		return
 	}
 
@@ -546,12 +532,12 @@ func (h *Handlers) UpdateCampaign(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		slog.Error("updating newsletter campaign", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to update campaign")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update campaign")
 
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": campaign})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": campaign})
 }
 
 // UpdateSubscriber updates a subscriber's status.
@@ -571,23 +557,23 @@ func (h *Handlers) UpdateSubscriber(w http.ResponseWriter, r *http.Request) {
 		Status string `json:"status"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
 		return
 	}
 
 	if body.Status == "" {
-		writeError(w, http.StatusBadRequest, "validation_error", "status is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "status is required")
 		return
 	}
 
 	subscriber, err := h.Service.UpdateSubscriberStatus(r.Context(), tenantID, id, body.Status)
 	if err != nil {
 		slog.Error("updating newsletter subscriber", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to update subscriber")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update subscriber")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": subscriber})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": subscriber})
 }
 
 // DeleteCampaign removes a newsletter campaign.
@@ -608,19 +594,19 @@ func (h *Handlers) HandleSendCampaign(w http.ResponseWriter, r *http.Request) {
 
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid campaign ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid campaign ID")
 		return
 	}
 
 	// Fetch the campaign and verify it's in a sendable state.
 	campaign, err := h.Service.GetCampaign(r.Context(), tenantID, id)
 	if err != nil {
-		writeError(w, http.StatusNotFound, "not_found", "Campaign not found")
+		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Campaign not found")
 		return
 	}
 
 	if campaign.Status != CampaignDraft && campaign.Status != CampaignScheduled {
-		writeError(w, http.StatusBadRequest, "invalid_status", "Campaign must be in draft or scheduled status to send")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_status", "Campaign must be in draft or scheduled status to send")
 		return
 	}
 
@@ -630,7 +616,7 @@ func (h *Handlers) HandleSendCampaign(w http.ResponseWriter, r *http.Request) {
 		Status: &sendingStatus,
 	}); err != nil {
 		slog.Error("updating campaign status to sending", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to update campaign status")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update campaign status")
 
 		return
 	}
@@ -640,12 +626,12 @@ func (h *Handlers) HandleSendCampaign(w http.ResponseWriter, r *http.Request) {
 	// so the handler does not need to pre-fetch the recipient list.
 	if err := h.Service.EnqueueNewsletterSend(r.Context(), id, tenantID); err != nil {
 		slog.Error("enqueuing newsletter send", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to enqueue newsletter send")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to enqueue newsletter send")
 
 		return
 	}
 
-	writeJSON(w, http.StatusAccepted, map[string]any{
+	errpkg.WriteJSON(w, http.StatusAccepted, map[string]any{
 		"data": map[string]any{
 			"status": "sending",
 		},
@@ -667,24 +653,24 @@ func (h *Handlers) HandleUnsubscribe(w http.ResponseWriter, r *http.Request) {
 	token := r.URL.Query().Get("token")
 	if token != "" {
 		if err := h.Service.UnsubscribeByToken(r.Context(), tenantID, token); err != nil {
-			writeError(w, http.StatusBadRequest, "unsubscribe_failed", err.Error())
+			errpkg.WriteError(w, http.StatusBadRequest, "unsubscribe_failed", err.Error())
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"unsubscribed": true}})
+		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"unsubscribed": true}})
 		return
 	}
 
 	email := r.URL.Query().Get("email")
 	if email == "" {
-		writeError(w, http.StatusBadRequest, "validation_error", "token or email is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "token or email is required")
 		return
 	}
 
 	if err := h.Service.Unsubscribe(r.Context(), tenantID, email); err != nil {
-		writeError(w, http.StatusBadRequest, "unsubscribe_failed", err.Error())
+		errpkg.WriteError(w, http.StatusBadRequest, "unsubscribe_failed", err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"unsubscribed": true}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"unsubscribed": true}})
 }
 
 // HandleGetPreferences returns subscriber preferences.
@@ -696,16 +682,16 @@ func (h *Handlers) HandleGetPreferences(w http.ResponseWriter, r *http.Request) 
 	}
 	u := auth.FromContext(r.Context())
 	if u == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
 
 	subscriber, err := h.Service.GetPreferencesByUserID(r.Context(), tenantID, u.UserID)
 	if err != nil {
-		writeError(w, http.StatusNotFound, "not_found", "No subscription found")
+		errpkg.WriteError(w, http.StatusNotFound, "not_found", "No subscription found")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": subscriber})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": subscriber})
 }
 
 // HandleUpdatePreferences updates subscriber preferences.
@@ -717,13 +703,13 @@ func (h *Handlers) HandleUpdatePreferences(w http.ResponseWriter, r *http.Reques
 	}
 	u := auth.FromContext(r.Context())
 	if u == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
 
 	subscriber, err := h.Service.GetPreferencesByUserID(r.Context(), tenantID, u.UserID)
 	if err != nil {
-		writeError(w, http.StatusNotFound, "not_found", "No subscription found")
+		errpkg.WriteError(w, http.StatusNotFound, "not_found", "No subscription found")
 		return
 	}
 
@@ -732,16 +718,16 @@ func (h *Handlers) HandleUpdatePreferences(w http.ResponseWriter, r *http.Reques
 		CampaignEnabled *bool `json:"campaign_enabled"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
 		return
 	}
 
 	updated, err := h.Service.UpdatePreferences(r.Context(), tenantID, subscriber.ID, body.DigestEnabled, body.CampaignEnabled)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "update_failed", err.Error())
+		errpkg.WriteError(w, http.StatusBadRequest, "update_failed", err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": updated})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": updated})
 }
 
 // HandleAdminStats returns newsletter stats.
@@ -752,16 +738,16 @@ func (h *Handlers) HandleAdminStats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if auth.FromContext(r.Context()) == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
 
 	stats, err := h.Service.AdminSubscriberStats(r.Context(), tenantID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "stats_failed", err.Error())
+		errpkg.WriteError(w, http.StatusInternalServerError, "stats_failed", err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": stats})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": stats})
 }
 
 // HandleWebhook processes bounce/complaint webhooks from the marketing
@@ -772,7 +758,8 @@ func (h *Handlers) HandleAdminStats(w http.ResponseWriter, r *http.Request) {
 // shared secret passed in the X-Webhook-Secret header (JC_NEWSLETTER_WEBHOOK_SECRET).
 //
 // Ref: japaconnect-engineering/sections/62-newsletter-digest.md
-//      japaconnect-engineering/adr/ADR-080-newsletter-digest.md
+//
+//	japaconnect-engineering/adr/ADR-080-newsletter-digest.md
 func (h *Handlers) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -782,7 +769,7 @@ func (h *Handlers) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 	// Shared-secret auth: the provider echoes a secret set in config.
 	expected := r.Header.Get("X-Webhook-Secret")
 	if expected == "" || expected != h.Service.WebhookSecret(r.Context()) {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Invalid webhook secret")
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Invalid webhook secret")
 		return
 	}
 
@@ -791,12 +778,12 @@ func (h *Handlers) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 		Email     string `json:"email"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
 		return
 	}
 
 	if payload.Email == "" {
-		writeError(w, http.StatusBadRequest, "validation_error", "email is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "email is required")
 		return
 	}
 
@@ -804,13 +791,13 @@ func (h *Handlers) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 	case "bounce":
 		if err := h.Service.MarkBounced(r.Context(), tenantID, payload.Email); err != nil {
 			slog.Error("newsletter webhook: mark bounced", "email", payload.Email, "error", err)
-			writeError(w, http.StatusInternalServerError, "internal_error", "Failed to mark bounced")
+			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to mark bounced")
 			return
 		}
 	case "complaint":
 		if err := h.Service.MarkComplained(r.Context(), tenantID, payload.Email); err != nil {
 			slog.Error("newsletter webhook: mark complained", "email", payload.Email, "error", err)
-			writeError(w, http.StatusInternalServerError, "internal_error", "Failed to mark complained")
+			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to mark complained")
 			return
 		}
 	case "delivered", "open", "click":
@@ -818,9 +805,9 @@ func (h *Handlers) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 		// scope for the subscriber status machine. Acknowledge to avoid
 		// provider retries.
 	default:
-		writeError(w, http.StatusBadRequest, "validation_error", "unsupported event_type")
+		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "unsupported event_type")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "ok"}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "ok"}})
 }

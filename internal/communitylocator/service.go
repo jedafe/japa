@@ -5,7 +5,8 @@
 // system_setting (§101).
 //
 // Ref: japaconnect-engineering/sections/101-diaspora-community-locator.md
-//      japaconnect-engineering/adr/ADR-109-community-locator.md
+//
+//	japaconnect-engineering/adr/ADR-109-community-locator.md
 package communitylocator
 
 import (
@@ -113,13 +114,13 @@ var ErrDuplicateSlug = errors.New("duplicate slug")
 
 // validOrgTypes is the allow-list of organisation types per §101.
 var validOrgTypes = map[string]bool{
-	"cultural_association":  true,
-	"church":                true,
-	"mosque":                true,
-	"professional_network":  true,
-	"student_union":         true,
-	"informal_group":        true,
-	"other":                 true,
+	"cultural_association": true,
+	"church":               true,
+	"mosque":               true,
+	"professional_network": true,
+	"student_union":        true,
+	"informal_group":       true,
+	"other":                true,
 }
 
 // Submit creates a new community organisation submission. The row is
@@ -249,18 +250,18 @@ func (s *Service) Submit(ctx context.Context, tenantID, userID pgtype.UUID, inpu
 // row and returns it for the HITL review queue. The AI content is
 // populated by a separate step (or inline if the gateway is available).
 type GenerateInput struct {
-	Prompt               string `json:"prompt"`
-	DestinationSpaceID   string `json:"destination_space_id"`
-	OriginCommunity      string `json:"origin_community"`
-	OrgType              string `json:"org_type"`
-	Name                 string `json:"name"`
-	CitySpaceID          string `json:"city_space_id"`
-	Address              string `json:"address"`
-	WebsiteURL           string `json:"website_url"`
-	MeetingFrequency     string `json:"meeting_frequency"`
-	ContactInfo          string `json:"contact_info"`
-	JapaconnectSpaceID   string `json:"japaconnect_space_id"`
-	JapaconnectOrgID     string `json:"japaconnect_org_id"`
+	Prompt             string `json:"prompt"`
+	DestinationSpaceID string `json:"destination_space_id"`
+	OriginCommunity    string `json:"origin_community"`
+	OrgType            string `json:"org_type"`
+	Name               string `json:"name"`
+	CitySpaceID        string `json:"city_space_id"`
+	Address            string `json:"address"`
+	WebsiteURL         string `json:"website_url"`
+	MeetingFrequency   string `json:"meeting_frequency"`
+	ContactInfo        string `json:"contact_info"`
+	JapaconnectSpaceID string `json:"japaconnect_space_id"`
+	JapaconnectOrgID   string `json:"japaconnect_org_id"`
 }
 
 // Generate creates an AI-generated draft community organisation entry

@@ -363,11 +363,11 @@ func (s *Store) ListPermissions(ctx context.Context) ([]Permission, error) {
 
 // Role represents a user role.
 type Role struct {
-	ID         pgtype.UUID `json:"id"`
-	Name       string      `json:"name"`
-	Slug       string      `json:"slug"`
-	Permissions []string   `json:"permissions"`
-	UserCount  int32       `json:"user_count"`
+	ID          pgtype.UUID `json:"id"`
+	Name        string      `json:"name"`
+	Slug        string      `json:"slug"`
+	Permissions []string    `json:"permissions"`
+	UserCount   int32       `json:"user_count"`
 }
 
 // ListRoles returns all roles for a tenant.

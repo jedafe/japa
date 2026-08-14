@@ -6,7 +6,8 @@
 // session row, enqueues the task, and returns the session for polling.
 //
 // Ref: japaconnect-engineering/sections/95-cv-formatter.md
-//      japaconnect-engineering/adr/ADR-103-cv-formatter.md
+//
+//	japaconnect-engineering/adr/ADR-103-cv-formatter.md
 package cvformatter
 
 import (
@@ -104,11 +105,11 @@ var ErrQuotaExceeded = fmt.Errorf("cv_formatter quota exceeded for this month")
 
 // Service holds the business logic for the CV Formatter.
 type Service struct {
-	store       *Store
-	settings    *config.Settings
-	rbac        permissionChecker
-	enqueuer    TaskEnqueuer
-	cache       Cache
+	store        *Store
+	settings     *config.Settings
+	rbac         permissionChecker
+	enqueuer     TaskEnqueuer
+	cache        Cache
 	aiDispatcher AIDispatcher
 }
 

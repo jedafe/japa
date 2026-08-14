@@ -331,10 +331,10 @@ var ErrNoFieldsToUpdate = errors.New("no fields to update")
 // eliminating any SQL-injection surface even if the caller is later refactored
 // (SEC-002 / LAYER-003).
 var apiKeyUpdateColumns = map[string]string{
-	"name":           "name",
-	"status":         "status",
+	"name":            "name",
+	"status":          "status",
 	"rate_limit_tier": "rate_limit_tier",
-	"notes":          "notes",
+	"notes":           "notes",
 }
 
 // UpdateAPIKeyFields performs a partial update of an API key using a strict

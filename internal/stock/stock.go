@@ -11,11 +11,11 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
-	"golang.org/x/sync/errgroup"
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/crypto"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/media"
+	"golang.org/x/sync/errgroup"
 )
 
 // SearchResult holds a page of search results from a stock provider.
@@ -59,8 +59,8 @@ var ErrProviderUnavailable = fmt.Errorf("provider is not available")
 // cacheEntry holds cached search results with expiry and last-access time
 // for proper LRU eviction.
 type cacheEntry struct {
-	Result    *SearchResult
-	ExpiresAt time.Time
+	Result     *SearchResult
+	ExpiresAt  time.Time
 	LastAccess time.Time
 }
 
@@ -240,8 +240,8 @@ func (s *Service) Search(ctx context.Context, query, providerFilter string, page
 
 	// Fan out to all providers concurrently and merge.
 	type providerResult struct {
-		photos []StockPhoto
-		total  int
+		photos  []StockPhoto
+		total   int
 		hasMore bool
 	}
 	results := make([]providerResult, len(searchProviders))

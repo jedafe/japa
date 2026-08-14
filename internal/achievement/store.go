@@ -8,7 +8,8 @@
 // space filing, and analytics from the Content Type System (§14).
 //
 // Ref: japaconnect-engineering/sections/89-community-achievement-feed.md
-//      japaconnect-engineering/adr/ADR-097-community-achievement-feed.md
+//
+//	japaconnect-engineering/adr/ADR-097-community-achievement-feed.md
 package achievement
 
 import (
@@ -49,31 +50,31 @@ type AchievementMeta struct {
 // AchievementRow is the joined result of contents + achievement_meta + spaces
 // + users, returned by list and get-by-slug queries.
 type AchievementRow struct {
-	ID                 pgtype.UUID
-	TenantID           pgtype.UUID
-	AuthorID           pgtype.UUID
-	Title              string
-	Slug               string
-	Body               string
-	BodyHTML           string
-	Status             string
-	Visibility         string
-	ViewCount          int32
-	CommentCount       int32
-	ReactionCount      int32
-	PublishedAt        pgtype.Timestamptz
-	CreatedAt          pgtype.Timestamptz
-	UpdatedAt          pgtype.Timestamptz
-	MilestoneType      *string
-	OriginSpaceID      pgtype.UUID
-	OriginSpaceName    *string
-	OriginSpaceCode    *string
-	DestSpaceID        pgtype.UUID
-	DestSpaceName      *string
-	DestSpaceCode      *string
-	IsAnonymous        bool
-	AuthorName         *string
-	AuthorAvatar       *string
+	ID              pgtype.UUID
+	TenantID        pgtype.UUID
+	AuthorID        pgtype.UUID
+	Title           string
+	Slug            string
+	Body            string
+	BodyHTML        string
+	Status          string
+	Visibility      string
+	ViewCount       int32
+	CommentCount    int32
+	ReactionCount   int32
+	PublishedAt     pgtype.Timestamptz
+	CreatedAt       pgtype.Timestamptz
+	UpdatedAt       pgtype.Timestamptz
+	MilestoneType   *string
+	OriginSpaceID   pgtype.UUID
+	OriginSpaceName *string
+	OriginSpaceCode *string
+	DestSpaceID     pgtype.UUID
+	DestSpaceName   *string
+	DestSpaceCode   *string
+	IsAnonymous     bool
+	AuthorName      *string
+	AuthorAvatar    *string
 }
 
 // CreateMeta inserts a new achievement_meta row linked to a contents row.
@@ -140,13 +141,13 @@ WHERE content_id = $1 AND tenant_id = $2
 
 // ListAchievementsFilter holds the filter parameters for listing achievements.
 type ListAchievementsFilter struct {
-	TenantID           pgtype.UUID
-	DestSpaceID        pgtype.UUID // optional
-	MilestoneType      string      // optional
-	Sort               string      // "top" | "latest" (default: latest)
-	Status             string      // filter by status (default: published)
-	Limit              int32
-	Offset             int32
+	TenantID      pgtype.UUID
+	DestSpaceID   pgtype.UUID // optional
+	MilestoneType string      // optional
+	Sort          string      // "top" | "latest" (default: latest)
+	Status        string      // filter by status (default: published)
+	Limit         int32
+	Offset        int32
 }
 
 // ListAchievements returns a paginated, filtered list of published

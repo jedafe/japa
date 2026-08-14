@@ -14,7 +14,8 @@
 //	PATCH  /api/v1/admin/travel/providers/:id   — update provider config
 //
 // Ref: japaconnect-engineering/sections/67-travel-search.md
-//      japaconnect-engineering/adr/ADR-085-travel-search.md
+//
+//	japaconnect-engineering/adr/ADR-085-travel-search.md
 package travel
 
 import (
@@ -31,6 +32,7 @@ import (
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/crypto"
 	"github.com/jedafe/japa/internal/db/gen"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/tenant"
 )
 
@@ -49,24 +51,10 @@ func NewHandlers(service *Service, settings *config.Settings) *Handlers {
 // Shared helpers (same pattern as rag/handlers.go, remittance/handlers.go)
 // ---------------------------------------------------------------------------
 
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	if err := json.NewEncoder(w).Encode(v); err != nil {
-		slog.Error("travel: encode response", "error", err)
-	}
-}
-
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, map[string]any{
-		"error": map[string]string{"code": code, "message": message},
-	})
-}
-
 func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
 	return t.ID, true
@@ -75,7 +63,7 @@ func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	u := auth.FromContext(r.Context())
 	if u == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
 	return u, true
@@ -84,7 +72,7 @@ func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUse
 func scanUUIDParam(w http.ResponseWriter, r *http.Request, name string) (pgtype.UUID, bool) {
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, name)); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid "+name)
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid "+name)
 		return pgtype.UUID{}, false
 	}
 	return id, true
@@ -109,7 +97,7 @@ func atoiDefault(s string, fallback int) int {
 func writeConflictIfDuplicate(w http.ResponseWriter, err error, code, message string) bool {
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) && pgErr.Code == "23505" {
-		writeError(w, http.StatusConflict, code, message)
+		errpkg.WriteError(w, http.StatusConflict, code, message)
 		return true
 	}
 	return false
@@ -132,7 +120,7 @@ func (h *Handlers) HandleSearchFlights(w http.ResponseWriter, r *http.Request) {
 	dest := r.URL.Query().Get("dest")
 	date := r.URL.Query().Get("date")
 	if origin == "" || dest == "" || date == "" {
-		writeError(w, http.StatusBadRequest, "missing_params", "origin, dest, and date are required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_params", "origin, dest, and date are required")
 		return
 	}
 
@@ -147,22 +135,22 @@ func (h *Handlers) HandleSearchFlights(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil {
-		writeError(w, http.StatusServiceUnavailable, "travel_unavailable", "Travel service not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "travel_unavailable", "Travel service not configured")
 		return
 	}
 
 	resp, err := h.service.SearchFlights(r.Context(), tenantID, params)
 	if err != nil {
 		if errors.Is(err, ErrTravelDisabled) {
-			writeError(w, http.StatusServiceUnavailable, "travel_disabled", "Travel search is disabled")
+			errpkg.WriteError(w, http.StatusServiceUnavailable, "travel_disabled", "Travel search is disabled")
 			return
 		}
 		slog.Error("travel: flight search failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "search_failed", "Failed to search flights")
+		errpkg.WriteError(w, http.StatusInternalServerError, "search_failed", "Failed to search flights")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": resp,
 	})
 }
@@ -180,7 +168,7 @@ func (h *Handlers) HandleSearchHotels(w http.ResponseWriter, r *http.Request) {
 	checkin := r.URL.Query().Get("checkin")
 	checkout := r.URL.Query().Get("checkout")
 	if dest == "" || checkin == "" || checkout == "" {
-		writeError(w, http.StatusBadRequest, "missing_params", "dest, checkin, and checkout are required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_params", "dest, checkin, and checkout are required")
 		return
 	}
 
@@ -193,22 +181,22 @@ func (h *Handlers) HandleSearchHotels(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil {
-		writeError(w, http.StatusServiceUnavailable, "travel_unavailable", "Travel service not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "travel_unavailable", "Travel service not configured")
 		return
 	}
 
 	resp, err := h.service.SearchHotels(r.Context(), tenantID, params)
 	if err != nil {
 		if errors.Is(err, ErrTravelDisabled) {
-			writeError(w, http.StatusServiceUnavailable, "travel_disabled", "Travel search is disabled")
+			errpkg.WriteError(w, http.StatusServiceUnavailable, "travel_disabled", "Travel search is disabled")
 			return
 		}
 		slog.Error("travel: hotel search failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "search_failed", "Failed to search hotels")
+		errpkg.WriteError(w, http.StatusInternalServerError, "search_failed", "Failed to search hotels")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": resp,
 	})
 }
@@ -236,18 +224,18 @@ func (h *Handlers) HandleAdminListProviders(w http.ResponseWriter, r *http.Reque
 	providerType := r.URL.Query().Get("provider_type")
 
 	if h.service == nil {
-		writeError(w, http.StatusServiceUnavailable, "travel_unavailable", "Travel service not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "travel_unavailable", "Travel service not configured")
 		return
 	}
 
 	providers, err := h.service.ListProviders(r.Context(), tenantID, activeOnly, providerType)
 	if err != nil {
 		slog.Error("travel: admin list providers failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "providers_failed", "Failed to list providers")
+		errpkg.WriteError(w, http.StatusInternalServerError, "providers_failed", "Failed to list providers")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": providers,
 	})
 }
@@ -274,17 +262,17 @@ func (h *Handlers) HandleAdminCreateProvider(w http.ResponseWriter, r *http.Requ
 		IsActive        bool            `json:"is_active"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if body.Name == "" || body.Slug == "" || body.ProviderType == "" {
-		writeError(w, http.StatusBadRequest, "missing_params", "name, slug, and provider_type are required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_params", "name, slug, and provider_type are required")
 		return
 	}
 
 	if h.service == nil {
-		writeError(w, http.StatusServiceUnavailable, "travel_unavailable", "Travel service not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "travel_unavailable", "Travel service not configured")
 		return
 	}
 
@@ -293,7 +281,7 @@ func (h *Handlers) HandleAdminCreateProvider(w http.ResponseWriter, r *http.Requ
 		enc, err := crypto.EncryptJSON(body.APIConfig)
 		if err != nil {
 			slog.Error("travel: failed to encrypt api_config", "error", err)
-			writeError(w, http.StatusInternalServerError, "encryption_failed", "Failed to encrypt provider credentials")
+			errpkg.WriteError(w, http.StatusInternalServerError, "encryption_failed", "Failed to encrypt provider credentials")
 			return
 		}
 		apiConfig = enc
@@ -317,11 +305,11 @@ func (h *Handlers) HandleAdminCreateProvider(w http.ResponseWriter, r *http.Requ
 			return
 		}
 		slog.Error("travel: admin create provider failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "create_provider_failed", "Failed to create provider")
+		errpkg.WriteError(w, http.StatusInternalServerError, "create_provider_failed", "Failed to create provider")
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{
 		"data": provider,
 	})
 }
@@ -352,12 +340,12 @@ func (h *Handlers) HandleAdminUpdateProvider(w http.ResponseWriter, r *http.Requ
 		IsActive        *bool           `json:"is_active"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if h.service == nil {
-		writeError(w, http.StatusServiceUnavailable, "travel_unavailable", "Travel service not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "travel_unavailable", "Travel service not configured")
 		return
 	}
 
@@ -366,7 +354,7 @@ func (h *Handlers) HandleAdminUpdateProvider(w http.ResponseWriter, r *http.Requ
 		enc, err := crypto.EncryptJSON(body.APIConfig)
 		if err != nil {
 			slog.Error("travel: failed to encrypt api_config", "error", err)
-			writeError(w, http.StatusInternalServerError, "encryption_failed", "Failed to encrypt provider credentials")
+			errpkg.WriteError(w, http.StatusInternalServerError, "encryption_failed", "Failed to encrypt provider credentials")
 			return
 		}
 		apiConfig = enc
@@ -390,11 +378,11 @@ func (h *Handlers) HandleAdminUpdateProvider(w http.ResponseWriter, r *http.Requ
 			return
 		}
 		slog.Error("travel: admin update provider failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "update_provider_failed", "Failed to update provider")
+		errpkg.WriteError(w, http.StatusInternalServerError, "update_provider_failed", "Failed to update provider")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": provider,
 	})
 }

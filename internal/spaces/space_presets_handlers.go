@@ -6,6 +6,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jedafe/japa/internal/db/gen"
+	errpkg "github.com/jedafe/japa/internal/errors"
 )
 
 // ---------------------------------------------------------------------------
@@ -25,7 +26,7 @@ func (h *Handlers) ListPermissionPresets(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": presets})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": presets})
 }
 
 // UpdatePermissionPreset handles PUT /api/v1/space-permission-presets/{name}.
@@ -34,7 +35,7 @@ func (h *Handlers) ListPermissionPresets(w http.ResponseWriter, r *http.Request)
 func (h *Handlers) UpdatePermissionPreset(w http.ResponseWriter, r *http.Request) {
 	name := chi.URLParam(r, "name")
 	if name == "" {
-		writeError(w, http.StatusBadRequest, "missing_name", "Preset name is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_name", "Preset name is required")
 		return
 	}
 
@@ -58,7 +59,7 @@ func (h *Handlers) UpdatePermissionPreset(w http.ResponseWriter, r *http.Request
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
 		return
 	}
 
@@ -70,7 +71,7 @@ func (h *Handlers) UpdatePermissionPreset(w http.ResponseWriter, r *http.Request
 		Joining:    req.JoiningPerm,
 	}
 	if !ValidPermissionAxes(axes) {
-		writeError(w, http.StatusBadRequest, "invalid_permission_axes", "One or more permission axes are invalid")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_permission_axes", "One or more permission axes are invalid")
 		return
 	}
 
@@ -88,5 +89,5 @@ func (h *Handlers) UpdatePermissionPreset(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": preset})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": preset})
 }

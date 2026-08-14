@@ -13,7 +13,8 @@
 //	PATCH /api/v1/admin/community-locator/:id/claim/:claim_id — resolve claim (admin, community_locator.manage)
 //
 // Ref: japaconnect-engineering/sections/101-diaspora-community-locator.md
-//      japaconnect-engineering/adr/ADR-109-community-locator.md
+//
+//	japaconnect-engineering/adr/ADR-109-community-locator.md
 package communitylocator
 
 import (
@@ -29,6 +30,7 @@ import (
 
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/config"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/tenant"
 )
 
@@ -48,24 +50,10 @@ func NewHandlers(service *Service, settings *config.Settings) *Handlers {
 // Shared helpers (same pattern as servicedir/handlers.go)
 // ---------------------------------------------------------------------------
 
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	if err := json.NewEncoder(w).Encode(v); err != nil {
-		slog.Error("communitylocator: encode response", "error", err)
-	}
-}
-
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, map[string]any{
-		"error": map[string]string{"code": code, "message": message},
-	})
-}
-
 func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
 	return t.ID, true
@@ -74,7 +62,7 @@ func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	u := auth.FromContext(r.Context())
 	if u == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
 	return u, true
@@ -83,7 +71,7 @@ func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUse
 func scanUUIDParam(w http.ResponseWriter, r *http.Request, name string) (pgtype.UUID, bool) {
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, name)); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid "+name)
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid "+name)
 		return pgtype.UUID{}, false
 	}
 	return id, true
@@ -119,14 +107,14 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "community_locator_disabled", "Community locator is not available")
+		errpkg.WriteError(w, http.StatusNotFound, "community_locator_disabled", "Community locator is not available")
 		return
 	}
 
 	var destSpaceID pgtype.UUID
 	if v := r.URL.Query().Get("dest"); v != "" {
 		if err := destSpaceID.Scan(v); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid destination space ID")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid destination space ID")
 			return
 		}
 	}
@@ -134,7 +122,7 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 	var citySpaceID pgtype.UUID
 	if v := r.URL.Query().Get("city"); v != "" {
 		if err := citySpaceID.Scan(v); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid city space ID")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid city space ID")
 			return
 		}
 	}
@@ -164,11 +152,11 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 	orgs, total, err := h.service.List(r.Context(), tenantID, destSpaceID, citySpaceID, originCommunity, orgType, lat, lng, radiusKm, page, limit)
 	if err != nil {
 		slog.Error("communitylocator: list failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "list_failed", "Failed to list community organisations")
+		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list community organisations")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": orgs,
 		"pagination": map[string]any{
 			"page":  page,
@@ -187,28 +175,28 @@ func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "community_locator_disabled", "Community locator is not available")
+		errpkg.WriteError(w, http.StatusNotFound, "community_locator_disabled", "Community locator is not available")
 		return
 	}
 
 	slug := chi.URLParam(r, "slug")
 	if slug == "" {
-		writeError(w, http.StatusBadRequest, "missing_slug", "Organisation slug is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_slug", "Organisation slug is required")
 		return
 	}
 
 	org, err := h.service.GetBySlug(r.Context(), slug, tenantID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "org_not_found", "Community organisation not found")
+			errpkg.WriteError(w, http.StatusNotFound, "org_not_found", "Community organisation not found")
 			return
 		}
 		slog.Error("communitylocator: get by slug failed", "slug", slug, "error", err)
-		writeError(w, http.StatusInternalServerError, "get_failed", "Failed to get community organisation")
+		errpkg.WriteError(w, http.StatusInternalServerError, "get_failed", "Failed to get community organisation")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": org})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": org})
 }
 
 // ---------------------------------------------------------------------------
@@ -229,34 +217,34 @@ func (h *Handlers) HandleSubmit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "community_locator_disabled", "Community locator is not available")
+		errpkg.WriteError(w, http.StatusNotFound, "community_locator_disabled", "Community locator is not available")
 		return
 	}
 
 	var input SubmitInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
 
 	if input.Name == "" {
-		writeError(w, http.StatusBadRequest, "missing_name", "Name is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_name", "Name is required")
 		return
 	}
 	if input.OrgType == "" {
-		writeError(w, http.StatusBadRequest, "missing_org_type", "org_type is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_org_type", "org_type is required")
 		return
 	}
 	if !validOrgTypes[input.OrgType] {
-		writeError(w, http.StatusBadRequest, "invalid_org_type", "org_type must be one of: cultural_association, church, mosque, professional_network, student_union, informal_group, other")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_org_type", "org_type must be one of: cultural_association, church, mosque, professional_network, student_union, informal_group, other")
 		return
 	}
 	if input.OriginCommunity == "" {
-		writeError(w, http.StatusBadRequest, "missing_origin_community", "origin_community is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_origin_community", "origin_community is required")
 		return
 	}
 	if input.DestinationSpaceID == "" {
-		writeError(w, http.StatusBadRequest, "missing_destination_space_id", "destination_space_id is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_destination_space_id", "destination_space_id is required")
 		return
 	}
 
@@ -267,15 +255,15 @@ func (h *Handlers) HandleSubmit(w http.ResponseWriter, r *http.Request) {
 	org, err := h.service.Submit(r.Context(), tenantID, user.UserID, input)
 	if err != nil {
 		if errors.Is(err, ErrDuplicateSlug) {
-			writeError(w, http.StatusConflict, "duplicate_slug", "An organisation with this slug already exists")
+			errpkg.WriteError(w, http.StatusConflict, "duplicate_slug", "An organisation with this slug already exists")
 			return
 		}
 		slog.Error("communitylocator: submit failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "submit_failed", "Failed to submit community organisation")
+		errpkg.WriteError(w, http.StatusInternalServerError, "submit_failed", "Failed to submit community organisation")
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": org})
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": org})
 }
 
 // HandleClaim handles POST /community-locator/:id/claim — initiate the
@@ -296,21 +284,21 @@ func (h *Handlers) HandleClaim(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
-		writeError(w, http.StatusNotFound, "community_locator_disabled", "Community locator is not available")
+		errpkg.WriteError(w, http.StatusNotFound, "community_locator_disabled", "Community locator is not available")
 		return
 	}
 
 	if err := h.service.InitiateClaim(r.Context(), id, tenantID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "org_not_found", "Community organisation not found")
+			errpkg.WriteError(w, http.StatusNotFound, "org_not_found", "Community organisation not found")
 			return
 		}
 		slog.Error("communitylocator: claim failed", "error", err, "user_id", user.UserID)
-		writeError(w, http.StatusInternalServerError, "claim_failed", "Failed to initiate claim")
+		errpkg.WriteError(w, http.StatusInternalServerError, "claim_failed", "Failed to initiate claim")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"claim_status": ClaimStatusPending}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"claim_status": ClaimStatusPending}})
 }
 
 // ---------------------------------------------------------------------------
@@ -331,7 +319,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil {
-		writeError(w, http.StatusServiceUnavailable, "community_locator_unavailable", "Community locator not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "community_locator_unavailable", "Community locator not configured")
 		return
 	}
 
@@ -339,7 +327,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	var destSpaceID pgtype.UUID
 	if v := r.URL.Query().Get("dest"); v != "" {
 		if err := destSpaceID.Scan(v); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid destination space ID")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid destination space ID")
 			return
 		}
 	}
@@ -359,11 +347,11 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	orgs, total, err := h.service.AdminList(r.Context(), tenantID, destSpaceID, originCommunity, orgType, status, q, sort, dir, page, limit)
 	if err != nil {
 		slog.Error("communitylocator: admin list failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "admin_list_failed", "Failed to list community organisations")
+		errpkg.WriteError(w, http.StatusInternalServerError, "admin_list_failed", "Failed to list community organisations")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": orgs,
 		"pagination": map[string]any{
 			"page":  page,
@@ -392,22 +380,22 @@ func (h *Handlers) HandleAdminApprove(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil {
-		writeError(w, http.StatusServiceUnavailable, "community_locator_unavailable", "Community locator not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "community_locator_unavailable", "Community locator not configured")
 		return
 	}
 
 	org, err := h.service.ApproveOrg(r.Context(), id, tenantID, user.UserID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "org_not_found", "Community organisation not found")
+			errpkg.WriteError(w, http.StatusNotFound, "org_not_found", "Community organisation not found")
 			return
 		}
 		slog.Error("communitylocator: admin approve failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "approve_failed", "Failed to approve community organisation")
+		errpkg.WriteError(w, http.StatusInternalServerError, "approve_failed", "Failed to approve community organisation")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": org})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": org})
 }
 
 // HandleAdminVerify handles PATCH /admin/community-locator/:id/verify —
@@ -427,22 +415,22 @@ func (h *Handlers) HandleAdminVerify(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil {
-		writeError(w, http.StatusServiceUnavailable, "community_locator_unavailable", "Community locator not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "community_locator_unavailable", "Community locator not configured")
 		return
 	}
 
 	org, err := h.service.VerifyOrg(r.Context(), id, tenantID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "org_not_found", "Community organisation not found")
+			errpkg.WriteError(w, http.StatusNotFound, "org_not_found", "Community organisation not found")
 			return
 		}
 		slog.Error("communitylocator: admin verify failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "verify_failed", "Failed to verify community organisation")
+		errpkg.WriteError(w, http.StatusInternalServerError, "verify_failed", "Failed to verify community organisation")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": org})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": org})
 }
 
 // HandleAdminResolveClaim handles PATCH
@@ -467,7 +455,7 @@ func (h *Handlers) HandleAdminResolveClaim(w http.ResponseWriter, r *http.Reques
 	}
 
 	if h.service == nil {
-		writeError(w, http.StatusServiceUnavailable, "community_locator_unavailable", "Community locator not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "community_locator_unavailable", "Community locator not configured")
 		return
 	}
 
@@ -475,26 +463,26 @@ func (h *Handlers) HandleAdminResolveClaim(w http.ResponseWriter, r *http.Reques
 		Approve *bool `json:"approve"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
 	if body.Approve == nil {
-		writeError(w, http.StatusBadRequest, "missing_approve", "approve field is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_approve", "approve field is required")
 		return
 	}
 
 	org, err := h.service.ResolveClaim(r.Context(), id, tenantID, *body.Approve)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "org_not_found", "Community organisation not found")
+			errpkg.WriteError(w, http.StatusNotFound, "org_not_found", "Community organisation not found")
 			return
 		}
 		slog.Error("communitylocator: admin resolve claim failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "resolve_claim_failed", "Failed to resolve claim")
+		errpkg.WriteError(w, http.StatusInternalServerError, "resolve_claim_failed", "Failed to resolve claim")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": org})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": org})
 }
 
 // HandleAdminGenerate handles POST /admin/community-locator/generate —
@@ -513,22 +501,22 @@ func (h *Handlers) HandleAdminGenerate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil {
-		writeError(w, http.StatusServiceUnavailable, "community_locator_unavailable", "Community locator not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "community_locator_unavailable", "Community locator not configured")
 		return
 	}
 
 	var input GenerateInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
 
 	if input.Name == "" {
-		writeError(w, http.StatusBadRequest, "missing_name", "Name is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_name", "Name is required")
 		return
 	}
 	if input.DestinationSpaceID == "" {
-		writeError(w, http.StatusBadRequest, "missing_destination_space_id", "destination_space_id is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_destination_space_id", "destination_space_id is required")
 		return
 	}
 
@@ -540,15 +528,15 @@ func (h *Handlers) HandleAdminGenerate(w http.ResponseWriter, r *http.Request) {
 	org, err := h.service.Generate(r.Context(), tenantID, user.UserID, input, aiModel)
 	if err != nil {
 		if errors.Is(err, ErrDuplicateSlug) {
-			writeError(w, http.StatusConflict, "duplicate_slug", "An organisation with this slug already exists")
+			errpkg.WriteError(w, http.StatusConflict, "duplicate_slug", "An organisation with this slug already exists")
 			return
 		}
 		slog.Error("communitylocator: admin generate failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "generate_failed", "Failed to generate community organisation draft")
+		errpkg.WriteError(w, http.StatusInternalServerError, "generate_failed", "Failed to generate community organisation draft")
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": org})
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": org})
 }
 
 // HandleAdminArchive handles PATCH /admin/community-locator/:id/archive —
@@ -569,22 +557,22 @@ func (h *Handlers) HandleAdminArchive(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil {
-		writeError(w, http.StatusServiceUnavailable, "community_locator_unavailable", "Community locator not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "community_locator_unavailable", "Community locator not configured")
 		return
 	}
 
 	org, err := h.service.ArchiveOrg(r.Context(), id, tenantID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "org_not_found", "Community organisation not found")
+			errpkg.WriteError(w, http.StatusNotFound, "org_not_found", "Community organisation not found")
 			return
 		}
 		slog.Error("communitylocator: admin archive failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "archive_failed", "Failed to archive community organisation")
+		errpkg.WriteError(w, http.StatusInternalServerError, "archive_failed", "Failed to archive community organisation")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": org})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": org})
 }
 
 // HandleAdminDelete handles DELETE /admin/community-locator/:id —
@@ -605,19 +593,19 @@ func (h *Handlers) HandleAdminDelete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.service == nil {
-		writeError(w, http.StatusServiceUnavailable, "community_locator_unavailable", "Community locator not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "community_locator_unavailable", "Community locator not configured")
 		return
 	}
 
 	if err := h.service.DeleteOrg(r.Context(), id, tenantID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "org_not_found", "Community organisation not found")
+			errpkg.WriteError(w, http.StatusNotFound, "org_not_found", "Community organisation not found")
 			return
 		}
 		slog.Error("communitylocator: admin delete failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "delete_failed", "Failed to delete community organisation")
+		errpkg.WriteError(w, http.StatusInternalServerError, "delete_failed", "Failed to delete community organisation")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"deleted": true}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"deleted": true}})
 }

@@ -224,9 +224,9 @@ func (s *Store) GetOwnershipClaimByID(ctx context.Context, claimID, tenantID pgt
 // WithdrawOwnershipClaim withdraws (deletes) a pending claim by the claimant.
 func (s *Store) WithdrawOwnershipClaim(ctx context.Context, claimID, tenantID, claimantUserID pgtype.UUID) error {
 	return s.write.WithdrawOwnershipClaim(ctx, gen.WithdrawOwnershipClaimParams{
-		ID:              claimID,
-		TenantID:        tenantID,
-		ClaimantUserID:  claimantUserID,
+		ID:             claimID,
+		TenantID:       tenantID,
+		ClaimantUserID: claimantUserID,
 	})
 }
 

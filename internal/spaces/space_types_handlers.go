@@ -7,6 +7,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
+	errpkg "github.com/jedafe/japa/internal/errors"
 )
 
 // ---------------------------------------------------------------------------
@@ -31,7 +32,7 @@ func (h *Handlers) ListSpaceTypes(w http.ResponseWriter, r *http.Request) {
 			handleServiceError(w, err)
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"data": types})
+		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": types})
 		return
 	}
 
@@ -41,14 +42,14 @@ func (h *Handlers) ListSpaceTypes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": types})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": types})
 }
 
 // GetSpaceType handles GET /api/v1/space-types/{id}.
 func (h *Handlers) GetSpaceType(w http.ResponseWriter, r *http.Request) {
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
@@ -63,7 +64,7 @@ func (h *Handlers) GetSpaceType(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": st})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": st})
 }
 
 // CreateSpaceType handles POST /api/v1/space-types. API-created types are
@@ -79,12 +80,12 @@ func (h *Handlers) CreateSpaceType(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
 		return
 	}
 
 	if strings.TrimSpace(req.Name) == "" || strings.TrimSpace(req.Slug) == "" {
-		writeError(w, http.StatusBadRequest, "missing_fields", "Name and slug are required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_fields", "Name and slug are required")
 		return
 	}
 
@@ -96,7 +97,7 @@ func (h *Handlers) CreateSpaceType(w http.ResponseWriter, r *http.Request) {
 	var fieldGroupID pgtype.UUID
 	if req.FieldGroupID != "" {
 		if err := fieldGroupID.Scan(req.FieldGroupID); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid field_group_id format")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid field_group_id format")
 			return
 		}
 	}
@@ -116,7 +117,7 @@ func (h *Handlers) CreateSpaceType(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": st})
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": st})
 }
 
 // UpdateSpaceType handles PATCH /api/v1/space-types/{id}. Slug is immutable
@@ -124,7 +125,7 @@ func (h *Handlers) CreateSpaceType(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) UpdateSpaceType(w http.ResponseWriter, r *http.Request) {
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
@@ -137,12 +138,12 @@ func (h *Handlers) UpdateSpaceType(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
 		return
 	}
 
 	if strings.TrimSpace(req.Name) == "" {
-		writeError(w, http.StatusBadRequest, "missing_fields", "Name is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_fields", "Name is required")
 		return
 	}
 
@@ -154,7 +155,7 @@ func (h *Handlers) UpdateSpaceType(w http.ResponseWriter, r *http.Request) {
 	var fieldGroupID pgtype.UUID
 	if req.FieldGroupID != "" {
 		if err := fieldGroupID.Scan(req.FieldGroupID); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid field_group_id format")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid field_group_id format")
 			return
 		}
 	}
@@ -173,14 +174,14 @@ func (h *Handlers) UpdateSpaceType(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": st})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": st})
 }
 
 // DeleteSpaceType handles DELETE /api/v1/space-types/{id}.
 func (h *Handlers) DeleteSpaceType(w http.ResponseWriter, r *http.Request) {
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
@@ -194,5 +195,5 @@ func (h *Handlers) DeleteSpaceType(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
 }

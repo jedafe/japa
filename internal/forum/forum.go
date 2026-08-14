@@ -90,13 +90,13 @@ type Service struct {
 	// Optional collaborators injected after construction. Each is nil-safe:
 	// when unset the service skips the corresponding cross-cutting behavior
 	// (RBAC scoping, perm-cache invalidation, webhook emit, WS broadcast).
-	rbac       permissionChecker
-	permCache  permCacheInvalidator
-	webhooks   webhookEmitter
+	rbac        permissionChecker
+	permCache   permCacheInvalidator
+	webhooks    webhookEmitter
 	broadcaster spaceBroadcaster
-	valkey     valkeycompat.Cmdable
-	asynq      *asynq.Client
-	notifier   NotificationDispatcher
+	valkey      valkeycompat.Cmdable
+	asynq       *asynq.Client
+	notifier    NotificationDispatcher
 
 	// BUG-020: in-memory JSON-LD cache for solved threads.
 	jsonLDCache sync.Map

@@ -36,6 +36,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/config"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/honcho"
 	"github.com/jedafe/japa/internal/rag"
 	"github.com/jedafe/japa/internal/tenant"
@@ -246,25 +247,10 @@ func (h *Handlers) persistChatTurn(ctx context.Context, userID, message, reply, 
 // Shared helpers
 // ---------------------------------------------------------------------------
 
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-
-	if err := json.NewEncoder(w).Encode(v); err != nil {
-		slog.Warn("json encode error", "error", err)
-	}
-}
-
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, map[string]any{
-		"error": map[string]string{"code": code, "message": message},
-	})
-}
-
 func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 
 		return pgtype.UUID{}, false
 	}
@@ -275,7 +261,7 @@ func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	user := auth.FromContext(r.Context())
 	if user == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 
 		return nil, false
 	}
@@ -342,19 +328,19 @@ func (h *Handlers) HandleGenerate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
 
 		return
 	}
 
 	if input.Category == "" {
-		writeError(w, http.StatusBadRequest, "validation_error", "category is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "category is required")
 
 		return
 	}
 
 	if input.Prompt == "" {
-		writeError(w, http.StatusBadRequest, "validation_error", "prompt is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "prompt is required")
 
 		return
 	}
@@ -376,19 +362,19 @@ func (h *Handlers) HandleGenerate(w http.ResponseWriter, r *http.Request) {
 		}
 
 		payload, err := json.Marshal(map[string]any{
-			"prompt":            input.Prompt,
-			"user_id":           user.UserID.String(),
-			"tenant_id":         tenantID.String(),
-			"audience":          audience,
-			"related_features":  relatedFeatures,
+			"prompt":           input.Prompt,
+			"user_id":          user.UserID.String(),
+			"tenant_id":        tenantID.String(),
+			"audience":         audience,
+			"related_features": relatedFeatures,
 		})
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, "marshal_error", "Failed to marshal task payload")
+			errpkg.WriteError(w, http.StatusInternalServerError, "marshal_error", "Failed to marshal task payload")
 			return
 		}
 
 		if h.AsynqClient == nil {
-			writeError(w, http.StatusServiceUnavailable, "no_worker", "Background task client unavailable")
+			errpkg.WriteError(w, http.StatusServiceUnavailable, "no_worker", "Background task client unavailable")
 			return
 		}
 
@@ -398,14 +384,14 @@ func (h *Handlers) HandleGenerate(w http.ResponseWriter, r *http.Request) {
 		)
 		if err != nil {
 			slog.Error("ai: failed to enqueue docs:generate_page", "error", err)
-			writeError(w, http.StatusBadGateway, "enqueue_error", "Failed to enqueue generation task")
+			errpkg.WriteError(w, http.StatusBadGateway, "enqueue_error", "Failed to enqueue generation task")
 			return
 		}
 
-		writeJSON(w, http.StatusAccepted, map[string]any{
+		errpkg.WriteJSON(w, http.StatusAccepted, map[string]any{
 			"data": map[string]any{
-				"status":   "accepted",
-				"task_id":  info.ID,
+				"status":    "accepted",
+				"task_id":   info.ID,
 				"task_type": worker.TypeDocsGeneratePage,
 			},
 		})
@@ -429,7 +415,7 @@ func (h *Handlers) HandleGenerate(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		slog.Error("ai generate failed", "error", err, "category", input.Category)
-		writeError(w, http.StatusBadGateway, "ai_error", "AI generation failed")
+		errpkg.WriteError(w, http.StatusBadGateway, "ai_error", "AI generation failed")
 
 		return
 	}
@@ -442,7 +428,7 @@ func (h *Handlers) HandleGenerate(w http.ResponseWriter, r *http.Request) {
 	// the admin UI needs (generated_text, model, tokens_used).
 	genResult := mapGenerateResult(resp)
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": genResult,
 	})
 }
@@ -516,7 +502,7 @@ func (h *Handlers) HandleChat(w http.ResponseWriter, r *http.Request) {
 	// default true). A disabled toggle short-circuits before any provider call.
 	if h.Settings != nil {
 		if enabled, err := h.Settings.GetSettingBool(r.Context(), tenantID, "ai.japabot_enabled"); err == nil && !enabled {
-			writeError(w, http.StatusServiceUnavailable, "japabot_disabled", "JapaBot is currently disabled")
+			errpkg.WriteError(w, http.StatusServiceUnavailable, "japabot_disabled", "JapaBot is currently disabled")
 			return
 		}
 	}
@@ -529,7 +515,7 @@ func (h *Handlers) HandleChat(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			slog.Warn("ai: consent check failed, allowing request", "error", err)
 		} else if !consented {
-			writeError(w, http.StatusForbidden, "ai_consent_required",
+			errpkg.WriteError(w, http.StatusForbidden, "ai_consent_required",
 				"You must consent to AI processing before using JapaBot")
 			return
 		}
@@ -544,13 +530,13 @@ func (h *Handlers) HandleChat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
 
 		return
 	}
 
 	if input.Message == "" {
-		writeError(w, http.StatusBadRequest, "validation_error", "message is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "message is required")
 
 		return
 	}
@@ -597,12 +583,12 @@ func (h *Handlers) HandleChat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	payload := map[string]any{
-		"prompt":           input.Message,
-		"context":          aiContext,
-		"user_id":          user.UserID.String(),
-		"tenant_id":        tenantID.String(),
-		"task":             "chat",
-		"conversation_id":  input.ConversationID,
+		"prompt":          input.Message,
+		"context":         aiContext,
+		"user_id":         user.UserID.String(),
+		"tenant_id":       tenantID.String(),
+		"task":            "chat",
+		"conversation_id": input.ConversationID,
 	}
 
 	// Humanization: merge global ai.humanize.* setting with per-request override.
@@ -615,7 +601,7 @@ func (h *Handlers) HandleChat(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		slog.Error("ai chat failed", "error", err)
-		writeError(w, http.StatusBadGateway, "ai_error", "JapaBot is unavailable")
+		errpkg.WriteError(w, http.StatusBadGateway, "ai_error", "JapaBot is unavailable")
 
 		return
 	}
@@ -650,7 +636,7 @@ func (h *Handlers) HandleChat(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
 			"reply":           reply,
 			"conversation_id": conversationID,
@@ -711,13 +697,13 @@ func (h *Handlers) HandleImprove(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
 
 		return
 	}
 
 	if input.Text == "" {
-		writeError(w, http.StatusBadRequest, "validation_error", "text is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "text is required")
 
 		return
 	}
@@ -745,12 +731,12 @@ func (h *Handlers) HandleImprove(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		slog.Error("ai improve failed", "error", err)
-		writeError(w, http.StatusBadGateway, "ai_error", "AI improvement failed")
+		errpkg.WriteError(w, http.StatusBadGateway, "ai_error", "AI improvement failed")
 
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": resp})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": resp})
 }
 
 // HandleSummarize handles POST /api/v1/ai/assist/summarize — summarize text.
@@ -774,13 +760,13 @@ func (h *Handlers) HandleSummarize(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
 
 		return
 	}
 
 	if input.Text == "" {
-		writeError(w, http.StatusBadRequest, "validation_error", "text is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "text is required")
 
 		return
 	}
@@ -808,12 +794,12 @@ func (h *Handlers) HandleSummarize(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		slog.Error("ai summarize failed", "error", err)
-		writeError(w, http.StatusBadGateway, "ai_error", "AI summarization failed")
+		errpkg.WriteError(w, http.StatusBadGateway, "ai_error", "AI summarization failed")
 
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": resp})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": resp})
 }
 
 // HandleTranslate handles POST /api/v1/ai/assist/translate — translate text.
@@ -837,19 +823,19 @@ func (h *Handlers) HandleTranslate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
 
 		return
 	}
 
 	if input.Text == "" {
-		writeError(w, http.StatusBadRequest, "validation_error", "text is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "text is required")
 
 		return
 	}
 
 	if input.TargetLocale == "" {
-		writeError(w, http.StatusBadRequest, "validation_error", "target_locale is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "target_locale is required")
 
 		return
 	}
@@ -872,12 +858,12 @@ func (h *Handlers) HandleTranslate(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		slog.Error("ai translate failed", "error", err)
-		writeError(w, http.StatusBadGateway, "ai_error", "AI translation failed")
+		errpkg.WriteError(w, http.StatusBadGateway, "ai_error", "AI translation failed")
 
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": resp})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": resp})
 }
 
 // HandleGenerateTags handles POST /api/v1/ai/assist/generate-tags — generate content tags.
@@ -899,13 +885,13 @@ func (h *Handlers) HandleGenerateTags(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
 
 		return
 	}
 
 	if input.Title == "" && input.Text == "" {
-		writeError(w, http.StatusBadRequest, "validation_error", "title or text is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "title or text is required")
 
 		return
 	}
@@ -923,12 +909,12 @@ func (h *Handlers) HandleGenerateTags(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		slog.Error("ai generate-tags failed", "error", err)
-		writeError(w, http.StatusBadGateway, "ai_error", "AI tag generation failed")
+		errpkg.WriteError(w, http.StatusBadGateway, "ai_error", "AI tag generation failed")
 
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": resp})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": resp})
 }
 
 // HandleGenerateOG handles POST /api/v1/ai/assist/generate-og — generate OG metadata.
@@ -951,13 +937,13 @@ func (h *Handlers) HandleGenerateOG(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
 
 		return
 	}
 
 	if input.Title == "" {
-		writeError(w, http.StatusBadRequest, "validation_error", "title is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "title is required")
 
 		return
 	}
@@ -981,12 +967,12 @@ func (h *Handlers) HandleGenerateOG(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		slog.Error("ai generate-og failed", "error", err)
-		writeError(w, http.StatusBadGateway, "ai_error", "AI OG generation failed")
+		errpkg.WriteError(w, http.StatusBadGateway, "ai_error", "AI OG generation failed")
 
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": resp})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": resp})
 }
 
 // ---------------------------------------------------------------------------
@@ -1039,13 +1025,13 @@ func (h *Handlers) HandleCreateHITL(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
 
 		return
 	}
 
 	if input.ContentType == "" {
-		writeError(w, http.StatusBadRequest, "validation_error", "content_type is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "content_type is required")
 
 		return
 	}
@@ -1054,7 +1040,7 @@ func (h *Handlers) HandleCreateHITL(w http.ResponseWriter, r *http.Request) {
 	var contentID pgtype.UUID
 	if input.ContentID != "" {
 		if err := contentID.Scan(input.ContentID); err != nil {
-			writeError(w, http.StatusBadRequest, "validation_error", "invalid content_id")
+			errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "invalid content_id")
 
 			return
 		}
@@ -1067,7 +1053,7 @@ func (h *Handlers) HandleCreateHITL(w http.ResponseWriter, r *http.Request) {
 		var err error
 		aiOutputBytes, err = json.Marshal(input.AIOutput)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, "validation_error", "invalid ai_output")
+			errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "invalid ai_output")
 
 			return
 		}
@@ -1076,7 +1062,7 @@ func (h *Handlers) HandleCreateHITL(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if len(aiOutputBytes) == 0 {
-		writeError(w, http.StatusBadRequest, "validation_error", "either ai_output or content is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "either ai_output or content is required")
 
 		return
 	}
@@ -1089,12 +1075,12 @@ func (h *Handlers) HandleCreateHITL(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		slog.Error("creating HITL review", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to create HITL review")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to create HITL review")
 
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": review})
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": review})
 }
 
 // HandleListPendingHITL lists pending HITL reviews for the current tenant.
@@ -1116,7 +1102,7 @@ func (h *Handlers) HandleListPendingHITL(w http.ResponseWriter, r *http.Request)
 	reviews, err := ListPendingReviews(r.Context(), h.Store, tenantID, sourceFilter, limit, offset)
 	if err != nil {
 		slog.Error("listing pending HITL reviews", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list reviews")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list reviews")
 
 		return
 	}
@@ -1124,7 +1110,7 @@ func (h *Handlers) HandleListPendingHITL(w http.ResponseWriter, r *http.Request)
 	total, err := CountPendingReviews(r.Context(), h.Store, tenantID, sourceFilter)
 	if err != nil {
 		slog.Error("counting pending HITL reviews", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to count reviews")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to count reviews")
 
 		return
 	}
@@ -1134,15 +1120,15 @@ func (h *Handlers) HandleListPendingHITL(w http.ResponseWriter, r *http.Request)
 	// The backend stores the AI output in ai_output (JSONB); decode it to a
 	// string for the content field.
 	type hitlReviewDTO struct {
-		ID           string `json:"id"`
-		Content      string `json:"content"`
-		ContentType  string `json:"content_type"`
-		Source       string `json:"source"`
-		Status       string `json:"status"`
-		CreatedAt    string `json:"created_at"`
-		ReviewedAt   string `json:"reviewed_at,omitempty"`
-		ReviewerID   string `json:"reviewer_id,omitempty"`
-		Reason       string `json:"reason,omitempty"`
+		ID          string `json:"id"`
+		Content     string `json:"content"`
+		ContentType string `json:"content_type"`
+		Source      string `json:"source"`
+		Status      string `json:"status"`
+		CreatedAt   string `json:"created_at"`
+		ReviewedAt  string `json:"reviewed_at,omitempty"`
+		ReviewerID  string `json:"reviewer_id,omitempty"`
+		Reason      string `json:"reason,omitempty"`
 	}
 
 	dtos := make([]hitlReviewDTO, 0, len(reviews))
@@ -1167,7 +1153,7 @@ func (h *Handlers) HandleListPendingHITL(w http.ResponseWriter, r *http.Request)
 		dtos = append(dtos, dto)
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
 			"reviews": dtos,
 			"total":   total,
@@ -1190,18 +1176,18 @@ func (h *Handlers) HandleApproveHITL(w http.ResponseWriter, r *http.Request) {
 
 	var reviewID pgtype.UUID
 	if err := reviewID.Scan(chi.URLParam(r, "id")); err != nil {
-		writeError(w, http.StatusBadRequest, "validation_error", "invalid review ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "invalid review ID")
 
 		return
 	}
 
 	if err := ApproveReview(r.Context(), h.Store, tenantID, reviewID, user.UserID); err != nil {
 		slog.Error("approving HITL review", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "An unexpected error occurred")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "An unexpected error occurred")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "approved"}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "approved"}})
 }
 
 // HandleRejectHITL rejects a pending HITL review with a reason. The review is
@@ -1219,7 +1205,7 @@ func (h *Handlers) HandleRejectHITL(w http.ResponseWriter, r *http.Request) {
 
 	var reviewID pgtype.UUID
 	if err := reviewID.Scan(chi.URLParam(r, "id")); err != nil {
-		writeError(w, http.StatusBadRequest, "validation_error", "invalid review ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "invalid review ID")
 
 		return
 	}
@@ -1229,18 +1215,18 @@ func (h *Handlers) HandleRejectHITL(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
 
 		return
 	}
 
 	if err := RejectReview(r.Context(), h.Store, tenantID, reviewID, user.UserID, input.Reason); err != nil {
 		slog.Error("rejecting HITL review", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "An unexpected error occurred")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "An unexpected error occurred")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "rejected"}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "rejected"}})
 }
 
 // ---------------------------------------------------------------------------
@@ -1254,7 +1240,7 @@ func (h *Handlers) HandleRejectHITL(w http.ResponseWriter, r *http.Request) {
 // registration without breaking.
 func (h *Handlers) HandleGetUserContext(w http.ResponseWriter, r *http.Request) {
 	if h.Honcho == nil {
-		writeJSON(w, http.StatusOK, map[string]any{"data": []any{}})
+		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": []any{}})
 		return
 	}
 
@@ -1263,7 +1249,7 @@ func (h *Handlers) HandleGetUserContext(w http.ResponseWriter, r *http.Request) 
 		userID = chi.URLParam(r, "id")
 	}
 	if userID == "" {
-		writeError(w, http.StatusBadRequest, "validation_error", "user_id is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "user_id is required")
 
 		return
 	}
@@ -1277,12 +1263,12 @@ func (h *Handlers) HandleGetUserContext(w http.ResponseWriter, r *http.Request) 
 			ok, err := h.Store.UserBelongsToTenant(r.Context(), t.ID, userID)
 			if err != nil {
 				slog.Error("verifying user tenant membership", "error", err, "user_id", userID)
-				writeError(w, http.StatusInternalServerError, "internal_error", "Failed to verify user")
+				errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to verify user")
 
 				return
 			}
 			if !ok {
-				writeError(w, http.StatusNotFound, "user_not_found", "User not found")
+				errpkg.WriteError(w, http.StatusNotFound, "user_not_found", "User not found")
 
 				return
 			}
@@ -1292,12 +1278,12 @@ func (h *Handlers) HandleGetUserContext(w http.ResponseWriter, r *http.Request) 
 	entries, err := h.Honcho.GetContext(r.Context(), userID)
 	if err != nil {
 		slog.Error("getting user AI context", "error", err, "user_id", userID)
-		writeError(w, http.StatusBadGateway, "honcho_error", "Failed to retrieve user context")
+		errpkg.WriteError(w, http.StatusBadGateway, "honcho_error", "Failed to retrieve user context")
 
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": entries,
 		"meta": map[string]any{"total_count": len(entries)},
 	})
@@ -1308,7 +1294,7 @@ func (h *Handlers) HandleGetUserContext(w http.ResponseWriter, r *http.Request) 
 // Reads params from either {user_id}/{entry_id} or {id}/{entryId} chi params.
 func (h *Handlers) HandleDeleteUserContextEntry(w http.ResponseWriter, r *http.Request) {
 	if h.Honcho == nil {
-		writeError(w, http.StatusServiceUnavailable, "honcho_unavailable", "Honcho client not configured")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "honcho_unavailable", "Honcho client not configured")
 
 		return
 	}
@@ -1318,7 +1304,7 @@ func (h *Handlers) HandleDeleteUserContextEntry(w http.ResponseWriter, r *http.R
 		userID = chi.URLParam(r, "id")
 	}
 	if userID == "" {
-		writeError(w, http.StatusBadRequest, "validation_error", "user_id is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "user_id is required")
 
 		return
 	}
@@ -1328,7 +1314,7 @@ func (h *Handlers) HandleDeleteUserContextEntry(w http.ResponseWriter, r *http.R
 		entryID = chi.URLParam(r, "entryId")
 	}
 	if entryID == "" {
-		writeError(w, http.StatusBadRequest, "validation_error", "entry_id is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "entry_id is required")
 
 		return
 	}
@@ -1341,12 +1327,12 @@ func (h *Handlers) HandleDeleteUserContextEntry(w http.ResponseWriter, r *http.R
 			ok, err := h.Store.UserBelongsToTenant(r.Context(), t.ID, userID)
 			if err != nil {
 				slog.Error("verifying user tenant membership", "error", err, "user_id", userID)
-				writeError(w, http.StatusInternalServerError, "internal_error", "Failed to verify user")
+				errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to verify user")
 
 				return
 			}
 			if !ok {
-				writeError(w, http.StatusNotFound, "user_not_found", "User not found")
+				errpkg.WriteError(w, http.StatusNotFound, "user_not_found", "User not found")
 
 				return
 			}
@@ -1355,12 +1341,12 @@ func (h *Handlers) HandleDeleteUserContextEntry(w http.ResponseWriter, r *http.R
 
 	if err := h.Honcho.DeleteEntry(r.Context(), userID, entryID); err != nil {
 		slog.Error("deleting user context entry", "error", err, "user_id", userID, "entry_id", entryID)
-		writeError(w, http.StatusBadGateway, "honcho_error", "Failed to delete context entry")
+		errpkg.WriteError(w, http.StatusBadGateway, "honcho_error", "Failed to delete context entry")
 
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
 }
 
 // ---------------------------------------------------------------------------
@@ -1385,7 +1371,7 @@ func (h *Handlers) HandleGetAIUsage(w http.ResponseWriter, r *http.Request) {
 		case "30d":
 			periodDays = 30
 		default:
-			writeError(w, http.StatusBadRequest, "validation_error", "period must be '7d' or '30d'")
+			errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "period must be '7d' or '30d'")
 			return
 		}
 	}
@@ -1395,11 +1381,11 @@ func (h *Handlers) HandleGetAIUsage(w http.ResponseWriter, r *http.Request) {
 	summary, err := h.Store.GetAIUsageSummary(r.Context(), tenantID, periodDays, provider)
 	if err != nil {
 		slog.Error("getting ai usage summary", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to retrieve AI usage")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to retrieve AI usage")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": summary})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": summary})
 }
 
 // ---------------------------------------------------------------------------
@@ -1425,7 +1411,7 @@ func (h *Handlers) HandleListModels(w http.ResponseWriter, _ *http.Request) {
 		}
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": models})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": models})
 }
 
 // ─── P5.6 AI Conversations ───────────────────────────────────────────────
@@ -1438,13 +1424,13 @@ func (h *Handlers) HandleListModels(w http.ResponseWriter, _ *http.Request) {
 func (h *Handlers) HandleListConversations(w http.ResponseWriter, r *http.Request) {
 	user := auth.FromContext(r.Context())
 	if user == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 
 		return
 	}
 
 	if h.Honcho == nil {
-		writeJSON(w, http.StatusOK, map[string]any{"data": []any{}})
+		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": []any{}})
 		return
 	}
 
@@ -1452,16 +1438,16 @@ func (h *Handlers) HandleListConversations(w http.ResponseWriter, r *http.Reques
 	if err != nil {
 		// Honcho may be unreachable — degrade to an empty list rather than 500.
 		slog.Warn("ai: listing conversations from honcho", "error", err)
-		writeJSON(w, http.StatusOK, map[string]any{"data": []any{}})
+		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": []any{}})
 		return
 	}
 
 	// Group entries by conversation_id (metadata) into conversation summaries.
 	type convoSummary struct {
-		ConversationID string         `json:"conversation_id"`
-		Preview        string         `json:"preview"`
-		TurnCount      int            `json:"turn_count"`
-		LastEntryAt    time.Time      `json:"last_entry_at"`
+		ConversationID string                `json:"conversation_id"`
+		Preview        string                `json:"preview"`
+		TurnCount      int                   `json:"turn_count"`
+		LastEntryAt    time.Time             `json:"last_entry_at"`
 		Entries        []honcho.ContextEntry `json:"entries,omitempty"`
 	}
 
@@ -1501,7 +1487,7 @@ func (h *Handlers) HandleListConversations(w http.ResponseWriter, r *http.Reques
 		out = append(out, *convos[cid])
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": out})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": out})
 }
 
 // HandleGetConversation handles GET /ai/conversations/:id (P5.6).
@@ -1510,26 +1496,26 @@ func (h *Handlers) HandleListConversations(w http.ResponseWriter, r *http.Reques
 func (h *Handlers) HandleGetConversation(w http.ResponseWriter, r *http.Request) {
 	user := auth.FromContext(r.Context())
 	if user == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 
 		return
 	}
 
 	conversationID := chi.URLParam(r, "id")
 	if conversationID == "" {
-		writeError(w, http.StatusBadRequest, "validation_error", "conversation id is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "conversation id is required")
 		return
 	}
 
 	if h.Honcho == nil {
-		writeError(w, http.StatusNotFound, "not_found", "Conversation not found")
+		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Conversation not found")
 		return
 	}
 
 	entries, err := h.Honcho.GetContext(r.Context(), user.UserID.String())
 	if err != nil {
 		slog.Warn("ai: loading conversations from honcho", "error", err)
-		writeError(w, http.StatusNotFound, "not_found", "Conversation not found")
+		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Conversation not found")
 		return
 	}
 
@@ -1544,11 +1530,11 @@ func (h *Handlers) HandleGetConversation(w http.ResponseWriter, r *http.Request)
 	}
 
 	if len(matched) == 0 {
-		writeError(w, http.StatusNotFound, "not_found", "Conversation not found")
+		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Conversation not found")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
 		"conversation_id": conversationID,
 		"entries":         matched,
 		"turn_count":      len(matched),
@@ -1588,7 +1574,7 @@ func (h *Handlers) HandleListCategories(w http.ResponseWriter, _ *http.Request) 
 		}
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": categories})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": categories})
 }
 
 // resolveAcceptLanguage extracts the primary 2-letter language tag from the

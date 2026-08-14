@@ -17,7 +17,6 @@ package webhooks
 
 import (
 	"encoding/json"
-	"log/slog"
 	"net/http"
 	"strconv"
 
@@ -42,29 +41,14 @@ func NewHandlers(service *Service) *Handlers {
 // Shared helpers
 // ---------------------------------------------------------------------------
 
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-
-	if err := json.NewEncoder(w).Encode(v); err != nil {
-		slog.Warn("json encode error", "error", err)
-	}
-}
-
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, map[string]any{
-		"error": map[string]string{"code": code, "message": message},
-	})
-}
-
 func handleServiceError(w http.ResponseWriter, err error) {
 	switch {
 	case contains(err.Error(), "not found"):
-		writeError(w, http.StatusNotFound, "not_found", "Resource not found")
+		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Resource not found")
 	case contains(err.Error(), "already"):
-		writeError(w, http.StatusConflict, "already_exists", "Resource already exists")
+		errpkg.WriteError(w, http.StatusConflict, "already_exists", "Resource already exists")
 	case contains(err.Error(), "challenge/response") || contains(err.Error(), "challenge"):
-		writeError(w, http.StatusUnprocessableEntity, "verification_failed", err.Error())
+		errpkg.WriteError(w, http.StatusUnprocessableEntity, "verification_failed", err.Error())
 	default:
 		errpkg.HandleServiceError(w, err)
 	}
@@ -87,7 +71,7 @@ func containsHelper(s, substr string) bool {
 func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
 
@@ -99,7 +83,7 @@ func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype
 func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	user := auth.FromContext(r.Context())
 	if user == nil || !user.UserID.Valid {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return pgtype.UUID{}, false
 	}
 	return user.UserID, true
@@ -132,7 +116,7 @@ func (h *Handlers) ListWebhooks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data":        endpoints,
 		"total_count": len(endpoints),
 	})
@@ -148,7 +132,7 @@ func (h *Handlers) GetWebhook(w http.ResponseWriter, r *http.Request) {
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid webhook ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid webhook ID")
 		return
 	}
 
@@ -158,7 +142,7 @@ func (h *Handlers) GetWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": endpoint})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": endpoint})
 }
 
 // CreateWebhook registers a new webhook endpoint. The signing secret is
@@ -177,22 +161,22 @@ func (h *Handlers) CreateWebhook(w http.ResponseWriter, r *http.Request) {
 
 	var input CreateWebhookRequest
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
 		return
 	}
 
 	if input.Name == "" {
-		writeError(w, http.StatusBadRequest, "validation_error", "name is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "name is required")
 		return
 	}
 
 	if input.URL == "" {
-		writeError(w, http.StatusBadRequest, "validation_error", "url is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "url is required")
 		return
 	}
 
 	if len(input.EventTypes) == 0 {
-		writeError(w, http.StatusBadRequest, "validation_error", "event_types is required and must not be empty")
+		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "event_types is required and must not be empty")
 		return
 	}
 
@@ -203,7 +187,7 @@ func (h *Handlers) CreateWebhook(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// §12: return the secret exactly once on create.
-	writeJSON(w, http.StatusCreated, map[string]any{"data": endpoint.ToCreateResponse()})
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": endpoint.ToCreateResponse()})
 }
 
 // UpdateWebhook updates an existing webhook endpoint.
@@ -216,13 +200,13 @@ func (h *Handlers) UpdateWebhook(w http.ResponseWriter, r *http.Request) {
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid webhook ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid webhook ID")
 		return
 	}
 
 	var input UpdateWebhookRequest
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
 		return
 	}
 
@@ -232,7 +216,7 @@ func (h *Handlers) UpdateWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": endpoint})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": endpoint})
 }
 
 // DeleteWebhook removes a webhook endpoint.
@@ -245,7 +229,7 @@ func (h *Handlers) DeleteWebhook(w http.ResponseWriter, r *http.Request) {
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid webhook ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid webhook ID")
 		return
 	}
 
@@ -254,7 +238,7 @@ func (h *Handlers) DeleteWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
 }
 
 // TestWebhook sends a test event to a webhook endpoint.
@@ -267,13 +251,13 @@ func (h *Handlers) TestWebhook(w http.ResponseWriter, r *http.Request) {
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid webhook ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid webhook ID")
 		return
 	}
 
 	var input TestWebhookRequest
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
 		return
 	}
 
@@ -287,7 +271,7 @@ func (h *Handlers) TestWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
 			"delivery_id": deliveryID.String(),
 			"status":      "pending",
@@ -307,7 +291,7 @@ func (h *Handlers) VerifyWebhook(w http.ResponseWriter, r *http.Request) {
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid webhook ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid webhook ID")
 		return
 	}
 
@@ -316,7 +300,7 @@ func (h *Handlers) VerifyWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{"status": "verified"},
 	})
 }
@@ -330,7 +314,7 @@ func (h *Handlers) ListDeliveries(w http.ResponseWriter, r *http.Request) {
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid webhook ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid webhook ID")
 		return
 	}
 
@@ -343,7 +327,7 @@ func (h *Handlers) ListDeliveries(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": deliveries})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": deliveries})
 }
 
 // RetryDelivery handles POST /admin/webhooks/{id}/deliveries/{delivery_id}/retry.
@@ -358,13 +342,13 @@ func (h *Handlers) RetryDelivery(w http.ResponseWriter, r *http.Request) {
 
 	endpointID, err := parseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid webhook ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid webhook ID")
 		return
 	}
 
 	deliveryID, err := parseUUIDParam(r, "delivery_id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid delivery ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid delivery ID")
 		return
 	}
 
@@ -373,7 +357,7 @@ func (h *Handlers) RetryDelivery(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]string{"status": "retried"},
 	})
 }
@@ -389,23 +373,23 @@ func (h *Handlers) RetryDelivery(w http.ResponseWriter, r *http.Request) {
 // Ref: japaconnect-engineering/sections/12-webhooks.md
 var defaultWebhookEventCatalog = []map[string]string{
 	// Content (§14)
-	{ "key": "content.published", "label": "Content Published", "description": "When content is published" },
-	{ "key": "content.updated", "label": "Content Updated", "description": "When content is updated" },
-	{ "key": "content.deleted", "label": "Content Deleted", "description": "When content is soft-deleted" },
+	{"key": "content.published", "label": "Content Published", "description": "When content is published"},
+	{"key": "content.updated", "label": "Content Updated", "description": "When content is updated"},
+	{"key": "content.deleted", "label": "Content Deleted", "description": "When content is soft-deleted"},
 	// Claims (§07)
-	{ "key": "claim.approved", "label": "Claim Approved", "description": "When an ownership claim is approved" },
-	{ "key": "claim.rejected", "label": "Claim Rejected", "description": "When an ownership claim is rejected" },
+	{"key": "claim.approved", "label": "Claim Approved", "description": "When an ownership claim is approved"},
+	{"key": "claim.rejected", "label": "Claim Rejected", "description": "When an ownership claim is rejected"},
 	// Reviews (§29)
-	{ "key": "review.created", "label": "Review Created", "description": "When a new review is created" },
+	{"key": "review.created", "label": "Review Created", "description": "When a new review is created"},
 	// Organizations (§07)
-	{ "key": "organization.verified", "label": "Organization Verified", "description": "When an organization is verified" },
+	{"key": "organization.verified", "label": "Organization Verified", "description": "When an organization is verified"},
 	// Payments (§17)
-	{ "key": "payment.succeeded", "label": "Payment Succeeded", "description": "When a payment succeeds" },
-	{ "key": "payment.failed", "label": "Payment Failed", "description": "When a payment fails" },
+	{"key": "payment.succeeded", "label": "Payment Succeeded", "description": "When a payment succeeds"},
+	{"key": "payment.failed", "label": "Payment Failed", "description": "When a payment fails"},
 	// Forum (§08) — non-PII
-	{ "key": "forum.thread.created", "label": "Forum Thread Created", "description": "When a new forum thread is created" },
-	{ "key": "forum.thread.solved", "label": "Forum Thread Solved", "description": "When a forum thread is marked as solved" },
-	{ "key": "forum.reply.created", "label": "Forum Reply Created", "description": "When a new reply is posted in a forum thread" },
+	{"key": "forum.thread.created", "label": "Forum Thread Created", "description": "When a new forum thread is created"},
+	{"key": "forum.thread.solved", "label": "Forum Thread Solved", "description": "When a forum thread is marked as solved"},
+	{"key": "forum.reply.created", "label": "Forum Reply Created", "description": "When a new reply is posted in a forum thread"},
 }
 
 // eventCatalogEntry is a single entry in the webhook event catalog.
@@ -440,14 +424,14 @@ func (h *Handlers) ListWebhookEvents(w http.ResponseWriter, r *http.Request) {
 							"description": e.Description,
 						})
 					}
-					writeJSON(w, http.StatusOK, map[string]any{"data": data})
+					errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": data})
 					return
 				}
 			}
 		}
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": entries})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": entries})
 }
 
 // defaultWebhookEventEntries returns the built-in default catalog as a slice

@@ -46,9 +46,9 @@ func ExtractPlainText(body string) string {
 // tiptapDoc is the minimal ProseMirror document structure needed for text
 // extraction. We only care about the recursive content tree and text nodes.
 type tiptapDoc struct {
-	Type    string      `json:"type"`
-	Content []tiptapDoc `json:"content,omitempty"`
-	Text    string      `json:"text,omitempty"`
+	Type    string         `json:"type"`
+	Content []tiptapDoc    `json:"content,omitempty"`
+	Text    string         `json:"text,omitempty"`
 	Attrs   map[string]any `json:"attrs,omitempty"`
 }
 

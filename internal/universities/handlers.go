@@ -23,6 +23,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/db/gen"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/media"
 	"github.com/jedafe/japa/internal/tenant"
 	"github.com/jedafe/japa/internal/worker"
@@ -128,7 +129,7 @@ func (h *Handlers) enqueueFetchLogo(ctx context.Context, tenantID, spaceID, uplo
 func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
 
@@ -192,7 +193,7 @@ func (h *Handlers) ListUniversities(w http.ResponseWriter, r *http.Request) {
 
 	spaceType, err := h.spaces.GetSpaceTypeBySlug(r.Context(), universitySpaceTypeSlug, tenantID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to resolve university space type")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to resolve university space type")
 		return
 	}
 
@@ -213,13 +214,13 @@ func (h *Handlers) ListUniversities(w http.ResponseWriter, r *http.Request) {
 
 	universities, err := h.spaces.ListSpacesByTypePaginated(r.Context(), tenantID, spaceType.ID, search, country, sort, limit32, offset)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list universities")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list universities")
 		return
 	}
 
 	total, err := h.spaces.CountSpacesByType(r.Context(), tenantID, spaceType.ID, search, country)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to count universities")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to count universities")
 		return
 	}
 
@@ -228,7 +229,7 @@ func (h *Handlers) ListUniversities(w http.ResponseWriter, r *http.Request) {
 		totalPages++
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": universities,
 		"meta": map[string]any{
 			"total":       total,
@@ -251,7 +252,7 @@ func (h *Handlers) ListUniversitiesAdmin(w http.ResponseWriter, r *http.Request)
 
 	spaceType, err := h.spaces.GetSpaceTypeBySlug(r.Context(), universitySpaceTypeSlug, tenantID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to resolve university space type")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to resolve university space type")
 		return
 	}
 
@@ -273,13 +274,13 @@ func (h *Handlers) ListUniversitiesAdmin(w http.ResponseWriter, r *http.Request)
 
 	universities, err := h.spaces.ListSpacesByTypePaginated(r.Context(), tenantID, spaceType.ID, search, country, sort, limit32, offset)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list universities")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list universities")
 		return
 	}
 
 	total, err := h.spaces.CountSpacesByType(r.Context(), tenantID, spaceType.ID, search, country)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to count universities")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to count universities")
 		return
 	}
 
@@ -288,7 +289,7 @@ func (h *Handlers) ListUniversitiesAdmin(w http.ResponseWriter, r *http.Request)
 		totalPages++
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": universities,
 		"meta": map[string]any{
 			"total":       total,
@@ -309,30 +310,30 @@ func (h *Handlers) GetUniversity(w http.ResponseWriter, r *http.Request) {
 
 	slug := chi.URLParam(r, "slug")
 	if slug == "" {
-		writeError(w, http.StatusBadRequest, "missing_slug", "University slug is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_slug", "University slug is required")
 		return
 	}
 
 	space, err := h.spaces.GetSpaceBySlug(r.Context(), slug, tenantID)
 	if err != nil {
-		writeError(w, http.StatusNotFound, "not_found", "University not found")
+		errpkg.WriteError(w, http.StatusNotFound, "not_found", "University not found")
 		return
 	}
 
 	spaceType, err := h.spaces.GetSpaceTypeBySlug(r.Context(), universitySpaceTypeSlug, tenantID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to resolve university space type")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to resolve university space type")
 		return
 	}
 
 	if space.SpaceTypeID != spaceType.ID {
-		writeError(w, http.StatusNotFound, "not_found", "University not found")
+		errpkg.WriteError(w, http.StatusNotFound, "not_found", "University not found")
 		return
 	}
 
 	fields, err := h.customFields.ListFieldValuesByEntity(r.Context(), tenantID, customFieldEntityTypeSpace, space.ID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to load university fields")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to load university fields")
 		return
 	}
 
@@ -362,7 +363,7 @@ func (h *Handlers) GetUniversity(w http.ResponseWriter, r *http.Request) {
 	// logo_url, and the frontend falls back to the GraduationCap icon.
 	logoURL := h.resolveLogoURL(r.Context(), tenantID, space.LogoMediaID)
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": universityDetail{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": universityDetail{
 		GetSpaceBySlugRow: space,
 		Fields:            fields,
 		DisplayFields:     displayFields,
@@ -485,16 +486,6 @@ func decodeMultiselectKeys(valueJSON []byte, valueText *string) []string {
 	return nil
 }
 
-// writeJSON serializes the given value as JSON and writes it to the response.
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-
-	if err := json.NewEncoder(w).Encode(v); err != nil {
-		slog.Warn("json encode error", "error", err)
-	}
-}
-
 // parseIntDefault parses a string as an int, returning the default on error
 // or empty string.
 func parseIntDefault(s string, def int) int {
@@ -506,13 +497,6 @@ func parseIntDefault(s string, def int) int {
 		return def
 	}
 	return n
-}
-
-// writeError writes a JSON error response following the JapaConnect API format.
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, map[string]any{
-		"error": map[string]string{"code": code, "message": message},
-	})
 }
 
 // ─── Admin University CRUD (P5.6 — Task 11) ──────────────────────────────
@@ -547,17 +531,17 @@ func (h *Handlers) CreateUniversity(w http.ResponseWriter, r *http.Request) {
 		LogoURL  string `json:"logo_url"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", "Invalid body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_request", "Invalid body")
 		return
 	}
 	if strings.TrimSpace(input.Name) == "" {
-		writeError(w, http.StatusBadRequest, "missing_name", "Name is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_name", "Name is required")
 		return
 	}
 
 	spaceType, err := h.spaces.GetSpaceTypeBySlug(r.Context(), universitySpaceTypeSlug, tenantID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to load university space type")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to load university space type")
 		return
 	}
 
@@ -585,7 +569,7 @@ func (h *Handlers) CreateUniversity(w http.ResponseWriter, r *http.Request) {
 		Status:         status,
 	})
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "create_failed", "Failed to create university")
+		errpkg.WriteError(w, http.StatusInternalServerError, "create_failed", "Failed to create university")
 		return
 	}
 
@@ -595,7 +579,7 @@ func (h *Handlers) CreateUniversity(w http.ResponseWriter, r *http.Request) {
 	}
 	h.enqueueFetchLogo(r.Context(), tenantID, space.ID, actorID, input.LogoURL)
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": space})
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": space})
 }
 
 // UpdateUniversity handles PATCH /admin/universities/:id.
@@ -607,13 +591,13 @@ func (h *Handlers) UpdateUniversity(w http.ResponseWriter, r *http.Request) {
 
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid university ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid university ID")
 		return
 	}
 
 	existing, err := h.spaces.GetSpace(r.Context(), id, tenantID)
 	if err != nil {
-		writeError(w, http.StatusNotFound, "not_found", "University not found")
+		errpkg.WriteError(w, http.StatusNotFound, "not_found", "University not found")
 		return
 	}
 
@@ -624,7 +608,7 @@ func (h *Handlers) UpdateUniversity(w http.ResponseWriter, r *http.Request) {
 		LogoURL  *string `json:"logo_url"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", "Invalid body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_request", "Invalid body")
 		return
 	}
 
@@ -659,7 +643,7 @@ func (h *Handlers) UpdateUniversity(w http.ResponseWriter, r *http.Request) {
 		Status:         status,
 	})
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "update_failed", "Failed to update university")
+		errpkg.WriteError(w, http.StatusInternalServerError, "update_failed", "Failed to update university")
 		return
 	}
 
@@ -672,7 +656,7 @@ func (h *Handlers) UpdateUniversity(w http.ResponseWriter, r *http.Request) {
 		if newSlug != "" && newSlug != existing.Slug {
 			updated, err := h.spaces.UpdateSpaceSlug(r.Context(), id, tenantID, newSlug)
 			if err != nil {
-				writeError(w, http.StatusConflict, "slug_in_use", "Slug is already in use")
+				errpkg.WriteError(w, http.StatusConflict, "slug_in_use", "Slug is already in use")
 				return
 			}
 			space.Slug = updated.Slug
@@ -688,7 +672,7 @@ func (h *Handlers) UpdateUniversity(w http.ResponseWriter, r *http.Request) {
 		h.enqueueFetchLogo(r.Context(), tenantID, space.ID, actorID, *input.LogoURL)
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": space})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": space})
 }
 
 // DeleteUniversity handles DELETE /admin/universities/:id.
@@ -700,12 +684,12 @@ func (h *Handlers) DeleteUniversity(w http.ResponseWriter, r *http.Request) {
 
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid university ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid university ID")
 		return
 	}
 
 	if err := h.spaces.DeleteSpace(r.Context(), id, tenantID); err != nil {
-		writeError(w, http.StatusInternalServerError, "delete_failed", "Failed to delete university")
+		errpkg.WriteError(w, http.StatusInternalServerError, "delete_failed", "Failed to delete university")
 		return
 	}
 
@@ -721,13 +705,13 @@ func (h *Handlers) VerifyUniversity(w http.ResponseWriter, r *http.Request) {
 
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid university ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid university ID")
 		return
 	}
 
 	existing, err := h.spaces.GetSpace(r.Context(), id, tenantID)
 	if err != nil {
-		writeError(w, http.StatusNotFound, "not_found", "University not found")
+		errpkg.WriteError(w, http.StatusNotFound, "not_found", "University not found")
 		return
 	}
 
@@ -746,11 +730,11 @@ func (h *Handlers) VerifyUniversity(w http.ResponseWriter, r *http.Request) {
 		Status:         "active",
 	})
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "verify_failed", "Failed to verify university")
+		errpkg.WriteError(w, http.StatusInternalServerError, "verify_failed", "Failed to verify university")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": space})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": space})
 }
 
 // UnverifyUniversity handles DELETE /admin/universities/:id/verify — reverses
@@ -764,13 +748,13 @@ func (h *Handlers) UnverifyUniversity(w http.ResponseWriter, r *http.Request) {
 
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid university ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid university ID")
 		return
 	}
 
 	existing, err := h.spaces.GetSpace(r.Context(), id, tenantID)
 	if err != nil {
-		writeError(w, http.StatusNotFound, "not_found", "University not found")
+		errpkg.WriteError(w, http.StatusNotFound, "not_found", "University not found")
 		return
 	}
 
@@ -789,11 +773,11 @@ func (h *Handlers) UnverifyUniversity(w http.ResponseWriter, r *http.Request) {
 		Status:         "pending",
 	})
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "unverify_failed", "Failed to unverify university")
+		errpkg.WriteError(w, http.StatusInternalServerError, "unverify_failed", "Failed to unverify university")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": space})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": space})
 }
 
 // allowedUniversityStatuses is the set of status values the admin may set on a
@@ -816,7 +800,7 @@ func (h *Handlers) UpdateUniversityStatus(w http.ResponseWriter, r *http.Request
 
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid university ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid university ID")
 		return
 	}
 
@@ -824,19 +808,19 @@ func (h *Handlers) UpdateUniversityStatus(w http.ResponseWriter, r *http.Request
 		Status string `json:"status"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", "Invalid body")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_request", "Invalid body")
 		return
 	}
 	input.Status = strings.TrimSpace(input.Status)
 	if !allowedUniversityStatuses[input.Status] {
-		writeError(w, http.StatusBadRequest, "invalid_status",
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_status",
 			"Status must be one of: active, pending, suspended")
 		return
 	}
 
 	existing, err := h.spaces.GetSpace(r.Context(), id, tenantID)
 	if err != nil {
-		writeError(w, http.StatusNotFound, "not_found", "University not found")
+		errpkg.WriteError(w, http.StatusNotFound, "not_found", "University not found")
 		return
 	}
 
@@ -855,11 +839,11 @@ func (h *Handlers) UpdateUniversityStatus(w http.ResponseWriter, r *http.Request
 		Status:         input.Status,
 	})
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "update_failed", "Failed to update status")
+		errpkg.WriteError(w, http.StatusInternalServerError, "update_failed", "Failed to update status")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": space})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": space})
 }
 
 // BulkImportUniversities handles POST /admin/universities/bulk-import —
@@ -875,20 +859,20 @@ func (h *Handlers) BulkImportUniversities(w http.ResponseWriter, r *http.Request
 
 	// 10 MB upload cap — matches media.max_upload_mb default for a CSV.
 	if err := r.ParseMultipartForm(10 << 20); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_upload", "Failed to parse upload (max 10 MB)")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_upload", "Failed to parse upload (max 10 MB)")
 		return
 	}
 
 	file, _, err := r.FormFile("file")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "missing_file", "CSV file is required (field name: file)")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_file", "CSV file is required (field name: file)")
 		return
 	}
 	defer file.Close()
 
 	spaceType, err := h.spaces.GetSpaceTypeBySlug(r.Context(), universitySpaceTypeSlug, tenantID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to resolve university space type")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to resolve university space type")
 		return
 	}
 
@@ -902,7 +886,7 @@ func (h *Handlers) BulkImportUniversities(w http.ResponseWriter, r *http.Request
 	reader.FieldsPerRecord = -1 // tolerate ragged rows
 	header, err := reader.Read()
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_csv", "CSV is empty or missing a header row")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_csv", "CSV is empty or missing a header row")
 		return
 	}
 	colIndex := make(map[string]int, len(header))
@@ -914,7 +898,7 @@ func (h *Handlers) BulkImportUniversities(w http.ResponseWriter, r *http.Request
 	logoCol, logoOK := colIndex["logo_url"]
 
 	if !nameOK {
-		writeError(w, http.StatusBadRequest, "invalid_csv", "CSV must have a 'name' column")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_csv", "CSV must have a 'name' column")
 		return
 	}
 
@@ -968,7 +952,7 @@ func (h *Handlers) BulkImportUniversities(w http.ResponseWriter, r *http.Request
 		created++
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
 			"created": created,
 			"skipped": skipped,
@@ -988,13 +972,13 @@ func (h *Handlers) CompareUniversities(w http.ResponseWriter, r *http.Request) {
 	}
 	slug := chi.URLParam(r, "slug")
 	if slug == "" {
-		writeError(w, http.StatusBadRequest, "missing_slug", "University slug is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_slug", "University slug is required")
 		return
 	}
 	// Verify the university exists so a bad slug 404s rather than redirecting
 	// to a picker with a dead pre-selection.
 	if _, err := h.spaces.GetSpaceBySlug(r.Context(), slug, tenantID); err != nil {
-		writeError(w, http.StatusNotFound, "not_found", "University not found")
+		errpkg.WriteError(w, http.StatusNotFound, "not_found", "University not found")
 		return
 	}
 	target := "/compare/universities?item1_slug=" + url.QueryEscape(slug)

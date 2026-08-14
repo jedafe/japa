@@ -173,10 +173,10 @@ func (s *Store) listTicketsByTenant(ctx context.Context, p gen.ListTicketsByTena
 	}
 
 	return ListTicketsResponse{
-		Tickets:     items,
-		Total:       total,
-		Page:        p.PageOffset / p.PageLimit,
-		TotalPages:  totalPages,
+		Tickets:    items,
+		Total:      total,
+		Page:       p.PageOffset / p.PageLimit,
+		TotalPages: totalPages,
 	}, nil
 }
 

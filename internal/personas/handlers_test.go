@@ -266,9 +266,9 @@ func TestActivityPolicy_DefaultRoundTrip(t *testing.T) {
 // tenants that lack the 'contributor'/'columnist' default types.
 func TestProvisionPersonas_NeedsDefaultLogic(t *testing.T) {
 	tests := []struct {
-		name      string
-		typeIDs   []string
-		wantNeed  bool
+		name     string
+		typeIDs  []string
+		wantNeed bool
 	}{
 		{
 			name:     "all inputs have type_id",
@@ -326,10 +326,10 @@ func TestProvisionPersonas_NeedsDefaultLogic(t *testing.T) {
 // of which slug collided.
 func TestProvisionPersonas_DuplicateSlugDetection(t *testing.T) {
 	tests := []struct {
-		name     string
-		slugs    []string
-		wantDup  bool
-		wantIdx  int
+		name    string
+		slugs   []string
+		wantDup bool
+		wantIdx int
 	}{
 		{"all unique slugs", []string{"ada", "bola", "chi"}, false, -1},
 		{"two duplicate slugs", []string{"ada", "bola", "ada"}, true, 2},

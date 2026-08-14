@@ -2,7 +2,8 @@
 // surface (Section 77, ADR-074).
 //
 // Ref: japaconnect-engineering/sections/77-flutter-mobile-app.md
-//      japaconnect-engineering/adr/ADR-074-screen-contract.md
+//
+//	japaconnect-engineering/adr/ADR-074-screen-contract.md
 package devices
 
 import (
@@ -27,12 +28,12 @@ const (
 
 // Sentinel errors for structured handling (Rule 5).
 var (
-	ErrMissingFields  = errors.New("devices: device_id and token are required")
+	ErrMissingFields   = errors.New("devices: device_id and token are required")
 	ErrInvalidPlatform = errors.New("devices: invalid platform")
-	ErrNoActiveTokens = errors.New("devices: no active device tokens for user")
-	ErrPushDisabled   = errors.New("devices: push notifications are disabled")
-	ErrNoDispatcher   = errors.New("devices: no push dispatcher configured")
-	ErrDeviceNotFound = errors.New("devices: device not found")
+	ErrNoActiveTokens  = errors.New("devices: no active device tokens for user")
+	ErrPushDisabled    = errors.New("devices: push notifications are disabled")
+	ErrNoDispatcher    = errors.New("devices: no push dispatcher configured")
+	ErrDeviceNotFound  = errors.New("devices: device not found")
 )
 
 // PushPayload is the resolved push payload handed to a PushDispatcher.
@@ -40,9 +41,9 @@ var (
 // below this point (BE-007: the service is the terminal dispatcher, not an
 // enqueuer of notification:send_push).
 type PushPayload struct {
-	Title    string                 `json:"title"`
-	Body     string                 `json:"body"`
-	Data     map[string]interface{} `json:"data"`
+	Title string                 `json:"title"`
+	Body  string                 `json:"body"`
+	Data  map[string]interface{} `json:"data"`
 }
 
 // PushDispatcher is the FCM/APNs provider abstraction. Implementations

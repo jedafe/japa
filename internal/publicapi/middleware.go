@@ -10,6 +10,7 @@ import (
 	"github.com/valkey-io/valkey-go/valkeycompat"
 
 	"github.com/jedafe/japa/internal/clientip"
+	errpkg "github.com/jedafe/japa/internal/errors"
 )
 
 // APIKeyMiddleware extracts the X-API-Key header, validates it, and
@@ -27,7 +28,7 @@ func APIKeyMiddleware(service *Service) func(http.Handler) http.Handler {
 			keyCtx, err := service.ValidateAPIKey(r.Context(), apiKey)
 			if err != nil {
 				slog.Warn("api key validation failed", "error", err)
-				writeError(w, http.StatusUnauthorized, "invalid_api_key", "Invalid or expired API key")
+				errpkg.WriteError(w, http.StatusUnauthorized, "invalid_api_key", "Invalid or expired API key")
 
 				return
 			}
@@ -39,7 +40,7 @@ func APIKeyMiddleware(service *Service) func(http.Handler) http.Handler {
 				allowed, err := service.hasIPAccess(r.Context(), keyCtx.KeyID, clientIP)
 				if err != nil {
 					slog.Error("api key: IP allowlist check failed", "error", err)
-					writeError(w, http.StatusInternalServerError, "ip_check_error", "Failed to verify IP access")
+					errpkg.WriteError(w, http.StatusInternalServerError, "ip_check_error", "Failed to verify IP access")
 
 					return
 				}
@@ -48,7 +49,7 @@ func APIKeyMiddleware(service *Service) func(http.Handler) http.Handler {
 					slog.Warn("api key: IP not in allowlist",
 						"key_id", keyCtx.KeyID.String(),
 						"client_ip", clientIP)
-					writeError(w, http.StatusForbidden, "ip_not_allowed", "Your IP address is not authorized for this API key")
+					errpkg.WriteError(w, http.StatusForbidden, "ip_not_allowed", "Your IP address is not authorized for this API key")
 
 					return
 				}
@@ -77,12 +78,12 @@ func RequireScope(scope string) func(http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			keyCtx := APIKeyFromContext(r.Context())
 			if keyCtx == nil {
-				writeError(w, http.StatusUnauthorized, "api_key_required", "X-API-Key header is required")
+				errpkg.WriteError(w, http.StatusUnauthorized, "api_key_required", "X-API-Key header is required")
 				return
 			}
 
 			if !hasScope(keyCtx.Scopes, scope) {
-				writeError(w, http.StatusForbidden, "insufficient_scope", "API key lacks required scope: "+scope)
+				errpkg.WriteError(w, http.StatusForbidden, "insufficient_scope", "API key lacks required scope: "+scope)
 				return
 			}
 

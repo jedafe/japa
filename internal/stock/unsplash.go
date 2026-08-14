@@ -67,7 +67,7 @@ func (p *UnsplashProvider) Search(ctx context.Context, query string, page, perPa
 				Raw   string `json:"raw"`
 			} `json:"urls"`
 			Description *string `json:"description"`
-			User       struct {
+			User        struct {
 				Name     string `json:"name"`
 				Username string `json:"username"`
 				Links    struct {
@@ -93,8 +93,8 @@ func (p *UnsplashProvider) Search(ctx context.Context, query string, page, perPa
 			FullURL:         r.Urls.Full,
 			Width:           r.Width,
 			Height:          r.Height,
-			Photographer:     r.User.Name,
-			PhotographerURL:  r.User.Links.HTML + "?utm_source=japaconnect&utm_medium=referral",
+			Photographer:    r.User.Name,
+			PhotographerURL: r.User.Links.HTML + "?utm_source=japaconnect&utm_medium=referral",
 			Description:     desc,
 		})
 	}
@@ -136,7 +136,7 @@ func (p *UnsplashProvider) GetByID(ctx context.Context, photoID string) (*StockP
 			Raw   string `json:"raw"`
 		} `json:"urls"`
 		Description *string `json:"description"`
-		User       struct {
+		User        struct {
 			Name     string `json:"name"`
 			Username string `json:"username"`
 			Links    struct {
@@ -160,8 +160,8 @@ func (p *UnsplashProvider) GetByID(ctx context.Context, photoID string) (*StockP
 		FullURL:         raw.Urls.Full,
 		Width:           raw.Width,
 		Height:          raw.Height,
-		Photographer:     raw.User.Name,
-		PhotographerURL:  raw.User.Links.HTML + "?utm_source=japaconnect&utm_medium=referral",
+		Photographer:    raw.User.Name,
+		PhotographerURL: raw.User.Links.HTML + "?utm_source=japaconnect&utm_medium=referral",
 		Description:     desc,
 	}, nil
 }
@@ -215,12 +215,12 @@ func (p *UnsplashProvider) Download(ctx context.Context, photoID string) (*Downl
 	}
 
 	return &DownloadedPhoto{
-		Data:             data,
-		Filename:         photoID + ".jpg",
-		Photographer:     photo.Photographer,
-		PhotographerURL:  photo.PhotographerURL,
-		License:          "unsplash",
-		LicenseURL:       "https://unsplash.com/license",
-		ProviderPhotoID:  photoID,
+		Data:            data,
+		Filename:        photoID + ".jpg",
+		Photographer:    photo.Photographer,
+		PhotographerURL: photo.PhotographerURL,
+		License:         "unsplash",
+		LicenseURL:      "https://unsplash.com/license",
+		ProviderPhotoID: photoID,
 	}, nil
 }

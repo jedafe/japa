@@ -10,7 +10,8 @@
 // spaces(id) per ADR-053.
 //
 // Ref: japaconnect-engineering/sections/96-housing-guide.md
-//      japaconnect-engineering/adr/ADR-104-housing-guide.md
+//
+//	japaconnect-engineering/adr/ADR-104-housing-guide.md
 package housingguide
 
 import (
@@ -35,11 +36,11 @@ const (
 
 // Guide statuses (§96).
 const (
-	StatusDraft    = "draft"
-	StatusAIDraft  = "ai_draft"
-	StatusPending  = "pending"
+	StatusDraft     = "draft"
+	StatusAIDraft   = "ai_draft"
+	StatusPending   = "pending"
 	StatusPublished = "published"
-	StatusRejected = "rejected"
+	StatusRejected  = "rejected"
 )
 
 // Store is the data-access layer for the housing_guides table. It uses
@@ -58,52 +59,52 @@ func NewStore(database *db.DB) *Store {
 // joining housing_guides with spaces (destination + city) and users
 // (HITL reviewer).
 type GuideRow struct {
-	ID                 pgtype.UUID
-	TenantID           pgtype.UUID
-	DestinationSpaceID pgtype.UUID
-	CitySpaceID        pgtype.UUID
-	AccommodationType  *string
-	SearchPlatforms    []byte // jsonb
+	ID                   pgtype.UUID
+	TenantID             pgtype.UUID
+	DestinationSpaceID   pgtype.UUID
+	CitySpaceID          pgtype.UUID
+	AccommodationType    *string
+	SearchPlatforms      []byte // jsonb
 	LandlordRequirements *string
-	RentRanges         []byte // jsonb
-	ScamCategories     []string
-	Tips               *string
-	Status             string
-	IsActive           bool
-	AIGenerated        bool
-	AIModel            *string
-	AIPromptHash       *string
-	HITLReviewedBy     pgtype.UUID
-	HITLReviewedAt     pgtype.Timestamptz
-	HITLReviewNotes    *string
-	LastVerifiedAt     pgtype.Date
-	IsJapabotIndexed   bool
-	CreatedAt          pgtype.Timestamptz
-	UpdatedAt          pgtype.Timestamptz
-	DestSpaceName      *string
-	DestSpaceCode      *string
-	CitySpaceName      *string
-	CitySpaceCode      *string
-	ReviewerName       *string
+	RentRanges           []byte // jsonb
+	ScamCategories       []string
+	Tips                 *string
+	Status               string
+	IsActive             bool
+	AIGenerated          bool
+	AIModel              *string
+	AIPromptHash         *string
+	HITLReviewedBy       pgtype.UUID
+	HITLReviewedAt       pgtype.Timestamptz
+	HITLReviewNotes      *string
+	LastVerifiedAt       pgtype.Date
+	IsJapabotIndexed     bool
+	CreatedAt            pgtype.Timestamptz
+	UpdatedAt            pgtype.Timestamptz
+	DestSpaceName        *string
+	DestSpaceCode        *string
+	CitySpaceName        *string
+	CitySpaceCode        *string
+	ReviewerName         *string
 }
 
 // CreateGuideInput holds the fields for inserting a new housing guide.
 type CreateGuideInput struct {
-	TenantID           pgtype.UUID
-	DestinationSpaceID pgtype.UUID
-	CitySpaceID        pgtype.UUID
-	AccommodationType  *string
-	SearchPlatforms    []byte
+	TenantID             pgtype.UUID
+	DestinationSpaceID   pgtype.UUID
+	CitySpaceID          pgtype.UUID
+	AccommodationType    *string
+	SearchPlatforms      []byte
 	LandlordRequirements *string
-	RentRanges         []byte
-	ScamCategories     []string
-	Tips               *string
-	Status             string
-	IsActive           bool
-	AIGenerated        bool
-	AIModel            *string
-	AIPromptHash       *string
-	LastVerifiedAt     pgtype.Date
+	RentRanges           []byte
+	ScamCategories       []string
+	Tips                 *string
+	Status               string
+	IsActive             bool
+	AIGenerated          bool
+	AIModel              *string
+	AIPromptHash         *string
+	LastVerifiedAt       pgtype.Date
 }
 
 // UpdateGuideInput holds the mutable fields for updating a housing guide.
@@ -126,14 +127,14 @@ type UpdateGuideInput struct {
 // ListGuidesFilter holds the filter parameters for listing published
 // housing guides.
 type ListGuidesFilter struct {
-	TenantID           pgtype.UUID
-	DestSpaceID        pgtype.UUID // optional
-	CitySpaceID        pgtype.UUID // optional
-	AccommodationType  string      // optional
-	Status             string      // default: published
-	IsActive           *bool       // default: true
-	Limit              int32
-	Offset             int32
+	TenantID          pgtype.UUID
+	DestSpaceID       pgtype.UUID // optional
+	CitySpaceID       pgtype.UUID // optional
+	AccommodationType string      // optional
+	Status            string      // default: published
+	IsActive          *bool       // default: true
+	Limit             int32
+	Offset            int32
 }
 
 // ListGuides returns a paginated, filtered list of housing guides. The
@@ -481,12 +482,12 @@ WHERE id = $1 AND tenant_id = $2 AND status = 'pending_review'
 // AdminListFilter holds filter parameters for the admin management list.
 type AdminListFilter struct {
 	TenantID          pgtype.UUID
-	Status            string // optional
-	AccommodationType string // optional
+	Status            string      // optional
+	AccommodationType string      // optional
 	DestSpaceID       pgtype.UUID // optional
 	CitySpaceID       pgtype.UUID // optional
-	Q                 string // optional: search tips/landlord_requirements
-	IsActive          *bool  // optional
+	Q                 string      // optional: search tips/landlord_requirements
+	IsActive          *bool       // optional
 	Limit             int32
 	Offset            int32
 }

@@ -76,7 +76,7 @@ func recoveryMiddleware(next http.Handler) http.Handler {
 
 				errtracking.CaptureException(panicErr)
 
-				writeError(w, http.StatusInternalServerError, "internal_error", "internal server error")
+				errtracking.WriteError(w, http.StatusInternalServerError, "internal_error", "internal server error")
 			}
 		}()
 

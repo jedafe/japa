@@ -13,16 +13,16 @@ package affiliate
 import "errors"
 
 var (
-	ErrMemberNotFound       = errors.New("affiliate member not found")
-	ErrAlreadyEnrolled      = errors.New("user is already enrolled in the affiliate program")
-	ErrNotEnrolled          = errors.New("user is not enrolled in the affiliate program")
-	ErrLinkNotFound         = errors.New("affiliate link not found")
-	ErrLinkNotActive        = errors.New("affiliate link is not active")
-	ErrTooManyLinks         = errors.New("affiliate link limit reached")
-	ErrAccountTooNew        = errors.New("account does not meet minimum age requirement")
-	ErrFeatureDisabled      = errors.New("affiliate program is not enabled")
-	ErrInvalidProductType   = errors.New("invalid product type")
-	ErrMemberSuspended      = errors.New("affiliate member is suspended or banned")
+	ErrMemberNotFound     = errors.New("affiliate member not found")
+	ErrAlreadyEnrolled    = errors.New("user is already enrolled in the affiliate program")
+	ErrNotEnrolled        = errors.New("user is not enrolled in the affiliate program")
+	ErrLinkNotFound       = errors.New("affiliate link not found")
+	ErrLinkNotActive      = errors.New("affiliate link is not active")
+	ErrTooManyLinks       = errors.New("affiliate link limit reached")
+	ErrAccountTooNew      = errors.New("account does not meet minimum age requirement")
+	ErrFeatureDisabled    = errors.New("affiliate program is not enabled")
+	ErrInvalidProductType = errors.New("invalid product type")
+	ErrMemberSuspended    = errors.New("affiliate member is suspended or banned")
 )
 
 // MemberStatus represents the enrollment status of an affiliate member.
@@ -39,8 +39,8 @@ type ProductType string
 
 const (
 	ProductTypeProSubscription ProductType = "pro_subscription"
-	ProductTypeCourse         ProductType = "course"
-	ProductTypeGeneral        ProductType = "general"
+	ProductTypeCourse          ProductType = "course"
+	ProductTypeGeneral         ProductType = "general"
 )
 
 // EventType represents the type of affiliate link event.
