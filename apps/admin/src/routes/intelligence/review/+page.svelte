@@ -7,7 +7,8 @@
 	import { Button } from '$lib/components/ui/button';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
-	import { Check, X, Eye, Pencil } from 'lucide-svelte';
+	import { Check, X, Eye, Pencil, Wand } from 'lucide-svelte';
+	import { goto } from '$app/navigation';
 	import type { ActionItem, FilterDef } from '$lib/components/ui/data-table';
 	import { intelReviewApi } from '$lib/api';
 
@@ -31,6 +32,7 @@
 	const canApprove = $derived(hasPermission('intel.review.approve'));
 	const canReject = $derived(hasPermission('intel.review.reject'));
 	const canEdit = $derived(hasPermission('intel.review.edit'));
+	const canCreate = $derived(hasPermission('studio.create') || hasPermission('studio.manage'));
 
 	let entityController = $state<EntityPageController | undefined>(undefined);
 	let pageError = $state('');
@@ -137,6 +139,49 @@
 		}
 	}
 
+	// Map an intel entity_type to a Studio content_type. Most guide-like
+	// entities funnel into the generic "guide" content type; a few have
+	// dedicated Studio content types.
+	const ENTITY_TO_CONTENT_TYPE: Record<string, string> = {
+		scholarship: 'guide',
+		job: 'job_listing',
+		visa: 'visa_route',
+		housing: 'housing_guide',
+		wiki_page: 'wiki_page',
+		language_test_requirement: 'language_test_requirement',
+		tax_obligation_guide: 'tax_obligation_guide',
+		community_organisation: 'community_organisation',
+		cost_of_living: 'comparison'
+	};
+
+	function contentTypeForEntity(entityType: string): string {
+		return ENTITY_TO_CONTENT_TYPE[entityType] ?? 'guide';
+	}
+
+	// Derive a topic prompt from a record. Prefer a human-readable title
+	// decoded from the extracted payload; fall back to the external key.
+	function topicPromptForRecord(rec: ReviewRecord): string {
+		let title = '';
+		try {
+			const decoded = rec.extracted ? atob(rec.extracted) : '';
+			const parsed = decoded ? JSON.parse(decoded) : null;
+			title = (parsed && (parsed.title || parsed.name)) || '';
+		} catch {
+			// ignore — fall through to external_key
+		}
+		if (!title) title = rec.external_key || '';
+		return title;
+	}
+
+	function promoteToStudio(rec: ReviewRecord) {
+		const params = new URLSearchParams();
+		params.set('intel_record_id', rec.id);
+		params.set('content_type', contentTypeForEntity(rec.entity_type));
+		const topic = topicPromptForRecord(rec);
+		if (topic) params.set('topic_prompt', topic);
+		goto(`/studio?${params.toString()}`);
+	}
+
 	// ── Row actions ─────
 	const rowActions = $derived.by<ActionItem[]>(() => {
 		const acts: ActionItem[] = [
@@ -166,6 +211,16 @@
 				show: (row: ReviewRecord) => row.status === 'review_required'
 			});
 		}
+		// Promote an extracted intel record into a Studio job. Navigates to
+		// the Studio page with query params that pre-fill the create-job form.
+		if (canCreate) {
+			acts.push({
+				label: t('intel.promote_to_studio', 'Promote to Studio'),
+				icon: Wand,
+				onclick: (row: ReviewRecord) => promoteToStudio(row),
+				show: (row: ReviewRecord) => row.status === 'extracted'
+			});
+		}
 		return acts;
 	});
 
@@ -175,6 +230,7 @@
 			label: t('intel.status', 'Status'),
 			options: [
 				{ value: 'review_required', label: t('intel.status_review_required', 'Review Required') },
+				{ value: 'extracted', label: t('intel.status_extracted', 'Extracted') },
 				{ value: 'approved', label: t('intel.status_approved', 'Approved') },
 				{ value: 'rejected', label: t('intel.status_rejected', 'Rejected') }
 			]
@@ -247,6 +303,7 @@
 				render: (v: string) => {
 					const clsMap: Record<string, string> = {
 						review_required: 'bg-warning/15 text-warning border-warning',
+						extracted: 'bg-primary/15 text-primary border-primary',
 						approved: 'bg-success/15 text-success border-success',
 						rejected: 'bg-danger/15 text-danger border-danger'
 					};
