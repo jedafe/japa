@@ -16,10 +16,11 @@ import (
 // RemittanceStore is the persistence surface the RemittancePromoter needs.
 // *stores.Store satisfies this interface; tests substitute a mock.
 //
-// Unlike the scholarship/job promoters, the remittance promoter does NOT
+// Under Approach B (ADR-076 Amendment 1), the remittance promoter does NOT
 // create a contents guide row — it only writes the remittance_rates
-// projection row (ALTERed with intel columns by migration 000446). There is
-// therefore no authorID on the promoter and no CreateContent in the store.
+// projection row (ALTERed with intel columns by migration 000446). After
+// successful projection, the intel record is marked status='extracted' so
+// the admin can promote it to Studio for editorial generation.
 //
 // WithTx runs a callback inside a transaction. The callback receives a
 // RemittanceTxStore — a narrower interface exposing only the write methods
@@ -31,7 +32,7 @@ type RemittanceStore interface {
 	GetRemittanceRateByIntelRecord(ctx context.Context, tenantID, intelRecordID pgtype.UUID) (gen.RemittanceRate, error)
 	CreateRemittanceRateIntel(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateRemittanceRateIntelParams) (gen.RemittanceRate, error)
 	UpdateRemittanceRateIntel(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateRemittanceRateIntelParams) error
-	UpdateIntelRecordPromoted(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateIntelRecordPromotedParams) error
+	UpdateIntelRecordStatus(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateIntelRecordStatusParams) error
 	CreateIntelReviewLog(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateIntelReviewLogParams) error
 	WithTx(ctx context.Context, fn func(RemittanceTxStore) error) error
 }
@@ -43,7 +44,7 @@ type RemittanceStore interface {
 // test mock satisfies it directly.
 type RemittanceTxStore interface {
 	CreateRemittanceRateIntel(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateRemittanceRateIntelParams) (gen.RemittanceRate, error)
-	UpdateIntelRecordPromoted(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateIntelRecordPromotedParams) error
+	UpdateIntelRecordStatus(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateIntelRecordStatusParams) error
 	UpdateRemittanceRateIntel(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateRemittanceRateIntelParams) error
 	CreateIntelReviewLog(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateIntelReviewLogParams) error
 }
@@ -51,9 +52,10 @@ type RemittanceTxStore interface {
 // RemittancePromoter promotes remittance intel_records into the
 // remittance_rates projection table.
 //
-// Unlike scholarships/jobs, remittance does NOT create a contents guide row —
-// it only creates/updates the remittance_rates row. There is therefore no
-// authorID on the promoter.
+// Under Approach B (ADR-076 Amendment 1), remittance does NOT create a
+// contents guide row — it only creates/updates the remittance_rates row
+// and marks the intel record status='extracted'. Studio generates the
+// editorial remittance guide when the admin promotes the record.
 //
 // It implements the editorial-override-respect invariant: on the update path,
 // any field present in remittance_rates.editorial_overrides is left untouched
@@ -102,7 +104,10 @@ var ErrNotRemittance = fmt.Errorf("promoter: intel record is not a remittance")
 
 // Promote maps the intel record identified by recordID to a remittance_rates
 // projection row, creating it or updating it in place while respecting
-// editorial overrides.
+// editorial overrides. Under Approach B, no contents guide row is created
+// — the promoter only writes the remittance_rates projection and marks
+// the intel record status='extracted'. Studio generates the editorial
+// remittance guide when the admin promotes the record.
 func (p *RemittancePromoter) Promote(ctx context.Context, recordID uuid.UUID) (PromoteResult, error) {
 	pgID := uuidToPg(recordID)
 
@@ -137,8 +142,8 @@ func (p *RemittancePromoter) Promote(ctx context.Context, recordID uuid.UUID) (P
 	return p.remittanceUpdatePath(ctx, record, existing, ext)
 }
 
-// remittanceCreatePath inserts the remittance_rates projection row and flips
-// the intel record to 'published' with the promoted row id. Both writes run
+// remittanceCreatePath inserts the remittance_rates projection row and
+// marks the intel record status='extracted' (Approach B). Both writes run
 // inside a single transaction so a failure in either rolls back the other
 // (BUG-01 fix, §6.2).
 //
@@ -155,15 +160,18 @@ func (p *RemittancePromoter) remittanceCreatePath(ctx context.Context, record ge
 		if err != nil {
 			return fmt.Errorf("promoter: create remittance rate: %w", err)
 		}
-		if err := tx.UpdateIntelRecordPromoted(ctx, p.tenantID, gen.UpdateIntelRecordPromotedParams{
-			ID:               record.ID,
-			PromotedRecordID: rate.ID,
+		if err := tx.UpdateIntelRecordStatus(ctx, p.tenantID, gen.UpdateIntelRecordStatusParams{
+			TenantID: p.tenantID,
+			ID:       record.ID,
+			Status:   "extracted",
 		}); err != nil {
-			return fmt.Errorf("promoter: mark intel record promoted: %w", err)
+			return fmt.Errorf("promoter: mark intel record extracted: %w", err)
 		}
 		result = PromoteResult{
 			DomainID: pgToUUID(rate.ID),
 			Action:   ActionCreated,
+			// Approach B: no contents row created by the promoter.
+			ContentID: uuid.Nil,
 		}
 		return nil
 	})
