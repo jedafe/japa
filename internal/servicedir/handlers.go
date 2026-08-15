@@ -18,6 +18,7 @@
 package servicedir
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -38,12 +39,50 @@ import (
 type Handlers struct {
 	service  *Service
 	settings *config.Settings
+	rbac     RBACResolver
+	reviews  ReviewFetcher
+}
+
+// RBACResolver is the subset of the RBAC resolver needed to check
+// permissions in-handler (e.g. service.edit_any for the edit bypass).
+type RBACResolver interface {
+	HasPermission(ctx context.Context, userID, tenantID pgtype.UUID, permKey string) bool
+}
+
+// ReviewItem is a single review returned by ReviewFetcher.ListByEntity.
+// Mirrors the relevant fields from §29 reviews joined with author info.
+type ReviewItem struct {
+	ID                string  `json:"id"`
+	AuthorID          string  `json:"author_id"`
+	AuthorUsername    string  `json:"author_username"`
+	AuthorDisplayName *string `json:"author_display_name,omitempty"`
+	AuthorAvatarURL   *string `json:"author_avatar_url,omitempty"`
+	Rating            int16   `json:"rating"`
+	Title             *string `json:"title,omitempty"`
+	Body              *string `json:"body,omitempty"`
+	CreatedAt         string  `json:"created_at"`
+}
+
+// ReviewAggregate holds the count + average rating for an entity (§29).
+type ReviewAggregate struct {
+	Count int32   `json:"count"`
+	Avg   float64 `json:"avg"`
+}
+
+// ReviewFetcher is the subset of the §29 reviews.Service needed by the
+// service directory to embed reviews + aggregate in GET /services/:slug
+// (BUG-014: §98 spec says "service detail + reviews").
+type ReviewFetcher interface {
+	ListByEntity(ctx context.Context, tenantID pgtype.UUID, entityType string, entityID pgtype.UUID, limit, offset int32, sort string) ([]ReviewItem, error)
+	Aggregate(ctx context.Context, tenantID pgtype.UUID, entityType string, entityID pgtype.UUID) (ReviewAggregate, error)
 }
 
 // NewHandlers creates service directory handlers bound to the provided
-// service.
-func NewHandlers(service *Service, settings *config.Settings) *Handlers {
-	return &Handlers{service: service, settings: settings}
+// service. The rbac resolver is used for in-handler permission checks
+// (service.edit_any bypass). The reviews fetcher is optional — when nil,
+// GET /services/:slug omits the reviews/aggregate sidecar fields.
+func NewHandlers(service *Service, settings *config.Settings, rbac RBACResolver, reviews ReviewFetcher) *Handlers {
+	return &Handlers{service: service, settings: settings, rbac: rbac, reviews: reviews}
 }
 
 // ---------------------------------------------------------------------------
@@ -149,7 +188,7 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": services,
-		"pagination": map[string]any{
+		"meta": map[string]any{
 			"page":  page,
 			"limit": limit,
 			"total": total,
@@ -186,7 +225,31 @@ func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": service})
+	// BUG-014: §98 spec says "service detail + reviews". Embed the
+	// published reviews + aggregate rating from the §29 polymorphic
+	// reviews table (entity_type='service_listing', entity_id=content_id).
+	// Reviews are fetched best-effort: a failure logs but does not fail
+	// the detail request — the listing still renders without reviews.
+	resp := map[string]any{"data": service}
+	if h.reviews != nil {
+		var contentID pgtype.UUID
+		if err := contentID.Scan(service.ID); err == nil {
+			reviews, revErr := h.reviews.ListByEntity(r.Context(), tenantID, "service_listing", contentID, 10, 0, "latest")
+			if revErr != nil {
+				slog.Warn("servicedir: fetch reviews for service detail", "slug", slug, "error", revErr)
+			} else {
+				resp["reviews"] = reviews
+			}
+			agg, aggErr := h.reviews.Aggregate(r.Context(), tenantID, "service_listing", contentID)
+			if aggErr != nil {
+				slog.Warn("servicedir: fetch review aggregate for service detail", "slug", slug, "error", aggErr)
+			} else {
+				resp["review_aggregate"] = agg
+			}
+		}
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, resp)
 }
 
 // ---------------------------------------------------------------------------
@@ -235,10 +298,10 @@ func (h *Handlers) HandleCreate(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": service})
 }
 
-// HandleEdit handles PATCH /services/:id — edit own service listing. Auth
-// required (service.edit_own permission checked at route registration).
-// The feature flag is enforced by the features.Gate middleware at route
-// registration (BUG-014: no redundant in-handler check).
+// HandleEdit handles PATCH /services/:id — edit a service listing. Auth
+// required. The route accepts either service.edit_own or service.edit_any
+// (BUG-009). The feature flag is enforced by the features.Gate middleware
+// at route registration (BUG-014: no redundant in-handler check).
 func (h *Handlers) HandleEdit(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
 	if !ok {
@@ -253,13 +316,23 @@ func (h *Handlers) HandleEdit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if h.service == nil {
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "service_directory_unavailable", "Service directory not configured")
+		return
+	}
+
 	var input EditServiceInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
 
-	service, err := h.service.EditOwn(r.Context(), contentID, tenantID, user.UserID, input)
+	// Determine whether the user holds service.edit_any (admins bypass
+	// the ownership check — BUG-009). The route middleware already verified
+	// the user has at least one of edit_own/edit_any.
+	isEditAny := h.rbac.HasPermission(r.Context(), user.UserID, tenantID, "service.edit_any")
+
+	service, err := h.service.EditOwn(r.Context(), contentID, tenantID, user.UserID, input, isEditAny)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "service_not_found", "Service not found")
@@ -321,9 +394,17 @@ func (h *Handlers) HandleClaim(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.service.Claim(r.Context(), contentID, tenantID, orgID); err != nil {
+	if err := h.service.Claim(r.Context(), contentID, tenantID, user.UserID, orgID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "service_not_found", "Service not found")
+			return
+		}
+		if errors.Is(err, ErrNotOrgMember) {
+			errpkg.WriteError(w, http.StatusForbidden, "not_org_member", "You are not a member of the claiming organization")
+			return
+		}
+		if errors.Is(err, ErrAlreadyClaimed) {
+			errpkg.WriteError(w, http.StatusConflict, "already_claimed", "This service listing is already claimed or has a pending claim")
 			return
 		}
 		slog.Error("servicedir: claim failed", "error", err, "user_id", user.UserID)
@@ -362,6 +443,14 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	serviceCategory := r.URL.Query().Get("category")
 	q := r.URL.Query().Get("q")
 
+	var destSpaceID pgtype.UUID
+	if v := r.URL.Query().Get("dest"); v != "" {
+		if err := destSpaceID.Scan(v); err != nil {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid destination space ID")
+			return
+		}
+	}
+
 	var verifiedPtr *bool
 	if v := r.URL.Query().Get("verified"); v != "" {
 		b, err := strconv.ParseBool(v)
@@ -375,7 +464,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 		limit = 200
 	}
 
-	services, total, err := h.service.AdminList(r.Context(), tenantID, status, claimStatus, serviceCategory, q, verifiedPtr, page, limit)
+	services, total, err := h.service.AdminList(r.Context(), tenantID, status, claimStatus, serviceCategory, q, verifiedPtr, destSpaceID, page, limit)
 	if err != nil {
 		slog.Error("servicedir: admin list failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "admin_list_failed", "Failed to list services")
@@ -384,7 +473,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": services,
-		"pagination": map[string]any{
+		"meta": map[string]any{
 			"page":  page,
 			"limit": limit,
 			"total": total,
@@ -428,6 +517,10 @@ func (h *Handlers) HandleAdminVerify(w http.ResponseWriter, r *http.Request) {
 	if err := h.service.AdminVerify(r.Context(), contentID, tenantID, user.UserID, verificationType); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "service_not_found", "Service not found")
+			return
+		}
+		if errors.Is(err, ErrInvalidVerificationType) {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_verification_type", "verification_type must be one of self|community|admin|professional_body")
 			return
 		}
 		slog.Error("servicedir: admin verify failed", "error", err)

@@ -2943,6 +2943,25 @@ export interface ServiceListing {
 	author_avatar?: string;
 }
 
+/** A single review embedded in GET /services/:slug (§98 + §29 sidecar). */
+export interface ServiceReview {
+	id: string;
+	author_id: string;
+	author_username: string;
+	author_display_name?: string | null;
+	author_avatar_url?: string | null;
+	rating: number;
+	title?: string | null;
+	body?: string | null;
+	created_at: string;
+}
+
+/** Review aggregate embedded in GET /services/:slug (§98 + §29 sidecar). */
+export interface ServiceReviewAggregate {
+	count: number;
+	avg: number;
+}
+
 // --- Section 102: Mentorship Matching ---
 /** GET /mentors item — a mentor's public discovery card. */
 export interface Mentor {

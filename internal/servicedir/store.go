@@ -54,6 +54,22 @@ func IsValidCategory(s string) bool {
 	return ok
 }
 
+// validVerificationTypes is the canonical set of verification_type values
+// (§98 schema: self|community|admin|professional_body).
+var validVerificationTypes = map[string]struct{}{
+	VerificationTypeSelf:             {},
+	VerificationTypeCommunity:        {},
+	VerificationTypeAdmin:            {},
+	VerificationTypeProfessionalBody: {},
+}
+
+// IsValidVerificationType reports whether s is a canonical §98
+// verification_type.
+func IsValidVerificationType(s string) bool {
+	_, ok := validVerificationTypes[s]
+	return ok
+}
+
 // Claim statuses (§98 schema: unclaimed|pending|approved|rejected).
 const (
 	ClaimStatusUnclaimed = "unclaimed"
@@ -459,11 +475,12 @@ LIMIT 1
 // AdminListFilter holds filter parameters for the admin moderation list.
 type AdminListFilter struct {
 	TenantID        pgtype.UUID
-	Status          string // optional: filter by content status
-	IsVerified      *bool  // optional: filter by verified state
-	ClaimStatus     string // optional: filter by claim status
-	ServiceCategory string // optional: filter by service category
-	Q               string // optional: search title
+	DestSpaceID     pgtype.UUID // optional, ?dest= (BUG-011)
+	Status          string      // optional: filter by content status
+	IsVerified      *bool       // optional: filter by verified state
+	ClaimStatus     string      // optional: filter by claim status
+	ServiceCategory string      // optional: filter by service category
+	Q               string      // optional: search title
 	Limit           int32
 	Offset          int32
 }
@@ -487,6 +504,11 @@ func (s *Store) AdminList(ctx context.Context, f AdminListFilter) ([]ServiceRow,
 
 	conditions = append(conditions, "c.deleted_at IS NULL")
 
+	if f.DestSpaceID.Valid {
+		conditions = append(conditions, fmt.Sprintf("sm.destination_space_id = $%d", argIdx))
+		args = append(args, f.DestSpaceID)
+		argIdx++
+	}
 	if f.Status != "" {
 		conditions = append(conditions, fmt.Sprintf("c.status = $%d", argIdx))
 		args = append(args, f.Status)
@@ -634,6 +656,71 @@ WHERE content_id = $1 AND tenant_id = $2
 	cmd, err := s.pool.Writer.Exec(ctx, q, contentID, tenantID, claimStatus, orgID)
 	if err != nil {
 		return fmt.Errorf("servicedir: update claim status: %w", err)
+	}
+	if cmd.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+	return nil
+}
+
+// IsOrgMember checks whether a user is a member of the given organization
+// (BUG-006: claim flow must verify the user belongs to the org they are
+// claiming on behalf of).
+func (s *Store) IsOrgMember(ctx context.Context, orgID, userID pgtype.UUID) (bool, error) {
+	const q = `
+SELECT EXISTS (
+    SELECT 1 FROM organization_members
+    WHERE organization_id = $1 AND user_id = $2
+) AS is_member
+`
+	var isMember bool
+	if err := s.pool.Reader.QueryRow(ctx, q, orgID, userID).Scan(&isMember); err != nil {
+		return false, fmt.Errorf("servicedir: is org member: %w", err)
+	}
+	return isMember, nil
+}
+
+// ClaimIfUnclaimed atomically initiates a claim only if the listing is
+// currently unclaimed (BUG-007: prevents overwriting an existing pending
+// or approved claim). Returns pgx.ErrNoRows if the listing does not exist
+// or is already claimed.
+func (s *Store) ClaimIfUnclaimed(ctx context.Context, contentID, tenantID, orgID pgtype.UUID) error {
+	const q = `
+UPDATE service_listing_meta
+SET claim_status = 'pending', claimed_by_org_id = $3, updated_at = now()
+WHERE content_id = $1 AND tenant_id = $2 AND claim_status = 'unclaimed'
+`
+	cmd, err := s.pool.Writer.Exec(ctx, q, contentID, tenantID, orgID)
+	if err != nil {
+		return fmt.Errorf("servicedir: claim if unclaimed: %w", err)
+	}
+	if cmd.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+	return nil
+}
+
+// ResolveClaimIfPending atomically resolves a claim only if it is
+// currently pending (BUG-015: prevents resolving an already-approved or
+// unclaimed listing). Returns pgx.ErrNoRows if the listing does not exist
+// or the claim is not pending.
+func (s *Store) ResolveClaimIfPending(ctx context.Context, contentID, tenantID, orgID pgtype.UUID, approve bool) error {
+	var claimStatus, claimedByOrgID any
+	claimStatus = ClaimStatusApproved
+	if !approve {
+		claimStatus = ClaimStatusRejected
+		claimedByOrgID = pgtype.UUID{} // NULL — clears the rejected claimant
+	} else {
+		claimedByOrgID = orgID
+	}
+	const q = `
+UPDATE service_listing_meta
+SET claim_status = $3, claimed_by_org_id = $4, updated_at = now()
+WHERE content_id = $1 AND tenant_id = $2 AND claim_status = 'pending'
+`
+	cmd, err := s.pool.Writer.Exec(ctx, q, contentID, tenantID, claimStatus, claimedByOrgID)
+	if err != nil {
+		return fmt.Errorf("servicedir: resolve claim if pending: %w", err)
 	}
 	if cmd.RowsAffected() == 0 {
 		return pgx.ErrNoRows

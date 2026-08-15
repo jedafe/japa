@@ -135,6 +135,11 @@ func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
 // service_category that is not in the §98 canonical enum.
 var ErrInvalidCategory = fmt.Errorf("invalid service_category")
 
+// ErrInvalidVerificationType is returned when an admin verify request
+// supplies a verification_type that is not in the §98 canonical enum
+// (BUG-010).
+var ErrInvalidVerificationType = fmt.Errorf("invalid verification_type")
+
 // Create creates a new service listing — a contents row with
 // content_type='service_listing' plus a service_listing_meta row. The
 // listing is created in 'draft' status; the author can submit for review
@@ -182,9 +187,12 @@ func (s *Service) Create(ctx context.Context, tenantID, authorID pgtype.UUID, in
 		ContentType:    content.TypeServiceListing,
 		Title:          input.Title,
 		Body:           input.Body,
-		Status:         content.StatusDraft,
-		Visibility:     content.VisibilityPublic,
-		GeoSpaceID:     destSpaceID,
+		// BUG-013: create as 'pending' so the listing enters the admin
+		// review queue and can be published. 'draft' would make it
+		// invisible with no publish path.
+		Status:     content.StatusPending,
+		Visibility: content.VisibilityPublic,
+		GeoSpaceID: destSpaceID,
 	})
 	if err != nil {
 		return ServiceDTO{}, fmt.Errorf("servicedir: create content: %w", err)
@@ -269,10 +277,12 @@ func (s *Service) List(ctx context.Context, tenantID, destSpaceID, citySpaceID p
 	return dtos, total, nil
 }
 
-// EditOwn updates the author's own service listing. The caller must verify
-// ownership (service.edit_own permission + author_id match). Only the
-// provided (non-nil) fields are updated.
-func (s *Service) EditOwn(ctx context.Context, contentID, tenantID, userID pgtype.UUID, input EditServiceInput) (ServiceDTO, error) {
+// EditOwn updates the author's own service listing, or a listing owned by
+// the user's organization (§98: service.edit_own = "listing owner org").
+// An admin with service.edit_any (checked at route level via
+// RequireAnyPermission) bypasses the ownership check (BUG-008, BUG-009).
+// Only the provided (non-nil) fields are updated.
+func (s *Service) EditOwn(ctx context.Context, contentID, tenantID, userID pgtype.UUID, input EditServiceInput, isEditAny bool) (ServiceDTO, error) {
 	existing, err := s.content.GetContent(ctx, contentID, tenantID)
 	if err != nil {
 		if err == pgx.ErrNoRows {
@@ -280,8 +290,28 @@ func (s *Service) EditOwn(ctx context.Context, contentID, tenantID, userID pgtyp
 		}
 		return ServiceDTO{}, fmt.Errorf("servicedir: edit: get content: %w", err)
 	}
-	if existing.AuthorID != userID {
-		return ServiceDTO{}, ErrNotOwner
+
+	// service.edit_any holders (admins) bypass the ownership check (BUG-009).
+	if !isEditAny {
+		// Check author ownership first (BUG-008).
+		if existing.AuthorID != userID {
+			// Not the author — check if the user is a member of the org
+			// that owns the listing (§98: service.edit_own = "listing owner org").
+			meta, err := s.store.GetMeta(ctx, contentID, tenantID)
+			if err != nil {
+				return ServiceDTO{}, fmt.Errorf("servicedir: edit: get meta: %w", err)
+			}
+			if !meta.OrgID.Valid {
+				return ServiceDTO{}, ErrNotOwner
+			}
+			isMember, err := s.store.IsOrgMember(ctx, meta.OrgID, userID)
+			if err != nil {
+				return ServiceDTO{}, fmt.Errorf("servicedir: edit: check org membership: %w", err)
+			}
+			if !isMember {
+				return ServiceDTO{}, ErrNotOwner
+			}
+		}
 	}
 
 	updateInput := content.UpdateContentInput{
@@ -349,14 +379,31 @@ func (s *Service) EditOwn(ctx context.Context, contentID, tenantID, userID pgtyp
 	return s.getServiceDTOByID(ctx, contentID, tenantID)
 }
 
+// ErrNotOrgMember is returned when a user tries to claim a listing on
+// behalf of an organization they are not a member of (BUG-006).
+var ErrNotOrgMember = fmt.Errorf("not a member of the claiming organization")
+
+// ErrAlreadyClaimed is returned when a listing is already claimed
+// (pending or approved) and a new claim is attempted (BUG-007).
+var ErrAlreadyClaimed = fmt.Errorf("service listing is already claimed")
+
 // Claim initiates an organization claim on a service listing. Sets
 // claim_status to 'pending' and records the claiming org_id. The caller
-// must verify the user is authorized to act for the organization
-// (service.claim permission checked at route level).
-func (s *Service) Claim(ctx context.Context, contentID, tenantID, orgID pgtype.UUID) error {
-	if err := s.store.UpdateClaimStatus(ctx, contentID, tenantID, ClaimStatusPending, orgID); err != nil {
+// must have the service.claim permission (checked at route level). This
+// method verifies the user is a member of the claiming org (BUG-006) and
+// that the listing is not already claimed (BUG-007).
+func (s *Service) Claim(ctx context.Context, contentID, tenantID, userID, orgID pgtype.UUID) error {
+	isMember, err := s.store.IsOrgMember(ctx, orgID, userID)
+	if err != nil {
+		return fmt.Errorf("servicedir: claim: check org membership: %w", err)
+	}
+	if !isMember {
+		return ErrNotOrgMember
+	}
+
+	if err := s.store.ClaimIfUnclaimed(ctx, contentID, tenantID, orgID); err != nil {
 		if err == pgx.ErrNoRows {
-			return pgx.ErrNoRows
+			return ErrAlreadyClaimed
 		}
 		return fmt.Errorf("servicedir: claim: %w", err)
 	}
@@ -364,8 +411,9 @@ func (s *Service) Claim(ctx context.Context, contentID, tenantID, orgID pgtype.U
 }
 
 // AdminList returns all service listings (any status) for the moderation
-// queue.
-func (s *Service) AdminList(ctx context.Context, tenantID pgtype.UUID, status, claimStatus, serviceCategory, q string, isVerified *bool, page, limit int32) ([]ServiceDTO, int64, error) {
+// queue. Supports optional dest filter (BUG-011: geo-aware pattern on
+// admin list endpoints).
+func (s *Service) AdminList(ctx context.Context, tenantID pgtype.UUID, status, claimStatus, serviceCategory, q string, isVerified *bool, destSpaceID pgtype.UUID, page, limit int32) ([]ServiceDTO, int64, error) {
 	if limit <= 0 {
 		limit = 20
 	}
@@ -376,6 +424,7 @@ func (s *Service) AdminList(ctx context.Context, tenantID pgtype.UUID, status, c
 
 	rows, total, err := s.store.AdminList(ctx, AdminListFilter{
 		TenantID:        tenantID,
+		DestSpaceID:     destSpaceID,
 		Status:          status,
 		IsVerified:      isVerified,
 		ClaimStatus:     claimStatus,
@@ -399,9 +448,13 @@ func (s *Service) AdminList(ctx context.Context, tenantID pgtype.UUID, status, c
 // (service.verify permission). The verificationType records how the
 // verification was performed (§98: self|community|admin|professional_body);
 // the admin user_id is recorded in verified_by for audit (ADR-088, BUG-015).
+// The verificationType is validated against the §98 enum (BUG-010).
 func (s *Service) AdminVerify(ctx context.Context, contentID, tenantID, verifiedBy pgtype.UUID, verificationType string) error {
 	if verificationType == "" {
 		verificationType = VerificationTypeAdmin
+	}
+	if !IsValidVerificationType(verificationType) {
+		return ErrInvalidVerificationType
 	}
 	if err := s.store.VerifyService(ctx, contentID, tenantID, verifiedBy, verificationType); err != nil {
 		if err == pgx.ErrNoRows {
@@ -415,22 +468,14 @@ func (s *Service) AdminVerify(ctx context.Context, contentID, tenantID, verified
 // AdminResolveClaim resolves a pending organization claim on a service
 // listing. Approving sets claim_status to 'approved' and links the org;
 // rejecting sets claim_status to 'rejected' and clears claimed_by_org_id
-// (service.verify permission).
+// (service.verify permission). Only pending claims can be resolved
+// (BUG-015).
 func (s *Service) AdminResolveClaim(ctx context.Context, contentID, tenantID, orgID pgtype.UUID, approve bool) error {
-	if approve {
-		if err := s.store.UpdateClaimStatus(ctx, contentID, tenantID, ClaimStatusApproved, orgID); err != nil {
-			if err == pgx.ErrNoRows {
-				return pgx.ErrNoRows
-			}
-			return fmt.Errorf("servicedir: admin resolve claim (approve): %w", err)
-		}
-		return nil
-	}
-	if err := s.store.UpdateClaimStatus(ctx, contentID, tenantID, ClaimStatusRejected, pgtype.UUID{}); err != nil {
+	if err := s.store.ResolveClaimIfPending(ctx, contentID, tenantID, orgID, approve); err != nil {
 		if err == pgx.ErrNoRows {
 			return pgx.ErrNoRows
 		}
-		return fmt.Errorf("servicedir: admin resolve claim (reject): %w", err)
+		return fmt.Errorf("servicedir: admin resolve claim: %w", err)
 	}
 	return nil
 }

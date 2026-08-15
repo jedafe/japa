@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"os"
 	"strings"
 	"time"
 
@@ -40,20 +39,24 @@ type sitemapSettingsReader interface {
 
 // SitemapHandler handles sitemap generation requests.
 type SitemapHandler struct {
-	queries  *gen.Queries
-	reader   *pgxpool.Pool
-	settings sitemapSettingsReader
-	vkClient *valkey.Client
-	siteURL  string // JC_SITE_URL — configured base URL (Rule 3)
+	queries         *gen.Queries
+	reader          *pgxpool.Pool
+	settings        sitemapSettingsReader
+	vkClient        *valkey.Client
+	siteURL         string // JC_SITE_URL — configured base URL (Rule 3)
+	imgproxyBaseURL string // JC_IMGPROXY_BASE_URL — imgproxy origin for absolute image URLs (Rule 3)
 }
 
 // NewSitemapHandler creates a new sitemap handler. settings may be nil —
 // handlers fall back to bots.DefaultSitemapQualityConfig() defaults. vkClient
 // may be nil — handlers fall back to rendering without cache. siteURL is the
 // configured public base URL (JC_SITE_URL); when empty the handler derives
-// the base URL from the request host (fallback only).
-func NewSitemapHandler(queries *gen.Queries, reader *pgxpool.Pool, settings sitemapSettingsReader, vkClient *valkey.Client, siteURL string) *SitemapHandler {
-	return &SitemapHandler{queries: queries, reader: reader, settings: settings, vkClient: vkClient, siteURL: siteURL}
+// the base URL from the request host (fallback only). imgproxyBaseURL is the
+// configured imgproxy origin (JC_IMGPROXY_BASE_URL); when empty, image
+// sitemap URLs are built against the site base URL via the local media serve
+// endpoint (Rule 3 — no os.Getenv inside the package).
+func NewSitemapHandler(queries *gen.Queries, reader *pgxpool.Pool, settings sitemapSettingsReader, vkClient *valkey.Client, siteURL, imgproxyBaseURL string) *SitemapHandler {
+	return &SitemapHandler{queries: queries, reader: reader, settings: settings, vkClient: vkClient, siteURL: siteURL, imgproxyBaseURL: imgproxyBaseURL}
 }
 
 // sitemapCacheKey builds the tenant-scoped Valkey cache key for a sitemap
@@ -316,7 +319,7 @@ func (h *SitemapHandler) ServeContentSitemap(w http.ResponseWriter, r *http.Requ
 			continue
 		}
 		entries = append(entries, urlEntry{
-			Loc:        fmt.Sprintf("%s/%s", base, c.Slug),
+			Loc:        fmt.Sprintf("%s/content/%s", base, c.Slug),
 			LastMod:    c.UpdatedAt.Time.Format(time.RFC3339),
 			ChangeFreq: "weekly",
 			Priority:   "0.8",
@@ -345,12 +348,15 @@ func (h *SitemapHandler) ServeSpacesSitemap(w http.ResponseWriter, r *http.Reque
 		 LEFT JOIN (
 		     SELECT c.space_id, count(*) AS forum_count
 		     FROM contents c JOIN forum_threads ft ON ft.content_id = c.id
-		     WHERE c.status = 'published' GROUP BY c.space_id
+		     WHERE c.status = 'published' AND c.deleted_at IS NULL AND c.visibility = 'public'
+		     GROUP BY c.space_id
 		 ) fc ON fc.space_id = s.id
 		 LEFT JOIN (
 		     SELECT c.space_id, count(*) AS question_count
 		     FROM contents c JOIN forum_threads ft ON ft.content_id = c.id
-		     WHERE c.status = 'published' AND ft.solved = true GROUP BY c.space_id
+		     WHERE c.status = 'published' AND c.deleted_at IS NULL AND c.visibility = 'public'
+		       AND ft.solved = true
+		     GROUP BY c.space_id
 		 ) qc ON qc.space_id = s.id
 		 WHERE s.tenant_id = $1 AND s.status = 'active' AND s.deleted_at IS NULL
 		 ORDER BY s.updated_at DESC`, t.ID)
@@ -442,7 +448,7 @@ func (h *SitemapHandler) ServeUsersSitemap(w http.ResponseWriter, r *http.Reques
 			continue
 		}
 		entries = append(entries, urlEntry{
-			Loc:        fmt.Sprintf("%s/users/%s", base, username),
+			Loc:        fmt.Sprintf("%s/u/%s", base, username),
 			LastMod:    updatedAt.Format(time.RFC3339),
 			ChangeFreq: "monthly",
 			Priority:   "0.6",
@@ -492,8 +498,9 @@ func (h *SitemapHandler) ServeImagesSitemap(w http.ResponseWriter, r *http.Reque
 		`SELECT c.slug, c.updated_at, c.title,
 		        m.storage_bucket, m.storage_path, COALESCE(m.alt_text, c.title)
 		 FROM contents c
-		 JOIN media m ON c.featured_image_id = m.id
+		 JOIN media m ON c.featured_image_id = m.id AND m.tenant_id = c.tenant_id
 		 WHERE c.tenant_id = $1 AND c.status = 'published'
+		   AND c.deleted_at IS NULL
 		   AND c.visibility = 'public' AND c.seo_indexable = true
 		   AND c.featured_image_id IS NOT NULL
 		   AND m.deleted_at IS NULL AND m.confirmed = true
@@ -510,9 +517,9 @@ func (h *SitemapHandler) ServeImagesSitemap(w http.ResponseWriter, r *http.Reque
 		if err := rows.Scan(&slug, &updatedAt, &title, &storageBucket, &storagePath, &altText); err != nil {
 			continue
 		}
-		imgURL := resolveMediaURL(storageBucket, storagePath)
+		imgURL := resolveMediaURL(h.imgproxyBaseURL, base, storageBucket, storagePath)
 		entries = append(entries, imageURLEntry{
-			Loc:     fmt.Sprintf("%s/%s", base, slug),
+			Loc:     fmt.Sprintf("%s/content/%s", base, slug),
 			LastMod: updatedAt.Format(time.RFC3339),
 			Images: []imageItem{
 				{Loc: imgURL, Title: title, Caption: altText},
@@ -529,22 +536,24 @@ func (h *SitemapHandler) ServeImagesSitemap(w http.ResponseWriter, r *http.Reque
 	h.serveSitemapBytes(w, r, t.ID, "images", []byte(buf.String()))
 }
 
-// resolveMediaURL builds a public media URL from storage_bucket/storage_path.
-// It mirrors media.MediaURL's fallback path (local serve endpoint) without
-// importing the media package (avoids an import cycle). When imgproxy is
-// configured (JC_IMGPROXY_BASE_URL set), the URL is absolute; otherwise it's
-// a relative /api/v1/media/serve/ path that resolves against the sitemap's
-// base URL.
-func resolveMediaURL(storageBucket, storagePath string) string {
-	baseURL := os.Getenv("JC_IMGPROXY_BASE_URL")
-	if baseURL != "" {
+// resolveMediaURL builds a public, absolute media URL from
+// storage_bucket/storage_path. It mirrors media.MediaURL's fallback path
+// (local serve endpoint) without importing the media package (avoids an
+// import cycle). When imgproxy is configured (imgproxyBaseURL non-empty),
+// the URL is absolute against the imgproxy origin; otherwise the local
+// /api/v1/media/serve/ path is prefixed with the sitemap base URL so the
+// emitted <image:loc> is always absolute (sitemaps.org protocol requires
+// absolute URLs — relative URLs are rejected by Google Search Console).
+// Ref: japaconnect-engineering/sections/26-seo-performance.md
+func resolveMediaURL(imgproxyBaseURL, siteBaseURL, storageBucket, storagePath string) string {
+	if imgproxyBaseURL != "" {
 		// Defer to the full imgproxy URL construction. We can't call
 		// media.MediaURL here (import cycle), so we build the raw source
 		// URL — imgproxy signs it, but for sitemap purposes the unsigned
 		// source URL is sufficient because crawlers fetch via the site.
-		return baseURL + "/" + storageBucket + "/" + storagePath
+		return strings.TrimRight(imgproxyBaseURL, "/") + "/" + storageBucket + "/" + storagePath
 	}
-	return "/api/v1/media/serve/" + storageBucket + "/" + storagePath
+	return strings.TrimRight(siteBaseURL, "/") + "/api/v1/media/serve/" + storageBucket + "/" + storagePath
 }
 
 // renderURLSetXML renders a urlset to XML bytes (with the XML header) for

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
@@ -51,6 +52,9 @@ func (s *Store) countSidebars(ctx context.Context, tenantID pgtype.UUID, app, po
 func (s *Store) getSidebarByID(ctx context.Context, id, tenantID pgtype.UUID) (gen.Sidebar, error) {
 	row, err := s.read.GetSidebarByID(ctx, gen.GetSidebarByIDParams{ID: id, TenantID: tenantID})
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return gen.Sidebar{}, ErrSidebarNotFound
+		}
 		return gen.Sidebar{}, fmt.Errorf("getting sidebar: %w", err)
 	}
 	return row, nil
@@ -75,6 +79,9 @@ func (s *Store) createSidebar(ctx context.Context, p gen.CreateSidebarParams) (g
 func (s *Store) updateSidebar(ctx context.Context, p gen.UpdateSidebarParams) (gen.Sidebar, error) {
 	row, err := s.write.UpdateSidebar(ctx, p)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return gen.Sidebar{}, ErrSidebarNotFound
+		}
 		return gen.Sidebar{}, fmt.Errorf("updating sidebar: %w", err)
 	}
 	return row, nil
@@ -102,6 +109,9 @@ func (s *Store) listSidebarWidgets(ctx context.Context, tenantID, sidebarID pgty
 func (s *Store) getSidebarWidget(ctx context.Context, id, tenantID pgtype.UUID) (gen.SidebarWidget, error) {
 	row, err := s.read.GetSidebarWidget(ctx, gen.GetSidebarWidgetParams{ID: id, TenantID: tenantID})
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return gen.SidebarWidget{}, ErrSidebarWidgetNotFound
+		}
 		return gen.SidebarWidget{}, fmt.Errorf("getting sidebar widget: %w", err)
 	}
 	return row, nil
@@ -118,6 +128,9 @@ func (s *Store) createSidebarWidget(ctx context.Context, p gen.CreateSidebarWidg
 func (s *Store) updateSidebarWidget(ctx context.Context, p gen.UpdateSidebarWidgetParams) (gen.SidebarWidget, error) {
 	row, err := s.write.UpdateSidebarWidget(ctx, p)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return gen.SidebarWidget{}, ErrSidebarWidgetNotFound
+		}
 		return gen.SidebarWidget{}, fmt.Errorf("updating sidebar widget: %w", err)
 	}
 	return row, nil

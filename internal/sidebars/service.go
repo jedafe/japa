@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/content"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/valkey-io/valkey-go/valkeycompat"
@@ -246,7 +247,7 @@ func (s *Service) CreateSidebarWidget(ctx context.Context, tenantID, sidebarID p
 	}
 	var props []byte
 	if len(input.Props) > 0 {
-		props = input.Props
+		props = sanitizeWidgetProps(input.WidgetType, input.Props)
 	} else {
 		props = []byte("{}")
 	}
@@ -276,7 +277,7 @@ func (s *Service) CreateSidebarWidget(ctx context.Context, tenantID, sidebarID p
 	return widget, nil
 }
 
-func (s *Service) UpdateSidebarWidget(ctx context.Context, id, tenantID pgtype.UUID, input UpdateSidebarWidgetInput) (gen.SidebarWidget, error) {
+func (s *Service) UpdateSidebarWidget(ctx context.Context, id, sidebarID, tenantID pgtype.UUID, input UpdateSidebarWidgetInput) (gen.SidebarWidget, error) {
 	if !IsValidWidgetType(input.WidgetType) {
 		return gen.SidebarWidget{}, ErrInvalidWidgetType
 	}
@@ -286,9 +287,20 @@ func (s *Service) UpdateSidebarWidget(ctx context.Context, id, tenantID pgtype.U
 	if !ValidStatus(input.Status) {
 		return gen.SidebarWidget{}, ErrInvalidStatus
 	}
+	// Verify the widget exists and belongs to the sidebar in the URL path,
+	// preventing a within-tenant IDOR where a widget from sidebar B could be
+	// mutated via /admin/sidebars/{sidebarA_id}/widgets/{widgetB_id}.
+	// Ref: Bug Hunter's Guide §5.3 (RBAC & Multi-tenancy Escapes).
+	existing, err := s.store.getSidebarWidget(ctx, id, tenantID)
+	if err != nil {
+		return gen.SidebarWidget{}, err
+	}
+	if existing.SidebarID != sidebarID {
+		return gen.SidebarWidget{}, ErrSidebarWidgetNotFound
+	}
 	var props []byte
 	if len(input.Props) > 0 {
-		props = input.Props
+		props = sanitizeWidgetProps(input.WidgetType, input.Props)
 	} else {
 		props = []byte("{}")
 	}
@@ -318,7 +330,16 @@ func (s *Service) UpdateSidebarWidget(ctx context.Context, id, tenantID pgtype.U
 	return widget, nil
 }
 
-func (s *Service) DeleteSidebarWidget(ctx context.Context, id, tenantID pgtype.UUID) error {
+func (s *Service) DeleteSidebarWidget(ctx context.Context, id, sidebarID, tenantID pgtype.UUID) error {
+	// Verify the widget exists and belongs to the sidebar in the URL path.
+	// Ref: Bug Hunter's Guide §5.3 (RBAC & Multi-tenancy Escapes).
+	existing, err := s.store.getSidebarWidget(ctx, id, tenantID)
+	if err != nil {
+		return err
+	}
+	if existing.SidebarID != sidebarID {
+		return ErrSidebarWidgetNotFound
+	}
 	if err := s.store.deleteSidebarWidget(ctx, id, tenantID); err != nil {
 		return err
 	}
@@ -337,7 +358,7 @@ type ReorderItem struct {
 	SortOrder int    `json:"sort_order"`
 }
 
-func (s *Service) ReorderSidebarWidgets(ctx context.Context, tenantID pgtype.UUID, items []ReorderItem) error {
+func (s *Service) ReorderSidebarWidgets(ctx context.Context, sidebarID, tenantID pgtype.UUID, items []ReorderItem) error {
 	if len(items) == 0 {
 		return nil
 	}
@@ -348,6 +369,19 @@ func (s *Service) ReorderSidebarWidgets(ctx context.Context, tenantID pgtype.UUI
 			return fmt.Errorf("invalid item id %s: %w", item.ID, err)
 		}
 		sortOrders[i] = int32(item.SortOrder)
+	}
+	// Verify every widget belongs to the sidebar in the URL path, preventing
+	// a within-tenant IDOR where widgets from other sidebars could be
+	// reordered via /admin/sidebars/{sidebarA_id}/widgets/reorder.
+	// Ref: Bug Hunter's Guide §5.3 (RBAC & Multi-tenancy Escapes).
+	for i := range ids {
+		w, err := s.store.getSidebarWidget(ctx, ids[i], tenantID)
+		if err != nil {
+			return err
+		}
+		if w.SidebarID != sidebarID {
+			return ErrSidebarWidgetNotFound
+		}
 	}
 	if err := s.store.bulkUpdateSidebarWidgetSortOrder(ctx, tenantID, ids, sortOrders); err != nil {
 		slog.Error("reorder sidebar widgets failed", "tenant_id", tenantID.String(), "error", err)
@@ -384,11 +418,23 @@ func (s *Service) Resolve(ctx context.Context, tenantID pgtype.UUID, app, positi
 	// permission pruning) rather than 500'ing the whole sidebar render — a
 	// missing widget is preferable to a blank sidebar. The RBAC resolver is
 	// cached, so this path is cheap. Guests skip permission pruning.
+	//
+	// cacheable tracks whether the resolved result is safe to cache. If perm
+	// resolution failed for an authenticated user, the cache key collapses to
+	// a shared "auth::" entry and the degraded (permission-gated widgets
+	// missing) result could be served to other authenticated users who DO hold
+	// those permissions — a cache-poisoning vector. We skip writing to the
+	// cache in that case. Ref: Bug Hunter's Guide §4.2 (Caching).
+	cacheable := true
 	var userPerms map[string]bool
 	if isAuthenticated && userID.Valid && s.perms != nil {
 		perms, err := s.perms.UserPermissions(ctx, userID, tenantID)
 		if err == nil {
 			userPerms = perms
+		} else {
+			// Perm resolution failed — fail open for this request but do NOT
+			// cache the degraded result.
+			cacheable = false
 		}
 	}
 
@@ -455,7 +501,7 @@ func (s *Service) Resolve(ctx context.Context, tenantID pgtype.UUID, app, positi
 
 	if bestSidebar == nil {
 		emptyResult := &ResolveResponse{Sidebar: nil, Widgets: []SidebarWidgetJSON{}}
-		if s.vk != nil && cacheKey != "" {
+		if cacheable && s.vk != nil && cacheKey != "" {
 			if data, err := json.Marshal(emptyResult); err == nil {
 				_ = s.vk.Set(ctx, cacheKey, data, sidebarResolveCacheTTL).Err()
 			}
@@ -478,8 +524,10 @@ func (s *Service) Resolve(ctx context.Context, tenantID pgtype.UUID, app, positi
 		Widgets: filtered,
 	}
 
-	// Cache the resolved result. Ref: Section 59 §5.
-	if s.vk != nil && cacheKey != "" {
+	// Cache the resolved result. Ref: Section 59 §5. Skip caching when perm
+	// resolution failed for an authenticated user (cacheable=false) to avoid
+	// poisoning the shared cache with a degraded, permission-pruned result.
+	if cacheable && s.vk != nil && cacheKey != "" {
 		if data, err := json.Marshal(result); err == nil {
 			_ = s.vk.Set(ctx, cacheKey, data, sidebarResolveCacheTTL).Err()
 		}
@@ -642,4 +690,44 @@ func filterWidgets(widgets []gen.SidebarWidget, userGroupIDs map[string]bool, is
 		filtered = []SidebarWidgetJSON{}
 	}
 	return filtered
+}
+
+// sanitizeWidgetProps decodes the raw widget props JSON, sanitizes any HTML
+// string fields the widget type renders with {@html} on the frontend
+// (rich_text.content, custom_html.html), and re-encodes. This is the
+// server-side sanitization required by Bug Hunter's Guide §5.1/§14 — the
+// frontend renders these fields with {@html}, so stored XSS must be blocked
+// at the storage boundary. Uses the shared content.SanitizeHTML allowlist
+// (the same sanitizer used for content posts in internal/renderer).
+//
+// Unknown widget types and non-HTML props pass through unchanged.
+func sanitizeWidgetProps(widgetType string, raw json.RawMessage) []byte {
+	if len(raw) == 0 {
+		return []byte("{}")
+	}
+	// Only the rich_text and custom_html widget types carry user-authored HTML.
+	if widgetType != "rich_text" && widgetType != "custom_html" {
+		return raw
+	}
+	var props map[string]any
+	if err := json.Unmarshal(raw, &props); err != nil {
+		// Malformed props — fall back to empty object rather than persisting
+		// something we can't reason about.
+		return []byte("{}")
+	}
+	switch widgetType {
+	case "rich_text":
+		if v, ok := props["content"].(string); ok {
+			props["content"] = content.SanitizeHTML(v)
+		}
+	case "custom_html":
+		if v, ok := props["html"].(string); ok {
+			props["html"] = content.SanitizeHTML(v)
+		}
+	}
+	out, err := json.Marshal(props)
+	if err != nil {
+		return []byte("{}")
+	}
+	return out
 }
