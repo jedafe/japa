@@ -152,12 +152,11 @@
 	}
 
 	const columns = [
-		{ key: 'name', label: t('users.groups.name', 'Name'), sortable: true },
+		{ key: 'name', label: t('users.groups.name', 'Name') },
 		{ key: 'description', label: t('users.groups.description_label', 'Description') },
 		{
 			key: 'member_count',
 			label: t('users.groups.members', 'Members'),
-			sortable: true,
 			render: (v: number) => `<span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold" style="background-color: color-mix(in srgb, var(--color-primary) 10%, transparent); color: var(--color-primary)">${v}</span>`
 		},
 		{

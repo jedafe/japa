@@ -14,8 +14,7 @@
 	let loading = $state(false);
 	const activeType = $derived(page.url.searchParams.get('type') ?? 'all');
 
-	// Live debounced search — updates the URL (and thus SSR results) as the
-	// user types, with a 300ms debounce to avoid hammering the backend.
+	// §54: 200ms debounce per spec.
 	let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
 	function onInput() {
@@ -36,8 +35,19 @@
 			const params = new URLSearchParams();
 			if (q) params.set('q', q);
 			if (activeType !== 'all') params.set('type', activeType);
+			// Preserve §54 params from the current URL.
+			const sort = page.url.searchParams.get('sort');
+			if (sort) params.set('sort', sort);
+			const contentType = page.url.searchParams.get('content_type');
+			if (contentType) params.set('content_type', contentType);
+			const spaceId = page.url.searchParams.get('space_id');
+			if (spaceId) params.set('space_id', spaceId);
+			const tagSlug = page.url.searchParams.get('tag_slug');
+			if (tagSlug) params.set('tag_slug', tagSlug);
+			const geo = page.url.searchParams.get('geo');
+			if (geo) params.set('geo', geo);
 			goto(`/search?${params.toString()}`, { keepFocus: true, noScroll: true });
-		}, 300);
+		}, 200);
 	}
 
 	// Sync the input from the URL only when data.query changes externally
@@ -73,13 +83,13 @@
 	}
 
 	async function autocompleteFetcher(q: string): Promise<SearchSuggestion[]> {
-		const res = await api.get<{ data: { suggestions: { type: string; id: string; title: string; excerpt?: string; url?: string; slug?: string }[] } }>(
+		const res = await api.get<{ data: { suggestions: { type: string; id: string; title?: string; excerpt?: string; url?: string; slug?: string; username?: string; display_name?: string; name?: string; content_type?: string }[] } }>(
 			`/search/autocomplete?q=${encodeURIComponent(q)}&limit=8`
 		);
 		if (res.error || !res.data) return [];
 		return (res.data.data?.suggestions ?? []).map((s) => ({
 			id: s.id,
-			title: s.title,
+			title: s.title ?? s.name ?? s.username ?? s.display_name ?? '',
 			url: s.url ?? (s.slug ? `/${s.type === 'user' ? 'u' : s.type === 'space' ? 'spaces' : s.type}/${s.slug}` : '/search'),
 			excerpt: s.excerpt,
 			type: s.type
@@ -96,19 +106,24 @@
 		{ key: 'organization', label: t('search.filter_orgs', 'Organizations'), icon: Building2 }
 	]);
 
-	// Group results by type for the "All" view.
+	// ADR-017: the backend now groups results server-side when no type
+	// filter is active. Use the server-provided groups directly instead of
+	// re-grouping the flat results client-side. Fall back to client-side
+	// grouping only if groups is empty but results is not (defensive).
 	const grouped = $derived.by(() => {
-		const groups: Record<string, typeof data.results> = {};
-		for (const r of data.results) {
-			if (!groups[r.type]) groups[r.type] = [];
-			groups[r.type].push(r);
+		if (data.groups && data.groups.length > 0) {
+			return data.groups;
 		}
-		return groups;
+		// Defensive fallback: re-group flat results if backend didn't group.
+		const buckets: Record<string, typeof data.results> = {};
+		for (const r of data.results) {
+			if (!buckets[r.type]) buckets[r.type] = [];
+			buckets[r.type].push(r);
+		}
+		return Object.entries(buckets).map(([type, results]) => ({ type, results, total: results.length }));
 	});
 
 	// Reactive label map so a locale switch re-resolves the type labels.
-	// Previously a plain const object computed once at init, which left the
-	// group headings stale after a language change.
 	const groupLabels = $derived<Record<string, string>>({
 		content: t('search.filter_content', 'Posts'),
 		user: t('search.filter_people', 'People'),
@@ -119,6 +134,20 @@
 		tag: t('search.filter_all', 'Tags'),
 		doc_page: t('search.filter_content', 'Docs')
 	});
+
+	// Helper to get a display title from a nested result item (§54).
+	function resultTitle(r: { item: { title?: string; name?: string; username?: string; display_name?: string } }): string {
+		return r.item.title ?? r.item.name ?? r.item.username ?? r.item.display_name ?? '';
+	}
+	function resultExcerpt(r: { item: { excerpt?: string } }): string {
+		return r.item.excerpt ?? '';
+	}
+	function resultURL(r: { item: { url?: string } }): string {
+		return r.item.url ?? '#';
+	}
+	function resultID(r: { item: { id: string } }): string {
+		return r.item.id;
+	}
 </script>
 
 <svelte:head>
@@ -136,7 +165,7 @@
 			placeholder={t('search.placeholder', 'Search stories, spaces, people...')}
 			ariaLabel={t('search.heading', 'Search')}
 			fetcher={autocompleteFetcher}
-			debounceMs={300}
+			debounceMs={200}
 			onInput={(v) => { query = v; onInput(); }}
 			inputClass="py-2.5"
 		/>
@@ -163,38 +192,49 @@
 			{t('search.results_for', 'Results for')} "<span class="font-medium text-[var(--color-text)]">{data.query}</span>"
 		</p>
 
-		{#if data.loadError}
+		{#if loading}
+			<!-- Loading skeleton (§54: loading states) -->
+			<div class="space-y-3" aria-busy="true" aria-live="polite">
+				{#each Array(5) as _, i (i)}
+					<div class="animate-pulse rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+						<div class="mb-2 h-4 w-3/4 rounded bg-[var(--color-surface-subtle)]"></div>
+						<div class="h-3 w-full rounded bg-[var(--color-surface-subtle)]"></div>
+						<div class="mt-1 h-3 w-2/3 rounded bg-[var(--color-surface-subtle)]"></div>
+					</div>
+				{/each}
+			</div>
+		{:else if data.loadError}
 			<!-- The backend returned a non-2xx (e.g. 503 search_unavailable when
 			     Meilisearch is down). Distinguish this from a genuine empty result
 			     so the user knows to retry rather than assuming nothing exists. -->
 			<p class="py-12 text-center text-[var(--color-text-subtle)]">{t('search.search_unavailable', 'Search is temporarily unavailable. Please try again in a moment.')}</p>
-		{:else if data.results.length === 0}
+		{:else if data.results.length === 0 && (!data.groups || data.groups.length === 0)}
 			<p class="py-12 text-center text-[var(--color-text-subtle)]">{t('search.no_results', 'No results found. Try a different query.')}</p>
 		{:else if activeType === 'all'}
-			<!-- Grouped results (Phase 10.01) -->
+			<!-- Grouped results (ADR-017: server-side grouping) -->
 			<div class="space-y-6">
-				{#each Object.entries(grouped) as [type, results] (type)}
+				{#each grouped as group (group.type)}
 					<section>
 						<h2 class="mb-2 text-sm font-medium text-[var(--color-text)]">
-							{groupLabels[type] ?? type}
-							<span class="ml-1 text-xs text-[var(--color-muted)]">({results.length})</span>
+							{groupLabels[group.type] ?? group.type}
+							<span class="ml-1 text-xs text-[var(--color-muted)]">({group.total})</span>
 						</h2>
 						<div class="space-y-2">
-							{#each results.slice(0, 5) as result (result.id)}
-								<a href={result.url} class="block rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 transition-colors hover:bg-[var(--color-surface-subtle)]">
-									<h3 class="font-medium text-[var(--color-text)]">{result.title}</h3>
-									{#if result.excerpt}
-										<p class="mt-1 line-clamp-2 text-sm text-[var(--color-text-subtle)]">{result.excerpt}</p>
+							{#each group.results as result (resultID(result))}
+								<a href={resultURL(result)} class="block rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 transition-colors hover:bg-[var(--color-surface-subtle)]">
+									<h3 class="font-medium text-[var(--color-text)]">{resultTitle(result)}</h3>
+									{#if resultExcerpt(result)}
+										<p class="mt-1 line-clamp-2 text-sm text-[var(--color-text-subtle)]">{resultExcerpt(result)}</p>
 									{/if}
 								</a>
 							{/each}
-							{#if results.length > 5}
+							{#if group.total > group.results.length}
 								<button
 									type="button"
-									onclick={() => filterByType(type)}
+									onclick={() => filterByType(group.type)}
 									class="text-sm text-[var(--color-primary)] hover:underline"
 								>
-									{t('search.see_all', 'See all {n}').replace('{n}', String(results.length))} →
+									{t('search.see_all', 'See all {n}').replace('{n}', String(group.total))} →
 								</button>
 							{/if}
 						</div>
@@ -202,16 +242,16 @@
 				{/each}
 			</div>
 		{:else}
-			<!-- Filtered flat list -->
+			<!-- Filtered flat list (§54 nested item shape) -->
 			<div class="space-y-3">
-				{#each data.results as result (result.id)}
-					<a href={result.url} class="block rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 transition-colors hover:bg-[var(--color-surface-subtle)]">
+				{#each data.results as result (resultID(result))}
+					<a href={resultURL(result)} class="block rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 transition-colors hover:bg-[var(--color-surface-subtle)]">
 						<div class="mb-1 flex items-center gap-2">
 							<span class="rounded-full bg-[var(--color-surface-subtle)] px-2 py-0.5 text-xs text-[var(--color-text-subtle)]">{groupLabels[result.type] ?? result.type}</span>
 						</div>
-						<h3 class="font-medium text-[var(--color-text)]">{result.title}</h3>
-						{#if result.excerpt}
-							<p class="mt-1 line-clamp-2 text-sm text-[var(--color-text-subtle)]">{result.excerpt}</p>
+						<h3 class="font-medium text-[var(--color-text)]">{resultTitle(result)}</h3>
+						{#if resultExcerpt(result)}
+							<p class="mt-1 line-clamp-2 text-sm text-[var(--color-text-subtle)]">{resultExcerpt(result)}</p>
 						{/if}
 					</a>
 				{/each}

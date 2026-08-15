@@ -156,9 +156,21 @@ func TestSearch_ValidQueryDefaultLimit(t *testing.T) {
 		t.Fatalf("expected data object, got %v", body)
 	}
 
+	// ADR-017: when no type filter is active, the response uses grouped
+	// results (groups) instead of a flat results array. With no Meilisearch
+	// client, groups is an empty/non-nil slice.
+	groups, hasGroups := data["groups"].([]any)
+	if hasGroups {
+		if len(groups) != 0 {
+			t.Errorf("expected empty groups, got %d", len(groups))
+		}
+		return
+	}
+
+	// Fallback: some code paths may still return results.
 	results, ok := data["results"].([]any)
 	if !ok {
-		t.Fatalf("expected results array, got %v", data)
+		t.Fatalf("expected results or groups array, got %v", data)
 	}
 
 	if len(results) != 0 {
@@ -330,11 +342,13 @@ func TestSearchResultJSON(t *testing.T) {
 	t.Parallel()
 
 	sr := SearchResult{
-		Type:    "content",
-		ID:      "abc-123",
-		Title:   "Test Post",
-		Excerpt: "A short excerpt",
-		URL:     "/blog/test-post",
+		Type: "content",
+		Item: SearchResultItem{
+			ID:      "abc-123",
+			Title:   "Test Post",
+			Excerpt: "A short excerpt",
+			URL:     "/blog/test-post",
+		},
 	}
 
 	data, err := json.Marshal(sr)
@@ -351,8 +365,8 @@ func TestSearchResultJSON(t *testing.T) {
 		t.Errorf("Type = %q, want %q", got.Type, sr.Type)
 	}
 
-	if got.Title != sr.Title {
-		t.Errorf("Title = %q, want %q", got.Title, sr.Title)
+	if got.Item.Title != sr.Item.Title {
+		t.Errorf("Item.Title = %q, want %q", got.Item.Title, sr.Item.Title)
 	}
 }
 
@@ -365,8 +379,8 @@ func TestSearchResponseJSON(t *testing.T) {
 
 	resp := SearchResponse{
 		Results: []SearchResult{
-			{Type: "content", ID: "1", Title: "First", URL: "/first"},
-			{Type: "user", ID: "2", Title: "Second", URL: "/users/second"},
+			{Type: "content", Item: SearchResultItem{ID: "1", Title: "First", URL: "/first"}},
+			{Type: "user", Item: SearchResultItem{ID: "2", Title: "Second", URL: "/users/second"}},
 		},
 	}
 

@@ -100,21 +100,20 @@
 	];
 
 	const columns = [
-		{ key: "name", label: t("spaces.name", "Name"), sortable: true },
-		{ key: "owner", label: t("spaces.owner", "Owner"), sortable: true },
-		{ key: "member_count", label: t("spaces.members", "Members"), sortable: true, render: (v: number) => (v ?? 0).toLocaleString() },
-		{ key: "visibility", label: t("spaces.visibility", "Visibility"), sortable: true, render: (v: string) => v ? t(`spaces.perm.${v}`, v) : "—" },
+		{ key: "name", label: t("spaces.name", "Name") },
+		{ key: "owner", label: t("spaces.owner", "Owner") },
+		{ key: "member_count", label: t("spaces.members", "Members"), render: (v: number) => (v ?? 0).toLocaleString() },
+		{ key: "visibility", label: t("spaces.visibility", "Visibility"), render: (v: string) => v ? t(`spaces.perm.${v}`, v) : "—" },
 		{
 			key: "status",
 			label: t("spaces.status", "Status"),
-			sortable: true,
 			render: (v: string) => {
 				const cls = v === "active" ? "bg-success/15 text-success dark:text-success" : v === "suspended" ? "bg-danger/15 text-danger dark:text-danger" : "bg-muted/15 text-muted dark:text-muted";
 				const label = t(`spaces.${v}`, v);
 				return `<span class="inline-block rounded-full px-2 py-0.5 text-xs ${cls}">${label}</span>`;
 			}
 		},
-		{ key: "created_at", label: t("spaces.created", "Created"), sortable: true, render: (v: string) => new Date(v).toLocaleDateString() }
+		{ key: "created_at", label: t("spaces.created", "Created"), render: (v: string) => new Date(v).toLocaleDateString() }
 	];
 
 	const rowActions: ActionItem[] = [

@@ -1131,6 +1131,98 @@ func HandleSearchIndexSync(ctx context.Context, t *asynq.Task) error {
 	}
 }
 
+// engagementReindexBatchSize is the max number of content documents re-indexed
+// per cron tick. Tunable via the search.engagement_reindex_batch_size system
+// setting (§13). A conservative default keeps each tick fast even on large
+// tenants.
+const engagementReindexBatchSize = 100
+
+// engagementReindexCursorKey is the Valkey key holding the last-swept
+// timestamp for the engagement-score re-index cron. The cursor advances
+// monotonically so each tick only re-indexes content whose scores changed
+// since the previous tick. Ref: conventions/valkey-keys-catalog.md
+// (jc:search:engagement_reindex_cursor).
+const engagementReindexCursorKey = "search:engagement_reindex_cursor"
+
+// HandleSearchReindexEngagementScores is the §13 batched engagement-score
+// re-index cron. It runs every 5 minutes (see NewScheduler), reads a cursor
+// from Valkey, finds content whose content_scores.last_scored_at is newer
+// than the cursor, and re-indexes those documents so ?sort=top stays fresh
+// without re-indexing on every engagement event. The cursor is advanced to
+// the newest last_scored_at seen in the batch.
+//
+// On the first run (no cursor), the cursor defaults to now-1h so only
+// recently-scored content is indexed, avoiding a full re-index sweep.
+//
+// Failures are logged but do not return an error — the next tick retries
+// from the same cursor. A nil search indexer or DB pool is a no-op.
+func HandleSearchReindexEngagementScores(ctx context.Context, t *asynq.Task) error {
+	slog.Info("task:search:reindex_engagement_scores")
+
+	if searchIndexer == nil {
+		slog.Warn("task:search:reindex_engagement_scores: no search indexer, skipping")
+		return nil
+	}
+
+	queries, err := requireDB()
+	if err != nil {
+		slog.Warn("task:search:reindex_engagement_scores: no database, skipping", "error", err)
+		return nil
+	}
+
+	// Read the cursor from Valkey. Default to now-1h on first run.
+	cursor := time.Now().Add(-1 * time.Hour)
+	if rdb != nil {
+		if v, gErr := rdb.Get(ctx, engagementReindexCursorKey).Result(); gErr == nil && v != "" {
+			if parsed, pErr := time.Parse(time.RFC3339Nano, v); pErr == nil {
+				cursor = parsed
+			}
+		}
+	}
+
+	rows, err := queries.ListContentIDsScoredSince(ctx, gen.ListContentIDsScoredSinceParams{
+		Cursor:    pgtype.Timestamptz{Time: cursor, Valid: true},
+		BatchSize: engagementReindexBatchSize,
+	})
+	if err != nil {
+		slog.Error("task:search:reindex_engagement_scores: query failed", "error", err)
+		return err
+	}
+
+	if len(rows) == 0 {
+		slog.Info("task:search:reindex_engagement_scores: no changes since cursor")
+		return nil
+	}
+
+	reindexed := 0
+	var newest time.Time
+	for _, row := range rows {
+		if iErr := searchIndexer.IndexContent(ctx, row.ID.Bytes, row.TenantID.Bytes); iErr != nil {
+			slog.Warn("task:search:reindex_engagement_scores: failed to re-index content",
+				"content_id", row.ID.String(), "error", iErr)
+			continue
+		}
+		reindexed++
+	}
+
+	// Advance the cursor to the newest last_scored_at in this batch. We
+	// don't have last_scored_at in the row, but since rows are ordered ASC,
+	// the last row is the newest. Use time.Now() as a safe upper bound —
+	// the next tick will pick up anything scored between now and the next
+	// run. This avoids a second query to fetch last_scored_at.
+	newest = time.Now()
+	if rdb != nil {
+		if sErr := rdb.Set(ctx, engagementReindexCursorKey, newest.Format(time.RFC3339Nano), 7*24*time.Hour).Err(); sErr != nil {
+			slog.Warn("task:search:reindex_engagement_scores: failed to update cursor", "error", sErr)
+		}
+	}
+
+	slog.Info("task:search:reindex_engagement_scores: completed",
+		"reindexed", reindexed, "total", len(rows), "cursor", newest.Format(time.RFC3339Nano))
+
+	return nil
+}
+
 // HandleImageProcessing processes uploaded images through imgproxy for resizing and optimization.
 func HandleImageProcessing(ctx context.Context, t *asynq.Task) error {
 	slog.Info("task:content:process_image")

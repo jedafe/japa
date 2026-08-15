@@ -6,11 +6,12 @@
 	// suggested_spaces) receive their data from the parent RightSidebar via
 	// props, since the data is already fetched SSR in +layout.server.ts.
 
-	import { Sun, Moon, Languages, Bell, Mail, Share2, Calendar, Trophy, Hash, Star, Bookmark, BarChart3, MousePointerClick, UserCircle, FolderTree, MessageSquare, PlayCircle, GraduationCap, BookOpen, CircleDashed } from 'lucide-svelte';
+	import { Sun, Moon, Languages, Check, Bell, Mail, Share2, Calendar, Trophy, Hash, Star, Bookmark, BarChart3, MousePointerClick, UserCircle, FolderTree, MessageSquare, PlayCircle, GraduationCap, BookOpen, CircleDashed } from 'lucide-svelte';
 	import { theme } from '$lib/stores/theme.svelte';
 	import { t, i18n } from '$lib/i18n';
 	import { api } from '$lib/api/client';
 	import { page } from '$app/state';
+	import { DropdownMenu } from 'bits-ui';
 	import SearchAutocomplete from './SearchAutocomplete.svelte';
 	import UserDropdown from './UserDropdown.svelte';
 	import NotificationCentre from './NotificationCentre.svelte';
@@ -54,6 +55,34 @@
 	);
 
 	let showLanguageToggle = $derived(enabledLanguages.split(',').filter(Boolean).length > 1);
+
+	// Default language from site settings (for unprefixed URL generation).
+	// Ref: §18 — English unprefixed at root, other languages prefixed.
+	const defaultLanguage = $derived(
+		(page.data?.siteSettings?.['i18n.default_language'] as string | undefined) ?? 'en'
+	);
+
+	// Parse the enabled-languages list for the dropdown.
+	const langList = $derived(
+		enabledLanguages.split(',').map((l) => l.trim()).filter(Boolean)
+	);
+
+	// Resolve locale codes to display names via Intl.DisplayNames (platform
+	// API, not app data — Rule 16 safe). Falls back to the code itself.
+	const displayNames = (() => {
+		try { return new Intl.DisplayNames(undefined, { type: 'language' }); }
+		catch { return null; }
+	})();
+	function localeLabel(code: string): string {
+		return displayNames?.of(code) ?? code;
+	}
+
+	// Build the switch URL for a given language: unprefixed for the default
+	// language, prefixed for all others. Ref: §18.
+	function localeHref(lang: string): string {
+		const path = currentPath || '';
+		return lang === defaultLanguage ? `/${path}` : `/${lang}/${path}`;
+	}
 
 	// SSR-safe current path for locale-switch links. Uses $app/state's page
 	// store (available during SSR) instead of window.location to avoid
@@ -258,14 +287,28 @@
 	</button>
 {:else if widget.widget_type === 'language_toggle'}
 	{#if showLanguageToggle}
-		<a
-			href={i18n.locale === 'fr' ? `/en/${currentPath}` : `/fr/${currentPath}`}
-			class="grid h-9 w-9 shrink-0 place-items-center rounded-full text-[var(--color-muted)] hover:bg-[var(--color-surface-subtle)]"
-			aria-label={i18n.locale === 'fr' ? t('locale.switch_to_en') : t('locale.switch_to_fr')}
-			title={i18n.locale === 'fr' ? 'English' : 'Français'}
-		>
-			<Languages size={18} />
-		</a>
+		<DropdownMenu.Root>
+			<DropdownMenu.Trigger
+				class="grid h-9 w-9 shrink-0 place-items-center rounded-full text-[var(--color-muted)] hover:bg-[var(--color-surface-subtle)]"
+				aria-label={t('locale.switch_language', 'Switch language')}
+				title={localeLabel(i18n.locale)}
+			>
+				<Languages size={18} />
+			</DropdownMenu.Trigger>
+			<DropdownMenu.Portal>
+				<DropdownMenu.Content class="z-50 max-h-60 overflow-y-auto rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-1 shadow-lg">
+					{#each langList as lang (lang)}
+						<DropdownMenu.Item
+							onclick={() => { window.location.href = localeHref(lang); }}
+							class="flex cursor-pointer items-center justify-between rounded px-2 py-1.5 text-sm text-[var(--color-text)] data-[highlighted]:bg-[var(--color-surface-subtle)]"
+						>
+							<span>{localeLabel(lang)}</span>
+							{#if lang === i18n.locale}<Check size={14} class="text-[var(--color-primary)]" />{/if}
+						</DropdownMenu.Item>
+					{/each}
+				</DropdownMenu.Content>
+			</DropdownMenu.Portal>
+		</DropdownMenu.Root>
 	{/if}
 {:else if widget.widget_type === 'user_dropdown'}
 	<UserDropdown {user} />

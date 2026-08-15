@@ -46,7 +46,7 @@
 	);
 
 	const columns = [
-		{ key: 'title', label: t('comparisons.col_title'), sortable: true },
+		{ key: 'title', label: t('comparisons.col_title') },
 		{ key: 'slug', label: t('comparisons.col_slug'), render: (v: string) => `<span class="text-xs font-mono" style="color: var(--color-muted)">${v}</span>` },
 		{
 			key: 'visibility',
@@ -61,7 +61,6 @@
 		{
 			key: 'created_at',
 			label: t('comparisons.col_created'),
-			sortable: true,
 			render: (v: string) => `<span class="text-xs" style="color: var(--color-muted)">${v ? new Date(v).toLocaleDateString() : '—'}</span>`
 		}
 	];

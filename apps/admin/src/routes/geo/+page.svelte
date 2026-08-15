@@ -86,9 +86,9 @@
 	);
 
 	const countryColumns = [
-		{ key: 'name', label: t('geo.country', 'Country'), sortable: true, render: (v: string) => `<span class="font-medium">${v}</span>` },
-		{ key: 'geo_code', label: t('geo.code', 'ISO Code'), sortable: true, render: (v: string) => `<span class="font-mono text-xs">${v ?? '—'}</span>` },
-		{ key: 'member_count', label: t('geo.members', 'Members'), sortable: true, render: (v: number) => `<span class="text-xs">${(v ?? 0).toLocaleString()}</span>` }
+		{ key: 'name', label: t('geo.country', 'Country'), render: (v: string) => `<span class="font-medium">${v}</span>` },
+		{ key: 'geo_code', label: t('geo.code', 'ISO Code'), render: (v: string) => `<span class="font-mono text-xs">${v ?? '—'}</span>` },
+		{ key: 'member_count', label: t('geo.members', 'Members'), render: (v: number) => `<span class="text-xs">${(v ?? 0).toLocaleString()}</span>` }
 	];
 
 	const countryRowActions: ActionItem[] = [
@@ -96,7 +96,7 @@
 	];
 
 	const stateColumns = [
-		{ key: 'name', label: t('geo.state', 'State/Province'), sortable: true, render: (v: string) => `<span class="font-medium">${v}</span>` },
+		{ key: 'name', label: t('geo.state', 'State/Province'), render: (v: string) => `<span class="font-medium">${v}</span>` },
 		{ key: 'geo_code', label: t('geo.code', 'ISO Code'), render: (v: string) => `<span class="font-mono text-xs">${v ?? '—'}</span>` }
 	];
 
@@ -105,8 +105,8 @@
 	];
 
 	const cityColumns = [
-		{ key: 'name', label: t('geo.city', 'City'), sortable: true, render: (v: string) => `<span class="font-medium">${v}</span>` },
-		{ key: 'member_count', label: t('geo.members', 'Members'), sortable: true, render: (v: number) => `<span class="text-xs">${(v ?? 0).toLocaleString()}</span>` }
+		{ key: 'name', label: t('geo.city', 'City'), render: (v: string) => `<span class="font-medium">${v}</span>` },
+		{ key: 'member_count', label: t('geo.members', 'Members'), render: (v: number) => `<span class="text-xs">${(v ?? 0).toLocaleString()}</span>` }
 	];
 
 	async function doLookup() {

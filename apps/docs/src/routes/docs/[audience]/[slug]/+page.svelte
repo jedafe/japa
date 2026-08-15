@@ -4,6 +4,7 @@
 	import TableOfContents from '$lib/components/shell/TableOfContents.svelte';
 	import DocContent from '$lib/components/docs/DocContent.svelte';
 	import { t } from '$lib/i18n';
+	import { page } from '$app/state';
 	import { persistNavCollapse } from '$lib/nav-collapse';
 	import { ArrowLeft, ArrowRight, Pencil } from 'lucide-svelte';
 	import type { PageData } from './$types';
@@ -23,6 +24,15 @@
 	let canEdit = $derived(
 		!!data.user && (data.user.groups?.some((g) => g === 'Admin' || g === 'Super Admin') ?? false)
 	);
+
+	// Dynamic hreflang from enabled languages (§18, ADR-013).
+	const enabledLanguages = $derived(
+		((page.data?.siteSettings?.['i18n.enabled_languages'] as string | undefined) ?? 'en,fr')
+			.split(',').map((l) => l.trim()).filter(Boolean)
+	);
+	const defaultLanguage = $derived(
+		(page.data?.siteSettings?.['i18n.default_language'] as string | undefined) ?? 'en'
+	);
 </script>
 
 <svelte:head>
@@ -34,8 +44,15 @@
 	{:else}
 		<meta name="robots" content="index, follow" />
 		<!-- hreflang for public audiences (Ref: §18 ROADMAP 07.05) -->
-		<link rel="alternate" hreflang="en" href={data.meta.ogUrl} />
-		<link rel="alternate" hreflang="fr" href={data.meta.ogUrl.replace(/\/docs\//, '/fr/docs/')} />
+		{#each enabledLanguages as lang (lang)}
+			<link
+				rel="alternate"
+				hreflang={lang}
+				href={lang === defaultLanguage
+					? data.meta.ogUrl
+					: data.meta.ogUrl.replace(/\/docs\//, `/${lang}/docs/`)}
+			/>
+		{/each}
 		<link rel="alternate" hreflang="x-default" href={data.meta.ogUrl} />
 	{/if}
 	<meta property="og:title" content={data.meta.title} />
@@ -93,7 +110,7 @@
 			{#if data.page.ai_generated}
 				<span class="ai-flag">{t('page.ai_assisted_draft')}</span>
 			{/if}
-			{#if data.locale === 'fr' && data.page.content_lang === 'en'}
+			{#if data.locale !== 'en' && data.page.content_lang === 'en'}
 				<div class="translation-notice">
 					{t('page.not_translated', 'This page is not yet translated. Showing the English version.')}
 				</div>

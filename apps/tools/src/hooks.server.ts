@@ -2,7 +2,7 @@ import type { Handle } from '@sveltejs/kit';
 import { building } from '$app/environment';
 import { env } from '$env/dynamic/private';
 import { apiContext, apiGet, ApiError } from '$lib/server/api';
-import type { SessionUser, Locale, ToolSurface } from '$lib/types';
+import type { SessionUser, ToolSurface } from '$lib/types';
 
 /**
  * ADR-086 / §78: detect which tool surface the request host maps to.
@@ -117,9 +117,14 @@ export const handle: Handle = async ({ event, resolve }) => {
 	event.locals.tenantHost = event.url.hostname;
 	event.locals.token = event.cookies.get('jc_token') ?? null;
 
+	// Detect locale prefix in the URL path (e.g. /fr/visa-checklist → 'fr').
+	// Ref: §18 (i18n language packs), ADR-013.
+	const localePrefixMatch = event.url.pathname.match(/^\/([a-z]{2})(?=\/|$)/);
+	const pathLocale = localePrefixMatch?.[1] ?? null;
+
 	// Fetch public site settings once per request and reuse for theme, locale,
-	// and tool-surface resolution. Previously these were three separate fetches
-	// to /site/settings/public on every request (§4.1 performance bug).
+	// locale-prefix validation, and tool-surface resolution. Previously these
+	// were separate fetches to /site/settings/public on every request.
 	// Ref: conventions/system-settings-catalog.md
 	const ctx = apiContext(event);
 	let siteSettings: Record<string, unknown> = {};
@@ -143,24 +148,39 @@ export const handle: Handle = async ({ event, resolve }) => {
 	}
 	event.locals.features = features;
 
-	// Theme: prefer the user's cookie, then fall back to the control panel
-	// appearance.dark_mode_default setting, then 'light'.
-	// Ref: conventions/system-settings-catalog.md (appearance.dark_mode_default)
+	// Theme: prefer cookie, then appearance.dark_mode_default, then 'light'.
 	const themeCookie = event.cookies.get('jc_theme');
-	if (themeCookie === 'dark' || themeCookie === 'light') {
-		event.locals.theme = themeCookie;
-	} else {
-		event.locals.theme = siteSettings['appearance.dark_mode_default'] === true ? 'dark' : 'light';
-	}
+	event.locals.theme =
+		themeCookie === 'dark' || themeCookie === 'light'
+			? themeCookie
+			: siteSettings['appearance.dark_mode_default'] === true
+				? 'dark'
+				: 'light';
 
-	// Locale: prefer the user's cookie, then fall back to the control panel
-	// i18n.default_language setting, then 'en'.
+	// Locale resolution: URL prefix > cookie > i18n.default_language > 'en'.
+	// Valid prefix → set cookie + rewrite URL so SvelteKit routes to the
+	// unprefixed page tree. Browser URL stays /fr/visa-checklist; page renders
+	// in French. Ref: §18, ADR-013.
 	const localeCookie = event.cookies.get('jc_locale');
-	if (localeCookie === 'fr' || localeCookie === 'en') {
-		event.locals.locale = localeCookie as Locale;
+	const enabledLanguages =
+		((siteSettings['i18n.enabled_languages'] as string | undefined) ?? 'en,fr')
+			.split(',')
+			.map((l) => l.trim())
+			.filter(Boolean);
+
+	if (pathLocale && enabledLanguages.includes(pathLocale)) {
+		event.locals.locale = pathLocale;
+		event.cookies.set('jc_locale', pathLocale, {
+			path: '/',
+			maxAge: 60 * 60 * 24 * 365,
+			sameSite: 'lax'
+		});
+		event.url.pathname = event.url.pathname.slice(3) || '/';
+	} else if (localeCookie && enabledLanguages.includes(localeCookie)) {
+		event.locals.locale = localeCookie;
 	} else {
 		const defaultLang = (siteSettings['i18n.default_language'] as string | undefined) ?? 'en';
-		event.locals.locale = (defaultLang === 'fr' ? 'fr' : 'en') as Locale;
+		event.locals.locale = enabledLanguages.includes(defaultLang) ? defaultLang : 'en';
 	}
 
 	event.locals.user = null;

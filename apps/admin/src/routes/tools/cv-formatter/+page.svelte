@@ -1,14 +1,15 @@
 <script lang="ts">
 	// /tools/cv-formatter — admin management for CV formatting standards (§95).
 	// Ref: japaconnect-engineering/sections/95-cv-formatter.md
+	import { onMount } from 'svelte';
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import { Modal } from '$lib/components/ui/modal';
 	import { Button } from '$lib/components/ui/button';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { Eye, Save } from 'lucide-svelte';
-	import type { ActionItem } from '$lib/components/ui/data-table';
-	import { cvFormatterAdminApi } from '$lib/api';
+	import type { ActionItem, FilterDef } from '$lib/components/ui/data-table';
+	import { cvFormatterAdminApi , spacesAdminApi } from '$lib/api';
 
 	// CVStandardRow matches the backend StandardDTO (§95, ADR-103).
 	type CVStandardRow = {
@@ -35,6 +36,20 @@
 	const canManage = $derived(hasPermission('cv_formatter.manage'));
 
 	// ── State ───────────────────────────────────────────────────────────────
+	
+// Destination Spaces for the dest filter (geo-aware pattern §90-101).
+let destOptions = $state<SpaceOption[]>([]);
+onMount(async () => {
+	try {
+		const res = await spacesAdminApi.list('?level=country&limit=200');
+		if (res.ok && Array.isArray(res.data)) {
+			destOptions = (res.data as Array<{ id: string; name: string }>).map((s) => ({
+				id: s.id, name: s.name
+			}));
+		}
+	} catch { /* Non-fatal */ }
+});
+
 	let entityController = $state<EntityPageController | undefined>(undefined);
 	let pageError = $state('');
 	let acting = $state(false);
@@ -122,7 +137,12 @@
 		{ key: 'common_pitfalls', label: t('app.tools.col_common_pitfalls', 'Common Pitfalls'), type: 'textarea' }
 	];
 
+		const filters = $derived<FilterDef[]>([
+		{ key: 'dest', label: t('app.tools.col_destination', 'Destination'), options: destOptions.map((s) => ({ value: s.id, label: s.name })) }
+	]);
+
 	const config = $derived<EntityPageConfig>({
+		filters,
 		title: t('app.tools.cv_formatter_heading', 'CV Formatter Standards'),
 		description: t('app.tools.cv_formatter_desc', 'Manage country-specific CV formatting standards'),
 		readonly: true,

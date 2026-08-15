@@ -160,10 +160,9 @@
 			{
 				key: 'title',
 				label: t('app.tools.col_title', 'Title'),
-				sortable: true,
 				render: (v: string) => `<span class="font-medium text-foreground">${v ?? '—'}</span>`
 			},
-			{ key: 'country', label: t('app.tools.col_country', 'Country'), sortable: true },
+			{ key: 'country', label: t('app.tools.col_country', 'Country') },
 			{
 				key: 'university',
 				label: t('app.tools.col_university', 'University'),
@@ -177,19 +176,16 @@
 			{
 				key: 'deadline',
 				label: t('app.tools.col_deadline', 'Deadline'),
-				sortable: true,
 				render: (value: string) => (value ? new Date(value).toLocaleDateString() : '—')
 			},
 			{
 				key: 'trust_level',
 				label: t('app.tools.col_trust_level', 'Trust'),
-				sortable: true,
 				render: (v: number) => (v != null ? String(v) : '—')
 			},
 			{
 				key: 'verification_status',
 				label: t('app.tools.col_status', 'Status'),
-				sortable: true,
 				render: (v: string) => {
 					const clsMap: Record<string, string> = {
 						verified: 'bg-success/15 text-success border-success',
@@ -204,7 +200,6 @@
 			{
 				key: 'freshness_score',
 				label: t('app.tools.col_freshness', 'Freshness'),
-				sortable: true,
 				render: (v: number) => (v != null ? `${v}%` : '—')
 			}
 		],

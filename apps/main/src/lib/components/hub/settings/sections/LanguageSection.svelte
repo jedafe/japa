@@ -25,7 +25,7 @@
 	import SettingsSection from '$lib/components/hub/SettingsSection.svelte';
 	import { patchAccount, putPreferences } from '$lib/api/hub';
 	import { setContentCountry } from '$lib/api/geo';
-	import { t, i18n, type Locale } from '$lib/i18n';
+	import { t, i18n } from '$lib/i18n';
 	import { Globe, Clock, MapPin } from 'lucide-svelte';
 	import type { GeoCountry } from '$lib/types';
 
@@ -91,16 +91,15 @@
 			// Surface the first error if either call failed.
 			const err = langRes.error ?? tzRes.error;
 			// If the language preference persisted and differs from the active UI
-			// locale, set the jc_locale cookie (mirroring the /fr and /en
-			// locale-switch routes) and invalidate all loaders. The i18n store
-			// derives its locale from page.data.locale (request-scoped during SSR,
+			// locale, set the jc_locale cookie (mirroring the locale-switch
+			// routes) and invalidate all loaders. The i18n store derives its
+			// locale from page.data.locale (request-scoped during SSR,
 			// reactive on the client), so after invalidateAll() refreshes the page
 			// data the whole UI re-renders in the chosen language automatically.
 			// Ref: japa-bugs-hunters.md §1 / §21 — without this the preference
 			// saved silently and the UI never switched language.
 			if (!langRes.error && browser && v.language && v.language !== i18n.locale) {
-				const locale = (v.language === 'fr' || v.language === 'en') ? (v.language as Locale) : 'en';
-				document.cookie = `jc_locale=${locale}; path=/; max-age=${60 * 60 * 24 * 365}; samesite=lax`;
+				document.cookie = `jc_locale=${v.language}; path=/; max-age=${60 * 60 * 24 * 365}; samesite=lax`;
 				// Fire-and-forget: re-run load functions so data.locale refreshes.
 				void invalidateAll();
 			}

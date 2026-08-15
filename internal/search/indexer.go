@@ -66,6 +66,8 @@ type contentDocument struct {
 	SpaceID           string   `json:"space_id"`
 	TagSlugs          []string `json:"tag_slugs"`
 	RelevantCountries []string `json:"relevant_countries"`
+	CreatedAt         int64    `json:"created_at"`       // unix timestamp for §54 ?sort=latest
+	EngagementScore   int64    `json:"engagement_score"` // weighted engagement for §54 ?sort=top
 }
 
 // IndexContent fetches the content row identified by contentID+tenantID and
@@ -110,6 +112,8 @@ func (ix *Indexer) IndexContent(ctx context.Context, contentID, tenantID [16]byt
 		SpaceID:           spaceID,
 		TagSlugs:          tagSlugs,
 		RelevantCountries: ix.resolveRelevantCountries(ctx, tID, row.GeoSpaceID),
+		CreatedAt:         row.CreatedAt.Time.Unix(),
+		EngagementScore:   int64(row.ViewCount) + int64(row.CommentCount)*3 + int64(row.ShareCount)*5 + int64(row.ReshareCount)*2,
 	}
 
 	docs := []contentDocument{doc}
@@ -323,6 +327,7 @@ type forumThreadDocument struct {
 	Solved       bool   `json:"solved"`
 	AuthorUserID string `json:"author_user_id"`
 	URL          string `json:"url"`
+	CreatedAt    int64  `json:"created_at"` // unix timestamp for §54 ?sort=latest
 }
 
 // IndexForumThread fetches a forum thread and upserts it into the
@@ -352,6 +357,7 @@ func (ix *Indexer) IndexForumThread(ctx context.Context, threadID, tenantID [16]
 		Solved:       row.Solved,
 		AuthorUserID: row.AuthorUserID.String(),
 		URL:          "/forum/" + row.Slug,
+		CreatedAt:    row.CreatedAt.Time.Unix(),
 	}
 
 	docs := []forumThreadDocument{doc}
@@ -379,6 +385,7 @@ type spaceDocument struct {
 	Status      string `json:"status"`
 	ParentID    string `json:"parent_id"`
 	URL         string `json:"url"`
+	CreatedAt   int64  `json:"created_at"` // unix timestamp for §54 ?sort=latest
 }
 
 // IndexSpace fetches a space and upserts it into the spaces index.
@@ -411,6 +418,7 @@ func (ix *Indexer) IndexSpace(ctx context.Context, spaceID, tenantID [16]byte) e
 		Status:      row.Status,
 		ParentID:    row.ParentID.String(),
 		URL:         "/spaces/" + row.Slug,
+		CreatedAt:   row.CreatedAt.Time.Unix(),
 	}
 
 	docs := []spaceDocument{doc}
@@ -434,7 +442,9 @@ type userDocument struct {
 	Username    string `json:"title"`
 	DisplayName string `json:"excerpt"`
 	Bio         string `json:"bio"`
+	AvatarURL   string `json:"avatar_url"` // §54 autocomplete type-specific field
 	URL         string `json:"url"`
+	CreatedAt   int64  `json:"created_at"` // unix timestamp for §54 ?sort=latest
 }
 
 // IndexUser fetches a user profile and upserts it into the users index.
@@ -485,13 +495,20 @@ func (ix *Indexer) IndexUser(ctx context.Context, userID, tenantID [16]byte) err
 		bio = *row.Bio
 	}
 
+	avatarURL := ""
+	if row.AvatarUrl != nil {
+		avatarURL = *row.AvatarUrl
+	}
+
 	doc := userDocument{
 		ID:          row.UserID.String(),
 		TenantID:    row.TenantID.String(),
 		Username:    row.Username,
 		DisplayName: displayName,
 		Bio:         bio,
+		AvatarURL:   avatarURL,
 		URL:         "/users/" + row.Username,
+		CreatedAt:   row.CreatedAt.Time.Unix(),
 	}
 
 	docs := []userDocument{doc}
@@ -510,12 +527,14 @@ func (ix *Indexer) IndexUser(ctx context.Context, userID, tenantID [16]byte) err
 
 // tagDocument is the shape stored in the tags index.
 type tagDocument struct {
-	ID          string `json:"id"`
-	TenantID    string `json:"tenant_id"`
-	Name        string `json:"title"`
-	Slug        string `json:"slug"`
-	Description string `json:"excerpt"`
-	URL         string `json:"url"`
+	ID           string `json:"id"`
+	TenantID     string `json:"tenant_id"`
+	Name         string `json:"title"`
+	Slug         string `json:"slug"`
+	Description  string `json:"excerpt"`
+	ContentCount int32  `json:"content_count"` // §54 autocomplete type-specific field
+	URL          string `json:"url"`
+	CreatedAt    int64  `json:"created_at"` // unix timestamp for §54 ?sort=latest
 }
 
 // IndexTag fetches a forum tag and upserts it into the tags index.
@@ -539,12 +558,14 @@ func (ix *Indexer) IndexTag(ctx context.Context, tagID, tenantID [16]byte) error
 	}
 
 	doc := tagDocument{
-		ID:          row.ID.String(),
-		TenantID:    row.TenantID.String(),
-		Name:        row.Name,
-		Slug:        row.Slug,
-		Description: desc,
-		URL:         "/forum/tags/" + row.Slug,
+		ID:           row.ID.String(),
+		TenantID:     row.TenantID.String(),
+		Name:         row.Name,
+		Slug:         row.Slug,
+		Description:  desc,
+		ContentCount: row.FollowerCount,
+		URL:          "/forum/tags/" + row.Slug,
+		CreatedAt:    row.CreatedAt.Time.Unix(),
 	}
 
 	docs := []tagDocument{doc}
@@ -574,7 +595,9 @@ type organizationDocument struct {
 	Verified    bool   `json:"verified"`
 	Status      string `json:"status"`
 	CountryCode string `json:"country_code"`
+	MemberCount int32  `json:"member_count"` // §54 autocomplete type-specific field
 	URL         string `json:"url"`
+	CreatedAt   int64  `json:"created_at"` // unix timestamp for §54 ?sort=latest
 }
 
 // IndexOrganization fetches an organization and upserts it into the
@@ -619,7 +642,9 @@ func (ix *Indexer) IndexOrganization(ctx context.Context, orgID, tenantID [16]by
 		Verified:    row.Verified,
 		Status:      row.Status,
 		CountryCode: country,
+		MemberCount: row.MemberCount,
 		URL:         "/org/" + row.Slug,
+		CreatedAt:   row.CreatedAt.Time.Unix(),
 	}
 
 	docs := []organizationDocument{doc}
@@ -640,16 +665,16 @@ func (ix *Indexer) IndexOrganization(ctx context.Context, orgID, tenantID [16]by
 // (status=published AND is_active AND hitl_reviewed_by IS NOT NULL) are
 // indexed so JapaBot RAG retrieval never surfaces unreviewed content.
 type languageTestRequirementDocument struct {
-	ID                 string   `json:"id"`
-	TenantID           string   `json:"tenant_id"`
-	TestSlug           string   `json:"test_slug"`
-	TestName           string   `json:"title"`
-	MinimumScore       string   `json:"excerpt"`
-	DestinationSpaceID string   `json:"destination_space_id"`
-	VisaCategory       string   `json:"visa_category"`
-	IsJapabotIndexed   bool     `json:"is_japabot_indexed"`
-	Status             string   `json:"status"`
-	URL                string   `json:"url"`
+	ID                 string `json:"id"`
+	TenantID           string `json:"tenant_id"`
+	TestSlug           string `json:"test_slug"`
+	TestName           string `json:"title"`
+	MinimumScore       string `json:"excerpt"`
+	DestinationSpaceID string `json:"destination_space_id"`
+	VisaCategory       string `json:"visa_category"`
+	IsJapabotIndexed   bool   `json:"is_japabot_indexed"`
+	Status             string `json:"status"`
+	URL                string `json:"url"`
 }
 
 // IndexLanguageTestRequirement fetches a language_test_requirements row
@@ -657,7 +682,8 @@ type languageTestRequirementDocument struct {
 // not JapaBot-indexable (is_japabot_indexed = false) are deleted from the
 // index so stale drafts/rejected rows do not surface in RAG retrieval.
 // Ref: japaconnect-engineering/sections/99-language-test-hub.md
-//      japaconnect-engineering/adr/ADR-107-language-test-hub.md
+//
+//	japaconnect-engineering/adr/ADR-107-language-test-hub.md
 func (ix *Indexer) IndexLanguageTestRequirement(ctx context.Context, reqID, tenantID [16]byte) error {
 	if ix.client == nil {
 		slog.Warn("search:index: no meilisearch client, skipping")
@@ -704,15 +730,15 @@ func (ix *Indexer) IndexLanguageTestRequirement(ctx context.Context, reqID, tena
 
 // languageTestReqRow is the scanned shape for the direct pgx query.
 type languageTestReqRow struct {
-	id               string
-	tenantID         string
-	testSlug         string
-	testName         string
-	minimumScore     string
+	id                 string
+	tenantID           string
+	testSlug           string
+	testName           string
+	minimumScore       string
 	destinationSpaceID string
-	visaCategory     string
-	status           string
-	isJapabotIndexed bool
+	visaCategory       string
+	status             string
+	isJapabotIndexed   bool
 }
 
 // fetchLanguageTestRequirement reads a single requirement row joined with
@@ -799,6 +825,7 @@ type learningTrackDocument struct {
 	ReviewCount       int32    `json:"review_count"`
 	RelevantCountries []string `json:"relevant_countries"`
 	URL               string   `json:"url"`
+	CreatedAt         int64    `json:"created_at"` // unix timestamp for §54 ?sort=latest
 }
 
 // IndexLearningTrack fetches a published marketplace track and upserts it
@@ -852,6 +879,7 @@ func (ix *Indexer) IndexLearningTrack(ctx context.Context, trackID, tenantID [16
 		// relevant_countries is resolved from the track's geo_space_id by
 		// walking the space hierarchy to the country level (ADR-064).
 		RelevantCountries: ix.resolveRelevantCountries(ctx, tID, row.GeoSpaceID),
+		CreatedAt:         row.CreatedAt.Time.Unix(),
 	}
 
 	docs := []learningTrackDocument{doc}
@@ -877,6 +905,7 @@ type docPageDocument struct {
 	BodyPreview  string `json:"excerpt"`
 	ReviewStatus string `json:"review_status"`
 	URL          string `json:"url"`
+	CreatedAt    int64  `json:"created_at"` // unix timestamp for §54 ?sort=latest
 }
 
 // IndexDocPage fetches a doc page and upserts it into the doc_pages index
@@ -905,6 +934,7 @@ func (ix *Indexer) IndexDocPage(ctx context.Context, pageID, tenantID [16]byte) 
 		BodyPreview:  buildExcerpt(string(row.Content)),
 		ReviewStatus: row.ReviewStatus,
 		URL:          fmt.Sprintf("/docs/%s/%s", row.Audience, row.Slug),
+		CreatedAt:    row.CreatedAt.Time.Unix(),
 	}
 
 	docs := []docPageDocument{doc}

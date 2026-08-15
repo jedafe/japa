@@ -74,14 +74,14 @@
 	}
 
 	const columns = [
-		{ key: "title", label: t("university.track_title", "Track"), sortable: true, render: (v: string) => `<span class="font-medium">${v}</span>` },
-		{ key: "instructor_name", label: t("university.instructor", "Instructor"), sortable: true },
-		{ key: "difficulty", label: t("university.difficulty", "Difficulty"), sortable: true, render: (v: string) => `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium ${v === 'advanced' ? 'bg-danger/15 text-danger' : v === 'intermediate' ? 'bg-warning/15 text-warning' : 'bg-success/15 text-success'}">${v}</span>` },
+		{ key: "title", label: t("university.track_title", "Track"), render: (v: string) => `<span class="font-medium">${v}</span>` },
+		{ key: "instructor_name", label: t("university.instructor", "Instructor") },
+		{ key: "difficulty", label: t("university.difficulty", "Difficulty"), render: (v: string) => `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium ${v === 'advanced' ? 'bg-danger/15 text-danger' : v === 'intermediate' ? 'bg-warning/15 text-warning' : 'bg-success/15 text-success'}">${v}</span>` },
 		{ key: "price_kobo", label: t("university.price", "Price"), render: (_: any, row: PendingTrack) => `<span class="text-xs">${formatPrice(row.price_kobo, row.currency)}</span>` },
 		{ key: "category", label: t("university.category", "Category"), render: (v: string | null) => `<span class="text-xs" style="color: var(--color-muted)">${v ?? "—"}</span>` },
-		{ key: "language", label: t("university.language", "Language"), sortable: true, render: (v: string) => `<span class="text-xs">${v}</span>` },
-		{ key: "total_enrolled", label: t("university.enrolled", "Enrolled"), sortable: true, render: (v: number) => `<span class="text-xs">${v}</span>` },
-		{ key: "created_at", label: t("common.submitted", "Submitted"), sortable: true, render: (v: string) => `<span class="text-xs" style="color: var(--color-muted)">${new Date(v).toLocaleDateString()}</span>` }
+		{ key: "language", label: t("university.language", "Language"), render: (v: string) => `<span class="text-xs">${v}</span>` },
+		{ key: "total_enrolled", label: t("university.enrolled", "Enrolled"), render: (v: number) => `<span class="text-xs">${v}</span>` },
+		{ key: "created_at", label: t("common.submitted", "Submitted"), render: (v: string) => `<span class="text-xs" style="color: var(--color-muted)">${new Date(v).toLocaleDateString()}</span>` }
 	];
 
 	const rowActions: ActionItem[] = [

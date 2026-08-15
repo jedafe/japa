@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
-	"strconv"
 	"strings"
 	"time"
 
@@ -866,4 +865,83 @@ func (s *Service) DeleteTemplate(ctx context.Context, tenantID, id pgtype.UUID) 
 	}
 
 	return s.store.deleteTemplate(ctx, tenantID, id)
+}
+
+// GetAdminSettings returns the tenant's onboarding configuration as exposed
+// on the admin Onboarding Settings surface (Section 09 — minimum-count fields
+// and promoted-entities picker). Reads the six onboarding.* system_settings
+// keys and assembles them into OnboardingAdminSettings. Missing keys fall
+// back to the Section 09 defaults (3 tags, 2 users, 2 spaces, empty lists).
+func (s *Service) GetAdminSettings(ctx context.Context, tenantID pgtype.UUID) (*OnboardingAdminSettings, error) {
+	settings := &OnboardingAdminSettings{
+		MinTagsFollow:  s.getMinTagsFollow(ctx, tenantID),
+		MinUsersFollow: s.getMinUsersFollow(ctx, tenantID),
+		MinSpacesJoin:  s.getMinSpacesJoin(ctx, tenantID),
+	}
+
+	if raw, _ := s.settings.GetSetting(ctx, tenantID, keyPromotedSpaces); raw != "" {
+		_ = json.Unmarshal([]byte(raw), &settings.PromotedSpaces)
+	}
+	if raw, _ := s.settings.GetSetting(ctx, tenantID, keyPromotedUsers); raw != "" {
+		_ = json.Unmarshal([]byte(raw), &settings.PromotedUsers)
+	}
+	if raw, _ := s.settings.GetSetting(ctx, tenantID, keyPromotedTags); raw != "" {
+		_ = json.Unmarshal([]byte(raw), &settings.PromotedTags)
+	}
+
+	if settings.PromotedSpaces == nil {
+		settings.PromotedSpaces = []string{}
+	}
+	if settings.PromotedUsers == nil {
+		settings.PromotedUsers = []string{}
+	}
+	if settings.PromotedTags == nil {
+		settings.PromotedTags = []string{}
+	}
+
+	return settings, nil
+}
+
+// UpdateAdminSettings applies a partial update to the tenant's onboarding
+// configuration. Only fields present in the request body are written; nil
+// fields preserve the existing value. All writes are applied atomically via
+// UpdateSettingsBatch so the admin never observes a half-applied config.
+// Ref: Section 09 — admin Onboarding Settings surface.
+func (s *Service) UpdateAdminSettings(ctx context.Context, tenantID pgtype.UUID, req *UpdateOnboardingSettingsRequest) error {
+	pending := make(map[string][]byte, 6)
+
+	if req.MinTagsFollow != nil {
+		v, _ := json.Marshal(*req.MinTagsFollow)
+		pending[keyMinTagsFollow] = v
+	}
+	if req.MinUsersFollow != nil {
+		v, _ := json.Marshal(*req.MinUsersFollow)
+		pending[keyMinUsersFollow] = v
+	}
+	if req.MinSpacesJoin != nil {
+		v, _ := json.Marshal(*req.MinSpacesJoin)
+		pending[keyMinSpacesJoin] = v
+	}
+	if req.PromotedSpaces != nil {
+		v, _ := json.Marshal(*req.PromotedSpaces)
+		pending[keyPromotedSpaces] = v
+	}
+	if req.PromotedUsers != nil {
+		v, _ := json.Marshal(*req.PromotedUsers)
+		pending[keyPromotedUsers] = v
+	}
+	if req.PromotedTags != nil {
+		v, _ := json.Marshal(*req.PromotedTags)
+		pending[keyPromotedTags] = v
+	}
+
+	if len(pending) == 0 {
+		return nil
+	}
+
+	if err := s.settings.UpdateSettingsBatch(ctx, tenantID, pending); err != nil {
+		return fmt.Errorf("updating onboarding settings: %w", err)
+	}
+
+	return nil
 }

@@ -114,7 +114,6 @@
 			{
 				key: 'name',
 				label: t('app.bots.column_bot', 'Bot'),
-				sortable: true,
 				render: (_: any, row: Bot) => `
 					<div class="flex items-center gap-3">
 						<div>
@@ -127,19 +126,16 @@
 			{
 				key: 'bot_type',
 				label: t('app.bots.column_type', 'Type'),
-				sortable: true,
 				render: (v: string) => `<span class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${botTypeClasses[v] || botTypeClasses.unknown}">${botTypeLabels[v] || v}</span>`
 			},
 			{
 				key: 'policy',
 				label: t('app.bots.column_policy', 'Policy'),
-				sortable: true,
 				render: (v: string) => `<span class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${policyClasses[v] || 'bg-surface text-foreground border'}">${v}</span>`
 			},
 			{
 				key: 'crawl_delay',
 				label: t('app.bots.column_crawl_delay', 'Crawl Delay'),
-				sortable: true,
 				render: (v: number) => `<span class="text-sm text-muted">${v > 0 ? v + 's' : '—'}</span>`
 			}
 		],

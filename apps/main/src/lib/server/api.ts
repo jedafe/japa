@@ -6,6 +6,15 @@ import type { ApiErr, ApiOk, ListMeta } from '$lib/types';
 export const API_BASE = env.PRIVATE_API_BASE_URL ?? 'http://localhost:8080';
 export const API_V1 = `${API_BASE}/api/v1`;
 
+/**
+ * Per-request timeout (ms) for backend calls originating from the SSR server.
+ * Without an explicit timeout a slow/stuck backend hangs the page indefinitely
+ * and the swallowing catch blocks in hooks.server.ts hide the failure. 5s is
+ * long enough to absorb a cold DB connection without making a degraded backend
+ * feel like a hang. Tuned for the SSR critical path, not background work.
+ */
+const REQUEST_TIMEOUT_MS = 5000;
+
 /** Typed transport error; carries the backend's status + error code. */
 export class ApiError extends Error {
 	constructor(
@@ -79,11 +88,22 @@ async function request<T>(
 	// session (e.g. GET /me/sessions flags the current session per JEOS §50).
 	if (ctx.refreshCookie) headers.cookie = `jc_refresh=${ctx.refreshCookie}`;
 
-	const res = await ctx.fetch(`${API_V1}${path}`, {
-		method,
-		headers,
-		body: body === undefined ? undefined : JSON.stringify(body)
-	});
+	// Abort the fetch after REQUEST_TIMEOUT_MS so a slow/stuck backend cannot
+	// hang the SSR critical path. The controller + timer are cleaned up via
+	// the finally block below to avoid leaking a pending timer per request.
+	const controller = new AbortController();
+	const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+	let res: Response;
+	try {
+		res = await ctx.fetch(`${API_V1}${path}`, {
+			method,
+			headers,
+			body: body === undefined ? undefined : JSON.stringify(body),
+			signal: controller.signal
+		});
+	} finally {
+		clearTimeout(timer);
+	}
 
 	let payload: unknown = null;
 	try {

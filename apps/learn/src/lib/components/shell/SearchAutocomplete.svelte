@@ -40,7 +40,7 @@
 			} finally {
 				loading = false;
 			}
-		}, 250);
+		}, 200);
 	}
 
 	function select(s: TrackSummary) {
@@ -111,6 +111,13 @@
 			role="combobox"
 		/>
 	</form>
+
+	{#if loading && showDropdown}
+		<!-- Loading indicator (§54: loading states) -->
+		<div class="absolute left-0 right-0 top-full z-50 mt-1 rounded-[12px] border border-[var(--color-border)] bg-[var(--color-surface)] py-3 text-center shadow-lg">
+			<span class="inline-block h-4 w-4 animate-spin rounded-full border-2 border-[var(--color-border)] border-t-[var(--color-primary)]"></span>
+		</div>
+	{/if}
 
 	{#if showDropdown && suggestions.length > 0}
 		<ul

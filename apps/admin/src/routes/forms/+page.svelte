@@ -90,7 +90,6 @@
 		{
 			key: 'name',
 			label: t('forms.columnForm', 'Form'),
-			sortable: true,
 			render: (_: any, row: any) => `
 				<div>
 					<a href="/forms/${row.id}" class="font-medium text-foreground hover:underline cursor-pointer" onclick="event.stopPropagation()">${row.name}</a>
@@ -102,13 +101,11 @@
 		{
 			key: 'space_name',
 			label: t('forms.columnSpace', 'Space'),
-			sortable: true,
 			render: (value: any, row: any) => `<span class="text-sm text-foreground-alt">${row.space_name || (row.space_id ? row.space_id.substring(0, 8) + '...' : t('forms.global', 'Global'))}</span>`
 		},
 		{
 			key: 'is_system',
 			label: t('forms.columnType', 'Type'),
-			sortable: true,
 			render: (v: boolean) => v
 				? `<span class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold bg-info/15 text-info border-info">${t('forms.type.system', 'System')}</span>`
 				: `<span class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold bg-surface text-foreground border">${t('forms.type.custom', 'Custom')}</span>`
@@ -116,7 +113,6 @@
 		{
 			key: 'status',
 			label: t('forms.columnStatus', 'Status'),
-			sortable: true,
 			render: (v: string) => {
 				const isActive = v === 'active';
 				const cls = isActive ? 'bg-success/15 text-success border-success' : 'bg-surface text-foreground border';
@@ -126,7 +122,6 @@
 		{
 			key: 'created_at',
 			label: t('forms.created', 'Created'),
-			sortable: true,
 			render: (v: string) => new Date(v).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
 		}
 	];

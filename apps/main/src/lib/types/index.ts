@@ -5,8 +5,8 @@
 
 export type ThemeName = 'light' | 'dark';
 
-/** Supported UI locales. Mirrors the i18n store's Locale type. */
-export type Locale = 'en' | 'fr';
+/** Supported UI locale code (e.g. 'en', 'fr', 'yo'). Dynamic per ADR-013. */
+export type Locale = string;
 
 /* ------------------------------------------------------------------ *
  * Transport envelope
@@ -1085,6 +1085,24 @@ export interface SpaceJoinRequest {
 
 /** POST /spaces/{id}/report response — gen.Report row. */
 export interface SpaceReport {
+	id: string;
+	tenant_id: string;
+	reporter_user_id: string;
+	entity_type: string;
+	entity_id: string;
+	reason: string;
+	notes: string | null;
+	evidence_urls: string[];
+	status: string;
+	reviewed_by: string | null;
+	resolution_note: string | null;
+	resolved_at: string | null;
+	created_at: string;
+}
+
+/** GET /me/reports item — gen.ContentReport row (§51). The current user's
+ *  own submitted content reports with their review status. */
+export interface MyReport {
 	id: string;
 	tenant_id: string;
 	reporter_user_id: string;

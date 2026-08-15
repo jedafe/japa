@@ -100,13 +100,11 @@
 			{
 				key: 'display_name',
 				label: t('joinRequests.user', 'User'),
-				sortable: true,
 				render: (v: string, row: JoinRequest) => v || row.username || 'anonymous'
 			},
 			{
 				key: 'space_name',
 				label: t('joinRequests.space', 'Space'),
-				sortable: true,
 				render: (v: string, row: JoinRequest) => v || (row.space_id ? row.space_id.substring(0, 8) + '...' : '—')
 			},
 			{
@@ -118,7 +116,6 @@
 			{
 				key: 'status',
 				label: t('joinRequests.status', 'Status'),
-				sortable: true,
 				render: (v: string) => {
 					const cls = v === 'approved' ? 'bg-success/15 text-success' : v === 'rejected' ? 'bg-danger/15 text-danger' : 'bg-warning/15 text-warning';
 					return `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium ${cls}">${v}</span>`;
@@ -127,7 +124,6 @@
 			{
 				key: 'requested_at',
 				label: t('joinRequests.requested', 'Requested'),
-				sortable: true,
 				render: (v: string) => new Date(v).toLocaleDateString()
 			}
 		],

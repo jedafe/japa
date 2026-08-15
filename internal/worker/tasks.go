@@ -26,6 +26,7 @@ const (
 
 	TypeEmailSend                     = "email:send"
 	TypeSearchIndexSync               = "search:index_entity"
+	TypeSearchReindexEngagementScores = "search:reindex_engagement_scores"
 	TypeImageProcessing               = "content:process_image"
 	TypeAITaskProcessing              = "ai:process_task"
 	TypeEngagementCountUpdate         = "content:update_engagement"
@@ -137,6 +138,7 @@ func RegisterHandlers(mux *asynq.ServeMux) {
 	// Default handlers
 	mux.HandleFunc(TypeEmailSend, HandleEmailSend)
 	mux.HandleFunc(TypeSearchIndexSync, HandleSearchIndexSync)
+	mux.HandleFunc(TypeSearchReindexEngagementScores, HandleSearchReindexEngagementScores)
 	mux.HandleFunc(TypeImageProcessing, HandleImageProcessing)
 	mux.HandleFunc(TypeAITaskProcessing, HandleAITaskProcessing)
 	mux.HandleFunc(TypeEngagementCountUpdate, HandleEngagementCountUpdate)

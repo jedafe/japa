@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
@@ -25,6 +26,7 @@ import (
 	"github.com/jedafe/japa/internal/mentions"
 	"github.com/jedafe/japa/internal/seo"
 	"github.com/jedafe/japa/internal/tenant"
+	"github.com/jedafe/japa/internal/worker"
 )
 
 const defaultPageSize int32 = 20
@@ -75,6 +77,7 @@ type Handlers struct {
 	mentionCheckers *mentions.DBCheckers // nil disables erased-mention redaction
 	ragIndexer      RAGEntityIndexer     // nil disables RAG indexing (§69)
 	settings        settingsReader       // nil falls back to defaults
+	asynqClient     *asynq.Client        // nil disables search index enqueue (test-only)
 }
 
 // NewHandlers creates Handlers with the given Service and optional JSON-LD
@@ -102,6 +105,37 @@ func (h *Handlers) SetRAGIndexer(r RAGEntityIndexer) { h.ragIndexer = r }
 // system_settings (e.g. i18n.default_language for RAG indexing). nil falls
 // back to compiled-in defaults.
 func (h *Handlers) SetSettings(s settingsReader) { h.settings = s }
+
+// SetAsynqClient injects the Asynq client so thread/tag CRUD can enqueue
+// search:index_entity tasks (§12 stale-index fix). nil disables enqueue
+// (test-only).
+func (h *Handlers) SetAsynqClient(c *asynq.Client) { h.asynqClient = c }
+
+// enqueueSearchIndex enqueues a Meilisearch re-index task for a forum entity
+// (thread or tag). operation is "index" (create/update) or "delete".
+// Fire-and-forget per Rule 8.
+func (h *Handlers) enqueueSearchIndex(entityType, operation string, entityID, tenantID pgtype.UUID) {
+	if h.asynqClient == nil {
+		return
+	}
+	payload, err := json.Marshal(map[string]string{
+		"entity_id":   entityID.String(),
+		"entity_type": entityType,
+		"tenant_id":   tenantID.String(),
+		"operation":   operation,
+	})
+	if err != nil {
+		slog.Warn("forum: failed to marshal search index payload", "error", err)
+		return
+	}
+	if _, err := h.asynqClient.Enqueue(
+		asynq.NewTask(worker.TypeSearchIndexSync, payload),
+		asynq.Queue(worker.QueueForTask(worker.TypeSearchIndexSync)),
+	); err != nil {
+		slog.Warn("forum: failed to enqueue search index task",
+			"entity_type", entityType, "entity_id", entityID.String(), "error", err)
+	}
+}
 
 // indexThreadRAG fires-and-forgets a RAG indexing call for a forum thread.
 // Errors are logged, never propagated (Rule 8). The body is the thread title
@@ -322,6 +356,9 @@ func (h *Handlers) CreateThread(w http.ResponseWriter, r *http.Request) {
 	// RAG indexing — fire-and-forget (§69/ADR-069 BUG-001 fix: forum threads
 	// are part of the RAG corpus).
 	h.indexThreadRAG(r.Context(), tenantID, thread.ID, input.Title, input.Body)
+
+	// §12 stale-index fix: enqueue Meilisearch re-index for the new thread.
+	h.enqueueSearchIndex("forum_thread", "index", thread.ID, tenantID)
 
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": thread})
 }
@@ -722,6 +759,9 @@ func (h *Handlers) UpdateThread(w http.ResponseWriter, r *http.Request) {
 	// RAG re-indexing — fire-and-forget (§69/ADR-069 BUG-001 fix).
 	h.indexThreadRAG(r.Context(), tenantID, id, input.Title, input.Body)
 
+	// §12 stale-index fix: enqueue Meilisearch re-index for the updated thread.
+	h.enqueueSearchIndex("forum_thread", "index", id, tenantID)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": thread})
 }
 
@@ -751,6 +791,9 @@ func (h *Handlers) DeleteThread(w http.ResponseWriter, r *http.Request) {
 	// RAG purge — fire-and-forget (§69/ADR-069 BUG-001 fix: deleted threads
 	// must not be retrievable in RAG).
 	h.purgeThreadRAG(r.Context(), tenantID, id)
+
+	// §12 stale-index fix: remove the deleted thread from the Meilisearch index.
+	h.enqueueSearchIndex("forum_thread", "delete", id, tenantID)
 
 	errpkg.WriteJSON(w, http.StatusNoContent, nil)
 }
@@ -1590,6 +1633,9 @@ func (h *Handlers) CreateTag(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// §12 stale-index fix: enqueue Meilisearch re-index for the new tag.
+	h.enqueueSearchIndex("tag", "index", tag.ID, tenantID)
+
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": tag})
 }
 
@@ -1694,6 +1740,9 @@ func (h *Handlers) UpdateTag(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// §12 stale-index fix: enqueue Meilisearch re-index for the updated tag.
+	h.enqueueSearchIndex("tag", "index", tag.ID, tenantID)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": tag})
 }
 
@@ -1719,6 +1768,9 @@ func (h *Handlers) DeleteTag(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
+	// §12 stale-index fix: remove the deleted tag from the Meilisearch index.
+	h.enqueueSearchIndex("tag", "delete", id, tenantID)
 
 	errpkg.WriteJSON(w, http.StatusNoContent, nil)
 }

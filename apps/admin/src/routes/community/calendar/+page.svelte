@@ -1,13 +1,14 @@
 <script lang="ts">
 	// /community/calendar — admin HITL review queue for Calendar events with approve/reject.
+	import { onMount } from 'svelte';
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import { Modal } from '$lib/components/ui/modal';
 	import { Button } from '$lib/components/ui/button';
-	import { calendarAdminApi } from '$lib/api';
+	import { calendarAdminApi , spacesAdminApi } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { Eye, CheckCircle, XCircle, Trash2 } from 'lucide-svelte';
-	import type { ActionItem } from '$lib/components/ui/data-table';
+	import type { ActionItem, FilterDef } from '$lib/components/ui/data-table';
 
 	type CalendarItem = {
 		id: string;
@@ -155,7 +156,36 @@
 		{ key: 'description', label: t('app.calendar.detail_description', 'Description'), type: 'textarea' }
 	];
 
+	
+// Destination Spaces for the dest filter (geo-aware pattern). Loaded once
+// on mount from /admin/spaces?level=country so the filter options are
+// driven by the backend (Rule 16 — no hardcoded lists).
+type SpaceOption = { id: string; name: string };
+let destOptions = $state<SpaceOption[]>([]);
+onMount(async () => {
+	try {
+		const res = await spacesAdminApi.list('?level=country&limit=200');
+		if (res.ok && Array.isArray(res.data)) {
+			destOptions = (res.data as Array<{ id: string; name: string }>).map((s) => ({
+				id: s.id,
+				name: s.name
+			}));
+		}
+	} catch {
+		// Non-fatal — the dest filter simply stays empty.
+	}
+});
+
+		const filters = $derived<FilterDef[]>([
+		{
+			key: 'dest',
+			label: t('app.calendar.col_destination', 'Destination'),
+			options: destOptions.map((s) => ({ value: s.id, label: s.name }))
+		}
+	]);
+
 	const config = $derived<EntityPageConfig>({
+		filters,
 		title: t('app.calendar.review_queue_heading', 'Calendar Review Queue'),
 		description: t('app.calendar.review_queue_desc', 'Review and approve pending calendar events'),
 		readonly: true,
