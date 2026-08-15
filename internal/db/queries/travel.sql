@@ -36,14 +36,19 @@ SELECT * FROM travel_providers
 WHERE tenant_id = @tenant_id AND id = @id;
 
 -- =====================================================================
--- List travel providers (optionally active only).
+-- List travel providers with optional search and active-status filter.
+-- q: ILIKE search on name or slug (empty = no filter).
+-- is_active_filter: tri-state — 'true' = only active, 'false' = only
+--   inactive, '' (empty) = no filter (all statuses).
+-- provider_type: filter by exact type (empty = all).
 -- =====================================================================
 
 -- name: ListTravelProviders :many
 SELECT * FROM travel_providers
 WHERE tenant_id = @tenant_id
-  AND (@active_only::boolean = false OR is_active = true)
+  AND (@is_active_filter::text = '' OR is_active = (@is_active_filter::text = 'true'))
   AND (@provider_type::text = '' OR provider_type = @provider_type)
+  AND (@q::text = '' OR name ILIKE '%' || @q::text || '%' OR slug ILIKE '%' || @q::text || '%')
 ORDER BY name ASC;
 
 -- =====================================================================

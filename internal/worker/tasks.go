@@ -103,6 +103,10 @@ const (
 	TypeContentScanAffiliateLinks       = "content:scan_affiliate_links"
 	TypeRedirectRecordHit               = "redirect:record_hit"
 
+	// ---- Destination Wiki (§80, ADR-088) ----.
+
+	TypeWikiSeedStubPages = "wiki:seed_stub_pages"
+
 	// ---- Periodic sweep tasks (enqueued by scheduler, not API) ----.
 
 	TypeScheduledPublishSweep = "content:publish_sweep"
@@ -211,6 +215,7 @@ func RegisterHandlers(mux *asynq.ServeMux) {
 	mux.HandleFunc(TypeContentScanAffiliateLinks, HandleContentScanAffiliateLinks)
 	mux.HandleFunc(TypeRedirectRecordHit, HandleRedirectRecordHit)
 	mux.HandleFunc(TypeTenantCleanupData, HandleTenantCleanupData)
+	mux.HandleFunc(TypeWikiSeedStubPages, HandleWikiSeedStubPages)
 
 	// Periodic sweep handlers
 	mux.HandleFunc(TypeScheduledPublishSweep, HandleScheduledPublishSweep)
@@ -269,6 +274,7 @@ func RegisterHandlers(mux *asynq.ServeMux) {
 
 	// §84 Community Digest Widget handlers (ADR-092).
 	mux.HandleFunc(TypeDigestGenerate, HandleDigestGenerate)
+	mux.HandleFunc(TypeDigestAutoPublish, HandleDigestAutoPublish)
 	mux.HandleFunc(TypeDigestSendEmail, HandleDigestSendEmail)
 	mux.HandleFunc(TypeJapaStageRecommend, HandleJapaStageRecommend)
 

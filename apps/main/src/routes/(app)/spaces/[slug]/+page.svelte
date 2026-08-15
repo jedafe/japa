@@ -5,7 +5,7 @@
 	import {
 		Rss, MessageSquare, Users, Info, PenSquare, Search, BarChart3,
 		UserPlus, UserCheck, Loader2, BellOff, Bell, Flag, Pin, PinOff,
-		Check, X, Inbox, ChevronUp, ChevronDown
+		Check, X, Inbox, ChevronUp, ChevronDown, BookOpen
 	} from 'lucide-svelte';
 	import { Dialog } from 'bits-ui';
 	import SetSidebar from '$lib/components/shell/SetSidebar.svelte';
@@ -506,6 +506,12 @@
 							{t('profile.follow', 'Follow')}
 						{/if}
 					</button>
+					<a
+						href="/wiki/{space.slug}"
+						class="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-[var(--color-border)] px-4 py-1.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
+					>
+						<BookOpen size={16} /> {t('space.wiki', 'Wiki')}
+					</a>
 					<a
 						href="/create?type=forum&space={space.slug}"
 						class="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-[var(--color-primary)] px-4 py-1.5 text-sm font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)]"

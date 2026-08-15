@@ -1555,6 +1555,10 @@ func formatTimestamptz(t pgtype.Timestamptz) string {
 
 // ListPosts handles GET /api/v1/blog — published blog posts, newest first.
 // Supports ?page_size= and ?page_offset= (Rule 5 offset pagination).
+// BUG-011: §24-mandated filters — ?space_id, ?tag (tag slug), ?series_id,
+// ?sort=latest|top, ?author_id. sort=featured is handled by the frontend
+// via the separate /blog/featured endpoint, so it is normalized to "latest"
+// here to avoid a silent empty result.
 // C5/H3: uses the enriched ListPublishedBlogPosts query that filters
 // status='published' and deleted_at IS NULL in SQL (not Go memory), and
 // JOINs users + media for author name and featured image URL.
@@ -1568,13 +1572,52 @@ func (h *Handlers) ListPosts(w http.ResponseWriter, r *http.Request) {
 	limit := parsePageSize(r)
 	offset := parsePageSizeOffset(r)
 
-	posts, err := h.Service.ListPublishedBlogPosts(r.Context(), tenantID, limit, offset)
+	// BUG-011: build the §24 filter from query params. Unknown/invalid
+	// UUIDs return 400; an unknown sort value falls back to "latest"
+	// (the spec only defines latest|top|featured, and featured is routed
+	// to /blog/featured by the frontend).
+	filter := BlogListFilter{TenantID: tenantID}
+
+	if v := r.URL.Query().Get("space_id"); v != "" {
+		if err := filter.SpaceID.Scan(v); err != nil {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_space_id", "Invalid space_id")
+			return
+		}
+	}
+	if v := r.URL.Query().Get("author_id"); v != "" {
+		if err := filter.AuthorID.Scan(v); err != nil {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_author_id", "Invalid author_id")
+			return
+		}
+	}
+	if v := r.URL.Query().Get("series_id"); v != "" {
+		if err := filter.SeriesID.Scan(v); err != nil {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_series_id", "Invalid series_id")
+			return
+		}
+	}
+	if v := strings.TrimSpace(r.URL.Query().Get("tag")); v != "" {
+		filter.Tag = &v
+	}
+	switch sort := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("sort"))); sort {
+	case "", "latest", "top":
+		filter.Sort = sort
+	case "featured":
+		// Frontend routes sort=featured to /blog/featured; normalize to
+		// latest here so a direct API call still returns results.
+		filter.Sort = "latest"
+	default:
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_sort", "sort must be one of: latest, top, featured")
+		return
+	}
+
+	posts, err := h.Service.ListPublishedBlogPosts(r.Context(), filter, limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
 
-	total, err := h.Service.CountPublishedBlogPosts(r.Context(), tenantID)
+	total, err := h.Service.CountPublishedBlogPosts(r.Context(), filter)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -1654,7 +1697,7 @@ func (h *Handlers) AdminListPosts(w http.ResponseWriter, r *http.Request) {
 	// for every author. Offset-paginated per Rule 5.
 	posts, err := h.Service.ListAdminBlogPosts(r.Context(), tenantID, limit, offset)
 	if err != nil {
-		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list blog posts")
+		handleServiceError(w, err)
 		return
 	}
 
@@ -1677,7 +1720,7 @@ func (h *Handlers) AdminDeletePost(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.content.DeleteContent(r.Context(), id, tenantID); err != nil {
-		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to delete blog post")
+		handleServiceError(w, err)
 		return
 	}
 

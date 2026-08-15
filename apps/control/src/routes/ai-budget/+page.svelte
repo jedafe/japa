@@ -8,8 +8,16 @@
 	import { DollarSign, RefreshCw, AlertTriangle, Pencil } from 'lucide-svelte';
 	import { BarChart, Spline } from 'layerchart';
 	import { curveMonotoneX } from 'd3-shape';
+	import { hasAnyPermission } from '$lib/stores/auth.svelte';
 
 	let {} = $props();
+
+	// Backend routes gated by ai.budget.view (GET) and ai.budget.manage
+	// (PATCH) — migration 000452, server.go:6089-6093. The frontend must
+	// match so users without view access see an access-denied message
+	// instead of triggering 403 API calls.
+	const canView = $derived(hasAnyPermission(['ai.budget.view', 'ai.budget.manage']));
+	const canManage = $derived(hasAnyPermission(['ai.budget.manage']));
 
 	let budget = $state<AiBudget | null>(null);
 	let loading = $state(true);
@@ -111,11 +119,19 @@
 
 <PageHeader title={t('ai_budget.title', 'AI Budget')} description={t('ai_budget.description', 'Monitor AI costs and budget limits')} />
 
+{#if !canView}
+	<div class="flex items-center gap-2 rounded-lg border p-4 text-sm" style="border-color: var(--color-danger); color: var(--color-danger)">
+		<AlertTriangle class="size-4" />
+		{t('ai_budget.no_permission', 'You do not have permission to view the AI budget dashboard.')}
+	</div>
+{:else}
 <div class="mb-4 flex items-center justify-end gap-2">
-	<button class="border-border-input bg-background-alt hover:bg-muted text-foreground rounded-9px border px-3 py-1.5 text-xs font-medium transition-colors" onclick={openEditModal}>
-		<Pencil class="size-3" />
-		{t('ai_budget.edit_threshold', 'Edit Threshold')}
-	</button>
+	{#if canManage}
+		<button class="border-border-input bg-background-alt hover:bg-muted text-foreground rounded-9px border px-3 py-1.5 text-xs font-medium transition-colors" onclick={openEditModal}>
+			<Pencil class="size-3" />
+			{t('ai_budget.edit_threshold', 'Edit Threshold')}
+		</button>
+	{/if}
 	<button class="border-border-input bg-background-alt hover:bg-muted text-foreground rounded-9px border px-3 py-1.5 text-xs font-medium transition-colors" onclick={load}>
 		<RefreshCw class="size-3" />
 		{t('common.refresh')}
@@ -340,3 +356,4 @@
 		</Dialog.Content>
 	</Dialog.Portal>
 </Dialog.Root>
+{/if}

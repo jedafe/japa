@@ -188,7 +188,7 @@
 		try {
 			const result = await api(`/control/extensions/${ext.key}/rollout`, {
 				method: 'PATCH',
-				body: JSON.stringify({ rollout_percentage: rolloutInput })
+				body: { rollout_percentage: rolloutInput }
 			});
 			if (result.ok) {
 				extensions = extensions.map((e) =>

@@ -2,7 +2,7 @@
 	import type { Snippet } from 'svelte';
 	import { page } from '$app/state';
 	import SidebarWidgetRenderer from './SidebarWidgetRenderer.svelte';
-	import type { SessionUser, TagSuggestion, SpaceSuggestion } from '$lib/types';
+	import type { SessionUser, TrendingTag, SpaceSuggestion } from '$lib/types';
 
 	interface SidebarWidget {
 		id: string;
@@ -17,7 +17,7 @@
 
 	interface Props {
 		user: SessionUser | null;
-		trendingTags?: TagSuggestion[];
+		trendingTags?: TrendingTag[];
 		suggestedSpaces?: SpaceSuggestion[];
 		/** Comma-separated list of enabled language codes from i18n.enabled_languages. */
 		enabledLanguages?: string;

@@ -25,6 +25,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -529,6 +530,22 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	filter.VisaCategory = r.URL.Query().Get("visa")
 	filter.Outcome = r.URL.Query().Get("outcome")
 	filter.Q = r.URL.Query().Get("q")
+
+	// Sort support (geo-aware tool pattern: "all admin tables must have
+	// filter + sort + paginate"). EntityPage sends sort as "column:dir"
+	// (e.g. "created_at:desc"); a bare "dir" query param is also accepted
+	// for compatibility with the DataTable urlSync convention.
+	if v := r.URL.Query().Get("sort"); v != "" {
+		if col, dir, ok := strings.Cut(v, ":"); ok {
+			filter.Sort = col
+			filter.Order = dir
+		} else {
+			filter.Sort = v
+		}
+	}
+	if v := r.URL.Query().Get("dir"); v != "" {
+		filter.Order = v
+	}
 
 	page, limit := parsePageParams(r)
 	if limit > 200 {

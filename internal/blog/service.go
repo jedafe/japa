@@ -327,14 +327,16 @@ func (s *Service) GetBlogPostDetail(ctx context.Context, slug string, tenantID p
 // ListPublishedBlogPosts returns published blog post cards with author and
 // featured image, status-filtered in SQL (C5/H3).
 // BUG-005: offset-based pagination per Rule 5 (page_size + page_offset).
-func (s *Service) ListPublishedBlogPosts(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]gen.ListPublishedBlogPostsRow, error) {
-	return s.store.listPublishedBlogPosts(ctx, tenantID, limit, offset)
+// BUG-011: accepts §24-mandated filters via BlogListFilter.
+func (s *Service) ListPublishedBlogPosts(ctx context.Context, f BlogListFilter, limit, offset int32) ([]gen.ListPublishedBlogPostsRow, error) {
+	return s.store.listPublishedBlogPosts(ctx, f, limit, offset)
 }
 
 // CountPublishedBlogPosts returns the total number of published blog posts
 // for pagination meta.
-func (s *Service) CountPublishedBlogPosts(ctx context.Context, tenantID pgtype.UUID) (int64, error) {
-	return s.store.countPublishedBlogPosts(ctx, tenantID)
+// BUG-011: accepts the same §24 filters as ListPublishedBlogPosts.
+func (s *Service) CountPublishedBlogPosts(ctx context.Context, f BlogListFilter) (int64, error) {
+	return s.store.countPublishedBlogPosts(ctx, f)
 }
 
 // ListPendingReviewSummaries returns joined review-queue rows with post

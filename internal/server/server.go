@@ -1100,6 +1100,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	wikiService := wiki.NewService(wikiStore, settingsService)
 	wikiService.SetFeatureChecker(featureChecker)
 	wikiHandlers := wiki.NewHandlers(wikiService, settingsService)
+
+	// Register wiki seed-stub-pages processor for the worker's
+	// wiki:seed_stub_pages task (§80, ADR-088). Auto-seeds the 7 default
+	// wiki sub-pages for a Country Space when wiki.enabled is activated.
+	worker.RegisterWikiSeedStubPagesProcessor(wiki.NewWorkerAdapter(wikiService))
 	// B4/B5: wire the reputation (points) checker and RBAC resolver so the
 	// wiki.edit submission gate can enforce wiki.min_reputation_to_edit and
 	// wiki.community_edits (§80 business-logic gates).
@@ -1133,7 +1138,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	// Ref: japaconnect-engineering/sections/83-visa-timeline-tracker.md (ADR-091)
 	visaTimelineStore := visatimeline.NewStore(database)
-	visaTimelineService := visatimeline.NewService(visaTimelineStore, settingsService)
+	visaTimelineService := visatimeline.NewService(visaTimelineStore, settingsService).
+		WithNotifier(notificationService)
 	visaTimelineHandlers := visatimeline.NewHandlers(visaTimelineService, settingsService)
 	// Wire the wallet service for the anti-gaming reputation gate on shared
 	// timelines (§83: contribute to aggregate requires reputation ≥
@@ -1359,6 +1365,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Page Builder subsystem (Section 16 — Page Builder admin CRUD).
 	pagebuilderService := pagebuilder.NewService(database)
 	pagebuilderService.SetRedis(vkClient.Redis())
+	pagebuilderService.SetSettings(settingsService) // Rule 3: page.cache_ttl_secs
 	pagebuilderHandlers := pagebuilder.NewHandlers(pagebuilderService)
 
 	// Widget configurations subsystem (Section 16 — data-source-driven dynamic
@@ -1846,6 +1853,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// opt-out) trigger a search:index_entity task to sync the user's
 	// document in the Meilisearch users index (§13/§19).
 	usersService.SetEnqueuer(taskEnqueuer)
+	// Wire auth settings so UpdateAccount reads the username change cooldown
+	// (users.username_cooldown_days) from system_settings instead of a
+	// hardcoded constant (BUG-005, Rule 3).
+	usersService.SetAuthSettings(settingsService)
 	usersHandlers := users.NewHandlers(usersService, contentService)
 	// Wire the RBAC resolver so GetMyContent can fall back to a
 	// tenant-scoped (non-author-scoped) fetch for super-admins and users
@@ -2790,6 +2801,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			wsDMStore := websocket.NewDMStore(gen.New(database.Reader), gen.New(database.Writer))
 			wsDMService := websocket.NewDMService(wsDMStore, wsHub)
 			wsDMService.AsynqClient = asynqClient
+			wsDMService.SetValkeyClient(vkClient)
 			// Wire DM store into mentorship service for auto-opening DM
 			// threads when a mentorship connection is accepted (§102, ADR-110).
 			mentorshipService.SetDMCreator(wsDMStore)
@@ -3405,8 +3417,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Patch("/admin/wallet/rules/{id}/toggle", walletHandlers.ToggleRule)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wallet.admin.rules.manage")).
 					Delete("/admin/wallet/rules/{id}", walletHandlers.DeleteRule)
-				// Admin adjustments
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wallet.admin.adjust")).
+				// Admin adjustments — idempotency middleware prevents duplicate
+				// adjustments on client retry (Rule 9, BUG-W-006).
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wallet.admin.adjust"),
+					mw.IdempotencyMiddleware(vkClient.Redis(), settingsService)).
 					Post("/admin/wallet/adjust", walletHandlers.AdminAdjust)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wallet.admin.adjust")).
 					Get("/admin/wallet/user/{userId}/balance", walletHandlers.AdminGetUserBalance)
@@ -3539,7 +3553,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Get("/admin/tickets/{id}/events", ticketHandlers.GetTicketEvents)
 				// Catalog: /admin/tickets/:id/comments accepts { body, is_internal }
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tickets.comment.internal")).
-					Post("/admin/tickets/{id}/comments", ticketHandlers.AddInternalNote)
+					Post("/admin/tickets/{id}/comments", ticketHandlers.AddComment)
 				// Delete ticket (admin, spam/test only)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tickets.admin")).
 					Delete("/admin/tickets/{id}", ticketHandlers.DeleteTicket)
@@ -4112,8 +4126,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "integrations.webhooks.manage")).
 				Post("/admin/webhooks/{id}/deliveries/{delivery_id}/retry", webhookHandlers.RetryDelivery)
 
-			// Webhook event types (public — for frontend webhook configuration)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).
+			// Webhook event types — §12 admin-only management. Gated by
+			// integrations.webhooks.manage so only admins can see the event
+			// taxonomy (BUG-003: previously behind RequireAuth only, exposing
+			// the catalog to any authenticated user).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "integrations.webhooks.manage")).
 				Get("/webhook-events", webhookHandlers.ListWebhookEvents)
 
 			// Newsletter admin routes (Section 33 — Newsletter)
@@ -4662,6 +4679,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				r.Use(auth.RequireAuth(kr, vkClient.Redis()))
 				r.Use(rbac.RequirePermission(rbacResolver, "widgets.manage"))
 				r.Get("/admin/widgets", widgetHandlers.ListWidgets)
+				r.Get("/admin/widgets/{id}", widgetHandlers.GetWidget)
 				r.Post("/admin/widgets", widgetHandlers.CreateWidget)
 				r.Patch("/admin/widgets/{id}", widgetHandlers.UpdateWidget)
 				r.Delete("/admin/widgets/{id}", widgetHandlers.DeleteWidget)
@@ -5298,7 +5316,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Section 80 — Destination Wiki (ADR-088)
 			// Feature-flagged via features.Gate (returns 404 when disabled, ADR-042).
 			r.With(features.Gate(featureChecker, "wiki.enabled")).Group(func(r chi.Router) {
-				// Public browse (anonymous): wiki index + single page + history.
+				// Public browse (anonymous): wiki categories + index + single page + history.
+				r.Get("/wiki/categories", wikiHandlers.HandleGetCategories)
 				r.Get("/wiki/{space_slug}", wikiHandlers.HandleGetIndex)
 				r.Get("/wiki/{space_slug}/{page_slug}", wikiHandlers.HandleGetPage)
 				r.Get("/wiki/{space_slug}/{page_slug}/history", wikiHandlers.HandleGetHistory)
@@ -5702,23 +5721,26 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// The internal service.Enabled() checks remain as a secondary defense.
 
 			// §90 — Visa Route Comparison (ADR-098)
+			// Public routes are feature-flagged (404 when disabled, ADR-042).
+			// Admin CRUD routes are NOT gated by the public feature flag so
+			// admins can populate route data before enabling the public tool.
 			r.With(features.Gate(featureChecker, "visa_routes.enabled")).Group(func(r chi.Router) {
 				r.Get("/visa-routes", visaRoutesHandlers.HandleList)
 				r.Get("/visa-routes/compare", visaRoutesHandlers.HandleCompare)
 				r.Get("/visa-routes/{id}", visaRoutesHandlers.HandleGet)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "visa_routes.manage")).
-					Get("/admin/visa-routes", visaRoutesHandlers.HandleAdminList)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "visa_routes.manage")).
-					Post("/admin/visa-routes", visaRoutesHandlers.HandleAdminCreate)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "visa_routes.manage")).
-					Post("/admin/visa-routes/generate", visaRoutesHandlers.HandleAdminGenerate)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "visa_routes.manage")).
-					Patch("/admin/visa-routes/{id}", visaRoutesHandlers.HandleAdminUpdate)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "visa_routes.manage")).
-					Patch("/admin/visa-routes/{id}/approve", visaRoutesHandlers.HandleAdminApprove)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "visa_routes.manage")).
-					Delete("/admin/visa-routes/{id}", visaRoutesHandlers.HandleAdminDelete)
 			})
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "visa_routes.manage")).
+				Get("/admin/visa-routes", visaRoutesHandlers.HandleAdminList)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "visa_routes.manage")).
+				Post("/admin/visa-routes", visaRoutesHandlers.HandleAdminCreate)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "visa_routes.manage")).
+				Post("/admin/visa-routes/generate", visaRoutesHandlers.HandleAdminGenerate)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "visa_routes.manage")).
+				Patch("/admin/visa-routes/{id}", visaRoutesHandlers.HandleAdminUpdate)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "visa_routes.manage")).
+				Patch("/admin/visa-routes/{id}/approve", visaRoutesHandlers.HandleAdminApprove)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "visa_routes.manage")).
+				Delete("/admin/visa-routes/{id}", visaRoutesHandlers.HandleAdminDelete)
 
 			// §91 — Embassy Appointment Alerter (ADR-099)
 			r.With(features.Gate(featureChecker, "appointment_alert.enabled")).Group(func(r chi.Router) {
@@ -6640,8 +6662,9 @@ type mutualAidDMAdapter struct {
 func (a *mutualAidDMAdapter) GetOrCreateConversationForInitiator(
 	ctx context.Context,
 	tenantID, initiatorID, recipientID pgtype.UUID,
+	previewMessage string,
 ) (mutualaid.DMConversationResult, error) {
-	result, err := a.dm.GetOrCreateConversationForInitiator(ctx, tenantID, initiatorID, recipientID)
+	result, err := a.dm.GetOrCreateConversationForInitiator(ctx, tenantID, initiatorID, recipientID, previewMessage)
 	if err != nil {
 		return mutualaid.DMConversationResult{}, err
 	}

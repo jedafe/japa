@@ -63,7 +63,7 @@ JOIN trending_snapshots ts ON ts.entity_id = c.id
     AND ts.entity_type = 'content'
     AND ts."window" = $2
     AND ts.expires_at > now()
-    AND ($3::text IS NULL OR ts.geo_code = $3)
+    AND ($3::text IS NULL OR $3::text = '' OR ts.geo_code = $3)
 LEFT JOIN content_scores cs ON cs.content_id = c.id
 WHERE c.tenant_id = $1
   AND c.status = 'published'
@@ -216,9 +216,12 @@ FROM tags t
 JOIN contents c ON c.tenant_id = t.tenant_id AND c.id IN (
     SELECT ct.content_id FROM content_tags ct
     JOIN contents c2 ON c2.id = ct.content_id AND c2.author_id = $1 AND c2.tenant_id = $2
+        AND c2.deleted_at IS NULL AND c2.status = 'published'
 )
 LEFT JOIN spaces sp ON sp.id = c.geo_space_id
 WHERE t.tenant_id = $2
+  AND c.deleted_at IS NULL
+  AND c.status = 'published'
 AND NOT EXISTS (
     SELECT 1 FROM follows f
     WHERE f.follower_id = $1 AND f.entity_type = 'tag' AND f.entity_id = t.id AND f.tenant_id = $2
@@ -282,10 +285,11 @@ SELECT DISTINCT u.id, u.username, up.display_name, up.avatar_url, up.bio,
 FROM users u
 JOIN space_members sm ON sm.user_id = $1 AND sm.tenant_id = $2
 JOIN space_members sm2 ON sm2.space_id = sm.space_id AND sm2.user_id = u.id AND sm2.tenant_id = $2
-LEFT JOIN spaces sp ON sp.id = sm2.space_id AND sp.tenant_id = $2
+LEFT JOIN spaces sp ON sp.id = sm2.space_id AND sp.tenant_id = $2 AND sp.deleted_at IS NULL
 LEFT JOIN user_profiles up ON up.user_id = u.id AND up.tenant_id = $2
 WHERE u.id != $1
   AND u.tenant_id = $2
+  AND u.status = 'active'
   AND NOT EXISTS (
       SELECT 1 FROM follows f
       WHERE f.follower_id = $1 AND f.entity_type = 'user' AND f.entity_id = u.id AND f.tenant_id = $2
@@ -431,6 +435,7 @@ WHERE ts.tenant_id = $1
   AND ($3::text IS NULL OR $3::text = '' OR ts.geo_code = $3)
   AND c.status = 'published'
   AND c.visibility = 'public'
+  AND c.deleted_at IS NULL
 ORDER BY ts.score DESC
 LIMIT $4
 `
@@ -552,6 +557,7 @@ WHERE ts.tenant_id = $1
   AND ts."window" = $2
   AND ts.expires_at > now()
   AND ($3::text IS NULL OR $3::text = '' OR ts.geo_code = $3)
+  AND s.deleted_at IS NULL
 ORDER BY ts.score DESC
 LIMIT $4
 `
@@ -695,6 +701,7 @@ WHERE ts.tenant_id = $1
   AND ts."window" = $2
   AND ts.expires_at > now()
   AND ($3::text IS NULL OR $3::text = '' OR ts.geo_code = $3)
+  AND u.status = 'active'
 ORDER BY ts.score DESC
 LIMIT $4
 `

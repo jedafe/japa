@@ -56,6 +56,10 @@ RETURNING id, tenant_id, name, slug, description, field_group_id, default_priori
 DELETE FROM ticket_types
 WHERE id = @id AND tenant_id = @tenant_id;
 
+-- name: CountTicketsByType :one
+SELECT COUNT(*) FROM tickets
+WHERE type_id = @type_id AND tenant_id = @tenant_id;
+
 -- =====================
 -- Tickets CRUD
 -- =====================
@@ -112,6 +116,7 @@ SELECT t.id, t.tenant_id, t.type_id, t.subject, t.description, t.status, t.prior
 FROM tickets t
 JOIN ticket_types tt ON tt.id = t.type_id
 WHERE t.tenant_id = @tenant_id AND t.submitter_user_id = @submitter_user_id
+    AND (sqlc.narg(status)::text IS NULL OR t.status = sqlc.narg(status))
 ORDER BY t.created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
@@ -268,7 +273,7 @@ SET sla_breach_at = now(), updated_at = now()
 WHERE id = @id AND sla_breach_at IS NULL AND status NOT IN ('resolved', 'closed', 'spam');
 
 -- name: ListSLABreachedTickets :many
-SELECT id, subject, sla_breach_at
+SELECT id, subject, sla_breach_at, assigned_to, tenant_id
 FROM tickets
 WHERE tenant_id = @tenant_id
   AND sla_breach_at IS NOT NULL

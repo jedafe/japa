@@ -177,7 +177,7 @@ func (s *Service) Submit(ctx context.Context, tenantID, authorID pgtype.UUID, in
 		ContentType: content.TypeStory,
 		Title:       input.Title,
 		Body:        input.Body,
-		Status:      content.StatusPending, // submit directly into moderation queue per §79
+		Status:      content.StatusInReview, // submit directly into moderation queue per §79
 		Visibility:  content.VisibilityPublic,
 		GeoSpaceID:  destSpaceID, // file story in destination country space
 	})

@@ -68,6 +68,15 @@ func (s *Service) ProcessActivityEvent(ctx context.Context, eventID, tenantID pg
 		return fmt.Errorf("getting activity event: %w", err)
 	}
 
+	// BUG-W-001: skip already-processed events. Asynq retries the task if the
+	// worker crashes after committing the ledger entry but before acking. The
+	// ledger idempotency key would catch a duplicate insert, but as a unique-
+	// constraint error that re-fails the task and creates a poison-pill retry
+	// loop. Checking the processed flag turns a retry into a clean no-op.
+	if event.Processed != nil && *event.Processed {
+		return nil
+	}
+
 	// Get the activity rule
 	rule, err := s.store.getActivityRuleByKey(ctx, tenantID, event.ActivityKey)
 	if err != nil {
@@ -254,6 +263,15 @@ func (s *Service) GetBalance(ctx context.Context, tenantID, userID pgtype.UUID) 
 	}
 
 	return points, credits, nil
+}
+
+// GetLifetimePoints returns the total positive points ever earned by a user
+// (never decreases — used for badges/tiers per Section 28). BUG-W-003.
+func (s *Service) GetLifetimePoints(ctx context.Context, tenantID, userID pgtype.UUID) (int64, error) {
+	return s.store.read.GetLifetimePoints(ctx, gen.GetLifetimePointsParams{
+		TenantID: tenantID,
+		UserID:   userID,
+	})
 }
 
 // GetPointsBalance returns only the Points balance for a user. Used by the

@@ -86,6 +86,37 @@ func (d *Dispatcher) RegisteredModels() []Model {
 	return models
 }
 
+// RegisteredModelsByCategory returns the union of models exposed by every
+// provider registered for the given category (e.g. "embedding"). Used by the
+// RAG embedding-model picker so only embedding-capable models are offered
+// (Rule 16: derived from registered providers, not hardcoded).
+func (d *Dispatcher) RegisteredModelsByCategory(category string) []Model {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	providers, ok := d.providersByCategory[category]
+	if !ok {
+		return nil
+	}
+
+	seen := make(map[string]struct{})
+	var models []Model
+	for _, p := range providers {
+		for _, mi := range p.Models() {
+			if mi.ID == "" {
+				continue
+			}
+			if _, ok := seen[mi.ID]; ok {
+				continue
+			}
+			seen[mi.ID] = struct{}{}
+			models = append(models, Model{ID: mi.ID, Label: mi.Label})
+		}
+	}
+
+	return models
+}
+
 // RegisteredCategories returns the categories that have at least one provider
 // wired at startup. Used by HandleListCategories so the list reflects the
 // actual gateway configuration (Rule 16: no hardcoded data).

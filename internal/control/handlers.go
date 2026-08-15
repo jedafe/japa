@@ -434,6 +434,15 @@ func (h *Handlers) UpdateSystemSettings(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	for key, value := range input {
+		// Validate the value against the catalog (type + min/max bounds).
+		// The frontend sends values as strings; for non-string types we
+		// validate the string representation before persisting.
+		if s, ok := value.(string); ok {
+			if verr := validateSettingValue(key, s); verr != nil {
+				errpkg.WriteError(w, http.StatusBadRequest, "invalid_setting_value", verr.Error())
+				return
+			}
+		}
 		// The system_settings.value column is jsonb, so every value must be
 		// valid JSON. json.Marshal produces the canonical encoding for each
 		// Go type: strings get wrapped in quotes ("3"), booleans become true,
@@ -500,6 +509,13 @@ func (h *Handlers) UpdateSystemSetting(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
+	}
+	// Validate the value against the catalog (type + min/max bounds).
+	if s, ok := input.Value.(string); ok {
+		if verr := validateSettingValue(key, s); verr != nil {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_setting_value", verr.Error())
+			return
+		}
 	}
 	// The value column is jsonb — json.Marshal produces the correct JSON
 	// encoding for each type (strings quoted, booleans bare, etc.).
@@ -2234,6 +2250,19 @@ func (h *Handlers) ListAuditLogs(w http.ResponseWriter, r *http.Request) {
 		where += " AND al.impersonated_user_id IS NOT NULL"
 	}
 
+	// Count the total matching rows (same WHERE, no LIMIT/OFFSET) so the
+	// control panel can render correct pagination. The count uses the filter
+	// args built above; the pagination args are appended only for the SELECT.
+	countQuery := fmt.Sprintf(`SELECT count(*) FROM audit_logs al
+		LEFT JOIN users u ON u.id = al.actor_user_id
+		WHERE 1=1%s`, where)
+	var total int64
+	if err := h.DB.Reader.QueryRow(r.Context(), countQuery, args...).Scan(&total); err != nil {
+		slog.Error("control: count audit logs", "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to count audit logs")
+		return
+	}
+
 	query := fmt.Sprintf(`SELECT al.id, al.created_at, al.actor_user_id, u.username,
 		al.action_type, al.target_type, al.target_id::text, al.tenant_id,
 		al.ip_address::text, al.impersonated_user_id::text, al.metadata
@@ -2270,7 +2299,22 @@ func (h *Handlers) ListAuditLogs(w http.ResponseWriter, r *http.Request) {
 	if logs == nil {
 		logs = []auditLog{}
 	}
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": logs})
+	totalPages := int(total) / perPage
+	if int(total)%perPage > 0 {
+		totalPages++
+	}
+	if totalPages < 1 {
+		totalPages = 1
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
+		"data": map[string]any{
+			"data":        logs,
+			"total":       total,
+			"page":        page,
+			"per_page":    perPage,
+			"total_pages": totalPages,
+		},
+	})
 }
 
 // auditLogDefaultRetentionDays is the fallback retention window for an

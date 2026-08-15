@@ -65,11 +65,36 @@ WHERE c.tenant_id = $1
   AND c.status = 'published'
   AND c.deleted_at IS NULL
   AND c.auto_hidden = false
+  AND ($2::uuid IS NULL OR c.space_id = $2)
+  AND ($3::uuid IS NULL OR c.author_id = $3)
+  AND ($4::uuid IS NULL OR EXISTS (
+      SELECT 1 FROM blog_series_posts bsp
+      WHERE bsp.content_id = c.id AND bsp.series_id = $4))
+  AND ($5::text IS NULL OR EXISTS (
+      SELECT 1 FROM content_tags ct2
+      JOIN tags t2 ON t2.id = ct2.tag_id
+      WHERE ct2.content_id = c.id AND t2.slug = $5))
 `
 
+type CountPublishedBlogPostsParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	SpaceID  pgtype.UUID `json:"space_id"`
+	AuthorID pgtype.UUID `json:"author_id"`
+	SeriesID pgtype.UUID `json:"series_id"`
+	Tag      *string     `json:"tag"`
+}
+
 // Returns the total number of published blog posts for pagination meta.
-func (q *Queries) CountPublishedBlogPosts(ctx context.Context, tenantID pgtype.UUID) (int64, error) {
-	row := q.db.QueryRow(ctx, countPublishedBlogPosts, tenantID)
+// BUG-011: accepts the same §24 filters as ListPublishedBlogPosts so the
+// pagination total reflects the active filter set.
+func (q *Queries) CountPublishedBlogPosts(ctx context.Context, arg CountPublishedBlogPostsParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countPublishedBlogPosts,
+		arg.TenantID,
+		arg.SpaceID,
+		arg.AuthorID,
+		arg.SeriesID,
+		arg.Tag,
+	)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -1248,12 +1273,29 @@ WHERE c.tenant_id = $1
   AND c.status = 'published'
   AND c.deleted_at IS NULL
   AND c.auto_hidden = false
-ORDER BY c.created_at DESC, c.id DESC
-LIMIT $3 OFFSET $2
+  AND ($2::uuid IS NULL OR c.space_id = $2)
+  AND ($3::uuid IS NULL OR c.author_id = $3)
+  AND ($4::uuid IS NULL OR EXISTS (
+      SELECT 1 FROM blog_series_posts bsp
+      WHERE bsp.content_id = c.id AND bsp.series_id = $4))
+  AND ($5::text IS NULL OR EXISTS (
+      SELECT 1 FROM content_tags ct2
+      JOIN tags t2 ON t2.id = ct2.tag_id
+      WHERE ct2.content_id = c.id AND t2.slug = $5))
+ORDER BY
+    CASE WHEN $6::text = 'top' THEN c.view_count END DESC,
+    CASE WHEN $6::text = 'top' THEN c.reshare_count END DESC,
+    c.created_at DESC, c.id DESC
+LIMIT $8 OFFSET $7
 `
 
 type ListPublishedBlogPostsParams struct {
 	TenantID   pgtype.UUID `json:"tenant_id"`
+	SpaceID    pgtype.UUID `json:"space_id"`
+	AuthorID   pgtype.UUID `json:"author_id"`
+	SeriesID   pgtype.UUID `json:"series_id"`
+	Tag        *string     `json:"tag"`
+	Sort       string      `json:"sort"`
 	PageOffset int32       `json:"page_offset"`
 	PageLimit  int32       `json:"page_limit"`
 }
@@ -1300,8 +1342,20 @@ type ListPublishedBlogPostsRow struct {
 // C5/H3: published-only blog post cards with author + featured image,
 // status filter in SQL (not Go memory), deleted_at filtered.
 // BUG-005: offset-based pagination per Rule 5 (?page_size=N&page_offset=N).
+// BUG-011: §24-mandated filters — ?space_id, ?tag (slug), ?series_id,
+// ?sort=latest|top, ?author_id. sort=featured is handled by the separate
+// /blog/featured endpoint. All filters are optional (NULL = no filter).
 func (q *Queries) ListPublishedBlogPosts(ctx context.Context, arg ListPublishedBlogPostsParams) ([]ListPublishedBlogPostsRow, error) {
-	rows, err := q.db.Query(ctx, listPublishedBlogPosts, arg.TenantID, arg.PageOffset, arg.PageLimit)
+	rows, err := q.db.Query(ctx, listPublishedBlogPosts,
+		arg.TenantID,
+		arg.SpaceID,
+		arg.AuthorID,
+		arg.SeriesID,
+		arg.Tag,
+		arg.Sort,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
 	if err != nil {
 		return nil, err
 	}

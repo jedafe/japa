@@ -13,10 +13,18 @@ import (
 	"github.com/valkey-io/valkey-go/valkeycompat"
 )
 
+// settingsReader is the subset of *config.Settings used by the pagebuilder
+// service for hot-reloadable operational limits (page cache TTL). Defined as
+// an interface so tests can substitute a stub (Rule 3).
+type settingsReader interface {
+	GetIntOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback int) int
+}
+
 // Service provides pagebuilder business logic with reader/writer pool separation.
 type Service struct {
-	store *Store
-	redis valkeycompat.Cmdable
+	store    *Store
+	redis    valkeycompat.Cmdable
+	settings settingsReader
 }
 
 // NewService creates a Service backed by the given database pool.
@@ -29,6 +37,13 @@ func NewService(database *db.DB) *Service {
 // the published-page cache (jc:page:{tenant_id}:{slug}).
 func (s *Service) SetRedis(r valkeycompat.Cmdable) {
 	s.redis = r
+}
+
+// SetSettings wires the hot-reloadable settings reader. Optional — when
+// not called, the service falls back to hardcoded defaults for any
+// setting-governed limit (Rule 3).
+func (s *Service) SetSettings(sr settingsReader) {
+	s.settings = sr
 }
 
 // validationError wraps a human-readable validation message with the
@@ -229,10 +244,18 @@ func (s *Service) GetPageBySlug(ctx context.Context, slug string, tenantID pgtyp
 		return Page{}, err
 	}
 
-	// Cache the published page.
+	// Cache the published page. TTL comes from the page.cache_ttl_secs
+	// system setting (default 300s) per Rule 3 / valkey-keys-catalog.md.
 	if s.redis != nil {
 		if serialized, err := json.Marshal(p); err == nil {
-			_ = s.redis.Set(ctx, cacheKey, string(serialized), 300*time.Second)
+			ttlSecs := 300
+			if s.settings != nil {
+				ttlSecs = s.settings.GetIntOr(ctx, tenantID, "page.cache_ttl_secs", 300)
+			}
+			if ttlSecs <= 0 {
+				ttlSecs = 300
+			}
+			_ = s.redis.Set(ctx, cacheKey, string(serialized), time.Duration(ttlSecs)*time.Second)
 		}
 	}
 

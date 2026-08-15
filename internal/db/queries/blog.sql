@@ -363,6 +363,9 @@ LIMIT @page_limit OFFSET @page_offset;
 -- C5/H3: published-only blog post cards with author + featured image,
 -- status filter in SQL (not Go memory), deleted_at filtered.
 -- BUG-005: offset-based pagination per Rule 5 (?page_size=N&page_offset=N).
+-- BUG-011: §24-mandated filters — ?space_id, ?tag (slug), ?series_id,
+-- ?sort=latest|top, ?author_id. sort=featured is handled by the separate
+-- /blog/featured endpoint. All filters are optional (NULL = no filter).
 SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type,
        c.title, c.slug, c.body, c.body_html, c.field_values, c.content_hash,
        c.geo_space_id, c.header_image_id, c.featured_image_id,
@@ -386,17 +389,40 @@ WHERE c.tenant_id = @tenant_id
   AND c.status = 'published'
   AND c.deleted_at IS NULL
   AND c.auto_hidden = false
-ORDER BY c.created_at DESC, c.id DESC
+  AND (sqlc.narg(space_id)::uuid IS NULL OR c.space_id = sqlc.narg(space_id))
+  AND (sqlc.narg(author_id)::uuid IS NULL OR c.author_id = sqlc.narg(author_id))
+  AND (sqlc.narg(series_id)::uuid IS NULL OR EXISTS (
+      SELECT 1 FROM blog_series_posts bsp
+      WHERE bsp.content_id = c.id AND bsp.series_id = sqlc.narg(series_id)))
+  AND (sqlc.narg(tag)::text IS NULL OR EXISTS (
+      SELECT 1 FROM content_tags ct2
+      JOIN tags t2 ON t2.id = ct2.tag_id
+      WHERE ct2.content_id = c.id AND t2.slug = sqlc.narg(tag)))
+ORDER BY
+    CASE WHEN @sort::text = 'top' THEN c.view_count END DESC,
+    CASE WHEN @sort::text = 'top' THEN c.reshare_count END DESC,
+    c.created_at DESC, c.id DESC
 LIMIT @page_limit OFFSET @page_offset;
 
 -- name: CountPublishedBlogPosts :one
 -- Returns the total number of published blog posts for pagination meta.
+-- BUG-011: accepts the same §24 filters as ListPublishedBlogPosts so the
+-- pagination total reflects the active filter set.
 SELECT COUNT(*) FROM contents c
 WHERE c.tenant_id = @tenant_id
   AND c.content_type = 'blog_post'
   AND c.status = 'published'
   AND c.deleted_at IS NULL
-  AND c.auto_hidden = false;
+  AND c.auto_hidden = false
+  AND (sqlc.narg(space_id)::uuid IS NULL OR c.space_id = sqlc.narg(space_id))
+  AND (sqlc.narg(author_id)::uuid IS NULL OR c.author_id = sqlc.narg(author_id))
+  AND (sqlc.narg(series_id)::uuid IS NULL OR EXISTS (
+      SELECT 1 FROM blog_series_posts bsp
+      WHERE bsp.content_id = c.id AND bsp.series_id = sqlc.narg(series_id)))
+  AND (sqlc.narg(tag)::text IS NULL OR EXISTS (
+      SELECT 1 FROM content_tags ct2
+      JOIN tags t2 ON t2.id = ct2.tag_id
+      WHERE ct2.content_id = c.id AND t2.slug = sqlc.narg(tag)));
 
 -- =====================
 -- RSS Feed Queries

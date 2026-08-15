@@ -62,13 +62,16 @@ func (s *Store) GetActiveProvider(ctx context.Context, tenantID pgtype.UUID, pro
 	})
 }
 
-// ListProviders lists travel providers for a tenant, optionally filtering to
-// active only and/or by provider type.
-func (s *Store) ListProviders(ctx context.Context, tenantID pgtype.UUID, activeOnly bool, providerType string) ([]gen.TravelProvider, error) {
+// ListProviders lists travel providers for a tenant with optional search and
+// filters. isActiveFilter is tri-state: "true" = only active, "false" = only
+// inactive, "" = all. q is an ILIKE search on name/slug (empty = no filter).
+// providerType filters by exact type (empty = all).
+func (s *Store) ListProviders(ctx context.Context, tenantID pgtype.UUID, isActiveFilter, providerType, q string) ([]gen.TravelProvider, error) {
 	rows, err := s.queries.ListTravelProviders(ctx, gen.ListTravelProvidersParams{
-		TenantID:     tenantID,
-		ActiveOnly:   activeOnly,
-		ProviderType: providerType,
+		TenantID:       tenantID,
+		IsActiveFilter: isActiveFilter,
+		ProviderType:   providerType,
+		Q:              q,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("travel: list providers: %w", err)

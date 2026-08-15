@@ -5,14 +5,14 @@
 	import RightSidebar from './RightSidebar.svelte';
 	import ComposeModal from './ComposeModal.svelte';
 	import { t } from '$lib/i18n';
-	import type { Menu, SessionUser, TagSuggestion, SpaceSuggestion, UserSpaceRef } from '$lib/types';
+	import type { Menu, SessionUser, TrendingTag, SpaceSuggestion, UserSpaceRef } from '$lib/types';
 
 	interface Props {
 		menu: Menu | null;
 		user: SessionUser | null;
 		collapsed: boolean;
 		onToggleCollapse: () => void;
-		trendingTags?: TagSuggestion[];
+		trendingTags?: TrendingTag[];
 		suggestedSpaces?: SpaceSuggestion[];
 		userSpaces?: UserSpaceRef[];
 		/** Platform logo URL from appearance.logo_url (control panel). */

@@ -329,22 +329,15 @@ func (s *Service) ListContentTypes(ctx context.Context, tenantID pgtype.UUID) Co
 		{Type: "doc_page", Label: "Documentation Page", CanAutoPublish: false},
 	}
 
-	// Filter by auto_publish_types setting.
-	autoPublishCSV := ""
+	// CanAutoPublish reflects the static capability (which types are eligible
+	// to skip review). It is NOT modified by the current studio.auto_publish_types
+	// setting value — that would create a chicken-and-egg problem where the
+	// settings page's option list shrinks as the user selects items. The
+	// runtime auto-publish decision is made by ShouldAutoPublish, which checks
+	// the setting at generation time.
 	defaultPersonaID := ""
 	if s.settings != nil {
-		autoPublishCSV, _ = s.settings.GetSetting(ctx, tenantID, "studio.auto_publish_types")
 		defaultPersonaID, _ = s.settings.GetSetting(ctx, tenantID, "studio.default_persona_id")
-	}
-	autoPublishMap := parseCSV(autoPublishCSV)
-	for i := range types {
-		if !types[i].CanAutoPublish {
-			continue
-		}
-		// Only keep auto-publish if it's in the configured list.
-		if len(autoPublishMap) > 0 && !autoPublishMap[types[i].Type] {
-			types[i].CanAutoPublish = false
-		}
 	}
 
 	return ContentTypeResponse{

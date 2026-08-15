@@ -29,6 +29,13 @@ WHERE tenant_id = @tenant_id AND user_id = @user_id AND ledger_type = @ledger_ty
 ORDER BY created_at DESC, id DESC
 LIMIT 1;
 
+-- name: GetLifetimePoints :one
+-- Sum of all positive points earns (never decreases; used for badges/tiers,
+-- Section 28). BUG-W-003: surfaced in GET /me/wallet response.
+SELECT COALESCE(SUM(amount), 0)::bigint FROM wallet_ledger
+WHERE tenant_id = @tenant_id AND user_id = @user_id
+  AND ledger_type = 'points' AND amount > 0;
+
 -- name: CheckIdempotencyKey :one
 SELECT EXISTS(
     SELECT 1 FROM wallet_ledger

@@ -115,6 +115,11 @@ func (s *Store) deleteTicketType(ctx context.Context, id, tenantID pgtype.UUID) 
 	return nil
 }
 
+// countTicketsByType returns the number of tickets using the given type.
+func (s *Store) countTicketsByType(ctx context.Context, typeID, tenantID pgtype.UUID) (int64, error) {
+	return s.read.CountTicketsByType(ctx, gen.CountTicketsByTypeParams{TypeID: typeID, TenantID: tenantID})
+}
+
 // ---------------------------------------------------------------------------
 // Tickets
 // ---------------------------------------------------------------------------

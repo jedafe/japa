@@ -531,8 +531,20 @@ type AdminListFilter struct {
 	VisaCategory       string      // optional
 	Outcome            string      // optional
 	Q                  string      // optional: search visa_category/consulate
+	Sort               string      // optional: sort column (created_at|updated_at|visa_category|outcome)
+	Order              string      // optional: asc|desc (default desc)
 	Limit              int32
 	Offset             int32
+}
+
+// adminListSortColumns is the whitelist of columns the admin list may sort
+// by (geo-aware tool pattern: "all admin tables must have filter + sort +
+// paginate"). The column key maps to the SQL expression used in ORDER BY.
+var adminListSortColumns = map[string]string{
+	"created_at":    "t.created_at",
+	"updated_at":    "t.updated_at",
+	"visa_category": "t.visa_category",
+	"outcome":       "t.outcome",
 }
 
 // AdminList returns all timelines (any share state) for the moderation queue.
@@ -589,6 +601,18 @@ func (s *Store) AdminList(ctx context.Context, f AdminListFilter) ([]Timeline, i
 		offset = 0
 	}
 
+	// Resolve the sort column from the whitelist (geo-aware tool pattern:
+	// "all admin tables must have filter + sort + paginate"). Default is
+	// created_at DESC. The order direction is clamped to asc/desc.
+	sortExpr := "t.created_at"
+	if col, ok := adminListSortColumns[f.Sort]; ok {
+		sortExpr = col
+	}
+	orderDir := "DESC"
+	if strings.EqualFold(f.Order, "asc") {
+		orderDir = "ASC"
+	}
+
 	listQ := fmt.Sprintf(`
 SELECT t.id, t.tenant_id, t.user_id, t.origin_space_id, t.destination_space_id,
        t.visa_category, t.consulate, t.application_method, t.outcome, t.is_shared,
@@ -609,9 +633,9 @@ LEFT JOIN LATERAL (
     WHERE m.timeline_id = t.id
 ) ms ON TRUE
 WHERE %s
-ORDER BY t.created_at DESC
+ORDER BY %s %s
 LIMIT $%d OFFSET $%d
-`, whereClause, argIdx, argIdx+1)
+`, whereClause, sortExpr, orderDir, argIdx, argIdx+1)
 	args = append(args, limit, offset)
 
 	rows, err := s.pool.Reader.Query(ctx, listQ, args...)
@@ -800,6 +824,25 @@ func (s *Store) UserAccountAge(ctx context.Context, tenantID, userID pgtype.UUID
 		return pgtype.Timestamptz{}, fmt.Errorf("visatimeline: user account age: %w", err)
 	}
 	return ts, nil
+}
+
+// FlagImplausibleSequence records an audit_logs entry when a member
+// attempts to add a milestone that violates the canonical chronological
+// order (§83 Privacy & Anti-Gaming: "Implausible milestone sequences flagged
+// automatically and held for moderator review"). The milestone is rejected
+// (not stored), and this audit row lets moderators review flagged attempts.
+// Ref: japaconnect-engineering/sections/83-visa-timeline-tracker.md
+func (s *Store) FlagImplausibleSequence(ctx context.Context, tenantID, userID, timelineID pgtype.UUID, milestoneType string, occurredAt pgtype.Timestamptz) error {
+	metadata := fmt.Sprintf(`{"timeline_id":"%s","milestone_type":%q,"occurred_at":"%s"}`,
+		timelineID.String(), milestoneType, occurredAt.Time.UTC().Format(time.RFC3339))
+	targetType := "visa_timeline_milestone"
+	if _, err := s.pool.Writer.Exec(ctx, `
+INSERT INTO audit_logs (tenant_id, actor_user_id, action_type, target_type, target_id, metadata)
+VALUES ($1, $2, $3, $4, $5, $6::jsonb)
+`, tenantID, userID, "visa_timeline.implausible_sequence", targetType, timelineID, metadata); err != nil {
+		return fmt.Errorf("visatimeline: flag implausible sequence: %w", err)
+	}
+	return nil
 }
 
 // decodeMilestonesJSON parses the JSON array produced by the LATERAL

@@ -71,6 +71,17 @@ ON CONFLICT (tenant_id, user_id) DO UPDATE SET
     cover_url = EXCLUDED.cover_url,
     updated_at = now();
 
+-- name: GetUserProfileForUpdate :one
+-- Row-locks the user_profiles row for the read-merge-upsert pattern in
+-- UpdateProfile (BUG-002). The FOR UPDATE lock is held until the
+-- transaction commits or rolls back, preventing concurrent profile edits
+-- from racing on the merge step.
+SELECT id, tenant_id, user_id, display_name, avatar_url, avatar_media_id,
+       header_media_id, bio, timezone, cover_url, created_at, updated_at
+FROM user_profiles
+WHERE tenant_id = @tenant_id AND user_id = @user_id
+FOR UPDATE;
+
 -- name: GetUserProfileID :one
 -- ADR-064a: Returns the user_profiles.id for a given user. Used as the
 -- entity_id when upserting custom field values (entity_type='user_profile').
@@ -83,6 +94,16 @@ WHERE tenant_id = @tenant_id AND user_id = @user_id;
 SELECT id, tenant_id, user_id, dark_mode, language, created_at, updated_at
 FROM user_preferences
 WHERE tenant_id = @tenant_id AND user_id = @user_id;
+
+-- name: GetUserPreferencesForUpdate :one
+-- Row-locks the user_preferences row for the read-merge-upsert pattern in
+-- UpdatePreferences (BUG-003). The FOR UPDATE lock is held until the
+-- transaction commits or rolls back, preventing concurrent preference
+-- edits from racing on the merge step.
+SELECT id, tenant_id, user_id, dark_mode, language, created_at, updated_at
+FROM user_preferences
+WHERE tenant_id = @tenant_id AND user_id = @user_id
+FOR UPDATE;
 
 -- name: UpsertUserPreferences :exec
 INSERT INTO user_preferences (tenant_id, user_id, dark_mode, language)
@@ -149,6 +170,17 @@ SELECT user_id, tenant_id, dm_privacy, profile_visibility, search_indexable,
        show_online_status, show_activity, show_points_publicly, created_at, updated_at
 FROM user_privacy_settings
 WHERE tenant_id = $1 AND user_id = $2;
+
+-- name: GetUserPrivacySettingsForUpdate :one
+-- Row-locks the user_privacy_settings row for the read-merge-upsert pattern
+-- in UpdatePrivacySettings (BUG-004). The FOR UPDATE lock is held until
+-- the transaction commits or rolls back, preventing concurrent privacy
+-- edits from racing on the merge step.
+SELECT user_id, tenant_id, dm_privacy, profile_visibility, search_indexable,
+       show_online_status, show_activity, show_points_publicly, created_at, updated_at
+FROM user_privacy_settings
+WHERE tenant_id = $1 AND user_id = $2
+FOR UPDATE;
 
 -- name: UpsertUserPrivacySettings :exec
 -- Tenant-scoped per Section 04 (BUG-009).
@@ -489,11 +521,16 @@ WHERE id = $2 AND tenant_id = $3;
 -- hierarchy (city → state → country) to extract geo_code and names for
 -- VisitorContext city-level personalization. Returns the city-level space,
 -- its parent (state), and the country-level space's geo_code in one round-trip.
+-- BUG-VIS-002: city_name is only populated when the space is city-level
+-- (CASE WHEN city.level = 'city'). space_name is always the space's name
+-- regardless of level, used by GET /me/location to display the user's
+-- location even when it's a state or country (BUG-VIS-003).
 SELECT
     u.current_geo_space_id,
     city.id AS city_id,
-    city.name AS city_name,
+    CASE WHEN city.level = 'city' THEN city.name END::text AS city_name,
     city.geo_code AS city_geo_code,
+    city.name AS space_name,
     country.id AS country_id,
     country.name AS country_name,
     country.geo_code AS country_geo_code

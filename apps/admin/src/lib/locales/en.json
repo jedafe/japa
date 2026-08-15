@@ -1904,6 +1904,7 @@
 	"jsonld-templates.no_templates_to_preview": "No templates to preview",
 	"jsonld-templates.ph_eg_article": "e.g., Article",
 	"jsonld-templates.placeholder": "{\"@context\": \"https://schema.org\", \"@type\": \"Article\", ...}",
+	"jsonld-templates.select_content_type": "Select a content type",
 	"jsonld-templates.preview": "Preview",
 	"jsonld-templates.refresh": "Refresh",
 	"jsonld-templates.save": "Save Changes",

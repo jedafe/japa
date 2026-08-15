@@ -146,7 +146,7 @@ func (h *Handlers) InitiateConversation(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	result, err := h.dmService.GetOrCreateConversationForInitiator(r.Context(), tenantID, user.UserID, recipientID)
+	result, err := h.dmService.GetOrCreateConversationForInitiator(r.Context(), tenantID, user.UserID, recipientID, req.Message)
 	if err != nil {
 		// Map DM privacy/block sentinel errors to 403 per Section 48.
 		switch {
@@ -498,6 +498,10 @@ func (h *Handlers) EditMessage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.dmService.EditMessage(r.Context(), tenantID, conversationID, messageID, user.UserID, req.Body); err != nil {
+		if errors.Is(err, ErrDMNotSender) {
+			errpkg.WriteError(w, http.StatusForbidden, "not_sender", "Only the sender can edit this message")
+			return
+		}
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to edit message")
 		return
 	}
@@ -535,6 +539,10 @@ func (h *Handlers) DeleteMessage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.dmService.DeleteMessage(r.Context(), tenantID, conversationID, messageID, user.UserID); err != nil {
+		if errors.Is(err, ErrDMNotSender) {
+			errpkg.WriteError(w, http.StatusForbidden, "not_sender", "Only the sender can delete this message")
+			return
+		}
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to delete message")
 		return
 	}

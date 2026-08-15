@@ -3,11 +3,12 @@
 	import DataTable from '$lib/components/DataTable.svelte';
 	import AlertBanner from '$lib/components/ui/AlertBanner.svelte';
 	import ConfirmModal from '$lib/components/ui/ConfirmModal.svelte';
-	import { Dialog, Popover } from 'bits-ui';
+	import WebhookEventMultiSelect from '$lib/components/webhooks/WebhookEventMultiSelect.svelte';
+	import { Dialog } from 'bits-ui';
 	import { api } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { escapeHtml } from '$lib/utils';
-	import { Webhook, Plus, Trash2, TestTube, Pencil, RefreshCw, Send, ChevronDown, Check, Search, X } from 'lucide-svelte';
+	import { Webhook, Plus, Trash2, TestTube, Pencil, RefreshCw, Send } from 'lucide-svelte';
 	import type { DataTableColumn, DataTableRowAction, DataTableBulkAction } from '$lib/api/types';
 
 	let {} = $props();
@@ -36,7 +37,6 @@
 	let editingWebhook = $state<WebhookEndpoint | null>(null);
 	let form = $state({ name: '', url: '', event_types: [] as string[], is_active: true });
 	let saving = $state(false);
-	let eventSearch = $state('');
 
 	let deleteModalOpen = $state(false);
 	let deletingWebhook = $state<WebhookEndpoint | null>(null);
@@ -44,42 +44,6 @@
 	let selectedIds = $state(new Set<string>());
 	let confirmBulkDeleteOpen = $state(false);
 	let pendingBulkIds = $state<string[]>([]);
-
-	interface WebhookEventDef {
-		key: string;
-		label: string;
-		description: string;
-	}
-
-	let availableEvents = $state<WebhookEventDef[]>([]);
-
-	function toggleEventInForm(eventKey: string) {
-		const idx = form.event_types.indexOf(eventKey);
-		if (idx >= 0) {
-			form.event_types = form.event_types.filter((e) => e !== eventKey);
-		} else {
-			form.event_types = [...form.event_types, eventKey];
-		}
-	}
-
-	function removeEventFromForm(eventKey: string) {
-		form.event_types = form.event_types.filter((e) => e !== eventKey);
-	}
-
-	let filteredAvailableEvents = $derived.by(() => {
-		const q = eventSearch.trim().toLowerCase();
-		if (!q) return availableEvents;
-		return availableEvents.filter(
-			(e) => e.key.toLowerCase().includes(q) || e.label.toLowerCase().includes(q)
-		);
-	});
-
-	let selectedEventLabels = $derived.by(() => {
-		return form.event_types.map((key) => {
-			const def = availableEvents.find((e) => e.key === key);
-			return { key, label: def?.label ?? key };
-		});
-	});
 
 	const columns: DataTableColumn[] = [
 		{
@@ -129,13 +93,6 @@
 		}
 	];
 
-	async function loadEvents() {
-		const result = await api<WebhookEventDef[]>('/control/webhook-events');
-		if (result.ok && Array.isArray(result.data)) {
-			availableEvents = result.data;
-		}
-	}
-
 	async function load() {
 		loading = true;
 		try {
@@ -156,7 +113,6 @@
 
 	$effect(() => {
 		load();
-		loadEvents();
 		const interval = setInterval(() => {
 			load();
 		}, 30000);
@@ -198,7 +154,6 @@
 	function openCreateModal() {
 		editingWebhook = null;
 		form = { name: '', url: '', event_types: [], is_active: true };
-		eventSearch = '';
 		createModalOpen = true;
 	}
 
@@ -210,7 +165,6 @@
 			event_types: Array.isArray(webhook.event_types) ? [...webhook.event_types] : [],
 			is_active: webhook.is_active
 		};
-		eventSearch = '';
 		createModalOpen = true;
 	}
 
@@ -218,7 +172,6 @@
 		createModalOpen = false;
 		editingWebhook = null;
 		form = { name: '', url: '', event_types: [], is_active: true };
-		eventSearch = '';
 	}
 
 	async function submitWebhook() {
@@ -467,102 +420,10 @@
 					<label for="webhook-events" class="text-foreground mb-1 block text-sm font-medium">
 						{t('webhooks.events', 'Events')}
 					</label>
-
-					{#if selectedEventLabels.length > 0}
-						<div class="mb-2 flex flex-wrap gap-1.5">
-							{#each selectedEventLabels as ev (ev.key)}
-								<span class="bg-muted text-muted-foreground flex items-center gap-1 rounded-5px px-2 py-0.5 font-mono text-xs">
-									{ev.label}
-									<button
-										type="button"
-										class="text-muted-foreground hover:text-foreground"
-										onclick={() => removeEventFromForm(ev.key)}
-										aria-label="Remove {ev.label}"
-									>
-										<X class="size-3" />
-									</button>
-								</span>
-							{/each}
-						</div>
-					{/if}
-
-					<Popover.Root>
-						<Popover.Trigger
-							id="webhook-events"
-							class="border-border-input bg-background text-foreground hover:border-border-input-hover focus:border-border-input-hover focus:shadow-date-field-focus flex w-full items-center justify-between rounded-9px border px-3 py-2 text-sm transition-colors"
-							aria-label={t('webhooks.events', 'Events')}
-						>
-							<span class={form.event_types.length === 0 ? 'text-muted-foreground' : ''}>
-								{form.event_types.length === 0
-									? t('webhooks.select_events', 'Select events...')
-									: t('webhooks.events_selected', '{count} selected').replace('{count}', String(form.event_types.length))}
-							</span>
-							<ChevronDown class="text-muted-foreground size-4 shrink-0" />
-						</Popover.Trigger>
-						<Popover.Portal>
-							<Popover.Content
-								class="border-border-input bg-background shadow-popover z-50 w-[var(--bits-popover-anchor-width)] rounded-xl border p-0"
-								sideOffset={4}
-							>
-								<div class="bg-muted/40 px-3 py-2">
-									<div class="flex items-center gap-2">
-										<Search class="text-muted-foreground size-4 shrink-0" />
-										<input
-											type="text"
-											bind:value={eventSearch}
-											class="text-foreground placeholder:text-muted-foreground/60 w-full bg-transparent text-sm outline-none"
-											placeholder={t('webhooks.search_events', 'Search events...')}
-										/>
-										{#if eventSearch}
-											<button
-												type="button"
-												class="text-muted-foreground hover:text-foreground shrink-0"
-												onclick={() => { eventSearch = ''; }}
-												aria-label="Clear search"
-											>
-												<X class="size-3.5" />
-											</button>
-										{/if}
-									</div>
-								</div>
-								<div class="max-h-60 overflow-y-auto p-1">
-									{#if filteredAvailableEvents.length === 0}
-										<div class="text-muted-foreground px-3 py-4 text-center text-sm">
-											{t('webhooks.no_events_found', 'No events found.')}
-										</div>
-									{:else}
-										{#each filteredAvailableEvents as event (event.key)}
-											<button
-												type="button"
-												class="hover:bg-accent flex w-full items-center gap-2 rounded-9px px-3 py-2 text-left text-sm transition-colors {form.event_types.includes(event.key) ? 'bg-accent' : ''}"
-												onclick={() => toggleEventInForm(event.key)}
-												title={event.description}
-											>
-												<span class="flex-1">
-													<span class="text-foreground block font-medium">{event.label}</span>
-													<span class="text-muted-foreground block font-mono text-xs">{event.key}</span>
-												</span>
-												{#if form.event_types.includes(event.key)}
-													<Check class="text-foreground size-4 shrink-0" />
-												{/if}
-											</button>
-										{/each}
-									{/if}
-								</div>
-								{#if form.event_types.length > 0}
-									<div class="border-border-input border-t p-2">
-										<button
-											type="button"
-											class="text-muted-foreground hover:text-foreground w-full text-center text-xs font-medium"
-											onclick={() => { form.event_types = []; }}
-										>
-											{t('webhooks.clear_all', 'Clear all')}
-										</button>
-									</div>
-								{/if}
-							</Popover.Content>
-						</Popover.Portal>
-					</Popover.Root>
+					<WebhookEventMultiSelect
+						value={form.event_types}
+						onchange={(next) => (form.event_types = next)}
+					/>
 					<p class="text-muted-foreground mt-1 text-xs">
 						{t('webhooks.events_hint', 'Select the events to subscribe to.')}
 					</p>

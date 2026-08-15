@@ -240,6 +240,7 @@ const (
 	defaultRateLimitPerDay    = 50
 	defaultCostPer1kTokensUSD = 0.002
 	defaultDailyBudgetUSD     = 5.00
+	defaultLLMTemperature     = 0.3
 )
 
 // HandleAgentRequest runs the agent loop for a single user prompt. It
@@ -416,6 +417,7 @@ func (h *AgentHandler) runLoop(
 	maxToolCalls := h.getIntSetting(ctx, tenantID, "agent.max_tool_calls", defaultMaxToolCalls)
 	costLimit := h.getFloatSetting(ctx, tenantID, "agent.cost_limit_per_request_usd", defaultCostLimitUSD)
 	costPer1k := h.getFloatSetting(ctx, tenantID, "agent.cost_per_1k_tokens", defaultCostPer1kTokensUSD)
+	temperature := h.getFloatSetting(ctx, tenantID, "agent.temperature", defaultLLMTemperature)
 
 	// sendEvent writes an event to the channel, respecting the original
 	// request context cancellation. If the SSE consumer stops reading
@@ -495,7 +497,7 @@ func (h *AgentHandler) runLoop(
 		resp, err := h.gateway.ChatWithTools(loopCtx, h.llmCategory, ChatWithToolsRequest{
 			Messages:    messages,
 			Tools:       toolDefs,
-			Temperature: 0.3,
+			Temperature: temperature,
 		})
 		if err != nil {
 			loopErr = fmt.Errorf("agent: LLM call failed: %w", err)
@@ -693,8 +695,8 @@ func (h *AgentHandler) resolveGeoContext(ctx context.Context, userID, tenantID p
 	}
 
 	var parts []string
-	if row.CityName != nil {
-		parts = append(parts, fmt.Sprintf("City: %s", *row.CityName))
+	if row.CityName != "" {
+		parts = append(parts, fmt.Sprintf("City: %s", row.CityName))
 	}
 	if row.CountryName != nil {
 		parts = append(parts, fmt.Sprintf("Country: %s", *row.CountryName))

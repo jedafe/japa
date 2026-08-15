@@ -1,5 +1,11 @@
 package control
 
+import (
+	"fmt"
+	"strconv"
+	"strings"
+)
+
 // settingMeta holds the authoritative metadata for one system setting.
 // The Key is the full dot-notation key (e.g. "auth.password.min_length").
 type settingMeta struct {
@@ -159,6 +165,13 @@ var settingsCatalog = map[string]settingMeta{
 	"university.pro_stream_rate_kobo":        {Type: "int", DefaultValue: "5000", Description: "Amount (kobo) accrued to a creator per Pro-enrolled learner per period.", Panel: "control"},
 	// AUDIT-BE-SETTING-005: geo-aware personalization master switch (ADR-064).
 	"geo_personalization.enabled": {Type: "bool", DefaultValue: "true", Description: "Master switch for geo-aware feed/search/discovery weighting.", Panel: "control"},
+	// ADR-064 / Phase 38.03: config-driven archetype market lists (CSV of ISO
+	// 3166-1 alpha-2 codes). The visitor archetype resolver classifies each
+	// visitor as origin_visitor | diaspora | global_traveler based on whether
+	// their current/origin country is in origin_markets or destination_markets.
+	// Kept in config (not hardcoded) so ops can tune the lists without a deploy.
+	"geo_personalization.origin_markets":      {Type: "csv", DefaultValue: "NG,GH,ZA,KE,EG", Description: "CSV of ISO 3166-1 alpha-2 codes of 'origin markets' — visitors here are classified origin_visitor (preparing to relocate) by the archetype resolver.", Panel: "control"},
+	"geo_personalization.destination_markets": {Type: "csv", DefaultValue: "GB,CA,US,DE,AU,AE", Description: "CSV of ISO 3166-1 alpha-2 codes of 'destination markets' — visitors here (or with japa_status=settled) are classified diaspora by the archetype resolver.", Panel: "control"},
 	// ADR-064a: recommendation engine config — the stage_tool_matrix drives
 	// tool/feature suggestions by archetype + japa_stage; tool_labels and
 	// tool_urls override the compiled-in display fallbacks (Rule 3).
@@ -170,7 +183,7 @@ var settingsCatalog = map[string]settingMeta{
 	"geo_personalization.nominatim_timeout_ms":              {Type: "int", DefaultValue: "5000", Min: 1000, Max: 30000, Description: "Reverse-geocoding request timeout in milliseconds.", Panel: "control"},
 	"geo_personalization.recommendations_cache_ttl_seconds": {Type: "int", DefaultValue: "900", Min: 60, Max: 3600, Description: "TTL in seconds for the jc:recommendations:* cache keys (900 = 15 minutes).", Panel: "control"},
 	"geo_personalization.recommendations_max_limit":         {Type: "int", DefaultValue: "20", Min: 1, Max: 100, Description: "Maximum value accepted for the ?limit query param on GET /recommendations.", Panel: "control"},
-	"geo_personalization.recommendations_trending_window":   {Type: "string", DefaultValue: "7d", Description: "Trending-snapshot window for sourcing content/space recommendations (e.g. 7d, 24h, 30d).", Panel: "control"},
+	"geo_personalization.recommendations_trending_window":   {Type: "string", DefaultValue: "7d", Description: "Trending-snapshot window for sourcing content/space recommendations.", Options: `[{"value":"24h","label":"24 hours"},{"value":"7d","label":"7 days"},{"value":"14d","label":"14 days"},{"value":"30d","label":"30 days"},{"value":"90d","label":"90 days"}]`, Panel: "control"},
 	// AUDIT-BE2-SEC-013: link preview fetch timeout (Rule 3 — was hardcoded 10s).
 	"linkpreview.fetch_timeout_seconds": {Type: "int", DefaultValue: "10", Min: 1, Max: 120, Description: "HTTP timeout for link preview fetches in seconds.", Panel: "control"},
 	// AUDIT-BE2-BL-014: configurable iframe embed allowlist for HTML sanitization (Section 16).
@@ -251,14 +264,15 @@ var settingsCatalog = map[string]settingMeta{
 	// RAG / JapaBot Knowledge Layer (§69, ADR-069)
 	"rag.enabled":          {Type: "bool", DefaultValue: "true", Description: "Global RAG toggle — falls back to non-grounded LLM if false.", Panel: "control"},
 	"rag.embedding_model":  {Type: "string", DefaultValue: "text-embedding-3-small", Description: "Embedding model name (via AI gateway).", Panel: "control"},
-	"rag.retrieval_top_k":  {Type: "int", DefaultValue: "5", Description: "Number of chunks retrieved per query.", Panel: "control"},
-	"rag.chunk_max_tokens": {Type: "int", DefaultValue: "400", Description: "Max tokens per chunk during indexing.", Panel: "control"},
+	"rag.retrieval_top_k":  {Type: "int", DefaultValue: "5", Description: "Number of chunks retrieved per query.", Panel: "control", Min: 1, Max: 50},
+	"rag.chunk_max_tokens": {Type: "int", DefaultValue: "400", Description: "Max tokens per chunk during indexing.", Panel: "control", Min: 1, Max: 8000},
 
 	// AI Content Studio (§75, ADR-076)
-	"studio.enabled":             {Type: "bool", DefaultValue: "true", Description: "Global studio toggle.", Panel: "control"},
-	"studio.max_concurrent_jobs": {Type: "int", DefaultValue: "3", Description: "Max parallel generation jobs (AI gateway throttle).", Panel: "control"},
-	"studio.auto_publish_types":  {Type: "csv", DefaultValue: "", Description: "Content types that skip review (empty = all reviewed).", Panel: "control"},
-	"studio.default_persona_id":  {Type: "string", DefaultValue: "", Description: "Pre-selected persona UUID in new-job form.", Panel: "control"},
+	"studio.enabled":                    {Type: "bool", DefaultValue: "true", Description: "Global studio toggle.", Panel: "control"},
+	"studio.max_concurrent_jobs":        {Type: "int", DefaultValue: "3", Description: "Max parallel generation jobs (AI gateway throttle).", Panel: "control"},
+	"studio.auto_publish_types":         {Type: "csv", DefaultValue: "", Description: "Content types that skip review (empty = all reviewed).", Panel: "control"},
+	"studio.default_persona_id":         {Type: "string", DefaultValue: "", Description: "Pre-selected persona UUID in new-job form.", Panel: "control"},
+	"studio.auto_promote_intel_records": {Type: "bool", DefaultValue: "false", Description: "When true, high-confidence intel_records are automatically promoted to Studio jobs for editorial generation (ADR-076 Amendment 1).", Panel: "control"},
 
 	// Participation Orchestration (§76, ADR-077)
 	"participation.enabled":              {Type: "bool", DefaultValue: "true", Description: "Global kill-switch for all persona activity.", Panel: "control"},
@@ -474,4 +488,45 @@ func getSettingMeta(key string, currentValue string) settingMeta {
 		DefaultValue: "",
 		Description:  "",
 	}
+}
+
+// validateSettingValue checks a raw string value against the catalog metadata
+// for the given key. It verifies the type (int/float/bool) and, when the
+// catalog declares Min/Max bounds, enforces them. Returns an error when the
+// value is invalid, nil otherwise. Uncatalogued keys (empty Type) and
+// string/csv/json types always pass — only numeric and bool types are checked.
+func validateSettingValue(key, raw string) error {
+	meta, ok := settingsCatalog[key]
+	if !ok || meta.Type == "" {
+		return nil
+	}
+	switch meta.Type {
+	case "int", "float":
+		trimmed := strings.TrimSpace(raw)
+		if trimmed == "" {
+			return fmt.Errorf("setting %q must be a valid number", key)
+		}
+		n, err := strconv.ParseFloat(trimmed, 64)
+		if err != nil {
+			return fmt.Errorf("setting %q must be a valid number", key)
+		}
+		if meta.Type == "int" && n != float64(int64(n)) {
+			return fmt.Errorf("setting %q must be a whole number", key)
+		}
+		if meta.Min != 0 || meta.Max != 0 {
+			if n < meta.Min {
+				return fmt.Errorf("setting %q must be >= %v", key, meta.Min)
+			}
+			if meta.Max > 0 && n > meta.Max {
+				return fmt.Errorf("setting %q must be <= %v", key, meta.Max)
+			}
+		}
+	case "bool":
+		unquoted := strings.Trim(raw, `"`)
+		lower := strings.ToLower(unquoted)
+		if lower != "true" && lower != "false" {
+			return fmt.Errorf("setting %q must be true or false", key)
+		}
+	}
+	return nil
 }

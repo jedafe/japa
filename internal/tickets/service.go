@@ -12,6 +12,7 @@ import (
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/worker"
 )
 
@@ -160,7 +161,16 @@ func (s *Service) UpdateTicketType(ctx context.Context, id, tenantID pgtype.UUID
 }
 
 // DeleteTicketType removes a ticket type and its cascaded children.
+// DeleteTicketType deletes a ticket type only if no tickets reference it.
+// Ref: japaconnect-engineering/sections/38-ticket-system.md (delete only if no tickets)
 func (s *Service) DeleteTicketType(ctx context.Context, id, tenantID pgtype.UUID) error {
+	count, err := s.store.countTicketsByType(ctx, id, tenantID)
+	if err != nil {
+		return fmt.Errorf("checking ticket type usage: %w", err)
+	}
+	if count > 0 {
+		return fmt.Errorf("%w: ticket type has %d existing tickets", errpkg.ErrInUse, count)
+	}
 	return s.store.deleteTicketType(ctx, id, tenantID)
 }
 
@@ -200,6 +210,9 @@ func (s *Service) CreateTicket(ctx context.Context, tenantID pgtype.UUID, input 
 	priority := input.Priority
 	if priority == "" {
 		priority = ticketType.DefaultPriority
+	}
+	if !ValidPriority(priority) {
+		return gen.Ticket{}, fmt.Errorf("invalid priority %q: must be one of low, normal, high, urgent", priority)
 	}
 
 	// Compute SLA breach time. Fall back to tickets.default_sla_hours
@@ -304,10 +317,18 @@ func (s *Service) ListTickets(ctx context.Context, tenantID pgtype.UUID, status,
 }
 
 // ListTicketsBySubmitter returns tickets submitted by a specific user.
-func (s *Service) ListTicketsBySubmitter(ctx context.Context, tenantID, submitterUserID pgtype.UUID, limit, offset int32) ([]gen.ListTicketsBySubmitterRow, error) {
+// Ref: japaconnect-engineering/sections/38-ticket-system.md (GET /me/tickets ?status=)
+// An empty status string returns all tickets; a non-empty status filters by it.
+func (s *Service) ListTicketsBySubmitter(ctx context.Context, tenantID, submitterUserID pgtype.UUID, status string, limit, offset int32) ([]gen.ListTicketsBySubmitterRow, error) {
+	var statusPtr *string
+	if status != "" {
+		s := status
+		statusPtr = &s
+	}
 	return s.store.listTicketsBySubmitter(ctx, gen.ListTicketsBySubmitterParams{
 		TenantID:        tenantID,
 		SubmitterUserID: submitterUserID,
+		Status:          statusPtr,
 		PageLimit:       limit,
 		PageOffset:      offset,
 	})
@@ -376,6 +397,10 @@ type UpdateTicketPriorityInput struct {
 
 // UpdateTicketPriority changes the ticket priority.
 func (s *Service) UpdateTicketPriority(ctx context.Context, id, tenantID pgtype.UUID, input UpdateTicketPriorityInput) (gen.Ticket, error) {
+	if !ValidPriority(input.Priority) {
+		return gen.Ticket{}, fmt.Errorf("invalid priority %q: must be one of low, normal, high, urgent", input.Priority)
+	}
+
 	current, err := s.store.getTicketByID(ctx, id, tenantID)
 	if err != nil {
 		return gen.Ticket{}, fmt.Errorf("fetching current ticket: %w", err)
@@ -479,6 +504,9 @@ func (s *Service) ResolveTicket(ctx context.Context, id, tenantID pgtype.UUID, i
 	}); err != nil {
 		slog.Error("create ticket event", "ticket_id", id, "error", err)
 	}
+
+	// Enqueue status update email (fire-and-forget per Rule 8).
+	s.enqueueTicketStatusUpdate(ticket, current.Status)
 
 	return ticket, nil
 }
@@ -625,45 +653,6 @@ func (s *Service) ListAttachments(ctx context.Context, ticketID pgtype.UUID) ([]
 // ListEvents returns the audit trail for a ticket.
 func (s *Service) ListEvents(ctx context.Context, ticketID pgtype.UUID) ([]gen.TicketEvent, error) {
 	return s.store.listTicketEvents(ctx, ticketID)
-}
-
-// ---------------------------------------------------------------------------
-// SLA Breach Detection
-// ---------------------------------------------------------------------------
-
-// CheckSLABreaches finds tickets where SLA breach time has passed and marks them.
-func (s *Service) CheckSLABreaches(ctx context.Context, tenantID pgtype.UUID) (int, error) {
-	resp, err := s.store.listTicketsByTenant(ctx, gen.ListTicketsByTenantParams{
-		TenantID:   tenantID,
-		Status:     "",
-		PageLimit:  100,
-		PageOffset: 0,
-	})
-	if err != nil {
-		return 0, fmt.Errorf("listing tickets for SLA check: %w", err)
-	}
-
-	breached := 0
-
-	now := time.Now()
-	for _, t := range resp.Tickets {
-		if t.SlaBreachAt.Valid && t.SlaBreachAt.Time.Before(now) &&
-			t.Status != string(StatusResolved) && t.Status != string(StatusClosed) && t.Status != string(StatusSpam) {
-			if _, err := s.store.createTicketEvent(ctx, gen.CreateTicketEventParams{
-				TicketID:  t.ID,
-				UserID:    pgtype.UUID{},
-				EventType: string(EventSLABreached),
-				OldValue:  nil,
-				NewValue:  strPtr("sla_breached"),
-			}); err != nil {
-				slog.Error("create ticket event", "ticket_id", t.ID, "error", err)
-			}
-
-			breached++
-		}
-	}
-
-	return breached, nil
 }
 
 // ---------------------------------------------------------------------------

@@ -61,33 +61,62 @@ func (h *Hub) SetPubSub(p Publisher) {
 	h.pubsub = p
 }
 
-// Register adds a client to the hub.
+// Register adds a client to the hub. If an existing client for the same
+// user is already registered (e.g. a reconnect or multi-tab close race),
+// its Send channel is closed so its writePump exits and its readPump
+// eventually breaks. Without this, the old connection's goroutines leak
+// and its later Unregister would delete the new client from the hub
+// (§4.3 memory/connection leak, §11 connection not cleaned on close).
 func (h *Hub) Register(client *Client) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
+
+	if existing, ok := h.clients[client.UserID]; ok && existing != client {
+		h.removeSpaceSubscriptionsLocked(existing)
+		close(existing.Send)
+		delete(h.clients, client.UserID)
+	}
+
 	h.clients[client.UserID] = client
 	slog.Info("ws client registered", "user_id", client.UserID)
 }
 
-// Unregister removes a client from the hub and cleans up space subscriptions.
+// Unregister removes a client from the hub and cleans up space
+// subscriptions. Only deletes the hub map entry and closes the Send
+// channel if this client is still the one registered for the user — a
+// newer connection may have replaced it via Register, in which case
+// evicting would drop the live connection (§11 connection leak).
 func (h *Hub) Unregister(client *Client) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
-	// Remove from all space subscriptions.
+	h.removeSpaceSubscriptionsLocked(client)
+
+	if current, ok := h.clients[client.UserID]; ok && current == client {
+		delete(h.clients, client.UserID)
+		close(client.Send)
+	}
+
+	slog.Info("ws client unregistered", "user_id", client.UserID)
+}
+
+// removeSpaceSubscriptionsLocked removes the client from every space
+// subscription map it belongs to. The key is tenant-scoped
+// (spaceSubscriptionKey) so it matches what SubscribeToSpace stores —
+// the previous Unregister used the bare spaceID and never matched,
+// leaking every space subscription on disconnect (§4.3 memory leak).
+// Caller must hold h.mu.
+func (h *Hub) removeSpaceSubscriptionsLocked(client *Client) {
 	for spaceID := range client.SpaceIDs {
-		if subs, ok := h.spaceSubscribers[spaceID]; ok {
+		key := spaceSubscriptionKey(client.TenantID, spaceID)
+		if subs, ok := h.spaceSubscribers[key]; ok {
 			delete(subs, client.UserID)
 
 			if len(subs) == 0 {
-				delete(h.spaceSubscribers, spaceID)
+				delete(h.spaceSubscribers, key)
 			}
 		}
 	}
-
-	delete(h.clients, client.UserID)
-	close(client.Send)
-	slog.Info("ws client unregistered", "user_id", client.UserID)
 }
 
 // BroadcastToUser sends an event to a specific user on this instance and

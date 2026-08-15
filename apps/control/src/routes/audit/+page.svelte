@@ -5,7 +5,7 @@
 	import { Select } from 'bits-ui';
 	import { api } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
-	import { ACTION_TYPES } from '$lib/constants/audit';
+	import { ACTION_TYPES, TARGET_TYPES } from '$lib/constants/audit';
 	import { escapeHtml } from '$lib/utils';
 	import type { AuditLogEntry, PaginatedResponse, DataTableColumn, DataTableRowAction, DataTableBulkAction } from '$lib/api/types';
 	import { Trash2 } from 'lucide-svelte';
@@ -26,13 +26,18 @@
 
 	let filterActor = $state('');
 	let filterAction = $state('all');
-	let filterTarget = $state('');
+	let filterTarget = $state('all');
 	let filterFrom = $state('');
 	let filterTo = $state('');
 
 	const actionTypes = $derived([
 		{ value: 'all', label: t('audit.action_all', 'All Actions') },
-		...ACTION_TYPES.map((a) => ({ value: a, label: t(`audit.action_${a}`, a.charAt(0).toUpperCase() + a.slice(1)) }))
+		...ACTION_TYPES.map((a) => ({ value: a, label: a }))
+	]);
+
+	const targetTypes = $derived([
+		{ value: 'all', label: t('audit.target_all', 'All Target Types') },
+		...TARGET_TYPES.map((tt) => ({ value: tt, label: tt }))
 	]);
 
 	function formatTimestamp(val: unknown): string {
@@ -50,6 +55,23 @@
 		return actor.username || actor.id || '—';
 	}
 
+	function formatMetadata(row: Record<string, unknown>): string {
+		const meta = row.metadata as Record<string, unknown> | undefined;
+		if (!meta || Object.keys(meta).length === 0) return '';
+		// Surface the most useful metadata fields in priority order.
+		const parts: string[] = [];
+		if (meta.email) parts.push(`email: ${meta.email}`);
+		if (meta.target_id) parts.push(`target: ${String(meta.target_id).slice(0, 8)}...`);
+		if (meta.admin_id) parts.push(`admin: ${String(meta.admin_id).slice(0, 8)}...`);
+		// Include any remaining keys not already shown.
+		for (const [k, v] of Object.entries(meta)) {
+			if (['email', 'target_id', 'admin_id', 'ip'].includes(k)) continue;
+			const vs = typeof v === 'string' ? v : JSON.stringify(v);
+			parts.push(`${k}: ${vs.slice(0, 30)}`);
+		}
+		return parts.join(' · ');
+	}
+
 	const columns: DataTableColumn[] = [
 		{
 			key: 'timestamp',
@@ -61,11 +83,21 @@
 		{
 			key: 'actor',
 			label: t('audit.actor', 'Actor'),
-			render: (val: unknown) => {
+			render: (val: unknown, row: Record<string, unknown>) => {
 				const actor = val as AuditLogEntry['actor'];
-				if (!actor) return `<span class="text-muted-foreground">—</span>`;
-				return `<span class="font-medium">${escapeHtml(actor.username)}</span>
-					<span class="text-muted-foreground ml-1 text-xs">${escapeHtml(actor.id?.slice(0, 8))}...</span>`;
+				if (actor) {
+					return `<span class="font-medium">${escapeHtml(actor.username)}</span>
+						<span class="text-muted-foreground ml-1 text-xs">${escapeHtml(actor.id?.slice(0, 8))}...</span>`;
+				}
+				// No actor (e.g. failed login) — fall back to the attempted email
+				// recorded in metadata so the column is not uselessly empty.
+				const meta = row.metadata as Record<string, unknown> | undefined;
+				const attemptedEmail = meta?.email;
+				if (attemptedEmail) {
+					return `<span class="font-medium">${escapeHtml(String(attemptedEmail))}</span>
+						<span class="text-muted-foreground ml-1 text-xs italic">(attempted)</span>`;
+				}
+				return `<span class="text-muted-foreground">—</span>`;
 			}
 		},
 		{
@@ -79,7 +111,11 @@
 						? 'bg-destructive/10 text-destructive'
 						: action === 'create'
 							? 'bg-emerald-500/10 text-emerald-600'
-							: 'bg-accent text-accent-foreground';
+							: action === 'auth.login_failed'
+								? 'bg-amber-500/10 text-amber-600'
+								: action === 'impersonation.start'
+									? 'bg-blue-500/10 text-blue-600'
+									: 'bg-accent text-accent-foreground';
 				return `<span class="${color} rounded-full px-2 py-0.5 text-xs font-medium">${action}</span>`;
 			}
 		},
@@ -96,6 +132,22 @@
 				const s = val ? String(val) : '';
 				const truncated = s.length > 12 ? s.slice(0, 12) + '...' : s;
 				return `<span class="font-mono text-xs">${escapeHtml(truncated || '—')}</span>`;
+			}
+		},
+		{
+			key: 'ip_address',
+			label: t('audit.ip_address', 'IP Address'),
+			render: (val: unknown) => {
+				const s = val ? String(val) : '';
+				return `<span class="font-mono text-xs">${escapeHtml(s || '—')}</span>`;
+			}
+		},
+		{
+			key: 'metadata',
+			label: t('audit.details', 'Details'),
+			render: (_val: unknown, row: Record<string, unknown>) => {
+				const summary = formatMetadata(row);
+				return `<span class="text-muted-foreground text-xs">${escapeHtml(summary || '—')}</span>`;
 			}
 		}
 	];
@@ -164,7 +216,7 @@
 		});
 		if (filterActor) params.set('actor', filterActor);
 		if (filterAction !== 'all') params.set('action_type', filterAction);
-		if (filterTarget) params.set('entity_type', filterTarget);
+		if (filterTarget !== 'all') params.set('entity_type', filterTarget);
 		if (filterFrom) params.set('from', filterFrom);
 		if (filterTo) params.set('to', filterTo);
 		if (sortKey) {
@@ -288,14 +340,32 @@
 			</Select.Content>
 		</Select.Portal>
 	</Select.Root>
-	<input
-		type="text"
-		placeholder={t('audit.target_placeholder', 'Filter by target type...')}
-		class="border-border-input bg-background text-foreground placeholder:text-muted-foreground/50 rounded-9px border px-3 py-2 text-sm transition-colors hover:border-border-input-hover focus:border-border-input-hover focus:shadow-date-field-focus"
-		bind:value={filterTarget}
-		onkeydown={handleFilterKeydown}
-		aria-label={t('audit.target_placeholder', 'Filter by target type...')}
-	/>
+	<Select.Root type="single" bind:value={filterTarget} items={targetTypes} onValueChange={() => applyFilters()}>
+		<Select.Trigger
+			class="border-border-input bg-background data-placeholder:text-muted-foreground/50 rounded-9px flex h-10 w-full items-center border px-3 text-sm transition-colors hover:border-border-input-hover"
+			aria-label={t('audit.target_placeholder', 'Filter by target type')}
+		>
+			<Select.Value placeholder={t('audit.target_all', 'All Target Types')} />
+		</Select.Trigger>
+		<Select.Portal>
+			<Select.Content class="border-border-input bg-background shadow-popover z-50 rounded-xl border px-1 py-1" sideOffset={4}>
+				<Select.Viewport class="p-1">
+					{#each targetTypes as item}
+						<Select.Item
+							class="data-highlighted:bg-accent rounded-9px flex h-9 cursor-pointer items-center px-3 text-sm outline-none"
+							value={item.value}
+							label={item.label}
+						>
+							{#snippet children({ selected })}
+								{item.label}
+								{#if selected}<span class="ml-auto">&#10003;</span>{/if}
+							{/snippet}
+						</Select.Item>
+					{/each}
+				</Select.Viewport>
+			</Select.Content>
+		</Select.Portal>
+	</Select.Root>
 	<input
 		type="date"
 		class="border-border-input bg-background text-foreground rounded-9px border px-3 py-2 text-sm transition-colors hover:border-border-input-hover focus:border-border-input-hover focus:shadow-date-field-focus"

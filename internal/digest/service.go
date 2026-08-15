@@ -327,12 +327,17 @@ func (s *Service) generateForTenant(ctx context.Context, tenantID, spaceID pgtyp
 		return fmt.Errorf("digest: generate: assemble content: %w", err)
 	}
 
+	// §84: "A 1-hour review window opens after generation before
+	// auto-publish." scheduled_for gates the digest:auto_publish cron, which
+	// publishes draft/review editions once scheduled_for <= now(). Admins
+	// can still publish early via AdminPublish (which short-circuits the
+	// window). Ref: japaconnect-engineering/sections/84-community-digest-widget.md
 	editionID, err := s.store.CreateEdition(ctx, DigestEdition{
 		TenantID:     tenantID,
 		SpaceID:      spaceID,
 		Cadence:      "weekly",
 		Status:       "draft",
-		ScheduledFor: pgtype.Timestamptz{Time: time.Now().Add(24 * time.Hour), Valid: true},
+		ScheduledFor: pgtype.Timestamptz{Time: time.Now().Add(1 * time.Hour), Valid: true},
 		Content:      content,
 		GeneratedBy:  "system",
 	})
@@ -346,6 +351,42 @@ func (s *Service) generateForTenant(ctx context.Context, tenantID, spaceID pgtyp
 	slog.Info("task:digest:generate: edition assembled",
 		"tenant_id", tenantID, "edition_id", editionID, "space_id", spaceID.Valid)
 	return nil
+}
+
+// AutoPublishDueEditions is the digest:auto_publish task processor (§84,
+// ADR-092). It publishes every draft/review edition whose 1-hour admin review
+// window has elapsed (scheduled_for <= now()), clears each edition's draft
+// lock, and enqueues digest:send_email fire-and-forget per edition (Rule 8).
+//
+// This method satisfies the worker.DigestProcessor interface. It is
+// idempotent: the store UPDATE only matches rows still in draft/review, so a
+// duplicate cron run publishes nothing and enqueues nothing.
+//
+// Ref: japaconnect-engineering/sections/84-community-digest-widget.md
+func (s *Service) AutoPublishDueEditions(ctx context.Context) (int64, error) {
+	published, err := s.store.AutoPublishDueEditions(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("digest: auto-publish: %w", err)
+	}
+	for _, e := range published {
+		// Clear the draft review lock (mirrors AdminPublish, §84).
+		s.clearDraftLock(ctx, e.TenantID, e.ID)
+
+		// Fire-and-forget: enqueue digest:send_email so subscribed members
+		// receive the now-published edition. A failed enqueue is logged but
+		// does not fail the sweep — the edition is already published and an
+		// admin can re-trigger email from the panel.
+		payload, _ := json.Marshal(map[string]string{
+			"edition_id": e.ID.String(),
+			"tenant_id":  e.TenantID.String(),
+		})
+		if err := s.enqueuer.Enqueue("digest:send_email", payload); err != nil {
+			slog.Error("digest: auto-publish enqueue send_email failed",
+				"error", err, "edition_id", e.ID.String())
+		}
+	}
+	slog.Info("task:digest:auto_publish: complete", "published", len(published))
+	return int64(len(published)), nil
 }
 
 // SendEditionEmail is the digest:send_email task processor (§84, ADR-092).

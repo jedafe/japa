@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -43,29 +44,17 @@ func NewHandlers(service *Service) *Handlers {
 
 func handleServiceError(w http.ResponseWriter, err error) {
 	switch {
-	case contains(err.Error(), "not found"):
+	case strings.Contains(err.Error(), "not verified"):
+		errpkg.WriteError(w, http.StatusUnprocessableEntity, "endpoint_not_verified", err.Error())
+	case strings.Contains(err.Error(), "not found"):
 		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Resource not found")
-	case contains(err.Error(), "already"):
+	case strings.Contains(err.Error(), "already"):
 		errpkg.WriteError(w, http.StatusConflict, "already_exists", "Resource already exists")
-	case contains(err.Error(), "challenge/response") || contains(err.Error(), "challenge"):
+	case strings.Contains(err.Error(), "challenge/response") || strings.Contains(err.Error(), "challenge"):
 		errpkg.WriteError(w, http.StatusUnprocessableEntity, "verification_failed", err.Error())
 	default:
 		errpkg.HandleServiceError(w, err)
 	}
-}
-
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || len(s) > 0 && containsHelper(s, substr))
-}
-
-func containsHelper(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-
-	return false
 }
 
 func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
@@ -373,6 +362,7 @@ func (h *Handlers) RetryDelivery(w http.ResponseWriter, r *http.Request) {
 // Ref: japaconnect-engineering/sections/12-webhooks.md
 var defaultWebhookEventCatalog = []map[string]string{
 	// Content (§14)
+	{"key": "content.created", "label": "Content Created", "description": "When content is first created (draft or published)"},
 	{"key": "content.published", "label": "Content Published", "description": "When content is published"},
 	{"key": "content.updated", "label": "Content Updated", "description": "When content is updated"},
 	{"key": "content.deleted", "label": "Content Deleted", "description": "When content is soft-deleted"},
@@ -383,13 +373,21 @@ var defaultWebhookEventCatalog = []map[string]string{
 	{"key": "review.created", "label": "Review Created", "description": "When a new review is created"},
 	// Organizations (§07)
 	{"key": "organization.verified", "label": "Organization Verified", "description": "When an organization is verified"},
+	{"key": "organization.unverified", "label": "Organization Unverified", "description": "When an organization's verification is revoked"},
 	// Payments (§17)
 	{"key": "payment.succeeded", "label": "Payment Succeeded", "description": "When a payment succeeds"},
 	{"key": "payment.failed", "label": "Payment Failed", "description": "When a payment fails"},
 	// Forum (§08) — non-PII
 	{"key": "forum.thread.created", "label": "Forum Thread Created", "description": "When a new forum thread is created"},
+	{"key": "forum.thread.updated", "label": "Forum Thread Updated", "description": "When a forum thread is updated"},
+	{"key": "forum.thread.deleted", "label": "Forum Thread Deleted", "description": "When a forum thread is deleted"},
 	{"key": "forum.thread.solved", "label": "Forum Thread Solved", "description": "When a forum thread is marked as solved"},
 	{"key": "forum.reply.created", "label": "Forum Reply Created", "description": "When a new reply is posted in a forum thread"},
+	{"key": "forum.reply.updated", "label": "Forum Reply Updated", "description": "When a forum reply is updated"},
+	{"key": "forum.reply.deleted", "label": "Forum Reply Deleted", "description": "When a forum reply is deleted"},
+	{"key": "forum.vote.cast", "label": "Forum Vote Cast", "description": "When a vote is cast on a forum entity"},
+	// AMA (§88) — non-PII
+	{"key": "forum.ama.opened", "label": "AMA Opened", "description": "When an Ask-Me-Anything session is opened"},
 }
 
 // eventCatalogEntry is a single entry in the webhook event catalog.
@@ -456,7 +454,7 @@ func parsePageSize(r *http.Request) int32 {
 }
 
 func parsePageSizeOffset(r *http.Request) int32 {
-	if v := r.URL.Query().Get("page_token"); v != "" {
+	if v := r.URL.Query().Get("page_offset"); v != "" {
 		if n, err := strconv.ParseInt(v, 10, 64); err == nil {
 			return int32(n)
 		}
