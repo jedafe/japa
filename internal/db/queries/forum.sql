@@ -252,19 +252,19 @@ INSERT INTO forum_replies (
 )
 RETURNING id, tenant_id, thread_id, parent_reply_id, author_user_id,
           body, vote_score, view_count, is_anonymous, is_edited,
-          created_at, updated_at, deleted_at;
+          created_at, updated_at, deleted_at, ama_pending, ama_approved_at;
 
 -- name: GetForumReplyByID :one
 SELECT id, tenant_id, thread_id, parent_reply_id, author_user_id,
        body, vote_score, view_count, is_anonymous, is_edited,
-       created_at, updated_at, deleted_at
+       created_at, updated_at, deleted_at, ama_pending, ama_approved_at
 FROM forum_replies
 WHERE id = @id AND tenant_id = @tenant_id AND deleted_at IS NULL;
 
 -- name: ListForumRepliesByThread :many
 SELECT id, tenant_id, thread_id, parent_reply_id, author_user_id,
        body, vote_score, view_count, is_anonymous, is_edited,
-       created_at, updated_at, deleted_at
+       created_at, updated_at, deleted_at, ama_pending, ama_approved_at
 FROM forum_replies
 WHERE thread_id = @thread_id
   AND tenant_id = @tenant_id
@@ -274,7 +274,7 @@ ORDER BY created_at ASC;
 -- name: ListForumRepliesByThreadWithAuthor :many
 SELECT fr.id, fr.tenant_id, fr.thread_id, fr.parent_reply_id, fr.author_user_id,
        fr.body, fr.vote_score, fr.view_count, fr.is_anonymous, fr.is_edited,
-       fr.created_at, fr.updated_at, fr.deleted_at,
+       fr.created_at, fr.updated_at, fr.deleted_at, fr.ama_pending, fr.ama_approved_at,
        CASE WHEN fr.is_anonymous THEN NULL ELSE u.username END AS author_username,
        CASE WHEN fr.is_anonymous THEN NULL ELSE up.display_name END AS author_display_name,
        CASE WHEN fr.is_anonymous THEN NULL ELSE up.avatar_url END AS author_avatar_url
@@ -310,7 +310,7 @@ SET body = @body, is_edited = true, updated_at = now()
 WHERE id = @id AND tenant_id = @tenant_id AND deleted_at IS NULL
 RETURNING id, tenant_id, thread_id, parent_reply_id, author_user_id,
           body, vote_score, view_count, is_anonymous, is_edited,
-          created_at, updated_at, deleted_at;
+          created_at, updated_at, deleted_at, ama_pending, ama_approved_at;
 
 -- name: SoftDeleteForumReply :exec
 UPDATE forum_replies

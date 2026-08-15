@@ -175,6 +175,13 @@ func (s *Store) getRecentEvents(ctx context.Context, userID, tenantID pgtype.UUI
 	return s.read.GetRecentAffiliateEvents(ctx, gen.GetRecentAffiliateEventsParams{UserID: userID, TenantID: tenantID, PageLimit: limit})
 }
 
+// getProgramStats returns program-wide totals for the admin overview
+// endpoint GET /admin/affiliate-program (Section 56 Admin management).
+// Tenant-scoped.
+func (s *Store) getProgramStats(ctx context.Context, tenantID pgtype.UUID) (gen.GetAffiliateProgramStatsRow, error) {
+	return s.read.GetAffiliateProgramStats(ctx, tenantID)
+}
+
 // ── Helpers ─────────────────────────────────────────────────────────
 
 func isNoRows(err error) bool {

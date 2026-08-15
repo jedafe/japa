@@ -3,6 +3,8 @@
 	import { page } from '$app/state';
 	import { enhance } from '$app/forms';
 	import { Building2, Plus, Loader2 } from 'lucide-svelte';
+	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
+	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -16,6 +18,33 @@
 	let orgType = $state('business');
 	let submitting = $state(false);
 	let slugTouched = $state(false);
+
+	// Country autocomplete — filters the SSR-loaded country spaces
+	// (data.countries from /geo/countries) client-side. The selected
+	// geo_code is submitted as the country_code form field (Rule 16).
+	function countryFetcher(q: string): Promise<AutocompleteItem[]> {
+		const needle = q.toLowerCase().trim();
+		const list = data.countries ?? [];
+		const filtered = needle
+			? list.filter(
+					(c) => c.name.toLowerCase().includes(needle) || c.geo_code.toLowerCase().includes(needle)
+				)
+			: list;
+		return Promise.resolve(
+			filtered.slice(0, 50).map((c) => ({ id: c.geo_code, label: c.name, sublabel: c.geo_code }))
+		);
+	}
+
+	function countryInitialFetcher(): Promise<AutocompleteItem[]> {
+		const list = data.countries ?? [];
+		return Promise.resolve(
+			list.slice(0, 8).map((c) => ({ id: c.geo_code, label: c.name, sublabel: c.geo_code }))
+		);
+	}
+
+	function countryLabel(id: string): string {
+		return (data.countries ?? []).find((c) => c.geo_code === id)?.name ?? id;
+	}
 
 	const pageTitle = $derived(t('organizations.new.title', 'New organization — JapaConnect'));
 	const pageDescription = $derived(
@@ -168,16 +197,19 @@
 
 					<div>
 						<label for="country_code" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
-							{t('organizations.new.field_country', 'Country code')}
+							{t('organizations.new.field_country', 'Country')}
 						</label>
-						<input
-							id="country_code"
-							name="country_code"
-							type="text"
-							maxlength="2"
-							bind:value={countryCode}
-							placeholder="US"
-							class={inputClass}
+						<!-- Hidden input submits the selected geo_code as country_code -->
+						<input type="hidden" name="country_code" value={countryCode} />
+						<Autocomplete
+							placeholder={t('organizations.new.country_placeholder', 'Search country…')}
+							emptyMessage={t('common.no_results', 'No results found')}
+							fetcher={countryFetcher}
+							initialFetcher={countryInitialFetcher}
+							selectedId={countryCode || null}
+							selectedLabel={countryCode ? countryLabel(countryCode) : null}
+							onSelect={(item) => { countryCode = item.id; }}
+							onClear={() => { countryCode = ''; }}
 						/>
 					</div>
 				</div>

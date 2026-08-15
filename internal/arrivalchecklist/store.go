@@ -278,6 +278,8 @@ WHERE %s
 }
 
 // GetGuideByID returns a single guide by its id, scoped to tenant_id.
+// Returns guides of ANY status — use only from admin contexts. For
+// public/user-facing endpoints use GetPublishedGuideByID instead.
 func (s *Store) GetGuideByID(ctx context.Context, id, tenantID pgtype.UUID) (GuideRow, error) {
 	const q = `
 SELECT g.id, g.tenant_id, g.destination_space_id, sp.name AS dest_space_name,
@@ -310,7 +312,46 @@ LIMIT 1
 	return r, nil
 }
 
-// GetGuideItems returns all items for a guide, ordered by sort_order.
+// GetPublishedGuideByID returns a single published, active guide by its id,
+// scoped to tenant_id. Use this for all public/user-facing endpoints —
+// draft/ai_draft/pending/rejected guides must never be visible to
+// non-admin callers (§92, ADR-088 HITL gate).
+func (s *Store) GetPublishedGuideByID(ctx context.Context, id, tenantID pgtype.UUID) (GuideRow, error) {
+	const q = `
+SELECT g.id, g.tenant_id, g.destination_space_id, sp.name AS dest_space_name,
+       sp.geo_code AS dest_space_code, g.visa_category, g.applicant_type,
+       g.version, g.status, g.is_active, g.ai_generated, g.ai_model,
+       g.ai_prompt_hash, g.hitl_reviewed_by, ru.username AS hitl_reviewed_name,
+       g.hitl_reviewed_at, g.hitl_review_notes, g.is_japabot_indexed,
+       g.created_at, g.updated_at
+FROM arrival_checklist_guides g
+LEFT JOIN spaces sp ON sp.id = g.destination_space_id
+LEFT JOIN users ru ON ru.id = g.hitl_reviewed_by
+WHERE g.id = $1 AND g.tenant_id = $2
+  AND g.status = 'published'
+  AND g.is_active = true
+LIMIT 1
+`
+	var r GuideRow
+	err := s.pool.Reader.QueryRow(ctx, q, id, tenantID).Scan(
+		&r.ID, &r.TenantID, &r.DestinationSpaceID, &r.DestSpaceName,
+		&r.DestSpaceCode, &r.VisaCategory, &r.ApplicantType,
+		&r.Version, &r.Status, &r.IsActive, &r.AIGenerated, &r.AIModel,
+		&r.AIPromptHash, &r.HITLReviewedBy, &r.HITLReviewedByName,
+		&r.HITLReviewedAt, &r.HITLReviewNotes, &r.IsJapabotIndexed,
+		&r.CreatedAt, &r.UpdatedAt,
+	)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return GuideRow{}, pgx.ErrNoRows
+		}
+		return GuideRow{}, fmt.Errorf("arrivalchecklist: get published guide by id: %w", err)
+	}
+	return r, nil
+}
+
+// GetGuideItems returns all items for a published guide, ordered by
+// sort_order. Only published+active guides expose items publicly (§92).
 func (s *Store) GetGuideItems(ctx context.Context, guideID, tenantID pgtype.UUID) ([]ItemRow, error) {
 	const q = `
 SELECT i.id, i.guide_id, i.phase, i.title, i.description, i.official_link,
@@ -318,6 +359,8 @@ SELECT i.id, i.guide_id, i.phase, i.title, i.description, i.official_link,
 FROM arrival_checklist_items i
 JOIN arrival_checklist_guides g ON g.id = i.guide_id
 WHERE i.guide_id = $1 AND g.tenant_id = $2
+  AND g.status = 'published'
+  AND g.is_active = true
 ORDER BY i.sort_order ASC, i.created_at ASC
 `
 	rows, err := s.pool.Reader.Query(ctx, q, guideID, tenantID)

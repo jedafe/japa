@@ -149,6 +149,7 @@ func (d *Dispatcher) Dispatch(ctx context.Context, category string, req Request)
 	for _, p := range providers {
 		resp, err := p.Send(ctx, req)
 		if err == nil {
+			resp.ProviderName = p.Name()
 			return resp, nil
 		}
 

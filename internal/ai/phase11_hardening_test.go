@@ -30,7 +30,7 @@ func TestExecute_PrivacyFailClosed_NilChecker(t *testing.T) {
 	t.Parallel()
 
 	reg := NewToolHandlerRegistry()
-	reg.RegisterConfig("content.read", ToolConfig{FunctionName: "content.read"}, "")
+	reg.RegisterConfig("content.read", ToolConfig{FunctionName: "content.read"}, "", pgtype.UUID{})
 	called := false
 	reg.RegisterHandler("content.read", func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error) {
 		called = true
@@ -64,7 +64,7 @@ func TestExecute_PrivacyNoTarget_NilChecker_Proceeds(t *testing.T) {
 	t.Parallel()
 
 	reg := NewToolHandlerRegistry()
-	reg.RegisterConfig("content.search", ToolConfig{FunctionName: "content.search"}, "")
+	reg.RegisterConfig("content.search", ToolConfig{FunctionName: "content.search"}, "", pgtype.UUID{})
 	reg.RegisterHandler("content.search", stubSuccessHandler)
 	// No privacy target registered — nil checker should NOT block.
 
@@ -319,7 +319,7 @@ func TestExecute_NormalizesToolName_BlockedUppercase(t *testing.T) {
 
 	reg := NewToolHandlerRegistry()
 	// Register a legitimate tool that the normalized name would match.
-	reg.RegisterConfig("content.search", ToolConfig{FunctionName: "content.search"}, "")
+	reg.RegisterConfig("content.search", ToolConfig{FunctionName: "content.search"}, "", pgtype.UUID{})
 	reg.RegisterHandler("content.search", stubSuccessHandler)
 
 	exec := newTestExecutor(t, &stubPerms{granted: map[string]bool{"content.search": true}}, &stubPrivacy{}, reg)
@@ -347,7 +347,7 @@ func TestExecute_NormalizesToolName_LegitimateUppercase(t *testing.T) {
 			"type":     "object",
 			"required": []any{"query"},
 		},
-	}, "")
+	}, "", pgtype.UUID{})
 	reg.RegisterHandler("content.search", stubSuccessHandler)
 
 	exec := newTestExecutor(t, &stubPerms{granted: map[string]bool{"content.search": true}}, &stubPrivacy{}, reg)

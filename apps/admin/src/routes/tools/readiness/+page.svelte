@@ -55,6 +55,26 @@
 		completion: null
 	});
 
+	// Score-band filter options derived from the assessment's configured
+	// thresholds (Rule 16 — no hardcoded data that changes over time). Falls
+	// back to an empty list until the form config loads on mount.
+	const scoreBandOptions = $derived(
+		(scoringConfig?.thresholds ?? []).map((th) => ({
+			value: `${th.min}-${th.max}`,
+			label: `${th.min}–${th.max}`
+		}))
+	);
+
+	// Resolve a threshold color to a CSS value. Threshold colors may be stored
+	// as chart theme token names (e.g. "chart-5") or legacy hex values. Token
+	// names resolve to var(--chart-N) so the palette adapts to light/dark mode.
+	function resolveThresholdColor(color: string): string {
+		if (!color) return 'var(--color-muted)';
+		if (color.startsWith('#')) return color;
+		if (color.startsWith('chart-')) return `var(--${color})`;
+		return color;
+	}
+
 	// ── Row actions ─────────────────────────────────────────────────────────
 	const rowActions = $derived.by<ActionItem[]>(() => {
 		const acts: ActionItem[] = [
@@ -99,12 +119,7 @@
 			{
 				key: 'score_band',
 				label: t('app.tools.col_readiness_level', 'Readiness Level'),
-				options: [
-					{ value: '0-39', label: '0–39' },
-					{ value: '40-59', label: '40–59' },
-					{ value: '60-74', label: '60–74' },
-					{ value: '75-100', label: '75–100' }
-				]
+				options: scoreBandOptions
 			}
 		],
 		actions: rowActions,
@@ -189,6 +204,9 @@
 	$effect(() => {
 		if (canManage) {
 			loadStats();
+			// Load the form config on mount so the score-band filter options
+			// are driven by the API's configured thresholds (Rule 16).
+			loadFormConfig();
 		}
 	});
 </script>
@@ -409,8 +427,8 @@
 										thresholds[i] = { ...thresholds[i], color: e.currentTarget.value };
 										scoringConfig = { ...scoringConfig!, thresholds };
 									}}
-									class="w-20 rounded border px-2 py-1 text-xs"
-									style="border-color: var(--color-border); background: var(--color-background); color: var(--color-foreground)"
+									class="w-24 rounded border px-2 py-1 text-xs"
+									style="border-color: var(--color-border); background: var(--color-background); color: var(--color-foreground); border-left: 4px solid {resolveThresholdColor(t.color)}"
 								/>
 							</div>
 						{/each}

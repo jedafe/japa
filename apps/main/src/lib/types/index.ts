@@ -642,6 +642,10 @@ export interface ForumReply {
 	author_display_name: string | null;
 	/** Joined author avatar URL (null when is_anonymous or no avatar). */
 	author_avatar_url: string | null;
+	/** §88: true when the reply is a pending AMA question awaiting host approval. */
+	ama_pending?: boolean;
+	/** §88: when the pending AMA question was approved by the host. */
+	ama_approved_at?: string | null;
 }
 
 /** Vote entity type accepted by POST /forum/vote. */

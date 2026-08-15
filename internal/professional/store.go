@@ -377,17 +377,17 @@ func (s *Store) deleteExpiredInvitations(ctx context.Context) error {
 // ---------------------------------------------------------------------------
 
 // Reserved for future features.
-func (s *Store) createProfessionalRelocation(ctx context.Context, p gen.CreateProfessionalRelocationParams) (gen.ProfessionalRelocation, error) {
+func (s *Store) createProfessionalRelocation(ctx context.Context, p gen.CreateProfessionalRelocationParams) (gen.CreateProfessionalRelocationRow, error) {
 	row, err := s.write.CreateProfessionalRelocation(ctx, p)
 	if err != nil {
-		return gen.ProfessionalRelocation{}, fmt.Errorf("creating professional relocation: %w", err)
+		return gen.CreateProfessionalRelocationRow{}, fmt.Errorf("creating professional relocation: %w", err)
 	}
 
 	return row, nil
 }
 
 // Reserved for future features.
-func (s *Store) listProfessionalRelocationsByProfile(ctx context.Context, profileID, tenantID pgtype.UUID, limit, offset int32) ([]gen.ProfessionalRelocation, error) {
+func (s *Store) listProfessionalRelocationsByProfile(ctx context.Context, profileID, tenantID pgtype.UUID, limit, offset int32) ([]gen.ListProfessionalRelocationsByProfileRow, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -406,10 +406,10 @@ func (s *Store) listProfessionalRelocationsByProfile(ctx context.Context, profil
 }
 
 // Reserved for future features.
-func (s *Store) updateProfessionalRelocation(ctx context.Context, p gen.UpdateProfessionalRelocationParams) (gen.ProfessionalRelocation, error) {
+func (s *Store) updateProfessionalRelocation(ctx context.Context, p gen.UpdateProfessionalRelocationParams) (gen.UpdateProfessionalRelocationRow, error) {
 	row, err := s.write.UpdateProfessionalRelocation(ctx, p)
 	if err != nil {
-		return gen.ProfessionalRelocation{}, fmt.Errorf("updating professional relocation: %w", err)
+		return gen.UpdateProfessionalRelocationRow{}, fmt.Errorf("updating professional relocation: %w", err)
 	}
 
 	return row, nil

@@ -293,12 +293,13 @@ func (s *Store) MarkJobGeneratingCAS(ctx context.Context, tenantID, id pgtype.UU
 // after the AI gateway has produced the draft content (ADR-076 §2 step 7).
 // The job remains in 'draft_ready' until it is routed to the review queue
 // (UpdateJobRoutedToReview) or auto-published (UpdateJobPublished).
-func (s *Store) UpdateJobGenerated(ctx context.Context, tenantID, id, draftContentID pgtype.UUID) error {
+// Sets ai_generated_at (ADR-088) alongside generated_at.
+func (s *Store) UpdateJobGenerated(ctx context.Context, tenantID, id, draftContentID pgtype.UUID, aiModel string) error {
 	_, err := s.db.Writer.Exec(ctx,
 		`UPDATE studio_jobs SET draft_content_id = $3, status = 'draft_ready',
-		          generated_at = now()
+		          generated_at = now(), ai_generated_at = now(), ai_model = NULLIF($4, '')
 		  WHERE id = $1 AND tenant_id = $2`,
-		id, tenantID, draftContentID)
+		id, tenantID, draftContentID, aiModel)
 	return err
 }
 
@@ -316,12 +317,13 @@ func (s *Store) UpdateJobRoutedToReview(ctx context.Context, tenantID, id, revie
 // UpdateJobPublished sets the draft_content_id, status, and timestamps for a
 // job whose draft was auto-published (studio.auto_publish_types, §75). No
 // review_id is written because auto-published types skip the HITL queue.
-func (s *Store) UpdateJobPublished(ctx context.Context, tenantID, id, draftContentID pgtype.UUID) error {
+// Sets ai_generated_at (ADR-088) alongside generated_at.
+func (s *Store) UpdateJobPublished(ctx context.Context, tenantID, id, draftContentID pgtype.UUID, aiModel string) error {
 	_, err := s.db.Writer.Exec(ctx,
 		`UPDATE studio_jobs SET draft_content_id = $3, status = 'published',
-		          generated_at = now(), published_at = now()
+		          generated_at = now(), ai_generated_at = now(), ai_model = NULLIF($4, ''), published_at = now()
 		  WHERE id = $1 AND tenant_id = $2`,
-		id, tenantID, draftContentID)
+		id, tenantID, draftContentID, aiModel)
 	return err
 }
 

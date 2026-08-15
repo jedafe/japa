@@ -135,11 +135,11 @@ func TestCatalogForUser_FiltersByPermissionAndBlocklist(t *testing.T) {
 	t.Parallel()
 
 	reg := NewToolHandlerRegistry()
-	reg.RegisterConfig("content.search", ToolConfig{FunctionName: "content.search"}, "")
-	reg.RegisterConfig("content.create", ToolConfig{FunctionName: "content.create"}, "content.create")
-	reg.RegisterConfig("content.delete", ToolConfig{FunctionName: "content.delete", IsBlocked: true}, "content.delete")
+	reg.RegisterConfig("content.search", ToolConfig{FunctionName: "content.search"}, "", pgtype.UUID{})
+	reg.RegisterConfig("content.create", ToolConfig{FunctionName: "content.create"}, "content.create", pgtype.UUID{})
+	reg.RegisterConfig("content.delete", ToolConfig{FunctionName: "content.delete", IsBlocked: true}, "content.delete", pgtype.UUID{})
 	// Hardcoded blocklist — even with no is_blocked flag and no permission.
-	reg.RegisterConfig("rbac.grant", ToolConfig{FunctionName: "rbac.grant"}, "")
+	reg.RegisterConfig("rbac.grant", ToolConfig{FunctionName: "rbac.grant"}, "", pgtype.UUID{})
 
 	perms := &stubPerms{granted: map[string]bool{"content.create": true}}
 
@@ -164,7 +164,7 @@ func TestCatalogForUser_UserLacksPermission(t *testing.T) {
 	t.Parallel()
 
 	reg := NewToolHandlerRegistry()
-	reg.RegisterConfig("content.create", ToolConfig{FunctionName: "content.create"}, "content.create")
+	reg.RegisterConfig("content.create", ToolConfig{FunctionName: "content.create"}, "content.create", pgtype.UUID{})
 
 	perms := &stubPerms{granted: map[string]bool{}}
 	got := reg.CatalogForUser(context.Background(), perms, pgtype.UUID{}, pgtype.UUID{})
@@ -196,7 +196,7 @@ func TestExecute_Success(t *testing.T) {
 			"type":     "object",
 			"required": []any{"query"},
 		},
-	}, "")
+	}, "", pgtype.UUID{})
 	reg.RegisterHandler("content.search", func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error) {
 		return &ToolResult{Status: ToolCallStatusSuccess, Content: `{"results":[]}`}, nil
 	})
@@ -239,7 +239,7 @@ func TestExecute_SchemaValidation_MissingRequired(t *testing.T) {
 		Parameters: map[string]any{
 			"required": []any{"query"},
 		},
-	}, "")
+	}, "", pgtype.UUID{})
 	called := false
 	reg.RegisterHandler("content.search", func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error) {
 		called = true
@@ -266,7 +266,7 @@ func TestExecute_BlockedOperation(t *testing.T) {
 	t.Parallel()
 
 	reg := NewToolHandlerRegistry()
-	reg.RegisterConfig("rbac.grant", ToolConfig{FunctionName: "rbac.grant"}, "")
+	reg.RegisterConfig("rbac.grant", ToolConfig{FunctionName: "rbac.grant"}, "", pgtype.UUID{})
 	called := false
 	reg.RegisterHandler("rbac.grant", func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error) {
 		called = true
@@ -293,7 +293,7 @@ func TestExecute_RBACUnauthorized(t *testing.T) {
 	t.Parallel()
 
 	reg := NewToolHandlerRegistry()
-	reg.RegisterConfig("content.create", ToolConfig{FunctionName: "content.create"}, "content.create")
+	reg.RegisterConfig("content.create", ToolConfig{FunctionName: "content.create"}, "content.create", pgtype.UUID{})
 	called := false
 	reg.RegisterHandler("content.create", func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error) {
 		called = true
@@ -321,7 +321,7 @@ func TestExecute_RBACFailClosed_NilPerms(t *testing.T) {
 	t.Parallel()
 
 	reg := NewToolHandlerRegistry()
-	reg.RegisterConfig("content.create", ToolConfig{FunctionName: "content.create"}, "content.create")
+	reg.RegisterConfig("content.create", ToolConfig{FunctionName: "content.create"}, "content.create", pgtype.UUID{})
 	called := false
 	reg.RegisterHandler("content.create", func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error) {
 		called = true
@@ -353,7 +353,7 @@ func TestExecute_RBACNoPermissionRequired_NilPerms_Proceeds(t *testing.T) {
 	t.Parallel()
 
 	reg := NewToolHandlerRegistry()
-	reg.RegisterConfig("content.search", ToolConfig{FunctionName: "content.search"}, "")
+	reg.RegisterConfig("content.search", ToolConfig{FunctionName: "content.search"}, "", pgtype.UUID{})
 	reg.RegisterHandler("content.search", stubSuccessHandler)
 
 	// No permission checker, but the tool has no required_permission —
@@ -377,7 +377,7 @@ func TestExecute_PrivacyBlocked(t *testing.T) {
 	t.Parallel()
 
 	reg := NewToolHandlerRegistry()
-	reg.RegisterConfig("content.read", ToolConfig{FunctionName: "content.read"}, "")
+	reg.RegisterConfig("content.read", ToolConfig{FunctionName: "content.read"}, "", pgtype.UUID{})
 	reg.RegisterHandler("content.read", stubSuccessHandler)
 	reg.RegisterPrivacyTarget("content.read", fixedPrivacyTarget(PrivacyEntityContent, contentID))
 
@@ -402,7 +402,7 @@ func TestExecute_PrivacyNotExempt_Proceeds(t *testing.T) {
 	t.Parallel()
 
 	reg := NewToolHandlerRegistry()
-	reg.RegisterConfig("content.read", ToolConfig{FunctionName: "content.read"}, "")
+	reg.RegisterConfig("content.read", ToolConfig{FunctionName: "content.read"}, "", pgtype.UUID{})
 	reg.RegisterHandler("content.read", stubSuccessHandler)
 	reg.RegisterPrivacyTarget("content.read", fixedPrivacyTarget(PrivacyEntityContent, contentID))
 
@@ -424,7 +424,7 @@ func TestExecute_PrivacyTargetZero_SkipsCheck(t *testing.T) {
 	t.Parallel()
 
 	reg := NewToolHandlerRegistry()
-	reg.RegisterConfig("rag.search", ToolConfig{FunctionName: "rag.search"}, "")
+	reg.RegisterConfig("rag.search", ToolConfig{FunctionName: "rag.search"}, "", pgtype.UUID{})
 	reg.RegisterHandler("rag.search", stubSuccessHandler)
 	// Returns zero entity → executor should skip the privacy check.
 	reg.RegisterPrivacyTarget("rag.search", func(ctx context.Context, args json.RawMessage, tenantID pgtype.UUID) (PrivacyEntityType, pgtype.UUID, error) {
@@ -450,7 +450,7 @@ func TestExecute_HandlerError(t *testing.T) {
 	t.Parallel()
 
 	reg := NewToolHandlerRegistry()
-	reg.RegisterConfig("content.search", ToolConfig{FunctionName: "content.search"}, "")
+	reg.RegisterConfig("content.search", ToolConfig{FunctionName: "content.search"}, "", pgtype.UUID{})
 	reg.RegisterHandler("content.search", func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error) {
 		return nil, errors.New("boom")
 	})
@@ -472,7 +472,7 @@ func TestExecute_HandlerPanic_Recovered(t *testing.T) {
 	t.Parallel()
 
 	reg := NewToolHandlerRegistry()
-	reg.RegisterConfig("content.search", ToolConfig{FunctionName: "content.search"}, "")
+	reg.RegisterConfig("content.search", ToolConfig{FunctionName: "content.search"}, "", pgtype.UUID{})
 	reg.RegisterHandler("content.search", func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error) {
 		panic("kaboom")
 	})

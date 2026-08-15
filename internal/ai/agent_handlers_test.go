@@ -652,7 +652,7 @@ func TestHandleCancelSession_Success(t *testing.T) {
 		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
 	}
 	// Verify the Valkey cancel flag was set.
-	flagKey := "jc:agent:session:" + sessID.String()
+	flagKey := "jc:agent:session:" + tn.ID.String() + ":" + sessID.String()
 	if v, _ := cache.Get(context.Background(), flagKey); v != "cancelled" {
 		t.Errorf("Valkey cancel flag = %q, want %q", v, "cancelled")
 	}

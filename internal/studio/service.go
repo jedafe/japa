@@ -466,8 +466,9 @@ func (s *Service) MarkJobGenerating(ctx context.Context, tenantID, jobID pgtype.
 
 // MarkJobGenerated sets the draft_content_id and status to 'draft_ready'
 // after the AI gateway has produced the draft content (ADR-076 §2 step 7).
-func (s *Service) MarkJobGenerated(ctx context.Context, tenantID, jobID, draftContentID pgtype.UUID) error {
-	return s.store.UpdateJobGenerated(ctx, tenantID, jobID, draftContentID)
+// aiModel is the provider model that generated the draft (ADR-088).
+func (s *Service) MarkJobGenerated(ctx context.Context, tenantID, jobID, draftContentID pgtype.UUID, aiModel string) error {
+	return s.store.UpdateJobGenerated(ctx, tenantID, jobID, draftContentID, aiModel)
 }
 
 // MarkJobRoutedToReview sets the review_id and status to 'in_review' after
@@ -484,8 +485,9 @@ func (s *Service) MarkJobFailed(ctx context.Context, tenantID, jobID pgtype.UUID
 
 // MarkJobPublished marks a job's draft as auto-published (status='published').
 // Used for content types in studio.auto_publish_types (§75).
-func (s *Service) MarkJobPublished(ctx context.Context, tenantID, jobID, draftContentID pgtype.UUID) error {
-	return s.store.UpdateJobPublished(ctx, tenantID, jobID, draftContentID)
+// aiModel is the provider model that generated the draft (ADR-088).
+func (s *Service) MarkJobPublished(ctx context.Context, tenantID, jobID, draftContentID pgtype.UUID, aiModel string) error {
+	return s.store.UpdateJobPublished(ctx, tenantID, jobID, draftContentID, aiModel)
 }
 
 // ShouldAutoPublish returns true if the content type can skip review.

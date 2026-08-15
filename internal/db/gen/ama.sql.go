@@ -11,6 +11,30 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const approveAMAQuestion = `-- name: ApproveAMAQuestion :exec
+UPDATE forum_replies
+SET ama_pending     = false,
+    ama_approved_at = now()
+WHERE id = $1
+  AND thread_id = $2
+  AND tenant_id = $3
+  AND ama_pending = true
+  AND deleted_at IS NULL
+`
+
+type ApproveAMAQuestionParams struct {
+	ReplyID  pgtype.UUID `json:"reply_id"`
+	ThreadID pgtype.UUID `json:"thread_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+// Approves a pending AMA question (host or forum.ama.moderate only).
+// Sets ama_pending = false and records the approval timestamp.
+func (q *Queries) ApproveAMAQuestion(ctx context.Context, arg ApproveAMAQuestionParams) error {
+	_, err := q.db.Exec(ctx, approveAMAQuestion, arg.ReplyID, arg.ThreadID, arg.TenantID)
+	return err
+}
+
 const checkAMACooldown = `-- name: CheckAMACooldown :one
 SELECT EXISTS(
     SELECT 1 FROM forum_threads
@@ -405,4 +429,27 @@ func (q *Queries) ListActiveAMAs(ctx context.Context, arg ListActiveAMAsParams) 
 		return nil, err
 	}
 	return items, nil
+}
+
+const setReplyAMAPending = `-- name: SetReplyAMAPending :exec
+
+UPDATE forum_replies
+SET ama_pending = true
+WHERE id = $1 AND tenant_id = $2
+`
+
+type SetReplyAMAPendingParams struct {
+	ID       pgtype.UUID `json:"id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+// =====================
+// Question approval (§88 question_approval_required)
+// =====================
+// Marks a forum reply as pending AMA host approval. Called by the forum
+// service after CreateReply when the parent thread is an AMA with
+// question_approval_required = true and the reply author is not the host.
+func (q *Queries) SetReplyAMAPending(ctx context.Context, arg SetReplyAMAPendingParams) error {
+	_, err := q.db.Exec(ctx, setReplyAMAPending, arg.ID, arg.TenantID)
+	return err
 }

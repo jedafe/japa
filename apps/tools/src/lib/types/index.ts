@@ -74,6 +74,10 @@ export interface SessionUser {
 	primary_space?: SpaceRef | null;
 	ui?: { nav_collapsed?: boolean } & Record<string, unknown>;
 	is_pro?: boolean;
+	/** Effective RBAC permission nodes resolved by the backend (§26). Present
+	 *  on /me so frontend pages gate UI on the actual node (e.g.
+	 *  `appointment_alert.premium`) instead of hardcoded role names (Rule 16). */
+	permissions?: string[];
 }
 
 export interface SpaceRef {

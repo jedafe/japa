@@ -353,6 +353,29 @@ func (s *Store) RecordAIUsage(ctx context.Context, tenantID, userID pgtype.UUID,
 	return nil
 }
 
+// RecordToolUsage inserts a single ai_tool_usage row. Called after every
+// successful tool execution so admin tool-usage stats stay current (§20).
+// tokensUsed and costCents are 0 for internal tools that don't make LLM
+// calls — the row records that the tool was invoked.
+func (s *Store) RecordToolUsage(ctx context.Context, tenantID, toolID pgtype.UUID, userID *pgtype.UUID, tokensUsed, costCents int32) error {
+	var userIDArg any
+	if userID != nil && userID.Valid {
+		userIDArg = *userID
+	} else {
+		userIDArg = nil
+	}
+
+	_, err := s.write.Exec(ctx, `
+		INSERT INTO ai_tool_usage (tenant_id, tool_id, user_id, tokens_used, cost_cents)
+		VALUES ($1, $2, $3, $4, $5)
+	`, tenantID, toolID, userIDArg, tokensUsed, costCents)
+	if err != nil {
+		return fmt.Errorf("recording ai tool usage: %w", err)
+	}
+
+	return nil
+}
+
 // UserBelongsToTenant reports whether the given user id exists within the
 // given tenant. Used by the admin AI-context handlers to prevent cross-tenant
 // access to a user's Honcho memory (ADR-027, §9 multi-tenancy).

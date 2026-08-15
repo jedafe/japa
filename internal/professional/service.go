@@ -6,12 +6,14 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/valkey"
 )
 
 // ErrUpgradeToBusinessRequired is returned when a personal profile type user
@@ -616,16 +618,21 @@ func (s *Service) CleanupExpiredInvitations(ctx context.Context) error {
 
 // CreateRelocationInput holds parameters for creating a relocation.
 type CreateRelocationInput struct {
-	Country string
-	City    string
-	Status  string
-	Year    int32
+	Country     string
+	CountryCode string // ISO 3166-1 alpha-2 (ADR-064a geo-aware integration)
+	City        string
+	Status      string
+	Year        int32
 }
 
 // CreateRelocation records a relocation entry for a professional profile.
-func (s *Service) CreateRelocation(ctx context.Context, tenantID, profileID pgtype.UUID, input CreateRelocationInput) (gen.ProfessionalRelocation, error) {
+// ADR-064a: When the relocation status is "planned" or "in_progress" and a
+// country_code is provided, the user's `destination_country` custom field is
+// updated so the geo-aware personalization feature picks up the destination
+// without the user having to set it again in Settings.
+func (s *Service) CreateRelocation(ctx context.Context, tenantID, profileID, userID pgtype.UUID, input CreateRelocationInput) (gen.CreateProfessionalRelocationRow, error) {
 	if input.Country == "" {
-		return gen.ProfessionalRelocation{}, errors.New("country is required")
+		return gen.CreateProfessionalRelocationRow{}, errors.New("country is required")
 	}
 
 	status := input.Status
@@ -634,7 +641,7 @@ func (s *Service) CreateRelocation(ctx context.Context, tenantID, profileID pgty
 	}
 
 	if !IsValidRelocationStatus(status) {
-		return gen.ProfessionalRelocation{}, fmt.Errorf("invalid relocation status: %s", status)
+		return gen.CreateProfessionalRelocationRow{}, fmt.Errorf("invalid relocation status: %s", status)
 	}
 
 	var city *string
@@ -649,39 +656,70 @@ func (s *Service) CreateRelocation(ctx context.Context, tenantID, profileID pgty
 		year = &input.Year
 	}
 
-	return s.store.createProfessionalRelocation(ctx, gen.CreateProfessionalRelocationParams{
-		TenantID:  tenantID,
-		ProfileID: profileID,
-		Country:   input.Country,
-		City:      city,
-		Status:    statusPtr,
-		Year:      year,
+	var countryCodePtr *string
+	if input.CountryCode != "" {
+		cc := strings.ToUpper(strings.TrimSpace(input.CountryCode))
+		countryCodePtr = &cc
+	}
+
+	relocation, err := s.store.createProfessionalRelocation(ctx, gen.CreateProfessionalRelocationParams{
+		TenantID:    tenantID,
+		ProfileID:   profileID,
+		Country:     input.Country,
+		CountryCode: countryCodePtr,
+		City:        city,
+		Status:      statusPtr,
+		Year:        year,
 	})
+	if err != nil {
+		return gen.CreateProfessionalRelocationRow{}, err
+	}
+
+	// ADR-064a: Feed the destination country into the geo-aware
+	// personalization system when the relocation is forward-looking
+	// (planned or in_progress). "completed" relocations don't update
+	// destination_country because the user has already arrived.
+	if countryCodePtr != nil && (status == RelocationStatusPlanned || status == RelocationStatusInProgress) {
+		if err := s.setDestinationCountry(ctx, tenantID, userID, *countryCodePtr); err != nil {
+			// Non-fatal — the relocation row is already saved. Log and
+			// continue so the user doesn't see an error.
+			slog.Warn("professional: failed to set destination_country from relocation", "error", err)
+		}
+	}
+
+	return relocation, nil
 }
 
 // ListRelocations returns all relocations for a profile.
-func (s *Service) ListRelocations(ctx context.Context, profileID, tenantID pgtype.UUID, limit, offset int32) ([]gen.ProfessionalRelocation, error) {
+func (s *Service) ListRelocations(ctx context.Context, profileID, tenantID pgtype.UUID, limit, offset int32) ([]gen.ListProfessionalRelocationsByProfileRow, error) {
 	return s.store.listProfessionalRelocationsByProfile(ctx, profileID, tenantID, limit, offset)
 }
 
 // UpdateRelocationInput holds parameters for updating a relocation.
 // All fields are optional; omitted fields retain their existing values.
 type UpdateRelocationInput struct {
-	Country string
-	City    string
-	Status  string
-	Year    int32
+	Country     string
+	CountryCode string
+	City        string
+	Status      string
+	Year        int32
 }
 
 // UpdateRelocation partially updates a relocation entry (PATCH semantics).
-func (s *Service) UpdateRelocation(ctx context.Context, id, tenantID pgtype.UUID, input UpdateRelocationInput) (gen.ProfessionalRelocation, error) {
+func (s *Service) UpdateRelocation(ctx context.Context, id, tenantID pgtype.UUID, input UpdateRelocationInput) (gen.UpdateProfessionalRelocationRow, error) {
 	if input.Status != "" && !IsValidRelocationStatus(input.Status) {
-		return gen.ProfessionalRelocation{}, fmt.Errorf("invalid relocation status: %s", input.Status)
+		return gen.UpdateProfessionalRelocationRow{}, fmt.Errorf("invalid relocation status: %s", input.Status)
 	}
 
 	var country *string
 	if input.Country != "" {
 		country = &input.Country
+	}
+
+	var countryCode *string
+	if input.CountryCode != "" {
+		cc := strings.ToUpper(strings.TrimSpace(input.CountryCode))
+		countryCode = &cc
 	}
 
 	var city *string
@@ -700,12 +738,13 @@ func (s *Service) UpdateRelocation(ctx context.Context, id, tenantID pgtype.UUID
 	}
 
 	return s.store.updateProfessionalRelocation(ctx, gen.UpdateProfessionalRelocationParams{
-		ID:       id,
-		TenantID: tenantID,
-		Country:  country,
-		City:     city,
-		Status:   status,
-		Year:     year,
+		ID:          id,
+		TenantID:    tenantID,
+		Country:     country,
+		CountryCode: countryCode,
+		City:        city,
+		Status:      status,
+		Year:        year,
 	})
 }
 
@@ -895,4 +934,49 @@ func (s *Service) IsAdminMember(ctx context.Context, profileID, userID pgtype.UU
 // ListProfileContent returns paginated content authored by a professional profile.
 func (s *Service) ListProfileContent(ctx context.Context, tenantID, profileID pgtype.UUID, limit, offset int32) ([]gen.ListContentsByAuthorProfileRow, error) {
 	return s.store.listProfileContent(ctx, tenantID, profileID, limit, offset)
+}
+
+// setDestinationCountry saves the given ISO 3166-1 alpha-2 code as the
+// `destination_country` custom field on the user's profile (ADR-064a). This
+// mirrors the write path in users.Store.setGeoCustomField so the geo-aware
+// VisitorContext resolver picks up the destination from a relocation without
+// the user having to re-enter it in Settings.
+func (s *Service) setDestinationCountry(ctx context.Context, tenantID, userID pgtype.UUID, geoCode string) error {
+	code := strings.ToUpper(strings.TrimSpace(geoCode))
+	if code == "" {
+		return nil
+	}
+
+	field, err := s.store.read.GetCustomFieldByKey(ctx, gen.GetCustomFieldByKeyParams{
+		Key:      "destination_country",
+		TenantID: tenantID,
+	})
+	if err != nil {
+		return fmt.Errorf("looking up destination_country custom field: %w", err)
+	}
+
+	profileID, err := s.store.read.GetUserProfileID(ctx, gen.GetUserProfileIDParams{
+		TenantID: tenantID, UserID: userID,
+	})
+	if err != nil {
+		return fmt.Errorf("getting user profile id: %w", err)
+	}
+
+	if _, err := s.store.write.UpsertCustomFieldValue(ctx, gen.UpsertCustomFieldValueParams{
+		FieldID:    field.ID,
+		EntityType: "user_profile",
+		EntityID:   profileID,
+		ValueText:  &code,
+	}); err != nil {
+		return fmt.Errorf("upserting destination_country custom field value: %w", err)
+	}
+
+	// ADR-064a: Invalidate the VisitorContext cache so the next request
+	// picks up the new destination_country resolution.
+	if s.vk != nil {
+		_ = s.vk.Del(ctx, valkey.MustKey("visitor:ctx:user:%s", userID.String())).Err()
+		_ = s.vk.Del(ctx, valkey.MustKey("recommendations:user:%s", userID.String())).Err()
+	}
+
+	return nil
 }

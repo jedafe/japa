@@ -14,6 +14,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -25,6 +26,11 @@ import (
 	"github.com/jedafe/japa/internal/ai"
 	"github.com/jedafe/japa/internal/config"
 )
+
+// ErrPublishViaUpdate is returned when UpdateGuide is called with
+// status='published'. Publishing must go through ApproveGuide to enforce
+// the ADR-088 HITL review gate (hitl_reviewed_by + hitl_reviewed_at).
+var ErrPublishViaUpdate = errors.New("arrivalchecklist: cannot publish via update; use the approve endpoint")
 
 // AIDispatcher is the subset of the AI Gateway the arrival checklist
 // needs to generate draft guides. *ai.Dispatcher satisfies this.
@@ -186,10 +192,11 @@ func (s *Service) GetGuide(ctx context.Context, id, tenantID pgtype.UUID) (Guide
 	return guideRowToDTO(row), nil
 }
 
-// GetGuideItems returns the ordered checklist items for a guide. The
-// guide must exist and belong to the tenant.
+// GetGuideItems returns the ordered checklist items for a published guide.
+// The guide must exist, be published, active, and belong to the tenant.
+// Public endpoint — never exposes draft/rejected guides (§92, ADR-088).
 func (s *Service) GetGuideItems(ctx context.Context, guideID, tenantID pgtype.UUID) ([]ChecklistItemDTO, error) {
-	if _, err := s.store.GetGuideByID(ctx, guideID, tenantID); err != nil {
+	if _, err := s.store.GetPublishedGuideByID(ctx, guideID, tenantID); err != nil {
 		if err == pgx.ErrNoRows {
 			return nil, pgx.ErrNoRows
 		}
@@ -287,7 +294,16 @@ func (s *Service) CreateGuide(ctx context.Context, tenantID pgtype.UUID, req Cre
 
 // UpdateGuide updates mutable fields on a guide. Only non-nil fields are
 // applied. Auth and permission checks are done at the handler layer.
+// The status field may only be set to 'draft', 'pending', or 'rejected' via
+// this endpoint — publishing MUST go through ApproveGuide to enforce the
+// ADR-088 HITL review gate (hitl_reviewed_by + hitl_reviewed_at).
 func (s *Service) UpdateGuide(ctx context.Context, id, tenantID pgtype.UUID, req UpdateGuideRequest) (GuideDTO, error) {
+	// Block status='published' via UpdateGuide — publishing must go through
+	// ApproveGuide which records the HITL reviewer and timestamp (ADR-088).
+	if req.Status != nil && *req.Status == StatusPublished {
+		return GuideDTO{}, ErrPublishViaUpdate
+	}
+
 	in := UpdateGuideInput{
 		IsActive:         req.IsActive,
 		IsJapabotIndexed: req.IsJapabotIndexed,
@@ -609,7 +625,7 @@ func (s *Service) ListUserChecklists(ctx context.Context, tenantID, userID pgtyp
 // Returns pgx.ErrNoRows if the guide does not exist or is not published.
 func (s *Service) GetUserChecklistItems(ctx context.Context, tenantID, userID, guideID pgtype.UUID) ([]UserChecklistItemDTO, error) {
 	// Verify the guide exists and is published.
-	if _, err := s.store.GetGuideByID(ctx, guideID, tenantID); err != nil {
+	if _, err := s.store.GetPublishedGuideByID(ctx, guideID, tenantID); err != nil {
 		if err == pgx.ErrNoRows {
 			return nil, pgx.ErrNoRows
 		}
@@ -658,8 +674,10 @@ func (s *Service) StartChecklist(ctx context.Context, tenantID, userID pgtype.UU
 		return GuideDTO{}, fmt.Errorf("invalid guide_id: %w", err)
 	}
 
-	// Verify the guide exists and is published.
-	guide, err := s.store.GetGuideByID(ctx, guideID, tenantID)
+	// Verify the guide exists and is published (§92 — only published guides
+	// can be started by users; draft/ai_draft/pending/rejected are not
+	// visible to non-admin callers per ADR-088 HITL gate).
+	guide, err := s.store.GetPublishedGuideByID(ctx, guideID, tenantID)
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			return GuideDTO{}, pgx.ErrNoRows
@@ -676,9 +694,10 @@ func (s *Service) StartChecklist(ctx context.Context, tenantID, userID pgtype.UU
 
 // TickItem marks a single arrival checklist item complete/incomplete with an
 // optional note. For PATCH /me/arrival-checklists/:id/items/:item_id.
+// Only published+active guides accept progress updates (§92, ADR-088).
 func (s *Service) TickItem(ctx context.Context, tenantID, userID, guideID pgtype.UUID, itemID string, req TickItemRequest) error {
 	// Verify the guide exists and is published.
-	if _, err := s.store.GetGuideByID(ctx, guideID, tenantID); err != nil {
+	if _, err := s.store.GetPublishedGuideByID(ctx, guideID, tenantID); err != nil {
 		if err == pgx.ErrNoRows {
 			return pgx.ErrNoRows
 		}

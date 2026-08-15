@@ -225,9 +225,12 @@ WHERE tenant_id = @tenant_id AND organization_id = @organization_id
 ORDER BY created_at DESC;
 
 -- name: ListActiveBoosts :many
-SELECT ob.*, s.name AS space_name, o.name AS organization_name
+-- Ref: japaconnect-engineering/sections/25-ad-placement.md
+-- Organization boosts link an organization to a campaign (not a space).
+-- The previous query referenced ob.space_id which does not exist on
+-- organization_boosts, causing a 500 on GET /admin/ads/boosts/active.
+SELECT ob.*, o.name AS organization_name
 FROM organization_boosts ob
-LEFT JOIN spaces s ON s.id = ob.space_id
 LEFT JOIN organizations o ON o.id = ob.organization_id
 WHERE ob.tenant_id = @tenant_id AND ob.status = 'active'
   AND (ob.end_date IS NULL OR ob.end_date >= now())

@@ -33,6 +33,7 @@ const (
 	EntityTypeLanguageTest          = "language_test_requirement"
 	EntityTypeTaxObligation         = "tax_obligation_guide"
 	EntityTypeCommunityOrganisation = "community_organisation"
+	EntityTypeNews                  = "news"
 )
 
 // registry maps entity_type → EntitySchema. Populated by init() so the
@@ -56,6 +57,7 @@ var registry = map[string]EntitySchema{
 	EntityTypeLanguageTest:          LanguageTestRequirement,
 	EntityTypeTaxObligation:         TaxObligationGuide,
 	EntityTypeCommunityOrganisation: CommunityOrganisation,
+	EntityTypeNews:                  News,
 }
 
 // ForEntityType returns the registered EntitySchema for the given
@@ -118,6 +120,8 @@ func CategoryToEntityType(category string) string {
 		return EntityTypeTaxObligation
 	case "community", "community_organisation", "diaspora":
 		return EntityTypeCommunityOrganisation
+	case "news":
+		return EntityTypeNews
 	default:
 		return ""
 	}

@@ -288,6 +288,68 @@ func TestGenerateRoadmap_UnknownDimension(t *testing.T) {
 	}
 }
 
+// TestGenerateRoadmap_DefaultSeedDimensions verifies that the default seeded
+// form dimensions (financial, logistical, professional, personal — migration
+// 000279) all produce curated roadmap steps from the built-in fallback
+// library. This is a regression test for the dimension-mismatch bug where the
+// curated library only covered the ADR-071 example dimensions and 3 of 4
+// seeded dimensions produced no roadmap steps.
+func TestGenerateRoadmap_DefaultSeedDimensions(t *testing.T) {
+	dimensionScores := map[string]int{
+		"financial":    20,
+		"logistical":   40,
+		"professional": 60,
+		"personal":     80,
+	}
+
+	roadmap := GenerateRoadmap(dimensionScores, ScoringConfig{})
+
+	// Every seeded dimension must have at least one curated step.
+	seen := map[string]bool{}
+	for _, step := range roadmap {
+		seen[step.Dimension] = true
+	}
+	for _, dim := range []string{"financial", "logistical", "professional", "personal"} {
+		if !seen[dim] {
+			t.Errorf("GenerateRoadmap produced no steps for seeded dimension %q", dim)
+		}
+	}
+}
+
+// TestGenerateRoadmap_CuratedRoadmapOverride verifies that when
+// scoring_config.curated_roadmap is set, GenerateRoadmap uses the
+// admin-configured library instead of the built-in fallback (ADR-071 §3 —
+// curated steps are admin-configurable, stored in scoring_config).
+func TestGenerateRoadmap_CuratedRoadmapOverride(t *testing.T) {
+	customStep := RoadmapStep{
+		Title:       "Custom admin step",
+		Description: "Configured by admin via scoring_config",
+		ContentSlug: "guide/custom-admin-guide",
+	}
+	scoringConfig := ScoringConfig{
+		CuratedRoadmap: map[string][]RoadmapStep{
+			"financial": {customStep},
+		},
+	}
+
+	roadmap := GenerateRoadmap(
+		map[string]int{"financial": 30, "logistical": 50},
+		scoringConfig,
+	)
+
+	// The admin-configured library only has "financial", so "logistical"
+	// (which exists in the fallback) must NOT appear — proving the override
+	// is used instead of the fallback.
+	for _, step := range roadmap {
+		if step.Dimension == "logistical" {
+			t.Error("GenerateRoadmap used the fallback library instead of the admin-configured curated_roadmap")
+		}
+	}
+	if len(roadmap) == 0 || roadmap[0].Title != customStep.Title {
+		t.Errorf("GenerateRoadmap did not use the admin-configured step, got %v", roadmap)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // parseScoringConfig and parseFieldScoringConfig — parsing tests
 // ---------------------------------------------------------------------------

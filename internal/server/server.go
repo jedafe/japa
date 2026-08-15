@@ -664,6 +664,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	// Professional Profiles subsystem (Section 33 — Professional Profiles).
 	professionalService := professional.NewService(database)
+	professionalService.SetValkey(vkClient.Redis()) // ADR-064a: VisitorContext cache invalidation on relocation
 	professionalHandlers := professional.NewHandlers(professionalService, rbacResolver, followService)
 
 	// Organization system (Section 07).
@@ -968,6 +969,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	// Platform Analytics & Site Reports subsystem (Section 40).
 	analyticsService := analytics.NewServiceWithEnqueuer(database, taskEnqueuer)
+	analyticsService.SetSettings(settingsService) // BUG-003: security scan thresholds from system_settings
 	analyticsHandlers := analytics.NewHandlers(analyticsService)
 
 	// Learning Platform subsystem (Section 36).
@@ -1229,6 +1231,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	appointmentAlertService.SetEnqueuer(taskEnqueuer)
 	appointmentAlertService.SetNotifier(notificationService)
 	appointmentAlertService.SetCache(vkClient.Redis())
+	// Premium-tier polling + SMS channel gating (§91, ADR-099). The RBAC
+	// resolver is used to check the appointment_alert.premium permission;
+	// the SMS sender is nil for now (pending platform-wide SMS gateway
+	// integration) and SMS dispatch degrades to a warning log.
+	appointmentAlertService.SetRBAC(rbacResolver)
 	appointmentAlertHandlers := appointmentalert.NewHandlers(appointmentAlertService, settingsService)
 	// Register the service as the embassy alerter processor so the
 	// embassy:poll / embassy:dispatch_alerts / embassy:expire_checks Asynq
@@ -1402,8 +1409,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		aiDispatcher.RegisterProvider("content_generation", xiaomiProvider)
 		aiDispatcher.RegisterProvider("chat", xiaomiProvider)
 		aiDispatcher.RegisterProvider("moderation", xiaomiProvider)
+		aiDispatcher.RegisterProvider("extraction", xiaomiProvider)
 		slog.Info("ai: registered xiaomi provider", "model", ai.XiaomiModelFlash,
-			"categories", []string{"content_generation", "chat", "moderation"})
+			"categories", []string{"content_generation", "chat", "moderation", "extraction"})
 	}
 
 	// Wire the AI classifier into the spam pipeline so the
@@ -2975,6 +2983,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// §12 stale-index fix: wire Asynq so thread/tag CRUD enqueues
 			// search:index_entity tasks.
 			forumHandlers.SetAsynqClient(asynqClient)
+			// §88 question_approval_required: the forum service checks each
+			// new reply's parent thread for AMA question_approval_required and
+			// holds non-host questions for host approval.
+			forumService.SetAMAQuestionHandler(amaService)
 
 			r.With(features.Gate(featureChecker, "feature.forum")).Group(func(r chi.Router) {
 				// Thread routes
@@ -2993,6 +3005,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					// the moderator grant (§88 "host or moderator").
 					r.With(auth.RequireAuth(kr, vkClient.Redis())).
 						Patch("/forum/ama/{id}", amaHandlers.HandleClose)
+				// §88 question_approval_required: host or forum.ama.moderate
+				// may approve a pending question.
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).
+						Post("/forum/ama/{id}/questions/{replyId}/approve", amaHandlers.HandleApproveQuestion)
 				})
 				r.Get("/forum/{slug}", forumHandlers.GetThread)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.thread.edit_own")).
@@ -3515,6 +3531,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Get("/admin/ads/networks", adHandlers.ListAdNetworks)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ad.network.manage")).
 				Post("/admin/ads/networks", adHandlers.CreateAdNetwork)
+			// Providers list (Rule 16 — frontend fetches allowed providers
+			// from the backend). Registered BEFORE /{id} so chi matches it.
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ad.network.manage")).
+				Get("/admin/ads/networks/providers", adHandlers.ListAdNetworkProviders)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ad.network.manage")).
 				Get("/admin/ads/networks/{id}", adHandlers.GetAdNetwork)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ad.network.manage")).
@@ -4291,6 +4311,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				r.Get("/r/{code}", affiliateHandlers.Redirect)
 
 				// Admin: affiliate program management
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "affiliate.admin.view")).
+					Get("/admin/affiliate-program", affiliateHandlers.GetProgramStatsAdmin)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "affiliate.admin.view")).
 					Get("/admin/affiliate-program/members", affiliateHandlers.ListMembersAdmin)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "affiliate.admin.manage")).
@@ -5770,6 +5792,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			})
 
 			// §92 — Arrival Checklist (ADR-100)
+			// Public + user-facing routes are feature-flagged. Admin routes
+			// are NOT gated so admins can create/approve guides before the
+			// feature goes live (consistent with §90 visa routes pattern).
 			r.With(features.Gate(featureChecker, "arrival_checklist.enabled")).Group(func(r chi.Router) {
 				r.Get("/arrival-checklist/selector", arrivalChecklistHandlers.HandleSelector)
 				r.Get("/arrival-checklist/{guide_id}", arrivalChecklistHandlers.HandleGetGuide)
@@ -5782,17 +5807,20 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Post("/me/arrival-checklists", arrivalChecklistHandlers.HandleStartChecklist)
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).
 					Patch("/me/arrival-checklists/{id}/items/{item_id}", arrivalChecklistHandlers.HandleTickItem)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "arrival_checklist.manage")).
-					Get("/admin/arrival-checklists", arrivalChecklistHandlers.HandleAdminList)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "arrival_checklist.manage")).
-					Post("/admin/arrival-checklists", arrivalChecklistHandlers.HandleAdminCreate)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "arrival_checklist.manage")).
-					Post("/admin/arrival-checklists/generate", arrivalChecklistHandlers.HandleAdminGenerate)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "arrival_checklist.manage")).
-					Patch("/admin/arrival-checklists/{id}/approve", arrivalChecklistHandlers.HandleAdminApprove)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "arrival_checklist.manage")).
-					Patch("/admin/arrival-checklists/{id}", arrivalChecklistHandlers.HandleAdminUpdate)
 			})
+			// Admin management routes — always available to admins with
+			// arrival_checklist.manage permission, regardless of the public
+			// feature flag (allows content preparation before go-live).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "arrival_checklist.manage")).
+				Get("/admin/arrival-checklists", arrivalChecklistHandlers.HandleAdminList)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "arrival_checklist.manage")).
+				Post("/admin/arrival-checklists", arrivalChecklistHandlers.HandleAdminCreate)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "arrival_checklist.manage")).
+				Post("/admin/arrival-checklists/generate", arrivalChecklistHandlers.HandleAdminGenerate)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "arrival_checklist.manage")).
+				Patch("/admin/arrival-checklists/{id}/approve", arrivalChecklistHandlers.HandleAdminApprove)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "arrival_checklist.manage")).
+				Patch("/admin/arrival-checklists/{id}", arrivalChecklistHandlers.HandleAdminUpdate)
 
 			// §94 — Professional Credential Checker (ADR-102)
 			r.With(features.Gate(featureChecker, "credential_checker.enabled")).Group(func(r chi.Router) {

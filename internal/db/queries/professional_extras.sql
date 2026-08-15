@@ -7,19 +7,19 @@
 
 -- name: CreateProfessionalRelocation :one
 INSERT INTO professional_relocations (
-    tenant_id, profile_id, country, city, status, year
+    tenant_id, profile_id, country, country_code, city, status, year
 ) VALUES (
-    @tenant_id, @profile_id, @country, sqlc.narg(city), sqlc.narg(status), sqlc.narg(year)
+    @tenant_id, @profile_id, @country, sqlc.narg(country_code), sqlc.narg(city), sqlc.narg(status), sqlc.narg(year)
 )
-RETURNING id, tenant_id, profile_id, country, city, status, year, created_at, updated_at;
+RETURNING id, tenant_id, profile_id, country, country_code, city, status, year, created_at, updated_at;
 
 -- name: GetProfessionalRelocationByID :one
-SELECT id, tenant_id, profile_id, country, city, status, year, created_at, updated_at
+SELECT id, tenant_id, profile_id, country, country_code, city, status, year, created_at, updated_at
 FROM professional_relocations
 WHERE id = @id AND tenant_id = @tenant_id;
 
 -- name: ListProfessionalRelocationsByProfile :many
-SELECT id, tenant_id, profile_id, country, city, status, year, created_at, updated_at
+SELECT id, tenant_id, profile_id, country, country_code, city, status, year, created_at, updated_at
 FROM professional_relocations
 WHERE profile_id = @profile_id AND tenant_id = @tenant_id
 ORDER BY created_at DESC
@@ -29,12 +29,13 @@ LIMIT @page_limit OFFSET @page_offset;
 -- PATCH semantics: omitted fields fall back to their existing values via COALESCE.
 UPDATE professional_relocations
 SET country = COALESCE(sqlc.narg(country), country),
+    country_code = COALESCE(sqlc.narg(country_code), country_code),
     city = COALESCE(sqlc.narg(city), city),
     status = COALESCE(sqlc.narg(status), status),
     year = COALESCE(sqlc.narg(year), year),
     updated_at = now()
 WHERE id = @id AND tenant_id = @tenant_id
-RETURNING id, tenant_id, profile_id, country, city, status, year, created_at, updated_at;
+RETURNING id, tenant_id, profile_id, country, country_code, city, status, year, created_at, updated_at;
 
 -- name: DeleteProfessionalRelocation :exec
 DELETE FROM professional_relocations

@@ -6,7 +6,7 @@
 import { error, redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiGet, apiList } from '$lib/server/api';
-import type { OrganizationAdmin, OrgMember, OrgMeta, ProfilePost } from '$lib/types';
+import type { GeoCountry, OrganizationAdmin, OrgMember, OrgMeta, ProfilePost } from '$lib/types';
 
 export const load: PageServerLoad = async (event) => {
 	if (!event.locals.user) {
@@ -25,13 +25,15 @@ export const load: PageServerLoad = async (event) => {
 	}
 
 	// Members + invitations + content + analytics + meta load best-effort.
-	const [membersRes, invitationsRes, contentRes, analyticsRes, orgMetaRes] = await Promise.all([
+	const [membersRes, invitationsRes, contentRes, analyticsRes, orgMetaRes, countriesRes] = await Promise.all([
 		apiList<OrgMember>(ctx, `/organizations/${id}/members`).catch(() => ({ items: [] as OrgMember[] })),
 		apiList<unknown>(ctx, `/organizations/${id}/invitations`).catch(() => ({ items: [] as unknown[] })),
 		apiList<ProfilePost>(ctx, `/organizations/${id}/content?page_size=20`).catch(() => ({ items: [] as ProfilePost[] })),
 		apiGet<unknown>(ctx, `/organizations/${id}/analytics`).catch(() => null),
 		// BUG-022/023: Fetch org type + member role options from the API (Rule 16).
-		apiGet<OrgMeta>(ctx, '/organizations/meta').catch(() => null)
+		apiGet<OrgMeta>(ctx, '/organizations/meta').catch(() => null),
+		// Country list from the spaces country table (Rule 16).
+		apiList<GeoCountry>(ctx, '/geo/countries').catch(() => ({ items: [] as GeoCountry[] }))
 	]);
 
 	return {
@@ -40,6 +42,7 @@ export const load: PageServerLoad = async (event) => {
 		invitations: invitationsRes.items,
 		content: contentRes.items,
 		analytics: analyticsRes,
-		orgMeta: orgMetaRes
+		orgMeta: orgMetaRes,
+		countries: countriesRes.items
 	};
 };

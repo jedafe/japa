@@ -154,7 +154,7 @@ INSERT INTO forum_replies (
 )
 RETURNING id, tenant_id, thread_id, parent_reply_id, author_user_id,
           body, vote_score, view_count, is_anonymous, is_edited,
-          created_at, updated_at, deleted_at
+          created_at, updated_at, deleted_at, ama_pending, ama_approved_at
 `
 
 type CreateForumReplyParams struct {
@@ -193,6 +193,8 @@ func (q *Queries) CreateForumReply(ctx context.Context, arg CreateForumReplyPara
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DeletedAt,
+		&i.AmaPending,
+		&i.AmaApprovedAt,
 	)
 	return i, err
 }
@@ -595,7 +597,7 @@ func (q *Queries) GetForumPollUserVote(ctx context.Context, arg GetForumPollUser
 const getForumReplyByID = `-- name: GetForumReplyByID :one
 SELECT id, tenant_id, thread_id, parent_reply_id, author_user_id,
        body, vote_score, view_count, is_anonymous, is_edited,
-       created_at, updated_at, deleted_at
+       created_at, updated_at, deleted_at, ama_pending, ama_approved_at
 FROM forum_replies
 WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
 `
@@ -622,6 +624,8 @@ func (q *Queries) GetForumReplyByID(ctx context.Context, arg GetForumReplyByIDPa
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DeletedAt,
+		&i.AmaPending,
+		&i.AmaApprovedAt,
 	)
 	return i, err
 }
@@ -1211,7 +1215,7 @@ func (q *Queries) ListForumBookmarksByUser(ctx context.Context, arg ListForumBoo
 const listForumRepliesByThread = `-- name: ListForumRepliesByThread :many
 SELECT id, tenant_id, thread_id, parent_reply_id, author_user_id,
        body, vote_score, view_count, is_anonymous, is_edited,
-       created_at, updated_at, deleted_at
+       created_at, updated_at, deleted_at, ama_pending, ama_approved_at
 FROM forum_replies
 WHERE thread_id = $1
   AND tenant_id = $2
@@ -1247,6 +1251,8 @@ func (q *Queries) ListForumRepliesByThread(ctx context.Context, arg ListForumRep
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.DeletedAt,
+			&i.AmaPending,
+			&i.AmaApprovedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -1261,7 +1267,7 @@ func (q *Queries) ListForumRepliesByThread(ctx context.Context, arg ListForumRep
 const listForumRepliesByThreadWithAuthor = `-- name: ListForumRepliesByThreadWithAuthor :many
 SELECT fr.id, fr.tenant_id, fr.thread_id, fr.parent_reply_id, fr.author_user_id,
        fr.body, fr.vote_score, fr.view_count, fr.is_anonymous, fr.is_edited,
-       fr.created_at, fr.updated_at, fr.deleted_at,
+       fr.created_at, fr.updated_at, fr.deleted_at, fr.ama_pending, fr.ama_approved_at,
        CASE WHEN fr.is_anonymous THEN NULL ELSE u.username END AS author_username,
        CASE WHEN fr.is_anonymous THEN NULL ELSE up.display_name END AS author_display_name,
        CASE WHEN fr.is_anonymous THEN NULL ELSE up.avatar_url END AS author_avatar_url
@@ -1293,6 +1299,8 @@ type ListForumRepliesByThreadWithAuthorRow struct {
 	CreatedAt         pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
 	DeletedAt         pgtype.Timestamptz `json:"deleted_at"`
+	AmaPending        bool               `json:"ama_pending"`
+	AmaApprovedAt     pgtype.Timestamptz `json:"ama_approved_at"`
 	AuthorUsername    interface{}        `json:"author_username"`
 	AuthorDisplayName interface{}        `json:"author_display_name"`
 	AuthorAvatarUrl   interface{}        `json:"author_avatar_url"`
@@ -1321,6 +1329,8 @@ func (q *Queries) ListForumRepliesByThreadWithAuthor(ctx context.Context, arg Li
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.DeletedAt,
+			&i.AmaPending,
+			&i.AmaApprovedAt,
 			&i.AuthorUsername,
 			&i.AuthorDisplayName,
 			&i.AuthorAvatarUrl,
@@ -2405,7 +2415,7 @@ SET body = $1, is_edited = true, updated_at = now()
 WHERE id = $2 AND tenant_id = $3 AND deleted_at IS NULL
 RETURNING id, tenant_id, thread_id, parent_reply_id, author_user_id,
           body, vote_score, view_count, is_anonymous, is_edited,
-          created_at, updated_at, deleted_at
+          created_at, updated_at, deleted_at, ama_pending, ama_approved_at
 `
 
 type UpdateForumReplyParams struct {
@@ -2431,6 +2441,8 @@ func (q *Queries) UpdateForumReply(ctx context.Context, arg UpdateForumReplyPara
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DeletedAt,
+		&i.AmaPending,
+		&i.AmaApprovedAt,
 	)
 	return i, err
 }

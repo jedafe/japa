@@ -272,6 +272,9 @@ var healthInsurancePrompt string
 //go:embed prompts/culture_lifestyle.txt
 var cultureLifestylePrompt string
 
+//go:embed prompts/news.txt
+var newsPrompt string
+
 // promptTemplates maps entity_type → embedded prompt template. Adding a
 // domain = add a //go:embed line + an entry here. No buildPrompt code
 // change.
@@ -289,6 +292,7 @@ var promptTemplates = map[string]string{
 	schemas.EntityTypeWorkCareer:       workCareerPrompt,
 	schemas.EntityTypeHealthInsurance:  healthInsurancePrompt,
 	schemas.EntityTypeCultureLifestyle: cultureLifestylePrompt,
+	schemas.EntityTypeNews:             newsPrompt,
 }
 
 // buildPrompt loads the prompt template for the given entity schema and

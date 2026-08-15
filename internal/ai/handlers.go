@@ -301,6 +301,49 @@ func parsePageOffset(r *http.Request) int32 {
 	return int32(n) // #nosec G109 G115 -- bounded by non-negative check above
 }
 
+// dispatchAndRecordUsage dispatches through the gateway and, on success,
+// writes a row to ai_usage_log (Section 20 — admin AI usage monitoring).
+// The usage write is fire-and-forget: a failure to log never fails the
+// request. The provider name, model, and token counts are extracted from
+// the Response. Cost is 0 at the gateway level (per-request cost tracking
+// lives in the agent executor path via estimateCost).
+func (h *Handlers) dispatchAndRecordUsage(ctx context.Context, tenantID, userID pgtype.UUID, taskType, category string, req Request) (Response, error) {
+	resp, err := h.Dispatcher.Dispatch(ctx, category, req)
+	if err != nil {
+		return resp, err
+	}
+
+	// Extract model + token counts from the provider response. The Raw map
+	// is OpenAI-compatible: { "model": "...", "usage": { prompt_tokens,
+	// completion_tokens, total_tokens } }.
+	model, _ := resp.Raw["model"].(string)
+	var promptTokens, completionTokens, totalTokens int32
+	if usage, ok := resp.Raw["usage"].(mimoUsage); ok {
+		promptTokens = int32(usage.PromptTokens)
+		completionTokens = int32(usage.CompletionTokens)
+		totalTokens = int32(usage.TotalTokens)
+	} else if usageRaw, ok := resp.Raw["usage"].(map[string]any); ok {
+		if v, ok := usageRaw["prompt_tokens"].(float64); ok {
+			promptTokens = int32(v)
+		}
+		if v, ok := usageRaw["completion_tokens"].(float64); ok {
+			completionTokens = int32(v)
+		}
+		if v, ok := usageRaw["total_tokens"].(float64); ok {
+			totalTokens = int32(v)
+		}
+	}
+
+	// Fire-and-forget usage log. A failure here must not fail the request.
+	if h.Store != nil {
+		if lerr := h.Store.RecordAIUsage(ctx, tenantID, userID, resp.ProviderName, model, taskType, resp.ProviderRef, promptTokens, completionTokens, totalTokens, 0); lerr != nil {
+			slog.Warn("ai: failed to record usage log", "task_type", taskType, "error", lerr)
+		}
+	}
+
+	return resp, nil
+}
+
 // ---------------------------------------------------------------------------
 // AI Generate Handler
 // ---------------------------------------------------------------------------
@@ -409,7 +452,7 @@ func (h *Handlers) HandleGenerate(w http.ResponseWriter, r *http.Request) {
 	hEnabled, hLevel := h.resolveHandlerHumanize(r.Context(), tenantID, input.Humanize, input.HumanizeLevel)
 	writeHumanizePayload(payload, hEnabled, hLevel)
 
-	resp, err := h.Dispatcher.Dispatch(r.Context(), input.Category, Request{
+	resp, err := h.dispatchAndRecordUsage(r.Context(), tenantID, user.UserID, "generate", input.Category, Request{
 		Category: input.Category,
 		Payload:  payload,
 	})
@@ -595,7 +638,7 @@ func (h *Handlers) HandleChat(w http.ResponseWriter, r *http.Request) {
 	hEnabled, hLevel := h.resolveHandlerHumanize(r.Context(), tenantID, input.Humanize, input.HumanizeLevel)
 	writeHumanizePayload(payload, hEnabled, hLevel)
 
-	resp, err := h.Dispatcher.Dispatch(r.Context(), "chat", Request{
+	resp, err := h.dispatchAndRecordUsage(r.Context(), tenantID, user.UserID, "chat", "chat", Request{
 		Category: "chat",
 		Payload:  payload,
 	})
@@ -725,7 +768,7 @@ func (h *Handlers) HandleImprove(w http.ResponseWriter, r *http.Request) {
 	hEnabled, hLevel := h.resolveHandlerHumanize(r.Context(), tenantID, input.Humanize, input.HumanizeLevel)
 	writeHumanizePayload(payload, hEnabled, hLevel)
 
-	resp, err := h.Dispatcher.Dispatch(r.Context(), "content_generation", Request{
+	resp, err := h.dispatchAndRecordUsage(r.Context(), tenantID, user.UserID, "assist_improve", "content_generation", Request{
 		Category: "content_generation",
 		Payload:  payload,
 	})
@@ -788,7 +831,7 @@ func (h *Handlers) HandleSummarize(w http.ResponseWriter, r *http.Request) {
 	hEnabled, hLevel := h.resolveHandlerHumanize(r.Context(), tenantID, input.Humanize, input.HumanizeLevel)
 	writeHumanizePayload(payload, hEnabled, hLevel)
 
-	resp, err := h.Dispatcher.Dispatch(r.Context(), "content_generation", Request{
+	resp, err := h.dispatchAndRecordUsage(r.Context(), tenantID, user.UserID, "assist_summarize", "content_generation", Request{
 		Category: "content_generation",
 		Payload:  payload,
 	})
@@ -852,7 +895,7 @@ func (h *Handlers) HandleTranslate(w http.ResponseWriter, r *http.Request) {
 	hEnabled, hLevel := h.resolveHandlerHumanize(r.Context(), tenantID, input.Humanize, input.HumanizeLevel)
 	writeHumanizePayload(payload, hEnabled, hLevel)
 
-	resp, err := h.Dispatcher.Dispatch(r.Context(), "content_generation", Request{
+	resp, err := h.dispatchAndRecordUsage(r.Context(), tenantID, user.UserID, "assist_translate", "content_generation", Request{
 		Category: "content_generation",
 		Payload:  payload,
 	})
@@ -903,7 +946,7 @@ func (h *Handlers) HandleGenerateTags(w http.ResponseWriter, r *http.Request) {
 		"task":      "generate_tags",
 	}
 
-	resp, err := h.Dispatcher.Dispatch(r.Context(), "content_generation", Request{
+	resp, err := h.dispatchAndRecordUsage(r.Context(), tenantID, user.UserID, "assist_generate_tags", "content_generation", Request{
 		Category: "content_generation",
 		Payload:  payload,
 	})
@@ -961,7 +1004,7 @@ func (h *Handlers) HandleGenerateOG(w http.ResponseWriter, r *http.Request) {
 		"content_type": contentType,
 	}
 
-	resp, err := h.Dispatcher.Dispatch(r.Context(), "content_generation", Request{
+	resp, err := h.dispatchAndRecordUsage(r.Context(), tenantID, user.UserID, "assist_generate_og", "content_generation", Request{
 		Category: "content_generation",
 		Payload:  payload,
 	})

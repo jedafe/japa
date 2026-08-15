@@ -37,6 +37,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/crypto"
 	"github.com/jedafe/japa/internal/valkey"
 )
 
@@ -197,13 +198,13 @@ func ExternalSearchHandler(deps *ToolDeps) ToolHandler {
 		}
 
 		provider := deps.Settings.GetStringOr(ctx, tenantID, "agent.external_search_provider", "tavily")
-		apiKey := deps.Settings.GetStringOr(ctx, tenantID, "agent.external_search_api_key", "")
+		apiKey := decryptSettingIfNeeded(deps.Settings.GetStringOr(ctx, tenantID, "agent.external_search_api_key", ""))
 		if apiKey == "" {
 			return errorToolResult("external_search_unavailable", "external search API key is not configured"), nil
 		}
 
 		// Check cache (jc:agent:external:{hash}).
-		cacheKey := externalSearchCacheKey(a.Query, a.Limit)
+		cacheKey := externalSearchCacheKey(tenantID, a.Query, a.Limit)
 		if deps.Cache != nil {
 			if cached, err := deps.Cache.Get(ctx, cacheKey); err == nil && cached != "" {
 				// Cache hit — return the cached JSON directly.
@@ -248,10 +249,28 @@ func ExternalSearchHandler(deps *ToolDeps) ToolHandler {
 }
 
 // externalSearchCacheKey builds jc:agent:external:{hash} where hash is the
-// SHA-256 of the query + limit. Per the Valkey keys catalog (Rule 4).
-func externalSearchCacheKey(query string, limit int32) string {
-	h := sha256.Sum256([]byte(fmt.Sprintf("%s:%d", query, limit)))
+// SHA-256 of the tenant_id + query + limit. Tenant-scoping prevents
+// cross-tenant cache sharing of external search results (Rule 4, §4.2).
+// Per the Valkey keys catalog (Rule 4).
+func externalSearchCacheKey(tenantID pgtype.UUID, query string, limit int32) string {
+	h := sha256.Sum256([]byte(fmt.Sprintf("%s:%s:%d", tenantID.String(), query, limit)))
 	return valkey.MustKey("agent:external:%s", hex.EncodeToString(h[:16]))
+}
+
+// decryptSettingIfNeeded decrypts a system_settings value if it is encrypted
+// (v1: prefix format). Plaintext values are returned as-is for backward
+// compatibility. Used for secret settings like agent.external_search_api_key
+// that should be stored encrypted at rest (§5.4, §103).
+func decryptSettingIfNeeded(value string) string {
+	if value == "" || !strings.HasPrefix(value, "v1:") {
+		return value
+	}
+	plaintext, err := crypto.Decrypt(value)
+	if err != nil {
+		slog.Warn("ai: failed to decrypt setting, using raw value", "error", err)
+		return value
+	}
+	return plaintext
 }
 
 // ---------------------------------------------------------------------------

@@ -1007,10 +1007,10 @@ func isToolTableType(contentType string) bool {
 type studioProcessorService interface {
 	GetJob(ctx context.Context, tenantID, id pgtype.UUID) (studio.Job, error)
 	MarkJobGenerating(ctx context.Context, tenantID, jobID pgtype.UUID) error
-	MarkJobGenerated(ctx context.Context, tenantID, jobID, draftContentID pgtype.UUID) error
+	MarkJobGenerated(ctx context.Context, tenantID, jobID, draftContentID pgtype.UUID, aiModel string) error
 	MarkJobRoutedToReview(ctx context.Context, tenantID, jobID, reviewID pgtype.UUID) error
 	MarkJobFailed(ctx context.Context, tenantID, jobID pgtype.UUID, errMsg string) error
-	MarkJobPublished(ctx context.Context, tenantID, jobID, draftContentID pgtype.UUID) error
+	MarkJobPublished(ctx context.Context, tenantID, jobID, draftContentID pgtype.UUID, aiModel string) error
 	ShouldAutoPublish(ctx context.Context, tenantID pgtype.UUID, contentType, guideCategory string) bool
 	RunBatch(ctx context.Context, tenantID, batchID pgtype.UUID) error
 	RetryFailed(ctx context.Context, tenantID, jobID pgtype.UUID) error
@@ -1084,8 +1084,9 @@ func (a *studioDraftProcessorAdapter) GenerateJob(ctx context.Context, tenantID,
 
 	// 3. Generate the draft body via the AI gateway.
 	body := job.TopicPrompt
+	aiModel := ""
 	if a.dispatcher != nil {
-		generated, gerr := a.studioGenerateBody(ctx, tenantID, job, persona, extractionContext)
+		generated, model, gerr := a.studioGenerateBody(ctx, tenantID, job, persona, extractionContext)
 		if gerr != nil {
 			_ = a.studio.MarkJobFailed(ctx, tenantID, jobID, "AI generation failed: "+gerr.Error())
 			return fmt.Errorf("studio: generate: body: %w", gerr)
@@ -1093,6 +1094,7 @@ func (a *studioDraftProcessorAdapter) GenerateJob(ctx context.Context, tenantID,
 		if generated != "" {
 			body = generated
 		}
+		aiModel = model
 	}
 
 	// 4. Build field_values with _ai_provenance (ADR-088 universal AI
@@ -1120,7 +1122,7 @@ func (a *studioDraftProcessorAdapter) GenerateJob(ctx context.Context, tenantID,
 	// contents creation as a safe default.
 	if isToolTableType(job.ContentType) {
 		if draftID, targetTable, routed, rerr := a.tryToolTableRouting(ctx, tenantID, jobID, job, persona, body, extractionContext); rerr == nil && routed {
-			a.routeToHITL(ctx, tenantID, jobID, draftID, targetTable, job.ContentType, fvJSON)
+			a.routeToHITL(ctx, tenantID, jobID, draftID, targetTable, job.ContentType, aiModel, fvJSON)
 			return nil
 		}
 		slog.Info("studio: generate: tool table routing fell back to contents",
@@ -1148,11 +1150,11 @@ func (a *studioDraftProcessorAdapter) GenerateJob(ctx context.Context, tenantID,
 		if _, perr := a.contentSvc.UpdateContentStatus(ctx, row.ID, tenantID, "published"); perr != nil {
 			slog.Warn("studio: generate: auto-publish failed, routing to review",
 				"job_id", jobID, "content_id", row.ID, "error", perr)
-			_ = a.studio.MarkJobGenerated(ctx, tenantID, jobID, row.ID)
+			_ = a.studio.MarkJobGenerated(ctx, tenantID, jobID, row.ID, aiModel)
 			a.createStudioReview(ctx, tenantID, row.ID, job.ContentType, fvJSON)
 			return nil
 		}
-		if err := a.studio.MarkJobPublished(ctx, tenantID, jobID, row.ID); err != nil {
+		if err := a.studio.MarkJobPublished(ctx, tenantID, jobID, row.ID, aiModel); err != nil {
 			slog.Warn("studio: generate: mark job published failed", "job_id", jobID, "error", err)
 		}
 		// Transition the linked intel_record to 'published' (§75: "On
@@ -1164,7 +1166,7 @@ func (a *studioDraftProcessorAdapter) GenerateJob(ctx context.Context, tenantID,
 	}
 
 	// Step 7 (ADR-076 §2): mark draft_ready with the draft_content_id.
-	if err := a.studio.MarkJobGenerated(ctx, tenantID, jobID, row.ID); err != nil {
+	if err := a.studio.MarkJobGenerated(ctx, tenantID, jobID, row.ID, aiModel); err != nil {
 		return fmt.Errorf("studio: generate: mark generated: %w", err)
 	}
 
@@ -1174,7 +1176,7 @@ func (a *studioDraftProcessorAdapter) GenerateJob(ctx context.Context, tenantID,
 	// above (via tryToolTableRouting → routeToHITL). When we reach here
 	// the draft row lives in `contents`, so target_table must always be
 	// 'contents' — even for tool-table content types that fell back.
-	a.routeToHITL(ctx, tenantID, jobID, row.ID, "contents", job.ContentType, fvJSON)
+	a.routeToHITL(ctx, tenantID, jobID, row.ID, "contents", job.ContentType, aiModel, fvJSON)
 	return nil
 }
 
@@ -1451,10 +1453,10 @@ func (a *studioDraftProcessorAdapter) tryToolTableRouting(
 func (a *studioDraftProcessorAdapter) routeToHITL(
 	ctx context.Context,
 	tenantID, jobID, draftID pgtype.UUID,
-	targetTable, contentType string,
+	targetTable, contentType, aiModel string,
 	fvJSON []byte,
 ) {
-	if err := a.studio.MarkJobGenerated(ctx, tenantID, jobID, draftID); err != nil {
+	if err := a.studio.MarkJobGenerated(ctx, tenantID, jobID, draftID, aiModel); err != nil {
 		slog.Warn("studio: generate: mark generated failed",
 			"job_id", jobID, "draft_id", draftID, "error", err)
 		return
@@ -1488,8 +1490,9 @@ func (a *studioDraftProcessorAdapter) routeToHITL(
 }
 
 // studioGenerateBody synthesizes a draft body via the AI gateway, weaving in
-// the persona voice prompt when present.
-func (a *studioDraftProcessorAdapter) studioGenerateBody(ctx context.Context, tenantID pgtype.UUID, job studio.Job, persona gen.GetAIPersonaByIDRow, extractionContext string) (string, error) {
+// the persona voice prompt when present. Returns the body text and the model
+// name (for ADR-088 ai_model column on studio_jobs).
+func (a *studioDraftProcessorAdapter) studioGenerateBody(ctx context.Context, tenantID pgtype.UUID, job studio.Job, persona gen.GetAIPersonaByIDRow, extractionContext string) (string, string, error) {
 	prompt := fmt.Sprintf("Generate a %s draft about: %s", job.ContentType, job.TopicPrompt)
 	if persona.VoicePrompt != nil && *persona.VoicePrompt != "" {
 		prompt = fmt.Sprintf("Voice: %s\n\n%s", *persona.VoicePrompt, prompt)
@@ -1508,20 +1511,21 @@ func (a *studioDraftProcessorAdapter) studioGenerateBody(ctx context.Context, te
 		},
 	})
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
+	model, _ := resp.Raw["model"].(string)
 	if text, ok := resp.Raw["text"].(string); ok {
-		return text, nil
+		return text, model, nil
 	}
 	if text, ok := resp.Raw["content"].(string); ok {
-		return text, nil
+		return text, model, nil
 	}
 	if output, ok := resp.Raw["output"].(string); ok {
-		return output, nil
+		return output, model, nil
 	}
 	// Fallback: no recognized text field; return the topic prompt so the
 	// draft is still created with meaningful content.
-	return job.TopicPrompt, nil
+	return job.TopicPrompt, model, nil
 }
 
 // createStudioReview is a best-effort HITL review creation helper.
