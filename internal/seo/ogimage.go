@@ -147,6 +147,7 @@ func (h *OGImageHandler) ServeOGImage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var title, subtitle string
+	isBrandFallback := false
 
 	if t != nil {
 		if meta := h.lookupContent(r.Context(), idStr, t.ID); meta != nil {
@@ -160,6 +161,7 @@ func (h *OGImageHandler) ServeOGImage(w http.ResponseWriter, r *http.Request) {
 	if title == "" {
 		title = h.siteName
 		subtitle = "Community Platform"
+		isBrandFallback = true
 	}
 
 	img := generateOGImage(title, subtitle, h.face)
@@ -174,7 +176,7 @@ func (h *OGImageHandler) ServeOGImage(w http.ResponseWriter, r *http.Request) {
 	// Cache the rendered PNG in Valkey (Section 26: TTL 24h). Cache only
 	// content-specific images (not the brand fallback) so the fallback
 	// stays cheap and doesn't pollute the cache with generic entries.
-	if t != nil && h.vkClient != nil && subtitle != "Community Platform" {
+	if t != nil && h.vkClient != nil && !isBrandFallback {
 		cacheKey := ogCacheKey(t.ID, idStr)
 		if err := h.vkClient.Redis().Set(r.Context(), cacheKey, buf.Bytes(), ogCacheTTL).Err(); err != nil {
 			slog.Warn("og-image: failed to cache", "content_id", idStr, "error", err)

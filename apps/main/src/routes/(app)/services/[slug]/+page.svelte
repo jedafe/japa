@@ -15,16 +15,38 @@
 		HandCoins,
 		Loader2,
 		CheckCircle2,
-		AlertCircle
+		AlertCircle,
+		Star
 	} from 'lucide-svelte';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
-	import type { ServiceListing, ServiceCategory } from '$lib/types';
+	import type { ServiceListing, ServiceCategory, ServiceReview } from '$lib/types';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
 
 	const service = $derived<ServiceListing | null>(data.service);
 	const canEdit = $derived(!!data.authed && !!service?.author_id && service.author_id === data.currentUserId);
+
+	// Reviews + aggregate from the §29 sidecar (BUG-014).
+	const reviews = $derived<ServiceReview[]>(data.reviews ?? []);
+	const reviewAggregate = $derived(data.reviewAggregate ?? { count: 0, avg: 0 });
+	const hasReviews = $derived(reviews.length > 0 || reviewAggregate.count > 0);
+
+	function formatRating(avg: number): string {
+		return avg.toFixed(1);
+	}
+
+	function reviewAuthorName(r: ServiceReview): string {
+		return r.author_display_name ?? r.author_username ?? t('services.anonymous_reviewer', 'Anonymous');
+	}
+
+	function formatDate(iso: string): string {
+		try {
+			return new Date(iso).toLocaleDateString();
+		} catch {
+			return iso;
+		}
+	}
 
 	const title = $derived(
 		service
@@ -194,6 +216,55 @@
 			{#if service.body}
 				<div class="mt-6 prose prose-sm max-w-none text-[var(--color-text)]">
 					{@html service.body_html || service.body}
+				</div>
+			{/if}
+
+			<!-- Reviews (§29 sidecar — BUG-014) -->
+			{#if hasReviews}
+				<div class="mt-8 border-t border-[var(--color-border)] pt-6">
+					<h2 class="flex items-center gap-2 text-lg font-semibold text-[var(--color-text)]">
+						<Star size={18} class="text-[var(--color-primary)]" />
+						{t('services.reviews_heading', 'Reviews')}
+						{#if reviewAggregate.count > 0}
+							<span class="text-sm font-normal text-[var(--color-muted)]">
+								{formatRating(reviewAggregate.avg)} · {reviewAggregate.count} {t('services.reviews_count', reviewAggregate.count === 1 ? 'review' : 'reviews')}
+							</span>
+						{/if}
+					</h2>
+
+					{#if reviews.length > 0}
+						<ul class="mt-4 space-y-4">
+							{#each reviews as review (review.id)}
+								<li class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+									<div class="flex items-center justify-between gap-2">
+										<div class="flex items-center gap-2">
+											<span class="text-sm font-medium text-[var(--color-text)]">{reviewAuthorName(review)}</span>
+											<span class="flex items-center gap-0.5 text-[var(--color-primary)]">
+												{#each Array(5) as _, i}
+													<Star
+														size={12}
+														fill={i < review.rating ? 'currentColor' : 'none'}
+														class={i < review.rating ? '' : 'text-[var(--color-muted)]'}
+													/>
+												{/each}
+											</span>
+										</div>
+										<span class="text-xs text-[var(--color-muted)]">{formatDate(review.created_at)}</span>
+									</div>
+									{#if review.title}
+										<p class="mt-2 text-sm font-medium text-[var(--color-text)]">{review.title}</p>
+									{/if}
+									{#if review.body}
+										<p class="mt-1 text-sm text-[var(--color-text-subtle)]">{review.body}</p>
+									{/if}
+								</li>
+							{/each}
+						</ul>
+					{:else}
+						<p class="mt-4 text-sm text-[var(--color-muted)]">
+							{t('services.no_reviews_yet', 'No reviews yet. Be the first to share your experience.')}
+						</p>
+					{/if}
 				</div>
 			{/if}
 

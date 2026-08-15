@@ -45,6 +45,9 @@ export const SEO_MAX_LENGTHS: Record<string, number> = {
 // matching the backend's excerpt() fallback for meta_description.
 // Exported so the editor can pre-fill meta_description with a body excerpt
 // when the stored field is empty (Section 26 ResolveMetadata fallback).
+// Uses Array.from() for rune-safe truncation so multi-byte UTF-8 characters
+// (French accents, Nigerian names) are never split mid-codepoint — matches
+// the backend's []rune(s) truncation in internal/seo/sitemap.go.
 export function excerpt(body: string, n: number): string {
 	if (!body) return '';
 	// Strip HTML tags (body_html is the rendered HTML from the editor).
@@ -53,7 +56,7 @@ export function excerpt(body: string, n: number): string {
 		.replace(/&[a-z]+;/gi, ' ')
 		.replace(/\s+/g, ' ')
 		.trim();
-	return text.slice(0, n);
+	return Array.from(text).slice(0, n).join('');
 }
 
 // computeSeoScore evaluates the current form state and returns a score

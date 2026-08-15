@@ -1712,7 +1712,7 @@ export const achievementAdminApi = {
 
 export const serviceDirectoryAdminApi = {
 	list: (params?: string) =>
-		apiRaw<{ data: unknown[]; pagination: { page: number; limit: number; total: number } }>(
+		apiRaw<{ data: unknown[]; meta: { page: number; limit: number; total: number } }>(
 			`/admin/services${params ? `?${params}` : ''}`
 		),
 	verify: (id: string) => api<unknown>(`/admin/services/${id}/verify`, { method: 'PATCH', body: {} }),

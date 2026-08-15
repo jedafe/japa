@@ -268,6 +268,11 @@ func (h *Handlers) UpdateSidebarWidget(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	sidebarID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid sidebar ID")
+		return
+	}
 	id, err := parseUUIDParam(r, "widgetId")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid widget ID")
@@ -278,7 +283,7 @@ func (h *Handlers) UpdateSidebarWidget(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
 		return
 	}
-	widget, err := h.Service.UpdateSidebarWidget(r.Context(), id, tenantID, input)
+	widget, err := h.Service.UpdateSidebarWidget(r.Context(), id, sidebarID, tenantID, input)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -292,12 +297,17 @@ func (h *Handlers) DeleteSidebarWidget(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	sidebarID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid sidebar ID")
+		return
+	}
 	id, err := parseUUIDParam(r, "widgetId")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid widget ID")
 		return
 	}
-	if err := h.Service.DeleteSidebarWidget(r.Context(), id, tenantID); err != nil {
+	if err := h.Service.DeleteSidebarWidget(r.Context(), id, sidebarID, tenantID); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -310,6 +320,11 @@ func (h *Handlers) ReorderSidebarWidgets(w http.ResponseWriter, r *http.Request)
 	if !ok {
 		return
 	}
+	sidebarID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid sidebar ID")
+		return
+	}
 	var input ReorderInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
@@ -319,7 +334,7 @@ func (h *Handlers) ReorderSidebarWidgets(w http.ResponseWriter, r *http.Request)
 		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "items array is required")
 		return
 	}
-	if err := h.Service.ReorderSidebarWidgets(r.Context(), tenantID, input.Items); err != nil {
+	if err := h.Service.ReorderSidebarWidgets(r.Context(), sidebarID, tenantID, input.Items); err != nil {
 		handleServiceError(w, err)
 		return
 	}

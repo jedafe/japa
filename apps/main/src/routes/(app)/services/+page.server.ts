@@ -30,7 +30,8 @@ export const load: PageServerLoad = async (event) => {
 	const filters = { dest, category, verified, sort, page };
 
 	const params = new URLSearchParams();
-	params.set('page_size', String(PAGE_SIZE));
+	params.set('limit', String(PAGE_SIZE));
+	if (page > 1) params.set('page', String(page));
 	if (dest) params.set('dest', dest);
 	if (category) params.set('category', category);
 	if (verified) params.set('verified', verified);
