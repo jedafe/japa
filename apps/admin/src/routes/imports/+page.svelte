@@ -16,7 +16,6 @@
 	import { api, apiRaw } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
-	import { onMount } from 'svelte';
 	import { Eye, RotateCw } from 'lucide-svelte';
 	import type { ActionItem, FilterDef } from '$lib/components/ui/data-table';
 
@@ -59,7 +58,7 @@
 		}
 	}
 
-	onMount(() => {
+	$effect(() => {
 		loadSources();
 	});
 

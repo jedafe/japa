@@ -86,7 +86,7 @@
 			}
 		} catch (e) {
 			// Settings load is best-effort — the status dashboard still works.
-			console.error('Failed to load RAG settings', e);
+			console.error('Failed to load RAG settings', e instanceof Error ? e.message : String(e));
 		} finally {
 			settingsLoading = false;
 		}

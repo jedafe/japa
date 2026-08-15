@@ -56,6 +56,11 @@
 	let pendingBulkIpIds = $state<string[]>([]);
 	// L4: Bulk selection state for scan findings
 	let selectedScanIds = $state(new Set<string>());
+	// Scan finding delete confirmation
+	let showDeleteScanConfirm = $state(false);
+	let deleteScanTarget = $state<ScanResult | null>(null);
+	let pendingBulkScanIds = $state<string[]>([]);
+	let showBulkDeleteScanConfirm = $state(false);
 
 	let showCreateModal = $state(false);
 	let cidr = $state('');
@@ -72,6 +77,11 @@
 	let scanRunning = $state(false);
 	let scanMessage = $state('');
 	let scanMessageType = $state<'success' | 'error' | ''>('');
+	// Post-scan refresh: a single delayed reload so the user sees results
+	// without waiting for the 30s background interval. The background
+	// interval handles the case where the Asynq worker is slower than this.
+	let scanRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+	const SCAN_REFRESH_DELAY_MS = 8000;
 
 	let blockTypeLabels = $derived.by<Record<string, string>>(() => {
 		translations();
@@ -158,6 +168,12 @@
 			variant: 'default',
 			onClick: (row) => resolveScanResult((row as unknown as ScanResult).id),
 			hidden: (row) => (row as unknown as ScanResult).resolved
+		},
+		{
+			label: t('common.delete', 'Delete'),
+			icon: Trash2,
+			variant: 'destructive',
+			onClick: (row) => openDeleteScanConfirm(row as unknown as ScanResult)
 		}
 	];
 	});
@@ -172,6 +188,15 @@
 			onClick: async (ids: string[]) => {
 				await Promise.allSettled(ids.map((id) => resolveScanResult(id)));
 				selectedScanIds = new Set();
+			}
+		},
+		{
+			label: t('security.delete_selected', 'Delete Selected'),
+			icon: Trash2,
+			variant: 'destructive',
+			onClick: (ids: string[]) => {
+				pendingBulkScanIds = ids;
+				showBulkDeleteScanConfirm = true;
 			}
 		}
 	];
@@ -328,12 +353,15 @@
 		loadScanResults();
 		loadIpBlocks();
 
+		// Background refresh every 2h — keeps the page from going stale when
+		// left open, without hammering the API on a short interval. The
+		// post-scan refresh (scheduleScanRefresh) handles the "Run Scan" case.
 		const interval = setInterval(() => {
 			if (document.visibilityState === 'visible') {
 				loadScanResults();
 				loadIpBlocks();
 			}
-		}, 30_000);
+		}, 2 * 60 * 60 * 1000);
 
 		const onVisible = () => {
 			if (document.visibilityState === 'visible') {
@@ -346,6 +374,7 @@
 		return () => {
 			clearInterval(interval);
 			document.removeEventListener('visibilitychange', onVisible);
+			cancelScanRefresh();
 		};
 	});
 
@@ -386,7 +415,9 @@
 			if (result.ok) {
 				scanMessage = t('security.scan_enqueued', 'Scan enqueued. Results will appear shortly.');
 				scanMessageType = 'success';
-				setTimeout(() => loadScanResults(), 5000);
+				// Single delayed refresh — gives the Asynq worker time to process
+				// without looping. The 30s background interval covers slower workers.
+				scheduleScanRefresh();
 			} else {
 				scanMessage = result.error || t('security.scan_error', 'Failed to trigger scan');
 				scanMessageType = 'error';
@@ -396,6 +427,18 @@
 			scanMessageType = 'error';
 		} finally {
 			scanRunning = false;
+		}
+	}
+
+	function scheduleScanRefresh() {
+		cancelScanRefresh();
+		scanRefreshTimer = setTimeout(() => loadScanResults(), SCAN_REFRESH_DELAY_MS);
+	}
+
+	function cancelScanRefresh() {
+		if (scanRefreshTimer !== null) {
+			clearTimeout(scanRefreshTimer);
+			scanRefreshTimer = null;
 		}
 	}
 
@@ -412,6 +455,56 @@
 			scanMessage = t('security.resolve_error', 'Failed to resolve finding.');
 			scanMessageType = 'error';
 		}
+	}
+
+	function openDeleteScanConfirm(finding: ScanResult) {
+		deleteScanTarget = finding;
+		showDeleteScanConfirm = true;
+	}
+
+	function closeDeleteScanConfirm() {
+		showDeleteScanConfirm = false;
+		deleteScanTarget = null;
+	}
+
+	async function deleteScanResult() {
+		if (!deleteScanTarget) return;
+		try {
+			const result = await api(`/control/security/${deleteScanTarget.id}`, { method: 'DELETE' });
+			if (result.ok) {
+				results = results.filter((r) => r.id !== deleteScanTarget!.id);
+				selectedScanIds.delete(deleteScanTarget.id);
+				selectedScanIds = new Set(selectedScanIds);
+				closeDeleteScanConfirm();
+			} else {
+				scanMessage = result.error || t('security.delete_finding_error', 'Failed to delete finding.');
+				scanMessageType = 'error';
+			}
+		} catch {
+			scanMessage = t('security.delete_finding_error', 'Failed to delete finding.');
+			scanMessageType = 'error';
+		}
+	}
+
+	async function confirmBulkDeleteScan() {
+		const ids = pendingBulkScanIds;
+		const settled = await Promise.allSettled(
+			ids.map((id) => api(`/control/security/${id}`, { method: 'DELETE' }))
+		);
+		const failed = settled.filter((r) => r.status === 'rejected').length;
+		const deletedIds = new Set(
+			ids.filter((_, i) => settled[i].status === 'fulfilled' && (settled[i] as PromiseFulfilledResult<{ ok: boolean }>).value.ok)
+		);
+		results = results.filter((r) => !deletedIds.has(r.id));
+		if (failed > 0) {
+			scanMessage = t('security.bulk_delete_partial_error', `{failed} of ${ids.length} deletes failed.`)
+				.replace('{failed}', String(failed))
+				.replace('{count}', String(ids.length));
+			scanMessageType = 'error';
+		}
+		selectedScanIds = new Set();
+		pendingBulkScanIds = [];
+		showBulkDeleteScanConfirm = false;
 	}
 
 	function openCreateModal() {
@@ -741,4 +834,24 @@
 	confirmText={t('common.delete', 'Delete')}
 	onConfirm={confirmBulkDeleteIp}
 	onCancel={() => { confirmBulkDeleteIpOpen = false; pendingBulkIpIds = []; }}
+/>
+
+<!-- Single scan finding delete confirmation -->
+<ConfirmModal
+	bind:open={showDeleteScanConfirm}
+	title={t('security.delete_finding_title', 'Delete Finding')}
+	consequence={deleteScanTarget ? t('security.delete_finding_confirm', 'Are you sure you want to permanently delete this finding? This action cannot be undone.') : ''}
+	confirmText={t('common.delete', 'Delete')}
+	onConfirm={deleteScanResult}
+	onCancel={closeDeleteScanConfirm}
+/>
+
+<!-- Bulk scan finding delete confirmation -->
+<ConfirmModal
+	bind:open={showBulkDeleteScanConfirm}
+	title={t('security.bulk_delete_findings_title', 'Delete Selected Findings')}
+	consequence={t('security.bulk_delete_findings_confirm', 'Are you sure you want to permanently delete the selected findings? This action cannot be undone.')}
+	confirmText={t('common.delete', 'Delete')}
+	onConfirm={confirmBulkDeleteScan}
+	onCancel={() => { showBulkDeleteScanConfirm = false; pendingBulkScanIds = []; }}
 />

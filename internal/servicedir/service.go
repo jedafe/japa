@@ -465,6 +465,18 @@ func (s *Service) AdminVerify(ctx context.Context, contentID, tenantID, verified
 	return nil
 }
 
+// AdminUnverify marks a service listing as unverified by an admin
+// (service.verify permission). Clears the verified flag and audit trail.
+func (s *Service) AdminUnverify(ctx context.Context, contentID, tenantID pgtype.UUID) error {
+	if err := s.store.UnverifyService(ctx, contentID, tenantID); err != nil {
+		if err == pgx.ErrNoRows {
+			return pgx.ErrNoRows
+		}
+		return fmt.Errorf("servicedir: admin unverify: %w", err)
+	}
+	return nil
+}
+
 // AdminResolveClaim resolves a pending organization claim on a service
 // listing. Approving sets claim_status to 'approved' and links the org;
 // rejecting sets claim_status to 'rejected' and clears claimed_by_org_id

@@ -158,14 +158,31 @@
 		})();
 	});
 
+	// ── Org type autocomplete helpers (filter pre-loaded options client-side) ──
+	function fetchOrgTypeOptions(q: string): Promise<{ id: string; label: string }[]> {
+		const query = q.toLowerCase();
+		const filtered = query === ''
+			? orgTypeOptions
+			: orgTypeOptions.filter((o) => o.label.toLowerCase().includes(query));
+		return Promise.resolve(filtered.map((o) => ({ id: o.value, label: o.label })));
+	}
+
+	function fetchOrgTypeOptionsInitial(): Promise<{ id: string; label: string }[]> {
+		return Promise.resolve(orgTypeOptions.map((o) => ({ id: o.value, label: o.label })));
+	}
+
+	function getOrgTypeSelectedLabel(id: string): string {
+		return orgTypeOptions.find((o) => o.value === id)?.label ?? id;
+	}
+
 	// ── Create/Edit form fields ───── standard flat form, EntityForm handles rendering + edit seeding.
-	// BUG-022: org_type select is API-driven (Rule 16). Built as $derived so
+	// BUG-022: org_type autocomplete is API-driven (Rule 16). Built as $derived so
 	// the options populate after the meta endpoint resolves.
 	const fields = $derived<FieldDef[]>([
 		{ key: "name", label: t("organisations.name", "Name"), type: "text", required: true },
 		{ key: "slug", label: t("common.slug", "Slug"), type: "text" },
 		...(orgTypeOptions.length > 0
-			? [{ key: "org_type", label: t("organisations.new.field_type", "Organization type"), type: "select" as const, options: orgTypeOptions }]
+			? [{ key: "org_type", label: t("organisations.new.field_type", "Organization type"), type: "autocomplete" as const, placeholder: t("organisations.org_type_placeholder", "Search organization type…"), emptyMessage: t("common.no_results", "No results found"), fetcher: fetchOrgTypeOptions, initialFetcher: fetchOrgTypeOptionsInitial, getSelectedLabel: getOrgTypeSelectedLabel }]
 			: [])
 	]);
 

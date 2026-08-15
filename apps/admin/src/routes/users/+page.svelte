@@ -7,11 +7,10 @@
 	import { t } from "$lib/stores/i18n.svelte";
 	import { hasPermission } from "$lib/stores/permissions.svelte";
 	import { goto, invalidateAll } from "$app/navigation";
-	import { onMount } from "svelte";
 	import {
 		Eye, Pencil, Trash2, Ban, AlertTriangle, RotateCcw, Trash, UserPlus
 	} from "lucide-svelte";
-	import type { ActionItem, FilterDef } from "$lib/components/ui/data-table";
+	import type { ActionItem, ActionContext, FilterDef } from "$lib/components/ui/data-table";
 
 	type User = {
 		id: string;
@@ -92,7 +91,7 @@
 		}
 	}
 
-	onMount(() => {
+	$effect(() => {
 		loadFilterOptions();
 	});
 
@@ -309,7 +308,7 @@
 	// ActionItem[] with show() predicates; custom actions replace defaults, so View/Edit/Delete are included explicitly.
 	const rowActions = $derived.by<ActionItem[]>(() => {
 		const acts: ActionItem[] = [
-			{ label: t("common.view", "View"), icon: Eye, onclick: (row: User) => goto(`/users/${row.id}`) }
+			{ label: t("common.view", "View"), icon: Eye, onclick: (row: User, ctx?: ActionContext) => ctx?.openView(row) }
 		];
 		if (canManageUsers) {
 			acts.push({ label: t("common.edit", "Edit"), icon: Pencil, onclick: (row: User) => goto(`/users/${row.id}`) });

@@ -10,7 +10,6 @@
 	import { universityAdminApi } from "$lib/api";
 	import { t } from "$lib/stores/i18n.svelte";
 	import { hasPermission } from "$lib/stores/permissions.svelte";
-	import { onMount } from "svelte";
 
 	type Payout = {
 		id: string;
@@ -152,7 +151,9 @@
 		actionLoading = false;
 	}
 
-	onMount(load);
+	$effect(() => {
+		load();
+	});
 </script>
 
 <svelte:head>

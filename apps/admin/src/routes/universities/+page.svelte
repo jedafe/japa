@@ -118,6 +118,23 @@
 		return acts;
 	});
 
+	// ── Country autocomplete helpers (filter pre-loaded options client-side) ──
+	function fetchCountryOptions(q: string): Promise<{ id: string; label: string }[]> {
+		const query = q.toLowerCase();
+		const filtered = query === ''
+			? countryOptions
+			: countryOptions.filter((o) => o.label.toLowerCase().includes(query));
+		return Promise.resolve(filtered.map((o) => ({ id: o.value, label: o.label })));
+	}
+
+	function fetchCountryOptionsInitial(): Promise<{ id: string; label: string }[]> {
+		return Promise.resolve(countryOptions.map((o) => ({ id: o.value, label: o.label })));
+	}
+
+	function getCountrySelectedLabel(id: string): string {
+		return countryOptions.find((o) => o.value === id)?.label ?? id;
+	}
+
 	// ── Create/Edit form fields ─────────────────────────────────────────────
 	// logo_url is accepted by the backend (POST/PATCH /admin/universities) and
 	// enqueues university:fetch_logo to download + store it (Section 39).
@@ -125,7 +142,7 @@
 	const fields = $derived<FieldDef[]>([
 		{ key: "name", label: t("universities.name", "Name"), type: "text", required: true },
 		{ key: "slug", label: t("universities.domain_slug", "Domain"), type: "text", placeholder: "mit.edu" },
-		{ key: "country", label: t("universities.country", "Country"), type: "select", options: countryOptions, placeholder: t("universities.country_placeholder", "Select country") },
+		{ key: "country", label: t("universities.country", "Country"), type: "autocomplete", placeholder: t("universities.country_placeholder", "Select country"), emptyMessage: t("common.no_results", "No results found"), fetcher: fetchCountryOptions, initialFetcher: fetchCountryOptionsInitial, getSelectedLabel: getCountrySelectedLabel },
 		{ key: "logo_url", label: t("universities.logo_url", "Logo URL"), type: "url", placeholder: "https://…" },
 		{ key: "verified", label: t("universities.verified", "Verified"), type: "checkbox" }
 	]);

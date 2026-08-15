@@ -8,6 +8,8 @@
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import LoadingSkeleton from '$lib/components/ui/LoadingSkeleton.svelte';
 	import ToolDisabled from '$lib/components/ui/ToolDisabled.svelte';
+	import Autocomplete from '$lib/components/ui/Autocomplete.svelte';
+	import type { AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
 	import type { TaxGuideWithAi, TaxTreaty, GeoSpaceOption } from '$lib/types';
 
 	/**
@@ -108,12 +110,20 @@
 		}).filter((item) => item.action.length > 0);
 	}
 
-	function onOriginChange(e: Event) {
-		selectedOriginId = (e.currentTarget as HTMLSelectElement).value;
+	function fetchDestinations(q: string): Promise<AutocompleteItem[]> {
+		const query = q.toLowerCase();
+		const filtered = query === ''
+			? destinations
+			: destinations.filter((d) => d.name.toLowerCase().includes(query));
+		return Promise.resolve(filtered.map((d) => ({ id: d.id, label: d.name })));
 	}
 
-	function onDestChange(e: Event) {
-		selectedDestId = (e.currentTarget as HTMLSelectElement).value;
+	function fetchDestinationsInitial(): Promise<AutocompleteItem[]> {
+		return fetchDestinations('');
+	}
+
+	function getDestinationLabel(id: string): string {
+		return destinations.find((d) => d.id === id)?.name ?? id;
 	}
 </script>
 
@@ -167,17 +177,17 @@
 					<label for="dest-selector" class="text-sm font-medium text-text whitespace-nowrap">
 						{t('tax_calculator.destination', 'Destination:')}
 					</label>
-					<select
+					<Autocomplete
 						id="dest-selector"
-						value={selectedDestId}
-						onchange={onDestChange}
-						class="flex-1 px-4 py-2 bg-surface border border-border rounded-lg text-text focus:border-primary focus:outline-none"
-					>
-						<option value="">{t('geo.select_destination', 'Select a country…')}</option>
-						{#each destinations as dest (dest.id)}
-							<option value={dest.id}>{dest.name}</option>
-						{/each}
-					</select>
+						placeholder={t('geo.select_destination', 'Select a country…')}
+						emptyMessage={t('geo.no_destinations', 'No destinations found')}
+						fetcher={fetchDestinations}
+						initialFetcher={fetchDestinationsInitial}
+						selectedId={selectedDestId || null}
+						selectedLabel={selectedDestId ? getDestinationLabel(selectedDestId) : null}
+						onSelect={(item) => (selectedDestId = item.id)}
+						onClear={() => (selectedDestId = '')}
+					/>
 				</div>
 
 				<!-- Origin selector (secondary — geo-aware pattern) -->
@@ -185,17 +195,17 @@
 					<label for="origin-selector" class="text-sm font-medium text-text whitespace-nowrap">
 						{t('tax_calculator.origin', 'Origin:')}
 					</label>
-					<select
+					<Autocomplete
 						id="origin-selector"
-						value={selectedOriginId}
-						onchange={onOriginChange}
-						class="flex-1 px-4 py-2 bg-surface border border-border rounded-lg text-text focus:border-primary focus:outline-none"
-					>
-						<option value="">{t('tax_calculator.select_origin', 'Select origin country…')}</option>
-						{#each destinations as dest (dest.id)}
-							<option value={dest.id}>{dest.name}</option>
-						{/each}
-					</select>
+						placeholder={t('tax_calculator.select_origin', 'Select origin country…')}
+						emptyMessage={t('geo.no_destinations', 'No destinations found')}
+						fetcher={fetchDestinations}
+						initialFetcher={fetchDestinationsInitial}
+						selectedId={selectedOriginId || null}
+						selectedLabel={selectedOriginId ? getDestinationLabel(selectedOriginId) : null}
+						onSelect={(item) => (selectedOriginId = item.id)}
+						onClear={() => (selectedOriginId = '')}
+					/>
 				</div>
 			</div>
 

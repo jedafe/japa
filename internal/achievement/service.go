@@ -172,6 +172,33 @@ func (s *Service) allowedReactions(ctx context.Context, tenantID pgtype.UUID) []
 // ErrMissingMilestone is returned when a submission omits milestone_type.
 var ErrMissingMilestone = fmt.Errorf("milestone_type is required")
 
+// ErrInvalidMilestone is returned when a submission uses a milestone_type
+// that is not in the spec-defined enum set (§89 Schema).
+var ErrInvalidMilestone = fmt.Errorf("invalid milestone_type")
+
+// ErrInvalidDestination is returned when the destination_space_id does not
+// reference a country-level space (§89 Geo Awareness).
+var ErrInvalidDestination = fmt.Errorf("destination_space_id must be a country-level space")
+
+// validMilestoneTypes is the spec-defined enum set for achievement milestone
+// types (§89 Schema). The DB column is TEXT (no CHECK constraint), so
+// server-side validation is the only guard against invalid values.
+// Ref: japaconnect-engineering/sections/89-achievement-feed.md
+var validMilestoneTypes = map[string]bool{
+	"visa_approved":       true,
+	"job_offer":           true,
+	"university_accepted": true,
+	"arrived":             true,
+	"one_year":            true,
+	"citizenship":         true,
+	"other":               true,
+}
+
+// IsValidMilestoneType reports whether v is a spec-defined milestone type.
+func IsValidMilestoneType(v string) bool {
+	return validMilestoneTypes[v]
+}
+
 // Submit creates a new achievement — a contents row with
 // content_type='achievement' plus an achievement_meta row. The achievement is
 // published immediately (member+ is gated by the achievement.create
@@ -183,10 +210,27 @@ func (s *Service) Submit(ctx context.Context, tenantID, authorID pgtype.UUID, in
 	if input.MilestoneType == "" {
 		return AchievementDTO{}, ErrMissingMilestone
 	}
+	if !IsValidMilestoneType(input.MilestoneType) {
+		return AchievementDTO{}, ErrInvalidMilestone
+	}
 
 	var destSpaceID pgtype.UUID
 	if err := destSpaceID.Scan(input.DestinationSpaceID); err != nil {
 		return AchievementDTO{}, fmt.Errorf("invalid destination_space_id: %w", err)
+	}
+
+	// §89 Geo Awareness: destination must be a country-level space. The spec
+	// tags every achievement by destination_country_id; filing it in a city
+	// or topic space would break the destination filter and Space widget.
+	level, err := s.store.GetSpaceLevel(ctx, destSpaceID, tenantID)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return AchievementDTO{}, ErrInvalidDestination
+		}
+		return AchievementDTO{}, fmt.Errorf("achievement: validate destination space: %w", err)
+	}
+	if level != "country" {
+		return AchievementDTO{}, ErrInvalidDestination
 	}
 
 	var originSpaceID pgtype.UUID
@@ -370,6 +414,17 @@ func (s *Service) EditOwn(ctx context.Context, contentID, tenantID, userID pgtyp
 		if err := dest.Scan(*input.DestinationSpaceID); err != nil {
 			return AchievementDTO{}, fmt.Errorf("achievement: edit: invalid destination_space_id: %w", err)
 		}
+		// §89 Geo Awareness: destination must be a country-level space.
+		level, err := s.store.GetSpaceLevel(ctx, dest, tenantID)
+		if err != nil {
+			if err == pgx.ErrNoRows {
+				return AchievementDTO{}, ErrInvalidDestination
+			}
+			return AchievementDTO{}, fmt.Errorf("achievement: edit: validate destination space: %w", err)
+		}
+		if level != "country" {
+			return AchievementDTO{}, ErrInvalidDestination
+		}
 		meta.DestinationSpaceID = dest
 	}
 	if input.OriginSpaceID != nil {
@@ -385,6 +440,9 @@ func (s *Service) EditOwn(ctx context.Context, contentID, tenantID, userID pgtyp
 		}
 	}
 	if input.MilestoneType != nil {
+		if *input.MilestoneType != "" && !IsValidMilestoneType(*input.MilestoneType) {
+			return AchievementDTO{}, ErrInvalidMilestone
+		}
 		meta.MilestoneType = input.MilestoneType
 	}
 	if input.IsAnonymous != nil {

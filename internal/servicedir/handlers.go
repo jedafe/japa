@@ -531,6 +531,41 @@ func (h *Handlers) HandleAdminVerify(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"verified": true, "verification_type": verificationType, "verified_by": user.UserID.String()}})
 }
 
+// HandleAdminUnverify handles PATCH /admin/services/:id/unverify — mark a
+// service listing as unverified. Admin-only (service.verify permission
+// checked at route registration). Clears the verified flag and audit trail.
+func (h *Handlers) HandleAdminUnverify(w http.ResponseWriter, r *http.Request) {
+	_, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+	contentID, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	if h.service == nil {
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "service_directory_unavailable", "Service directory not configured")
+		return
+	}
+
+	if err := h.service.AdminUnverify(r.Context(), contentID, tenantID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			errpkg.WriteError(w, http.StatusNotFound, "service_not_found", "Service not found")
+			return
+		}
+		slog.Error("servicedir: admin unverify failed", "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "unverify_failed", "Failed to unverify service")
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"verified": false}})
+}
+
 // HandleAdminResolveClaim handles PATCH /admin/services/:id/claim/:claim_id
 // — resolve a pending organization claim. Admin-only (service.verify
 // permission checked at route registration). The :claim_id URL param is the

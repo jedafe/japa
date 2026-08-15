@@ -17,6 +17,7 @@
 		author_name: string;
 		author_id: string;
 		status: string;
+		is_verified?: boolean;
 		created_at: string;
 		body?: string;
 		body_html?: string;
@@ -61,10 +62,32 @@
 	}
 
 	async function verifyStory(item: StoryItem) {
+		// ADR-088 HITL gate: AI-generated content cannot be verified without HITL review.
+		if (item.ai_generated && !item.hitl_reviewed_by) {
+			pageError = t('app.story.hitl_required', 'Cannot verify AI-generated story without HITL review');
+			return;
+		}
 		acting = true;
 		pageError = '';
 		try {
 			const result = await storyAdminApi.verify(item.id);
+			if (result.ok) {
+				entityController?.reload();
+			} else {
+				pageError = result.error ?? t('common.error', 'An error occurred');
+			}
+		} catch {
+			pageError = t('common.error', 'An error occurred');
+		} finally {
+			acting = false;
+		}
+	}
+
+	async function unverifyStory(item: StoryItem) {
+		acting = true;
+		pageError = '';
+		try {
+			const result = await storyAdminApi.unverify(item.id);
 			if (result.ok) {
 				entityController?.reload();
 			} else {
@@ -87,7 +110,13 @@
 				label: t('app.story.verify', 'Verify'),
 				icon: CheckCircle,
 				onclick: verifyStory,
-				show: () => true
+				show: (row: StoryItem) => row.is_verified !== true
+			});
+			acts.push({
+				label: t('app.story.unverify', 'Unverify'),
+				icon: CheckCircle,
+				onclick: unverifyStory,
+				show: (row: StoryItem) => row.is_verified === true
 			});
 			acts.push({
 				label: t('common.delete', 'Delete'),
@@ -264,5 +293,17 @@ onMount(async () => {
 			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.story.detail_content', 'Content')}</p>
 			<p class="mt-1 whitespace-pre-wrap text-sm" style="color: var(--color-foreground)">{row.body || row.body_html || '—'}</p>
 		</div>
+		{#if row.ai_generated}
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.common.ai_generated', 'AI Generated')}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{t('common.yes', 'Yes')} ({row.ai_model ?? '—'})</p>
+			</div>
+		{/if}
+		{#if row.hitl_reviewed_by}
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.common.hitl_reviewed_by', 'HITL Reviewed By')}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.hitl_reviewed_by}</p>
+			</div>
+		{/if}
 	</div>
 {/snippet}

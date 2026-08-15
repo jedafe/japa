@@ -394,6 +394,29 @@ func (h *Handlers) ResolveSecurityScanResult(w http.ResponseWriter, r *http.Requ
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "resolved"}})
 }
 
+// DeleteSecurityScanResult handles DELETE /api/v1/admin/analytics/security/{id}.
+// Permanently removes a scan finding (typically a resolved one) from the
+// control panel audit view. Tenant-scoped.
+func (h *Handlers) DeleteSecurityScanResult(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	var id pgtype.UUID
+	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid scan result ID")
+		return
+	}
+
+	if err := h.Service.DeleteScanResult(r.Context(), id, tenantID); err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
+}
+
 // RefreshViews handles POST /api/v1/admin/analytics/refresh.
 func (h *Handlers) RefreshViews(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireTenant(w, r)

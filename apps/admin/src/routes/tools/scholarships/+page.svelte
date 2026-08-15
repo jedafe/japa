@@ -2,12 +2,13 @@
 	// /tools/scholarships — full CRUD admin page for scholarship projections.
 	// Combines the summary dashboard (stats + deadlines + reminder log) with
 	// an EntityPage CRUD list backed by /admin/scholarships.
+	import { onMount } from 'svelte';
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { Trash2, Eye, Pencil } from 'lucide-svelte';
-	import type { ActionItem } from '$lib/components/ui/data-table';
-	import { scholarshipAdminApi } from '$lib/api';
+	import type { ActionItem, FilterDef } from '$lib/components/ui/data-table';
+	import { scholarshipAdminApi, spacesAdminApi } from '$lib/api';
 
 	type Scholarship = {
 		id: string;
@@ -45,6 +46,25 @@
 	const canManage = $derived(hasPermission('scholarship.manage'));
 
 	// ── State ───────────────────────────────────────────────────────────────
+	// Destination Spaces for the dest filter (geo-aware pattern). Loaded once
+	// on mount from /admin/spaces?level=country so the filter options are
+	// driven by the backend (Rule 16 — no hardcoded lists).
+	type SpaceOption = { id: string; name: string };
+	let destOptions = $state<SpaceOption[]>([]);
+	onMount(async () => {
+		try {
+			const res = await spacesAdminApi.list('?level=country&limit=200');
+			if (res.ok && Array.isArray(res.data)) {
+				destOptions = (res.data as Array<{ id: string; name: string }>).map((s) => ({
+					id: s.id,
+					name: s.name
+				}));
+			}
+		} catch {
+			// Non-fatal — the dest filter simply stays empty.
+		}
+	});
+
 	let entityController = $state<EntityPageController | undefined>(undefined);
 	let pageError = $state('');
 	let bulkDeleting = $state(false);
@@ -213,6 +233,11 @@
 					{ value: 'conflict', label: 'Conflict' },
 					{ value: 'stale', label: 'Stale' }
 				]
+			},
+			{
+				key: 'dest',
+				label: t('app.tools.col_destination', 'Destination'),
+				options: destOptions.map((s) => ({ value: s.id, label: s.name }))
 			}
 		],
 		bulkActions: [
@@ -228,6 +253,7 @@
 			const params = new URLSearchParams();
 			if (q) params.set('q', q);
 			if (filter.verification_status) params.set('verification_status', filter.verification_status);
+			if (filter.dest) params.set('dest', filter.dest);
 			if (page) params.set('page', String(page));
 			if (pageSize) params.set('page_size', String(pageSize));
 			const result = await scholarshipAdminApi.list(params.toString());

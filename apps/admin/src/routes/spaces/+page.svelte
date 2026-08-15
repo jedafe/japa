@@ -1,24 +1,20 @@
 <script lang="ts">
-	// /spaces — migrated to shared components (ActionMenu, FilterPanel,
-	// SlideOver, bulkActionsList). Server-side paginated list; state actions
-	// (suspend/unsuspend) via ActionItem with show() predicates. Keeps
-	// page-local Modals for suspend (reason input) and delete confirmation.
-	// View/Edit open in SlideOvers.
-	import PageHeader from "$lib/components/layout/page-header.svelte";
-	import { Card, CardContent } from "$lib/components/ui/card";
-	import { DataTable } from "$lib/components/ui/data-table";
-	import { Button } from "$lib/components/ui/button";
+	// /spaces — migrated to EntityPage scaffold. EntityPage owns list/pagination/
+	// search/filter state and URL sync. Page keeps local Modals for Suspend
+	// (reason input) and Delete confirmation, plus a page-local Edit SlideOver
+	// (name + visibility). View opens via ctx.openView; Manage navigates to the
+	// dedicated detail route.
+	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from "$lib/components/entity";
 	import { Modal } from "$lib/components/ui/modal";
+	import { Button } from "$lib/components/ui/button";
 	import { SlideOver } from "$lib/components/ui/slide-over";
 	import { Select } from "$lib/components/ui/select";
-	import { TableSkeleton } from "$lib/components/ui/skeleton";
-	import type { ActionItem, BulkAction } from "$lib/components/ui/data-table";
-	import { Plus, RefreshCw, Eye, Pencil, Trash2, SlidersHorizontal } from "lucide-svelte";
 	import { spacesAdminApi } from "$lib/api";
 	import { goto } from "$app/navigation";
 	import { t } from "$lib/stores/i18n.svelte";
 	import { hasPermission } from "$lib/stores/permissions.svelte";
-	import { pageFromUrl, pageSizeFromUrl, searchFromUrl, filterFromUrl, syncListStateToUrl } from "$lib/utils/url-sync.svelte";
+	import { Eye, Pencil, Trash2, SlidersHorizontal } from "lucide-svelte";
+	import type { ActionItem, FilterDef } from "$lib/components/ui/data-table";
 
 	type Space = {
 		id: string;
@@ -33,27 +29,27 @@
 		updated_at: string;
 	};
 
-	let spaces = $state<Space[]>([]);
-	let loading = $state(true);
-	let error = $state("");
-	let currentPage = $state(pageFromUrl());
-	let totalItems = $state(0);
-	let pageSize = $state(pageSizeFromUrl(25));
-	let totalPages = $state(1);
-	let searchQuery = $state(searchFromUrl());
-	const _initFilterValue: Record<string, string> = {};
-	{
-		const status = filterFromUrl("status");
-		if (status) _initFilterValue.status = status;
-		const visibility = filterFromUrl("visibility");
-		if (visibility) _initFilterValue.visibility = visibility;
-	}
-	let filterValue = $state<Record<string, string>>(_initFilterValue);
-	let selectedIds = $state<Set<string>>(new Set());
+	const canModerateSpaces = $derived(hasPermission("spaces.moderate"));
+	const canManageSpaces = $derived(hasPermission("spaces.admin"));
 
-	// View/Edit SlideOvers
-	let showViewSlideOver = $state(false);
-	let viewTarget = $state<Space | null>(null);
+	const visibilitySelectOptions = [
+		{ value: "public", label: t("spaces.public", "Public") },
+		{ value: "members", label: t("spaces.perm.members", "Members") },
+		{ value: "private", label: t("spaces.private", "Private") }
+	];
+
+	const levelOptions = [
+		{ value: "1", label: "1" },
+		{ value: "2", label: "2" },
+		{ value: "3", label: "3" }
+	];
+
+	// ── Page-local state for sub-flows ──────────────────────────────────────
+	let entityController = $state<EntityPageController | undefined>(undefined);
+	let pageError = $state("");
+	let acting = $state(false);
+
+	// Edit SlideOver (page-local — name + visibility)
 	let showEditSlideOver = $state(false);
 	let editTarget = $state<Space | null>(null);
 	let editName = $state("");
@@ -67,18 +63,9 @@
 	let showSuspendModal = $state(false);
 	let suspendTarget = $state<Space | null>(null);
 	let suspendReason = $state("");
-	let acting = $state(false);
 
-	const canModerateSpaces = $derived(hasPermission("spaces.moderate"));
-	const canManageSpaces = $derived(hasPermission("spaces.admin"));
-
-	const visibilitySelectOptions = [
-		{ value: "public", label: t("spaces.public", "Public") },
-		{ value: "members", label: t("spaces.perm.members", "Members") },
-		{ value: "private", label: t("spaces.private", "Private") }
-	];
-
-	const filterDefs = [
+	// ── Filters ─────────────────────────────────────────────────────────────
+	const filterDefs = $derived<FilterDef[]>([
 		{
 			key: "status",
 			label: t("spaces.status", "Status"),
@@ -91,107 +78,158 @@
 		{
 			key: "visibility",
 			label: t("spaces.visibility", "Visibility"),
-			options: [
-				{ value: "public", label: t("spaces.public", "Public") },
-				{ value: "members", label: t("spaces.perm.members", "Members") },
-				{ value: "private", label: t("spaces.private", "Private") }
-			]
+			options: visibilitySelectOptions
 		}
-	];
+	]);
 
-	const columns = [
-		{ key: "name", label: t("spaces.name", "Name") },
-		{ key: "owner", label: t("spaces.owner", "Owner") },
-		{ key: "member_count", label: t("spaces.members", "Members"), render: (v: number) => (v ?? 0).toLocaleString() },
-		{ key: "visibility", label: t("spaces.visibility", "Visibility"), render: (v: string) => v ? t(`spaces.perm.${v}`, v) : "—" },
-		{
-			key: "status",
-			label: t("spaces.status", "Status"),
-			render: (v: string) => {
-				const cls = v === "active" ? "bg-success/15 text-success dark:text-success" : v === "suspended" ? "bg-danger/15 text-danger dark:text-danger" : "bg-muted/15 text-muted dark:text-muted";
-				const label = t(`spaces.${v}`, v);
-				return `<span class="inline-block rounded-full px-2 py-0.5 text-xs ${cls}">${label}</span>`;
+	// ── Create form fields ──────────────────────────────────────────────────
+	const fields = $derived<FieldDef[]>([
+		{ key: "name", label: t("spaces.name", "Name"), type: "text", required: true },
+		{ key: "slug", label: t("spaces.slug", "Slug"), type: "text", placeholder: "my-space" },
+		{ key: "space_type_id", label: t("spaces.space_type", "Space Type ID"), type: "text", placeholder: "e.g. standard" },
+		{ key: "level", label: t("spaces.level", "Level"), type: "select", options: levelOptions },
+		{ key: "visibility", label: t("spaces.visibility", "Visibility"), type: "select", options: visibilitySelectOptions },
+		{ key: "description", label: t("spaces.description", "Description"), type: "textarea" }
+	]);
+
+	// ── Row actions ─────────────────────────────────────────────────────────
+	const rowActions = $derived.by<ActionItem[]>(() => {
+		const acts: ActionItem[] = [
+			{ label: t("common.view", "View"), icon: Eye, onclick: (row: Space, ctx) => ctx?.openView(row) },
+			{ label: t("spaces.manage", "Manage"), onclick: (row: Space) => goto(`/spaces/${row.id}`) }
+		];
+		if (canManageSpaces) {
+			acts.push({
+				label: t("common.edit", "Edit"),
+				icon: Pencil,
+				onclick: (row: Space) => openEdit(row)
+			});
+		}
+		if (canModerateSpaces) {
+			acts.push({
+				label: t("spaces.suspend", "Suspend"),
+				onclick: (row: Space) => openSuspend(row),
+				show: (row: Space) => row.status !== "suspended"
+			});
+			acts.push({
+				label: t("spaces.unsuspend", "Unsuspend"),
+				onclick: (row: Space) => openSuspend(row),
+				show: (row: Space) => row.status === "suspended"
+			});
+		}
+		if (canManageSpaces) {
+			acts.push({
+				label: t("common.delete", "Delete"),
+				icon: Trash2,
+				variant: "destructive",
+				onclick: (row: Space) => confirmDelete(row)
+			});
+		}
+		return acts;
+	});
+
+	// ── Config ──────────────────────────────────────────────────────────────
+	const config = $derived<EntityPageConfig>({
+		title: t("spaces.title", "Spaces"),
+		description: t("spaces.description", "Manage platform spaces"),
+		createLabel: t("spaces.create", "Create Space"),
+		createPermission: "spaces.admin",
+		pageSize: 25,
+		columns: [
+			{ key: "name", label: t("spaces.name", "Name"), sortable: true },
+			{ key: "owner", label: t("spaces.owner", "Owner") },
+			{ key: "member_count", label: t("spaces.members", "Members"), render: (v: number) => (v ?? 0).toLocaleString() },
+			{ key: "visibility", label: t("spaces.visibility", "Visibility"), render: (v: string) => (v ? t(`spaces.perm.${v}`, v) : "—") },
+			{
+				key: "status",
+				label: t("spaces.status", "Status"),
+				render: (v: string) => {
+					const cls = v === "active" ? "bg-success/15 text-success dark:text-success" : v === "suspended" ? "bg-danger/15 text-danger dark:text-danger" : "bg-muted/15 text-muted dark:text-muted";
+					const label = t(`spaces.${v}`, v);
+					return `<span class="inline-block rounded-full px-2 py-0.5 text-xs ${cls}">${label}</span>`;
+				}
+			},
+			{ key: "space_type", label: t("spaces.space_type", "Type") },
+			{ key: "created_at", label: t("spaces.created", "Created"), render: (v: string) => new Date(v).toLocaleDateString() }
+		],
+		filters: filterDefs,
+		actions: rowActions,
+		bulkActions: canManageSpaces ? [
+			{
+				label: t("common.delete_selected", "Delete Selected"),
+				icon: Trash2,
+				variant: "destructive",
+				onclick: bulkDelete
 			}
-		},
-		{ key: "created_at", label: t("spaces.created", "Created"), render: (v: string) => new Date(v).toLocaleDateString() }
-	];
-
-	const rowActions: ActionItem[] = [
-		{ label: t("common.view", "View"), icon: Eye, onclick: (row) => openView(row) },
-		{ label: t("spaces.manage", "Manage"), onclick: (row: Space) => goto(`/spaces/${row.id}`) },
-		{
-			label: t("common.edit", "Edit"),
-			icon: Pencil,
-			onclick: (row) => openEdit(row),
-			show: () => canManageSpaces
-		},
-		{
-			label: t("spaces.suspend", "Suspend"),
-			onclick: (row) => openSuspend(row),
-			show: (row: Space) => canModerateSpaces && row.status !== "suspended"
-		},
-		{
-			label: t("spaces.unsuspend", "Unsuspend"),
-			onclick: (row) => openSuspend(row),
-			show: (row: Space) => canModerateSpaces && row.status === "suspended"
-		},
-		{
-			label: t("common.delete", "Delete"),
-			icon: Trash2,
-			variant: "destructive",
-			onclick: (row) => confirmDelete(row),
-			show: () => canManageSpaces
-		}
-	];
-
-	const bulkActions: BulkAction[] = $derived(canManageSpaces
-		? [{ label: t("common.delete_selected", "Delete Selected"), icon: Trash2, variant: "destructive", onclick: bulkDelete }]
-		: []);
-
-	async function loadSpaces() {
-		loading = true;
-		error = "";
-		try {
+		] : [],
+		fields,
+		headerActions: canManageSpaces ? [
+			{ label: t("spaces.presets_title", "Permission Presets"), icon: SlidersHorizontal, onclick: () => goto("/spaces/presets"), variant: "ghost" }
+		] : [],
+		load: async ({ page, pageSize, q, filter }) => {
 			const params = new URLSearchParams({
 				page_size: String(pageSize),
-				page_offset: String(currentPage * pageSize)
+				page_offset: String(page * pageSize)
 			});
-			if (searchQuery) params.set("q", searchQuery);
-			if (filterValue.status) params.set("status", filterValue.status);
-			if (filterValue.visibility) params.set("visibility", filterValue.visibility);
-
+			if (q) params.set("q", q);
+			if (filter?.status) params.set("status", filter.status);
+			if (filter?.visibility) params.set("visibility", filter.visibility);
 			const result = await spacesAdminApi.list(params.toString());
 			if (result.ok) {
 				const d = result.data as Space[] | { items: Space[]; total: number; total_pages: number };
 				if (Array.isArray(d)) {
-					spaces = d;
-					totalItems = d.length;
-					totalPages = 1;
-				} else {
-					spaces = d.items ?? [];
-					totalItems = d.total ?? d.items?.length ?? 0;
-					totalPages = d.total_pages ?? 1;
+					return { data: d, total: d.length, totalPages: 1 };
 				}
-			} else {
-				error = result.error ?? t("common.error", "Failed to load spaces");
+				return {
+					data: d.items ?? [],
+					total: d.total ?? d.items?.length ?? 0,
+					totalPages: d.total_pages ?? 1
+				};
 			}
-		} catch (e) {
-			error = e instanceof Error ? e.message : t("common.error", "Failed to load spaces");
-		} finally {
-			loading = false;
-		}
-	}
+			throw new Error(result.error ?? t("common.error", "Failed to load spaces"));
+		},
+		create: async (body) => {
+			const res = await spacesAdminApi.create({
+				name: String(body.name ?? "").trim(),
+				slug: String(body.slug ?? "").trim(),
+				space_type_id: String(body.space_type_id ?? "").trim(),
+				level: String(body.level ?? "1"),
+				visibility: String(body.visibility ?? "public"),
+				description: String(body.description ?? "").trim() || undefined
+			} as any);
+			return res.ok ? { ok: true } : { ok: false, error: res.error };
+		},
+		update: async (id, body) => {
+			const res = await spacesAdminApi.update(id, {
+				name: String(body.name ?? "").trim() || undefined,
+				visibility: String(body.visibility ?? "").trim() || undefined
+			});
+			return res.ok ? { ok: true } : { ok: false, error: res.error };
+		},
+		remove: async (id) => {
+			const res = await spacesAdminApi.delete(id);
+			return res.ok ? { ok: true } : { ok: false, error: res.error };
+		},
+		viewSnippet: SpaceView
+	});
 
-	function openView(space: Space) {
-		viewTarget = space;
-		showViewSlideOver = true;
-	}
-
+	// ── Sub-flow handlers ───────────────────────────────────────────────────
 	function openEdit(space: Space) {
 		editTarget = space;
 		editName = space.name;
 		editVisibility = space.visibility;
 		showEditSlideOver = true;
+	}
+
+	function confirmDelete(space: Space) {
+		deleteTarget = space;
+		showDeleteConfirm = true;
+	}
+
+	function openSuspend(space: Space) {
+		suspendTarget = space;
+		suspendReason = "";
+		showSuspendModal = true;
 	}
 
 	async function saveEdit() {
@@ -201,20 +239,15 @@
 			const result = await spacesAdminApi.update(editTarget.id, { name: editName, visibility: editVisibility });
 			if (result.ok) {
 				showEditSlideOver = false;
-				loadSpaces();
+				entityController?.reload();
 			} else {
-				error = result.error;
+				pageError = result.error;
 			}
 		} catch {
-			error = t("common.error", "Failed to update space");
+			pageError = t("common.error", "Failed to update space");
 		} finally {
 			acting = false;
 		}
-	}
-
-	function confirmDelete(space: Space) {
-		deleteTarget = space;
-		showDeleteConfirm = true;
 	}
 
 	async function executeDelete() {
@@ -225,21 +258,15 @@
 			if (result.ok) {
 				showDeleteConfirm = false;
 				deleteTarget = null;
-				loadSpaces();
+				entityController?.reload();
 			} else {
-				error = result.error;
+				pageError = result.error;
 			}
 		} catch {
-			error = t("common.error", "Failed to delete space");
+			pageError = t("common.error", "Failed to delete space");
 		} finally {
 			acting = false;
 		}
-	}
-
-	function openSuspend(space: Space) {
-		suspendTarget = space;
-		suspendReason = "";
-		showSuspendModal = true;
 	}
 
 	async function executeSuspend() {
@@ -252,156 +279,46 @@
 			});
 			if (result.ok) {
 				showSuspendModal = false;
-				loadSpaces();
+				entityController?.reload();
 			} else {
-				error = result.error;
+				pageError = result.error;
 			}
 		} catch {
-			error = t("common.error", "Failed to update space status");
+			pageError = t("common.error", "Failed to update space status");
 		} finally {
 			acting = false;
 		}
 	}
 
+	let bulkDeleting = $state(false);
 	async function bulkDelete(ids: Set<string>) {
 		const idArr = Array.from(ids);
-		if (idArr.length === 0 || acting) return;
-		acting = true;
+		if (idArr.length === 0 || bulkDeleting) return;
+		bulkDeleting = true;
+		pageError = "";
 		try {
 			await Promise.all(idArr.map((id) => spacesAdminApi.delete(id)));
-			selectedIds = new Set();
-			await loadSpaces();
-		} catch {
-			error = t("common.error", "Failed to delete spaces");
+		} catch (e) {
+			pageError = e instanceof Error ? e.message : t("common.error", "Failed to delete spaces");
 		} finally {
-			acting = false;
+			bulkDeleting = false;
 		}
 	}
-
-	function handlePageChange(p: number) {
-		currentPage = p;
-	}
-
-	function handlePageSizeChange(s: number) {
-		pageSize = s;
-		currentPage = 0;
-	}
-
-	// Sync list state (page, search, filters) to URL for back/forward survival.
-	$effect(() => {
-		void currentPage;
-		void pageSize;
-		void searchQuery;
-		void filterValue;
-		syncListStateToUrl({
-			page: currentPage,
-			pageSize,
-			defaultPageSize: 25,
-			search: searchQuery,
-			filters: filterValue
-		});
-	});
-
-	$effect(() => {
-		void currentPage;
-		void pageSize;
-		void searchQuery;
-		void filterValue;
-		loadSpaces();
-	});
 </script>
 
 <svelte:head>
 	<title>{t("spaces.title", "Spaces")} — JapaConnect Admin</title>
 </svelte:head>
 
-<PageHeader
-	title={t("spaces.title", "Spaces")}
-	description={t("spaces.description", "Manage platform spaces")}
-	actions={[
-		...(canManageSpaces ? [{ label: t("spaces.create", "Create Space"), icon: Plus, onclick: () => goto("/spaces/new") }] : []),
-		...(canManageSpaces ? [{ label: t("spaces.presets_title", "Permission Presets"), icon: SlidersHorizontal, variant: "ghost" as const, onclick: () => goto("/spaces/presets") }] : []),
-		{ label: t("common.refresh", "Refresh"), icon: RefreshCw, variant: "ghost" as const, onclick: loadSpaces }
-	]}
-/>
-
-{#if error}
+{#if pageError}
 	<div class="mb-4 rounded-lg p-3 text-sm" style="background: color-mix(in srgb, var(--color-danger) 10%, transparent); color: var(--color-danger)">
-		{error}
+		{pageError}
 	</div>
 {/if}
 
-<Card>
-	<CardContent>
-		{#if loading}
-			<TableSkeleton rows={8} columns={columns.length} />
-		{:else}
-			<div aria-live="polite">
-				<DataTable
-					{columns}
-					data={spaces}
-					serverSide
-					page={currentPage}
-					{pageSize}
-					totalRows={totalItems}
-					{totalPages}
-					onpagechange={handlePageChange}
-					onpagesizechange={handlePageSizeChange}
-					searchable
-					onsearch={(q) => { searchQuery = q; currentPage = 0; }}
-					filters={filterDefs}
-					bind:filterValue
-					onfilterapply={() => { currentPage = 0; }}
-					selectable={canManageSpaces}
-					bind:selectedIds
-					actions={rowActions}
-					bulkActionsList={bulkActions}
-				/>
-			</div>
-		{/if}
-	</CardContent>
-</Card>
+<EntityPage {config} bind:controller={entityController} />
 
-<!-- View SlideOver -->
-<SlideOver bind:open={showViewSlideOver} title={t("spaces.details", "Space Details")}>
-	{#if viewTarget}
-		<div class="space-y-4">
-			<div class="grid grid-cols-2 gap-4">
-				<div>
-					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('spaces.name')}</p>
-					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.name}</p>
-				</div>
-				<div>
-					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('spaces.owner')}</p>
-					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.owner}</p>
-				</div>
-				<div>
-					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('spaces.members')}</p>
-					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.member_count.toLocaleString()}</p>
-				</div>
-				<div>
-					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('spaces.visibility')}</p>
-					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.visibility ? t(`spaces.perm.${viewTarget.visibility}`, viewTarget.visibility) : "—"}</p>
-				</div>
-				<div>
-					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('spaces.status')}</p>
-					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{t(`spaces.${viewTarget.status}`, viewTarget.status)}</p>
-				</div>
-				<div>
-					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('spaces.created')}</p>
-					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{new Date(viewTarget.created_at).toLocaleString()}</p>
-				</div>
-			</div>
-		</div>
-	{/if}
-	{#snippet footer()}
-		<div class="flex justify-end">
-			<Button variant="outline" onclick={() => (showViewSlideOver = false)}>{t('spaces.close')}</Button>
-		</div>
-	{/snippet}
-</SlideOver>
-
-<!-- Edit SlideOver -->
+<!-- Edit SlideOver (page-local — name + visibility) -->
 <SlideOver bind:open={showEditSlideOver} title={t("spaces.edit", "Edit Space")}>
 	{#if editTarget}
 		<div class="space-y-4">
@@ -463,3 +380,43 @@
 		</Button>
 	</div>
 </Modal>
+
+<!-- ── View snippet ──────────────────────────────────────────────────────── -->
+{#snippet SpaceView({ row }: { row: Space })}
+	<div class="space-y-4">
+		<div class="grid grid-cols-2 gap-4">
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('spaces.name')}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.name}</p>
+			</div>
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('spaces.owner')}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.owner}</p>
+			</div>
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('spaces.members')}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.member_count.toLocaleString()}</p>
+			</div>
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('spaces.visibility')}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.visibility ? t(`spaces.perm.${row.visibility}`, row.visibility) : "—"}</p>
+			</div>
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('spaces.status')}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{t(`spaces.${row.status}`, row.status)}</p>
+			</div>
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('spaces.space_type', "Type")}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.space_type ?? "—"}</p>
+			</div>
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('spaces.created')}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{new Date(row.created_at).toLocaleString()}</p>
+			</div>
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('spaces.updated', "Updated")}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{new Date(row.updated_at).toLocaleString()}</p>
+			</div>
+		</div>
+	</div>
+{/snippet}

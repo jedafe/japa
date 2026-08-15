@@ -644,6 +644,28 @@ WHERE content_id = $1 AND tenant_id = $2
 	return nil
 }
 
+// UnverifyService marks a service listing as unverified by an admin
+// (service.verify permission). Clears the verified flag and the audit trail.
+func (s *Store) UnverifyService(ctx context.Context, contentID, tenantID pgtype.UUID) error {
+	const q = `
+UPDATE service_listing_meta
+SET is_verified = false,
+    verification_type = null,
+    verified_by = null,
+    verified_at = null,
+    updated_at = now()
+WHERE content_id = $1 AND tenant_id = $2
+`
+	cmd, err := s.pool.Writer.Exec(ctx, q, contentID, tenantID)
+	if err != nil {
+		return fmt.Errorf("servicedir: unverify service: %w", err)
+	}
+	if cmd.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+	return nil
+}
+
 // UpdateClaimStatus updates the claim_status and claimed_by_org_id on a
 // service_listing_meta row. Used to initiate, approve, or reject an
 // organization claim (§98).

@@ -10,6 +10,8 @@
 	import LoadingSkeleton from '$lib/components/ui/LoadingSkeleton.svelte';
 	import ToolDisabled from '$lib/components/ui/ToolDisabled.svelte';
 	import DestinationSelector from '$lib/components/tools/DestinationSelector.svelte';
+	import Autocomplete from '$lib/components/ui/Autocomplete.svelte';
+	import type { AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
 	import type {
 		ArrivalChecklistSelectorEntry,
 		ArrivalChecklistItem,
@@ -109,9 +111,21 @@
 		loadItems();
 	}
 
-	function onVisaCategoryChange(e: Event) {
-		selectedVisaCategory = (e.currentTarget as HTMLSelectElement).value;
+	function onVisaCategoryChange(value: string) {
+		selectedVisaCategory = value;
 		loadItems();
+	}
+
+	function fetchVisaCategories(q: string): Promise<AutocompleteItem[]> {
+		const query = q.toLowerCase();
+		const filtered = query === ''
+			? visaCategories
+			: visaCategories.filter((c) => c.toLowerCase().includes(query));
+		return Promise.resolve(filtered.map((c) => ({ id: c, label: c })));
+	}
+
+	function fetchVisaCategoriesInitial(): Promise<AutocompleteItem[]> {
+		return fetchVisaCategories('');
 	}
 </script>
 
@@ -159,17 +173,17 @@
 					<label for="visa-cat" class="text-sm font-medium text-text whitespace-nowrap">
 						{t('arrival_checklist.visa_category', 'Visa category:')}
 					</label>
-					<select
+					<Autocomplete
 						id="visa-cat"
-						value={selectedVisaCategory}
-						onchange={onVisaCategoryChange}
-						class="flex-1 px-4 py-2 bg-surface border border-border rounded-lg text-text focus:border-primary focus:outline-none"
-					>
-						<option value="">{t('arrival_checklist.all_categories', 'All categories')}</option>
-						{#each visaCategories as cat (cat)}
-							<option value={cat}>{cat}</option>
-						{/each}
-					</select>
+						placeholder={t('arrival_checklist.all_categories', 'All categories')}
+						emptyMessage={t('arrival_checklist.no_categories', 'No categories found')}
+						fetcher={fetchVisaCategories}
+						initialFetcher={fetchVisaCategoriesInitial}
+						selectedId={selectedVisaCategory || null}
+						selectedLabel={selectedVisaCategory || null}
+						onSelect={(item) => onVisaCategoryChange(item.id)}
+						onClear={() => onVisaCategoryChange('')}
+					/>
 				</div>
 			{/if}
 

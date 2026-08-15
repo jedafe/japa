@@ -10,6 +10,8 @@
 	import LoadingSkeleton from '$lib/components/ui/LoadingSkeleton.svelte';
 	import RegistrationPrompt from '$lib/components/ui/RegistrationPrompt.svelte';
 	import ToolDisabled from '$lib/components/ui/ToolDisabled.svelte';
+	import Autocomplete from '$lib/components/ui/Autocomplete.svelte';
+	import type { AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
 	import type {
 		ChecklistSelector,
 		ChecklistGuide,
@@ -206,6 +208,39 @@
 	);
 	const totalCount = $derived(guide?.items.length ?? 0);
 	const progressPct = $derived(totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0);
+
+	function fetchOrigins(q: string): Promise<AutocompleteItem[]> {
+		const opts = selector?.origins ?? [];
+		const query = q.toLowerCase();
+		const filtered = query === ''
+			? opts
+			: opts.filter((o) => o.name.toLowerCase().includes(query));
+		return Promise.resolve(filtered.map((o) => ({ id: o.id, label: o.name })));
+	}
+
+	function fetchOriginsInitial(): Promise<AutocompleteItem[]> {
+		return fetchOrigins('');
+	}
+
+	function getOriginLabel(id: string): string {
+		return selector?.origins.find((o) => o.id === id)?.name ?? id;
+	}
+
+	function fetchDestinations(q: string): Promise<AutocompleteItem[]> {
+		const query = q.toLowerCase();
+		const filtered = query === ''
+			? destinations
+			: destinations.filter((d) => d.name.toLowerCase().includes(query));
+		return Promise.resolve(filtered.map((d) => ({ id: d.id, label: d.name })));
+	}
+
+	function fetchDestinationsInitial(): Promise<AutocompleteItem[]> {
+		return fetchDestinations('');
+	}
+
+	function getDestinationLabel(id: string): string {
+		return destinations.find((d) => d.id === id)?.name ?? id;
+	}
 </script>
 
 <svelte:head>
@@ -246,16 +281,17 @@
 				<label for="origin" class="block text-sm font-medium text-text mb-2">
 					<span class="text-muted">1.</span> {t('checklist.step1_label', 'Your country (origin)')}
 				</label>
-				<select
+				<Autocomplete
 					id="origin"
-					bind:value={selectedOrigin}
-					class="w-full px-4 py-3 bg-surface border border-border rounded-lg text-text focus:border-primary focus:outline-none"
-				>
-					<option value="">{t('checklist.step1_placeholder', 'Select your country')}</option>
-					{#each selector.origins as opt (opt.id)}
-						<option value={opt.id}>{opt.name}</option>
-					{/each}
-				</select>
+					placeholder={t('checklist.step1_placeholder', 'Select your country')}
+					emptyMessage={t('geo.no_destinations', 'No destinations found')}
+					fetcher={fetchOrigins}
+					initialFetcher={fetchOriginsInitial}
+					selectedId={selectedOrigin || null}
+					selectedLabel={selectedOrigin ? getOriginLabel(selectedOrigin) : null}
+					onSelect={(item) => (selectedOrigin = item.id)}
+					onClear={() => (selectedOrigin = '')}
+				/>
 			</div>
 
 			<!-- Step 2: Destination -->
@@ -263,17 +299,17 @@
 				<label for="dest" class="block text-sm font-medium text-text mb-2">
 					<span class="text-muted">2.</span> {t('checklist.step2_label', 'Destination country')}
 				</label>
-				<select
+				<Autocomplete
 					id="dest"
-					bind:value={selectedDestination}
-					disabled={!selectedOrigin}
-					class="w-full px-4 py-3 bg-surface border border-border rounded-lg text-text focus:border-primary focus:outline-none disabled:opacity-50"
-				>
-					<option value="">{t('checklist.step2_placeholder', 'Select destination')}</option>
-					{#each destinations as opt (opt.id)}
-						<option value={opt.id}>{opt.name}</option>
-					{/each}
-				</select>
+					placeholder={t('checklist.step2_placeholder', 'Select destination')}
+					emptyMessage={t('geo.no_destinations', 'No destinations found')}
+					fetcher={fetchDestinations}
+					initialFetcher={fetchDestinationsInitial}
+					selectedId={selectedDestination || null}
+					selectedLabel={selectedDestination ? getDestinationLabel(selectedDestination) : null}
+					onSelect={(item) => (selectedDestination = item.id)}
+					onClear={() => (selectedDestination = '')}
+				/>
 			</div>
 
 			<!-- Step 3: Visa type -->

@@ -687,6 +687,13 @@
 		}, 350);
 	}
 
+	// Clear any pending stock-search debounce when the page unmounts.
+	$effect(() => {
+		return () => {
+			if (stockModalTimer) clearTimeout(stockModalTimer);
+		};
+	});
+
 	async function loadMoreStockModal() {
 		stockModalPage++;
 		stockModalLoading = true;

@@ -77,6 +77,21 @@ type AchievementRow struct {
 	AuthorAvatar    *string
 }
 
+// GetSpaceLevel returns the level ('country', 'state', 'city', etc.) of the
+// space identified by id, or pgx.ErrNoRows if not found. Used by the service
+// to validate that destination_space_id is a country-level space (§89).
+func (s *Store) GetSpaceLevel(ctx context.Context, id, tenantID pgtype.UUID) (string, error) {
+	const q = `SELECT level FROM spaces WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL`
+	var level string
+	if err := s.pool.Reader.QueryRow(ctx, q, id, tenantID).Scan(&level); err != nil {
+		if err == pgx.ErrNoRows {
+			return "", pgx.ErrNoRows
+		}
+		return "", fmt.Errorf("achievement: get space level: %w", err)
+	}
+	return level, nil
+}
+
 // CreateMeta inserts a new achievement_meta row linked to a contents row.
 func (s *Store) CreateMeta(ctx context.Context, meta AchievementMeta) error {
 	const q = `

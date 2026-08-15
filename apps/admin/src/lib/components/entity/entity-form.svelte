@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { clsx, type ClassValue } from 'clsx';
 	import type { FieldDef } from './index';
+	import Autocomplete from '$lib/components/ui/Autocomplete.svelte';
+	import type { AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
 
 	let {
 		fields,
@@ -62,6 +64,19 @@
 						<option value={option.value}>{option.label}</option>
 					{/each}
 				</select>
+			{:else if field.type === 'autocomplete'}
+				{@const acVal = value[field.key] as string | undefined}
+				<Autocomplete
+					id={field.key}
+					placeholder={field.placeholder}
+					emptyMessage={field.emptyMessage}
+					fetcher={field.fetcher}
+					initialFetcher={field.initialFetcher}
+					selectedId={acVal ?? null}
+					selectedLabel={acVal ? field.getSelectedLabel(acVal) : null}
+					onSelect={(item: AutocompleteItem) => { value[field.key] = item.id; }}
+					onClear={() => { value[field.key] = ''; }}
+				/>
 			{:else if field.type === 'checkbox'}
 				<input
 					id={field.key}

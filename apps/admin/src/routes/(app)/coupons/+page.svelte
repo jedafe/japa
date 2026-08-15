@@ -85,6 +85,23 @@
 		{ value: 'suspended', label: t('coupons.suspended', 'Suspended') }
 	];
 
+	// ── Provider autocomplete helpers (filter pre-loaded options client-side) ──
+	function fetchProviderOptions(q: string): Promise<{ id: string; label: string }[]> {
+		const query = q.toLowerCase();
+		const filtered = query === ''
+			? providerOptions
+			: providerOptions.filter((o) => o.label.toLowerCase().includes(query));
+		return Promise.resolve(filtered.map((o) => ({ id: o.value, label: o.label })));
+	}
+
+	function fetchProviderOptionsInitial(): Promise<{ id: string; label: string }[]> {
+		return Promise.resolve(providerOptions.map((o) => ({ id: o.value, label: o.label })));
+	}
+
+	function getProviderSelectedLabel(id: string): string {
+		return providerOptions.find((o) => o.value === id)?.label ?? id;
+	}
+
 	// `is_active` is derived from `status`; `valid_from`/`expires_at` are converted
 	// to date-input format in `load` so EntityForm's date inputs seed correctly.
 	// `provider_id` and `is_verified` are included per Section 55 (provider linkage + verify).
@@ -92,7 +109,7 @@
 		{ key: 'title', label: t('coupons.title_field', 'Title'), type: 'text', required: true, placeholder: 'e.g. 20% off Remitly — first transfer' },
 		{ key: 'code', label: t('coupons.code', 'Code'), type: 'text', required: true },
 		{ key: 'coupon_type', label: t('coupons.coupon_type', 'Coupon Type'), type: 'select', options: couponTypeOptions },
-		{ key: 'provider_id', label: t('coupons.provider', 'Provider'), type: 'select', options: providerOptions },
+		{ key: 'provider_id', label: t('coupons.provider', 'Provider'), type: 'autocomplete', placeholder: t('coupons.provider_placeholder', 'Search provider…'), emptyMessage: t('common.no_results', 'No results found'), fetcher: fetchProviderOptions, initialFetcher: fetchProviderOptionsInitial, getSelectedLabel: getProviderSelectedLabel },
 		{ key: 'discount_type', label: t('coupons.type', 'Discount Type'), type: 'select', options: discountTypeOptions },
 		{ key: 'discount_value', label: t('coupons.value', 'Value'), type: 'number' },
 		{ key: 'currency', label: t('coupons.currency', 'Currency'), type: 'text', placeholder: 'e.g. NGN, USD' },

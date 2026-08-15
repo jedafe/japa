@@ -3,10 +3,11 @@
 	import { page } from '$app/state';
 	import { enhance } from '$app/forms';
 	import { ArrowLeft, Send, BarChart3, Plus, Trash2 } from 'lucide-svelte';
-	import { Select } from 'bits-ui';
 	import { untrack } from 'svelte';
 	import type { PageData, ActionData } from './$types';
 	import CommentEditor from '$lib/components/comments/CommentEditor.svelte';
+	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
+	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 
@@ -61,6 +62,27 @@
 		if (form?.spaceId !== undefined) spaceId = form.spaceId;
 		if (form?.isAnonymous !== undefined) isAnonymous = form.isAnonymous;
 	});
+
+	// Autocomplete fetchers — filter the already-loaded spaces client-side.
+	function fetchSpaces(q: string): Promise<AutocompleteItem[]> {
+		const query = q.toLowerCase();
+		const filtered = query === ''
+			? data.spaces
+			: data.spaces.filter((s) => s.name.toLowerCase().includes(query));
+		return Promise.resolve(
+			filtered.map((s) => ({
+				id: s.id,
+				label: s.name,
+				sublabel: s.is_primary ? '★' : undefined
+			}))
+		);
+	}
+	function fetchSpacesInitial(): Promise<AutocompleteItem[]> {
+		return fetchSpaces('');
+	}
+	const selectedSpaceLabel = $derived(
+		spaceId ? data.spaces.find((s) => s.id === spaceId)?.name ?? null : null
+	);
 </script>
 
 <svelte:head>
@@ -100,34 +122,16 @@
 		<!-- Space selector -->
 		<div>
 			<label for="space_id" class="mb-1.5 block text-sm font-medium text-[var(--color-text)]">{t('create.label.space', 'Space')}</label>
-			<Select.Root
-				type="single"
-				value={spaceId}
-				onValueChange={(v) => (spaceId = (v as string) ?? '')}
-			>
-				<Select.Trigger
-					id="space_id"
-					class="flex w-full items-center justify-between rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none"
-				>
-					{data.spaces.find((s) => s.id === spaceId)?.name ?? t('create.placeholder.space', 'Select a space…')}
-				</Select.Trigger>
-				<Select.Portal>
-					<Select.Content
-						class="z-50 max-h-60 overflow-y-auto rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-1 shadow-lg"
-					>
-						{#each data.spaces as space (space.id)}
-							<Select.Item value={space.id} class="flex cursor-pointer items-center rounded-[6px] px-3 py-2 text-sm text-[var(--color-text)] outline-none data-[highlighted]:bg-[var(--color-surface-subtle)]">
-								{#snippet child({ props })}
-									<div {...props}>
-										{space.name}
-										{#if space.is_primary}<span class="ml-1 text-[var(--color-primary)]">★</span>{/if}
-									</div>
-								{/snippet}
-							</Select.Item>
-						{/each}
-					</Select.Content>
-				</Select.Portal>
-			</Select.Root>
+			<Autocomplete
+				placeholder={t('create.placeholder.space', 'Select a space…')}
+				emptyMessage={t('common.no_results', 'No results found')}
+				fetcher={fetchSpaces}
+				initialFetcher={fetchSpacesInitial}
+				selectedId={spaceId || null}
+				selectedLabel={selectedSpaceLabel}
+				onSelect={(item) => (spaceId = item.id)}
+				onClear={() => (spaceId = '')}
+			/>
 			<input type="hidden" name="space_id" value={spaceId} />
 		</div>
 

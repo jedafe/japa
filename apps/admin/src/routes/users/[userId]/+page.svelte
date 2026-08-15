@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { t } from '$lib/stores/i18n.svelte';
-  import { onMount } from "svelte";
   import { page } from "$app/state";
   import { goto, invalidateAll } from "$app/navigation";
   import PageHeader from "$lib/components/layout/page-header.svelte";
@@ -545,7 +544,7 @@
 
   // Load moderation config (profile types, violation types, restriction
   // operations + durations) from the backend on mount. BUG-019/BUG-020/BUG-021
-  onMount(() => {
+  $effect(() => {
     loadModerationConfig();
   });
 </script>

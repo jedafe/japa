@@ -217,6 +217,13 @@
 		}, debounceMs);
 	});
 
+	// Clear any pending debounce timer when the component unmounts.
+	$effect(() => {
+		return () => {
+			if (timer) clearTimeout(timer);
+		};
+	});
+
 	function pick(item: AutocompleteItem) {
 		// In free-text mode, keep the picked value visible in the input;
 		// in selection mode, clear the query (the chip shows the selection).

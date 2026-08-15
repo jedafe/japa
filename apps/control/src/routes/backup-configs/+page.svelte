@@ -10,6 +10,8 @@
 	import { escapeHtml } from '$lib/utils';
 	import { DatabaseBackup, Plus, Trash2, Play, Power, RefreshCw, ChevronDown, Check, X } from 'lucide-svelte';
 	import type { DataTableColumn, DataTableRowAction, DataTableBulkAction } from '$lib/api/types';
+	import Autocomplete from '$lib/components/ui/Autocomplete.svelte';
+	import type { AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
 
 	let {} = $props();
 
@@ -439,6 +441,25 @@
 		confirmBulkDeleteOpen = false;
 		await load();
 	}
+
+	// --- Autocomplete fetchers (client-side filter of loaded options) ---
+
+	// Schedule Preset fetcher — filters the server-fetched schedulePresets list.
+	async function fetchSchedulePresets(q: string): Promise<AutocompleteItem[]> {
+		const query = q.toLowerCase();
+		return schedulePresets
+			.filter((p) => p.label.toLowerCase().includes(query) || p.value.toLowerCase().includes(query))
+			.map((p) => ({ id: p.value, label: p.label, sublabel: p.cron }));
+	}
+
+	async function fetchSchedulePresetsInitial(): Promise<AutocompleteItem[]> {
+		return schedulePresets.map((p) => ({ id: p.value, label: p.label, sublabel: p.cron }));
+	}
+
+	function getSchedulePresetSelectedLabel(value: string): string | null {
+		if (!value) return null;
+		return schedulePresets.find((p) => p.value === value)?.label ?? value;
+	}
 </script>
 
 <PageHeader
@@ -518,36 +539,17 @@
 					<label for="bc-schedule" class="text-foreground mb-1 block text-sm font-medium">
 						{t('backup_configs.schedule', 'Schedule')}
 					</label>
-					<Select.Root type="single" value={selectedSchedulePreset} onValueChange={(v) => { if (v) onSchedulePresetChange(v); }}>
-						<Select.Trigger
-							id="bc-schedule"
-							class="border-border-input bg-background text-foreground w-full rounded-9px border px-3 py-2 text-sm transition-colors hover:border-border-input-hover focus:border-border-input-hover focus:shadow-date-field-focus"
-							aria-label={t('backup_configs.schedule', 'Schedule')}
-						>
-							<Select.Value placeholder={t('backup_configs.schedule', 'Select schedule...')} />
-						</Select.Trigger>
-						<Select.Portal>
-							<Select.Content
-								class="border-border-input bg-background shadow-popover z-50 rounded-xl border"
-								sideOffset={4}
-							>
-								<Select.Viewport class="p-1">
-									{#each schedulePresets as preset (preset.value)}
-										<Select.Item
-											class="data-highlighted:bg-accent rounded-9px flex h-9 cursor-pointer items-center px-3 text-sm outline-none"
-											value={preset.value}
-											label={preset.label}
-										>
-											{#snippet children({ selected })}
-												<span>{preset.label}</span>
-												{#if selected}<span class="ml-auto">✓</span>{/if}
-											{/snippet}
-										</Select.Item>
-									{/each}
-								</Select.Viewport>
-							</Select.Content>
-						</Select.Portal>
-					</Select.Root>
+					<Autocomplete
+						id="bc-schedule"
+						placeholder={t('backup_configs.schedule', 'Select schedule...')}
+						emptyMessage={t('common.no_results', 'No results found')}
+						fetcher={fetchSchedulePresets}
+						initialFetcher={fetchSchedulePresetsInitial}
+						selectedId={selectedSchedulePreset || null}
+						selectedLabel={getSchedulePresetSelectedLabel(selectedSchedulePreset)}
+						onSelect={(item) => onSchedulePresetChange(item.id)}
+						onClear={() => onSchedulePresetChange('')}
+					/>
 					{#if customScheduleMode}
 						<input
 							id="bc-schedule-custom"

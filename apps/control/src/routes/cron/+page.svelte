@@ -9,6 +9,8 @@
 	import { escapeHtml } from '$lib/utils';
 	import { Play, Pause, PlayCircle, Pencil, Plus, RefreshCw, Trash2 } from 'lucide-svelte';
 	import type { DataTableColumn, DataTableRowAction, DataTableBulkAction } from '$lib/api/types';
+	import Autocomplete from '$lib/components/ui/Autocomplete.svelte';
+	import type { AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
 
 	let {} = $props();
 
@@ -454,6 +456,42 @@
 		confirmBulkDeleteOpen = false;
 		await load();
 	}
+
+	// --- Autocomplete fetchers (client-side filter of loaded options) ---
+
+	// Job Type fetcher — filters the server-fetched taskTypeOptions list.
+	async function fetchTaskTypes(q: string): Promise<AutocompleteItem[]> {
+		const query = q.toLowerCase();
+		return taskTypeOptions
+			.filter((o) => o.label.toLowerCase().includes(query) || o.value.toLowerCase().includes(query))
+			.map((o) => ({ id: o.value, label: o.label, sublabel: o.tier }));
+	}
+
+	async function fetchTaskTypesInitial(): Promise<AutocompleteItem[]> {
+		return taskTypeOptions.map((o) => ({ id: o.value, label: o.label, sublabel: o.tier }));
+	}
+
+	function getTaskTypeSelectedLabel(value: string): string | null {
+		if (!value) return null;
+		return taskTypeOptions.find((o) => o.value === value)?.label ?? value;
+	}
+
+	// Schedule Preset fetcher — filters the server-fetched schedulePresets list.
+	async function fetchSchedulePresets(q: string): Promise<AutocompleteItem[]> {
+		const query = q.toLowerCase();
+		return schedulePresets
+			.filter((p) => p.label.toLowerCase().includes(query) || p.value.toLowerCase().includes(query))
+			.map((p) => ({ id: p.value, label: p.label, sublabel: p.cron }));
+	}
+
+	async function fetchSchedulePresetsInitial(): Promise<AutocompleteItem[]> {
+		return schedulePresets.map((p) => ({ id: p.value, label: p.label, sublabel: p.cron }));
+	}
+
+	function getSchedulePresetSelectedLabel(value: string): string | null {
+		if (!value) return null;
+		return schedulePresets.find((p) => p.value === value)?.label ?? value;
+	}
 </script>
 
 <PageHeader
@@ -550,41 +588,18 @@
 					<label for="cron-type" class="text-foreground mb-1 block text-sm font-medium">
 						{t('cron.job_type', 'Job Type')}
 					</label>
-					<Select.Root type="single" value={editForm.type} onValueChange={(v) => { if (v) editForm.type = v; }}>
-						<Select.Trigger
-							id="cron-type"
-							class="border-border-input bg-background text-foreground w-full rounded-9px border px-3 py-2 text-sm transition-colors hover:border-border-input-hover focus:border-border-input-hover focus:shadow-date-field-focus"
-							aria-label={t('cron.job_type', 'Job Type')}
-						>
-							<Select.Value placeholder={t('cron.select_task_type', 'Select a task type...')} />
-						</Select.Trigger>
-						<Select.Portal>
-							<Select.Content
-								class="border-border-input bg-background shadow-popover z-50 max-h-80 rounded-xl border overflow-y-auto"
-								sideOffset={4}
-							>
-								<Select.Viewport class="p-1">
-									{#each queueTiers as tier}
-										<div class="text-muted-foreground px-2 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider">
-											{tier.charAt(0).toUpperCase() + tier.slice(1)} {t('cron.tier', 'Tier')}
-										</div>
-										{#each taskTypeOptions.filter((o) => o.tier === tier) as option}
-											<Select.Item
-												class="data-highlighted:bg-accent rounded-9px flex h-9 cursor-pointer items-center px-3 text-sm outline-none"
-												value={option.value}
-												label={option.label}
-											>
-												{#snippet children({ selected })}
-													<span class="font-mono text-xs">{option.label}</span>
-													{#if selected}<span class="ml-auto">✓</span>{/if}
-												{/snippet}
-											</Select.Item>
-										{/each}
-									{/each}
-								</Select.Viewport>
-							</Select.Content>
-						</Select.Portal>
-					</Select.Root>
+					<Autocomplete
+						id="cron-type"
+						placeholder={t('cron.select_task_type', 'Select a task type...')}
+						emptyMessage={t('common.no_results', 'No results found')}
+						fetcher={fetchTaskTypes}
+						initialFetcher={fetchTaskTypesInitial}
+						selectedId={editForm.type || null}
+						selectedLabel={getTaskTypeSelectedLabel(editForm.type)}
+						onSelect={(item) => (editForm.type = item.id)}
+						onClear={() => (editForm.type = '')}
+						inputClass="font-mono"
+					/>
 					<p class="text-muted-foreground mt-1 text-xs">
 						{t('cron.job_type_hint', 'The Asynq task type to execute')}
 					</p>
@@ -593,37 +608,17 @@
 					<label for="cron-schedule-preset" class="text-foreground mb-1 block text-sm font-medium">
 						{t('cron.schedule', 'Schedule')}
 					</label>
-					<Select.Root type="single" value={selectedSchedulePreset} onValueChange={handleSchedulePresetChange}>
-						<Select.Trigger
-							id="cron-schedule-preset"
-							class="border-border-input bg-background text-foreground w-full rounded-9px border px-3 py-2 text-sm transition-colors hover:border-border-input-hover focus:border-border-input-hover focus:shadow-date-field-focus"
-							aria-label={t('cron.schedule', 'Schedule')}
-						>
-							<Select.Value placeholder={t('cron.select_schedule', 'Select a schedule...')} />
-						</Select.Trigger>
-						<Select.Portal>
-							<Select.Content
-								class="border-border-input bg-background shadow-popover z-50 rounded-xl border"
-								sideOffset={4}
-							>
-								<Select.Viewport class="p-1">
-									{#each schedulePresets as preset}
-										<Select.Item
-											class="data-highlighted:bg-accent rounded-9px flex h-9 cursor-pointer items-center px-3 text-sm outline-none"
-											value={preset.value}
-											label={preset.label}
-										>
-											{#snippet children({ selected })}
-												<span>{preset.label}</span>
-												{#if preset.cron}<span class="text-muted-foreground ml-auto font-mono text-[10px]">{preset.cron}</span>{/if}
-												{#if selected}<span class="ml-1">✓</span>{/if}
-											{/snippet}
-										</Select.Item>
-									{/each}
-								</Select.Viewport>
-							</Select.Content>
-						</Select.Portal>
-					</Select.Root>
+					<Autocomplete
+						id="cron-schedule-preset"
+						placeholder={t('cron.select_schedule', 'Select a schedule...')}
+						emptyMessage={t('common.no_results', 'No results found')}
+						fetcher={fetchSchedulePresets}
+						initialFetcher={fetchSchedulePresetsInitial}
+						selectedId={selectedSchedulePreset || null}
+						selectedLabel={getSchedulePresetSelectedLabel(selectedSchedulePreset)}
+						onSelect={(item) => handleSchedulePresetChange(item.id)}
+						onClear={() => handleSchedulePresetChange('')}
+					/>
 					{#if customScheduleMode}
 						<input
 							id="cron-spec"

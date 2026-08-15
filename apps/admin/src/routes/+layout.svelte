@@ -6,6 +6,7 @@
 	import { restoreSession } from '$lib/stores/session.svelte';
 
 	import { initNotifications, addNotification } from '$lib/stores/notifications.svelte';
+	import { setGlobalErrorHandler } from '$lib/api/client';
 	import { wsClient } from '$lib/websocket';
 	import { initSidebarFromStorage, toggleSidebar, sidebarCollapsed } from '$lib/stores/sidebar.svelte';
 	import Sidebar from '$lib/components/layout/sidebar.svelte';
@@ -41,6 +42,16 @@
 		fetchCsrfToken().catch(() => {});
 		initSidebarFromStorage();
 
+		// Register a global 403 error handler so permission errors from any
+		// API call surface as a notification rather than a silent blank screen.
+		setGlobalErrorHandler((err) => {
+			addNotification({
+				title: t('common.permission_denied', 'Permission Denied'),
+				body: err.message || t('common.no_permission_action', 'You do not have permission to perform this action'),
+				type: 'error'
+			});
+		});
+
 		// Skip session restoration on auth pages — no session exists yet and
 		// the calls would generate console 401 noise. The login page sets the
 		// access token in-memory and calls restoreSession() + goto('/'), which
@@ -56,6 +67,11 @@
 			goto('/login');
 		}
 		loading = false;
+	});
+
+	// Clear the global error handler when the root layout unmounts.
+	$effect(() => {
+		return () => setGlobalErrorHandler(null);
 	});
 
 	const PAGE_PERMISSIONS: Record<string, string> = {

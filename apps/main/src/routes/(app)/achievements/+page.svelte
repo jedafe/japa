@@ -23,6 +23,7 @@
 		Heart
 	} from 'lucide-svelte';
 	import type { Achievement, AchievementMilestoneType } from '$lib/types';
+	import { milestoneOptions } from '$lib/achievement';
 	import type { PageData } from './$types';
 	import type { IconComponent } from '$lib/components/ui/icons';
 
@@ -49,15 +50,7 @@
 		sort = data.filters.sort;
 	});
 
-	const milestoneOptions: { value: AchievementMilestoneType; label: string }[] = [
-		{ value: 'visa_approved', label: t('achievements.type_visa_approved', 'Visa approved') },
-		{ value: 'job_offer', label: t('achievements.type_job_offer', 'Job offer') },
-		{ value: 'university_accepted', label: t('achievements.type_university_accepted', 'University accepted') },
-		{ value: 'arrived', label: t('achievements.type_arrived', 'Arrived') },
-		{ value: 'one_year', label: t('achievements.type_one_year', 'One year') },
-		{ value: 'citizenship', label: t('achievements.type_citizenship', 'Citizenship') },
-		{ value: 'other', label: t('achievements.type_other', 'Other') }
-	];
+	const milestoneOpts = $derived(milestoneOptions(t));
 
 	const milestoneIcons: Record<AchievementMilestoneType, IconComponent> = {
 		visa_approved: BadgeCheck,
@@ -74,7 +67,7 @@
 	}
 
 	function milestoneLabel(type: AchievementMilestoneType): string {
-		return milestoneOptions.find((o) => o.value === type)?.label ?? type;
+		return milestoneOpts.find((o) => o.value === type)?.label ?? type;
 	}
 
 	function applyFilters() {
@@ -170,7 +163,7 @@
 				</label>
 				<select id="filter-milestone" value={milestone} onchange={(e) => (milestone = e.currentTarget.value)} class={inputClass}>
 					<option value="">{t('achievements.filter_all_types', 'All milestones')}</option>
-					{#each milestoneOptions as opt (opt.value)}
+					{#each milestoneOpts as opt (opt.value)}
 						<option value={opt.value}>{opt.label}</option>
 					{/each}
 				</select>

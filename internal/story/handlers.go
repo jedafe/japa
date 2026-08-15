@@ -374,6 +374,46 @@ func (h *Handlers) HandleVerify(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"verified": true}})
 }
 
+// HandleUnverify handles POST /admin/stories/:id/unverify — mark story as
+// unverified. Admin-only (story.verify permission checked at route registration).
+// Clears the verified flag and the HITL review audit trail.
+func (h *Handlers) HandleUnverify(w http.ResponseWriter, r *http.Request) {
+	_, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+	contentID, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	if h.service == nil {
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "story_unavailable", "Story service not configured")
+		return
+	}
+
+	if !h.service.Enabled(r.Context(), tenantID) {
+		errpkg.WriteError(w, http.StatusNotFound, "story_disabled", "Story wall is not available")
+		return
+	}
+
+	if err := h.service.Unverify(r.Context(), contentID, tenantID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			errpkg.WriteError(w, http.StatusNotFound, "story_not_found", "Story not found")
+			return
+		}
+		slog.Error("story: unverify failed", "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "unverify_failed", "Failed to unverify story")
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"verified": false}})
+}
+
 // HandleAdminList handles GET /admin/stories — moderation queue listing all
 // stories (any status). Admin-only (story.verify permission checked at route
 // registration). Supports ?status=&verified=&q=&sort=latest|oldest|title&page_size=&page_offset=.

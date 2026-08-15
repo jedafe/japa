@@ -10,6 +10,7 @@
 	import { api } from '$lib/api/client';
 	import { Trophy, Loader2, Save } from 'lucide-svelte';
 	import type { Achievement, AchievementMilestoneType } from '$lib/types';
+	import { milestoneOptions } from '$lib/achievement';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -27,15 +28,7 @@
 
 	const pageTitle = $derived(t('achievements.edit_title', 'Edit Achievement — JapaConnect'));
 
-	const milestoneOptions: { value: AchievementMilestoneType; label: string }[] = [
-		{ value: 'visa_approved', label: t('achievements.type_visa_approved', 'Visa approved') },
-		{ value: 'job_offer', label: t('achievements.type_job_offer', 'Job offer') },
-		{ value: 'university_accepted', label: t('achievements.type_university_accepted', 'University accepted') },
-		{ value: 'arrived', label: t('achievements.type_arrived', 'Arrived') },
-		{ value: 'one_year', label: t('achievements.type_one_year', 'One year') },
-		{ value: 'citizenship', label: t('achievements.type_citizenship', 'Citizenship') },
-		{ value: 'other', label: t('achievements.type_other', 'Other') }
-	];
+	const milestoneOpts = $derived(milestoneOptions(t));
 
 	const inputClass =
 		'w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20';
@@ -138,7 +131,7 @@
 				onchange={(e) => (milestoneType = e.currentTarget.value as AchievementMilestoneType)}
 				class={inputClass}
 			>
-				{#each milestoneOptions as opt (opt.value)}
+				{#each milestoneOpts as opt (opt.value)}
 					<option value={opt.value}>{opt.label}</option>
 				{/each}
 			</select>
