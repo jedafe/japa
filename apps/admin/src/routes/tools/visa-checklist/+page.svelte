@@ -51,13 +51,12 @@
 		readonly: true,
 		pageSize: 25,
 		columns: [
-			{ key: 'username', label: t('app.tools.col_username', 'Username'), sortable: true },
-			{ key: 'guide_id', label: t('app.tools.col_guide_id', 'Guide'), sortable: true },
-			{ key: 'item_key', label: t('app.tools.col_item_key', 'Item'), sortable: true },
+			{ key: 'username', label: t('app.tools.col_username', 'Username') },
+			{ key: 'guide_id', label: t('app.tools.col_guide_id', 'Guide') },
+			{ key: 'item_key', label: t('app.tools.col_item_key', 'Item') },
 			{
 				key: 'completed',
 				label: t('app.tools.col_completed', 'Completed'),
-				sortable: true,
 				render: (value: boolean) => (value ? '✓' : '—')
 			},
 			{
@@ -69,7 +68,6 @@
 			{
 				key: 'updated_at',
 				label: t('app.tools.col_updated_at', 'Updated'),
-				sortable: true,
 				render: (value: string) => (value ? new Date(value).toLocaleDateString() : '—')
 			}
 		],

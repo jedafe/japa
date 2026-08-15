@@ -138,7 +138,8 @@ var taskTier = func() map[string]string {
 	// asynq-tasks.md — the fallback in QueueForTask is also default, but
 	// listing them here keeps the tier map authoritative and auditable).
 	for _, t := range []string{
-		TypeEmailSend, TypeSearchIndexSync, TypeImageProcessing,
+		TypeEmailSend, TypeSearchIndexSync, TypeSearchReindexEngagementScores,
+		TypeImageProcessing,
 		TypeAITaskProcessing, TypeEngagementCountUpdate, TypeModerationScan,
 		TypeScheduledPublish, TypeLinkPreviewFetch, TypeLanguagePackAITranslate,
 		TypeMediaScan, TypeContentFanOutToFeeds, TypeAIGenerateContentEmbedding,
@@ -297,6 +298,7 @@ func TaskTypeCatalog() []map[string]string {
 		// Default tier
 		{TypeEmailSend, "default", "Send transactional email"},
 		{TypeSearchIndexSync, "default", "Index entity in Meilisearch"},
+		{TypeSearchReindexEngagementScores, "default", "Batched re-index of content whose engagement_score changed (§13)"},
 		{TypeImageProcessing, "default", "Resize/optimize uploaded images"},
 		{TypeAITaskProcessing, "default", "Process AI task"},
 		{TypeEngagementCountUpdate, "default", "Update engagement counters"},

@@ -202,16 +202,19 @@
 		],
 		actions: rowActions,
 		fields: [],
-		load: async ({ q, filter }) => {
+		load: async ({ q, filter, pageSize }) => {
 			const params = new URLSearchParams();
+			params.set('page_size', String(pageSize));
 			if (filter.type) params.set('type', filter.type);
 			if (filter.status) params.set('status', filter.status);
 			if (q) params.set('q', q);
 			const result = await contentAdminApi.list(params.toString() || undefined);
 			if (result.ok) {
-				const d = result.data as { items: ContentItem[] } | ContentItem[];
+				const d = result.data as { items: ContentItem[]; total?: number; total_pages?: number } | ContentItem[];
 				const items = Array.isArray(d) ? d : (d?.items ?? []);
-				return { data: items, total: items.length, totalPages: 1 };
+				const total = Array.isArray(d) ? items.length : (d.total ?? items.length);
+				const totalPages = Array.isArray(d) ? 1 : (d.total_pages ?? Math.max(1, Math.ceil(total / pageSize)));
+				return { data: items, total, totalPages };
 			}
 			throw new Error(result.error ?? t('common.error', 'Failed to load content'));
 		},

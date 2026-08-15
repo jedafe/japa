@@ -60,13 +60,13 @@
 	}
 
 	const columns = [
-		{ key: "instructor_name", label: t("university.instructor", "Instructor"), sortable: true, render: (v: string, row: Payout) => `<span class="text-sm">${v || (row.instructor_id ? row.instructor_id.slice(0, 8) + "..." : "—")}</span>` },
-		{ key: "period_start", label: t("university.period", "Period"), sortable: true, render: (_: any, row: Payout) => `<span class="text-xs" style="color: var(--color-muted)">${row.period_start} → ${row.period_end}</span>` },
-		{ key: "gross_kobo", label: t("university.gross", "Gross"), sortable: true, render: (v: number, row: Payout) => `<span class="text-sm font-medium">${formatKobo(v, row.currency)}</span>` },
+		{ key: "instructor_name", label: t("university.instructor", "Instructor"), render: (v: string, row: Payout) => `<span class="text-sm">${v || (row.instructor_id ? row.instructor_id.slice(0, 8) + "..." : "—")}</span>` },
+		{ key: "period_start", label: t("university.period", "Period"), render: (_: any, row: Payout) => `<span class="text-xs" style="color: var(--color-muted)">${row.period_start} → ${row.period_end}</span>` },
+		{ key: "gross_kobo", label: t("university.gross", "Gross"), render: (v: number, row: Payout) => `<span class="text-sm font-medium">${formatKobo(v, row.currency)}</span>` },
 		{ key: "platform_commission_kobo", label: t("university.commission", "Commission"), render: (v: number, row: Payout) => `<span class="text-xs" style="color: var(--color-muted)">${formatKobo(v, row.currency)}</span>` },
-		{ key: "net_kobo", label: t("university.net", "Net"), sortable: true, render: (v: number, row: Payout) => `<span class="text-sm font-semibold" style="color: var(--color-success)">${formatKobo(v, row.currency)}</span>` },
-		{ key: "status", label: t("university.status", "Status"), sortable: true, componentSnippet: PayoutStatusBadge },
-		{ key: "created_at", label: t("common.created", "Created"), sortable: true, render: (v: string) => `<span class="text-xs" style="color: var(--color-muted)">${new Date(v).toLocaleDateString()}</span>` }
+		{ key: "net_kobo", label: t("university.net", "Net"), render: (v: number, row: Payout) => `<span class="text-sm font-semibold" style="color: var(--color-success)">${formatKobo(v, row.currency)}</span>` },
+		{ key: "status", label: t("university.status", "Status"), componentSnippet: PayoutStatusBadge },
+		{ key: "created_at", label: t("common.created", "Created"), render: (v: string) => `<span class="text-xs" style="color: var(--color-muted)">${new Date(v).toLocaleDateString()}</span>` }
 	];
 
 	const rowActions: ActionItem[] = [

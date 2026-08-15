@@ -57,10 +57,10 @@
 	];
 
 	const columns = $derived([
-		{ key: "name", label: t("university.category_name", "Category"), sortable: true, render: (v: string) => `<span class="font-medium">${v}</span>` },
-		{ key: "slug", label: t("university.slug", "Slug"), sortable: true, render: (v: string) => `<span class="font-mono text-xs" style="color: var(--color-muted)">${v}</span>` },
-		{ key: "sort_order", label: t("university.sort_order", "Sort Order"), sortable: true, render: (v: number) => `<span class="text-xs">${v}</span>` },
-		{ key: "is_active", label: t("university.status", "Status"), sortable: true, render: (v: boolean) => v
+		{ key: "name", label: t("university.category_name", "Category"), render: (v: string) => `<span class="font-medium">${v}</span>` },
+		{ key: "slug", label: t("university.slug", "Slug"), render: (v: string) => `<span class="font-mono text-xs" style="color: var(--color-muted)">${v}</span>` },
+		{ key: "sort_order", label: t("university.sort_order", "Sort Order"), render: (v: number) => `<span class="text-xs">${v}</span>` },
+		{ key: "is_active", label: t("university.status", "Status"), render: (v: boolean) => v
 			? `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium" style="background: color-mix(in srgb, var(--color-success) 15%, transparent); color: var(--color-success)">${t("university.active", "Active")}</span>`
 			: `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium" style="background: color-mix(in srgb, var(--color-muted) 15%, transparent); color: var(--color-muted)">${t("university.inactive", "Inactive")}</span>`
 		}

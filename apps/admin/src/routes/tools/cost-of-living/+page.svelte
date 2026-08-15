@@ -146,9 +146,23 @@
 		<!-- Pagination -->
 		{#if totalPages > 1}
 			<div class="flex items-center justify-between">
-				<span class="text-sm" style="color: var(--color-muted)">
-					{t('common.page', 'Page')} {page} / {totalPages} · {total} {t('common.total', 'total')}
-				</span>
+				<div class="flex items-center gap-3">
+					<span class="text-sm" style="color: var(--color-muted)">
+						{t('common.page', 'Page')} {page} / {totalPages} · {total} {t('common.total', 'total')}
+					</span>
+					<select
+						value={limit}
+						onchange={(e) => { limit = Number((e.currentTarget as HTMLSelectElement).value); page = 1; void loadStats(); }}
+						class="rounded border px-2 py-1 text-sm"
+						style="border-color: var(--color-border); color: var(--color-foreground); background: var(--color-surface)"
+						aria-label={t('common.pageSize', 'Page size')}
+					>
+						<option value={10}>10</option>
+						<option value={25}>25</option>
+						<option value={50}>50</option>
+						<option value={100}>100</option>
+					</select>
+				</div>
 				<div class="flex gap-2">
 					<button
 						type="button"

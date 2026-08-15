@@ -668,6 +668,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	orgService.SetAsynqClient(asynqClient)      // BUG-018: invitation email:send tasks
 	orgHandlers := organizations.NewHandlers(orgService, followService, contentService)
 	orgHandlers.SetCustomFieldLookup(cfService) // org_type options from custom_fields (Section 07 + 08)
+	orgHandlers.SetAsynqClient(asynqClient)     // §12 stale-index fix: org CRUD enqueues search:index_entity
 
 	// Wallet & Credits subsystem (Section 28 — Wallet & Credits).
 	walletService := wallet.NewService(database)
@@ -2926,6 +2927,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// handler can resolve i18n.default_language for RAG indexing
 			// instead of hardcoding "en".
 			forumHandlers.SetSettings(settingsService)
+			// §12 stale-index fix: wire Asynq so thread/tag CRUD enqueues
+			// search:index_entity tasks.
+			forumHandlers.SetAsynqClient(asynqClient)
 
 			r.With(features.Gate(featureChecker, "feature.forum")).Group(func(r chi.Router) {
 				// Thread routes
@@ -3879,7 +3883,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(mw.RateLimit(vkClient.Redis(), "moderate")).Get("/search/autocomplete", searchHandlers.Autocomplete)
 			// catalog: GET /spaces/search — space-discovery search (distinct from
 			// /spaces/{id}/search below, which searches one space's content).
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "moderate")).Get("/spaces/search", searchHandlers.SearchSpaces)
+			r.With(auth.OptionalAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "moderate")).Get("/spaces/search", searchHandlers.SearchSpaces)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/spaces/{id}/search", searchHandlers.SearchSpace)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/tags/{slug}/search", searchHandlers.SearchTag)
 

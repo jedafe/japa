@@ -1,7 +1,7 @@
 import type { Handle } from '@sveltejs/kit';
 import { building } from '$app/environment';
 import { apiContext, apiGet, ApiError } from '$lib/server/api';
-import type { SessionUser, Locale, DocAudience } from '$lib/types';
+import type { SessionUser, DocAudience } from '$lib/types';
 import { AUDIENCE_ORDER } from '$lib/types';
 
 /**
@@ -36,16 +36,24 @@ export const handle: Handle = async ({ event, resolve }) => {
 	event.locals.tenantHost = event.url.hostname;
 	event.locals.token = event.cookies.get('jc_token') ?? null;
 
+	// Detect locale prefix in the URL path (e.g. /fr/docs → 'fr').
+	// Ref: §18 (i18n language packs), ADR-013.
+	const localePrefixMatch = event.url.pathname.match(/^\/([a-z]{2})(?=\/|$)/);
+	const pathLocale = localePrefixMatch?.[1] ?? null;
+
 	// Theme + locale: prefer the user's cookie, then fall back to the control
 	// panel appearance/i18n settings, then defaults. The settings endpoint is
-	// fetched at most once per request (shared between theme + locale).
+	// fetched at most once per request (shared between theme + locale + prefix
+	// validation).
 	const themeCookie = event.cookies.get('jc_theme');
 	const localeCookie = event.cookies.get('jc_locale');
-	const needSettings = themeCookie !== 'dark' && themeCookie !== 'light';
-	const needLocaleSettings = localeCookie !== 'fr' && localeCookie !== 'en';
+	const needSettings =
+		(themeCookie !== 'dark' && themeCookie !== 'light') ||
+		!localeCookie ||
+		pathLocale !== null;
 
 	let settings: Record<string, unknown> = {};
-	if ((needSettings || needLocaleSettings) && !building) {
+	if (needSettings && !building) {
 		try {
 			settings =
 				(await apiGet<Record<string, unknown>>(apiContext(event), '/site/settings/public')) ?? {};
@@ -61,12 +69,30 @@ export const handle: Handle = async ({ event, resolve }) => {
 				? 'dark'
 				: 'light';
 
-	const defaultLang = (settings['i18n.default_language'] as string | undefined) ?? 'en';
-	event.locals.locale = (localeCookie === 'fr' || localeCookie === 'en'
-		? localeCookie
-		: defaultLang === 'fr'
-			? 'fr'
-			: 'en') as Locale;
+	// Locale resolution: URL prefix > cookie > i18n.default_language > 'en'.
+	// Valid prefix → set cookie + rewrite URL so SvelteKit routes to the
+	// unprefixed page tree. Browser URL stays /fr/docs; page renders French.
+	// Ref: §18, conventions/system-settings-catalog.md (i18n.enabled_languages)
+	const enabledLanguages =
+		((settings['i18n.enabled_languages'] as string | undefined) ?? 'en,fr')
+			.split(',')
+			.map((l) => l.trim())
+			.filter(Boolean);
+
+	if (pathLocale && enabledLanguages.includes(pathLocale)) {
+		event.locals.locale = pathLocale;
+		event.cookies.set('jc_locale', pathLocale, {
+			path: '/',
+			maxAge: 60 * 60 * 24 * 365,
+			sameSite: 'lax'
+		});
+		event.url.pathname = event.url.pathname.slice(3) || '/';
+	} else if (localeCookie && enabledLanguages.includes(localeCookie)) {
+		event.locals.locale = localeCookie;
+	} else {
+		const defaultLang = (settings['i18n.default_language'] as string | undefined) ?? 'en';
+		event.locals.locale = enabledLanguages.includes(defaultLang) ? defaultLang : 'en';
+	}
 
 	event.locals.user = null;
 

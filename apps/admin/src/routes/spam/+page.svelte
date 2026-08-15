@@ -123,11 +123,11 @@
 		deletePermission: IP_BLOCK_PERM,
 		pageSize: 25,
 		columns: [
-			{ key: 'cidr', label: t('spam.cidr', 'IP / CIDR'), sortable: true },
-			{ key: 'block_type', label: t('spam.block_type', 'Type'), sortable: true },
-			{ key: 'reason', label: t('spam.reason', 'Reason'), sortable: true, render: (v: string) => v || '—' },
-			{ key: 'expires_at', label: t('spam.expires', 'Expires'), sortable: true, render: (v: string) => v || t('spam.never', 'Never') },
-			{ key: 'created_at', label: t('common.created', 'Created'), sortable: true, render: (v: string) => (v ? new Date(v).toLocaleDateString() : '—') }
+			{ key: 'cidr', label: t('spam.cidr', 'IP / CIDR') },
+			{ key: 'block_type', label: t('spam.block_type', 'Type') },
+			{ key: 'reason', label: t('spam.reason', 'Reason'), render: (v: string) => v || '—' },
+			{ key: 'expires_at', label: t('spam.expires', 'Expires'), render: (v: string) => v || t('spam.never', 'Never') },
+			{ key: 'created_at', label: t('common.created', 'Created'), render: (v: string) => (v ? new Date(v).toLocaleDateString() : '—') }
 		],
 		filters: [
 			{ key: 'block_type', label: t('spam.block_type', 'Block Type'), options: blockTypeOptions }
@@ -206,10 +206,10 @@
 		deletePermission: CENSORED_PERM,
 		pageSize: 25,
 		columns: [
-			{ key: 'pattern', label: t('spam.pattern', 'Pattern'), sortable: true },
-			{ key: 'action', label: t('spam.action', 'Action'), sortable: true },
-			{ key: 'replacement', label: t('spam.replacement', 'Replacement'), sortable: true, render: (v: string) => v || '—' },
-			{ key: 'created_at', label: t('common.created', 'Created'), sortable: true, render: (v: string) => (v ? new Date(v).toLocaleDateString() : '—') }
+			{ key: 'pattern', label: t('spam.pattern', 'Pattern') },
+			{ key: 'action', label: t('spam.action', 'Action') },
+			{ key: 'replacement', label: t('spam.replacement', 'Replacement'), render: (v: string) => v || '—' },
+			{ key: 'created_at', label: t('common.created', 'Created'), render: (v: string) => (v ? new Date(v).toLocaleDateString() : '—') }
 		],
 		filters: [{ key: 'action', label: t('spam.action', 'Action'), options: actionOptions }],
 		bulkActions: [
@@ -281,16 +281,14 @@
 			{
 				key: 'blocker_display_name',
 				label: t('spam.blocker', 'Blocker'),
-				sortable: true,
 				render: (v: string, row: UserBlock) => v || row.blocker_username || 'anonymous'
 			},
 			{
 				key: 'blocked_display_name',
 				label: t('spam.blocked', 'Blocked'),
-				sortable: true,
 				render: (v: string, row: UserBlock) => v || row.blocked_username || 'anonymous'
 			},
-			{ key: 'created_at', label: t('common.created', 'Created'), sortable: true, render: (v: string) => (v ? new Date(v).toLocaleDateString() : '—') }
+			{ key: 'created_at', label: t('common.created', 'Created'), render: (v: string) => (v ? new Date(v).toLocaleDateString() : '—') }
 		],
 		fields: [],
 		actions: [

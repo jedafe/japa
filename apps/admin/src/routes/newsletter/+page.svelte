@@ -126,7 +126,6 @@
 		{
 			key: 'email',
 			label: t('app.newsletter.col_email', 'Email'),
-			sortable: true,
 			render: (_: any, row: any) => `
 				<div class="flex items-center gap-3">
 					<div class="h-8 w-8 rounded-full bg-primary-100 flex items-center justify-center">
@@ -142,7 +141,6 @@
 		{
 			key: 'status',
 			label: t('app.newsletter.col_status', 'Status'),
-			sortable: true,
 			render: (v: string) => {
 				const cls = v === 'subscribed' ? 'bg-success/15 text-success border-success' : v === 'bounced' ? 'bg-danger/15 text-danger border-danger' : v === 'complained' ? 'bg-warning/15 text-warning border-warning' : 'bg-surface text-foreground border';
 				return `<span class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${cls}">${v || 'subscribed'}</span>`;
@@ -151,7 +149,6 @@
 		{
 			key: 'subscribedAt',
 			label: t('app.newsletter.col_subscribed', 'Subscribed'),
-			sortable: true,
 			render: (v: string, row: any) => new Date(v || row.created_at).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
 		}
 	];
@@ -160,7 +157,6 @@
 		{
 			key: 'subject',
 			label: t('app.newsletter.col_subject', 'Subject'),
-			sortable: true,
 			render: (_: any, row: any) => `
 				<div>
 					<p class="font-medium text-foreground">${row.subject || row.name || 'No subject'}</p>
@@ -171,7 +167,6 @@
 		{
 			key: 'status',
 			label: t('app.newsletter.col_status', 'Status'),
-			sortable: true,
 			render: (v: string) => {
 				const cls = v === 'sent' ? 'bg-success/15 text-success border-success' : v === 'scheduled' ? 'bg-info-100 text-info-800 border-info-200' : v === 'sending' ? 'bg-warning/15 text-warning border-warning' : v === 'cancelled' ? 'bg-danger/15 text-danger border-danger' : 'bg-surface text-foreground border';
 				return `<span class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${cls}">${v || 'draft'}</span>`;
@@ -180,7 +175,6 @@
 		{
 			key: 'sentAt',
 			label: t('app.newsletter.col_sent', 'Sent'),
-			sortable: true,
 			render: (v: string, row: any) => {
 				const date = v || row.sent_at;
 				return date ? new Date(date).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : '<span class="text-muted">—</span>';
@@ -189,7 +183,6 @@
 		{
 			key: 'openRate',
 			label: t('app.newsletter.col_open_rate', 'Open Rate'),
-			sortable: true,
 			render: (v: number, row: any) => {
 				const rate = v ?? row.openRate ?? 0;
 				return `<span class="font-medium">${rate.toFixed(1)}%</span>`;

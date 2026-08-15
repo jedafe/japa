@@ -6,8 +6,8 @@
 
 export type ThemeName = 'light' | 'dark';
 
-/** Supported UI locales. Mirrors the i18n store's Locale type. */
-export type Locale = 'en' | 'fr';
+/** Supported UI locale code (e.g. 'en', 'fr', 'yo'). Dynamic per ADR-013. */
+export type Locale = string;
 
 /* ------------------------------------------------------------------ *
  * Transport envelope

@@ -1,14 +1,15 @@
 <script lang="ts">
 	// /community/story-wall — admin HITL review queue for Story Wall submissions.
+	import { onMount } from 'svelte';
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import { Modal } from '$lib/components/ui/modal';
 	import { Button } from '$lib/components/ui/button';
-	import { storyAdminApi } from '$lib/api';
+	import { storyAdminApi , spacesAdminApi } from '$lib/api';
 	import { apiRaw } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { Eye, CheckCircle, Trash2 } from 'lucide-svelte';
-	import type { ActionItem } from '$lib/components/ui/data-table';
+	import type { ActionItem, FilterDef } from '$lib/components/ui/data-table';
 
 	type StoryItem = {
 		id: string;
@@ -106,7 +107,45 @@
 		{ key: 'body', label: t('app.story.detail_content', 'Content'), type: 'textarea' }
 	];
 
+	
+// Destination Spaces for the dest filter (geo-aware pattern). Loaded once
+// on mount from /admin/spaces?level=country so the filter options are
+// driven by the backend (Rule 16 — no hardcoded lists).
+type SpaceOption = { id: string; name: string };
+let destOptions = $state<SpaceOption[]>([]);
+onMount(async () => {
+	try {
+		const res = await spacesAdminApi.list('?level=country&limit=200');
+		if (res.ok && Array.isArray(res.data)) {
+			destOptions = (res.data as Array<{ id: string; name: string }>).map((s) => ({
+				id: s.id,
+				name: s.name
+			}));
+		}
+	} catch {
+		// Non-fatal — the dest filter simply stays empty.
+	}
+});
+
+		const filters = $derived<FilterDef[]>([
+		{
+			key: 'status',
+			label: t('app.story.col_status', 'Status'),
+			options: [
+				{ value: 'pending', label: t('app.story.status_pending', 'Pending') },
+				{ value: 'verified', label: t('app.story.status_verified', 'Verified') },
+				{ value: 'rejected', label: t('app.story.status_rejected', 'Rejected') },
+			]
+		},
+		{
+			key: 'dest',
+			label: t('app.story.col_destination', 'Destination'),
+			options: destOptions.map((s) => ({ value: s.id, label: s.name }))
+		}
+	]);
+
 	const config = $derived<EntityPageConfig>({
+		filters,
 		title: t('app.story.review_queue_heading', 'Story Wall Review Queue'),
 		description: t('app.story.review_queue_desc', 'Review and verify pending Story Wall submissions'),
 		readonly: true,
@@ -147,6 +186,7 @@
 				else if (sortKey === 'title') qp.set('sort', 'title');
 			}
 			if (params.filter?.dest) qp.set('dest', params.filter.dest);
+			if (params.filter?.status) qp.set('status', params.filter.status);
 			const result = await apiRaw<{ data: StoryItem[]; pagination: { total: number } }>(
 				`/admin/stories${qp.toString() ? `?${qp.toString()}` : ''}`
 			);

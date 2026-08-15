@@ -347,14 +347,14 @@
 			if (q) params.set('q', q);
 			if (filter.status) params.set('status', filter.status);
 			if (filter.entity_type) params.set('entity_type', filter.entity_type);
-			if (page) params.set('page', String(page));
-			if (pageSize) params.set('page_size', String(pageSize));
+			params.set('page_offset', String(page * pageSize));
+			params.set('page_size', String(pageSize));
 			const result = await intelReviewApi.queue(params.toString());
 			if (result.ok) {
-				const body = result.data;
+				const body = result.data as { data?: ReviewRecord[]; meta?: { count?: number; page_size?: number; page_offset?: number } };
 				const data = (body?.data as ReviewRecord[]) ?? [];
-				const total = data.length; // queue endpoint may not paginate
-				const totalPages = 1;
+				const total = body?.meta?.count ?? data.length;
+				const totalPages = Math.max(1, Math.ceil(total / pageSize));
 				return { data, total, totalPages };
 			}
 			throw new Error(result.error ?? t('intel.load_error', 'Failed to load review queue'));

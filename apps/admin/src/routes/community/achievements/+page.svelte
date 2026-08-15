@@ -3,12 +3,13 @@
 	// Lists all achievements (any status) with publish/unpublish/delete
 	// actions gated by achievement.moderate. Uses server-side pagination via
 	// the DataTable. Ref: §89, ADR-097.
+	import { onMount } from 'svelte';
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
-	import { achievementAdminApi } from '$lib/api';
+	import { achievementAdminApi , spacesAdminApi } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { Eye, EyeOff, Trash2, CheckCircle } from 'lucide-svelte';
-	import type { ActionItem } from '$lib/components/ui/data-table';
+	import type { ActionItem, FilterDef } from '$lib/components/ui/data-table';
 
 	type AchievementItem = {
 		id: string;
@@ -86,7 +87,45 @@
 		{ key: 'is_anonymous', label: t('app.achievements.col_anonymous', 'Anonymous'), type: 'checkbox' }
 	];
 
+	
+// Destination Spaces for the dest filter (geo-aware pattern). Loaded once
+// on mount from /admin/spaces?level=country so the filter options are
+// driven by the backend (Rule 16 — no hardcoded lists).
+type SpaceOption = { id: string; name: string };
+let destOptions = $state<SpaceOption[]>([]);
+onMount(async () => {
+	try {
+		const res = await spacesAdminApi.list('?level=country&limit=200');
+		if (res.ok && Array.isArray(res.data)) {
+			destOptions = (res.data as Array<{ id: string; name: string }>).map((s) => ({
+				id: s.id,
+				name: s.name
+			}));
+		}
+	} catch {
+		// Non-fatal — the dest filter simply stays empty.
+	}
+});
+
+		const filters = $derived<FilterDef[]>([
+		{
+			key: 'status',
+			label: t('app.achievement.col_status', 'Status'),
+			options: [
+				{ value: 'active', label: t('app.achievement.status_active', 'Active') },
+				{ value: 'inactive', label: t('app.achievement.status_inactive', 'Inactive') },
+				{ value: 'pending', label: t('app.achievement.status_pending', 'Pending') },
+			]
+		},
+		{
+			key: 'dest',
+			label: t('app.achievement.col_destination', 'Destination'),
+			options: destOptions.map((s) => ({ value: s.id, label: s.name }))
+		}
+	]);
+
 	const config = $derived<EntityPageConfig>({
+		filters,
 		title: t('app.achievements.review_queue_heading', 'Achievements Moderation'),
 		description: t('app.achievements.review_queue_desc', 'Review community achievement records'),
 		// Achievements are user-submitted; admins moderate (publish/unpublish/
@@ -136,6 +175,7 @@
 			if (params.q) qs.set('q', params.q);
 			if (params.sort) qs.set('sort', params.sort);
 			if (params.filter?.dest) qs.set('dest', params.filter.dest);
+			if (params.filter?.status) qs.set('status', params.filter.status);
 			const result = await achievementAdminApi.list(qs.toString());
 			if (result.ok) {
 				const data = (result.data.data as AchievementItem[]) ?? [];

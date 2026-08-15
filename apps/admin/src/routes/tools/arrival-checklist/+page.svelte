@@ -1,14 +1,15 @@
 <script lang="ts">
 	// /tools/arrival-checklist — admin HITL review queue for AI-generated arrival checklists.
 	// Ref: §92 (Arrival Checklist Generator), ADR-100, ADR-088 (Universal AI content generation).
+	import { onMount } from 'svelte';
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import { Modal } from '$lib/components/ui/modal';
 	import { Button } from '$lib/components/ui/button';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { Eye, CheckCircle, Sparkles } from 'lucide-svelte';
-	import type { ActionItem } from '$lib/components/ui/data-table';
-	import { arrivalChecklistAdminApi, api } from '$lib/api';
+	import type { ActionItem, FilterDef } from '$lib/components/ui/data-table';
+	import { arrivalChecklistAdminApi, api , spacesAdminApi } from '$lib/api';
 
 	// GuideDTO — matches the backend response shape (internal/arrivalchecklist/service.go).
 	type ArrivalChecklistGuide = {
@@ -43,6 +44,21 @@
 	const canManage = $derived(hasPermission('arrival_checklist.manage'));
 
 	// ── State ───────────────────────────────────────────────────────────────
+	
+// Destination Spaces for the dest filter (geo-aware pattern §90-101).
+type SpaceOption = { id: string; name: string };
+let destOptions = $state<SpaceOption[]>([]);
+onMount(async () => {
+	try {
+		const res = await spacesAdminApi.list('?level=country&limit=200');
+		if (res.ok && Array.isArray(res.data)) {
+			destOptions = (res.data as Array<{ id: string; name: string }>).map((s) => ({
+				id: s.id, name: s.name
+			}));
+		}
+	} catch { /* Non-fatal */ }
+});
+
 	let entityController = $state<EntityPageController | undefined>(undefined);
 	let pageError = $state('');
 	let acting = $state(false);
@@ -159,7 +175,9 @@
 					{ value: 'published', label: t('app.tools.status_published', 'Published') },
 					{ value: 'rejected', label: t('app.tools.status_rejected', 'Rejected') }
 				]
-			}
+			},
+			{ key: 'dest', label: t('app.tools.col_destination', 'Destination'), options: destOptions.map((s) => ({ value: s.id, label: s.name })) }
+
 		],
 		columns: [
 			{

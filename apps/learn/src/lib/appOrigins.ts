@@ -1,5 +1,4 @@
 import { PUBLIC_MAIN_ORIGIN } from '$env/static/public';
-import type { Locale } from '$lib/i18n';
 
 /**
  * Cross-app origin helpers.
@@ -50,18 +49,18 @@ export function profileUrl(username: string): string {
 }
 
 /**
- * Switch the UI locale by setting the `jc_locale` cookie and reloading.
+ * Switch the UI locale by navigating to the locale-prefixed URL.
  *
- * The Learn app resolves the locale from the `jc_locale` cookie (see
- * hooks.server.ts) — it has NO `/en/*` or `/fr/*` URL-prefixed routes (unlike
- * the Main app). Navigating to `/en/<path>` therefore 404s. The correct way to
- * switch locale here is to set the cookie and reload the current page so SSR
- * re-resolves with the new locale. No-op during SSR.
+ * The hooks.server.ts handle hook detects the locale prefix in the URL
+ * (e.g. /fr/tracks), sets the jc_locale cookie, and rewrites the URL to
+ * the unprefixed path for routing. The browser URL stays /fr/tracks and
+ * the page renders in the chosen locale. No-op during SSR.
+ * Ref: §18 (i18n language packs), ADR-013.
  */
-export function switchLocale(locale: Locale): void {
+export function switchLocale(locale: string, defaultLang = 'en'): void {
 	if (typeof document === 'undefined') return;
-	document.cookie = `jc_locale=${locale}; path=/; max-age=31536000; samesite=lax`;
-	// Reload the current page so the server re-resolves the locale.
-	window.location.reload();
+	const path = window.location.pathname.replace(/^\//, '');
+	const href = locale === defaultLang ? `/${path}` : `/${locale}/${path}`;
+	window.location.href = href;
 }
 

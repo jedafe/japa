@@ -2,14 +2,15 @@
 	// /tools/visa-routes — admin management page for visa route data.
 	// Full CRUD: create, edit, deactivate (soft-delete), approve (HITL), generate (AI draft).
 	// Ref: §90 (Visa Route Comparison), ADR-098, ADR-088 (Universal AI content generation).
+	import { onMount } from 'svelte';
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import { Modal } from '$lib/components/ui/modal';
 	import { Button } from '$lib/components/ui/button';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { Eye, CheckCircle, Sparkles, Trash2 } from 'lucide-svelte';
-	import type { ActionItem } from '$lib/components/ui/data-table';
-	import { visaRoutesAdminApi, api } from '$lib/api';
+	import type { ActionItem, FilterDef } from '$lib/components/ui/data-table';
+	import { visaRoutesAdminApi, api , spacesAdminApi } from '$lib/api';
 
 	// RouteDTO — matches the backend response shape (internal/visaroutes/service.go).
 	type VisaRoute = {
@@ -50,6 +51,21 @@
 	const canManage = $derived(hasPermission('visa_routes.manage'));
 
 	// ── State ───────────────────────────────────────────────────────────────
+	
+// Destination Spaces for the dest filter (geo-aware pattern §90-101).
+type SpaceOption = { id: string; name: string };
+let destOptions = $state<SpaceOption[]>([]);
+onMount(async () => {
+	try {
+		const res = await spacesAdminApi.list('?level=country&limit=200');
+		if (res.ok && Array.isArray(res.data)) {
+			destOptions = (res.data as Array<{ id: string; name: string }>).map((s) => ({
+				id: s.id, name: s.name
+			}));
+		}
+	} catch { /* Non-fatal */ }
+});
+
 	let entityController = $state<EntityPageController | undefined>(undefined);
 	let pageError = $state('');
 	let acting = $state(false);
@@ -222,7 +238,9 @@
 		deletePermission: 'visa_routes.manage',
 		pageSize: 25,
 		filters: [
-			{ key: 'status', label: t('app.tools.col_status', 'Status'), options: statusFilterOptions }
+			{ key: 'status', label: t('app.tools.col_status', 'Status'), options: statusFilterOptions },
+			{ key: 'dest', label: t('app.tools.col_destination', 'Destination'), options: destOptions.map((s) => ({ value: s.id, label: s.name })) }
+
 		],
 		columns: [
 			{ key: 'name', label: t('app.tools.col_name', 'Name'), sortable: true },

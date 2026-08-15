@@ -307,3 +307,44 @@ func (h *Handlers) DeleteTemplate(w http.ResponseWriter, r *http.Request) {
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
 }
+
+// GetAdminSettings handles GET /admin/onboarding/settings.
+// Returns the tenant's onboarding configuration (minimum counts + promoted
+// entities). Ref: Section 09 — admin Onboarding Settings surface.
+func (h *Handlers) GetAdminSettings(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	settings, err := h.Service.GetAdminSettings(r.Context(), tenantID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": settings})
+}
+
+// UpdateAdminSettings handles PUT /admin/onboarding/settings.
+// Applies a partial update to the onboarding configuration. Only fields
+// present in the request body are written. Ref: Section 09.
+func (h *Handlers) UpdateAdminSettings(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	var req UpdateOnboardingSettingsRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+
+	if err := h.Service.UpdateAdminSettings(r.Context(), tenantID, &req); err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "updated"}})
+}

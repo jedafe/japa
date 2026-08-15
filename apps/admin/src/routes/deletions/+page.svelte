@@ -39,7 +39,6 @@
 			{
 				key: 'title',
 				label: t('deletions.title_col', 'Title'),
-				sortable: true,
 				render: (v: string) =>
 					`<span class="text-sm">${v || '<em>untitled</em>'}</span>`
 			},
@@ -51,7 +50,6 @@
 			{
 				key: 'display_name',
 				label: t('deletions.user', 'Author'),
-				sortable: true,
 				render: (v: string, row: DeletedContent) =>
 					`<span class="text-sm">${v || row.username || 'anonymous'}</span>`
 			},
@@ -66,7 +64,6 @@
 			{
 				key: 'deleted_at',
 				label: t('deletions.date', 'Deleted At'),
-				sortable: true,
 				render: (v: string) =>
 					v
 						? `<span class="text-xs" style="color: var(--color-muted)">${new Date(v).toLocaleString()}</span>`
@@ -82,23 +79,19 @@
 			}
 		],
 		fields,
-		load: async ({ q }) => {
+		load: async ({ q, page, pageSize }) => {
 			try {
-				const result = await api<DeletedContent[]>('/admin/deletions');
+				const params = new URLSearchParams();
+				params.set('page_size', String(pageSize));
+				params.set('page_offset', String(page * pageSize));
+				if (q) params.set('q', encodeURIComponent(q));
+				const result = await api<DeletedContent[] | { data?: DeletedContent[]; total?: number }>(`/admin/deletions?${params.toString()}`);
 				if (result.ok) {
-					let data = result.data ?? [];
-					// Client-side search on title/username/content_type/status.
-					if (q) {
-						const query = q.toLowerCase();
-						data = data.filter(
-							(d) =>
-								(d.title || '').toLowerCase().includes(query) ||
-								(d.display_name || d.username || '').toLowerCase().includes(query) ||
-								d.content_type.toLowerCase().includes(query) ||
-								d.status.toLowerCase().includes(query)
-						);
-					}
-					return { data, total: data.length, totalPages: 1 };
+					const raw = result.data;
+					const data = Array.isArray(raw) ? raw : (raw?.data ?? []);
+					const total = Array.isArray(raw) ? data.length : (raw?.total ?? data.length);
+					const totalPages = Math.max(1, Math.ceil(total / pageSize));
+					return { data, total, totalPages };
 				}
 				throw new Error(result.error ?? t('common.error', 'Failed to load deletions'));
 			} catch (e) {

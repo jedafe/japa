@@ -78,12 +78,12 @@
 	];
 
 	const columns = [
-		{ key: "display_name", label: t("university.instructor", "Instructor"), sortable: true, render: (v: string) => `<span class="font-medium">${v}</span>` },
+		{ key: "display_name", label: t("university.instructor", "Instructor"), render: (v: string) => `<span class="font-medium">${v}</span>` },
 		{ key: "headline", label: t("university.headline", "Headline"), render: (v: string | null) => `<span class="text-xs" style="color: var(--color-muted)">${v ?? "—"}</span>` },
-		{ key: "tier", label: t("university.tier", "Tier"), sortable: true, render: (v: string) => `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium ${v === "partner" ? "bg-primary/15 text-primary" : v === "verified" ? "bg-info/15 text-info" : "bg-muted/15 text-muted"}">${v}</span>` },
-		{ key: "status", label: t("university.status", "Status"), sortable: true, componentSnippet: StatusBadge },
+		{ key: "tier", label: t("university.tier", "Tier"), render: (v: string) => `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium ${v === "partner" ? "bg-primary/15 text-primary" : v === "verified" ? "bg-info/15 text-info" : "bg-muted/15 text-muted"}">${v}</span>` },
+		{ key: "status", label: t("university.status", "Status"), componentSnippet: StatusBadge },
 		{ key: "kyc_status", label: t("university.kyc", "KYC"), render: (v: string) => `<span class="text-xs ${v === "verified" ? "text-success" : v === "pending" ? "text-warning" : "text-muted"}">${v}</span>` },
-		{ key: "created_at", label: t("common.created", "Created"), sortable: true, render: (v: string) => `<span class="text-xs" style="color: var(--color-muted)">${new Date(v).toLocaleDateString()}</span>` }
+		{ key: "created_at", label: t("common.created", "Created"), render: (v: string) => `<span class="text-xs" style="color: var(--color-muted)">${new Date(v).toLocaleDateString()}</span>` }
 	];
 
 	const rowActions: ActionItem[] = [

@@ -18,15 +18,15 @@ import (
 
 // Meilisearch index UIDs — one per searchable entity type.
 const (
-	IndexPosts             = "posts"              // blog posts, discussions, pages (contents table)
-	IndexForumThreads      = "forum_threads"      // Q&A threads
-	IndexSpaces            = "spaces"             // geo-first community spaces
-	IndexUsers             = "users"              // user profiles
-	IndexTags              = "tags"               // forum tags
-	IndexKnowledgeArticles = "knowledge_articles" // learning platform articles (§13, ADR-069)
-	IndexLearningTracks    = "learning_tracks"    // Japa University marketplace courses (ADR-063)
-	IndexDocPages          = "doc_pages"          // documentation pages (SEARCH-001)
-	IndexOrganizations     = "organizations"      // verified orgs/businesses (Section 54)
+	IndexPosts             = "posts"                      // blog posts, discussions, pages (contents table)
+	IndexForumThreads      = "forum_threads"              // Q&A threads
+	IndexSpaces            = "spaces"                     // geo-first community spaces
+	IndexUsers             = "users"                      // user profiles
+	IndexTags              = "tags"                       // forum tags
+	IndexKnowledgeArticles = "knowledge_articles"         // learning platform articles (§13, ADR-069)
+	IndexLearningTracks    = "learning_tracks"            // Japa University marketplace courses (ADR-063)
+	IndexDocPages          = "doc_pages"                  // documentation pages (SEARCH-001)
+	IndexOrganizations     = "organizations"              // verified orgs/businesses (Section 54)
 	IndexLanguageTestReqs  = "language_test_requirements" // §99 language test score requirements (JapaBot RAG)
 )
 
@@ -62,6 +62,23 @@ var filterableAttributesByIndex = map[string][]string{
 	IndexDocPages:          {"tenant_id", "audience", "review_status"},
 	IndexOrganizations:     {"tenant_id", "org_type", "verified", "status", "country_code"},
 	IndexLanguageTestReqs:  {"tenant_id", "test_slug", "destination_space_id", "visa_category", "is_japabot_indexed"},
+}
+
+// sortableAttributesByIndex declares which attributes each index exposes for
+// the §54 ?sort= param. created_at is sortable on every index so "latest"
+// works universally. engagement_score is sortable on the posts index so
+// "top" works for content.
+var sortableAttributesByIndex = map[string][]string{
+	IndexPosts:             {"created_at", "engagement_score"},
+	IndexForumThreads:      {"created_at"},
+	IndexSpaces:            {"created_at"},
+	IndexUsers:             {"created_at"},
+	IndexTags:              {"created_at"},
+	IndexKnowledgeArticles: {"created_at"},
+	IndexLearningTracks:    {"created_at"},
+	IndexDocPages:          {"created_at"},
+	IndexOrganizations:     {"created_at"},
+	IndexLanguageTestReqs:  {"created_at"},
 }
 
 // NewClient creates a Meilisearch client and ensures every search index
@@ -111,6 +128,16 @@ func ensureIndexes(ctx context.Context, client meilisearch.ServiceManager) error
 		filterable := stringsToInterface(filterableAttributesByIndex[uid])
 		if _, err := client.Index(uid).UpdateFilterableAttributesWithContext(setupCtx, &filterable); err != nil {
 			return fmt.Errorf("setting filterable attributes for index %q: %w", uid, err)
+		}
+
+		// §54 ?sort=: set sortable attributes so created_at:desc (latest) and
+		// engagement_score:desc (top) work. Best-effort — older Meilisearch
+		// versions may not support sortable attributes, but filtering still
+		// works.
+		sortable := sortableAttributesByIndex[uid]
+		if _, err := client.Index(uid).UpdateSortableAttributesWithContext(setupCtx, &sortable); err != nil {
+			slog.Warn("meilisearch: failed to set sortable attributes (non-fatal)",
+				"index", uid, "error", err)
 		}
 	}
 

@@ -405,7 +405,21 @@
 				<!-- Pagination -->
 				{#if totalPages > 1}
 					<div class="flex items-center justify-between text-xs" style="color: var(--color-muted)">
-						<span>{t('common.page', 'Page')} {sessionsPage} {t('common.of', 'of')} {totalPages}</span>
+						<div class="flex items-center gap-3">
+							<span>{t('common.page', 'Page')} {sessionsPage} {t('common.of', 'of')} {totalPages}</span>
+							<select
+								value={sessionsPageSize}
+								onchange={(e) => { sessionsPageSize = Number((e.currentTarget as HTMLSelectElement).value); sessionsPage = 1; void loadSessions(); }}
+								class="rounded border px-2 py-1 text-xs"
+								style="border-color: var(--color-border); color: var(--color-foreground); background: var(--color-surface)"
+								aria-label={t('common.pageSize', 'Page size')}
+							>
+								<option value={10}>10</option>
+								<option value={25}>25</option>
+								<option value={50}>50</option>
+								<option value={100}>100</option>
+							</select>
+						</div>
 						<div class="flex gap-2">
 							<Button variant="outline" size="sm" disabled={sessionsPage <= 1} onclick={prevPage}>
 								<ChevronLeft size={14} />

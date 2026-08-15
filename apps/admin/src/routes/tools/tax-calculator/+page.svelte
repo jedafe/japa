@@ -1,14 +1,15 @@
 <script lang="ts">
 	// /tools/tax-calculator — HITL review queue with Approve Guide + AI Generate Guide actions.
 	// BUG-001/002/003/011 fix: response shape, field names, generate fields, pagination.
+	import { onMount } from 'svelte';
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import { Modal } from '$lib/components/ui/modal';
 	import { Button } from '$lib/components/ui/button';
-	import { taxCalculatorAdminApi } from '$lib/api';
+	import { taxCalculatorAdminApi , spacesAdminApi } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { Eye, CheckCircle, Sparkles } from 'lucide-svelte';
-	import type { ActionItem } from '$lib/components/ui/data-table';
+	import type { ActionItem, FilterDef } from '$lib/components/ui/data-table';
 
 	type GuideItem = {
 		id: string;
@@ -32,6 +33,21 @@
 	const canReview = $derived(hasPermission('tax_content.review'));
 
 	// ── State ───────────────────────────────────────────────────────────────
+	
+// Destination Spaces for the dest filter (geo-aware pattern §90-101).
+type SpaceOption = { id: string; name: string };
+let destOptions = $state<SpaceOption[]>([]);
+onMount(async () => {
+	try {
+		const res = await spacesAdminApi.list('?level=country&limit=200');
+		if (res.ok && Array.isArray(res.data)) {
+			destOptions = (res.data as Array<{ id: string; name: string }>).map((s) => ({
+				id: s.id, name: s.name
+			}));
+		}
+	} catch { /* Non-fatal */ }
+});
+
 	let entityController = $state<EntityPageController | undefined>(undefined);
 	let pageError = $state('');
 	let acting = $state(false);
@@ -123,7 +139,12 @@
 		{ key: 'first_year_obligations', label: t('tax_calculator.first_year_obligations', 'First Year Obligations'), type: 'textarea' }
 	];
 
+		const filters = $derived<FilterDef[]>([
+		{ key: 'dest', label: t('app.tools.col_destination', 'Destination'), options: destOptions.map((s) => ({ value: s.id, label: s.name })) }
+	]);
+
 	const config = $derived<EntityPageConfig>({
+		filters,
 		title: t('app.tools.tax_calculator_heading', 'Tax Calculator Guide Review Queue'),
 		description: t('app.tools.tax_calculator_desc', 'Review and approve tax calculator guide entries'),
 		readonly: true,

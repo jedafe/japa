@@ -395,13 +395,12 @@
 		createPermission: "admin.users.manage",
 		pageSize: 25,
 		columns: [
-			{ key: "username", label: t("users.username", "Username"), sortable: true },
-			{ key: "email", label: t("users.email", "Email"), sortable: true },
-			{ key: "profile_type", label: t("users.profile_type", "Profile Type"), sortable: true },
+			{ key: "username", label: t("users.username", "Username") },
+			{ key: "email", label: t("users.email", "Email") },
+			{ key: "profile_type", label: t("users.profile_type", "Profile Type") },
 			{
 				key: "status",
 				label: t("common.status", "Status"),
-				sortable: true,
 				render: (v: string) => {
 					const colors = v === "active" ? "bg-success/15 text-success dark:text-success" : v === "banned" ? "bg-danger/15 text-danger dark:text-danger" : v === "suspended" ? "bg-warning/15 text-warning dark:text-warning" : v === "deleted" ? "bg-muted/30 text-muted dark:text-muted" : v === "restricted" ? "bg-warning/15 text-warning dark:text-warning" : "bg-info/15 text-info dark:text-info";
 					return `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium ${colors}">${v}</span>`;
@@ -410,7 +409,6 @@
 			{
 				key: "groups",
 				label: t("users.groups", "Groups"),
-				sortable: true,
 				render: (v: string[]) => {
 					if (!v || v.length === 0) return `<span style="color: var(--color-muted)">—</span>`;
 					return v.map(g => `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium bg-info/15 text-info dark:text-info">${g}</span>`).join(' ');
@@ -419,13 +417,11 @@
 			{
 				key: "follower_count",
 				label: t("users.followers", "Followers"),
-				sortable: true,
 				render: (v: number) => (v ?? 0).toLocaleString()
 			},
 			{
 				key: "created_at",
 				label: t("users.joined", "Joined"),
-				sortable: true,
 				render: (value: string) => new Date(value).toLocaleDateString()
 			}
 		],

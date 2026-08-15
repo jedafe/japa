@@ -314,8 +314,17 @@ func (s *Service) CreateReply(ctx context.Context, tenantID, threadID, authorUse
 				asynq.NewTask("content:fan_out_to_feeds", payload),
 				asynq.MaxRetry(3),
 			)
+			// §12 stale-index fix: re-index the parent thread (not the reply)
+			// since there is no forum_reply index — the thread document's
+			// excerpt/solved status may change when a reply is added.
+			searchPayload, _ := json.Marshal(map[string]string{
+				"entity_type": "forum_thread",
+				"entity_id":   threadID.String(),
+				"tenant_id":   tenantID.String(),
+				"operation":   "index",
+			})
 			_, _ = s.asynq.Enqueue(
-				asynq.NewTask("search:index_entity", payload),
+				asynq.NewTask("search:index_entity", searchPayload),
 				asynq.MaxRetry(3),
 			)
 		}()

@@ -37,6 +37,7 @@
 	};
 
 	let rules = $state<ActivityRule[]>([]);
+				let pageSize = $state(20);
 	let rulesLoading = $state(true);
 	let searchQuery = $state('');
 	let selectedIds = $state<Set<string>>(new Set());
@@ -87,8 +88,8 @@
 	let activityKeyMode = $state<'select' | 'custom'>('select');
 
 	const ruleColumns = [
-		{ key: 'activity_key', label: t('app.wallet.col_activity_key', 'Activity Key'), sortable: true, render: (v: string) => `<span class="font-mono text-xs font-medium text-foreground">${v}</span>` },
-		{ key: 'point_value', label: t('app.wallet.col_points', 'Points'), sortable: true, render: (v: number) => `<span class="font-semibold">${v}</span>` },
+		{ key: 'activity_key', label: t('app.wallet.col_activity_key', 'Activity Key'), render: (v: string) => `<span class="font-mono text-xs font-medium text-foreground">${v}</span>` },
+		{ key: 'point_value', label: t('app.wallet.col_points', 'Points'), render: (v: number) => `<span class="font-semibold">${v}</span>` },
 		{ key: 'description', label: t('app.wallet.col_description', 'Description'), render: (v: string) => `<span class="text-sm text-muted">${v || '—'}</span>` },
 		{
 			key: 'is_enabled',
@@ -399,7 +400,8 @@
 					<DataTable
 						columns={ruleColumns}
 						data={rules}
-						pageSize={20}
+						bind:pageSize
+					pageSizeOptions={[10, 25, 50, 100]}
 						emptyMessage={t('app.wallet.empty_rules', 'No rules configured')}
 						searchable
 						onsearch={(q) => { searchQuery = q; loadRules(); }}

@@ -16,7 +16,8 @@ declare global {
 			theme: ThemeName;
 			/** Hostname (port stripped) used for backend tenant resolution. */
 			tenantHost: string;
-			/** Resolved UI locale, from the jc_locale cookie ('en' | 'fr'). */
+			/** Resolved UI locale code (e.g. 'en', 'fr', 'yo'), from the jc_locale
+			 *  cookie or the locale prefix in the URL. Dynamic per ADR-013. */
 			locale: Locale;
 			/** True when the request host is the Japa University surface (ADR-063). */
 			isUniversityHost: boolean;

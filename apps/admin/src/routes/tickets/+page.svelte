@@ -107,22 +107,22 @@
 		{
 			key: "subject",
 			label: t("tickets.subject", "Subject"),
-			sortable: true
+			
 		},
 		{
 			key: "type_name",
 			label: t("tickets.type", "Type"),
-			sortable: true
+			
 		},
 		{
 			key: "status",
 			label: t("common.status", "Status"),
-			sortable: true
+			
 		},
 		{
 			key: "priority",
 			label: t("tickets.priority", "Priority"),
-			sortable: true
+			
 		},
 		{
 			key: "assigned_to",
@@ -132,7 +132,6 @@
 		{
 			key: "created_at",
 			label: t("common.created", "Created"),
-			sortable: true,
 			render: (v: string) => new Date(v).toLocaleDateString()
 		}
 	];
@@ -390,7 +389,8 @@
 					</Button>
 				{/snippet}
 			</DataTable>
-			<Pagination bind:page={currentPage} {totalPages} {totalItems} bind:pageSize />
+			<Pagination bind:page={currentPage} {totalPages} {totalItems} bind:pageSize
+			pageSizeOptions={[10, 25, 50, 100]} />
 		{/if}
 	</CardContent>
 </Card>

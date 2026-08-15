@@ -66,21 +66,21 @@
 	let volumePageSize = $state(10);
 
 	const topQueryColumns = [
-		{ key: 'query', label: t('search.query'), sortable: true },
-		{ key: 'search_count', label: t('search.searches'), sortable: true },
-		{ key: 'avg_results', label: t('search.avg_results'), sortable: true },
-		{ key: 'zero_result_count', label: t('search.zero_results', 'Zero Results'), sortable: true }
+		{ key: 'query', label: t('search.query') },
+		{ key: 'search_count', label: t('search.searches') },
+		{ key: 'avg_results', label: t('search.avg_results') },
+		{ key: 'zero_result_count', label: t('search.zero_results', 'Zero Results') }
 	];
 
 	const zeroResultColumns = [
-		{ key: 'query', label: t('search.query'), sortable: true },
-		{ key: 'search_count', label: t('search.searches'), sortable: true }
+		{ key: 'query', label: t('search.query') },
+		{ key: 'search_count', label: t('search.searches') }
 	];
 
 	const volumeColumns = [
-		{ key: 'day', label: t('search.date', 'Date'), sortable: true },
-		{ key: 'total_searches', label: t('search.total_searches', 'Total Searches'), sortable: true },
-		{ key: 'zero_result_searches', label: t('search.zero_result_searches', 'Zero Result Searches'), sortable: true }
+		{ key: 'day', label: t('search.date', 'Date') },
+		{ key: 'total_searches', label: t('search.total_searches', 'Total Searches') },
+		{ key: 'zero_result_searches', label: t('search.zero_result_searches', 'Zero Result Searches') }
 	];
 
 	const tabs = [

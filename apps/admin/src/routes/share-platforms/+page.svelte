@@ -70,10 +70,9 @@
 			{
 				key: 'key',
 				label: t('share_platforms.key', 'Key'),
-				sortable: true,
 				render: (v: string) => `<span class="font-mono text-xs" style="color: var(--color-muted)">${v}</span>`
 			},
-			{ key: 'label', label: t('share_platforms.label', 'Label'), sortable: true },
+			{ key: 'label', label: t('share_platforms.label', 'Label') },
 			{ key: 'icon', label: t('share_platforms.icon', 'Icon'), componentSnippet: IconCell },
 			{
 				key: 'url_template',
@@ -81,8 +80,8 @@
 				render: (v: string) => `<span class="font-mono text-xs truncate" style="color: var(--color-muted)">${v}</span>`
 			},
 			{ key: 'color', label: t('share_platforms.color', 'Color'), componentSnippet: ColorCell },
-			{ key: 'enabled', label: t('share_platforms.active', 'Enabled'), sortable: true, componentSnippet: StatusCell },
-			{ key: 'position', label: t('share_platforms.position', 'Position'), sortable: true }
+			{ key: 'enabled', label: t('share_platforms.active', 'Enabled'), componentSnippet: StatusCell },
+			{ key: 'position', label: t('share_platforms.position', 'Position') }
 		],
 		filters: [
 			{

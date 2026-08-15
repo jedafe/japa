@@ -56,7 +56,7 @@
 	const audienceOptions = audiences.map((a) => ({ value: a, label: a }));
 
 	const columns = [
-		{ key: 'title', label: t('docs.title_2'), sortable: true },
+		{ key: 'title', label: t('docs.title_2') },
 		{ key: 'slug', label: t('docs.slug'), render: (v: string) => `<span class="font-mono text-xs" style="color: var(--color-muted)">${v}</span>` },
 		{ key: 'audience', label: t('docs.audience'), render: (v: string) => `<span class="inline-block rounded-full bg-black/5 px-2 py-0.5 text-xs dark:bg-surface/10">${v}</span>` },
 		{ key: 'status', label: t('docs.status'), render: (v: string) => `<span class="inline-block rounded-full px-2 py-0.5 text-xs ${v === 'published' ? 'bg-success/15 text-success dark:text-success' : 'bg-warning/15 text-warning dark:text-warning'}">${v}</span>` },

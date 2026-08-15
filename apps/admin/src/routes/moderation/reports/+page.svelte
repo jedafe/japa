@@ -196,15 +196,19 @@
 		],
 		actions: rowActions,
 		fields,
-		load: async ({ q, filter }) => {
+		load: async ({ q, filter, page, pageSize }) => {
 			const params = new URLSearchParams();
+			params.set('page', String(page));
+			params.set('page_size', String(pageSize));
 			if (filter.status) params.set('status', filter.status);
 			if (q) params.set('q', q);
 			const result = await moderationAdminApi.listReports(params.toString() || undefined);
 			if (result.ok) {
-				const d = result.data as { items: Report[] } | Report[];
+				const d = result.data as { items: Report[]; total?: number; total_pages?: number } | Report[];
 				const items = Array.isArray(d) ? d : (d.items ?? []);
-				return { data: items, total: items.length, totalPages: 1 };
+				const total = Array.isArray(d) ? items.length : (d.total ?? items.length);
+				const totalPages = Array.isArray(d) ? 1 : (d.total_pages ?? Math.max(1, Math.ceil(total / pageSize)));
+				return { data: items, total, totalPages };
 			}
 			throw new Error(result.error ?? t('common.error', 'Failed to load reports'));
 		},

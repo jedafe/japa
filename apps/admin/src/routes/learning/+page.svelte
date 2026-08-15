@@ -156,7 +156,6 @@
 		{
 			key: "title",
 			label: t('app.learning.col_track', 'Track'),
-			sortable: true,
 			render: (_: any, row: any) => `
 				<div>
 					<p class="font-medium text-foreground">${row.title}</p>
@@ -167,19 +166,16 @@
 		{
 			key: "difficulty",
 			label: t('app.learning.col_difficulty', 'Difficulty'),
-			sortable: true,
 			render: (value: string) => `<span class="text-sm text-foreground-alt">${value || "—"}</span>`
 		},
 		{
 			key: "category",
 			label: t('app.learning.col_category', 'Category'),
-			sortable: true,
 			render: (value: string) => `<span class="text-sm text-foreground-alt">${value || "—"}</span>`
 		},
 		{
 			key: "subscription_eligible",
 			label: t('app.learning.col_sub_eligible', 'Sub.'),
-			sortable: true,
 			render: (value: boolean) => {
 				if (value) {
 					return `<span class="inline-flex items-center rounded-full border bg-primary/15 text-primary border-primary px-2 py-0.5 text-xs font-semibold">Sub</span>`;
@@ -190,7 +186,6 @@
 		{
 			key: "is_published",
 			label: t('app.learning.col_status', 'Status'),
-			sortable: true,
 			render: (value: boolean) => {
 				const label = value ? "published" : "draft";
 				const variant = value ? "success" : "warning";
@@ -208,7 +203,6 @@
 		{
 			key: "title",
 			label: t('app.learning.col_module', 'Module'),
-			sortable: true,
 			render: (_: any, row: any) => `
 				<div>
 					<p class="font-medium text-foreground">${row.title}</p>
@@ -219,13 +213,11 @@
 		{
 			key: "lesson_count",
 			label: t('app.learning.col_lessons', 'Lessons'),
-			sortable: true,
 			render: (value: number) => `<span class="font-medium">${value ?? 0}</span>`
 		},
 		{
 			key: "sort_order",
 			label: t('app.learning.col_order', 'Order'),
-			sortable: true,
 			render: (value: number) => `<span class="text-sm text-foreground-alt">${value}</span>`
 		}
 	];
@@ -234,7 +226,6 @@
 		{
 			key: "title",
 			label: t('app.learning.col_lesson', 'Lesson'),
-			sortable: true,
 			render: (_: any, row: any) => `
 				<div>
 					<p class="font-medium text-foreground">${row.title}</p>
@@ -245,19 +236,16 @@
 		{
 			key: "lesson_type",
 			label: t('app.learning.col_type', 'Type'),
-			sortable: true,
 			render: (value: string) => `<span class="text-sm text-foreground-alt">${value || "—"}</span>`
 		},
 		{
 			key: "duration_minutes",
 			label: t('app.learning.col_duration', 'Duration'),
-			sortable: true,
 			render: (value: number) => `<span class="text-sm text-foreground-alt">${value ? `${value} ${t('app.learning.min', 'min')}` : "—"}</span>`
 		},
 		{
 			key: "sort_order",
 			label: t('app.learning.col_order', 'Order'),
-			sortable: true,
 			render: (value: number) => `<span class="text-sm text-foreground-alt">${value}</span>`
 		}
 	];

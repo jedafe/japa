@@ -302,11 +302,10 @@
 		createLabel: t('widgets.create', 'Create'),
 		pageSize: 25,
 		columns: [
-			{ key: 'name', label: t('widgets.name', 'Name'), sortable: true },
+			{ key: 'name', label: t('widgets.name', 'Name') },
 			{
 				key: 'widget_type',
 				label: t('widgets.type', 'Type'),
-				sortable: true,
 				render: (v: string) => `<span class="text-xs" style="color: var(--color-muted)">${v}</span>`
 			},
 			{ key: 'is_active', label: t('widgets.status', 'Status'), componentSnippet: StatusCell }
@@ -325,7 +324,7 @@
 		load: async ({ q, filter, page, pageSize }) => {
 			const params = new URLSearchParams();
 			params.set('page_size', String(pageSize));
-			params.set('page_offset', String(page));
+			params.set('page_offset', String(page * pageSize));
 			if (filter.is_active) params.set('is_active', filter.is_active);
 			if (q) params.set('q', q);
 			const result = await apiRaw<{ data?: Widget[]; total?: number; total_pages?: number }>(

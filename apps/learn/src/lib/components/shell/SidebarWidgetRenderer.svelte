@@ -8,10 +8,11 @@
 	// previously hardcoded topbar that duplicated these widgets).
 
 	import { t } from '$lib/i18n';
-	import { Sun, Moon, Languages, Bell, Mail, Share2, Calendar, Trophy, Hash, Star, BarChart3, MousePointerClick, UserCircle, FolderTree, MessageSquare, PlayCircle, GraduationCap, BookOpen, CircleDashed, ThumbsUp, List } from 'lucide-svelte';
+	import { Sun, Moon, Languages, Check, Bell, Mail, Share2, Calendar, Trophy, Hash, Star, BarChart3, MousePointerClick, UserCircle, FolderTree, MessageSquare, PlayCircle, GraduationCap, BookOpen, CircleDashed, ThumbsUp, List } from 'lucide-svelte';
 	import { theme } from '$lib/stores/theme.svelte';
 	import { i18n } from '$lib/i18n';
-	import { switchLocale } from '$lib/appOrigins';
+	import { page } from '$app/state';
+	import { DropdownMenu } from 'bits-ui';
 	import SearchAutocomplete from './SearchAutocomplete.svelte';
 	import UserDropdown from './UserDropdown.svelte';
 	import ContinueLearningCard from './ContinueLearningCard.svelte';
@@ -49,6 +50,34 @@
 		square: 'h-[250px] w-full max-w-[300px]',
 		inline: 'h-[60px] w-full'
 	} as const;
+
+	// Enabled languages + default language from site settings (§18, ADR-013).
+	// Read from page.data.siteSettings to avoid threading props through layers.
+	const enabledLanguages = $derived(
+		((page.data?.siteSettings?.['i18n.enabled_languages'] as string | undefined) ?? 'en,fr')
+			.split(',').map((l) => l.trim()).filter(Boolean)
+	);
+	const defaultLanguage = $derived(
+		(page.data?.siteSettings?.['i18n.default_language'] as string | undefined) ?? 'en'
+	);
+	const showLanguageToggle = $derived(enabledLanguages.length > 1);
+
+	// SSR-safe current path for locale-switch links.
+	const currentPath = $derived(page.url.pathname.replace(/^\//, ''));
+
+	// Resolve locale codes to display names via Intl.DisplayNames (platform
+	// API, not app data — Rule 16 safe).
+	const displayNames = (() => {
+		try { return new Intl.DisplayNames(undefined, { type: 'language' }); }
+		catch { return null; }
+	})();
+	function localeLabel(code: string): string {
+		return displayNames?.of(code) ?? code;
+	}
+	function localeHref(lang: string): string {
+		const path = currentPath || '';
+		return lang === defaultLanguage ? `/${path}` : `/${lang}/${path}`;
+	}
 </script>
 
 {#if widget.widget_type === 'ad_slot'}
@@ -105,15 +134,30 @@
 		{#if theme.current === 'dark'}<Sun size={18} />{:else}<Moon size={18} />{/if}
 	</button>
 {:else if widget.widget_type === 'language_toggle'}
-	<button
-		type="button"
-		onclick={() => switchLocale(i18n.locale === 'fr' ? 'en' : 'fr')}
-		class="grid h-9 w-9 shrink-0 place-items-center rounded-full text-[var(--color-muted)] hover:bg-[var(--color-surface-subtle)]"
-		aria-label={i18n.locale === 'fr' ? t('locale.switch_to_en') : t('locale.switch_to_fr')}
-		title={i18n.locale === 'fr' ? 'English' : 'Français'}
-	>
-		<Languages size={18} />
-	</button>
+	{#if showLanguageToggle}
+		<DropdownMenu.Root>
+			<DropdownMenu.Trigger
+				class="grid h-9 w-9 shrink-0 place-items-center rounded-full text-[var(--color-muted)] hover:bg-[var(--color-surface-subtle)]"
+				aria-label={t('locale.switch_language', 'Switch language')}
+				title={localeLabel(i18n.locale)}
+			>
+				<Languages size={18} />
+			</DropdownMenu.Trigger>
+			<DropdownMenu.Portal>
+				<DropdownMenu.Content class="z-50 max-h-60 overflow-y-auto rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-1 shadow-lg">
+					{#each enabledLanguages as lang (lang)}
+						<DropdownMenu.Item
+							onclick={() => { window.location.href = localeHref(lang); }}
+							class="flex cursor-pointer items-center justify-between rounded px-2 py-1.5 text-sm text-[var(--color-text)] data-[highlighted]:bg-[var(--color-surface-subtle)]"
+						>
+							<span>{localeLabel(lang)}</span>
+							{#if lang === i18n.locale}<Check size={14} class="text-[var(--color-primary)]" />{/if}
+						</DropdownMenu.Item>
+					{/each}
+				</DropdownMenu.Content>
+			</DropdownMenu.Portal>
+		</DropdownMenu.Root>
+	{/if}
 {:else if widget.widget_type === 'continue_learning'}
 	<!-- continue_learning is rendered globally by RightSidebar (ContinueLearningCard).
 	     The admin-managed widget is a no-op here to avoid a duplicate with user=null. -->

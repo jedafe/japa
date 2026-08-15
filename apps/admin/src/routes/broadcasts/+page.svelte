@@ -33,6 +33,7 @@
 	};
 
 	let activeTab = $state('all');
+	let pageSize = $state(15);
 	let broadcasts = $state<Broadcast[]>([]);
 	let loading = $state(true);
 	let filterValue = $state<Record<string, string>>({});
@@ -70,7 +71,6 @@
 		{
 			key: 'title',
 			label: t('broadcasts.column_title', 'Title'),
-			sortable: true,
 			render: (_: any, row: any) => `
 				<div>
 					<p class="font-medium text-foreground">${row.title}</p>
@@ -81,7 +81,6 @@
 		{
 			key: 'target_audience',
 			label: t('broadcasts.column_audience', 'Audience'),
-			sortable: true,
 			render: (v: string) => {
 				const labels: Record<string, string> = { all: t('broadcasts.all_users', 'All Users'), active: t('broadcasts.active_users', 'Active Users'), premium: t('broadcasts.premium_users', 'Premium Users') };
 				return `<span class="text-sm text-foreground-alt">${labels[v] || v}</span>`;
@@ -90,7 +89,6 @@
 		{
 			key: 'status',
 			label: t('common.status', 'Status'),
-			sortable: true,
 			render: (v: string) => {
 				const cls = v === 'sent' ? 'bg-success/15 text-success border-success' : v === 'scheduled' ? 'bg-info-100 text-info-800 border-info-200' : v === 'failed' ? 'bg-danger/15 text-danger border-danger' : 'bg-surface text-foreground border';
 				return `<span class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${cls}">${v}</span>`;
@@ -99,13 +97,11 @@
 		{
 			key: 'recipient_count',
 			label: t('broadcasts.column_recipients', 'Recipients'),
-			sortable: true,
 			render: (v: number) => `<span class="text-sm font-medium">${(v ?? 0).toLocaleString()}</span>`
 		},
 		{
 			key: 'sent_at',
 			label: t('broadcasts.column_sent', 'Sent'),
-			sortable: true,
 			render: (v: string) => (v ? new Date(v).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : '<span class="text-muted">—</span>')
 		}
 	];
@@ -228,7 +224,8 @@
 				columns={columns}
 				data={filteredBroadcasts}
 				{loading}
-				pageSize={15}
+				bind:pageSize
+			pageSizeOptions={[10, 25, 50, 100]}
 				emptyMessage={t('broadcasts.no_broadcasts_found', 'No broadcasts found')}
 				searchable
 				onsearch={(q) => { searchQuery = q; }}
