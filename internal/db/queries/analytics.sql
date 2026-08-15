@@ -224,9 +224,49 @@ SELECT COUNT(*)::integer FROM users WHERE tenant_id = $1 AND created_at::date = 
 -- =====================
 
 -- name: CreateSecurityScanResult :one
-INSERT INTO security_scan_results (tenant_id, scan_type, severity, finding, meta)
-VALUES ($1, $2, $3, $4, $5)
-RETURNING id, tenant_id, scan_type, severity, finding, meta, resolved_at, created_at;
+-- Upsert by (tenant_id, scan_type) on the MOST RECENT row regardless of
+-- resolved state. This prevents the control panel security page from
+-- showing the same finding repeated on every scan run, AND prevents a
+-- resolved finding from reappearing as a new row when the condition is
+-- re-detected by a later scan.
+--
+-- Behavior:
+--   * No existing row of this scan_type  -> INSERT a new finding.
+--   * Existing UNRESOLVED row            -> refresh severity/finding/meta
+--                                           and bump created_at (so the
+--                                           "last checked" time is current).
+--   * Existing RESOLVED row              -> refresh severity/finding/meta
+--                                           in place but KEEP resolved_at
+--                                           set and do NOT bump created_at,
+--                                           so the resolved finding does not
+--                                           reappear as a new active warning.
+WITH target AS (
+    SELECT s0.id, (s0.resolved_at IS NOT NULL) AS is_resolved
+    FROM security_scan_results s0
+    WHERE s0.tenant_id = $1
+      AND s0.scan_type = $2
+    ORDER BY s0.created_at DESC, s0.id DESC
+    LIMIT 1
+),
+updated AS (
+    UPDATE security_scan_results AS s
+    SET severity   = $3,
+        finding    = $4,
+        meta       = $5,
+        created_at = CASE WHEN target.is_resolved THEN s.created_at ELSE now() END
+    FROM target
+    WHERE s.id = target.id
+    RETURNING s.id, s.tenant_id, s.scan_type, s.severity, s.finding, s.meta, s.resolved_at, s.created_at
+),
+inserted AS (
+    INSERT INTO security_scan_results (tenant_id, scan_type, severity, finding, meta)
+    SELECT $1, $2, $3, $4, $5
+    WHERE NOT EXISTS (SELECT 1 FROM updated)
+    RETURNING id, tenant_id, scan_type, severity, finding, meta, resolved_at, created_at
+)
+SELECT u.id, u.tenant_id, u.scan_type, u.severity, u.finding, u.meta, u.resolved_at, u.created_at FROM updated u
+UNION ALL
+SELECT i.id, i.tenant_id, i.scan_type, i.severity, i.finding, i.meta, i.resolved_at, i.created_at FROM inserted i;
 
 -- name: ListSecurityScanResults :many
 SELECT id, tenant_id, scan_type, severity, finding, meta, resolved_at, created_at
@@ -240,6 +280,12 @@ LIMIT $4 OFFSET $5;
 -- name: ResolveSecurityScanResult :exec
 UPDATE security_scan_results
 SET resolved_at = now()
+WHERE id = $1 AND tenant_id = $2;
+
+-- name: DeleteSecurityScanResult :exec
+-- Deletes a single scan finding. Used by the control panel to clear
+-- resolved findings from the audit view. Tenant-scoped for safety.
+DELETE FROM security_scan_results
 WHERE id = $1 AND tenant_id = $2;
 
 -- name: GetUnresolvedCriticalFindings :many

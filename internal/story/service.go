@@ -375,6 +375,18 @@ func (s *Service) Verify(ctx context.Context, contentID, tenantID, adminUserID p
 	return nil
 }
 
+// Unverify marks a story as unverified by an admin (story.verify permission).
+// Clears the verified flag and the HITL review audit trail.
+func (s *Service) Unverify(ctx context.Context, contentID, tenantID pgtype.UUID) error {
+	if err := s.store.UnverifyStory(ctx, contentID, tenantID); err != nil {
+		if err == pgx.ErrNoRows {
+			return pgx.ErrNoRows
+		}
+		return fmt.Errorf("story: unverify: %w", err)
+	}
+	return nil
+}
+
 // AdminList returns all stories (any status) for the moderation queue.
 // pageSize and pageOffset follow the conventions/api-response-format.md
 // offset pagination convention. sort may be "latest" (default), "oldest",

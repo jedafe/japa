@@ -12,6 +12,7 @@
 	import { SlideOver } from '$lib/components/ui/slide-over';
 	import { Button } from '$lib/components/ui/button';
 	import { TableSkeleton } from '$lib/components/ui/skeleton';
+	import Autocomplete, { type AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
 	import {
 		comparisonAdminApi,
 		userManagementApi,
@@ -122,6 +123,24 @@
 		accessSaving = false;
 	}
 
+	// ── Field group autocomplete helpers (filter pre-loaded options client-side) ──
+	function fetchFieldGroupOptions(q: string): Promise<{ id: string; label: string }[]> {
+		const opts = fieldGroups.map((fg) => ({ id: fg.id, label: fg.name }));
+		const query = q.toLowerCase();
+		const filtered = query === ''
+			? opts
+			: opts.filter((o) => o.label.toLowerCase().includes(query));
+		return Promise.resolve(filtered);
+	}
+
+	function fetchFieldGroupOptionsInitial(): Promise<{ id: string; label: string }[]> {
+		return Promise.resolve(fieldGroups.map((fg) => ({ id: fg.id, label: fg.name })));
+	}
+
+	function getFieldGroupSelectedLabel(id: string): string {
+		return fieldGroups.find((fg) => fg.id === id)?.name ?? id;
+	}
+
 	// `fields` is used by EntityPage to seed the form value on edit; the actual
 	// inputs are rendered by the `formSnippet` below (the rich comparison-type form).
 	const fields: FieldDef[] = [
@@ -130,7 +149,7 @@
 		{ key: 'description', label: t('comparison_types.description_label', 'Description'), type: 'textarea' },
 		{ key: 'icon', label: t('comparison_types.icon', 'Icon'), type: 'text' },
 		{ key: 'item_label', label: t('comparison_types.item_label', 'Item label'), type: 'text' },
-		{ key: 'field_group_id', label: t('comparison_types.field_group', 'Field group'), type: 'select', options: [] },
+		{ key: 'field_group_id', label: t('comparison_types.field_group', 'Field group'), type: 'autocomplete', placeholder: t('comparison_types.field_group_select', 'Select a field group…'), emptyMessage: t('common.no_results', 'No results found'), fetcher: fetchFieldGroupOptions, initialFetcher: fetchFieldGroupOptionsInitial, getSelectedLabel: getFieldGroupSelectedLabel },
 		{ key: 'is_system', label: t('comparison_types.system', 'System'), type: 'checkbox' }
 	];
 
@@ -549,17 +568,17 @@
 					{t('comparison_types.field_group_locked', 'Field group cannot be changed after creation')}
 				</p>
 			{:else}
-				<select
+				<Autocomplete
 					id="ct-field-group"
-					class="mt-1 w-full rounded-lg border p-2 text-sm"
-					style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
-					bind:value={value.field_group_id}
-				>
-					<option value="">{t('comparison_types.field_group_select', 'Select a field group…')}</option>
-					{#each fieldGroups as fg (fg.id)}
-						<option value={fg.id}>{fg.name}</option>
-					{/each}
-				</select>
+					placeholder={t('comparison_types.field_group_select', 'Select a field group…')}
+					emptyMessage={t('common.no_results', 'No results found')}
+					fetcher={fetchFieldGroupOptions}
+					initialFetcher={fetchFieldGroupOptionsInitial}
+					selectedId={value.field_group_id ?? null}
+					selectedLabel={value.field_group_id ? getFieldGroupSelectedLabel(value.field_group_id) : null}
+					onSelect={(item: AutocompleteItem) => { value.field_group_id = item.id; }}
+					onClear={() => { value.field_group_id = ''; }}
+				/>
 			{/if}
 		</div>
 		<div class="flex items-center gap-2">

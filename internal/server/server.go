@@ -3713,6 +3713,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "analytics.admin")).
 				Post("/admin/analytics/security/{id}/resolve", analyticsHandlers.ResolveSecurityScanResult)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "analytics.admin")).
+				Delete("/admin/analytics/security/{id}", analyticsHandlers.DeleteSecurityScanResult)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "analytics.admin")).
 				Post("/admin/analytics/refresh", analyticsHandlers.RefreshViews)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "analytics.admin")).
 				Post("/admin/analytics/security/scan", analyticsHandlers.RunSecurityScan)
@@ -5308,6 +5310,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "story.verify")).
 					Post("/admin/stories/{id}/verify", storyHandlers.HandleVerify)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "story.verify")).
+					Post("/admin/stories/{id}/unverify", storyHandlers.HandleUnverify)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "story.verify")).
 					Get("/admin/stories", storyHandlers.HandleAdminList)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "story.delete_any")).
 					Delete("/admin/stories/{id}", storyHandlers.HandleAdminDelete)
@@ -5524,6 +5528,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Get("/admin/services", serviceDirHandlers.HandleAdminList)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "service.verify")).
 					Patch("/admin/services/{id}/verify", serviceDirHandlers.HandleAdminVerify)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "service.verify")).
+					Patch("/admin/services/{id}/unverify", serviceDirHandlers.HandleAdminUnverify)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "service.verify")).
 					Patch("/admin/services/{id}/claim/{claim_id}", serviceDirHandlers.HandleAdminResolveClaim)
 			})
@@ -6064,6 +6070,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.Post("/security/ip-blocks", controlHandlers.CreateIPBlock)
 			r.Delete("/security/ip-blocks/{id}", controlHandlers.DeleteIPBlock)
 			r.Post("/security/{id}/resolve", analyticsHandlers.ResolveSecurityScanResult)
+			r.Delete("/security/{id}", analyticsHandlers.DeleteSecurityScanResult)
 
 			// API Keys (moved from /admin/api-keys)
 			// Granular RBAC per Section 47 lines 233–238 (PUB-007):

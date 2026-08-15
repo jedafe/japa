@@ -1,23 +1,22 @@
 <script lang="ts">
-	// /newsletter — migrated to shared components (ActionMenu, FilterPanel,
-	// SlideOver, bulkActionsList). Tabbed page (subscribers + campaigns +
-	// analytics); keeps page-local Modals for create campaign and import
-	// subscribers (forms with rich inputs). View campaign and edit subscriber
-	// open in SlideOver panels.
+	// /newsletter — migrated to the EntityPage scaffold.
+	// Tabbed page: Subscribers (view/edit/delete + import) and Campaigns
+	// (view/send + bulk delete + create-via-modal), plus an Analytics tab
+	// with stat cards and a campaign-performance bar chart.
+	// Create-campaign and import-subscribers keep page-local Modals because
+	// their forms use rich inputs (HTML textarea / bulk paste) that EntityForm
+	// does not support; they are triggered via EntityPage `headerActions`.
+	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
-	import PageHeader from '$lib/components/layout/page-header.svelte';
-	import { Card, CardContent, CardHeader } from '$lib/components/ui/card';
 	import { Tabs } from '$lib/components/ui/tabs';
-	import { DataTable } from '$lib/components/ui/data-table';
+	import { Card, CardContent, CardHeader } from '$lib/components/ui/card';
 	import { Button } from '$lib/components/ui/button';
 	import { Modal } from '$lib/components/ui/modal';
-	import { SlideOver } from '$lib/components/ui/slide-over';
-	import { Select } from '$lib/components/ui/select';
-	import type { ActionItem, BulkAction } from '$lib/components/ui/data-table';
-	import { Mail, Plus, Send, Users, BarChart3, Trash2, Eye, Pencil, Upload } from 'lucide-svelte';
 	import { BarChart } from 'layerchart';
 	import { api } from '$lib/api';
+	import { Mail, Plus, Send, Users, BarChart3, Trash2, Eye, Pencil, Upload } from 'lucide-svelte';
+	import type { ActionItem, FilterDef } from '$lib/components/ui/data-table';
 
 	type Subscriber = {
 		id: string;
@@ -55,51 +54,19 @@
 	const canManageNewsletter = $derived(hasPermission('newsletter.manage'));
 
 	let activeTab = $state('subscribers');
-	let subscribers = $state<Subscriber[]>([]);
-	let campaigns = $state<Campaign[]>([]);
+
+	// Stats for tab badges + analytics cards. Loaded once on mount and refreshed
+	// when the analytics tab is opened. The EntityPage instances own their own
+	// list data; this state is only for the cross-tab summary.
 	let stats = $state<NewsletterStats>({ subscribers: 0, campaigns: 0, avgOpenRate: 0, avgClickRate: 0 });
+	// Campaigns fetched for the analytics chart (independent of the campaigns
+	// EntityPage, which owns its own paginated list).
+	let analyticsCampaigns = $state<Campaign[]>([]);
+	let analyticsLoading = $state(false);
+	let pageError = $state('');
+
 	// LayerChart axis format for the campaign-performance bar chart.
 	const newsletterChartAxis: any = { x: { ticks: { rotate: -30 } } };
-	let loading = $state(true);
-	let pageError = $state('');
-	let filterValue = $state<Record<string, string>>({});
-	let searchQuery = $state('');
-
-	// Campaigns server-side pagination state (§22, ADR-080 §3).
-	let campaignPage = $state(0);
-	let campaignPageSize = $state(20);
-	let campaignTotal = $state(0);
-	let campaignTotalPages = $state(1);
-
-	// Campaign creation Modal (page-local — form with HTML textarea)
-	let showCreateModal = $state(false);
-	let newCampaign = $state({ name: '', subject: '', html: '' });
-	let creating = $state(false);
-
-	// Delete confirmation Modal
-	let showDeleteModal = $state(false);
-	let deleteTarget = $state<Subscriber | null>(null);
-	let deleting = $state(false);
-
-	// Bulk delete
-	let selectedSubscriberIds = $state<Set<string>>(new Set());
-	let selectedCampaignIds = $state<Set<string>>(new Set());
-	let bulkDeleting = $state(false);
-
-	// Edit subscriber SlideOver
-	let showEditSlideOver = $state(false);
-	let subscriberTarget = $state<Subscriber | null>(null);
-	let editSubscriberStatus = $state('');
-
-	// View campaign SlideOver
-	let showCampaignSlideOver = $state(false);
-	let campaignTarget = $state<Campaign | null>(null);
-
-	// Import subscribers Modal (page-local — form with textarea)
-	let showImportModal = $state(false);
-	let importText = $state('');
-	let importing = $state(false);
-	let importResult = $state<{ success: number; failed: number; errors: string[] } | null>(null);
 
 	const tabs = [
 		{ value: 'subscribers', label: t('app.newsletter.tab_subscribers', 'Subscribers'), icon: Users, count: stats.subscribers },
@@ -122,135 +89,195 @@
 		{ value: 'cancelled', label: t('app.newsletter.status_cancelled', 'Cancelled') }
 	];
 
-	const subscriberColumns = [
-		{
-			key: 'email',
-			label: t('app.newsletter.col_email', 'Email'),
-			render: (_: any, row: any) => `
-				<div class="flex items-center gap-3">
-					<div class="h-8 w-8 rounded-full bg-primary-100 flex items-center justify-center">
-						<span class="text-sm font-medium text-primary-700">${(row.email || '?')[0].toUpperCase()}</span>
-					</div>
-					<div>
-						<p class="font-medium text-foreground">${row.email}</p>
-						${row.name ? `<p class="text-sm text-muted">${row.name}</p>` : ''}
-					</div>
-				</div>
-			`
-		},
-		{
-			key: 'status',
-			label: t('app.newsletter.col_status', 'Status'),
-			render: (v: string) => {
-				const cls = v === 'subscribed' ? 'bg-success/15 text-success border-success' : v === 'bounced' ? 'bg-danger/15 text-danger border-danger' : v === 'complained' ? 'bg-warning/15 text-warning border-warning' : 'bg-surface text-foreground border';
-				return `<span class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${cls}">${v || 'subscribed'}</span>`;
-			}
-		},
-		{
-			key: 'subscribedAt',
-			label: t('app.newsletter.col_subscribed', 'Subscribed'),
-			render: (v: string, row: any) => new Date(v || row.created_at).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
-		}
-	];
+	// ── Controllers ─────────────────────────────────────────────────────────
+	let subscriberController = $state<EntityPageController | undefined>(undefined);
+	let campaignController = $state<EntityPageController | undefined>(undefined);
 
-	const campaignColumns = [
-		{
-			key: 'subject',
-			label: t('app.newsletter.col_subject', 'Subject'),
-			render: (_: any, row: any) => `
-				<div>
-					<p class="font-medium text-foreground">${row.subject || row.name || 'No subject'}</p>
-					${row.preview ? `<p class="text-sm text-muted">${row.preview}</p>` : ''}
-				</div>
-			`
-		},
-		{
-			key: 'status',
-			label: t('app.newsletter.col_status', 'Status'),
-			render: (v: string) => {
-				const cls = v === 'sent' ? 'bg-success/15 text-success border-success' : v === 'scheduled' ? 'bg-info-100 text-info-800 border-info-200' : v === 'sending' ? 'bg-warning/15 text-warning border-warning' : v === 'cancelled' ? 'bg-danger/15 text-danger border-danger' : 'bg-surface text-foreground border';
-				return `<span class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${cls}">${v || 'draft'}</span>`;
-			}
-		},
-		{
-			key: 'sentAt',
-			label: t('app.newsletter.col_sent', 'Sent'),
-			render: (v: string, row: any) => {
-				const date = v || row.sent_at;
-				return date ? new Date(date).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : '<span class="text-muted">—</span>';
-			}
-		},
-		{
-			key: 'openRate',
-			label: t('app.newsletter.col_open_rate', 'Open Rate'),
-			render: (v: number, row: any) => {
-				const rate = v ?? row.openRate ?? 0;
-				return `<span class="font-medium">${rate.toFixed(1)}%</span>`;
-			}
-		}
-	];
+	// ── Campaign creation Modal (page-local — form with HTML textarea) ──────
+	let showCreateModal = $state(false);
+	let newCampaign = $state({ name: '', subject: '', html: '' });
+	let creating = $state(false);
 
-	// ── Row actions via ActionMenu ──────────────────────────────────────────
-	const subscriberActions: ActionItem[] = [
+	// ── Import subscribers Modal (page-local — form with textarea) ──────────
+	let showImportModal = $state(false);
+	let importText = $state('');
+	let importing = $state(false);
+	let importResult = $state<{ success: number; failed: number; errors: string[] } | null>(null);
+
+	// ── Bulk delete (campaigns) in-flight guard ─────────────────────────────
+	let bulkDeleting = $state(false);
+
+	// ── Filters ─────────────────────────────────────────────────────────────
+	const subscriberFilters = $derived<FilterDef[]>([
+		{ key: 'status', label: t('app.newsletter.filter_status', 'Status'), options: subscriberStatusOptions }
+	]);
+	const campaignFilters = $derived<FilterDef[]>([
+		{ key: 'campaign_status', label: t('app.newsletter.filter_status', 'Status'), options: campaignStatusOptions }
+	]);
+
+	// ── Subscriber edit fields (status only — email is read-only) ───────────
+	const subscriberFields = $derived<FieldDef[]>([
+		{ key: 'status', label: t('common.status', 'Status'), type: 'select', options: subscriberStatusOptions }
+	]);
+
+	// ── Row actions ─────────────────────────────────────────────────────────
+	const subscriberActions = $derived<ActionItem[]>([
+		{ label: t('common.view', 'View'), icon: Eye, onclick: (_row, ctx) => ctx?.openView(_row) },
 		{
 			label: t('common.edit', 'Edit'),
 			icon: Pencil,
-			onclick: (row) => openEditSubscriber(row),
+			onclick: (row, ctx) => ctx?.openEdit(row),
 			show: () => canManageNewsletter
 		},
 		{
 			label: t('common.delete', 'Delete'),
 			icon: Trash2,
 			variant: 'destructive',
-			onclick: (row) => confirmDeleteSubscriber(row),
+			onclick: (row, ctx) => ctx?.openDelete(row),
 			show: () => canManageNewsletter
 		}
-	];
+	]);
 
-	const campaignActions: ActionItem[] = [
-		{ label: t('common.view', 'View'), icon: Eye, onclick: (row) => openViewCampaign(row) },
+	const campaignActions = $derived<ActionItem[]>([
+		{ label: t('common.view', 'View'), icon: Eye, onclick: (_row, ctx) => ctx?.openView(_row) },
 		{
 			label: t('common.send', 'Send'),
 			icon: Send,
 			onclick: (row) => sendCampaign(row.id),
 			show: (row: Campaign) => (row.status === 'draft' || row.status === 'scheduled') && canManageNewsletter
 		}
-	];
+	]);
 
-	// ── Bulk actions via BulkBar ────────────────────────────────────────────
-	const campaignBulkActions: BulkAction[] = [
-		{ label: t('app.newsletter.btn_delete_selected', 'Delete Selected'), icon: Trash2, variant: 'destructive', onclick: bulkDeleteCampaigns }
-	];
-
-	async function loadSubscribers() {
-		loading = true;
-		try {
+	// ── Subscribers EntityPage config ───────────────────────────────────────
+	const subscriberConfig = $derived<EntityPageConfig>({
+		title: t('app.newsletter.tab_subscribers', 'Subscribers'),
+		description: t('app.newsletter.empty_subscribers', 'Manage email subscribers'),
+		// readonly hides the Create button (subscribers are added via import);
+		// edit/delete are exposed through custom `actions` with show() predicates.
+		readonly: true,
+		pageSize: 20,
+		columns: [
+			{
+				key: 'email',
+				label: t('app.newsletter.col_email', 'Email'),
+				render: (_: any, row: any) => `
+					<div class="flex items-center gap-3">
+						<div class="h-8 w-8 rounded-full bg-primary-100 flex items-center justify-center">
+							<span class="text-sm font-medium text-primary-700">${(row.email || '?')[0].toUpperCase()}</span>
+						</div>
+						<div>
+							<p class="font-medium text-foreground">${row.email}</p>
+							${row.name ? `<p class="text-sm text-muted">${row.name}</p>` : ''}
+						</div>
+					</div>
+				`
+			},
+			{
+				key: 'status',
+				label: t('app.newsletter.col_status', 'Status'),
+				render: (v: string) => {
+					const cls = v === 'subscribed' ? 'bg-success/15 text-success border-success' : v === 'bounced' ? 'bg-danger/15 text-danger border-danger' : v === 'complained' ? 'bg-warning/15 text-warning border-warning' : 'bg-surface text-foreground border';
+					return `<span class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${cls}">${v || 'subscribed'}</span>`;
+				}
+			},
+			{
+				key: 'subscribedAt',
+				label: t('app.newsletter.col_subscribed', 'Subscribed'),
+				render: (v: string, row: any) => new Date(v || row.created_at).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
+			}
+		],
+		filters: subscriberFilters,
+		actions: subscriberActions,
+		fields: subscriberFields,
+		headerActions: canManageNewsletter
+			? [{ label: t('app.newsletter.btn_import_subscribers', 'Import Subscribers'), icon: Upload, variant: 'outline', onclick: openImportModal }]
+			: [],
+		load: async ({ q, filter }) => {
 			const params = new URLSearchParams();
-			if (searchQuery) params.set('search', searchQuery);
-			if (filterValue.status) params.set('status', filterValue.status);
+			if (q) params.set('search', q);
+			if (filter.status) params.set('status', filter.status);
 			const query = params.toString();
 			const result = await api<Subscriber[]>(`/admin/newsletter/subscribers${query ? `?${query}` : ''}`);
 			if (result.ok) {
-				subscribers = result.data ?? [];
-				stats.subscribers = subscribers.length;
+				const data = result.data ?? [];
+				return { data, total: data.length, totalPages: 1 };
 			}
-		} catch (e) { pageError = e instanceof Error ? e.message : t('app.newsletter.error_load_subscribers', 'Failed to load subscribers'); } finally {
-			loading = false;
-		}
-	}
+			throw new Error(result.error ?? t('app.newsletter.error_load_subscribers', 'Failed to load subscribers'));
+		},
+		update: async (id, body) => {
+			const res = await api(`/admin/newsletter/subscribers/${id}`, { method: 'PATCH', body: { status: body.status } });
+			return res.ok ? { ok: true } : { ok: false, error: res.error };
+		},
+		remove: async (id) => {
+			const res = await api(`/admin/newsletter/subscribers/${id}`, { method: 'DELETE' });
+			return res.ok ? { ok: true } : { ok: false, error: res.error };
+		},
+		viewSnippet: SubscriberView
+	});
 
-	async function loadCampaigns() {
-		loading = true;
-		try {
+	// ── Campaigns EntityPage config ─────────────────────────────────────────
+	const campaignConfig = $derived<EntityPageConfig>({
+		title: t('app.newsletter.tab_campaigns', 'Campaigns'),
+		description: t('app.newsletter.empty_campaigns', 'Manage newsletter campaigns'),
+		// readonly hides the Create button; campaigns are created via the
+		// page-local Modal (rich HTML form) triggered by `headerActions`.
+		readonly: true,
+		pageSize: 20,
+		columns: [
+			{
+				key: 'subject',
+				label: t('app.newsletter.col_subject', 'Subject'),
+				render: (_: any, row: any) => `
+					<div>
+						<p class="font-medium text-foreground">${row.subject || row.name || 'No subject'}</p>
+						${row.preview ? `<p class="text-sm text-muted">${row.preview}</p>` : ''}
+					</div>
+				`
+			},
+			{
+				key: 'status',
+				label: t('app.newsletter.col_status', 'Status'),
+				render: (v: string) => {
+					const cls = v === 'sent' ? 'bg-success/15 text-success border-success' : v === 'scheduled' ? 'bg-info-100 text-info-800 border-info-200' : v === 'sending' ? 'bg-warning/15 text-warning border-warning' : v === 'cancelled' ? 'bg-danger/15 text-danger border-danger' : 'bg-surface text-foreground border';
+					return `<span class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${cls}">${v || 'draft'}</span>`;
+				}
+			},
+			{
+				key: 'sentAt',
+				label: t('app.newsletter.col_sent', 'Sent'),
+				render: (v: string, row: any) => {
+					const date = v || row.sent_at;
+					return date ? new Date(date).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : '<span class="text-muted">—</span>';
+				}
+			},
+			{
+				key: 'openRate',
+				label: t('app.newsletter.col_open_rate', 'Open Rate'),
+				render: (v: number, row: any) => {
+					const rate = v ?? row.openRate ?? 0;
+					return `<span class="font-medium">${rate.toFixed(1)}%</span>`;
+				}
+			}
+		],
+		filters: campaignFilters,
+		actions: campaignActions,
+		fields: [],
+		bulkActions: canManageNewsletter
+			? [{ label: t('app.newsletter.btn_delete_selected', 'Delete Selected'), icon: Trash2, variant: 'destructive', onclick: bulkDeleteCampaigns }]
+			: [],
+		headerActions: canManageNewsletter
+			? [{ label: t('app.newsletter.btn_new_campaign', 'New Campaign'), icon: Plus, onclick: () => (showCreateModal = true) }]
+			: [],
+		load: async ({ page, pageSize, q, filter }) => {
 			// Server-side pagination: send page_size + offset so the backend
 			// returns the paginated envelope {items, total, total_pages}
 			// instead of silently truncating at the default page size (§22).
 			const params = new URLSearchParams({
-				page_size: String(campaignPageSize),
-				offset: String(campaignPage * campaignPageSize)
+				page_size: String(pageSize),
+				offset: String(page * pageSize)
 			});
-			if (filterValue.campaign_status) params.set('status', filterValue.campaign_status);
-
+			if (q) params.set('search', q);
+			if (filter.campaign_status) params.set('status', filter.campaign_status);
 			const result = await api<{ items: Campaign[]; total: number; total_pages: number } | Campaign[]>(
 				`/admin/newsletter/campaigns?${params.toString()}`
 			);
@@ -260,53 +287,53 @@
 				const items = Array.isArray(d) ? d : (d?.items ?? []);
 				const total = Array.isArray(d) ? d.length : (d?.total ?? 0);
 				const totalPages = Array.isArray(d) ? 1 : (d?.total_pages ?? 1);
-
 				// Compute derived open/click rates from the raw counters returned
 				// by the backend (open_count/click_count/recipient_count). The
 				// backend never returns a pre-computed rate — §62 schema.
-				campaigns = items.map((c) => {
+				const data = items.map((c) => {
 					const recipients = c.recipient_count ?? 0;
 					const openRate = recipients > 0 ? ((c.open_count ?? 0) / recipients) * 100 : 0;
 					const clickRate = recipients > 0 ? ((c.click_count ?? 0) / recipients) * 100 : 0;
 					return { ...c, openRate, clickRate };
 				});
-				campaignTotal = total;
-				campaignTotalPages = totalPages;
-				stats.campaigns = total;
+				return { data, total, totalPages };
 			}
-		} catch (e) { pageError = e instanceof Error ? e.message : t('app.newsletter.error_load_campaigns', 'Failed to load campaigns'); } finally {
-			loading = false;
+			throw new Error(result.error ?? t('app.newsletter.error_load_campaigns', 'Failed to load campaigns'));
+		},
+		viewSnippet: CampaignView
+	});
+
+	// ── Campaign send ───────────────────────────────────────────────────────
+	async function sendCampaign(id: string) {
+		pageError = '';
+		try {
+			const result = await api(`/admin/newsletter/campaigns/${id}/send`, { method: 'POST' });
+			if (!result.ok) {
+				pageError = result.error ?? t('app.newsletter.error_send_campaign', 'Failed to send campaign');
+				return;
+			}
+			campaignController?.reload();
+		} catch (e) {
+			pageError = e instanceof Error ? e.message : t('app.newsletter.error_send_campaign', 'Failed to send campaign');
 		}
 	}
 
-	function handleCampaignPageChange(p: number) {
-		campaignPage = p;
-	}
-
-	function handleCampaignPageSizeChange(s: number) {
-		campaignPageSize = s;
-		campaignPage = 0;
-	}
-
-	async function loadStats() {
+	// ── Bulk delete campaigns (in-flight guard) ─────────────────────────────
+	async function bulkDeleteCampaigns(ids: Set<string>) {
+		if (ids.size === 0) return;
+		if (bulkDeleting) return;
+		bulkDeleting = true;
+		pageError = '';
 		try {
-			const result = await api<Array<{ status: string; count: number }>>('/admin/newsletter/stats');
-			if (result.ok && result.data) {
-				const totalSubscribers = result.data.reduce((sum, s) => sum + s.count, 0);
-				stats.subscribers = totalSubscribers;
-				// Average open/click rates are derived from the per-campaign
-				// counters (open_count/click_count/recipient_count) computed
-				// in loadCampaigns — the backend does not return pre-computed
-				// rates (§62 schema).
-				const sentCampaigns = campaigns.filter((c) => c.status === 'sent');
-				if (sentCampaigns.length > 0) {
-					stats.avgOpenRate = sentCampaigns.reduce((sum, c) => sum + (c.openRate ?? 0), 0) / sentCampaigns.length;
-					stats.avgClickRate = sentCampaigns.reduce((sum, c) => sum + (c.clickRate ?? 0), 0) / sentCampaigns.length;
-				}
-			}
-		} catch (e) { pageError = e instanceof Error ? e.message : t('app.newsletter.error_load_stats', 'Failed to load stats'); }
+			await Promise.all(Array.from(ids).map((id) => api(`/admin/newsletter/campaigns/${id}`, { method: 'DELETE' })));
+		} catch (e) {
+			pageError = e instanceof Error ? e.message : t('app.newsletter.error_load_campaigns', 'Failed to delete campaigns');
+		} finally {
+			bulkDeleting = false;
+		}
 	}
 
+	// ── Create campaign (page-local Modal — sanitizes HTML) ─────────────────
 	async function createCampaign() {
 		if (!newCampaign.name || !newCampaign.subject) return;
 		creating = true;
@@ -321,108 +348,18 @@
 			if (result.ok) {
 				showCreateModal = false;
 				newCampaign = { name: '', subject: '', html: '' };
-				loadCampaigns();
+				campaignController?.reload();
+			} else {
+				pageError = result.error ?? t('app.newsletter.error_create_campaign', 'Failed to create campaign');
 			}
-		} catch (e) { pageError = e instanceof Error ? e.message : t('app.newsletter.error_create_campaign', 'Failed to create campaign'); } finally {
+		} catch (e) {
+			pageError = e instanceof Error ? e.message : t('app.newsletter.error_create_campaign', 'Failed to create campaign');
+		} finally {
 			creating = false;
 		}
 	}
 
-	async function sendCampaign(id: string) {
-		try {
-			const result = await api(`/admin/newsletter/campaigns/${id}/send`, { method: 'POST' });
-			if (!result.ok) {
-				pageError = result.error ?? t('app.newsletter.error_send_campaign', 'Failed to send campaign');
-				return;
-			}
-			loadCampaigns();
-		} catch (e) { pageError = e instanceof Error ? e.message : t('app.newsletter.error_send_campaign', 'Failed to send campaign'); }
-	}
-
-	function openEditSubscriber(sub: Subscriber) {
-		subscriberTarget = sub;
-		editSubscriberStatus = sub.status;
-		showEditSlideOver = true;
-	}
-
-	async function saveSubscriber() {
-		if (!subscriberTarget) return;
-		deleting = true;
-		try {
-			await api(`/admin/newsletter/subscribers/${subscriberTarget.id}`, { method: 'PATCH', body: { status: editSubscriberStatus } });
-			showEditSlideOver = false;
-			loadSubscribers();
-		} catch { /* API not available */ } finally {
-			deleting = false;
-		}
-	}
-
-	function openViewCampaign(c: Campaign) {
-		campaignTarget = c;
-		showCampaignSlideOver = true;
-	}
-
-	async function deleteSubscriber() {
-		if (!deleteTarget) return;
-		deleting = true;
-		try {
-			await api(`/admin/newsletter/subscribers/${deleteTarget.id}`, { method: 'DELETE' });
-			showDeleteModal = false;
-			deleteTarget = null;
-			loadSubscribers();
-		} catch { /* API not available */ } finally {
-			deleting = false;
-		}
-	}
-
-	function confirmDeleteSubscriber(subscriber: Subscriber) {
-		deleteTarget = subscriber;
-		showDeleteModal = true;
-	}
-
-	async function bulkDeleteCampaigns(ids: Set<string>) {
-		if (ids.size === 0) return;
-		if (bulkDeleting) return; // in-flight guard
-		bulkDeleting = true;
-		try {
-			await Promise.all(Array.from(ids).map((id) => api(`/admin/newsletter/campaigns/${id}`, { method: 'DELETE' })));
-		} catch { /* API not available */ } finally {
-			bulkDeleting = false;
-		}
-	}
-
-	let initialized = false;
-	$effect(() => {
-		if (!initialized) {
-			initialized = true;
-			loadSubscribers();
-		}
-	});
-
-	// Reload when tab changes. The campaigns tab is handled by the
-	// pagination effect below (which also fires when activeTab changes to
-	// 'campaigns' because it reads activeTab in its condition) — omitting it
-	// here avoids a double fetch.
-	$effect(() => {
-		void activeTab;
-		if (initialized) {
-			if (activeTab === 'subscribers') loadSubscribers();
-			else if (activeTab === 'analytics') { loadCampaigns(); loadStats(); }
-		}
-	});
-
-	// Reload campaigns when server-side pagination state, status filter, or
-	// tab activation changes (§22). The filterValue.campaign_status dependency
-	// triggers a reload when the user applies the campaign status filter.
-	$effect(() => {
-		void campaignPage;
-		void campaignPageSize;
-		void filterValue.campaign_status;
-		if (initialized && activeTab === 'campaigns') {
-			loadCampaigns();
-		}
-	});
-
+	// ── Import subscribers (page-local Modal) ───────────────────────────────
 	function openImportModal() {
 		importText = '';
 		importResult = null;
@@ -450,80 +387,92 @@
 			importResult.errors.push(e instanceof Error ? e.message : 'failed');
 		}
 		importing = false;
-		if (importResult.success > 0) loadSubscribers();
+		if (importResult.success > 0) subscriberController?.reload();
 	}
+
+	// ── Stats + analytics data ──────────────────────────────────────────────
+	async function loadStats() {
+		try {
+			const result = await api<Array<{ status: string; count: number }>>('/admin/newsletter/stats');
+			if (result.ok && result.data) {
+				stats.subscribers = result.data.reduce((sum, s) => sum + s.count, 0);
+			}
+		} catch (e) {
+			pageError = e instanceof Error ? e.message : t('app.newsletter.error_load_stats', 'Failed to load stats');
+		}
+	}
+
+	async function loadAnalytics() {
+		analyticsLoading = true;
+		pageError = '';
+		try {
+			// Fetch all campaigns for the chart + average-rate computation.
+			// Use a large page_size so the backend returns everything in one page.
+			const params = new URLSearchParams({ page_size: '500', offset: '0' });
+			const result = await api<{ items: Campaign[]; total: number; total_pages: number } | Campaign[]>(
+				`/admin/newsletter/campaigns?${params.toString()}`
+			);
+			if (result.ok) {
+				const d = result.data;
+				const items = Array.isArray(d) ? d : (d?.items ?? []);
+				const total = Array.isArray(d) ? d.length : (d?.total ?? 0);
+				analyticsCampaigns = items.map((c) => {
+					const recipients = c.recipient_count ?? 0;
+					const openRate = recipients > 0 ? ((c.open_count ?? 0) / recipients) * 100 : 0;
+					const clickRate = recipients > 0 ? ((c.click_count ?? 0) / recipients) * 100 : 0;
+					return { ...c, openRate, clickRate };
+				});
+				stats.campaigns = total;
+				// Average open/click rates are derived from the per-campaign
+				// counters (open_count/click_count/recipient_count) — the backend
+				// does not return pre-computed rates (§62 schema).
+				const sentCampaigns = analyticsCampaigns.filter((c) => c.status === 'sent');
+				if (sentCampaigns.length > 0) {
+					stats.avgOpenRate = sentCampaigns.reduce((sum, c) => sum + (c.openRate ?? 0), 0) / sentCampaigns.length;
+					stats.avgClickRate = sentCampaigns.reduce((sum, c) => sum + (c.clickRate ?? 0), 0) / sentCampaigns.length;
+				}
+			}
+		} catch (e) {
+			pageError = e instanceof Error ? e.message : t('app.newsletter.error_load_campaigns', 'Failed to load campaigns');
+		} finally {
+			analyticsLoading = false;
+		}
+	}
+
+	// Load subscriber stats once on mount for the tab badge count.
+	let initialized = false;
+	$effect(() => {
+		if (!initialized) {
+			initialized = true;
+			loadStats();
+		}
+	});
+
+	// Refresh analytics data when the analytics tab is opened.
+	$effect(() => {
+		void activeTab;
+		if (initialized && activeTab === 'analytics') {
+			loadAnalytics();
+		}
+	});
 </script>
 
 <svelte:head>
 	<title>{t('app.newsletter.page_title', 'Newsletter')} — JapaConnect Admin</title>
 </svelte:head>
 
-<PageHeader
-	title={t('app.newsletter.title', 'Newsletter')}
-	description={t('app.newsletter.description', 'Manage email subscribers and campaigns')}
-	actions={canManageNewsletter ? [
-		{ label: t('app.newsletter.btn_new_campaign', 'New Campaign'), icon: Plus, onclick: () => (showCreateModal = true) },
-		{ label: t('app.newsletter.btn_import_subscribers', 'Import Subscribers'), icon: Upload, variant: 'outline', onclick: openImportModal }
-	] : []}
-/>
-
 {#if pageError}
 	<div class="mb-4 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-600 dark:text-red-400">{pageError}</div>
 {/if}
 
-<div class="space-y-6">
-	<Tabs {tabs} bind:value={activeTab} />
+<Tabs {tabs} bind:value={activeTab} />
 
-	{#if activeTab === 'subscribers'}
-		<Card>
-			<CardContent class="p-0">
-				<DataTable
-					columns={subscriberColumns}
-					data={subscribers}
-					pageSize={20}
-					{loading}
-					selectable={canManageNewsletter}
-					bind:selectedIds={selectedSubscriberIds}
-					emptyMessage={t('app.newsletter.empty_subscribers', 'No subscribers yet')}
-					searchable
-					onsearch={(q) => { searchQuery = q; loadSubscribers(); }}
-					filters={[{ key: 'status', label: t('app.newsletter.filter_status', 'Status'), options: subscriberStatusOptions }]}
-					bind:filterValue
-					onfilterapply={loadSubscribers}
-					actions={subscriberActions}
-				/>
-			</CardContent>
-		</Card>
-	{/if}
-
-	{#if activeTab === 'campaigns'}
-		<Card>
-			<CardContent class="p-0">
-				<DataTable
-					columns={campaignColumns}
-					data={campaigns}
-					serverSide
-					page={campaignPage}
-					pageSize={campaignPageSize}
-					totalRows={campaignTotal}
-					totalPages={campaignTotalPages}
-					onpagechange={handleCampaignPageChange}
-					onpagesizechange={handleCampaignPageSizeChange}
-					{loading}
-					selectable={canManageNewsletter}
-					bind:selectedIds={selectedCampaignIds}
-					emptyMessage={t('app.newsletter.empty_campaigns', 'No campaigns yet')}
-					filters={[{ key: 'campaign_status', label: t('app.newsletter.filter_status', 'Status'), options: campaignStatusOptions }]}
-					bind:filterValue
-					onfilterapply={() => { campaignPage = 0; }}
-					actions={campaignActions}
-					bulkActionsList={canManageNewsletter ? campaignBulkActions : undefined}
-				/>
-			</CardContent>
-		</Card>
-	{/if}
-
-	{#if activeTab === 'analytics'}
+{#if activeTab === 'subscribers'}
+	<EntityPage config={subscriberConfig} bind:controller={subscriberController} />
+{:else if activeTab === 'campaigns'}
+	<EntityPage config={campaignConfig} bind:controller={campaignController} />
+{:else if activeTab === 'analytics'}
+	<div class="space-y-6">
 		<div class="grid grid-cols-1 gap-6 md:grid-cols-3">
 			<Card>
 				<CardContent class="p-6">
@@ -549,10 +498,14 @@
 				<h3 class="text-lg font-semibold text-foreground">{t('newsletter.campaign_performance')}</h3>
 			</CardHeader>
 			<CardContent>
-				{#if campaigns.filter((c) => c.status === 'sent').length > 0}
+				{#if analyticsLoading}
+					<div class="flex h-64 items-center justify-center rounded-lg bg-surface">
+						<p class="text-muted">{t('common.loading', 'Loading…')}</p>
+					</div>
+				{:else if analyticsCampaigns.filter((c) => c.status === 'sent').length > 0}
 					<div class="h-64">
 						<BarChart
-							data={campaigns
+							data={analyticsCampaigns
 								.filter((c) => c.status === 'sent')
 								.map((c) => ({
 									name: c.subject ?? c.name ?? 'Untitled',
@@ -573,8 +526,8 @@
 				{/if}
 			</CardContent>
 		</Card>
-	{/if}
-</div>
+	</div>
+{/if}
 
 <!-- Create Campaign Modal (page-local — form with HTML textarea) -->
 <Modal bind:open={showCreateModal} title={t('app.newsletter.modal_create_campaign', 'Create Campaign')} description={t('app.newsletter.modal_create_campaign_desc', 'Compose a new newsletter campaign')} size="lg">
@@ -599,83 +552,6 @@
 		</div>
 	</div>
 </Modal>
-
-<!-- Delete Subscriber Confirmation Modal -->
-<Modal bind:open={showDeleteModal} title={t('app.newsletter.modal_remove_subscriber', 'Remove Subscriber')} description={t('app.newsletter.modal_remove_subscriber_desc', 'This subscriber will be removed from your mailing list.')} size="sm">
-	{#if deleteTarget}
-		<div class="rounded-lg bg-surface p-4">
-			<p class="text-sm text-foreground-alt">{t('app.newsletter.confirm_remove_prefix', 'Are you sure you want to remove')} <strong>{deleteTarget.email}</strong>?</p>
-		</div>
-	{/if}
-	<div class="flex justify-end gap-3 pt-4">
-		<Button variant="outline" onclick={() => (showDeleteModal = false)}>{t('newsletter.cancel')}</Button>
-		<Button variant="destructive" onclick={deleteSubscriber} disabled={deleting}>
-			{deleting ? t('app.newsletter.removing', 'Removing...') : t('app.newsletter.btn_remove', 'Remove')}
-		</Button>
-	</div>
-</Modal>
-
-<!-- Edit Subscriber SlideOver -->
-<SlideOver bind:open={showEditSlideOver} title={t('app.newsletter.modal_edit_subscriber', 'Edit Subscriber')}>
-	{#if subscriberTarget}
-		<div class="space-y-4">
-			<div>
-				<p class="text-sm" style="color: var(--color-muted)">{subscriberTarget.email}</p>
-			</div>
-			<div>
-				<label for="sub-status" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('common.status', 'Status')}</label>
-				<Select options={subscriberStatusOptions} value={editSubscriberStatus} onchange={(val) => (editSubscriberStatus = val)} />
-			</div>
-		</div>
-	{/if}
-	{#snippet footer()}
-		<div class="flex justify-end gap-2">
-			<Button variant="ghost" onclick={() => (showEditSlideOver = false)}>{t('common.cancel', 'Cancel')}</Button>
-			<Button onclick={saveSubscriber} disabled={deleting}>{t('common.save', 'Save')}</Button>
-		</div>
-	{/snippet}
-</SlideOver>
-
-<!-- View Campaign SlideOver -->
-<SlideOver bind:open={showCampaignSlideOver} title={t('app.newsletter.modal_campaign_details', 'Campaign Details')} size="lg">
-	{#if campaignTarget}
-		<div class="space-y-4">
-			<div class="grid grid-cols-2 gap-4">
-				<div>
-					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('newsletter.subject_line', 'Subject')}</p>
-					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{campaignTarget.subject || campaignTarget.name}</p>
-				</div>
-				<div>
-					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('common.status', 'Status')}</p>
-					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{campaignTarget.status}</p>
-				</div>
-			</div>
-			{#if campaignTarget.preview}
-				<div>
-					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('newsletter.content_html', 'Preview')}</p>
-					<p class="mt-1 text-sm" style="color: var(--color-foreground)">{campaignTarget.preview}</p>
-				</div>
-			{/if}
-			{#if campaignTarget.recipient_count != null}
-				<div>
-					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('newsletter.recipients', 'Recipients')}</p>
-					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{campaignTarget.recipient_count.toLocaleString()}</p>
-				</div>
-			{/if}
-		</div>
-	{/if}
-	{#snippet footer()}
-		<div class="flex justify-end gap-2">
-			{#if (campaignTarget?.status === 'draft' || campaignTarget?.status === 'scheduled') && canManageNewsletter}
-				{@const ct = campaignTarget}
-				<Button onclick={() => { showCampaignSlideOver = false; sendCampaign(ct.id); }}>
-					<Send class="mr-1 h-3.5 w-3.5" /> {t('common.send', 'Send')}
-				</Button>
-			{/if}
-			<Button variant="outline" onclick={() => (showCampaignSlideOver = false)}>{t('common.close', 'Close')}</Button>
-		</div>
-	{/snippet}
-</SlideOver>
 
 <!-- Import Subscribers Modal (page-local — form with textarea) -->
 <Modal bind:open={showImportModal} title={t('app.newsletter.modal_import_subscribers', 'Import Subscribers')} size="lg">
@@ -705,3 +581,71 @@
 		</Button>
 	</div>
 </Modal>
+
+<!-- ── View snippets ───────────────────────────────────────────────────── -->
+
+{#snippet SubscriberView({ row }: { row: Subscriber })}
+	<div class="space-y-4">
+		<div>
+			<p class="text-xs font-medium uppercase tracking-wider text-muted">{t('app.newsletter.col_email', 'Email')}</p>
+			<p class="mt-1 text-sm font-medium text-foreground">{row.email}</p>
+		</div>
+		{#if row.name}
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider text-muted">{t('app.newsletter.col_email', 'Name')}</p>
+				<p class="mt-1 text-sm font-medium text-foreground">{row.name}</p>
+			</div>
+		{/if}
+		<div>
+			<p class="text-xs font-medium uppercase tracking-wider text-muted">{t('app.newsletter.col_status', 'Status')}</p>
+			<p class="mt-1 text-sm font-medium text-foreground">{row.status}</p>
+		</div>
+		<div>
+			<p class="text-xs font-medium uppercase tracking-wider text-muted">{t('app.newsletter.col_subscribed', 'Subscribed')}</p>
+			<p class="mt-1 text-sm font-medium text-foreground">{new Date(row.subscribedAt || row.created_at).toLocaleString()}</p>
+		</div>
+	</div>
+{/snippet}
+
+{#snippet CampaignView({ row }: { row: Campaign })}
+	<div class="space-y-4">
+		<div class="grid grid-cols-2 gap-4">
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider text-muted">{t('newsletter.subject_line', 'Subject')}</p>
+				<p class="mt-1 text-sm font-medium text-foreground">{row.subject || row.name}</p>
+			</div>
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider text-muted">{t('common.status', 'Status')}</p>
+				<p class="mt-1 text-sm font-medium text-foreground">{row.status}</p>
+			</div>
+		</div>
+		{#if row.preview}
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider text-muted">{t('newsletter.content_html', 'Preview')}</p>
+				<p class="mt-1 text-sm text-foreground">{row.preview}</p>
+			</div>
+		{/if}
+		<div class="grid grid-cols-2 gap-4">
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider text-muted">{t('newsletter.recipients', 'Recipients')}</p>
+				<p class="mt-1 text-sm font-medium text-foreground">{row.recipient_count != null ? row.recipient_count.toLocaleString() : '—'}</p>
+			</div>
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider text-muted">{t('app.newsletter.col_open_rate', 'Open Rate')}</p>
+				<p class="mt-1 text-sm font-medium text-foreground">{(row.openRate ?? 0).toFixed(1)}%</p>
+			</div>
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider text-muted">{t('newsletter.avg_click_rate', 'Click Rate')}</p>
+				<p class="mt-1 text-sm font-medium text-foreground">{(row.clickRate ?? 0).toFixed(1)}%</p>
+			</div>
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider text-muted">{t('app.newsletter.col_sent', 'Sent')}</p>
+				<p class="mt-1 text-sm font-medium text-foreground">{(row.sentAt || row.sent_at) ? new Date(row.sentAt || row.sent_at!).toLocaleString() : '—'}</p>
+			</div>
+		</div>
+		<div>
+			<p class="text-xs font-medium uppercase tracking-wider text-muted">{t('app.mentorship.columns.created', 'Created')}</p>
+			<p class="mt-1 text-sm font-medium text-foreground">{new Date(row.created_at).toLocaleString()}</p>
+		</div>
+	</div>
+{/snippet}

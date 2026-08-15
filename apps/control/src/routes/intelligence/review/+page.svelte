@@ -97,7 +97,14 @@
 		{ value: 'all', label: t('intel.filter_all_entities', 'All entity types') },
 		{ value: 'scholarship', label: t('intel.category_scholarship', 'Scholarship') },
 		{ value: 'job', label: t('intel.category_job', 'Job') },
-		{ value: 'visa', label: t('intel.category_visa', 'Visa') }
+		{ value: 'visa', label: t('intel.category_visa', 'Visa') },
+		{ value: 'housing', label: t('intel.category_housing', 'Housing') },
+		{ value: 'remittance', label: t('intel.category_remittance', 'Remittance') },
+		{ value: 'cost_of_living', label: t('intel.category_cost_of_living', 'Cost of Living') },
+		{ value: 'guide', label: t('intel.category_guide', 'Guide') },
+		{ value: 'news', label: t('intel.category_news', 'News') },
+		{ value: 'community', label: t('intel.category_community', 'Community') },
+		{ value: 'mentorship', label: t('intel.category_mentorship', 'Mentorship') }
 	]);
 
 	let filtered = $derived(
@@ -117,6 +124,12 @@
 	);
 
 	let totalRows = $derived(filtered.length);
+
+	// The backend caps the response at page_size=100. When the fetched page
+	// is full, more records likely exist beyond the cap — surface a notice so
+	// the operator knows the list is truncated (the DataTable paginates the
+	// fetched 100 client-side, so it is not a true total).
+	let truncated = $derived(records.length >= 100);
 
 	function formatTime(ts?: string): string {
 		if (!ts) return '—';
@@ -194,13 +207,22 @@
 	]);
 
 	const bulkActions = $derived<DataTableBulkAction[]>(
-		canApprove && statusIsReviewable
+		statusIsReviewable
 			? [
-					{
-						label: t('intel.approve_selected', 'Approve selected'),
-						icon: CheckCircle2,
-						onClick: (ids) => bulkApprove(ids)
-					}
+					...(canApprove
+						? [{
+								label: t('intel.approve_selected', 'Approve selected'),
+								icon: CheckCircle2,
+								onClick: (ids: string[]) => bulkApprove(ids)
+							}]
+						: []),
+					...(canReject
+						? [{
+								label: t('intel.reject_selected', 'Reject selected'),
+								icon: XCircle,
+								onClick: (ids: string[]) => bulkReject(ids)
+							}]
+						: [])
 				]
 			: []
 	);
@@ -229,6 +251,11 @@
 
 	async function bulkApprove(ids: string[]) {
 		await Promise.allSettled(ids.map((id) => approveRecord(id)));
+		await load();
+	}
+
+	async function bulkReject(ids: string[]) {
+		await Promise.allSettled(ids.map((id) => rejectRecord(id)));
 		await load();
 	}
 </script>
@@ -313,6 +340,13 @@
 			{t('common.refresh', 'Refresh')}
 		</button>
 	</div>
+
+	{#if truncated && !loading}
+		<div class="bg-amber-500/10 text-amber-500 mb-3 flex items-center gap-2 rounded-md p-2.5 text-xs">
+			<ClipboardList class="size-3.5 shrink-0" />
+			{t('intel.truncated_notice', 'Showing the first 100 records. Refine the filter above to narrow the list.')}
+		</div>
+	{/if}
 
 	<DataTable
 		{columns}

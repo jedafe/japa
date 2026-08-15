@@ -56,7 +56,7 @@ export function syncListStateToUrl(opts: {
 }): void {
 	if (typeof window === 'undefined') return;
 	const { page: p, pageSize: ps, defaultPageSize = 25, search = '', filters = {}, searchParam = 'q' } = opts;
-	const params = new URLSearchParams(window.location.search);
+	const params = new URLSearchParams(page.url.searchParams.toString());
 
 	// Preserve sort/dir (managed by DataTable) — don't touch them.
 	// Page: 1-based in URL, omit when 0.
@@ -78,7 +78,7 @@ export function syncListStateToUrl(opts: {
 	}
 
 	const qs = params.toString();
-	const url = `${window.location.pathname}${qs ? `?${qs}` : ''}`;
+	const url = `${page.url.pathname}${qs ? `?${qs}` : ''}`;
 	try {
 		replaceState(url, {});
 	} catch {

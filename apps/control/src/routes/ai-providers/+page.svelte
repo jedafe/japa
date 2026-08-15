@@ -5,11 +5,13 @@
 	import SearchInput from '$lib/components/ui/SearchInput.svelte';
 	import ConfirmModal from '$lib/components/ui/ConfirmModal.svelte';
 	import { Cpu, Plus, Pencil, Trash2, Zap, Check, X } from 'lucide-svelte';
-	import { Dialog, Select } from 'bits-ui';
+	import { Dialog } from 'bits-ui';
 	import { t } from '$lib/stores/i18n.svelte';
 	import type { AiProvider } from '$lib/api/types';
 	import type { DataTableColumn, DataTableRowAction } from '$lib/api/types';
 	import { hasAnyPermission } from '$lib/stores/auth.svelte';
+	import Autocomplete from '$lib/components/ui/Autocomplete.svelte';
+	import type { AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
 
 	let {} = $props();
 
@@ -414,6 +416,42 @@
 		availableModels = [];
 		fetchModelsError = '';
 	}
+
+	// --- Autocomplete fetchers (client-side filter of loaded options) ---
+
+	// Provider Type fetcher — filters the server-fetched providerTypes list.
+	async function fetchProviderTypes(q: string): Promise<AutocompleteItem[]> {
+		const query = q.toLowerCase();
+		return providerTypes
+			.filter((pt) => pt.label.toLowerCase().includes(query) || pt.value.toLowerCase().includes(query))
+			.map((pt) => ({ id: pt.value, label: pt.label }));
+	}
+
+	async function fetchProviderTypesInitial(): Promise<AutocompleteItem[]> {
+		return providerTypes.map((pt) => ({ id: pt.value, label: pt.label }));
+	}
+
+	function getProviderTypeSelectedLabel(value: string): string | null {
+		if (!value) return null;
+		return providerTypes.find((pt) => pt.value === value)?.label ?? value;
+	}
+
+	// Model fetcher — filters the server-fetched availableModels list.
+	async function fetchModelsOptions(q: string): Promise<AutocompleteItem[]> {
+		const query = q.toLowerCase();
+		return availableModels
+			.filter((m) => m.label.toLowerCase().includes(query) || m.id.toLowerCase().includes(query))
+			.map((m) => ({ id: m.id, label: m.label }));
+	}
+
+	async function fetchModelsOptionsInitial(): Promise<AutocompleteItem[]> {
+		return availableModels.map((m) => ({ id: m.id, label: m.label }));
+	}
+
+	function getModelSelectedLabel(value: string): string | null {
+		if (!value) return null;
+		return availableModels.find((m) => m.id === value)?.label ?? value;
+	}
 </script>
 
 <PageHeader title={t('ai_providers.title', 'AI Providers')} description={t('ai_providers.description', 'Manage AI provider configurations, API keys, and categories')} />
@@ -498,22 +536,17 @@
 				<!-- Provider Type -->
 				<div>
 					<label for="provider-type" class="text-muted-foreground mb-1 block text-xs font-medium uppercase tracking-wider">{t('ai_providers.type', 'Type')}</label>
-					<Select.Root type="single" bind:value={form.provider_type}>
-						<Select.Trigger id="provider-type" class="border-border-input bg-background-alt text-foreground w-full rounded-9px border px-3 py-2 text-sm">
-							<Select.Value />
-						</Select.Trigger>
-						<Select.Portal>
-							<Select.Content class="border-border-input bg-background shadow-popover z-50 rounded-lg border">
-								<Select.Viewport class="p-1">
-									{#each providerTypes as pt}
-										<Select.Item class="data-highlighted:bg-accent rounded-lg px-3 py-1.5 text-sm outline-none" value={pt.value} label={pt.label}>
-											{pt.label}
-										</Select.Item>
-									{/each}
-								</Select.Viewport>
-							</Select.Content>
-						</Select.Portal>
-					</Select.Root>
+					<Autocomplete
+						id="provider-type"
+						placeholder={t('ai_providers.type', 'Type')}
+						emptyMessage={t('common.no_results', 'No results found')}
+						fetcher={fetchProviderTypes}
+						initialFetcher={fetchProviderTypesInitial}
+						selectedId={form.provider_type || null}
+						selectedLabel={getProviderTypeSelectedLabel(form.provider_type)}
+						onSelect={(item) => (form.provider_type = item.id)}
+						onClear={() => (form.provider_type = '')}
+					/>
 				</div>
 
 				<!-- API Key -->
@@ -545,22 +578,17 @@
 					<div>
 						<label for="create-model" class="text-muted-foreground mb-1 block text-xs font-medium uppercase tracking-wider">{t('ai_providers.model', 'Default Model')}</label>
 						{#if availableModels.length > 0}
-							<Select.Root type="single" bind:value={form.model}>
-								<Select.Trigger class="border-border-input bg-background-alt text-foreground w-full rounded-9px border px-3 py-2 text-sm font-mono">
-									<Select.Value placeholder={t('ai_providers.model_placeholder', 'Select a model')} />
-								</Select.Trigger>
-								<Select.Portal>
-									<Select.Content class="border-border-input bg-background shadow-popover z-50 max-h-[300px] rounded-lg border overflow-y-auto">
-										<Select.Viewport class="p-1">
-											{#each availableModels as m}
-												<Select.Item class="data-highlighted:bg-accent rounded-lg px-3 py-1.5 text-sm outline-none font-mono" value={m.id} label={m.label}>
-													{m.label}
-												</Select.Item>
-											{/each}
-										</Select.Viewport>
-									</Select.Content>
-								</Select.Portal>
-							</Select.Root>
+							<Autocomplete
+								placeholder={t('ai_providers.model_placeholder', 'Select a model')}
+								emptyMessage={t('common.no_results', 'No results found')}
+								fetcher={fetchModelsOptions}
+								initialFetcher={fetchModelsOptionsInitial}
+								selectedId={form.model || null}
+								selectedLabel={getModelSelectedLabel(form.model)}
+								onSelect={(item) => (form.model = item.id)}
+								onClear={() => (form.model = '')}
+								inputClass="font-mono"
+							/>
 						{:else}
 							<input
 								id="create-model"
@@ -681,22 +709,17 @@
 				<!-- Provider Type -->
 				<div>
 					<label for="provider-type" class="text-muted-foreground mb-1 block text-xs font-medium uppercase tracking-wider">{t('ai_providers.type', 'Type')}</label>
-					<Select.Root type="single" bind:value={form.provider_type}>
-						<Select.Trigger id="provider-type" class="border-border-input bg-background-alt text-foreground w-full rounded-9px border px-3 py-2 text-sm">
-							<Select.Value />
-						</Select.Trigger>
-						<Select.Portal>
-							<Select.Content class="border-border-input bg-background shadow-popover z-50 rounded-lg border">
-								<Select.Viewport class="p-1">
-									{#each providerTypes as pt}
-										<Select.Item class="data-highlighted:bg-accent rounded-lg px-3 py-1.5 text-sm outline-none" value={pt.value} label={pt.label}>
-											{pt.label}
-										</Select.Item>
-									{/each}
-								</Select.Viewport>
-							</Select.Content>
-						</Select.Portal>
-					</Select.Root>
+					<Autocomplete
+						id="provider-type"
+						placeholder={t('ai_providers.type', 'Type')}
+						emptyMessage={t('common.no_results', 'No results found')}
+						fetcher={fetchProviderTypes}
+						initialFetcher={fetchProviderTypesInitial}
+						selectedId={form.provider_type || null}
+						selectedLabel={getProviderTypeSelectedLabel(form.provider_type)}
+						onSelect={(item) => (form.provider_type = item.id)}
+						onClear={() => (form.provider_type = '')}
+					/>
 				</div>
 
 				<!-- API Key (edit mode — empty = keep existing) -->
@@ -730,22 +753,17 @@
 					<div>
 						<label for="edit-model" class="text-muted-foreground mb-1 block text-xs font-medium uppercase tracking-wider">{t('ai_providers.model', 'Default Model')}</label>
 						{#if availableModels.length > 0}
-							<Select.Root type="single" bind:value={form.model}>
-								<Select.Trigger class="border-border-input bg-background-alt text-foreground w-full rounded-9px border px-3 py-2 text-sm font-mono">
-									<Select.Value placeholder={t('ai_providers.model_placeholder', 'Select a model')} />
-								</Select.Trigger>
-								<Select.Portal>
-									<Select.Content class="border-border-input bg-background shadow-popover z-50 max-h-[300px] rounded-lg border overflow-y-auto">
-										<Select.Viewport class="p-1">
-											{#each availableModels as m}
-												<Select.Item class="data-highlighted:bg-accent rounded-lg px-3 py-1.5 text-sm outline-none font-mono" value={m.id} label={m.label}>
-													{m.label}
-												</Select.Item>
-											{/each}
-										</Select.Viewport>
-									</Select.Content>
-								</Select.Portal>
-							</Select.Root>
+							<Autocomplete
+								placeholder={t('ai_providers.model_placeholder', 'Select a model')}
+								emptyMessage={t('common.no_results', 'No results found')}
+								fetcher={fetchModelsOptions}
+								initialFetcher={fetchModelsOptionsInitial}
+								selectedId={form.model || null}
+								selectedLabel={getModelSelectedLabel(form.model)}
+								onSelect={(item) => (form.model = item.id)}
+								onClear={() => (form.model = '')}
+								inputClass="font-mono"
+							/>
 						{:else}
 							<input
 								id="edit-model"

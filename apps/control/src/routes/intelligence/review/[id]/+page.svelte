@@ -19,7 +19,10 @@
 		FileText,
 		Sparkles,
 		ListTree,
-		ExternalLink
+		ExternalLink,
+		Ban,
+		ChevronRight,
+		MessageSquare
 	} from 'lucide-svelte';
 
 	// SPA: read the route id from client-side page state (no SSR load()).
@@ -29,6 +32,7 @@
 	const canApprove = $derived(hasAnyPermission(['intel.review.approve', 'intel.review.*']));
 	const canReject = $derived(hasAnyPermission(['intel.review.reject', 'intel.review.*']));
 	const canEdit = $derived(hasAnyPermission(['intel.review.edit', 'intel.review.*']));
+	const canDisableSource = $derived(hasAnyPermission(['intel.review.disable_source', 'intel.review.*']));
 
 	interface IntelRecord {
 		id: string;
@@ -83,22 +87,55 @@
 	let rawDoc = $state<RawDocument | null>(null);
 	let loading = $state(true);
 	let errorMessage = $state('');
-	let actionLoading = $state<'approve' | 'reject' | 'save' | null>(null);
+	let actionLoading = $state<'approve' | 'reject' | 'save' | 'disable' | null>(null);
 	let actionMessage = $state('');
 	let actionType = $state<'success' | 'error' | ''>('');
 
 	// Edit mode for the structured record pane.
 	let editMode = $state(false);
 	let editJson = $state('');
+	let editNote = $state('');
 
 	// Structured record (promoted projection) — fetched best-effort when
-	// promoted_record_id is present.
+	// promoted_record_id is present and the entity type has a detail endpoint.
 	let structuredRecord = $state<Record<string, unknown> | null>(null);
 
+	// Review note inputs for approve/reject (backend accepts { note } on
+	// both endpoints and writes it to intel_review_log for the audit trail).
+	let approveNote = $state('');
+	let rejectNote = $state('');
+	let showApproveDialog = $state(false);
+	let showRejectDialog = $state(false);
+
+	// Next-in-queue navigation: the review queue is fetched best-effort so a
+	// reviewer can advance to the next record without returning to the list.
+	let queueIds = $state<string[]>([]);
+	let nextRecordId = $state<string | null>(null);
+
+	// Generation guard: prevents a stale in-flight loadAll (from a previous
+	// record id) overwriting state after the user navigates to a new record.
+	let loadGeneration = 0;
+
 	async function loadAll() {
-		loading = true;
+		// Reset all per-record state so data from the previously-viewed
+		// record does not leak into the new one while its fetches are in
+		// flight (stale source/rawDoc/structuredRecord flash).
+		record = null;
+		source = null;
+		rawDoc = null;
+		structuredRecord = null;
+		editMode = false;
+		editJson = '';
+		editNote = '';
+		approveNote = '';
+		rejectNote = '';
+		showApproveDialog = false;
+		showRejectDialog = false;
 		errorMessage = '';
 		actionMessage = '';
+
+		loading = true;
+		const gen = ++loadGeneration;
 
 		// Fetch the single record directly by id (BUG-B fix). The prior
 		// approach fetched the entire review_required queue and scanned for
@@ -110,6 +147,7 @@
 		const recRes = await api<IntelRecord>(
 			`/api/v1/intel/records/${recordId}`
 		);
+		if (gen !== loadGeneration) return; // superseded by a newer navigation
 		if (recRes.ok && recRes.data) {
 			record = recRes.data as IntelRecord;
 		} else if (!recRes.ok) {
@@ -120,19 +158,30 @@
 			// Seed the edit buffer with the extracted blob.
 			editJson = record.extracted ? safeStringify(record.extracted) : '';
 
-			// Fetch the source and raw document in parallel (best-effort).
-			await Promise.allSettled([loadSource(record.source_id), loadRawDoc(record.raw_document_id)]);
+			// Fetch the source, raw document, and review queue in parallel
+			// (best-effort). The queue is used to compute the next record id
+			// for the "Next in queue" workflow button.
+			await Promise.allSettled([
+				loadSource(record.source_id, gen),
+				loadRawDoc(record.raw_document_id, gen),
+				loadQueue(gen)
+			]);
 
-			// Fetch the promoted/structured record when available.
-			if (record.promoted_record_id) {
-				await loadStructured(record.promoted_record_id);
+			// Fetch the promoted/structured record when available AND the
+			// entity type has a promoted-record detail endpoint. The backend
+			// only exposes /intel/scholarships/:id as a promoted projection
+			// detail endpoint (route catalog §2237); other entity types have
+			// no equivalent, so the structured pane falls back to showing the
+			// extracted blob (which is what gets promoted).
+			if (record.promoted_record_id && record.entity_type === 'scholarship') {
+				await loadStructured(record.promoted_record_id, gen);
 			}
 		}
 
-		loading = false;
+		if (gen === loadGeneration) loading = false;
 	}
 
-	async function loadSource(sourceId: string) {
+	async function loadSource(sourceId: string, gen: number) {
 		// Fetch all sources (including disabled) to find the one for this
 		// record. There is no single-source GET endpoint, so we fetch the
 		// full list and find by id. include_disabled=true ensures disabled
@@ -140,27 +189,46 @@
 		const result = await api<IntelSource[]>(
 			'/api/v1/intel/sources?page_size=100&include_disabled=true'
 		);
+		if (gen !== loadGeneration) return;
 		if (result.ok && Array.isArray(result.data)) {
 			source = (result.data as IntelSource[]).find((s) => s.id === sourceId) ?? null;
 		}
 	}
 
-	async function loadRawDoc(docId: string) {
+	async function loadRawDoc(docId: string, gen: number) {
 		// The raw document endpoint is best-effort; the pane handles absence.
 		const result = await api<RawDocument>(
 			`/api/v1/intel/raw-documents/${docId}`
 		);
+		if (gen !== loadGeneration) return;
 		if (result.ok && result.data) {
 			rawDoc = result.data as RawDocument;
 		}
 	}
 
-	async function loadStructured(promotedId: string) {
+	async function loadStructured(promotedId: string, gen: number) {
 		const result = await api<Record<string, unknown>>(
 			`/api/v1/intel/scholarships/${promotedId}`
 		);
+		if (gen !== loadGeneration) return;
 		if (result.ok && result.data) {
 			structuredRecord = result.data as Record<string, unknown>;
+		}
+	}
+
+	// loadQueue fetches the review_required queue (best-effort) and computes
+	// the next record id after the current one, so the reviewer can advance
+	// without returning to the list page. Only relevant while viewing a
+	// review_required record.
+	async function loadQueue(gen: number) {
+		if (record?.status !== 'review_required' || !recordId) return;
+		const result = await api<IntelRecord[]>('/api/v1/intel/review/queue?page_size=100');
+		if (gen !== loadGeneration) return;
+		if (result.ok && Array.isArray(result.data)) {
+			queueIds = (result.data as IntelRecord[]).map((r) => r.id);
+			const idx = queueIds.indexOf(recordId);
+			const next = idx >= 0 && idx < queueIds.length - 1 ? queueIds[idx + 1] : undefined;
+			nextRecordId = next ?? null;
 		}
 	}
 
@@ -193,13 +261,21 @@
 		if (!record) return;
 		actionLoading = 'approve';
 		actionMessage = '';
-		const result = await api(`/api/v1/intel/review/${record.id}/approve`, { method: 'POST' });
+		const result = await api(`/api/v1/intel/review/${record.id}/approve`, {
+			method: 'POST',
+			body: { note: approveNote.trim() || undefined }
+		});
 		actionLoading = null;
 		if (result.ok) {
-			// Redirect to the review queue after a successful approve. The
-			// record is no longer in the review_required queue, so reloading
-			// this page would show "Record not found" — confusing UX.
-			goto('/intelligence/review');
+			// Advance to the next record in the queue when available; otherwise
+			// return to the queue list. The approved record is no longer in
+			// the review_required queue, so reloading this page would show
+			// "Record not found" — confusing UX.
+			if (nextRecordId) {
+				goto(`/intelligence/review/${nextRecordId}`);
+			} else {
+				goto('/intelligence/review');
+			}
 		} else {
 			notify('error', result.error);
 		}
@@ -209,11 +285,33 @@
 		if (!record) return;
 		actionLoading = 'reject';
 		actionMessage = '';
-		const result = await api(`/api/v1/intel/review/${record.id}/reject`, { method: 'POST' });
+		const result = await api(`/api/v1/intel/review/${record.id}/reject`, {
+			method: 'POST',
+			body: { note: rejectNote.trim() || undefined }
+		});
 		actionLoading = null;
 		if (result.ok) {
-			// Redirect to the review queue after a successful reject.
-			goto('/intelligence/review');
+			// Advance to the next record in the queue when available.
+			if (nextRecordId) {
+				goto(`/intelligence/review/${nextRecordId}`);
+			} else {
+				goto('/intelligence/review');
+			}
+		} else {
+			notify('error', result.error);
+		}
+	}
+
+	async function disableSource() {
+		if (!source) return;
+		actionLoading = 'disable';
+		actionMessage = '';
+		const result = await api(`/api/v1/intel/sources/${source.id}/disable`, { method: 'POST' });
+		actionLoading = null;
+		if (result.ok) {
+			notify('success', t('intel.source_disabled', 'Source disabled. Existing promoted records are preserved.'));
+			// Refresh the source so the Enabled flag reflects the new state.
+			if (record) await loadSource(record.source_id, loadGeneration);
 		} else {
 			notify('error', result.error);
 		}
@@ -243,7 +341,7 @@
 		}
 		const result = await api(`/api/v1/intel/review/${record.id}/edit`, {
 			method: 'PATCH',
-			body: { fields: parsed as Record<string, unknown> }
+			body: { fields: parsed as Record<string, unknown>, note: editNote.trim() || undefined }
 		});
 		actionLoading = null;
 		if (result.ok) {
@@ -274,6 +372,29 @@
 		}
 	}
 
+	// Status-colored badge classes. The prior meta strip always rendered the
+	// status in amber regardless of the actual status, so an approved record
+	// showed the same warning color as a review_required one.
+	function statusBadgeClass(status: string): string {
+		switch (status) {
+			case 'approved':
+			case 'published':
+			case 'auto_published':
+				return 'bg-emerald-500/10 text-emerald-500';
+			case 'rejected':
+				return 'bg-destructive/10 text-destructive';
+			case 'stale':
+				return 'bg-rose-500/10 text-rose-500';
+			case 'review_required':
+				return 'bg-amber-500/10 text-amber-500';
+			case 'extracted':
+			case 'deduped':
+				return 'bg-sky-500/10 text-sky-500';
+			default:
+				return 'bg-muted text-muted-foreground';
+		}
+	}
+
 	const structuredJson = $derived(safeStringify(structuredRecord));
 </script>
 
@@ -295,11 +416,22 @@
 		</button>
 		{#if record}
 			<div class="flex items-center gap-2">
+				{#if nextRecordId}
+					<button
+						class="border-border-input bg-background-alt hover:bg-muted text-foreground flex items-center gap-1.5 rounded-9px border px-3 py-2 text-sm font-medium transition-colors disabled:opacity-50"
+						disabled={actionLoading !== null}
+						onclick={() => goto(`/intelligence/review/${nextRecordId}`)}
+						title={t('intel.next_in_queue', 'Next in queue')}
+					>
+						{t('intel.next', 'Next')}
+						<ChevronRight class="size-4" />
+					</button>
+				{/if}
 				{#if canApprove}
 					<button
 						class="bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20 flex items-center gap-1.5 rounded-9px px-4 py-2 text-sm font-medium transition-colors disabled:opacity-50"
 						disabled={actionLoading !== null}
-						onclick={approve}
+						onclick={() => { approveNote = ''; showApproveDialog = true; }}
 					>
 						{#if actionLoading === 'approve'}
 							<Loader2 class="size-4 animate-spin" />
@@ -313,7 +445,7 @@
 					<button
 						class="bg-destructive/10 text-destructive hover:bg-destructive/20 flex items-center gap-1.5 rounded-9px px-4 py-2 text-sm font-medium transition-colors disabled:opacity-50"
 						disabled={actionLoading !== null}
-						onclick={reject}
+						onclick={() => { rejectNote = ''; showRejectDialog = true; }}
 					>
 						{#if actionLoading === 'reject'}
 							<Loader2 class="size-4 animate-spin" />
@@ -326,6 +458,48 @@
 			</div>
 		{/if}
 	</div>
+
+	{#if showApproveDialog}
+		<div class="bg-background/60 fixed inset-0 z-40 flex items-center justify-center p-4 backdrop-blur-sm" role="dialog" aria-modal="true">
+			<div class="border-border-card bg-background-alt shadow-card w-full max-w-md rounded-xl border p-4">
+				<div class="flex items-center gap-2">
+					<CheckCircle2 class="text-emerald-500 size-5" />
+					<h3 class="text-foreground text-sm font-semibold">{t('intel.approve_record', 'Approve record')}</h3>
+				</div>
+				<p class="text-muted-foreground mt-2 text-xs">{t('intel.approve_confirm', 'This will mark the record as approved and enqueue it for promotion to the structured projection. An optional note is recorded in the review log.')}</p>
+				<label for="approve-note" class="text-muted-foreground mt-3 block text-xs font-medium">{t('intel.review_note', 'Review note (optional)')}</label>
+				<textarea id="approve-note" bind:value={approveNote} rows="3" class="border-border-input bg-background text-foreground mt-1 w-full rounded-lg border p-2 text-xs focus:shadow-date-field-focus focus:outline-none"></textarea>
+				<div class="mt-3 flex justify-end gap-2">
+					<button class="border-border-input bg-background-alt hover:bg-muted text-foreground rounded-9px border px-3 py-1.5 text-xs font-medium transition-colors" onclick={() => { showApproveDialog = false; }}>{t('common.cancel', 'Cancel')}</button>
+					<button class="bg-emerald-500 text-white flex items-center gap-1.5 rounded-9px px-3 py-1.5 text-xs font-medium transition-colors hover:opacity-90 disabled:opacity-50" disabled={actionLoading === 'approve'} onclick={approve}>
+						{#if actionLoading === 'approve'}<Loader2 class="size-3.5 animate-spin" />{:else}<CheckCircle2 class="size-3.5" />{/if}
+						{t('intel.approve', 'Approve')}
+					</button>
+				</div>
+			</div>
+		</div>
+	{/if}
+
+	{#if showRejectDialog}
+		<div class="bg-background/60 fixed inset-0 z-40 flex items-center justify-center p-4 backdrop-blur-sm" role="dialog" aria-modal="true">
+			<div class="border-border-card bg-background-alt shadow-card w-full max-w-md rounded-xl border p-4">
+				<div class="flex items-center gap-2">
+					<XCircle class="text-destructive size-5" />
+					<h3 class="text-foreground text-sm font-semibold">{t('intel.reject_record', 'Reject record')}</h3>
+				</div>
+				<p class="text-muted-foreground mt-2 text-xs">{t('intel.reject_confirm', 'This will mark the record as rejected. It will not be promoted. An optional note is recorded in the review log.')}</p>
+				<label for="reject-note" class="text-muted-foreground mt-3 block text-xs font-medium">{t('intel.review_note', 'Review note (optional)')}</label>
+				<textarea id="reject-note" bind:value={rejectNote} rows="3" class="border-border-input bg-background text-foreground mt-1 w-full rounded-lg border p-2 text-xs focus:shadow-date-field-focus focus:outline-none"></textarea>
+				<div class="mt-3 flex justify-end gap-2">
+					<button class="border-border-input bg-background-alt hover:bg-muted text-foreground rounded-9px border px-3 py-1.5 text-xs font-medium transition-colors" onclick={() => { showRejectDialog = false; }}>{t('common.cancel', 'Cancel')}</button>
+					<button class="bg-destructive text-white flex items-center gap-1.5 rounded-9px px-3 py-1.5 text-xs font-medium transition-colors hover:opacity-90 disabled:opacity-50" disabled={actionLoading === 'reject'} onclick={reject}>
+						{#if actionLoading === 'reject'}<Loader2 class="size-3.5 animate-spin" />{:else}<XCircle class="size-3.5" />{/if}
+						{t('intel.reject', 'Reject')}
+					</button>
+				</div>
+			</div>
+		</div>
+	{/if}
 
 	{#if errorMessage}
 		<div class="bg-destructive/10 text-destructive mb-4 rounded-md p-3 text-sm">
@@ -360,7 +534,7 @@
 			<div>
 				<p class="text-muted-foreground text-[10px] font-medium uppercase tracking-wider">{t('intel.status', 'Status')}</p>
 				<p class="mt-0.5">
-					<span class="inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-500">{record.status}</span>
+					<span class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium {statusBadgeClass(record.status)}">{record.status}</span>
 				</p>
 			</div>
 			<div>
@@ -377,9 +551,26 @@
 		<div class="grid gap-4 lg:grid-cols-2">
 			<!-- Pane 1: Source -->
 			<div class="border-border-card bg-background-alt shadow-card flex flex-col rounded-xl">
-				<div class="border-border-card flex items-center gap-2 border-b px-4 py-3">
-					<Database class="text-muted-foreground size-4" />
-					<h3 class="text-foreground text-sm font-semibold">{t('intel.source_pane', 'Source')}</h3>
+				<div class="border-border-card flex items-center justify-between border-b px-4 py-3">
+					<div class="flex items-center gap-2">
+						<Database class="text-muted-foreground size-4" />
+						<h3 class="text-foreground text-sm font-semibold">{t('intel.source_pane', 'Source')}</h3>
+					</div>
+					{#if source && source.enabled && canDisableSource}
+						<button
+							class="text-destructive hover:bg-destructive/10 flex items-center gap-1 rounded-md px-2 py-1 text-xs transition-colors disabled:opacity-50"
+							disabled={actionLoading !== null}
+							onclick={disableSource}
+							title={t('intel.disable_source_title', 'Disable this source from the review queue. Promoted records are preserved.')}
+						>
+							{#if actionLoading === 'disable'}
+								<Loader2 class="size-3.5 animate-spin" />
+							{:else}
+								<Ban class="size-3.5" />
+							{/if}
+							{t('intel.disable_source', 'Disable source')}
+						</button>
+					{/if}
 				</div>
 				<div class="flex-1 overflow-y-auto p-4">
 					{#if source}
@@ -462,10 +653,10 @@
 						<ListTree class="text-muted-foreground size-4" />
 						<h3 class="text-foreground text-sm font-semibold">{t('intel.structured_record', 'Structured Record')}</h3>
 					</div>
-					{#if canEdit && !editMode && record?.promoted_record_id}
+					{#if canEdit && !editMode}
 						<button
 							class="text-muted-foreground hover:bg-muted hover:text-foreground flex items-center gap-1 rounded-md px-2 py-1 text-xs transition-colors"
-							onclick={() => { editMode = true; editJson = structuredJson || safeStringify(record?.extracted); }}
+							onclick={() => { editMode = true; editJson = structuredJson || safeStringify(record?.extracted); editNote = ''; }}
 						>
 							<Pencil class="size-3" />
 							{t('intel.edit', 'Edit')}
@@ -483,6 +674,15 @@
 								bind:value={editJson}
 								rows="14"
 								class="border-border-input bg-background text-foreground font-mono w-full rounded-lg border p-3 text-xs leading-relaxed focus:shadow-date-field-focus focus:outline-none"
+							></textarea>
+							<label for="edit-note" class="text-muted-foreground mt-3 block text-xs font-medium">
+								{t('intel.review_note', 'Review note (optional)')}
+							</label>
+							<textarea
+								id="edit-note"
+								bind:value={editNote}
+								rows="2"
+								class="border-border-input bg-background text-foreground mt-1 w-full rounded-lg border p-2 text-xs focus:shadow-date-field-focus focus:outline-none"
 							></textarea>
 							<div class="mt-3 flex justify-end gap-2">
 								<button
@@ -508,6 +708,18 @@
 					{:else if structuredJson}
 						<div class="border-border-card bg-background overflow-auto rounded-lg border p-3">
 							<pre class="text-foreground whitespace-pre-wrap break-words font-mono text-xs leading-relaxed">{structuredJson}</pre>
+						</div>
+					{:else if record?.extracted}
+						<!-- No promoted projection endpoint exists for this entity
+						     type (only scholarships have one), so show the extracted
+						     blob — the candidate structured record that promotion
+						     will project. -->
+						<div class="mb-2 flex items-center gap-1.5">
+							<Sparkles class="text-muted-foreground size-3.5" />
+							<p class="text-muted-foreground text-xs">{t('intel.extracted_candidate', 'Extracted fields (candidate for promotion)')}</p>
+						</div>
+						<div class="border-border-card bg-background overflow-auto rounded-lg border p-3">
+							<pre class="text-foreground whitespace-pre-wrap break-words font-mono text-xs leading-relaxed">{safeStringify(record.extracted)}</pre>
 						</div>
 					{:else}
 						<div class="text-muted-foreground py-8 text-center text-sm">

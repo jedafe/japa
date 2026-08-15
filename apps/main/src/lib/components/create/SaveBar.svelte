@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { t } from '$lib/i18n';
 	import { statusLabel } from './gate';
-	import { Select } from 'bits-ui';
-	import { Building2, User, Check, ChevronDown } from 'lucide-svelte';
+	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
+	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 	import type { ComposerStatus, ComposerOrganization } from '$lib/types';
 
 	interface Props {
@@ -28,62 +28,57 @@
 	let { status, canPublish, publishReason, orgs, selectedOrgId, onSelectOrg, onSaveDraft, onPublish, isPublished = false }: Props = $props();
 
 	const selectedOrg = $derived(orgs.find((o) => o.id === selectedOrgId) ?? null);
-	const currentValue = $derived(selectedOrgId ?? '');
 
-	type OrgOption = { value: string; label: string; icon: 'user' | 'org'; role?: string };
-	const options = $derived<OrgOption[]>([
-		{ value: '', label: t('create.post_as_yourself', 'Post as yourself'), icon: 'user' },
-		...orgs.map((o) => ({ value: o.id, label: o.name, icon: 'org' as const, role: o.member_role }))
-	]);
+	// "Post as yourself" is a special item with a sentinel id. It is
+	// included in the Autocomplete item list so the user can search for it.
+	const SELF_ID = '__self__';
+
+	// Autocomplete fetchers — filter the already-loaded orgs client-side.
+	function fetchOrgs(q: string): Promise<AutocompleteItem[]> {
+		const selfLabel = t('create.post_as_yourself', 'Post as yourself');
+		const query = q.toLowerCase();
+		const selfItem: AutocompleteItem = { id: SELF_ID, label: selfLabel };
+		if (query === '') {
+			return Promise.resolve([
+				selfItem,
+				...orgs.map((o) => ({ id: o.id, label: o.name, sublabel: o.member_role }))
+			]);
+		}
+		const matchesSelf = selfLabel.toLowerCase().includes(query);
+		const filtered = orgs.filter((o) => o.name.toLowerCase().includes(query));
+		const items = filtered.map((o) => ({ id: o.id, label: o.name, sublabel: o.member_role }));
+		return Promise.resolve(matchesSelf ? [selfItem, ...items] : items);
+	}
+	function fetchOrgsInitial(): Promise<AutocompleteItem[]> {
+		return fetchOrgs('');
+	}
+
+	const selectedLabel = $derived(
+		selectedOrg
+			? selectedOrg.name
+			: t('create.post_as_yourself', 'Post as yourself')
+	);
+	function handleSelect(item: AutocompleteItem) {
+		onSelectOrg(item.id === SELF_ID ? null : item.id);
+	}
 </script>
 
 <div class="save-bar">
 	<!-- Left: author selector (replaces old "Draft" status text).
 	     Ghost-style trigger — no border, subtle hover, blends into the bar. -->
 	{#if orgs.length > 0}
-		<Select.Root
-			type="single"
-			value={currentValue}
-			onValueChange={(v) => onSelectOrg(v === '' ? null : (v as string))}
-		>
-			<Select.Trigger class="author-trigger" aria-label={t('create.author_label', 'Author')}>
-				{#if selectedOrg}
-					<Building2 size={14} class="author-icon" />
-				{:else}
-					<User size={14} class="author-icon" />
-				{/if}
-				<span class="author-name">
-					{selectedOrg ? selectedOrg.name : t('create.post_as_yourself', 'Post as yourself')}
-				</span>
-				<ChevronDown size={13} class="author-chevron" />
-			</Select.Trigger>
-			<Select.Portal>
-				<Select.Content class="author-content">
-					{#each options as opt (opt.value)}
-						<Select.Item value={opt.value} class="author-item">
-							{#snippet child({ props })}
-								<div {...props}>
-									<span class="author-item-label">
-										{#if opt.icon === 'org'}
-											<Building2 size={14} class="author-icon" />
-										{:else}
-											<User size={14} class="author-icon" />
-										{/if}
-										{opt.label}
-										{#if opt.role}
-											<span class="author-role">{opt.role}</span>
-										{/if}
-									</span>
-									{#if opt.value === currentValue}
-										<Check size={14} class="author-check" />
-									{/if}
-								</div>
-							{/snippet}
-						</Select.Item>
-					{/each}
-				</Select.Content>
-			</Select.Portal>
-		</Select.Root>
+		<div class="author-autocomplete">
+			<Autocomplete
+				placeholder={t('create.post_as_yourself', 'Post as yourself')}
+				emptyMessage={t('common.no_results', 'No results found')}
+				fetcher={fetchOrgs}
+				initialFetcher={fetchOrgsInitial}
+				selectedId={selectedOrg ? selectedOrgId : SELF_ID}
+				selectedLabel={selectedLabel}
+				onSelect={handleSelect}
+				onClear={() => onSelectOrg(null)}
+			/>
+		</div>
 	{:else}
 		<span class="status-text">{t(statusLabel(status))}</span>
 	{/if}
@@ -144,98 +139,10 @@
 		padding: 10px 16px;
 	}
 
-	/* ---- Author trigger: ghost/borderless, blends into the bar ---- */
-	.author-trigger {
-		display: inline-flex;
-		align-items: center;
-		gap: 6px;
-		padding: 5px 8px;
-		border: none;
-		border-radius: var(--radius);
-		background: transparent;
-		color: var(--color-text-subtle);
-		font-size: 0.8125rem;
-		font-weight: 500;
-		cursor: pointer;
-		transition: background 0.12s, color 0.12s;
-	}
-	.author-trigger:hover {
-		background: var(--color-surface-subtle);
-		color: var(--color-text);
-	}
-	.author-trigger:focus-visible {
-		outline: 2px solid var(--color-primary);
-		outline-offset: 1px;
-	}
-	.author-icon {
-		flex-shrink: 0;
-		color: var(--color-muted);
-	}
-	.author-name {
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-		max-width: 180px;
-	}
-	.author-chevron {
-		flex-shrink: 0;
-		color: var(--color-muted);
-		opacity: 0.6;
-	}
-
-	/* ---- Dropdown content ---- */
-	.author-content {
-		z-index: 50;
+	/* ---- Author autocomplete wrapper ---- */
+	.author-autocomplete {
 		min-width: 200px;
-		max-height: 260px;
-		overflow-y: auto;
-		border: 1px solid var(--color-border);
-		border-radius: var(--radius);
-		background: var(--color-surface);
-		padding: 4px;
-		box-shadow: 0 8px 24px rgb(0 0 0 / 0.14);
-	}
-	.author-item {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 8px;
-		padding: 7px 10px;
-		border-radius: calc(var(--radius) - 2px);
-		font-size: 0.8125rem;
-		color: var(--color-text);
-		cursor: pointer;
-		outline: none;
-	}
-	.author-item[data-highlighted] {
-		background: var(--color-surface-subtle);
-	}
-	.author-item[data-selected] {
-		background: color-mix(in srgb, var(--color-primary) 8%, transparent);
-		color: var(--color-primary);
-		font-weight: 500;
-	}
-	.author-item-label {
-		display: flex;
-		align-items: center;
-		gap: 6px;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-	}
-	.author-role {
-		flex-shrink: 0;
-		border-radius: 9999px;
-		background: var(--color-surface-subtle);
-		padding: 1px 6px;
-		font-size: 10px;
-		font-weight: 500;
-		text-transform: capitalize;
-		color: var(--color-text-subtle);
-	}
-	.author-check {
-		flex-shrink: 0;
-		color: var(--color-primary);
+		max-width: 260px;
 	}
 
 	/* ---- Status text fallback (no orgs) ---- */

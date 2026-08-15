@@ -4,6 +4,7 @@
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import { Modal } from '$lib/components/ui/modal';
 	import { Button } from '$lib/components/ui/button';
+	import Autocomplete, { type AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
 	import { mutualAidAdminApi , spacesAdminApi } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
@@ -49,6 +50,11 @@
 
 	async function confirmSetStatus() {
 		if (!actionTarget) return;
+		// ADR-088 HITL gate: AI-generated content cannot be approved without HITL review.
+		if (actionTarget.ai_generated && !actionTarget.hitl_reviewed_by) {
+			pageError = t('app.mutual_aid.hitl_required', 'Cannot approve AI-generated content without HITL review');
+			return;
+		}
 		acting = true;
 		pageError = '';
 		try {
@@ -95,6 +101,7 @@
 // driven by the backend (Rule 16 — no hardcoded lists).
 type SpaceOption = { id: string; name: string };
 let destOptions = $state<SpaceOption[]>([]);
+let selectedDest = $state<string>('');
 onMount(async () => {
 	try {
 		const res = await spacesAdminApi.list('?level=country&limit=200');
@@ -109,6 +116,34 @@ onMount(async () => {
 	}
 });
 
+// ── Dest autocomplete helpers (filter pre-loaded options client-side) ──
+function fetchDestOptions(q: string): Promise<{ id: string; label: string }[]> {
+	const opts = destOptions.map((s) => ({ id: s.id, label: s.name }));
+	const query = q.toLowerCase();
+	const filtered = query === ''
+		? opts
+		: opts.filter((o) => o.label.toLowerCase().includes(query));
+	return Promise.resolve(filtered);
+}
+
+function fetchDestOptionsInitial(): Promise<{ id: string; label: string }[]> {
+	return Promise.resolve(destOptions.map((s) => ({ id: s.id, label: s.name })));
+}
+
+function getDestSelectedLabel(id: string): string {
+	return destOptions.find((s) => s.id === id)?.name ?? id;
+}
+
+function selectDest(item: AutocompleteItem) {
+	selectedDest = item.id;
+	entityController?.reload();
+}
+
+function clearDest() {
+	selectedDest = '';
+	entityController?.reload();
+}
+
 		const filters = $derived<FilterDef[]>([
 		{
 			key: 'status',
@@ -118,11 +153,6 @@ onMount(async () => {
 				{ value: 'closed', label: t('app.mutual_aid.status_closed', 'Closed') },
 				{ value: 'pending', label: t('app.mutual_aid.status_pending', 'Pending') },
 			]
-		},
-		{
-			key: 'dest',
-			label: t('app.mutual_aid.col_destination', 'Destination'),
-			options: destOptions.map((s) => ({ value: s.id, label: s.name }))
 		}
 	]);
 
@@ -164,9 +194,9 @@ onMount(async () => {
 			if (params.sort) {
 				queryParts.push(`sort=${params.sort}`);
 			}
-			if (params.filter?.dest) {
 			if (params.filter?.status) queryParts.push(`status=${encodeURIComponent(params.filter.status)}`);
-				queryParts.push(`dest=${encodeURIComponent(params.filter.dest)}`);
+			if (selectedDest) {
+				queryParts.push(`dest=${encodeURIComponent(selectedDest)}`);
 			}
 			const qs = queryParts.join('&');
 			const result = await mutualAidAdminApi.list(qs);
@@ -196,6 +226,25 @@ onMount(async () => {
 		{pageError}
 	</div>
 {/if}
+
+<div class="mb-4 flex items-center gap-2">
+	<label for="dest-filter" class="text-sm font-medium" style="color: var(--color-foreground)">
+		{t('app.mutual_aid.col_destination', 'Destination')}
+	</label>
+	<div class="w-64">
+		<Autocomplete
+			id="dest-filter"
+			placeholder={t('app.mutual_aid.dest_filter_placeholder', 'Search destination…')}
+			emptyMessage={t('common.no_results', 'No results found')}
+			fetcher={fetchDestOptions}
+			initialFetcher={fetchDestOptionsInitial}
+			selectedId={selectedDest || null}
+			selectedLabel={selectedDest ? getDestSelectedLabel(selectedDest) : null}
+			onSelect={selectDest}
+			onClear={clearDest}
+		/>
+	</div>
+</div>
 
 <EntityPage {config} bind:controller={entityController} />
 
@@ -250,5 +299,17 @@ onMount(async () => {
 			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.mutual_aid.detail_description', 'Description')}</p>
 			<p class="mt-1 whitespace-pre-wrap text-sm" style="color: var(--color-foreground)">{row.description || '—'}</p>
 		</div>
+		{#if row.ai_generated}
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.common.ai_generated', 'AI Generated')}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{t('common.yes', 'Yes')} ({row.ai_model ?? '—'})</p>
+			</div>
+		{/if}
+		{#if row.hitl_reviewed_by}
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.common.hitl_reviewed_by', 'HITL Reviewed By')}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.hitl_reviewed_by}</p>
+			</div>
+		{/if}
 	</div>
 {/snippet}

@@ -9,6 +9,8 @@
 	import LoadingSkeleton from '$lib/components/ui/LoadingSkeleton.svelte';
 	import ToolDisabled from '$lib/components/ui/ToolDisabled.svelte';
 	import DestinationSelector from '$lib/components/tools/DestinationSelector.svelte';
+	import Autocomplete from '$lib/components/ui/Autocomplete.svelte';
+	import type { AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
 	import { LineChart } from 'layerchart';
 	import type { GeoSpaceOption, ProcessingStat, ProcessingTrendPoint } from '$lib/types';
 
@@ -133,6 +135,22 @@
 	onMount(() => {
 		// No auto-load — requires dest + visa selection.
 	});
+
+	function fetchDestinations(q: string): Promise<AutocompleteItem[]> {
+		const query = q.toLowerCase();
+		const filtered = query === ''
+			? destinations
+			: destinations.filter((d) => d.name.toLowerCase().includes(query));
+		return Promise.resolve(filtered.map((d) => ({ id: d.id, label: d.name })));
+	}
+
+	function fetchDestinationsInitial(): Promise<AutocompleteItem[]> {
+		return fetchDestinations('');
+	}
+
+	function getDestinationLabel(id: string): string {
+		return destinations.find((d) => d.id === id)?.name ?? id;
+	}
 </script>
 
 <svelte:head>
@@ -209,16 +227,17 @@
 						>
 							{t('processing_tracker.origin', 'Origin country (optional)')}
 						</label>
-						<select
+						<Autocomplete
 							id="origin-dest"
-							bind:value={originDest}
-							class="w-full px-4 py-2 bg-surface border border-border rounded-lg text-text focus:border-primary focus:outline-none"
-						>
-							<option value="">{t('geo.select_destination', 'Select a country…')}</option>
-							{#each destinations as dest (dest.id)}
-								<option value={dest.id}>{dest.name}</option>
-							{/each}
-						</select>
+							placeholder={t('geo.select_destination', 'Select a country…')}
+							emptyMessage={t('geo.no_destinations', 'No destinations found')}
+							fetcher={fetchDestinations}
+							initialFetcher={fetchDestinationsInitial}
+							selectedId={originDest || null}
+							selectedLabel={originDest ? getDestinationLabel(originDest) : null}
+							onSelect={(item) => (originDest = item.id)}
+							onClear={() => (originDest = '')}
+						/>
 					</div>
 
 					<button

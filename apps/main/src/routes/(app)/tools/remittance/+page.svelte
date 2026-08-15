@@ -12,6 +12,8 @@
 		RemittanceAlert
 	} from '$lib/types';
 	import type { PageData } from './$types';
+	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
+	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 
 	let { data }: { data: PageData } = $props();
 
@@ -98,6 +100,28 @@
 		const ratio = (r.rate / bestRate.rate) * 100;
 		return ratio.toFixed(1) + '%';
 	}
+
+	// Autocomplete fetchers — filter the already-loaded corridors client-side.
+	// Send currencies are the distinct send_currency values; receive currencies
+	// are the distinct receive_currency values from the corridors list.
+	function fetchSendCurrencies(q: string): Promise<AutocompleteItem[]> {
+		const codes = [...new Set(corridors.map((c) => c.send_currency))];
+		const query = q.toLowerCase();
+		const filtered = query === '' ? codes : codes.filter((c) => c.toLowerCase().includes(query));
+		return Promise.resolve(filtered.map((c) => ({ id: c, label: c })));
+	}
+	function fetchSendCurrenciesInitial(): Promise<AutocompleteItem[]> {
+		return fetchSendCurrencies('');
+	}
+	function fetchReceiveCurrencies(q: string): Promise<AutocompleteItem[]> {
+		const codes = [...new Set(corridors.map((c) => c.receive_currency))];
+		const query = q.toLowerCase();
+		const filtered = query === '' ? codes : codes.filter((c) => c.toLowerCase().includes(query));
+		return Promise.resolve(filtered.map((c) => ({ id: c, label: c })));
+	}
+	function fetchReceiveCurrenciesInitial(): Promise<AutocompleteItem[]> {
+		return fetchReceiveCurrencies('');
+	}
 </script>
 
 <svelte:head>
@@ -134,12 +158,15 @@
 						{t('remittance.send', 'Send')}
 					</label>
 					<div class="mt-1">
-						<SelectField
-							id="rem-send"
-							value={sendCurrency}
-							options={corridors.map((c) => ({ value: c.send_currency, label: c.send_currency }))}
+						<Autocomplete
 							placeholder="—"
-							onValueChange={(v) => { sendCurrency = v; onSelectCorridor(); }}
+							emptyMessage={t('common.no_results', 'No results found')}
+							fetcher={fetchSendCurrencies}
+							initialFetcher={fetchSendCurrenciesInitial}
+							selectedId={sendCurrency || null}
+							selectedLabel={sendCurrency || null}
+							onSelect={(item) => { sendCurrency = item.id; onSelectCorridor(); }}
+							onClear={() => { sendCurrency = ''; onSelectCorridor(); }}
 						/>
 					</div>
 				</div>
@@ -149,12 +176,15 @@
 						{t('remittance.receive', 'Receive')}
 					</label>
 					<div class="mt-1">
-						<SelectField
-							id="rem-recv"
-							value={receiveCurrency}
-							options={corridors.map((c) => ({ value: c.receive_currency, label: c.receive_currency }))}
+						<Autocomplete
 							placeholder="—"
-							onValueChange={(v) => { receiveCurrency = v; onSelectCorridor(); }}
+							emptyMessage={t('common.no_results', 'No results found')}
+							fetcher={fetchReceiveCurrencies}
+							initialFetcher={fetchReceiveCurrenciesInitial}
+							selectedId={receiveCurrency || null}
+							selectedLabel={receiveCurrency || null}
+							onSelect={(item) => { receiveCurrency = item.id; onSelectCorridor(); }}
+							onClear={() => { receiveCurrency = ''; onSelectCorridor(); }}
 						/>
 					</div>
 				</div>

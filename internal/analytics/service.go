@@ -472,6 +472,12 @@ func (s *Service) ResolveScanResult(ctx context.Context, id, tenantID pgtype.UUI
 	return s.store.ResolveSecurityScanResult(ctx, id, tenantID)
 }
 
+// DeleteScanResult permanently deletes a security finding. Used to clear
+// resolved findings from the control panel audit view.
+func (s *Service) DeleteScanResult(ctx context.Context, id, tenantID pgtype.UUID) error {
+	return s.store.DeleteSecurityScanResult(ctx, id, tenantID)
+}
+
 // GetUnresolvedCriticalFindings returns unresolved critical findings.
 func (s *Service) GetUnresolvedCriticalFindings(ctx context.Context, tenantID pgtype.UUID) ([]gen.GetUnresolvedCriticalFindingsRow, error) {
 	return s.store.GetUnresolvedCriticalFindings(ctx, tenantID)

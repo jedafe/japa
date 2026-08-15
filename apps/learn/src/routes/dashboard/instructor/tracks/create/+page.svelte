@@ -10,6 +10,8 @@
 	import { onMount } from 'svelte';
 	import { Plus, Save, ArrowLeft } from 'lucide-svelte';
 	import { DIFFICULTY_LEVELS } from '$lib/constants/learning';
+	import Autocomplete from '$lib/components/ui/Autocomplete.svelte';
+	import type { AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
 
 	// Difficulty options are a fixed enum from the backend, not configurable data (Rule 16).
 	const DIFFICULTIES = DIFFICULTY_LEVELS;
@@ -51,6 +53,20 @@
 				.replace(/^-|-$/g, '');
 		}
 	});
+
+	// Autocomplete fetchers — filter the already-loaded categories client-side.
+	async function fetchCategories(q: string): Promise<AutocompleteItem[]> {
+		const lower = q.toLowerCase();
+		return categories
+			.filter((c) => c.name.toLowerCase().includes(lower))
+			.map((c) => ({ id: c.slug, label: c.name }));
+	}
+	async function fetchCategoriesInitial(): Promise<AutocompleteItem[]> {
+		return categories.map((c) => ({ id: c.slug, label: c.name }));
+	}
+	function getCategoryLabel(slug: string): string {
+		return categories.find((c) => c.slug === slug)?.name ?? slug;
+	}
 
 	const formValid = $derived(title.trim().length > 0 && slug.trim().length > 0);
 
@@ -205,16 +221,17 @@
 			<label for="category" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 				{t('university.track_category_label')}
 			</label>
-			<select
-				id="category"
-				bind:value={category}
-				class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-3 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none"
-			>
-				<option value="">—</option>
-				{#each categories as c (c.id)}
-					<option value={c.slug}>{c.name}</option>
-				{/each}
-			</select>
+			<Autocomplete
+			id="category"
+			placeholder={t('university.track_category_label')}
+			emptyMessage={t('common.no_results', 'No categories found')}
+			fetcher={fetchCategories}
+			initialFetcher={fetchCategoriesInitial}
+			selectedId={category || null}
+			selectedLabel={category ? getCategoryLabel(category) : null}
+			onSelect={(item) => (category = item.id)}
+			onClear={() => (category = '')}
+		/>
 		</div>
 
 		<!-- Language -->

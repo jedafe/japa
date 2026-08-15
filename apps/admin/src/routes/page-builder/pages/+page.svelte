@@ -296,6 +296,39 @@
 		return acts;
 	});
 
+	// ── Template / theme autocomplete helpers (filter pre-loaded options client-side) ──
+	function fetchTemplateOptions(q: string): Promise<{ id: string; label: string }[]> {
+		const query = q.toLowerCase();
+		const filtered = query === ''
+			? templateOptions
+			: templateOptions.filter((o) => o.label.toLowerCase().includes(query));
+		return Promise.resolve(filtered.map((o) => ({ id: o.value, label: o.label })));
+	}
+
+	function fetchTemplateOptionsInitial(): Promise<{ id: string; label: string }[]> {
+		return Promise.resolve(templateOptions.map((o) => ({ id: o.value, label: o.label })));
+	}
+
+	function getTemplateSelectedLabel(id: string): string {
+		return templateOptions.find((o) => o.value === id)?.label ?? id;
+	}
+
+	function fetchThemeOptions(q: string): Promise<{ id: string; label: string }[]> {
+		const query = q.toLowerCase();
+		const filtered = query === ''
+			? themeOptions
+			: themeOptions.filter((o) => o.label.toLowerCase().includes(query));
+		return Promise.resolve(filtered.map((o) => ({ id: o.value, label: o.label })));
+	}
+
+	function fetchThemeOptionsInitial(): Promise<{ id: string; label: string }[]> {
+		return Promise.resolve(themeOptions.map((o) => ({ id: o.value, label: o.label })));
+	}
+
+	function getThemeSelectedLabel(id: string): string {
+		return themeOptions.find((o) => o.value === id)?.label ?? id;
+	}
+
 	// ── Form fields ── `fields` drives EntityForm rendering + edit-form seeding.
 	const fields = $derived.by<FieldDef[]>(() => [
 		{ key: 'title', label: t('page_builder.title', 'Title'), type: 'text', required: true },
@@ -331,15 +364,23 @@
 		{
 			key: 'template_id',
 			label: t('page_builder.template', 'Template'),
-			type: 'select',
-			options: templateOptions,
+			type: 'autocomplete',
+			placeholder: t('page_builder.template_placeholder', 'Search template…'),
+			emptyMessage: t('common.no_results', 'No results found'),
+			fetcher: fetchTemplateOptions,
+			initialFetcher: fetchTemplateOptionsInitial,
+			getSelectedLabel: getTemplateSelectedLabel,
 			help: t('page_builder.template_hint', 'Start from a pre-built template')
 		},
 		{
 			key: 'theme_id',
 			label: t('page_builder.theme', 'Theme'),
-			type: 'select',
-			options: themeOptions
+			type: 'autocomplete',
+			placeholder: t('page_builder.theme_placeholder', 'Search theme…'),
+			emptyMessage: t('common.no_results', 'No results found'),
+			fetcher: fetchThemeOptions,
+			initialFetcher: fetchThemeOptionsInitial,
+			getSelectedLabel: getThemeSelectedLabel
 		}
 	]);
 

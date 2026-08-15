@@ -8,7 +8,6 @@
 	import { contentAdminApi, apiRaw } from "$lib/api";
 	import { t } from "$lib/stores/i18n.svelte";
 	import { hasPermission } from "$lib/stores/permissions.svelte";
-	import { onMount } from "svelte";
 	import { Eye, Trash2, RotateCcw, Star } from "lucide-svelte";
 	import type { ActionItem, FilterDef } from "$lib/components/ui/data-table";
 
@@ -56,21 +55,23 @@
 		{ key: "status", label: t("common.status", "Status"), options: statusOptions }
 	]);
 
-	onMount(async () => {
-		try {
-			const res = await contentAdminApi.listContentTypes();
-			if (res.ok) {
-				contentTypeOptions = (res.data as { value: string; label: string }[]).map((ct) => ({
-					value: ct.value,
-					label: ct.label
-				}));
-				filterDefs = filterDefs.map((def) =>
-					def.key === "content_type" ? { ...def, options: contentTypeOptions } : def
-				);
+	$effect(() => {
+		(async () => {
+			try {
+				const res = await contentAdminApi.listContentTypes();
+				if (res.ok) {
+					contentTypeOptions = (res.data as { value: string; label: string }[]).map((ct) => ({
+						value: ct.value,
+						label: ct.label
+					}));
+					filterDefs = filterDefs.map((def) =>
+						def.key === "content_type" ? { ...def, options: contentTypeOptions } : def
+					);
+				}
+			} catch {
+				// Keep empty fallback on failure.
 			}
-		} catch {
-			// Keep empty fallback on failure.
-		}
+		})();
 	});
 
 	// ── Bulk remove ───── EntityPage auto-reloads + clears selection after a bulk action handler completes.

@@ -26,4 +26,21 @@ export type FieldDef =
 			help?: string;
 			class?: string;
 			readonlyInEdit?: boolean;
+	  }
+	| {
+			key: string;
+			label: string;
+			type: 'autocomplete';
+			placeholder: string;
+			emptyMessage: string;
+			/** Fetcher — called with the debounced query string. */
+			fetcher: (q: string) => Promise<{ id: string; label: string; sublabel?: string }[]>;
+			/** Optional fetcher for initial suggestions when focused with empty query. */
+			initialFetcher?: () => Promise<{ id: string; label: string; sublabel?: string }[]>;
+			/** Resolves the currently selected id to a display label (avoids re-fetch on render). */
+			getSelectedLabel: (id: string) => string;
+			required?: boolean;
+			help?: string;
+			class?: string;
+			readonlyInEdit?: boolean;
 	  };

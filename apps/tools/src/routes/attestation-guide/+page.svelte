@@ -12,6 +12,8 @@
 	import RegistrationPrompt from '$lib/components/ui/RegistrationPrompt.svelte';
 	import ToolDisabled from '$lib/components/ui/ToolDisabled.svelte';
 	import DestinationSelector from '$lib/components/tools/DestinationSelector.svelte';
+	import Autocomplete from '$lib/components/ui/Autocomplete.svelte';
+	import type { AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
 	import type { AttestationPathwayWithAi, AttestationCommunityUpdate, GeoSpaceOption } from '$lib/types';
 
 	/**
@@ -172,6 +174,22 @@
 		}
 		closeUpdateForm();
 	}
+
+	function fetchDestinations(q: string): Promise<AutocompleteItem[]> {
+		const query = q.toLowerCase();
+		const filtered = query === ''
+			? destinations
+			: destinations.filter((d) => d.name.toLowerCase().includes(query));
+		return Promise.resolve(filtered.map((d) => ({ id: d.id, label: d.name })));
+	}
+
+	function fetchDestinationsInitial(): Promise<AutocompleteItem[]> {
+		return fetchDestinations('');
+	}
+
+	function getDestinationLabel(id: string): string {
+		return destinations.find((d) => d.id === id)?.name ?? id;
+	}
 </script>
 
 <svelte:head>
@@ -229,17 +247,17 @@
 					<label for="issuing-selector" class="text-sm font-medium text-text whitespace-nowrap">
 						{t('attestation_guide.issuing_country', 'Issuing country:')}
 					</label>
-					<select
+					<Autocomplete
 						id="issuing-selector"
-						value={selectedIssuingId}
-						onchange={(e) => onIssuingChange((e.currentTarget as HTMLSelectElement).value)}
-						class="px-4 py-2 bg-surface border border-border rounded-lg text-text focus:border-primary focus:outline-none"
-					>
-						<option value="">{t('attestation_guide.any_issuing', 'Any')}</option>
-						{#each destinations as dest (dest.id)}
-							<option value={dest.id}>{dest.name}</option>
-						{/each}
-					</select>
+						placeholder={t('attestation_guide.any_issuing', 'Any')}
+						emptyMessage={t('geo.no_destinations', 'No destinations found')}
+						fetcher={fetchDestinations}
+						initialFetcher={fetchDestinationsInitial}
+						selectedId={selectedIssuingId || null}
+						selectedLabel={selectedIssuingId ? getDestinationLabel(selectedIssuingId) : null}
+						onSelect={(item) => onIssuingChange(item.id)}
+						onClear={() => onIssuingChange('')}
+					/>
 				</div>
 				<div class="flex items-center gap-3">
 					<label for="doc-type" class="text-sm font-medium text-text whitespace-nowrap">

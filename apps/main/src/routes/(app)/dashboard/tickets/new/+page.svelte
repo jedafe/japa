@@ -8,6 +8,8 @@
 	import { Select } from 'bits-ui';
 	import { api } from '$lib/api/client';
 	import type { TicketPriority, TicketType } from '$lib/types';
+	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
+	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 
 	let { data } = $props();
 	const types = $derived(data.types as TicketType[]);
@@ -59,6 +61,21 @@
 			loading = false;
 		}
 	}
+
+	// Autocomplete fetchers — filter the already-loaded ticket types client-side.
+	function fetchTypes(q: string): Promise<AutocompleteItem[]> {
+		const query = q.toLowerCase();
+		const filtered = query === ''
+			? types
+			: types.filter((tp) => tp.name.toLowerCase().includes(query));
+		return Promise.resolve(filtered.map((tp) => ({ id: tp.id, label: tp.name })));
+	}
+	function fetchTypesInitial(): Promise<AutocompleteItem[]> {
+		return fetchTypes('');
+	}
+	const selectedTypeLabel = $derived(
+		typeId ? types.find((tp) => tp.id === typeId)?.name ?? null : null
+	);
 </script>
 
 <section class="space-y-4">
@@ -82,41 +99,24 @@
 				<label for="ticket-type" class="text-sm font-medium text-[var(--color-text)]">
 					{t('tickets.field_type')}
 				</label>
-				<Select.Root
-					type="single"
-					value={typeId}
-					onValueChange={(v) => {
-						typeId = (v as string) ?? '';
-						const found = types.find((tp) => tp.id === v);
+				<Autocomplete
+					placeholder={t('tickets.type_placeholder')}
+					emptyMessage={t('common.no_results', 'No results found')}
+					fetcher={fetchTypes}
+					initialFetcher={fetchTypesInitial}
+					selectedId={typeId || null}
+					selectedLabel={selectedTypeLabel}
+					onSelect={(item) => {
+						typeId = item.id;
+						const found = types.find((tp) => tp.id === item.id);
 						typeName = found?.name ?? '';
 						if (found?.default_priority) priority = found.default_priority;
 					}}
-				>
-					<Select.Trigger
-						id="ticket-type"
-						class="inline-flex w-full items-center justify-between rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"
-						aria-label={t('tickets.field_type')}
-					>
-						{typeName || t('tickets.type_placeholder')}
-					</Select.Trigger>
-					<Select.Portal>
-						<Select.Content class="z-50 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-1 shadow">
-							<Select.Viewport>
-								{#each types as tp (tp.id)}
-									<Select.Item
-										value={tp.id}
-										label={tp.name}
-										class="cursor-pointer rounded px-2 py-1.5 text-sm text-[var(--color-text)] data-[highlighted]:bg-[var(--color-surface-subtle)]"
-									>
-										{#snippet children({ selected })}
-											{selected ? '✓ ' : ''}{tp.name}
-										{/snippet}
-									</Select.Item>
-								{/each}
-							</Select.Viewport>
-						</Select.Content>
-					</Select.Portal>
-				</Select.Root>
+					onClear={() => {
+						typeId = '';
+						typeName = '';
+					}}
+				/>
 			</div>
 		{/if}
 

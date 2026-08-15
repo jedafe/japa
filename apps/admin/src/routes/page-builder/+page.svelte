@@ -5,7 +5,6 @@
 	import type { BlockType } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { Trash2 } from 'lucide-svelte';
-	import { onMount } from 'svelte';
 
 	type Block = {
 		id: string;
@@ -40,15 +39,17 @@
 		[...new Set(blockTypeOptions.map((bt) => bt.category))].filter(Boolean).sort()
 	);
 
-	onMount(async () => {
-		try {
-			const result = await pageBuilderApi.getBlockTypes();
-			if (result.ok) {
-				blockTypeOptions = result.data?.block_types ?? [];
+	$effect(() => {
+		(async () => {
+			try {
+				const result = await pageBuilderApi.getBlockTypes();
+				if (result.ok) {
+					blockTypeOptions = result.data?.block_types ?? [];
+				}
+			} catch {
+				// Keep empty options on failure; form selects will just have no options.
 			}
-		} catch {
-			// Keep empty options on failure; form selects will just have no options.
-		}
+		})();
 	});
 
 	// ── Bulk delete ───── EntityPage auto-reloads + clears selection after a bulk action handler completes.
@@ -71,8 +72,43 @@
 		}
 	}
 
+	// ── Component / category autocomplete helpers (filter pre-loaded options client-side) ──
+	function fetchComponentOptions(q: string): Promise<{ id: string; label: string }[]> {
+		const opts = blockTypeOptions.map((bt) => ({ value: bt.type, label: bt.name }));
+		const query = q.toLowerCase();
+		const filtered = query === ''
+			? opts
+			: opts.filter((o) => o.label.toLowerCase().includes(query));
+		return Promise.resolve(filtered.map((o) => ({ id: o.value, label: o.label })));
+	}
+
+	function fetchComponentOptionsInitial(): Promise<{ id: string; label: string }[]> {
+		return Promise.resolve(blockTypeOptions.map((bt) => ({ id: bt.type, label: bt.name })));
+	}
+
+	function getComponentSelectedLabel(id: string): string {
+		return blockTypeOptions.find((bt) => bt.type === id)?.name ?? id;
+	}
+
+	function fetchCategoryOptions(q: string): Promise<{ id: string; label: string }[]> {
+		const opts = blockCategories.map((cat) => ({ value: cat, label: cat }));
+		const query = q.toLowerCase();
+		const filtered = query === ''
+			? opts
+			: opts.filter((o) => o.label.toLowerCase().includes(query));
+		return Promise.resolve(filtered.map((o) => ({ id: o.value, label: o.label })));
+	}
+
+	function fetchCategoryOptionsInitial(): Promise<{ id: string; label: string }[]> {
+		return Promise.resolve(blockCategories.map((cat) => ({ id: cat, label: cat })));
+	}
+
+	function getCategorySelectedLabel(id: string): string {
+		return blockCategories.find((cat) => cat === id) ?? id;
+	}
+
 	// `fields` drives EntityForm rendering and edit-form seeding. Component and
-	// category are select fields whose options are populated from the fetched
+	// category are autocomplete fields whose options are populated from the fetched
 	// block type registry. Config is built as a $derived so option updates
 	// propagate once the registry loads.
 	const fields = $derived<FieldDef[]>([
@@ -81,17 +117,23 @@
 		{
 			key: 'component',
 			label: t('pageBuilder.type', 'Type'),
-			type: 'select',
-			options: blockTypeOptions.map((bt) => ({ value: bt.type, label: bt.name })),
+			type: 'autocomplete',
 			placeholder: t('pageBuilder.select_type', 'Select a block type'),
+			emptyMessage: t('common.no_results', 'No results found'),
+			fetcher: fetchComponentOptions,
+			initialFetcher: fetchComponentOptionsInitial,
+			getSelectedLabel: getComponentSelectedLabel,
 			required: true
 		},
 		{
 			key: 'category',
 			label: t('pageBuilder.category', 'Category'),
-			type: 'select',
-			options: blockCategories.map((cat) => ({ value: cat, label: cat })),
-			placeholder: t('pageBuilder.select_category', 'Select a category')
+			type: 'autocomplete',
+			placeholder: t('pageBuilder.select_category', 'Select a category'),
+			emptyMessage: t('common.no_results', 'No results found'),
+			fetcher: fetchCategoryOptions,
+			initialFetcher: fetchCategoryOptionsInitial,
+			getSelectedLabel: getCategorySelectedLabel
 		},
 		{ key: 'is_enabled', label: t('pageBuilder.enabled', 'Enabled'), type: 'checkbox' }
 	]);

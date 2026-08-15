@@ -10,7 +10,6 @@
 	import { universityAdminApi } from "$lib/api";
 	import { t } from "$lib/stores/i18n.svelte";
 	import { hasPermission } from "$lib/stores/permissions.svelte";
-	import { onMount } from "svelte";
 
 	type Category = {
 		id: string;
@@ -182,7 +181,9 @@
 		deleting = false;
 	}
 
-	onMount(load);
+	$effect(() => {
+		load();
+	});
 </script>
 
 <svelte:head>

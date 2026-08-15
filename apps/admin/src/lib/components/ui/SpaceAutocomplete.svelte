@@ -94,6 +94,13 @@
 		}, 200);
 	}
 
+	// Clear any pending debounce timer when the component unmounts.
+	$effect(() => {
+		return () => {
+			if (debounceTimer) clearTimeout(debounceTimer);
+		};
+	});
+
 	function selectSpace(space: Space) {
 		if (!selectedIds.includes(space.id)) {
 			selectedIds = [...selectedIds, space.id];

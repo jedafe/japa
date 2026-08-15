@@ -15,7 +15,7 @@
 		description?: string;
 		is_active: boolean;
 		mentor_count: number;
-		mentee_count: number;
+		active_mentee_count: number;
 		match_count: number;
 		created_at: string;
 	};
@@ -106,7 +106,7 @@
 				render: (v: number) => `<span class="font-medium">${v ?? 0}</span>`
 			},
 			{
-				key: 'mentee_count',
+				key: 'active_mentee_count',
 				label: t('app.mentorship.columns.mentees', 'Mentees'),
 				sortable: true,
 				render: (v: number) => `<span class="font-medium">${v ?? 0}</span>`
@@ -435,7 +435,7 @@
 			</div>
 			<div>
 				<p class="text-xs font-medium uppercase tracking-wider text-muted">{t('app.mentorship.field.mentees', 'Mentees')}</p>
-				<p class="mt-1 text-sm font-medium text-foreground">{row.mentee_count ?? 0}</p>
+				<p class="mt-1 text-sm font-medium text-foreground">{row.active_mentee_count ?? 0}</p>
 			</div>
 			<div>
 				<p class="text-xs font-medium uppercase tracking-wider text-muted">{t('app.mentorship.columns.matches', 'Matches')}</p>
