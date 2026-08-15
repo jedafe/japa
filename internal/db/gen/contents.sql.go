@@ -2759,6 +2759,7 @@ LEFT JOIN (
     GROUP BY entity_id
 ) r ON r.entity_id = c.id
 WHERE c.tenant_id = $1 AND c.status = 'published'
+  AND c.deleted_at IS NULL AND c.visibility = 'public' AND c.seo_indexable = true
 ORDER BY c.updated_at DESC
 LIMIT 10000
 `

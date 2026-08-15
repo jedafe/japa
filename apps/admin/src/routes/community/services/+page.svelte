@@ -11,7 +11,7 @@
 	import type { ActionItem, FilterDef } from '$lib/components/ui/data-table';
 
 	// Backend ServiceRow shape (§98 DTO). The admin list endpoint returns
-	// { data: ServiceRow[], pagination: { page, limit, total } }.
+	// { data: ServiceRow[], meta: { page, limit, total } }.
 	type ServiceItem = {
 		id: string;
 		title: string;
@@ -20,15 +20,11 @@
 		status: string;
 		is_verified: boolean;
 		claim_status?: string;
+		claimed_by_org_id?: string;
 		claimed_org_name?: string;
 		created_at: string;
 		body?: string;
 		author_name?: string;
-		// ADR-088 AI generation columns
-		ai_generated?: boolean;
-		ai_model?: string;
-		hitl_reviewed_by?: string;
-		ai_generated_at?: string;
 	};
 
 	const canManage = $derived(hasPermission('service.verify'));
@@ -63,10 +59,11 @@
 		acting = true;
 		pageError = '';
 		try {
-			// The :claim_id URL param is the service id itself in the current
-			// backend (the claim is tracked inline on service_listing_meta).
-			const result = await serviceDirectoryAdminApi.resolveClaim(item.id, item.id, {
-				approved
+			// The :claim_id URL param is the org_id of the claimant (§98).
+			// The backend matches the claim by content_id + claimed_by_org_id.
+			const claimId = item.claimed_by_org_id ?? item.id;
+			const result = await serviceDirectoryAdminApi.resolveClaim(item.id, claimId, {
+				approve: approved
 			});
 			if (result.ok) {
 				claimTarget = null;
@@ -135,9 +132,10 @@ onMount(async () => {
 			key: 'status',
 			label: t('app.services.col_status', 'Status'),
 			options: [
-				{ value: 'active', label: t('app.services.status_active', 'Active') },
-				{ value: 'inactive', label: t('app.services.status_inactive', 'Inactive') },
+				{ value: 'draft', label: t('app.services.status_draft', 'Draft') },
+				{ value: 'published', label: t('app.services.status_published', 'Published') },
 				{ value: 'pending', label: t('app.services.status_pending', 'Pending') },
+				{ value: 'archived', label: t('app.services.status_archived', 'Archived') },
 			]
 		},
 		{
@@ -190,7 +188,7 @@ onMount(async () => {
 			if (result.ok && result.data) {
 				const envelope = result.data;
 				const data = (envelope.data as ServiceItem[]) ?? [];
-				const total = envelope.pagination?.total ?? data.length;
+				const total = envelope.meta?.total ?? data.length;
 				const totalPages = Math.max(1, Math.ceil(total / (params.pageSize || 25)));
 				return { data, total, totalPages };
 			}

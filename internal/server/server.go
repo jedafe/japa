@@ -1202,7 +1202,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Ref: japaconnect-engineering/sections/98-service-directory.md (ADR-106)
 	serviceDirStore := servicedir.NewStore(database)
 	serviceDirService := servicedir.NewService(serviceDirStore, contentService, settingsService)
-	serviceDirHandlers := servicedir.NewHandlers(serviceDirService, settingsService)
+	// BUG-014: §98 spec says GET /services/:slug returns "service detail +
+	// reviews". The adapter bridges the §29 reviews subsystem to the
+	// servicedir.ReviewFetcher interface using the read pool.
+	serviceDirReviewFetcher := serviceReviewAdapter{read: gen.New(database.Reader)}
+	serviceDirHandlers := servicedir.NewHandlers(serviceDirService, settingsService, rbacResolver, serviceDirReviewFetcher)
 
 	// Phase 49 — V2 Functional Tools (§90–§97, §99–§101)
 	// Ref: japaconnect-engineering/sections/90-97,99-101
@@ -1889,7 +1893,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	// SEO & Performance subsystem (Section 26).
 	seoQueries := gen.New(database.Writer)
-	sitemapHandler := seo.NewSitemapHandler(seoQueries, database.Reader, settingsService, vkClient, cfg.SiteURL)
+	sitemapHandler := seo.NewSitemapHandler(seoQueries, database.Reader, settingsService, vkClient, cfg.SiteURL, cfg.ImgproxyBaseURL)
 	ogImageHandler := seo.NewOGImageHandler(database.Reader, vkClient, cfg.SiteName)
 
 	// Config handlers for public settings endpoint.
@@ -5464,7 +5468,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				r.Get("/services/{slug}", serviceDirHandlers.HandleGet)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "service.create")).
 					Post("/services", serviceDirHandlers.HandleCreate)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "service.edit_own")).
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequireAnyPermission(rbacResolver, "service.edit_own", "service.edit_any")).
 					Patch("/services/{id}", serviceDirHandlers.HandleEdit)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "service.claim")).
 					Post("/services/{id}/claim", serviceDirHandlers.HandleClaim)

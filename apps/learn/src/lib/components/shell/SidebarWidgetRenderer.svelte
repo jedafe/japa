@@ -19,6 +19,7 @@
 	import ProgressRingWidget from './ProgressRingWidget.svelte';
 	import LearningEnrollmentsWidget from './LearningEnrollmentsWidget.svelte';
 	import TrackCardWidget from './TrackCardWidget.svelte';
+	import { sanitizeSidebarHtml, safeHref } from '$lib/utils/safeHtml';
 	import type { SessionUser } from '$lib/types';
 
 	interface SidebarWidget {
@@ -90,15 +91,22 @@
 	</div>
 {:else if widget.widget_type === 'rich_text'}
 	{#if typeof widgetProps.content === 'string' && widgetProps.content.trim()}
+		<!-- Sanitized server-side via internal/content.SanitizeHTML (BE-4) and
+		     client-side via sanitizeSidebarHtml as defense in depth. Ref: §5.1. -->
 		<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 prose prose-sm max-w-none">
-			{@html widgetProps.content}
+			{@html sanitizeSidebarHtml(widgetProps.content)}
 		</section>
 	{/if}
 {:else if widget.widget_type === 'custom_html'}
 	{#if typeof widgetProps.html === 'string' && widgetProps.html.trim()}
-		<section class="sidebar-widget-custom-html">
-			{@html widgetProps.html}
-		</section>
+		<!-- Custom HTML — rendered in a sandboxed iframe (no allow-scripts) so
+		     injected script cannot run. Also sanitized server-side (BE-4). -->
+		<iframe
+			class="sidebar-widget-custom-html w-full rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)]"
+			sandbox="allow-same-origin"
+			srcdoc={widgetProps.html}
+			title={widget.label || 'Custom HTML'}
+		></iframe>
 	{/if}
 {:else if widget.widget_type === 'recent_content'}
 	<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
@@ -204,7 +212,7 @@
 			{#each (Array.isArray(widgetProps.links) ? widgetProps.links : []) as link (link.platform)}
 				{#if typeof link.url === 'string' && link.url}
 					<a
-						href={link.url}
+						href={safeHref(link.url)}
 						target="_blank"
 						rel="noopener noreferrer"
 						class="grid h-9 w-9 place-items-center rounded-full bg-[var(--color-surface-subtle)] text-[var(--color-text-subtle)] hover:bg-[var(--color-primary)] hover:text-[var(--color-primary-contrast)]"
@@ -219,7 +227,7 @@
 {:else if widget.widget_type === 'cta_button'}
 	<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 		<a
-			href={typeof widgetProps.url === 'string' ? widgetProps.url : '/signup'}
+			href={safeHref(typeof widgetProps.url === 'string' ? widgetProps.url : '/signup') || '/signup'}
 			class="flex w-full items-center justify-center gap-2 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2.5 text-sm font-semibold text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)]"
 		>
 			<MousePointerClick size={16} />
