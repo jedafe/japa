@@ -1,3 +1,4 @@
+import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiList, ApiError } from '$lib/server/api';
 import type { GeoSpaceOption } from '$lib/types';
@@ -14,6 +15,11 @@ import type { GeoSpaceOption } from '$lib/types';
  * Ref: §93 (Processing Time Tracker), ROADMAP-TOOLS 02.06, ADR-088.
  */
 export const load: PageServerLoad = async (event) => {
+	const { features } = await event.parent();
+	if (!features['visa_timeline.enabled']) {
+		throw error(404, { code: 'feature_disabled', message: 'Visa Processing Time Tracker is not available' });
+	}
+
 	const ctx = apiContext(event);
 	const authed = !!event.locals.user;
 

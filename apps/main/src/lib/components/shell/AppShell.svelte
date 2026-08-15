@@ -28,6 +28,9 @@
 		rightSidebarWidgets?: unknown[];
 		/** Whether the global Compose bottom-sheet is available on this route. */
 		composeEnabled?: boolean;
+		/** Feature flags from /feature-flags — passed to LeftNav to hide
+		 *  nav items for disabled features. */
+		features?: Record<string, boolean>;
 	}
 
 	let {
@@ -44,7 +47,8 @@
 		sidebar,
 		hideRightSidebar = false,
 		rightSidebarWidgets = [],
-		composeEnabled = false
+		composeEnabled = false,
+		features = {}
 	}: Props = $props();
 
 	let mobileNavOpen = $state(false);
@@ -55,7 +59,7 @@
 
 <div class="shell" class:hide-sidebar={hideRightSidebar} style="--current-nav-width: {navWidth}" data-nav-collapsed={collapsed}>
 	<div class="shell-nav">
-		<LeftNav {menu} {user} {collapsed} {userSpaces} {logoUrl} onToggle={onToggleCollapse} />
+		<LeftNav {menu} {user} {collapsed} {userSpaces} {logoUrl} {features} onToggle={onToggleCollapse} />
 	</div>
 
 	<main class="shell-center">
@@ -101,7 +105,7 @@
 		onclick={() => (mobileNavOpen = false)}
 	></button>
 	<div class="drawer">
-		<LeftNav {menu} {user} collapsed={false} {userSpaces} {logoUrl} onToggle={() => (mobileNavOpen = false)} />
+		<LeftNav {menu} {user} collapsed={false} {userSpaces} {logoUrl} {features} onToggle={() => (mobileNavOpen = false)} />
 	</div>
 {/if}
 

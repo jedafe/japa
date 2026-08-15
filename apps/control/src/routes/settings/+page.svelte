@@ -62,8 +62,10 @@
 	// C3: university.subdomain / university.custom_domain change warning (ADR-063 §2)
 	let confirmSurfaceDomainOpen = $state(false);
 	let pendingSurfaceDomainValue = $state('');
-	// C4: geo_personalization.enabled disable warning (ADR-064)
-	let confirmGeoDisableOpen = $state(false);
+
+	// Feature on/off toggles are now controlled by the Control Panel extensions
+	// page (single source of truth). These keys are hidden from the settings page.
+	const hiddenKeys = new Set(['geo_personalization.enabled']);
 
 	const selectOptions: Record<string, { value: string; label: string }[]> = $derived(
 		(() => {
@@ -402,19 +404,10 @@
 		await saveAll();
 	}
 
-	// C4: Called when the user confirms the geo_personalization disable warning.
-	function confirmGeoDisable() {
-		confirmGeoDisableOpen = false;
-		updateSetting('geo_personalization.enabled', 'false');
-	}
-
-	// C4: Intercept geo_personalization.enabled toggle — on disable, show
-	// a confirmation dialog before applying the change (ADR-064).
+	// Apply a boolean setting toggle directly. Feature on/off toggles
+	// (e.g. geo_personalization.enabled) are no longer editable here —
+	// they are controlled by the extensions page.
 	function handleSettingToggle(key: string, checked: boolean) {
-		if (key === 'geo_personalization.enabled' && !checked) {
-			confirmGeoDisableOpen = true;
-			return;
-		}
 		updateSetting(key, checked ? 'true' : 'false');
 	}
 
@@ -462,7 +455,7 @@
 			// never leak into the control panel — only explicitly control-panel
 			// settings are shown.
 			const normalized = normalizeSettings(
-				result.data.filter((s) => s.panel === 'control')
+				result.data.filter((s) => s.panel === 'control' && !hiddenKeys.has(s.key))
 			);
 			originalSettings = JSON.parse(JSON.stringify(normalized));
 			currentSettings = JSON.parse(JSON.stringify(normalized));
@@ -1666,17 +1659,4 @@ if (isHidden) {
 	confirmText={t('common.confirm', 'Confirm')}
 	onConfirm={confirmSurfaceDomainSave}
 	onCancel={() => { confirmSurfaceDomainOpen = false; }}
-/>
-
-<!-- C4: geo_personalization.enabled disable warning (ADR-064) -->
-<ConfirmModal
-	bind:open={confirmGeoDisableOpen}
-	title={t('settings.geo_disable_warning_title', 'Disable Geo-Personalization')}
-	consequence={t(
-		'settings.geo_disable_warning',
-		'This will disable geo-personalized content for all users. Content feeds will no longer be tailored by geographic location.'
-	)}
-	confirmText={t('common.confirm', 'Confirm')}
-	onConfirm={confirmGeoDisable}
-	onCancel={() => { confirmGeoDisableOpen = false; }}
 />

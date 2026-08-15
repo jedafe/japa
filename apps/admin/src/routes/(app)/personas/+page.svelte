@@ -71,6 +71,7 @@
 		eligible_spaces: string[];
 		min_content_age_hours: number;
 		avoid_own_content: boolean;
+		avoid_recent_authors: string[];
 		active_hours_utc: [number, number];
 	};
 
@@ -134,6 +135,7 @@
 			eligible_spaces: [],
 			min_content_age_hours: 1,
 			avoid_own_content: true,
+			avoid_recent_authors: [],
 			active_hours_utc: [8, 22]
 		};
 	}
@@ -352,10 +354,10 @@
 		message = '';
 		try {
 			const body: UpdateInput = { ...editForm };
-			// BUG-012: Send voice_prompt as empty string (not deleted) so the
-			// backend sets it to '' (clearing it). Previously the field was
-			// deleted when empty, causing COALESCE to keep the old value —
-			// the admin could never clear a voice_prompt once set.
+			// voice_prompt is always sent as a string (bound to a textarea).
+			// An empty string clears it on the backend because the PATCH
+			// handler decodes VoicePrompt as *string — empty is non-nil, so
+			// COALESCE sets the column to '' rather than keeping the old value.
 			const result = await api(`/admin/personas/${editingPersona.id}`, { method: 'PATCH', body });
 			if (result.ok) {
 				messageType = 'success';
@@ -658,7 +660,36 @@
 								/>
 							</div>
 							<div class="sm:col-span-2">
-								<label for={`persona-active-hours-${idx}`} class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('personas.active_hours_utc', 'Active Hours UTC (start-end)')}</label>
+								<label for={`persona-action-budget-${idx}`} class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('personas.action_budget', 'Action Budget (JSON)')}</label>
+							<textarea
+								id={`persona-action-budget-${idx}`}
+								class="w-full rounded-md border px-3 py-1.5 text-sm font-mono"
+								style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+								rows="2"
+								value={JSON.stringify(persona.activity_policy!.action_budget)}
+								oninput={(e) => {
+									try {
+										persona.activity_policy!.action_budget = JSON.parse((e.target as HTMLTextAreaElement).value || '{}');
+									} catch { /* leave unchanged on parse error */ }
+								}}
+								placeholder={'{"comment": 4, "react": 20}'}
+							></textarea>
+							<p class="mt-1 text-[10px]" style="color: var(--color-muted)">{t('personas.action_budget_hint', 'Map of action type to max count per day.')}</p>
+						</div>
+						<div class="sm:col-span-2">
+							<label for={`persona-avoid-recent-${idx}`} class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('personas.avoid_recent_authors', 'Avoid Recent Authors (comma-separated user IDs)')}</label>
+							<input
+								id={`persona-avoid-recent-${idx}`}
+								type="text"
+								class="w-full rounded-md border px-3 py-1.5 text-sm font-mono"
+								style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+								value={persona.activity_policy!.avoid_recent_authors.join(', ')}
+								oninput={(e) => { persona.activity_policy!.avoid_recent_authors = (e.target as HTMLInputElement).value.split(',').map(s => s.trim()).filter(Boolean); }}
+								placeholder="uuid, uuid"
+							/>
+						</div>
+						<div class="sm:col-span-2">
+							<label for={`persona-active-hours-${idx}`} class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('personas.active_hours_utc', 'Active Hours UTC (start-end)')}</label>
 								<div class="flex items-center gap-2">
 									<input
 										id={`persona-active-hours-start-${idx}`}
@@ -882,6 +913,35 @@
 								value={editForm.activity_policy.eligible_spaces.join(', ')}
 								oninput={(e) => { editForm.activity_policy!.eligible_spaces = (e.target as HTMLInputElement).value.split(',').map(s => s.trim()).filter(Boolean); }}
 								placeholder="lagos, abuja"
+							/>
+						</div>
+						<div class="sm:col-span-2">
+							<label for="edit-persona-action-budget" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('personas.action_budget', 'Action Budget (JSON)')}</label>
+							<textarea
+								id="edit-persona-action-budget"
+								class="w-full rounded-md border px-3 py-1.5 text-sm font-mono"
+								style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+								rows="2"
+								value={JSON.stringify(editForm.activity_policy.action_budget)}
+								oninput={(e) => {
+									try {
+										editForm.activity_policy!.action_budget = JSON.parse((e.target as HTMLTextAreaElement).value || '{}');
+									} catch { /* leave unchanged on parse error */ }
+								}}
+								placeholder={'{"comment": 4, "react": 20}'}
+							></textarea>
+							<p class="mt-1 text-[10px]" style="color: var(--color-muted)">{t('personas.action_budget_hint', 'Map of action type to max count per day.')}</p>
+						</div>
+						<div class="sm:col-span-2">
+							<label for="edit-persona-avoid-recent" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('personas.avoid_recent_authors', 'Avoid Recent Authors (comma-separated user IDs)')}</label>
+							<input
+								id="edit-persona-avoid-recent"
+								type="text"
+								class="w-full rounded-md border px-3 py-1.5 text-sm font-mono"
+								style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+								value={editForm.activity_policy.avoid_recent_authors.join(', ')}
+								oninput={(e) => { editForm.activity_policy!.avoid_recent_authors = (e.target as HTMLInputElement).value.split(',').map(s => s.trim()).filter(Boolean); }}
+								placeholder="uuid, uuid"
 							/>
 						</div>
 						<div class="sm:col-span-2">

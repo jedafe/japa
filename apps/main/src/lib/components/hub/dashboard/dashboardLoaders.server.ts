@@ -1,5 +1,6 @@
 import { apiGet, apiList, type ApiContext } from '$lib/server/api';
 import { buildContentQuery } from './contentQuery';
+import type { RecommendationsResponse } from '$lib/types';
 
 /**
  * Server-only loader registry for the dashboard family. Mirrors the settings
@@ -17,7 +18,10 @@ export const DASHBOARD_LOADERS: Record<string, (ctx: ApiContext, params?: Dashbo
 		// counts come from /me/analytics (total_followers/total_following),
 		// not a separate /me/followers/summary endpoint.
 		wallet: await apiGet<unknown>(ctx, '/me/wallet').catch(() => null),
-		unread: await apiGet<unknown>(ctx, '/me/notifications/unread-count').catch(() => null)
+		unread: await apiGet<unknown>(ctx, '/me/notifications/unread-count').catch(() => null),
+		// ADR-064a — geo-aware tool/feature/content/space recommendations.
+		// Best-effort: degrades to null when the endpoint is unavailable.
+		recommendations: await apiGet<RecommendationsResponse>(ctx, '/recommendations?limit=6').catch(() => null)
 	}),
 	analytics: async (ctx) => ({
 		analytics: await apiGet<unknown>(ctx, '/me/analytics').catch(() => null),

@@ -77,34 +77,43 @@ type UpdateBlockInput struct {
 
 // Template represents a pagebuilder_templates row.
 type Template struct {
-	ID          pgtype.UUID        `json:"id"`
-	TenantID    pgtype.UUID        `json:"tenant_id"`
-	Name        string             `json:"name"`
-	Slug        string             `json:"slug"`
-	Description *string            `json:"description"`
-	PageType    string             `json:"page_type"`
-	Blocks      json.RawMessage    `json:"blocks"`
-	IsSystem    bool               `json:"is_system"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
+	ID                pgtype.UUID        `json:"id"`
+	TenantID          pgtype.UUID        `json:"tenant_id"`
+	Name              string             `json:"name"`
+	Slug              string             `json:"slug"`
+	Description       *string            `json:"description"`
+	PageType          string             `json:"page_type"`
+	Blocks            json.RawMessage    `json:"blocks"`
+	IsActive          bool               `json:"is_active"`
+	ThumbnailMediaID  *pgtype.UUID       `json:"thumbnail_media_id"`
+	SchemaVersion     int32              `json:"schema_version"`
+	IsSystem          bool               `json:"is_system"`
+	CreatedBy         *pgtype.UUID       `json:"created_by"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
 }
 
 // CreateTemplateInput holds parameters for creating a template.
 type CreateTemplateInput struct {
-	Name        string          `json:"name"`
-	Slug        string          `json:"slug"`
-	Description *string         `json:"description"`
-	PageType    string          `json:"page_type"`
-	Blocks      json.RawMessage `json:"blocks"`
+	Name             string          `json:"name"`
+	Slug             string          `json:"slug"`
+	Description      *string         `json:"description"`
+	PageType         string          `json:"page_type"`
+	Blocks           json.RawMessage `json:"blocks"`
+	IsActive         bool            `json:"is_active"`
+	ThumbnailMediaID *pgtype.UUID    `json:"thumbnail_media_id"`
+	CreatedBy        *pgtype.UUID    `json:"created_by"`
 }
 
 // UpdateTemplateInput holds parameters for updating a template.
 type UpdateTemplateInput struct {
-	Name        string          `json:"name"`
-	Slug        string          `json:"slug"`
-	Description *string         `json:"description"`
-	PageType    string          `json:"page_type"`
-	Blocks      json.RawMessage `json:"blocks"`
+	Name             string          `json:"name"`
+	Slug             string          `json:"slug"`
+	Description      *string         `json:"description"`
+	PageType         string          `json:"page_type"`
+	Blocks           json.RawMessage `json:"blocks"`
+	IsActive         *bool           `json:"is_active"`
+	ThumbnailMediaID *pgtype.UUID    `json:"thumbnail_media_id"`
 }
 
 // ---------------------------------------------------------------------------

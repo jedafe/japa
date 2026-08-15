@@ -1,4 +1,5 @@
 // Ref: japaconnect-engineering/sections/87-japa-stage-profiles.md
+import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiList } from '$lib/server/api';
 import type { MemberStage, Space } from '$lib/types';
@@ -11,6 +12,11 @@ const PAGE_SIZE = 20;
  * GET /members/by-stage endpoint.
  */
 export const load: PageServerLoad = async (event) => {
+	const { features } = await event.parent();
+	if (!features['japa_stage.enabled']) {
+		throw error(404, { code: 'feature_disabled', message: 'Japa Stage is not available' });
+	}
+
 	const ctx = apiContext(event);
 	const authed = !!event.locals.user;
 	const stage = event.url.searchParams.get('stage') ?? '';

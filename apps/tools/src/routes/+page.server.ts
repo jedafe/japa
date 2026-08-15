@@ -19,9 +19,9 @@ export const load: PageServerLoad = async ({ locals }) => {
 		}
 	}
 	return {
-		// Pass site settings so the hub grid can filter out disabled tools
-		// via the per-tool {tool}.enabled system_settings toggles.
-		// Ref: conventions/system-settings-catalog.md, Rule 3 / Rule 16.
-		siteSettings: locals.siteSettings
+		// Pass feature flags so the hub grid can filter out disabled tools
+		// via the per-tool {tool}.enabled feature flags.
+		// Ref: sections/42-feature-flags.md, Rule 3 / Rule 16.
+		features: locals.features
 	};
 };

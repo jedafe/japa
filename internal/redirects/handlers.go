@@ -3,8 +3,10 @@ package redirects
 import (
 	"encoding/json"
 	"errors"
+	"math"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -51,7 +53,7 @@ func parsePageSize(r *http.Request) int32 {
 	if n > int(MaxPageSize) {
 		return MaxPageSize
 	}
-	return int32(n)
+	return int32(n) // #nosec G109 -- n is clamped to MaxPageSize (100) above
 }
 
 func parsePageOffset(r *http.Request) int32 {
@@ -63,7 +65,46 @@ func parsePageOffset(r *http.Request) int32 {
 	if err != nil || n < 0 {
 		return 0
 	}
-	return int32(n)
+	if n > math.MaxInt32 {
+		return 0
+	}
+	return int32(n) // #nosec G109 -- n is bounded by math.MaxInt32 check above
+}
+
+// allowedSortColumns is the whitelist of columns the list endpoint accepts for
+// server-side sorting. Any other value falls back to the default (created_at DESC).
+var allowedSortColumns = map[string]bool{
+	"source_path": true,
+	"target_url":  true,
+	"http_status": true,
+	"is_active":   true,
+	"hit_count":   true,
+	"created_at":  true,
+	"updated_at":  true,
+}
+
+// parseSortParam extracts the sort column and direction from the query string.
+// The frontend DataTable emits sort as "column:dir" (e.g. "hit_count:desc").
+// Returns (column, dir) where dir is "asc" or "desc"; invalid/absent values
+// default to ("", "desc") which the SQL maps to created_at DESC.
+func parseSortParam(r *http.Request) (string, string) {
+	raw := r.URL.Query().Get("sort")
+	if raw == "" {
+		return "", "desc"
+	}
+	col := raw
+	dir := "desc"
+	if i := strings.IndexByte(raw, ':'); i >= 0 {
+		col = raw[:i]
+		dir = raw[i+1:]
+	}
+	if !allowedSortColumns[col] {
+		return "", "desc"
+	}
+	if dir != "asc" && dir != "desc" {
+		dir = "desc"
+	}
+	return col, dir
 }
 
 func handleServiceError(w http.ResponseWriter, err error) {
@@ -98,9 +139,10 @@ func (h *Handlers) ListRedirects(w http.ResponseWriter, r *http.Request) {
 		isActive = &b
 	}
 	search := r.URL.Query().Get("q")
+	sort, dir := parseSortParam(r)
 	limit := parsePageSize(r)
 	offset := parsePageOffset(r)
-	result, err := h.Service.ListRedirects(r.Context(), tenantID, isActive, search, limit, offset)
+	result, err := h.Service.ListRedirects(r.Context(), tenantID, isActive, search, sort, dir, limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return

@@ -36,6 +36,11 @@ declare global {
 			 * Ref: §4.1 (performance — eliminate duplicate /site/settings/public).
 			 */
 			siteSettings: Record<string, unknown>;
+			/**
+			 * Feature flags fetched once in hooks.server.ts and reused by
+			 * layout/page load functions to avoid redundant backend fetches.
+			 */
+			features: Record<string, boolean>;
 		}
 		interface PageData {
 			user: SessionUser | null;

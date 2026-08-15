@@ -151,6 +151,20 @@ func (s *Store) setStatus(ctx context.Context, tenantID, keyID pgtype.UUID, stat
 	return err
 }
 
+// revokeKey marks an API key as revoked and records the revocation audit
+// trail (revoked_at + revoked_by). Section 47 schema requires these columns
+// for audit traceability (BUG-006 fix: setStatus only set status, not the
+// audit columns).
+func (s *Store) revokeKey(ctx context.Context, tenantID, keyID, revokedBy pgtype.UUID) error {
+	_, err := s.dbPool.Exec(ctx, `
+		UPDATE api_keys
+		SET status = 'revoked', revoked_at = now(), revoked_by = $1, updated_at = now()
+		WHERE id = $2 AND tenant_id = $3
+	`, revokedBy, keyID, tenantID)
+
+	return err
+}
+
 // apiKeyRow is the internal row type for API key queries.
 type apiKeyRow struct {
 	ID            pgtype.UUID
@@ -537,8 +551,10 @@ func (s *Service) ListAllAPIKeys(ctx context.Context, limit, offset int32) ([]AP
 	return result, nil
 }
 
-// RevokeAPIKey soft-deletes an API key by setting status to revoked.
+// RevokeAPIKey soft-deletes an API key by setting status to revoked and
+// recording the revocation audit trail (revoked_at + revoked_by).
 // The ownership check is tenant-scoped to prevent cross-tenant access.
+// Section 47 schema requires revoked_at/revoked_by (BUG-006 fix).
 func (s *Service) RevokeAPIKey(ctx context.Context, userID, keyID pgtype.UUID) error {
 	tenantID := tenant.IDFromContext(ctx)
 
@@ -560,7 +576,7 @@ func (s *Service) RevokeAPIKey(ctx context.Context, userID, keyID pgtype.UUID) e
 		return errors.New("api key does not belong to user")
 	}
 
-	return s.store.setStatus(ctx, tenantID, keyID, "revoked")
+	return s.store.revokeKey(ctx, tenantID, keyID, userID)
 }
 
 // SuspendAPIKey sets an API key status to suspended (admin action).
@@ -927,6 +943,8 @@ func (s *Service) ListPublishedContent(ctx context.Context, tenantID pgtype.UUID
 // RotateAPIKey generates a new API key with the same name, scopes, and
 // rate_limit_tier as the old key, sets the old key's expires_at to now+24h
 // (grace period), and returns the new key with the full secret (shown once).
+// Enforces the api.keys.max_per_user system setting (BUG-007 fix: rotation
+// previously bypassed the limit check, allowing N+1 active keys).
 func (s *Service) RotateAPIKey(ctx context.Context, userID, keyID pgtype.UUID) (*CreateAPIKeyResponse, error) {
 	// Verify the key exists and belongs to the user.
 	var row apiKeyRow
@@ -948,6 +966,30 @@ func (s *Service) RotateAPIKey(ctx context.Context, userID, keyID pgtype.UUID) (
 
 	if row.UserID != userID {
 		return nil, errors.New("api key does not belong to user")
+	}
+
+	// Enforce max keys per user (Section 47: api.keys.max_per_user, default 5).
+	// Count active keys excluding the one being rotated (it will be expired,
+	// not revoked, during the 24h grace period — so it still counts as active
+	// until the grace expiry). The new key adds 1 to the active count.
+	limit := maxKeysPerUser
+	if s.keyCountReader != nil {
+		limit = s.keyCountReader.GetIntOr(ctx, row.TenantID, "api.keys.max_per_user", maxKeysPerUser)
+	}
+	var currentCount int
+	err = s.store.dbPool.QueryRow(ctx, `
+		SELECT count(*) FROM api_keys
+		WHERE user_id = $1 AND status = 'active'
+		  AND (expires_at IS NULL OR expires_at > now())
+	`, userID).Scan(&currentCount)
+	if err != nil {
+		return nil, fmt.Errorf("rotate api key: count active keys: %w", err)
+	}
+	// The old key is still active (will be expired in the tx below), and the
+	// new key adds 1. So the post-rotation active count is currentCount + 1.
+	// We allow rotation if currentCount + 1 <= limit, i.e., currentCount < limit.
+	if currentCount >= limit {
+		return nil, fmt.Errorf("%w: maximum %d keys per user", errpkg.ErrForbidden, limit)
 	}
 
 	// Generate a new key with the same configuration.

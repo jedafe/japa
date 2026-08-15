@@ -271,6 +271,10 @@ func (s *Service) UpdateOrganization(ctx context.Context, id, tenantID, userID p
 func (s *Service) DeleteOrganization(ctx context.Context, id, tenantID, userID pgtype.UUID) error {
 	role, err := s.store.GetMemberRole(ctx, id, userID)
 	if err != nil {
+		// BUG-021: A non-member (ErrNoRows) should get 403, not 500.
+		if errors.Is(err, pgx.ErrNoRows) {
+			return fmt.Errorf("%w: insufficient permissions", errpkg.ErrForbidden)
+		}
 		return fmt.Errorf("checking membership: %w", err)
 	}
 
@@ -293,6 +297,10 @@ func (s *Service) InviteMember(ctx context.Context, orgID, _, invitedBy pgtype.U
 
 	role, err := s.store.GetMemberRole(ctx, orgID, invitedBy)
 	if err != nil {
+		// BUG-021: A non-member (ErrNoRows) should get 403, not 500.
+		if errors.Is(err, pgx.ErrNoRows) {
+			return gen.OrganizationInvitation{}, fmt.Errorf("%w: insufficient permissions", errpkg.ErrForbidden)
+		}
 		return gen.OrganizationInvitation{}, fmt.Errorf("checking membership: %w", err)
 	}
 
@@ -344,6 +352,10 @@ func (s *Service) InviteMember(ctx context.Context, orgID, _, invitedBy pgtype.U
 func (s *Service) ListInvitations(ctx context.Context, orgID, userID, tenantID pgtype.UUID) ([]gen.OrganizationInvitation, error) {
 	role, err := s.store.GetMemberRole(ctx, orgID, userID)
 	if err != nil {
+		// BUG-021: A non-member (ErrNoRows) should get 403, not 500.
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, fmt.Errorf("%w: insufficient permissions", errpkg.ErrForbidden)
+		}
 		return nil, fmt.Errorf("checking membership: %w", err)
 	}
 
@@ -359,6 +371,10 @@ func (s *Service) ListInvitations(ctx context.Context, orgID, userID, tenantID p
 func (s *Service) RevokeInvitation(ctx context.Context, orgID, userID, invitationID pgtype.UUID) error {
 	role, err := s.store.GetMemberRole(ctx, orgID, userID)
 	if err != nil {
+		// BUG-021: A non-member (ErrNoRows) should get 403, not 500.
+		if errors.Is(err, pgx.ErrNoRows) {
+			return fmt.Errorf("%w: insufficient permissions", errpkg.ErrForbidden)
+		}
 		return fmt.Errorf("checking membership: %w", err)
 	}
 
@@ -437,11 +453,17 @@ func (s *Service) AcceptInvitation(ctx context.Context, tokenHash string, userID
 }
 
 // AddMember adds a user to an organization. Only owner or admin can add
-// members. The member count is incremented atomically.
+// members. The member insert and member-count increment are wrapped in a
+// single transaction so a partial failure cannot leave a stale member_count
+// (BUG-013, mirroring RemoveMember).
 // Ref: japaconnect-engineering/sections/07-organization-profiles-claim-ownership.md
 func (s *Service) AddMember(ctx context.Context, orgID, addedBy, targetUserID pgtype.UUID, role string) error {
 	callerRole, err := s.store.GetMemberRole(ctx, orgID, addedBy)
 	if err != nil {
+		// BUG-021: A non-member (ErrNoRows) should get 403, not 500.
+		if errors.Is(err, pgx.ErrNoRows) {
+			return fmt.Errorf("%w: insufficient permissions", errpkg.ErrForbidden)
+		}
 		return fmt.Errorf("checking membership: %w", err)
 	}
 
@@ -454,7 +476,21 @@ func (s *Service) AddMember(ctx context.Context, orgID, addedBy, targetUserID pg
 		return fmt.Errorf("%w: cannot add a member with the owner role", errpkg.ErrForbidden)
 	}
 
-	if err := s.store.AddMember(ctx, gen.AddOrganizationMemberParams{
+	// Fetch the org for the tenant-scoped member-count update (read before tx).
+	org, err := s.store.GetOrganizationByIDOnly(ctx, orgID)
+	if err != nil {
+		return fmt.Errorf("finding organization: %w", err)
+	}
+
+	tx, err := s.db.Writer.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("beginning transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	qtx := s.store.write.WithTx(tx)
+
+	if err := qtx.AddOrganizationMember(ctx, gen.AddOrganizationMemberParams{
 		OrganizationID: orgID,
 		UserID:         targetUserID,
 		Role:           role,
@@ -463,14 +499,16 @@ func (s *Service) AddMember(ctx context.Context, orgID, addedBy, targetUserID pg
 		return fmt.Errorf("adding member: %w", err)
 	}
 
-	// Fetch the org for tenant-scoped member-count update.
-	org, err := s.store.GetOrganizationByIDOnly(ctx, orgID)
-	if err != nil {
-		return fmt.Errorf("finding organization: %w", err)
+	if err := qtx.IncrementOrganizationMemberCount(ctx, gen.IncrementOrganizationMemberCountParams{
+		ID:          orgID,
+		MemberCount: 1,
+		TenantID:    org.TenantID,
+	}); err != nil {
+		return fmt.Errorf("incrementing member count: %w", err)
 	}
 
-	if err := s.store.IncrementMemberCount(ctx, orgID, org.TenantID, 1); err != nil {
-		return fmt.Errorf("incrementing member count: %w", err)
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("committing transaction: %w", err)
 	}
 
 	return nil
@@ -483,6 +521,10 @@ func (s *Service) AddMember(ctx context.Context, orgID, addedBy, targetUserID pg
 func (s *Service) RemoveMember(ctx context.Context, orgID, removedBy, targetUserID pgtype.UUID) error {
 	role, err := s.store.GetMemberRole(ctx, orgID, removedBy)
 	if err != nil {
+		// BUG-021: A non-member (ErrNoRows) should get 403, not 500.
+		if errors.Is(err, pgx.ErrNoRows) {
+			return fmt.Errorf("%w: insufficient permissions", errpkg.ErrForbidden)
+		}
 		return fmt.Errorf("checking membership: %w", err)
 	}
 
@@ -493,6 +535,10 @@ func (s *Service) RemoveMember(ctx context.Context, orgID, removedBy, targetUser
 	// Cannot remove the owner.
 	targetRole, err := s.store.GetMemberRole(ctx, orgID, targetUserID)
 	if err != nil {
+		// Target is not a member → 404, not a 500.
+		if errors.Is(err, pgx.ErrNoRows) {
+			return fmt.Errorf("%w: member not found in this organization", errpkg.ErrNotFound)
+		}
 		return fmt.Errorf("checking target membership: %w", err)
 	}
 
@@ -546,6 +592,10 @@ func (s *Service) ListMembers(ctx context.Context, orgID, tenantID pgtype.UUID) 
 func (s *Service) UpdateMemberRole(ctx context.Context, orgID, updatedBy, targetUserID pgtype.UUID, newRole string) error {
 	role, err := s.store.GetMemberRole(ctx, orgID, updatedBy)
 	if err != nil {
+		// BUG-021: A non-member (ErrNoRows) should get 403, not 500.
+		if errors.Is(err, pgx.ErrNoRows) {
+			return fmt.Errorf("%w: insufficient permissions", errpkg.ErrForbidden)
+		}
 		return fmt.Errorf("checking membership: %w", err)
 	}
 
@@ -643,41 +693,65 @@ func (s *Service) WithdrawOwnershipClaim(ctx context.Context, claimID, tenantID,
 
 // ReviewOwnershipClaim approves or rejects a claim (admin). When approving,
 // the organization's owner_user_id is transferred to the claimant and the
-// claimant is added as an 'owner' member (BUG-006).
+// claimant is added as an 'owner' member (BUG-006). The claim review, ownership
+// transfer, and owner-member insert are wrapped in a single transaction so a
+// partial failure cannot leave an approved claim with no ownership change or
+// an owner_user_id pointing at a non-member (BUG-006/BUG-007).
 // Ref: japaconnect-engineering/sections/07-organization-profiles-claim-ownership.md
 func (s *Service) ReviewOwnershipClaim(ctx context.Context, claimID, tenantID, reviewedBy pgtype.UUID, input ReviewClaimInput) error {
-	// Fetch the claim before reviewing so the webhook payload can carry the
-	// organization_id (entity_id). The row is read tenant-scoped.
+	// Fetch the claim before reviewing. This is required (not best-effort): on
+	// approval the claimant_user_id and organization_id drive the ownership
+	// transfer, so a failed fetch must abort the review — otherwise the claim
+	// could be marked approved while the transfer is silently skipped.
 	claim, err := s.store.GetOwnershipClaimByID(ctx, claimID, tenantID)
 	if err != nil {
-		slog.Warn("organizations: fetch claim for webhook payload", "claim_id", claimID.String(), "error", err)
+		return fmt.Errorf("fetching claim for review: %w", err)
 	}
 
-	if err := s.store.ReviewOwnershipClaim(ctx, gen.ReviewOwnershipClaimParams{
+	tx, err := s.db.Writer.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("beginning transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	qtx := s.store.write.WithTx(tx)
+
+	if err := qtx.ReviewOwnershipClaim(ctx, gen.ReviewOwnershipClaimParams{
 		ID:             claimID,
 		TenantID:       tenantID,
 		Status:         input.Status,
 		ReviewedBy:     reviewedBy,
 		ResolutionNote: strPtr(input.ResolutionNote),
 	}); err != nil {
-		return err
+		return fmt.Errorf("reviewing claim: %w", err)
 	}
 
-	// When approving, transfer org ownership to the claimant (BUG-006).
-	if input.Status == ClaimStatusApproved && claim.ClaimantUserID.Valid {
-		if err := s.store.TransferOrganizationOwnership(ctx, claim.OrganizationID, claim.ClaimantUserID, tenantID); err != nil {
-			slog.Error("organizations: transfer ownership on claim approval", "claim_id", claimID.String(), "error", err)
+	// When approving, transfer org ownership to the claimant and ensure the
+	// claimant is an owner member (BUG-006). Both writes are inside the same
+	// transaction as the review so the three states stay consistent.
+	approved := input.Status == ClaimStatusApproved && claim.ClaimantUserID.Valid
+	if approved {
+		if err := qtx.TransferOrganizationOwnership(ctx, gen.TransferOrganizationOwnershipParams{
+			ID:          claim.OrganizationID,
+			OwnerUserID: claim.ClaimantUserID,
+			TenantID:    tenantID,
+		}); err != nil {
 			return fmt.Errorf("transferring ownership: %w", err)
 		}
-		// Ensure the claimant is an owner member.
-		if err := s.store.AddMember(ctx, gen.AddOrganizationMemberParams{
+		if err := qtx.AddOrganizationMember(ctx, gen.AddOrganizationMemberParams{
 			OrganizationID: claim.OrganizationID,
 			UserID:         claim.ClaimantUserID,
 			Role:           MemberRoleOwner,
 		}); err != nil {
-			slog.Error("organizations: add owner member on claim approval", "claim_id", claimID.String(), "error", err)
 			return fmt.Errorf("adding owner member: %w", err)
 		}
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("committing transaction: %w", err)
+	}
+
+	if approved {
 		s.InvalidateOrgCache(ctx, tenantID)
 	}
 

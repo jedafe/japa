@@ -198,11 +198,20 @@ func (r *RBAC) IsSuperAdmin(ctx context.Context, userID, tenantID pgtype.UUID) b
 // admin-level capabilities. Per Section 46 ("A user with admin.impersonate
 // cannot impersonate another user who holds any admin-level role"), any user
 // holding one of these nodes — or the wildcard "*" — is considered
-// admin-level and cannot be impersonated. The list mirrors the
-// admin-panel section-visibility gates seeded by migration 000147 plus the
-// wallet admin node, which together capture every role that can reach the
-// admin panel or perform privileged admin actions.
+// admin-level and cannot be impersonated. The list includes:
+//   - the admin-panel section-visibility gates seeded by migration 000147
+//     (admin.*.view)
+//   - the admin action/manage nodes seeded by migration 000109
+//     (admin.rbac.manage, admin.moderation, admin.settings, admin.broadcast,
+//     admin.users.manage, admin.groups.manage, admin.spaces.manage,
+//     admin.feature_flags.manage, etc.)
+//   - the wallet admin and impersonation nodes
+//
+// Together these capture every role that can reach the admin panel or perform
+// privileged admin actions. A user granted any manage node without a
+// corresponding view node is still flagged as admin-capable.
 var adminCapabilityNodes = []string{
+	// Section-visibility gates (migration 000147)
 	"admin.users.view",
 	"admin.content.view",
 	"admin.moderation.view",
@@ -214,6 +223,21 @@ var adminCapabilityNodes = []string{
 	"admin.payments.view",
 	"admin.ai.view",
 	"admin.feature_flags.view",
+	// Action/manage nodes (migration 000109 + later)
+	"admin.rbac.manage",
+	"admin.moderation",
+	"admin.settings",
+	"admin.settings.manage",
+	"admin.broadcast",
+	"admin.users.manage",
+	"admin.users.list",
+	"admin.groups.manage",
+	"admin.spaces.manage",
+	"admin.feature_flags.manage",
+	"admin.analytics.search",
+	"admin.brand",
+	"admin.footer",
+	// Wallet + impersonation
 	"wallet.admin",
 	"admin.impersonate",
 }

@@ -9,6 +9,7 @@ package planninggroups
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -85,6 +86,7 @@ type CreateGroupInput struct {
 type UpdateGroupInput struct {
 	Name                  *string `json:"name"`
 	Description           *string `json:"description"`
+	DestinationSpaceID    *string `json:"destination_space_id"`
 	VisaCategory          *string `json:"visa_category"`
 	TargetDepartureWindow *string `json:"target_departure_window"`
 	TargetDepartureAt     *string `json:"target_departure_at"`
@@ -149,10 +151,10 @@ func (s *Service) Create(ctx context.Context, tenantID, ownerID pgtype.UUID, inp
 	if input.Name == "" || input.DestinationSpaceID == "" {
 		return PlanningGroupDTO{}, fmt.Errorf("name and destination_space_id are required")
 	}
-	// §82: groups are 5–20 members (max_members DEFAULT 15). Enforce a
-	// reasonable 2–100 range server-side (frontend validates the same).
-	if input.MaxMembers > 0 && (input.MaxMembers < 2 || input.MaxMembers > 100) {
-		return PlanningGroupDTO{}, fmt.Errorf("max_members must be between 2 and 100")
+	// §82/ADR-090: groups are 5–20 members (max_members DEFAULT 15). Enforce
+	// a 2–50 range server-side (frontend validates the same).
+	if input.MaxMembers > 0 && (input.MaxMembers < 2 || input.MaxMembers > 50) {
+		return PlanningGroupDTO{}, fmt.Errorf("max_members must be between 2 and 50")
 	}
 
 	var destSpaceID pgtype.UUID
@@ -175,7 +177,7 @@ func (s *Service) Create(ctx context.Context, tenantID, ownerID pgtype.UUID, inp
 
 	var targetDepartureAt pgtype.Timestamptz
 	if input.TargetDepartureAt != "" {
-		t, err := time.Parse(time.RFC3339, input.TargetDepartureAt)
+		t, err := parseFlexibleDate(input.TargetDepartureAt)
 		if err != nil {
 			return PlanningGroupDTO{}, fmt.Errorf("invalid target_departure_at: %w", err)
 		}
@@ -189,7 +191,7 @@ func (s *Service) Create(ctx context.Context, tenantID, ownerID pgtype.UUID, inp
 
 	var expiresAt pgtype.Timestamptz
 	if input.ExpiresAt != "" {
-		t, err := time.Parse(time.RFC3339, input.ExpiresAt)
+		t, err := parseFlexibleDate(input.ExpiresAt)
 		if err != nil {
 			return PlanningGroupDTO{}, fmt.Errorf("invalid expires_at: %w", err)
 		}
@@ -285,8 +287,16 @@ func (s *Service) UpdateOwn(ctx context.Context, id, tenantID, userID pgtype.UUI
 	storeInput.MaxMembers = input.MaxMembers
 	storeInput.IsOpenJoin = input.IsOpenJoin
 
+	if input.DestinationSpaceID != nil && *input.DestinationSpaceID != "" {
+		var destID pgtype.UUID
+		if err := destID.Scan(*input.DestinationSpaceID); err != nil {
+			return PlanningGroupDTO{}, fmt.Errorf("invalid destination_space_id: %w", err)
+		}
+		storeInput.DestinationSpaceID = &destID
+	}
+
 	if input.TargetDepartureAt != nil && *input.TargetDepartureAt != "" {
-		t, err := time.Parse(time.RFC3339, *input.TargetDepartureAt)
+		t, err := parseFlexibleDate(*input.TargetDepartureAt)
 		if err != nil {
 			return PlanningGroupDTO{}, fmt.Errorf("invalid target_departure_at: %w", err)
 		}
@@ -294,7 +304,7 @@ func (s *Service) UpdateOwn(ctx context.Context, id, tenantID, userID pgtype.UUI
 		storeInput.TargetDepartureAt = &ts
 	}
 	if input.ExpiresAt != nil && *input.ExpiresAt != "" {
-		t, err := time.Parse(time.RFC3339, *input.ExpiresAt)
+		t, err := parseFlexibleDate(*input.ExpiresAt)
 		if err != nil {
 			return PlanningGroupDTO{}, fmt.Errorf("invalid expires_at: %w", err)
 		}
@@ -494,17 +504,18 @@ func (s *Service) InviteMember(ctx context.Context, groupID, inviteeUserID, tena
 	return nil
 }
 
-// AdminListGroups returns all planning groups for the admin review queue.
-func (s *Service) AdminListGroups(ctx context.Context, tenantID pgtype.UUID) ([]PlanningGroupDTO, error) {
-	groups, err := s.store.AdminListGroups(ctx, tenantID)
+// AdminListGroups returns a paginated list of all planning groups for the
+// admin review queue, optionally filtered by destination and search term.
+func (s *Service) AdminListGroups(ctx context.Context, f AdminListGroupsFilter) ([]PlanningGroupDTO, int64, error) {
+	groups, total, err := s.store.AdminListGroups(ctx, f)
 	if err != nil {
-		return nil, fmt.Errorf("planninggroups: admin list: %w", err)
+		return nil, 0, fmt.Errorf("planninggroups: admin list: %w", err)
 	}
 	dtos := make([]PlanningGroupDTO, 0, len(groups))
 	for _, g := range groups {
 		dtos = append(dtos, groupToDTO(g))
 	}
-	return dtos, nil
+	return dtos, total, nil
 }
 
 // ExpireGroups soft-deletes planning groups whose expires_at has passed.
@@ -527,23 +538,61 @@ func (s *Service) SendCheckinReminders(ctx context.Context) (int64, error) {
 	if err != nil {
 		return 0, fmt.Errorf("planninggroups: send checkin reminders: %w", err)
 	}
-	// TODO: dispatch notifications via the notification service once the
-	// notifier is wired (s.notifier.NotifyCheckinReminder). For now, log
-	// the count so the task is not a silent no-op.
-	if len(members) > 0 {
-		slog.InfoContext(ctx, "planninggroups: checkin reminders queued",
-			"count", len(members))
+	if len(members) == 0 {
+		return 0, nil
 	}
-	return int64(len(members)), nil
+
+	var sent int64
+	zero := pgtype.UUID{}
+	title := "Weekly check-in reminder"
+	body := "You haven't checked in with your planning group this week. Share your progress and keep your accountability on track."
+
+	for _, m := range members {
+		if s.notifier == nil {
+			// No notifier wired — log and stop so we don't silently
+			// claim success.
+			slog.WarnContext(ctx, "planninggroups: checkin reminder notifier not wired",
+				"group_id", m.GroupID, "user_id", m.UserID)
+			break
+		}
+		if err := s.notifier.CreateNotification(
+			ctx, m.TenantID, m.UserID,
+			"planning_group.checkin_reminder", "system", zero,
+			"planning_group", m.GroupID,
+			title, body,
+			"/planning-groups/"+m.GroupID.String(),
+		); err != nil {
+			slog.WarnContext(ctx, "planninggroups: checkin reminder notification failed",
+				"error", err, "user_id", m.UserID, "group_id", m.GroupID)
+			continue
+		}
+		sent++
+	}
+
+	slog.InfoContext(ctx, "planninggroups: checkin reminders dispatched",
+		"sent", sent, "eligible", len(members))
+	return sent, nil
 }
 
+// ErrCheckinTooLong is returned when a check-in note exceeds the 200-char
+// limit defined in §82 (note VARCHAR(200)).
+var ErrCheckinTooLong = fmt.Errorf("check-in note exceeds 200 characters")
+
 // CreateCheckin adds a weekly check-in for the requesting user in a group.
+// Returns ErrAlreadyCheckedIn if the user has already checked in this week.
 func (s *Service) CreateCheckin(ctx context.Context, groupID, userID, tenantID pgtype.UUID, note string) (CheckinDTO, error) {
 	if note == "" {
 		return CheckinDTO{}, fmt.Errorf("note is required")
 	}
+	// §82: note VARCHAR(200).
+	if len(note) > 200 {
+		return CheckinDTO{}, ErrCheckinTooLong
+	}
 	c, err := s.store.CreateCheckin(ctx, groupID, userID, tenantID, note)
 	if err != nil {
+		if errors.Is(err, ErrAlreadyCheckedIn) {
+			return CheckinDTO{}, ErrAlreadyCheckedIn
+		}
 		return CheckinDTO{}, fmt.Errorf("planninggroups: create checkin: %w", err)
 	}
 	return checkinToDTO(c), nil
@@ -564,12 +613,12 @@ func (s *Service) ListCheckins(ctx context.Context, groupID, tenantID pgtype.UUI
 
 // AdminExtendExpiry extends the expires_at timestamp on a planning group.
 // Admin-only (planning_group.manage_any permission checked at route
-// registration). newExpiry is RFC 3339.
+// registration). newExpiry is RFC 3339 or YYYY-MM-DD.
 func (s *Service) AdminExtendExpiry(ctx context.Context, id, tenantID pgtype.UUID, newExpiry string) error {
 	if newExpiry == "" {
 		return fmt.Errorf("expires_at is required")
 	}
-	t, err := time.Parse(time.RFC3339, newExpiry)
+	t, err := parseFlexibleDate(newExpiry)
 	if err != nil {
 		return fmt.Errorf("invalid expires_at: %w", err)
 	}
@@ -580,6 +629,36 @@ func (s *Service) AdminExtendExpiry(ctx context.Context, id, tenantID pgtype.UUI
 			return pgx.ErrNoRows
 		}
 		return fmt.Errorf("planninggroups: admin extend expiry: %w", err)
+	}
+	return nil
+}
+
+// AdminExtendExpiryByDays extends the expires_at of a planning group by
+// the given number of days, computed from the later of the current
+// expires_at or now(). If the group has no expires_at, the new expiry is
+// now + days. Admin-only.
+func (s *Service) AdminExtendExpiryByDays(ctx context.Context, id, tenantID pgtype.UUID, days int) error {
+	if days <= 0 {
+		return fmt.Errorf("days must be a positive integer")
+	}
+	group, err := s.store.GetGroup(ctx, id, tenantID)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return pgx.ErrNoRows
+		}
+		return fmt.Errorf("planninggroups: admin extend by days: get: %w", err)
+	}
+	base := time.Now().UTC()
+	if group.ExpiresAt.Valid && group.ExpiresAt.Time.After(base) {
+		base = group.ExpiresAt.Time
+	}
+	newExpiry := base.AddDate(0, 0, days)
+	exp := pgtype.Timestamptz{Time: newExpiry, Valid: true}
+	if err := s.store.ExtendExpiry(ctx, id, tenantID, exp); err != nil {
+		if err == pgx.ErrNoRows {
+			return pgx.ErrNoRows
+		}
+		return fmt.Errorf("planninggroups: admin extend by days: %w", err)
 	}
 	return nil
 }
@@ -678,4 +757,20 @@ func formatTs(t pgtype.Timestamptz) string {
 		return ""
 	}
 	return t.Time.UTC().Format(time.RFC3339)
+}
+
+// parseFlexibleDate parses a date/datetime string accepting both RFC 3339
+// (e.g. "2026-08-14T00:00:00Z") and YYYY-MM-DD (e.g. "2026-08-14"). The
+// latter is what HTML <input type="date"> submits. A bare date is parsed
+// at midnight UTC.
+func parseFlexibleDate(s string) (time.Time, error) {
+	t, err := time.Parse(time.RFC3339, s)
+	if err == nil {
+		return t, nil
+	}
+	t, err = time.Parse("2006-01-02", s)
+	if err == nil {
+		return t, nil
+	}
+	return time.Time{}, fmt.Errorf("unrecognized date format (use RFC 3339 or YYYY-MM-DD)")
 }

@@ -27,6 +27,17 @@ export const load: LayoutServerLoad = async (event) => {
 		siteSettings = {};
 	}
 
+	// Feature flags (public endpoint) — fetched SSR so the layout can gate
+	// client-only features on feature.dm without firing doomed requests when
+	// the flag is off. Ref: sections/42-feature-flags.md
+	let features: Record<string, boolean> = {};
+	try {
+		const res = await apiGet<Record<string, boolean>>(ctx, '/feature-flags');
+		features = res ?? {};
+	} catch {
+		features = {};
+	}
+
 	// Footer menu — ADR-054 cross-app menu system. The docs footer slug is
 	// `docs_footer`. Degrades to null if unseeded; GuestFooter renders nothing.
 	let footerMenu: Menu | null = null;
@@ -56,6 +67,7 @@ export const load: LayoutServerLoad = async (event) => {
 		accessibleAudiences: event.locals.accessibleAudiences,
 		nav,
 		siteSettings,
+		features,
 		footerMenu,
 		rightSidebarWidgets,
 		navCollapsed: event.locals.user?.ui?.nav_collapsed ?? false

@@ -131,6 +131,18 @@ export const handle: Handle = async ({ event, resolve }) => {
 		}
 	}
 
+	// Feature flags fetched once per request and reused by layout/page load
+	// functions. Degrades gracefully to an empty object on error.
+	let features: Record<string, boolean> = {};
+	if (!building) {
+		try {
+			features = (await apiGet<Record<string, boolean>>(ctx, '/feature-flags')) ?? {};
+		} catch {
+			features = {};
+		}
+	}
+	event.locals.features = features;
+
 	// Theme: prefer the user's cookie, then fall back to the control panel
 	// appearance.dark_mode_default setting, then 'light'.
 	// Ref: conventions/system-settings-catalog.md (appearance.dark_mode_default)

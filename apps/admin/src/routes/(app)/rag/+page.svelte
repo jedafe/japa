@@ -50,7 +50,6 @@
 	let settingsLoading = $state(false);
 	let settingsSaving = $state(false);
 	let settingsForm = $state({
-		enabled: false,
 		embedding_model: '',
 		retrieval_top_k: 0,
 		chunk_max_tokens: 0
@@ -80,7 +79,6 @@
 			if (result.ok) {
 				settings = result.data;
 				settingsForm = {
-					enabled: result.data['rag.enabled'],
 					embedding_model: result.data['rag.embedding_model'],
 					retrieval_top_k: result.data['rag.retrieval_top_k'],
 					chunk_max_tokens: result.data['rag.chunk_max_tokens']
@@ -101,7 +99,6 @@
 			const result = await api('/admin/settings/rag', {
 				method: 'PUT',
 				body: JSON.stringify({
-					enabled: settingsForm.enabled,
 					embedding_model: settingsForm.embedding_model,
 					retrieval_top_k: settingsForm.retrieval_top_k,
 					chunk_max_tokens: settingsForm.chunk_max_tokens
@@ -323,21 +320,6 @@
 						saveSettings();
 					}}
 				>
-					<div class="flex items-center justify-between">
-						<div>
-							<label class="text-sm font-medium" style="color: var(--color-foreground)" for="rag-enabled">
-								{t('rag.setting_enabled')}
-							</label>
-							<p class="text-xs" style="color: var(--color-muted)">{t('rag.setting_enabled_help')}</p>
-						</div>
-						<input
-							id="rag-enabled"
-							type="checkbox"
-							bind:checked={settingsForm.enabled}
-							class="h-4 w-4"
-						/>
-					</div>
-
 					<div class="grid gap-1">
 						<label class="text-sm font-medium" style="color: var(--color-foreground)" for="rag-model">
 							{t('rag.setting_embedding_model')}

@@ -1,3 +1,4 @@
+import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiList, ApiError } from '$lib/server/api';
 import type { HousingGuideWithAi, GeoSpaceOption } from '$lib/types';
@@ -17,6 +18,11 @@ import type { HousingGuideWithAi, GeoSpaceOption } from '$lib/types';
  * Ref: §96 (Housing Guide), ROADMAP-TOOLS 02.06.
  */
 export const load: PageServerLoad = async (event) => {
+	const { features } = await event.parent();
+	if (!features['housing_guide.enabled']) {
+		throw error(404, { code: 'feature_disabled', message: 'Housing Guide is not available' });
+	}
+
 	const ctx = apiContext(event);
 	const authed = !!event.locals.user;
 

@@ -420,6 +420,33 @@ WHERE u.tenant_id = @tenant_id
   AND (@search::text = '' OR u.username ILIKE '%' || @search || '%' OR up.display_name ILIKE '%' || @search || '%')
   AND (@profile_type::text = '' OR u.profile_type = @profile_type);
 
+-- name: GetPublicUserByID :one
+-- Public API (Section 47): PII-safe single-user lookup by ID. Returns only
+-- id, username, profile_type, follower_count, display_name, avatar_url, bio,
+-- and created_at — NO email, status, last_login, or group membership.
+-- Only active users who have not opted out of search indexability.
+-- Ref: japaconnect-engineering/sections/47-public-api-developer-portal.md
+--      japaconnect-engineering/sections/19-privacy-gdpr.md (search_indexable opt-out)
+SELECT u.id AS user_id,
+       u.username,
+       u.profile_type,
+       u.follower_count,
+       up.display_name,
+       up.avatar_url,
+       up.bio,
+       up.cover_url,
+       COALESCE(up.created_at, u.created_at) AS created_at,
+       (SELECT COUNT(*)::int
+          FROM follows f
+         WHERE f.tenant_id = u.tenant_id AND f.follower_id = u.id) AS following_count
+FROM users u
+LEFT JOIN user_profiles up ON up.user_id = u.id AND up.tenant_id = u.tenant_id
+LEFT JOIN user_privacy_settings ups ON ups.user_id = u.id AND ups.tenant_id = u.tenant_id
+WHERE u.tenant_id = @tenant_id
+  AND u.id = @user_id
+  AND u.status = 'active'
+  AND COALESCE(ups.search_indexable, true) = true;
+
 -- name: ActiveUserExistsByID :one
 -- Existence check for the public profile gate: is there an ACTIVE user with
 -- this id in this tenant? Non-active (banned/suspended/deleted) or missing → false.

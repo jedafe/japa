@@ -24,7 +24,7 @@ export const load: PageServerLoad = async (event) => {
 	// Ref: conventions/system-settings-catalog.md, Rule 3.
 	const tool = getTool('attestation-guide')!;
 	const settings = event.locals.siteSettings;
-	if (!isToolEnabled(tool, settings)) {
+	if (!isToolEnabled(tool, event.locals.features)) {
 		return {
 			enabled: false,
 			tool,

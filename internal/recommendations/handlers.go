@@ -44,9 +44,9 @@ const defaultLimit = 10
 // geo_personalization.recommendations_max_limit is unset.
 const defaultMaxLimit = 20
 
-// trendingWindow is the trending-snapshot window used when sourcing
-// content and space recommendations (Section 53).
-const trendingWindow = "7d"
+// defaultTrendingWindow is the fallback trending-snapshot window used when
+// geo_personalization.recommendations_trending_window is unset (Rule 3).
+const defaultTrendingWindow = "7d"
 
 // settingsReader is the subset of config.Settings the recommendation engine needs.
 type settingsReader interface {
@@ -61,6 +61,7 @@ type settingsReader interface {
 type TrendingReader interface {
 	GetTrendingContent(ctx context.Context, tenantID pgtype.UUID, window, geoCode string, limit int32) ([]gen.GetTrendingContentRow, error)
 	GetTrendingSpaces(ctx context.Context, tenantID pgtype.UUID, window, geoCode string, limit int32) ([]gen.GetTrendingSpacesRow, error)
+	GetSpaceLevels(ctx context.Context, tenantID pgtype.UUID, spaceIDs []pgtype.UUID) (map[[16]byte]string, error)
 }
 
 // Handlers holds dependencies for recommendation HTTP handlers.
@@ -353,6 +354,22 @@ func (h *Handlers) resolveCacheTTL(ctx context.Context, tenantID pgtype.UUID) ti
 	return time.Duration(secs) * time.Second
 }
 
+// resolveTrendingWindow returns the configured trending-snapshot window
+// (geo_personalization.recommendations_trending_window, fallback "7d").
+// Config-driven per Rule 3 (BUG-004 fix).
+func (h *Handlers) resolveTrendingWindow(ctx context.Context, tenantID pgtype.UUID) string {
+	if h.settings == nil {
+		return defaultTrendingWindow
+	}
+
+	w := h.settings.GetStringOr(ctx, tenantID, "geo_personalization.recommendations_trending_window", defaultTrendingWindow)
+	if w == "" {
+		return defaultTrendingWindow
+	}
+
+	return w
+}
+
 // classifySlugs splits a list of matrix slugs into tools and features using
 // the featureSlugs set (ADR-064a §5). Order is preserved within each group.
 func classifySlugs(slugs []string) (tools, features []string) {
@@ -394,7 +411,7 @@ func (h *Handlers) buildContentItems(ctx context.Context, tenantID pgtype.UUID, 
 		return []RecommendationContentItem{}
 	}
 
-	rows, err := h.trending.GetTrendingContent(ctx, tenantID, trendingWindow, vc.ContentCountry, int32(limit)) //nolint:gosec // G115: limit bounded by resolveLimit
+	rows, err := h.trending.GetTrendingContent(ctx, tenantID, h.resolveTrendingWindow(ctx, tenantID), vc.ContentCountry, int32(limit)) //nolint:gosec // G115: limit bounded by resolveLimit
 	if err != nil {
 		slog.Warn("recommendations: trending content fetch failed", "error", err)
 		return []RecommendationContentItem{}
@@ -421,15 +438,35 @@ func (h *Handlers) buildContentItems(ctx context.Context, tenantID pgtype.UUID, 
 // buildSpaceItems sources trending spaces (Section 53) and re-weights them by
 // the VisitorContext's ContentCountry (ADR-064a §5). Returns an empty slice
 // (never nil) when the trending reader is unavailable or returns no rows.
+// Populates the Level field via GetSpaceLevels (BUG-001 fix — ADR-064a §5
+// response shape requires `level`).
 func (h *Handlers) buildSpaceItems(ctx context.Context, tenantID pgtype.UUID, vc visitor.VisitorContext, limit int) []RecommendationSpaceItem {
 	if h.trending == nil {
 		return []RecommendationSpaceItem{}
 	}
 
-	rows, err := h.trending.GetTrendingSpaces(ctx, tenantID, trendingWindow, vc.ContentCountry, int32(limit)) //nolint:gosec // G115: limit bounded by resolveLimit
+	window := h.resolveTrendingWindow(ctx, tenantID)
+	rows, err := h.trending.GetTrendingSpaces(ctx, tenantID, window, vc.ContentCountry, int32(limit)) //nolint:gosec // G115: limit bounded by resolveLimit
 	if err != nil {
 		slog.Warn("recommendations: trending spaces fetch failed", "error", err)
 		return []RecommendationSpaceItem{}
+	}
+
+	// Collect space IDs for the level lookup (BUG-001).
+	spaceIDs := make([]pgtype.UUID, 0, len(rows))
+	for _, row := range rows {
+		if row.ID_2.Valid {
+			spaceIDs = append(spaceIDs, row.ID_2)
+		}
+	}
+
+	levels := map[[16]byte]string{}
+	if len(spaceIDs) > 0 {
+		if lv, err := h.trending.GetSpaceLevels(ctx, tenantID, spaceIDs); err == nil {
+			levels = lv
+		} else {
+			slog.Warn("recommendations: space levels fetch failed", "error", err)
+		}
 	}
 
 	items := make([]RecommendationSpaceItem, 0, len(rows))
@@ -443,7 +480,7 @@ func (h *Handlers) buildSpaceItems(ctx context.Context, tenantID pgtype.UUID, vc
 			ID:    row.ID_2.String(),
 			Name:  row.Name,
 			Slug:  row.Slug,
-			Level: "", // trending snapshots do not join the space level; field present per ADR-064a shape.
+			Level: levels[row.ID_2.Bytes], // BUG-001: populated from GetSpaceLevels
 		})
 	}
 
@@ -596,8 +633,36 @@ func defaultToolSlugs(vc visitor.VisitorContext) []string {
 }
 
 // reasonForSlug returns a human-readable reason string for why a tool is
-// recommended given the VisitorContext.
-func (h *Handlers) reasonForSlug(_ string, vc visitor.VisitorContext) string {
+// recommended given the VisitorContext. The reason is tool-specific (BUG-003
+// fix): visa/embassy/processing tools are "planning", arrival/housing/banking
+// tools are "settling_in", tax/attestation/credential tools are "settled",
+// community/social tools are "community", and everything else falls back to
+// the archetype-level reason.
+func (h *Handlers) reasonForSlug(slug string, vc visitor.VisitorContext) string {
+	// Tool-specific reasons keyed on the slug's functional category.
+	switch slug {
+	case "visa-route-comparison", "embassy-alerter", "processing-time-tracker":
+		return "planning"
+	case "arrival-checklist", "housing-guide", "banking-guide", "language-test-hub":
+		return "settling_in"
+	case "tax-calculator", "attestation-guide", "credential-checker", "cv-formatter":
+		return "settled"
+	case "community-locator", "destination-wiki", "service-directory", "mutual-aid-board",
+		"story-wall", "scam-alert", "planning-groups", "visa-timeline",
+		"community-calendar", "japa-stage", "ask-an-expat", "achievement-feed",
+		"mentorship", "japa-university":
+		return "community"
+	case "cost-of-living-comparison":
+		return "exploring"
+	default:
+		// Fallback: archetype-level reason for unknown slugs.
+		return h.archetypeReason(vc)
+	}
+}
+
+// archetypeReason returns the archetype-level reason used as a fallback when
+// a slug doesn't map to a specific category.
+func (h *Handlers) archetypeReason(vc visitor.VisitorContext) string {
 	switch vc.Archetype {
 	case visitor.ArchetypeOriginVisitor:
 		if vc.JapaStage == "planning" {

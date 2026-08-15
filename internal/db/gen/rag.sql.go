@@ -359,19 +359,37 @@ SELECT
     ce.chunk_text,
     ce.language,
     ce.created_at,
-    (1.0 - (ce.embedding <=> $1))::float8 AS similarity
+    (1.0 - (ce.embedding <=> $1))::float8 AS similarity,
+    CASE WHEN ce.entity_type = 'content' THEN
+        (SELECT c.content_type FROM contents c
+         WHERE c.id = ce.entity_id AND c.tenant_id = ce.tenant_id)
+    ELSE NULL END AS content_type
 FROM content_embeddings ce
 WHERE ce.tenant_id = $2
   AND ($3::text = '' OR ce.language = $3)
-  AND (
-      ce.entity_type != 'content'
-      OR EXISTS (
+  AND CASE ce.entity_type
+      WHEN 'content' THEN EXISTS (
           SELECT 1 FROM contents c
-          WHERE c.id = ce.entity_id
-            AND c.status = 'published'
-            AND c.deleted_at IS NULL
+          WHERE c.id = ce.entity_id AND c.tenant_id = ce.tenant_id
+            AND c.status = 'published' AND c.deleted_at IS NULL
       )
-  )
+      WHEN 'forum_thread' THEN EXISTS (
+          SELECT 1 FROM forum_threads ft
+          WHERE ft.id = ce.entity_id AND ft.tenant_id = ce.tenant_id
+            AND ft.deleted_at IS NULL
+      )
+      WHEN 'space' THEN EXISTS (
+          SELECT 1 FROM spaces s
+          WHERE s.id = ce.entity_id AND s.tenant_id = ce.tenant_id
+            AND s.status = 'active'
+      )
+      WHEN 'learning_track' THEN EXISTS (
+          SELECT 1 FROM learning_tracks lt
+          WHERE lt.id = ce.entity_id AND lt.tenant_id = ce.tenant_id
+            AND lt.is_published = true
+      )
+      ELSE true
+  END
 ORDER BY ce.embedding <=> $1
 LIMIT $4
 `
@@ -384,15 +402,16 @@ type SearchContentEmbeddingsParams struct {
 }
 
 type SearchContentEmbeddingsRow struct {
-	ID         pgtype.UUID        `json:"id"`
-	TenantID   pgtype.UUID        `json:"tenant_id"`
-	EntityType string             `json:"entity_type"`
-	EntityID   pgtype.UUID        `json:"entity_id"`
-	ChunkIndex int32              `json:"chunk_index"`
-	ChunkText  string             `json:"chunk_text"`
-	Language   string             `json:"language"`
-	CreatedAt  pgtype.Timestamptz `json:"created_at"`
-	Similarity float64            `json:"similarity"`
+	ID          pgtype.UUID        `json:"id"`
+	TenantID    pgtype.UUID        `json:"tenant_id"`
+	EntityType  string             `json:"entity_type"`
+	EntityID    pgtype.UUID        `json:"entity_id"`
+	ChunkIndex  int32              `json:"chunk_index"`
+	ChunkText   string             `json:"chunk_text"`
+	Language    string             `json:"language"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	Similarity  float64            `json:"similarity"`
+	ContentType interface{}        `json:"content_type"`
 }
 
 // =====================================================================
@@ -409,6 +428,17 @@ type SearchContentEmbeddingsRow struct {
 // Ref: ADR-069 §2 — "Content is unpublished or deleted — deletes its
 //
 //	content_embeddings rows" implies only published content is retrievable.
+//
+// BUG-001 (rag-audit): return the content_type for content entities so the
+// store layer can classify the source tier correctly (editorial vs community).
+// The entity_type column is "content" (generic) for all content entities, not
+// the specific content_type (guide, blog_post, comparison, discussion).
+// ADR-069 §4 requires tier classification by content_type, not entity_type.
+//
+// BUG-004 (rag-audit): add status/deleted filters for non-content entity types
+// as defense-in-depth. The forum/spaces/learning handlers purge embeddings on
+// delete, but those are fire-and-forget — a failed purge leaves orphaned
+// embeddings. The CASE expression checks each entity type's status condition.
 func (q *Queries) SearchContentEmbeddings(ctx context.Context, arg SearchContentEmbeddingsParams) ([]SearchContentEmbeddingsRow, error) {
 	rows, err := q.db.Query(ctx, searchContentEmbeddings,
 		arg.QueryEmbedding,
@@ -433,6 +463,7 @@ func (q *Queries) SearchContentEmbeddings(ctx context.Context, arg SearchContent
 			&i.Language,
 			&i.CreatedAt,
 			&i.Similarity,
+			&i.ContentType,
 		); err != nil {
 			return nil, err
 		}
@@ -455,7 +486,8 @@ SELECT
     ce.chunk_text,
     ce.language,
     ce.created_at,
-    (1.0 - (ce.embedding <=> $1))::float8 AS similarity
+    (1.0 - (ce.embedding <=> $1))::float8 AS similarity,
+    c.content_type
 FROM content_embeddings ce
 JOIN contents c ON c.id = ce.entity_id AND ce.entity_type = 'content'
 WHERE ce.tenant_id = $2
@@ -480,15 +512,16 @@ type SearchContentEmbeddingsGeoFilteredParams struct {
 }
 
 type SearchContentEmbeddingsGeoFilteredRow struct {
-	ID         pgtype.UUID        `json:"id"`
-	TenantID   pgtype.UUID        `json:"tenant_id"`
-	EntityType string             `json:"entity_type"`
-	EntityID   pgtype.UUID        `json:"entity_id"`
-	ChunkIndex int32              `json:"chunk_index"`
-	ChunkText  string             `json:"chunk_text"`
-	Language   string             `json:"language"`
-	CreatedAt  pgtype.Timestamptz `json:"created_at"`
-	Similarity float64            `json:"similarity"`
+	ID          pgtype.UUID        `json:"id"`
+	TenantID    pgtype.UUID        `json:"tenant_id"`
+	EntityType  string             `json:"entity_type"`
+	EntityID    pgtype.UUID        `json:"entity_id"`
+	ChunkIndex  int32              `json:"chunk_index"`
+	ChunkText   string             `json:"chunk_text"`
+	Language    string             `json:"language"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	Similarity  float64            `json:"similarity"`
+	ContentType string             `json:"content_type"`
 }
 
 // =====================================================================
@@ -505,6 +538,10 @@ type SearchContentEmbeddingsGeoFilteredRow struct {
 // so that soft-deleted or unpublished content is never returned in geo-filtered
 // RAG retrieval. The JOIN to contents already exists for the geo filter, so
 // the status/deleted_at conditions are added to the WHERE clause.
+//
+// BUG-001 (rag-audit): return c.content_type so the store layer can classify
+// the source tier correctly (editorial vs community). The geo-filtered query
+// already JOINs to contents, so c.content_type is always available.
 func (q *Queries) SearchContentEmbeddingsGeoFiltered(ctx context.Context, arg SearchContentEmbeddingsGeoFilteredParams) ([]SearchContentEmbeddingsGeoFilteredRow, error) {
 	rows, err := q.db.Query(ctx, searchContentEmbeddingsGeoFiltered,
 		arg.QueryEmbedding,
@@ -530,6 +567,7 @@ func (q *Queries) SearchContentEmbeddingsGeoFiltered(ctx context.Context, arg Se
 			&i.Language,
 			&i.CreatedAt,
 			&i.Similarity,
+			&i.ContentType,
 		); err != nil {
 			return nil, err
 		}

@@ -19,12 +19,13 @@ func NewStore(read, write *gen.Queries) *Store {
 	return &Store{read: read, write: write}
 }
 
-func (s *Store) listRedirects(ctx context.Context, tenantID pgtype.UUID, isActive *bool, search string, limit, offset int32) ([]gen.Redirect, error) {
+func (s *Store) listRedirects(ctx context.Context, tenantID pgtype.UUID, isActive *bool, search, sort, dir string, limit, offset int32) ([]gen.Redirect, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
 	rows, err := s.read.ListRedirects(ctx, gen.ListRedirectsParams{
 		TenantID: tenantID, IsActive: isActive, Search: search,
+		Sort: sort, Dir: dir,
 		PageOffset: offset, PageLimit: limit,
 	})
 	if err != nil {

@@ -339,6 +339,22 @@ SELECT id, tenant_id, parent_id, space_type_id, name, slug, description, wiki_co
 FROM spaces
 WHERE slug = @slug AND tenant_id = @tenant_id AND deleted_at IS NULL;
 
+-- name: GetPublicSpaceBySlug :one
+-- Public API (Section 47): returns a single space only if it is public,
+-- active, and not soft-deleted. Private, member-only, and inactive spaces
+-- are never exposed to external API consumers.
+-- Ref: japaconnect-engineering/sections/47-public-api-developer-portal.md
+SELECT id, tenant_id, parent_id, space_type_id, name, slug, description, wiki_content,
+       logo_media_id, header_image_id, geo_code, level, member_count, post_count,
+       follower_count, visibility, posting_perm, replying_perm, commenting_perm,
+       joining_perm, status, created_at, updated_at, deleted_at, currency_code
+FROM spaces
+WHERE slug = @slug
+  AND tenant_id = @tenant_id
+  AND visibility = 'public'
+  AND status = 'active'
+  AND deleted_at IS NULL;
+
 -- name: CreateSpace :one
 INSERT INTO spaces (
     tenant_id, parent_id, space_type_id, name, slug, description, wiki_content,

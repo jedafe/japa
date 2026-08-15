@@ -74,6 +74,23 @@ var Registry = []Feature{
 	{Key: "language_test_hub.enabled", Label: "Language Test Hub", Default: false},
 	{Key: "tax_calculator.enabled", Label: "Tax Calculator", Default: false},
 	{Key: "community_locator.enabled", Label: "Diaspora Community Locator", Default: false},
+	// V1 Tools — originally toggled via system_settings, now unified under
+	// feature_flags so the Control Panel Extensions page and the frontend
+	// tool registries share a single source of truth.
+	{Key: "assessment.enabled", Label: "Japa Readiness Assessment", Default: true},
+	{Key: "col_calculator.enabled", Label: "Cost of Living Calculator", Default: true},
+	{Key: "scholarship_finder.enabled", Label: "Scholarship Finder", Default: true},
+	{Key: "remittance.enabled", Label: "Remittance Rate Tracker", Default: true},
+	{Key: "travel.enabled", Label: "Travel Search", Default: true},
+	{Key: "jobs.enabled", Label: "Jobs Board", Default: true},
+	{Key: "gamification.enabled", Label: "Gamification", Default: true},
+	{Key: "push.enabled", Label: "Mobile Push Notifications", Default: true},
+	{Key: "geo_personalization.enabled", Label: "Geo Personalization", Default: true},
+	// V2 AI / Infrastructure extensions
+	{Key: "rag.enabled", Label: "RAG / JapaBot Knowledge", Default: false},
+	{Key: "studio.enabled", Label: "AI Content Studio", Default: false},
+	{Key: "participation.enabled", Label: "Participation Orchestration", Default: false},
+	{Key: "webhooks.enabled", Label: "Webhooks", Default: false},
 }
 
 // DefaultFor returns the default enabled state for a feature key.

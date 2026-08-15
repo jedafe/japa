@@ -645,6 +645,20 @@ func (s *Service) ProcessAccountDeletion(ctx context.Context, requestID pgtype.U
 					"user_id", request.UserID.String(), "error", err)
 			}
 		}
+		// Revoke all of the user's API keys during the anonymization phase
+		// so they cannot authenticate during the retention_wait window
+		// (Section 19 GDPR/NDPR, BUG-008 fix: API keys remained active
+		// until the hard-delete cascade removed them). Best-effort: a
+		// failure logs a warning but does not abort — the user row is
+		// already anonymized.
+		if _, err := s.db.Writer.Exec(ctx, `
+			UPDATE api_keys
+			SET status = 'revoked', revoked_at = now(), revoked_by = user_id, updated_at = now()
+			WHERE user_id = $1 AND tenant_id = $2 AND status = 'active'
+		`, request.UserID, request.TenantID); err != nil {
+			slog.Warn("failed to revoke api keys during deletion",
+				"user_id", request.UserID.String(), "error", err)
+		}
 		if err := s.checkpoint(ctx, requestID, request.TenantID, deletionStepAnonymized); err != nil {
 			return err
 		}
@@ -1784,6 +1798,29 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 			  )
 		`, userID, tenantID); err != nil {
 			return fmt.Errorf("purging content_embeddings for soft-deleted content: %w", err)
+		}
+
+		// BUG-003 (rag-audit): Purge RAG content_embeddings for the user's
+		// forum threads. Forum threads are user-authored content (title +
+		// body) embedded into content_embeddings with entity_type =
+		// 'forum_thread'. content_embeddings has no FK to forum_threads
+		// (polymorphic entity_type/entity_id), so ON DELETE CASCADE does not
+		// fire. The thread body may contain PII (the user's words), so it
+		// must be removed on erasure. Spaces and learning_tracks are
+		// tenant-owned content (no author_user_id column) and are not
+		// purged here — they are not user PII.
+		// Ref: japaconnect-engineering/sections/69-rag-knowledge-layer.md
+		//      japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
+		if _, err := s.db.Writer.Exec(ctx, `
+			DELETE FROM content_embeddings
+			WHERE tenant_id = $2
+			  AND entity_type = 'forum_thread'
+			  AND entity_id IN (
+			      SELECT id FROM forum_threads
+			      WHERE tenant_id = $2 AND author_user_id = $1
+			  )
+		`, userID, tenantID); err != nil {
+			return fmt.Errorf("purging content_embeddings for user forum threads: %w", err)
 		}
 
 		// 5. Physical deletion — ON DELETE CASCADE handles all child tables.

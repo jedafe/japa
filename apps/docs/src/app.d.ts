@@ -37,6 +37,8 @@ declare global {
 			theme: ThemeName;
 			locale: Locale;
 			accessibleAudiences: DocAudience[];
+			/** Feature flags from GET /feature-flags (public endpoint). */
+			features?: Record<string, boolean>;
 		}
 		// interface PageState {}
 		// interface Platform {}

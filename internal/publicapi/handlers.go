@@ -33,13 +33,10 @@ func (h *Handlers) SetQueries(q *gen.Queries) {
 	h.Queries = q
 }
 
-// siteURL is the base URL for the site, set during initialization.
-var siteURL string
-
-// SetSiteURL sets the base URL for the site (e.g. "https://example.com").
-func SetSiteURL(url string) {
-	siteURL = url
-}
+// SetSiteURL is a no-op retained for backward compatibility. The site URL
+// is now passed directly to GetPublicOpenAPISpec as a parameter (BUG-011
+// fix: the package-level global was dead code — set but never read).
+func SetSiteURL(_ string) {}
 
 // ---------------------------------------------------------------------------
 // Shared helpers
@@ -582,6 +579,8 @@ func (h *Handlers) UpdateAPIKey(w http.ResponseWriter, r *http.Request) {
 // return a simplified, stable response shape suitable for third-party consumers.
 
 // GetContentByID handles GET /api/v1/content/:id — returns a single content item.
+// Only published, public, non-deleted content is exposed to external API
+// consumers (Section 47 — BUG-001 fix: GetContentByID exposed drafts/private).
 func (h *Handlers) GetContentByID(w http.ResponseWriter, r *http.Request) {
 	if h.Queries == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "not_ready", "Public API not configured")
@@ -600,7 +599,7 @@ func (h *Handlers) GetContentByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	content, err := h.Queries.GetContentByID(r.Context(), gen.GetContentByIDParams{
+	content, err := h.Queries.GetPublishedContentByID(r.Context(), gen.GetPublishedContentByIDParams{
 		ID:       id,
 		TenantID: keyCtx.TenantID,
 	})
@@ -638,6 +637,8 @@ func (h *Handlers) ListSpaces(w http.ResponseWriter, r *http.Request) {
 }
 
 // GetSpaceBySlug handles GET /api/v1/spaces/:slug — returns a single space.
+// Only public, active, non-deleted spaces are exposed to external API
+// consumers (Section 47 — BUG-004 fix: GetSpaceBySlug exposed private/inactive).
 func (h *Handlers) GetSpaceBySlug(w http.ResponseWriter, r *http.Request) {
 	if h.Queries == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "not_ready", "Public API not configured")
@@ -656,7 +657,7 @@ func (h *Handlers) GetSpaceBySlug(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	space, err := h.Queries.GetSpaceBySlug(r.Context(), gen.GetSpaceBySlugParams{
+	space, err := h.Queries.GetPublicSpaceBySlug(r.Context(), gen.GetPublicSpaceBySlugParams{
 		Slug:     slug,
 		TenantID: keyCtx.TenantID,
 	})
@@ -669,6 +670,8 @@ func (h *Handlers) GetSpaceBySlug(w http.ResponseWriter, r *http.Request) {
 }
 
 // ListTags handles GET /api/v1/tags — returns a paginated list of tags.
+// Uses ListTagsPaginated (BUG-010 fix: ListTagsByTenant returned ALL tags
+// with no pagination — unbounded response for large tenants).
 func (h *Handlers) ListTags(w http.ResponseWriter, r *http.Request) {
 	if h.Queries == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "not_ready", "Public API not configured")
@@ -681,16 +684,44 @@ func (h *Handlers) ListTags(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tags, err := h.Queries.ListTagsByTenant(r.Context(), keyCtx.TenantID)
+	limit := parsePageSize(r, defaultPageSize, 100)
+	offset := parseOffset(r)
+	q := r.URL.Query().Get("q")
+	sort := r.URL.Query().Get("sort")
+
+	tags, err := h.Queries.ListTagsPaginated(r.Context(), gen.ListTagsPaginatedParams{
+		TenantID:   keyCtx.TenantID,
+		Q:          q,
+		Sort:       sort,
+		PageLimit:  limit,
+		PageOffset: offset,
+	})
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
 
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": tags})
+	total, err := h.Queries.CountTagsPaginated(r.Context(), gen.CountTagsPaginatedParams{
+		TenantID: keyCtx.TenantID,
+		Q:        q,
+	})
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
+		"data":   tags,
+		"total":  total,
+		"limit":  limit,
+		"offset": offset,
+	})
 }
 
 // GetUserByID handles GET /api/v1/users/:id — returns a single user profile.
+// PII-safe: no email, status, last_login, or group membership (Section 47 —
+// BUG-002 fix: GetUserByID leaked email + status fields).
+// Only active users who have not opted out of search indexability.
 func (h *Handlers) GetUserByID(w http.ResponseWriter, r *http.Request) {
 	if h.Queries == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "not_ready", "Public API not configured")
@@ -709,7 +740,7 @@ func (h *Handlers) GetUserByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user, err := h.Queries.GetUserByID(r.Context(), gen.GetUserByIDParams{
+	user, err := h.Queries.GetPublicUserByID(r.Context(), gen.GetPublicUserByIDParams{
 		UserID:   id,
 		TenantID: keyCtx.TenantID,
 	})
@@ -810,7 +841,9 @@ func (h *Handlers) ListContent(w http.ResponseWriter, r *http.Request) {
 }
 
 // ListContentComments handles GET /api/v1/public/content/{id}/comments —
-// returns top-level published comments for a content item.
+// returns top-level published comments for a content item, but ONLY if the
+// parent content itself is published and public (Section 47 — BUG-005 fix:
+// comments on drafts/private content were exposed).
 // Ref: japaconnect-engineering/sections/47-public-api-developer-portal.md
 func (h *Handlers) ListContentComments(w http.ResponseWriter, r *http.Request) {
 	if h.Queries == nil {
@@ -833,7 +866,7 @@ func (h *Handlers) ListContentComments(w http.ResponseWriter, r *http.Request) {
 	limit := parsePageSize(r, defaultPageSize, 100)
 	offset := parseOffset(r)
 
-	comments, err := h.Queries.ListCommentsByContent(r.Context(), gen.ListCommentsByContentParams{
+	comments, err := h.Queries.ListPublicCommentsByContent(r.Context(), gen.ListPublicCommentsByContentParams{
 		ContentID:  contentID,
 		TenantID:   keyCtx.TenantID,
 		PageOffset: offset,

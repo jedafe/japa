@@ -58,6 +58,13 @@ type RAGEntityIndexer interface {
 	PurgeEntity(ctx context.Context, tenantID pgtype.UUID, entityType string, entityID pgtype.UUID) error
 }
 
+// settingsReader is the subset of config.Settings needed by the spaces
+// handlers to resolve hot-reloadable system_settings (e.g.
+// i18n.default_language for RAG indexing). Nil falls back to defaults.
+type settingsReader interface {
+	GetStringOr(ctx context.Context, tenantID pgtype.UUID, key, fallback string) string
+}
+
 type Handlers struct {
 	Service    *Service
 	Unread     *UnreadCounter
@@ -66,6 +73,7 @@ type Handlers struct {
 	permCache  PermCacheInvalidator
 	media      MediaResolver    // nil = logo_url omitted from responses
 	ragIndexer RAGEntityIndexer // nil disables RAG indexing (§69)
+	settings   settingsReader   // nil falls back to defaults
 }
 
 // FollowToggleService is the subset of the follows.Service used by the space
@@ -97,6 +105,11 @@ func (h *Handlers) SetMediaResolver(m MediaResolver) { h.media = m }
 // content_embeddings (§69/ADR-069 BUG-001 fix). nil disables RAG indexing.
 func (h *Handlers) SetRAGIndexer(r RAGEntityIndexer) { h.ragIndexer = r }
 
+// SetSettings injects the hot-reloadable settings reader for resolving
+// system_settings (e.g. i18n.default_language for RAG indexing). nil falls
+// back to compiled-in defaults.
+func (h *Handlers) SetSettings(s settingsReader) { h.settings = s }
+
 // indexSpaceRAG fires-and-forgets a RAG indexing call for a space. The body
 // is the space name + description + keywords concatenated for embedding.
 // Errors are logged, never propagated (Rule 8).
@@ -120,9 +133,16 @@ func (h *Handlers) indexSpaceRAG(ctx context.Context, tenantID, spaceID pgtype.U
 	if text == "" {
 		return
 	}
+	// BUG-002 (rag-audit): resolve the indexing language from
+	// i18n.default_language (§7 i18n) instead of hardcoding "en". Falls back
+	// to "en" when settings are not injected or the key is unset.
+	language := "en"
+	if h.settings != nil {
+		language = h.settings.GetStringOr(ctx, tenantID, "i18n.default_language", "en")
+	}
 	go func() { // #nosec G118 -- fire-and-forget: request ctx is cancelled on HTTP return (Rule 8)
 		bgCtx := context.Background()
-		if err := h.ragIndexer.IndexEntity(bgCtx, tenantID, "space", spaceID, text, "en"); err != nil {
+		if err := h.ragIndexer.IndexEntity(bgCtx, tenantID, "space", spaceID, text, language); err != nil {
 			slog.Warn("spaces: RAG index failed for space",
 				"space_id", spaceID.String(), "error", err)
 		}

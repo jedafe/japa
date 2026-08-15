@@ -479,6 +479,46 @@ export interface OnboardingRecommendation {
 	score: number;
 }
 
+/** GET /recommendations — geo-aware tool/feature/content/space recommendations (ADR-064a §5). */
+export interface RecommendationItem {
+	slug: string;
+	label: string;
+	url: string;
+	reason: string;
+}
+
+export interface RecommendationContentItem {
+	id: string;
+	title: string;
+	url: string;
+	content_type: string;
+}
+
+export interface RecommendationSpaceItem {
+	id: string;
+	name: string;
+	slug: string;
+	level: string;
+}
+
+export interface VisitorContextSummary {
+	archetype: string;
+	content_country: string;
+	origin_country: string;
+	current_country: string;
+	destination_country: string;
+	japa_stage: string;
+	current_city: string;
+}
+
+export interface RecommendationsResponse {
+	tools: RecommendationItem[];
+	features: RecommendationItem[];
+	content: RecommendationContentItem[];
+	spaces: RecommendationSpaceItem[];
+	context: VisitorContextSummary;
+}
+
 /** GET /onboarding/options — option lists for Step 1 & Step 2 (Rule 16). */
 export interface OnboardingOption {
 	value: string;
