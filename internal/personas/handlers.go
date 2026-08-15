@@ -174,7 +174,7 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": items,
-		"meta": map[string]int64{"total": total, "limit": int64(limit), "offset": int64(offset)},
+		"meta": map[string]int64{"total": total, "page_size": int64(limit), "page_offset": int64(offset)},
 	})
 }
 
@@ -314,7 +314,7 @@ func (h *Handlers) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 
 // HandleActivity handles GET /admin/personas/{id}/activity — paginated
 // action log (platform_events for the persona's backing user).
-// Gated by persona.view permission.
+// Gated by participation.view permission (ADR-077 §10/§11).
 func (h *Handlers) HandleActivity(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
@@ -345,6 +345,6 @@ func (h *Handlers) HandleActivity(w http.ResponseWriter, r *http.Request) {
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": entries,
-		"meta": map[string]int64{"total": total, "limit": int64(limit), "offset": int64(offset)},
+		"meta": map[string]int64{"total": total, "page_size": int64(limit), "page_offset": int64(offset)},
 	})
 }

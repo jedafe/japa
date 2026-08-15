@@ -1,4 +1,5 @@
 // Ref: japaconnect-engineering/sections/98-service-directory.md
+import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiList } from '$lib/server/api';
 import type { ServiceListing, Space } from '$lib/types';
@@ -12,6 +13,11 @@ import type { ServiceListing, Space } from '$lib/types';
 const PAGE_SIZE = 20;
 
 export const load: PageServerLoad = async (event) => {
+	const { features } = await event.parent();
+	if (!features['service_directory.enabled']) {
+		throw error(404, { code: 'feature_disabled', message: 'Service Directory is not available' });
+	}
+
 	const ctx = apiContext(event);
 	const authed = !!event.locals.user;
 

@@ -14,7 +14,7 @@
 		Download, Trash2, FileInput, AlertTriangle,
 		Star, MessageCircle, Layout, Image,
 		Type, ListOrdered, GitCompare, Palette,
-		Clock, UserPlus, ChevronDown, ChevronRight,
+		Clock, ChevronDown, ChevronRight,
 		Briefcase, Eye, X, Menu, ArrowRightLeft, CreditCard,
 		Package, Receipt, PanelLeft,
 		Brain, Wand, Trophy, Plane, Banknote,
@@ -143,7 +143,6 @@
 			{ path: "/university/payouts", label: t("nav.university_payouts", "University Payouts"), icon: DollarSign, permission: "university.payout.process" },
 		{ path: "/university/revenue-splits", label: t("nav.university_revenue_splits", "Revenue Splits"), icon: DollarSign, permission: "university.revenue.list" },
 		{ path: "/mentorship", label: t("nav.mentorship", "Mentorship"), icon: Users2, permission: "mentorship.admin" },
-		{ path: "/onboarding", label: t("nav.onboarding", "Onboarding"), icon: UserPlus, permission: "admin.settings.view" },
 		{ path: "/onboarding/templates", label: t("nav.onboarding_templates", "Onboarding Templates"), icon: FileText, permission: "admin.settings.view" },
 		{ path: "/gamification", label: t("nav.gamification", "Gamification"), icon: Trophy, permission: "gamification.view" },
 		{ path: "/jobs", label: t("nav.jobs", "Jobs Board"), icon: Briefcase, permission: "jobs.admin" }
@@ -221,8 +220,7 @@
 				{ path: "/participation", label: t("nav.participation", "Participation Queue"), icon: Bot, permission: "participation.view" },
 				{ path: "/rag", label: t("nav.rag", "RAG Index"), icon: Brain, permission: "ai.rag.manage" },
 				{ path: "/bots", label: t("nav.bots", "Bots"), icon: Bot, permission: "bots.admin" },
-				{ path: "/webhooks", label: t("nav.webhooks", "Webhooks"), icon: Webhook, permission: "integrations.webhooks.manage" },
-				{ path: "/feature-flags", label: t("nav.feature_flags", "Feature Flags"), icon: Zap, permission: "admin.feature_flags.view" }
+				{ path: "/webhooks", label: t("nav.webhooks", "Webhooks"), icon: Webhook, permission: "integrations.webhooks.manage" }
 			]
 		},
 		{

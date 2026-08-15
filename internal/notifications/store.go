@@ -19,13 +19,16 @@ func NewStore(read, write *gen.Queries) *Store {
 	return &Store{read: read, write: write}
 }
 
-// insertNotification creates a new notification row.
-func (s *Store) insertNotification(ctx context.Context, params gen.InsertNotificationParams) error {
-	if err := s.write.InsertNotification(ctx, params); err != nil {
-		return fmt.Errorf("inserting notification: %w", err)
+// insertNotification creates a new notification row and returns its ID.
+// BUG-005: now returns the notification ID so callers can include it in
+// the WebSocket broadcast payload (§35 L88, §10).
+func (s *Store) insertNotification(ctx context.Context, params gen.InsertNotificationParams) (pgtype.UUID, error) {
+	id, err := s.write.InsertNotification(ctx, params)
+	if err != nil {
+		return pgtype.UUID{}, fmt.Errorf("inserting notification: %w", err)
 	}
 
-	return nil
+	return id, nil
 }
 
 // getNotificationsByRecipient returns paginated notifications for a user.
@@ -222,9 +225,12 @@ func (s *Store) deleteNotificationType(ctx context.Context, key string) error {
 }
 
 // getUserDisplayName returns a user's display_name (nil when unset).
-func (s *Store) getUserDisplayName(ctx context.Context, userID pgtype.UUID) (*string, error) {
+// BUG-003: previously passed a zero UUID as tenant_id, which caused
+// GetUserProfile to return ErrNoRows for every user. Now requires the
+// correct tenant_id so the tenant-scoped WHERE clause matches.
+func (s *Store) getUserDisplayName(ctx context.Context, tenantID, userID pgtype.UUID) (*string, error) {
 	user, err := s.read.GetUserProfile(ctx, gen.GetUserProfileParams{
-		TenantID: pgtype.UUID{},
+		TenantID: tenantID,
 		UserID:   userID,
 	})
 	if err != nil {

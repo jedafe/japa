@@ -32,6 +32,10 @@ export interface SectionMeta {
 	group: HubGroup;
 	backendReady: boolean;
 	component: Component<{ data: unknown }> | null; // null = not built in this plan (rail shows disabled)
+	/** Feature flag key that gates this section's visibility. When the flag
+	 *  is disabled, the section is hidden from the settings rail and the
+	 *  dispatch page returns 404. Empty = always visible (core section). */
+	featureFlag?: string;
 }
 
 export const DEFAULT_SECTION = 'profile';
@@ -42,17 +46,17 @@ export const SETTINGS_SECTIONS: SectionMeta[] = [
 	{ slug: 'privacy', labelKey: 'settings.nav.privacy', icon: 'lock', group: 'account', backendReady: true, component: PrivacySection },
 	{ slug: 'language', labelKey: 'settings.nav.language', icon: 'globe', group: 'account', backendReady: true, component: LanguageSection },
 	{ slug: 'location', labelKey: 'settings.nav.location', icon: 'map-pin', group: 'account', backendReady: true, component: LocationSection },
-	{ slug: 'mentorship', labelKey: 'settings.nav.mentorship', icon: 'graduation-cap', group: 'account', backendReady: true, component: MentorSection },
+	{ slug: 'mentorship', labelKey: 'settings.nav.mentorship', icon: 'graduation-cap', group: 'account', backendReady: true, component: MentorSection, featureFlag: 'mentorship.enabled' },
 	{ slug: 'data-privacy', labelKey: 'settings.nav.data_privacy', icon: 'shield-check', group: 'account', backendReady: true, component: DataPrivacySection },
 	{ slug: 'security', labelKey: 'settings.nav.security', icon: 'shield', group: 'security', backendReady: true, component: SecuritySection },
 	{ slug: 'sessions', labelKey: 'settings.nav.sessions', icon: 'monitor', group: 'security', backendReady: true, component: SessionsSection },
 	{ slug: 'connected', labelKey: 'settings.nav.connected', icon: 'link', group: 'security', backendReady: true, component: ConnectedSection },
 	{ slug: 'devices', labelKey: 'settings.nav.devices', icon: 'smartphone', group: 'security', backendReady: false, component: null },
-	{ slug: 'notifications', labelKey: 'settings.nav.notifications', icon: 'bell', group: 'notifications', backendReady: true, component: NotificationsSection },
-	{ slug: 'newsletter', labelKey: 'settings.nav.newsletter', icon: 'mail', group: 'notifications', backendReady: true, component: NewsletterSection },
+	{ slug: 'notifications', labelKey: 'settings.nav.notifications', icon: 'bell', group: 'notifications', backendReady: true, component: NotificationsSection, featureFlag: 'feature.notifications' },
+	{ slug: 'newsletter', labelKey: 'settings.nav.newsletter', icon: 'mail', group: 'notifications', backendReady: true, component: NewsletterSection, featureFlag: 'feature.newsletter' },
 	{ slug: 'api-keys', labelKey: 'settings.nav.api_keys', icon: 'key', group: 'developer', backendReady: true, component: ApiKeysSection },
-	{ slug: 'affiliate', labelKey: 'settings.nav.affiliate', icon: 'share-2', group: 'developer', backendReady: true, component: AffiliateSection },
-	{ slug: 'wallet', labelKey: 'settings.nav.wallet', icon: 'wallet', group: 'billing', backendReady: true, component: WalletSection },
+	{ slug: 'affiliate', labelKey: 'settings.nav.affiliate', icon: 'share-2', group: 'developer', backendReady: true, component: AffiliateSection, featureFlag: 'feature.affiliate_program' },
+	{ slug: 'wallet', labelKey: 'settings.nav.wallet', icon: 'wallet', group: 'billing', backendReady: true, component: WalletSection, featureFlag: 'feature.wallet' },
 	{ slug: 'subscription', labelKey: 'settings.nav.subscription', icon: 'credit-card', group: 'billing', backendReady: true, component: SubscriptionSection },
 	{ slug: 'danger', labelKey: 'settings.nav.danger', icon: 'alert-triangle', group: 'danger', backendReady: true, component: DangerSection }
 ];
@@ -63,8 +67,14 @@ export function resolveSection(slug: string): SectionMeta | null {
 
 const GROUP_ORDER: HubGroup[] = ['account', 'security', 'notifications', 'billing', 'developer', 'danger'];
 
-export function sectionsByGroup(): [HubGroup, SectionMeta[]][] {
-	return GROUP_ORDER.map((g) => [g, SETTINGS_SECTIONS.filter((s) => s.group === g)] as [HubGroup, SectionMeta[]])
+/** Returns true when the section's feature flag is enabled (or it has no flag). */
+function sectionFeatureEnabled(s: SectionMeta, features?: Record<string, boolean>): boolean {
+	if (!s.featureFlag) return true;
+	return features?.[s.featureFlag] === true;
+}
+
+export function sectionsByGroup(features?: Record<string, boolean>): [HubGroup, SectionMeta[]][] {
+	return GROUP_ORDER.map((g) => [g, SETTINGS_SECTIONS.filter((s) => s.group === g && sectionFeatureEnabled(s, features))] as [HubGroup, SectionMeta[]])
 		.filter(([, list]) => list.length > 0);
 }
 
@@ -73,14 +83,20 @@ export function groupForSection(slug: string): HubGroup | null {
 	return resolveSection(slug)?.group ?? null;
 }
 
-/** Returns all ready sections within the given group, in registry order. */
-export function sectionsInGroup(group: HubGroup): SectionMeta[] {
-	return SETTINGS_SECTIONS.filter((s) => s.group === group && s.backendReady && s.component);
+/** Returns all ready sections within the given group, in registry order.
+ *  When `features` is provided, sections whose feature flag is disabled
+ *  are excluded so they don't appear in the settings tab rail. */
+export function sectionsInGroup(group: HubGroup, features?: Record<string, boolean>): SectionMeta[] {
+	return SETTINGS_SECTIONS.filter(
+		(s) => s.group === group && s.backendReady && s.component && sectionFeatureEnabled(s, features)
+	);
 }
 
-/** Lean list of groups that have at least one ready section, with the first slug for navigation. */
-export function readyGroups(): { group: HubGroup; firstSlug: string; count: number }[] {
-	return sectionsByGroup()
+/** Lean list of groups that have at least one ready section, with the first slug for navigation.
+ *  When `features` is provided, sections whose feature flag is disabled
+ *  are excluded so empty groups collapse. */
+export function readyGroups(features?: Record<string, boolean>): { group: HubGroup; firstSlug: string; count: number }[] {
+	return sectionsByGroup(features)
 		.map(([group, items]) => {
 			const ready = items.filter((s) => s.backendReady && s.component);
 			return { group, firstSlug: ready[0]?.slug ?? '', count: ready.length };

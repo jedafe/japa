@@ -8,22 +8,31 @@
 
 	interface Props {
 		user: SessionUser | null;
+		/** Feature flags from /feature-flags — used to hide the notifications
+		 *  tab when feature.notifications is disabled. */
+		features?: Record<string, boolean>;
 	}
 
-	let { user }: Props = $props();
+	let { user, features = {} }: Props = $props();
 
 	const profileHref = $derived(user ? `/u/${user.username}` : '/login');
 	const unread = $derived(realtime.unreadNotifications);
+	const notificationsEnabled = $derived(features['feature.notifications'] === true);
 
 	// Notifications tab is auth-gated — guests get a login link with returnTo
-	// instead of navigating to a 403. Compose is handled separately below
-	// (center elevated button) because it opens a modal for authed users.
+	// instead of navigating to a 403. It is also hidden entirely when the
+	// feature.notifications flag is disabled so no trace of the toggled-off
+	// feature leaks into the mobile tab bar.
+	// Compose is handled separately below (center elevated button) because it
+	// opens a modal for authed users.
 	const tabs = $derived([
 		{ href: '/', icon: Home, label: t('nav.home', 'Home'), active: page.url.pathname === '/' },
 		{ href: '/search', icon: Search, label: t('nav.search', 'Search'), active: page.url.pathname.startsWith('/search') },
-		...(user
-			? [{ href: '/notifications', icon: Bell, label: t('nav.notifications', 'Notifications'), active: page.url.pathname.startsWith('/notifications') }]
-			: [{ href: '/login?redirect=/notifications', icon: Bell, label: t('nav.notifications', 'Notifications'), active: false }]),
+		...(notificationsEnabled
+			? (user
+				? [{ href: '/notifications', icon: Bell, label: t('nav.notifications', 'Notifications'), active: page.url.pathname.startsWith('/notifications') }]
+				: [{ href: '/login?redirect=/notifications', icon: Bell, label: t('nav.notifications', 'Notifications'), active: false }])
+			: []),
 		{ href: profileHref, icon: User, label: t('nav.profile', 'Profile'), active: page.url.pathname.startsWith('/u/') }
 	]);
 </script>

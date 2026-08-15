@@ -87,7 +87,7 @@ func (h *Handlers) HandleQueue(w http.ResponseWriter, r *http.Request) {
 	countArgs := []interface{}{t.ID}
 	countQuery := `SELECT count(*) FROM content_reviews cr
 		 JOIN contents c ON c.id = cr.content_id
-		 JOIN users u ON u.id = c.author_user_id
+		 JOIN users u ON u.id = c.author_id
 		 LEFT JOIN professional_profiles p ON p.id = c.author_profile_id
 		 WHERE cr.tenant_id = $1 AND cr.source = 'persona_action' AND cr.status = 'pending' AND cr.deleted_at IS NULL`
 	if search != "" {
@@ -120,7 +120,7 @@ func (h *Handlers) HandleQueue(w http.ResponseWriter, r *http.Request) {
 			        COALESCE(p.display_name, u.username) as persona_name
 			 FROM content_reviews cr
 			 JOIN contents c ON c.id = cr.content_id
-			 JOIN users u ON u.id = c.author_user_id
+			 JOIN users u ON u.id = c.author_id
 			 LEFT JOIN professional_profiles p ON p.id = c.author_profile_id
 			 WHERE cr.tenant_id = $1 AND cr.source = 'persona_action' AND cr.status = 'pending' AND cr.deleted_at IS NULL`
 	argIdx := 2

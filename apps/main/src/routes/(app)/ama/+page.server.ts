@@ -1,4 +1,5 @@
 // Ref: japaconnect-engineering/sections/88-ask-an-expat.md
+import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiList } from '$lib/server/api';
 import type { AMAThread } from '$lib/types';
@@ -6,6 +7,11 @@ import type { AMAThread } from '$lib/types';
 const PAGE_SIZE = 20;
 
 export const load: PageServerLoad = async (event) => {
+	const { features } = await event.parent();
+	if (!features['forum.ama.enabled']) {
+		throw error(404, { code: 'feature_disabled', message: 'Ask an Expat AMA is not available' });
+	}
+
 	const ctx = apiContext(event);
 	const authed = !!event.locals.user;
 

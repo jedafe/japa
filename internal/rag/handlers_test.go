@@ -76,24 +76,34 @@ func TestHandleStatus_NoTenant(t *testing.T) {
 // TestSourceTier verifies the editorial/community tier classification.
 func TestSourceTier(t *testing.T) {
 	tests := []struct {
-		entityType string
-		want       string
+		entityType  string
+		contentType string
+		want        string
 	}{
-		{"guide", "editorial"},
-		{"blog_post", "editorial"},
-		{"learning_track", "editorial"},
-		{"comparison", "editorial"},
-		{"discussion", "community"},
-		{"forum_thread", "community"},
-		{"space", "community"},
-		{"unknown_type", "community"},
+		// Non-content entity types — contentType is ignored.
+		{"forum_thread", "", "community"},
+		{"space", "", "community"},
+		{"learning_track", "", "editorial"},
+		// Content entity type — contentType determines the tier.
+		{"content", "guide", "editorial"},
+		{"content", "blog_post", "editorial"},
+		{"content", "comparison", "editorial"},
+		{"content", "discussion", "community"},
+		{"content", "", "community"}, // no content_type resolved → default community
+		// Unknown entity types.
+		{"unknown_type", "", "community"},
+		{"wiki_page", "", "community"},
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.entityType, func(t *testing.T) {
-			got := SourceTier(tt.entityType)
+		name := tt.entityType
+		if tt.contentType != "" {
+			name += "/" + tt.contentType
+		}
+		t.Run(name, func(t *testing.T) {
+			got := SourceTier(tt.entityType, tt.contentType)
 			if got != tt.want {
-				t.Errorf("SourceTier(%q) = %q, want %q", tt.entityType, got, tt.want)
+				t.Errorf("SourceTier(%q, %q) = %q, want %q", tt.entityType, tt.contentType, got, tt.want)
 			}
 		})
 	}

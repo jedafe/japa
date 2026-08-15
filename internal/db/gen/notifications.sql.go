@@ -446,11 +446,12 @@ func (q *Queries) GetUnreadNotificationCount(ctx context.Context, arg GetUnreadN
 	return count, err
 }
 
-const insertNotification = `-- name: InsertNotification :exec
+const insertNotification = `-- name: InsertNotification :one
 
 
 INSERT INTO notifications (tenant_id, recipient_id, notification_type, actor_type, actor_id, subject_type, subject_id, title, body, action_url)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+RETURNING id
 `
 
 type InsertNotificationParams struct {
@@ -471,8 +472,10 @@ type InsertNotificationParams struct {
 // =====================
 // Notifications CRUD
 // =====================
-func (q *Queries) InsertNotification(ctx context.Context, arg InsertNotificationParams) error {
-	_, err := q.db.Exec(ctx, insertNotification,
+// BUG-005: changed from :exec to :one returning id so the notification
+// ID is available for the WebSocket broadcast payload (§35 L88, §10).
+func (q *Queries) InsertNotification(ctx context.Context, arg InsertNotificationParams) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, insertNotification,
 		arg.TenantID,
 		arg.RecipientID,
 		arg.NotificationType,
@@ -484,7 +487,9 @@ func (q *Queries) InsertNotification(ctx context.Context, arg InsertNotification
 		arg.Body,
 		arg.ActionUrl,
 	)
-	return err
+	var id pgtype.UUID
+	err := row.Scan(&id)
+	return id, err
 }
 
 const markAllNotificationsRead = `-- name: MarkAllNotificationsRead :exec

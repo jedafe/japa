@@ -5,9 +5,12 @@
 -- Notifications CRUD
 -- =====================
 
--- name: InsertNotification :exec
+-- name: InsertNotification :one
+-- BUG-005: changed from :exec to :one returning id so the notification
+-- ID is available for the WebSocket broadcast payload (§35 L88, §10).
 INSERT INTO notifications (tenant_id, recipient_id, notification_type, actor_type, actor_id, subject_type, subject_id, title, body, action_url)
-VALUES (@tenant_id, @recipient_id, @notification_type, @actor_type, @actor_id, @subject_type, @subject_id, @title, @body, @action_url);
+VALUES (@tenant_id, @recipient_id, @notification_type, @actor_type, @actor_id, @subject_type, @subject_id, @title, @body, @action_url)
+RETURNING id;
 
 -- name: GetNotificationsByRecipient :many
 SELECT n.id, n.tenant_id, n.recipient_id, n.notification_type, n.actor_type, n.actor_id,

@@ -24,6 +24,7 @@
 		setting_key: string;
 		settings_category: string;
 		category: string;
+		rollout_percentage?: number;
 	}
 
 	let extensions = $state<Extension[]>([]);
@@ -67,7 +68,8 @@
 				version: e.version,
 				setting_key: e.setting_key ?? '',
 				settings_category: e.settings_category ?? '',
-				category: e.category ?? 'Other'
+				category: e.category ?? 'Other',
+				rollout_percentage: e.rollout_percentage ?? 100
 			}));
 		} else {
 			error = result.error || t('extensions.load_error', 'Failed to load extensions.');
@@ -162,6 +164,52 @@
 		}
 		confirmDisableOpen = false;
 		pendingDisable = null;
+	}
+
+	// Rollout percentage editing — only for feature-flagged extensions.
+	// Updates the feature_flags config blob's rollout_percentage via the
+	// control panel API. 100 = fully on, 0 = off, 1-99 = gradual rollout.
+	let editingRollout = $state<string | null>(null);
+	let rolloutInput = $state(100);
+	let savingRollout = $state(false);
+
+	function startEditRollout(ext: Extension) {
+		editingRollout = ext.key;
+		rolloutInput = ext.rollout_percentage ?? 100;
+	}
+
+	function cancelEditRollout() {
+		editingRollout = null;
+		rolloutInput = 100;
+	}
+
+	async function saveRollout(ext: Extension) {
+		savingRollout = true;
+		try {
+			const result = await api(`/control/extensions/${ext.key}/rollout`, {
+				method: 'PATCH',
+				body: JSON.stringify({ rollout_percentage: rolloutInput })
+			});
+			if (result.ok) {
+				extensions = extensions.map((e) =>
+					e.key === ext.key ? { ...e, rollout_percentage: rolloutInput } : e
+				);
+				messageType = 'success';
+				message = t('extensions.rollout_saved', 'Rollout updated to {p}%').replace('{p}', String(rolloutInput));
+			} else {
+				messageType = 'error';
+				message = result.error || t('extensions.rollout_error', 'Failed to update rollout.');
+			}
+		} catch {
+			messageType = 'error';
+			message = t('extensions.rollout_error', 'Failed to update rollout.');
+		} finally {
+			savingRollout = false;
+			editingRollout = null;
+			if (message) {
+				setTimeout(() => { message = ''; messageType = ''; }, 3000);
+			}
+		}
 	}
 </script>
 
@@ -343,6 +391,44 @@
 						</Switch.Root>
 					</div>
 				</div>
+
+				{#if ext.enabled}
+					<div class="mt-2 flex items-center gap-2 text-xs">
+						{#if editingRollout === ext.key}
+							<span class="text-muted-foreground">{t('extensions.rollout', 'Rollout')}:</span>
+							<input
+								type="number"
+								min="0"
+								max="100"
+								bind:value={rolloutInput}
+								class="border-border-input bg-background w-16 rounded border px-2 py-0.5 text-xs"
+							/>
+							<span class="text-muted-foreground">%</span>
+							<button
+								class="text-primary hover:text-primary/80 font-medium"
+								onclick={() => saveRollout(ext)}
+								disabled={savingRollout}
+							>
+								{savingRollout ? '...' : t('common.save', 'Save')}
+							</button>
+							<button
+								class="text-muted-foreground hover:text-foreground"
+								onclick={cancelEditRollout}
+							>
+								{t('common.cancel', 'Cancel')}
+							</button>
+						{:else}
+							<button
+								class="text-muted-foreground hover:text-primary inline-flex items-center gap-1 font-medium transition-colors"
+								onclick={() => startEditRollout(ext)}
+								title={t('extensions.rollout_edit', 'Edit rollout percentage')}
+							>
+								{t('extensions.rollout', 'Rollout')}:
+								<span class="text-foreground">{ext.rollout_percentage ?? 100}%</span>
+							</button>
+						{/if}
+					</div>
+				{/if}
 			</div>
 		{/each}
 	</div>

@@ -24,6 +24,7 @@ export const load: LayoutServerLoad = async (event) => {
 		toolSurface: event.locals.toolSurface,
 		csrfToken: event.locals.csrfToken ?? null,
 		siteSettings,
+		features: event.locals.features,
 		// Platform logo from appearance.logo_url (control panel).
 		logoUrl: (siteSettings['appearance.logo_url'] as string | undefined) ?? ''
 	};

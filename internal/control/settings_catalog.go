@@ -170,6 +170,7 @@ var settingsCatalog = map[string]settingMeta{
 	"geo_personalization.nominatim_timeout_ms":              {Type: "int", DefaultValue: "5000", Min: 1000, Max: 30000, Description: "Reverse-geocoding request timeout in milliseconds.", Panel: "control"},
 	"geo_personalization.recommendations_cache_ttl_seconds": {Type: "int", DefaultValue: "900", Min: 60, Max: 3600, Description: "TTL in seconds for the jc:recommendations:* cache keys (900 = 15 minutes).", Panel: "control"},
 	"geo_personalization.recommendations_max_limit":         {Type: "int", DefaultValue: "20", Min: 1, Max: 100, Description: "Maximum value accepted for the ?limit query param on GET /recommendations.", Panel: "control"},
+	"geo_personalization.recommendations_trending_window":   {Type: "string", DefaultValue: "7d", Description: "Trending-snapshot window for sourcing content/space recommendations (e.g. 7d, 24h, 30d).", Panel: "control"},
 	// AUDIT-BE2-SEC-013: link preview fetch timeout (Rule 3 — was hardcoded 10s).
 	"linkpreview.fetch_timeout_seconds": {Type: "int", DefaultValue: "10", Min: 1, Max: 120, Description: "HTTP timeout for link preview fetches in seconds.", Panel: "control"},
 	// AUDIT-BE2-BL-014: configurable iframe embed allowlist for HTML sanitization (Section 16).

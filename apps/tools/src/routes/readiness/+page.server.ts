@@ -21,7 +21,7 @@ export const load: PageServerLoad = async (event) => {
 	// Gate: skip all backend calls when assessment.enabled is false.
 	// Ref: conventions/system-settings-catalog.md, Rule 3.
 	const tool = getTool('readiness')!;
-	if (!isToolEnabled(tool, event.locals.siteSettings)) {
+	if (!isToolEnabled(tool, event.locals.features)) {
 		return { enabled: false, tool, form: null, result: null, history: [], user: event.locals.user };
 	}
 

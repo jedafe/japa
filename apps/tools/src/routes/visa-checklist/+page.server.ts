@@ -18,7 +18,7 @@ export const load: PageServerLoad = async (event) => {
 	// Gate: skip all backend calls when checklist.enabled is false.
 	// Ref: conventions/system-settings-catalog.md, Rule 3.
 	const tool = getTool('visa-checklist')!;
-	if (!isToolEnabled(tool, event.locals.siteSettings)) {
+	if (!isToolEnabled(tool, event.locals.features)) {
 		return { enabled: false, tool, selector: null, guide: null, progress: null, user: event.locals.user };
 	}
 

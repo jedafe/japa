@@ -30,6 +30,7 @@ const (
 	PurposeCourseAccess   = "course_access"
 	PurposeCreditPurchase = "credit_purchase"
 	PurposeAdSlot         = "ad_slot"
+	PurposeFormSubmission = "form_submission"
 )
 
 // Payment statuses.
@@ -75,6 +76,38 @@ const (
 	ApplicableToProMembership = "pro_membership"
 	ApplicableToAll           = "all"
 )
+
+// validProviders is the set of accepted Provider values. It mirrors the
+// payments.provider CHECK constraint in migration 000358 so invalid values
+// are rejected with a structured 400 at the handler boundary instead of
+// surfacing as a raw 500 from the DB (BUG-P015).
+var validProviders = map[string]bool{
+	ProviderPaystack:       true,
+	ProviderStripe:         true,
+	ProviderNOWPayments:    true,
+	ProviderManualTransfer: true,
+	ProviderCredit:         true,
+}
+
+// validPurposeTypes is the set of accepted PurposeType values. It mirrors the
+// payments.purpose_type CHECK constraint in migration 000358 so invalid
+// values are rejected with a structured 400 at the handler boundary instead
+// of surfacing as a raw 500 from the DB (BUG-P015).
+var validPurposeTypes = map[string]bool{
+	PurposeProMembership:  true,
+	PurposeOrgBoost:       true,
+	PurposeDonation:       true,
+	PurposeCourseAccess:   true,
+	PurposeCreditPurchase: true,
+	PurposeAdSlot:         true,
+	PurposeFormSubmission: true,
+}
+
+// IsValidProvider reports whether v is a recognized payment provider.
+func IsValidProvider(v string) bool { return validProviders[v] }
+
+// IsValidPurposeType reports whether v is a recognized payment purpose type.
+func IsValidPurposeType(v string) bool { return validPurposeTypes[v] }
 
 // Pagination defaults.
 const (

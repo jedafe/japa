@@ -16,11 +16,6 @@
 		status: string;
 		created_at: string;
 		description?: string;
-		// ADR-088 AI generation columns
-		ai_generated?: boolean;
-		ai_model?: string;
-		hitl_reviewed_by?: string;
-		ai_generated_at?: string;
 	};
 
 	const canManage = $derived(hasPermission('planning_group.manage_any'));

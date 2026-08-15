@@ -103,11 +103,11 @@ type ListRedirectsResponse struct {
 	TotalPages int32          `json:"total_pages"`
 }
 
-func (s *Service) ListRedirects(ctx context.Context, tenantID pgtype.UUID, isActive *bool, search string, limit, offset int32) (*ListRedirectsResponse, error) {
+func (s *Service) ListRedirects(ctx context.Context, tenantID pgtype.UUID, isActive *bool, search, sort, dir string, limit, offset int32) (*ListRedirectsResponse, error) {
 	if limit <= 0 {
 		limit = DefaultPageSize
 	}
-	redirects, err := s.store.listRedirects(ctx, tenantID, isActive, search, limit, offset)
+	redirects, err := s.store.listRedirects(ctx, tenantID, isActive, search, sort, dir, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("listing redirects: %w", err)
 	}

@@ -411,6 +411,71 @@ func (q *Queries) GetPublicProfileByUsername(ctx context.Context, arg GetPublicP
 	return i, err
 }
 
+const getPublicUserByID = `-- name: GetPublicUserByID :one
+SELECT u.id AS user_id,
+       u.username,
+       u.profile_type,
+       u.follower_count,
+       up.display_name,
+       up.avatar_url,
+       up.bio,
+       up.cover_url,
+       COALESCE(up.created_at, u.created_at) AS created_at,
+       (SELECT COUNT(*)::int
+          FROM follows f
+         WHERE f.tenant_id = u.tenant_id AND f.follower_id = u.id) AS following_count
+FROM users u
+LEFT JOIN user_profiles up ON up.user_id = u.id AND up.tenant_id = u.tenant_id
+LEFT JOIN user_privacy_settings ups ON ups.user_id = u.id AND ups.tenant_id = u.tenant_id
+WHERE u.tenant_id = $1
+  AND u.id = $2
+  AND u.status = 'active'
+  AND COALESCE(ups.search_indexable, true) = true
+`
+
+type GetPublicUserByIDParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	UserID   pgtype.UUID `json:"user_id"`
+}
+
+type GetPublicUserByIDRow struct {
+	UserID         pgtype.UUID        `json:"user_id"`
+	Username       string             `json:"username"`
+	ProfileType    string             `json:"profile_type"`
+	FollowerCount  int32              `json:"follower_count"`
+	DisplayName    *string            `json:"display_name"`
+	AvatarUrl      *string            `json:"avatar_url"`
+	Bio            *string            `json:"bio"`
+	CoverUrl       *string            `json:"cover_url"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	FollowingCount int32              `json:"following_count"`
+}
+
+// Public API (Section 47): PII-safe single-user lookup by ID. Returns only
+// id, username, profile_type, follower_count, display_name, avatar_url, bio,
+// and created_at — NO email, status, last_login, or group membership.
+// Only active users who have not opted out of search indexability.
+// Ref: japaconnect-engineering/sections/47-public-api-developer-portal.md
+//
+//	japaconnect-engineering/sections/19-privacy-gdpr.md (search_indexable opt-out)
+func (q *Queries) GetPublicUserByID(ctx context.Context, arg GetPublicUserByIDParams) (GetPublicUserByIDRow, error) {
+	row := q.db.QueryRow(ctx, getPublicUserByID, arg.TenantID, arg.UserID)
+	var i GetPublicUserByIDRow
+	err := row.Scan(
+		&i.UserID,
+		&i.Username,
+		&i.ProfileType,
+		&i.FollowerCount,
+		&i.DisplayName,
+		&i.AvatarUrl,
+		&i.Bio,
+		&i.CoverUrl,
+		&i.CreatedAt,
+		&i.FollowingCount,
+	)
+	return i, err
+}
+
 const getSessionIDByHash = `-- name: GetSessionIDByHash :one
 SELECT id
 FROM refresh_tokens

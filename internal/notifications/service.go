@@ -49,13 +49,14 @@ type DispatchResult struct {
 // 3. If no window: create new window
 // Returns whether a new notification was created or batch was extended.
 func (s *Service) DispatchNotification(ctx context.Context, tenantID, recipientID pgtype.UUID, nType, _ string, actorID pgtype.UUID, subjectType string, subjectID pgtype.UUID, _, _, _ string) (DispatchResult, error) {
-	// Check user preferences — if in-app is disabled, skip entirely.
-	pref, err := s.store.getNotificationPreferences(ctx, recipientID)
+	// Check effective preferences (user override OR type default).
+	// BUG-001: previously only checked explicit user preferences, ignoring
+	// notification_type defaults. A type with default_in_app=false would
+	// still create a notification if the user had no saved preference.
+	prefs, err := s.resolveEffectivePreferences(ctx, recipientID)
 	if err == nil {
-		for _, p := range pref {
-			if p.NotificationType == nType && !p.InApp {
-				return DispatchResult{Action: "skipped"}, nil
-			}
+		if ep, ok := prefs[nType]; ok && !ep.InApp {
+			return DispatchResult{Action: "skipped"}, nil
 		}
 	}
 
@@ -158,17 +159,42 @@ func (s *Service) DispatchBatch(ctx context.Context, windowID pgtype.UUID) error
 	action := notificationAction(window.NotificationType)
 
 	// Get the last actor's display name for the batch title.
-	actorName := s.resolveActorDisplayName(ctx, window.LastActorID)
+	// BUG-003: pass the batch window's tenant_id so the profile lookup
+	// resolves correctly (previously always returned "Someone").
+	actorName := s.resolveActorDisplayName(ctx, window.TenantID, window.LastActorID)
 
 	title := BuildBatchTitle(actorName, window.ActorCount, action)
+
+	// BUG-004: re-check the effective in-app preference before inserting.
+	// The user may have disabled in-app during the 5-minute batch window.
+	// If in-app is off, skip the insert but still mark the window dispatched
+	// so the Asynq task does not retry. Push/email preferences are still
+	// honoured below if the user has them enabled.
+	prefs, prefErr := s.resolveEffectivePreferences(ctx, window.RecipientID)
+	if prefErr == nil {
+		if ep, ok := prefs[window.NotificationType]; ok && !ep.InApp {
+			if err := s.store.markBatchWindowDispatched(ctx, windowID); err != nil {
+				return fmt.Errorf("marking batch window dispatched: %w", err)
+			}
+			// Still honour push/email if the user enabled them.
+			if ep.Push {
+				s.enqueuePushDeliveryWithCtx(ctx, window.RecipientID, title, "", "")
+			}
+			if ep.Email {
+				s.enqueueEmailDelivery(ctx, window.TenantID, window.RecipientID, window.NotificationType, title, "", "")
+			}
+			return nil
+		}
+	}
 
 	// Insert the aggregated notification.
 	// BUG-001: use the batch window's tenant_id (previously zero UUID, which
 	// violated the NOT NULL FK constraint on notifications.tenant_id).
+	// BUG-005: capture the returned ID for the WebSocket broadcast.
 	var bodyPtr *string
 	var actionURLPtr *string
 
-	if err := s.store.insertNotification(ctx, gen.InsertNotificationParams{
+	notifID, err := s.store.insertNotification(ctx, gen.InsertNotificationParams{
 		TenantID:         window.TenantID,
 		RecipientID:      window.RecipientID,
 		NotificationType: window.NotificationType,
@@ -179,7 +205,8 @@ func (s *Service) DispatchBatch(ctx context.Context, windowID pgtype.UUID) error
 		Title:            title,
 		Body:             bodyPtr,
 		ActionUrl:        actionURLPtr,
-	}); err != nil {
+	})
+	if err != nil {
 		return fmt.Errorf("inserting batch notification: %w", err)
 	}
 
@@ -190,8 +217,10 @@ func (s *Service) DispatchBatch(ctx context.Context, windowID pgtype.UUID) error
 
 	// BUG-002: broadcast the new notification via WebSocket so the client
 	// sees it without a manual refresh. Ref: §35 L88, §11.
+	// BUG-005: include the real notification ID so the client can mark-as-read
+	// directly from the realtime push without a refetch.
 	s.broadcastNotification(window.RecipientID, map[string]any{
-		"id":                pgtype.UUID{}, // ID not returned by insertNotification; client refetches
+		"id":                notifID,
 		"notification_type": window.NotificationType,
 		"actor_type":        ActorTypeUser,
 		"actor_id":          window.LastActorID,
@@ -206,10 +235,22 @@ func (s *Service) DispatchBatch(ctx context.Context, windowID pgtype.UUID) error
 	// BUG-013: invalidate the unread count cache so the badge updates.
 	s.invalidateUnreadCount(ctx, window.RecipientID)
 
-	// Enqueue push delivery if user has push enabled for this type.
-	s.checkAndEnqueuePush(ctx, window.RecipientID, window.NotificationType, title, "", "")
+	// BUG-007: use the already-fetched effective preferences to check
+	// push/email instead of re-querying the DB in checkAndEnqueuePush/Email.
+	if prefErr == nil {
+		if ep, ok := prefs[window.NotificationType]; ok {
+			if ep.Push {
+				s.enqueuePushDeliveryWithCtx(ctx, window.RecipientID, title, "", "")
+			}
+			if ep.Email {
+				s.enqueueEmailDelivery(ctx, window.TenantID, window.RecipientID, window.NotificationType, title, "", "")
+			}
+			return nil
+		}
+	}
 
-	// BUG-003: enqueue email delivery if user has email enabled for this type.
+	// Fallback if preference resolution failed — use the old per-call checks.
+	s.checkAndEnqueuePush(ctx, window.RecipientID, window.NotificationType, title, "", "")
 	s.checkAndEnqueueEmail(ctx, window.TenantID, window.RecipientID, window.NotificationType, title, "", "")
 
 	return nil
@@ -237,8 +278,11 @@ func notificationAction(ntype string) string {
 
 // resolveActorDisplayName returns the display_name of a user, or "Someone" on
 // error. Routed through the store rather than constructing gen.Queries inline.
-func (s *Service) resolveActorDisplayName(ctx context.Context, userID pgtype.UUID) string {
-	name, err := s.store.getUserDisplayName(ctx, userID)
+// BUG-003: previously passed a zero UUID as tenant_id, which caused
+// GetUserProfile to return ErrNoRows for every user — batch notification
+// titles were always "Someone and N others reacted".
+func (s *Service) resolveActorDisplayName(ctx context.Context, tenantID, userID pgtype.UUID) string {
+	name, err := s.store.getUserDisplayName(ctx, tenantID, userID)
 	if err != nil || name == nil || *name == "" {
 		return "Someone"
 	}
@@ -276,7 +320,8 @@ func (s *Service) CreateNotification(ctx context.Context, tenantID, recipientID 
 		actionURLPtr = &actionURL
 	}
 
-	if err := s.store.insertNotification(ctx, gen.InsertNotificationParams{
+	// BUG-005: capture the returned ID for the WebSocket broadcast.
+	notifID, err := s.store.insertNotification(ctx, gen.InsertNotificationParams{
 		TenantID:         tenantID,
 		RecipientID:      recipientID,
 		NotificationType: nType,
@@ -287,13 +332,17 @@ func (s *Service) CreateNotification(ctx context.Context, tenantID, recipientID 
 		Title:            title,
 		Body:             bodyPtr,
 		ActionUrl:        actionURLPtr,
-	}); err != nil {
+	})
+	if err != nil {
 		return fmt.Errorf("inserting notification: %w", err)
 	}
 
 	// BUG-002: broadcast the new notification via WebSocket so the client
 	// sees it without a manual refresh. Ref: §35 L88, §11.
+	// BUG-005: include the real notification ID so the client can mark-as-read
+	// directly from the realtime push without a refetch.
 	s.broadcastNotification(recipientID, map[string]any{
+		"id":                notifID,
 		"notification_type": nType,
 		"actor_type":        actorType,
 		"actor_id":          actorID,
@@ -308,10 +357,23 @@ func (s *Service) CreateNotification(ctx context.Context, tenantID, recipientID 
 	// BUG-013: invalidate the unread count cache so the badge updates.
 	s.invalidateUnreadCount(ctx, recipientID)
 
-	// Enqueue push delivery if user has push enabled for this type.
-	s.checkAndEnqueuePush(ctx, recipientID, nType, title, body, actionURL)
+	// BUG-007: resolve effective preferences once and use them for both
+	// push and email checks, instead of two separate DB queries.
+	prefs, prefErr := s.resolveEffectivePreferences(ctx, recipientID)
+	if prefErr == nil {
+		if ep, ok := prefs[nType]; ok {
+			if ep.Push {
+				s.enqueuePushDeliveryWithCtx(ctx, recipientID, title, body, actionURL)
+			}
+			if ep.Email {
+				s.enqueueEmailDelivery(ctx, tenantID, recipientID, nType, title, body, actionURL)
+			}
+			return nil
+		}
+	}
 
-	// BUG-003: enqueue email delivery if user has email enabled for this type.
+	// Fallback if preference resolution failed — use the old per-call checks.
+	s.checkAndEnqueuePush(ctx, recipientID, nType, title, body, actionURL)
 	s.checkAndEnqueueEmail(ctx, tenantID, recipientID, nType, title, body, actionURL)
 
 	return nil
@@ -419,6 +481,56 @@ func (s *Service) GetPreferences(ctx context.Context, userID pgtype.UUID) ([]Pre
 			pref.Push = o.Push
 		}
 		result = append(result, pref)
+	}
+
+	return result, nil
+}
+
+// effectivePref is the resolved preference for a single notification type,
+// merging the user's override (if any) with the notification_type defaults.
+type effectivePref struct {
+	InApp bool
+	Email bool
+	Push  bool
+}
+
+// resolveEffectivePreferences returns a map of notification_type → effective
+// preference, merging notification_types defaults with the user's overrides
+// (Section 35). Types the user has never configured fall back to the type
+// defaults. This is the single source of truth for dispatch/push/email
+// preference checks — fixes BUG-001, BUG-002, BUG-004, BUG-007.
+func (s *Service) resolveEffectivePreferences(ctx context.Context, recipientID pgtype.UUID) (map[string]effectivePref, error) {
+	types, err := s.store.getNotificationTypes(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("getting notification types: %w", err)
+	}
+
+	userPrefs, err := s.store.getNotificationPreferences(ctx, recipientID)
+	if err != nil {
+		return nil, fmt.Errorf("getting user preferences: %w", err)
+	}
+
+	overrides := make(map[string]gen.GetNotificationPreferencesRow, len(userPrefs))
+	for _, p := range userPrefs {
+		overrides[p.NotificationType] = p
+	}
+
+	result := make(map[string]effectivePref, len(types))
+	for _, nt := range types {
+		if !nt.Enabled {
+			continue
+		}
+		ep := effectivePref{
+			InApp: nt.DefaultInApp,
+			Email: nt.DefaultEmail,
+			Push:  nt.DefaultPush,
+		}
+		if o, ok := overrides[nt.Key]; ok {
+			ep.InApp = o.InApp
+			ep.Email = o.Email
+			ep.Push = o.Push
+		}
+		result[nt.Key] = ep
 	}
 
 	return result, nil

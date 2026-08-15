@@ -1,3 +1,4 @@
+import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiGet } from '$lib/server/api';
 import { ApiError } from '$lib/server/api';
@@ -16,11 +17,15 @@ import type { ColCity, ColCitiesListResponse } from '$lib/types';
  * Ref: japaconnect-engineering/sections/72-cost-of-living.md
  */
 export const load: PageServerLoad = async (event) => {
+	const { features, siteSettings } = await event.parent();
+	if (!features['col_calculator.enabled']) {
+		throw error(404, { code: 'feature_disabled', message: 'Cost of Living Calculator is not available' });
+	}
+
 	const ctx = apiContext(event);
 	const authed = !!event.locals.user;
 
 	// Tool config from the root layout's public siteSettings (Rule 3 / Rule 16).
-	const { siteSettings } = await event.parent();
 	let maxCities = 3;
 	let staleDays = 180;
 	if (typeof siteSettings?.['col_calculator.max_cities'] === 'number') {

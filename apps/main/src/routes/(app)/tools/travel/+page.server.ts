@@ -1,3 +1,4 @@
+import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 
 /**
@@ -8,5 +9,10 @@ import type { PageServerLoad } from './$types';
  * Ref: japaconnect-engineering/sections/67-travel-search.md
  */
 export const load: PageServerLoad = async (event) => {
+	const { features } = await event.parent();
+	if (!features['travel.enabled']) {
+		throw error(404, { code: 'feature_disabled', message: 'Travel Search is not available' });
+	}
+
 	return { authed: !!event.locals.user };
 };

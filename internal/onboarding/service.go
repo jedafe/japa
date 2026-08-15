@@ -62,6 +62,9 @@ func (s *Service) GetState(ctx context.Context, tenantID, userID pgtype.UUID) (*
 	}, nil
 }
 
+// totalSteps is the number of steps in the onboarding wizard per Section 09.
+const totalSteps = 5
+
 // UpdateStep saves step data and advances the current step number.
 // When req.Skip is true, the step minimum is auto-fulfilled using the ranked
 // recommendation algorithm per Section 09 skip semantics (the user always
@@ -89,6 +92,12 @@ func (s *Service) UpdateStep(ctx context.Context, tenantID, userID pgtype.UUID, 
 	submitStep := req.Step
 	if submitStep <= 0 {
 		submitStep = int(currentStep)
+	}
+
+	// BUG-004 fix: validate the submitted step is in the valid range [1, totalSteps].
+	// Without this, a malicious client could send step: 999 to bypass the 5-step flow.
+	if submitStep < 1 || submitStep > totalSteps {
+		return fmt.Errorf("%w: step %d out of range [1, %d]", errpkg.ErrInvalidStatusTransition, submitStep, totalSteps)
 	}
 
 	// Section 09 skip semantics: if the user skips a step with a minimum
@@ -121,17 +130,23 @@ func (s *Service) persistStep(ctx context.Context, tenantID, userID pgtype.UUID,
 		}
 	}
 
-	// Advance to the requested step or next if step is 0/omitted.
-	newStep := submitStep
-	if newStep <= 0 {
-		newStep = int(currentStep) + 1
+	// BUG-001/002 fix: current_step represents the step the user is
+	// currently ON (about to work on), not the last completed step. When
+	// the user submits step N data, they advance to step N+1. Storing
+	// submitStep (the step just completed) caused two bugs:
+	//   1. Complete() checks CurrentStep >= 5, but the last PUT stores 4,
+	//      so completion always failed.
+	//   2. On refresh, GetState returned the step just completed, sending
+	//      the user backwards.
+	newStep := submitStep + 1
+
+	// Clamp to totalSteps — step 5 is the terminal step; advancing past it
+	// is handled by POST /onboarding/complete, not by advancing current_step.
+	if newStep > totalSteps {
+		newStep = totalSteps
 	}
 
-	if newStep > math.MaxInt32 {
-		newStep = math.MaxInt32
-	}
-
-	if err := s.store.upsertState(ctx, tenantID, userID, int32(newStep), completed, merged, tourDismissed); err != nil { //nolint:gosec // G115: bounded by math.MaxInt32 check above
+	if err := s.store.upsertState(ctx, tenantID, userID, int32(newStep), completed, merged, tourDismissed); err != nil { //nolint:gosec // G115: newStep is bounded by totalSteps (5)
 		return fmt.Errorf("updating onboarding step: %w", err)
 	}
 
@@ -788,98 +803,6 @@ const (
 	keyPromotedTags   = "onboarding.promoted_tags"
 )
 
-// GetAdminSettings reads onboarding configuration from system_settings.
-func (s *Service) GetAdminSettings(ctx context.Context, tenantID pgtype.UUID) (*OnboardingAdminSettings, error) {
-	minTags, _ := s.settings.GetSettingInt(ctx, tenantID, keyMinTagsFollow)
-	minUsers, _ := s.settings.GetSettingInt(ctx, tenantID, keyMinUsersFollow)
-	minSpaces, _ := s.settings.GetSettingInt(ctx, tenantID, keyMinSpacesJoin)
-
-	promotedSpaces, _ := s.settings.GetSetting(ctx, tenantID, keyPromotedSpaces)
-	promotedUsers, _ := s.settings.GetSetting(ctx, tenantID, keyPromotedUsers)
-	promotedTags, _ := s.settings.GetSetting(ctx, tenantID, keyPromotedTags)
-
-	var spacesArr, usersArr, tagsArr []string
-	if promotedSpaces != "" {
-		_ = json.Unmarshal([]byte(promotedSpaces), &spacesArr)
-	}
-
-	if promotedUsers != "" {
-		_ = json.Unmarshal([]byte(promotedUsers), &usersArr)
-	}
-
-	if promotedTags != "" {
-		_ = json.Unmarshal([]byte(promotedTags), &tagsArr)
-	}
-
-	// Defaults per Section 09
-	if minTags == 0 {
-		minTags = 3
-	}
-
-	if minUsers == 0 {
-		minUsers = 2
-	}
-
-	if minSpaces == 0 {
-		minSpaces = 2
-	}
-
-	return &OnboardingAdminSettings{
-		MinTagsFollow:  minTags,
-		MinUsersFollow: minUsers,
-		MinSpacesJoin:  minSpaces,
-		PromotedSpaces: spacesArr,
-		PromotedUsers:  usersArr,
-		PromotedTags:   tagsArr,
-	}, nil
-}
-
-// UpdateAdminSettings writes onboarding configuration to system_settings.
-// Returns the first SetSetting error so the admin sees a real failure rather
-// than a silent 200 OK (Rule 5, §6.2 error handling).
-func (s *Service) UpdateAdminSettings(ctx context.Context, tenantID pgtype.UUID, req *UpdateOnboardingSettingsRequest) error {
-	if req.MinTagsFollow != nil {
-		if err := s.settings.SetSetting(ctx, tenantID, keyMinTagsFollow, strconv.Itoa(*req.MinTagsFollow)); err != nil {
-			return fmt.Errorf("setting %s: %w", keyMinTagsFollow, err)
-		}
-	}
-
-	if req.MinUsersFollow != nil {
-		if err := s.settings.SetSetting(ctx, tenantID, keyMinUsersFollow, strconv.Itoa(*req.MinUsersFollow)); err != nil {
-			return fmt.Errorf("setting %s: %w", keyMinUsersFollow, err)
-		}
-	}
-
-	if req.MinSpacesJoin != nil {
-		if err := s.settings.SetSetting(ctx, tenantID, keyMinSpacesJoin, strconv.Itoa(*req.MinSpacesJoin)); err != nil {
-			return fmt.Errorf("setting %s: %w", keyMinSpacesJoin, err)
-		}
-	}
-
-	if req.PromotedSpaces != nil {
-		b, _ := json.Marshal(*req.PromotedSpaces)
-		if err := s.settings.SetSetting(ctx, tenantID, keyPromotedSpaces, string(b)); err != nil {
-			return fmt.Errorf("setting %s: %w", keyPromotedSpaces, err)
-		}
-	}
-
-	if req.PromotedUsers != nil {
-		b, _ := json.Marshal(*req.PromotedUsers)
-		if err := s.settings.SetSetting(ctx, tenantID, keyPromotedUsers, string(b)); err != nil {
-			return fmt.Errorf("setting %s: %w", keyPromotedUsers, err)
-		}
-	}
-
-	if req.PromotedTags != nil {
-		b, _ := json.Marshal(*req.PromotedTags)
-		if err := s.settings.SetSetting(ctx, tenantID, keyPromotedTags, string(b)); err != nil {
-			return fmt.Errorf("setting %s: %w", keyPromotedTags, err)
-		}
-	}
-
-	return nil
-}
-
 // ListTemplates returns all onboarding templates for the tenant.
 //
 // NOTE: Templates CRUD is wired (route catalog + admin API) but the wizard
@@ -907,7 +830,19 @@ func (s *Service) CreateTemplate(ctx context.Context, tenantID pgtype.UUID, req 
 }
 
 // UpdateTemplate updates an existing onboarding template.
+// System templates (is_system = true) cannot be modified — the API enforces
+// this guard so a direct API call cannot bypass the frontend's hidden edit
+// button (BUG-003 fix, §09 system template protection).
 func (s *Service) UpdateTemplate(ctx context.Context, tenantID, id pgtype.UUID, req *UpdateTemplateRequest) error {
+	existing, err := s.store.getTemplate(ctx, tenantID, id)
+	if err != nil {
+		return fmt.Errorf("checking template before update: %w", err)
+	}
+
+	if existing.IsSystem {
+		return fmt.Errorf("%w: system templates cannot be modified", errpkg.ErrForbidden)
+	}
+
 	steps, err := json.Marshal(req.Steps)
 	if err != nil {
 		return fmt.Errorf("marshaling steps: %w", err)
@@ -917,6 +852,18 @@ func (s *Service) UpdateTemplate(ctx context.Context, tenantID, id pgtype.UUID, 
 }
 
 // DeleteTemplate deletes an onboarding template.
+// System templates (is_system = true) cannot be deleted — the API enforces
+// this guard so a direct API call cannot bypass the frontend's hidden delete
+// button (BUG-003 fix, §09 system template protection).
 func (s *Service) DeleteTemplate(ctx context.Context, tenantID, id pgtype.UUID) error {
+	existing, err := s.store.getTemplate(ctx, tenantID, id)
+	if err != nil {
+		return fmt.Errorf("checking template before delete: %w", err)
+	}
+
+	if existing.IsSystem {
+		return fmt.Errorf("%w: system templates cannot be deleted", errpkg.ErrForbidden)
+	}
+
 	return s.store.deleteTemplate(ctx, tenantID, id)
 }

@@ -31,6 +31,8 @@ declare global {
 			locale: Locale;
 			/** CSRF token for client-side mutations (echoed as X-CSRF-Token). */
 			csrfToken: string | null;
+			/** Feature flags from GET /feature-flags (public endpoint). */
+			features?: Record<string, boolean>;
 		}
 		// interface PageState {}
 		// interface Platform {}

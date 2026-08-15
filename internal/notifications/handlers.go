@@ -219,7 +219,7 @@ func (h *Handlers) GetPreferences(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": prefs})
 }
 
-// UpdatePreference handles PUT /api/v1/notification-preferences/{type}.
+// UpdatePreference handles PATCH /api/v1/me/notification-preferences/{type}.
 func (h *Handlers) UpdatePreference(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
 	if !ok {

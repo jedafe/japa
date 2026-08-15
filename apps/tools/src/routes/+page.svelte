@@ -11,14 +11,14 @@
 	 * Ref: §78 (Tools Web Surface), ROADMAP-TOOLS 02.01.
 	 *
 	 * The tool list comes from the registry filtered by the per-tool
-	 * `system_settings` enabled toggles (e.g. `checklist.enabled`).
+	 * feature flags (e.g. `checklist.enabled`).
 	 * Disabled tools are hidden from the hub grid. All dynamic tool data
 	 * is fetched by each tool's own page from the backend API (Rule 16).
-	 * Ref: conventions/system-settings-catalog.md ({tool}.enabled keys).
+	 * Ref: sections/42-feature-flags.md ({tool}.enabled keys).
 	 */
 	let { data } = $props();
 
-	const enabledTools = $derived(getEnabledTools(data.siteSettings ?? {}));
+	const enabledTools = $derived(getEnabledTools(data.features ?? {}));
 
 	const seo = $derived(
 		buildSeoMeta({

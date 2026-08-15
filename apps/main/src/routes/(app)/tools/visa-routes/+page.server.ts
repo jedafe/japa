@@ -1,3 +1,4 @@
+import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiList, ApiError } from '$lib/server/api';
 import type { VisaRouteWithAi, GeoSpaceOption } from '$lib/types';
@@ -17,6 +18,11 @@ import type { VisaRouteWithAi, GeoSpaceOption } from '$lib/types';
  * Ref: §90 (Visa Route Comparison), ROADMAP-TOOLS 02.06.
  */
 export const load: PageServerLoad = async (event) => {
+	const { features } = await event.parent();
+	if (!features['visa_routes.enabled']) {
+		throw error(404, { code: 'feature_disabled', message: 'Visa Route Comparison is not available' });
+	}
+
 	const ctx = apiContext(event);
 	const authed = !!event.locals.user;
 

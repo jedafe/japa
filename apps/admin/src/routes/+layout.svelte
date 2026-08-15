@@ -72,7 +72,6 @@
 		'/payments': 'admin.payments.view',
 		'/ai': 'admin.ai.view',
 		'/blog': 'blog.review.manage',
-		'/feature-flags': 'admin.feature_flags.view',
 		'/gdpr': 'gdpr.deletions.view',
 		'/moderation/alerts': 'moderation.alerts.manage',
 		'/spaces': 'spaces.admin',

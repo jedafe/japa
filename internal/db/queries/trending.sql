@@ -31,7 +31,7 @@ WHERE ts.tenant_id = $1
   AND ts.entity_type = 'content'
   AND ts."window" = $2
   AND ts.expires_at > now()
-  AND ($3::text IS NULL OR ts.geo_code = $3)
+  AND ($3::text IS NULL OR $3::text = '' OR ts.geo_code = $3)
   AND c.status = 'published'
   AND c.visibility = 'public'
 ORDER BY ts.score DESC
@@ -46,7 +46,7 @@ WHERE ts.tenant_id = $1
   AND ts.entity_type = 'tag'
   AND ts."window" = $2
   AND ts.expires_at > now()
-  AND ($3::text IS NULL OR ts.geo_code = $3)
+  AND ($3::text IS NULL OR $3::text = '' OR ts.geo_code = $3)
 ORDER BY ts.score DESC
 LIMIT $4;
 
@@ -59,7 +59,7 @@ WHERE ts.tenant_id = $1
   AND ts.entity_type = 'space'
   AND ts."window" = $2
   AND ts.expires_at > now()
-  AND ($3::text IS NULL OR ts.geo_code = $3)
+  AND ($3::text IS NULL OR $3::text = '' OR ts.geo_code = $3)
 ORDER BY ts.score DESC
 LIMIT $4;
 
@@ -73,7 +73,7 @@ WHERE ts.tenant_id = $1
   AND ts.entity_type = 'user'
   AND ts."window" = $2
   AND ts.expires_at > now()
-  AND ($3::text IS NULL OR ts.geo_code = $3)
+  AND ($3::text IS NULL OR $3::text = '' OR ts.geo_code = $3)
 ORDER BY ts.score DESC
 LIMIT $4;
 

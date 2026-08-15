@@ -7,7 +7,7 @@
 	import { redirectsAdminApi } from '$lib/api';
 	import { apiRaw } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
-	import { Trash2 } from 'lucide-svelte';
+	import { Trash2, CheckCircle2, XCircle } from 'lucide-svelte';
 
 	type Redirect = {
 		id: string;
@@ -23,29 +23,41 @@
 		updated_at: string;
 	};
 
-	// ── Bulk delete ───── EntityPage auto-reloads + clears selection after a bulk action handler completes.
+	// ── Bulk actions ───── EntityPage auto-reloads + clears selection after a bulk action handler completes.
 	let entityController = $state<EntityPageController | undefined>(undefined);
 	let pageError = $state('');
-	let bulkDeleting = $state(false);
+	let bulkInFlight = $state(false);
 
-	async function bulkDelete(ids: Set<string>) {
+	async function bulkAction(action: 'activate' | 'deactivate' | 'delete', ids: Set<string>) {
 		const idArr = Array.from(ids);
 		if (idArr.length === 0) return;
-		if (bulkDeleting) return; // in-flight guard
-		bulkDeleting = true;
+		if (bulkInFlight) return; // in-flight guard
+		bulkInFlight = true;
 		pageError = '';
 		try {
 			// Use the spec'd bulk endpoint (ADR-056) — single POST with
-			// {action: "delete", ids: [...]} instead of N individual DELETEs.
-			const res = await redirectsAdminApi.bulkDelete({ action: 'delete', ids: idArr });
+			// {action, ids: [...]} instead of N individual calls.
+			const res = await redirectsAdminApi.bulkDelete({ action, ids: idArr });
 			if (!res.ok) {
-				pageError = res.error ?? t('common.error', 'Failed to delete redirects');
+				pageError = res.error ?? t('common.error', 'Failed to update redirects');
 			}
 		} catch (e) {
-			pageError = e instanceof Error ? e.message : t('common.error', 'Failed to delete redirects');
+			pageError = e instanceof Error ? e.message : t('common.error', 'Failed to update redirects');
 		} finally {
-			bulkDeleting = false;
+			bulkInFlight = false;
 		}
+	}
+
+	async function bulkDelete(ids: Set<string>) {
+		await bulkAction('delete', ids);
+	}
+
+	async function bulkActivate(ids: Set<string>) {
+		await bulkAction('activate', ids);
+	}
+
+	async function bulkDeactivate(ids: Set<string>) {
+		await bulkAction('deactivate', ids);
 	}
 
 	// `fields` drives EntityForm rendering and edit-form seeding.
@@ -125,6 +137,16 @@
 		],
 		bulkActions: [
 			{
+				label: t('common.activateSelected', 'Activate Selected'),
+				icon: CheckCircle2,
+				onclick: bulkActivate
+			},
+			{
+				label: t('common.deactivateSelected', 'Deactivate Selected'),
+				icon: XCircle,
+				onclick: bulkDeactivate
+			},
+			{
 				label: t('common.deleteSelected', 'Delete Selected'),
 				icon: Trash2,
 				variant: 'destructive',
@@ -132,10 +154,11 @@
 			}
 		],
 		fields,
-		load: async ({ q, filter, page, pageSize }) => {
+		load: async ({ q, filter, page, pageSize, sort }) => {
 			const params = new URLSearchParams();
 			if (filter.status) params.set('status', filter.status);
 			if (q) params.set('q', q);
+			if (sort) params.set('sort', sort);
 			params.set('page_size', String(pageSize));
 			params.set('page_offset', String(page * pageSize));
 			// Use apiRaw to access top-level total/total_pages alongside data (matches tags pattern).

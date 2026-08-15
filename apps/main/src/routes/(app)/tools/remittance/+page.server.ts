@@ -1,3 +1,4 @@
+import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiList, ApiError } from '$lib/server/api';
 import type { RemittanceCorridor } from '$lib/types';
@@ -11,6 +12,11 @@ import type { RemittanceCorridor } from '$lib/types';
  * Ref: japaconnect-engineering/sections/74-remittance-tracker.md
  */
 export const load: PageServerLoad = async (event) => {
+	const { features } = await event.parent();
+	if (!features['remittance.enabled']) {
+		throw error(404, { code: 'feature_disabled', message: 'Remittance Rate Tracker is not available' });
+	}
+
 	const ctx = apiContext(event);
 	const authed = !!event.locals.user;
 

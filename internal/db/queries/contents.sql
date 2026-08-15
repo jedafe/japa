@@ -652,6 +652,24 @@ WHERE tenant_id = @tenant_id
 ORDER BY created_at DESC
 LIMIT 10;
 
+-- name: GetPublishedContentByID :one
+-- Public API (Section 47): returns a single content item only if it is
+-- published, public, and not soft-deleted. Drafts, scheduled, private, and
+-- member-only content are never exposed to external API consumers.
+-- Ref: japaconnect-engineering/sections/47-public-api-developer-portal.md
+SELECT id, tenant_id, author_id, organization_id, space_id, content_type, title, slug, body, body_html,
+       field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
+       canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
+       status, visibility, is_locked, is_pinned, read_time_minutes,
+       view_count, comment_count, share_count, reshare_count, publish_at, published_at,
+       created_at, updated_at, guide_category
+FROM contents
+WHERE id = @id
+  AND tenant_id = @tenant_id
+  AND status = 'published'
+  AND visibility = 'public'
+  AND deleted_at IS NULL;
+
 -- name: ArchiveContent :execrows
 UPDATE contents SET status = 'archived', updated_at = now()
 WHERE id = @id AND tenant_id = @tenant_id AND status != 'archived';

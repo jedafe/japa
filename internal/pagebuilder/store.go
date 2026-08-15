@@ -216,7 +216,8 @@ func (s *Store) ListTemplates(ctx context.Context, tenantID pgtype.UUID, q, cate
 
 	rows, err := s.reader.Query(ctx, `
 		SELECT id, tenant_id, name, slug, description, page_type,
-		       COALESCE(blocks, '[]'::jsonb), is_system, created_at, updated_at
+		       COALESCE(blocks, '[]'::jsonb),
+		       is_active, thumbnail_media_id, schema_version, is_system, created_by, created_at, updated_at
 		FROM pagebuilder_templates
 		WHERE tenant_id = $1
 		  AND ($2 = '' OR name ILIKE '%' || $2 || '%' OR slug ILIKE '%' || $2 || '%' OR description ILIKE '%' || $2 || '%')
@@ -236,7 +237,7 @@ func (s *Store) ListTemplates(ctx context.Context, tenantID pgtype.UUID, q, cate
 		var t Template
 		if err := rows.Scan(
 			&t.ID, &t.TenantID, &t.Name, &t.Slug, &t.Description, &t.PageType,
-			&t.Blocks, &t.IsSystem, &t.CreatedAt, &t.UpdatedAt,
+			&t.Blocks, &t.IsActive, &t.ThumbnailMediaID, &t.SchemaVersion, &t.IsSystem, &t.CreatedBy, &t.CreatedAt, &t.UpdatedAt,
 		); err != nil {
 			return nil, 0, fmt.Errorf("scanning template: %w", err)
 		}
@@ -268,12 +269,13 @@ func (s *Store) GetTemplate(ctx context.Context, id, tenantID pgtype.UUID) (Temp
 
 	err := s.reader.QueryRow(ctx, `
 		SELECT id, tenant_id, name, slug, description, page_type,
-		       COALESCE(blocks, '[]'::jsonb), is_system, created_at, updated_at
+		       COALESCE(blocks, '[]'::jsonb),
+		       is_active, thumbnail_media_id, schema_version, is_system, created_by, created_at, updated_at
 		FROM pagebuilder_templates
 		WHERE id = $1 AND tenant_id = $2
 	`, id, tenantID).Scan(
 		&t.ID, &t.TenantID, &t.Name, &t.Slug, &t.Description, &t.PageType,
-		&t.Blocks, &t.IsSystem, &t.CreatedAt, &t.UpdatedAt,
+		&t.Blocks, &t.IsActive, &t.ThumbnailMediaID, &t.SchemaVersion, &t.IsSystem, &t.CreatedBy, &t.CreatedAt, &t.UpdatedAt,
 	)
 	if err != nil {
 		return Template{}, fmt.Errorf("getting template: %w", err)
@@ -293,14 +295,16 @@ func (s *Store) CreateTemplate(ctx context.Context, tenantID pgtype.UUID, input 
 
 	err := s.writer.QueryRow(
 		ctx, `
-		INSERT INTO pagebuilder_templates (tenant_id, name, slug, description, page_type, blocks)
-		VALUES ($1, $2, $3, $4, $5, $6)
+		INSERT INTO pagebuilder_templates (tenant_id, name, slug, description, page_type, blocks, is_active, thumbnail_media_id, created_by)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 		RETURNING id, tenant_id, name, slug, description, page_type,
-		          COALESCE(blocks, '[]'::jsonb), is_system, created_at, updated_at
+		          COALESCE(blocks, '[]'::jsonb),
+		          is_active, thumbnail_media_id, schema_version, is_system, created_by, created_at, updated_at
 	`, tenantID, input.Name, input.Slug, input.Description, input.PageType, blocks,
+		input.IsActive, input.ThumbnailMediaID, input.CreatedBy,
 	).Scan(
 		&t.ID, &t.TenantID, &t.Name, &t.Slug, &t.Description, &t.PageType,
-		&t.Blocks, &t.IsSystem, &t.CreatedAt, &t.UpdatedAt,
+		&t.Blocks, &t.IsActive, &t.ThumbnailMediaID, &t.SchemaVersion, &t.IsSystem, &t.CreatedBy, &t.CreatedAt, &t.UpdatedAt,
 	)
 	if err != nil {
 		return Template{}, fmt.Errorf("creating template: %w", err)
@@ -322,14 +326,19 @@ func (s *Store) UpdateTemplate(ctx context.Context, id, tenantID pgtype.UUID, in
 		ctx, `
 		UPDATE pagebuilder_templates
 		SET name = $3, slug = $4, description = $5, page_type = $6,
-		    blocks = $7, updated_at = now()
+		    blocks = $7,
+		    is_active = COALESCE($8, is_active),
+		    thumbnail_media_id = COALESCE($9, thumbnail_media_id),
+		    updated_at = now()
 		WHERE id = $1 AND tenant_id = $2
 		RETURNING id, tenant_id, name, slug, description, page_type,
-		          COALESCE(blocks, '[]'::jsonb), is_system, created_at, updated_at
+		          COALESCE(blocks, '[]'::jsonb),
+		          is_active, thumbnail_media_id, schema_version, is_system, created_by, created_at, updated_at
 	`, id, tenantID, input.Name, input.Slug, input.Description, input.PageType, blocks,
+		input.IsActive, input.ThumbnailMediaID,
 	).Scan(
 		&t.ID, &t.TenantID, &t.Name, &t.Slug, &t.Description, &t.PageType,
-		&t.Blocks, &t.IsSystem, &t.CreatedAt, &t.UpdatedAt,
+		&t.Blocks, &t.IsActive, &t.ThumbnailMediaID, &t.SchemaVersion, &t.IsSystem, &t.CreatedBy, &t.CreatedAt, &t.UpdatedAt,
 	)
 	if err != nil {
 		return Template{}, fmt.Errorf("updating template: %w", err)

@@ -120,6 +120,14 @@ func handleServiceError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, ErrUpgradeToBusinessRequired):
 		errpkg.WriteError(w, http.StatusForbidden, "upgrade_to_business_required", "You must upgrade to a business profile to create professional profiles")
+	case errors.Is(err, ErrInvitationNotFound):
+		errpkg.WriteError(w, http.StatusNotFound, "invitation_not_found", "Invitation not found or already accepted")
+	case errors.Is(err, ErrInvitationExpired):
+		errpkg.WriteError(w, http.StatusGone, "invitation_expired", "Invitation has expired")
+	case errors.Is(err, ErrEmailMismatch):
+		errpkg.WriteError(w, http.StatusForbidden, "email_mismatch", "Invitation email does not match your account email")
+	case errors.Is(err, ErrAlreadyMember):
+		errpkg.WriteError(w, http.StatusConflict, "already_member", "You are already a member of this profile")
 	default:
 		errpkg.HandleServiceError(w, err)
 	}
@@ -187,7 +195,7 @@ func (h *Handlers) checkProfileOwnerOrAdmin(w http.ResponseWriter, r *http.Reque
 // Profile Type Definition Handlers
 // ---------------------------------------------------------------------------
 
-// CreateProfessionalProfileType handles POST /api/v1/professional-profiles/types.
+// CreateProfessionalProfileType handles POST /api/v1/profiles/types.
 func (h *Handlers) CreateProfessionalProfileType(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireUser(w, r)
 	if !ok {
@@ -243,7 +251,7 @@ func (h *Handlers) CreateProfessionalProfileType(w http.ResponseWriter, r *http.
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": result})
 }
 
-// ListProfessionalProfileTypes handles GET /api/v1/professional-profiles/types.
+// ListProfessionalProfileTypes handles GET /api/v1/profiles/types.
 func (h *Handlers) ListProfessionalProfileTypes(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireUser(w, r)
 	if !ok {
@@ -267,7 +275,7 @@ func (h *Handlers) ListProfessionalProfileTypes(w http.ResponseWriter, r *http.R
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": types})
 }
 
-// GetProfessionalProfileType handles GET /api/v1/professional-profiles/types/{slug}.
+// GetProfessionalProfileType handles GET /api/v1/profiles/types/{slug}.
 func (h *Handlers) GetProfessionalProfileType(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireUser(w, r)
 	if !ok {
@@ -294,7 +302,7 @@ func (h *Handlers) GetProfessionalProfileType(w http.ResponseWriter, r *http.Req
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": result})
 }
 
-// UpdateProfessionalProfileType handles PATCH /api/v1/professional-profiles/types/{id}.
+// UpdateProfessionalProfileType handles PATCH /api/v1/profiles/types/{id}.
 func (h *Handlers) UpdateProfessionalProfileType(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireUser(w, r)
 	if !ok {
@@ -349,7 +357,7 @@ func (h *Handlers) UpdateProfessionalProfileType(w http.ResponseWriter, r *http.
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": result})
 }
 
-// DeleteProfessionalProfileType handles DELETE /api/v1/professional-profiles/types/{id}.
+// DeleteProfessionalProfileType handles DELETE /api/v1/profiles/types/{id}.
 func (h *Handlers) DeleteProfessionalProfileType(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireUser(w, r)
 	if !ok {
@@ -379,7 +387,7 @@ func (h *Handlers) DeleteProfessionalProfileType(w http.ResponseWriter, r *http.
 // Professional Profile CRUD Handlers
 // ---------------------------------------------------------------------------
 
-// CreateProfessionalProfile handles POST /api/v1/professional-profiles.
+// CreateProfessionalProfile handles POST /api/v1/profiles.
 func (h *Handlers) CreateProfessionalProfile(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
 	if !ok {
@@ -502,7 +510,7 @@ func parseOptionalUUID(w http.ResponseWriter, value, fieldName string) (pgtype.U
 	return id, true
 }
 
-// ListProfessionalProfiles handles GET /api/v1/professional-profiles.
+// ListProfessionalProfiles handles GET /api/v1/profiles.
 func (h *Handlers) ListProfessionalProfiles(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireUser(w, r)
 	if !ok {
@@ -586,7 +594,7 @@ func (h *Handlers) ListProfessionalProfiles(w http.ResponseWriter, r *http.Reque
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": profiles})
 }
 
-// GetProfessionalProfile handles GET /api/v1/professional-profiles/{slug}.
+// GetProfessionalProfile handles GET /api/v1/profiles/{slug}.
 func (h *Handlers) GetProfessionalProfile(w http.ResponseWriter, r *http.Request) {
 	// OptionalAuth: guests can view public professional profiles (Phase 12.08
 	// public SSR). The profile is fetched by slug — no user context needed.
@@ -607,7 +615,7 @@ func (h *Handlers) GetProfessionalProfile(w http.ResponseWriter, r *http.Request
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": result})
 }
 
-// UpdateProfessionalProfile handles PATCH /api/v1/professional-profiles/{id}.
+// UpdateProfessionalProfile handles PATCH /api/v1/profiles/{id}.
 func (h *Handlers) UpdateProfessionalProfile(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
 	if !ok {
@@ -685,7 +693,7 @@ func (h *Handlers) UpdateProfessionalProfile(w http.ResponseWriter, r *http.Requ
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": result})
 }
 
-// DeleteProfessionalProfile handles DELETE /api/v1/professional-profiles/{id}.
+// DeleteProfessionalProfile handles DELETE /api/v1/profiles/{id}.
 func (h *Handlers) DeleteProfessionalProfile(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
 	if !ok {
@@ -719,7 +727,7 @@ func (h *Handlers) DeleteProfessionalProfile(w http.ResponseWriter, r *http.Requ
 // Member Management Handlers
 // ---------------------------------------------------------------------------
 
-// AddMember handles POST /api/v1/professional-profiles/{id}/members.
+// AddMember handles POST /api/v1/profiles/{id}/members.
 func (h *Handlers) AddMember(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
 	if !ok {
@@ -773,7 +781,7 @@ func (h *Handlers) AddMember(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": map[string]string{"status": "added"}})
 }
 
-// RemoveMember handles DELETE /api/v1/professional-profiles/{id}/members/{userId}.
+// RemoveMember handles DELETE /api/v1/profiles/{id}/members/{userId}.
 func (h *Handlers) RemoveMember(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
 	if !ok {
@@ -813,7 +821,7 @@ func (h *Handlers) RemoveMember(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusNoContent, nil)
 }
 
-// ListMembers handles GET /api/v1/professional-profiles/{id}/members.
+// ListMembers handles GET /api/v1/profiles/{id}/members.
 func (h *Handlers) ListMembers(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireUser(w, r)
 	if !ok {
@@ -840,7 +848,7 @@ func (h *Handlers) ListMembers(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": members})
 }
 
-// UpdateMemberRole handles PATCH /api/v1/professional-profiles/{id}/members/{userId}.
+// UpdateMemberRole handles PATCH /api/v1/profiles/{id}/members/{userId}.
 func (h *Handlers) UpdateMemberRole(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
 	if !ok {
@@ -894,7 +902,7 @@ func (h *Handlers) UpdateMemberRole(w http.ResponseWriter, r *http.Request) {
 // Invitation Management Handlers
 // ---------------------------------------------------------------------------
 
-// CreateInvitation handles POST /api/v1/professional-profiles/{id}/invitations.
+// CreateInvitation handles POST /api/v1/profiles/{id}/invitations.
 func (h *Handlers) CreateInvitation(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
 	if !ok {
@@ -943,7 +951,7 @@ func (h *Handlers) CreateInvitation(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": inv})
 }
 
-// ListInvitations handles GET /api/v1/professional-profiles/{id}/invitations.
+// ListInvitations handles GET /api/v1/profiles/{id}/invitations.
 func (h *Handlers) ListInvitations(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
 	if !ok {
@@ -974,7 +982,7 @@ func (h *Handlers) ListInvitations(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": invitations})
 }
 
-// AcceptInvitation handles POST /api/v1/professional-profiles/invitations/{token}/accept.
+// AcceptInvitation handles POST /api/v1/profiles/invitations/{token}/accept.
 func (h *Handlers) AcceptInvitation(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
 	if !ok {
@@ -1004,7 +1012,7 @@ func (h *Handlers) AcceptInvitation(w http.ResponseWriter, r *http.Request) {
 // Authorship Context Handler
 // ---------------------------------------------------------------------------
 
-// GetAuthorContext handles GET /api/v1/professional-profiles/{id}/author-context.
+// GetAuthorContext handles GET /api/v1/profiles/{id}/author-context.
 func (h *Handlers) GetAuthorContext(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
 	if !ok {
@@ -1035,7 +1043,7 @@ func (h *Handlers) GetAuthorContext(w http.ResponseWriter, r *http.Request) {
 // Relocation Handlers
 // ---------------------------------------------------------------------------
 
-// ListRelocations handles GET /api/v1/professional-profiles/{id}/relocations.
+// ListRelocations handles GET /api/v1/profiles/{id}/relocations.
 func (h *Handlers) ListRelocations(w http.ResponseWriter, r *http.Request) {
 	listProfileSubEntities(w, r, h, func(ctx context.Context, profileID, tenantID pgtype.UUID, limit, offset int32) ([]any, error) {
 		relocations, err := h.Service.ListRelocations(ctx, profileID, tenantID, limit, offset)
@@ -1052,7 +1060,7 @@ func (h *Handlers) ListRelocations(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// ListDocuments handles GET /api/v1/professional-profiles/{id}/documents.
+// ListDocuments handles GET /api/v1/profiles/{id}/documents.
 func (h *Handlers) ListDocuments(w http.ResponseWriter, r *http.Request) {
 	listProfileSubEntities(w, r, h, func(ctx context.Context, profileID, tenantID pgtype.UUID, limit, offset int32) ([]any, error) {
 		documents, err := h.Service.ListDocuments(ctx, profileID, tenantID, limit, offset)
@@ -1069,7 +1077,7 @@ func (h *Handlers) ListDocuments(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// ListVerifiers handles GET /api/v1/professional-profiles/{id}/verifiers.
+// ListVerifiers handles GET /api/v1/profiles/{id}/verifiers.
 func (h *Handlers) ListVerifiers(w http.ResponseWriter, r *http.Request) {
 	listProfileSubEntities(w, r, h, func(ctx context.Context, profileID, tenantID pgtype.UUID, limit, offset int32) ([]any, error) {
 		verifiers, err := h.Service.ListVerifiers(ctx, profileID, tenantID, limit, offset)
@@ -1086,7 +1094,7 @@ func (h *Handlers) ListVerifiers(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// CreateRelocation handles POST /api/v1/professional-profiles/{id}/relocations.
+// CreateRelocation handles POST /api/v1/profiles/{id}/relocations.
 func (h *Handlers) CreateRelocation(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
 	if !ok {
@@ -1139,7 +1147,7 @@ func (h *Handlers) CreateRelocation(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": relocation})
 }
 
-// UpdateRelocation handles PATCH /api/v1/professional-profiles/relocations/{relocationId}.
+// UpdateRelocation handles PATCH /api/v1/profiles/relocations/{relocationId}.
 func (h *Handlers) UpdateRelocation(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
 	if !ok {
@@ -1193,7 +1201,7 @@ func (h *Handlers) UpdateRelocation(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": relocation})
 }
 
-// DeleteRelocation handles DELETE /api/v1/professional-profiles/relocations/{relocationId}.
+// DeleteRelocation handles DELETE /api/v1/profiles/relocations/{relocationId}.
 func (h *Handlers) DeleteRelocation(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
 	if !ok {
@@ -1233,7 +1241,7 @@ func (h *Handlers) DeleteRelocation(w http.ResponseWriter, r *http.Request) {
 // Document Handlers
 // ---------------------------------------------------------------------------
 
-// CreateDocument handles POST /api/v1/professional-profiles/{id}/documents.
+// CreateDocument handles POST /api/v1/profiles/{id}/documents.
 func (h *Handlers) CreateDocument(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
 	if !ok {
@@ -1291,7 +1299,7 @@ func (h *Handlers) CreateDocument(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": document})
 }
 
-// UpdateDocument handles PATCH /api/v1/professional-profiles/documents/{documentId}.
+// UpdateDocument handles PATCH /api/v1/profiles/documents/{documentId}.
 func (h *Handlers) UpdateDocument(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
 	if !ok {
@@ -1345,7 +1353,7 @@ func (h *Handlers) UpdateDocument(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": document})
 }
 
-// DeleteDocument handles DELETE /api/v1/professional-profiles/documents/{documentId}.
+// DeleteDocument handles DELETE /api/v1/profiles/documents/{documentId}.
 func (h *Handlers) DeleteDocument(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
 	if !ok {
@@ -1385,7 +1393,7 @@ func (h *Handlers) DeleteDocument(w http.ResponseWriter, r *http.Request) {
 // Verifier Handlers
 // ---------------------------------------------------------------------------
 
-// CreateVerifier handles POST /api/v1/professional-profiles/{id}/verifiers.
+// CreateVerifier handles POST /api/v1/profiles/{id}/verifiers.
 func (h *Handlers) CreateVerifier(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
 	if !ok {
@@ -1440,7 +1448,7 @@ func (h *Handlers) CreateVerifier(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": verifier})
 }
 
-// DeleteVerifier handles DELETE /api/v1/professional-profiles/verifiers/{verifierId}.
+// DeleteVerifier handles DELETE /api/v1/profiles/verifiers/{verifierId}.
 func (h *Handlers) DeleteVerifier(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
 	if !ok {

@@ -2,6 +2,7 @@
 // Achievement Feed list at /achievements — opt-in feed of member relocation
 // milestones and wins. SSR fetches GET /achievements?dest=&milestone=&sort= and
 // passes through the active query params so the filter bar reflects state.
+import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiList } from '$lib/server/api';
 import type { Achievement, Space } from '$lib/types';
@@ -9,6 +10,11 @@ import type { Achievement, Space } from '$lib/types';
 const PAGE_SIZE = 20;
 
 export const load: PageServerLoad = async (event) => {
+	const { features } = await event.parent();
+	if (!features['achievement.enabled']) {
+		throw error(404, { code: 'feature_disabled', message: 'Achievements are not available' });
+	}
+
 	const ctx = apiContext(event);
 	const authed = !!event.locals.user;
 

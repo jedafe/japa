@@ -195,43 +195,6 @@ func (h *Handlers) GetOptions(w http.ResponseWriter, r *http.Request) {
 // Admin Onboarding Handlers
 // ---------------------------------------------------------------------------
 
-// GetAdminSettings handles GET /admin/onboarding/settings.
-func (h *Handlers) GetAdminSettings(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
-
-	settings, err := h.Service.GetAdminSettings(r.Context(), tenantID)
-	if err != nil {
-		handleServiceError(w, err)
-		return
-	}
-
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": settings})
-}
-
-// UpdateAdminSettings handles PUT /admin/onboarding/settings.
-func (h *Handlers) UpdateAdminSettings(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
-
-	var req UpdateOnboardingSettingsRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
-		return
-	}
-
-	if err := h.Service.UpdateAdminSettings(r.Context(), tenantID, &req); err != nil {
-		handleServiceError(w, err)
-		return
-	}
-
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "updated"}})
-}
-
 // ListTemplates handles GET /admin/onboarding/templates.
 func (h *Handlers) ListTemplates(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)

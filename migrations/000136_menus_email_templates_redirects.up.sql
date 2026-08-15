@@ -2,7 +2,7 @@
 -- Creates three new entities: menus (navigation menus with RBAC-gated items),
 -- email_templates (tenant-customizable transactional emails with hardcoded fallback),
 -- and redirects (admin-managed URL redirect rules with Valkey-cached resolution).
--- Ref: ADR-054
+-- Ref: ADR-054 (menus), ADR-055 (email_templates), ADR-056 (redirects)
 
 BEGIN;
 

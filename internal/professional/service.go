@@ -7,7 +7,9 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
 )
@@ -15,6 +17,25 @@ import (
 // ErrUpgradeToBusinessRequired is returned when a personal profile type user
 // attempts to create a professional profile.
 var ErrUpgradeToBusinessRequired = errors.New("upgrade_to_business_required")
+
+// Invitation lifecycle errors. These are mapped to the standard error envelope
+// by handleServiceError so the frontend receives machine-readable codes.
+var (
+	// ErrInvitationNotFound is returned when an invitation token does not match
+	// an unaccepted invitation.
+	ErrInvitationNotFound = errors.New("invitation_not_found")
+	// ErrInvitationExpired is returned when an invitation's expires_at is in the past.
+	ErrInvitationExpired = errors.New("invitation_expired")
+	// ErrEmailMismatch is returned when the accepting user's email does not match
+	// the invitation's email.
+	ErrEmailMismatch = errors.New("email_mismatch")
+	// ErrAlreadyMember is returned when the accepting user is already a member of
+	// the profile.
+	ErrAlreadyMember = errors.New("already_member")
+)
+
+// invitationExpiryDuration is how long an invitation remains valid.
+const invitationExpiryDuration = 7 * 24 * time.Hour
 
 // ---------------------------------------------------------------------------
 // Profile Type Definitions
@@ -169,7 +190,18 @@ func (s *Service) CreateProfessionalProfile(ctx context.Context, tenantID, owner
 		fieldValues = []byte("{}")
 	}
 
-	profile, err := s.store.createProfessionalProfile(ctx, gen.CreateProfessionalProfileParams{
+	// Create the profile and auto-add the owner as a member in a single
+	// transaction so a failed member insert rolls back the profile row
+	// (§6.2 transaction boundary — no partial commit).
+	tx, err := s.db.Writer.Begin(ctx)
+	if err != nil {
+		return gen.ProfessionalProfile{}, fmt.Errorf("beginning transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	qtx := s.store.write.WithTx(tx)
+
+	profile, err := qtx.CreateProfessionalProfile(ctx, gen.CreateProfessionalProfileParams{
 		TenantID:         tenantID,
 		OwnerUserID:      ownerUserID,
 		TypeID:           input.TypeID,
@@ -184,16 +216,20 @@ func (s *Service) CreateProfessionalProfile(ctx context.Context, tenantID, owner
 		FieldValues:      fieldValues,
 	})
 	if err != nil {
-		return gen.ProfessionalProfile{}, err
+		return gen.ProfessionalProfile{}, fmt.Errorf("creating professional profile: %w", err)
 	}
 
 	// Auto-add the owner as a member with 'owner' role.
-	if addErr := s.store.addProfessionalProfileMember(ctx, gen.AddProfessionalProfileMemberParams{
+	if err := qtx.AddProfessionalProfileMember(ctx, gen.AddProfessionalProfileMemberParams{
 		ProfileID: profile.ID,
 		UserID:    ownerUserID,
 		Role:      MemberRoleOwner,
-	}); addErr != nil {
-		return gen.ProfessionalProfile{}, fmt.Errorf("adding owner as member: %w", addErr)
+	}); err != nil {
+		return gen.ProfessionalProfile{}, fmt.Errorf("adding owner as member: %w", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return gen.ProfessionalProfile{}, fmt.Errorf("committing professional profile: %w", err)
 	}
 
 	return profile, nil
@@ -403,10 +439,7 @@ func (s *Service) CreateInvitation(ctx context.Context, profileID, invitedBy pgt
 		return gen.ProfessionalProfileInvitation{}, err
 	}
 
-	var expiresAt pgtype.Timestamptz
-	if err := expiresAt.Scan("now() + interval '7 days'"); err != nil {
-		return gen.ProfessionalProfileInvitation{}, fmt.Errorf("computing expiry: %w", err)
-	}
+	expiresAt := pgtype.Timestamptz{Time: time.Now().Add(invitationExpiryDuration), Valid: true}
 
 	return s.store.createProfessionalProfileInvitation(ctx, gen.CreateProfessionalProfileInvitationParams{
 		ProfileID: profileID,
@@ -422,20 +455,23 @@ func (s *Service) CreateInvitation(ctx context.Context, profileID, invitedBy pgt
 // The accepting user's email must match the invitation email. Both the
 // invitation acceptance and the member addition are wrapped in a single
 // transaction to prevent partial commits.
+//
+// Returns typed sentinel errors (ErrInvitationNotFound, ErrInvitationExpired,
+// ErrEmailMismatch, ErrAlreadyMember) so handleServiceError can produce the
+// standard error envelope the frontend expects.
 func (s *Service) AcceptInvitation(ctx context.Context, token string, userID, tenantID pgtype.UUID) error {
 	inv, err := s.store.getProfessionalProfileInvitationByToken(ctx, token)
 	if err != nil {
-		return errors.New("invalid or expired invitation")
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrInvitationNotFound
+		}
+		return fmt.Errorf("looking up invitation: %w", err)
 	}
 
 	// Check if the invitation has expired by comparing with current time.
-	var now pgtype.Timestamptz
-	if err := now.Scan("now()"); err != nil {
-		return fmt.Errorf("checking expiry: %w", err)
-	}
-
-	if inv.ExpiresAt.Time.Before(now.Time) {
-		return errors.New("invitation has expired")
+	now := time.Now()
+	if inv.ExpiresAt.Time.Before(now) {
+		return ErrInvitationExpired
 	}
 
 	// Verify the accepting user's email matches the invitation email.
@@ -445,7 +481,16 @@ func (s *Service) AcceptInvitation(ctx context.Context, token string, userID, te
 	}
 
 	if !strings.EqualFold(userEmail, inv.Email) {
-		return errors.New("invitation email does not match your account email")
+		return ErrEmailMismatch
+	}
+
+	// Reject re-acceptance if the user is already a member of the profile.
+	isMember, err := s.store.isProfessionalProfileMember(ctx, inv.ProfileID, userID)
+	if err != nil {
+		return fmt.Errorf("checking existing membership: %w", err)
+	}
+	if isMember {
+		return ErrAlreadyMember
 	}
 
 	// Wrap invitation acceptance + member addition in a transaction to
@@ -495,8 +540,16 @@ type AuthorContext struct {
 }
 
 // GetAuthorContext returns the author context for a user on a profile.
-// The user must be a member of the profile to post as it.
-func (s *Service) GetAuthorContext(ctx context.Context, profileID, userID, _ pgtype.UUID) (AuthorContext, error) {
+// The user must be a member of the profile to post as it. The profile must
+// belong to the caller's tenant (§9 multi-tenancy).
+func (s *Service) GetAuthorContext(ctx context.Context, profileID, userID, tenantID pgtype.UUID) (AuthorContext, error) {
+	// Verify the profile belongs to the caller's tenant before checking
+	// membership, so a profile_id from another tenant cannot pass the
+	// (non-tenant-scoped) membership check.
+	if _, err := s.store.getProfessionalProfileByID(ctx, profileID, tenantID); err != nil {
+		return AuthorContext{}, fmt.Errorf("checking profile tenancy: %w", err)
+	}
+
 	// Check if the user is a member of the profile.
 	isMember, err := s.store.isProfessionalProfileMember(ctx, profileID, userID)
 	if err != nil {
@@ -536,7 +589,12 @@ func (s *Service) CanPostAsProfile(ctx context.Context, profileID, userID, tenan
 	// Member with editor or admin role can post.
 	member, err := s.store.getProfessionalProfileMember(ctx, profileID, userID)
 	if err != nil {
-		return false, nil //nolint:nilerr // intentional: not a member = not authorized
+		// Not a member (no rows) = not authorized; any other error is a
+		// real failure that must surface to the caller (§6.2).
+		if errors.Is(err, pgx.ErrNoRows) {
+			return false, nil
+		}
+		return false, fmt.Errorf("checking profile membership: %w", err)
 	}
 
 	return member.Role == MemberRoleAdmin || member.Role == MemberRoleEditor, nil
@@ -823,7 +881,12 @@ func (s *Service) SetProfileVerified(ctx context.Context, id, tenantID pgtype.UU
 func (s *Service) IsAdminMember(ctx context.Context, profileID, userID pgtype.UUID) (bool, error) {
 	member, err := s.store.getProfessionalProfileMember(ctx, profileID, userID)
 	if err != nil {
-		return false, nil //nolint:nilerr // intentional: not a member = not admin
+		// Not a member (no rows) = not an admin; any other error is a real
+		// failure that must surface to the caller (§6.2).
+		if errors.Is(err, pgx.ErrNoRows) {
+			return false, nil
+		}
+		return false, fmt.Errorf("checking profile membership: %w", err)
 	}
 
 	return member.Role == MemberRoleAdmin, nil

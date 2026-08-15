@@ -43,6 +43,13 @@ type RAGEntityIndexer interface {
 	PurgeEntity(ctx context.Context, tenantID pgtype.UUID, entityType string, entityID pgtype.UUID) error
 }
 
+// settingsReader is the subset of config.Settings needed by the learning
+// handlers to resolve hot-reloadable system_settings (e.g.
+// i18n.default_language for RAG indexing). Nil falls back to defaults.
+type settingsReader interface {
+	GetStringOr(ctx context.Context, tenantID pgtype.UUID, key, fallback string) string
+}
+
 // Handlers exposes HTTP endpoints for the learning platform. Each handler
 // reads tenant context from the request, parses input, delegates to the
 // store, and writes a JSON response. Guard clauses at the top of every
@@ -52,6 +59,7 @@ type Handlers struct {
 	AsynqClient    TaskEnqueueClient
 	jsonldResolver JSONLDResolver
 	ragIndexer     RAGEntityIndexer // nil disables RAG indexing (§69)
+	settings       settingsReader   // nil falls back to defaults
 }
 
 // NewHandlers creates a learning handler bound to the provided store. A nil
@@ -63,6 +71,21 @@ func NewHandlers(store *Store, resolver JSONLDResolver) *Handlers {
 // SetRAGIndexer injects the RAG indexer for embedding learning tracks into
 // content_embeddings (§69/ADR-069 BUG-001 fix). nil disables RAG indexing.
 func (h *Handlers) SetRAGIndexer(r RAGEntityIndexer) { h.ragIndexer = r }
+
+// SetSettings injects the hot-reloadable settings reader for resolving
+// system_settings (e.g. i18n.default_language for RAG indexing). nil falls
+// back to compiled-in defaults.
+func (h *Handlers) SetSettings(s settingsReader) { h.settings = s }
+
+// resolveRAGLanguage resolves the indexing language from i18n.default_language
+// (§7 i18n). Falls back to "en" when settings are not injected or the key is
+// unset. BUG-002 (rag-audit): replaces hardcoded "en" at the call sites.
+func (h *Handlers) resolveRAGLanguage(ctx context.Context, tenantID pgtype.UUID) string {
+	if h.settings != nil {
+		return h.settings.GetStringOr(ctx, tenantID, "i18n.default_language", "en")
+	}
+	return "en"
+}
 
 // indexTrackRAG fires-and-forgets a RAG indexing call for a learning track.
 // The body is the track title + description concatenated for embedding.
@@ -446,7 +469,7 @@ func (h *Handlers) CreateTrack(w http.ResponseWriter, r *http.Request) {
 	// RAG indexing — fire-and-forget (§69/ADR-069 BUG-001 fix: learning
 	// tracks are part of the RAG corpus). Only index published tracks.
 	if input.IsPublished {
-		h.indexTrackRAG(r.Context(), t.ID, track.ID, input.Title, input.Description, "en")
+		h.indexTrackRAG(r.Context(), t.ID, track.ID, input.Title, input.Description, h.resolveRAGLanguage(r.Context(), t.ID))
 	}
 
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": track})
@@ -484,7 +507,7 @@ func (h *Handlers) UpdateTrack(w http.ResponseWriter, r *http.Request) {
 	// RAG re-indexing — fire-and-forget (§69/ADR-069 BUG-001 fix). Only
 	// published tracks are indexed; unpublished tracks are purged.
 	if input.IsPublished {
-		h.indexTrackRAG(r.Context(), t.ID, id, input.Title, input.Description, "en")
+		h.indexTrackRAG(r.Context(), t.ID, id, input.Title, input.Description, h.resolveRAGLanguage(r.Context(), t.ID))
 	} else {
 		h.purgeTrackRAG(r.Context(), t.ID, id)
 	}

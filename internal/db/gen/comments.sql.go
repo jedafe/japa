@@ -827,6 +827,103 @@ func (q *Queries) ListContentThreadLinks(ctx context.Context, arg ListContentThr
 	return items, nil
 }
 
+const listPublicCommentsByContent = `-- name: ListPublicCommentsByContent :many
+SELECT c.id, c.tenant_id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
+       c.vote_score, c.is_pinned, c.is_edited, c.edited_at, c.created_at, c.updated_at, c.deleted_at,
+       u.username,
+       COALESCE(up.display_name, '') AS display_name,
+       COALESCE(up.avatar_url, '') AS avatar_url
+FROM comments c
+JOIN users u ON u.id = c.author_user_id
+LEFT JOIN user_profiles up ON up.user_id = u.id AND up.tenant_id = c.tenant_id
+JOIN contents parent ON parent.id = c.content_id AND parent.tenant_id = c.tenant_id
+WHERE c.content_id = $1
+  AND c.tenant_id = $2
+  AND c.deleted_at IS NULL
+  AND c.status = 'published'
+  AND (c.parent_id IS NULL)
+  AND parent.status = 'published'
+  AND parent.visibility = 'public'
+  AND parent.deleted_at IS NULL
+ORDER BY c.is_pinned DESC, c.vote_score DESC, c.created_at DESC
+LIMIT $4 OFFSET $3
+`
+
+type ListPublicCommentsByContentParams struct {
+	ContentID  pgtype.UUID `json:"content_id"`
+	TenantID   pgtype.UUID `json:"tenant_id"`
+	PageOffset int32       `json:"page_offset"`
+	PageLimit  int32       `json:"page_limit"`
+}
+
+type ListPublicCommentsByContentRow struct {
+	ID           pgtype.UUID        `json:"id"`
+	TenantID     pgtype.UUID        `json:"tenant_id"`
+	ContentID    pgtype.UUID        `json:"content_id"`
+	AuthorUserID pgtype.UUID        `json:"author_user_id"`
+	ParentID     pgtype.UUID        `json:"parent_id"`
+	Body         []byte             `json:"body"`
+	Depth        int32              `json:"depth"`
+	VoteScore    int32              `json:"vote_score"`
+	IsPinned     bool               `json:"is_pinned"`
+	IsEdited     bool               `json:"is_edited"`
+	EditedAt     pgtype.Timestamptz `json:"edited_at"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt    pgtype.Timestamptz `json:"deleted_at"`
+	Username     string             `json:"username"`
+	DisplayName  string             `json:"display_name"`
+	AvatarUrl    string             `json:"avatar_url"`
+}
+
+// Public API (Section 47): top-level published comments for a content item,
+// but ONLY if the parent content itself is published and public. Comments on
+// drafts, private, or member-only content are never exposed to external API
+// consumers.
+// Ref: japaconnect-engineering/sections/47-public-api-developer-portal.md
+func (q *Queries) ListPublicCommentsByContent(ctx context.Context, arg ListPublicCommentsByContentParams) ([]ListPublicCommentsByContentRow, error) {
+	rows, err := q.db.Query(ctx, listPublicCommentsByContent,
+		arg.ContentID,
+		arg.TenantID,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListPublicCommentsByContentRow
+	for rows.Next() {
+		var i ListPublicCommentsByContentRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.ContentID,
+			&i.AuthorUserID,
+			&i.ParentID,
+			&i.Body,
+			&i.Depth,
+			&i.VoteScore,
+			&i.IsPinned,
+			&i.IsEdited,
+			&i.EditedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.DeletedAt,
+			&i.Username,
+			&i.DisplayName,
+			&i.AvatarUrl,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listRepliesByParent = `-- name: ListRepliesByParent :many
 SELECT c.id, c.tenant_id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
        c.vote_score, c.is_pinned, c.is_edited, c.edited_at, c.created_at, c.updated_at, c.deleted_at,

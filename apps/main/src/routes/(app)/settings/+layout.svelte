@@ -7,12 +7,13 @@
 		groupForSection,
 		sectionsInGroup
 	} from '$lib/components/hub/settings/settingsSections';
-	let { children } = $props();
+	let { data, children } = $props();
 
-	const groups = $derived(readyGroups());
+	const features = $derived(data.features ?? {});
+	const groups = $derived(readyGroups(features));
 	const activeSection = $derived(page.params.section ?? 'profile');
 	const activeGroup = $derived(groupForSection(activeSection) ?? 'account');
-	const groupSections = $derived(sectionsInGroup(activeGroup));
+	const groupSections = $derived(sectionsInGroup(activeGroup, features));
 </script>
 
 <div class="grid grid-cols-1 gap-6 px-4 py-4 md:grid-cols-[200px_1fr] md:px-6 lg:px-8">
