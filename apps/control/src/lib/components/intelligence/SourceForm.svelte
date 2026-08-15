@@ -2,6 +2,8 @@
 	import { Dialog, Select } from 'bits-ui';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { Loader2 } from 'lucide-svelte';
+	import Autocomplete from '$lib/components/ui/Autocomplete.svelte';
+	import type { AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
 
 	// SourceForm is the create/edit dialog for the intel_sources registry.
 	// It is a controlled dialog: the parent owns the `open` state and passes
@@ -157,25 +159,29 @@
 	const isEdit = $derived(!!source?.id);
 	const valid = $derived(form.name.trim().length > 0 && form.source_url.trim().length > 0);
 
-	// Sentinel for the "No persona" option. Bits UI Select doesn't treat
-	// empty string "" as a real selectable value, so we use "__none__" and
-	// convert back to "" on submit.
+	// Sentinel for the "No persona" option. The Autocomplete fetcher
+	// includes this as a selectable item; onPersonaChange converts it
+	// back to '' (empty = no persona / system default).
 	const NONE_PERSONA = '__none__';
-	// The Select binds to this derived value — it's the persona_id or the
-	// sentinel when empty so the dropdown can show the "No persona" item as
-	// selected.
-	let selectPersona = $derived(form.persona_id || NONE_PERSONA);
-	// Display text for the trigger — resolves the UUID to the persona's
-	// profile name. Select.Value can't resolve labels from dynamic items
-	// reliably, so we render the text ourselves.
-	let personaDisplay = $derived.by(() => {
-		if (!form.persona_id) return t('intel.field_persona_none', 'No persona (use system default)');
-		const p = personas.find((x) => x.id === form.persona_id);
-		return p?.profile_name ?? form.persona_id;
-	});
 
 	function onPersonaChange(v: string | undefined) {
 		form.persona_id = !v || v === NONE_PERSONA ? '' : v;
+	}
+
+	// --- Autocomplete fetcher for AI Persona ---
+	// Filters the personas prop (server-fetched, unbounded list) client-side.
+	async function fetchPersonas(q: string): Promise<AutocompleteItem[]> {
+		const query = q.toLowerCase();
+		const noneItem: AutocompleteItem = { id: NONE_PERSONA, label: t('intel.field_persona_none', 'No persona (use system default)') };
+		const matched = personas
+			.filter((p) => p.profile_name.toLowerCase().includes(query) || p.id.toLowerCase().includes(query))
+			.map((p) => ({ id: p.id, label: p.profile_name, sublabel: p.backing_username }));
+		return [noneItem, ...matched];
+	}
+
+	async function fetchPersonasInitial(): Promise<AutocompleteItem[]> {
+		const noneItem: AutocompleteItem = { id: NONE_PERSONA, label: t('intel.field_persona_none', 'No persona (use system default)') };
+		return [noneItem, ...personas.map((p) => ({ id: p.id, label: p.profile_name, sublabel: p.backing_username }))];
 	}
 
 	function submit(e: SubmitEvent) {
@@ -356,29 +362,17 @@
 
 				<div>
 					<label for="sf-persona" class={labelClass}>{t('intel.field_persona', 'AI Persona')}</label>
-					<Select.Root
-						type="single"
-						value={selectPersona}
-						onValueChange={onPersonaChange}
-					>
-						<Select.Trigger class={inputClass}>
-							<span class="truncate">{personaDisplay}</span>
-						</Select.Trigger>
-						<Select.Portal>
-							<Select.Content class="border-border-input bg-background shadow-popover z-50 rounded-xl border">
-								<Select.Viewport class="p-1">
-									<Select.Item class="data-highlighted:bg-accent rounded-9px flex h-9 cursor-pointer items-center px-3 text-sm outline-none" value={NONE_PERSONA} label={t('intel.field_persona_none', 'No persona (use system default)')}>
-										{t('intel.field_persona_none', 'No persona (use system default)')}
-									</Select.Item>
-									{#each personas as p}
-										<Select.Item class="data-highlighted:bg-accent rounded-9px flex h-9 cursor-pointer items-center px-3 text-sm outline-none" value={p.id} label={p.profile_name}>
-											{p.profile_name}
-										</Select.Item>
-									{/each}
-								</Select.Viewport>
-							</Select.Content>
-						</Select.Portal>
-					</Select.Root>
+					<Autocomplete
+						id="sf-persona"
+						placeholder={t('intel.field_persona_none', 'No persona (use system default)')}
+						emptyMessage={t('common.no_results', 'No results found')}
+						fetcher={fetchPersonas}
+						initialFetcher={fetchPersonasInitial}
+						selectedId={form.persona_id || null}
+						selectedLabel={form.persona_id ? (personas.find((x) => x.id === form.persona_id)?.profile_name ?? form.persona_id) : null}
+						onSelect={(item) => onPersonaChange(item.id)}
+						onClear={() => onPersonaChange(NONE_PERSONA)}
+					/>
 					<p class="text-muted-foreground mt-1 text-xs">
 						{t('intel.field_persona_hint', "The persona's backing bot user will be credited as the author of content promoted from this source.")}
 					</p>

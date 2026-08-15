@@ -278,6 +278,13 @@
 		}, 350);
 	}
 
+	// Clear any pending user-search debounce when the page unmounts.
+	$effect(() => {
+		return () => {
+			if (userSearchTimer) clearTimeout(userSearchTimer);
+		};
+	});
+
 	function selectSuggestion(user: { id: string; username: string }) {
 		userSearch = user.username;
 		showSuggestions = false;

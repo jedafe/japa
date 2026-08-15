@@ -20,12 +20,14 @@
 		MapPinOff,
 		Map as MapIcon
 	} from 'lucide-svelte';
-	import { EmptyState, LoadingSkeleton, SelectField } from '$lib/components/ui';
+	import { EmptyState, LoadingSkeleton } from '$lib/components/ui';
 	import { api } from '$lib/api/client';
 	import type { CommunityOrgWithAi, GeoSpaceOption } from '$lib/types';
 	import OrgMap from '$lib/components/tools/OrgMap.svelte';
 	import 'leaflet/dist/leaflet.css';
 	import type { PageData } from './$types';
+	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
+	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 
 	/**
 	 * Diaspora Community Locator tool — §101, ADR-088.
@@ -214,6 +216,21 @@
 			loadCities(selectedDestId);
 		}
 	});
+
+	// Autocomplete fetchers — filter the already-loaded destinations client-side.
+	function fetchDestinations(q: string): Promise<AutocompleteItem[]> {
+		const query = q.toLowerCase();
+		const filtered = query === ''
+			? destinations
+			: destinations.filter((d) => d.name.toLowerCase().includes(query));
+		return Promise.resolve(filtered.map((d) => ({ id: d.id, label: d.name })));
+	}
+	function fetchDestinationsInitial(): Promise<AutocompleteItem[]> {
+		return fetchDestinations('');
+	}
+	const selectedDestLabel = $derived(
+		selectedDestId ? destinations.find((d) => d.id === selectedDestId)?.name ?? null : null
+	);
 </script>
 
 <svelte:head>
@@ -284,12 +301,15 @@
 				{t('geo.destination', 'Destination:')}
 			</label>
 			<div class="mt-2">
-				<SelectField
-					id="cl-dest"
-					value={selectedDestId}
-					options={destinations.map((d) => ({ value: d.id, label: d.name }))}
+				<Autocomplete
 					placeholder={t('geo.select_destination', 'Select a country…')}
-					onValueChange={(v) => onDestChange(v)}
+					emptyMessage={t('common.no_results', 'No results found')}
+					fetcher={fetchDestinations}
+					initialFetcher={fetchDestinationsInitial}
+					selectedId={selectedDestId || null}
+					selectedLabel={selectedDestLabel}
+					onSelect={(item) => onDestChange(item.id)}
+					onClear={() => onDestChange('')}
 				/>
 			</div>
 		</div>

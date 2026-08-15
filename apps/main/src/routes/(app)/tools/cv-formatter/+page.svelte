@@ -3,10 +3,12 @@
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
 	import { FileText, Lock, Sparkles, Loader2, AlertTriangle, XCircle, Download, Upload } from 'lucide-svelte';
-	import { EmptyState, LoadingSkeleton, SelectField } from '$lib/components/ui';
+	import { EmptyState, LoadingSkeleton } from '$lib/components/ui';
 	import { api } from '$lib/api/client';
 	import type { GeoSpaceOption, CvStandard, CvFormatSession } from '$lib/types';
 	import type { PageData } from './$types';
+	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
+	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 
 	/**
 	 * CV Formatter tool — §95.
@@ -167,6 +169,21 @@
 	onDestroy(() => {
 		if (pollTimer) clearTimeout(pollTimer);
 	});
+
+	// Autocomplete fetchers — filter the available destinations client-side.
+	function fetchDestinations(q: string): Promise<AutocompleteItem[]> {
+		const query = q.toLowerCase();
+		const filtered = query === ''
+			? availableDestinations
+			: availableDestinations.filter((d) => d.name.toLowerCase().includes(query));
+		return Promise.resolve(filtered.map((d) => ({ id: d.id, label: d.name })));
+	}
+	function fetchDestinationsInitial(): Promise<AutocompleteItem[]> {
+		return fetchDestinations('');
+	}
+	const selectedDestLabel = $derived(
+		selectedDest ? availableDestinations.find((d) => d.id === selectedDest)?.name ?? null : null
+	);
 </script>
 
 <svelte:head>
@@ -226,14 +243,20 @@
 				{t('cv_formatter.select_destination', 'Destination')}
 			</label>
 			<div class="mt-2">
-				<SelectField
-					id="cvf-dest"
-					value={selectedDest}
-					options={availableDestinations.map((d) => ({ value: d.id, label: d.name }))}
+				<Autocomplete
 					placeholder={t('cv_formatter.select_destination_placeholder', 'Select destination country')}
-					onValueChange={(v) => {
-						selectedDest = v;
-						onDestChange(v);
+					emptyMessage={t('common.no_results', 'No results found')}
+					fetcher={fetchDestinations}
+					initialFetcher={fetchDestinationsInitial}
+					selectedId={selectedDest || null}
+					selectedLabel={selectedDestLabel}
+					onSelect={(item) => {
+						selectedDest = item.id;
+						onDestChange(item.id);
+					}}
+					onClear={() => {
+						selectedDest = '';
+						onDestChange('');
 					}}
 				/>
 			</div>

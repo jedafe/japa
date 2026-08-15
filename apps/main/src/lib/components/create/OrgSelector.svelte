@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { t } from '$lib/i18n';
-	import { Select } from 'bits-ui';
-	import { Building2, User, Check, ChevronDown } from 'lucide-svelte';
+	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
+	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 	import type { ComposerOrganization } from '$lib/types';
 
 	interface Props {
@@ -17,72 +17,57 @@
 
 	const selectedOrg = $derived(orgs.find((o) => o.id === selectedId) ?? null);
 
-	// Build the options list: "Post as yourself" (value: "") + orgs.
-	type OrgOption = { value: string; label: string; icon: 'user' | 'org'; role?: string };
-	const options = $derived<OrgOption[]>([
-		{ value: '', label: t('create.post_as_yourself', 'Post as yourself'), icon: 'user' },
-		...orgs.map((o) => ({ value: o.id, label: o.name, icon: 'org' as const, role: o.member_role }))
-	]);
+	// "Post as yourself" is a special item with id="" (personal). It is
+	// included in the Autocomplete item list so the user can search for it.
+	const SELF_ID = '__self__';
 
-	const currentValue = $derived(selectedId ?? '');
+	// Autocomplete fetchers — filter the already-loaded orgs client-side.
+	// The "Post as yourself" option is always included at the top.
+	function fetchOrgs(q: string): Promise<AutocompleteItem[]> {
+		const selfLabel = t('create.post_as_yourself', 'Post as yourself');
+		const query = q.toLowerCase();
+		const selfItem: AutocompleteItem = { id: SELF_ID, label: selfLabel };
+		if (query === '') {
+			return Promise.resolve([
+				selfItem,
+				...orgs.map((o) => ({ id: o.id, label: o.name, sublabel: o.member_role }))
+			]);
+		}
+		const matchesSelf = selfLabel.toLowerCase().includes(query);
+		const filtered = orgs.filter((o) => o.name.toLowerCase().includes(query));
+		const items = filtered.map((o) => ({ id: o.id, label: o.name, sublabel: o.member_role }));
+		return Promise.resolve(matchesSelf ? [selfItem, ...items] : items);
+	}
+	function fetchOrgsInitial(): Promise<AutocompleteItem[]> {
+		return fetchOrgs('');
+	}
+
+	const selectedLabel = $derived(
+		selectedOrg
+			? selectedOrg.name
+			: t('create.post_as_yourself', 'Post as yourself')
+	);
+	// Map the internal SELF_ID back to null (personal) on select/clear.
+	function handleSelect(item: AutocompleteItem) {
+		onfocus?.();
+		onSelect(item.id === SELF_ID ? null : item.id);
+	}
 </script>
 
 {#if orgs.length > 0}
 	<div class="org-selector">
 		<span class="org-label" id="org-selector-label">{t('create.author_label', 'Author')}</span>
-		<Select.Root
-			type="single"
-			value={currentValue}
-			onValueChange={(v) => {
-				onfocus?.();
-				onSelect(v === '' ? null : (v as string));
-			}}
-		>
-			<Select.Trigger
-				class="org-trigger"
-				aria-labelledby="org-selector-label"
-			>
-				<span class="org-trigger-content">
-					{#if selectedOrg}
-						<Building2 size={16} class="org-icon" />
-						{selectedOrg.name}
-					{:else}
-						<User size={16} class="org-icon" />
-						{t('create.post_as_yourself', 'Post as yourself')}
-					{/if}
-				</span>
-				<ChevronDown size={16} class="org-chevron" />
-			</Select.Trigger>
-			<Select.Portal>
-				<Select.Content class="org-content">
-					{#each options as opt (opt.value)}
-						<Select.Item
-							value={opt.value}
-							class="org-item"
-						>
-							{#snippet child({ props })}
-								<div {...props}>
-									<span class="org-item-label">
-										{#if opt.icon === 'org'}
-											<Building2 size={15} class="org-icon" />
-										{:else}
-											<User size={15} class="org-icon" />
-										{/if}
-										{opt.label}
-										{#if opt.role}
-											<span class="org-role">{opt.role}</span>
-										{/if}
-									</span>
-									{#if opt.value === currentValue}
-										<Check size={15} class="org-check" />
-									{/if}
-								</div>
-							{/snippet}
-						</Select.Item>
-					{/each}
-				</Select.Content>
-			</Select.Portal>
-		</Select.Root>
+		<Autocomplete
+			placeholder={t('create.post_as_yourself', 'Post as yourself')}
+			emptyMessage={t('common.no_results', 'No results found')}
+			fetcher={fetchOrgs}
+			initialFetcher={fetchOrgsInitial}
+			selectedId={selectedOrg ? selectedId : SELF_ID}
+			selectedLabel={selectedLabel}
+			onSelect={handleSelect}
+			onClear={() => { onfocus?.(); onSelect(null); }}
+			onfocus={onfocus}
+		/>
 	</div>
 {/if}
 
@@ -96,99 +81,5 @@
 		font-size: 0.75rem;
 		font-weight: 500;
 		color: var(--color-muted);
-	}
-	.org-trigger {
-		display: flex;
-		width: 100%;
-		align-items: center;
-		justify-content: space-between;
-		gap: 8px;
-		padding: 10px 14px;
-		border: 1px solid var(--color-border);
-		border-radius: var(--radius);
-		background: var(--color-surface);
-		color: var(--color-text);
-		font-size: 1rem;
-		text-align: left;
-		cursor: pointer;
-		transition: border-color 0.15s, box-shadow 0.15s;
-	}
-	.org-trigger:hover {
-		border-color: var(--color-text-subtle);
-	}
-	.org-trigger:focus-visible {
-		border-color: var(--color-primary);
-		box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 15%, transparent);
-		outline: none;
-	}
-	.org-trigger-content {
-		display: flex;
-		align-items: center;
-		gap: 6px;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-	}
-	.org-icon {
-		flex-shrink: 0;
-		color: var(--color-muted);
-	}
-	.org-chevron {
-		flex-shrink: 0;
-		color: var(--color-muted);
-		transition: transform 0.15s;
-	}
-
-	.org-content {
-		z-index: 40;
-		max-height: 240px;
-		overflow-y: auto;
-		border: 1px solid var(--color-border);
-		border-radius: var(--radius);
-		background: var(--color-surface);
-		padding: 4px;
-		box-shadow: 0 4px 16px rgb(0 0 0 / 0.12);
-	}
-	.org-item {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 8px;
-		padding: 8px 10px;
-		border-radius: calc(var(--radius) - 2px);
-		font-size: 0.875rem;
-		color: var(--color-text);
-		cursor: pointer;
-		outline: none;
-	}
-	.org-item:hover {
-		background: var(--color-surface-subtle);
-	}
-	.org-item[data-selected] {
-		background: color-mix(in srgb, var(--color-primary) 10%, transparent);
-		color: var(--color-primary);
-		font-weight: 500;
-	}
-	.org-item-label {
-		display: flex;
-		align-items: center;
-		gap: 6px;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-	}
-	.org-role {
-		flex-shrink: 0;
-		border-radius: 9999px;
-		background: var(--color-surface-subtle);
-		padding: 1px 6px;
-		font-size: 10px;
-		font-weight: 500;
-		text-transform: capitalize;
-		color: var(--color-text-subtle);
-	}
-	.org-check {
-		flex-shrink: 0;
-		color: var(--color-primary);
 	}
 </style>

@@ -79,7 +79,7 @@
 			}
 			if (permsResult.ok) allPermissions = permsResult.data;
 		} catch (e) {
-			console.error('Failed to load groups:', e);
+			console.error('Failed to load groups:', e instanceof Error ? e.message : String(e));
 		}
 		finally { loading = false; }
 	}
@@ -146,7 +146,7 @@
 			await Promise.all(idArr.map((id) => userManagementApi.deleteGroup(id)));
 			load();
 		} catch (e) {
-			console.error('Bulk delete failed:', e);
+			console.error('Bulk delete failed:', e instanceof Error ? e.message : String(e));
 		}
 		bulkDeleting = false;
 	}

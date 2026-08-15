@@ -317,6 +317,12 @@
        searchSeeded = true;
      }
    });
+   // Clear any pending search debounce when the table unmounts.
+   $effect(() => {
+     return () => {
+       if (searchTimer) clearTimeout(searchTimer);
+     };
+   });
    function handleSearchInput(e: Event) {
      searchInput = (e.currentTarget as HTMLInputElement).value;
      if (searchTimer) clearTimeout(searchTimer);

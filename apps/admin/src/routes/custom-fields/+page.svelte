@@ -87,8 +87,25 @@
 		}
 	}
 
-	// `fields` drives EntityForm rendering + edit-form seeding. entity_type is a
-	// select whose options are loaded dynamically, so the array is rebuilt when
+	// ── Entity type autocomplete helpers (filter pre-loaded options client-side) ──
+	function fetchEntityTypeOptions(q: string): Promise<{ id: string; label: string }[]> {
+		const query = q.toLowerCase();
+		const filtered = query === ''
+			? entityTypeOptions
+			: entityTypeOptions.filter((o) => o.label.toLowerCase().includes(query));
+		return Promise.resolve(filtered.map((o) => ({ id: o.value, label: o.label })));
+	}
+
+	function fetchEntityTypeOptionsInitial(): Promise<{ id: string; label: string }[]> {
+		return Promise.resolve(entityTypeOptions.map((o) => ({ id: o.value, label: o.label })));
+	}
+
+	function getEntityTypeSelectedLabel(id: string): string {
+		return entityTypeOptions.find((o) => o.value === id)?.label ?? id;
+	}
+
+	// `fields` drives EntityForm rendering + edit-form seeding. entity_type is an
+	// autocomplete whose options are loaded dynamically, so the array is rebuilt when
 	// entityTypeOptions updates (mirrors the /users dynamic-filter pattern).
 	const fields = $derived<FieldDef[]>([
 		{ key: 'name', label: t('fieldGroups.name', 'Name'), type: 'text', required: true },
@@ -96,8 +113,12 @@
 		{
 			key: 'entity_type',
 			label: t('fieldGroups.entity_type', 'Entity Type'),
-			type: 'select',
-			options: entityTypeOptions,
+			type: 'autocomplete',
+			placeholder: t('fieldGroups.entity_type_placeholder', 'Search entity type…'),
+			emptyMessage: t('common.no_results', 'No results found'),
+			fetcher: fetchEntityTypeOptions,
+			initialFetcher: fetchEntityTypeOptionsInitial,
+			getSelectedLabel: getEntityTypeSelectedLabel,
 			required: true
 		},
 		{ key: 'description', label: t('fieldGroups.description', 'Description'), type: 'textarea' }

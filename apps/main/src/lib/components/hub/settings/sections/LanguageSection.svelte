@@ -28,6 +28,8 @@
 	import { t, i18n } from '$lib/i18n';
 	import { Globe, Clock, MapPin } from 'lucide-svelte';
 	import type { GeoCountry } from '$lib/types';
+	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
+	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 
 	interface LanguageData {
 		packs: string[];
@@ -134,6 +136,47 @@
 			countryError = t('settings.language.content_country_error', 'Could not save content country preference.');
 		}
 	}
+
+	// Autocomplete fetchers — filter the already-loaded language packs client-side.
+	function fetchLanguages(q: string): Promise<AutocompleteItem[]> {
+		const query = q.toLowerCase();
+		const filtered = query === ''
+			? packs
+			: packs.filter((code) => {
+					const label = localeLabel(code).toLowerCase();
+					return code.toLowerCase().includes(query) || label.includes(query);
+				});
+		return Promise.resolve(
+			filtered.map((code) => ({ id: code, label: localeLabel(code), sublabel: code }))
+		);
+	}
+	function fetchLanguagesInitial(): Promise<AutocompleteItem[]> {
+		return fetchLanguages('');
+	}
+	const selectedLanguageLabel = $derived(localeLabel(form.values.language));
+
+	// Autocomplete fetchers — filter the already-loaded countries client-side.
+	// Includes an "Auto-detect" option (id: '') at the top of the list.
+	function fetchCountries(q: string): Promise<AutocompleteItem[]> {
+		const autoLabel = t('settings.language.content_country_auto', 'Auto-detect from my location');
+		const query = q.toLowerCase();
+		const autoItem: AutocompleteItem = { id: '', label: autoLabel };
+		if (query === '') {
+			return Promise.resolve([autoItem, ...countries.map((c) => ({ id: c.geo_code, label: c.name, sublabel: c.geo_code }))]);
+		}
+		const matchesAuto = autoLabel.toLowerCase().includes(query);
+		const filtered = countries.filter((c) => c.name.toLowerCase().includes(query) || c.geo_code.toLowerCase().includes(query));
+		const items = filtered.map((c) => ({ id: c.geo_code, label: c.name, sublabel: c.geo_code }));
+		return Promise.resolve(matchesAuto ? [autoItem, ...items] : items);
+	}
+	function fetchCountriesInitial(): Promise<AutocompleteItem[]> {
+		return fetchCountries('');
+	}
+	const selectedCountryLabel = $derived(
+		contentCountry
+			? countries.find((c) => c.geo_code === contentCountry)?.name ?? contentCountry
+			: t('settings.language.content_country_auto', 'Auto-detect from my location')
+	);
 </script>
 
 <SettingsSection titleKey="settings.nav.language" descKey="settings.language.desc" {form}>
@@ -141,34 +184,16 @@
 		<span class="mb-1.5 flex items-center gap-1.5 text-sm text-[var(--color-muted)]">
 			<Globe size={14} /> {t('settings.language.language', 'Language')}
 		</span>
-		<Select.Root
-			type="single"
-			value={form.values.language}
-			onValueChange={(v) => v && form.set({ language: v })}
-		>
-			<Select.Trigger
-				class="inline-flex w-full items-center justify-between rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"
-				aria-label={t('settings.language.language', 'Language')}
-			>
-				{localeLabel(form.values.language)}
-			</Select.Trigger>
-			<Select.Portal>
-				<Select.Content class="z-50 max-h-60 overflow-y-auto rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-1 shadow-lg">
-					<Select.Viewport>
-						{#each packs as code (code)}
-							<Select.Item
-								value={code}
-								label={localeLabel(code)}
-								class="flex cursor-pointer items-center justify-between rounded px-2 py-1.5 text-sm text-[var(--color-text)] data-[highlighted]:bg-[var(--color-surface-subtle)]"
-							>
-								<span>{localeLabel(code)}</span>
-								<span class="text-xs text-[var(--color-muted)]">{code}</span>
-							</Select.Item>
-						{/each}
-					</Select.Viewport>
-				</Select.Content>
-			</Select.Portal>
-		</Select.Root>
+		<Autocomplete
+			placeholder={t('settings.language.language', 'Language')}
+			emptyMessage={t('common.no_results', 'No results found')}
+			fetcher={fetchLanguages}
+			initialFetcher={fetchLanguagesInitial}
+			selectedId={form.values.language || null}
+			selectedLabel={selectedLanguageLabel}
+			onSelect={(item) => form.set({ language: item.id })}
+			onClear={() => form.set({ language: 'en' })}
+		/>
 	</label>
 
 	<label class="block">
@@ -212,43 +237,16 @@
 			<span class="mb-1.5 flex items-center gap-1.5 text-sm text-[var(--color-muted)]">
 				<MapPin size={14} /> {t('settings.language.content_country', 'Content country')}
 			</span>
-			<Select.Root
-				type="single"
-				value={contentCountry}
-				onValueChange={(v) => v !== undefined && saveContentCountry(v ?? '')}
-			>
-				<Select.Trigger
-					class="inline-flex w-full items-center justify-between rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"
-					aria-label={t('settings.language.content_country', 'Content country')}
-				>
-					{contentCountry
-						? countries.find((c) => c.geo_code === contentCountry)?.name ?? contentCountry
-						: t('settings.language.content_country_auto', 'Auto-detect from my location')}
-				</Select.Trigger>
-				<Select.Portal>
-					<Select.Content class="z-50 max-h-60 overflow-y-auto rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-1 shadow-lg">
-						<Select.Viewport>
-							<Select.Item
-								value=""
-								label={t('settings.language.content_country_auto', 'Auto-detect from my location')}
-								class="flex cursor-pointer items-center justify-between rounded px-2 py-1.5 text-sm text-[var(--color-text)] data-[highlighted]:bg-[var(--color-surface-subtle)]"
-							>
-								{t('settings.language.content_country_auto', 'Auto-detect from my location')}
-							</Select.Item>
-							{#each countries as c (c.id)}
-								<Select.Item
-									value={c.geo_code}
-									label={c.name}
-									class="flex cursor-pointer items-center justify-between rounded px-2 py-1.5 text-sm text-[var(--color-text)] data-[highlighted]:bg-[var(--color-surface-subtle)]"
-								>
-									<span>{c.name}</span>
-									<span class="text-xs text-[var(--color-muted)]">{c.geo_code}</span>
-								</Select.Item>
-							{/each}
-						</Select.Viewport>
-					</Select.Content>
-				</Select.Portal>
-			</Select.Root>
+			<Autocomplete
+				placeholder={t('settings.language.content_country_auto', 'Auto-detect from my location')}
+				emptyMessage={t('common.no_results', 'No results found')}
+				fetcher={fetchCountries}
+				initialFetcher={fetchCountriesInitial}
+				selectedId={contentCountry || null}
+				selectedLabel={selectedCountryLabel}
+				onSelect={(item) => saveContentCountry(item.id)}
+				onClear={() => saveContentCountry('')}
+			/>
 			<p class="mt-1.5 text-xs text-[var(--color-muted)]">
 				{t('settings.language.content_country_hint', 'Personalizes your feed and search results. Leave on auto to use your detected location.')}
 			</p>

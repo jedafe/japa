@@ -10,6 +10,8 @@
 	import LoadingSkeleton from '$lib/components/ui/LoadingSkeleton.svelte';
 	import RegistrationPrompt from '$lib/components/ui/RegistrationPrompt.svelte';
 	import ToolDisabled from '$lib/components/ui/ToolDisabled.svelte';
+	import Autocomplete from '$lib/components/ui/Autocomplete.svelte';
+	import type { AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
 	import { LineChart } from 'layerchart';
 	import type {
 		RemittanceCorridor,
@@ -194,8 +196,7 @@
 		return providers.find((p) => p.id === providerId);
 	}
 
-	function onCorridorChange(e: Event) {
-		const value = (e.currentTarget as HTMLSelectElement).value;
+	function onCorridorChange(value: string) {
 		const corridor = corridors.find(
 			(c) => `${c.send_currency}-${c.receive_currency}` === value
 		);
@@ -203,6 +204,26 @@
 			selectedCorridor = corridor;
 			loadRates();
 		}
+	}
+
+	function corridorId(c: RemittanceCorridor): string {
+		return `${c.send_currency}-${c.receive_currency}`;
+	}
+
+	function fetchCorridors(q: string): Promise<AutocompleteItem[]> {
+		const query = q.toLowerCase();
+		const filtered = query === ''
+			? corridors
+			: corridors.filter((c) => c.label.toLowerCase().includes(query));
+		return Promise.resolve(filtered.map((c) => ({ id: corridorId(c), label: c.label })));
+	}
+
+	function fetchCorridorsInitial(): Promise<AutocompleteItem[]> {
+		return fetchCorridors('');
+	}
+
+	function getCorridorLabel(id: string): string {
+		return corridors.find((c) => corridorId(c) === id)?.label ?? id;
 	}
 
 	// Prepare history data for LayerChart — daily aggregate (avg rate per day).
@@ -272,17 +293,17 @@
 	{:else}
 		<!-- Corridor selector -->
 		<div class="mb-6 flex items-center gap-3">
-			<label for="corridor" class="text-sm font-medium text-text">{t('remittance.corridor', 'Corridor:')}</label>
-			<select
+			<label for="corridor" class="text-sm font-medium text-text whitespace-nowrap">{t('remittance.corridor', 'Corridor:')}</label>
+			<Autocomplete
 				id="corridor"
-				value={`${selectedCorridor.send_currency}-${selectedCorridor.receive_currency}`}
-				onchange={onCorridorChange}
-				class="px-4 py-2 bg-surface border border-border rounded-lg text-text focus:border-primary focus:outline-none"
-			>
-				{#each corridors as c (c.label)}
-					<option value={`${c.send_currency}-${c.receive_currency}`}>{c.label}</option>
-				{/each}
-			</select>
+				placeholder={t('remittance.corridor_placeholder', 'Search corridors…')}
+				emptyMessage={t('remittance.no_corridors_found', 'No corridors found')}
+				fetcher={fetchCorridors}
+				initialFetcher={fetchCorridorsInitial}
+				selectedId={corridorId(selectedCorridor)}
+				selectedLabel={getCorridorLabel(corridorId(selectedCorridor))}
+				onSelect={(item) => onCorridorChange(item.id)}
+			/>
 		</div>
 
 		<div class="grid grid-cols-1 lg:grid-cols-2 gap-6">

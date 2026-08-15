@@ -10,6 +10,8 @@
 	import RegistrationPrompt from '$lib/components/ui/RegistrationPrompt.svelte';
 	import ToolDisabled from '$lib/components/ui/ToolDisabled.svelte';
 	import DestinationSelector from '$lib/components/tools/DestinationSelector.svelte';
+	import Autocomplete from '$lib/components/ui/Autocomplete.svelte';
+	import type { AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
 	import type {
 		GeoSpaceOption,
 		CredentialProfession,
@@ -166,6 +168,44 @@
 		if (professionParam) selectedProfession = professionParam;
 		if (pathways.length > 0) hasSearched = true;
 	});
+
+	function fetchProfessions(q: string): Promise<AutocompleteItem[]> {
+		const query = q.toLowerCase();
+		const filtered = query === ''
+			? professions
+			: professions.filter((p) => p.name.toLowerCase().includes(query));
+		return Promise.resolve(
+			filtered.map((p) => ({
+				id: p.id,
+				label: p.name,
+				sublabel: p.category ?? undefined
+			}))
+		);
+	}
+
+	function fetchProfessionsInitial(): Promise<AutocompleteItem[]> {
+		return fetchProfessions('');
+	}
+
+	function getProfessionLabel(id: string): string {
+		return professions.find((p) => p.id === id)?.name ?? id;
+	}
+
+	function fetchDestinations(q: string): Promise<AutocompleteItem[]> {
+		const query = q.toLowerCase();
+		const filtered = query === ''
+			? destinations
+			: destinations.filter((d) => d.name.toLowerCase().includes(query));
+		return Promise.resolve(filtered.map((d) => ({ id: d.id, label: d.name })));
+	}
+
+	function fetchDestinationsInitial(): Promise<AutocompleteItem[]> {
+		return fetchDestinations('');
+	}
+
+	function getDestinationLabel(id: string): string {
+		return destinations.find((d) => d.id === id)?.name ?? id;
+	}
 </script>
 
 <svelte:head>
@@ -223,20 +263,17 @@
 						>
 							{t('credential_checker.profession', 'Profession')}
 						</label>
-						<select
+						<Autocomplete
 							id="profession"
-							bind:value={selectedProfession}
-							class="w-full px-4 py-2 bg-surface border border-border rounded-lg text-text focus:border-primary focus:outline-none"
-						>
-							<option value="">{t('credential_checker.select_profession', 'Select a profession…')}</option>
-							{#each Object.entries(professionGroups) as [category, items] (category)}
-								<optgroup label={category}>
-									{#each items as prof (prof.id)}
-										<option value={prof.id}>{prof.name}</option>
-									{/each}
-								</optgroup>
-							{/each}
-						</select>
+							placeholder={t('credential_checker.select_profession', 'Select a profession…')}
+							emptyMessage={t('credential_checker.no_professions', 'No professions found')}
+							fetcher={fetchProfessions}
+							initialFetcher={fetchProfessionsInitial}
+							selectedId={selectedProfession || null}
+							selectedLabel={selectedProfession ? getProfessionLabel(selectedProfession) : null}
+							onSelect={(item) => (selectedProfession = item.id)}
+							onClear={() => (selectedProfession = '')}
+						/>
 					</div>
 
 					<div class="flex-1 min-w-[200px]">
@@ -246,16 +283,17 @@
 						>
 							{t('credential_checker.issuing_country', 'Issuing country (optional)')}
 						</label>
-						<select
+						<Autocomplete
 							id="issuing"
-							bind:value={selectedIssuing}
-							class="w-full px-4 py-2 bg-surface border border-border rounded-lg text-text focus:border-primary focus:outline-none"
-						>
-							<option value="">{t('geo.select_destination', 'Select a country…')}</option>
-							{#each destinations as dest (dest.id)}
-								<option value={dest.id}>{dest.name}</option>
-							{/each}
-						</select>
+							placeholder={t('geo.select_destination', 'Select a country…')}
+							emptyMessage={t('geo.no_destinations', 'No destinations found')}
+							fetcher={fetchDestinations}
+							initialFetcher={fetchDestinationsInitial}
+							selectedId={selectedIssuing || null}
+							selectedLabel={selectedIssuing ? getDestinationLabel(selectedIssuing) : null}
+							onSelect={(item) => (selectedIssuing = item.id)}
+							onClear={() => (selectedIssuing = '')}
+						/>
 					</div>
 
 					<button

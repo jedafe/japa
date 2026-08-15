@@ -9,6 +9,8 @@
 	import LoadingSkeleton from '$lib/components/ui/LoadingSkeleton.svelte';
 	import RegistrationPrompt from '$lib/components/ui/RegistrationPrompt.svelte';
 	import ToolDisabled from '$lib/components/ui/ToolDisabled.svelte';
+	import Autocomplete from '$lib/components/ui/Autocomplete.svelte';
+	import type { AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
 	import type { Scholarship, SavedScholarship, ScholarshipStatus } from '$lib/types';
 	import { t } from '$lib/i18n';
 
@@ -167,6 +169,18 @@
 		}
 		return Array.from(levels).sort();
 	});
+
+	function fetchLevels(q: string): Promise<AutocompleteItem[]> {
+		const query = q.toLowerCase();
+		const filtered = query === ''
+			? levelOptions
+			: levelOptions.filter((l) => l.toLowerCase().includes(query));
+		return Promise.resolve(filtered.map((l) => ({ id: l, label: l })));
+	}
+
+	function fetchLevelsInitial(): Promise<AutocompleteItem[]> {
+		return fetchLevels('');
+	}
 </script>
 
 <svelte:head>
@@ -235,16 +249,17 @@
 
 				<div>
 					<label class="block text-xs font-medium text-muted mb-1" for="scholarship-level">{t('scholarships.level', 'Level of study')}</label>
-					<select
+					<Autocomplete
 						id="scholarship-level"
-						bind:value={filterLevel}
-						class="w-full px-3 py-2 text-sm bg-surface border border-border rounded focus:border-primary focus:outline-none"
-					>
-						<option value="">{t('scholarships.level_any', 'Any level')}</option>
-						{#each levelOptions as level (level)}
-							<option value={level}>{level}</option>
-						{/each}
-					</select>
+						placeholder={t('scholarships.level_any', 'Any level')}
+						emptyMessage={t('scholarships.no_levels', 'No levels found')}
+						fetcher={fetchLevels}
+						initialFetcher={fetchLevelsInitial}
+						selectedId={filterLevel || null}
+						selectedLabel={filterLevel || null}
+						onSelect={(item) => (filterLevel = item.id)}
+						onClear={() => (filterLevel = '')}
+					/>
 				</div>
 
 				<div class="grid grid-cols-2 gap-2">

@@ -2,11 +2,13 @@
 	import { t } from '$lib/i18n';
 	import { untrack } from 'svelte';
 	import { Download, FileUp, CheckCircle2, AlertCircle, Loader2 } from 'lucide-svelte';
-	import { EmptyState, RelativeTime, SelectField } from '$lib/components/ui';
+	import { EmptyState, RelativeTime } from '$lib/components/ui';
 	import { enhance } from '$app/forms';
 	import { invalidate } from '$app/navigation';
 	import type { ContentImport, ImportSource } from '$lib/types';
 	import type { PageData } from './$types';
+	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
+	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 
 	let { data }: { data: PageData } = $props();
 
@@ -31,6 +33,21 @@
 			default: return 'text-[var(--color-muted)]';
 		}
 	};
+
+	// Autocomplete fetchers — filter the already-loaded import sources client-side.
+	function fetchSources(q: string): Promise<AutocompleteItem[]> {
+		const query = q.toLowerCase();
+		const filtered = query === ''
+			? sources
+			: sources.filter((s) => s.label.toLowerCase().includes(query) || s.value.toLowerCase().includes(query));
+		return Promise.resolve(filtered.map((s) => ({ id: s.value, label: s.label })));
+	}
+	function fetchSourcesInitial(): Promise<AutocompleteItem[]> {
+		return fetchSources('');
+	}
+	const selectedSourceLabel = $derived(
+		sourceType ? sources.find((s) => s.value === sourceType)?.label ?? null : null
+	);
 </script>
 
 <svelte:head>
@@ -88,12 +105,15 @@
 					</label>
 					<!-- Hidden field keeps the SvelteKit form action payload intact. -->
 					<input type="hidden" name="source_type" value={sourceType} />
-					<SelectField
-						id="source_type"
-						value={sourceType}
-						options={sources.map((s) => ({ value: s.value, label: s.label }))}
+					<Autocomplete
 						placeholder={t('import.source_type', 'Source type')}
-						onValueChange={(v) => (sourceType = v)}
+						emptyMessage={t('common.no_results', 'No results found')}
+						fetcher={fetchSources}
+						initialFetcher={fetchSourcesInitial}
+						selectedId={sourceType || null}
+						selectedLabel={selectedSourceLabel}
+						onSelect={(item) => (sourceType = item.id)}
+						onClear={() => (sourceType = sources[0]?.value ?? '')}
 					/>
 				</div>
 

@@ -194,6 +194,27 @@ WHERE content_id = $1 AND tenant_id = $2
 	return nil
 }
 
+// UnverifyStory marks a story as unverified by an admin (story.verify
+// permission). Clears the verified flag and the HITL review audit trail.
+func (s *Store) UnverifyStory(ctx context.Context, contentID, tenantID pgtype.UUID) error {
+	const q = `
+UPDATE story_meta
+SET verified = false,
+    hitl_reviewed_by = null,
+    hitl_reviewed_at = null,
+    updated_at = now()
+WHERE content_id = $1 AND tenant_id = $2
+`
+	cmd, err := s.pool.Writer.Exec(ctx, q, contentID, tenantID)
+	if err != nil {
+		return fmt.Errorf("story: unverify story: %w", err)
+	}
+	if cmd.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+	return nil
+}
+
 // ListStoriesFilter holds the filter parameters for listing stories.
 type ListStoriesFilter struct {
 	TenantID      pgtype.UUID

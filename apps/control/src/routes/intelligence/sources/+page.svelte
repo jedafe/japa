@@ -12,7 +12,8 @@
 	import { hasAnyPermission } from '$lib/stores/auth.svelte';
 	import { escapeHtml } from '$lib/utils';
 	import { Plus, Pencil, Trash2, Power, RefreshCw, Database, Zap, Ban } from 'lucide-svelte';
-	import { Select } from 'bits-ui';
+	import Autocomplete from '$lib/components/ui/Autocomplete.svelte';
+	import type { AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
 
 	interface IntelSource {
 		id: string;
@@ -386,6 +387,24 @@
 			errorMessage = result.error;
 		}
 	}
+
+	// --- Autocomplete fetcher for category filter ---
+	// Filters the derived categoryItems (from fetched sources) by query.
+	async function fetchCategories(q: string): Promise<AutocompleteItem[]> {
+		const query = q.toLowerCase();
+		return categoryItems
+			.filter((c) => c.label.toLowerCase().includes(query) || c.value.toLowerCase().includes(query))
+			.map((c) => ({ id: c.value, label: c.label }));
+	}
+
+	async function fetchCategoriesInitial(): Promise<AutocompleteItem[]> {
+		return categoryItems.map((c) => ({ id: c.value, label: c.label }));
+	}
+
+	function getCategorySelectedLabel(value: string): string | null {
+		if (!value || value === 'all') return null;
+		return categoryItems.find((c) => c.value === value)?.label ?? value;
+	}
 </script>
 
 <PageHeader
@@ -405,26 +424,16 @@
 	<div class="mb-4 flex flex-wrap items-center justify-between gap-3">
 		<div class="flex flex-1 flex-wrap items-center gap-2">
 			<SearchInput bind:value={filter} placeholder={t('intel.search_sources', 'Search sources...')} class="w-64" />
-			<Select.Root
-				type="single"
-				value={filterCategory}
-				onValueChange={(v) => { if (v !== undefined) { filterCategory = v; page = 0; } }}
-			>
-				<Select.Trigger class="border-border-input bg-background text-foreground h-input rounded-9px border px-3 text-sm transition-colors hover:border-border-input-hover focus:border-border-input-hover focus:shadow-date-field-focus">
-					<Select.Value placeholder={t('intel.filter_all_categories', 'All categories')} />
-				</Select.Trigger>
-				<Select.Portal>
-					<Select.Content class="border-border-input bg-background shadow-popover z-50 rounded-xl border">
-						<Select.Viewport class="p-1">
-							{#each categoryItems as c}
-								<Select.Item class="data-highlighted:bg-accent rounded-9px flex h-9 cursor-pointer items-center px-3 text-sm outline-none" value={c.value} label={c.label}>
-									{c.label}
-								</Select.Item>
-							{/each}
-						</Select.Viewport>
-					</Select.Content>
-				</Select.Portal>
-			</Select.Root>
+			<Autocomplete
+				placeholder={t('intel.filter_all_categories', 'All categories')}
+				emptyMessage={t('common.no_results', 'No results found')}
+				fetcher={fetchCategories}
+				initialFetcher={fetchCategoriesInitial}
+				selectedId={filterCategory !== 'all' ? filterCategory : null}
+				selectedLabel={getCategorySelectedLabel(filterCategory)}
+				onSelect={(item) => { filterCategory = item.id; page = 0; }}
+				onClear={() => { filterCategory = 'all'; page = 0; }}
+			/>
 		</div>
 		<div class="flex items-center gap-2">
 			<button

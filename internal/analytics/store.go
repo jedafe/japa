@@ -155,8 +155,11 @@ func (s *Store) RefreshRevenueStreamsView(ctx context.Context) error {
 	return s.write.RefreshRevenueStreamsView(ctx)
 }
 
-// CreateSecurityScanResult records a new security scan finding.
-func (s *Store) CreateSecurityScanResult(ctx context.Context, p gen.CreateSecurityScanResultParams) (gen.SecurityScanResult, error) {
+// CreateSecurityScanResult records a new security scan finding, or refreshes
+// the existing unresolved finding of the same scan_type (upsert by
+// tenant_id + scan_type for unresolved rows) to avoid duplicate findings
+// on repeated scans.
+func (s *Store) CreateSecurityScanResult(ctx context.Context, p gen.CreateSecurityScanResultParams) (gen.CreateSecurityScanResultRow, error) {
 	return s.write.CreateSecurityScanResult(ctx, p)
 }
 
@@ -174,6 +177,14 @@ func (s *Store) ListSecurityScanResults(ctx context.Context, tenantID pgtype.UUI
 // ResolveSecurityScanResult marks a finding as resolved.
 func (s *Store) ResolveSecurityScanResult(ctx context.Context, id, tenantID pgtype.UUID) error {
 	return s.write.ResolveSecurityScanResult(ctx, gen.ResolveSecurityScanResultParams{
+		ID:       id,
+		TenantID: tenantID,
+	})
+}
+
+// DeleteSecurityScanResult permanently deletes a finding (tenant-scoped).
+func (s *Store) DeleteSecurityScanResult(ctx context.Context, id, tenantID pgtype.UUID) error {
+	return s.write.DeleteSecurityScanResult(ctx, gen.DeleteSecurityScanResultParams{
 		ID:       id,
 		TenantID: tenantID,
 	})

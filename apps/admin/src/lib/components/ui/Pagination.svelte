@@ -22,12 +22,18 @@
 
 	function syncToUrl() {
 		if (!urlSync || typeof window === 'undefined') return;
-		const url = new URL(window.location.href);
-		if (page > 0) url.searchParams.set('page', String(page + 1));
-		else url.searchParams.delete('page');
-		if (pageSize !== 10) url.searchParams.set('pageSize', String(pageSize));
-		else url.searchParams.delete('pageSize');
-		window.history.replaceState({}, '', url.toString());
+		const params = new URLSearchParams(sveltekitPage.url.searchParams.toString());
+		if (page > 0) params.set('page', String(page + 1));
+		else params.delete('page');
+		if (pageSize !== 10) params.set('pageSize', String(pageSize));
+		else params.delete('pageSize');
+		const qs = params.toString();
+		const url = `${sveltekitPage.url.pathname}${qs ? `?${qs}` : ''}`;
+		try {
+			history.replaceState({}, '', url);
+		} catch {
+			// Fallback for SSR or edge cases
+		}
 	}
 
 	function goTo(p: number) {

@@ -46,13 +46,13 @@
 				label: t('app.achievements.publish', 'Publish'),
 				icon: CheckCircle,
 				show: (row: AchievementItem) => row.status !== 'published',
-				onclick: (row: AchievementItem) => setStatus(row.id, 'published')
+				onclick: (row: AchievementItem) => setStatus(row, 'published')
 			});
 			acts.push({
 				label: t('app.achievements.unpublish', 'Unpublish'),
 				icon: EyeOff,
 				show: (row: AchievementItem) => row.status === 'published',
-				onclick: (row: AchievementItem) => setStatus(row.id, 'draft')
+				onclick: (row: AchievementItem) => setStatus(row, 'draft')
 			});
 			acts.push({
 				label: t('common.delete', 'Delete'),
@@ -64,12 +64,17 @@
 		return acts;
 	});
 
-	async function setStatus(id: string, status: string) {
+	async function setStatus(item: AchievementItem, status: string) {
 		if (actionLoading) return;
+		// ADR-088 HITL gate: AI-generated content cannot be approved without HITL review.
+		if (item.ai_generated && !item.hitl_reviewed_by) {
+			pageError = t('app.achievement.hitl_required', 'Cannot approve AI-generated content without HITL review');
+			return;
+		}
 		actionLoading = true;
 		pageError = '';
 		try {
-			const result = await achievementAdminApi.setStatus(id, status);
+			const result = await achievementAdminApi.setStatus(item.id, status);
 			if (!result.ok) throw new Error(result.error ?? t('common.error', 'An error occurred'));
 			entityController?.reload();
 		} catch (e) {
@@ -251,5 +256,17 @@ onMount(async () => {
 			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.achievements.col_body', 'Body')}</p>
 			<p class="mt-1 whitespace-pre-wrap text-sm" style="color: var(--color-foreground)">{row.body || '—'}</p>
 		</div>
+		{#if row.ai_generated}
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.common.ai_generated', 'AI Generated')}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{t('common.yes', 'Yes')} ({row.ai_model ?? '—'})</p>
+			</div>
+		{/if}
+		{#if row.hitl_reviewed_by}
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.common.hitl_reviewed_by', 'HITL Reviewed By')}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.hitl_reviewed_by}</p>
+			</div>
+		{/if}
 	</div>
 {/snippet}

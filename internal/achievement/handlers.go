@@ -118,6 +118,10 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 
 	milestoneType := r.URL.Query().Get("milestone")
 	sort := r.URL.Query().Get("sort")
+	if sort != "" && sort != "latest" && sort != "top" {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_sort", "Sort must be 'latest' or 'top'")
+		return
+	}
 	page, limit := parsePageParams(r)
 
 	achievements, total, err := h.service.List(r.Context(), tenantID, destSpaceID, milestoneType, sort, page, limit)
@@ -224,6 +228,14 @@ func (h *Handlers) HandleSubmit(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusBadRequest, "missing_milestone_type", "Milestone type is required")
 			return
 		}
+		if errors.Is(err, ErrInvalidMilestone) {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_milestone_type", "Milestone type must be one of: visa_approved, job_offer, university_accepted, arrived, one_year, citizenship, other")
+			return
+		}
+		if errors.Is(err, ErrInvalidDestination) {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_destination_space", "Destination must be a country-level space")
+			return
+		}
 		slog.Error("achievement: submit failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "submit_failed", "Failed to submit achievement")
 		return
@@ -267,6 +279,14 @@ func (h *Handlers) HandleEdit(w http.ResponseWriter, r *http.Request) {
 		}
 		if errors.Is(err, ErrNotOwner) {
 			errpkg.WriteError(w, http.StatusForbidden, "not_owner", "You can only edit your own achievements")
+			return
+		}
+		if errors.Is(err, ErrInvalidMilestone) {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_milestone_type", "Milestone type must be one of: visa_approved, job_offer, university_accepted, arrived, one_year, citizenship, other")
+			return
+		}
+		if errors.Is(err, ErrInvalidDestination) {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_destination_space", "Destination must be a country-level space")
 			return
 		}
 		slog.Error("achievement: edit failed", "error", err)

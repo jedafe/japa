@@ -98,6 +98,13 @@
 		}, 200);
 	}
 
+	// Clear any pending debounce timer when the component unmounts.
+	$effect(() => {
+		return () => {
+			if (debounceTimer) clearTimeout(debounceTimer);
+		};
+	});
+
 	function selectKey(key: string) {
 		value = key;
 		query = key;

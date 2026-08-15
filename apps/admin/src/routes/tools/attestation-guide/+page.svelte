@@ -78,6 +78,11 @@ onMount(async () => {
 	let loadingUpdates = $state(false);
 
 	async function approvePathway(item: PathwayItem) {
+		// ADR-088 HITL gate: AI-generated content cannot be approved without HITL review.
+		if (item.ai_generated && !item.hitl_reviewed_by) {
+			pageError = t('app.attestation_guide.hitl_required', 'Cannot approve AI-generated content without HITL review');
+			return;
+		}
 		acting = true;
 		pageError = '';
 		try {
@@ -441,6 +446,18 @@ onMount(async () => {
 						<li>{JSON.stringify(step)}</li>
 					{/each}
 				</ol>
+			</div>
+		{/if}
+		{#if row.ai_generated}
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.common.ai_generated', 'AI Generated')}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{t('common.yes', 'Yes')} ({row.ai_model ?? '—'})</p>
+			</div>
+		{/if}
+		{#if row.hitl_reviewed_by}
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.common.hitl_reviewed_by', 'HITL Reviewed By')}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.hitl_reviewed_by}</p>
 			</div>
 		{/if}
 	</div>

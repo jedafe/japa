@@ -9,6 +9,8 @@
 	import { t } from '$lib/stores/i18n.svelte';
 	import { escapeHtml } from '$lib/utils';
 	import type { DataTableColumn, DataTableRowAction, DataTableBulkAction } from '$lib/api/types';
+	import Autocomplete from '$lib/components/ui/Autocomplete.svelte';
+	import type { AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
 
 	interface AdminApiKey {
 		id: string;
@@ -450,6 +452,27 @@
 		page = 0;
 		selectedIds = new Set();
 	}
+
+	// --- Autocomplete fetchers for scopes (multi-select via chips) ---
+
+	// Filter availableScopes by query string, excluding already-selected scopes.
+	async function fetchScopes(q: string, selected: string[]): Promise<AutocompleteItem[]> {
+		const query = q.toLowerCase();
+		return availableScopes
+			.filter((s) => !selected.includes(s.value))
+			.filter((s) => s.label.toLowerCase().includes(query) || s.value.toLowerCase().includes(query))
+			.map((s) => ({ id: s.value, label: s.label, sublabel: s.description }));
+	}
+
+	async function fetchScopesInitial(selected: string[]): Promise<AutocompleteItem[]> {
+		return availableScopes
+			.filter((s) => !selected.includes(s.value))
+			.map((s) => ({ id: s.value, label: s.label, sublabel: s.description }));
+	}
+
+	function getScopeLabel(value: string): string {
+		return availableScopes.find((s) => s.value === value)?.label ?? value;
+	}
 </script>
 
 <PageHeader
@@ -721,30 +744,14 @@
 							</span>
 						{/each}
 					</div>
-					<Select.Root
-						type="single"
-						value=""
-						onValueChange={(v) => {
-							if (v && !createForm.scopes.includes(v)) {
-								createForm.scopes = [...createForm.scopes, v];
-							}
-						}}
-					>
-						<Select.Trigger class="border-border-input bg-background text-foreground mt-2 block w-full rounded-9px border px-3 py-2 text-sm transition-colors">
-							<Select.Value placeholder="Add scope..." />
-						</Select.Trigger>
-						<Select.Portal>
-							<Select.Content class="border-border-input bg-background shadow-popover z-50 rounded-xl border">
-								<Select.Viewport class="p-1">
-									{#each availableScopes.filter((s) => !createForm.scopes.includes(s.value)) as s}
-										<Select.Item class="data-highlighted:bg-accent rounded-9px flex h-9 cursor-pointer items-center px-3 text-sm outline-none" value={s.value} label={s.label}>
-											{s.label}
-										</Select.Item>
-									{/each}
-								</Select.Viewport>
-							</Select.Content>
-						</Select.Portal>
-					</Select.Root>
+					<Autocomplete
+						placeholder="Add scope..."
+						emptyMessage={t('common.no_results', 'No results')}
+						fetcher={(q) => fetchScopes(q, createForm.scopes)}
+						initialFetcher={() => fetchScopesInitial(createForm.scopes)}
+						selectedId={null}
+						onSelect={(item) => { if (!createForm.scopes.includes(item.id)) createForm.scopes = [...createForm.scopes, item.id]; }}
+					/>
 					<p class="text-muted-foreground mt-1 text-xs">{t('api_keys.scopes_hint')}</p>
 				</div>
 
@@ -936,30 +943,14 @@
 							</span>
 						{/each}
 					</div>
-					<Select.Root
-						type="single"
-						value=""
-						onValueChange={(v) => {
-							if (v && !editForm.scopes.includes(v)) {
-								editForm.scopes = [...editForm.scopes, v];
-							}
-						}}
-					>
-						<Select.Trigger class="border-border-input bg-background text-foreground mt-2 block w-full rounded-9px border px-3 py-2 text-sm transition-colors">
-							<Select.Value placeholder="Add scope..." />
-						</Select.Trigger>
-						<Select.Portal>
-							<Select.Content class="border-border-input bg-background shadow-popover z-50 rounded-xl border">
-								<Select.Viewport class="p-1">
-									{#each availableScopes.filter((s) => !editForm.scopes.includes(s.value)) as s}
-										<Select.Item class="data-highlighted:bg-accent rounded-9px flex h-9 cursor-pointer items-center px-3 text-sm outline-none" value={s.value} label={s.label}>
-											{s.label}
-										</Select.Item>
-									{/each}
-								</Select.Viewport>
-							</Select.Content>
-						</Select.Portal>
-					</Select.Root>
+					<Autocomplete
+						placeholder="Add scope..."
+						emptyMessage={t('common.no_results', 'No results')}
+						fetcher={(q) => fetchScopes(q, editForm.scopes)}
+						initialFetcher={() => fetchScopesInitial(editForm.scopes)}
+						selectedId={null}
+						onSelect={(item) => { if (!editForm.scopes.includes(item.id)) editForm.scopes = [...editForm.scopes, item.id]; }}
+					/>
 					<p class="text-muted-foreground mt-1 text-xs">{t('api_keys.scopes_hint')}</p>
 				</div>
 

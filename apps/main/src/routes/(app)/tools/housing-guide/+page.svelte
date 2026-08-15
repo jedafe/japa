@@ -3,10 +3,12 @@
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
 	import { Home, MapPin, ChevronDown, ChevronUp, Globe, AlertTriangle, Lock } from 'lucide-svelte';
-	import { EmptyState, LoadingSkeleton, SelectField } from '$lib/components/ui';
+	import { EmptyState, LoadingSkeleton } from '$lib/components/ui';
 	import { api } from '$lib/api/client';
 	import type { HousingGuideWithAi, GeoSpaceOption } from '$lib/types';
 	import type { PageData } from './$types';
+	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
+	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 
 	/**
 	 * Housing Guide tool — §96, ADR-088.
@@ -108,6 +110,21 @@
 	onMount(() => {
 		// SSR handles initial load; nothing to fetch here.
 	});
+
+	// Autocomplete fetchers — filter the already-loaded destinations client-side.
+	function fetchDestinations(q: string): Promise<AutocompleteItem[]> {
+		const query = q.toLowerCase();
+		const filtered = query === ''
+			? destinations
+			: destinations.filter((d) => d.name.toLowerCase().includes(query));
+		return Promise.resolve(filtered.map((d) => ({ id: d.id, label: d.name })));
+	}
+	function fetchDestinationsInitial(): Promise<AutocompleteItem[]> {
+		return fetchDestinations('');
+	}
+	const selectedDestLabel = $derived(
+		selectedDestId ? destinations.find((d) => d.id === selectedDestId)?.name ?? null : null
+	);
 </script>
 
 <svelte:head>
@@ -157,12 +174,15 @@
 				{t('housing_guide.destination', 'Destination country')}
 			</label>
 			<div class="mt-2">
-				<SelectField
-					id="hg-dest"
-					value={selectedDestId}
-					options={destinations.map((d) => ({ value: d.id, label: d.name }))}
+				<Autocomplete
 					placeholder={t('housing_guide.select_destination', 'Select a destination country')}
-					onValueChange={onDestChange}
+					emptyMessage={t('common.no_results', 'No results found')}
+					fetcher={fetchDestinations}
+					initialFetcher={fetchDestinationsInitial}
+					selectedId={selectedDestId || null}
+					selectedLabel={selectedDestLabel}
+					onSelect={(item) => onDestChange(item.id)}
+					onClear={() => onDestChange('')}
 				/>
 			</div>
 		</div>

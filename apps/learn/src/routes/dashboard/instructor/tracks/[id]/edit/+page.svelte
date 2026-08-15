@@ -12,6 +12,8 @@
 	import { Save, ArrowLeft } from 'lucide-svelte';
 	import { DIFFICULTY_LEVELS } from '$lib/constants/learning';
 	import type { InstructorTrack, TrackLevel } from '$lib/types';
+	import Autocomplete from '$lib/components/ui/Autocomplete.svelte';
+	import type { AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
 
 	const trackId = page.params.id;
 
@@ -41,6 +43,20 @@
 			categories = r.data;
 		}
 	});
+
+	// Autocomplete fetchers — filter the already-loaded categories client-side.
+	async function fetchCategories(q: string): Promise<AutocompleteItem[]> {
+		const lower = q.toLowerCase();
+		return categories
+			.filter((c) => c.name.toLowerCase().includes(lower))
+			.map((c) => ({ id: c.slug, label: c.name }));
+	}
+	async function fetchCategoriesInitial(): Promise<AutocompleteItem[]> {
+		return categories.map((c) => ({ id: c.slug, label: c.name }));
+	}
+	function getCategoryLabel(slug: string): string {
+		return categories.find((c) => c.slug === slug)?.name ?? slug;
+	}
 
 	$effect(() => {
 		(async () => {
@@ -211,16 +227,17 @@
 				<label for="category" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 					{t('university.category_label', 'Category')}
 				</label>
-				<select
+				<Autocomplete
 					id="category"
-					bind:value={category}
-					class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-3 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none"
-				>
-					<option value="">—</option>
-					{#each categories as c (c.id)}
-						<option value={c.slug}>{c.name}</option>
-					{/each}
-				</select>
+					placeholder={t('university.category_label', 'Category')}
+					emptyMessage={t('common.no_results', 'No categories found')}
+					fetcher={fetchCategories}
+					initialFetcher={fetchCategoriesInitial}
+					selectedId={category || null}
+					selectedLabel={category ? getCategoryLabel(category) : null}
+					onSelect={(item) => (category = item.id)}
+					onClear={() => (category = '')}
+				/>
 			</div>
 
 			<!-- Language -->

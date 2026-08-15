@@ -2,6 +2,16 @@ import { PUBLIC_JC_API_URL } from '$env/static/public';
 import { csrfHeaders, refreshCsrfToken } from './csrf';
 import { getAccessToken, setAccessToken, clearAccessToken } from './token';
 
+// Global error callback — registered by the root layout to surface 403
+// permission errors to the user via the notification system. Avoids
+// circular imports between the API client and the notifications store.
+type GlobalErrorHandler = (error: { code: string; message: string; status: number }) => void;
+let globalErrorHandler: GlobalErrorHandler | null = null;
+
+export function setGlobalErrorHandler(handler: GlobalErrorHandler | null): void {
+	globalErrorHandler = handler;
+}
+
 export interface ApiOk<T> {
 	data: T;
 }
@@ -128,6 +138,11 @@ async function dispatch<T>(
 
 	if (!res.ok || 'error' in body) {
 		const err = 'error' in body ? body.error : { code: 'unknown', message: res.statusText, status: res.status };
+		// Surface 403 permission errors globally (non-CSRF — CSRF 403s are
+		// handled by the retry path in apiFetch below).
+		if (res.status === 403 && err.code !== 'csrf_token_invalid' && err.code !== 'csrf_token_missing' && globalErrorHandler) {
+			globalErrorHandler(err);
+		}
 		return { data: null, error: err, status: res.status };
 	}
 

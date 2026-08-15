@@ -12,6 +12,8 @@
 	import ToolDisabled from '$lib/components/ui/ToolDisabled.svelte';
 	import DestinationSelector from '$lib/components/tools/DestinationSelector.svelte';
 	import OrgMap from '$lib/components/tools/OrgMap.svelte';
+	import Autocomplete from '$lib/components/ui/Autocomplete.svelte';
+	import type { AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
 	import type { CommunityOrgWithAi, GeoSpaceOption } from '$lib/types';
 	import 'leaflet/dist/leaflet.css';
 
@@ -208,6 +210,22 @@
 			loadCities(selectedDestId);
 		}
 	});
+
+	function fetchCities(q: string): Promise<AutocompleteItem[]> {
+		const query = q.toLowerCase();
+		const filtered = query === ''
+			? cities
+			: cities.filter((c) => c.name.toLowerCase().includes(query));
+		return Promise.resolve(filtered.map((c) => ({ id: c.id, label: c.name })));
+	}
+
+	function fetchCitiesInitial(): Promise<AutocompleteItem[]> {
+		return fetchCities('');
+	}
+
+	function getCityLabel(id: string): string {
+		return cities.find((c) => c.id === id)?.name ?? id;
+	}
 </script>
 
 <svelte:head>
@@ -366,17 +384,17 @@
 								<label for="form-city" class="block text-sm font-medium text-text mb-1">
 									{t('community_locator.field_city', 'City')}
 								</label>
-								<select
+								<Autocomplete
 									id="form-city"
-									bind:value={form.city_space_id}
-									disabled={cities.length === 0}
-									class="w-full px-3 py-2 bg-surface border border-border rounded text-text focus:border-primary focus:outline-none disabled:opacity-50"
-								>
-									<option value="">{t('community_locator.select_city', 'Select a city…')}</option>
-									{#each cities as city (city.id)}
-										<option value={city.id}>{city.name}</option>
-									{/each}
-								</select>
+									placeholder={t('community_locator.select_city', 'Select a city…')}
+									emptyMessage={t('community_locator.no_cities', 'No cities configured for this destination.')}
+									fetcher={fetchCities}
+									initialFetcher={fetchCitiesInitial}
+									selectedId={form.city_space_id || null}
+									selectedLabel={form.city_space_id ? getCityLabel(form.city_space_id) : null}
+									onSelect={(item) => (form.city_space_id = item.id)}
+									onClear={() => (form.city_space_id = '')}
+								/>
 								{#if cities.length === 0 && selectedDestId}
 									<p class="text-xs text-muted mt-1">{t('community_locator.no_cities', 'No cities configured for this destination.')}</p>
 								{/if}

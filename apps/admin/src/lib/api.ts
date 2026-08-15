@@ -1646,6 +1646,7 @@ export const sharePlatformsAdminApi = {
 export const storyAdminApi = {
 	list: (params?: string) => api<unknown>(`/admin/stories${params ? `?${params}` : ''}`),
 	verify: (id: string) => api<unknown>(`/admin/stories/${id}/verify`, { method: 'POST', body: {} }),
+	unverify: (id: string) => api<unknown>(`/admin/stories/${id}/unverify`, { method: 'POST', body: {} }),
 	delete: (id: string) => api<unknown>(`/admin/stories/${id}`, { method: 'DELETE' }),
 };
 
@@ -1711,6 +1712,7 @@ export const serviceDirectoryAdminApi = {
 			`/admin/services${params ? `?${params}` : ''}`
 		),
 	verify: (id: string) => api<unknown>(`/admin/services/${id}/verify`, { method: 'PATCH', body: {} }),
+	unverify: (id: string) => api<unknown>(`/admin/services/${id}/unverify`, { method: 'PATCH', body: {} }),
 	resolveClaim: (serviceId: string, claimId: string, body: Record<string, unknown>) =>
 		api<unknown>(`/admin/services/${serviceId}/claim/${claimId}`, { method: 'PATCH', body }),
 };

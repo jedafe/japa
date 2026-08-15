@@ -2,12 +2,13 @@
 	// /community/scam-alerts — admin HITL review queue for Scam Alerts with
 	// confirm/debunk/duplicate review + pin/unpin.
 	// Ref: japaconnect-engineering/sections/81-scam-alert-board.md
+	import { onMount } from 'svelte';
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
-	import { scamAlertAdminApi } from '$lib/api';
+	import { scamAlertAdminApi, spacesAdminApi } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { Eye, Pin, PinOff, CheckCircle, XCircle, Copy } from 'lucide-svelte';
-	import type { ActionItem } from '$lib/components/ui/data-table';
+	import type { ActionItem, FilterDef } from '$lib/components/ui/data-table';
 
 	type ScamAlertItem = {
 		id: string;
@@ -48,6 +49,25 @@
 	let moderatorNote = $state('');
 	let reviewSubmitting = $state(false);
 
+	// Destination Spaces for the dest filter (geo-aware pattern). Loaded once
+	// on mount from /admin/spaces?level=country so the filter options are
+	// driven by the backend (Rule 16 — no hardcoded lists).
+	type SpaceOption = { id: string; name: string };
+	let destOptions = $state<SpaceOption[]>([]);
+	onMount(async () => {
+		try {
+			const res = await spacesAdminApi.list('?level=country&limit=200');
+			if (res.ok && Array.isArray(res.data)) {
+				destOptions = (res.data as Array<{ id: string; name: string }>).map((s) => ({
+					id: s.id,
+					name: s.name
+				}));
+			}
+		} catch {
+			// Non-fatal — the dest filter simply stays empty.
+		}
+	});
+
 	function openReview(item: ScamAlertItem) {
 		reviewTarget = item;
 		reviewStatus = 'confirmed';
@@ -57,6 +77,11 @@
 
 	async function submitReview() {
 		if (!reviewTarget || reviewSubmitting) return;
+		// ADR-088 HITL gate: AI-generated content cannot be approved without HITL review.
+		if (reviewTarget.ai_generated && !reviewTarget.hitl_reviewed_by) {
+			pageError = t('app.scam_alert.hitl_required', 'Cannot approve AI-generated content without HITL review');
+			return;
+		}
 		reviewSubmitting = true;
 		pageError = '';
 		try {
@@ -149,11 +174,30 @@
 		{ key: 'moderator_note', label: t('app.scam_alert.col_moderator_note', 'Moderator Note'), type: 'textarea' }
 	];
 
+	const filters = $derived<FilterDef[]>([
+		{
+			key: 'status',
+			label: t('app.scam_alert.col_status', 'Status'),
+			options: [
+				{ value: 'confirmed', label: t('app.scam_alert.status_confirmed', 'Confirmed') },
+				{ value: 'debunked', label: t('app.scam_alert.status_debunked', 'Debunked') },
+				{ value: 'duplicate', label: t('app.scam_alert.status_duplicate', 'Duplicate') },
+				{ value: 'pending', label: t('app.scam_alert.status_pending', 'Pending') }
+			]
+		},
+		{
+			key: 'dest',
+			label: t('app.scam_alert.col_destination', 'Destination'),
+			options: destOptions.map((s) => ({ value: s.id, label: s.name }))
+		}
+	]);
+
 	const config = $derived<EntityPageConfig>({
 		title: t('app.scam_alert.review_queue_heading', 'Scam Alerts Review Queue'),
 		description: t('app.scam_alert.review_queue_desc', 'Review and pin scam alerts for the community'),
 		readonly: true,
 		pageSize: 25,
+		filters,
 		columns: [
 			{
 				key: 'scam_type',
@@ -373,6 +417,18 @@
 			<div>
 				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.scam_alert.col_moderator_note', 'Moderator Note')}</p>
 				<p class="mt-1 whitespace-pre-wrap text-sm" style="color: var(--color-foreground)">{row.moderator_note}</p>
+			</div>
+		{/if}
+		{#if row.ai_generated}
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.common.ai_generated', 'AI Generated')}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{t('common.yes', 'Yes')} ({row.ai_model ?? '—'})</p>
+			</div>
+		{/if}
+		{#if row.hitl_reviewed_by}
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.common.hitl_reviewed_by', 'HITL Reviewed By')}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.hitl_reviewed_by}</p>
 			</div>
 		{/if}
 	</div>

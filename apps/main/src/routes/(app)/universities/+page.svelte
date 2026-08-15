@@ -15,6 +15,8 @@
 	} from '$lib/components/ui';
 	import type { University } from '$lib/types';
 	import type { PageData } from './$types';
+	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
+	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 
 	let { data }: { data: PageData } = $props();
 
@@ -152,6 +154,30 @@
 			}))
 		})
 	);
+
+	// Autocomplete fetchers — filter the already-derived country options client-side.
+	// The "All countries" option (id: '') is always included at the top.
+	function fetchCountries(q: string): Promise<AutocompleteItem[]> {
+		const allLabel = t('universities.all_countries', 'All countries');
+		const query = q.toLowerCase();
+		const allItem: AutocompleteItem = { id: '', label: allLabel };
+		if (query === '') {
+			return Promise.resolve([allItem, ...countryOptions.filter((o) => o.value !== '').map((o) => ({ id: o.value, label: o.label }))]);
+		}
+		const matchesAll = allLabel.toLowerCase().includes(query);
+		const filtered = countryOptions
+			.filter((o) => o.value !== '' && (o.value.toLowerCase().includes(query) || o.label.toLowerCase().includes(query)))
+			.map((o) => ({ id: o.value, label: o.label }));
+		return Promise.resolve(matchesAll ? [allItem, ...filtered] : filtered);
+	}
+	function fetchCountriesInitial(): Promise<AutocompleteItem[]> {
+		return fetchCountries('');
+	}
+	const selectedCountryLabel = $derived(
+		countryInput
+			? countryOptions.find((o) => o.value === countryInput)?.label ?? countryInput
+			: t('universities.all_countries', 'All countries')
+	);
 </script>
 
 <svelte:head>
@@ -221,11 +247,15 @@
 			</div>
 			<div class="flex gap-2">
 				<div class="w-40">
-					<SelectField
-						value={countryInput}
-						options={countryOptions}
+					<Autocomplete
 						placeholder={t('universities.all_countries', 'All countries')}
-						onValueChange={setCountry}
+						emptyMessage={t('common.no_results', 'No results found')}
+						fetcher={fetchCountries}
+						initialFetcher={fetchCountriesInitial}
+						selectedId={countryInput || null}
+						selectedLabel={selectedCountryLabel}
+						onSelect={(item) => setCountry(item.id)}
+						onClear={() => setCountry('')}
 					/>
 				</div>
 				<div class="w-44">

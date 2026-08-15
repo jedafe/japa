@@ -68,6 +68,14 @@
 
 	let errorMessage = $state('');
 
+	// Clear any pending debounce timers when the modal unmounts.
+	$effect(() => {
+		return () => {
+			if (debounceTimer) clearTimeout(debounceTimer);
+			if (stockTimer) clearTimeout(stockTimer);
+		};
+	});
+
 	// fixMediaUrl — the backend returns imgproxy URLs (e.g.
 	// http://imgproxy:8080/{sig}/{opts}/{base64_source}@{format}) which
 	// don't resolve in dev. Decode the base64 source segment to recover
