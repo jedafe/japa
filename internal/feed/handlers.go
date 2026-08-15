@@ -240,7 +240,7 @@ func (h *Handlers) GetSpaceFeed(w http.ResponseWriter, r *http.Request) {
 	offset := parsePageOffset(r)
 	sort := parseSort(r)
 
-	items, err := h.service.GetFeed(r.Context(), tenantID, "space", nil, &spaceID, nil, sort, limit, offset)
+	items, err := h.service.GetFeed(r.Context(), tenantID, "space", &user.UserID, &spaceID, nil, sort, limit, offset)
 	if err != nil {
 		slog.Error("feed: get space feed failed", "space_id", spaceID, "sort", sort, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to get space feed")
@@ -252,9 +252,8 @@ func (h *Handlers) GetSpaceFeed(w http.ResponseWriter, r *http.Request) {
 
 // GetProfileFeed handles GET /api/v1/feed/profile/{user_id}. Public per
 // Section 32:12 (profile timeline audience = "Anyone"): the viewer is
-// optional — guests get the same public rows as an authenticated viewer,
-// since this handler does not (yet) pass the viewer into GetFeed for
-// personalization.
+// optional — guests see all public rows. When the viewer is authenticated,
+// mutual user_blocks are excluded per §41 (BUG-002).
 func (h *Handlers) GetProfileFeed(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -274,7 +273,14 @@ func (h *Handlers) GetProfileFeed(w http.ResponseWriter, r *http.Request) {
 	offset := parsePageOffset(r)
 	sort := parseSort(r)
 
-	items, err := h.service.GetFeed(r.Context(), tenantID, "profile", nil, nil, &authorID, sort, limit, offset)
+	// viewer is optional — nil for guests, populated for authed users so
+	// the §41 mutual user_blocks exclusion applies.
+	var viewerID *pgtype.UUID
+	if user := h.optionalUser(r); user != nil {
+		viewerID = &user.UserID
+	}
+
+	items, err := h.service.GetFeed(r.Context(), tenantID, "profile", viewerID, nil, &authorID, sort, limit, offset)
 	if err != nil {
 		slog.Error("feed: get profile feed failed", "author_id", authorID, "sort", sort, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to get profile feed")

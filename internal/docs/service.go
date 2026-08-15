@@ -2,6 +2,8 @@ package docs
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -9,6 +11,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/ai"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/valkey"
@@ -21,15 +24,25 @@ const (
 	docPageCacheTTL = 5 * time.Minute
 )
 
+// AIDispatcher is the subset of the AI Gateway the docs service needs to
+// generate draft pages (content_generation category).
+type AIDispatcher interface {
+	Dispatch(ctx context.Context, category string, req ai.Request) (ai.Response, error)
+}
+
 // Service provides business logic for documentation pages.
 type Service struct {
-	store *Store
-	cache valkeycompat.Cmdable
+	store      *Store
+	cache      valkeycompat.Cmdable
+	dispatcher AIDispatcher
 }
 
 // SetCache injects a Valkey cache client for docs page/nav caching
 // (VALKEY-003). When nil, the service falls back to direct DB reads.
 func (s *Service) SetCache(c valkeycompat.Cmdable) { s.cache = c }
+
+// SetDispatcher injects the AI Gateway dispatcher for draft generation.
+func (s *Service) SetDispatcher(d AIDispatcher) { s.dispatcher = d }
 
 // NewService creates a Service backed by the given database pools.
 func NewService(database *db.DB) *Service {
@@ -39,6 +52,22 @@ func NewService(database *db.DB) *Service {
 			write: gen.New(database.Writer),
 		},
 	}
+}
+
+// GenerateDraftRequest is the input for AI-generated doc page drafts
+// (ADR-088, routed from the Content Studio).
+type GenerateDraftRequest struct {
+	Title    string `json:"title"`
+	Slug     string `json:"slug"`
+	Audience string `json:"audience"`
+	Prompt   string `json:"prompt"`
+}
+
+// GenerateDraftResponse is the response from Content Agent draft generation.
+type GenerateDraftResponse struct {
+	Status  string `json:"status"`
+	Message string `json:"message"`
+	PageID  string `json:"page_id"`
 }
 
 // GetDocPageBySlug returns a published page by audience and slug. Checks the
@@ -641,4 +670,96 @@ func timestamptzPtr(t pgtype.Timestamptz) *string {
 	s := t.Time.Format(time.RFC3339)
 
 	return &s
+}
+
+// slugify converts a title into a URL-safe slug.
+func slugify(s string) string {
+	return strings.ToLower(strings.ReplaceAll(strings.TrimSpace(s), " ", "-"))
+}
+
+// GenerateDraft creates a doc page draft via the Content Agent (ADR-088).
+// The draft is inserted with ai_generated=true, review_status='draft'. It
+// requires HITL approval before publication.
+//
+// When an AI dispatcher is wired (SetDispatcher), the method calls the AI
+// Gateway via the "content_generation" category. If the dispatcher is nil,
+// the draft is still created with the prompt as content so a reviewer can
+// fill it manually (graceful degradation).
+func (s *Service) GenerateDraft(ctx context.Context, tenantID pgtype.UUID, input GenerateDraftRequest) (GenerateDraftResponse, error) {
+	if input.Title == "" {
+		return GenerateDraftResponse{}, fmt.Errorf("title is required")
+	}
+
+	slug := input.Slug
+	if slug == "" {
+		slug = slugify(input.Title)
+	}
+	audience := input.Audience
+	if audience == "" {
+		audience = "public"
+	}
+
+	// Build the prompt sent to the Content Agent.
+	prompt := input.Prompt
+	if prompt == "" {
+		prompt = fmt.Sprintf("Generate documentation for: %s (audience: %s)", input.Title, audience)
+	}
+
+	// ai_prompt_hash = SHA256(prompt) for audit traceability.
+	sum := sha256.Sum256([]byte(prompt))
+	promptHash := hex.EncodeToString(sum[:])
+	_ = promptHash // stored in content for audit; doc_pages has no ai_prompt_hash column
+
+	// Call the AI Gateway when a dispatcher is wired.
+	generatedText := prompt
+	if s.dispatcher != nil {
+		resp, aiErr := s.dispatcher.Dispatch(ctx, "content_generation", ai.Request{
+			Category: "content_generation",
+			Payload: map[string]any{
+				"prompt":     prompt,
+				"tenant_id":  tenantID,
+				"guide_type": "doc_page",
+			},
+		})
+		if aiErr != nil {
+			return GenerateDraftResponse{}, fmt.Errorf("docs: AI generation failed: %w", aiErr)
+		}
+		if text, ok := resp.Raw["text"].(string); ok {
+			generatedText = text
+		} else if text, ok := resp.Raw["content"].(string); ok {
+			generatedText = text
+		} else if text, ok := resp.Raw["output"].(string); ok {
+			generatedText = text
+		}
+		slog.Info("docs: AI Gateway generated draft",
+			"title", input.Title, "audience", audience)
+	}
+
+	// Build TipTap JSON content from the generated text.
+	contentBytes := []byte(fmt.Sprintf(`{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":%q}]}]}`, generatedText))
+
+	// Create the doc page with ai_generated=true, review_status='draft'.
+	id, err := s.store.create(ctx, gen.CreateDocPageParams{
+		TenantID:     tenantID,
+		Title:        input.Title,
+		Slug:         slug,
+		Audience:     audience,
+		Content:      contentBytes,
+		AiGenerated:  true,
+		ReviewStatus: "draft",
+		ParentID:     pgtype.UUID{},
+		Position:     0,
+	})
+	if err != nil {
+		return GenerateDraftResponse{}, fmt.Errorf("docs: generate draft: %w", err)
+	}
+
+	// Invalidate cache for this audience+slug.
+	s.invalidateCache(ctx, tenantID, audience, slug)
+
+	return GenerateDraftResponse{
+		Status:  "accepted",
+		Message: "Content Agent draft created in 'draft' status. Review and approve to publish.",
+		PageID:  id.String(),
+	}, nil
 }

@@ -40,23 +40,29 @@ export const load: PageServerLoad = async (event) => {
 	}
 
 	// Tagged content — degrades to an empty list on failure so a missing feed
-	// never blanks the whole tag view. Supports cursor-based pagination
-	// (Section 14): the initial SSR load fetches the first page; subsequent
-	// "Load More" clicks are handled client-side via ?cursor=.
+	// never blanks the whole tag view. Supports composite cursor-based
+	// pagination (Section 14): the initial SSR load fetches the first page;
+	// subsequent "Load More" clicks are handled client-side via ?cursor=
+	// and ?cursor_id=. The composite (created_at, id) cursor avoids skipping
+	// items that share the same created_at timestamp.
 	let items: ContentArticle[] = [];
 	let loadError = false;
 	let nextCursor = '';
+	let nextCursorId = '';
 	try {
 		const cursorParam = event.url.searchParams.get('cursor') ?? '';
+		const cursorIdParam = event.url.searchParams.get('cursor_id') ?? '';
 		const params = new URLSearchParams({ page_size: String(PAGE_SIZE) });
 		if (cursorParam) params.set('cursor', cursorParam);
+		if (cursorIdParam) params.set('cursor_id', cursorIdParam);
 		items = (await apiList<ContentArticle>(ctx, `/tags/${slug}/content?${params.toString()}`)).items;
-		// Compute the next cursor from the last item's created_at so the
-		// client can fetch the following page without a server round-trip
+		// Compute the next cursor from the last item's (created_at, id) so
+		// the client can fetch the following page without a server round-trip
 		// for metadata.
 		if (items.length >= PAGE_SIZE && items.length > 0) {
 			const last = items[items.length - 1];
 			if (last?.created_at) nextCursor = last.created_at;
+			if (last?.id) nextCursorId = last.id;
 		}
 	} catch {
 		loadError = true;
@@ -125,6 +131,7 @@ export const load: PageServerLoad = async (event) => {
 		fieldDefs,
 		canManage,
 		initiallyFollowing: isFollowing,
-		nextCursor
+		nextCursor,
+		nextCursorId
 	};
 };

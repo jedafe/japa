@@ -41,9 +41,12 @@
 	}
 
 	// Cursor-based pagination state (Section 14). The initial page is SSR'd;
-	// "Load More" fetches the next page client-side and appends.
+	// "Load More" fetches the next page client-side and appends. Uses a
+	// composite (created_at, id) cursor to avoid skipping items that share
+	// the same created_at timestamp.
 	let extraItems: typeof data.items = $state([]);
 	let nextCursor = $state(untrack(() => data.nextCursor ?? ''));
+	let nextCursorId = $state(untrack(() => data.nextCursorId ?? ''));
 	let loadingMore = $state(false);
 
 	const allItems = $derived([...data.items, ...extraItems]);
@@ -54,9 +57,9 @@
 		if (!nextCursor || loadingMore) return;
 		loadingMore = true;
 		try {
-			const res = await api.get<{ data: typeof data.items }>(
-				`/tags/${tag.slug}/content?page_size=${data.pageSize}&cursor=${encodeURIComponent(nextCursor)}`
-			);
+			let url = `/tags/${tag.slug}/content?page_size=${data.pageSize}&cursor=${encodeURIComponent(nextCursor)}`;
+			if (nextCursorId) url += `&cursor_id=${encodeURIComponent(nextCursorId)}`;
+			const res = await api.get<{ data: typeof data.items }>(url);
 			if (res.error || !res.data) {
 				loadingMore = false;
 				return;
@@ -65,12 +68,16 @@
 			if (fetched.length > 0) {
 				extraItems = [...extraItems, ...fetched];
 			}
-			// Advance the cursor to the last fetched item's created_at; if
-			// fewer than a full page came back, there are no more pages.
+			// Advance the composite cursor to the last fetched item's
+			// (created_at, id); if fewer than a full page came back, there
+			// are no more pages.
 			if (fetched.length >= data.pageSize && fetched.length > 0) {
-				nextCursor = fetched[fetched.length - 1]?.created_at ?? '';
+				const last = fetched[fetched.length - 1];
+				nextCursor = last?.created_at ?? '';
+				nextCursorId = last?.id ?? '';
 			} else {
 				nextCursor = '';
+				nextCursorId = '';
 			}
 		} catch {
 			// leave nextCursor so the user can retry

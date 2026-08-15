@@ -4,6 +4,7 @@
 	import { validateResetPassword } from '$lib/auth/validation';
 	import { mapAuthError } from '$lib/auth/errors';
 	import PasswordField from '$lib/components/auth/PasswordField.svelte';
+	import HoneypotField from '$lib/components/auth/HoneypotField.svelte';
 
 	const token = $derived(page.data.token);
 
@@ -12,6 +13,7 @@
 	let loading = $state(false);
 	let errors = $state<Record<string, string>>({});
 	let success = $state(false);
+	let honeypot = $state('');
 
 	async function submit(e: SubmitEvent) {
 		e.preventDefault();
@@ -27,7 +29,7 @@
 			const res = await fetch('/api/auth/reset-password', {
 				method: 'POST',
 				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({ token, new_password: password })
+				body: JSON.stringify({ token, new_password: password, website: honeypot })
 			});
 			if (!res.ok) {
 				const data = await res.json().catch(() => null);
@@ -45,6 +47,7 @@
 </script>
 
 <form onsubmit={submit} class="flex flex-col gap-4" novalidate>
+	<HoneypotField bind:value={honeypot} />
 	<h1 class="text-2xl font-semibold text-[var(--color-text)]">{t('auth.reset_password.title')}</h1>
 	<p class="text-sm text-[var(--color-muted)]">{t('auth.reset_password.subtitle')}</p>
 

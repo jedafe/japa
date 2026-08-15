@@ -103,6 +103,30 @@ func (q *Queries) CountContentShares(ctx context.Context, arg CountContentShares
 	return count, err
 }
 
+const countPostsByAuthor = `-- name: CountPostsByAuthor :one
+SELECT COUNT(*)::int AS count
+FROM contents c
+WHERE c.tenant_id = $1
+  AND c.author_id = $2
+  AND c.status = 'published'
+  AND c.deleted_at IS NULL
+`
+
+type CountPostsByAuthorParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	AuthorID pgtype.UUID `json:"author_id"`
+}
+
+// Counts published, non-deleted content by the given author in a tenant.
+// Used by the spam pipeline's new-user link restriction (§41 Layer 3) to
+// determine whether a user has passed the "first N posts" threshold.
+func (q *Queries) CountPostsByAuthor(ctx context.Context, arg CountPostsByAuthorParams) (int32, error) {
+	row := q.db.QueryRow(ctx, countPostsByAuthor, arg.TenantID, arg.AuthorID)
+	var count int32
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createBookmark = `-- name: CreateBookmark :one
 
 INSERT INTO bookmarks (tenant_id, user_id, entity_type, entity_id, folder, folder_id)
@@ -1423,15 +1447,20 @@ LEFT JOIN media m ON m.id = COALESCE(c.featured_image_id, c.header_image_id) AND
 WHERE ct.tag_id = $1 AND c.tenant_id = $2 AND c.status = 'published'
   AND c.deleted_at IS NULL
   AND c.auto_hidden = false
-  AND (c.created_at < $3 OR ($3 IS NULL))
+  AND (
+    $3::timestamptz IS NULL
+    OR c.created_at < $3::timestamptz
+    OR (c.created_at = $3::timestamptz AND c.id < $4::uuid)
+  )
 ORDER BY c.created_at DESC, c.id DESC
-LIMIT $4
+LIMIT $5
 `
 
 type ListContentByTagParams struct {
 	TagID           pgtype.UUID        `json:"tag_id"`
 	TenantID        pgtype.UUID        `json:"tenant_id"`
 	CursorCreatedAt pgtype.Timestamptz `json:"cursor_created_at"`
+	CursorID        pgtype.UUID        `json:"cursor_id"`
 	PageLimit       int32              `json:"page_limit"`
 }
 
@@ -1472,11 +1501,14 @@ type ListContentByTagRow struct {
 	CoverStoragePath   *string            `json:"cover_storage_path"`
 }
 
+// Composite cursor (created_at, id) avoids skipping items that share the
+// same created_at timestamp as the last item on a page. Ref: §4.1.
 func (q *Queries) ListContentByTag(ctx context.Context, arg ListContentByTagParams) ([]ListContentByTagRow, error) {
 	rows, err := q.db.Query(ctx, listContentByTag,
 		arg.TagID,
 		arg.TenantID,
 		arg.CursorCreatedAt,
+		arg.CursorID,
 		arg.PageLimit,
 	)
 	if err != nil {

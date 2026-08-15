@@ -267,6 +267,7 @@ const checkSpaceMembership = `-- name: CheckSpaceMembership :one
 SELECT EXISTS(
     SELECT 1 FROM space_members
     WHERE space_id = $1 AND user_id = $2 AND tenant_id = $3
+      AND status = 'approved'
 ) AS is_member
 `
 
@@ -279,6 +280,9 @@ type CheckSpaceMembershipParams struct {
 // =====================
 // Space Members
 // =====================
+// SPACES-005: only count approved members. A pending join request
+// (status='pending') does NOT make the user a member until an admin
+// approves it (Section 05 lines 358-360).
 func (q *Queries) CheckSpaceMembership(ctx context.Context, arg CheckSpaceMembershipParams) (bool, error) {
 	row := q.db.QueryRow(ctx, checkSpaceMembership, arg.SpaceID, arg.UserID, arg.TenantID)
 	var is_member bool
@@ -311,7 +315,7 @@ func (q *Queries) CheckSpaceOwnership(ctx context.Context, arg CheckSpaceOwnersh
 const countSpaceMembers = `-- name: CountSpaceMembers :one
 SELECT COUNT(*) AS count
 FROM space_members
-WHERE space_id = $1 AND tenant_id = $2
+WHERE space_id = $1 AND tenant_id = $2 AND status = 'approved'
 `
 
 type CountSpaceMembersParams struct {
@@ -319,6 +323,7 @@ type CountSpaceMembersParams struct {
 	TenantID pgtype.UUID `json:"tenant_id"`
 }
 
+// SPACES-006: only count approved members, not pending join requests.
 func (q *Queries) CountSpaceMembers(ctx context.Context, arg CountSpaceMembersParams) (int64, error) {
 	row := q.db.QueryRow(ctx, countSpaceMembers, arg.SpaceID, arg.TenantID)
 	var count int64
@@ -342,6 +347,48 @@ func (q *Queries) CountSpacePublishedContent(ctx context.Context, arg CountSpace
 	var count int64
 	err := row.Scan(&count)
 	return count, err
+}
+
+const countSpaces = `-- name: CountSpaces :one
+SELECT COUNT(*) AS total
+FROM spaces s
+WHERE s.tenant_id = $1 AND s.deleted_at IS NULL
+  AND (
+    s.visibility = 'public'
+    OR (
+      $2::uuid IS NOT NULL
+      AND EXISTS (
+        SELECT 1 FROM space_members sm
+        WHERE sm.space_id = s.id AND sm.user_id = $2::uuid
+          AND sm.tenant_id = s.tenant_id AND sm.status = 'approved'
+      )
+    )
+  )
+  AND ($3::text = '' OR s.name ILIKE '%' || $3 || '%' OR s.slug ILIKE '%' || $3 || '%')
+  AND ($4::text = '' OR s.geo_code = $4)
+  AND ($5::text = '' OR s.level = $5)
+`
+
+type CountSpacesParams struct {
+	TenantID     pgtype.UUID `json:"tenant_id"`
+	ViewerUserID pgtype.UUID `json:"viewer_user_id"`
+	Search       string      `json:"search"`
+	GeoCode      string      `json:"geo_code"`
+	Level        string      `json:"level"`
+}
+
+// SPACES-009: total count for the paginated discovery list.
+func (q *Queries) CountSpaces(ctx context.Context, arg CountSpacesParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countSpaces,
+		arg.TenantID,
+		arg.ViewerUserID,
+		arg.Search,
+		arg.GeoCode,
+		arg.Level,
+	)
+	var total int64
+	err := row.Scan(&total)
+	return total, err
 }
 
 const countSpacesByOwnerUser = `-- name: CountSpacesByOwnerUser :one
@@ -368,7 +415,7 @@ func (q *Queries) CountSpacesByOwnerUser(ctx context.Context, arg CountSpacesByO
 const countSpacesByType = `-- name: CountSpacesByType :one
 SELECT COUNT(*) AS total
 FROM spaces
-WHERE tenant_id = $1 AND space_type_id = $2 AND deleted_at IS NULL
+WHERE spaces.tenant_id = $1 AND spaces.space_type_id = $2 AND spaces.deleted_at IS NULL
   AND ($3::text = '' OR name ILIKE '%' || $3 || '%' OR slug ILIKE '%' || $3 || '%')
   AND ($4::text = '' OR geo_code = $4)
 `
@@ -1404,16 +1451,18 @@ func (q *Queries) GetSpaceKeywords(ctx context.Context, arg GetSpaceKeywordsPara
 const getSpaceModerator = `-- name: GetSpaceModerator :one
 SELECT id, tenant_id, space_id, user_id, assigned_by, assigned_by_user_id, created_at
 FROM space_moderators
-WHERE space_id = $1 AND user_id = $2
+WHERE space_id = $1 AND user_id = $2 AND tenant_id = $3
 `
 
 type GetSpaceModeratorParams struct {
-	SpaceID pgtype.UUID `json:"space_id"`
-	UserID  pgtype.UUID `json:"user_id"`
+	SpaceID  pgtype.UUID `json:"space_id"`
+	UserID   pgtype.UUID `json:"user_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
 }
 
+// SPACES-015: tenant-scoped for defense-in-depth.
 func (q *Queries) GetSpaceModerator(ctx context.Context, arg GetSpaceModeratorParams) (SpaceModerator, error) {
-	row := q.db.QueryRow(ctx, getSpaceModerator, arg.SpaceID, arg.UserID)
+	row := q.db.QueryRow(ctx, getSpaceModerator, arg.SpaceID, arg.UserID, arg.TenantID)
 	var i SpaceModerator
 	err := row.Scan(
 		&i.ID,
@@ -1699,13 +1748,25 @@ SELECT id, tenant_id, parent_id, space_type_id, name, slug, description, wiki_co
        follower_count, visibility, posting_perm, replying_perm, commenting_perm,
        joining_perm, status, created_at, updated_at, deleted_at, currency_code
 FROM spaces
-WHERE parent_id = $1 AND tenant_id = $2 AND deleted_at IS NULL
+WHERE spaces.parent_id = $1 AND spaces.tenant_id = $2 AND spaces.deleted_at IS NULL
+  AND (
+    visibility = 'public'
+    OR (
+      $3::uuid IS NOT NULL
+      AND EXISTS (
+        SELECT 1 FROM space_members sm
+        WHERE sm.space_id = spaces.id AND sm.user_id = $3::uuid
+          AND sm.tenant_id = spaces.tenant_id AND sm.status = 'approved'
+      )
+    )
+  )
 ORDER BY created_at ASC, id ASC
 `
 
 type ListChildSpacesParams struct {
-	ParentID pgtype.UUID `json:"parent_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
+	ParentID     pgtype.UUID `json:"parent_id"`
+	TenantID     pgtype.UUID `json:"tenant_id"`
+	ViewerUserID pgtype.UUID `json:"viewer_user_id"`
 }
 
 type ListChildSpacesRow struct {
@@ -1736,8 +1797,9 @@ type ListChildSpacesRow struct {
 	CurrencyCode   *string            `json:"currency_code"`
 }
 
+// SPACES-001: apply the same visibility filter as ListSpacesByTenant.
 func (q *Queries) ListChildSpaces(ctx context.Context, arg ListChildSpacesParams) ([]ListChildSpacesRow, error) {
-	rows, err := q.db.Query(ctx, listChildSpaces, arg.ParentID, arg.TenantID)
+	rows, err := q.db.Query(ctx, listChildSpaces, arg.ParentID, arg.TenantID, arg.ViewerUserID)
 	if err != nil {
 		return nil, err
 	}
@@ -2127,7 +2189,7 @@ SELECT sm.user_id, u.username, up.display_name, up.avatar_url, sm.joined_at
 FROM space_members sm
 JOIN users u ON u.id = sm.user_id AND u.tenant_id = sm.tenant_id
 LEFT JOIN user_profiles up ON up.user_id = sm.user_id AND up.tenant_id = sm.tenant_id
-WHERE sm.space_id = $1 AND sm.tenant_id = $2
+WHERE sm.space_id = $1 AND sm.tenant_id = $2 AND sm.status = 'approved'
 ORDER BY sm.joined_at DESC
 LIMIT $4 OFFSET $3
 `
@@ -2150,6 +2212,7 @@ type ListSpaceMembersWithProfileRow struct {
 // =====================
 // Space Members (with profile data)
 // =====================
+// SPACES-007: only list approved members, not pending join requests.
 func (q *Queries) ListSpaceMembersWithProfile(ctx context.Context, arg ListSpaceMembersWithProfileParams) ([]ListSpaceMembersWithProfileRow, error) {
 	rows, err := q.db.Query(ctx, listSpaceMembersWithProfile,
 		arg.SpaceID,
@@ -2188,9 +2251,14 @@ SELECT sm.id, sm.tenant_id, sm.space_id, sm.user_id, sm.assigned_by,
 FROM space_moderators sm
 JOIN users u ON u.id = sm.user_id
 LEFT JOIN user_profiles up ON up.user_id = sm.user_id AND up.tenant_id = sm.tenant_id
-WHERE sm.space_id = $1
+WHERE sm.space_id = $1 AND sm.tenant_id = $2
 ORDER BY sm.created_at ASC
 `
+
+type ListSpaceModeratorsParams struct {
+	SpaceID  pgtype.UUID `json:"space_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
 
 type ListSpaceModeratorsRow struct {
 	ID               pgtype.UUID        `json:"id"`
@@ -2204,8 +2272,9 @@ type ListSpaceModeratorsRow struct {
 	UserDisplayName  *string            `json:"user_display_name"`
 }
 
-func (q *Queries) ListSpaceModerators(ctx context.Context, spaceID pgtype.UUID) ([]ListSpaceModeratorsRow, error) {
-	rows, err := q.db.Query(ctx, listSpaceModerators, spaceID)
+// SPACES-015: tenant-scoped for defense-in-depth.
+func (q *Queries) ListSpaceModerators(ctx context.Context, arg ListSpaceModeratorsParams) ([]ListSpaceModeratorsRow, error) {
+	rows, err := q.db.Query(ctx, listSpaceModerators, arg.SpaceID, arg.TenantID)
 	if err != nil {
 		return nil, err
 	}
@@ -2373,13 +2442,25 @@ SELECT id, tenant_id, parent_id, space_type_id, name, slug, description, wiki_co
        follower_count, visibility, posting_perm, replying_perm, commenting_perm,
        joining_perm, status, created_at, updated_at, deleted_at, currency_code
 FROM spaces
-WHERE tenant_id = $1 AND level = $2 AND deleted_at IS NULL
+WHERE spaces.tenant_id = $1 AND spaces.level = $2 AND deleted_at IS NULL
+  AND (
+    visibility = 'public'
+    OR (
+      $3::uuid IS NOT NULL
+      AND EXISTS (
+        SELECT 1 FROM space_members sm
+        WHERE sm.space_id = spaces.id AND sm.user_id = $3::uuid
+          AND sm.tenant_id = spaces.tenant_id AND sm.status = 'approved'
+      )
+    )
+  )
 ORDER BY created_at DESC, id DESC
 `
 
 type ListSpacesByLevelParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	Level    string      `json:"level"`
+	TenantID     pgtype.UUID `json:"tenant_id"`
+	Level        string      `json:"level"`
+	ViewerUserID pgtype.UUID `json:"viewer_user_id"`
 }
 
 type ListSpacesByLevelRow struct {
@@ -2410,8 +2491,12 @@ type ListSpacesByLevelRow struct {
 	CurrencyCode   *string            `json:"currency_code"`
 }
 
+// SPACES-001: apply the same visibility filter as ListSpacesByTenant so
+// unauthenticated callers only see public spaces; authenticated callers
+// also see members/private spaces they belong to (Section 05 line 272).
+// Pass @viewer_user_id as NULL for unauthenticated requests.
 func (q *Queries) ListSpacesByLevel(ctx context.Context, arg ListSpacesByLevelParams) ([]ListSpacesByLevelRow, error) {
-	rows, err := q.db.Query(ctx, listSpacesByLevel, arg.TenantID, arg.Level)
+	rows, err := q.db.Query(ctx, listSpacesByLevel, arg.TenantID, arg.Level, arg.ViewerUserID)
 	if err != nil {
 		return nil, err
 	}
@@ -2849,13 +2934,25 @@ SELECT id, tenant_id, parent_id, space_type_id, name, slug, description, wiki_co
        follower_count, visibility, posting_perm, replying_perm, commenting_perm,
        joining_perm, status, created_at, updated_at, deleted_at, currency_code
 FROM spaces
-WHERE tenant_id = $1 AND space_type_id = $2 AND deleted_at IS NULL
+WHERE spaces.tenant_id = $1 AND spaces.space_type_id = $2 AND spaces.deleted_at IS NULL
+  AND (
+    visibility = 'public'
+    OR (
+      $3::uuid IS NOT NULL
+      AND EXISTS (
+        SELECT 1 FROM space_members sm
+        WHERE sm.space_id = spaces.id AND sm.user_id = $3::uuid
+          AND sm.tenant_id = spaces.tenant_id AND sm.status = 'approved'
+      )
+    )
+  )
 ORDER BY created_at DESC, id DESC
 `
 
 type ListSpacesByTypeParams struct {
-	TenantID    pgtype.UUID `json:"tenant_id"`
-	SpaceTypeID pgtype.UUID `json:"space_type_id"`
+	TenantID     pgtype.UUID `json:"tenant_id"`
+	SpaceTypeID  pgtype.UUID `json:"space_type_id"`
+	ViewerUserID pgtype.UUID `json:"viewer_user_id"`
 }
 
 type ListSpacesByTypeRow struct {
@@ -2886,8 +2983,9 @@ type ListSpacesByTypeRow struct {
 	CurrencyCode   *string            `json:"currency_code"`
 }
 
+// SPACES-001: apply the same visibility filter as ListSpacesByTenant.
 func (q *Queries) ListSpacesByType(ctx context.Context, arg ListSpacesByTypeParams) ([]ListSpacesByTypeRow, error) {
-	rows, err := q.db.Query(ctx, listSpacesByType, arg.TenantID, arg.SpaceTypeID)
+	rows, err := q.db.Query(ctx, listSpacesByType, arg.TenantID, arg.SpaceTypeID, arg.ViewerUserID)
 	if err != nil {
 		return nil, err
 	}
@@ -2938,7 +3036,7 @@ SELECT id, tenant_id, parent_id, space_type_id, name, slug, description, wiki_co
        follower_count, visibility, posting_perm, replying_perm, commenting_perm,
        joining_perm, status, created_at, updated_at, deleted_at, currency_code
 FROM spaces
-WHERE tenant_id = $1 AND space_type_id = $2 AND deleted_at IS NULL
+WHERE spaces.tenant_id = $1 AND spaces.space_type_id = $2 AND spaces.deleted_at IS NULL
   AND ($3::text = '' OR name ILIKE '%' || $3 || '%' OR slug ILIKE '%' || $3 || '%')
   AND ($4::text = '' OR geo_code = $4)
 ORDER BY
@@ -3010,6 +3108,139 @@ func (q *Queries) ListSpacesByTypePaginated(ctx context.Context, arg ListSpacesB
 	var items []ListSpacesByTypePaginatedRow
 	for rows.Next() {
 		var i ListSpacesByTypePaginatedRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.ParentID,
+			&i.SpaceTypeID,
+			&i.Name,
+			&i.Slug,
+			&i.Description,
+			&i.WikiContent,
+			&i.LogoMediaID,
+			&i.HeaderImageID,
+			&i.GeoCode,
+			&i.Level,
+			&i.MemberCount,
+			&i.PostCount,
+			&i.FollowerCount,
+			&i.Visibility,
+			&i.PostingPerm,
+			&i.ReplyingPerm,
+			&i.CommentingPerm,
+			&i.JoiningPerm,
+			&i.Status,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.DeletedAt,
+			&i.CurrencyCode,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listSpacesPaginated = `-- name: ListSpacesPaginated :many
+SELECT s.id, s.tenant_id, s.parent_id, s.space_type_id, s.name, s.slug, s.description,
+       s.wiki_content, s.logo_media_id, s.header_image_id, s.geo_code, s.level,
+       s.member_count, s.post_count, s.follower_count, s.visibility, s.posting_perm,
+       s.replying_perm, s.commenting_perm, s.joining_perm, s.status, s.created_at,
+       s.updated_at, s.deleted_at, s.currency_code
+FROM spaces s
+WHERE s.tenant_id = $1 AND s.deleted_at IS NULL
+  AND (
+    s.visibility = 'public'
+    OR (
+      $2::uuid IS NOT NULL
+      AND EXISTS (
+        SELECT 1 FROM space_members sm
+        WHERE sm.space_id = s.id AND sm.user_id = $2::uuid
+          AND sm.tenant_id = s.tenant_id AND sm.status = 'approved'
+      )
+    )
+  )
+  AND ($3::text = '' OR s.name ILIKE '%' || $3 || '%' OR s.slug ILIKE '%' || $3 || '%')
+  AND ($4::text = '' OR s.geo_code = $4)
+  AND ($5::text = '' OR s.level = $5)
+ORDER BY
+  CASE WHEN $6::text = 'name' THEN s.name ELSE NULL END ASC,
+  CASE
+    WHEN $6::text = 'members' THEN s.member_count
+    WHEN $6::text = 'followers' THEN s.follower_count
+    WHEN $6::text = 'posts' THEN s.post_count
+    ELSE NULL
+  END DESC,
+  s.created_at DESC, s.id DESC
+LIMIT $8 OFFSET $7
+`
+
+type ListSpacesPaginatedParams struct {
+	TenantID     pgtype.UUID `json:"tenant_id"`
+	ViewerUserID pgtype.UUID `json:"viewer_user_id"`
+	Search       string      `json:"search"`
+	GeoCode      string      `json:"geo_code"`
+	Level        string      `json:"level"`
+	Sort         string      `json:"sort"`
+	OffsetVal    int32       `json:"offset_val"`
+	LimitVal     int32       `json:"limit_val"`
+}
+
+type ListSpacesPaginatedRow struct {
+	ID             pgtype.UUID        `json:"id"`
+	TenantID       pgtype.UUID        `json:"tenant_id"`
+	ParentID       pgtype.UUID        `json:"parent_id"`
+	SpaceTypeID    pgtype.UUID        `json:"space_type_id"`
+	Name           string             `json:"name"`
+	Slug           string             `json:"slug"`
+	Description    *string            `json:"description"`
+	WikiContent    []byte             `json:"wiki_content"`
+	LogoMediaID    pgtype.UUID        `json:"logo_media_id"`
+	HeaderImageID  pgtype.UUID        `json:"header_image_id"`
+	GeoCode        *string            `json:"geo_code"`
+	Level          string             `json:"level"`
+	MemberCount    int32              `json:"member_count"`
+	PostCount      int32              `json:"post_count"`
+	FollowerCount  int32              `json:"follower_count"`
+	Visibility     string             `json:"visibility"`
+	PostingPerm    string             `json:"posting_perm"`
+	ReplyingPerm   string             `json:"replying_perm"`
+	CommentingPerm string             `json:"commenting_perm"`
+	JoiningPerm    string             `json:"joining_perm"`
+	Status         string             `json:"status"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
+	CurrencyCode   *string            `json:"currency_code"`
+}
+
+// SPACES-009/011: SQL-level paginated discovery list with search, geo,
+// level, and sort support. Replaces the in-memory filter+paginate in the
+// ListSpaces handler. Visibility filter matches ListSpacesByTenant.
+// sort accepts: ” (default → newest), 'name' (A–Z), 'members', 'followers',
+// 'posts' (all numeric DESC). Unknown values fall back to newest.
+func (q *Queries) ListSpacesPaginated(ctx context.Context, arg ListSpacesPaginatedParams) ([]ListSpacesPaginatedRow, error) {
+	rows, err := q.db.Query(ctx, listSpacesPaginated,
+		arg.TenantID,
+		arg.ViewerUserID,
+		arg.Search,
+		arg.GeoCode,
+		arg.Level,
+		arg.Sort,
+		arg.OffsetVal,
+		arg.LimitVal,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListSpacesPaginatedRow
+	for rows.Next() {
+		var i ListSpacesPaginatedRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.TenantID,
@@ -3177,25 +3408,33 @@ func (q *Queries) RemoveSpaceMember(ctx context.Context, arg RemoveSpaceMemberPa
 
 const removeSpaceModerator = `-- name: RemoveSpaceModerator :exec
 DELETE FROM space_moderators
-WHERE space_id = $1 AND user_id = $2
+WHERE space_id = $1 AND user_id = $2 AND tenant_id = $3
 `
 
 type RemoveSpaceModeratorParams struct {
-	SpaceID pgtype.UUID `json:"space_id"`
-	UserID  pgtype.UUID `json:"user_id"`
+	SpaceID  pgtype.UUID `json:"space_id"`
+	UserID   pgtype.UUID `json:"user_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
 }
 
+// SPACES-015: tenant-scoped for defense-in-depth.
 func (q *Queries) RemoveSpaceModerator(ctx context.Context, arg RemoveSpaceModeratorParams) error {
-	_, err := q.db.Exec(ctx, removeSpaceModerator, arg.SpaceID, arg.UserID)
+	_, err := q.db.Exec(ctx, removeSpaceModerator, arg.SpaceID, arg.UserID, arg.TenantID)
 	return err
 }
 
 const suggestParentSpaces = `-- name: SuggestParentSpaces :many
 SELECT s.id, s.name, s.slug FROM spaces s
 WHERE s.tenant_id = $1 AND s.status = 'active' AND s.deleted_at IS NULL
-  AND s.space_type_id IN (SELECT id FROM space_types WHERE slug = 'category')
+  AND s.level IN ('country', 'state', 'city')
+  AND ($2::text = '' OR s.name ILIKE '%' || $2 || '%' OR s.slug ILIKE '%' || $2 || '%')
 ORDER BY s.name LIMIT 20
 `
+
+type SuggestParentSpacesParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	Search   string      `json:"search"`
+}
 
 type SuggestParentSpacesRow struct {
 	ID   pgtype.UUID `json:"id"`
@@ -3203,8 +3442,12 @@ type SuggestParentSpacesRow struct {
 	Slug string      `json:"slug"`
 }
 
-func (q *Queries) SuggestParentSpaces(ctx context.Context, tenantID pgtype.UUID) ([]SuggestParentSpacesRow, error) {
-	rows, err := q.db.Query(ctx, suggestParentSpaces, tenantID)
+// SPACES-003: return primary spaces (country/state/city level) that can
+// serve as parents of a custom space (Section 05 lines 14, 190, 252-267).
+// The previous query filtered by space_types.slug = 'category' which does
+// not exist in the spec; the correct filter is by level.
+func (q *Queries) SuggestParentSpaces(ctx context.Context, arg SuggestParentSpacesParams) ([]SuggestParentSpacesRow, error) {
+	rows, err := q.db.Query(ctx, suggestParentSpaces, arg.TenantID, arg.Search)
 	if err != nil {
 		return nil, err
 	}

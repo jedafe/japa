@@ -10,9 +10,9 @@ import (
 	"github.com/jedafe/japa/internal/db/gen"
 )
 
-// ErrTooManyTags is returned when adding tags would exceed MaxTagsPerThread.
+// ErrTooManyTags is returned when adding tags would exceed the per-thread tag cap.
 // Ref: japaconnect-engineering/sections/08-forum-qa-solved.md (BUG-008)
-var ErrTooManyTags = errors.New("too many tags: maximum 5 tags per thread")
+var ErrTooManyTags = errors.New("too many tags: maximum tags per thread exceeded")
 
 // CreateTagInput holds parameters for creating a new forum tag.
 type CreateTagInput struct {
@@ -81,16 +81,27 @@ func (s *Service) ListTags(ctx context.Context, tenantID pgtype.UUID, limit, off
 	return s.store.listTags(ctx, tenantID, limit, offset)
 }
 
-// AddThreadTag adds a tag to a thread. Enforces the MaxTagsPerThread cap.
+// maxTagsForThread resolves the per-thread tag cap from system_settings
+// (content.max_tags), falling back to MaxTagsPerThread when settings are
+// not wired. Ref: AGENTS.md Rule 3, Section 08 Tags.
+func (s *Service) maxTagsForThread(ctx context.Context, tenantID pgtype.UUID) int32 {
+	if s.settings != nil {
+		return int32(s.settings.GetIntOr(ctx, tenantID, "content.max_tags", int(MaxTagsPerThread)))
+	}
+	return MaxTagsPerThread
+}
+
+// AddThreadTag adds a tag to a thread. Enforces the per-thread tag cap.
 // Ref: Section 08 Tags (max 5 tags per post).
 func (s *Service) AddThreadTag(ctx context.Context, tenantID, threadID, tagID pgtype.UUID) error {
 	// Enforce the per-thread tag cap before inserting.
+	maxTags := s.maxTagsForThread(ctx, tenantID)
 	count, err := s.store.countThreadTags(ctx, threadID)
 	if err != nil {
 		return fmt.Errorf("counting thread tags: %w", err)
 	}
-	if count >= MaxTagsPerThread {
-		return fmt.Errorf("thread already has the maximum of %d tags", MaxTagsPerThread)
+	if count >= maxTags {
+		return fmt.Errorf("thread already has the maximum of %d tags", maxTags)
 	}
 
 	if err := s.store.addThreadTag(ctx, threadID, tagID); err != nil {
@@ -105,9 +116,10 @@ func (s *Service) AddThreadTag(ctx context.Context, tenantID, threadID, tagID pg
 }
 
 // AddThreadTagsBulk adds multiple tags to a thread in one call
-// (POST /forum/{id}/tags). Enforces the MaxTagsPerThread cap across the
+// (POST /forum/{id}/tags). Enforces the per-thread tag cap across the
 // combined set. Ref: api-routes-catalog L596.
 func (s *Service) AddThreadTagsBulk(ctx context.Context, tenantID, threadID pgtype.UUID, tagIDs []pgtype.UUID) error {
+	maxTags := s.maxTagsForThread(ctx, tenantID)
 	existing, err := s.store.countThreadTags(ctx, threadID)
 	if err != nil {
 		return fmt.Errorf("counting thread tags: %w", err)
@@ -125,8 +137,8 @@ func (s *Service) AddThreadTagsBulk(ctx context.Context, tenantID, threadID pgty
 		seen[id.Bytes] = struct{}{}
 		unique = append(unique, id)
 	}
-	if existing+int32(len(unique)) > MaxTagsPerThread { // #nosec G115 -- len() of a deduped tag slice, bounded by MaxTagsPerThread
-		return fmt.Errorf("adding these tags would exceed the maximum of %d tags per thread", MaxTagsPerThread)
+	if existing+int32(len(unique)) > maxTags { // #nosec G115 -- len() of a deduped tag slice, bounded by maxTags
+		return fmt.Errorf("adding these tags would exceed the maximum of %d tags per thread", maxTags)
 	}
 
 	for _, tagID := range unique {

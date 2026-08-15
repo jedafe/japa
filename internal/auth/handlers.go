@@ -141,10 +141,22 @@ func (h *AuthHandlers) Register(w http.ResponseWriter, r *http.Request) {
 		Username string `json:"username"`
 		Password string `json:"password"`
 		RefCode  string `json:"ref_code"` // §60 — referral code captured at signup (?ref=CODE)
+		Website  string `json:"website"`  // §41 Layer 2 — honeypot field
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		return
+	}
+
+	// §41 Layer 2: honeypot field. Real users never fill the hidden
+	// `website` field; bots auto-filling all form fields will. Reject
+	// silently with a generic 400 so the bot can't distinguish the
+	// honeypot from a real validation error.
+	if strings.TrimSpace(req.Website) != "" {
+		slog.Info("registration blocked: honeypot triggered")
+		errpkg.WriteError(w, http.StatusBadRequest, "honeypot_triggered",
+			"Registration failed. Please try again.")
 		return
 	}
 
@@ -302,10 +314,19 @@ func (h *AuthHandlers) Login(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Email    string `json:"email"`
 		Password string `json:"password"`
+		Website  string `json:"website"` // §41 Layer 2 — honeypot field
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		return
+	}
+
+	// §41 Layer 2: honeypot field. Reject silently if filled.
+	if strings.TrimSpace(req.Website) != "" {
+		slog.Info("login blocked: honeypot triggered")
+		errpkg.WriteError(w, http.StatusBadRequest, "honeypot_triggered",
+			"Login failed. Please try again.")
 		return
 	}
 
@@ -975,11 +996,20 @@ func rateLimitCheck(ctx context.Context, rdb valkeycompat.Cmdable, key string, m
 // Always returns 200 to prevent email enumeration. Rate limited to 3 requests per 10 minutes per email.
 func (h *AuthHandlers) HandleForgotPassword(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Email string `json:"email"`
+		Email   string `json:"email"`
+		Website string `json:"website"` // §41 Layer 2 — honeypot field
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		return
+	}
+
+	// §41 Layer 2: honeypot field. Reject silently if filled.
+	if strings.TrimSpace(req.Website) != "" {
+		slog.Info("forgot-password blocked: honeypot triggered")
+		errpkg.WriteError(w, http.StatusBadRequest, "honeypot_triggered",
+			"Request failed. Please try again.")
 		return
 	}
 
@@ -1122,10 +1152,19 @@ func (h *AuthHandlers) HandleResetPassword(w http.ResponseWriter, r *http.Reques
 	var req struct {
 		Token       string `json:"token"`
 		NewPassword string `json:"new_password"`
+		Website     string `json:"website"` // §41 Layer 2 — honeypot field
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		return
+	}
+
+	// §41 Layer 2: honeypot field. Reject silently if filled.
+	if strings.TrimSpace(req.Website) != "" {
+		slog.Info("reset-password blocked: honeypot triggered")
+		errpkg.WriteError(w, http.StatusBadRequest, "honeypot_triggered",
+			"Request failed. Please try again.")
 		return
 	}
 

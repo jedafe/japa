@@ -8,6 +8,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
 )
 
@@ -48,8 +49,16 @@ func (h *Handlers) AddParentSpace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Verify the parent space exists and belongs to the same tenant.
-	if _, err := h.Service.GetSpace(r.Context(), parentID, tenantID); err != nil {
+	parent, err := h.Service.GetSpace(r.Context(), parentID, tenantID)
+	if err != nil {
 		handleServiceError(w, err)
+		return
+	}
+	// SPACES-008: parent spaces must be primary (country/state/city).
+	// Custom or global spaces cannot serve as parents (Section 05 line 14).
+	if parent.Level != LevelCountry && parent.Level != LevelState && parent.Level != LevelCity {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_parent",
+			"Parent spaces must be primary (country, state, or city)")
 		return
 	}
 
@@ -117,19 +126,25 @@ func (h *Handlers) ListParentSpaces(w http.ResponseWriter, r *http.Request) {
 }
 
 // SuggestParentSpaces handles GET /spaces/suggest-parents.
+// SPACES-003: returns primary spaces (country/state/city) eligible to be
+// parents of a custom space, filtered by the optional ?q= search param.
 func (h *Handlers) SuggestParentSpaces(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
-	rows, err := h.Service.read.SuggestParentSpaces(r.Context(), tenantID)
+	search := strings.TrimSpace(r.URL.Query().Get("q"))
+	rows, err := h.Service.read.SuggestParentSpaces(r.Context(), gen.SuggestParentSpacesParams{
+		TenantID: tenantID,
+		Search:   search,
+	})
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to suggest parents")
 		return
 	}
 	spaces := make([]map[string]any, 0, len(rows))
-	for _, r := range rows {
-		spaces = append(spaces, map[string]any{"id": r.ID, "name": r.Name, "slug": r.Slug})
+	for _, row := range rows {
+		spaces = append(spaces, map[string]any{"id": row.ID, "name": row.Name, "slug": row.Slug})
 	}
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": spaces})
 }

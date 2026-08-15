@@ -95,6 +95,11 @@ type SessionRow struct {
 	HITLReviewedBy    pgtype.UUID
 	HITLReviewedAt    pgtype.Timestamptz
 	HITLReviewNotes   *string
+	// File upload metadata (migration 000487).
+	OriginalFilename *string
+	FileStoragePath  *string
+	FileMimeType     *string
+	FileSizeBytes    *int64
 }
 
 // ListStandards returns all cv_standards rows joined with destination
@@ -241,6 +246,13 @@ type SessionInput struct {
 	OutputFormat       string
 	AIModel            *string
 	AIPromptHash       *string // SHA-256 of input_text (ADR-088)
+	// File upload metadata (migration 000487). Populated when the user
+	// uploads a PDF/DOCX file instead of pasting text. The extracted text
+	// is stored in InputText; these columns preserve the original file.
+	OriginalFilename *string
+	FileStoragePath  *string
+	FileMimeType     *string
+	FileSizeBytes    *int64
 }
 
 // CreateSession inserts a new cv_format_sessions row with status='pending'
@@ -255,19 +267,22 @@ func (s *Store) CreateSession(ctx context.Context, input SessionInput) (SessionR
 INSERT INTO cv_format_sessions (
     tenant_id, user_id, origin_space_id, destination_space_id,
     input_text, output_format, status, ai_model,
-    ai_generated, ai_prompt_hash
-) VALUES ($1, $2, $3, $4, $5, $6, 'pending', $7, true, $8)
+    ai_generated, ai_prompt_hash,
+    original_filename, file_storage_path, file_mime_type, file_size_bytes
+) VALUES ($1, $2, $3, $4, $5, $6, 'pending', $7, true, $8, $9, $10, $11, $12)
 RETURNING id, tenant_id, user_id, origin_space_id, destination_space_id,
           input_text, output_text, output_format, status, ai_model,
           tokens_used, created_at, expires_at,
           ai_generated, ai_prompt_hash, hitl_reviewed_by,
-          hitl_reviewed_at, hitl_review_notes
-`
+          hitl_reviewed_at, hitl_review_notes,
+          original_filename, file_storage_path, file_mime_type, file_size_bytes`
 	var r SessionRow
 	err := s.pool.Writer.QueryRow(ctx, q,
 		input.TenantID, input.UserID, input.OriginSpaceID,
 		input.DestinationSpaceID, input.InputText, outputFormat,
 		input.AIModel, input.AIPromptHash,
+		input.OriginalFilename, input.FileStoragePath,
+		input.FileMimeType, input.FileSizeBytes,
 	).Scan(
 		&r.ID, &r.TenantID, &r.UserID, &r.OriginSpaceID,
 		&r.DestinationSpaceID, &r.InputText, &r.OutputText,
@@ -275,6 +290,8 @@ RETURNING id, tenant_id, user_id, origin_space_id, destination_space_id,
 		&r.CreatedAt, &r.ExpiresAt,
 		&r.AIGenerated, &r.AIPromptHash, &r.HITLReviewedBy,
 		&r.HITLReviewedAt, &r.HITLReviewNotes,
+		&r.OriginalFilename, &r.FileStoragePath,
+		&r.FileMimeType, &r.FileSizeBytes,
 	)
 	if err != nil {
 		return SessionRow{}, fmt.Errorf("cvformatter: create session: %w", err)
@@ -289,7 +306,8 @@ SELECT id, tenant_id, user_id, origin_space_id, destination_space_id,
        input_text, output_text, output_format, status, ai_model,
        tokens_used, created_at, expires_at,
        ai_generated, ai_prompt_hash, hitl_reviewed_by,
-       hitl_reviewed_at, hitl_review_notes
+       hitl_reviewed_at, hitl_review_notes,
+       original_filename, file_storage_path, file_mime_type, file_size_bytes
 FROM cv_format_sessions
 WHERE id = $1
 `
@@ -301,6 +319,8 @@ WHERE id = $1
 		&r.CreatedAt, &r.ExpiresAt,
 		&r.AIGenerated, &r.AIPromptHash, &r.HITLReviewedBy,
 		&r.HITLReviewedAt, &r.HITLReviewNotes,
+		&r.OriginalFilename, &r.FileStoragePath,
+		&r.FileMimeType, &r.FileSizeBytes,
 	)
 	if err != nil {
 		if err == pgx.ErrNoRows {

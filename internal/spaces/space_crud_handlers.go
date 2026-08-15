@@ -20,8 +20,11 @@ import (
 
 // ListSpaces handles GET /api/v1/spaces. Optional query params filter the
 // result set: q (search by name/slug), level (by hierarchy level), type (by
-// space_type_id), parent (by parent_id). page_size/page_offset paginate the
+// space_type_id), parent (by parent_id), geo (by geo_code), sort
+// (members|followers|posts|name|newest). page_size/page_offset paginate the
 // result. With no filters, all visible spaces for the tenant are returned.
+// SPACES-009/011: the default (no type/parent filter) branch uses SQL-level
+// pagination, search, geo, and sort for performance and spec conformance.
 func (h *Handlers) ListSpaces(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -38,6 +41,9 @@ func (h *Handlers) ListSpaces(w http.ResponseWriter, r *http.Request) {
 
 	q := r.URL.Query()
 	search := strings.TrimSpace(q.Get("q"))
+	geoCode := strings.TrimSpace(q.Get("geo"))
+	sort := strings.TrimSpace(q.Get("sort"))
+	levelFilter := strings.TrimSpace(q.Get("level"))
 
 	// The different list branches return distinct sqlc-generated Row types
 	// (each structurally identical to gen.Space minus the Keywords column).
@@ -45,26 +51,42 @@ func (h *Handlers) ListSpaces(w http.ResponseWriter, r *http.Request) {
 	// shared helpers below.
 	var spaces any
 	var err error
+	var total int
+
+	limit := parsePageSize(r)
+	offset := parsePageSizeOffset(r)
 
 	switch {
-	case q.Get("level") != "":
-		spaces, err = h.Service.ListSpacesByLevel(r.Context(), tenantID, q.Get("level"))
 	case q.Get("type") != "":
 		var spaceTypeID pgtype.UUID
 		if scanErr := spaceTypeID.Scan(q.Get("type")); scanErr != nil {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid type filter format")
 			return
 		}
-		spaces, err = h.Service.ListSpacesByType(r.Context(), tenantID, spaceTypeID)
+		spaces, err = h.Service.ListSpacesByType(r.Context(), tenantID, viewerUserID, spaceTypeID)
 	case q.Get("parent") != "":
 		var parentID pgtype.UUID
 		if scanErr := parentID.Scan(q.Get("parent")); scanErr != nil {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid parent filter format")
 			return
 		}
-		spaces, err = h.Service.ListChildSpaces(r.Context(), tenantID, parentID)
+		spaces, err = h.Service.ListChildSpaces(r.Context(), tenantID, viewerUserID, parentID)
 	default:
-		spaces, err = h.Service.ListSpaces(r.Context(), tenantID, viewerUserID)
+		// SPACES-009/011: use SQL-level pagination, search, geo, level, and
+		// sort for the default branch. This avoids loading the entire tenant's
+		// space set into memory and supports the spec's ?geo=&sort= params.
+		rows, perr := h.Service.ListSpacesPaginated(r.Context(), tenantID, viewerUserID, search, geoCode, levelFilter, sort, int32(limit), int32(offset))
+		if perr != nil {
+			handleServiceError(w, perr)
+			return
+		}
+		count, cerr := h.Service.CountSpaces(r.Context(), tenantID, viewerUserID, search, geoCode, levelFilter)
+		if cerr != nil {
+			handleServiceError(w, cerr)
+			return
+		}
+		spaces = rows
+		total = int(count)
 	}
 
 	if err != nil {
@@ -72,20 +94,18 @@ func (h *Handlers) ListSpaces(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Apply search filter (by name or slug) if provided.
-	if search != "" {
-		spaces = filterSpacesByNameSlug(spaces, search)
+	// For the non-default branches (type/parent filter), apply search filter
+	// and pagination in memory. The default branch already did this in SQL.
+	if q.Get("type") != "" || q.Get("parent") != "" {
+		if search != "" {
+			spaces = filterSpacesByNameSlug(spaces, search)
+		}
+		total = int(spacesLen(spaces))
+		spaces = paginateSpaces(spaces, offset, limit)
 	}
 
-	total := spacesLen(spaces)
-
-	// Apply pagination.
-	limit := parsePageSize(r)
-	offset := parsePageSizeOffset(r)
-	spaces = paginateSpaces(spaces, offset, limit)
-
-	totalPages := total / limit
-	if total%limit > 0 {
+	totalPages := total / int(limit)
+	if total%int(limit) > 0 {
 		totalPages++
 	}
 
@@ -147,6 +167,15 @@ func filterSpacesByNameSlug(spaces any, search string) any {
 			}
 		}
 		return filtered
+	case []gen.ListSpacesPaginatedRow:
+		filtered := make([]gen.ListSpacesPaginatedRow, 0, len(s))
+		for _, sp := range s {
+			if strings.Contains(strings.ToLower(sp.Name), lower) ||
+				strings.Contains(strings.ToLower(sp.Slug), lower) {
+				filtered = append(filtered, sp)
+			}
+		}
+		return filtered
 	default:
 		return spaces
 	}
@@ -162,6 +191,8 @@ func spacesLen(spaces any) int32 {
 	case []gen.ListSpacesByTypeRow:
 		return int32(len(s)) // #nosec G115 -- len() of a DB result slice
 	case []gen.ListChildSpacesRow:
+		return int32(len(s)) // #nosec G115 -- len() of a DB result slice
+	case []gen.ListSpacesPaginatedRow:
 		return int32(len(s)) // #nosec G115 -- len() of a DB result slice
 	default:
 		return 0
@@ -179,6 +210,8 @@ func paginateSpaces(spaces any, offset, limit int32) any {
 	case []gen.ListSpacesByTypeRow:
 		return paginateSpaceSlice(s, offset, limit)
 	case []gen.ListChildSpacesRow:
+		return paginateSpaceSlice(s, offset, limit)
+	case []gen.ListSpacesPaginatedRow:
 		return paginateSpaceSlice(s, offset, limit)
 	default:
 		return spaces
@@ -235,6 +268,14 @@ func (h *Handlers) spacesWithLogoURL(ctx context.Context, tenantID pgtype.UUID, 
 		}
 		return out
 	case []gen.ListChildSpacesRow:
+		out := make([]map[string]any, 0, len(s))
+		for _, sp := range s {
+			m := rowToMap(sp)
+			m["logo_url"] = h.resolveLogoURL(ctx, tenantID, sp.LogoMediaID)
+			out = append(out, m)
+		}
+		return out
+	case []gen.ListSpacesPaginatedRow:
 		out := make([]map[string]any, 0, len(s))
 		for _, sp := range s {
 			m := rowToMap(sp)
@@ -517,7 +558,7 @@ func (h *Handlers) GetSpace(w http.ResponseWriter, r *http.Request) {
 			slog.Warn("spaces: IsOwner check failed", "space_id", space.ID.String(), "error", err)
 			isOwner = false
 		}
-		isModerator, err = h.Service.IsModerator(r.Context(), space.ID, user.UserID)
+		isModerator, err = h.Service.IsModerator(r.Context(), space.ID, user.UserID, tenantID)
 		if err != nil {
 			slog.Warn("spaces: IsModerator check failed", "space_id", space.ID.String(), "error", err)
 			isModerator = false
@@ -952,6 +993,10 @@ func (h *Handlers) UpdateSpace(w http.ResponseWriter, r *http.Request) {
 }
 
 // DeleteSpace handles DELETE /api/v1/spaces/{id}.
+// SPACES-002: enforces spec rule "creator only; must have 0 members"
+// (Section 05 line 328). The route already requires spaces.delete
+// permission; this handler additionally checks ownership and empties the
+// space of members before soft-deleting.
 func (h *Handlers) DeleteSpace(w http.ResponseWriter, r *http.Request) {
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -961,6 +1006,38 @@ func (h *Handlers) DeleteSpace(w http.ResponseWriter, r *http.Request) {
 
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
+		return
+	}
+
+	user := auth.FromContext(r.Context())
+	if user == nil {
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		return
+	}
+
+	// SPACES-002: only the space owner (creator) may delete the space.
+	isOwner, err := h.Service.IsOwner(r.Context(), id, user.UserID, tenantID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	if !isOwner {
+		errpkg.WriteError(w, http.StatusForbidden, "not_space_owner",
+			"Only the space creator can delete this space")
+		return
+	}
+
+	// SPACES-002: the space must have 0 approved members (excluding the
+	// owner themselves, who is always a member). A space with other members
+	// cannot be deleted because it would orphan their membership.
+	memberCount, err := h.Service.CountMembers(r.Context(), id, tenantID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	if memberCount > 1 {
+		errpkg.WriteError(w, http.StatusConflict, "space_not_empty",
+			"Cannot delete a space that still has members")
 		return
 	}
 

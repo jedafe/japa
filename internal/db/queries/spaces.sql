@@ -99,22 +99,107 @@ WHERE s.tenant_id = @tenant_id AND s.deleted_at IS NULL
   )
 ORDER BY s.created_at DESC, s.id DESC;
 
+-- name: ListSpacesPaginated :many
+-- SPACES-009/011: SQL-level paginated discovery list with search, geo,
+-- level, and sort support. Replaces the in-memory filter+paginate in the
+-- ListSpaces handler. Visibility filter matches ListSpacesByTenant.
+-- sort accepts: '' (default → newest), 'name' (A–Z), 'members', 'followers',
+-- 'posts' (all numeric DESC). Unknown values fall back to newest.
+SELECT s.id, s.tenant_id, s.parent_id, s.space_type_id, s.name, s.slug, s.description,
+       s.wiki_content, s.logo_media_id, s.header_image_id, s.geo_code, s.level,
+       s.member_count, s.post_count, s.follower_count, s.visibility, s.posting_perm,
+       s.replying_perm, s.commenting_perm, s.joining_perm, s.status, s.created_at,
+       s.updated_at, s.deleted_at, s.currency_code
+FROM spaces s
+WHERE s.tenant_id = @tenant_id AND s.deleted_at IS NULL
+  AND (
+    s.visibility = 'public'
+    OR (
+      @viewer_user_id::uuid IS NOT NULL
+      AND EXISTS (
+        SELECT 1 FROM space_members sm
+        WHERE sm.space_id = s.id AND sm.user_id = @viewer_user_id::uuid
+          AND sm.tenant_id = s.tenant_id AND sm.status = 'approved'
+      )
+    )
+  )
+  AND (@search::text = '' OR s.name ILIKE '%' || @search || '%' OR s.slug ILIKE '%' || @search || '%')
+  AND (@geo_code::text = '' OR s.geo_code = @geo_code)
+  AND (@level::text = '' OR s.level = @level)
+ORDER BY
+  CASE WHEN @sort::text = 'name' THEN s.name ELSE NULL END ASC,
+  CASE
+    WHEN @sort::text = 'members' THEN s.member_count
+    WHEN @sort::text = 'followers' THEN s.follower_count
+    WHEN @sort::text = 'posts' THEN s.post_count
+    ELSE NULL
+  END DESC,
+  s.created_at DESC, s.id DESC
+LIMIT @limit_val OFFSET @offset_val;
+
+-- name: CountSpaces :one
+-- SPACES-009: total count for the paginated discovery list.
+SELECT COUNT(*) AS total
+FROM spaces s
+WHERE s.tenant_id = @tenant_id AND s.deleted_at IS NULL
+  AND (
+    s.visibility = 'public'
+    OR (
+      @viewer_user_id::uuid IS NOT NULL
+      AND EXISTS (
+        SELECT 1 FROM space_members sm
+        WHERE sm.space_id = s.id AND sm.user_id = @viewer_user_id::uuid
+          AND sm.tenant_id = s.tenant_id AND sm.status = 'approved'
+      )
+    )
+  )
+  AND (@search::text = '' OR s.name ILIKE '%' || @search || '%' OR s.slug ILIKE '%' || @search || '%')
+  AND (@geo_code::text = '' OR s.geo_code = @geo_code)
+  AND (@level::text = '' OR s.level = @level);
+
 -- name: ListSpacesByLevel :many
+-- SPACES-001: apply the same visibility filter as ListSpacesByTenant so
+-- unauthenticated callers only see public spaces; authenticated callers
+-- also see members/private spaces they belong to (Section 05 line 272).
+-- Pass @viewer_user_id as NULL for unauthenticated requests.
 SELECT id, tenant_id, parent_id, space_type_id, name, slug, description, wiki_content,
        logo_media_id, header_image_id, geo_code, level, member_count, post_count,
        follower_count, visibility, posting_perm, replying_perm, commenting_perm,
        joining_perm, status, created_at, updated_at, deleted_at, currency_code
 FROM spaces
-WHERE tenant_id = @tenant_id AND level = @level AND deleted_at IS NULL
+WHERE spaces.tenant_id = @tenant_id AND spaces.level = @level AND deleted_at IS NULL
+  AND (
+    visibility = 'public'
+    OR (
+      @viewer_user_id::uuid IS NOT NULL
+      AND EXISTS (
+        SELECT 1 FROM space_members sm
+        WHERE sm.space_id = spaces.id AND sm.user_id = @viewer_user_id::uuid
+          AND sm.tenant_id = spaces.tenant_id AND sm.status = 'approved'
+      )
+    )
+  )
 ORDER BY created_at DESC, id DESC;
 
 -- name: ListSpacesByType :many
+-- SPACES-001: apply the same visibility filter as ListSpacesByTenant.
 SELECT id, tenant_id, parent_id, space_type_id, name, slug, description, wiki_content,
        logo_media_id, header_image_id, geo_code, level, member_count, post_count,
        follower_count, visibility, posting_perm, replying_perm, commenting_perm,
        joining_perm, status, created_at, updated_at, deleted_at, currency_code
 FROM spaces
-WHERE tenant_id = @tenant_id AND space_type_id = @space_type_id AND deleted_at IS NULL
+WHERE spaces.tenant_id = @tenant_id AND spaces.space_type_id = @space_type_id AND spaces.deleted_at IS NULL
+  AND (
+    visibility = 'public'
+    OR (
+      @viewer_user_id::uuid IS NOT NULL
+      AND EXISTS (
+        SELECT 1 FROM space_members sm
+        WHERE sm.space_id = spaces.id AND sm.user_id = @viewer_user_id::uuid
+          AND sm.tenant_id = spaces.tenant_id AND sm.status = 'approved'
+      )
+    )
+  )
 ORDER BY created_at DESC, id DESC;
 
 -- name: ListSpacesByTypePaginated :many
@@ -125,7 +210,7 @@ SELECT id, tenant_id, parent_id, space_type_id, name, slug, description, wiki_co
        follower_count, visibility, posting_perm, replying_perm, commenting_perm,
        joining_perm, status, created_at, updated_at, deleted_at, currency_code
 FROM spaces
-WHERE tenant_id = @tenant_id AND space_type_id = @space_type_id AND deleted_at IS NULL
+WHERE spaces.tenant_id = @tenant_id AND spaces.space_type_id = @space_type_id AND spaces.deleted_at IS NULL
   AND (@search::text = '' OR name ILIKE '%' || @search || '%' OR slug ILIKE '%' || @search || '%')
   AND (@geo_code::text = '' OR geo_code = @geo_code)
 ORDER BY
@@ -142,17 +227,29 @@ LIMIT @limit_val OFFSET @offset_val;
 -- name: CountSpacesByType :one
 SELECT COUNT(*) AS total
 FROM spaces
-WHERE tenant_id = @tenant_id AND space_type_id = @space_type_id AND deleted_at IS NULL
+WHERE spaces.tenant_id = @tenant_id AND spaces.space_type_id = @space_type_id AND spaces.deleted_at IS NULL
   AND (@search::text = '' OR name ILIKE '%' || @search || '%' OR slug ILIKE '%' || @search || '%')
   AND (@geo_code::text = '' OR geo_code = @geo_code);
 
 -- name: ListChildSpaces :many
+-- SPACES-001: apply the same visibility filter as ListSpacesByTenant.
 SELECT id, tenant_id, parent_id, space_type_id, name, slug, description, wiki_content,
        logo_media_id, header_image_id, geo_code, level, member_count, post_count,
        follower_count, visibility, posting_perm, replying_perm, commenting_perm,
        joining_perm, status, created_at, updated_at, deleted_at, currency_code
 FROM spaces
-WHERE parent_id = @parent_id AND tenant_id = @tenant_id AND deleted_at IS NULL
+WHERE spaces.parent_id = @parent_id AND spaces.tenant_id = @tenant_id AND spaces.deleted_at IS NULL
+  AND (
+    visibility = 'public'
+    OR (
+      @viewer_user_id::uuid IS NOT NULL
+      AND EXISTS (
+        SELECT 1 FROM space_members sm
+        WHERE sm.space_id = spaces.id AND sm.user_id = @viewer_user_id::uuid
+          AND sm.tenant_id = spaces.tenant_id AND sm.status = 'approved'
+      )
+    )
+  )
 ORDER BY created_at ASC, id ASC;
 
 -- name: AdminListSpaces :many
@@ -447,9 +544,13 @@ WHERE id = @id AND space_id = @space_id;
 -- =====================
 
 -- name: CheckSpaceMembership :one
+-- SPACES-005: only count approved members. A pending join request
+-- (status='pending') does NOT make the user a member until an admin
+-- approves it (Section 05 lines 358-360).
 SELECT EXISTS(
     SELECT 1 FROM space_members
     WHERE space_id = @space_id AND user_id = @user_id AND tenant_id = @tenant_id
+      AND status = 'approved'
 ) AS is_member;
 
 -- name: CheckSpaceOwnership :one
@@ -486,9 +587,10 @@ DELETE FROM space_members
 WHERE space_id = @space_id AND user_id = @user_id AND tenant_id = @tenant_id;
 
 -- name: CountSpaceMembers :one
+-- SPACES-006: only count approved members, not pending join requests.
 SELECT COUNT(*) AS count
 FROM space_members
-WHERE space_id = @space_id AND tenant_id = @tenant_id;
+WHERE space_id = @space_id AND tenant_id = @tenant_id AND status = 'approved';
 
 -- =====================
 -- Space Moderators
@@ -500,34 +602,38 @@ VALUES (@tenant_id, @space_id, @user_id, @assigned_by, sqlc.narg(assigned_by_use
 ON CONFLICT (tenant_id, space_id, user_id) DO NOTHING;
 
 -- name: RemoveSpaceModerator :exec
+-- SPACES-015: tenant-scoped for defense-in-depth.
 DELETE FROM space_moderators
-WHERE space_id = @space_id AND user_id = @user_id;
+WHERE space_id = @space_id AND user_id = @user_id AND tenant_id = @tenant_id;
 
 -- name: ListSpaceModerators :many
+-- SPACES-015: tenant-scoped for defense-in-depth.
 SELECT sm.id, sm.tenant_id, sm.space_id, sm.user_id, sm.assigned_by,
        sm.assigned_by_user_id, sm.created_at,
        u.username AS user_username, up.display_name AS user_display_name
 FROM space_moderators sm
 JOIN users u ON u.id = sm.user_id
 LEFT JOIN user_profiles up ON up.user_id = sm.user_id AND up.tenant_id = sm.tenant_id
-WHERE sm.space_id = @space_id
+WHERE sm.space_id = @space_id AND sm.tenant_id = @tenant_id
 ORDER BY sm.created_at ASC;
 
 -- name: GetSpaceModerator :one
+-- SPACES-015: tenant-scoped for defense-in-depth.
 SELECT id, tenant_id, space_id, user_id, assigned_by, assigned_by_user_id, created_at
 FROM space_moderators
-WHERE space_id = @space_id AND user_id = @user_id;
+WHERE space_id = @space_id AND user_id = @user_id AND tenant_id = @tenant_id;
 
 -- =====================
 -- Space Members (with profile data)
 -- =====================
 
 -- name: ListSpaceMembersWithProfile :many
+-- SPACES-007: only list approved members, not pending join requests.
 SELECT sm.user_id, u.username, up.display_name, up.avatar_url, sm.joined_at
 FROM space_members sm
 JOIN users u ON u.id = sm.user_id AND u.tenant_id = sm.tenant_id
 LEFT JOIN user_profiles up ON up.user_id = sm.user_id AND up.tenant_id = sm.tenant_id
-WHERE sm.space_id = @space_id AND sm.tenant_id = @tenant_id
+WHERE sm.space_id = @space_id AND sm.tenant_id = @tenant_id AND sm.status = 'approved'
 ORDER BY sm.joined_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
@@ -627,9 +733,14 @@ FROM contents
 WHERE space_id = @space_id AND tenant_id = @tenant_id AND status = 'published';
 
 -- name: SuggestParentSpaces :many
+-- SPACES-003: return primary spaces (country/state/city level) that can
+-- serve as parents of a custom space (Section 05 lines 14, 190, 252-267).
+-- The previous query filtered by space_types.slug = 'category' which does
+-- not exist in the spec; the correct filter is by level.
 SELECT s.id, s.name, s.slug FROM spaces s
 WHERE s.tenant_id = @tenant_id AND s.status = 'active' AND s.deleted_at IS NULL
-  AND s.space_type_id IN (SELECT id FROM space_types WHERE slug = 'category')
+  AND s.level IN ('country', 'state', 'city')
+  AND (@search::text = '' OR s.name ILIKE '%' || @search || '%' OR s.slug ILIKE '%' || @search || '%')
 ORDER BY s.name LIMIT 20;
 
 -- =====================

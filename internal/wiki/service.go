@@ -9,16 +9,20 @@ package wiki
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/valkey-io/valkey-go/valkeycompat"
 
+	"github.com/jedafe/japa/internal/ai"
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/valkey"
 )
@@ -92,6 +96,23 @@ type GeneratePageInput struct {
 	Category  string `json:"category"`
 }
 
+// GenerateDraftRequest is the input for AI-generated wiki page drafts
+// (ADR-088, routed from the Content Studio).
+type GenerateDraftRequest struct {
+	SpaceID  string `json:"space_id"`
+	PageSlug string `json:"page_slug"`
+	Title    string `json:"title"`
+	Category string `json:"category"`
+	Prompt   string `json:"prompt"`
+}
+
+// GenerateDraftResponse is the response from Content Agent draft generation.
+type GenerateDraftResponse struct {
+	Status  string `json:"status"`
+	Message string `json:"message"`
+	PageID  string `json:"page_id"`
+}
+
 // FeatureChecker checks whether a feature flag is enabled for a tenant.
 // Satisfied by *features.Checker via structural typing — defined locally to
 // avoid importing the features package (keeps the dependency graph clean).
@@ -99,12 +120,19 @@ type FeatureChecker interface {
 	IsEnabled(ctx context.Context, tenantID pgtype.UUID, key string) bool
 }
 
+// AIDispatcher is the subset of the AI Gateway the wiki service needs to
+// generate draft pages (content_generation category).
+type AIDispatcher interface {
+	Dispatch(ctx context.Context, category string, req ai.Request) (ai.Response, error)
+}
+
 // Service holds the business logic for the Destination Wiki.
 type Service struct {
-	store    *Store
-	settings *config.Settings
-	vk       valkeycompat.Cmdable
-	checker  FeatureChecker
+	store      *Store
+	settings   *config.Settings
+	vk         valkeycompat.Cmdable
+	checker    FeatureChecker
+	dispatcher AIDispatcher
 }
 
 // NewService creates a wiki service.
@@ -120,6 +148,9 @@ func (s *Service) SetFeatureChecker(c FeatureChecker) { s.checker = c }
 // SetValkey injects the Valkey client used for the jc:wiki_edit_lock lock
 // (B6: soft edit lock preventing concurrent wiki edits, §80 / valkey-keys-catalog).
 func (s *Service) SetValkey(vk valkeycompat.Cmdable) { s.vk = vk }
+
+// SetDispatcher injects the AI Gateway dispatcher for draft generation.
+func (s *Service) SetDispatcher(d AIDispatcher) { s.dispatcher = d }
 
 // Enabled checks whether the wiki feature is enabled for the given tenant.
 // Delegates to the features.Checker (feature_flags table) when available,
@@ -451,4 +482,93 @@ func formatTs(t pgtype.Timestamptz) string {
 		return ""
 	}
 	return t.Time.UTC().Format(time.RFC3339)
+}
+
+// slugify produces a lowercase, hyphen-joined slug from a free-form title.
+func slugify(s string) string {
+	return strings.ToLower(strings.ReplaceAll(strings.TrimSpace(s), " ", "-"))
+}
+
+// GenerateDraft creates a wiki page draft via the Content Agent (ADR-088).
+// The draft page + pending revision are created with ai_generated=true,
+// ai_model='content_agent_v1', and ai_prompt_hash=SHA256(prompt). It
+// requires HITL approval (ApproveRevision) before publication.
+//
+// When an AI dispatcher is wired (SetDispatcher), the method calls the AI
+// Gateway via the "content_generation" category. If the dispatcher is nil,
+// the draft is still created with the prompt as content so a reviewer can
+// fill it manually (graceful degradation).
+func (s *Service) GenerateDraft(ctx context.Context, tenantID pgtype.UUID, input GenerateDraftRequest) (GenerateDraftResponse, error) {
+	if input.SpaceID == "" {
+		return GenerateDraftResponse{}, fmt.Errorf("space_id is required")
+	}
+	if input.Title == "" {
+		return GenerateDraftResponse{}, fmt.Errorf("title is required")
+	}
+
+	var spaceID pgtype.UUID
+	if err := spaceID.Scan(input.SpaceID); err != nil {
+		return GenerateDraftResponse{}, fmt.Errorf("wiki: generate draft: invalid space_id: %w", err)
+	}
+
+	slug := input.PageSlug
+	if slug == "" {
+		slug = slugify(input.Title)
+	}
+
+	// Build the prompt sent to the Content Agent.
+	prompt := input.Prompt
+	if prompt == "" {
+		prompt = fmt.Sprintf("Generate a wiki page about: %s (category: %s)", input.Title, input.Category)
+	}
+
+	// ai_prompt_hash = SHA256(prompt) for audit traceability.
+	sum := sha256.Sum256([]byte(prompt))
+	promptHash := hex.EncodeToString(sum[:])
+
+	// Call the AI Gateway when a dispatcher is wired.
+	generatedText := prompt
+	if s.dispatcher != nil {
+		resp, aiErr := s.dispatcher.Dispatch(ctx, "content_generation", ai.Request{
+			Category: "content_generation",
+			Payload: map[string]any{
+				"prompt":     prompt,
+				"tenant_id":  tenantID,
+				"guide_type": "wiki_page",
+			},
+		})
+		if aiErr != nil {
+			return GenerateDraftResponse{}, fmt.Errorf("wiki: AI generation failed: %w", aiErr)
+		}
+		if text, ok := resp.Raw["text"].(string); ok {
+			generatedText = text
+		} else if text, ok := resp.Raw["content"].(string); ok {
+			generatedText = text
+		} else if text, ok := resp.Raw["output"].(string); ok {
+			generatedText = text
+		}
+		slog.Info("wiki: AI Gateway generated draft",
+			"space_id", input.SpaceID, "title", input.Title, "prompt_hash", promptHash)
+	}
+
+	// Create the wiki page.
+	var createdBy pgtype.UUID // zero UUID — AI-generated, no human author
+	pageID, err := s.store.CreatePage(ctx, tenantID, spaceID, createdBy, slug, input.Title, input.Category)
+	if err != nil {
+		return GenerateDraftResponse{}, fmt.Errorf("wiki: generate draft: create page: %w", err)
+	}
+
+	// Create a pending revision with the AI-generated content as TipTap JSON.
+	tiptapJSON := []byte(fmt.Sprintf(`{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":%q}]}]}`, generatedText))
+	aiModel := "content_agent_v1"
+	summary := fmt.Sprintf("AI-generated draft (model: %s)", aiModel)
+	if _, err := s.store.SubmitRevision(ctx, tenantID, pageID, createdBy, tiptapJSON, summary, true, aiModel, promptHash); err != nil {
+		return GenerateDraftResponse{}, fmt.Errorf("wiki: generate draft: submit revision: %w", err)
+	}
+
+	return GenerateDraftResponse{
+		Status:  "accepted",
+		Message: "Content Agent draft created with pending revision. Review and approve to publish.",
+		PageID:  pageID.String(),
+	}, nil
 }

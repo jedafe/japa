@@ -68,13 +68,14 @@
 		// Fetch tax guides, treaty info, and service directory tax consultants
 		// (§100: result page surfaces verified tax consultants from §98
 		// filtered by service_category='finance' and destination_country_id).
+		// Backend route is /services (api-routes-catalog.md L2123).
 		const [guidesRes, treatyRes, consultantsRes] = await Promise.all([
 			api.get<TaxGuideWithAi[]>(`/tax-calculator?${params.toString()}`),
 			api.get<TaxTreaty>(
 				`/tax-calculator/treaty?dest=${selectedDestId}&origin=${selectedOriginId}`
 			),
 			api.get<Array<{ id: string; name: string; slug?: string; description?: string }>>(
-				`/service-directory?dest=${selectedDestId}&category=finance&limit=5`
+				`/services?dest=${selectedDestId}&category=finance&limit=5`
 			)
 		]);
 
@@ -158,26 +159,13 @@
 			</div>
 		{/if}
 
-		<!-- Origin + Destination selectors + employment status -->
+		<!-- Destination + Origin selectors + employment status -->
+		<!-- Destination selector is first per the geo-aware tool pattern
+		     (geo-aware-tool-pattern.md: "destination country selector is
+		     always the first input"). -->
 		<div class="border-b border-[var(--color-border)] px-4 py-3 space-y-4">
 			<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-				<!-- Origin selector -->
-				<div>
-					<label for="tc-origin" class="block text-xs font-medium uppercase tracking-wide text-[var(--color-muted)]">
-						{t('tax_calculator.origin', 'Origin:')}
-					</label>
-					<div class="mt-2">
-						<SelectField
-							id="tc-origin"
-							value={selectedOriginId}
-							options={destinations.map((d) => ({ value: d.id, label: d.name }))}
-							placeholder={t('tax_calculator.select_origin', 'Select origin country…')}
-							onValueChange={(v) => (selectedOriginId = v)}
-						/>
-					</div>
-				</div>
-
-				<!-- Destination selector -->
+				<!-- Destination selector (first — geo-aware pattern) -->
 				<div>
 					<label for="tc-dest" class="block text-xs font-medium uppercase tracking-wide text-[var(--color-muted)]">
 						{t('tax_calculator.destination', 'Destination:')}
@@ -189,6 +177,22 @@
 							options={destinations.map((d) => ({ value: d.id, label: d.name }))}
 							placeholder={t('geo.select_destination', 'Select a country…')}
 							onValueChange={(v) => (selectedDestId = v)}
+						/>
+					</div>
+				</div>
+
+				<!-- Origin selector (secondary — geo-aware pattern) -->
+				<div>
+					<label for="tc-origin" class="block text-xs font-medium uppercase tracking-wide text-[var(--color-muted)]">
+						{t('tax_calculator.origin', 'Origin:')}
+					</label>
+					<div class="mt-2">
+						<SelectField
+							id="tc-origin"
+							value={selectedOriginId}
+							options={destinations.map((d) => ({ value: d.id, label: d.name }))}
+							placeholder={t('tax_calculator.select_origin', 'Select origin country…')}
+							onValueChange={(v) => (selectedOriginId = v)}
 						/>
 					</div>
 				</div>
@@ -399,7 +403,7 @@
 						<div class="space-y-2">
 							{#each taxConsultants as consultant (consultant.id)}
 								<a
-									href={`/service-directory/${consultant.slug ?? consultant.id}`}
+									href={`/services/${consultant.slug ?? consultant.id}`}
 									class="block p-3 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius-card)] hover:bg-[var(--color-surface-subtle)] transition-colors"
 								>
 									<p class="text-sm font-medium text-[var(--color-text)]">{consultant.name}</p>

@@ -16,11 +16,11 @@ export const load: PageServerLoad = async (event) => {
 
 	try {
 		const story = await apiGet<Story>(ctx, `/stories/${slug}`);
-		return { story, authed, loadError: false };
+		return { story, authed, currentUserId: event.locals.user?.id ?? null, loadError: false };
 	} catch (err) {
 		if (err instanceof ApiError && err.status === 404) {
 			throw error(404, { code: 'not_found', message: 'Story not found' });
 		}
-		return { story: null, authed, loadError: true };
+		return { story: null, authed, currentUserId: event.locals.user?.id ?? null, loadError: true };
 	}
 };

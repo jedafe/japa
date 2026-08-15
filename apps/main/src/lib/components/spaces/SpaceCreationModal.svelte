@@ -167,7 +167,10 @@
 	const showCountrySelect = $derived(!isGlobalType);
 	const showStateSelect = $derived(level === 'state' || level === 'city' || level === 'custom');
 	const showCitySelect = $derived(level === 'city' || level === 'custom');
-	const showMultiParent = $derived(false);
+	// SPACES-010: enable multi-parent selector for custom-level spaces.
+	// Custom spaces must link to at least one primary space (country/state/city)
+	// via the space_parent_spaces junction (Section 05 line 14, 190).
+	const showMultiParent = $derived(level === 'custom' && !isUniversityType);
 
 	// Whether each level is required.
 	// University: country required (universities have physical locations).
@@ -408,6 +411,11 @@
 				description: description.trim() || undefined
 			};
 			if (parentId) body.parent_id = parentId;
+			// SPACES-010: send multi-parent IDs for custom spaces so the
+			// backend populates the space_parent_spaces junction.
+			if (multiParents.length > 0) {
+				body.parent_space_ids = multiParents.map((p) => p.id);
+			}
 			if (selectedPresetName) body.preset_name = selectedPresetName;
 
 			const res = await api.post<{ id: string; slug: string; name: string }>('/spaces', body);

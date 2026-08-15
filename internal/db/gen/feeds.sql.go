@@ -207,6 +207,12 @@ WITH affinity AS (
       AND c.visibility = 'public'
       AND c.created_at >= $6
       AND c.author_id <> $7
+      AND NOT EXISTS (
+          SELECT 1 FROM user_blocks ub
+          WHERE ub.tenant_id = c.tenant_id
+            AND ((ub.blocker_id = $7 AND ub.blocked_id = c.author_id)
+              OR (ub.blocker_id = c.author_id AND ub.blocked_id = $7))
+      )
       AND (
             c.author_id = ANY(COALESCE($1::uuid[], ARRAY[]::uuid[]))
          OR c.space_id  = ANY(COALESCE($2::uuid[], ARRAY[]::uuid[]))
@@ -228,6 +234,12 @@ velocity AS (
       AND c.visibility = 'public'
       AND c.created_at >= $6
       AND c.author_id <> $7
+      AND NOT EXISTS (
+          SELECT 1 FROM user_blocks ub
+          WHERE ub.tenant_id = c.tenant_id
+            AND ((ub.blocker_id = $7 AND ub.blocked_id = c.author_id)
+              OR (ub.blocker_id = c.author_id AND ub.blocked_id = $7))
+      )
     ORDER BY cs.velocity_score DESC
     LIMIT $9
 ),
@@ -430,6 +442,12 @@ LEFT JOIN media m ON m.id = COALESCE(c.featured_image_id, c.header_image_id) AND
 WHERE f.tenant_id = $1 AND f.user_id = $2
   AND c.status = 'published'
   AND c.deleted_at IS NULL
+  AND NOT EXISTS (
+      SELECT 1 FROM user_blocks ub
+      WHERE ub.tenant_id = f.tenant_id
+        AND ((ub.blocker_id = $2 AND ub.blocked_id = c.author_id)
+          OR (ub.blocker_id = c.author_id AND ub.blocked_id = $2))
+  )
 GROUP BY f.id, f.content_id, f.space_id, f.content_type, f.score, f.created_at,
          c.title, c.slug, c.author_id, c.created_at,
          c.view_count, c.comment_count, cs.vote_score, cs.velocity_score, cs.bookmark_count,
@@ -558,20 +576,29 @@ WHERE c.tenant_id = $1 AND c.author_id = $2
   AND c.status = 'published'
   AND c.deleted_at IS NULL
   AND c.visibility = 'public'
+  AND NOT (
+      $3::uuid IS NOT NULL AND EXISTS (
+          SELECT 1 FROM user_blocks ub
+          WHERE ub.tenant_id = c.tenant_id
+            AND ((ub.blocker_id = $3::uuid AND ub.blocked_id = c.author_id)
+              OR (ub.blocker_id = c.author_id AND ub.blocked_id = $3::uuid))
+      )
+  )
 GROUP BY c.id, cs.vote_score, cs.velocity_score, cs.bookmark_count,
          u.username, up.display_name, up.avatar_url,
          s.name, s.slug,
          m.storage_bucket, m.storage_path
 ORDER BY
-    CASE WHEN $3 = 'top' THEN cs.vote_score END DESC,
-    CASE WHEN $3 = 'rising' THEN cs.velocity_score END DESC,
+    CASE WHEN $4 = 'top' THEN cs.vote_score END DESC,
+    CASE WHEN $4 = 'rising' THEN cs.velocity_score END DESC,
     c.created_at DESC
-LIMIT $5 OFFSET $4
+LIMIT $6 OFFSET $5
 `
 
 type GetProfileFeedParams struct {
 	TenantID   pgtype.UUID `json:"tenant_id"`
 	AuthorID   pgtype.UUID `json:"author_id"`
+	ViewerID   pgtype.UUID `json:"viewer_id"`
 	Sort       interface{} `json:"sort"`
 	PageOffset int32       `json:"page_offset"`
 	PageLimit  int32       `json:"page_limit"`
@@ -604,10 +631,14 @@ type GetProfileFeedRow struct {
 // All public posts by a specific user.
 // sort: 'latest' (default), 'top' (vote_score DESC), 'rising' (velocity_score DESC).
 // 'relevant' falls back to latest (pgvector relevance is only used in the for-you feed).
+// @viewer_id is nullable — when present, mutual user_blocks are excluded (§41).
+// If the viewer has blocked the profile owner (or vice versa), the profile
+// feed returns no rows, enforcing mutual invisibility.
 func (q *Queries) GetProfileFeed(ctx context.Context, arg GetProfileFeedParams) ([]GetProfileFeedRow, error) {
 	rows, err := q.db.Query(ctx, getProfileFeed,
 		arg.TenantID,
 		arg.AuthorID,
+		arg.ViewerID,
 		arg.Sort,
 		arg.PageOffset,
 		arg.PageLimit,
@@ -784,20 +815,29 @@ LEFT JOIN media m ON m.id = COALESCE(c.featured_image_id, c.header_image_id) AND
 WHERE c.tenant_id = $1 AND c.space_id = $2
   AND c.status = 'published'
   AND c.deleted_at IS NULL
+  AND NOT (
+      $3::uuid IS NOT NULL AND EXISTS (
+          SELECT 1 FROM user_blocks ub
+          WHERE ub.tenant_id = c.tenant_id
+            AND ((ub.blocker_id = $3::uuid AND ub.blocked_id = c.author_id)
+              OR (ub.blocker_id = c.author_id AND ub.blocked_id = $3::uuid))
+      )
+  )
 GROUP BY c.id, cs.vote_score, cs.velocity_score, cs.bookmark_count,
          u.username, up.display_name, up.avatar_url,
          s.name, s.slug,
          m.storage_bucket, m.storage_path
 ORDER BY
-    CASE WHEN $3 = 'top' THEN cs.vote_score END DESC,
-    CASE WHEN $3 = 'rising' THEN cs.velocity_score END DESC,
+    CASE WHEN $4 = 'top' THEN cs.vote_score END DESC,
+    CASE WHEN $4 = 'rising' THEN cs.velocity_score END DESC,
     c.created_at DESC
-LIMIT $5 OFFSET $4
+LIMIT $6 OFFSET $5
 `
 
 type GetSpaceFeedParams struct {
 	TenantID   pgtype.UUID `json:"tenant_id"`
 	SpaceID    pgtype.UUID `json:"space_id"`
+	ViewerID   pgtype.UUID `json:"viewer_id"`
 	Sort       interface{} `json:"sort"`
 	PageOffset int32       `json:"page_offset"`
 	PageLimit  int32       `json:"page_limit"`
@@ -829,10 +869,12 @@ type GetSpaceFeedRow struct {
 // Posts in a specific space.
 // sort: 'latest' (default), 'top' (vote_score DESC), 'rising' (velocity_score DESC).
 // 'relevant' falls back to latest (pgvector relevance is only used in the for-you feed).
+// @viewer_id is nullable — when present, mutual user_blocks are excluded (§41).
 func (q *Queries) GetSpaceFeed(ctx context.Context, arg GetSpaceFeedParams) ([]GetSpaceFeedRow, error) {
 	rows, err := q.db.Query(ctx, getSpaceFeed,
 		arg.TenantID,
 		arg.SpaceID,
+		arg.ViewerID,
 		arg.Sort,
 		arg.PageOffset,
 		arg.PageLimit,

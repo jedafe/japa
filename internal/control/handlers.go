@@ -1916,6 +1916,7 @@ func (h *Handlers) CreateIPBlock(w http.ResponseWriter, r *http.Request) {
 		CIDR      string  `json:"cidr"`
 		BlockType string  `json:"block_type"`
 		Reason    *string `json:"reason"`
+		ExpiresAt *string `json:"expires_at"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
@@ -1925,13 +1926,31 @@ func (h *Handlers) CreateIPBlock(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_fields", "cidr and block_type are required")
 		return
 	}
-	block, err := h.SpamStore.CreateIPBlock(r.Context(), spam.CreateIPBlockInput{
+	// BUG-006: validate block_type against the §41 enum so an invalid value
+	// (e.g. "global") is rejected at the API boundary, matching the admin
+	// spam handler's validation.
+	if !spam.IsValidBlockType(input.BlockType) {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_block_type",
+			"block_type must be one of: full, registration, posting, api")
+		return
+	}
+	createInput := spam.CreateIPBlockInput{
 		TenantID:  tenantID,
 		CIDR:      input.CIDR,
 		BlockType: input.BlockType,
 		Reason:    input.Reason,
 		BlockedBy: userID,
-	})
+	}
+	if input.ExpiresAt != nil && *input.ExpiresAt != "" {
+		var ts pgtype.Timestamptz
+		if err := ts.Scan(*input.ExpiresAt); err != nil {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_expires_at",
+				"expires_at must be an RFC3339 timestamp")
+			return
+		}
+		createInput.ExpiresAt = ts
+	}
+	block, err := h.SpamStore.CreateIPBlock(r.Context(), createInput)
 	if err != nil {
 		slog.Error("control: create ip block", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to create IP block")

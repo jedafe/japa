@@ -208,6 +208,26 @@ WHERE id = $1
 	return r, nil
 }
 
+// GetProfessionBySlug returns a single profession by slug. Used by the
+// Studio routing adapter to resolve a profession from the job's
+// guide_category or topic_prompt.
+func (s *Store) GetProfessionBySlug(ctx context.Context, slug string) (ProfessionRow, error) {
+	const q = `
+SELECT id, slug, name, category
+FROM credential_professions
+WHERE slug = $1
+`
+	var r ProfessionRow
+	err := s.pool.Reader.QueryRow(ctx, q, slug).Scan(&r.ID, &r.Slug, &r.Name, &r.Category)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return ProfessionRow{}, pgx.ErrNoRows
+		}
+		return ProfessionRow{}, fmt.Errorf("credentialchecker: get profession by slug: %w", err)
+	}
+	return r, nil
+}
+
 // SpaceNameRow holds the name of a single space, used by GeneratePathwayDraft
 // to build the AI generation prompt.
 type SpaceNameRow struct {

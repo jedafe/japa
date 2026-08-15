@@ -214,6 +214,13 @@ func (s *Service) ListProfessions(ctx context.Context) ([]ProfessionDTO, error) 
 	return dtos, nil
 }
 
+// GetProfessionBySlug returns a single profession by slug. Used by the
+// Studio routing adapter to resolve a profession from the job's
+// guide_category or topic_prompt.
+func (s *Service) GetProfessionBySlug(ctx context.Context, slug string) (ProfessionRow, error) {
+	return s.store.GetProfessionBySlug(ctx, slug)
+}
+
 // ListPathways returns a paginated, filtered list of published credential
 // pathways. The destination/profession/issuing filters are optional.
 func (s *Service) ListPathways(ctx context.Context, tenantID, destSpaceID, issuingSpaceID pgtype.UUID, professionID pgtype.UUID, page, limit int32) ([]PathwayDTO, int64, error) {

@@ -307,7 +307,7 @@ type mockSpacesService struct {
 	listErr error
 }
 
-func (m *mockSpacesService) ListSpacesByLevel(_ context.Context, _ pgtype.UUID, _ string) ([]gen.ListSpacesByLevelRow, error) {
+func (m *mockSpacesService) ListSpacesByLevel(_ context.Context, _ pgtype.UUID, _ pgtype.UUID, _ string) ([]gen.ListSpacesByLevelRow, error) {
 	if m.listErr != nil {
 		return nil, m.listErr
 	}

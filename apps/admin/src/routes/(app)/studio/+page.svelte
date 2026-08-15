@@ -138,7 +138,10 @@
 		loading = true;
 		error = '';
 		try {
-			await Promise.all([loadJobs(), loadBatches()]);
+			// Load jobs, batches, stats, and content-type options in
+			// parallel. Content types are needed for the filter dropdown
+			// on initial load, not just when the create form opens.
+			await Promise.all([loadJobs(), loadBatches(), loadCreateOptions()]);
 			const statsRes = await api<StudioStats>('/admin/studio/stats');
 			if (statsRes.ok) {
 				stats = statsRes.data;
@@ -211,6 +214,8 @@
 	const guideCategories = $derived(selectedContentType?.guide_categories ?? []);
 
 	async function retryJob(id: string) {
+		if (busyJobId) return;
+		busyJobId = id;
 		try {
 			const result = await api(`/admin/studio/jobs/${id}/retry`, { method: 'POST' });
 			if (result.ok) {
@@ -224,11 +229,17 @@
 		} catch (e) {
 			messageType = 'error';
 			message = e instanceof Error ? e.message : t('studio.retry_error', 'Failed to retry job');
+		} finally {
+			busyJobId = '';
 		}
 	}
 
 	let viewingJob = $state<StudioJob | null>(null);
 	let viewJobSlideOverOpen = $state(false);
+
+	// In-flight guard for row actions (retry/cancel) to prevent duplicate
+	// API calls on double-click (per AGENTS.md bulk-delete guard pattern).
+	let busyJobId = $state('');
 
 	let createBatchSlideOverOpen = $state(false);
 	let savingBatch = $state(false);
@@ -268,6 +279,8 @@
 	}
 
 	async function cancelJob(id: string) {
+		if (busyJobId) return;
+		busyJobId = id;
 		try {
 			const result = await api(`/admin/studio/jobs/${id}`, { method: 'DELETE' });
 			if (result.ok) {
@@ -281,6 +294,8 @@
 		} catch (e) {
 			messageType = 'error';
 			message = e instanceof Error ? e.message : t('studio.cancel_error', 'Failed to cancel job');
+		} finally {
+			busyJobId = '';
 		}
 	}
 
@@ -380,6 +395,8 @@
 	}
 
 	async function retryBatch(id: string) {
+		if (busyJobId) return;
+		busyJobId = id;
 		try {
 			const result = await api(`/admin/studio/batches/${id}/retry`, { method: 'POST' });
 			if (result.ok) {
@@ -393,6 +410,8 @@
 		} catch (e) {
 			messageType = 'error';
 			message = e instanceof Error ? e.message : t('studio.batch_retry_error', 'Failed to retry batch');
+		} finally {
+			busyJobId = '';
 		}
 	}
 
@@ -453,7 +472,7 @@
 			label: t('common.cancel', 'Cancel'),
 			icon: X,
 			onclick: (row: StudioJob) => cancelJob(row.id),
-			show: (row: StudioJob) => canManage && (row.status === 'queued' || row.status === 'generating')
+			show: (row: StudioJob) => canManage && (row.status === 'queued' || row.status === 'failed')
 		}
 	];
 

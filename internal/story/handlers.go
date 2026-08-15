@@ -230,6 +230,10 @@ func (h *Handlers) HandleSubmit(w http.ResponseWriter, r *http.Request) {
 
 	story, err := h.service.Submit(r.Context(), tenantID, user.UserID, input)
 	if err != nil {
+		if errors.Is(err, ErrValidation) {
+			errpkg.WriteError(w, http.StatusBadRequest, "validation_error", err.Error())
+			return
+		}
 		slog.Error("story: submit failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "submit_failed", "Failed to submit story")
 		return
@@ -273,6 +277,10 @@ func (h *Handlers) HandleEdit(w http.ResponseWriter, r *http.Request) {
 		}
 		if errors.Is(err, ErrNotOwner) {
 			errpkg.WriteError(w, http.StatusForbidden, "not_owner", "You can only edit your own stories")
+			return
+		}
+		if errors.Is(err, ErrValidation) {
+			errpkg.WriteError(w, http.StatusBadRequest, "validation_error", err.Error())
 			return
 		}
 		slog.Error("story: edit failed", "error", err)
@@ -348,6 +356,11 @@ func (h *Handlers) HandleVerify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !h.service.Enabled(r.Context(), tenantID) {
+		errpkg.WriteError(w, http.StatusNotFound, "story_disabled", "Story wall is not available")
+		return
+	}
+
 	if err := h.service.Verify(r.Context(), contentID, tenantID, user.UserID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "story_not_found", "Story not found")
@@ -378,9 +391,22 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !h.service.Enabled(r.Context(), tenantID) {
+		errpkg.WriteError(w, http.StatusNotFound, "story_disabled", "Story wall is not available")
+		return
+	}
+
 	status := r.URL.Query().Get("status")
 	q := r.URL.Query().Get("q")
 	sort := r.URL.Query().Get("sort")
+
+	var destSpaceID pgtype.UUID
+	if v := r.URL.Query().Get("dest"); v != "" {
+		if err := destSpaceID.Scan(v); err != nil {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid destination space ID")
+			return
+		}
+	}
 
 	var verifiedPtr *bool
 	if v := r.URL.Query().Get("verified"); v != "" {
@@ -395,7 +421,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 		pageSize = 200
 	}
 
-	stories, total, err := h.service.AdminList(r.Context(), tenantID, status, q, verifiedPtr, sort, pageSize, pageOffset)
+	stories, total, err := h.service.AdminList(r.Context(), tenantID, status, q, verifiedPtr, sort, destSpaceID, pageSize, pageOffset)
 	if err != nil {
 		slog.Error("story: admin list failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "admin_list_failed", "Failed to list stories")
@@ -431,6 +457,11 @@ func (h *Handlers) HandleAdminDelete(w http.ResponseWriter, r *http.Request) {
 
 	if h.service == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "story_unavailable", "Story service not configured")
+		return
+	}
+
+	if !h.service.Enabled(r.Context(), tenantID) {
+		errpkg.WriteError(w, http.StatusNotFound, "story_disabled", "Story wall is not available")
 		return
 	}
 

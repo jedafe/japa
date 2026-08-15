@@ -33,8 +33,10 @@ async function clientFetch<T>(
 	init: RequestInit = {}
 ): Promise<ClientResult<T>> {
 	const method = (init.method ?? 'GET').toString().toUpperCase();
+	const isFormData = init.body instanceof FormData;
 	const baseHeaders: Record<string, string> = {
-		'content-type': 'application/json',
+		// For FormData, let the browser set the multipart boundary.
+		...(isFormData ? {} : { 'content-type': 'application/json' }),
 		...((init.headers as Record<string, string>) ?? {})
 	};
 
@@ -108,6 +110,11 @@ export const api = {
 			method: 'POST',
 			body: body ? JSON.stringify(body) : undefined,
 			headers
+		}),
+	postMultipart: <T>(path: string, formData: FormData) =>
+		clientFetch<T>(path, {
+			method: 'POST',
+			body: formData
 		}),
 	patch: <T>(path: string, body?: unknown, headers?: Record<string, string>) =>
 		clientFetch<T>(path, {

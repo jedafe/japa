@@ -2,7 +2,7 @@
 	import { untrack, onDestroy } from 'svelte';
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
-	import { FileText, Lock, Sparkles, Loader2, AlertTriangle, XCircle, Download } from 'lucide-svelte';
+	import { FileText, Lock, Sparkles, Loader2, AlertTriangle, XCircle, Download, Upload } from 'lucide-svelte';
 	import { EmptyState, LoadingSkeleton, SelectField } from '$lib/components/ui';
 	import { api } from '$lib/api/client';
 	import type { GeoSpaceOption, CvStandard, CvFormatSession } from '$lib/types';
@@ -34,6 +34,11 @@
 	let outputFormat = $state('docx');
 	let loadingStandard = $state(false);
 	let currentStandard = $state<CvStandard | null>(null);
+
+	// Input mode: 'text' (paste) or 'file' (upload)
+	let inputMode = $state<'text' | 'file'>('text');
+	let uploadedFile = $state<File | null>(null);
+	let fileError = $state('');
 
 	// Session state
 	let session = $state<CvFormatSession | null>(null);
@@ -81,24 +86,65 @@
 	}
 
 	async function formatCv() {
-		if (!selectedDest || !inputText.trim()) return;
+		if (!selectedDest) return;
+		if (inputMode === 'text' && !inputText.trim()) return;
+		if (inputMode === 'file' && !uploadedFile) return;
 		if (!authed) {
 			showRegisterPrompt = true;
 			return;
 		}
 		submitting = true;
 		session = null;
-		const body: Record<string, unknown> = {
-			destination_space_id: selectedDest,
-			input_text: inputText.trim(),
-			output_format: outputFormat
-		};
-		const res = await api.post<CvFormatSession>('/cv-formatter/format', body);
+
+		let res;
+		if (inputMode === 'file' && uploadedFile) {
+			const formData = new FormData();
+			formData.append('file', uploadedFile);
+			formData.append('destination_space_id', selectedDest);
+			formData.append('output_format', outputFormat);
+			res = await api.postMultipart<CvFormatSession>('/cv-formatter/format', formData);
+		} else {
+			const body: Record<string, unknown> = {
+				destination_space_id: selectedDest,
+				input_text: inputText.trim(),
+				output_format: outputFormat
+			};
+			res = await api.post<CvFormatSession>('/cv-formatter/format', body);
+		}
 		submitting = false;
 		if (!res.error && res.data) {
 			session = res.data;
 			pollSession(res.data.id);
 		}
+	}
+
+	function onFileSelect(e: Event) {
+		const input = e.target as HTMLInputElement;
+		fileError = '';
+		if (!input.files || input.files.length === 0) {
+			uploadedFile = null;
+			return;
+		}
+		const file = input.files[0];
+		// Validate file type.
+		const allowedTypes = [
+			'application/pdf',
+			'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+		];
+		const allowedExts = ['.pdf', '.docx'];
+		const ext = file.name.toLowerCase().slice(file.name.lastIndexOf('.'));
+		if (!allowedTypes.includes(file.type) && !allowedExts.includes(ext)) {
+			fileError = t('cv_formatter.file_type_error', 'Only PDF and DOCX files are accepted.');
+			uploadedFile = null;
+			return;
+		}
+		// Validate file size (10 MB).
+		if (file.size > 10 * 1024 * 1024) {
+			fileError = t('cv_formatter.file_size_error', 'File exceeds 10 MB limit.');
+			uploadedFile = null;
+			return;
+		}
+		uploadedFile = file;
 	}
 
 	async function pollSession(sessionId: string) {
@@ -285,24 +331,82 @@
 						</select>
 					</div>
 
-					<textarea
-						bind:value={inputText}
-						rows="10"
-						placeholder={t(
-							'cv_formatter.input_placeholder',
-							'Paste your current CV/resume text here…'
-						)}
-						class="w-full px-4 py-3 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius)] text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none resize-y font-mono"
-					></textarea>
+					<!-- Input mode toggle: paste text or upload file -->
+					<div class="flex items-center gap-2 mb-3">
+						<button
+							type="button"
+							onclick={() => (inputMode = 'text')}
+							class="px-3 py-1.5 text-sm rounded-[var(--radius)] transition-colors {inputMode === 'text'
+								? 'bg-[var(--color-primary)] text-[var(--color-primary-contrast)]'
+								: 'bg-[var(--color-surface)] text-[var(--color-text)] border border-[var(--color-border)]'}"
+						>
+							{t('cv_formatter.mode_text', 'Paste Text')}
+						</button>
+						<button
+							type="button"
+							onclick={() => (inputMode = 'file')}
+							class="px-3 py-1.5 text-sm rounded-[var(--radius)] transition-colors {inputMode === 'file'
+								? 'bg-[var(--color-primary)] text-[var(--color-primary-contrast)]'
+								: 'bg-[var(--color-surface)] text-[var(--color-text)] border border-[var(--color-border)]'}"
+						>
+							<Upload size={14} class="inline mr-1" />
+							{t('cv_formatter.mode_file', 'Upload File')}
+						</button>
+					</div>
+
+					{#if inputMode === 'text'}
+						<textarea
+							bind:value={inputText}
+							rows="10"
+							placeholder={t(
+								'cv_formatter.input_placeholder',
+								'Paste your current CV/resume text here…'
+							)}
+							class="w-full px-4 py-3 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius)] text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none resize-y font-mono"
+						></textarea>
+					{:else}
+						<div class="w-full px-4 py-6 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius)] text-center">
+							<Upload size={32} class="mx-auto text-[var(--color-muted)] mb-2" />
+							<label for="cvf-file" class="cursor-pointer text-sm text-[var(--color-primary)] hover:underline">
+								{t('cv_formatter.choose_file', 'Choose a PDF or DOCX file')}
+							</label>
+							<input
+								id="cvf-file"
+								type="file"
+								accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+								onchange={onFileSelect}
+								class="hidden"
+							/>
+							{#if uploadedFile}
+								<p class="mt-2 text-sm text-[var(--color-text)]">
+									<FileText size={14} class="inline mr-1" />
+									{uploadedFile.name}
+									<span class="text-[var(--color-muted)]">
+										({(uploadedFile.size / 1024).toFixed(0)} KB)
+									</span>
+								</p>
+							{/if}
+							{#if fileError}
+								<p class="mt-2 text-sm text-[var(--color-error)]">{fileError}</p>
+							{/if}
+							<p class="mt-2 text-xs text-[var(--color-muted)]">
+								{t('cv_formatter.file_hint', 'Max 10 MB. Text is extracted on the server.')}
+							</p>
+						</div>
+					{/if}
 
 					<div class="flex items-center justify-between">
 						<p class="text-xs text-[var(--color-muted)]">
-							{inputText.length.toLocaleString()} {t('cv_formatter.characters', 'characters')}
+							{#if inputMode === 'text'}
+								{inputText.length.toLocaleString()} {t('cv_formatter.characters', 'characters')}
+							{:else if uploadedFile}
+								{uploadedFile.name}
+							{/if}
 						</p>
 						<button
 							type="button"
 							onclick={formatCv}
-							disabled={!inputText.trim() || submitting || isProcessing}
+							disabled={(inputMode === 'text' ? !inputText.trim() : !uploadedFile) || submitting || isProcessing}
 							class="inline-flex items-center gap-2 px-5 py-2 bg-[var(--color-primary)] text-[var(--color-primary-contrast)] rounded-[var(--radius)] text-sm font-medium hover:bg-[var(--color-primary-hover)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
 						>
 							{#if submitting}

@@ -112,11 +112,20 @@ type Handlers struct {
 	Redis           CacheReader          // C6: serve live feed from Valkey cache
 	notifier        MentionNotifier      // nil disables mention notifications (test-only)
 	mentionCheckers *mentions.DBCheckers // nil disables erased-mention redaction
+	spamRecorder    ContentCreationRecorder // nil disables spam rate-limit recording (test-only)
 }
 
 // TaskEnqueueClient is the subset of asynq.Client used by blog handlers.
 type TaskEnqueueClient interface {
 	Enqueue(task *asynq.Task, opts ...asynq.Option) (*asynq.TaskInfo, error)
+}
+
+// ContentCreationRecorder is the subset of *spam.SpamPipeline used by blog
+// handlers to record content creation events for the spam rate-limit layer
+// (§41 Layer "rate_limit"). Narrow interface so the blog package stays
+// testable without importing spam.
+type ContentCreationRecorder interface {
+	RecordContentCreation(ctx context.Context, tenantID, userID pgtype.UUID)
 }
 
 // CacheReader is the subset of valkeycompat.Cmdable used by blog handlers for
@@ -139,6 +148,13 @@ func (h *Handlers) SetAsynqClient(c TaskEnqueueClient) {
 // SetRedis injects the Valkey/Redis client for reading cached feeds (C6).
 func (h *Handlers) SetRedis(r CacheReader) {
 	h.Redis = r
+}
+
+// SetSpamRecorder injects the spam pipeline recorder so blog post creation
+// is counted toward the spam rate-limit layer (§41, BUG-004). Nil disables
+// recording (test-only).
+func (h *Handlers) SetSpamRecorder(r ContentCreationRecorder) {
+	h.spamRecorder = r
 }
 
 // SetMentionCheckers wires the DB-backed erased-user checker used to
@@ -1780,6 +1796,13 @@ func (h *Handlers) CreatePost(w http.ResponseWriter, r *http.Request) {
 		slog.Error("failed to create blog post", "error", err, "title", input.Title, "slug", input.Slug)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to create blog post")
 		return
+	}
+
+	// Record the creation event for the spam rate-limit layer (§41, BUG-004).
+	// Fire-and-forget — the pipeline records a timestamp in Valkey and never
+	// blocks the response.
+	if h.spamRecorder != nil {
+		h.spamRecorder.RecordContentCreation(r.Context(), tenantID, user.UserID)
 	}
 
 	// Dispatch @mention notifications — fire-and-forget (BL-002, Section 15).

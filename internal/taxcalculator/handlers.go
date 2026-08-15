@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"math"
 	"net/http"
 	"strconv"
 
@@ -136,12 +137,22 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	totalPages := int32(1)
+	if limit > 0 && total > 0 {
+		tp := (total + int64(limit) - 1) / int64(limit)
+		if tp > int64(math.MaxInt32) {
+			tp = int64(math.MaxInt32)
+		}
+		totalPages = int32(tp) //nolint:gosec // G115: bounded to MaxInt32 above
+	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": guides,
-		"pagination": map[string]any{
-			"page":  page,
-			"limit": limit,
-			"total": total,
+		"meta": map[string]any{
+			"page":        page,
+			"per_page":    limit,
+			"total":       total,
+			"total_pages": totalPages,
 		},
 	})
 }
@@ -245,15 +256,25 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	totalPages := int32(1)
+	if limit > 0 && total > 0 {
+		tp := (total + int64(limit) - 1) / int64(limit)
+		if tp > int64(math.MaxInt32) {
+			tp = int64(math.MaxInt32)
+		}
+		totalPages = int32(tp) //nolint:gosec // G115: bounded to MaxInt32 above
+	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
 			"guides":   guides,
 			"treaties": treaties,
 		},
-		"pagination": map[string]any{
-			"page":  page,
-			"limit": limit,
-			"total": total,
+		"meta": map[string]any{
+			"page":        page,
+			"per_page":    limit,
+			"total":       total,
+			"total_pages": totalPages,
 		},
 	})
 }
