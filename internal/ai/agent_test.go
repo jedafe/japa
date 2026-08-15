@@ -259,7 +259,7 @@ func newTestAgentHandler(t *testing.T, provider *mockAgentProvider, opts ...Agen
 			"type":     "object",
 			"required": []any{"query"},
 		},
-	}, "")
+	}, "", pgtype.UUID{})
 	reg.RegisterHandler("content.search", func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error) {
 		return &ToolResult{Status: ToolCallStatusSuccess, Content: `{"results":[]}`}, nil
 	})

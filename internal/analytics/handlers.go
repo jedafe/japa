@@ -725,6 +725,9 @@ func (h *Handlers) GetContentAnalytics(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// BUG-002 fix: return both the daily time series and the aggregated
+	// totals. Section 40 specifies "views, reactions, comments, shares over
+	// time" — the per-day rows are the time series; the sums are the totals.
 	var views, reactions, comments, shares, uniqueViewers int64
 	for _, s := range stats {
 		views += int64(s.Views)
@@ -735,6 +738,7 @@ func (h *Handlers) GetContentAnalytics(w http.ResponseWriter, r *http.Request) {
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
+		"daily_stats":    stats,
 		"views":          views,
 		"reactions":      reactions,
 		"comments":       comments,

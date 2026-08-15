@@ -13,7 +13,7 @@
 	import { Modal } from '$lib/components/ui/modal';
 	import { SlideOver } from '$lib/components/ui/slide-over';
 	import type { ActionItem, BulkAction, FilterDef } from '$lib/components/ui/data-table';
-	import { Plus, Trash2, Link2, Users, Percent, DollarSign } from 'lucide-svelte';
+	import { Plus, Trash2, Link2, Users, Percent, DollarSign, BarChart3 } from 'lucide-svelte';
 
 	type AffiliateProvider = {
 		id: string;
@@ -87,13 +87,23 @@
 		created_at: string;
 	};
 
-	let activeTab = $state('providers');
+	type ProgramStats = {
+		total_members: number;
+		active_members: number;
+		total_links: number;
+		total_clicks: number;
+		total_conversions: number;
+		total_commissions: string;
+	};
+
+	let activeTab = $state('overview');
 	let providers = $state<AffiliateProvider[]>([]);
 	let members = $state<AffiliateMember[]>([]);
 	let links = $state<AffiliateLink[]>([]);
 	let rates = $state<CommissionRates>({ pro_monthly: 0, pro_annual: 0, course: 0 });
 	let scanResults = $state<ScanResult[]>([]);
 	let commissions = $state<AuthorCommission[]>([]);
+	let stats = $state<ProgramStats | null>(null);
 	let loading = $state(true);
 	let error = $state('');
 	let showCreateSlideOver = $state(false);
@@ -126,6 +136,7 @@
 	let newCommission = $state({ provider_id: '', content_id: '', external_commission: 0, event_description: '' });
 
 	const tabs = $derived([
+		{ value: 'overview', label: t('affiliate.overview', 'Overview'), icon: BarChart3 },
 		{ value: 'providers', label: t('affiliate.providers'), icon: Link2 },
 		{ value: 'members', label: t('affiliate.members'), icon: Users },
 		{ value: 'links', label: t('affiliate.links'), icon: Link2 },
@@ -292,7 +303,14 @@
 		loading = true;
 		error = '';
 		try {
-			if (activeTab === 'providers') {
+			if (activeTab === 'overview') {
+				const result = await affiliateProgramAdminApi.stats();
+				if (result.ok) {
+					stats = result.data as ProgramStats;
+				} else {
+					error = result.error;
+				}
+			} else if (activeTab === 'providers') {
 				const result = await affiliateProvidersAdminApi.list();
 				if (result.ok) {
 					providers = (Array.isArray(result.data) ? result.data : []) as AffiliateProvider[];
@@ -507,6 +525,49 @@
 
 	{#if loading}
 		<p class="py-8 text-center text-sm text-muted">{t('common.loading')}</p>
+	{:else if activeTab === 'overview'}
+		{#if stats}
+			<div class="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-6">
+				<Card>
+					<CardContent class="p-4">
+						<p class="text-xs text-muted">{t('affiliate.total_members', 'Total Members')}</p>
+						<p class="mt-1 text-2xl font-semibold text-foreground [font-variant-numeric:tabular-nums]">{stats.total_members}</p>
+					</CardContent>
+				</Card>
+				<Card>
+					<CardContent class="p-4">
+						<p class="text-xs text-muted">{t('affiliate.active_members', 'Active Members')}</p>
+						<p class="mt-1 text-2xl font-semibold text-foreground [font-variant-numeric:tabular-nums]">{stats.active_members}</p>
+					</CardContent>
+				</Card>
+				<Card>
+					<CardContent class="p-4">
+						<p class="text-xs text-muted">{t('affiliate.total_links', 'Total Links')}</p>
+						<p class="mt-1 text-2xl font-semibold text-foreground [font-variant-numeric:tabular-nums]">{stats.total_links}</p>
+					</CardContent>
+				</Card>
+				<Card>
+					<CardContent class="p-4">
+						<p class="text-xs text-muted">{t('affiliate.total_clicks', 'Total Clicks')}</p>
+						<p class="mt-1 text-2xl font-semibold text-foreground [font-variant-numeric:tabular-nums]">{stats.total_clicks}</p>
+					</CardContent>
+				</Card>
+				<Card>
+					<CardContent class="p-4">
+						<p class="text-xs text-muted">{t('affiliate.total_conversions', 'Total Conversions')}</p>
+						<p class="mt-1 text-2xl font-semibold text-foreground [font-variant-numeric:tabular-nums]">{stats.total_conversions}</p>
+					</CardContent>
+				</Card>
+				<Card>
+					<CardContent class="p-4">
+						<p class="text-xs text-muted">{t('affiliate.total_commissions', 'Total Commissions')}</p>
+						<p class="mt-1 text-2xl font-semibold text-foreground [font-variant-numeric:tabular-nums]">{stats.total_commissions}</p>
+					</CardContent>
+				</Card>
+			</div>
+		{:else}
+			<p class="py-8 text-center text-sm text-muted">{t('affiliate.no_stats', 'No program stats available.')}</p>
+		{/if}
 	{:else if activeTab === 'providers'}
 		<Card>
 			<CardContent class="p-0">

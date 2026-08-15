@@ -184,6 +184,12 @@ func (h *Handlers) HandleCreate(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_slug", "Slug is required")
 		return
 	}
+	// Geo-aware tool pattern (§§79–101): destination country is the primary
+	// data axis and must not be empty (§88 Geo Awareness).
+	if input.HostDestCountryID == "" {
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_dest_country", "Destination country is required")
+		return
+	}
 
 	var spaceID pgtype.UUID
 	if input.SpaceID != nil {
@@ -262,4 +268,43 @@ func (h *Handlers) HandleClose(w http.ResponseWriter, r *http.Request) {
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"closed": true}})
+}
+
+// HandleApproveQuestion handles POST /forum/ama/:id/questions/:replyId/approve
+// — approves a pending AMA question (host or forum.ama.moderate only, §88
+// question_approval_required).
+func (h *Handlers) HandleApproveQuestion(w http.ResponseWriter, r *http.Request) {
+	user, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+	threadID, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+	replyID, ok := scanUUIDParam(w, r, "replyId")
+	if !ok {
+		return
+	}
+
+	err := h.service.ApproveQuestion(r.Context(), threadID, replyID, tenantID, user.UserID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			errpkg.WriteError(w, http.StatusNotFound, "question_not_found", "Pending question not found")
+			return
+		}
+		if errors.Is(err, ErrCloseForbidden) {
+			errpkg.WriteError(w, http.StatusForbidden, "approve_forbidden", "Only the host or a moderator may approve questions.")
+			return
+		}
+		slog.Error("ama: approve question failed", "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "approve_failed", "Failed to approve question")
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"approved": true}})
 }

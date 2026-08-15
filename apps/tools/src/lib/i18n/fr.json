@@ -398,5 +398,19 @@
 	"tax_calculator.unknown": "Inconnu",
 	"tax_calculator.hitl_disclosure": "Tout le contenu fiscal sur cette page a été révisé par un professionnel fiscal qualifié avant publication. Cet outil fournit des conseils généraux uniquement — consultez un conseiller fiscal qualifié pour votre situation spécifique.",
 	"common.searching": "Recherche...",
-	"geo.select_destination": "Sélectionner un pays…"
+	"geo.select_destination": "Sélectionner un pays…",
+	"arrival_checklist.title": "Liste d'arrivée",
+	"arrival_checklist.subtitle": "Tout ce que vous devez faire après votre arrivée — par phases temporelles.",
+	"arrival_checklist.seo_title": "Liste d'arrivée — Outils JapaConnect",
+	"arrival_checklist.seo_description": "Une liste phased de tâches à accomplir après votre arrivée dans votre pays de destination — inscription, banque, et plus.",
+	"arrival_checklist.no_destinations": "Aucune liste disponible",
+	"arrival_checklist.no_destinations_desc": "Les guides de liste d'arrivée n'ont pas encore été publiés. Veuillez revenir plus tard.",
+	"arrival_checklist.no_categories": "Aucune catégorie trouvée",
+	"arrival_checklist.visa_category": "Catégorie de visa :",
+	"arrival_checklist.all_categories": "Toutes les catégories",
+	"arrival_checklist.select_destination": "Sélectionnez un pays de destination",
+	"arrival_checklist.select_destination_desc": "Choisissez un pays ci-dessus pour voir votre liste d'arrivée.",
+	"arrival_checklist.no_items": "Aucun élément de liste",
+	"arrival_checklist.no_items_desc": "Aucun élément de liste d'arrivée n'a été publié pour cette destination pour le moment.",
+	"arrival_checklist.official_link": "Conseils officiels"
 }

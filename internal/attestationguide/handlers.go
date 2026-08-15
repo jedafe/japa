@@ -288,7 +288,8 @@ func (h *Handlers) HandleSubmitUpdate(w http.ResponseWriter, r *http.Request) {
 // HandleAdminList handles GET /admin/attestation — moderation queue
 // listing all attestation pathways (any status). Admin-only
 // (attestation_guide.manage permission checked at route registration).
-// Supports ?status=&doc_type=&dest=&active=&page=&limit=.
+// Supports ?status=&doc_type=&dest=&active=&q=&sort=&dir=&page=&limit=.
+// BUG-004: sort and q (search) params now honoured.
 func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
@@ -305,6 +306,9 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 
 	status := r.URL.Query().Get("status")
 	documentType := r.URL.Query().Get("doc_type")
+	search := r.URL.Query().Get("q")
+	sortBy := r.URL.Query().Get("sort")
+	sortDir := r.URL.Query().Get("dir")
 
 	var destSpaceID pgtype.UUID
 	if v := r.URL.Query().Get("dest"); v != "" {
@@ -327,7 +331,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 		limit = 200
 	}
 
-	pathways, total, err := h.service.AdminList(r.Context(), tenantID, destSpaceID, status, documentType, activePtr, page, limit)
+	pathways, total, err := h.service.AdminList(r.Context(), tenantID, destSpaceID, status, documentType, activePtr, search, sortBy, sortDir, page, limit)
 	if err != nil {
 		slog.Error("attestationguide: admin list failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "admin_list_failed", "Failed to list attestation pathways")

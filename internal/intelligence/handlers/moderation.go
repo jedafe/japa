@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
@@ -335,6 +336,80 @@ func (h *Handlers) HandleReviewReject(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// intelRecordResponse is the public-facing shape for an intel record. The
+// extracted/confidence/evidence columns are JSON blobs stored as []byte in
+// the generated sqlc model; encoding/json base64-encodes []byte fields, which
+// would surface as opaque strings (e.g. "e30=" for "{}") to clients. The
+// control panel ExtractionPane and Structured Record pane expect parsed JSON
+// objects, so these fields are emitted as json.RawMessage to preserve the
+// stored JSON shape. All other fields mirror gen.IntelRecord exactly.
+type intelRecordResponse struct {
+	ID                pgtype.UUID        `json:"id"`
+	SourceID          pgtype.UUID        `json:"source_id"`
+	RawDocumentID     pgtype.UUID        `json:"raw_document_id"`
+	EntityType        string             `json:"entity_type"`
+	ExternalKey       string             `json:"external_key"`
+	Extracted         json.RawMessage    `json:"extracted"`
+	Confidence        json.RawMessage    `json:"confidence"`
+	Evidence          json.RawMessage    `json:"evidence"`
+	ConfidenceOverall float32            `json:"confidence_overall"`
+	Status            string             `json:"status"`
+	FreshnessScore    int32              `json:"freshness_score"`
+	GeoSpaceIds       []pgtype.UUID      `json:"geo_space_ids"`
+	ExtractedAt       pgtype.Timestamptz `json:"extracted_at"`
+	LastVerifiedAt    pgtype.Timestamptz `json:"last_verified_at"`
+	PromotedRecordID  pgtype.UUID        `json:"promoted_record_id"`
+	TenantID          pgtype.UUID        `json:"tenant_id"`
+}
+
+// intelRecordToResponse converts a generated intel record row to the
+// public-facing response shape. The three JSON-blob columns are converted
+// from []byte to json.RawMessage so they serialize as JSON objects (or null
+// when empty) instead of base64 strings. A nil/empty byte slice maps to a
+// nil RawMessage, which encoding/json emits as null.
+func intelRecordToResponse(r gen.IntelRecord) intelRecordResponse {
+	return intelRecordResponse{
+		ID:                r.ID,
+		SourceID:          r.SourceID,
+		RawDocumentID:     r.RawDocumentID,
+		EntityType:        r.EntityType,
+		ExternalKey:       r.ExternalKey,
+		Extracted:         jsonBlobToRawMessage(r.Extracted),
+		Confidence:        jsonBlobToRawMessage(r.Confidence),
+		Evidence:          jsonBlobToRawMessage(r.Evidence),
+		ConfidenceOverall: r.ConfidenceOverall,
+		Status:            r.Status,
+		FreshnessScore:    r.FreshnessScore,
+		GeoSpaceIds:       r.GeoSpaceIds,
+		ExtractedAt:       r.ExtractedAt,
+		LastVerifiedAt:    r.LastVerifiedAt,
+		PromotedRecordID:  r.PromotedRecordID,
+		TenantID:          r.TenantID,
+	}
+}
+
+// jsonBlobToRawMessage converts a JSON-blob byte slice (as returned by sqlc
+// for jsonb columns) into a json.RawMessage. nil or empty slices yield a nil
+// RawMessage (serialized as null). Non-empty slices are returned as-is; the
+// caller is responsible for ensuring the bytes are valid JSON (the columns
+// are jsonb, so the database guarantees validity).
+func jsonBlobToRawMessage(b []byte) json.RawMessage {
+	if len(b) == 0 {
+		return nil
+	}
+	return json.RawMessage(b)
+}
+
+// intelRecordsToResponse converts a slice of generated intel record rows to
+// the public-facing response shape (see intelRecordToResponse).
+func intelRecordsToResponse(rows []gen.IntelRecord) []intelRecordResponse {
+	out := make([]intelRecordResponse, 0, len(rows))
+	for i := range rows {
+		out = append(out, intelRecordToResponse(rows[i]))
+	}
+	return out
+}
+
 // HandleReviewQueue lists intel records awaiting human review.
 // GET /api/v1/intel/review/queue
 func (h *Handlers) HandleReviewQueue(w http.ResponseWriter, r *http.Request) {
@@ -388,7 +463,7 @@ func (h *Handlers) HandleReviewQueue(w http.ResponseWriter, r *http.Request) {
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
-		"data": rows,
+		"data": intelRecordsToResponse(rows),
 		"meta": map[string]interface{}{
 			"page_size":   limit,
 			"page_offset": (page - 1) * limit,
@@ -475,7 +550,7 @@ func (h *Handlers) HandleListIntelRecords(w http.ResponseWriter, r *http.Request
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
-		"data": rows,
+		"data": intelRecordsToResponse(rows),
 		"meta": map[string]interface{}{
 			"page_size":   limit,
 			"page_offset": (page - 1) * limit,
@@ -526,6 +601,6 @@ func (h *Handlers) HandleGetIntelRecord(w http.ResponseWriter, r *http.Request) 
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
-		"data": rec,
+		"data": intelRecordToResponse(rec),
 	})
 }

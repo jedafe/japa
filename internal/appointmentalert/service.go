@@ -113,17 +113,35 @@ type Notifier interface {
 	CreateNotification(ctx context.Context, tenantID, recipientID pgtype.UUID, nType, actorType string, actorID pgtype.UUID, subjectType string, subjectID pgtype.UUID, title, body, actionURL string) error
 }
 
+// permissionChecker is the subset of rbac.RBAC needed to resolve premium-tier
+// status. Local interface so appointmentalert does not import rbac directly
+// (same pattern as cvformatter). Nil-safe: a nil checker means
+// IsPremiumUser returns false (development/tests).
+type permissionChecker interface {
+	HasPermission(ctx context.Context, userID, tenantID pgtype.UUID, permKey string) bool
+}
+
+// SMSSender is the minimal interface for dispatching SMS notifications to
+// premium-tier users who selected the `sms` channel. Nil-safe: a nil sender
+// means SMS dispatch is a graceful no-op with a warning log (pending
+// platform-wide SMS gateway integration, §91, ADR-099).
+type SMSSender interface {
+	SendSMS(ctx context.Context, tenantID, userID pgtype.UUID, message, actionURL string) error
+}
+
 // availabilityCacheTTL is the TTL for the jc:embassy_avail:{slug} Valkey key
 // that stores the current availability state for a monitored embassy (§91).
 const availabilityCacheTTL = 60 * time.Second
 
 // Service holds the business logic for the Embassy Appointment Alerter.
 type Service struct {
-	store    *Store
-	settings *config.Settings
-	enqueuer TaskEnqueuer
-	notifier Notifier
-	cache    valkeycompat.Cmdable
+	store     *Store
+	settings  *config.Settings
+	enqueuer  TaskEnqueuer
+	notifier  Notifier
+	cache     valkeycompat.Cmdable
+	rbac      permissionChecker
+	smsSender SMSSender
 }
 
 // NewService creates an appointment alerter service.
@@ -140,6 +158,14 @@ func (s *Service) SetNotifier(n Notifier) { s.notifier = n }
 // SetCache injects the Valkey client for availability-state caching (§91).
 func (s *Service) SetCache(c valkeycompat.Cmdable) { s.cache = c }
 
+// SetRBAC injects the RBAC resolver used for premium-tier checks
+// (appointment_alert.premium permission). Nil-safe (§91, ADR-099).
+func (s *Service) SetRBAC(r permissionChecker) { s.rbac = r }
+
+// SetSMSSender injects the SMS sender for premium-tier SMS dispatch (§91).
+// Nil-safe: a nil sender means SMS dispatch is a graceful no-op.
+func (s *Service) SetSMSSender(sender SMSSender) { s.smsSender = sender }
+
 // Enabled reads the appointment_alert.enabled system_setting toggle
 // (§91 feature flag).
 func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
@@ -151,6 +177,31 @@ func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
 
 // ErrNotOwner is returned when a user tries to manage an alert they do not own.
 var ErrNotOwner = fmt.Errorf("not the alert owner")
+
+// ErrSMSPremiumOnly is returned when a non-premium user tries to select the
+// SMS notification channel (§91, ADR-099). The sms channel is premium-only.
+var ErrSMSPremiumOnly = fmt.Errorf("sms channel is only available to premium users")
+
+// IsPremiumUser reports whether the user holds the appointment_alert.premium
+// permission (premium tier). Returns false when no RBAC resolver is wired
+// (development/tests) — in that case SMS channel selection is rejected
+// because the premium status cannot be confirmed (§91, ADR-099).
+func (s *Service) IsPremiumUser(ctx context.Context, userID, tenantID pgtype.UUID) bool {
+	if s.rbac == nil {
+		return false
+	}
+	return s.rbac.HasPermission(ctx, userID, tenantID, "appointment_alert.premium")
+}
+
+// channelsContainSMS reports whether the `sms` channel is in the list.
+func channelsContainSMS(channels []string) bool {
+	for _, ch := range channels {
+		if ch == "sms" {
+			return true
+		}
+	}
+	return false
+}
 
 // ListEmbassies returns a paginated list of monitored embassies. When
 // activeOnly is true, only embassies currently being polled are returned.
@@ -452,6 +503,27 @@ func (s *Service) DispatchAlerts(ctx context.Context, embassySlug string, tenant
 			continue
 		}
 
+		// SMS channel dispatch (§91, ADR-099): premium-tier users who
+		// selected the `sms` channel receive an SMS in addition to the
+		// in-app/email notification. The SMS channel is gated to premium
+		// users at alert creation/update time, so by the time an alert
+		// reaches dispatch the `sms` channel is only present for premium
+		// users. Nil-safe: a nil SMSSender logs a warning and continues
+		// (pending platform-wide SMS gateway integration).
+		if channelsContainSMS(alert.NotificationChannels) {
+			if s.smsSender != nil {
+				smsBody := fmt.Sprintf("JapaConnect: appointment available at %s. Book quickly — slots can disappear fast. %s",
+					embassy.Name, embassy.BookingURL)
+				if err := s.smsSender.SendSMS(ctx, tenantID, alert.UserID, smsBody, embassy.BookingURL); err != nil {
+					slog.Warn("appointmentalert: dispatch alerts: sms send failed",
+						"alert_id", alert.ID.String(), "user_id", alert.UserID.String(), "error", err)
+				}
+			} else {
+				slog.Warn("appointmentalert: dispatch alerts: sms channel requested but no SMSSender wired",
+					"alert_id", alert.ID.String(), "user_id", alert.UserID.String())
+			}
+		}
+
 		// Mark the alert as fired (sets fired_at = now(), status = 'fired').
 		// The 24-hour pause prevents re-firing on the next poll cycle.
 		if err := s.store.MarkAlertFired(ctx, alert.ID, tenantID); err != nil {
@@ -471,16 +543,30 @@ func (s *Service) DispatchAlerts(ctx context.Context, embassySlug string, tenant
 }
 
 // ScheduleDuePolls enqueues embassy:poll tasks for all active monitored
-// embassies whose poll_interval_seconds has elapsed since last_polled_at.
+// embassies whose effective poll interval has elapsed since last_polled_at.
 // Called by the recurring poll scheduler (every 5 minutes) so each embassy
-// is polled at its own configured interval (§91, ADR-099). Fire-and-forget
+// is polled at its own effective interval (§91, ADR-099). Fire-and-forget
 // per Rule 8.
+//
+// The effective interval is LEAST(embassy.poll_interval_seconds,
+// appointment_alert.premium_poll_interval) for embassies that have at least
+// one active alert from a premium-tier user; otherwise the embassy's
+// configured poll_interval_seconds. This gives premium users faster polling
+// without per-user poll tasks (§91, ADR-099).
 func (s *Service) ScheduleDuePolls(ctx context.Context) (int, error) {
 	if s.enqueuer == nil {
 		return 0, nil
 	}
 
-	embassies, err := s.store.ListEmbassiesDueForPoll(ctx)
+	premiumInterval := 300 // default 5 min (§91)
+	if s.settings != nil {
+		premiumInterval = s.settings.GetIntOr(ctx, pgtype.UUID{}, "appointment_alert.premium_poll_interval", 300)
+	}
+	if premiumInterval <= 0 {
+		premiumInterval = 300
+	}
+
+	embassies, err := s.store.ListEmbassiesDueForPoll(ctx, int32(premiumInterval))
 	if err != nil {
 		return 0, fmt.Errorf("appointmentalert: schedule due polls: list: %w", err)
 	}
@@ -602,6 +688,13 @@ func (s *Service) CreateAlert(ctx context.Context, tenantID, userID pgtype.UUID,
 		return AlertDTO{}, fmt.Errorf("embassy %q does not belong to the selected destination", input.EmbassySlug)
 	}
 
+	// SMS channel gating: the `sms` notification channel is only available
+	// to premium-tier users (holding appointment_alert.premium). Non-premium
+	// users are rejected with ErrSMSPremiumOnly (§91, ADR-099).
+	if channelsContainSMS(input.NotificationChannels) && !s.IsPremiumUser(ctx, userID, tenantID) {
+		return AlertDTO{}, ErrSMSPremiumOnly
+	}
+
 	var visaCat *string
 	if input.VisaCategory != "" {
 		v := input.VisaCategory
@@ -645,6 +738,12 @@ func (s *Service) UpdateAlert(ctx context.Context, id, tenantID, userID pgtype.U
 	}
 	if existing.UserID != userID {
 		return AlertDTO{}, ErrNotOwner
+	}
+
+	// SMS channel gating: if the update includes notification_channels with
+	// `sms`, the user must be premium (§91, ADR-099).
+	if channelsContainSMS(input.NotificationChannels) && !s.IsPremiumUser(ctx, userID, tenantID) {
+		return AlertDTO{}, ErrSMSPremiumOnly
 	}
 
 	if input.Status != nil {

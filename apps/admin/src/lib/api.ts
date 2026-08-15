@@ -1,4 +1,5 @@
 import { apiFetch as _apiFetch } from './api/client';
+import { getAccessToken } from './api/token';
 import { PUBLIC_JC_API_URL } from '$env/static/public';
 
 export { _apiFetch as apiFetch };
@@ -10,6 +11,39 @@ type FetchOptions = {
 };
 
 type ApiResult<T> = { ok: true; data: T } | { ok: false; error: string };
+
+// fetchRaw performs a direct fetch that bypasses the JSON envelope parsing in
+// apiFetch. Used for non-JSON responses (e.g. CSV exports from
+// /admin/analytics/export). Auth credentials and the bearer token are attached
+// the same way apiFetch attaches them; CSRF is not needed for GET requests.
+async function fetchRaw(path: string): Promise<ApiResult<string>> {
+	const url = `${PUBLIC_JC_API_URL}/api/v1${path}`;
+	const accessToken = getAccessToken();
+	const authHeader: Record<string, string> = accessToken
+		? { Authorization: `Bearer ${accessToken}` }
+		: {};
+	try {
+		const res = await fetch(url, {
+			method: 'GET',
+			credentials: 'include',
+			headers: authHeader,
+		});
+		if (!res.ok) {
+			const text = await res.text();
+			let msg = res.statusText;
+			try {
+				const body = JSON.parse(text);
+				if (body?.error?.message) msg = body.error.message;
+			} catch {
+				if (text) msg = text;
+			}
+			return { ok: false, error: msg };
+		}
+		return { ok: true, data: await res.text() };
+	} catch (err) {
+		return { ok: false, error: err instanceof Error ? err.message : 'Network error' };
+	}
+}
 
 export function setToken(token: string | null): void {
 	// Deprecated no-op: JWT auth state is no longer managed client-side.
@@ -265,6 +299,9 @@ export const adNetworksApi = {
 	create: (body: Record<string, unknown>) => api<{ data: AdNetwork }>('/admin/ads/networks', { method: 'POST', body }),
 	update: (id: string, body: Record<string, unknown>) => api<{ data: AdNetwork }>(`/admin/ads/networks/${id}`, { method: 'PUT', body }),
 	delete: (id: string) => api<{ data: unknown }>(`/admin/ads/networks/${id}`, { method: 'DELETE' }),
+	// Ref: japaconnect-engineering/sections/25-ad-placement.md (Ad Networks)
+	// Rule 16 — providers list fetched from backend, not hardcoded.
+	listProviders: () => api<{ data: string[] }>('/admin/ads/networks/providers'),
 };
 
 export const adBoostsApi = {
@@ -931,7 +968,7 @@ export const analyticsAdminApi = {
 	getRetention: (params?: string) => api<unknown>(`/admin/analytics/retention${params ? `?${params}` : ''}`),
 	exportCsv: (metric: string, period?: string) => {
 		const params = [metric && `metric=${metric}`, period && `period=${period}`].filter(Boolean).join('&');
-		return api<unknown>(`/admin/analytics/export${params ? `?${params}` : ''}`);
+		return fetchRaw(`/admin/analytics/export${params ? `?${params}` : ''}`);
 	},
 };
 
@@ -1494,6 +1531,8 @@ export const affiliateLinksAdminApi = {
 };
 
 export const affiliateProgramAdminApi = {
+	stats: () =>
+		api<unknown>('/admin/affiliate-program'),
 	members: (params?: string) =>
 		api<unknown>(`/admin/affiliate-program/members${params ? `?${params}` : ''}`),
 	updateMemberStatus: (userId: string, body: { status: string; notes?: string }) =>

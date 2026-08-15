@@ -431,6 +431,51 @@ func (s *Service) GetEarnings(ctx context.Context, userID, tenantID pgtype.UUID)
 	}, nil
 }
 
+// ProgramStats is the program-wide summary returned by
+// GET /api/v1/admin/affiliate-program (Section 56 Admin management).
+type ProgramStats struct {
+	TotalMembers      int64   `json:"total_members"`
+	ActiveMembers     int64   `json:"active_members"`
+	TotalLinks        int64   `json:"total_links"`
+	TotalClicks       int64   `json:"total_clicks"`
+	TotalConversions  int64   `json:"total_conversions"`
+	TotalCommissions  string  `json:"total_commissions"`
+}
+
+// GetProgramStats returns tenant-scoped program-wide totals for the admin
+// overview endpoint (Section 56). Money is rendered as a string via
+// formatNumeric to avoid float serialization of pgtype.Numeric.
+func (s *Service) GetProgramStats(ctx context.Context, tenantID pgtype.UUID) (*ProgramStats, error) {
+	row, err := s.store.getProgramStats(ctx, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("getting program stats: %w", err)
+	}
+	return &ProgramStats{
+		TotalMembers:     row.TotalMembers,
+		ActiveMembers:    row.ActiveMembers,
+		TotalLinks:       row.TotalLinks,
+		TotalClicks:      toInt64(row.TotalClicks),
+		TotalConversions: toInt64(row.TotalConversions),
+		TotalCommissions: formatNumeric(row.TotalCommissions),
+	}, nil
+}
+
+// toInt64 coerces the interface{} returned by sqlc for COALESCE(SUM(...),0)
+// into int64. SUM of int columns comes back as int64; the COALESCE fallback
+// may come back as int. Both are handled.
+func toInt64(v interface{}) int64 {
+	switch n := v.(type) {
+	case int64:
+		return n
+	case int32:
+		return int64(n)
+	case int:
+		return int64(n)
+	default:
+		return 0
+	}
+}
+
 // formatNumeric renders a pgtype.Numeric (or any numeric interface{} coming
 // back from a SUM/COALESCE aggregate) as a currency string with 2 decimals.
 // Returns "0.00" for nil/invalid values so the UI always shows a parseable

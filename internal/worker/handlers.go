@@ -3352,6 +3352,7 @@ func HandleAdEventIngest(ctx context.Context, t *asynq.Task) error {
 		CampaignID: campaignID,
 		UserID:     userID,
 		EventType:  payload.EventType,
+		OccurredAt: pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true},
 	}); err != nil {
 		slog.Error("task:ad:ingest_event_batch: failed to insert event",
 			"campaign_id", payload.CampaignID, "error", err)

@@ -807,9 +807,8 @@ func (q *Queries) ListActiveAdSlotTypes(ctx context.Context, tenantID pgtype.UUI
 }
 
 const listActiveBoosts = `-- name: ListActiveBoosts :many
-SELECT ob.id, ob.tenant_id, ob.organization_id, ob.campaign_id, ob.boost_type, ob.status, ob.start_date, ob.end_date, ob.created_at, s.name AS space_name, o.name AS organization_name
+SELECT ob.id, ob.tenant_id, ob.organization_id, ob.campaign_id, ob.boost_type, ob.status, ob.start_date, ob.end_date, ob.created_at, o.name AS organization_name
 FROM organization_boosts ob
-LEFT JOIN spaces s ON s.id = ob.space_id
 LEFT JOIN organizations o ON o.id = ob.organization_id
 WHERE ob.tenant_id = $1 AND ob.status = 'active'
   AND (ob.end_date IS NULL OR ob.end_date >= now())
@@ -826,10 +825,13 @@ type ListActiveBoostsRow struct {
 	StartDate        pgtype.Timestamptz `json:"start_date"`
 	EndDate          pgtype.Timestamptz `json:"end_date"`
 	CreatedAt        pgtype.Timestamptz `json:"created_at"`
-	SpaceName        *string            `json:"space_name"`
 	OrganizationName *string            `json:"organization_name"`
 }
 
+// Ref: japaconnect-engineering/sections/25-ad-placement.md
+// Organization boosts link an organization to a campaign (not a space).
+// The previous query referenced ob.space_id which does not exist on
+// organization_boosts, causing a 500 on GET /admin/ads/boosts/active.
 func (q *Queries) ListActiveBoosts(ctx context.Context, tenantID pgtype.UUID) ([]ListActiveBoostsRow, error) {
 	rows, err := q.db.Query(ctx, listActiveBoosts, tenantID)
 	if err != nil {
@@ -849,7 +851,6 @@ func (q *Queries) ListActiveBoosts(ctx context.Context, tenantID pgtype.UUID) ([
 			&i.StartDate,
 			&i.EndDate,
 			&i.CreatedAt,
-			&i.SpaceName,
 			&i.OrganizationName,
 		); err != nil {
 			return nil, err

@@ -63,20 +63,34 @@ const createProfessionalRelocation = `-- name: CreateProfessionalRelocation :one
 
 
 INSERT INTO professional_relocations (
-    tenant_id, profile_id, country, city, status, year
+    tenant_id, profile_id, country, country_code, city, status, year
 ) VALUES (
-    $1, $2, $3, $4, $5, $6
+    $1, $2, $3, $4, $5, $6, $7
 )
-RETURNING id, tenant_id, profile_id, country, city, status, year, created_at, updated_at
+RETURNING id, tenant_id, profile_id, country, country_code, city, status, year, created_at, updated_at
 `
 
 type CreateProfessionalRelocationParams struct {
-	TenantID  pgtype.UUID `json:"tenant_id"`
-	ProfileID pgtype.UUID `json:"profile_id"`
-	Country   string      `json:"country"`
-	City      *string     `json:"city"`
-	Status    *string     `json:"status"`
-	Year      *int32      `json:"year"`
+	TenantID    pgtype.UUID `json:"tenant_id"`
+	ProfileID   pgtype.UUID `json:"profile_id"`
+	Country     string      `json:"country"`
+	CountryCode *string     `json:"country_code"`
+	City        *string     `json:"city"`
+	Status      *string     `json:"status"`
+	Year        *int32      `json:"year"`
+}
+
+type CreateProfessionalRelocationRow struct {
+	ID          pgtype.UUID        `json:"id"`
+	TenantID    pgtype.UUID        `json:"tenant_id"`
+	ProfileID   pgtype.UUID        `json:"profile_id"`
+	Country     string             `json:"country"`
+	CountryCode *string            `json:"country_code"`
+	City        *string            `json:"city"`
+	Status      string             `json:"status"`
+	Year        *int32             `json:"year"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
 }
 
 // Professional Profile extras — relocations, documents, and verifiers.
@@ -84,21 +98,23 @@ type CreateProfessionalRelocationParams struct {
 // =====================
 // Relocations
 // =====================
-func (q *Queries) CreateProfessionalRelocation(ctx context.Context, arg CreateProfessionalRelocationParams) (ProfessionalRelocation, error) {
+func (q *Queries) CreateProfessionalRelocation(ctx context.Context, arg CreateProfessionalRelocationParams) (CreateProfessionalRelocationRow, error) {
 	row := q.db.QueryRow(ctx, createProfessionalRelocation,
 		arg.TenantID,
 		arg.ProfileID,
 		arg.Country,
+		arg.CountryCode,
 		arg.City,
 		arg.Status,
 		arg.Year,
 	)
-	var i ProfessionalRelocation
+	var i CreateProfessionalRelocationRow
 	err := row.Scan(
 		&i.ID,
 		&i.TenantID,
 		&i.ProfileID,
 		&i.Country,
+		&i.CountryCode,
 		&i.City,
 		&i.Status,
 		&i.Year,
@@ -231,7 +247,7 @@ func (q *Queries) GetProfessionalDocumentByID(ctx context.Context, arg GetProfes
 }
 
 const getProfessionalRelocationByID = `-- name: GetProfessionalRelocationByID :one
-SELECT id, tenant_id, profile_id, country, city, status, year, created_at, updated_at
+SELECT id, tenant_id, profile_id, country, country_code, city, status, year, created_at, updated_at
 FROM professional_relocations
 WHERE id = $1 AND tenant_id = $2
 `
@@ -241,14 +257,28 @@ type GetProfessionalRelocationByIDParams struct {
 	TenantID pgtype.UUID `json:"tenant_id"`
 }
 
-func (q *Queries) GetProfessionalRelocationByID(ctx context.Context, arg GetProfessionalRelocationByIDParams) (ProfessionalRelocation, error) {
+type GetProfessionalRelocationByIDRow struct {
+	ID          pgtype.UUID        `json:"id"`
+	TenantID    pgtype.UUID        `json:"tenant_id"`
+	ProfileID   pgtype.UUID        `json:"profile_id"`
+	Country     string             `json:"country"`
+	CountryCode *string            `json:"country_code"`
+	City        *string            `json:"city"`
+	Status      string             `json:"status"`
+	Year        *int32             `json:"year"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) GetProfessionalRelocationByID(ctx context.Context, arg GetProfessionalRelocationByIDParams) (GetProfessionalRelocationByIDRow, error) {
 	row := q.db.QueryRow(ctx, getProfessionalRelocationByID, arg.ID, arg.TenantID)
-	var i ProfessionalRelocation
+	var i GetProfessionalRelocationByIDRow
 	err := row.Scan(
 		&i.ID,
 		&i.TenantID,
 		&i.ProfileID,
 		&i.Country,
+		&i.CountryCode,
 		&i.City,
 		&i.Status,
 		&i.Year,
@@ -337,7 +367,7 @@ func (q *Queries) ListProfessionalDocumentsByProfile(ctx context.Context, arg Li
 }
 
 const listProfessionalRelocationsByProfile = `-- name: ListProfessionalRelocationsByProfile :many
-SELECT id, tenant_id, profile_id, country, city, status, year, created_at, updated_at
+SELECT id, tenant_id, profile_id, country, country_code, city, status, year, created_at, updated_at
 FROM professional_relocations
 WHERE profile_id = $1 AND tenant_id = $2
 ORDER BY created_at DESC
@@ -351,7 +381,20 @@ type ListProfessionalRelocationsByProfileParams struct {
 	PageLimit  int32       `json:"page_limit"`
 }
 
-func (q *Queries) ListProfessionalRelocationsByProfile(ctx context.Context, arg ListProfessionalRelocationsByProfileParams) ([]ProfessionalRelocation, error) {
+type ListProfessionalRelocationsByProfileRow struct {
+	ID          pgtype.UUID        `json:"id"`
+	TenantID    pgtype.UUID        `json:"tenant_id"`
+	ProfileID   pgtype.UUID        `json:"profile_id"`
+	Country     string             `json:"country"`
+	CountryCode *string            `json:"country_code"`
+	City        *string            `json:"city"`
+	Status      string             `json:"status"`
+	Year        *int32             `json:"year"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) ListProfessionalRelocationsByProfile(ctx context.Context, arg ListProfessionalRelocationsByProfileParams) ([]ListProfessionalRelocationsByProfileRow, error) {
 	rows, err := q.db.Query(ctx, listProfessionalRelocationsByProfile,
 		arg.ProfileID,
 		arg.TenantID,
@@ -362,14 +405,15 @@ func (q *Queries) ListProfessionalRelocationsByProfile(ctx context.Context, arg 
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ProfessionalRelocation
+	var items []ListProfessionalRelocationsByProfileRow
 	for rows.Next() {
-		var i ProfessionalRelocation
+		var i ListProfessionalRelocationsByProfileRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.TenantID,
 			&i.ProfileID,
 			&i.Country,
+			&i.CountryCode,
 			&i.City,
 			&i.Status,
 			&i.Year,
@@ -499,39 +543,56 @@ func (q *Queries) UpdateProfessionalDocument(ctx context.Context, arg UpdateProf
 const updateProfessionalRelocation = `-- name: UpdateProfessionalRelocation :one
 UPDATE professional_relocations
 SET country = COALESCE($1, country),
-    city = COALESCE($2, city),
-    status = COALESCE($3, status),
-    year = COALESCE($4, year),
+    country_code = COALESCE($2, country_code),
+    city = COALESCE($3, city),
+    status = COALESCE($4, status),
+    year = COALESCE($5, year),
     updated_at = now()
-WHERE id = $5 AND tenant_id = $6
-RETURNING id, tenant_id, profile_id, country, city, status, year, created_at, updated_at
+WHERE id = $6 AND tenant_id = $7
+RETURNING id, tenant_id, profile_id, country, country_code, city, status, year, created_at, updated_at
 `
 
 type UpdateProfessionalRelocationParams struct {
-	Country  *string     `json:"country"`
-	City     *string     `json:"city"`
-	Status   *string     `json:"status"`
-	Year     *int32      `json:"year"`
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
+	Country     *string     `json:"country"`
+	CountryCode *string     `json:"country_code"`
+	City        *string     `json:"city"`
+	Status      *string     `json:"status"`
+	Year        *int32      `json:"year"`
+	ID          pgtype.UUID `json:"id"`
+	TenantID    pgtype.UUID `json:"tenant_id"`
+}
+
+type UpdateProfessionalRelocationRow struct {
+	ID          pgtype.UUID        `json:"id"`
+	TenantID    pgtype.UUID        `json:"tenant_id"`
+	ProfileID   pgtype.UUID        `json:"profile_id"`
+	Country     string             `json:"country"`
+	CountryCode *string            `json:"country_code"`
+	City        *string            `json:"city"`
+	Status      string             `json:"status"`
+	Year        *int32             `json:"year"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
 }
 
 // PATCH semantics: omitted fields fall back to their existing values via COALESCE.
-func (q *Queries) UpdateProfessionalRelocation(ctx context.Context, arg UpdateProfessionalRelocationParams) (ProfessionalRelocation, error) {
+func (q *Queries) UpdateProfessionalRelocation(ctx context.Context, arg UpdateProfessionalRelocationParams) (UpdateProfessionalRelocationRow, error) {
 	row := q.db.QueryRow(ctx, updateProfessionalRelocation,
 		arg.Country,
+		arg.CountryCode,
 		arg.City,
 		arg.Status,
 		arg.Year,
 		arg.ID,
 		arg.TenantID,
 	)
-	var i ProfessionalRelocation
+	var i UpdateProfessionalRelocationRow
 	err := row.Scan(
 		&i.ID,
 		&i.TenantID,
 		&i.ProfileID,
 		&i.Country,
+		&i.CountryCode,
 		&i.City,
 		&i.Status,
 		&i.Year,

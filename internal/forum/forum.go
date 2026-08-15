@@ -97,6 +97,7 @@ type Service struct {
 	valkey      valkeycompat.Cmdable
 	asynq       *asynq.Client
 	notifier    NotificationDispatcher
+	amaQuestions AMAQuestionHandler
 
 	// BUG-020: in-memory JSON-LD cache for solved threads.
 	jsonLDCache sync.Map
@@ -181,6 +182,19 @@ type NotificationDispatcher interface {
 // notifications (BUG-013, Section 35). Optional — when nil, notifications are
 // skipped.
 func (s *Service) SetNotificationDispatcher(n NotificationDispatcher) { s.notifier = n }
+
+// AMAQuestionHandler is the subset of the AMA service the forum needs to
+// enforce §88 question_approval_required. When a reply is created on an AMA
+// thread with question_approval_required = true and the reply author is not
+// the host, the forum service calls MarkPending to hold the question for
+// host approval.
+type AMAQuestionHandler interface {
+	MarkReplyPending(ctx context.Context, replyID, tenantID pgtype.UUID) error
+}
+
+// SetAMAQuestionHandler injects the AMA question-approval hook (§88).
+// Optional — when nil, question_approval_required is not enforced.
+func (s *Service) SetAMAQuestionHandler(h AMAQuestionHandler) { s.amaQuestions = h }
 
 // emitWebhook fires a forum.* event fire-and-forget (Rule 8). Errors are
 // never returned to the caller; a missing emitter is a no-op.

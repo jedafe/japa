@@ -6,6 +6,7 @@ import { error, redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiGet, apiList } from '$lib/server/api';
 import type {
+	GeoCountry,
 	ProfessionalProfile,
 	ProfessionalProfileMember,
 	ProfessionalProfileInvitation,
@@ -30,12 +31,14 @@ export const load: PageServerLoad = async (event) => {
 		throw error(status, { code, message: 'Profile not found' });
 	}
 
-	const [membersRes, invitationsRes, relocationsRes, documentsRes, verifiersRes] = await Promise.all([
+	const [membersRes, invitationsRes, relocationsRes, documentsRes, verifiersRes, countriesRes] = await Promise.all([
 		apiList<ProfessionalProfileMember>(ctx, `/profiles/${id}/members`).catch(() => ({ items: [] as ProfessionalProfileMember[] })),
 		apiList<ProfessionalProfileInvitation>(ctx, `/profiles/${id}/invitations`).catch(() => ({ items: [] as ProfessionalProfileInvitation[] })),
 		apiList<ProfessionalRelocation>(ctx, `/profiles/${id}/relocations`).catch(() => ({ items: [] as ProfessionalRelocation[] })),
 		apiList<ProfessionalDocument>(ctx, `/profiles/${id}/documents`).catch(() => ({ items: [] as ProfessionalDocument[] })),
-		apiList<ProfessionalVerifier>(ctx, `/profiles/${id}/verifiers`).catch(() => ({ items: [] as ProfessionalVerifier[] }))
+		apiList<ProfessionalVerifier>(ctx, `/profiles/${id}/verifiers`).catch(() => ({ items: [] as ProfessionalVerifier[] })),
+		// Country list from the spaces country table (Rule 16).
+		apiList<GeoCountry>(ctx, '/geo/countries').catch(() => ({ items: [] as GeoCountry[] }))
 	]);
 
 	return {
@@ -44,6 +47,7 @@ export const load: PageServerLoad = async (event) => {
 		invitations: invitationsRes.items,
 		relocations: relocationsRes.items,
 		documents: documentsRes.items,
-		verifiers: verifiersRes.items
+		verifiers: verifiersRes.items,
+		countries: countriesRes.items
 	};
 };

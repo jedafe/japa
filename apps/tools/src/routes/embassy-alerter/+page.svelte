@@ -47,6 +47,11 @@
 	let editVisaCategory = $state('');
 	let editChannels = $state<string[]>([]);
 
+	// Premium-tier detection (§91, ADR-099): the SMS notification channel is
+	// only available to premium users (holding appointment_alert.premium).
+	// The backend rejects sms for non-premium users with 403 sms_premium_only.
+	const canUseSMS = $derived(!!user?.permissions?.includes('appointment_alert.premium'));
+
 	const seo = $derived(
 		buildSeoMeta({
 			title: t('embassy_alerter.seo_title', 'Embassy Appointment Alerter — JapaConnect Tools'),
@@ -158,11 +163,11 @@
 	function statusBadgeClass(status: string): string {
 		switch (status) {
 			case 'active':
-				return 'bg-green-100 text-green-700';
+				return 'bg-success/10 text-success';
 			case 'fired':
-				return 'bg-blue-100 text-blue-700';
+				return 'bg-primary/10 text-primary';
 			case 'expired':
-				return 'bg-gray-100 text-gray-500';
+				return 'bg-surface-subtle text-muted';
 			default:
 				return 'bg-surface-subtle text-muted';
 		}
@@ -383,6 +388,17 @@
 														/>
 														{t('embassy_alerter.push', 'Push')}
 													</label>
+													{#if canUseSMS}
+														<label class="flex items-center gap-1 text-text">
+															<input
+																type="checkbox"
+																checked={editChannels.includes('sms')}
+																onchange={() => (editChannels = toggleChannel(editChannels, 'sms'))}
+																class="accent-[var(--tool-accent)]"
+															/>
+															{t('embassy_alerter.sms', 'SMS')}
+														</label>
+													{/if}
 												</div>
 												<div class="flex gap-2">
 													<button
@@ -415,7 +431,7 @@
 														<p class="text-xs text-muted">{alert.visa_category}</p>
 													{/if}
 													{#if alert.fired_at}
-														<p class="text-xs text-blue-600 mt-1">
+														<p class="text-xs text-primary mt-1">
 															{t('embassy_alerter.fired_at', 'Fired')}: {formatDateTime(alert.fired_at)}
 														</p>
 													{/if}
@@ -435,7 +451,7 @@
 													</button>
 													<button
 														onclick={() => deleteAlert(alert.id)}
-														class="p-1.5 text-muted hover:text-red-500 transition-colors"
+														class="p-1.5 text-muted hover:text-danger transition-colors"
 														aria-label={t('embassy_alerter.delete_alert', 'Delete alert')}
 													>
 														<Icon name="trash-2" size={14} />
@@ -548,6 +564,18 @@
 									/>
 									{t('embassy_alerter.push', 'Push')}
 								</label>
+								{#if canUseSMS}
+									<label class="flex items-center gap-2 text-sm text-text">
+										<input
+											type="checkbox"
+											checked={alertChannels.includes('sms')}
+											onchange={() => (alertChannels = toggleChannel(alertChannels, 'sms'))}
+											class="accent-[var(--tool-accent)]"
+										/>
+										{t('embassy_alerter.sms', 'SMS')}
+										<span class="text-xs text-muted">({t('embassy_alerter.premium', 'premium')})</span>
+									</label>
+								{/if}
 							</div>
 						</div>
 						<button

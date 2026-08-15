@@ -474,7 +474,7 @@ func (h *AgentHTTPHandlers) HandleCancelSession(w http.ResponseWriter, r *http.R
 	// iteration check. The key already exists (set to "running" by the
 	// agent loop); overwrite it with "cancelled".
 	if h.cache != nil {
-		key := valkey.MustKey("agent:session:%s", sessionID.String())
+		key := valkey.MustKey("agent:session:%s:%s", tenantID.String(), sessionID.String())
 		if err := h.cache.Set(r.Context(), key, "cancelled", int(agentSessionStateTTL.Seconds())); err != nil {
 			slog.Warn("ai: failed to set cancel flag", "error", err)
 			// Non-fatal — the DB update below still marks the session.

@@ -244,7 +244,9 @@ WHERE %s
 }
 
 // GetPathwayByID returns a single attestation pathway by its id, joining
-// spaces for the issuing and destination jurisdictions.
+// spaces for the issuing and destination jurisdictions. Returns any status
+// (used by admin handlers). Public handlers must use GetPublishedPathwayByID
+// to avoid leaking draft/ai_draft/pending/rejected pathways (BUG-001).
 func (s *Store) GetPathwayByID(ctx context.Context, id, tenantID pgtype.UUID) (PathwayRow, error) {
 	const q = `
 SELECT p.id, p.tenant_id, p.document_type, p.issuing_space_id, p.destination_space_id,
@@ -275,6 +277,44 @@ LIMIT 1
 			return PathwayRow{}, pgx.ErrNoRows
 		}
 		return PathwayRow{}, fmt.Errorf("attestationguide: get pathway by id: %w", err)
+	}
+	return r, nil
+}
+
+// GetPublishedPathwayByID returns a single PUBLISHED, ACTIVE attestation
+// pathway by its id. Used by public handlers (HandleGet, HandleExportPDF,
+// SubmitCommunityUpdate) to prevent leaking draft/ai_draft/pending/rejected
+// pathways to anonymous users (BUG-001).
+func (s *Store) GetPublishedPathwayByID(ctx context.Context, id, tenantID pgtype.UUID) (PathwayRow, error) {
+	const q = `
+SELECT p.id, p.tenant_id, p.document_type, p.issuing_space_id, p.destination_space_id,
+       p.apostille_required, p.pathway_steps, p.community_last_verified, p.status,
+       p.is_active, p.ai_generated, p.ai_model, p.ai_prompt_hash,
+       p.hitl_reviewed_by, p.hitl_reviewed_at, p.hitl_review_notes,
+       p.is_japabot_indexed, p.created_at, p.updated_at,
+       iss.name AS issuing_space_name, iss.geo_code AS issuing_space_code,
+       ds.name AS dest_space_name, ds.geo_code AS dest_space_code
+FROM attestation_pathways p
+LEFT JOIN spaces iss ON iss.id = p.issuing_space_id
+LEFT JOIN spaces ds ON ds.id = p.destination_space_id
+WHERE p.id = $1 AND p.tenant_id = $2 AND p.status = 'published' AND p.is_active = true
+LIMIT 1
+`
+	var r PathwayRow
+	err := s.pool.Reader.QueryRow(ctx, q, id, tenantID).Scan(
+		&r.ID, &r.TenantID, &r.DocumentType, &r.IssuingSpaceID, &r.DestinationSpaceID,
+		&r.ApostilleRequired, &r.PathwaySteps, &r.CommunityLastVerified, &r.Status,
+		&r.IsActive, &r.AIGenerated, &r.AIModel, &r.AIPromptHash,
+		&r.HITLReviewedBy, &r.HITLReviewedAt, &r.HITLReviewNotes,
+		&r.IsJapabotIndexed, &r.CreatedAt, &r.UpdatedAt,
+		&r.IssuingSpaceName, &r.IssuingSpaceCode,
+		&r.DestSpaceName, &r.DestSpaceCode,
+	)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return PathwayRow{}, pgx.ErrNoRows
+		}
+		return PathwayRow{}, fmt.Errorf("attestationguide: get published pathway by id: %w", err)
 	}
 	return r, nil
 }
@@ -600,8 +640,22 @@ type AdminListFilter struct {
 	DocumentType       string      // optional
 	DestinationSpaceID pgtype.UUID // optional
 	IsActive           *bool       // optional
+	Search             string      // optional — q param (BUG-004)
+	SortBy             string      // optional — column key (BUG-004)
+	SortDir            string      // optional — "asc" | "desc" (BUG-004)
 	Limit              int32
 	Offset             int32
+}
+
+// adminSortColumn maps a frontend column key to a qualified SQL column.
+// Only whitelisted columns are accepted to prevent SQL injection (BUG-004).
+var adminSortColumns = map[string]string{
+	"document_type":         "p.document_type",
+	"issuing_space_name":    "iss.name",
+	"destination_space_name": "ds.name",
+	"status":                "p.status",
+	"updated_at":            "p.updated_at",
+	"created_at":            "p.created_at",
 }
 
 // AdminList returns all attestation pathways (any status) for the
@@ -637,8 +691,25 @@ func (s *Store) AdminList(ctx context.Context, f AdminListFilter) ([]PathwayRow,
 		args = append(args, *f.IsActive)
 		argIdx++
 	}
+	// BUG-004: search (q) — case-insensitive ILIKE on document_type.
+	if f.Search != "" {
+		conditions = append(conditions, fmt.Sprintf("p.document_type ILIKE $%d", argIdx))
+		args = append(args, "%"+f.Search+"%")
+		argIdx++
+	}
 
 	whereClause := strings.Join(conditions, " AND ")
+
+	// BUG-004: sort — whitelist column + direction to prevent SQL injection.
+	orderCol := "p.created_at"
+	if col, ok := adminSortColumns[f.SortBy]; ok {
+		orderCol = col
+	}
+	orderDir := "DESC"
+	if strings.ToLower(f.SortDir) == "asc" {
+		orderDir = "ASC"
+	}
+	orderByClause := fmt.Sprintf("ORDER BY %s %s", orderCol, orderDir)
 
 	limit := f.Limit
 	if limit <= 0 {
@@ -664,9 +735,9 @@ FROM attestation_pathways p
 LEFT JOIN spaces iss ON iss.id = p.issuing_space_id
 LEFT JOIN spaces ds ON ds.id = p.destination_space_id
 WHERE %s
-ORDER BY p.created_at DESC
+%s
 LIMIT $%d OFFSET $%d
-`, whereClause, argIdx, argIdx+1)
+`, whereClause, orderByClause, argIdx, argIdx+1)
 	args = append(args, limit, offset)
 
 	rows, err := s.pool.Reader.Query(ctx, listQuery, args...)

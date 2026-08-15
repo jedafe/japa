@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sort"
 	"strings"
 	"time"
 
@@ -515,6 +516,20 @@ type UpdateAdNetworkInput struct {
 // validProviders is the set of allowed ad network provider values.
 var validProviders = map[string]bool{
 	"adsense": true, "ezoic": true, "media_net": true, "custom": true,
+}
+
+// ListAdNetworkProviders returns the sorted list of allowed ad network
+// provider values. Exposed via GET /admin/ads/networks/providers so the
+// admin frontend can populate the provider <select> from the backend
+// instead of hardcoding the list (Rule 16).
+// Ref: japaconnect-engineering/sections/25-ad-placement.md (Ad Networks)
+func (s *Service) ListAdNetworkProviders() []string {
+	providers := make([]string, 0, len(validProviders))
+	for p := range validProviders {
+		providers = append(providers, p)
+	}
+	sort.Strings(providers)
+	return providers
 }
 
 // maskAPIKey returns a masked representation of an API key for display:

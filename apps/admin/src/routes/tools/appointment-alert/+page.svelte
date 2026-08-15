@@ -97,13 +97,16 @@ onMount(async () => {
 	} catch { /* Non-fatal */ }
 });
 
-		const filters = $derived<FilterDef[]>([
+		// Status filter: the backend handler reads ?active= (boolean), not
+	// ?status=. Sending ?status=active was silently ignored (§3 contract
+	// drift). Use the boolean param the handler expects (§91).
+	const filters = $derived<FilterDef[]>([
 		{
-			key: 'status',
+			key: 'active',
 			label: t('app.tools.col_status', 'Status'),
 			options: [
-				{ value: 'active', label: 'Active' },
-				{ value: 'inactive', label: 'Inactive' }
+				{ value: 'true', label: 'Active' },
+				{ value: 'false', label: 'Inactive' }
 			]
 		},
 		{

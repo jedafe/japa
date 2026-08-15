@@ -16,6 +16,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/valkey"
 )
 
 // validOrgTypes is the allow-list enforced by the organizations.org_type
@@ -170,6 +171,17 @@ func (s *Service) CreateOrganization(ctx context.Context, tenantID, userID pgtyp
 	}
 
 	s.InvalidateOrgCache(ctx, tenantID)
+
+	// ADR-064a: The org's country_code is sourced from the spaces country
+	// table, so it is a geo-aware signal. Feed it into the user's
+	// destination_country custom field so the geo-aware personalization
+	// system picks it up. Non-fatal — org creation succeeds regardless.
+	if input.CountryCode != "" {
+		if err := s.setDestinationCountry(ctx, tenantID, userID, input.CountryCode); err != nil {
+			slog.Warn("organizations: failed to set destination_country from org creation", "error", err)
+		}
+	}
+
 	return org, nil
 }
 
@@ -264,6 +276,16 @@ func (s *Service) UpdateOrganization(ctx context.Context, id, tenantID, userID p
 		return err
 	}
 	s.InvalidateOrgCache(ctx, tenantID)
+
+	// ADR-064a: Feed the updated country_code into the user's
+	// destination_country custom field (geo-aware personalization).
+	// Non-fatal — the org update succeeds regardless.
+	if input.CountryCode != "" {
+		if err := s.setDestinationCountry(ctx, tenantID, userID, input.CountryCode); err != nil {
+			slog.Warn("organizations: failed to set destination_country from org update", "error", err)
+		}
+	}
+
 	return nil
 }
 
@@ -940,4 +962,50 @@ func (s *Service) AdminListMembers(ctx context.Context, orgID, tenantID pgtype.U
 // Tenant-scoped for defense-in-depth (BUG-005).
 func (s *Service) AdminListInvitations(ctx context.Context, orgID, tenantID pgtype.UUID) ([]gen.OrganizationInvitation, error) {
 	return s.store.ListInvitations(ctx, orgID, tenantID)
+}
+
+// setDestinationCountry saves the given ISO 3166-1 alpha-2 code as the
+// `destination_country` custom field on the user's profile (ADR-064a). Since
+// the org's country_code is sourced from the spaces country table, it is a
+// geo-aware signal — creating or editing an org in a country means the user
+// is operationally tied to that country, so we feed it into the geo-aware
+// personalization system. Mirrors users.Store.setGeoCustomField.
+func (s *Service) setDestinationCountry(ctx context.Context, tenantID, userID pgtype.UUID, geoCode string) error {
+	code := strings.ToUpper(strings.TrimSpace(geoCode))
+	if code == "" {
+		return nil
+	}
+
+	field, err := s.store.read.GetCustomFieldByKey(ctx, gen.GetCustomFieldByKeyParams{
+		Key:      "destination_country",
+		TenantID: tenantID,
+	})
+	if err != nil {
+		return fmt.Errorf("looking up destination_country custom field: %w", err)
+	}
+
+	profileID, err := s.store.read.GetUserProfileID(ctx, gen.GetUserProfileIDParams{
+		TenantID: tenantID, UserID: userID,
+	})
+	if err != nil {
+		return fmt.Errorf("getting user profile id: %w", err)
+	}
+
+	if _, err := s.store.write.UpsertCustomFieldValue(ctx, gen.UpsertCustomFieldValueParams{
+		FieldID:    field.ID,
+		EntityType: "user_profile",
+		EntityID:   profileID,
+		ValueText:  &code,
+	}); err != nil {
+		return fmt.Errorf("upserting destination_country custom field value: %w", err)
+	}
+
+	// ADR-064a: Invalidate the VisitorContext cache so the next request
+	// picks up the new destination_country resolution.
+	if s.vk != nil {
+		_ = s.vk.Del(ctx, valkey.MustKey("visitor:ctx:user:%s", userID.String())).Err()
+		_ = s.vk.Del(ctx, valkey.MustKey("recommendations:user:%s", userID.String())).Err()
+	}
+
+	return nil
 }

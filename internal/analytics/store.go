@@ -2,6 +2,7 @@ package analytics
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -39,11 +40,22 @@ func (s *Store) CreatePlatformEvent(ctx context.Context, p gen.CreatePlatformEve
 }
 
 // ListPlatformEvents returns events matching the given filters.
+// BUG-001 fix: pass filter.UserID as a parsed UUID so the admin event list
+// can actually be filtered by user. A zero/empty UserID produces a zero
+// UUID which the SQL treats as "no user filter" (the $3 = zero-uuid OR
+// branch).
 func (s *Store) ListPlatformEvents(ctx context.Context, tenantID pgtype.UUID, filter EventFilter) ([]gen.ListPlatformEventsRow, error) {
+	var userID pgtype.UUID
+	if filter.UserID != "" {
+		if err := userID.Scan(filter.UserID); err != nil {
+			return nil, fmt.Errorf("invalid user_id filter: %w", err)
+		}
+	}
+
 	return s.read.ListPlatformEvents(ctx, gen.ListPlatformEventsParams{
 		TenantID: tenantID,
 		Column2:  filter.EventType,
-		Column3:  pgtype.UUID{Bytes: [16]byte{}, Valid: true}, // zero UUID = no user filter
+		Column3:  userID,
 		Column4:  filter.EntityType,
 		Column5:  nullableTimestamptz(filter.StartDate),
 		Column6:  nullableTimestamptz(filter.EndDate),

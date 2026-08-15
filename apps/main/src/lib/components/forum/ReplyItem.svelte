@@ -25,6 +25,11 @@
 		/** Optional set of erased user UUIDs for GDPR/ADR-029 mention
 		 * redaction (Section 15). Passed down from the thread page. */
 		deletedUserIds?: Set<string>;
+		/** §88 AMA: the host's user ID. When set and this reply's author
+		 * matches, the reply is highlighted as a host answer. */
+		hostUserId?: string;
+		/** §88 AMA: whether the current viewer is the host (for approve UI). */
+		isHost?: boolean;
 	}
 	let {
 		reply,
@@ -34,7 +39,9 @@
 		authed,
 		canSolve,
 		isAccepted,
-		deletedUserIds
+		deletedUserIds,
+		hostUserId,
+		isHost
 	}: Props = $props();
 
 	const MAX_DEPTH = 6;
@@ -51,6 +58,23 @@
 			: reply.author_display_name || reply.author_username || t('forum.member', 'Member')
 	);
 	const beyondMaxDepth = $derived(depth >= MAX_DEPTH);
+
+	// §88 AMA: is this reply from the AMA host? When true, highlight it.
+	const isHostReply = $derived(!!hostUserId && reply.author_user_id === hostUserId);
+
+	// §88 AMA: is this a pending question awaiting host approval?
+	const isPending = $derived(!!reply.ama_pending);
+
+	let approving = $state(false);
+
+	// §88: host approves a pending question via POST /forum/ama/:id/questions/:replyId/approve
+	async function approveQuestion() {
+		if (approving) return;
+		approving = true;
+		await api.post(`/forum/ama/${threadId}/questions/${reply.id}/approve`, {});
+		approving = false;
+		reply.ama_pending = false;
+	}
 
 	let collapsed = $state(false);
 	let composing = $state(false);
@@ -76,7 +100,7 @@
 	}
 </script>
 
-<div class="flex gap-3" class:pl-1={depth > 0}>
+<div class={`flex gap-3 ${isHostReply ? 'rounded-[var(--radius-card)] border border-[var(--color-primary)]/30 bg-[var(--color-primary)]/[0.03] p-3' : ''}`} class:pl-1={depth > 0 && !isHostReply}>
 	<!-- Vote rail (vertical) -->
 	<VoteRail
 		entityType="reply"
@@ -93,6 +117,20 @@
 					class="inline-flex items-center gap-0.5 rounded-full bg-[var(--color-success)]/10 px-1.5 py-0.5 font-semibold text-[var(--color-success)]"
 				>
 					<CheckCircle2 size={11} /> {t('forum.accepted', 'Accepted')}
+				</span>
+			{/if}
+			{#if isHostReply}
+				<span
+					class="inline-flex items-center gap-0.5 rounded-full bg-[var(--color-primary)]/10 px-1.5 py-0.5 font-semibold text-[var(--color-primary)]"
+				>
+					{t('ama.host_badge', 'Host')}
+				</span>
+			{/if}
+			{#if isPending}
+				<span
+					class="inline-flex items-center gap-0.5 rounded-full bg-amber-500/10 px-1.5 py-0.5 font-semibold text-amber-600"
+				>
+					{t('ama.pending', 'Pending')}
 				</span>
 			{/if}
 			<span class="font-medium text-[var(--color-text-subtle)]">{authorLabel}</span>
@@ -115,6 +153,16 @@
 						class="inline-flex items-center gap-1 transition-colors hover:text-[var(--color-text)]"
 					>
 						<CornerUpLeft size={12} /> {t('forum.reply', 'Reply')}
+					</button>
+				{/if}
+				{#if isPending && isHost}
+					<button
+						type="button"
+						onclick={approveQuestion}
+						disabled={approving}
+						class="inline-flex items-center gap-1 font-medium text-[var(--color-primary)] transition-colors hover:text-[var(--color-primary-hover)] disabled:opacity-50"
+					>
+						<CheckCircle2 size={12} /> {approving ? t('common.loading', 'Loading') : t('ama.approve', 'Approve')}
 					</button>
 				{/if}
 				{#if allChildren.length > 0}
@@ -167,6 +215,8 @@
 							{canSolve}
 							isAccepted={false}
 							{deletedUserIds}
+							{hostUserId}
+							{isHost}
 						/>
 					{/each}
 				</div>

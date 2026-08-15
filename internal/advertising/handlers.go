@@ -1213,6 +1213,19 @@ func (h *Handlers) DeleteAdNetwork(w http.ResponseWriter, r *http.Request) {
 // Ad Network Config — public endpoint (no api_key exposed)
 // ---------------------------------------------------------------------------
 
+// ListAdNetworkProviders returns the set of allowed ad network provider values.
+// Ref: japaconnect-engineering/sections/25-ad-placement.md (Ad Networks)
+// Exposed so the admin frontend can populate the provider <select> from the
+// backend instead of hardcoding the list (Rule 16).
+// GET /admin/ads/networks/providers
+func (h *Handlers) ListAdNetworkProviders(w http.ResponseWriter, r *http.Request) {
+	if _, ok := h.requireUser(w, r); !ok {
+		return
+	}
+	providers := h.Service.ListAdNetworkProviders()
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": providers})
+}
+
 // GetAdNetworkConfig returns active ad networks for public consumption (no api_key exposed).
 func (h *Handlers) GetAdNetworkConfig(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()

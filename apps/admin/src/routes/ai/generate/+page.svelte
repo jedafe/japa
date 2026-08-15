@@ -4,6 +4,7 @@
 	import { Loader2, Copy, Check, Sparkles, RotateCcw, Send, ChevronDown, ChevronUp, Clock, Zap, Trash2, AlertTriangle } from 'lucide-svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { Select } from '$lib/components/ui/select';
+	import Autocomplete, { type AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
 
 	const canGenerate = $derived(hasPermission('ai.generate'));
 
@@ -81,6 +82,48 @@
 			}
 		})();
 	});
+
+	// ─── Autocomplete fetchers (client-side filter over cached lists) ───
+	// The /ai/categories and /admin/ai/models endpoints return full lists
+	// without server-side search, so we fetch once (above) and filter
+	// client-side in the fetcher — the same pattern SpaceAutocomplete uses.
+	function categoryFetcher(q: string): Promise<AutocompleteItem[]> {
+		const ql = q.trim().toLowerCase();
+		const items = categories.map((c) => ({
+			id: c.value,
+			label: t(c.labelKey),
+			sublabel: c.desc
+		}));
+		const filtered = ql
+			? items.filter((i) => i.label.toLowerCase().includes(ql) || i.id.toLowerCase().includes(ql))
+			: items;
+		return Promise.resolve(filtered.slice(0, 50));
+	}
+
+	function categoryInitialFetcher(): Promise<AutocompleteItem[]> {
+		return Promise.resolve(
+			categories.map((c) => ({ id: c.value, label: t(c.labelKey), sublabel: c.desc })).slice(0, 50)
+		);
+	}
+
+	function modelFetcher(q: string): Promise<AutocompleteItem[]> {
+		const ql = q.trim().toLowerCase();
+		const items = models.map((m) => ({ id: m.value, label: m.label }));
+		const filtered = ql
+			? items.filter((i) => i.label.toLowerCase().includes(ql) || i.id.toLowerCase().includes(ql))
+			: items;
+		return Promise.resolve(filtered.slice(0, 50));
+	}
+
+	function modelInitialFetcher(): Promise<AutocompleteItem[]> {
+		return Promise.resolve(models.map((m) => ({ id: m.value, label: m.label })).slice(0, 50));
+	}
+
+	// Selected labels for the Autocomplete chip display.
+	let categoryLabel = $derived(
+		categories.find((c) => c.value === category) ? t(categories.find((c) => c.value === category)!.labelKey) : category
+	);
+	let modelLabel = $derived(models.find((m) => m.value === model)?.label ?? '');
 
 	let charCount = $derived(prompt.length);
 
@@ -207,9 +250,16 @@
 								{t('ai.categories_load_failed', 'Failed to load categories. Please retry.')}
 							</p>
 						{:else}
-							<Select
-								options={categories.map(c => ({ value: c.value, label: t(c.labelKey) }))}
-								bind:value={category}
+							<Autocomplete
+								id="gen-category"
+								placeholder={t('ai.category_search', 'Search category...')}
+								emptyMessage={t('ai.no_categories', 'No categories found')}
+								fetcher={categoryFetcher}
+								initialFetcher={categoryInitialFetcher}
+								selectedId={category}
+								selectedLabel={categoryLabel}
+								onSelect={(item) => (category = item.id)}
+								onClear={() => (category = 'blog_post')}
 							/>
 							<p class="mt-1 text-xs" style="color: var(--color-muted)">
 								{categories.find(c => c.value === category)?.desc}
@@ -218,7 +268,17 @@
 					</div>
 					<div>
 						<label for="gen-model" class="mb-1 block text-sm font-medium">{t('ai.model_optional')}</label>
-						<Select options={models} bind:value={model} />
+						<Autocomplete
+							id="gen-model"
+							placeholder={t('ai.model_search', 'Search model...')}
+							emptyMessage={t('ai.no_models', 'No models found')}
+							fetcher={modelFetcher}
+							initialFetcher={modelInitialFetcher}
+							selectedId={model}
+							selectedLabel={modelLabel}
+							onSelect={(item) => (model = item.id)}
+							onClear={() => (model = '')}
+						/>
 					</div>
 				</div>
 

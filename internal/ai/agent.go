@@ -308,7 +308,7 @@ func (h *AgentHandler) HandleAgentRequest(ctx context.Context, userID, tenantID 
 	}
 
 	// --- Set session state in Valkey for cancellation checks ---
-	h.setSessionState(ctx, session.ID)
+	h.setSessionState(ctx, tenantID, session.ID)
 
 	// --- Phase 8: resolve the draft-request context (Content Request Flow).
 	// When pre-search = NONE and the user has agent.draft_request but not
@@ -477,8 +477,8 @@ func (h *AgentHandler) runLoop(
 	)
 
 	for iteration := 0; iteration < maxToolCalls; iteration++ {
-		// Check for user-initiated cancellation (jc:agent:session:{id} = "cancelled").
-		if h.isCancelled(loopCtx, session.ID) {
+		// Check for user-initiated cancellation (jc:agent:session:{tenant_id}:{id} = "cancelled").
+		if h.isCancelled(loopCtx, tenantID, session.ID) {
 			cancelled = true
 			break
 		}
@@ -923,25 +923,27 @@ func (h *AgentHandler) cancelSession(ctx context.Context, session gen.AiAgentSes
 }
 
 // setSessionState writes the session state to Valkey for cancellation
-// checks. The key jc:agent:session:{session_id} is set to "running" with a
-// 5-minute TTL. The cancel endpoint (Phase 6) sets it to "cancelled".
-func (h *AgentHandler) setSessionState(ctx context.Context, sessionID pgtype.UUID) {
+// checks. The key jc:agent:session:{tenant_id}:{session_id} is set to
+// "running" with a 5-minute TTL. The cancel endpoint (Phase 6) sets it to
+// "cancelled". Tenant-scoping prevents cross-tenant session cancellation
+// (Rule 4 defense-in-depth, complementing the DB ownership check).
+func (h *AgentHandler) setSessionState(ctx context.Context, tenantID, sessionID pgtype.UUID) {
 	if h.cache == nil {
 		return
 	}
-	key := valkey.MustKey("agent:session:%s", sessionID.String())
+	key := valkey.MustKey("agent:session:%s:%s", tenantID.String(), sessionID.String())
 	if err := h.cache.Set(ctx, key, "running", int(agentSessionStateTTL.Seconds())); err != nil {
 		slog.Warn("ai: failed to set session state", "error", err)
 	}
 }
 
 // isCancelled checks whether the session has been cancelled via the
-// jc:agent:session:{session_id} Valkey key.
-func (h *AgentHandler) isCancelled(ctx context.Context, sessionID pgtype.UUID) bool {
+// jc:agent:session:{tenant_id}:{session_id} Valkey key.
+func (h *AgentHandler) isCancelled(ctx context.Context, tenantID, sessionID pgtype.UUID) bool {
 	if h.cache == nil {
 		return false
 	}
-	key := valkey.MustKey("agent:session:%s", sessionID.String())
+	key := valkey.MustKey("agent:session:%s:%s", tenantID.String(), sessionID.String())
 	val, err := h.cache.Get(ctx, key)
 	if err != nil {
 		return false

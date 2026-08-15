@@ -106,3 +106,27 @@ SET ama_config = jsonb_set(ama_config, '{closes_at}', to_jsonb(now()::timestampt
     updated_at = now()
 WHERE id = @id AND tenant_id = @tenant_id
   AND ama_config IS NOT NULL AND deleted_at IS NULL;
+
+-- =====================
+-- Question approval (§88 question_approval_required)
+-- =====================
+
+-- name: SetReplyAMAPending :exec
+-- Marks a forum reply as pending AMA host approval. Called by the forum
+-- service after CreateReply when the parent thread is an AMA with
+-- question_approval_required = true and the reply author is not the host.
+UPDATE forum_replies
+SET ama_pending = true
+WHERE id = @id AND tenant_id = @tenant_id;
+
+-- name: ApproveAMAQuestion :exec
+-- Approves a pending AMA question (host or forum.ama.moderate only).
+-- Sets ama_pending = false and records the approval timestamp.
+UPDATE forum_replies
+SET ama_pending     = false,
+    ama_approved_at = now()
+WHERE id = @reply_id
+  AND thread_id = @thread_id
+  AND tenant_id = @tenant_id
+  AND ama_pending = true
+  AND deleted_at IS NULL;

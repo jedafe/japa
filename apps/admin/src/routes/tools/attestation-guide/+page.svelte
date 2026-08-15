@@ -5,6 +5,7 @@
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import { Modal } from '$lib/components/ui/modal';
 	import { Button } from '$lib/components/ui/button';
+	import Autocomplete from '$lib/components/ui/Autocomplete.svelte';
 	import { attestationGuideAdminApi , spacesAdminApi } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
@@ -76,6 +77,10 @@ onMount(async () => {
 	// Community updates list state
 	let updates = $state<CommunityUpdateItem[]>([]);
 	let loadingUpdates = $state(false);
+	let updatesPage = $state(1);
+	let updatesTotal = $state(0);
+	let updatesPageSize = $state(25);
+	const updatesTotalPages = $derived(Math.max(1, Math.ceil(updatesTotal / updatesPageSize)));
 
 	async function approvePathway(item: PathwayItem) {
 		// ADR-088 HITL gate: AI-generated content cannot be approved without HITL review.
@@ -131,18 +136,24 @@ onMount(async () => {
 		}
 	}
 
-	async function loadUpdates() {
+	async function loadUpdates(page = 1) {
 		loadingUpdates = true;
+		updatesPage = page;
 		try {
-			const result = await attestationGuideAdminApi.listUpdates('?status=pending');
+			const result = await attestationGuideAdminApi.listUpdates(
+				`?status=pending&page_offset=${page}&page_size=${updatesPageSize}`
+			);
 			if (result.ok) {
-				const resp = result.data as { data?: CommunityUpdateItem[] } | undefined;
+				const resp = result.data as { data?: CommunityUpdateItem[]; pagination?: { total?: number } } | undefined;
 				updates = resp?.data ?? [];
+				updatesTotal = resp?.pagination?.total ?? updates.length;
 			} else {
 				updates = [];
+				updatesTotal = 0;
 			}
 		} catch {
 			updates = [];
+			updatesTotal = 0;
 		} finally {
 			loadingUpdates = false;
 		}
@@ -167,7 +178,7 @@ onMount(async () => {
 
 	function onTabChange(tab: 'pathways' | 'updates') {
 		activeTab = tab;
-		if (tab === 'updates') loadUpdates();
+		if (tab === 'updates') loadUpdates(1);
 	}
 
 	// ── Row actions ─────────────────────────────────────────────────────────
@@ -182,20 +193,34 @@ onMount(async () => {
 				onclick: approvePathway,
 				show: (row: PathwayItem) => row.status === 'ai_draft' || row.status === 'pending'
 			});
-			acts.push({
-				label: t('common.generate', 'Generate'),
-				icon: Sparkles,
-				onclick: openGenerate,
-				show: () => true
-			});
 		}
 		return acts;
 	});
 
+	// ── Country autocomplete helpers (filter destOptions client-side) ──────
+	// Sourced from the spaces country table (destOptions, loaded from
+	// /admin/spaces?level=country) — never hardcoded (Rule 16). Keyed by
+	// space ID so the selected UUID is stored as the field value.
+	function fetchCountryId(q: string): Promise<{ id: string; label: string; sublabel?: string }[]> {
+		const needle = q.toLowerCase().trim();
+		const filtered = needle
+			? destOptions.filter((o) => o.name.toLowerCase().includes(needle))
+			: destOptions;
+		return Promise.resolve(filtered.slice(0, 50).map((o) => ({ id: o.id, label: o.name })));
+	}
+
+	function fetchCountryIdInitial(): Promise<{ id: string; label: string; sublabel?: string }[]> {
+		return Promise.resolve(destOptions.slice(0, 8).map((o) => ({ id: o.id, label: o.name })));
+	}
+
+	function getCountryIdLabel(id: string): string {
+		return destOptions.find((o) => o.id === id)?.name ?? id;
+	}
+
 	const fields: FieldDef[] = [
 		{ key: 'document_type', label: t('common.doc_type', 'Document Type'), type: 'text' },
-		{ key: 'issuing_space_id', label: t('common.issuing_country', 'Issuing Country ID'), type: 'text' },
-		{ key: 'destination_space_id', label: t('common.dest_country', 'Destination Country ID'), type: 'text' },
+		{ key: 'issuing_space_id', label: t('common.issuing_country', 'Issuing Country'), type: 'autocomplete', placeholder: t('app.tools.country_placeholder', 'Search country…'), emptyMessage: t('common.no_results', 'No results found'), fetcher: fetchCountryId, initialFetcher: fetchCountryIdInitial, getSelectedLabel: getCountryIdLabel },
+		{ key: 'destination_space_id', label: t('common.dest_country', 'Destination Country'), type: 'autocomplete', placeholder: t('app.tools.country_placeholder', 'Search country…'), emptyMessage: t('common.no_results', 'No results found'), fetcher: fetchCountryId, initialFetcher: fetchCountryIdInitial, getSelectedLabel: getCountryIdLabel },
 		{ key: 'apostille_required', label: t('common.apostille', 'Apostille Required'), type: 'checkbox' },
 		{ key: 'pathway_steps', label: t('common.pathway_steps', 'Pathway Steps (JSON)'), type: 'textarea' }
 	];
@@ -249,6 +274,12 @@ onMount(async () => {
 			if (params.page) queryParts.push(`page_offset=${params.page}`);
 			if (params.pageSize) queryParts.push(`page_size=${params.pageSize}`);
 			if (params.q) queryParts.push(`q=${encodeURIComponent(params.q)}`);
+			// EntityPage passes sort as "key:dir" (e.g. "document_type:asc").
+			if (params.sort) {
+				const [sortKey, sortDir] = params.sort.split(':');
+				if (sortKey) queryParts.push(`sort=${encodeURIComponent(sortKey)}`);
+				if (sortDir) queryParts.push(`dir=${encodeURIComponent(sortDir)}`);
+			}
 			if (params.filter?.dest) queryParts.push(`dest=${encodeURIComponent(params.filter.dest)}`);
 			const queryString = queryParts.length > 0 ? `?${queryParts.join('&')}` : '';
 			const result = await attestationGuideAdminApi.list(queryString);
@@ -301,6 +332,14 @@ onMount(async () => {
 </div>
 
 {#if activeTab === 'pathways'}
+	{#if canManage}
+		<div class="mb-4 flex justify-end">
+			<Button onclick={openGenerate}>
+				<Sparkles size={16} class="mr-1.5" />
+				{t('common.generate', 'Generate')}
+			</Button>
+		</div>
+	{/if}
 	<EntityPage {config} bind:controller={entityController} />
 {:else}
 	<div class="space-y-3">
@@ -348,6 +387,30 @@ onMount(async () => {
 				</div>
 			{/each}
 		{/if}
+		<!-- Pagination controls (BUG-005) -->
+		{#if updatesTotalPages > 1}
+			<div class="mt-4 flex items-center justify-between">
+				<p class="text-xs" style="color: var(--color-muted)">
+					{t('common.page', 'Page')} {updatesPage} / {updatesTotalPages}
+				</p>
+				<div class="flex gap-2">
+					<Button
+						variant="ghost"
+						onclick={() => loadUpdates(updatesPage - 1)}
+						disabled={updatesPage <= 1 || loadingUpdates}
+					>
+						{t('common.prev', 'Previous')}
+					</Button>
+					<Button
+						variant="ghost"
+						onclick={() => loadUpdates(updatesPage + 1)}
+						disabled={updatesPage >= updatesTotalPages || loadingUpdates}
+					>
+						{t('common.next', 'Next')}
+					</Button>
+				</div>
+			</div>
+		{/if}
 	</div>
 {/if}
 
@@ -366,25 +429,31 @@ onMount(async () => {
 			/>
 		</div>
 		<div>
-			<label for="gen-issuing" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('common.issuing_country', 'Issuing Country (Space ID)')}</label>
-			<input
+			<label for="gen-issuing" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('common.issuing_country', 'Issuing Country')}</label>
+			<Autocomplete
 				id="gen-issuing"
-				type="text"
-				class="w-full rounded-lg border p-3 text-sm"
-				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
-				bind:value={generateIssuingId}
-				placeholder="UUID of the issuing country space"
+				placeholder={t('app.tools.country_placeholder', 'Search country…')}
+				emptyMessage={t('common.no_results', 'No results found')}
+				fetcher={fetchCountryId}
+				initialFetcher={fetchCountryIdInitial}
+				selectedId={generateIssuingId || null}
+				selectedLabel={generateIssuingId ? getCountryIdLabel(generateIssuingId) : null}
+				onSelect={(item) => { generateIssuingId = item.id; }}
+				onClear={() => { generateIssuingId = ''; }}
 			/>
 		</div>
 		<div>
-			<label for="gen-dest" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('common.dest_country', 'Destination Country (Space ID)')}</label>
-			<input
+			<label for="gen-dest" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('common.dest_country', 'Destination Country')}</label>
+			<Autocomplete
 				id="gen-dest"
-				type="text"
-				class="w-full rounded-lg border p-3 text-sm"
-				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
-				bind:value={generateDestId}
-				placeholder="UUID of the destination country space"
+				placeholder={t('app.tools.country_placeholder', 'Search country…')}
+				emptyMessage={t('common.no_results', 'No results found')}
+				fetcher={fetchCountryId}
+				initialFetcher={fetchCountryIdInitial}
+				selectedId={generateDestId || null}
+				selectedLabel={generateDestId ? getCountryIdLabel(generateDestId) : null}
+				onSelect={(item) => { generateDestId = item.id; }}
+				onClear={() => { generateDestId = ''; }}
 			/>
 		</div>
 		<div>

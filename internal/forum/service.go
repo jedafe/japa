@@ -265,6 +265,25 @@ func (s *Service) CreateReply(ctx context.Context, tenantID, threadID, authorUse
 		return gen.ForumReply{}, fmt.Errorf("creating forum reply: %w", err)
 	}
 
+	// Load the parent thread once for both the AMA question-approval check
+	// and the reply notification (§88 / §35).
+	thread, threadErr := s.store.getThreadByID(ctx, threadID, tenantID)
+
+	// §88 question_approval_required: if the parent thread is an AMA with
+	// question_approval_required = true and the reply author is not the
+	// host, mark the reply as pending host approval (BUG-003).
+	amaPending := false
+	if threadErr == nil && s.amaQuestions != nil && thread.AmaConfig != nil {
+		if thread.AuthorUserID != authorUserID && amaRequiresApproval(thread.AmaConfig) {
+			if markErr := s.amaQuestions.MarkReplyPending(ctx, reply.ID, tenantID); markErr != nil {
+				slog.Warn("ama: failed to mark reply pending", "reply_id", reply.ID, "error", markErr)
+			} else {
+				amaPending = true
+				reply.AmaPending = true
+			}
+		}
+	}
+
 	// Increment the parent thread's reply count.
 	if err := s.store.incrementReplyCount(ctx, threadID, tenantID, 1); err != nil {
 		// Log but don't fail the reply creation.
@@ -277,26 +296,28 @@ func (s *Service) CreateReply(ctx context.Context, tenantID, threadID, authorUse
 
 	// BUG-013: Notify the thread author about the reply (fire-and-forget, Rule 8).
 	// Don't notify if the reply author is the thread author.
-	if s.notifier != nil {
-		thread, threadErr := s.store.getThreadByID(ctx, threadID, tenantID)
-		if threadErr == nil && thread.AuthorUserID != authorUserID {
-			go func() { // #nosec G118 -- fire-and-forget: request ctx is cancelled on HTTP return (Rule 8)
-				notifyCtx := context.Background()
-				subjectTitle := thread.Title
-				subjectType := "forum_thread"
-				subjectID := threadID
-				actorName := ""
-				actorAvatar := ""
-				subjectURL := fmt.Sprintf("/forum/threads/%s", threadID)
-				_ = s.notifier.DispatchNotification(
-					notifyCtx, tenantID, thread.AuthorUserID,
-					"forum_reply", subjectTitle,
-					authorUserID,
-					subjectType, subjectID,
-					subjectURL, actorName, actorAvatar,
-				)
-			}()
+	if s.notifier != nil && threadErr == nil && thread.AuthorUserID != authorUserID {
+		notifyType := "forum_reply"
+		if amaPending {
+			// §88: host notified when questions queue up.
+			notifyType = "ama_question_pending"
 		}
+		go func() { // #nosec G118 -- fire-and-forget: request ctx is cancelled on HTTP return (Rule 8)
+			notifyCtx := context.Background()
+			subjectTitle := thread.Title
+			subjectType := "forum_thread"
+			subjectID := threadID
+			actorName := ""
+			actorAvatar := ""
+			subjectURL := fmt.Sprintf("/forum/threads/%s", threadID)
+			_ = s.notifier.DispatchNotification(
+				notifyCtx, tenantID, thread.AuthorUserID,
+				notifyType, subjectTitle,
+				authorUserID,
+				subjectType, subjectID,
+				subjectURL, actorName, actorAvatar,
+			)
+		}()
 	}
 
 	// BUG-011/012: Enqueue fan-out tasks for activity feed and search indexing
@@ -625,6 +646,19 @@ func (s *Service) GetTopReplyForThread(ctx context.Context, threadID, tenantID p
 // ListThreadsByTenantWithDetails returns paginated threads with author + space.
 func (s *Service) ListThreadsByTenantWithDetails(ctx context.Context, tenantID pgtype.UUID, cursorCreatedAt pgtype.Timestamptz, limit int32) ([]gen.ListForumThreadsByTenantWithDetailsRow, error) {
 	return s.store.listThreadsByTenantWithDetails(ctx, tenantID, cursorCreatedAt, limit)
+}
+
+// amaRequiresApproval parses an ama_config JSONB blob and returns true if
+// question_approval_required is set to true (§88). Returns false on any
+// parse error — fail-open to avoid blocking replies on malformed config.
+func amaRequiresApproval(amaConfig []byte) bool {
+	var cfg struct {
+		QuestionApprovalRequired *bool `json:"question_approval_required"`
+	}
+	if err := json.Unmarshal(amaConfig, &cfg); err != nil {
+		return false
+	}
+	return cfg.QuestionApprovalRequired != nil && *cfg.QuestionApprovalRequired
 }
 
 // ListThreadsBySpaceWithDetails returns paginated threads for a space with author + space.

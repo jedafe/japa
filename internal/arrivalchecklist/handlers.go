@@ -80,12 +80,12 @@ func parsePageParams(r *http.Request) (page, limit int32) {
 	page = 1
 	limit = 20
 	if v := r.URL.Query().Get("page"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+		if n, err := strconv.ParseInt(v, 10, 32); err == nil && n > 0 {
 			page = int32(n)
 		}
 	}
 	if v := r.URL.Query().Get("limit"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 100 {
+		if n, err := strconv.ParseInt(v, 10, 32); err == nil && n > 0 && n <= 100 {
 			limit = int32(n)
 		}
 	}
@@ -520,6 +520,11 @@ func (h *Handlers) HandleAdminUpdate(w http.ResponseWriter, r *http.Request) {
 
 	guide, err := h.service.UpdateGuide(r.Context(), id, tenantID, input)
 	if err != nil {
+		if errors.Is(err, ErrPublishViaUpdate) {
+			errpkg.WriteError(w, http.StatusBadRequest, "publish_via_update_blocked",
+				"Use the approve endpoint to publish a guide (HITL review required)")
+			return
+		}
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "guide_not_found", "Arrival checklist guide not found")
 			return

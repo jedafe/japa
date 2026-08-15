@@ -167,11 +167,30 @@ onMount(async () => {
 		return acts;
 	});
 
+	// ── Country autocomplete helpers (filter destOptions client-side) ──────
+	// Sourced from the spaces country table (destOptions, loaded from
+	// /admin/spaces?level=country) — never hardcoded (Rule 16).
+	function fetchDestName(q: string): Promise<{ id: string; label: string; sublabel?: string }[]> {
+		const needle = q.toLowerCase().trim();
+		const filtered = needle
+			? destOptions.filter((o) => o.name.toLowerCase().includes(needle))
+			: destOptions;
+		return Promise.resolve(filtered.slice(0, 50).map((o) => ({ id: o.name, label: o.name })));
+	}
+
+	function fetchDestNameInitial(): Promise<{ id: string; label: string; sublabel?: string }[]> {
+		return Promise.resolve(destOptions.slice(0, 8).map((o) => ({ id: o.name, label: o.name })));
+	}
+
+	function getDestNameLabel(id: string): string {
+		return destOptions.find((o) => o.name === id)?.name ?? id;
+	}
+
 	const fields: FieldDef[] = [
 		{ key: 'name', label: t('common.name', 'Name'), type: 'text' },
 		{ key: 'org_type', label: t('common.type', 'Type'), type: 'text' },
 		{ key: 'origin_community', label: t('common.origin', 'Origin'), type: 'text' },
-		{ key: 'destination_space_name', label: t('common.country', 'Country'), type: 'text' },
+		{ key: 'destination_space_name', label: t('common.country', 'Country'), type: 'autocomplete', placeholder: t('app.tools.country_placeholder', 'Search country…'), emptyMessage: t('common.no_results', 'No results found'), fetcher: fetchDestName, initialFetcher: fetchDestNameInitial, getSelectedLabel: getDestNameLabel },
 		{ key: 'address', label: t('common.address', 'Address'), type: 'textarea' },
 		{ key: 'website_url', label: t('common.website', 'Website'), type: 'url' },
 		{ key: 'contact_info', label: t('common.contact', 'Contact'), type: 'text' },

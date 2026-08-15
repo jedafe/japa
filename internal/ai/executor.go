@@ -157,6 +157,7 @@ type toolEntry struct {
 type loadedTool struct {
 	config             ToolConfig
 	requiredPermission string // from ai_tools.required_permission; empty = no permission gate
+	toolID             pgtype.UUID // from ai_tools.id; used for ai_tool_usage tracking (§20)
 }
 
 // NewToolHandlerRegistry creates an empty registry.
@@ -195,11 +196,12 @@ func (r *ToolHandlerRegistry) RegisterPrivacyTarget(functionName string, fn Priv
 
 // RegisterConfig records the parsed config + required_permission for a tool
 // loaded from the ai_tools table. Called by LoadFromDB for each enabled row.
-func (r *ToolHandlerRegistry) RegisterConfig(functionName string, cfg ToolConfig, requiredPermission string) {
+// The toolID is the ai_tools.id UUID, used for ai_tool_usage tracking (§20).
+func (r *ToolHandlerRegistry) RegisterConfig(functionName string, cfg ToolConfig, requiredPermission string, toolID pgtype.UUID) {
 	if r == nil {
 		return
 	}
-	r.configs[functionName] = loadedTool{config: cfg, requiredPermission: requiredPermission}
+	r.configs[functionName] = loadedTool{config: cfg, requiredPermission: requiredPermission, toolID: toolID}
 }
 
 // LoadFromDB loads enabled ai_tools rows for the tenant, parses each row's
@@ -245,7 +247,7 @@ func (r *ToolHandlerRegistry) LoadFromDB(ctx context.Context, registry *ToolRegi
 			requiredPerm = *t.RequiredPermission
 		}
 
-		r.RegisterConfig(functionName, cfg, requiredPerm)
+		r.RegisterConfig(functionName, cfg, requiredPerm, t.ID)
 	}
 
 	return nil
@@ -743,6 +745,19 @@ func (e *Executor) finalizeToolCall(ctx context.Context, p ExecuteParams, call T
 
 	if _, err := e.write.UpdateAgentToolCallResult(logCtx, updateParams); err != nil {
 		slog.Warn("ai: failed to update ai_agent_tool_calls result", "tool", call.Name, "error", err)
+	}
+
+	// Record ai_tool_usage for successful tool calls (§20 admin tool-usage
+	// monitoring). Only success and hitl_queued statuses represent a tool
+	// that actually ran — error/unauthorized/privacy_blocked are skipped.
+	// Fire-and-forget: a failure here is warned, never propagated.
+	if (status == ToolCallStatusSuccess || status == ToolCallStatusHITLQueued) && e.store != nil {
+		if lt, ok := e.registry.loadedConfig(call.Name); ok && lt.toolID.Valid {
+			userID := &p.UserID
+			if err := e.store.RecordToolUsage(logCtx, p.TenantID, lt.toolID, userID, 0, 0); err != nil {
+				slog.Warn("ai: failed to record ai_tool_usage", "tool", call.Name, "error", err)
+			}
+		}
 	}
 }
 

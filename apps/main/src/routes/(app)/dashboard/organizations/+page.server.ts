@@ -4,7 +4,7 @@
 import { redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiGet, apiList } from '$lib/server/api';
-import type { OrganizationAdmin, OrgMeta } from '$lib/types';
+import type { GeoCountry, OrganizationAdmin, OrgMeta } from '$lib/types';
 
 /** GET /me/organizations row — org + member_role. */
 export interface MyOrganizationRow extends OrganizationAdmin {
@@ -26,5 +26,14 @@ export const load: PageServerLoad = async (event) => {
 		// Non-fatal — the form falls back to hardcoded options.
 	}
 
-	return { organizations, orgMeta };
+	// Country list sourced from the spaces country table (/geo/countries)
+	// so the country_code picker is never hardcoded (Rule 16).
+	let countries: GeoCountry[] = [];
+	try {
+		countries = (await apiList<GeoCountry>(ctx, '/geo/countries')).items;
+	} catch {
+		countries = [];
+	}
+
+	return { organizations, orgMeta, countries };
 };
