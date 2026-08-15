@@ -1,3 +1,4 @@
+import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiList, ApiError } from '$lib/server/api';
 import type { AttestationPathwayWithAi, GeoSpaceOption } from '$lib/types';
@@ -20,6 +21,11 @@ import type { AttestationPathwayWithAi, GeoSpaceOption } from '$lib/types';
  * Ref: §97 (Attestation Guide), ROADMAP-TOOLS 02.06.
  */
 export const load: PageServerLoad = async (event) => {
+	const { features } = await event.parent();
+	if (!features['attestation_guide.enabled']) {
+		throw error(404, { code: 'feature_disabled', message: 'Attestation Guide is not available' });
+	}
+
 	const ctx = apiContext(event);
 	const authed = !!event.locals.user;
 

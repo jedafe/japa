@@ -346,8 +346,26 @@ func (h *Handlers) InitiatePayment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// BUG-P015: validate provider against the recognized enum so an invalid
+	// value gets a structured 400 instead of surfacing as a raw 500 from the
+	// DB CHECK constraint (migration 000211).
+	if !IsValidProvider(input.Provider) {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_provider",
+			fmt.Sprintf("provider must be one of: paystack, stripe, nowpayments, manual_transfer, credit (got %q)", input.Provider))
+		return
+	}
+
 	if input.PurposeType == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_purpose_type", "purpose_type is required")
+		return
+	}
+
+	// BUG-P015: validate purpose_type against the recognized enum so an
+	// invalid value gets a structured 400 instead of surfacing as a raw 500
+	// from the DB CHECK constraint (migration 000358).
+	if !IsValidPurposeType(input.PurposeType) {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_purpose_type",
+			fmt.Sprintf("purpose_type must be one of: pro_membership, org_boost, donation, course_access, credit_purchase, ad_slot, form_submission (got %q)", input.PurposeType))
 		return
 	}
 
@@ -622,32 +640,28 @@ func resolveNOWPaymentsStatus(event WebhookEvent) string {
 }
 
 // extractPaystackEventID extracts the event ID from a Paystack webhook payload.
-// Paystack events carry "event" (type) and an "id" or "reference" field.
+// Paystack events carry "event" (type) and a "data.reference" (transaction ref).
 //
 // The event ID is the dedup key for payment_webhook_events
 // (UNIQUE(provider, event_id)), so it MUST be unique per logical event.
 // Falling back to the bare event type (e.g. "charge.success") is unsafe —
 // every charge.success in the tenant would collide and the second payment
-// would be silently skipped (BUG-007). When no stable reference is present
-// we compose a deterministic ID from provider + provider_ref + event_type
-// so distinct payments never collide.
+// would be silently skipped (BUG-007). Returning the bare transaction
+// reference is equally unsafe — Paystack sends multiple event types for the
+// same transaction (charge.success then refund.processed), and they would
+// collide on the reference, silently dropping the refund event (BUG-P010).
+// We therefore compose the event ID from reference + event_type so distinct
+// events for the same transaction are processed independently while retries
+// of the same event are deduped.
 func extractPaystackEventID(payload map[string]interface{}) string {
-	// Paystack event ID is in data.reference or top-level id
-	if data, ok := payload["data"].(map[string]interface{}); ok {
-		if ref, ok := data["reference"].(string); ok && ref != "" {
-			return ref
-		}
-	}
-	if id, ok := payload["id"].(string); ok && id != "" {
-		return id
-	}
-	// Deterministic composite fallback: provider_ref + event_type. This
-	// keeps distinct payments separate while still deduping retries of the
-	// same event for the same payment.
 	ev, _ := payload["event"].(string)
 	providerRef := extractPaystackProviderRef(payload)
 	if providerRef != "" && ev != "" {
 		return fmt.Sprintf("%s:%s", providerRef, ev)
+	}
+	// Fall back to top-level id if present (some Paystack event formats).
+	if id, ok := payload["id"].(string); ok && id != "" {
+		return id
 	}
 	return ""
 }
@@ -1808,27 +1822,47 @@ func (h *Handlers) AdminSetPlanTracks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	wr := gen.New(h.Service.db.Writer)
-	// Clear existing entries, then insert the new set.
-	if err := wr.RemoveAllTracksFromPlan(r.Context(), gen.RemoveAllTracksFromPlanParams{
+	// BUG-P016: wrap the clear + re-add in a single transaction so a failure
+	// mid-way doesn't leave the plan with a partial track list (some old
+	// tracks removed, some new tracks missing). The previous code issued
+	// RemoveAllTracksFromPlan + N x AddTrackToPlan as independent DB calls.
+	ctx := r.Context()
+	tx, err := h.Service.db.Writer.Begin(ctx)
+	if err != nil {
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to begin transaction")
+		return
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	qtx := gen.New(tx)
+	if err := qtx.RemoveAllTracksFromPlan(ctx, gen.RemoveAllTracksFromPlanParams{
 		PlanID:   planID,
 		TenantID: tenantID,
 	}); err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to clear plan tracks")
 		return
 	}
+	added := 0
 	for _, tidStr := range input.TrackIDs {
 		var tid pgtype.UUID
 		if err := tid.Scan(tidStr); err != nil {
 			continue // skip invalid IDs
 		}
-		_ = wr.AddTrackToPlan(r.Context(), gen.AddTrackToPlanParams{
+		if err := qtx.AddTrackToPlan(ctx, gen.AddTrackToPlanParams{
 			PlanID:   planID,
 			TrackID:  tid,
 			TenantID: tenantID,
-		})
+		}); err != nil {
+			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to add track to plan")
+			return
+		}
+		added++
 	}
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]int{"count": len(input.TrackIDs)}})
+	if err := tx.Commit(ctx); err != nil {
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to commit plan tracks")
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]int{"count": added}})
 }
 
 // AdminAddTrackToPlan handles POST /api/v1/admin/plans/{id}/tracks/{trackId}.

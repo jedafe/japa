@@ -1,3 +1,4 @@
+import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiList, ApiError } from '$lib/server/api';
 import type {
@@ -22,6 +23,11 @@ import type {
  * Ref: §94 (Credential Checker), ROADMAP-TOOLS 02.06, ADR-088.
  */
 export const load: PageServerLoad = async (event) => {
+	const { features } = await event.parent();
+	if (!features['credential_checker.enabled']) {
+		throw error(404, { code: 'feature_disabled', message: 'Credential Checker is not available' });
+	}
+
 	const ctx = apiContext(event);
 	const authed = !!event.locals.user;
 

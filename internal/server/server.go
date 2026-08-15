@@ -1182,7 +1182,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	japaStageService := japastage.NewService(japaStageStore, settingsService).
 		WithNotifier(notificationService).
 		WithHoncho(honcho.NewClient(cfg.HonchoURL))
-	japaStageHandlers := japastage.NewHandlers(japaStageService, settingsService, asynqClient)
+	japaStageHandlers := japastage.NewHandlers(japaStageService, settingsService, asynqClient).WithRedis(vkClient.Redis())
 
 	// Ref: japaconnect-engineering/sections/88-ask-an-expat.md (ADR-096)
 	amaStore := ama.NewStore(database)
@@ -1349,6 +1349,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	// Page Builder subsystem (Section 16 — Page Builder admin CRUD).
 	pagebuilderService := pagebuilder.NewService(database)
+	pagebuilderService.SetRedis(vkClient.Redis())
 	pagebuilderHandlers := pagebuilder.NewHandlers(pagebuilderService)
 
 	// Widget configurations subsystem (Section 16 — data-source-driven dynamic
@@ -1484,6 +1485,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// created above.
 	spaceHandlers.SetRAGIndexer(ragService)
 	learningHandlers.SetRAGIndexer(ragService)
+	// BUG-002 (rag-audit): inject the settings reader so the spaces and
+	// learning handlers can resolve i18n.default_language for RAG indexing
+	// instead of hardcoding "en".
+	spaceHandlers.SetSettings(settingsService)
+	learningHandlers.SetSettings(settingsService)
 
 	// AI Agent Executor (Section 103, ADR-111) — Phase 6 wiring.
 	// The agent handler ties together the gateway function-calling extension
@@ -2916,6 +2922,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Wire RAG indexer so forum threads are embedded into
 			// content_embeddings (§69/ADR-069 BUG-001 fix).
 			forumHandlers.SetRAGIndexer(ragService)
+			// BUG-002 (rag-audit): inject the settings reader so the forum
+			// handler can resolve i18n.default_language for RAG indexing
+			// instead of hardcoding "en".
+			forumHandlers.SetSettings(settingsService)
 
 			r.With(features.Gate(featureChecker, "feature.forum")).Group(func(r chi.Router) {
 				// Thread routes
@@ -3173,6 +3183,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				// handler fetches by slug without needing a user context.
 				// Ref: sections/33-professional-profiles.md
 				r.With(auth.OptionalAuth(kr, vkClient.Redis())).Get("/profiles/{slug}", professionalHandlers.GetProfessionalProfile)
+				// GET /profiles/{id}/content — public content list for a profile;
+				// OptionalAuth so guests can browse a public profile's content
+				// (consistent with GetProfessionalProfile). Ref: sections/33-professional-profiles.md
+				r.With(auth.OptionalAuth(kr, vkClient.Redis())).Get("/profiles/{id}/content", professionalHandlers.ListProfileContent)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "professional_profile.edit_own")).
 					Patch("/profiles/{id}", professionalHandlers.UpdateProfessionalProfile)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "professional_profile.delete_own")).
@@ -3703,25 +3717,46 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				r.Use(publicapi.APIKeyMiddleware(publicAPIService))
 				r.Use(publicapi.SlidingWindowRateLimitWithSettings(vkClient.Redis(), settingsService))
 
-				r.Get("/public/content", publicAPIHandlers.ListContent)
-				r.Get("/public/content/{id}", publicAPIHandlers.GetContentByID)
-				r.Get("/public/content/{id}/comments", publicAPIHandlers.ListContentComments)
-				r.Get("/public/spaces", publicAPIHandlers.ListSpaces)
-				r.Get("/public/spaces/{slug}", publicAPIHandlers.GetSpaceBySlug)
-				r.Get("/public/tags", publicAPIHandlers.ListTags)
-				r.Get("/public/tags/{slug}", publicAPIHandlers.GetTagBySlug)
-				r.Get("/public/users", publicAPIHandlers.ListUsers)
-				r.Get("/public/users/{id}", publicAPIHandlers.GetUserByID)
-				r.Get("/public/search", publicAPIHandlers.SearchContent)
-				r.With(csrf.EnsureCookie(cfg.CookieDomain, cfg.IsProduction())).Get("/public/me", publicAPIHandlers.GetMyProfile)
+				// Scope enforcement (Section 47 lines 169-182, BUG-003 fix:
+				// RequireScope was defined but never wired — all public
+				// endpoints accepted any valid key regardless of scopes).
+				// Each endpoint requires its specific api.read.* scope. Keys
+				// with the default api.read.* scope pass all checks via
+				// wildcard matching in hasScope().
+				r.With(publicapi.RequireScope("api.read.content")).
+					Get("/public/content", publicAPIHandlers.ListContent)
+				r.With(publicapi.RequireScope("api.read.content")).
+					Get("/public/content/{id}", publicAPIHandlers.GetContentByID)
+				r.With(publicapi.RequireScope("api.read.content")).
+					Get("/public/content/{id}/comments", publicAPIHandlers.ListContentComments)
+				r.With(publicapi.RequireScope("api.read.spaces")).
+					Get("/public/spaces", publicAPIHandlers.ListSpaces)
+				r.With(publicapi.RequireScope("api.read.spaces")).
+					Get("/public/spaces/{slug}", publicAPIHandlers.GetSpaceBySlug)
+				r.With(publicapi.RequireScope("api.read.tags")).
+					Get("/public/tags", publicAPIHandlers.ListTags)
+				r.With(publicapi.RequireScope("api.read.tags")).
+					Get("/public/tags/{slug}", publicAPIHandlers.GetTagBySlug)
+				r.With(publicapi.RequireScope("api.read.users.public")).
+					Get("/public/users", publicAPIHandlers.ListUsers)
+				r.With(publicapi.RequireScope("api.read.users.public")).
+					Get("/public/users/{id}", publicAPIHandlers.GetUserByID)
+				r.With(publicapi.RequireScope("api.read.content")).
+					Get("/public/search", publicAPIHandlers.SearchContent)
+				r.With(publicapi.RequireScope("api.read.me"), csrf.EnsureCookie(cfg.CookieDomain, cfg.IsProduction())).
+					Get("/public/me", publicAPIHandlers.GetMyProfile)
 
 				// Trending endpoints (Section 47 — public read-only snapshots)
 				// Mounted under /public/trending/ to avoid chi radix-tree
 				// collision with the existing /trending/* routes (line ~2246).
-				r.Get("/public/trending/content", publicAPIHandlers.GetTrendingContentHandler)
-				r.Get("/public/trending/tags", publicAPIHandlers.GetTrendingTagsHandler)
-				r.Get("/public/trending/spaces", publicAPIHandlers.GetTrendingSpacesHandler)
-				r.Get("/public/trending/users", publicAPIHandlers.GetTrendingUsersHandler)
+				r.With(publicapi.RequireScope("api.read.content")).
+					Get("/public/trending/content", publicAPIHandlers.GetTrendingContentHandler)
+				r.With(publicapi.RequireScope("api.read.tags")).
+					Get("/public/trending/tags", publicAPIHandlers.GetTrendingTagsHandler)
+				r.With(publicapi.RequireScope("api.read.spaces")).
+					Get("/public/trending/spaces", publicAPIHandlers.GetTrendingSpacesHandler)
+				r.With(publicapi.RequireScope("api.read.users.public")).
+					Get("/public/trending/users", publicAPIHandlers.GetTrendingUsersHandler)
 			})
 
 			// User Profile & Preferences routes (catalog: /me, /me/profile)
@@ -4783,7 +4818,6 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Post("/admin/profiles/{id}/verify", professionalHandlers.VerifyProfile)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).
 				Delete("/admin/profiles/{id}/verify", professionalHandlers.UnverifyProfile)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/profiles/{id}/content", professionalHandlers.ListProfileContent)
 
 			// Task 14: Learning admin extras
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "learning.admin.manage")).
@@ -5123,25 +5157,28 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Get("/admin/analytics/export", advancedAnalyticsHandlers.HandleExport)
 
 			// Section 67 — Travel Search & Compare (ADR-085)
-			r.Get("/travel/search/flights", travelHandlers.HandleSearchFlights)
-			r.Get("/travel/search/hotels", travelHandlers.HandleSearchHotels)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "travel.manage")).
-				Get("/admin/travel/providers", travelHandlers.HandleAdminListProviders)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "travel.manage")).
-				Post("/admin/travel/providers", travelHandlers.HandleAdminCreateProvider)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "travel.manage")).
-				Patch("/admin/travel/providers/{id}", travelHandlers.HandleAdminUpdateProvider)
+			// Feature-flagged via features.Gate (returns 404 when disabled, ADR-042).
+			r.With(features.Gate(featureChecker, "travel.enabled")).Group(func(r chi.Router) {
+				r.Get("/travel/search/flights", travelHandlers.HandleSearchFlights)
+				r.Get("/travel/search/hotels", travelHandlers.HandleSearchHotels)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "travel.manage")).
+					Get("/admin/travel/providers", travelHandlers.HandleAdminListProviders)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "travel.manage")).
+					Post("/admin/travel/providers", travelHandlers.HandleAdminCreateProvider)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "travel.manage")).
+					Patch("/admin/travel/providers/{id}", travelHandlers.HandleAdminUpdateProvider)
+			})
 
 			// Section 68 — AI Persona System (ADR-068)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "persona.view")).
 				Get("/admin/personas", personasHandlers.HandleList)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "persona.manage")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "persona.manage"), mw.RateLimit(vkClient.Redis(), "mass_provision")).
 				Post("/admin/personas", personasHandlers.HandleCreate)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "persona.view")).
 				Get("/admin/personas/{id}", personasHandlers.HandleGet)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "persona.manage")).
 				Patch("/admin/personas/{id}", personasHandlers.HandleUpdate)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "persona.view")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "participation.view")).
 				Get("/admin/personas/{id}/activity", personasHandlers.HandleActivity)
 
 			// Section 75 — AI Content Studio (ADR-076)
@@ -5444,21 +5481,24 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// owner (enforced in the handler).
 			// Submit is rate-limited to 10 per user (or IP for anonymous) per hour,
 			// matching the §06 form_submission limiter (§23 — form-spam prevention).
-			r.Get("/assessment", assessmentHandlers.HandleGetAssessment)
-			r.With(auth.OptionalAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "form_submission")).
-				Post("/assessment/submit", assessmentHandlers.HandleSubmit)
-			r.Get("/assessment/result/by-submission/{submission_id}", assessmentHandlers.HandleGetResultBySubmission)
-			r.Get("/assessment/result/{id}", assessmentHandlers.HandleGetResult)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "assessment.take")).
-				Get("/assessment/history", assessmentHandlers.HandleHistory)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "assessment.manage")).
-				Get("/admin/assessment/form", assessmentHandlers.HandleAdminGetForm)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "assessment.manage")).
-				Patch("/admin/assessment/form", assessmentHandlers.HandleAdminUpdateForm)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "assessment.view_results")).
-				Get("/admin/assessment/results", assessmentHandlers.HandleAdminListResults)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "assessment.view_results")).
-				Get("/admin/assessment/stats", assessmentHandlers.HandleAdminStats)
+			// Feature-flagged via features.Gate (returns 404 when disabled, ADR-042).
+			r.With(features.Gate(featureChecker, "assessment.enabled")).Group(func(r chi.Router) {
+				r.Get("/assessment", assessmentHandlers.HandleGetAssessment)
+				r.With(auth.OptionalAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "form_submission")).
+					Post("/assessment/submit", assessmentHandlers.HandleSubmit)
+				r.Get("/assessment/result/by-submission/{submission_id}", assessmentHandlers.HandleGetResultBySubmission)
+				r.Get("/assessment/result/{id}", assessmentHandlers.HandleGetResult)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "assessment.take")).
+					Get("/assessment/history", assessmentHandlers.HandleHistory)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "assessment.manage")).
+					Get("/admin/assessment/form", assessmentHandlers.HandleAdminGetForm)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "assessment.manage")).
+					Patch("/admin/assessment/form", assessmentHandlers.HandleAdminUpdateForm)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "assessment.view_results")).
+					Get("/admin/assessment/results", assessmentHandlers.HandleAdminListResults)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "assessment.view_results")).
+					Get("/admin/assessment/stats", assessmentHandlers.HandleAdminStats)
+			})
 
 			// Section 72 — Cost of Living Calculator (ADR-072)
 			// Public browse routes use OptionalAuth + OptionalPermission so anonymous
@@ -5466,45 +5506,51 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// anonymous") while authed users whose roles have had col_calculator.use
 			// revoked are denied (403). This makes the seeded col_calculator.use node
 			// a real killswitch instead of dead — same pattern as scholarship.browse.
-			r.With(auth.OptionalAuth(kr, vkClient.Redis()), rbac.OptionalPermission(rbacResolver, "col_calculator.use")).
-				Get("/calculator/cost-of-living/cities", costOfLivingHandlers.HandleListCities)
-			r.With(auth.OptionalAuth(kr, vkClient.Redis()), rbac.OptionalPermission(rbacResolver, "col_calculator.use")).
-				Get("/calculator/cost-of-living/compare", costOfLivingHandlers.HandleCompare)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "col_calculator.manage")).
-				Get("/admin/calculator/cost-of-living/stats", costOfLivingHandlers.HandleAdminStats)
+			// Feature-flagged via features.Gate (returns 404 when disabled, ADR-042).
+			r.With(features.Gate(featureChecker, "col_calculator.enabled")).Group(func(r chi.Router) {
+				r.With(auth.OptionalAuth(kr, vkClient.Redis()), rbac.OptionalPermission(rbacResolver, "col_calculator.use")).
+					Get("/calculator/cost-of-living/cities", costOfLivingHandlers.HandleListCities)
+				r.With(auth.OptionalAuth(kr, vkClient.Redis()), rbac.OptionalPermission(rbacResolver, "col_calculator.use")).
+					Get("/calculator/cost-of-living/compare", costOfLivingHandlers.HandleCompare)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "col_calculator.manage")).
+					Get("/admin/calculator/cost-of-living/stats", costOfLivingHandlers.HandleAdminStats)
+			})
 
 			// Section 73 — Scholarship Finder (ADR-073)
 			// Browse routes use OptionalAuth + OptionalPermission so anonymous
 			// users can browse (ADR-073 §7) while authed users whose roles have
 			// had scholarship.browse revoked are denied (403). This makes the
 			// seeded scholarship.browse node a real killswitch instead of dead.
-			r.With(auth.OptionalAuth(kr, vkClient.Redis()), rbac.OptionalPermission(rbacResolver, "scholarship.browse")).
-				Get("/scholarships", scholarshipsHandlers.HandleFindScholarships)
-			r.With(auth.OptionalAuth(kr, vkClient.Redis()), rbac.OptionalPermission(rbacResolver, "scholarship.browse")).
-				Get("/scholarships/{id}", scholarshipsHandlers.HandleScholarshipDetail)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "scholarship.save")).
-				Get("/scholarships/saved", scholarshipsHandlers.HandleListSavedScholarships)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "scholarship.save")).
-				Post("/scholarships/{id}/save", scholarshipsHandlers.HandleSaveScholarship)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "scholarship.save")).
-				Patch("/scholarships/{id}/save", scholarshipsHandlers.HandleUpdateSavedScholarship)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "scholarship.save")).
-				Delete("/scholarships/{id}/save", scholarshipsHandlers.HandleDeleteSavedScholarship)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "scholarship.manage")).
-				Get("/admin/scholarships/stats", scholarshipsHandlers.HandleAdminStatusDistribution)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "scholarship.manage")).
-				Get("/admin/scholarships/deadlines", scholarshipsHandlers.HandleAdminUpcomingDeadlines)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "scholarship.manage")).
-				Get("/admin/scholarships/reminder-log", scholarshipsHandlers.HandleAdminReminderLog)
-			// Admin CRUD for scholarship records — scholarship.manage
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "scholarship.manage")).
-				Get("/admin/scholarships", scholarshipsHandlers.HandleAdminListScholarships)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "scholarship.manage")).
-				Post("/admin/scholarships", scholarshipsHandlers.HandleAdminCreateScholarship)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "scholarship.manage")).
-				Patch("/admin/scholarships/{id}", scholarshipsHandlers.HandleAdminUpdateScholarship)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "scholarship.manage")).
-				Delete("/admin/scholarships/{id}", scholarshipsHandlers.HandleAdminDeleteScholarship)
+			// Feature-flagged via features.Gate (returns 404 when disabled, ADR-042).
+			r.With(features.Gate(featureChecker, "scholarship_finder.enabled")).Group(func(r chi.Router) {
+				r.With(auth.OptionalAuth(kr, vkClient.Redis()), rbac.OptionalPermission(rbacResolver, "scholarship.browse")).
+					Get("/scholarships", scholarshipsHandlers.HandleFindScholarships)
+				r.With(auth.OptionalAuth(kr, vkClient.Redis()), rbac.OptionalPermission(rbacResolver, "scholarship.browse")).
+					Get("/scholarships/{id}", scholarshipsHandlers.HandleScholarshipDetail)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "scholarship.save")).
+					Get("/scholarships/saved", scholarshipsHandlers.HandleListSavedScholarships)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "scholarship.save")).
+					Post("/scholarships/{id}/save", scholarshipsHandlers.HandleSaveScholarship)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "scholarship.save")).
+					Patch("/scholarships/{id}/save", scholarshipsHandlers.HandleUpdateSavedScholarship)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "scholarship.save")).
+					Delete("/scholarships/{id}/save", scholarshipsHandlers.HandleDeleteSavedScholarship)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "scholarship.manage")).
+					Get("/admin/scholarships/stats", scholarshipsHandlers.HandleAdminStatusDistribution)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "scholarship.manage")).
+					Get("/admin/scholarships/deadlines", scholarshipsHandlers.HandleAdminUpcomingDeadlines)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "scholarship.manage")).
+					Get("/admin/scholarships/reminder-log", scholarshipsHandlers.HandleAdminReminderLog)
+				// Admin CRUD for scholarship records — scholarship.manage
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "scholarship.manage")).
+					Get("/admin/scholarships", scholarshipsHandlers.HandleAdminListScholarships)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "scholarship.manage")).
+					Post("/admin/scholarships", scholarshipsHandlers.HandleAdminCreateScholarship)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "scholarship.manage")).
+					Patch("/admin/scholarships/{id}", scholarshipsHandlers.HandleAdminUpdateScholarship)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "scholarship.manage")).
+					Delete("/admin/scholarships/{id}", scholarshipsHandlers.HandleAdminDeleteScholarship)
+			})
 
 			// Section INTEL — Intelligence System (radar + scholarships + sources)
 			// Radar feed + counts use OptionalAuth so anonymous users can
@@ -5586,29 +5632,32 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Patch("/intel/review/{record_id}/edit", intelHandlers.HandleReviewEdit)
 
 			// Section 74 — Remittance Rate Tracker (ADR-075)
-			r.Get("/remittance/rates", remittanceHandlers.HandleGetRates)
-			r.Get("/remittance/calculate", remittanceHandlers.HandleCalculate)
-			r.Get("/remittance/history", remittanceHandlers.HandleGetHistory)
-			r.Get("/remittance/providers", remittanceHandlers.HandleGetProviders)
-			r.Get("/remittance/corridors", remittanceHandlers.HandleGetCorridors)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "remittance.alert")).
-				Get("/remittance/alerts", remittanceHandlers.HandleListAlerts)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "remittance.alert")).
-				Post("/remittance/alerts", remittanceHandlers.HandleCreateAlert)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "remittance.alert")).
-				Patch("/remittance/alerts/{id}", remittanceHandlers.HandleUpdateAlert)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "remittance.alert")).
-				Delete("/remittance/alerts/{id}", remittanceHandlers.HandleDeleteAlert)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "remittance.manage")).
-				Get("/admin/remittance/providers", remittanceHandlers.HandleAdminListProviders)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "remittance.manage")).
-				Post("/admin/remittance/providers", remittanceHandlers.HandleAdminCreateProvider)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "remittance.manage")).
-				Patch("/admin/remittance/providers/{id}", remittanceHandlers.HandleAdminUpdateProvider)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "remittance.manage")).
-				Post("/admin/remittance/providers/{id}/rates", remittanceHandlers.HandleAdminInsertManualRate)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "remittance.fetch")).
-				Post("/admin/remittance/providers/{id}/fetch", remittanceHandlers.HandleAdminTriggerFetch)
+			// Feature-flagged via features.Gate (returns 404 when disabled, ADR-042).
+			r.With(features.Gate(featureChecker, "remittance.enabled")).Group(func(r chi.Router) {
+				r.Get("/remittance/rates", remittanceHandlers.HandleGetRates)
+				r.Get("/remittance/calculate", remittanceHandlers.HandleCalculate)
+				r.Get("/remittance/history", remittanceHandlers.HandleGetHistory)
+				r.Get("/remittance/providers", remittanceHandlers.HandleGetProviders)
+				r.Get("/remittance/corridors", remittanceHandlers.HandleGetCorridors)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "remittance.alert")).
+					Get("/remittance/alerts", remittanceHandlers.HandleListAlerts)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "remittance.alert")).
+					Post("/remittance/alerts", remittanceHandlers.HandleCreateAlert)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "remittance.alert")).
+					Patch("/remittance/alerts/{id}", remittanceHandlers.HandleUpdateAlert)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "remittance.alert")).
+					Delete("/remittance/alerts/{id}", remittanceHandlers.HandleDeleteAlert)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "remittance.manage")).
+					Get("/admin/remittance/providers", remittanceHandlers.HandleAdminListProviders)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "remittance.manage")).
+					Post("/admin/remittance/providers", remittanceHandlers.HandleAdminCreateProvider)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "remittance.manage")).
+					Patch("/admin/remittance/providers/{id}", remittanceHandlers.HandleAdminUpdateProvider)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "remittance.manage")).
+					Post("/admin/remittance/providers/{id}/rates", remittanceHandlers.HandleAdminInsertManualRate)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "remittance.fetch")).
+					Post("/admin/remittance/providers/{id}/fetch", remittanceHandlers.HandleAdminTriggerFetch)
+			})
 
 			// Phase 49 — V2 Functional Tools (§90–§97, §99–§101)
 			// Ref: japaconnect-engineering/sections/90-97,99-101
@@ -6056,11 +6105,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.Post("/oauth-clients/{id}/rotate-secret", controlHandlers.RotateOAuthClientSecret)
 			r.Get("/oauth-providers", controlHandlers.ListOAuthProviders)
 
-			// Extensions — super-admin CRUD (stored in system_settings as JSON)
+			// Extensions — super-admin CRUD (feature_flags is the single source of truth)
 			r.Get("/extensions", controlHandlers.ListExtensions)
 			r.Patch("/extensions/{key}", controlHandlers.UpdateExtension)
 			r.Post("/extensions/{key}/enable", controlHandlers.EnableExtension)
 			r.Post("/extensions/{key}/disable", controlHandlers.DisableExtension)
+			r.Patch("/extensions/{key}/rollout", controlHandlers.UpdateExtensionRollout)
 
 			// Backup Configs — super-admin CRUD
 			r.Get("/backup-configs", controlHandlers.ListBackupConfigs)

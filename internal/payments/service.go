@@ -295,7 +295,7 @@ func (s *Service) GetAdminPayment(ctx context.Context, id, tenantID pgtype.UUID)
 // credit").
 func (s *Service) ProcessWebhook(ctx context.Context, tenantID pgtype.UUID, provider string, event WebhookEvent, status string) error {
 	// Atomic insert-or-skip: if the event already exists (ON CONFLICT DO
-	// NOTHING), no rows are returned and we treat it as already processed.
+	// NOTHING), no rows are returned and we treat it as already recorded.
 	// This collapses the previous read-check + insert + mark into a single
 	// atomic step that is race-free under concurrent delivery.
 	inserted, err := s.store.insertWebhookEventIfNew(ctx, gen.InsertWebhookEventParams{
@@ -308,22 +308,26 @@ func (s *Service) ProcessWebhook(ctx context.Context, tenantID pgtype.UUID, prov
 	if err != nil {
 		return fmt.Errorf("recording webhook event: %w", err)
 	}
+
+	// If the event already existed, check whether it was already processed.
+	// If not (a prior enqueue failed — BUG-P011), re-enqueue the task. If
+	// already processed, skip — the worker already handled this event.
 	if !inserted {
-		// Event already recorded by a concurrent delivery — skip enqueue.
-		return nil
+		alreadyProcessed, err := s.store.isWebhookEventProcessed(ctx, tenantID, provider, event.EventID)
+		if err != nil {
+			return fmt.Errorf("checking webhook event processed: %w", err)
+		}
+		if alreadyProcessed {
+			return nil
+		}
+		// Event exists but was never processed — fall through to enqueue.
 	}
 
-	// Mark as processed BEFORE enqueuing the task (TX-004). The insert above
-	// already won the race, so the mark is safe.
-	if err := s.store.markWebhookEventProcessed(ctx, tenantID, provider, event.EventID); err != nil {
-		return fmt.Errorf("marking webhook event processed: %w", err)
-	}
-
-	// Enqueue async processing AFTER the event is marked processed — the worker
-	// handles payment status updates, subscription activation, wallet
-	// adjustments, and affiliate commission crediting. The provider_ref is
-	// passed so the worker can match the payment directly instead of scanning
-	// all pending payments (BUG-002 / BUG-019).
+	// Enqueue async processing BEFORE marking the event as processed
+	// (BUG-P011). The worker handles payment status updates, subscription
+	// activation, wallet adjustments, and affiliate commission crediting.
+	// The provider_ref is passed so the worker can match the payment directly
+	// instead of scanning all pending payments (BUG-002 / BUG-019).
 	if s.enqueuer != nil {
 		payload, _ := json.Marshal(map[string]string{
 			"event_id":     event.EventID,
@@ -332,15 +336,21 @@ func (s *Service) ProcessWebhook(ctx context.Context, tenantID pgtype.UUID, prov
 			"provider_ref": event.ProviderRef,
 			"provider":     provider,
 		})
-		// Return the error so the provider receives a 5xx and retries.
-		// The event is already recorded + marked in the DB; on retry the
-		// idempotency check sees it as processed and returns 200.
 		if err := s.enqueuer.Enqueue(worker.TypePaymentWebhookProcess, payload); err != nil {
 			slog.Error("payments: failed to enqueue webhook processing",
 				"event_id", event.EventID, "provider", provider, "error", err)
 			errpkg.CaptureException(fmt.Errorf("enqueue %s (event %s): %w", worker.TypePaymentWebhookProcess, event.EventID, err))
+			// Return the error so the provider receives a 5xx and retries.
+			// The event is NOT marked processed, so on retry we re-enqueue.
 			return fmt.Errorf("enqueue %s (event %s): %w", worker.TypePaymentWebhookProcess, event.EventID, err)
 		}
+	}
+
+	// Mark as processed AFTER successful enqueue (BUG-P011). If the enqueue
+	// failed above, the event stays unprocessed and the provider retry will
+	// re-enqueue via the !inserted + !alreadyProcessed path.
+	if err := s.store.markWebhookEventProcessed(ctx, tenantID, provider, event.EventID); err != nil {
+		return fmt.Errorf("marking webhook event processed: %w", err)
 	}
 
 	return nil

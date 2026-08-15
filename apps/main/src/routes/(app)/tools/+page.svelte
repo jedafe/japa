@@ -59,14 +59,14 @@
 		'/tools/community-locator': MapPin
 	};
 
-	// Data-driven: the tool list is filtered by each tool's {tool}.enabled
-	// system_setting toggle (read from the root layout's siteSettings). Disabled
-	// tools are hidden from the hub. Ref: conventions/system-settings-catalog.md.
-	const settings = $derived<Record<string, unknown>>(data.siteSettings ?? {});
+	// Data-driven: the tool list is filtered by each tool's feature flag
+	// (read from the root layout's /feature-flags fetch). Disabled tools
+	// are hidden from the hub. Ref: sections/42-feature-flags.md.
+	const features = $derived<Record<string, boolean>>(data.features ?? {});
 	const sections = $derived(
 		TOOL_SECTIONS.map((section) => ({
 			section,
-			tools: getEnabledToolsBySection(settings, section)
+			tools: getEnabledToolsBySection(features, section)
 		})).filter((s) => s.tools.length > 0)
 	);
 	const totalEnabled = $derived(sections.reduce((sum, s) => sum + s.tools.length, 0));

@@ -35,7 +35,8 @@ export interface ToolMeta {
 	accentHover: string;
 	/** system_settings key prefix for this tool's subdomain. */
 	settingsKey: string;
-	/** system_settings key that toggles the tool on/off (e.g. 'checklist.enabled'). */
+	/** Feature flag key that toggles the tool on/off (e.g. 'checklist.enabled').
+	 *  Read from the /feature-flags endpoint (data.features), NOT system_settings. */
 	enabledSetting: string;
 	/** SEO keywords for the tool page. */
 	keywords: string[];
@@ -145,7 +146,7 @@ export const TOOLS: ToolMeta[] = [
 		accent: '#8b5cf6',
 		accentHover: '#7c3aed',
 		settingsKey: 'japabot',
-		enabledSetting: 'ai.japabot_enabled',
+		enabledSetting: 'feature.japabot',
 		keywords: ['japabot', 'AI', 'chat', 'RAG', 'assistant', 'japa guide']
 	},
 	// --- V2 functional tools (§§90–97, §§99–101) — geo-aware tool pattern ---
@@ -349,24 +350,18 @@ export function getAllTools(): ToolMeta[] {
 }
 
 /**
- * Check whether a tool is enabled via its `system_settings` toggle
- * (e.g. `checklist.enabled`). Defaults to `true` when the setting is
- * absent — tools are opt-out, not opt-in.
+ * Check whether a tool is enabled via its feature flag. Reads from the
+ * /feature-flags map (data.features), NOT system_settings. Defaults to
+ * `false` when the flag is absent — unknown features default to disabled
+ * for safety, matching the backend features.DefaultFor behaviour.
  *
- * Ref: conventions/system-settings-catalog.md ({tool}.enabled keys),
- *      Rule 3 (config from system_settings, never hardcoded).
+ * Ref: sections/42-feature-flags.md
  */
-export function isToolEnabled(tool: ToolMeta, settings: Record<string, unknown>): boolean {
-	const value = settings[tool.enabledSetting];
-	// Booleans come through as-is; the backend stores these as bool settings.
-	// Absent or non-boolean values default to enabled (safe default).
-	if (typeof value === 'boolean') return value;
-	if (value === 'true') return true;
-	if (value === 'false') return false;
-	return true;
+export function isToolEnabled(tool: ToolMeta, features: Record<string, boolean>): boolean {
+	return features[tool.enabledSetting] === true;
 }
 
-/** Return only the enabled tools, given the current site settings. */
-export function getEnabledTools(settings: Record<string, unknown>): ToolMeta[] {
-	return TOOLS.filter((t) => isToolEnabled(t, settings));
+/** Return only the enabled tools, given the current feature flags. */
+export function getEnabledTools(features: Record<string, boolean>): ToolMeta[] {
+	return TOOLS.filter((t) => isToolEnabled(t, features));
 }

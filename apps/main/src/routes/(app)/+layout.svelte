@@ -28,8 +28,7 @@
 	);
 
 	// ADR-058 §5 Exception #3: guest landing page renders WITHOUT the app shell.
-	// This covers both the Page Builder landing and the default GuestLanding fallback.
-	const isGuestLanding = $derived(!!page.data.landing || !!page.data.guestLanding);
+	const isGuestLanding = $derived(!!page.data.landing);
 
 	// Settings hub: auto-collapse the left nav to give settings panels more
 	// room, but keep the right sidebar and let the user expand via the toggle.
@@ -119,11 +118,12 @@
 		rightSidebarWidgets={data.rightSidebarWidgets}
 		sidebar={routeSidebar ?? undefined}
 		composeEnabled={!exception && !!data.user}
+		features={data.features}
 	>
 		{@render children()}
 	</AppShell>
 	{#if !exception}
-		<MobileBottomTabBar user={data.user} />
+		<MobileBottomTabBar user={data.user} features={data.features} />
 	{/if}
 	{#if tourRequested && data.user}
 		<!-- Section 09 Product Tour: triggered after onboarding completion -->

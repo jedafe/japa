@@ -40,6 +40,7 @@ func (m mockSettings) GetIntOr(_ context.Context, _ pgtype.UUID, key string, fb 
 type mockTrending struct {
 	content []gen.GetTrendingContentRow
 	spaces  []gen.GetTrendingSpacesRow
+	levels  map[[16]byte]string
 	err     error
 }
 
@@ -49,6 +50,10 @@ func (m mockTrending) GetTrendingContent(context.Context, pgtype.UUID, string, s
 
 func (m mockTrending) GetTrendingSpaces(context.Context, pgtype.UUID, string, string, int32) ([]gen.GetTrendingSpacesRow, error) {
 	return m.spaces, m.err
+}
+
+func (m mockTrending) GetSpaceLevels(_ context.Context, _ pgtype.UUID, _ []pgtype.UUID) (map[[16]byte]string, error) {
+	return m.levels, nil
 }
 
 func validUUID() pgtype.UUID {

@@ -1,3 +1,4 @@
+import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiGet } from '$lib/server/api';
 import { ApiError } from '$lib/server/api';
@@ -11,6 +12,11 @@ import type { ChecklistSelector } from '$lib/types';
  * Ref: japaconnect-engineering/sections/70-visa-checklist.md
  */
 export const load: PageServerLoad = async (event) => {
+	const { features } = await event.parent();
+	if (!features['checklist.enabled']) {
+		throw error(404, { code: 'feature_disabled', message: 'Visa Document Checklist is not available' });
+	}
+
 	const ctx = apiContext(event);
 	const authed = !!event.locals.user;
 

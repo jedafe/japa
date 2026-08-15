@@ -7,6 +7,8 @@
 	import { FileText, Wallet, Bell, Users } from 'lucide-svelte';
 	import ReferralWidget from '$lib/components/referral/ReferralWidget.svelte';
 	import RadarCard from '$lib/components/RadarCard.svelte';
+	import RecommendationsWidget from '$lib/components/hub/dashboard/RecommendationsWidget.svelte';
+	import type { RecommendationsResponse } from '$lib/types';
 
 	// Analytics fields match the backend MeAnalytics struct (§50):
 	// total_content, draft_content, published_content, total_bookmarks,
@@ -39,6 +41,7 @@
 		recent: RecentItem[];
 		wallet?: WalletSummary | null;
 		unread?: UnreadSummary | null;
+		recommendations?: RecommendationsResponse | null;
 	}
 
 	let { data }: { data: unknown } = $props();
@@ -47,6 +50,7 @@
 	const recent = $derived(overview?.recent ?? []);
 	const wallet = $derived(overview?.wallet ?? null);
 	const unread = $derived(overview?.unread ?? null);
+	const recommendations = $derived(overview?.recommendations ?? null);
 
 	// Build the canonical URL for a content item — blog posts use /blog/{slug},
 	// other content types use /content/{slug}. Falls back to /content/{id}.
@@ -126,6 +130,9 @@
 
 	<!-- Japa Radar widget (Intelligence System §7) — followed-country opportunities -->
 	<RadarCard />
+
+	<!-- ADR-064a — geo-aware tool/feature/content/space recommendations -->
+	<RecommendationsWidget data={recommendations} />
 
 	<DashboardPanel titleKey="dashboard.overview.recent">
 		{#if recent.length === 0}

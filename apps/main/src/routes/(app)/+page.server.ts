@@ -9,7 +9,7 @@ import { resolveGeoCopy, getGeoTokens, landingPalettes, fetchEntityCollection, t
  * - Authenticated users: For You timeline in the app shell (default tab).
  * - Guests with an assigned homepage Page Builder page (slug "homepage"):
  *   render the landing page OUTSIDE the app shell.
- * - Guests without an assigned landing: render the default GuestLanding
+ * - Guests without an assigned landing: render the default seed landing
  *   (Hashnode-style marketing page) using API data — NOT a redirect.
  */
 export const load: PageServerLoad = async (event) => {
@@ -27,10 +27,10 @@ export const load: PageServerLoad = async (event) => {
 			undefined;
 		try {
 			const { items } = await apiList<FeedItem>(ctx, feedPath(tab, sort, PAGE_SIZE, 0, geo));
-			return { items, tab, sort, authed, pageSize: PAGE_SIZE, loadError: false, landing: null, guestLanding: null };
+			return { items, tab, sort, authed, pageSize: PAGE_SIZE, loadError: false, landing: null };
 		} catch (e) {
 			console.error('[HOME LOAD ERROR]', tab, sort, e);
-			return { items: [] as FeedItem[], tab, sort, authed, pageSize: PAGE_SIZE, loadError: true, landing: null, guestLanding: null };
+			return { items: [] as FeedItem[], tab, sort, authed, pageSize: PAGE_SIZE, loadError: true, landing: null };
 		}
 	}
 	// Guests: check for an assigned homepage Page Builder landing page.
@@ -81,7 +81,6 @@ export const load: PageServerLoad = async (event) => {
 		return {
 			authed: false,
 			landing: { ...landing, blocks: resolvedBlocks },
-			guestLanding: null,
 			contentCountry: geoCountry,
 		};
 	} catch (err) {
@@ -161,7 +160,6 @@ export const load: PageServerLoad = async (event) => {
 				status: 'seed',
 				blocks: resolvedBlocks,
 			} as LandingPageData,
-			guestLanding: null,
 			contentCountry: geoCountry,
 		};
 	}

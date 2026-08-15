@@ -20,10 +20,12 @@ package planninggroups
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/jedafe/japa/internal/db"
@@ -282,6 +284,7 @@ LIMIT $%d OFFSET $%d
 type StoreUpdateInput struct {
 	Name                  *string
 	Description           *string
+	DestinationSpaceID    *pgtype.UUID
 	VisaCategory          *string
 	TargetDepartureWindow *string
 	TargetDepartureAt     *pgtype.Timestamptz
@@ -307,6 +310,11 @@ func (s *Store) UpdateGroup(ctx context.Context, id, tenantID pgtype.UUID, input
 	if input.Description != nil {
 		sets = append(sets, fmt.Sprintf("description = $%d", argIdx))
 		args = append(args, *input.Description)
+		argIdx++
+	}
+	if input.DestinationSpaceID != nil {
+		sets = append(sets, fmt.Sprintf("destination_space_id = $%d", argIdx))
+		args = append(args, *input.DestinationSpaceID)
 		argIdx++
 	}
 	if input.VisaCategory != nil {
@@ -382,7 +390,7 @@ func (s *Store) JoinGroup(ctx context.Context, groupID, userID, tenantID pgtype.
 	_, err := s.pool.Writer.Exec(ctx, `
 INSERT INTO planning_group_members (group_id, user_id, tenant_id, departure_date)
 VALUES ($1, $2, $3, $4)
-ON CONFLICT (group_id, user_id, tenant_id) DO NOTHING
+ON CONFLICT (group_id, user_id) DO NOTHING
 `, groupID, userID, tenantID, departureDate)
 	if err != nil {
 		return fmt.Errorf("planninggroups: join group: %w", err)
@@ -534,7 +542,14 @@ WHERE group_id = $1 AND user_id = $2 AND tenant_id = $3 AND completed = false
 	return count, nil
 }
 
+// ErrAlreadyCheckedIn is returned when a user submits a second check-in in
+// the same week. The weekly unique index idx_planning_group_checkins_weekly
+// enforces one check-in per user per group per week (§82).
+var ErrAlreadyCheckedIn = fmt.Errorf("already checked in this week")
+
 // CreateCheckin inserts a new weekly check-in for a user in a group.
+// Returns ErrAlreadyCheckedIn if the user has already checked in this week
+// (unique violation on idx_planning_group_checkins_weekly).
 func (s *Store) CreateCheckin(ctx context.Context, groupID, userID, tenantID pgtype.UUID, note string) (PlanningGroupCheckin, error) {
 	const q = `
 INSERT INTO planning_group_checkins (tenant_id, group_id, user_id, note)
@@ -546,6 +561,10 @@ RETURNING id, tenant_id, group_id, user_id, note, created_at
 		&c.ID, &c.TenantID, &c.GroupID, &c.UserID, &c.Note, &c.CreatedAt,
 	)
 	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return PlanningGroupCheckin{}, ErrAlreadyCheckedIn
+		}
 		return PlanningGroupCheckin{}, fmt.Errorf("planninggroups: create checkin: %w", err)
 	}
 	return c, nil
@@ -602,10 +621,55 @@ WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
 	return nil
 }
 
-// AdminListGroups returns all planning groups for the admin review queue,
-// including soft-deleted ones, with member_count. Filters by tenant only.
-func (s *Store) AdminListGroups(ctx context.Context, tenantID pgtype.UUID) ([]PlanningGroup, error) {
-	const q = `
+// AdminListGroupsFilter holds the filter parameters for the admin list.
+type AdminListGroupsFilter struct {
+	TenantID           pgtype.UUID
+	DestinationSpaceID pgtype.UUID // optional
+	Search             string      // optional — case-insensitive ILIKE on name
+	Limit              int32
+	Offset             int32
+}
+
+// AdminListGroups returns a paginated list of all planning groups for the
+// admin review queue (including soft-deleted ones), with member_count.
+// Supports optional destination filter and name search.
+func (s *Store) AdminListGroups(ctx context.Context, f AdminListGroupsFilter) ([]PlanningGroup, int64, error) {
+	var (
+		conditions []string
+		args       []any
+		argIdx     = 1
+	)
+
+	conditions = append(conditions, fmt.Sprintf("g.tenant_id = $%d", argIdx))
+	args = append(args, f.TenantID)
+	argIdx++
+
+	if f.DestinationSpaceID.Valid {
+		conditions = append(conditions, fmt.Sprintf("g.destination_space_id = $%d", argIdx))
+		args = append(args, f.DestinationSpaceID)
+		argIdx++
+	}
+	if f.Search != "" {
+		conditions = append(conditions, fmt.Sprintf("g.name ILIKE $%d", argIdx))
+		args = append(args, "%"+f.Search+"%")
+		argIdx++
+	}
+
+	whereClause := strings.Join(conditions, " AND ")
+
+	limit := f.Limit
+	if limit <= 0 {
+		limit = 25
+	}
+	if limit > 100 {
+		limit = 100
+	}
+	offset := f.Offset
+	if offset < 0 {
+		offset = 0
+	}
+
+	listQ := fmt.Sprintf(`
 SELECT g.id, g.tenant_id, g.name, g.description, g.destination_space_id, g.visa_category,
        g.target_departure_window, g.target_departure_at, g.max_members, g.is_open_join,
        g.owner_id, g.expires_at, g.created_at, g.updated_at, g.deleted_at,
@@ -613,12 +677,15 @@ SELECT g.id, g.tenant_id, g.name, g.description, g.destination_space_id, g.visa_
 FROM planning_groups g
 LEFT JOIN (SELECT group_id, COUNT(*) AS cnt FROM planning_group_members GROUP BY group_id) m
   ON m.group_id = g.id
-WHERE g.tenant_id = $1
+WHERE %s
 ORDER BY g.created_at DESC
-`
-	rows, err := s.pool.Reader.Query(ctx, q, tenantID)
+LIMIT $%d OFFSET $%d
+`, whereClause, argIdx, argIdx+1)
+	args = append(args, limit, offset)
+
+	rows, err := s.pool.Reader.Query(ctx, listQ, args...)
 	if err != nil {
-		return nil, fmt.Errorf("planninggroups: admin list groups: %w", err)
+		return nil, 0, fmt.Errorf("planninggroups: admin list groups: %w", err)
 	}
 	defer rows.Close()
 
@@ -631,14 +698,24 @@ ORDER BY g.created_at DESC
 			&g.MaxMembers, &g.IsOpenJoin, &g.OwnerID, &g.ExpiresAt,
 			&g.CreatedAt, &g.UpdatedAt, &g.DeletedAt, &g.MemberCount,
 		); err != nil {
-			return nil, fmt.Errorf("planninggroups: admin scan group: %w", err)
+			return nil, 0, fmt.Errorf("planninggroups: admin scan group: %w", err)
 		}
 		out = append(out, g)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("planninggroups: admin iterate groups: %w", err)
+		return nil, 0, fmt.Errorf("planninggroups: admin iterate groups: %w", err)
 	}
-	return out, nil
+
+	countQ := fmt.Sprintf(`
+SELECT COUNT(*) FROM planning_groups g WHERE %s
+`, whereClause)
+	countArgs := args[:len(args)-2]
+	var total int64
+	if err := s.pool.Reader.QueryRow(ctx, countQ, countArgs...).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("planninggroups: admin count groups: %w", err)
+	}
+
+	return out, total, nil
 }
 
 // ExpireGroups soft-deletes planning groups whose expires_at has passed.
@@ -708,7 +785,7 @@ func (s *Store) InviteMember(ctx context.Context, groupID, userID, tenantID pgty
 	_, err := s.pool.Writer.Exec(ctx, `
 INSERT INTO planning_group_members (group_id, user_id, tenant_id)
 VALUES ($1, $2, $3)
-ON CONFLICT (group_id, user_id, tenant_id) DO NOTHING
+ON CONFLICT (group_id, user_id) DO NOTHING
 `, groupID, userID, tenantID)
 	if err != nil {
 		return fmt.Errorf("planninggroups: invite member: %w", err)

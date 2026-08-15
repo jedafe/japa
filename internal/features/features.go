@@ -489,6 +489,66 @@ type FlagRow struct {
 	UpdatedAt time.Time
 }
 
+// GetFlagConfig returns the stored FlagConfig for a feature flag, or a
+// zero-value FlagConfig when the flag has no row or no config blob.
+func (c *Checker) GetFlagConfig(ctx context.Context, tenantID pgtype.UUID, key string) (FlagConfig, error) {
+	var configBytes []byte
+	err := c.db.Reader.QueryRow(ctx, `
+		SELECT config FROM feature_flags
+		WHERE key = $1 AND tenant_id = $2
+	`, key, tenantID).Scan(&configBytes)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return FlagConfig{}, nil
+		}
+		return FlagConfig{}, fmt.Errorf("querying feature flag config %s: %w", key, err)
+	}
+	if len(configBytes) == 0 {
+		return FlagConfig{}, nil
+	}
+	var cfg FlagConfig
+	if err := json.Unmarshal(configBytes, &cfg); err != nil {
+		return FlagConfig{}, nil
+	}
+	return cfg, nil
+}
+
+// SetRolloutPercentage updates the rollout_percentage in a feature flag's
+// config blob without changing its enabled state. Used by the Control Panel
+// extensions page to manage gradual rollout. A percentage of 0 or 100 means
+// "off" or "fully on" (no hash bucketing).
+func (c *Checker) SetRolloutPercentage(ctx context.Context, tenantID pgtype.UUID, key string, percentage int, updatedBy pgtype.UUID) error {
+	cfg, err := c.GetFlagConfig(ctx, tenantID, key)
+	if err != nil {
+		return fmt.Errorf("reading config for rollout update %s: %w", key, err)
+	}
+	cfg.RolloutPercentage = percentage
+
+	configJSON, err := json.Marshal(cfg)
+	if err != nil {
+		return fmt.Errorf("marshaling config for %s: %w", key, err)
+	}
+
+	// Use the registry default for the INSERT case (new row) so we don't
+	// accidentally enable a disabled feature just by setting rollout. The
+	// ON CONFLICT clause only updates config, preserving the existing
+	// enabled state.
+	defaultEnabled := DefaultFor(key)
+
+	_, err = c.db.Writer.Exec(ctx, `
+		INSERT INTO feature_flags (key, tenant_id, enabled, config, updated_by)
+		VALUES ($1, $2, $3, $4, $5)
+		ON CONFLICT (key, tenant_id)
+		DO UPDATE SET config = $4, updated_by = $5, updated_at = now()
+	`, key, tenantID, defaultEnabled, configJSON, updatedBy)
+	if err != nil {
+		return fmt.Errorf("updating rollout for %s: %w", key, err)
+	}
+
+	c.ClearCacheForTenant(tenantID.String())
+	return nil
+}
+
 // Gate is HTTP middleware that checks if a feature is enabled.
 // If disabled, returns 404 with {"error":{"code":"feature_disabled","message":"..."}}.
 // This MUST be used inside the tenant middleware group so tenant

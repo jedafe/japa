@@ -1,4 +1,5 @@
 // Ref: japaconnect-engineering/sections/82-japa-planning-groups.md
+import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiList } from '$lib/server/api';
 import type { PlanningGroup, Space } from '$lib/types';
@@ -6,6 +7,11 @@ import type { PlanningGroup, Space } from '$lib/types';
 const PAGE_SIZE = 20;
 
 export const load: PageServerLoad = async (event) => {
+	const { features } = await event.parent();
+	if (!features['planning_group.enabled']) {
+		throw error(404, { code: 'feature_disabled', message: 'Planning Groups are not available' });
+	}
+
 	const ctx = apiContext(event);
 	const authed = !!event.locals.user;
 	const dest = event.url.searchParams.get('dest') ?? '';

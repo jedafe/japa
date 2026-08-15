@@ -22,7 +22,8 @@ export interface MainToolMeta {
 	labelKey: string;
 	/** i18n key for the short description. */
 	descKey: string;
-	/** system_settings key that toggles the tool on/off (e.g. 'checklist.enabled'). */
+	/** Feature flag key that toggles the tool on/off (e.g. 'checklist.enabled').
+	 *  Read from the /feature-flags endpoint (data.features), NOT system_settings. */
 	enabledSetting: string;
 	/** Hub categories the tool belongs to (primary first, then secondary).
 	 *  A tool appears under every category listed here. */
@@ -59,7 +60,7 @@ export const MAIN_TOOLS: MainToolMeta[] = [
 		href: '/ai/chat',
 		labelKey: 'tools.japabot',
 		descKey: 'tools.japabot_desc',
-		enabledSetting: 'ai.japabot_enabled',
+		enabledSetting: 'feature.japabot',
 		sections: ['planning', 'immigration']
 	},
 	{
@@ -182,27 +183,24 @@ export const MAIN_TOOLS: MainToolMeta[] = [
 ];
 
 /**
- * Check whether a tool is enabled via its `system_settings` toggle. Defaults to
- * `true` when the setting is absent — tools are opt-out, not opt-in. Matches the
- * apps/tools registry behaviour so both surfaces stay consistent.
+ * Check whether a tool is enabled via its feature flag. Reads from the
+ * /feature-flags map (data.features), NOT system_settings. Defaults to
+ * `false` when the flag is absent — unknown features default to disabled
+ * for safety, matching the backend features.DefaultFor behaviour.
  */
 export function isMainToolEnabled(
 	tool: MainToolMeta,
-	settings: Record<string, unknown>
+	features: Record<string, boolean>
 ): boolean {
-	const value = settings[tool.enabledSetting];
-	if (typeof value === 'boolean') return value;
-	if (value === 'true') return true;
-	if (value === 'false') return false;
-	return true;
+	return features[tool.enabledSetting] === true;
 }
 
 /** Return only the enabled tools that belong to a given section (primary or secondary). */
 export function getEnabledToolsBySection(
-	settings: Record<string, unknown>,
+	features: Record<string, boolean>,
 	section: ToolSection
 ): MainToolMeta[] {
 	return MAIN_TOOLS.filter(
-		(t) => t.sections.includes(section) && isMainToolEnabled(t, settings)
+		(t) => t.sections.includes(section) && isMainToolEnabled(t, features)
 	);
 }

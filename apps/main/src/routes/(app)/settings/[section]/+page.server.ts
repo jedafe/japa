@@ -6,8 +6,9 @@ import { SETTINGS_LOADERS } from '$lib/components/hub/settings/settingsLoaders.s
 
 /**
  * Dispatch to the section's server loader. 404s on unknown slugs, sections
- * flagged backendReady:false (e.g. `devices`), and sections whose component
- * is not yet built (Plan 2/3) — the rail shows those disabled.
+ * flagged backendReady:false (e.g. `devices`), sections whose component
+ * is not yet built (Plan 2/3), and sections whose feature flag is disabled
+ * — the rail shows those disabled.
  *
  * Ref: japaconnect-engineering/sections/23-main-site-frontend.md (Settings hub)
  */
@@ -20,6 +21,14 @@ export const load: PageServerLoad = async (event) => {
 	const meta = resolveSection(event.params.section);
 	if (!meta || !meta.backendReady || !meta.component) {
 		throw error(404, { code: 'not_found', message: 'Unknown settings section' });
+	}
+
+	// Feature flag gate: hide the section entirely when its flag is disabled.
+	if (meta.featureFlag) {
+		const { features } = await event.parent();
+		if (features[meta.featureFlag] !== true) {
+			throw error(404, { code: 'feature_disabled', message: 'This section is not available' });
+		}
 	}
 
 	const loader = SETTINGS_LOADERS[meta.slug];

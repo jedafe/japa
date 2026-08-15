@@ -211,6 +211,9 @@ func (s *Service) ProvisionPersonas(ctx context.Context, tenantID, adminUserID p
 		if err := validateActivityPolicy(in.ActivityPolicy); err != nil {
 			return nil, fmt.Errorf("personas: input %d: %w: %w", i, errpkg.ErrInvalid, err)
 		}
+		if err := validateVoicePrompt(&in.VoicePrompt); err != nil {
+			return nil, fmt.Errorf("personas: input %d: %w: %w", i, errpkg.ErrInvalid, err)
+		}
 	}
 
 	// Pre-validate duplicate slugs within the batch (BUG-013). Without this,
@@ -372,6 +375,25 @@ func validateMode(mode, field string, allowed ...string) error {
 	return fmt.Errorf("invalid %s %q (allowed: %s)", field, mode, strings.Join(allowed, ", "))
 }
 
+// maxVoicePromptLen is the maximum allowed length for a persona voice_prompt.
+// The §68 schema declares the column as unbounded `text`, but an extremely
+// long prompt bloats the row and the AI generation context. This is a
+// defensive guard — admins hold persona.manage, but a length cap prevents
+// accidental paste-of-document submissions (BUG-PER-010).
+const maxVoicePromptLen = 5000
+
+// validateVoicePrompt returns an error if the voice_prompt exceeds the
+// maximum allowed length (BUG-PER-010). Empty/nil is allowed.
+func validateVoicePrompt(vp *string) error {
+	if vp == nil {
+		return nil
+	}
+	if len(*vp) > maxVoicePromptLen {
+		return fmt.Errorf("voice_prompt length %d exceeds max %d", len(*vp), maxVoicePromptLen)
+	}
+	return nil
+}
+
 // validateActivityPolicy validates an ActivityPolicy for sensible values
 // (BUG-001). The policy governs the orchestration engine's scheduling, so
 // nonsensical values (negative actions, reversed hours, out-of-range hours)
@@ -492,6 +514,9 @@ func (s *Service) UpdatePersona(ctx context.Context, tenantID, id pgtype.UUID, i
 		if err := validateActivityPolicy(*in.ActivityPolicy); err != nil {
 			return PersonaDetail{}, fmt.Errorf("personas: %w: %w", errpkg.ErrInvalid, err)
 		}
+	}
+	if err := validateVoicePrompt(in.VoicePrompt); err != nil {
+		return PersonaDetail{}, fmt.Errorf("personas: %w: %w", errpkg.ErrInvalid, err)
 	}
 
 	params := gen.UpdateAIPersonaParams{

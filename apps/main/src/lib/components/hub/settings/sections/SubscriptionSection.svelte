@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { Dialog } from 'bits-ui';
-	import { untrack } from 'svelte';
 	import { t } from '$lib/i18n';
 	import {
 		cancelSubscription,
@@ -12,14 +11,15 @@
 	import { invalidateAll } from '$app/navigation';
 
 	// Contract: GET /me/subscription returns gen.Subscription with fields
-	// plan, status, current_period_end (RFC 3339). The loader returns null
-	// when the user has no active subscription (404 from the backend).
-	// The loader also returns pricing plans and payment providers for the
-	// subscribe flow (Rule 16: all data from API).
+	// plan, status, current_period_end (RFC 3339), cancel_at_period_end.
+	// The loader returns null when the user has no active subscription (404
+	// from the backend). The loader also returns pricing plans and payment
+	// providers for the subscribe flow (Rule 16: all data from API).
 	interface Subscription {
 		plan?: string;
 		status?: string;
 		current_period_end?: string;
+		cancel_at_period_end?: boolean;
 	}
 
 	interface PlanFeature {
@@ -55,11 +55,24 @@
 	}
 
 	let { data }: { data: unknown } = $props();
-	let rawData = untrack(() => (data as SubscriptionData | null));
-	let sub = $state<Subscription | null>(rawData?.subscription ?? null);
-	let plans = $state<PricingPlan[]>(rawData?.plans ?? []);
-	let providers = $state<PaymentProvider[]>(rawData?.providers ?? []);
-	let currencies = $state<Currency[]>(rawData?.currencies ?? []);
+
+	// Sync local state from `data` whenever it changes (BUG-P014). The
+	// previous code captured a snapshot via untrack() once at init and never
+	// updated, so invalidateAll() re-fetched on the server but the component
+	// kept showing stale state.
+	let sub = $state<Subscription | null>(null);
+	let plans = $state<PricingPlan[]>([]);
+	let providers = $state<PaymentProvider[]>([]);
+	let currencies = $state<Currency[]>([]);
+
+	$effect(() => {
+		const d = data as SubscriptionData | null;
+		sub = d?.subscription ?? null;
+		plans = d?.plans ?? [];
+		providers = d?.providers ?? [];
+		currencies = d?.currencies ?? [];
+	});
+
 	let cancelOpen = $state(false);
 	let loading = $state(false);
 	let error = $state<string | null>(null);
@@ -71,9 +84,14 @@
 	let billingCycle = $state<'monthly' | 'yearly'>('monthly');
 	let selectedProvider = $state<string>('');
 
-	// Super admin bypasses all permission checks, but regular members need
-	// payments.subscriptions.manage (granted via migration 000198).
-	const isCancelled = $derived(sub?.status === 'canceled');
+	// BUG-P013: the backend CancelSubscription sets cancel_at_period_end =
+	// true but leaves status = 'active' (the user keeps access until period
+	// end). Checking only status === 'canceled' misses the scheduled-cancel
+	// state, so the Reactivate button never appears and the Cancel button
+	// stays visible after cancelling.
+	const isCancelled = $derived(
+		sub?.status === 'canceled' || sub?.cancel_at_period_end === true
+	);
 
 	const statusLabel = $derived(
 		sub?.status ? t(`settings.subscription.status_${sub.status}`, sub.status) : '—'
@@ -126,13 +144,22 @@
 			const res = await createSubscription(planCode, selectedProvider);
 			loading = false;
 			if (res.error) {
-				error = t('settings.subscription.subscribe_error');
+				// BUG-P012: the backend CreateSubscription returns
+				// not_implemented for all providers (recurring billing is
+				// not yet built). Show a user-friendly message instead of a
+				// generic error so the user understands the feature is
+				// unavailable rather than broken.
+				if (res.error.code === 'not_implemented') {
+					error = t(
+						'settings.subscription.recurring_not_available',
+						'Recurring subscription billing is not yet available. You can still purchase Pro membership as a one-time payment.'
+					);
+				} else {
+					error = t('settings.subscription.subscribe_error');
+				}
 			} else {
 				success = t('settings.subscription.subscribe_success');
-				// Full reload so the loader re-fetches /me/subscription and
-				// the active subscription view renders with the new data.
 				await invalidateAll();
-				setTimeout(() => window.location.reload(), 800);
 			}
 		} catch {
 			loading = false;
@@ -145,9 +172,12 @@
 		error = null;
 		success = null;
 		loading = true;
+		// Optimistic: reflect the scheduled-cancel state (cancel_at_period_end
+		// = true, status stays 'active') so the UI updates immediately.
+		const prevSub = sub;
 		const res = await optimisticAction({
-			apply: () => (sub = { ...sub, status: 'canceled' }),
-			rollback: () => (sub = rawData?.subscription ?? null),
+			apply: () => (sub = { ...sub, cancel_at_period_end: true }),
+			rollback: () => (sub = prevSub),
 			call: () => cancelSubscription()
 		});
 		loading = false;
@@ -159,9 +189,10 @@
 		error = null;
 		success = null;
 		loading = true;
+		const prevSub = sub;
 		const res = await optimisticAction({
-			apply: () => (sub = { ...sub, status: 'active' }),
-			rollback: () => (sub = rawData?.subscription ?? null),
+			apply: () => (sub = { ...sub, status: 'active', cancel_at_period_end: false }),
+			rollback: () => (sub = prevSub),
 			call: () => reactivateSubscription()
 		});
 		loading = false;

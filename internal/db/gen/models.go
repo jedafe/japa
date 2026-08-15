@@ -975,6 +975,7 @@ type ContentReview struct {
 	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
 	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
 	Source         string             `json:"source"`
+	PersonaPayload []byte             `json:"persona_payload"`
 }
 
 type ContentRevision struct {
@@ -2571,16 +2572,20 @@ type PagebuilderBlock struct {
 }
 
 type PagebuilderTemplate struct {
-	ID          pgtype.UUID        `json:"id"`
-	TenantID    pgtype.UUID        `json:"tenant_id"`
-	Name        string             `json:"name"`
-	Slug        string             `json:"slug"`
-	Description *string            `json:"description"`
-	PageType    string             `json:"page_type"`
-	Blocks      []byte             `json:"blocks"`
-	IsSystem    bool               `json:"is_system"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
+	ID               pgtype.UUID        `json:"id"`
+	TenantID         pgtype.UUID        `json:"tenant_id"`
+	Name             string             `json:"name"`
+	Slug             string             `json:"slug"`
+	Description      *string            `json:"description"`
+	PageType         string             `json:"page_type"`
+	Blocks           []byte             `json:"blocks"`
+	IsSystem         bool               `json:"is_system"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+	IsActive         bool               `json:"is_active"`
+	ThumbnailMediaID pgtype.UUID        `json:"thumbnail_media_id"`
+	CreatedBy        pgtype.UUID        `json:"created_by"`
+	SchemaVersion    int32              `json:"schema_version"`
 }
 
 type PagebuilderTheme struct {

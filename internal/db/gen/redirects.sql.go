@@ -233,24 +233,45 @@ FROM redirects
 WHERE tenant_id = $1
   AND ($2::boolean IS NULL OR is_active = $2::boolean)
   AND ($3::text = '' OR source_path ILIKE '%' || $3 || '%' OR target_url ILIKE '%' || $3 || '%')
-ORDER BY created_at DESC
-LIMIT $5 OFFSET $4
+ORDER BY
+  -- Dynamic sort: @sort is the column name, @dir is 'asc' or 'desc'.
+  -- Fallback to created_at DESC when @sort is empty or unrecognized.
+  CASE WHEN $4::text = 'source_path' AND $5::text = 'asc'  THEN source_path END ASC,
+  CASE WHEN $4::text = 'source_path' AND $5::text = 'desc' THEN source_path END DESC,
+  CASE WHEN $4::text = 'target_url'  AND $5::text = 'asc'  THEN target_url  END ASC,
+  CASE WHEN $4::text = 'target_url'  AND $5::text = 'desc' THEN target_url  END DESC,
+  CASE WHEN $4::text = 'http_status' AND $5::text = 'asc'  THEN http_status END ASC,
+  CASE WHEN $4::text = 'http_status' AND $5::text = 'desc' THEN http_status END DESC,
+  CASE WHEN $4::text = 'is_active'   AND $5::text = 'asc'  THEN is_active   END ASC,
+  CASE WHEN $4::text = 'is_active'   AND $5::text = 'desc' THEN is_active   END DESC,
+  CASE WHEN $4::text = 'hit_count'   AND $5::text = 'asc'  THEN hit_count   END ASC,
+  CASE WHEN $4::text = 'hit_count'   AND $5::text = 'desc' THEN hit_count   END DESC,
+  CASE WHEN $4::text = 'created_at'  AND $5::text = 'asc'  THEN created_at  END ASC,
+  CASE WHEN $4::text = 'created_at'  AND $5::text = 'desc' THEN created_at  END DESC,
+  CASE WHEN $4::text = 'updated_at'  AND $5::text = 'asc'  THEN updated_at  END ASC,
+  CASE WHEN $4::text = 'updated_at'  AND $5::text = 'desc' THEN updated_at  END DESC,
+  CASE WHEN $4::text = '' OR $4::text NOT IN ('source_path','target_url','http_status','is_active','hit_count','created_at','updated_at') THEN created_at END DESC
+LIMIT $7 OFFSET $6
 `
 
 type ListRedirectsParams struct {
 	TenantID   pgtype.UUID `json:"tenant_id"`
 	IsActive   *bool       `json:"is_active"`
 	Search     string      `json:"search"`
+	Sort       string      `json:"sort"`
+	Dir        string      `json:"dir"`
 	PageOffset int32       `json:"page_offset"`
 	PageLimit  int32       `json:"page_limit"`
 }
 
-// Redirects — Admin-managed URL redirect rules (ADR-054)
+// Redirects — Admin-managed URL redirect rules (ADR-056)
 func (q *Queries) ListRedirects(ctx context.Context, arg ListRedirectsParams) ([]Redirect, error) {
 	rows, err := q.db.Query(ctx, listRedirects,
 		arg.TenantID,
 		arg.IsActive,
 		arg.Search,
+		arg.Sort,
+		arg.Dir,
 		arg.PageOffset,
 		arg.PageLimit,
 	)

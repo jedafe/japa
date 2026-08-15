@@ -1,3 +1,4 @@
+import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiGet, apiList } from '$lib/server/api';
 import { ApiError } from '$lib/server/api';
@@ -21,6 +22,11 @@ export interface AssessmentHistoryEntry {
 }
 
 export const load: PageServerLoad = async (event) => {
+	const { features } = await event.parent();
+	if (!features['assessment.enabled']) {
+		throw error(404, { code: 'feature_disabled', message: 'Japa Readiness Assessment is not available' });
+	}
+
 	const ctx = apiContext(event);
 	const authed = !!event.locals.user;
 

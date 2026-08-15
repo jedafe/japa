@@ -19,6 +19,7 @@
 package japastage
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -34,7 +35,9 @@ import (
 	"github.com/jedafe/japa/internal/config"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/tenant"
+	"github.com/jedafe/japa/internal/valkey"
 	"github.com/jedafe/japa/internal/worker"
+	"github.com/valkey-io/valkey-go/valkeycompat"
 )
 
 // Handlers exposes the japa stage profile endpoints.
@@ -42,13 +45,40 @@ type Handlers struct {
 	service     *Service
 	settings    *config.Settings
 	asynqClient *asynq.Client
+	redis       valkeycompat.Cmdable // nil disables cache invalidation (tests)
 }
 
 // NewHandlers creates japa stage handlers bound to the provided service.
 // asynqClient may be nil — when absent, stage-change fan-out is skipped
-// (logged at warn) instead of crashing the request.
+// (logged at warn) instead of crashing the request. redis may be nil —
+// when absent, VisitorContext/recommendations cache invalidation is skipped.
 func NewHandlers(service *Service, settings *config.Settings, asynqClient *asynq.Client) *Handlers {
 	return &Handlers{service: service, settings: settings, asynqClient: asynqClient}
+}
+
+// WithRedis sets the Redis client used to invalidate the VisitorContext and
+// recommendations caches after a stage update (ADR-064a §5, BUG-002). Returns
+// the receiver for chaining.
+func (h *Handlers) WithRedis(rdb valkeycompat.Cmdable) *Handlers {
+	h.redis = rdb
+	return h
+}
+
+// invalidateVisitorCache deletes the VisitorContext and recommendations cache
+// entries for the given user (ADR-064a). Mirrors the pattern in
+// internal/users/handlers.go — a japa stage change alters the archetype
+// resolution, so cached recommendations must be evicted to avoid serving stale
+// results for up to 15 minutes.
+func (h *Handlers) invalidateVisitorCache(ctx context.Context, user *auth.AuthenticatedUser) {
+	if h.redis == nil {
+		return
+	}
+	if user.SessionID != "" {
+		_ = h.redis.Del(ctx, valkey.MustKey("visitor:ctx:%s", user.SessionID)).Err()
+		_ = h.redis.Del(ctx, valkey.MustKey("recommendations:%s", user.SessionID)).Err()
+	}
+	_ = h.redis.Del(ctx, valkey.MustKey("visitor:ctx:user:%s", user.UserID.String())).Err()
+	_ = h.redis.Del(ctx, valkey.MustKey("recommendations:user:%s", user.UserID.String())).Err()
 }
 
 // ---------------------------------------------------------------------------
@@ -266,6 +296,12 @@ func (h *Handlers) HandleUpdateOwn(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusInternalServerError, "update_failed", "Failed to update japa stage")
 		return
 	}
+
+	// Invalidate the VisitorContext and recommendations cache for this user
+	// so the next request picks up the new archetype/stage resolution
+	// immediately (ADR-064a §5, BUG-002). Without this, cached recommendations
+	// remain stale for up to 15 minutes after a stage change.
+	h.invalidateVisitorCache(r.Context(), user)
 
 	// Fire-and-forget japa_stage:recommend (§87, Rule 8). Idempotent on
 	// (user_id, stage, set_at) via asynq.Unique over a short window so a

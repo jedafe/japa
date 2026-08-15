@@ -1,3 +1,4 @@
+import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiList } from '$lib/server/api';
 import type { Scholarship, SavedScholarship } from '$lib/types';
@@ -26,6 +27,11 @@ export interface SavedScholarshipView {
 }
 
 export const load: PageServerLoad = async (event) => {
+	const { features } = await event.parent();
+	if (!features['scholarship_finder.enabled']) {
+		throw error(404, { code: 'feature_disabled', message: 'Scholarship Finder is not available' });
+	}
+
 	const ctx = apiContext(event);
 	const authed = !!event.locals.user;
 

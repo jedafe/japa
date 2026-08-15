@@ -32,10 +32,22 @@ const (
 	EntityTypeLearningTrack = "learning_track"
 )
 
-// SourceTier classifies an entity type as editorial (Tier 1) or community
-// (Tier 2). The LLM prompt uses this label to qualify claims appropriately.
-func SourceTier(entityType string) string {
-	switch entityType {
+// SourceTier classifies an entity as editorial (Tier 1) or community (Tier 2).
+// The LLM prompt uses this label to qualify claims appropriately.
+//
+// For content entities (entity_type = "content"), the actual content_type
+// (guide, blog_post, comparison, discussion) determines the tier — the
+// entity_type column is generic "content" for all content entities.
+// For non-content entities (forum_thread, space, learning_track), the
+// entity_type itself determines the tier.
+//
+// Ref: ADR-069 §4 — Source tier weighting.
+func SourceTier(entityType, contentType string) string {
+	tierKey := entityType
+	if entityType == EntityTypeContent && contentType != "" {
+		tierKey = contentType
+	}
+	switch tierKey {
 	case "guide", "blog_post", "learning_track", "comparison":
 		return "editorial"
 	case "discussion", "forum_thread", "space":
@@ -54,11 +66,12 @@ type Chunk struct {
 
 // RetrievedChunk is a search result from the HNSW cosine query.
 type RetrievedChunk struct {
-	EntityID   string
-	EntityType string
-	ChunkText  string
-	Similarity float64
-	Tier       string
+	EntityID    string
+	EntityType  string
+	ContentType string
+	ChunkText   string
+	Similarity  float64
+	Tier        string
 }
 
 // Store wraps the sqlc-generated Queries for content_embeddings operations.
@@ -242,12 +255,19 @@ func (s *Store) Search(ctx context.Context, tenantID pgtype.UUID, queryVector []
 
 	results := make([]RetrievedChunk, 0, len(rows))
 	for _, row := range rows {
+		contentType := ""
+		if row.ContentType != nil {
+			if s, ok := row.ContentType.(string); ok {
+				contentType = s
+			}
+		}
 		results = append(results, RetrievedChunk{
-			EntityID:   row.EntityID.String(),
-			EntityType: row.EntityType,
-			ChunkText:  row.ChunkText,
-			Similarity: row.Similarity,
-			Tier:       SourceTier(row.EntityType),
+			EntityID:    row.EntityID.String(),
+			EntityType:  row.EntityType,
+			ContentType: contentType,
+			ChunkText:   row.ChunkText,
+			Similarity:  row.Similarity,
+			Tier:        SourceTier(row.EntityType, contentType),
 		})
 	}
 	return results, nil
@@ -276,11 +296,12 @@ func (s *Store) SearchGeoFiltered(ctx context.Context, tenantID pgtype.UUID, que
 	results := make([]RetrievedChunk, 0, len(rows))
 	for _, row := range rows {
 		results = append(results, RetrievedChunk{
-			EntityID:   row.EntityID.String(),
-			EntityType: row.EntityType,
-			ChunkText:  row.ChunkText,
-			Similarity: row.Similarity,
-			Tier:       SourceTier(row.EntityType),
+			EntityID:    row.EntityID.String(),
+			EntityType:  row.EntityType,
+			ContentType: row.ContentType,
+			ChunkText:   row.ChunkText,
+			Similarity:  row.Similarity,
+			Tier:        SourceTier(row.EntityType, row.ContentType),
 		})
 	}
 	return results, nil

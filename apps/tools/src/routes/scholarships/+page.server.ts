@@ -17,7 +17,7 @@ export const load: PageServerLoad = async (event) => {
 	// Gate: skip all backend calls when scholarship_finder.enabled is false.
 	// Ref: conventions/system-settings-catalog.md, Rule 3.
 	const tool = getTool('scholarships')!;
-	if (!isToolEnabled(tool, event.locals.siteSettings)) {
+	if (!isToolEnabled(tool, event.locals.features)) {
 		return { enabled: false, tool, scholarships: [], saved: [], user: event.locals.user };
 	}
 

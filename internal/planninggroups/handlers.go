@@ -111,8 +111,13 @@ func parsePageParams(r *http.Request) (page, limit int32) {
 			page = int32(n)
 		}
 	}
-	if v := r.URL.Query().Get("limit"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 100 {
+	// Accept both "limit" (legacy) and "page_size" (convention standard).
+	pageSize := r.URL.Query().Get("page_size")
+	if pageSize == "" {
+		pageSize = r.URL.Query().Get("limit")
+	}
+	if pageSize != "" {
+		if n, err := strconv.Atoi(pageSize); err == nil && n > 0 && n <= 100 {
 			limit = int32(n)
 		}
 	}
@@ -717,8 +722,15 @@ func (h *Handlers) HandleCreateCheckin(w http.ResponseWriter, r *http.Request) {
 
 	checkin, err := h.service.CreateCheckin(r.Context(), groupID, user.UserID, tenantID, body.Note)
 	if err != nil {
-		slog.Error("planninggroups: create checkin failed", "error", err)
-		errpkg.WriteError(w, http.StatusInternalServerError, "create_checkin_failed", "Failed to create check-in")
+		switch {
+		case errors.Is(err, ErrAlreadyCheckedIn):
+			errpkg.WriteError(w, http.StatusConflict, "already_checked_in", "You have already checked in this week")
+		case errors.Is(err, ErrCheckinTooLong):
+			errpkg.WriteError(w, http.StatusBadRequest, "checkin_too_long", "Check-in note must be 200 characters or fewer")
+		default:
+			slog.Error("planninggroups: create checkin failed", "error", err)
+			errpkg.WriteError(w, http.StatusInternalServerError, "create_checkin_failed", "Failed to create check-in")
+		}
 		return
 	}
 
@@ -731,7 +743,7 @@ func (h *Handlers) HandleCreateCheckin(w http.ResponseWriter, r *http.Request) {
 
 // HandleAdminList handles GET /admin/planning-groups — list all planning
 // groups for the admin review queue. Admin-only (planning_group.manage_any
-// permission checked at route registration).
+// permission checked at route registration). Supports ?page=&limit=&q=&dest=.
 func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
@@ -746,19 +758,46 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	groups, err := h.service.AdminListGroups(r.Context(), tenantID)
+	page, limit := parsePageParams(r)
+	offset := (page - 1) * limit
+	search := r.URL.Query().Get("q")
+
+	var destSpaceID pgtype.UUID
+	if destParam := r.URL.Query().Get("dest"); destParam != "" {
+		if err := destSpaceID.Scan(destParam); err != nil {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid destination space ID")
+			return
+		}
+	}
+
+	groups, total, err := h.service.AdminListGroups(r.Context(), AdminListGroupsFilter{
+		TenantID:           tenantID,
+		DestinationSpaceID: destSpaceID,
+		Search:             search,
+		Limit:              limit,
+		Offset:             offset,
+	})
 	if err != nil {
 		slog.Error("planninggroups: admin list failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "admin_list_failed", "Failed to list planning groups")
 		return
 	}
 
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": groups})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
+		"data": groups,
+		"pagination": map[string]any{
+			"page":  page,
+			"limit": limit,
+			"total": total,
+		},
+	})
 }
 
 // HandleAdminExtend handles POST /admin/planning-groups/:id/extend — extend
 // the expiry of a planning group. Admin-only (planning_group.manage_any
-// permission checked at route registration).
+// permission checked at route registration). Accepts { days: int } (extends
+// from the later of current expires_at or now) or { expires_at: RFC3339 }
+// for an explicit new expiry.
 func (h *Handlers) HandleAdminExtend(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
@@ -778,14 +817,30 @@ func (h *Handlers) HandleAdminExtend(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var body struct {
+		Days      *int   `json:"days"`
 		ExpiresAt string `json:"expires_at"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
+
+	if body.Days != nil && *body.Days > 0 {
+		if err := h.service.AdminExtendExpiryByDays(r.Context(), groupID, tenantID, *body.Days); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				errpkg.WriteError(w, http.StatusNotFound, "group_not_found", "Planning group not found")
+				return
+			}
+			slog.Error("planninggroups: admin extend failed", "error", err)
+			errpkg.WriteError(w, http.StatusInternalServerError, "extend_failed", "Failed to extend planning group expiry")
+			return
+		}
+		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"extended": true}})
+		return
+	}
+
 	if body.ExpiresAt == "" {
-		errpkg.WriteError(w, http.StatusBadRequest, "missing_expires_at", "expires_at is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_days_or_expires_at", "Either days or expires_at is required")
 		return
 	}
 

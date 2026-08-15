@@ -24,6 +24,17 @@ export const load: LayoutServerLoad = async (event) => {
 		siteSettings = {};
 	}
 
+	// Feature flags (public endpoint) — fetched SSR so the layout can gate
+	// client-only features on feature.dm without firing doomed requests when
+	// the flag is off. Ref: sections/42-feature-flags.md
+	let features: Record<string, boolean> = {};
+	try {
+		const res = await apiGet<Record<string, boolean>>(ctx, '/feature-flags');
+		features = res ?? {};
+	} catch {
+		features = {};
+	}
+
 	// Navigation menu — ADR-054 cross-app menu system. The Learn nav slug is
 	// `learn_sidebar` (seeded by migration 000213 — Explore · My Learning ·
 	// Certificates · Bookmarks · Instructor Dashboard). Degrades to null if
@@ -76,6 +87,7 @@ export const load: LayoutServerLoad = async (event) => {
 		locale: event.locals.locale,
 		csrfToken: event.locals.csrfToken ?? null,
 		siteSettings,
+		features,
 		menu,
 		footerMenu,
 		unreadNotifications,

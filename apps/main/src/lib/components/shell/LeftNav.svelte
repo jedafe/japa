@@ -17,6 +17,7 @@
 	import { t } from '$lib/i18n';
 	import { realtime } from '$lib/realtime/realtime.svelte';
 	import type { Menu, MenuItem, SessionUser, UserSpaceRef } from '$lib/types';
+	import { routeFeatureFlagForPath } from '$lib/components/shell/routeFeatureFlags';
 
 	interface Props {
 		menu: Menu | null;
@@ -25,17 +26,24 @@
 		userSpaces?: UserSpaceRef[];
 		/** Platform logo URL from appearance.logo_url (control panel). */
 		logoUrl?: string;
+		/** Feature flags from /feature-flags — used to hide nav items for
+		 *  disabled features so no trace of a toggled-off feature leaks. */
+		features?: Record<string, boolean>;
 		onToggle: () => void;
 	}
 
-	let { menu, user, collapsed, userSpaces = [], logoUrl = '', onToggle }: Props = $props();
+	let { menu, user, collapsed, userSpaces = [], logoUrl = '', features = {}, onToggle }: Props = $props();
 
 	// The API already filters by auth/permissions, but guard against visibility
 	// drift so an 'authenticated' item never leaks to a guest and vice-versa.
+	// Also filter by feature flags: if a nav item's route maps to a feature
+	// flag that is disabled, the item is hidden entirely.
 	const items = $derived(
 		(menu?.items ?? []).filter((item: MenuItem) => {
 			if (item.visibility === 'authenticated') return !!user;
 			if (item.visibility === 'guest') return !user;
+			const flag = routeFeatureFlagForPath(item.url);
+			if (flag && features[flag] !== true) return false;
 			return true;
 		})
 	);

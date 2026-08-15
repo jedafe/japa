@@ -1,4 +1,5 @@
 // Ref: japaconnect-engineering/sections/86-community-calendar.md
+import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiGet, apiList } from '$lib/server/api';
 import type { CalendarEntry, CalendarCategory, Space } from '$lib/types';
@@ -15,6 +16,11 @@ const VALID_VIEWS = ['list', 'month', 'week'] as const;
 type CalendarView = (typeof VALID_VIEWS)[number];
 
 export const load: PageServerLoad = async (event) => {
+	const { features } = await event.parent();
+	if (!features['calendar.enabled']) {
+		throw error(404, { code: 'feature_disabled', message: 'Community Calendar is not available' });
+	}
+
 	const ctx = apiContext(event);
 	const authed = !!event.locals.user;
 

@@ -70,6 +70,17 @@ WHERE tenant_id = @tenant_id AND entity_type = @entity_type AND entity_id = @ent
 -- learning_track) pass through the entity_type != 'content' branch.
 -- Ref: ADR-069 §2 — "Content is unpublished or deleted — deletes its
 --      content_embeddings rows" implies only published content is retrievable.
+--
+-- BUG-001 (rag-audit): return the content_type for content entities so the
+-- store layer can classify the source tier correctly (editorial vs community).
+-- The entity_type column is "content" (generic) for all content entities, not
+-- the specific content_type (guide, blog_post, comparison, discussion).
+-- ADR-069 §4 requires tier classification by content_type, not entity_type.
+--
+-- BUG-004 (rag-audit): add status/deleted filters for non-content entity types
+-- as defense-in-depth. The forum/spaces/learning handlers purge embeddings on
+-- delete, but those are fire-and-forget — a failed purge leaves orphaned
+-- embeddings. The CASE expression checks each entity type's status condition.
 SELECT
     ce.id,
     ce.tenant_id,
@@ -79,19 +90,37 @@ SELECT
     ce.chunk_text,
     ce.language,
     ce.created_at,
-    (1.0 - (ce.embedding <=> @query_embedding))::float8 AS similarity
+    (1.0 - (ce.embedding <=> @query_embedding))::float8 AS similarity,
+    CASE WHEN ce.entity_type = 'content' THEN
+        (SELECT c.content_type FROM contents c
+         WHERE c.id = ce.entity_id AND c.tenant_id = ce.tenant_id)
+    ELSE NULL END AS content_type
 FROM content_embeddings ce
 WHERE ce.tenant_id = @tenant_id
   AND (@language::text = '' OR ce.language = @language)
-  AND (
-      ce.entity_type != 'content'
-      OR EXISTS (
+  AND CASE ce.entity_type
+      WHEN 'content' THEN EXISTS (
           SELECT 1 FROM contents c
-          WHERE c.id = ce.entity_id
-            AND c.status = 'published'
-            AND c.deleted_at IS NULL
+          WHERE c.id = ce.entity_id AND c.tenant_id = ce.tenant_id
+            AND c.status = 'published' AND c.deleted_at IS NULL
       )
-  )
+      WHEN 'forum_thread' THEN EXISTS (
+          SELECT 1 FROM forum_threads ft
+          WHERE ft.id = ce.entity_id AND ft.tenant_id = ce.tenant_id
+            AND ft.deleted_at IS NULL
+      )
+      WHEN 'space' THEN EXISTS (
+          SELECT 1 FROM spaces s
+          WHERE s.id = ce.entity_id AND s.tenant_id = ce.tenant_id
+            AND s.status = 'active'
+      )
+      WHEN 'learning_track' THEN EXISTS (
+          SELECT 1 FROM learning_tracks lt
+          WHERE lt.id = ce.entity_id AND lt.tenant_id = ce.tenant_id
+            AND lt.is_published = true
+      )
+      ELSE true
+  END
 ORDER BY ce.embedding <=> @query_embedding
 LIMIT @top_k;
 
@@ -111,6 +140,10 @@ LIMIT @top_k;
 -- so that soft-deleted or unpublished content is never returned in geo-filtered
 -- RAG retrieval. The JOIN to contents already exists for the geo filter, so
 -- the status/deleted_at conditions are added to the WHERE clause.
+--
+-- BUG-001 (rag-audit): return c.content_type so the store layer can classify
+-- the source tier correctly (editorial vs community). The geo-filtered query
+-- already JOINs to contents, so c.content_type is always available.
 SELECT
     ce.id,
     ce.tenant_id,
@@ -120,7 +153,8 @@ SELECT
     ce.chunk_text,
     ce.language,
     ce.created_at,
-    (1.0 - (ce.embedding <=> @query_embedding))::float8 AS similarity
+    (1.0 - (ce.embedding <=> @query_embedding))::float8 AS similarity,
+    c.content_type
 FROM content_embeddings ce
 JOIN contents c ON c.id = ce.entity_id AND ce.entity_type = 'content'
 WHERE ce.tenant_id = @tenant_id

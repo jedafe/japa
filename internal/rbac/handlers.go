@@ -10,6 +10,7 @@ import (
 
 	"github.com/jedafe/japa/internal/auth"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/publicapi"
 )
 
 // Handlers provides HTTP handlers for admin RBAC management.
@@ -335,7 +336,8 @@ func (h *Handlers) ListRoles(w http.ResponseWriter, r *http.Request) {
 
 // CreateRoleInput is the request body for creating a role.
 type CreateRoleInput struct {
-	Name string `json:"name"`
+	Name        string   `json:"name"`
+	Permissions []string `json:"permissions"`
 }
 
 // CreateRole handles POST /api/v1/admin/rbac/roles.
@@ -363,7 +365,20 @@ func (h *Handlers) CreateRole(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": map[string]any{"id": id, "name": input.Name}})
+	// Persist permissions if provided. SetRolePermissions handles cache
+	// invalidation for all groups that hold this role (Rule 6).
+	if len(input.Permissions) > 0 {
+		if err := h.store.SetRolePermissions(r.Context(), id, input.Permissions); err != nil {
+			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to set role permissions")
+			return
+		}
+	}
+
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": map[string]any{
+		"id":          id,
+		"name":        input.Name,
+		"permissions": input.Permissions,
+	}})
 }
 
 // ListRolePermissions handles GET /api/v1/admin/rbac/roles/{id}/permissions.
@@ -512,17 +527,39 @@ func (h *Handlers) UpdateRole(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var input struct {
-		Name string `json:"name"`
+		Name        string   `json:"name"`
+		Permissions []string `json:"permissions"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_input", "Invalid request body")
 		return
 	}
-	if err := h.store.UpdateRole(r.Context(), tenantID, roleID, input.Name); err != nil {
-		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update role")
-		return
+
+	// Only update the name when a non-empty value is provided, so a
+	// PATCH that only changes permissions doesn't wipe the role name.
+	if input.Name != "" {
+		if err := h.store.UpdateRole(r.Context(), tenantID, roleID, input.Name); err != nil {
+			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update role")
+			return
+		}
 	}
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": roleID.String()}})
+
+	// Persist permissions when provided (non-nil). SetRolePermissions
+	// handles cache invalidation for all groups that hold this role
+	// (Rule 6). A nil slice means "don't touch permissions"; an empty
+	// slice means "clear all permissions".
+	if input.Permissions != nil {
+		if err := h.store.SetRolePermissions(r.Context(), roleID, input.Permissions); err != nil {
+			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to set role permissions")
+			return
+		}
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
+		"id":          roleID.String(),
+		"name":        input.Name,
+		"permissions": input.Permissions,
+	}})
 }
 
 // SetRolePermissions handles PATCH /admin/roles/:id/permissions (P5.6).
@@ -601,14 +638,19 @@ func (h *Handlers) UpdateGroup(w http.ResponseWriter, r *http.Request) {
 		updateSlug = existing.Slug
 	}
 
-	// Preserve the existing description when the request omits it, so a
-	// PATCH that only updates name/slug/permissions doesn't wipe it.
+	// Preserve the existing name and description when the request omits
+	// them, so a PATCH that only updates slug/permissions doesn't wipe
+	// them.
+	updateName := input.Name
+	if updateName == "" {
+		updateName = existing.Name
+	}
 	updateDesc := input.Description
 	if updateDesc == "" {
 		updateDesc = existing.Description
 	}
 
-	if err := h.store.UpdateGroup(r.Context(), tenantID, groupID, input.Name, updateSlug, updateDesc); err != nil {
+	if err := h.store.UpdateGroup(r.Context(), tenantID, groupID, updateName, updateSlug, updateDesc); err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update group")
 		return
 	}
@@ -631,31 +673,19 @@ func (h *Handlers) UpdateGroup(w http.ResponseWriter, r *http.Request) {
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
 		"id":          groupID.String(),
-		"name":        input.Name,
-		"slug":        slug,
+		"name":        updateName,
+		"slug":        updateSlug,
 		"description": updateDesc,
 		"permissions": input.Permissions,
 	}})
 }
 
 // ListScopes handles GET /developer/scopes — returns available API scopes.
+// The scope catalog is sourced from publicapi.ScopeCatalog so the developer
+// portal only offers scopes that RequireScope actually enforces (Rule 16 —
+// no hardcoded data that can drift from the enforcement layer).
+//
+// Ref: japaconnect-engineering/sections/47-public-api-developer-portal.md
 func (h *Handlers) ListScopes(w http.ResponseWriter, r *http.Request) {
-	scopes := []map[string]string{
-		{"value": "api.read.*", "label": "Read All", "description": "Read access to all resources"},
-		{"value": "content.read", "label": "Read Content", "description": "Read content and articles"},
-		{"value": "content.create", "label": "Create Content", "description": "Create new content"},
-		{"value": "content.edit", "label": "Edit Content", "description": "Edit existing content"},
-		{"value": "content.delete", "label": "Delete Content", "description": "Delete content"},
-		{"value": "spaces.read", "label": "Read Spaces", "description": "Read spaces and communities"},
-		{"value": "spaces.create", "label": "Create Spaces", "description": "Create new spaces"},
-		{"value": "forum.read", "label": "Read Forum", "description": "Read forum threads and replies"},
-		{"value": "forum.thread.create", "label": "Create Forum Threads", "description": "Create new forum threads"},
-		{"value": "forum.reply.create", "label": "Create Forum Replies", "description": "Reply to forum threads"},
-		{"value": "users.read", "label": "Read Users", "description": "Read user profiles"},
-		{"value": "media.upload", "label": "Upload Media", "description": "Upload media files"},
-		{"value": "notifications.read", "label": "Read Notifications", "description": "Read notifications"},
-		{"value": "search", "label": "Search", "description": "Use search functionality"},
-	}
-
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": scopes})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": publicapi.AvailableScopes()})
 }

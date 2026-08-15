@@ -208,6 +208,15 @@ func (s *Service) PushDelivery() *PushDelivery {
 // enqueuePushDelivery enqueues a background push delivery task for a recipient.
 // BUG-004: respects notifications.max_delivery_attempts from system_settings.
 func (s *Service) enqueuePushDelivery(recipientID pgtype.UUID, title, body, actionURL string) {
+	s.enqueuePushDeliveryWithCtx(context.Background(), recipientID, title, body, actionURL)
+}
+
+// enqueuePushDeliveryWithCtx is the context-aware variant of enqueuePushDelivery.
+// BUG-006: previously enqueuePushDelivery used context.Background() and a zero
+// UUID tenant for the settings lookup, losing tenant context. This variant
+// accepts the request context so the settings provider can scope the lookup
+// and the operation respects cancellation/deadline.
+func (s *Service) enqueuePushDeliveryWithCtx(ctx context.Context, recipientID pgtype.UUID, title, body, actionURL string) {
 	if s.client == nil || s.push == nil || !s.push.IsEnabled() {
 		return
 	}
@@ -229,8 +238,9 @@ func (s *Service) enqueuePushDelivery(recipientID pgtype.UUID, title, body, acti
 		asynq.Unique(1 * time.Hour),
 	}
 	// BUG-004: cap retries at notifications.max_delivery_attempts (default 5).
+	// BUG-006: use the passed context instead of context.Background().
 	if s.settings != nil {
-		maxAttempts := s.settings.GetIntOr(context.Background(), pgtype.UUID{}, "notifications.max_delivery_attempts", 5)
+		maxAttempts := s.settings.GetIntOr(ctx, pgtype.UUID{}, "notifications.max_delivery_attempts", 5)
 		if maxAttempts > 0 {
 			opts = append(opts, asynq.MaxRetry(maxAttempts))
 		}
@@ -248,17 +258,18 @@ func (s *Service) enqueuePushDelivery(recipientID pgtype.UUID, title, body, acti
 }
 
 // checkAndEnqueuePush checks user preferences and enqueues push if enabled.
+// BUG-002: previously only checked explicit user preferences, ignoring
+// notification_type defaults. A type with default_push=true (e.g.
+// mention.content, dm.message) would never send push if the user had no
+// saved preference. Now resolves the effective preference (user override
+// OR type default) before deciding.
 func (s *Service) checkAndEnqueuePush(ctx context.Context, recipientID pgtype.UUID, nType, title, body, actionURL string) {
-	pref, err := s.store.getNotificationPreferences(ctx, recipientID)
+	prefs, err := s.resolveEffectivePreferences(ctx, recipientID)
 	if err != nil {
 		return
 	}
-
-	for _, p := range pref {
-		if p.NotificationType == nType && p.Push {
-			s.enqueuePushDelivery(recipientID, title, body, actionURL)
-			return
-		}
+	if ep, ok := prefs[nType]; ok && ep.Push {
+		s.enqueuePushDeliveryWithCtx(ctx, recipientID, title, body, actionURL)
 	}
 }
 
@@ -311,17 +322,18 @@ func (s *Service) enqueueEmailDelivery(ctx context.Context, tenantID, recipientI
 
 // checkAndEnqueueEmail checks user preferences and enqueues email if enabled.
 // BUG-003: previously missing — email delivery was never dispatched.
+// BUG-002: previously only checked explicit user preferences, ignoring
+// notification_type defaults. A type with default_email=true (e.g.
+// payment.failed, org.invite) would never send email if the user had no
+// saved preference. Now resolves the effective preference (user override
+// OR type default) before deciding.
 func (s *Service) checkAndEnqueueEmail(ctx context.Context, tenantID, recipientID pgtype.UUID, nType, title, body, actionURL string) {
-	pref, err := s.store.getNotificationPreferences(ctx, recipientID)
+	prefs, err := s.resolveEffectivePreferences(ctx, recipientID)
 	if err != nil {
 		return
 	}
-
-	for _, p := range pref {
-		if p.NotificationType == nType && p.Email {
-			s.enqueueEmailDelivery(ctx, tenantID, recipientID, nType, title, body, actionURL)
-			return
-		}
+	if ep, ok := prefs[nType]; ok && ep.Email {
+		s.enqueueEmailDelivery(ctx, tenantID, recipientID, nType, title, body, actionURL)
 	}
 }
 

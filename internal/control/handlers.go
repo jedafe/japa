@@ -3141,59 +3141,69 @@ type extensionEntry struct {
 	SettingsCategory string `json:"settings_category"`
 	// Category is used for grouping in the UI (e.g. "Content", "Social", "AI").
 	Category string `json:"category"`
+	// FeatureFlagKey is the feature_flags table key that controls this
+	// extension's enabled/disabled state. When non-empty, the extension
+	// reads/writes feature_flags (the single source of truth). When empty,
+	// the extension falls back to system_settings via SettingKey (legacy).
+	FeatureFlagKey string `json:"-"`
+	// RolloutPercentage is the gradual rollout percentage (0-100) from the
+	// feature_flags config blob. 100 = fully on, 0 = off, 1-99 = deterministic
+	// per-tenant hash bucketing (BL-013 / Section 42).
+	RolloutPercentage int `json:"rollout_percentage"`
 }
 
 // knownExtensions is the unified catalog of all extensions and tools
 // recognized by the control panel. Each entry's enabled/disabled state is
-// persisted in system_settings under the key specified by SettingKey.
-// SettingsCategory is the control-panel settings category the entry's title
-// links to (empty = no settings page). This catalog is the single source of
-// truth for all extension/tool on/off switches — the /extensions page is the
-// canonical place to toggle them.
+// persisted in the feature_flags table under the key specified by
+// FeatureFlagKey (the single source of truth). SettingKey is retained for
+// backward-compatible system_settings lookups of non-enabled configuration
+// (subdomain, quotas, etc.). SettingsCategory is the control-panel settings
+// category the entry's title links to (empty = no settings page). This
+// catalog is the single source of truth for all extension/tool on/off
+// switches — the /extensions page is the canonical place to toggle them.
 var knownExtensions = []extensionEntry{
-	// Legacy extensions (stored under extensions.<key>.enabled)
-	{Key: "blog", Name: "Blog", Description: "Blog series, content reviews, and featured posts", Version: "1.0.0", SettingKey: "extensions.blog.enabled", SettingsCategory: "content", Category: "Content"},
-	{Key: "webhooks", Name: "Webhooks", Description: "Outgoing webhook delivery system", Version: "1.0.0", SettingKey: "extensions.webhooks.enabled", SettingsCategory: "", Category: "Integrations"},
-	{Key: "ai", Name: "AI Assistant", Description: "AI-powered content assistance and moderation", Version: "1.0.0", SettingKey: "extensions.ai.enabled", SettingsCategory: "rag", Category: "AI"},
-	{Key: "affiliate", Name: "Affiliate Program", Description: "Affiliate tracking and commission management", Version: "1.0.0", SettingKey: "extensions.affiliate.enabled", SettingsCategory: "", Category: "Commerce"},
+	// Legacy extensions
+	{Key: "blog", Name: "Blog", Description: "Blog series, content reviews, and featured posts", Version: "1.0.0", SettingKey: "extensions.blog.enabled", SettingsCategory: "content", Category: "Content", FeatureFlagKey: "feature.blog"},
+	{Key: "webhooks", Name: "Webhooks", Description: "Outgoing webhook delivery system", Version: "1.0.0", SettingKey: "extensions.webhooks.enabled", SettingsCategory: "", Category: "Integrations", FeatureFlagKey: "webhooks.enabled"},
+	{Key: "ai", Name: "AI Assistant", Description: "AI-powered content assistance and moderation", Version: "1.0.0", SettingKey: "extensions.ai.enabled", SettingsCategory: "rag", Category: "AI", FeatureFlagKey: "feature.ai_content_gen"},
+	{Key: "affiliate", Name: "Affiliate Program", Description: "Affiliate tracking and commission management", Version: "1.0.0", SettingKey: "extensions.affiliate.enabled", SettingsCategory: "", Category: "Commerce", FeatureFlagKey: "feature.affiliate_program"},
 
-	// V2 tools — each uses its own catalogued system_settings key
-	// (JEOS §§60–78, ADRs 061–086)
-	{Key: "rag", Name: "RAG / JapaBot Knowledge", Description: "Retrieval-augmented generation knowledge layer for JapaBot grounding", Version: "2.0.0", SettingKey: "rag.enabled", SettingsCategory: "rag", Category: "AI"},
-	{Key: "studio", Name: "AI Content Studio", Description: "AI-powered content generation studio with persona-driven jobs", Version: "2.0.0", SettingKey: "studio.enabled", SettingsCategory: "studio", Category: "AI"},
-	{Key: "participation", Name: "Participation Orchestration", Description: "Persona-driven participation orchestration engine", Version: "2.0.0", SettingKey: "participation.enabled", SettingsCategory: "participation", Category: "AI"},
-	{Key: "checklist", Name: "Visa Document Checklist", Description: "Interactive visa document checklist tool for immigrants", Version: "2.0.0", SettingKey: "checklist.enabled", SettingsCategory: "checklist", Category: "Tools"},
-	{Key: "assessment", Name: "Japa Readiness Assessment", Description: "AI-assisted readiness assessment with personalized roadmap", Version: "2.0.0", SettingKey: "assessment.enabled", SettingsCategory: "assessment", Category: "Tools"},
-	{Key: "col_calculator", Name: "Cost of Living Calculator", Description: "Compare cost of living across destination cities", Version: "2.0.0", SettingKey: "col_calculator.enabled", SettingsCategory: "col_calculator", Category: "Tools"},
-	{Key: "scholarship_finder", Name: "Scholarship Finder", Description: "Search and track scholarships with deadline reminders", Version: "2.0.0", SettingKey: "scholarship_finder.enabled", SettingsCategory: "scholarship_finder", Category: "Tools"},
-	{Key: "remittance", Name: "Remittance Rate Tracker", Description: "Track and compare remittance exchange rates over time", Version: "2.0.0", SettingKey: "remittance.enabled", SettingsCategory: "remittance", Category: "Tools"},
-	{Key: "referral", Name: "Referral System", Description: "User referral program with credit rewards and attribution tracking", Version: "2.0.0", SettingKey: "referral.enabled", SettingsCategory: "referral", Category: "Commerce"},
-	{Key: "ads", Name: "Self-Serve Advertising", Description: "Self-serve ad campaign creation and management platform", Version: "2.0.0", SettingKey: "ads.self_serve_enabled", SettingsCategory: "ads", Category: "Commerce"},
-	{Key: "newsletter", Name: "Newsletter & Digest", Description: "Email newsletter subscriber management with weekly digests", Version: "2.0.0", SettingKey: "newsletter.enabled", SettingsCategory: "newsletter", Category: "Content"},
-	{Key: "jobs", Name: "Jobs Board", Description: "Job listings board with featured placement and credit-based promotion", Version: "2.0.0", SettingKey: "jobs.enabled", SettingsCategory: "jobs", Category: "Commerce"},
-	{Key: "gamification", Name: "Gamification", Description: "Badges, challenges, and leaderboards for user engagement", Version: "2.0.0", SettingKey: "gamification.badges_enabled", SettingsCategory: "gamification", Category: "Engagement"},
-	{Key: "travel", Name: "Travel Search", Description: "Travel search and booking integration for immigration journeys", Version: "2.0.0", SettingKey: "travel.enabled", SettingsCategory: "travel", Category: "Tools"},
-	{Key: "push", Name: "Mobile Push Notifications", Description: "FCM and APNs push notification delivery for mobile apps", Version: "2.0.0", SettingKey: "push.enabled", SettingsCategory: "push", Category: "Integrations"},
-	{Key: "geo_personalization", Name: "Geo Personalization", Description: "Geo-aware feed, search, and discovery ranking based on user location", Version: "2.0.0", SettingKey: "geo_personalization.enabled", SettingsCategory: "geo_personalization", Category: "Integrations"},
+	// V2 tools — each uses its own feature_flags key (JEOS §§60–78, ADRs 061–086)
+	{Key: "rag", Name: "RAG / JapaBot Knowledge", Description: "Retrieval-augmented generation knowledge layer for JapaBot grounding", Version: "2.0.0", SettingKey: "rag.enabled", SettingsCategory: "rag", Category: "AI", FeatureFlagKey: "rag.enabled"},
+	{Key: "studio", Name: "AI Content Studio", Description: "AI-powered content generation studio with persona-driven jobs", Version: "2.0.0", SettingKey: "studio.enabled", SettingsCategory: "studio", Category: "AI", FeatureFlagKey: "studio.enabled"},
+	{Key: "participation", Name: "Participation Orchestration", Description: "Persona-driven participation orchestration engine", Version: "2.0.0", SettingKey: "participation.enabled", SettingsCategory: "participation", Category: "AI", FeatureFlagKey: "participation.enabled"},
+	{Key: "checklist", Name: "Visa Document Checklist", Description: "Interactive visa document checklist tool for immigrants", Version: "2.0.0", SettingKey: "checklist.enabled", SettingsCategory: "checklist", Category: "Tools", FeatureFlagKey: "checklist.enabled"},
+	{Key: "assessment", Name: "Japa Readiness Assessment", Description: "AI-assisted readiness assessment with personalized roadmap", Version: "2.0.0", SettingKey: "assessment.enabled", SettingsCategory: "assessment", Category: "Tools", FeatureFlagKey: "assessment.enabled"},
+	{Key: "col_calculator", Name: "Cost of Living Calculator", Description: "Compare cost of living across destination cities", Version: "2.0.0", SettingKey: "col_calculator.enabled", SettingsCategory: "col_calculator", Category: "Tools", FeatureFlagKey: "col_calculator.enabled"},
+	{Key: "scholarship_finder", Name: "Scholarship Finder", Description: "Search and track scholarships with deadline reminders", Version: "2.0.0", SettingKey: "scholarship_finder.enabled", SettingsCategory: "scholarship_finder", Category: "Tools", FeatureFlagKey: "scholarship_finder.enabled"},
+	{Key: "remittance", Name: "Remittance Rate Tracker", Description: "Track and compare remittance exchange rates over time", Version: "2.0.0", SettingKey: "remittance.enabled", SettingsCategory: "remittance", Category: "Tools", FeatureFlagKey: "remittance.enabled"},
+	{Key: "referral", Name: "Referral System", Description: "User referral program with credit rewards and attribution tracking", Version: "2.0.0", SettingKey: "referral.enabled", SettingsCategory: "referral", Category: "Commerce", FeatureFlagKey: "feature.referral"},
+	{Key: "ads", Name: "Self-Serve Advertising", Description: "Self-serve ad campaign creation and management platform", Version: "2.0.0", SettingKey: "ads.self_serve_enabled", SettingsCategory: "ads", Category: "Commerce", FeatureFlagKey: "feature.ads"},
+	{Key: "newsletter", Name: "Newsletter & Digest", Description: "Email newsletter subscriber management with weekly digests", Version: "2.0.0", SettingKey: "newsletter.enabled", SettingsCategory: "newsletter", Category: "Content", FeatureFlagKey: "feature.newsletter"},
+	{Key: "jobs", Name: "Jobs Board", Description: "Job listings board with featured placement and credit-based promotion", Version: "2.0.0", SettingKey: "jobs.enabled", SettingsCategory: "jobs", Category: "Commerce", FeatureFlagKey: "jobs.enabled"},
+	{Key: "gamification", Name: "Gamification", Description: "Badges, challenges, and leaderboards for user engagement", Version: "2.0.0", SettingKey: "gamification.badges_enabled", SettingsCategory: "gamification", Category: "Engagement", FeatureFlagKey: "gamification.enabled"},
+	{Key: "travel", Name: "Travel Search", Description: "Travel search and booking integration for immigration journeys", Version: "2.0.0", SettingKey: "travel.enabled", SettingsCategory: "travel", Category: "Tools", FeatureFlagKey: "travel.enabled"},
+	{Key: "push", Name: "Mobile Push Notifications", Description: "FCM and APNs push notification delivery for mobile apps", Version: "2.0.0", SettingKey: "push.enabled", SettingsCategory: "push", Category: "Integrations", FeatureFlagKey: "push.enabled"},
+	{Key: "geo_personalization", Name: "Geo Personalization", Description: "Geo-aware feed, search, and discovery ranking based on user location", Version: "2.0.0", SettingKey: "geo_personalization.enabled", SettingsCategory: "geo_personalization", Category: "Integrations", FeatureFlagKey: "geo_personalization.enabled"},
 
 	// V2 functional tools (§§90–97, §§99–101) — geo-aware tool pattern
 	// (ADR-088). Each tool lives on the Tools web surface (§78, ADR-086)
-	// and is toggled via its own catalogued system_settings key. These
-	// mirror the apps/tools registry (apps/tools/src/lib/tools/registry.ts)
-	// so the /extensions Tools tab is the canonical on/off switch for every
-	// tool on the surface.
-	{Key: "japabot", Name: "JapaBot", Description: "RAG-grounded AI japa guide chatbot on the Tools surface", Version: "2.0.0", SettingKey: "ai.japabot_enabled", SettingsCategory: "japabot", Category: "AI"},
-	{Key: "visa_routes", Name: "Visa Route Comparison", Description: "Compare visa routes side by side — eligibility, fees, path to PR, and renewal terms", Version: "2.0.0", SettingKey: "visa_routes.enabled", SettingsCategory: "visa_routes", Category: "Tools"},
-	{Key: "appointment_alert", Name: "Embassy Appointment Alerter", Description: "Subscribe to embassy appointment availability alerts and get notified when slots open", Version: "2.0.0", SettingKey: "appointment_alert.enabled", SettingsCategory: "appointment_alert", Category: "Tools"},
-	{Key: "arrival_checklist", Name: "Arrival Checklist", Description: "Phased post-arrival task checklist — registration, banking, and settling-in steps", Version: "2.0.0", SettingKey: "arrival_checklist.enabled", SettingsCategory: "arrival_checklist", Category: "Tools"},
-	{Key: "visa_timeline", Name: "Visa Processing Time Tracker", Description: "Visa processing time statistics and trends — average, median, and percentile wait times", Version: "2.0.0", SettingKey: "visa_timeline.enabled", SettingsCategory: "visa_timeline", Category: "Tools"},
-	{Key: "credential_checker", Name: "Professional Credential Checker", Description: "Credential recognition pathways — regulatory body, timeline, cost, and steps", Version: "2.0.0", SettingKey: "credential_checker.enabled", SettingsCategory: "credential_checker", Category: "Tools"},
-	{Key: "cv_formatter", Name: "CV Formatter", Description: "Destination-specific CV standards and AI-assisted formatting", Version: "2.0.0", SettingKey: "cv_formatter.enabled", SettingsCategory: "cv_formatter", Category: "Tools"},
-	{Key: "housing_guide", Name: "Housing Guide", Description: "Destination-specific housing guides — platforms, landlord requirements, rent ranges, and scam categories", Version: "2.0.0", SettingKey: "housing_guide.enabled", SettingsCategory: "housing_guide", Category: "Tools"},
-	{Key: "attestation_guide", Name: "Attestation Guide", Description: "Step-by-step document attestation pathways — apostille requirements, steps, and fees", Version: "2.0.0", SettingKey: "attestation_guide.enabled", SettingsCategory: "attestation_guide", Category: "Tools"},
-	{Key: "language_test_hub", Name: "Language Test Hub", Description: "Required language tests for your visa — minimum scores, prep resources, and community score stories", Version: "2.0.0", SettingKey: "language_test_hub.enabled", SettingsCategory: "language_test_hub", Category: "Tools"},
-	{Key: "tax_calculator", Name: "Tax Calculator", Description: "Destination-specific tax guides — residency triggers, worldwide income rules, and double taxation treaties", Version: "2.0.0", SettingKey: "tax_calculator.enabled", SettingsCategory: "tax_calculator", Category: "Tools"},
-	{Key: "community_locator", Name: "Diaspora Community Locator", Description: "Find diaspora organisations near your destination — cultural groups, religious communities, and social clubs", Version: "2.0.0", SettingKey: "community_locator.enabled", SettingsCategory: "community_locator", Category: "Tools"},
+	// and is toggled via its own feature_flags key. These mirror the
+	// apps/tools registry (apps/tools/src/lib/tools/registry.ts) so the
+	// /extensions Tools tab is the canonical on/off switch for every tool
+	// on the surface.
+	{Key: "japabot", Name: "JapaBot", Description: "RAG-grounded AI japa guide chatbot on the Tools surface", Version: "2.0.0", SettingKey: "ai.japabot_enabled", SettingsCategory: "japabot", Category: "AI", FeatureFlagKey: "feature.japabot"},
+	{Key: "visa_routes", Name: "Visa Route Comparison", Description: "Compare visa routes side by side — eligibility, fees, path to PR, and renewal terms", Version: "2.0.0", SettingKey: "visa_routes.enabled", SettingsCategory: "visa_routes", Category: "Tools", FeatureFlagKey: "visa_routes.enabled"},
+	{Key: "appointment_alert", Name: "Embassy Appointment Alerter", Description: "Subscribe to embassy appointment availability alerts and get notified when slots open", Version: "2.0.0", SettingKey: "appointment_alert.enabled", SettingsCategory: "appointment_alert", Category: "Tools", FeatureFlagKey: "appointment_alert.enabled"},
+	{Key: "arrival_checklist", Name: "Arrival Checklist", Description: "Phased post-arrival task checklist — registration, banking, and settling-in steps", Version: "2.0.0", SettingKey: "arrival_checklist.enabled", SettingsCategory: "arrival_checklist", Category: "Tools", FeatureFlagKey: "arrival_checklist.enabled"},
+	{Key: "visa_timeline", Name: "Visa Processing Time Tracker", Description: "Visa processing time statistics and trends — average, median, and percentile wait times", Version: "2.0.0", SettingKey: "visa_timeline.enabled", SettingsCategory: "visa_timeline", Category: "Tools", FeatureFlagKey: "visa_timeline.enabled"},
+	{Key: "credential_checker", Name: "Professional Credential Checker", Description: "Credential recognition pathways — regulatory body, timeline, cost, and steps", Version: "2.0.0", SettingKey: "credential_checker.enabled", SettingsCategory: "credential_checker", Category: "Tools", FeatureFlagKey: "credential_checker.enabled"},
+	{Key: "cv_formatter", Name: "CV Formatter", Description: "Destination-specific CV standards and AI-assisted formatting", Version: "2.0.0", SettingKey: "cv_formatter.enabled", SettingsCategory: "cv_formatter", Category: "Tools", FeatureFlagKey: "cv_formatter.enabled"},
+	{Key: "housing_guide", Name: "Housing Guide", Description: "Destination-specific housing guides — platforms, landlord requirements, rent ranges, and scam categories", Version: "2.0.0", SettingKey: "housing_guide.enabled", SettingsCategory: "housing_guide", Category: "Tools", FeatureFlagKey: "housing_guide.enabled"},
+	{Key: "attestation_guide", Name: "Attestation Guide", Description: "Step-by-step document attestation pathways — apostille requirements, steps, and fees", Version: "2.0.0", SettingKey: "attestation_guide.enabled", SettingsCategory: "attestation_guide", Category: "Tools", FeatureFlagKey: "attestation_guide.enabled"},
+	{Key: "language_test_hub", Name: "Language Test Hub", Description: "Required language tests for your visa — minimum scores, prep resources, and community score stories", Version: "2.0.0", SettingKey: "language_test_hub.enabled", SettingsCategory: "language_test_hub", Category: "Tools", FeatureFlagKey: "language_test_hub.enabled"},
+	{Key: "tax_calculator", Name: "Tax Calculator", Description: "Destination-specific tax guides — residency triggers, worldwide income rules, and double taxation treaties", Version: "2.0.0", SettingKey: "tax_calculator.enabled", SettingsCategory: "tax_calculator", Category: "Tools", FeatureFlagKey: "tax_calculator.enabled"},
+	{Key: "community_locator", Name: "Diaspora Community Locator", Description: "Find diaspora organisations near your destination — cultural groups, religious communities, and social clubs", Version: "2.0.0", SettingKey: "community_locator.enabled", SettingsCategory: "community_locator", Category: "Tools", FeatureFlagKey: "community_locator.enabled"},
 }
 
 func (h *Handlers) ListExtensions(w http.ResponseWriter, r *http.Request) {
@@ -3203,23 +3213,23 @@ func (h *Handlers) ListExtensions(w http.ResponseWriter, r *http.Request) {
 	}
 	result := make([]extensionEntry, 0, len(knownExtensions))
 	for _, ext := range knownExtensions {
-		settingKey := ext.SettingKey
-		if settingKey == "" {
-			settingKey = "extensions." + ext.Key + ".enabled"
-		}
-		// Resolve the default enabled state from the settings catalog's
-		// DefaultValue (the authoritative source, per Rule 3). Falls back to
-		// the Version-based heuristic for legacy entries not in the catalog:
-		// V2 tools default to enabled, legacy extensions default to disabled.
-		defaultEnabled := ext.Version == "2.0.0"
-		if meta, ok := settingsCatalog[settingKey]; ok && meta.Type == "bool" {
-			defaultEnabled = meta.DefaultValue == "true"
-		}
-		enabled := defaultEnabled
-		if h.Settings != nil {
-			enabled = h.Settings.GetBoolOr(r.Context(), tenantID, settingKey, defaultEnabled)
+		enabled := extensionDefaultEnabled(ext)
+		rollout := 100
+		if ext.FeatureFlagKey != "" && h.FeatureChecker != nil {
+			enabled = h.FeatureChecker.IsEnabled(r.Context(), tenantID, ext.FeatureFlagKey)
+			if cfg, err := h.FeatureChecker.GetFlagConfig(r.Context(), tenantID, ext.FeatureFlagKey); err == nil && cfg.RolloutPercentage > 0 {
+				rollout = cfg.RolloutPercentage
+			}
+		} else if ext.SettingKey != "" && h.Settings != nil {
+			// Legacy fallback for extensions without a feature_flags key.
+			settingKey := ext.SettingKey
+			if settingKey == "" {
+				settingKey = "extensions." + ext.Key + ".enabled"
+			}
+			enabled = h.Settings.GetBoolOr(r.Context(), tenantID, settingKey, enabled)
 		}
 		ext.Enabled = enabled
+		ext.RolloutPercentage = rollout
 		result = append(result, ext)
 	}
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": result})
@@ -3249,20 +3259,10 @@ func (h *Handlers) UpdateExtension(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if input.Enabled != nil {
-		settingKey := extensionSettingKey(ext)
-		val := "false"
-		if *input.Enabled {
-			val = "true"
-		}
-		if _, err := h.DB.Writer.Exec(r.Context(),
-			`INSERT INTO system_settings (tenant_id, key, value, updated_at) VALUES ($1, $2, $3, NOW()) ON CONFLICT (tenant_id, key) DO UPDATE SET value = $3, updated_at = NOW()`,
-			tenantID, settingKey, val); err != nil {
+		if err := h.setExtensionEnabled(r, tenantID, ext, *input.Enabled); err != nil {
 			slog.Error("control: update extension", "error", err)
 			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update extension")
 			return
-		}
-		if h.Settings != nil {
-			h.Settings.InvalidateSettings(r.Context(), tenantID)
 		}
 	}
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"key": key, "status": "updated"}})
@@ -3283,15 +3283,10 @@ func (h *Handlers) EnableExtension(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	settingKey := extensionSettingKey(ext)
-	if _, err := h.DB.Writer.Exec(r.Context(),
-		`INSERT INTO system_settings (tenant_id, key, value, updated_at) VALUES ($1, $2, 'true', NOW()) ON CONFLICT (tenant_id, key) DO UPDATE SET value = 'true', updated_at = NOW()`,
-		tenantID, settingKey); err != nil {
+	if err := h.setExtensionEnabled(r, tenantID, ext, true); err != nil {
+		slog.Error("control: enable extension", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to enable extension")
 		return
-	}
-	if h.Settings != nil {
-		h.Settings.InvalidateSettings(r.Context(), tenantID)
 	}
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"key": key, "status": "enabled"}})
 }
@@ -3311,17 +3306,113 @@ func (h *Handlers) DisableExtension(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	settingKey := extensionSettingKey(ext)
-	if _, err := h.DB.Writer.Exec(r.Context(),
-		`INSERT INTO system_settings (tenant_id, key, value, updated_at) VALUES ($1, $2, 'false', NOW()) ON CONFLICT (tenant_id, key) DO UPDATE SET value = 'false', updated_at = NOW()`,
-		tenantID, settingKey); err != nil {
+	if err := h.setExtensionEnabled(r, tenantID, ext, false); err != nil {
+		slog.Error("control: disable extension", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to disable extension")
 		return
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"key": key, "status": "disabled"}})
+}
+
+// UpdateExtensionRollout updates the rollout percentage for a feature-flagged
+// extension. Only applies to extensions with a FeatureFlagKey. The percentage
+// is clamped to 0-100. A value of 100 means fully on (no hash bucketing),
+// 0 means off, and 1-99 enables deterministic per-tenant gradual rollout
+// (BL-013 / Section 42).
+func (h *Handlers) UpdateExtensionRollout(w http.ResponseWriter, r *http.Request) {
+	key := chi.URLParam(r, "key")
+	if key == "" {
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_key", "Extension key is required")
+		return
+	}
+	ext := findExtension(key)
+	if ext == nil {
+		errpkg.WriteError(w, http.StatusNotFound, "extension_not_found", "Unknown extension or tool")
+		return
+	}
+	if ext.FeatureFlagKey == "" {
+		errpkg.WriteError(w, http.StatusBadRequest, "no_feature_flag", "This extension does not support rollout percentage")
+		return
+	}
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+	var input struct {
+		RolloutPercentage *int `json:"rollout_percentage"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+	if input.RolloutPercentage == nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_rollout", "rollout_percentage is required")
+		return
+	}
+	percentage := *input.RolloutPercentage
+	if percentage < 0 {
+		percentage = 0
+	}
+	if percentage > 100 {
+		percentage = 100
+	}
+	updatedBy := authUserFromContext(r)
+	if err := h.FeatureChecker.SetRolloutPercentage(r.Context(), tenantID, ext.FeatureFlagKey, percentage, updatedBy); err != nil {
+		slog.Error("control: update rollout", "error", err, "key", ext.FeatureFlagKey)
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update rollout percentage")
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"key": key, "rollout_percentage": percentage}})
+}
+
+// setExtensionEnabled persists the enabled/disabled state for an extension.
+// When the extension has a FeatureFlagKey, it writes to the feature_flags
+// table (the single source of truth) via FeatureChecker.SetEnabled and
+// invalidates the feature flag cache. When it does not (legacy extensions
+// without a feature_flags mapping), it falls back to writing system_settings
+// via the SettingKey and invalidating the settings cache.
+func (h *Handlers) setExtensionEnabled(r *http.Request, tenantID pgtype.UUID, ext *extensionEntry, enabled bool) error {
+	if ext.FeatureFlagKey != "" && h.FeatureChecker != nil {
+		updatedBy := authUserFromContext(r)
+		if err := h.FeatureChecker.SetEnabled(r.Context(), tenantID, ext.FeatureFlagKey, enabled, updatedBy); err != nil {
+			return fmt.Errorf("setting feature flag %s: %w", ext.FeatureFlagKey, err)
+		}
+		h.FeatureChecker.ClearCacheForTenant(tenantID.String())
+		return nil
+	}
+	// Legacy fallback: write to system_settings.
+	settingKey := extensionSettingKey(ext)
+	val := "false"
+	if enabled {
+		val = "true"
+	}
+	if _, err := h.DB.Writer.Exec(r.Context(),
+		`INSERT INTO system_settings (tenant_id, key, value, updated_at) VALUES ($1, $2, $3, NOW()) ON CONFLICT (tenant_id, key) DO UPDATE SET value = $3, updated_at = NOW()`,
+		tenantID, settingKey, val); err != nil {
+		return fmt.Errorf("writing system_setting %s: %w", settingKey, err)
 	}
 	if h.Settings != nil {
 		h.Settings.InvalidateSettings(r.Context(), tenantID)
 	}
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"key": key, "status": "disabled"}})
+	return nil
+}
+
+// extensionDefaultEnabled resolves the default enabled state for an extension
+// from the feature_flags registry (authoritative) or the settings catalog
+// DefaultValue (legacy fallback).
+func extensionDefaultEnabled(ext extensionEntry) bool {
+	if ext.FeatureFlagKey != "" {
+		return features.DefaultFor(ext.FeatureFlagKey)
+	}
+	settingKey := ext.SettingKey
+	if settingKey == "" {
+		settingKey = "extensions." + ext.Key + ".enabled"
+	}
+	defaultEnabled := ext.Version == "2.0.0"
+	if meta, ok := settingsCatalog[settingKey]; ok && meta.Type == "bool" {
+		defaultEnabled = meta.DefaultValue == "true"
+	}
+	return defaultEnabled
 }
 
 // findExtension returns the knownExtensions entry for the given key, or nil.
@@ -3335,7 +3426,8 @@ func findExtension(key string) *extensionEntry {
 }
 
 // extensionSettingKey returns the system_settings key that controls the
-// enabled/disabled state for the given extension entry.
+// enabled/disabled state for the given extension entry (legacy fallback
+// when FeatureFlagKey is empty).
 func extensionSettingKey(ext *extensionEntry) string {
 	if ext.SettingKey != "" {
 		return ext.SettingKey

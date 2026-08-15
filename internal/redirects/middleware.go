@@ -63,7 +63,12 @@ func Middleware(service *Service, store tenant.TenantStore) func(http.Handler) h
 				return
 			}
 
-			http.Redirect(w, r, targetURL, httpStatus)
+			// targetURL is safe: it originates from the redirects table, which is
+			// validated by validateTargetURL at create/update time (only root-relative
+			// paths and absolute http/https URLs are allowed). The Valkey cache is
+			// populated exclusively from DB reads. No unvalidated user input reaches
+			// this call. gosec G710 is a false positive here.
+			http.Redirect(w, r, targetURL, httpStatus) // #nosec G710 -- target_url validated at storage time (ADR-056)
 		})
 	}
 }

@@ -4556,7 +4556,7 @@ func HandleReportNotifyAdmin(ctx context.Context, t *asynq.Task) error {
 		subjectTypePtr := &subjectType
 		actorTypePtr := &actorType
 
-		if err := wq.InsertNotification(ctx, gen.InsertNotificationParams{
+		if _, err := wq.InsertNotification(ctx, gen.InsertNotificationParams{
 			TenantID:         tenantID,
 			RecipientID:      recipientID,
 			NotificationType: "report.new",

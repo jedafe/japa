@@ -2,7 +2,13 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/svelte';
 import Page from './+page.svelte';
 
+// Mock the API module — the page uses `apiRaw` for the list load and
+// `redirectsAdminApi` for create/update/delete/bulk. Both must be provided.
 vi.mock('$lib/api', () => ({
+	apiRaw: vi.fn().mockResolvedValue({
+		ok: true,
+		data: { data: [], total: 0, total_pages: 0 },
+	}),
 	redirectsAdminApi: {
 		list: vi.fn().mockResolvedValue({ ok: true, data: { items: [] } }),
 		create: vi.fn().mockResolvedValue({ ok: true }),

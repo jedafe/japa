@@ -35,6 +35,32 @@ WHERE c.content_id = @content_id AND c.tenant_id = @tenant_id AND c.deleted_at I
 ORDER BY c.is_pinned DESC, c.vote_score DESC, c.created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
+-- name: ListPublicCommentsByContent :many
+-- Public API (Section 47): top-level published comments for a content item,
+-- but ONLY if the parent content itself is published and public. Comments on
+-- drafts, private, or member-only content are never exposed to external API
+-- consumers.
+-- Ref: japaconnect-engineering/sections/47-public-api-developer-portal.md
+SELECT c.id, c.tenant_id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
+       c.vote_score, c.is_pinned, c.is_edited, c.edited_at, c.created_at, c.updated_at, c.deleted_at,
+       u.username,
+       COALESCE(up.display_name, '') AS display_name,
+       COALESCE(up.avatar_url, '') AS avatar_url
+FROM comments c
+JOIN users u ON u.id = c.author_user_id
+LEFT JOIN user_profiles up ON up.user_id = u.id AND up.tenant_id = c.tenant_id
+JOIN contents parent ON parent.id = c.content_id AND parent.tenant_id = c.tenant_id
+WHERE c.content_id = @content_id
+  AND c.tenant_id = @tenant_id
+  AND c.deleted_at IS NULL
+  AND c.status = 'published'
+  AND (c.parent_id IS NULL)
+  AND parent.status = 'published'
+  AND parent.visibility = 'public'
+  AND parent.deleted_at IS NULL
+ORDER BY c.is_pinned DESC, c.vote_score DESC, c.created_at DESC
+LIMIT @page_limit OFFSET @page_offset;
+
 -- name: ListCommentsByContentNew :many
 -- Section 49 ?sort=new — newest first (pinned still surface on top).
 SELECT c.id, c.tenant_id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,

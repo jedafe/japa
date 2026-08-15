@@ -272,7 +272,7 @@ func (h *Handlers) HandleGetMyCode(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusInternalServerError, "stats_failed", err.Error())
 		return
 	}
-	errpkg.WriteJSON(w, http.StatusOK, stats)
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": stats})
 }
 
 // HandleRedirect handles the public /r/:code redirect with click tracking.
@@ -349,8 +349,8 @@ func (h *Handlers) HandleMyHistory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
-		"referrals": rows,
-		"total":     total,
+		"data":  rows,
+		"total": total,
 	})
 }
 
@@ -376,8 +376,8 @@ func (h *Handlers) HandleAdminListReferrals(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
-		"referrals": rows,
-		"total":     total,
+		"data":  rows,
+		"total": total,
 	})
 }
 
@@ -414,7 +414,7 @@ func (h *Handlers) HandleAdminResolveFlagged(w http.ResponseWriter, r *http.Requ
 		errpkg.WriteError(w, http.StatusBadRequest, "resolve_failed", err.Error())
 		return
 	}
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"resolved": true})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"resolved": true}})
 }
 
 // HandleAdminReferralStats returns referral stats by status.
@@ -434,7 +434,7 @@ func (h *Handlers) HandleAdminReferralStats(w http.ResponseWriter, r *http.Reque
 		errpkg.WriteError(w, http.StatusInternalServerError, "stats_failed", err.Error())
 		return
 	}
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"stats": stats})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": stats})
 }
 
 // HandleAdminFlagged returns the flagged referral queue.
@@ -458,7 +458,7 @@ func (h *Handlers) HandleAdminFlagged(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
-		"flagged": rows,
-		"total":   total,
+		"data":  rows,
+		"total": total,
 	})
 }

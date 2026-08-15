@@ -519,16 +519,24 @@ func (h *Handlers) Broadcast(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 
-	// If scheduled for later, store as a pending broadcast task.
+	// If scheduled for later, validate the schedule time and return an
+	// error instead of silently dropping the broadcast content (BUG-008).
+	// The admin_broadcasts table has no status/scheduled_at column, so
+	// scheduled delivery is not yet supported via this endpoint. The
+	// separate POST /admin/broadcasts/{id}/send endpoint handles sending
+	// an already-created broadcast. Ref: §35 L128.
 	if req.Schedule != "" {
-		errpkg.WriteJSON(w, http.StatusOK, map[string]any{
-			"data": map[string]any{
-				"sent":         0,
-				"scheduled":    true,
-				"scheduled_at": req.Schedule,
-				"message":      "Broadcast scheduled for later delivery",
-			},
-		})
+		scheduledAt, parseErr := time.Parse(time.RFC3339, req.Schedule)
+		if parseErr != nil {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_schedule", "schedule must be a valid RFC3339 timestamp")
+			return
+		}
+		if scheduledAt.Before(time.Now()) {
+			errpkg.WriteError(w, http.StatusBadRequest, "past_schedule", "schedule time must be in the future")
+			return
+		}
+		errpkg.WriteError(w, http.StatusNotImplemented, "scheduled_broadcast_unsupported",
+			"Scheduled broadcasts are not yet supported. Use POST /admin/broadcasts/{id}/send to send an existing broadcast.")
 		return
 	}
 
@@ -1193,12 +1201,12 @@ func (h *Handlers) handlePersonaActionReview(ctx context.Context, id, tenantID, 
 		return true
 	}
 
-	// Update only status and reviewer_user_id. The feedback column stores
-	// the actionPayload JSON that DispatchAction reads to route the approved
-	// action to the correct existing endpoint (ADR-077 §5). Overwriting it
-	// with the admin's reason string would destroy the payload and the
-	// approved action would never dispatch (BUG-001). The reason is logged
-	// for audit purposes instead.
+	// Update only status and reviewer_user_id. The persona_payload column
+	// stores the actionPayload JSON that DispatchAction reads to route the
+	// approved action to the correct existing endpoint (ADR-077 §5,
+	// migration 000482). Overwriting it with the admin's reason string would
+	// destroy the payload and the approved action would never dispatch
+	// (BUG-001). The reason is logged for audit purposes instead.
 	_, err = h.DB.Writer.Exec(ctx,
 		`UPDATE content_reviews
 		 SET status = $1, reviewer_user_id = $2, updated_at = now()
