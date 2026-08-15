@@ -64,8 +64,9 @@ var DefaultWeights = map[string]float64{
 	"censored_words":    0.10,
 	"link_analysis":     0.10,
 	"user_age":          0.05,
+	"new_user_links":    0.10,
 	"content_length":    0.05,
-	"ai_classification": 0.20,
+	"ai_classification": 0.10,
 }
 
 // --- Pipeline ---
@@ -121,6 +122,7 @@ func (p *SpamPipeline) Check(ctx context.Context, tenantID pgtype.UUID, req Spam
 		p.checkCensoredWords,
 		p.checkLinkAnalysis,
 		p.checkUserAge,
+		p.checkNewUserLinks,
 		p.checkContentLength,
 		p.checkAIClassification,
 	}
@@ -408,6 +410,80 @@ func (p *SpamPipeline) checkUserAge(ctx context.Context, tenantID pgtype.UUID, r
 
 	if age < threshold {
 		return name, 0.3, []string{fmt.Sprintf("new account: %s old", age.Round(time.Hour))}
+	}
+
+	return name, 0.0, nil
+}
+
+// newUserMinPostsForLinks is the default number of published posts a user must
+// have before they are allowed to include external links. Overridable via the
+// moderation.new_user_min_posts_for_links system setting (§41 Layer 3).
+const newUserMinPostsForLinks = 3
+
+// checkNewUserLinks enforces §41 Layer 3: new users (accounts younger than
+// moderation.new_account_threshold_days) may not include external links in
+// their posts until they have published at least moderation.new_user_min_posts_for_links
+// posts. This stops brand-new spam accounts from dropping links in their first
+// posts. The layer returns a near-block score (0.95) when violated, so the
+// pipeline's blockThreshold (default 0.6) rejects the post.
+// Ref: japaconnect-engineering/sections/41-spam-content-safety.md (Layer 3).
+func (p *SpamPipeline) checkNewUserLinks(ctx context.Context, tenantID pgtype.UUID, req SpamCheckRequest) (string, float64, []string) {
+	const name = "new_user_links"
+
+	if req.UserID == (pgtype.UUID{}) || req.Content == "" {
+		return name, 0.0, nil
+	}
+
+	// No external links → no restriction applies.
+	if countLinks(req.Content) == 0 {
+		return name, 0.0, nil
+	}
+
+	if p.db == nil {
+		return name, 0.0, nil
+	}
+
+	queries := gen.New(p.db.Reader)
+
+	// 1. Is the account "new"? Use the same threshold as checkUserAge.
+	days := 7
+	if p.settings != nil {
+		days = p.settings.GetIntOr(ctx, tenantID, "moderation.new_account_threshold_days", days)
+	}
+	threshold := time.Duration(days) * 24 * time.Hour
+
+	user, err := queries.GetUserByID(ctx, gen.GetUserByIDParams{
+		TenantID: tenantID,
+		UserID:   req.UserID,
+	})
+	if err != nil {
+		slog.Warn("new_user_links: user lookup failed", "user_id", req.UserID, "error", err)
+		return name, 0.0, nil
+	}
+
+	if !user.CreatedAt.Valid || time.Since(user.CreatedAt.Time) >= threshold {
+		return name, 0.0, nil // account is not new
+	}
+
+	// 2. How many published posts does the user already have?
+	minPosts := newUserMinPostsForLinks
+	if p.settings != nil {
+		minPosts = p.settings.GetIntOr(ctx, tenantID, "moderation.new_user_min_posts_for_links", minPosts)
+	}
+
+	count, err := queries.CountPostsByAuthor(ctx, gen.CountPostsByAuthorParams{
+		TenantID: tenantID,
+		AuthorID: req.UserID,
+	})
+	if err != nil {
+		slog.Warn("new_user_links: post count lookup failed", "user_id", req.UserID, "error", err)
+		return name, 0.0, nil
+	}
+
+	if int(count) < minPosts {
+		return name, 0.95, []string{
+			fmt.Sprintf("new user with external links: %d posts (need %d before links allowed)", count, minPosts),
+		}
 	}
 
 	return name, 0.0, nil

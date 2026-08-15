@@ -3,14 +3,36 @@
 	import { t } from '$lib/i18n';
 	import { i18n } from '$lib/i18n';
 	import { page } from '$app/state';
+	import { goto } from '$app/navigation';
+	import { api } from '$lib/api/client';
 	import { relativeTime } from '$lib/feed/time';
-	import { ArrowLeft, BadgeCheck, MapPin, Calendar, CreditCard, Briefcase, Lightbulb, BookMarked, Quote } from 'lucide-svelte';
+	import { ArrowLeft, BadgeCheck, MapPin, Calendar, CreditCard, Briefcase, Lightbulb, BookMarked, Quote, Pencil, Trash2, Loader2 } from 'lucide-svelte';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
 
 	const story = $derived(data.story);
+	const isAuthor = $derived(!!story && !!data.currentUserId && story.author_id === data.currentUserId);
+
+	let deleting = $state(false);
+	let showDeleteConfirm = $state(false);
+
+	async function confirmDelete() {
+		if (!story) return;
+		deleting = true;
+		try {
+			const res = await api.delete(`/stories/${story.id}`);
+			if (res.error === null) {
+				goto('/stories');
+			}
+		} catch {
+			// stay on page — the error is transient
+		} finally {
+			deleting = false;
+			showDeleteConfirm = false;
+		}
+	}
 
 	const title = $derived(story ? `${story.title} — ${t('stories.heading', 'Community Stories')}` : t('stories.heading', 'Community Stories'));
 	const description = $derived(story?.biggest_challenge ?? story?.title ?? '');
@@ -80,11 +102,30 @@
 		</div>
 
 		<article class="px-4 pb-8">
-			<!-- Title + verified badge -->
-			<div class="flex items-start gap-2">
-				<h1 class="text-2xl font-bold text-[var(--color-text)]">{story.title}</h1>
-				{#if story.verified}
-					<BadgeCheck size={22} class="mt-1 shrink-0 text-[var(--color-primary)]" />
+			<!-- Title + verified badge + author actions -->
+			<div class="flex items-start justify-between gap-2">
+				<div class="flex items-start gap-2">
+					<h1 class="text-2xl font-bold text-[var(--color-text)]">{story.title}</h1>
+					{#if story.verified}
+						<BadgeCheck size={22} class="mt-1 shrink-0 text-[var(--color-primary)]" />
+					{/if}
+				</div>
+				{#if isAuthor}
+					<div class="flex shrink-0 items-center gap-1">
+						<a
+							href="/stories/{story.slug}/edit"
+							class="inline-flex items-center gap-1 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-1.5 text-xs font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
+						>
+							<Pencil size={14} /> {t('stories.edit', 'Edit')}
+						</a>
+						<button
+							type="button"
+							onclick={() => (showDeleteConfirm = true)}
+							class="inline-flex items-center gap-1 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-1.5 text-xs font-medium text-red-500 transition-colors hover:bg-red-500/10"
+						>
+							<Trash2 size={14} /> {t('stories.delete', 'Delete')}
+						</button>
+					</div>
 				{/if}
 			</div>
 
@@ -150,5 +191,37 @@
 				{/if}
 			</div>
 		</article>
+
+		{#if showDeleteConfirm}
+			<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true">
+				<div class="w-full max-w-md rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-6">
+					<h2 class="text-lg font-semibold text-[var(--color-text)]">{t('stories.delete_confirm_title', 'Delete your story?')}</h2>
+					<p class="mt-2 text-sm text-[var(--color-text-subtle)]">{t('stories.delete_confirm_body', 'This will permanently remove your story. This action cannot be undone.')}</p>
+					<div class="mt-4 flex justify-end gap-2">
+						<button
+							type="button"
+							onclick={() => (showDeleteConfirm = false)}
+							class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
+						>
+							{t('common.cancel', 'Cancel')}
+						</button>
+						<button
+							type="button"
+							onclick={confirmDelete}
+							disabled={deleting}
+							class="inline-flex items-center gap-2 rounded-[var(--radius)] bg-red-500 px-4 py-2 text-sm font-medium text-white transition-colors hover:opacity-90 disabled:opacity-50"
+						>
+							{#if deleting}
+								<Loader2 size={16} class="animate-spin" />
+								{t('stories.deleting', 'Deleting…')}
+							{:else}
+								<Trash2 size={16} />
+								{t('stories.delete', 'Delete')}
+							{/if}
+						</button>
+					</div>
+				</div>
+			</div>
+		{/if}
 	{/if}
 </div>

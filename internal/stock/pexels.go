@@ -19,10 +19,10 @@ type PexelsProvider struct {
 	client *http.Client
 }
 
-func NewPexelsProvider(apiKey string) *PexelsProvider {
+func NewPexelsProvider(apiKey string, timeout time.Duration) *PexelsProvider {
 	return &PexelsProvider{
 		apiKey: apiKey,
-		client: &http.Client{Timeout: 15 * time.Second},
+		client: &http.Client{Timeout: timeout},
 	}
 }
 
@@ -56,6 +56,7 @@ func (p *PexelsProvider) Search(ctx context.Context, query string, page, perPage
 		TotalResults int `json:"total_results"`
 		Page         int `json:"page"`
 		PerPage      int `json:"per_page"`
+		NextPage     string `json:"next_page"`
 		Photos       []struct {
 			ID     int `json:"id"`
 			Width  int `json:"width"`
@@ -94,7 +95,7 @@ func (p *PexelsProvider) Search(ctx context.Context, query string, page, perPage
 		Total:       raw.TotalResults,
 		Page:        raw.Page,
 		PerPage:     raw.PerPage,
-		HasNextPage: len(raw.Photos) == raw.PerPage,
+		HasNextPage: raw.NextPage != "",
 	}, nil
 }
 

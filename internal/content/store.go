@@ -1040,7 +1040,9 @@ func (s *Service) ListContentTags(ctx context.Context, contentID pgtype.UUID) ([
 }
 
 // ListContentByTag returns published content items tagged with the given tag.
-func (s *Service) ListContentByTag(ctx context.Context, tenantID, tagID pgtype.UUID, cursor pgtype.Timestamptz, limit int32) ([]gen.ListContentByTagRow, error) {
+// The cursor is a composite (created_at, id) pair to avoid skipping items
+// that share the same created_at timestamp. Ref: §4.1.
+func (s *Service) ListContentByTag(ctx context.Context, tenantID, tagID pgtype.UUID, cursorCreatedAt pgtype.Timestamptz, cursorID pgtype.UUID, limit int32) ([]gen.ListContentByTagRow, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -1048,7 +1050,8 @@ func (s *Service) ListContentByTag(ctx context.Context, tenantID, tagID pgtype.U
 	contents, err := s.read.ListContentByTag(ctx, gen.ListContentByTagParams{
 		TagID:           tagID,
 		TenantID:        tenantID,
-		CursorCreatedAt: cursor,
+		CursorCreatedAt: cursorCreatedAt,
+		CursorID:        cursorID,
 		PageLimit:       limit,
 	})
 	if err != nil {

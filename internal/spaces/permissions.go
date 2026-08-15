@@ -58,7 +58,7 @@ func (s *Service) CanPostInSpace(
 		}
 		return true
 	case PermModerators:
-		isMod, err := s.IsModerator(ctx, space.ID, userID)
+		isMod, err := s.IsModerator(ctx, space.ID, userID, tenantID)
 		if err != nil || !isMod {
 			return false
 		}
@@ -134,7 +134,7 @@ func canActInSpace(
 		}
 		return true
 	case PermModerators:
-		isMod, err := s.IsModerator(ctx, space.ID, userID)
+		isMod, err := s.IsModerator(ctx, space.ID, userID, tenantID)
 		if err != nil || !isMod {
 			return false
 		}

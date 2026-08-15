@@ -82,12 +82,19 @@ type SessionDTO struct {
 }
 
 // FormatInput is the request body for POST /cv-formatter/format.
+// When a file is uploaded, InputText contains the extracted text and
+// the File* fields preserve the original file metadata.
 type FormatInput struct {
 	DestinationSpaceID string `json:"destination_space_id"`
 	OriginSpaceID      string `json:"origin_space_id"`
 	InputText          string `json:"input_text"`
 	OutputFormat       string `json:"output_format"`
 	AIModel            string `json:"ai_model"`
+	// File upload metadata (populated by the multipart handler).
+	OriginalFilename *string `json:"-"`
+	FileStoragePath  *string `json:"-"`
+	FileMimeType     *string `json:"-"`
+	FileSizeBytes    *int64  `json:"-"`
 }
 
 // StandardInput is the request body for POST /admin/cv-formatter/standards.
@@ -335,6 +342,10 @@ func (s *Service) CreateSession(ctx context.Context, tenantID, userID pgtype.UUI
 		OutputFormat:       outputFormat,
 		AIModel:            aiModel,
 		AIPromptHash:       &promptHash,
+		OriginalFilename:   input.OriginalFilename,
+		FileStoragePath:    input.FileStoragePath,
+		FileMimeType:       input.FileMimeType,
+		FileSizeBytes:      input.FileSizeBytes,
 	})
 	if err != nil {
 		return SessionDTO{}, fmt.Errorf("cvformatter: create session: %w", err)

@@ -19,9 +19,11 @@ package cvformatter
 import (
 	"encoding/json"
 	"errors"
+	"io"
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
@@ -179,6 +181,11 @@ func (h *Handlers) HandleGetStandard(w http.ResponseWriter, r *http.Request) {
 // registration). Quota-checked via CheckQuota. Creates a session with
 // status='pending' and returns 202 Accepted. The actual AI processing is
 // an Asynq task (not implemented here).
+//
+// Accepts two content types:
+//   - application/json: body with input_text (pasted text)
+//   - multipart/form-data: file upload (PDF or DOCX) with form fields
+//     destination_space_id, origin_space_id (optional), output_format (optional)
 func (h *Handlers) HandleFormat(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
 	if !ok {
@@ -195,9 +202,83 @@ func (h *Handlers) HandleFormat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var input FormatInput
-	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
-		return
+
+	ct := r.Header.Get("Content-Type")
+	if strings.HasPrefix(ct, "multipart/form-data") {
+		// File upload path — parse multipart form and extract text.
+		if err := r.ParseMultipartForm(MaxUploadBytes); err != nil {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_form", "Failed to parse multipart form (max 10 MB)")
+			return
+		}
+		file, header, err := r.FormFile("file")
+		if err != nil {
+			errpkg.WriteError(w, http.StatusBadRequest, "missing_file", "file is required for multipart uploads")
+			return
+		}
+		defer file.Close()
+
+		// Validate file size.
+		if header.Size > MaxUploadBytes {
+			errpkg.WriteError(w, http.StatusBadRequest, "file_too_large", "File exceeds 10 MB limit")
+			return
+		}
+
+		// Determine MIME type from the file header (not just the extension).
+		mimeType := header.Header.Get("Content-Type")
+		if mimeType == "" {
+			mimeType = detectMimeType(header.Filename)
+		}
+		if !AllowedMimeTypes[mimeType] {
+			errpkg.WriteError(w, http.StatusBadRequest, "unsupported_type",
+				"Only PDF and DOCX files are accepted")
+			return
+		}
+
+		// Read the file body.
+		body, err := io.ReadAll(io.LimitReader(file, MaxUploadBytes+1))
+		if err != nil {
+			errpkg.WriteError(w, http.StatusBadRequest, "read_failed", "Failed to read uploaded file")
+			return
+		}
+		if int64(len(body)) > MaxUploadBytes {
+			errpkg.WriteError(w, http.StatusBadRequest, "file_too_large", "File exceeds 10 MB limit")
+			return
+		}
+
+		// Extract text from the file.
+		extracted, err := ExtractTextFromFile(body, mimeType)
+		if err != nil {
+			slog.Error("cvformatter: text extraction failed", "filename", header.Filename, "error", err)
+			errpkg.WriteError(w, http.StatusBadRequest, "extraction_failed",
+				"Failed to extract text from file. Ensure it is a valid PDF or DOCX.")
+			return
+		}
+		if strings.TrimSpace(extracted) == "" {
+			errpkg.WriteError(w, http.StatusBadRequest, "empty_text",
+				"No text could be extracted from the file. If it is a scanned PDF, paste the text manually.")
+			return
+		}
+
+		// Populate input from form fields + extracted text.
+		input.DestinationSpaceID = r.FormValue("destination_space_id")
+		input.OriginSpaceID = r.FormValue("origin_space_id")
+		input.OutputFormat = r.FormValue("output_format")
+		input.AIModel = r.FormValue("ai_model")
+		input.InputText = extracted
+		filename := header.Filename
+		size := header.Size
+		input.OriginalFilename = &filename
+		input.FileMimeType = &mimeType
+		input.FileSizeBytes = &size
+		// FileStoragePath is nil — we don't persist the raw file to S3
+		// in this iteration; the extracted text is sufficient for AI
+		// processing. A future iteration can upload to SeaweedFS.
+	} else {
+		// JSON path — text pasted directly.
+		if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+			return
+		}
 	}
 
 	if input.DestinationSpaceID == "" {
@@ -205,7 +286,7 @@ func (h *Handlers) HandleFormat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if input.InputText == "" {
-		errpkg.WriteError(w, http.StatusBadRequest, "missing_input", "input_text is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_input", "input_text or a file is required")
 		return
 	}
 
@@ -323,15 +404,40 @@ func (h *Handlers) HandleDownload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	contentType := "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+	// Generate the actual document file (DOCX or PDF) from the AI output
+	// text. The output_text is plain text from the AI Gateway; we convert
+	// it to a properly formatted document for download.
+	var fileBytes []byte
+	var contentType string
+	var ext string
+
 	if row.OutputFormat == OutputFormatPDF {
 		contentType = "application/pdf"
+		ext = "pdf"
+		var err error
+		fileBytes, err = GeneratePDF(*row.OutputText)
+		if err != nil {
+			slog.Error("cvformatter: generate PDF failed", "error", err)
+			errpkg.WriteError(w, http.StatusInternalServerError, "generate_failed", "Failed to generate PDF")
+			return
+		}
+	} else {
+		contentType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+		ext = "docx"
+		var err error
+		fileBytes, err = GenerateDOCX(*row.OutputText)
+		if err != nil {
+			slog.Error("cvformatter: generate DOCX failed", "error", err)
+			errpkg.WriteError(w, http.StatusInternalServerError, "generate_failed", "Failed to generate DOCX")
+			return
+		}
 	}
 
 	w.Header().Set("Content-Type", contentType)
-	w.Header().Set("Content-Disposition", "attachment; filename=\"cv-formatted."+row.OutputFormat+"\"")
+	w.Header().Set("Content-Disposition", "attachment; filename=\"cv-formatted."+ext+"\"")
+	w.Header().Set("Content-Length", strconv.Itoa(len(fileBytes)))
 	w.WriteHeader(http.StatusOK)
-	if _, err := w.Write([]byte(*row.OutputText)); err != nil {
+	if _, err := w.Write(fileBytes); err != nil {
 		slog.Error("cvformatter: write download body", "error", err)
 	}
 }
@@ -404,4 +510,18 @@ func (h *Handlers) HandleAdminUpsertStandard(w http.ResponseWriter, r *http.Requ
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": standard})
+}
+
+// detectMimeType infers the MIME type from the filename extension when
+// the Content-Type header is missing or generic.
+func detectMimeType(filename string) string {
+	lower := strings.ToLower(filename)
+	switch {
+	case strings.HasSuffix(lower, ".pdf"):
+		return "application/pdf"
+	case strings.HasSuffix(lower, ".docx"):
+		return "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+	default:
+		return ""
+	}
 }

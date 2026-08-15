@@ -31,19 +31,24 @@ import (
 	"github.com/jedafe/japa/internal/ai"
 	"github.com/jedafe/japa/internal/arrivalchecklist"
 	"github.com/jedafe/japa/internal/attestationguide"
+	"github.com/jedafe/japa/internal/calendar"
 	"github.com/jedafe/japa/internal/comparison"
 	"github.com/jedafe/japa/internal/communitylocator"
 	"github.com/jedafe/japa/internal/content"
 	"github.com/jedafe/japa/internal/credentialchecker"
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/docs"
+	"github.com/jedafe/japa/internal/housingguide"
 	"github.com/jedafe/japa/internal/languagetesthub"
 	"github.com/jedafe/japa/internal/learning"
 	"github.com/jedafe/japa/internal/menus"
 	"github.com/jedafe/japa/internal/rag"
 	"github.com/jedafe/japa/internal/studio"
+	"github.com/jedafe/japa/internal/story"
 	"github.com/jedafe/japa/internal/taxcalculator"
 	"github.com/jedafe/japa/internal/users"
+	"github.com/jedafe/japa/internal/visaroutes"
+	"github.com/jedafe/japa/internal/wiki"
 	"github.com/jedafe/japa/internal/worker"
 	"github.com/valkey-io/valkey-go/valkeycompat"
 )
@@ -878,9 +883,11 @@ func (a *agentUsersAdapter) UpdateProfile(ctx context.Context, tenantID, userID 
 // import internal/studio, internal/content, internal/ai, or internal/personas
 // (which would create cycles).
 // intelRecordLoader is the subset of the intelligence store needed to
-// load extraction context for Studio generation (Approach B).
+// load extraction context for Studio generation (Approach B) and to
+// transition linked intel_records to 'published' on successful publish (§75).
 type intelRecordLoader interface {
 	GetIntelRecord(ctx context.Context, tenantID, id pgtype.UUID) (gen.IntelRecord, error)
+	UpdateIntelRecordStatus(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateIntelRecordStatusParams) error
 }
 
 type studioDraftProcessorAdapter struct {
@@ -899,6 +906,12 @@ type studioDraftProcessorAdapter struct {
 	languageTestSvc  languageTestDraftGenerator
 	taxSvc           taxDraftGenerator
 	credentialSvc    credentialDraftGenerator
+	housingSvc       housingDraftGenerator
+	visaRouteSvc     visaRouteDraftGenerator
+	wikiSvc          wikiDraftGenerator
+	calendarSvc      calendarDraftGenerator
+	docsSvc          docsDraftGenerator
+	storySvc         storyDraftGenerator
 }
 
 // arrivalDraftGenerator is the subset of *arrivalchecklist.Service needed
@@ -930,6 +943,40 @@ type taxDraftGenerator interface {
 // credentialDraftGenerator is the subset of *credentialchecker.Service.
 type credentialDraftGenerator interface {
 	GeneratePathwayDraft(ctx context.Context, tenantID pgtype.UUID, req credentialchecker.GeneratePathwayRequest) (credentialchecker.GeneratePathwayResponse, error)
+	GetProfessionBySlug(ctx context.Context, slug string) (credentialchecker.ProfessionRow, error)
+}
+
+// housingDraftGenerator is the subset of *housingguide.Service needed for
+// Studio routing (Approach B, ADR-076 Amendment 1).
+type housingDraftGenerator interface {
+	GenerateDraft(ctx context.Context, tenantID pgtype.UUID, input housingguide.GenerateGuideRequest) (housingguide.GenerateDraftResponse, error)
+}
+
+// visaRouteDraftGenerator is the subset of *visaroutes.Service.
+type visaRouteDraftGenerator interface {
+	GenerateDraft(ctx context.Context, tenantID pgtype.UUID, input visaroutes.GenerateRouteRequest) (visaroutes.GenerateDraftResponse, error)
+}
+
+// wikiDraftGenerator is the subset of *wiki.Service.
+type wikiDraftGenerator interface {
+	GenerateDraft(ctx context.Context, tenantID pgtype.UUID, input wiki.GenerateDraftRequest) (wiki.GenerateDraftResponse, error)
+}
+
+// calendarDraftGenerator is the subset of *calendar.Service.
+type calendarDraftGenerator interface {
+	GenerateDraft(ctx context.Context, tenantID pgtype.UUID, input calendar.GenerateDraftRequest) (calendar.GenerateDraftResponse, error)
+}
+
+// docsDraftGenerator is the subset of *docs.Service.
+type docsDraftGenerator interface {
+	GenerateDraft(ctx context.Context, tenantID pgtype.UUID, input docs.GenerateDraftRequest) (docs.GenerateDraftResponse, error)
+}
+
+// storyDraftGenerator is the subset of *story.Service. Story creates both a
+// contents row and a story_meta row, so it needs the persona's backing
+// user_id as the author.
+type storyDraftGenerator interface {
+	GenerateDraft(ctx context.Context, tenantID, authorID pgtype.UUID, input story.GenerateDraftRequest) (story.GenerateDraftResponse, error)
 }
 
 // toolTableTargetTable maps tool-table content types to their backing
@@ -945,6 +992,8 @@ var toolTableTargetTable = map[string]string{
 	"community_organisation":   "community_organisations",
 	"wiki_page":                "wiki_pages",
 	"calendar_entry":           "calendar_entries",
+	"doc_page":                 "doc_pages",
+	"story":                    "story_meta",
 }
 
 // isToolTableType returns true if the content type should route to a
@@ -1106,6 +1155,10 @@ func (a *studioDraftProcessorAdapter) GenerateJob(ctx context.Context, tenantID,
 		if err := a.studio.MarkJobPublished(ctx, tenantID, jobID, row.ID); err != nil {
 			slog.Warn("studio: generate: mark job published failed", "job_id", jobID, "error", err)
 		}
+		// Transition the linked intel_record to 'published' (§75: "On
+		// successful publish the linked intel_records row transitions to
+		// status='published'").
+		a.transitionIntelRecordOnPublish(ctx, tenantID, job.IntelRecordID)
 		slog.Info("studio: generate: auto-published", "job_id", jobID, "content_id", row.ID)
 		return nil
 	}
@@ -1233,37 +1286,162 @@ func (a *studioDraftProcessorAdapter) tryToolTableRouting(
 		return id, "language_test_requirements", true, nil
 
 	case "tax_obligation_guide":
-		if a.taxSvc == nil || destSpaceStr == "" {
-			return pgtype.UUID{}, "", false, nil
-		}
-		// Tax needs origin_space_id + employment_status. Use defaults.
-		result, err := a.taxSvc.GenerateGuide(ctx, tenantID, taxcalculator.GenerateGuideRequest{
-			OriginSpaceID:      destSpaceStr,
-			DestinationSpaceID: destSpaceStr,
-			EmploymentStatus:   "employed",
-			Prompt:             promptWithCtx,
-		})
-		if err != nil {
-			slog.Warn("studio: tax_obligation_guide routing failed, falling back to contents",
-				"job_id", jobID, "error", err)
-			return pgtype.UUID{}, "", false, nil
-		}
-		var id pgtype.UUID
-		_ = id.Scan(result.GuideID)
-		return id, "tax_obligation_guides", true, nil
+		// Tax guides are keyed on origin×destination×employment_status
+		// (§100 schema UNIQUE constraint). The studio.Job model only
+		// carries TargetSpaceID (destination) — there is no origin space
+		// field. Routing with origin==destination produces a semantically
+		// wrong draft (a "Nigeria→Nigeria" tax guide is meaningless).
+		// Fall back to contents creation; tax guide AI drafts must be
+		// generated via the dedicated
+		// POST /admin/tax-calculator/guides/generate endpoint where the
+		// admin explicitly provides both origin and destination.
+		// Ref: japaconnect-engineering/sections/100-tax-calculator.md
+		return pgtype.UUID{}, "", false, nil
 
 	case "credential_pathway":
 		if a.credentialSvc == nil || destSpaceStr == "" {
 			return pgtype.UUID{}, "", false, nil
 		}
-		// Credential needs profession_id (UUID) — can't be mapped from
-		// Studio job fields. Fall back to contents.
-		return pgtype.UUID{}, "", false, nil
+		// Resolve profession_id from the job's guide_category (treated as
+		// a profession slug) or topic_prompt. Falls back to contents if
+		// no profession matches.
+		professionSlug := visaCat
+		if professionSlug == "" {
+			return pgtype.UUID{}, "", false, nil
+		}
+		prof, perr := a.credentialSvc.GetProfessionBySlug(ctx, professionSlug)
+		if perr != nil {
+			slog.Info("studio: credential_pathway: profession slug not found, falling back to contents",
+				"job_id", jobID, "profession_slug", professionSlug)
+			return pgtype.UUID{}, "", false, nil
+		}
+		resp, err := a.credentialSvc.GeneratePathwayDraft(ctx, tenantID, credentialchecker.GeneratePathwayRequest{
+			ProfessionID:       prof.ID,
+			IssuingSpaceID:     destSpaceStr,
+			DestinationSpaceID: destSpaceStr,
+		})
+		if err != nil {
+			slog.Warn("studio: credential_pathway routing failed, falling back to contents",
+				"job_id", jobID, "error", err)
+			return pgtype.UUID{}, "", false, nil
+		}
+		var id pgtype.UUID
+		_ = id.Scan(resp.PathwayID)
+		return id, "credential_pathways", true, nil
+
+	case "housing_guide":
+		if a.housingSvc == nil || destSpaceStr == "" {
+			return pgtype.UUID{}, "", false, nil
+		}
+		resp, err := a.housingSvc.GenerateDraft(ctx, tenantID, housingguide.GenerateGuideRequest{
+			DestinationSpaceID: destSpaceStr,
+			AccommodationType:  visaCat,
+		})
+		if err != nil {
+			slog.Warn("studio: housing_guide routing failed, falling back to contents",
+				"job_id", jobID, "error", err)
+			return pgtype.UUID{}, "", false, nil
+		}
+		var id pgtype.UUID
+		_ = id.Scan(resp.GuideID)
+		return id, "housing_guides", true, nil
+
+	case "visa_route":
+		if a.visaRouteSvc == nil || destSpaceStr == "" {
+			return pgtype.UUID{}, "", false, nil
+		}
+		resp, err := a.visaRouteSvc.GenerateDraft(ctx, tenantID, visaroutes.GenerateRouteRequest{
+			DestinationSpaceID: destSpaceStr,
+			VisaCategory:       visaCat,
+			Prompt:             promptWithCtx,
+		})
+		if err != nil {
+			slog.Warn("studio: visa_route routing failed, falling back to contents",
+				"job_id", jobID, "error", err)
+			return pgtype.UUID{}, "", false, nil
+		}
+		var id pgtype.UUID
+		_ = id.Scan(resp.RouteID)
+		return id, "visa_routes", true, nil
+
+	case "wiki_page":
+		if a.wikiSvc == nil || !job.TargetSpaceID.Valid {
+			return pgtype.UUID{}, "", false, nil
+		}
+		// Wiki needs a space_id + title. Use the job's TargetSpaceID and
+		// topic_prompt as the title.
+		resp, err := a.wikiSvc.GenerateDraft(ctx, tenantID, wiki.GenerateDraftRequest{
+			SpaceID:  job.TargetSpaceID.String(),
+			Title:    job.TopicPrompt,
+			Category: visaCat,
+			Prompt:   promptWithCtx,
+		})
+		if err != nil {
+			slog.Warn("studio: wiki_page routing failed, falling back to contents",
+				"job_id", jobID, "error", err)
+			return pgtype.UUID{}, "", false, nil
+		}
+		var id pgtype.UUID
+		_ = id.Scan(resp.PageID)
+		return id, "wiki_pages", true, nil
+
+	case "calendar_entry":
+		if a.calendarSvc == nil || destSpaceStr == "" {
+			return pgtype.UUID{}, "", false, nil
+		}
+		resp, err := a.calendarSvc.GenerateDraft(ctx, tenantID, calendar.GenerateDraftRequest{
+			DestinationSpaceID: destSpaceStr,
+			Category:           visaCat,
+			Prompt:             promptWithCtx,
+		})
+		if err != nil {
+			slog.Warn("studio: calendar_entry routing failed, falling back to contents",
+				"job_id", jobID, "error", err)
+			return pgtype.UUID{}, "", false, nil
+		}
+		var id pgtype.UUID
+		_ = id.Scan(resp.EntryID)
+		return id, "calendar_entries", true, nil
+
+	case "doc_page":
+		if a.docsSvc == nil {
+			return pgtype.UUID{}, "", false, nil
+		}
+		resp, err := a.docsSvc.GenerateDraft(ctx, tenantID, docs.GenerateDraftRequest{
+			Title:  job.TopicPrompt,
+			Prompt: promptWithCtx,
+		})
+		if err != nil {
+			slog.Warn("studio: doc_page routing failed, falling back to contents",
+				"job_id", jobID, "error", err)
+			return pgtype.UUID{}, "", false, nil
+		}
+		var id pgtype.UUID
+		_ = id.Scan(resp.PageID)
+		return id, "doc_pages", true, nil
+
+	case "story":
+		if a.storySvc == nil || destSpaceStr == "" {
+			return pgtype.UUID{}, "", false, nil
+		}
+		// Story creates both a contents row and a story_meta row. The
+		// persona's backing user_id is the author.
+		resp, err := a.storySvc.GenerateDraft(ctx, tenantID, persona.UserID, story.GenerateDraftRequest{
+			DestinationSpaceID: destSpaceStr,
+			VisaCategory:       visaCat,
+			Prompt:             promptWithCtx,
+		})
+		if err != nil {
+			slog.Warn("studio: story routing failed, falling back to contents",
+				"job_id", jobID, "error", err)
+			return pgtype.UUID{}, "", false, nil
+		}
+		var id pgtype.UUID
+		_ = id.Scan(resp.ContentID)
+		return id, "story_meta", true, nil
 
 	default:
-		// housing_guide, visa_route, wiki_page, calendar_entry: these
-		// either have placeholder GenerateDraft methods or no draft
-		// method. Fall back to contents creation.
+		// Unknown tool-table type: fall back to contents creation.
 		return pgtype.UUID{}, "", false, nil
 	}
 }
@@ -1358,5 +1536,23 @@ func (a *studioDraftProcessorAdapter) createStudioReview(ctx context.Context, te
 	})
 	if err != nil {
 		slog.Warn("studio: create HITL review failed", "content_id", contentID, "error", err)
+	}
+}
+
+// transitionIntelRecordOnPublish transitions a linked intel_record to
+// 'published' when the studio job is published (§75: "On successful publish
+// the linked intel_records row transitions to status='published'"). Safe to
+// call when intelRecordID is nil or no intel store is wired.
+func (a *studioDraftProcessorAdapter) transitionIntelRecordOnPublish(ctx context.Context, tenantID, intelRecordID pgtype.UUID) {
+	if !intelRecordID.Valid || a.intelStore == nil {
+		return
+	}
+	if err := a.intelStore.UpdateIntelRecordStatus(ctx, tenantID, gen.UpdateIntelRecordStatusParams{
+		TenantID: tenantID,
+		ID:       intelRecordID,
+		Status:   "published",
+	}); err != nil {
+		slog.Warn("studio: transition intel_record to published failed",
+			"intel_record_id", intelRecordID, "error", err)
 	}
 }

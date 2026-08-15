@@ -64,32 +64,38 @@ type cacheEntry struct {
 	LastAccess time.Time
 }
 
-// DefaultCacheTTL is how long search results stay in the LRU cache.
-const DefaultCacheTTL = 5 * time.Minute
-
-// MaxCacheEntries is the maximum number of cached search result pages.
-const MaxCacheEntries = 1000
-
 // Service orchestrates stock photo search and import across providers.
 type Service struct {
-	providers map[string]StockProvider
-	store     *Store
-	media     *media.Service
-	cache     map[string]*cacheEntry
-	mu        sync.RWMutex
-	cacheMu   sync.RWMutex
-	cfg       *config.Config
+	providers     map[string]StockProvider
+	store         *Store
+	media         *media.Service
+	cache         map[string]*cacheEntry
+	mu            sync.RWMutex
+	cacheMu       sync.RWMutex
+	cfg           *config.Config
+	cacheTTL      time.Duration
+	maxCacheItems int
 }
 
 // NewService creates a Service. Call ReloadProviders after construction
 // to populate providers from DB config.
 func NewService(database *db.DB, mediaSvc *media.Service, cfg *config.Config) *Service {
+	ttlSec := cfg.StockCacheTTLSec
+	if ttlSec <= 0 {
+		ttlSec = 300
+	}
+	maxEntries := cfg.StockCacheMaxEntries
+	if maxEntries <= 0 {
+		maxEntries = 1000
+	}
 	return &Service{
-		providers: make(map[string]StockProvider),
-		store:     NewStore(database),
-		media:     mediaSvc,
-		cache:     make(map[string]*cacheEntry),
-		cfg:       cfg,
+		providers:     make(map[string]StockProvider),
+		store:         NewStore(database),
+		media:         mediaSvc,
+		cache:         make(map[string]*cacheEntry),
+		cfg:           cfg,
+		cacheTTL:      time.Duration(ttlSec) * time.Second,
+		maxCacheItems: maxEntries,
 	}
 }
 
@@ -130,13 +136,13 @@ func (s *Service) ReloadProviders(ctx context.Context) error {
 
 		switch row.ProviderName {
 		case "unsplash":
-			s.providers["unsplash"] = NewUnsplashProvider(apiKey)
+			s.providers["unsplash"] = NewUnsplashProvider(apiKey, s.httpTimeout())
 		case "pexels":
-			s.providers["pexels"] = NewPexelsProvider(apiKey)
+			s.providers["pexels"] = NewPexelsProvider(apiKey, s.httpTimeout())
 		case "pixabay":
-			s.providers["pixabay"] = NewPixabayProvider(apiKey)
+			s.providers["pixabay"] = NewPixabayProvider(apiKey, s.httpTimeout())
 		case "openverse":
-			s.providers["openverse"] = NewOpenverseProvider()
+			s.providers["openverse"] = NewOpenverseProvider(s.httpTimeout())
 		}
 		s.mu.Unlock()
 	}
@@ -173,6 +179,16 @@ func (s *Service) seedFromEnv(ctx context.Context) {
 	}
 	// Openverse always gets seeded (no API key needed).
 	_ = s.store.SeedProvider(ctx, "openverse", "")
+}
+
+// httpTimeout returns the configured provider HTTP client timeout, defaulting
+// to 15 seconds when JC_STOCK_HTTP_TIMEOUT_SECONDS is unset or invalid.
+func (s *Service) httpTimeout() time.Duration {
+	sec := s.cfg.StockHTTPTimeoutSec
+	if sec <= 0 {
+		sec = 15
+	}
+	return time.Duration(sec) * time.Second
 }
 
 // AvailableProvidersForPerms returns provider names available to a user with
@@ -296,7 +312,7 @@ func (s *Service) searchSingle(ctx context.Context, p StockProvider, query strin
 	s.cacheMu.Lock()
 	// LRU eviction: if over max, sort by last-access time and evict the
 	// oldest half. Unlike random map iteration, this preserves hot entries.
-	if len(s.cache) >= MaxCacheEntries {
+	if len(s.cache) >= s.maxCacheItems {
 		type kv struct {
 			key string
 			la  time.Time
@@ -306,7 +322,7 @@ func (s *Service) searchSingle(ctx context.Context, p StockProvider, query strin
 			entries = append(entries, kv{k, e.LastAccess})
 		}
 		sort.Slice(entries, func(i, j int) bool { return entries[i].la.Before(entries[j].la) })
-		evictCount := len(s.cache) - MaxCacheEntries/2
+		evictCount := len(s.cache) - s.maxCacheItems/2
 		if evictCount < 0 {
 			evictCount = len(s.cache) / 2
 		}
@@ -314,7 +330,7 @@ func (s *Service) searchSingle(ctx context.Context, p StockProvider, query strin
 			delete(s.cache, entries[i].key)
 		}
 	}
-	s.cache[key] = &cacheEntry{Result: result, ExpiresAt: now.Add(DefaultCacheTTL), LastAccess: now}
+	s.cache[key] = &cacheEntry{Result: result, ExpiresAt: now.Add(s.cacheTTL), LastAccess: now}
 	s.cacheMu.Unlock()
 
 	return result, nil

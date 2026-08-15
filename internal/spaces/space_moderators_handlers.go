@@ -139,13 +139,18 @@ func (h *Handlers) RemoveModerator(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
 	userID, err := parseUUIDParam(r, "userId")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid user ID format")
 		return
 	}
 
-	if err := h.Service.RemoveModerator(r.Context(), space.ID, userID); err != nil {
+	if err := h.Service.RemoveModerator(r.Context(), space.ID, userID, tenantID); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -165,7 +170,12 @@ func (h *Handlers) ListModerators(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	mods, err := h.Service.ListModerators(r.Context(), space.ID)
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	mods, err := h.Service.ListModerators(r.Context(), space.ID, tenantID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -193,7 +203,7 @@ func (h *Handlers) AdminListModerators(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	mods, err := h.Service.ListModerators(r.Context(), spaceID)
+	mods, err := h.Service.ListModerators(r.Context(), spaceID, tenantID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -323,7 +333,7 @@ func (h *Handlers) AdminRemoveModerator(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if err := h.Service.RemoveModerator(r.Context(), space.ID, targetUserID); err != nil {
+	if err := h.Service.RemoveModerator(r.Context(), space.ID, targetUserID, tenantID); err != nil {
 		handleServiceError(w, err)
 		return
 	}

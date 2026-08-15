@@ -10,6 +10,7 @@
 	import PasswordField from './PasswordField.svelte';
 	import OAuthButtons from './OAuthButtons.svelte';
 	import AuthFooter from './AuthFooter.svelte';
+	import HoneypotField from './HoneypotField.svelte';
 
 	let {
 		redirectTarget = '/onboarding',
@@ -27,6 +28,7 @@
 	let termsAccepted = $state(false);
 	let loading = $state(false);
 	let errors = $state<Record<string, string>>({});
+	let honeypot = $state('');
 
 	async function submit(e: SubmitEvent) {
 		e.preventDefault();
@@ -47,7 +49,7 @@
 			const res = await fetch('/api/auth/signup', {
 				method: 'POST',
 				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({ email, username, password, redirect: redirectTarget })
+				body: JSON.stringify({ email, username, password, redirect: redirectTarget, website: honeypot })
 			});
 			const data = await res.json();
 			if (!res.ok) {
@@ -70,6 +72,7 @@
 </script>
 
 <form onsubmit={submit} class="flex flex-col gap-5" novalidate>
+	<HoneypotField bind:value={honeypot} />
 	<div class="flex items-start justify-between gap-4">
 		<div>
 			<h1 class="text-2xl font-semibold text-[var(--color-text)]">{t('auth.signup.title')}</h1>

@@ -9,6 +9,8 @@ package calendar
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -18,6 +20,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/jedafe/japa/internal/ai"
 	"github.com/jedafe/japa/internal/config"
 )
 
@@ -70,6 +73,21 @@ type SubmitEntryInput struct {
 	SourceURL          string `json:"source_url"`
 }
 
+// GenerateDraftRequest is the input for AI-generated calendar entry drafts
+// (ADR-088, routed from the Content Studio).
+type GenerateDraftRequest struct {
+	DestinationSpaceID string `json:"destination_space_id"`
+	Category           string `json:"category"`
+	Prompt             string `json:"prompt"`
+}
+
+// GenerateDraftResponse is the response from Content Agent draft generation.
+type GenerateDraftResponse struct {
+	Status  string `json:"status"`
+	Message string `json:"message"`
+	EntryID string `json:"entry_id"`
+}
+
 // SubscribeInput is the request body for POST /calendar/subscribe.
 // Accepts both destination_space_id (canonical) and destination_country
 // (frontend alias) for the destination field.
@@ -85,11 +103,18 @@ type AdminUpdateEntryInput struct {
 	Reason string `json:"reason"`
 }
 
+// AIDispatcher is the subset of the AI Gateway the calendar service needs
+// to generate draft entries (content_generation category).
+type AIDispatcher interface {
+	Dispatch(ctx context.Context, category string, req ai.Request) (ai.Response, error)
+}
+
 // Service holds the business logic for the Community Calendar.
 type Service struct {
-	store    *Store
-	settings *config.Settings
-	notifier Notifier
+	store      *Store
+	settings   *config.Settings
+	notifier   Notifier
+	dispatcher AIDispatcher
 }
 
 // NewService creates a calendar service.
@@ -103,6 +128,9 @@ func NewService(store *Store, settings *config.Settings) *Service {
 func (s *Service) SetNotifier(n Notifier) {
 	s.notifier = n
 }
+
+// SetDispatcher injects the AI Gateway dispatcher for draft generation.
+func (s *Service) SetDispatcher(d AIDispatcher) { s.dispatcher = d }
 
 // Enabled reads the calendar.enabled system_setting toggle.
 func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
@@ -581,4 +609,96 @@ func parseTimestamp(s string) (pgtype.Timestamptz, error) {
 		return pgtype.Timestamptz{}, err
 	}
 	return pgtype.Timestamptz{Time: t, Valid: true}, nil
+}
+
+// GenerateDraft creates a calendar entry draft via the Content Agent (§86,
+// ADR-088). The draft is inserted with status='pending', then stamped with
+// ai_generated=true, ai_model='content_agent_v1'. It requires HITL approval
+// before publication. Admin-only (community_calendar.manage permission).
+//
+// When an AI dispatcher is wired (SetDispatcher), the method calls the AI
+// Gateway via the "content_generation" category. If the dispatcher is nil,
+// the draft is still created with the prompt as description so a reviewer
+// can fill it manually (graceful degradation).
+func (s *Service) GenerateDraft(ctx context.Context, tenantID pgtype.UUID, input GenerateDraftRequest) (GenerateDraftResponse, error) {
+	if input.DestinationSpaceID == "" {
+		return GenerateDraftResponse{}, fmt.Errorf("destination_space_id is required")
+	}
+	var destSpaceID pgtype.UUID
+	if err := destSpaceID.Scan(input.DestinationSpaceID); err != nil {
+		return GenerateDraftResponse{}, fmt.Errorf("invalid destination_space_id: %w", err)
+	}
+
+	category := input.Category
+	if category == "" {
+		category = "general"
+	}
+
+	// Build the prompt sent to the Content Agent.
+	prompt := input.Prompt
+	if prompt == "" {
+		prompt = fmt.Sprintf(
+			"Generate a community calendar entry for destination_space_id=%s, category=%s. Include title, description, date, and source URL.",
+			input.DestinationSpaceID, category,
+		)
+	}
+
+	// ai_prompt_hash = SHA256(prompt) for audit traceability.
+	sum := sha256.Sum256([]byte(prompt))
+	promptHash := hex.EncodeToString(sum[:])
+
+	// Call the AI Gateway when a dispatcher is wired.
+	description := prompt
+	title := fmt.Sprintf("AI Draft: %s", category)
+	if s.dispatcher != nil {
+		resp, aiErr := s.dispatcher.Dispatch(ctx, "content_generation", ai.Request{
+			Category: "content_generation",
+			Payload: map[string]any{
+				"prompt":     prompt,
+				"tenant_id":  tenantID,
+				"guide_type": "calendar_entry",
+			},
+		})
+		if aiErr != nil {
+			return GenerateDraftResponse{}, fmt.Errorf("calendar: AI generation failed: %w", aiErr)
+		}
+		if text, ok := resp.Raw["text"].(string); ok {
+			description = text
+		} else if text, ok := resp.Raw["content"].(string); ok {
+			description = text
+		} else if text, ok := resp.Raw["output"].(string); ok {
+			description = text
+		}
+		slog.Info("calendar: AI Gateway generated draft",
+			"destination_space_id", input.DestinationSpaceID,
+			"category", category, "prompt_hash", promptHash)
+	}
+
+	descPtr := &description
+	// Create the calendar entry with status='pending'.
+	entryID, err := s.store.CreateEntry(ctx, CalendarEntry{
+		TenantID:           tenantID,
+		Title:              title,
+		Description:        descPtr,
+		Category:           category,
+		DestinationSpaceID: destSpaceID,
+		SourceURL:          "https://japaconnect.com/ai-generated",
+		Status:             "pending",
+	})
+	if err != nil {
+		return GenerateDraftResponse{}, fmt.Errorf("calendar: generate draft: %w", err)
+	}
+
+	// Stamp the AI provenance columns (CreateEntry doesn't set them).
+	aiModel := "content_agent_v1"
+	if err := s.store.MarkAIGenerated(ctx, entryID, tenantID, aiModel); err != nil {
+		slog.Warn("calendar: mark ai generated failed, draft remains",
+			"entry_id", entryID, "error", err)
+	}
+
+	return GenerateDraftResponse{
+		Status:  "accepted",
+		Message: "Content Agent draft created in 'pending' status. Review and approve to publish.",
+		EntryID: entryID.String(),
+	}, nil
 }

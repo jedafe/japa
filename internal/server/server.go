@@ -648,6 +648,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// feed request hits the database.
 	blogHandlers.SetAsynqClient(asynqClient)
 	blogHandlers.SetRedis(vkClient.Redis())
+	// Wire spam rate-limit recording so blog post creation counts toward the
+	// spam pipeline's rate_limit layer (§41, BUG-004). Without this, a spammer
+	// flooding blog posts evades the rate-limit signal.
+	blogHandlers.SetSpamRecorder(spamPipeline)
 
 	// Reviews subsystem (Section 29 — Universal Ratings & Reviews).
 	reviewService := reviews.NewService(database)
@@ -1422,6 +1426,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		languageTestSvc: languageTestHubService,
 		taxSvc:          taxCalculatorService,
 		credentialSvc:   credentialCheckerService,
+		housingSvc:      housingGuideService,
+		visaRouteSvc:    visaRoutesService,
+		wikiSvc:         wikiService,
+		calendarSvc:     calendarService,
+		docsSvc:         docsService,
+		storySvc:        storyService,
 	})
 
 	// Wire the intelligence store into the Studio handlers so the
@@ -1430,6 +1440,15 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// intel_record_id values without verifying they belong to the tenant.
 	studioHandlers.SetIntelStore(intelStores)
 
+	// Wire the Studio review hook into the admin moderation handler so
+	// PATCH /admin/moderation-queue/:id transitions studio_jobs status
+	// (published/rejected) and the linked intel_records status when a
+	// source='studio' HITL review is approved/rejected (§75, ADR-076 §3).
+	// Without this, studio jobs stay 'in_review' forever after admin review.
+	studioService.SetIntelRecordUpdater(&studioIntelStatusAdapter{store: intelStores})
+	studioService.SetContentPublisher(&studioContentPublisherAdapter{svc: contentService})
+	adminHandlers.SetStudioReviewHook(studioService)
+
 	// §97: wire the AI Gateway dispatcher into the attestation guide so
 	// GenerateDraft can populate pathway_steps via the content_generation
 	// category (ADR-088). The dispatcher is optional; GenerateDraft falls
@@ -1437,6 +1456,16 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	attestationGuideService.SetDispatcher(aiDispatcher)
 	arrivalChecklistService.SetDispatcher(aiDispatcher)
 	languageTestHubService.SetDispatcher(aiDispatcher)
+	// ADR-088: wire the AI Gateway dispatcher into the remaining content
+	// services so their GenerateDraft methods can call the content_generation
+	// category. The dispatcher is optional; each GenerateDraft falls back to
+	// placeholder content when nil or when the call fails.
+	housingGuideService.SetDispatcher(aiDispatcher)
+	visaRoutesService.SetDispatcher(aiDispatcher)
+	wikiService.SetDispatcher(aiDispatcher)
+	calendarService.SetDispatcher(aiDispatcher)
+	docsService.SetDispatcher(aiDispatcher)
+	storyService.SetDispatcher(aiDispatcher)
 	// §99: wire the Asynq client so the approve handler can enqueue
 	// Meilisearch index sync for JapaBot RAG retrieval (ADR-088).
 	languageTestHubHandlers.SetAsynqClient(asynqClient)
@@ -4809,7 +4838,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "spaces.moderate")).
 				Post("/admin/join-requests/{id}/reject", spaceHandlers.AdminRejectJoinRequest)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "spaces.moderate")).
-				Patch("/admin/spaces/{id}/join-requests/{requestId}", spaceHandlers.UpdateJoinRequest)
+				Patch("/admin/spaces/{id}/join-requests/{uid}", spaceHandlers.UpdateJoinRequest)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "spaces.moderate")).
 				Patch("/admin/spaces/{id}/status", spaceHandlers.UpdateSpaceStatus)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermissionWithInvalidation(rbacResolver, "spaces.moderator.assign")).
@@ -6714,4 +6743,38 @@ func (d *personaActionDispatcher) SubmitForm(ctx context.Context, tenantID, pers
 		return pgtype.UUID{}, err
 	}
 	return sub.ID, nil
+}
+
+// studioIntelStatusAdapter adapts the intelligence store's
+// UpdateIntelRecordStatus method to the studio.IntelRecordStatusUpdater
+// interface, so the studio service can transition linked intel_records to
+// 'published' when a studio job is published (§75).
+type studioIntelStatusAdapter struct {
+	store intelRecordStatusStore
+}
+
+// intelRecordStatusStore is the subset of *intel_stores.Store the adapter
+// needs. Defined here to avoid importing intel_stores in the studio package.
+type intelRecordStatusStore interface {
+	UpdateIntelRecordStatus(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateIntelRecordStatusParams) error
+}
+
+func (a *studioIntelStatusAdapter) UpdateIntelRecordStatus(ctx context.Context, tenantID, id pgtype.UUID, status string) error {
+	return a.store.UpdateIntelRecordStatus(ctx, tenantID, gen.UpdateIntelRecordStatusParams{
+		TenantID: tenantID,
+		ID:       id,
+		Status:   status,
+	})
+}
+
+// studioContentPublisherAdapter adapts content.Service.UpdateContentStatus
+// to the studio.ContentPublisher interface. The concrete method returns
+// gen.UpdateContentStatusRow; the adapter widens it to `any` so the studio
+// package does not need to import gen.
+type studioContentPublisherAdapter struct {
+	svc *content.Service
+}
+
+func (a *studioContentPublisherAdapter) UpdateContentStatus(ctx context.Context, contentID, tenantID pgtype.UUID, status string) (any, error) {
+	return a.svc.UpdateContentStatus(ctx, contentID, tenantID, status)
 }

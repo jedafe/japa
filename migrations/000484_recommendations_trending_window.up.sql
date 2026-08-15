@@ -11,5 +11,5 @@
 -- Ref: japaconnect-engineering/adr/ADR-064a-geo-awareness-extension.md
 
 INSERT INTO system_settings (tenant_id, key, value) VALUES
-    ('00000000-0000-0000-0000-000000000001', 'geo_personalization.recommendations_trending_window', '7d')
+    ('00000000-0000-0000-0000-000000000001', 'geo_personalization.recommendations_trending_window', '"7d"')
 ON CONFLICT (tenant_id, key) DO NOTHING;

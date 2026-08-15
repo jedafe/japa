@@ -19,11 +19,12 @@ type UnsplashProvider struct {
 	client    *http.Client
 }
 
-// NewUnsplashProvider creates an Unsplash provider with the given access key.
-func NewUnsplashProvider(accessKey string) *UnsplashProvider {
+// NewUnsplashProvider creates an Unsplash provider with the given access key
+// and HTTP client timeout.
+func NewUnsplashProvider(accessKey string, timeout time.Duration) *UnsplashProvider {
 	return &UnsplashProvider{
 		accessKey: accessKey,
-		client:    &http.Client{Timeout: 15 * time.Second},
+		client:    &http.Client{Timeout: timeout},
 	}
 }
 

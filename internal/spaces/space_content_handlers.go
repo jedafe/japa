@@ -155,15 +155,15 @@ func (h *Handlers) ReorderPinned(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var input struct {
-		Order []string `json:"order"`
+		OrderedContentIDs []string `json:"ordered_content_ids"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
-	contentIDs := make([]pgtype.UUID, 0, len(input.Order))
-	for _, contentIDStr := range input.Order {
+	contentIDs := make([]pgtype.UUID, 0, len(input.OrderedContentIDs))
+	for _, contentIDStr := range input.OrderedContentIDs {
 		var contentID pgtype.UUID
 		if scanErr := contentID.Scan(contentIDStr); scanErr != nil {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_content_id", "Invalid content ID: "+contentIDStr)

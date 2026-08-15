@@ -20,9 +20,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
-	"sort"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -32,6 +29,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/jedafe/japa/internal/db"
+	"github.com/jedafe/japa/internal/migrate"
 )
 
 // defaultTestDSN is used when JC_TEST_DATABASE_URL is unset. It targets the
@@ -147,14 +145,16 @@ func resolvedDatabaseName(dsn string) (string, error) {
 }
 
 // connectAndMigrate opens the writer/reader pools and applies every
-// pending forward migration before returning.
+// pending forward migration before returning. It reuses the shared
+// forward-only apply logic from internal/migrate (ADR-061) so the harness
+// and cmd/migrate can never drift.
 func connectAndMigrate(ctx context.Context, dsn string) (*db.DB, error) {
 	database, err := db.New(ctx, dsn)
 	if err != nil {
 		return nil, fmt.Errorf("connecting to test database: %w", err)
 	}
 
-	if err := applyMigrations(ctx, database.Writer); err != nil {
+	if _, err := migrate.ApplyPending(ctx, database.Writer, migrate.FindMigrationsDir()); err != nil {
 		database.Close()
 		return nil, fmt.Errorf("applying migrations: %w", err)
 	}
@@ -205,174 +205,3 @@ func mustUUID() pgtype.UUID {
 	return id
 }
 
-// --- Migration apply logic -------------------------------------------------
-//
-// Duplicated from cmd/migrate/main.go's runMigrations/listMigrationFiles/
-// applyMigration/findMigrationsDir rather than extracted into a shared
-// package. cmd/migrate is a `package main` entrypoint that this task does
-// not modify, and this change's file scope is internal/testdb plus
-// .jeos/sections/27-devops-testing-qa.md only (see task-0-report.md for the
-// extraction recommendation left to a follow-up). The forward-only rule —
-// apply plain "NNNNNN_name.sql" and "NNNNNN_name.up.sql" files, skip
-// "NNNNNN_name.down.sql" rollbacks — is copied verbatim (AUDIT-BE-003). If
-// cmd/migrate's apply logic ever changes, this copy must be updated to
-// match.
-
-// applyMigrations ensures the schema_migrations tracking table exists and
-// applies every forward migration file not yet recorded there, in
-// alphabetical (i.e. numeric-prefix) order. Already-applied files are
-// skipped, so this is safe to call once per test-binary process even
-// though many test binaries share the same japa_test database.
-func applyMigrations(ctx context.Context, pool *pgxpool.Pool) error {
-	if err := ensureMigrationsTable(ctx, pool); err != nil {
-		return fmt.Errorf("ensuring schema_migrations table: %w", err)
-	}
-
-	files, err := listMigrationFiles(findMigrationsDir())
-	if err != nil {
-		return fmt.Errorf("listing migration files: %w", err)
-	}
-
-	applied, err := getAppliedMigrations(ctx, pool)
-	if err != nil {
-		return fmt.Errorf("reading applied migrations: %w", err)
-	}
-
-	for _, file := range files {
-		name := filepath.Base(file)
-
-		if applied[name] {
-			continue
-		}
-
-		content, err := os.ReadFile(file) //nolint:gosec // G304: migration files from trusted repo directory
-		if err != nil {
-			return fmt.Errorf("reading migration %s: %w", name, err)
-		}
-
-		if err := applyMigration(ctx, pool, name, string(content)); err != nil {
-			return fmt.Errorf("applying migration %s: %w", name, err)
-		}
-	}
-
-	return nil
-}
-
-// ensureMigrationsTable creates the schema_migrations table if it does not
-// already exist.
-func ensureMigrationsTable(ctx context.Context, pool *pgxpool.Pool) error {
-	_, err := pool.Exec(ctx, `
-		CREATE TABLE IF NOT EXISTS schema_migrations (
-			filename     text PRIMARY KEY,
-			applied_at   timestamptz NOT NULL DEFAULT now()
-		)
-	`)
-	if err != nil {
-		return fmt.Errorf("creating schema_migrations: %w", err)
-	}
-
-	return nil
-}
-
-// getAppliedMigrations returns the set of filenames already recorded as
-// applied.
-func getAppliedMigrations(ctx context.Context, pool *pgxpool.Pool) (map[string]bool, error) {
-	rows, err := pool.Query(ctx, "SELECT filename FROM schema_migrations")
-	if err != nil {
-		return nil, fmt.Errorf("querying schema_migrations: %w", err)
-	}
-	defer rows.Close()
-
-	applied := make(map[string]bool)
-
-	for rows.Next() {
-		var filename string
-		if err := rows.Scan(&filename); err != nil {
-			return nil, fmt.Errorf("scanning migration row: %w", err)
-		}
-
-		applied[filename] = true
-	}
-
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterating migration rows: %w", err)
-	}
-
-	return applied, nil
-}
-
-// applyMigration executes a single migration's SQL in a transaction and
-// records it as applied. If the SQL fails, the transaction rolls back and
-// the filename is not recorded, so a retry will apply it again.
-func applyMigration(ctx context.Context, pool *pgxpool.Pool, filename, sql string) error {
-	tx, err := pool.Begin(ctx)
-	if err != nil {
-		return fmt.Errorf("beginning transaction: %w", err)
-	}
-
-	defer func() { _ = tx.Rollback(ctx) }()
-
-	if _, err := tx.Exec(ctx, sql); err != nil {
-		return fmt.Errorf("executing SQL: %w", err)
-	}
-
-	if _, err := tx.Exec(ctx, "INSERT INTO schema_migrations (filename) VALUES ($1)", filename); err != nil {
-		return fmt.Errorf("recording migration: %w", err)
-	}
-
-	if err := tx.Commit(ctx); err != nil {
-		return fmt.Errorf("committing transaction: %w", err)
-	}
-
-	return nil
-}
-
-// listMigrationFiles returns the full paths of all forward migration files
-// in dir, sorted so they apply in order. Both "NNNNNN_name.sql" and
-// "NNNNNN_name.up.sql" are forward migrations; "NNNNNN_name.down.sql"
-// files are rollbacks and are excluded (AUDIT-BE-003).
-func listMigrationFiles(dir string) ([]string, error) {
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return nil, fmt.Errorf("reading directory %s: %w", dir, err)
-	}
-
-	var files []string
-
-	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
-
-		if !strings.HasSuffix(entry.Name(), ".sql") {
-			continue
-		}
-
-		if strings.HasSuffix(entry.Name(), ".down.sql") {
-			continue
-		}
-
-		files = append(files, filepath.Join(dir, entry.Name()))
-	}
-
-	sort.Strings(files)
-
-	return files, nil
-}
-
-// findMigrationsDir locates the migrations directory relative to the
-// current working directory, mirroring cmd/migrate/main.go so it resolves
-// correctly whether the test binary runs from the repo root, cmd/migrate,
-// or internal/testdb.
-func findMigrationsDir() string {
-	candidates := []string{"migrations", "../migrations", "../../migrations"}
-	for _, c := range candidates {
-		if info, err := os.Stat(c); err == nil && info.IsDir() {
-			return c
-		}
-	}
-
-	// Fall back to the default — the error will surface when we try to
-	// read the directory.
-	return "migrations"
-}

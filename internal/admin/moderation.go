@@ -1153,6 +1153,18 @@ func (h *Handlers) ModerateItem(w http.ResponseWriter, r *http.Request) {
 			"item_id", id, "action", input.Action, "reviewer", user.UserID.String())
 	}
 
+	// AI Content Studio (§75, ADR-076 §3): if the ID matches a
+	// content_reviews row with source='studio', transition the linked
+	// studio_jobs row to 'published' (approve) or 'rejected' (reject) and
+	// — on approve — publish the draft content and transition the linked
+	// intel_records row to 'published'. Without this, studio jobs stay
+	// 'in_review' forever after admin review (same defect class as the
+	// persona_action BUG-001 fix above).
+	if h.handleStudioReview(ctx, rid, tenantID, user.UserID, input.Action, input.Reason) {
+		slog.Info("moderation: studio review processed",
+			"item_id", id, "action", input.Action, "reviewer", user.UserID.String())
+	}
+
 	slog.Info("moderation item processed",
 		"user_id", user.UserID.String(),
 		"item_id", id,
@@ -1229,6 +1241,82 @@ func (h *Handlers) handlePersonaActionReview(ctx context.Context, id, tenantID, 
 		payload, _ := json.Marshal(map[string]string{"action_id": id.String()})
 		if err := h.Tasks.Enqueue("persona:dispatch_action", payload); err != nil {
 			slog.Error("moderation: enqueue persona:dispatch_action failed", "id", id, "error", err)
+		}
+	}
+	return true
+}
+
+// handleStudioReview handles a content_reviews row with source='studio'
+// (§75, ADR-076 §3). It returns true if the ID matched a studio HITL review
+// (so the caller can log it). On approve, it delegates to the injected
+// StudioReviewHook which publishes the draft content, transitions
+// studio_jobs to 'published', and transitions the linked intel_records row
+// to 'published'. On reject, it transitions studio_jobs to 'rejected'.
+// The content_reviews status is updated first so the admin UI reflects the
+// decision immediately.
+func (h *Handlers) handleStudioReview(ctx context.Context, id, tenantID, reviewerID pgtype.UUID, action, reason string) bool {
+	// Check whether this ID is a studio content_reviews row.
+	var source, status string
+	err := h.DB.Reader.QueryRow(ctx,
+		`SELECT source, status FROM content_reviews
+		 WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL`,
+		id, tenantID,
+	).Scan(&source, &status)
+	if err != nil {
+		return false // not a content_reviews row (or not found)
+	}
+	if source != "studio" {
+		return false // not a studio review — leave to other flows
+	}
+
+	// Map the moderation action to a content_reviews status.
+	var newCRStatus string
+	switch action {
+	case "approve":
+		newCRStatus = "approved"
+	case "reject", "delete":
+		newCRStatus = "rejected"
+	default:
+		return true
+	}
+
+	// Update the content_reviews row status + reviewer.
+	_, err = h.DB.Writer.Exec(ctx,
+		`UPDATE content_reviews
+		 SET status = $1, reviewer_user_id = $2, updated_at = now()
+		 WHERE id = $3 AND tenant_id = $4 AND source = 'studio'`,
+		newCRStatus, reviewerID, id, tenantID,
+	)
+	if err != nil {
+		slog.Error("moderation: studio review update failed", "id", id, "error", err)
+		return true
+	}
+	if reason != "" {
+		slog.Info("moderation: studio review reason",
+			"id", id.String(), "action", action, "reason", reason)
+	}
+
+	// Delegate studio_jobs + intel_records transitions to the studio hook.
+	// The hook looks up the studio_jobs row by review_id and handles the
+	// full transition (publish content, update job status, transition
+	// intel_record). When no hook is wired, the content_reviews status is
+	// still updated above so the admin UI is consistent — but studio_jobs
+	// would remain 'in_review' (logged for ops visibility).
+	if h.StudioHook == nil {
+		slog.Warn("moderation: studio review hook not wired, studio_jobs status not transitioned",
+			"review_id", id, "action", action)
+		return true
+	}
+	switch action {
+	case "approve":
+		if err := h.StudioHook.OnStudioReviewApproved(ctx, tenantID, id); err != nil {
+			slog.Error("moderation: studio review approve hook failed",
+				"review_id", id, "error", err)
+		}
+	case "reject", "delete":
+		if err := h.StudioHook.OnStudioReviewRejected(ctx, tenantID, id); err != nil {
+			slog.Error("moderation: studio review reject hook failed",
+				"review_id", id, "error", err)
 		}
 	}
 	return true

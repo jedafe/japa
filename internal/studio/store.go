@@ -501,6 +501,39 @@ func (s *Store) CountActiveJobs(ctx context.Context, tenantID pgtype.UUID) (int,
 	return count, err
 }
 
+// GetJobByReviewID fetches the studio job linked to a content_reviews row
+// by its review_id. Used by the moderation hook to transition studio_jobs
+// status when a source='studio' HITL review is approved/rejected (§75,
+// ADR-076 §3).
+func (s *Store) GetJobByReviewID(ctx context.Context, tenantID, reviewID pgtype.UUID) (Job, error) {
+	var j Job
+	err := s.db.Reader.QueryRow(ctx, `
+		SELECT id, tenant_id, batch_id, persona_id, content_type, guide_category,
+		       topic_prompt, target_space_id, target_tags, intel_record_id, status, draft_content_id,
+		       review_id, generated_at, reviewed_at, published_at, error_message,
+		       created_by, created_at
+		FROM studio_jobs WHERE review_id = $1 AND tenant_id = $2`, reviewID, tenantID,
+	).Scan(
+		&j.ID, &j.TenantID, &j.BatchID, &j.PersonaID, &j.ContentType, &j.GuideCategory,
+		&j.TopicPrompt, &j.TargetSpaceID, &j.TargetTags, &j.IntelRecordID, &j.Status, &j.DraftContentID,
+		&j.ReviewID, &j.GeneratedAt, &j.ReviewedAt, &j.PublishedAt, &j.ErrorMessage,
+		&j.CreatedBy, &j.CreatedAt,
+	)
+	return j, err
+}
+
+// UpdateJobReviewed sets the status and reviewed_at timestamp for a job.
+// Used by the moderation hook to transition a job to 'published' (approve)
+// or 'rejected' (reject) after HITL review (§75, ADR-076 §3).
+func (s *Store) UpdateJobReviewed(ctx context.Context, tenantID, id pgtype.UUID, status string) error {
+	_, err := s.db.Writer.Exec(ctx,
+		`UPDATE studio_jobs SET status = $3, reviewed_at = now(),
+		          published_at = CASE WHEN $3 = 'published' THEN now() ELSE published_at END
+		  WHERE id = $1 AND tenant_id = $2`,
+		id, tenantID, status)
+	return err
+}
+
 // fmtArg converts an int to a string for parameterized query building.
 // Uses strconv.Itoa for correct conversion at any argIdx value.
 func fmtArg(i int) string {

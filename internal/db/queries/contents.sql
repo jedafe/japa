@@ -457,6 +457,8 @@ UPDATE contents SET space_id = @space_id, updated_at = now()
 WHERE id = @content_id;
 
 -- name: ListContentByTag :many
+-- Composite cursor (created_at, id) avoids skipping items that share the
+-- same created_at timestamp as the last item on a page. Ref: §4.1.
 SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c.body_html,
        c.field_values, c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
        c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
@@ -471,7 +473,11 @@ LEFT JOIN media m ON m.id = COALESCE(c.featured_image_id, c.header_image_id) AND
 WHERE ct.tag_id = @tag_id AND c.tenant_id = @tenant_id AND c.status = 'published'
   AND c.deleted_at IS NULL
   AND c.auto_hidden = false
-  AND (c.created_at < @cursor_created_at OR (@cursor_created_at IS NULL))
+  AND (
+    @cursor_created_at::timestamptz IS NULL
+    OR c.created_at < @cursor_created_at::timestamptz
+    OR (c.created_at = @cursor_created_at::timestamptz AND c.id < @cursor_id::uuid)
+  )
 ORDER BY c.created_at DESC, c.id DESC
 LIMIT @page_limit;
 
@@ -740,3 +746,14 @@ SELECT
       WHERE f.tenant_id = @tenant_id AND f.follower_id = u.id) AS total_following
 FROM users u
 WHERE u.id = @author_id AND u.tenant_id = @tenant_id;
+
+-- name: CountPostsByAuthor :one
+-- Counts published, non-deleted content by the given author in a tenant.
+-- Used by the spam pipeline's new-user link restriction (§41 Layer 3) to
+-- determine whether a user has passed the "first N posts" threshold.
+SELECT COUNT(*)::int AS count
+FROM contents c
+WHERE c.tenant_id = @tenant_id
+  AND c.author_id = @author_id
+  AND c.status = 'published'
+  AND c.deleted_at IS NULL;

@@ -19,10 +19,10 @@ type PixabayProvider struct {
 	client *http.Client
 }
 
-func NewPixabayProvider(apiKey string) *PixabayProvider {
+func NewPixabayProvider(apiKey string, timeout time.Duration) *PixabayProvider {
 	return &PixabayProvider{
 		apiKey: apiKey,
-		client: &http.Client{Timeout: 15 * time.Second},
+		client: &http.Client{Timeout: timeout},
 	}
 }
 

@@ -22,11 +22,29 @@ type TaskEnqueuer interface {
 	Enqueue(taskType string, payload []byte, opts ...interface{}) error
 }
 
+// IntelRecordStatusUpdater transitions an intel_records row's status. Used
+// by the studio service to transition a linked intel_record to 'published'
+// when a studio job is published (§75: "On successful publish the linked
+// intel_records row transitions to status='published'").
+type IntelRecordStatusUpdater interface {
+	UpdateIntelRecordStatus(ctx context.Context, tenantID pgtype.UUID, id pgtype.UUID, status string) error
+}
+
+// ContentPublisher publishes a content row (sets status='published'). Used
+// by the studio review hook to publish the draft content when a studio HITL
+// review is approved (§75: "Approve → publish"). The return value is the
+// updated content row; the studio service ignores it.
+type ContentPublisher interface {
+	UpdateContentStatus(ctx context.Context, contentID, tenantID pgtype.UUID, status string) (any, error)
+}
+
 // Service holds the business logic for the AI Content Studio.
 type Service struct {
-	store    *Store
-	settings *config.Settings
-	enqueuer TaskEnqueuer
+	store          *Store
+	settings       *config.Settings
+	enqueuer       TaskEnqueuer
+	intelUpdater   IntelRecordStatusUpdater
+	contentPub     ContentPublisher
 }
 
 // NewService creates a Service backed by the given store and settings.
@@ -36,6 +54,16 @@ func NewService(store *Store, settings *config.Settings) *Service {
 
 // SetEnqueuer injects the task enqueuer (called at server wiring time).
 func (s *Service) SetEnqueuer(e TaskEnqueuer) { s.enqueuer = e }
+
+// SetIntelRecordUpdater injects the intel record status updater so the
+// service can transition linked intel_records to 'published' on publish
+// (§75). Called at server wiring time.
+func (s *Service) SetIntelRecordUpdater(u IntelRecordStatusUpdater) { s.intelUpdater = u }
+
+// SetContentPublisher injects the content publisher so the review hook can
+// publish draft content when a studio HITL review is approved (§75).
+// Called at server wiring time.
+func (s *Service) SetContentPublisher(p ContentPublisher) { s.contentPub = p }
 
 // highStakesCategories are the guide categories that always require human
 // review, regardless of studio.auto_publish_types. Hardcoded per §75 — not
@@ -295,6 +323,10 @@ func (s *Service) ListContentTypes(ctx context.Context, tenantID pgtype.UUID) Co
 		{Type: "community_organisation", Label: "Community Organisation", CanAutoPublish: false},
 		{Type: "wiki_page", Label: "Wiki Page", CanAutoPublish: false},
 		{Type: "calendar_entry", Label: "Calendar Entry", CanAutoPublish: false},
+		// Community content types (ADR-088). Story reuses the contents
+		// table with content_type='story'; doc_page uses doc_pages.
+		{Type: "story", Label: "Story", CanAutoPublish: false},
+		{Type: "doc_page", Label: "Documentation Page", CanAutoPublish: false},
 	}
 
 	// Filter by auto_publish_types setting.
@@ -547,4 +579,67 @@ func (s *Service) RetryFailed(ctx context.Context, tenantID, jobID pgtype.UUID) 
 // by the HTTP handler so batch retry is asynchronous (ADR-076 §7).
 func (s *Service) EnqueueRetryFailed(ctx context.Context, tenantID, batchID pgtype.UUID) error {
 	return s.enqueueRetryFailed(ctx, tenantID, batchID)
+}
+
+// OnStudioReviewApproved is called by the admin moderation handler when a
+// source='studio' HITL review is approved (§75, ADR-076 §3). It publishes
+// the draft content, transitions studio_jobs to 'published', and transitions
+// the linked intel_records row to 'published'.
+func (s *Service) OnStudioReviewApproved(ctx context.Context, tenantID, reviewID pgtype.UUID) error {
+	job, err := s.store.GetJobByReviewID(ctx, tenantID, reviewID)
+	if err != nil {
+		return fmt.Errorf("studio: approve: find job by review_id: %w", err)
+	}
+
+	// Publish the draft content (contents table only — tool-table types
+	// have their own publish flows managed by their services).
+	if job.DraftContentID.Valid && s.contentPub != nil {
+		if _, perr := s.contentPub.UpdateContentStatus(ctx, job.DraftContentID, tenantID, "published"); perr != nil {
+			slog.Warn("studio: approve: publish content failed, marking job published anyway",
+				"job_id", job.ID, "content_id", job.DraftContentID, "error", perr)
+		}
+	}
+
+	// Transition the studio job to 'published'.
+	if err := s.store.UpdateJobReviewed(ctx, tenantID, job.ID, "published"); err != nil {
+		return fmt.Errorf("studio: approve: update job status: %w", err)
+	}
+
+	// Transition the linked intel_record to 'published' (§75).
+	s.transitionIntelRecordOnPublish(ctx, tenantID, job.IntelRecordID)
+
+	slog.Info("studio: review approved, job published",
+		"job_id", job.ID, "review_id", reviewID,
+		"content_id", job.DraftContentID, "intel_record_id", job.IntelRecordID)
+	return nil
+}
+
+// OnStudioReviewRejected is called by the admin moderation handler when a
+// source='studio' HITL review is rejected (§75: "Reject → job rejected,
+// draft remains as unpublished content").
+func (s *Service) OnStudioReviewRejected(ctx context.Context, tenantID, reviewID pgtype.UUID) error {
+	job, err := s.store.GetJobByReviewID(ctx, tenantID, reviewID)
+	if err != nil {
+		return fmt.Errorf("studio: reject: find job by review_id: %w", err)
+	}
+	if err := s.store.UpdateJobReviewed(ctx, tenantID, job.ID, "rejected"); err != nil {
+		return fmt.Errorf("studio: reject: update job status: %w", err)
+	}
+	slog.Info("studio: review rejected, job rejected",
+		"job_id", job.ID, "review_id", reviewID)
+	return nil
+}
+
+// transitionIntelRecordOnPublish transitions a linked intel_record to
+// 'published' when the studio job is published (§75: "On successful publish
+// the linked intel_records row transitions to status='published'"). Safe to
+// call when intelRecordID is nil or no updater is wired.
+func (s *Service) transitionIntelRecordOnPublish(ctx context.Context, tenantID, intelRecordID pgtype.UUID) {
+	if !intelRecordID.Valid || s.intelUpdater == nil {
+		return
+	}
+	if err := s.intelUpdater.UpdateIntelRecordStatus(ctx, tenantID, intelRecordID, "published"); err != nil {
+		slog.Warn("studio: transition intel_record to published failed",
+			"intel_record_id", intelRecordID, "error", err)
+	}
 }

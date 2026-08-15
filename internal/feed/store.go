@@ -73,9 +73,10 @@ func (s *Store) getPrimaryFeed(ctx context.Context, tenantID, userID pgtype.UUID
 }
 
 // getSpaceFeed returns published posts in a specific space.
+// viewerID is nullable — when valid, mutual user_blocks are excluded (§41).
 //
 //nolint:unused // reserved for future features
-func (s *Store) getSpaceFeed(ctx context.Context, tenantID, spaceID pgtype.UUID, sort string, limit, offset int32) ([]gen.GetSpaceFeedRow, error) {
+func (s *Store) getSpaceFeed(ctx context.Context, tenantID, spaceID, viewerID pgtype.UUID, sort string, limit, offset int32) ([]gen.GetSpaceFeedRow, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -83,6 +84,7 @@ func (s *Store) getSpaceFeed(ctx context.Context, tenantID, spaceID pgtype.UUID,
 	rows, err := s.read.GetSpaceFeed(ctx, gen.GetSpaceFeedParams{
 		TenantID:   tenantID,
 		SpaceID:    spaceID,
+		ViewerID:   viewerID,
 		Sort:       sort,
 		PageLimit:  limit,
 		PageOffset: offset,
@@ -95,9 +97,10 @@ func (s *Store) getSpaceFeed(ctx context.Context, tenantID, spaceID pgtype.UUID,
 }
 
 // getProfileFeed returns all public published posts by a specific user.
+// viewerID is nullable — when valid, mutual user_blocks are excluded (§41).
 //
 //nolint:unused // reserved for future features
-func (s *Store) getProfileFeed(ctx context.Context, tenantID, authorID pgtype.UUID, sort string, limit, offset int32) ([]gen.GetProfileFeedRow, error) {
+func (s *Store) getProfileFeed(ctx context.Context, tenantID, authorID, viewerID pgtype.UUID, sort string, limit, offset int32) ([]gen.GetProfileFeedRow, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -105,6 +108,7 @@ func (s *Store) getProfileFeed(ctx context.Context, tenantID, authorID pgtype.UU
 	rows, err := s.read.GetProfileFeed(ctx, gen.GetProfileFeedParams{
 		TenantID:   tenantID,
 		AuthorID:   authorID,
+		ViewerID:   viewerID,
 		Sort:       sort,
 		PageLimit:  limit,
 		PageOffset: offset,

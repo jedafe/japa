@@ -209,8 +209,8 @@ type ListStoriesFilter struct {
 
 // ListStories returns a paginated, filtered list of published stories.
 // The query joins contents + story_meta + spaces (origin + destination) +
-// users (author name/avatar). Sort "top" orders by view_count + reaction
-// count; "latest" orders by published_at DESC.
+// users (author name/avatar). Sort "top" orders by view_count + comment_count;
+// "latest" orders by published_at DESC.
 func (s *Store) ListStories(ctx context.Context, f ListStoriesFilter) ([]StoryRow, int64, error) {
 	var (
 		conditions []string
@@ -386,15 +386,61 @@ LIMIT 1
 	return r, nil
 }
 
+// GetStoryByID returns a single story by its content_id (any status), joining
+// contents + story_meta + spaces + users. Used by Submit/EditOwn to return a
+// fully-populated DTO with origin/destination space names and author info.
+func (s *Store) GetStoryByID(ctx context.Context, contentID, tenantID pgtype.UUID) (StoryRow, error) {
+	const q = `
+SELECT c.id, c.tenant_id, c.author_id, c.title, c.slug, c.body, c.body_html,
+       c.status, c.visibility, c.view_count, c.comment_count,
+       c.published_at, c.created_at, c.updated_at,
+       sm.origin_space_id, os.name AS origin_space_name, os.geo_code AS origin_space_code,
+       sm.destination_space_id, ds.name AS dest_space_name, ds.geo_code AS dest_space_code,
+       sm.relocation_year, sm.visa_category, sm.profession,
+       sm.biggest_challenge, sm.most_useful_resource, sm.best_advice,
+       sm.verified,
+       u.username AS author_name, up.avatar_url AS author_avatar
+FROM contents c
+JOIN story_meta sm ON sm.content_id = c.id AND sm.tenant_id = c.tenant_id
+LEFT JOIN spaces os ON os.id = sm.origin_space_id
+JOIN spaces ds ON ds.id = sm.destination_space_id
+LEFT JOIN users u ON u.id = c.author_id
+LEFT JOIN user_profiles up ON up.user_id = c.author_id
+WHERE c.tenant_id = $1 AND c.id = $2 AND c.content_type = 'story'
+  AND c.deleted_at IS NULL
+LIMIT 1
+`
+	var r StoryRow
+	err := s.pool.Reader.QueryRow(ctx, q, tenantID, contentID).Scan(
+		&r.ID, &r.TenantID, &r.AuthorID, &r.Title, &r.Slug, &r.Body, &r.BodyHTML,
+		&r.Status, &r.Visibility, &r.ViewCount, &r.CommentCount,
+		&r.PublishedAt, &r.CreatedAt, &r.UpdatedAt,
+		&r.OriginSpaceID, &r.OriginSpaceName, &r.OriginSpaceCode,
+		&r.DestSpaceID, &r.DestSpaceName, &r.DestSpaceCode,
+		&r.RelocationYear, &r.VisaCategory, &r.Profession,
+		&r.BiggestChallenge, &r.MostUsefulResource, &r.BestAdvice,
+		&r.Verified,
+		&r.AuthorName, &r.AuthorAvatar,
+	)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return StoryRow{}, pgx.ErrNoRows
+		}
+		return StoryRow{}, fmt.Errorf("story: get by id: %w", err)
+	}
+	return r, nil
+}
+
 // AdminListStoriesFilter holds filter parameters for the admin moderation list.
 type AdminListStoriesFilter struct {
-	TenantID pgtype.UUID
-	Status   string // optional: filter by content status
-	Verified *bool  // optional: filter by verified state
-	Q        string // optional: search title
-	Sort     string // "latest" (default), "oldest", "title"
-	Limit    int32
-	Offset   int32
+	TenantID   pgtype.UUID
+	Status     string       // optional: filter by content status
+	Verified   *bool        // optional: filter by verified state
+	Q          string       // optional: search title
+	Sort       string       // "latest" (default), "oldest", "title"
+	DestSpaceID pgtype.UUID // optional: filter by destination country
+	Limit      int32
+	Offset     int32
 }
 
 // AdminListStories returns all stories (any status) for the moderation queue.
@@ -428,6 +474,11 @@ func (s *Store) AdminListStories(ctx context.Context, f AdminListStoriesFilter) 
 	if f.Q != "" {
 		conditions = append(conditions, fmt.Sprintf("c.title ILIKE $%d", argIdx))
 		args = append(args, "%"+f.Q+"%")
+		argIdx++
+	}
+	if f.DestSpaceID.Valid {
+		conditions = append(conditions, fmt.Sprintf("sm.destination_space_id = $%d", argIdx))
+		args = append(args, f.DestSpaceID)
 		argIdx++
 	}
 

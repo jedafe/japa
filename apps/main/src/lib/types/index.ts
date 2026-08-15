@@ -2423,6 +2423,7 @@ export interface TravelSearchResponse {
 // --- Section 79: Community Story Wall ---
 export interface Story {
 	id: string;
+	author_id?: string;
 	title: string;
 	slug: string;
 	body: string;

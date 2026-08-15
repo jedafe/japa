@@ -1674,6 +1674,23 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 			return fmt.Errorf("reassigning housing_guides hitl_reviewed_by: %w", err)
 		}
 
+		// tax_obligation_guides.hitl_reviewed_by references users(id) with
+		// ON DELETE SET NULL (migration 000341). Reassign to the placeholder
+		// so the HITL audit trail preserves a stable "deleted user"
+		// attribution rather than an anonymous NULL, matching the
+		// platform-wide erasure convention (ADR-014) and the
+		// housing_guides / community_organisations pattern above.
+		// Ref: japaconnect-engineering/sections/100-tax-calculator.md
+		//      japaconnect-engineering/adr/ADR-108-tax-calculator.md
+		//      japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
+		if _, err := s.db.Writer.Exec(ctx, `
+			UPDATE tax_obligation_guides
+			SET hitl_reviewed_by = $3
+			WHERE tenant_id = $2 AND hitl_reviewed_by = $1
+		`, userID, tenantID, deletedUserPlaceholder); err != nil {
+			return fmt.Errorf("reassigning tax_obligation_guides hitl_reviewed_by: %w", err)
+		}
+
 		// BUG-017: Scrub PII from cv_format_sessions during the
 		// anonymization phase (§95, ADR-103, ADR-014). The table has
 		// ON DELETE CASCADE from users(id) so rows are removed at

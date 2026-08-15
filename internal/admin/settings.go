@@ -52,14 +52,25 @@ type SettingValue struct {
 
 // Handlers holds dependencies for admin HTTP handlers.
 type Handlers struct {
-	DB       *db.DB
-	Queries  *gen.Queries
-	RBAC     *rbac.RBAC
-	Valkey   valkeycompat.Cmdable
-	Settings *config.Settings
-	GDPR     GDPRService
-	Orgs     OrgVerifier
-	Tasks    TaskEnqueuer
+	DB          *db.DB
+	Queries     *gen.Queries
+	RBAC        *rbac.RBAC
+	Valkey      valkeycompat.Cmdable
+	Settings    *config.Settings
+	GDPR        GDPRService
+	Orgs        OrgVerifier
+	Tasks       TaskEnqueuer
+	StudioHook  StudioReviewHook
+}
+
+// StudioReviewHook is the subset of the studio service the moderation
+// handler needs to transition studio_jobs status when a source='studio'
+// HITL review is approved or rejected (§75, ADR-076 §3). Without this,
+// ModerateItem updates content_reviews but studio_jobs stays 'in_review'
+// forever — the same defect class as the persona_action BUG-001 fix.
+type StudioReviewHook interface {
+	OnStudioReviewApproved(ctx context.Context, tenantID, reviewID pgtype.UUID) error
+	OnStudioReviewRejected(ctx context.Context, tenantID, reviewID pgtype.UUID) error
 }
 
 // TaskEnqueuer is the subset of the worker enqueuer that admin needs to
@@ -119,6 +130,13 @@ func (h *Handlers) SetGDPR(g GDPRService) {
 // flow (which emits the organization.verified webhook event, Section 12).
 func (h *Handlers) SetOrgVerifier(o OrgVerifier) {
 	h.Orgs = o
+}
+
+// SetStudioReviewHook injects the studio service hook so ModerateItem can
+// transition studio_jobs status when a source='studio' HITL review is
+// approved or rejected (§75, ADR-076 §3).
+func (h *Handlers) SetStudioReviewHook(s StudioReviewHook) {
+	h.StudioHook = s
 }
 
 // defaultSettings defines every available setting with its metadata.

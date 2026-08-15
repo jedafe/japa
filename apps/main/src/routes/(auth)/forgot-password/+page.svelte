@@ -1,11 +1,13 @@
 <script lang="ts">
 	import { t } from '$lib/i18n/store.svelte';
 	import { validateForgotPassword } from '$lib/auth/validation';
+	import HoneypotField from '$lib/components/auth/HoneypotField.svelte';
 
 	let email = $state('');
 	let loading = $state(false);
 	let errors = $state<Record<string, string>>({});
 	let sent = $state(false);
+	let honeypot = $state('');
 
 	async function submit(e: SubmitEvent) {
 		e.preventDefault();
@@ -21,7 +23,7 @@
 			await fetch('/api/auth/forgot-password', {
 				method: 'POST',
 				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({ email })
+				body: JSON.stringify({ email, website: honeypot })
 			});
 			// Always show confirmation — don't reveal whether the email exists.
 			sent = true;
@@ -34,6 +36,7 @@
 </script>
 
 <form onsubmit={submit} class="flex flex-col gap-4" novalidate>
+	<HoneypotField bind:value={honeypot} />
 	<h1 class="text-2xl font-semibold text-[var(--color-text)]">{t('auth.forgot_password.title')}</h1>
 	<p class="text-sm text-[var(--color-muted)]">{t('auth.forgot_password.subtitle')}</p>
 

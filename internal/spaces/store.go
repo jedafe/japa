@@ -165,6 +165,43 @@ func (s *Service) ListSpaces(ctx context.Context, tenantID, viewerUserID pgtype.
 	return spaces, nil
 }
 
+// ListSpacesPaginated returns a page of spaces with SQL-level search, geo,
+// level, sort, and visibility filtering (SPACES-009/011). Replaces the
+// in-memory filter+paginate in the ListSpaces handler for the default
+// (no type/parent filter) branch.
+func (s *Service) ListSpacesPaginated(ctx context.Context, tenantID, viewerUserID pgtype.UUID, search, geoCode, level, sort string, limit, offset int32) ([]gen.ListSpacesPaginatedRow, error) {
+	spaces, err := s.read.ListSpacesPaginated(ctx, gen.ListSpacesPaginatedParams{
+		TenantID:     tenantID,
+		ViewerUserID: viewerUserID,
+		Search:       search,
+		GeoCode:      geoCode,
+		Level:        level,
+		Sort:         sort,
+		LimitVal:     limit,
+		OffsetVal:    offset,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("listing spaces paginated: %w", err)
+	}
+	return spaces, nil
+}
+
+// CountSpaces returns the total count of spaces matching the paginated
+// discovery filters (SPACES-009).
+func (s *Service) CountSpaces(ctx context.Context, tenantID, viewerUserID pgtype.UUID, search, geoCode, level string) (int64, error) {
+	total, err := s.read.CountSpaces(ctx, gen.CountSpacesParams{
+		TenantID:     tenantID,
+		ViewerUserID: viewerUserID,
+		Search:       search,
+		GeoCode:      geoCode,
+		Level:        level,
+	})
+	if err != nil {
+		return 0, fmt.Errorf("counting spaces: %w", err)
+	}
+	return total, nil
+}
+
 // AdminListSpaces returns paginated spaces for the admin view with owner and
 // space_type name resolved via JOINs. Search, status, and visibility filters
 // are applied at the SQL level — pass "" for no filter.
@@ -340,11 +377,14 @@ func (s *Service) ListCitiesByState(ctx context.Context, tenantID, stateID pgtyp
 }
 
 // ListSpacesByLevel returns every space at the given hierarchy level for the
-// tenant, newest first.
-func (s *Service) ListSpacesByLevel(ctx context.Context, tenantID pgtype.UUID, level string) ([]gen.ListSpacesByLevelRow, error) {
+// tenant, newest first. The viewerUserID filters by visibility: unauthenticated
+// callers (zero UUID) only see public spaces; authenticated callers also see
+// members/private spaces they belong to (SPACES-001, Section 05 line 272).
+func (s *Service) ListSpacesByLevel(ctx context.Context, tenantID, viewerUserID pgtype.UUID, level string) ([]gen.ListSpacesByLevelRow, error) {
 	spaces, err := s.read.ListSpacesByLevel(ctx, gen.ListSpacesByLevelParams{
-		TenantID: tenantID,
-		Level:    level,
+		TenantID:     tenantID,
+		Level:        level,
+		ViewerUserID: viewerUserID,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("listing spaces by level: %w", err)
@@ -386,11 +426,12 @@ func (s *Service) FindCitySpaceByName(ctx context.Context, tenantID pgtype.UUID,
 }
 
 // ListSpacesByType returns every space of the given type for the tenant,
-// newest first.
-func (s *Service) ListSpacesByType(ctx context.Context, tenantID, spaceTypeID pgtype.UUID) ([]gen.ListSpacesByTypeRow, error) {
+// newest first. The viewerUserID filters by visibility (SPACES-001).
+func (s *Service) ListSpacesByType(ctx context.Context, tenantID, viewerUserID, spaceTypeID pgtype.UUID) ([]gen.ListSpacesByTypeRow, error) {
 	spaces, err := s.read.ListSpacesByType(ctx, gen.ListSpacesByTypeParams{
-		TenantID:    tenantID,
-		SpaceTypeID: spaceTypeID,
+		TenantID:     tenantID,
+		SpaceTypeID:  spaceTypeID,
+		ViewerUserID: viewerUserID,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("listing spaces by type: %w", err)
@@ -434,11 +475,13 @@ func (s *Service) CountSpacesByType(ctx context.Context, tenantID, spaceTypeID p
 }
 
 // ListChildSpaces returns every space whose parent is the given space,
-// scoped to the tenant, oldest first.
-func (s *Service) ListChildSpaces(ctx context.Context, tenantID, parentID pgtype.UUID) ([]gen.ListChildSpacesRow, error) {
+// scoped to the tenant, oldest first. The viewerUserID filters by
+// visibility (SPACES-001).
+func (s *Service) ListChildSpaces(ctx context.Context, tenantID, viewerUserID, parentID pgtype.UUID) ([]gen.ListChildSpacesRow, error) {
 	spaces, err := s.read.ListChildSpaces(ctx, gen.ListChildSpacesParams{
-		ParentID: parentID,
-		TenantID: tenantID,
+		ParentID:     parentID,
+		TenantID:     tenantID,
+		ViewerUserID: viewerUserID,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("listing child spaces: %w", err)
@@ -862,10 +905,12 @@ func (s *Service) AssignModerator(ctx context.Context, params gen.AssignSpaceMod
 }
 
 // RemoveModerator removes a user from the space moderator list.
-func (s *Service) RemoveModerator(ctx context.Context, spaceID, userID pgtype.UUID) error {
+// SPACES-015: tenant-scoped for defense-in-depth.
+func (s *Service) RemoveModerator(ctx context.Context, spaceID, userID, tenantID pgtype.UUID) error {
 	if err := s.write.RemoveSpaceModerator(ctx, gen.RemoveSpaceModeratorParams{
-		SpaceID: spaceID,
-		UserID:  userID,
+		SpaceID:  spaceID,
+		UserID:   userID,
+		TenantID: tenantID,
 	}); err != nil {
 		return fmt.Errorf("removing space moderator: %w", err)
 	}
@@ -902,8 +947,12 @@ func (s *Service) GetSpaceByID(ctx context.Context, tenantID, id pgtype.UUID) (g
 
 // ListModerators returns every moderator assigned to the given space,
 // including their username and display name.
-func (s *Service) ListModerators(ctx context.Context, spaceID pgtype.UUID) ([]gen.ListSpaceModeratorsRow, error) {
-	mods, err := s.read.ListSpaceModerators(ctx, spaceID)
+// SPACES-015: tenant-scoped for defense-in-depth.
+func (s *Service) ListModerators(ctx context.Context, spaceID, tenantID pgtype.UUID) ([]gen.ListSpaceModeratorsRow, error) {
+	mods, err := s.read.ListSpaceModerators(ctx, gen.ListSpaceModeratorsParams{
+		SpaceID:  spaceID,
+		TenantID: tenantID,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("listing space moderators: %w", err)
 	}
@@ -912,10 +961,12 @@ func (s *Service) ListModerators(ctx context.Context, spaceID pgtype.UUID) ([]ge
 }
 
 // IsModerator returns true if the user is a moderator of the space.
-func (s *Service) IsModerator(ctx context.Context, spaceID, userID pgtype.UUID) (bool, error) {
+// SPACES-015: tenant-scoped for defense-in-depth.
+func (s *Service) IsModerator(ctx context.Context, spaceID, userID, tenantID pgtype.UUID) (bool, error) {
 	_, err := s.read.GetSpaceModerator(ctx, gen.GetSpaceModeratorParams{
-		SpaceID: spaceID,
-		UserID:  userID,
+		SpaceID:  spaceID,
+		UserID:   userID,
+		TenantID: tenantID,
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -945,7 +996,7 @@ func (s *Service) CanManageSpace(ctx context.Context, spaceID, userID, tenantID 
 	if isOwner {
 		return true, nil
 	}
-	isMod, err := s.IsModerator(ctx, spaceID, userID)
+	isMod, err := s.IsModerator(ctx, spaceID, userID, tenantID)
 	if err != nil {
 		return false, err
 	}

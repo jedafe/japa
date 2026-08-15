@@ -68,12 +68,13 @@ function extractRefreshToken(res: Response): string | null {
 export async function authenticateLogin(
 	ctx: ApiContext,
 	email: string,
-	password: string
+	password: string,
+	website?: string
 ): Promise<AuthSession | AuthTotpChallenge> {
 	const res = await fetch(`${API_V1}/auth/login`, {
 		method: 'POST',
 		headers: { 'content-type': 'application/json', host: ctx.host, 'x-forwarded-host': ctx.host },
-		body: JSON.stringify({ email: email.toLowerCase().trim(), password })
+		body: JSON.stringify({ email: email.toLowerCase().trim(), password, website: website ?? '' })
 	});
 	const payload = await res.json();
 	if (!res.ok) {
@@ -94,12 +95,13 @@ export async function authenticateSignup(
 	ctx: ApiContext,
 	email: string,
 	username: string,
-	password: string
+	password: string,
+	website?: string
 ): Promise<AuthSession> {
 	const res = await fetch(`${API_V1}/auth/register`, {
 		method: 'POST',
 		headers: { 'content-type': 'application/json', host: ctx.host, 'x-forwarded-host': ctx.host },
-		body: JSON.stringify({ email: email.toLowerCase().trim(), username: username.trim(), password })
+		body: JSON.stringify({ email: email.toLowerCase().trim(), username: username.trim(), password, website: website ?? '' })
 	});
 	const payload = await res.json();
 	if (!res.ok) {
@@ -143,11 +145,11 @@ export async function getOnboardingStatus(ctx: ApiContext): Promise<OnboardingSt
 }
 
 /** POST /auth/forgot-password — sends a reset email. Throws ApiError on failure. */
-export async function requestPasswordReset(ctx: ApiContext, email: string): Promise<void> {
+export async function requestPasswordReset(ctx: ApiContext, email: string, website?: string): Promise<void> {
 	const res = await fetch(`${API_V1}/auth/forgot-password`, {
 		method: 'POST',
 		headers: { 'content-type': 'application/json', host: ctx.host, 'x-forwarded-host': ctx.host },
-		body: JSON.stringify({ email: email.toLowerCase().trim() })
+		body: JSON.stringify({ email: email.toLowerCase().trim(), website: website ?? '' })
 	});
 	if (!res.ok) {
 		const payload = await res.json().catch(() => null);
@@ -160,12 +162,13 @@ export async function requestPasswordReset(ctx: ApiContext, email: string): Prom
 export async function resetPassword(
 	ctx: ApiContext,
 	token: string,
-	newPassword: string
+	newPassword: string,
+	website?: string
 ): Promise<void> {
 	const res = await fetch(`${API_V1}/auth/reset-password`, {
 		method: 'POST',
 		headers: { 'content-type': 'application/json', host: ctx.host, 'x-forwarded-host': ctx.host },
-		body: JSON.stringify({ token, new_password: newPassword })
+		body: JSON.stringify({ token, new_password: newPassword, website: website ?? '' })
 	});
 	if (!res.ok) {
 		const payload = await res.json().catch(() => null);

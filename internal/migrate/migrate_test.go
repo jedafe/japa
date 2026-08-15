@@ -1,4 +1,4 @@
-package main
+package migrate
 
 import (
 	"os"
@@ -30,9 +30,9 @@ func TestListMigrationFilesSkipsDownMigrations(t *testing.T) {
 		t.Fatalf("creating fixture subdirectory: %v", err)
 	}
 
-	files, err := listMigrationFiles(dir)
+	files, err := ListMigrationFiles(dir)
 	if err != nil {
-		t.Fatalf("listMigrationFiles: %v", err)
+		t.Fatalf("ListMigrationFiles: %v", err)
 	}
 
 	want := []string{

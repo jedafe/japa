@@ -65,13 +65,14 @@
 		// Fetch tax guides, treaty info, and service directory tax consultants
 		// (§100: result page surfaces verified tax consultants from §98
 		// filtered by service_category='finance' and destination_country_id).
+		// Backend route is /services (api-routes-catalog.md L2123).
 		const [guidesRes, treatyRes, consultantsRes] = await Promise.all([
 			api.get<TaxGuideWithAi[]>(`/tax-calculator?${params.toString()}`),
 			api.get<TaxTreaty>(
 				`/tax-calculator/treaty?dest=${selectedDestId}&origin=${selectedOriginId}`
 			),
 			api.get<Array<{ id: string; name: string; slug?: string; description?: string }>>(
-				`/service-directory?dest=${selectedDestId}&category=finance&limit=5`
+				`/services?dest=${selectedDestId}&category=finance&limit=5`
 			)
 		]);
 
@@ -155,28 +156,13 @@
 			)}
 		/>
 	{:else}
-		<!-- Origin + Destination selectors + employment status -->
+		<!-- Destination + Origin selectors + employment status -->
+		<!-- Destination selector is first per the geo-aware tool pattern
+		     (geo-aware-tool-pattern.md: "destination country selector is
+		     always the first input"). -->
 		<div class="mb-6 space-y-4">
 			<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-				<!-- Origin selector -->
-				<div class="flex items-center gap-3">
-					<label for="origin-selector" class="text-sm font-medium text-text whitespace-nowrap">
-						{t('tax_calculator.origin', 'Origin:')}
-					</label>
-					<select
-						id="origin-selector"
-						value={selectedOriginId}
-						onchange={onOriginChange}
-						class="flex-1 px-4 py-2 bg-surface border border-border rounded-lg text-text focus:border-primary focus:outline-none"
-					>
-						<option value="">{t('tax_calculator.select_origin', 'Select origin country…')}</option>
-						{#each destinations as dest (dest.id)}
-							<option value={dest.id}>{dest.name}</option>
-						{/each}
-					</select>
-				</div>
-
-				<!-- Destination selector -->
+				<!-- Destination selector (first — geo-aware pattern) -->
 				<div class="flex items-center gap-3">
 					<label for="dest-selector" class="text-sm font-medium text-text whitespace-nowrap">
 						{t('tax_calculator.destination', 'Destination:')}
@@ -188,6 +174,24 @@
 						class="flex-1 px-4 py-2 bg-surface border border-border rounded-lg text-text focus:border-primary focus:outline-none"
 					>
 						<option value="">{t('geo.select_destination', 'Select a country…')}</option>
+						{#each destinations as dest (dest.id)}
+							<option value={dest.id}>{dest.name}</option>
+						{/each}
+					</select>
+				</div>
+
+				<!-- Origin selector (secondary — geo-aware pattern) -->
+				<div class="flex items-center gap-3">
+					<label for="origin-selector" class="text-sm font-medium text-text whitespace-nowrap">
+						{t('tax_calculator.origin', 'Origin:')}
+					</label>
+					<select
+						id="origin-selector"
+						value={selectedOriginId}
+						onchange={onOriginChange}
+						class="flex-1 px-4 py-2 bg-surface border border-border rounded-lg text-text focus:border-primary focus:outline-none"
+					>
+						<option value="">{t('tax_calculator.select_origin', 'Select origin country…')}</option>
 						{#each destinations as dest (dest.id)}
 							<option value={dest.id}>{dest.name}</option>
 						{/each}
@@ -400,7 +404,7 @@
 						<div class="space-y-2">
 							{#each taxConsultants as consultant (consultant.id)}
 								<a
-									href={`/service-directory/${consultant.slug ?? consultant.id}`}
+									href={`/services/${consultant.slug ?? consultant.id}`}
 									class="block p-3 bg-surface border border-border rounded-lg hover:bg-surface-subtle transition-colors"
 								>
 									<p class="text-sm font-medium text-text">{consultant.name}</p>

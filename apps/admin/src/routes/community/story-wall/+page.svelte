@@ -127,14 +127,22 @@ onMount(async () => {
 	}
 });
 
-		const filters = $derived<FilterDef[]>([
+	const filters = $derived<FilterDef[]>([
 		{
 			key: 'status',
 			label: t('app.story.col_status', 'Status'),
 			options: [
+				{ value: 'draft', label: t('app.story.status_draft', 'Draft') },
 				{ value: 'pending', label: t('app.story.status_pending', 'Pending') },
-				{ value: 'verified', label: t('app.story.status_verified', 'Verified') },
-				{ value: 'rejected', label: t('app.story.status_rejected', 'Rejected') },
+				{ value: 'published', label: t('app.story.status_published', 'Published') },
+			]
+		},
+		{
+			key: 'verified',
+			label: t('app.story.col_verified', 'Verified'),
+			options: [
+				{ value: 'true', label: t('app.story.status_verified', 'Verified') },
+				{ value: 'false', label: t('app.story.status_unverified', 'Unverified') },
 			]
 		},
 		{
@@ -187,6 +195,7 @@ onMount(async () => {
 			}
 			if (params.filter?.dest) qp.set('dest', params.filter.dest);
 			if (params.filter?.status) qp.set('status', params.filter.status);
+			if (params.filter?.verified) qp.set('verified', params.filter.verified);
 			const result = await apiRaw<{ data: StoryItem[]; pagination: { total: number } }>(
 				`/admin/stories${qp.toString() ? `?${qp.toString()}` : ''}`
 			);
