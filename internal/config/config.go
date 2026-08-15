@@ -83,6 +83,9 @@ type Config struct {
 	UnsplashAccessKey        string // JC_UNSPLASH_ACCESS_KEY — Unsplash API access key
 	PexelsAPIKey             string // JC_PEXELS_API_KEY — Pexels API key
 	PixabayAPIKey            string // JC_PIXABAY_API_KEY — Pixabay API key
+	StockCacheTTLSec         int    // JC_STOCK_CACHE_TTL_SECONDS — search result cache TTL (default 300)
+	StockCacheMaxEntries     int    // JC_STOCK_CACHE_MAX_ENTRIES — max cached search pages (default 1000)
+	StockHTTPTimeoutSec      int    // JC_STOCK_HTTP_TIMEOUT_SECONDS — provider HTTP client timeout (default 15)
 }
 
 // Load reads all JC_ environment variables and returns a populated Config.
@@ -173,6 +176,9 @@ func Load() (Config, error) {
 		UnsplashAccessKey:        os.Getenv("JC_UNSPLASH_ACCESS_KEY"),
 		PexelsAPIKey:             os.Getenv("JC_PEXELS_API_KEY"),
 		PixabayAPIKey:            os.Getenv("JC_PIXABAY_API_KEY"),
+		StockCacheTTLSec:         getEnvInt("JC_STOCK_CACHE_TTL_SECONDS", 300),
+		StockCacheMaxEntries:     getEnvInt("JC_STOCK_CACHE_MAX_ENTRIES", 1000),
+		StockHTTPTimeoutSec:      getEnvInt("JC_STOCK_HTTP_TIMEOUT_SECONDS", 15),
 	}
 
 	if err := applyDefaults(&cfg); err != nil {

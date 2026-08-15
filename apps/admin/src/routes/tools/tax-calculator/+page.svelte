@@ -208,11 +208,12 @@ onMount(async () => {
 			const query = queryParts.join('&');
 			const result = await taxCalculatorAdminApi.list(query);
 			if (result.ok && result.data) {
-				// BUG-001: backend returns { data: { guides, treaties }, pagination }
-				// Extract guides array and pagination total.
+				// Backend returns { data: { guides, treaties }, meta }
+				// (geo-aware admin list pattern). Extract guides array
+				// and pagination total from meta.
 				const guides = (result.data.data?.guides as GuideItem[]) ?? [];
-				const total = result.data.pagination?.total ?? guides.length;
-				const totalPages = Math.max(1, Math.ceil(total / (params.pageSize ?? 25)));
+				const total = result.data.meta?.total ?? guides.length;
+				const totalPages = result.data.meta?.total_pages ?? Math.max(1, Math.ceil(total / (params.pageSize ?? 25)));
 				return { data: guides, total, totalPages };
 			}
 			const errMsg = !result.ok ? result.error : t('common.error', 'An error occurred');
@@ -240,27 +241,35 @@ onMount(async () => {
 <!-- ── Generate modal ────────────────────────────────────────────────────── -->
 <Modal bind:open={showGenerateModal} title={t('app.tools.generate_tax_guide', 'Generate Tax Calculator Guide')}>
 	<div class="space-y-4">
+		<!-- Destination selector (first — geo-aware pattern) -->
 		<div>
-			<label for="gen-origin" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('tax_calculator.origin', 'Origin Country Space ID')}</label>
-			<input
-				id="gen-origin"
-				type="text"
-				class="w-full rounded-lg border p-3 text-sm"
-				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
-				bind:value={generateOrigin}
-				placeholder={t('tax_calculator.origin_placeholder', 'UUID of origin country space')}
-			/>
-		</div>
-		<div>
-			<label for="gen-dest" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('tax_calculator.destination', 'Destination Country Space ID')}</label>
-			<input
+			<label for="gen-dest" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('tax_calculator.destination', 'Destination')}</label>
+			<select
 				id="gen-dest"
-				type="text"
 				class="w-full rounded-lg border p-3 text-sm"
 				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
 				bind:value={generateDest}
-				placeholder={t('tax_calculator.destination_placeholder', 'UUID of destination country space')}
-			/>
+			>
+				<option value="">{t('common.select', 'Select…')}</option>
+				{#each destOptions as opt (opt.id)}
+					<option value={opt.id}>{opt.name}</option>
+				{/each}
+			</select>
+		</div>
+		<!-- Origin selector (secondary — geo-aware pattern) -->
+		<div>
+			<label for="gen-origin" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('tax_calculator.origin', 'Origin')}</label>
+			<select
+				id="gen-origin"
+				class="w-full rounded-lg border p-3 text-sm"
+				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+				bind:value={generateOrigin}
+			>
+				<option value="">{t('common.select', 'Select…')}</option>
+				{#each destOptions as opt (opt.id)}
+					<option value={opt.id}>{opt.name}</option>
+				{/each}
+			</select>
 		</div>
 		<div>
 			<label for="gen-emp" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('common.employment_status', 'Employment Status')}</label>

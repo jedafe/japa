@@ -38,20 +38,33 @@ func (a *WorkerAdapter) ScanContent(ctx context.Context, entityType, entityID, t
 		return fmt.Errorf("spam: invalid tenant_id %q: %w", tenantID, err)
 	}
 
-	// Look up the entity body for content-type entities.
+	// Look up the entity body so the pipeline scores real text instead of
+	// an empty string. Content handlers enqueue with entityType "content"
+	// (internal/content/handlers.go); the legacy "post" alias is also
+	// accepted for backward compatibility. Comments are stored in the
+	// comments table with a []byte body column.
 	var body string
 
-	if entityType == "post" && a.pipeline.db != nil {
+	if a.pipeline.db != nil {
 		var eid pgtype.UUID
 		if err := eid.Scan(entityID); err == nil {
 			queries := gen.New(a.pipeline.db.Reader)
-			row, err := queries.GetContentByID(ctx, gen.GetContentByIDParams{
-				ID:       eid,
-				TenantID: tid,
-			})
 
-			if err == nil {
-				body = row.Body
+			switch entityType {
+			case "post", "content":
+				if row, err := queries.GetContentByID(ctx, gen.GetContentByIDParams{
+					ID:       eid,
+					TenantID: tid,
+				}); err == nil {
+					body = row.Body
+				}
+			case "comment":
+				if row, err := queries.GetComment(ctx, gen.GetCommentParams{
+					ID:       eid,
+					TenantID: tid,
+				}); err == nil {
+					body = string(row.Body)
+				}
 			}
 		}
 	}

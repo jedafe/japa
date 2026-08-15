@@ -1272,6 +1272,14 @@ type CvFormatSession struct {
 	HitlReviewedBy     pgtype.UUID        `json:"hitl_reviewed_by"`
 	HitlReviewedAt     pgtype.Timestamptz `json:"hitl_reviewed_at"`
 	HitlReviewNotes    *string            `json:"hitl_review_notes"`
+	// Original filename of the uploaded CV file (if submitted via file upload)
+	OriginalFilename *string `json:"original_filename"`
+	// S3/SeaweedFS object key for the uploaded file (if submitted via file upload)
+	FileStoragePath *string `json:"file_storage_path"`
+	// MIME type of the uploaded file (application/pdf, application/vnd.openxmlformats-officedocument.wordprocessingml.document)
+	FileMimeType *string `json:"file_mime_type"`
+	// Size of the uploaded file in bytes
+	FileSizeBytes *int64 `json:"file_size_bytes"`
 }
 
 type CvStandard struct {

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
@@ -109,7 +110,11 @@ func (h *Handlers) resolveTag(w http.ResponseWriter, r *http.Request, tenantID p
 
 	tag, err := h.service.GetTagBySlug(r.Context(), tenantID, slug)
 	if err != nil {
-		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Tag not found")
+		if errors.Is(err, pgx.ErrNoRows) {
+			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Tag not found")
+		} else {
+			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to load tag")
+		}
 		return gen.GetTagBySlugRow{}, false
 	}
 
@@ -210,7 +215,9 @@ func (h *Handlers) GetTag(w http.ResponseWriter, r *http.Request) {
 
 // GetTagContent handles GET /api/v1/tags/{slug}/content — published content
 // tagged with this tag, newest first. Supports ?cursor= (RFC3339 timestamp)
-// and ?page_size= for pagination. [public]
+// and ?cursor_id= (UUID) for composite cursor pagination, plus ?page_size=.
+// The composite (created_at, id) cursor avoids skipping items that share the
+// same created_at timestamp. [public]
 func (h *Handlers) GetTagContent(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -223,6 +230,7 @@ func (h *Handlers) GetTagContent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var cursor pgtype.Timestamptz
+	var cursorID pgtype.UUID
 	if c := r.URL.Query().Get("cursor"); c != "" {
 		t, err := time.Parse(time.RFC3339, c)
 		if err != nil {
@@ -231,11 +239,20 @@ func (h *Handlers) GetTagContent(w http.ResponseWriter, r *http.Request) {
 		}
 
 		cursor = pgtype.Timestamptz{Time: t, Valid: true}
+
+		// cursor_id is required when cursor is set — it's the id of the
+		// last item on the previous page, used as the tiebreaker.
+		if cid := r.URL.Query().Get("cursor_id"); cid != "" {
+			if err := cursorID.Scan(cid); err != nil {
+				errpkg.WriteError(w, http.StatusBadRequest, "invalid_cursor_id", "cursor_id must be a UUID")
+				return
+			}
+		}
 	}
 
 	limit := parsePageSize(r)
 
-	items, err := h.content.ListContentByTag(r.Context(), tenantID, tag.ID, cursor, limit)
+	items, err := h.content.ListContentByTag(r.Context(), tenantID, tag.ID, cursor, cursorID, limit)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list tagged content")
 		return
@@ -617,6 +634,10 @@ func (h *Handlers) UpdateTag(w http.ResponseWriter, r *http.Request) {
 		FieldValues:  input.FieldValues,
 	})
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Tag not found")
+			return
+		}
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
 			errpkg.WriteError(w, http.StatusConflict, "duplicate_slug", "A tag with this slug already exists")
@@ -774,6 +795,11 @@ func (h *Handlers) AddTagModerator(w http.ResponseWriter, r *http.Request) {
 		AssignedByUserID: user.UserID,
 	})
 	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23503" {
+			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Tag or user not found")
+			return
+		}
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to add tag moderator")
 		return
 	}

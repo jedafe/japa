@@ -20,9 +20,9 @@ type OpenverseProvider struct {
 	client *http.Client
 }
 
-func NewOpenverseProvider() *OpenverseProvider {
+func NewOpenverseProvider(timeout time.Duration) *OpenverseProvider {
 	return &OpenverseProvider{
-		client: &http.Client{Timeout: 15 * time.Second},
+		client: &http.Client{Timeout: timeout},
 	}
 }
 

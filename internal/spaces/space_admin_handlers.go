@@ -44,13 +44,15 @@ func (h *Handlers) ListJoinRequests(w http.ResponseWriter, r *http.Request) {
 }
 
 // UpdateJoinRequest handles PATCH /admin/spaces/:id/join-requests/:requestId.
+// SPACES-004: when the request is approved, increment the space's
+// member_count so the counter reflects the newly active member.
 func (h *Handlers) UpdateJoinRequest(w http.ResponseWriter, r *http.Request) {
 	spaceID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", err.Error())
 		return
 	}
-	requestID, err := parseUUIDParam(r, "requestId")
+	requestID, err := parseUUIDParam(r, "uid")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_request_id", "Invalid request ID")
 		return
@@ -75,6 +77,14 @@ func (h *Handlers) UpdateJoinRequest(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update join request")
 		return
+	}
+	// SPACES-004: increment member_count only on approval. The pending
+	// join path did not increment, so the approval must.
+	if input.Status == "approved" {
+		if err := h.Service.IncrementSpaceCount(r.Context(), spaceID, tenantID, 1); err != nil {
+			slog.Error("spaces: failed to increment member_count on join approval",
+				"space_id", spaceID.String(), "user_id", requestID.String(), "error", err)
+		}
 	}
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"id": requestID.String(), "status": input.Status})
 }
@@ -288,6 +298,14 @@ func (h *Handlers) AdminResolveJoinRequest(w http.ResponseWriter, r *http.Reques
 	}); err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update join request")
 		return
+	}
+
+	// SPACES-004: increment member_count only on approval.
+	if status == "approved" {
+		if err := h.Service.IncrementSpaceCount(r.Context(), spaceID, tenantID, 1); err != nil {
+			slog.Error("spaces: failed to increment member_count on join approval",
+				"space_id", spaceID.String(), "user_id", userID.String(), "error", err)
+		}
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"id": composite, "status": status})

@@ -121,13 +121,27 @@ func (s *Service) GetFeed(ctx context.Context, tenantID pgtype.UUID, timeline st
 			return nil, errors.New("space feed requires space_id")
 		}
 
-		return s.getSpaceFeedItems(ctx, tenantID, *spaceID, sort, limit, offset)
+		// viewerID is the authenticated user (may be nil for guests); used
+		// for mutual user_blocks exclusion per §41.
+		var viewerID pgtype.UUID
+		if userID != nil {
+			viewerID = *userID
+		}
+
+		return s.getSpaceFeedItems(ctx, tenantID, *spaceID, viewerID, sort, limit, offset)
 	case "profile":
 		if authorID == nil {
 			return nil, errors.New("profile feed requires author_id")
 		}
 
-		return s.getProfileFeedItems(ctx, tenantID, *authorID, sort, limit, offset)
+		// viewerID is the authenticated user (may be nil for guests); used
+		// for mutual user_blocks exclusion per §41.
+		var viewerID pgtype.UUID
+		if userID != nil {
+			viewerID = *userID
+		}
+
+		return s.getProfileFeedItems(ctx, tenantID, *authorID, viewerID, sort, limit, offset)
 	default:
 		return nil, fmt.Errorf("unknown timeline: %s", timeline)
 	}
@@ -187,8 +201,9 @@ func (s *Service) getPrimaryFeedItems(ctx context.Context, tenantID, userID pgty
 // getSpaceFeedItems returns space-specific feed with sort.
 // sort: 'latest' (default), 'top' (vote_score DESC), 'rising' (velocity_score DESC).
 // 'relevant' falls back to latest (pgvector relevance is only in the for-you feed).
-func (s *Service) getSpaceFeedItems(ctx context.Context, tenantID, spaceID pgtype.UUID, sort string, limit, offset int32) ([]FeedItem, error) {
-	rows, err := s.store.getSpaceFeed(ctx, tenantID, spaceID, sort, limit, offset)
+// viewerID is nullable — when valid, mutual user_blocks are excluded (§41).
+func (s *Service) getSpaceFeedItems(ctx context.Context, tenantID, spaceID, viewerID pgtype.UUID, sort string, limit, offset int32) ([]FeedItem, error) {
+	rows, err := s.store.getSpaceFeed(ctx, tenantID, spaceID, viewerID, sort, limit, offset)
 	if err != nil {
 		return nil, err
 	}
@@ -199,8 +214,9 @@ func (s *Service) getSpaceFeedItems(ctx context.Context, tenantID, spaceID pgtyp
 // getProfileFeedItems returns a user's public posts with sort.
 // sort: 'latest' (default), 'top' (vote_score DESC), 'rising' (velocity_score DESC).
 // 'relevant' falls back to latest (pgvector relevance is only in the for-you feed).
-func (s *Service) getProfileFeedItems(ctx context.Context, tenantID, authorID pgtype.UUID, sort string, limit, offset int32) ([]FeedItem, error) {
-	rows, err := s.store.getProfileFeed(ctx, tenantID, authorID, sort, limit, offset)
+// viewerID is nullable — when valid, mutual user_blocks are excluded (§41).
+func (s *Service) getProfileFeedItems(ctx context.Context, tenantID, authorID, viewerID pgtype.UUID, sort string, limit, offset int32) ([]FeedItem, error) {
+	rows, err := s.store.getProfileFeed(ctx, tenantID, authorID, viewerID, sort, limit, offset)
 	if err != nil {
 		return nil, err
 	}

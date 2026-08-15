@@ -9,6 +9,8 @@ package visaroutes
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -17,6 +19,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/jedafe/japa/internal/ai"
 	"github.com/jedafe/japa/internal/config"
 )
 
@@ -99,24 +102,44 @@ type ApproveInput struct {
 	Notes *string `json:"notes"`
 }
 
+// GenerateDraftResponse is the response from Content Agent draft generation.
+type GenerateDraftResponse struct {
+	Status             string `json:"status"`
+	Message            string `json:"message"`
+	RouteID            string `json:"route_id"`
+	DestinationSpaceID string `json:"destination_space_id"`
+	VisaCategory       string `json:"visa_category"`
+}
+
 // GenerateRouteRequest is the request body for POST
 // /admin/visa-routes/generate (Content Agent draft placeholder, §90,
 // ADR-088).
 type GenerateRouteRequest struct {
 	DestinationSpaceID string `json:"destination_space_id"`
 	VisaCategory       string `json:"visa_category"`
+	Prompt             string `json:"prompt"`
+}
+
+// AIDispatcher is the subset of the AI Gateway the visa routes service
+// needs to generate draft routes (content_generation category).
+type AIDispatcher interface {
+	Dispatch(ctx context.Context, category string, req ai.Request) (ai.Response, error)
 }
 
 // Service holds the business logic for visa routes.
 type Service struct {
-	store    *Store
-	settings *config.Settings
+	store      *Store
+	settings   *config.Settings
+	dispatcher AIDispatcher
 }
 
 // NewService creates a visa routes service.
 func NewService(store *Store, settings *config.Settings) *Service {
 	return &Service{store: store, settings: settings}
 }
+
+// SetDispatcher injects the AI Gateway dispatcher for draft generation.
+func (s *Service) SetDispatcher(d AIDispatcher) { s.dispatcher = d }
 
 // Enabled reads the visa_routes.enabled system_setting toggle (§90
 // feature flag).
@@ -422,32 +445,100 @@ func (s *Service) Deactivate(ctx context.Context, id, tenantID pgtype.UUID) erro
 	return nil
 }
 
-// GenerateDraft is the Content Agent draft placeholder for POST
-// /admin/visa-routes/generate (§90, ADR-088). It does not yet invoke the
-// Content Agent; instead it returns a placeholder response indicating the
-// generation has been queued. The actual AI generation will be wired in a
-// follow-up (§90 Content Agent integration).
-func (s *Service) GenerateDraft(ctx context.Context, tenantID pgtype.UUID, input GenerateRouteRequest) (map[string]any, error) {
+// GenerateDraft creates a visa route draft via the Content Agent (§90,
+// ADR-088). The draft is inserted with status='ai_draft',
+// ai_generated=true, ai_model='content_agent_v1', and
+// ai_prompt_hash=SHA256(prompt). It requires HITL approval before
+// publication. Admin-only (visa_routes.manage permission).
+//
+// When an AI dispatcher is wired (SetDispatcher), the method calls the AI
+// Gateway via the "content_generation" category. If the dispatcher is nil,
+// the draft is still created with placeholder content so a reviewer can
+// fill it manually (graceful degradation).
+func (s *Service) GenerateDraft(ctx context.Context, tenantID pgtype.UUID, input GenerateRouteRequest) (GenerateDraftResponse, error) {
 	if input.DestinationSpaceID == "" {
-		return nil, fmt.Errorf("destination_space_id is required")
+		return GenerateDraftResponse{}, fmt.Errorf("destination_space_id is required")
 	}
-
 	var destSpaceID pgtype.UUID
 	if err := destSpaceID.Scan(input.DestinationSpaceID); err != nil {
-		return nil, fmt.Errorf("invalid destination_space_id: %w", err)
+		return GenerateDraftResponse{}, fmt.Errorf("invalid destination_space_id: %w", err)
 	}
 
-	slog.Info("visaroutes: generate draft placeholder",
-		"tenant_id", tenantID,
-		"dest_space_id", destSpaceID,
-		"visa_category", input.VisaCategory,
-	)
+	visaCategory := input.VisaCategory
+	if visaCategory == "" {
+		visaCategory = "general"
+	}
 
-	return map[string]any{
-		"status":               "queued",
-		"destination_space_id": input.DestinationSpaceID,
-		"visa_category":        input.VisaCategory,
-		"message":              "Content Agent draft generation queued; not yet implemented.",
+	// Build the prompt sent to the Content Agent.
+	prompt := input.Prompt
+	if prompt == "" {
+		prompt = fmt.Sprintf(
+			"Generate a visa route guide for destination_space_id=%s, visa_category=%s. Include eligibility summary, requirements, typical fees, path to permanent residency, renewal terms, restrictions, and government source URL.",
+			input.DestinationSpaceID, visaCategory,
+		)
+	}
+
+	// ai_prompt_hash = SHA256(prompt) for audit traceability.
+	sum := sha256.Sum256([]byte(prompt))
+	promptHash := hex.EncodeToString(sum[:])
+
+	// Call the AI Gateway when a dispatcher is wired.
+	eligibilitySummary := prompt
+	if s.dispatcher != nil {
+		resp, aiErr := s.dispatcher.Dispatch(ctx, "content_generation", ai.Request{
+			Category: "content_generation",
+			Payload: map[string]any{
+				"prompt":     prompt,
+				"tenant_id":  tenantID,
+				"guide_type": "visa_route",
+			},
+		})
+		if aiErr != nil {
+			return GenerateDraftResponse{}, fmt.Errorf("visaroutes: AI generation failed: %w", aiErr)
+		}
+		if text, ok := resp.Raw["text"].(string); ok {
+			eligibilitySummary = text
+		} else if text, ok := resp.Raw["content"].(string); ok {
+			eligibilitySummary = text
+		} else if text, ok := resp.Raw["output"].(string); ok {
+			eligibilitySummary = text
+		}
+		slog.Info("visaroutes: AI Gateway generated draft",
+			"destination_space_id", input.DestinationSpaceID,
+			"visa_category", visaCategory,
+			"prompt_hash", promptHash,
+		)
+	}
+
+	aiModel := "content_agent_v1"
+	aiGenerated := true
+	routeName := fmt.Sprintf("AI Draft: %s (%s)", visaCategory, input.DestinationSpaceID)
+	slug := fmt.Sprintf("ai-draft-%s-%s", visaCategory, promptHash[:8])
+	isActive := false
+
+	row, err := s.store.Create(ctx, CreateRoute{
+		TenantID:           tenantID,
+		DestinationSpaceID: destSpaceID,
+		VisaCategory:       visaCategory,
+		Name:               routeName,
+		Slug:               slug,
+		EligibilitySummary: &eligibilitySummary,
+		Status:             StatusAIDraft,
+		IsActive:           isActive,
+		AIGenerated:        aiGenerated,
+		AIModel:            &aiModel,
+		AIPromptHash:       &promptHash,
+	})
+	if err != nil {
+		return GenerateDraftResponse{}, fmt.Errorf("visaroutes: generate draft: %w", err)
+	}
+
+	return GenerateDraftResponse{
+		Status:             "accepted",
+		Message:            "Content Agent draft created in 'ai_draft' status. Review and approve to publish.",
+		RouteID:            row.ID.String(),
+		DestinationSpaceID: destSpaceID.String(),
+		VisaCategory:       visaCategory,
 	}, nil
 }
 

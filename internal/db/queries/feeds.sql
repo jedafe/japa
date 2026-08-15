@@ -68,6 +68,12 @@ LEFT JOIN media m ON m.id = COALESCE(c.featured_image_id, c.header_image_id) AND
 WHERE f.tenant_id = @tenant_id AND f.user_id = @user_id
   AND c.status = 'published'
   AND c.deleted_at IS NULL
+  AND NOT EXISTS (
+      SELECT 1 FROM user_blocks ub
+      WHERE ub.tenant_id = f.tenant_id
+        AND ((ub.blocker_id = @user_id AND ub.blocked_id = c.author_id)
+          OR (ub.blocker_id = c.author_id AND ub.blocked_id = @user_id))
+  )
 GROUP BY f.id, f.content_id, f.space_id, f.content_type, f.score, f.created_at,
          c.title, c.slug, c.author_id, c.created_at,
          c.view_count, c.comment_count, cs.vote_score, cs.velocity_score, cs.bookmark_count,
@@ -84,6 +90,7 @@ LIMIT @page_limit OFFSET @page_offset;
 -- Posts in a specific space.
 -- sort: 'latest' (default), 'top' (vote_score DESC), 'rising' (velocity_score DESC).
 -- 'relevant' falls back to latest (pgvector relevance is only used in the for-you feed).
+-- @viewer_id is nullable — when present, mutual user_blocks are excluded (§41).
 SELECT c.id, c.title, c.slug, c.content_type, c.author_id,
        c.created_at, c.view_count, c.comment_count,
        cs.vote_score, cs.velocity_score,
@@ -108,6 +115,14 @@ LEFT JOIN media m ON m.id = COALESCE(c.featured_image_id, c.header_image_id) AND
 WHERE c.tenant_id = @tenant_id AND c.space_id = @space_id
   AND c.status = 'published'
   AND c.deleted_at IS NULL
+  AND NOT (
+      sqlc.narg(viewer_id)::uuid IS NOT NULL AND EXISTS (
+          SELECT 1 FROM user_blocks ub
+          WHERE ub.tenant_id = c.tenant_id
+            AND ((ub.blocker_id = sqlc.narg(viewer_id)::uuid AND ub.blocked_id = c.author_id)
+              OR (ub.blocker_id = c.author_id AND ub.blocked_id = sqlc.narg(viewer_id)::uuid))
+      )
+  )
 GROUP BY c.id, cs.vote_score, cs.velocity_score, cs.bookmark_count,
          u.username, up.display_name, up.avatar_url,
          s.name, s.slug,
@@ -122,6 +137,9 @@ LIMIT @page_limit OFFSET @page_offset;
 -- All public posts by a specific user.
 -- sort: 'latest' (default), 'top' (vote_score DESC), 'rising' (velocity_score DESC).
 -- 'relevant' falls back to latest (pgvector relevance is only used in the for-you feed).
+-- @viewer_id is nullable — when present, mutual user_blocks are excluded (§41).
+-- If the viewer has blocked the profile owner (or vice versa), the profile
+-- feed returns no rows, enforcing mutual invisibility.
 SELECT c.id, c.title, c.slug, c.content_type, c.author_id, c.space_id,
        c.created_at, c.view_count, c.comment_count,
        cs.vote_score, cs.velocity_score,
@@ -147,6 +165,14 @@ WHERE c.tenant_id = @tenant_id AND c.author_id = @author_id
   AND c.status = 'published'
   AND c.deleted_at IS NULL
   AND c.visibility = 'public'
+  AND NOT (
+      sqlc.narg(viewer_id)::uuid IS NOT NULL AND EXISTS (
+          SELECT 1 FROM user_blocks ub
+          WHERE ub.tenant_id = c.tenant_id
+            AND ((ub.blocker_id = sqlc.narg(viewer_id)::uuid AND ub.blocked_id = c.author_id)
+              OR (ub.blocker_id = c.author_id AND ub.blocked_id = sqlc.narg(viewer_id)::uuid))
+      )
+  )
 GROUP BY c.id, cs.vote_score, cs.velocity_score, cs.bookmark_count,
          u.username, up.display_name, up.avatar_url,
          s.name, s.slug,
@@ -296,6 +322,12 @@ WITH affinity AS (
       AND c.visibility = 'public'
       AND c.created_at >= @window_start
       AND c.author_id <> @exclude_author_id
+      AND NOT EXISTS (
+          SELECT 1 FROM user_blocks ub
+          WHERE ub.tenant_id = c.tenant_id
+            AND ((ub.blocker_id = @exclude_author_id AND ub.blocked_id = c.author_id)
+              OR (ub.blocker_id = c.author_id AND ub.blocked_id = @exclude_author_id))
+      )
       AND (
             c.author_id = ANY(COALESCE(@author_ids::uuid[], ARRAY[]::uuid[]))
          OR c.space_id  = ANY(COALESCE(@space_ids::uuid[], ARRAY[]::uuid[]))
@@ -317,6 +349,12 @@ velocity AS (
       AND c.visibility = 'public'
       AND c.created_at >= @window_start
       AND c.author_id <> @exclude_author_id
+      AND NOT EXISTS (
+          SELECT 1 FROM user_blocks ub
+          WHERE ub.tenant_id = c.tenant_id
+            AND ((ub.blocker_id = @exclude_author_id AND ub.blocked_id = c.author_id)
+              OR (ub.blocker_id = c.author_id AND ub.blocked_id = @exclude_author_id))
+      )
     ORDER BY cs.velocity_score DESC
     LIMIT @velocity_limit
 ),

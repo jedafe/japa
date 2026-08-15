@@ -3,6 +3,14 @@
 // Distinct from forum_tags (forum-scoped, internal/forum): this package
 // backs the tags table content is tagged against via content_tags, and
 // followed via the follows package (entity_type="tag").
+//
+// Tag moderation model: all tag mutations (create/update/delete) require
+// the tags.manage permission, held by admins and super_admins. The
+// tag_moderators table records designated moderators per tag for display
+// and audit purposes, but does not grant a separate runtime permission
+// node — tag_moderators is informational only in V1. This matches the
+// forum_tags.moderator_user_id pattern (single nullable moderator) and
+// avoids a tag.moderate.assigned runtime-resolved node. Ref: §08, §26.
 package tags
 
 import (

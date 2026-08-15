@@ -101,6 +101,9 @@ func (h *Handlers) ToggleSpaceMembership(w http.ResponseWriter, r *http.Request)
 
 // Leave handles DELETE /api/v1/spaces/{slug}/leave — dedicated leave action,
 // split from the join/leave toggle in ToggleSpaceMembership.
+// SPACES-016: only decrement member_count if the user was an approved
+// member. A pending member's count was never incremented, so decrementing
+// on their leave would cause negative drift.
 func (h *Handlers) Leave(w http.ResponseWriter, r *http.Request) {
 	space, ok := spaceFromContext(w, r)
 	if !ok {
@@ -118,14 +121,25 @@ func (h *Handlers) Leave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Check if the user is an approved member before removing. Pending
+	// members (status='pending') are removed but don't affect the count.
+	wasApproved, err := h.Service.IsMember(r.Context(), space.ID, user.UserID, tenantID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
 	if err := h.Service.Leave(r.Context(), space.ID, user.UserID, tenantID); err != nil {
 		handleServiceError(w, err)
 		return
 	}
 
-	if err := h.Service.IncrementSpaceCount(r.Context(), space.ID, tenantID, -1); err != nil {
-		handleServiceError(w, err)
-		return
+	// SPACES-016: only decrement if the user was an approved member.
+	if wasApproved {
+		if err := h.Service.IncrementSpaceCount(r.Context(), space.ID, tenantID, -1); err != nil {
+			handleServiceError(w, err)
+			return
+		}
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"left": true}})

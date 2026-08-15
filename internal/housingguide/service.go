@@ -10,6 +10,8 @@ package housingguide
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -18,6 +20,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/jedafe/japa/internal/ai"
 	"github.com/jedafe/japa/internal/config"
 )
 
@@ -89,6 +92,14 @@ type ApproveGuideRequest struct {
 	Notes *string `json:"notes"`
 }
 
+// GenerateDraftResponse is the response from Content Agent draft generation.
+type GenerateDraftResponse struct {
+	Status             string `json:"status"`
+	Message            string `json:"message"`
+	GuideID            string `json:"guide_id"`
+	DestinationSpaceID string `json:"destination_space_id"`
+}
+
 // GenerateGuideRequest is the request body for POST
 // /admin/housing-guides/generate (Content Agent draft placeholder).
 type GenerateGuideRequest struct {
@@ -105,10 +116,18 @@ type Enqueuer interface {
 	Enqueue(taskType string, payload []byte, opts ...interface{}) error
 }
 
+// AIDispatcher is the subset of the AI Gateway the housing guide service
+// needs to generate draft guides (content_generation category). *ai.Dispatcher
+// satisfies this.
+type AIDispatcher interface {
+	Dispatch(ctx context.Context, category string, req ai.Request) (ai.Response, error)
+}
+
 type Service struct {
-	store    *Store
-	settings *config.Settings
-	enqueuer Enqueuer // nil = no task dispatch
+	store      *Store
+	settings   *config.Settings
+	enqueuer   Enqueuer     // nil = no task dispatch
+	dispatcher AIDispatcher // nil = no AI generation
 }
 
 // NewService creates a housing guide service.
@@ -122,6 +141,9 @@ func NewService(store *Store, settings *config.Settings) *Service {
 // SetEnqueuer injects the Asynq task enqueuer for fire-and-forget dispatch
 // (Rule 8). Optional — when nil, task dispatch is skipped.
 func (s *Service) SetEnqueuer(e Enqueuer) { s.enqueuer = e }
+
+// SetDispatcher injects the AI Gateway dispatcher for draft generation.
+func (s *Service) SetDispatcher(d AIDispatcher) { s.dispatcher = d }
 
 // Enabled reads the housing_guide.enabled system_setting toggle
 // (§96 feature flag).
@@ -374,35 +396,97 @@ func (s *Service) AdminList(ctx context.Context, tenantID pgtype.UUID, status, a
 	return dtos, total, nil
 }
 
-// GenerateDraft is the Content Agent draft placeholder. It does not yet
-// invoke the Content Agent; instead it returns a placeholder response
-// indicating the generation has been queued. The actual AI generation
-// will be wired in a follow-up (§96 Content Agent integration).
-func (s *Service) GenerateDraft(ctx context.Context, tenantID pgtype.UUID, input GenerateGuideRequest) (map[string]any, error) {
+// GenerateDraft creates a housing guide draft via the Content Agent
+// (§96, ADR-088). The draft is inserted with status='ai_draft',
+// ai_generated=true, ai_model='content_agent_v1', and
+// ai_prompt_hash=SHA256(prompt). It requires HITL approval (ApproveGuide)
+// before publication. Admin-only (housing_guide.manage permission).
+//
+// When an AI dispatcher is wired (SetDispatcher), the method calls the AI
+// Gateway via the "content_generation" category. If the dispatcher is nil
+// or the call fails, the draft is still created with the prompt as tips so
+// a reviewer can fill it manually (graceful degradation).
+func (s *Service) GenerateDraft(ctx context.Context, tenantID pgtype.UUID, input GenerateGuideRequest) (GenerateDraftResponse, error) {
 	if input.DestinationSpaceID == "" {
-		return nil, fmt.Errorf("destination_space_id is required")
+		return GenerateDraftResponse{}, fmt.Errorf("destination_space_id is required")
 	}
-
 	var destSpaceID pgtype.UUID
 	if err := destSpaceID.Scan(input.DestinationSpaceID); err != nil {
-		return nil, fmt.Errorf("invalid destination_space_id: %w", err)
+		return GenerateDraftResponse{}, fmt.Errorf("invalid destination_space_id: %w", err)
 	}
 
 	var citySpaceID pgtype.UUID
 	if input.CitySpaceID != "" {
 		if err := citySpaceID.Scan(input.CitySpaceID); err != nil {
-			return nil, fmt.Errorf("invalid city_space_id: %w", err)
+			return GenerateDraftResponse{}, fmt.Errorf("invalid city_space_id: %w", err)
 		}
 	}
 
-	slog.Info("housingguide: generate draft placeholder", "tenant_id", tenantID, "dest_space_id", destSpaceID, "city_space_id", citySpaceID, "accommodation_type", input.AccommodationType)
+	// Build the prompt sent to the Content Agent.
+	prompt := fmt.Sprintf(
+		"Generate a housing guide for destination_space_id=%s, accommodation_type=%s. Include tips for finding housing, landlord requirements, common scams, and rent ranges.",
+		input.DestinationSpaceID, input.AccommodationType,
+	)
 
-	return map[string]any{
-		"status":               "queued",
-		"destination_space_id": input.DestinationSpaceID,
-		"city_space_id":        input.CitySpaceID,
-		"accommodation_type":   input.AccommodationType,
-		"message":              "Content Agent draft generation queued; not yet implemented.",
+	// ai_prompt_hash = SHA256(prompt) for audit traceability.
+	sum := sha256.Sum256([]byte(prompt))
+	promptHash := hex.EncodeToString(sum[:])
+
+	// Call the AI Gateway when a dispatcher is wired.
+	tips := prompt
+	if s.dispatcher != nil {
+		resp, aiErr := s.dispatcher.Dispatch(ctx, "content_generation", ai.Request{
+			Category: "content_generation",
+			Payload: map[string]any{
+				"prompt":     prompt,
+				"tenant_id":  tenantID,
+				"guide_type": "housing_guide",
+			},
+		})
+		if aiErr != nil {
+			return GenerateDraftResponse{}, fmt.Errorf("housingguide: AI generation failed: %w", aiErr)
+		}
+		if text, ok := resp.Raw["text"].(string); ok {
+			tips = text
+		} else if text, ok := resp.Raw["content"].(string); ok {
+			tips = text
+		} else if text, ok := resp.Raw["output"].(string); ok {
+			tips = text
+		}
+		slog.Info("housingguide: AI Gateway generated draft",
+			"destination_space_id", input.DestinationSpaceID,
+			"accommodation_type", input.AccommodationType,
+			"prompt_hash", promptHash,
+		)
+	}
+
+	aiModel := "content_agent_v1"
+	var accomTypePtr *string
+	if input.AccommodationType != "" {
+		accomTypePtr = &input.AccommodationType
+	}
+	tipsPtr := &tips
+	id, err := s.store.CreateGuide(ctx, CreateGuideInput{
+		TenantID:           tenantID,
+		DestinationSpaceID: destSpaceID,
+		CitySpaceID:        citySpaceID,
+		AccommodationType:  accomTypePtr,
+		Tips:               tipsPtr,
+		Status:             StatusAIDraft,
+		IsActive:           false,
+		AIGenerated:        true,
+		AIModel:            &aiModel,
+		AIPromptHash:       &promptHash,
+	})
+	if err != nil {
+		return GenerateDraftResponse{}, fmt.Errorf("housingguide: generate draft: %w", err)
+	}
+
+	return GenerateDraftResponse{
+		Status:             "accepted",
+		Message:            "Content Agent draft created in 'ai_draft' status. Review and approve to publish.",
+		GuideID:            id.String(),
+		DestinationSpaceID: destSpaceID.String(),
 	}, nil
 }
 

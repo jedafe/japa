@@ -125,6 +125,22 @@ func (s *Store) CreateEntry(ctx context.Context, entry CalendarEntry) (pgtype.UU
 	return id, nil
 }
 
+// MarkAIGenerated stamps the ADR-088 AI provenance columns on an existing
+// calendar entry. Called after CreateEntry for AI-generated drafts.
+func (s *Store) MarkAIGenerated(ctx context.Context, id, tenantID pgtype.UUID, aiModel string) error {
+	_, err := s.pool.Writer.Exec(ctx, `
+UPDATE calendar_entries
+SET ai_generated = true,
+    ai_model = $3,
+    ai_generated_at = NOW()
+WHERE id = $1 AND tenant_id = $2
+`, id, tenantID, aiModel)
+	if err != nil {
+		return fmt.Errorf("calendar: mark ai generated: %w", err)
+	}
+	return nil
+}
+
 // SetStalenessCheckDue sets staleness_check_due = occurs_at - 60 days for
 // recurring entries. Non-recurring entries get a NULL staleness_check_due.
 // Ref: §86 Staleness Management, ADR-094.
