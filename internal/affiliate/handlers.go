@@ -576,6 +576,25 @@ var _ = fmt.Sprintf
 
 // ─── P5.6 Affiliate Commission Rates ─────────────────────────────────────
 
+// GetProgramStatsAdmin handles GET /api/v1/admin/affiliate-program
+//
+// Ref: japaconnect-engineering/sections/56-user-affiliate-program.md
+// (Admin management). Returns program-wide totals: total/active members,
+// total links, total clicks, total conversions, total commissions.
+// Tenant-scoped, guarded by affiliate.admin.view.
+func (h *Handlers) GetProgramStatsAdmin(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+	stats, err := h.Service.GetProgramStats(r.Context(), tenantID)
+	if err != nil {
+		errpkg.WriteError(w, http.StatusInternalServerError, "query_error", "Failed to query program stats")
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": stats})
+}
+
 // GetCommissionRates handles GET /admin/affiliate-program/commission-rates.
 func (h *Handlers) GetCommissionRates(w http.ResponseWriter, r *http.Request) {
 	info := h.Service.GetProgramInfo(r.Context())

@@ -3,14 +3,15 @@ package analytics
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log/slog"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/worker"
 )
 
@@ -24,6 +25,7 @@ type Service struct {
 	store    *Store
 	db       *db.DB
 	enqueuer Enqueuer
+	settings *config.Settings // nil disables system_settings lookups (tests)
 }
 
 // NewService creates a Service backed by both Reader and Writer pools.
@@ -41,6 +43,12 @@ func NewServiceWithEnqueuer(database *db.DB, enqueuer Enqueuer) *Service {
 	svc.enqueuer = enqueuer
 
 	return svc
+}
+
+// SetSettings attaches the system_settings reader for Rule 3 compliance
+// (security scan thresholds and other configurable values).
+func (s *Service) SetSettings(settings *config.Settings) {
+	s.settings = settings
 }
 
 // noopEnqueuer is a no-op implementation for development.
@@ -67,9 +75,15 @@ type TrackEventInput struct {
 }
 
 // TrackEvent records a platform event in the write-optimised append-only table.
+// BUG-004 fix: validate event_type against the ValidEventTypes allowlist so
+// arbitrary strings cannot pollute platform_events.
 func (s *Service) TrackEvent(ctx context.Context, tenantID pgtype.UUID, input TrackEventInput) (gen.CreatePlatformEventRow, error) {
 	if input.EventType == "" {
-		return gen.CreatePlatformEventRow{}, errors.New("event_type is required")
+		return gen.CreatePlatformEventRow{}, fmt.Errorf("%w: event_type is required", errpkg.ErrRequired)
+	}
+
+	if !isValidEventType(input.EventType) {
+		return gen.CreatePlatformEventRow{}, fmt.Errorf("%w: unknown event_type %q", errpkg.ErrInvalid, input.EventType)
 	}
 
 	metaBytes := []byte("{}")

@@ -263,7 +263,7 @@ func TestExternalSearchHandler_CacheHit(t *testing.T) {
 	cache := newStubCacheClient()
 	cachedJSON := `{"query":"test","provider":"tavily","results":[{"title":"Cached","url":"https://example.com","content":"cached"}],"total":1,"cached":false}`
 	// Use the real computed cache key so the handler finds the cached entry.
-	cacheKey := externalSearchCacheKey("test", 5)
+	cacheKey := externalSearchCacheKey(pgtype.UUID{}, "test", 5)
 	cache.store[cacheKey] = cachedJSON
 
 	deps := &ToolDeps{
@@ -305,9 +305,9 @@ func TestExternalSearchHandler_TavilyLive(t *testing.T) {
 func TestExternalSearchCacheKey(t *testing.T) {
 	t.Parallel()
 
-	key1 := externalSearchCacheKey("scholarships", 5)
-	key2 := externalSearchCacheKey("scholarships", 5)
-	key3 := externalSearchCacheKey("scholarships", 10)
+	key1 := externalSearchCacheKey(pgtype.UUID{}, "scholarships", 5)
+	key2 := externalSearchCacheKey(pgtype.UUID{}, "scholarships", 5)
+	key3 := externalSearchCacheKey(pgtype.UUID{}, "scholarships", 10)
 
 	if key1 != key2 {
 		t.Error("same query+limit should produce same key")

@@ -1598,6 +1598,8 @@ type ForumReply struct {
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
 	DeletedAt     pgtype.Timestamptz `json:"deleted_at"`
+	AmaPending    bool               `json:"ama_pending"`
+	AmaApprovedAt pgtype.Timestamptz `json:"ama_approved_at"`
 }
 
 type ForumTag struct {
@@ -2835,15 +2837,16 @@ type ProfessionalProfileType struct {
 }
 
 type ProfessionalRelocation struct {
-	ID        pgtype.UUID        `json:"id"`
-	TenantID  pgtype.UUID        `json:"tenant_id"`
-	ProfileID pgtype.UUID        `json:"profile_id"`
-	Country   string             `json:"country"`
-	City      *string            `json:"city"`
-	Status    string             `json:"status"`
-	Year      *int32             `json:"year"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+	ID          pgtype.UUID        `json:"id"`
+	TenantID    pgtype.UUID        `json:"tenant_id"`
+	ProfileID   pgtype.UUID        `json:"profile_id"`
+	Country     string             `json:"country"`
+	City        *string            `json:"city"`
+	Status      string             `json:"status"`
+	Year        *int32             `json:"year"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
+	CountryCode *string            `json:"country_code"`
 }
 
 type ProfessionalVerifier struct {

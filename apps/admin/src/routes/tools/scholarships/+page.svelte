@@ -154,10 +154,31 @@
 		}
 	}
 
+	// ── Country autocomplete helpers (filter destOptions client-side) ──────
+	// The scholarships `country` field stores a free-text country NAME (e.g.
+	// "Germany"). The picker is sourced from the spaces country table
+	// (destOptions, loaded from /admin/spaces?level=country) so the user
+	// selects a real seeded country — never a hardcoded list (Rule 16).
+	function fetchCountryName(q: string): Promise<{ id: string; label: string; sublabel?: string }[]> {
+		const needle = q.toLowerCase().trim();
+		const filtered = needle
+			? destOptions.filter((o) => o.name.toLowerCase().includes(needle))
+			: destOptions;
+		return Promise.resolve(filtered.slice(0, 50).map((o) => ({ id: o.name, label: o.name })));
+	}
+
+	function fetchCountryNameInitial(): Promise<{ id: string; label: string; sublabel?: string }[]> {
+		return Promise.resolve(destOptions.slice(0, 8).map((o) => ({ id: o.name, label: o.name })));
+	}
+
+	function getCountryNameLabel(id: string): string {
+		return destOptions.find((o) => o.name === id)?.name ?? id;
+	}
+
 	// ── Fields ───── drives EntityForm rendering + edit-form seeding.
 	const fields: FieldDef[] = [
 		{ key: 'title', label: t('app.tools.col_title', 'Title'), type: 'text', required: true },
-		{ key: 'country', label: t('app.tools.col_country', 'Country'), type: 'text', required: true, placeholder: 'Germany' },
+		{ key: 'country', label: t('app.tools.col_country', 'Country'), type: 'autocomplete', placeholder: t('app.tools.country_placeholder', 'Search country…'), emptyMessage: t('common.no_results', 'No results found'), fetcher: fetchCountryName, initialFetcher: fetchCountryNameInitial, getSelectedLabel: getCountryNameLabel, required: true },
 		{ key: 'university', label: t('app.tools.col_university', 'University'), type: 'text' },
 		{ key: 'degree_level', label: t('app.tools.col_degree_level', 'Degree Level'), type: 'text', placeholder: 'masters, bachelors, phd' },
 		{ key: 'deadline', label: t('app.tools.col_deadline', 'Deadline'), type: 'date' },

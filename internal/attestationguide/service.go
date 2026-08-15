@@ -186,9 +186,10 @@ func (s *Service) List(ctx context.Context, tenantID, destSpaceID, issuingSpaceI
 }
 
 // GetByID returns a single published attestation pathway by id.
-// Anonymous-accessible.
+// Anonymous-accessible. Only returns pathways with status='published' and
+// is_active=true (BUG-001: prevent leaking unpublished pathways).
 func (s *Service) GetByID(ctx context.Context, id, tenantID pgtype.UUID) (PathwayDTO, error) {
-	row, err := s.store.GetPathwayByID(ctx, id, tenantID)
+	row, err := s.store.GetPublishedPathwayByID(ctx, id, tenantID)
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			return PathwayDTO{}, pgx.ErrNoRows
@@ -415,10 +416,12 @@ func (s *Service) Approve(ctx context.Context, id, tenantID, reviewerID pgtype.U
 }
 
 // SubmitCommunityUpdate creates a pending community update for a
-// pathway. Auth required (attestation_guide.update permission).
+// pathway. Auth required (attestation_guide.update permission). Only
+// published, active pathways accept community updates (BUG-002).
 func (s *Service) SubmitCommunityUpdate(ctx context.Context, pathwayID, tenantID, userID pgtype.UUID, input CreateCommunityUpdateInput) (CommunityUpdateDTO, error) {
-	// Verify the pathway exists and belongs to the tenant.
-	if _, err := s.store.GetPathwayByID(ctx, pathwayID, tenantID); err != nil {
+	// Verify the pathway exists, belongs to the tenant, and is published +
+	// active (BUG-002: no updates on draft/ai_draft/pending/rejected pathways).
+	if _, err := s.store.GetPublishedPathwayByID(ctx, pathwayID, tenantID); err != nil {
 		if err == pgx.ErrNoRows {
 			return CommunityUpdateDTO{}, pgx.ErrNoRows
 		}
@@ -484,7 +487,8 @@ func (s *Service) ReviewCommunityUpdate(ctx context.Context, updateID, tenantID,
 
 // AdminList returns all attestation pathways (any status) for the
 // moderation queue. Admin-only (attestation_guide.manage permission).
-func (s *Service) AdminList(ctx context.Context, tenantID, destSpaceID pgtype.UUID, status, documentType string, isActive *bool, page, limit int32) ([]PathwayDTO, int64, error) {
+// Supports search (q) and sort (sortBy/sortDir) per BUG-004.
+func (s *Service) AdminList(ctx context.Context, tenantID, destSpaceID pgtype.UUID, status, documentType string, isActive *bool, search, sortBy, sortDir string, page, limit int32) ([]PathwayDTO, int64, error) {
 	if limit <= 0 {
 		limit = 20
 	}
@@ -499,6 +503,9 @@ func (s *Service) AdminList(ctx context.Context, tenantID, destSpaceID pgtype.UU
 		DocumentType:       documentType,
 		DestinationSpaceID: destSpaceID,
 		IsActive:           isActive,
+		Search:             search,
+		SortBy:             sortBy,
+		SortDir:            sortDir,
 		Limit:              limit,
 		Offset:             offset,
 	})

@@ -11,6 +11,8 @@
 	import { untrack } from 'svelte';
 	import { page } from '$app/state';
 	import { invalidateAll, goto } from '$app/navigation';
+	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
+	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 	import type {
 		ProfessionalProfile,
 		ProfessionalProfileMember,
@@ -55,11 +57,37 @@
 	let deleting = $state(false);
 
 	// Relocation form state
+	// `relocCountry` stores the country NAME (the backend persists it as a
+	// free-text string). `relocCountryCode` holds the selected ISO geo_code
+	// from the Autocomplete. The picker is sourced from the spaces country
+	// table (data.countries from /geo/countries) — never hardcoded (Rule 16).
 	let relocCountry = $state('');
+	let relocCountryCode = $state('');
 	let relocCity = $state('');
 	let relocStatus = $state('planned');
 	let relocYear = $state('');
 	let addingReloc = $state(false);
+
+	// Country autocomplete — filters the SSR-loaded country spaces client-side.
+	function countryFetcher(q: string): Promise<AutocompleteItem[]> {
+		const needle = q.toLowerCase().trim();
+		const list = data.countries ?? [];
+		const filtered = needle
+			? list.filter(
+					(c) => c.name.toLowerCase().includes(needle) || c.geo_code.toLowerCase().includes(needle)
+				)
+			: list;
+		return Promise.resolve(
+			filtered.slice(0, 50).map((c) => ({ id: c.geo_code, label: c.name, sublabel: c.geo_code }))
+		);
+	}
+
+	function countryInitialFetcher(): Promise<AutocompleteItem[]> {
+		const list = data.countries ?? [];
+		return Promise.resolve(
+			list.slice(0, 8).map((c) => ({ id: c.geo_code, label: c.name, sublabel: c.geo_code }))
+		);
+	}
 
 	// Document form state
 	let docTitle = $state('');
@@ -169,12 +197,17 @@
 		addingReloc = true;
 		try {
 			const payload: Record<string, unknown> = { country: relocCountry.trim() };
+			// ADR-064a: Send the ISO geo_code so the backend can save it as
+			// the destination_country custom field, feeding the geo-aware
+			// personalization feature.
+			if (relocCountryCode) payload.country_code = relocCountryCode;
 			if (relocCity.trim()) payload.city = relocCity.trim();
 			if (relocStatus) payload.status = relocStatus;
 			if (relocYear) payload.year = parseInt(relocYear, 10);
 			const res = await api.post(`/profiles/${profile.id}/relocations`, payload);
 			if (!res.error) {
 				relocCountry = '';
+				relocCountryCode = '';
 				relocCity = '';
 				relocStatus = 'planned';
 				relocYear = '';
@@ -381,7 +414,16 @@
 			<div class="grid grid-cols-1 gap-3 sm:grid-cols-4">
 				<label class="flex flex-col gap-1.5">
 					<span class="text-sm font-medium text-[var(--color-text)]">{t('profiles.detail.relocation_country')}</span>
-					<input class={inputClass} bind:value={relocCountry} placeholder="Japan" required />
+					<Autocomplete
+						placeholder={t('organizations.new.country_placeholder', 'Search country…')}
+						emptyMessage={t('common.no_results', 'No results found')}
+						fetcher={countryFetcher}
+						initialFetcher={countryInitialFetcher}
+						selectedId={relocCountryCode || null}
+						selectedLabel={relocCountry || null}
+						onSelect={(item) => { relocCountryCode = item.id; relocCountry = item.label; }}
+						onClear={() => { relocCountryCode = ''; relocCountry = ''; }}
+					/>
 				</label>
 				<label class="flex flex-col gap-1.5">
 					<span class="text-sm font-medium text-[var(--color-text)]">{t('profiles.detail.relocation_city')}</span>

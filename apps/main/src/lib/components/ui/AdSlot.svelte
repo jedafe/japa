@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import { t } from '$lib/i18n';
 	import { api } from '$lib/api/client';
 
@@ -89,7 +88,12 @@
 		window.open(campaign.target_url, '_blank', 'noopener,noreferrer');
 	}
 
-	onMount(() => {
+	// Ref: japaconnect-engineering/sections/23-main-site-frontend.md (Svelte 5 runes)
+	// $effect replaces onMount for Svelte 5 — it runs after the DOM is mounted
+	// and re-runs when its tracked dependencies (slot, containerEl) change.
+	// The returned cleanup function disconnects the IntersectionObserver when
+	// the component unmounts or the effect re-runs.
+	$effect(() => {
 		fetchAds();
 
 		// IntersectionObserver to track impression when the ad enters the viewport.

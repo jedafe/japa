@@ -502,6 +502,48 @@ func (q *Queries) GetAffiliateMemberTenant(ctx context.Context, userID pgtype.UU
 	return tenant_id, err
 }
 
+const getAffiliateProgramStats = `-- name: GetAffiliateProgramStats :one
+
+SELECT
+    (SELECT COUNT(*) FROM affiliate_program_members apm WHERE apm.tenant_id = $1) AS total_members,
+    (SELECT COUNT(*) FROM affiliate_program_members apm WHERE apm.tenant_id = $1 AND apm.status = 'active') AS active_members,
+    (SELECT COUNT(*) FROM user_affiliate_links ual2 WHERE ual2.tenant_id = $1) AS total_links,
+    COALESCE(SUM(ale.click_count), 0) AS total_clicks,
+    COALESCE(SUM(ale.conversion_count), 0) AS total_conversions,
+    COALESCE(SUM(ale.total_earned), 0) AS total_commissions
+FROM user_affiliate_links ale
+WHERE ale.tenant_id = $1
+`
+
+type GetAffiliateProgramStatsRow struct {
+	TotalMembers     int64       `json:"total_members"`
+	ActiveMembers    int64       `json:"active_members"`
+	TotalLinks       int64       `json:"total_links"`
+	TotalClicks      interface{} `json:"total_clicks"`
+	TotalConversions interface{} `json:"total_conversions"`
+	TotalCommissions interface{} `json:"total_commissions"`
+}
+
+// =====================
+// Program-wide Stats (admin overview — Section 56)
+// =====================
+// Returns program-wide totals for the admin overview endpoint
+// GET /admin/affiliate-program (Section 56 Admin management).
+// Tenant-scoped: only counts members/links/events for the given tenant.
+func (q *Queries) GetAffiliateProgramStats(ctx context.Context, tenantID pgtype.UUID) (GetAffiliateProgramStatsRow, error) {
+	row := q.db.QueryRow(ctx, getAffiliateProgramStats, tenantID)
+	var i GetAffiliateProgramStatsRow
+	err := row.Scan(
+		&i.TotalMembers,
+		&i.ActiveMembers,
+		&i.TotalLinks,
+		&i.TotalClicks,
+		&i.TotalConversions,
+		&i.TotalCommissions,
+	)
+	return i, err
+}
+
 const getRecentAffiliateEvents = `-- name: GetRecentAffiliateEvents :many
 SELECT ale.id, ale.event_type, ale.commission_amount, ale.created_at,
     ual.code AS link_code, ual.product_type

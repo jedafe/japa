@@ -2,13 +2,14 @@
 	// Ref: japaconnect-engineering/sections/88-ask-an-expat.md
 	import { untrack } from 'svelte';
 	import { page } from '$app/state';
-	import { MessageSquare, Plus, Circle, CircleSlash, Loader2 } from 'lucide-svelte';
+	import { goto } from '$app/navigation';
+	import { MessageSquare, Plus, Circle, CircleSlash, Loader2, Filter } from 'lucide-svelte';
 	import { api } from '$lib/api/client';
 	import { t } from '$lib/i18n';
 	import { i18n } from '$lib/i18n';
 	import { relativeTime } from '$lib/feed/time';
 	import { EmptyState, LoadingSkeleton } from '$lib/components/ui';
-	import type { AMAThread } from '$lib/types';
+	import type { AMAThread, Space } from '$lib/types';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -17,6 +18,24 @@
 	let atEnd = $state(false);
 	let loading = $state(false);
 	let sentinel = $state<HTMLElement | null>(null);
+
+	// Filter state (BUG-006: dest/profession filter UI).
+	let destFilter = $state(page.url.searchParams.get('dest') ?? '');
+	let professionFilter = $state(page.url.searchParams.get('profession') ?? '');
+
+	// Build a country ID → name lookup (BUG-007: display country name not raw ID).
+	const countryMap = $derived.by(() => {
+		const m = new Map<string, string>();
+		for (const c of data.countries ?? []) {
+			m.set(c.id, c.name);
+		}
+		return m;
+	});
+
+	function countryName(id: string | undefined): string {
+		if (!id) return '';
+		return countryMap.get(id) ?? id;
+	}
 
 	$effect(() => {
 		const seed = data.sessions;
@@ -68,6 +87,8 @@
 			page_size: String(data.pageSize),
 			cursor_created_at: c
 		});
+		if (destFilter) params.set('dest', destFilter);
+		if (professionFilter) params.set('profession', professionFilter);
 		const res = await api.get<AMAThread[]>(`/forum/ama?${params.toString()}`);
 		if (res.error) {
 			loading = false;
@@ -77,6 +98,14 @@
 		sessions = [...sessions, ...batch];
 		atEnd = batch.length < data.pageSize;
 		loading = false;
+	}
+
+	function applyFilters() {
+		const params = new URLSearchParams();
+		if (destFilter) params.set('dest', destFilter);
+		if (professionFilter) params.set('profession', professionFilter);
+		const qs = params.toString();
+		goto(`/ama${qs ? `?${qs}` : ''}`, { invalidateAll: true });
 	}
 
 	function amaConfig(thread: AMAThread): {
@@ -122,6 +151,47 @@
 				<Plus size={14} /> {t('ama.start', 'Start an AMA')}
 			</a>
 		{/if}
+	</div>
+
+	<!-- Filters (BUG-006: dest/profession filter UI per §88 Geo Awareness) -->
+	<div class="flex flex-wrap items-end gap-3 border-b border-[var(--color-border)] px-4 py-3">
+		<div class="flex flex-col gap-1">
+			<label for="dest-filter" class="text-xs font-medium text-[var(--color-text-subtle)]">
+				{t('ama.filter_destination', 'Destination')}
+			</label>
+			<select
+				id="dest-filter"
+				value={destFilter}
+				onchange={(e) => (destFilter = e.currentTarget.value)}
+				class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-1.5 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none"
+			>
+				<option value="">{t('ama.filter_all', 'All countries')}</option>
+				{#each data.countries ?? [] as country (country.id)}
+					<option value={country.id}>{country.name}</option>
+				{/each}
+			</select>
+		</div>
+		<div class="flex flex-col gap-1">
+			<label for="profession-filter" class="text-xs font-medium text-[var(--color-text-subtle)]">
+				{t('ama.filter_profession', 'Profession')}
+			</label>
+			<input
+				id="profession-filter"
+				type="text"
+				value={professionFilter}
+				oninput={(e) => (professionFilter = e.currentTarget.value)}
+				onkeydown={(e) => { if (e.key === 'Enter') applyFilters(); }}
+				placeholder={t('ama.filter_profession_placeholder', 'e.g. Nurse')}
+				class="w-40 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-1.5 text-sm text-[var(--color-text)] placeholder:text-[var(--color-muted)] focus:border-[var(--color-primary)] focus:outline-none"
+			/>
+		</div>
+		<button
+			type="button"
+			onclick={applyFilters}
+			class="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1.5 text-sm font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)]"
+		>
+			<Filter size={14} /> {t('ama.filter_apply', 'Filter')}
+		</button>
 	</div>
 
 	<!-- List -->
@@ -179,7 +249,7 @@
 								<span>{cfg.host_profession}</span>
 							{/if}
 							{#if cfg?.host_dest_country_id}
-								<span>{t('ama.in_country', 'in')} {cfg.host_dest_country_id}</span>
+								<span>{t('ama.in_country', 'in')} {countryName(cfg.host_dest_country_id)}</span>
 							{/if}
 							{#if cfg?.host_years_abroad != null}
 								<span>{cfg.host_years_abroad} {t('ama.years_abroad', 'yrs abroad')}</span>

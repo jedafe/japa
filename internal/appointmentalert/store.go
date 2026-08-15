@@ -713,11 +713,33 @@ WHERE id = $1 AND tenant_id = $2 AND status = 'active' AND deleted_at IS NULL
 }
 
 // ListEmbassiesDueForPoll returns all active monitored_embassies whose
-// last_polled_at + poll_interval_seconds has elapsed (or last_polled_at is
-// NULL). Used by the recurring poll scheduler to enqueue embassy:poll tasks
-// at each embassy's configured interval (§91, ADR-099).
-func (s *Store) ListEmbassiesDueForPoll(ctx context.Context) ([]EmbassyRow, error) {
-	const q = `
+// effective poll interval has elapsed since last_polled_at (or
+// last_polled_at is NULL). Used by the recurring poll scheduler to enqueue
+// embassy:poll tasks at each embassy's configured interval (§91, ADR-099).
+//
+// The effective interval is computed per-embassy: if at least one
+// premium-tier user (holding the appointment_alert.premium permission) has
+// an active alert for the embassy, the effective interval is
+// LEAST(e.poll_interval_seconds, premiumIntervalSeconds); otherwise it is
+// e.poll_interval_seconds. This gives premium users faster polling without
+// per-user poll tasks (§91, ADR-099).
+func (s *Store) ListEmbassiesDueForPoll(ctx context.Context, premiumIntervalSeconds int32) ([]EmbassyRow, error) {
+	q := `
+WITH premium_embassies AS (
+    -- Embassies that have at least one active alert from a premium-tier user.
+    -- The RBAC chain: appointment_alerts → user_group_memberships →
+    -- user_groups → group_roles → role_permissions → permissions.
+    SELECT DISTINCT a.embassy_slug, a.tenant_id
+    FROM appointment_alerts a
+    JOIN user_group_memberships m ON m.user_id = a.user_id AND m.tenant_id = a.tenant_id
+    JOIN user_groups ug ON ug.id = m.group_id
+    JOIN group_roles gr ON gr.group_id = ug.id
+    JOIN role_permissions rp ON rp.role_id = gr.role_id
+    JOIN permissions p ON p.id = rp.permission_id
+    WHERE a.status = 'active'
+      AND a.deleted_at IS NULL
+      AND p.key = 'appointment_alert.premium'
+)
 SELECT e.id, e.tenant_id, e.destination_space_id, sp.name AS dest_space_name,
        e.slug, e.name, e.booking_url, e.poll_interval_seconds, e.is_active,
        e.last_polled_at, e.created_at, e.updated_at
@@ -726,11 +748,20 @@ LEFT JOIN spaces sp ON sp.id = e.destination_space_id
 WHERE e.is_active = true
   AND (
       e.last_polled_at IS NULL
-      OR e.last_polled_at + (e.poll_interval_seconds || ' seconds')::interval <= now()
+      OR e.last_polled_at + (
+          (CASE
+              WHEN EXISTS (
+                  SELECT 1 FROM premium_embassies pe
+                  WHERE pe.embassy_slug = e.slug AND pe.tenant_id = e.tenant_id
+              )
+              THEN LEAST(e.poll_interval_seconds, $1)
+              ELSE e.poll_interval_seconds
+          END) || ' seconds'
+          )::interval <= now()
   )
 ORDER BY e.last_polled_at ASC NULLS FIRST
 `
-	rows, err := s.pool.Reader.Query(ctx, q)
+	rows, err := s.pool.Reader.Query(ctx, q, premiumIntervalSeconds)
 	if err != nil {
 		return nil, fmt.Errorf("appointmentalert: list embassies due for poll: %w", err)
 	}

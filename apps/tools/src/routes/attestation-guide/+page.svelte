@@ -136,6 +136,20 @@
 		}
 	}
 
+	/** ADR-105: community_last_verified older than 180 days (or NULL) is stale. */
+	const STALENESS_THRESHOLD_DAYS = 180;
+
+	function isStale(iso?: string | null): boolean {
+		if (!iso) return true;
+		try {
+			const verified = new Date(iso);
+			const daysOld = (Date.now() - verified.getTime()) / (1000 * 60 * 60 * 24);
+			return daysOld > STALENESS_THRESHOLD_DAYS;
+		} catch {
+			return true;
+		}
+	}
+
 	function openUpdateForm(pathwayId: string) {
 		if (!user) {
 			showRegisterPrompt = true;
@@ -381,11 +395,22 @@
 									</div>
 								{/if}
 
-								<!-- Community last verified -->
+								<!-- Community last verified + staleness warning (ADR-105) -->
 								{#if pathway.community_last_verified}
 									<p class="text-xs text-muted">
 										{t('attestation_guide.community_last_verified', 'Community last verified:')}
 										{formatDate(pathway.community_last_verified)}
+									</p>
+								{/if}
+								{#if isStale(pathway.community_last_verified)}
+									<p
+										class="text-xs px-3 py-2 rounded-lg"
+										style="background: color-mix(in srgb, var(--color-warning, #f59e0b) 10%, transparent); color: var(--color-warning, #f59e0b)"
+									>
+										{t(
+											'attestation_guide.stale_warning',
+											'This pathway has not been community-verified recently. Details may be outdated — please confirm with official sources.'
+										)}
 									</p>
 								{/if}
 
@@ -398,7 +423,7 @@
 										class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-text bg-surface border border-border rounded-lg hover:border-primary hover:text-primary transition-colors"
 									>
 										<Icon name="download" size={16} />
-										{t('attestation_guide.download_pdf', 'Download PDF')}
+										{t('attestation_guide.download_pdf', 'Export pathway')}
 									</a>
 									<button
 										onclick={() => openUpdateForm(pathway.id)}

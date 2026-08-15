@@ -398,5 +398,19 @@
 	"tax_calculator.unknown": "Unknown",
 	"tax_calculator.hitl_disclosure": "All tax content on this page has been reviewed by a qualified tax professional before publication. This tool provides general guidance only — consult a qualified tax advisor for your specific situation.",
 	"common.searching": "Searching...",
-	"geo.select_destination": "Select a country…"
+	"geo.select_destination": "Select a country…",
+	"arrival_checklist.title": "Arrival Checklist",
+	"arrival_checklist.subtitle": "Everything you need to do after you land — phased by time period.",
+	"arrival_checklist.seo_title": "Arrival Checklist — JapaConnect Tools",
+	"arrival_checklist.seo_description": "A phased checklist of tasks to complete after arriving in your destination country — registration, banking, and more.",
+	"arrival_checklist.no_destinations": "No checklists available",
+	"arrival_checklist.no_destinations_desc": "Arrival checklist guides haven't been published yet. Please check back later.",
+	"arrival_checklist.no_categories": "No categories found",
+	"arrival_checklist.visa_category": "Visa category:",
+	"arrival_checklist.all_categories": "All categories",
+	"arrival_checklist.select_destination": "Select a destination country",
+	"arrival_checklist.select_destination_desc": "Choose a country above to see your arrival checklist.",
+	"arrival_checklist.no_items": "No checklist items",
+	"arrival_checklist.no_items_desc": "No arrival checklist items have been published for this destination yet.",
+	"arrival_checklist.official_link": "Official guidance"
 }

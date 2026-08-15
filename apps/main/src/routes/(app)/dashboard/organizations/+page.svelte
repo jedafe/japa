@@ -13,11 +13,39 @@
 	import { api } from '$lib/api/client';
 	import { invalidateAll, goto } from '$app/navigation';
 	import { suggestSlug } from '$lib/components/create/slug';
+	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
+	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 	import type { MyOrganizationRow } from './+page.server';
 	import type { PublicOrganization } from '$lib/types';
 
 	let { data } = $props();
 	const organizations = $derived(data.organizations);
+
+	// Country autocomplete — filters the SSR-loaded country spaces
+	// (data.countries from /geo/countries) client-side (Rule 16).
+	function countryFetcher(q: string): Promise<AutocompleteItem[]> {
+		const needle = q.toLowerCase().trim();
+		const list = data.countries ?? [];
+		const filtered = needle
+			? list.filter(
+					(c) => c.name.toLowerCase().includes(needle) || c.geo_code.toLowerCase().includes(needle)
+				)
+			: list;
+		return Promise.resolve(
+			filtered.slice(0, 50).map((c) => ({ id: c.geo_code, label: c.name, sublabel: c.geo_code }))
+		);
+	}
+
+	function countryInitialFetcher(): Promise<AutocompleteItem[]> {
+		const list = data.countries ?? [];
+		return Promise.resolve(
+			list.slice(0, 8).map((c) => ({ id: c.geo_code, label: c.name, sublabel: c.geo_code }))
+		);
+	}
+
+	function countryLabel(id: string): string {
+		return (data.countries ?? []).find((c) => c.geo_code === id)?.name ?? id;
+	}
 
 	// Inline create-form state.
 	let showCreateForm = $state(false);
@@ -190,8 +218,17 @@
 					<input class={inputClass} value={websiteUrl} oninput={(e) => (websiteUrl = e.currentTarget.value)} placeholder="https://example.com" />
 				</label>
 				<label class="flex flex-col gap-1.5">
-					<span class="text-sm font-medium text-[var(--color-text)]">{t('organizations.new.field_country', 'Country code')}</span>
-					<input class={inputClass} maxlength={2} value={countryCode} oninput={(e) => (countryCode = e.currentTarget.value)} placeholder="US" />
+					<span class="text-sm font-medium text-[var(--color-text)]">{t('organizations.new.field_country', 'Country')}</span>
+					<Autocomplete
+						placeholder={t('organizations.new.country_placeholder', 'Search country…')}
+						emptyMessage={t('common.no_results', 'No results found')}
+						fetcher={countryFetcher}
+						initialFetcher={countryInitialFetcher}
+						selectedId={countryCode || null}
+						selectedLabel={countryCode ? countryLabel(countryCode) : null}
+						onSelect={(item) => { countryCode = item.id; }}
+						onClear={() => { countryCode = ''; }}
+					/>
 				</label>
 				<label class="flex flex-col gap-1.5">
 					<span class="text-sm font-medium text-[var(--color-text)]">{t('organizations.new.field_type', 'Organization type')}</span>

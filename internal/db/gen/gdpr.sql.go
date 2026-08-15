@@ -1931,7 +1931,7 @@ func (q *Queries) GdprExportUserForumPollVotes(ctx context.Context, userID pgtyp
 
 const gdprExportUserForumReplies = `-- name: GdprExportUserForumReplies :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT id, tenant_id, thread_id, parent_reply_id, author_user_id, body, vote_score, view_count, is_anonymous, is_edited, created_at, updated_at, deleted_at FROM forum_replies WHERE author_user_id = $1 AND tenant_id = $2) t
+FROM (SELECT id, tenant_id, thread_id, parent_reply_id, author_user_id, body, vote_score, view_count, is_anonymous, is_edited, created_at, updated_at, deleted_at, ama_pending, ama_approved_at FROM forum_replies WHERE author_user_id = $1 AND tenant_id = $2) t
 `
 
 type GdprExportUserForumRepliesParams struct {
@@ -2355,7 +2355,7 @@ func (q *Queries) GdprExportUserProfessionalProfiles(ctx context.Context, arg Gd
 
 const gdprExportUserProfessionalRelocations = `-- name: GdprExportUserProfessionalRelocations :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT pr.id, pr.tenant_id, pr.profile_id, pr.country, pr.city, pr.status, pr.year, pr.created_at, pr.updated_at FROM professional_relocations pr
+FROM (SELECT pr.id, pr.tenant_id, pr.profile_id, pr.country, pr.city, pr.status, pr.year, pr.created_at, pr.updated_at, pr.country_code FROM professional_relocations pr
       JOIN professional_profiles pp ON pp.id = pr.profile_id
       WHERE pp.owner_user_id = $1 AND pr.tenant_id = $2) t
 `

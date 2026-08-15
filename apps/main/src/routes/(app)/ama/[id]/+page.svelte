@@ -49,6 +49,16 @@
 		return new Date(cfg.closes_at).getTime() > Date.now();
 	});
 
+	// BUG-007: resolve host_dest_country_id to a human-readable country name.
+	const countryName = $derived.by(() => {
+		const id = cfg?.host_dest_country_id;
+		if (!id) return '';
+		for (const c of data.countries ?? []) {
+			if (c.id === id) return c.name;
+		}
+		return id;
+	});
+
 	const bodyHtml = $derived(tiptapBodyToHtml(session?.body));
 	const time = $derived(
 		session ? relativeTime(session.created_at, new Date(), i18n.locale) : ''
@@ -186,7 +196,7 @@
 						<span>{cfg.host_profession}</span>
 					{/if}
 					{#if cfg?.host_dest_country_id}
-						<span>{t('ama.in_country', 'in')} {cfg.host_dest_country_id}</span>
+						<span>{t('ama.in_country', 'in')} {countryName}</span>
 					{/if}
 					{#if cfg?.host_years_abroad != null}
 						<span>{cfg.host_years_abroad} {t('ama.years_abroad', 'yrs abroad')}</span>
@@ -219,6 +229,8 @@
 			authed={data.authed}
 			canSolve={false}
 			acceptedReplyId={null}
+			hostUserId={session.author_user_id}
+			isHost={data.isHost}
 		/>
 	{/if}
 </div>

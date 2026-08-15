@@ -231,6 +231,40 @@ func (s *Service) CreateAMA(ctx context.Context, tenantID, authorUserID pgtype.U
 	return threadToDTO(thread), nil
 }
 
+// ApproveQuestion approves a pending AMA question. Only the host (thread
+// author) or a holder of forum.ama.moderate may approve (§88
+// question_approval_required). Returns pgx.ErrNoRows if the question is not
+// found or not pending.
+func (s *Service) ApproveQuestion(ctx context.Context, threadID, replyID, tenantID, callerUserID pgtype.UUID) error {
+	allowed, err := s.CanClose(ctx, threadID, tenantID, callerUserID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return pgx.ErrNoRows
+		}
+		return fmt.Errorf("ama: authorize approve: %w", err)
+	}
+	if !allowed {
+		return ErrCloseForbidden
+	}
+	if err := s.store.ApproveQuestion(ctx, threadID, replyID, tenantID); err != nil {
+		return fmt.Errorf("ama: approve question: %w", err)
+	}
+	return nil
+}
+
+// SetReplyPending marks a reply as pending AMA host approval. Called by the
+// forum service after CreateReply when the parent thread is an AMA with
+// question_approval_required = true and the reply author is not the host.
+func (s *Service) SetReplyPending(ctx context.Context, replyID, tenantID pgtype.UUID) error {
+	return s.store.SetReplyPending(ctx, replyID, tenantID)
+}
+
+// MarkReplyPending implements forum.AMAQuestionHandler. It is the same as
+// SetReplyPending but named to match the interface the forum service expects.
+func (s *Service) MarkReplyPending(ctx context.Context, replyID, tenantID pgtype.UUID) error {
+	return s.store.SetReplyPending(ctx, replyID, tenantID)
+}
+
 // CanClose reports whether the caller may close the AMA: the thread author
 // (host) always may, otherwise the caller must hold forum.ama.moderate
 // (§88 "host or moderator").
@@ -266,8 +300,18 @@ func (s *Service) CloseAMA(ctx context.Context, threadID, tenantID, callerUserID
 	if err := s.store.CloseAMA(ctx, threadID, tenantID); err != nil {
 		return fmt.Errorf("ama: close: %w", err)
 	}
-	// Release the active-AMA lock for the host.
-	s.clearActiveLock(ctx, callerUserID)
+	// Release the active-AMA lock for the HOST (the thread author), not the
+	// caller. A moderator closing the AMA must release the host's lock so
+	// the host can create a new session (BUG-002: previously used
+	// callerUserID, which left the host's jc:ama_active lock stranded).
+	authorID, err := s.store.GetAuthorID(ctx, threadID, tenantID)
+	if err != nil {
+		// Thread was closed successfully; a failed lock cleanup is
+		// non-fatal (the lock has a TTL matching closes_at).
+		slog.Warn("ama: resolve author for lock cleanup", "error", err)
+	} else {
+		s.clearActiveLock(ctx, authorID)
+	}
 	return nil
 }
 

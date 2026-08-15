@@ -5,11 +5,21 @@
 	import { t } from '$lib/stores/i18n.svelte';
 	import { Trash2 } from 'lucide-svelte';
 
-	const PROVIDERS = ['adsense', 'ezoic', 'media_net', 'custom'] as const;
-
+	// Ref: japaconnect-engineering/sections/25-ad-placement.md (Ad Networks)
+	// Rule 16 — providers list fetched from the backend API, not hardcoded.
+	let providers = $state<string[]>([]);
 	let entityController = $state<EntityPageController | undefined>(undefined);
 	let pageError = $state('');
 	let bulkDeleting = $state(false);
+
+	// Fetch allowed providers from the backend on mount.
+	$effect(() => {
+		adNetworksApi.listProviders().then((res) => {
+			if (res.ok && res.data?.data) {
+				providers = res.data.data;
+			}
+		});
+	});
 
 	async function bulkDelete(ids: Set<string>) {
 		const idArr = Array.from(ids);
@@ -26,12 +36,15 @@
 		}
 	}
 
-	const providerOptions = PROVIDERS.map((p) => ({ value: p, label: p }));
+	// Reactive provider options — updates when the API response arrives.
+	const providerOptions = $derived(providers.map((p) => ({ value: p, label: p })));
 
 	// `slot_mapping`/`config` are JSON objects in the row; `load` stringifies them
 	// so the textarea fields seed correctly. `api_key` is never returned by the
 	// backend (security), so it seeds empty on edit — "leave empty to keep current".
-	const fields: FieldDef[] = [
+	// `fields` is $derived so the provider <select> options update after the
+	// providers API call resolves.
+	const fields = $derived<FieldDef[]>([
 		{ key: 'provider', label: t('networks.provider', 'Provider'), type: 'select', options: providerOptions, required: true },
 		{ key: 'name', label: t('networks.name', 'Name'), type: 'text', placeholder: t('networks.name_placeholder', 'e.g. Production AdSense'), required: true },
 		{ key: 'client_id', label: t('networks.client_id', 'Client ID'), type: 'text', placeholder: t('networks.client_id_placeholder', 'Optional') },
@@ -40,7 +53,7 @@
 		{ key: 'is_active', label: t('networks.active', 'Active'), type: 'checkbox' },
 		{ key: 'slot_mapping', label: t('networks.slot_mapping', 'Slot Mapping'), type: 'textarea', placeholder: '{"leaderboard": "ca-pub-123/456"}' },
 		{ key: 'config', label: t('networks.config', 'Config'), type: 'textarea', placeholder: '{"auto_ads": true, "ads_per_page": 3}' }
-	];
+	]);
 
 	function parseJsonField(raw: string, field: string): Record<string, unknown> | undefined {
 		const trimmed = String(raw ?? '').trim();
@@ -56,7 +69,9 @@
 		}
 	}
 
-	const config: EntityPageConfig = {
+	// `config` is $derived so it picks up the reactive `fields` (which
+	// depends on the providers API response).
+	const config = $derived<EntityPageConfig>({
 		title: t('networks.title', 'Ad Networks'),
 		description: t('networks.description', 'Manage ad network integrations — configure providers, API keys, slot mappings, and priority'),
 		createLabel: t('networks.create', 'Create Network'),
@@ -197,7 +212,7 @@
 			return res.ok ? { ok: true } : { ok: false, error: res.error };
 		},
 		viewSnippet: NetworkView
-	};
+	});
 </script>
 
 <svelte:head>

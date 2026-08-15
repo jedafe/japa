@@ -10,9 +10,36 @@ import (
 	"github.com/jedafe/japa/internal/db/gen"
 )
 
+// Default security scan thresholds (used when system_settings is not
+// configured or the settings reader is nil). These match the values seeded
+// by migration 000501_security_scan_settings.up.sql.
+const (
+	defaultFailedLoginThreshold   = 50
+	defaultSLABreachThreshold     = 5
+	defaultStaleTokensThreshold   = 100
+	defaultUnverifiedUserThreshold = 10
+	defaultMinPasswordLength      = 8
+	defaultExcessiveAPIKeysThreshold = 20
+)
+
+// getSettingInt reads an int system_setting for the tenant, returning the
+// fallback default when the settings reader is nil or the key is absent.
+// This satisfies Rule 3 (no hardcoded config) while remaining testable.
+func (s *Service) getSettingInt(ctx context.Context, tenantID pgtype.UUID, key string, fallback int) int {
+	if s.settings == nil {
+		return fallback
+	}
+	val, err := s.settings.GetSettingInt(ctx, tenantID, key)
+	if err != nil || val <= 0 {
+		return fallback
+	}
+	return val
+}
+
 // scanFailedLoginSpike checks if failed logins in the last hour exceed threshold.
 // BUG-ANALYTICS-06 fix: query audit_logs (action_type = 'auth.login_failed')
 // instead of platform_events, which never contained that event type.
+// BUG-003 fix: threshold read from system_settings 'security.scan.failed_login_threshold'.
 func (s *Service) scanFailedLoginSpike(ctx context.Context, tenantID pgtype.UUID) error {
 	oneHourAgo := time.Now().Add(-1 * time.Hour)
 
@@ -29,7 +56,7 @@ func (s *Service) scanFailedLoginSpike(ctx context.Context, tenantID pgtype.UUID
 		return fmt.Errorf("counting failed logins: %w", err)
 	}
 
-	threshold := int64(50)
+	threshold := int64(s.getSettingInt(ctx, tenantID, "security.scan.failed_login_threshold", defaultFailedLoginThreshold))
 	if count >= threshold {
 		meta, _ := json.Marshal(map[string]any{
 			"failed_count": count,
@@ -56,6 +83,7 @@ func (s *Service) scanFailedLoginSpike(ctx context.Context, tenantID pgtype.UUID
 // BUG-ANALYTICS-07 fix: query the tickets table for actual SLA breaches
 // (sla_breach_at IS NOT NULL AND status is open) instead of counting
 // previous security_scan_results findings (which was circular).
+// BUG-003 fix: threshold read from system_settings 'security.scan.sla_breach_threshold'.
 func (s *Service) scanSLABreachCount(ctx context.Context, tenantID pgtype.UUID) error {
 	var count int64
 
@@ -71,7 +99,8 @@ func (s *Service) scanSLABreachCount(ctx context.Context, tenantID pgtype.UUID) 
 		return fmt.Errorf("counting SLA breaches: %w", err)
 	}
 
-	if count > 5 {
+	threshold := int64(s.getSettingInt(ctx, tenantID, "security.scan.sla_breach_threshold", defaultSLABreachThreshold))
+	if count > threshold {
 		meta, _ := json.Marshal(map[string]any{
 			"breach_count": count,
 			"period":       "current",
@@ -93,6 +122,7 @@ func (s *Service) scanSLABreachCount(ctx context.Context, tenantID pgtype.UUID) 
 }
 
 // scanStaleTokens checks for refresh tokens older than 30 days.
+// BUG-003 fix: threshold read from system_settings 'security.scan.stale_tokens_threshold'.
 func (s *Service) scanStaleTokens(ctx context.Context, tenantID pgtype.UUID) error {
 	var count int64
 
@@ -108,7 +138,8 @@ func (s *Service) scanStaleTokens(ctx context.Context, tenantID pgtype.UUID) err
 		return nil //nolint:nilerr // intentional: degradable security check
 	}
 
-	if count > 100 {
+	threshold := int64(s.getSettingInt(ctx, tenantID, "security.scan.stale_tokens_threshold", defaultStaleTokensThreshold))
+	if count > threshold {
 		meta, _ := json.Marshal(map[string]any{
 			"stale_count": count,
 			"max_age":     "30d",
@@ -130,6 +161,7 @@ func (s *Service) scanStaleTokens(ctx context.Context, tenantID pgtype.UUID) err
 }
 
 // scanUnverifiedUsers checks for users who haven't verified their email.
+// BUG-003 fix: threshold read from system_settings 'security.scan.unverified_users_threshold'.
 func (s *Service) scanUnverifiedUsers(ctx context.Context, tenantID pgtype.UUID) error {
 	var count int64
 
@@ -144,7 +176,8 @@ func (s *Service) scanUnverifiedUsers(ctx context.Context, tenantID pgtype.UUID)
 		return nil //nolint:nilerr // table may not exist
 	}
 
-	if count > 10 {
+	threshold := int64(s.getSettingInt(ctx, tenantID, "security.scan.unverified_users_threshold", defaultUnverifiedUserThreshold))
+	if count > threshold {
 		meta, _ := json.Marshal(map[string]any{
 			"unverified_count": count,
 			"threshold":        "7 days",
@@ -166,6 +199,8 @@ func (s *Service) scanUnverifiedUsers(ctx context.Context, tenantID pgtype.UUID)
 }
 
 // scanWeakPasswordSettings checks for weak password configuration.
+// BUG-003 fix: recommended min length read from system_settings
+// 'security.scan.min_password_length' (defaults to 8).
 func (s *Service) scanWeakPasswordSettings(ctx context.Context, tenantID pgtype.UUID) error {
 	var minLength int
 
@@ -179,17 +214,18 @@ func (s *Service) scanWeakPasswordSettings(ctx context.Context, tenantID pgtype.
 		return nil //nolint:nilerr
 	}
 
-	if minLength < 8 {
+	recommended := s.getSettingInt(ctx, tenantID, "security.scan.min_password_length", defaultMinPasswordLength)
+	if minLength < recommended {
 		meta, _ := json.Marshal(map[string]any{
 			"min_length":  minLength,
-			"recommended": 8,
+			"recommended": recommended,
 		})
 
 		_, err = s.store.CreateSecurityScanResult(ctx, gen.CreateSecurityScanResultParams{
 			TenantID: tenantID,
 			ScanType: "weak_password_settings",
 			Severity: string(SeverityWarning),
-			Finding:  fmt.Sprintf("Weak password policy: minimum length is %d (recommended: 8+)", minLength),
+			Finding:  fmt.Sprintf("Weak password policy: minimum length is %d (recommended: %d+)", minLength, recommended),
 			Meta:     meta,
 		})
 		if err != nil {
@@ -201,6 +237,7 @@ func (s *Service) scanWeakPasswordSettings(ctx context.Context, tenantID pgtype.
 }
 
 // scanExcessiveAPIKeys checks for API keys without expiration.
+// BUG-003 fix: threshold read from system_settings 'security.scan.excessive_api_keys_threshold'.
 func (s *Service) scanExcessiveAPIKeys(ctx context.Context, tenantID pgtype.UUID) error {
 	var count int64
 
@@ -215,7 +252,8 @@ func (s *Service) scanExcessiveAPIKeys(ctx context.Context, tenantID pgtype.UUID
 		return nil //nolint:nilerr
 	}
 
-	if count > 20 {
+	threshold := int64(s.getSettingInt(ctx, tenantID, "security.scan.excessive_api_keys_threshold", defaultExcessiveAPIKeysThreshold))
+	if count > threshold {
 		meta, _ := json.Marshal(map[string]any{
 			"key_count":      count,
 			"issue":          "no_expiration",

@@ -151,9 +151,28 @@ onMount(async () => {
 		return acts;
 	});
 
+	// ── Country autocomplete helpers (filter destOptions client-side) ──────
+	// Sourced from the spaces country table (destOptions, loaded from
+	// /admin/spaces?level=country) — never hardcoded (Rule 16).
+	function fetchDestName(q: string): Promise<{ id: string; label: string; sublabel?: string }[]> {
+		const needle = q.toLowerCase().trim();
+		const filtered = needle
+			? destOptions.filter((o) => o.name.toLowerCase().includes(needle))
+			: destOptions;
+		return Promise.resolve(filtered.slice(0, 50).map((o) => ({ id: o.name, label: o.name })));
+	}
+
+	function fetchDestNameInitial(): Promise<{ id: string; label: string; sublabel?: string }[]> {
+		return Promise.resolve(destOptions.slice(0, 8).map((o) => ({ id: o.name, label: o.name })));
+	}
+
+	function getDestNameLabel(id: string): string {
+		return destOptions.find((o) => o.name === id)?.name ?? id;
+	}
+
 	// `fields` is required by EntityPageConfig; readonly page so the form is never shown, but kept for shape completeness.
 	const fields: FieldDef[] = [
-		{ key: 'destination_space_name', label: t('app.tools.col_dest_country', 'Destination'), type: 'text' },
+		{ key: 'destination_space_name', label: t('app.tools.col_dest_country', 'Destination'), type: 'autocomplete', placeholder: t('app.tools.country_placeholder', 'Search country…'), emptyMessage: t('common.no_results', 'No results found'), fetcher: fetchDestName, initialFetcher: fetchDestNameInitial, getSelectedLabel: getDestNameLabel },
 		{ key: 'visa_category', label: t('app.tools.col_visa_category', 'Visa Category'), type: 'text' },
 		{ key: 'applicant_type', label: t('app.tools.col_applicant_type', 'Applicant Type'), type: 'text' }
 	];

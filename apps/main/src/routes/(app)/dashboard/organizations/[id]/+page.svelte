@@ -12,6 +12,8 @@
 	import { untrack } from 'svelte';
 	import { page } from '$app/state';
 	import { invalidateAll, goto } from '$app/navigation';
+	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
+	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 	import type { OrganizationAdmin, OrgMember, ProfilePost } from '$lib/types';
 
 	let { data } = $props();
@@ -26,6 +28,32 @@
 		posts_last_30d?: number;
 	} | null);
 	let activeTab = $state(untrack(() => page.url.searchParams.get('tab') ?? 'settings'));
+
+	// Country autocomplete — filters the SSR-loaded country spaces
+	// (data.countries from /geo/countries) client-side (Rule 16).
+	function countryFetcher(q: string): Promise<AutocompleteItem[]> {
+		const needle = q.toLowerCase().trim();
+		const list = data.countries ?? [];
+		const filtered = needle
+			? list.filter(
+					(c) => c.name.toLowerCase().includes(needle) || c.geo_code.toLowerCase().includes(needle)
+				)
+			: list;
+		return Promise.resolve(
+			filtered.slice(0, 50).map((c) => ({ id: c.geo_code, label: c.name, sublabel: c.geo_code }))
+		);
+	}
+
+	function countryInitialFetcher(): Promise<AutocompleteItem[]> {
+		const list = data.countries ?? [];
+		return Promise.resolve(
+			list.slice(0, 8).map((c) => ({ id: c.geo_code, label: c.name, sublabel: c.geo_code }))
+		);
+	}
+
+	function countryLabel(id: string): string {
+		return (data.countries ?? []).find((c) => c.geo_code === id)?.name ?? id;
+	}
 
 	const tabs: UrlTab[] = [
 		{ value: 'settings', label: t('org_admin.tab_settings', 'Settings') },
@@ -291,7 +319,16 @@
 			</label>
 			<label class="flex flex-col gap-1.5">
 				<span class="text-sm font-medium text-[var(--color-text)]">{t('org_admin.field_country')}</span>
-				<input class={inputClass} value={countryCode} oninput={(e) => (countryCode = e.currentTarget.value)} placeholder="NG" />
+				<Autocomplete
+					placeholder={t('organizations.new.country_placeholder', 'Search country…')}
+					emptyMessage={t('common.no_results', 'No results found')}
+					fetcher={countryFetcher}
+					initialFetcher={countryInitialFetcher}
+					selectedId={countryCode || null}
+					selectedLabel={countryCode ? countryLabel(countryCode) : null}
+					onSelect={(item) => { countryCode = item.id; }}
+					onClear={() => { countryCode = ''; }}
+				/>
 			</label>
 			<label class="flex flex-col gap-1.5">
 				<span class="text-sm font-medium text-[var(--color-text)]">{t('org_admin.field_type')}</span>

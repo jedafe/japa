@@ -192,11 +192,31 @@ onMount(async () => {
 		return acts;
 	});
 
+	// ── Country autocomplete helpers (filter destOptions client-side) ──────
+	// Sourced from the spaces country table (destOptions, loaded from
+	// /admin/spaces?level=country) — never hardcoded (Rule 16). Keyed by
+	// space ID so the selected UUID is stored as the field value.
+	function fetchCountryId(q: string): Promise<{ id: string; label: string; sublabel?: string }[]> {
+		const needle = q.toLowerCase().trim();
+		const filtered = needle
+			? destOptions.filter((o) => o.name.toLowerCase().includes(needle))
+			: destOptions;
+		return Promise.resolve(filtered.slice(0, 50).map((o) => ({ id: o.id, label: o.name })));
+	}
+
+	function fetchCountryIdInitial(): Promise<{ id: string; label: string; sublabel?: string }[]> {
+		return Promise.resolve(destOptions.slice(0, 8).map((o) => ({ id: o.id, label: o.name })));
+	}
+
+	function getCountryIdLabel(id: string): string {
+		return destOptions.find((o) => o.id === id)?.name ?? id;
+	}
+
 	// ── Form fields (drives EntityForm for create/edit) ─────────────────────
 	const fields: FieldDef[] = [
 		{ key: 'name', label: t('app.tools.col_name', 'Name'), type: 'text' },
 		{ key: 'visa_category', label: t('app.tools.col_visa_type', 'Visa Category'), type: 'text' },
-		{ key: 'destination_space_id', label: t('app.tools.col_dest_country', 'Destination Space ID'), type: 'text' },
+		{ key: 'destination_space_id', label: t('app.tools.col_dest_country', 'Destination Country'), type: 'autocomplete', placeholder: t('app.tools.country_placeholder', 'Search country…'), emptyMessage: t('common.no_results', 'No results found'), fetcher: fetchCountryId, initialFetcher: fetchCountryIdInitial, getSelectedLabel: getCountryIdLabel },
 		{ key: 'slug', label: t('app.tools.col_slug', 'Slug'), type: 'text' },
 		{ key: 'eligibility_summary', label: t('app.tools.col_summary', 'Eligibility Summary'), type: 'textarea' },
 		{ key: 'gov_source_url', label: t('app.tools.col_gov_source_url', 'Government Source URL'), type: 'url' },

@@ -80,6 +80,17 @@ func ValidEventTypes() []EventType {
 	}
 }
 
+// isValidEventType reports whether et is a recognised platform event type.
+// Used by TrackEvent (BUG-004) to reject arbitrary event_type strings.
+func isValidEventType(et EventType) bool {
+	for _, v := range ValidEventTypes() {
+		if et == v {
+			return true
+		}
+	}
+	return false
+}
+
 // ScanSeverity classifies the severity of a security scan finding.
 type ScanSeverity string
 

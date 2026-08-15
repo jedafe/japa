@@ -1,10 +1,15 @@
 // Ref: japaconnect-engineering/sections/88-ask-an-expat.md
 import type { PageServerLoad } from './$types';
-import { redirect } from '@sveltejs/kit';
+import { redirect, error } from '@sveltejs/kit';
 import { apiContext, apiList } from '$lib/server/api';
 import type { Space } from '$lib/types';
 
 export const load: PageServerLoad = async (event) => {
+	const { features } = await event.parent();
+	if (!features['forum.ama.enabled']) {
+		throw error(404, { code: 'feature_disabled', message: 'Ask an Expat AMA is not available' });
+	}
+
 	if (!event.locals.user) {
 		throw redirect(307, `/login?redirect=${encodeURIComponent(event.url.pathname)}`);
 	}

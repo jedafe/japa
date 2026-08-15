@@ -1,7 +1,7 @@
 import { fail, redirect } from '@sveltejs/kit';
 import type { PageServerLoad, Actions } from './$types';
-import { apiContext, apiGet, apiPost, ApiError } from '$lib/server/api';
-import type { OrgMeta, PublicOrganization } from '$lib/types';
+import { apiContext, apiGet, apiList, apiPost, ApiError } from '$lib/server/api';
+import type { GeoCountry, OrgMeta, PublicOrganization } from '$lib/types';
 
 /**
  * Create-organization form at /org/new — auth-gated. POST
@@ -23,7 +23,16 @@ export const load: PageServerLoad = async (event) => {
 		// Non-fatal — the form falls back to hardcoded options.
 	}
 
-	return { orgMeta };
+	// Country list sourced from the spaces country table (/geo/countries)
+	// so the country_code picker is never hardcoded (Rule 16).
+	let countries: GeoCountry[] = [];
+	try {
+		countries = (await apiList<GeoCountry>(apiContext(event), '/geo/countries')).items;
+	} catch {
+		countries = [];
+	}
+
+	return { orgMeta, countries };
 };
 
 export const actions: Actions = {

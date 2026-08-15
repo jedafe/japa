@@ -15,9 +15,10 @@ type Request struct {
 
 // Response is the standard envelope returned by any AI provider.
 type Response struct {
-	ProviderRef string         // provider-assigned reference ID for audit trail
-	Status      string         // "success", "pending", "failed"
-	Raw         map[string]any // provider-specific response data
+	ProviderRef  string         // provider-assigned reference ID for audit trail
+	ProviderName string         // name of the provider that handled the request (set by Dispatcher)
+	Status       string         // "success", "pending", "failed"
+	Raw          map[string]any // provider-specific response data
 }
 
 // Provider defines the contract every AI backend must implement.

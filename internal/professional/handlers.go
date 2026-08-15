@@ -1117,10 +1117,11 @@ func (h *Handlers) CreateRelocation(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var input struct {
-		Country string `json:"country"`
-		City    string `json:"city"`
-		Status  string `json:"status"`
-		Year    int32  `json:"year"`
+		Country     string `json:"country"`
+		CountryCode string `json:"country_code"`
+		City        string `json:"city"`
+		Status      string `json:"status"`
+		Year        int32  `json:"year"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -1133,11 +1134,12 @@ func (h *Handlers) CreateRelocation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	relocation, err := h.Service.CreateRelocation(r.Context(), tenantID, profileID, CreateRelocationInput{
-		Country: input.Country,
-		City:    input.City,
-		Status:  input.Status,
-		Year:    input.Year,
+	relocation, err := h.Service.CreateRelocation(r.Context(), tenantID, profileID, user.UserID, CreateRelocationInput{
+		Country:     input.Country,
+		CountryCode: input.CountryCode,
+		City:        input.City,
+		Status:      input.Status,
+		Year:        input.Year,
 	})
 	if err != nil {
 		handleServiceError(w, err)
@@ -1176,10 +1178,11 @@ func (h *Handlers) UpdateRelocation(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var input struct {
-		Country string `json:"country"`
-		City    string `json:"city"`
-		Status  string `json:"status"`
-		Year    int32  `json:"year"`
+		Country     string `json:"country"`
+		CountryCode string `json:"country_code"`
+		City        string `json:"city"`
+		Status      string `json:"status"`
+		Year        int32  `json:"year"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -1188,10 +1191,11 @@ func (h *Handlers) UpdateRelocation(w http.ResponseWriter, r *http.Request) {
 	}
 
 	relocation, err := h.Service.UpdateRelocation(r.Context(), relocationID, tenantID, UpdateRelocationInput{
-		Country: input.Country,
-		City:    input.City,
-		Status:  input.Status,
-		Year:    input.Year,
+		Country:     input.Country,
+		CountryCode: input.CountryCode,
+		City:        input.City,
+		Status:      input.Status,
+		Year:        input.Year,
 	})
 	if err != nil {
 		handleServiceError(w, err)

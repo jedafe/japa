@@ -160,6 +160,24 @@ func (s *Store) CloseAMA(ctx context.Context, threadID, tenantID pgtype.UUID) er
 	return s.write.CloseAMA(ctx, gen.CloseAMAParams{ID: threadID, TenantID: tenantID})
 }
 
+// SetReplyPending marks a forum reply as pending AMA host approval. Called
+// by the forum service when the parent thread is an AMA with
+// question_approval_required = true and the reply author is not the host
+// (§88 question_approval_required).
+func (s *Store) SetReplyPending(ctx context.Context, replyID, tenantID pgtype.UUID) error {
+	return s.write.SetReplyAMAPending(ctx, gen.SetReplyAMAPendingParams{ID: replyID, TenantID: tenantID})
+}
+
+// ApproveQuestion approves a pending AMA question (host or moderator).
+// Returns pgx.ErrNoRows if the reply is not a pending AMA question.
+func (s *Store) ApproveQuestion(ctx context.Context, threadID, replyID, tenantID pgtype.UUID) error {
+	return s.write.ApproveAMAQuestion(ctx, gen.ApproveAMAQuestionParams{
+		ReplyID:   replyID,
+		ThreadID:  threadID,
+		TenantID:  tenantID,
+	})
+}
+
 // CheckCooldown returns true if the user has created an AMA within the
 // cooldown period (default 30 days, configurable via ama_cooldown_days).
 func (s *Store) CheckCooldown(ctx context.Context, userID, tenantID pgtype.UUID, cooldownDays int) (bool, error) {

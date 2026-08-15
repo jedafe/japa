@@ -4,6 +4,8 @@
 	import { api } from '$lib/api/client';
 	import { t } from '$lib/i18n';
 	import { Check, ChevronRight, Sparkles, MapPin, Trophy, Heart } from 'lucide-svelte';
+	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
+	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 	import type { PageData } from './$types';
 	import type { GeoCity, GeoState, OnboardingRecommendation, TagSuggestion, AchievementMilestoneType } from '$lib/types';
 
@@ -42,8 +44,41 @@
 	let loadingCities = $state(false);
 
 	// Step 2: Destination & Goals
+	// `destination` stores the country NAME (the backend persists it as a
+	// free-text string in onboarding step_data). `destCountryCode` holds the
+	// selected ISO geo_code from the Autocomplete. The picker is sourced from
+	// the spaces country table (data.countries, loaded from /geo/countries)
+	// so the user selects a real seeded country — never a hardcoded list.
 	let destination = $state('');
+	let destCountryCode = $state('');
 	let primaryGoal = $state('');
+
+	// Destination country autocomplete — filters the SSR-loaded country
+	// spaces client-side (same pattern as LocationSection.svelte).
+	function destCountryFetcher(q: string): Promise<AutocompleteItem[]> {
+		const needle = q.toLowerCase().trim();
+		const list = data.countries ?? [];
+		const filtered = needle
+			? list.filter(
+					(c) => c.name.toLowerCase().includes(needle) || c.geo_code.toLowerCase().includes(needle)
+				)
+			: list;
+		return Promise.resolve(
+			filtered.slice(0, 50).map((c) => ({ id: c.geo_code, label: c.name, sublabel: c.geo_code }))
+		);
+	}
+
+	function destCountryInitialFetcher(): Promise<AutocompleteItem[]> {
+		const list = data.countries ?? [];
+		return Promise.resolve(
+			list.slice(0, 8).map((c) => ({ id: c.geo_code, label: c.name, sublabel: c.geo_code }))
+		);
+	}
+
+	function destCountryLabel(id: string): string {
+		const c = (data.countries ?? []).find((c) => c.geo_code === id);
+		return c?.name ?? id;
+	}
 
 	// Step 3: Interests/Tags
 	let selectedTags = $state<string[]>([]);
@@ -122,6 +157,11 @@
 			stepData.city_id = selectedCity;
 		} else if (currentStep === 2) {
 			stepData.destination = destination;
+			// ADR-064a: Also send the ISO geo_code so the backend can save
+			// it as the `destination_country` custom field, feeding the
+			// geo-aware personalization feature without requiring the user
+			// to set it again in Settings.
+			stepData.destination_country_code = destCountryCode;
 			stepData.primary_goal = primaryGoal;
 		} else if (currentStep === 3) {
 			// Send both 'tags' and 'interests' so the backend recommendation
@@ -294,7 +334,16 @@
 				<div class="space-y-4">
 					<div>
 						<label class="mb-1 block text-sm font-medium text-[var(--color-text)]" for="ob-dest">{t('onboarding.field_destination', 'Destination country')}</label>
-						<input id="ob-dest" bind:value={destination} type="text" placeholder="e.g. United Kingdom" class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none" />
+						<Autocomplete
+							placeholder={t('onboarding.field_destination_ph', 'Search destination country…')}
+							emptyMessage={t('common.no_results', 'No results found')}
+							fetcher={destCountryFetcher}
+							initialFetcher={destCountryInitialFetcher}
+							selectedId={destCountryCode || null}
+							selectedLabel={destination || null}
+							onSelect={(item) => { destCountryCode = item.id; destination = item.label; }}
+							onClear={() => { destCountryCode = ''; destination = ''; }}
+						/>
 					</div>
 					<div>
 						<label class="mb-1 block text-sm font-medium text-[var(--color-text)]" for="ob-goal">{t('onboarding.field_goal', 'Primary goal')}</label>

@@ -19,8 +19,13 @@
 		/** Optional set of erased user UUIDs for GDPR/ADR-029 mention
 		 * redaction (Section 15). Passed down to ReplyItem. */
 		deletedUserIds?: Set<string>;
+		/** §88 AMA: the host's user ID. When set, host replies are highlighted
+		 * and pinned above regular replies. */
+		hostUserId?: string;
+		/** §88 AMA: whether the current viewer is the host (for approve UI). */
+		isHost?: boolean;
 	}
-	let { replies, threadId, authed, canSolve, acceptedReplyId, deletedUserIds }: Props = $props();
+	let { replies, threadId, authed, canSolve, acceptedReplyId, deletedUserIds, hostUserId, isHost }: Props = $props();
 
 	// Build a parent → children map from the flat reply list. Uses $derived so
 	// the tree is computed synchronously during SSR (not deferred to $effect,
@@ -57,7 +62,19 @@
 		topBody = '';
 	}
 
-	const allTop = $derived([...topLevel, ...addedTop]);
+	const allTop = $derived.by(() => {
+		// §88 BUG-008: pin host replies above regular replies when hostUserId
+		// is set (AMA threads). Host replies stay in created_at order within
+		// their group; non-host replies follow in created_at order.
+		const combined = [...topLevel, ...addedTop];
+		if (!hostUserId) return combined;
+		return combined.sort((a, b) => {
+			const aHost = a.author_user_id === hostUserId ? 0 : 1;
+			const bHost = b.author_user_id === hostUserId ? 0 : 1;
+			if (aHost !== bHost) return aHost - bHost;
+			return a.created_at.localeCompare(b.created_at);
+		});
+	});
 	const replyCount = $derived(replies.length + addedTop.length);
 </script>
 
@@ -102,6 +119,8 @@
 					{canSolve}
 					isAccepted={acceptedReplyId === reply.id}
 					{deletedUserIds}
+					{hostUserId}
+					{isHost}
 				/>
 			{/each}
 		</div>

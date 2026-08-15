@@ -129,6 +129,19 @@ func (s *Service) persistStep(ctx context.Context, tenantID, userID pgtype.UUID,
 		}
 	}
 
+	// ADR-064a: When the user selects a destination country in Step 2, save
+	// the ISO geo_code as the `destination_country` custom field so the
+	// geo-aware personalization feature (VisitorContext resolver, feed
+	// geo-boost, search geo-weighting) picks it up without the user having
+	// to set it again in Settings. Failures are non-fatal — onboarding
+	// must not block on the custom-field write.
+	if fields.DestinationCountryCode != "" {
+		if err := s.setDestinationCountry(ctx, tenantID, userID, fields.DestinationCountryCode); err != nil {
+			slog.Warn("onboarding: failed to save destination_country custom field", "error", err)
+			// Non-fatal — don't block onboarding.
+		}
+	}
+
 	// BUG-001/002 fix: current_step represents the step the user is
 	// currently ON (about to work on), not the last completed step. When
 	// the user submits step N data, they advance to step N+1. Storing
@@ -449,7 +462,7 @@ func (s *Service) getPromotedRecommendations(ctx context.Context, tenantID pgtyp
 // Field names match what the frontend wizard sends in step_data:
 //
 //	Step 1: name, japa_status, current_location
-//	Step 2: destination, primary_goal
+//	Step 2: destination, destination_country_code, primary_goal
 //	Step 3: tags (array of tag slugs — used for interest-based recommendations)
 //	Step 4: follows (array of space/user IDs)
 type stepDataFields struct {
@@ -460,10 +473,17 @@ type stepDataFields struct {
 	StateID         string   `json:"state_id"`
 	CityID          string   `json:"city_id"`
 	Destination     string   `json:"destination"`
-	PrimaryGoal     string   `json:"primary_goal"`
-	Tags            []string `json:"tags"`
-	Interests       []string `json:"interests"` // legacy alias; Tags takes precedence
-	Follows         []string `json:"follows"`
+	// DestinationCountryCode is the ISO 3166-1 alpha-2 code for the
+	// destination country selected in Step 2. When present, it is saved as
+	// the `destination_country` custom field (ADR-064a) so the geo-aware
+	// personalization feature picks it up without the user re-entering it
+	// in Settings. The legacy `Destination` name is kept for backward
+	// compatibility with existing step_data consumers.
+	DestinationCountryCode string   `json:"destination_country_code"`
+	PrimaryGoal            string   `json:"primary_goal"`
+	Tags                   []string `json:"tags"`
+	Interests              []string `json:"interests"` // legacy alias; Tags takes precedence
+	Follows                []string `json:"follows"`
 }
 
 func parseStepData(data json.RawMessage) stepDataFields {
@@ -784,6 +804,44 @@ func (s *Service) autoJoinGeoSpaces(ctx context.Context, tenantID, userID pgtype
 
 	if err := tx.Commit(ctx); err != nil {
 		return fmt.Errorf("committing geo-join transaction: %w", err)
+	}
+
+	return nil
+}
+
+// setDestinationCountry saves the given ISO 3166-1 alpha-2 code as the
+// `destination_country` custom field on the user's profile (ADR-064a). This
+// mirrors the write path in users.Store.setGeoCustomField so the geo-aware
+// VisitorContext resolver picks up the destination selected during onboarding
+// without the user having to re-enter it in Settings.
+func (s *Service) setDestinationCountry(ctx context.Context, tenantID, userID pgtype.UUID, geoCode string) error {
+	code := strings.ToUpper(strings.TrimSpace(geoCode))
+	if code == "" {
+		return nil
+	}
+
+	field, err := s.store.read.GetCustomFieldByKey(ctx, gen.GetCustomFieldByKeyParams{
+		Key:      "destination_country",
+		TenantID: tenantID,
+	})
+	if err != nil {
+		return fmt.Errorf("looking up destination_country custom field: %w", err)
+	}
+
+	profileID, err := s.store.read.GetUserProfileID(ctx, gen.GetUserProfileIDParams{
+		TenantID: tenantID, UserID: userID,
+	})
+	if err != nil {
+		return fmt.Errorf("getting user profile id: %w", err)
+	}
+
+	if _, err := s.store.write.UpsertCustomFieldValue(ctx, gen.UpsertCustomFieldValueParams{
+		FieldID:    field.ID,
+		EntityType: "user_profile",
+		EntityID:   profileID,
+		ValueText:  &code,
+	}); err != nil {
+		return fmt.Errorf("upserting destination_country custom field value: %w", err)
 	}
 
 	return nil

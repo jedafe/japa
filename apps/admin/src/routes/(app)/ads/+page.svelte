@@ -14,7 +14,7 @@
 	import { Modal } from '$lib/components/ui/modal';
 	import { SlideOver } from '$lib/components/ui/slide-over';
 	import type { ActionItem, BulkAction } from '$lib/components/ui/data-table';
-	import { BarChart3, Zap, Pause, Play, StopCircle, Plus, Eye, Trash2 } from 'lucide-svelte';
+	import { BarChart3, Zap, Pause, Play, StopCircle, Plus, Eye, Trash2, Check, XCircle } from 'lucide-svelte';
 
 	type Campaign = {
 		id: string;
@@ -71,6 +71,10 @@
 	let showEndBoostConfirm = $state(false);
 	let endBoostTarget = $state<ActiveBoost | null>(null);
 
+	// Reject campaign confirm modal (§61 Review Gate — refund credits on reject).
+	let showRejectCampaignConfirm = $state(false);
+	let rejectCampaignTarget = $state<Campaign | null>(null);
+
 	let searchQuery = $state('');
 
 	let selectedCampaignIds = $state<Set<string>>(new Set());
@@ -123,8 +127,25 @@
 	]);
 
 	// ── Row actions via ActionMenu ──────────────────────────────────────────
+	// §61 Review Gate: pending_review self-serve campaigns need Approve/Reject
+	// actions. Approve calls activateCampaign (pending_review→active + notify);
+	// Reject calls rejectCampaign (refund credits + notify). Both are admin-only
+	// (ad.campaign.manage permission). Ref: ADR-079 §3.
 	const campaignActions: ActionItem[] = [
 		{ label: t('ads.stats', 'Stats'), icon: Eye, onclick: (row) => viewStats(row.id) },
+		{
+			label: t('ads.approve', 'Approve'),
+			icon: Check,
+			show: (row) => canManageAds && row.status === 'pending_review',
+			onclick: (row) => approveCampaign(row.id)
+		},
+		{
+			label: t('ads.reject', 'Reject'),
+			icon: XCircle,
+			variant: 'destructive',
+			show: (row) => canManageAds && row.status === 'pending_review',
+			onclick: (row) => confirmRejectCampaign(row)
+		},
 		{
 			label: t('ads.pause', 'Pause'),
 			icon: Pause,
@@ -240,6 +261,49 @@
 			}
 		} catch {
 			errorMessage = t('ads.status_error');
+		}
+	}
+
+	// §61 Review Gate: approve a pending_review self-serve campaign.
+	// The backend transitions pending_review→active and enqueues the
+	// ads:notify_campaign_status task (advertiser notified). Ref: ADR-079 §3.
+	async function approveCampaign(campaignId: string) {
+		try {
+			const result = await adsAdminApi.activateCampaign(campaignId);
+			if (result.ok) {
+				await load();
+			} else {
+				errorMessage = result.error || t('ads.status_error');
+			}
+		} catch {
+			errorMessage = t('ads.status_error');
+		}
+	}
+
+	// §61 Review Gate: reject a pending_review self-serve campaign.
+	// The backend sets status=rejected and enqueues ads:refund_campaign_credits
+	// (credits returned to org wallet) + ads:notify_campaign_status. Because
+	// rejection refunds credits it is destructive — confirmed via a modal.
+	// Ref: ADR-079 §3.
+	function confirmRejectCampaign(campaign: Campaign) {
+		rejectCampaignTarget = campaign;
+		showRejectCampaignConfirm = true;
+	}
+
+	async function executeRejectCampaign() {
+		if (!rejectCampaignTarget) return;
+		try {
+			const result = await adsAdminApi.rejectCampaign(rejectCampaignTarget.id);
+			if (result.ok) {
+				await load();
+			} else {
+				errorMessage = result.error || t('ads.status_error');
+			}
+		} catch {
+			errorMessage = t('ads.status_error');
+		} finally {
+			showRejectCampaignConfirm = false;
+			rejectCampaignTarget = null;
 		}
 	}
 
@@ -487,5 +551,21 @@
 	<div class="mt-4 flex justify-end gap-2">
 		<Button variant="ghost" onclick={() => showEndBoostConfirm = false}>{t('common.cancel', 'Cancel')}</Button>
 		<Button variant="destructive" onclick={executeEndBoost}>{t('ads.end', 'End')}</Button>
+	</div>
+</Modal>
+
+<!-- Reject Campaign Confirm (§61 Review Gate — refunds credits) -->
+<Modal bind:open={showRejectCampaignConfirm} title={t('ads.reject_confirm', 'Reject Campaign')}>
+	{#if rejectCampaignTarget}
+		<p class="text-sm" style="color: var(--color-foreground)">
+			{t('ads.reject_confirm', 'Reject campaign')} <strong>{rejectCampaignTarget.name}</strong>?
+		</p>
+		<p class="mt-2 text-sm" style="color: var(--color-danger)">
+			{t('ads.reject_helper', 'Credits will be refunded to the organization. This action cannot be undone.')}
+		</p>
+	{/if}
+	<div class="mt-4 flex justify-end gap-2">
+		<Button variant="ghost" onclick={() => showRejectCampaignConfirm = false}>{t('common.cancel', 'Cancel')}</Button>
+		<Button variant="destructive" onclick={executeRejectCampaign}>{t('ads.reject', 'Reject')}</Button>
 	</div>
 </Modal>

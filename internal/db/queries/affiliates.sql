@@ -233,6 +233,24 @@ ORDER BY ale.created_at DESC
 LIMIT @page_limit;
 
 -- =====================
+-- Program-wide Stats (admin overview — Section 56)
+-- =====================
+
+-- name: GetAffiliateProgramStats :one
+-- Returns program-wide totals for the admin overview endpoint
+-- GET /admin/affiliate-program (Section 56 Admin management).
+-- Tenant-scoped: only counts members/links/events for the given tenant.
+SELECT
+    (SELECT COUNT(*) FROM affiliate_program_members apm WHERE apm.tenant_id = @tenant_id) AS total_members,
+    (SELECT COUNT(*) FROM affiliate_program_members apm WHERE apm.tenant_id = @tenant_id AND apm.status = 'active') AS active_members,
+    (SELECT COUNT(*) FROM user_affiliate_links ual2 WHERE ual2.tenant_id = @tenant_id) AS total_links,
+    COALESCE(SUM(ale.click_count), 0) AS total_clicks,
+    COALESCE(SUM(ale.conversion_count), 0) AS total_conversions,
+    COALESCE(SUM(ale.total_earned), 0) AS total_commissions
+FROM user_affiliate_links ale
+WHERE ale.tenant_id = @tenant_id;
+
+-- =====================
 -- Dedup check (for redirect handler)
 -- =====================
 

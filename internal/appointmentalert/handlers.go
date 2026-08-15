@@ -219,6 +219,10 @@ func (h *Handlers) HandleCreateMyAlert(w http.ResponseWriter, r *http.Request) {
 
 	alert, err := h.service.CreateAlert(r.Context(), tenantID, user.UserID, input)
 	if err != nil {
+		if errors.Is(err, ErrSMSPremiumOnly) {
+			errpkg.WriteError(w, http.StatusForbidden, "sms_premium_only", "The SMS notification channel is only available to premium users")
+			return
+		}
 		slog.Error("appointmentalert: create alert failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "create_failed", "Failed to create alert")
 		return
@@ -263,6 +267,10 @@ func (h *Handlers) HandleUpdateMyAlert(w http.ResponseWriter, r *http.Request) {
 		}
 		if errors.Is(err, ErrNotOwner) {
 			errpkg.WriteError(w, http.StatusForbidden, "not_owner", "You can only manage your own alerts")
+			return
+		}
+		if errors.Is(err, ErrSMSPremiumOnly) {
+			errpkg.WriteError(w, http.StatusForbidden, "sms_premium_only", "The SMS notification channel is only available to premium users")
 			return
 		}
 		slog.Error("appointmentalert: update alert failed", "error", err)

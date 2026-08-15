@@ -56,5 +56,10 @@ export const load: PageServerLoad = async (event) => {
 	// mount to avoid leaking user-specific data across cached SSR responses.
 	// Ref: jc-tools-audit checklist §4 (SSR/CSR boundary).
 
-	return { destinations, embassies, initialDestId, disabled, authed };
+	// Pass the user's effective permissions so the page can gate premium-only
+	// UI (e.g. the SMS channel checkbox) on the appointment_alert.premium
+	// permission node (§91, ADR-099, Rule 16).
+	const userPermissions = event.locals.user?.permissions ?? [];
+
+	return { destinations, embassies, initialDestId, disabled, authed, userPermissions };
 };

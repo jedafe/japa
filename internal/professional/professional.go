@@ -13,6 +13,7 @@ package professional
 import (
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/valkey-io/valkey-go/valkeycompat"
 )
 
 // Profile status values.
@@ -128,6 +129,7 @@ func IsValidVerifierStatus(s string) bool {
 type Service struct {
 	store *Store
 	db    *db.DB
+	vk    valkeycompat.Cmdable
 }
 
 // NewService creates a Service backed by the given database pool.
@@ -139,4 +141,12 @@ func NewService(database *db.DB) *Service {
 		},
 		db: database,
 	}
+}
+
+// SetValkey injects a Valkey client for VisitorContext cache invalidation
+// when the user's destination_country is updated via a relocation
+// (ADR-064a). nil disables cache invalidation (the 15-minute TTL will
+// eventually expire the stale entry).
+func (s *Service) SetValkey(vk valkeycompat.Cmdable) {
+	s.vk = vk
 }

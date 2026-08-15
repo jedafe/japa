@@ -217,9 +217,28 @@ onMount(async () => {
 		return acts;
 	});
 
+	// ── Country autocomplete helpers (filter destinations client-side) ─────
+	// Sourced from the spaces country table (destinations, loaded from
+	// /spaces?level=country via listDestinations) — never hardcoded (Rule 16).
+	function fetchCountryName(q: string): Promise<{ id: string; label: string; sublabel?: string }[]> {
+		const needle = q.toLowerCase().trim();
+		const filtered = needle
+			? destinations.filter((d) => d.name.toLowerCase().includes(needle))
+			: destinations;
+		return Promise.resolve(filtered.slice(0, 50).map((d) => ({ id: d.name, label: d.name })));
+	}
+
+	function fetchCountryNameInitial(): Promise<{ id: string; label: string; sublabel?: string }[]> {
+		return Promise.resolve(destinations.slice(0, 8).map((d) => ({ id: d.name, label: d.name })));
+	}
+
+	function getCountryNameLabel(id: string): string {
+		return destinations.find((d) => d.name === id)?.name ?? id;
+	}
+
 	const fields: FieldDef[] = [
 		{ key: 'test_name', label: t('common.test_name', 'Test Name'), type: 'text' },
-		{ key: 'destination_space_name', label: t('common.country', 'Country'), type: 'text' },
+		{ key: 'destination_space_name', label: t('common.country', 'Country'), type: 'autocomplete', placeholder: t('app.tools.country_placeholder', 'Search country…'), emptyMessage: t('common.no_results', 'No results found'), fetcher: fetchCountryName, initialFetcher: fetchCountryNameInitial, getSelectedLabel: getCountryNameLabel },
 		{ key: 'visa_category', label: t('common.visa_category', 'Visa Category'), type: 'text' },
 		{ key: 'minimum_score', label: t('common.minimum_score', 'Minimum Score'), type: 'text' },
 		{ key: 'notes', label: t('common.notes', 'Notes'), type: 'textarea' },

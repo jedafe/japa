@@ -76,11 +76,16 @@ type RAGChunk struct {
 
 // ScoringConfig is the JSONB shape stored in forms.scoring_config.
 // It defines the max possible score, threshold bands for classification,
-// and per-dimension weights used for aggregation.
+// per-dimension weights used for aggregation, and an optional admin-configured
+// curated roadmap library (ADR-071 §3 — curated steps are admin-configurable,
+// stored in scoring_config). When CuratedRoadmap is empty, GenerateRoadmap
+// falls back to the built-in default library returned by
+// curatedRoadmapLibrary().
 type ScoringConfig struct {
-	MaxScore         int                `json:"max_score"`
-	Thresholds       []Threshold        `json:"thresholds"`
-	DimensionWeights map[string]float64 `json:"dimension_weights"`
+	MaxScore         int                      `json:"max_score"`
+	Thresholds       []Threshold              `json:"thresholds"`
+	DimensionWeights map[string]float64       `json:"dimension_weights"`
+	CuratedRoadmap   map[string][]RoadmapStep `json:"curated_roadmap,omitempty"`
 }
 
 // Threshold is a single band in the scoring_config.thresholds array.
@@ -546,9 +551,13 @@ func ClassifyScore(totalScore int, thresholds []Threshold) string {
 // dimensions get the highest-priority roadmap steps. Each step links to a
 // platform content slug.
 //
-// The curated step library maps dimension names to recommended content. This
-// is deterministic and always present (ADR-071 §3). AI-assisted supplementary
-// steps are a separate layer gated by assessment.ai_roadmap_enabled.
+// The curated step library is sourced from scoring_config.curated_roadmap when
+// the admin has configured it (ADR-071 §3 — curated steps are
+// admin-configurable, stored in scoring_config). When that field is empty,
+// GenerateRoadmap falls back to the built-in default library returned by
+// curatedRoadmapLibrary(). This is deterministic and always present.
+// AI-assisted supplementary steps are a separate layer gated by
+// assessment.ai_roadmap_enabled.
 func GenerateRoadmap(dimensionScores map[string]int, scoringConfig ScoringConfig) []RoadmapStep {
 	if len(dimensionScores) == 0 {
 		return []RoadmapStep{}
@@ -567,10 +576,13 @@ func GenerateRoadmap(dimensionScores map[string]int, scoringConfig ScoringConfig
 		return sorted[i].score < sorted[j].score
 	})
 
-	// Curated step library — maps dimension to recommended next steps.
-	// Priority is assigned based on the order of weakest dimensions.
-	// Content slugs link to platform guides/tools (Section 14 content).
-	curatedLibrary := curatedRoadmapLibrary()
+	// Curated step library — prefer the admin-configured library in
+	// scoring_config.curated_roadmap (ADR-071 §3); fall back to the built-in
+	// default library when the admin has not configured one.
+	curatedLibrary := scoringConfig.CuratedRoadmap
+	if len(curatedLibrary) == 0 {
+		curatedLibrary = curatedRoadmapLibrary()
+	}
 
 	roadmap := make([]RoadmapStep, 0)
 	priority := 1
@@ -720,8 +732,14 @@ func (s *Service) CleanupAnonymousResults(ctx context.Context, retentionHours in
 
 // curatedRoadmapLibrary returns the deterministic mapping of dimension names
 // to recommended roadmap steps. Each step links to a platform content slug.
-// Admin can override these via scoring_config in a future iteration; for now
-// this is the default curated library (ADR-071 §3).
+// This is the default fallback library used when scoring_config.curated_roadmap
+// is not set; admins can override it via scoring_config (ADR-071 §3).
+//
+// The library covers both the default seeded form dimensions (financial,
+// logistical, professional, personal — see migration 000279) and the
+// ADR-071 §1 example dimensions (language, qualifications,
+// visa_eligibility, destination_knowledge) so the roadmap is populated
+// regardless of which dimension set the active form uses.
 func curatedRoadmapLibrary() map[string][]RoadmapStep {
 	return map[string][]RoadmapStep{
 		"financial": {
@@ -734,6 +752,47 @@ func curatedRoadmapLibrary() map[string][]RoadmapStep {
 				Title:       "Use the Cost of Living Calculator",
 				Description: "Compare living costs between your current city and target destination to set a realistic budget.",
 				ContentSlug: "tool/cost-of-living-calculator",
+			},
+		},
+		"logistical": {
+			{
+				Title:       "Determine your visa pathway",
+				Description: "Research visa categories you qualify for based on your skills, experience, and destination.",
+				ContentSlug: "guide/visa-pathways-overview",
+			},
+			{
+				Title:       "Prepare your visa application documents",
+				Description: "Gather and organise the documents required for your target visa category.",
+				ContentSlug: "guide/visa-document-checklist",
+			},
+			{
+				Title:       "Research housing at your destination",
+				Description: "Compare neighbourhoods, rental costs, and short-term accommodation options before you arrive.",
+				ContentSlug: "guide/destination-research-guide",
+			},
+		},
+		"professional": {
+			{
+				Title:       "Get your credentials evaluated",
+				Description: "Research credential recognition requirements for your profession in your target country.",
+				ContentSlug: "guide/credential-evaluation",
+			},
+			{
+				Title:       "Upgrade your professional certifications",
+				Description: "Identify and pursue certifications that are in demand in your destination's job market.",
+				ContentSlug: "guide/professional-certifications",
+			},
+		},
+		"personal": {
+			{
+				Title:       "Connect with the diaspora community",
+				Description: "Join spaces and forums for Nigerians in your destination country for on-the-ground insights and support.",
+				ContentSlug: "guide/connecting-with-diaspora",
+			},
+			{
+				Title:       "Plan your emotional and family readiness",
+				Description: "Reflect on cultural adjustment, family logistics, and support networks to ease the transition.",
+				ContentSlug: "guide/emotional-readiness-relocation",
 			},
 		},
 		"language": {
