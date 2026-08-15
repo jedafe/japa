@@ -7,6 +7,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/jedafe/japa/internal/content"
 	"github.com/jedafe/japa/internal/media"
 )
 
@@ -279,7 +280,7 @@ func (r *Renderer) renderTrendingTags(ctx context.Context, w Widget) (json.RawMe
 	return json.Marshal(items)
 }
 
-// renderSpaceMembers returns members of a configured space.
+// renderSpaceMembers returns members of a configured space with display info.
 func (r *Renderer) renderSpaceMembers(ctx context.Context, w Widget) (json.RawMessage, error) {
 	limit := widgetConfigLimit(w.Config)
 	spaceID := widgetConfigSpaceID(w.Config)
@@ -287,9 +288,12 @@ func (r *Renderer) renderSpaceMembers(ctx context.Context, w Widget) (json.RawMe
 		return json.Marshal([]map[string]any{})
 	}
 	rows, err := r.reader.Query(ctx, `
-		SELECT sm.user_id, sm.joined_at
+		SELECT sm.user_id, sm.joined_at,
+		       u.username, u.display_name
 		FROM space_members sm
+		JOIN users u ON u.id = sm.user_id
 		WHERE sm.space_id = $1 AND sm.status = 'active'
+		  AND u.deleted_at IS NULL
 		ORDER BY sm.joined_at DESC
 		LIMIT $2
 	`, *spaceID, limit)
@@ -301,13 +305,16 @@ func (r *Renderer) renderSpaceMembers(ctx context.Context, w Widget) (json.RawMe
 	items := make([]map[string]any, 0)
 	for rows.Next() {
 		var userID pgtype.UUID
+		var username, displayName string
 		var joinedAt interface{}
-		if err := rows.Scan(&userID, &joinedAt); err != nil {
+		if err := rows.Scan(&userID, &joinedAt, &username, &displayName); err != nil {
 			return nil, fmt.Errorf("scanning space_members: %w", err)
 		}
 		items = append(items, map[string]any{
-			"user_id":   userID,
-			"joined_at": joinedAt,
+			"user_id":      userID,
+			"username":     username,
+			"display_name": displayName,
+			"joined_at":    joinedAt,
 		})
 	}
 	return json.Marshal(items)
@@ -355,6 +362,7 @@ func (r *Renderer) renderUpcomingEvents(ctx context.Context, w Widget) (json.Raw
 		SELECT id, title, slug, start_time, end_time
 		FROM calendar_entries
 		WHERE tenant_id = $1 AND status = 'approved' AND start_time >= now()
+		  AND deleted_at IS NULL
 		ORDER BY start_time ASC
 		LIMIT $2
 	`, w.TenantID, limit)
@@ -423,8 +431,9 @@ func (r *Renderer) renderFeaturedSpaces(ctx context.Context, w Widget) (json.Raw
 	return json.Marshal(items)
 }
 
-// renderCustomHTML returns the config's html field as-is (sanitized at render
-// time by the frontend).
+// renderCustomHTML returns the config's html field, sanitized server-side
+// through content.SanitizeHTML to prevent stored XSS (§5.1/§14 — Renderer
+// must allowlist tags, never trust client HTML).
 func (r *Renderer) renderCustomHTML(ctx context.Context, w Widget) (json.RawMessage, error) {
 	var c struct {
 		HTML string `json:"html"`
@@ -432,7 +441,7 @@ func (r *Renderer) renderCustomHTML(ctx context.Context, w Widget) (json.RawMess
 	if len(w.Config) > 0 {
 		_ = json.Unmarshal(w.Config, &c)
 	}
-	return json.Marshal(map[string]any{"html": c.HTML})
+	return json.Marshal(map[string]any{"html": content.SanitizeHTML(c.HTML)})
 }
 
 // ─── Extended: content-curation types ───────────────────────────────────
@@ -558,7 +567,7 @@ func (r *Renderer) renderBlogPosts(ctx context.Context, w Widget) (json.RawMessa
 	                 m.storage_bucket AS featured_storage_bucket,
 	                 m.storage_path AS featured_storage_path
 	          FROM contents c
-	          LEFT JOIN users u ON u.id = c.author_id
+	          LEFT JOIN users u ON u.id = c.author_id AND u.deleted_at IS NULL
 	          LEFT JOIN media m ON m.id = c.featured_image_id AND m.deleted_at IS NULL
 	          WHERE c.tenant_id = $1 AND c.deleted_at IS NULL
 	            AND c.status = 'published' AND c.content_type = 'blog_post'`
@@ -929,7 +938,7 @@ func (r *Renderer) renderReviews(ctx context.Context, w Widget) (json.RawMessage
 	                 r.rating, r.title, r.body, r.created_at,
 	                 u.username AS reviewer_username
 	          FROM reviews r
-	          LEFT JOIN users u ON u.id = r.reviewer_user_id
+	          LEFT JOIN users u ON u.id = r.reviewer_user_id AND u.deleted_at IS NULL
 	          WHERE r.tenant_id = $1 AND r.status = 'published'`
 	args := []any{w.TenantID}
 	argIdx := 2
@@ -1147,7 +1156,7 @@ func (r *Renderer) renderMentorSpotlight(ctx context.Context, w Widget) (json.Ra
 		       mp.rating_avg, mp.session_count,
 		       u.username, u.display_name
 		FROM mentorship_profiles mp
-		JOIN users u ON u.id = mp.user_id
+		JOIN users u ON u.id = mp.user_id AND u.deleted_at IS NULL
 		WHERE mp.tenant_id = $1
 		  AND mp.is_mentor = true
 		  AND mp.is_available = true

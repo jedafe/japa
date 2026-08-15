@@ -274,6 +274,43 @@ WHERE id = $1 AND tenant_id = $2 AND status IN ('draft', 'review', 'scheduled')
 	return nil
 }
 
+// PublishedEdition is the minimal row returned by AutoPublishDueEditions so
+// the service can clear draft locks and enqueue digest:send_email per edition.
+type PublishedEdition struct {
+	ID       pgtype.UUID
+	TenantID pgtype.UUID
+}
+
+// AutoPublishDueEditions publishes every draft/review edition whose
+// 1-hour admin review window has elapsed (scheduled_for <= now()). This is
+// the digest:auto_publish cron body (§84: "A 1-hour review window opens after
+// generation before auto-publish"). The UPDATE is atomic and returns the
+// (id, tenant_id) pairs it transitioned to 'published' so the caller can fire
+// digest:send_email per edition. Idempotent: once status='published' the row
+// no longer matches the WHERE clause, so a duplicate cron run is a no-op.
+func (s *Store) AutoPublishDueEditions(ctx context.Context) ([]PublishedEdition, error) {
+	rows, err := s.pool.Writer.Query(ctx, `
+UPDATE digest_editions
+SET status = 'published', published_at = now()
+WHERE status IN ('draft', 'review') AND scheduled_for <= now()
+RETURNING id, tenant_id
+`)
+	if err != nil {
+		return nil, fmt.Errorf("digest: auto-publish due editions: %w", err)
+	}
+	defer rows.Close()
+
+	var out []PublishedEdition
+	for rows.Next() {
+		var e PublishedEdition
+		if err := rows.Scan(&e.ID, &e.TenantID); err != nil {
+			return nil, fmt.Errorf("digest: auto-publish due editions: scan: %w", err)
+		}
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}
+
 // MarkEmailSent stamps email_sent=true and email_sent_at=now() on a
 // published edition after the digest:send_email task completes.
 func (s *Store) MarkEmailSent(ctx context.Context, id, tenantID pgtype.UUID) error {

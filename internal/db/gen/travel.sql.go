@@ -136,22 +136,35 @@ const listTravelProviders = `-- name: ListTravelProviders :many
 
 SELECT id, tenant_id, name, slug, provider_type, api_config, affiliate_config, is_active, created_at FROM travel_providers
 WHERE tenant_id = $1
-  AND ($2::boolean = false OR is_active = true)
+  AND ($2::text = '' OR is_active = ($2::text = 'true'))
   AND ($3::text = '' OR provider_type = $3)
+  AND ($4::text = '' OR name ILIKE '%' || $4::text || '%' OR slug ILIKE '%' || $4::text || '%')
 ORDER BY name ASC
 `
 
 type ListTravelProvidersParams struct {
-	TenantID     pgtype.UUID `json:"tenant_id"`
-	ActiveOnly   bool        `json:"active_only"`
-	ProviderType string      `json:"provider_type"`
+	TenantID       pgtype.UUID `json:"tenant_id"`
+	IsActiveFilter string      `json:"is_active_filter"`
+	ProviderType   string      `json:"provider_type"`
+	Q              string      `json:"q"`
 }
 
 // =====================================================================
-// List travel providers (optionally active only).
+// List travel providers with optional search and active-status filter.
+// q: ILIKE search on name or slug (empty = no filter).
+// is_active_filter: tri-state — 'true' = only active, 'false' = only
+//
+//	inactive, '' (empty) = no filter (all statuses).
+//
+// provider_type: filter by exact type (empty = all).
 // =====================================================================
 func (q *Queries) ListTravelProviders(ctx context.Context, arg ListTravelProvidersParams) ([]TravelProvider, error) {
-	rows, err := q.db.Query(ctx, listTravelProviders, arg.TenantID, arg.ActiveOnly, arg.ProviderType)
+	rows, err := q.db.Query(ctx, listTravelProviders,
+		arg.TenantID,
+		arg.IsActiveFilter,
+		arg.ProviderType,
+		arg.Q,
+	)
 	if err != nil {
 		return nil, err
 	}

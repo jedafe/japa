@@ -114,6 +114,14 @@ func (s *Service) IndexEntity(ctx context.Context, tenantID pgtype.UUID, entityT
 	}
 
 	maxTokens := s.settings.GetIntOr(ctx, tenantID, "rag.chunk_max_tokens", 400)
+	// Defense-in-depth: clamp to [1, 8000] even if catalog validation is
+	// bypassed. 0 or negative causes ChunkText to return the whole text as
+	// one giant chunk (may exceed the embedding model's token limit).
+	if maxTokens < 1 {
+		maxTokens = 1
+	} else if maxTokens > 8000 {
+		maxTokens = 8000
+	}
 	chunkTexts := ChunkText(plainText, maxTokens, maxTokens/5)
 	if len(chunkTexts) == 0 {
 		return s.store.DeleteEntityEmbeddings(ctx, tenantID, entityType, entityID)
@@ -192,6 +200,14 @@ func (s *Service) Retrieve(ctx context.Context, tenantID pgtype.UUID, query, lan
 
 	model := s.settings.GetStringOr(ctx, tenantID, "rag.embedding_model", "text-embedding-3-small")
 	topK := int32(s.settings.GetIntOr(ctx, tenantID, "rag.retrieval_top_k", 5)) // #nosec G115 -- bounded by settings validation (1-50)
+	// Defense-in-depth: clamp topK to [1, 50] even if the catalog validation
+	// is bypassed (e.g. direct DB write). LIMIT 0 in PostgreSQL returns no
+	// rows, silently breaking RAG; LIMIT -1 returns all rows (unbounded).
+	if topK < 1 {
+		topK = 1
+	} else if topK > 50 {
+		topK = 50
+	}
 
 	queryVec, err := s.embedder.GenerateEmbedding(ctx, query, model)
 	if err != nil {

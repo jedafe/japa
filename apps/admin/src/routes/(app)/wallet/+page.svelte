@@ -13,7 +13,7 @@
 	import { SlideOver } from '$lib/components/ui/slide-over';
 	import { Select } from '$lib/components/ui/select';
 	import type { ActionItem, BulkAction } from '$lib/components/ui/data-table';
-	import { Wallet, DollarSign, Download, Plus, Settings, Trash2, X, Pencil, ToggleLeft } from 'lucide-svelte';
+	import { Wallet, DollarSign, Plus, Settings, Trash2, X, Pencil, ToggleLeft } from 'lucide-svelte';
 
 	type ActivityRule = {
 		id: string;
@@ -365,9 +365,6 @@
 <PageHeader
 	title={t('app.wallet.title', 'Wallet Management')}
 	description={t('app.wallet.description', 'Configure activity point rules, wallet settings, and user balance adjustments')}
-	actions={[
-		{ label: t('app.wallet.export', 'Export'), icon: Download, variant: 'outline' }
-	]}
 />
 
 <div class="space-y-6">

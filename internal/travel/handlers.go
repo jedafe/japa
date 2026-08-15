@@ -24,6 +24,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -90,6 +91,26 @@ func atoiDefault(s string, fallback int) int {
 	return v
 }
 
+// validateDate checks that a date string is in YYYY-MM-DD format and is a
+// valid calendar date. Returns true when valid.
+func validateDate(s string) bool {
+	if s == "" {
+		return false
+	}
+	if _, err := time.Parse("2006-01-02", s); err != nil {
+		return false
+	}
+	return true
+}
+
+// validatePositiveInt returns the int if it is >= min, otherwise fallback.
+func validatePositiveInt(v, fallback, min int) int {
+	if v < min {
+		return fallback
+	}
+	return v
+}
+
 // writeConflictIfDuplicate maps a pgx unique-violation (SQLSTATE 23505) to a
 // 409 duplicate_provider error envelope (Rule 5). Returns true when the error
 // was handled (response already written); false when the caller should handle
@@ -123,14 +144,24 @@ func (h *Handlers) HandleSearchFlights(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_params", "origin, dest, and date are required")
 		return
 	}
+	if !validateDate(date) {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_date", "date must be in YYYY-MM-DD format")
+		return
+	}
+
+	returnDate := r.URL.Query().Get("return_date")
+	if returnDate != "" && !validateDate(returnDate) {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_return_date", "return_date must be in YYYY-MM-DD format")
+		return
+	}
 
 	params := FlightSearchParams{
 		Origin:      origin,
 		Destination: dest,
 		Date:        date,
-		Adults:      atoiDefault(r.URL.Query().Get("adults"), 1),
-		Children:    atoiDefault(r.URL.Query().Get("children"), 0),
-		ReturnDate:  r.URL.Query().Get("return_date"),
+		Adults:      validatePositiveInt(atoiDefault(r.URL.Query().Get("adults"), 1), 1, 1),
+		Children:    validatePositiveInt(atoiDefault(r.URL.Query().Get("children"), 0), 0, 0),
+		ReturnDate:  returnDate,
 		CabinClass:  r.URL.Query().Get("cabin_class"),
 	}
 
@@ -171,13 +202,21 @@ func (h *Handlers) HandleSearchHotels(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_params", "dest, checkin, and checkout are required")
 		return
 	}
+	if !validateDate(checkin) {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_checkin", "checkin must be in YYYY-MM-DD format")
+		return
+	}
+	if !validateDate(checkout) {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_checkout", "checkout must be in YYYY-MM-DD format")
+		return
+	}
 
 	params := HotelSearchParams{
 		Destination: dest,
 		CheckIn:     checkin,
 		CheckOut:    checkout,
-		Guests:      atoiDefault(r.URL.Query().Get("guests"), 1),
-		Rooms:       atoiDefault(r.URL.Query().Get("rooms"), 1),
+		Guests:      validatePositiveInt(atoiDefault(r.URL.Query().Get("guests"), 1), 1, 1),
+		Rooms:       validatePositiveInt(atoiDefault(r.URL.Query().Get("rooms"), 1), 1, 1),
 	}
 
 	if h.service == nil {
@@ -206,7 +245,8 @@ func (h *Handlers) HandleSearchHotels(w http.ResponseWriter, r *http.Request) {
 // ---------------------------------------------------------------------------
 
 // HandleAdminListProviders handles GET /api/v1/admin/travel/providers — list
-// configured providers. Query: active_only, provider_type.
+// configured providers. Query: is_active (tri-state: true/false/absent=all),
+// provider_type, q (ILIKE search on name/slug).
 func (h *Handlers) HandleAdminListProviders(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
@@ -217,18 +257,24 @@ func (h *Handlers) HandleAdminListProviders(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	activeOnly := false
-	if a := r.URL.Query().Get("active_only"); a == "true" {
-		activeOnly = true
+	// Tri-state is_active filter: "true" = only active, "false" = only
+	// inactive, absent = all statuses. Also accept the legacy "active_only"
+	// param for backward compatibility (active_only=true → is_active=true).
+	isActiveFilter := r.URL.Query().Get("is_active")
+	if isActiveFilter == "" {
+		if a := r.URL.Query().Get("active_only"); a == "true" {
+			isActiveFilter = "true"
+		}
 	}
 	providerType := r.URL.Query().Get("provider_type")
+	q := r.URL.Query().Get("q")
 
 	if h.service == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "travel_unavailable", "Travel service not configured")
 		return
 	}
 
-	providers, err := h.service.ListProviders(r.Context(), tenantID, activeOnly, providerType)
+	providers, err := h.service.ListProviders(r.Context(), tenantID, isActiveFilter, providerType, q)
 	if err != nil {
 		slog.Error("travel: admin list providers failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "providers_failed", "Failed to list providers")

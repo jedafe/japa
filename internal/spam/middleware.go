@@ -138,7 +138,7 @@ var CensorResultKey = contextKey{"censor_result"}
 // patterns the middleware rewrites the request body with the cleaned text so
 // the downstream handler persists the censored version (BUG-012). For
 // action=flag patterns the middleware logs the flag and stores the result in
-// context; the spam pipeline's Flagged path (which sets StatusPending) is the
+// context; the spam pipeline's Flagged path (which sets StatusInReview) is the
 // canonical moderation-queue entry point, so the middleware does not enqueue a
 // separate moderation task here.
 func CensorMiddleware(database *db.DB, rdb *valkey.Client) func(http.Handler) http.Handler {

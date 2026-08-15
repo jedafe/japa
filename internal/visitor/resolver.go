@@ -180,17 +180,21 @@ func (res *Resolver) resolve(r *http.Request) VisitorContext {
 		vc.UserID = user.UserID.String()
 	}
 
-	// Killswitch (ADR-064): when geo_personalization.enabled is false,
-	// short-circuit to the system default for every request. The ?geo=
-	// override is still honored (it's an explicit user action, not
+	// Killswitch (ADR-064 §6): when geo_personalization.enabled is false,
+	// "all surfaces fall back to global ranking (current behavior)." The
+	// ?geo= override is still honored (it's an explicit user action, not
 	// personalization), but preference/archetype/GeoIP sources are skipped.
+	// ContentCountry is left empty (not "NG") so downstream consumers
+	// (trending, recommendations, search) treat it as global — empty/NULL
+	// in the trending SQL means "no geo filter", while "NG" would filter
+	// to Nigeria only (BUG-VIS-001).
 	if res.settings != nil && t != nil {
 		if !res.settings.GetBoolOr(r.Context(), t.ID, "geo_personalization.enabled", true) {
 			if q := normalizeCountry(r.URL.Query().Get("geo")); q != "" {
 				vc.ContentCountry = q
 				vc.Source = "query"
 			} else {
-				vc.ContentCountry = "NG"
+				vc.ContentCountry = ""
 				vc.Source = "default"
 			}
 			return vc
@@ -309,9 +313,11 @@ func (res *Resolver) enrichArchetype(ctx context.Context, vc *VisitorContext, us
 				if geoSpace.CountryGeoCode != nil && *geoSpace.CountryGeoCode != "" {
 					vc.CurrentCountry = strings.ToUpper(*geoSpace.CountryGeoCode)
 				}
-				// Set CurrentCity from the Space name when it's a city-level space.
-				if geoSpace.CityName != nil && *geoSpace.CityName != "" {
-					vc.CurrentCity = *geoSpace.CityName
+				// Set CurrentCity from the Space name when it's a city-level
+				// space (BUG-VIS-002: the SQL query only returns city_name for
+				// city-level spaces; state/country names are NOT treated as cities).
+				if geoSpace.CityName != "" {
+					vc.CurrentCity = geoSpace.CityName
 				}
 			}
 		}

@@ -102,16 +102,31 @@ type UpdateMilestoneInput struct {
 	Notes         *string `json:"notes"`
 }
 
+// Notifier is the interface used to dispatch visa-timeline notifications
+// (the weekly visa_timeline:prompt_update nudge, §83). Satisfied by
+// *notifications.Service; declared here to avoid an import cycle. Mirrors
+// the planninggroups.Notifier pattern (§82).
+// Ref: japaconnect-engineering/sections/83-visa-timeline-tracker.md
+type Notifier interface {
+	CreateNotification(ctx context.Context, tenantID, recipientID pgtype.UUID, nType, actorType string, actorID pgtype.UUID, subjectType string, subjectID pgtype.UUID, title, body, actionURL string) error
+}
+
 // Service holds the business logic for the Visa Timeline Tracker.
 type Service struct {
 	store    *Store
 	settings *config.Settings
+	notifier Notifier
 }
 
 // NewService creates a visa-timeline service.
 func NewService(store *Store, settings *config.Settings) *Service {
 	return &Service{store: store, settings: settings}
 }
+
+// WithNotifier attaches the notification dispatcher used by the weekly
+// visa_timeline:prompt_update nudge (§83). Mirrors the
+// planninggroups.WithNotifier pattern (§82).
+func (s *Service) WithNotifier(n Notifier) *Service { s.notifier = n; return s }
 
 // Enabled reads the visa_timeline.enabled system_setting toggle (§83 feature
 // flag).
@@ -312,11 +327,13 @@ func (s *Service) AddMilestone(ctx context.Context, timelineID, tenantID, userID
 			// New milestone is later-stage but dated before an
 			// earlier-stage existing milestone → implausible.
 			if newOrder > emOrder && occurredAt.Time.Before(em.OccurredAt.Time) {
+				s.flagImplausible(ctx, tenantID, userID, timelineID, input.MilestoneType, occurredAt)
 				return MilestoneDTO{}, ErrImplausibleSequence
 			}
 			// New milestone is earlier-stage but dated after a
 			// later-stage existing milestone → implausible.
 			if newOrder < emOrder && occurredAt.Time.After(em.OccurredAt.Time) {
+				s.flagImplausible(ctx, tenantID, userID, timelineID, input.MilestoneType, occurredAt)
 				return MilestoneDTO{}, ErrImplausibleSequence
 			}
 		}
@@ -332,6 +349,17 @@ func (s *Service) AddMilestone(ctx context.Context, timelineID, tenantID, userID
 		return MilestoneDTO{}, fmt.Errorf("visatimeline: add milestone: %w", err)
 	}
 	return milestoneToDTO(m), nil
+}
+
+// flagImplausible records an audit_logs entry for an implausible milestone
+// sequence attempt (§83 Privacy & Anti-Gaming) so moderators can review
+// flagged attempts. Failures are logged but do not change the rejection
+// outcome — the milestone is rejected regardless.
+func (s *Service) flagImplausible(ctx context.Context, tenantID, userID, timelineID pgtype.UUID, milestoneType string, occurredAt pgtype.Timestamptz) {
+	if err := s.store.FlagImplausibleSequence(ctx, tenantID, userID, timelineID, milestoneType, occurredAt); err != nil {
+		slog.WarnContext(ctx, "visatimeline: failed to record implausible-sequence flag",
+			"error", err, "timeline_id", timelineID, "user_id", userID)
+	}
 }
 
 // UpdateMilestone edits a milestone belonging to a timeline owned by the
@@ -566,17 +594,47 @@ func (s *Service) RefreshStats(ctx context.Context) (int64, error) {
 // visa_timeline:prompt_update Asynq task (§83, ADR-091).
 // Implements worker.VisaTimelineProcessor.
 //
-// The actual notification dispatch is delegated to the notification service
-// when wired; until then the count is logged so the task is not a silent
-// no-op (mirroring the planning_group:checkin_reminder pattern).
+// Each eligible owner receives a visa_timeline.prompt_update notification
+// with an action URL back to /visa-timelines/my. Mirrors the
+// planning_group:checkin_reminder dispatch pattern (§82). If no notifier is
+// wired, the method logs a warning and returns 0 so the task does not
+// silently claim success.
 func (s *Service) PromptUpdate(ctx context.Context) (int64, error) {
 	owners, err := s.store.InProgressTimelineOwners(ctx)
 	if err != nil {
 		return 0, fmt.Errorf("visatimeline: prompt update: %w", err)
 	}
-	if len(owners) > 0 {
-		slog.InfoContext(ctx, "visatimeline: prompt update queued",
-			"count", len(owners))
+	if len(owners) == 0 {
+		return 0, nil
 	}
-	return int64(len(owners)), nil
+
+	if s.notifier == nil {
+		slog.WarnContext(ctx, "visatimeline: prompt update notifier not wired",
+			"eligible", len(owners))
+		return 0, nil
+	}
+
+	var sent int64
+	zero := pgtype.UUID{}
+	title := "Update your visa timeline"
+	body := "Your visa application timeline is still in progress. Add the latest milestone to help the community and keep your record up to date."
+
+	for _, o := range owners {
+		if err := s.notifier.CreateNotification(
+			ctx, o.TenantID, o.UserID,
+			"visa_timeline.prompt_update", "system", zero,
+			"visa_timeline", zero,
+			title, body,
+			"/visa-timelines/my",
+		); err != nil {
+			slog.WarnContext(ctx, "visatimeline: prompt update notification failed",
+				"error", err, "user_id", o.UserID)
+			continue
+		}
+		sent++
+	}
+
+	slog.InfoContext(ctx, "visatimeline: prompt updates dispatched",
+		"sent", sent, "eligible", len(owners))
+	return sent, nil
 }

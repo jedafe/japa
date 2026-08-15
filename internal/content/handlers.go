@@ -707,6 +707,25 @@ func (h *Handlers) CreateContent(w http.ResponseWriter, r *http.Request) {
 		input.Visibility = VisibilityPublic
 	}
 
+	// Validate enum values against the §14 defined sets. The contents table
+	// has no DB-level CHECK constraint on these columns, so handler-level
+	// validation is the only guard against invalid values being stored.
+	if !IsValidContentType(input.ContentType) {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_content_type",
+			fmt.Sprintf("Invalid content_type: %q", input.ContentType))
+		return
+	}
+	if !IsValidStatus(input.Status) {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_status",
+			fmt.Sprintf("Invalid status: %q", input.Status))
+		return
+	}
+	if !IsValidVisibility(input.Visibility) {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_visibility",
+			fmt.Sprintf("Invalid visibility: %q", input.Visibility))
+		return
+	}
+
 	// Derive plain-text body from body_html when the client sends only
 	// body_html (the Tiptap editor always produces HTML, never plain text).
 	// Without this, body is always "" → ComputeContentHash("") is the same
@@ -832,7 +851,7 @@ func (h *Handlers) CreateContent(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusForbidden, "content_blocked", "Content blocked by safety filters")
 			return
 		} else if spamResult.Flagged {
-			createInput.Status = StatusPending // hold for moderation review
+			createInput.Status = StatusInReview // hold for moderation review
 		}
 	}
 
@@ -876,7 +895,19 @@ func (h *Handlers) CreateContent(w http.ResponseWriter, r *http.Request) {
 
 	// Enqueue feed fan-out for published content (BL-005). Scheduled posts
 	// are fanned out by the scheduled-publish handler when they go live.
+	// When content is created directly as published (bypassing the dedicated
+	// POST /content/{id}/publish flow), we must also: (1) ensure a
+	// content_scores row exists — feed queries INNER JOIN content_scores so
+	// a missing row makes the content invisible (§32); (2) enqueue the
+	// affiliate link scan (§55); (3) emit the content.published webhook
+	// (the store only emits content.created on insert; content.published is
+	// emitted by UpdateContentStatus, which the direct-publish path skips).
 	if content.Status == StatusPublished {
+		if err := h.Service.EnsureContentScore(r.Context(), content.ID); err != nil {
+			slog.Warn("content: failed to ensure content_scores row on direct publish",
+				"content_id", content.ID.String(), "error", err)
+		}
+		h.enqueueAffiliateLinkScan(content.ID, tenantID)
 		h.enqueueFeedFanOut(r.Context(), content.ID, tenantID, user.UserID, content.SpaceID, content.ContentType)
 		// RSS-013: regenerate RSS feeds so new content appears without
 		// waiting for the hourly cron.
@@ -1121,6 +1152,21 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+
+	// Validate enum values when provided (§14). The contents table has no
+	// DB-level CHECK constraint on these columns, so handler-level validation
+	// is the only guard against invalid values being stored. Empty values are
+	// allowed here because UpdateContent only updates fields that are set.
+	if input.Status != "" && !IsValidStatus(input.Status) {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_status",
+			fmt.Sprintf("Invalid status: %q", input.Status))
+		return
+	}
+	if input.Visibility != "" && !IsValidVisibility(input.Visibility) {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_visibility",
+			fmt.Sprintf("Invalid visibility: %q", input.Visibility))
 		return
 	}
 
@@ -2380,11 +2426,11 @@ func (h *Handlers) ListContentTypes(w http.ResponseWriter, r *http.Request) {
 	// contents with content_type='question'. The seo/trending packages
 	// retain defensive handling for legacy "question" rows.
 	types := []map[string]any{
-		{"value": "discussion", "label": "Discussion"},
-		{"value": "blog_post", "label": "Blog Post"},
-		{"value": "page", "label": "Page"},
-		{"value": "comparison", "label": "Comparison"},
-		{"value": "guide", "label": "Guide", "has_category": true, "categories": guideCategories},
+		{"value": TypeDiscussion, "label": "Discussion"},
+		{"value": TypeBlogPost, "label": "Blog Post"},
+		{"value": TypePage, "label": "Page"},
+		{"value": TypeComparison, "label": "Comparison"},
+		{"value": TypeGuide, "label": "Guide", "has_category": true, "categories": guideCategories},
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": types})

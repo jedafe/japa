@@ -199,11 +199,14 @@ type CvFormatterProcessor interface {
 // ADR-092). GenerateEdition assembles a new digest edition from platform
 // analytics (top threads, new members, events, featured story, poll) and
 // stores it in draft/review status for the 1-hour admin review window.
+// AutoPublishDueEditions is the hourly cron that publishes editions whose
+// review window has elapsed and enqueues digest:send_email per edition.
 // SendEditionEmail sends the published digest to members with the digest
 // notification preference enabled, reusing §62 Newsletter infrastructure.
 // Ref: japaconnect-engineering/sections/84-community-digest-widget.md
 type DigestProcessor interface {
 	GenerateEdition(ctx context.Context, tenantID, spaceID pgtype.UUID) error
+	AutoPublishDueEditions(ctx context.Context) (int64, error)
 	SendEditionEmail(ctx context.Context, editionID, tenantID pgtype.UUID) error
 }
 
@@ -381,12 +384,15 @@ const (
 	// §84 Community Digest Widget (ADR-092).
 	// digest:generate runs weekly on Sunday 22:00 UTC on the low queue,
 	// assembling a new digest edition from platform analytics (top threads,
-	// new members, events, featured story, poll). digest:send_email runs
-	// on the default queue when an edition is published, sending the digest
-	// to members with the digest notification preference enabled (reuses
-	// §62 Newsletter infrastructure).
-	TypeDigestGenerate  = "digest:generate"
-	TypeDigestSendEmail = "digest:send_email"
+	// new members, events, featured story, poll). digest:auto_publish runs
+	// hourly on the low queue, publishing draft/review editions whose 1-hour
+	// admin review window has elapsed and enqueuing digest:send_email per
+	// edition. digest:send_email runs on the default queue when an edition
+	// is published, sending the digest to members with the digest
+	// notification preference enabled (reuses §62 Newsletter infrastructure).
+	TypeDigestGenerate    = "digest:generate"
+	TypeDigestAutoPublish = "digest:auto_publish"
+	TypeDigestSendEmail   = "digest:send_email"
 
 	// §87 Japa Stage Progress Profiles (ADR-095).
 	// japa_stage:recommend runs on the default queue after a successful
@@ -1364,6 +1370,25 @@ func HandleDigestGenerate(ctx context.Context, t *asynq.Task) error {
 	}
 	slog.Info("task:digest:generate: edition assembled",
 		"tenant_id", p.TenantID, "space_id", p.SpaceID)
+	return nil
+}
+
+// HandleDigestAutoPublish is the hourly cron body for §84: it publishes every
+// draft/review digest edition whose 1-hour admin review window has elapsed
+// (scheduled_for <= now()) and enqueues digest:send_email per edition. The
+// processor is nil-safe (skips when no DigestProcessor is registered). The
+// task carries no payload — it sweeps all tenants in a single UPDATE.
+// Ref: japaconnect-engineering/sections/84-community-digest-widget.md
+func HandleDigestAutoPublish(ctx context.Context, t *asynq.Task) error {
+	if digestProcessor == nil {
+		slog.Warn("task:digest:auto_publish: no processor registered, skipping")
+		return nil
+	}
+	published, err := digestProcessor.AutoPublishDueEditions(ctx)
+	if err != nil {
+		return fmt.Errorf("task:digest:auto_publish: %w", err)
+	}
+	slog.Info("task:digest:auto_publish: complete", "published", published)
 	return nil
 }
 

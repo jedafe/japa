@@ -1,12 +1,19 @@
 <script lang="ts">
 	import { aiAdminApi, type AiTool, type AiUsageSummary } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
+	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { Modal } from '$lib/components/ui/modal';
 	import { SlideOver } from '$lib/components/ui/slide-over';
 	import { Button } from '$lib/components/ui/button';
 	import { DataTable } from '$lib/components/ui/data-table';
 	import type { ActionItem } from '$lib/components/ui/data-table';
-	import { Pencil, Trash2, Loader2 } from 'lucide-svelte';
+	import { Pencil, Trash2, Loader2, AlertCircle } from 'lucide-svelte';
+
+	// Backend admin AI tools routes (GET/PUT/DELETE /admin/ai/tools*) are
+	// gated by ai.tools.manage (server.go:4002-4011). The frontend must
+	// match so users without the permission see an access-denied message
+	// instead of triggering 403 API calls.
+	const canManage = $derived(hasPermission('ai.tools.manage'));
 
 	let tools = $state<AiTool[]>([]);
 	let usage = $state<AiUsageSummary | null>(null);
@@ -141,6 +148,12 @@
 <h1 class="mb-1 text-2xl font-bold tracking-tight">{t('ai.tools_title')}</h1>
 <p class="mb-6 text-sm" style="color: var(--color-muted)">{t('ai.tools_description')}</p>
 
+{#if !canManage}
+	<div class="flex items-center gap-2 rounded-md border p-3 text-sm" style="border-color: var(--color-danger); color: var(--color-danger)">
+		<AlertCircle class="size-4" />
+		{t('ai.tools_no_permission', 'You do not have permission to manage AI tools.')}
+	</div>
+{:else}
 <!-- Tabs -->
 <div class="mb-6 flex gap-1 rounded-lg border p-1" style="border-color: var(--color-border)">
 	<button
@@ -298,5 +311,6 @@
 			</Button>
 		</div>
 	</Modal>
+{/if}
 {/if}
 

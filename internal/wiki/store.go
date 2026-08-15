@@ -13,13 +13,17 @@ package wiki
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 
+	contentpkg "github.com/jedafe/japa/internal/content"
 	"github.com/jedafe/japa/internal/db"
+	"github.com/jedafe/japa/internal/rag"
 )
 
 // Store is the data-access layer for wiki_pages and wiki_revisions.
@@ -272,8 +276,16 @@ LIMIT $3 OFFSET $4
 	return out, total, nil
 }
 
+// ErrDuplicateContent is returned when a submitted revision has the same
+// normalized content_hash as an existing revision for the same page (Rule 12).
+// Callers should map this to a 409 duplicate_content API error.
+var ErrDuplicateContent = errors.New("wiki: duplicate content")
+
 // SubmitRevision inserts a new pending revision for a wiki page.
-func (s *Store) SubmitRevision(ctx context.Context, tenantID, pageID, userID pgtype.UUID, content []byte, summary string, aiGenerated bool, aiModel, aiPromptHash string) (pgtype.UUID, error) {
+// BUG-002: computes content_hash (Rule 12) and rejects duplicate no-op edits
+// with ErrDuplicateContent when the unique index idx_wiki_revisions_page_hash
+// conflicts.
+func (s *Store) SubmitRevision(ctx context.Context, tenantID, pageID, userID pgtype.UUID, body []byte, summary string, aiGenerated bool, aiModel, aiPromptHash string) (pgtype.UUID, error) {
 	var revID pgtype.UUID
 	var summaryPtr *string
 	if summary != "" {
@@ -287,13 +299,24 @@ func (s *Store) SubmitRevision(ctx context.Context, tenantID, pageID, userID pgt
 		aiPromptHashPtr = &aiPromptHash
 	}
 
+	// BUG-002: compute content_hash per Rule 12. Extract plain text from the
+	// TipTap JSON body, then hash with the standard content.ComputeContentHash.
+	// Ref: japaconnect-engineering/AGENTS.md Rule 12
+	plainText := rag.ExtractPlainText(string(body))
+	contentHash := contentpkg.ComputeContentHash(plainText)
+
 	err := s.pool.Writer.QueryRow(ctx, `
 INSERT INTO wiki_revisions (tenant_id, wiki_page_id, content, summary, status,
-    submitted_by, ai_generated, ai_model, ai_prompt_hash)
-VALUES ($1, $2, $3, $4, 'pending', $5, $6, $7, $8)
+    submitted_by, ai_generated, ai_model, ai_prompt_hash, content_hash)
+VALUES ($1, $2, $3, $4, 'pending', $5, $6, $7, $8, $9)
 RETURNING id
-`, tenantID, pageID, content, summaryPtr, userID, aiGenerated, aiModelPtr, aiPromptHashPtr).Scan(&revID)
+`, tenantID, pageID, body, summaryPtr, userID, aiGenerated, aiModelPtr, aiPromptHashPtr, contentHash).Scan(&revID)
 	if err != nil {
+		// Map unique-violation on idx_wiki_revisions_page_hash to ErrDuplicateContent.
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" && strings.Contains(pgErr.ConstraintName, "wiki_revisions_page_hash") {
+			return pgtype.UUID{}, ErrDuplicateContent
+		}
 		return pgtype.UUID{}, fmt.Errorf("wiki: submit revision: %w", err)
 	}
 	return revID, nil
@@ -500,6 +523,12 @@ func (s *Store) AdminListPages(ctx context.Context, f AdminListPagesFilter) ([]A
 		offset = 0
 	}
 
+	// BUG-021: build countArgs explicitly from the filter args (before
+	// limit/offset are appended) rather than slicing args[:len-2], which
+	// was brittle if the query builder changed.
+	countArgs := make([]any, len(args))
+	copy(countArgs, args)
+
 	listQ := fmt.Sprintf(`
 SELECT wp.id, wp.tenant_id, wp.space_id, wp.slug, wp.title, wp.category,
        wp.is_active, wp.is_featured, wp.is_locked, wp.created_by,
@@ -549,7 +578,6 @@ LIMIT $%d OFFSET $%d
 	}
 
 	countQ := fmt.Sprintf(`SELECT COUNT(*) FROM wiki_pages wp WHERE %s`, whereClause)
-	countArgs := args[:len(args)-2]
 	var total int64
 	if err := s.pool.Reader.QueryRow(ctx, countQ, countArgs...).Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("wiki: admin count pages: %w", err)

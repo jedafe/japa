@@ -817,8 +817,9 @@ const getUserCurrentGeoSpace = `-- name: GetUserCurrentGeoSpace :one
 SELECT
     u.current_geo_space_id,
     city.id AS city_id,
-    city.name AS city_name,
+    CASE WHEN city.level = 'city' THEN city.name END::text AS city_name,
     city.geo_code AS city_geo_code,
+    city.name AS space_name,
     country.id AS country_id,
     country.name AS country_name,
     country.geo_code AS country_geo_code
@@ -843,8 +844,9 @@ type GetUserCurrentGeoSpaceParams struct {
 type GetUserCurrentGeoSpaceRow struct {
 	CurrentGeoSpaceID pgtype.UUID `json:"current_geo_space_id"`
 	CityID            pgtype.UUID `json:"city_id"`
-	CityName          *string     `json:"city_name"`
+	CityName          string      `json:"city_name"`
 	CityGeoCode       *string     `json:"city_geo_code"`
+	SpaceName         *string     `json:"space_name"`
 	CountryID         pgtype.UUID `json:"country_id"`
 	CountryName       *string     `json:"country_name"`
 	CountryGeoCode    *string     `json:"country_geo_code"`
@@ -854,6 +856,10 @@ type GetUserCurrentGeoSpaceRow struct {
 // hierarchy (city → state → country) to extract geo_code and names for
 // VisitorContext city-level personalization. Returns the city-level space,
 // its parent (state), and the country-level space's geo_code in one round-trip.
+// BUG-VIS-002: city_name is only populated when the space is city-level
+// (CASE WHEN city.level = 'city'). space_name is always the space's name
+// regardless of level, used by GET /me/location to display the user's
+// location even when it's a state or country (BUG-VIS-003).
 func (q *Queries) GetUserCurrentGeoSpace(ctx context.Context, arg GetUserCurrentGeoSpaceParams) (GetUserCurrentGeoSpaceRow, error) {
 	row := q.db.QueryRow(ctx, getUserCurrentGeoSpace, arg.UserID, arg.TenantID)
 	var i GetUserCurrentGeoSpaceRow
@@ -862,6 +868,7 @@ func (q *Queries) GetUserCurrentGeoSpace(ctx context.Context, arg GetUserCurrent
 		&i.CityID,
 		&i.CityName,
 		&i.CityGeoCode,
+		&i.SpaceName,
 		&i.CountryID,
 		&i.CountryName,
 		&i.CountryGeoCode,
@@ -1105,6 +1112,37 @@ func (q *Queries) GetUserPreferences(ctx context.Context, arg GetUserPreferences
 	return i, err
 }
 
+const getUserPreferencesForUpdate = `-- name: GetUserPreferencesForUpdate :one
+SELECT id, tenant_id, user_id, dark_mode, language, created_at, updated_at
+FROM user_preferences
+WHERE tenant_id = $1 AND user_id = $2
+FOR UPDATE
+`
+
+type GetUserPreferencesForUpdateParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	UserID   pgtype.UUID `json:"user_id"`
+}
+
+// Row-locks the user_preferences row for the read-merge-upsert pattern in
+// UpdatePreferences (BUG-003). The FOR UPDATE lock is held until the
+// transaction commits or rolls back, preventing concurrent preference
+// edits from racing on the merge step.
+func (q *Queries) GetUserPreferencesForUpdate(ctx context.Context, arg GetUserPreferencesForUpdateParams) (UserPreference, error) {
+	row := q.db.QueryRow(ctx, getUserPreferencesForUpdate, arg.TenantID, arg.UserID)
+	var i UserPreference
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.UserID,
+		&i.DarkMode,
+		&i.Language,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const getUserPrivacySettings = `-- name: GetUserPrivacySettings :one
 SELECT user_id, tenant_id, dm_privacy, profile_visibility, search_indexable,
        show_online_status, show_activity, show_points_publicly, created_at, updated_at
@@ -1134,6 +1172,54 @@ type GetUserPrivacySettingsRow struct {
 func (q *Queries) GetUserPrivacySettings(ctx context.Context, arg GetUserPrivacySettingsParams) (GetUserPrivacySettingsRow, error) {
 	row := q.db.QueryRow(ctx, getUserPrivacySettings, arg.TenantID, arg.UserID)
 	var i GetUserPrivacySettingsRow
+	err := row.Scan(
+		&i.UserID,
+		&i.TenantID,
+		&i.DmPrivacy,
+		&i.ProfileVisibility,
+		&i.SearchIndexable,
+		&i.ShowOnlineStatus,
+		&i.ShowActivity,
+		&i.ShowPointsPublicly,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getUserPrivacySettingsForUpdate = `-- name: GetUserPrivacySettingsForUpdate :one
+SELECT user_id, tenant_id, dm_privacy, profile_visibility, search_indexable,
+       show_online_status, show_activity, show_points_publicly, created_at, updated_at
+FROM user_privacy_settings
+WHERE tenant_id = $1 AND user_id = $2
+FOR UPDATE
+`
+
+type GetUserPrivacySettingsForUpdateParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	UserID   pgtype.UUID `json:"user_id"`
+}
+
+type GetUserPrivacySettingsForUpdateRow struct {
+	UserID             pgtype.UUID        `json:"user_id"`
+	TenantID           pgtype.UUID        `json:"tenant_id"`
+	DmPrivacy          string             `json:"dm_privacy"`
+	ProfileVisibility  string             `json:"profile_visibility"`
+	SearchIndexable    bool               `json:"search_indexable"`
+	ShowOnlineStatus   bool               `json:"show_online_status"`
+	ShowActivity       bool               `json:"show_activity"`
+	ShowPointsPublicly bool               `json:"show_points_publicly"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+}
+
+// Row-locks the user_privacy_settings row for the read-merge-upsert pattern
+// in UpdatePrivacySettings (BUG-004). The FOR UPDATE lock is held until
+// the transaction commits or rolls back, preventing concurrent privacy
+// edits from racing on the merge step.
+func (q *Queries) GetUserPrivacySettingsForUpdate(ctx context.Context, arg GetUserPrivacySettingsForUpdateParams) (GetUserPrivacySettingsForUpdateRow, error) {
+	row := q.db.QueryRow(ctx, getUserPrivacySettingsForUpdate, arg.TenantID, arg.UserID)
+	var i GetUserPrivacySettingsForUpdateRow
 	err := row.Scan(
 		&i.UserID,
 		&i.TenantID,
@@ -1223,6 +1309,58 @@ func (q *Queries) GetUserProfile(ctx context.Context, arg GetUserProfileParams) 
 		&i.FollowerCount,
 		&i.LastLoginAt,
 		&i.UserGroupName,
+	)
+	return i, err
+}
+
+const getUserProfileForUpdate = `-- name: GetUserProfileForUpdate :one
+SELECT id, tenant_id, user_id, display_name, avatar_url, avatar_media_id,
+       header_media_id, bio, timezone, cover_url, created_at, updated_at
+FROM user_profiles
+WHERE tenant_id = $1 AND user_id = $2
+FOR UPDATE
+`
+
+type GetUserProfileForUpdateParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	UserID   pgtype.UUID `json:"user_id"`
+}
+
+type GetUserProfileForUpdateRow struct {
+	ID            pgtype.UUID        `json:"id"`
+	TenantID      pgtype.UUID        `json:"tenant_id"`
+	UserID        pgtype.UUID        `json:"user_id"`
+	DisplayName   *string            `json:"display_name"`
+	AvatarUrl     *string            `json:"avatar_url"`
+	AvatarMediaID pgtype.UUID        `json:"avatar_media_id"`
+	HeaderMediaID pgtype.UUID        `json:"header_media_id"`
+	Bio           *string            `json:"bio"`
+	Timezone      *string            `json:"timezone"`
+	CoverUrl      *string            `json:"cover_url"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+}
+
+// Row-locks the user_profiles row for the read-merge-upsert pattern in
+// UpdateProfile (BUG-002). The FOR UPDATE lock is held until the
+// transaction commits or rolls back, preventing concurrent profile edits
+// from racing on the merge step.
+func (q *Queries) GetUserProfileForUpdate(ctx context.Context, arg GetUserProfileForUpdateParams) (GetUserProfileForUpdateRow, error) {
+	row := q.db.QueryRow(ctx, getUserProfileForUpdate, arg.TenantID, arg.UserID)
+	var i GetUserProfileForUpdateRow
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.UserID,
+		&i.DisplayName,
+		&i.AvatarUrl,
+		&i.AvatarMediaID,
+		&i.HeaderMediaID,
+		&i.Bio,
+		&i.Timezone,
+		&i.CoverUrl,
+		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }

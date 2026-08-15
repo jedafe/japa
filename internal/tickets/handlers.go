@@ -20,6 +20,8 @@ import (
 	"github.com/jedafe/japa/internal/auth"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/tenant"
+
+	"github.com/jedafe/japa/internal/db/gen"
 )
 
 const defaultPageSize int32 = 20
@@ -111,6 +113,32 @@ func parsePageSizeOffset(r *http.Request) int32 {
 	return int32(n) //nolint:gosec // G109: bounded by MaxInt32 check
 }
 
+// ticketRowToTicket converts a GetTicketByIDRow (which includes the joined
+// type_name/type_slug) to a gen.Ticket for handlers that need to return the
+// base ticket shape after a partial update.
+func ticketRowToTicket(r gen.GetTicketByIDRow) gen.Ticket {
+	return gen.Ticket{
+		ID:              r.ID,
+		TenantID:        r.TenantID,
+		TypeID:          r.TypeID,
+		Subject:         r.Subject,
+		Description:     r.Description,
+		Status:          r.Status,
+		Priority:        r.Priority,
+		SubmitterUserID: r.SubmitterUserID,
+		SubmitterEmail:  r.SubmitterEmail,
+		AssignedTo:      r.AssignedTo,
+		AssignedGroupID: r.AssignedGroupID,
+		ResolutionNote:  r.ResolutionNote,
+		FieldValues:     r.FieldValues,
+		SlaBreachAt:     r.SlaBreachAt,
+		ResolvedAt:      r.ResolvedAt,
+		ClosedAt:        r.ClosedAt,
+		CreatedAt:       r.CreatedAt,
+		UpdatedAt:       r.UpdatedAt,
+	}
+}
+
 // ---------------------------------------------------------------------------
 // User Portal Handlers
 // ---------------------------------------------------------------------------
@@ -177,6 +205,7 @@ func (h *Handlers) CreateTicket(w http.ResponseWriter, r *http.Request) {
 }
 
 // ListMyTickets handles GET /api/v1/me/tickets.
+// Ref: japaconnect-engineering/sections/38-ticket-system.md (GET /me/tickets ?status=)
 func (h *Handlers) ListMyTickets(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
 	if !ok {
@@ -190,8 +219,9 @@ func (h *Handlers) ListMyTickets(w http.ResponseWriter, r *http.Request) {
 
 	limit := parsePageSize(r)
 	offset := parsePageSizeOffset(r)
+	status := r.URL.Query().Get("status")
 
-	tickets, err := h.Service.ListTicketsBySubmitter(r.Context(), tenantID, user.UserID, limit, offset)
+	tickets, err := h.Service.ListTicketsBySubmitter(r.Context(), tenantID, user.UserID, status, limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -509,9 +539,17 @@ func (h *Handlers) UpdateTicket(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteError(w, http.StatusBadRequest, "missing_fields", "At least one field to update is required")
 }
 
-// AddInternalNote handles POST /api/v1/admin/tickets/:id/notes.
-func (h *Handlers) AddInternalNote(w http.ResponseWriter, r *http.Request) {
+// AddComment handles POST /api/v1/admin/tickets/:id/comments.
+// Ref: japaconnect-engineering/sections/38-ticket-system.md
+// The /comments endpoint defaults is_internal=false (public comment visible
+// to the submitter). The /notes endpoint (AddInternalNote) defaults to true.
+func (h *Handlers) AddComment(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -519,6 +557,74 @@ func (h *Handlers) AddInternalNote(w http.ResponseWriter, r *http.Request) {
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ticket ID")
+		return
+	}
+
+	// Verify the ticket belongs to the caller's tenant before mutating.
+	if _, err := h.Service.GetTicket(r.Context(), id, tenantID); err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	var input struct {
+		Body       string `json:"body"`
+		IsInternal *bool  `json:"is_internal"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+
+	if input.Body == "" {
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_body", "body is required")
+		return
+	}
+
+	// /comments defaults to public (is_internal=false); /notes defaults to
+	// internal (is_internal=true). The is_internal field overrides the default.
+	isInternal := false
+	if input.IsInternal != nil {
+		isInternal = *input.IsInternal
+	}
+
+	comment, err := h.Service.AddComment(r.Context(), id, AddCommentInput{
+		Body:       input.Body,
+		IsInternal: isInternal,
+		UserID:     user.UserID,
+	})
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": comment})
+}
+
+// AddInternalNote handles POST /api/v1/admin/tickets/:id/notes.
+// Ref: japaconnect-engineering/sections/38-ticket-system.md
+// The /notes endpoint defaults is_internal=true (staff-only, hidden from
+// submitter). The /comments endpoint (AddComment) defaults to false.
+func (h *Handlers) AddInternalNote(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	id, err := parseUUIDParam(r, "id")
+	if err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ticket ID")
+		return
+	}
+
+	// Verify the ticket belongs to the caller's tenant before mutating.
+	if _, err := h.Service.GetTicket(r.Context(), id, tenantID); err != nil {
+		handleServiceError(w, err)
 		return
 	}
 
@@ -557,8 +663,15 @@ func (h *Handlers) AddInternalNote(w http.ResponseWriter, r *http.Request) {
 }
 
 // GetTicketEvents handles GET /api/v1/admin/tickets/:id/events.
+// Ref: japaconnect-engineering/sections/38-ticket-system.md
+// Verifies the ticket belongs to the caller's tenant before listing events.
 func (h *Handlers) GetTicketEvents(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -566,6 +679,12 @@ func (h *Handlers) GetTicketEvents(w http.ResponseWriter, r *http.Request) {
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ticket ID")
+		return
+	}
+
+	// Verify the ticket belongs to the caller's tenant before listing events.
+	if _, err := h.Service.GetTicket(r.Context(), id, tenantID); err != nil {
+		handleServiceError(w, err)
 		return
 	}
 
@@ -678,8 +797,16 @@ func (h *Handlers) ListTicketTypes(w http.ResponseWriter, r *http.Request) {
 }
 
 // AddAttachment handles POST /api/v1/me/tickets/:id/attachments.
+// Ref: japaconnect-engineering/sections/38-ticket-system.md
+// Verifies the ticket belongs to the caller's tenant before adding an
+// attachment.
 func (h *Handlers) AddAttachment(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -687,6 +814,12 @@ func (h *Handlers) AddAttachment(w http.ResponseWriter, r *http.Request) {
 	ticketID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ticket ID")
+		return
+	}
+
+	// Verify the ticket belongs to the caller's tenant before mutating.
+	if _, err := h.Service.GetTicket(r.Context(), ticketID, tenantID); err != nil {
+		handleServiceError(w, err)
 		return
 	}
 
@@ -723,8 +856,16 @@ func (h *Handlers) AddAttachment(w http.ResponseWriter, r *http.Request) {
 }
 
 // ListAttachments handles GET /api/v1/me/tickets/:id/attachments.
+// Ref: japaconnect-engineering/sections/38-ticket-system.md
+// Verifies the ticket belongs to the caller's tenant before listing
+// attachments.
 func (h *Handlers) ListAttachments(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -732,6 +873,12 @@ func (h *Handlers) ListAttachments(w http.ResponseWriter, r *http.Request) {
 	ticketID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ticket ID")
+		return
+	}
+
+	// Verify the ticket belongs to the caller's tenant before listing.
+	if _, err := h.Service.GetTicket(r.Context(), ticketID, tenantID); err != nil {
+		handleServiceError(w, err)
 		return
 	}
 

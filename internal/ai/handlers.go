@@ -1399,14 +1399,24 @@ type Model struct {
 }
 
 // HandleListModels returns the list of available AI models.
-// GET /admin/ai/models. Models are derived from the providers actually
-// registered with the dispatcher (Rule 16: no hardcoded/mock data). A
-// "Default" entry (empty id) is always present for auto-selection.
-func (h *Handlers) HandleListModels(w http.ResponseWriter, _ *http.Request) {
+// GET /admin/ai/models[?category=embedding]. Models are derived from the
+// providers actually registered with the dispatcher (Rule 16: no
+// hardcoded/mock data). A "Default" entry (empty id) is always present for
+// auto-selection. When the optional ?category= query param is supplied, only
+// models from providers registered for that category are returned (e.g.
+// ?category=embedding returns only embedding-capable models).
+func (h *Handlers) HandleListModels(w http.ResponseWriter, r *http.Request) {
 	models := []Model{{ID: "", Label: "Default"}}
 
 	if h.Dispatcher != nil {
-		for _, m := range h.Dispatcher.RegisteredModels() {
+		category := r.URL.Query().Get("category")
+		var registered []Model
+		if category != "" {
+			registered = h.Dispatcher.RegisteredModelsByCategory(category)
+		} else {
+			registered = h.Dispatcher.RegisteredModels()
+		}
+		for _, m := range registered {
 			models = append(models, m)
 		}
 	}

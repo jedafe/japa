@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
@@ -34,6 +35,11 @@ type Service struct {
 	// enqueuer injects the Asynq task enqueuer for search index sync.
 	// Optional — when nil, search reindex on privacy changes is skipped.
 	enqueuer userEnqueuer
+	// authSettings provides auth-specific system settings (password policy,
+	// username cooldown). Implements auth.SettingsReader. Wired via
+	// SetAuthSettings during server setup. When nil, compiled-in defaults
+	// are used (BUG-005, Rule 3).
+	authSettings auth.SettingsReader
 }
 
 // userEnqueuer is the subset of worker.Enqueuer that users needs.
@@ -45,6 +51,15 @@ type userEnqueuer interface {
 // sync on privacy settings change).
 func (s *Service) SetEnqueuer(e userEnqueuer) {
 	s.enqueuer = e
+}
+
+// SetAuthSettings wires the auth-specific settings reader (implements
+// auth.SettingsReader). Used by UpdateAccount to read the username change
+// cooldown from system_settings (users.username_cooldown_days) instead of
+// a hardcoded constant (BUG-005, Rule 3). Called once during server setup.
+// When not wired, the compiled-in default (30 days) is used.
+func (s *Service) SetAuthSettings(r auth.SettingsReader) {
+	s.authSettings = r
 }
 
 // MediaResolver resolves a media UUID to a presigned URL.
@@ -234,104 +249,119 @@ func (s *Service) GetPublicProfileByUsername(ctx context.Context, tenantID pgtyp
 // Supports both URL-based (avatar_url/cover_url) and media-system
 // (avatar_media_id/header_media_id) fields per Section 50 (BUG-004).
 func (s *Service) UpdateProfile(ctx context.Context, tenantID, userID pgtype.UUID, req *UpdateProfileRequest) error {
-	// Read current profile to preserve existing values for omitted fields.
-	current, err := s.store.getProfile(ctx, tenantID, userID)
-	if err != nil {
-		return fmt.Errorf("reading current profile: %w", err)
-	}
-
-	// Merge: use request value when provided, otherwise keep existing.
-	displayName := current.DisplayName
-	if req.DisplayName != nil {
-		displayName = req.DisplayName
-	}
-
-	avatarURL := current.AvatarUrl
-	if req.AvatarURL != nil {
-		avatarURL = req.AvatarURL
-	}
-
-	coverURL := current.CoverUrl
-	if req.CoverURL != nil {
-		coverURL = req.CoverURL
-	}
-
-	bio := current.Bio
-	if req.Bio != nil {
-		bio = req.Bio
-	}
-
-	timezone := current.Timezone
-	if req.Timezone != nil {
-		timezone = req.Timezone
-	}
-
-	// Media ID fields (BUG-004): when provided, resolve to URLs via the
-	// MediaResolver (if wired) and store both the media_id and the URL.
-	avatarMediaID := current.AvatarMediaID
-	if req.AvatarMediaID != nil {
-		if *req.AvatarMediaID == "" {
-			avatarMediaID = pgtype.UUID{}
-		} else {
-			var mid pgtype.UUID
-			if err := mid.Scan(*req.AvatarMediaID); err != nil {
-				return fmt.Errorf("invalid avatar_media_id: %w", err)
+	// BUG-002: Wrap the read-merge-upsert in a transaction with a FOR UPDATE
+	// lock on the user_profiles row so two concurrent PATCH /me/profile
+	// calls cannot both read the same baseline and the second write
+	// overwrite the first (lost update).
+	if err := db.WithTx(ctx, s.db.Writer, func(q *gen.Queries) error {
+		// Read current profile to preserve existing values for omitted fields.
+		// The FOR UPDATE lock is held until commit.
+		current, err := s.store.getProfileForUpdateTx(ctx, q, tenantID, userID)
+		if err != nil {
+			// First-time profile edit: no user_profiles row exists yet.
+			// The upsert below will INSERT it. Use zero values for the merge.
+			if !errors.Is(err, pgx.ErrNoRows) {
+				return fmt.Errorf("reading current profile: %w", err)
 			}
-			avatarMediaID = mid
-			// Resolve to URL if a MediaResolver is wired.
-			if s.MediaResolver != nil {
-				url, err := s.MediaResolver.ResolveMediaURL(ctx, tenantID, mid)
-				if err == nil {
-					avatarURL = &url
+			current = gen.GetUserProfileForUpdateRow{}
+		}
+
+		// Merge: use request value when provided, otherwise keep existing.
+		displayName := current.DisplayName
+		if req.DisplayName != nil {
+			displayName = req.DisplayName
+		}
+
+		avatarURL := current.AvatarUrl
+		if req.AvatarURL != nil {
+			avatarURL = req.AvatarURL
+		}
+
+		coverURL := current.CoverUrl
+		if req.CoverURL != nil {
+			coverURL = req.CoverURL
+		}
+
+		bio := current.Bio
+		if req.Bio != nil {
+			bio = req.Bio
+		}
+
+		timezone := current.Timezone
+		if req.Timezone != nil {
+			timezone = req.Timezone
+		}
+
+		// Media ID fields (BUG-004): when provided, resolve to URLs via the
+		// MediaResolver (if wired) and store both the media_id and the URL.
+		avatarMediaID := current.AvatarMediaID
+		if req.AvatarMediaID != nil {
+			if *req.AvatarMediaID == "" {
+				avatarMediaID = pgtype.UUID{}
+			} else {
+				var mid pgtype.UUID
+				if err := mid.Scan(*req.AvatarMediaID); err != nil {
+					return fmt.Errorf("invalid avatar_media_id: %w", err)
+				}
+				avatarMediaID = mid
+				// Resolve to URL if a MediaResolver is wired.
+				if s.MediaResolver != nil {
+					url, err := s.MediaResolver.ResolveMediaURL(ctx, tenantID, mid)
+					if err == nil {
+						avatarURL = &url
+					}
 				}
 			}
 		}
-	}
 
-	headerMediaID := current.HeaderMediaID
-	if req.HeaderMediaID != nil {
-		if *req.HeaderMediaID == "" {
-			headerMediaID = pgtype.UUID{}
-		} else {
-			var mid pgtype.UUID
-			if err := mid.Scan(*req.HeaderMediaID); err != nil {
-				return fmt.Errorf("invalid header_media_id: %w", err)
-			}
-			headerMediaID = mid
-			// Resolve to URL if a MediaResolver is wired.
-			if s.MediaResolver != nil {
-				url, err := s.MediaResolver.ResolveMediaURL(ctx, tenantID, mid)
-				if err == nil {
-					coverURL = &url
+		headerMediaID := current.HeaderMediaID
+		if req.HeaderMediaID != nil {
+			if *req.HeaderMediaID == "" {
+				headerMediaID = pgtype.UUID{}
+			} else {
+				var mid pgtype.UUID
+				if err := mid.Scan(*req.HeaderMediaID); err != nil {
+					return fmt.Errorf("invalid header_media_id: %w", err)
+				}
+				headerMediaID = mid
+				// Resolve to URL if a MediaResolver is wired.
+				if s.MediaResolver != nil {
+					url, err := s.MediaResolver.ResolveMediaURL(ctx, tenantID, mid)
+					if err == nil {
+						coverURL = &url
+					}
 				}
 			}
 		}
-	}
 
-	if err := s.store.upsertProfile(ctx, tenantID, userID, displayName, avatarURL, coverURL, bio, timezone, avatarMediaID, headerMediaID); err != nil {
-		return fmt.Errorf("updating profile: %w", err)
-	}
+		if err := s.store.upsertProfileTx(ctx, q, tenantID, userID, displayName, avatarURL, coverURL, bio, timezone, avatarMediaID, headerMediaID); err != nil {
+			return fmt.Errorf("updating profile: %w", err)
+		}
 
-	// ADR-064a: Save geo custom fields (origin_country, destination_country)
-	// as custom_field_values on the user_profile entity. These are saved
-	// after the profile upsert to ensure the profile row exists.
-	if req.OriginCountry != nil {
-		if err := s.store.setGeoCustomField(ctx, tenantID, userID, "origin_country", strings.ToUpper(strings.TrimSpace(*req.OriginCountry))); err != nil {
-			return fmt.Errorf("saving origin_country: %w", err)
+		// ADR-064a: Save geo custom fields (origin_country, destination_country)
+		// as custom_field_values on the user_profile entity. These are saved
+		// after the profile upsert to ensure the profile row exists.
+		if req.OriginCountry != nil {
+			if err := s.store.setGeoCustomFieldTx(ctx, q, tenantID, userID, "origin_country", strings.ToUpper(strings.TrimSpace(*req.OriginCountry))); err != nil {
+				return fmt.Errorf("saving origin_country: %w", err)
+			}
 		}
-	}
-	if req.DestinationCountry != nil {
-		if err := s.store.setGeoCustomField(ctx, tenantID, userID, "destination_country", strings.ToUpper(strings.TrimSpace(*req.DestinationCountry))); err != nil {
-			return fmt.Errorf("saving destination_country: %w", err)
+		if req.DestinationCountry != nil {
+			if err := s.store.setGeoCustomFieldTx(ctx, q, tenantID, userID, "destination_country", strings.ToUpper(strings.TrimSpace(*req.DestinationCountry))); err != nil {
+				return fmt.Errorf("saving destination_country: %w", err)
+			}
 		}
+		return nil
+	}); err != nil {
+		return err
 	}
 
 	// Re-index the user in Meilisearch when display_name changes so the
-	// search index reflects the new name (§13/§19).
+	// search index reflects the new name (§13/§19). Enqueued after commit
+	// so we don't index a row that might roll back.
 	if req.DisplayName != nil {
 		s.enqueueUserSearchIndex(tenantID, userID)
 	}
-
 	return nil
 }
 
@@ -355,31 +385,41 @@ func (s *Service) GetPreferences(ctx context.Context, tenantID, userID pgtype.UU
 
 // UpdatePreferences upserts user preferences. Only non-nil fields are
 // overwritten; nil fields are left unchanged via a read-then-merge strategy.
+//
+// BUG-003: The read-merge-upsert is wrapped in a transaction with a FOR
+// UPDATE lock on the user_preferences row so two concurrent PUT
+// /me/preferences calls cannot both read the same baseline and the second
+// write overwrite the first (lost update).
 func (s *Service) UpdatePreferences(ctx context.Context, tenantID, userID pgtype.UUID, req *UpdatePreferencesRequest) error {
-	// Read current preferences to preserve existing values for omitted fields.
-	current, err := s.store.getPreferences(ctx, tenantID, userID)
-	darkMode := "system"
-	language := "en-NG"
+	return db.WithTx(ctx, s.db.Writer, func(q *gen.Queries) error {
+		// Read current preferences to preserve existing values for omitted
+		// fields. The FOR UPDATE lock is held until commit.
+		current, err := s.store.getPreferencesForUpdateTx(ctx, q, tenantID, userID)
+		darkMode := "system"
+		language := "en-NG"
 
-	if err == nil {
-		darkMode = current.DarkMode
-		language = current.Language
-	}
+		if err == nil {
+			darkMode = current.DarkMode
+			language = current.Language
+		} else if !errors.Is(err, pgx.ErrNoRows) {
+			return fmt.Errorf("reading current preferences: %w", err)
+		}
 
-	// Merge: use request value when provided, otherwise keep existing/default.
-	if req.DarkMode != nil {
-		darkMode = *req.DarkMode
-	}
+		// Merge: use request value when provided, otherwise keep existing/default.
+		if req.DarkMode != nil {
+			darkMode = *req.DarkMode
+		}
 
-	if req.Language != nil {
-		language = *req.Language
-	}
+		if req.Language != nil {
+			language = *req.Language
+		}
 
-	if err := s.store.upsertPreferences(ctx, tenantID, userID, darkMode, language); err != nil {
-		return fmt.Errorf("updating preferences: %w", err)
-	}
+		if err := s.store.upsertPreferencesTx(ctx, q, tenantID, userID, darkMode, language); err != nil {
+			return fmt.Errorf("updating preferences: %w", err)
+		}
 
-	return nil
+		return nil
+	})
 }
 
 // SetContentCountry updates the user's content_country_preference.
@@ -616,43 +656,51 @@ func (s *Service) GetPrivacySettings(ctx context.Context, tenantID, userID pgtyp
 }
 
 // UpdatePrivacySettings updates the user's privacy settings.
+//
+// BUG-004: The read-merge-upsert is wrapped in a transaction with a FOR
+// UPDATE lock on the user_privacy_settings row so two concurrent PATCH
+// /me/privacy calls cannot both read the same baseline and the second
+// write overwrite the first (lost update).
 func (s *Service) UpdatePrivacySettings(ctx context.Context, tenantID, userID pgtype.UUID, req *UpdatePrivacyRequest) error {
-	current, err := s.GetPrivacySettings(ctx, tenantID, userID)
-	if err != nil {
-		return fmt.Errorf("reading current settings: %w", err)
-	}
+	if err := db.WithTx(ctx, s.db.Writer, func(q *gen.Queries) error {
+		// Read current settings with FOR UPDATE lock held until commit.
+		current, err := s.store.getUserPrivacySettingsForUpdateTx(ctx, q, tenantID, userID)
+		dmPrivacy := "followers"
+		profileVisibility := "public"
+		var searchIndexable, showOnlineStatus, showActivity, showPointsPublicly bool
 
-	dmPrivacy := current.DmPrivacy
-	if req.DmPrivacy != nil {
-		dmPrivacy = *req.DmPrivacy
-	}
+		if err == nil {
+			dmPrivacy = current.DmPrivacy
+			profileVisibility = current.ProfileVisibility
+			searchIndexable = current.SearchIndexable
+			showOnlineStatus = current.ShowOnlineStatus
+			showActivity = current.ShowActivity
+			showPointsPublicly = current.ShowPointsPublicly
+		} else if !errors.Is(err, pgx.ErrNoRows) {
+			return fmt.Errorf("reading current settings: %w", err)
+		}
 
-	profileVisibility := current.ProfileVisibility
-	if req.ProfileVisibility != nil {
-		profileVisibility = *req.ProfileVisibility
-	}
+		if req.DmPrivacy != nil {
+			dmPrivacy = *req.DmPrivacy
+		}
+		if req.ProfileVisibility != nil {
+			profileVisibility = *req.ProfileVisibility
+		}
+		if req.SearchIndexable != nil {
+			searchIndexable = *req.SearchIndexable
+		}
+		if req.ShowOnlineStatus != nil {
+			showOnlineStatus = *req.ShowOnlineStatus
+		}
+		if req.ShowActivity != nil {
+			showActivity = *req.ShowActivity
+		}
+		if req.ShowPointsPublicly != nil {
+			showPointsPublicly = *req.ShowPointsPublicly
+		}
 
-	searchIndexable := current.SearchIndexable
-	if req.SearchIndexable != nil {
-		searchIndexable = *req.SearchIndexable
-	}
-
-	showOnlineStatus := current.ShowOnlineStatus
-	if req.ShowOnlineStatus != nil {
-		showOnlineStatus = *req.ShowOnlineStatus
-	}
-
-	showActivity := current.ShowActivity
-	if req.ShowActivity != nil {
-		showActivity = *req.ShowActivity
-	}
-
-	showPointsPublicly := current.ShowPointsPublicly
-	if req.ShowPointsPublicly != nil {
-		showPointsPublicly = *req.ShowPointsPublicly
-	}
-
-	if err := s.store.upsertUserPrivacySettings(ctx, tenantID, userID, dmPrivacy, profileVisibility, searchIndexable, showOnlineStatus, showActivity, showPointsPublicly); err != nil {
+		return s.store.upsertUserPrivacySettingsTx(ctx, q, tenantID, userID, dmPrivacy, profileVisibility, searchIndexable, showOnlineStatus, showActivity, showPointsPublicly)
+	}); err != nil {
 		return err
 	}
 
@@ -660,6 +708,7 @@ func (s *Service) UpdatePrivacySettings(ctx context.Context, tenantID, userID pg
 	// Meilisearch users index reflects their discoverability opt-out. The
 	// IndexUser method checks search_indexable and deletes the document
 	// if the user opted out, or upserts it if they opted back in.
+	// Enqueued after commit so we don't index a row that might roll back.
 	s.enqueueUserSearchIndex(tenantID, userID)
 
 	return nil
@@ -1104,9 +1153,21 @@ func (s *Service) GetUserFollowerGrowth(ctx context.Context, tenantID, userID pg
 // Ref: japaconnect-engineering/sections/50-user-dashboard-settings.md
 // ---------------------------------------------------------------------------
 
-// usernameCooldownDays is the minimum interval between username changes.
+// defaultUsernameCooldownDays is the fallback interval between username
+// changes when system_settings.users.username_cooldown_days is not set.
 // Section 50: "username (once per 30 days)".
-const usernameCooldownDays = 30
+const defaultUsernameCooldownDays = 30
+
+// usernameCooldownDaysFor returns the configured username change cooldown
+// from system_settings (users.username_cooldown_days), falling back to the
+// compiled-in default when the settings reader is not wired or the key is
+// unset (BUG-005, Rule 3).
+func (s *Service) usernameCooldownDaysFor(ctx context.Context, tenantID pgtype.UUID) int {
+	if s.authSettings == nil {
+		return defaultUsernameCooldownDays
+	}
+	return s.authSettings.GetIntOr(ctx, tenantID, "users.username_cooldown_days", defaultUsernameCooldownDays)
+}
 
 // ErrUsernameCooldown is returned when the user attempts to change their
 // username before the cooldown window has elapsed.
@@ -1131,86 +1192,97 @@ type UpdateAccountResult struct {
 // display_name) per Section 50. Username changes are rate-limited to once
 // per 30 days; email changes reset email_verified_at to NULL (triggering
 // re-verification). All fields are optional (partial update).
+//
+// BUG-001: The entire update is wrapped in a single transaction so the
+// FOR UPDATE row lock acquired by getUserAccountForUpdateTx is held until
+// commit. This prevents two concurrent PATCH /me/account requests from
+// both passing the uniqueness check and both writing, which would create
+// a duplicate username or email.
 func (s *Service) UpdateAccount(ctx context.Context, tenantID, userID pgtype.UUID, req *UpdateAccountRequest) (*UpdateAccountResult, error) {
-	result := &UpdateAccountResult{}
+	result, err := db.WithTxResult(ctx, s.db.Writer, func(q *gen.Queries) (*UpdateAccountResult, error) {
+		txResult := &UpdateAccountResult{}
 
-	// Row-lock the user for the duration of the update to prevent concurrent
-	// account edits from racing on uniqueness checks.
-	acct, err := s.store.getUserAccountForUpdate(ctx, tenantID, userID)
-	if err != nil {
-		return nil, fmt.Errorf("getting account for update: %w", err)
-	}
-
-	// --- Username change (with 30-day cooldown) ---
-	if req.Username != nil {
-		newUsername := strings.TrimSpace(*req.Username)
-		if newUsername == "" {
-			return nil, errors.New("username cannot be empty")
+		// Row-lock the user for the duration of the transaction to prevent
+		// concurrent account edits from racing on uniqueness checks.
+		acct, err := s.store.getUserAccountForUpdateTx(ctx, q, tenantID, userID)
+		if err != nil {
+			return nil, fmt.Errorf("getting account for update: %w", err)
 		}
-		if newUsername != acct.Username {
-			// Enforce 30-day cooldown.
-			if acct.UsernameChangedAt.Valid {
-				elapsed := time.Since(acct.UsernameChangedAt.Time)
-				if elapsed < time.Duration(usernameCooldownDays)*24*time.Hour {
-					return nil, ErrUsernameCooldown
+
+		// --- Username change (with 30-day cooldown) ---
+		if req.Username != nil {
+			newUsername := strings.TrimSpace(*req.Username)
+			if newUsername == "" {
+				return nil, errors.New("username cannot be empty")
+			}
+			if newUsername != acct.Username {
+				// Enforce cooldown (configurable via system_settings,
+				// users.username_cooldown_days; default 30 per §50).
+				if acct.UsernameChangedAt.Valid {
+					elapsed := time.Since(acct.UsernameChangedAt.Time)
+					cooldown := time.Duration(s.usernameCooldownDaysFor(ctx, tenantID)) * 24 * time.Hour
+					if elapsed < cooldown {
+						return nil, ErrUsernameCooldown
+					}
 				}
+				// Check uniqueness within the tenant.
+				count, err := s.store.usernameExistsForTenantTx(ctx, q, tenantID, userID, newUsername)
+				if err != nil {
+					return nil, fmt.Errorf("checking username uniqueness: %w", err)
+				}
+				if count > 0 {
+					return nil, ErrUsernameTaken
+				}
+				if err := s.store.updateUsernameTx(ctx, q, tenantID, userID, newUsername); err != nil {
+					return nil, fmt.Errorf("updating username: %w", err)
+				}
+				txResult.UsernameChanged = true
 			}
-			// Check uniqueness within the tenant.
-			count, err := s.store.usernameExistsForTenant(ctx, tenantID, userID, newUsername)
-			if err != nil {
-				return nil, fmt.Errorf("checking username uniqueness: %w", err)
-			}
-			if count > 0 {
-				return nil, ErrUsernameTaken
-			}
-			if err := s.store.updateUsername(ctx, tenantID, userID, newUsername); err != nil {
-				return nil, fmt.Errorf("updating username: %w", err)
-			}
-			result.UsernameChanged = true
 		}
-	}
 
-	// --- Email change (triggers re-verification) ---
-	if req.Email != nil {
-		newEmail := strings.TrimSpace(strings.ToLower(*req.Email))
-		if newEmail == "" {
-			return nil, errors.New("email cannot be empty")
+		// --- Email change (triggers re-verification) ---
+		if req.Email != nil {
+			newEmail := strings.TrimSpace(strings.ToLower(*req.Email))
+			if newEmail == "" {
+				return nil, errors.New("email cannot be empty")
+			}
+			if newEmail != acct.Email {
+				// Check uniqueness within the tenant.
+				count, err := s.store.emailExistsForTenantTx(ctx, q, tenantID, userID, newEmail)
+				if err != nil {
+					return nil, fmt.Errorf("checking email uniqueness: %w", err)
+				}
+				if count > 0 {
+					return nil, ErrEmailTaken
+				}
+				if err := s.store.updateEmailTx(ctx, q, tenantID, userID, newEmail); err != nil {
+					return nil, fmt.Errorf("updating email: %w", err)
+				}
+				txResult.EmailChanged = true
+				txResult.EmailVerificationNeeded = true
+			}
 		}
-		if newEmail != acct.Email {
-			// Check uniqueness within the tenant.
-			count, err := s.store.emailExistsForTenant(ctx, tenantID, userID, newEmail)
-			if err != nil {
-				return nil, fmt.Errorf("checking email uniqueness: %w", err)
-			}
-			if count > 0 {
-				return nil, ErrEmailTaken
-			}
-			if err := s.store.updateEmail(ctx, tenantID, userID, newEmail); err != nil {
-				return nil, fmt.Errorf("updating email: %w", err)
-			}
-			result.EmailChanged = true
-			result.EmailVerificationNeeded = true
-		}
-	}
 
-	// --- Display name change (delegates to profile upsert) ---
-	if req.DisplayName != nil {
-		newDisplayName := strings.TrimSpace(*req.DisplayName)
-		// Update the display_name on the user_profiles row via the existing
-		// UpdateProfile path (which upserts user_profiles).
-		profileReq := &UpdateProfileRequest{DisplayName: &newDisplayName}
-		if err := s.UpdateProfile(ctx, tenantID, userID, profileReq); err != nil {
-			return nil, fmt.Errorf("updating display name: %w", err)
+		// --- Display name change (upserts user_profiles within the same
+		// transaction so the FOR UPDATE lock covers this write too) ---
+		if req.DisplayName != nil {
+			newDisplayName := strings.TrimSpace(*req.DisplayName)
+			if err := s.store.upsertProfileTx(ctx, q, tenantID, userID, &newDisplayName, nil, nil, nil, nil, pgtype.UUID{}, pgtype.UUID{}); err != nil {
+				return nil, fmt.Errorf("updating display name: %w", err)
+			}
+			txResult.DisplayNameChanged = true
 		}
-		result.DisplayNameChanged = true
+
+		return txResult, nil
+	})
+	if err != nil {
+		return nil, err
 	}
 
 	// Re-index the user in Meilisearch when username or display_name
 	// changes so the search index reflects the new values (§13/§19).
-	// UpdateProfile already enqueues when display_name changes, but
-	// username changes are handled here since UpdateProfile doesn't
-	// touch the username field.
-	if result.UsernameChanged {
+	// Enqueued after commit so we don't index a row that might roll back.
+	if result.UsernameChanged || result.DisplayNameChanged {
 		s.enqueueUserSearchIndex(tenantID, userID)
 	}
 

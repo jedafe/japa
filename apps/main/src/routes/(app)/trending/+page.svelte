@@ -62,6 +62,15 @@
 	// Round the trending score for display (Rule: round every displayed number).
 	const score = (n: number) => Math.round(n);
 
+	// Build the canonical URL for a trending content item — blog posts use
+	// /blog/{slug}, forum threads use /forum/{slug}, everything else uses
+	// /content/{slug}. Matches FeedCard.href and backend contentURL.
+	function contentUrl(item: { content_type: string; slug: string }): string {
+		if (item.content_type === 'blog_post') return `/blog/${item.slug}`;
+		if (item.content_type === 'forum_thread') return `/forum/${item.slug}`;
+		return `/content/${item.slug}`;
+	}
+
 	function windowHref(w: TrendingWindow): string {
 		const params = new URLSearchParams(page.url.searchParams);
 		params.set('window', w);
@@ -146,7 +155,7 @@
 					{#each data.content as item, i (item.id)}
 						<li>
 							<a
-								href="/blog/{item.slug}"
+								href={contentUrl(item)}
 								class="group flex items-center gap-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3 transition-colors hover:border-[var(--color-primary)]/40 hover:bg-[var(--color-surface-subtle)]"
 							>
 								<span

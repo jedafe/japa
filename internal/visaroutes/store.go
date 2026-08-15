@@ -125,7 +125,12 @@ func (s *Store) List(ctx context.Context, f ListFilter) ([]RouteRow, int64, erro
 		argIdx++
 	}
 	if f.ExperienceYears > 0 {
-		conditions = append(conditions, fmt.Sprintf("(requirements_json->>'experience_years')::int <= $%d", argIdx))
+		// Rows without an experience_years key should match (no minimum
+		// requirement). NULL::int <= N is NULL (false), so we explicitly
+		// include rows that don't carry the key.
+		conditions = append(conditions, fmt.Sprintf(
+			"(NOT requirements_json ? 'experience_years' OR (requirements_json->>'experience_years')::int <= $%d)",
+			argIdx))
 		args = append(args, f.ExperienceYears)
 		argIdx++
 	}
@@ -268,6 +273,7 @@ SELECT vr.id, vr.tenant_id, vr.destination_space_id,
 FROM visa_routes vr
 LEFT JOIN spaces ds ON ds.id = vr.destination_space_id
 WHERE vr.tenant_id = $1 AND vr.id IN (%s)
+  AND vr.status = 'published' AND vr.is_active = true
 ORDER BY vr.name ASC
 `, strings.Join(placeholders, ", "))
 	rows, err := s.pool.Reader.Query(ctx, q, args...)
@@ -308,6 +314,8 @@ type AdminListFilter struct {
 	IsActive           *bool       // optional
 	VisaCategory       string      // optional
 	Q                  string      // optional: search name
+	Sort               string      // optional: sort column (name, visa_category, status, created_at, updated_at)
+	Order              string      // optional: "asc" or "desc" (default desc)
 	Limit              int32
 	Offset             int32
 }
@@ -365,6 +373,18 @@ func (s *Store) AdminList(ctx context.Context, f AdminListFilter) ([]RouteRow, i
 		offset = 0
 	}
 
+	// Sort: whitelist of allowed columns to prevent SQL injection via
+	// user-supplied sort param (geo-aware-tool-pattern.md admin list).
+	// Default: created_at DESC.
+	orderClause := "vr.created_at DESC"
+	if col, ok := adminSortColumn(f.Sort); ok {
+		dir := "DESC"
+		if strings.EqualFold(f.Order, "asc") {
+			dir = "ASC"
+		}
+		orderClause = col + " " + dir
+	}
+
 	listQuery := fmt.Sprintf(`
 SELECT vr.id, vr.tenant_id, vr.destination_space_id,
        ds.name AS dest_space_name, ds.geo_code AS dest_space_code,
@@ -378,9 +398,9 @@ SELECT vr.id, vr.tenant_id, vr.destination_space_id,
 FROM visa_routes vr
 LEFT JOIN spaces ds ON ds.id = vr.destination_space_id
 WHERE %s
-ORDER BY vr.created_at DESC
+ORDER BY %s
 LIMIT $%d OFFSET $%d
-`, whereClause, argIdx, argIdx+1)
+`, whereClause, orderClause, argIdx, argIdx+1)
 	args = append(args, limit, offset)
 
 	rows, err := s.pool.Reader.Query(ctx, listQuery, args...)
@@ -620,8 +640,9 @@ WHERE id = $%d AND tenant_id = $%d
 }
 
 // Approve sets the HITL review fields: hitl_reviewed_by, hitl_reviewed_at
-// = now(), status = 'published', and optional review notes.
-func (s *Store) Approve(ctx context.Context, id, tenantID, reviewerID pgtype.UUID, notes *string) error {
+// = now(), status = 'published', and optional review notes. Returns the
+// updated row so the caller can return the full record per ADR-088.
+func (s *Store) Approve(ctx context.Context, id, tenantID, reviewerID pgtype.UUID, notes *string) (RouteRow, error) {
 	const q = `
 UPDATE visa_routes
 SET hitl_reviewed_by = $3,
@@ -633,12 +654,12 @@ WHERE id = $1 AND tenant_id = $2
 `
 	cmd, err := s.pool.Writer.Exec(ctx, q, id, tenantID, reviewerID, notes)
 	if err != nil {
-		return fmt.Errorf("visaroutes: approve: %w", err)
+		return RouteRow{}, fmt.Errorf("visaroutes: approve: %w", err)
 	}
 	if cmd.RowsAffected() == 0 {
-		return pgx.ErrNoRows
+		return RouteRow{}, pgx.ErrNoRows
 	}
-	return nil
+	return s.GetByID(ctx, id, tenantID)
 }
 
 // Deactivate soft-deletes a visa route by setting is_active = false.
@@ -656,4 +677,25 @@ WHERE id = $1 AND tenant_id = $2
 		return pgx.ErrNoRows
 	}
 	return nil
+}
+
+// adminSortColumn maps a user-supplied sort key to a qualified column
+// expression. Returns false for unknown columns to prevent SQL injection
+// via the sort query param (geo-aware-tool-pattern.md admin list pattern).
+func adminSortColumn(key string) (string, bool) {
+	switch strings.ToLower(key) {
+	case "name":
+		return "vr.name", true
+	case "visa_category", "visacategory":
+		return "vr.visa_category", true
+	case "status":
+		return "vr.status", true
+	case "created_at", "createdat":
+		return "vr.created_at", true
+	case "updated_at", "updatedat":
+		return "vr.updated_at", true
+	case "destination_space_name", "destination":
+		return "ds.name", true
+	}
+	return "", false
 }

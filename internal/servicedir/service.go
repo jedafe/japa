@@ -187,10 +187,10 @@ func (s *Service) Create(ctx context.Context, tenantID, authorID pgtype.UUID, in
 		ContentType:    content.TypeServiceListing,
 		Title:          input.Title,
 		Body:           input.Body,
-		// BUG-013: create as 'pending' so the listing enters the admin
+		// BUG-013: create as 'in_review' so the listing enters the admin
 		// review queue and can be published. 'draft' would make it
 		// invisible with no publish path.
-		Status:     content.StatusPending,
+		Status:     content.StatusInReview,
 		Visibility: content.VisibilityPublic,
 		GeoSpaceID: destSpaceID,
 	})

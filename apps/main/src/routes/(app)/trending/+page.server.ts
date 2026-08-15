@@ -15,7 +15,7 @@ import type {
  * active tab paints immediately on navigation; each degrades to an empty
  * list on failure so one broken feed never blanks the page.
  *
- * Ref: japaconnect-engineering/sections/10-search-discover-trending.md
+ * Ref: japaconnect-engineering/sections/53-trending-discovery.md
  *      ADR-058 (renders inside the app shell)
  */
 const LIMIT = 25;

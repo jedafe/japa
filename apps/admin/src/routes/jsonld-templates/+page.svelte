@@ -7,7 +7,7 @@
 	// page-local header actions rendered above the scaffold.
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import { Button } from '$lib/components/ui/button';
-	import { jsonLdApi, type JsonLdTemplate } from '$lib/api';
+	import { jsonLdApi, contentAdminApi, type JsonLdTemplate } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { Trash2, Download, Upload } from 'lucide-svelte';
@@ -17,6 +17,20 @@
 	const canManageTemplates = $derived(hasPermission('content.jsonld.manage'));
 
 	const DEFAULT_TEMPLATE = '{\n  "@context": "https://schema.org",\n  "@type": "Article"\n}';
+
+	// Content types are fetched from GET /content-types so the dropdown stays in
+	// sync with the backend's canonical list (Rule 16) — no free-text input that
+	// could allow typos or invalid content_type keys.
+	let contentTypeOptions = $state<Array<{ value: string; label: string }>>([]);
+
+	$effect(() => {
+		void (async () => {
+			const res = await contentAdminApi.listContentTypes();
+			if (res.ok && res.data) {
+				contentTypeOptions = res.data.map((ct) => ({ value: ct.value, label: ct.label }));
+			}
+		})();
+	});
 
 	// Normalize an API row: stringify `template` into a `content` string so the
 	// formSnippet's textarea can bind to `value.content` and EntityPage's edit
@@ -328,15 +342,23 @@
 				<label for="template-content-type" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground-alt)">
 					{t('jsonld-templates.content_type', 'Content Type')}
 				</label>
-				<input
+				<select
 					id="template-content-type"
-					type="text"
 					class="w-full rounded-lg border px-3 py-2 text-sm"
 					style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
 					bind:value={value.content_type}
 					disabled={!!editing}
-					placeholder={t('jsonld-templates.ph_eg_article', 'e.g., Article')}
-				/>
+				>
+					{#if !value.content_type}
+						<option value="" disabled>{t('jsonld-templates.select_content_type', 'Select a content type')}</option>
+					{/if}
+					{#each contentTypeOptions as ct (ct.value)}
+						<option value={ct.value}>{ct.label}</option>
+					{/each}
+					{#if editing && value.content_type && !contentTypeOptions.some((ct) => ct.value === value.content_type)}
+						<option value={value.content_type}>{value.content_type}</option>
+					{/if}
+				</select>
 			</div>
 			<div>
 				<label for="template-is-active" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground-alt)">

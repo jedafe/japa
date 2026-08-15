@@ -658,7 +658,8 @@ func (s *Service) GetActiveProvider(ctx context.Context, tenantID pgtype.UUID, p
 	return providerToInfo(p), nil
 }
 
-// CreateProvider creates a new travel provider (admin).
+// CreateProvider creates a new travel provider (admin). Invalidates the
+// tenant's search result cache so new searches use the new provider.
 func (s *Service) CreateProvider(ctx context.Context, arg gen.CreateTravelProviderParams) (ProviderInfo, error) {
 	if arg.ProviderType != ProviderTypeFlight && arg.ProviderType != ProviderTypeHotel && arg.ProviderType != ProviderTypeBoth {
 		return ProviderInfo{}, fmt.Errorf("travel: invalid provider_type %q", arg.ProviderType)
@@ -667,10 +668,13 @@ func (s *Service) CreateProvider(ctx context.Context, arg gen.CreateTravelProvid
 	if err != nil {
 		return ProviderInfo{}, fmt.Errorf("travel: create provider: %w", err)
 	}
+	s.invalidateSearchCache(ctx, arg.TenantID)
 	return providerToInfo(p), nil
 }
 
 // UpdateProvider updates a travel provider's mutable fields (admin).
+// Invalidates the tenant's search result cache so new searches reflect the
+// updated provider config (affiliate params, api_config, is_active).
 func (s *Service) UpdateProvider(ctx context.Context, arg gen.UpdateTravelProviderParams) (ProviderInfo, error) {
 	if arg.ProviderType != nil && *arg.ProviderType != ProviderTypeFlight && *arg.ProviderType != ProviderTypeHotel && *arg.ProviderType != ProviderTypeBoth {
 		return ProviderInfo{}, fmt.Errorf("travel: invalid provider_type %q", *arg.ProviderType)
@@ -679,12 +683,44 @@ func (s *Service) UpdateProvider(ctx context.Context, arg gen.UpdateTravelProvid
 	if err != nil {
 		return ProviderInfo{}, fmt.Errorf("travel: update provider: %w", err)
 	}
+	s.invalidateSearchCache(ctx, arg.TenantID)
 	return providerToInfo(p), nil
 }
 
-// ListProviders lists travel providers for a tenant (admin).
-func (s *Service) ListProviders(ctx context.Context, tenantID pgtype.UUID, activeOnly bool, providerType string) ([]ProviderInfo, error) {
-	rows, err := s.store.ListProviders(ctx, tenantID, activeOnly, providerType)
+// invalidateSearchCache flushes all cached travel search results for a tenant.
+// Uses SCAN (not KEYS) to find jc:travel:search:* keys and batch-deletes them.
+// Best-effort: errors are logged but do not fail the caller's operation.
+func (s *Service) invalidateSearchCache(ctx context.Context, tenantID pgtype.UUID) {
+	if s.cache == nil {
+		return
+	}
+	pattern := valkey.MustKey("travel:search:*")
+	var cursor uint64
+	var keys []string
+	for {
+		scanKeys, nextCursor, err := s.cache.Scan(ctx, cursor, pattern, 100).Result()
+		if err != nil {
+			slog.Warn("travel: cache invalidation scan failed", "error", err)
+			return
+		}
+		keys = append(keys, scanKeys...)
+		cursor = nextCursor
+		if cursor == 0 {
+			break
+		}
+	}
+	if len(keys) > 0 {
+		if err := s.cache.Del(ctx, keys...).Err(); err != nil {
+			slog.Warn("travel: cache invalidation delete failed", "error", err)
+		}
+	}
+}
+
+// ListProviders lists travel providers for a tenant (admin). isActiveFilter
+// is tri-state: "true" = only active, "false" = only inactive, "" = all. q
+// is an ILIKE search on name/slug (empty = no filter).
+func (s *Service) ListProviders(ctx context.Context, tenantID pgtype.UUID, isActiveFilter, providerType, q string) ([]ProviderInfo, error) {
+	rows, err := s.store.ListProviders(ctx, tenantID, isActiveFilter, providerType, q)
 	if err != nil {
 		return nil, err
 	}

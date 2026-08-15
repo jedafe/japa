@@ -40,15 +40,11 @@
 	};
 	let history = $state<HistoryEntry[]>([]);
 
-	const defaultCategories = [
-		{ value: 'blog_post', labelKey: 'ai.category.blog_post', desc: 'Long-form articles and blog posts' },
-		{ value: 'forum_reply', labelKey: 'ai.category.forum_reply', desc: 'Contextual replies for forum discussions' },
-		{ value: 'social_media', labelKey: 'ai.category.social_media', desc: 'Short posts for social platforms' },
-		{ value: 'email', labelKey: 'ai.category.email', desc: 'Professional and transactional emails' },
-		{ value: 'summary', labelKey: 'ai.category.summary', desc: 'Condensed summaries of longer content' },
-		{ value: 'translation', labelKey: 'ai.category.translation', desc: 'Translate content between languages' }
-	];
-	let categories = $state(defaultCategories);
+	// Rule 16: categories come from the backend (/api/v1/ai/categories).
+	// No hardcoded fallback — if the API fails the selector shows a
+	// "failed to load" message instead of invented options.
+	let categories = $state<{ value: string; labelKey: string; desc: string }[]>([]);
+	let categoriesError = $state(false);
 
 	let models = $state<{ value: string; label: string }[]>([
 		{ value: '', label: 'Default' }
@@ -76,9 +72,12 @@
 						labelKey: `ai.category.${c.value}`,
 						desc: c.label
 					}));
+					categoriesError = false;
+				} else {
+					categoriesError = true;
 				}
 			} catch {
-				categories = defaultCategories;
+				categoriesError = true;
 			}
 		})();
 	});
@@ -203,13 +202,19 @@
 				<div class="grid gap-4 sm:grid-cols-2">
 					<div>
 						<label for="gen-category" class="mb-1 block text-sm font-medium">{t('ai.category')}</label>
-						<Select
-							options={categories.map(c => ({ value: c.value, label: t(c.labelKey) }))}
-							bind:value={category}
-						/>
-						<p class="mt-1 text-xs" style="color: var(--color-muted)">
-							{categories.find(c => c.value === category)?.desc}
-						</p>
+						{#if categoriesError}
+							<p class="text-sm" style="color: var(--color-danger)">
+								{t('ai.categories_load_failed', 'Failed to load categories. Please retry.')}
+							</p>
+						{:else}
+							<Select
+								options={categories.map(c => ({ value: c.value, label: t(c.labelKey) }))}
+								bind:value={category}
+							/>
+							<p class="mt-1 text-xs" style="color: var(--color-muted)">
+								{categories.find(c => c.value === category)?.desc}
+							</p>
+						{/if}
 					</div>
 					<div>
 						<label for="gen-model" class="mb-1 block text-sm font-medium">{t('ai.model_optional')}</label>

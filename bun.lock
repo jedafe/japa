@@ -223,6 +223,9 @@
     "packages/landing-blocks": {
       "name": "@japaconnect/landing-blocks",
       "version": "0.0.1",
+      "devDependencies": {
+        "vitest": "^4.1.10",
+      },
       "peerDependencies": {
         "@sveltejs/kit": "^2.0.0",
         "bits-ui": "^2.0.0",

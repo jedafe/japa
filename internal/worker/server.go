@@ -225,6 +225,14 @@ func NewScheduler(cfg *Config) *asynq.Scheduler {
 	// Low queue.
 	schedule("0 22 * * 0", TypeDigestGenerate, 7*24*time.Hour)
 
+	// Hourly digest auto-publish — top of each hour (§84, ADR-092).
+	// Publishes draft/review editions whose 1-hour admin review window has
+	// elapsed (scheduled_for <= now()) and enqueues digest:send_email per
+	// edition. Idempotent: the UPDATE only matches rows still in
+	// draft/review, so overlapping runs across replicas are no-ops (plus
+	// the Unique key guards duplicate execution). Low queue.
+	schedule("0 * * * *", TypeDigestAutoPublish, 1*time.Hour)
+
 	// Nightly planning group expiry — 03:30 UTC (§82, ADR-090).
 	// Soft-deletes planning groups whose expires_at has passed. Low queue.
 	schedule("30 3 * * *", TypePlanningGroupExpire, 24*time.Hour)

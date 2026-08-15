@@ -173,6 +173,13 @@ func (s *Service) UpdateEndpoint(ctx context.Context, tenantID, id pgtype.UUID, 
 	if input.IsActive != nil {
 		isActive = *input.IsActive
 		if isActive {
+			// §12: an endpoint may only be activated after challenge/response
+			// verification. Reject attempts to set is_active=true when the
+			// endpoint has not been verified (verified_at IS NULL). The
+			// admin must call POST /admin/webhooks/{id}/verify first.
+			if !current.VerifiedAt.Valid {
+				return WebhookEndpointResponse{}, fmt.Errorf("webhook endpoint not verified: complete challenge/response verification before activating")
+			}
 			status = "active"
 		} else {
 			status = "disabled"

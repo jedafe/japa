@@ -99,6 +99,16 @@ func AllPriorities() []TicketPriority {
 	}
 }
 
+// ValidPriority reports whether p is one of the allowed ticket priorities.
+func ValidPriority(p string) bool {
+	for _, vp := range AllPriorities() {
+		if string(vp) == p {
+			return true
+		}
+	}
+	return false
+}
+
 // Pagination defaults.
 const (
 	DefaultPageSize = 20

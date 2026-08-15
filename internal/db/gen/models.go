@@ -4068,6 +4068,7 @@ type WikiRevision struct {
 	HitlReviewedAt  pgtype.Timestamptz `json:"hitl_reviewed_at"`
 	HitlReviewNotes *string            `json:"hitl_review_notes"`
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	ContentHash     *string            `json:"content_hash"`
 }
 
 type WsTicket struct {

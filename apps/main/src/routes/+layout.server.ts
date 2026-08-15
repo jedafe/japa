@@ -1,6 +1,6 @@
 import type { LayoutServerLoad } from './$types';
 import { apiContext, apiGet, apiList } from '$lib/server/api';
-import type { Menu, SpaceSuggestion, TagSuggestion, UserSpaceRef } from '$lib/types';
+import type { Menu, SpaceSuggestion, TrendingTag, UserSpaceRef } from '$lib/types';
 
 /**
  * Module-level caches for global, non-user-specific data that rarely changes.
@@ -80,10 +80,12 @@ export const load: LayoutServerLoad = async (event) => {
 		apiGet<Menu>(ctx, '/menus/main_footer')
 			.then((v) => ({ ok: true as const, value: v }))
 			.catch(() => ({ ok: false as const, value: null as Menu | null })),
-		// Trending tags for the right sidebar.
-		apiList<TagSuggestion>(ctx, '/suggestions/tags?limit=8')
+		// Trending tags for the right sidebar — public /trending/tags endpoint
+		// (Section 53) so the widget renders for guests too. Previously fetched
+		// /suggestions/tags which is auth-only and serves a different purpose.
+		apiList<TrendingTag>(ctx, '/trending/tags?limit=8')
 			.then((v) => ({ ok: true as const, value: v.items }))
-			.catch(() => ({ ok: false as const, value: [] as TagSuggestion[] })),
+			.catch(() => ({ ok: false as const, value: [] as TrendingTag[] })),
 		// Suggested spaces for the right sidebar.
 		apiList<SpaceSuggestion>(ctx, '/suggestions/spaces?limit=5')
 			.then((v) => ({ ok: true as const, value: v.items }))

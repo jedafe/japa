@@ -71,8 +71,12 @@
 	let showDeleteConfirm = $state(false);
 	let deleteTarget = $state<TicketItem | null>(null);
 
-	// Backend gates ticket mutations on tickets.admin
-	const canManageTickets = $derived(hasPermission("tickets.admin"));
+	// Per-action RBAC gates matching the backend route middleware.
+	// Ref: japaconnect-engineering/sections/38-ticket-system.md
+	const canViewAllTickets = $derived(hasPermission("tickets.view_all"));
+	const canManageTickets = $derived(hasPermission("tickets.manage"));
+	const canDeleteTickets = $derived(hasPermission("tickets.admin"));
+	const canCommentInternal = $derived(hasPermission("tickets.comment.internal"));
 
 	const statusTabs = [
 		{ value: "", label: t("tickets.all", "All"), icon: Ticket },
@@ -100,7 +104,7 @@
 	const rowActions: ActionItem[] = [
 		{ label: t("common.view", "View"), icon: Eye, onclick: (row: TicketItem) => openView(row) },
 		{ label: t("common.edit", "Edit"), icon: Pencil, onclick: (row: TicketItem) => openEdit(row), show: () => canManageTickets },
-		{ label: t("common.delete", "Delete"), icon: Trash2, variant: "destructive", onclick: (row: TicketItem) => confirmDelete(row), show: () => canManageTickets }
+		{ label: t("common.delete", "Delete"), icon: Trash2, variant: "destructive", onclick: (row: TicketItem) => confirmDelete(row), show: () => canDeleteTickets }
 	];
 
 	const columns = [
@@ -464,7 +468,7 @@
 			{/if}
 
 			<!-- Add comment -->
-			{#if canManageTickets}
+			{#if canCommentInternal}
 				<div>
 					<label for="tk-comment" class="mb-1 block text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("tickets.add_comment", "Add Comment")}</label>
 					<div class="flex gap-2">

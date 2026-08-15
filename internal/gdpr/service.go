@@ -1691,6 +1691,23 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 			return fmt.Errorf("reassigning tax_obligation_guides hitl_reviewed_by: %w", err)
 		}
 
+		// visa_routes.hitl_reviewed_by references users(id) with ON
+		// DELETE SET NULL (migration 000325). Reassign to the placeholder
+		// so the HITL audit trail preserves a stable "deleted user"
+		// attribution rather than an anonymous NULL, matching the
+		// platform-wide erasure convention (ADR-014) and the
+		// housing_guides / community_organisations pattern above.
+		// Ref: japaconnect-engineering/sections/90-visa-route-comparison.md
+		//      japaconnect-engineering/adr/ADR-098-visa-route-comparison.md
+		//      japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
+		if _, err := s.db.Writer.Exec(ctx, `
+			UPDATE visa_routes
+			SET hitl_reviewed_by = $3
+			WHERE tenant_id = $2 AND hitl_reviewed_by = $1
+		`, userID, tenantID, deletedUserPlaceholder); err != nil {
+			return fmt.Errorf("reassigning visa_routes hitl_reviewed_by: %w", err)
+		}
+
 		// BUG-017: Scrub PII from cv_format_sessions during the
 		// anonymization phase (§95, ADR-103, ADR-014). The table has
 		// ON DELETE CASCADE from users(id) so rows are removed at
@@ -1875,6 +1892,47 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 			ActorUserID: userID,
 		}); err != nil {
 			return fmt.Errorf("deleting intel review log by actor: %w", err)
+		}
+
+		// BUG-006/BUG-022: Destination Wiki GDPR erasure (§80, ADR-088).
+		// wiki_pages.created_by and wiki_revisions.{submitted_by, reviewed_by,
+		// hitl_reviewed_by} reference users(id) with ON DELETE SET NULL, so the
+		// final HardDeleteUser would nullify them. Reassign to the placeholder
+		// so wiki pages and revisions (community content) survive with a stable
+		// "deleted user" attribution rather than an anonymous NULL, matching the
+		// calendar_entries / mutual_aid_posts / scam_reports pattern. Wiki
+		// content is collaborative and long-lived; nullifying authorship would
+		// break the revision history audit trail.
+		// Ref: japaconnect-engineering/sections/80-destination-wiki.md
+		//      japaconnect-engineering/adr/ADR-088-destination-wiki.md
+		//      japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
+		if _, err := s.db.Writer.Exec(ctx, `
+			UPDATE wiki_pages
+			SET created_by = $3, updated_at = now()
+			WHERE tenant_id = $2 AND created_by = $1
+		`, userID, tenantID, deletedUserPlaceholder); err != nil {
+			return fmt.Errorf("reassigning wiki_pages created_by: %w", err)
+		}
+		if _, err := s.db.Writer.Exec(ctx, `
+			UPDATE wiki_revisions
+			SET submitted_by = $3
+			WHERE tenant_id = $2 AND submitted_by = $1
+		`, userID, tenantID, deletedUserPlaceholder); err != nil {
+			return fmt.Errorf("reassigning wiki_revisions submitted_by: %w", err)
+		}
+		if _, err := s.db.Writer.Exec(ctx, `
+			UPDATE wiki_revisions
+			SET reviewed_by = $3
+			WHERE tenant_id = $2 AND reviewed_by = $1
+		`, userID, tenantID, deletedUserPlaceholder); err != nil {
+			return fmt.Errorf("reassigning wiki_revisions reviewed_by: %w", err)
+		}
+		if _, err := s.db.Writer.Exec(ctx, `
+			UPDATE wiki_revisions
+			SET hitl_reviewed_by = $3
+			WHERE tenant_id = $2 AND hitl_reviewed_by = $1
+		`, userID, tenantID, deletedUserPlaceholder); err != nil {
+			return fmt.Errorf("reassigning wiki_revisions hitl_reviewed_by: %w", err)
 		}
 
 		if err := q.HardDeleteUser(ctx, gen.HardDeleteUserParams{
@@ -2134,6 +2192,8 @@ type UserDataExport struct {
 	ReferralsAsReferee          []map[string]interface{} `json:"referrals_as_referee"`          // §60 BUG-013
 	ServiceListings             []map[string]interface{} `json:"service_listings"`              // §98 BUG-008
 	LanguageScoreStories        []map[string]interface{} `json:"language_score_stories"`        // §99 BUG-004
+	WikiPages                   []map[string]interface{} `json:"wiki_pages"`                    // §80 BUG-022
+	WikiRevisions               []map[string]interface{} `json:"wiki_revisions"`                // §80 BUG-022
 	ExportMetadata              map[string]interface{}   `json:"export_metadata"`
 }
 
@@ -2965,6 +3025,51 @@ func (s *Service) collectUserData(ctx context.Context, userID, tenantID pgtype.U
 		export.ReferralsAsReferee = rows
 	} else {
 		slog.Warn("failed to collect referrals_as_referee for export", "user_id", userID.String(), "error", err)
+	}
+
+	// BUG-022: export wiki_pages created by the user and wiki_revisions
+	// submitted/reviewed by the user so the GDPR data export includes their
+	// Destination Wiki contributions (§80, ADR-088).
+	// Ref: japaconnect-engineering/sections/80-destination-wiki.md
+	//      japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
+	if rows, err := s.db.Reader.Query(ctx, `
+		SELECT id, tenant_id, space_id, slug, title, category,
+		       is_active, is_featured, is_locked, created_at, updated_at
+		FROM wiki_pages
+		WHERE tenant_id = $2 AND created_by = $1
+		ORDER BY created_at DESC
+	`, userID, tenantID); err == nil {
+		defer rows.Close()
+		for rows.Next() {
+			row := make(map[string]interface{})
+			cols, _ := rows.Values()
+			for i, col := range rows.FieldDescriptions() {
+				row[string(col.Name)] = cols[i]
+			}
+			export.WikiPages = append(export.WikiPages, row)
+		}
+	} else {
+		slog.Warn("failed to collect wiki_pages for export", "user_id", userID.String(), "error", err)
+	}
+	if rows, err := s.db.Reader.Query(ctx, `
+		SELECT id, tenant_id, wiki_page_id, summary, status,
+		       ai_generated, ai_model, created_at
+		FROM wiki_revisions
+		WHERE tenant_id = $2
+		  AND (submitted_by = $1 OR reviewed_by = $1 OR hitl_reviewed_by = $1)
+		ORDER BY created_at DESC
+	`, userID, tenantID); err == nil {
+		defer rows.Close()
+		for rows.Next() {
+			row := make(map[string]interface{})
+			cols, _ := rows.Values()
+			for i, col := range rows.FieldDescriptions() {
+				row[string(col.Name)] = cols[i]
+			}
+			export.WikiRevisions = append(export.WikiRevisions, row)
+		}
+	} else {
+		slog.Warn("failed to collect wiki_revisions for export", "user_id", userID.String(), "error", err)
 	}
 
 	return export, nil

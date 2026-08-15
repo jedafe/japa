@@ -15,6 +15,7 @@
 		id: string;
 		name: string;
 		slug: string;
+		geo_code?: string;
 		member_count: number;
 		status: string;
 		verified: boolean;
@@ -45,15 +46,9 @@
 	});
 
 	// ── Filter options ──────────────────────────────────────────────────────
+	// Section 39 spec filters: country (geo_code). The "verified" filter was
+	// removed (audit U-4) - never wired to backend, not in spec.
 	const filterDefs = $derived<FilterDef[]>([
-		{
-			key: "verified",
-			label: t("universities.verified", "Verified"),
-			options: [
-				{ value: "true", label: t("common.yes", "Yes") },
-				{ value: "false", label: t("common.no", "No") }
-			]
-		},
 		{
 			key: "country",
 			label: t("universities.country", "Country"),
@@ -80,6 +75,7 @@
 
 	let formName = $state("");
 	let formSlug = $state("");
+	let formCountry = $state("");
 	let formLogoUrl = $state("");
 	let formVerified = $state(false);
 
@@ -125,12 +121,14 @@
 	// ── Create/Edit form fields ─────────────────────────────────────────────
 	// logo_url is accepted by the backend (POST/PATCH /admin/universities) and
 	// enqueues university:fetch_logo to download + store it (Section 39).
-	const fields: FieldDef[] = [
+	// country is stored as geo_code (ISO 3166-1 alpha-2) (audit U-1/U-2).
+	const fields = $derived<FieldDef[]>([
 		{ key: "name", label: t("universities.name", "Name"), type: "text", required: true },
 		{ key: "slug", label: t("universities.domain_slug", "Domain"), type: "text", placeholder: "mit.edu" },
+		{ key: "country", label: t("universities.country", "Country"), type: "select", options: countryOptions, placeholder: t("universities.country_placeholder", "Select country") },
 		{ key: "logo_url", label: t("universities.logo_url", "Logo URL"), type: "url", placeholder: "https://…" },
 		{ key: "verified", label: t("universities.verified", "Verified"), type: "checkbox" }
-	];
+	]);
 
 	// ── Config ──────────────────────────────────────────────────────────────
 	// Built as $derived so canManage/rowActions updates propagate.
@@ -194,6 +192,7 @@
 			const res = await universitiesAdminApi.create({
 				name: String(body.name ?? "").trim(),
 				slug: String(body.slug ?? "").trim(),
+				country: String(body.country ?? "").trim() || undefined as any,
 				logo_url: String(body.logo_url ?? "").trim() || undefined as any,
 				verified: !!body.verified
 			});
@@ -209,7 +208,7 @@
 	// ── Sub-flow handlers ───────────────────────────────────────────────────
 	function openEdit(uni: University) {
 		editTarget = uni;
-		formName = uni.name; formSlug = uni.slug; formLogoUrl = ""; formVerified = uni.status === "active";
+		formName = uni.name; formSlug = uni.slug; formCountry = uni.geo_code ?? ""; formLogoUrl = ""; formVerified = uni.status === "active";
 		showEditSlideOver = true;
 	}
 
@@ -233,6 +232,7 @@
 			const result = await universitiesAdminApi.update(editTarget.id, {
 				name: formName.trim(),
 				slug: formSlug.trim(),
+				country: formCountry.trim() || undefined,
 				logo_url: formLogoUrl.trim() || undefined,
 				verified: formVerified
 			});
@@ -324,6 +324,15 @@
 		<div class="space-y-3">
 			<div><label for="edit-uni-name" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t("universities.name", "Name")}</label><input id="edit-uni-name" type="text" class="w-full rounded-lg border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={formName} /></div>
 			<div><label for="edit-uni-domain" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t("universities.domain_slug", "Domain")}</label><input id="edit-uni-domain" type="text" class="w-full rounded-lg border px-3 py-2 text-sm font-mono" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={formSlug} /></div>
+			<div>
+				<label for="edit-uni-country" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t("universities.country", "Country")}</label>
+				<select id="edit-uni-country" class="w-full rounded-lg border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={formCountry}>
+					<option value="">{t("universities.country_placeholder", "Select country")}</option>
+					{#each countryOptions as opt (opt.value)}
+						<option value={opt.value}>{opt.label}</option>
+					{/each}
+				</select>
+			</div>
 			<div><label for="edit-uni-logo" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t("universities.logo_url", "Logo URL")}</label><input id="edit-uni-logo" type="url" placeholder="https://…" class="w-full rounded-lg border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={formLogoUrl} /></div>
 			<div class="flex items-center gap-2"><input id="edit-uni-verified" type="checkbox" bind:checked={formVerified} /><label for="edit-uni-verified" class="text-sm">{t("universities.verified", "Verified")}</label></div>
 		</div>
@@ -369,7 +378,7 @@
 <!-- ── CSV bulk import modal ── -->
 <Modal bind:open={showBulkImportModal} title={t("universities.bulkImport", "CSV Bulk Import")} size="default">
 	<div class="space-y-3">
-		<p class="text-sm" style="color: var(--color-muted)">{t("universities.bulkImportHelp", "Upload a CSV file with columns: name, slug, logo_url. Each row will create a university. Duplicate slugs are skipped.")}</p>
+		<p class="text-sm" style="color: var(--color-muted)">{t("universities.bulkImportHelp", "Upload a CSV file with columns: name, slug, country, logo_url. The country column is optional (ISO 3166-1 alpha-2, e.g. NG, GB, US). Each row will create a university. Duplicate slugs are skipped.")}</p>
 		<div>
 			<label for="csv-file" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t("universities.csvFile", "CSV File")}</label>
 			<input id="csv-file" type="file" accept=".csv" onchange={handleFileSelect} class="w-full text-sm" />
