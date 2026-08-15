@@ -142,8 +142,8 @@
 	]);
 
 	const columns = [
-		{ key: 'title', label: t('app.blog.col_title', 'Title'), sortable: true },
-		{ key: 'author_name', label: t('app.blog.col_author', 'Author'), sortable: true, render: (v: string) => v || t('app.blog.unknown', 'Unknown') },
+		{ key: 'title', label: t('app.blog.col_title', 'Title') },
+		{ key: 'author_name', label: t('app.blog.col_author', 'Author'), render: (v: string) => v || t('app.blog.unknown', 'Unknown') },
 		{
 			key: 'tags',
 			label: t('app.blog.col_tags', 'Tags'),
@@ -155,7 +155,6 @@
 		{
 			key: 'status',
 			label: t('app.blog.col_status', 'Status'),
-			sortable: true,
 			render: (v: string) => {
 				const colors: Record<string, string> = { published: 'var(--color-success)', draft: 'var(--color-warning)', in_review: 'var(--color-info)', review: 'var(--color-info)', archived: 'var(--color-muted)' };
 				const labels: Record<string, string> = { published: 'published', draft: 'draft', in_review: 'in review', review: 'in review', archived: 'archived' };
@@ -164,8 +163,8 @@
 				return `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium" style="background: color-mix(in srgb, ${color} 15%, transparent); color: ${color}">${label}</span>`;
 			}
 		},
-		{ key: 'published_at', label: t('app.blog.col_published', 'Published'), sortable: true, render: (v: string) => (v ? new Date(v).toLocaleDateString() : '—') },
-		{ key: 'views', label: t('app.blog.col_views', 'Views'), sortable: true, render: (v: number) => (v ?? 0).toLocaleString() }
+		{ key: 'published_at', label: t('app.blog.col_published', 'Published'), render: (v: string) => (v ? new Date(v).toLocaleDateString() : '—') },
+		{ key: 'views', label: t('app.blog.col_views', 'Views'), render: (v: number) => (v ?? 0).toLocaleString() }
 	];
 
 	// Tag filter options derived from loaded posts (Rule 16 — no hardcoded data).

@@ -100,19 +100,16 @@
 			{
 				key: 'display_name',
 				label: t('profiles.name', 'Name'),
-				sortable: true,
 				render: (v: string) => `<span class="font-medium">${v}</span>`
 			},
 			{
 				key: 'professional_type',
 				label: t('profiles.type', 'Type'),
-				sortable: true,
 				render: (v: string) => `<span class="text-xs" style="color: var(--color-muted)">${v}</span>`
 			},
 			{
 				key: 'is_verified',
 				label: t('profiles.verification', 'Verification'),
-				sortable: true,
 				render: (v: boolean) => {
 					const cls = v ? 'bg-success/15 text-success' : 'bg-warning/15 text-warning';
 					const text = v ? t('profiles.verified', 'Verified') : t('profiles.unverified', 'Unverified');

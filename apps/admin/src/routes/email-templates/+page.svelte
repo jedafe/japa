@@ -156,14 +156,13 @@
 		editPermission: 'email.templates.manage',
 		pageSize: 25,
 		columns: [
-			{ key: 'name', label: t('email_templates.name', 'Name'), sortable: true },
-			{ key: 'slug', label: t('email_templates.slug', 'Slug'), sortable: true },
-			{ key: 'subject', label: t('email_templates.subject', 'Subject'), sortable: true },
-			{ key: 'is_active', label: t('common.status', 'Status'), sortable: true, componentSnippet: StatusCell },
+			{ key: 'name', label: t('email_templates.name', 'Name') },
+			{ key: 'slug', label: t('email_templates.slug', 'Slug') },
+			{ key: 'subject', label: t('email_templates.subject', 'Subject') },
+			{ key: 'is_active', label: t('common.status', 'Status'), componentSnippet: StatusCell },
 			{
 				key: 'updated_at',
 				label: t('common.updated', 'Updated'),
-				sortable: true,
 				render: (v: string) => (v ? new Date(v).toLocaleDateString() : '—'),
 			},
 		],

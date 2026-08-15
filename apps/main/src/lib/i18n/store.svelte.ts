@@ -2,10 +2,13 @@ import { page } from '$app/state';
 import en from './en.json';
 import fr from './fr.json';
 
-export type Locale = 'en' | 'fr';
+export type Locale = string;
 type Dict = Record<string, string>;
 
-const dictionaries: Record<Locale, Dict> = { en, fr };
+// Static dictionaries for built-in locales. Additional locales resolved at
+// runtime fall back to English per Section 18 ("Missing keys always fall back
+// to English, never a blank string"). ADR-013 — runtime i18n.
+const dictionaries: Record<string, Dict> = { en, fr };
 
 /**
  * Translator. Flat dotted keys resolved against the active locale's dictionary,
@@ -21,11 +24,12 @@ const dictionaries: Record<Locale, Dict> = { en, fr };
 class I18nStore {
 	/** Active locale, derived from the request-scoped page data. */
 	locale = $derived<Locale>(
-		(page.data?.locale === 'fr' || page.data?.locale === 'en') ? page.data.locale : 'en'
+		typeof page.data?.locale === 'string' && page.data.locale ? page.data.locale : 'en'
 	);
 
 	t = (key: string, fallback?: string): string => {
-		return dictionaries[this.locale][key] ?? fallback ?? key;
+		const dict = dictionaries[this.locale] ?? dictionaries.en;
+		return dict[key] ?? fallback ?? key;
 	};
 }
 

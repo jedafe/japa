@@ -196,7 +196,6 @@
 			{
 				key: 'username',
 				label: t('imports.col_user', 'User'),
-				sortable: true,
 				render: (v: string, row: ContentImport) =>
 					`<div><p class="font-medium text-foreground">${v || 'unknown'}</p><p class="text-xs text-muted">${row.source_type}</p></div>`
 			},
@@ -211,7 +210,6 @@
 			{
 				key: 'status',
 				label: t('imports.col_status', 'Status'),
-				sortable: true,
 				render: (value: string) => {
 					const cls = statusBadgeClass(value);
 					return `<span class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold capitalize ${cls}">${value}</span>`;
@@ -220,7 +218,6 @@
 			{
 				key: 'imported_count',
 				label: t('imports.col_progress', 'Progress'),
-				sortable: true,
 				render: (v: number, row: ContentImport) => {
 					const total = row.total_items || 0;
 					const failed = row.failed_count || 0;
@@ -233,14 +230,12 @@
 			{
 				key: 'created_at',
 				label: t('imports.col_created', 'Created'),
-				sortable: true,
 				render: (value: string) =>
 					`<span class="text-sm text-foreground-alt">${new Date(value).toLocaleString()}</span>`
 			},
 			{
 				key: 'completed_at',
 				label: t('imports.col_completed', 'Completed'),
-				sortable: true,
 				render: (value: string | null | undefined) =>
 					value
 						? `<span class="text-sm text-foreground-alt">${new Date(value).toLocaleString()}</span>`

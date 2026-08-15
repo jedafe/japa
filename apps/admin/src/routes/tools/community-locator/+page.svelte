@@ -1,11 +1,12 @@
 <script lang="ts">
 	// /tools/community-locator — read-only HITL review queue with Approve + Verify actions.
+	import { onMount } from 'svelte';
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
-	import { communityLocatorAdminApi } from '$lib/api';
+	import { communityLocatorAdminApi , spacesAdminApi } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { Eye, CheckCircle, BadgeCheck, Archive, Trash2 } from 'lucide-svelte';
-	import type { ActionItem } from '$lib/components/ui/data-table';
+	import type { ActionItem, FilterDef } from '$lib/components/ui/data-table';
 
 	// CommunityItem matches the OrgDTO field names returned by the backend
 	// (internal/communitylocator/service.go OrgDTO). The previous version used
@@ -37,6 +38,21 @@
 	const canManage = $derived(hasPermission('community_locator.manage'));
 
 	// ── State ───────────────────────────────────────────────────────────────
+	
+// Destination Spaces for the dest filter (geo-aware pattern §90-101).
+type SpaceOption = { id: string; name: string };
+let destOptions = $state<SpaceOption[]>([]);
+onMount(async () => {
+	try {
+		const res = await spacesAdminApi.list('?level=country&limit=200');
+		if (res.ok && Array.isArray(res.data)) {
+			destOptions = (res.data as Array<{ id: string; name: string }>).map((s) => ({
+				id: s.id, name: s.name
+			}));
+		}
+	} catch { /* Non-fatal */ }
+});
+
 	let entityController = $state<EntityPageController | undefined>(undefined);
 	let pageError = $state('');
 	let acting = $state(false);
@@ -154,7 +170,12 @@
 		{ key: 'meeting_frequency', label: t('common.frequency', 'Meeting frequency'), type: 'text' }
 	];
 
+		const filters = $derived<FilterDef[]>([
+		{ key: 'dest', label: t('app.tools.col_destination', 'Destination'), options: destOptions.map((s) => ({ value: s.id, label: s.name })) }
+	]);
+
 	const config = $derived<EntityPageConfig>({
+		filters,
 		title: t('app.tools.community_locator_heading', 'Community Locator Review Queue'),
 		description: t('app.tools.community_locator_desc', 'Review, approve, and verify community locator entries'),
 		readonly: true,

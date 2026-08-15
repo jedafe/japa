@@ -57,8 +57,15 @@ var indexTypeByUID = map[string]string{
 }
 
 // searchAttributesToRetrieve limits each hit to the fields the response needs,
-// keeping payloads small and the mapping logic simple.
-var searchAttributesToRetrieve = []string{"id", "title", "excerpt", "url"}
+// keeping payloads small and the mapping logic simple. Includes type-specific
+// fields per §54 (avatar_url, username, display_name, name, level,
+// member_count, content_count, content_type, slug).
+var searchAttributesToRetrieve = []string{
+	"id", "title", "excerpt", "url",
+	"content_type", "slug", "avatar_url",
+	"username", "display_name", "name", "level",
+	"member_count", "content_count",
+}
 
 // indexesWithRelevantCountries is the set of Meilisearch indexes that carry
 // a `relevant_countries` filterable attribute (ADR-064 + ADR-064a). The
@@ -110,28 +117,58 @@ func (h *Handlers) SetCache(c valkeycompat.Cmdable) {
 	h.cache = c
 }
 
-// searchCacheKey builds jc:cache:search:{tenant_id}:{query_hash}:{type}:{geo}:{limit}.
+// searchCacheKey builds jc:cache:search:{tenant_id}:{query_hash}:{type}:{geo}:{limit}:{page}:{sort}.
 // The query is SHA-256 hashed to keep keys short and avoid storing raw user
 // input in Valkey keys. geoCountry is included so visitors from different
-// countries don't share a cached result set (ADR-064 geo-boost).
-func searchCacheKey(tenantID pgtype.UUID, query, typeFilter, geoCountry string, limit int) string {
+// countries don't share a cached result set (ADR-064 geo-boost). page and sort
+// are included so different pages/sort orders don't share a cached result set.
+func searchCacheKey(tenantID pgtype.UUID, query, typeFilter, geoCountry string, limit, offset int, sortExpr string) string {
 	h := sha256.Sum256([]byte(query))
 	queryHash := hex.EncodeToString(h[:16]) // 32-char hex, enough for uniqueness
-	return vkcache.MustKey("cache:search:%s:%s:%s:%s:%d", tenantID.String(), queryHash, typeFilter, geoCountry, limit)
+	return vkcache.MustKey("cache:search:%s:%s:%s:%s:%d:%d:%s", tenantID.String(), queryHash, typeFilter, geoCountry, limit, offset, sortExpr)
 }
 
-// SearchResult represents a single search result.
+// SearchResultItem holds the type-specific fields for a search result. Per
+// §54, each result type exposes its own field set. Fields are optional — only
+// the fields relevant to the type are populated.
+type SearchResultItem struct {
+	ID           string `json:"id"`
+	Title        string `json:"title,omitempty"`
+	Excerpt      string `json:"excerpt,omitempty"`
+	URL          string `json:"url,omitempty"`
+	ContentType  string `json:"content_type,omitempty"`
+	Slug         string `json:"slug,omitempty"`
+	Username     string `json:"username,omitempty"`
+	DisplayName  string `json:"display_name,omitempty"`
+	AvatarURL    string `json:"avatar_url,omitempty"`
+	Name         string `json:"name,omitempty"`
+	Level        string `json:"level,omitempty"`
+	MemberCount  *int32 `json:"member_count,omitempty"`
+	ContentCount *int32 `json:"content_count,omitempty"`
+}
+
+// SearchResult represents a single search result. Per §54 the response shape
+// is { type, item } where item holds the type-specific fields.
 type SearchResult struct { //nolint:revive // stuttering type name preserved for API compatibility
-	Type    string `json:"type"`
-	ID      string `json:"id"`
-	Title   string `json:"title"`
-	Excerpt string `json:"excerpt"`
-	URL     string `json:"url"`
+	Type string           `json:"type"`
+	Item SearchResultItem `json:"item"`
 }
 
-// SearchResponse is the API response for search.
+// ResultGroup holds a grouped bucket of results for one type (ADR-017).
+// When grouping is active, the response contains top 2–3 results per category
+// instead of a flat cross-index merge.
+type ResultGroup struct {
+	Type    string         `json:"type"`
+	Results []SearchResult `json:"results"`
+	Total   int            `json:"total"`
+}
+
+// SearchResponse is the API response for search. Per §54 + ADR-017 the
+// response contains grouped results (top 2–3 per category) when no type
+// filter is active, or a flat results list when a specific type is requested.
 type SearchResponse struct { //nolint:revive // stuttering type name preserved for API compatibility
 	Results []SearchResult `json:"results"`
+	Groups  []ResultGroup  `json:"groups,omitempty"`
 	Total   int            `json:"total"`
 	TookMs  int64          `json:"took_ms"`
 }
@@ -166,6 +203,8 @@ func (h *Handlers) Search(w http.ResponseWriter, r *http.Request) {
 	}
 
 	limit := parseLimit(r.URL.Query().Get("limit"))
+	offset := parsePage(r.URL.Query().Get("page"), limit)
+	sortExprs := parseSort(r.URL.Query().Get("sort"))
 	typeFilter := typeFromParam(r.URL.Query().Get("type"))
 	geoCountry := visitor.FromContext(r.Context()).ContentCountry
 
@@ -207,7 +246,7 @@ func (h *Handlers) Search(w http.ResponseWriter, r *http.Request) {
 	// queries from the same tenant are served from cache. Uses distributed
 	// lock stampede protection (BUG-008) to prevent thundering herd on
 	// popular queries.
-	cacheKey := searchCacheKey(t.ID, query, typeFilter, geoCountry, limit)
+	cacheKey := searchCacheKey(t.ID, query, typeFilter, geoCountry, limit, offset, r.URL.Query().Get("sort"))
 
 	searchStart := time.Now()
 	results, err := vkcache.GetOrComputeCompat(r.Context(), h.cache, cacheKey, searchCacheTTL, func(ctx context.Context) ([]SearchResult, error) {
@@ -217,7 +256,7 @@ func (h *Handlers) Search(w http.ResponseWriter, r *http.Request) {
 		if !authenticated && effectiveFilter == "" {
 			effectiveFilter = "all_no_users"
 		}
-		return h.runMultiSearchFiltered(ctx, query, limit, t.ID, effectiveFilter, geoCountry, extraPostFilter)
+		return h.runMultiSearchFiltered(ctx, query, limit, offset, sortExprs, t.ID, effectiveFilter, geoCountry, extraPostFilter)
 	})
 	if err != nil {
 		slog.Warn("search query failed", "query", query, "error", err)
@@ -228,12 +267,22 @@ func (h *Handlers) Search(w http.ResponseWriter, r *http.Request) {
 
 	tookMs := time.Since(searchStart).Milliseconds()
 
+	// ADR-017: when no type filter is active, group results by type (top 2-3
+	// per category) instead of returning a flat cross-index merge. When a
+	// specific type is requested, return a flat results list.
+	resp := SearchResponse{
+		Results: results,
+		Total:   len(results),
+		TookMs:  tookMs,
+	}
+	if typeFilter == "" {
+		resp.Groups = groupResults(results)
+		// When grouping, results is still populated for clients that prefer
+		// the flat view, but groups is the canonical field per ADR-017.
+	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
-		"data": SearchResponse{
-			Results: results,
-			Total:   len(results),
-			TookMs:  tookMs,
-		},
+		"data": resp,
 	})
 
 	// Log search analytics asynchronously (fire-and-forget). Guests have a
@@ -248,12 +297,11 @@ func (h *Handlers) Search(w http.ResponseWriter, r *http.Request) {
 
 // SearchSpaces handles GET /api/v1/spaces/search — the same multi-search
 // pipeline as Search, with the type filter pinned to "space".
+//
+// §54: space search is public (guests can search). Uses OptionalAuth so a
+// nil user is valid — analytics logging is skipped for guests.
 func (h *Handlers) SearchSpaces(w http.ResponseWriter, r *http.Request) {
 	user := auth.FromContext(r.Context())
-	if user == nil {
-		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
-		return
-	}
 
 	t := tenant.FromContext(r.Context())
 	if t == nil {
@@ -273,13 +321,15 @@ func (h *Handlers) SearchSpaces(w http.ResponseWriter, r *http.Request) {
 	}
 
 	limit := parseLimit(r.URL.Query().Get("limit"))
+	offset := parsePage(r.URL.Query().Get("page"), limit)
+	sortExprs := parseSort(r.URL.Query().Get("sort"))
 
 	if h.client == nil {
 		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": SearchResponse{Results: []SearchResult{}}})
 		return
 	}
 
-	results, err := h.runMultiSearchFiltered(r.Context(), query, limit, t.ID, "space", "", "")
+	results, err := h.runMultiSearchFiltered(r.Context(), query, limit, offset, sortExprs, t.ID, "space", "", "")
 	if err != nil {
 		slog.Warn("space search query failed", "query", query, "error", err)
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "search_unavailable", "Search is temporarily unavailable")
@@ -289,19 +339,17 @@ func (h *Handlers) SearchSpaces(w http.ResponseWriter, r *http.Request) {
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": SearchResponse{Results: results}})
 
-	var userID pgtype.UUID
-	if user.UserID != (pgtype.UUID{}) {
-		userID = user.UserID
+	// Analytics logging — skip for guests (nil or zero UUID).
+	if user != nil && user.UserID != (pgtype.UUID{}) {
+		h.logSearchAsync(r.Context(), t.ID, query, len(results), user.UserID, "space")
 	}
-
-	h.logSearchAsync(r.Context(), t.ID, query, len(results), userID, "space")
 }
 
 // runMultiSearch queries the posts, spaces, users, forum_threads, and tags
 // indexes in a single Meilisearch multi-search call, scoped to the given
 // tenant. It returns the flattened, type-tagged results.
 func (h *Handlers) runMultiSearch(ctx context.Context, query string, limit int, tenantID pgtype.UUID) ([]SearchResult, error) {
-	return h.runMultiSearchFiltered(ctx, query, limit, tenantID, "", "", "")
+	return h.runMultiSearchFiltered(ctx, query, limit, 0, nil, tenantID, "", "", "")
 }
 
 // buildPostFilter builds the extra Meilisearch filter expression for the
@@ -326,8 +374,10 @@ func buildPostFilter(contentType, spaceID, tagSlug string) string {
 // non-empty, adds a soft boost for learning_tracks results whose
 // relevant_countries array contains the visitor's country (ADR-064).
 // extraPostFilter, when non-empty, is appended to the posts index filter
-// (supports §54 ?content_type, ?space_id, ?tag_slug params).
-func (h *Handlers) runMultiSearchFiltered(ctx context.Context, query string, limit int, tenantID pgtype.UUID, typeFilter, geoCountry, extraPostFilter string) ([]SearchResult, error) {
+// (supports §54 ?content_type, ?space_id, ?tag_slug params). offset is the
+// zero-based pagination offset (§54 ?page=). sortExprs, when non-nil, is
+// passed to Meilisearch as the sort expression (§54 ?sort=).
+func (h *Handlers) runMultiSearchFiltered(ctx context.Context, query string, limit, offset int, sortExprs []string, tenantID pgtype.UUID, typeFilter, geoCountry, extraPostFilter string) ([]SearchResult, error) {
 	tenantFilter := fmt.Sprintf(`tenant_id = "%s"`, tenantID.String())
 	indexes := searchTypeIndexes(typeFilter)
 
@@ -362,11 +412,19 @@ func (h *Handlers) runMultiSearchFiltered(ctx context.Context, query string, lim
 			filter = fmt.Sprintf(`%s AND (relevant_countries IS EMPTY OR relevant_countries = "%s")`,
 				filter, geoCountry)
 		}
+		// §54 ?sort=: "top" uses engagement_score which only exists on the
+		// posts index. For other indexes, fall back to created_at:desc.
+		sort := sortExprs
+		if sort != nil && idx != IndexPosts {
+			sort = []string{"created_at:desc"}
+		}
 		queries[i] = &meilisearch.SearchRequest{
 			IndexUID:             idx,
 			Query:                query,
 			Limit:                int64(limit),
+			Offset:               int64(offset),
 			Filter:               filter,
+			Sort:                 sort,
 			AttributesToRetrieve: searchAttributesToRetrieve,
 		}
 	}
@@ -385,7 +443,8 @@ func (h *Handlers) runMultiSearchFiltered(ctx context.Context, query string, lim
 
 // mapSearchResults flattens a Meilisearch multi-search response into a single
 // type-tagged result list. Results from unknown indexes are skipped so a
-// misconfigured engine cannot corrupt the response shape.
+// misconfigured engine cannot corrupt the response shape. Per §54, each result
+// includes a nested item with type-specific fields.
 func mapSearchResults(resp *meilisearch.MultiSearchResponse) []SearchResult {
 	results := make([]SearchResult, 0, resp.EstimatedTotalHits)
 
@@ -397,16 +456,130 @@ func mapSearchResults(resp *meilisearch.MultiSearchResponse) []SearchResult {
 
 		for _, hit := range sr.Hits {
 			results = append(results, SearchResult{
-				Type:    resultType,
-				ID:      stringField(hit, "id"),
-				Title:   stringField(hit, "title"),
-				Excerpt: stringField(hit, "excerpt"),
-				URL:     stringField(hit, "url"),
+				Type: resultType,
+				Item: mapHitToItem(resultType, hit),
 			})
 		}
 	}
 
 	return results
+}
+
+// mapHitToItem builds a SearchResultItem from a Meilisearch hit, populating
+// only the fields relevant to the result type (§54 autocomplete/search
+// type-specific fields).
+func mapHitToItem(resultType string, hit meilisearch.Hit) SearchResultItem {
+	item := SearchResultItem{
+		ID:      stringField(hit, "id"),
+		Title:   stringField(hit, "title"),
+		Excerpt: stringField(hit, "excerpt"),
+		URL:     stringField(hit, "url"),
+	}
+
+	switch resultType {
+	case "content":
+		item.ContentType = stringField(hit, "content_type")
+		item.Slug = stringField(hit, "slug")
+	case "user":
+		// User documents store username in "title" and display_name in
+		// "excerpt" for backward compatibility with the uniform mapper, but
+		// §54 wants explicit username/display_name/avatar_url fields.
+		item.Username = stringField(hit, "title")
+		item.DisplayName = stringField(hit, "excerpt")
+		item.AvatarURL = stringField(hit, "avatar_url")
+		// Clear title/excerpt since we've mapped them to type-specific fields.
+		item.Title = ""
+		item.Excerpt = ""
+	case "space":
+		// Space documents store name in "title" for backward compatibility.
+		// §54 wants explicit name/level/member_count fields.
+		item.Name = stringField(hit, "title")
+		item.Level = stringField(hit, "level")
+		if mc := int32Field(hit, "member_count"); mc != nil {
+			item.MemberCount = mc
+		}
+		item.Title = ""
+	case "tag":
+		// Tag documents store name in "title" for backward compatibility.
+		// §54 wants explicit name/slug/content_count fields.
+		item.Name = stringField(hit, "title")
+		item.Slug = stringField(hit, "slug")
+		if cc := int32Field(hit, "content_count"); cc != nil {
+			item.ContentCount = cc
+		}
+		item.Title = ""
+	case "organization":
+		item.Name = stringField(hit, "title")
+		item.Slug = stringField(hit, "slug")
+		if mc := int32Field(hit, "member_count"); mc != nil {
+			item.MemberCount = mc
+		}
+		item.Title = ""
+	case "forum_thread":
+		item.Slug = stringField(hit, "slug")
+	case "learning_track":
+		item.Slug = stringField(hit, "slug")
+	}
+
+	return item
+}
+
+// int32Field extracts an int32 value from a Meilisearch hit by key. Returns
+// nil when the field is absent or not a number.
+func int32Field(hit meilisearch.Hit, key string) *int32 {
+	raw, ok := hit[key]
+	if !ok || len(raw) == 0 {
+		return nil
+	}
+	var n int32
+	if err := json.Unmarshal(raw, &n); err != nil {
+		// Meilisearch may return numbers as float64 in some cases.
+		var f float64
+		if err2 := json.Unmarshal(raw, &f); err2 == nil {
+			n = int32(f) //nolint:gosec // bounded by Meilisearch field values
+			return &n
+		}
+		return nil
+	}
+	return &n
+}
+
+// groupResults groups flat search results by type, keeping at most
+// maxPerGroup results per category (ADR-017: "top 2-3 per category"). The
+// group order follows the canonical type order for consistent responses.
+// Results within each group preserve Meilisearch's relevance order.
+const maxPerGroup = 3
+
+// canonicalTypeOrder is the display order for grouped results.
+var canonicalTypeOrder = []string{
+	"content", "forum_thread", "space", "user", "tag",
+	"organization", "course", "article", "doc_page",
+}
+
+func groupResults(flat []SearchResult) []ResultGroup {
+	buckets := make(map[string][]SearchResult)
+	for _, r := range flat {
+		buckets[r.Type] = append(buckets[r.Type], r)
+	}
+
+	groups := make([]ResultGroup, 0, len(buckets))
+	// Emit groups in canonical order for stable responses.
+	for _, t := range canonicalTypeOrder {
+		rs, ok := buckets[t]
+		if !ok || len(rs) == 0 {
+			continue
+		}
+		total := len(rs)
+		if total > maxPerGroup {
+			rs = rs[:maxPerGroup]
+		}
+		groups = append(groups, ResultGroup{
+			Type:    t,
+			Results: rs,
+			Total:   total,
+		})
+	}
+	return groups
 }
 
 // stringField extracts a string value from a Meilisearch hit by key. Returns
@@ -441,19 +614,57 @@ func parseLimit(raw string) int {
 	return parsed
 }
 
+// parsePage resolves the ?page= query parameter (§54: ?page=1&limit=20,
+// offset pagination). Returns the zero-based offset for Meilisearch. page
+// starts at 1; invalid values default to page 1 (offset 0).
+func parsePage(raw string, limit int) int {
+	if raw == "" {
+		return 0
+	}
+	parsed, err := strconv.Atoi(raw)
+	if err != nil || parsed <= 1 {
+		return 0
+	}
+	return (parsed - 1) * limit
+}
+
+// parseSort resolves the ?sort= query parameter (§54: relevant|latest|top).
+// Returns a Meilisearch sort expression slice. "relevant" (default) returns
+// nil so Meilisearch uses its native relevance ranking. "latest" sorts by
+// created_at descending. "top" sorts by engagement_score descending (posts
+// index only — other indexes fall back to created_at:desc).
+func parseSort(raw string) []string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "latest":
+		return []string{"created_at:desc"}
+	case "top":
+		return []string{"engagement_score:desc", "created_at:desc"}
+	default:
+		// "relevant" or unrecognized — use Meilisearch's native relevance.
+		return nil
+	}
+}
+
 // maxAutocompleteLimit caps autocomplete results.
 const maxAutocompleteLimit = 8
 
-// AutocompleteSuggestion is a single autocomplete suggestion.
+// AutocompleteSuggestion is a single autocomplete suggestion. Per §54,
+// each suggestion type exposes type-specific fields.
 type AutocompleteSuggestion struct {
-	Type        string `json:"type"`
-	ID          string `json:"id"`
-	Title       string `json:"title"`
-	Excerpt     string `json:"excerpt"`
-	URL         string `json:"url"`
-	ContentType string `json:"content_type,omitempty"`
-	Level       string `json:"level,omitempty"`
-	Slug        string `json:"slug,omitempty"`
+	Type         string `json:"type"`
+	ID           string `json:"id"`
+	Title        string `json:"title,omitempty"`
+	Excerpt      string `json:"excerpt,omitempty"`
+	URL          string `json:"url,omitempty"`
+	ContentType  string `json:"content_type,omitempty"`
+	Level        string `json:"level,omitempty"`
+	Slug         string `json:"slug,omitempty"`
+	Username     string `json:"username,omitempty"`
+	DisplayName  string `json:"display_name,omitempty"`
+	AvatarURL    string `json:"avatar_url,omitempty"`
+	Name         string `json:"name,omitempty"`
+	MemberCount  *int32 `json:"member_count,omitempty"`
+	ContentCount *int32 `json:"content_count,omitempty"`
 }
 
 // AutocompleteResponse is the API response for autocomplete.
@@ -588,7 +799,7 @@ func (h *Handlers) runAutocomplete(ctx context.Context, query string, limit int,
 			Query:                query,
 			Limit:                limit64,
 			Filter:               tenantFilter,
-			AttributesToRetrieve: []string{"id", "title", "excerpt", "url"},
+			AttributesToRetrieve: searchAttributesToRetrieve,
 		}
 	}
 
@@ -615,13 +826,44 @@ func mapAutocompleteResults(resp *meilisearch.MultiSearchResponse) []Autocomplet
 		}
 
 		for _, hit := range sr.Hits {
-			suggestions = append(suggestions, AutocompleteSuggestion{
-				Type:    resultType,
-				ID:      stringField(hit, "id"),
-				Title:   stringField(hit, "title"),
-				Excerpt: stringField(hit, "excerpt"),
-				URL:     stringField(hit, "url"),
-			})
+			s := AutocompleteSuggestion{
+				Type: resultType,
+				ID:   stringField(hit, "id"),
+				URL:  stringField(hit, "url"),
+			}
+
+			// §54: populate type-specific fields per suggestion type.
+			switch resultType {
+			case "content":
+				s.Title = stringField(hit, "title")
+				s.ContentType = stringField(hit, "content_type")
+			case "user":
+				s.Username = stringField(hit, "title")
+				s.DisplayName = stringField(hit, "excerpt")
+				s.AvatarURL = stringField(hit, "avatar_url")
+			case "space":
+				s.Name = stringField(hit, "title")
+				s.Level = stringField(hit, "level")
+				if mc := int32Field(hit, "member_count"); mc != nil {
+					s.MemberCount = mc
+				}
+			case "tag":
+				s.Name = stringField(hit, "title")
+				s.Slug = stringField(hit, "slug")
+				if cc := int32Field(hit, "content_count"); cc != nil {
+					s.ContentCount = cc
+				}
+			case "organization":
+				s.Name = stringField(hit, "title")
+				s.Slug = stringField(hit, "slug")
+			default:
+				// forum_thread, course, article, doc_page — use the uniform
+				// title/excerpt shape.
+				s.Title = stringField(hit, "title")
+				s.Excerpt = stringField(hit, "excerpt")
+			}
+
+			suggestions = append(suggestions, s)
 		}
 	}
 
@@ -689,11 +931,8 @@ func (h *Handlers) SearchSpace(w http.ResponseWriter, r *http.Request) {
 	results := make([]SearchResult, 0, len(resp.Hits))
 	for _, hit := range resp.Hits {
 		results = append(results, SearchResult{
-			Type:    "content",
-			ID:      stringField(hit, "id"),
-			Title:   stringField(hit, "title"),
-			Excerpt: stringField(hit, "excerpt"),
-			URL:     stringField(hit, "url"),
+			Type: "content",
+			Item: mapHitToItem("content", hit),
 		})
 	}
 
@@ -759,11 +998,8 @@ func (h *Handlers) SearchTag(w http.ResponseWriter, r *http.Request) {
 	results := make([]SearchResult, 0, len(resp.Hits))
 	for _, hit := range resp.Hits {
 		results = append(results, SearchResult{
-			Type:    "content",
-			ID:      stringField(hit, "id"),
-			Title:   stringField(hit, "title"),
-			Excerpt: stringField(hit, "excerpt"),
-			URL:     stringField(hit, "url"),
+			Type: "content",
+			Item: mapHitToItem("content", hit),
 		})
 	}
 

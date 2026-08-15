@@ -1,13 +1,14 @@
 <script lang="ts">
 	// /community/mutual-aid — admin HITL review queue for Mutual Aid requests with status update.
+	import { onMount } from 'svelte';
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import { Modal } from '$lib/components/ui/modal';
 	import { Button } from '$lib/components/ui/button';
-	import { mutualAidAdminApi } from '$lib/api';
+	import { mutualAidAdminApi , spacesAdminApi } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { Eye, RefreshCw } from 'lucide-svelte';
-	import type { ActionItem } from '$lib/components/ui/data-table';
+	import type { ActionItem, FilterDef } from '$lib/components/ui/data-table';
 
 	type MutualAidItem = {
 		id: string;
@@ -88,7 +89,45 @@
 		{ key: 'description', label: t('app.mutual_aid.detail_description', 'Description'), type: 'textarea' }
 	];
 
+	
+// Destination Spaces for the dest filter (geo-aware pattern). Loaded once
+// on mount from /admin/spaces?level=country so the filter options are
+// driven by the backend (Rule 16 — no hardcoded lists).
+type SpaceOption = { id: string; name: string };
+let destOptions = $state<SpaceOption[]>([]);
+onMount(async () => {
+	try {
+		const res = await spacesAdminApi.list('?level=country&limit=200');
+		if (res.ok && Array.isArray(res.data)) {
+			destOptions = (res.data as Array<{ id: string; name: string }>).map((s) => ({
+				id: s.id,
+				name: s.name
+			}));
+		}
+	} catch {
+		// Non-fatal — the dest filter simply stays empty.
+	}
+});
+
+		const filters = $derived<FilterDef[]>([
+		{
+			key: 'status',
+			label: t('app.mutual_aid.col_status', 'Status'),
+			options: [
+				{ value: 'active', label: t('app.mutual_aid.status_active', 'Active') },
+				{ value: 'closed', label: t('app.mutual_aid.status_closed', 'Closed') },
+				{ value: 'pending', label: t('app.mutual_aid.status_pending', 'Pending') },
+			]
+		},
+		{
+			key: 'dest',
+			label: t('app.mutual_aid.col_destination', 'Destination'),
+			options: destOptions.map((s) => ({ value: s.id, label: s.name }))
+		}
+	]);
+
 	const config = $derived<EntityPageConfig>({
+		filters,
 		title: t('app.mutual_aid.review_queue_heading', 'Mutual Aid Review Queue'),
 		description: t('app.mutual_aid.review_queue_desc', 'Review and moderate mutual aid requests'),
 		readonly: true,
@@ -126,6 +165,7 @@
 				queryParts.push(`sort=${params.sort}`);
 			}
 			if (params.filter?.dest) {
+			if (params.filter?.status) queryParts.push(`status=${encodeURIComponent(params.filter.status)}`);
 				queryParts.push(`dest=${encodeURIComponent(params.filter.dest)}`);
 			}
 			const qs = queryParts.join('&');

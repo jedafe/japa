@@ -152,24 +152,21 @@
 			{
 				key: 'sort_order',
 				label: '#',
-				sortable: true,
 				class: 'w-10 text-center',
 				render: (v: number) => `<span class="text-xs text-muted">${v}</span>`
 			},
 			{
 				key: 'name',
 				label: t('plans.name', 'Name'),
-				sortable: true,
 				render: (v: string, row: Plan) => {
 					const star = row.highlighted ? '<span class="ml-1 inline-block text-warning">★</span>' : '';
 					return `<span class="font-medium">${v}${star}</span>`;
 				}
 			},
-			{ key: 'slug', label: t('plans.slug', 'Slug'), sortable: true, class: 'font-mono text-xs' },
+			{ key: 'slug', label: t('plans.slug', 'Slug'), class: 'font-mono text-xs' },
 			{
 				key: 'monthly_amount',
 				label: t('plans.monthly', 'Monthly'),
-				sortable: true,
 				render: (v: number, row: Plan) => {
 					if (v === 0) return '<span class="text-success text-xs">Free</span>';
 					const sym = currencySymbolMap.get(row.currency) ?? row.currency;
@@ -179,7 +176,6 @@
 			{
 				key: 'yearly_amount',
 				label: t('plans.yearly', 'Yearly'),
-				sortable: true,
 				render: (v: number, row: Plan) => {
 					if (v === 0) return '<span class="text-muted text-xs">—</span>';
 					const sym = currencySymbolMap.get(row.currency) ?? row.currency;
@@ -198,7 +194,6 @@
 			{
 				key: 'status',
 				label: t('plans.status', 'Status'),
-				sortable: true,
 				render: (v: string) =>
 					v === 'active'
 						? '<span class="inline-block rounded-full px-2 py-0.5 text-xs bg-success/15 text-success">Active</span>'
@@ -236,7 +231,7 @@
 			}
 		],
 		fields,
-		load: async () => {
+		load: async ({ page, pageSize }) => {
 			const result = await plansApi.list();
 			if (result.ok) {
 				const data = ((result.data ?? []) as Plan[]).map(mapPlan);

@@ -28,7 +28,7 @@
 		name?: string;
 		/** Fetcher called with the debounced query; returns suggestions. */
 		fetcher: (q: string) => Promise<SearchSuggestion[]>;
-		/** Debounce delay in ms (default 250). */
+		/** Debounce delay in ms (default 200, per §54). */
 		debounceMs?: number;
 		/** Extra classes for the input element. */
 		inputClass?: string;
@@ -44,7 +44,7 @@
 		ariaLabel,
 		name = 'q',
 		fetcher,
-		debounceMs = 250,
+		debounceMs = 200,
 		inputClass = '',
 		minQuery = 2,
 		onInput

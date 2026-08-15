@@ -27,8 +27,9 @@ export const load: PageServerLoad = async (event) => {
 		// Pass the user's locale as ?lang= so the backend can return a
 		// translated version if available (Ref: §18, §44 ROADMAP 08.03).
 		// If no translation exists, the API returns the English version
-		// with a content_lang flag.
-		const langParam = event.locals.locale === 'fr' ? '?lang=fr' : '';
+		// with a content_lang flag. The backend handles the default locale
+		// (en) the same as no param.
+		const langParam = `?lang=${event.locals.locale}`;
 		page = await apiGet<DocPage>(ctx, `/docs/${audience}/${slug}${langParam}`);
 	} catch (err) {
 		if (err instanceof ApiError) {

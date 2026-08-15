@@ -39,6 +39,7 @@
 	};
 
 	let claims = $state<PendingClaim[]>([]);
+	let pageSize = $state(25);
 	let loading = $state(true);
 	let errorMessage = $state("");
 	let successMessage = $state("");
@@ -89,7 +90,6 @@
 		{
 			key: "org_name",
 			label: t("organisations.name", "Organization"),
-			sortable: true,
 			render: (v: string, row: PendingClaim) =>
 				`<span class="text-sm font-medium">${v}</span>` +
 				(row.org_slug
@@ -99,7 +99,6 @@
 		{
 			key: "claimant_username",
 			label: t("organisations.claimant", "Claimant"),
-			sortable: true,
 			render: (v: string) => `<span class="text-sm font-medium">${v}</span>`
 		},
 		{
@@ -110,13 +109,11 @@
 		{
 			key: "status",
 			label: t("organisations.status", "Status"),
-			sortable: true,
 			componentSnippet: ClaimStatusBadge
 		},
 		{
 			key: "created_at",
 			label: t("organisations.submitted_at", "Submitted"),
-			sortable: true,
 			render: (v: string) =>
 				`<span class="text-xs" style="color: var(--color-muted)">${new Date(v).toLocaleDateString()}</span>`
 		},
@@ -365,7 +362,8 @@
 	<DataTable
 		{columns}
 		data={filtered}
-		pageSize={25}
+		bind:pageSize
+		pageSizeOptions={[10, 25, 50, 100]}
 		selectable={canReview}
 		bind:selectedIds
 		bulkActionsList={bulkActionsList}

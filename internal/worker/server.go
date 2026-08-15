@@ -89,6 +89,14 @@ func NewScheduler(cfg *Config) *asynq.Scheduler {
 	// Writes to content_scores.velocity_score (used by feed ranking queries).
 	schedule("*/5 * * * *", TypeMaintenanceUpdateVelocityScores, 5*time.Minute)
 
+	// §13: batched engagement-score re-index — every 5 minutes.
+	// Re-indexes content documents whose engagement_score changed since the
+	// last sweep, so ?sort=top stays fresh without re-indexing on every
+	// engagement event. The handler tracks the last-swept timestamp in
+	// Valkey (jc:search:engagement_reindex_cursor) and only re-indexes
+	// content whose content_scores.updated_at > cursor. Default queue.
+	schedule("*/5 * * * *", TypeSearchReindexEngagementScores, 5*time.Minute)
+
 	// Every 15 min: check ticket SLA breaches.
 	schedule("*/15 * * * *", TypeMaintenanceCheckSLABreaches, 15*time.Minute)
 

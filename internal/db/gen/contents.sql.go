@@ -1532,6 +1532,51 @@ func (q *Queries) ListContentByTag(ctx context.Context, arg ListContentByTagPara
 	return items, nil
 }
 
+const listContentIDsScoredSince = `-- name: ListContentIDsScoredSince :many
+SELECT c.id, c.tenant_id
+FROM content_scores cs
+JOIN contents c ON c.id = cs.content_id
+WHERE cs.last_scored_at > $1 AND c.deleted_at IS NULL
+ORDER BY cs.last_scored_at ASC
+LIMIT $2
+`
+
+type ListContentIDsScoredSinceParams struct {
+	Cursor    pgtype.Timestamptz `json:"cursor"`
+	BatchSize int32              `json:"batch_size"`
+}
+
+type ListContentIDsScoredSinceRow struct {
+	ID       pgtype.UUID `json:"id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+// Returns content IDs whose content_scores.last_scored_at is newer than the
+// given cursor, joined to contents for tenant scoping. Used by the §13
+// batched engagement-score re-index cron to find content whose search index
+// document needs refreshing without re-indexing on every engagement event.
+// Limits to @batch_size rows ordered by last_scored_at ascending so the
+// cursor advances monotonically.
+func (q *Queries) ListContentIDsScoredSince(ctx context.Context, arg ListContentIDsScoredSinceParams) ([]ListContentIDsScoredSinceRow, error) {
+	rows, err := q.db.Query(ctx, listContentIDsScoredSince, arg.Cursor, arg.BatchSize)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListContentIDsScoredSinceRow
+	for rows.Next() {
+		var i ListContentIDsScoredSinceRow
+		if err := rows.Scan(&i.ID, &i.TenantID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listContentRevisions = `-- name: ListContentRevisions :many
 SELECT id, content_id, field_values, title, body, body_html, edited_by, created_at
 FROM content_revisions

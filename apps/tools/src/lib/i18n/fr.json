@@ -178,6 +178,7 @@
 	"scholarships.edit_reminder": "Modifier",
 	"scholarships.tracker_title": "Bourses enregistrées",
 	"scholarships.tracker_subtitle": "Suivez vos bourses enregistrées et votre progression.",
+	"scholarships.tracker_seo_desc": "Suivez vos bourses enregistrées et le statut de vos candidatures.",
 	"scholarships.tracker_empty": "Aucune bourse enregistrée",
 	"scholarships.tracker_empty_desc": "Parcourez le chercheur de bourses et enregistrez des bourses pour les suivre ici.",
 	"scholarships.browse": "Parcourir les bourses",

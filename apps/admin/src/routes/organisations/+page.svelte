@@ -192,13 +192,13 @@
 		createPermission: "admin.moderation",
 		pageSize: 25,
 		columns: [
-			{ key: "name", label: t("organisations.name", "Name"), sortable: true },
-			{ key: "slug", label: t("organisations.slug", "Slug"), sortable: true, render: (v: string) => v || "—" },
-			{ key: "org_type", label: t("organisations.new.field_type", "Type"), sortable: true, render: (v: string) => v ? v.charAt(0).toUpperCase() + v.slice(1) : "—" },
-			{ key: "owner_username", label: t("organisations.owner", "Owner"), sortable: true, render: (v: string) => v || "—" },
-			{ key: "member_count", label: t("organisations.members", "Members"), sortable: true, render: (v: number) => (v ?? 0).toLocaleString() },
-			{ key: "verified", label: t("organisations.verified", "Verified"), sortable: true, componentSnippet: VerifiedCell },
-			{ key: "created_at", label: t("common.created", "Created"), sortable: true, render: (v: string) => new Date(v).toLocaleDateString() }
+			{ key: "name", label: t("organisations.name", "Name") },
+			{ key: "slug", label: t("organisations.slug", "Slug"), render: (v: string) => v || "—" },
+			{ key: "org_type", label: t("organisations.new.field_type", "Type"), render: (v: string) => v ? v.charAt(0).toUpperCase() + v.slice(1) : "—" },
+			{ key: "owner_username", label: t("organisations.owner", "Owner"), render: (v: string) => v || "—" },
+			{ key: "member_count", label: t("organisations.members", "Members"), render: (v: number) => (v ?? 0).toLocaleString() },
+			{ key: "verified", label: t("organisations.verified", "Verified"), componentSnippet: VerifiedCell },
+			{ key: "created_at", label: t("common.created", "Created"), render: (v: string) => new Date(v).toLocaleDateString() }
 		],
 		filters,
 		actions: rowActions,

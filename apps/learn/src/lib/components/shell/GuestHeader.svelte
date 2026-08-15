@@ -5,8 +5,10 @@
 	// theme toggle, language toggle, and auth buttons.
 	import { t, i18n } from '$lib/i18n';
 	import { theme } from '$lib/stores/theme.svelte';
-	import { loginUrl, MAIN_ORIGIN, switchLocale } from '$lib/appOrigins';
-	import { Sun, Moon, LogIn, UserPlus, Languages, GraduationCap } from 'lucide-svelte';
+	import { loginUrl, MAIN_ORIGIN } from '$lib/appOrigins';
+	import { page } from '$app/state';
+	import { DropdownMenu } from 'bits-ui';
+	import { Sun, Moon, LogIn, UserPlus, Languages, GraduationCap, Check } from 'lucide-svelte';
 	import SearchAutocomplete from './SearchAutocomplete.svelte';
 	import type { Menu, MenuItem } from '$lib/types';
 
@@ -25,6 +27,29 @@
 	);
 
 	const brandLabel = $derived(t('university.name'));
+
+	// Enabled languages + default from site settings (§18, ADR-013).
+	const enabledLanguages = $derived(
+		((page.data?.siteSettings?.['i18n.enabled_languages'] as string | undefined) ?? 'en,fr')
+			.split(',').map((l) => l.trim()).filter(Boolean)
+	);
+	const defaultLanguage = $derived(
+		(page.data?.siteSettings?.['i18n.default_language'] as string | undefined) ?? 'en'
+	);
+	const showLanguageToggle = $derived(enabledLanguages.length > 1);
+	const currentPath = $derived(page.url.pathname.replace(/^\//, ''));
+
+	const displayNames = (() => {
+		try { return new Intl.DisplayNames(undefined, { type: 'language' }); }
+		catch { return null; }
+	})();
+	function localeLabel(code: string): string {
+		return displayNames?.of(code) ?? code;
+	}
+	function localeHref(lang: string): string {
+		const path = currentPath || '';
+		return lang === defaultLanguage ? `/${path}` : `/${lang}/${path}`;
+	}
 </script>
 
 <header class="guest-header">
@@ -50,15 +75,30 @@
 			<div class="guest-search">
 				<SearchAutocomplete />
 			</div>
-			<button
-				type="button"
-				class="guest-icon-btn"
-				onclick={() => switchLocale(i18n.locale === 'fr' ? 'en' : 'fr')}
-				aria-label={i18n.locale === 'fr' ? t('locale.switch_to_en') : t('locale.switch_to_fr')}
-				title={i18n.locale === 'fr' ? 'English' : 'Français'}
-			>
-				<Languages size={18} />
-			</button>
+			{#if showLanguageToggle}
+				<DropdownMenu.Root>
+					<DropdownMenu.Trigger
+						class="guest-icon-btn"
+						aria-label={t('locale.switch_language', 'Switch language')}
+						title={localeLabel(i18n.locale)}
+					>
+						<Languages size={18} />
+					</DropdownMenu.Trigger>
+					<DropdownMenu.Portal>
+						<DropdownMenu.Content class="z-50 max-h-60 overflow-y-auto rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-1 shadow-lg">
+							{#each enabledLanguages as lang (lang)}
+								<DropdownMenu.Item
+									onclick={() => { window.location.href = localeHref(lang); }}
+									class="flex cursor-pointer items-center justify-between rounded px-2 py-1.5 text-sm text-[var(--color-text)] data-[highlighted]:bg-[var(--color-surface-subtle)]"
+									>
+									<span>{localeLabel(lang)}</span>
+									{#if lang === i18n.locale}<Check size={14} class="text-[var(--color-primary)]" />{/if}
+								</DropdownMenu.Item>
+							{/each}
+						</DropdownMenu.Content>
+					</DropdownMenu.Portal>
+				</DropdownMenu.Root>
+			{/if}
 			<button
 				type="button"
 				class="guest-icon-btn"

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import { goto } from '$app/navigation';
+	import { navigating } from '$app/state';
 	import AppShell from '$lib/components/shell/AppShell.svelte';
 	import { Search } from 'lucide-svelte';
 	import { t } from '$lib/i18n';
@@ -103,6 +104,16 @@
 
 		{#if !data.q}
 			<p class="hint">{t('search.start_typing')}</p>
+		{:else if navigating && navigating.to?.url.searchParams.get('q') !== data.q}
+			<!-- Loading skeleton (§54: loading states) -->
+			<div class="results-loading" aria-busy="true" aria-live="polite">
+				{#each Array(5) as _, i (i)}
+					<div class="result-skeleton">
+						<div class="skeleton-line skeleton-title"></div>
+						<div class="skeleton-line skeleton-meta"></div>
+					</div>
+				{/each}
+			</div>
 		{:else if data.results.length === 0}
 			<p class="hint">{t('search.empty')}</p>
 		{:else}
@@ -211,6 +222,34 @@
 		font-size: 0.9375rem;
 		border: 1px dashed var(--color-border);
 		border-radius: var(--radius-card);
+	}
+	.results-loading {
+		display: flex;
+		flex-direction: column;
+		gap: 0.75rem;
+	}
+	.result-skeleton {
+		padding: 1rem;
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-card);
+	}
+	.skeleton-line {
+		height: 0.875rem;
+		border-radius: 4px;
+		background: var(--color-surface-subtle);
+		animation: pulse 1.5s ease-in-out infinite;
+	}
+	.skeleton-title {
+		width: 60%;
+		height: 1.125rem;
+		margin-bottom: 0.5rem;
+	}
+	.skeleton-meta {
+		width: 85%;
+	}
+	@keyframes pulse {
+		0%, 100% { opacity: 1; }
+		50% { opacity: 0.5; }
 	}
 	.results-for {
 		font-size: 0.875rem;

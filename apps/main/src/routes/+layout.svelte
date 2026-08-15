@@ -72,6 +72,8 @@
 	// Public: true) so the hreflang set matches the active language selector
 	// rather than a hardcoded en/fr list. Falls back to en,fr when the
 	// setting is absent (Rule 3 — no hardcoded config in the steady state).
+	// The default language gets the unprefixed URL (e.g. /blog); all others
+	// get the prefixed URL (e.g. /fr/blog). Ref: §18 (English unprefixed).
 	// Ref: japaconnect-engineering/sections/26-seo-performance.md
 	//      conventions/system-settings-catalog.md (i18n.enabled_languages)
 	let pathname = $derived(page.url.pathname);
@@ -87,11 +89,13 @@
 	let hreflangLinks = $derived(
 		enabledLanguages.map((lang) => ({
 			lang,
-			href: `/${lang}${pathname === '/' ? '' : pathname}`
+			href: lang === defaultLanguage
+				? (pathname === '/' ? '/' : pathname)
+				: `/${lang}${pathname === '/' ? '' : pathname}`
 		}))
 	);
 	let xDefaultHref = $derived(
-		`/${defaultLanguage}${pathname === '/' ? '' : pathname}`
+		pathname === '/' ? '/' : pathname
 	);
 
 	// Site-level settings from GET /site/settings/public (general.*).

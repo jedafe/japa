@@ -1,6 +1,7 @@
 <script lang="ts">
 	// /tools/credential-checker — admin HITL review queue for AI-generated credential checker guides.
 	// Fields map to the backend PathwayDTO contract (§94, ADR-102, ADR-088).
+	import { onMount } from 'svelte';
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import { Modal } from '$lib/components/ui/modal';
 	import { Button } from '$lib/components/ui/button';
@@ -8,7 +9,7 @@
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { Eye, CheckCircle, Sparkles } from 'lucide-svelte';
 	import type { ActionItem, FilterDef } from '$lib/components/ui/data-table';
-	import { credentialCheckerAdminApi, apiFetch } from '$lib/api';
+	import { credentialCheckerAdminApi, apiFetch , spacesAdminApi } from '$lib/api';
 
 	type CredentialCheckerItem = {
 		id: string;
@@ -32,6 +33,21 @@
 	const canManage = $derived(hasPermission('credential_checker.manage'));
 
 	// ── State ───────────────────────────────────────────────────────────────
+	
+// Destination Spaces for the dest filter (geo-aware pattern §90-101).
+type SpaceOption = { id: string; name: string };
+let destOptions = $state<SpaceOption[]>([]);
+onMount(async () => {
+	try {
+		const res = await spacesAdminApi.list('?level=country&limit=200');
+		if (res.ok && Array.isArray(res.data)) {
+			destOptions = (res.data as Array<{ id: string; name: string }>).map((s) => ({
+				id: s.id, name: s.name
+			}));
+		}
+	} catch { /* Non-fatal */ }
+});
+
 	let entityController = $state<EntityPageController | undefined>(undefined);
 	let pageError = $state('');
 	let acting = $state(false);
@@ -158,7 +174,9 @@
 		description: t('app.tools.credential_checker_desc', 'Review and approve AI-generated credential checker guides'),
 		readonly: true,
 		pageSize: 25,
-		filters: [statusFilter],
+		filters: [statusFilter,
+			{ key: 'dest', label: t('app.tools.col_destination', 'Destination'), options: destOptions.map((s) => ({ value: s.id, label: s.name })) }
+],
 		columns: [
 			{ key: 'profession_name', label: t('app.tools.col_profession', 'Profession'), sortable: true },
 			{ key: 'destination_space_name', label: t('app.tools.col_dest_country', 'Destination'), sortable: true },

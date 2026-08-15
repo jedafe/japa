@@ -8,12 +8,15 @@ import (
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/tenant"
+	"github.com/jedafe/japa/internal/worker"
+	"log/slog"
 )
 
 // Handlers provides HTTP handlers for organization management.
@@ -22,6 +25,7 @@ type Handlers struct {
 	follows           FollowService
 	jsonldResolver    JSONLDResolver
 	customFieldLookup CustomFieldLookup
+	asynqClient       *asynq.Client // nil disables search index enqueue (test-only)
 }
 
 // FollowService is the subset of the follows.Service used by org handlers.
@@ -54,6 +58,36 @@ func NewHandlers(service *Service, follows FollowService, resolver JSONLDResolve
 // Optional — when unset, /organizations/meta falls back to hardcoded constants.
 func (h *Handlers) SetCustomFieldLookup(l CustomFieldLookup) {
 	h.customFieldLookup = l
+}
+
+// SetAsynqClient injects the Asynq client so organization CRUD can enqueue
+// search:index_entity tasks (§12 stale-index fix). nil disables enqueue
+// (test-only).
+func (h *Handlers) SetAsynqClient(c *asynq.Client) { h.asynqClient = c }
+
+// enqueueSearchIndex enqueues a Meilisearch re-index task for an organization.
+// operation is "index" (create/update) or "delete". Fire-and-forget per Rule 8.
+func (h *Handlers) enqueueSearchIndex(operation string, entityID, tenantID pgtype.UUID) {
+	if h.asynqClient == nil {
+		return
+	}
+	payload, err := json.Marshal(map[string]string{
+		"entity_id":   entityID.String(),
+		"entity_type": "organization",
+		"tenant_id":   tenantID.String(),
+		"operation":   operation,
+	})
+	if err != nil {
+		slog.Warn("organizations: failed to marshal search index payload", "error", err)
+		return
+	}
+	if _, err := h.asynqClient.Enqueue(
+		asynq.NewTask(worker.TypeSearchIndexSync, payload),
+		asynq.Queue(worker.QueueForTask(worker.TypeSearchIndexSync)),
+	); err != nil {
+		slog.Warn("organizations: failed to enqueue search index task",
+			"entity_id", entityID.String(), "error", err)
+	}
 }
 
 func parsePageSize(r *http.Request) int32 {
@@ -224,6 +258,9 @@ func (h *Handlers) CreateOrganization(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// §12 stale-index fix: enqueue Meilisearch re-index for the new org.
+	h.enqueueSearchIndex("index", result.ID, tenantID)
+
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": result})
 }
 
@@ -340,6 +377,9 @@ func (h *Handlers) UpdateOrganization(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// §12 stale-index fix: enqueue Meilisearch re-index for the updated org.
+	h.enqueueSearchIndex("index", id, tenantID)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"message": "Organization updated"}})
 }
 
@@ -365,6 +405,9 @@ func (h *Handlers) DeleteOrganization(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
+	// §12 stale-index fix: remove the deleted org from the Meilisearch index.
+	h.enqueueSearchIndex("delete", id, tenantID)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"message": "Organization deleted"}})
 }
@@ -936,6 +979,9 @@ func (h *Handlers) AdminCreateOrganization(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	// §12 stale-index fix: enqueue Meilisearch re-index for the new org.
+	h.enqueueSearchIndex("index", result.ID, tenantID)
+
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": result})
 }
 
@@ -983,6 +1029,9 @@ func (h *Handlers) AdminUpdateOrganization(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	// §12 stale-index fix: enqueue Meilisearch re-index for the updated org.
+	h.enqueueSearchIndex("index", id, tenantID)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"message": "Organization updated"}})
 }
 
@@ -1003,6 +1052,9 @@ func (h *Handlers) AdminDeleteOrganization(w http.ResponseWriter, r *http.Reques
 		handleServiceError(w, err)
 		return
 	}
+
+	// §12 stale-index fix: remove the deleted org from the Meilisearch index.
+	h.enqueueSearchIndex("delete", id, tenantID)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"message": "Organization deleted"}})
 }

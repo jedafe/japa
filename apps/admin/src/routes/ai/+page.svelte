@@ -72,7 +72,7 @@
 	let reviewsLoading = $state(true);
 	let reviewsError = $state('');
 	let page = $state(0);
-	const pageSize = 10;
+	let pageSize = $state(10);
 
 	// Stats
 	let pendingCount = $state(0);
@@ -105,7 +105,7 @@
 	];
 
 	const toolsMgmtColumns = [
-		{ key: 'name', label: t('ai.tools.name'), sortable: true },
+		{ key: 'name', label: t('ai.tools.name') },
 		{ key: 'description', label: t('ai.tools.description'), render: (v: string) => `<span class="text-xs" style="color: var(--color-muted)">${v || '—'}</span>` },
 		{ key: 'is_enabled', label: t('ai.tools.status'), render: (v: boolean) => `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium ${v ? 'bg-success/15 text-success dark:text-success' : 'bg-muted/15 text-muted dark:text-muted'}">${v ? t('ai.tools.enabled') : t('ai.tools.disabled')}</span>` },
 		{ key: 'created_at', label: t('ai.tools.created'), render: (v: string) => `<span class="text-xs" style="color: var(--color-muted)">${new Date(v).toLocaleDateString()}</span>` }

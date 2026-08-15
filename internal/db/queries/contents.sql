@@ -398,6 +398,20 @@ SELECT content_id, vote_score, comment_count, view_count, bookmark_count, veloci
 FROM content_scores
 WHERE content_id = @content_id;
 
+-- name: ListContentIDsScoredSince :many
+-- Returns content IDs whose content_scores.last_scored_at is newer than the
+-- given cursor, joined to contents for tenant scoping. Used by the §13
+-- batched engagement-score re-index cron to find content whose search index
+-- document needs refreshing without re-indexing on every engagement event.
+-- Limits to @batch_size rows ordered by last_scored_at ascending so the
+-- cursor advances monotonically.
+SELECT c.id, c.tenant_id
+FROM content_scores cs
+JOIN contents c ON c.id = cs.content_id
+WHERE cs.last_scored_at > @cursor AND c.deleted_at IS NULL
+ORDER BY cs.last_scored_at ASC
+LIMIT @batch_size;
+
 -- =====================
 -- Content Tags
 -- =====================

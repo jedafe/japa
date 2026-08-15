@@ -1,14 +1,15 @@
 <script lang="ts">
 	// /tools/processing-tracker — management page for user-submitted visa processing timeline entries.
 	// Ref: japaconnect-engineering/sections/83-visa-timeline-tracker.md (ADR-091)
+	import { onMount } from 'svelte';
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import { Modal } from '$lib/components/ui/modal';
 	import { Button } from '$lib/components/ui/button';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { Eye, Trash2 } from 'lucide-svelte';
-	import type { ActionItem } from '$lib/components/ui/data-table';
-	import { processingTrackerAdminApi } from '$lib/api';
+	import type { ActionItem, FilterDef } from '$lib/components/ui/data-table';
+	import { processingTrackerAdminApi , spacesAdminApi } from '$lib/api';
 
 	// TimelineDTO shape from GET /admin/visa-timelines (§83). The backend
 	// returns the full TimelineDTO with joined milestones; we derive the
@@ -45,6 +46,21 @@
 	const canManage = $derived(hasPermission('visa_timeline.manage_any'));
 
 	// ── State ───────────────────────────────────────────────────────────────
+	
+// Destination Spaces for the dest filter (geo-aware pattern §90-101).
+type SpaceOption = { id: string; name: string };
+let destOptions = $state<SpaceOption[]>([]);
+onMount(async () => {
+	try {
+		const res = await spacesAdminApi.list('?level=country&limit=200');
+		if (res.ok && Array.isArray(res.data)) {
+			destOptions = (res.data as Array<{ id: string; name: string }>).map((s) => ({
+				id: s.id, name: s.name
+			}));
+		}
+	} catch { /* Non-fatal */ }
+});
+
 	let entityController = $state<EntityPageController | undefined>(undefined);
 	let pageError = $state('');
 	let acting = $state(false);
@@ -116,7 +132,12 @@
 		{ key: 'outcome', label: t('app.tools.col_status', 'Status'), type: 'text' }
 	];
 
+		const filters = $derived<FilterDef[]>([
+		{ key: 'dest', label: t('app.tools.col_destination', 'Destination'), options: destOptions.map((s) => ({ value: s.id, label: s.name })) }
+	]);
+
 	const config = $derived<EntityPageConfig>({
+		filters,
 		title: t('app.tools.processing_tracker_heading', 'Processing Time Tracker'),
 		description: t('app.tools.processing_tracker_desc', 'Manage user-submitted visa processing timeline entries'),
 		readonly: true,

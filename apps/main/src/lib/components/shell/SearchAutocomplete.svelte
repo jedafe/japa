@@ -12,11 +12,14 @@
 	interface AutocompleteSuggestion {
 		type: string;
 		id: string;
-		title: string;
+		title?: string;
 		excerpt?: string;
 		url?: string;
 		content_type?: string;
 		slug?: string;
+		username?: string;
+		display_name?: string;
+		name?: string;
 	}
 
 	let query = $state('');
@@ -49,7 +52,7 @@
 			} finally {
 				loading = false;
 			}
-		}, 250);
+		}, 200);
 	}
 
 	function select(s: AutocompleteSuggestion) {
@@ -125,6 +128,13 @@
 		/>
 	</form>
 
+	{#if loading && showDropdown}
+		<!-- Loading indicator (§54: loading states) -->
+		<div class="absolute left-0 right-0 top-full z-50 mt-1 rounded-[12px] border border-[var(--color-border)] bg-[var(--color-surface)] py-3 text-center shadow-lg">
+			<span class="inline-block h-4 w-4 animate-spin rounded-full border-2 border-[var(--color-border)] border-t-[var(--color-primary)]"></span>
+		</div>
+	{/if}
+
 	{#if showDropdown && suggestions.length > 0}
 		<ul
 			id="search-suggestions"
@@ -140,7 +150,7 @@
 						class="flex w-full items-start gap-2 px-3 py-2 text-left transition {i === activeIndex ? 'bg-[var(--color-surface-subtle)]' : ''}"
 					>
 						<div class="min-w-0 flex-1">
-							<p class="truncate text-sm font-medium text-[var(--color-text)]">{s.title}</p>
+							<p class="truncate text-sm font-medium text-[var(--color-text)]">{s.title ?? s.name ?? s.username ?? s.display_name ?? ''}</p>
 							{#if s.excerpt}
 								<p class="truncate text-xs text-[var(--color-muted)]">{s.excerpt}</p>
 							{/if}

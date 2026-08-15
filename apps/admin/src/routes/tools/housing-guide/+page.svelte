@@ -8,8 +8,8 @@
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { Eye, CheckCircle, XCircle, Sparkles } from 'lucide-svelte';
-	import type { ActionItem } from '$lib/components/ui/data-table';
-	import { housingGuideAdminApi, api } from '$lib/api';
+	import type { ActionItem, FilterDef } from '$lib/components/ui/data-table';
+	import { housingGuideAdminApi, api , spacesAdminApi } from '$lib/api';
 
 	// GuideDTO fields from internal/housingguide/service.go (GuideDTO).
 	type HousingGuideItem = {
@@ -34,6 +34,21 @@
 	const canManage = $derived(hasPermission('housing_guide.manage'));
 
 	// ── State ───────────────────────────────────────────────────────────────
+	
+// Destination Spaces for the dest filter (geo-aware pattern §90-101).
+type SpaceOption = { id: string; name: string };
+let destOptions = $state<SpaceOption[]>([]);
+onMount(async () => {
+	try {
+		const res = await spacesAdminApi.list('?level=country&limit=200');
+		if (res.ok && Array.isArray(res.data)) {
+			destOptions = (res.data as Array<{ id: string; name: string }>).map((s) => ({
+				id: s.id, name: s.name
+			}));
+		}
+	} catch { /* Non-fatal */ }
+});
+
 	let entityController = $state<EntityPageController | undefined>(undefined);
 	let pageError = $state('');
 	let acting = $state(false);
@@ -161,7 +176,12 @@
 		{ key: 'accommodation_type', label: t('app.tools.col_accommodation_type', 'Accommodation Type'), type: 'text' }
 	];
 
+		const filters = $derived<FilterDef[]>([
+		{ key: 'dest', label: t('app.tools.col_destination', 'Destination'), options: destOptions.map((s) => ({ value: s.id, label: s.name })) }
+	]);
+
 	const config = $derived<EntityPageConfig>({
+		filters,
 		title: t('app.tools.housing_guide_heading', 'Housing Guide Review Queue'),
 		description: t('app.tools.housing_guide_desc', 'Review and approve AI-generated housing guides'),
 		readonly: true,
