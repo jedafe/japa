@@ -9,8 +9,17 @@
 	import { t } from '$lib/stores/i18n.svelte';
 	import type { AiProvider } from '$lib/api/types';
 	import type { DataTableColumn, DataTableRowAction } from '$lib/api/types';
+	import { hasAnyPermission } from '$lib/stores/auth.svelte';
 
 	let {} = $props();
+
+	// Backend routes gated by ai.providers.view (list/get/types) and
+	// ai.providers.manage (create/update/delete/test/fetch-models) —
+	// migration 000452, server.go:6096-6111. The frontend must match so
+	// users without view access see an access-denied message instead of
+	// triggering 403 API calls.
+	const canView = $derived(hasAnyPermission(['ai.providers.view', 'ai.providers.manage']));
+	const canManage = $derived(hasAnyPermission(['ai.providers.manage']));
 
 	let providers = $state<AiProvider[]>([]);
 	let loading = $state(true);
@@ -210,17 +219,20 @@
 		{
 			label: t('ai_providers.edit', 'Edit'),
 			icon: Pencil,
+			hidden: () => !canManage,
 			onClick: (row) => openEdit(row as unknown as AiProvider)
 		},
 		{
 			label: t('ai_providers.test', 'Test Connection'),
 			icon: Zap,
+			hidden: () => !canManage,
 			onClick: (row) => testProvider(row as unknown as AiProvider)
 		},
 		{
 			label: t('ai_providers.delete', 'Delete'),
 			icon: Trash2,
 			variant: 'destructive',
+			hidden: () => !canManage,
 			onClick: (row) => openDeleteConfirm(row as unknown as AiProvider)
 		}
 	];
@@ -406,6 +418,11 @@
 
 <PageHeader title={t('ai_providers.title', 'AI Providers')} description={t('ai_providers.description', 'Manage AI provider configurations, API keys, and categories')} />
 
+{#if !canView}
+	<div class="flex items-center gap-2 rounded-lg border p-4 text-sm" style="border-color: var(--color-danger); color: var(--color-danger)">
+		{t('ai_providers.no_permission', 'You do not have permission to view AI providers.')}
+	</div>
+{:else}
 {#if errorMessage}
 	<div class="border-destructive bg-destructive/10 text-destructive mb-4 rounded-xl border px-4 py-3 text-sm">
 		{errorMessage}
@@ -414,13 +431,15 @@
 
 <div class="mb-4 flex items-center justify-between gap-3">
 	<SearchInput bind:value={filter} placeholder={t('common.search', 'Search...')} />
-	<button
-		class="bg-foreground text-background hover:bg-foreground/90 rounded-9px inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium transition-colors"
-		onclick={openCreate}
-	>
-		<Plus class="size-4" />
-		{t('ai_providers.create', 'Add Provider')}
-	</button>
+	{#if canManage}
+		<button
+			class="bg-foreground text-background hover:bg-foreground/90 rounded-9px inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium transition-colors"
+			onclick={openCreate}
+		>
+			<Plus class="size-4" />
+			{t('ai_providers.create', 'Add Provider')}
+		</button>
+	{/if}
 </div>
 
 {#if testResult}
@@ -828,3 +847,4 @@
 	consequence={deleteTarget ? t('ai_providers.delete_confirm_detail', 'Permanently delete provider \'{name}\'. The dispatcher will be hot-reloaded and this provider will stop serving requests immediately.').replace('{name}', deleteTarget.name) : ''}
 	onConfirm={confirmDelete}
 />
+{/if}

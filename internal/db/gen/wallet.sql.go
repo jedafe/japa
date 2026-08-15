@@ -212,6 +212,26 @@ func (q *Queries) GetLedgerEntryByID(ctx context.Context, arg GetLedgerEntryByID
 	return i, err
 }
 
+const getLifetimePoints = `-- name: GetLifetimePoints :one
+SELECT COALESCE(SUM(amount), 0)::bigint FROM wallet_ledger
+WHERE tenant_id = $1 AND user_id = $2
+  AND ledger_type = 'points' AND amount > 0
+`
+
+type GetLifetimePointsParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	UserID   pgtype.UUID `json:"user_id"`
+}
+
+// Sum of all positive points earns (never decreases; used for badges/tiers,
+// Section 28). BUG-W-003: surfaced in GET /me/wallet response.
+func (q *Queries) GetLifetimePoints(ctx context.Context, arg GetLifetimePointsParams) (int64, error) {
+	row := q.db.QueryRow(ctx, getLifetimePoints, arg.TenantID, arg.UserID)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const getWalletSettings = `-- name: GetWalletSettings :one
 
 SELECT id, tenant_id, points_to_credits_rate, created_at, updated_at, daily_earning_cap, enable_earning FROM wallet_settings

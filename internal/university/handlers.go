@@ -557,6 +557,9 @@ func (h *Handlers) GetMyTrackStats(w http.ResponseWriter, r *http.Request) {
 // ---------------------------------------------------------------------------
 
 // ListCatalog handles GET /learn/university/catalog.
+// Supports ?q= (title search), ?level= (difficulty), ?category=, ?language=,
+// ?is_free=true, and ?sort=popular|newest|rating filters. The frontend search
+// page and homepage send q and level (ADR-060 TrackSummary contract).
 func (h *Handlers) ListCatalog(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
@@ -568,6 +571,9 @@ func (h *Handlers) ListCatalog(w http.ResponseWriter, r *http.Request) {
 		Category: r.URL.Query().Get("category"),
 		Language: r.URL.Query().Get("language"),
 		IsFree:   r.URL.Query().Get("is_free") == "true",
+		Level:    r.URL.Query().Get("level"),
+		Q:        r.URL.Query().Get("q"),
+		Sort:     r.URL.Query().Get("sort"),
 	}
 
 	rows, err := h.service.store.ListCatalog(r.Context(), tenantID, f, limit, offset)
@@ -883,6 +889,8 @@ func (h *Handlers) AdminDeleteInstructor(w http.ResponseWriter, r *http.Request)
 
 // AdminListPendingTracks handles GET /admin/university/tracks/pending.
 // Optional ?space_id= scopes the list to tracks targeted at that space.
+// Returns {data, meta{total,limit,offset}} so the admin hub can show the
+// true pending count (not just the page length).
 func (h *Handlers) AdminListPendingTracks(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
@@ -899,7 +907,15 @@ func (h *Handlers) AdminListPendingTracks(w http.ResponseWriter, r *http.Request
 	if rows == nil {
 		rows = []gen.ListPendingUniversityTracksRow{}
 	}
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": rows})
+	total, err := h.service.store.CountPendingTracks(r.Context(), tenantID, spaceID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
+		"data": rows,
+		"meta": map[string]int64{"total": total, "limit": int64(limit), "offset": int64(offset)},
+	})
 }
 
 // AdminApproveTrack handles POST /admin/university/tracks/{id}/approve.
@@ -924,6 +940,8 @@ func (h *Handlers) AdminApproveTrack(w http.ResponseWriter, r *http.Request) {
 // AdminListPayouts handles GET /admin/university/payouts.
 // Optional ?space_id= scopes the list to payouts for instructors with a track
 // targeted at that space.
+// Returns {data, meta{total,limit,offset}} so the admin hub can show the
+// true pending-payout count (not just the page length).
 func (h *Handlers) AdminListPayouts(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
@@ -941,7 +959,15 @@ func (h *Handlers) AdminListPayouts(w http.ResponseWriter, r *http.Request) {
 	if payouts == nil {
 		payouts = []gen.ListInstructorPayoutsByStatusRow{}
 	}
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": payouts})
+	total, err := h.service.store.CountPayoutsByStatus(r.Context(), tenantID, spaceID, status)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
+		"data": payouts,
+		"meta": map[string]int64{"total": total, "limit": int64(limit), "offset": int64(offset)},
+	})
 }
 
 // AdminGetPayout handles GET /admin/university/payouts/{id}.

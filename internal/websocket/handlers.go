@@ -2,10 +2,8 @@ package websocket
 
 import (
 	"context"
-	"crypto/rand"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"time"
@@ -248,6 +246,22 @@ func (h *Handlers) GetOnlineUsers(w http.ResponseWriter, _ *http.Request) {
 func (c *Client) readPump(dmSvc *DMService) {
 	defer func() {
 		c.Hub.Unregister(c)
+
+		// Broadcast an offline presence event to the tenant — but only
+		// if the user has no other active connection (multi-device).
+		// The connect path broadcasts "online" via BroadcastToTenant;
+		// without this counterpart, other users see the user as online
+		// indefinitely after disconnect (§11 presence tracking).
+		if !c.Hub.IsUserOnline(c.UserID) {
+			c.Hub.BroadcastToTenant(c.TenantID, WSEvent{
+				Type: EventPresence,
+				Payload: map[string]interface{}{
+					"user_id": c.UserID,
+					"status":  "offline",
+				},
+			})
+		}
+
 		_ = c.Conn.Close()
 	}()
 
@@ -427,17 +441,6 @@ func (c *Client) writePump() {
 			}
 		}
 	}
-}
-
-// generateUUID generates a random UUID string.
-func generateUUID() string {
-	b := make([]byte, 16)
-	_, _ = rand.Read(b)
-	b[6] = (b[6] & 0x0f) | 0x40 // Version 4
-	b[8] = (b[8] & 0x3f) | 0x80 // Variant 10
-
-	return fmt.Sprintf("%08x-%04x-%04x-%04x-%012x",
-		b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
 }
 
 // mustMarshal marshals v to JSON, returning empty byte slice on error.

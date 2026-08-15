@@ -116,7 +116,7 @@
 		fields,
 		load: async ({ q, filter }) => {
 			const params = new URLSearchParams();
-			if (filter.is_active) params.set('active_only', filter.is_active === 'true' ? 'true' : 'false');
+			if (filter.is_active) params.set('is_active', filter.is_active);
 			if (filter.provider_type) params.set('provider_type', filter.provider_type);
 			if (q) params.set('q', q);
 			const result = await travelAdminApi.list(params.toString() || undefined);

@@ -1142,7 +1142,7 @@ const engagementReindexBatchSize = 100
 // monotonically so each tick only re-indexes content whose scores changed
 // since the previous tick. Ref: conventions/valkey-keys-catalog.md
 // (jc:search:engagement_reindex_cursor).
-const engagementReindexCursorKey = "search:engagement_reindex_cursor"
+const engagementReindexCursorKey = "jc:search:engagement_reindex_cursor"
 
 // HandleSearchReindexEngagementScores is the §13 batched engagement-score
 // re-index cron. It runs every 5 minutes (see NewScheduler), reads a cursor
@@ -3472,6 +3472,30 @@ func HandleMaintenanceCheckSLABreaches(ctx context.Context, t *asynq.Task) error
 				"subject", b.Subject,
 				"sla_breach_at", b.SlaBreachAt.Time)
 			breachCount++
+
+			// Create an in-app notification for the assigned agent.
+			// Ref: japaconnect-engineering/sections/38-ticket-system.md (SLA Tracking)
+			if b.AssignedTo.Valid {
+				title := fmt.Sprintf("SLA breached: %s", b.Subject)
+				bodyStr := fmt.Sprintf("Ticket %s has breached its SLA deadline.", b.ID.String())
+				actionURL := fmt.Sprintf("/admin/tickets/%s", b.ID.String())
+				actorType := "system"
+				subjectType := "ticket"
+				if _, nErr := gen.New(dbPool.Writer).InsertNotification(ctx, gen.InsertNotificationParams{
+					TenantID:         tenantID,
+					RecipientID:      b.AssignedTo,
+					NotificationType: "ticket_sla_breached",
+					ActorType:        &actorType,
+					SubjectType:      &subjectType,
+					SubjectID:        b.ID,
+					Title:            title,
+					Body:             &bodyStr,
+					ActionUrl:        &actionURL,
+				}); nErr != nil {
+					slog.Error("task:maintenance:check_sla_breaches: failed to create notification",
+						"ticket_id", b.ID.String(), "error", nErr)
+				}
+			}
 		}
 
 		// Auto-close resolved tickets older than tickets.auto_close_resolved_days
@@ -5108,6 +5132,44 @@ func HandleTenantCleanupData(ctx context.Context, t *asynq.Task) error {
 	}
 
 	slog.Info("tenant:cleanup_data — cleanup complete", "tenant_id", payload.TenantID, "child_rows_deleted", totalDeleted, "tenant_deleted", true)
+
+	return nil
+}
+
+// HandleWikiSeedStubPages auto-seeds the 7 default wiki sub-pages for a
+// Country Space when wiki.enabled is activated (§80, ADR-088).
+// The task is idempotent: if the stub pages already exist (matched by
+// tenant_id + space_id + slug), the processor skips them.
+func HandleWikiSeedStubPages(ctx context.Context, t *asynq.Task) error {
+	slog.Info("task:wiki:seed_stub_pages")
+
+	if wikiSeedStubPagesProcessor == nil {
+		slog.Warn("task:wiki:seed_stub_pages: no wiki seed processor registered, skipping")
+		return nil
+	}
+
+	var payload struct {
+		SpaceID  string `json:"space_id"`
+		TenantID string `json:"tenant_id"`
+	}
+
+	if err := parsePayload(t, &payload); err != nil {
+		slog.Error("task:wiki:seed_stub_pages: invalid payload", "error", err)
+		return err
+	}
+
+	if payload.SpaceID == "" {
+		return fmt.Errorf("wiki:seed_stub_pages: space_id is required")
+	}
+
+	if err := wikiSeedStubPagesProcessor.SeedStubPages(ctx, payload.SpaceID, payload.TenantID); err != nil {
+		slog.Error("task:wiki:seed_stub_pages: failed",
+			"space_id", payload.SpaceID, "error", err)
+		return err
+	}
+
+	slog.Info("task:wiki:seed_stub_pages: completed",
+		"space_id", payload.SpaceID)
 
 	return nil
 }

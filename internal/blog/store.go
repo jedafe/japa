@@ -426,7 +426,9 @@ func (s *Store) getBlogPostDetail(ctx context.Context, slug string, tenantID pgt
 // listPublishedBlogPosts returns published blog post cards with author and
 // featured image, status-filtered in SQL (C5/H3).
 // BUG-005: offset-based pagination per Rule 5 (page_size + page_offset).
-func (s *Store) listPublishedBlogPosts(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]gen.ListPublishedBlogPostsRow, error) {
+// BUG-011: accepts §24-mandated filters (space_id, tag, series_id, sort,
+// author_id) via BlogListFilter. All fields zero/nil = no filter.
+func (s *Store) listPublishedBlogPosts(ctx context.Context, f BlogListFilter, limit, offset int32) ([]gen.ListPublishedBlogPostsRow, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -434,8 +436,18 @@ func (s *Store) listPublishedBlogPosts(ctx context.Context, tenantID pgtype.UUID
 		offset = 0
 	}
 
+	sort := f.Sort
+	if sort == "" {
+		sort = "latest"
+	}
+
 	rows, err := s.read.ListPublishedBlogPosts(ctx, gen.ListPublishedBlogPostsParams{
-		TenantID:   tenantID,
+		TenantID:   f.TenantID,
+		SpaceID:    f.SpaceID,
+		AuthorID:   f.AuthorID,
+		SeriesID:   f.SeriesID,
+		Tag:        f.Tag,
+		Sort:       sort,
 		PageOffset: offset,
 		PageLimit:  limit,
 	})
@@ -448,8 +460,16 @@ func (s *Store) listPublishedBlogPosts(ctx context.Context, tenantID pgtype.UUID
 
 // countPublishedBlogPosts returns the total number of published blog posts
 // for pagination meta.
-func (s *Store) countPublishedBlogPosts(ctx context.Context, tenantID pgtype.UUID) (int64, error) {
-	count, err := s.read.CountPublishedBlogPosts(ctx, tenantID)
+// BUG-011: accepts the same §24 filters as listPublishedBlogPosts so the
+// pagination total reflects the active filter set.
+func (s *Store) countPublishedBlogPosts(ctx context.Context, f BlogListFilter) (int64, error) {
+	count, err := s.read.CountPublishedBlogPosts(ctx, gen.CountPublishedBlogPostsParams{
+		TenantID: f.TenantID,
+		SpaceID:  f.SpaceID,
+		AuthorID: f.AuthorID,
+		SeriesID: f.SeriesID,
+		Tag:      f.Tag,
+	})
 	if err != nil {
 		return 0, fmt.Errorf("counting published blog posts: %w", err)
 	}

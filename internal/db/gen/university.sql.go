@@ -165,6 +165,33 @@ func (q *Queries) CountAllUniversityTracks(ctx context.Context, arg CountAllUniv
 	return count, err
 }
 
+const countInstructorPayoutsByStatus = `-- name: CountInstructorPayoutsByStatus :one
+SELECT COUNT(*) FROM instructor_payouts p
+LEFT JOIN instructor_profiles ip ON ip.id = p.instructor_id
+WHERE p.tenant_id = $1
+  AND ($2::text = '' OR p.status = $2)
+  AND ($3::uuid IS NULL OR EXISTS (
+        SELECT 1 FROM learning_tracks lt
+        WHERE lt.instructor_id = p.instructor_id
+          AND lt.geo_space_id = $3))
+`
+
+type CountInstructorPayoutsByStatusParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	Status   string      `json:"status"`
+	SpaceID  pgtype.UUID `json:"space_id"`
+}
+
+// Count of payouts matching the status/space filter (mirrors
+// ListInstructorPayoutsByStatus WHERE clause). Used by the admin hub
+// and the payout-queue list meta envelope.
+func (q *Queries) CountInstructorPayoutsByStatus(ctx context.Context, arg CountInstructorPayoutsByStatusParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countInstructorPayoutsByStatus, arg.TenantID, arg.Status, arg.SpaceID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countInstructorProfilesByStatus = `-- name: CountInstructorProfilesByStatus :one
 SELECT COUNT(*) FROM instructor_profiles ip
 WHERE ip.tenant_id = $1
@@ -183,6 +210,32 @@ type CountInstructorProfilesByStatusParams struct {
 
 func (q *Queries) CountInstructorProfilesByStatus(ctx context.Context, arg CountInstructorProfilesByStatusParams) (int64, error) {
 	row := q.db.QueryRow(ctx, countInstructorProfilesByStatus, arg.TenantID, arg.Status, arg.SpaceID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countPendingUniversityTracks = `-- name: CountPendingUniversityTracks :one
+SELECT COUNT(*) FROM learning_tracks lt
+JOIN instructor_profiles ip ON ip.id = lt.instructor_id
+WHERE lt.tenant_id = $1
+  AND lt.instructor_id IS NOT NULL
+  AND lt.is_published_to_university = false
+  AND lt.is_published = true
+  AND ip.status = 'approved'
+  AND ($2::uuid IS NULL OR lt.geo_space_id = $2)
+`
+
+type CountPendingUniversityTracksParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	SpaceID  pgtype.UUID `json:"space_id"`
+}
+
+// Count of tracks awaiting marketplace approval (mirrors
+// ListPendingUniversityTracks WHERE clause). Used by the admin hub and
+// the pending-tracks list meta envelope.
+func (q *Queries) CountPendingUniversityTracks(ctx context.Context, arg CountPendingUniversityTracksParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countPendingUniversityTracks, arg.TenantID, arg.SpaceID)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -252,12 +305,17 @@ func (q *Queries) CountTracksByCategory(ctx context.Context, arg CountTracksByCa
 }
 
 const countUniversityCatalog = `-- name: CountUniversityCatalog :one
-SELECT COUNT(*) FROM learning_tracks
-WHERE tenant_id = $1
-  AND is_published_to_university = true
-  AND ($2::text = '' OR category = $2)
-  AND ($3::text = '' OR language = $3)
-  AND ($4::bool = false OR price_kobo IS NULL)
+SELECT COUNT(*) FROM learning_tracks lt
+LEFT JOIN review_aggregates ra ON ra.entity_type = 'learning_track'
+                              AND ra.entity_id = lt.id
+                              AND ra.tenant_id = lt.tenant_id
+WHERE lt.tenant_id = $1
+  AND lt.is_published_to_university = true
+  AND ($2::text = '' OR lt.category = $2)
+  AND ($3::text = '' OR lt.language = $3)
+  AND ($4::bool = false OR lt.price_kobo IS NULL)
+  AND ($5::text = '' OR lt.difficulty = $5)
+  AND ($6::text = '' OR lt.title ILIKE '%' || $6 || '%')
 `
 
 type CountUniversityCatalogParams struct {
@@ -265,6 +323,8 @@ type CountUniversityCatalogParams struct {
 	Category string      `json:"category"`
 	Language string      `json:"language"`
 	IsFree   bool        `json:"is_free"`
+	Level    string      `json:"level"`
+	Q        string      `json:"q"`
 }
 
 func (q *Queries) CountUniversityCatalog(ctx context.Context, arg CountUniversityCatalogParams) (int64, error) {
@@ -273,6 +333,8 @@ func (q *Queries) CountUniversityCatalog(ctx context.Context, arg CountUniversit
 		arg.Category,
 		arg.Language,
 		arg.IsFree,
+		arg.Level,
+		arg.Q,
 	)
 	var count int64
 	err := row.Scan(&count)
@@ -2165,8 +2227,13 @@ WHERE lt.tenant_id = $1
   AND ($2::text = '' OR lt.category = $2)
   AND ($3::text = '' OR lt.language = $3)
   AND ($4::bool = false OR lt.price_kobo IS NULL)
-ORDER BY lt.total_enrolled DESC, lt.created_at DESC
-LIMIT $6 OFFSET $5
+  AND ($5::text = '' OR lt.difficulty = $5)
+  AND ($6::text = '' OR lt.title ILIKE '%' || $6 || '%')
+ORDER BY
+  CASE WHEN $7::text = 'newest' THEN lt.created_at END DESC,
+  CASE WHEN $7::text = 'rating' THEN COALESCE(ra.average_rating, 0) END DESC,
+  lt.total_enrolled DESC, lt.created_at DESC
+LIMIT $9 OFFSET $8
 `
 
 type ListUniversityCatalogParams struct {
@@ -2174,6 +2241,9 @@ type ListUniversityCatalogParams struct {
 	Category   string      `json:"category"`
 	Language   string      `json:"language"`
 	IsFree     bool        `json:"is_free"`
+	Level      string      `json:"level"`
+	Q          string      `json:"q"`
+	Sort       string      `json:"sort"`
 	PageOffset int32       `json:"page_offset"`
 	PageLimit  int32       `json:"page_limit"`
 }
@@ -2204,12 +2274,19 @@ type ListUniversityCatalogRow struct {
 // =====================================================================
 // Marketplace tracks (learning_tracks extensions)
 // =====================================================================
+// Marketplace catalog with optional search (q), difficulty (level),
+// category, language, is_free, and sort (popular|newest|rating) filters.
+// q does a case-insensitive ILIKE on title; level maps to the difficulty
+// column (the frontend uses "level" per ADR-060 TrackSummary contract).
 func (q *Queries) ListUniversityCatalog(ctx context.Context, arg ListUniversityCatalogParams) ([]ListUniversityCatalogRow, error) {
 	rows, err := q.db.Query(ctx, listUniversityCatalog,
 		arg.TenantID,
 		arg.Category,
 		arg.Language,
 		arg.IsFree,
+		arg.Level,
+		arg.Q,
+		arg.Sort,
 		arg.PageOffset,
 		arg.PageLimit,
 	)

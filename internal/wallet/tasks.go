@@ -341,8 +341,10 @@ func (s *Service) creditWallet(ctx context.Context, tenantID, userID pgtype.UUID
 
 	newBalance := currentBalance + amount
 
-	// Non-negative balance guard (§1.3, Checklist B.10).
-	if newBalance < 0 {
+	// Non-negative balance guard (§1.3, Checklist B.10) — except clawback,
+	// which per Section 28 may take a Credits balance negative rather than
+	// being blocked outright (BUG-W-004).
+	if newBalance < 0 && operation != OperationClawback {
 		slog.Warn("wallet: deduct would result in negative balance, skipping",
 			"user_id", userID.String(), "ledger_type", ledgerType,
 			"current", currentBalance, "amount", amount)

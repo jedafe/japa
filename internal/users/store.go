@@ -267,6 +267,72 @@ func (s *Store) upsertProfile(ctx context.Context, tenantID, userID pgtype.UUID,
 	return nil
 }
 
+// getProfileForUpdateTx row-locks the user_profiles row for the
+// read-merge-upsert pattern in UpdateProfile (BUG-002). The FOR UPDATE
+// lock is held until the transaction commits or rolls back.
+func (s *Store) getProfileForUpdateTx(ctx context.Context, q *gen.Queries, tenantID, userID pgtype.UUID) (gen.GetUserProfileForUpdateRow, error) {
+	row, err := q.GetUserProfileForUpdate(ctx, gen.GetUserProfileForUpdateParams{
+		TenantID: tenantID,
+		UserID:   userID,
+	})
+	if err != nil {
+		return gen.GetUserProfileForUpdateRow{}, fmt.Errorf("getting user profile for update: %w", err)
+	}
+	return row, nil
+}
+
+// upsertProfileTx is the transaction-scoped variant of upsertProfile.
+func (s *Store) upsertProfileTx(ctx context.Context, q *gen.Queries, tenantID, userID pgtype.UUID, displayName, avatarURL, coverURL, bio, timezone *string, avatarMediaID, headerMediaID pgtype.UUID) error {
+	if err := q.UpsertUserProfile(ctx, gen.UpsertUserProfileParams{
+		TenantID:      tenantID,
+		UserID:        userID,
+		DisplayName:   displayName,
+		AvatarUrl:     avatarURL,
+		AvatarMediaID: avatarMediaID,
+		HeaderMediaID: headerMediaID,
+		CoverUrl:      coverURL,
+		Bio:           bio,
+		Timezone:      timezone,
+	}); err != nil {
+		return fmt.Errorf("upserting user profile: %w", err)
+	}
+	return nil
+}
+
+// setGeoCustomFieldTx is the transaction-scoped variant of setGeoCustomField.
+func (s *Store) setGeoCustomFieldTx(ctx context.Context, q *gen.Queries, tenantID, userID pgtype.UUID, fieldKey, value string) error {
+	field, err := q.GetCustomFieldByKey(ctx, gen.GetCustomFieldByKeyParams{
+		Key:      fieldKey,
+		TenantID: tenantID,
+	})
+	if err != nil {
+		return fmt.Errorf("looking up custom field %q: %w", fieldKey, err)
+	}
+
+	profileID, err := q.GetUserProfileID(ctx, gen.GetUserProfileIDParams{
+		TenantID: tenantID, UserID: userID,
+	})
+	if err != nil {
+		return fmt.Errorf("getting user profile id: %w", err)
+	}
+
+	var valueText *string
+	if value != "" {
+		v := value
+		valueText = &v
+	}
+
+	if _, err := q.UpsertCustomFieldValue(ctx, gen.UpsertCustomFieldValueParams{
+		FieldID:    field.ID,
+		EntityType: "user_profile",
+		EntityID:   profileID,
+		ValueText:  valueText,
+	}); err != nil {
+		return fmt.Errorf("upserting custom field value for %q: %w", fieldKey, err)
+	}
+	return nil
+}
+
 // getPreferences returns user preferences.
 func (s *Store) getPreferences(ctx context.Context, tenantID, userID pgtype.UUID) (gen.UserPreference, error) {
 	pref, err := s.read.GetUserPreferences(ctx, gen.GetUserPreferencesParams{
@@ -291,6 +357,33 @@ func (s *Store) upsertPreferences(ctx context.Context, tenantID, userID pgtype.U
 		return fmt.Errorf("upserting user preferences: %w", err)
 	}
 
+	return nil
+}
+
+// getPreferencesForUpdateTx row-locks the user_preferences row for the
+// read-merge-upsert pattern in UpdatePreferences (BUG-003). The FOR UPDATE
+// lock is held until the transaction commits or rolls back.
+func (s *Store) getPreferencesForUpdateTx(ctx context.Context, q *gen.Queries, tenantID, userID pgtype.UUID) (gen.UserPreference, error) {
+	pref, err := q.GetUserPreferencesForUpdate(ctx, gen.GetUserPreferencesForUpdateParams{
+		TenantID: tenantID,
+		UserID:   userID,
+	})
+	if err != nil {
+		return gen.UserPreference{}, fmt.Errorf("getting user preferences for update: %w", err)
+	}
+	return pref, nil
+}
+
+// upsertPreferencesTx is the transaction-scoped variant of upsertPreferences.
+func (s *Store) upsertPreferencesTx(ctx context.Context, q *gen.Queries, tenantID, userID pgtype.UUID, darkMode, language string) error {
+	if err := q.UpsertUserPreferences(ctx, gen.UpsertUserPreferencesParams{
+		TenantID: tenantID,
+		UserID:   userID,
+		DarkMode: darkMode,
+		Language: language,
+	}); err != nil {
+		return fmt.Errorf("upserting user preferences: %w", err)
+	}
 	return nil
 }
 
@@ -420,6 +513,31 @@ func (s *Store) getUserPrivacySettings(ctx context.Context, tenantID, userID pgt
 
 func (s *Store) upsertUserPrivacySettings(ctx context.Context, tenantID, userID pgtype.UUID, dmPrivacy, profileVisibility string, searchIndexable, showOnlineStatus, showActivity, showPointsPublicly bool) error {
 	return s.write.UpsertUserPrivacySettings(ctx, gen.UpsertUserPrivacySettingsParams{
+		TenantID:           tenantID,
+		UserID:             userID,
+		DmPrivacy:          dmPrivacy,
+		ProfileVisibility:  profileVisibility,
+		SearchIndexable:    searchIndexable,
+		ShowOnlineStatus:   showOnlineStatus,
+		ShowActivity:       showActivity,
+		ShowPointsPublicly: showPointsPublicly,
+	})
+}
+
+// getUserPrivacySettingsForUpdateTx row-locks the user_privacy_settings row
+// for the read-merge-upsert pattern in UpdatePrivacySettings (BUG-004). The
+// FOR UPDATE lock is held until the transaction commits or rolls back.
+func (s *Store) getUserPrivacySettingsForUpdateTx(ctx context.Context, q *gen.Queries, tenantID, userID pgtype.UUID) (gen.GetUserPrivacySettingsForUpdateRow, error) {
+	return q.GetUserPrivacySettingsForUpdate(ctx, gen.GetUserPrivacySettingsForUpdateParams{
+		TenantID: tenantID,
+		UserID:   userID,
+	})
+}
+
+// upsertUserPrivacySettingsTx is the transaction-scoped variant of
+// upsertUserPrivacySettings.
+func (s *Store) upsertUserPrivacySettingsTx(ctx context.Context, q *gen.Queries, tenantID, userID pgtype.UUID, dmPrivacy, profileVisibility string, searchIndexable, showOnlineStatus, showActivity, showPointsPublicly bool) error {
+	return q.UpsertUserPrivacySettings(ctx, gen.UpsertUserPrivacySettingsParams{
 		TenantID:           tenantID,
 		UserID:             userID,
 		DmPrivacy:          dmPrivacy,
@@ -627,6 +745,17 @@ func (s *Store) getUserAccountForUpdate(ctx context.Context, tenantID, userID pg
 	})
 }
 
+// getUserAccountForUpdateTx is the transaction-scoped variant of
+// getUserAccountForUpdate. The FOR UPDATE row lock is held until the
+// transaction commits or rolls back, preventing concurrent account edits
+// from racing on uniqueness checks (BUG-001).
+func (s *Store) getUserAccountForUpdateTx(ctx context.Context, q *gen.Queries, tenantID, userID pgtype.UUID) (gen.GetUserAccountForUpdateRow, error) {
+	return q.GetUserAccountForUpdate(ctx, gen.GetUserAccountForUpdateParams{
+		ID:       userID,
+		TenantID: tenantID,
+	})
+}
+
 // updateUsername updates the username and stamps username_changed_at.
 func (s *Store) updateUsername(ctx context.Context, tenantID, userID pgtype.UUID, username string) error {
 	return s.write.UpdateUserUsername(ctx, gen.UpdateUserUsernameParams{
@@ -636,9 +765,27 @@ func (s *Store) updateUsername(ctx context.Context, tenantID, userID pgtype.UUID
 	})
 }
 
+// updateUsernameTx is the transaction-scoped variant of updateUsername.
+func (s *Store) updateUsernameTx(ctx context.Context, q *gen.Queries, tenantID, userID pgtype.UUID, username string) error {
+	return q.UpdateUserUsername(ctx, gen.UpdateUserUsernameParams{
+		ID:       userID,
+		TenantID: tenantID,
+		Username: username,
+	})
+}
+
 // updateEmail updates the email and resets email_verified_at to NULL.
 func (s *Store) updateEmail(ctx context.Context, tenantID, userID pgtype.UUID, email string) error {
 	return s.write.UpdateUserEmail(ctx, gen.UpdateUserEmailParams{
+		ID:       userID,
+		TenantID: tenantID,
+		Email:    email,
+	})
+}
+
+// updateEmailTx is the transaction-scoped variant of updateEmail.
+func (s *Store) updateEmailTx(ctx context.Context, q *gen.Queries, tenantID, userID pgtype.UUID, email string) error {
+	return q.UpdateUserEmail(ctx, gen.UpdateUserEmailParams{
 		ID:       userID,
 		TenantID: tenantID,
 		Email:    email,
@@ -655,10 +802,30 @@ func (s *Store) emailExistsForTenant(ctx context.Context, tenantID, userID pgtyp
 	})
 }
 
+// emailExistsForTenantTx is the transaction-scoped variant of
+// emailExistsForTenant.
+func (s *Store) emailExistsForTenantTx(ctx context.Context, q *gen.Queries, tenantID, userID pgtype.UUID, email string) (int32, error) {
+	return q.EmailExistsForTenant(ctx, gen.EmailExistsForTenantParams{
+		TenantID: tenantID,
+		Email:    email,
+		ID:       userID,
+	})
+}
+
 // usernameExistsForTenant returns the count of other users in the tenant with
 // the given username (0 = available).
 func (s *Store) usernameExistsForTenant(ctx context.Context, tenantID, userID pgtype.UUID, username string) (int32, error) {
 	return s.write.UsernameExistsForTenant(ctx, gen.UsernameExistsForTenantParams{
+		TenantID: tenantID,
+		Username: username,
+		ID:       userID,
+	})
+}
+
+// usernameExistsForTenantTx is the transaction-scoped variant of
+// usernameExistsForTenant.
+func (s *Store) usernameExistsForTenantTx(ctx context.Context, q *gen.Queries, tenantID, userID pgtype.UUID, username string) (int32, error) {
+	return q.UsernameExistsForTenant(ctx, gen.UsernameExistsForTenantParams{
 		TenantID: tenantID,
 		Username: username,
 		ID:       userID,

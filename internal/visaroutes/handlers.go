@@ -273,6 +273,8 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	status := r.URL.Query().Get("status")
 	visaCategory := r.URL.Query().Get("category")
 	q := r.URL.Query().Get("q")
+	sort := r.URL.Query().Get("sort")
+	order := r.URL.Query().Get("order")
 
 	var activePtr *bool
 	if v := r.URL.Query().Get("active"); v != "" {
@@ -287,7 +289,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 		limit = 200
 	}
 
-	routes, total, err := h.service.AdminList(r.Context(), tenantID, destSpaceID, status, visaCategory, q, activePtr, page, limit)
+	routes, total, err := h.service.AdminList(r.Context(), tenantID, destSpaceID, status, visaCategory, q, sort, order, activePtr, page, limit)
 	if err != nil {
 		slog.Error("visaroutes: admin list failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "admin_list_failed", "Failed to list visa routes")
@@ -419,7 +421,8 @@ func (h *Handlers) HandleAdminApprove(w http.ResponseWriter, r *http.Request) {
 	// Body is optional; ignore decode errors for empty bodies.
 	_ = json.NewDecoder(r.Body).Decode(&input)
 
-	if err := h.service.Approve(r.Context(), id, tenantID, user.UserID, input); err != nil {
+	route, err := h.service.Approve(r.Context(), id, tenantID, user.UserID, input)
+	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "route_not_found", "Visa route not found")
 			return
@@ -429,7 +432,7 @@ func (h *Handlers) HandleAdminApprove(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"approved": true}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": route})
 }
 
 // HandleAdminGenerate handles POST /admin/visa-routes/generate — Content

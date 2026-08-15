@@ -134,6 +134,10 @@ WHERE tenant_id = @tenant_id AND id = @id AND status = 'approved';
 -- =====================================================================
 
 -- name: ListUniversityCatalog :many
+-- Marketplace catalog with optional search (q), difficulty (level),
+-- category, language, is_free, and sort (popular|newest|rating) filters.
+-- q does a case-insensitive ILIKE on title; level maps to the difficulty
+-- column (the frontend uses "level" per ADR-060 TrackSummary contract).
 SELECT lt.id, lt.tenant_id, lt.title, lt.slug, lt.description,
        lt.difficulty, lt.cover_media_id, lt.instructor_id, lt.price_kobo,
        lt.currency, lt.category, lt.language, lt.geo_space_id, lt.total_enrolled, lt.subscription_eligible,
@@ -151,16 +155,26 @@ WHERE lt.tenant_id = @tenant_id
   AND (@category::text = '' OR lt.category = @category)
   AND (@language::text = '' OR lt.language = @language)
   AND (@is_free::bool = false OR lt.price_kobo IS NULL)
-ORDER BY lt.total_enrolled DESC, lt.created_at DESC
+  AND (@level::text = '' OR lt.difficulty = @level)
+  AND (@q::text = '' OR lt.title ILIKE '%' || @q || '%')
+ORDER BY
+  CASE WHEN @sort::text = 'newest' THEN lt.created_at END DESC,
+  CASE WHEN @sort::text = 'rating' THEN COALESCE(ra.average_rating, 0) END DESC,
+  lt.total_enrolled DESC, lt.created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
 -- name: CountUniversityCatalog :one
-SELECT COUNT(*) FROM learning_tracks
-WHERE tenant_id = @tenant_id
-  AND is_published_to_university = true
-  AND (@category::text = '' OR category = @category)
-  AND (@language::text = '' OR language = @language)
-  AND (@is_free::bool = false OR price_kobo IS NULL);
+SELECT COUNT(*) FROM learning_tracks lt
+LEFT JOIN review_aggregates ra ON ra.entity_type = 'learning_track'
+                              AND ra.entity_id = lt.id
+                              AND ra.tenant_id = lt.tenant_id
+WHERE lt.tenant_id = @tenant_id
+  AND lt.is_published_to_university = true
+  AND (@category::text = '' OR lt.category = @category)
+  AND (@language::text = '' OR lt.language = @language)
+  AND (@is_free::bool = false OR lt.price_kobo IS NULL)
+  AND (@level::text = '' OR lt.difficulty = @level)
+  AND (@q::text = '' OR lt.title ILIKE '%' || @q || '%');
 
 -- name: GetUniversityTrackBySlug :one
 SELECT lt.id, lt.tenant_id, lt.title, lt.slug, lt.description,
@@ -291,6 +305,19 @@ WHERE lt.tenant_id = @tenant_id
   AND (@space_id::uuid IS NULL OR lt.geo_space_id = @space_id)
 ORDER BY lt.updated_at ASC
 LIMIT @page_limit OFFSET @page_offset;
+
+-- name: CountPendingUniversityTracks :one
+-- Count of tracks awaiting marketplace approval (mirrors
+-- ListPendingUniversityTracks WHERE clause). Used by the admin hub and
+-- the pending-tracks list meta envelope.
+SELECT COUNT(*) FROM learning_tracks lt
+JOIN instructor_profiles ip ON ip.id = lt.instructor_id
+WHERE lt.tenant_id = @tenant_id
+  AND lt.instructor_id IS NOT NULL
+  AND lt.is_published_to_university = false
+  AND lt.is_published = true
+  AND ip.status = 'approved'
+  AND (@space_id::uuid IS NULL OR lt.geo_space_id = @space_id);
 
 -- name: ApproveUniversityTrack :one
 -- Admin approves a submitted track to the marketplace. Sets submission_status
@@ -501,6 +528,19 @@ WHERE p.tenant_id = @tenant_id
           AND lt.geo_space_id = @space_id))
 ORDER BY p.created_at ASC
 LIMIT @page_limit OFFSET @page_offset;
+
+-- name: CountInstructorPayoutsByStatus :one
+-- Count of payouts matching the status/space filter (mirrors
+-- ListInstructorPayoutsByStatus WHERE clause). Used by the admin hub
+-- and the payout-queue list meta envelope.
+SELECT COUNT(*) FROM instructor_payouts p
+LEFT JOIN instructor_profiles ip ON ip.id = p.instructor_id
+WHERE p.tenant_id = @tenant_id
+  AND (@status::text = '' OR p.status = @status)
+  AND (@space_id::uuid IS NULL OR EXISTS (
+        SELECT 1 FROM learning_tracks lt
+        WHERE lt.instructor_id = p.instructor_id
+          AND lt.geo_space_id = @space_id));
 
 -- name: UpdatePayoutStatus :one
 UPDATE instructor_payouts

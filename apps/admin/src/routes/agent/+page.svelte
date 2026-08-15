@@ -108,7 +108,11 @@
 	let costFromDate = $state('');
 	let costToDate = $state('');
 
-	const canView = $derived(hasPermission('admin.ai.view') || hasPermission('admin.agent.view'));
+	// Backend admin agent routes (GET /admin/agent/sessions, /tool-stats,
+	// /cost-report) are gated by the agent.admin permission node (migration
+	// 000406). The frontend must check the same node so users without
+	// agent.admin don't see a page where every API call returns 403.
+	const canView = $derived(hasPermission('agent.admin'));
 
 	// ─── Data loading ─────────────────────────────────────────────────
 	async function loadSessions() {

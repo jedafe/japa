@@ -7,7 +7,7 @@
 	import { wikiAdminApi, apiRaw , spacesAdminApi } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
-	import { Eye, CheckCircle, XCircle } from 'lucide-svelte';
+	import { Eye, CheckCircle, XCircle, Sparkles, Lock, Unlock, Star } from 'lucide-svelte';
 	import type { ActionItem, FilterDef } from '$lib/components/ui/data-table';
 
 	type WikiItem = {
@@ -18,6 +18,8 @@
 		updated_at: string;
 		latest_revision_id?: string;
 		excerpt?: string;
+		is_locked?: boolean;
+		is_featured?: boolean;
 		// ADR-088 AI generation columns
 		ai_generated?: boolean;
 		ai_model?: string;
@@ -25,7 +27,9 @@
 		ai_generated_at?: string;
 	};
 
-	const canManage = $derived(hasPermission('wiki.review'));
+	const canReview = $derived(hasPermission('wiki.review'));
+	const canManage = $derived(hasPermission('wiki.manage'));
+	const canLock = $derived(hasPermission('wiki.lock'));
 
 	// ── State-action confirmation modal (reject with optional reason) ────────
 	let entityController = $state<EntityPageController | undefined>(undefined);
@@ -78,12 +82,84 @@
 		}
 	}
 
+	// ── Page management: lock/unlock/feature (wiki.manage / wiki.lock) ──────
+	async function toggleLock(item: WikiItem) {
+		acting = true;
+		pageError = '';
+		try {
+			const result = await wikiAdminApi.update(item.id, { is_locked: !item.is_locked });
+			if (result.ok) {
+				entityController?.reload();
+			} else {
+				pageError = result.error ?? t('common.error', 'An error occurred');
+			}
+		} catch {
+			pageError = t('common.error', 'An error occurred');
+		} finally {
+			acting = false;
+		}
+	}
+
+	async function toggleFeatured(item: WikiItem) {
+		acting = true;
+		pageError = '';
+		try {
+			const result = await wikiAdminApi.update(item.id, { is_featured: !item.is_featured });
+			if (result.ok) {
+				entityController?.reload();
+			} else {
+				pageError = result.error ?? t('common.error', 'An error occurred');
+			}
+		} catch {
+			pageError = t('common.error', 'An error occurred');
+		} finally {
+			acting = false;
+		}
+	}
+
+	// ── AI generate draft modal (wiki.manage) ───────────────────────────────
+	let showGenerateModal = $state(false);
+	let genSpaceSlug = $state('');
+	let genPageTitle = $state('');
+	let genCategory = $state('overview');
+	let generating = $state(false);
+
+	function openGenerate() {
+		genSpaceSlug = '';
+		genPageTitle = '';
+		genCategory = 'overview';
+		showGenerateModal = true;
+	}
+
+	async function confirmGenerate() {
+		if (!genSpaceSlug.trim() || !genPageTitle.trim()) return;
+		generating = true;
+		pageError = '';
+		try {
+			const result = await wikiAdminApi.generate({
+				space_slug: genSpaceSlug.trim(),
+				title: genPageTitle.trim(),
+				category: genCategory
+			});
+			if (result.ok) {
+				showGenerateModal = false;
+				entityController?.reload();
+			} else {
+				pageError = result.error ?? t('common.error', 'An error occurred');
+			}
+		} catch {
+			pageError = t('common.error', 'An error occurred');
+		} finally {
+			generating = false;
+		}
+	}
+
 	// ── Row actions ─────────────────────────────────────────────────────────
 	const rowActions = $derived.by<ActionItem[]>(() => {
 		const acts: ActionItem[] = [
 			{ label: t('common.view', 'View'), icon: Eye, onclick: (_row: WikiItem, ctx) => ctx?.openView(_row) }
 		];
-		if (canManage) {
+		if (canReview) {
 			acts.push({
 				label: t('app.wiki.approve_revision', 'Approve Revision'),
 				icon: CheckCircle,
@@ -96,6 +172,20 @@
 				variant: 'destructive',
 				onclick: openReject,
 				show: (row: WikiItem) => !!row.latest_revision_id
+			});
+		}
+		if (canLock) {
+			acts.push({
+				label: t('app.wiki.toggle_lock', 'Toggle Lock'),
+				icon: Lock,
+				onclick: toggleLock
+			});
+		}
+		if (canManage) {
+			acts.push({
+				label: t('app.wiki.toggle_featured', 'Toggle Featured'),
+				icon: Star,
+				onclick: toggleFeatured
 			});
 		}
 		return acts;
@@ -147,6 +237,18 @@ onMount(async () => {
 			{ key: 'space_slug', label: t('app.wiki.col_space', 'Space'), sortable: true },
 			{ key: 'status', label: t('app.wiki.col_status', 'Status'), sortable: true },
 			{
+				key: 'ai_generated',
+				label: t('app.wiki.col_ai', 'AI'),
+				sortable: false,
+				render: (value: boolean) => (value ? '🤖' : '—')
+			},
+			{
+				key: 'is_locked',
+				label: t('app.wiki.col_locked', 'Locked'),
+				sortable: true,
+				render: (value: boolean) => (value ? '🔒' : '—')
+			},
+			{
 				key: 'updated_at',
 				label: t('app.wiki.col_updated', 'Updated'),
 				sortable: true,
@@ -191,6 +293,15 @@ onMount(async () => {
 	</div>
 {/if}
 
+{#if canManage}
+	<div class="mb-4 flex justify-end">
+		<Button onclick={openGenerate}>
+			<Sparkles size={16} class="mr-1.5" />
+			{t('app.wiki.generate_draft', 'Generate AI Draft')}
+		</Button>
+	</div>
+{/if}
+
 <EntityPage {config} bind:controller={entityController} />
 
 <!-- ── Reject revision confirmation modal ─────────────────────────────────── -->
@@ -219,6 +330,61 @@ onMount(async () => {
 	</div>
 </Modal>
 
+<!-- ── AI generate draft modal (wiki.manage) ─────────────────────────────── -->
+<Modal bind:open={showGenerateModal} title={t('app.wiki.modal_generate_draft', 'Generate AI Draft')}>
+	<div class="space-y-4">
+		<p class="text-sm" style="color: var(--color-foreground)">
+			{t('app.wiki.generate_desc', 'Generate a wiki page draft using the Content Agent. The draft will be created as a pending revision for HITL review.')}
+		</p>
+		<div>
+			<label for="gen-space-slug" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('app.wiki.gen_space_slug', 'Space slug')}</label>
+			<input
+				id="gen-space-slug"
+				type="text"
+				class="w-full rounded-lg border p-3 text-sm"
+				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+				placeholder="e.g. japan"
+				bind:value={genSpaceSlug}
+			/>
+		</div>
+		<div>
+			<label for="gen-page-title" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('app.wiki.gen_page_title', 'Page title')}</label>
+			<input
+				id="gen-page-title"
+				type="text"
+				class="w-full rounded-lg border p-3 text-sm"
+				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+				placeholder="e.g. Visa Routes"
+				bind:value={genPageTitle}
+			/>
+		</div>
+		<div>
+			<label for="gen-category" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('app.wiki.gen_category', 'Category')}</label>
+			<select
+				id="gen-category"
+				class="w-full rounded-lg border p-3 text-sm"
+				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+				bind:value={genCategory}
+			>
+				<option value="overview">Overview</option>
+				<option value="visa">Visa</option>
+				<option value="cost_of_living">Cost of Living</option>
+				<option value="healthcare">Healthcare</option>
+				<option value="banking">Banking</option>
+				<option value="community">Community</option>
+				<option value="housing">Housing</option>
+				<option value="other">Other</option>
+			</select>
+		</div>
+	</div>
+	<div class="mt-4 flex justify-end gap-2">
+		<Button variant="ghost" onclick={() => (showGenerateModal = false)}>{t('app.wiki.cancel', 'Cancel')}</Button>
+		<Button onclick={confirmGenerate} disabled={generating || !genSpaceSlug.trim() || !genPageTitle.trim()}>
+			{generating ? t('app.wiki.generating', 'Generating...') : t('app.wiki.generate', 'Generate')}
+		</Button>
+	</div>
+</Modal>
+
 <!-- ── View slide-over body ──────────────────────────────────────────────── -->
 {#snippet WikiView({ row }: { row: WikiItem })}
 	<div class="space-y-4">
@@ -241,6 +407,20 @@ onMount(async () => {
 		<div>
 			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.wiki.detail_excerpt', 'Excerpt')}</p>
 			<p class="mt-1 text-sm" style="color: var(--color-foreground)">{row.excerpt || '—'}</p>
+		</div>
+		<div>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.wiki.col_ai', 'AI-generated')}</p>
+			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">
+				{row.ai_generated ? `${t('app.wiki.ai_yes', 'Yes')} (${row.ai_model ?? '—'})` : t('app.wiki.ai_no', 'No')}
+			</p>
+		</div>
+		<div>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.wiki.col_locked', 'Locked')}</p>
+			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.is_locked ? t('app.wiki.locked_yes', 'Yes') : t('app.wiki.locked_no', 'No')}</p>
+		</div>
+		<div>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.wiki.col_featured', 'Featured')}</p>
+			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.is_featured ? t('app.wiki.featured_yes', 'Yes') : t('app.wiki.featured_no', 'No')}</p>
 		</div>
 	</div>
 {/snippet}

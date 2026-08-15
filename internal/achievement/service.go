@@ -451,7 +451,7 @@ func (s *Service) AdminList(ctx context.Context, tenantID pgtype.UUID, status, m
 // publish / unpublish). Used by the moderation queue. Caller must hold the
 // achievement.moderate permission (enforced at route level).
 func (s *Service) AdminSetStatus(ctx context.Context, contentID, tenantID pgtype.UUID, status string) (AchievementDTO, error) {
-	if status != content.StatusPublished && status != content.StatusDraft && status != content.StatusPending {
+	if status != content.StatusPublished && status != content.StatusDraft && status != content.StatusInReview {
 		return AchievementDTO{}, fmt.Errorf("invalid status: %s", status)
 	}
 	if _, err := s.content.UpdateContentStatus(ctx, contentID, tenantID, status); err != nil {

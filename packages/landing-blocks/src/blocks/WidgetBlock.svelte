@@ -39,9 +39,13 @@
         return res.json();
       })
       .then((json) => {
-        data = json.data;
-        widgetType = json.widget_type;
-        cardType = json.card_type ?? '';
+        // The API returns { data: RenderedWidget } where RenderedWidget is
+        // { widget_id, widget_type, card_type, data: [...items...], cached_at }.
+        // The actual items and metadata are nested under json.data.
+        const rendered = json.data;
+        data = rendered.data;
+        widgetType = rendered.widget_type;
+        cardType = rendered.card_type ?? '';
         error = false;
       })
       .catch(() => { error = true; })
@@ -147,6 +151,11 @@
     {:else if error}
       <div class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-8 text-center text-[var(--color-muted)]">
         <p>Unable to load widget data. Please try again later.</p>
+      </div>
+    {:else if widgetType === 'custom_html' && data && typeof data === 'object' && 'html' in (data as Record<string, unknown>)}
+      <!-- custom_html widget — HTML is sanitized server-side by content.SanitizeHTML (§5.1/§14) -->
+      <div class="prose prose-sm max-w-none text-[var(--color-text)]">
+        {@html (data as Record<string, unknown>).html as string}
       </div>
     {:else if items.length === 0}
       <div class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-8 text-center text-[var(--color-muted)]">

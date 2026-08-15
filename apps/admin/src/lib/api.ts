@@ -777,9 +777,9 @@ export const universitiesAdminApi = {
 	list: (params?: string) => apiRaw(`/admin/universities${params ? `?${params}` : ''}`),
 	listPublic: (params?: string) => api<unknown>(`/universities${params ? `?${params}` : ''}`),
 	getBySlug: (slug: string) => api<unknown>(`/universities/${encodeURIComponent(slug)}`),
-	create: (body: { name: string; slug: string; logo_url?: string; verified: boolean }) =>
+	create: (body: { name: string; slug: string; country?: string; logo_url?: string; verified: boolean }) =>
 		api('/admin/universities', { method: 'POST', body }),
-	update: (id: string, body: { name?: string; slug?: string; logo_url?: string; verified?: boolean }) =>
+	update: (id: string, body: { name?: string; slug?: string; country?: string; logo_url?: string; verified?: boolean }) =>
 		api(`/admin/universities/${id}`, { method: 'PATCH', body }),
 	delete: (id: string) =>
 		api(`/admin/universities/${id}`, { method: 'DELETE' }),
@@ -1436,11 +1436,6 @@ export const widgetsAdminApiExtended = {
 	update: (id: string, body: Record<string, unknown>) =>
 		api<unknown>(`/admin/widgets/${id}`, { method: 'PATCH', body }),
 	delete: (id: string) => api<{ deleted: boolean }>(`/admin/widgets/${id}`, { method: 'DELETE' }),
-};
-
-export const walletAdminApiExtended = {
-	award: (body: { user_id: string; amount: number; reason: string; type: string }) =>
-		api<unknown>('/admin/wallet/award', { method: 'POST', body }),
 };
 
 export const pageBuilderSaveAsTemplateApi = {

@@ -24,6 +24,7 @@ import (
 
 	"github.com/jedafe/japa/internal/ai"
 	"github.com/jedafe/japa/internal/config"
+	contentpkg "github.com/jedafe/japa/internal/content"
 	"github.com/jedafe/japa/internal/valkey"
 )
 
@@ -166,9 +167,12 @@ func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
 }
 
 // CommunityEditsAllowed checks if community edits are allowed (vs mod-only).
+// BUG-003: fail closed when settings is nil — community edits disabled by
+// default to avoid a fail-open bypass if settings injection fails.
 func (s *Service) CommunityEditsAllowed(ctx context.Context, tenantID pgtype.UUID) bool {
 	if s.settings == nil {
-		return true
+		slog.Warn("wiki: settings service is nil, community_edits defaulting to false (fail-closed)")
+		return false
 	}
 	return s.settings.GetBoolOr(ctx, tenantID, "wiki.community_edits", true)
 }
@@ -284,6 +288,17 @@ func (s *Service) SubmitRevision(ctx context.Context, tenantID, userID pgtype.UU
 		return "", fmt.Errorf("content is required")
 	}
 
+	// BUG-020: sanitize/normalize content before storage. If the content is a
+	// JSON string (raw HTML from a plain-text editor), sanitize the HTML and
+	// wrap it in a TipTap doc structure so the frontend never renders
+	// unsanitized HTML via {@html}. If it's already a TipTap JSON object,
+	// validate it parses as JSON. Ref: §5.1 XSS, §14 Tiptap sanitize.
+	normalizedContent, err := normalizeWikiContent(input.Content)
+	if err != nil {
+		return "", fmt.Errorf("wiki: submit: invalid content: %w", err)
+	}
+	input.Content = normalizedContent
+
 	page, err := s.store.GetWikiPageBySlug(ctx, tenantID, spaceSlug, pageSlug)
 	if err != nil {
 		if err == pgx.ErrNoRows {
@@ -297,7 +312,8 @@ func (s *Service) SubmitRevision(ctx context.Context, tenantID, userID pgtype.UU
 	}
 
 	// B6: acquire the per-user-per-page edit lock. SET NX EX 5m.
-	lockKey := valkey.MustKey("wiki_edit_lock:%s:%s", page.ID.String(), userID.String())
+	// Tenant-scoped per Rule 4 (VALKEY-004): jc:wiki_edit_lock:{tenant_id}:{page_id}:{user_id}
+	lockKey := valkey.MustKey("wiki_edit_lock:%s:%s:%s", tenantID.String(), page.ID.String(), userID.String())
 	if s.vk != nil {
 		acquired, lerr := s.vk.SetNX(ctx, lockKey, "1", 5*time.Minute).Result()
 		if lerr != nil {
@@ -315,6 +331,9 @@ func (s *Service) SubmitRevision(ctx context.Context, tenantID, userID pgtype.UU
 
 	revID, err := s.store.SubmitRevision(ctx, tenantID, page.ID, userID, input.Content, input.Summary, false, "", "")
 	if err != nil {
+		if errors.Is(err, ErrDuplicateContent) {
+			return "", ErrDuplicateContent
+		}
 		return "", fmt.Errorf("wiki: submit: %w", err)
 	}
 	return revID.String(), nil
@@ -571,4 +590,108 @@ func (s *Service) GenerateDraft(ctx context.Context, tenantID pgtype.UUID, input
 		Message: "Content Agent draft created with pending revision. Review and approve to publish.",
 		PageID:  pageID.String(),
 	}, nil
+}
+
+// stubPageSpec defines a default wiki sub-page to seed for each Country Space.
+type stubPageSpec struct {
+	slug     string
+	title    string
+	category string
+}
+
+// defaultStubPages is the set of 7 default wiki sub-pages every Country Space
+// receives when wiki.enabled is activated (§80, ADR-088). The list mirrors
+// the §80 Overview spec: "Overview, Visa Routes, Cost of Living, Healthcare,
+// Banking, Community, Housing".
+var defaultStubPages = []stubPageSpec{
+	{slug: "overview", title: "Overview", category: "overview"},
+	{slug: "visa-routes", title: "Visa Routes", category: "visa"},
+	{slug: "cost-of-living", title: "Cost of Living", category: "cost_of_living"},
+	{slug: "healthcare", title: "Healthcare", category: "healthcare"},
+	{slug: "banking", title: "Banking", category: "banking"},
+	{slug: "community", title: "Community", category: "community"},
+	{slug: "housing", title: "Housing", category: "housing"},
+}
+
+// SeedStubPages creates the 7 default wiki sub-pages for a Country Space.
+// Idempotent: pages that already exist (matched by tenant_id + space_id +
+// slug) are skipped via the store's ON CONFLICT DO NOTHING. Used by the
+// wiki:seed_stub_pages Asynq task handler.
+//
+// Ref: japaconnect-engineering/sections/80-destination-wiki.md
+//      japaconnect-engineering/adr/ADR-088-destination-wiki.md
+func (s *Service) SeedStubPages(ctx context.Context, tenantID, spaceID pgtype.UUID) error {
+	if !tenantID.Valid || !spaceID.Valid {
+		return fmt.Errorf("wiki: seed stub pages: tenant_id and space_id are required")
+	}
+	var createdBy pgtype.UUID // system-created stub pages have no human author
+	for _, spec := range defaultStubPages {
+		if _, err := s.store.CreatePage(ctx, tenantID, spaceID, createdBy, spec.slug, spec.title, spec.category); err != nil {
+			if errors.Is(err, ErrPageExists) {
+				continue // idempotent — page already seeded
+			}
+			return fmt.Errorf("wiki: seed stub page %q: %w", spec.slug, err)
+		}
+	}
+	return nil
+}
+
+// normalizeWikiContent ensures wiki revision content is always stored as a
+// valid TipTap JSON document, never as raw HTML. This prevents stored XSS
+// when the frontend renders content with {@html}.
+//
+// If the content is a JSON string (e.g. "some text"), it is treated as plain
+// text, sanitized, and wrapped in a TipTap doc. If it is a JSON object, it
+// is validated as a TipTap doc and the text nodes are sanitized.
+//
+// Ref: japaconnect-engineering/sections/14-content-type-system.md
+//      japaconnect-engineering/sections/05-authentication-sessions.md (XSS)
+func normalizeWikiContent(raw json.RawMessage) (json.RawMessage, error) {
+	var v any
+	if err := json.Unmarshal(raw, &v); err != nil {
+		return nil, fmt.Errorf("invalid JSON: %w", err)
+	}
+
+	switch val := v.(type) {
+	case string:
+		// Raw string content — sanitize as HTML and wrap in a TipTap doc.
+		sanitized := contentpkg.SanitizeHTML(val)
+		doc := map[string]any{
+			"type": "doc",
+			"content": []any{
+				map[string]any{
+					"type": "paragraph",
+					"content": []any{
+						map[string]any{"type": "text", "text": sanitized},
+					},
+				},
+			},
+		}
+		return json.Marshal(doc)
+	case map[string]any:
+		// Already a TipTap JSON object — validate it has a type field.
+		if _, ok := val["type"]; !ok {
+			return nil, fmt.Errorf("invalid TipTap document: missing type field")
+		}
+		// Recursively sanitize text nodes to strip any embedded HTML.
+		sanitizeTipTapNodes(val)
+		return json.Marshal(val)
+	default:
+		return nil, fmt.Errorf("content must be a string or TipTap JSON object")
+	}
+}
+
+// sanitizeTipTapNodes walks a TipTap node tree and sanitizes text node
+// values to strip any embedded HTML tags.
+func sanitizeTipTapNodes(node map[string]any) {
+	if text, ok := node["text"].(string); ok {
+		node["text"] = contentpkg.SanitizeText(text)
+	}
+	if content, ok := node["content"].([]any); ok {
+		for _, child := range content {
+			if childMap, ok := child.(map[string]any); ok {
+				sanitizeTipTapNodes(childMap)
+			}
+		}
+	}
 }

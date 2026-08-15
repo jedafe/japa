@@ -170,6 +170,20 @@ func (s *Service) createContent(ctx context.Context, readQ, writeQ *gen.Queries,
 		"author_id":  content.AuthorID,
 	})
 
+	// When content is created directly as published (bypassing the dedicated
+	// POST /content/{id}/publish flow), also emit the content.published
+	// webhook — subscribers to content.published (e.g. RSS, notifications)
+	// would otherwise miss this content. The content_scores row and affiliate
+	// scan are handled by the CreateContent handler (§32, §55).
+	if content.Status == StatusPublished {
+		s.emitWebhook(ctx, tenantID, "content.published", map[string]any{
+			"content_id": content.ID,
+			"slug":       content.Slug,
+			"title":      content.Title,
+			"actor_id":   content.AuthorID,
+		})
+	}
+
 	return content, nil
 }
 

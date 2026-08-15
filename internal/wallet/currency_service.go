@@ -223,6 +223,17 @@ func (s *Service) purchaseCredits(ctx context.Context, tenantID, userID pgtype.U
 		return PurchaseCreditsResult{}, errors.New("credits_to_grant must be positive")
 	}
 
+	// BUG-W-002: enforce the server-side minimum for custom-amount purchases.
+	// The frontend enforces min_purchase_credits client-side, but a direct API
+	// caller can bypass it. Pack purchases are exempt (the pack defines its
+	// own amount). Defense in depth (Rule 16).
+	if input.PackID == "" && s.settings != nil {
+		minPurchase := s.settings.GetIntOr(ctx, tenantID, "wallet.min_purchase_credits", 100)
+		if creditsToGrant < minPurchase {
+			return PurchaseCreditsResult{}, fmt.Errorf("minimum %d credits required for purchase", minPurchase)
+		}
+	}
+
 	// Compute fiat price in minor units.
 	// credits = fiatMinor * credits_per_unit / 100
 	// → fiatMinor = credits * 100 / credits_per_unit

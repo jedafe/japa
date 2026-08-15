@@ -748,7 +748,7 @@ func TestHandleAgentRequest_GeoContextResolved(t *testing.T) {
 	geo := &stubGeoResolver{
 		row: gen.GetUserCurrentGeoSpaceRow{
 			CurrentGeoSpaceID: geoID,
-			CityName:          &cityName,
+			CityName:          cityName,
 			CountryName:       &countryName,
 			CountryGeoCode:    &countryCode,
 		},

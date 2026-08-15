@@ -142,10 +142,19 @@ func (h *Handlers) GetBalance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// BUG-W-003: include lifetime_points per Section 28 spec
+	// ({ points_balance, credits_balance, lifetime_points }).
+	lifetimePoints, err := h.Service.GetLifetimePoints(r.Context(), tenantID, user.UserID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]int64{
-			"points":  points,
-			"credits": credits,
+			"points":          points,
+			"credits":         credits,
+			"lifetime_points": lifetimePoints,
 		},
 	})
 }

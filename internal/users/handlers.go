@@ -857,6 +857,7 @@ func (h *Handlers) GetMyLocation(w http.ResponseWriter, r *http.Request) {
 
 	data := map[string]any{
 		"space_id":     nil,
+		"name":         nil,
 		"city":         nil,
 		"country":      nil,
 		"country_code": nil,
@@ -864,8 +865,15 @@ func (h *Handlers) GetMyLocation(w http.ResponseWriter, r *http.Request) {
 	if geoSpace.CurrentGeoSpaceID.Valid {
 		data["space_id"] = geoSpace.CurrentGeoSpaceID.String()
 	}
-	if geoSpace.CityName != nil {
-		data["city"] = *geoSpace.CityName
+	// BUG-VIS-003: name is the space's display name regardless of level
+	// (country/state/city), so the frontend can show the user's location
+	// even when they selected a state or country instead of a city.
+	if geoSpace.SpaceName != nil && *geoSpace.SpaceName != "" {
+		data["name"] = *geoSpace.SpaceName
+	}
+	// city is only non-nil when the space is city-level (BUG-VIS-002).
+	if geoSpace.CityName != "" {
+		data["city"] = geoSpace.CityName
 	}
 	if geoSpace.CountryName != nil {
 		data["country"] = *geoSpace.CountryName

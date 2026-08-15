@@ -48,10 +48,14 @@ func isOrgPostRole(role string) bool {
 	return role == "owner" || role == "admin" || role == "editor"
 }
 
-// Content status values stored in the contents.status column.
+// Content status values stored in the contents.status column (§14).
+// The moderation-hold state is "in_review" per the spec's CHECK constraint:
+//   CHECK (status IN ('draft','in_review','scheduled','published','archived'))
+// Migration 000494 renamed legacy "pending" rows to "in_review" and added
+// the CHECK constraint that was missing from migration 000010.
 const (
 	StatusDraft     = "draft"
-	StatusPending   = "pending"
+	StatusInReview  = "in_review"
 	StatusPublished = "published"
 	StatusScheduled = "scheduled"
 	StatusArchived  = "archived"
@@ -64,6 +68,7 @@ const (
 	TypeDiscussion = "discussion"
 	TypePage       = "page"
 	TypeComparison = "comparison"
+	TypeGuide      = "guide"
 	// V2 community content types (§§79, 88, 98 — ADR-087/097/106).
 	TypeStory          = "story"
 	TypeAchievement    = "achievement"
@@ -76,6 +81,46 @@ const (
 	VisibilityMembers = "members"
 	VisibilityPrivate = "private"
 )
+
+// validStatuses is the set of allowed values for contents.status (§14).
+var validStatuses = map[string]bool{
+	StatusDraft:     true,
+	StatusInReview:  true,
+	StatusPublished: true,
+	StatusScheduled: true,
+	StatusArchived:  true,
+}
+
+// validVisibilities is the set of allowed values for contents.visibility (§14).
+var validVisibilities = map[string]bool{
+	VisibilityPublic:  true,
+	VisibilityMembers: true,
+	VisibilityPrivate: true,
+}
+
+// validContentTypes is the set of built-in content types (§14 + v2 community
+// types §§79/88/98). Admin-defined custom types are not listed here; the
+// CreateContent handler accepts any type that the universal content system
+// supports, but rejects clearly invalid values.
+var validContentTypes = map[string]bool{
+	TypeBlogPost:       true,
+	TypeDiscussion:     true,
+	TypePage:           true,
+	TypeComparison:     true,
+	TypeGuide:          true,
+	TypeStory:          true,
+	TypeAchievement:    true,
+	TypeServiceListing: true,
+}
+
+// IsValidStatus reports whether s is a valid contents.status value.
+func IsValidStatus(s string) bool { return validStatuses[s] }
+
+// IsValidVisibility reports whether v is a valid contents.visibility value.
+func IsValidVisibility(v string) bool { return validVisibilities[v] }
+
+// IsValidContentType reports whether t is a recognised built-in content type.
+func IsValidContentType(t string) bool { return validContentTypes[t] }
 
 // EntityType constants for the polymorphic reactions and slug_history tables.
 const (

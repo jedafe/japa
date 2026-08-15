@@ -194,6 +194,23 @@ func (q *Queries) CountTicketsByTenant(ctx context.Context, arg CountTicketsByTe
 	return count, err
 }
 
+const countTicketsByType = `-- name: CountTicketsByType :one
+SELECT COUNT(*) FROM tickets
+WHERE type_id = $1 AND tenant_id = $2
+`
+
+type CountTicketsByTypeParams struct {
+	TypeID   pgtype.UUID `json:"type_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+func (q *Queries) CountTicketsByType(ctx context.Context, arg CountTicketsByTypeParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countTicketsByType, arg.TypeID, arg.TenantID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createTicket = `-- name: CreateTicket :one
 
 INSERT INTO tickets (
@@ -677,7 +694,7 @@ func (q *Queries) GetTicketTypeBySlug(ctx context.Context, arg GetTicketTypeBySl
 }
 
 const listSLABreachedTickets = `-- name: ListSLABreachedTickets :many
-SELECT id, subject, sla_breach_at
+SELECT id, subject, sla_breach_at, assigned_to, tenant_id
 FROM tickets
 WHERE tenant_id = $1
   AND sla_breach_at IS NOT NULL
@@ -690,6 +707,8 @@ type ListSLABreachedTicketsRow struct {
 	ID          pgtype.UUID        `json:"id"`
 	Subject     string             `json:"subject"`
 	SlaBreachAt pgtype.Timestamptz `json:"sla_breach_at"`
+	AssignedTo  pgtype.UUID        `json:"assigned_to"`
+	TenantID    pgtype.UUID        `json:"tenant_id"`
 }
 
 func (q *Queries) ListSLABreachedTickets(ctx context.Context, tenantID pgtype.UUID) ([]ListSLABreachedTicketsRow, error) {
@@ -701,7 +720,13 @@ func (q *Queries) ListSLABreachedTickets(ctx context.Context, tenantID pgtype.UU
 	var items []ListSLABreachedTicketsRow
 	for rows.Next() {
 		var i ListSLABreachedTicketsRow
-		if err := rows.Scan(&i.ID, &i.Subject, &i.SlaBreachAt); err != nil {
+		if err := rows.Scan(
+			&i.ID,
+			&i.Subject,
+			&i.SlaBreachAt,
+			&i.AssignedTo,
+			&i.TenantID,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -886,13 +911,15 @@ SELECT t.id, t.tenant_id, t.type_id, t.subject, t.description, t.status, t.prior
 FROM tickets t
 JOIN ticket_types tt ON tt.id = t.type_id
 WHERE t.tenant_id = $1 AND t.submitter_user_id = $2
+    AND ($3::text IS NULL OR t.status = $3)
 ORDER BY t.created_at DESC
-LIMIT $4 OFFSET $3
+LIMIT $5 OFFSET $4
 `
 
 type ListTicketsBySubmitterParams struct {
 	TenantID        pgtype.UUID `json:"tenant_id"`
 	SubmitterUserID pgtype.UUID `json:"submitter_user_id"`
+	Status          *string     `json:"status"`
 	PageOffset      int32       `json:"page_offset"`
 	PageLimit       int32       `json:"page_limit"`
 }
@@ -924,6 +951,7 @@ func (q *Queries) ListTicketsBySubmitter(ctx context.Context, arg ListTicketsByS
 	rows, err := q.db.Query(ctx, listTicketsBySubmitter,
 		arg.TenantID,
 		arg.SubmitterUserID,
+		arg.Status,
 		arg.PageOffset,
 		arg.PageLimit,
 	)

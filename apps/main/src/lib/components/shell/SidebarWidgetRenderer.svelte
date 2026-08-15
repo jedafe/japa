@@ -17,7 +17,7 @@
 	import NotificationCentre from './NotificationCentre.svelte';
 	import { AdSlot } from '$lib/components/ui';
 	import { sanitizeSidebarHtml, safeHref } from '$lib/utils/safeHtml';
-	import type { SessionUser, TagSuggestion, SpaceSuggestion } from '$lib/types';
+	import type { SessionUser, TrendingTag, SpaceSuggestion } from '$lib/types';
 
 	interface SidebarWidget {
 		id: string;
@@ -30,7 +30,7 @@
 	interface Props {
 		widget: SidebarWidget;
 		user: SessionUser | null;
-		trendingTags?: TagSuggestion[];
+		trendingTags?: TrendingTag[];
 		suggestedSpaces?: SpaceSuggestion[];
 		enabledLanguages?: string;
 		isDashboard?: boolean;

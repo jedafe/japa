@@ -8,6 +8,10 @@
 	import { t, translations } from '$lib/stores/i18n.svelte';
 	import { convertImageToModernFormat } from '$lib/utils/imageConvert';
 	import AchievementReactionsEditor from '$lib/components/settings/AchievementReactionsEditor.svelte';
+	import CountryMultiSelect from '$lib/components/settings/CountryMultiSelect.svelte';
+	import KeyValueEditor from '$lib/components/settings/KeyValueEditor.svelte';
+	import Autocomplete from '$lib/components/ui/Autocomplete.svelte';
+	import type { AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
 	import { categoryIcons, categoryNames, sensitiveKeys as categorySensitiveKeys, textareaKeys as categoryTextareaKeys, uploadKeys as categoryUploadKeys, colorKeys as categoryColorKeys } from '$lib/components/settings/categoryConfig';
 	import {
 		Settings,
@@ -31,16 +35,18 @@
 		'onboarding.promoted_users': [],
 		'onboarding.promoted_tags': []
 	});
-	let entitySearch = $state('');
-	let entityDropdownRefs = $state<Record<string, HTMLDivElement>>({});
 
-	// Close entity dropdowns when clicking outside
-	function handleEntityDropdownClick(e: MouseEvent) {
-		const target = e.target as HTMLElement;
-		if (!target.closest('[data-entity-dropdown]') && !target.closest('button')) {
-			document.querySelectorAll('[data-entity-dropdown]').forEach((d) => d.classList.add('hidden'));
-		}
-	}
+	// Studio options fetched from the admin API so studio.default_persona_id
+	// renders as a persona select and studio.auto_publish_types renders as a
+	// content-type multi-select (Rule 16 — backend is source of truth).
+	let studioPersonaOptions = $state<{ value: string; label: string }[]>([]);
+	let studioContentTypeOptions = $state<{ value: string; label: string }[]>([]);
+
+	// RAG embedding model options fetched from the AI gateway so
+	// rag.embedding_model renders as a live-debounced autocomplete listing
+	// only models from providers registered for the "embedding" category
+	// (§69, ADR-069 — Rule 16: backend is source of truth).
+	let ragEmbeddingModelOptions = $state<{ value: string; label: string }[]>([]);
 
 	let isDirty = $derived(
 		JSON.stringify(currentSettings) !== JSON.stringify(originalSettings)
@@ -63,9 +69,17 @@
 	let confirmSurfaceDomainOpen = $state(false);
 	let pendingSurfaceDomainValue = $state('');
 
-	// Feature on/off toggles are now controlled by the Control Panel extensions
-	// page (single source of truth). These keys are hidden from the settings page.
-	const hiddenKeys = new Set(['geo_personalization.enabled']);
+	// Feature on/off toggles are controlled by the Control Panel extensions
+	// page (single source of truth). The setting_key of every extension in the
+	// backend knownExtensions catalog is fetched from /control/extensions and
+	// hidden from the settings page so the enable/disable switch is not
+	// duplicated. This keeps the backend catalog as the single source of truth —
+	// new extensions are automatically hidden without a frontend update.
+	interface ExtensionEntry {
+		key: string;
+		setting_key?: string;
+	}
+	let extensionSettingKeys = $state<Set<string>>(new Set());
 
 	const selectOptions: Record<string, { value: string; label: string }[]> = $derived(
 		(() => {
@@ -404,9 +418,9 @@
 		await saveAll();
 	}
 
-	// Apply a boolean setting toggle directly. Feature on/off toggles
-	// (e.g. geo_personalization.enabled) are no longer editable here —
-	// they are controlled by the extensions page.
+	// Apply a boolean setting toggle directly. Extension on/off toggles
+	// are filtered out of the settings list (see load()) and are controlled
+	// by the /extensions page.
 	function handleSettingToggle(key: string, checked: boolean) {
 		updateSetting(key, checked ? 'true' : 'false');
 	}
@@ -448,19 +462,42 @@
 	async function load() {
 		isLoading = true;
 		message = '';
-		const result = await api<SystemSetting[]>('/control/system-settings');
+		// Fetch system settings and the extensions catalog in parallel. The
+		// extensions catalog supplies every extension's setting_key, which is
+		// the enable/disable toggle that must be hidden from the settings page
+		// (it is owned by the /extensions page).
+		const [result, extResult] = await Promise.all([
+			api<SystemSetting[]>('/control/system-settings'),
+			api<ExtensionEntry[]>('/control/extensions')
+		]);
+		if (extResult.ok && extResult.data) {
+			extensionSettingKeys = new Set(
+				extResult.data
+					.map((e) => e.setting_key ?? '')
+					.filter((k) => k !== '')
+			);
+		}
 		if (result.ok) {
-			// Filter to control-panel settings only (Panel === 'control').
+			// Filter to control-panel settings only (Panel === 'control') and
+			// exclude extension enable/disable toggles (owned by /extensions).
 			// Using a positive filter ensures uncatalogued settings (panel === '')
 			// never leak into the control panel — only explicitly control-panel
 			// settings are shown.
 			const normalized = normalizeSettings(
-				result.data.filter((s) => s.panel === 'control' && !hiddenKeys.has(s.key))
+				result.data.filter(
+					(s) => s.panel === 'control' && !extensionSettingKeys.has(s.key)
+				)
 			);
 			originalSettings = JSON.parse(JSON.stringify(normalized));
 			currentSettings = JSON.parse(JSON.stringify(normalized));
 			// Fetch entity names for onboarding promoted_* fields (UUID → name).
 			await loadEntityOptions();
+			// Fetch studio persona and content-type options for the studio
+			// settings category (§75, ADR-076).
+			await loadStudioOptions();
+			// Fetch embedding models from the AI gateway for the RAG embedding
+			// model autocomplete (§69, ADR-069).
+			await loadEmbeddingModels();
 		}
 		isLoading = false;
 	}
@@ -468,23 +505,249 @@
 	// loadEntityOptions fetches spaces, users, and tags from the admin API so
 	// the onboarding.promoted_* settings can display entity names instead of
 	// raw UUIDs. The values stored in the setting are JSON arrays of UUIDs.
+	//
+	// The backend list endpoints use `page_size` (max 100) — not `per_page`.
+	// After loading the first page, any UUIDs already stored in the promoted_*
+	// settings that were not in the list are fetched individually via
+	// GET /admin/{resource}/{id} so every chip shows a human-readable name
+	// instead of a truncated UUID prefix.
 	async function loadEntityOptions() {
 		const [spacesRes, usersRes, tagsRes] = await Promise.all([
-			api<{ items: { id: string; name: string }[] }>('/api/v1/admin/spaces?per_page=200'),
-			api<{ items: { id: string; username: string }[] }>('/api/v1/admin/users?per_page=200'),
-			api<{ id: string; name: string }[]>('/api/v1/admin/tags')
+			api<{ items: { id: string; name: string }[] }>('/api/v1/admin/spaces?page_size=100'),
+			api<{ items: { id: string; username: string }[] }>('/api/v1/admin/users?page_size=100'),
+			api<{ id: string; name: string }[]>('/api/v1/admin/tags?page_size=100')
 		]);
+
+		const spaceOpts = spacesRes.ok && spacesRes.data?.items
+			? spacesRes.data.items.map((s) => ({ value: s.id, label: s.name }))
+			: [];
+		const userOpts = usersRes.ok && usersRes.data?.items
+			? usersRes.data.items.map((u) => ({ value: u.id, label: u.username }))
+			: [];
+		const tagOpts = tagsRes.ok && Array.isArray(tagsRes.data)
+			? tagsRes.data.map((t) => ({ value: t.id, label: t.name }))
+			: [];
+
+		// Resolve any promoted UUIDs that were not in the first 100 list
+		// results by fetching them individually. This ensures every chip
+		// shows a name rather than a UUID prefix.
+		const promotedSpaceUuids = getCurrentUuids('onboarding.promoted_spaces');
+		const promotedUserUuids = getCurrentUuids('onboarding.promoted_users');
+
+		const unresolvedSpaceUuids = promotedSpaceUuids.filter(
+			(uuid) => !spaceOpts.some((o) => o.value === uuid)
+		);
+		const unresolvedUserUuids = promotedUserUuids.filter(
+			(uuid) => !userOpts.some((o) => o.value === uuid)
+		);
+
+		const [extraSpaces, extraUsers] = await Promise.all([
+			Promise.all(
+				unresolvedSpaceUuids.map((uuid) =>
+					api<{ space: { id: string; name: string } }>(`/api/v1/admin/spaces/${uuid}`).then(
+						(r) => r.ok && r.data?.space ? { value: r.data.space.id, label: r.data.space.name } : null
+					).catch(() => null)
+				)
+			),
+			Promise.all(
+				unresolvedUserUuids.map((uuid) =>
+					api<{ id: string; username: string }>(`/api/v1/admin/users/${uuid}`).then(
+						(r) => r.ok && r.data ? { value: r.data.id, label: r.data.username } : null
+					).catch(() => null)
+				)
+			)
+		]);
+
 		entityOptions = {
-			'onboarding.promoted_spaces': spacesRes.ok && spacesRes.data?.items
-				? spacesRes.data.items.map((s) => ({ value: s.id, label: s.name }))
-				: [],
-			'onboarding.promoted_users': usersRes.ok && usersRes.data?.items
-				? usersRes.data.items.map((u) => ({ value: u.id, label: u.username }))
-				: [],
-			'onboarding.promoted_tags': tagsRes.ok && Array.isArray(tagsRes.data)
-				? tagsRes.data.map((t) => ({ value: t.id, label: t.name }))
-				: []
+			'onboarding.promoted_spaces': [
+				...spaceOpts,
+				...extraSpaces.filter((o): o is { value: string; label: string } => o !== null)
+			],
+			'onboarding.promoted_users': [
+				...userOpts,
+				...extraUsers.filter((o): o is { value: string; label: string } => o !== null)
+			],
+			'onboarding.promoted_tags': tagOpts
 		};
+	}
+
+	// loadStudioOptions fetches active personas and content types from the
+	// admin Studio API so studio.default_persona_id can render as a persona
+	// autocomplete and studio.auto_publish_types as a content-type autocomplete
+	// multi-select (§75, ADR-076). Only content types with can_auto_publish=true
+	// are offered as auto-publish options — other types are always reviewed.
+	async function loadStudioOptions() {
+		const [personasRes, contentTypesRes] = await Promise.all([
+			api<{ id: string; label: string }[]>('/api/v1/admin/studio/personas'),
+			api<{ types: { type: string; label: string; can_auto_publish: boolean }[] }>('/api/v1/admin/studio/content-types')
+		]);
+		studioPersonaOptions = personasRes.ok && Array.isArray(personasRes.data)
+			? personasRes.data.map((p) => ({ value: p.id, label: p.label }))
+			: [];
+		studioContentTypeOptions = contentTypesRes.ok && contentTypesRes.data?.types
+			? contentTypesRes.data.types
+					.filter((ct) => ct.can_auto_publish)
+					.map((ct) => ({ value: ct.type, label: ct.label }))
+			: [];
+	}
+
+	// Studio Autocomplete fetchers — filter the pre-loaded options client-side
+	// by the debounced query string. The Autocomplete component handles the
+	// debounce timing; these functions just do the matching.
+
+	function fetchStudioPersonas(q: string): Promise<AutocompleteItem[]> {
+		const query = q.toLowerCase();
+		const filtered = query === ''
+			? studioPersonaOptions
+			: studioPersonaOptions.filter((o) => o.label.toLowerCase().includes(query));
+		return Promise.resolve(filtered.map((o) => ({ id: o.value, label: o.label })));
+	}
+
+	function fetchStudioPersonasInitial(): Promise<AutocompleteItem[]> {
+		return Promise.resolve(studioPersonaOptions.map((o) => ({ id: o.value, label: o.label })));
+	}
+
+	// getStudioPersonaLabel returns the display label for the currently
+	// selected persona UUID (for the Autocomplete chip display).
+	function getStudioPersonaLabel(uuid: string): string {
+		if (!uuid) return '';
+		return studioPersonaOptions.find((o) => o.value === uuid)?.label ?? uuid.slice(0, 8) + '…';
+	}
+
+	function fetchStudioContentTypes(q: string, excludeIds: string[] = []): Promise<AutocompleteItem[]> {
+		const query = q.toLowerCase();
+		const filtered = studioContentTypeOptions
+			.filter((o) => !excludeIds.includes(o.value))
+			.filter((o) => query === '' || o.label.toLowerCase().includes(query));
+		return Promise.resolve(filtered.map((o) => ({ id: o.value, label: o.label })));
+	}
+
+	function fetchStudioContentTypesInitial(excludeIds: string[] = []): Promise<AutocompleteItem[]> {
+		return Promise.resolve(
+			studioContentTypeOptions
+				.filter((o) => !excludeIds.includes(o.value))
+				.map((o) => ({ id: o.value, label: o.label }))
+		);
+	}
+
+	// getStudioContentTypeLabel returns the display label for a content type
+	// value (for chip display in the multi-select).
+	function getStudioContentTypeLabel(value: string): string {
+		return studioContentTypeOptions.find((o) => o.value === value)?.label ?? value;
+	}
+
+	// loadEmbeddingModels fetches all available AI models from the AI gateway
+	// so rag.embedding_model renders as an autocomplete listing models from
+	// every integrated provider (§69, ADR-069 — Rule 16: backend is source of
+	// truth, no hardcoded model list).
+	async function loadEmbeddingModels() {
+		const res = await api<{ id: string; label: string }[]>(
+			'/api/v1/admin/ai/models'
+		);
+		ragEmbeddingModelOptions = res.ok && Array.isArray(res.data)
+			? res.data
+					.filter((m) => m.id !== '')
+					.map((m) => ({ value: m.id, label: m.label }))
+			: [];
+	}
+
+	// RAG embedding model Autocomplete fetchers — filter the pre-loaded
+	// options client-side by the debounced query string. The Autocomplete
+	// component handles the debounce timing.
+
+	function fetchEmbeddingModels(q: string): Promise<AutocompleteItem[]> {
+		const query = q.toLowerCase();
+		const filtered = query === ''
+			? ragEmbeddingModelOptions
+			: ragEmbeddingModelOptions.filter(
+					(o) => o.value.toLowerCase().includes(query) || o.label.toLowerCase().includes(query)
+				);
+		return Promise.resolve(filtered.map((o) => ({ id: o.value, label: o.label })));
+	}
+
+	function fetchEmbeddingModelsInitial(): Promise<AutocompleteItem[]> {
+		return Promise.resolve(ragEmbeddingModelOptions.map((o) => ({ id: o.value, label: o.label })));
+	}
+
+	// getEmbeddingModelLabel returns the display label for the currently
+	// selected embedding model (for the Autocomplete chip display). Falls
+	// back to the raw model ID if the model is not in the loaded list (e.g.
+	// the provider was disabled after the setting was last saved).
+	function getEmbeddingModelLabel(modelId: string): string {
+		if (!modelId) return '';
+		return ragEmbeddingModelOptions.find((o) => o.value === modelId)?.label ?? modelId;
+	}
+
+	// --- Entity multi-select fetchers (onboarding promoted_* fields) ---
+	// Live debounced search via the Autocomplete component. Each fetcher
+	// calls the backend admin list endpoint with the query string and
+	// excludes already-selected UUIDs so the user cannot add duplicates.
+
+	// fetchEntitySpaces searches spaces via GET /admin/spaces?q=...
+	async function fetchEntitySpaces(q: string, excludeIds: string[] = []): Promise<AutocompleteItem[]> {
+		const res = await api<{ items: { id: string; name: string }[] }>(
+			`/api/v1/admin/spaces?q=${encodeURIComponent(q)}&page_size=50`
+		);
+		if (!res.ok || !res.data?.items) return [];
+		return res.data.items
+			.filter((s) => !excludeIds.includes(s.id))
+			.map((s) => ({ id: s.id, label: s.name }));
+	}
+
+	function fetchEntitySpacesInitial(excludeIds: string[] = []): Promise<AutocompleteItem[]> {
+		return fetchEntitySpaces('', excludeIds);
+	}
+
+	// fetchEntityUsers searches users via GET /admin/users?search=...
+	async function fetchEntityUsers(q: string, excludeIds: string[] = []): Promise<AutocompleteItem[]> {
+		const res = await api<{ items: { id: string; username: string }[] }>(
+			`/api/v1/admin/users?search=${encodeURIComponent(q)}&page_size=50`
+		);
+		if (!res.ok || !res.data?.items) return [];
+		return res.data.items
+			.filter((u) => !excludeIds.includes(u.id))
+			.map((u) => ({ id: u.id, label: u.username }));
+	}
+
+	function fetchEntityUsersInitial(excludeIds: string[] = []): Promise<AutocompleteItem[]> {
+		return fetchEntityUsers('', excludeIds);
+	}
+
+	// fetchEntityTags searches tags via GET /admin/tags?q=...
+	async function fetchEntityTags(q: string, excludeIds: string[] = []): Promise<AutocompleteItem[]> {
+		const res = await api<{ id: string; name: string }[]>(
+			`/api/v1/admin/tags?q=${encodeURIComponent(q)}&page_size=50`
+		);
+		if (!res.ok || !Array.isArray(res.data)) return [];
+		return res.data
+			.filter((t) => !excludeIds.includes(t.id))
+			.map((t) => ({ id: t.id, label: t.name }));
+	}
+
+	function fetchEntityTagsInitial(excludeIds: string[] = []): Promise<AutocompleteItem[]> {
+		return fetchEntityTags('', excludeIds);
+	}
+
+	// getEntityLabel returns the display label for a selected entity UUID
+	// (for chip display). Falls back to the pre-loaded entityOptions map
+	// (populated in loadEntityOptions), then to a truncated UUID prefix.
+	function getEntityLabel(settingKey: string, uuid: string): string {
+		if (!uuid) return '';
+		return entityOptions[settingKey]?.find((o) => o.value === uuid)?.label ?? uuid.slice(0, 8) + '…';
+	}
+
+	// getEntityFetcher returns the appropriate live-search fetcher for the
+	// given onboarding promoted_* setting key.
+	function getEntityFetcher(settingKey: string): (q: string, excludeIds: string[]) => Promise<AutocompleteItem[]> {
+		if (settingKey === 'onboarding.promoted_spaces') return fetchEntitySpaces;
+		if (settingKey === 'onboarding.promoted_users') return fetchEntityUsers;
+		return fetchEntityTags;
+	}
+
+	function getEntityInitialFetcher(settingKey: string): (excludeIds: string[]) => Promise<AutocompleteItem[]> {
+		if (settingKey === 'onboarding.promoted_spaces') return fetchEntitySpacesInitial;
+		if (settingKey === 'onboarding.promoted_users') return fetchEntityUsersInitial;
+		return fetchEntityTagsInitial;
 	}
 
 	beforeNavigate(({ cancel }) => {
@@ -560,11 +823,16 @@
 	);
 
 	function formatSettingKey(key: string): string {
+		// Common acronyms that should be fully uppercased, not just title-cased.
+		const acronyms = new Set(['rag', 'api', 'ai', 'cv', 'seo', 'url', 'ip', 'dns', 'ssl', 'tls', 'sms', 'fcm', 'apns', 'pr']);
 		return (key ?? '')
 			.replace(/_/g, ' ')
 			.replace(/([a-z])([A-Z])/g, '$1 $2')
 			.replace(/\./g, ' · ')
-			.replace(/\b\w/g, (c) => c.toUpperCase());
+			.replace(/\b\w+/g, (word) => {
+				if (acronyms.has(word.toLowerCase())) return word.toUpperCase();
+				return word.charAt(0).toUpperCase() + word.slice(1);
+			});
 	}
 
 	function formatNamespace(ns: string): string {
@@ -584,9 +852,29 @@
 		// achievement_reactions stores a JSONB array of {emoji, label} pairs (§89).
 		// Render as a dedicated reaction editor instead of raw JSON text.
 		if (setting.key === 'achievement_reactions') return 'achievement-reactions';
+		// Geo personalization market lists — CSV of ISO 3166-1 alpha-2 codes.
+		// Render as a country multi-select with chips sourced from the spaces
+		// API (Rule 16 — no hardcoded country list). ADR-064 / Phase 38.03.
+		if (setting.key === 'geo_personalization.origin_markets' || setting.key === 'geo_personalization.destination_markets') return 'country-multi-select';
+		// Geo personalization JSON map settings — structured key-value editors
+		// instead of raw JSON textareas. ADR-064a recommendation engine config.
+		// tool_labels / tool_urls: slug → string (label or URL).
+		// stage_tool_matrix: archetype:stage → CSV of tool slugs.
+		if (setting.key === 'geo_personalization.tool_labels' || setting.key === 'geo_personalization.tool_urls') return 'key-value-editor';
+		if (setting.key === 'geo_personalization.stage_tool_matrix') return 'stage-tool-matrix-editor';
 		// Onboarding promoted_* fields store JSON arrays of UUIDs — render as
 		// an entity multi-select that shows names instead of raw UUIDs.
 		if (setting.key in entityOptions) return 'entity-multi-select';
+		// Studio fields with API-backed option lists (§75, ADR-076):
+		// studio.default_persona_id → persona autocomplete (live debounced
+		// search), studio.auto_publish_types → content-type autocomplete
+		// multi-select (csv). Options fetched in loadStudioOptions.
+		if (setting.key === 'studio.default_persona_id') return 'studio-persona-autocomplete';
+		if (setting.key === 'studio.auto_publish_types') return 'studio-content-type-autocomplete';
+		// RAG embedding model — live-debounced autocomplete listing models
+		// from all integrated AI providers (§69, ADR-069 — Rule 16: no
+		// hardcoded model list).
+		if (setting.key === 'rag.embedding_model') return 'rag-embedding-model-autocomplete';
 		// When the API provides options, render as select (single) or multi-select
 		// (csv type) per Rule 16 — the backend catalog is the source of truth.
 		const hasApiOptions = !!(setting.options && setting.options.length > 0);
@@ -713,11 +1001,6 @@
 
 	let uploadingKey = $state('');
 	let uploadError = $state('');
-
-	$effect(() => {
-		document.addEventListener('click', handleEntityDropdownClick);
-		return () => document.removeEventListener('click', handleEntityDropdownClick);
-	});
 </script>
 
 <div class="flex h-full gap-6">
@@ -938,6 +1221,64 @@
 										</Switch.Root>
 									</div>
 
+								{:else if componentType === 'studio-persona-autocomplete'}
+									{@const personaId = getDisplayValue(setting) || null}
+									<div class="w-56">
+										<Autocomplete
+											id="setting-{setting.key}"
+											placeholder={t('settings.studio_search_persona', 'Search persona...')}
+											emptyMessage={t('settings.studio_no_personas', 'No personas found')}
+											fetcher={fetchStudioPersonas}
+											initialFetcher={fetchStudioPersonasInitial}
+											selectedId={personaId}
+											selectedLabel={personaId ? getStudioPersonaLabel(personaId) : null}
+											onSelect={(item) => updateSetting(setting.key, item.id)}
+											onClear={() => updateSetting(setting.key, '')}
+										/>
+									</div>
+
+								{:else if componentType === 'rag-embedding-model-autocomplete'}
+									{@const modelId = getDisplayValue(setting) || null}
+									<div class="w-56">
+										<Autocomplete
+											id="setting-{setting.key}"
+											placeholder={t('settings.rag_search_model', 'Search embedding model...')}
+											emptyMessage={t('settings.rag_no_models', 'No embedding models found — type a model name manually')}
+											fetcher={fetchEmbeddingModels}
+											initialFetcher={fetchEmbeddingModelsInitial}
+											selectedId={modelId}
+											selectedLabel={modelId ? getEmbeddingModelLabel(modelId) : null}
+											freeText={true}
+											onSelect={(item) => updateSetting(setting.key, item.id)}
+											onFreeTextBlur={(q) => updateSetting(setting.key, q)}
+											onClear={() => updateSetting(setting.key, '')}
+										/>
+									</div>
+
+								{:else if componentType === 'studio-content-type-autocomplete'}
+									{@const selectedTypes = getMultiSelectValues(getDisplayValue(setting))}
+									<div class="w-56">
+										{#if selectedTypes.length > 0}
+											<div class="mb-1 flex flex-wrap gap-1">
+												{#each selectedTypes as val}
+													<span class="bg-accent text-accent-foreground inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px]">
+														{getStudioContentTypeLabel(val)}
+														<button class="hover:text-destructive" onclick={() => updateSetting(setting.key, selectedTypes.filter((v) => v !== val).join(','))}>×</button>
+													</span>
+												{/each}
+											</div>
+										{/if}
+										<Autocomplete
+											id="setting-{setting.key}"
+											placeholder={t('settings.studio_add_type', 'Add content type...')}
+											emptyMessage={t('settings.studio_no_types', 'No content types found')}
+											fetcher={(q) => fetchStudioContentTypes(q, selectedTypes)}
+											initialFetcher={() => fetchStudioContentTypesInitial(selectedTypes)}
+											selectedId={null}
+											onSelect={(item) => updateSetting(setting.key, [...selectedTypes, item.id].join(','))}
+										/>
+									</div>
+
 								{:else if componentType === 'select'}
 									<Select.Root
 										type="single"
@@ -1010,107 +1351,56 @@
 									/>
 								</div>
 
+							{:else if componentType === 'country-multi-select'}
+								<CountryMultiSelect
+									value={setting.value ?? ''}
+									disabled={isSaving}
+									onchange={(next) => updateSetting(setting.key, next)}
+								/>
+
+							{:else if componentType === 'key-value-editor'}
+								<KeyValueEditor
+									value={setting.value ?? '{}'}
+									valueMode="string"
+									keyPlaceholder="slug"
+									valuePlaceholder={setting.key === 'geo_personalization.tool_urls' ? '/path' : 'Display label'}
+									disabled={isSaving}
+									onchange={(next) => updateSetting(setting.key, next)}
+								/>
+
+							{:else if componentType === 'stage-tool-matrix-editor'}
+								<KeyValueEditor
+									value={setting.value ?? '{}'}
+									valueMode="csv"
+									keyPlaceholder="archetype:stage"
+									valuePlaceholder="tool-slug-1, tool-slug-2, ..."
+									disabled={isSaving}
+									onchange={(next) => updateSetting(setting.key, next)}
+								/>
+
 							{:else if componentType === 'entity-multi-select'}
+									{@const selectedUuids = getCurrentUuids(setting.key)}
 								<div class="w-64">
-									<div class="mb-1 flex flex-wrap gap-1">
-										{#each getCurrentUuids(setting.key) as uuid}
-											<span class="bg-accent text-accent-foreground inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px]">
-												{entityOptions[setting.key]?.find((o) => o.value === uuid)?.label ?? uuid.slice(0, 8) + '…'}
-												<button class="hover:text-destructive" onclick={() => removeUuidFromSetting(setting.key, uuid)}>×</button>
-											</span>
-										{/each}
-									</div>
-									{#if (entityOptions[setting.key] ?? []).filter((o) => !getCurrentUuids(setting.key).includes(o.value)).length > 0}
-										<div class="relative" bind:this={entityDropdownRefs[setting.key]}>
-											<button
-												type="button"
-												class="{selectTriggerClasses} w-full"
-												onclick={(e) => {
-													const container = e.currentTarget.parentElement;
-													const dropdown = container?.querySelector('[data-entity-dropdown]') as HTMLElement | null;
-													if (dropdown) {
-														const isHidden = dropdown.classList.contains('hidden');
-														(document.querySelectorAll('[data-entity-dropdown]') as NodeListOf<HTMLElement>).forEach(d => {
-															d.classList.add('hidden');
-															d.style.bottom = '';
-															d.style.top = '';
-															d.style.marginBottom = '';
-															d.style.marginTop = '';
-														});
-if (isHidden) {
-														dropdown.classList.remove('hidden');
-														const triggerBtn = e.currentTarget as HTMLElement;
-														requestAnimationFrame(() => {
-															const btnRect = triggerBtn.getBoundingClientRect();
-																const spaceBelow = window.innerHeight - btnRect.bottom;
-																if (spaceBelow < 220) {
-																	dropdown.style.bottom = '100%';
-																	dropdown.style.top = 'auto';
-																	dropdown.style.marginBottom = '4px';
-																	dropdown.style.marginTop = '0';
-																} else {
-																	dropdown.style.bottom = 'auto';
-																	dropdown.style.top = '100%';
-																	dropdown.style.marginTop = '4px';
-																	dropdown.style.marginBottom = '0';
-																}
-															});
-														}
-													}
-												}}
-											>
-												<span class="text-muted-foreground">{t('settings.add_placeholder', 'Add...')}</span>
-												<ChevronDown class="text-muted-foreground size-3.5 ml-auto" />
-											</button>
-											<div
-												data-entity-dropdown
-												class="border-border-input bg-background absolute z-[99999] mt-1 hidden max-h-48 w-full overflow-y-auto rounded-lg border p-1 shadow-lg"
-											>
-												<input
-													type="text"
-													placeholder="Search..."
-													class="bg-background border-border-input mb-1 w-full rounded border px-2 py-1 text-xs outline-none"
-												oninput={(e) => {
-													const container = e.currentTarget.closest('[data-entity-dropdown]');
-													const buttons = container?.querySelectorAll('button[data-entity-option]');
-													const query = (e.target as HTMLInputElement).value.toLowerCase();
-													buttons?.forEach((btn) => {
-														const el = btn as HTMLElement;
-														const label = el.dataset.optionLabel?.toLowerCase() ?? '';
-														el.style.display = label.includes(query) ? '' : 'none';
-													});
-												}}
-												onfocus={(e) => e.stopPropagation()}
-											/>
-												{#each (entityOptions[setting.key] ?? []).filter((o) => !getCurrentUuids(setting.key).includes(o.value)) as option}
-													<button
-														type="button"
-														data-entity-option
-														data-option-label={option.label}
-														class="hover:bg-muted flex w-full items-center rounded px-2 py-1 text-left text-xs"
-														onmousedown={(e) => e.preventDefault()}
-														onclick={(e) => {
-															addUuidToSetting(setting.key, option.value);
-															const dropdown = e.currentTarget.closest('[data-entity-dropdown]') as HTMLElement | null;
-															if (dropdown) {
-																dropdown.classList.add('hidden');
-																dropdown.style.bottom = '';
-																dropdown.style.top = '';
-																dropdown.style.marginBottom = '';
-																dropdown.style.marginTop = '';
-															}
-															const input = dropdown?.querySelector('input') as HTMLInputElement;
-															if (input) input.value = '';
-														}}
-													>
-														{option.label}
-													</button>
-												{/each}
-											</div>
+									{#if selectedUuids.length > 0}
+										<div class="mb-1 flex flex-wrap gap-1">
+											{#each selectedUuids as uuid}
+												<span class="bg-accent text-accent-foreground inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px]">
+													{getEntityLabel(setting.key, uuid)}
+													<button class="hover:text-destructive" onclick={() => removeUuidFromSetting(setting.key, uuid)}>×</button>
+												</span>
+											{/each}
 										</div>
 									{/if}
+									<Autocomplete
+										id="setting-{setting.key}"
+										placeholder={t('settings.add_placeholder', 'Add...')}
+										emptyMessage={t('settings.no_results', 'No results found')}
+										fetcher={(q) => getEntityFetcher(setting.key)(q, selectedUuids)}
+										initialFetcher={() => getEntityInitialFetcher(setting.key)(selectedUuids)}
+										selectedId={null}
+										onSelect={(item) => addUuidToSetting(setting.key, item.id)}
+									/>
 								</div>
-
 							{:else if componentType === 'textarea'}
 									<textarea
 										id="setting-{setting.key}"
@@ -1138,6 +1428,8 @@ if (isHidden) {
 											updateSetting(setting.key, target.value);
 										}}
 										step={setting.type === 'float' ? '0.01' : '1'}
+										min={typeof setting.min === 'number' ? setting.min : undefined}
+										max={typeof setting.max === 'number' ? setting.max : undefined}
 										class="{inputClasses} w-28"
 									/>
 
@@ -1345,6 +1637,64 @@ if (isHidden) {
 													<Switch.Thumb class="bg-background pointer-events-none block size-4 shrink-0 rounded-full shadow-lg transition-transform data-[state=checked]:translate-x-4 data-[state=unchecked]:translate-x-0" />
 												</Switch.Root>
 											</div>
+										{:else if componentType === 'studio-persona-autocomplete'}
+											{@const personaId = getDisplayValue(setting) || null}
+											<div class="w-56">
+												<Autocomplete
+													id="setting-{setting.key}"
+													placeholder={t('settings.studio_search_persona', 'Search persona...')}
+													emptyMessage={t('settings.studio_no_personas', 'No personas found')}
+													fetcher={fetchStudioPersonas}
+													initialFetcher={fetchStudioPersonasInitial}
+													selectedId={personaId}
+													selectedLabel={personaId ? getStudioPersonaLabel(personaId) : null}
+													onSelect={(item) => updateSetting(setting.key, item.id)}
+													onClear={() => updateSetting(setting.key, '')}
+												/>
+											</div>
+
+										{:else if componentType === 'rag-embedding-model-autocomplete'}
+											{@const modelId = getDisplayValue(setting) || null}
+											<div class="w-56">
+												<Autocomplete
+													id="setting-{setting.key}"
+													placeholder={t('settings.rag_search_model', 'Search embedding model...')}
+													emptyMessage={t('settings.rag_no_models', 'No embedding models found — type a model name manually')}
+													fetcher={fetchEmbeddingModels}
+													initialFetcher={fetchEmbeddingModelsInitial}
+													selectedId={modelId}
+													selectedLabel={modelId ? getEmbeddingModelLabel(modelId) : null}
+													freeText={true}
+													onSelect={(item) => updateSetting(setting.key, item.id)}
+													onFreeTextBlur={(q) => updateSetting(setting.key, q)}
+													onClear={() => updateSetting(setting.key, '')}
+												/>
+											</div>
+
+										{:else if componentType === 'studio-content-type-autocomplete'}
+											{@const selectedTypes = getMultiSelectValues(getDisplayValue(setting))}
+											<div class="w-56">
+												{#if selectedTypes.length > 0}
+													<div class="mb-1 flex flex-wrap gap-1">
+														{#each selectedTypes as val}
+															<span class="bg-accent text-accent-foreground inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px]">
+																{getStudioContentTypeLabel(val)}
+																<button class="hover:text-destructive" onclick={() => updateSetting(setting.key, selectedTypes.filter((v) => v !== val).join(','))}>×</button>
+															</span>
+														{/each}
+													</div>
+												{/if}
+												<Autocomplete
+													id="setting-{setting.key}"
+													placeholder={t('settings.studio_add_type', 'Add content type...')}
+													emptyMessage={t('settings.studio_no_types', 'No content types found')}
+													fetcher={(q) => fetchStudioContentTypes(q, selectedTypes)}
+													initialFetcher={() => fetchStudioContentTypesInitial(selectedTypes)}
+													selectedId={null}
+													onSelect={(item) => updateSetting(setting.key, [...selectedTypes, item.id].join(','))}
+												/>
+											</div>
+
 										{:else if componentType === 'select'}
 											<Select.Root type="single" value={getSelectValue(getDisplayValue(setting))} onValueChange={(v) => { if (v !== undefined) updateSetting(setting.key, v); }}>
 												<Select.Trigger class={selectTriggerClasses} id="setting-{setting.key}">
@@ -1429,106 +1779,28 @@ if (isHidden) {
 									</div>
 
 								{:else if componentType === 'entity-multi-select'}
+									{@const selectedUuids = getCurrentUuids(setting.key)}
 									<div class="w-64">
-										<div class="mb-1 flex flex-wrap gap-1">
-											{#each getCurrentUuids(setting.key) as uuid}
-												<span class="bg-accent text-accent-foreground inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px]">
-													{entityOptions[setting.key]?.find((o) => o.value === uuid)?.label ?? uuid.slice(0, 8) + '…'}
-													<button class="hover:text-destructive" onclick={() => removeUuidFromSetting(setting.key, uuid)}>×</button>
-												</span>
-											{/each}
-										</div>
-										{#if (entityOptions[setting.key] ?? []).filter((o) => !getCurrentUuids(setting.key).includes(o.value)).length > 0}
-											<div class="relative" bind:this={entityDropdownRefs[setting.key]}>
-											<button
-												type="button"
-												class="{selectTriggerClasses} w-full"
-												onclick={(e) => {
-													const container = e.currentTarget.parentElement;
-													const dropdown = container?.querySelector('[data-entity-dropdown]') as HTMLElement | null;
-													if (dropdown) {
-														const isHidden = dropdown.classList.contains('hidden');
-														(document.querySelectorAll('[data-entity-dropdown]') as NodeListOf<HTMLElement>).forEach(d => {
-															d.classList.add('hidden');
-															d.style.bottom = '';
-															d.style.top = '';
-															d.style.marginBottom = '';
-															d.style.marginTop = '';
-														});
-if (isHidden) {
-													dropdown.classList.remove('hidden');
-													const triggerBtn = e.currentTarget as HTMLElement;
-													requestAnimationFrame(() => {
-														const btnRect = triggerBtn.getBoundingClientRect();
-															const spaceBelow = window.innerHeight - btnRect.bottom;
-															if (spaceBelow < 220) {
-																dropdown.style.bottom = '100%';
-																dropdown.style.top = 'auto';
-																dropdown.style.marginBottom = '4px';
-																dropdown.style.marginTop = '0';
-															} else {
-																dropdown.style.bottom = 'auto';
-																dropdown.style.top = '100%';
-																dropdown.style.marginTop = '4px';
-																dropdown.style.marginBottom = '0';
-															}
-														});
-													}
-												}
-											}}
-										>
-											<span class="text-muted-foreground">{t('settings.add_placeholder', 'Add...')}</span>
-											<ChevronDown class="text-muted-foreground size-3.5 ml-auto" />
-										</button>
-										<div
-											data-entity-dropdown
-											class="border-border-input bg-background absolute z-[99999] mt-1 hidden max-h-48 w-full overflow-y-auto rounded-lg border p-1 shadow-lg"
-										>
-												<input
-													type="text"
-													placeholder="Search..."
-													class="bg-background border-border-input mb-1 w-full rounded border px-2 py-1 text-xs outline-none"
-													oninput={(e) => {
-															const container = e.currentTarget.closest('[data-entity-dropdown]');
-															const buttons = container?.querySelectorAll('button[data-entity-option]');
-															const query = (e.target as HTMLInputElement).value.toLowerCase();
-															buttons?.forEach((btn) => {
-																const el = btn as HTMLElement;
-																const label = el.dataset.optionLabel?.toLowerCase() ?? '';
-																el.style.display = label.includes(query) ? '' : 'none';
-															});
-														}}
-														onfocus={(e) => e.stopPropagation()}
-													/>
-												{#each (entityOptions[setting.key] ?? []).filter((o) => !getCurrentUuids(setting.key).includes(o.value)) as option}
-													<button
-														type="button"
-														data-entity-option
-														data-option-label={option.label}
-														class="hover:bg-muted flex w-full items-center rounded px-2 py-1 text-left text-xs"
-														onmousedown={(e) => e.preventDefault()}
-														onclick={(e) => {
-															addUuidToSetting(setting.key, option.value);
-															const dropdown = e.currentTarget.closest('[data-entity-dropdown]') as HTMLElement | null;
-															if (dropdown) {
-																dropdown.classList.add('hidden');
-																dropdown.style.bottom = '';
-																dropdown.style.top = '';
-																dropdown.style.marginBottom = '';
-																dropdown.style.marginTop = '';
-															}
-															const input = dropdown?.querySelector('input') as HTMLInputElement;
-															if (input) input.value = '';
-														}}
-													>
-														{option.label}
-													</button>
+										{#if selectedUuids.length > 0}
+											<div class="mb-1 flex flex-wrap gap-1">
+												{#each selectedUuids as uuid}
+													<span class="bg-accent text-accent-foreground inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px]">
+														{getEntityLabel(setting.key, uuid)}
+														<button class="hover:text-destructive" onclick={() => removeUuidFromSetting(setting.key, uuid)}>×</button>
+													</span>
 												{/each}
 											</div>
-										</div>
-									{/if}
-								</div>
-
+										{/if}
+										<Autocomplete
+											id="setting-{setting.key}"
+											placeholder={t('settings.add_placeholder', 'Add...')}
+											emptyMessage={t('settings.no_results', 'No results found')}
+											fetcher={(q) => getEntityFetcher(setting.key)(q, selectedUuids)}
+											initialFetcher={() => getEntityInitialFetcher(setting.key)(selectedUuids)}
+											selectedId={null}
+											onSelect={(item) => addUuidToSetting(setting.key, item.id)}
+										/>
+									</div>
 								{:else if componentType === 'number'}
 										<input
 											id="setting-{setting.key}"
@@ -1539,6 +1811,8 @@ if (isHidden) {
 												updateSetting(setting.key, target.value);
 											}}
 											step={setting.type === 'float' ? '0.01' : '1'}
+											min={typeof setting.min === 'number' ? setting.min : undefined}
+											max={typeof setting.max === 'number' ? setting.max : undefined}
 											class="{inputClasses} w-28"
 										/>
 

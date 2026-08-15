@@ -364,20 +364,25 @@ type CatalogFilter struct {
 	Category string
 	Language string
 	IsFree   bool
+	Level    string // difficulty filter (frontend sends "level" per ADR-060)
+	Q        string // title search (ILIKE)
+	Sort     string // popular|newest|rating (empty = popular by default)
 }
 
 // ListCatalog returns marketplace tracks matching the filter.
 func (s *Store) ListCatalog(ctx context.Context, tenantID pgtype.UUID, f CatalogFilter, limit, offset int32) ([]gen.ListUniversityCatalogRow, error) {
 	return s.read.ListUniversityCatalog(ctx, gen.ListUniversityCatalogParams{
 		TenantID: tenantID, Category: f.Category, Language: f.Language,
-		IsFree: f.IsFree, PageLimit: limit, PageOffset: offset,
+		IsFree: f.IsFree, Level: f.Level, Q: f.Q, Sort: f.Sort,
+		PageLimit: limit, PageOffset: offset,
 	})
 }
 
 // CountCatalog returns the total count of marketplace tracks matching the filter.
 func (s *Store) CountCatalog(ctx context.Context, tenantID pgtype.UUID, f CatalogFilter) (int64, error) {
 	return s.read.CountUniversityCatalog(ctx, gen.CountUniversityCatalogParams{
-		TenantID: tenantID, Category: f.Category, Language: f.Language, IsFree: f.IsFree,
+		TenantID: tenantID, Category: f.Category, Language: f.Language,
+		IsFree: f.IsFree, Level: f.Level, Q: f.Q,
 	})
 }
 
@@ -561,6 +566,15 @@ func (s *Store) ListPendingTracks(ctx context.Context, tenantID, spaceID pgtype.
 	})
 }
 
+// CountPendingTracks returns the total count of tracks awaiting marketplace
+// approval (mirrors ListPendingTracks). Used by the admin hub and the
+// pending-tracks list meta envelope.
+func (s *Store) CountPendingTracks(ctx context.Context, tenantID, spaceID pgtype.UUID) (int64, error) {
+	return s.read.CountPendingUniversityTracks(ctx, gen.CountPendingUniversityTracksParams{
+		TenantID: tenantID, SpaceID: spaceID,
+	})
+}
+
 // ApproveTrack publishes a submitted track to the marketplace.
 func (s *Store) ApproveTrack(ctx context.Context, tenantID, trackID pgtype.UUID) (gen.ApproveUniversityTrackRow, error) {
 	return s.write.ApproveUniversityTrack(ctx, gen.ApproveUniversityTrackParams{
@@ -730,6 +744,15 @@ func (s *Store) ListPayoutsByInstructor(ctx context.Context, tenantID, instructo
 func (s *Store) ListPayoutsByStatus(ctx context.Context, tenantID, spaceID pgtype.UUID, status string, limit, offset int32) ([]gen.ListInstructorPayoutsByStatusRow, error) {
 	return s.read.ListInstructorPayoutsByStatus(ctx, gen.ListInstructorPayoutsByStatusParams{
 		TenantID: tenantID, Status: status, SpaceID: spaceID, PageLimit: limit, PageOffset: offset,
+	})
+}
+
+// CountPayoutsByStatus returns the total count of payouts matching the
+// status/space filter (mirrors ListPayoutsByStatus). Used by the admin hub
+// and the payout-queue list meta envelope.
+func (s *Store) CountPayoutsByStatus(ctx context.Context, tenantID, spaceID pgtype.UUID, status string) (int64, error) {
+	return s.read.CountInstructorPayoutsByStatus(ctx, gen.CountInstructorPayoutsByStatusParams{
+		TenantID: tenantID, Status: status, SpaceID: spaceID,
 	})
 }
 

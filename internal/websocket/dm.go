@@ -6,11 +6,13 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/valkey"
 	"github.com/jedafe/japa/internal/worker"
 )
 
@@ -299,6 +301,17 @@ func (s *DMStore) SoftDeleteDMMessage(ctx context.Context, messageID, conversati
 	})
 }
 
+// GetDMMessageByID returns a single DM message by ID and conversation.
+// Returns pgx.ErrNoRows when the message does not exist. Used by the
+// edit/delete service paths to verify sender ownership before mutating
+// (Rule 5: return 403 not 500 for a non-sender).
+func (s *DMStore) GetDMMessageByID(ctx context.Context, messageID, conversationID pgtype.UUID) (gen.DmMessage, error) {
+	return s.read.GetDMMessageByID(ctx, gen.GetDMMessageByIDParams{
+		ID:             messageID,
+		ConversationID: conversationID,
+	})
+}
+
 // ConversationResult is returned when getting or creating a conversation.
 type ConversationResult struct {
 	Conversation gen.DmConversation
@@ -339,6 +352,7 @@ type DMService struct {
 	store       *DMStore
 	hub         *Hub
 	AsynqClient *asynq.Client
+	vkClient    *valkey.Client
 }
 
 // NewDMService creates a DMService with the given store and hub.
@@ -346,11 +360,20 @@ func NewDMService(store *DMStore, hub *Hub) *DMService {
 	return &DMService{store: store, hub: hub}
 }
 
+// SetValkeyClient injects the Valkey client used to maintain the
+// jc:dm_total_unread:{user_id} badge counter (Section 48). Without this,
+// the DB unread columns are still correct (source of truth) but the
+// Valkey-cached badge total is never updated.
+func (s *DMService) SetValkeyClient(vk *valkey.Client) {
+	s.vkClient = vk
+}
+
 // DM privacy / block sentinel errors per Section 48.
 var (
 	ErrDMBlocked           = errors.New("dm blocked by user_blocks")
 	ErrDMPrivacyNobody     = errors.New("recipient does not accept new DM conversations")
 	ErrDMNotMutualFollower = errors.New("recipient only accepts DMs from mutual followers")
+	ErrDMNotSender         = errors.New("user is not the sender of this message")
 )
 
 // GetOrCreateConversation gets existing or creates new DM conversation.
@@ -359,7 +382,11 @@ var (
 // conversations are returned unchanged (privacy settings do not retroactively
 // close already-active threads). Non-mutual-follow senders land as a message
 // request (pending state) instead of a direct conversation (Section 48).
-func (s *DMService) GetOrCreateConversation(ctx context.Context, tenantID, senderID, recipientID pgtype.UUID) (ConversationResult, error) {
+// The previewMessage is stored as dm_requests.preview_message for
+// non-mutual-follow senders so the recipient can see what the requester
+// wants to say (Section 48: "first message text; shown in the request
+// preview").
+func (s *DMService) GetOrCreateConversation(ctx context.Context, tenantID, senderID, recipientID pgtype.UUID, previewMessage string) (ConversationResult, error) {
 	// Ensure sender != recipient
 	if senderID == recipientID {
 		return ConversationResult{}, errors.New("cannot create conversation with yourself")
@@ -439,7 +466,6 @@ func (s *DMService) GetOrCreateConversation(ctx context.Context, tenantID, sende
 	// preview. (BUG-002: previously skipped, creating direct conversations
 	// for all non-mutual-follow senders.)
 	if !isMutualFollow {
-		previewMessage := "" // set by InitiateConversation which sends the first message
 		if err := s.store.CreateMessageRequest(ctx, tenantID, senderID, recipientID, conv.ID, previewMessage); err != nil {
 			slog.Warn("dm: failed to create message request",
 				"conversation_id", conv.ID.String(), "error", err)
@@ -485,11 +511,15 @@ func (s *DMService) SendMessage(ctx context.Context, tenantID, conversationID, s
 		return fmt.Errorf("incrementing unread count: %w", err)
 	}
 
-	// Truncate preview to 100 chars.
-	preview := body
-	if len(preview) > 100 {
-		preview = preview[:100]
-	}
+	// Maintain the Valkey badge counter: INCR jc:dm_total_unread:{recipient}
+	// (Section 48). The DB column is the source of truth; this cache
+	// avoids a DB query on every page load for the unread badge.
+	s.incrTotalUnread(ctx, recipientID)
+
+	// Truncate preview to 100 characters (runes, not bytes — slicing by
+	// bytes splits multi-byte UTF-8 and corrupts non-ASCII previews on a
+	// multi-language platform, §6.2).
+	preview := truncateRunes(body, 100)
 
 	previewPtr := &preview
 
@@ -602,7 +632,9 @@ func (s *DMService) GetMessages(ctx context.Context, tenantID, conversationID, u
 
 // MarkAsRead marks messages as read and resets unread count. The tenantID
 // scopes the update so a cross-tenant conversation ID cannot be modified
-// (BUG-009, Rule 4: tenant-scoped).
+// (BUG-009, Rule 4: tenant-scoped). After resetting the DB column, the
+// Valkey badge counter jc:dm_total_unread:{user_id} is recalculated from
+// the sum of all conversation unread counts (Section 48).
 func (s *DMService) MarkAsRead(ctx context.Context, tenantID, conversationID, userID pgtype.UUID) error {
 	if err := s.store.MarkMessagesRead(ctx, tenantID, conversationID, userID); err != nil {
 		return fmt.Errorf("marking messages read: %w", err)
@@ -611,6 +643,9 @@ func (s *DMService) MarkAsRead(ctx context.Context, tenantID, conversationID, us
 	if err := s.store.ResetUnreadCount(ctx, conversationID, userID); err != nil {
 		return fmt.Errorf("resetting unread count: %w", err)
 	}
+
+	// Recalculate and re-set the Valkey badge counter (Section 48).
+	s.recalcTotalUnread(ctx, tenantID, userID)
 
 	return nil
 }
@@ -710,7 +745,10 @@ func (s *DMService) GetDMPrivacy(ctx context.Context, tenantID, userID pgtype.UU
 	return privacy, nil
 }
 
-// EditMessage edits a message within the 15-minute window.
+// EditMessage edits a message within the 15-minute window. Only the
+// sender of the message may edit it; a participant who is not the sender
+// gets ErrDMNotSender so the handler can return 403 instead of 500
+// (Rule 5: structured error envelope with correct status code).
 func (s *DMService) EditMessage(ctx context.Context, tenantID, conversationID, messageID, senderID pgtype.UUID, body string) error {
 	if body == "" {
 		return errors.New("message body cannot be empty")
@@ -725,6 +763,19 @@ func (s *DMService) EditMessage(ctx context.Context, tenantID, conversationID, m
 		return errors.New("user is not a participant in this conversation")
 	}
 
+	// Verify the user is the sender of this specific message. The
+	// EditDMMessage :exec query does not return ErrNoRows on a sender
+	// mismatch (it silently affects 0 rows), so we must check ownership
+	// explicitly to return a 403 instead of a 500 (Rule 5).
+	msg, err := s.store.GetDMMessageByID(ctx, messageID, conversationID)
+	if err != nil {
+		return fmt.Errorf("looking up message: %w", err)
+	}
+
+	if msg.SenderID != senderID {
+		return ErrDMNotSender
+	}
+
 	if err := s.store.EditDMMessage(ctx, messageID, conversationID, senderID, body); err != nil {
 		return fmt.Errorf("editing dm message: %w", err)
 	}
@@ -732,7 +783,9 @@ func (s *DMService) EditMessage(ctx context.Context, tenantID, conversationID, m
 	return nil
 }
 
-// DeleteMessage soft-deletes a message owned by the sender.
+// DeleteMessage soft-deletes a message owned by the sender. Only the
+// sender may delete; a non-sender participant gets ErrDMNotSender so the
+// handler returns 403, not 500 (Rule 5).
 func (s *DMService) DeleteMessage(ctx context.Context, tenantID, conversationID, messageID, senderID pgtype.UUID) error {
 	conv, err := s.store.GetConversationByID(ctx, conversationID, tenantID)
 	if err != nil {
@@ -743,6 +796,17 @@ func (s *DMService) DeleteMessage(ctx context.Context, tenantID, conversationID,
 		return errors.New("user is not a participant in this conversation")
 	}
 
+	// Verify sender ownership explicitly — the SoftDeleteDMMessage :exec
+	// query silently affects 0 rows on a sender mismatch (Rule 5).
+	msg, err := s.store.GetDMMessageByID(ctx, messageID, conversationID)
+	if err != nil {
+		return fmt.Errorf("looking up message: %w", err)
+	}
+
+	if msg.SenderID != senderID {
+		return ErrDMNotSender
+	}
+
 	if err := s.store.SoftDeleteDMMessage(ctx, messageID, conversationID, senderID); err != nil {
 		return fmt.Errorf("deleting dm message: %w", err)
 	}
@@ -751,9 +815,11 @@ func (s *DMService) DeleteMessage(ctx context.Context, tenantID, conversationID,
 }
 
 // GetOrCreateConversationForInitiator gets or creates a conversation,
-// checking blocks and privacy settings per Section 48.
-func (s *DMService) GetOrCreateConversationForInitiator(ctx context.Context, tenantID, initiatorID, recipientID pgtype.UUID) (ConversationResult, error) {
-	return s.GetOrCreateConversation(ctx, tenantID, initiatorID, recipientID)
+// checking blocks and privacy settings per Section 48. The previewMessage
+// is stored as the dm_requests.preview_message when a message request is
+// created for a non-mutual-follow sender (Section 48 spec).
+func (s *DMService) GetOrCreateConversationForInitiator(ctx context.Context, tenantID, initiatorID, recipientID pgtype.UUID, previewMessage string) (ConversationResult, error) {
+	return s.GetOrCreateConversation(ctx, tenantID, initiatorID, recipientID, previewMessage)
 }
 
 // GetOtherParticipant returns the ID of the other participant in a
@@ -838,5 +904,62 @@ func (s *DMService) enqueueDMNotifyRequest(ctx context.Context, tenantID, recipi
 	); err != nil {
 		slog.Warn("dm: failed to enqueue notify_request",
 			"conversation_id", conversationID.String(), "error", err)
+	}
+}
+
+// truncateRunes shortens s to at most n runes, preserving valid UTF-8.
+// Unlike byte-slicing (s[:n]), this never splits a multi-byte character,
+// which is required on a multi-language platform (en, fr, non-ASCII).
+func truncateRunes(s string, n int) string {
+	if n <= 0 {
+		return ""
+	}
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	return string(r[:n])
+}
+
+// incrTotalUnread increments the Valkey badge counter
+// jc:dm_total_unread:{user_id} by 1 (Section 48). Failures are logged and
+// swallowed — the DB column is the source of truth and the next
+// recalculation (on MarkAsRead) will correct any drift.
+func (s *DMService) incrTotalUnread(ctx context.Context, userID pgtype.UUID) {
+	if s.vkClient == nil {
+		return
+	}
+	vctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	key := valkey.MustKey("dm_total_unread:%s", userID.String())
+	if err := s.vkClient.Redis().Incr(vctx, key).Err(); err != nil {
+		slog.Warn("dm: failed to incr total unread", "user_id", userID.String(), "error", err)
+	}
+}
+
+// recalcTotalUnread recalculates the total unread DM count for a user by
+// summing all per-conversation unread counts from the DB, then sets the
+// Valkey badge counter jc:dm_total_unread:{user_id} with a 24h TTL
+// (Section 48). Fetches up to MaxPageSize conversations; for users with
+// more, the badge may be slightly off until the next recalculation —
+// acceptable for a cache backed by the DB source of truth.
+func (s *DMService) recalcTotalUnread(ctx context.Context, tenantID, userID pgtype.UUID) {
+	if s.vkClient == nil {
+		return
+	}
+	convs, err := s.store.GetUserConversations(ctx, tenantID, userID, MaxPageSize, 0)
+	if err != nil {
+		slog.Warn("dm: failed to fetch conversations for unread recalc", "error", err)
+		return
+	}
+	var total int64
+	for _, c := range convs {
+		total += int64(c.UnreadCount)
+	}
+	vctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	key := valkey.MustKey("dm_total_unread:%s", userID.String())
+	if err := s.vkClient.Redis().Set(vctx, key, total, 24*time.Hour).Err(); err != nil {
+		slog.Warn("dm: failed to set total unread", "user_id", userID.String(), "error", err)
 	}
 }

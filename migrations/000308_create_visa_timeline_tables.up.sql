@@ -23,8 +23,8 @@ CREATE TABLE IF NOT EXISTS visa_timelines (
     destination_space_id  uuid NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
     visa_category         text NOT NULL, -- free-text visa category
     consulate             text,
-    application_method    text, -- in_person|mail|online|agent
-    outcome               text, -- approved|denied|pending|withdrawn
+    application_method    text, -- online|in_person|vfs
+    outcome               text, -- approved|refused|pending|withdrawn
     is_shared             boolean NOT NULL DEFAULT false,
     anonymised_at         timestamptz,
     created_at            timestamptz NOT NULL DEFAULT now(),
@@ -40,7 +40,7 @@ CREATE TABLE IF NOT EXISTS visa_timeline_milestones (
     id             uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id      uuid NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
     timeline_id    uuid NOT NULL REFERENCES visa_timelines(id) ON DELETE CASCADE,
-    milestone_type text NOT NULL, -- application_submitted|biometrics|interview|decision|passport_collected|other
+    milestone_type text NOT NULL, -- applied|biometrics|medical|docs_requested|decision|visa_issued
     occurred_at    date NOT NULL,
     notes          text,
     created_at     timestamptz NOT NULL DEFAULT now()

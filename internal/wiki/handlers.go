@@ -177,6 +177,36 @@ func (h *Handlers) HandleGetIndex(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": pages})
 }
 
+// WikiCategoryDef describes a wiki page category (slug + display label key).
+type WikiCategoryDef struct {
+	Slug      string `json:"slug"`
+	LabelKey  string `json:"label_key"`
+	Label     string `json:"label"`
+}
+
+// wikiCategories is the canonical list of wiki page categories, ordered by
+// display priority. The slugs match the wiki_pages.category enum values
+// defined in migrations/000301_create_wiki_tables.up.sql.
+//
+// Ref: japaconnect-engineering/sections/80-destination-wiki.md
+var wikiCategories = []WikiCategoryDef{
+	{Slug: "overview", LabelKey: "wiki.category_overview", Label: "Overview"},
+	{Slug: "visa", LabelKey: "wiki.category_visa", Label: "Visa"},
+	{Slug: "cost_of_living", LabelKey: "wiki.category_cost_of_living", Label: "Cost of Living"},
+	{Slug: "healthcare", LabelKey: "wiki.category_healthcare", Label: "Healthcare"},
+	{Slug: "banking", LabelKey: "wiki.category_banking", Label: "Banking"},
+	{Slug: "community", LabelKey: "wiki.category_community", Label: "Community"},
+	{Slug: "housing", LabelKey: "wiki.category_housing", Label: "Housing"},
+	{Slug: "other", LabelKey: "wiki.category_other", Label: "Other"},
+}
+
+// HandleGetCategories handles GET /wiki/categories — returns the canonical
+// list of wiki page categories. This allows the frontend to derive the
+// category list from the API rather than hardcoding it (Rule 16).
+func (h *Handlers) HandleGetCategories(w http.ResponseWriter, r *http.Request) {
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": wikiCategories})
+}
+
 // HandleGetPage handles GET /wiki/:space_slug/:page_slug — single wiki page
 // with its current approved revision content.
 func (h *Handlers) HandleGetPage(w http.ResponseWriter, r *http.Request) {
@@ -288,21 +318,28 @@ func (h *Handlers) HandleSubmitRevision(w http.ResponseWriter, r *http.Request) 
 	// B4: reputation gate (§80). wiki.edit is "member with reputation ≥
 	// threshold". The route middleware checks the wiki.edit permission node;
 	// this checks the lifetime-points threshold on top.
-	if h.points != nil {
-		threshold := h.service.MinReputationToEdit(r.Context(), tenantID)
-		if threshold > 0 {
-			points, err := h.points.GetPointsBalance(r.Context(), tenantID, user.UserID)
-			if err != nil {
-				slog.Error("wiki: reputation check failed", "error", err)
-				errpkg.WriteError(w, http.StatusInternalServerError, "reputation_check_failed",
-					"Failed to verify reputation")
-				return
-			}
-			if points < int64(threshold) {
-				errpkg.WriteError(w, http.StatusForbidden, "insufficient_reputation",
-					"You need more reputation to edit this wiki page")
-				return
-			}
+	// BUG-004: fail closed when the points checker is nil — if the reputation
+	// gate cannot be enforced, the edit must be rejected rather than silently
+	// allowed. This prevents a bypass if SetPointsChecker was never called.
+	threshold := h.service.MinReputationToEdit(r.Context(), tenantID)
+	if threshold > 0 {
+		if h.points == nil {
+			slog.Error("wiki: points checker is nil, cannot enforce reputation gate (fail-closed)")
+			errpkg.WriteError(w, http.StatusInternalServerError, "reputation_check_unavailable",
+				"Reputation verification is currently unavailable")
+			return
+		}
+		points, err := h.points.GetPointsBalance(r.Context(), tenantID, user.UserID)
+		if err != nil {
+			slog.Error("wiki: reputation check failed", "error", err)
+			errpkg.WriteError(w, http.StatusInternalServerError, "reputation_check_failed",
+				"Failed to verify reputation")
+			return
+		}
+		if points < int64(threshold) {
+			errpkg.WriteError(w, http.StatusForbidden, "insufficient_reputation",
+				"You need more reputation to edit this wiki page")
+			return
 		}
 	}
 
@@ -329,6 +366,10 @@ func (h *Handlers) HandleSubmitRevision(w http.ResponseWriter, r *http.Request) 
 		}
 		if errors.Is(err, ErrEditInProgress) {
 			errpkg.WriteError(w, http.StatusConflict, "edit_in_progress", "A wiki edit is already in progress for this page")
+			return
+		}
+		if errors.Is(err, ErrDuplicateContent) {
+			errpkg.WriteError(w, http.StatusConflict, "duplicate_content", "This content is identical to an existing revision")
 			return
 		}
 		slog.Error("wiki: submit revision failed", "error", err)

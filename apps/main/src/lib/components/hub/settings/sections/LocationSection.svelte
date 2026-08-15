@@ -56,6 +56,7 @@
 	// Current location (city-level Space selection).
 	let currentLocation = $state<{
 		space_id: string | null;
+		name: string | null;
 		city: string | null;
 		country: string | null;
 		country_code: string | null;
@@ -235,6 +236,7 @@
 		if (res) {
 			currentLocation = {
 				space_id: res.space_id,
+				name: label,
 				city: label,
 				country: countries.find((c) => c.geo_code === selectedCountryCode)?.name ?? null,
 				country_code: selectedCountryCode || null
@@ -357,6 +359,10 @@
 		{:else if currentLocation?.city}
 			<p class="mb-3 text-sm text-[var(--color-text)]">
 				{currentLocation.city}{#if currentLocation.country && currentLocation.country !== currentLocation.city}, {currentLocation.country}{/if}
+			</p>
+		{:else if currentLocation?.name}
+			<p class="mb-3 text-sm text-[var(--color-text)]">
+				{currentLocation.name}{#if currentLocation.country && currentLocation.country !== currentLocation.name}, {currentLocation.country}{/if}
 			</p>
 		{:else}
 			<p class="mb-3 text-sm text-[var(--color-muted)]">

@@ -55,6 +55,9 @@ func (s *Service) Create(ctx context.Context, tenantID pgtype.UUID, input Create
 
 // Update modifies a widget and invalidates its Valkey cache.
 func (s *Service) Update(ctx context.Context, id, tenantID pgtype.UUID, input UpdateWidgetInput) (Widget, error) {
+	if input.Name != nil && *input.Name == "" {
+		return Widget{}, fmt.Errorf("%w: name must not be empty", errpkg.ErrInvalid)
+	}
 	if input.WidgetType != nil && !IsValidWidgetType(*input.WidgetType) {
 		return Widget{}, fmt.Errorf("%w: widget_type must be one of: %v", errpkg.ErrInvalid, ValidWidgetTypes)
 	}

@@ -36,6 +36,7 @@ import {
     Languages,
     Receipt,
     MapPin,
+    BookOpen,
 } from 'lucide-svelte';
 
 // Only categories that have Panel: "control" settings appear in the control
@@ -89,6 +90,7 @@ export const categoryIcons: Record<string, typeof Settings> = {
     community_locator: MapPin,
     service_directory: Briefcase,
     mentorship: GraduationCap,
+    wiki: BookOpen,
 };
 
 export const categoryNames: Record<string, string> = {
@@ -134,6 +136,7 @@ export const categoryNames: Record<string, string> = {
     community_locator: 'Diaspora Community Locator',
     service_directory: 'Service Directory',
     mentorship: 'Mentorship Matching',
+    wiki: 'Destination Wiki',
 };
 
 // Sensitive keys that should be masked in the UI (control-panel settings only).

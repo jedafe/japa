@@ -215,7 +215,7 @@ func (s *Service) GetByID(ctx context.Context, id, tenantID pgtype.UUID) (RouteD
 }
 
 // AdminList returns all visa routes (any status) for the admin view.
-func (s *Service) AdminList(ctx context.Context, tenantID, destSpaceID pgtype.UUID, status, visaCategory, q string, isActive *bool, page, limit int32) ([]RouteDTO, int64, error) {
+func (s *Service) AdminList(ctx context.Context, tenantID, destSpaceID pgtype.UUID, status, visaCategory, q, sort, order string, isActive *bool, page, limit int32) ([]RouteDTO, int64, error) {
 	if limit <= 0 {
 		limit = 20
 	}
@@ -231,6 +231,8 @@ func (s *Service) AdminList(ctx context.Context, tenantID, destSpaceID pgtype.UU
 		IsActive:           isActive,
 		VisaCategory:       visaCategory,
 		Q:                  q,
+		Sort:               sort,
+		Order:              order,
 		Limit:              limit,
 		Offset:             offset,
 	})
@@ -424,14 +426,16 @@ func (s *Service) Update(ctx context.Context, id, tenantID pgtype.UUID, input Up
 }
 
 // Approve marks a visa route as HITL-reviewed and published (admin).
-func (s *Service) Approve(ctx context.Context, id, tenantID, reviewerID pgtype.UUID, input ApproveInput) error {
-	if err := s.store.Approve(ctx, id, tenantID, reviewerID, input.Notes); err != nil {
+// Returns the updated route DTO per the ADR-088 HITL approve pattern.
+func (s *Service) Approve(ctx context.Context, id, tenantID, reviewerID pgtype.UUID, input ApproveInput) (RouteDTO, error) {
+	row, err := s.store.Approve(ctx, id, tenantID, reviewerID, input.Notes)
+	if err != nil {
 		if err == pgx.ErrNoRows {
-			return pgx.ErrNoRows
+			return RouteDTO{}, pgx.ErrNoRows
 		}
-		return fmt.Errorf("visaroutes: approve: %w", err)
+		return RouteDTO{}, fmt.Errorf("visaroutes: approve: %w", err)
 	}
-	return nil
+	return rowToDTO(row), nil
 }
 
 // Deactivate soft-deletes a visa route by setting is_active = false (admin).

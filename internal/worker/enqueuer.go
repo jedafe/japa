@@ -248,8 +248,11 @@ var taskTier = func() map[string]string {
 		TypeVisaRoutesCheckLinks,
 		// §95 CV Formatter (ADR-103) — nightly purge of expired sessions, low tier.
 		TypeCvFormatSessionsPurge,
-		// §84 Community Digest Widget (ADR-092) — weekly generation, low tier.
+		// §84 Community Digest Widget (ADR-092) — weekly generation +
+		// hourly auto-publish of editions past the 1-hour review window,
+		// low tier.
 		TypeDigestGenerate,
+		TypeDigestAutoPublish,
 		// §82 Japa Planning Groups (ADR-090) — nightly expiry sweep, low tier.
 		TypePlanningGroupExpire,
 		// §83 Visa Timeline Tracker (ADR-091) — nightly stats refresh +
@@ -411,6 +414,7 @@ func TaskTypeCatalog() []map[string]string {
 		{TypeCvFormatSessionsPurge, "low", "Purge expired CV format sessions past their expires_at"},
 		// §84 Community Digest Widget (ADR-092)
 		{TypeDigestGenerate, "low", "Assemble a new community digest edition from platform analytics"},
+		{TypeDigestAutoPublish, "low", "Publish draft/review digest editions past their 1-hour review window and enqueue email send (§84)"},
 		{TypeDigestSendEmail, "default", "Send a published digest edition to subscribed members"},
 		// §82 Japa Planning Groups (ADR-090)
 		{TypePlanningGroupExpire, "low", "Soft-delete planning groups past their expires_at date"},

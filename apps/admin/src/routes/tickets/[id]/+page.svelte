@@ -45,7 +45,12 @@
 	};
 
 	const ticketId = $derived(page.params.id ?? '');
-	const canManageTickets = $derived(hasPermission('tickets.admin'));
+	// Per-action RBAC gates matching the backend route middleware.
+	// Ref: japaconnect-engineering/sections/38-ticket-system.md
+	const canViewAllTickets = $derived(hasPermission('tickets.view_all'));
+	const canManageTickets = $derived(hasPermission('tickets.manage'));
+	const canDeleteTickets = $derived(hasPermission('tickets.admin'));
+	const canCommentInternal = $derived(hasPermission('tickets.comment.internal'));
 
 	let ticket = $state<TicketItem | null>(null);
 	let events = $state<TicketEvent[]>([]);
@@ -83,7 +88,7 @@
 	const priorityBadgeVariant = (priority: string): 'default' | 'secondary' | 'destructive' | 'success' | 'warning' | 'info' | 'outline' => {
 		if (priority === 'urgent') return 'destructive';
 		if (priority === 'high') return 'warning';
-		if (priority === 'medium') return 'info';
+		if (priority === 'normal') return 'info';
 		if (priority === 'low') return 'secondary';
 		return 'default';
 	};
@@ -106,7 +111,8 @@
 				ticketsAdminApi.getEvents(ticketId),
 			]);
 			if (ticketRes.ok) {
-				ticket = ticketRes.data as TicketItem;
+				const detail = ticketRes.data as { ticket: TicketItem; comments: any[]; attachments: any[]; events: any[] };
+				ticket = detail?.ticket ?? (ticketRes.data as TicketItem);
 			} else {
 				error = t('tickets.detail.load_error', 'Failed to load ticket');
 			}
@@ -268,22 +274,26 @@
 		<RefreshCw class="mr-1.5 h-3.5 w-3.5" />
 		{t('common.refresh', 'Refresh')}
 	</Button>
-	{#if canManageTickets && ticket}
+	{#if (canManageTickets || canDeleteTickets || canCommentInternal) && ticket}
 		<div class="ml-auto flex gap-2">
-			<Button variant="outline" size="sm" onclick={openEdit}>
-				<Pencil class="mr-1.5 h-3.5 w-3.5" />
-				{t('common.edit', 'Edit')}
-			</Button>
+{#if canManageTickets}
+				<Button variant="outline" size="sm" onclick={openEdit}>
+					<Pencil class="mr-1.5 h-3.5 w-3.5" />
+					{t('common.edit', 'Edit')}
+				</Button>
+			{/if}
 			{#if ticket.status !== 'resolved' && ticket.status !== 'closed'}
 				<Button variant="outline" size="sm" onclick={() => (showResolveModal = true)}>
 					<CheckCircle class="mr-1.5 h-3.5 w-3.5" />
 					{t('tickets.detail.resolve', 'Resolve')}
 				</Button>
 			{/if}
-			<Button variant="destructive" size="sm" onclick={() => (showDeleteConfirm = true)}>
-				<Trash2 class="mr-1.5 h-3.5 w-3.5" />
-				{t('common.delete', 'Delete')}
-			</Button>
+{#if canDeleteTickets}
+				<Button variant="destructive" size="sm" onclick={() => (showDeleteConfirm = true)}>
+					<Trash2 class="mr-1.5 h-3.5 w-3.5" />
+					{t('common.delete', 'Delete')}
+				</Button>
+			{/if}
 		</div>
 	{/if}
 </div>
@@ -444,15 +454,17 @@
 				<select id="edit-status" bind:value={editForm.status} class="mt-1 w-full rounded-lg border border-border bg-background p-2 text-sm">
 					<option value="open">open</option>
 					<option value="in_progress">in_progress</option>
+					<option value="waiting_on_user">waiting_on_user</option>
 					<option value="resolved">resolved</option>
 					<option value="closed">closed</option>
+					<option value="spam">spam</option>
 				</select>
 			</div>
 			<div>
 				<label class="text-sm font-medium" for="edit-priority">{t('tickets.priority', 'Priority')}</label>
 				<select id="edit-priority" bind:value={editForm.priority} class="mt-1 w-full rounded-lg border border-border bg-background p-2 text-sm">
 					<option value="low">low</option>
-					<option value="medium">medium</option>
+					<option value="normal">normal</option>
 					<option value="high">high</option>
 					<option value="urgent">urgent</option>
 				</select>

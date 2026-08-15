@@ -311,6 +311,7 @@ func (p *Processor) computeContentTrending(ctx context.Context, tenantID [16]byt
 		WHERE c.tenant_id = $1
 		  AND c.status = 'published'
 		  AND c.visibility = 'public'
+		  AND c.deleted_at IS NULL
 		  AND c.published_at IS NOT NULL
 		  AND c.published_at >= now() - $4::interval
 		ON CONFLICT (tenant_id, entity_type, entity_id, "window", geo_code)
@@ -349,6 +350,7 @@ func (p *Processor) computeTagTrending(ctx context.Context, tenantID [16]byte, w
 		LEFT JOIN content_tags ct ON ct.tag_id = t.id
 		LEFT JOIN contents c ON c.id = ct.content_id
 			AND c.status = 'published'
+			AND c.deleted_at IS NULL
 			AND c.published_at >= now() - $4::interval
 		WHERE t.tenant_id = $1
 		GROUP BY t.id, t.tenant_id, t.follower_count
@@ -438,8 +440,10 @@ func (p *Processor) computeUserTrending(ctx context.Context, tenantID [16]byte, 
 		LEFT JOIN content_engagement ce ON ce.content_id = c.id
 		WHERE c.tenant_id = $1
 		  AND c.status = 'published'
+		  AND c.deleted_at IS NULL
 		  AND c.author_id IS NOT NULL
 		  AND c.published_at >= now() - $4::interval
+		  AND EXISTS (SELECT 1 FROM users au WHERE au.id = c.author_id AND au.status = 'active')
 		GROUP BY c.tenant_id, c.author_id
 		ON CONFLICT (tenant_id, entity_type, entity_id, "window", geo_code)
 		DO UPDATE SET
