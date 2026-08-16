@@ -106,8 +106,17 @@
 	// the node from the DOM entirely (Svelte is destroying the {#if}
 	// block that contained it, so moving it back to a dying parent is
 	// pointless and can orphan the element in document.body).
+	//
+	// When the Autocomplete is inside a bits-ui Dialog (aria-modal="true"),
+	// the dialog's overlay intercepts pointer events on elements outside
+	// the dialog content. Teleporting to document.body would place the
+	// dropdown outside the dialog, making options unclickable. To fix
+	// this, we portal into the closest [role=dialog] ancestor if one
+	// exists, falling back to document.body otherwise.
 	function portal(node: HTMLElement) {
-		document.body.appendChild(node);
+		const dialog = fieldEl?.closest('[role="dialog"][aria-modal="true"]');
+		const target = dialog ?? document.body;
+		target.appendChild(node);
 		return {
 			destroy() {
 				node.remove();
@@ -141,14 +150,26 @@
 		}
 	});
 
-	// updateDropdownPosition calculates the fixed position for the dropdown
-	// based on the input wrapper's bounding rect.
+	// updateDropdownPosition calculates the position for the dropdown
+	// based on the input wrapper's bounding rect. When inside a dialog
+	// (which uses CSS transform), position:fixed behaves like absolute
+	// relative to the dialog, so we compute offsets relative to the
+	// portal target (the dialog element) instead of the viewport.
 	function updateDropdownPosition() {
 		if (!fieldEl) return;
 		const rect = fieldEl.getBoundingClientRect();
-		dropdownTop = rect.bottom + 4;
-		dropdownLeft = rect.left;
 		dropdownWidth = rect.width;
+		const portalParent = dropdownEl?.parentElement;
+		if (portalParent && portalParent !== document.body) {
+			// Inside a dialog — compute position relative to the dialog.
+			const parentRect = portalParent.getBoundingClientRect();
+			dropdownTop = rect.bottom - parentRect.top + 4;
+			dropdownLeft = rect.left - parentRect.left;
+		} else {
+			// Default — viewport-relative fixed positioning.
+			dropdownTop = rect.bottom + 4;
+			dropdownLeft = rect.left;
+		}
 	}
 
 	// Reposition the dropdown on scroll/resize while open.
@@ -218,7 +239,9 @@
 		// via onFreeTextBlur. This avoids the infinite effect loop that
 		// occurs when onInput updates parent state that feeds back into
 		// selectedLabel (which re-seeds query via the $effect).
-		if (freeText && onFreeTextBlur) {
+		// SKIP this if the blur was caused by pick() — otherwise the
+		// typed query text overwrites the just-selected item id.
+		if (freeText && onFreeTextBlur && !picking) {
 			onFreeTextBlur(query);
 		}
 		// Close after focus transfer completes — prevents stale dropdowns
@@ -291,16 +314,26 @@
 		}, debounceMs);
 	});
 
+	// picking flag — set to true during pick() so onBlur knows NOT to
+	// fire onFreeTextBlur (which would overwrite the just-selected value
+	// with the typed query text). Without this, the blur event (which
+	// may fire asynchronously after .blur()) runs after onSelect and
+	// clobbers form.model with the partial search string.
+	let picking = false;
+
 	function pick(item: AutocompleteItem) {
 		// Close the dropdown FIRST, before calling onSelect. onSelect
 		// updates parent state which triggers a re-render and new prop
 		// identities — closing first ensures the {#if showDropdown} block
 		// is torn down cleanly before the parent re-render happens.
+		picking = true;
 		focused = false;
 		if (!freeText) query = '';
 		close();
 		inputEl?.blur();
 		onSelect(item);
+		// Reset after a microtask to allow the blur handler to see it.
+		queueMicrotask(() => { picking = false; });
 	}
 
 	function handleKeydown(e: KeyboardEvent) {
@@ -371,13 +404,15 @@
 </div>
 
 {#if showDropdown}
-	<!-- The dropdown is teleported to document.body via the `portal` action
-	     so it is not clipped by ancestor overflow:hidden containers. -->
+	<!-- The dropdown is teleported via the `portal` action so it is not
+	     clipped by ancestor overflow:hidden containers. When inside a
+	     bits-ui Dialog, it is portaled into the dialog content to avoid
+	     the dialog overlay intercepting pointer events. -->
 	<div
 		bind:this={dropdownEl}
 		use:portal
 		class="autocomplete-dropdown"
-		style="position: fixed; top: {dropdownTop}px; left: {dropdownLeft}px; width: {dropdownWidth}px; z-index: 99999;"
+		style="position: absolute; top: {dropdownTop}px; left: {dropdownLeft}px; width: {dropdownWidth}px; z-index: 99999;"
 		role="listbox"
 	>
 		<div class="autocomplete-options" id={id ? `${id}-list` : 'autocomplete-list'}>

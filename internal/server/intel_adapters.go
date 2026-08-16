@@ -51,11 +51,32 @@ type intelExtractorPortAdapter struct {
 // worker's port-level sentinel so HandleIntelExtract can detect it via
 // errors.Is and route the record to REVIEW_REQUIRED instead of failing
 // the task (BUG-16 fix).
+//
+// For RSS-sourced news records, a rule-based extractor is tried first —
+// it parses the RSS XML directly and maps feed item fields to the news
+// schema without an LLM call. This ensures news records get structured
+// data even when no AI provider is configured (or the provider returns
+// auth errors). When rule-based extraction succeeds, its result is used
+// directly; otherwise the flow falls through to the LLM extractor.
 func (a *intelExtractorPortAdapter) Extract(ctx context.Context, entityType, sourceURL, sourceType, sourceText string) (worker.IntelExtractResult, error) {
 	schema, ok := schemas.ForEntityType(entityType)
 	if !ok {
 		return worker.IntelExtractResult{}, fmt.Errorf("intel: no schema registered for entity type %q", entityType)
 	}
+
+	// Try rule-based extraction first (RSS news feeds). This avoids an
+	// LLM call for structured XML content that can be parsed directly.
+	if rbResult, rbOK := extractor.RuleBasedExtract(schema, sourceURL, sourceType, sourceText); rbOK {
+		raw, err := json.Marshal(rbResult.Extraction)
+		if err != nil {
+			return worker.IntelExtractResult{}, err
+		}
+		return worker.IntelExtractResult{
+			RawExtraction:     raw,
+			ConfidenceOverall: aggregateConfidence(rbResult.Extraction),
+		}, nil
+	}
+
 	result, err := a.ext.Extract(ctx, schema, sourceURL, sourceType, sourceText)
 	if err != nil {
 		if errors.Is(err, extractor.ErrExtractionRetriesExhausted) {

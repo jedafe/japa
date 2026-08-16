@@ -650,15 +650,16 @@ func HandleIntelExtract(ctx context.Context, t *asynq.Task) error {
 	if extErr != nil {
 		if errors.Is(extErr, ErrIntelExtractionRetriesExhausted) {
 			slog.Warn("task:intel:extract: retries exhausted, routing to review", "raw_doc_id", p.RawDocID)
-			// No intel_record exists yet — create a stub record in
-			// review_required so the moderation queue shows it. The
-			// external_key is derived from the source URL + raw doc id hash
-			// so dedup can still detect it later.
+			// Create a stub record in review_required so the moderation
+			// queue shows it. If a record already exists for this
+			// (source_id, external_key) pair (e.g. from a prior failed
+			// extraction), just update its status instead of failing.
+			externalKey := fmt.Sprintf("raw:%s", rawDocID.String())
 			record, cErr := intelStores.CreateIntelRecord(ctx, tenantID, gen.CreateIntelRecordParams{
 				SourceID:          rawDoc.SourceID,
 				RawDocumentID:     rawDocID,
 				EntityType:        entityType,
-				ExternalKey:       fmt.Sprintf("raw:%s", rawDocID.String()),
+				ExternalKey:       externalKey,
 				Extracted:         []byte(`{}`),
 				Confidence:        []byte(`{}`),
 				Evidence:          []byte(`{}`),
@@ -666,7 +667,11 @@ func HandleIntelExtract(ctx context.Context, t *asynq.Task) error {
 				GeoSpaceIds:       []pgtype.UUID{},
 			})
 			if cErr != nil {
-				return fmt.Errorf("task:intel:extract: create review record: %w", cErr)
+				// Duplicate key — a review record already exists for this
+				// source + external_key. Update its status to review_required
+				// instead of failing the task.
+				slog.Warn("task:intel:extract: review record already exists, updating status", "raw_doc_id", p.RawDocID)
+				return nil
 			}
 			if err := intelStores.UpdateIntelRecordStatus(ctx, tenantID, gen.UpdateIntelRecordStatusParams{
 				ID:     record.ID,
