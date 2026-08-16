@@ -61,12 +61,15 @@
 	let testResult = $state<{ id: string; status: string; message: string } | null>(null);
 	let testing = $state<string | null>(null);
 
-	// Model fetching state — when the admin enters an API key and clicks
-	// "Fetch Models", we call the provider's /v1/models endpoint and
-	// populate a dropdown instead of requiring manual model name entry.
+	// Model fetching state — the Autocomplete's initialFetcher calls the
+	// provider's /v1/models endpoint via the backend proxy when the model
+	// field is focused. Results are cached in availableModels so subsequent
+	// keystrokes filter client-side without another network call. The cache
+	// is invalidated when provider_type, base_url, or api_key changes.
 	let availableModels = $state<{ id: string; label: string }[]>([]);
 	let fetchingModels = $state(false);
 	let fetchModelsError = $state('');
+	let modelsFetchedForKey = $state('');
 
 	// Provider type UI metadata — i18n labels and base URL hints keyed by
 	// provider_type. The list of valid types is fetched from the API
@@ -86,7 +89,8 @@
 		content_generation: t('ai_providers.cat_content_generation', 'Content Generation'),
 		chat: t('ai_providers.cat_chat', 'Chat (JapaBot)'),
 		embedding: t('ai_providers.cat_embedding', 'Embedding'),
-		moderation: t('ai_providers.cat_moderation', 'Moderation')
+		moderation: t('ai_providers.cat_moderation', 'Moderation'),
+		extraction: t('ai_providers.cat_extraction', 'Extraction')
 	};
 
 	// Fetch valid provider types and categories from the API (Rule 16).
@@ -110,6 +114,19 @@
 
 	$effect(() => {
 		load();
+	});
+
+	// Invalidate the model cache when provider config fields change so
+	// the next focus of the model Autocomplete re-fetches from the API.
+	$effect(() => {
+		// Track these reactively
+		form.provider_type;
+		form.base_url;
+		form.api_key;
+		if (modelsFetchedForKey && modelsFetchedForKey !== modelsCacheKey()) {
+			availableModels = [];
+			modelsFetchedForKey = '';
+		}
 	});
 
 	async function load() {
@@ -380,15 +397,21 @@
 		return providerTypes.find((p) => p.value === value)?.baseUrlHint ?? '';
 	}
 
-	async function fetchModels() {
-		if (!form.api_key.trim()) {
-			fetchModelsError = t('ai_providers.fetch_models_need_key', 'Enter an API key first to fetch available models.');
-			return;
-		}
-		fetchingModels = true;
-		fetchModelsError = '';
-		availableModels = [];
+	// modelsCacheKey returns a composite key that identifies the current
+	// provider configuration. When any of these fields change, the cached
+	// model list is stale and must be re-fetched.
+	function modelsCacheKey(): string {
+		return `${form.provider_type}|${form.base_url}|${form.api_key}`;
+	}
 
+	// fetchModelsFromProvider calls the backend proxy to fetch the full
+	// model list from the provider's /v1/models endpoint. Results are
+	// cached in availableModels keyed by modelsCacheKey() so subsequent
+	// Autocomplete focus events skip the network call.
+	async function fetchModelsFromProvider(): Promise<{ id: string; label: string }[]> {
+		if (!form.api_key.trim() || !form.provider_type) {
+			return [];
+		}
 		const result = await api<{ id: string; label: string }[]>('/control/ai-providers/fetch-models', {
 			method: 'POST',
 			body: {
@@ -397,27 +420,19 @@
 				api_key: form.api_key
 			}
 		});
-
-		if (!result.ok) {
-			fetchModelsError = result.error || t('ai_providers.fetch_models_empty', 'No models returned — you can still type the model name manually.');
-		} else if (Array.isArray(result.data) && result.data.length > 0) {
-			availableModels = result.data;
-			// Auto-select the first model if none is set yet.
-			if (!form.model && availableModels.length > 0) {
-				form.model = availableModels[0].id;
-			}
-		} else {
-			fetchModelsError = t('ai_providers.fetch_models_empty', 'No models returned — you can still type the model name manually.');
+		if (!result.ok || !Array.isArray(result.data)) {
+			throw new Error(result.error || 'fetch failed');
 		}
-		fetchingModels = false;
+		return result.data;
 	}
 
 	function resetModelFetch() {
 		availableModels = [];
 		fetchModelsError = '';
+		modelsFetchedForKey = '';
 	}
 
-	// --- Autocomplete fetchers (client-side filter of loaded options) ---
+	// --- Autocomplete fetchers ---
 
 	// Provider Type fetcher — filters the server-fetched providerTypes list.
 	async function fetchProviderTypes(q: string): Promise<AutocompleteItem[]> {
@@ -436,15 +451,45 @@
 		return providerTypes.find((pt) => pt.value === value)?.label ?? value;
 	}
 
-	// Model fetcher — filters the server-fetched availableModels list.
+	// Model fetcher — filters the cached availableModels list client-side.
+	// If the cache is empty (e.g. initial fetch hasn't run yet), triggers
+	// a server-side fetch first so typing always shows results.
 	async function fetchModelsOptions(q: string): Promise<AutocompleteItem[]> {
 		const query = q.toLowerCase();
+		// If cache is empty or stale, try to populate it before filtering.
+		if (availableModels.length === 0 && form.api_key.trim() && form.provider_type) {
+			await fetchModelsOptionsInitial();
+		}
 		return availableModels
 			.filter((m) => m.label.toLowerCase().includes(query) || m.id.toLowerCase().includes(query))
 			.map((m) => ({ id: m.id, label: m.label }));
 	}
 
+	// Model initial fetcher — called by Autocomplete when the model field
+	// gains focus with no query. Fetches the full model list from the
+	// provider's API (via the backend proxy) and caches it. If the cache
+	// is already valid for the current provider config, returns immediately.
 	async function fetchModelsOptionsInitial(): Promise<AutocompleteItem[]> {
+		const key = modelsCacheKey();
+		if (modelsFetchedForKey === key && availableModels.length > 0) {
+			return availableModels.map((m) => ({ id: m.id, label: m.label }));
+		}
+		if (!form.api_key.trim() || !form.provider_type) {
+			return [];
+		}
+		fetchingModels = true;
+		fetchModelsError = '';
+		try {
+			availableModels = await fetchModelsFromProvider();
+			modelsFetchedForKey = key;
+		} catch (err) {
+			availableModels = [];
+			fetchModelsError = err instanceof Error
+				? err.message
+				: t('ai_providers.fetch_models_empty', 'No models returned — you can still type the model name manually.');
+		} finally {
+			fetchingModels = false;
+		}
 		return availableModels.map((m) => ({ id: m.id, label: m.label }));
 	}
 
@@ -577,37 +622,21 @@
 					</div>
 					<div>
 						<label for="create-model" class="text-muted-foreground mb-1 block text-xs font-medium uppercase tracking-wider">{t('ai_providers.model', 'Default Model')}</label>
-						{#if availableModels.length > 0}
-							<Autocomplete
-								placeholder={t('ai_providers.model_placeholder', 'Select a model')}
-								emptyMessage={t('common.no_results', 'No results found')}
-								fetcher={fetchModelsOptions}
-								initialFetcher={fetchModelsOptionsInitial}
-								selectedId={form.model || null}
-								selectedLabel={getModelSelectedLabel(form.model)}
-								onSelect={(item) => (form.model = item.id)}
-								onClear={() => (form.model = '')}
-								inputClass="font-mono"
-							/>
-						{:else}
-							<input
-								id="create-model"
-								type="text"
-								bind:value={form.model}
-								class="border-border-input bg-background-alt text-foreground w-full rounded-9px border px-3 py-2 text-sm font-mono"
-								placeholder={t('ai_providers.model_placeholder', 'e.g., mimo-v2-flash')}
-							/>
-						{/if}
-						<button
-							type="button"
-							class="text-muted-foreground hover:text-foreground mt-1 text-[10px] underline transition-colors disabled:opacity-50"
-							disabled={fetchingModels}
-							onclick={fetchModels}
-						>
-							{fetchingModels
-								? t('ai_providers.fetching_models', 'Fetching models...')
-								: t('ai_providers.fetch_models', 'Fetch available models from provider')}
-						</button>
+						<Autocomplete
+							id="create-model"
+							placeholder={t('ai_providers.model_placeholder', 'Type to search or enter model name')}
+							emptyMessage={t('common.no_results', 'No results found')}
+							fetcher={fetchModelsOptions}
+							initialFetcher={fetchModelsOptionsInitial}
+							selectedId={form.model || null}
+							selectedLabel={getModelSelectedLabel(form.model)}
+							onSelect={(item) => (form.model = item.id)}
+							onClear={() => (form.model = '')}
+							onFreeTextBlur={(q) => (form.model = q)}
+							freeText
+							inputClass="font-mono"
+						/>
+						<p class="text-muted-foreground mt-1 text-[10px]">{t('ai_providers.model_help', 'Focus to load available models from the provider, or type a model name manually.')}</p>
 						{#if fetchModelsError}
 							<p class="text-destructive mt-1 text-[10px]">{fetchModelsError}</p>
 						{/if}
@@ -752,37 +781,21 @@
 					</div>
 					<div>
 						<label for="edit-model" class="text-muted-foreground mb-1 block text-xs font-medium uppercase tracking-wider">{t('ai_providers.model', 'Default Model')}</label>
-						{#if availableModels.length > 0}
-							<Autocomplete
-								placeholder={t('ai_providers.model_placeholder', 'Select a model')}
-								emptyMessage={t('common.no_results', 'No results found')}
-								fetcher={fetchModelsOptions}
-								initialFetcher={fetchModelsOptionsInitial}
-								selectedId={form.model || null}
-								selectedLabel={getModelSelectedLabel(form.model)}
-								onSelect={(item) => (form.model = item.id)}
-								onClear={() => (form.model = '')}
-								inputClass="font-mono"
-							/>
-						{:else}
-							<input
-								id="edit-model"
-								type="text"
-								bind:value={form.model}
-								class="border-border-input bg-background-alt text-foreground w-full rounded-9px border px-3 py-2 text-sm font-mono"
-								placeholder={t('ai_providers.model_placeholder', 'e.g., mimo-v2-flash')}
-							/>
-						{/if}
-						<button
-							type="button"
-							class="text-muted-foreground hover:text-foreground mt-1 text-[10px] underline transition-colors disabled:opacity-50"
-							disabled={fetchingModels}
-							onclick={fetchModels}
-						>
-							{fetchingModels
-								? t('ai_providers.fetching_models', 'Fetching models...')
-								: t('ai_providers.fetch_models', 'Fetch available models from provider')}
-						</button>
+						<Autocomplete
+							id="edit-model"
+							placeholder={t('ai_providers.model_placeholder', 'Type to search or enter model name')}
+							emptyMessage={t('common.no_results', 'No results found')}
+							fetcher={fetchModelsOptions}
+							initialFetcher={fetchModelsOptionsInitial}
+							selectedId={form.model || null}
+							selectedLabel={getModelSelectedLabel(form.model)}
+							onSelect={(item) => (form.model = item.id)}
+							onClear={() => (form.model = '')}
+							onFreeTextBlur={(q) => (form.model = q)}
+							freeText
+							inputClass="font-mono"
+						/>
+						<p class="text-muted-foreground mt-1 text-[10px]">{t('ai_providers.model_help', 'Focus to load available models from the provider, or type a model name manually.')}</p>
 						{#if fetchModelsError}
 							<p class="text-destructive mt-1 text-[10px]">{fetchModelsError}</p>
 						{/if}

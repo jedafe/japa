@@ -36,6 +36,7 @@ var validAICategories = map[string]bool{
 	"chat":               true,
 	"embedding":          true,
 	"moderation":         true,
+	"extraction":         true,
 }
 
 // ListAIProviders handles GET /control/ai-providers.

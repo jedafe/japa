@@ -1696,9 +1696,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// up the entity schema by entityType from the schemas registry; the
 	// worker derives entityType from the source's category.
 	// Read the AI extraction model from system_settings (Rule 3, INTEL-007).
-	// This model is stamped on every AI-generated content row created by the
-	// promoters (ADR-088, INTEL-003).
-	intelExtractionModel := settingsService.GetStringOr(context.Background(), defaultTenantID, "intel.extraction_model", "gpt-4o-mini")
+	// When empty, the provider's configured default model is used (so
+	// changing the model in the AI Providers UI takes effect without
+	// also updating this setting). This model is stamped on every
+	// AI-generated content row created by the promoters (ADR-088, INTEL-003).
+	intelExtractionModel := settingsService.GetStringOr(context.Background(), defaultTenantID, "intel.extraction_model", "")
 	// Read max retries from system_settings (Rule 3, INTEL-012 fix).
 	intelExtractionMaxRetries := settingsService.GetIntOr(context.Background(), defaultTenantID, "intel.extraction_max_retries", 3)
 
