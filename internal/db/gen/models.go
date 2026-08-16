@@ -621,6 +621,9 @@ type CalendarEntry struct {
 	AiModel            *string            `json:"ai_model"`
 	HitlReviewedBy     pgtype.UUID        `json:"hitl_reviewed_by"`
 	AiGeneratedAt      pgtype.Timestamptz `json:"ai_generated_at"`
+	AiPromptHash       *string            `json:"ai_prompt_hash"`
+	HitlReviewedAt     pgtype.Timestamptz `json:"hitl_reviewed_at"`
+	HitlReviewNotes    *string            `json:"hitl_review_notes"`
 }
 
 type CalendarSafe struct {
@@ -3418,6 +3421,11 @@ type StudioJob struct {
 	CreatedBy      pgtype.UUID        `json:"created_by"`
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
 	IntelRecordID  pgtype.UUID        `json:"intel_record_id"`
+	AiGenerated    bool               `json:"ai_generated"`
+	AiModel        *string            `json:"ai_model"`
+	AiGeneratedAt  pgtype.Timestamptz `json:"ai_generated_at"`
+	HitlReviewedBy pgtype.UUID        `json:"hitl_reviewed_by"`
+	HitlReviewedAt pgtype.Timestamptz `json:"hitl_reviewed_at"`
 }
 
 type Subscription struct {

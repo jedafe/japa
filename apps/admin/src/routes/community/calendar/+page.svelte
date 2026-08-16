@@ -71,6 +71,8 @@
 
 	async function approveEvent(item: CalendarItem) {
 		// ADR-088 HITL gate: AI-generated content cannot be approved without HITL review.
+		// The backend (BUG-003) also enforces this server-side, but we keep the
+		// client-side check for immediate feedback without a round-trip.
 		if (item.ai_generated && !item.hitl_reviewed_by) {
 			pageError = t('app.calendar.hitl_required', 'Cannot approve AI-generated content without HITL review');
 			return;
@@ -83,7 +85,14 @@
 			if (result.ok) {
 				entityController?.reload();
 			} else {
-				pageError = result.error ?? t('common.error', 'An error occurred');
+				// BUG-003: handle server-side HITL gate and source_url errors.
+				if (result.error?.includes('HITL review required')) {
+					pageError = t('app.calendar.hitl_required', 'Cannot approve AI-generated content without HITL review');
+				} else if (result.error?.includes('source_url') || result.error?.includes('source URL')) {
+					pageError = t('app.calendar.source_url_required', 'A verifiable official source URL is required before publication');
+				} else {
+					pageError = result.error ?? t('common.error', 'An error occurred');
+				}
 			}
 		} catch {
 			pageError = t('common.error', 'An error occurred');
@@ -231,7 +240,15 @@ onMount(async () => {
 			if (params.pageSize) queryParts.push(`page_size=${params.pageSize}`);
 			if (params.q) queryParts.push(`q=${encodeURIComponent(params.q)}`);
 			if (params.sort) {
-				queryParts.push(`sort=${params.sort}`);
+				// EntityPage passes sort as "key:dir" (e.g. "title:asc").
+				// The backend expects separate sort and dir params.
+				const [sortKey, sortDir] = params.sort.split(':');
+				queryParts.push(`sort=${sortKey}`);
+				// BUG-007: pass sort direction (dir) so column sort toggles
+				// can reverse direction.
+				if (sortDir) {
+					queryParts.push(`dir=${sortDir}`);
+				}
 			}
 			if (params.filter) {
 				for (const [k, v] of Object.entries(params.filter)) {

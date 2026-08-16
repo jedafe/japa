@@ -420,8 +420,11 @@
 				api_key: form.api_key
 			}
 		});
-		if (!result.ok || !Array.isArray(result.data)) {
+		if (!result.ok) {
 			throw new Error(result.error || 'fetch failed');
+		}
+		if (!Array.isArray(result.data)) {
+			throw new Error('fetch failed');
 		}
 		return result.data;
 	}

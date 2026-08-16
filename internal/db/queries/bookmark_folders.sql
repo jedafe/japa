@@ -35,3 +35,11 @@ WHERE id = @id AND tenant_id = @tenant_id AND user_id = @user_id;
 SELECT id, tenant_id, user_id, name, created_at, updated_at, position
 FROM bookmark_folders
 WHERE id = @id AND tenant_id = @tenant_id AND user_id = @user_id;
+
+-- name: UpdateBookmarkFolderPosition :exec
+-- BUG-008: sets the position of a single folder. Called in a loop by the
+-- reorder handler (PATCH /me/bookmark-folders/reorder) to persist the
+-- caller's desired ordering. Scoped to tenant + owner.
+UPDATE bookmark_folders
+SET position = @position, updated_at = now()
+WHERE id = @id AND tenant_id = @tenant_id AND user_id = @user_id;

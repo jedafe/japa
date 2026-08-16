@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { setToken } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
+	import { setChallenge } from '$lib/api/challenge';
 
 	let email = $state('');
 	let password = $state('');
@@ -31,7 +32,7 @@
 			});
 
 			const text = await res.text();
-			let body: { data?: { access_token?: string }; error?: { message?: string } } = {};
+			let body: { data?: { access_token?: string; totp_required?: boolean; challenge_token?: string; user?: { email?: string } }; error?: { message?: string } } = {};
 			if (text) {
 				try {
 					body = JSON.parse(text);
@@ -47,6 +48,14 @@
 				// /me/permissions). Client-side goto() would NOT re-run
 				// onMount since the layout is already mounted.
 				window.location.href = '/';
+			} else if (res.ok && body.data?.totp_required) {
+				// 2FA challenge required (§02/§22). Stash the challenge
+				// token + email and redirect to /verify-totp so the user
+				// can complete the second factor. Without this, a control
+				// user with 2FA enabled (mandatory per §22) would be
+				// locked out with a generic "Invalid credentials" error.
+				setChallenge(body.data.challenge_token ?? null, body.data.user?.email ?? email);
+				window.location.href = '/verify-totp';
 			} else if (res.ok) {
 				error = body.error?.message || t('login.invalid_credentials', 'Invalid credentials.');
 			} else {

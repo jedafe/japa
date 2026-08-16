@@ -67,13 +67,16 @@ type CalendarEntry struct {
 	ReviewedAt         pgtype.Timestamptz
 	StalenessCheckDue  pgtype.Timestamptz
 	// ADR-088 universal AI content generation columns.
-	AiGenerated    bool
-	AiModel        *string
-	HitlReviewedBy pgtype.UUID
-	AiGeneratedAt  pgtype.Timestamptz
-	CreatedAt      pgtype.Timestamptz
-	UpdatedAt      pgtype.Timestamptz
-	DeletedAt      pgtype.Timestamptz
+	AiGenerated     bool
+	AiModel         *string
+	HitlReviewedBy  pgtype.UUID
+	AiGeneratedAt   pgtype.Timestamptz
+	AiPromptHash    *string
+	HitlReviewedAt  pgtype.Timestamptz
+	HitlReviewNotes *string
+	CreatedAt       pgtype.Timestamptz
+	UpdatedAt       pgtype.Timestamptz
+	DeletedAt       pgtype.Timestamptz
 }
 
 // fromGetRow converts a sqlc-generated CalendarGetEntryRow to CalendarEntry.
@@ -85,6 +88,7 @@ func fromGetRow(r gen.CalendarGetEntryRow) CalendarEntry {
 		SourceURL: r.SourceUrl, Status: r.Status, SubmittedBy: r.SubmittedBy, ReviewedBy: r.ReviewedBy, ReviewedAt: r.ReviewedAt,
 		StalenessCheckDue: r.StalenessCheckDue,
 		AiGenerated:       r.AiGenerated, AiModel: r.AiModel, HitlReviewedBy: r.HitlReviewedBy, AiGeneratedAt: r.AiGeneratedAt,
+		AiPromptHash: r.AiPromptHash, HitlReviewedAt: r.HitlReviewedAt, HitlReviewNotes: r.HitlReviewNotes,
 		CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt, DeletedAt: r.DeletedAt,
 	}
 }
@@ -98,6 +102,7 @@ func fromSavedRow(r gen.CalendarListSavedEntriesRow) CalendarEntry {
 		SourceURL: r.SourceUrl, Status: r.Status, SubmittedBy: r.SubmittedBy, ReviewedBy: r.ReviewedBy, ReviewedAt: r.ReviewedAt,
 		StalenessCheckDue: r.StalenessCheckDue,
 		AiGenerated:       r.AiGenerated, AiModel: r.AiModel, HitlReviewedBy: r.HitlReviewedBy, AiGeneratedAt: r.AiGeneratedAt,
+		AiPromptHash: r.AiPromptHash, HitlReviewedAt: r.HitlReviewedAt, HitlReviewNotes: r.HitlReviewNotes,
 		CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt, DeletedAt: r.DeletedAt,
 	}
 }
@@ -127,18 +132,37 @@ func (s *Store) CreateEntry(ctx context.Context, entry CalendarEntry) (pgtype.UU
 
 // MarkAIGenerated stamps the ADR-088 AI provenance columns on an existing
 // calendar entry. Called after CreateEntry for AI-generated drafts.
-func (s *Store) MarkAIGenerated(ctx context.Context, id, tenantID pgtype.UUID, aiModel string) error {
+// BUG-004: now stores ai_prompt_hash for audit reproducibility.
+func (s *Store) MarkAIGenerated(ctx context.Context, id, tenantID pgtype.UUID, aiModel, aiPromptHash string) error {
 	_, err := s.pool.Writer.Exec(ctx, `
 UPDATE calendar_entries
 SET ai_generated = true,
     ai_model = $3,
-    ai_generated_at = NOW()
+    ai_generated_at = NOW(),
+    ai_prompt_hash = $4
 WHERE id = $1 AND tenant_id = $2
-`, id, tenantID, aiModel)
+`, id, tenantID, aiModel, aiPromptHash)
 	if err != nil {
 		return fmt.Errorf("calendar: mark ai generated: %w", err)
 	}
 	return nil
+}
+
+// GetEntryForReview fetches the fields needed for the ADR-088 HITL gate
+// check before publishing. Used by Service.AdminUpdate to verify that
+// AI-generated entries have been reviewed before allowing publication.
+func (s *Store) GetEntryForReview(ctx context.Context, id, tenantID pgtype.UUID) (gen.CalendarGetEntryForReviewRow, error) {
+	row, err := s.read.CalendarGetEntryForReview(ctx, gen.CalendarGetEntryForReviewParams{
+		ID:       id,
+		TenantID: tenantID,
+	})
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return gen.CalendarGetEntryForReviewRow{}, pgx.ErrNoRows
+		}
+		return gen.CalendarGetEntryForReviewRow{}, fmt.Errorf("calendar: get entry for review: %w", err)
+	}
+	return row, nil
 }
 
 // SetStalenessCheckDue sets staleness_check_due = occurs_at - 60 days for

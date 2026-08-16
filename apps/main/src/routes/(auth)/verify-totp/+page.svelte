@@ -15,6 +15,11 @@
 	let loading = $state(false);
 	let errorKey = $state('');
 	let showBackup = $state(false);
+	// Exponential backoff on backup-code failures to throttle guessing
+	// (Bug Hunter §5.2: 2FA recovery path not rate-limited → brute force).
+	// Each invalid_backup failure doubles the cooldown up to a 30s cap.
+	let backupAttempts = $state(0);
+	let backupCooldown = $state(0);
 
 	function sanitizeCode(value: string): string {
 		return value.replace(/\D/g, '').slice(0, 6);
@@ -59,6 +64,14 @@
 			errorKey = 'auth.totp.backup_required';
 			return;
 		}
+		// Client-side cooldown: if previous attempts failed, wait before
+		// allowing another submission. This complements the server-side
+		// rate limit (jc:ratelimit:totp_backup:{user_id}) and gives
+		// immediate UX feedback rather than waiting for a 429.
+		if (backupCooldown > 0) {
+			errorKey = 'auth.totp.backup_cooldown';
+			return;
+		}
 		loading = true;
 		try {
 			const res = await fetch('/api/auth/totp/backup', {
@@ -73,6 +86,13 @@
 			const payload = await res.json();
 			if (!res.ok) {
 				errorKey = mapTotpError(payload?.error?.code);
+				// On invalid_backup or rate_limit_exceeded, apply exponential
+				// backoff so the user can't immediately retry.
+				if (payload?.error?.code === 'invalid_backup' || payload?.error?.code === 'rate_limit_exceeded') {
+					backupAttempts += 1;
+					backupCooldown = Math.min(2 ** backupAttempts, 30);
+					startBackupCooldownTimer();
+				}
 				return;
 			}
 			await invalidateAll();
@@ -82,6 +102,21 @@
 		} finally {
 			loading = false;
 		}
+	}
+
+	let backupCooldownTimer: ReturnType<typeof setInterval> | null = null;
+	function startBackupCooldownTimer() {
+		if (backupCooldownTimer) clearInterval(backupCooldownTimer);
+		backupCooldownTimer = setInterval(() => {
+			backupCooldown -= 1;
+			if (backupCooldown <= 0) {
+				backupCooldown = 0;
+				if (backupCooldownTimer) {
+					clearInterval(backupCooldownTimer);
+					backupCooldownTimer = null;
+				}
+			}
+		}, 1000);
 	}
 
 	function mapTotpError(code: string | undefined): string {
@@ -184,10 +219,14 @@
 
 			<button
 				type="submit"
-				disabled={loading}
+				disabled={loading || backupCooldown > 0}
 				class="w-full rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2.5 text-sm font-medium text-white transition hover:opacity-90 disabled:opacity-50"
 			>
-				{loading ? '...' : t('auth.totp.verify_backup')}
+				{#if backupCooldown > 0}
+					{t('auth.totp.retry_in', 'Retry in')} {backupCooldown}s
+				{:else}
+					{loading ? '...' : t('auth.totp.verify_backup')}
+				{/if}
 			</button>
 		</form>
 

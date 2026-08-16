@@ -589,6 +589,18 @@ func (h *Handlers) HandleAdminUpdate(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "entry_not_found", "Calendar entry not found")
 			return
 		}
+		// BUG-003: ADR-088 HITL gate — AI-generated content requires HITL
+		// review before publication. Return 422 so the frontend can show
+		// a meaningful error.
+		if errors.Is(err, ErrHITLReviewRequired) {
+			errpkg.WriteError(w, http.StatusUnprocessableEntity, "hitl_review_required", "AI-generated content requires HITL review before publication")
+			return
+		}
+		// BUG-005: §86 requires a verifiable official source_url.
+		if errors.Is(err, ErrSourceURLRequired) {
+			errpkg.WriteError(w, http.StatusUnprocessableEntity, "source_url_required", "A verifiable official source URL is required before publication")
+			return
+		}
 		slog.Error("calendar: admin update failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "update_failed", "Failed to update calendar entry")
 		return
