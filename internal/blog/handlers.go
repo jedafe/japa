@@ -11,6 +11,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -29,6 +30,7 @@ import (
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/media"
 	"github.com/jedafe/japa/internal/mentions"
+	"github.com/jedafe/japa/internal/rbac"
 	"github.com/jedafe/japa/internal/tenant"
 	"github.com/jedafe/japa/internal/valkey"
 	"github.com/jedafe/japa/internal/worker"
@@ -1851,6 +1853,16 @@ func (h *Handlers) CreatePost(w http.ResponseWriter, r *http.Request) {
 	// Dispatch @mention notifications — fire-and-forget (BL-002, Section 15).
 	h.dispatchMentionNotifications(r.Context(), tenantID, user.UserID, post.ID, post.SpaceID, input.Body)
 
+	// BUG-009: enqueue rss:regenerate when a blog post is created directly as
+	// published, so the feed reflects it without waiting for the hourly cron.
+	// The content HTTP handler does this at content/handlers.go:914, but the
+	// blog CreatePost calls the service directly, bypassing that enqueue.
+	// Ref: §24 "RSS feed (static XML, regenerated via the new rss_regenerate
+	// task on every publish)".
+	if post.Status == content.StatusPublished {
+		h.enqueueRSSRegenerate(tenantID)
+	}
+
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": post})
 }
 
@@ -1967,4 +1979,229 @@ func (h *Handlers) FeaturePostByID(w http.ResponseWriter, r *http.Request) {
 	}
 
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": featured})
+}
+
+// verifyOwnBlogPost loads the content row for the given id, verifies it is a
+// blog_post in the caller's tenant, and confirms the caller is the author OR a
+// super admin. Returns the loaded row on success. Used by UpdatePost and
+// DeletePost to enforce the "own" scoping of blog.edit_own (BUG-001/BUG-002:
+// the generic contentHandlers.UpdateContent/DeleteContent do not check
+// authorship, so without this any blog.edit_own holder could edit/delete ANY
+// blog post by id). Ref: japaconnect-engineering/sections/24-blog-extension.md
+// ("blog.edit_own" — edit OWN posts).
+func (h *Handlers) verifyOwnBlogPost(w http.ResponseWriter, r *http.Request, user *auth.AuthenticatedUser, tenantID, id pgtype.UUID) (gen.GetContentByIDRow, bool) {
+	existing, err := h.content.GetContent(r.Context(), id, tenantID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Blog post not found")
+			return gen.GetContentByIDRow{}, false
+		}
+		handleServiceError(w, err)
+		return gen.GetContentByIDRow{}, false
+	}
+
+	if existing.ContentType != contentTypeBlogPost {
+		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Blog post not found")
+		return gen.GetContentByIDRow{}, false
+	}
+
+	isAuthor := existing.AuthorID.Valid && existing.AuthorID.Bytes == user.UserID.Bytes
+	if !isAuthor {
+		// Super admins bypass the own-post check (they hold all permissions
+		// implicitly). blog.edit_any is intentionally NOT honored here — the
+		// §24 "edit any" path is the admin surface PATCH /admin/blog/{id}
+		// gated by blog.review.manage. The user-facing PATCH /blog/{id} is
+		// strictly own-post per §24.
+		if resolver := rbac.FromContext(r.Context()); resolver != nil &&
+			resolver.IsSuperAdmin(r.Context(), user.UserID, user.TenantID) {
+			return existing, true
+		}
+		errpkg.WriteError(w, http.StatusForbidden, "not_author", "You can only edit or delete your own blog posts")
+		return gen.GetContentByIDRow{}, false
+	}
+
+	return existing, true
+}
+
+// UpdatePost handles PATCH /api/v1/blog/{id} — edits the caller's own blog
+// post. BUG-001: the route previously delegated to contentHandlers.UpdateContent
+// which performs NO authorship check, so any user holding blog.edit_own could
+// edit ANY blog post by id. This handler enforces own-post scoping before
+// delegating to the content service. Ref: §24 blog.edit_own.
+func (h *Handlers) UpdatePost(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	id, err := parseUUIDParam(r, "id")
+	if err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		return
+	}
+
+	existing, ok := h.verifyOwnBlogPost(w, r, user, tenantID, id)
+	if !ok {
+		return
+	}
+
+	var raw struct {
+		Title           string          `json:"title"`
+		Slug            string          `json:"slug"`
+		Body            string          `json:"body"`
+		BodyHtml        string          `json:"body_html"`
+		FieldValues     json.RawMessage `json:"field_values"`
+		CanonicalUrl    *string         `json:"canonical_url"`
+		HeaderImageID   *string         `json:"header_image_id"`
+		FeaturedImageID *string         `json:"featured_image_id"`
+		MetaTitle       *string         `json:"meta_title"`
+		MetaDescription *string         `json:"meta_description"`
+		OgImageUrl      *string         `json:"og_image_url"`
+		SeoIndexable    *bool           `json:"seo_indexable"`
+		Status          string          `json:"status"`
+		Visibility      string          `json:"visibility"`
+		PublishAt       *string         `json:"publish_at"`
+		GeoSpaceID      *string         `json:"geo_space_id"`
+		OrganizationID  *string         `json:"organization_id"`
+		IsLocked        bool            `json:"is_locked"`
+		IsPinned        bool            `json:"is_pinned"`
+		GuideCategory   *string         `json:"guide_category"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&raw); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+
+	if raw.Status != "" && !content.IsValidStatus(raw.Status) {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_status",
+			fmt.Sprintf("Invalid status: %q", raw.Status))
+		return
+	}
+	if raw.Visibility != "" && !content.IsValidVisibility(raw.Visibility) {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_visibility",
+			fmt.Sprintf("Invalid visibility: %q", raw.Visibility))
+		return
+	}
+
+	body := raw.Body
+	if body == "" && raw.BodyHtml != "" {
+		body = content.SanitizeText(raw.BodyHtml)
+	}
+
+	input := content.UpdateContentInput{
+		Title:           raw.Title,
+		Slug:            raw.Slug,
+		Body:            content.SanitizeText(body),
+		BodyHtml:        content.SanitizeHTML(raw.BodyHtml),
+		FieldValues:     raw.FieldValues,
+		CanonicalUrl:    raw.CanonicalUrl,
+		MetaTitle:       raw.MetaTitle,
+		MetaDescription: raw.MetaDescription,
+		OgImageUrl:      raw.OgImageUrl,
+		SeoIndexable:    raw.SeoIndexable,
+		Status:          raw.Status,
+		Visibility:      raw.Visibility,
+		IsLocked:        raw.IsLocked,
+		IsPinned:        raw.IsPinned,
+		GuideCategory:   raw.GuideCategory,
+	}
+
+	if strings.TrimSpace(body) != "" {
+		hash := content.ComputeContentHash(body)
+		input.ContentHash = &hash
+	}
+
+	if raw.GeoSpaceID != nil && *raw.GeoSpaceID != "" {
+		if err := input.GeoSpaceID.Scan(*raw.GeoSpaceID); err != nil {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_geo_space_id", "Invalid geo_space_id format")
+			return
+		}
+	}
+	if raw.OrganizationID != nil && *raw.OrganizationID != "" {
+		if err := input.OrganizationID.Scan(*raw.OrganizationID); err != nil {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_organization_id", "Invalid organization_id format")
+			return
+		}
+	}
+	if raw.HeaderImageID != nil && *raw.HeaderImageID != "" {
+		if err := input.HeaderImageID.Scan(*raw.HeaderImageID); err != nil {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_header_image_id", "Invalid header_image_id format")
+			return
+		}
+	}
+	if raw.FeaturedImageID != nil && *raw.FeaturedImageID != "" {
+		if err := input.FeaturedImageID.Scan(*raw.FeaturedImageID); err != nil {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_featured_image_id", "Invalid featured_image_id format")
+			return
+		}
+	}
+	if raw.PublishAt != nil && *raw.PublishAt != "" {
+		if err := input.PublishAt.Scan(*raw.PublishAt); err != nil {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_publish_at", "Invalid publish_at format")
+			return
+		}
+		if input.PublishAt.Valid && input.PublishAt.Time.Before(time.Now()) {
+			errpkg.WriteError(w, http.StatusBadRequest, "publish_at_in_past", "publish_at must be in the future")
+			return
+		}
+	}
+
+	bypassEditWindow := false
+	if resolver := rbac.FromContext(r.Context()); resolver != nil {
+		bypassEditWindow = resolver.IsSuperAdmin(r.Context(), user.UserID, user.TenantID)
+	}
+
+	updated, err := h.content.UpdateContent(r.Context(), id, tenantID, user.UserID, input, bypassEditWindow)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	// BUG-009: enqueue rss:regenerate on draft→published transition. The
+	// content HTTP handler does this at content/handlers.go:1308, but the
+	// blog UpdatePost calls the service directly. Ref: §24.
+	if existing.Status != content.StatusPublished && updated.Status == content.StatusPublished {
+		h.enqueueRSSRegenerate(tenantID)
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": updated})
+}
+
+// DeletePost handles DELETE /api/v1/blog/{id} — soft-deletes the caller's own
+// blog post. BUG-002: the route previously delegated to contentHandlers.DeleteContent
+// which performs NO authorship check, so any user holding blog.edit_own could
+// delete ANY blog post by id. This handler enforces own-post scoping before
+// delegating to the content service. Ref: §24 blog.edit_own.
+func (h *Handlers) DeletePost(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	id, err := parseUUIDParam(r, "id")
+	if err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		return
+	}
+
+	if _, ok := h.verifyOwnBlogPost(w, r, user, tenantID, id); !ok {
+		return
+	}
+
+	if err := h.content.DeleteContent(r.Context(), id, tenantID); err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusNoContent, nil)
 }

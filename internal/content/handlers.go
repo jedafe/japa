@@ -2084,7 +2084,8 @@ func (h *Handlers) RemoveBookmark(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusNoContent, nil)
 }
 
-// ListBookmarks handles GET /api/v1/content/{id}/bookmark/status.
+// GetBookmarkStatus handles GET /api/v1/content/{id}/bookmark.
+// Returns whether the authenticated user has bookmarked the content item.
 func (h *Handlers) GetBookmarkStatus(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
 	if !ok {
@@ -2445,6 +2446,22 @@ func (h *Handlers) GetVisibilityOptions(w http.ResponseWriter, r *http.Request) 
 		{"value": VisibilityPublic, "label": "Public"},
 		{"value": VisibilityMembers, "label": "Members"},
 		{"value": VisibilityPrivate, "label": "Private"},
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": options})
+}
+
+// GetStatusOptions handles GET /api/v1/content/status-options — returns the
+// valid status values for content (Section 14). The frontend uses this to
+// populate status selectors instead of hardcoding the values (Rule 16).
+// BUG-007/BUG-008: the admin blog pages hardcoded status dropdown options,
+// missing scheduled/archived and diverging from §14's canonical set.
+func (h *Handlers) GetStatusOptions(w http.ResponseWriter, r *http.Request) {
+	options := []map[string]string{
+		{"value": StatusDraft, "label": "Draft"},
+		{"value": StatusInReview, "label": "In Review"},
+		{"value": StatusScheduled, "label": "Scheduled"},
+		{"value": StatusPublished, "label": "Published"},
+		{"value": StatusArchived, "label": "Archived"},
 	}
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": options})
 }

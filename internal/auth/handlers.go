@@ -827,6 +827,24 @@ func (h *AuthHandlers) ConsumeBackupCode(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	// Rate-limit backup-code attempts per user to prevent brute-force
+	// guessing. Backup codes are 8-char alphanumeric (limited entropy), so
+	// unthrottled guessing risks account compromise (Bug Hunter §5.2).
+	// 5 attempts per 5 minutes — cataloged as jc:ratelimit:totp_backup:{user_id}.
+	// Ref: japaconnect-engineering/sections/02-authentication-sessions.md
+	if h.VKClient != nil {
+		rlKey := valkey.MustKey("jc:ratelimit:totp_backup:%s", userID.String())
+		ok, err := rateLimitCheck(r.Context(), h.VKClient.Redis(), rlKey, 5, 5*time.Minute)
+		if err != nil {
+			slog.Error("totp backup: rate limit check failed, allowing request", "error", err)
+		}
+		if !ok {
+			errpkg.WriteError(w, http.StatusTooManyRequests, "rate_limit_exceeded",
+				"Too many backup code attempts. Please try again later.")
+			return
+		}
+	}
+
 	req.BackupCode = sanitizeCode(req.BackupCode)
 
 	backupRecord, err := h.Queries.GetTOTPCredentials(r.Context(), gen.GetTOTPCredentialsParams{

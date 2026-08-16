@@ -12,6 +12,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/url"
@@ -51,12 +52,15 @@ type CalendarEntryDTO struct {
 	ReviewedBy         string `json:"reviewed_by,omitempty"`
 	ReviewedAt         string `json:"reviewed_at,omitempty"`
 	// ADR-088 universal AI content generation columns.
-	AiGenerated    bool   `json:"ai_generated"`
-	AiModel        string `json:"ai_model,omitempty"`
-	HitlReviewedBy string `json:"hitl_reviewed_by,omitempty"`
-	AiGeneratedAt  string `json:"ai_generated_at,omitempty"`
-	CreatedAt      string `json:"created_at"`
-	UpdatedAt      string `json:"updated_at,omitempty"`
+	AiGenerated     bool   `json:"ai_generated"`
+	AiModel         string `json:"ai_model,omitempty"`
+	HitlReviewedBy  string `json:"hitl_reviewed_by,omitempty"`
+	AiGeneratedAt   string `json:"ai_generated_at,omitempty"`
+	AiPromptHash    string `json:"ai_prompt_hash,omitempty"`
+	HitlReviewedAt  string `json:"hitl_reviewed_at,omitempty"`
+	HitlReviewNotes string `json:"hitl_review_notes,omitempty"`
+	CreatedAt       string `json:"created_at"`
+	UpdatedAt       string `json:"updated_at,omitempty"`
 }
 
 // SubmitEntryInput is the request body for POST /calendar.
@@ -108,6 +112,15 @@ type AdminUpdateEntryInput struct {
 type AIDispatcher interface {
 	Dispatch(ctx context.Context, category string, req ai.Request) (ai.Response, error)
 }
+
+// ErrHITLReviewRequired is returned by AdminUpdate when an AI-generated
+// entry is being published without prior HITL review (ADR-088 gate).
+var ErrHITLReviewRequired = errors.New("calendar: HITL review required before publishing AI-generated content")
+
+// ErrSourceURLRequired is returned by AdminUpdate when an AI-generated
+// entry with a placeholder source_url is being published (§86 requires a
+// verifiable official source link).
+var ErrSourceURLRequired = errors.New("calendar: a verifiable official source_url is required before publishing")
 
 // Service holds the business logic for the Community Calendar.
 type Service struct {
@@ -587,9 +600,16 @@ func entryToDTO(e CalendarEntry) CalendarEntryDTO {
 	if e.HitlReviewedBy.Valid {
 		dto.HitlReviewedBy = e.HitlReviewedBy.String()
 	}
+	if e.AiPromptHash != nil {
+		dto.AiPromptHash = *e.AiPromptHash
+	}
+	if e.HitlReviewNotes != nil {
+		dto.HitlReviewNotes = *e.HitlReviewNotes
+	}
 	dto.EndsAt = formatTs(e.EndsAt)
 	dto.ReviewedAt = formatTs(e.ReviewedAt)
 	dto.AiGeneratedAt = formatTs(e.AiGeneratedAt)
+	dto.HitlReviewedAt = formatTs(e.HitlReviewedAt)
 	dto.UpdatedAt = formatTs(e.UpdatedAt)
 	return dto
 }
@@ -676,13 +696,17 @@ func (s *Service) GenerateDraft(ctx context.Context, tenantID pgtype.UUID, input
 
 	descPtr := &description
 	// Create the calendar entry with status='pending'.
+	// BUG-005: use an empty source_url for AI drafts — the reviewer must
+	// fill in the real verifiable official source URL before publication.
+	// The AdminUpdate HITL gate (BUG-003/BUG-005) blocks publishing AI
+	// entries with an empty or placeholder source_url.
 	entryID, err := s.store.CreateEntry(ctx, CalendarEntry{
 		TenantID:           tenantID,
 		Title:              title,
 		Description:        descPtr,
 		Category:           category,
 		DestinationSpaceID: destSpaceID,
-		SourceURL:          "https://japaconnect.com/ai-generated",
+		SourceURL:          "",
 		Status:             "pending",
 	})
 	if err != nil {
@@ -690,8 +714,9 @@ func (s *Service) GenerateDraft(ctx context.Context, tenantID pgtype.UUID, input
 	}
 
 	// Stamp the AI provenance columns (CreateEntry doesn't set them).
+	// BUG-004: pass ai_prompt_hash for audit reproducibility (ADR-088).
 	aiModel := "content_agent_v1"
-	if err := s.store.MarkAIGenerated(ctx, entryID, tenantID, aiModel); err != nil {
+	if err := s.store.MarkAIGenerated(ctx, entryID, tenantID, aiModel, promptHash); err != nil {
 		slog.Warn("calendar: mark ai generated failed, draft remains",
 			"entry_id", entryID, "error", err)
 	}

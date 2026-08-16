@@ -1024,6 +1024,10 @@ func (s *Service) ListUserBookmarks(ctx context.Context, tenantID, userID pgtype
 // DeleteBookmarkByID removes a single bookmark by its row ID. Tenant + owner
 // scoped — returns ErrNotFound when the bookmark doesn't exist or belongs to
 // another user/tenant. Works polymorphically across all entity types.
+// BUG-004: tries the unified bookmarks table first, then falls back to the
+// legacy forum_bookmarks table so DELETE /me/bookmarks/{id} works for forum
+// bookmarks too (§08 spec calls for a single polymorphic table; until
+// forum_bookmarks is fully consolidated, this fallback bridges the gap).
 func (s *Service) DeleteBookmarkByID(ctx context.Context, id, tenantID, userID pgtype.UUID) error {
 	affected, err := s.store.write.DeleteBookmarkByID(ctx, gen.DeleteBookmarkByIDParams{
 		ID:       id,
@@ -1033,7 +1037,19 @@ func (s *Service) DeleteBookmarkByID(ctx context.Context, id, tenantID, userID p
 	if err != nil {
 		return fmt.Errorf("deleting bookmark by id: %w", err)
 	}
-	if affected == 0 {
+	if affected > 0 {
+		return nil
+	}
+	// Fallback: the bookmark may live in the legacy forum_bookmarks table.
+	forumAffected, forumErr := s.store.write.DeleteForumBookmarkByIDForUser(ctx, gen.DeleteForumBookmarkByIDForUserParams{
+		ID:       id,
+		TenantID: tenantID,
+		UserID:   userID,
+	})
+	if forumErr != nil {
+		return fmt.Errorf("deleting forum bookmark by id: %w", forumErr)
+	}
+	if forumAffected == 0 {
 		return errpkg.ErrNotFound
 	}
 	return nil

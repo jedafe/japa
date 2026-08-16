@@ -1,12 +1,19 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { onMount } from 'svelte';
-	// L1: redirectViaLogin bypasses the SvelteKit router for auth
-	// redirects, avoiding the get_navigation_intent crash that occurs
-	// when goto() is called before the router is initialized. This
-	// eliminates the brief "Loading..." flash.
-	function redirectViaLogin() {
-		if (typeof window !== 'undefined') {
+	import { goto } from '$app/navigation';
+	// L1: redirectViaLogin uses goto() for SPA navigation when the router
+	// is ready (the auth guard runs after mount + async API calls), with a
+	// window.location.href fallback in case goto() throws — which can happen
+	// if the router is not yet initialized (get_navigation_intent crash).
+	// Ref: §1.2 (SvelteKit client nav uses window.location redirects instead
+	// of goto() → full reload kills SPA auth/session context)
+	async function redirectViaLogin() {
+		if (typeof window === 'undefined') return;
+		try {
+			await goto('/login', { replaceState: true });
+		} catch {
+			// Router not ready — fall back to a full navigation.
 			window.location.href = '/login';
 		}
 	}
@@ -53,7 +60,14 @@
 	let mounted = $state(false);
 
 	const currentPath = $derived(page.url.pathname);
-	const isAuthPage = $derived(currentPath === '/login' || currentPath.startsWith('/logout'));
+	// /verify-totp is an auth page (2FA challenge) — it must be exempt from
+	// the redirect-to-/login guard so the user can complete the second factor.
+	// Ref: sections/02-authentication-sessions.md (TOTP login challenge)
+	const isAuthPage = $derived(
+		currentPath === '/login' ||
+		currentPath === '/verify-totp' ||
+		currentPath.startsWith('/logout')
+	);
 
 	$effect(() => {
 		loadTranslations('en');

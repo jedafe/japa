@@ -2521,6 +2521,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Content types (public — for frontend content type selection)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/content-types", contentHandlers.ListContentTypes)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/content/visibility-options", contentHandlers.GetVisibilityOptions)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/content/status-options", contentHandlers.GetStatusOptions)
 			// Update/Delete (require auth + edit lock + censor check + permission)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.EditLockMiddleware(vkClient.Redis(), settingsService), spam.CensorMiddleware(database, vkClient), rbac.RequirePermission(rbacResolver, "content.edit")).
 				Patch("/content/{id}", contentHandlers.UpdateContent)
@@ -3081,9 +3082,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Post("/blog", blogHandlers.CreatePost)
 				r.Get("/blog/{slug}", blogHandlers.GetPost)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.EditLockMiddleware(vkClient.Redis(), settingsService), spam.CensorMiddleware(database, vkClient), rbac.RequirePermission(rbacResolver, "blog.edit_own")).
-					Patch("/blog/{id}", contentHandlers.UpdateContent)
+					Patch("/blog/{id}", blogHandlers.UpdatePost)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.EditLockMiddleware(vkClient.Redis(), settingsService), rbac.RequirePermission(rbacResolver, "blog.edit_own")).
-					Delete("/blog/{id}", contentHandlers.DeleteContent)
+					Delete("/blog/{id}", blogHandlers.DeletePost)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "blog.create")).
 					Post("/blog/{id}/submit-for-review", blogHandlers.SubmitForReview)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "blog.feature")).
@@ -3869,6 +3870,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/organizations", orgHandlers.ListMyOrganizations)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/bookmark-folders", bookmarkFoldersHandlers.ListFolders)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "bookmarks.manage")).Post("/me/bookmark-folders", bookmarkFoldersHandlers.CreateFolder)
+			// BUG-008: reorder route registered before the {id} route so chi
+			// matches the literal "reorder" path before treating it as an ID.
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "bookmarks.manage")).Patch("/me/bookmark-folders/reorder", bookmarkFoldersHandlers.ReorderFolders)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "bookmarks.manage")).Patch("/me/bookmark-folders/{id}", bookmarkFoldersHandlers.UpdateFolder)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "bookmarks.manage")).Delete("/me/bookmark-folders/{id}", bookmarkFoldersHandlers.DeleteFolder)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/analytics", usersHandlers.GetMyAnalytics)
@@ -4930,22 +4934,27 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wallet.admin.rules.manage")).
 				Patch("/admin/wallet/rules/{id}", walletHandlers.UpdateRule)
 
-			// Task 18: Blog review queue
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "blog.review.manage")).
-				Get("/admin/blog/review-queue", blogHandlers.ListReviews)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "blog.review.manage")).
-				Post("/admin/blog/review-queue/{id}/approve", blogHandlers.ApproveReview)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "blog.review.manage")).
-				Post("/admin/blog/review-queue/{id}/reject", blogHandlers.RejectReview)
-			// Admin blog post management (Section 24 blog extension).
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "blog.review.manage")).
-				Get("/admin/blog", blogHandlers.AdminListPosts)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "blog.review.manage")).
-				Post("/admin/blog", blogHandlers.AdminCreatePost)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "blog.review.manage")).
-				Patch("/admin/blog/{id}", blogHandlers.AdminUpdatePost)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "blog.review.manage")).
-				Delete("/admin/blog/{id}", blogHandlers.AdminDeletePost)
+			// Task 18: Blog review queue + admin blog post management.
+			// BUG-010: gated by feature.blog so disabling the blog feature hides
+			// the admin surface too (matches the public /blog route group at
+			// server.go:3072). Ref: §42 feature.blog.
+			r.With(features.Gate(featureChecker, "feature.blog")).Group(func(r chi.Router) {
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "blog.review.manage")).
+					Get("/admin/blog/review-queue", blogHandlers.ListReviews)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "blog.review.manage")).
+					Post("/admin/blog/review-queue/{id}/approve", blogHandlers.ApproveReview)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "blog.review.manage")).
+					Post("/admin/blog/review-queue/{id}/reject", blogHandlers.RejectReview)
+				// Admin blog post management (Section 24 blog extension).
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "blog.review.manage")).
+					Get("/admin/blog", blogHandlers.AdminListPosts)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "blog.review.manage")).
+					Post("/admin/blog", blogHandlers.AdminCreatePost)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "blog.review.manage")).
+					Patch("/admin/blog/{id}", blogHandlers.AdminUpdatePost)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "blog.review.manage")).
+					Delete("/admin/blog/{id}", blogHandlers.AdminDeletePost)
+			})
 
 			// Task 19: Analytics admin — domain-specific
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "analytics.admin")).

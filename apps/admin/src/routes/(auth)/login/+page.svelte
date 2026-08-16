@@ -4,6 +4,7 @@
 	import { restoreSession } from '$lib/stores/session.svelte';
 	import { goto } from '$app/navigation';
 	import { getPermissions } from '$lib/stores/permissions.svelte';
+	import { setChallenge } from '$lib/api/challenge';
 
 	let email = $state('');
 	let password = $state('');
@@ -29,7 +30,7 @@
 			// down, or non-JSON error body) must not throw "Unexpected end of
 			// JSON input". Read as text first, then attempt JSON decode.
 			const text = await res.text();
-			let body: { data?: { access_token?: string }; error?: { message?: string } } = {};
+			let body: { data?: { access_token?: string; totp_required?: boolean; challenge_token?: string; user?: { email?: string } }; error?: { message?: string } } = {};
 			if (text) {
 				try {
 					body = JSON.parse(text);
@@ -49,8 +50,16 @@
 				// reactivity picks up the new state.
 				void getPermissions();
 				await goto('/', { invalidateAll: true });
+			} else if (res.ok && body.data?.totp_required) {
+				// 2FA challenge required (§02/§22). Stash the challenge token
+				// + email and redirect to the verify-totp page so the admin
+				// can complete the second factor. Without this, an admin with
+				// 2FA enabled (mandatory per §22) would be locked out with a
+				// generic "no session was issued" error.
+				setChallenge(body.data.challenge_token ?? null, body.data.user?.email ?? email);
+				await goto('/verify-totp');
 			} else if (res.ok) {
-				// Authenticated but no access token (e.g. TOTP challenge) — surface it.
+				// Authenticated but no access token and no TOTP challenge — surface it.
 				error = body.error?.message || 'Login succeeded but no session was issued';
 			} else {
 				const status = res.status ? ` (${res.status})` : '';

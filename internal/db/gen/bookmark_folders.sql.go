@@ -181,3 +181,29 @@ func (q *Queries) UpdateBookmarkFolder(ctx context.Context, arg UpdateBookmarkFo
 	)
 	return i, err
 }
+
+const updateBookmarkFolderPosition = `-- name: UpdateBookmarkFolderPosition :exec
+UPDATE bookmark_folders
+SET position = $1, updated_at = now()
+WHERE id = $2 AND tenant_id = $3 AND user_id = $4
+`
+
+type UpdateBookmarkFolderPositionParams struct {
+	Position int32       `json:"position"`
+	ID       pgtype.UUID `json:"id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+	UserID   pgtype.UUID `json:"user_id"`
+}
+
+// BUG-008: sets the position of a single folder. Called in a loop by the
+// reorder handler (PATCH /me/bookmark-folders/reorder) to persist the
+// caller's desired ordering. Scoped to tenant + owner.
+func (q *Queries) UpdateBookmarkFolderPosition(ctx context.Context, arg UpdateBookmarkFolderPositionParams) error {
+	_, err := q.db.Exec(ctx, updateBookmarkFolderPosition,
+		arg.Position,
+		arg.ID,
+		arg.TenantID,
+		arg.UserID,
+	)
+	return err
+}
