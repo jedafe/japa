@@ -72,6 +72,12 @@ func (h *Handlers) AdminCreatePost(w http.ResponseWriter, r *http.Request) {
 	// too, otherwise @mentions in admin-created posts are silently dropped.
 	h.dispatchMentionNotifications(r.Context(), tenantID, user.UserID, post.ID, post.SpaceID, input.Body)
 
+	// BUG-009: enqueue rss:regenerate when an admin creates a post directly
+	// as published. Ref: §24.
+	if post.Status == content.StatusPublished {
+		h.enqueueRSSRegenerate(tenantID)
+	}
+
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": post})
 }
 
@@ -129,11 +135,23 @@ func (h *Handlers) AdminUpdatePost(w http.ResponseWriter, r *http.Request) {
 		updateInput.Visibility = *input.Visibility
 	}
 
+	// BUG-009: capture previous status to detect draft→published transition
+	// for rss:regenerate enqueue. Ref: §24.
+	prevStatus := ""
+	if existing, gErr := h.content.GetContent(r.Context(), id, tenantID); gErr == nil {
+		prevStatus = existing.Status
+	}
+
 	post, err := h.content.UpdateContent(r.Context(), id, tenantID, user.UserID, updateInput, true)
 	if err != nil {
 		slog.Error("failed to update blog post (admin)", "error", err, "id", id)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update blog post")
 		return
+	}
+
+	// BUG-009: enqueue rss:regenerate on draft→published transition. Ref: §24.
+	if prevStatus != content.StatusPublished && post.Status == content.StatusPublished {
+		h.enqueueRSSRegenerate(tenantID)
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": post})

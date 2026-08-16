@@ -62,6 +62,38 @@ function isCsrfRejection(status: number, body: ApiOk<unknown> | ApiErr | null): 
 	return body !== null && 'error' in body && body.error?.code === 'csrf_token_invalid';
 }
 
+// tryTokenRefresh attempts to refresh the access token using the httpOnly
+// jc_refresh cookie. On success, updates the in-memory token via setToken
+// and returns true. On failure, returns false. Uses a dynamic import to
+// avoid a circular dependency with $lib/api (which imports this module).
+// The X-Skip-Refresh header prevents the refresh call itself from
+// triggering another refresh on 401.
+let refreshPromise: Promise<boolean> | null = null;
+
+async function tryTokenRefresh(): Promise<boolean> {
+	if (refreshPromise) return refreshPromise;
+	refreshPromise = (async () => {
+		try {
+			const res = await fetch(`${PUBLIC_JC_API_URL}/api/v1/auth/refresh`, {
+				method: 'POST',
+				credentials: 'include',
+				headers: { 'Content-Type': 'application/json', 'X-Skip-Refresh': '1' },
+			});
+			if (!res.ok) return false;
+			const body = await res.json().catch(() => null);
+			if (!body?.data?.access_token) return false;
+			const { setToken } = await import('$lib/api');
+			setToken(body.data.access_token);
+			return true;
+		} catch {
+			return false;
+		} finally {
+			refreshPromise = null;
+		}
+	})();
+	return refreshPromise;
+}
+
 export async function apiFetch<T>(
 	path: string,
 	options: RequestInit = {},
@@ -120,6 +152,36 @@ export async function apiFetch<T>(
 					const retryHeaders = {
 						...(options.headers as Record<string, string> | undefined),
 						[CSRF_HEADER]: newToken,
+					};
+					const retryOpts = { ...options, headers: retryHeaders };
+					const retry = await doFetch(retryOpts);
+					res = retry.res;
+					body = retry.body;
+				}
+			}
+		}
+
+		// On a 401, attempt a token refresh using the httpOnly jc_refresh
+		// cookie before surfacing the error. If the refresh succeeds, update
+		// the in-memory token and retry the original request with the new
+		// Authorization header. This mirrors the admin app's 401 handler and
+		// prevents spurious "Session expired" errors when the 15-min access
+		// token expires but the refresh cookie is still valid.
+		// Ref: sections/02-authentication-sessions.md (Token model)
+		// Guard: don't recurse if this request IS the refresh call (X-Skip-Refresh).
+		if (
+			res.status === 401 &&
+			!(options.headers as Record<string, string>)?.['X-Skip-Refresh']
+		) {
+			const refreshOk = await tryTokenRefresh();
+			if (refreshOk) {
+				// Retry the original request with the updated Authorization header.
+				const { getToken } = await import('$lib/api');
+				const newToken = getToken();
+				if (newToken) {
+					const retryHeaders = {
+						...(options.headers as Record<string, string> | undefined),
+						Authorization: `Bearer ${newToken}`,
 					};
 					const retryOpts = { ...options, headers: retryHeaders };
 					const retry = await doFetch(retryOpts);

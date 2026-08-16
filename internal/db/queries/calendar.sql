@@ -42,6 +42,7 @@ SELECT id, tenant_id, title, description, category,
        source_url, status, submitted_by, reviewed_by, reviewed_at,
        staleness_check_due,
        ai_generated, ai_model, hitl_reviewed_by, ai_generated_at,
+       ai_prompt_hash, hitl_reviewed_at, hitl_review_notes,
        created_at, updated_at, deleted_at
 FROM calendar_entries
 WHERE id = $1 AND tenant_id = $2 AND status = 'published'
@@ -70,6 +71,7 @@ SELECT e.id, e.tenant_id, e.title, e.description, e.category,
        e.source_url, e.status, e.submitted_by, e.reviewed_by, e.reviewed_at,
        e.staleness_check_due,
        e.ai_generated, e.ai_model, e.hitl_reviewed_by, e.ai_generated_at,
+       e.ai_prompt_hash, e.hitl_reviewed_at, e.hitl_review_notes,
        e.created_at, e.updated_at, e.deleted_at,
        COUNT(*) OVER() AS total_count
 FROM calendar_saves s
@@ -88,9 +90,30 @@ ON CONFLICT (tenant_id, user_id, destination_space_id, category) DO NOTHING;
 DELETE FROM calendar_subscriptions
 WHERE user_id = $1 AND tenant_id = $2 AND destination_space_id = $3 AND category = $4;
 
+-- name: CalendarGetEntryForReview :one
+-- Fetches the fields needed for the ADR-088 HITL gate check before
+-- publishing an AI-generated entry. Used by Service.AdminUpdate.
+SELECT id, ai_generated, hitl_reviewed_by, source_url, status
+FROM calendar_entries
+WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
+LIMIT 1;
+
 -- name: CalendarAdminUpdateEntry :execrows
+-- On publish, stamps hitl_reviewed_by / hitl_reviewed_at for AI-generated
+-- entries (ADR-088 HITL gate). Non-AI entries leave hitl_* unchanged.
 UPDATE calendar_entries
-SET status = $3, reviewed_by = $4, reviewed_at = now(), updated_at = now()
+SET status = $3,
+    reviewed_by = $4,
+    reviewed_at = now(),
+    updated_at = now(),
+    hitl_reviewed_by = CASE
+        WHEN $3 = 'published' AND ai_generated THEN $4
+        ELSE hitl_reviewed_by
+    END,
+    hitl_reviewed_at = CASE
+        WHEN $3 = 'published' AND ai_generated THEN now()
+        ELSE hitl_reviewed_at
+    END
 WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL;
 
 -- name: CalendarAdminSoftDeleteEntry :execrows

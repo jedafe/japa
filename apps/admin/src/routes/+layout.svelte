@@ -30,10 +30,15 @@
 
 	// Check if we're on the login or logout page — computed first so onMount
 	// can skip session restoration on auth pages (avoids noisy 401s when no
-	// session exists yet).
+	// session exists yet). /verify-totp is an auth page (2FA challenge) and
+	// must be exempt from the redirect-to-/login guard so the user can
+	// complete the second factor.
+	// Ref: sections/02-authentication-sessions.md (TOTP login challenge)
 	let isAuthPage = $derived(
 		page.url.pathname === '/login' ||
 		page.url.pathname.startsWith('/login/') ||
+		page.url.pathname === '/verify-totp' ||
+		page.url.pathname.startsWith('/verify-totp/') ||
 		page.url.pathname === '/logout' ||
 		page.url.pathname.startsWith('/logout/')
 	);

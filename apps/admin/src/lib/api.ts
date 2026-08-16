@@ -406,6 +406,8 @@ export const comparisonAdminApi = {
 	getDimensionTypes: () => api<{ value: string; label: string }[]>('/comparisons/dimension-types'),
 	// Visibility options from GET /content/visibility-options (Rule 16).
 	getVisibilityOptions: () => api<{ value: string; label: string }[]>('/content/visibility-options'),
+	// Status options from GET /content/status-options (Rule 16).
+	getStatusOptions: () => api<{ value: string; label: string }[]>('/content/status-options'),
 	// Comparison content CRUD (Section 30 — actual comparison articles).
 	listComparisons: (params?: string) =>
 		api<ComparisonEntry[]>(`/comparisons${params ? `?${params}` : ''}`),
@@ -1002,6 +1004,9 @@ export const contentAdminApi = {
 	unfeature: (id: string) => api<unknown>(`/blog/featured/${id}`, { method: 'DELETE' }),
 	archive: (id: string) => api<unknown>(`/content/${id}/archive`, { method: 'POST', body: {} }),
 	listContentTypes: () => api<{ value: string; label: string }[]>('/content-types'),
+	// BUG-007/BUG-008: status & visibility options from the backend (Rule 16).
+	getStatusOptions: () => api<{ value: string; label: string }[]>('/content/status-options'),
+	getVisibilityOptions: () => api<{ value: string; label: string }[]>('/content/visibility-options'),
 };
 
 export const mediaAdminApi = {

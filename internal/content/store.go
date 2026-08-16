@@ -1174,24 +1174,6 @@ func (s *Service) ValidateFolderOwnership(ctx context.Context, folderID, tenantI
 	return nil
 }
 
-// ListBookmarksByFolder returns bookmarks filed under a specific folder (BL-011).
-func (s *Service) ListBookmarksByFolder(ctx context.Context, tenantID, userID, folderID pgtype.UUID, limit, offset int32) ([]gen.ListBookmarksByFolderRow, error) {
-	if limit <= 0 || limit > MaxPageSize {
-		limit = DefaultPageSize
-	}
-	bms, err := s.read.ListBookmarksByFolder(ctx, gen.ListBookmarksByFolderParams{
-		UserID:     userID,
-		TenantID:   tenantID,
-		FolderID:   folderID,
-		PageLimit:  limit,
-		PageOffset: offset,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("listing bookmarks by folder: %w", err)
-	}
-	return bms, nil
-}
-
 // RemoveBookmark deletes a user's bookmark for the given entity.
 // Tenant-scoped for defense-in-depth (BE-05).
 func (s *Service) RemoveBookmark(ctx context.Context, tenantID, userID pgtype.UUID, entityType string, entityID pgtype.UUID) error {

@@ -32,7 +32,18 @@ func (q *Queries) CalendarAdminSoftDeleteEntry(ctx context.Context, arg Calendar
 
 const calendarAdminUpdateEntry = `-- name: CalendarAdminUpdateEntry :execrows
 UPDATE calendar_entries
-SET status = $3, reviewed_by = $4, reviewed_at = now(), updated_at = now()
+SET status = $3,
+    reviewed_by = $4,
+    reviewed_at = now(),
+    updated_at = now(),
+    hitl_reviewed_by = CASE
+        WHEN $3 = 'published' AND ai_generated THEN $4
+        ELSE hitl_reviewed_by
+    END,
+    hitl_reviewed_at = CASE
+        WHEN $3 = 'published' AND ai_generated THEN now()
+        ELSE hitl_reviewed_at
+    END
 WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
 `
 
@@ -43,6 +54,8 @@ type CalendarAdminUpdateEntryParams struct {
 	ReviewedBy pgtype.UUID `json:"reviewed_by"`
 }
 
+// On publish, stamps hitl_reviewed_by / hitl_reviewed_at for AI-generated
+// entries (ADR-088 HITL gate). Non-AI entries leave hitl_* unchanged.
 func (q *Queries) CalendarAdminUpdateEntry(ctx context.Context, arg CalendarAdminUpdateEntryParams) (int64, error) {
 	result, err := q.db.Exec(ctx, calendarAdminUpdateEntry,
 		arg.ID,
@@ -139,6 +152,7 @@ SELECT id, tenant_id, title, description, category,
        source_url, status, submitted_by, reviewed_by, reviewed_at,
        staleness_check_due,
        ai_generated, ai_model, hitl_reviewed_by, ai_generated_at,
+       ai_prompt_hash, hitl_reviewed_at, hitl_review_notes,
        created_at, updated_at, deleted_at
 FROM calendar_entries
 WHERE id = $1 AND tenant_id = $2 AND status = 'published'
@@ -173,6 +187,9 @@ type CalendarGetEntryRow struct {
 	AiModel            *string            `json:"ai_model"`
 	HitlReviewedBy     pgtype.UUID        `json:"hitl_reviewed_by"`
 	AiGeneratedAt      pgtype.Timestamptz `json:"ai_generated_at"`
+	AiPromptHash       *string            `json:"ai_prompt_hash"`
+	HitlReviewedAt     pgtype.Timestamptz `json:"hitl_reviewed_at"`
+	HitlReviewNotes    *string            `json:"hitl_review_notes"`
 	CreatedAt          pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
 	DeletedAt          pgtype.Timestamptz `json:"deleted_at"`
@@ -203,9 +220,47 @@ func (q *Queries) CalendarGetEntry(ctx context.Context, arg CalendarGetEntryPara
 		&i.AiModel,
 		&i.HitlReviewedBy,
 		&i.AiGeneratedAt,
+		&i.AiPromptHash,
+		&i.HitlReviewedAt,
+		&i.HitlReviewNotes,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DeletedAt,
+	)
+	return i, err
+}
+
+const calendarGetEntryForReview = `-- name: CalendarGetEntryForReview :one
+SELECT id, ai_generated, hitl_reviewed_by, source_url, status
+FROM calendar_entries
+WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
+LIMIT 1
+`
+
+type CalendarGetEntryForReviewParams struct {
+	ID       pgtype.UUID `json:"id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+type CalendarGetEntryForReviewRow struct {
+	ID             pgtype.UUID `json:"id"`
+	AiGenerated    bool        `json:"ai_generated"`
+	HitlReviewedBy pgtype.UUID `json:"hitl_reviewed_by"`
+	SourceUrl      string      `json:"source_url"`
+	Status         string      `json:"status"`
+}
+
+// Fetches the fields needed for the ADR-088 HITL gate check before
+// publishing an AI-generated entry. Used by Service.AdminUpdate.
+func (q *Queries) CalendarGetEntryForReview(ctx context.Context, arg CalendarGetEntryForReviewParams) (CalendarGetEntryForReviewRow, error) {
+	row := q.db.QueryRow(ctx, calendarGetEntryForReview, arg.ID, arg.TenantID)
+	var i CalendarGetEntryForReviewRow
+	err := row.Scan(
+		&i.ID,
+		&i.AiGenerated,
+		&i.HitlReviewedBy,
+		&i.SourceUrl,
+		&i.Status,
 	)
 	return i, err
 }
@@ -217,6 +272,7 @@ SELECT e.id, e.tenant_id, e.title, e.description, e.category,
        e.source_url, e.status, e.submitted_by, e.reviewed_by, e.reviewed_at,
        e.staleness_check_due,
        e.ai_generated, e.ai_model, e.hitl_reviewed_by, e.ai_generated_at,
+       e.ai_prompt_hash, e.hitl_reviewed_at, e.hitl_review_notes,
        e.created_at, e.updated_at, e.deleted_at,
        COUNT(*) OVER() AS total_count
 FROM calendar_saves s
@@ -256,6 +312,9 @@ type CalendarListSavedEntriesRow struct {
 	AiModel            *string            `json:"ai_model"`
 	HitlReviewedBy     pgtype.UUID        `json:"hitl_reviewed_by"`
 	AiGeneratedAt      pgtype.Timestamptz `json:"ai_generated_at"`
+	AiPromptHash       *string            `json:"ai_prompt_hash"`
+	HitlReviewedAt     pgtype.Timestamptz `json:"hitl_reviewed_at"`
+	HitlReviewNotes    *string            `json:"hitl_review_notes"`
 	CreatedAt          pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
 	DeletedAt          pgtype.Timestamptz `json:"deleted_at"`
@@ -298,6 +357,9 @@ func (q *Queries) CalendarListSavedEntries(ctx context.Context, arg CalendarList
 			&i.AiModel,
 			&i.HitlReviewedBy,
 			&i.AiGeneratedAt,
+			&i.AiPromptHash,
+			&i.HitlReviewedAt,
+			&i.HitlReviewNotes,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.DeletedAt,

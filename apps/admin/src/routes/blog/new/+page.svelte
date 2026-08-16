@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { t } from '$lib/stores/i18n.svelte';
-	import { blogAdminApi } from '$lib/api';
+	import { blogAdminApi, contentAdminApi } from '$lib/api';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import PageHeader from '$lib/components/layout/page-header.svelte';
 	import { Card, CardContent } from '$lib/components/ui/card';
@@ -21,6 +21,26 @@
 	let visibility = $state('public');
 	let submitting = $state(false);
 	let error = $state('');
+
+	// BUG-007/BUG-008: fetch status & visibility options from the backend
+	// instead of hardcoding them (Rule 16). Ref: §14 content status/visibility.
+	let statusOptions = $state<{ value: string; label: string }[]>([]);
+	let visibilityOptions = $state<{ value: string; label: string }[]>([]);
+
+	$effect(() => {
+		void (async () => {
+			try {
+				const [s, v] = await Promise.all([
+					contentAdminApi.getStatusOptions(),
+					contentAdminApi.getVisibilityOptions()
+				]);
+				if (s.ok) statusOptions = s.data ?? [];
+				if (v.ok) visibilityOptions = v.data ?? [];
+			} catch {
+				// Best-effort — selectors fall back to the default-bound value.
+			}
+		})();
+	});
 
 	function generateSlug(val: string) {
 		return val
@@ -151,9 +171,13 @@
 						class="w-full rounded-lg border p-3 text-sm"
 						style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
 					>
-						<option value="draft">{t('app.blog.status_draft', 'Draft')}</option>
-						<option value="published">{t('app.blog.status_published', 'Published')}</option>
-						<option value="in_review">{t('app.blog.status_in_review', 'In Review')}</option>
+						{#if statusOptions.length === 0}
+							<option value="draft">{t('app.blog.status_draft', 'Draft')}</option>
+						{:else}
+							{#each statusOptions as opt (opt.value)}
+								<option value={opt.value}>{opt.label}</option>
+							{/each}
+						{/if}
 					</select>
 				</div>
 				<div>
@@ -166,8 +190,13 @@
 						class="w-full rounded-lg border p-3 text-sm"
 						style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
 					>
-						<option value="public">{t('app.blog.visibility_public', 'Public')}</option>
-						<option value="private">{t('app.blog.visibility_private', 'Private')}</option>
+						{#if visibilityOptions.length === 0}
+							<option value="public">{t('app.blog.visibility_public', 'Public')}</option>
+						{:else}
+							{#each visibilityOptions as opt (opt.value)}
+								<option value={opt.value}>{opt.label}</option>
+							{/each}
+						{/if}
 					</select>
 				</div>
 			</div>
