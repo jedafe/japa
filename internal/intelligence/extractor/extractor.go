@@ -158,7 +158,7 @@ func (e *Extractor) Extract(ctx context.Context, schema schemas.EntitySchema, so
 			Messages: []ai.ChatMessage{
 				{Role: "user", Content: prompt},
 			},
-			Model:       e.model,
+			Model:       e.model, // empty = use provider's configured default
 			Temperature: e.temperature,
 			MaxTokens:   e.maxTokens,
 		})
