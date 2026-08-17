@@ -14,6 +14,8 @@
 	import { cardStyleFor, type CardStyleConfig } from '$lib/feed/cardStyle';
 	import type { ProfileAnalytics, ProfilePost, FeedItem, FollowerGrowthItem, TopContentItem } from '$lib/types';
 	import FeedCard from '$lib/components/feed/FeedCard.svelte';
+	import { formatMetric } from '$lib/components/hub/charts/format';
+	import { tiptapExcerpt } from '$lib/tiptap/serialize';
 	import { blockUser, unblockUser, muteUser, unmuteUser } from '$lib/api/hub';
 	import type { PageData } from './$types';
 
@@ -40,6 +42,7 @@
 
 	const user = $derived(data.user);
 	const isOwnProfile = $derived(data.isOwnProfile);
+	const isAuthenticated = $derived(data.isAuthenticated);
 	const initiallyFollowing = $derived(data.initiallyFollowing);
 	let activeTab = $state(untrack(() => page.url.searchParams.get('tab') ?? 'posts'));
 
@@ -156,6 +159,7 @@
 		topContent
 			.slice(0, 10)
 			.map((item) => ({
+				id: item.id,
 				x: item.title?.length > 20 ? item.title.slice(0, 20) + '…' : item.title ?? item.id,
 				y: item.view_count ?? 0,
 				label: item.title?.length > 30 ? item.title.slice(0, 30) + '…' : item.title ?? item.id
@@ -202,30 +206,32 @@
 <ProfileHeader {user} {isOwnProfile}>
 	{#if !isOwnProfile}
 		<FollowButton entityType="user" entityId={user.id} {initiallyFollowing} />
-		<button
-			type="button"
-			class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border px-3 py-1.5 text-sm font-medium transition-colors {isBlocked
-				? 'border-[var(--color-danger)] text-[var(--color-danger)] hover:bg-[var(--color-danger)]/10'
-				: 'border-[var(--color-border)] text-[var(--color-muted)] hover:text-[var(--color-danger)] hover:border-[var(--color-danger)]'}"
-			disabled={blockPending}
-			onclick={toggleBlock}
-			aria-label={isBlocked ? t('profile.unblock_user', 'Unblock user') : t('profile.block_user', 'Block user')}
-		>
-			<Ban class="h-4 w-4" />
-			{isBlocked ? t('profile.unblock', 'Unblock') : t('profile.block', 'Block')}
-		</button>
-		<button
-			type="button"
-			class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border px-3 py-1.5 text-sm font-medium transition-colors {isMuted
-				? 'border-[var(--color-warning)] text-[var(--color-warning)] hover:bg-[var(--color-warning)]/10'
-				: 'border-[var(--color-border)] text-[var(--color-muted)] hover:text-[var(--color-text)] hover:border-[var(--color-border-strong)]'}"
-			disabled={mutePending}
-			onclick={toggleMute}
-			aria-label={isMuted ? t('profile.unmute_user', 'Unmute user') : t('profile.mute_user', 'Mute user')}
-		>
-			<VolumeX class="h-4 w-4" />
-			{isMuted ? t('profile.unmute', 'Unmute') : t('profile.mute', 'Mute')}
-		</button>
+		{#if isAuthenticated}
+			<button
+				type="button"
+				class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border px-3 py-1.5 text-sm font-medium transition-colors {isBlocked
+					? 'border-[var(--color-danger)] text-[var(--color-danger)] hover:bg-[var(--color-danger)]/10'
+					: 'border-[var(--color-border)] text-[var(--color-muted)] hover:text-[var(--color-danger)] hover:border-[var(--color-danger)]'}"
+				disabled={blockPending}
+				onclick={toggleBlock}
+				aria-label={isBlocked ? t('profile.unblock_user', 'Unblock user') : t('profile.block_user', 'Block user')}
+			>
+				<Ban class="h-4 w-4" />
+				{isBlocked ? t('profile.unblock', 'Unblock') : t('profile.block', 'Block')}
+			</button>
+			<button
+				type="button"
+				class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border px-3 py-1.5 text-sm font-medium transition-colors {isMuted
+					? 'border-[var(--color-warning)] text-[var(--color-warning)] hover:bg-[var(--color-warning)]/10'
+					: 'border-[var(--color-border)] text-[var(--color-muted)] hover:text-[var(--color-text)] hover:border-[var(--color-border-strong)]'}"
+				disabled={mutePending}
+				onclick={toggleMute}
+				aria-label={isMuted ? t('profile.unmute_user', 'Unmute user') : t('profile.mute_user', 'Mute user')}
+			>
+				<VolumeX class="h-4 w-4" />
+				{isMuted ? t('profile.unmute', 'Unmute') : t('profile.mute', 'Mute')}
+			</button>
+		{/if}
 	{/if}
 </ProfileHeader>
 
@@ -318,7 +324,7 @@ profile is private, or no stage is set. -->
 				<ul class="space-y-2">
 					{#each data.replies as reply (reply.id)}
 						<li class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-							<p class="text-sm text-[var(--color-text)]">{reply.body}</p>
+							<p class="text-sm text-[var(--color-text)]">{tiptapExcerpt(reply.body)}</p>
 							<a href="/content/{reply.content_slug}" class="mt-2 block text-xs text-[var(--color-primary)] hover:underline">
 								{t('profile.in_reply_to', 'In reply to')}: {reply.content_title}
 							</a>
@@ -495,10 +501,10 @@ profile is private, or no stage is set. -->
 								</Chart>
 							</div>
 							<div class="mt-2 space-y-1 text-xs text-[var(--color-muted)]">
-								{#each topPostsSeries as point (point.x)}
+								{#each topPostsSeries as point (point.id)}
 									<div class="flex items-center justify-between">
 										<span class="truncate">{point.label}</span>
-										<span class="shrink-0 pl-2">{point.y} {t('profile.views', 'views')}</span>
+										<span class="shrink-0 pl-2">{formatMetric(point.y)} {t('profile.views', 'views')}</span>
 									</div>
 								{/each}
 							</div>
@@ -515,37 +521,37 @@ profile is private, or no stage is set. -->
 							<div class="flex items-center gap-2 text-xs text-[var(--color-muted)]">
 								<BarChart3 size={14} /> {t('profile.analytics.views', 'Total views')}
 							</div>
-							<p class="mt-1 text-lg font-semibold text-[var(--color-text)]">{analytics.total_views ?? 0}</p>
+							<p class="mt-1 text-lg font-semibold text-[var(--color-text)]">{formatMetric(analytics.total_views ?? 0)}</p>
 						</div>
 						<div class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 							<div class="flex items-center gap-2 text-xs text-[var(--color-muted)]">
 								<Heart size={14} /> {t('profile.analytics.likes', 'Total likes')}
 							</div>
-							<p class="mt-1 text-lg font-semibold text-[var(--color-text)]">{analytics.total_likes ?? 0}</p>
+							<p class="mt-1 text-lg font-semibold text-[var(--color-text)]">{formatMetric(analytics.total_likes ?? 0)}</p>
 						</div>
 						<div class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 							<div class="flex items-center gap-2 text-xs text-[var(--color-muted)]">
 								<FileText size={14} /> {t('profile.analytics.posts', 'Total posts')}
 							</div>
-							<p class="mt-1 text-lg font-semibold text-[var(--color-text)]">{analytics.total_posts ?? 0}</p>
+							<p class="mt-1 text-lg font-semibold text-[var(--color-text)]">{formatMetric(analytics.total_posts ?? 0)}</p>
 						</div>
 						<div class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 							<div class="flex items-center gap-2 text-xs text-[var(--color-muted)]">
 								<Users size={14} /> {t('profile.analytics.followers', 'Followers')}
 							</div>
-							<p class="mt-1 text-lg font-semibold text-[var(--color-text)]">{analytics.total_followers ?? 0}</p>
+							<p class="mt-1 text-lg font-semibold text-[var(--color-text)]">{formatMetric(analytics.total_followers ?? 0)}</p>
 						</div>
 						<div class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 							<div class="flex items-center gap-2 text-xs text-[var(--color-muted)]">
 								<Users size={14} /> {t('profile.analytics.following', 'Following')}
 							</div>
-							<p class="mt-1 text-lg font-semibold text-[var(--color-text)]">{analytics.total_following ?? 0}</p>
+							<p class="mt-1 text-lg font-semibold text-[var(--color-text)]">{formatMetric(analytics.total_following ?? 0)}</p>
 						</div>
 						<div class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 							<div class="flex items-center gap-2 text-xs text-[var(--color-muted)]">
 								<FileText size={14} /> {t('profile.analytics.shares', 'Total shares')}
 							</div>
-							<p class="mt-1 text-lg font-semibold text-[var(--color-text)]">{analytics.total_shares ?? 0}</p>
+							<p class="mt-1 text-lg font-semibold text-[var(--color-text)]">{formatMetric(analytics.total_shares ?? 0)}</p>
 						</div>
 					</div>
 				</div>

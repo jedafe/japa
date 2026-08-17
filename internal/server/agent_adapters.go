@@ -922,7 +922,7 @@ type arrivalDraftGenerator interface {
 
 // communityOrgDraftGenerator is the subset of *communitylocator.Service.
 type communityOrgDraftGenerator interface {
-	Generate(ctx context.Context, tenantID, generatedBy pgtype.UUID, input communitylocator.GenerateInput, aiModel string) (communitylocator.OrgDTO, error)
+	Generate(ctx context.Context, tenantID, generatedBy pgtype.UUID, input communitylocator.GenerateInput) (communitylocator.OrgDTO, error)
 }
 
 // attestationDraftGenerator is the subset of *attestationguide.Service.
@@ -1225,11 +1225,10 @@ func (a *studioDraftProcessorAdapter) tryToolTableRouting(
 		if a.communityOrgSvc == nil {
 			return pgtype.UUID{}, "", false, nil
 		}
-		aiModel := "content_agent_v1"
 		org, err := a.communityOrgSvc.Generate(ctx, tenantID, persona.UserID, communitylocator.GenerateInput{
 			Prompt:             promptWithCtx,
 			DestinationSpaceID: destSpaceStr,
-		}, aiModel)
+		})
 		if err != nil {
 			slog.Warn("studio: community_organisation routing failed, falling back to contents",
 				"job_id", jobID, "error", err)

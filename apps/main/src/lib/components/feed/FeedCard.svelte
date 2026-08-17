@@ -89,7 +89,7 @@
 		{/if}
 		<div class="flex flex-1 flex-col gap-2 p-3">
 			{@render badge()}
-			<h2 class="line-clamp-2 text-[15px] font-semibold leading-snug tracking-tight text-[var(--color-text)]">{item.title}</h2>
+			<h2 class="line-clamp-2 text-[18px] font-semibold leading-snug tracking-tight text-[var(--color-text)]">{item.title}</h2>
 			{#if item.space_name}
 				<span class="text-xs font-medium text-[var(--color-text-subtle)]">{item.space_name}</span>
 			{/if}

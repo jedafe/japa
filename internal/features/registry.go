@@ -48,7 +48,11 @@ var Registry = []Feature{
 	{Key: "feature.japabot", Label: "JapaBot AI Chat", Default: false},
 	{Key: "feature.ai_content_gen", Label: "AI Content Generation", Default: false},
 	// Section 70 — Visa Document Checklist Generator (ADR-070).
-	{Key: "checklist.enabled", Label: "Visa Document Checklist", Default: false},
+	// Default true per ADR-070 §5 / §70 system_settings (checklist.enabled).
+	// The feature_flags row is optional; when absent the registry default
+	// applies, so the tool is reachable out-of-the-box and can be disabled
+	// by setting the flag false in the control panel.
+	{Key: "checklist.enabled", Label: "Visa Document Checklist", Default: true},
 	// V2 Community Features (§79–§89, §98) — keys renamed by migration 000404
 	// from feature.{name} to {domain}.enabled per conventions/feature-flag-naming.md.
 	{Key: "story.enabled", Label: "Community Story Wall", Default: false},

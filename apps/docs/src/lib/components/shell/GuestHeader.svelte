@@ -9,6 +9,13 @@
 	import SearchLauncher from './SearchLauncher.svelte';
 	import AudienceSwitcher from './AudienceSwitcher.svelte';
 	import type { DocAudience } from '$lib/types';
+	import { env } from '$env/dynamic/public';
+	import { page } from '$app/state';
+
+	// Login/signup live on the Main app. Build full URLs against the main origin
+	// so these links do not 404 when the guest header is rendered.
+	const mainOrigin = (env.PUBLIC_MAIN_ORIGIN ?? 'http://localhost:3000').replace(/\/$/, '');
+	const returnTo = encodeURIComponent(page.url.href);
 
 	interface Props {
 		logoUrl?: string;
@@ -49,11 +56,11 @@
 			>
 				{#if theme.current === 'dark'}<Sun size={18} />{:else}<Moon size={18} />{/if}
 			</button>
-			<a href="/login" class="guest-login-btn">
+			<a href={`${mainOrigin}/login?redirect=${returnTo}`} class="guest-login-btn">
 				<LogIn size={16} />
 				<span>{t('auth.login')}</span>
 			</a>
-			<a href="/signup" class="guest-signup-btn">
+			<a href={`${mainOrigin}/signup?redirect=${returnTo}`} class="guest-signup-btn">
 				<UserPlus size={16} />
 				<span>{t('auth.signup')}</span>
 			</a>

@@ -3,6 +3,9 @@
   "private": true,
   "version": "0.0.1",
   "type": "module",
+  "bin": {
+    "japa": "./japa"
+  },
   "scripts": {
     "test:e2e": "playwright test",
     "test:e2e:main": "playwright test --project=main",

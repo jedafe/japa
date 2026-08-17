@@ -8,6 +8,7 @@
 	import { t, i18n } from '$lib/i18n';
 	import { relativeTime } from '$lib/feed/time';
 	import { api } from '$lib/api/client';
+	import { requireAuthOrRedirect } from '$lib/auth/guest';
 	import {
 		ArrowLeft,
 		Trophy,
@@ -76,6 +77,7 @@
 	let reactionError = $state<string | null>(null);
 
 	async function react(emoji: string) {
+		if (!(await requireAuthOrRedirect())) return;
 		if (reacting) return;
 		reacting = true;
 		reactionError = null;
@@ -194,14 +196,22 @@
 					<button
 						type="button"
 						onclick={() => react(r.emoji)}
-						disabled={reacting}
-						class="inline-flex items-center gap-1.5 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm transition-colors hover:border-[var(--color-primary)]/40 hover:bg-[var(--color-surface-subtle)] disabled:opacity-50"
+						disabled={reacting || !data.authed}
+						class="inline-flex items-center gap-1.5 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm transition-colors hover:border-[var(--color-primary)]/40 hover:bg-[var(--color-surface-subtle)] disabled:cursor-not-allowed disabled:opacity-50"
 						title={r.label}
 					>
 						<span class="text-base">{r.emoji}</span>
 						<span class="text-xs font-medium text-[var(--color-text-subtle)]">{r.label}</span>
 					</button>
 				{/each}
+				{#if !data.authed}
+					<a
+						href={`/login?redirect=${encodeURIComponent(page.url.pathname + page.url.search)}`}
+						class="text-xs font-medium text-[var(--color-primary)] hover:underline"
+					>
+						{t('achievements.login_to_react', 'Log in to react')}
+					</a>
+				{/if}
 				{#if reactionError}
 					<span class="text-xs text-red-500">{reactionError}</span>
 				{/if}

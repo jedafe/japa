@@ -890,6 +890,12 @@ export interface CommunityOrg {
 
 export interface CommunityOrgWithAi extends CommunityOrg, AiGenerationMeta {}
 
+/** Org-type allow-list entry from GET /community-locator/org-types (Rule 16). */
+export interface OrgTypeOption {
+	value: string;
+	label: string;
+}
+
 /* --- Geo Space reference (for destination selectors) --- */
 // Used by all V2 tools for the ?dest= destination selector.
 // Fetched from /spaces?level=country or the tool-specific selector endpoint.

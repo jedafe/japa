@@ -1,6 +1,6 @@
 import type { PageServerLoad } from './$types';
 import { apiContext, apiList, ApiError } from '$lib/server/api';
-import type { CommunityOrgWithAi, GeoSpaceOption } from '$lib/types';
+import type { CommunityOrgWithAi, GeoSpaceOption, OrgTypeOption } from '$lib/types';
 
 /**
  * Diaspora Community Locator — §101, ADR-088.
@@ -14,6 +14,7 @@ import type { CommunityOrgWithAi, GeoSpaceOption } from '$lib/types';
  * without making API calls to a disabled endpoint (BUG-014).
  *
  * API: GET /spaces?level=country — destination countries (geo selector).
+ *      GET /community-locator/org-types — org-type allow-list (Rule 16).
  *      GET /community-locator?dest={space_id} — community orgs for a dest.
  *      GET /community-locator/{slug} — single org (client-side, on demand).
  *      POST /community-locator — submit a new org (auth, client-side).
@@ -32,7 +33,7 @@ export const load: PageServerLoad = async (event) => {
 	const { siteSettings } = await event.parent();
 	const enabled = siteSettings?.['community_locator.enabled'] === true;
 	if (!enabled) {
-		return { destinations: [], orgs: [], initialDestId: null, disabled: true, authed };
+		return { destinations: [], orgTypes: [], orgs: [], initialDestId: null, disabled: true, authed };
 	}
 
 	// Destination list — the geo-aware selector source (Rule 16).
@@ -45,6 +46,15 @@ export const load: PageServerLoad = async (event) => {
 			disabled = true;
 		}
 		// Other errors: leave destinations empty; page shows an empty state.
+	}
+
+	// BUG-005: org-type allow-list from the backend (Rule 16). Falls back
+	// to an empty list on error; the page renders an empty select.
+	let orgTypes: OrgTypeOption[] = [];
+	try {
+		orgTypes = (await apiList<OrgTypeOption>(ctx, '/community-locator/org-types')).items;
+	} catch {
+		orgTypes = [];
 	}
 
 	// If ?dest= is present, fetch community orgs for that destination so the
@@ -64,5 +74,5 @@ export const load: PageServerLoad = async (event) => {
 		}
 	}
 
-	return { destinations, orgs, initialDestId, disabled, authed };
+	return { destinations, orgTypes, orgs, initialDestId, disabled, authed };
 };

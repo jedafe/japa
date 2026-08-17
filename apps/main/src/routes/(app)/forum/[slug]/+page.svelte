@@ -7,6 +7,7 @@
 	import { relativeTime } from '$lib/feed/time';
 	import { tiptapBodyToHtml, tiptapExcerpt } from '$lib/tiptap/serialize';
 	import { api } from '$lib/api/client';
+	import { requireAuthOrRedirect } from '$lib/auth/guest';
 	import VoteRail from '$lib/components/forum/VoteRail.svelte';
 	import ReplyThread from '$lib/components/forum/ReplyThread.svelte';
 	import PollBlock from '$lib/components/forum/PollBlock.svelte';
@@ -195,6 +196,7 @@
 	}
 
 	async function submitReport() {
+		if (!(await requireAuthOrRedirect())) return;
 		if (!thread.content_id || !reportReason.trim() || reportSubmitting) return;
 		reportSubmitting = true;
 		reportError = '';
@@ -450,7 +452,7 @@
 			<button type="button" onclick={shareThread} class="flex items-center gap-1 transition-colors hover:text-[var(--color-text)]">
 				<Share2 size={14} /> {shared ? t('forum.shared', 'Copied!') : t('forum.share', 'Share')}
 			</button>
-			<button type="button" onclick={openReport} disabled={!thread.content_id} class="flex items-center gap-1 transition-colors hover:text-[var(--color-text)] disabled:cursor-not-allowed disabled:opacity-50" title={thread.content_id ? t('forum.report', 'Report') : t('forum.report_unavailable', 'Reporting unavailable')}>
+			<button type="button" onclick={openReport} disabled={!data.authed || !thread.content_id} class="flex items-center gap-1 transition-colors hover:text-[var(--color-text)] disabled:cursor-not-allowed disabled:opacity-50" title={!data.authed ? t('forum.login_to_report', 'Log in to report') : thread.content_id ? t('forum.report', 'Report') : t('forum.report_unavailable', 'Reporting unavailable')}>
 				<Flag size={14} /> {t('forum.report', 'Report')}
 			</button>
 			{#if data.canSolve}

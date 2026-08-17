@@ -18,6 +18,12 @@ export interface ClientResult<T> {
 	status: number;
 }
 
+/** Result including sidecar envelope fields (e.g. deleted_user_ids for GDPR). */
+export interface ClientEnvelopeResult<T> extends ClientResult<T> {
+	/** Raw envelope body (data + sidecar fields like deleted_user_ids). */
+	envelope: Record<string, unknown> | null;
+}
+
 const MUTATING_METHODS = new Set(['POST', 'PATCH', 'PUT', 'DELETE']);
 
 function withCsrfHeader(method: string, headers: Record<string, string>): Record<string, string> {
@@ -32,6 +38,15 @@ async function clientFetch<T>(
 	path: string,
 	init: RequestInit = {}
 ): Promise<ClientResult<T>> {
+	const r = await clientFetchRaw<T>(path, init);
+	return { data: r.data, error: r.error, status: r.status };
+}
+
+/** Internal: clientFetch that also returns the raw parsed envelope body. */
+async function clientFetchRaw<T>(
+	path: string,
+	init: RequestInit = {}
+): Promise<ClientEnvelopeResult<T>> {
 	const method = (init.method ?? 'GET').toString().toUpperCase();
 	const isFormData = init.body instanceof FormData;
 	const baseHeaders: Record<string, string> = {
@@ -76,6 +91,7 @@ async function clientFetch<T>(
 			const err = (body as { error?: { code?: string; message?: string } } | null)?.error;
 			return {
 				data: null,
+				envelope: null,
 				error: {
 					code: err?.code ?? 'request_failed',
 					message: err?.message ?? res.statusText,
@@ -87,12 +103,14 @@ async function clientFetch<T>(
 
 		return {
 			data: (body as { data: T } | null)?.data ?? null,
+			envelope: (body as Record<string, unknown> | null) ?? null,
 			error: null,
 			status: res.status
 		};
 	} catch (e) {
 		return {
 			data: null,
+			envelope: null,
 			error: {
 				code: 'network_error',
 				message: e instanceof Error ? e.message : 'Network error',
@@ -105,6 +123,9 @@ async function clientFetch<T>(
 
 export const api = {
 	get: <T>(path: string) => clientFetch<T>(path, { method: 'GET' }),
+	/** Like get() but also returns the raw envelope (sidecar fields like deleted_user_ids). */
+	getEnvelope: <T>(path: string): Promise<ClientEnvelopeResult<T>> =>
+		clientFetchRaw<T>(path, { method: 'GET' }),
 	post: <T>(path: string, body?: unknown, headers?: Record<string, string>) =>
 		clientFetch<T>(path, {
 			method: 'POST',

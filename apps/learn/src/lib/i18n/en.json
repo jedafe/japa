@@ -121,6 +121,8 @@
 	"learn.no_match_for_query": "No courses match \"{query}\".",
 	"learn.no_courses_yet": "No courses published yet.",
 	"learn.browse_catalog_prompt": "Browse the catalog to start learning.",
+	"learn.load_error": "Failed to load your enrollments",
+	"learn.retry": "Retry",
 	"learn.analytics_pending": "Requires analytics endpoint",
 	"learn.progress_over_time": "Progress over time",
 	"learn.analytics_endpoint_pending": "Requires a backend analytics endpoint (e.g. GET /me/learning-analytics).",

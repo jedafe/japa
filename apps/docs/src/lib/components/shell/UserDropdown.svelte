@@ -11,7 +11,12 @@
 	} from 'lucide-svelte';
 	import { t } from '$lib/i18n';
 	import { theme } from '$lib/stores/theme.svelte';
+	import { env } from '$env/dynamic/public';
+	import { page } from '$app/state';
 	import type { SessionUser } from '$lib/types';
+
+	const mainOrigin = (env.PUBLIC_MAIN_ORIGIN ?? 'http://localhost:3000').replace(/\/$/, '');
+	const returnTo = encodeURIComponent(page.url.href);
 
 	interface Props {
 		user: SessionUser | null;
@@ -73,21 +78,21 @@
 				{#if user}
 					<DropdownMenu.Item class={itemClass}>
 						{#snippet child({ props })}
-							<a href="/u/{user.username}" {...props}>
+							<a href={`${mainOrigin}/u/${user.username}`} {...props}>
 								<User size={16} /> {t('nav.profile', 'Profile')}
 							</a>
 						{/snippet}
 					</DropdownMenu.Item>
 					<DropdownMenu.Item class={itemClass}>
 						{#snippet child({ props })}
-							<a href="/dashboard" {...props}>
+							<a href={`${mainOrigin}/dashboard`} {...props}>
 								<LayoutDashboard size={16} /> {t('nav.dashboard', 'Dashboard')}
 							</a>
 						{/snippet}
 					</DropdownMenu.Item>
 					<DropdownMenu.Item class={itemClass}>
 						{#snippet child({ props })}
-							<a href="/settings/profile" {...props}>
+							<a href={`${mainOrigin}/settings/profile`} {...props}>
 								<Settings size={16} /> {t('nav.settings', 'Settings')}
 							</a>
 						{/snippet}
@@ -95,7 +100,7 @@
 					<DropdownMenu.Separator class="my-1 h-px bg-[var(--color-border)]" />
 					<DropdownMenu.Item class={itemClass}>
 						{#snippet child({ props })}
-							<a href="/logout" {...props}>
+							<a href={`${mainOrigin}/logout`} {...props}>
 								<LogOut size={16} /> {t('nav.logout', 'Logout')}
 							</a>
 						{/snippet}
@@ -103,15 +108,15 @@
 				{:else}
 					<DropdownMenu.Item class={itemClass}>
 						{#snippet child({ props })}
-							<a href="/login" {...props}>
-								<LogIn size={16} /> {t('auth.login')}
+						<a href={`${mainOrigin}/login?redirect=${returnTo}`} {...props}>
+							<LogIn size={16} /> {t('auth.login')}
 							</a>
 						{/snippet}
 					</DropdownMenu.Item>
 					<DropdownMenu.Item class={itemClass}>
 						{#snippet child({ props })}
-							<a href="/signup" {...props}>
-								<User size={16} /> {t('auth.signup')}
+						<a href={`${mainOrigin}/signup?redirect=${returnTo}`} {...props}>
+							<User size={16} /> {t('auth.signup')}
 							</a>
 						{/snippet}
 					</DropdownMenu.Item>

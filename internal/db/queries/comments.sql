@@ -12,6 +12,7 @@ RETURNING *;
 -- name: GetComment :one
 SELECT c.id, c.tenant_id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
        c.vote_score, c.is_pinned, c.is_edited, c.edited_at, c.created_at, c.updated_at, c.deleted_at,
+       c.is_anonymous,
        u.username,
        COALESCE(up.display_name, '') AS display_name,
        COALESCE(up.avatar_url, '') AS avatar_url
@@ -23,6 +24,7 @@ WHERE c.id = @id AND c.tenant_id = @tenant_id;
 -- name: ListCommentsByContent :many
 SELECT c.id, c.tenant_id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
        c.vote_score, c.is_pinned, c.is_edited, c.edited_at, c.created_at, c.updated_at, c.deleted_at,
+       c.is_anonymous,
        u.username,
        COALESCE(up.display_name, '') AS display_name,
        COALESCE(up.avatar_url, '') AS avatar_url
@@ -43,6 +45,7 @@ LIMIT @page_limit OFFSET @page_offset;
 -- Ref: japaconnect-engineering/sections/47-public-api-developer-portal.md
 SELECT c.id, c.tenant_id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
        c.vote_score, c.is_pinned, c.is_edited, c.edited_at, c.created_at, c.updated_at, c.deleted_at,
+       c.is_anonymous,
        u.username,
        COALESCE(up.display_name, '') AS display_name,
        COALESCE(up.avatar_url, '') AS avatar_url
@@ -65,6 +68,7 @@ LIMIT @page_limit OFFSET @page_offset;
 -- Section 49 ?sort=new — newest first (pinned still surface on top).
 SELECT c.id, c.tenant_id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
        c.vote_score, c.is_pinned, c.is_edited, c.edited_at, c.created_at, c.updated_at, c.deleted_at,
+       c.is_anonymous,
        u.username,
        COALESCE(up.display_name, '') AS display_name,
        COALESCE(up.avatar_url, '') AS avatar_url
@@ -81,6 +85,7 @@ LIMIT @page_limit OFFSET @page_offset;
 -- Section 49 ?sort=oldest — oldest first (pinned still surface on top).
 SELECT c.id, c.tenant_id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
        c.vote_score, c.is_pinned, c.is_edited, c.edited_at, c.created_at, c.updated_at, c.deleted_at,
+       c.is_anonymous,
        u.username,
        COALESCE(up.display_name, '') AS display_name,
        COALESCE(up.avatar_url, '') AS avatar_url
@@ -96,6 +101,7 @@ LIMIT @page_limit OFFSET @page_offset;
 -- name: ListRepliesByParent :many
 SELECT c.id, c.tenant_id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
        c.vote_score, c.is_pinned, c.is_edited, c.edited_at, c.created_at, c.updated_at, c.deleted_at,
+       c.is_anonymous,
        u.username,
        COALESCE(up.display_name, '') AS display_name,
        COALESCE(up.avatar_url, '') AS avatar_url
@@ -177,7 +183,7 @@ WHERE id = @id AND tenant_id = @tenant_id AND deleted_at IS NULL;
 INSERT INTO comment_votes (tenant_id, comment_id, user_id, value)
 VALUES (@tenant_id, @comment_id, @user_id, @value)
 ON CONFLICT (comment_id, user_id) DO UPDATE SET value = EXCLUDED.value
-RETURNING id, tenant_id, comment_id, user_id, value, created_at;
+RETURNING tenant_id, comment_id, user_id, value, created_at;
 
 -- name: DeleteCommentVote :exec
 DELETE FROM comment_votes
@@ -194,7 +200,7 @@ updated_at = now()
 WHERE id = @comment_id AND tenant_id = @tenant_id;
 
 -- name: GetCommentVote :one
-SELECT id, tenant_id, comment_id, user_id, value, created_at
+SELECT tenant_id, comment_id, user_id, value, created_at
 FROM comment_votes
 WHERE comment_id = @comment_id AND user_id = @user_id;
 
@@ -247,6 +253,7 @@ WHERE c.tenant_id = @tenant_id
   AND c.author_user_id = @author_user_id
   AND c.deleted_at IS NULL
   AND c.status = 'published'
+  AND c.is_anonymous = false
   AND ct.status = 'published'
   AND ct.visibility = 'public'
 ORDER BY c.created_at DESC
@@ -259,6 +266,7 @@ JOIN contents ct ON ct.id = c.content_id AND ct.tenant_id = c.tenant_id
 WHERE c.tenant_id = @tenant_id
   AND c.author_user_id = @author_user_id
   AND c.deleted_at IS NULL
+  AND c.is_anonymous = false
   AND ct.status = 'published'
   AND ct.visibility = 'public';
 

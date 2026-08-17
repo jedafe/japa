@@ -41,7 +41,7 @@
 		<p class="denied-body">{t('audience.no_access_body')}</p>
 		<div class="denied-actions">
 			{#if !data.user}
-				<a href="/login" class="btn primary">
+				<a href={data.loginUrl} class="btn primary">
 					<LogIn size={16} />
 					{t('audience.no_access_signin')}
 				</a>

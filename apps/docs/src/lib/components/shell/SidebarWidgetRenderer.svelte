@@ -16,6 +16,7 @@
 	import SearchLauncher from './SearchLauncher.svelte';
 	import UserDropdown from './UserDropdown.svelte';
 	import { sanitizeSidebarHtml, safeHref } from '$lib/utils/safeHtml';
+	import { env } from '$env/dynamic/public';
 	import type { SessionUser } from '$lib/types';
 
 	interface SidebarWidget {
@@ -32,6 +33,8 @@
 	}
 
 	let { widget, user = null }: Props = $props();
+
+	const mainOrigin = (env.PUBLIC_MAIN_ORIGIN ?? 'http://localhost:3000').replace(/\/$/, '');
 
 	const widgetProps = $derived(widget.props ?? {});
 	const title = $derived(typeof widgetProps.title === 'string' ? widgetProps.title : '');
@@ -213,7 +216,7 @@
 {:else if widget.widget_type === 'cta_button'}
 	<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 		<a
-			href={safeHref(typeof widgetProps.url === 'string' ? widgetProps.url : '/signup') || '/signup'}
+			href={safeHref(typeof widgetProps.url === 'string' ? widgetProps.url : `${mainOrigin}/signup`) || `${mainOrigin}/signup`}
 			class="flex w-full items-center justify-center gap-2 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2.5 text-sm font-semibold text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)]"
 		>
 			<MousePointerClick size={16} />
@@ -323,7 +326,7 @@
 {:else if widget.widget_type === 'notification_centre'}
 	<!-- Notification centre — rendered by the Main app; no-op in Docs. -->
 {:else if widget.widget_type === 'search'}
-	<!-- Search widget (Main app variant) — Docs uses 'search_launcher' instead. -->
+	<SearchLauncher />
 {:else if widget.widget_type === 'user_dropdown'}
 	{#if user}
 		<UserDropdown {user} />

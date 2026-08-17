@@ -55,6 +55,7 @@
 		contentAnalytics
 			.slice(0, 10)
 			.map((item) => ({
+				id: item.id,
 				x: item.title?.length > 20 ? item.title.slice(0, 20) + '…' : item.title ?? item.id,
 				y: item.view_count ?? 0,
 				label: item.title?.length > 30 ? item.title.slice(0, 30) + '…' : item.title ?? item.id
@@ -132,7 +133,7 @@
 				</Chart>
 			</div>
 			<div class="mt-2 space-y-1 text-xs text-[var(--color-muted)]">
-				{#each topPostsSeries as point (point.x)}
+				{#each topPostsSeries as point (point.id)}
 					<div class="flex items-center justify-between">
 						<span class="truncate">{point.label}</span>
 						<span class="shrink-0 pl-2">{formatMetric(point.y)} {t('profile.views', 'views')}</span>

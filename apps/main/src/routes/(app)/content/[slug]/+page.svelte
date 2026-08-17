@@ -178,6 +178,7 @@
 		<CommentThread
 			comments={data.comments}
 			contentId={article.id}
+			contentType={article.content_type}
 			authed={data.authed}
 			currentUserId={data.currentUserId}
 			canModerate={data.canModerate}
