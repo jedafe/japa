@@ -8,10 +8,14 @@
 	// Ref: japaconnect-engineering/sections/50-user-dashboard-settings.md
 	import { t } from '$lib/i18n';
 	import { api } from '$lib/api/client';
+	import { loginUrl } from '$lib/appOrigins';
 	import { goto } from '$app/navigation';
 	import { EmptyState } from '$lib/components/ui';
 	import { Bookmark as BookmarkIcon, ExternalLink, FolderPlus, Trash2, Loader2, Folder, Pencil, Check, X } from 'lucide-svelte';
 	import type { Bookmark, BookmarkFolder } from '$lib/types';
+	import type { PageData } from './$types';
+
+	let { data }: { data: PageData } = $props();
 
 	// Learning-related entity types shown on this page.
 	const LEARNING_ENTITY_TYPES = 'learning_track,content';
@@ -87,6 +91,10 @@
 	}
 
 	async function createFolder() {
+		if (!data.user) {
+			window.location.href = loginUrl('/bookmarks');
+			return;
+		}
 		if (!newFolderName.trim() || creatingFolder) return;
 		creatingFolder = true;
 		folderError = '';
@@ -101,6 +109,10 @@
 	}
 
 	async function deleteFolder(id: string) {
+		if (!data.user) {
+			window.location.href = loginUrl('/bookmarks');
+			return;
+		}
 		if (deletingFolderId) return;
 		deletingFolderId = id;
 		folderError = '';
@@ -126,6 +138,10 @@
 	}
 
 	async function confirmRename(id: string) {
+		if (!data.user) {
+			window.location.href = loginUrl('/bookmarks');
+			return;
+		}
 		if (!editFolderName.trim() || renamingFolder) return;
 		renamingFolder = true;
 		folderError = '';
@@ -142,6 +158,10 @@
 	}
 
 	async function removeBookmark(id: string) {
+		if (!data.user) {
+			window.location.href = loginUrl('/bookmarks');
+			return;
+		}
 		if (removingBookmarkId) return;
 		removingBookmarkId = id;
 		folderError = '';

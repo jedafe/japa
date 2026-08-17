@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
-	import { ClipboardCheck, Check, Lock } from 'lucide-svelte';
+	import { ClipboardCheck, Check, Lock, RotateCcw, MessageSquarePlus } from 'lucide-svelte';
 	import { EmptyState, LoadingSkeleton, SelectField } from '$lib/components/ui';
 	import { api } from '$lib/api/client';
 	import type { ChecklistItem, ChecklistSelector } from '$lib/types';
@@ -29,6 +29,7 @@
 	let loadingItems = $state(false);
 	let itemError = $state<string | null>(null);
 	let savingKey = $state<string | null>(null);
+	let resetting = $state(false);
 
 	const destinations = $derived(selector?.destinations ?? []);
 	const visaTypes = $derived(
@@ -50,7 +51,91 @@
 		}
 		// Backend returns either { items: [...] } or a bare array.
 		const raw = res.data as { items?: ChecklistItem[] } | ChecklistItem[];
-		items = Array.isArray(raw) ? raw : (raw.items ?? []);
+		let loaded: ChecklistItem[] = Array.isArray(raw) ? raw : (raw.items ?? []);
+
+		// Merge saved progress for authenticated users (§70: GET /progress).
+		// Without this, authenticated users see all items unchecked on every
+		// load and their persisted notes/completions are invisible.
+		if (authed) {
+			const progRes = await api.get<{
+				items?: { item_key: string; completed: boolean; notes?: string }[];
+			}>(`/checklist/${guideId}/progress`);
+			if (!progRes.error && progRes.data?.items) {
+				const progMap = new Map(
+					progRes.data.items.map((p) => [p.item_key, p])
+				);
+				loaded = loaded.map((it) => {
+					const p = progMap.get(it.item_key);
+					return p
+						? { ...it, completed: p.completed, notes: p.notes ?? it.notes }
+						: it;
+				});
+			}
+		}
+		items = loaded;
+	}
+
+	/** Reset all progress for the current guide (§70: DELETE /progress). */
+	async function resetProgress() {
+		if (!authed || !selectedGuideId || resetting) return;
+		if (!confirm(t('checklist.reset_confirm', 'Reset all progress for this checklist? This cannot be undone.'))) return;
+		resetting = true;
+		const res = await api.delete(`/checklist/${selectedGuideId}/progress`);
+		resetting = false;
+		if (res.error) {
+			itemError = res.error.message;
+			return;
+		}
+		// Clear local completed/notes state (items remain, just unchecked).
+		items = items.map((i) => ({ ...i, completed: false, notes: '' }));
+		itemError = null;
+	}
+
+	// ── Request-a-guide (§70: POST /forms/{id}/submissions via §06) ────────
+	// When no visa guide exists for the selected origin + destination, the
+	// user can submit a request. The form slug is fixed ('visa-guide-request',
+	// seeded by migration 000509); the form ID is resolved via the embed
+	// endpoint and cached for the session.
+	let requestFormId = $state<string | null>(null);
+	let requestLoading = $state(false);
+	let requestError = $state<string | null>(null);
+	let requestSubmitted = $state(false);
+
+	async function ensureRequestFormId(): Promise<string | null> {
+		if (requestFormId) return requestFormId;
+		const res = await api.get<{ id: string }>(`/forms/visa-guide-request/embed`);
+		if (res.error || !res.data?.id) return null;
+		requestFormId = res.data.id;
+		return requestFormId;
+	}
+
+	async function submitGuideRequest() {
+		if (!selectedOrigin || !selectedDestination || requestLoading) return;
+		requestLoading = true;
+		requestError = null;
+		requestSubmitted = false;
+		const formId = await ensureRequestFormId();
+		if (!formId) {
+			requestError = t('checklist.request_unavailable', 'Request form unavailable. Please try again later.');
+			requestLoading = false;
+			return;
+		}
+		const originName = selector?.origins.find((o) => o.id === selectedOrigin)?.name ?? selectedOrigin;
+		const destName = destinations.find((d) => d.id === selectedDestination)?.name ?? selectedDestination;
+		const res = await api.post(`/forms/${formId}/submissions`, {
+			field_values: {
+				origin_country: originName,
+				destination_country: destName,
+				visa_type: 'other',
+				notes: ''
+			}
+		});
+		requestLoading = false;
+		if (res.error) {
+			requestError = res.error.message;
+			return;
+		}
+		requestSubmitted = true;
 	}
 
 	function onSelectDestination() {
@@ -193,8 +278,31 @@
 				</div>
 			</div>
 		{:else if selectedDestination && visaTypes.length === 0}
-			<div class="px-4 py-3 text-sm text-[var(--color-muted)]">
-				{t('checklist.no_visa_types', 'No visa guides published for this destination yet.')}
+			<div class="px-4 py-3">
+				<p class="text-sm text-[var(--color-muted)]">
+					{t('checklist.no_visa_types', 'No visa guides published for this destination yet.')}
+				</p>
+				<!-- Request-a-guide CTA (§70: form_submission via §06, slug 'visa-guide-request') -->
+				{#if requestSubmitted}
+					<p class="mt-2 text-sm text-[var(--color-primary)]">
+						{t('checklist.request_success', 'Your request has been submitted. Our team will prioritize this route.')}
+					</p>
+				{:else}
+					<button
+						type="button"
+						disabled={!selectedOrigin || !selectedDestination || requestLoading}
+						onclick={submitGuideRequest}
+						class="mt-3 inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm text-[var(--color-text)] hover:border-[var(--color-primary)] hover:text-[var(--color-primary)] disabled:opacity-50"
+					>
+						<MessageSquarePlus size={16} />
+						{requestLoading
+							? t('checklist.request_submitting', 'Submitting…')
+							: t('checklist.request_guide', 'Request a guide for this route')}
+					</button>
+					{#if requestError}
+						<p class="mt-2 text-xs text-[var(--color-danger)]">{requestError}</p>
+					{/if}
+				{/if}
 			</div>
 		{/if}
 
@@ -218,7 +326,20 @@
 					<div class="mb-4">
 						<div class="flex items-center justify-between text-xs text-[var(--color-muted)]">
 							<span>{t('checklist.progress', 'Progress')}</span>
-							<span>{completedCount}/{items.length} ({progressPct}%)</span>
+							<span class="flex items-center gap-3">
+								<span>{completedCount}/{items.length} ({progressPct}%)</span>
+								{#if authed && completedCount > 0}
+									<button
+										type="button"
+										disabled={resetting}
+										onclick={resetProgress}
+										class="inline-flex items-center gap-1 text-[var(--color-muted)] hover:text-red-500 disabled:opacity-50"
+									>
+										<RotateCcw size={14} />
+										{t('checklist.reset_progress', 'Reset progress')}
+									</button>
+								{/if}
+							</span>
 						</div>
 						<div class="mt-1 h-2 overflow-hidden rounded-full bg-[var(--color-surface-subtle)]">
 							<div

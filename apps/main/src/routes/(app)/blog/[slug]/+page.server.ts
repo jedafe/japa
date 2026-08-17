@@ -47,19 +47,24 @@ export const load: PageServerLoad = async (event) => {
 	const isSuperAdmin = userGroups.some((g) => g === 'super_admin' || g === 'Super Admin');
 
 	let hasContentEditPermission = false;
+	let hasCommentsPinPermission = false;
 	if (!isOwner && !isSuperAdmin && event.locals.user) {
 		try {
 			const permRes = await apiGet<{ permissions: string[] }>(ctx, '/me/permissions');
-			hasContentEditPermission = (permRes?.permissions ?? []).includes('content.edit');
+			const perms = permRes?.permissions ?? [];
+			hasContentEditPermission = perms.includes('content.edit');
+			hasCommentsPinPermission = perms.includes('comments.pin');
 		} catch {
 			hasContentEditPermission = false;
+			hasCommentsPinPermission = false;
 		}
 	}
 	const canEdit = isOwner || isSuperAdmin || hasContentEditPermission;
 
-	// Pin affordance: content author or moderator. The backend enforces the
-	// actual permission; this flag only gates the UI control.
-	const canModerate = isOwner;
+	// Pin affordance: content author or moderator (comments.pin). The backend
+	// enforces the actual permission; this flag only gates the UI control.
+	// BUG-004: include moderator permission check, not just content author.
+	const canModerate = isOwner || isSuperAdmin || hasCommentsPinPermission;
 
 	// Hydrate the CreatorCard follow button's initial state. Best-effort:
 	// a failure degrades to `false` (not following). Skip when the viewer

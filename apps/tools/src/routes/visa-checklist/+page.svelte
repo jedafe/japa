@@ -191,6 +191,53 @@
 		error = null;
 	}
 
+	// ── Request-a-guide (§70: POST /forms/{id}/submissions via §06) ────────
+	// When no visa guide exists for the selected origin + destination, the
+	// user can submit a request. The form slug is fixed ('visa-guide-request',
+	// seeded by migration 000509); the form ID is resolved via the embed
+	// endpoint and cached for the session.
+	let requestFormId = $state<string | null>(null);
+	let requestLoading = $state(false);
+	let requestError = $state<string | null>(null);
+	let requestSubmitted = $state(false);
+
+	async function ensureRequestFormId(): Promise<string | null> {
+		if (requestFormId) return requestFormId;
+		const res = await api.get<{ id: string }>(`/forms/visa-guide-request/embed`);
+		if (res.error || !res.data?.id) return null;
+		requestFormId = res.data.id;
+		return requestFormId;
+	}
+
+	async function submitGuideRequest() {
+		if (!selectedOrigin || !selectedDestination || requestLoading) return;
+		requestLoading = true;
+		requestError = null;
+		requestSubmitted = false;
+		const formId = await ensureRequestFormId();
+		if (!formId) {
+			requestError = t('checklist.request_unavailable', 'Request form unavailable. Please try again later.');
+			requestLoading = false;
+			return;
+		}
+		const originName = selector?.origins.find((o) => o.id === selectedOrigin)?.name ?? selectedOrigin;
+		const destName = destinations.find((d) => d.id === selectedDestination)?.name ?? selectedDestination;
+		const res = await api.post(`/forms/${formId}/submissions`, {
+			field_values: {
+				origin_country: originName,
+				destination_country: destName,
+				visa_type: 'other',
+				notes: ''
+			}
+		});
+		requestLoading = false;
+		if (res.error) {
+			requestError = res.error.message;
+			return;
+		}
+		requestSubmitted = true;
+	}
+
 	// Group items by category
 	const groupedItems = $derived.by(() => {
 		if (!guide?.items) return [];
@@ -335,6 +382,30 @@
 				<p class="text-sm text-muted">{t('checklist.no_destinations', 'No visa guides have been published yet. Please check back later.')}</p>
 			{:else if selectedDestination && visaTypes.length === 0}
 				<p class="text-sm text-muted">{t('checklist.no_guides', 'No visa guides found for this destination.')}</p>
+			{/if}
+
+			<!-- Request-a-guide CTA (§70: form_submission via §06, slug 'visa-guide-request') -->
+			{#if (selectedOrigin && destinations.length === 0) || (selectedDestination && visaTypes.length === 0)}
+				{#if requestSubmitted}
+					<p class="text-sm text-primary">
+						{t('checklist.request_success', 'Your request has been submitted. Our team will prioritize this route.')}
+					</p>
+				{:else}
+					<button
+						type="button"
+						disabled={!selectedOrigin || !selectedDestination || requestLoading}
+						onclick={submitGuideRequest}
+						class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm bg-surface border border-border rounded hover:border-primary hover:text-primary transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+					>
+						<Icon name="message-square-plus" size={16} />
+						{requestLoading
+							? t('checklist.request_submitting', 'Submitting…')
+							: t('checklist.request_guide', 'Request a guide for this route')}
+					</button>
+					{#if requestError}
+						<p class="mt-2 text-xs text-red-500">{requestError}</p>
+					{/if}
+				{/if}
 			{/if}
 		</div>
 	{:else}

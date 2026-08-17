@@ -1,7 +1,7 @@
 import type { PageServerLoad } from './$types';
 import { apiContext, apiList } from '$lib/server/api';
 import { getTool, isToolEnabled } from '$lib/tools/registry';
-import type { CommunityOrgWithAi, GeoSpaceOption } from '$lib/types';
+import type { CommunityOrgWithAi, GeoSpaceOption, OrgTypeOption } from '$lib/types';
 
 /**
  * Diaspora Community Locator — §101, ADR-088.
@@ -11,6 +11,7 @@ import type { CommunityOrgWithAi, GeoSpaceOption } from '$lib/types';
  * server-side so the page renders with content immediately.
  *
  * API: GET /spaces?level=country — destination countries (geo selector).
+ *      GET /community-locator/org-types — org-type allow-list (Rule 16).
  *      GET /community-locator?dest={space_id} — community orgs for a dest.
  *      GET /community-locator/{slug} — single org (client-side, on demand).
  *      POST /community-locator — submit a new org (auth, client-side).
@@ -28,6 +29,7 @@ export const load: PageServerLoad = async (event) => {
 			enabled: false,
 			tool,
 			destinations: [],
+			orgTypes: [],
 			orgs: [],
 			initialDestId: null,
 			user: event.locals.user
@@ -42,6 +44,14 @@ export const load: PageServerLoad = async (event) => {
 		destinations = (await apiList<GeoSpaceOption>(ctx, '/spaces?level=country')).items;
 	} catch {
 		destinations = [];
+	}
+
+	// BUG-005: org-type allow-list from the backend (Rule 16).
+	let orgTypes: OrgTypeOption[] = [];
+	try {
+		orgTypes = (await apiList<OrgTypeOption>(ctx, '/community-locator/org-types')).items;
+	} catch {
+		orgTypes = [];
 	}
 
 	// If ?dest= is present, fetch community orgs for that destination so the
@@ -65,6 +75,7 @@ export const load: PageServerLoad = async (event) => {
 		enabled: true,
 		tool,
 		destinations,
+		orgTypes,
 		orgs,
 		initialDestId,
 		user: event.locals.user

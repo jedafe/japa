@@ -13,6 +13,8 @@
 		comment: Comment;
 		/** Content id (for posting replies via POST /content/{id}/comments). */
 		contentId: string;
+		/** Parent content type — controls vote vs emoji-reaction display (Section 49). */
+		contentType: string;
 		/** Current nesting depth (0 = top-level). */
 		depth: number;
 		/** Auth gating: only render interactive controls when true. */
@@ -24,12 +26,20 @@
 		/** Erased-user IDs for GDPR/ADR-029 mention redaction (Section 15). */
 		deletedUserIds?: Set<string>;
 	}
-	let { comment, contentId, depth, authed, currentUserId, canModerate, deletedUserIds }: Props = $props();
+	let { comment, contentId, contentType, depth, authed, currentUserId, canModerate, deletedUserIds }: Props = $props();
 
 	const MAX_DEPTH = 3;
+	// Section 49: voting is forum-discussions-only; other content types use
+	// emoji reactions (Section 14). BUG-003: hide vote rail for non-discussion.
+	const canVote = $derived(contentType === 'discussion');
 	const time = $derived(relativeTime(comment.created_at, new Date(), i18n.locale));
-	const authorLabel = $derived(comment.display_name || comment.username || t('forum.member', 'Member'));
-	const isAuthor = $derived(!!currentUserId && currentUserId === comment.author_user_id);
+	// BUG-002: show "Anonymous" for anonymous comments (author redacted by backend).
+	const authorLabel = $derived(
+		comment.is_anonymous
+			? t('comments.anonymous', 'Anonymous')
+			: comment.display_name || comment.username || t('forum.member', 'Member')
+	);
+	const isAuthor = $derived(!!currentUserId && !!comment.author_user_id && currentUserId === comment.author_user_id);
 	const beyondMaxDepth = $derived(depth >= MAX_DEPTH);
 	const bodyHtml = $derived(
 		tiptapBodyToHtml(comment.body, {
@@ -44,6 +54,7 @@
 	let score = $state(0);
 	let userVote = $state<1 | -1 | 0>(0);
 	let votePending = $state(false);
+	let voteError = $state<string | null>(null);
 
 	// Sync from the server payload on mount and whenever the prop reference
 	// changes (e.g. a parent re-fetch). Mirrors the VoteRail pattern.
@@ -54,6 +65,7 @@
 
 	async function vote(value: 1 | -1) {
 		if (!authed || votePending) return;
+		voteError = null;
 		const prev = userVote;
 		const optimisticScore = score + (value - prev);
 		score = optimisticScore;
@@ -68,6 +80,7 @@
 		if (res.error) {
 			score = comment.vote_score;
 			userVote = prev;
+			voteError = res.error.message;
 		}
 	}
 
@@ -108,22 +121,36 @@
 	async function loadReplies() {
 		if (repliesLoading || repliesLoaded) return;
 		repliesLoading = true;
-		const res = await api.get<Comment[]>(`/content/${contentId}/comments?parent_id=${encodeURIComponent(comment.id)}`);
+		repliesError = null;
+		// BUG-005: use getEnvelope to extract deleted_user_ids for GDPR redaction.
+		const res = await api.getEnvelope<Comment[]>(`/content/${contentId}/comments?parent_id=${encodeURIComponent(comment.id)}`);
 		repliesLoading = false;
 		repliesLoaded = true;
-		if (res.error || !res.data) return;
+		if (res.error || !res.data) {
+			repliesError = res.error?.message ?? t('comments.load_error');
+			return;
+		}
 		loadedReplies = res.data;
+		// Merge any new deleted_user_ids from the reply envelope into the set.
+		const replyDeletedIds = (res.envelope as Record<string, unknown> | null)?.deleted_user_ids;
+		if (Array.isArray(replyDeletedIds) && deletedUserIds) {
+			for (const id of replyDeletedIds as string[]) deletedUserIds.add(id);
+		}
 	}
 
 	async function submitReply() {
 		if (!replyBody || submitting || !authed) return;
 		submitting = true;
+		replyError = null;
 		const res = await api.post<Comment>(`/content/${contentId}/comments`, {
 			parent_id: comment.id,
 			body: replyBody
 		});
 		submitting = false;
-		if (res.error || !res.data) return;
+		if (res.error || !res.data) {
+			replyError = res.error?.message ?? t('comments.load_error');
+			return;
+		}
 		localReplies = [...localReplies, res.data];
 		replyBody = '';
 		composing = false;
@@ -135,6 +162,11 @@
 	let editPending = $state(false);
 	let deleted = $state(false);
 	let deletePending = $state(false);
+	// BUG-006: error feedback for failed actions.
+	let repliesError = $state<string | null>(null);
+	let replyError = $state<string | null>(null);
+	let editError = $state<string | null>(null);
+	let deleteError = $state<string | null>(null);
 
 	function startEdit() {
 		editBody = comment.body;
@@ -144,9 +176,13 @@
 	async function saveEdit() {
 		if (!editBody || editPending) return;
 		editPending = true;
+		editError = null;
 		const res = await api.patch<Comment>(`/comments/${comment.id}`, { body: editBody });
 		editPending = false;
-		if (res.error || !res.data) return;
+		if (res.error || !res.data) {
+			editError = res.error?.message ?? t('comments.load_error');
+			return;
+		}
 		comment = { ...comment, body: res.data.body, is_edited: res.data.is_edited, edited_at: res.data.edited_at };
 		editing = false;
 	}
@@ -154,9 +190,13 @@
 	async function deleteComment() {
 		if (deletePending) return;
 		deletePending = true;
+		deleteError = null;
 		const res = await api.delete(`/comments/${comment.id}`);
 		deletePending = false;
-		if (res.error) return;
+		if (res.error) {
+			deleteError = res.error?.message ?? t('comments.load_error');
+			return;
+		}
 		deleted = true;
 	}
 
@@ -172,7 +212,8 @@
 </script>
 
 <div class="flex gap-3" class:pl-1={depth > 0}>
-	<!-- Vertical vote rail -->
+	<!-- Vertical vote rail — forum discussions only (Section 49, BUG-003) -->
+	{#if canVote}
 	<div class="flex w-7 flex-col items-center gap-0.5 pt-0.5 text-[var(--color-muted)]">
 		<button
 			type="button"
@@ -195,7 +236,11 @@
 		>
 			<ArrowDown size={16} />
 		</button>
+		{#if voteError}
+			<span class="text-[10px] text-[var(--color-danger)]" title={voteError}>!</span>
+		{/if}
 	</div>
+	{/if}
 
 	<div class="min-w-0 flex-1">
 		<div class="flex flex-wrap items-center gap-2 text-xs text-[var(--color-muted)]">
@@ -204,7 +249,7 @@
 					<Pin size={11} /> {t('comments.pinned')}
 				</span>
 			{/if}
-			{#if comment.avatar_url}
+			{#if comment.avatar_url && !comment.is_anonymous}
 				<img src={comment.avatar_url} alt="" class="h-5 w-5 rounded-full object-cover" />
 			{/if}
 			<span class="font-medium text-[var(--color-text-subtle)]">{authorLabel}</span>
@@ -235,6 +280,9 @@
 							{editPending ? t('common.loading') : t('comments.save')}
 						</button>
 					</div>
+					{#if editError}
+						<p class="mt-1.5 text-xs text-[var(--color-danger)]">{editError}</p>
+					{/if}
 				</div>
 			{:else}
 				<!-- Body: TipTap JSON rendered to HTML (Section 49). -->
@@ -324,6 +372,7 @@
 							<CommentItem
 								comment={child}
 								{contentId}
+								{contentType}
 								depth={depth + 1}
 								{authed}
 								{currentUserId}

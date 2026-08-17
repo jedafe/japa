@@ -5,7 +5,7 @@
 	import { communityLocatorAdminApi , spacesAdminApi } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
-	import { Eye, CheckCircle, BadgeCheck, Archive, Trash2 } from 'lucide-svelte';
+	import { Eye, CheckCircle, BadgeCheck, Archive, Trash2, Hand, XCircle } from 'lucide-svelte';
 	import type { ActionItem, FilterDef } from '$lib/components/ui/data-table';
 
 	// CommunityItem matches the OrgDTO field names returned by the backend
@@ -133,6 +133,45 @@ onMount(async () => {
 		}
 	}
 
+	// BUG-004: wire the claim-resolution actions so pending claims can be
+	// approved/rejected from the admin review queue. The backend's
+	// HandleAdminResolveClaim reads :claim_id from the URL but the service
+	// operates on the org's own claim_status, so we pass the org id as
+	// claim_id (the value is ignored server-side). Body: { approve: bool }.
+	async function approveClaim(item: CommunityItem) {
+		acting = true;
+		pageError = '';
+		try {
+			const result = await communityLocatorAdminApi.resolveClaim(item.id, item.id, { approve: true });
+			if (result.ok) {
+				entityController?.reload();
+			} else {
+				pageError = result.error ?? t('common.error', 'An error occurred');
+			}
+		} catch {
+			pageError = t('common.error', 'An error occurred');
+		} finally {
+			acting = false;
+		}
+	}
+
+	async function rejectClaim(item: CommunityItem) {
+		acting = true;
+		pageError = '';
+		try {
+			const result = await communityLocatorAdminApi.resolveClaim(item.id, item.id, { approve: false });
+			if (result.ok) {
+				entityController?.reload();
+			} else {
+				pageError = result.error ?? t('common.error', 'An error occurred');
+			}
+		} catch {
+			pageError = t('common.error', 'An error occurred');
+		} finally {
+			acting = false;
+		}
+	}
+
 	// ── Row actions ─────────────────────────────────────────────────────────
 	const rowActions = $derived.by<ActionItem[]>(() => {
 		const acts: ActionItem[] = [
@@ -143,13 +182,28 @@ onMount(async () => {
 				label: t('common.approve', 'Approve'),
 				icon: CheckCircle,
 				onclick: approveCommunity,
-				show: (row: CommunityItem) => row.status === 'pending'
+				show: (row: CommunityItem) => row.status === 'pending' || row.status === 'ai_draft'
 			});
 			acts.push({
 				label: t('common.verify', 'Verify'),
 				icon: BadgeCheck,
 				onclick: verifyCommunity,
 				show: (row: CommunityItem) => !row.is_verified && row.status === 'published'
+			});
+			// BUG-004: claim-resolution actions. Shown only when the org has
+			// a pending claim awaiting admin review.
+			acts.push({
+				label: t('app.community_locator.approve_claim', 'Approve claim'),
+				icon: Hand,
+				onclick: approveClaim,
+				show: (row: CommunityItem) => row.claim_status === 'pending'
+			});
+			acts.push({
+				label: t('app.community_locator.reject_claim', 'Reject claim'),
+				icon: XCircle,
+				onclick: rejectClaim,
+				show: (row: CommunityItem) => row.claim_status === 'pending',
+				variant: 'destructive'
 			});
 			acts.push({
 				label: t('common.archive', 'Archive'),

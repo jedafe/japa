@@ -68,9 +68,22 @@ func (h *AuthHandlers) SetReferralCapturer(rc ReferralCapturer) { h.ReferralCapt
 // controllable Host header) and an unvalidated X-Forwarded-Proto, allowing an
 // attacker to send Host: evil.com and capture the reset token when the victim
 // clicked the link in the email.
+//
+// The r.Host fallback is used ONLY when the immediate peer is a trusted
+// proxy. r.Host is the client-controllable Host header; behind a trusted
+// proxy it is the vhost the proxy forwarded, which is as trustworthy as the
+// X-Forwarded-Host value ForwardedBaseURL already accepts from trusted peers.
+// When the peer is untrusted (a direct client connection) and no SiteURL is
+// configured, there is no safe URL to embed in a security-sensitive link —
+// baseURL returns "" so callers can refuse to send the email rather than emit
+// a link pointing at an attacker-controlled host.
 func (h *AuthHandlers) baseURL(r *http.Request) string {
 	if h.SiteURL != "" {
 		return h.SiteURL
+	}
+
+	if !clientip.IsTrustedPeer(r) {
+		return ""
 	}
 
 	return clientip.ForwardedBaseURL(r, clientip.ForwardedScheme(r)+"://"+r.Host)
@@ -1102,6 +1115,18 @@ func (h *AuthHandlers) HandleForgotPassword(w http.ResponseWriter, r *http.Reque
 	// See baseURL doc for the host-header injection rationale.
 	baseURL := h.baseURL(r)
 
+	// No safe base URL could be derived: JC_SITE_URL is unset and the
+	// immediate peer is not a trusted proxy, so r.Host / X-Forwarded-Host
+	// are client-controlled and must not be embedded in a password-reset
+	// link (CWE-601). Refuse to send the email rather than emit a link
+	// pointing at an attacker-controlled host. The deferred 200 response
+	// still fires, so this does not leak that the account exists.
+	if baseURL == "" {
+		slog.Error("forgot-password: no safe base URL configured (set JC_SITE_URL or run behind a trusted proxy)")
+		errpkg.CaptureException(fmt.Errorf("forgot-password: no safe base URL configured (set JC_SITE_URL or run behind a trusted proxy)"))
+		return
+	}
+
 	// Render the HTML email body.
 	siteName := h.SiteName
 	if siteName == "" {
@@ -1436,6 +1461,18 @@ func (h *AuthHandlers) HandleResendVerification(w http.ResponseWriter, r *http.R
 
 	// Build the base URL from the server-configured SiteURL (CWE-601 fix).
 	baseURL := h.baseURL(r)
+
+	// No safe base URL could be derived: JC_SITE_URL is unset and the
+	// immediate peer is not a trusted proxy, so r.Host / X-Forwarded-Host
+	// are client-controlled and must not be embedded in an email-verification
+	// link (CWE-601). Refuse to send the email rather than emit a link
+	// pointing at an attacker-controlled host. The deferred 200 response
+	// still fires, so this does not leak that the account exists.
+	if baseURL == "" {
+		slog.Error("resend-verification: no safe base URL configured (set JC_SITE_URL or run behind a trusted proxy)")
+		errpkg.CaptureException(fmt.Errorf("resend-verification: no safe base URL configured (set JC_SITE_URL or run behind a trusted proxy)"))
+		return
+	}
 
 	// Render the HTML email body.
 	siteName := h.SiteName

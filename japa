@@ -1,0 +1,194 @@
+#!/usr/bin/env bash
+set -e
+
+# ─── JapaConnect CLI Entrypoint ───────────────────────────────────────────────
+# Usage: ./japa <command>
+#
+# Commands:
+#   dev     Start all frontend apps in parallel
+#   help    Show this help message
+#
+# Examples:
+#   ./japa dev
+#   ./japa dev main
+#   ./japa help
+
+# ─── Resolve project root from this script's location ─────────────────────────
+# Resolve the real location of this script (follows symlinks)
+SOURCE="${BASH_SOURCE[0]}"
+while [ -L "$SOURCE" ]; do
+  DIR="$(cd "$(dirname "$SOURCE")" && pwd)"
+  SOURCE="$(readlink "$SOURCE")"
+  [[ $SOURCE != /* ]] && SOURCE="$DIR/$SOURCE"
+done
+ROOT="$(cd "$(dirname "$SOURCE")" && pwd)"
+
+# ─── ANSI color codes ─────────────────────────────────────────────────────────
+NC='\033[0m'     # No Color (reset)
+BLUE='\033[0;34m'
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+MAGENTA='\033[0;35m'
+CYAN='\033[0;36m'
+BOLD='\033[1m'
+DIM='\033[2m'
+
+# ─── Track child process PIDs for cleanup ─────────────────────────────────────
+PIDS=()
+
+cleanup() {
+  echo ""
+  echo "${DIM}Shutting down all apps...${NC}"
+  for pid in "${PIDS[@]}"; do
+    if kill -0 "$pid" 2>/dev/null; then
+      kill "$pid" 2>/dev/null || true
+      wait "$pid" 2>/dev/null || true
+    fi
+  done
+  echo "${GREEN}All apps stopped.${NC}"
+  exit 0
+}
+
+trap cleanup SIGINT SIGTERM
+
+# ─── Show help/usage ─────────────────────────────────────────────────────────
+show_help() {
+  echo ""
+  echo "${BOLD}JapaConnect CLI${NC}"
+  echo ""
+  echo "${BOLD}Usage:${NC}"
+  echo "  ./japa <command> [options]"
+  echo ""
+  echo "${BOLD}Commands:${NC}"
+  echo "  ${GREEN}dev${NC} [app]     Start frontend apps (all, or a specific one)"
+  echo "  ${GREEN}help${NC}          Show this help message"
+  echo ""
+  echo "${BOLD}Dev Apps:${NC}"
+  echo "  ${BLUE}main${NC}    → :3000"
+  echo "  ${RED}admin${NC}   → :3001"
+  echo "  ${GREEN}control${NC} → :3002"
+  echo "  ${YELLOW}learn${NC}   → :3003"
+  echo "  ${MAGENTA}docs${NC}    → :3004"
+  echo "  ${CYAN}tools${NC}   → :3005"
+  echo ""
+  echo "${BOLD}Examples:${NC}"
+  echo "  ./japa dev           Start all apps"
+  echo "  ./japa dev main      Start only the main app"
+  echo "  ./japa dev admin     Start only the admin app"
+  echo "  ./japa dev control   Start only the control app"
+  echo "  ./japa dev learn     Start only the learn app"
+  echo "  ./japa dev docs      Start only the docs app"
+  echo "  ./japa dev tools     Start only the tools app"
+  echo ""
+}
+
+# ─── Run a single app with colored, labeled output ────────────────────────────
+run_app() {
+  local name=$1
+  local color=$2
+  local dir=$3
+  local port=$4
+
+  (
+    cd "$ROOT/$dir"
+    bun run dev 2>&1 | while IFS= read -r line; do
+      printf "${color}[${name}]${NC} %s\n" "$line"
+    done
+  ) &
+  PIDS+=($!)
+}
+
+# ─── Start all frontend apps in parallel ─────────────────────────────────────
+cmd_dev() {
+  local filter="${1:-}"
+  
+  # Define all apps as name:color:dir:port
+  local -a apps=(
+    "main:${BLUE}:apps/main:3000"
+    "admin:${RED}:apps/admin:3001"
+    "control:${GREEN}:apps/control:3002"
+    "learn:${YELLOW}:apps/learn:3003"
+    "docs:${MAGENTA}:apps/docs:3004"
+    "tools:${CYAN}:apps/tools:3005"
+  )
+  
+  # Filter to a single app if specified
+  if [ -n "$filter" ]; then
+    local found=false
+    for app in "${apps[@]}"; do
+      IFS=':' read -r name _ _ _ <<< "$app"
+      if [ "$name" = "$filter" ]; then
+        found=true
+        break
+      fi
+    done
+    if [ "$found" = false ]; then
+      echo ""
+      echo "${RED}Error: Unknown app '$filter'${NC}"
+      echo ""
+      echo "Valid apps: main, admin, control, learn, docs, tools"
+      echo ""
+      exit 1
+    fi
+  fi
+  
+  # Show banner (single app or all)
+  if [ -n "$filter" ]; then
+    # Find and display the single app's info
+    for app in "${apps[@]}"; do
+      IFS=':' read -r name color dir port <<< "$app"
+      if [ "$name" = "$filter" ]; then
+        echo ""
+        echo "${BOLD}╔══════════════════════════════════════════════╗${NC}"
+        echo "${BOLD}║       JapaConnect Dev — ${color}${name}${NC}${BOLD}                 ║${NC}"
+        echo "${BOLD}╠══════════════════════════════════════════════╣${NC}"
+        echo "${color}║  ${name}    → :${port}                             ║${NC}"
+        echo "${BOLD}╚══════════════════════════════════════════════╝${NC}"
+        echo ""
+        run_app "$name" "$color" "$dir" "$port"
+      fi
+    done
+  else
+    # Show all apps banner and start all
+    echo ""
+    echo "${BOLD}╔══════════════════════════════════════════════╗${NC}"
+    echo "${BOLD}║       JapaConnect Dev — All Apps             ║${NC}"
+    echo "${BOLD}╠══════════════════════════════════════════════╣${NC}"
+    echo "${BLUE}║  main    → :3000                             ║${NC}"
+    echo "${RED}║  admin   → :3001                             ║${NC}"
+    echo "${GREEN}║  control → :3002                             ║${NC}"
+    echo "${YELLOW}║  learn   → :3003                             ║${NC}"
+    echo "${MAGENTA}║  docs    → :3004                             ║${NC}"
+    echo "${CYAN}║  tools   → :3005                             ║${NC}"
+    echo "${BOLD}╚══════════════════════════════════════════════╝${NC}"
+    echo ""
+    echo "${DIM}Press Ctrl+C to stop all apps${NC}"
+    echo ""
+    
+    for app in "${apps[@]}"; do
+      IFS=':' read -r name color dir port <<< "$app"
+      run_app "$name" "$color" "$dir" "$port"
+    done
+  fi
+  
+  wait
+}
+
+# ─── Main dispatch ────────────────────────────────────────────────────────────
+case "${1:-help}" in
+  dev)
+    cmd_dev "${2:-}"
+    ;;
+  help|--help|-h)
+    show_help
+    ;;
+  *)
+    echo ""
+    echo "${RED}Error: Unknown command '$1'${NC}"
+    echo ""
+    echo "Run ${BOLD}./japa help${NC} to see available commands."
+    echo ""
+    exit 1
+    ;;
+esac

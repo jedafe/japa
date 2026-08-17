@@ -29,6 +29,8 @@
 		"vitest": "^4.1.10"
 	},
 	"dependencies": {
+		"@fontsource/inter": "^5.3.0",
+		"@fontsource/lora": "^5.3.0",
 		"@japaconnect/landing-blocks": "workspace:*",
 		"@tiptap/core": "^3.29.0",
 		"@tiptap/extension-image": "^3.29.0",

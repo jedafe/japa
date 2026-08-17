@@ -123,6 +123,33 @@ func IsTrustedProxy(ip net.IP) bool {
 	return false
 }
 
+// PeerIP returns the immediate TCP peer address of the request in canonical
+// form, without consulting any forwarding headers. This is the address used
+// to decide whether X-Forwarded-* headers may be trusted.
+//
+// Callers that need the actual client address should use FromRequest; PeerIP
+// is exposed for consumers that must gate peer-derived behaviour on the
+// trusted-proxy model themselves — for example, refusing to build a
+// password-reset link from r.Host when the peer is not a trusted proxy,
+// because r.Host is the client-controllable Host header and using it from
+// an untrusted peer reopens host-header poisoning (CWE-601).
+func PeerIP(r *http.Request) string {
+	return peerIP(r)
+}
+
+// IsTrustedPeer reports whether the immediate TCP peer of the request belongs
+// to the configured trusted-proxy set. It is a convenience wrapper over
+// PeerIP and IsTrustedProxy that handles the empty / unparseable RemoteAddr
+// edge cases (returning false in both), so consumers can gate
+// peer-derived behaviour without re-implementing the peer extraction.
+func IsTrustedPeer(r *http.Request) bool {
+	peer := peerIP(r)
+	if peer == "" {
+		return false
+	}
+	return IsTrustedProxy(net.ParseIP(peer))
+}
+
 // FromRequest returns the client IP for the request in canonical form.
 // Forwarding headers are honoured only when the connecting peer is a trusted
 // proxy; otherwise the peer address itself is returned. The returned string
@@ -210,24 +237,79 @@ func ForwardedBaseURL(r *http.Request, fallback string) string {
 // ForwardedHost returns the X-Forwarded-Host value when the immediate peer is
 // a trusted proxy; otherwise it returns an empty string so callers fall back
 // to a configured or peer-derived value.
+//
+// The header value is sanitized before it is returned: only a syntactically
+// valid host (with optional port) is accepted. Values containing control
+// characters, whitespace, path/query separators, or backslashes are rejected
+// and the function returns "". This is defense in depth on top of the
+// trusted-proxy gate: the header is client-influenced, and these values are
+// concatenated into public URLs (RSS link elements, password-reset email
+// links). A CRLF-bearing host can split HTTP headers or RSS XML lines; a
+// path-bearing host can inject an attacker-controlled path into a base URL;
+// an embedded-space host breaks URL parsing. Rejecting them here keeps every
+// consumer safe without each one re-validating.
 func ForwardedHost(r *http.Request) string {
 	peer := peerIP(r)
 	if peer == "" || !IsTrustedProxy(net.ParseIP(peer)) {
 		return ""
 	}
 
-	return strings.TrimSpace(r.Header.Get("X-Forwarded-Host"))
+	host := strings.TrimSpace(r.Header.Get("X-Forwarded-Host"))
+	if !isValidForwardedHost(host) {
+		return ""
+	}
+
+	return host
+}
+
+// isValidForwardedHost reports whether s is a syntactically valid host
+// (optionally with a port) suitable for concatenation into a URL. It rejects
+// the empty string, control characters (incl. CR/LF/tab), any whitespace,
+// and the path/query/fragment separators "/", "?", "#", and backslash. A
+// bare bracketed IPv6 address or a bracketed IPv6 with a port is accepted.
+func isValidForwardedHost(s string) bool {
+	if s == "" {
+		return false
+	}
+
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		// Reject control chars (incl. CR/LF/tab) and any whitespace.
+		if c < 0x21 || c == 0x7f {
+			return false
+		}
+		// Reject path/query/fragment separators and backslash. These turn
+		// a host into a host+path and let an attacker steer the path
+		// component of a generated URL.
+		switch c {
+		case '/', '?', '#', '\\':
+			return false
+		}
+	}
+
+	return true
 }
 
 // ForwardedScheme returns the transport scheme for the request, honouring
-// X-Forwarded-Proto only when the immediate peer is a trusted proxy. When the
-// header is absent or the peer is untrusted, it falls back to "https" when the
-// request was received over TLS, otherwise "http".
+// X-Forwarded-Proto only when the immediate peer is a trusted proxy. When
+// the header is absent, the peer is untrusted, or the header value is not
+// exactly "http" or "https" (case-insensitive), it falls back to "https"
+// when the request was received over TLS, otherwise "http".
+//
+// The value is validated, not just gated: X-Forwarded-Proto is
+// client-influenced and the returned scheme is concatenated into public URLs
+// (RSS links, password-reset email links). Returning an arbitrary string
+// such as "javascript:alert(1)//" would produce a javascript:// link in an
+// email; a CRLF-bearing value could split HTTP headers or RSS XML lines.
+// Only "http" and "https" are ever returned from the header.
 func ForwardedScheme(r *http.Request) string {
 	peer := peerIP(r)
 	if peer != "" && IsTrustedProxy(net.ParseIP(peer)) {
-		if proto := strings.TrimSpace(r.Header.Get("X-Forwarded-Proto")); proto != "" {
-			return proto
+		switch strings.ToLower(strings.TrimSpace(r.Header.Get("X-Forwarded-Proto"))) {
+		case "http":
+			return "http"
+		case "https":
+			return "https"
 		}
 	}
 

@@ -6,8 +6,8 @@
 	import SearchLauncher from './SearchLauncher.svelte';
 	import UserDropdown from './UserDropdown.svelte';
 	import SidebarWidgetRenderer from './SidebarWidgetRenderer.svelte';
-	import GuestHeader from './GuestHeader.svelte';
 	import GuestFooter from './GuestFooter.svelte';
+	import GuestAuthButtons from './GuestAuthButtons.svelte';
 	import { t } from '$lib/i18n';
 	import type { DocNavTree as DocNavTreeType, DocAudience, SessionUser, Menu } from '$lib/types';
 
@@ -69,9 +69,15 @@
 	// hardcoded sidebar-topbar (SearchLauncher + UserDropdown), which
 	// duplicated the admin-managed topbar widgets seeded by migration 000223.
 	const topbarWidgetTypes = new Set(['search', 'search_launcher', 'theme_toggle', 'language_toggle', 'user_dropdown']);
-	function isTopbar(w: { slot?: string; widget_type: string }): boolean {
+	function isTopbar(w: { slot?: string; widget_type: string; props?: Record<string, unknown> }): boolean {
+		// Explicit slot field on the widget (from the sidebar API)
 		if (w.slot === 'topbar') return true;
 		if (w.slot === 'content') return false;
+		// Check props.slot for widgets that store slot in their props (e.g., ad_slot)
+		const propsSlot = w.props?.slot;
+		if (propsSlot === 'topbar') return true;
+		if (propsSlot === 'content' || propsSlot === 'sidebar_top' || propsSlot === 'sidebar_bottom') return false;
+		// Fallback: known topbar widget types
 		return topbarWidgetTypes.has(w.widget_type);
 	}
 	let topbarWidgets = $derived(sidebarWidgets.filter((w) => isTopbar(w)));
@@ -97,8 +103,10 @@
 				{/if}
 				<span>{t('app.name')}</span>
 			</a>
-			<SearchLauncher />
-			<UserDropdown {user} />
+			<div class="full-topbar-actions">
+				<SearchLauncher />
+				<UserDropdown {user} />
+			</div>
 		</div>
 		<main class="full-main">
 			{@render children()}
@@ -124,6 +132,7 @@
 		</div>
 
 		<main class="shell-center">
+			<!-- Mobile topbar (hidden on desktop) -->
 			<div class="mobile-topbar">
 				<button
 					type="button"
@@ -142,6 +151,7 @@
 					<span>{t('app.name')}</span>
 				</a>
 				<div class="ml-auto"><SearchLauncher /></div>
+				{#if !user}<GuestAuthButtons compact />{/if}
 			</div>
 			{@render children()}
 		</main>
@@ -151,6 +161,9 @@
 				{#each topbarWidgets as widget (widget.id)}
 					<SidebarWidgetRenderer {widget} {user} />
 				{/each}
+				{#if !user}
+					<GuestAuthButtons />
+				{/if}
 			</div>
 			<div class="sidebar-body">
 				{#if variant === 'api' && apiPane}
@@ -169,6 +182,8 @@
 			</div>
 		</div>
 	</div>
+
+	<GuestFooter menu={footerMenu} />
 
 	{#if mobileNavOpen}
 		<button
@@ -206,6 +221,7 @@
 		</div>
 
 		<main class="shell-center">
+			<!-- Mobile topbar (hidden on desktop) -->
 			<div class="mobile-topbar">
 				<button
 					type="button"
@@ -382,12 +398,19 @@
 		top: 0;
 		z-index: 20;
 	}
+	.full-topbar-actions {
+		margin-left: auto;
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+	}
 	.full-brand {
 		display: flex;
 		align-items: center;
 		gap: 0.5rem;
 		font-weight: 600;
 		color: var(--color-text);
+		flex-shrink: 0;
 	}
 	.full-brand-logo {
 		height: 1.75rem;
@@ -399,6 +422,7 @@
 		min-width: 0;
 	}
 
+	/* ---- Desktop topbar ---- */
 	/* ---- Responsive ---- */
 	/* Below 1280px: drop the right sidebar (TOC/code pane). */
 	@media (max-width: 1279px) {

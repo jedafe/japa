@@ -135,6 +135,10 @@
 	}
 
 	async function deleteAlert(id: string) {
+		if (!user) {
+			showRegisterPrompt = true;
+			return;
+		}
 		const res = await api.delete(`/me/appointment-alerts/${id}`);
 		if (!res.error) alerts = alerts.filter((a) => a.id !== id);
 	}
@@ -148,6 +152,10 @@
 	}
 
 	async function saveAlertEdit(id: string) {
+		if (!user) {
+			showRegisterPrompt = true;
+			return;
+		}
 		const res = await api.patch<AppointmentAlert>(`/me/appointment-alerts/${id}`, {
 			date_range_start: editDateStart,
 			date_range_end: editDateEnd,

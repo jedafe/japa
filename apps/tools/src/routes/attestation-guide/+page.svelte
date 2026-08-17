@@ -169,6 +169,10 @@
 	}
 
 	async function submitUpdate() {
+		if (!user) {
+			showRegisterPrompt = true;
+			return;
+		}
 		if (!updatePathwayId) return;
 		submittingUpdate = true;
 		updateError = null;

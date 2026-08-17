@@ -702,10 +702,16 @@ type Comment struct {
 	Status          string             `json:"status"`
 	RemovedBy       pgtype.UUID        `json:"removed_by"`
 	RemovedReason   *string            `json:"removed_reason"`
+	ViewCount       int32              `json:"view_count"`
+}
+
+type CommentView struct {
+	CommentID pgtype.UUID        `json:"comment_id"`
+	UserID    pgtype.UUID        `json:"user_id"`
+	ViewedAt  pgtype.Timestamptz `json:"viewed_at"`
 }
 
 type CommentVote struct {
-	ID        pgtype.UUID        `json:"id"`
 	TenantID  pgtype.UUID        `json:"tenant_id"`
 	CommentID pgtype.UUID        `json:"comment_id"`
 	UserID    pgtype.UUID        `json:"user_id"`

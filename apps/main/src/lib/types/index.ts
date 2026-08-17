@@ -222,7 +222,7 @@ export interface CustomFieldDef {
 	label: string;
 	field_type: string; // text|textarea|rich_text|number|boolean|date|select|multiselect|rating|url|...
 	is_required: boolean;
-	options?: string[] | null;
+	options?: (string | { value: string; label: string })[] | null;
 	help_text?: string | null;
 }
 
@@ -671,7 +671,7 @@ export interface Comment {
 	id: string;
 	tenant_id: string;
 	content_id: string;
-	author_user_id: string;
+	author_user_id: string | null;
 	parent_id: string | null;
 	/** Base64-encoded TipTap JSON document (Section 49 — jsonb body). */
 	body: string;
@@ -684,7 +684,9 @@ export interface Comment {
 	created_at: string;
 	updated_at: string;
 	deleted_at: string | null;
-	/** Joined author username. */
+	/** Anonymous comment — author identity redacted by backend (Section 49). */
+	is_anonymous: boolean;
+	/** Joined author username (empty for anonymous comments). */
 	username: string;
 	/** Joined author display name (empty string when absent). */
 	display_name: string;
@@ -3380,6 +3382,12 @@ export interface CommunityOrg {
 	updated_at: string;
 }
 export interface CommunityOrgWithAi extends CommunityOrg, AiGenerationMeta {}
+
+/** Org-type allow-list entry from GET /community-locator/org-types (Rule 16). */
+export interface OrgTypeOption {
+	value: string;
+	label: string;
+}
 
 /* --- Japa Intelligence System (§7 Japa Radar) --- */
 

@@ -130,6 +130,7 @@ export const load: PageServerLoad = async (event) => {
 	return {
 		user,
 		isOwnProfile,
+		isAuthenticated: !!event.locals.user,
 		initiallyFollowing: isFollowing,
 		initiallyBlocked: isBlocked,
 		initiallyMuted: isMuted,

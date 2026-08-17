@@ -159,6 +159,10 @@
 	}
 
 	async function submitStory() {
+		if (!user) {
+			showRegisterPrompt = true;
+			return;
+		}
 		if (!selectedTestSlug) return;
 		submittingStory = true;
 		storyError = null;

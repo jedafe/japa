@@ -1276,6 +1276,6 @@ func writePlaceholderSVG(w http.ResponseWriter) {
 	_, _ = w.Write([]byte(`<?xml version="1.0" encoding="UTF-8"?>
 <svg width="200" height="200" xmlns="http://www.w3.org/2000/svg">
   <rect width="100%" height="100%" fill="#1a1a2e"/>
-  <text x="50%" y="50%" font-family="sans-serif" font-size="14" fill="#888" text-anchor="middle" dy=".3em">Media Placeholder</text>
+  <text x="50%" y="50%" font-family="sans-serif" font-size="14" fill="#888" text-anchor="middle" dy=".3em">Japa Connect</text>
 </svg>`))
 }
