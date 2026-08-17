@@ -14,7 +14,7 @@
 	import OrgMap from '$lib/components/tools/OrgMap.svelte';
 	import Autocomplete from '$lib/components/ui/Autocomplete.svelte';
 	import type { AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
-	import type { CommunityOrgWithAi, GeoSpaceOption } from '$lib/types';
+	import type { CommunityOrgWithAi, GeoSpaceOption, OrgTypeOption } from '$lib/types';
 	import 'leaflet/dist/leaflet.css';
 
 	/**
@@ -26,6 +26,8 @@
 
 	let destinations = $state<GeoSpaceOption[]>(untrack(() => data.destinations));
 	let orgs = $state<CommunityOrgWithAi[]>(untrack(() => data.orgs));
+	// BUG-005: org-type allow-list from the backend (Rule 16).
+	let orgTypes = $state<OrgTypeOption[]>(untrack(() => data.orgTypes ?? []));
 	let user = $state(untrack(() => data.user));
 
 	let selectedDestId = $state<string>(untrack(() => data.initialDestId ?? ''));
@@ -359,13 +361,9 @@
 									class="w-full px-3 py-2 bg-surface border border-border rounded text-text focus:border-primary focus:outline-none"
 								>
 									<option value="">{t('common.select', 'Select…')}</option>
-									<option value="cultural_association">{t('community_locator.type_cultural_association', 'Cultural Association')}</option>
-									<option value="church">{t('community_locator.type_church', 'Church')}</option>
-									<option value="mosque">{t('community_locator.type_mosque', 'Mosque')}</option>
-									<option value="professional_network">{t('community_locator.type_professional_network', 'Professional Network')}</option>
-									<option value="student_union">{t('community_locator.type_student_union', 'Student Union')}</option>
-									<option value="informal_group">{t('community_locator.type_informal_group', 'Informal Group')}</option>
-									<option value="other">{t('community_locator.type_other', 'Other')}</option>
+									{#each orgTypes as ot (ot.value)}
+										<option value={ot.value}>{t(`community_locator.type_${ot.value}`, ot.label)}</option>
+									{/each}
 								</select>
 							</div>
 							<div>

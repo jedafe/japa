@@ -166,6 +166,23 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// HandleOrgTypes handles GET /community-locator/org-types — returns the
+// allow-list of organisation types as [{value,label}] so the frontend
+// submit form can render the dropdown from the backend (Rule 16) instead
+// of hardcoding the options. Public/anonymous (the list itself is not
+// sensitive); feature-flagged with the rest of the routes.
+func (h *Handlers) HandleOrgTypes(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+		errpkg.WriteError(w, http.StatusNotFound, "community_locator_disabled", "Community locator is not available")
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": h.service.OrgTypes()})
+}
+
 // HandleGet handles GET /community-locator/:slug — single published
 // community organisation.
 func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
@@ -520,12 +537,12 @@ func (h *Handlers) HandleAdminGenerate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// AI model identifier — in a full implementation this comes from the
-	// §20 AI Gateway response. For now, record a placeholder that
-	// indicates the draft was admin-initiated for AI generation.
-	aiModel := "admin-draft"
-
-	org, err := h.service.Generate(r.Context(), tenantID, user.UserID, input, aiModel)
+	// ADR-088: the service calls the §20 AI Gateway (when a dispatcher
+	// is wired via SetDispatcher) to populate the draft content, records
+	// ai_model='content_agent_v1' and ai_prompt_hash=SHA256(prompt), and
+	// inserts the row with status='ai_draft'. The draft enters the HITL
+	// review queue and is not visible to end users until ApproveOrg.
+	org, err := h.service.Generate(r.Context(), tenantID, user.UserID, input)
 	if err != nil {
 		if errors.Is(err, ErrDuplicateSlug) {
 			errpkg.WriteError(w, http.StatusConflict, "duplicate_slug", "An organisation with this slug already exists")

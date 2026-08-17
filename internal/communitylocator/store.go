@@ -44,9 +44,11 @@ const (
 	ClaimStatusClaimed   = "claimed"
 )
 
-// Publication statuses (§101).
+// Publication statuses (§101 + ADR-088 lifecycle).
 const (
-	StatusPending   = "pending"
+	StatusDraft    = "draft"
+	StatusAIDraft  = "ai_draft" // ADR-088: AI-generated draft, never visible to end users
+	StatusPending  = "pending"
 	StatusPublished = "published"
 	StatusArchived  = "archived"
 )
@@ -130,13 +132,24 @@ type CreateOrgInput struct {
 	SubmittedBy          pgtype.UUID
 	// ADR-088 AI generation metadata (defaults to ai_generated=false for
 	// community-submitted orgs).
-	AiGenerated bool
-	AiModel     *string
+	AiGenerated   bool
+	AiModel       *string
+	AiPromptHash  *string
+	// Status overrides the default 'pending' insert status. Used by
+	// Generate (ADR-088) to insert AI drafts as 'ai_draft' so they are
+	// never visible to end users until HITL approval. Empty → 'pending'.
+	Status string
 }
 
-// CreateOrg inserts a new community_organisations row. The row is created
-// in 'pending' status with claim_status='unclaimed'.
+// CreateOrg inserts a new community_organisations row. Community submissions
+// default to status='pending'; AI-generated drafts (ADR-088) pass
+// Status='ai_draft' so they are excluded from the public list endpoint and
+// only appear in the admin HITL queue. claim_status defaults to 'unclaimed'.
 func (s *Store) CreateOrg(ctx context.Context, in CreateOrgInput) (pgtype.UUID, error) {
+	status := in.Status
+	if status == "" {
+		status = StatusPending
+	}
 	const q = `
 INSERT INTO community_organisations (
     tenant_id, name, slug, org_type, origin_community,
@@ -144,11 +157,11 @@ INSERT INTO community_organisations (
     website_url, meeting_frequency, contact_info,
     japaconnect_space_id, japaconnect_org_id,
     is_community_submitted, submitted_by, status, claim_status,
-    ai_generated, ai_model
+    ai_generated, ai_model, ai_prompt_hash
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-    $11, $12, $13, $14, $15, $16, $17, 'pending', 'unclaimed',
-    $18, $19
+    $11, $12, $13, $14, $15, $16, $17, $18, 'unclaimed',
+    $19, $20, $21
 )
 RETURNING id
 `
@@ -158,8 +171,8 @@ RETURNING id
 		in.DestinationSpaceID, in.CitySpaceID, in.Address, in.Latitude, in.Longitude,
 		in.WebsiteURL, in.MeetingFrequency, in.ContactInfo,
 		in.JapaconnectSpaceID, in.JapaconnectOrgID,
-		in.IsCommunitySubmitted, in.SubmittedBy,
-		in.AiGenerated, in.AiModel,
+		in.IsCommunitySubmitted, in.SubmittedBy, status,
+		in.AiGenerated, in.AiModel, in.AiPromptHash,
 	).Scan(&id)
 	if err != nil {
 		return pgtype.UUID{}, fmt.Errorf("communitylocator: create org: %w", err)
@@ -175,17 +188,21 @@ type ListOrgsFilter struct {
 	CitySpaceID        pgtype.UUID // optional
 	OriginCommunity    string      // optional
 	OrgType            string      // optional
-	Lat                *float64    // optional — bounding-box centre
-	Lng                *float64    // optional — bounding-box centre
-	RadiusKm           *float64    // optional — bounding-box radius in km
+	Lat                *float64    // optional — proximity centre latitude
+	Lng                *float64    // optional — proximity centre longitude
+	RadiusKm           *float64    // optional — proximity radius in km
 	Status             string      // default: published
 	Limit              int32
 	Offset             int32
 }
 
 // ListOrgs returns a paginated, filtered list of community organisations.
-// When lat, lng, and radius (km) are all provided, results are filtered by
-// a simplified bounding box (radius_deg = radius/111.0).
+// When lat, lng, and radius (km) are all provided, results are filtered
+// by the GiST <-> distance operator against point(longitude, latitude)
+// (BUG-007: migration 000511 added the GiST index using PostgreSQL's
+// core point type — no PostGIS required). Results are ordered nearest-
+// first. When no proximity filter is given, results are ordered by
+// created_at DESC as before.
 func (s *Store) ListOrgs(ctx context.Context, f ListOrgsFilter) ([]OrgRow, int64, error) {
 	var (
 		conditions []string
@@ -228,17 +245,24 @@ func (s *Store) ListOrgs(ctx context.Context, f ListOrgsFilter) ([]OrgRow, int64
 		args = append(args, f.OrgType)
 		argIdx++
 	}
-	if f.Lat != nil && f.Lng != nil && f.RadiusKm != nil {
+
+	// BUG-007: proximity filter using the GiST <-> distance operator on
+	// point(longitude, latitude). The <-> operator returns Euclidean
+	// distance in degrees; radius_deg = radius_km / 111.0 converts to the
+	// same degree-based approximation the previous bounding-box code used.
+	// The GiST index (idx_community_orgs_gist_point) accelerates both the
+	// filter and the nearest-first ORDER BY.
+	hasProximity := f.Lat != nil && f.Lng != nil && f.RadiusKm != nil
+	if hasProximity {
 		radiusDeg := *f.RadiusKm / 111.0
 		conditions = append(conditions, "co.latitude IS NOT NULL AND co.longitude IS NOT NULL")
-		conditions = append(conditions, fmt.Sprintf("co.latitude BETWEEN $%d AND $%d", argIdx, argIdx+1))
-		args = append(args, *f.Lat-radiusDeg)
-		args = append(args, *f.Lat+radiusDeg)
-		argIdx += 2
-		conditions = append(conditions, fmt.Sprintf("co.longitude BETWEEN $%d AND $%d", argIdx, argIdx+1))
-		args = append(args, *f.Lng-radiusDeg)
-		args = append(args, *f.Lng+radiusDeg)
-		argIdx += 2
+		// point(lng, lat) <-> point($lng, $lat) <= radius_deg
+		conditions = append(conditions, fmt.Sprintf(
+			"point(co.longitude, co.latitude) <-> point($%d, $%d) <= $%d",
+			argIdx, argIdx+1, argIdx+2,
+		))
+		args = append(args, *f.Lng, *f.Lat, radiusDeg)
+		argIdx += 3
 	}
 
 	whereClause := strings.Join(conditions, " AND ")
@@ -253,6 +277,19 @@ func (s *Store) ListOrgs(ctx context.Context, f ListOrgsFilter) ([]OrgRow, int64
 	offset := f.Offset
 	if offset < 0 {
 		offset = 0
+	}
+
+	// ORDER BY: nearest-first when proximity is active (using the same
+	// <-> expression so the GiST index can serve both filter and sort);
+	// otherwise by created_at DESC.
+	orderClause := "co.created_at DESC"
+	if hasProximity {
+		orderClause = fmt.Sprintf(
+			"point(co.longitude, co.latitude) <-> point($%d, $%d)",
+			argIdx, argIdx+1,
+		)
+		args = append(args, *f.Lng, *f.Lat)
+		argIdx += 2
 	}
 
 	listQuery := fmt.Sprintf(`
@@ -273,9 +310,9 @@ LEFT JOIN spaces ds ON ds.id = co.destination_space_id
 LEFT JOIN spaces cs ON cs.id = co.city_space_id
 LEFT JOIN users u ON u.id = co.submitted_by
 WHERE %s
-ORDER BY co.created_at DESC
+ORDER BY %s
 LIMIT $%d OFFSET $%d
-`, whereClause, argIdx, argIdx+1)
+`, whereClause, orderClause, argIdx, argIdx+1)
 	args = append(args, limit, offset)
 
 	rows, err := s.pool.Reader.Query(ctx, listQuery, args...)
@@ -602,8 +639,10 @@ WHERE %s
 // ApproveOrg publishes a community organisation: sets status='published',
 // records the reviewer and review timestamp. For AI-generated entries
 // (ADR-088), also sets hitl_reviewed_by and hitl_reviewed_at — the
-// approve action IS the HITL review gate. Only pending orgs can be
-// approved (prevents re-approving already-published or archived orgs).
+// approve action IS the HITL review gate. Accepts both 'pending'
+// (community submission) and 'ai_draft' (ADR-088 AI draft) sources so
+// the HITL gate can publish AI-generated drafts. Archived or already-
+// published orgs are not re-approvable.
 func (s *Store) ApproveOrg(ctx context.Context, id, tenantID, reviewedBy pgtype.UUID) error {
 	const q = `
 UPDATE community_organisations
@@ -613,7 +652,7 @@ SET status = 'published',
     hitl_reviewed_by = CASE WHEN ai_generated = true THEN $3 ELSE hitl_reviewed_by END,
     hitl_reviewed_at = CASE WHEN ai_generated = true THEN now() ELSE hitl_reviewed_at END,
     updated_at = now()
-WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL AND status = 'pending'
+WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL AND status IN ('pending','ai_draft')
 `
 	cmd, err := s.pool.Writer.Exec(ctx, q, id, tenantID, reviewedBy)
 	if err != nil {

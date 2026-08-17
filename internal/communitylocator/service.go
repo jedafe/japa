@@ -11,6 +11,8 @@ package communitylocator
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -22,6 +24,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/jedafe/japa/internal/ai"
 	"github.com/jedafe/japa/internal/config"
 )
 
@@ -85,10 +88,18 @@ type SubmitInput struct {
 	JapaconnectOrgID   string  `json:"japaconnect_org_id"`
 }
 
+// AIDispatcher is the subset of the §20 AI Gateway the community locator
+// service needs to generate draft organisation entries (content_generation
+// category). Mirrors the visaroutes/housingguide/calendar pattern.
+type AIDispatcher interface {
+	Dispatch(ctx context.Context, category string, req ai.Request) (ai.Response, error)
+}
+
 // Service holds the business logic for the Diaspora Community Locator.
 type Service struct {
-	store    *Store
-	settings *config.Settings
+	store      *Store
+	settings   *config.Settings
+	dispatcher AIDispatcher
 }
 
 // NewService creates a community locator service.
@@ -98,6 +109,11 @@ func NewService(store *Store, settings *config.Settings) *Service {
 		settings: settings,
 	}
 }
+
+// SetDispatcher injects the AI Gateway dispatcher for draft generation
+// (ADR-088). Optional: when nil, Generate falls back to placeholder
+// content so a reviewer can fill it manually (graceful degradation).
+func (s *Service) SetDispatcher(d AIDispatcher) { s.dispatcher = d }
 
 // Enabled reads the community_locator.enabled system_setting toggle
 // (§101 feature flag).
@@ -121,6 +137,41 @@ var validOrgTypes = map[string]bool{
 	"student_union":        true,
 	"informal_group":       true,
 	"other":                true,
+}
+
+// orgTypeOrder is the canonical display order for org types, matching
+// the §101 spec. OrgTypes returns entries in this order so the frontend
+// dropdown is stable across surfaces.
+var orgTypeOrder = []string{
+	"cultural_association",
+	"church",
+	"mosque",
+	"professional_network",
+	"student_union",
+	"informal_group",
+	"other",
+}
+
+// OrgTypeOption is a single org-type entry returned by HandleOrgTypes.
+type OrgTypeOption struct {
+	Value string `json:"value"`
+	Label string `json:"label"`
+}
+
+// OrgTypes returns the allow-list of organisation types as [{value,label}]
+// in canonical order, so the frontend submit form can render the dropdown
+// from the backend (Rule 16) instead of hardcoding options. The labels are
+// human-readable; the frontend may further localize via i18n keys
+// (community_locator.type_<value>) keyed off the value.
+func (s *Service) OrgTypes() []OrgTypeOption {
+	out := make([]OrgTypeOption, 0, len(orgTypeOrder))
+	for _, v := range orgTypeOrder {
+		if !validOrgTypes[v] {
+			continue
+		}
+		out = append(out, OrgTypeOption{Value: v, Label: v})
+	}
+	return out
 }
 
 // Submit creates a new community organisation submission. The row is
@@ -245,10 +296,9 @@ func (s *Service) Submit(ctx context.Context, tenantID, userID pgtype.UUID, inpu
 
 // GenerateInput is the request body for POST /admin/community-locator/generate
 // (ADR-088 universal AI content generation). The admin provides a prompt
-// and destination; the service creates an ai_draft entry. The actual AI
-// call goes through the §20 AI Gateway — this method creates the draft
-// row and returns it for the HITL review queue. The AI content is
-// populated by a separate step (or inline if the gateway is available).
+// and destination; the service creates an ai_draft entry via the §20 AI
+// Gateway. The draft enters the HITL review queue and is not visible to
+// end users until an admin approves it via ApproveOrg.
 type GenerateInput struct {
 	Prompt             string `json:"prompt"`
 	DestinationSpaceID string `json:"destination_space_id"`
@@ -265,16 +315,20 @@ type GenerateInput struct {
 }
 
 // Generate creates an AI-generated draft community organisation entry
-// (ADR-088). The draft is created with status='pending', ai_generated=true,
-// and the AI model recorded. The entry enters the HITL review queue and
-// is not visible to end users until an admin approves it via ApproveOrg.
+// (ADR-088). The draft is inserted with status='ai_draft', ai_generated=true,
+// ai_model='content_agent_v1', and ai_prompt_hash=SHA256(prompt). The draft
+// is NOT visible to end users (the public list endpoint filters
+// status='published') and enters the admin HITL review queue. An admin
+// approves it via ApproveOrg, which transitions ai_draft → published and
+// stamps the HITL review fields.
 //
-// The actual AI text generation is handled by the §20 AI Gateway; this
-// method records the draft with the admin-supplied content and metadata.
-// In a full implementation, the AI Gateway would populate the content
-// fields from the prompt; here we accept the admin's structured input
-// as the AI-generated draft.
-func (s *Service) Generate(ctx context.Context, tenantID, generatedBy pgtype.UUID, input GenerateInput, aiModel string) (OrgDTO, error) {
+// When an AI dispatcher is wired (SetDispatcher), the method calls the
+// §20 AI Gateway via the "content_generation" category to populate the
+// description/contact fields from the prompt. If the dispatcher is nil,
+// the draft is still created with the admin-supplied structured input
+// so a reviewer can fill it manually (graceful degradation, matching
+// the visaroutes/housingguide/calendar pattern).
+func (s *Service) Generate(ctx context.Context, tenantID, generatedBy pgtype.UUID, input GenerateInput) (OrgDTO, error) {
 	if input.Name == "" {
 		return OrgDTO{}, fmt.Errorf("name is required")
 	}
@@ -311,6 +365,52 @@ func (s *Service) Generate(ctx context.Context, tenantID, generatedBy pgtype.UUI
 		}
 	}
 
+	// Build the prompt sent to the Content Agent. When the admin supplies
+	// a free-text prompt, use it; otherwise synthesize one from the
+	// structured input so the gateway has something to expand.
+	prompt := input.Prompt
+	if prompt == "" {
+		prompt = fmt.Sprintf(
+			"Generate a diaspora community organisation entry for destination_space_id=%s, org_type=%s, origin_community=%s, name=%s. Include description, meeting frequency, contact info, and website URL.",
+			input.DestinationSpaceID, input.OrgType, input.OriginCommunity, input.Name,
+		)
+	}
+
+	// ai_prompt_hash = SHA256(prompt) for audit traceability (ADR-088).
+	sum := sha256.Sum256([]byte(prompt))
+	promptHash := hex.EncodeToString(sum[:])
+
+	// Call the AI Gateway when a dispatcher is wired. The generated text
+	// is used to enrich the contact_info/meeting_frequency fields when
+	// the admin did not supply them explicitly. Falls back to the
+	// admin-supplied input when the dispatcher is nil or returns no text.
+	aiGeneratedText := ""
+	if s.dispatcher != nil {
+		resp, aiErr := s.dispatcher.Dispatch(ctx, "content_generation", ai.Request{
+			Category: "content_generation",
+			Payload: map[string]any{
+				"prompt":     prompt,
+				"tenant_id":  tenantID,
+				"guide_type": "community_organisation",
+			},
+		})
+		if aiErr != nil {
+			return OrgDTO{}, fmt.Errorf("communitylocator: AI generation failed: %w", aiErr)
+		}
+		if text, ok := resp.Raw["text"].(string); ok {
+			aiGeneratedText = text
+		} else if text, ok := resp.Raw["content"].(string); ok {
+			aiGeneratedText = text
+		} else if text, ok := resp.Raw["output"].(string); ok {
+			aiGeneratedText = text
+		}
+		slog.Info("communitylocator: AI Gateway generated draft",
+			"destination_space_id", input.DestinationSpaceID,
+			"org_type", input.OrgType,
+			"prompt_hash", promptHash,
+		)
+	}
+
 	slug := slugify(input.Name)
 
 	// Forward-geocode the address if provided (same as Submit).
@@ -334,6 +434,16 @@ func (s *Service) Generate(ctx context.Context, tenantID, generatedBy pgtype.UUI
 		originCommunity = "African"
 	}
 
+	// Use AI-generated text to fill contact_info when the admin did not
+	// supply it explicitly. This is the graceful-degradation path: when
+	// the dispatcher is nil, aiGeneratedText is "" and the admin's own
+	// contact_info (if any) is used.
+	contactInfo := input.ContactInfo
+	if contactInfo == "" && aiGeneratedText != "" {
+		contactInfo = aiGeneratedText
+	}
+
+	aiModel := "content_agent_v1"
 	in := CreateOrgInput{
 		TenantID:             tenantID,
 		Name:                 input.Name,
@@ -347,6 +457,9 @@ func (s *Service) Generate(ctx context.Context, tenantID, generatedBy pgtype.UUI
 		IsCommunitySubmitted: false,
 		SubmittedBy:          generatedBy,
 		AiGenerated:          true,
+		AiModel:              &aiModel,
+		AiPromptHash:         &promptHash,
+		Status:               StatusAIDraft,
 	}
 	if input.Address != "" {
 		in.Address = &input.Address
@@ -363,11 +476,8 @@ func (s *Service) Generate(ctx context.Context, tenantID, generatedBy pgtype.UUI
 	if input.MeetingFrequency != "" {
 		in.MeetingFrequency = &input.MeetingFrequency
 	}
-	if input.ContactInfo != "" {
-		in.ContactInfo = &input.ContactInfo
-	}
-	if aiModel != "" {
-		in.AiModel = &aiModel
+	if contactInfo != "" {
+		in.ContactInfo = &contactInfo
 	}
 
 	id, err := s.store.CreateOrg(ctx, in)

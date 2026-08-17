@@ -85,6 +85,10 @@
 	}
 
 	async function updateStatus(status: ScholarshipStatus) {
+		if (!user) {
+			showRegisterPrompt = true;
+			return;
+		}
 		if (!scholarship || !savedItem) return;
 		updating = true;
 		const res = await api.patch(`/scholarships/${scholarship.id}/save`, { status });
@@ -100,6 +104,10 @@
 	}
 
 	async function saveNotes() {
+		if (!user) {
+			showRegisterPrompt = true;
+			return;
+		}
 		if (!scholarship || !savedItem) return;
 		editingNotes = false;
 		const res = await api.patch(`/scholarships/${scholarship.id}/save`, { notes: notesDraft });
@@ -114,6 +122,10 @@
 	}
 
 	async function saveReminder() {
+		if (!user) {
+			showRegisterPrompt = true;
+			return;
+		}
 		if (!scholarship || !savedItem) return;
 		editingReminder = false;
 		const res = await api.patch(`/scholarships/${scholarship.id}/save`, {

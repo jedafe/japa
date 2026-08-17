@@ -455,6 +455,68 @@ func TestIsTrustedProxy_IPv4MappedIPv6_Loopback(t *testing.T) {
 	}
 }
 
+// --- PeerIP / IsTrustedPeer (consumer gating helpers) ---
+
+func TestPeerIP_ReturnsCanonicalPeerWithoutHeaders(t *testing.T) {
+	t.Parallel()
+
+	// PeerIP must ignore forwarding headers and return the TCP peer only.
+	r := requestWith("203.0.113.42:4321", map[string]string{
+		"X-Forwarded-For": "1.1.1.1",
+		"X-Real-IP":       "2.2.2.2",
+	})
+
+	if got := PeerIP(r); got != "203.0.113.42" {
+		t.Fatalf("expected peer address, got %q", got)
+	}
+}
+
+func TestPeerIP_EmptyRemoteAddr(t *testing.T) {
+	t.Parallel()
+
+	if got := PeerIP(requestWith("", nil)); got != "" {
+		t.Fatalf("expected empty peer, got %q", got)
+	}
+}
+
+func TestIsTrustedPeer_TrustedLoopback(t *testing.T) {
+	t.Parallel()
+
+	if !IsTrustedPeer(requestWith("127.0.0.1:4321", nil)) {
+		t.Fatal("expected loopback peer to be trusted")
+	}
+}
+
+func TestIsTrustedPeer_UntrustedPublic(t *testing.T) {
+	t.Parallel()
+
+	if IsTrustedPeer(requestWith("203.0.113.10:4321", nil)) {
+		t.Fatal("expected public peer to be untrusted")
+	}
+}
+
+func TestIsTrustedPeer_EmptyRemoteAddr(t *testing.T) {
+	t.Parallel()
+
+	// Empty RemoteAddr must not be trusted (no peer to vouch for headers).
+	if IsTrustedPeer(requestWith("", nil)) {
+		t.Fatal("expected empty RemoteAddr to be untrusted")
+	}
+}
+
+func TestIsTrustedPeer_IgnoresForwardedHeaders(t *testing.T) {
+	t.Parallel()
+
+	// An untrusted peer cannot promote itself by sending forwarding headers.
+	r := requestWith("203.0.113.10:4321", map[string]string{
+		"X-Forwarded-For": "127.0.0.1",
+	})
+
+	if IsTrustedPeer(r) {
+		t.Fatal("expected untrusted peer to remain untrusted despite spoofed XFF")
+	}
+}
+
 // --- ForwardedBaseURL / ForwardedHost / ForwardedScheme tests (host-header injection fix) ---
 
 func TestForwardedBaseURL_TrustedProxy_UsesForwardedHost(t *testing.T) {
@@ -560,5 +622,144 @@ func TestForwardedScheme_TrustedPeer_UsesForwardedProto(t *testing.T) {
 
 	if got := ForwardedScheme(r); got != "https" {
 		t.Fatalf("expected https from trusted proxy forwarded proto, got %q", got)
+	}
+}
+
+// --- Forwarded header value sanitization (CIP-4) ---
+//
+// ForwardedScheme and ForwardedHost gate on the trusted-proxy peer, but the
+// header VALUE is still client-influenced (a misconfigured or compromised
+// proxy, or an operator who sets JC_TRUSTED_PROXIES too broadly, lets an
+// attacker control it). Because these values are concatenated into public
+// URLs — RSS <link> elements, password-reset email links — they must be
+// validated, not just gated. Otherwise a trusted peer can inject
+// "javascript:" schemes, CRLF sequences, or path separators into URLs.
+
+func TestForwardedScheme_RejectsNonHTTPScheme(t *testing.T) {
+	t.Parallel()
+
+	// A "javascript:" scheme must never be returned — it would produce a
+	// javascript:// link in a password-reset email or RSS feed. Fall back
+	// to the TLS state (no TLS here → "http").
+	for _, proto := range []string{"javascript:alert(1)//", "ftp", "file", "gopher", "htt p"} {
+		r := requestWith("10.0.0.5:4321", map[string]string{
+			"X-Forwarded-Proto": proto,
+		})
+
+		if got := ForwardedScheme(r); got != "http" {
+			t.Fatalf("proto %q: expected http fallback, got %q", proto, got)
+		}
+	}
+}
+
+func TestForwardedScheme_NormalizesCase(t *testing.T) {
+	t.Parallel()
+
+	// "HTTPS" and "Http" are valid schemes; return them lowercased so the
+	// resulting URL is canonical and downstream string comparisons hold.
+	r := requestWith("10.0.0.5:4321", map[string]string{
+		"X-Forwarded-Proto": "HTTPS",
+	})
+
+	if got := ForwardedScheme(r); got != "https" {
+		t.Fatalf("expected lowercased https, got %q", got)
+	}
+}
+
+func TestForwardedScheme_RejectsCRLFInjection(t *testing.T) {
+	t.Parallel()
+
+	// CRLF in the proto could split an HTTP header or RSS XML line.
+	r := requestWith("10.0.0.5:4321", map[string]string{
+		"X-Forwarded-Proto": "https\r\nX-Injected: evil",
+	})
+
+	if got := ForwardedScheme(r); got != "http" {
+		t.Fatalf("expected http fallback for CRLF proto, got %q", got)
+	}
+}
+
+func TestForwardedHost_RejectsCRLFInjection(t *testing.T) {
+	t.Parallel()
+
+	// CRLF in the host could inject headers / split RSS XML when the value
+	// is concatenated into a URL. Must return "" so the caller falls back.
+	r := requestWith("10.0.0.5:4321", map[string]string{
+		"X-Forwarded-Host": "japaconnect.com\r\nBcc: attacker@evil.com",
+	})
+
+	if got := ForwardedHost(r); got != "" {
+		t.Fatalf("expected empty host for CRLF injection, got %q", got)
+	}
+}
+
+func TestForwardedHost_RejectsPathSeparator(t *testing.T) {
+	t.Parallel()
+
+	// A host with a path separator is not a bare host — it would turn
+	// "base URL" into a URL with an attacker-controlled path component.
+	r := requestWith("10.0.0.5:4321", map[string]string{
+		"X-Forwarded-Host": "evil.com/reset?token=stolen",
+	})
+
+	if got := ForwardedHost(r); got != "" {
+		t.Fatalf("expected empty host for path-bearing host, got %q", got)
+	}
+}
+
+func TestForwardedHost_RejectsEmbeddedWhitespace(t *testing.T) {
+	t.Parallel()
+
+	// Internal whitespace (not just leading/trailing) breaks URL parsing.
+	r := requestWith("10.0.0.5:4321", map[string]string{
+		"X-Forwarded-Host": "evil.com other.com",
+	})
+
+	if got := ForwardedHost(r); got != "" {
+		t.Fatalf("expected empty host for embedded whitespace, got %q", got)
+	}
+}
+
+func TestForwardedHost_AcceptsPortBearingHost(t *testing.T) {
+	t.Parallel()
+
+	// A legitimate host with an explicit port must still be accepted.
+	r := requestWith("10.0.0.5:4321", map[string]string{
+		"X-Forwarded-Host": "japaconnect.com:8443",
+	})
+
+	if got := ForwardedHost(r); got != "japaconnect.com:8443" {
+		t.Fatalf("expected port-bearing host, got %q", got)
+	}
+}
+
+func TestForwardedHost_AcceptsIPv6BracketedHost(t *testing.T) {
+	t.Parallel()
+
+	// IPv6 host with port uses bracketed form: [::1]:8080.
+	r := requestWith("10.0.0.5:4321", map[string]string{
+		"X-Forwarded-Host": "[::1]:8080",
+	})
+
+	if got := ForwardedHost(r); got != "[::1]:8080" {
+		t.Fatalf("expected bracketed IPv6 host, got %q", got)
+	}
+}
+
+func TestForwardedBaseURL_RejectsJavaScriptScheme(t *testing.T) {
+	t.Parallel()
+
+	// Defense in depth: even from a trusted peer, a "javascript:" proto
+	// must not produce a javascript:// URL that ends up in an email link.
+	// The scheme is rejected and falls back to "http" (no TLS); the trusted
+	// host is still honoured, yielding a plain http:// URL — the
+	// javascript:// link-poisoning vector is neutralized.
+	r := requestWith("10.0.0.5:4321", map[string]string{
+		"X-Forwarded-Host":  "evil.com",
+		"X-Forwarded-Proto": "javascript:alert(1)//",
+	})
+
+	if got := ForwardedBaseURL(r, "https://japaconnect.com"); got != "http://evil.com" {
+		t.Fatalf("expected http://evil.com (javascript scheme rejected), got %q", got)
 	}
 }

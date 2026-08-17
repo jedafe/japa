@@ -15,6 +15,7 @@ import (
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/clientip"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/mentions"
 	"github.com/jedafe/japa/internal/spam"
 	"github.com/jedafe/japa/internal/tenant"
@@ -232,6 +233,22 @@ func parseUUIDParam(r *http.Request, param string) (pgtype.UUID, error) {
 // Comment Handlers
 // ---------------------------------------------------------------------------
 
+// redactAnonymousComments zeroes out author-identifying fields (author_user_id,
+// username, display_name, avatar_url) on anonymous comments so the API never
+// leaks the identity of an anonymous commenter (Section 49 — is_anonymous,
+// BUG-002). Works on all sqlc row types that carry the standard author fields.
+func redactAnonymousComments[T any](
+	rows []T,
+	isAnon func(*T) bool,
+	clear func(*T),
+) {
+	for i := range rows {
+		if isAnon(&rows[i]) {
+			clear(&rows[i])
+		}
+	}
+}
+
 // ListComments handles GET /api/v1/content/{id}/comments.
 func (h *Handlers) ListComments(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
@@ -277,6 +294,16 @@ func (h *Handlers) ListComments(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		// BUG-002: redact author identity on anonymous replies.
+		redactAnonymousComments(replies,
+			func(r *gen.ListRepliesByParentRow) bool { return r.IsAnonymous },
+			func(r *gen.ListRepliesByParentRow) {
+				r.AuthorUserID = pgtype.UUID{}
+				r.Username = ""
+				r.DisplayName = ""
+				r.AvatarUrl = ""
+			})
+
 		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": replies})
 
 		return
@@ -287,6 +314,16 @@ func (h *Handlers) ListComments(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
+	// BUG-002: redact author identity on anonymous comments.
+	redactAnonymousComments(comments,
+		func(c *gen.ListCommentsByContentRow) bool { return c.IsAnonymous },
+		func(c *gen.ListCommentsByContentRow) {
+			c.AuthorUserID = pgtype.UUID{}
+			c.Username = ""
+			c.DisplayName = ""
+			c.AvatarUrl = ""
+		})
 
 	// GDPR / ADR-029: compute erased-mention IDs across all comments so the
 	// frontend can render @[deleted user] for mentions of erased users.
@@ -333,6 +370,14 @@ func (h *Handlers) GetComment(w http.ResponseWriter, r *http.Request) {
 	if comment.DeletedAt.Valid {
 		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Comment not found")
 		return
+	}
+
+	// BUG-002: redact author identity on anonymous comments.
+	if comment.IsAnonymous {
+		comment.AuthorUserID = pgtype.UUID{}
+		comment.Username = ""
+		comment.DisplayName = ""
+		comment.AvatarUrl = ""
 	}
 
 	// GDPR / ADR-029: expose deleted_user_ids for frontend rendering.

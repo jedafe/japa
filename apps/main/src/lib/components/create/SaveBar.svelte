@@ -25,9 +25,15 @@
 		isPublished?: boolean;
 	}
 
-	let { status, canPublish, publishReason, orgs, selectedOrgId, onSelectOrg, onSaveDraft, onPublish, isPublished = false }: Props = $props();
+	let { status, savedAt, canPublish, publishReason, orgs, selectedOrgId, onSelectOrg, onSaveDraft, onPublish, isPublished = false }: Props = $props();
 
 	const selectedOrg = $derived(orgs.find((o) => o.id === selectedOrgId) ?? null);
+
+	function formatSavedAt(ts: number | null): string {
+		if (!ts) return '';
+		const d = new Date(ts);
+		return d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+	}
 
 	// "Post as yourself" is a special item with a sentinel id. It is
 	// included in the Autocomplete item list so the user can search for it.
@@ -80,7 +86,12 @@
 			/>
 		</div>
 	{:else}
-		<span class="status-text">{t(statusLabel(status))}</span>
+		<span class="status-text">
+			{t(statusLabel(status))}
+			{#if status === 'saved' && savedAt}
+				<span class="saved-time"> · {formatSavedAt(savedAt)}</span>
+			{/if}
+		</span>
 	{/if}
 
 	<!-- Right: publish gate reason + action buttons -->
@@ -149,6 +160,10 @@
 	.status-text {
 		font-size: 0.8125rem;
 		color: var(--color-muted);
+	}
+	.saved-time {
+		color: var(--color-muted);
+		font-size: 0.75rem;
 	}
 
 	/* ---- Right side actions ---- */

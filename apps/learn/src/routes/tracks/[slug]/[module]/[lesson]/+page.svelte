@@ -6,6 +6,7 @@
 	// guard, rollback, auto-next). No ads. Access verified server-side.
 	import { t } from '$lib/i18n';
 	import { api } from '$lib/api/client';
+	import { loginUrl } from '$lib/appOrigins';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import SetSidebar from '$lib/components/shell/SetSidebar.svelte';
@@ -68,6 +69,12 @@
 	// After success, refresh the shared enrollments store so all sidebar
 	// widgets (Continue Learning, My Progress, My Learning) update reactively.
 	async function markComplete() {
+		// A guest can reach a *preview* lesson with "Mark complete" enabled.
+		// Guard against firing an authed mutation without a session.
+		if (!data.user) {
+			window.location.href = loginUrl(`/tracks/${page.params.slug}/${page.params.module}/${page.params.lesson}`);
+			return;
+		}
 		if (marking || isCompleted) return;
 		marking = true;
 		// Optimistic: add to the set immediately.
@@ -188,6 +195,12 @@
 	}
 
 	async function submitQuiz() {
+		// A guest can reach a *preview* lesson with the quiz engine rendered.
+		// Guard against firing an authed mutation without a session.
+		if (!data.user) {
+			window.location.href = loginUrl(`/tracks/${page.params.slug}/${page.params.module}/${page.params.lesson}`);
+			return;
+		}
 		const q = lesson.quiz;
 		if (!q || !quizCanSubmit()) return;
 		quizSubmitting = true;

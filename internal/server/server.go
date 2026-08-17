@@ -1481,6 +1481,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	calendarService.SetDispatcher(aiDispatcher)
 	docsService.SetDispatcher(aiDispatcher)
 	storyService.SetDispatcher(aiDispatcher)
+	// §101: wire the AI Gateway dispatcher into the community locator so
+	// its Generate method can call the content_generation category
+	// (ADR-088). The dispatcher is optional; Generate falls back to the
+	// admin-supplied structured input when nil.
+	communityLocatorService.SetDispatcher(aiDispatcher)
 	// §99: wire the Asynq client so the approve handler can enqueue
 	// Meilisearch index sync for JapaBot RAG retrieval (ADR-088).
 	languageTestHubHandlers.SetAsynqClient(asynqClient)
@@ -5949,6 +5954,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// §101 — Diaspora Community Locator (ADR-109)
 			r.With(features.Gate(featureChecker, "community_locator.enabled")).Group(func(r chi.Router) {
 				r.Get("/community-locator", communityLocatorHandlers.HandleList)
+				// BUG-005: org-types endpoint must be registered before
+				// /{slug} so chi does not match "org-types" as a slug.
+				r.Get("/community-locator/org-types", communityLocatorHandlers.HandleOrgTypes)
 				r.Get("/community-locator/{slug}", communityLocatorHandlers.HandleGet)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "community_locator.submit")).
 					Post("/community-locator", communityLocatorHandlers.HandleSubmit)

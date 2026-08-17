@@ -36,6 +36,15 @@
 		nav.filter((tree) => accessibleAudiences.includes(tree.audience))
 	);
 
+	// Ensure the API audience is always visible in the nav tree (ADR-060:
+	// /docs/api is always public). The backend only returns audiences with
+	// published pages, so we add a fallback entry for 'api' when missing.
+	let treesWithApi = $derived(
+		visibleTrees.some((t) => t.audience === 'api')
+			? visibleTrees
+			: [...visibleTrees, { audience: 'api' as const, items: [] }]
+	);
+
 	let activePath = $derived(page.url.pathname);
 
 	function hrefFor(audience: DocAudience, slug: string): string {
@@ -82,7 +91,7 @@
 		{#if collapsed}
 			<!-- Collapsed: show audience initials as icons. -->
 			<ul class="rail">
-				{#each visibleTrees as tree (tree.audience)}
+				{#each treesWithApi as tree (tree.audience)}
 					<li>
 						<a
 							href="/docs/{tree.audience}"
@@ -95,10 +104,10 @@
 					</li>
 				{/each}
 			</ul>
-		{:else if visibleTrees.length === 0}
+		{:else if treesWithApi.length === 0}
 			<p class="nav-empty">{t('nav.empty')}</p>
 		{:else}
-			{#each visibleTrees as tree (tree.audience)}
+			{#each treesWithApi as tree (tree.audience)}
 				<div class="section">
 					<a
 						href="/docs/{tree.audience}"
@@ -117,7 +126,8 @@
 							<ChevronDown size={14} class={`chevron ${expanded[tree.audience] ?? true ? 'rot' : ''}`} />
 						{/if}
 					</a>
-					{#if expanded[tree.audience] ?? true}
+				{#if expanded[tree.audience] ?? true}
+					{#if tree.items.length > 0}
 						<ul class="page-list">
 							{#each tree.items as item (item.id)}
 								<li>
@@ -146,7 +156,13 @@
 								</li>
 							{/each}
 						</ul>
+					{:else if tree.audience === 'api'}
+						<!-- API audience with no published pages: show a helpful hint -->
+						<p class="nav-empty">
+							<a href="/docs/api" class="api-hint">{t('api.browse_endpoints', 'Browse API endpoints →')}</a>
+						</p>
 					{/if}
+				{/if}
 				</div>
 			{/each}
 		{/if}
@@ -237,6 +253,14 @@
 		padding: 1rem 0.75rem;
 		font-size: 0.8125rem;
 		color: var(--color-muted);
+	}
+	.api-hint {
+		font-size: 0.8125rem;
+		color: var(--color-primary);
+		text-decoration: none;
+	}
+	.api-hint:hover {
+		text-decoration: underline;
 	}
 
 	/* Collapsed rail */

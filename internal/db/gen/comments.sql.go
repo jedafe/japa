@@ -19,6 +19,7 @@ JOIN contents ct ON ct.id = c.content_id AND ct.tenant_id = c.tenant_id
 WHERE c.tenant_id = $1
   AND c.author_user_id = $2
   AND c.deleted_at IS NULL
+  AND c.is_anonymous = false
   AND ct.status = 'published'
   AND ct.visibility = 'public'
 `
@@ -100,7 +101,7 @@ const createComment = `-- name: CreateComment :one
 
 INSERT INTO comments (tenant_id, content_id, author_user_id, parent_id, body, depth, is_anonymous)
 VALUES ($1, $2, $3, $4, $5, $6, $7)
-RETURNING id, tenant_id, content_id, author_user_id, parent_id, body, depth, vote_score, is_pinned, is_edited, edited_at, created_at, updated_at, deleted_at, is_anonymous, reply_count, author_profile_id, status, removed_by, removed_reason
+RETURNING id, tenant_id, content_id, author_user_id, parent_id, body, depth, vote_score, is_pinned, is_edited, edited_at, created_at, updated_at, deleted_at, is_anonymous, reply_count, author_profile_id, status, removed_by, removed_reason, view_count
 `
 
 type CreateCommentParams struct {
@@ -149,6 +150,7 @@ func (q *Queries) CreateComment(ctx context.Context, arg CreateCommentParams) (C
 		&i.Status,
 		&i.RemovedBy,
 		&i.RemovedReason,
+		&i.ViewCount,
 	)
 	return i, err
 }
@@ -207,6 +209,7 @@ func (q *Queries) DeleteCommentVote(ctx context.Context, arg DeleteCommentVotePa
 const getComment = `-- name: GetComment :one
 SELECT c.id, c.tenant_id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
        c.vote_score, c.is_pinned, c.is_edited, c.edited_at, c.created_at, c.updated_at, c.deleted_at,
+       c.is_anonymous,
        u.username,
        COALESCE(up.display_name, '') AS display_name,
        COALESCE(up.avatar_url, '') AS avatar_url
@@ -236,6 +239,7 @@ type GetCommentRow struct {
 	CreatedAt    pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
 	DeletedAt    pgtype.Timestamptz `json:"deleted_at"`
+	IsAnonymous  bool               `json:"is_anonymous"`
 	Username     string             `json:"username"`
 	DisplayName  string             `json:"display_name"`
 	AvatarUrl    string             `json:"avatar_url"`
@@ -259,6 +263,7 @@ func (q *Queries) GetComment(ctx context.Context, arg GetCommentParams) (GetComm
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DeletedAt,
+		&i.IsAnonymous,
 		&i.Username,
 		&i.DisplayName,
 		&i.AvatarUrl,
@@ -267,7 +272,7 @@ func (q *Queries) GetComment(ctx context.Context, arg GetCommentParams) (GetComm
 }
 
 const getCommentVote = `-- name: GetCommentVote :one
-SELECT id, tenant_id, comment_id, user_id, value, created_at
+SELECT tenant_id, comment_id, user_id, value, created_at
 FROM comment_votes
 WHERE comment_id = $1 AND user_id = $2
 `
@@ -281,7 +286,6 @@ func (q *Queries) GetCommentVote(ctx context.Context, arg GetCommentVoteParams) 
 	row := q.db.QueryRow(ctx, getCommentVote, arg.CommentID, arg.UserID)
 	var i CommentVote
 	err := row.Scan(
-		&i.ID,
 		&i.TenantID,
 		&i.CommentID,
 		&i.UserID,
@@ -434,6 +438,7 @@ WHERE c.tenant_id = $1
   AND c.author_user_id = $2
   AND c.deleted_at IS NULL
   AND c.status = 'published'
+  AND c.is_anonymous = false
   AND ct.status = 'published'
   AND ct.visibility = 'public'
 ORDER BY c.created_at DESC
@@ -500,6 +505,7 @@ func (q *Queries) ListCommentsByAuthor(ctx context.Context, arg ListCommentsByAu
 const listCommentsByContent = `-- name: ListCommentsByContent :many
 SELECT c.id, c.tenant_id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
        c.vote_score, c.is_pinned, c.is_edited, c.edited_at, c.created_at, c.updated_at, c.deleted_at,
+       c.is_anonymous,
        u.username,
        COALESCE(up.display_name, '') AS display_name,
        COALESCE(up.avatar_url, '') AS avatar_url
@@ -535,6 +541,7 @@ type ListCommentsByContentRow struct {
 	CreatedAt    pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
 	DeletedAt    pgtype.Timestamptz `json:"deleted_at"`
+	IsAnonymous  bool               `json:"is_anonymous"`
 	Username     string             `json:"username"`
 	DisplayName  string             `json:"display_name"`
 	AvatarUrl    string             `json:"avatar_url"`
@@ -569,6 +576,7 @@ func (q *Queries) ListCommentsByContent(ctx context.Context, arg ListCommentsByC
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.DeletedAt,
+			&i.IsAnonymous,
 			&i.Username,
 			&i.DisplayName,
 			&i.AvatarUrl,
@@ -586,6 +594,7 @@ func (q *Queries) ListCommentsByContent(ctx context.Context, arg ListCommentsByC
 const listCommentsByContentNew = `-- name: ListCommentsByContentNew :many
 SELECT c.id, c.tenant_id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
        c.vote_score, c.is_pinned, c.is_edited, c.edited_at, c.created_at, c.updated_at, c.deleted_at,
+       c.is_anonymous,
        u.username,
        COALESCE(up.display_name, '') AS display_name,
        COALESCE(up.avatar_url, '') AS avatar_url
@@ -621,6 +630,7 @@ type ListCommentsByContentNewRow struct {
 	CreatedAt    pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
 	DeletedAt    pgtype.Timestamptz `json:"deleted_at"`
+	IsAnonymous  bool               `json:"is_anonymous"`
 	Username     string             `json:"username"`
 	DisplayName  string             `json:"display_name"`
 	AvatarUrl    string             `json:"avatar_url"`
@@ -656,6 +666,7 @@ func (q *Queries) ListCommentsByContentNew(ctx context.Context, arg ListComments
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.DeletedAt,
+			&i.IsAnonymous,
 			&i.Username,
 			&i.DisplayName,
 			&i.AvatarUrl,
@@ -673,6 +684,7 @@ func (q *Queries) ListCommentsByContentNew(ctx context.Context, arg ListComments
 const listCommentsByContentOldest = `-- name: ListCommentsByContentOldest :many
 SELECT c.id, c.tenant_id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
        c.vote_score, c.is_pinned, c.is_edited, c.edited_at, c.created_at, c.updated_at, c.deleted_at,
+       c.is_anonymous,
        u.username,
        COALESCE(up.display_name, '') AS display_name,
        COALESCE(up.avatar_url, '') AS avatar_url
@@ -708,6 +720,7 @@ type ListCommentsByContentOldestRow struct {
 	CreatedAt    pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
 	DeletedAt    pgtype.Timestamptz `json:"deleted_at"`
+	IsAnonymous  bool               `json:"is_anonymous"`
 	Username     string             `json:"username"`
 	DisplayName  string             `json:"display_name"`
 	AvatarUrl    string             `json:"avatar_url"`
@@ -743,6 +756,7 @@ func (q *Queries) ListCommentsByContentOldest(ctx context.Context, arg ListComme
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.DeletedAt,
+			&i.IsAnonymous,
 			&i.Username,
 			&i.DisplayName,
 			&i.AvatarUrl,
@@ -830,6 +844,7 @@ func (q *Queries) ListContentThreadLinks(ctx context.Context, arg ListContentThr
 const listPublicCommentsByContent = `-- name: ListPublicCommentsByContent :many
 SELECT c.id, c.tenant_id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
        c.vote_score, c.is_pinned, c.is_edited, c.edited_at, c.created_at, c.updated_at, c.deleted_at,
+       c.is_anonymous,
        u.username,
        COALESCE(up.display_name, '') AS display_name,
        COALESCE(up.avatar_url, '') AS avatar_url
@@ -871,6 +886,7 @@ type ListPublicCommentsByContentRow struct {
 	CreatedAt    pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
 	DeletedAt    pgtype.Timestamptz `json:"deleted_at"`
+	IsAnonymous  bool               `json:"is_anonymous"`
 	Username     string             `json:"username"`
 	DisplayName  string             `json:"display_name"`
 	AvatarUrl    string             `json:"avatar_url"`
@@ -910,6 +926,7 @@ func (q *Queries) ListPublicCommentsByContent(ctx context.Context, arg ListPubli
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.DeletedAt,
+			&i.IsAnonymous,
 			&i.Username,
 			&i.DisplayName,
 			&i.AvatarUrl,
@@ -927,6 +944,7 @@ func (q *Queries) ListPublicCommentsByContent(ctx context.Context, arg ListPubli
 const listRepliesByParent = `-- name: ListRepliesByParent :many
 SELECT c.id, c.tenant_id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
        c.vote_score, c.is_pinned, c.is_edited, c.edited_at, c.created_at, c.updated_at, c.deleted_at,
+       c.is_anonymous,
        u.username,
        COALESCE(up.display_name, '') AS display_name,
        COALESCE(up.avatar_url, '') AS avatar_url
@@ -961,6 +979,7 @@ type ListRepliesByParentRow struct {
 	CreatedAt    pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
 	DeletedAt    pgtype.Timestamptz `json:"deleted_at"`
+	IsAnonymous  bool               `json:"is_anonymous"`
 	Username     string             `json:"username"`
 	DisplayName  string             `json:"display_name"`
 	AvatarUrl    string             `json:"avatar_url"`
@@ -995,6 +1014,7 @@ func (q *Queries) ListRepliesByParent(ctx context.Context, arg ListRepliesByPare
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.DeletedAt,
+			&i.IsAnonymous,
 			&i.Username,
 			&i.DisplayName,
 			&i.AvatarUrl,
@@ -1141,7 +1161,7 @@ const updateComment = `-- name: UpdateComment :one
 UPDATE comments
 SET body = $1, is_edited = true, edited_at = now(), updated_at = now()
 WHERE id = $2 AND tenant_id = $3 AND author_user_id = $4 AND deleted_at IS NULL
-RETURNING id, tenant_id, content_id, author_user_id, parent_id, body, depth, vote_score, is_pinned, is_edited, edited_at, created_at, updated_at, deleted_at, is_anonymous, reply_count, author_profile_id, status, removed_by, removed_reason
+RETURNING id, tenant_id, content_id, author_user_id, parent_id, body, depth, vote_score, is_pinned, is_edited, edited_at, created_at, updated_at, deleted_at, is_anonymous, reply_count, author_profile_id, status, removed_by, removed_reason, view_count
 `
 
 type UpdateCommentParams struct {
@@ -1182,6 +1202,7 @@ func (q *Queries) UpdateComment(ctx context.Context, arg UpdateCommentParams) (C
 		&i.Status,
 		&i.RemovedBy,
 		&i.RemovedReason,
+		&i.ViewCount,
 	)
 	return i, err
 }
@@ -1190,7 +1211,7 @@ const updateCommentUnmarked = `-- name: UpdateCommentUnmarked :one
 UPDATE comments
 SET body = $1, updated_at = now()
 WHERE id = $2 AND tenant_id = $3 AND author_user_id = $4 AND deleted_at IS NULL
-RETURNING id, tenant_id, content_id, author_user_id, parent_id, body, depth, vote_score, is_pinned, is_edited, edited_at, created_at, updated_at, deleted_at, is_anonymous, reply_count, author_profile_id, status, removed_by, removed_reason
+RETURNING id, tenant_id, content_id, author_user_id, parent_id, body, depth, vote_score, is_pinned, is_edited, edited_at, created_at, updated_at, deleted_at, is_anonymous, reply_count, author_profile_id, status, removed_by, removed_reason, view_count
 `
 
 type UpdateCommentUnmarkedParams struct {
@@ -1232,6 +1253,7 @@ func (q *Queries) UpdateCommentUnmarked(ctx context.Context, arg UpdateCommentUn
 		&i.Status,
 		&i.RemovedBy,
 		&i.RemovedReason,
+		&i.ViewCount,
 	)
 	return i, err
 }
@@ -1241,7 +1263,7 @@ const upsertCommentVote = `-- name: UpsertCommentVote :one
 INSERT INTO comment_votes (tenant_id, comment_id, user_id, value)
 VALUES ($1, $2, $3, $4)
 ON CONFLICT (comment_id, user_id) DO UPDATE SET value = EXCLUDED.value
-RETURNING id, tenant_id, comment_id, user_id, value, created_at
+RETURNING tenant_id, comment_id, user_id, value, created_at
 `
 
 type UpsertCommentVoteParams struct {
@@ -1263,7 +1285,6 @@ func (q *Queries) UpsertCommentVote(ctx context.Context, arg UpsertCommentVotePa
 	)
 	var i CommentVote
 	err := row.Scan(
-		&i.ID,
 		&i.TenantID,
 		&i.CommentID,
 		&i.UserID,

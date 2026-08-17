@@ -113,6 +113,10 @@
 	}
 
 	async function updateStatus(guideId: string, status: ScholarshipStatus) {
+		if (!user) {
+			showRegisterPrompt = true;
+			return;
+		}
 		const res = await api.patch(`/scholarships/${guideId}/save`, { status });
 		if (!res.error) {
 			saved = saved.map((s) =>

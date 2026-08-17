@@ -121,6 +121,8 @@
 	"learn.no_match_for_query": "Aucun cours ne correspond à « {query} ».",
 	"learn.no_courses_yet": "Aucun cours publié pour le moment.",
 	"learn.browse_catalog_prompt": "Parcourez le catalogue pour commencer à apprendre.",
+	"learn.load_error": "Échec du chargement de vos inscriptions",
+	"learn.retry": "Réessayer",
 	"learn.analytics_pending": "Requiert un endpoint d'analyse",
 	"learn.progress_over_time": "Progression au fil du temps",
 	"learn.analytics_endpoint_pending": "Requiert un endpoint d'analyse backend (ex. GET /me/learning-analytics).",

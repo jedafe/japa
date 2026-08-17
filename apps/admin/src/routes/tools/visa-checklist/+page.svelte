@@ -21,11 +21,40 @@
 		username: string;
 	};
 
+	type CompletionStat = {
+		guide_id: string;
+		total_users: number;
+		users_with_any_completion: number;
+	};
+
 	const canManage = $derived(hasPermission('checklist.manage'));
 
 	// ── State ───────────────────────────────────────────────────────────────
 	let entityController = $state<EntityPageController | undefined>(undefined);
 	let pageError = $state('');
+	let stats = $state<CompletionStat[]>([]);
+	let statsLoading = $state(false);
+	let statsError = $state('');
+
+	// Load completion stats (§70: GET /admin/checklist/completion-stats).
+	// The route + API method exist but were previously unused.
+	$effect(() => {
+		if (!canManage) return;
+		statsLoading = true;
+		statsError = '';
+		visaChecklistAdminApi
+			.completionStats()
+			.then((resp: unknown) => {
+				const r = resp as { data?: CompletionStat[] };
+				stats = r.data ?? [];
+			})
+			.catch((e: unknown) => {
+				statsError = e instanceof Error ? e.message : t('common.error', 'An error occurred');
+			})
+			.finally(() => {
+				statsLoading = false;
+			});
+	});
 
 	// ── Row actions ─────────────────────────────────────────────────────────
 	const rowActions = $derived.by<ActionItem[]>(() => {
@@ -49,6 +78,8 @@
 		title: t('app.tools.visa_checklist_heading', 'Visa Checklist Progress'),
 		description: t('app.tools.visa_checklist_desc', 'Monitor user progress on visa document checklists'),
 		readonly: true,
+		exportable: true,
+		exportFilename: 'visa-checklist-progress',
 		pageSize: 25,
 		columns: [
 			{ key: 'username', label: t('app.tools.col_username', 'Username') },
@@ -103,6 +134,43 @@
 		style="background: color-mix(in srgb, var(--color-danger) 10%, transparent); color: var(--color-danger)"
 	>
 		{pageError}
+	</div>
+{/if}
+
+<!-- ── Completion stats (§70: GET /admin/checklist/completion-stats) ─────── -->
+{#if canManage}
+	<div class="mb-6 rounded-lg border p-4" style="border-color: var(--color-border)">
+		<h2 class="text-sm font-semibold uppercase tracking-wide" style="color: var(--color-muted)">
+			{t('app.tools.visa_checklist_stats_heading', 'Completion Rates by Guide')}
+		</h2>
+		{#if statsLoading}
+			<p class="mt-2 text-sm" style="color: var(--color-muted)">{t('common.loading', 'Loading…')}</p>
+		{:else if statsError}
+			<p class="mt-2 text-sm" style="color: var(--color-danger)">{statsError}</p>
+		{:else if stats.length === 0}
+			<p class="mt-2 text-sm" style="color: var(--color-muted)">
+				{t('app.tools.visa_checklist_stats_empty', 'No completion data yet.')}
+			</p>
+		{:else}
+			<table class="mt-3 w-full text-sm">
+				<thead>
+					<tr style="color: var(--color-muted)">
+						<th class="pb-2 text-left font-medium">{t('app.tools.col_guide_id', 'Guide')}</th>
+						<th class="pb-2 text-right font-medium">{t('app.tools.visa_checklist_total_users', 'Total Users')}</th>
+						<th class="pb-2 text-right font-medium">{t('app.tools.visa_checklist_users_completed', 'Users w/ Any Completion')}</th>
+					</tr>
+				</thead>
+				<tbody>
+					{#each stats as s (s.guide_id)}
+						<tr class="border-t" style="border-color: var(--color-border)">
+							<td class="py-2 font-mono text-xs" style="color: var(--color-foreground)">{s.guide_id}</td>
+							<td class="py-2 text-right">{s.total_users}</td>
+							<td class="py-2 text-right">{s.users_with_any_completion}</td>
+						</tr>
+					{/each}
+				</tbody>
+			</table>
+		{/if}
 	</div>
 {/if}
 

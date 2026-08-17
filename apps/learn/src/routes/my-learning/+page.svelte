@@ -5,29 +5,29 @@
 	// per-chart skeletons, dates → Date.
 	//
 	// NOTE: time-series analytics (progress over time, weekly activity, streak)
-	// require a backend analytics endpoint not yet built. Those charts show empty
-	// states — NO mocked data (Rule 16, API-Readiness Gate).
-	import { LineChart, BarChart } from 'layerchart';
+	// require a backend analytics endpoint not yet built. Those sections are
+	// hidden — NO mocked data (Rule 16, API-Readiness Gate).
+	import { BarChart } from 'layerchart';
 	import { t } from '$lib/i18n';
-	import { api } from '$lib/api/client';
+	import { enrollmentsStore } from '$lib/stores/enrollments.svelte';
 	import { LoadingSkeleton, EmptyState } from '$lib/components/ui';
-	import { LayoutDashboard, Flame, Clock, CheckCircle } from 'lucide-svelte';
+	import { LayoutDashboard, CheckCircle, AlertTriangle, RotateCw } from 'lucide-svelte';
 	import type { Enrollment } from '$lib/types';
 
-	let enrollments = $state<Enrollment[]>([]);
-	let loading = $state(true);
-
+	// Subscribe to the shared enrollments store — avoids duplicate API calls
+	// and ensures mutations (enroll, mark-complete) propagate to all widgets.
 	$effect(() => {
-		(async () => {
-			const r = await api.get<Enrollment[]>('/me/enrollments');
-			loading = false;
-			if (r.data) enrollments = r.data;
-		})();
+		enrollmentsStore.fetch();
 	});
 
-	// Derived stats from real enrollment data.
+	const enrollments = $derived(enrollmentsStore.enrollments ?? []);
+	const loading = $derived(enrollmentsStore.loading);
+	const error = $derived(enrollmentsStore.error);
+
+	// Derived stats from real enrollment data — guard against null/undefined
+	// lessons_completed to prevent NaN (the API may omit the field).
 	const totalCompleted = $derived(
-		enrollments.reduce((sum, e) => sum + e.lessons_completed, 0)
+		enrollments.reduce((sum, e) => sum + (e.lessons_completed || 0), 0)
 	);
 	const inProgress = $derived(enrollments.filter((e) => e.progress_pct > 0 && e.progress_pct < 100));
 	const completed = $derived(enrollments.filter((e) => e.progress_pct >= 100));
@@ -38,7 +38,7 @@
 			.slice(0, 10)
 			.map((e) => ({
 				track: e.track_title.length > 20 ? e.track_title.slice(0, 20) + '…' : e.track_title,
-				lessons: e.lessons_completed
+				lessons: e.lessons_completed || 0
 			}))
 	);
 </script>
@@ -68,6 +68,20 @@
 		<div class="mt-4 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 			<LoadingSkeleton class="h-64 w-full" />
 		</div>
+	{:else if error}
+		<!-- Error state with retry -->
+		<div class="rounded-[var(--radius-card)] border border-[var(--color-error)] bg-[var(--color-surface)] p-6 text-center">
+			<AlertTriangle size={32} class="mx-auto mb-3 text-[var(--color-error)]" />
+			<p class="text-sm font-medium text-[var(--color-text)]">{t('learn.load_error', 'Failed to load your enrollments')}</p>
+			<p class="mt-1 text-xs text-[var(--color-muted)]">{error}</p>
+			<button
+				onclick={() => enrollmentsStore.refresh()}
+				class="mt-4 inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1.5 text-sm font-medium text-[var(--color-primary-contrast)] hover:bg-[var(--color-primary-hover)]"
+			>
+				<RotateCw size={14} />
+				{t('learn.retry', 'Retry')}
+			</button>
+		</div>
 	{:else if enrollments.length === 0}
 		<EmptyState
 			title={t('learn.no_enrollments')}
@@ -84,8 +98,8 @@
 		</EmptyState>
 	{:else}
 		<!-- Stats cards -->
-		<div class="grid grid-cols-1 gap-4 md:grid-cols-3">
-			<div class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+		<div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+			<div class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4" role="status" aria-label={t('learn.completed')}>
 				<div class="flex items-center gap-2 text-sm text-[var(--color-muted)]">
 					<CheckCircle size={16} class="text-[var(--color-progress)]" />
 					{t('learn.completed')}
@@ -93,7 +107,7 @@
 				<p class="mt-2 text-3xl font-bold text-[var(--color-text)]">{totalCompleted}</p>
 				<p class="text-xs text-[var(--color-muted)]">{t('learn.lessons')}</p>
 			</div>
-			<div class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+			<div class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4" role="status" aria-label={t('learn.in_progress')}>
 				<div class="flex items-center gap-2 text-sm text-[var(--color-muted)]">
 					<LayoutDashboard size={16} class="text-[var(--color-primary)]" />
 					{t('learn.in_progress')}
@@ -101,36 +115,22 @@
 				<p class="mt-2 text-3xl font-bold text-[var(--color-text)]">{inProgress.length}</p>
 				<p class="text-xs text-[var(--color-muted)]">{t('learn.lessons')}</p>
 			</div>
-			<div class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-				<div class="flex items-center gap-2 text-sm text-[var(--color-muted)]">
-					<Flame size={16} class="text-[var(--level-intermediate)]" />
-					{t('learn.streak')}
-				</div>
-				<p class="mt-2 text-3xl font-bold text-[var(--color-text)]">—</p>
-				<p class="text-xs text-[var(--color-muted)]">{t('learn.analytics_pending', 'Requires analytics endpoint')}</p>
-			</div>
 		</div>
 
 		<!-- BarChart: lessons completed per track (real data from /me/enrollments) -->
-		<section class="mt-4 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-			<h2 class="mb-3 text-sm font-medium text-[var(--color-text)]">{t('learn.lessons_completed_by_course')}</h2>
-			<div class="h-64 w-full">
-				<BarChart
-					data={barData}
-					x="track"
-					y="lessons"
-					props={{ bars: { class: 'fill-[var(--chart-1)]' } }}
-				/>
-			</div>
-		</section>
-
-		<!-- Progress over time (LineChart) — requires backend analytics endpoint -->
-		<section class="mt-4 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-			<h2 class="mb-3 text-sm font-medium text-[var(--color-text)]">{t('learn.progress_over_time', 'Progress over time')}</h2>
-			<div class="flex h-64 w-full items-center justify-center text-sm text-[var(--color-muted)]">
-				{t('learn.analytics_endpoint_pending', 'Requires a backend analytics endpoint (e.g. GET /me/learning-analytics).')}
-			</div>
-		</section>
+		{#if barData.length > 0}
+			<section class="mt-4 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+				<h2 class="mb-3 text-sm font-medium text-[var(--color-text)]">{t('learn.lessons_completed_by_course')}</h2>
+				<div class="h-64 w-full">
+					<BarChart
+						data={barData}
+						x="track"
+						y="lessons"
+						props={{ bars: { class: 'fill-[var(--chart-1)]' } }}
+					/>
+				</div>
+			</section>
+		{/if}
 
 		<!-- Enrollment list -->
 		<section class="mt-6">
@@ -149,12 +149,12 @@
 									{en.track_title}
 								</a>
 								<p class="text-sm text-[var(--color-muted)]">
-									{en.lessons_completed}/{en.lessons_total} {t('learn.lessons')} · {en.progress_pct}%
+									{en.lessons_completed || 0}/{en.lessons_total || 0} {t('learn.lessons')} · {en.progress_pct || 0}%
 								</p>
 								<div class="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-[var(--color-surface-subtle)]">
 									<div
 										class="h-full rounded-full bg-[var(--color-progress)]"
-										style="width: {en.progress_pct}%"
+										style="width: {en.progress_pct || 0}%"
 									></div>
 								</div>
 							</div>

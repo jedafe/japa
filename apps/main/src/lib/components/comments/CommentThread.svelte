@@ -21,6 +21,8 @@
 		comments: Comment[];
 		/** Content id — used for POST /content/{id}/comments and reply fetches. */
 		contentId: string;
+		/** Parent content type — controls vote vs emoji-reaction display (Section 49). */
+		contentType: string;
 		/** Auth gating. */
 		authed: boolean;
 		/** Current user id — gates edit/delete to the author. */
@@ -32,7 +34,7 @@
 		/** Erased-user IDs for GDPR/ADR-029 mention redaction (Section 15). */
 		deletedUserIds?: Set<string>;
 	}
-	let { comments: initial, contentId, authed, currentUserId, canModerate, loadError = false, deletedUserIds }: Props = $props();
+	let { comments: initial, contentId, contentType, authed, currentUserId, canModerate, loadError = false, deletedUserIds }: Props = $props();
 
 	let comments = $state<Comment[]>(untrack(() => initial));
 
@@ -113,6 +115,7 @@
 					<CommentItem
 						{comment}
 						{contentId}
+						{contentType}
 						depth={0}
 						{authed}
 						{currentUserId}

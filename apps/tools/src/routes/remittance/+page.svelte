@@ -126,12 +126,20 @@
 	}
 
 	async function deleteAlert(id: string) {
+		if (!user) {
+			showRegisterPrompt = true;
+			return;
+		}
 		const res = await api.delete(`/remittance/alerts/${id}`);
 		if (!res.error) alerts = alerts.filter((a) => a.id !== id);
 	}
 
 	/** Toggle an alert's active state via PATCH (§74). */
 	async function toggleAlertActive(id: string, currentActive: boolean) {
+		if (!user) {
+			showRegisterPrompt = true;
+			return;
+		}
 		const res = await api.patch<RemittanceAlert>(`/remittance/alerts/${id}`, {
 			is_active: !currentActive
 		});
@@ -152,6 +160,10 @@
 	}
 
 	async function saveAlertEdit(id: string) {
+		if (!user) {
+			showRegisterPrompt = true;
+			return;
+		}
 		const res = await api.patch<RemittanceAlert>(`/remittance/alerts/${id}`, {
 			target_rate: parseFloat(editTargetRate),
 			direction: editDirection

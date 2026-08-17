@@ -83,23 +83,25 @@
 				onchange={(e) => setField(field.key, e.currentTarget.value)}
 			>
 				<option value="">— Select —</option>
-				{#each field.options ?? [] as opt (opt)}
-					<option value={opt}>{opt}</option>
-				{/each}
+			{#each field.options ?? [] as opt (typeof opt === 'object' ? opt.value : opt)}
+				<option value={typeof opt === 'object' ? opt.value : opt}>{typeof opt === 'object' ? opt.label : opt}</option>
+			{/each}
 			</select>
 		{:else if field.field_type === 'multiselect'}
 			<span class="cf-label">{field.label}{#if field.is_required}<span class="cf-required">*</span>{/if}</span>
 			<div class="cf-multiselect">
-				{#each field.options ?? [] as opt (opt)}
-					<label class="cf-checkbox">
-						<input
-							type="checkbox"
-							checked={multiselectChecked(field.key, opt)}
-							onchange={() => multiselectToggle(field.key, opt)}
-						/>
-						<span>{opt}</span>
-					</label>
-				{/each}
+			{#each field.options ?? [] as opt (typeof opt === 'object' ? opt.value : opt)}
+				{@const optValue = typeof opt === 'object' ? opt.value : opt}
+				{@const optLabel = typeof opt === 'object' ? opt.label : opt}
+				<label class="cf-checkbox">
+					<input
+						type="checkbox"
+						checked={multiselectChecked(field.key, optValue)}
+						onchange={() => multiselectToggle(field.key, optValue)}
+					/>
+					<span>{optLabel}</span>
+				</label>
+			{/each}
 			</div>
 		{:else if field.field_type === 'number' || field.field_type === 'currency' || field.field_type === 'percentage' || field.field_type === 'rating'}
 			<input
@@ -198,7 +200,7 @@
 						<input
 							type="text"
 							class="cf-input"
-							placeholder={(field.options?.[0] ?? 'Add item...')}
+							placeholder={typeof field.options?.[0] === 'object' ? (field.options?.[0] as {label:string}).label : (field.options?.[0] as string ?? 'Add item...')}
 							value={item}
 							oninput={(e) => repeaterSet(field.key, idx, e.currentTarget.value)}
 						/>
