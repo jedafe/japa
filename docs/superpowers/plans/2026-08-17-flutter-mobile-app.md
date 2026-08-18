@@ -6,14 +6,14 @@
 
 **Architecture:** One shared Dart package (`packages/japaconnect_core`) holds the OpenAPI-generated typed API client, auth, models, and shared widgets. `apps/mobile` consumes it through self-contained feature modules, uses `flutter_riverpod` for state, `go_router` for navigation, and a bottom-nav app shell.
 
-**Tech Stack:** Flutter (stable), Dart, `flutter_riverpod`, `go_router`, `flutter_secure_storage`, `firebase_messaging`, `web_socket_channel`, `cached_network_image`, `fl_chart`, `openapi_generator`, `freezed`/`json_serializable`.
+**Tech Stack:** Flutter 3.47.0+ / Dart 3.13.0+, `flutter_riverpod` 3.4.2, `go_router` 17.5.0, `flutter_secure_storage` 11.0.0, `firebase_messaging` 16.5.0, `firebase_core` 4.13.0, `web_socket_channel` 3.0.3, `cached_network_image` 3.4.1, `fl_chart` 1.2.0, `openapi_generator` 7.0.0, `freezed` 3.2.5 / `json_serializable` 6.14.1.
 
 ## Global Constraints
 
 These apply to every task. Each task's requirements implicitly include this section.
 
 - **Flutter/Dart only** — no `bun`, `npm`, `pnpm`, or `yarn` for Flutter work.
-- **State management** — `flutter_riverpod` (`AsyncNotifier`, `FutureProvider`, `StateProvider`). No `setState` soup in feature screens.
+- **State management** — `flutter_riverpod` (`Notifier`, `AsyncNotifier`, `FutureProvider`). No `setState` soup in feature screens.
 - **Navigation** — `go_router` with deep links and shell routing.
 - **HTTP** — typed `japaconnect_core` API client only. No raw `http` or `dio` in `apps/mobile/lib/features/`.
 - **Auth** — device-scoped JWT; access token in memory; refresh token and device ID in `flutter_secure_storage`; `X-Device-Id` header on every request.
@@ -221,30 +221,30 @@ version: 0.1.0
 publish_to: none
 
 environment:
-  sdk: '>=3.4.0 <4.0.0'
-  flutter: '>=3.22.0'
+  sdk: '>=3.13.0 <4.0.0'
+  flutter: '>=3.47.0'
 
 dependencies:
   flutter:
     sdk: flutter
-  flutter_riverpod: ^2.5.1
-  flutter_secure_storage: ^9.2.2
-  firebase_messaging: ^15.0.4
-  web_socket_channel: ^3.0.0
-  cached_network_image: ^3.3.1
-  http: ^1.2.2
-  uuid: ^4.0.0
-  freezed_annotation: ^2.4.1
-  json_annotation: ^4.9.0
+  flutter_riverpod: ^3.4.2
+  flutter_secure_storage: ^11.0.0
+  firebase_messaging: ^16.5.0
+  web_socket_channel: ^3.0.3
+  cached_network_image: ^3.4.1
+  http: ^1.6.0
+  uuid: ^4.6.0
+  freezed_annotation: ^3.1.0
+  json_annotation: ^4.12.0
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
-  build_runner: ^2.4.11
-  freezed: ^2.5.2
-  json_serializable: ^6.8.0
-  openapi_generator: ^4.0.0
-  mocktail: ^1.0.4
+  build_runner: ^2.16.0
+  freezed: ^3.2.5
+  json_serializable: ^6.14.1
+  openapi_generator: ^7.0.0
+  mocktail: ^1.0.5
 ```
 
 - [ ] **Step 2: Create `apps/mobile/pubspec.yaml`**
@@ -255,27 +255,28 @@ description: JapaConnect Flutter mobile app
 publish_to: none
 
 environment:
-  sdk: '>=3.4.0 <4.0.0'
-  flutter: '>=3.22.0'
+  sdk: '>=3.13.0 <4.0.0'
+  flutter: '>=3.47.0'
 
 dependencies:
   flutter:
     sdk: flutter
   japaconnect_core:
     path: ../../packages/japaconnect_core
-  flutter_riverpod: ^2.5.1
-  go_router: ^14.2.0
-  firebase_messaging: ^15.0.4
-  fl_chart: ^0.68.0
-  cached_network_image: ^3.3.1
+  flutter_riverpod: ^3.4.2
+  go_router: ^17.5.0
+  firebase_core: ^4.13.0
+  firebase_messaging: ^16.5.0
+  fl_chart: ^1.2.0
+  cached_network_image: ^3.4.1
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   integration_test:
     sdk: flutter
-  mocktail: ^1.0.4
-  flutter_lints: ^4.0.0
+  mocktail: ^1.0.5
+  flutter_lints: ^6.0.0
 ```
 
 - [ ] **Step 3: Create `packages/japaconnect_core/build.yaml`**
@@ -434,9 +435,7 @@ Expected: `lib/api/generated/` is created with a typed client and models.
 ```dart
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
-const _secureStorage = FlutterSecureStorage(
-  aOptions: AndroidOptions(encryptedSharedPreferences: true),
-);
+const _secureStorage = FlutterSecureStorage();
 
 class TokenStore {
   Future<void> writeRefreshToken(String token) =>
@@ -692,9 +691,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:uuid/uuid.dart';
 
-const _secureStorage = FlutterSecureStorage(
-  aOptions: AndroidOptions(encryptedSharedPreferences: true),
-);
+const _secureStorage = FlutterSecureStorage();
 
 final deviceIdProvider = Provider<DeviceId>((ref) => DeviceId());
 
@@ -721,7 +718,12 @@ class DeviceId {
 ```dart
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-final isAuthenticatedProvider = StateProvider<bool>((ref) => false);
+final isAuthenticatedProvider = NotifierProvider<IsAuthenticatedNotifier, bool>(() => IsAuthenticatedNotifier());
+
+class IsAuthenticatedNotifier extends Notifier<bool> {
+  @override
+  bool build() => false;
+}
 ```
 
 - [ ] **Step 2: Create `packages/japaconnect_core/lib/auth/service.dart`**
@@ -1404,7 +1406,7 @@ git commit -m "feat(mobile): add app shell, theme, and go_router"
 
 **Interfaces:**
 - Consumes: `AuthService` from core (Task 3), shared widgets (Task 4), app router (Task 5).
-- Produces: `authStateProvider`, `LoginScreen`, `RegisterScreen`, `TOTPScreen`, route `/login`, `/register`, `/totp`.
+- Produces: `authFormProvider`, `isAuthenticatedProvider`, `LoginScreen`, `RegisterScreen`, `TOTPScreen`, route `/login`, `/register`, `/totp`.
 
 - [ ] **Step 1: Verify API routes**
 
@@ -1422,10 +1424,7 @@ Verify each exists in `conventions/api-routes-catalog.md` or by `curl`.
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:japaconnect_core/japaconnect_core.dart';
 
-final authFormProvider = StateNotifierProvider<AuthFormNotifier, AuthFormState>((ref) {
-  final auth = ref.watch(authServiceProvider);
-  return AuthFormNotifier(ref, auth);
-});
+final authFormProvider = NotifierProvider<AuthFormNotifier, AuthFormState>(() => AuthFormNotifier());
 
 class AuthFormState {
   final bool isLoading;
@@ -1443,13 +1442,14 @@ class AuthFormState {
   }
 }
 
-class AuthFormNotifier extends StateNotifier<AuthFormState> {
-  final Ref _ref;
-  final AuthService _auth;
-  AuthFormNotifier(this._ref, this._auth) : super(const AuthFormState());
+class AuthFormNotifier extends Notifier<AuthFormState> {
+  @override
+  AuthFormState build() => const AuthFormState();
+
+  AuthService get _auth => ref.read(authServiceProvider);
 
   void _setAuthenticated() {
-    _ref.read(isAuthenticatedProvider.notifier).state = true;
+    ref.read(isAuthenticatedProvider.notifier).state = true;
   }
 
   Future<void> login(String username, String password) async {
@@ -1461,7 +1461,7 @@ class AuthFormNotifier extends StateNotifier<AuthFormState> {
       if (e.code == 'totp_required') {
         state = state.copyWith(isLoading: false, challengeToken: e.message);
       } else {
-        _ref.read(isAuthenticatedProvider.notifier).state = false;
+        ref.read(isAuthenticatedProvider.notifier).state = false;
         state = state.copyWith(isLoading: false, error: e.message);
       }
     }
@@ -1473,7 +1473,7 @@ class AuthFormNotifier extends StateNotifier<AuthFormState> {
       await _auth.register(username, email, password, onAuthenticated: _setAuthenticated);
       state = state.copyWith(isLoading: false);
     } on JcApiError catch (e) {
-      _ref.read(isAuthenticatedProvider.notifier).state = false;
+      ref.read(isAuthenticatedProvider.notifier).state = false;
       state = state.copyWith(isLoading: false, error: e.message);
     }
   }
@@ -1489,7 +1489,7 @@ class AuthFormNotifier extends StateNotifier<AuthFormState> {
       await _auth.verifyTOTP(token, code, onAuthenticated: _setAuthenticated);
       state = state.copyWith(isLoading: false);
     } on JcApiError catch (e) {
-      _ref.read(isAuthenticatedProvider.notifier).state = false;
+      ref.read(isAuthenticatedProvider.notifier).state = false;
       state = state.copyWith(isLoading: false, error: e.message);
     }
   }
@@ -4782,9 +4782,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:japaconnect_core/japaconnect_core.dart';
 import 'package:japaconnect_mobile/features/tools/cost_of_living/providers/cost_of_living_provider.dart';
 
-final _costOfLivingInputsProvider = StateProvider<({String origin, String destination})>(
-  (ref) => (origin: '', destination: ''),
+final _costOfLivingInputsProvider = NotifierProvider<CostOfLivingInputsNotifier, ({String origin, String destination})>(
+  () => CostOfLivingInputsNotifier(),
 );
+
+class CostOfLivingInputsNotifier extends Notifier<({String origin, String destination})> {
+  @override
+  ({String origin, String destination}) build() => (origin: '', destination: '');
+}
 
 class CostOfLivingScreen extends ConsumerWidget {
   const CostOfLivingScreen({super.key});
