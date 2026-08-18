@@ -1,0 +1,1 @@
+library japaconnect_core;

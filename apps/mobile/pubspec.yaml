@@ -1,0 +1,27 @@
+name: japaconnect_mobile
+description: JapaConnect Flutter mobile app
+publish_to: none
+
+environment:
+  sdk: '>=3.13.0 <4.0.0'
+  flutter: '>=3.47.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  japaconnect_core:
+    path: ../../packages/japaconnect_core
+  flutter_riverpod: ^3.4.2
+  go_router: ^17.5.0
+  firebase_core: ^4.13.0
+  firebase_messaging: ^16.5.0
+  fl_chart: ^1.2.0
+  cached_network_image: ^3.4.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  integration_test:
+    sdk: flutter
+  mocktail: ^1.0.5
+  flutter_lints: ^6.0.0
