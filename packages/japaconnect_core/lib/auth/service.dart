@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:japaconnect_core/api/api_error.dart';
 import 'package:japaconnect_core/api/client.dart';
+import 'package:japaconnect_core/push/push_token_manager.dart';
 
 final authServiceProvider = Provider<AuthService>((ref) {
   final client = ref.watch(jcApiClientProvider);
@@ -69,6 +70,11 @@ class AuthService {
   Future<bool> refresh() async => client.refresh();
 
   Future<void> logout() async {
+    try {
+      final manager =
+          PushTokenManager(client: client, deviceId: client.deviceId);
+      await manager.deregister();
+    } catch (_) {}
     await client.logout();
   }
 
