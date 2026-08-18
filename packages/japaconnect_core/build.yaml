@@ -2,4 +2,5 @@ targets:
   $default:
     sources:
       - lib/**
-      - openapi/openapi.json
+      - openapi/**
+      - $package$
