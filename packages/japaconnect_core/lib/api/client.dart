@@ -117,6 +117,7 @@ class JcApiClient {
     Map<String, dynamic>? body,
     required T Function(dynamic) parse,
     bool includeAuth = true,
+    bool isRetry = false,
   }) async {
     var uri = Uri.parse('$baseUrl$path');
     if (query != null) {
@@ -139,7 +140,7 @@ class JcApiClient {
     final response = await http.Response.fromStream(streamedResponse);
 
     if (response.statusCode == 401) {
-      if (!includeAuth) {
+      if (!includeAuth || isRetry) {
         onUnauthenticated?.call();
         throw JcApiError(
           code: 'unauthenticated',
@@ -162,6 +163,7 @@ class JcApiClient {
         query: query,
         body: body,
         parse: parse,
+        isRetry: true,
       );
     }
 
