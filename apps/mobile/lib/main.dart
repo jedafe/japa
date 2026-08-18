@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:japaconnect_core/japaconnect_core.dart';
+import 'app/theme.dart';
+import 'app/router.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
