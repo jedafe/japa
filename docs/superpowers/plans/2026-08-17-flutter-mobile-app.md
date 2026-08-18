@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` (recommended) or `superpowers:executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build the full v2.1 JapaConnect Flutter mobile app (`apps/mobile`) and shared Dart package (`packages/japaconnect_core`) as a thin `/api/v1` client for iOS and Android.
+**Goal:** Build the full v2.1 JapaConnect Flutter mobile app (`apps/mobile`) and shared Dart package (`packages/japaconnect_core`) as a thin API client for iOS and Android.
 
 **Architecture:** One shared Dart package (`packages/japaconnect_core`) holds the OpenAPI-generated typed API client, auth, models, and shared widgets. `apps/mobile` consumes it through self-contained feature modules, uses `flutter_riverpod` for state, `go_router` for navigation, and a bottom-nav app shell.
 
@@ -296,8 +296,11 @@ library japaconnect_core;
 export 'api/client.dart';
 export 'api/api_error.dart';
 export 'auth/service.dart';
+export 'auth/auth_state.dart';
 export 'auth/device_id.dart';
 export 'auth/token_store.dart';
+export 'realtime/socket_service.dart';
+export 'push/push_service.dart';
 export 'widgets/tokens/colors.dart';
 export 'widgets/tokens/typography.dart';
 export 'widgets/tokens/spacing.dart';
@@ -478,6 +481,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:japaconnect_core/auth/token_store.dart';
 import 'package:japaconnect_core/auth/device_id.dart';
+import 'package:japaconnect_core/auth/auth_state.dart';
 import 'api_error.dart';
 import 'generated/api_client.dart';
 
@@ -496,6 +500,7 @@ final jcApiClientProvider = Provider<JcApiClient>((ref) {
     wsUrl: wsUrl,
     tokenStore: tokenStore,
     deviceId: deviceId,
+    onUnauthenticated: () => ref.read(isAuthenticatedProvider.notifier).state = false,
   );
 });
 
@@ -504,10 +509,17 @@ class JcApiClient {
   final String wsUrl;
   final TokenStore tokenStore;
   final DeviceId deviceId;
+  final VoidCallback? onUnauthenticated;
   String? _accessToken;
   late final GeneratedApiClient _inner;
 
-  JcApiClient({required this.baseUrl, this.wsUrl = '', required this.tokenStore, required this.deviceId}) {
+  JcApiClient({
+    required this.baseUrl,
+    this.wsUrl = '',
+    required this.tokenStore,
+    required this.deviceId,
+    this.onUnauthenticated,
+  }) {
     _inner = GeneratedApiClient(basePath: baseUrl);
   }
 
@@ -569,10 +581,14 @@ class JcApiClient {
 
     if (response.statusCode == 401) {
       if (!includeAuth) {
+        onUnauthenticated?.call();
         throw JcApiError(code: 'unauthenticated', message: 'Session expired', status: 401);
       }
       final refreshed = await _refresh();
-      if (!refreshed) throw JcApiError(code: 'unauthenticated', message: 'Session expired', status: 401);
+      if (!refreshed) {
+        onUnauthenticated?.call();
+        throw JcApiError(code: 'unauthenticated', message: 'Session expired', status: 401);
+      }
       return _request<T>(method, path, query: query, body: body, parse: parse);
     }
 
@@ -603,12 +619,16 @@ class JcApiClient {
       await tokenStore.writeRefreshToken(data['refresh_token'] as String);
       return true;
     } catch (_) {
+      onUnauthenticated?.call();
       await logout();
       return false;
     }
   }
 
   Future<void> logout() async {
+    try {
+      await post<void>('/auth/logout', parse: (_) {});
+    } catch (_) {}
     clearAccessToken();
     await tokenStore.deleteRefreshToken();
   }
@@ -668,7 +688,6 @@ git commit -m "feat(jc-core): add OpenAPI-generated client and JcApiClient wrapp
 - [ ] **Step 1: Create `packages/japaconnect_core/lib/auth/device_id.dart`**
 
 ```dart
-import 'dart:math';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:uuid/uuid.dart';
@@ -697,12 +716,21 @@ class DeviceId {
 }
 ```
 
+- [ ] **Step 1.5: Create `packages/japaconnect_core/lib/auth/auth_state.dart`**
+
+```dart
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+final isAuthenticatedProvider = StateProvider<bool>((ref) => false);
+```
+
 - [ ] **Step 2: Create `packages/japaconnect_core/lib/auth/service.dart`**
 
 ```dart
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:japaconnect_core/api/client.dart';
 import 'token_store.dart';
+import '../push/push_token_manager.dart';
 
 final authServiceProvider = Provider<AuthService>((ref) {
   final client = ref.watch(jcApiClientProvider);
@@ -716,36 +744,61 @@ class AuthService {
 
   String? get accessToken => client.accessToken;
 
-  Future<void> login(String username, String password) async {
+  Future<void> login(
+    String username,
+    String password, {
+    void Function()? onAuthenticated,
+  }) async {
     final result = await client.post<Map<String, dynamic>>(
       '/auth/login',
       body: {'username': username, 'password': password},
       parse: (json) => json as Map<String, dynamic>,
     );
+    final challengeToken = result['challenge_token'] as String?;
+    final accessToken = result['access_token'] as String?;
+    if (challengeToken != null && accessToken == null) {
+      throw JcApiError(code: 'totp_required', message: challengeToken, status: 401);
+    }
     await _persist(result);
+    onAuthenticated?.call();
   }
 
-  Future<void> register(String username, String email, String password) async {
+  Future<void> register(
+    String username,
+    String email,
+    String password, {
+    void Function()? onAuthenticated,
+  }) async {
     final result = await client.post<Map<String, dynamic>>(
       '/auth/register',
       body: {'username': username, 'email': email, 'password': password},
       parse: (json) => json as Map<String, dynamic>,
     );
     await _persist(result);
+    onAuthenticated?.call();
   }
 
-  Future<void> verifyTOTP(String challengeToken, String code) async {
+  Future<void> verifyTOTP(
+    String challengeToken,
+    String code, {
+    void Function()? onAuthenticated,
+  }) async {
     final result = await client.post<Map<String, dynamic>>(
       '/auth/totp/verify-challenge',
       body: {'challenge_token': challengeToken, 'code': code},
       parse: (json) => json as Map<String, dynamic>,
     );
     await _persist(result);
+    onAuthenticated?.call();
   }
 
   Future<bool> refresh() async => client.refresh();
 
   Future<void> logout() async {
+    try {
+      final manager = PushTokenManager(client: client, deviceId: client.deviceId);
+      await manager.deregister();
+    } catch (_) {}
     await client.logout();
   }
 
@@ -784,7 +837,7 @@ void main() {
       'refresh_token': 'refresh-456',
     });
 
-    await service.login('user', 'pass');
+    await service.login('user', 'pass', onAuthenticated: null);
     verify(() => client.setAccessToken('access-123')).called(1);
     verify(() => tokenStore.writeRefreshToken('refresh-456')).called(1);
   });
@@ -1206,12 +1259,14 @@ import 'package:go_router/go_router.dart';
 import 'package:japaconnect_core/japaconnect_core.dart';
 import '../features/auth/screens/login_screen.dart';
 import '../features/feed/screens/feed_screen.dart';
+import '../features/feed/screens/discover_screen.dart';
+import '../features/feed/screens/trending_screen.dart';
 
 final jcRouterProvider = Provider<GoRouter>((ref) {
-  final auth = ref.watch(authServiceProvider);
+  final loggedIn = ref.watch(isAuthenticatedProvider);
   return GoRouter(
     initialLocation: '/',
-    redirect: (context, state) => AuthGuard.redirect(auth, state),
+    redirect: (context, state) => AuthGuard.redirect(loggedIn, state),
     routes: [
       GoRoute(
         path: '/login',
@@ -1220,10 +1275,9 @@ final jcRouterProvider = Provider<GoRouter>((ref) {
       ShellRoute(
         builder: (_, __, child) => AppShell(child: child),
         routes: [
-          GoRoute(
-            path: '/',
-            builder: (_, __) => const FeedScreen(),
-          ),
+          GoRoute(path: '/', builder: (_, __) => const FeedScreen()),
+          GoRoute(path: '/discover', builder: (_, __) => const DiscoverScreen()),
+          GoRoute(path: '/trending', builder: (_, __) => const TrendingScreen()),
         ],
       ),
     ],
@@ -1262,7 +1316,7 @@ class AppShell extends StatelessWidget {
 
   int _currentIndex(BuildContext context) {
     final path = GoRouterState.of(context).uri.path;
-    if (path == '/') return 0;
+    if (path == '/' || path == '/discover' || path == '/trending') return 0;
     if (path.startsWith('/spaces')) return 1;
     if (path.startsWith('/notifications')) return 3;
     if (path.startsWith('/profile')) return 4;
@@ -1285,11 +1339,9 @@ class AppShell extends StatelessWidget {
 
 ```dart
 import 'package:go_router/go_router.dart';
-import 'package:japaconnect_core/auth/service.dart';
 
 class AuthGuard {
-  static String? redirect(AuthService auth, GoRouterState state) {
-    final loggedIn = auth.accessToken != null;
+  static String? redirect(bool loggedIn, GoRouterState state) {
     final onLogin = state.matchedLocation == '/login';
     if (!loggedIn && !onLogin) return '/login';
     if (loggedIn && onLogin) return '/';
@@ -1314,18 +1366,14 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:japaconnect_mobile/app/auth_guard.dart';
-import 'package:japaconnect_core/auth/service.dart';
 
-class MockAuthService extends Mock implements AuthService {}
 class MockGoRouterState extends Mock implements GoRouterState {}
 
 void main() {
   test('redirects unauthenticated users to /login', () {
-    final auth = MockAuthService();
     final state = MockGoRouterState();
     when(() => state.matchedLocation).thenReturn('/');
-    when(() => auth.accessToken).thenReturn(null);
-    expect(AuthGuard.redirect(auth, state), '/login');
+    expect(AuthGuard.redirect(false, state), '/login');
   });
 }
 ```
@@ -1376,7 +1424,7 @@ import 'package:japaconnect_core/japaconnect_core.dart';
 
 final authFormProvider = StateNotifierProvider<AuthFormNotifier, AuthFormState>((ref) {
   final auth = ref.watch(authServiceProvider);
-  return AuthFormNotifier(auth);
+  return AuthFormNotifier(ref, auth);
 });
 
 class AuthFormState {
@@ -1396,18 +1444,24 @@ class AuthFormState {
 }
 
 class AuthFormNotifier extends StateNotifier<AuthFormState> {
+  final Ref _ref;
   final AuthService _auth;
-  AuthFormNotifier(this._auth) : super(const AuthFormState());
+  AuthFormNotifier(this._ref, this._auth) : super(const AuthFormState());
+
+  void _setAuthenticated() {
+    _ref.read(isAuthenticatedProvider.notifier).state = true;
+  }
 
   Future<void> login(String username, String password) async {
     state = state.copyWith(isLoading: true, error: null);
     try {
-      await _auth.login(username, password);
+      await _auth.login(username, password, onAuthenticated: _setAuthenticated);
       state = state.copyWith(isLoading: false);
     } on JcApiError catch (e) {
       if (e.code == 'totp_required') {
         state = state.copyWith(isLoading: false, challengeToken: e.message);
       } else {
+        _ref.read(isAuthenticatedProvider.notifier).state = false;
         state = state.copyWith(isLoading: false, error: e.message);
       }
     }
@@ -1416,9 +1470,10 @@ class AuthFormNotifier extends StateNotifier<AuthFormState> {
   Future<void> register(String username, String email, String password) async {
     state = state.copyWith(isLoading: true, error: null);
     try {
-      await _auth.register(username, email, password);
+      await _auth.register(username, email, password, onAuthenticated: _setAuthenticated);
       state = state.copyWith(isLoading: false);
     } on JcApiError catch (e) {
+      _ref.read(isAuthenticatedProvider.notifier).state = false;
       state = state.copyWith(isLoading: false, error: e.message);
     }
   }
@@ -1431,9 +1486,10 @@ class AuthFormNotifier extends StateNotifier<AuthFormState> {
         state = state.copyWith(isLoading: false, error: 'No challenge token');
         return;
       }
-      await _auth.verifyTOTP(token, code);
+      await _auth.verifyTOTP(token, code, onAuthenticated: _setAuthenticated);
       state = state.copyWith(isLoading: false);
     } on JcApiError catch (e) {
+      _ref.read(isAuthenticatedProvider.notifier).state = false;
       state = state.copyWith(isLoading: false, error: e.message);
     }
   }
@@ -1447,7 +1503,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:japaconnect_core/japaconnect_core.dart';
-import 'providers/auth_provider.dart';
+import 'package:japaconnect_mobile/features/auth/providers/auth_provider.dart';
 
 class LoginScreen extends ConsumerWidget {
   const LoginScreen({super.key});
@@ -1458,6 +1514,17 @@ class LoginScreen extends ConsumerWidget {
     final password = TextEditingController();
     final state = ref.watch(authFormProvider);
     final notifier = ref.read(authFormProvider.notifier);
+
+    ref.listen(authFormProvider, (prev, next) {
+      if (next.challengeToken != null && next.challengeToken != prev?.challengeToken) {
+        context.push('/totp');
+      }
+    });
+    ref.listen(isAuthenticatedProvider, (prev, next) {
+      if (next == true && prev != true) {
+        context.go('/');
+      }
+    });
 
     return Scaffold(
       body: Padding(
@@ -1493,7 +1560,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:japaconnect_core/japaconnect_core.dart';
-import 'providers/auth_provider.dart';
+import 'package:japaconnect_mobile/features/auth/providers/auth_provider.dart';
 
 class RegisterScreen extends ConsumerWidget {
   const RegisterScreen({super.key});
@@ -1505,6 +1572,12 @@ class RegisterScreen extends ConsumerWidget {
     final password = TextEditingController();
     final state = ref.watch(authFormProvider);
     final notifier = ref.read(authFormProvider.notifier);
+
+    ref.listen(isAuthenticatedProvider, (prev, next) {
+      if (next == true && prev != true) {
+        context.go('/');
+      }
+    });
 
     return Scaffold(
       appBar: AppBar(title: const Text('Register')),
@@ -1543,7 +1616,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:japaconnect_core/japaconnect_core.dart';
-import 'providers/auth_provider.dart';
+import 'package:japaconnect_mobile/features/auth/providers/auth_provider.dart';
 
 class TOTPScreen extends ConsumerWidget {
   const TOTPScreen({super.key});
@@ -1553,6 +1626,12 @@ class TOTPScreen extends ConsumerWidget {
     final code = TextEditingController();
     final state = ref.watch(authFormProvider);
     final notifier = ref.read(authFormProvider.notifier);
+
+    ref.listen(isAuthenticatedProvider, (prev, next) {
+      if (next == true && prev != true) {
+        context.go('/');
+      }
+    });
 
     return Scaffold(
       appBar: AppBar(title: const Text('Two-Factor Authentication')),
@@ -1640,7 +1719,7 @@ git commit -m "feat(mobile): add auth feature module (login, register, TOTP)"
 
 **Interfaces:**
 - Consumes: `JcApiClient`, `FeedCard`, `LoadingShimmer`, `JcErrorWidget`, `EntityCard`.
-- Produces: `feedServiceProvider`, `feedProvider`, `FeedScreen`, route `/`.
+- Produces: `feedServiceProvider`, `feedProvider`, `feedRealtimeSyncProvider`, `FeedScreen`, route `/`.
 
 - [ ] **Step 1: Verify API routes**
 
@@ -1684,7 +1763,8 @@ class FeedService {
 ```dart
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:japaconnect_core/japaconnect_core.dart';
-import 'feed_service.dart';
+import 'package:japaconnect_core/realtime/socket_service.dart';
+import 'package:japaconnect_mobile/features/feed/services/feed_service.dart';
 
 final feedServiceProvider = Provider<FeedService>((ref) {
   final client = ref.watch(jcApiClientProvider);
@@ -1695,6 +1775,19 @@ final feedProvider = FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref
   final service = ref.watch(feedServiceProvider);
   return service.fetchFeed();
 });
+
+/// Listens to [realtimeEventsProvider] and invalidates [feedProvider] on
+/// `feed_update` events. Keep this provider alive by watching it in a long-lived
+/// widget (e.g., the app shell or [FeedScreen]) so the listener survives rebuilds.
+final feedRealtimeSyncProvider = Provider<void>((ref) {
+  ref.listen(realtimeEventsProvider, (previous, next) {
+    next.whenData((event) {
+      if (event['type'] == 'feed_update') {
+        ref.invalidate(feedProvider);
+      }
+    });
+  });
+});
 ```
 
 - [ ] **Step 4: Create `feed_screen.dart` with pull-to-refresh and infinite scroll**
@@ -1703,13 +1796,14 @@ final feedProvider = FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:japaconnect_core/japaconnect_core.dart';
-import 'providers/feed_provider.dart';
+import 'package:japaconnect_mobile/features/feed/providers/feed_provider.dart';
 
 class FeedScreen extends ConsumerWidget {
   const FeedScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    ref.watch(feedRealtimeSyncProvider); // keep realtime listener alive
     final feed = ref.watch(feedProvider);
     return Scaffold(
       appBar: AppBar(title: const Text('Home')),
@@ -1759,27 +1853,35 @@ git commit -m "feat(mobile): add home feed feature module"
 
 ---
 
-## Task 7.5: Discover feature module
+## Task 7.5: Discover and Trending (part of feed module)
 
 **Files:**
-- Create: `apps/mobile/lib/features/discover/services/discover_service.dart`
-- Create: `apps/mobile/lib/features/discover/providers/discover_provider.dart`
-- Create: `apps/mobile/lib/features/discover/screens/discover_screen.dart`
-- Create: `apps/mobile/test/features/discover/discover_screen_test.dart`
+- Create: `apps/mobile/lib/features/feed/services/discover_service.dart`
+- Create: `apps/mobile/lib/features/feed/providers/discover_provider.dart`
+- Create: `apps/mobile/lib/features/feed/screens/discover_screen.dart`
+- Create: `apps/mobile/lib/features/feed/services/trending_service.dart`
+- Create: `apps/mobile/lib/features/feed/providers/trending_provider.dart`
+- Create: `apps/mobile/lib/features/feed/screens/trending_screen.dart`
+- Create: `apps/mobile/test/features/feed/discover_screen_test.dart`
+- Create: `apps/mobile/test/features/feed/trending_screen_test.dart`
 
 **Interfaces:**
-- Consumes: `JcApiClient`, `EntityCard`, `LoadingShimmer`.
-- Produces: `discoverServiceProvider`, `discoverProvider`, `DiscoverScreen`, route `/discover`.
+- Consumes: `JcApiClient`, `EntityCard`, `LoadingShimmer`, `JcErrorWidget`.
+- Produces: `discoverServiceProvider`, `discoverProvider`, `DiscoverScreen`, route `/discover`; `trendingServiceProvider`, `trendingProvider`, `TrendingScreen`, route `/trending`.
 
 - [ ] **Step 1: Verify API routes**
 
 Routes consumed:
-- `GET /suggestions/users`
-- `GET /suggestions/spaces`
-- `GET /suggestions/tags`
-- `GET /suggestions/content`
+- Discover: `GET /suggestions/users`
+- Discover: `GET /suggestions/spaces`
+- Discover: `GET /suggestions/tags`
+- Discover: `GET /suggestions/content`
+- Trending: `GET /trending/content`
+- Trending: `GET /trending/spaces`
+- Trending: `GET /trending/users`
+- Trending: `GET /trending/tags`
 
-- [ ] **Step 2: Create `discover_service.dart`**
+- [ ] **Step 2: Create `apps/mobile/lib/features/feed/services/discover_service.dart`**
 
 ```dart
 import 'package:japaconnect_core/japaconnect_core.dart';
@@ -1822,12 +1924,12 @@ class DiscoverService {
 }
 ```
 
-- [ ] **Step 3: Create `discover_provider.dart`**
+- [ ] **Step 3: Create `apps/mobile/lib/features/feed/providers/discover_provider.dart`**
 
 ```dart
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:japaconnect_core/japaconnect_core.dart';
-import 'discover_service.dart';
+import 'package:japaconnect_mobile/features/feed/services/discover_service.dart';
 
 final discoverServiceProvider = Provider<DiscoverService>((ref) {
   final client = ref.watch(jcApiClientProvider);
@@ -1844,13 +1946,13 @@ final discoverProvider = FutureProvider.autoDispose<Map<String, List<Map<String,
 });
 ```
 
-- [ ] **Step 4: Create `DiscoverScreen`**
+- [ ] **Step 4: Create `apps/mobile/lib/features/feed/screens/discover_screen.dart`**
 
 ```dart
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:japaconnect_core/japaconnect_core.dart';
-import 'providers/discover_provider.dart';
+import 'package:japaconnect_mobile/features/feed/providers/discover_provider.dart';
 
 class DiscoverScreen extends ConsumerWidget {
   const DiscoverScreen({super.key});
@@ -1907,7 +2009,7 @@ class _Section extends StatelessWidget {
 }
 ```
 
-- [ ] **Step 5: Add route and write tests**
+- [ ] **Step 5: Add Discover route and test**
 
 ```dart
 GoRoute(path: '/discover', builder: (_, __) => const DiscoverScreen()),
@@ -1917,23 +2019,171 @@ GoRoute(path: '/discover', builder: (_, __) => const DiscoverScreen()),
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:japaconnect_mobile/features/discover/screens/discover_screen.dart';
+import 'package:japaconnect_mobile/features/feed/screens/discover_screen.dart';
 
 void main() {
-  testWidgets('shows loading shimmer initially', (tester) async {
+  testWidgets('DiscoverScreen shows loading shimmer initially', (tester) async {
     await tester.pumpWidget(const ProviderScope(child: MaterialApp(home: DiscoverScreen())));
     expect(find.byType(LoadingShimmer), findsOneWidget);
   });
 }
 ```
 
-- [ ] **Step 6: Run `flutter analyze` and `flutter test`**
+- [ ] **Step 6: Create `TrendingService`, `TrendingProvider`, `TrendingScreen`, route, and test**
 
-- [ ] **Step 7: Commit**
+`apps/mobile/lib/features/feed/services/trending_service.dart`:
+
+```dart
+import 'package:japaconnect_core/japaconnect_core.dart';
+
+class TrendingService {
+  final JcApiClient _client;
+  TrendingService(this._client);
+
+  Future<List<Map<String, dynamic>>> trendingContent() async {
+    final response = await _client.get<List<dynamic>>(
+      '/trending/content',
+      parse: (json) => (json as List).cast<Map<String, dynamic>>(),
+    );
+    return response;
+  }
+
+  Future<List<Map<String, dynamic>>> trendingSpaces() async {
+    final response = await _client.get<List<dynamic>>(
+      '/trending/spaces',
+      parse: (json) => (json as List).cast<Map<String, dynamic>>(),
+    );
+    return response;
+  }
+
+  Future<List<Map<String, dynamic>>> trendingUsers() async {
+    final response = await _client.get<List<dynamic>>(
+      '/trending/users',
+      parse: (json) => (json as List).cast<Map<String, dynamic>>(),
+    );
+    return response;
+  }
+
+  Future<List<Map<String, dynamic>>> trendingTags() async {
+    final response = await _client.get<List<dynamic>>(
+      '/trending/tags',
+      parse: (json) => (json as List).cast<Map<String, dynamic>>(),
+    );
+    return response;
+  }
+}
+```
+
+`apps/mobile/lib/features/feed/providers/trending_provider.dart`:
+
+```dart
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:japaconnect_core/japaconnect_core.dart';
+import 'package:japaconnect_mobile/features/feed/services/trending_service.dart';
+
+final trendingServiceProvider = Provider<TrendingService>((ref) {
+  final client = ref.watch(jcApiClientProvider);
+  return TrendingService(client);
+});
+
+final trendingProvider = FutureProvider.autoDispose<Map<String, List<Map<String, dynamic>>>>((ref) async {
+  final service = ref.watch(trendingServiceProvider);
+  final content = await service.trendingContent();
+  final spaces = await service.trendingSpaces();
+  final users = await service.trendingUsers();
+  final tags = await service.trendingTags();
+  return {'content': content, 'spaces': spaces, 'users': users, 'tags': tags};
+});
+```
+
+`apps/mobile/lib/features/feed/screens/trending_screen.dart`:
+
+```dart
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:japaconnect_core/japaconnect_core.dart';
+import 'package:japaconnect_mobile/features/feed/providers/trending_provider.dart';
+
+class TrendingScreen extends ConsumerWidget {
+  const TrendingScreen({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final state = ref.watch(trendingProvider);
+    return Scaffold(
+      appBar: AppBar(title: const Text('Trending')),
+      body: state.when(
+        data: (data) => ListView(
+          children: [
+            _Section(title: 'Content', items: data['content']!),
+            _Section(title: 'Spaces', items: data['spaces']!),
+            _Section(title: 'Users', items: data['users']!),
+            _Section(title: 'Tags', items: data['tags']!),
+          ],
+        ),
+        loading: () => const LoadingShimmer(),
+        error: (e, _) => JcErrorWidget(error: e, onRetry: () => ref.invalidate(trendingProvider)),
+      ),
+    );
+  }
+}
+
+class _Section extends StatelessWidget {
+  final String title;
+  final List<Map<String, dynamic>> items;
+  const _Section({required this.title, required this.items});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(16),
+          child: Text(title, style: JcTypography.heading),
+        ),
+        SizedBox(
+          height: 180,
+          child: ListView.builder(
+            scrollDirection: Axis.horizontal,
+            itemCount: items.length,
+            itemBuilder: (_, i) => SizedBox(
+              width: 160,
+              child: EntityCard(item: items[i]),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+```
+
+```dart
+GoRoute(path: '/trending', builder: (_, __) => const TrendingScreen()),
+```
+
+```dart
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:japaconnect_mobile/features/feed/screens/trending_screen.dart';
+
+void main() {
+  testWidgets('TrendingScreen shows loading shimmer initially', (tester) async {
+    await tester.pumpWidget(const ProviderScope(child: MaterialApp(home: TrendingScreen())));
+    expect(find.byType(LoadingShimmer), findsOneWidget);
+  });
+}
+```
+
+- [ ] **Step 7: Run `flutter analyze` and `flutter test`**
+
+- [ ] **Step 8: Commit**
 
 ```bash
 git add apps/mobile
-git commit -m "feat(mobile): add discover feature module"
+git commit -m "feat(mobile): add Discover and Trending (feed sub-module)"
 ```
 
 ---
@@ -2028,7 +2278,7 @@ class ContentService {
 ```dart
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:japaconnect_core/japaconnect_core.dart';
-import 'content_service.dart';
+import 'package:japaconnect_mobile/features/content/services/content_service.dart';
 
 final contentServiceProvider = Provider<ContentService>((ref) {
   final client = ref.watch(jcApiClientProvider);
@@ -2073,7 +2323,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:japaconnect_core/japaconnect_core.dart';
-import 'providers/content_provider.dart';
+import 'package:japaconnect_mobile/features/content/providers/content_provider.dart';
 
 class BlogListScreen extends ConsumerWidget {
   const BlogListScreen({super.key});
@@ -2108,7 +2358,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:japaconnect_core/japaconnect_core.dart';
-import '../providers/content_provider.dart';
+import 'package:japaconnect_mobile/features/content/providers/content_provider.dart';
 
 class GuideListScreen extends ConsumerWidget {
   const GuideListScreen({super.key});
@@ -2141,7 +2391,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:japaconnect_core/japaconnect_core.dart';
-import '../providers/content_provider.dart';
+import 'package:japaconnect_mobile/features/content/providers/content_provider.dart';
 
 class ComparisonListScreen extends ConsumerWidget {
   const ComparisonListScreen({super.key});
@@ -2173,7 +2423,7 @@ class ComparisonListScreen extends ConsumerWidget {
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:japaconnect_core/japaconnect_core.dart';
-import '../providers/content_provider.dart';
+import 'package:japaconnect_mobile/features/content/providers/content_provider.dart';
 
 class BlogDetailScreen extends ConsumerWidget {
   final String slug;
@@ -2210,7 +2460,7 @@ class BlogDetailScreen extends ConsumerWidget {
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:japaconnect_core/japaconnect_core.dart';
-import '../providers/content_provider.dart';
+import 'package:japaconnect_mobile/features/content/providers/content_provider.dart';
 
 class GuideDetailScreen extends ConsumerWidget {
   final String slug;
@@ -2247,7 +2497,7 @@ class GuideDetailScreen extends ConsumerWidget {
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:japaconnect_core/japaconnect_core.dart';
-import '../providers/content_provider.dart';
+import 'package:japaconnect_mobile/features/content/providers/content_provider.dart';
 
 class ComparisonDetailScreen extends ConsumerWidget {
   final String id;
@@ -2401,7 +2651,7 @@ class ForumService {
 ```dart
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:japaconnect_core/japaconnect_core.dart';
-import 'forum_service.dart';
+import 'package:japaconnect_mobile/features/forum/services/forum_service.dart';
 
 final forumServiceProvider = Provider<ForumService>((ref) {
   final client = ref.watch(jcApiClientProvider);
@@ -2426,7 +2676,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:japaconnect_core/japaconnect_core.dart';
-import 'providers/forum_provider.dart';
+import 'package:japaconnect_mobile/features/forum/providers/forum_provider.dart';
 
 class ForumListScreen extends ConsumerWidget {
   const ForumListScreen({super.key});
@@ -2461,7 +2711,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:japaconnect_core/japaconnect_core.dart';
-import '../providers/forum_provider.dart';
+import 'package:japaconnect_mobile/features/forum/providers/forum_provider.dart';
 
 class ForumDetailScreen extends ConsumerWidget {
   final String slug;
@@ -2502,7 +2752,7 @@ class ForumDetailScreen extends ConsumerWidget {
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:japaconnect_core/japaconnect_core.dart';
-import '../providers/forum_provider.dart';
+import 'package:japaconnect_mobile/features/forum/providers/forum_provider.dart';
 
 class ForumReplyScreen extends ConsumerWidget {
   final String slug;
@@ -2633,7 +2883,7 @@ class JapaBotService {
 ```dart
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:japaconnect_core/japaconnect_core.dart';
-import 'japabot_service.dart';
+import 'package:japaconnect_mobile/features/tools/japabot/services/japabot_service.dart';
 
 final japabotServiceProvider = Provider<JapaBotService>((ref) {
   final client = ref.watch(jcApiClientProvider);
@@ -2652,7 +2902,7 @@ final japabotConversationsProvider = FutureProvider.autoDispose<List<Map<String,
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:japaconnect_core/japaconnect_core.dart';
-import 'providers/japabot_provider.dart';
+import 'package:japaconnect_mobile/features/tools/japabot/providers/japabot_provider.dart';
 
 class JapaBotScreen extends ConsumerWidget {
   const JapaBotScreen({super.key});
@@ -2749,7 +2999,7 @@ class SpacesService {
 ```dart
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:japaconnect_core/japaconnect_core.dart';
-import 'spaces_service.dart';
+import 'package:japaconnect_mobile/features/spaces/services/spaces_service.dart';
 
 final spacesServiceProvider = Provider<SpacesService>((ref) {
   final client = ref.watch(jcApiClientProvider);
@@ -2774,7 +3024,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:japaconnect_core/japaconnect_core.dart';
-import 'providers/spaces_provider.dart';
+import 'package:japaconnect_mobile/features/spaces/providers/spaces_provider.dart';
 
 class SpaceListScreen extends ConsumerWidget {
   const SpaceListScreen({super.key});
@@ -2807,7 +3057,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:japaconnect_core/japaconnect_core.dart';
-import 'providers/spaces_provider.dart';
+import 'package:japaconnect_mobile/features/spaces/providers/spaces_provider.dart';
 
 class SpaceDetailScreen extends ConsumerWidget {
   final String slug;
@@ -2881,7 +3131,7 @@ git commit -m "feat(mobile): add spaces feature module"
 
 **Interfaces:**
 - Consumes: `JcApiClient`, `JcTextField`, `JcButton`.
-- Produces: `socialServiceProvider`, `notificationsProvider`, `conversationsProvider`, `conversationMessagesProvider`, `NotificationsScreen`, `MessagesListScreen`, `MessageThreadScreen`, `/notifications`, `/messages`, `/messages/:id`.
+- Produces: `socialServiceProvider`, `notificationsProvider`, `conversationsProvider`, `conversationMessagesProvider`, `socialRealtimeSyncProvider`, `NotificationsScreen`, `MessagesListScreen`, `MessageThreadScreen`, `/notifications`, `/messages`, `/messages/:id`.
 
 - [ ] **Step 1: Verify API routes**
 
@@ -2964,7 +3214,8 @@ class SocialService {
 ```dart
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:japaconnect_core/japaconnect_core.dart';
-import 'social_service.dart';
+import 'package:japaconnect_core/realtime/socket_service.dart';
+import 'package:japaconnect_mobile/features/social/services/social_service.dart';
 
 final socialServiceProvider = Provider<SocialService>((ref) {
   final client = ref.watch(jcApiClientProvider);
@@ -2985,6 +3236,37 @@ final conversationMessagesProvider = FutureProvider.autoDispose.family<List<Map<
   final service = ref.watch(socialServiceProvider);
   return service.getConversationMessages(id);
 });
+
+/// Listens to [realtimeEventsProvider] and [pushServiceProvider.foregroundMessages]
+/// and invalidates the relevant providers for `notification` and `dm` events.
+/// For `dm` events, also invalidates the specific
+/// `conversationMessagesProvider(conversationId)` when the payload includes a
+/// `conversation_id`. The stream subscriptions are cancelled when this provider
+/// is disposed.
+final socialRealtimeSyncProvider = Provider<void>((ref) {
+  ref.listen(realtimeEventsProvider, (previous, next) {
+    next.whenData((event) {
+      final type = event['type'] as String?;
+      switch (type) {
+        case 'notification':
+          ref.invalidate(notificationsProvider);
+          break;
+        case 'dm':
+          ref.invalidate(conversationsProvider);
+          final conversationId = event['conversation_id'] as String?;
+          if (conversationId != null) {
+            ref.invalidate(conversationMessagesProvider(conversationId));
+          }
+          break;
+      }
+    });
+  });
+
+  final pushSub = ref.watch(pushServiceProvider).foregroundMessages.listen((_) {
+    ref.invalidate(notificationsProvider);
+  });
+  ref.onDispose(pushSub.cancel);
+});
 ```
 
 - [ ] **Step 4: Create `NotificationsScreen`, `MessagesListScreen`, and `MessageThreadScreen`**
@@ -2996,13 +3278,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:japaconnect_core/japaconnect_core.dart';
-import 'providers/social_provider.dart';
+import 'package:japaconnect_mobile/features/social/providers/social_provider.dart';
 
 class NotificationsScreen extends ConsumerWidget {
   const NotificationsScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    ref.watch(socialRealtimeSyncProvider); // keep realtime listener alive
     final state = ref.watch(notificationsProvider);
     return Scaffold(
       appBar: AppBar(title: const Text('Notifications')),
@@ -3032,13 +3315,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:japaconnect_core/japaconnect_core.dart';
-import 'providers/social_provider.dart';
+import 'package:japaconnect_mobile/features/social/providers/social_provider.dart';
 
 class MessagesListScreen extends ConsumerWidget {
   const MessagesListScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    ref.watch(socialRealtimeSyncProvider); // keep realtime listener alive
     final state = ref.watch(conversationsProvider);
     return Scaffold(
       appBar: AppBar(title: const Text('Messages')),
@@ -3064,7 +3348,7 @@ class MessagesListScreen extends ConsumerWidget {
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:japaconnect_core/japaconnect_core.dart';
-import 'providers/social_provider.dart';
+import 'package:japaconnect_mobile/features/social/providers/social_provider.dart';
 
 class MessageThreadScreen extends ConsumerWidget {
   final String id;
@@ -3073,6 +3357,7 @@ class MessageThreadScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final text = TextEditingController();
+    ref.watch(socialRealtimeSyncProvider); // keep realtime + push listener alive
     final messages = ref.watch(conversationMessagesProvider(id));
     return Scaffold(
       appBar: AppBar(title: const Text('Message Thread')),
@@ -3231,7 +3516,7 @@ class LearningService {
 ```dart
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:japaconnect_core/japaconnect_core.dart';
-import 'learning_service.dart';
+import 'package:japaconnect_mobile/features/learning/services/learning_service.dart';
 
 final learningServiceProvider = Provider<LearningService>((ref) {
   final client = ref.watch(jcApiClientProvider);
@@ -3262,7 +3547,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:japaconnect_core/japaconnect_core.dart';
-import 'providers/learning_provider.dart';
+import 'package:japaconnect_mobile/features/learning/providers/learning_provider.dart';
 
 class CourseListScreen extends ConsumerWidget {
   const CourseListScreen({super.key});
@@ -3297,7 +3582,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:japaconnect_core/japaconnect_core.dart';
-import 'providers/learning_provider.dart';
+import 'package:japaconnect_mobile/features/learning/providers/learning_provider.dart';
 
 class CourseDetailScreen extends ConsumerWidget {
   final String slug;
@@ -3338,7 +3623,7 @@ class CourseDetailScreen extends ConsumerWidget {
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:japaconnect_core/japaconnect_core.dart';
-import 'providers/learning_provider.dart';
+import 'package:japaconnect_mobile/features/learning/providers/learning_provider.dart';
 
 class LessonPlayerScreen extends ConsumerWidget {
   final String trackSlug;
@@ -3517,7 +3802,7 @@ class ProfileService {
 ```dart
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:japaconnect_core/japaconnect_core.dart';
-import 'profile_service.dart';
+import 'package:japaconnect_mobile/features/profile/services/profile_service.dart';
 
 final profileServiceProvider = Provider<ProfileService>((ref) {
   final client = ref.watch(jcApiClientProvider);
@@ -3554,7 +3839,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:japaconnect_core/japaconnect_core.dart';
-import 'providers/profile_provider.dart';
+import 'package:japaconnect_mobile/features/profile/providers/profile_provider.dart';
 
 class ProfileScreen extends ConsumerWidget {
   const ProfileScreen({super.key});
@@ -3571,6 +3856,14 @@ class ProfileScreen extends ConsumerWidget {
             ListTile(title: const Text('Settings'), onTap: () => context.push('/profile/settings')),
             ListTile(title: const Text('Wallet'), onTap: () => context.push('/profile/wallet')),
             ListTile(title: const Text('Bookmarks'), onTap: () => context.push('/profile/bookmarks')),
+            ListTile(
+              title: const Text('Logout'),
+              onTap: () async {
+                await ref.read(authServiceProvider).logout();
+                ref.read(isAuthenticatedProvider.notifier).state = false;
+                if (context.mounted) context.go('/login');
+              },
+            ),
           ],
         ),
         loading: () => const LoadingShimmer(),
@@ -3587,7 +3880,7 @@ class ProfileScreen extends ConsumerWidget {
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:japaconnect_core/japaconnect_core.dart';
-import 'providers/profile_provider.dart';
+import 'package:japaconnect_mobile/features/profile/providers/profile_provider.dart';
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
@@ -3618,7 +3911,7 @@ class SettingsScreen extends ConsumerWidget {
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:japaconnect_core/japaconnect_core.dart';
-import 'providers/profile_provider.dart';
+import 'package:japaconnect_mobile/features/profile/providers/profile_provider.dart';
 
 class WalletScreen extends ConsumerWidget {
   const WalletScreen({super.key});
@@ -3648,7 +3941,7 @@ class WalletScreen extends ConsumerWidget {
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:japaconnect_core/japaconnect_core.dart';
-import 'providers/profile_provider.dart';
+import 'package:japaconnect_mobile/features/profile/providers/profile_provider.dart';
 
 class BookmarksScreen extends ConsumerWidget {
   const BookmarksScreen({super.key});
@@ -3785,7 +4078,7 @@ class GamificationService {
 ```dart
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:japaconnect_core/japaconnect_core.dart';
-import 'gamification_service.dart';
+import 'package:japaconnect_mobile/features/gamification/services/gamification_service.dart';
 
 final gamificationServiceProvider = Provider<GamificationService>((ref) {
   final client = ref.watch(jcApiClientProvider);
@@ -3819,7 +4112,7 @@ final leaderboardProvider = FutureProvider.autoDispose<Map<String, dynamic>>((re
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:japaconnect_core/japaconnect_core.dart';
-import 'providers/gamification_provider.dart';
+import 'package:japaconnect_mobile/features/gamification/providers/gamification_provider.dart';
 
 class BadgesScreen extends ConsumerWidget {
   const BadgesScreen({super.key});
@@ -3850,7 +4143,7 @@ class BadgesScreen extends ConsumerWidget {
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:japaconnect_core/japaconnect_core.dart';
-import 'providers/gamification_provider.dart';
+import 'package:japaconnect_mobile/features/gamification/providers/gamification_provider.dart';
 
 class LeaderboardScreen extends ConsumerWidget {
   const LeaderboardScreen({super.key});
@@ -3982,7 +4275,7 @@ class JobsService {
 ```dart
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:japaconnect_core/japaconnect_core.dart';
-import 'jobs_service.dart';
+import 'package:japaconnect_mobile/features/jobs/services/jobs_service.dart';
 
 final jobsServiceProvider = Provider<JobsService>((ref) {
   final client = ref.watch(jcApiClientProvider);
@@ -4007,7 +4300,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:japaconnect_core/japaconnect_core.dart';
-import 'providers/jobs_provider.dart';
+import 'package:japaconnect_mobile/features/jobs/providers/jobs_provider.dart';
 
 class JobsListScreen extends ConsumerWidget {
   const JobsListScreen({super.key});
@@ -4041,7 +4334,7 @@ class JobsListScreen extends ConsumerWidget {
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:japaconnect_core/japaconnect_core.dart';
-import 'providers/jobs_provider.dart';
+import 'package:japaconnect_mobile/features/jobs/providers/jobs_provider.dart';
 
 class JobDetailScreen extends ConsumerWidget {
   final String slug;
@@ -4159,7 +4452,7 @@ class ToolsHubService {
 ```dart
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:japaconnect_core/japaconnect_core.dart';
-import 'tools_hub_service.dart';
+import 'package:japaconnect_mobile/features/tools/hub/services/tools_hub_service.dart';
 
 final toolsHubServiceProvider = Provider<ToolsHubService>((ref) {
   final client = ref.watch(jcApiClientProvider);
@@ -4179,7 +4472,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:japaconnect_core/japaconnect_core.dart';
-import 'providers/tools_hub_provider.dart';
+import 'package:japaconnect_mobile/features/tools/hub/providers/tools_hub_provider.dart';
 
 class ToolsHubScreen extends ConsumerWidget {
   const ToolsHubScreen({super.key});
@@ -4314,7 +4607,7 @@ class VisaChecklistService {
 ```dart
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:japaconnect_core/japaconnect_core.dart';
-import 'visa_checklist_service.dart';
+import 'package:japaconnect_mobile/features/tools/visa_checklist/services/visa_checklist_service.dart';
 
 final visaChecklistServiceProvider = Provider<VisaChecklistService>((ref) {
   final client = ref.watch(jcApiClientProvider);
@@ -4333,7 +4626,7 @@ final visaChecklistProvider = FutureProvider.autoDispose<List<Map<String, dynami
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:japaconnect_core/japaconnect_core.dart';
-import '../providers/visa_checklist_provider.dart';
+import 'package:japaconnect_mobile/features/tools/visa_checklist/providers/visa_checklist_provider.dart';
 
 class VisaChecklistScreen extends ConsumerWidget {
   const VisaChecklistScreen({super.key});
@@ -4398,7 +4691,7 @@ class ReadinessService {
 ```dart
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:japaconnect_core/japaconnect_core.dart';
-import 'readiness_service.dart';
+import 'package:japaconnect_mobile/features/tools/readiness/services/readiness_service.dart';
 
 final readinessServiceProvider = Provider<ReadinessService>((ref) {
   final client = ref.watch(jcApiClientProvider);
@@ -4417,7 +4710,7 @@ final readinessProvider = FutureProvider.autoDispose<Map<String, dynamic>>((ref)
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:japaconnect_core/japaconnect_core.dart';
-import '../providers/readiness_provider.dart';
+import 'package:japaconnect_mobile/features/tools/readiness/providers/readiness_provider.dart';
 
 class ReadinessScreen extends ConsumerWidget {
   const ReadinessScreen({super.key});
@@ -4468,7 +4761,7 @@ class CostOfLivingService {
 ```dart
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:japaconnect_core/japaconnect_core.dart';
-import 'cost_of_living_service.dart';
+import 'package:japaconnect_mobile/features/tools/cost_of_living/services/cost_of_living_service.dart';
 
 final costOfLivingServiceProvider = Provider<CostOfLivingService>((ref) {
   final client = ref.watch(jcApiClientProvider);
@@ -4487,7 +4780,7 @@ final costOfLivingProvider = FutureProvider.autoDispose.family<Map<String, dynam
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:japaconnect_core/japaconnect_core.dart';
-import '../providers/cost_of_living_provider.dart';
+import 'package:japaconnect_mobile/features/tools/cost_of_living/providers/cost_of_living_provider.dart';
 
 final _costOfLivingInputsProvider = StateProvider<({String origin, String destination})>(
   (ref) => (origin: '', destination: ''),
@@ -4576,7 +4869,7 @@ class ScholarshipsService {
 ```dart
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:japaconnect_core/japaconnect_core.dart';
-import 'scholarships_service.dart';
+import 'package:japaconnect_mobile/features/tools/scholarships/services/scholarships_service.dart';
 
 final scholarshipsServiceProvider = Provider<ScholarshipsService>((ref) {
   final client = ref.watch(jcApiClientProvider);
@@ -4595,7 +4888,7 @@ final scholarshipsProvider = FutureProvider.autoDispose<List<Map<String, dynamic
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:japaconnect_core/japaconnect_core.dart';
-import '../providers/scholarships_provider.dart';
+import 'package:japaconnect_mobile/features/tools/scholarships/providers/scholarships_provider.dart';
 
 class ScholarshipsScreen extends ConsumerWidget {
   const ScholarshipsScreen({super.key});
@@ -4661,7 +4954,7 @@ class RemittanceService {
 ```dart
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:japaconnect_core/japaconnect_core.dart';
-import 'remittance_service.dart';
+import 'package:japaconnect_mobile/features/tools/remittance/services/remittance_service.dart';
 
 final remittanceServiceProvider = Provider<RemittanceService>((ref) {
   final client = ref.watch(jcApiClientProvider);
@@ -4680,7 +4973,7 @@ final remittanceProvidersProvider = FutureProvider.autoDispose<List<Map<String, 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:japaconnect_core/japaconnect_core.dart';
-import '../providers/remittance_provider.dart';
+import 'package:japaconnect_mobile/features/tools/remittance/providers/remittance_provider.dart';
 
 class RemittanceScreen extends ConsumerWidget {
   const RemittanceScreen({super.key});
@@ -4772,11 +5065,19 @@ git commit -m "feat(mobile): add v2 identity tool modules (checklist, readiness,
 
 - [ ] **Step 1: Verify backend support**
 
-Confirm the backend has implemented:
+Confirm the backend has implemented at least one of the device-token endpoints:
 - `POST /me/devices`
 - `DELETE /me/devices/:device_id`
 - `GET /me/devices`
-- `notification:send_push` Asynq task
+
+or the catalog-equivalent routes:
+- `POST /me/push-tokens`
+- `DELETE /me/push-tokens`
+- `DELETE /me/push-tokens/{id}`
+
+and the `notification:send_push` Asynq task.
+
+> **Implementation note:** The ADR-074 design uses `/me/devices`, but `conventions/api-routes-catalog.md` lists `/me/push-tokens` for the same purpose. At runtime, `PushTokenManager` must verify which endpoint the backend exposes. If `POST /me/devices` returns `404`, fall back to `POST /me/push-tokens` with body `{token, platform, device_id}`. For deregistration, if `DELETE /me/devices/:device_id` returns `404`, fall back to `DELETE /me/push-tokens/:device_id` (or `DELETE /me/push-tokens` with the token). Do not proceed if both endpoints are missing.
 
 If not, pause this task until Backend Phase 47 is complete.
 
@@ -4787,6 +5088,7 @@ import 'package:flutter/foundation.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:japaconnect_core/auth/device_id.dart';
 import 'package:japaconnect_core/api/client.dart';
+import 'package:japaconnect_core/api/api_error.dart';
 
 class PushTokenManager {
   final JcApiClient client;
@@ -4801,9 +5103,16 @@ class PushTokenManager {
     final token = await FirebaseMessaging.instance.getToken();
     if (token == null) return;
     final id = await deviceId.value;
+    final body = {'device_id': id, 'platform': platform, 'token': token};
+    try {
+      await client.post<void>('/me/devices', body: body, parse: (_) {});
+      return;
+    } on JcApiError catch (e) {
+      if (e.status != 404) rethrow;
+    }
     await client.post<void>(
-      '/me/devices',
-      body: {'device_id': id, 'platform': platform, 'token': token},
+      '/me/push-tokens',
+      body: {'token': token, 'platform': platform, 'device_id': id},
       parse: (_) {},
     );
   }
@@ -4811,17 +5120,31 @@ class PushTokenManager {
   Future<void> deregister() async {
     if (!_isMobile) return;
     final id = await deviceId.value;
-    await client.delete('/me/devices/$id');
+    try {
+      await client.delete('/me/devices/$id');
+      return;
+    } on JcApiError catch (e) {
+      if (e.status != 404) rethrow;
+    }
+    await client.delete('/me/push-tokens/$id');
   }
 
   Future<void> listenAndRefresh() async {
     if (!_isMobile) return;
     FirebaseMessaging.instance.onTokenRefresh.listen((token) async {
+      if (client.accessToken == null) return;
       final id = await deviceId.value;
       final platform = defaultTargetPlatform == TargetPlatform.iOS ? 'ios' : 'android';
+      final body = {'device_id': id, 'platform': platform, 'token': token};
+      try {
+        await client.post<void>('/me/devices', body: body, parse: (_) {});
+        return;
+      } on JcApiError catch (e) {
+        if (e.status != 404) rethrow;
+      }
       await client.post<void>(
-        '/me/devices',
-        body: {'device_id': id, 'platform': platform, 'token': token},
+        '/me/push-tokens',
+        body: {'token': token, 'platform': platform, 'device_id': id},
         parse: (_) {},
       );
     });
@@ -4850,6 +5173,8 @@ class PushService {
   final JcApiClient client;
   final DeviceId deviceId;
   final _foregroundController = StreamController<RemoteMessage>.broadcast();
+  var _listeningToForeground = false;
+  var _listeningToTokenRefresh = false;
 
   PushService({required this.client, required this.deviceId});
 
@@ -4858,13 +5183,23 @@ class PushService {
   Future<void> initialize() async {
     if (defaultTargetPlatform != TargetPlatform.android && defaultTargetPlatform != TargetPlatform.iOS) return;
     await FirebaseMessaging.instance.requestPermission();
+    if (!_listeningToForeground) {
+      FirebaseMessaging.onMessage.listen((message) => _foregroundController.add(message));
+      _listeningToForeground = true;
+    }
+    if (client.accessToken == null) return;
     final manager = PushTokenManager(client: client, deviceId: deviceId);
     await manager.register(defaultTargetPlatform == TargetPlatform.iOS ? 'ios' : 'android');
-    manager.listenAndRefresh();
+    if (!_listeningToTokenRefresh) {
+      manager.listenAndRefresh();
+      _listeningToTokenRefresh = true;
+    }
+  }
 
-    FirebaseMessaging.onMessage.listen((message) {
-      _foregroundController.add(message);
-    });
+  Future<void> deregister() async {
+    if (defaultTargetPlatform != TargetPlatform.android && defaultTargetPlatform != TargetPlatform.iOS) return;
+    final manager = PushTokenManager(client: client, deviceId: deviceId);
+    await manager.deregister();
   }
 }
 ```
@@ -4876,8 +5211,7 @@ Add to `apps/mobile/lib/app/app_shell.dart` or a new `apps/mobile/lib/app/push_i
 ```dart
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:japaconnect_core/push/push_service.dart';
-import 'package:japaconnect_mobile/features/social/providers/social_provider.dart';
+import 'package:japaconnect_core/japaconnect_core.dart';
 
 class PushInitializer extends ConsumerStatefulWidget {
   final Widget child;
@@ -4888,17 +5222,33 @@ class PushInitializer extends ConsumerStatefulWidget {
 }
 
 class _PushInitializerState extends ConsumerState<PushInitializer> {
+  var _pushSub;
+  ProviderSubscription<bool>? _authSub;
+
   @override
   void initState() {
     super.initState();
     final push = ref.read(pushServiceProvider);
     push.initialize();
-    push.foregroundMessages.listen((_) {
-      ref.invalidate(notificationsProvider);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('New notification')),
-      );
+    _pushSub = push.foregroundMessages.listen((_) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('New notification')),
+        );
+      }
     });
+    _authSub = ref.listen<bool>(isAuthenticatedProvider, (prev, next) {
+      if (next == true && prev != true) {
+        ref.read(pushServiceProvider).initialize();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _pushSub?.cancel();
+    _authSub?.close();
+    super.dispose();
   }
 
   @override
@@ -4922,7 +5272,7 @@ void main() async {
 
 - [ ] **Step 5: Deregister token on logout**
 
-In `packages/japaconnect_core/lib/auth/service.dart`, update `logout()`:
+Ensure `packages/japaconnect_core/lib/auth/service.dart` `logout()` deregisters the push token before calling `client.logout()`. The implementation should already contain:
 
 ```dart
 Future<void> logout() async {
@@ -4957,6 +5307,7 @@ git commit -m "feat: add push notification token registration and deregistration
 - Create: `packages/japaconnect_core/lib/realtime/socket_service.dart`
 - Create: `apps/mobile/lib/app/realtime_initializer.dart`
 - Create: `packages/japaconnect_core/test/realtime/socket_service_test.dart`
+- Create: `packages/japaconnect_core/test/api/client_ws_test.dart`
 
 **Interfaces:**
 - Consumes: `web_socket_channel`, `JcApiClient`.
@@ -4982,7 +5333,7 @@ class SocketClient {
     _channel = WebSocketChannel.connect(Uri.parse('$url?ticket=$ticket'));
   }
 
-  Stream<dynamic> get events => _channel!.stream.map((e) => jsonDecode(e as String));
+  Stream<dynamic> get events => _channel?.stream.map((e) => jsonDecode(e as String)) ?? const Stream.empty();
 
   void send(Map<String, dynamic> message) {
     _channel?.sink.add(jsonEncode(message));
@@ -5008,6 +5359,11 @@ final socketServiceProvider = Provider<SocketService>((ref) {
   return SocketService(client: client);
 });
 
+final realtimeEventsProvider = StreamProvider<Map<String, dynamic>>((ref) {
+  final socket = ref.watch(socketServiceProvider);
+  return socket.events;
+});
+
 class SocketService {
   final JcApiClient client;
   final _eventController = StreamController<Map<String, dynamic>>.broadcast();
@@ -5019,7 +5375,7 @@ class SocketService {
   Stream<Map<String, dynamic>> get events => _eventController.stream;
 
   Future<void> connect() async {
-    if (client.accessToken == null) return;
+    if (client.accessToken == null || _socket != null) return;
     final ticket = await client.post<Map<String, dynamic>>(
       '/auth/ws-ticket',
       parse: (json) => json as Map<String, dynamic>,
@@ -5028,9 +5384,14 @@ class SocketService {
     _socket!.connect(ticket['token'] as String);
     _socket!.events.listen(
       (event) => _eventController.add(event as Map<String, dynamic>),
-      onError: (_) => _scheduleReconnect(),
-      onDone: _scheduleReconnect,
+      onError: (_) => _onConnectionLost(),
+      onDone: _onConnectionLost,
     );
+  }
+
+  void _onConnectionLost() {
+    _socket = null;
+    _scheduleReconnect();
   }
 
   void _scheduleReconnect() {
@@ -5041,7 +5402,7 @@ class SocketService {
   void disconnect() {
     _reconnectTimer?.cancel();
     _socket?.disconnect();
-    _eventController.close();
+    _socket = null;
   }
 }
 ```
@@ -5051,9 +5412,7 @@ class SocketService {
 ```dart
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:japaconnect_core/realtime/socket_service.dart';
-import 'package:japaconnect_mobile/features/feed/providers/feed_provider.dart';
-import 'package:japaconnect_mobile/features/social/providers/social_provider.dart';
+import 'package:japaconnect_core/japaconnect_core.dart';
 
 class RealtimeInitializer extends ConsumerStatefulWidget {
   final Widget child;
@@ -5064,25 +5423,24 @@ class RealtimeInitializer extends ConsumerStatefulWidget {
 }
 
 class _RealtimeInitializerState extends ConsumerState<RealtimeInitializer> {
+  ProviderSubscription<bool>? _sub;
+
   @override
   void initState() {
     super.initState();
-    final socket = ref.read(socketServiceProvider);
-    socket.connect();
-    socket.events.listen((event) {
-      final type = event['type'] as String?;
-      if (type == 'notification') ref.invalidate(notificationsProvider);
-      if (type == 'feed_update') ref.invalidate(feedProvider);
-      if (type == 'dm') {
-        ref.invalidate(conversationsProvider);
-        final conversationId = event['conversation_id'] as String?;
-        if (conversationId != null) ref.invalidate(conversationMessagesProvider(conversationId));
+    _sub = ref.listen<bool>(isAuthenticatedProvider, (prev, next) {
+      final socket = ref.read(socketServiceProvider);
+      if (next) {
+        socket.connect();
+      } else {
+        socket.disconnect();
       }
     });
   }
 
   @override
   void dispose() {
+    _sub?.close();
     ref.read(socketServiceProvider).disconnect();
     super.dispose();
   }
@@ -5094,23 +5452,97 @@ class _RealtimeInitializerState extends ConsumerState<RealtimeInitializer> {
 
 Wrap `JapaConnectApp` with `RealtimeInitializer` after the `PushInitializer` in `main.dart`.
 
-- [ ] **Step 5: Write a unit test for `SocketClient` parsing**
+**Feature-isolation note:** `RealtimeInitializer` only starts and stops the global socket connection. Feature providers must subscribe to `realtimeEventsProvider` internally and invalidate themselves when an event of their own concern is received. Example implementations: `feedRealtimeSyncProvider` (Task 7) and `socialRealtimeSyncProvider` (Task 12). Each sync provider uses `ref.listen` on `realtimeEventsProvider`, invalidates the relevant `FutureProvider` (e.g., `feedProvider`, `notificationsProvider`, `conversationsProvider`), and the stream subscription is cancelled when the provider is disposed.
+
+- [ ] **Step 5: Write unit tests in `packages/japaconnect_core/test/realtime/socket_service_test.dart`**
 
 ```dart
+import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:japaconnect_core/realtime/socket_client.dart';
+import 'package:japaconnect_core/realtime/socket_service.dart';
 
 void main() {
   test('SocketClient stores URL', () {
     final client = SocketClient(url: 'wss://example.com/ws');
     expect(client.url, 'wss://example.com/ws');
   });
+
+  test('realtime sync provider invalidates target provider on a mock event', () async {
+    var loadCount = 0;
+    final mockTargetProvider = FutureProvider<String>((ref) async {
+      loadCount++;
+      return 'ok-$loadCount';
+    });
+
+    final mockSyncProvider = Provider<void>((ref) {
+      ref.listen(realtimeEventsProvider, (previous, next) {
+        next.whenData((event) {
+          if (event['type'] == 'feed_update') {
+            ref.invalidate(mockTargetProvider);
+          }
+        });
+      });
+    });
+
+    final container = ProviderContainer(
+      overrides: [
+        realtimeEventsProvider.overrideWith((ref) => Stream.value({'type': 'feed_update'})),
+      ],
+    );
+
+    await container.read(mockTargetProvider.future);
+    final before = await container.read(mockTargetProvider.future);
+    container.read(mockSyncProvider);
+    await Future<void>.delayed(Duration.zero);
+    final after = await container.read(mockTargetProvider.future);
+
+    expect(after, isNot(equals(before)));
+    container.dispose();
+  });
 }
 ```
 
-- [ ] **Step 6: Run `flutter analyze` and `flutter test` in `packages/japaconnect_core`**
+- [ ] **Step 6: Write a unit test for `JcApiClient.effectiveWsUrl` in `packages/japaconnect_core/test/api/client_ws_test.dart`**
 
-- [ ] **Step 7: Commit**
+```dart
+import 'package:flutter_test/flutter_test.dart';
+import 'package:japaconnect_core/api/client.dart';
+import 'package:japaconnect_core/auth/token_store.dart';
+import 'package:japaconnect_core/auth/device_id.dart';
+
+class FakeTokenStore extends TokenStore {
+  @override
+  Future<void> writeRefreshToken(String token) async {}
+
+  @override
+  Future<String?> readRefreshToken() async => null;
+
+  @override
+  Future<void> deleteRefreshToken() async {}
+}
+
+class FakeDeviceId extends DeviceId {
+  @override
+  Future<String> get value async => 'test-device';
+}
+
+void main() {
+  test('JcApiClient.effectiveWsUrl derives ws://localhost:8080/ws from http base', () {
+    final client = JcApiClient(
+      baseUrl: 'http://localhost:8080/api/v1',
+      tokenStore: FakeTokenStore(),
+      deviceId: FakeDeviceId(),
+    );
+    expect(client.effectiveWsUrl, 'ws://localhost:8080/ws');
+  });
+}
+```
+
+- [ ] **Step 7: Run `flutter analyze` and `flutter test` in `packages/japaconnect_core`**
+
+- [ ] **Step 8: Commit**
 
 ```bash
 cd /home/jmobile/websites/japa/japaconnect
