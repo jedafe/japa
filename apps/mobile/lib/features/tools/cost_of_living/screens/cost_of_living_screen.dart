@@ -20,27 +20,47 @@ class CostOfLivingInputsNotifier
   }
 }
 
-class CostOfLivingScreen extends ConsumerWidget {
+class CostOfLivingScreen extends ConsumerStatefulWidget {
   const CostOfLivingScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<CostOfLivingScreen> createState() => _CostOfLivingScreenState();
+}
+
+class _CostOfLivingScreenState extends ConsumerState<CostOfLivingScreen> {
+  late final TextEditingController _originController;
+  late final TextEditingController _destinationController;
+
+  @override
+  void initState() {
+    super.initState();
+    _originController = TextEditingController();
+    _destinationController = TextEditingController();
+  }
+
+  @override
+  void dispose() {
+    _originController.dispose();
+    _destinationController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final inputs = ref.watch(_costOfLivingInputsProvider);
     final state = ref.watch(costOfLivingProvider(inputs));
-    final origin = TextEditingController();
-    final destination = TextEditingController();
 
     Widget buildForm() {
       return Column(
         children: [
-          JcTextField(label: 'Origin', controller: origin),
-          JcTextField(label: 'Destination', controller: destination),
+          JcTextField(label: 'Origin', controller: _originController),
+          JcTextField(label: 'Destination', controller: _destinationController),
           JcButton(
             label: 'Compare',
             onPressed: () {
               ref
                   .read(_costOfLivingInputsProvider.notifier)
-                  .updateInputs(origin.text, destination.text);
+                  .updateInputs(_originController.text, _destinationController.text);
             },
           ),
         ],
