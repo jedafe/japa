@@ -3374,7 +3374,7 @@ type SpaceType struct {
 	IsSystem     bool               `json:"is_system"`
 	CreatedAt    pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
-	IsUniversity bool               `json:"is_university"`
+	Category     *string            `json:"category"`
 }
 
 type StockProvider struct {
