@@ -80,6 +80,18 @@ func (s *Service) Update(ctx context.Context, tenantID pgtype.UUID, arg gen.Upda
 	return s.store.Update(ctx, tenantID, arg)
 }
 
+// ListProposed returns a page of sources with status='proposed' for admin
+// review. Tenant-scoped.
+func (s *Service) ListProposed(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]Source, error) {
+	return s.store.ListProposed(ctx, tenantID, limit, offset)
+}
+
+// ApproveProposed activates a proposed source (status='active', enabled=true)
+// and records the approver. Tenant-scoped.
+func (s *Service) ApproveProposed(ctx context.Context, tenantID, id, approvedBy pgtype.UUID) (Source, error) {
+	return s.store.ApproveProposed(ctx, tenantID, id, approvedBy)
+}
+
 // CrawlNow is a no-op service method retained for API surface compatibility.
 // The actual crawl-now trigger is handled by the HTTP handler which enqueues
 // the intel:fetch_source Asynq task directly (INTEL-011 fix). This method

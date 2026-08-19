@@ -605,6 +605,101 @@ func (h *Handlers) HandleCrawlNow(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// HandleListProposedSources returns the sources with status='proposed' for
+// admin review. These are sources discovered by the agent (source.discover)
+// that have not yet been approved.
+//
+// GET /api/v1/intel/sources/proposed
+//
+// Requires: intel.sources.manage
+// Ref: docs/superpowers/specs/2026-08-19-on-demand-intel-to-content.md
+func (h *Handlers) HandleListProposedSources(w http.ResponseWriter, r *http.Request) {
+	if h.intelSources == nil {
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
+		return
+	}
+
+	_, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	page, limit := h.parsePagination(r)
+	offset := clampInt32((page - 1) * limit)
+
+	rows, err := h.intelSources.ListProposed(r.Context(), tenantID, clampInt32(limit), offset)
+	if err != nil {
+		slog.Error("intel: list proposed sources failed", "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "list_proposed_failed", "Failed to list proposed sources")
+		return
+	}
+
+	entries := make([]map[string]interface{}, 0, len(rows))
+	for _, s := range rows {
+		entries = append(entries, sourceToFullEntry(s))
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
+		"data": entries,
+		"meta": map[string]interface{}{
+			"page_size":   limit,
+			"page_offset": (page - 1) * limit,
+			"count":       len(entries),
+		},
+	})
+}
+
+// HandleApproveProposedSource approves a proposed source: sets
+// status='active', enabled=true, and records the approver.
+//
+// POST /api/v1/intel/sources/{id}/approve
+//
+// Requires: intel.sources.manage
+// Ref: docs/superpowers/specs/2026-08-19-on-demand-intel-to-content.md
+func (h *Handlers) HandleApproveProposedSource(w http.ResponseWriter, r *http.Request) {
+	if h.intelSources == nil {
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
+		return
+	}
+
+	userID, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	sourceID, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	src, err := h.intelSources.ApproveProposed(r.Context(), tenantID, sourceID, userID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Proposed source not found")
+			return
+		}
+		slog.Error("intel: approve proposed source failed", "source_id", sourceID.String(), "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "approve_failed", "Failed to approve source")
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
+		"data": map[string]interface{}{
+			"source_id": sourceID.String(),
+			"status":    src.Status,
+			"enabled":   src.Enabled,
+		},
+	})
+}
+
 // HandleDisableSource disables a source from the review queue surface.
 // This is the review-side counterpart to PATCH enabled=false: it sets
 // enabled=false so future crawls stop, but existing promoted records are
