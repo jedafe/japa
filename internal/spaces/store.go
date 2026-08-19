@@ -583,6 +583,55 @@ func (s *Service) CreateSpaceWithOwner(
 	})
 }
 
+// LinkSpaceToPrimarySpaces keyword-matches the space name against public
+// primary (country/state/city) spaces and returns the most specific matched
+// space ID (city > state > country) plus all matched IDs. The matches are
+// intended to populate the space_parent_spaces junction.
+func (s *Service) LinkSpaceToPrimarySpaces(ctx context.Context, spaceID, tenantID pgtype.UUID, name string) (pgtype.UUID, []pgtype.UUID, error) {
+	keywords := extractSpaceKeywords(name)
+	if len(keywords) == 0 {
+		return pgtype.UUID{}, nil, nil
+	}
+
+	matches, err := s.FindSpacesByKeywords(ctx, tenantID, keywords)
+	if err != nil {
+		return pgtype.UUID{}, nil, fmt.Errorf("finding primary spaces by keywords: %w", err)
+	}
+	if len(matches) == 0 {
+		return pgtype.UUID{}, nil, nil
+	}
+
+	parentIDs := make([]pgtype.UUID, 0, len(matches))
+	for _, m := range matches {
+		parentIDs = append(parentIDs, m.ID)
+	}
+
+	return matches[0].ID, parentIDs, nil
+}
+
+// SetSpaceParent updates a space's parent_id and links it to the given primary
+// parent spaces in a single transaction.
+func (s *Service) SetSpaceParent(ctx context.Context, spaceID, tenantID, parentID pgtype.UUID, parentIDs []pgtype.UUID) error {
+	return db.WithTx(ctx, s.db.Writer, func(q *gen.Queries) error {
+		if err := q.UpdateSpaceParentID(ctx, gen.UpdateSpaceParentIDParams{
+			ID:       spaceID,
+			TenantID: tenantID,
+			ParentID: parentID,
+		}); err != nil {
+			return fmt.Errorf("updating parent_id: %w", err)
+		}
+		for _, pid := range parentIDs {
+			if err := q.AddParentSpace(ctx, gen.AddParentSpaceParams{
+				SpaceID:       spaceID,
+				ParentSpaceID: pid,
+			}); err != nil {
+				return fmt.Errorf("adding parent space: %w", err)
+			}
+		}
+		return nil
+	})
+}
+
 // UpdateSpace updates the mutable fields of a space, scoped to the tenant.
 func (s *Service) UpdateSpace(ctx context.Context, params gen.UpdateSpaceParams) (gen.UpdateSpaceRow, error) {
 	space, err := s.write.UpdateSpace(ctx, params)

@@ -15,6 +15,8 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"regexp"
+	"strings"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db"
@@ -203,8 +205,57 @@ func (s *Service) EnqueueSearchIndex(ctx context.Context, spaceID, tenantID pgty
 	}
 }
 
+var spaceKeywordStopWords = map[string]struct{}{
+	"a": {}, "an": {}, "the": {}, "in": {}, "of": {}, "for": {}, "and": {}, "or": {},
+	"community": {}, "global": {}, "world": {}, "university": {}, "college": {},
+}
+
+var spaceKeywordSeparators = regexp.MustCompile(`[^\p{L}\p{N}]+`)
+
+// extractSpaceKeywords tokenises a short space name into normalised n-grams
+// (1-2 words) for keyword matching against primary geo spaces. Stop words
+// are dropped only when they appear as single-word grams.
+func extractSpaceKeywords(name string) []string {
+	if name == "" {
+		return nil
+	}
+	normalized := spaceKeywordSeparators.ReplaceAllString(strings.ToLower(strings.TrimSpace(name)), " ")
+	raw := strings.Fields(normalized)
+	words := make([]string, 0, len(raw))
+	for _, w := range raw {
+		if len(w) >= 2 {
+			words = append(words, w)
+		}
+	}
+	if len(words) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{})
+	out := make([]string, 0, len(words)*2)
+	maxN := 2
+	if len(words) < maxN {
+		maxN = len(words)
+	}
+	for n := 1; n <= maxN; n++ {
+		for i := 0; i+n <= len(words); i++ {
+			phrase := strings.Join(words[i:i+n], " ")
+			if n == 1 {
+				if _, ok := spaceKeywordStopWords[phrase]; ok {
+					continue
+				}
+			}
+			if _, ok := seen[phrase]; ok {
+				continue
+			}
+			seen[phrase] = struct{}{}
+			out = append(out, phrase)
+		}
+	}
+	return out
+}
+
 // FindSpacesByKeywords finds public primary (country/state/city) and public
-// university spaces whose configured keywords, full name, or university
+// education spaces whose configured keywords, full name, or university
 // initials overlap with the given keyword list. Used by the content
 // auto-assign feature to link content to spaces based on title matching.
 // Ref: sections/05-geo-first-space-system.md, sections/14-content-type-system.md

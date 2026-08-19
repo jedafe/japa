@@ -650,15 +650,11 @@ func (h *Handlers) CreateSpace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// BUG-002: custom spaces must be linked to at least one primary space
-	// (country/state/city) via space_parent_spaces (Section 05 line 14, 190).
-	// Primary spaces (country/state/city) are themselves parents and need no
-	// parent linkage. Global spaces have no geo parent at all.
-	if req.Level == LevelCustom && len(req.ParentSpaceIDs) == 0 && req.ParentID == "" {
-		errpkg.WriteError(w, http.StatusBadRequest, "missing_parent",
-			"Custom spaces must belong to at least one primary space (country, state, or city)")
-		return
-	}
+	// Custom spaces no longer require the creator to manually select a parent.
+	// The platform keyword-matches the space name against primary geo spaces
+	// and auto-links via space_parent_spaces after creation. Existing API
+	// callers may still pass explicit parent_id/parent_space_ids; those are
+	// preserved if provided, otherwise auto-linking is used.
 
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -769,6 +765,20 @@ func (h *Handlers) CreateSpace(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		handleServiceError(w, err)
 		return
+	}
+
+	// Auto-link custom spaces to primary geo spaces by keyword-matching the
+	// space name. Only runs when the creator did not explicitly provide a
+	// parent, keeping the new member flow simple.
+	if req.Level == LevelCustom && !parentID.Valid && len(parentSpaceUUIDs) == 0 {
+		parentID, matchedParentIDs, err := h.Service.LinkSpaceToPrimarySpaces(r.Context(), space.ID, tenantID, req.Name)
+		if err != nil {
+			slog.Warn("create space: failed to link primary spaces", "space_id", space.ID, "error", err)
+		} else if parentID.Valid {
+			if err := h.Service.SetSpaceParent(r.Context(), space.ID, tenantID, parentID, matchedParentIDs); err != nil {
+				slog.Warn("create space: failed to set space parent", "space_id", space.ID, "error", err)
+			}
+		}
 	}
 
 	// Enqueue async auto-population (Wikipedia summary, flag image, etc.).
