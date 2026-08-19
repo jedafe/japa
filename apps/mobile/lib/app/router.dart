@@ -24,6 +24,9 @@ import '../features/spaces/screens/space_detail_screen.dart';
 import '../features/social/screens/notifications_screen.dart';
 import '../features/social/screens/messages_list_screen.dart';
 import '../features/social/screens/message_thread_screen.dart';
+import '../features/learning/screens/course_list_screen.dart';
+import '../features/learning/screens/course_detail_screen.dart';
+import '../features/learning/screens/lesson_player_screen.dart';
 
 final jcRouterProvider = Provider<GoRouter>((ref) {
   final loggedIn = ref.watch(isAuthenticatedProvider);
@@ -97,6 +100,24 @@ final jcRouterProvider = Provider<GoRouter>((ref) {
         path: '/messages/:id',
         builder: (ctx, state) =>
             MessageThreadScreen(id: state.pathParameters['id']!),
+      ),
+      GoRoute(
+        path: '/learn/university/catalog',
+        builder: (_, _) => const CourseListScreen(),
+      ),
+      GoRoute(
+        path: '/learn/university/catalog/:slug',
+        builder: (ctx, state) =>
+            CourseDetailScreen(slug: state.pathParameters['slug']!),
+      ),
+      GoRoute(
+        path:
+            '/learn/tracks/:trackSlug/modules/:moduleSlug/lessons/:lessonSlug',
+        builder: (ctx, state) => LessonPlayerScreen(
+          trackSlug: state.pathParameters['trackSlug']!,
+          moduleSlug: state.pathParameters['moduleSlug']!,
+          lessonSlug: state.pathParameters['lessonSlug']!,
+        ),
       ),
     ],
   );
