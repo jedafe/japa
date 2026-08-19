@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:japaconnect_core/japaconnect_core.dart';
 import 'package:japaconnect_mobile/features/profile/providers/profile_provider.dart';
+import 'package:japaconnect_mobile/i18n/app_localizations.dart';
 
 class ProfileScreen extends ConsumerWidget {
   const ProfileScreen({super.key});
@@ -10,8 +11,9 @@ class ProfileScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(meProvider);
+    final t = ref.watch(tProvider);
     return Scaffold(
-      appBar: AppBar(title: const Text('Profile')),
+      appBar: AppBar(title: Text(t('profile.title'))),
       body: state.when(
         data: (user) => ListView(
           children: [
@@ -19,16 +21,16 @@ class ProfileScreen extends ConsumerWidget {
                 title: Text(user['username'] ?? ''),
                 subtitle: Text(user['email'] ?? '')),
             ListTile(
-                title: const Text('Settings'),
+                title: Text(t('profile.settings')),
                 onTap: () => context.push('/profile/settings')),
             ListTile(
-                title: const Text('Wallet'),
+                title: Text(t('profile.wallet')),
                 onTap: () => context.push('/profile/wallet')),
             ListTile(
-                title: const Text('Bookmarks'),
+                title: Text(t('profile.bookmarks')),
                 onTap: () => context.push('/profile/bookmarks')),
             ListTile(
-              title: const Text('Logout'),
+              title: Text(t('profile.logout')),
               onTap: () async {
                 await ref.read(authServiceProvider).logout();
                 ref.read(isAuthenticatedProvider.notifier).set(false);

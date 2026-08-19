@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:japaconnect_core/japaconnect_core.dart';
 import 'package:japaconnect_mobile/features/tools/visa_checklist/providers/visa_checklist_provider.dart';
+import 'package:japaconnect_mobile/i18n/app_localizations.dart';
 
 class VisaChecklistScreen extends ConsumerWidget {
   const VisaChecklistScreen({super.key});
@@ -9,8 +10,9 @@ class VisaChecklistScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(visaChecklistProvider);
+    final t = ref.watch(tProvider);
     return Scaffold(
-      appBar: AppBar(title: const Text('Visa Checklist')),
+      appBar: AppBar(title: Text(t('tools.visa_checklist'))),
       body: state.when(
         data: (items) => ListView.builder(
           itemCount: items.length,

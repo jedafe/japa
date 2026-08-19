@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:japaconnect_core/japaconnect_core.dart';
 import 'package:japaconnect_mobile/features/social/providers/social_provider.dart';
+import 'package:japaconnect_mobile/i18n/app_localizations.dart';
 
 class MessageThreadScreen extends ConsumerStatefulWidget {
   final String id;
@@ -31,8 +32,9 @@ class _MessageThreadScreenState extends ConsumerState<MessageThreadScreen> {
   Widget build(BuildContext context) {
     ref.watch(socialRealtimeSyncProvider); // keep realtime + push listener alive
     final messages = ref.watch(conversationMessagesProvider(widget.id));
+    final t = ref.watch(tProvider);
     return Scaffold(
-      appBar: AppBar(title: const Text('Message Thread')),
+      appBar: AppBar(title: Text(t('social.message_thread'))),
       body: messages.when(
         data: (items) => Column(
           children: [
@@ -49,7 +51,7 @@ class _MessageThreadScreenState extends ConsumerState<MessageThreadScreen> {
                 children: [
                   Expanded(
                       child: JcTextField(
-                          label: 'Message', controller: _textController)),
+                          label: t('social.message_label'), controller: _textController)),
                   JcIconButton(
                     icon: Icons.send,
                     onPressed: () async {
@@ -65,7 +67,7 @@ class _MessageThreadScreenState extends ConsumerState<MessageThreadScreen> {
                       } catch (e) {
                         if (context.mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text('Failed to send: $e')),
+                            SnackBar(content: Text(t('errors.failed_send', {'error': e.toString()}))),
                           );
                         }
                       }

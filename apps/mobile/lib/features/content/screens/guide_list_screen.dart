@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:japaconnect_core/japaconnect_core.dart';
 import 'package:japaconnect_mobile/features/content/providers/content_provider.dart';
+import 'package:japaconnect_mobile/i18n/app_localizations.dart';
 
 class GuideListScreen extends ConsumerWidget {
   const GuideListScreen({super.key});
@@ -10,8 +11,9 @@ class GuideListScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(guideListProvider);
+    final t = ref.watch(tProvider);
     return Scaffold(
-      appBar: AppBar(title: const Text('Guides')),
+      appBar: AppBar(title: Text(t('content.guides'))),
       body: state.when(
         data: (items) => ListView.builder(
           itemCount: items.length,

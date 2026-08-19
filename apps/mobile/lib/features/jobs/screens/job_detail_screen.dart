@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:japaconnect_core/japaconnect_core.dart';
 import 'package:japaconnect_mobile/features/jobs/providers/jobs_provider.dart';
+import 'package:japaconnect_mobile/i18n/app_localizations.dart';
 
 class JobDetailScreen extends ConsumerStatefulWidget {
   final String slug;
@@ -19,14 +20,16 @@ class _JobDetailScreenState extends ConsumerState<JobDetailScreen> {
     try {
       await ref.read(jobsServiceProvider).apply(jobId);
       if (mounted) {
+        final t = ref.read(tProvider);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Applied!')),
+          SnackBar(content: Text(t('jobs.applied'))),
         );
       }
     } catch (e) {
       if (mounted) {
+        final t = ref.read(tProvider);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to apply: $e')),
+          SnackBar(content: Text(t('errors.failed_apply', {'error': e.toString()}))),
         );
       }
     } finally {
@@ -37,8 +40,9 @@ class _JobDetailScreenState extends ConsumerState<JobDetailScreen> {
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(jobDetailProvider(widget.slug));
+    final t = ref.watch(tProvider);
     return Scaffold(
-      appBar: AppBar(title: const Text('Job')),
+      appBar: AppBar(title: Text(t('jobs.job'))),
       body: state.when(
         data: (job) => SingleChildScrollView(
           padding: const EdgeInsets.all(16),
@@ -49,7 +53,7 @@ class _JobDetailScreenState extends ConsumerState<JobDetailScreen> {
               const SizedBox(height: 8),
               Text(job['description'] ?? ''),
               JcButton(
-                label: 'Apply',
+                label: t('jobs.apply'),
                 onPressed:
                     _loading ? null : () => _apply(job['id'] as String),
               ),

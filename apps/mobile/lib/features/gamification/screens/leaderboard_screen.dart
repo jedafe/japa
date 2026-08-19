@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:japaconnect_core/japaconnect_core.dart';
 import 'package:japaconnect_mobile/features/gamification/providers/gamification_provider.dart';
+import 'package:japaconnect_mobile/i18n/app_localizations.dart';
 
 class LeaderboardScreen extends ConsumerWidget {
   const LeaderboardScreen({super.key});
@@ -9,8 +10,9 @@ class LeaderboardScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(leaderboardProvider);
+    final t = ref.watch(tProvider);
     return Scaffold(
-      appBar: AppBar(title: const Text('Leaderboard')),
+      appBar: AppBar(title: Text(t('gamification.leaderboard'))),
       body: state.when(
         data: (leaderboard) => ListView.builder(
           itemCount: (leaderboard['entries'] as List? ?? []).length,

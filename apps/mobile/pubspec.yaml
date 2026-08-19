@@ -25,3 +25,7 @@ dev_dependencies:
     sdk: flutter
   mocktail: ^1.0.5
   flutter_lints: ^6.0.0
+
+flutter:
+  assets:
+    - lib/i18n/

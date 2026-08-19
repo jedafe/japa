@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:japaconnect_core/japaconnect_core.dart';
 import 'package:japaconnect_mobile/features/forum/providers/forum_provider.dart';
+import 'package:japaconnect_mobile/i18n/app_localizations.dart';
 
 class ForumListScreen extends ConsumerWidget {
   const ForumListScreen({super.key});
@@ -10,8 +11,9 @@ class ForumListScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(forumListProvider);
+    final t = ref.watch(tProvider);
     return Scaffold(
-      appBar: AppBar(title: const Text('Forum')),
+      appBar: AppBar(title: Text(t('forum.title'))),
       body: state.when(
         data: (items) => ListView.builder(
           itemCount: items.length,

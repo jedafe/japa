@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:japaconnect_core/japaconnect_core.dart';
 import 'package:japaconnect_mobile/features/forum/providers/forum_provider.dart';
+import 'package:japaconnect_mobile/i18n/app_localizations.dart';
 
 class ForumReplyScreen extends ConsumerStatefulWidget {
   final String slug;
@@ -30,15 +31,16 @@ class _ForumReplyScreenState extends ConsumerState<ForumReplyScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final t = ref.watch(tProvider);
     return Scaffold(
-      appBar: AppBar(title: const Text('Reply')),
+      appBar: AppBar(title: Text(t('forum.reply'))),
       body: Padding(
         padding: const EdgeInsets.all(24),
         child: Column(
           children: [
-            JcTextField(label: 'Reply', controller: _bodyController),
+            JcTextField(label: t('forum.reply_label'), controller: _bodyController),
             JcButton(
-              label: 'Post',
+              label: t('forum.post'),
               onPressed: _submitting
                   ? null
                   : () async {
@@ -53,7 +55,7 @@ class _ForumReplyScreenState extends ConsumerState<ForumReplyScreen> {
                       } catch (e) {
                         if (context.mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text('Failed to post reply: $e')),
+                            SnackBar(content: Text(t('errors.failed_reply', {'error': e.toString()}))),
                           );
                         }
                       } finally {

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:japaconnect_core/japaconnect_core.dart';
 import 'package:japaconnect_mobile/features/feed/providers/trending_provider.dart';
+import 'package:japaconnect_mobile/i18n/app_localizations.dart';
 
 class TrendingScreen extends ConsumerWidget {
   const TrendingScreen({super.key});
@@ -9,15 +10,16 @@ class TrendingScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(trendingProvider);
+    final t = ref.watch(tProvider);
     return Scaffold(
-      appBar: AppBar(title: const Text('Trending')),
+      appBar: AppBar(title: Text(t('feed.trending'))),
       body: state.when(
         data: (data) => ListView(
           children: [
-            _Section(title: 'Content', items: data['content']!),
-            _Section(title: 'Spaces', items: data['spaces']!),
-            _Section(title: 'Users', items: data['users']!),
-            _Section(title: 'Tags', items: data['tags']!),
+            _Section(title: t('feed.section_content'), items: data['content']!),
+            _Section(title: t('feed.section_spaces'), items: data['spaces']!),
+            _Section(title: t('feed.section_users'), items: data['users']!),
+            _Section(title: t('feed.section_tags'), items: data['tags']!),
           ],
         ),
         loading: () => const LoadingShimmer(),
