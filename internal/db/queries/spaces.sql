@@ -27,44 +27,44 @@ RETURNING id, tenant_id, name, visibility, posting_perm, replying_perm, commenti
 -- =====================
 
 -- name: ListSpaceTypesByTenant :many
-SELECT id, tenant_id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at, is_university
+SELECT id, tenant_id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at, category
 FROM space_types
 WHERE tenant_id = @tenant_id
 ORDER BY created_at ASC, id ASC;
 
 -- name: ListSpaceTypesByTenantFiltered :many
--- Supports optional search (q) and is_university filter for the admin panel.
--- Pass empty strings to skip either filter.
-SELECT id, tenant_id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at, is_university
+-- Supports optional search (q), category filter, and a selectable-only flag
+-- for the admin panel and the member space-creation flow. Pass empty strings
+-- and false booleans to skip filters.
+SELECT id, tenant_id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at, category
 FROM space_types
 WHERE tenant_id = @tenant_id
   AND (@search::text = '' OR name ILIKE '%' || @search || '%' OR slug ILIKE '%' || @search || '%')
-  AND (@is_university_filter::text = ''
-       OR (@is_university_filter = 'true' AND is_university = true)
-       OR (@is_university_filter = 'false' AND is_university = false))
+  AND (@category_filter::text = '' OR category = @category_filter)
+  AND (@selectable_only::boolean = false OR category IS NOT NULL)
 ORDER BY created_at ASC, id ASC;
 
 -- name: GetSpaceTypeByID :one
-SELECT id, tenant_id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at, is_university
+SELECT id, tenant_id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at, category
 FROM space_types
 WHERE id = @id AND tenant_id = @tenant_id;
 
 -- name: GetSpaceTypeBySlug :one
-SELECT id, tenant_id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at, is_university
+SELECT id, tenant_id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at, category
 FROM space_types
 WHERE slug = @slug AND tenant_id = @tenant_id;
 
 -- name: CreateSpaceType :one
-INSERT INTO space_types (tenant_id, name, slug, description, icon, field_group_id, is_university, is_system)
-VALUES (@tenant_id, @name, @slug, sqlc.narg(description), sqlc.narg(icon), sqlc.narg(field_group_id), @is_university, @is_system)
-RETURNING id, tenant_id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at, is_university;
+INSERT INTO space_types (tenant_id, name, slug, description, icon, field_group_id, category, is_system)
+VALUES (@tenant_id, @name, @slug, sqlc.narg(description), sqlc.narg(icon), sqlc.narg(field_group_id), sqlc.narg(category), @is_system)
+RETURNING id, tenant_id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at, category;
 
 -- name: UpdateSpaceType :one
 UPDATE space_types
 SET name = @name, description = sqlc.narg(description), icon = sqlc.narg(icon),
-    field_group_id = sqlc.narg(field_group_id), is_university = @is_university
+    field_group_id = sqlc.narg(field_group_id), category = sqlc.narg(category)
 WHERE id = @id AND tenant_id = @tenant_id AND is_system = false
-RETURNING id, tenant_id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at, is_university;
+RETURNING id, tenant_id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at, category;
 
 -- name: DeleteSpaceType :exec
 DELETE FROM space_types
@@ -698,6 +698,23 @@ JOIN space_parent_spaces sps ON sps.space_id = s.id
 WHERE sps.parent_space_id = @parent_space_id AND s.tenant_id = @tenant_id AND s.deleted_at IS NULL
 ORDER BY s.name;
 
+-- name: UpdateSpaceParentID :exec
+UPDATE spaces
+SET parent_id = @parent_id, updated_at = now()
+WHERE id = @id AND tenant_id = @tenant_id;
+
+-- name: GetSpacePrimaryGeoParents :many
+-- Returns the country/state/city primary spaces linked to a member space
+-- via space_parent_spaces. Used to add geo parents to content created in
+-- that space.
+SELECT s.id
+FROM spaces s
+JOIN space_parent_spaces sps ON sps.parent_space_id = s.id
+WHERE sps.space_id = @space_id
+  AND s.tenant_id = @tenant_id
+  AND s.level IN ('country', 'state', 'city')
+  AND s.deleted_at IS NULL;
+
 -- =====================
 -- Space Admin Queries (handlers)
 -- =====================
@@ -826,14 +843,14 @@ RETURNING id, tenant_id, parent_id, space_type_id, name, slug, description, wiki
           joining_perm, status, created_at, updated_at, deleted_at, currency_code;
 
 -- name: FindSpacesByKeywords :many
--- Find primary (country/state/city) and public university spaces whose
--- keywords, full name, or university initials overlap with the given keyword
--- list. Used for auto-assigning content to spaces based on the content title.
--- Multi-word contiguous phrases in the title generate multi-word n-grams so
--- that full names (e.g. "University of Lagos") and multi-word keywords
--- (e.g. "new york") match exactly. Matches are ordered by specificity:
--- initials match > full name match > keyword match, then by
--- city > state > country > university. Errors are logged by the caller.
+-- Find primary (country/state/city) and public education spaces (including
+-- universities) whose keywords, full name, or university initials overlap
+-- with the given keyword list. Used for auto-assigning content to spaces
+-- based on the content title. Multi-word contiguous phrases in the title
+-- generate multi-word n-grams so that full names (e.g. "University of Lagos")
+-- and multi-word keywords (e.g. "new york") match exactly. Matches are
+-- ordered by specificity: initials match > full name match > keyword match,
+-- then by city > state > country > education. Errors are logged by the caller.
 WITH title_ngrams AS (
     SELECT
         value AS kw,
@@ -856,11 +873,11 @@ keyword_matches AS (
       AND s.deleted_at IS NULL
       AND s.visibility = 'public'
       AND s.status = 'active'
-      AND (s.level IN ('country', 'state', 'city') OR st.slug = 'university')
+      AND (s.level IN ('country', 'state', 'city') OR st.category = 'education')
       AND s.keywords && @keywords::text[]
 ),
 name_matches AS (
-    -- primary spaces and universities whose full name exactly matches a title n-gram.
+    -- primary spaces and education spaces whose full name exactly matches a title n-gram.
     SELECT
         s.id,
         s.name,
@@ -874,7 +891,7 @@ name_matches AS (
       AND s.deleted_at IS NULL
       AND s.visibility = 'public'
       AND s.status = 'active'
-      AND (s.level IN ('country', 'state', 'city') OR st.slug = 'university')
+      AND (s.level IN ('country', 'state', 'city') OR st.category = 'education')
       AND LOWER(s.name) = tn.kw
 ),
 initials_matches AS (
