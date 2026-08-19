@@ -561,6 +561,11 @@ type ToolDeps struct {
 	// tools.list / tools.read AI Agent handlers. nil → tools handlers
 	// return "not configured".
 	ToolsRegistry ToolsRegistryService
+
+	// Intelligence tools (§75 ADR-076 Amendment 2, on-demand source/record
+	// update, content regeneration, and source discovery).
+	TaskEnqueuer TaskEnqueuer // nil disables agent-triggered background tasks
+	IntelQuerier IntelQuerier // nil disables source/record validation
 }
 
 // ToolsRegistryService is the subset of the per-tool services the
@@ -584,6 +589,23 @@ type ToolCatalogEntry struct {
 	Label    string `json:"label"`
 	Count    int64  `json:"count"`
 	Category string `json:"category"`
+}
+
+// TaskEnqueuer enqueues Asynq tasks from AI agent handlers. The worker
+// package's Enqueuer satisfies this interface.
+//
+// Ref: japaconnect-engineering/sections/11-job-queue-asynq.md
+type TaskEnqueuer interface {
+	Enqueue(taskType string, payload []byte, opts ...any) error
+}
+
+// IntelQuerier loads tenant-scoped intelligence sources and records so
+// agent handlers can validate IDs before enqueueing background work.
+//
+// Ref: japaconnect-engineering/adr/ADR-112-intelligence-scholarships-table.md
+type IntelQuerier interface {
+	GetIntelSource(ctx context.Context, arg gen.GetIntelSourceParams) (gen.IntelSource, error)
+	GetIntelRecord(ctx context.Context, arg gen.GetIntelRecordParams) (gen.IntelRecord, error)
 }
 
 // NewToolDeps creates an empty ToolDeps. Fields are set directly or via the
@@ -656,6 +678,21 @@ func (d *ToolDeps) WithContentLifecycle(s ContentLifecycleService) *ToolDeps {
 // WithToolsRegistry injects the tools registry service (Phase 9 tools.list/read).
 func (d *ToolDeps) WithToolsRegistry(s ToolsRegistryService) *ToolDeps {
 	d.ToolsRegistry = s
+	return d
+}
+
+// WithTaskEnqueuer injects the Asynq task enqueuer used by agent handlers
+// that trigger background workers (source.crawl_now, record.update_now,
+// content.regenerate_from_source).
+func (d *ToolDeps) WithTaskEnqueuer(e TaskEnqueuer) *ToolDeps {
+	d.TaskEnqueuer = e
+	return d
+}
+
+// WithIntelQuerier injects the intelligence query provider used to validate
+// source/record IDs before enqueueing background work.
+func (d *ToolDeps) WithIntelQuerier(q IntelQuerier) *ToolDeps {
+	d.IntelQuerier = q
 	return d
 }
 
