@@ -25,17 +25,21 @@ class SocketService {
 
   Future<void> connect() async {
     if (client.accessToken == null || _socket != null) return;
-    final ticket = await client.post<Map<String, dynamic>>(
-      '/auth/ws-ticket',
-      parse: (json) => json as Map<String, dynamic>,
-    );
-    _socket = SocketClient(url: client.effectiveWsUrl);
-    _socket!.connect(ticket['token'] as String);
-    _socket!.events.listen(
-      (event) => _eventController.add(event as Map<String, dynamic>),
-      onError: (_) => _onConnectionLost(),
-      onDone: _onConnectionLost,
-    );
+    try {
+      final ticket = await client.post<Map<String, dynamic>>(
+        '/auth/ws-ticket',
+        parse: (json) => json as Map<String, dynamic>,
+      );
+      _socket = SocketClient(url: client.effectiveWsUrl);
+      _socket!.connect(ticket['token'] as String);
+      _socket!.events.listen(
+        (event) => _eventController.add(event as Map<String, dynamic>),
+        onError: (_) => _onConnectionLost(),
+        onDone: _onConnectionLost,
+      );
+    } catch (_) {
+      _scheduleReconnect();
+    }
   }
 
   void _onConnectionLost() {
