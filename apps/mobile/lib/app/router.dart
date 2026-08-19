@@ -31,6 +31,8 @@ import '../features/profile/screens/profile_screen.dart';
 import '../features/profile/screens/settings_screen.dart';
 import '../features/profile/screens/wallet_screen.dart';
 import '../features/profile/screens/bookmarks_screen.dart';
+import '../features/gamification/screens/badges_screen.dart';
+import '../features/gamification/screens/leaderboard_screen.dart';
 
 final jcRouterProvider = Provider<GoRouter>((ref) {
   final loggedIn = ref.watch(isAuthenticatedProvider);
@@ -133,6 +135,12 @@ final jcRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
           path: '/profile/bookmarks',
           builder: (_, _) => const BookmarksScreen()),
+      GoRoute(
+          path: '/profile/badges',
+          builder: (_, _) => const BadgesScreen()),
+      GoRoute(
+          path: '/leaderboard',
+          builder: (_, _) => const LeaderboardScreen()),
     ],
   );
 });
