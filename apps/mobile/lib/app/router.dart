@@ -15,6 +15,9 @@ import '../features/content/screens/guide_list_screen.dart';
 import '../features/content/screens/guide_detail_screen.dart';
 import '../features/content/screens/comparison_list_screen.dart';
 import '../features/content/screens/comparison_detail_screen.dart';
+import '../features/forum/screens/forum_list_screen.dart';
+import '../features/forum/screens/forum_detail_screen.dart';
+import '../features/forum/screens/forum_reply_screen.dart';
 
 final jcRouterProvider = Provider<GoRouter>((ref) {
   final loggedIn = ref.watch(isAuthenticatedProvider);
@@ -55,6 +58,17 @@ final jcRouterProvider = Provider<GoRouter>((ref) {
         path: '/comparisons/:id',
         builder: (ctx, state) =>
             ComparisonDetailScreen(id: state.pathParameters['id']!),
+      ),
+      GoRoute(path: '/forum', builder: (_, _) => const ForumListScreen()),
+      GoRoute(
+        path: '/forum/:id',
+        builder: (ctx, state) =>
+            ForumDetailScreen(slug: state.pathParameters['id']!),
+      ),
+      GoRoute(
+        path: '/forum/:id/reply',
+        builder: (ctx, state) =>
+            ForumReplyScreen(slug: state.pathParameters['id']!),
       ),
     ],
   );
