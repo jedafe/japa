@@ -14,9 +14,24 @@ import (
 // Space Type Handlers
 // ---------------------------------------------------------------------------
 
+var allowedSpaceTypeCategories = map[string]bool{
+	"education":  true,
+	"business":   true,
+	"profession": true,
+	"interest":   true,
+	"lifestyle":  true,
+}
+
+// isAllowedCategory returns true for the categories that can be assigned to
+// admin-created (non-system) space types.
+func isAllowedCategory(category string) bool {
+	return allowedSpaceTypeCategories[strings.ToLower(strings.TrimSpace(category))]
+}
+
 // ListSpaceTypes handles GET /api/v1/space-types and GET /api/v1/admin/space-types.
-// Supports optional q (search by name/slug) and is_university query params for
-// the admin panel DataTable search and filter.
+// Supports optional q (search by name/slug) and category query params for the
+// admin panel DataTable search and filter. The public member-facing endpoint
+// can pass selectable=true to hide geo (country/state/city) types.
 func (h *Handlers) ListSpaceTypes(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -24,10 +39,11 @@ func (h *Handlers) ListSpaceTypes(w http.ResponseWriter, r *http.Request) {
 	}
 
 	q := strings.TrimSpace(r.URL.Query().Get("q"))
-	isUniversityFilter := strings.TrimSpace(r.URL.Query().Get("is_university"))
+	categoryFilter := strings.TrimSpace(r.URL.Query().Get("category"))
+	selectableOnly := strings.TrimSpace(r.URL.Query().Get("selectable")) == "true"
 
-	if q != "" || isUniversityFilter != "" {
-		types, err := h.Service.ListSpaceTypesFiltered(r.Context(), tenantID, q, isUniversityFilter)
+	if q != "" || categoryFilter != "" || selectableOnly {
+		types, err := h.Service.ListSpaceTypesFiltered(r.Context(), tenantID, q, categoryFilter, selectableOnly)
 		if err != nil {
 			handleServiceError(w, err)
 			return
@@ -68,7 +84,7 @@ func (h *Handlers) GetSpaceType(w http.ResponseWriter, r *http.Request) {
 }
 
 // CreateSpaceType handles POST /api/v1/space-types. API-created types are
-// never system types.
+// never system types and must be in an allowed category.
 func (h *Handlers) CreateSpaceType(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Name         string  `json:"name"`
@@ -76,7 +92,7 @@ func (h *Handlers) CreateSpaceType(w http.ResponseWriter, r *http.Request) {
 		Description  *string `json:"description"`
 		Icon         *string `json:"icon"`
 		FieldGroupID string  `json:"field_group_id"`
-		IsUniversity bool    `json:"is_university"`
+		Category     string  `json:"category"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -86,6 +102,12 @@ func (h *Handlers) CreateSpaceType(w http.ResponseWriter, r *http.Request) {
 
 	if strings.TrimSpace(req.Name) == "" || strings.TrimSpace(req.Slug) == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_fields", "Name and slug are required")
+		return
+	}
+
+	if !isAllowedCategory(req.Category) {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_category",
+			"Category must be one of: education, business, profession, interest, lifestyle")
 		return
 	}
 
@@ -102,6 +124,7 @@ func (h *Handlers) CreateSpaceType(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	category := strings.ToLower(strings.TrimSpace(req.Category))
 	st, err := h.Service.CreateSpaceType(r.Context(), gen.CreateSpaceTypeParams{
 		TenantID:     tenantID,
 		Name:         req.Name,
@@ -109,7 +132,7 @@ func (h *Handlers) CreateSpaceType(w http.ResponseWriter, r *http.Request) {
 		Description:  req.Description,
 		Icon:         req.Icon,
 		FieldGroupID: fieldGroupID,
-		IsUniversity: req.IsUniversity,
+		Category:     &category,
 		IsSystem:     false,
 	})
 	if err != nil {
@@ -134,7 +157,7 @@ func (h *Handlers) UpdateSpaceType(w http.ResponseWriter, r *http.Request) {
 		Description  *string `json:"description"`
 		Icon         *string `json:"icon"`
 		FieldGroupID string  `json:"field_group_id"`
-		IsUniversity bool    `json:"is_university"`
+		Category     string  `json:"category"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -144,6 +167,12 @@ func (h *Handlers) UpdateSpaceType(w http.ResponseWriter, r *http.Request) {
 
 	if strings.TrimSpace(req.Name) == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_fields", "Name is required")
+		return
+	}
+
+	if req.Category != "" && !isAllowedCategory(req.Category) {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_category",
+			"Category must be one of: education, business, profession, interest, lifestyle")
 		return
 	}
 
@@ -160,12 +189,18 @@ func (h *Handlers) UpdateSpaceType(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	var category *string
+	if req.Category != "" {
+		c := strings.ToLower(strings.TrimSpace(req.Category))
+		category = &c
+	}
+
 	st, err := h.Service.UpdateSpaceType(r.Context(), gen.UpdateSpaceTypeParams{
 		Name:         req.Name,
 		Description:  req.Description,
 		Icon:         req.Icon,
 		FieldGroupID: fieldGroupID,
-		IsUniversity: req.IsUniversity,
+		Category:     category,
 		ID:           id,
 		TenantID:     tenantID,
 	})

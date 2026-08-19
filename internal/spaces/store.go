@@ -67,13 +67,15 @@ func (s *Service) ListSpaceTypes(ctx context.Context, tenantID pgtype.UUID) ([]g
 }
 
 // ListSpaceTypesFiltered returns space types for the given tenant, optionally
-// filtered by a search query (matched against name and slug) and/or the
-// is_university flag. Pass empty strings to skip either filter.
-func (s *Service) ListSpaceTypesFiltered(ctx context.Context, tenantID pgtype.UUID, search, isUniversityFilter string) ([]gen.SpaceType, error) {
+// filtered by a search query (matched against name and slug), a category
+// filter, and a selectable-only flag. Pass empty strings and false booleans
+// to skip filters.
+func (s *Service) ListSpaceTypesFiltered(ctx context.Context, tenantID pgtype.UUID, search, categoryFilter string, selectableOnly bool) ([]gen.SpaceType, error) {
 	types, err := s.read.ListSpaceTypesByTenantFiltered(ctx, gen.ListSpaceTypesByTenantFilteredParams{
-		TenantID:           tenantID,
-		Search:             search,
-		IsUniversityFilter: isUniversityFilter,
+		TenantID:       tenantID,
+		Search:         search,
+		CategoryFilter: categoryFilter,
+		SelectableOnly: selectableOnly,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("listing space types (filtered): %w", err)

@@ -40,6 +40,13 @@ function apiHeadersPlugin(): Plugin {
 export default defineConfig({
 	plugins: [tailwindcss(), apiHeadersPlugin(), sveltekit(), svelteTesting()],
 	server: {
+		// Allow serving workspace-level .bun node_modules (e.g. @fontsource
+		// fonts installed by Bun at the monorepo root). Without this, Vite
+		// rejects requests like:
+		//   /node_modules/.bun/@fontsource+inter@5.3.0/.../inter-latin-500-normal.woff2
+		fs: {
+			allow: ['..']
+		},
 		proxy: {
 			// WebSocket upgrade must be matched before the plain /api/v1 entry
 			// (which has no ws:true) so the dev proxy upgrades /api/v1/ws to the

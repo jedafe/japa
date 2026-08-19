@@ -592,9 +592,9 @@ func (q *Queries) CreateSpaceRule(ctx context.Context, arg CreateSpaceRuleParams
 }
 
 const createSpaceType = `-- name: CreateSpaceType :one
-INSERT INTO space_types (tenant_id, name, slug, description, icon, field_group_id, is_university, is_system)
+INSERT INTO space_types (tenant_id, name, slug, description, icon, field_group_id, category, is_system)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-RETURNING id, tenant_id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at, is_university
+RETURNING id, tenant_id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at, category
 `
 
 type CreateSpaceTypeParams struct {
@@ -604,7 +604,7 @@ type CreateSpaceTypeParams struct {
 	Description  *string     `json:"description"`
 	Icon         *string     `json:"icon"`
 	FieldGroupID pgtype.UUID `json:"field_group_id"`
-	IsUniversity bool        `json:"is_university"`
+	Category     *string     `json:"category"`
 	IsSystem     bool        `json:"is_system"`
 }
 
@@ -616,7 +616,7 @@ func (q *Queries) CreateSpaceType(ctx context.Context, arg CreateSpaceTypeParams
 		arg.Description,
 		arg.Icon,
 		arg.FieldGroupID,
-		arg.IsUniversity,
+		arg.Category,
 		arg.IsSystem,
 	)
 	var i SpaceType
@@ -631,7 +631,7 @@ func (q *Queries) CreateSpaceType(ctx context.Context, arg CreateSpaceTypeParams
 		&i.IsSystem,
 		&i.CreatedAt,
 		&i.UpdatedAt,
-		&i.IsUniversity,
+		&i.Category,
 	)
 	return i, err
 }
@@ -803,11 +803,11 @@ keyword_matches AS (
       AND s.deleted_at IS NULL
       AND s.visibility = 'public'
       AND s.status = 'active'
-      AND (s.level IN ('country', 'state', 'city') OR st.slug = 'university')
+      AND (s.level IN ('country', 'state', 'city') OR st.category = 'education')
       AND s.keywords && $1::text[]
 ),
 name_matches AS (
-    -- primary spaces and universities whose full name exactly matches a title n-gram.
+    -- primary spaces and education spaces whose full name exactly matches a title n-gram.
     SELECT
         s.id,
         s.name,
@@ -821,7 +821,7 @@ name_matches AS (
       AND s.deleted_at IS NULL
       AND s.visibility = 'public'
       AND s.status = 'active'
-      AND (s.level IN ('country', 'state', 'city') OR st.slug = 'university')
+      AND (s.level IN ('country', 'state', 'city') OR st.category = 'education')
       AND LOWER(s.name) = tn.kw
 ),
 initials_matches AS (
@@ -880,14 +880,14 @@ type FindSpacesByKeywordsRow struct {
 	SpaceTypeSlug string      `json:"space_type_slug"`
 }
 
-// Find primary (country/state/city) and public university spaces whose
-// keywords, full name, or university initials overlap with the given keyword
-// list. Used for auto-assigning content to spaces based on the content title.
-// Multi-word contiguous phrases in the title generate multi-word n-grams so
-// that full names (e.g. "University of Lagos") and multi-word keywords
-// (e.g. "new york") match exactly. Matches are ordered by specificity:
-// initials match > full name match > keyword match, then by
-// city > state > country > university. Errors are logged by the caller.
+// Find primary (country/state/city) and public education spaces (including
+// universities) whose keywords, full name, or university initials overlap
+// with the given keyword list. Used for auto-assigning content to spaces
+// based on the content title. Multi-word contiguous phrases in the title
+// generate multi-word n-grams so that full names (e.g. "University of Lagos")
+// and multi-word keywords (e.g. "new york") match exactly. Matches are
+// ordered by specificity: initials match > full name match > keyword match,
+// then by city > state > country > education. Errors are logged by the caller.
 func (q *Queries) FindSpacesByKeywords(ctx context.Context, arg FindSpacesByKeywordsParams) ([]FindSpacesByKeywordsRow, error) {
 	rows, err := q.db.Query(ctx, findSpacesByKeywords, arg.Keywords, arg.TenantID)
 	if err != nil {
@@ -1564,8 +1564,46 @@ func (q *Queries) GetSpaceModerator(ctx context.Context, arg GetSpaceModeratorPa
 	return i, err
 }
 
+const getSpacePrimaryGeoParents = `-- name: GetSpacePrimaryGeoParents :many
+SELECT s.id
+FROM spaces s
+JOIN space_parent_spaces sps ON sps.parent_space_id = s.id
+WHERE sps.space_id = $1
+  AND s.tenant_id = $2
+  AND s.level IN ('country', 'state', 'city')
+  AND s.deleted_at IS NULL
+`
+
+type GetSpacePrimaryGeoParentsParams struct {
+	SpaceID  pgtype.UUID `json:"space_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+// Returns the country/state/city primary spaces linked to a member space
+// via space_parent_spaces. Used to add geo parents to content created in
+// that space.
+func (q *Queries) GetSpacePrimaryGeoParents(ctx context.Context, arg GetSpacePrimaryGeoParentsParams) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, getSpacePrimaryGeoParents, arg.SpaceID, arg.TenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []pgtype.UUID
+	for rows.Next() {
+		var id pgtype.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getSpaceTypeByID = `-- name: GetSpaceTypeByID :one
-SELECT id, tenant_id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at, is_university
+SELECT id, tenant_id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at, category
 FROM space_types
 WHERE id = $1 AND tenant_id = $2
 `
@@ -1589,13 +1627,13 @@ func (q *Queries) GetSpaceTypeByID(ctx context.Context, arg GetSpaceTypeByIDPara
 		&i.IsSystem,
 		&i.CreatedAt,
 		&i.UpdatedAt,
-		&i.IsUniversity,
+		&i.Category,
 	)
 	return i, err
 }
 
 const getSpaceTypeBySlug = `-- name: GetSpaceTypeBySlug :one
-SELECT id, tenant_id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at, is_university
+SELECT id, tenant_id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at, category
 FROM space_types
 WHERE slug = $1 AND tenant_id = $2
 `
@@ -1619,7 +1657,7 @@ func (q *Queries) GetSpaceTypeBySlug(ctx context.Context, arg GetSpaceTypeBySlug
 		&i.IsSystem,
 		&i.CreatedAt,
 		&i.UpdatedAt,
-		&i.IsUniversity,
+		&i.Category,
 	)
 	return i, err
 }
@@ -2410,7 +2448,7 @@ func (q *Queries) ListSpaceRulesBySpace(ctx context.Context, spaceID pgtype.UUID
 
 const listSpaceTypesByTenant = `-- name: ListSpaceTypesByTenant :many
 
-SELECT id, tenant_id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at, is_university
+SELECT id, tenant_id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at, category
 FROM space_types
 WHERE tenant_id = $1
 ORDER BY created_at ASC, id ASC
@@ -2439,7 +2477,7 @@ func (q *Queries) ListSpaceTypesByTenant(ctx context.Context, tenantID pgtype.UU
 			&i.IsSystem,
 			&i.CreatedAt,
 			&i.UpdatedAt,
-			&i.IsUniversity,
+			&i.Category,
 		); err != nil {
 			return nil, err
 		}
@@ -2452,26 +2490,32 @@ func (q *Queries) ListSpaceTypesByTenant(ctx context.Context, tenantID pgtype.UU
 }
 
 const listSpaceTypesByTenantFiltered = `-- name: ListSpaceTypesByTenantFiltered :many
-SELECT id, tenant_id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at, is_university
+SELECT id, tenant_id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at, category
 FROM space_types
 WHERE tenant_id = $1
   AND ($2::text = '' OR name ILIKE '%' || $2 || '%' OR slug ILIKE '%' || $2 || '%')
-  AND ($3::text = ''
-       OR ($3 = 'true' AND is_university = true)
-       OR ($3 = 'false' AND is_university = false))
+  AND ($3::text = '' OR category = $3)
+  AND ($4::boolean = false OR category IS NOT NULL)
 ORDER BY created_at ASC, id ASC
 `
 
 type ListSpaceTypesByTenantFilteredParams struct {
-	TenantID           pgtype.UUID `json:"tenant_id"`
-	Search             string      `json:"search"`
-	IsUniversityFilter string      `json:"is_university_filter"`
+	TenantID       pgtype.UUID `json:"tenant_id"`
+	Search         string      `json:"search"`
+	CategoryFilter string      `json:"category_filter"`
+	SelectableOnly bool        `json:"selectable_only"`
 }
 
-// Supports optional search (q) and is_university filter for the admin panel.
-// Pass empty strings to skip either filter.
+// Supports optional search (q), category filter, and a selectable-only flag
+// for the admin panel and the member space-creation flow. Pass empty strings
+// and false booleans to skip filters.
 func (q *Queries) ListSpaceTypesByTenantFiltered(ctx context.Context, arg ListSpaceTypesByTenantFilteredParams) ([]SpaceType, error) {
-	rows, err := q.db.Query(ctx, listSpaceTypesByTenantFiltered, arg.TenantID, arg.Search, arg.IsUniversityFilter)
+	rows, err := q.db.Query(ctx, listSpaceTypesByTenantFiltered,
+		arg.TenantID,
+		arg.Search,
+		arg.CategoryFilter,
+		arg.SelectableOnly,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -2490,7 +2534,7 @@ func (q *Queries) ListSpaceTypesByTenantFiltered(ctx context.Context, arg ListSp
 			&i.IsSystem,
 			&i.CreatedAt,
 			&i.UpdatedAt,
-			&i.IsUniversity,
+			&i.Category,
 		); err != nil {
 			return nil, err
 		}
@@ -3872,6 +3916,23 @@ func (q *Queries) UpdateSpaceLogoMediaID(ctx context.Context, arg UpdateSpaceLog
 	return i, err
 }
 
+const updateSpaceParentID = `-- name: UpdateSpaceParentID :exec
+UPDATE spaces
+SET parent_id = $1, updated_at = now()
+WHERE id = $2 AND tenant_id = $3
+`
+
+type UpdateSpaceParentIDParams struct {
+	ParentID pgtype.UUID `json:"parent_id"`
+	ID       pgtype.UUID `json:"id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+func (q *Queries) UpdateSpaceParentID(ctx context.Context, arg UpdateSpaceParentIDParams) error {
+	_, err := q.db.Exec(ctx, updateSpaceParentID, arg.ParentID, arg.ID, arg.TenantID)
+	return err
+}
+
 const updateSpacePinPosition = `-- name: UpdateSpacePinPosition :exec
 
 UPDATE space_pinned_posts
@@ -4028,9 +4089,9 @@ func (q *Queries) UpdateSpaceStatus(ctx context.Context, arg UpdateSpaceStatusPa
 const updateSpaceType = `-- name: UpdateSpaceType :one
 UPDATE space_types
 SET name = $1, description = $2, icon = $3,
-    field_group_id = $4, is_university = $5
+    field_group_id = $4, category = $5
 WHERE id = $6 AND tenant_id = $7 AND is_system = false
-RETURNING id, tenant_id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at, is_university
+RETURNING id, tenant_id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at, category
 `
 
 type UpdateSpaceTypeParams struct {
@@ -4038,7 +4099,7 @@ type UpdateSpaceTypeParams struct {
 	Description  *string     `json:"description"`
 	Icon         *string     `json:"icon"`
 	FieldGroupID pgtype.UUID `json:"field_group_id"`
-	IsUniversity bool        `json:"is_university"`
+	Category     *string     `json:"category"`
 	ID           pgtype.UUID `json:"id"`
 	TenantID     pgtype.UUID `json:"tenant_id"`
 }
@@ -4049,7 +4110,7 @@ func (q *Queries) UpdateSpaceType(ctx context.Context, arg UpdateSpaceTypeParams
 		arg.Description,
 		arg.Icon,
 		arg.FieldGroupID,
-		arg.IsUniversity,
+		arg.Category,
 		arg.ID,
 		arg.TenantID,
 	)
@@ -4065,7 +4126,7 @@ func (q *Queries) UpdateSpaceType(ctx context.Context, arg UpdateSpaceTypeParams
 		&i.IsSystem,
 		&i.CreatedAt,
 		&i.UpdatedAt,
-		&i.IsUniversity,
+		&i.Category,
 	)
 	return i, err
 }
