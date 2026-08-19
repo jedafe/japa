@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:japaconnect_core/japaconnect_core.dart';
+import '../i18n/app_localizations.dart';
 
 class PushInitializer extends ConsumerStatefulWidget {
   final Widget child;
@@ -21,8 +22,9 @@ class _PushInitializerState extends ConsumerState<PushInitializer> {
     push.initialize();
     _pushSub = push.foregroundMessages.listen((_) {
       if (!mounted) return;
+      final t = ref.read(tProvider);
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('New notification')),
+        SnackBar(content: Text(t('social.new_notification'))),
       );
     });
     ref.listen<bool>(isAuthenticatedProvider, (prev, next) {

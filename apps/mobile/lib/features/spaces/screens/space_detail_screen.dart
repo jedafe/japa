@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:japaconnect_core/japaconnect_core.dart';
 import 'package:japaconnect_mobile/features/spaces/providers/spaces_provider.dart';
+import 'package:japaconnect_mobile/i18n/app_localizations.dart';
 
 class SpaceDetailScreen extends ConsumerStatefulWidget {
   final String slug;
@@ -23,8 +24,9 @@ class _SpaceDetailScreenState extends ConsumerState<SpaceDetailScreen> {
       }
     } catch (e) {
       if (mounted) {
+        final t = ref.read(tProvider);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to join: $e')),
+          SnackBar(content: Text(t('errors.failed_join', {'error': e.toString()}))),
         );
       }
     } finally {
@@ -41,8 +43,9 @@ class _SpaceDetailScreenState extends ConsumerState<SpaceDetailScreen> {
       }
     } catch (e) {
       if (mounted) {
+        final t = ref.read(tProvider);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to leave: $e')),
+          SnackBar(content: Text(t('errors.failed_leave', {'error': e.toString()}))),
         );
       }
     } finally {
@@ -53,8 +56,9 @@ class _SpaceDetailScreenState extends ConsumerState<SpaceDetailScreen> {
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(spaceDetailProvider(widget.slug));
+    final t = ref.watch(tProvider);
     return Scaffold(
-      appBar: AppBar(title: const Text('Space')),
+      appBar: AppBar(title: Text(t('spaces.space'))),
       body: state.when(
         data: (space) => Column(
           children: [
@@ -63,12 +67,12 @@ class _SpaceDetailScreenState extends ConsumerState<SpaceDetailScreen> {
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 JcButton(
-                  label: 'Join',
+                  label: t('spaces.join'),
                   onPressed: _loading ? null : _join,
                 ),
                 const SizedBox(width: 16),
                 JcButton(
-                  label: 'Leave',
+                  label: t('spaces.leave'),
                   onPressed: _loading ? null : _leave,
                 ),
               ],

@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:japaconnect_core/japaconnect_core.dart';
 import 'auth_guard.dart';
 import 'app_shell.dart';
+import '../i18n/app_localizations.dart';
 import '../features/auth/screens/login_screen.dart';
 import '../features/auth/screens/register_screen.dart';
 import '../features/auth/screens/totp_screen.dart';
@@ -43,6 +44,17 @@ import '../features/gamification/screens/leaderboard_screen.dart';
 import '../features/jobs/screens/jobs_list_screen.dart';
 import '../features/jobs/screens/job_detail_screen.dart';
 
+class _ComposePlaceholder extends ConsumerWidget {
+  const _ComposePlaceholder();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final t = ref.watch(tProvider);
+    return Scaffold(
+        body: Center(child: Text(t('tools.compose_soon'))));
+  }
+}
+
 final jcRouterProvider = Provider<GoRouter>((ref) {
   final loggedIn = ref.watch(isAuthenticatedProvider);
   return GoRouter(
@@ -63,8 +75,7 @@ final jcRouterProvider = Provider<GoRouter>((ref) {
           GoRoute(path: '/trending', builder: (_, _) => const TrendingScreen()),
           GoRoute(
               path: '/compose',
-              builder: (_, _) => const Scaffold(
-                  body: Center(child: Text('Compose — coming soon')))),
+              builder: (_, _) => const _ComposePlaceholder()),
           GoRoute(
               path: '/spaces', builder: (_, _) => const SpaceListScreen()),
           GoRoute(

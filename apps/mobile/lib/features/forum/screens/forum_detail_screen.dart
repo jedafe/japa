@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:japaconnect_core/japaconnect_core.dart';
 import 'package:japaconnect_mobile/features/forum/providers/forum_provider.dart';
+import 'package:japaconnect_mobile/i18n/app_localizations.dart';
 
 class ForumDetailScreen extends ConsumerWidget {
   final String slug;
@@ -11,8 +12,9 @@ class ForumDetailScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(forumThreadProvider(slug));
+    final t = ref.watch(tProvider);
     return Scaffold(
-      appBar: AppBar(title: const Text('Thread')),
+      appBar: AppBar(title: Text(t('forum.thread'))),
       body: state.when(
         data: (thread) => Column(
           children: [
@@ -25,7 +27,7 @@ class ForumDetailScreen extends ConsumerWidget {
               ),
             ),
             JcButton(
-              label: 'Reply',
+              label: t('forum.reply'),
               onPressed: () => context.push('/forum/$slug/reply'),
             ),
           ],

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:japaconnect_core/japaconnect_core.dart';
 import 'package:japaconnect_mobile/features/tools/cost_of_living/providers/cost_of_living_provider.dart';
+import 'package:japaconnect_mobile/i18n/app_localizations.dart';
 
 final _costOfLivingInputsProvider = NotifierProvider<
     CostOfLivingInputsNotifier,
@@ -49,14 +50,15 @@ class _CostOfLivingScreenState extends ConsumerState<CostOfLivingScreen> {
   Widget build(BuildContext context) {
     final inputs = ref.watch(_costOfLivingInputsProvider);
     final state = ref.watch(costOfLivingProvider(inputs));
+    final t = ref.watch(tProvider);
 
     Widget buildForm() {
       return Column(
         children: [
-          JcTextField(label: 'Origin', controller: _originController),
-          JcTextField(label: 'Destination', controller: _destinationController),
+          JcTextField(label: t('tools.origin'), controller: _originController),
+          JcTextField(label: t('tools.destination'), controller: _destinationController),
           JcButton(
-            label: 'Compare',
+            label: t('tools.compare'),
             onPressed: () {
               ref
                   .read(_costOfLivingInputsProvider.notifier)
@@ -68,7 +70,7 @@ class _CostOfLivingScreenState extends ConsumerState<CostOfLivingScreen> {
     }
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Cost of Living')),
+      appBar: AppBar(title: Text(t('tools.cost_of_living'))),
       body: state.when(
         data: (result) {
           final items = result['items'] as List? ?? [];

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:japaconnect_core/japaconnect_core.dart';
 import 'package:japaconnect_mobile/features/auth/providers/auth_provider.dart';
+import 'package:japaconnect_mobile/i18n/app_localizations.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
@@ -33,6 +34,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   Widget build(BuildContext context) {
     final state = ref.watch(authFormProvider);
     final notifier = ref.read(authFormProvider.notifier);
+    final t = ref.watch(tProvider);
 
     ref.listen(authFormProvider, (prev, next) {
       if (next.challengeToken != null && next.challengeToken != prev?.challengeToken) {
@@ -51,18 +53,18 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            JcTextField(label: 'Username', controller: _username),
+            JcTextField(label: t('auth.username'), controller: _username),
             const SizedBox(height: 16),
-            JcTextField(label: 'Password', controller: _password, obscureText: true),
+            JcTextField(label: t('auth.password'), controller: _password, obscureText: true),
             if (state.error != null) Text(state.error!, style: const TextStyle(color: Colors.red)),
             const SizedBox(height: 16),
             JcButton(
-              label: state.isLoading ? 'Loading...' : 'Login',
+              label: state.isLoading ? t('auth.loading') : t('auth.login'),
               onPressed: state.isLoading ? null : () => notifier.login(_username.text, _password.text),
             ),
             TextButton(
               onPressed: () => context.push('/register'),
-              child: const Text('Register'),
+              child: Text(t('auth.register')),
             ),
           ],
         ),

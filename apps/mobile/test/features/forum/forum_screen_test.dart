@@ -23,6 +23,6 @@ void main() {
     await tester.pumpWidget(const ProviderScope(
         child: MaterialApp(home: ForumReplyScreen(slug: 'sample'))));
     expect(find.byType(JcTextField), findsOneWidget);
-    expect(find.text('Post'), findsOneWidget);
+    expect(find.text('forum.post'), findsOneWidget);
   });
 }
