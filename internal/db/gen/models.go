@@ -3293,6 +3293,8 @@ type Space struct {
 	CurrencyCode   *string            `json:"currency_code"`
 	Keywords       []string           `json:"keywords"`
 	CreatorUserID  pgtype.UUID        `json:"creator_user_id"`
+	Region         *string            `json:"region"`
+	Subregion      *string            `json:"subregion"`
 }
 
 type SpaceMember struct {
