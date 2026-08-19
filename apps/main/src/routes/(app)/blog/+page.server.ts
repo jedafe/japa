@@ -1,3 +1,4 @@
+import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiList } from '$lib/server/api';
 import type { ContentArticle } from '$lib/types/content';
@@ -9,6 +10,11 @@ import type { BlogSeries } from '$lib/types';
  * Rendered INSIDE the app shell with Ghost.org magazine card design.
  */
 export const load: PageServerLoad = async (event) => {
+	const { features } = await event.parent();
+	if (!features?.['feature.blog']) {
+		throw error(404, { code: 'feature_disabled', message: 'Blog is not available' });
+	}
+
 	const ctx = apiContext(event);
 	const page = Number(event.url.searchParams.get('page') ?? '1');
 	const pageSize = 12;
