@@ -1,0 +1,28 @@
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:japaconnect_core/japaconnect_core.dart';
+import 'package:japaconnect_mobile/features/gamification/services/gamification_service.dart';
+
+final gamificationServiceProvider = Provider<GamificationService>((ref) {
+  final client = ref.watch(jcApiClientProvider);
+  return GamificationService(client);
+});
+
+final myBadgesProvider = FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref) async {
+  final service = ref.watch(gamificationServiceProvider);
+  return service.listMyBadges();
+});
+
+final badgesProvider = FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref) async {
+  final service = ref.watch(gamificationServiceProvider);
+  return service.listBadges();
+});
+
+final challengesProvider = FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref) async {
+  final service = ref.watch(gamificationServiceProvider);
+  return service.listChallenges();
+});
+
+final leaderboardProvider = FutureProvider.autoDispose<Map<String, dynamic>>((ref) async {
+  final service = ref.watch(gamificationServiceProvider);
+  return service.getLeaderboard();
+});
