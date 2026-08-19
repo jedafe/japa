@@ -16,14 +16,14 @@
     {/if}
     {#if props.headline}
       <h1
-        class="text-balance text-4xl font-bold tracking-tight text-[var(--color-text)] sm:text-5xl lg:text-6xl"
-        style="font-family: var(--font-serif);"
+        class="text-balance text-4xl font-bold tracking-tight text-[var(--color-heading,var(--color-text))] sm:text-5xl lg:text-6xl"
+        style="font-family: var(--block-heading-family, var(--font-serif, ui-serif, Georgia, Cambria, 'Times New Roman', Times, serif)); font-size: var(--block-heading-size); font-weight: var(--block-heading-weight);"
       >
         {props.headline}
       </h1>
     {/if}
     {#if props.subhead}
-      <p class="mt-6 text-balance text-lg text-[var(--color-text-subtle)] sm:text-xl">
+      <p class="mt-6 text-balance text-lg text-[var(--color-text-subtle)] sm:text-xl" style="font-family: var(--block-body-family); font-size: var(--block-body-size); font-weight: var(--block-body-weight);">
         {props.subhead}
       </p>
     {/if}

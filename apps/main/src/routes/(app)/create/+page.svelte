@@ -51,6 +51,8 @@
 		visibilityOptions={data.visibilityOptions}
 		coverMedia={data.coverMedia}
 		draftSeriesId={data.draftSeriesId}
+		initialType={data.initialType}
+		initialSpaceId={data.initialSpaceId}
 		user={data.user}
 		{defaultEditor}
 		{maxTags}

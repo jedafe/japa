@@ -1,7 +1,7 @@
 import { redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiGet, apiList } from '$lib/server/api';
-import { availableTypes } from '$lib/components/create/contentTypeRegistry';
+import { createAvailableTypes, CREATE_ALLOWED_TYPES } from '$lib/components/create/contentTypeRegistry';
 import type {
 	ContentTypeMeta,
 	MeSpace,
@@ -59,11 +59,31 @@ export const load: PageServerLoad = async (event) => {
 	const rawTypes = typesRes.status === 'fulfilled' ? typesRes.value.items : [];
 	const flags = flagsRes.status === 'fulfilled' ? flagsRes.value : {};
 	const spaces = spacesRes.status === 'fulfilled' ? spacesRes.value.items : [];
+
+	// Only blog posts, comparisons, and guides are authored through /create.
+	// Pages are created in the admin pagebuilder; discussions are created in
+	// the forum composer (ComposeModal -> DiscussionComposer or
+	// /forum/[category]/new). Invalid ?type values are ignored and fall back
+	// to the first allowed type.
+	const requestedType = event.url.searchParams.get('type') ?? '';
+	const initialType = CREATE_ALLOWED_TYPES.some((t) => t === requestedType) ? requestedType : null;
+
+	// ?space is a space slug. Resolve it to the user's joined space id so the
+	// composer can pre-select the space. Unknown / non-joined slugs are ignored.
+	const requestedSpaceSlug = event.url.searchParams.get('space') ?? '';
+	const initialSpaceId = requestedSpaceSlug
+		? (spaces.find((s) => s.slug === requestedSpaceSlug)?.id ?? null)
+		: null;
+	// Only load field groups that match the content types the /create composer
+	// actually supports. Job listing and forum fields have their own creation
+	// surfaces and should not show up here.
+	const allowedFieldGroupSlugs = new Set<string>(CREATE_ALLOWED_TYPES.map((t) => `${t}_fields`));
 	const fieldGroups =
 		groupsRes.status === 'fulfilled'
 			? groupsRes.value.items.filter(
 					(g) =>
 						g.entity_type === 'content' &&
+						allowedFieldGroupSlugs.has(g.slug ?? '') &&
 						// Exclude guide category-specific field groups — those are loaded
 						// on demand by CreateShell when a guide category is selected,
 						// via GET /custom-field-groups?entity_class=content_type:guide:{cat}
@@ -155,7 +175,7 @@ export const load: PageServerLoad = async (event) => {
 	}
 
 	return {
-		types: availableTypes(rawTypes, flags),
+		types: createAvailableTypes(rawTypes, flags),
 		spaces,
 		fieldGroups,
 		series,
@@ -168,6 +188,8 @@ export const load: PageServerLoad = async (event) => {
 		visibilityOptions,
 		coverMedia,
 		draftSeriesId,
+		initialType,
+		initialSpaceId,
 		loadError: typesRes.status === 'rejected'
 	};
 };

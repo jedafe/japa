@@ -2,6 +2,7 @@
   import type { EntityCollectionProps } from '../types';
   import type { FetchContext } from '../data/types';
   import { fetchEntityCollection } from '../data/entityFetchers';
+  import { getBlockContentContext } from '../shell/blockContent';
 
   interface Props {
     props: EntityCollectionProps;
@@ -14,6 +15,8 @@
   let loading = $state(true);
   let error = $state(false);
 
+  const blockContent = getBlockContentContext();
+
   // Use pre-fetched data if provided (server-side injection), otherwise fetch client-side.
   $effect(() => {
     // Pre-fetched data injected by the server (e.g. default seed).
@@ -25,6 +28,12 @@
       .then((result) => { items = result; error = false; })
       .catch(() => { error = true; })
       .finally(() => { loading = false; });
+  });
+
+  // Report content state to the wrapping BlockShell for `hide_if_empty`.
+  $effect(() => {
+    if (loading) return;
+    blockContent?.set(!error && items.length > 0);
   });
 
   const colsClass = $derived(

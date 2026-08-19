@@ -202,14 +202,13 @@ test.describe('J5 — Blog reading', () => {
 });
 
 test.describe('J6 — Editor (/create)', () => {
+	function composerSelect(page: Page) {
+		return page.locator('select.composer-type-select');
+	}
+
 	test('create page renders TipTap editor with slash menu', async ({ page }) => {
 		await login(page, USER1);
 		await page.goto('/create');
-		// /create may present a type chooser; follow into forum type if so
-		const forumOption = page.getByRole('link', { name: /forum|discussion/i }).first();
-		if ((await forumOption.count()) > 0) {
-			await forumOption.click();
-		}
 		const editor = page.locator('[contenteditable="true"], .tiptap, .ProseMirror').first();
 		await expect(editor).toBeVisible({ timeout: 15_000 });
 		await editor.click();
@@ -218,6 +217,31 @@ test.describe('J6 — Editor (/create)', () => {
 		await expect(
 			page.getByText(/heading|paragraph|table|image|list/i).first()
 		).toBeVisible({ timeout: 5_000 });
+	});
+
+	test('/create only exposes blog_post, comparison and guide', async ({ page }) => {
+		await login(page, USER1);
+		await page.goto('/create');
+		const options = await composerSelect(page).locator('option').allTextContents();
+		expect(options).toEqual(['Blog Post', 'Comparison', 'Guide']);
+	});
+
+	test('/create preselects type and space from query params', async ({ page }) => {
+		await login(page, USER1);
+		await page.goto('/create?type=guide&space=united-kingdom');
+		await expect(composerSelect(page)).toHaveValue('guide');
+		const guideCategory = page.locator('select#guide-category');
+		await expect(guideCategory).toBeVisible();
+		const spaceChip = page.locator('.space-selector-row .autocomplete-chip-label');
+		await expect(spaceChip).toHaveText(/United Kingdom/i);
+	});
+
+	test('/create falls back to first allowed type for invalid or non-create types', async ({ page }) => {
+		await login(page, USER1);
+		await page.goto('/create?type=forum');
+		await expect(composerSelect(page)).toHaveValue('blog_post');
+		await page.goto('/create?type=discussion');
+		await expect(composerSelect(page)).toHaveValue('blog_post');
 	});
 });
 
@@ -428,6 +452,32 @@ test.describe('Create page — editor mode switcher', () => {
 		await tabs.nth(0).click();
 		await expect(tabs.nth(0)).toHaveAttribute('aria-selected', 'true');
 		await expect(page.locator('.editor-surface')).toBeVisible();
+	});
+});
+
+test.describe('J8 — Jobs', () => {
+	test('/jobs has a create button and /jobs/create can post a listing', async ({ page }) => {
+		const errors = trackConsoleErrors(page);
+		await login(page, USER1);
+
+		await page.goto('/jobs');
+		await expect(page.locator('a[href="/jobs/create"]')).toBeVisible();
+
+		await page.goto('/jobs/create');
+		await page.waitForLoadState('networkidle');
+		await expect(page.locator('h1')).toHaveText(/Post a job/i);
+		await expect(page.locator('text=Job Listing Fields')).toBeVisible();
+
+		const unique = Date.now();
+		await page.locator('#job-title').fill('QA Playwright Job ' + unique);
+		await page.locator('#job-body').fill(`A test job created by Playwright at ${unique}.`);
+		await page.getByPlaceholder('Company Name *').fill('QA Company');
+		await page.locator('#job_type').selectOption('full_time');
+		await page.locator('#location_type').selectOption('remote');
+
+		await page.getByRole('button', { name: /Post job/i }).click();
+		await expect(page).toHaveURL(/\/jobs\/qa-playwright-job/);
+		expect(errors).toEqual([]);
 	});
 });
 
