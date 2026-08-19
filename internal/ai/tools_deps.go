@@ -564,8 +564,13 @@ type ToolDeps struct {
 
 	// Intelligence tools (§75 ADR-076 Amendment 2, on-demand source/record
 	// update, content regeneration, and source discovery).
-	TaskEnqueuer TaskEnqueuer // nil disables agent-triggered background tasks
-	IntelQuerier IntelQuerier // nil disables source/record validation
+	TaskEnqueuer       TaskEnqueuer       // nil disables agent-triggered background tasks
+	IntelQuerier       IntelQuerier       // nil disables source/record validation
+	IntelSourceManager IntelSourceManager // nil disables source.discover
+
+	// SearchWebFunc overrides SearchWeb for tests and custom search wiring.
+	// If nil, SourceDiscoverHandler calls SearchWeb directly.
+	SearchWebFunc func(ctx context.Context, client *http.Client, settings SettingsReader, tenantID pgtype.UUID, query string, limit int) (string, []WebSearchResult, error)
 
 	// ScholarshipSearcher queries the scholarships projection table.
 	ScholarshipSearcher ScholarshipSearcher // nil → scholarship.search returns "not configured"
@@ -609,6 +614,17 @@ type TaskEnqueuer interface {
 type IntelQuerier interface {
 	GetIntelSource(ctx context.Context, arg gen.GetIntelSourceParams) (gen.IntelSource, error)
 	GetIntelRecord(ctx context.Context, arg gen.GetIntelRecordParams) (gen.IntelRecord, error)
+	GetIntelSourceByURL(ctx context.Context, arg gen.GetIntelSourceByURLParams) (gen.IntelSource, error)
+}
+
+// IntelSourceManager creates and looks up sources for the source.discover
+// workflow. It is satisfied by sources.Service or by a direct gen.Queries
+// adapter.
+//
+// Ref: japaconnect-engineering/adr/ADR-112-intelligence-scholarships-table.md
+type IntelSourceManager interface {
+	Create(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateIntelSourceParams) (gen.IntelSource, error)
+	GetByURL(ctx context.Context, tenantID pgtype.UUID, sourceURL string) (gen.IntelSource, error)
 }
 
 // ScholarshipSearchFilters is the argument shape for a scholarship search.
@@ -744,6 +760,13 @@ func (d *ToolDeps) WithTaskEnqueuer(e TaskEnqueuer) *ToolDeps {
 // source/record IDs before enqueueing background work.
 func (d *ToolDeps) WithIntelQuerier(q IntelQuerier) *ToolDeps {
 	d.IntelQuerier = q
+	return d
+}
+
+// WithIntelSourceManager injects the intelligence source manager used to
+// create proposed sources from the source.discover agent tool.
+func (d *ToolDeps) WithIntelSourceManager(m IntelSourceManager) *ToolDeps {
+	d.IntelSourceManager = m
 	return d
 }
 

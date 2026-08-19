@@ -1716,6 +1716,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// break the import cycle documented in internal/worker/intelligence.go).
 	intelSourcesStore := sources.NewStore(database)
 	intelSourcesService := sources.NewService(intelSourcesStore)
+	agentDeps.IntelSourceManager = intelSourcesService
 	intelScheduler := scheduler.NewScheduler(&intelSchedulerSourceAdapter{store: intelSourcesStore, tenantID: defaultTenantID}, vkClient.Redis(), defaultTenantID)
 	intelDedupService := dedup.NewService(intelStores, defaultTenantID)
 	intelEventPublisher := events.NewAsynqEventPublisher(asynqClient)

@@ -23,14 +23,23 @@ func NewService(store *Store) *Service {
 	return &Service{store: store}
 }
 
-// Create registers a new source in the registry.
+// Create registers a new source in the registry. Defaults status to 'active'
+// when the caller did not supply a status (e.g. admin creation flow).
 func (s *Service) Create(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateIntelSourceParams) (Source, error) {
+	if arg.Status == nil || arg.Status == "" {
+		arg.Status = "active"
+	}
 	return s.store.Create(ctx, tenantID, arg)
 }
 
 // Get retrieves a source by ID.
 func (s *Service) Get(ctx context.Context, tenantID pgtype.UUID, id SourceID) (Source, error) {
 	return s.store.Get(ctx, tenantID, id)
+}
+
+// GetByURL retrieves a source by its canonical source_url.
+func (s *Service) GetByURL(ctx context.Context, tenantID pgtype.UUID, sourceURL string) (Source, error) {
+	return s.store.GetByURL(ctx, tenantID, sourceURL)
 }
 
 // List returns a page of sources.

@@ -11,6 +11,63 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const approveProposedIntelSource = `-- name: ApproveProposedIntelSource :one
+UPDATE intel_sources
+SET status = 'active',
+    enabled = true,
+    approved_by = $3,
+    approved_at = now(),
+    updated_at = now()
+WHERE tenant_id = $1 AND id = $2 AND status = 'proposed'
+RETURNING id, name, domain, source_url, category, source_type, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, enabled, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at, tenant_id, persona_id, status, proposed_by, proposed_at, approved_by, approved_at
+`
+
+type ApproveProposedIntelSourceParams struct {
+	TenantID   pgtype.UUID `json:"tenant_id"`
+	ID         pgtype.UUID `json:"id"`
+	ApprovedBy pgtype.UUID `json:"approved_by"`
+}
+
+// Approves a proposed source: status='active', enabled=true, record approver.
+func (q *Queries) ApproveProposedIntelSource(ctx context.Context, arg ApproveProposedIntelSourceParams) (IntelSource, error) {
+	row := q.db.QueryRow(ctx, approveProposedIntelSource, arg.TenantID, arg.ID, arg.ApprovedBy)
+	var i IntelSource
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Domain,
+		&i.SourceUrl,
+		&i.Category,
+		&i.SourceType,
+		&i.TrustLevel,
+		&i.CrawlMethod,
+		&i.CrawlFrequency,
+		&i.CrawlFrequencyMins,
+		&i.RobotsPolicy,
+		&i.SourceLicense,
+		&i.AttributionRequired,
+		&i.UsageRestriction,
+		&i.ProviderConfig,
+		&i.Enabled,
+		&i.LastCrawledAt,
+		&i.LastSuccessAt,
+		&i.LastErrorAt,
+		&i.LastErrorMessage,
+		&i.LastChangedAt,
+		&i.ConsecutiveFailures,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.TenantID,
+		&i.PersonaID,
+		&i.Status,
+		&i.ProposedBy,
+		&i.ProposedAt,
+		&i.ApprovedBy,
+		&i.ApprovedAt,
+	)
+	return i, err
+}
+
 const countPromotedIntelRecordsBySource = `-- name: CountPromotedIntelRecordsBySource :one
 SELECT count(*) FROM intel_records
 WHERE tenant_id = $1 AND source_id = $2 AND promoted_record_id IS NOT NULL
@@ -159,29 +216,40 @@ func (q *Queries) CreateIntelReviewLog(ctx context.Context, arg CreateIntelRevie
 
 const createIntelSource = `-- name: CreateIntelSource :one
 
-INSERT INTO intel_sources (tenant_id, name, domain, source_url, category, source_type, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, enabled, persona_id)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
-RETURNING id, name, domain, source_url, category, source_type, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, enabled, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at, tenant_id, persona_id
+INSERT INTO intel_sources (tenant_id, name, domain, source_url, category, source_type, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, enabled, status, proposed_by, proposed_at, approved_by, approved_at, persona_id)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16,
+        COALESCE($17, 'active'),
+        $18,
+        $19,
+        $20,
+        $21,
+        $22)
+RETURNING id, name, domain, source_url, category, source_type, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, enabled, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at, tenant_id, persona_id, status, proposed_by, proposed_at, approved_by, approved_at
 `
 
 type CreateIntelSourceParams struct {
-	TenantID            pgtype.UUID `json:"tenant_id"`
-	Name                string      `json:"name"`
-	Domain              string      `json:"domain"`
-	SourceUrl           string      `json:"source_url"`
-	Category            string      `json:"category"`
-	SourceType          string      `json:"source_type"`
-	TrustLevel          int16       `json:"trust_level"`
-	CrawlMethod         string      `json:"crawl_method"`
-	CrawlFrequency      string      `json:"crawl_frequency"`
-	CrawlFrequencyMins  int32       `json:"crawl_frequency_mins"`
-	RobotsPolicy        []byte      `json:"robots_policy"`
-	SourceLicense       *string     `json:"source_license"`
-	AttributionRequired bool        `json:"attribution_required"`
-	UsageRestriction    *string     `json:"usage_restriction"`
-	ProviderConfig      []byte      `json:"provider_config"`
-	Enabled             bool        `json:"enabled"`
-	PersonaID           pgtype.UUID `json:"persona_id"`
+	TenantID            pgtype.UUID        `json:"tenant_id"`
+	Name                string             `json:"name"`
+	Domain              string             `json:"domain"`
+	SourceUrl           string             `json:"source_url"`
+	Category            string             `json:"category"`
+	SourceType          string             `json:"source_type"`
+	TrustLevel          int16              `json:"trust_level"`
+	CrawlMethod         string             `json:"crawl_method"`
+	CrawlFrequency      string             `json:"crawl_frequency"`
+	CrawlFrequencyMins  int32              `json:"crawl_frequency_mins"`
+	RobotsPolicy        []byte             `json:"robots_policy"`
+	SourceLicense       *string            `json:"source_license"`
+	AttributionRequired bool               `json:"attribution_required"`
+	UsageRestriction    *string            `json:"usage_restriction"`
+	ProviderConfig      []byte             `json:"provider_config"`
+	Enabled             bool               `json:"enabled"`
+	Status              interface{}        `json:"status"`
+	ProposedBy          pgtype.UUID        `json:"proposed_by"`
+	ProposedAt          pgtype.Timestamptz `json:"proposed_at"`
+	ApprovedBy          pgtype.UUID        `json:"approved_by"`
+	ApprovedAt          pgtype.Timestamptz `json:"approved_at"`
+	PersonaID           pgtype.UUID        `json:"persona_id"`
 }
 
 // internal/db/queries/intelligence.sql
@@ -208,6 +276,11 @@ func (q *Queries) CreateIntelSource(ctx context.Context, arg CreateIntelSourcePa
 		arg.UsageRestriction,
 		arg.ProviderConfig,
 		arg.Enabled,
+		arg.Status,
+		arg.ProposedBy,
+		arg.ProposedAt,
+		arg.ApprovedBy,
+		arg.ApprovedAt,
 		arg.PersonaID,
 	)
 	var i IntelSource
@@ -238,6 +311,11 @@ func (q *Queries) CreateIntelSource(ctx context.Context, arg CreateIntelSourcePa
 		&i.UpdatedAt,
 		&i.TenantID,
 		&i.PersonaID,
+		&i.Status,
+		&i.ProposedBy,
+		&i.ProposedAt,
+		&i.ApprovedBy,
+		&i.ApprovedAt,
 	)
 	return i, err
 }
@@ -385,7 +463,7 @@ func (q *Queries) GetIntelRecordByExternalKey(ctx context.Context, arg GetIntelR
 }
 
 const getIntelSource = `-- name: GetIntelSource :one
-SELECT id, name, domain, source_url, category, source_type, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, enabled, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at, tenant_id, persona_id FROM intel_sources WHERE tenant_id = $1 AND id = $2
+SELECT id, name, domain, source_url, category, source_type, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, enabled, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at, tenant_id, persona_id, status, proposed_by, proposed_at, approved_by, approved_at FROM intel_sources WHERE tenant_id = $1 AND id = $2
 `
 
 type GetIntelSourceParams struct {
@@ -423,12 +501,17 @@ func (q *Queries) GetIntelSource(ctx context.Context, arg GetIntelSourceParams) 
 		&i.UpdatedAt,
 		&i.TenantID,
 		&i.PersonaID,
+		&i.Status,
+		&i.ProposedBy,
+		&i.ProposedAt,
+		&i.ApprovedBy,
+		&i.ApprovedAt,
 	)
 	return i, err
 }
 
 const getIntelSourceByURL = `-- name: GetIntelSourceByURL :one
-SELECT id, name, domain, source_url, category, source_type, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, enabled, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at, tenant_id, persona_id FROM intel_sources WHERE tenant_id = $1 AND source_url = $2
+SELECT id, name, domain, source_url, category, source_type, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, enabled, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at, tenant_id, persona_id, status, proposed_by, proposed_at, approved_by, approved_at FROM intel_sources WHERE tenant_id = $1 AND source_url = $2
 `
 
 type GetIntelSourceByURLParams struct {
@@ -466,6 +549,11 @@ func (q *Queries) GetIntelSourceByURL(ctx context.Context, arg GetIntelSourceByU
 		&i.UpdatedAt,
 		&i.TenantID,
 		&i.PersonaID,
+		&i.Status,
+		&i.ProposedBy,
+		&i.ProposedAt,
+		&i.ApprovedBy,
+		&i.ApprovedAt,
 	)
 	return i, err
 }
@@ -487,9 +575,10 @@ func (q *Queries) GetLatestIntelRawDocHash(ctx context.Context, arg GetLatestInt
 }
 
 const listDueIntelSources = `-- name: ListDueIntelSources :many
-SELECT id, name, domain, source_url, category, source_type, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, enabled, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at, tenant_id, persona_id FROM intel_sources
+SELECT id, name, domain, source_url, category, source_type, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, enabled, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at, tenant_id, persona_id, status, proposed_by, proposed_at, approved_by, approved_at FROM intel_sources
 WHERE tenant_id = $1
   AND enabled = true
+  AND status = 'active'
   AND (last_crawled_at IS NULL OR now() - last_crawled_at >= (crawl_frequency_mins || ' minutes')::interval)
 ORDER BY last_crawled_at NULLS FIRST
 LIMIT $2
@@ -536,6 +625,11 @@ func (q *Queries) ListDueIntelSources(ctx context.Context, arg ListDueIntelSourc
 			&i.UpdatedAt,
 			&i.TenantID,
 			&i.PersonaID,
+			&i.Status,
+			&i.ProposedBy,
+			&i.ProposedAt,
+			&i.ApprovedBy,
+			&i.ApprovedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -744,7 +838,7 @@ func (q *Queries) ListIntelReviewLog(ctx context.Context, arg ListIntelReviewLog
 }
 
 const listIntelSources = `-- name: ListIntelSources :many
-SELECT id, name, domain, source_url, category, source_type, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, enabled, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at, tenant_id, persona_id FROM intel_sources WHERE tenant_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3
+SELECT id, name, domain, source_url, category, source_type, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, enabled, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at, tenant_id, persona_id, status, proposed_by, proposed_at, approved_by, approved_at FROM intel_sources WHERE tenant_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3
 `
 
 type ListIntelSourcesParams struct {
@@ -789,6 +883,11 @@ func (q *Queries) ListIntelSources(ctx context.Context, arg ListIntelSourcesPara
 			&i.UpdatedAt,
 			&i.TenantID,
 			&i.PersonaID,
+			&i.Status,
+			&i.ProposedBy,
+			&i.ProposedAt,
+			&i.ApprovedBy,
+			&i.ApprovedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -801,7 +900,7 @@ func (q *Queries) ListIntelSources(ctx context.Context, arg ListIntelSourcesPara
 }
 
 const listIntelSourcesByCategory = `-- name: ListIntelSourcesByCategory :many
-SELECT id, name, domain, source_url, category, source_type, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, enabled, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at, tenant_id, persona_id FROM intel_sources WHERE tenant_id = $1 AND category = $2 AND enabled = true ORDER BY trust_level, name
+SELECT id, name, domain, source_url, category, source_type, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, enabled, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at, tenant_id, persona_id, status, proposed_by, proposed_at, approved_by, approved_at FROM intel_sources WHERE tenant_id = $1 AND category = $2 AND enabled = true AND status = 'active' ORDER BY trust_level, name
 `
 
 type ListIntelSourcesByCategoryParams struct {
@@ -845,6 +944,77 @@ func (q *Queries) ListIntelSourcesByCategory(ctx context.Context, arg ListIntelS
 			&i.UpdatedAt,
 			&i.TenantID,
 			&i.PersonaID,
+			&i.Status,
+			&i.ProposedBy,
+			&i.ProposedAt,
+			&i.ApprovedBy,
+			&i.ApprovedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listProposedIntelSources = `-- name: ListProposedIntelSources :many
+SELECT id, name, domain, source_url, category, source_type, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, enabled, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at, tenant_id, persona_id, status, proposed_by, proposed_at, approved_by, approved_at FROM intel_sources
+WHERE tenant_id = $1 AND status = 'proposed'
+ORDER BY proposed_at DESC NULLS LAST
+LIMIT $2 OFFSET $3
+`
+
+type ListProposedIntelSourcesParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	Limit    int32       `json:"limit"`
+	Offset   int32       `json:"offset"`
+}
+
+// Returns sources with status='proposed' for admin review.
+func (q *Queries) ListProposedIntelSources(ctx context.Context, arg ListProposedIntelSourcesParams) ([]IntelSource, error) {
+	rows, err := q.db.Query(ctx, listProposedIntelSources, arg.TenantID, arg.Limit, arg.Offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []IntelSource
+	for rows.Next() {
+		var i IntelSource
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Domain,
+			&i.SourceUrl,
+			&i.Category,
+			&i.SourceType,
+			&i.TrustLevel,
+			&i.CrawlMethod,
+			&i.CrawlFrequency,
+			&i.CrawlFrequencyMins,
+			&i.RobotsPolicy,
+			&i.SourceLicense,
+			&i.AttributionRequired,
+			&i.UsageRestriction,
+			&i.ProviderConfig,
+			&i.Enabled,
+			&i.LastCrawledAt,
+			&i.LastSuccessAt,
+			&i.LastErrorAt,
+			&i.LastErrorMessage,
+			&i.LastChangedAt,
+			&i.ConsecutiveFailures,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.TenantID,
+			&i.PersonaID,
+			&i.Status,
+			&i.ProposedBy,
+			&i.ProposedAt,
+			&i.ApprovedBy,
+			&i.ApprovedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -962,29 +1132,39 @@ SET name = $3,
     attribution_required = $13,
     usage_restriction = $14,
     enabled = $15,
-    persona_id = COALESCE($16, persona_id),
+    status = COALESCE($16, status),
+    proposed_by = COALESCE($17, proposed_by),
+    proposed_at = COALESCE($18, proposed_at),
+    approved_by = COALESCE($19, approved_by),
+    approved_at = COALESCE($20, approved_at),
+    persona_id = COALESCE($21, persona_id),
     updated_at = now()
 WHERE tenant_id = $1 AND id = $2
-RETURNING id, name, domain, source_url, category, source_type, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, enabled, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at, tenant_id, persona_id
+RETURNING id, name, domain, source_url, category, source_type, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, enabled, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at, tenant_id, persona_id, status, proposed_by, proposed_at, approved_by, approved_at
 `
 
 type UpdateIntelSourceParams struct {
-	TenantID            pgtype.UUID `json:"tenant_id"`
-	ID                  pgtype.UUID `json:"id"`
-	Name                string      `json:"name"`
-	Domain              string      `json:"domain"`
-	SourceUrl           string      `json:"source_url"`
-	Category            string      `json:"category"`
-	SourceType          string      `json:"source_type"`
-	TrustLevel          int16       `json:"trust_level"`
-	CrawlMethod         string      `json:"crawl_method"`
-	CrawlFrequency      string      `json:"crawl_frequency"`
-	CrawlFrequencyMins  int32       `json:"crawl_frequency_mins"`
-	SourceLicense       *string     `json:"source_license"`
-	AttributionRequired bool        `json:"attribution_required"`
-	UsageRestriction    *string     `json:"usage_restriction"`
-	Enabled             bool        `json:"enabled"`
-	PersonaID           pgtype.UUID `json:"persona_id"`
+	TenantID            pgtype.UUID        `json:"tenant_id"`
+	ID                  pgtype.UUID        `json:"id"`
+	Name                string             `json:"name"`
+	Domain              string             `json:"domain"`
+	SourceUrl           string             `json:"source_url"`
+	Category            string             `json:"category"`
+	SourceType          string             `json:"source_type"`
+	TrustLevel          int16              `json:"trust_level"`
+	CrawlMethod         string             `json:"crawl_method"`
+	CrawlFrequency      string             `json:"crawl_frequency"`
+	CrawlFrequencyMins  int32              `json:"crawl_frequency_mins"`
+	SourceLicense       *string            `json:"source_license"`
+	AttributionRequired bool               `json:"attribution_required"`
+	UsageRestriction    *string            `json:"usage_restriction"`
+	Enabled             bool               `json:"enabled"`
+	Status              *string            `json:"status"`
+	ProposedBy          pgtype.UUID        `json:"proposed_by"`
+	ProposedAt          pgtype.Timestamptz `json:"proposed_at"`
+	ApprovedBy          pgtype.UUID        `json:"approved_by"`
+	ApprovedAt          pgtype.Timestamptz `json:"approved_at"`
+	PersonaID           pgtype.UUID        `json:"persona_id"`
 }
 
 func (q *Queries) UpdateIntelSource(ctx context.Context, arg UpdateIntelSourceParams) (IntelSource, error) {
@@ -1004,6 +1184,11 @@ func (q *Queries) UpdateIntelSource(ctx context.Context, arg UpdateIntelSourcePa
 		arg.AttributionRequired,
 		arg.UsageRestriction,
 		arg.Enabled,
+		arg.Status,
+		arg.ProposedBy,
+		arg.ProposedAt,
+		arg.ApprovedBy,
+		arg.ApprovedAt,
 		arg.PersonaID,
 	)
 	var i IntelSource
@@ -1034,6 +1219,11 @@ func (q *Queries) UpdateIntelSource(ctx context.Context, arg UpdateIntelSourcePa
 		&i.UpdatedAt,
 		&i.TenantID,
 		&i.PersonaID,
+		&i.Status,
+		&i.ProposedBy,
+		&i.ProposedAt,
+		&i.ApprovedBy,
+		&i.ApprovedAt,
 	)
 	return i, err
 }
