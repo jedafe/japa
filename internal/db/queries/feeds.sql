@@ -375,8 +375,8 @@ SELECT c.id, c.title, c.slug, c.content_type, c.author_id, c.space_id,
        m.storage_bucket AS cover_storage_bucket,
        m.storage_path   AS cover_storage_path,
        COALESCE(string_agg(t.name, ',' ORDER BY t.name), '') AS tags,
-       (c.author_id = ANY(COALESCE(@author_ids::uuid[], ARRAY[]::uuid[])))            AS is_author_followed,
-       (c.space_id  = ANY(COALESCE(@space_ids::uuid[], ARRAY[]::uuid[])))             AS is_space_followed,
+       COALESCE(c.author_id = ANY(COALESCE(@author_ids::uuid[], ARRAY[]::uuid[])), false)::bool AS is_author_followed,
+       COALESCE(c.space_id  = ANY(COALESCE(@space_ids::uuid[], ARRAY[]::uuid[])), false)::bool AS is_space_followed,
        COUNT(DISTINCT t.id) FILTER (
            WHERE t.id = ANY(COALESCE(@tag_ids::uuid[], ARRAY[]::uuid[]))
        )::int                                              AS followed_tag_overlap,

@@ -301,30 +301,30 @@ WHERE s.tenant_id = @tenant_id AND s.deleted_at IS NULL
   AND (@visibility::text = '' OR s.visibility = @visibility);
 
 -- name: ListSpacesByMemberUser :many
-SELECT s.id, s.tenant_id, s.parent_id, s.space_type_id, s.name, s.slug, s.description,
-       s.wiki_content, s.logo_media_id, s.header_image_id, s.geo_code, s.level,
-       s.member_count, s.post_count, s.follower_count, s.visibility, s.posting_perm,
-       s.replying_perm, s.commenting_perm, s.joining_perm, s.status, s.created_at,
-       s.updated_at, s.deleted_at, s.currency_code
+-- Returns only the lean fields the main-app nav and composer need (id, name,
+-- slug). Returning the full spaces row (including large wiki_content) made the
+-- authenticated shell SSR payload explode when a super admin belongs to many
+-- spaces.
+SELECT s.id, s.name, s.slug
 FROM spaces s
 JOIN space_members sm ON sm.space_id = s.id
 WHERE sm.user_id = @user_id AND sm.tenant_id = @tenant_id AND s.deleted_at IS NULL
   AND (@search::text = '' OR s.name ILIKE '%' || @search || '%' OR s.slug ILIKE '%' || @search || '%')
-ORDER BY sm.joined_at DESC, s.id DESC;
+ORDER BY sm.joined_at DESC, s.id DESC
+LIMIT @limit_val OFFSET @offset_val;
 
 -- name: ListAllSpacesForAdmin :many
 -- Returns every active space in the tenant with no visibility or membership
 -- filter. Used by GET /me/spaces when the caller is a super_admin so they can
 -- post to any space without joining it first (Section 03 — admin override).
-SELECT s.id, s.tenant_id, s.parent_id, s.space_type_id, s.name, s.slug, s.description,
-       s.wiki_content, s.logo_media_id, s.header_image_id, s.geo_code, s.level,
-       s.member_count, s.post_count, s.follower_count, s.visibility, s.posting_perm,
-       s.replying_perm, s.commenting_perm, s.joining_perm, s.status, s.created_at,
-       s.updated_at, s.deleted_at, s.currency_code
+-- Selects only the lean fields the nav/composer need to keep the SSR payload
+-- small.
+SELECT s.id, s.name, s.slug
 FROM spaces s
 WHERE s.tenant_id = @tenant_id AND s.deleted_at IS NULL
   AND (@search::text = '' OR s.name ILIKE '%' || @search || '%' OR s.slug ILIKE '%' || @search || '%')
-ORDER BY s.created_at DESC, s.id DESC;
+ORDER BY s.created_at DESC, s.id DESC
+LIMIT @limit_val OFFSET @offset_val;
 
 -- name: ListSpacesByModeratorUser :many
 SELECT s.id, s.tenant_id, s.parent_id, s.space_type_id, s.name, s.slug, s.description,

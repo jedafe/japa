@@ -142,7 +142,7 @@ LIMIT $3;
 -- ADR-064: when geoCode is provided, spaces matching the visitor's
 -- ContentCountry are preferred (re-weighted, not hidden). Empty geoCode =
 -- global ranking (original behavior).
-SELECT DISTINCT s.id, s.name, s.slug, s.member_count, s.post_count, s.geo_code,
+SELECT s.id, s.name, s.slug, s.member_count, s.post_count, s.geo_code,
        COUNT(DISTINCT sm2.user_id) AS shared_members
 FROM spaces s
 JOIN space_members sm ON sm.user_id = $1 AND sm.tenant_id = $2
@@ -160,7 +160,8 @@ LIMIT $3;
 -- ADR-064: when geoCode is provided, tags from content in the visitor's
 -- geo region are preferred (re-weighted, not hidden). Empty geoCode =
 -- global ranking (original behavior).
-SELECT DISTINCT t.id, t.name, t.slug, t.follower_count
+SELECT DISTINCT t.id, t.name, t.slug, t.follower_count,
+       (CASE WHEN sp.geo_code = sqlc.narg(geo_code) THEN 0 ELSE 1 END) AS geo_weight
 FROM tags t
 JOIN contents c ON c.tenant_id = t.tenant_id AND c.id IN (
     SELECT ct.content_id FROM content_tags ct

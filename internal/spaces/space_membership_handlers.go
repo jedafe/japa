@@ -207,3 +207,43 @@ func parsePageSizeOffset(r *http.Request) int32 {
 
 	return int32(n) // #nosec G109 G115 -- bounded by non-negative check above
 }
+
+// parseMeSpacesLimit extracts the page_size query parameter for GET
+// /api/v1/me/spaces. The default is intentionally high so the shell nav can
+// request a small page while existing full-list callers keep working.
+func parseMeSpacesLimit(r *http.Request) int32 {
+	const defaultLimit = 10000
+
+	const maxLimit = 10000
+
+	s := r.URL.Query().Get("page_size")
+	if s == "" {
+		return defaultLimit
+	}
+
+	n, err := strconv.Atoi(s)
+	if err != nil || n <= 0 {
+		return defaultLimit
+	}
+
+	if n > maxLimit {
+		return maxLimit
+	}
+
+	return int32(n) // #nosec G109 G115 -- bounded by MaxPageSize check above
+}
+
+// parseMeSpacesOffset extracts the page_offset query parameter for GET
+// /api/v1/me/spaces.
+func parseMeSpacesOffset(r *http.Request) int32 {
+	s := r.URL.Query().Get("page_offset")
+	if s == "" {
+		return 0
+	}
+
+	n, err := strconv.Atoi(s)
+	if err != nil || n < 0 {
+		return 0
+	}
+	return int32(n) // #nosec G109 G115 -- bounded by non-negative check above
+}

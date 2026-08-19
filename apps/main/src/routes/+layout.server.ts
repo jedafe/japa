@@ -1,24 +1,25 @@
 import type { LayoutServerLoad } from './$types';
 import { apiContext, apiGet, apiList } from '$lib/server/api';
-import type { Menu, SpaceSuggestion, TrendingTag, UserSpaceRef } from '$lib/types';
+import { normalizeConfig, type CardStyleConfig } from '$lib/feed/cardStyle';
+import type { Menu, OnboardingStatus, SpaceSuggestion, TrendingTag, UserSpaceRef } from '$lib/types';
 
 /**
  * Module-level caches for global, non-user-specific data that rarely changes.
  *
- * The root +layout.server.ts re-runs on every SPA navigation (SvelteKit
- * fetches fresh data for the new route from the server). Without caching,
- * each navigation paid 9 serial backend round-trips just for shell data
- * that is identical between routes — making menu-nav clicks feel like full
- * page reloads while inline tab switches (which don't trigger a route
- * change) were instant.
+ * The root +layout.server.ts is intentionally independent of the current URL
+ * and route. As long as it does not access event.url / event.params /
+ * event.route, SvelteKit will not re-run this load on SPA navigation, so the
+ * expensive shell data (settings, menus, spaces, notifications, flags) is
+ * fetched once on the initial request and reused for every client-side route
+ * change. This is what makes menu-nav clicks feel like fast SPA transitions
+ * instead of full page reloads.
+ *
+ * Path-dependent data (right-sidebar widgets) lives in (app)/+layout.server.ts
+ * so it can change per route without forcing the whole shell to reload.
  *
  * The caches are positive-only (misses aren't cached so the next request
  * retries immediately) and short-TTL so admin changes propagate within
- * a minute. Feature flags are an exception: they are fetched fresh on
- * every navigation so toggles take effect immediately. The backend caches
- * the flag lookup in Valkey, so the extra HTTP call is cheap.
- * User-specific data (menu, spaces, notifications) is always fetched
- * fresh but in parallel with the rest.
+ * a minute.
  */
 const SETTINGS_TTL_MS = 60_000;
 interface Cached<T> {
@@ -35,20 +36,25 @@ let featureFlagsFallback: Record<string, boolean> | null = null;
  * a failing widget must never blank the whole app.
  *
  * All independent backend calls are fetched in parallel (Promise.all) rather
- * than serially. Previously these were 9 sequential awaits, each blocking
- * the next — making every SPA navigation wait for 9 serial round-trips
- * before the page could render. Now they all fire at once and the layout
- * load completes in roughly one round-trip instead of nine.
+ * than serially.
  */
 export const load: LayoutServerLoad = async (event) => {
 	const ctx = apiContext(event);
 	const user = event.locals.user;
 	const now = Date.now();
 
+	// Register manual dependencies for shell data that can be invalidated
+	// from the client (e.g. after joining/leaving a space). These do not make
+	// the root load re-run on navigation, only on explicit invalidate(url).
+	if (user) {
+		event.depends('/api/v1/me/spaces');
+	}
+
 	// ── Global, cacheable data (served from module-level cache when fresh)
 	// Site settings change rarely, so a 60s TTL avoids re-fetching them on
-	// every navigation. Feature flags are fetched fresh so admin toggles are
-	// reflected immediately; the backend Valkey cache makes the call cheap.
+	// every navigation. Feature flags are fetched fresh on initial load so
+	// admin toggles are reflected immediately; the backend Valkey cache makes
+	// the call cheap.
 	const settingsFromCache =
 		settingsCache && settingsCache.expiresAt > now ? settingsCache.value : null;
 
@@ -61,10 +67,11 @@ export const load: LayoutServerLoad = async (event) => {
 		footerMenuResult,
 		trendingTagsResult,
 		suggestedSpacesResult,
-		sidebarResult,
 		userSpacesResult,
 		unreadResult,
-		featuresResult
+		featuresResult,
+		cardStyleResult,
+		tourResult
 	] = await Promise.all([
 		// Site settings — from cache if fresh, otherwise fetch.
 		settingsFromCache !== null
@@ -72,11 +79,11 @@ export const load: LayoutServerLoad = async (event) => {
 			: apiGet<Record<string, unknown>>(ctx, '/site/settings/public')
 					.then((v) => ({ ok: true as const, value: v ?? ({} as Record<string, unknown>), cached: false }))
 					.catch(() => ({ ok: false as const, value: {} as Record<string, unknown>, cached: false })),
-		// Main sidebar menu — user-specific (RBAC filtered), always fetched.
+		// Main sidebar menu — user-specific (RBAC filtered).
 		apiGet<Menu>(ctx, '/menus/main_sidebar')
 			.then((v) => ({ ok: true as const, value: v }))
 			.catch(() => ({ ok: false as const, value: null as Menu | null })),
-		// Footer menu — user-specific (RBAC filtered), always fetched.
+		// Footer menu — user-specific (RBAC filtered).
 		apiGet<Menu>(ctx, '/menus/main_footer')
 			.then((v) => ({ ok: true as const, value: v }))
 			.catch(() => ({ ok: false as const, value: null as Menu | null })),
@@ -90,19 +97,11 @@ export const load: LayoutServerLoad = async (event) => {
 		apiList<SpaceSuggestion>(ctx, '/suggestions/spaces?limit=5')
 			.then((v) => ({ ok: true as const, value: v.items }))
 			.catch(() => ({ ok: false as const, value: [] as SpaceSuggestion[] })),
-		// Sidebar widgets — path-dependent, always fetched.
-		apiGet<{ sidebar?: { id?: string } | null; widgets?: unknown[] }>(
-			ctx,
-			`/sidebars/resolve?app=main&position=right&path=${encodeURIComponent(event.url.pathname)}`
-		)
-			.then((v) => ({ ok: true as const, value: v }))
-			.catch(() => ({
-				ok: false as const,
-				value: null as { sidebar?: { id?: string } | null; widgets?: unknown[] } | null
-			})),
-		// User's joined spaces — authed only.
+		// User's joined spaces — authed only. Request a small first page; the
+		// left nav switcher only renders a handful and the full list is huge
+		// for super admins.
 		user
-			? apiList<UserSpaceRef>(ctx, '/me/spaces')
+			? apiList<UserSpaceRef>(ctx, '/me/spaces?page_size=50')
 					.then((v) => ({ ok: true as const, value: v.items }))
 					.catch(() => ({ ok: false as const, value: [] as UserSpaceRef[] }))
 			: Promise.resolve({ ok: true as const, value: [] as UserSpaceRef[] }),
@@ -112,11 +111,23 @@ export const load: LayoutServerLoad = async (event) => {
 					.then((v) => ({ ok: true as const, value: v.count }))
 					.catch(() => ({ ok: false as const, value: 0 }))
 			: Promise.resolve({ ok: true as const, value: 0 }),
-		// Feature flags — fetched fresh every navigation so admin toggles
-		// propagate immediately. The backend caches flags in Valkey.
+		// Feature flags — fetched fresh on initial load so admin toggles
+		// propagate. The backend caches flags in Valkey.
 		apiGet<Record<string, boolean>>(ctx, '/feature-flags')
 			.then((v) => ({ ok: true as const, value: v ?? {} }))
-			.catch(() => ({ ok: false as const, value: {} as Record<string, boolean> }))
+			.catch(() => ({ ok: false as const, value: {} as Record<string, boolean> })),
+		// Feed card-style config — public; used by feed/list surfaces across
+		// the (app) group.
+		apiGet<unknown>(ctx, '/feed/card-style')
+			.then((v) => ({ ok: true as const, value: normalizeConfig(v) }))
+			.catch(() => ({ ok: false as const, value: { default: 'reddit', byType: {} } as CardStyleConfig })),
+		// Onboarding tour dismissal status — authed only. Guards the ?tour=1
+		// auto-trigger in (app)/+layout.svelte (Section 09).
+		user
+			? apiGet<OnboardingStatus>(ctx, '/onboarding/status')
+					.then((v) => ({ ok: true as const, value: !!v?.tour_dismissed }))
+					.catch(() => ({ ok: false as const, value: false }))
+			: Promise.resolve({ ok: true as const, value: false })
 	]);
 
 	// ── Apply results and populate caches for fresh (non-cached) fetches.
@@ -140,12 +151,13 @@ export const load: LayoutServerLoad = async (event) => {
 	const footerMenu = footerMenuResult.value;
 	const trendingTags = trendingTagsResult.value;
 	const suggestedSpaces = suggestedSpacesResult.value;
-	const sidebarData = sidebarResult.value;
 	const userSpaces = userSpacesResult.value;
 	const unreadNotifications = unreadResult.value;
 
-	const rightSidebarWidgets = sidebarData?.widgets ?? [];
-	const rightSidebarEnabled = sidebarData?.sidebar != null;
+	const cardStyleConfig = cardStyleResult.ok
+		? (cardStyleResult.value as CardStyleConfig)
+		: { default: 'reddit', byType: {} };
+	const tourDismissed = tourResult.value;
 
 	return {
 		user,
@@ -168,7 +180,7 @@ export const load: LayoutServerLoad = async (event) => {
 		navCollapsed: user?.ui?.nav_collapsed ?? false,
 		unreadNotifications,
 		features,
-		rightSidebarWidgets,
-		rightSidebarEnabled
+		cardStyleConfig,
+		tourDismissed
 	};
 };

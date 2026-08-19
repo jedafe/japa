@@ -366,6 +366,12 @@ func (h *Handlers) ListMySpaces(w http.ResponseWriter, r *http.Request) {
 	// composer's space selector.
 	q := strings.TrimSpace(r.URL.Query().Get("q"))
 
+	// Optional page_size/page_offset. When omitted, apply a high default so
+	// existing callers (dashboard, composer) continue to receive the full set
+	// they expect, while the authenticated shell can request a small page.
+	limit := parseMeSpacesLimit(r)
+	offset := parseMeSpacesOffset(r)
+
 	// Super admins bypass the membership requirement — they can post to any
 	// space without joining it first (Section 03 — admin override).
 	isSuperAdmin, err := h.Service.IsSuperAdmin(r.Context(), tenantID, user.UserID)
@@ -373,7 +379,7 @@ func (h *Handlers) ListMySpaces(w http.ResponseWriter, r *http.Request) {
 		slog.Warn("check super admin group", "error", err, "user_id", user.UserID)
 	}
 	if isSuperAdmin {
-		spaces, lerr := h.Service.ListAllSpacesForAdmin(r.Context(), tenantID, q)
+		spaces, lerr := h.Service.ListAllSpacesForAdmin(r.Context(), tenantID, q, limit, offset)
 		if lerr != nil {
 			handleServiceError(w, lerr)
 			return
@@ -382,7 +388,7 @@ func (h *Handlers) ListMySpaces(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	spaces, err := h.Service.ListSpacesByMember(r.Context(), tenantID, user.UserID, q)
+	spaces, err := h.Service.ListSpacesByMember(r.Context(), tenantID, user.UserID, q, limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return
