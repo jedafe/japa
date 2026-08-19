@@ -53,13 +53,22 @@ class _MessageThreadScreenState extends ConsumerState<MessageThreadScreen> {
                   JcIconButton(
                     icon: Icons.send,
                     onPressed: () async {
-                      await ref
-                          .read(socialServiceProvider)
-                          .sendConversationMessage(
-                              widget.id, _textController.text);
-                      _textController.clear();
-                      ref.invalidate(
-                          conversationMessagesProvider(widget.id));
+                      final text = _textController.text;
+                      if (text.isEmpty) return;
+                      try {
+                        await ref
+                            .read(socialServiceProvider)
+                            .sendConversationMessage(widget.id, text);
+                        _textController.clear();
+                        ref.invalidate(
+                            conversationMessagesProvider(widget.id));
+                      } catch (e) {
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Failed to send: $e')),
+                          );
+                        }
+                      }
                     },
                   ),
                 ],
