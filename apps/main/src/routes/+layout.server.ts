@@ -14,17 +14,19 @@ import type { Menu, SpaceSuggestion, TrendingTag, UserSpaceRef } from '$lib/type
  *
  * The caches are positive-only (misses aren't cached so the next request
  * retries immediately) and short-TTL so admin changes propagate within
- * a minute. Only truly global, non-user-specific data is cached here;
- * user-specific data (menu, spaces, notifications) is always fetched
+ * a minute. Feature flags are an exception: they are fetched fresh on
+ * every navigation so toggles take effect immediately. The backend caches
+ * the flag lookup in Valkey, so the extra HTTP call is cheap.
+ * User-specific data (menu, spaces, notifications) is always fetched
  * fresh but in parallel with the rest.
  */
-const GLOBAL_TTL_MS = 60_000;
+const SETTINGS_TTL_MS = 60_000;
 interface Cached<T> {
 	value: T;
 	expiresAt: number;
 }
 let settingsCache: Cached<Record<string, unknown>> | null = null;
-let featureFlagsCache: Cached<Record<string, boolean>> | null = null;
+let featureFlagsFallback: Record<string, boolean> | null = null;
 
 /**
  * Shared shell data for every route: the resolved session (from hooks), the
@@ -44,13 +46,11 @@ export const load: LayoutServerLoad = async (event) => {
 	const now = Date.now();
 
 	// ── Global, cacheable data (served from module-level cache when fresh)
-	// These are non-user-specific and change rarely (admin edits), so a 60s
-	// TTL avoids re-fetching them on every navigation while still propagating
-	// admin changes within a minute.
+	// Site settings change rarely, so a 60s TTL avoids re-fetching them on
+	// every navigation. Feature flags are fetched fresh so admin toggles are
+	// reflected immediately; the backend Valkey cache makes the call cheap.
 	const settingsFromCache =
 		settingsCache && settingsCache.expiresAt > now ? settingsCache.value : null;
-	const flagsFromCache =
-		featureFlagsCache && featureFlagsCache.expiresAt > now ? featureFlagsCache.value : null;
 
 	// ── Parallel fetch group: all independent calls fire at once.
 	// Each resolves to a discriminated union so we can check success/failure
@@ -112,28 +112,28 @@ export const load: LayoutServerLoad = async (event) => {
 					.then((v) => ({ ok: true as const, value: v.count }))
 					.catch(() => ({ ok: false as const, value: 0 }))
 			: Promise.resolve({ ok: true as const, value: 0 }),
-		// Feature flags — from cache if fresh, otherwise fetch.
-		flagsFromCache !== null
-			? Promise.resolve({ ok: true as const, value: flagsFromCache, cached: true })
-			: apiGet<Record<string, boolean>>(ctx, '/feature-flags')
-					.then((v) => ({ ok: true as const, value: v ?? {}, cached: false }))
-					.catch(() => ({ ok: false as const, value: {} as Record<string, boolean>, cached: false }))
+		// Feature flags — fetched fresh every navigation so admin toggles
+		// propagate immediately. The backend caches flags in Valkey.
+		apiGet<Record<string, boolean>>(ctx, '/feature-flags')
+			.then((v) => ({ ok: true as const, value: v ?? {} }))
+			.catch(() => ({ ok: false as const, value: {} as Record<string, boolean> }))
 	]);
 
 	// ── Apply results and populate caches for fresh (non-cached) fetches.
 	let siteSettings = settingsResult.value;
 	if (settingsResult.ok && !settingsResult.cached) {
-		settingsCache = { value: siteSettings, expiresAt: now + GLOBAL_TTL_MS };
+		settingsCache = { value: siteSettings, expiresAt: now + SETTINGS_TTL_MS };
 	} else if (!settingsResult.ok && settingsCache) {
 		// Serve stale on fetch failure (transient backend blip).
 		siteSettings = settingsCache.value;
 	}
 
 	let features = featuresResult.value;
-	if (featuresResult.ok && !featuresResult.cached) {
-		featureFlagsCache = { value: features, expiresAt: now + GLOBAL_TTL_MS };
-	} else if (!featuresResult.ok && featureFlagsCache) {
-		features = featureFlagsCache.value;
+	if (featuresResult.ok) {
+		featureFlagsFallback = features;
+	} else if (featureFlagsFallback) {
+		// Serve last-known flags on transient backend blip.
+		features = featureFlagsFallback;
 	}
 
 	const menu = menuResult.value;
