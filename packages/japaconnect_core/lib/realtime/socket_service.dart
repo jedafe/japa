@@ -38,6 +38,7 @@ class SocketService {
         onDone: _onConnectionLost,
       );
     } catch (_) {
+      _socket = null;
       _scheduleReconnect();
     }
   }
