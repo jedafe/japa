@@ -38,6 +38,7 @@ const (
 	TypeContentFanOutToFeeds          = "content:fan_out_to_feeds"
 	TypeAIGenerateContentEmbedding    = "content:generate_embedding"
 	TypeContentGenerateDraft          = "content:generate_draft"
+	TypeContentRegenerateFromSource   = "content:regenerate_from_source"
 	TypeAgentCreateDraftRequest       = "agent:create_draft_request"
 	TypeReviewAggregateRecalc         = "content:recalc_review_aggregate"
 	TypeTicketSendStatusUpdate        = "ticket:send_status_update"
@@ -154,6 +155,7 @@ func RegisterHandlers(mux *asynq.ServeMux) {
 	mux.HandleFunc(TypeContentFanOutToFeeds, HandleContentFanOutToFeeds)
 	mux.HandleFunc(TypeAIGenerateContentEmbedding, HandleAIGenerateContentEmbedding)
 	mux.HandleFunc(TypeContentGenerateDraft, HandleContentGenerateDraft)
+	mux.HandleFunc(TypeContentRegenerateFromSource, HandleContentRegenerateFromSource)
 	mux.HandleFunc(TypeAgentCreateDraftRequest, HandleAgentCreateDraftRequest)
 	mux.HandleFunc(TypeReviewAggregateRecalc, HandleReviewAggregateRecalc)
 	mux.HandleFunc(TypeTicketSendStatusUpdate, HandleTicketSendStatusUpdate)

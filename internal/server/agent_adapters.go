@@ -1006,6 +1006,7 @@ func isToolTableType(contentType string) bool {
 // studioProcessorService is the subset of *studio.Service the adapter calls.
 type studioProcessorService interface {
 	GetJob(ctx context.Context, tenantID, id pgtype.UUID) (studio.Job, error)
+	DefaultPersonaID(ctx context.Context, tenantID pgtype.UUID) (pgtype.UUID, error)
 	MarkJobGenerating(ctx context.Context, tenantID, jobID pgtype.UUID) error
 	MarkJobGenerated(ctx context.Context, tenantID, jobID, draftContentID pgtype.UUID, aiModel string) error
 	MarkJobRoutedToReview(ctx context.Context, tenantID, jobID, reviewID pgtype.UUID) error
@@ -1178,6 +1179,194 @@ func (a *studioDraftProcessorAdapter) GenerateJob(ctx context.Context, tenantID,
 	// 'contents' — even for tool-table content types that fell back.
 	a.routeToHITL(ctx, tenantID, jobID, row.ID, "contents", job.ContentType, aiModel, fvJSON)
 	return nil
+}
+
+// RegenerateFromSource rewrites an existing contents row from the latest
+// intel_record extraction (§75, ADR-076 Amendment 2). It preserves the
+// content's identity and slug; if the live body has been manually edited or
+// the type requires HITL, it creates a new draft instead of overwriting.
+func (a *studioDraftProcessorAdapter) RegenerateFromSource(ctx context.Context, tenantID, contentID, intelRecordID pgtype.UUID) error {
+	existing, err := a.contentSvc.GetContent(ctx, contentID, tenantID)
+	if err != nil {
+		return fmt.Errorf("regenerate: get content: %w", err)
+	}
+
+	record, err := a.intelStore.GetIntelRecord(ctx, tenantID, intelRecordID)
+	if err != nil {
+		return fmt.Errorf("regenerate: get intel_record: %w", err)
+	}
+
+	persona, personaID, err := a.resolveRegenerationPersona(ctx, tenantID, existing)
+	if err != nil {
+		return fmt.Errorf("regenerate: resolve persona: %w", err)
+	}
+
+	extractionContext := string(record.Extracted)
+	job := studio.Job{
+		ContentType:   existing.ContentType,
+		GuideCategory: existing.GuideCategory,
+		TopicPrompt:   existing.Title,
+	}
+
+	body := existing.Title
+	aiModel := ""
+	if a.dispatcher != nil {
+		generated, model, gerr := a.studioGenerateBody(ctx, tenantID, job, persona, extractionContext)
+		if gerr != nil {
+			return fmt.Errorf("regenerate: generate body: %w", gerr)
+		}
+		if generated != "" {
+			body = generated
+		}
+		aiModel = model
+	}
+
+	provenance := map[string]any{
+		"ai_generated":      true,
+		"ai_persona_id":     personaID.String(),
+		"ai_model":          aiModel,
+		"source":            "regenerate_from_source",
+		"original_prompt":   existing.Title,
+		"intel_record_id":   intelRecordID.String(),
+		"previous_content_id": contentID.String(),
+	}
+	fieldValues := map[string]any{"_ai_provenance": provenance}
+	fvJSON, err := json.Marshal(fieldValues)
+	if err != nil {
+		return fmt.Errorf("regenerate: encode field values: %w", err)
+	}
+
+	manual, err := a.hasManualEditSinceAIGeneration(ctx, tenantID, contentID, existing.AiGeneratedAt, persona.UserID)
+	if err != nil {
+		return fmt.Errorf("regenerate: check manual edits: %w", err)
+	}
+
+	guideCategory := derefStr(existing.GuideCategory)
+	highStakes := studio.IsHighStakes(guideCategory)
+	canAutoPublish := a.studio.ShouldAutoPublish(ctx, tenantID, existing.ContentType, guideCategory)
+
+	// If the content is published and either HITL is required or a human has
+	// edited the body since the last AI generation, create a new draft for
+	// review rather than overwriting the live article.
+	needsHITL := highStakes || manual || (existing.Status == content.StatusPublished && !canAutoPublish)
+
+	if needsHITL {
+		draft, err := a.contentSvc.CreateContent(ctx, tenantID, content.CreateContentInput{
+			AuthorID:      persona.UserID,
+			SpaceID:       existing.GeoSpaceID,
+			ContentType:   existing.ContentType,
+			Title:         existing.Title,
+			Body:          body,
+			FieldValues:   fvJSON,
+			Status:        content.StatusDraft,
+			GuideCategory: existing.GuideCategory,
+		})
+		if err != nil {
+			return fmt.Errorf("regenerate: create HITL draft: %w", err)
+		}
+		a.createStudioReview(ctx, tenantID, draft.ID, existing.ContentType, fvJSON)
+		slog.Info("regenerate: created HITL draft for manual edit or HITL-required content",
+			"content_id", contentID, "draft_id", draft.ID, "high_stakes", highStakes, "manual_edit", manual)
+		return nil
+	}
+
+	// In-place update. Compute content hash and stamp ai_generated columns.
+	hash := content.ComputeContentHash(body)
+	now := pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true}
+	updated, err := a.contentSvc.UpdateContent(ctx, contentID, tenantID, persona.UserID, content.UpdateContentInput{
+		Title:         existing.Title,
+		Slug:          existing.Slug,
+		Body:          body,
+		BodyHtml:      "",
+		FieldValues:   fvJSON,
+		ContentHash:   &hash,
+		GeoSpaceID:    existing.GeoSpaceID,
+		SeoIndexable:  &existing.SeoIndexable,
+		Status:        existing.Status,
+		Visibility:    existing.Visibility,
+		GuideCategory: existing.GuideCategory,
+		AIGeneratedAt: now,
+		AIModel:       &aiModel,
+	}, true)
+	if err != nil {
+		return fmt.Errorf("regenerate: update content: %w", err)
+	}
+
+	// Transition linked intel_record to 'published' when the regenerated
+	// content is live (mirrors Studio publish flow).
+	if existing.Status == content.StatusPublished {
+		a.transitionIntelRecordOnPublish(ctx, tenantID, intelRecordID)
+	}
+
+	slog.Info("regenerate: updated content from source",
+		"content_id", contentID, "slug", updated.Slug, "ai_model", aiModel)
+	return nil
+}
+
+// resolveRegenerationPersona picks the persona to use for a regeneration.
+// Preference: field_values._ai_provenance.ai_persona_id, then the tenant's
+// studio.default_persona_id setting. The returned persona row carries the
+// backing user_id that will be stamped as the author.
+func (a *studioDraftProcessorAdapter) resolveRegenerationPersona(ctx context.Context, tenantID pgtype.UUID, existing gen.GetContentByIDRow) (gen.GetAIPersonaByIDRow, pgtype.UUID, error) {
+	var personaID pgtype.UUID
+	var empty gen.GetAIPersonaByIDRow
+
+	if len(existing.FieldValues) > 0 {
+		var fv map[string]any
+		if err := json.Unmarshal(existing.FieldValues, &fv); err == nil {
+			if prov, ok := fv["_ai_provenance"].(map[string]any); ok {
+				if raw, ok := prov["ai_persona_id"].(string); ok && raw != "" {
+					_ = personaID.Scan(raw)
+				}
+			}
+		}
+	}
+
+	if !personaID.Valid && a.studio != nil {
+		defaultID, err := a.studio.DefaultPersonaID(ctx, tenantID)
+		if err == nil {
+			personaID = defaultID
+		}
+	}
+
+	if !personaID.Valid {
+		return empty, pgtype.UUID{}, fmt.Errorf("no persona available for regeneration")
+	}
+
+	persona, err := a.personaStore.GetAIPersonaByID(ctx, tenantID, personaID)
+	if err != nil {
+		return empty, pgtype.UUID{}, err
+	}
+	return persona, personaID, nil
+}
+
+// hasManualEditSinceAIGeneration returns true if a content revision exists
+// that was edited by someone other than the current AI persona after the
+// last AI generation timestamp. It protects human editorial overrides from
+// being silently overwritten by source re-crawls.
+func (a *studioDraftProcessorAdapter) hasManualEditSinceAIGeneration(ctx context.Context, tenantID, contentID pgtype.UUID, aiGeneratedAt pgtype.Timestamptz, personaUserID pgtype.UUID) (bool, error) {
+	revisions, err := a.contentSvc.ListContentRevisions(ctx, tenantID, contentID)
+	if err != nil {
+		return false, err
+	}
+
+	for _, r := range revisions {
+		if !r.EditedBy.Valid {
+			continue
+		}
+		if r.EditedBy.Bytes == personaUserID.Bytes {
+			continue
+		}
+		if aiGeneratedAt.Valid && r.CreatedAt.Valid && r.CreatedAt.Time.After(aiGeneratedAt.Time) {
+			return true, nil
+		}
+		// If we have no ai_generated_at, treat any non-persona edit as
+		// manual. This is defensive for backfilled/legacy rows.
+		if !aiGeneratedAt.Valid {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // tryToolTableRouting attempts to route a Studio job to its dedicated tool
