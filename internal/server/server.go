@@ -1593,7 +1593,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		WithComparison(&agentComparisonAdapter{svc: comparisonService}).
 		WithPrivacy(ai.NewPrivacyChecker(gen.New(database.Reader))).
 		WithSettings(settingsService).
-		WithCache(agentCache)
+		WithCache(agentCache).
+		WithTaskEnqueuer(taskEnqueuer).
+		WithIntelQuerier(gen.New(database.Reader))
 	agentDeps.ContentCreator = contentCreatorBridge.create
 	agentDeps.ContentUpdater = contentUpdaterBridge.update
 	// Phase 8: persona resolver + HITL store for content.create_draft.

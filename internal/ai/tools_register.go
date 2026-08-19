@@ -53,6 +53,12 @@ func RegisterPhase4Tools(registry *ToolHandlerRegistry, deps *ToolDeps) {
 	registry.RegisterHandler("rag.search", RAGSearchHandler(deps))
 	registry.RegisterHandler("external.search", ExternalSearchHandler(deps))
 
+	// --- Intelligence tools (ADR-076 Amendment 2, on-demand source/record
+	// refresh and content regeneration).
+	registry.RegisterHandler("source.crawl_now", SourceCrawlNowHandler(deps))
+	registry.RegisterHandler("record.update_now", RecordUpdateNowHandler(deps))
+	registry.RegisterHandler("content.regenerate_from_source", ContentRegenerateFromSourceHandler(deps))
+
 	// --- Comparison tools (Phase 7, task 7.06) ---
 	RegisterPhase7ComparisonTools(registry, deps)
 }
