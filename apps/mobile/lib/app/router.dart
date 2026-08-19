@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:japaconnect_core/japaconnect_core.dart';
@@ -60,8 +61,44 @@ final jcRouterProvider = Provider<GoRouter>((ref) {
           GoRoute(path: '/', builder: (_, _) => const FeedScreen()),
           GoRoute(path: '/discover', builder: (_, _) => const DiscoverScreen()),
           GoRoute(path: '/trending', builder: (_, _) => const TrendingScreen()),
+          GoRoute(
+              path: '/compose',
+              builder: (_, _) => const Scaffold(
+                  body: Center(child: Text('Compose — coming soon')))),
+          GoRoute(
+              path: '/spaces', builder: (_, _) => const SpaceListScreen()),
+          GoRoute(
+            path: '/spaces/:slug',
+            builder: (ctx, state) =>
+                SpaceDetailScreen(slug: state.pathParameters['slug']!),
+          ),
+          GoRoute(
+              path: '/notifications',
+              builder: (_, _) => const NotificationsScreen()),
+          GoRoute(
+              path: '/messages',
+              builder: (_, _) => const MessagesListScreen()),
+          GoRoute(
+            path: '/messages/:id',
+            builder: (ctx, state) =>
+                MessageThreadScreen(id: state.pathParameters['id']!),
+          ),
+          GoRoute(path: '/profile', builder: (_, _) => const ProfileScreen()),
+          GoRoute(
+              path: '/profile/settings',
+              builder: (_, _) => const SettingsScreen()),
+          GoRoute(
+              path: '/profile/wallet',
+              builder: (_, _) => const WalletScreen()),
+          GoRoute(
+              path: '/profile/bookmarks',
+              builder: (_, _) => const BookmarksScreen()),
+          GoRoute(
+              path: '/profile/badges',
+              builder: (_, _) => const BadgesScreen()),
         ],
       ),
+      // Top-level routes (pushed over shell):
       GoRoute(path: '/blog', builder: (_, _) => const BlogListScreen()),
       GoRoute(
         path: '/blog/:slug',
@@ -94,13 +131,6 @@ final jcRouterProvider = Provider<GoRouter>((ref) {
             ForumReplyScreen(slug: state.pathParameters['id']!),
       ),
       GoRoute(
-          path: '/spaces', builder: (_, _) => const SpaceListScreen()),
-      GoRoute(
-        path: '/spaces/:slug',
-        builder: (ctx, state) =>
-            SpaceDetailScreen(slug: state.pathParameters['slug']!),
-      ),
-      GoRoute(
         path: '/tools',
         builder: (_, _) => const ToolsHubScreen(),
       ),
@@ -129,17 +159,6 @@ final jcRouterProvider = Provider<GoRouter>((ref) {
         builder: (_, _) => const RemittanceScreen(),
       ),
       GoRoute(
-          path: '/notifications',
-          builder: (_, _) => const NotificationsScreen()),
-      GoRoute(
-          path: '/messages',
-          builder: (_, _) => const MessagesListScreen()),
-      GoRoute(
-        path: '/messages/:id',
-        builder: (ctx, state) =>
-            MessageThreadScreen(id: state.pathParameters['id']!),
-      ),
-      GoRoute(
         path: '/learn/university/catalog',
         builder: (_, _) => const CourseListScreen(),
       ),
@@ -157,19 +176,6 @@ final jcRouterProvider = Provider<GoRouter>((ref) {
           lessonSlug: state.pathParameters['lessonSlug']!,
         ),
       ),
-      GoRoute(path: '/profile', builder: (_, _) => const ProfileScreen()),
-      GoRoute(
-          path: '/profile/settings',
-          builder: (_, _) => const SettingsScreen()),
-      GoRoute(
-          path: '/profile/wallet',
-          builder: (_, _) => const WalletScreen()),
-      GoRoute(
-          path: '/profile/bookmarks',
-          builder: (_, _) => const BookmarksScreen()),
-      GoRoute(
-          path: '/profile/badges',
-          builder: (_, _) => const BadgesScreen()),
       GoRoute(
           path: '/leaderboard',
           builder: (_, _) => const LeaderboardScreen()),
