@@ -238,12 +238,15 @@ func (s *Service) AdminListSpacesCount(ctx context.Context, tenantID pgtype.UUID
 // ListSpacesByMember returns every space the given user belongs to, most
 // recently joined first (catalog: GET /me/spaces). The search parameter
 // filters by name/slug (case-insensitive) at the SQL level — pass "" for
-// no filter.
-func (s *Service) ListSpacesByMember(ctx context.Context, tenantID, userID pgtype.UUID, search string) ([]gen.ListSpacesByMemberUserRow, error) {
+// no filter. limit/offset are applied at the SQL level to keep the payload
+// small for the authenticated shell (most callers only need the first page).
+func (s *Service) ListSpacesByMember(ctx context.Context, tenantID, userID pgtype.UUID, search string, limit, offset int32) ([]gen.ListSpacesByMemberUserRow, error) {
 	spaces, err := s.read.ListSpacesByMemberUser(ctx, gen.ListSpacesByMemberUserParams{
-		UserID:   userID,
-		TenantID: tenantID,
-		Search:   search,
+		UserID:    userID,
+		TenantID:  tenantID,
+		Search:    search,
+		LimitVal:  limit,
+		OffsetVal: offset,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("listing spaces by member: %w", err)
@@ -256,10 +259,12 @@ func (s *Service) ListSpacesByMember(ctx context.Context, tenantID, userID pgtyp
 // visibility or membership filter. Used by GET /me/spaces when the caller is
 // a super_admin so they can post to any space without joining it first
 // (Section 03 — admin override).
-func (s *Service) ListAllSpacesForAdmin(ctx context.Context, tenantID pgtype.UUID, search string) ([]gen.ListAllSpacesForAdminRow, error) {
+func (s *Service) ListAllSpacesForAdmin(ctx context.Context, tenantID pgtype.UUID, search string, limit, offset int32) ([]gen.ListAllSpacesForAdminRow, error) {
 	spaces, err := s.read.ListAllSpacesForAdmin(ctx, gen.ListAllSpacesForAdminParams{
-		TenantID: tenantID,
-		Search:   search,
+		TenantID:  tenantID,
+		Search:    search,
+		LimitVal:  limit,
+		OffsetVal: offset,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("listing all spaces for admin: %w", err)

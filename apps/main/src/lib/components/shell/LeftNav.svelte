@@ -144,7 +144,8 @@
 				{:else}
 					<a
 						href={item.url}
-						target={item.target}
+						target={item.target === '_blank' ? '_blank' : undefined}
+						rel={item.target === '_blank' ? 'noopener noreferrer' : undefined}
 						title={collapsed ? item.label : undefined}
 						aria-current={active ? 'page' : undefined}
 						class={itemClass(active)}

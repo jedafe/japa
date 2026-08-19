@@ -1761,55 +1761,39 @@ func (q *Queries) ListAllSpaceJoinRequests(ctx context.Context, tenantID pgtype.
 }
 
 const listAllSpacesForAdmin = `-- name: ListAllSpacesForAdmin :many
-SELECT s.id, s.tenant_id, s.parent_id, s.space_type_id, s.name, s.slug, s.description,
-       s.wiki_content, s.logo_media_id, s.header_image_id, s.geo_code, s.level,
-       s.member_count, s.post_count, s.follower_count, s.visibility, s.posting_perm,
-       s.replying_perm, s.commenting_perm, s.joining_perm, s.status, s.created_at,
-       s.updated_at, s.deleted_at, s.currency_code
+SELECT s.id, s.name, s.slug
 FROM spaces s
 WHERE s.tenant_id = $1 AND s.deleted_at IS NULL
   AND ($2::text = '' OR s.name ILIKE '%' || $2 || '%' OR s.slug ILIKE '%' || $2 || '%')
 ORDER BY s.created_at DESC, s.id DESC
+LIMIT $4 OFFSET $3
 `
 
 type ListAllSpacesForAdminParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	Search   string      `json:"search"`
+	TenantID  pgtype.UUID `json:"tenant_id"`
+	Search    string      `json:"search"`
+	OffsetVal int32       `json:"offset_val"`
+	LimitVal  int32       `json:"limit_val"`
 }
 
 type ListAllSpacesForAdminRow struct {
-	ID             pgtype.UUID        `json:"id"`
-	TenantID       pgtype.UUID        `json:"tenant_id"`
-	ParentID       pgtype.UUID        `json:"parent_id"`
-	SpaceTypeID    pgtype.UUID        `json:"space_type_id"`
-	Name           string             `json:"name"`
-	Slug           string             `json:"slug"`
-	Description    *string            `json:"description"`
-	WikiContent    []byte             `json:"wiki_content"`
-	LogoMediaID    pgtype.UUID        `json:"logo_media_id"`
-	HeaderImageID  pgtype.UUID        `json:"header_image_id"`
-	GeoCode        *string            `json:"geo_code"`
-	Level          string             `json:"level"`
-	MemberCount    int32              `json:"member_count"`
-	PostCount      int32              `json:"post_count"`
-	FollowerCount  int32              `json:"follower_count"`
-	Visibility     string             `json:"visibility"`
-	PostingPerm    string             `json:"posting_perm"`
-	ReplyingPerm   string             `json:"replying_perm"`
-	CommentingPerm string             `json:"commenting_perm"`
-	JoiningPerm    string             `json:"joining_perm"`
-	Status         string             `json:"status"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
-	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
-	CurrencyCode   *string            `json:"currency_code"`
+	ID   pgtype.UUID `json:"id"`
+	Name string      `json:"name"`
+	Slug string      `json:"slug"`
 }
 
 // Returns every active space in the tenant with no visibility or membership
 // filter. Used by GET /me/spaces when the caller is a super_admin so they can
 // post to any space without joining it first (Section 03 — admin override).
+// Selects only the lean fields the nav/composer need to keep the SSR payload
+// small.
 func (q *Queries) ListAllSpacesForAdmin(ctx context.Context, arg ListAllSpacesForAdminParams) ([]ListAllSpacesForAdminRow, error) {
-	rows, err := q.db.Query(ctx, listAllSpacesForAdmin, arg.TenantID, arg.Search)
+	rows, err := q.db.Query(ctx, listAllSpacesForAdmin,
+		arg.TenantID,
+		arg.Search,
+		arg.OffsetVal,
+		arg.LimitVal,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -1817,33 +1801,7 @@ func (q *Queries) ListAllSpacesForAdmin(ctx context.Context, arg ListAllSpacesFo
 	var items []ListAllSpacesForAdminRow
 	for rows.Next() {
 		var i ListAllSpacesForAdminRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.TenantID,
-			&i.ParentID,
-			&i.SpaceTypeID,
-			&i.Name,
-			&i.Slug,
-			&i.Description,
-			&i.WikiContent,
-			&i.LogoMediaID,
-			&i.HeaderImageID,
-			&i.GeoCode,
-			&i.Level,
-			&i.MemberCount,
-			&i.PostCount,
-			&i.FollowerCount,
-			&i.Visibility,
-			&i.PostingPerm,
-			&i.ReplyingPerm,
-			&i.CommentingPerm,
-			&i.JoiningPerm,
-			&i.Status,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-			&i.DeletedAt,
-			&i.CurrencyCode,
-		); err != nil {
+		if err := rows.Scan(&i.ID, &i.Name, &i.Slug); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -2650,54 +2608,41 @@ func (q *Queries) ListSpacesByLevel(ctx context.Context, arg ListSpacesByLevelPa
 }
 
 const listSpacesByMemberUser = `-- name: ListSpacesByMemberUser :many
-SELECT s.id, s.tenant_id, s.parent_id, s.space_type_id, s.name, s.slug, s.description,
-       s.wiki_content, s.logo_media_id, s.header_image_id, s.geo_code, s.level,
-       s.member_count, s.post_count, s.follower_count, s.visibility, s.posting_perm,
-       s.replying_perm, s.commenting_perm, s.joining_perm, s.status, s.created_at,
-       s.updated_at, s.deleted_at, s.currency_code
+SELECT s.id, s.name, s.slug
 FROM spaces s
 JOIN space_members sm ON sm.space_id = s.id
 WHERE sm.user_id = $1 AND sm.tenant_id = $2 AND s.deleted_at IS NULL
   AND ($3::text = '' OR s.name ILIKE '%' || $3 || '%' OR s.slug ILIKE '%' || $3 || '%')
 ORDER BY sm.joined_at DESC, s.id DESC
+LIMIT $5 OFFSET $4
 `
 
 type ListSpacesByMemberUserParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-	Search   string      `json:"search"`
+	UserID    pgtype.UUID `json:"user_id"`
+	TenantID  pgtype.UUID `json:"tenant_id"`
+	Search    string      `json:"search"`
+	OffsetVal int32       `json:"offset_val"`
+	LimitVal  int32       `json:"limit_val"`
 }
 
 type ListSpacesByMemberUserRow struct {
-	ID             pgtype.UUID        `json:"id"`
-	TenantID       pgtype.UUID        `json:"tenant_id"`
-	ParentID       pgtype.UUID        `json:"parent_id"`
-	SpaceTypeID    pgtype.UUID        `json:"space_type_id"`
-	Name           string             `json:"name"`
-	Slug           string             `json:"slug"`
-	Description    *string            `json:"description"`
-	WikiContent    []byte             `json:"wiki_content"`
-	LogoMediaID    pgtype.UUID        `json:"logo_media_id"`
-	HeaderImageID  pgtype.UUID        `json:"header_image_id"`
-	GeoCode        *string            `json:"geo_code"`
-	Level          string             `json:"level"`
-	MemberCount    int32              `json:"member_count"`
-	PostCount      int32              `json:"post_count"`
-	FollowerCount  int32              `json:"follower_count"`
-	Visibility     string             `json:"visibility"`
-	PostingPerm    string             `json:"posting_perm"`
-	ReplyingPerm   string             `json:"replying_perm"`
-	CommentingPerm string             `json:"commenting_perm"`
-	JoiningPerm    string             `json:"joining_perm"`
-	Status         string             `json:"status"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
-	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
-	CurrencyCode   *string            `json:"currency_code"`
+	ID   pgtype.UUID `json:"id"`
+	Name string      `json:"name"`
+	Slug string      `json:"slug"`
 }
 
+// Returns only the lean fields the main-app nav and composer need (id, name,
+// slug). Returning the full spaces row (including large wiki_content) made the
+// authenticated shell SSR payload explode when a super admin belongs to many
+// spaces.
 func (q *Queries) ListSpacesByMemberUser(ctx context.Context, arg ListSpacesByMemberUserParams) ([]ListSpacesByMemberUserRow, error) {
-	rows, err := q.db.Query(ctx, listSpacesByMemberUser, arg.UserID, arg.TenantID, arg.Search)
+	rows, err := q.db.Query(ctx, listSpacesByMemberUser,
+		arg.UserID,
+		arg.TenantID,
+		arg.Search,
+		arg.OffsetVal,
+		arg.LimitVal,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -2705,33 +2650,7 @@ func (q *Queries) ListSpacesByMemberUser(ctx context.Context, arg ListSpacesByMe
 	var items []ListSpacesByMemberUserRow
 	for rows.Next() {
 		var i ListSpacesByMemberUserRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.TenantID,
-			&i.ParentID,
-			&i.SpaceTypeID,
-			&i.Name,
-			&i.Slug,
-			&i.Description,
-			&i.WikiContent,
-			&i.LogoMediaID,
-			&i.HeaderImageID,
-			&i.GeoCode,
-			&i.Level,
-			&i.MemberCount,
-			&i.PostCount,
-			&i.FollowerCount,
-			&i.Visibility,
-			&i.PostingPerm,
-			&i.ReplyingPerm,
-			&i.CommentingPerm,
-			&i.JoiningPerm,
-			&i.Status,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-			&i.DeletedAt,
-			&i.CurrencyCode,
-		); err != nil {
+		if err := rows.Scan(&i.ID, &i.Name, &i.Slug); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
