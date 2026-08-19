@@ -330,6 +330,24 @@ type ContentTypeResponse struct {
 	DefaultPersonaID string            `json:"default_persona_id,omitempty"`
 }
 
+// DefaultPersonaID returns the studio.default_persona_id setting as a UUID.
+// It returns an empty/invalid UUID when the setting is unset or the value is
+// not a valid UUID.
+func (s *Service) DefaultPersonaID(ctx context.Context, tenantID pgtype.UUID) (pgtype.UUID, error) {
+	var id pgtype.UUID
+	if s.settings == nil {
+		return id, nil
+	}
+	val, err := s.settings.GetSetting(ctx, tenantID, "studio.default_persona_id")
+	if err != nil || val == "" {
+		return id, err
+	}
+	if uerr := id.Scan(val); uerr != nil {
+		return id, uerr
+	}
+	return id, nil
+}
+
 // ListContentTypes returns the content types available for studio generation
 // along with the studio.default_persona_id setting so the frontend can
 // pre-select a persona in the new-job form (§75 system_settings, ADR-076 §6).

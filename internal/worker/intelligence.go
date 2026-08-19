@@ -983,6 +983,30 @@ func HandleIntelPromote(ctx context.Context, t *asynq.Task) error {
 		}
 	}
 
+	// ADR-076 Amendment 2: if a promoter returned an existing ContentID
+	// (guide_content direct promotion or a projection table with a guide_id
+	// link), request a content body regeneration from the latest extraction
+	// so the narrative content stays in sync with the structured data.
+	if result.ContentID != uuid.Nil && (result.Action == "created" || result.Action == "updated") {
+		regenEnabled := false
+		if appSettings != nil {
+			regenEnabled = appSettings.GetBoolOr(ctx, tenantID, "agent.regenerate_content_on_promote", false)
+		}
+		if regenEnabled && taskEnqueuer != nil {
+			regenPayload, err := json.Marshal(map[string]string{
+				"content_id":      result.ContentID.String(),
+				"intel_record_id": record.ID.String(),
+				"tenant_id":       tenantID.String(),
+			})
+			if err == nil {
+				if qerr := taskEnqueuer.Enqueue(TypeContentRegenerateFromSource, regenPayload); qerr != nil {
+					slog.Warn("task:intel:promote: enqueue content regeneration failed",
+						"record_id", p.RecordID, "content_id", result.ContentID, "error", qerr)
+				}
+			}
+		}
+	}
+
 	payload := marshalPayload(intelPostPublishPayload{Version: intelPayloadVersion,
 		RecordID:   p.RecordID,
 		DomainID:   result.DomainID.String(),

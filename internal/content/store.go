@@ -412,6 +412,8 @@ type UpdateContentInput struct {
 	IsPinned        bool
 	OrganizationID  pgtype.UUID
 	GuideCategory   *string
+	AIGeneratedAt   pgtype.Timestamptz
+	AIModel         *string
 }
 
 // UpdateContent updates an existing content row, recording a revision and
@@ -543,6 +545,8 @@ func (s *Service) UpdateContent(ctx context.Context, id, tenantID, editedBy pgty
 		IsLocked:        input.IsLocked,
 		IsPinned:        input.IsPinned,
 		GuideCategory:   input.GuideCategory,
+		AiGeneratedAt:   input.AIGeneratedAt,
+		AiModel:         input.AIModel,
 		ID:              id,
 		TenantID:        tenantID,
 	})

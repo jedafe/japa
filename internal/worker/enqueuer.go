@@ -144,6 +144,7 @@ var taskTier = func() map[string]string {
 		TypeScheduledPublish, TypeLinkPreviewFetch, TypeLanguagePackAITranslate,
 		TypeMediaScan, TypeContentFanOutToFeeds, TypeAIGenerateContentEmbedding,
 		TypeContentGenerateDraft,
+		TypeContentRegenerateFromSource,
 		TypeAgentCreateDraftRequest,
 		TypeReviewAggregateRecalc, TypeTicketSendStatusUpdate,
 		TypeLearningUpdateTrackCompletion, TypeVideoProcessing,
@@ -329,6 +330,7 @@ func TaskTypeCatalog() []map[string]string {
 		{TypeUniversityNotifyCourseApproved, "default", "Notify creator their track was approved to the marketplace"},
 		// V2 default-tier tasks (§§60-76, ADRs 068-085)
 		{TypeContentGenerateDraft, "default", "Generate a draft content item via the AI Gateway (studio/persona/agent)"},
+		{TypeContentRegenerateFromSource, "default", "Rewrite an existing content row from a linked intelligence extraction (§75, ADR-076 Amendment 2)"},
 		{TypeFormFireSubmissionTriggers, "default", "Fire form submission triggers (assign_user_group / send_email / send_webhook / create_ticket / notify_admin)"},
 		{TypeAssessmentScoreSubmission, "default", "Score a completed readiness assessment, generate roadmap, notify (§71, ADR-071)"},
 		{TypeAssessmentCleanupAnonymous, "default", "Hourly cleanup of anonymous assessment_results older than 24h (§71)"},

@@ -2115,6 +2115,53 @@ func HandleContentGenerateDraft(ctx context.Context, t *asynq.Task) error {
 	return nil
 }
 
+// contentRegenerateFromSourcePayload is the payload for the
+// content:regenerate_from_source task (§75, ADR-076 Amendment 2).
+type contentRegenerateFromSourcePayload struct {
+	ContentID     string `json:"content_id"`
+	IntelRecordID string `json:"intel_record_id"`
+	TenantID      string `json:"tenant_id"`
+}
+
+// HandleContentRegenerateFromSource rewrites an existing contents row from
+// the latest linked intel_record extraction. It delegates to the registered
+// StudioProcessor (internal/server/agent_adapters.go) so the worker package
+// does not import internal/content, internal/ai, or internal/studio.
+func HandleContentRegenerateFromSource(ctx context.Context, t *asynq.Task) error {
+	slog.Info("task:content:regenerate_from_source")
+
+	if studioProcessor == nil {
+		slog.Warn("task:content:regenerate_from_source: no StudioProcessor registered, skipping")
+		return nil
+	}
+
+	var payload contentRegenerateFromSourcePayload
+	if err := parsePayloadOrSkip(t, &payload); err != nil {
+		return fmt.Errorf("task:content:regenerate_from_source: invalid payload: %w", err)
+	}
+
+	contentID, err := scanUUID(payload.ContentID)
+	if err != nil {
+		return fmt.Errorf("task:content:regenerate_from_source: bad content_id: %w", err)
+	}
+	intelRecordID, err := scanUUID(payload.IntelRecordID)
+	if err != nil {
+		return fmt.Errorf("task:content:regenerate_from_source: bad intel_record_id: %w", err)
+	}
+	tenantID, err := scanUUID(payload.TenantID)
+	if err != nil {
+		return fmt.Errorf("task:content:regenerate_from_source: bad tenant_id: %w", err)
+	}
+
+	if err := studioProcessor.RegenerateFromSource(ctx, tenantID, contentID, intelRecordID); err != nil {
+		return fmt.Errorf("task:content:regenerate_from_source: %w", err)
+	}
+
+	slog.Info("task:content:regenerate_from_source: completed",
+		"content_id", payload.ContentID, "intel_record_id", payload.IntelRecordID)
+	return nil
+}
+
 // agentDraftRequestPayload is the payload for the agent:create_draft_request
 // task (Section 103, Phase 8). It extends content:generate_draft with an
 // agent_session_id reference so the worker can persist provenance linking

@@ -116,6 +116,10 @@ type StudioProcessor interface {
 	// auto-publishes low-stakes types per studio.auto_publish_types). This is
 	// the actual payload of the extended content:generate_draft task.
 	GenerateJob(ctx context.Context, tenantID, jobID pgtype.UUID) error
+	// RegenerateFromSource rewrites the body of an existing contents row from
+	// the latest intel_record extraction, preserving its identity and status
+	// unless HITL is required (§75, ADR-076 Amendment 2).
+	RegenerateFromSource(ctx context.Context, tenantID, contentID, intelRecordID pgtype.UUID) error
 }
 
 // AgentDraftProcessor handles the agent:create_draft_request task
