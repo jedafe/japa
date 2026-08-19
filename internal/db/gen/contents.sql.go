@@ -639,7 +639,8 @@ SELECT id, tenant_id, author_id, organization_id, space_id, content_type, title,
        canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
        status, visibility, is_locked, is_pinned, read_time_minutes,
        view_count, comment_count, share_count, reshare_count, publish_at, published_at,
-       created_at, updated_at, guide_category
+       created_at, updated_at, guide_category,
+       ai_generated, ai_model, ai_generated_at, hitl_reviewed_by, hitl_reviewed_at
 FROM contents
 WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
 `
@@ -684,6 +685,11 @@ type GetContentByIDRow struct {
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
 	GuideCategory   *string            `json:"guide_category"`
+	AiGenerated     bool               `json:"ai_generated"`
+	AiModel         *string            `json:"ai_model"`
+	AiGeneratedAt   pgtype.Timestamptz `json:"ai_generated_at"`
+	HitlReviewedBy  pgtype.UUID        `json:"hitl_reviewed_by"`
+	HitlReviewedAt  pgtype.Timestamptz `json:"hitl_reviewed_at"`
 }
 
 func (q *Queries) GetContentByID(ctx context.Context, arg GetContentByIDParams) (GetContentByIDRow, error) {
@@ -724,6 +730,11 @@ func (q *Queries) GetContentByID(ctx context.Context, arg GetContentByIDParams) 
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.GuideCategory,
+		&i.AiGenerated,
+		&i.AiModel,
+		&i.AiGeneratedAt,
+		&i.HitlReviewedBy,
+		&i.HitlReviewedAt,
 	)
 	return i, err
 }
@@ -3559,8 +3570,10 @@ SET title = $1, slug = $2, body = $3, body_html = $4,
     publish_at = $18, published_at = $19,
     is_locked = $20, is_pinned = $21,
     organization_id = $22, guide_category = $23,
+    ai_generated_at = COALESCE($24, ai_generated_at),
+    ai_model = COALESCE($25, ai_model),
     updated_at = now()
-WHERE id = $24 AND tenant_id = $25 AND deleted_at IS NULL
+WHERE id = $26 AND tenant_id = $27 AND deleted_at IS NULL
 RETURNING id, tenant_id, author_id, organization_id, space_id, content_type, title, slug, body, body_html,
           field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
           canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
@@ -3593,6 +3606,8 @@ type UpdateContentParams struct {
 	IsPinned        bool               `json:"is_pinned"`
 	OrganizationID  pgtype.UUID        `json:"organization_id"`
 	GuideCategory   *string            `json:"guide_category"`
+	AiGeneratedAt   pgtype.Timestamptz `json:"ai_generated_at"`
+	AiModel         *string            `json:"ai_model"`
 	ID              pgtype.UUID        `json:"id"`
 	TenantID        pgtype.UUID        `json:"tenant_id"`
 }
@@ -3659,6 +3674,8 @@ func (q *Queries) UpdateContent(ctx context.Context, arg UpdateContentParams) (U
 		arg.IsPinned,
 		arg.OrganizationID,
 		arg.GuideCategory,
+		arg.AiGeneratedAt,
+		arg.AiModel,
 		arg.ID,
 		arg.TenantID,
 	)
