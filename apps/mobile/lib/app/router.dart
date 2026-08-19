@@ -27,6 +27,10 @@ import '../features/social/screens/message_thread_screen.dart';
 import '../features/learning/screens/course_list_screen.dart';
 import '../features/learning/screens/course_detail_screen.dart';
 import '../features/learning/screens/lesson_player_screen.dart';
+import '../features/profile/screens/profile_screen.dart';
+import '../features/profile/screens/settings_screen.dart';
+import '../features/profile/screens/wallet_screen.dart';
+import '../features/profile/screens/bookmarks_screen.dart';
 
 final jcRouterProvider = Provider<GoRouter>((ref) {
   final loggedIn = ref.watch(isAuthenticatedProvider);
@@ -119,6 +123,16 @@ final jcRouterProvider = Provider<GoRouter>((ref) {
           lessonSlug: state.pathParameters['lessonSlug']!,
         ),
       ),
+      GoRoute(path: '/profile', builder: (_, _) => const ProfileScreen()),
+      GoRoute(
+          path: '/profile/settings',
+          builder: (_, _) => const SettingsScreen()),
+      GoRoute(
+          path: '/profile/wallet',
+          builder: (_, _) => const WalletScreen()),
+      GoRoute(
+          path: '/profile/bookmarks',
+          builder: (_, _) => const BookmarksScreen()),
     ],
   );
 });
