@@ -20,6 +20,11 @@ import '../features/forum/screens/forum_detail_screen.dart';
 import '../features/forum/screens/forum_reply_screen.dart';
 import '../features/tools/hub/screens/tools_hub_screen.dart';
 import '../features/tools/japabot/screens/japabot_screen.dart';
+import '../features/tools/visa_checklist/screens/visa_checklist_screen.dart';
+import '../features/tools/readiness/screens/readiness_screen.dart';
+import '../features/tools/cost_of_living/screens/cost_of_living_screen.dart';
+import '../features/tools/scholarships/screens/scholarships_screen.dart';
+import '../features/tools/remittance/screens/remittance_screen.dart';
 import '../features/spaces/screens/space_list_screen.dart';
 import '../features/spaces/screens/space_detail_screen.dart';
 import '../features/social/screens/notifications_screen.dart';
@@ -102,6 +107,26 @@ final jcRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/tools/japabot',
         builder: (_, _) => const JapaBotScreen(),
+      ),
+      GoRoute(
+        path: '/tools/visa-checklist',
+        builder: (_, _) => const VisaChecklistScreen(),
+      ),
+      GoRoute(
+        path: '/tools/readiness',
+        builder: (_, _) => const ReadinessScreen(),
+      ),
+      GoRoute(
+        path: '/tools/cost-of-living',
+        builder: (_, _) => const CostOfLivingScreen(),
+      ),
+      GoRoute(
+        path: '/tools/scholarships',
+        builder: (_, _) => const ScholarshipsScreen(),
+      ),
+      GoRoute(
+        path: '/tools/remittance',
+        builder: (_, _) => const RemittanceScreen(),
       ),
       GoRoute(
           path: '/notifications',
