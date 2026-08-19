@@ -18,6 +18,7 @@ import '../features/content/screens/comparison_detail_screen.dart';
 import '../features/forum/screens/forum_list_screen.dart';
 import '../features/forum/screens/forum_detail_screen.dart';
 import '../features/forum/screens/forum_reply_screen.dart';
+import '../features/tools/hub/screens/tools_hub_screen.dart';
 import '../features/tools/japabot/screens/japabot_screen.dart';
 import '../features/spaces/screens/space_list_screen.dart';
 import '../features/spaces/screens/space_detail_screen.dart';
@@ -93,6 +94,10 @@ final jcRouterProvider = Provider<GoRouter>((ref) {
         path: '/spaces/:slug',
         builder: (ctx, state) =>
             SpaceDetailScreen(slug: state.pathParameters['slug']!),
+      ),
+      GoRoute(
+        path: '/tools',
+        builder: (_, _) => const ToolsHubScreen(),
       ),
       GoRoute(
         path: '/tools/japabot',
