@@ -21,6 +21,9 @@ import '../features/forum/screens/forum_reply_screen.dart';
 import '../features/tools/japabot/screens/japabot_screen.dart';
 import '../features/spaces/screens/space_list_screen.dart';
 import '../features/spaces/screens/space_detail_screen.dart';
+import '../features/social/screens/notifications_screen.dart';
+import '../features/social/screens/messages_list_screen.dart';
+import '../features/social/screens/message_thread_screen.dart';
 
 final jcRouterProvider = Provider<GoRouter>((ref) {
   final loggedIn = ref.watch(isAuthenticatedProvider);
@@ -83,6 +86,17 @@ final jcRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/tools/japabot',
         builder: (_, _) => const JapaBotScreen(),
+      ),
+      GoRoute(
+          path: '/notifications',
+          builder: (_, _) => const NotificationsScreen()),
+      GoRoute(
+          path: '/messages',
+          builder: (_, _) => const MessagesListScreen()),
+      GoRoute(
+        path: '/messages/:id',
+        builder: (ctx, state) =>
+            MessageThreadScreen(id: state.pathParameters['id']!),
       ),
     ],
   );
