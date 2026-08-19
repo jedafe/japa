@@ -18,6 +18,7 @@ import '../features/content/screens/comparison_detail_screen.dart';
 import '../features/forum/screens/forum_list_screen.dart';
 import '../features/forum/screens/forum_detail_screen.dart';
 import '../features/forum/screens/forum_reply_screen.dart';
+import '../features/tools/japabot/screens/japabot_screen.dart';
 
 final jcRouterProvider = Provider<GoRouter>((ref) {
   final loggedIn = ref.watch(isAuthenticatedProvider);
@@ -69,6 +70,10 @@ final jcRouterProvider = Provider<GoRouter>((ref) {
         path: '/forum/:id/reply',
         builder: (ctx, state) =>
             ForumReplyScreen(slug: state.pathParameters['id']!),
+      ),
+      GoRoute(
+        path: '/tools/japabot',
+        builder: (_, _) => const JapaBotScreen(),
       ),
     ],
   );
