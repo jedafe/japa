@@ -13,34 +13,41 @@ class ToolsHubScreen extends ConsumerWidget {
     return Scaffold(
       appBar: AppBar(title: const Text('Tools')),
       body: state.when(
-        data: (flags) => ListView(
-          children: [
-            ListTile(
-              title: const Text('Visa Checklist'),
-              onTap: () => context.push('/tools/visa-checklist'),
-            ),
-            ListTile(
-              title: const Text('Readiness Assessment'),
-              onTap: () => context.push('/tools/readiness'),
-            ),
-            ListTile(
-              title: const Text('Cost of Living'),
-              onTap: () => context.push('/tools/cost-of-living'),
-            ),
-            ListTile(
-              title: const Text('Scholarships'),
-              onTap: () => context.push('/tools/scholarships'),
-            ),
-            ListTile(
-              title: const Text('Remittance'),
-              onTap: () => context.push('/tools/remittance'),
-            ),
-            ListTile(
-              title: const Text('JapaBot'),
-              onTap: () => context.push('/tools/japabot'),
-            ),
-          ],
-        ),
+        data: (flags) {
+          final items = <Widget>[
+            if (flags['visa_checklist'] != false)
+              ListTile(
+                title: const Text('Visa Checklist'),
+                onTap: () => context.push('/tools/visa-checklist'),
+              ),
+            if (flags['readiness'] != false)
+              ListTile(
+                title: const Text('Readiness Assessment'),
+                onTap: () => context.push('/tools/readiness'),
+              ),
+            if (flags['cost_of_living'] != false)
+              ListTile(
+                title: const Text('Cost of Living'),
+                onTap: () => context.push('/tools/cost-of-living'),
+              ),
+            if (flags['scholarships'] != false)
+              ListTile(
+                title: const Text('Scholarships'),
+                onTap: () => context.push('/tools/scholarships'),
+              ),
+            if (flags['remittance'] != false)
+              ListTile(
+                title: const Text('Remittance'),
+                onTap: () => context.push('/tools/remittance'),
+              ),
+            if (flags['japabot'] != false)
+              ListTile(
+                title: const Text('JapaBot'),
+                onTap: () => context.push('/tools/japabot'),
+              ),
+          ];
+          return ListView(children: items);
+        },
         loading: () => const LoadingShimmer(),
         error: (e, _) => JcErrorWidget(
           error: e,
