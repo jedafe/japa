@@ -78,6 +78,7 @@ type ScholarshipFilters struct {
 type ScholarshipResult struct {
 	GuideID             string            `json:"guide_id"`
 	ID                  string            `json:"id"`
+	IntelRecordID       string            `json:"intel_record_id"`
 	Title               string            `json:"title"`
 	Slug                string            `json:"slug"`
 	Summary             string            `json:"summary"`
@@ -358,7 +359,7 @@ func (s *Service) FindScholarships(ctx context.Context, tenantID pgtype.UUID, fi
 	// count to every row; we read it from the first row (identical across
 	// rows in the same result set).
 	dataQuery := fmt.Sprintf(`
-		SELECT s.id, s.guide_id, s.title, c.slug, c.meta_description,
+		SELECT s.id, s.intel_record_id, s.guide_id, s.title, c.slug, c.meta_description,
 		       s.country, s.degree_level, s.deadline, s.application_url,
 		       s.university, s.eligible_countries, s.funding, s.description,
 		       COUNT(*) OVER() AS total_count
@@ -383,6 +384,7 @@ func (s *Service) FindScholarships(ctx context.Context, tenantID pgtype.UUID, fi
 		var (
 			r                 ScholarshipResult
 			id                pgtype.UUID
+			intelRecordID     pgtype.UUID
 			guideID           pgtype.UUID
 			slug              *string
 			summary           *string
@@ -397,7 +399,7 @@ func (s *Service) FindScholarships(ctx context.Context, tenantID pgtype.UUID, fi
 			rowCount          int64
 		)
 		if err := rows.Scan(
-			&id, &guideID, &r.Title, &slug, &summary,
+			&id, &intelRecordID, &guideID, &r.Title, &slug, &summary,
 			&country, &degreeLevel, &deadline, &applicationURL,
 			&university, &eligibleCountries, &funding, &description,
 			&rowCount,
@@ -408,6 +410,7 @@ func (s *Service) FindScholarships(ctx context.Context, tenantID pgtype.UUID, fi
 			total = rowCount
 		}
 		r.ID = pgtypeUUIDString(id)
+		r.IntelRecordID = pgtypeUUIDString(intelRecordID)
 		r.GuideID = pgtypeUUIDString(guideID)
 		if slug != nil {
 			r.Slug = *slug
