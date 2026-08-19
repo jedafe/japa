@@ -2,7 +2,6 @@ import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:japaconnect_core/realtime/socket_client.dart';
-import 'package:japaconnect_core/realtime/socket_service.dart';
 
 void main() {
   test('SocketClient stores URL', () {
