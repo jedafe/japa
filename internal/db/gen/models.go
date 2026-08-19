@@ -1854,6 +1854,12 @@ type IntelSource struct {
 	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
 	TenantID            pgtype.UUID        `json:"tenant_id"`
 	PersonaID           pgtype.UUID        `json:"persona_id"`
+	// active | proposed | disabled | rejected
+	Status     string             `json:"status"`
+	ProposedBy pgtype.UUID        `json:"proposed_by"`
+	ProposedAt pgtype.Timestamptz `json:"proposed_at"`
+	ApprovedBy pgtype.UUID        `json:"approved_by"`
+	ApprovedAt pgtype.Timestamptz `json:"approved_at"`
 }
 
 type IpBlock struct {
