@@ -1,4 +1,4 @@
-import { redirect } from '@sveltejs/kit';
+import { error, redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiList } from '$lib/server/api';
 
@@ -24,6 +24,11 @@ export interface DMRequest {
 const PAGE_SIZE = 30;
 
 export const load: PageServerLoad = async (event) => {
+	const { features } = await event.parent();
+	if (!features?.['feature.dm']) {
+		throw error(404, { code: 'feature_disabled', message: 'Direct Messages are not available' });
+	}
+
 	if (!event.locals.user) {
 		throw redirect(307, '/login?redirect=/messages/requests');
 	}

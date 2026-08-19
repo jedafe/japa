@@ -17,6 +17,11 @@ import type { Comment } from '$lib/types';
  * must still render.
  */
 export const load: PageServerLoad = async (event) => {
+	const { features } = await event.parent();
+	if (!features?.['feature.blog']) {
+		throw error(404, { code: 'feature_disabled', message: 'Blog is not available' });
+	}
+
 	const ctx = apiContext(event);
 	const slug = event.params.slug;
 

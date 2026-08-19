@@ -24,6 +24,11 @@ export interface BlogSeriesPost {
  * Ref: japaconnect-engineering/sections/14-content-type-system.md
  */
 export const load: PageServerLoad = async (event) => {
+	const { features } = await event.parent();
+	if (!features?.['feature.blog']) {
+		throw error(404, { code: 'feature_disabled', message: 'Blog is not available' });
+	}
+
 	const ctx = apiContext(event);
 	const slug = event.params.slug;
 
