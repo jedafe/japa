@@ -1595,7 +1595,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		WithSettings(settingsService).
 		WithCache(agentCache).
 		WithTaskEnqueuer(taskEnqueuer).
-		WithIntelQuerier(gen.New(database.Reader))
+		WithIntelQuerier(gen.New(database.Reader)).
+		WithScholarshipSearcher(newAgentScholarshipAdapter(scholarshipsService))
 	agentDeps.ContentCreator = contentCreatorBridge.create
 	agentDeps.ContentUpdater = contentUpdaterBridge.update
 	// Phase 8: persona resolver + HITL store for content.create_draft.

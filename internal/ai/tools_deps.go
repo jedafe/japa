@@ -566,6 +566,9 @@ type ToolDeps struct {
 	// update, content regeneration, and source discovery).
 	TaskEnqueuer TaskEnqueuer // nil disables agent-triggered background tasks
 	IntelQuerier IntelQuerier // nil disables source/record validation
+
+	// ScholarshipSearcher queries the scholarships projection table.
+	ScholarshipSearcher ScholarshipSearcher // nil → scholarship.search returns "not configured"
 }
 
 // ToolsRegistryService is the subset of the per-tool services the
@@ -606,6 +609,54 @@ type TaskEnqueuer interface {
 type IntelQuerier interface {
 	GetIntelSource(ctx context.Context, arg gen.GetIntelSourceParams) (gen.IntelSource, error)
 	GetIntelRecord(ctx context.Context, arg gen.GetIntelRecordParams) (gen.IntelRecord, error)
+}
+
+// ScholarshipSearchFilters is the argument shape for a scholarship search.
+// It mirrors the filters used by the Scholarship Finder surface (Section 73)
+// so the AI agent tool and the public UI share semantics.
+//
+// Ref: japaconnect-engineering/sections/73-scholarship-finder.md
+type ScholarshipSearchFilters struct {
+	Country           string
+	EligibleCountries string
+	DeadlineFrom      string
+	DeadlineTo        string
+	FundingType       string
+	Level             string
+	Q                 string
+	Limit             int
+	Page              int
+}
+
+// ScholarshipSearchResult is a single scholarship record returned to the AI
+// agent. It is intentionally a flat, stable shape independent of the internal
+// scholarships package so the ai package does not import it.
+//
+// Ref: docs/superpowers/specs/2026-08-19-on-demand-intel-to-content.md
+type ScholarshipSearchResult struct {
+	ID                string   `json:"id"`
+	GuideID           string   `json:"guide_id"`
+	IntelRecordID     string   `json:"intel_record_id"`
+	Title             string   `json:"title"`
+	Slug              string   `json:"slug"`
+	Summary           string   `json:"summary"`
+	Description       string   `json:"description"`
+	Institution       string   `json:"institution"`
+	Country           string   `json:"country"`
+	LevelOfStudy      string   `json:"level_of_study"`
+	AwardAmountUSD    *float64 `json:"award_amount_usd"`
+	IsRenewable       *bool    `json:"is_renewable"`
+	ApplicationDeadline string `json:"application_deadline"`
+	ApplicationURL    string   `json:"application_url"`
+	EligibleCountries []string `json:"eligible_countries"`
+}
+
+// ScholarshipSearcher is the subset of the scholarships finder service the
+// scholarship.search AI Agent handler calls.
+//
+// Ref: japaconnect-engineering/sections/73-scholarship-finder.md
+type ScholarshipSearcher interface {
+	FindScholarships(ctx context.Context, tenantID pgtype.UUID, filters ScholarshipSearchFilters) ([]ScholarshipSearchResult, int64, error)
 }
 
 // NewToolDeps creates an empty ToolDeps. Fields are set directly or via the
@@ -693,6 +744,13 @@ func (d *ToolDeps) WithTaskEnqueuer(e TaskEnqueuer) *ToolDeps {
 // source/record IDs before enqueueing background work.
 func (d *ToolDeps) WithIntelQuerier(q IntelQuerier) *ToolDeps {
 	d.IntelQuerier = q
+	return d
+}
+
+// WithScholarshipSearcher injects the scholarship finder service for the
+// scholarship.search agent tool.
+func (d *ToolDeps) WithScholarshipSearcher(s ScholarshipSearcher) *ToolDeps {
+	d.ScholarshipSearcher = s
 	return d
 }
 
