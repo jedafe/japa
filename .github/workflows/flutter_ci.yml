@@ -1,0 +1,31 @@
+name: Flutter CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version-file: apps/mobile/pubspec.yaml
+      - run: flutter pub get
+        working-directory: packages/japaconnect_core
+      - run: flutter analyze
+        working-directory: packages/japaconnect_core
+      - run: flutter test
+        working-directory: packages/japaconnect_core
+      - run: flutter pub get
+        working-directory: apps/mobile
+      - run: flutter analyze
+        working-directory: apps/mobile
+      - run: flutter test
+        working-directory: apps/mobile
+      - run: flutter build apk
+        working-directory: apps/mobile
