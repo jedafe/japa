@@ -9,6 +9,12 @@ import '../features/auth/screens/totp_screen.dart';
 import '../features/feed/screens/feed_screen.dart';
 import '../features/feed/screens/discover_screen.dart';
 import '../features/feed/screens/trending_screen.dart';
+import '../features/content/screens/blog_list_screen.dart';
+import '../features/content/screens/blog_detail_screen.dart';
+import '../features/content/screens/guide_list_screen.dart';
+import '../features/content/screens/guide_detail_screen.dart';
+import '../features/content/screens/comparison_list_screen.dart';
+import '../features/content/screens/comparison_detail_screen.dart';
 
 final jcRouterProvider = Provider<GoRouter>((ref) {
   final loggedIn = ref.watch(isAuthenticatedProvider);
@@ -29,6 +35,26 @@ final jcRouterProvider = Provider<GoRouter>((ref) {
           GoRoute(path: '/discover', builder: (_, _) => const DiscoverScreen()),
           GoRoute(path: '/trending', builder: (_, _) => const TrendingScreen()),
         ],
+      ),
+      GoRoute(path: '/blog', builder: (_, _) => const BlogListScreen()),
+      GoRoute(
+        path: '/blog/:slug',
+        builder: (ctx, state) =>
+            BlogDetailScreen(slug: state.pathParameters['slug']!),
+      ),
+      GoRoute(path: '/guides', builder: (_, _) => const GuideListScreen()),
+      GoRoute(
+        path: '/guides/:slug',
+        builder: (ctx, state) =>
+            GuideDetailScreen(slug: state.pathParameters['slug']!),
+      ),
+      GoRoute(
+          path: '/comparisons',
+          builder: (_, _) => const ComparisonListScreen()),
+      GoRoute(
+        path: '/comparisons/:id',
+        builder: (ctx, state) =>
+            ComparisonDetailScreen(id: state.pathParameters['id']!),
       ),
     ],
   );
