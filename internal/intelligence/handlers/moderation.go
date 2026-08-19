@@ -158,6 +158,7 @@ func sourceToFullEntry(s sources.Source) map[string]interface{} {
 		"crawl_frequency_mins": s.CrawlFrequencyMins,
 		"attribution_required": s.AttributionRequired,
 		"enabled":              s.Enabled,
+		"status":               s.Status,
 		"consecutive_failures": s.ConsecutiveFailures,
 	}
 	if s.ID.Valid {
@@ -186,6 +187,18 @@ func sourceToFullEntry(s sources.Source) map[string]interface{} {
 		entry["persona_id"] = s.PersonaID.String()
 	} else {
 		entry["persona_id"] = nil
+	}
+	entry["proposed_at"] = s.ProposedAt
+	if s.ProposedBy.Valid {
+		entry["proposed_by"] = s.ProposedBy.String()
+	} else {
+		entry["proposed_by"] = nil
+	}
+	entry["approved_at"] = s.ApprovedAt
+	if s.ApprovedBy.Valid {
+		entry["approved_by"] = s.ApprovedBy.String()
+	} else {
+		entry["approved_by"] = nil
 	}
 	return entry
 }
