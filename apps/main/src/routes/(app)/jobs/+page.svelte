@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
-	import { Briefcase, Lock, MapPin, Clock, ArrowRight } from 'lucide-svelte';
+	import { Briefcase, Lock, MapPin, Clock, ArrowRight, Plus } from 'lucide-svelte';
 	import { EmptyState, LoadingSkeleton, PaginationControls, SearchInput, type SearchSuggestion } from '$lib/components/ui';
 	import { api } from '$lib/api/client';
 	import { goto } from '$app/navigation';
@@ -72,11 +72,21 @@
 </svelte:head>
 
 <div class="mx-auto w-full max-w-4xl">
-	<div class="border-b border-[var(--color-border)] px-4 py-3">
-		<h1 class="flex items-center gap-2 text-lg font-semibold text-[var(--color-text)]">
-			<Briefcase size={20} /> {t('jobs.heading', 'Jobs')}
-		</h1>
-		<p class="mt-1 text-sm text-[var(--color-muted)]">{description}</p>
+	<div class="flex items-start justify-between gap-3 border-b border-[var(--color-border)] px-4 py-3">
+		<div>
+			<h1 class="flex items-center gap-2 text-lg font-semibold text-[var(--color-text)]">
+				<Briefcase size={20} /> {t('jobs.heading', 'Jobs')}
+			</h1>
+			<p class="mt-1 text-sm text-[var(--color-muted)]">{description}</p>
+		</div>
+		{#if authed && !disabled}
+			<a
+				href="/jobs/create"
+				class="inline-flex shrink-0 items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1.5 text-sm font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)]"
+			>
+				<Plus size={16} /> {t('jobs.create_button', 'Post a job')}
+			</a>
+		{/if}
 	</div>
 
 	{#if disabled}

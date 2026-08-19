@@ -90,3 +90,25 @@ export function availableTypes(
 		.map((t) => resolveType(t.value, t.label ?? t.value, t.categories))
 		.filter((entry) => entry.featureFlag === null || flags[entry.featureFlag] !== false);
 }
+
+/** Content types that can be created through the /create page composer. */
+export const CREATE_ALLOWED_TYPES = ['blog_post', 'comparison', 'guide'] as const;
+
+const CREATE_TYPE_ORDER = Object.fromEntries(
+	CREATE_ALLOWED_TYPES.map((value, index) => [value, index])
+) as Record<string, number>;
+
+/**
+ * Build the /create type selector. Only blog posts, comparisons, and guides
+ * are authored here; pages are created in the admin pagebuilder and
+ * discussions are created in the forum composer (ADR-058 / Section 14).
+ */
+export function createAvailableTypes(
+	types: ContentTypeMeta[],
+	flags: Record<string, boolean>
+): TypeEntry[] {
+	const allowed = new Set<string>(CREATE_ALLOWED_TYPES);
+	return availableTypes(types, flags)
+		.filter((entry) => allowed.has(entry.value))
+		.sort((a, b) => (CREATE_TYPE_ORDER[a.value] ?? 0) - (CREATE_TYPE_ORDER[b.value] ?? 0));
+}

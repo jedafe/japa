@@ -40,6 +40,13 @@
 
   const Icon = $derived(props.icon ? getIcon(props.icon) : null);
   const level = $derived(props.level ?? 'h2');
+  const headingStyle = $derived(
+    (props.accent === 'underline' && props.accent_color ? `border-color: ${props.accent_color};` : '') +
+    (props.accent === 'gradient' && props.accent_color
+      ? `background: linear-gradient(135deg, ${props.accent_color}, var(--color-primary)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;`
+      : '') +
+    (props.accent === 'highlight' && props.accent_color ? `background: ${props.accent_color}; padding: 0 0.2em; border-radius: 0.2em;` : '')
+  );
 </script>
 
 <section class="px-6 py-12">
@@ -60,14 +67,14 @@
 
       <svelte:element
         this={level}
-        class="font-bold tracking-tight text-[var(--color-text)] {sizeClass[props.size ?? 'xl'] ?? 'text-4xl'} {props.accent === 'underline' ? 'border-b-2 pb-2' : ''}"
-        style={props.accent === 'underline' && props.accent_color ? `border-color: ${props.accent_color}` : props.accent === 'gradient' && props.accent_color ? `background: linear-gradient(135deg, ${props.accent_color}, var(--color-primary)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;` : props.accent === 'highlight' && props.accent_color ? `background: ${props.accent_color}; padding: 0 0.2em; border-radius: 0.2em;` : undefined}
+        class="font-bold tracking-tight text-[var(--color-heading,var(--color-text))] {sizeClass[props.size ?? 'xl'] ?? 'text-4xl'} {props.accent === 'underline' ? 'border-b-2 pb-2' : ''}"
+        style="{headingStyle} font-family: var(--block-heading-family, var(--font-serif, ui-serif, Georgia, Cambria, 'Times New Roman', Times, serif)); font-size: var(--block-heading-size); font-weight: var(--block-heading-weight);"
       >
         {props.text}
       </svelte:element>
 
       {#if props.subheading}
-        <p class="mt-3 text-base text-[var(--color-text-subtle)] sm:text-lg">
+        <p class="mt-3 text-base text-[var(--color-text-subtle)] sm:text-lg" style="font-family: var(--block-body-family); font-size: var(--block-body-size); font-weight: var(--block-body-weight);">
           {props.subheading}
         </p>
       {/if}

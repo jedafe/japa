@@ -27,6 +27,8 @@ test.describe('Main App — Smoke Tests', () => {
 		'/settings',
 		'/spaces',
 		'/create',
+		'/jobs',
+		'/jobs/create',
 		'/universities',
 		'/onboarding',
 	];

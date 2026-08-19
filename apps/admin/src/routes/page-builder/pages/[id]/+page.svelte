@@ -29,6 +29,7 @@
 		type ContainerProps,
 		type CustomBlockDef,
 		type RuntimeBlockMeta,
+		type VisibilityRules,
 	} from '@japaconnect/landing-blocks';
 	import { DraggableBlockType, SortableSection, ContainerChildren, ResizeHandle, WidgetPicker } from '$lib/components/landing-editor';
 	import { Button } from '$lib/components/ui/button';
@@ -490,6 +491,43 @@
 		unsavedChanges = true;
 	}
 
+	/** Update the `hide_if_empty` visibility rule for a block. */
+	function updateVisibilityRuleHideIfEmpty(id: string, checked: boolean): void {
+		blocks = updateBlockInTree(blocks, id, (b) => {
+			const rules = { ...(b.visibility_rules ?? {}) } as VisibilityRules;
+			if (checked) {
+				rules.hide_if_empty = true;
+			} else {
+				delete rules.hide_if_empty;
+			}
+			const hasKeys = Object.keys(rules).length > 0;
+			return { ...b, visibility_rules: hasKeys ? rules : undefined } as Block;
+		});
+		unsavedChanges = true;
+	}
+
+	/** Toggle a country code in the `geo_countries` visibility rule. */
+	function updateVisibilityRuleGeo(id: string, geoCode: string, checked: boolean): void {
+		blocks = updateBlockInTree(blocks, id, (b) => {
+			const rules = { ...(b.visibility_rules ?? {}) } as VisibilityRules;
+			const set = new Set(rules.geo_countries ?? []);
+			if (checked) {
+				set.add(geoCode);
+			} else {
+				set.delete(geoCode);
+			}
+			const list = Array.from(set).sort();
+			if (list.length > 0) {
+				rules.geo_countries = list;
+			} else {
+				delete rules.geo_countries;
+			}
+			const hasKeys = Object.keys(rules).length > 0;
+			return { ...b, visibility_rules: hasKeys ? rules : undefined } as Block;
+		});
+		unsavedChanges = true;
+	}
+
 	// ─── dnd-kit handlers ─────────────────────────────────────────
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	function handleDragStart(event: any) {
@@ -941,7 +979,7 @@
 			<main class="flex-1 overflow-y-auto p-4" style="background: var(--color-surface)">
 				<div class="mx-auto shadow-lg" style="width: {deviceWidth}px; max-width: 100%; background: var(--color-background)">
 					{#if resolvedBlocks.length > 0}
-						<LandingRenderer blocks={resolvedBlocks} />
+						<LandingRenderer blocks={resolvedBlocks} geoCountry={previewCountry} />
 					{:else}
 						<div class="flex h-full flex-col items-center justify-center rounded-xl border-2 border-dashed py-20" style="border-color: var(--color-border)">
 							<Plus class="mb-3 h-8 w-8" style="color: var(--color-muted)" />
@@ -1020,6 +1058,36 @@
 										</label>
 									</div>
 									<p class="text-[10px]" style="color: var(--color-muted)">Uncheck to hide this block on that device. The block stays in the DOM but is display:none.</p>
+								</div>
+
+								<!-- Conditional visibility rules -->
+								<div class="space-y-3 rounded border p-3" style="border-color: var(--color-border)">
+									<h4 class="text-xs font-semibold uppercase" style="color: var(--color-muted)">{t('landing.visibility_rules', 'Visibility rules')}</h4>
+									<label class="flex items-center justify-between text-sm">
+										<span style="color: var(--color-foreground)">{t('landing.hide_if_empty', 'Hide if empty')}</span>
+										<input
+											type="checkbox"
+											checked={selectedBlock.visibility_rules?.hide_if_empty ?? false}
+											onchange={(e) => updateVisibilityRuleHideIfEmpty(selectedBlock.id, e.currentTarget.checked)}
+										/>
+									</label>
+									<div>
+										<span class="mb-1 block text-xs" style="color: var(--color-muted)">{t('landing.geo_countries', 'Show only in countries')}</span>
+										<div class="max-h-40 overflow-y-auto rounded border p-2" style="border-color: var(--color-border)">
+											<div class="grid grid-cols-2 gap-1">
+												{#each countries as country (country.geo_code)}
+													<label class="flex items-center gap-1.5 text-xs" style="color: var(--color-foreground)">
+														<input
+															type="checkbox"
+															checked={(selectedBlock.visibility_rules?.geo_countries ?? []).includes(country.geo_code)}
+															onchange={(e) => updateVisibilityRuleGeo(selectedBlock.id, country.geo_code, e.currentTarget.checked)}
+														/>
+														<span class="truncate">{country.name}</span>
+													</label>
+												{/each}
+											</div>
+										</div>
+									</div>
 								</div>
 
 								<!-- Motion / Animation -->

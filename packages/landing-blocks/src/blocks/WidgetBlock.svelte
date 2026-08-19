@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { WidgetBlockProps } from '../types';
   import type { FetchContext } from '../data/types';
+  import { getBlockContentContext } from '../shell/blockContent';
 
   interface Props {
     props: WidgetBlockProps;
@@ -14,6 +15,8 @@
   let cardType = $state<string>('');
   let loading = $state(true);
   let error = $state(false);
+
+  const blockContent = getBlockContentContext();
 
   // Use pre-resolved data if injected by the server, otherwise fetch client-side.
   $effect(() => {
@@ -50,6 +53,15 @@
       })
       .catch(() => { error = true; })
       .finally(() => { loading = false; });
+  });
+
+  // Report whether this widget has content to the wrapping BlockShell.
+  $effect(() => {
+    if (loading) return;
+    const dataObj = data && typeof data === 'object' ? (data as Record<string, unknown>) : null;
+    const html = dataObj?.html;
+    const hasContent = !error && (items.length > 0 || (typeof html === 'string' && html.trim().length > 0));
+    blockContent?.set(hasContent);
   });
 
   // The card_type set on /widgets is the source of truth for how cards render.

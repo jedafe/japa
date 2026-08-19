@@ -56,6 +56,12 @@
 		/** Series ID restored from GET /content/{id}/series so the series
 		 *  selector restores when editing existing content. */
 		draftSeriesId?: string | null;
+		/** Content type value from ?type — used to preselect the composer type
+		 *  when creating new content. Ignored when restoring a draft. */
+		initialType?: string | null;
+		/** Space ID resolved from ?space — used to preselect the space
+		 *  when creating new content. Ignored when restoring a draft. */
+		initialSpaceId?: string | null;
 		user: { id: string } | null;
 		defaultEditor?: EditorMode;
 		/** Visibility options from GET /content/visibility-options (Rule 16). */
@@ -64,13 +70,17 @@
 		maxTags?: number;
 	}
 
-	let { types, spaces, fieldGroups, series = $bindable(), organizations, draft, draftTags = [], comparisonDetail = null, comparisonTypes = [], dimensionTypes = [], coverMedia = null, draftSeriesId = null, user, defaultEditor = 'block', visibilityOptions = [], maxTags = 5 }: Props = $props();
+	let { types, spaces, fieldGroups, series = $bindable(), organizations, draft, draftTags = [], comparisonDetail = null, comparisonTypes = [], dimensionTypes = [], coverMedia = null, draftSeriesId = null, initialType = null, initialSpaceId = null, user, defaultEditor = 'block', visibilityOptions = [], maxTags = 5 }: Props = $props();
 
 	// ---- form state ----
 	let selectedType = $state<TypeEntry>(
 		untrack(() => {
 			if (draft?.content_type) {
 				const found = types.find((t) => t.value === draft.content_type);
+				if (found) return found;
+			}
+			if (initialType) {
+				const found = types.find((t) => t.value === initialType);
 				if (found) return found;
 			}
 			return types[0] ?? resolveType('blog_post');
@@ -80,7 +90,13 @@
 	let slug = $state(untrack(() => draft?.slug ?? ''));
 	let slugTouched = $state(untrack(() => Boolean(draft?.slug)));
 	let bodyHtml = $state(untrack(() => draft?.body_html || draft?.body || ''));
-	let spaceId = $state<string | null>(untrack(() => draft?.space_id ?? spaces.find((s) => s.is_primary)?.id ?? null));
+	let spaceId = $state<string | null>(
+		untrack(() => {
+			if (draft?.space_id) return draft.space_id;
+			if (initialSpaceId && spaces.some((s) => s.id === initialSpaceId)) return initialSpaceId;
+			return spaces.find((s) => s.is_primary)?.id ?? null;
+		})
+	);
 	// Post-as-org (ADR-062): null = personal post; an org id = post on behalf of
 	// that org. Restored from draft so edit-as-org round-trips the assignment.
 	let organizationId = $state<string | null>(untrack(() => draft?.organization_id ?? null));

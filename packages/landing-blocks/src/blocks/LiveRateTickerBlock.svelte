@@ -2,6 +2,7 @@
   import type { LiveRateTickerProps } from '../types';
   import type { FetchContext, RemittanceRate } from '../data/types';
   import { fetchRemittanceRates } from '../data/entityFetchers';
+  import { getBlockContentContext } from '../shell/blockContent';
 
   interface Props {
     props: LiveRateTickerProps;
@@ -13,6 +14,8 @@
   let rates = $state<RemittanceRate[]>([]);
   let loading = $state(true);
   let error = $state(false);
+
+  const blockContent = getBlockContentContext();
 
   $effect(() => {
     if (!fetchCtx) { loading = false; return; }
@@ -32,6 +35,12 @@
       })
       .catch(() => { error = true; })
       .finally(() => { loading = false; });
+  });
+
+  // Report whether any matching rates exist to the wrapping BlockShell.
+  $effect(() => {
+    if (loading) return;
+    blockContent?.set(!error && rates.length > 0);
   });
 
   const speed = $derived(props.speed ?? 30);
