@@ -19,6 +19,8 @@ import '../features/forum/screens/forum_list_screen.dart';
 import '../features/forum/screens/forum_detail_screen.dart';
 import '../features/forum/screens/forum_reply_screen.dart';
 import '../features/tools/japabot/screens/japabot_screen.dart';
+import '../features/spaces/screens/space_list_screen.dart';
+import '../features/spaces/screens/space_detail_screen.dart';
 
 final jcRouterProvider = Provider<GoRouter>((ref) {
   final loggedIn = ref.watch(isAuthenticatedProvider);
@@ -70,6 +72,13 @@ final jcRouterProvider = Provider<GoRouter>((ref) {
         path: '/forum/:id/reply',
         builder: (ctx, state) =>
             ForumReplyScreen(slug: state.pathParameters['id']!),
+      ),
+      GoRoute(
+          path: '/spaces', builder: (_, _) => const SpaceListScreen()),
+      GoRoute(
+        path: '/spaces/:slug',
+        builder: (ctx, state) =>
+            SpaceDetailScreen(slug: state.pathParameters['slug']!),
       ),
       GoRoute(
         path: '/tools/japabot',
