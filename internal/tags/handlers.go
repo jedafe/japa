@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/content"
+	"github.com/jedafe/japa/internal/content/visibility"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/follows"
@@ -252,7 +253,8 @@ func (h *Handlers) GetTagContent(w http.ResponseWriter, r *http.Request) {
 
 	limit := parsePageSize(r)
 
-	items, err := h.content.ListContentByTag(r.Context(), tenantID, tag.ID, cursor, cursorID, limit)
+	filter := visibility.VisibilityFilterFromRequest(r)
+	items, err := h.content.ListContentByTag(r.Context(), tenantID, tag.ID, cursor, cursorID, limit, filter)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list tagged content")
 		return

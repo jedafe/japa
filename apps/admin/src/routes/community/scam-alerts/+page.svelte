@@ -4,7 +4,7 @@
 	// Ref: japaconnect-engineering/sections/81-scam-alert-board.md
 	import { onMount } from 'svelte';
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
-	import { scamAlertAdminApi, spacesAdminApi } from '$lib/api';
+	import { scamAlertAdminApi, spacesAdminApi, adminCatalogApi, type CatalogOption } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { Eye, Pin, PinOff, CheckCircle, XCircle, Copy } from 'lucide-svelte';
@@ -39,6 +39,21 @@
 
 	// ── State ───────────────────────────────────────────────────────────────
 	let entityController = $state<EntityPageController | undefined>(undefined);
+
+	let scamAlertStatusOptions = $state<CatalogOption[]>([
+		{ value: 'confirmed', label: t('app.scam_alert.status_confirmed', 'Confirmed') },
+		{ value: 'debunked', label: t('app.scam_alert.status_debunked', 'Debunked') },
+		{ value: 'duplicate', label: t('app.scam_alert.status_duplicate', 'Duplicate') },
+		{ value: 'pending', label: t('app.scam_alert.status_pending', 'Pending') }
+	]);
+
+	$effect(() => {
+		void (async () => {
+			const res = await adminCatalogApi.get('community.scam_alerts.status');
+			if (res.ok && res.data?.length) scamAlertStatusOptions = res.data;
+		})();
+	});
+
 	let pageError = $state('');
 	let acting = $state(false);
 
@@ -178,12 +193,7 @@
 		{
 			key: 'status',
 			label: t('app.scam_alert.col_status', 'Status'),
-			options: [
-				{ value: 'confirmed', label: t('app.scam_alert.status_confirmed', 'Confirmed') },
-				{ value: 'debunked', label: t('app.scam_alert.status_debunked', 'Debunked') },
-				{ value: 'duplicate', label: t('app.scam_alert.status_duplicate', 'Duplicate') },
-				{ value: 'pending', label: t('app.scam_alert.status_pending', 'Pending') }
-			]
+			options: scamAlertStatusOptions
 		},
 		{
 			key: 'dest',

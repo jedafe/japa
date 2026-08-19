@@ -20,13 +20,15 @@ import (
 // validProviderTypes is the set of provider_type values accepted by the
 // create/update handlers. Must match the CHECK constraint in migration 000269.
 var validProviderTypes = map[string]bool{
-	"xiaomi":    true,
-	"openai":    true,
-	"ollama":    true,
-	"anthropic": true,
-	"devin":     true,
-	"cursor":    true,
-	"custom":    true,
+	"xiaomi":     true,
+	"openai":     true,
+	"groq":       true,
+	"ollama":     true,
+	"anthropic":  true,
+	"devin":      true,
+	"cursor":     true,
+	"perplexity": true,
+	"custom":     true,
 }
 
 // validAICategories is the set of dispatcher categories that providers can

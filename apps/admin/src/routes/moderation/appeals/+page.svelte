@@ -4,7 +4,7 @@
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import { Modal } from '$lib/components/ui/modal';
 	import { Button } from '$lib/components/ui/button';
-	import { moderationAdminApi } from '$lib/api';
+	import { moderationAdminApi, adminCatalogApi, type CatalogOption } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { Eye, Gavel, RotateCcw, XCircle } from 'lucide-svelte';
@@ -28,6 +28,21 @@
 
 	// ── State-action confirmation modal (shared by uphold / overturn / dismiss) ──
 	let entityController = $state<EntityPageController | undefined>(undefined);
+
+	let appealStatusOptions = $state<CatalogOption[]>([
+		{ value: 'pending', label: t('app.moderation.queue.pending', 'Pending') },
+		{ value: 'upheld', label: t('moderation.upheld', 'Upheld') },
+		{ value: 'overturn', label: t('moderation.overturn', 'Overturn') },
+		{ value: 'dismissed', label: t('moderation.dismissed', 'Dismissed') }
+	]);
+
+	$effect(() => {
+		void (async () => {
+			const res = await adminCatalogApi.get('moderation.appeals.status');
+			if (res.ok && res.data?.length) appealStatusOptions = res.data;
+		})();
+	});
+
 	let pageError = $state('');
 	let acting = $state(false);
 	let actionTarget = $state<Appeal | null>(null);
@@ -165,12 +180,7 @@
 			{
 				key: 'status',
 				label: t('moderation.status', 'Status'),
-				options: [
-					{ value: 'pending', label: t('app.moderation.queue.pending', 'Pending') },
-					{ value: 'upheld', label: t('moderation.upheld', 'Upheld') },
-					{ value: 'overturn', label: t('moderation.overturn', 'Overturn') },
-					{ value: 'dismissed', label: t('moderation.dismissed', 'Dismissed') }
-				]
+				options: appealStatusOptions
 			}
 		],
 		actions: rowActions,

@@ -15,6 +15,14 @@
 		Space, SpaceModerator, SpaceRule, SpacePermissionPreset, MediaAsset
 	} from '$lib/types';
 
+	function escapeHtml(s: string): string {
+		return s
+			.replace(/&/g, '&amp;')
+			.replace(/</g, '&lt;')
+			.replace(/>/g, '&gt;')
+			.replace(/"/g, '&quot;');
+	}
+
 	interface Props {
 		space: Space;
 		keywords: string[];
@@ -964,7 +972,7 @@
 						{t('space.delete_confirm', 'Are you absolutely sure? Type the space name to confirm.')}
 					</p>
 					<p class="text-xs text-[var(--color-muted)]">
-						{@html t('spaces.delete_confirm_hint', 'Type <strong>{name}</strong> to confirm deletion:').replace('{name}', space.name)}
+						{@html t('spaces.delete_confirm_hint', 'Type <strong>{name}</strong> to confirm deletion:').replace('{name}', escapeHtml(space.name))}
 					</p>
 					<input
 						type="text"

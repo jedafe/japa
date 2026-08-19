@@ -10,7 +10,7 @@
 	import { Check, X, Eye, Pencil, Wand } from 'lucide-svelte';
 	import { goto } from '$app/navigation';
 	import type { ActionItem, FilterDef } from '$lib/components/ui/data-table';
-	import { intelReviewApi } from '$lib/api';
+	import { intelReviewApi, adminCatalogApi, type CatalogOption } from '$lib/api';
 
 	type ReviewRecord = {
 		id: string;
@@ -35,6 +35,45 @@
 	const canCreate = $derived(hasPermission('studio.create') || hasPermission('studio.manage'));
 
 	let entityController = $state<EntityPageController | undefined>(undefined);
+
+	let intelReviewStatusOptions = $state<CatalogOption[]>([
+		{ value: 'review_required', label: t('intel.status_review_required', 'Review Required') },
+		{ value: 'extracted', label: t('intel.status_extracted', 'Extracted') },
+		{ value: 'approved', label: t('intel.status_approved', 'Approved') },
+		{ value: 'rejected', label: t('intel.status_rejected', 'Rejected') }
+	]);
+
+	let intelReviewEntityTypeOptions = $state<CatalogOption[]>([
+		{ value: 'scholarship', label: 'Scholarship' },
+		{ value: 'job', label: 'Job' },
+		{ value: 'visa', label: 'Visa' },
+		{ value: 'housing', label: 'Housing' },
+		{ value: 'remittance', label: 'Remittance' },
+		{ value: 'cost_of_living', label: 'Cost of Living' },
+		{ value: 'travel_routes', label: 'Travel Routes' },
+		{ value: 'grants', label: 'Grants' },
+		{ value: 'admission', label: 'Admission' },
+		{ value: 'banking', label: 'Banking' },
+		{ value: 'work_career', label: 'Work & Career' },
+		{ value: 'health_insurance', label: 'Health Insurance' },
+		{ value: 'culture_lifestyle', label: 'Culture & Lifestyle' },
+		{ value: 'wiki_page', label: 'Wiki Page' },
+		{ value: 'language_test_requirement', label: 'Language Test Requirement' },
+		{ value: 'tax_obligation_guide', label: 'Tax Obligation Guide' },
+		{ value: 'community_organisation', label: 'Community Organisation' }
+	]);
+
+	$effect(() => {
+		void (async () => {
+			const [statusRes, typeRes] = await Promise.all([
+				adminCatalogApi.get('intelligence.review.status'),
+				adminCatalogApi.get('intelligence.review.entity_type')
+			]);
+			if (statusRes.ok && statusRes.data?.length) intelReviewStatusOptions = statusRes.data;
+			if (typeRes.ok && typeRes.data?.length) intelReviewEntityTypeOptions = typeRes.data;
+		})();
+	});
+
 	let pageError = $state('');
 	let actingId = $state('');
 	let showActionConfirm = $state(false);
@@ -235,41 +274,18 @@
 		return acts;
 	});
 
-	const filters: FilterDef[] = [
+	const filters = $derived<FilterDef[]>([
 		{
 			key: 'status',
 			label: t('intel.status', 'Status'),
-			options: [
-				{ value: 'review_required', label: t('intel.status_review_required', 'Review Required') },
-				{ value: 'extracted', label: t('intel.status_extracted', 'Extracted') },
-				{ value: 'approved', label: t('intel.status_approved', 'Approved') },
-				{ value: 'rejected', label: t('intel.status_rejected', 'Rejected') }
-			]
+			options: intelReviewStatusOptions
 		},
 		{
 			key: 'entity_type',
 			label: t('intel.entity_type', 'Entity Type'),
-			options: [
-				{ value: 'scholarship', label: 'Scholarship' },
-				{ value: 'job', label: 'Job' },
-				{ value: 'visa', label: 'Visa' },
-				{ value: 'housing', label: 'Housing' },
-				{ value: 'remittance', label: 'Remittance' },
-				{ value: 'cost_of_living', label: 'Cost of Living' },
-				{ value: 'travel_routes', label: 'Travel Routes' },
-				{ value: 'grants', label: 'Grants' },
-				{ value: 'admission', label: 'Admission' },
-				{ value: 'banking', label: 'Banking' },
-				{ value: 'work_career', label: 'Work & Career' },
-				{ value: 'health_insurance', label: 'Health Insurance' },
-				{ value: 'culture_lifestyle', label: 'Culture & Lifestyle' },
-				{ value: 'wiki_page', label: 'Wiki Page' },
-				{ value: 'language_test_requirement', label: 'Language Test Requirement' },
-				{ value: 'tax_obligation_guide', label: 'Tax Obligation Guide' },
-				{ value: 'community_organisation', label: 'Community Organisation' }
-			]
+			options: intelReviewEntityTypeOptions
 		}
-	];
+	]);
 
 	const fields: FieldDef[] = [
 		{ key: 'extracted', label: t('intel.extracted', 'Extracted Data'), type: 'textarea' }

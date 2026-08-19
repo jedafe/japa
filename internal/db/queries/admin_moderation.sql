@@ -149,12 +149,12 @@ WHERE id = $4 AND tenant_id = $5;
 -- =====================
 
 -- name: RemoveContentByAdmin :exec
-UPDATE contents SET status = 'removed', updated_at = now()
+UPDATE contents SET status = 'archived', auto_hidden = true, deleted_at = now(), updated_at = now()
 WHERE id = $1 AND tenant_id = $2;
 
 -- name: RestoreContentByAdmin :exec
-UPDATE contents SET status = 'draft', updated_at = now()
-WHERE id = $1 AND tenant_id = $2 AND status = 'removed';
+UPDATE contents SET status = 'draft', auto_hidden = false, deleted_at = NULL, updated_at = now()
+WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NOT NULL;
 
 -- name: ListDeletedContents :many
 SELECT c.id, c.tenant_id, c.author_id, c.title, c.content_type, c.status,
@@ -164,7 +164,7 @@ FROM contents c
 LEFT JOIN users u ON u.id = c.author_id
 LEFT JOIN user_profiles up ON up.user_id = c.author_id
 WHERE c.tenant_id = $1
-  AND (c.deleted_at IS NOT NULL OR c.status = 'removed')
+  AND c.deleted_at IS NOT NULL
 ORDER BY c.deleted_at DESC NULLS LAST, c.updated_at DESC
 LIMIT $2;
 

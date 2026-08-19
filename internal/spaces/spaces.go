@@ -203,10 +203,11 @@ func (s *Service) EnqueueSearchIndex(ctx context.Context, spaceID, tenantID pgty
 	}
 }
 
-// FindSpacesByKeywords finds primary (country/state/city) and public spaces
-// whose keywords overlap with the given keyword list. Used by the content
+// FindSpacesByKeywords finds public primary (country/state/city) and public
+// university spaces whose configured keywords, full name, or university
+// initials overlap with the given keyword list. Used by the content
 // auto-assign feature to link content to spaces based on title matching.
-// Ref: sections/05-geo-first-space-system.md
+// Ref: sections/05-geo-first-space-system.md, sections/14-content-type-system.md
 func (s *Service) FindSpacesByKeywords(ctx context.Context, tenantID pgtype.UUID, keywords []string) ([]gen.FindSpacesByKeywordsRow, error) {
 	return s.read.FindSpacesByKeywords(ctx, gen.FindSpacesByKeywordsParams{
 		TenantID: tenantID,

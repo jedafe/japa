@@ -23,6 +23,8 @@ const settingsCacheTTL = 5 * time.Minute
 
 const settingsCachePrefix = "jc:settings:"
 
+// Settings provides hot-reloadable, per-tenant access to the system_settings
+// table with a two-tier cache (in-memory L1 + Valkey L2).
 type Settings struct {
 	db      *db.DB
 	q       *gen.Queries
@@ -37,8 +39,11 @@ type Settings struct {
 type cachedSetting struct {
 	Value     string    `json:"value"`
 	CreatedAt time.Time `json:"created_at"`
+	Missing   bool      `json:"missing"`
 }
 
+// NewSettings creates a Settings backed by the given database and Valkey client.
+// It starts a background cleanup goroutine that must be stopped with Close.
 func NewSettings(database *db.DB, vkClient valkeycompat.Cmdable) *Settings {
 	s := &Settings{
 		db:      database,
@@ -49,6 +54,7 @@ func NewSettings(database *db.DB, vkClient valkeycompat.Cmdable) *Settings {
 		stopCh:  make(chan struct{}),
 	}
 	go s.cleanupLoop(60 * time.Second)
+
 	return s
 }
 
@@ -60,6 +66,7 @@ func (s *Settings) Close() {
 	if s.stopCh == nil {
 		return
 	}
+
 	select {
 	case <-s.stopCh:
 		// already closed
@@ -68,78 +75,155 @@ func (s *Settings) Close() {
 	}
 }
 
-func (s *Settings) GetSetting(ctx context.Context, tenantID pgtype.UUID, key string) (string, error) {
-	cacheKey := tenantID.String() + ":" + key
-
-	s.mu.RLock()
-	if cached, ok := s.cache[cacheKey]; ok && time.Since(cached.CreatedAt) < settingsCacheTTL {
-		s.mu.RUnlock()
-		return cached.Value, nil
+// resolveCachedEntry translates an in-memory cache entry into a value or a
+// not-found error. It returns ok=false when the entry is expired or missing.
+func resolveCachedEntry(cached cachedSetting, key string) (string, bool, error) {
+	if time.Since(cached.CreatedAt) >= settingsCacheTTL {
+		return "", false, nil
 	}
+
+	if cached.Missing {
+		return "", true, fmt.Errorf("setting %q not found: %w", key, pgx.ErrNoRows)
+	}
+
+	return cached.Value, true, nil
+}
+
+func (s *Settings) getFromL1(cacheKey, key string) (string, bool, error) {
+	s.mu.RLock()
+	cached := s.cache[cacheKey]
 	s.mu.RUnlock()
 
-	if s.vk != nil {
-		data, err := s.vk.Get(ctx, settingsCachePrefix+cacheKey).Bytes()
-		if err == nil {
-			var entry cachedSetting
-			if json.Unmarshal(data, &entry) == nil {
-				s.mu.Lock()
-				s.cache[cacheKey] = entry
-				s.mu.Unlock()
-				return entry.Value, nil
-			}
-		}
+	return resolveCachedEntry(cached, key)
+}
+
+func (s *Settings) getFromL2(ctx context.Context, cacheKey, key string) (string, bool, error) {
+	data, ok := s.valkeyGet(ctx, cacheKey)
+	if !ok {
+		return "", false, nil
 	}
 
-	// Coalesce concurrent misses for the same cache key so only one goroutine
-	// hits the database (BUG-006 — cache stampede prevention).
+	entry, ok := parseCachedSetting(data)
+	if !ok {
+		return "", false, nil
+	}
+
+	s.setCache(cacheKey, entry)
+
+	return resolveCachedEntry(entry, key)
+}
+
+func (s *Settings) valkeyGet(ctx context.Context, cacheKey string) ([]byte, bool) {
+	if s.vk == nil {
+		return nil, false
+	}
+
+	data, err := s.vk.Get(ctx, settingsCachePrefix+cacheKey).Bytes()
+	if err != nil {
+		return nil, false
+	}
+
+	return data, true
+}
+
+func parseCachedSetting(data []byte) (cachedSetting, bool) {
+	var entry cachedSetting
+	if json.Unmarshal(data, &entry) != nil {
+		return cachedSetting{}, false
+	}
+
+	return entry, true
+}
+
+func (s *Settings) loadFromDB(ctx context.Context, tenantID pgtype.UUID, key, cacheKey string) (string, error) {
 	v, err, _ := s.sf.Do(cacheKey, func() (any, error) {
-		// Re-check L1 under singleflight — a concurrent call may have already
-		// populated the cache while we were waiting.
-		s.mu.RLock()
-		if cached, ok := s.cache[cacheKey]; ok && time.Since(cached.CreatedAt) < settingsCacheTTL {
-			s.mu.RUnlock()
-			return cached.Value, nil
-		}
-		s.mu.RUnlock()
-
-		valueBytes, err := s.q.GetSettingValue(ctx, gen.GetSettingValueParams{
-			TenantID: tenantID,
-			Key:      key,
-		})
-		if err != nil {
-			if errors.Is(err, pgx.ErrNoRows) {
-				slog.Debug("settings: setting not stored, using default", "key", key)
-			} else {
-				slog.Warn("settings: DB read failed", "key", key, "error", err)
-			}
-			return "", fmt.Errorf("setting %q not found: %w", key, err)
+		if value, ok, err := s.getFromL1(cacheKey, key); ok {
+			return value, err
 		}
 
-		value := string(valueBytes)
-		entry := cachedSetting{Value: value, CreatedAt: time.Now()}
-		s.mu.Lock()
-		s.cache[cacheKey] = entry
-		s.mu.Unlock()
-
-		if s.vk != nil {
-			data, _ := json.Marshal(entry)
-			_ = s.vk.Set(ctx, settingsCachePrefix+cacheKey, data, settingsCacheTTL).Err()
-		}
-
-		return value, nil
+		return s.queryAndCache(ctx, tenantID, key, cacheKey)
 	})
 	if err != nil {
 		return "", err
 	}
-	return v.(string), nil
+
+	value, ok := v.(string)
+	if !ok {
+		return "", fmt.Errorf("settings: unexpected singleflight result type %T", v)
+	}
+
+	return value, nil
 }
 
+func (s *Settings) queryAndCache(ctx context.Context, tenantID pgtype.UUID, key, cacheKey string) (any, error) {
+	valueBytes, err := s.q.GetSettingValue(ctx, gen.GetSettingValueParams{
+		TenantID: tenantID,
+		Key:      key,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			slog.Debug("settings: setting not stored, using default", "key", key)
+
+			entry := cachedSetting{Value: "", CreatedAt: time.Now(), Missing: true}
+			s.setCache(cacheKey, entry)
+			s.setValkeyCache(ctx, cacheKey, entry)
+
+			return nil, fmt.Errorf("setting %q not found: %w", key, err)
+		}
+
+		slog.Warn("settings: DB read failed", "key", key, "error", err)
+
+		return "", fmt.Errorf("setting %q not found: %w", key, err)
+	}
+
+	value := string(valueBytes)
+	entry := cachedSetting{Value: value, CreatedAt: time.Now()}
+
+	s.setCache(cacheKey, entry)
+	s.setValkeyCache(ctx, cacheKey, entry)
+
+	return value, nil
+}
+
+func (s *Settings) setCache(cacheKey string, entry cachedSetting) {
+	s.mu.Lock()
+	s.cache[cacheKey] = entry
+	s.mu.Unlock()
+}
+
+func (s *Settings) setValkeyCache(ctx context.Context, cacheKey string, entry cachedSetting) {
+	if s.vk == nil {
+		return
+	}
+
+	data, _ := json.Marshal(entry)
+	_ = s.vk.Set(ctx, settingsCachePrefix+cacheKey, data, settingsCacheTTL).Err()
+}
+
+// GetSetting returns the raw stored value for a tenant-scoped system setting.
+// Missing settings are cached with a sentinel so repeated lookups do not hit
+// the database. The cache is invalidated by Set/Update calls and by the TTL.
+func (s *Settings) GetSetting(ctx context.Context, tenantID pgtype.UUID, key string) (string, error) {
+	cacheKey := tenantID.String() + ":" + key
+
+	if value, ok, err := s.getFromL1(cacheKey, key); ok {
+		return value, err
+	}
+
+	if value, ok, err := s.getFromL2(ctx, cacheKey, key); ok {
+		return value, err
+	}
+
+	return s.loadFromDB(ctx, tenantID, key, cacheKey)
+}
+
+// GetSettingBool returns the boolean value for a system setting.
 func (s *Settings) GetSettingBool(ctx context.Context, tenantID pgtype.UUID, key string) (bool, error) {
 	val, err := s.GetSetting(ctx, tenantID, key)
 	if err != nil {
 		return false, err
 	}
+
 	return parseBool(val), nil
 }
 
@@ -147,23 +231,29 @@ func (s *Settings) GetSettingBool(ctx context.Context, tenantID pgtype.UUID, key
 // Accepts JSON bool (true), JSON string ("true"/"1"), or bare token.
 func parseBool(sv string) bool {
 	sv = strings.TrimSpace(sv)
+
 	var b bool
+
 	if json.Unmarshal([]byte(sv), &b) == nil {
 		return b
 	}
+
 	var str string
 	if json.Unmarshal([]byte(sv), &str) == nil {
 		str = strings.TrimSpace(str)
 		return str == "true" || str == "1"
 	}
+
 	return sv == "true" || sv == "1"
 }
 
+// GetSettingInt returns the integer value for a system setting.
 func (s *Settings) GetSettingInt(ctx context.Context, tenantID pgtype.UUID, key string) (int, error) {
 	val, err := s.GetSetting(ctx, tenantID, key)
 	if err != nil {
 		return 0, err
 	}
+
 	return parseInt(val)
 }
 
@@ -171,22 +261,30 @@ func (s *Settings) GetSettingInt(ctx context.Context, tenantID pgtype.UUID, key 
 // Accepts JSON number (5000), JSON string ("5000"), or bare token.
 func parseInt(sv string) (int, error) {
 	sv = strings.TrimSpace(sv)
+
 	var n int
+
 	if json.Unmarshal([]byte(sv), &n) == nil {
 		return n, nil
 	}
+
 	var str string
 	if json.Unmarshal([]byte(sv), &str) == nil {
 		if m, convErr := strconv.Atoi(strings.TrimSpace(str)); convErr == nil {
 			return m, nil
 		}
 	}
+
 	if m, convErr := strconv.Atoi(sv); convErr == nil {
 		return m, nil
 	}
+
 	return 0, fmt.Errorf("value is not an integer: %q", sv)
 }
 
+// InvalidateSettings clears the L1 and L2 cache for every setting belonging
+// to the given tenant. Callers should invoke this after any system_settings
+// write for the tenant.
 func (s *Settings) InvalidateSettings(ctx context.Context, tenantID pgtype.UUID) {
 	tenantPrefix := tenantID.String() + ":"
 
@@ -202,15 +300,18 @@ func (s *Settings) InvalidateSettings(ctx context.Context, tenantID pgtype.UUID)
 
 	if s.vk != nil {
 		var cursor uint64
+
 		for {
 			keys, nextCursor, err := s.vk.Scan(ctx, cursor, prefix+"*", 100).Result()
 			if err != nil {
 				slog.Warn("settings: failed to scan valkey for invalidation", "error", err)
 				return
 			}
+
 			if len(keys) > 0 {
 				_ = s.vk.Del(ctx, keys...).Err()
 			}
+
 			cursor = nextCursor
 			if cursor == 0 {
 				break
@@ -228,17 +329,19 @@ func (s *Settings) GetIntOr(ctx context.Context, tenantID pgtype.UUID, key strin
 	if err != nil {
 		return fallback
 	}
+
 	return v
 }
 
 // GetStringOr returns the string value for key, or fallback when the key is
 // unset or missing. It never returns an error. The value is unquoted if it
 // is a JSON-encoded string (e.g. "\"https://...\"" → "https://...").
-func (s *Settings) GetStringOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback string) string {
+func (s *Settings) GetStringOr(ctx context.Context, tenantID pgtype.UUID, key, fallback string) string {
 	val, err := s.GetSetting(ctx, tenantID, key)
 	if err != nil || val == "" {
 		return fallback
 	}
+
 	// system_settings values are stored as JSON-encoded strings —
 	// unquote if the raw value is a JSON string (starts and ends with `"`).
 	if len(val) >= 2 && val[0] == '"' && val[len(val)-1] == '"' {
@@ -247,6 +350,7 @@ func (s *Settings) GetStringOr(ctx context.Context, tenantID pgtype.UUID, key st
 			return unquoted
 		}
 	}
+
 	return val
 }
 
@@ -257,10 +361,12 @@ func (s *Settings) GetFloatOr(ctx context.Context, tenantID pgtype.UUID, key str
 	if err != nil {
 		return fallback
 	}
+
 	f, err := parseFloat(val)
 	if err != nil {
 		return fallback
 	}
+
 	return f
 }
 
@@ -268,19 +374,24 @@ func (s *Settings) GetFloatOr(ctx context.Context, tenantID pgtype.UUID, key str
 // Accepts JSON number (1.8), JSON string ("1.8"), or bare token.
 func parseFloat(sv string) (float64, error) {
 	sv = strings.TrimSpace(sv)
+
 	var f float64
+
 	if json.Unmarshal([]byte(sv), &f) == nil {
 		return f, nil
 	}
+
 	var str string
 	if json.Unmarshal([]byte(sv), &str) == nil {
 		if v, convErr := strconv.ParseFloat(strings.TrimSpace(str), 64); convErr == nil {
 			return v, nil
 		}
 	}
+
 	if v, convErr := strconv.ParseFloat(sv, 64); convErr == nil {
 		return v, nil
 	}
+
 	return 0, fmt.Errorf("value is not a float: %q", sv)
 }
 
@@ -291,6 +402,7 @@ func (s *Settings) GetBoolOr(ctx context.Context, tenantID pgtype.UUID, key stri
 	if err != nil {
 		return fallback
 	}
+
 	return v
 }
 
@@ -306,6 +418,7 @@ func (s *Settings) SetSetting(ctx context.Context, tenantID pgtype.UUID, key, va
 	}
 
 	s.InvalidateSettings(ctx, tenantID)
+
 	return nil
 }
 
@@ -325,6 +438,7 @@ func (s *Settings) UpdateSettingsBatch(ctx context.Context, tenantID pgtype.UUID
 				return fmt.Errorf("upserting setting %q: %w", key, err)
 			}
 		}
+
 		return nil
 	})
 	if err != nil {
@@ -332,6 +446,7 @@ func (s *Settings) UpdateSettingsBatch(ctx context.Context, tenantID pgtype.UUID
 	}
 
 	s.InvalidateSettings(ctx, tenantID)
+
 	return nil
 }
 
@@ -352,6 +467,7 @@ func (s *Settings) UpdateSettingsBatchWithPublic(ctx context.Context, tenantID p
 				return fmt.Errorf("upserting setting %q: %w", key, err)
 			}
 		}
+
 		return nil
 	})
 	if err != nil {
@@ -359,6 +475,7 @@ func (s *Settings) UpdateSettingsBatchWithPublic(ctx context.Context, tenantID p
 	}
 
 	s.InvalidateSettings(ctx, tenantID)
+
 	return nil
 }
 
@@ -370,6 +487,7 @@ func (s *Settings) GetPublicSettings(ctx context.Context, tenantID pgtype.UUID) 
 	}
 
 	settings := make(map[string]any, len(rows))
+
 	for _, row := range rows {
 		var parsed any
 		if json.Unmarshal(row.Value, &parsed) == nil {
@@ -394,6 +512,7 @@ func (s *Settings) cleanupLoop(maxAge time.Duration) {
 			return
 		case <-ticker.C:
 			now := time.Now()
+
 			s.mu.Lock()
 			for key, entry := range s.cache {
 				if now.Sub(entry.CreatedAt) > settingsCacheTTL {

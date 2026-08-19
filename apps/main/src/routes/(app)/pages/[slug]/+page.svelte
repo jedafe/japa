@@ -5,6 +5,7 @@
 	import { EmptyState } from '$lib/components/ui';
 	import { LandingRenderer, normalizeLegacyBlocks, type Block } from '@japaconnect/landing-blocks';
 	import type { PageData } from './$types';
+import { safeJsonLdScript } from '$lib/utils/safeHtml';
 
 	let { data }: { data: PageData } = $props();
 
@@ -53,7 +54,7 @@
 	<meta name="twitter:card" content="summary" />
 	<meta name="twitter:title" content={title} />
 	<meta name="twitter:description" content={description} />
-	{@html `<script type="application/ld+json">${jsonLd}</script>`}
+	{@html safeJsonLdScript(jsonLd)}
 </svelte:head>
 
 {#if !hasBlocks}

@@ -8,7 +8,7 @@
 	import { Modal } from "$lib/components/ui/modal";
 	import { Button } from "$lib/components/ui/button";
 	import { RefreshCw, Eye, Trash2 } from "lucide-svelte";
-	import { gdprAdminApiExtendedV2 } from "$lib/api";
+	import { gdprAdminApiExtendedV2, api } from "$lib/api";
 	import { t } from "$lib/stores/i18n.svelte";
 	import { hasPermission } from "$lib/stores/permissions.svelte";
 	import { page } from "$app/state";
@@ -31,18 +31,35 @@
 	let success = $state("");
 	let searchQuery = $state(""); // bound to the DataTable search box; forwarded to the API
 
-	const filterDefs: FilterDef[] = [
-		{ key: "consent_type", label: t("app.gdpr.consents.filter_consent_type", "Consent Type"), options: [
-			{ value: "marketing", label: t("app.gdpr.consents.option_marketing", "Marketing") },
-			{ value: "analytics", label: t("app.gdpr.consents.option_analytics", "Analytics") },
-			{ value: "functional", label: t("app.gdpr.consents.option_functional", "Functional") },
-			{ value: "necessary", label: t("app.gdpr.consents.option_necessary", "Necessary") }
-		]},
+	let consentTypeOptions = $state<{ value: string; label: string }[]>([
+		{ value: "marketing", label: t("app.gdpr.consents.option_marketing", "Marketing") },
+		{ value: "analytics", label: t("app.gdpr.consents.option_analytics", "Analytics") },
+		{ value: "functional", label: t("app.gdpr.consents.option_functional", "Functional") },
+		{ value: "necessary", label: t("app.gdpr.consents.option_necessary", "Necessary") }
+	]);
+
+	$effect(() => {
+		void (async () => {
+			const res = await api<{ consent_types: string[]; policy_version: string }>('/consent/config');
+			if (res.ok && res.data?.consent_types) {
+				consentTypeOptions = res.data.consent_types.map((ct) => ({
+					value: ct,
+					label: ct
+						.split('_')
+						.map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+						.join(' ')
+				}));
+			}
+		})();
+	});
+
+	const filterDefs = $derived<FilterDef[]>([
+		{ key: "consent_type", label: t("app.gdpr.consents.filter_consent_type", "Consent Type"), options: consentTypeOptions },
 		{ key: "granted", label: t("app.gdpr.consents.filter_status", "Status"), options: [
 			{ value: "true", label: t("app.gdpr.consents.option_granted", "Granted") },
 			{ value: "false", label: t("app.gdpr.consents.option_revoked", "Revoked") }
 		]}
-	];
+	]);
 	let filterValues = $state<Record<string, string>>({});
 
 	function handleFilterApply() {

@@ -425,7 +425,7 @@ FROM contents c
 LEFT JOIN users u ON u.id = c.author_id
 LEFT JOIN user_profiles up ON up.user_id = c.author_id
 WHERE c.tenant_id = $1
-  AND (c.deleted_at IS NOT NULL OR c.status = 'removed')
+  AND c.deleted_at IS NOT NULL
 ORDER BY c.deleted_at DESC NULLS LAST, c.updated_at DESC
 LIMIT $2
 `
@@ -691,7 +691,7 @@ func (q *Queries) ModerateContentReport(ctx context.Context, arg ModerateContent
 
 const removeContentByAdmin = `-- name: RemoveContentByAdmin :exec
 
-UPDATE contents SET status = 'removed', updated_at = now()
+UPDATE contents SET status = 'archived', auto_hidden = true, deleted_at = now(), updated_at = now()
 WHERE id = $1 AND tenant_id = $2
 `
 
@@ -709,8 +709,8 @@ func (q *Queries) RemoveContentByAdmin(ctx context.Context, arg RemoveContentByA
 }
 
 const restoreContentByAdmin = `-- name: RestoreContentByAdmin :exec
-UPDATE contents SET status = 'draft', updated_at = now()
-WHERE id = $1 AND tenant_id = $2 AND status = 'removed'
+UPDATE contents SET status = 'draft', auto_hidden = false, deleted_at = NULL, updated_at = now()
+WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NOT NULL
 `
 
 type RestoreContentByAdminParams struct {

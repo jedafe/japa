@@ -26,6 +26,7 @@ import (
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/clientip"
 	"github.com/jedafe/japa/internal/content"
+	"github.com/jedafe/japa/internal/content/visibility"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/media"
@@ -79,7 +80,7 @@ type ContentService interface {
 	CreateContent(ctx context.Context, tenantID pgtype.UUID, input content.CreateContentInput) (gen.CreateContentRow, error)
 	GetContent(ctx context.Context, id, tenantID pgtype.UUID) (gen.GetContentByIDRow, error)
 	GetContentBySlug(ctx context.Context, slug string, tenantID pgtype.UUID) (gen.GetContentBySlugRow, error)
-	ListContentsByType(ctx context.Context, tenantID pgtype.UUID, contentType string, cursor pgtype.Timestamptz, limit int32) ([]gen.ListContentsByTypeRow, error)
+	ListContentsByType(ctx context.Context, tenantID pgtype.UUID, contentType string, cursor pgtype.Timestamptz, limit int32, filter visibility.VisibilityFilter) ([]gen.ListContentsByTypeRow, error)
 	UpdateContent(ctx context.Context, id, tenantID, editedBy pgtype.UUID, input content.UpdateContentInput, bypassEditWindow bool) (gen.UpdateContentRow, error)
 	UpdateContentStatus(ctx context.Context, id, tenantID pgtype.UUID, status string) (gen.UpdateContentStatusRow, error)
 	DeleteContent(ctx context.Context, id, tenantID pgtype.UUID) error
@@ -110,10 +111,10 @@ type Handlers struct {
 	content         ContentService
 	siteURL         string
 	siteName        string
-	AsynqClient     TaskEnqueueClient    // C6: enqueue rss:regenerate on publish
-	Redis           CacheReader          // C6: serve live feed from Valkey cache
-	notifier        MentionNotifier      // nil disables mention notifications (test-only)
-	mentionCheckers *mentions.DBCheckers // nil disables erased-mention redaction
+	AsynqClient     TaskEnqueueClient       // C6: enqueue rss:regenerate on publish
+	Redis           CacheReader             // C6: serve live feed from Valkey cache
+	notifier        MentionNotifier         // nil disables mention notifications (test-only)
+	mentionCheckers *mentions.DBCheckers    // nil disables erased-mention redaction
 	spamRecorder    ContentCreationRecorder // nil disables spam rate-limit recording (test-only)
 }
 

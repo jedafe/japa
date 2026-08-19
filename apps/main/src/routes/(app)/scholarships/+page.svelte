@@ -8,6 +8,7 @@
 	import { goto } from '$app/navigation';
 	import type { Scholarship } from '$lib/types';
 	import type { PageData } from './$types';
+import { safeJsonLdScript } from '$lib/utils/safeHtml';
 
 	// SavedScholarship is exported from +page.server.ts as
 	// SavedScholarshipView and inferred by $types via PageData, but we
@@ -183,7 +184,7 @@
 	<meta property="og:type" content="website" />
 	<meta property="og:url" content={page.url.href} />
 	{#if jsonLd}
-		{@html `<script type="application/ld+json">${jsonLd}</script>`}
+		{@html safeJsonLdScript(jsonLd)}
 	{/if}
 </svelte:head>
 

@@ -61,6 +61,9 @@
 	let testResult = $state<{ id: string; status: string; message: string } | null>(null);
 	let testing = $state<string | null>(null);
 
+	// Selected preset in the create dialog (one-way; selecting a preset fills the form).
+	let selectedPreset = $state('');
+
 	// Model fetching state — the Autocomplete's initialFetcher calls the
 	// provider's /v1/models endpoint via the backend proxy when the model
 	// field is focused. Results are cached in availableModels so subsequent
@@ -75,15 +78,103 @@
 	// provider_type. The list of valid types is fetched from the API
 	// (GET /control/ai-providers/types, Rule 16); this map supplies the
 	// human-readable label and hint for each known type.
-	const providerTypeMeta: Record<string, { label: string; baseUrlHint: string }> = {
-		xiaomi: { label: t('ai_providers.type_xiaomi', 'Xiaomi MiMo'), baseUrlHint: 'Auto-selected from key prefix (tp- or sk-)' },
-		openai: { label: t('ai_providers.type_openai', 'OpenAI-compatible'), baseUrlHint: 'https://api.openai.com/v1 — or OpenRouter: https://openrouter.ai/api/v1 — or Command Code: https://api.commandcode.ai/provider/v1' },
-		ollama: { label: t('ai_providers.type_ollama', 'Ollama'), baseUrlHint: 'http://localhost:11434/v1' },
-		anthropic: { label: t('ai_providers.type_anthropic', 'Anthropic (native)'), baseUrlHint: 'https://api.anthropic.com/v1 — or Command Code: https://api.commandcode.ai/provider/v1' },
-		devin: { label: t('ai_providers.type_devin', 'Devin (Cognition)'), baseUrlHint: 'https://api.devin.ai/v3/organizations/org-xxxxx (include org ID!) — model field = devin_mode (normal/fast/lite/ultra/fusion)' },
-		cursor: { label: t('ai_providers.type_cursor', 'Cursor (Anysphere)'), baseUrlHint: 'https://api.cursor.com/v1 (Basic auth, key from Cursor Dashboard)' },
+	const providerTypeMeta: Record<string, { label: string; baseUrlHint: string; modelHint?: string }> = {
+		xiaomi: { label: t('ai_providers.type_xiaomi', 'Xiaomi MiMo'), baseUrlHint: 'Auto-selected from key prefix (tp- or sk-)', modelHint: 'mimo-v2-flash, mimo-v2-pro, mimo-v2.5-pro, mimo-v2-omni' },
+		openai: { label: t('ai_providers.type_openai', 'OpenAI-compatible'), baseUrlHint: 'https://api.openai.com/v1 — or OpenRouter: https://openrouter.ai/api/v1 — or Command Code: https://api.commandcode.ai/provider/v1', modelHint: 'gpt-4o-mini, gpt-4o, gpt-4.1' },
+		groq: { label: t('ai_providers.type_groq', 'Groq'), baseUrlHint: 'https://api.groq.com/openai/v1 (OpenAI-compatible)', modelHint: 'llama-3.1-8b-instant, llama-3.3-70b-versatile, mixtral-8x7b-32768' },
+		ollama: { label: t('ai_providers.type_ollama', 'Ollama'), baseUrlHint: 'Local: http://localhost:11434/v1 — Cloud: https://ollama.com/v1 (set Ollama API key)', modelHint: 'gpt-oss:20b-cloud, gpt-oss:120b-cloud, deepseek-v4-flash, llama3.2' },
+		anthropic: { label: t('ai_providers.type_anthropic', 'Anthropic (native)'), baseUrlHint: 'https://api.anthropic.com/v1 — or Command Code: https://api.commandcode.ai/provider/v1', modelHint: 'claude-3-5-sonnet-20241022, claude-3-opus-20240229' },
+		devin: { label: t('ai_providers.type_devin', 'Devin (Cognition)'), baseUrlHint: 'https://api.devin.ai/v3/organizations/org-xxxxx (include org ID!) — model field = devin_mode (normal/fast/lite/ultra/fusion)', modelHint: 'normal, fast, lite, ultra, fusion' },
+		cursor: { label: t('ai_providers.type_cursor', 'Cursor (Anysphere)'), baseUrlHint: 'https://api.cursor.com/v1 (Basic auth, key from Cursor Dashboard)', modelHint: 'claude-sonnet-4-20250514, gpt-4o' },
+		perplexity: { label: t('ai_providers.type_perplexity', 'Perplexity (Sonar)'), baseUrlHint: 'https://api.perplexity.ai — model: sonar-pro, sonar-reasoning, sonar-reasoning-pro', modelHint: 'sonar-pro, sonar-reasoning, sonar-reasoning-pro' },
 		custom: { label: t('ai_providers.type_custom', 'Custom'), baseUrlHint: 'Any OpenAI-compatible /v1 endpoint' }
 	};
+
+interface ProviderPreset {
+	label: string;
+	name: string;
+	provider_type: string;
+	base_url: string;
+	model: string;
+	categories: string[];
+}
+
+// Common provider presets to speed up Control Panel configuration.
+// Selecting a preset does not fill the API key — the admin must still enter it.
+const providerPresets: ProviderPreset[] = [
+	{
+		label: 'OpenAI',
+		name: 'OpenAI',
+		provider_type: 'openai',
+		base_url: 'https://api.openai.com/v1',
+		model: 'gpt-4o-mini',
+		categories: ['content_generation', 'chat', 'extraction']
+	},
+	{
+		label: 'OpenRouter',
+		name: 'OpenRouter',
+		provider_type: 'openai',
+		base_url: 'https://openrouter.ai/api/v1',
+		model: 'openai/gpt-4o-mini',
+		categories: ['content_generation', 'chat', 'extraction']
+	},
+	{
+		label: 'Groq',
+		name: 'Groq',
+		provider_type: 'groq',
+		base_url: 'https://api.groq.com/openai/v1',
+		model: 'llama-3.1-8b-instant',
+		categories: ['content_generation', 'chat', 'extraction']
+	},
+	{
+		label: 'Together AI',
+		name: 'Together AI',
+		provider_type: 'openai',
+		base_url: 'https://api.together.xyz/v1',
+		model: 'meta-llama/Llama-3.2-11B-Vision-Instruct-Turbo',
+		categories: ['content_generation', 'chat']
+	},
+	{
+		label: 'Anthropic',
+		name: 'Anthropic',
+		provider_type: 'anthropic',
+		base_url: 'https://api.anthropic.com/v1',
+		model: 'claude-3-5-sonnet-20241022',
+		categories: ['content_generation', 'chat', 'extraction']
+	},
+	{
+		label: 'Perplexity',
+		name: 'Perplexity',
+		provider_type: 'perplexity',
+		base_url: 'https://api.perplexity.ai',
+		model: 'sonar-pro',
+		categories: ['content_generation', 'extraction']
+	},
+	{
+		label: 'Xiaomi MiMo',
+		name: 'Xiaomi MiMo',
+		provider_type: 'xiaomi',
+		base_url: '',
+		model: 'mimo-v2-flash',
+		categories: ['content_generation', 'chat', 'extraction']
+	},
+	{
+		label: 'Ollama Cloud',
+		name: 'Ollama Cloud',
+		provider_type: 'ollama',
+		base_url: 'https://ollama.com/v1',
+		model: 'gpt-oss:20b-cloud',
+		categories: ['content_generation', 'chat', 'extraction']
+	},
+	{
+		label: 'Local Ollama',
+		name: 'Local Ollama',
+		provider_type: 'ollama',
+		base_url: 'http://localhost:11434/v1',
+		model: 'llama3.2',
+		categories: ['content_generation', 'chat', 'extraction']
+	}
+];
 
 	const categoryMeta: Record<string, string> = {
 		content_generation: t('ai_providers.cat_content_generation', 'Content Generation'),
@@ -101,7 +192,8 @@
 		apiProviderTypes.map((v) => ({
 			value: v,
 			label: providerTypeMeta[v]?.label ?? v,
-			baseUrlHint: providerTypeMeta[v]?.baseUrlHint ?? ''
+			baseUrlHint: providerTypeMeta[v]?.baseUrlHint ?? '',
+			modelHint: providerTypeMeta[v]?.modelHint ?? ''
 		}))
 	);
 
@@ -273,6 +365,15 @@
 		createModalOpen = true;
 	}
 
+	function applyPreset(preset: ProviderPreset) {
+		form.provider_type = preset.provider_type;
+		form.base_url = preset.base_url;
+		form.model = preset.model;
+		if (!form.name) form.name = preset.name;
+		form.categories = preset.categories.filter((c) => apiCategories.includes(c));
+		resetModelFetch();
+	}
+
 	function openEdit(provider: AiProvider) {
 		editingProvider = provider;
 		form = {
@@ -395,6 +496,10 @@
 
 	function getBaseUrlHint(value: string): string {
 		return providerTypes.find((p) => p.value === value)?.baseUrlHint ?? '';
+	}
+
+	function getModelHint(value: string): string {
+		return providerTypes.find((p) => p.value === value)?.modelHint ?? '';
 	}
 
 	// modelsCacheKey returns a composite key that identifies the current
@@ -569,6 +674,26 @@
 			<Dialog.Description class="text-muted-foreground mt-1 text-sm">{t('ai_providers.create_description', 'Configure a new AI backend for the dispatcher.')}</Dialog.Description>
 
 			<div class="mt-4 space-y-4">
+				<!-- Preset -->
+				<div>
+					<label for="create-preset" class="text-muted-foreground mb-1 block text-xs font-medium uppercase tracking-wider">{t('ai_providers.preset', 'Start from preset')}</label>
+					<select
+						id="create-preset"
+						bind:value={selectedPreset}
+						onchange={() => {
+							const preset = providerPresets.find((p) => p.name === selectedPreset);
+							if (preset) applyPreset(preset);
+						}}
+						class="border-border-input bg-background-alt text-foreground w-full rounded-9px border px-3 py-2 text-sm"
+					>
+						<option value="">{t('ai_providers.preset_none', '— No preset —')}</option>
+						{#each providerPresets as preset}
+							<option value={preset.name}>{preset.label}</option>
+						{/each}
+					</select>
+					<p class="text-muted-foreground mt-1 text-[10px]">{t('ai_providers.preset_help', 'Select a common provider to auto-fill the fields. API key is still required.')}</p>
+				</div>
+
 				<!-- Name -->
 				<div>
 					<label for="create-name" class="text-muted-foreground mb-1 block text-xs font-medium uppercase tracking-wider">{t('ai_providers.name', 'Name')}</label>
@@ -640,6 +765,9 @@
 							inputClass="font-mono"
 						/>
 						<p class="text-muted-foreground mt-1 text-[10px]">{t('ai_providers.model_help', 'Focus to load available models from the provider, or type a model name manually.')}</p>
+						{#if getModelHint(form.provider_type)}
+							<p class="text-muted-foreground mt-1 text-[10px]">{t('ai_providers.model_hint', 'Examples:')} {getModelHint(form.provider_type)}</p>
+						{/if}
 						{#if fetchModelsError}
 							<p class="text-destructive mt-1 text-[10px]">{fetchModelsError}</p>
 						{/if}
@@ -799,6 +927,9 @@
 							inputClass="font-mono"
 						/>
 						<p class="text-muted-foreground mt-1 text-[10px]">{t('ai_providers.model_help', 'Focus to load available models from the provider, or type a model name manually.')}</p>
+						{#if getModelHint(form.provider_type)}
+							<p class="text-muted-foreground mt-1 text-[10px]">{t('ai_providers.model_hint', 'Examples:')} {getModelHint(form.provider_type)}</p>
+						{/if}
 						{#if fetchModelsError}
 							<p class="text-destructive mt-1 text-[10px]">{fetchModelsError}</p>
 						{/if}

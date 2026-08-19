@@ -8,6 +8,9 @@ vi.mock('$lib/api', () => ({
 		getAppeal: vi.fn().mockResolvedValue({ ok: true, data: {} }),
 		updateAppeal: vi.fn().mockResolvedValue({ ok: true }),
 	},
+	adminCatalogApi: {
+		get: vi.fn().mockResolvedValue({ ok: true, data: [] }),
+	},
 }));
 vi.mock('$app/state', () => ({
 	page: { params: {}, url: new URL('http://localhost/') },

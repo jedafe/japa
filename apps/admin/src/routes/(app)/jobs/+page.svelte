@@ -6,7 +6,7 @@
 	import { Modal } from '$lib/components/ui/modal';
 	import { Button } from '$lib/components/ui/button';
 	import { Card, CardContent, CardHeader } from '$lib/components/ui/card';
-	import { jobsAdminApi } from '$lib/api';
+	import { jobsAdminApi, contentAdminApi } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { Star, Eye, Pencil, Trash2 } from 'lucide-svelte';
@@ -33,6 +33,22 @@
 	// Status distribution cards are a dashboard element rendered above EntityPage;
 	// captured from the load response as a side effect.
 	let statusDist = $state<StatusDist>({});
+
+	// Job listings are content rows; load canonical content status options (Rule 16).
+	let statusOptions = $state<{ value: string; label: string }[]>([
+		{ value: 'published', label: t('jobs.status_published', 'Published') },
+		{ value: 'archived', label: t('jobs.status_archived', 'Archived') },
+		{ value: 'draft', label: t('jobs.status_draft', 'Draft') }
+	]);
+
+	$effect(() => {
+		void (async () => {
+			const res = await contentAdminApi.getStatusOptions();
+			if (res.ok && res.data?.length) {
+				statusOptions = res.data;
+			}
+		})();
+	});
 
 	// ── Feature-toggle state action ─────
 	let entityController = $state<EntityPageController | undefined>(undefined);
@@ -111,28 +127,20 @@
 	});
 
 	// ── Filters ───── Listing status filter (published, archived, draft).
-	const filters: FilterDef[] = [
+	const filters = $derived<FilterDef[]>([
 		{
 			key: 'status',
 			label: t('jobs.status', 'Status'),
-			options: [
-				{ value: 'published', label: t('jobs.status_published', 'Published') },
-				{ value: 'archived', label: t('jobs.status_archived', 'Archived') },
-				{ value: 'draft', label: t('jobs.status_draft', 'Draft') }
-			]
+			options: statusOptions
 		}
-	];
+	]);
 
 	// ── Editable fields ─────
-	const fields: FieldDef[] = [
+	const fields = $derived<FieldDef[]>([
 		{ key: 'title', label: t('jobs.title_col', 'Title'), type: 'text', required: true },
-		{ key: 'status', label: t('jobs.status', 'Status'), type: 'select', options: [
-			{ value: 'published', label: t('jobs.status_published', 'Published') },
-			{ value: 'archived', label: t('jobs.status_archived', 'Archived') },
-			{ value: 'draft', label: t('jobs.status_draft', 'Draft') }
-		] },
+		{ key: 'status', label: t('jobs.status', 'Status'), type: 'select', options: statusOptions },
 		{ key: 'body', label: t('jobs.body', 'Body'), type: 'textarea' }
-	];
+	]);
 
 	// Helper to read a custom field value from the listing's field_values map.
 	function field(row: JobListing, key: string): string {

@@ -27,7 +27,10 @@
 		void (async () => {
 			const res = await contentAdminApi.listContentTypes();
 			if (res.ok && res.data) {
-				contentTypeOptions = res.data.map((ct) => ({ value: ct.value, label: ct.label }));
+				contentTypeOptions = res.data.map((ct) => ({
+					value: ct.value,
+					label: t(`content.type_${ct.value}`, ct.label)
+				}));
 			}
 		})();
 	});

@@ -8,12 +8,12 @@
 package comparison
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
-	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -80,6 +80,7 @@ func hasAnyPermission(r *http.Request, user *auth.AuthenticatedUser, permKey str
 	if !ok || resolver == nil {
 		return false
 	}
+
 	return resolver.HasPermission(r.Context(), user.UserID, user.TenantID, permKey)
 }
 
@@ -92,15 +93,18 @@ func handleServiceError(w http.ResponseWriter, err error) {
 // and writes the appropriate error response if the user is not the author.
 // Returns true if the caller should abort (error written), false if ownership
 // is confirmed. Ref: §5.3 RBAC escape, BUG-003.
-func (h *Handlers) verifyOwnership(w http.ResponseWriter, r *http.Request, user *auth.AuthenticatedUser, verify func() error) bool {
+func (h *Handlers) verifyOwnership(w http.ResponseWriter, _ *http.Request, _ *auth.AuthenticatedUser, verify func() error) bool {
 	if err := verify(); err != nil {
 		if errors.Is(err, ErrNotOwner) {
 			errpkg.WriteError(w, http.StatusForbidden, "not_owner", "You can only modify your own comparisons")
 			return true
 		}
+
 		handleServiceError(w, err)
+
 		return true
 	}
+
 	return false
 }
 
@@ -111,16 +115,16 @@ func parsePageSize(r *http.Request) int32 {
 		return defaultPageSize
 	}
 
-	n, err := strconv.Atoi(s)
+	n, err := strconv.ParseInt(s, 10, 32)
 	if err != nil || n <= 0 {
 		return defaultPageSize
 	}
 
-	if n > MaxPageSize {
+	if n > int64(MaxPageSize) {
 		return MaxPageSize
 	}
 
-	return int32(n) //nolint:gosec // G109: bounded by MaxPageSize check above
+	return int32(n) // #nosec G115 -- bounded by MaxPageSize and ParseInt bitSize 32
 }
 
 // parsePageSizeOffset extracts the page_offset query parameter.
@@ -130,12 +134,12 @@ func parsePageSizeOffset(r *http.Request) int32 {
 		return 0
 	}
 
-	n, err := strconv.Atoi(s)
+	n, err := strconv.ParseInt(s, 10, 32)
 	if err != nil || n < 0 {
 		return 0
 	}
 
-	return int32(n) //nolint:gosec // G109: bounded by MaxPageSize check above
+	return int32(n) // #nosec G115 -- non-negative and bounded by ParseInt bitSize 32
 }
 
 // ---------------------------------------------------------------------------
@@ -247,7 +251,26 @@ func (h *Handlers) ListComparisons(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	filter, err := h.buildListComparisonsFilter(r, tenantID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	comparisons, err := h.Service.ListComparisons(r.Context(), tenantID, filter)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": comparisons})
+}
+
+// buildListComparisonsFilter parses query parameters into a ListComparisonsFilter.
+// It resolves a slug-based type filter to a type_id.
+func (h *Handlers) buildListComparisonsFilter(r *http.Request, tenantID pgtype.UUID) (ListComparisonsFilter, error) {
 	q := r.URL.Query()
+
 	var filter ListComparisonsFilter
 	filter.Limit = parsePageSize(r)
 	filter.Offset = parsePageSizeOffset(r)
@@ -255,26 +278,49 @@ func (h *Handlers) ListComparisons(w http.ResponseWriter, r *http.Request) {
 	// type filter: accept either type_id (uuid) or type (slug) and resolve to id.
 	if v := q.Get("type_id"); v != "" {
 		if err := filter.TypeID.Scan(v); err != nil {
-			errpkg.WriteError(w, http.StatusBadRequest, "invalid_type_id", "Invalid type_id")
-			return
+			return filter, fmt.Errorf("%w: invalid type_id", errpkg.ErrInvalid)
 		}
 	} else if v := q.Get("type"); v != "" {
 		td, err := h.Service.GetComparisonTypeBySlug(r.Context(), v, tenantID)
 		if err != nil {
-			handleServiceError(w, err)
-			return
+			return filter, err
 		}
+
 		filter.TypeID = td.ID
 	}
 
 	if v := q.Get("space_id"); v != "" {
 		if err := filter.SpaceID.Scan(v); err != nil {
-			errpkg.WriteError(w, http.StatusBadRequest, "invalid_space_id", "Invalid space_id")
-			return
+			return filter, fmt.Errorf("%w: invalid space_id", errpkg.ErrInvalid)
 		}
 	}
 
-	comparisons, err := h.Service.ListComparisons(r.Context(), tenantID, filter)
+	return filter, nil
+}
+
+// ListComparisonsAdmin handles GET /api/v1/comparisons/admin.
+//
+// Returns all non-deleted comparison content rows for the tenant (including
+// drafts and private comparisons), optionally filtered by type and space_id.
+// Requires the comparison.edit_any permission (Section 30).
+func (h *Handlers) ListComparisonsAdmin(w http.ResponseWriter, r *http.Request) {
+	_, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	filter, err := h.buildListComparisonsFilter(r, tenantID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	comparisons, err := h.Service.ListComparisonsAdmin(r.Context(), tenantID, filter)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -538,10 +584,12 @@ func (h *Handlers) CreateComparison(w http.ResponseWriter, r *http.Request) {
 	}
 
 	items := make([]ComparisonItemInput, 0, len(input.Items))
+
 	for _, it := range input.Items {
 		if it.Name == "" {
 			continue
 		}
+
 		items = append(items, ComparisonItemInput{Name: it.Name, Slug: it.Slug})
 	}
 
@@ -604,7 +652,7 @@ func (h *Handlers) GetComparison(w http.ResponseWriter, r *http.Request) {
 // row. Previously this route was wired to UpdateComparisonItem, which treated
 // {id} as an item id and corrupted comparison items.
 //
-// Ref: japaconnect-engineering/sections/30-generic-comparison-system.md
+// Ref: japaconnect-engineering/sections/30-generic-comparison-system.md.
 func (h *Handlers) UpdateComparison(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
 	if !ok {
@@ -651,7 +699,9 @@ func (h *Handlers) UpdateComparison(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusForbidden, "not_owner", "You can only update your own comparisons")
 			return
 		}
+
 		handleServiceError(w, err)
+
 		return
 	}
 
@@ -662,7 +712,7 @@ func (h *Handlers) UpdateComparison(w http.ResponseWriter, r *http.Request) {
 // backing content row. Previously this route was wired to DeleteComparisonItem,
 // which hard-deleted a comparison item instead of the comparison itself.
 //
-// Ref: japaconnect-engineering/sections/30-generic-comparison-system.md
+// Ref: japaconnect-engineering/sections/30-generic-comparison-system.md.
 func (h *Handlers) DeleteComparison(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
 	if !ok {
@@ -685,7 +735,9 @@ func (h *Handlers) DeleteComparison(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusForbidden, "not_owner", "You can only delete your own comparisons")
 			return
 		}
+
 		handleServiceError(w, err)
+
 		return
 	}
 
@@ -715,6 +767,7 @@ func (h *Handlers) GetComparisonMatrix(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	if detail.Status != "published" || detail.Visibility != "public" {
 		user := auth.FromContext(r.Context())
 		if user == nil || (detail.AuthorID.Valid && user.UserID != detail.AuthorID) {
@@ -738,7 +791,7 @@ func (h *Handlers) GetComparisonMatrix(w http.ResponseWriter, r *http.Request) {
 
 // CreateComparisonItem handles POST /api/v1/comparisons/{id}/items.
 func (h *Handlers) CreateComparisonItem(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireUser(w, r)
+	user, ok := h.requireUser(w, r)
 	if !ok {
 		return
 	}
@@ -751,6 +804,12 @@ func (h *Handlers) CreateComparisonItem(w http.ResponseWriter, r *http.Request) 
 	contentID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid comparison ID")
+		return
+	}
+
+	if h.verifyOwnership(w, r, user, func() error {
+		return h.Service.VerifyComparisonOwnership(r.Context(), contentID, user.UserID, tenantID, hasAnyPermission(r, user, "comparison.edit_any"))
+	}) {
 		return
 	}
 
@@ -875,8 +934,16 @@ func (h *Handlers) UpdateComparisonItem(w http.ResponseWriter, r *http.Request) 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": item})
 }
 
-// DeleteComparisonItem handles DELETE /api/v1/comparisons/items/{id}.
-func (h *Handlers) DeleteComparisonItem(w http.ResponseWriter, r *http.Request) {
+// deleteOwnedResource deletes a comparison sub-resource after auth/ownership checks.
+// It factors out the identical auth, parse, ownership, and delete flow used by
+// DeleteComparisonItem and DeleteComparisonDimension so the code does not dupl.
+func (h *Handlers) deleteOwnedResource(
+	w http.ResponseWriter,
+	r *http.Request,
+	invalidIDMsg string,
+	verify func(ctx context.Context, id, userID, tenantID pgtype.UUID, bypass bool) error,
+	deleteFn func(ctx context.Context, id, tenantID pgtype.UUID) error,
+) {
 	user, ok := h.requireUser(w, r)
 	if !ok {
 		return
@@ -889,22 +956,29 @@ func (h *Handlers) DeleteComparisonItem(w http.ResponseWriter, r *http.Request) 
 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid item ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", invalidIDMsg)
 		return
 	}
 
 	if h.verifyOwnership(w, r, user, func() error {
-		return h.Service.VerifyComparisonItemOwnership(r.Context(), id, user.UserID, tenantID, hasAnyPermission(r, user, "comparison.edit_any"))
+		return verify(r.Context(), id, user.UserID, tenantID, hasAnyPermission(r, user, "comparison.edit_any"))
 	}) {
 		return
 	}
 
-	if err := h.Service.DeleteComparisonItem(r.Context(), id, tenantID); err != nil {
+	if err := deleteFn(r.Context(), id, tenantID); err != nil {
 		handleServiceError(w, err)
 		return
 	}
 
 	errpkg.WriteJSON(w, http.StatusNoContent, nil)
+}
+
+// DeleteComparisonItem handles DELETE /api/v1/comparisons/items/{id}.
+func (h *Handlers) DeleteComparisonItem(w http.ResponseWriter, r *http.Request) {
+	h.deleteOwnedResource(w, r, "Invalid item ID",
+		h.Service.VerifyComparisonItemOwnership,
+		h.Service.DeleteComparisonItem)
 }
 
 // ---------------------------------------------------------------------------
@@ -1035,34 +1109,9 @@ func (h *Handlers) UpdateComparisonDimension(w http.ResponseWriter, r *http.Requ
 
 // DeleteComparisonDimension handles DELETE /api/v1/comparisons/dimensions/{id}.
 func (h *Handlers) DeleteComparisonDimension(w http.ResponseWriter, r *http.Request) {
-	user, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-
-	tenantID, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
-
-	id, err := parseUUIDParam(r, "id")
-	if err != nil {
-		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid dimension ID")
-		return
-	}
-
-	if h.verifyOwnership(w, r, user, func() error {
-		return h.Service.VerifyComparisonDimensionOwnership(r.Context(), id, user.UserID, tenantID, hasAnyPermission(r, user, "comparison.edit_any"))
-	}) {
-		return
-	}
-
-	if err := h.Service.DeleteComparisonDimension(r.Context(), id, tenantID); err != nil {
-		handleServiceError(w, err)
-		return
-	}
-
-	errpkg.WriteJSON(w, http.StatusNoContent, nil)
+	h.deleteOwnedResource(w, r, "Invalid dimension ID",
+		h.Service.VerifyComparisonDimensionOwnership,
+		h.Service.DeleteComparisonDimension)
 }
 
 // ---------------------------------------------------------------------------
@@ -1109,12 +1158,14 @@ func (h *Handlers) UpsertComparisonValues(w http.ResponseWriter, r *http.Request
 
 	// Batch upsert: one round-trip for all values (BUG-027).
 	inputs := make([]UpsertComparisonValueInput, 0, len(input.Values))
+
 	for _, v := range input.Values {
 		var itemID pgtype.UUID
 		if err := itemID.Scan(v.ItemID); err != nil {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_item_id", "Invalid item_id")
 			return
 		}
+
 		inputs = append(inputs, UpsertComparisonValueInput{
 			DimensionID:  dimensionID,
 			ItemID:       itemID,
@@ -1140,6 +1191,8 @@ func (h *Handlers) UpsertComparisonValues(w http.ResponseWriter, r *http.Request
 // The position of each item is derived from its index in the array (0-based).
 // The legacy { "items": [{ "id", "position" }] } shape is still accepted for
 // backward compatibility but is deprecated.
+//
+//nolint:gocyclo // Supports both deprecated legacy body and canonical ordered_item_ids body.
 func (h *Handlers) ReorderComparisonItems(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
 	if !ok {
@@ -1187,35 +1240,43 @@ func (h *Handlers) ReorderComparisonItems(w http.ResponseWriter, r *http.Request
 	if len(input.OrderedItemIDs) > 0 {
 		ids := make([]pgtype.UUID, 0, len(input.OrderedItemIDs))
 		positions := make([]int32, 0, len(input.OrderedItemIDs))
+
 		for idx, id := range input.OrderedItemIDs {
 			var itemID pgtype.UUID
 			if err := itemID.Scan(id); err != nil {
 				errpkg.WriteError(w, http.StatusBadRequest, "invalid_item_id", "Invalid item id: "+id)
 				return
 			}
+
 			ids = append(ids, itemID)
-			positions = append(positions, int32(idx))
+			positions = append(positions, toInt32(idx))
 		}
+
 		if err := h.Service.BatchReorderComparisonItems(r.Context(), comparisonID, tenantID, ids, positions); err != nil {
 			handleServiceError(w, err)
 			return
 		}
+
 		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"reordered": true}})
+
 		return
 	}
 
 	// Legacy path: explicit positions per item.
 	ids := make([]pgtype.UUID, 0, len(input.Items))
 	positions := make([]int32, 0, len(input.Items))
+
 	for _, item := range input.Items {
 		var itemID pgtype.UUID
 		if err := itemID.Scan(item.ID); err != nil {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_item_id", "Invalid item id: "+item.ID)
 			return
 		}
+
 		ids = append(ids, itemID)
 		positions = append(positions, item.Position)
 	}
+
 	if err := h.Service.BatchReorderComparisonItems(r.Context(), comparisonID, tenantID, ids, positions); err != nil {
 		handleServiceError(w, err)
 		return
@@ -1224,17 +1285,13 @@ func (h *Handlers) ReorderComparisonItems(w http.ResponseWriter, r *http.Request
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"reordered": true}})
 }
 
-// AutoGenerateDimensions handles POST /api/v1/comparisons/auto-dimensions.
-// Given a list of item names, returns a set of suggested comparison dimensions
-// derived from a deterministic heuristic (no AI tokens). The frontend presents
-// these as editable defaults in the comparison creation wizard (Phase 16.05).
-//
-// Ref: japaconnect-engineering/sections/16-comparisons.md (Phase 16.05 — HITL)
 // GetDimensionTypes handles GET /api/v1/comparisons/dimension-types — returns
 // the valid dimension types supported by the comparison system (Section 30).
 // The frontend uses this to populate the dimension type selector in the
 // ComparisonBuilder instead of hardcoding the values (Rule 16).
-func (h *Handlers) GetDimensionTypes(w http.ResponseWriter, r *http.Request) {
+//
+// Ref: japaconnect-engineering/sections/30-generic-comparison-system.md.
+func (h *Handlers) GetDimensionTypes(w http.ResponseWriter, _ *http.Request) {
 	types := []map[string]string{
 		{"value": DimensionTypeText, "label": "Text"},
 		{"value": DimensionTypeRating, "label": "Rating"},
@@ -1245,10 +1302,28 @@ func (h *Handlers) GetDimensionTypes(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": types})
 }
 
+// AutoGenerateDimensions handles POST /api/v1/comparisons/auto-dimensions.
+// Given a list of item names, it returns a set of suggested comparison
+// dimensions derived from a configurable heuristic (no AI tokens). The
+// frontend presents these as editable defaults in the comparison creation
+// wizard (Phase 16.05).
+//
+// Ref: japaconnect-engineering/sections/16-comparisons.md (Phase 16.05 — HITL).
 func (h *Handlers) AutoGenerateDimensions(w http.ResponseWriter, r *http.Request) {
+	_, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
 	var input struct {
 		Items []string `json:"items"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
@@ -1259,46 +1334,11 @@ func (h *Handlers) AutoGenerateDimensions(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	dimensions := suggestDimensions(input.Items)
+	dimensions, err := h.Service.SuggestDimensions(r.Context(), tenantID, input.Items)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"dimensions": dimensions}})
-}
-
-// suggestDimensions returns a deterministic set of comparison dimensions
-// based on the item names. This is a heuristic — no AI tokens are spent.
-// The frontend can override or extend these before creating the comparison.
-func suggestDimensions(items []string) []string {
-	// Universal dimensions that apply to most comparison contexts.
-	dims := []string{
-		"Overview",
-		"Key features",
-		"Pros",
-		"Cons",
-		"Overall rating",
-	}
-
-	// If all items look like products/services (contain common product keywords),
-	// add price and quality dimensions.
-	productHints := []string{"price", "cost", "plan", "package", "version", "edition", "model"}
-	itemBlob := ""
-	for _, it := range items {
-		itemBlob += " " + it
-	}
-	itemLower := strings.ToLower(itemBlob)
-	for _, hint := range productHints {
-		if strings.Contains(itemLower, hint) {
-			dims = append([]string{"Price", "Value for money"}, dims...)
-			break
-		}
-	}
-
-	// If items mention education/learning keywords, add education-specific dims.
-	eduHints := []string{"course", "university", "school", "program", "degree", "certification"}
-	for _, hint := range eduHints {
-		if strings.Contains(itemLower, hint) {
-			dims = append(dims, "Curriculum", "Duration", "Cost", "Accreditation")
-			break
-		}
-	}
-
-	return dims
 }

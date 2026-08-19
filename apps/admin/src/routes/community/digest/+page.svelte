@@ -6,7 +6,7 @@
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import { Modal } from '$lib/components/ui/modal';
 	import { Button } from '$lib/components/ui/button';
-	import { digestAdminApi, spacesAdminApi } from '$lib/api';
+	import { digestAdminApi, spacesAdminApi, adminCatalogApi, type CatalogOption } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { Eye, CheckCircle, Sparkles } from 'lucide-svelte';
@@ -35,6 +35,21 @@
 
 	// ── State ────────────────────────────────────────────────────────────────
 	let entityController = $state<EntityPageController | undefined>(undefined);
+
+	let digestStatusOptions = $state<CatalogOption[]>([
+		{ value: 'draft', label: t('app.digest.status_draft', 'Draft') },
+		{ value: 'review', label: t('app.digest.status_review', 'Review') },
+		{ value: 'published', label: t('app.digest.status_published', 'Published') },
+		{ value: 'cancelled', label: t('app.digest.status_cancelled', 'Cancelled') }
+	]);
+
+	$effect(() => {
+		void (async () => {
+			const res = await adminCatalogApi.get('community.digest.status');
+			if (res.ok && res.data?.length) digestStatusOptions = res.data;
+		})();
+	});
+
 	let pageError = $state('');
 	let acting = $state(false);
 	let showGenerateModal = $state(false);
@@ -127,12 +142,7 @@
 		{
 			key: 'status',
 			label: t('app.digest.col_status', 'Status'),
-			options: [
-				{ value: 'draft', label: t('app.digest.status_draft', 'Draft') },
-				{ value: 'review', label: t('app.digest.status_review', 'Review') },
-				{ value: 'published', label: t('app.digest.status_published', 'Published') },
-				{ value: 'cancelled', label: t('app.digest.status_cancelled', 'Cancelled') }
-			]
+			options: digestStatusOptions
 		},
 		{
 			key: 'dest',

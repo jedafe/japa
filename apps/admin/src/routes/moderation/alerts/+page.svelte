@@ -2,7 +2,7 @@
 	// /moderation/alerts — migrated to the EntityPage scaffold; read-only list with
 	// state actions (Acknowledge / Resolve) wired through the `actions` config.
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
-	import { moderationAdminApi, apiRaw } from '$lib/api';
+	import { moderationAdminApi, apiRaw, adminCatalogApi, type CatalogOption } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { Eye, AlertCircle, CheckCircle } from 'lucide-svelte';
@@ -30,6 +30,31 @@
 	const fields: FieldDef[] = [];
 
 	let entityController = $state<EntityPageController | undefined>(undefined);
+
+	let alertSeverityOptions = $state<CatalogOption[]>([
+		{ value: 'low', label: t('app.moderation.alerts.severity.low', 'Low') },
+		{ value: 'medium', label: t('app.moderation.alerts.severity.medium', 'Medium') },
+		{ value: 'high', label: t('app.moderation.alerts.severity.high', 'High') },
+		{ value: 'critical', label: t('app.moderation.alerts.severity.critical', 'Critical') }
+	]);
+
+	let alertStatusOptions = $state<CatalogOption[]>([
+		{ value: 'open', label: t('app.moderation.alerts.status.open', 'Open') },
+		{ value: 'acknowledged', label: t('app.moderation.alerts.status.acknowledged', 'Acknowledged') },
+		{ value: 'resolved', label: t('app.moderation.alerts.status.resolved', 'Resolved') }
+	]);
+
+	$effect(() => {
+		void (async () => {
+			const [severityRes, statusRes] = await Promise.all([
+				adminCatalogApi.get('moderation.alerts.severity'),
+				adminCatalogApi.get('moderation.alerts.status')
+			]);
+			if (severityRes.ok && severityRes.data?.length) alertSeverityOptions = severityRes.data;
+			if (statusRes.ok && statusRes.data?.length) alertStatusOptions = statusRes.data;
+		})();
+	});
+
 	let pageError = $state('');
 
 	async function acknowledgeAlert(row: ModerationAlert) {
@@ -60,7 +85,7 @@
 		}
 	}
 
-	const config: EntityPageConfig = {
+	const config = $derived<EntityPageConfig>({
 		title: t('moderation.alerts_title', 'Moderation Alerts'),
 		description: t('moderation.alerts.real_time_moderation_alerts_and_security', 'Real-time moderation alerts and security notifications'),
 		readonly: true,
@@ -98,21 +123,12 @@
 			{
 				key: 'severity',
 				label: t('app.moderation.alerts.severity', 'Severity'),
-				options: [
-					{ value: 'low', label: t('app.moderation.alerts.severity.low', 'Low') },
-					{ value: 'medium', label: t('app.moderation.alerts.severity.medium', 'Medium') },
-					{ value: 'high', label: t('app.moderation.alerts.severity.high', 'High') },
-					{ value: 'critical', label: t('app.moderation.alerts.severity.critical', 'Critical') }
-				]
+				options: alertSeverityOptions
 			},
 			{
 				key: 'status',
 				label: t('app.moderation.alerts.status', 'Status'),
-				options: [
-					{ value: 'open', label: t('app.moderation.alerts.status.open', 'Open') },
-					{ value: 'acknowledged', label: t('app.moderation.alerts.status.acknowledged', 'Acknowledged') },
-					{ value: 'resolved', label: t('app.moderation.alerts.status.resolved', 'Resolved') }
-				]
+				options: alertStatusOptions
 			}
 		],
 		actions: [
@@ -152,7 +168,7 @@
 			throw new Error(result.error ?? t('common.error', 'Failed to load moderation alerts'));
 		},
 		viewSnippet: AlertView
-	};
+	});
 </script>
 
 <svelte:head>

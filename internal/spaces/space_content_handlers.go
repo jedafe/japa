@@ -9,6 +9,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
+	"github.com/jedafe/japa/internal/content/visibility"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
 )
@@ -29,10 +30,11 @@ func (h *Handlers) ListSpaceContent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	limit := parsePageSize(r)
+	filter := visibility.VisibilityFilterFromRequest(r)
 
 	if q := strings.TrimSpace(r.URL.Query().Get("q")); q != "" {
 		offset := parsePageSizeOffset(r)
-		items, err := h.content.SearchContentsBySpace(r.Context(), tenantID, space.ID, q, limit, offset)
+		items, err := h.content.SearchContentsBySpace(r.Context(), tenantID, space.ID, q, limit, offset, filter)
 		if err != nil {
 			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to search space content")
 			return
@@ -52,7 +54,7 @@ func (h *Handlers) ListSpaceContent(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	items, err := h.content.ListContentsBySpace(r.Context(), tenantID, space.ID, cursor, limit)
+	items, err := h.content.ListContentsBySpace(r.Context(), tenantID, space.ID, cursor, limit, filter)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list space content")
 		return

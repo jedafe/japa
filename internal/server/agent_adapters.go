@@ -32,8 +32,8 @@ import (
 	"github.com/jedafe/japa/internal/arrivalchecklist"
 	"github.com/jedafe/japa/internal/attestationguide"
 	"github.com/jedafe/japa/internal/calendar"
-	"github.com/jedafe/japa/internal/comparison"
 	"github.com/jedafe/japa/internal/communitylocator"
+	"github.com/jedafe/japa/internal/comparison"
 	"github.com/jedafe/japa/internal/content"
 	"github.com/jedafe/japa/internal/credentialchecker"
 	"github.com/jedafe/japa/internal/db/gen"
@@ -43,8 +43,8 @@ import (
 	"github.com/jedafe/japa/internal/learning"
 	"github.com/jedafe/japa/internal/menus"
 	"github.com/jedafe/japa/internal/rag"
-	"github.com/jedafe/japa/internal/studio"
 	"github.com/jedafe/japa/internal/story"
+	"github.com/jedafe/japa/internal/studio"
 	"github.com/jedafe/japa/internal/taxcalculator"
 	"github.com/jedafe/japa/internal/users"
 	"github.com/jedafe/japa/internal/visaroutes"
@@ -900,18 +900,18 @@ type studioDraftProcessorAdapter struct {
 	// Tool table services for Approach B routing (ADR-076 Amendment 1).
 	// When a Studio job has a tool-table content type, GenerateJob routes
 	// to the corresponding service instead of creating a contents row.
-	arrivalSvc       arrivalDraftGenerator
-	communityOrgSvc  communityOrgDraftGenerator
-	attestationSvc   attestationDraftGenerator
-	languageTestSvc  languageTestDraftGenerator
-	taxSvc           taxDraftGenerator
-	credentialSvc    credentialDraftGenerator
-	housingSvc       housingDraftGenerator
-	visaRouteSvc     visaRouteDraftGenerator
-	wikiSvc          wikiDraftGenerator
-	calendarSvc      calendarDraftGenerator
-	docsSvc          docsDraftGenerator
-	storySvc         storyDraftGenerator
+	arrivalSvc      arrivalDraftGenerator
+	communityOrgSvc communityOrgDraftGenerator
+	attestationSvc  attestationDraftGenerator
+	languageTestSvc languageTestDraftGenerator
+	taxSvc          taxDraftGenerator
+	credentialSvc   credentialDraftGenerator
+	housingSvc      housingDraftGenerator
+	visaRouteSvc    visaRouteDraftGenerator
+	wikiSvc         wikiDraftGenerator
+	calendarSvc     calendarDraftGenerator
+	docsSvc         docsDraftGenerator
+	storySvc        storyDraftGenerator
 }
 
 // arrivalDraftGenerator is the subset of *arrivalchecklist.Service needed
@@ -982,18 +982,18 @@ type storyDraftGenerator interface {
 // toolTableTargetTable maps tool-table content types to their backing
 // PostgreSQL table name for HITL review routing (migration 000477).
 var toolTableTargetTable = map[string]string{
-	"housing_guide":            "housing_guides",
-	"attestation_guide":        "attestation_pathways",
-	"visa_route":               "visa_routes",
-	"arrival_checklist":        "arrival_checklist_guides",
-	"credential_pathway":       "credential_pathways",
+	"housing_guide":             "housing_guides",
+	"attestation_guide":         "attestation_pathways",
+	"visa_route":                "visa_routes",
+	"arrival_checklist":         "arrival_checklist_guides",
+	"credential_pathway":        "credential_pathways",
 	"language_test_requirement": "language_test_requirements",
-	"tax_obligation_guide":     "tax_obligation_guides",
-	"community_organisation":   "community_organisations",
-	"wiki_page":                "wiki_pages",
-	"calendar_entry":           "calendar_entries",
-	"doc_page":                 "doc_pages",
-	"story":                    "story_meta",
+	"tax_obligation_guide":      "tax_obligation_guides",
+	"community_organisation":    "community_organisations",
+	"wiki_page":                 "wiki_pages",
+	"calendar_entry":            "calendar_entries",
+	"doc_page":                  "doc_pages",
+	"story":                     "story_meta",
 }
 
 // isToolTableType returns true if the content type should route to a
@@ -1426,7 +1426,8 @@ func (a *studioDraftProcessorAdapter) tryToolTableRouting(
 			return pgtype.UUID{}, "", false, nil
 		}
 		// Story creates both a contents row and a story_meta row. The
-		// persona's backing user_id is the author.
+		// HITL review targets the contents row; the persona's backing user_id
+		// is the author.
 		resp, err := a.storySvc.GenerateDraft(ctx, tenantID, persona.UserID, story.GenerateDraftRequest{
 			DestinationSpaceID: destSpaceStr,
 			VisaCategory:       visaCat,
@@ -1439,7 +1440,7 @@ func (a *studioDraftProcessorAdapter) tryToolTableRouting(
 		}
 		var id pgtype.UUID
 		_ = id.Scan(resp.ContentID)
-		return id, "story_meta", true, nil
+		return id, "contents", true, nil
 
 	default:
 		// Unknown tool-table type: fall back to contents creation.

@@ -63,6 +63,30 @@ func NewStore(database *db.DB) *Store {
 	return &Store{pool: database}
 }
 
+// GetSpaceName returns the name of a space scoped by tenant. It is used by
+// the service to build human-readable, destination-specific web research
+// queries. If the space is missing, not valid, or soft-deleted, it returns an
+// empty string with no error.
+func (s *Store) GetSpaceName(ctx context.Context, spaceID, tenantID pgtype.UUID) (string, error) {
+	if !spaceID.Valid {
+		return "", nil
+	}
+	const q = `
+SELECT name FROM spaces
+WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
+LIMIT 1
+`
+	var name string
+	err := s.pool.Reader.QueryRow(ctx, q, spaceID, tenantID).Scan(&name)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return "", nil
+		}
+		return "", fmt.Errorf("arrivalchecklist: get space name: %w", err)
+	}
+	return name, nil
+}
+
 // GuideRow holds a single arrival_checklist_guides row, joined to spaces
 // for the destination name and to users for the HITL reviewer name.
 type GuideRow struct {

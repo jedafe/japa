@@ -6,7 +6,7 @@
 	import { Modal } from '$lib/components/ui/modal';
 	import { Button } from '$lib/components/ui/button';
 	import { Card, CardContent } from '$lib/components/ui/card';
-	import { mediaAdminApi, api, apiFetch, apiRaw, stockAdminApi, type StockPhoto, type StockProviderAdmin } from '$lib/api';
+	import { mediaAdminApi, api, apiFetch, apiRaw, stockAdminApi, adminCatalogApi, type StockPhoto, type StockProviderAdmin, type CatalogOption } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { Eye, CheckCircle, XCircle, Shield, Trash2, Upload, Image as ImageIcon, FileText, Film, Music, Search, Download, Loader2, Check, RefreshCw, ZoomIn, ZoomOut, Maximize, Pencil, Save, X } from 'lucide-svelte';
@@ -39,6 +39,31 @@
 	// ── EntityPage controller + page error ─────────────────────────────────
 	let entityController = $state<EntityPageController | undefined>(undefined);
 	let pageError = $state('');
+
+	let mediaMimeTypeOptions = $state<CatalogOption[]>([
+		{ value: 'image/', label: t('app.media.type_images', 'Images') },
+		{ value: 'video/', label: t('app.media.type_videos', 'Videos') },
+		{ value: 'audio/', label: t('app.media.type_audio', 'Audio') },
+		{ value: 'application/', label: t('app.media.type_documents', 'Documents') }
+	]);
+
+	let mediaStatusOptions = $state<CatalogOption[]>([
+		{ value: 'approved', label: t('app.media.status_approved', 'Approved') },
+		{ value: 'pending', label: t('app.media.status_pending', 'Pending') },
+		{ value: 'quarantined', label: t('app.media.status_quarantined', 'Quarantined') },
+		{ value: 'rejected', label: t('app.media.status_rejected', 'Rejected') }
+	]);
+
+	$effect(() => {
+		void (async () => {
+			const [mimeRes, statusRes] = await Promise.all([
+				adminCatalogApi.get('media.mime_type'),
+				adminCatalogApi.get('media.status')
+			]);
+			if (mimeRes.ok && mimeRes.data?.length) mediaMimeTypeOptions = mimeRes.data;
+			if (statusRes.ok && statusRes.data?.length) mediaStatusOptions = statusRes.data;
+		})();
+	});
 
 	// ── State-action confirmation modals (approve / reject / quarantine) ───
 	// EntityPage's built-in confirm only covers the default delete; moderation state actions
@@ -309,22 +334,12 @@
 			{
 				key: 'mime_type',
 				label: t('app.media.filter_file_type', 'File Type'),
-				options: [
-					{ value: 'image/', label: t('app.media.type_images', 'Images') },
-					{ value: 'video/', label: t('app.media.type_videos', 'Videos') },
-					{ value: 'audio/', label: t('app.media.type_audio', 'Audio') },
-					{ value: 'application/', label: t('app.media.type_documents', 'Documents') }
-				]
+				options: mediaMimeTypeOptions
 			},
 			{
 				key: 'status',
 				label: t('app.media.filter_status', 'Status'),
-				options: [
-					{ value: 'approved', label: t('app.media.status_approved', 'Approved') },
-					{ value: 'pending', label: t('app.media.status_pending', 'Pending') },
-					{ value: 'quarantined', label: t('app.media.status_quarantined', 'Quarantined') },
-					{ value: 'rejected', label: t('app.media.status_rejected', 'Rejected') }
-				]
+				options: mediaStatusOptions
 			},
 			{
 				key: 'flagged',

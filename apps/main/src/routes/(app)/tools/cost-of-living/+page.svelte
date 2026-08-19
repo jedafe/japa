@@ -7,6 +7,7 @@
 	import { api } from '$lib/api/client';
 	import type { ColCity, ColComparisonMatrix } from '$lib/types';
 	import type { PageData } from './$types';
+import { safeJsonLdScript } from '$lib/utils/safeHtml';
 
 	let { data }: { data: PageData } = $props();
 
@@ -145,7 +146,7 @@
 	<meta property="og:type" content="website" />
 	<meta property="og:url" content={page.url.href} />
 	{#if jsonLd}
-		{@html `<script type="application/ld+json">${jsonLd}</script>`}
+		{@html safeJsonLdScript(jsonLd)}
 	{/if}
 </svelte:head>
 

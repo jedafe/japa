@@ -17,6 +17,7 @@
 	import type { PageData } from './$types';
 	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
 	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
+import { safeJsonLdScript } from '$lib/utils/safeHtml';
 
 	let { data }: { data: PageData } = $props();
 
@@ -127,11 +128,15 @@
 		const q = query.trim().toLowerCase();
 		if (!q) return [];
 		return paged
-			.filter((u) => u.name.toLowerCase().includes(q))
+			.filter(
+				(u) =>
+					u.name.toLowerCase().includes(q) ||
+					(u.initials?.toLowerCase().includes(q) ?? false)
+			)
 			.slice(0, 8)
 			.map((u) => ({
 				id: u.id,
-				title: u.name,
+				title: u.initials ? `${u.initials} — ${u.name}` : u.name,
 				url: `/universities/${u.slug}`,
 				excerpt: u.geo_code ?? undefined,
 				type: t('universities.suggestion_type', 'University')
@@ -187,7 +192,7 @@
 	<meta property="og:description" content={description} />
 	<meta property="og:type" content="website" />
 	<meta property="og:url" content={page.url.href} />
-	{@html `<script type="application/ld+json">${jsonLd}</script>`}
+	{@html safeJsonLdScript(jsonLd)}
 </svelte:head>
 
 <div class="mx-auto w-full max-w-full">
@@ -319,8 +324,14 @@
 								<GraduationCap size={22} />
 							</span>
 							<span class="min-w-0 flex-1">
-								<span class="block truncate text-sm font-medium text-[var(--color-text)]"
-									>{uni.name}</span>
+								<span class="flex items-center gap-2">
+									{#if uni.initials}
+										<span class="shrink-0 rounded bg-[var(--color-primary)]/10 px-1.5 py-0.5 text-xs font-semibold text-[var(--color-primary)]"
+											>{uni.initials}</span>
+									{/if}
+									<span class="block truncate text-sm font-medium text-[var(--color-text)]"
+										>{uni.name}</span>
+								</span>
 								<span
 									class="mt-1 flex flex-wrap items-center gap-3 text-xs text-[var(--color-muted)]"
 								>
@@ -340,6 +351,7 @@
 						<thead class="bg-[var(--color-surface-subtle)] text-xs uppercase text-[var(--color-muted)]">
 							<tr>
 								<th class="px-4 py-2 font-medium">{t('universities.col_name', 'Name')}</th>
+								<th class="px-4 py-2 text-center font-medium">{t('universities.col_initials', 'Initials')}</th>
 								<th class="px-4 py-2 text-right font-medium">{t('universities.col_members', 'Members')}</th>
 								<th class="px-4 py-2 text-right font-medium">{t('universities.col_posts', 'Posts')}</th>
 								<th class="px-4 py-2 text-right font-medium">{t('universities.col_followers', 'Followers')}</th>
@@ -356,6 +368,12 @@
 											<GraduationCap size={16} class="shrink-0 text-[var(--color-text-subtle)]" />
 											<span class="truncate">{uni.name}</span>
 										</a>
+									</td>
+									<td class="px-4 py-2.5 text-center">
+										{#if uni.initials}
+											<span class="rounded bg-[var(--color-primary)]/10 px-1.5 py-0.5 text-xs font-semibold text-[var(--color-primary)]"
+												>{uni.initials}</span>
+										{/if}
 									</td>
 									<td class="px-4 py-2.5 text-right tabular-nums text-[var(--color-muted)]">{uni.member_count}</td>
 									<td class="px-4 py-2.5 text-right tabular-nums text-[var(--color-muted)]">{uni.post_count}</td>

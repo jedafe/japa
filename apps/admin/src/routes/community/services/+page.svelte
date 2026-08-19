@@ -3,7 +3,7 @@
 	// Ref: japaconnect-engineering/sections/98-service-directory.md (ADR-106)
 	import { onMount } from 'svelte';
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
-	import { serviceDirectoryAdminApi , spacesAdminApi } from '$lib/api';
+	import { serviceDirectoryAdminApi , spacesAdminApi, adminCatalogApi, type CatalogOption } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { Eye, CheckCircle, BadgeCheck, XCircle } from 'lucide-svelte';
@@ -36,6 +36,21 @@
 
 	// ── State ────────────────────────────────────────────────────────────────
 	let entityController = $state<EntityPageController | undefined>(undefined);
+
+	let serviceStatusOptions = $state<CatalogOption[]>([
+		{ value: 'draft', label: t('app.services.status_draft', 'Draft') },
+		{ value: 'published', label: t('app.services.status_published', 'Published') },
+		{ value: 'pending', label: t('app.services.status_pending', 'Pending') },
+		{ value: 'archived', label: t('app.services.status_archived', 'Archived') }
+	]);
+
+	$effect(() => {
+		void (async () => {
+			const res = await adminCatalogApi.get('community.services.status');
+			if (res.ok && res.data?.length) serviceStatusOptions = res.data;
+		})();
+	});
+
 	let pageError = $state('');
 	let acting = $state(false);
 
@@ -164,12 +179,7 @@ onMount(async () => {
 		{
 			key: 'status',
 			label: t('app.services.col_status', 'Status'),
-			options: [
-				{ value: 'draft', label: t('app.services.status_draft', 'Draft') },
-				{ value: 'published', label: t('app.services.status_published', 'Published') },
-				{ value: 'pending', label: t('app.services.status_pending', 'Pending') },
-				{ value: 'archived', label: t('app.services.status_archived', 'Archived') },
-			]
+			options: serviceStatusOptions
 		},
 		{
 			key: 'dest',

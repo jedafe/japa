@@ -52,15 +52,15 @@ type SettingValue struct {
 
 // Handlers holds dependencies for admin HTTP handlers.
 type Handlers struct {
-	DB          *db.DB
-	Queries     *gen.Queries
-	RBAC        *rbac.RBAC
-	Valkey      valkeycompat.Cmdable
-	Settings    *config.Settings
-	GDPR        GDPRService
-	Orgs        OrgVerifier
-	Tasks       TaskEnqueuer
-	StudioHook  StudioReviewHook
+	DB         *db.DB
+	Queries    *gen.Queries
+	RBAC       *rbac.RBAC
+	Valkey     valkeycompat.Cmdable
+	Settings   *config.Settings
+	GDPR       GDPRService
+	Orgs       OrgVerifier
+	Tasks      TaskEnqueuer
+	StudioHook StudioReviewHook
 }
 
 // StudioReviewHook is the subset of the studio service the moderation
@@ -69,8 +69,8 @@ type Handlers struct {
 // ModerateItem updates content_reviews but studio_jobs stays 'in_review'
 // forever — the same defect class as the persona_action BUG-001 fix.
 type StudioReviewHook interface {
-	OnStudioReviewApproved(ctx context.Context, tenantID, reviewID pgtype.UUID) error
-	OnStudioReviewRejected(ctx context.Context, tenantID, reviewID pgtype.UUID) error
+	OnStudioReviewApproved(ctx context.Context, tenantID, reviewID, reviewerID pgtype.UUID) error
+	OnStudioReviewRejected(ctx context.Context, tenantID, reviewID, reviewerID pgtype.UUID) error
 }
 
 // TaskEnqueuer is the subset of the worker enqueuer that admin needs to

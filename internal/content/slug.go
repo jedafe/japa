@@ -4,8 +4,10 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"log/slog"
+	"math"
 	"regexp"
 	"strings"
 
@@ -26,6 +28,20 @@ var multipleHyphens = regexp.MustCompile(`-{2,}`)
 //
 //	.trim().replaceAll(/\s+/g, ' ').toLowerCase()))
 var whitespaceRun = regexp.MustCompile(`\s+`)
+
+// markdownPatterns strip common Markdown / markup syntax so the content hash
+// is based on the actual text rather than formatting characters. Ref: §41.
+var (
+	markdownHeader     = regexp.MustCompile(`(?m)^#{1,6}\s*`)
+	markdownBold       = regexp.MustCompile(`\*\*(.+?)\*\*|` + "`" + `__(.+?)__`)
+	markdownItalic     = regexp.MustCompile(`\*(.+?)\*|_(.+?)_`)
+	markdownLinkOrImg  = regexp.MustCompile(`!?\[([^\]]*)\]\([^)]*\)`)
+	markdownInlineCode = regexp.MustCompile("`+([^`]+)`+")
+	markdownCodeFence  = regexp.MustCompile("```[\\s\\S]*?```")
+	markdownList       = regexp.MustCompile(`(?m)^\s*(?:[-*+]|\d+\.)\s+`)
+	markdownBlockquote = regexp.MustCompile(`(?m)^\s*>\s*`)
+	htmlTag            = regexp.MustCompile(`<[^>]+>`)
+)
 
 // leadingTrailingHyphens matches hyphens at the start or end of a string.
 var leadingTrailingHyphens = regexp.MustCompile(`^-+|-+$`)
@@ -118,9 +134,9 @@ func (s *Service) ResolveSlugRedirect(ctx context.Context, entityType, oldSlug s
 }
 
 // ComputeReadTime estimates reading time in minutes from a body of text.
-// The standard rate is 200 words per minute, rounded up.
+// The standard rate is 200 words per minute, rounded up, clamped to int32.
 func ComputeReadTime(body string) int32 {
-	wordCount := len(strings.Fields(body))
+	wordCount := int64(len(strings.Fields(body)))
 	if wordCount == 0 {
 		return 0
 	}
@@ -130,7 +146,11 @@ func ComputeReadTime(body string) int32 {
 		minutes++
 	}
 
-	return int32(minutes) //nolint:gosec // G115: minutes bounded by time calculation
+	if minutes > math.MaxInt32 {
+		minutes = math.MaxInt32
+	}
+
+	return int32(minutes)
 }
 
 // ComputeContentHash returns a SHA-256 hex digest of the normalised body.
@@ -139,14 +159,97 @@ func ComputeReadTime(body string) int32 {
 //
 //	.trim().replaceAll(/\s+/g, ' ').toLowerCase()))
 //
-// The body passed in is already markdown-stripped via SanitizeText before
-// this function is called, so we only need to trim, collapse whitespace,
-// and lowercase.
+// The input may be plain text, Markdown, HTML, or a TipTap/ProseMirror JSON
+// document. All markup and formatting characters are stripped so the hash
+// reflects the underlying textual content.
 func ComputeContentHash(body string) string {
-	normalised := strings.TrimSpace(body)
+	normalised := stripMarkdown(body)
+	normalised = strings.TrimSpace(normalised)
 	normalised = whitespaceRun.ReplaceAllString(normalised, " ")
 	normalised = strings.ToLower(normalised)
 	h := sha256.Sum256([]byte(normalised))
 
 	return hex.EncodeToString(h[:])
+}
+
+// stripMarkdown removes Markdown, HTML, and TipTap JSON structure from a body
+// so only the underlying text remains. Ref: §41 (duplicate content detection).
+func stripMarkdown(body string) string {
+	body = strings.TrimSpace(body)
+	if body == "" {
+		return ""
+	}
+
+	// If the body is a TipTap / ProseMirror JSON document, extract text nodes.
+	first := strings.TrimLeftFunc(body, func(r rune) bool { return r == ' ' || r == '\t' || r == '\n' || r == '\r' })
+	if (first != "" && (first[0] == '{' || first[0] == '[')) || strings.HasPrefix(first, "\"") {
+		if text, ok := extractTipTapText([]byte(body)); ok {
+			return text
+		}
+	}
+
+	// Strip fenced code blocks first so their inner backticks don't leak.
+	body = markdownCodeFence.ReplaceAllString(body, " ")
+
+	// Remove HTML tags before Markdown so Markdown inside tags is dropped.
+	body = htmlTag.ReplaceAllString(body, " ")
+
+	// Strip Markdown formatting while preserving the meaningful text.
+	body = markdownHeader.ReplaceAllString(body, "")
+	body = markdownBold.ReplaceAllString(body, "$1$2")
+	body = markdownItalic.ReplaceAllString(body, "$1$2")
+	body = markdownLinkOrImg.ReplaceAllString(body, "$1")
+	body = markdownInlineCode.ReplaceAllString(body, "$1")
+	body = markdownList.ReplaceAllString(body, "")
+	body = markdownBlockquote.ReplaceAllString(body, "")
+
+	return body
+}
+
+// extractTipTapText walks a TipTap/ProseMirror JSON document and concatenates
+// all "text" leaf values.
+func extractTipTapText(b []byte) (string, bool) {
+	var doc struct {
+		Content []tipTapNode `json:"content"`
+	}
+	if err := json.Unmarshal(b, &doc); err != nil {
+		// Could be a bare array of nodes.
+		var nodes []tipTapNode
+		if err2 := json.Unmarshal(b, &nodes); err2 != nil {
+			return "", false
+		}
+		doc.Content = nodes
+	}
+
+	var out strings.Builder
+	for _, node := range doc.Content {
+		extractNodeText(&out, &node)
+	}
+	return out.String(), true
+}
+
+type tipTapNode struct {
+	Type    string        `json:"type"`
+	Text    string        `json:"text"`
+	Content []tipTapNode  `json:"content"`
+	Attrs   tipTapAttrs   `json:"attrs"`
+}
+
+type tipTapAttrs struct {
+	Alt string `json:"alt"`
+}
+
+func extractNodeText(out *strings.Builder, node *tipTapNode) {
+	if node.Text != "" {
+		out.WriteString(node.Text)
+		out.WriteByte(' ')
+		return
+	}
+	if node.Attrs.Alt != "" {
+		out.WriteString(node.Attrs.Alt)
+		out.WriteByte(' ')
+	}
+	for i := range node.Content {
+		extractNodeText(out, &node.Content[i])
+	}
 }

@@ -18,6 +18,7 @@
 	import { tiptapExcerpt } from '$lib/tiptap/serialize';
 	import { blockUser, unblockUser, muteUser, unmuteUser } from '$lib/api/hub';
 	import type { PageData } from './$types';
+import { safeJsonLdScript } from '$lib/utils/safeHtml';
 
 	let { data }: { data: PageData } = $props();
 
@@ -193,7 +194,7 @@
 	<meta property="og:description" content={description} />
 	<meta property="og:type" content="profile" />
 	<meta property="og:url" content={page.url.href} />
-	{@html `<script type="application/ld+json">${jsonLd}</script>`}
+	{@html safeJsonLdScript(jsonLd)}
 </svelte:head>
 
 <SetSidebar>

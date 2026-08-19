@@ -15,6 +15,7 @@
 		id: string;
 		name: string;
 		slug: string;
+		initials?: string;
 		geo_code?: string;
 		member_count: number;
 		status: string;
@@ -75,6 +76,7 @@
 
 	let formName = $state("");
 	let formSlug = $state("");
+	let formInitials = $state("");
 	let formCountry = $state("");
 	let formLogoUrl = $state("");
 	let formVerified = $state(false);
@@ -142,6 +144,7 @@
 	const fields = $derived<FieldDef[]>([
 		{ key: "name", label: t("universities.name", "Name"), type: "text", required: true },
 		{ key: "slug", label: t("universities.domain_slug", "Domain"), type: "text", placeholder: "mit.edu" },
+		{ key: "initials", label: t("universities.initials", "Initials"), type: "text", placeholder: "UNILAG" },
 		{ key: "country", label: t("universities.country", "Country"), type: "autocomplete", placeholder: t("universities.country_placeholder", "Select country"), emptyMessage: t("common.no_results", "No results found"), fetcher: fetchCountryOptions, initialFetcher: fetchCountryOptionsInitial, getSelectedLabel: getCountrySelectedLabel },
 		{ key: "logo_url", label: t("universities.logo_url", "Logo URL"), type: "url", placeholder: "https://…" },
 		{ key: "verified", label: t("universities.verified", "Verified"), type: "checkbox" }
@@ -158,6 +161,7 @@
 		columns: [
 			{ key: "name", label: t("universities.name", "Name"), sortable: true },
 			{ key: "slug", label: t("universities.slug", "Slug"), sortable: true, render: (v: string) => `<span class="font-mono text-xs">${v}</span>` },
+			{ key: "initials", label: t("universities.initials", "Initials"), sortable: true, render: (v: string) => v ? `<span class="font-mono text-xs font-semibold">${v}</span>` : '' },
 			{
 				key: "status",
 				label: t("universities.status", "Status"),
@@ -209,6 +213,7 @@
 			const res = await universitiesAdminApi.create({
 				name: String(body.name ?? "").trim(),
 				slug: String(body.slug ?? "").trim(),
+				initials: String(body.initials ?? "").trim() || undefined as any,
 				country: String(body.country ?? "").trim() || undefined as any,
 				logo_url: String(body.logo_url ?? "").trim() || undefined as any,
 				verified: !!body.verified
@@ -225,7 +230,7 @@
 	// ── Sub-flow handlers ───────────────────────────────────────────────────
 	function openEdit(uni: University) {
 		editTarget = uni;
-		formName = uni.name; formSlug = uni.slug; formCountry = uni.geo_code ?? ""; formLogoUrl = ""; formVerified = uni.status === "active";
+		formName = uni.name; formSlug = uni.slug; formInitials = uni.initials ?? ""; formCountry = uni.geo_code ?? ""; formLogoUrl = ""; formVerified = uni.status === "active";
 		showEditSlideOver = true;
 	}
 
@@ -249,6 +254,7 @@
 			const result = await universitiesAdminApi.update(editTarget.id, {
 				name: formName.trim(),
 				slug: formSlug.trim(),
+				initials: formInitials.trim() || undefined,
 				country: formCountry.trim() || undefined,
 				logo_url: formLogoUrl.trim() || undefined,
 				verified: formVerified
@@ -341,6 +347,7 @@
 		<div class="space-y-3">
 			<div><label for="edit-uni-name" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t("universities.name", "Name")}</label><input id="edit-uni-name" type="text" class="w-full rounded-lg border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={formName} /></div>
 			<div><label for="edit-uni-domain" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t("universities.domain_slug", "Domain")}</label><input id="edit-uni-domain" type="text" class="w-full rounded-lg border px-3 py-2 text-sm font-mono" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={formSlug} /></div>
+			<div><label for="edit-uni-initials" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t("universities.initials", "Initials")}</label><input id="edit-uni-initials" type="text" placeholder="UNILAG" class="w-full rounded-lg border px-3 py-2 text-sm font-mono" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={formInitials} /></div>
 			<div>
 				<label for="edit-uni-country" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t("universities.country", "Country")}</label>
 				<select id="edit-uni-country" class="w-full rounded-lg border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={formCountry}>
@@ -395,7 +402,7 @@
 <!-- ── CSV bulk import modal ── -->
 <Modal bind:open={showBulkImportModal} title={t("universities.bulkImport", "CSV Bulk Import")} size="default">
 	<div class="space-y-3">
-		<p class="text-sm" style="color: var(--color-muted)">{t("universities.bulkImportHelp", "Upload a CSV file with columns: name, slug, country, logo_url. The country column is optional (ISO 3166-1 alpha-2, e.g. NG, GB, US). Each row will create a university. Duplicate slugs are skipped.")}</p>
+		<p class="text-sm" style="color: var(--color-muted)">{t("universities.bulkImportHelp", "Upload a CSV file with columns: name, slug, initials, country, logo_url. The initials and country columns are optional. Each row will create a university. Duplicate slugs are skipped.")}</p>
 		<div>
 			<label for="csv-file" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t("universities.csvFile", "CSV File")}</label>
 			<input id="csv-file" type="file" accept=".csv" onchange={handleFileSelect} class="w-full text-sm" />
@@ -418,6 +425,10 @@
 			<div>
 				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("universities.slug", "Slug")}</p>
 				<p class="mt-1 text-sm font-mono" style="color: var(--color-foreground)">{row.slug}</p>
+			</div>
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("universities.initials", "Initials")}</p>
+				<p class="mt-1 text-sm font-mono" style="color: var(--color-foreground)">{row.initials ?? '—'}</p>
 			</div>
 			<div>
 				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("universities.status", "Status")}</p>

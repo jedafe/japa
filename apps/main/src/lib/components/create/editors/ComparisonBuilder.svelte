@@ -57,12 +57,10 @@
 	}: Props = $props();
 
 	// Dimension types from the API (GET /comparisons/dimension-types, Rule 16).
-	// Falls back to the spec-defined defaults if the API call failed.
-	const DIMENSION_TYPES = $derived(
-		dimensionTypes.length > 0
-			? dimensionTypes.map((d) => d.value)
-			: ['text', 'rating', 'boolean', 'number', 'currency']
-	);
+	// If the API call failed and the parent passed an empty list, the selector
+	// is disabled so no hardcoded fallback data lives in production code.
+	const dimensionTypeOptions = $derived(dimensionTypes.map((d) => d.value));
+	const dimensionTypesError = $derived(dimensionTypes.length === 0);
 	type DimensionType = string;
 
 	// Seed from the draft's existing items/dimensions when provided (e.g.
@@ -412,16 +410,22 @@
 									<select
 										class="dim-type-select"
 										value={dim.dimension_type}
+										disabled={dimensionTypesError}
 										onchange={(e) => {
 											dimensions[dIdx].dimension_type = e.currentTarget.value as DimensionType;
 											commitDimensionType(dIdx);
 										}}
 									>
-										{#each DIMENSION_TYPES as dt (dt)}
+										{#each dimensionTypeOptions as dt (dt)}
 											<option value={dt}>{t(`create.comparison.type_${dt}`, dt)}</option>
 										{/each}
 									</select>
 									<ChevronDown size={11} class="dim-type-arrow" />
+									{#if dimensionTypesError}
+										<span class="dim-type-error" title={t('create.comparison.dimension_types_error', 'Dimension types unavailable')}>
+											<AlertCircle size={14} />
+										</span>
+									{/if}
 								</div>
 							</th>
 						{/each}

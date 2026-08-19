@@ -49,29 +49,54 @@
 	let bulkActing = $state(false);
 
 	// ── Queue tab ────────────────────────────────────────────────────────────
-	const queueFilters: FilterDef[] = [
+	let queueStatusOptions = $state<{ value: string; label: string }[]>([
+		{ value: 'flagged', label: t('app.moderation.queue.flagged', 'Flagged') },
+		{ value: 'published', label: t('app.moderation.queue.published', 'Published') },
+		{ value: 'removed', label: t('app.moderation.queue.removed', 'Removed') },
+		{ value: 'pending_review', label: t('app.moderation.queue.pending_review', 'Pending Review') }
+	]);
+	let queueContentTypeOptions = $state<{ value: string; label: string }[]>([
+		{ value: 'organization', label: t('app.moderation.queue.organization', 'Organization') },
+		{ value: 'service', label: t('app.moderation.queue.service', 'Service') },
+		{ value: 'mentor', label: t('app.moderation.queue.mentor', 'Mentor') },
+		{ value: 'university', label: t('app.moderation.queue.university', 'University') },
+		{ value: 'ad_campaign', label: t('app.moderation.queue.ad_campaign', 'Ad Campaign') }
+	]);
+
+	$effect(() => {
+		void (async () => {
+			const res = await moderationAdminApi.getOptions();
+			if (res.ok && res.data) {
+				if (res.data.statuses?.length) {
+					queueStatusOptions = res.data.statuses;
+					// ad_campaign moderation still exposes a pending_review status that
+					// the generic catalog does not yet include.
+					if (!queueStatusOptions.some((o) => o.value === 'pending_review')) {
+						queueStatusOptions = [
+							...queueStatusOptions,
+							{ value: 'pending_review', label: t('app.moderation.queue.pending_review', 'Pending Review') }
+						];
+					}
+				}
+				if (res.data.content_types?.length) {
+					queueContentTypeOptions = res.data.content_types;
+				}
+			}
+		})();
+	});
+
+	const queueFilters = $derived<FilterDef[]>([
 		{
 			key: 'status',
 			label: t('common.status', 'Status'),
-			options: [
-				{ value: 'flagged', label: t('app.moderation.queue.flagged', 'Flagged') },
-				{ value: 'published', label: t('app.moderation.queue.published', 'Published') },
-				{ value: 'removed', label: t('app.moderation.queue.removed', 'Removed') },
-				{ value: 'pending_review', label: t('app.moderation.queue.pending_review', 'Pending Review') }
-			]
+			options: queueStatusOptions
 		},
 		{
 			key: 'content_type',
 			label: t('moderation.content_type', 'Content Type'),
-			options: [
-				{ value: 'organization', label: t('app.moderation.queue.organization', 'Organization') },
-				{ value: 'service', label: t('app.moderation.queue.service', 'Service') },
-				{ value: 'mentor', label: t('app.moderation.queue.mentor', 'Mentor') },
-				{ value: 'university', label: t('app.moderation.queue.university', 'University') },
-				{ value: 'ad_campaign', label: t('app.moderation.queue.ad_campaign', 'Ad Campaign') }
-			]
+			options: queueContentTypeOptions
 		}
-	];
+	]);
 
 	// "Assign to Me" uses the current admin user's id as the assignee.
 	async function assignToMe(row: ModerationQueueItem, ctx?: { reload?: () => void }) {
@@ -183,7 +208,7 @@
 		}
 	];
 
-	const queueConfig: EntityPageConfig = {
+	const queueConfig = $derived<EntityPageConfig>({
 		title: t('moderationQueue.title', 'Moderation Queue'),
 		description: t('moderationQueue.description', 'Unified moderation queue for reports and alerts'),
 		readonly: true,
@@ -270,7 +295,7 @@
 			throw new Error(result.error ?? t('common.error', 'Failed to load moderation queue'));
 		},
 		viewSnippet: QueueItemView
-	};
+	});
 
 	// ── Alerts tab ───────────────────────────────────────────────────────────
 	async function acknowledgeAlert(row: ModerationAlert, ctx?: { reload?: () => void }) {

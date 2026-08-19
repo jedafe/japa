@@ -5,7 +5,7 @@
 	import { Modal } from '$lib/components/ui/modal';
 	import { Button } from '$lib/components/ui/button';
 	import Autocomplete, { type AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
-	import { mutualAidAdminApi , spacesAdminApi } from '$lib/api';
+	import { mutualAidAdminApi , spacesAdminApi, adminCatalogApi, type CatalogOption } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { Eye, RefreshCw } from 'lucide-svelte';
@@ -27,12 +27,19 @@
 
 	const canManage = $derived(hasPermission('mutual_aid.moderate'));
 
-	const statusOptions = [
+	let statusOptions = $state<CatalogOption[]>([
 		{ value: 'active', label: t('mutual_aid.status.active', 'Active') },
 		{ value: 'fulfilled', label: t('mutual_aid.status.fulfilled', 'Fulfilled') },
 		{ value: 'removed', label: t('mutual_aid.status.removed', 'Removed') },
 		{ value: 'expired', label: t('mutual_aid.status.expired', 'Expired') }
-	];
+	]);
+
+	$effect(() => {
+		void (async () => {
+			const res = await adminCatalogApi.get('community.mutual_aid.status');
+			if (res.ok && res.data?.length) statusOptions = res.data;
+		})();
+	});
 
 	// ── State ───────────────────────────────────────────────────────────────
 	let entityController = $state<EntityPageController | undefined>(undefined);
@@ -88,12 +95,12 @@
 		return acts;
 	});
 
-	const fields: FieldDef[] = [
+	const fields = $derived<FieldDef[]>([
 		{ key: 'title', label: t('app.mutual_aid.col_title', 'Title'), type: 'text' },
 		{ key: 'type', label: t('app.mutual_aid.col_type', 'Type'), type: 'text' },
 		{ key: 'status', label: t('app.mutual_aid.col_status', 'Status'), type: 'select', options: statusOptions },
 		{ key: 'description', label: t('app.mutual_aid.detail_description', 'Description'), type: 'textarea' }
-	];
+	]);
 
 	
 // Destination Spaces for the dest filter (geo-aware pattern). Loaded once
@@ -148,11 +155,7 @@ function clearDest() {
 		{
 			key: 'status',
 			label: t('app.mutual_aid.col_status', 'Status'),
-			options: [
-				{ value: 'active', label: t('app.mutual_aid.status_active', 'Active') },
-				{ value: 'closed', label: t('app.mutual_aid.status_closed', 'Closed') },
-				{ value: 'pending', label: t('app.mutual_aid.status_pending', 'Pending') },
-			]
+			options: statusOptions
 		}
 	]);
 

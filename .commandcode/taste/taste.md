@@ -20,6 +20,7 @@
 
 # communication
 - Present bug hunt results as a structured table with columns: #, Section (with code section reference), Bug description, Fix description. Include a summary header with counts (found/fixed/remaining), a verification results section, and a files-changed list. Confidence: 0.75
+- When asked to arbitrate implementation decisions (e.g., contradictions in a plan), the user delegates the call to the assistant ("which yields the best results") rather than picking an option — make the judgment call, document the ruling, and proceed. Confidence: 0.70
 
 # data
 - Use Wikidata SPARQL for university ranking data instead of paid APIs. Confidence: 0.50
@@ -53,10 +54,7 @@ See [svelte/taste.md](svelte/taste.md)
 - API client `dispatch()` should read the response as text first (`res.text()`), then parse with `JSON.parse()` — never call `res.json()` directly. This gracefully handles empty bodies, server panics, and malformed responses without throwing. Confidence: 0.80
 
 # workflow
-- Clean up temporary debugging/verification scripts (e.g., Playwright scan scripts like `scan-*.cjs`) after use — don't leave them in the project root. Confidence: 0.70
-- Use a multi-agent task system: implementation agents, review agents, and security review agents working in parallel on separate tasks. The user sends "continue" to move agents forward when they hit pauses or errors. Confidence: 0.85
-- Sub-agents should report status as DONE / DONE_WITH_CONCERNS / FAILED with structured output including commit hashes, test summaries, and detailed concerns. Confidence: 0.80
-
+See [workflow/taste.md](workflow/taste.md)
 # bug-fixing
 - When auditing and fixing bugs, fix ALL identified bugs — don't defer low-severity items without explicit user approval. The user expects comprehensive resolution, not prioritization. Confidence: 0.75
 - Always reset loading/locking state variables (toggling, retrying, deleting, etc.) in `finally` blocks so they clear even on exceptions. Use try/catch/finally pattern for any async operation that sets state. Exception: Svelte 5 `$state` variables should NOT be set in `finally` — use explicit `try`/`catch` branches instead (see svelte section). Confidence: 0.70
@@ -70,4 +68,7 @@ See [svelte/taste.md](svelte/taste.md)
 - DataTables showing tab content (e.g., Activity, Sessions, AI Context, Warnings) should include pagination with configurable page size options (10/25/50/100), not use `showPagination={false}`. Confidence: 0.80
 - Admin list pages (reviews, tickets, etc.) should include: (1) status filter tabs with active highlighting, (2) entity/type filter dropdown using Select component, (3) server-side Pagination component. Model new pages after the tickets page pattern. Confidence: 0.85
 - Frontend filter option values (status, content_type, etc.) must match the actual database column values, not assumed or fabricated ones — verify against the backend schema/query before defining filter dropdown options. Confidence: 0.85
+
+# mobile
+- The monorepo includes a Flutter mobile app: `apps/mobile` (Flutter app) plus shared Dart package `packages/japaconnect_core`. Flutter SDK 3.47 stable / Dart 3.13 is installed at `~/flutter-sdk/flutter` and is NOT on PATH by default — prefix shell commands with `export PATH="$HOME/flutter-sdk/flutter/bin:$PATH"`. Confidence: 0.80
 

@@ -836,7 +836,7 @@ func (s *Service) SearchContent(ctx context.Context, tenantID pgtype.UUID, query
 	rows, err := s.store.dbPool.Query(ctx, `
 		SELECT id, title, slug, content_type, status, created_at
 		FROM contents
-		WHERE tenant_id = $1 AND status = 'published' AND title ILIKE $2 ESCAPE '\'
+		WHERE tenant_id = $1 AND status = 'published' AND visibility = 'public' AND deleted_at IS NULL AND title ILIKE $2 ESCAPE '\'
 		ORDER BY created_at DESC
 		LIMIT $3 OFFSET $4
 	`, tenantID, pattern, limit, offset)

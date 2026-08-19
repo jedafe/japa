@@ -82,6 +82,7 @@ api
 jc-api
 reindex
 meilisearch
+migrate
 seed
 bin/japa-api
 /japa-api

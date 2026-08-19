@@ -15,6 +15,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net/http"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -123,19 +125,30 @@ type AIDispatcher interface {
 	Dispatch(ctx context.Context, category string, req ai.Request) (ai.Response, error)
 }
 
+// Researcher runs grounded web research for a destination/city and returns
+// a formatted research section plus a list of citation URLs. *Service
+// implements this interface, but it can be swapped in tests.
+type Researcher interface {
+	Research(ctx context.Context, tenantID, destSpaceID, citySpaceID pgtype.UUID, accommodationType string) (string, []string, error)
+}
+
 type Service struct {
 	store      *Store
 	settings   *config.Settings
 	enqueuer   Enqueuer     // nil = no task dispatch
 	dispatcher AIDispatcher // nil = no AI generation
+	httpClient *http.Client // nil = http.DefaultClient
+	researcher Researcher   // nil = use s.Research
 }
 
 // NewService creates a housing guide service.
 func NewService(store *Store, settings *config.Settings) *Service {
-	return &Service{
+	s := &Service{
 		store:    store,
 		settings: settings,
 	}
+	s.researcher = s
+	return s
 }
 
 // SetEnqueuer injects the Asynq task enqueuer for fire-and-forget dispatch
@@ -145,6 +158,10 @@ func (s *Service) SetEnqueuer(e Enqueuer) { s.enqueuer = e }
 // SetDispatcher injects the AI Gateway dispatcher for draft generation.
 func (s *Service) SetDispatcher(d AIDispatcher) { s.dispatcher = d }
 
+// SetHTTPClient sets the HTTP client used for external web research. When
+// nil, http.DefaultClient is used.
+func (s *Service) SetHTTPClient(c *http.Client) { s.httpClient = c }
+
 // Enabled reads the housing_guide.enabled system_setting toggle
 // (§96 feature flag).
 func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
@@ -152,6 +169,132 @@ func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
 		return false
 	}
 	return s.settings.GetBoolOr(ctx, tenantID, "housing_guide.enabled", false)
+}
+
+// Research runs grounded web research for the given destination, optional
+// city, and accommodation type. It returns a formatted "GROUNDED RESEARCH"
+// section and a list of unique source URLs to append to the generation
+// prompt. Errors are returned so the caller can log and fall back.
+func (s *Service) Research(ctx context.Context, tenantID, destSpaceID, citySpaceID pgtype.UUID, accommodationType string) (string, []string, error) {
+	client := s.httpClient
+	if client == nil {
+		client = http.DefaultClient
+	}
+
+	destName, err := s.store.GetSpaceName(ctx, destSpaceID, tenantID)
+	if err != nil {
+		return "", nil, err
+	}
+	dest := destName
+	if dest == "" {
+		dest = destSpaceID.String()
+	}
+
+	city := ""
+	if citySpaceID.Valid {
+		cityName, err := s.store.GetSpaceName(ctx, citySpaceID, tenantID)
+		if err != nil {
+			return "", nil, err
+		}
+		city = cityName
+	}
+
+	accom := accommodationType
+	if accom == "" {
+		accom = "housing"
+	} else {
+		accom = strings.ReplaceAll(accom, "_", " ")
+	}
+
+	rentLoc := dest
+	if city != "" {
+		rentLoc = city + " " + dest
+	}
+
+	queries := []string{
+		fmt.Sprintf("current rent ranges for %s in %s 2026", accom, rentLoc),
+		fmt.Sprintf("common housing scams in %s 2026", dest),
+	}
+
+	return s.runWebResearch(ctx, client, tenantID, queries)
+}
+
+// runWebResearch executes the provided queries through the configured
+// external search provider and formats the results for the generation
+// prompt. It returns the full grounded research section and a deduplicated
+// list of citation URLs.
+func (s *Service) runWebResearch(ctx context.Context, client *http.Client, tenantID pgtype.UUID, queries []string) (string, []string, error) {
+	var sections []string
+	seenCitations := make(map[string]bool)
+	var citations []string
+
+	for _, q := range queries {
+		provider, results, err := ai.SearchWeb(ctx, client, s.settings, tenantID, q, 5)
+		if err != nil {
+			return "", nil, err
+		}
+		if len(results) == 0 {
+			continue
+		}
+		section, sectionCitations := buildGroundedResearchSection(q, provider, results)
+		sections = append(sections, section)
+		for _, c := range sectionCitations {
+			if !seenCitations[c] {
+				seenCitations[c] = true
+				citations = append(citations, c)
+			}
+		}
+	}
+
+	if len(sections) == 0 {
+		return "", nil, nil
+	}
+
+	var sb strings.Builder
+	sb.WriteString("GROUNDED RESEARCH (use the search results below for factual, time-sensitive sub-fields such as rent ranges, scams, and landlord requirements; cite the source URLs when you include factual claims):\n\n")
+	for _, sec := range sections {
+		sb.WriteString(sec)
+		sb.WriteString("\n\n")
+	}
+	if len(citations) > 0 {
+		sb.WriteString("Sources:\n")
+		for _, c := range citations {
+			sb.WriteString("- " + c + "\n")
+		}
+	}
+	return sb.String(), citations, nil
+}
+
+// buildGroundedResearchSection formats a single query's results.
+func buildGroundedResearchSection(query, provider string, results []ai.WebSearchResult) (string, []string) {
+	if len(results) == 0 {
+		return "", nil
+	}
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("Query: %q (provider: %s)\n", query, provider))
+
+	seen := make(map[string]bool)
+	var citations []string
+	for i, r := range results {
+		sb.WriteString(fmt.Sprintf("\nResult %d:\n", i+1))
+		sb.WriteString(fmt.Sprintf("Title: %s\n", r.Title))
+		sb.WriteString(fmt.Sprintf("URL: %s\n", r.URL))
+		sb.WriteString(fmt.Sprintf("Content: %s\n", r.Content))
+		if len(r.Citations) > 0 {
+			sb.WriteString(fmt.Sprintf("Citations: %s\n", strings.Join(r.Citations, ", ")))
+		}
+		for _, c := range append([]string{r.URL}, r.Citations...) {
+			if c == "" {
+				continue
+			}
+			if !seen[c] {
+				seen[c] = true
+				citations = append(citations, c)
+			}
+		}
+	}
+	return sb.String(), citations
 }
 
 // List returns a paginated, filtered list of published housing guides.
@@ -422,11 +565,39 @@ func (s *Service) GenerateDraft(ctx context.Context, tenantID pgtype.UUID, input
 		}
 	}
 
+	// Look up the destination (and optional city) names so the prompt and
+	// research queries are human-readable. Missing names are non-fatal; we
+	// fall back to the supplied IDs.
+	destName, _ := s.store.GetSpaceName(ctx, destSpaceID, tenantID)
+	cityName := ""
+	if citySpaceID.Valid {
+		cityName, _ = s.store.GetSpaceName(ctx, citySpaceID, tenantID)
+	}
+	location := destName
+	if location == "" {
+		location = input.DestinationSpaceID
+	}
+	if cityName != "" {
+		location = cityName + ", " + location
+	}
+
 	// Build the prompt sent to the Content Agent.
 	prompt := fmt.Sprintf(
-		"Generate a housing guide for destination_space_id=%s, accommodation_type=%s. Include tips for finding housing, landlord requirements, common scams, and rent ranges.",
-		input.DestinationSpaceID, input.AccommodationType,
+		"Generate a housing guide for destination %s (destination_space_id=%s), accommodation_type=%s. Include tips for finding housing, landlord requirements, common scams, and rent ranges.\n\n"+
+			"Use the GROUNDED RESEARCH section below for current, factual sub-fields (rent ranges, scams, landlord requirements, official links). Cite the source URLs when you make factual claims. If no grounded research is available, use your training knowledge and clearly note that figures are estimates.",
+		location, input.DestinationSpaceID, input.AccommodationType,
 	)
+
+	// Augment the prompt with grounded web research. If research fails, log
+	// a warning and continue with the original prompt (graceful degradation).
+	if s.researcher != nil {
+		researchText, _, researchErr := s.researcher.Research(ctx, tenantID, destSpaceID, citySpaceID, input.AccommodationType)
+		if researchErr != nil {
+			slog.Warn("housingguide: web research failed, continuing with original prompt", "error", researchErr)
+		} else if researchText != "" {
+			prompt = prompt + "\n\n" + researchText
+		}
+	}
 
 	// ai_prompt_hash = SHA256(prompt) for audit traceability.
 	sum := sha256.Sum256([]byte(prompt))

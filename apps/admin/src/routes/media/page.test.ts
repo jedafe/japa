@@ -17,6 +17,9 @@ vi.mock('$lib/api', () => ({
 		search: vi.fn().mockResolvedValue({ ok: true, data: { photos: [], has_next_page: false } }),
 		import: vi.fn().mockResolvedValue({ ok: true }),
 	},
+	adminCatalogApi: {
+		get: vi.fn().mockResolvedValue({ ok: true, data: [] }),
+	},
 }));
 vi.mock('$app/state', () => ({
 	page: { params: {}, url: new URL('http://localhost/') },

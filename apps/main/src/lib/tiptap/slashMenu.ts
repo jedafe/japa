@@ -1,4 +1,5 @@
 import type { Editor } from '@tiptap/core';
+import { safeHref } from '$lib/utils/safeHtml';
 
 /**
  * Optional context passed to slash block `run` handlers.
@@ -91,7 +92,8 @@ export const SLASH_BLOCKS: SlashBlock[] = [
 				ctx.onInsertImage();
 				return;
 			}
-			const url = window.prompt('Image URL');
+			const raw = window.prompt('Image URL');
+			const url = raw ? safeHref(raw) : '';
 			if (url) e.chain().focus().setImage({ src: url }).run();
 		}
 	},
@@ -105,8 +107,12 @@ export const SLASH_BLOCKS: SlashBlock[] = [
 				ctx.onInsertYoutube();
 				return;
 			}
-			const url = window.prompt('YouTube URL');
-			if (url) e.chain().focus().setYoutubeVideo({ src: url }).run();
+			const raw = window.prompt('YouTube URL');
+			const url = raw ? safeHref(raw) : '';
+			// TipTap's setYoutubeVideo accepts youtu.be or youtube.com URLs.
+			if (url && /^(https?:\/\/)?(www\.)?(youtube\.com|youtu\.be)\//i.test(url)) {
+				e.chain().focus().setYoutubeVideo({ src: url }).run();
+			}
 		}
 	},
 	{
@@ -119,7 +125,8 @@ export const SLASH_BLOCKS: SlashBlock[] = [
 				ctx.onInsertLink();
 				return;
 			}
-			const url = window.prompt('URL');
+			const raw = window.prompt('URL');
+			const url = raw ? safeHref(raw) : '';
 			if (!url) return;
 			if (/^https?:\/\//i.test(url)) {
 				// eslint-disable-next-line @typescript-eslint/no-explicit-any

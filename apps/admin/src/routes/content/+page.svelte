@@ -30,43 +30,41 @@
 		is_featured?: boolean;
 	};
 
-	// Backend gates content mutations on content.moderate (remove/restore) and
-	// content.edit (feature/unfeature metadata). Content types are admin-configurable
-	// (Section 14) so the Type filter options are fetched from GET /content-types.
-	const canModerate = $derived(hasPermission("content.moderate"));
-	const canEditContent = $derived(hasPermission("content.edit"));
+	// Backend gates /admin/content list on admin.moderation, remove/restore on
+	// content.delete_any, and blog feature/unfeature on blog.feature.
+	const canModerate = $derived(hasPermission("content.delete_any"));
+	const canEditContent = $derived(hasPermission("blog.feature") || hasPermission("content.edit_any"));
 
 	// ── Filter options ──────────────────────────────────────────────────────
-	// Status values are a fixed enum from the contents table CHECK constraint
-	// (draft, in_review, scheduled, published, archived, removed) — schema-defined.
-	const statusOptions = [
-		{ value: "published", label: t("content.status.published", "Published") },
-		{ value: "draft", label: t("content.status.draft", "Draft") },
-		{ value: "in_review", label: t("content.status.in_review", "In Review") },
-		{ value: "scheduled", label: t("content.status.scheduled", "Scheduled") },
-		{ value: "archived", label: t("content.status.archived", "Archived") },
-		{ value: "removed", label: t("content.status.removed", "Removed") }
-	];
+	// BUG-007 (Rule 16): status options are loaded from GET /content/status-options
+	// instead of being hardcoded.
+	let statusOptions = $state<{ value: string; label: string }[]>([]);
 
 	// Content types are admin-configurable — fetch from GET /content-types (Rule 16).
 	let contentTypeOptions = $state<{ value: string; label: string }[]>([]);
-	let filterDefs = $state<FilterDef[]>([
-		{ key: "content_type", label: t("content.type", "Type"), options: [] },
+	const filterDefs = $derived<FilterDef[]>([
+		{ key: "content_type", label: t("content.type", "Type"), options: contentTypeOptions },
 		{ key: "status", label: t("common.status", "Status"), options: statusOptions }
 	]);
 
 	$effect(() => {
 		(async () => {
 			try {
-				const res = await contentAdminApi.listContentTypes();
-				if (res.ok) {
-					contentTypeOptions = (res.data as { value: string; label: string }[]).map((ct) => ({
+				const [typesRes, statusRes] = await Promise.all([
+					contentAdminApi.listContentTypes(),
+					contentAdminApi.getStatusOptions()
+				]);
+				if (typesRes.ok) {
+					contentTypeOptions = (typesRes.data as { value: string; label: string }[]).map((ct) => ({
 						value: ct.value,
-						label: ct.label
+						label: t(`content.type_${ct.value}`, ct.label)
 					}));
-					filterDefs = filterDefs.map((def) =>
-						def.key === "content_type" ? { ...def, options: contentTypeOptions } : def
-					);
+				}
+				if (statusRes.ok) {
+					statusOptions = (statusRes.data as { value: string; label: string }[]).map((s) => ({
+						value: s.value,
+						label: t(`content.status_${s.value}`, s.label)
+					}));
 				}
 			} catch {
 				// Keep empty fallback on failure.

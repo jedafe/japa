@@ -13,7 +13,7 @@
 	import { Button } from "$lib/components/ui/button";
 	import { Select } from "$lib/components/ui/select";
 	import { TableSkeleton } from "$lib/components/ui/skeleton";
-	import { sidebarsAdminApi, userManagementApi, permissionsApi, type UserGroup } from "$lib/api";
+	import { sidebarsAdminApi, userManagementApi, permissionsApi, type UserGroup, type SidebarOptions } from "$lib/api";
 	import { t } from "$lib/stores/i18n.svelte";
 	import { hasPermission } from "$lib/stores/permissions.svelte";
 	import Autocomplete, { type AutocompleteItem } from "$lib/components/ui/Autocomplete.svelte";
@@ -66,6 +66,7 @@
 	let userGroups = $state<UserGroup[]>([]);
 	let widgetTypes = $state<WidgetType[]>([]);
 	let permissionNodes = $state<string[]>([]);
+	let sidebarOptions = $state<SidebarOptions>({ apps: [], positions: [], visibilities: [], statuses: [] });
 
 	async function loadUserGroups() {
 		try {
@@ -100,10 +101,22 @@
 		}
 	}
 
+	async function loadSidebarOptions() {
+		try {
+			const result = await sidebarsAdminApi.getOptions();
+			if (result.ok && result.data) {
+				sidebarOptions = result.data;
+			}
+		} catch {
+			// Keep empty fallback on failure.
+		}
+	}
+
 	$effect(() => {
 		void loadUserGroups();
 		void loadWidgetTypes();
 		void loadPermissionNodes();
+		void loadSidebarOptions();
 	});
 
 	// ── EntityPage controller + bulk delete ─────────────────────────────────
@@ -176,32 +189,33 @@
 		};
 	}
 
+	// Rule 16: app/position/visibility/status options are loaded from
+	// GET /admin/sidebars/options and localized with t() fallbacks.
+	const appOptions = $derived(
+		sidebarOptions.apps.map((o) => ({ value: o.value, label: t(`sidebars.app_${o.value}`, o.label) }))
+	);
+	const positionOptions = $derived(
+		sidebarOptions.positions.map((o) => ({ value: o.value, label: t(`sidebars.position_${o.value}`, o.label) }))
+	);
+	const visibilityOptions = $derived(
+		sidebarOptions.visibilities.map((o) => ({ value: o.value, label: t(`sidebars.visibility_${o.value}`, o.label) }))
+	);
+	const statusOptions = $derived(
+		sidebarOptions.statuses.map((o) => ({ value: o.value, label: t(`common.status_${o.value}`, o.label) }))
+	);
+
 	// `fields` seeds the EntityPage edit form value; the actual inputs are
 	// rendered by the `formSnippet` below (the group multi-select needs custom UI).
-	const fields: FieldDef[] = [
+	const fields = $derived<FieldDef[]>([
 		{ key: "name", label: t("sidebars.name", "Name"), type: "text" },
 		{ key: "slug", label: t("sidebars.slug", "Slug"), type: "text" },
-		{ key: "app", label: t("sidebars.app", "App"), type: "select", options: [
-			{ value: "main", label: t("sidebars.app_main", "Main") },
-			{ value: "docs", label: t("sidebars.app_docs", "Docs") },
-			{ value: "learn", label: t("sidebars.app_learn", "Learn") },
-		] },
-		{ key: "position", label: t("sidebars.position", "Position"), type: "select", options: [
-			{ value: "left", label: t("sidebars.position_left", "Left") },
-			{ value: "right", label: t("sidebars.position_right", "Right") },
-		] },
+		{ key: "app", label: t("sidebars.app", "App"), type: "select", options: appOptions },
+		{ key: "position", label: t("sidebars.position", "Position"), type: "select", options: positionOptions },
 		{ key: "page_pattern", label: t("sidebars.page_pattern", "Page Pattern"), type: "text" },
-		{ key: "visibility", label: t("sidebars.visibility", "Visibility"), type: "select", options: [
-			{ value: "all", label: t("sidebars.visibility_all", "All") },
-			{ value: "authenticated", label: t("sidebars.visibility_authenticated", "Authenticated") },
-			{ value: "guest", label: t("sidebars.visibility_guest", "Guest") },
-		] },
-		{ key: "status", label: t("common.status", "Status"), type: "select", options: [
-			{ value: "active", label: t("common.status_active", "Active") },
-			{ value: "inactive", label: t("common.status_inactive", "Inactive") },
-		] },
+		{ key: "visibility", label: t("sidebars.visibility", "Visibility"), type: "select", options: visibilityOptions },
+		{ key: "status", label: t("common.status", "Status"), type: "select", options: statusOptions },
 		{ key: "required_group_ids", label: "Required Group IDs", type: "text" },
-	];
+	]);
 
 	// ── Widget editor sub-flow (page-local SlideOver) ───────────────────────
 	let showWidgetsSlideOver = $state(false);
@@ -433,7 +447,7 @@
 	);
 
 	// ── EntityPage config ───────────────────────────────────────────────────
-	const config: EntityPageConfig = {
+	const config = $derived<EntityPageConfig>({
 		title: t("sidebars.title", "Sidebar Manager"),
 		description: t("sidebars.description", "Manage sidebars across Main, Docs, and Learn apps with per-page and per-usergroup visibility"),
 		createLabel: t("sidebars.create", "Create Sidebar"),
@@ -473,27 +487,17 @@
 			{
 				key: "app",
 				label: t("sidebars.app", "App"),
-				options: [
-					{ value: "main", label: t("sidebars.app_main", "Main") },
-					{ value: "docs", label: t("sidebars.app_docs", "Docs") },
-					{ value: "learn", label: t("sidebars.app_learn", "Learn") },
-				],
+				options: appOptions,
 			},
 			{
 				key: "position",
 				label: t("sidebars.position", "Position"),
-				options: [
-					{ value: "left", label: t("sidebars.position_left", "Left") },
-					{ value: "right", label: t("sidebars.position_right", "Right") },
-				],
+				options: positionOptions,
 			},
 			{
 				key: "status",
 				label: t("common.status", "Status"),
-				options: [
-					{ value: "active", label: t("common.status_active", "Active") },
-					{ value: "inactive", label: t("common.status_inactive", "Inactive") },
-				],
+				options: statusOptions,
 			},
 		],
 		actions: [
@@ -559,7 +563,7 @@
 		},
 		viewSnippet: SidebarView,
 		formSnippet: SidebarForm,
-	};
+	});
 </script>
 
 <svelte:head>
@@ -690,11 +694,7 @@
 			<div>
 				<label for="widget-visibility" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("sidebars.visibility", "Visibility")}</label>
 				<Select
-					options={[
-						{ value: "all", label: t("sidebars.visibility_all", "All") },
-						{ value: "authenticated", label: t("sidebars.visibility_authenticated", "Authenticated") },
-						{ value: "guest", label: t("sidebars.visibility_guest", "Guest") },
-					]}
+					options={visibilityOptions}
 					value={widgetVisibility}
 					onchange={(val) => (widgetVisibility = val)}
 				/>
@@ -702,10 +702,7 @@
 			<div>
 				<label for="widget-status" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("common.status", "Status")}</label>
 				<Select
-					options={[
-						{ value: "active", label: t("common.status_active", "Active") },
-						{ value: "inactive", label: t("common.status_inactive", "Inactive") },
-					]}
+					options={statusOptions}
 					value={widgetStatus}
 					onchange={(val) => (widgetStatus = val)}
 				/>
@@ -891,11 +888,7 @@
 			<div>
 				<label for="sidebar-app" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("sidebars.app", "App")}</label>
 				<Select
-					options={[
-						{ value: "main", label: t("sidebars.app_main", "Main") },
-						{ value: "docs", label: t("sidebars.app_docs", "Docs") },
-						{ value: "learn", label: t("sidebars.app_learn", "Learn") },
-					]}
+					options={appOptions}
 					value={value.app}
 					onchange={(val) => (value.app = val)}
 				/>
@@ -903,10 +896,7 @@
 			<div>
 				<label for="sidebar-position" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("sidebars.position", "Position")}</label>
 				<Select
-					options={[
-						{ value: "left", label: t("sidebars.position_left", "Left") },
-						{ value: "right", label: t("sidebars.position_right", "Right") },
-					]}
+					options={positionOptions}
 					value={value.position}
 					onchange={(val) => (value.position = val)}
 				/>
@@ -921,11 +911,7 @@
 			<div>
 				<label for="sidebar-visibility" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("sidebars.visibility", "Visibility")}</label>
 				<Select
-					options={[
-						{ value: "all", label: t("sidebars.visibility_all", "All") },
-						{ value: "authenticated", label: t("sidebars.visibility_authenticated", "Authenticated") },
-						{ value: "guest", label: t("sidebars.visibility_guest", "Guest") },
-					]}
+					options={visibilityOptions}
 					value={value.visibility}
 					onchange={(val) => (value.visibility = val)}
 				/>
@@ -933,10 +919,7 @@
 			<div>
 				<label for="sidebar-status" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("common.status", "Status")}</label>
 				<Select
-					options={[
-						{ value: "active", label: t("common.status_active", "Active") },
-						{ value: "inactive", label: t("common.status_inactive", "Inactive") },
-					]}
+					options={statusOptions}
 					value={value.status}
 					onchange={(val) => (value.status = val)}
 				/>

@@ -554,6 +554,7 @@
 	"create.comparison.type_number": "Number",
 	"create.comparison.type_rating": "Rating",
 	"create.comparison.type_text": "Text",
+	"create.comparison.dimension_types_error": "Dimension types unavailable",
 	"create.editor.link_preview.dismiss": "Dismiss preview",
 	"create.editor.link_preview.error": "Could not load preview for",
 	"create.editor.link_preview.loading": "Loading preview…",

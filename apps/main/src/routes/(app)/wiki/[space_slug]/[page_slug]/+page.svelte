@@ -6,6 +6,7 @@
 	import { BookOpen, Lock, Pencil, History, ArrowLeft, Send } from 'lucide-svelte';
 	import type { WikiCategory, WikiPage } from '$lib/types';
 	import type { PageData } from './$types';
+	import { sanitizeContentHtml } from '$lib/utils/safeHtml';
 
 	let { data }: { data: PageData } = $props();
 
@@ -262,7 +263,7 @@
 				{:else}
 					<div class="prose-wiki max-w-none text-sm leading-relaxed text-[var(--color-text)]">
 						{#if isHtml}
-							{@html htmlContent}
+							{@html sanitizeContentHtml(htmlContent)}
 						{:else}
 							<pre class="whitespace-pre-wrap font-sans text-sm text-[var(--color-text)]">{textContent}</pre>
 						{/if}

@@ -9,6 +9,7 @@ package content
 import (
 	"bytes"
 	"io"
+	"net/url"
 	"strings"
 	"sync"
 
@@ -265,13 +266,28 @@ func isSafeURL(url string) bool {
 
 // isApprovedIframe checks whether an <iframe> node's src points to an
 // approved embed platform. The allowlist is runtime-configurable via
-// SetAllowedIframeHosts (BL-014).
+// SetAllowedIframeHosts (BL-014). The src host must exactly match an
+// allowed host or be a direct subdomain of it; substring matching is
+// not sufficient to prevent `notyoutube.com` bypasses (BUG-016).
 func isApprovedIframe(n *html.Node) bool {
 	for _, attr := range n.Attr {
 		if strings.ToLower(attr.Key) == "src" {
-			src := strings.ToLower(strings.TrimSpace(attr.Val))
-			for _, host := range currentIframeHosts() {
-				if strings.Contains(src, host) {
+			src := strings.TrimSpace(attr.Val)
+			u, err := url.Parse(src)
+			if err != nil {
+				return false
+			}
+			host := strings.ToLower(u.Host)
+			for _, allowed := range currentIframeHosts() {
+				allowed = strings.ToLower(strings.TrimSpace(allowed))
+				if allowed == "" {
+					continue
+				}
+				if host == allowed {
+					return true
+				}
+				// Allow direct subdomains, e.g. www.youtube.com for youtube.com.
+				if strings.HasSuffix(host, "."+allowed) {
 					return true
 				}
 			}

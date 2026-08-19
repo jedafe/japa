@@ -6,6 +6,7 @@ vi.mock('$lib/api', () => ({
 	moderationAdminApi: {
 		getQueue: vi.fn().mockResolvedValue({ ok: true, data: { items: [], total: 0, total_pages: 1 } }),
 		getAlerts: vi.fn().mockResolvedValue({ ok: true, data: [] }),
+		getOptions: vi.fn().mockResolvedValue({ ok: true, data: { statuses: [], priorities: [], reasons: [] } }),
 		assignItem: vi.fn().mockResolvedValue({ ok: true }),
 		bulkAction: vi.fn().mockResolvedValue({ ok: true }),
 		acknowledgeAlert: vi.fn().mockResolvedValue({ ok: true }),

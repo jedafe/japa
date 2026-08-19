@@ -8,7 +8,7 @@
 	// Ref: japaconnect-engineering/sections/50-user-dashboard-settings.md
 	import { t } from '$lib/i18n';
 	import { api } from '$lib/api/client';
-	import { loginUrl } from '$lib/appOrigins';
+	import { loginUrl, MAIN_ORIGIN } from '$lib/appOrigins';
 	import { goto } from '$app/navigation';
 	import { EmptyState } from '$lib/components/ui';
 	import { Bookmark as BookmarkIcon, ExternalLink, FolderPlus, Trash2, Loader2, Folder, Pencil, Check, X } from 'lucide-svelte';
@@ -77,11 +77,12 @@
 		switch (b.entity_type) {
 			case 'learning_track':
 				return `/tracks/${idOrSlug}`;
-			case 'content':
 			case 'blog_post':
-				return `/tracks/${idOrSlug}`;
+				return `${MAIN_ORIGIN}/blog/${idOrSlug}`;
+			case 'content':
+				return `${MAIN_ORIGIN}/content/${idOrSlug}`;
 			default:
-				return `/tracks/${b.entity_id}`;
+				return `${MAIN_ORIGIN}/content/${b.entity_id}`;
 		}
 	}
 
@@ -92,7 +93,7 @@
 
 	async function createFolder() {
 		if (!data.user) {
-			window.location.href = loginUrl('/bookmarks');
+			window.location.replace(loginUrl('/bookmarks'));
 			return;
 		}
 		if (!newFolderName.trim() || creatingFolder) return;
@@ -110,7 +111,7 @@
 
 	async function deleteFolder(id: string) {
 		if (!data.user) {
-			window.location.href = loginUrl('/bookmarks');
+			window.location.replace(loginUrl('/bookmarks'));
 			return;
 		}
 		if (deletingFolderId) return;
@@ -139,7 +140,7 @@
 
 	async function confirmRename(id: string) {
 		if (!data.user) {
-			window.location.href = loginUrl('/bookmarks');
+			window.location.replace(loginUrl('/bookmarks'));
 			return;
 		}
 		if (!editFolderName.trim() || renamingFolder) return;
@@ -159,7 +160,7 @@
 
 	async function removeBookmark(id: string) {
 		if (!data.user) {
-			window.location.href = loginUrl('/bookmarks');
+			window.location.replace(loginUrl('/bookmarks'));
 			return;
 		}
 		if (removingBookmarkId) return;

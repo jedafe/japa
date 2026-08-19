@@ -17,65 +17,76 @@ export interface TypeEntry {
 }
 
 /**
- * Composer-specific metadata for each content type. The `label` field is a
- * fallback only — the actual label displayed to the user comes from the
- * backend's GET /content-types response (ContentTypeMeta.label), so the
- * selector always reflects admin-configured names (Rule 16 — no hardcoded
- * data in the frontend).
+ * Composer-specific metadata overrides for known Section 14 content types.
+ * Labels, categories, and the canonical list come from GET /content-types
+ * (Rule 16). This map only provides non-label metadata; unknown types fall
+ * back to sensible defaults so the composer can create any content_type the
+ * backend advertises.
  */
-export const COMPOSER_TYPES: Record<string, Omit<TypeEntry, 'label'>> = {
+const COMPOSER_OVERRIDES: Record<string, Partial<Omit<TypeEntry, 'label'>>> = {
 	blog_post: {
-		value: 'blog_post',
 		formKind: 'standard',
 		supportsSeries: true,
-		customFieldEntityType: 'content',
 		featureFlag: 'feature.blog'
 	},
 	guide: {
-		value: 'guide',
 		formKind: 'standard',
 		supportsSeries: true,
-		customFieldEntityType: 'content',
 		featureFlag: null,
 		hasCategory: true
 	},
 	comparison: {
-		value: 'comparison',
 		formKind: 'comparison',
 		supportsSeries: false,
-		customFieldEntityType: 'content',
 		featureFlag: 'feature.comparison'
+	},
+	discussion: {
+		formKind: 'standard',
+		supportsSeries: false,
+		featureFlag: 'feature.forum'
+	},
+	page: {
+		formKind: 'standard',
+		supportsSeries: false,
+		featureFlag: 'feature.page'
 	}
 };
 
-/** The order the selector presents composer types. */
-const COMPOSER_ORDER = ['blog_post', 'guide', 'comparison'];
+const DEFAULT_COMPOSER_META: Omit<TypeEntry, 'label' | 'value'> = {
+	formKind: 'standard',
+	supportsSeries: false,
+	customFieldEntityType: 'content',
+	featureFlag: null,
+	hasCategory: false
+};
 
-export function resolveType(value: string, backendLabel?: string): TypeEntry {
-	const meta = COMPOSER_TYPES[value] ?? COMPOSER_TYPES.blog_post;
-	return { ...meta, label: backendLabel ?? meta.value };
+/**
+ * Build a TypeEntry for a single content type, using the backend-supplied
+ * label and categories and falling back to defaults for form behavior.
+ */
+export function resolveType(value: string, backendLabel?: string, categories?: GuideCategory[]): TypeEntry {
+	const override = COMPOSER_OVERRIDES[value] ?? {};
+	return {
+		value,
+		label: backendLabel ?? value,
+		...DEFAULT_COMPOSER_META,
+		...override,
+		categories
+	} as TypeEntry;
 }
 
 /**
- * Intersect the backend's content types with composer-supported types and the
- * tenant's feature flags. A gated type is shown only when its flag is truthy;
- * an ungated type (featureFlag === null) is always shown. The label comes
- * from the backend's ContentTypeMeta, not a hardcoded string (Rule 16).
- * Guide categories are passed through from the backend response.
+ * Build the composer type selector from the backend's GET /content-types
+ * response (Rule 16). The backend is the canonical catalog; the composer
+ * metadata map only supplies behavior overrides (formKind, series support,
+ * feature flags, category requirement). Unknown types use sensible defaults
+ * so a new content_type does not require a frontend code change.
  */
 export function availableTypes(
 	types: ContentTypeMeta[],
 	flags: Record<string, boolean>
 ): TypeEntry[] {
-	const offered = new Map(types.map((t) => [t.value, t]));
-	return COMPOSER_ORDER.filter((v) => offered.has(v))
-		.map((v) => {
-			const meta = offered.get(v)!;
-			return {
-				...COMPOSER_TYPES[v],
-				label: meta.label ?? v,
-				categories: meta.categories
-			};
-		})
-		.filter((entry) => entry.featureFlag === null || flags[entry.featureFlag] === true);
+	return types
+		.map((t) => resolveType(t.value, t.label ?? t.value, t.categories))
+		.filter((entry) => entry.featureFlag === null || flags[entry.featureFlag] !== false);
 }

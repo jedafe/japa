@@ -12,6 +12,7 @@
 		visibility: Visibility;
 		canonicalUrl: string;
 		publishAt: string | null;
+		visibilityOptions?: { value: Visibility; label: string }[];
 		series: BlogSeries[];
 		seriesId: string | null;
 		spaces: MeSpace[];
@@ -53,6 +54,7 @@
 		visibility,
 		canonicalUrl,
 		publishAt,
+		visibilityOptions,
 		series = $bindable(),
 		seriesId,
 		spaces = $bindable(),
@@ -129,6 +131,7 @@
 			{visibility}
 			{canonicalUrl}
 			{publishAt}
+			{visibilityOptions}
 			{onslug}
 			{onvisibility}
 			{oncanonical}

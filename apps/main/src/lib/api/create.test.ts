@@ -42,7 +42,7 @@ describe('searchHits', () => {
 			status: 200
 		});
 		const hits = await searchHits('users', 'jane');
-		expect(api.get).toHaveBeenCalledWith('/search?type=users&q=jane');
+		expect(api.get).toHaveBeenCalledWith('/search?type=user&q=jane');
 		expect(hits[0]).toMatchObject({ id: 'u1', label: 'Jane', handle: 'jane' });
 	});
 });

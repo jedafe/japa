@@ -7,7 +7,7 @@
 	import { TableSkeleton } from "$lib/components/ui/skeleton";
 	import type { ActionItem } from "$lib/components/ui/data-table";
 	import { DollarSign, RefreshCw, AlertTriangle, Eye } from "lucide-svelte";
-	import { universityAdminApi } from "$lib/api";
+	import { universityAdminApi, adminCatalogApi, type CatalogOption } from "$lib/api";
 	import { t } from "$lib/stores/i18n.svelte";
 	import { hasPermission } from "$lib/stores/permissions.svelte";
 
@@ -44,14 +44,23 @@
 
 	const canProcess = $derived(hasPermission("university.payout.process"));
 
-	const statusFilters = [
-		{ key: "status", label: t("university.status", "Status"), options: [
-			{ value: "pending", label: t("university.pending", "Pending") },
-			{ value: "processing", label: t("university.processing", "Processing") },
-			{ value: "paid", label: t("university.paid", "Paid") },
-			{ value: "failed", label: t("university.failed", "Failed") }
-		]}
-	];
+	let payoutStatusOptions = $state<CatalogOption[]>([
+		{ value: "pending", label: t("university.pending", "Pending") },
+		{ value: "processing", label: t("university.processing", "Processing") },
+		{ value: "paid", label: t("university.paid", "Paid") },
+		{ value: "failed", label: t("university.failed", "Failed") }
+	]);
+
+	$effect(() => {
+		void (async () => {
+			const res = await adminCatalogApi.get("university.payouts.status");
+			if (res.ok && res.data?.length) payoutStatusOptions = res.data;
+		})();
+	});
+
+	const statusFilters = $derived([
+		{ key: "status", label: t("university.status", "Status"), options: payoutStatusOptions }
+	]);
 
 	function formatKobo(kobo: number, currency: string): string {
 		const major = kobo / 100;

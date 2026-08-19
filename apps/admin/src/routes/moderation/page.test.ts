@@ -7,6 +7,7 @@ vi.mock('$lib/api', () => ({
 		getQueue: vi.fn().mockResolvedValue({ ok: true, data: { items: [], total: 0, total_pages: 1 } }),
 		updateItem: vi.fn().mockResolvedValue({ ok: true }),
 		bulkAction: vi.fn().mockResolvedValue({ ok: true }),
+		getOptions: vi.fn().mockResolvedValue({ ok: true, data: { statuses: [], content_types: [] } }),
 	},
 }));
 vi.mock('$app/state', () => ({

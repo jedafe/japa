@@ -882,3 +882,53 @@ func (s *Store) UpdateCommunityOrganisationIntel(ctx context.Context, tenantID p
 	}
 	return nil
 }
+
+// ---------------------------------------------------------------------------
+// CredentialPathways (intelligence columns — domain projection for the credential checker)
+// ---------------------------------------------------------------------------
+
+// CreateCredentialPathwayIntel creates a credential_pathways row from an intelligence extraction.
+func (s *Store) CreateCredentialPathwayIntel(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateCredentialPathwayIntelParams) (gen.CredentialPathway, error) {
+	arg.TenantID = tenantID
+	row, err := s.queries.CreateCredentialPathwayIntel(ctx, arg)
+	if err != nil {
+		return gen.CredentialPathway{}, fmt.Errorf("stores: create credential pathway intel: %w", err)
+	}
+	return row, nil
+}
+
+// GetCredentialPathwayByIntelRecord returns the credential_pathways row linked to an intel record.
+func (s *Store) GetCredentialPathwayByIntelRecord(ctx context.Context, tenantID, intelRecordID pgtype.UUID) (gen.CredentialPathway, error) {
+	row, err := s.queries.GetCredentialPathwayByIntelRecord(ctx, gen.GetCredentialPathwayByIntelRecordParams{TenantID: tenantID, IntelRecordID: intelRecordID})
+	if err != nil {
+		return gen.CredentialPathway{}, fmt.Errorf("stores: get credential pathway by intel record: %w", err)
+	}
+	return row, nil
+}
+
+// UpdateCredentialPathwayIntel updates a credential_pathways projection row from a re-crawl.
+func (s *Store) UpdateCredentialPathwayIntel(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateCredentialPathwayIntelParams) error {
+	arg.TenantID = tenantID
+	if err := s.queries.UpdateCredentialPathwayIntel(ctx, arg); err != nil {
+		return fmt.Errorf("stores: update credential pathway intel: %w", err)
+	}
+	return nil
+}
+
+// GetCredentialProfessionBySlug resolves a credential profession by slug.
+func (s *Store) GetCredentialProfessionBySlug(ctx context.Context, slug string) (gen.CredentialProfession, error) {
+	row, err := s.queries.GetCredentialProfessionBySlug(ctx, slug)
+	if err != nil {
+		return gen.CredentialProfession{}, fmt.Errorf("stores: get credential profession by slug: %w", err)
+	}
+	return row, nil
+}
+
+// GetCredentialProfessionByName resolves a credential profession by display name.
+func (s *Store) GetCredentialProfessionByName(ctx context.Context, name string) (gen.CredentialProfession, error) {
+	row, err := s.queries.GetCredentialProfessionByName(ctx, name)
+	if err != nil {
+		return gen.CredentialProfession{}, fmt.Errorf("stores: get credential profession by name: %w", err)
+	}
+	return row, nil
+}

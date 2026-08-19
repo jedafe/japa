@@ -1114,6 +1114,26 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 			return fmt.Errorf("deleting user ad events: %w", err)
 		}
 
+		// BUG-011: explicitly delete reactions, content_shares, bookmarks, and
+		// bookmark folders authored by the user. These tables have ON DELETE
+		// CASCADE on user_id, but explicit deletion makes the erasure path
+		// self-documenting and survives future schema changes.
+		if err := q.GdprDeleteReactionsByUser(ctx, userID); err != nil {
+			return fmt.Errorf("deleting user reactions: %w", err)
+		}
+		if err := q.GdprDeleteContentSharesByUser(ctx, userID); err != nil {
+			return fmt.Errorf("deleting user content shares: %w", err)
+		}
+		if err := q.GdprDeleteBookmarksByUser(ctx, userID); err != nil {
+			return fmt.Errorf("deleting user bookmarks: %w", err)
+		}
+		if err := q.GdprDeleteBookmarkFoldersByUser(ctx, userID); err != nil {
+			return fmt.Errorf("deleting user bookmark folders: %w", err)
+		}
+		if err := q.GdprDeleteForumBookmarksByUser(ctx, userID); err != nil {
+			return fmt.Errorf("deleting user forum bookmarks: %w", err)
+		}
+
 		// GDPR: nullify ad_campaigns.created_by for campaigns created by the
 		// user. The FK has no CASCADE/SET NULL, so without this step the final
 		// HardDeleteUser would block on the residual foreign key. The campaign

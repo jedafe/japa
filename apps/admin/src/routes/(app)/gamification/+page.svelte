@@ -12,7 +12,7 @@
 	import UserAutocomplete from '$lib/components/ui/UserAutocomplete.svelte';
 	import type { ActionItem, FilterDef } from '$lib/components/ui/data-table';
 	import { Trophy, Target, Pencil, Award, Trash2, Eye } from 'lucide-svelte';
-	import { api } from '$lib/api';
+	import { api, adminCatalogApi, type CatalogOption } from '$lib/api';
 
 	type Badge = {
 		id: string;
@@ -103,15 +103,22 @@
 	});
 
 	// Trigger type options matching the backend CHECK constraint (§64 schema).
-	const triggerTypeOptions = [
+	let triggerTypeOptions = $state<CatalogOption[]>([
 		{ value: 'lifetime_points', label: t('gamification.trigger_lifetime_points', 'Lifetime Points') },
 		{ value: 'activity_count', label: t('gamification.trigger_activity_count', 'Activity Count') },
 		{ value: 'manual', label: t('gamification.trigger_manual', 'Manual') }
-	];
+	]);
+
+	$effect(() => {
+		void (async () => {
+			const res = await adminCatalogApi.get('gamification.trigger_type');
+			if (res.ok && res.data?.length) triggerTypeOptions = res.data;
+		})();
+	});
 
 	// ── Badge EntityPage ───────────────────────────────────────────────────
 
-	const badgeFields: FieldDef[] = [
+	const badgeFields = $derived<FieldDef[]>([
 		{ key: 'name', label: t('gamification.name', 'Name'), type: 'text', required: true },
 		{ key: 'slug', label: t('gamification.slug', 'Slug'), type: 'text' },
 		{ key: 'description', label: t('gamification.description', 'Description'), type: 'textarea' },
@@ -120,7 +127,7 @@
 		{ key: 'trigger_activity_key', label: t('gamification.activity_key', 'Activity Key'), type: 'text' },
 		{ key: 'is_active', label: t('gamification.active', 'Active'), type: 'checkbox' },
 		{ key: 'display_order', label: t('gamification.display_order', 'Display Order'), type: 'number' }
-	];
+	]);
 
 	const badgeFilters = $derived<FilterDef[]>([
 		{

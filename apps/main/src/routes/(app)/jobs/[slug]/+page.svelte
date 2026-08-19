@@ -6,6 +6,7 @@
 	import { enhance } from '$app/forms';
 	import type { JobDetail } from '$lib/types';
 	import type { PageData } from './$types';
+	import { sanitizeContentHtml, safeJsonLdScript } from '$lib/utils/safeHtml';
 
 	let { data }: { data: PageData } = $props();
 
@@ -71,7 +72,7 @@
 	<meta property="og:type" content="article" />
 	<meta property="og:url" content={page.url.href} />
 	{#if jsonLd}
-		{@html `<script type="application/ld+json">${jsonLd}</script>`}
+		{@html safeJsonLdScript(jsonLd)}
 	{/if}
 </svelte:head>
 
@@ -111,7 +112,7 @@
 			{/if}
 			{#if job.body}
 				<div class="prose prose-sm max-w-none text-[var(--color-text)]">
-					{@html job.body}
+					{@html sanitizeContentHtml(job.body)}
 				</div>
 			{/if}
 

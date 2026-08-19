@@ -307,6 +307,8 @@ FROM content_scores cs
 JOIN contents c ON c.id = cs.content_id
 WHERE c.tenant_id = $2
   AND c.status = 'published'
+  AND c.visibility = 'public'
+  AND c.deleted_at IS NULL
   AND c.id != $3
   AND cs.relevance_embedding IS NOT NULL
 ORDER BY cs.relevance_embedding <=> $1

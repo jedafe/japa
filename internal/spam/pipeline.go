@@ -69,6 +69,21 @@ var DefaultWeights = map[string]float64{
 	"ai_classification": 0.10,
 }
 
+// --- AI classifier integration ---
+
+// AIClassificationResult holds the output of an AI spam classification call.
+type AIClassificationResult struct {
+	Score   float64  // 0.0 = clean, 1.0 = definitely spam
+	Reasons []string // human-readable reasons from the model
+}
+
+// SpamClassifier abstracts AI-powered content classification so the pipeline
+// can call any backend that implements it without a hard dependency on the
+// ai package at the interface level.
+type SpamClassifier interface {
+	ClassifySpam(ctx context.Context, content string) (AIClassificationResult, error)
+}
+
 // --- Pipeline ---
 
 // SpamPipeline chains multiple detection layers and returns a single score.

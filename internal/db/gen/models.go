@@ -1141,6 +1141,12 @@ type CredentialPathway struct {
 	UpdatedAt              pgtype.Timestamptz `json:"updated_at"`
 	IsJapabotIndexed       *bool              `json:"is_japabot_indexed"`
 	GuideID                pgtype.UUID        `json:"guide_id"`
+	IntelRecordID          pgtype.UUID        `json:"intel_record_id"`
+	ConfidenceOverall      float32            `json:"confidence_overall"`
+	VerificationStatus     string             `json:"verification_status"`
+	FreshnessScore         int32              `json:"freshness_score"`
+	OverrideSource         string             `json:"override_source"`
+	EditorialOverrides     []byte             `json:"editorial_overrides"`
 }
 
 type CredentialProfession struct {

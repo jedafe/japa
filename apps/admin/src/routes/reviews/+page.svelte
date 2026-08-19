@@ -5,7 +5,7 @@
 	import { Modal } from '$lib/components/ui/modal';
 	import { Button } from '$lib/components/ui/button';
 	import { Select } from '$lib/components/ui/select';
-	import { api } from '$lib/api';
+	import { api, moderationAdminApi } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { Eye, Shield, Trash2 } from 'lucide-svelte';
@@ -28,6 +28,33 @@
 	let entityController = $state<EntityPageController | undefined>(undefined);
 	let pageError = $state('');
 	let acting = $state(false);
+
+	// Load canonical review status and entity-type options from the moderation catalog (Rule 16).
+	let reviewStatusOptions = $state<{ value: string; label: string }[]>([
+		{ value: 'published', label: t('reviews.status_published', 'Published') },
+		{ value: 'flagged', label: t('reviews.status_flagged', 'Flagged') },
+		{ value: 'removed', label: t('reviews.status_removed', 'Removed') }
+	]);
+	let reviewEntityTypeOptions = $state<{ value: string; label: string }[]>([
+		{ value: 'organization', label: t('reviews.type_organization', 'Organization') },
+		{ value: 'university', label: t('reviews.type_university', 'University') },
+		{ value: 'service', label: t('reviews.type_service', 'Service') },
+		{ value: 'mentor', label: t('reviews.type_mentor', 'Mentor') }
+	]);
+
+	$effect(() => {
+		void (async () => {
+			const res = await moderationAdminApi.getOptions();
+			if (res.ok && res.data) {
+				if (res.data.statuses?.length) {
+					reviewStatusOptions = res.data.statuses;
+				}
+				if (res.data.content_types?.length) {
+					reviewEntityTypeOptions = res.data.content_types;
+				}
+			}
+		})();
+	});
 
 	// Moderate state-action modal (PATCH status: published/flagged/removed)
 	let showModerateModal = $state(false);
@@ -150,13 +177,9 @@
 	});
 
 	// `fields` is required by EntityPage even on readonly pages (used for edit-form seeding).
-	const fields: FieldDef[] = [
-		{ key: 'status', label: t('reviews.status', 'Status'), type: 'select', options: [
-			{ value: 'published', label: t('reviews.status_published', 'Published') },
-			{ value: 'flagged', label: t('reviews.status_flagged', 'Flagged') },
-			{ value: 'removed', label: t('reviews.status_removed', 'Removed') }
-		] }
-	];
+	const fields = $derived<FieldDef[]>([
+		{ key: 'status', label: t('reviews.status', 'Status'), type: 'select', options: reviewStatusOptions }
+	]);
 
 	// Config built as a $derived so rowActions/canModerate updates propagate (mirrors /users).
 	const config = $derived<EntityPageConfig>({
@@ -194,21 +217,12 @@
 			{
 				key: 'status',
 				label: t('reviews.status', 'Status'),
-				options: [
-					{ value: 'published', label: t('reviews.status_published', 'Published') },
-					{ value: 'flagged', label: t('reviews.status_flagged', 'Flagged') },
-					{ value: 'removed', label: t('reviews.status_removed', 'Removed') }
-				]
+				options: reviewStatusOptions
 			},
 			{
 				key: 'entity_type',
 				label: t('reviews.entity_type', 'Entity Type'),
-				options: [
-					{ value: 'organization', label: t('reviews.type_organization', 'Organization') },
-					{ value: 'university', label: t('reviews.type_university', 'University') },
-					{ value: 'service', label: t('reviews.type_service', 'Service') },
-					{ value: 'mentor', label: t('reviews.type_mentor', 'Mentor') }
-				]
+				options: reviewEntityTypeOptions
 			}
 		],
 		actions: rowActions,

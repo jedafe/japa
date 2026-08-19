@@ -1,7 +1,9 @@
 package config
 
 import (
+	"math"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -9,7 +11,6 @@ import (
 // TestLoad_ReadsEnvironmentVariables verifies that Load picks up every JC_
 // environment variable and maps it to the correct Config field.
 func TestLoad_ReadsEnvironmentVariables(t *testing.T) {
-	//nolint:paralleltest // t.Setenv is incompatible with t.Parallel
 	t.Setenv("JC_DATABASE_URL", "postgresql://test:test@localhost:5432/testdb?sslmode=disable")
 	t.Setenv("JC_REDIS_ADDR", "test-redis:6380")
 	t.Setenv("JC_REDIS_PASSWORD", "test-pass")
@@ -79,18 +80,23 @@ func TestLoad_ReadsEnvironmentVariables(t *testing.T) {
 	if cfg.RedisPassword != "test-pass" {
 		t.Errorf("RedisPassword = %q, want %q", cfg.RedisPassword, "test-pass")
 	}
+
 	if cfg.RedisDB != 2 {
 		t.Errorf("RedisDB = %d, want %d", cfg.RedisDB, 2)
 	}
+
 	if cfg.RedisPoolSize != 20 {
 		t.Errorf("RedisPoolSize = %d, want %d", cfg.RedisPoolSize, 20)
 	}
+
 	if cfg.RedisDialTimeoutMs != 5000 {
 		t.Errorf("RedisDialTimeoutMs = %d, want %d", cfg.RedisDialTimeoutMs, 5000)
 	}
+
 	if cfg.RedisReadTimeoutMs != 3000 {
 		t.Errorf("RedisReadTimeoutMs = %d, want %d", cfg.RedisReadTimeoutMs, 3000)
 	}
+
 	if !cfg.RedisTLSEnabled {
 		t.Errorf("RedisTLSEnabled = false, want true")
 	}
@@ -157,7 +163,6 @@ func TestLoad_JWTSecretDefaults(t *testing.T) {
 
 // TestIsProduction verifies the IsProduction and IsDevelopment helpers.
 func TestIsProduction(t *testing.T) {
-	//nolint:paralleltest // subtests use t.Setenv which is incompatible with t.Parallel
 	tests := []struct {
 		name     string
 		env      string
@@ -173,11 +178,12 @@ func TestIsProduction(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			//nolint:paralleltest // t.Setenv is incompatible with t.Parallel
 			if tt.env != "" {
 				t.Setenv("JC_ENV", tt.env)
 			} else {
-				os.Unsetenv("JC_ENV")
+				if err := os.Unsetenv("JC_ENV"); err != nil {
+					t.Fatalf("unset JC_ENV: %v", err)
+				}
 			}
 			// Production validation requires JC_COOKIE_DOMAIN, JC_DATABASE_URL,
 			// JC_JWT_SECRET, and JC_ENCRYPTION_KEY.
@@ -229,6 +235,21 @@ func TestMaskURL(t *testing.T) {
 	}
 }
 
+// TestGetEnvInt32Bounds verifies that out-of-range or negative env values for
+// 32-bit integer fields fall back to the default instead of wrapping.
+func TestGetEnvInt32Bounds(t *testing.T) {
+	t.Setenv("JC_DB_MAX_CONNS", strconv.FormatInt(int64(math.MaxInt32)+1, 10))
+	t.Setenv("JC_DB_MIN_CONNS", "-5")
+
+	if got := getEnvInt32("JC_DB_MAX_CONNS", 0); got != 0 {
+		t.Errorf("getEnvInt32 overflow should fall back to 0, got %d", got)
+	}
+
+	if got := getEnvInt32("JC_DB_MIN_CONNS", 0); got != 0 {
+		t.Errorf("getEnvInt32 negative should fall back to 0, got %d", got)
+	}
+}
+
 // clearAllJCEnv unsets every JC_ environment variable so tests can verify
 // default behavior without interference from the host environment.
 func clearAllJCEnv(t *testing.T) {
@@ -258,7 +279,9 @@ func clearAllJCEnv(t *testing.T) {
 		"JC_STOCK_ENCRYPTION_KEY",
 		"JC_TOTP_ENCRYPTION_KEY",
 	} {
-		os.Unsetenv(key)
+		if err := os.Unsetenv(key); err != nil {
+			t.Fatalf("clearAllJCEnv: unset %s: %v", key, err)
+		}
 	}
 }
 
@@ -270,14 +293,24 @@ func TestLoad_ProductionRequiresEncryptionKey(t *testing.T) {
 	t.Setenv("JC_DATABASE_URL", "postgresql://test:test@localhost:5432/testdb?sslmode=disable")
 	t.Setenv("JC_COOKIE_DOMAIN", ".example.com")
 	t.Setenv("JC_JWT_SECRET", strings.Repeat("x", 32))
-	os.Unsetenv("JC_ENCRYPTION_KEY")
-	os.Unsetenv("JC_STOCK_ENCRYPTION_KEY")
-	os.Unsetenv("JC_TOTP_ENCRYPTION_KEY")
+
+	if err := os.Unsetenv("JC_ENCRYPTION_KEY"); err != nil {
+		t.Fatalf("unset JC_ENCRYPTION_KEY: %v", err)
+	}
+
+	if err := os.Unsetenv("JC_STOCK_ENCRYPTION_KEY"); err != nil {
+		t.Fatalf("unset JC_STOCK_ENCRYPTION_KEY: %v", err)
+	}
+
+	if err := os.Unsetenv("JC_TOTP_ENCRYPTION_KEY"); err != nil {
+		t.Fatalf("unset JC_TOTP_ENCRYPTION_KEY: %v", err)
+	}
 
 	_, err := Load()
 	if err == nil {
 		t.Fatal("Load should fail in production without JC_ENCRYPTION_KEY")
 	}
+
 	if !strings.Contains(err.Error(), "JC_ENCRYPTION_KEY") {
 		t.Errorf("error should mention JC_ENCRYPTION_KEY, got: %v", err)
 	}
@@ -290,8 +323,15 @@ func TestLoad_ProductionAcceptsLegacyEncryptionKey(t *testing.T) {
 	t.Setenv("JC_DATABASE_URL", "postgresql://test:test@localhost:5432/testdb?sslmode=disable")
 	t.Setenv("JC_COOKIE_DOMAIN", ".example.com")
 	t.Setenv("JC_JWT_SECRET", strings.Repeat("x", 32))
-	os.Unsetenv("JC_ENCRYPTION_KEY")
-	os.Unsetenv("JC_STOCK_ENCRYPTION_KEY")
+
+	if err := os.Unsetenv("JC_ENCRYPTION_KEY"); err != nil {
+		t.Fatalf("unset JC_ENCRYPTION_KEY: %v", err)
+	}
+
+	if err := os.Unsetenv("JC_STOCK_ENCRYPTION_KEY"); err != nil {
+		t.Fatalf("unset JC_STOCK_ENCRYPTION_KEY: %v", err)
+	}
+
 	t.Setenv("JC_TOTP_ENCRYPTION_KEY", "legacy-totp-key")
 
 	if _, err := Load(); err != nil {

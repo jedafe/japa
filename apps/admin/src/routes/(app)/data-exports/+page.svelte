@@ -5,7 +5,7 @@
 	// status filter, summary cards, download link in view slide-over.
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import { t } from '$lib/stores/i18n.svelte';
-	import { api, apiRaw } from '$lib/api';
+	import { api, apiRaw, adminCatalogApi, type CatalogOption } from '$lib/api';
 	import { getAccessToken } from '$lib/api/token';
 	import { PUBLIC_JC_API_URL } from '$env/static/public';
 	import PageHeader from '$lib/components/layout/page-header.svelte';
@@ -37,7 +37,7 @@
 	let bulkDeleting = $state(false);
 	let saving = $state(false);
 
-	const exportTypes = [
+	let exportTypes = $state<CatalogOption[]>([
 		{ value: 'users', label: t('app.data_exports.type_users', 'Users') },
 		{ value: 'posts', label: t('app.data_exports.type_posts', 'Posts') },
 		{ value: 'comments', label: t('app.data_exports.type_comments', 'Comments') },
@@ -45,12 +45,32 @@
 		{ value: 'transactions', label: t('app.data_exports.type_transactions', 'Transactions') },
 		{ value: 'analytics', label: t('app.data_exports.type_analytics', 'Analytics') },
 		{ value: 'moderation', label: t('app.data_exports.type_moderation', 'Moderation Logs') }
-	];
+	]);
 
-	const formatOptions = [
+	let exportFormatOptions = $state<CatalogOption[]>([
 		{ value: 'csv', label: t('app.data_exports.format_csv', 'CSV') },
 		{ value: 'json', label: t('app.data_exports.format_json', 'JSON') }
-	];
+	]);
+
+	let exportStatusOptions = $state<CatalogOption[]>([
+		{ value: 'pending', label: t('app.data_exports.tab_all', 'Pending') },
+		{ value: 'processing', label: t('app.data_exports.tab_in_progress', 'Processing') },
+		{ value: 'completed', label: t('app.data_exports.tab_completed', 'Completed') },
+		{ value: 'failed', label: t('app.data_exports.tab_failed', 'Failed') }
+	]);
+
+	$effect(() => {
+		void (async () => {
+			const [typeRes, formatRes, statusRes] = await Promise.all([
+				adminCatalogApi.get('data_exports.type'),
+				adminCatalogApi.get('data_exports.format'),
+				adminCatalogApi.get('data_exports.status')
+			]);
+			if (typeRes.ok && typeRes.data?.length) exportTypes = typeRes.data;
+			if (formatRes.ok && formatRes.data?.length) exportFormatOptions = formatRes.data;
+			if (statusRes.ok && statusRes.data?.length) exportStatusOptions = statusRes.data;
+		})();
+	});
 
 	// ── Summary cards (page-local, above EntityPage) ──────────────────────
 	async function loadSummary() {
@@ -148,14 +168,14 @@
 	// formSnippet for the create form (the export create flow has select
 	// inputs and a checkbox that EntityForm supports, but we keep the
 	// custom snippet for layout control).
-	const fields: FieldDef[] = [
+	const fields = $derived<FieldDef[]>([
 		{ key: 'name', label: t('app.data_exports.export_name', 'Export Name'), type: 'text', required: true },
 		{ key: 'type', label: t('app.data_exports.data_type', 'Data Type'), type: 'select', options: exportTypes },
-		{ key: 'format', label: t('app.data_exports.format', 'Format'), type: 'select', options: formatOptions },
+		{ key: 'format', label: t('app.data_exports.format', 'Format'), type: 'select', options: exportFormatOptions },
 		{ key: 'includeMetadata', label: t('app.data_exports.include_metadata_timestamps_ids', 'Include metadata (timestamps, IDs)'), type: 'checkbox' }
-	];
+	]);
 
-	const config: EntityPageConfig = {
+	const config = $derived<EntityPageConfig>({
 		title: t('app.data_exports.title', 'Data Exports'),
 		description: t('app.data_exports.description', 'Export platform data in various formats'),
 		createLabel: t('app.data_exports.action_new', 'New Export'),
@@ -208,12 +228,7 @@
 			{
 				key: 'status',
 				label: t('app.data_exports.col_status', 'Status'),
-				options: [
-					{ value: 'pending', label: t('app.data_exports.tab_all', 'Pending') },
-					{ value: 'processing', label: t('app.data_exports.tab_in_progress', 'Processing') },
-					{ value: 'completed', label: t('app.data_exports.tab_completed', 'Completed') },
-					{ value: 'failed', label: t('app.data_exports.tab_failed', 'Failed') }
-				]
+				options: exportStatusOptions
 			},
 			{
 				key: 'type',
@@ -284,7 +299,7 @@
 		},
 		formSnippet: ExportForm,
 		viewSnippet: ExportView
-	};
+	});
 
 </script>
 
@@ -395,7 +410,7 @@
 			</div>
 			<div>
 				<label for="export-format" class="mb-1 block text-sm font-medium text-foreground-alt">{t('app.data_exports.format', 'Format')}</label>
-				<Select bind:value={value.format} options={formatOptions} />
+				<Select bind:value={value.format} options={exportFormatOptions} />
 			</div>
 		</div>
 		<div class="flex items-center gap-2">

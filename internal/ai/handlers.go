@@ -25,6 +25,7 @@ package ai
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -35,7 +36,6 @@ import (
 	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
-	"github.com/jedafe/japa/internal/config"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/honcho"
 	"github.com/jedafe/japa/internal/rag"
@@ -65,16 +65,28 @@ type ConsentChecker interface {
 	HasConsent(ctx context.Context, userID pgtype.UUID, consentType string) (bool, error)
 }
 
+// StudioReviewHook is called when an ai_hitl_reviews row with source='studio'
+// is approved or rejected, so studio_jobs and the linked tool-table row can be
+// transitioned (ADR-076 Amendment 1, Approach B).
+type StudioReviewHook interface {
+	OnStudioReviewApproved(ctx context.Context, tenantID, reviewID, reviewerID pgtype.UUID) error
+	OnStudioReviewRejected(ctx context.Context, tenantID, reviewID, reviewerID pgtype.UUID) error
+}
+
 // Handlers holds dependencies for AI HTTP handlers.
 type Handlers struct {
-	Dispatcher  *Dispatcher
-	Store       *Store
-	Honcho      *honcho.Client
-	AsynqClient TaskEnqueueClient
-	Settings    *config.Settings // hot-reloadable system_settings (ai.japabot_enabled, etc.)
-	Perms       PermissionChecker
-	consents    ConsentChecker // §19: ai_processing consent gate (nil = skip check)
-	ragService  RAGRetriever   // Section 69: RAG retrieval at chat time (nil = non-RAG fallback)
+	Dispatcher       *Dispatcher
+	Store            *Store
+	Honcho           *honcho.Client
+	AsynqClient      TaskEnqueueClient
+	Settings         SettingsReader // hot-reloadable system_settings (ai.japabot_enabled, etc.)
+	Perms            PermissionChecker
+	consents         ConsentChecker // §19: ai_processing consent gate (nil = skip check)
+	ragService       RAGRetriever   // Section 69: RAG retrieval at chat time (nil = non-RAG fallback)
+	HTTPClient       *http.Client   // nil → http.DefaultClient (external search / HITL verify)
+	cache            CacheClient    // nil → ai.cache_enabled must be true to have any effect
+	costs            *CostEstimator // estimates per-request USD cost from token usage
+	StudioReviewHook                // optional hook for studio HITL review lifecycle
 }
 
 // RAGRetriever is the interface for the RAG retrieval step (Section 69,
@@ -90,6 +102,12 @@ type RAGRetriever interface {
 // before the LLM call if rag.enabled is true.
 func (h *Handlers) SetRAGService(r RAGRetriever) {
 	h.ragService = r
+}
+
+// SetStudioReviewHook injects the studio hook so AI HITL review
+// approve/reject can transition studio_jobs and linked tool-table rows.
+func (h *Handlers) SetStudioReviewHook(sh StudioReviewHook) {
+	h.StudioReviewHook = sh
 }
 
 // SetConsentChecker injects the consent checker used to verify
@@ -137,8 +155,15 @@ func (h *Handlers) SetHonchoClient(c *honcho.Client) {
 
 // SetSettings injects the hot-reloadable system_settings reader (Rule 3).
 // Used by HandleChat to honor the `ai.japabot_enabled` global toggle.
-func (h *Handlers) SetSettings(s *config.Settings) {
+func (h *Handlers) SetSettings(s SettingsReader) {
 	h.Settings = s
+	h.costs = NewCostEstimator(s)
+}
+
+// SetCacheClient injects the Valkey cache client used for the
+// jc:ai:response:* semantic cache. nil disables caching.
+func (h *Handlers) SetCacheClient(c CacheClient) {
+	h.cache = c
 }
 
 // SetRBAC injects the permission checker used by the ADR-025 context builder
@@ -305,9 +330,31 @@ func parsePageOffset(r *http.Request) int32 {
 // writes a row to ai_usage_log (Section 20 — admin AI usage monitoring).
 // The usage write is fire-and-forget: a failure to log never fails the
 // request. The provider name, model, and token counts are extracted from
-// the Response. Cost is 0 at the gateway level (per-request cost tracking
-// lives in the agent executor path via estimateCost).
+// the Response. Cost is estimated from token usage using the per-provider
+// price settings (ai.* and agent.cost_per_1k_tokens).
 func (h *Handlers) dispatchAndRecordUsage(ctx context.Context, tenantID, userID pgtype.UUID, taskType, category string, req Request) (Response, error) {
+	cacheEnabled := false
+	cacheTTL := 0
+	if h.Settings != nil {
+		cacheEnabled = h.Settings.GetBoolOr(ctx, tenantID, "ai.cache_enabled", false)
+		cacheTTL = h.Settings.GetIntOr(ctx, tenantID, "ai.cache_ttl_seconds", 300)
+	}
+
+	cacheKey := ""
+	if cacheEnabled && h.cache != nil {
+		cacheKey = aiResponseCacheKey(tenantID, userID, category, req.Payload)
+		if cached, ok := lookupCachedResponse(ctx, h.cache, cacheKey); ok {
+			// Cache hit: log as a zero-cost, zero-token cached call so the
+			// admin dashboard can still see the volume and the savings.
+			if h.Store != nil {
+				if lerr := h.Store.RecordAIUsage(ctx, tenantID, userID, "cache", "", taskType, "", 0, 0, 0, 0); lerr != nil {
+					slog.Warn("ai: failed to record cache usage log", "task_type", taskType, "error", lerr)
+				}
+			}
+			return cached, nil
+		}
+	}
+
 	resp, err := h.Dispatcher.Dispatch(ctx, category, req)
 	if err != nil {
 		return resp, err
@@ -334,11 +381,24 @@ func (h *Handlers) dispatchAndRecordUsage(ctx context.Context, tenantID, userID 
 		}
 	}
 
+	// Estimate cost from token usage. Falls back to a conservative default
+	// if no per-provider price is configured.
+	var costUSD float64
+	if h.costs != nil {
+		costUSD = h.costs.Estimate(ctx, tenantID, resp.ProviderName, model, int(totalTokens))
+	}
+
 	// Fire-and-forget usage log. A failure here must not fail the request.
 	if h.Store != nil {
-		if lerr := h.Store.RecordAIUsage(ctx, tenantID, userID, resp.ProviderName, model, taskType, resp.ProviderRef, promptTokens, completionTokens, totalTokens, 0); lerr != nil {
+		if lerr := h.Store.RecordAIUsage(ctx, tenantID, userID, resp.ProviderName, model, taskType, resp.ProviderRef, promptTokens, completionTokens, totalTokens, costUSD); lerr != nil {
 			slog.Warn("ai: failed to record usage log", "task_type", taskType, "error", lerr)
 		}
+	}
+
+	// Write the response to the semantic cache so identical future prompts
+	// can skip the LLM call entirely.
+	if cacheEnabled && h.cache != nil && cacheKey != "" {
+		cacheResponse(ctx, h.cache, cacheKey, resp, cacheTTL)
 	}
 
 	return resp, nil
@@ -543,11 +603,9 @@ func (h *Handlers) HandleChat(w http.ResponseWriter, r *http.Request) {
 
 	// Honor the global JapaBot toggle (system_settings 'ai.japabot_enabled',
 	// default true). A disabled toggle short-circuits before any provider call.
-	if h.Settings != nil {
-		if enabled, err := h.Settings.GetSettingBool(r.Context(), tenantID, "ai.japabot_enabled"); err == nil && !enabled {
-			errpkg.WriteError(w, http.StatusServiceUnavailable, "japabot_disabled", "JapaBot is currently disabled")
-			return
-		}
+	if h.Settings != nil && !h.Settings.GetBoolOr(r.Context(), tenantID, "ai.japabot_enabled", true) {
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "japabot_disabled", "JapaBot is currently disabled")
+		return
 	}
 
 	// §19/ADR-014: verify ai_processing consent before sending user prompts
@@ -1224,10 +1282,23 @@ func (h *Handlers) HandleApproveHITL(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	review, err := h.Store.GetHITLReview(r.Context(), tenantID, reviewID)
+	if err != nil {
+		slog.Error("fetching HITL review before approve", "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "An unexpected error occurred")
+		return
+	}
+
 	if err := ApproveReview(r.Context(), h.Store, tenantID, reviewID, user.UserID); err != nil {
 		slog.Error("approving HITL review", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "An unexpected error occurred")
 		return
+	}
+
+	if review.Source == HITLSourceStudio && h.StudioReviewHook != nil {
+		if err := h.StudioReviewHook.OnStudioReviewApproved(r.Context(), tenantID, reviewID, user.UserID); err != nil {
+			slog.Error("studio review approve hook failed", "review_id", reviewID, "error", err)
+		}
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "approved"}})
@@ -1263,13 +1334,107 @@ func (h *Handlers) HandleRejectHITL(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	review, err := h.Store.GetHITLReview(r.Context(), tenantID, reviewID)
+	if err != nil {
+		slog.Error("fetching HITL review before reject", "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "An unexpected error occurred")
+		return
+	}
+
 	if err := RejectReview(r.Context(), h.Store, tenantID, reviewID, user.UserID, input.Reason); err != nil {
 		slog.Error("rejecting HITL review", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "An unexpected error occurred")
 		return
 	}
 
+	if review.Source == HITLSourceStudio && h.StudioReviewHook != nil {
+		if err := h.StudioReviewHook.OnStudioReviewRejected(r.Context(), tenantID, reviewID, user.UserID); err != nil {
+			slog.Error("studio review reject hook failed", "review_id", reviewID, "error", err)
+		}
+	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "rejected"}})
+}
+
+// ---------------------------------------------------------------------------
+// HITL Verification Handler
+// ---------------------------------------------------------------------------
+
+// HandleVerifyHITL grounds a claim using the tenant's configured external
+// search provider (Perplexity, Tavily, or Brave). It is intended for human
+// reviewers to verify a factual claim in a guide, comparison, or other
+// AI-generated content before approval.
+//
+// POST /api/v1/ai/hitl/verify
+// Body: { "claim": "...", "context": "..." }
+// Response: { "data": { "answer": "...", "citations": ["..."], "provider": "perplexity" } }
+func (h *Handlers) HandleVerifyHITL(w http.ResponseWriter, r *http.Request) {
+	_, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	var input struct {
+		Claim   string `json:"claim"`
+		Context string `json:"context,omitempty"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
+		return
+	}
+	if input.Claim == "" {
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_claim", "claim is required")
+		return
+	}
+	if h.Settings == nil {
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "settings_unavailable", "Settings reader is not configured")
+		return
+	}
+
+	client := h.httpClient()
+
+	// Build a verification query from the claim and optional context.
+	query := input.Claim
+	if input.Context != "" {
+		query = fmt.Sprintf("%s\nContext: %s", input.Claim, input.Context)
+	}
+
+	provider, results, err := SearchWeb(r.Context(), client, h.Settings, tenantID, query, 5)
+	if err != nil {
+		slog.Warn("ai: HITL verification search failed", "error", err)
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "verification_unavailable", err.Error())
+		return
+	}
+
+	var answer string
+	var citations []string
+	if len(results) > 0 {
+		answer = results[0].Content
+		citations = results[0].Citations
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
+		"data": map[string]any{
+			"claim":     input.Claim,
+			"answer":    answer,
+			"citations": citations,
+			"provider":  provider,
+		},
+	})
+}
+
+// httpClient returns the handler's HTTP client, defaulting to
+// http.DefaultClient. Used for external search calls from handlers.
+func (h *Handlers) httpClient() *http.Client {
+	if h.HTTPClient != nil {
+		return h.HTTPClient
+	}
+	return http.DefaultClient
 }
 
 // ---------------------------------------------------------------------------

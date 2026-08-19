@@ -17,6 +17,7 @@
 	import { breadcrumbJsonLd } from '$lib/seo/breadcrumbs';
 	import type { ForumThread } from '$lib/types';
 	import type { PageData } from './$types';
+import { safeJsonLdScript } from '$lib/utils/safeHtml';
 
 	let { data }: { data: PageData } = $props();
 
@@ -271,8 +272,8 @@
 	<meta property="og:description" content={description} />
 	<meta property="og:type" content="article" />
 	<meta property="og:url" content={page.url.href} />
-	{@html `<script type="application/ld+json">${jsonLd}</script>`}
-	{@html `<script type="application/ld+json">${breadcrumbLd}</script>`}
+	{@html safeJsonLdScript(jsonLd)}
+	{@html safeJsonLdScript(breadcrumbLd)}
 </svelte:head>
 
 <div class="mx-auto w-full max-w-full px-4 py-6">
