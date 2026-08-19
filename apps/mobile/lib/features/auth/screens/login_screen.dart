@@ -4,13 +4,33 @@ import 'package:go_router/go_router.dart';
 import 'package:japaconnect_core/japaconnect_core.dart';
 import 'package:japaconnect_mobile/features/auth/providers/auth_provider.dart';
 
-class LoginScreen extends ConsumerWidget {
+class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final username = TextEditingController();
-    final password = TextEditingController();
+  ConsumerState<LoginScreen> createState() => _LoginScreenState();
+}
+
+class _LoginScreenState extends ConsumerState<LoginScreen> {
+  late final TextEditingController _username;
+  late final TextEditingController _password;
+
+  @override
+  void initState() {
+    super.initState();
+    _username = TextEditingController();
+    _password = TextEditingController();
+  }
+
+  @override
+  void dispose() {
+    _username.dispose();
+    _password.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final state = ref.watch(authFormProvider);
     final notifier = ref.read(authFormProvider.notifier);
 
@@ -31,14 +51,14 @@ class LoginScreen extends ConsumerWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            JcTextField(label: 'Username', controller: username),
+            JcTextField(label: 'Username', controller: _username),
             const SizedBox(height: 16),
-            JcTextField(label: 'Password', controller: password, obscureText: true),
+            JcTextField(label: 'Password', controller: _password, obscureText: true),
             if (state.error != null) Text(state.error!, style: const TextStyle(color: Colors.red)),
             const SizedBox(height: 16),
             JcButton(
               label: state.isLoading ? 'Loading...' : 'Login',
-              onPressed: state.isLoading ? null : () => notifier.login(username.text, password.text),
+              onPressed: state.isLoading ? null : () => notifier.login(_username.text, _password.text),
             ),
             TextButton(
               onPressed: () => context.push('/register'),
