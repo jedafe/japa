@@ -1,3 +1,4 @@
+import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiList, ApiError } from '$lib/server/api';
 import type { CommunityOrgWithAi, GeoSpaceOption, OrgTypeOption } from '$lib/types';
@@ -9,9 +10,9 @@ import type { CommunityOrgWithAi, GeoSpaceOption, OrgTypeOption } from '$lib/typ
  * param is present, the community orgs for that destination are fetched
  * server-side so the page renders with content immediately.
  *
- * The feature flag (community_locator.enabled) is checked via the root
- * layout's siteSettings so the page can show a "tool unavailable" state
- * without making API calls to a disabled endpoint (BUG-014).
+ * The feature flag (community_locator.enabled) is read from the root
+ * layout's features map (data.features). Disabled tools are hidden from the
+ * /tools hub and direct navigation to this route returns a 404.
  *
  * API: GET /spaces?level=country — destination countries (geo selector).
  *      GET /community-locator/org-types — org-type allow-list (Rule 16).
@@ -27,13 +28,15 @@ export const load: PageServerLoad = async (event) => {
 	const ctx = apiContext(event);
 	const authed = !!event.locals.user;
 
-	// Check the feature flag via the root layout's siteSettings (BUG-014).
+	// Check the feature flag via the root layout's features map.
 	// The /spaces endpoint is not gated by community_locator, so checking
 	// its 404 would never set disabled=true. Read the flag directly instead.
-	const { siteSettings } = await event.parent();
-	const enabled = siteSettings?.['community_locator.enabled'] === true;
-	if (!enabled) {
-		return { destinations: [], orgTypes: [], orgs: [], initialDestId: null, disabled: true, authed };
+	const { features } = await event.parent();
+	if (!features?.['community_locator.enabled']) {
+		throw error(404, {
+			code: 'feature_disabled',
+			message: 'Diaspora Community Locator is not available'
+		});
 	}
 
 	// Destination list — the geo-aware selector source (Rule 16).
