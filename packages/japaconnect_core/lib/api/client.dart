@@ -170,6 +170,7 @@ class JcApiClient {
     if (response.statusCode >= 400) {
       throw JcApiError.fromJson(
         jsonDecode(response.body) as Map<String, dynamic>,
+        fallbackStatus: response.statusCode,
       );
     }
 
