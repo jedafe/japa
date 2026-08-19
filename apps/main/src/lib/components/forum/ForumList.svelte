@@ -5,6 +5,7 @@
 	import { api } from '$lib/api/client';
 	import { EmptyState, LoadingSkeleton } from '$lib/components/ui';
 	import { t } from '$lib/i18n';
+	import { compose } from '$lib/components/shell/compose.svelte';
 	import type { ForumThread, FeedItem } from '$lib/types';
 	import FeedCard from '$lib/components/feed/FeedCard.svelte';
 	import { cardStyleFor, type CardStyleConfig } from '$lib/feed/cardStyle';
@@ -110,7 +111,11 @@
 		icon={MessageSquarePlus}
 		title={t('forum.empty_title', 'No discussions yet')}
 		body={t('forum.empty_body', 'Be the first to start a discussion.')}
-		action={{ label: t('forum.start_discussion', 'Start a discussion'), href: page.data.user ? '/create?type=forum' : '/login?redirect=' + encodeURIComponent('/create?type=forum') }}
+		action={
+			page.data.user
+				? { label: t('forum.start_discussion', 'Start a discussion'), onclick: () => compose.openDiscussion() }
+				: { label: t('forum.start_discussion', 'Start a discussion'), href: '/login?redirect=' + encodeURIComponent('/forum') }
+		}
 	/>
 {:else}
 	{#if navigating.to}

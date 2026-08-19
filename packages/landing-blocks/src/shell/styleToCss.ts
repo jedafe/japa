@@ -17,11 +17,25 @@ const SHADOW_MAP: Record<string, string> = {
   xl: 'shadow-xl', '2xl': 'shadow-2xl', inner: 'shadow-inner',
 };
 
-const BLUR_MAP: Record<string, string> = { sm: '4px', md: '8px', lg: '12px', xl: '16px' };
+export const BLUR_MAP: Record<string, string> = { sm: '4px', md: '8px', lg: '12px', xl: '16px' };
+
+const TRANSITION_PROP_MAP: Record<string, string> = {
+  all: 'all',
+  colors: 'color, background-color, border-color, text-decoration-color, fill, stroke',
+  opacity: 'opacity',
+  transform: 'transform',
+  shadow: 'box-shadow',
+};
 
 const HEADING_SIZE_MAP: Record<string, string> = {
   xs: '0.75rem', sm: '0.875rem', md: '1rem', lg: '1.125rem', xl: '1.25rem',
   '2xl': '1.5rem', '3xl': '1.875rem', '4xl': '2.25rem', '5xl': '3rem',
+};
+
+const FONT_FAMILY_STACK: Record<string, string> = {
+  sans: 'var(--font-sans, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Helvetica Neue, Arial, sans-serif)',
+  serif: 'var(--font-serif, ui-serif, Georgia, Cambria, Times New Roman, Times, serif)',
+  mono: 'var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, Courier New, monospace)',
 };
 
 /** Convert a BlockStyle object into Tailwind classes + inline CSS custom properties. */
@@ -44,21 +58,41 @@ export function styleToCss(style: BlockStyle | undefined): ResolvedStyle {
     if (l.z_index !== undefined && l.z_index !== 'auto') inline['z-index'] = String(l.z_index);
     if (l.width === 'contained') classes.push('max-w-5xl mx-auto');
     if (l.width === 'full') classes.push('w-full');
+    if (l.width === 'fit') inline['width'] = 'fit-content';
+    if (typeof l.width === 'number') inline['width'] = `${l.width}px`;
+    if (typeof l.max_width === 'number') inline['max-width'] = `${l.max_width}px`;
+    if (l.min_height !== undefined && l.min_height !== 'auto') {
+      inline['min-height'] = typeof l.min_height === 'number' ? `${l.min_height}px` : l.min_height;
+    }
+    if (l.height === 'full') inline['height'] = '100%';
+    else if (typeof l.height === 'number') inline['height'] = `${l.height}px`;
     if (l.display === 'flex') classes.push('flex');
     if (l.display === 'grid') classes.push('grid');
     if (l.display === 'hidden') classes.push('hidden');
     if (l.flex_direction === 'column') classes.push('flex-col');
     if (l.flex_direction === 'row-reverse') classes.push('flex-row-reverse');
+    if (l.flex_wrap) inline['flex-wrap'] = l.flex_wrap;
     if (l.align_items) classes.push(`items-${l.align_items}`);
     if (l.justify_content) {
       const j = l.justify_content === 'between' ? 'between' : l.justify_content === 'around' ? 'around' : l.justify_content === 'evenly' ? 'evenly' : l.justify_content;
       classes.push(`justify-${j}`);
     }
-    if (l.gap && typeof l.gap === 'string') classes.push(`gap-${l.gap}`);
+    if (l.gap !== undefined) {
+      inline['gap'] = typeof l.gap === 'number' ? `${l.gap}px` : GAP_PX_MAP[l.gap] ?? '0px';
+    }
     if (typeof l.grid_template_columns === 'number') {
       classes.push('grid');
       inline['grid-template-columns'] = `repeat(${l.grid_template_columns}, 1fr)`;
+    } else if (typeof l.grid_template_columns === 'string' && l.grid_template_columns) {
+      classes.push('grid');
+      inline['grid-template-columns'] = l.grid_template_columns;
     }
+    if (typeof l.grid_template_rows === 'number') {
+      inline['grid-template-rows'] = `repeat(${l.grid_template_rows}, 1fr)`;
+    } else if (typeof l.grid_template_rows === 'string' && l.grid_template_rows) {
+      inline['grid-template-rows'] = l.grid_template_rows;
+    }
+    if (typeof l.order === 'number') inline['order'] = String(l.order);
   }
 
   // Typography
@@ -67,6 +101,7 @@ export function styleToCss(style: BlockStyle | undefined): ResolvedStyle {
     if (t.text_align) classes.push(`text-${t.text_align}`);
     if (t.heading_family === 'serif') classes.push('font-serif');
     if (t.heading_family === 'mono') classes.push('font-mono');
+    if (t.heading_family) inline['--block-heading-family'] = FONT_FAMILY_STACK[t.heading_family];
     if (t.heading_weight) inline['--block-heading-weight'] = String(t.heading_weight);
     if (t.heading_size) {
       inline['--block-heading-size'] = typeof t.heading_size === 'string'
@@ -75,28 +110,79 @@ export function styleToCss(style: BlockStyle | undefined): ResolvedStyle {
     }
     if (t.heading_color) inline['--block-heading-color'] = t.heading_color;
     if (t.body_color) inline['--block-body-color'] = t.body_color;
+    if (t.body_family) inline['--block-body-family'] = FONT_FAMILY_STACK[t.body_family];
+    if (t.body_weight) inline['--block-body-weight'] = String(t.body_weight);
+    if (t.body_size) {
+      inline['--block-body-size'] = typeof t.body_size === 'string'
+        ? HEADING_SIZE_MAP[t.body_size] ?? '1rem'
+        : `${t.body_size}rem`;
+    }
   }
 
-  // Color
-  if (style.color?.accent) inline['--block-accent'] = style.color.accent;
-  if (style.color?.text) inline['--block-text'] = style.color.text;
+  // Color — expose both legacy --block-* variables and theme-aware --color-* variables
+  const textColor = style.color?.text;
+  const bodyColor = style.typography?.body_color;
+  const headingColor = style.typography?.heading_color ?? style.color?.heading;
+  const accentColor = style.color?.accent;
+  if (textColor) {
+    inline['--block-text'] = textColor;
+    inline['--color-text'] = textColor;
+  }
+  if (bodyColor) inline['--block-body-color'] = bodyColor;
+  if (textColor || bodyColor) inline['--color-text-subtle'] = (bodyColor ?? textColor) as string;
+  if (headingColor) {
+    inline['--block-heading-color'] = headingColor;
+    inline['--color-heading'] = headingColor;
+  }
+  if (accentColor) {
+    inline['--block-accent'] = accentColor;
+    inline['--color-primary'] = accentColor;
+  }
 
   // Border
   const b = style.border;
   if (b) {
     if (b.radius && typeof b.radius === 'string') classes.push(RADIUS_MAP[b.radius] ?? 'rounded-md');
-    if (b.width && b.width > 0) {
-      classes.push(`border${b.width === 1 ? '' : '-' + b.width}`);
-      if (b.style && b.style !== 'none') classes.push(`border-${b.style}`);
-      if (b.color) inline['border-color'] = b.color;
+    if (b.width !== undefined && b.width > 0) {
+      const side = b.sides ?? 'all';
+      const width = `${b.width}px`;
+      const styleValue = b.style ?? 'solid';
+      const color = b.color ?? 'currentColor';
+      if (side === 'all') {
+        inline['border'] = `${width} ${styleValue} ${color}`;
+      } else {
+        const sides = side === 'x' ? ['left', 'right'] : side === 'y' ? ['top', 'bottom'] : [side];
+        for (const s of sides) {
+          inline[`border-${s}`] = `${width} ${styleValue} ${color}`;
+        }
+      }
     }
   }
 
-  // Spacing
+  // Spacing — use inline sizes because the named tokens (xs, sm, md, lg, …)
+  // are not guaranteed to exist as Tailwind utility classes.
   const s = style.spacing;
   if (s) {
-    if (s.padding && typeof s.padding === 'string') classes.push(`p-${s.padding}`);
-    if (s.margin && typeof s.margin === 'string') classes.push(`m-${s.margin}`);
+    if (s.padding) {
+      if (typeof s.padding === 'string') {
+        inline['padding'] = SPACING_PX_MAP[s.padding] ?? '0px';
+      } else {
+        if (s.padding.top) inline['padding-top'] = s.padding.top;
+        if (s.padding.right) inline['padding-right'] = s.padding.right;
+        if (s.padding.bottom) inline['padding-bottom'] = s.padding.bottom;
+        if (s.padding.left) inline['padding-left'] = s.padding.left;
+      }
+    }
+    if (s.margin) {
+      if (typeof s.margin === 'string') {
+        inline['margin'] = SPACING_PX_MAP[s.margin] ?? '0px';
+      } else {
+        if (s.margin.top) inline['margin-top'] = s.margin.top;
+        if (s.margin.right) inline['margin-right'] = s.margin.right;
+        if (s.margin.bottom) inline['margin-bottom'] = s.margin.bottom;
+        if (s.margin.left) inline['margin-left'] = s.margin.left;
+      }
+    }
   }
 
   // Effects
@@ -119,6 +205,16 @@ export function styleToCss(style: BlockStyle | undefined): ResolvedStyle {
     if (tr.translate_x !== undefined) parts.push(`translateX(${tr.translate_x}px)`);
     if (tr.translate_y !== undefined) parts.push(`translateY(${tr.translate_y}px)`);
     if (parts.length) inline['transform'] = parts.join(' ');
+  }
+
+  // Transition
+  const tx = style.transition;
+  if (tx && tx.property && tx.property !== 'none') {
+    const prop = TRANSITION_PROP_MAP[tx.property] ?? tx.property;
+    const duration = tx.duration ?? 300;
+    const easing = tx.easing ?? 'ease';
+    const delay = tx.delay ?? 0;
+    inline['transition'] = `${prop} ${duration}ms ${easing} ${delay}ms`;
   }
 
   return { classes: classes.filter(Boolean).join(' '), inline };
@@ -156,13 +252,18 @@ function styleToCssDeclarations(style: Partial<BlockStyle>): string[] {
       decls.push(`gap: ${gapVal}`);
     }
     if (typeof l.grid_template_columns === 'number') decls.push(`grid-template-columns: repeat(${l.grid_template_columns}, 1fr)`);
+    else if (typeof l.grid_template_columns === 'string' && l.grid_template_columns) decls.push(`grid-template-columns: ${l.grid_template_columns}`);
+    if (typeof l.grid_template_rows === 'number') decls.push(`grid-template-rows: repeat(${l.grid_template_rows}, 1fr)`);
+    else if (typeof l.grid_template_rows === 'string' && l.grid_template_rows) decls.push(`grid-template-rows: ${l.grid_template_rows}`);
     if (l.width === 'full') decls.push('width: 100%');
     if (l.width === 'contained') decls.push('max-width: 64rem', 'margin-left: auto', 'margin-right: auto');
+    if (l.width === 'fit') decls.push('width: fit-content');
     if (typeof l.width === 'number') decls.push(`width: ${l.width}px`);
     if (l.max_width !== undefined) decls.push(`max-width: ${l.max_width}px`);
     if (l.min_height !== undefined && l.min_height !== 'auto') decls.push(`min-height: ${typeof l.min_height === 'number' ? l.min_height + 'px' : l.min_height}`);
     if (l.height === 'full') decls.push('height: 100%');
-    if (typeof l.height === 'number') decls.push(`height: ${l.height}px`);
+    else if (typeof l.height === 'number') decls.push(`height: ${l.height}px`);
+    if (l.flex_wrap) decls.push(`flex-wrap: ${l.flex_wrap}`);
     if (l.position && l.position !== 'static') decls.push(`position: ${l.position}`);
     if (typeof l.top === 'number') decls.push(`top: ${l.top}px`);
     if (typeof l.right === 'number') decls.push(`right: ${l.right}px`);
@@ -189,9 +290,24 @@ function styleToCssDeclarations(style: Partial<BlockStyle>): string[] {
     if (t.body_family) decls.push(`font-family: ${t.body_family === 'serif' ? 'serif' : t.body_family === 'mono' ? 'monospace' : 'sans-serif'}`);
   }
 
-  if (style.color?.text) decls.push(`--block-text: ${style.color.text}`);
-  if (style.color?.heading) decls.push(`--block-heading-color: ${style.color.heading}`);
-  if (style.color?.accent) decls.push(`--block-accent: ${style.color.accent}`);
+  const textColor = style.color?.text;
+  const bodyColor = style.typography?.body_color;
+  const headingColor = style.typography?.heading_color ?? style.color?.heading;
+  const accentColor = style.color?.accent;
+  if (textColor) {
+    decls.push(`--block-text: ${textColor}`);
+    decls.push(`--color-text: ${textColor}`);
+  }
+  if (bodyColor) decls.push(`--block-body-color: ${bodyColor}`);
+  if (textColor || bodyColor) decls.push(`--color-text-subtle: ${(bodyColor ?? textColor) as string}`);
+  if (headingColor) {
+    decls.push(`--block-heading-color: ${headingColor}`);
+    decls.push(`--color-heading: ${headingColor}`);
+  }
+  if (accentColor) {
+    decls.push(`--block-accent: ${accentColor}`);
+    decls.push(`--color-primary: ${accentColor}`);
+  }
 
   const b = style.border;
   if (b) {
@@ -199,10 +315,19 @@ function styleToCssDeclarations(style: Partial<BlockStyle>): string[] {
       const r = typeof b.radius === 'number' ? b.radius + 'px' : RADIUS_PX_MAP[b.radius] ?? '6px';
       decls.push(`border-radius: ${r}`);
     }
-    if (b.width && b.width > 0) {
-      decls.push(`border-width: ${b.width}px`);
-      if (b.style && b.style !== 'none') decls.push(`border-style: ${b.style}`);
-      if (b.color) decls.push(`border-color: ${b.color}`);
+    if (b.width !== undefined && b.width > 0) {
+      const side = b.sides ?? 'all';
+      const width = `${b.width}px`;
+      const styleValue = b.style ?? 'solid';
+      const color = b.color ?? 'currentColor';
+      if (side === 'all') {
+        decls.push(`border: ${width} ${styleValue} ${color}`);
+      } else {
+        const sides = side === 'x' ? ['left', 'right'] : side === 'y' ? ['top', 'bottom'] : [side];
+        for (const s of sides) {
+          decls.push(`border-${s}: ${width} ${styleValue} ${color}`);
+        }
+      }
     }
   }
 
@@ -246,6 +371,15 @@ function styleToCssDeclarations(style: Partial<BlockStyle>): string[] {
     if (parts.length) decls.push(`transform: ${parts.join(' ')}`);
   }
 
+  const tx = style.transition;
+  if (tx && tx.property && tx.property !== 'none') {
+    const prop = TRANSITION_PROP_MAP[tx.property] ?? tx.property;
+    const duration = tx.duration ?? 300;
+    const easing = tx.easing ?? 'ease';
+    const delay = tx.delay ?? 0;
+    decls.push(`transition: ${prop} ${duration}ms ${easing} ${delay}ms`);
+  }
+
   return decls;
 }
 
@@ -279,11 +413,24 @@ export function responsiveStyleToCss(style: BlockStyle | undefined, scopeSelecto
   const parts: string[] = [];
   for (const [breakpoint, override] of Object.entries(style.responsive)) {
     if (!override) continue;
-    const maxWidth = BREAKPOINTS[breakpoint];
-    if (maxWidth === undefined) continue;
     const decls = styleToCssDeclarations(override);
     if (decls.length === 0) continue;
-    parts.push(`@container (max-width: ${maxWidth}px) {\n  ${scopeSelector} {\n    ${decls.join(';\n    ')};\n  }\n}`);
+    const query = breakpointQuery(breakpoint);
+    if (!query) continue;
+    parts.push(`${query} {\n  ${scopeSelector} {\n    ${decls.join(';\n    ')};\n  }\n}`);
   }
   return parts.length > 0 ? parts.join('\n') : undefined;
+}
+
+function breakpointQuery(breakpoint: string): string | undefined {
+  switch (breakpoint) {
+    case 'desktop':
+      return `@container (min-width: ${BREAKPOINTS.tablet + 1}px)`;
+    case 'tablet':
+      return `@container (min-width: ${BREAKPOINTS.mobile + 1}px) and (max-width: ${BREAKPOINTS.tablet}px)`;
+    case 'mobile':
+      return `@container (max-width: ${BREAKPOINTS.mobile}px)`;
+    default:
+      return undefined;
+  }
 }

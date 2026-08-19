@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { resolveType, availableTypes } from './contentTypeRegistry';
+import { resolveType, availableTypes, createAvailableTypes, CREATE_ALLOWED_TYPES } from './contentTypeRegistry';
 
 describe('resolveType', () => {
 	it('maps blog_post/article/guide to the standard form', () => {
@@ -54,5 +54,43 @@ describe('availableTypes', () => {
 		expect(vals).toContain('article');
 		expect(vals).toContain('guide');
 		expect(vals).toContain('page');
+	});
+});
+
+describe('createAvailableTypes', () => {
+	const all = [
+		{ value: 'discussion', label: 'Discussion' },
+		{ value: 'blog_post', label: 'Blog Post' },
+		{ value: 'page', label: 'Page' },
+		{ value: 'comparison', label: 'Comparison' },
+		{ value: 'guide', label: 'Guide' }
+	];
+
+	it('exposes only the allowed /create types', () => {
+		const vals = createAvailableTypes(all, { 'feature.blog': true, 'feature.comparison': true }).map(
+			(t) => t.value
+		);
+		expect(vals).toEqual(CREATE_ALLOWED_TYPES);
+	});
+
+	it('excludes discussion, page, and unrecognised types', () => {
+		const vals = createAvailableTypes(all, {}).map((t) => t.value);
+		expect(vals).not.toContain('discussion');
+		expect(vals).not.toContain('page');
+		expect(vals).not.toContain('question');
+	});
+
+	it('follows the CREATE_ALLOWED_TYPES order', () => {
+		const vals = createAvailableTypes(all, { 'feature.blog': true, 'feature.comparison': true }).map(
+			(t) => t.value
+		);
+		expect(vals).toEqual(['blog_post', 'comparison', 'guide']);
+	});
+
+	it('hides comparison when feature.comparison is off', () => {
+		const vals = createAvailableTypes(all, { 'feature.blog': true, 'feature.comparison': false }).map(
+			(t) => t.value
+		);
+		expect(vals).toEqual(['blog_post', 'guide']);
 	});
 });

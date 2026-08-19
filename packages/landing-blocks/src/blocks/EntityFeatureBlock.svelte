@@ -2,6 +2,7 @@
   import type { EntityFeatureProps } from '../types';
   import type { FetchContext } from '../data/types';
   import { fetchEntityFeature } from '../data/entityFetchers';
+  import { getBlockContentContext } from '../shell/blockContent';
 
   interface Props {
     props: EntityFeatureProps;
@@ -13,6 +14,8 @@
   let loading = $state(true);
   let error = $state(false);
 
+  const blockContent = getBlockContentContext();
+
   $effect(() => {
     const prefetched = (props as unknown as { _entity?: Record<string, unknown> })._entity;
     if (prefetched) { entity = prefetched; loading = false; return; }
@@ -22,6 +25,12 @@
       .then((result) => { entity = result as Record<string, unknown> | null; error = false; })
       .catch(() => { error = true; })
       .finally(() => { loading = false; });
+  });
+
+  // Report whether the featured entity exists to the wrapping BlockShell.
+  $effect(() => {
+    if (loading) return;
+    blockContent?.set(!error && entity != null);
   });
 
   const layoutClass = $derived(

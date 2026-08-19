@@ -514,7 +514,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 						<BookOpen size={16} /> {t('space.wiki', 'Wiki')}
 					</a>
 					<a
-						href="/create?type=forum&space={space.slug}"
+						href="/create?type=blog_post&space={space.slug}"
 						class="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-[var(--color-primary)] px-4 py-1.5 text-sm font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)]"
 					>
 						<PenSquare size={16} /> {t('space.post', 'Post')}

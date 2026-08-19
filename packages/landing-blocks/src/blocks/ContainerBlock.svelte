@@ -2,7 +2,9 @@
   import type { ContainerProps, Block } from '../types';
   import type { FetchContext } from '../data/types';
   import { blockRegistry } from '../render/blockRegistry';
+  import { isBlockVisible, isBlockEmpty } from '../render/blockVisibility';
   import BlockShell from '../shell/BlockShell.svelte';
+  import { getBlockContentContext } from '../shell/blockContent';
 
   interface Props {
     props: ContainerProps;
@@ -10,6 +12,14 @@
     geoCountry?: string;
   }
   let { props, fetchCtx, geoCountry }: Props = $props();
+
+  // Report whether this container has any visible, non-empty children to the
+  // parent BlockShell so `hide_if_empty` works for container blocks.
+  const parentContentContext = getBlockContentContext();
+  const hasVisibleChildren = $derived(props.children.some((c) => isBlockVisible(c, geoCountry) && !isBlockEmpty(c)));
+  $effect(() => {
+    parentContentContext?.set(hasVisibleChildren);
+  });
 
   // Gap preset → CSS value (matches the spacing scale used elsewhere).
   const gapMap: Record<ContainerProps['gap'], string> = {
@@ -76,7 +86,7 @@
       const rules: string[] = [];
       let childIdx = 0;
       for (const child of props.children) {
-        if (!child.visible) { childIdx++; continue; }
+        if (!isBlockVisible(child, geoCountry)) { childIdx++; continue; }
         if (child.responsive_visibility?.desktop === false) {
           rules.push(`${scope} > [data-cell="${childIdx}"] { display: none !important; }`);
         }
@@ -96,7 +106,7 @@
       if (deviceCols !== undefined && deviceCols > 0) {
         let childIdx = 0;
         for (const child of props.children) {
-          if (!child.visible) continue;
+          if (!isBlockVisible(child, geoCountry)) { childIdx++; continue; }
           const span = childSpan(child, deviceCols);
           rules.push(`${scope} > [data-cell="${childIdx}"] { grid-column: span ${span} / span ${span} !important; }`);
           childIdx++;
@@ -106,7 +116,7 @@
       // Per-child responsive visibility.
       let childIdx2 = 0;
       for (const child of props.children) {
-        if (!child.visible) { childIdx2++; continue; }
+        if (!isBlockVisible(child, geoCountry)) { childIdx2++; continue; }
         const deviceVisible = child.responsive_visibility?.[device];
         if (deviceVisible === false) {
           rules.push(`${scope} > [data-cell="${childIdx2}"] { display: none !important; }`);
@@ -131,7 +141,7 @@
       const rules: string[] = [];
       let childIdx = 0;
       for (const child of props.children) {
-        if (!child.visible) { childIdx++; continue; }
+        if (!isBlockVisible(child, geoCountry)) { childIdx++; continue; }
         if (child.responsive_visibility?.desktop === false) {
           rules.push(`${scope} > [data-cell="${childIdx}"] { display: none !important; }`);
         }
@@ -146,7 +156,7 @@
       const rules: string[] = [];
       let childIdx = 0;
       for (const child of props.children) {
-        if (!child.visible) { childIdx++; continue; }
+        if (!isBlockVisible(child, geoCountry)) { childIdx++; continue; }
         const deviceVisible = child.responsive_visibility?.[device];
         if (deviceVisible === false) {
           rules.push(`${scope} > [data-cell="${childIdx}"] { display: none !important; }`);
@@ -185,12 +195,12 @@
   {#if props.layout === 'grid'}
     <div class="container-grid grid grid-cols-12" data-ctr={containerId} style={`gap: ${gapMap[props.gap ?? 'md']}`}>
       {#each props.children as block, i (block.id)}
-        {#if block.visible}
+        {#if isBlockVisible(block, geoCountry)}
           {@const meta = blockRegistry[block.type]}
           {#if meta}
             {@const span = childSpan(block, props.columns)}
             <div class="container-cell" data-cell={i} style={`--span: ${span}`}>
-              <BlockShell style={block.style} motion={block.motion} background={block.style?.background}>
+              <BlockShell style={block.style} motion={block.motion} background={block.style?.background} hideIfEmpty={block.visibility_rules?.hide_if_empty} initialHasContent={!isBlockEmpty(block)}>
                 {@const Component = meta.component}
                 <Component props={block.props} {fetchCtx} {geoCountry} />
               </BlockShell>
@@ -206,11 +216,11 @@
       style={`gap: ${gapMap[props.gap ?? 'md']}`}
     >
       {#each props.children as block, i (block.id)}
-        {#if block.visible}
+        {#if isBlockVisible(block, geoCountry)}
           {@const meta = blockRegistry[block.type]}
           {#if meta}
             <div class="flex-1 min-w-0" data-cell={i}>
-              <BlockShell style={block.style} motion={block.motion} background={block.style?.background}>
+              <BlockShell style={block.style} motion={block.motion} background={block.style?.background} hideIfEmpty={block.visibility_rules?.hide_if_empty} initialHasContent={!isBlockEmpty(block)}>
                 {@const Component = meta.component}
                 <Component props={block.props} {fetchCtx} {geoCountry} />
               </BlockShell>
@@ -223,11 +233,11 @@
     <!-- stack: vertical, like the flat section model but nestable -->
     <div class="flex flex-col" data-ctr={containerId} style={`gap: ${gapMap[props.gap ?? 'md']}`}>
       {#each props.children as block, i (block.id)}
-        {#if block.visible}
+        {#if isBlockVisible(block, geoCountry)}
           {@const meta = blockRegistry[block.type]}
           {#if meta}
             <div data-cell={i}>
-              <BlockShell style={block.style} motion={block.motion} background={block.style?.background}>
+              <BlockShell style={block.style} motion={block.motion} background={block.style?.background} hideIfEmpty={block.visibility_rules?.hide_if_empty} initialHasContent={!isBlockEmpty(block)}>
                 {@const Component = meta.component}
                 <Component props={block.props} {fetchCtx} {geoCountry} />
               </BlockShell>

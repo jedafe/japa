@@ -3,6 +3,7 @@
   import type { FetchContext } from '../data/types';
   import { blockRegistry } from './blockRegistry';
   import BlockShell from '../shell/BlockShell.svelte';
+  import { isBlockVisible, isBlockEmpty } from './blockVisibility';
 
   interface Props {
     blocks: Block[];
@@ -18,7 +19,7 @@
   const responsiveVisibilityCss = $derived.by(() => {
     const parts: string[] = [];
     for (const block of blocks) {
-      if (!block.visible || !block.responsive_visibility) continue;
+      if (!isBlockVisible(block, geoCountry) || !block.responsive_visibility) continue;
       const scope = `[data-rv="${block.id}"]`;
       // Desktop: hide when container is wider than 1024px
       if (block.responsive_visibility.desktop === false) {
@@ -43,11 +44,11 @@
 
 <div class="landing-page min-h-screen bg-[var(--color-bg)]" style="container-type: inline-size">
   {#each blocks as block (block.id)}
-    {#if block.visible}
+    {#if isBlockVisible(block, geoCountry)}
       {@const meta = blockRegistry[block.type]}
       {#if meta}
         <div data-rv={block.id}>
-          <BlockShell style={block.style} motion={block.motion} background={block.style?.background}>
+          <BlockShell style={block.style} motion={block.motion} background={block.style?.background} hideIfEmpty={block.visibility_rules?.hide_if_empty} initialHasContent={!isBlockEmpty(block)}>
             {@const Component = meta.component}
             {#if block.type === 'custom'}
               <Component props={block.props} blockDefId={block.block_def_id} {fetchCtx} {geoCountry} />
