@@ -46,6 +46,13 @@ func (s *stubIntelQuerier) GetIntelRecord(ctx context.Context, arg gen.GetIntelR
 	return s.record, nil
 }
 
+func (s *stubIntelQuerier) GetIntelSourceByURL(ctx context.Context, arg gen.GetIntelSourceByURLParams) (gen.IntelSource, error) {
+	if s.err != nil {
+		return gen.IntelSource{}, s.err
+	}
+	return s.source, nil
+}
+
 func TestSourceCrawlNowHandler(t *testing.T) {
 	t.Parallel()
 

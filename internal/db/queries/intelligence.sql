@@ -6,8 +6,14 @@
 -- by tenant_id to guarantee data isolation across tenants.
 
 -- name: CreateIntelSource :one
-INSERT INTO intel_sources (tenant_id, name, domain, source_url, category, source_type, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, enabled, persona_id)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, sqlc.narg(persona_id))
+INSERT INTO intel_sources (tenant_id, name, domain, source_url, category, source_type, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, enabled, status, proposed_by, proposed_at, approved_by, approved_at, persona_id)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16,
+        COALESCE(sqlc.narg(status), 'active'),
+        sqlc.narg(proposed_by),
+        sqlc.narg(proposed_at),
+        sqlc.narg(approved_by),
+        sqlc.narg(approved_at),
+        sqlc.narg(persona_id))
 RETURNING *;
 
 -- name: GetIntelSource :one
@@ -20,12 +26,13 @@ SELECT * FROM intel_sources WHERE tenant_id = $1 AND source_url = $2;
 SELECT * FROM intel_sources WHERE tenant_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3;
 
 -- name: ListIntelSourcesByCategory :many
-SELECT * FROM intel_sources WHERE tenant_id = $1 AND category = $2 AND enabled = true ORDER BY trust_level, name;
+SELECT * FROM intel_sources WHERE tenant_id = $1 AND category = $2 AND enabled = true AND status = 'active' ORDER BY trust_level, name;
 
 -- name: ListDueIntelSources :many
 SELECT * FROM intel_sources
 WHERE tenant_id = $1
   AND enabled = true
+  AND status = 'active'
   AND (last_crawled_at IS NULL OR now() - last_crawled_at >= (crawl_frequency_mins || ' minutes')::interval)
 ORDER BY last_crawled_at NULLS FIRST
 LIMIT $2;
@@ -67,6 +74,11 @@ SET name = $3,
     attribution_required = $13,
     usage_restriction = $14,
     enabled = $15,
+    status = COALESCE(sqlc.narg(status), status),
+    proposed_by = COALESCE(sqlc.narg(proposed_by), proposed_by),
+    proposed_at = COALESCE(sqlc.narg(proposed_at), proposed_at),
+    approved_by = COALESCE(sqlc.narg(approved_by), approved_by),
+    approved_at = COALESCE(sqlc.narg(approved_at), approved_at),
     persona_id = COALESCE(sqlc.narg(persona_id), persona_id),
     updated_at = now()
 WHERE tenant_id = $1 AND id = $2
@@ -144,3 +156,21 @@ DELETE FROM intel_review_log WHERE tenant_id = $1 AND actor_user_id = $2;
 SELECT ap.user_id
 FROM ai_personas ap
 WHERE ap.tenant_id = $1 AND ap.id = $2;
+
+-- name: ListProposedIntelSources :many
+-- Returns sources with status='proposed' for admin review.
+SELECT * FROM intel_sources
+WHERE tenant_id = $1 AND status = 'proposed'
+ORDER BY proposed_at DESC NULLS LAST
+LIMIT $2 OFFSET $3;
+
+-- name: ApproveProposedIntelSource :one
+-- Approves a proposed source: status='active', enabled=true, record approver.
+UPDATE intel_sources
+SET status = 'active',
+    enabled = true,
+    approved_by = $3,
+    approved_at = now(),
+    updated_at = now()
+WHERE tenant_id = $1 AND id = $2 AND status = 'proposed'
+RETURNING *;
