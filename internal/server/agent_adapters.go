@@ -43,6 +43,7 @@ import (
 	"github.com/jedafe/japa/internal/learning"
 	"github.com/jedafe/japa/internal/menus"
 	"github.com/jedafe/japa/internal/rag"
+	"github.com/jedafe/japa/internal/scholarships"
 	"github.com/jedafe/japa/internal/story"
 	"github.com/jedafe/japa/internal/studio"
 	"github.com/jedafe/japa/internal/taxcalculator"
@@ -1730,6 +1731,64 @@ func (a *studioDraftProcessorAdapter) createStudioReview(ctx context.Context, te
 	if err != nil {
 		slog.Warn("studio: create HITL review failed", "content_id", contentID, "error", err)
 	}
+}
+
+// agentScholarshipAdapter adapts scholarships.Service to the
+// ai.ScholarshipSearcher interface so the ai package can offer the
+// scholarship.search tool without importing internal/scholarships
+// (breaks the ai → scholarships → content → spam → ai cycle).
+//
+// Ref: japaconnect-engineering/sections/73-scholarship-finder.md
+type agentScholarshipAdapter struct {
+	svc *scholarships.Service
+}
+
+func newAgentScholarshipAdapter(svc *scholarships.Service) *agentScholarshipAdapter {
+	return &agentScholarshipAdapter{svc: svc}
+}
+
+// FindScholarships implements ai.ScholarshipSearcher by mapping to the
+// scholarships.Service filters and results.
+func (a *agentScholarshipAdapter) FindScholarships(ctx context.Context, tenantID pgtype.UUID, filters ai.ScholarshipSearchFilters) ([]ai.ScholarshipSearchResult, int64, error) {
+	if a == nil || a.svc == nil {
+		return nil, 0, nil
+	}
+
+	sf := scholarships.ScholarshipFilters{
+		Country:      filters.Country,
+		Level:        filters.Level,
+		DeadlineFrom: filters.DeadlineFrom,
+		DeadlineTo:   filters.DeadlineTo,
+		Q:            filters.EligibleCountries + " " + filters.FundingType,
+		Limit:        filters.Limit,
+		Page:         filters.Page,
+	}
+
+	rows, total, err := a.svc.FindScholarships(ctx, tenantID, sf)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	out := make([]ai.ScholarshipSearchResult, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, ai.ScholarshipSearchResult{
+			ID:                  r.ID,
+			GuideID:             r.GuideID,
+			IntelRecordID:       r.IntelRecordID,
+			Title:               r.Title,
+			Slug:                r.Slug,
+			Summary:             r.Summary,
+			Description:         r.Description,
+			Institution:         r.Institution,
+			Country:             r.Country,
+			LevelOfStudy:        r.LevelOfStudy,
+			AwardAmountUSD:      r.AwardAmountUSD,
+			IsRenewable:         r.IsRenewable,
+			ApplicationDeadline: r.ApplicationDeadline,
+			ApplicationURL:      r.ApplicationURL,
+		})
+	}
+	return out, total, nil
 }
 
 // transitionIntelRecordOnPublish transitions a linked intel_record to

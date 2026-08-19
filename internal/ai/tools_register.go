@@ -58,6 +58,7 @@ func RegisterPhase4Tools(registry *ToolHandlerRegistry, deps *ToolDeps) {
 	registry.RegisterHandler("source.crawl_now", SourceCrawlNowHandler(deps))
 	registry.RegisterHandler("record.update_now", RecordUpdateNowHandler(deps))
 	registry.RegisterHandler("content.regenerate_from_source", ContentRegenerateFromSourceHandler(deps))
+	registry.RegisterHandler("scholarship.search", ScholarshipSearchHandler(deps))
 
 	// --- Comparison tools (Phase 7, task 7.06) ---
 	RegisterPhase7ComparisonTools(registry, deps)
