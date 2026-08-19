@@ -1,12 +1,12 @@
 <script lang="ts">
-	import { aiApi, aiAdminApi, aiModelsAdminApi, type HitlReview, type GenerateResult, type AiTool, type AiUsageSummary, type AiToolUsageStats } from '$lib/api';
+	import { aiApi, aiAdminApi, aiModelsAdminApi, type HitlReview, type HitlVerifyResult, type GenerateResult, type AiTool, type AiUsageSummary, type AiToolUsageStats } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { Modal } from '$lib/components/ui/modal';
 	import { SlideOver } from '$lib/components/ui/slide-over';
 	import { Button } from '$lib/components/ui/button';
 	import { DataTable } from '$lib/components/ui/data-table';
 	import type { ActionItem } from '$lib/components/ui/data-table';
-	import { Loader2, Copy, Check, Clock, CheckCircle2, XCircle, Eye, Sparkles, AlertTriangle, Wrench, BarChart3, Activity, Settings, Trash2 } from 'lucide-svelte';
+	import { Loader2, Copy, Check, Clock, CheckCircle2, XCircle, Eye, Sparkles, AlertTriangle, Wrench, BarChart3, Activity, Settings, Trash2, Search } from 'lucide-svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { Select } from '$lib/components/ui/select';
 	import { page as pageState } from '$app/state';
@@ -87,6 +87,11 @@
 	let actionLoading = $state(false);
 	let actionMessage = $state('');
 	let actionMessageType = $state<'success' | 'error'>('success');
+
+	// HITL verify state
+	let verifyLoading = $state(false);
+	let verifyResult = $state<HitlVerifyResult | null>(null);
+	let verifyError = $state('');
 
 	let hitlSearchQuery = $state('');
 	let toolsSearchQuery = $state('');
@@ -226,7 +231,32 @@
 		rejectReason = '';
 		showRejectInput = false;
 		actionMessage = '';
+		verifyResult = null;
+		verifyError = '';
+		verifyLoading = false;
 		showReviewModal = true;
+	}
+
+	async function verifyReview() {
+		if (!selectedReview) return;
+		verifyLoading = true;
+		verifyResult = null;
+		verifyError = '';
+		try {
+			const result = await aiApi.verifyHitlClaim({
+				claim: selectedReview.content,
+				context: `content_type=${selectedReview.content_type}, source=${selectedReview.source}`
+			});
+			if (result.ok) {
+				verifyResult = result.data;
+			} else {
+				verifyError = result.error;
+			}
+		} catch (e) {
+			verifyError = e instanceof Error ? e.message : 'Verification failed';
+		} finally {
+			verifyLoading = false;
+		}
 	}
 
 	async function approveReview() {
@@ -786,6 +816,31 @@
 				{selectedReview.content}
 			</div>
 
+			{#if verifyError}
+				<div class="rounded-md border border-danger bg-danger-50 px-3 py-2 text-sm text-danger-700">
+					{verifyError}
+				</div>
+			{/if}
+
+			{#if verifyResult}
+				<div class="space-y-2 rounded-md border border-info bg-info-50 p-3 text-sm">
+					<div class="font-medium text-info-900">{t('ai.verified_with', 'Verified with')} {verifyResult.provider}</div>
+					<div class="max-h-48 overflow-y-auto text-info-800">{verifyResult.answer}</div>
+					{#if verifyResult.citations?.length > 0}
+						<div class="pt-1">
+							<div class="text-xs font-medium text-info-900">{t('ai.sources', 'Sources')}:</div>
+							<ul class="mt-1 list-inside list-disc space-y-1 text-xs text-info-800">
+								{#each verifyResult.citations as citation}
+									<li>
+										<a href={citation} target="_blank" rel="noopener noreferrer" class="hover:underline">{citation}</a>
+									</li>
+								{/each}
+							</ul>
+						</div>
+					{/if}
+				</div>
+			{/if}
+
 			{#if showRejectInput}
 				<div>
 					<label for="reject-reason" class="mb-1 block text-sm font-medium text-foreground-alt">{t('ai.reject_reason')}</label>
@@ -799,7 +854,7 @@
 				</div>
 			{/if}
 
-			<div class="flex gap-2 pt-2">
+			<div class="flex flex-wrap gap-2 pt-2">
 				<Button
 					variant="default"
 					disabled={actionLoading}
@@ -813,6 +868,18 @@
 					{t('ai.approve')}
 				</Button>
 				{#if !showRejectInput}
+					<Button
+						variant="outline"
+						disabled={verifyLoading}
+						onclick={verifyReview}
+					>
+						{#if verifyLoading}
+							<Loader2 class="h-3.5 w-3.5 animate-spin" />
+						{:else}
+							<Search class="h-3.5 w-3.5" />
+						{/if}
+						{t('ai.verify_perplexity', 'Verify with Perplexity')}
+					</Button>
 					<Button
 						variant="destructive"
 						onclick={() => (showRejectInput = true)}

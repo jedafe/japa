@@ -39,6 +39,18 @@ var ErrDuplicateContent = errors.New("duplicate content: a post with this conten
 // bypass this check because the editor is not the author.
 var ErrEditWindowExpired = errors.New("edit window has expired")
 
+// ErrMissingPrimarySpace is returned when a content item is published or
+// scheduled without exactly one primary space assignment (Section 14 / BUG-007).
+var ErrMissingPrimarySpace = errors.New("content requires a primary space")
+
+// ErrInvalidSpace is returned when a content space assignment references a
+// space that does not exist in the content's tenant (BUG-018).
+var ErrInvalidSpace = errors.New("invalid space for content")
+
+// ErrNotSpaceMember is returned when a user tries to assign a space they
+// have not joined as an additional/primary space (Section 45 / BUG-018).
+var ErrNotSpaceMember = errors.New("user is not a member of the requested space")
+
 // defaultEditWindowMinutes is the fallback for content.edit_window_minutes
 // when the setting is unset or no settings reader is wired (BL-008).
 const defaultEditWindowMinutes = 1440
@@ -148,12 +160,13 @@ type webhookEmitter interface {
 // separation. Reads go through the reader pool; writes go through the
 // writer pool. This follows the same pattern as the existing db.DB struct.
 type Service struct {
-	db       *db.DB
-	read     *gen.Queries
-	write    *gen.Queries
-	settings settingsReader
-	webhooks webhookEmitter
-	searcher ContentSearcher
+	db          *db.DB
+	read        *gen.Queries
+	write       *gen.Queries
+	settings    settingsReader
+	webhooks    webhookEmitter
+	searcher    ContentSearcher
+	spaceChecker SpacePostChecker
 }
 
 // ContentSearcher abstracts full-text search for content IDs.
@@ -191,6 +204,11 @@ func (s *Service) SetSettings(sr settingsReader) {
 
 // SetWebhookEmitter injects the content.* event fan-out (Section 12).
 func (s *Service) SetWebhookEmitter(w webhookEmitter) { s.webhooks = w }
+
+// SetSpaceChecker injects the space post-permission checker used to
+// validate primary and additional space assignments (Section 45 / BUG-018).
+// When nil, membership/permission checks are skipped.
+func (s *Service) SetSpaceChecker(sc SpacePostChecker) { s.spaceChecker = sc }
 
 // SetSearcher injects a Meilisearch-backed content searcher. When set,
 // ListContents uses Meilisearch for ?q= queries instead of ILIKE.

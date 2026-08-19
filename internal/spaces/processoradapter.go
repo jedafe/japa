@@ -389,22 +389,40 @@ func (a *ProcessorAdapter) enrichWebsiteFromWikipedia(ctx context.Context, space
 // field definitions, seeded in migration 000288. Using these directly avoids
 // a DB lookup per enrichment.
 var universityFieldUUIDs = struct {
+	Initials        string
 	OfficialWebsite string
 	FoundedYear     string
 	StudentPop      string
 }{
+	Initials:        "00000000-0000-0000-0000-000000000090",
 	OfficialWebsite: "00000000-0000-0000-0000-000000000091",
 	FoundedYear:     "00000000-0000-0000-0000-000000000096",
 	StudentPop:      "00000000-0000-0000-0000-000000000100",
 }
 
-// enrichUniversityFields upserts custom_field_values for founded_year,
-// student_population, and official_website_url from Wikidata data. Best-effort
-// — errors are logged, never returned (enrichment is non-critical; the
+// enrichUniversityFields upserts custom_field_values for initials,
+// founded_year, student_population, and official_website_url from Wikidata data.
+// Best-effort — errors are logged, never returned (enrichment is non-critical; the
 // wiki_content JSON is already stored).
 func (a *ProcessorAdapter) enrichUniversityFields(ctx context.Context, space *gen.GetSpaceByIDRow, uni *wikidataUniversity) {
 	if a.customFields == nil {
 		return
+	}
+
+	// initials — P1813 short name (e.g. "UNILAG", "UoPeople", "MIT").
+	if uni.ShortName != "" {
+		var fieldID pgtype.UUID
+		_ = fieldID.Scan(universityFieldUUIDs.Initials)
+		sn := uni.ShortName
+		if _, err := a.customFields.UpsertFieldValue(ctx, gen.UpsertCustomFieldValueParams{
+			FieldID:    fieldID,
+			EntityType: "space",
+			EntityID:   space.ID,
+			ValueText:  &sn,
+		}); err != nil {
+			slog.Warn("space:auto_populate — failed to upsert initials",
+				"space_id", space.ID.String(), "error", err)
+		}
 	}
 
 	// official_website_url
@@ -546,6 +564,7 @@ func parseStudentCount(s string) (int, bool) {
 // wikidataUniversity holds structured data fetched from Wikidata SPARQL.
 type wikidataUniversity struct {
 	Name         string `json:"name"`
+	ShortName    string `json:"short_name,omitempty"`
 	Description  string `json:"description,omitempty"`
 	Country      string `json:"country,omitempty"`
 	Founded      string `json:"founded,omitempty"`
@@ -760,6 +779,10 @@ func fetchWikidataEntity(ctx context.Context, qid string) (*wikidataUniversity, 
 	// P18 = image (string value — Wikimedia Commons filename)
 	if claims, ok := entity.Claims["P18"]; ok && len(claims) > 0 {
 		uni.Image = commonsFileURL(extractString(claims[0].Mainsnak.Datavalue.Value))
+	}
+	// P1813 = short name (monolingual text; e.g. "UNILAG", "UoPeople", "MIT").
+	if claims, ok := entity.Claims["P1813"]; ok && len(claims) > 0 {
+		uni.ShortName = extractString(claims[0].Mainsnak.Datavalue.Value)
 	}
 
 	return uni, nil

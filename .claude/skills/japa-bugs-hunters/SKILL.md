@@ -50,7 +50,9 @@ via the existing §20 AI Gateway, and mandatory HITL review before publish.
 **These must be followed every time this skill is loaded:**
 
 1. **Always use Playwright** whenever a page URL or link is supplied. This is mandatory for all
-   frontend testing, screenshot capture, and browser interaction. Never skip browser automation.
+   SvelteKit frontend testing, screenshot capture, and browser interaction. Never skip browser
+   automation. **Exception:** the Flutter mobile app (`apps/mobile/`) is not a browser target — use
+   `flutter analyze`, `flutter test`, and `flutter run` on an emulator/simulator instead.
 
 2. **Chrome is already installed** on this system. Do NOT attempt to install Chromium — it is
    unnecessary and will waste time. Use the existing Chrome installation.
@@ -82,8 +84,9 @@ question: "What do you want to bug-hunt and fix?"
 options:
   - label: "Frontend URL / page"      (option 1)
       A specific page on any of the 6 SvelteKit apps (main, admin, control, learn, docs, tools) or
-      the Flutter mobile app. You'll supply a URL (or app+page name); the agent loads Playwright,
-      tests the page against relevant bugs, fixes it, and fixes any backend the page needs.
+      the Flutter mobile app (`apps/mobile/`). For SvelteKit apps the agent loads Playwright and
+      tests the page. For Flutter mobile the agent uses `flutter analyze` + `flutter test` + the
+      `jc-mobile-*` skills; Playwright does not apply.
   - label: "Backend API / route"      (option 2)
       A specific /api/v1/* route or handler. The agent reviews/debugs it for bugs, unimplemented
       features, incomplete wiring, missing migrations, RBAC, etc., and fixes them.
@@ -109,8 +112,8 @@ options:
       embassy, arrival_checklist, credential_checker, cv_formatter, housing_guide,
       attestation_guide, service_directory, language_test_hub, tax_calculator,
       community_locator). The agent asks the user to input the feature name, then runs a full
-      cross-stack audit (backend + frontend across all 6 apps + mobile + JEOS spec) for that
-      feature, categorizes bugs by class, and saves findings to
+      cross-stack audit (backend + frontend across all 6 SvelteKit apps + Flutter mobile + JEOS spec)
+      for that feature, categorizes bugs by class, and saves findings to
       ./.jeos/audit/<feature_name>-audit.md.
   - label: "Fix feature audit findings"      (option 11)
       Apply fixes to the bugs recorded in ./.jeos/audit/<feature_name>-audit.md (produced by Option
@@ -195,29 +198,46 @@ the combined audit+fix for all other targets.
    - `localhost:3003` / `learn.*` → **learn** (SSR, ADR-060 lesson-player exception)
    - `localhost:3004` / `docs.*` → **docs** (SSR, ADR-060 nav-tree/TOC)
    - `localhost:3005` / `tools.*` → **tools** (SSR, ADR-086 hub/single-tool host-detection shell, §78)
-   - Flutter `apps/mobile` (or a mobile screen name) → **mobile** (Dart, `japaconnect_core` client,
-     §77/ADR-074 — Playwright does not apply; verify via `flutter analyze` + the typed API client)
-2. **Launch Playwright** (use the `webapp-testing` skill / `playwright-cli`) for any SvelteKit app.
-   Start the dev server for that app if not running (`bun dev` in the app dir). Open the URL, capture
-   console errors, network failures (esp. 4xx/5xx on `/api/v1/*`), layout/visual screenshots at
-   desktop + mobile widths, and hydration warnings. For the **tools** app, additionally verify the
-   host-detection shell mode: hit the hub domain (all tools) and a per-tool domain/subdomain
-   (single-tool shell, tool-specific branding, no cross-tool nav) per ADR-086/§78.
+   - Flutter `apps/mobile` (or a mobile screen name like `/feed`, `/forum/threads`, `/profile`) →
+     **mobile** (Dart, `japaconnect_core` client, §77/ADR-074/ADR-113 — Playwright does not apply)
+
+   **If the target is `apps/mobile/`,** first check the directory exists. If it does not, the mobile
+   app is not yet implemented — report this and stop. If it exists, load the relevant `jc-mobile-*`
+   skill (develop/debug/audit/refactor) for the fix type.
+2. **For SvelteKit apps, launch Playwright** (use the `webapp-testing` skill / `playwright-cli`).
+   Start the dev server if not running (`bun dev` in the app dir). Open the URL, capture console
+   errors, network failures (esp. 4xx/5xx on `/api/v1/*`), layout/visual screenshots at desktop +
+   mobile widths, and hydration warnings. For the **tools** app, additionally verify the host-detection
+   shell mode: hit the hub domain (all tools) and a per-tool domain/subdomain (single-tool shell,
+   tool-specific branding, no cross-tool nav) per ADR-086/§78.
+
+   **For `apps/mobile/`,** follow the **Flutter mobile verification workflow** instead:
+   - Run `flutter doctor` for the target platform.
+   - Run `flutter pub get` in `apps/mobile/` and `packages/japaconnect_core/`.
+   - Run `flutter analyze` and `flutter test`.
+   - If a visual/interactive fix is needed and the platform is available, launch an Android emulator
+     (`flutter run`) or iOS Simulator (`flutter run -d ios`, macOS only). Verify the screen renders
+     without overflow and the relevant API calls succeed.
+   - Check `X-Device-Id` and `Authorization` headers are present on API calls.
+   - For backend bugs, switch to `jc-backend-debug` and fix the Go code.
 3. **Filter the Guide to the page.** Apply the `[FE]` and `[BOTH]` sections relevant to the page
    type: §1 (forms/nav/calc), §2 (UI/UX, dark mode, LayerChart), §3 (API calls, 401 loop, contract
    drift), §6 (Svelte 4 anti-patterns), §7 (i18n), §16 (SSR/hydration), §17 (admin/control SPA),
    §18 (i18n language packs), §21 (stub/missing UI), §23 (form data), §27 (Rule 16 hardcoded data),
-   §36 (learning routes), §78 (tools host-detection shell). For v2 tool pages also check §70–§73
-   (visa checklist / readiness / cost of living / scholarship finder UIs) and §74 (remittance UI).
-   For v2 community feature pages (§§79–89, §98) check the geo-aware tool pattern: destination
+   §36 (learning routes), §78 (tools host-detection shell), §77 (Flutter mobile app) and ADR-074
+   (mobile screen contract, device-scoped JWT, push notifications, `X-Device-Id` header). For v2
+   tool pages also check §70–§73 (visa checklist / readiness / cost of living / scholarship finder
+   UIs) and §74 (remittance UI). For v2 community feature pages (§§79–89, §98) check the geo-aware
    country selector is first input, no hardcoded nationality, `?dest=` filter on list endpoints.
    For v2 functional tool pages (§§90–97, §§99–101) check ADR-088 universal AI content generation
    columns (`ai_generated`, `ai_model`, `hitl_reviewed_by`) and HITL review gate before publish.
    For mentorship pages (§102) check the 60/40 keyword+pgvector match scoring display and DM
    auto-open on connection accept.
-4. **Fix frontend bugs** in place (Svelte 5 runes, Bits UI, LayerChart 2.0.1, `var(--chart-*)` theming,
-   `$t()` i18n, no raw hex, no `export let`/`$:`/`on:`). For the tools app, respect the hub vs
-   single-tool shell contract — a single-tool domain must NOT render cross-tool nav.
+4. **Fix frontend bugs** in place. For SvelteKit apps: Svelte 5 runes, Bits UI, LayerChart 2.0.1,
+   `var(--chart-*)` theming, `$t()` i18n, no raw hex, no `export let`/`$:`/`on:`. For Flutter mobile:
+   Riverpod (or the project's state solution), shared `japaconnect_core` widgets, no `setState` soup,
+   no raw `http` in feature code, no access token in `flutter_secure_storage`. For the tools app,
+   respect the hub vs single-tool shell contract — a single-tool domain must NOT render cross-tool nav.
 5. **If a bug needs the backend, fix the backend too — do not stop at the frontend.** This includes:
    - A route the page calls that **does not exist** → add it (see Option 2 workflow): pick the owning
      `sections/*` file (v1 §§01–59 or v2 §§60–102), add the route to `conventions/api-routes-catalog.md`,
@@ -238,7 +258,9 @@ the combined audit+fix for all other targets.
      (see Option 2 step 4).
 6. Re-run Playwright on the page; iterate until **100% working** (no console errors, all network
    calls succeed, layout correct light+dark, i18n present, no hydration mismatch). For the tools app,
-   verify both shell modes render correctly.
+   verify both shell modes render correctly. For Flutter mobile, re-run `flutter analyze` and
+   `flutter test`, and verify on an emulator/simulator that the screen renders without overflow and
+   the API contract is honored.
 
 ## Option 2 — Backend API / Route
 
@@ -508,8 +530,14 @@ Run the following prompt against the supplied `[feature_name]`, then save the ou
    nationality, destination_country_id in schema) and ADR-088 AI generation column conformance.
 4. **(b) Map frontend** — for each of the 6 SvelteKit apps (`apps/main`, `apps/admin`,
    `apps/control`, `apps/learn`, `apps/docs`, `apps/tools`) plus the Flutter `apps/mobile` where
-   relevant, list components, pages/routes, API calls (`/api/v1/<feature>/*`), UI/UX flows, and i18n
-   keys referencing the feature.
+   relevant, list components/screens, pages/routes, API calls (`/api/v1/<feature>/*`), UI/UX flows,
+   and i18n keys referencing the feature. For `apps/mobile/`, map:
+   - Feature module under `lib/features/<feature_name>/`
+   - Screens (`lib/features/<feature_name>/screens/`)
+   - Providers / notifiers (`lib/features/<feature_name>/providers/`)
+   - API client calls through `japaconnect_core`
+   - Shared widgets used from `japaconnect_core/lib/widgets/`
+   - Rule 16 compliance (no hardcoded data)
 5. **(c) Map JEOS spec** — list every section (v1 §§01–59 or v2 §§60–102), route catalog entry,
    permission key, Valkey key, Asynq task, system setting, feature flag, and ADR that governs the
    feature. For §§79–101 features, also map the geo-aware tool pattern requirements.
@@ -555,7 +583,12 @@ Run the following prompt against the supplied `[feature_name]`, then save the ou
 ### apps/tools
 - ...
 ### apps/mobile (Flutter, if relevant)
-- ...
+- Feature module: `lib/features/<feature_name>/`
+- Screens: <list> · Providers: <list> · Services: <list>
+- `japaconnect_core` API calls: <list>
+- Shared widgets used: <list>
+- Rule 16 (hardcoded data): ✅/❌
+- `flutter analyze` status: ✅/❌
 
 ## 3. JEOS Spec Map
 - Sections: <list>
@@ -631,16 +664,17 @@ page/route scan.
      the v2 community/tool patterns (Cross-Cutting Fix Rules, v2 community/tool patterns section).
    - `ui-ux` → use the **Option 1 (Frontend URL / Page)** workflow against the bug's `file:line`
      (resolve the app from the path: `apps/main`→main, `apps/admin`→admin, `apps/control`→control,
-     `apps/learn`→learn, `apps/docs`→docs, `apps/tools`→tools, `apps/mobile`→mobile). Launch
-     Playwright to verify the fix when the bug is visual/interactive (skip for `apps/mobile` — use
-     `flutter analyze` instead).
+     `apps/learn`→learn, `apps/docs`→docs, `apps/tools`→tools, `apps/mobile`→mobile). For SvelteKit
+     apps, launch Playwright to verify the fix when the bug is visual/interactive. For `apps/mobile/`,
+     verify with `flutter analyze` + `flutter test`; run on an emulator/simulator if the visual fix
+     must be validated. Use `jc-mobile-debug` / `jc-mobile-refactor` as the implementation guide.
    - All fixes must obey the **Cross-Cutting Fix Rules** (Golden Rules, RBAC, multi-tenancy, custom
      fields, v2 patterns) and the standard Report Format.
 7. **Verify each fix** before marking it done:
    - Backend: `go build ./...` (and `go test ./internal/<feature_name>/...` if tests exist), plus
      `gosec` for security-class bugs.
-   - Frontend: `svelte-check` for the relevant app, plus a Playwright pass for `ui-ux` bugs. For
-     `apps/mobile` use `flutter analyze`.
+   - Frontend: `svelte-check` for the relevant SvelteKit app, plus a Playwright pass for `ui-ux`
+     bugs. For `apps/mobile` use `flutter analyze` and `flutter test`.
    - A fix is "successful" only when the relevant verifier passes and the original bug symptom is gone.
 8. **Mark the bug line in the audit file** immediately after a successful fix. Use the `edit` tool to
    prefix the bug line with `✅ ALREADY IMPLEMENTED — ` and append ` — fixed <ISO date>` at the end.
@@ -727,7 +761,7 @@ End every run with:
 - Backend changes: routes added <list>, migrations <list>, RBAC nodes <list>, Valkey keys <list>,
   Asynq tasks <list>
 - Files changed: <list>
-- Verification: <Playwright pass / go build / svelte-check / flutter analyze / gosec result>
+- Verification: <Playwright pass / go build / svelte-check / flutter analyze / flutter test / gosec result>
 - Checklist A (JEOS Conformance) and B (Feature-completeness) from the Guide: ✅/❌ per item
 - v2 conformance (if a v2 feature): synthetic-activity flagging ✅/❌, high-stakes gate ✅/❌,
   catalog completeness gate ✅/❌
@@ -760,4 +794,6 @@ End every run with:
   generation pattern), `ADR-110-mentorship-matching.md` (trigger-maintained counts, 60/40 scoring).
 - `.jeos/roadmaps/ROADMAP-V2.md` (v2 planning index), `ROADMAP-TOOLS.md` (tools surface).
 - `.jeos/.ai/skills/backend/` and `.jeos/.ai/skills/frontend/` — the jc-* develop/audit/debug/refactor
-  skills per surface (use as sub-routines per the surface options above).
+  skills per surface (use as sub-routines per the surface options above). For mobile, load
+  `jc-mobile-develop`, `jc-mobile-debug`, `jc-mobile-audit`, and `jc-mobile-refactor` from
+  `.jeos/.ai/skills/frontend/07-mobile/`.

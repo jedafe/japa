@@ -17,6 +17,7 @@
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import type { CalendarEntry, CalendarCategory } from '$lib/types';
 	import type { PageData } from './$types';
+import { safeJsonLdScript } from '$lib/utils/safeHtml';
 
 	let { data }: { data: PageData } = $props();
 
@@ -112,7 +113,7 @@
 	<meta property="og:type" content="article" />
 	<meta property="og:url" content={page.url.href} />
 	{#if jsonLd}
-		{@html `<script type="application/ld+json">${jsonLd}</script>`}
+		{@html safeJsonLdScript(jsonLd)}
 	{/if}
 </svelte:head>
 

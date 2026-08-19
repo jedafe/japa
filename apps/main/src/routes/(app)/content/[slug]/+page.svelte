@@ -9,6 +9,7 @@
 	import CommentThread from '$lib/components/comments/CommentThread.svelte';
 	import { hydrateLinkPreviews } from '$lib/tiptap/hydrateLinkPreviews';
 	import { hydrateMentions } from '$lib/tiptap/hydrateMentions';
+	import { safeJsonLdScript, sanitizeContentHtml } from '$lib/utils/safeHtml';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -27,23 +28,25 @@
 	const publishedDate = $derived(new Date(article.published_at || article.created_at).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' }));
 	const title = $derived(`${article.title} — ${t('app.name')}`);
 	const description = $derived(article.excerpt ?? article.body.slice(0, 160));
+	const allowedIframeHosts = $derived(
+		(data.siteSettings?.['content.sanitization.allowed_iframe_hosts'] as string | undefined) ?? undefined
+	);
+	const sanitizedBody = $derived(sanitizeContentHtml(article.body_html || article.body, allowedIframeHosts));
 
 	// JSON-LD structured data (Section 14, Section 26 — SEO). The backend
 	// resolves the admin-managed template (matching the content's
 	// content_type) server-side and returns it in the `json_ld` sidecar.
 	// Fall back to a basic Article schema when absent.
 	const jsonLd = $derived(
-		data.jsonLd
-			? JSON.stringify(data.jsonLd)
-			: JSON.stringify({
-					'@context': 'https://schema.org',
-					'@type': 'Article',
-					headline: article.title,
-					datePublished: article.published_at || article.created_at,
-					author: { '@type': 'Person', name: article.author_name ?? 'JapaConnect' },
-					url: page.url.href,
-					description
-				})
+		data.jsonLd ?? {
+			'@context': 'https://schema.org',
+			'@type': 'Article',
+			headline: article.title,
+			datePublished: article.published_at || article.created_at,
+			author: { '@type': 'Person', name: article.author_name || t('app.name') },
+			url: page.url.href,
+			description
+		}
 	);
 
 	// View tracking (Section 14 — POST /content/{id}/view). Fire-and-forget
@@ -65,7 +68,7 @@
 	<meta name="twitter:card" content="summary_large_image" />
 	<meta name="twitter:title" content={article.title} />
 	<meta name="twitter:description" content={description} />
-	{@html `<script type="application/ld+json">${jsonLd}</script>`}
+	{@html safeJsonLdScript(jsonLd)}
 </svelte:head>
 
 <!-- ADR-058 Exception #1: dev.to reading layout (same as blog singles).
@@ -127,7 +130,7 @@
 
 		<!-- Article body: prose TipTap HTML with serif reading font -->
 		<div class="prose mt-8" use:hydrateLinkPreviews use:hydrateMentions>
-			{@html article.body_html || article.body}
+			{@html sanitizedBody}
 		</div>
 
 		<!-- Mobile reaction bar (visible when ReactionRail is hidden) -->

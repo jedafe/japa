@@ -25,27 +25,43 @@
 	const canModerate = $derived(hasPermission("admin.moderation"));
 
 	// ── Filters ─────────────────────────────────────────────────────────────
-	const filters: FilterDef[] = [
+	// Rule 16: moderation status and content_type options are loaded from
+	// GET /admin/moderation/options instead of being hardcoded.
+	let moderationOptions = $state<{ statuses: { value: string; label: string }[]; content_types: { value: string; label: string }[] }>({
+		statuses: [],
+		content_types: []
+	});
+
+	$effect(() => {
+		void (async () => {
+			const res = await moderationAdminApi.getOptions();
+			if (res.ok && res.data) {
+				moderationOptions = {
+					statuses: res.data.statuses.map((s) => ({
+						value: s.value,
+						label: t(`app.moderation.queue.${s.value}`, s.label)
+					})),
+					content_types: res.data.content_types.map((c) => ({
+						value: c.value,
+						label: t(`app.moderation.queue.${c.value}`, c.label)
+					}))
+				};
+			}
+		})();
+	});
+
+	const filters = $derived<FilterDef[]>([
 		{
 			key: "status",
 			label: t("common.status", "Status"),
-			options: [
-				{ value: "flagged", label: t("app.moderation.queue.flagged", "Flagged") },
-				{ value: "published", label: t("app.moderation.queue.published", "Published") },
-				{ value: "removed", label: t("app.moderation.queue.removed", "Removed") }
-			]
+			options: moderationOptions.statuses
 		},
 		{
 			key: "content_type",
 			label: t("moderation.content_type", "Content Type"),
-			options: [
-				{ value: "organization", label: t("app.moderation.queue.organization", "Organization") },
-				{ value: "service", label: t("app.moderation.queue.service", "Service") },
-				{ value: "mentor", label: t("app.moderation.queue.mentor", "Mentor") },
-				{ value: "university", label: t("app.moderation.queue.university", "University") }
-			]
+			options: moderationOptions.content_types
 		}
-	];
+	]);
 
 	// ── Bulk actions ────────────────────────────────────────────────────────
 	// EntityPage auto-reloads + clears selection after bulk handlers complete.

@@ -705,6 +705,36 @@ DELETE FROM user_content_views WHERE user_id = @user_id;
 -- before the final HardDeleteUser. Ref: Section 25/61, GDPR erasure.
 DELETE FROM ad_events WHERE user_id = @user_id;
 
+-- name: GdprDeleteReactionsByUser :exec
+-- Deletes reaction rows authored by the user. reactions.user_id has
+-- ON DELETE CASCADE, but we delete explicitly so the erasure path is
+-- self-documenting and survives future schema changes. Ref: BUG-011.
+DELETE FROM reactions WHERE user_id = @user_id;
+
+-- name: GdprDeleteContentSharesByUser :exec
+-- Deletes content_shares rows authored by the user. content_shares.user_id
+-- has ON DELETE CASCADE, but we delete explicitly so the erasure path is
+-- self-documenting and survives future schema changes. Ref: BUG-011.
+DELETE FROM content_shares WHERE user_id = @user_id;
+
+-- name: GdprDeleteBookmarksByUser :exec
+-- Deletes bookmark rows for the user. bookmarks.user_id has ON DELETE
+-- CASCADE, but we delete explicitly so the erasure path is self-documenting
+-- and survives future schema changes. Ref: BUG-011.
+DELETE FROM bookmarks WHERE user_id = @user_id;
+
+-- name: GdprDeleteBookmarkFoldersByUser :exec
+-- Deletes custom bookmark folders for the user. bookmark_folders.user_id
+-- has ON DELETE CASCADE, but we delete explicitly so the erasure path is
+-- self-documenting and survives future schema changes. Ref: BUG-011.
+DELETE FROM bookmark_folders WHERE user_id = @user_id;
+
+-- name: GdprDeleteForumBookmarksByUser :exec
+-- Deletes forum bookmark rows for the user. forum_bookmarks.user_id has
+-- ON DELETE CASCADE, but we delete explicitly so the erasure path is
+-- self-documenting and survives future schema changes. Ref: BUG-011.
+DELETE FROM forum_bookmarks WHERE user_id = @user_id;
+
 -- name: GdprNullifyAdCampaignCreator :exec
 -- Nullifies ad_campaigns.created_by for campaigns created by the erased
 -- user. The FK has no CASCADE/SET NULL, so without this step the final

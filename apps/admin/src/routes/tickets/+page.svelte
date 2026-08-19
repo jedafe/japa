@@ -11,7 +11,7 @@
 	import Pagination from "$lib/components/ui/Pagination.svelte";
 	import { TableSkeleton } from "$lib/components/ui/skeleton";
 	import { RefreshCw, Eye, Pencil, Trash2, Ticket, Clock, CheckCircle, AlertCircle, MessageSquare, StickyNote } from "lucide-svelte";
-	import { ticketsAdminApi } from "$lib/api";
+	import { ticketsAdminApi, adminCatalogApi, type CatalogOption } from "$lib/api";
 	import { t } from "$lib/stores/i18n.svelte";
 	import { hasPermission } from "$lib/stores/permissions.svelte";
 	import { pageFromUrl, pageSizeFromUrl, searchFromUrl, filterFromUrl, syncListStateToUrl } from "$lib/utils/url-sync.svelte";
@@ -78,28 +78,57 @@
 	const canDeleteTickets = $derived(hasPermission("tickets.admin"));
 	const canCommentInternal = $derived(hasPermission("tickets.comment.internal"));
 
-	const statusTabs = [
-		{ value: "", label: t("tickets.all", "All"), icon: Ticket },
-		{ value: "open", label: t("tickets.open", "Open"), icon: AlertCircle },
-		{ value: "in_progress", label: t("tickets.in_progress", "In Progress"), icon: Clock },
-		{ value: "waiting_on_user", label: t("tickets.waiting_on_user", "Waiting on User"), icon: MessageSquare },
-		{ value: "resolved", label: t("tickets.resolved", "Resolved"), icon: CheckCircle },
-		{ value: "closed", label: t("tickets.closed", "Closed"), icon: CheckCircle },
-		{ value: "spam", label: t("tickets.spam", "Spam"), icon: AlertCircle }
-	];
+	let ticketPriorityOptions = $state<CatalogOption[]>([
+		{ value: "low", label: t("tickets.low", "Low") },
+		{ value: "normal", label: t("tickets.normal", "Normal") },
+		{ value: "high", label: t("tickets.high", "High") },
+		{ value: "urgent", label: t("tickets.urgent", "Urgent") }
+	]);
 
-	const filterDefs: FilterDef[] = [
+	let ticketStatusOptions = $state<CatalogOption[]>([
+		{ value: "open", label: t("tickets.open", "Open") },
+		{ value: "in_progress", label: t("tickets.in_progress", "In Progress") },
+		{ value: "waiting_on_user", label: t("tickets.waiting_on_user", "Waiting on User") },
+		{ value: "resolved", label: t("tickets.resolved", "Resolved") },
+		{ value: "closed", label: t("tickets.closed", "Closed") },
+		{ value: "spam", label: t("tickets.spam", "Spam") }
+	]);
+
+	$effect(() => {
+		void (async () => {
+			const [priorityRes, statusRes] = await Promise.all([
+				adminCatalogApi.get("tickets.priority"),
+				adminCatalogApi.get("tickets.status")
+			]);
+			if (priorityRes.ok && priorityRes.data?.length) ticketPriorityOptions = priorityRes.data;
+			if (statusRes.ok && statusRes.data?.length) ticketStatusOptions = statusRes.data;
+		})();
+	});
+
+	function getStatusIcon(value: string) {
+		switch (value) {
+			case 'open': return AlertCircle;
+			case 'in_progress': return Clock;
+			case 'waiting_on_user': return MessageSquare;
+			case 'resolved': return CheckCircle;
+			case 'closed': return CheckCircle;
+			case 'spam': return AlertCircle;
+			default: return Ticket;
+		}
+	}
+
+	const statusTabs = $derived([
+		{ value: "", label: t("tickets.all", "All"), icon: Ticket },
+		...ticketStatusOptions.map((o) => ({ ...o, icon: getStatusIcon(o.value) }))
+	]);
+
+	const filterDefs = $derived<FilterDef[]>([
 		{
 			key: "priority",
 			label: t("tickets.priority", "Priority"),
-			options: [
-				{ value: "low", label: t("tickets.low", "Low") },
-				{ value: "normal", label: t("tickets.normal", "Normal") },
-				{ value: "high", label: t("tickets.high", "High") },
-				{ value: "urgent", label: t("tickets.urgent", "Urgent") }
-			]
+			options: ticketPriorityOptions
 		}
-	];
+	]);
 
 	const rowActions: ActionItem[] = [
 		{ label: t("common.view", "View"), icon: Eye, onclick: (row: TicketItem) => openView(row) },
@@ -504,14 +533,7 @@
 			<div>
 				<label for="tk-status" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t("common.status", "Status")}</label>
 				<Select
-					options={[
-						{ value: "open", label: t("tickets.open", "Open") },
-						{ value: "in_progress", label: t("tickets.in_progress", "In Progress") },
-						{ value: "waiting_on_user", label: t("tickets.waiting_on_user", "Waiting on User") },
-						{ value: "resolved", label: t("tickets.resolved", "Resolved") },
-						{ value: "closed", label: t("tickets.closed", "Closed") },
-						{ value: "spam", label: t("tickets.spam", "Spam") }
-					]}
+					options={ticketStatusOptions}
 					value={editForm.status}
 					onchange={(val) => (editForm.status = val)}
 				/>
@@ -519,12 +541,7 @@
 			<div>
 				<label for="tk-priority" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t("tickets.priority", "Priority")}</label>
 				<Select
-					options={[
-						{ value: "low", label: t("tickets.low", "Low") },
-						{ value: "normal", label: t("tickets.normal", "Normal") },
-						{ value: "high", label: t("tickets.high", "High") },
-						{ value: "urgent", label: t("tickets.urgent", "Urgent") }
-					]}
+					options={ticketPriorityOptions}
 					value={editForm.priority}
 					onchange={(val) => (editForm.priority = val)}
 				/>

@@ -9,6 +9,7 @@ vi.mock('$lib/api', () => ({
 		create: vi.fn().mockResolvedValue({ ok: true }),
 		update: vi.fn().mockResolvedValue({ ok: true }),
 		delete: vi.fn().mockResolvedValue({ ok: true }),
+		getPageTypes: vi.fn().mockResolvedValue({ ok: true, data: [] }),
 	},
 }));
 vi.mock('$app/state', () => ({

@@ -6,6 +6,7 @@
 	import { EmptyState, UrlTabs, type UrlTab } from '$lib/components/ui';
 	import { decodeBase64Text } from '$lib/tiptap/serialize';
 	import type { PageData } from './$types';
+import { safeJsonLdScript } from '$lib/utils/safeHtml';
 
 	let { data }: { data: PageData } = $props();
 
@@ -96,6 +97,7 @@
 			'@context': 'https://schema.org',
 			'@type': 'EducationalOrganization',
 			name: university.name,
+			...(university.initials ? { alternateName: university.initials } : {}),
 			description: university.description ?? '',
 			url: page.url.href,
 			...(university.logo_url ? { logo: { '@type': 'ImageObject', url: university.logo_url } } : {}),
@@ -147,7 +149,7 @@
 	<meta property="og:description" content={description} />
 	<meta property="og:type" content="website" />
 	<meta property="og:url" content={page.url.href} />
-	{@html `<script type="application/ld+json">${jsonLd}</script>`}
+	{@html safeJsonLdScript(jsonLd)}
 </svelte:head>
 
 <div class="mx-auto w-full max-w-full">
@@ -174,7 +176,13 @@
 				</span>
 			{/if}
 			<div class="min-w-0 flex-1">
-				<h1 class="truncate text-xl font-semibold text-[var(--color-text)]">{university.name}</h1>
+				<div class="flex items-center gap-2">
+					{#if university.initials}
+						<span class="shrink-0 rounded bg-[var(--color-primary)]/10 px-2 py-0.5 text-sm font-semibold text-[var(--color-primary)]"
+							>{university.initials}</span>
+					{/if}
+					<h1 class="truncate text-xl font-semibold text-[var(--color-text)]">{university.name}</h1>
+				</div>
 				<p class="text-xs capitalize text-[var(--color-muted)]">
 					{university.level} · {university.visibility}
 				</p>

@@ -33,6 +33,7 @@ const (
 	EntityTypeLanguageTest          = "language_test_requirement"
 	EntityTypeTaxObligation         = "tax_obligation_guide"
 	EntityTypeCommunityOrganisation = "community_organisation"
+	EntityTypeCredentialPathway     = "credential_pathway"
 	EntityTypeNews                  = "news"
 )
 
@@ -57,6 +58,7 @@ var registry = map[string]EntitySchema{
 	EntityTypeLanguageTest:          LanguageTestRequirement,
 	EntityTypeTaxObligation:         TaxObligationGuide,
 	EntityTypeCommunityOrganisation: CommunityOrganisation,
+	EntityTypeCredentialPathway:     CredentialPathway,
 	EntityTypeNews:                  News,
 }
 
@@ -120,6 +122,8 @@ func CategoryToEntityType(category string) string {
 		return EntityTypeTaxObligation
 	case "community", "community_organisation", "diaspora":
 		return EntityTypeCommunityOrganisation
+	case "credential", "credential_pathway", "professional_credential":
+		return EntityTypeCredentialPathway
 	case "news":
 		return EntityTypeNews
 	default:

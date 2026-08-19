@@ -22,6 +22,7 @@
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import type { CalendarEntry, CalendarCategory } from '$lib/types';
 	import type { PageData } from './$types';
+import { safeJsonLdScript } from '$lib/utils/safeHtml';
 
 	let { data }: { data: PageData } = $props();
 
@@ -245,7 +246,7 @@
 	<meta name="twitter:title" content={title} />
 	<meta name="twitter:description" content={description} />
 	{#if jsonLd}
-		{@html `<script type="application/ld+json">${jsonLd}</script>`}
+		{@html safeJsonLdScript(jsonLd)}
 	{/if}
 </svelte:head>
 

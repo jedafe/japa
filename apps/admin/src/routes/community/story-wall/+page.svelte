@@ -4,8 +4,7 @@
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import { Modal } from '$lib/components/ui/modal';
 	import { Button } from '$lib/components/ui/button';
-	import { storyAdminApi , spacesAdminApi } from '$lib/api';
-	import { apiRaw } from '$lib/api';
+	import { storyAdminApi , spacesAdminApi, apiRaw, adminCatalogApi, type CatalogOption } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { Eye, CheckCircle, Trash2 } from 'lucide-svelte';
@@ -36,6 +35,19 @@
 	let acting = $state(false);
 	let actionTarget = $state<StoryItem | null>(null);
 	let showDeleteModal = $state(false);
+
+	let storyWallStatusOptions = $state<CatalogOption[]>([
+		{ value: 'draft', label: t('app.story.status_draft', 'Draft') },
+		{ value: 'pending', label: t('app.story.status_pending', 'Pending') },
+		{ value: 'published', label: t('app.story.status_published', 'Published') }
+	]);
+
+	$effect(() => {
+		void (async () => {
+			const res = await adminCatalogApi.get('community.story_wall.status');
+			if (res.ok && res.data?.length) storyWallStatusOptions = res.data;
+		})();
+	});
 
 	function openDelete(item: StoryItem) {
 		actionTarget = item;
@@ -160,11 +172,7 @@ onMount(async () => {
 		{
 			key: 'status',
 			label: t('app.story.col_status', 'Status'),
-			options: [
-				{ value: 'draft', label: t('app.story.status_draft', 'Draft') },
-				{ value: 'pending', label: t('app.story.status_pending', 'Pending') },
-				{ value: 'published', label: t('app.story.status_published', 'Published') },
-			]
+			options: storyWallStatusOptions
 		},
 		{
 			key: 'verified',

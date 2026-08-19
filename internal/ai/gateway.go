@@ -190,6 +190,7 @@ func (d *Dispatcher) ChatWithTools(ctx context.Context, category string, req Cha
 	for _, p := range providers {
 		resp, err := p.ChatWithTools(ctx, req)
 		if err == nil {
+			resp.ProviderName = p.Name()
 			return resp, nil
 		}
 

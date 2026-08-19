@@ -5,7 +5,7 @@
 	// status filter, summary cards, error log in view slide-over.
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import { t } from '$lib/stores/i18n.svelte';
-	import { api, apiRaw } from '$lib/api';
+	import { api, apiRaw, adminCatalogApi, type CatalogOption } from '$lib/api';
 	import PageHeader from '$lib/components/layout/page-header.svelte';
 	import { Card, CardContent } from '$lib/components/ui/card';
 	import { Select } from '$lib/components/ui/select';
@@ -41,7 +41,7 @@
 	let bulkDeleting = $state(false);
 	let saving = $state(false);
 
-	const importTypes = [
+	let importTypes = $state<CatalogOption[]>([
 		{ value: 'users', label: t('app.data_imports.type_users', 'Users') },
 		{ value: 'posts', label: t('app.data_imports.type_posts', 'Posts') },
 		{ value: 'comments', label: t('app.data_imports.type_comments', 'Comments') },
@@ -49,17 +49,40 @@
 		{ value: 'transactions', label: t('app.data_imports.type_transactions', 'Transactions') },
 		{ value: 'analytics', label: t('app.data_imports.type_analytics', 'Analytics') },
 		{ value: 'moderation', label: t('app.data_imports.type_moderation', 'Moderation Logs') }
-	];
+	]);
 
-	const formatOptions = [
+	let importFormatOptions = $state<CatalogOption[]>([
 		{ value: 'csv', label: t('app.data_imports.format_csv', 'CSV') },
 		{ value: 'json', label: t('app.data_imports.format_json', 'JSON') }
-	];
+	]);
 
-	const modeOptions = [
+	let importModeOptions = $state<CatalogOption[]>([
 		{ value: 'create', label: t('app.data_imports.mode_create', 'Create (skip existing)') },
 		{ value: 'upsert', label: t('app.data_imports.mode_upsert', 'Upsert (update or insert)') }
-	];
+	]);
+
+	let importStatusOptions = $state<CatalogOption[]>([
+		{ value: 'pending', label: 'Pending' },
+		{ value: 'processing', label: 'Processing' },
+		{ value: 'completed', label: t('app.data_imports.tab_completed', 'Completed') },
+		{ value: 'partial', label: t('app.data_imports.tab_partial', 'Partial') },
+		{ value: 'failed', label: t('app.data_imports.tab_failed', 'Failed') }
+	]);
+
+	$effect(() => {
+		void (async () => {
+			const [typeRes, formatRes, modeRes, statusRes] = await Promise.all([
+				adminCatalogApi.get('data_imports.type'),
+				adminCatalogApi.get('data_imports.format'),
+				adminCatalogApi.get('data_imports.mode'),
+				adminCatalogApi.get('data_imports.status')
+			]);
+			if (typeRes.ok && typeRes.data?.length) importTypes = typeRes.data;
+			if (formatRes.ok && formatRes.data?.length) importFormatOptions = formatRes.data;
+			if (modeRes.ok && modeRes.data?.length) importModeOptions = modeRes.data;
+			if (statusRes.ok && statusRes.data?.length) importStatusOptions = statusRes.data;
+		})();
+	});
 
 	// ── Summary cards (page-local, above EntityPage) ──────────────────────
 	async function loadSummary() {
@@ -105,15 +128,15 @@
 	}
 
 	// ── EntityPage config ─────────────────────────────────────────────────
-	const fields: FieldDef[] = [
+	const fields = $derived<FieldDef[]>([
 		{ key: 'name', label: t('app.data_imports.import_name', 'Import Name'), type: 'text', required: true },
 		{ key: 'type', label: t('app.data_imports.data_type', 'Data Type'), type: 'select', options: importTypes },
-		{ key: 'format', label: t('app.data_imports.format', 'Format'), type: 'select', options: formatOptions },
-		{ key: 'mode', label: t('app.data_imports.mode', 'Mode'), type: 'select', options: modeOptions },
+		{ key: 'format', label: t('app.data_imports.format', 'Format'), type: 'select', options: importFormatOptions },
+		{ key: 'mode', label: t('app.data_imports.mode', 'Mode'), type: 'select', options: importModeOptions },
 		{ key: 'file_url', label: t('app.data_imports.file_url', 'File URL'), type: 'text', required: true }
-	];
+	]);
 
-	const config: EntityPageConfig = {
+	const config = $derived<EntityPageConfig>({
 		title: t('app.data_imports.title', 'Data Imports'),
 		description: t('app.data_imports.description', 'Import platform data from CSV/JSON files'),
 		createLabel: t('app.data_imports.action_new', 'New Import'),
@@ -173,13 +196,7 @@
 			{
 				key: 'status',
 				label: t('app.data_imports.col_status', 'Status'),
-				options: [
-					{ value: 'pending', label: 'Pending' },
-					{ value: 'processing', label: 'Processing' },
-					{ value: 'completed', label: t('app.data_imports.tab_completed', 'Completed') },
-					{ value: 'partial', label: t('app.data_imports.tab_partial', 'Partial') },
-					{ value: 'failed', label: t('app.data_imports.tab_failed', 'Failed') }
-				]
+				options: importStatusOptions
 			},
 			{
 				key: 'type',
@@ -251,7 +268,7 @@
 		},
 		formSnippet: ImportForm,
 		viewSnippet: ImportView
-	};
+	});
 </script>
 
 <svelte:head>
@@ -370,14 +387,14 @@
 				<label for="import-format" class="mb-1 block text-sm font-medium text-foreground-alt">
 					{t('app.data_imports.format', 'Format')}
 				</label>
-				<Select bind:value={value.format} options={formatOptions} />
+				<Select bind:value={value.format} options={importFormatOptions} />
 			</div>
 		</div>
 		<div>
 			<label for="import-mode" class="mb-1 block text-sm font-medium text-foreground-alt">
 				{t('app.data_imports.mode', 'Mode')}
 			</label>
-			<Select bind:value={value.mode} options={modeOptions} />
+			<Select bind:value={value.mode} options={importModeOptions} />
 		</div>
 		<div>
 			<label for="import-file-url" class="mb-1 block text-sm font-medium text-foreground-alt">

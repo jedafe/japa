@@ -269,6 +269,9 @@ var workCareerPrompt string
 //go:embed prompts/health_insurance.txt
 var healthInsurancePrompt string
 
+//go:embed prompts/credential_pathway.txt
+var credentialPathwayPrompt string
+
 //go:embed prompts/culture_lifestyle.txt
 var cultureLifestylePrompt string
 
@@ -279,20 +282,21 @@ var newsPrompt string
 // domain = add a //go:embed line + an entry here. No buildPrompt code
 // change.
 var promptTemplates = map[string]string{
-	schemas.EntityTypeScholarship:      scholarshipPrompt,
-	schemas.EntityTypeJob:              jobPrompt,
-	schemas.EntityTypeVisa:             visaPrompt,
-	schemas.EntityTypeRemittance:       remittancePrompt,
-	schemas.EntityTypeCostOfLiving:     costOfLivingPrompt,
-	schemas.EntityTypeHousing:          housingPrompt,
-	schemas.EntityTypeTravelRoutes:     travelRoutesPrompt,
-	schemas.EntityTypeGrants:           grantsPrompt,
-	schemas.EntityTypeAdmission:        admissionPrompt,
-	schemas.EntityTypeBanking:          bankingPrompt,
-	schemas.EntityTypeWorkCareer:       workCareerPrompt,
-	schemas.EntityTypeHealthInsurance:  healthInsurancePrompt,
-	schemas.EntityTypeCultureLifestyle: cultureLifestylePrompt,
-	schemas.EntityTypeNews:             newsPrompt,
+	schemas.EntityTypeScholarship:       scholarshipPrompt,
+	schemas.EntityTypeJob:               jobPrompt,
+	schemas.EntityTypeVisa:              visaPrompt,
+	schemas.EntityTypeRemittance:        remittancePrompt,
+	schemas.EntityTypeCostOfLiving:      costOfLivingPrompt,
+	schemas.EntityTypeHousing:           housingPrompt,
+	schemas.EntityTypeTravelRoutes:      travelRoutesPrompt,
+	schemas.EntityTypeGrants:            grantsPrompt,
+	schemas.EntityTypeAdmission:         admissionPrompt,
+	schemas.EntityTypeBanking:           bankingPrompt,
+	schemas.EntityTypeWorkCareer:        workCareerPrompt,
+	schemas.EntityTypeHealthInsurance:   healthInsurancePrompt,
+	schemas.EntityTypeCultureLifestyle:  cultureLifestylePrompt,
+	schemas.EntityTypeCredentialPathway: credentialPathwayPrompt,
+	schemas.EntityTypeNews:              newsPrompt,
 }
 
 // buildPrompt loads the prompt template for the given entity schema and

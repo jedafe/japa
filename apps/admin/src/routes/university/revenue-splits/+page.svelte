@@ -1,7 +1,7 @@
 <script lang="ts">
 	// /university/revenue-splits — read-only audit viewer migrated to EntityPage scaffold.
 	import { EntityPage, type EntityPageConfig, type EntityPageController } from '$lib/components/entity';
-	import { universityAdminApi } from '$lib/api';
+	import { universityAdminApi, adminCatalogApi, type CatalogOption } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { Eye } from 'lucide-svelte';
 
@@ -24,6 +24,18 @@
 	let dateTo = $state('');
 	let entityController = $state<EntityPageController | undefined>(undefined);
 
+	let revenueSourceOptions = $state<CatalogOption[]>([
+		{ value: 'purchase', label: t('university.source_purchase', 'Purchase') },
+		{ value: 'pro_stream', label: t('university.source_pro_stream', 'Pro Stream') }
+	]);
+
+	$effect(() => {
+		void (async () => {
+			const res = await adminCatalogApi.get('university.revenue_splits.source');
+			if (res.ok && res.data?.length) revenueSourceOptions = res.data;
+		})();
+	});
+
 	function formatKobo(kobo: number): string {
 		const major = kobo / 100;
 		return `₦ ${major.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -33,7 +45,7 @@
 		entityController?.reload();
 	}
 
-	const config: EntityPageConfig = {
+	const config = $derived<EntityPageConfig>({
 		title: t('university.revenue_splits_title', 'Revenue Splits'),
 		description: t('university.revenue_splits_desc', 'Read-only audit viewer for per-event revenue split records'),
 		readonly: true,
@@ -96,10 +108,7 @@
 			{
 				key: 'source',
 				label: t('university.source', 'Source'),
-				options: [
-					{ value: 'purchase', label: t('university.source_purchase', 'Purchase') },
-					{ value: 'pro_stream', label: t('university.source_pro_stream', 'Pro Stream') }
-				]
+				options: revenueSourceOptions
 			}
 		],
 		actions: [
@@ -148,7 +157,7 @@
 			return { data: paged, total, totalPages };
 		},
 		viewSnippet: SplitView
-	};
+	});
 </script>
 
 <svelte:head>

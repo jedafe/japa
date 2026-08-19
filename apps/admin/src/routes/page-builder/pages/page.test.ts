@@ -15,7 +15,11 @@ vi.mock('$lib/api', () => ({
 		list: vi.fn().mockResolvedValue({ ok: true, data: [] })
 	},
 	pageBuilderAdminApiExtended: {
-		listThemes: vi.fn().mockResolvedValue({ ok: true, data: [] })
+		listThemes: vi.fn().mockResolvedValue({ ok: true, data: [] }),
+		getPageTypes: vi.fn().mockResolvedValue({ ok: true, data: [] })
+	},
+	contentAdminApi: {
+		getStatusOptions: vi.fn().mockResolvedValue({ ok: true, data: [] })
 	}
 }));
 vi.mock('$app/state', () => ({

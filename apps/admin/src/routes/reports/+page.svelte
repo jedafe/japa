@@ -7,7 +7,7 @@
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from "$lib/components/entity";
 	import { Modal } from "$lib/components/ui/modal";
 	import { Button } from "$lib/components/ui/button";
-	import { reportsAdminApiExtended, apiRaw } from "$lib/api";
+	import { reportsAdminApiExtended, apiRaw, adminCatalogApi, type CatalogOption } from "$lib/api";
 	import { t } from "$lib/stores/i18n.svelte";
 	import { Eye, Gavel, Ban, Trash2 } from "lucide-svelte";
 	import type { ActionItem } from "$lib/components/ui/data-table";
@@ -41,6 +41,33 @@
 
 	// ── EntityPage controller + page error ──────────────────────────────────
 	let entityController = $state<EntityPageController | undefined>(undefined);
+
+	let reportStatusOptions = $state<CatalogOption[]>([
+		{ value: "pending", label: t("reports.status_pending", "Pending") },
+		{ value: "reviewing", label: t("reports.status_reviewing", "Reviewing") },
+		{ value: "actioned", label: t("reports.status_actioned", "Actioned") },
+		{ value: "dismissed", label: t("reports.status_dismissed", "Dismissed") }
+	]);
+
+	let reportEntityTypeOptions = $state<CatalogOption[]>([
+		{ value: "content", label: "Content" },
+		{ value: "comment", label: "Comment" },
+		{ value: "user", label: "User" },
+		{ value: "space", label: "Space" },
+		{ value: "message", label: "Message" }
+	]);
+
+	$effect(() => {
+		void (async () => {
+			const [statusRes, typeRes] = await Promise.all([
+				adminCatalogApi.get("reports.status"),
+				adminCatalogApi.get("reports.entity_type")
+			]);
+			if (statusRes.ok && statusRes.data?.length) reportStatusOptions = statusRes.data;
+			if (typeRes.ok && typeRes.data?.length) reportEntityTypeOptions = typeRes.data;
+		})();
+	});
+
 	let pageError = $state("");
 
 	// ── Bulk dismiss (PATCH all selected to 'dismissed') with in-flight guard ──
@@ -194,22 +221,12 @@
 			{
 				key: "status",
 				label: t("reports.status", "Status"),
-				options: [
-					{ value: "pending", label: t("reports.status_pending", "Pending") },
-					{ value: "reviewing", label: t("reports.status_reviewing", "Reviewing") },
-					{ value: "actioned", label: t("reports.status_actioned", "Actioned") },
-					{ value: "dismissed", label: t("reports.status_dismissed", "Dismissed") }
-				]
+				options: reportStatusOptions
 			},
 			{
 				key: "entity_type",
 				label: t("reports.type", "Type"),
-				options: [
-					{ value: "content", label: "Content" },
-					{ value: "comment", label: "Comment" },
-					{ value: "user", label: "User" },
-					{ value: "space", label: "Space" }
-				]
+				options: reportEntityTypeOptions
 			}
 		],
 		actions: rowActions,

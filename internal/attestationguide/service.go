@@ -15,6 +15,9 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"log/slog"
+	"net/http"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -28,6 +31,13 @@ import (
 // needs to generate draft pathways. *ai.Dispatcher satisfies this.
 type AIDispatcher interface {
 	Dispatch(ctx context.Context, category string, req ai.Request) (ai.Response, error)
+}
+
+// Researcher runs grounded web research for an issuing jurisdiction,
+// destination jurisdiction, and document type. *Service implements this
+// interface, but it can be swapped in tests.
+type Researcher interface {
+	Research(ctx context.Context, tenantID, destSpaceID, issuingSpaceID pgtype.UUID, documentType string) (string, []string, error)
 }
 
 // PathwayDTO is the API response shape for a single attestation pathway.
@@ -109,19 +119,27 @@ type Service struct {
 	store      *Store
 	settings   *config.Settings
 	dispatcher AIDispatcher
+	httpClient *http.Client // nil = http.DefaultClient
+	researcher Researcher   // nil = use s.Research
 }
 
 // NewService creates an attestation guide service.
 func NewService(store *Store, settings *config.Settings) *Service {
-	return &Service{
+	s := &Service{
 		store:    store,
 		settings: settings,
 	}
+	s.researcher = s
+	return s
 }
 
 // SetDispatcher injects the AI Gateway dispatcher for draft generation
 // (called at server wiring time).
 func (s *Service) SetDispatcher(d AIDispatcher) { s.dispatcher = d }
+
+// SetHTTPClient sets the HTTP client used for external web research. When
+// nil, http.DefaultClient is used.
+func (s *Service) SetHTTPClient(c *http.Client) { s.httpClient = c }
 
 // Enabled reads the attestation_guide.enabled system_setting toggle
 // (§97 feature flag).
@@ -130,6 +148,126 @@ func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
 		return false
 	}
 	return s.settings.GetBoolOr(ctx, tenantID, "attestation_guide.enabled", false)
+}
+
+// Research runs grounded web research for the given issuing jurisdiction,
+// destination jurisdiction, and document type. It returns a formatted
+// "GROUNDED RESEARCH" section and a list of source URLs to append to the
+// generation prompt. Errors are returned so the caller can log and fall back.
+func (s *Service) Research(ctx context.Context, tenantID, destSpaceID, issuingSpaceID pgtype.UUID, documentType string) (string, []string, error) {
+	client := s.httpClient
+	if client == nil {
+		client = http.DefaultClient
+	}
+
+	destName, err := s.store.GetSpaceName(ctx, destSpaceID, tenantID)
+	if err != nil {
+		return "", nil, err
+	}
+	dest := destName
+	if dest == "" {
+		dest = destSpaceID.String()
+	}
+
+	issuingName, err := s.store.GetSpaceName(ctx, issuingSpaceID, tenantID)
+	if err != nil {
+		return "", nil, err
+	}
+	issuing := issuingName
+	if issuing == "" {
+		issuing = issuingSpaceID.String()
+	}
+
+	doc := documentType
+	if doc == "" {
+		doc = "document"
+	} else {
+		doc = strings.ReplaceAll(doc, "_", " ")
+	}
+
+	queries := []string{
+		fmt.Sprintf("current attestation requirements for %s from %s to %s 2026", doc, issuing, dest),
+	}
+
+	return s.runWebResearch(ctx, client, tenantID, queries)
+}
+
+// runWebResearch executes the provided queries through the configured
+// external search provider and formats the results for the generation
+// prompt. It returns the full grounded research section and a deduplicated
+// list of citation URLs.
+func (s *Service) runWebResearch(ctx context.Context, client *http.Client, tenantID pgtype.UUID, queries []string) (string, []string, error) {
+	var sections []string
+	seenCitations := make(map[string]bool)
+	var citations []string
+
+	for _, q := range queries {
+		provider, results, err := ai.SearchWeb(ctx, client, s.settings, tenantID, q, 5)
+		if err != nil {
+			return "", nil, err
+		}
+		if len(results) == 0 {
+			continue
+		}
+		section, sectionCitations := buildGroundedResearchSection(q, provider, results)
+		sections = append(sections, section)
+		for _, c := range sectionCitations {
+			if !seenCitations[c] {
+				seenCitations[c] = true
+				citations = append(citations, c)
+			}
+		}
+	}
+
+	if len(sections) == 0 {
+		return "", nil, nil
+	}
+
+	var sb strings.Builder
+	sb.WriteString("GROUNDED RESEARCH (use the search results below for current, factual sub-fields such as attestation steps, agencies, fees, and official links; cite the source URLs when you include factual claims):\n\n")
+	for _, sec := range sections {
+		sb.WriteString(sec)
+		sb.WriteString("\n\n")
+	}
+	if len(citations) > 0 {
+		sb.WriteString("Sources:\n")
+		for _, c := range citations {
+			sb.WriteString("- " + c + "\n")
+		}
+	}
+	return sb.String(), citations, nil
+}
+
+// buildGroundedResearchSection formats a single query's results.
+func buildGroundedResearchSection(query, provider string, results []ai.WebSearchResult) (string, []string) {
+	if len(results) == 0 {
+		return "", nil
+	}
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("Query: %q (provider: %s)\n", query, provider))
+
+	seen := make(map[string]bool)
+	var citations []string
+	for i, r := range results {
+		sb.WriteString(fmt.Sprintf("\nResult %d:\n", i+1))
+		sb.WriteString(fmt.Sprintf("Title: %s\n", r.Title))
+		sb.WriteString(fmt.Sprintf("URL: %s\n", r.URL))
+		sb.WriteString(fmt.Sprintf("Content: %s\n", r.Content))
+		if len(r.Citations) > 0 {
+			sb.WriteString(fmt.Sprintf("Citations: %s\n", strings.Join(r.Citations, ", ")))
+		}
+		for _, c := range append([]string{r.URL}, r.Citations...) {
+			if c == "" {
+				continue
+			}
+			if !seen[c] {
+				seen[c] = true
+				citations = append(citations, c)
+			}
+		}
+	}
+	return sb.String(), citations
 }
 
 // isHagueMember reports whether the destination space is a Hague Convention
@@ -297,11 +435,45 @@ func (s *Service) GenerateDraft(ctx context.Context, tenantID pgtype.UUID, input
 		return PathwayDTO{}, fmt.Errorf("invalid destination_space_id: %w", err)
 	}
 
+	// Look up the issuing and destination jurisdiction names so the prompt
+	// and research queries are human-readable. Missing names are non-fatal;
+	// we fall back to the supplied IDs.
+	issuingName, _ := s.store.GetSpaceName(ctx, issuingSpaceID, tenantID)
+	destName, _ := s.store.GetSpaceName(ctx, destSpaceID, tenantID)
+	issuing := issuingName
+	if issuing == "" {
+		issuing = input.IssuingSpaceID
+	}
+	dest := destName
+	if dest == "" {
+		dest = input.DestinationSpaceID
+	}
+
 	// Build the generation prompt.
 	prompt := input.Prompt
 	if prompt == "" {
-		prompt = fmt.Sprintf("Generate an attestation pathway for document type '%s' from %s to %s",
-			input.DocumentType, input.IssuingSpaceID, input.DestinationSpaceID)
+		prompt = fmt.Sprintf(
+			"Generate an attestation pathway for document type '%s' from %s to %s. Include the sequence of steps, agencies, fees, turnaround times, and official links.\n\n"+
+				"Use the GROUNDED RESEARCH section below for current attestation requirements. Cite the source URLs when you make factual claims. If no grounded research is available, use your training knowledge and clearly note that details may need verification.",
+			input.DocumentType, issuing, dest,
+		)
+	} else {
+		prompt = fmt.Sprintf(
+			"%s\n\nContext: document_type=%s, issuing_space=%s, destination_space=%s. "+
+				"Use the GROUNDED RESEARCH section below for current attestation requirements. Cite the source URLs when you make factual claims.",
+			prompt, input.DocumentType, issuing, dest,
+		)
+	}
+
+	// Augment the prompt with grounded web research. If research fails, log
+	// a warning and continue with the original prompt (graceful degradation).
+	if s.researcher != nil {
+		researchText, _, researchErr := s.researcher.Research(ctx, tenantID, destSpaceID, issuingSpaceID, input.DocumentType)
+		if researchErr != nil {
+			slog.Warn("attestationguide: web research failed, continuing with original prompt", "error", researchErr)
+		} else if researchText != "" {
+			prompt = prompt + "\n\n" + researchText
+		}
 	}
 
 	aiModel := "content_agent_v1"

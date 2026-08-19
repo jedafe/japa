@@ -21,6 +21,7 @@
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import type { ServiceListing, ServiceCategory, ServiceReview } from '$lib/types';
 	import type { PageData } from './$types';
+	import { sanitizeContentHtml, safeJsonLdScript } from '$lib/utils/safeHtml';
 
 	let { data }: { data: PageData } = $props();
 
@@ -130,7 +131,7 @@
 	<meta property="og:type" content="article" />
 	<meta property="og:url" content={page.url.href} />
 	{#if jsonLd}
-		{@html `<script type="application/ld+json">${jsonLd}</script>`}
+		{@html safeJsonLdScript(jsonLd)}
 	{/if}
 </svelte:head>
 
@@ -215,7 +216,7 @@
 			<!-- Body -->
 			{#if service.body}
 				<div class="mt-6 prose prose-sm max-w-none text-[var(--color-text)]">
-					{@html service.body_html || service.body}
+					{@html sanitizeContentHtml(service.body_html || service.body)}
 				</div>
 			{/if}
 

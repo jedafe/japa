@@ -8,20 +8,21 @@ const spaces = [
 ];
 
 describe('SpaceSelector', () => {
-	it('renders a trigger button with placeholder when no space is selected', () => {
+	it('renders a search input with placeholder when no space is selected', () => {
 		const { getByRole } = render(SpaceSelector, {
 			props: { spaces, selectedId: null, onSelect: () => {} }
 		});
-		const trigger = getByRole('button', { name: /select a space/i });
-		expect(trigger).toBeTruthy();
+		const input = getByRole('combobox');
+		expect(input).toBeTruthy();
+		expect(input.getAttribute('placeholder')).toMatch(/search spaces/i);
 	});
 
-	it('opens the dropdown and shows all spaces when clicked', async () => {
+	it('opens the dropdown and shows all spaces when focused', async () => {
 		const { getByRole, getAllByRole } = render(SpaceSelector, {
 			props: { spaces, selectedId: null, onSelect: () => {} }
 		});
-		const trigger = getByRole('button', { name: /select a space/i });
-		await fireEvent.click(trigger);
+		const input = getByRole('combobox');
+		await fireEvent.focus(input);
 		const options = getAllByRole('option');
 		expect(options.length).toBe(2);
 		expect(options[0].textContent).toContain('Nigeria');
@@ -32,8 +33,8 @@ describe('SpaceSelector', () => {
 		const { getByRole, getAllByRole } = render(SpaceSelector, {
 			props: { spaces, selectedId: null, onSelect: () => {} }
 		});
-		const trigger = getByRole('button', { name: /select a space/i });
-		await fireEvent.click(trigger);
+		const input = getByRole('combobox');
+		await fireEvent.focus(input);
 		const options = getAllByRole('option');
 		expect(options[0].textContent).toContain('★');
 	});
@@ -43,10 +44,10 @@ describe('SpaceSelector', () => {
 		const { getByRole, getAllByRole } = render(SpaceSelector, {
 			props: { spaces, selectedId: null, onSelect: (id: string) => (chosen = id) }
 		});
-		const trigger = getByRole('button', { name: /select a space/i });
-		await fireEvent.click(trigger);
+		const input = getByRole('combobox');
+		await fireEvent.focus(input);
 		const options = getAllByRole('option');
-		await fireEvent.click(options[1]);
+		await fireEvent.mouseDown(options[1]);
 		expect(chosen).toBe('s2');
 	});
 });

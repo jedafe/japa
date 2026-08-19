@@ -52,8 +52,10 @@
 	} as const;
 
 	// Enabled languages + default language from site settings (§18, ADR-013).
+	// If the setting is unavailable, fall back to the active locale instead of
+	// a hardcoded list (Rule 16).
 	const enabledLanguages = $derived(
-		((page.data?.siteSettings?.['i18n.enabled_languages'] as string | undefined) ?? 'en,fr')
+		((page.data?.siteSettings?.['i18n.enabled_languages'] as string | undefined) ?? (page.data?.locale as string))
 			.split(',').map((l) => l.trim()).filter(Boolean)
 	);
 	const defaultLanguage = $derived(

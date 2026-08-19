@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { t } from '$lib/i18n';
 	import { api } from '$lib/api/client';
+	import { sanitizeContentHtml } from '$lib/utils/safeHtml';
 
 	interface Props {
 		/** Ad slot identifier, surfaced as the label. */
@@ -141,7 +142,7 @@
 					loading="lazy"
 				/>
 			{:else if campaign.content?.html}
-				{@html campaign.content.html}
+				{@html sanitizeContentHtml(campaign.content.html)}
 			{:else}
 				<div class="flex flex-col items-center gap-1 px-2 text-center">
 					{#if campaign.content?.headline}

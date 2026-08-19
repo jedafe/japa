@@ -15,6 +15,7 @@
 	} from 'lucide-svelte';
 	import { EmptyState, UrlTabs, type UrlTab } from '$lib/components/ui';
 	import type { PageData } from './$types';
+import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	import type { TrendingWindow } from '$lib/types';
 
 	let { data }: { data: PageData } = $props();
@@ -88,7 +89,7 @@
 	<meta name="twitter:card" content="summary" />
 	<meta name="twitter:title" content={title} />
 	<meta name="twitter:description" content={description} />
-	{@html `<script type="application/ld+json">${jsonLd}</script>`}
+	{@html safeJsonLdScript(jsonLd)}
 </svelte:head>
 
 <div class="mx-auto w-full max-w-full">

@@ -94,3 +94,18 @@ function isDangerousUrl(url: string): boolean {
 	// Match `javascript:`, `data:`, `vbscript:` with optional whitespace/control chars.
 	return /^\s*(javascript|data|vbscript)\s*:/i.test(url);
 }
+
+/**
+ * Render a JSON-LD payload as a safe `<script type="application/ld+json">` tag.
+ *
+ * `JSON.stringify` does not escape the `<` character, so a string value that
+ * contains `</script>` could terminate the script block. We escape `<` to
+ * `\u003c` and `>` to `\u003e` so the browser parses the whole JSON as a single
+ * script text node. Ref: Bug Hunter's Guide §5.1 (Injection & XSS).
+ */
+export function safeJsonLdScript(payload: unknown): string {
+	if (payload === null || payload === undefined) return '';
+	const json = typeof payload === 'string' ? payload : JSON.stringify(payload);
+	const safe = json.replace(/</g, '\\u003c').replace(/>/g, '\\u003e');
+	return `<script type="application/ld+json">${safe}</script>`;
+}

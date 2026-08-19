@@ -414,10 +414,16 @@ func (q *Queries) CountSpacesByOwnerUser(ctx context.Context, arg CountSpacesByO
 
 const countSpacesByType = `-- name: CountSpacesByType :one
 SELECT COUNT(*) AS total
-FROM spaces
-WHERE spaces.tenant_id = $1 AND spaces.space_type_id = $2 AND spaces.deleted_at IS NULL
-  AND ($3::text = '' OR name ILIKE '%' || $3 || '%' OR slug ILIKE '%' || $3 || '%')
-  AND ($4::text = '' OR geo_code = $4)
+FROM spaces s
+LEFT JOIN custom_field_values cfv ON cfv.entity_id = s.id
+  AND cfv.entity_type = 'space'
+  AND cfv.field_id = '00000000-0000-0000-0000-000000000090'::uuid
+WHERE s.tenant_id = $1 AND s.space_type_id = $2 AND s.deleted_at IS NULL
+  AND ($3::text = ''
+    OR s.name ILIKE '%' || $3 || '%'
+    OR s.slug ILIKE '%' || $3 || '%'
+    OR cfv.value_text ILIKE '%' || $3 || '%')
+  AND ($4::text = '' OR s.geo_code = $4)
 `
 
 type CountSpacesByTypeParams struct {
@@ -427,6 +433,9 @@ type CountSpacesByTypeParams struct {
 	GeoCode     string      `json:"geo_code"`
 }
 
+// Counts spaces with the same filters as ListSpacesByTypePaginated, including
+// searching the initials custom field for university spaces.
+// Ref: japaconnect-engineering/sections/39-space-types-university.md
 func (q *Queries) CountSpacesByType(ctx context.Context, arg CountSpacesByTypeParams) (int64, error) {
 	row := q.db.QueryRow(ctx, countSpacesByType,
 		arg.TenantID,
@@ -772,41 +781,115 @@ func (q *Queries) FindCitySpaceByName(ctx context.Context, arg FindCitySpaceByNa
 }
 
 const findSpacesByKeywords = `-- name: FindSpacesByKeywords :many
-SELECT id, name, level
-FROM spaces
-WHERE tenant_id = $1
-  AND deleted_at IS NULL
-  AND visibility = 'public'
-  AND level IN ('country', 'state', 'city')
-  AND keywords && $2::text[]
+WITH title_ngrams AS (
+    SELECT
+        value AS kw,
+        array_length(regexp_split_to_array(value, '\s+'), 1) AS word_count
+    FROM unnest($1::text[]) AS value
+),
+keyword_matches AS (
+    -- country/state/city spaces whose configured keywords overlap with any title n-gram.
+    SELECT
+        s.id,
+        s.name,
+        s.level,
+        st.slug AS space_type_slug,
+        (SELECT COALESCE(MAX(tn.word_count * 1000), 0)
+         FROM title_ngrams tn
+         WHERE tn.kw IN (SELECT lower(sk) FROM unnest(s.keywords) sk)) AS score
+    FROM spaces s
+    JOIN space_types st ON st.id = s.space_type_id
+    WHERE s.tenant_id = $2
+      AND s.deleted_at IS NULL
+      AND s.visibility = 'public'
+      AND s.status = 'active'
+      AND (s.level IN ('country', 'state', 'city') OR st.slug = 'university')
+      AND s.keywords && $1::text[]
+),
+name_matches AS (
+    -- primary spaces and universities whose full name exactly matches a title n-gram.
+    SELECT
+        s.id,
+        s.name,
+        s.level,
+        st.slug AS space_type_slug,
+        (tn.word_count * 1000 + 100) AS score
+    FROM spaces s
+    JOIN space_types st ON st.id = s.space_type_id
+    CROSS JOIN title_ngrams tn
+    WHERE s.tenant_id = $2
+      AND s.deleted_at IS NULL
+      AND s.visibility = 'public'
+      AND s.status = 'active'
+      AND (s.level IN ('country', 'state', 'city') OR st.slug = 'university')
+      AND LOWER(s.name) = tn.kw
+),
+initials_matches AS (
+    -- universities whose initials custom-field value exactly matches a title n-gram.
+    SELECT
+        s.id,
+        s.name,
+        s.level,
+        st.slug AS space_type_slug,
+        (tn.word_count * 1000 + 500) AS score
+    FROM spaces s
+    JOIN space_types st ON st.id = s.space_type_id
+    JOIN custom_fields cf ON cf.tenant_id = s.tenant_id AND cf.key = 'initials'
+    JOIN custom_field_values cfv ON cfv.entity_id = s.id AND cfv.entity_type = 'space' AND cfv.field_id = cf.id
+    CROSS JOIN title_ngrams tn
+    WHERE s.tenant_id = $2
+      AND s.deleted_at IS NULL
+      AND s.visibility = 'public'
+      AND s.status = 'active'
+      AND st.slug = 'university'
+      AND LOWER(cfv.value_text) = tn.kw
+)
+SELECT
+    id,
+    name,
+    level,
+    space_type_slug
+FROM (
+    SELECT id, name, level, space_type_slug, score FROM keyword_matches
+    UNION ALL
+    SELECT id, name, level, space_type_slug, score FROM name_matches
+    UNION ALL
+    SELECT id, name, level, space_type_slug, score FROM initials_matches
+) combined
+GROUP BY id, name, level, space_type_slug
 ORDER BY
-  CASE level
-    WHEN 'city' THEN 1
-    WHEN 'state' THEN 2
-    WHEN 'country' THEN 3
-  END,
-  name
+    MAX(score) DESC,
+    CASE level
+        WHEN 'city' THEN 1
+        WHEN 'state' THEN 2
+        WHEN 'country' THEN 3
+        ELSE 4
+    END,
+    name
 `
 
 type FindSpacesByKeywordsParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
 	Keywords []string    `json:"keywords"`
+	TenantID pgtype.UUID `json:"tenant_id"`
 }
 
 type FindSpacesByKeywordsRow struct {
-	ID    pgtype.UUID `json:"id"`
-	Name  string      `json:"name"`
-	Level string      `json:"level"`
+	ID            pgtype.UUID `json:"id"`
+	Name          string      `json:"name"`
+	Level         string      `json:"level"`
+	SpaceTypeSlug string      `json:"space_type_slug"`
 }
 
-// Find primary (country/state/city) and public spaces whose keywords overlap
-// with the given keyword list. Used for auto-assigning content to spaces
-// based on the content title. Only matches spaces with visibility='public'
-// and level IN ('country','state','city'). Returns only the fields needed
-// for auto-assignment (id, name, level) to avoid coupling to the full Space
-// model which doesn't include the keywords column.
+// Find primary (country/state/city) and public university spaces whose
+// keywords, full name, or university initials overlap with the given keyword
+// list. Used for auto-assigning content to spaces based on the content title.
+// Multi-word contiguous phrases in the title generate multi-word n-grams so
+// that full names (e.g. "University of Lagos") and multi-word keywords
+// (e.g. "new york") match exactly. Matches are ordered by specificity:
+// initials match > full name match > keyword match, then by
+// city > state > country > university. Errors are logged by the caller.
 func (q *Queries) FindSpacesByKeywords(ctx context.Context, arg FindSpacesByKeywordsParams) ([]FindSpacesByKeywordsRow, error) {
-	rows, err := q.db.Query(ctx, findSpacesByKeywords, arg.TenantID, arg.Keywords)
+	rows, err := q.db.Query(ctx, findSpacesByKeywords, arg.Keywords, arg.TenantID)
 	if err != nil {
 		return nil, err
 	}
@@ -814,7 +897,12 @@ func (q *Queries) FindSpacesByKeywords(ctx context.Context, arg FindSpacesByKeyw
 	var items []FindSpacesByKeywordsRow
 	for rows.Next() {
 		var i FindSpacesByKeywordsRow
-		if err := rows.Scan(&i.ID, &i.Name, &i.Level); err != nil {
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Level,
+			&i.SpaceTypeSlug,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -1594,6 +1682,30 @@ func (q *Queries) IncrementSpaceFollowerCount(ctx context.Context, arg Increment
 	return err
 }
 
+const isUserSpaceMember = `-- name: IsUserSpaceMember :one
+
+SELECT EXISTS (
+    SELECT 1 FROM space_members
+    WHERE space_id = $1 AND user_id = $2 AND tenant_id = $3 AND status = 'approved'
+) AS is_member
+`
+
+type IsUserSpaceMemberParams struct {
+	SpaceID  pgtype.UUID `json:"space_id"`
+	UserID   pgtype.UUID `json:"user_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+// =====================
+// Space Members (with profile data)
+// =====================
+func (q *Queries) IsUserSpaceMember(ctx context.Context, arg IsUserSpaceMemberParams) (bool, error) {
+	row := q.db.QueryRow(ctx, isUserSpaceMember, arg.SpaceID, arg.UserID, arg.TenantID)
+	var is_member bool
+	err := row.Scan(&is_member)
+	return is_member, err
+}
+
 const listAllSpaceJoinRequests = `-- name: ListAllSpaceJoinRequests :many
 SELECT sm.space_id, sm.user_id, u.username, up.display_name, up.avatar_url, sm.joined_at, sm.status,
        s.name AS space_name
@@ -2184,7 +2296,6 @@ func (q *Queries) ListSpaceMemberUserIDs(ctx context.Context, arg ListSpaceMembe
 }
 
 const listSpaceMembersWithProfile = `-- name: ListSpaceMembersWithProfile :many
-
 SELECT sm.user_id, u.username, up.display_name, up.avatar_url, sm.joined_at
 FROM space_members sm
 JOIN users u ON u.id = sm.user_id AND u.tenant_id = sm.tenant_id
@@ -2209,9 +2320,6 @@ type ListSpaceMembersWithProfileRow struct {
 	JoinedAt    pgtype.Timestamptz `json:"joined_at"`
 }
 
-// =====================
-// Space Members (with profile data)
-// =====================
 // SPACES-007: only list approved members, not pending join requests.
 func (q *Queries) ListSpaceMembersWithProfile(ctx context.Context, arg ListSpaceMembersWithProfileParams) ([]ListSpaceMembersWithProfileRow, error) {
 	rows, err := q.db.Query(ctx, listSpaceMembersWithProfile,
@@ -3031,23 +3139,30 @@ func (q *Queries) ListSpacesByType(ctx context.Context, arg ListSpacesByTypePara
 }
 
 const listSpacesByTypePaginated = `-- name: ListSpacesByTypePaginated :many
-SELECT id, tenant_id, parent_id, space_type_id, name, slug, description, wiki_content,
-       logo_media_id, header_image_id, geo_code, level, member_count, post_count,
-       follower_count, visibility, posting_perm, replying_perm, commenting_perm,
-       joining_perm, status, created_at, updated_at, deleted_at, currency_code
-FROM spaces
-WHERE spaces.tenant_id = $1 AND spaces.space_type_id = $2 AND spaces.deleted_at IS NULL
-  AND ($3::text = '' OR name ILIKE '%' || $3 || '%' OR slug ILIKE '%' || $3 || '%')
-  AND ($4::text = '' OR geo_code = $4)
+SELECT s.id, s.tenant_id, s.parent_id, s.space_type_id, s.name, s.slug, s.description, s.wiki_content,
+       s.logo_media_id, s.header_image_id, s.geo_code, s.level, s.member_count, s.post_count,
+       s.follower_count, s.visibility, s.posting_perm, s.replying_perm, s.commenting_perm,
+       s.joining_perm, s.status, s.created_at, s.updated_at, s.deleted_at, s.currency_code,
+       cfv.value_text AS initials
+FROM spaces s
+LEFT JOIN custom_field_values cfv ON cfv.entity_id = s.id
+  AND cfv.entity_type = 'space'
+  AND cfv.field_id = '00000000-0000-0000-0000-000000000090'::uuid
+WHERE s.tenant_id = $1 AND s.space_type_id = $2 AND s.deleted_at IS NULL
+  AND ($3::text = ''
+    OR s.name ILIKE '%' || $3 || '%'
+    OR s.slug ILIKE '%' || $3 || '%'
+    OR cfv.value_text ILIKE '%' || $3 || '%')
+  AND ($4::text = '' OR s.geo_code = $4)
 ORDER BY
-  CASE WHEN $5::text = 'name' THEN name ELSE NULL END ASC,
+  CASE WHEN $5::text = 'name' THEN s.name ELSE NULL END ASC,
   CASE
-    WHEN $5::text = 'members' THEN member_count
-    WHEN $5::text = 'followers' THEN follower_count
-    WHEN $5::text = 'posts' THEN post_count
+    WHEN $5::text = 'members' THEN s.member_count
+    WHEN $5::text = 'followers' THEN s.follower_count
+    WHEN $5::text = 'posts' THEN s.post_count
     ELSE NULL
   END DESC,
-  created_at DESC, id DESC
+  s.created_at DESC, s.id DESC
 LIMIT $7 OFFSET $6
 `
 
@@ -3087,10 +3202,15 @@ type ListSpacesByTypePaginatedRow struct {
 	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
 	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
 	CurrencyCode   *string            `json:"currency_code"`
+	Initials       *string            `json:"initials"`
 }
 
 // sort accepts: ” (default → newest), 'name' (A–Z), 'members', 'followers',
 // 'posts' (all numeric DESC). Unknown values fall back to newest.
+// The initials column comes from the university_fields custom field group
+// (key = 'initials', deterministic id 00000000-0000-0000-0000-000000000090)
+// and is left-joined so it is NULL for non-university space types.
+// Ref: japaconnect-engineering/sections/39-space-types-university.md
 func (q *Queries) ListSpacesByTypePaginated(ctx context.Context, arg ListSpacesByTypePaginatedParams) ([]ListSpacesByTypePaginatedRow, error) {
 	rows, err := q.db.Query(ctx, listSpacesByTypePaginated,
 		arg.TenantID,
@@ -3134,6 +3254,7 @@ func (q *Queries) ListSpacesByTypePaginated(ctx context.Context, arg ListSpacesB
 			&i.UpdatedAt,
 			&i.DeletedAt,
 			&i.CurrencyCode,
+			&i.Initials,
 		); err != nil {
 			return nil, err
 		}

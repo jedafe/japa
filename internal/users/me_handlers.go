@@ -538,14 +538,14 @@ func (h *Handlers) GetMyContent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Author-scoped fetch returned 404. Fall back to the tenant-scoped
-	// fetch only for super-admins or users with the `content.edit`
+	// fetch only for super-admins or users with the `content.edit_any`
 	// permission node. Without a permResolver, fail closed (404).
 	if h.permResolver == nil {
 		handleServiceError(w, err)
 		return
 	}
 	canEditAny := h.permResolver.IsSuperAdmin(r.Context(), user.UserID, tenantID) ||
-		h.permResolver.HasPermission(r.Context(), user.UserID, tenantID, "content.edit")
+		h.permResolver.HasPermission(r.Context(), user.UserID, tenantID, "content.edit_any")
 	if !canEditAny {
 		handleServiceError(w, err)
 		return

@@ -4,9 +4,12 @@ import Page from './+page.svelte';
 
 vi.mock('$lib/api', () => ({
 	moderationAdminApi: {
-		getAlerts: vi.fn().mockResolvedValue({ ok: true, data: [] }),
 		acknowledgeAlert: vi.fn().mockResolvedValue({ ok: true }),
 		resolveAlert: vi.fn().mockResolvedValue({ ok: true }),
+	},
+	apiRaw: vi.fn().mockResolvedValue({ ok: true, data: { data: [], total: 0, total_pages: 1 } }),
+	adminCatalogApi: {
+		get: vi.fn().mockResolvedValue({ ok: true, data: [] }),
 	},
 }));
 vi.mock('$app/state', () => ({

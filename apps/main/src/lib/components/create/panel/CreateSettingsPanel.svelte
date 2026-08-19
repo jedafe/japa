@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { t } from '$lib/i18n';
+	import { api } from '$lib/api/client';
 	import type { Visibility } from '$lib/types';
 
 	interface Props {
@@ -7,6 +8,8 @@
 		visibility: Visibility;
 		canonicalUrl: string;
 		publishAt: string | null;
+		visibilityOptions?: { value: Visibility; label: string }[];
+		/** Slug change callback. */
 		onslug: (v: string) => void;
 		onvisibility: (v: Visibility) => void;
 		oncanonical: (v: string) => void;
@@ -19,12 +22,30 @@
 		visibility,
 		canonicalUrl,
 		publishAt,
+		visibilityOptions,
 		onslug,
 		onvisibility,
 		oncanonical,
 		onpublishat,
 		onedit
 	}: Props = $props();
+
+	let resolvedVisibilityOptions = $state<{ value: Visibility; label: string }[]>([]);
+
+	$effect(() => {
+		if (visibilityOptions && visibilityOptions.length > 0) {
+			resolvedVisibilityOptions = visibilityOptions;
+			return;
+		}
+		(async () => {
+			try {
+				const res = await api.get<{ value: Visibility; label: string }[]>('/content/visibility-options');
+				if (res.data) resolvedVisibilityOptions = res.data;
+			} catch {
+				// Leave default empty on failure.
+			}
+		})();
+	});
 </script>
 
 <div class="settings-panel">
@@ -38,7 +59,7 @@
 			placeholder={t('create.placeholder.slug')}
 			value={slug}
 			oninput={(e) => {
-				onslug(e.currentTarget.value);
+					onslug(e.currentTarget.value);
 				onedit();
 			}}
 		/>
@@ -53,9 +74,9 @@
 			value={visibility}
 			onchange={(e) => onvisibility(e.currentTarget.value as Visibility)}
 		>
-			<option value="public">{t('create.settings.visibility.public')}</option>
-			<option value="members">{t('create.settings.visibility.members')}</option>
-			<option value="private">{t('create.settings.visibility.private')}</option>
+			{#each resolvedVisibilityOptions as option}
+				<option value={option.value}>{option.label}</option>
+			{/each}
 		</select>
 	</div>
 

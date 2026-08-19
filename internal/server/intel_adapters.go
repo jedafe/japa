@@ -282,20 +282,33 @@ func (a *intelCommunityOrgPromoterStoreAdapter) WithTx(ctx context.Context, fn f
 // review page. Entity types that map to "" are skipped (no Studio content
 // type — e.g. guide_content types whose promoter already wrote contents).
 var intelEntityTypeToStudioContentType = map[string]string{
-	"scholarship":                "guide",
-	"job":                        "job_listing",
-	"visa":                       "visa_route",
-	"housing":                    "housing_guide",
-	"wiki_page":                  "wiki_page",
-	"language_test_requirement":  "language_test_requirement",
-	"tax_obligation_guide":       "tax_obligation_guide",
-	"community_organisation":     "community_organisation",
-	"cost_of_living":             "comparison",
-	"remittance":                 "guide",
+	"scholarship":               "guide",
+	"job":                       "job_listing",
+	"visa":                      "visa_route",
+	"housing":                   "housing_guide",
+	"wiki_page":                 "wiki_page",
+	"language_test_requirement": "language_test_requirement",
+	"tax_obligation_guide":      "tax_obligation_guide",
+	"community_organisation":    "community_organisation",
+	"cost_of_living":            "comparison",
+	"remittance":                "guide",
+	"credential_pathway":        "credential_pathway",
 	// guide_content entity types are intentionally omitted: their promoter
 	// writes the contents row directly and returns a real ContentID, so
 	// the worker's auto-promote gate (ContentID == uuid.Nil) already skips
 	// them before reaching the adapter.
+}
+
+// intelCredentialPromoterStoreAdapter wraps *stores.Store for the
+// CredentialPromoter's CredentialStore interface.
+type intelCredentialPromoterStoreAdapter struct {
+	*intel_stores.Store
+}
+
+func (a *intelCredentialPromoterStoreAdapter) WithTx(ctx context.Context, fn func(promoter.CredentialTxStore) error) error {
+	return a.Store.WithTx(ctx, func(s *intel_stores.Store) error {
+		return fn(s)
+	})
 }
 
 // studioAutoPromoterAdapter wraps *studio.Service so it satisfies the

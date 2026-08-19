@@ -186,6 +186,23 @@ func (s *Store) ListPendingHITLReviews(ctx context.Context, tenantID pgtype.UUID
 	return reviews, nil
 }
 
+// GetHITLReview returns a single HITL review by tenant + review ID. Used by
+// the Studio review hook to discover target_table for tool-table drafts.
+func (s *Store) GetHITLReview(ctx context.Context, tenantID, reviewID pgtype.UUID) (HITLReview, error) {
+	var r HITLReview
+	err := s.read.QueryRow(ctx, `
+		SELECT id, tenant_id, content_id, content_type, ai_output, status, source, target_table, created_at
+		FROM ai_hitl_reviews
+		WHERE id = $1 AND tenant_id = $2`,
+		reviewID, tenantID,
+	).Scan(&r.ID, &r.TenantID, &r.ContentID, &r.ContentType,
+		&r.AIOutput, &r.Status, &r.Source, &r.TargetTable, &r.CreatedAt)
+	if err != nil {
+		return HITLReview{}, fmt.Errorf("getting HITL review: %w", err)
+	}
+	return r, nil
+}
+
 // CountPendingHITLReviews returns the total count of pending reviews for a
 // tenant (used for pagination metadata in the admin HITL queue). When
 // sourceFilter is non-empty, only reviews with that source are counted.

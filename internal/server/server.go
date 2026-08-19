@@ -492,6 +492,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	spacePostChecker := spaces.NewPostCheckerAdapter(spaceService)
 	spacePostChecker.PermChecker = rbacResolver
 	contentHandlers.SetSpacePostChecker(spacePostChecker)
+	contentService.SetSpaceChecker(spacePostChecker)
 
 	// Wire the space keyword matcher for auto-assigning content to spaces
 	// based on title keyword matching (Section 05 — geo-first space system).
@@ -660,6 +661,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	// Comparison subsystem (Section 30 — Generic Comparison System).
 	comparisonService := comparison.NewService(database)
+	comparisonService.SetSettings(settingsService)
 	comparisonHandlers := comparison.NewHandlers(comparisonService)
 
 	// Professional Profiles subsystem (Section 33 — Professional Profiles).
@@ -1462,6 +1464,21 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Without this, studio jobs stay 'in_review' forever after admin review.
 	studioService.SetIntelRecordUpdater(&studioIntelStatusAdapter{store: intelStores})
 	studioService.SetContentPublisher(&studioContentPublisherAdapter{svc: contentService})
+	studioService.SetHITLReviewReader(&hitlReviewReaderAdapter{store: aiStore})
+	studioService.SetToolTablePublisher(&toolTablePublisher{
+		db:              database,
+		arrivalSvc:      arrivalChecklistService,
+		communityOrgSvc: communityLocatorService,
+		attestationSvc:  attestationGuideService,
+		languageTestSvc: languageTestHubService,
+		taxSvc:          taxCalculatorService,
+		credentialSvc:   credentialCheckerService,
+		housingSvc:      housingGuideService,
+		visaRouteSvc:    visaRoutesService,
+		wikiSvc:         wikiService,
+		calendarSvc:     calendarService,
+		docsSvc:         docsService,
+	})
 	adminHandlers.SetStudioReviewHook(studioService)
 
 	// §97: wire the AI Gateway dispatcher into the attestation guide so
@@ -1494,6 +1511,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	aiHandlers.SetHonchoClient(honcho.NewClient(cfg.HonchoURL))
 	aiHandlers.SetSettings(settingsService) // Rule 3: ai.japabot_enabled global toggle
 	aiHandlers.SetRBAC(rbacResolver)        // ADR-025: ai.context.* category node checks
+	aiHandlers.SetStudioReviewHook(studioService)
 	aiHandlers.AsynqClient = asynqClient
 
 	// Wire the AI dispatcher into the i18n handlers + processor adapter so
@@ -1553,6 +1571,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	agentRAG := &agentRAGAdapter{svc: ragService}
 	agentCache := &agentCacheAdapter{rdb: vkClient.Redis()}
 	agentRateLimiter := &agentRateLimiterAdapter{rdb: vkClient.Redis()}
+
+	// Wire the shared Valkey cache into the AI core handlers so
+	// jc:ai:response:* semantic caching can short-circuit repeated prompts.
+	aiHandlers.SetCacheClient(agentCache)
 	contentCreatorBridge := &agentContentCreatorBridge{svc: contentService}
 	contentUpdaterBridge := &agentContentUpdaterBridge{svc: contentService}
 
@@ -1805,6 +1827,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		},
 		schemas.EntityTypeCommunityOrganisation: &intelPromoterPortAdapter{
 			prom: promoter.NewCommunityOrgPromoter(&intelCommunityOrgPromoterStoreAdapter{Store: intelStores}, defaultTenantID, intelDefaultAuthorID, promoter.WithCommunityOrgAIModel(intelExtractionModel)),
+		},
+		schemas.EntityTypeCredentialPathway: &intelPromoterPortAdapter{
+			prom: promoter.NewCredentialPromoter(&intelCredentialPromoterStoreAdapter{Store: intelStores}, defaultTenantID, intelDefaultAuthorID, promoter.WithCredentialAIModel(intelExtractionModel)),
 		},
 	}
 
@@ -2528,17 +2553,20 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/content/visibility-options", contentHandlers.GetVisibilityOptions)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/content/status-options", contentHandlers.GetStatusOptions)
 			// Update/Delete (require auth + edit lock + censor check + permission)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.EditLockMiddleware(vkClient.Redis(), settingsService), spam.CensorMiddleware(database, vkClient), rbac.RequirePermission(rbacResolver, "content.edit")).
+			// BUG-001/BUG-002: route gates now use _own/_any scoping; authorship
+			// is verified in the handler so non-owners cannot edit/delete others.
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.EditLockMiddleware(vkClient.Redis(), settingsService), spam.CensorMiddleware(database, vkClient), rbac.RequirePermission(rbacResolver, "content.edit_own")).
 				Patch("/content/{id}", contentHandlers.UpdateContent)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.EditLockMiddleware(vkClient.Redis(), settingsService), rbac.RequirePermission(rbacResolver, "content.delete")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.EditLockMiddleware(vkClient.Redis(), settingsService), rbac.RequirePermission(rbacResolver, "content.delete_own")).
 				Delete("/content/{id}", contentHandlers.DeleteContent)
-			// Lifecycle: publish/archive/schedule are status transitions (content.edit);
-			// view/share-count just require auth.
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.edit")).
+			// Lifecycle: publish/archive/schedule are status transitions.
+			// BUG-003: routes now use the dedicated content.publish and
+			// content.schedule nodes; authorship is verified in the handler.
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.publish")).
 				Post("/content/{id}/publish", contentHandlers.PublishContent)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.edit")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.publish")).
 				Post("/content/{id}/archive", contentHandlers.ArchiveContent)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.edit")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.schedule")).
 				Post("/content/{id}/schedule", contentHandlers.ScheduleContent)
 			r.With(auth.OptionalAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "loose")).Post("/content/{id}/view", contentHandlers.RecordContentView)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/content/{id}/share-count", contentHandlers.GetContentShareCount)
@@ -2575,11 +2603,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Public read for enabled platforms, admin CRUD for management.
 			r.Get("/share-platforms/enabled", contentHandlers.ListEnabledSharePlatforms)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/share-platforms", contentHandlers.ListSharePlatforms)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.reaction_types.manage")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.share_platforms.manage")).
 				Post("/share-platforms", contentHandlers.CreateSharePlatform)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.reaction_types.manage")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.share_platforms.manage")).
 				Patch("/share-platforms/{key}", contentHandlers.UpdateSharePlatform)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.reaction_types.manage")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.share_platforms.manage")).
 				Delete("/share-platforms/{key}", contentHandlers.DeleteSharePlatform)
 
 			// JSON-LD template routes
@@ -2622,9 +2650,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 			// Content Tags (Section 14 — Content System API)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/content/{id}/tags", contentHandlers.ListContentTags)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.edit")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.edit_own")).
 				Post("/content/{id}/tags", contentHandlers.AddContentTag)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.edit")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.edit_own")).
 				Delete("/content/{id}/tags/{tagId}", contentHandlers.RemoveContentTag)
 
 			// Content Shares (Section 14 — Content System API)
@@ -2645,7 +2673,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 			// Content space assignment (catalog line 261). Multi-space update
 			// with primary_space_id + additional_space_ids.
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.edit")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.edit_own")).
 				Patch("/content/{id}/spaces", contentHandlers.UpdateContentSpaces)
 
 			// Comments (Section 49 — Unified Comment System)
@@ -3013,9 +3041,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					// the moderator grant (§88 "host or moderator").
 					r.With(auth.RequireAuth(kr, vkClient.Redis())).
 						Patch("/forum/ama/{id}", amaHandlers.HandleClose)
-				// §88 question_approval_required: host or forum.ama.moderate
-				// may approve a pending question.
-				r.With(auth.RequireAuth(kr, vkClient.Redis())).
+					// §88 question_approval_required: host or forum.ama.moderate
+					// may approve a pending question.
+					r.With(auth.RequireAuth(kr, vkClient.Redis())).
 						Post("/forum/ama/{id}/questions/{replyId}/approve", amaHandlers.HandleApproveQuestion)
 				})
 				r.Get("/forum/{slug}", forumHandlers.GetThread)
@@ -3201,6 +3229,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 				// Public comparison list (Section 30): SQL filters to published+public.
 				r.Get("/comparisons", comparisonHandlers.ListComparisons)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "comparison.edit_any")).
+					Get("/comparisons/admin", comparisonHandlers.ListComparisonsAdmin)
 				// Comparison update/delete at top level (P5.6 — Task 2, catalog paths)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequireAnyPermission(rbacResolver, "comparison.edit_own", "comparison.edit_any")).
 					Patch("/comparisons/{id}", comparisonHandlers.UpdateComparison)
@@ -4035,6 +4065,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Post("/ai/hitl/{id}/approve", aiHandlers.HandleApproveHITL)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ai.hitl.review")).
 				Post("/ai/hitl/{id}/reject", aiHandlers.HandleRejectHITL)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ai.hitl.review")).
+				Post("/ai/hitl/verify", aiHandlers.HandleVerifyHITL)
 
 			// AI Tool Registry admin routes (Section 22 — AI Tools)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ai.tools.manage")).
@@ -4611,6 +4643,13 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Get("/admin/learn/tracks/{trackId}/modules", learningHandlers.ListModulesByTrack)
 
 			// Page Builder admin CRUD routes (Section 16 — Page Builder)
+			// Page-type catalog (Rule 16 — no hardcoded option lists).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "pages.manage")).
+				Get("/admin/pagebuilder/page-types", pagebuilderHandlers.ListPageTypes)
+			// Widget config catalog (Rule 16 — no hardcoded option lists).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "widgets.manage")).
+				Get("/admin/pagebuilder/widget-config-options", adminHandlers.GetWidgetConfigOptions)
+
 			// Blocks
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "pagebuilder.blocks.manage")).
 				Get("/admin/pagebuilder/blocks", pagebuilderHandlers.ListBlocks)
@@ -4676,6 +4715,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Admin: sidebar CRUD (requires sidebars.manage permission)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "sidebars.manage")).
 				Get("/admin/sidebars", sidebarHandlers.ListSidebars)
+			// Sidebar option catalog (Rule 16 — no hardcoded option lists).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "sidebars.manage")).
+				Get("/admin/sidebars/options", sidebarHandlers.GetSidebarOptions)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "sidebars.manage")).
 				Post("/admin/sidebars", sidebarHandlers.CreateSidebar)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "sidebars.manage")).
@@ -4777,6 +4819,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Admin Moderation routes
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).
 				Get("/admin/moderation-queue", adminHandlers.ListModeration)
+			// Moderation option catalog (Rule 16 — no hardcoded option lists).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).
+				Get("/admin/moderation/options", adminHandlers.GetModerationOptions)
+			// Generic admin catalog (Rule 16 — centralised backend option lists).
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).
+				Get("/admin/catalogs/{name}", adminHandlers.GetCatalog)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).
 				Post("/admin/moderation-queue/bulk", adminHandlers.BulkModeration)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).
@@ -5030,13 +5078,13 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Task 23: Content admin moderation
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).
 				Get("/admin/content", contentHandlers.ListContent)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.edit")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.edit_any")).
 				Patch("/admin/content/{id}", contentHandlers.UpdateContent)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.delete")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.delete_any")).
 				Get("/admin/content/{id}/remove", adminHandlers.RemoveContent)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.delete")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.delete_any")).
 				Post("/admin/content/{id}/remove", adminHandlers.RemoveContent)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.edit")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.delete_any")).
 				Post("/admin/content/{id}/restore", adminHandlers.RestoreContent)
 
 			// Task 24: Affiliate admin commission rates

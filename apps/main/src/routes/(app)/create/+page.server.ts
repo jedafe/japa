@@ -12,7 +12,8 @@ import type {
 	ComparisonDetail,
 	ComparisonType,
 	ContentTag,
-	MediaAsset
+	MediaAsset,
+	Visibility
 } from '$lib/types';
 
 /** Load everything the composer needs; every fetch degrades independently. */
@@ -25,23 +26,35 @@ export const load: PageServerLoad = async (event) => {
 	const ctx = apiContext(event);
 	const draftId = event.url.searchParams.get('draft');
 
-	const [typesRes, flagsRes, spacesRes, groupsRes, seriesRes, orgsRes, compTypesRes, dimTypesRes] =
-		await Promise.allSettled([
-			apiList<ContentTypeMeta>(ctx, '/content-types'),
-			apiGet<Record<string, boolean>>(ctx, '/feature-flags'),
-			apiList<MeSpace>(ctx, '/me/spaces'),
-			apiList<CustomFieldGroup>(ctx, '/custom-field-groups'),
-			apiList<BlogSeries>(ctx, '/blog/series'),
-			// Post-as-org (ADR-062): the caller's org memberships, used by the
-			// "post on behalf of" selector. Empty list = personal posts only.
-			apiList<ComposerOrganization>(ctx, '/me/organizations'),
-			// Comparison types (Section 30) — for the type selector in the
-			// comparison editor. Empty list = "General (no type)" only.
-			apiList<ComparisonType>(ctx, '/comparisons/types?page_size=50'),
-			// Dimension types (Section 30) — for the dimension type selector
-			// in the ComparisonBuilder (Rule 16 — no hardcoded enums).
-			apiList<{ value: string; label: string }>(ctx, '/comparisons/dimension-types')
-		]);
+	const [
+		typesRes,
+		flagsRes,
+		spacesRes,
+		groupsRes,
+		seriesRes,
+		orgsRes,
+		compTypesRes,
+		dimTypesRes,
+		visibilityRes
+	] = await Promise.allSettled([
+		apiList<ContentTypeMeta>(ctx, '/content-types'),
+		apiGet<Record<string, boolean>>(ctx, '/feature-flags'),
+		apiList<MeSpace>(ctx, '/me/spaces'),
+		apiList<CustomFieldGroup>(ctx, '/custom-field-groups'),
+		apiList<BlogSeries>(ctx, '/blog/series'),
+		// Post-as-org (ADR-062): the caller's org memberships, used by the
+		// "post on behalf of" selector. Empty list = personal posts only.
+		apiList<ComposerOrganization>(ctx, '/me/organizations'),
+		// Comparison types (Section 30) — for the type selector in the
+		// comparison editor. Empty list = "General (no type)" only.
+		apiList<ComparisonType>(ctx, '/comparisons/types?page_size=50'),
+		// Dimension types (Section 30) — for the dimension type selector
+		// in the ComparisonBuilder (Rule 16 — no hardcoded enums).
+		apiList<{ value: string; label: string }>(ctx, '/comparisons/dimension-types'),
+		// Visibility options (Section 14) — canonical visibility values for
+		// the composer settings panel (Rule 16 — no hardcoded option lists).
+		apiGet<{ value: Visibility; label: string }[]>(ctx, '/content/visibility-options')
+	]);
 
 	const rawTypes = typesRes.status === 'fulfilled' ? typesRes.value.items : [];
 	const flags = flagsRes.status === 'fulfilled' ? flagsRes.value : {};
@@ -61,6 +74,8 @@ export const load: PageServerLoad = async (event) => {
 	const organizations = orgsRes.status === 'fulfilled' ? orgsRes.value.items : [];
 	const comparisonTypes = compTypesRes.status === 'fulfilled' ? compTypesRes.value.items : [];
 	const dimensionTypes = dimTypesRes.status === 'fulfilled' ? dimTypesRes.value.items : [];
+	const visibilityOptions =
+		visibilityRes.status === 'fulfilled' ? visibilityRes.value : [];
 
 	let draft: ContentRecord | null = null;
 	let comparisonDetail: ComparisonDetail | null = null;
@@ -150,6 +165,7 @@ export const load: PageServerLoad = async (event) => {
 		comparisonDetail,
 		comparisonTypes,
 		dimensionTypes,
+		visibilityOptions,
 		coverMedia,
 		draftSeriesId,
 		loadError: typesRes.status === 'rejected'

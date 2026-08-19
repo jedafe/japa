@@ -14,6 +14,7 @@
 	import { hydrateMentions } from '$lib/tiptap/hydrateMentions';
 	import type { AMAThread, ForumReply } from '$lib/types';
 	import type { PageData } from './$types';
+import { safeJsonLdScript } from '$lib/utils/safeHtml';
 
 	let { data }: { data: PageData } = $props();
 
@@ -124,7 +125,7 @@
 	<meta property="og:type" content="article" />
 	<meta property="og:url" content={page.url.href} />
 	{#if faqJsonLd}
-		{@html `<script type="application/ld+json">${faqJsonLd}</script>`}
+		{@html safeJsonLdScript(faqJsonLd)}
 	{/if}
 </svelte:head>
 

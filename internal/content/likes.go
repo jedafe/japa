@@ -49,7 +49,7 @@ func (h *Handlers) ListLikedByUser(w http.ResponseWriter, r *http.Request) {
 
 	var offset int32
 	if o := r.URL.Query().Get("page_offset"); o != "" {
-		if n, err := strconv.Atoi(o); err == nil && n > 0 {
+		if n, err := strconv.ParseInt(o, 10, 32); err == nil && n > 0 {
 			offset = int32(n)
 		}
 	}

@@ -8,7 +8,7 @@
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { Trash2, Eye, Pencil } from 'lucide-svelte';
 	import type { ActionItem, FilterDef } from '$lib/components/ui/data-table';
-	import { scholarshipAdminApi, spacesAdminApi } from '$lib/api';
+	import { scholarshipAdminApi, spacesAdminApi, adminCatalogApi, type CatalogOption } from '$lib/api';
 
 	type Scholarship = {
 		id: string;
@@ -63,6 +63,20 @@
 		} catch {
 			// Non-fatal — the dest filter simply stays empty.
 		}
+	});
+
+	let scholarshipVerificationOptions = $state<CatalogOption[]>([
+		{ value: 'verified', label: 'Verified' },
+		{ value: 'needs_review', label: 'Needs Review' },
+		{ value: 'conflict', label: 'Conflict' },
+		{ value: 'stale', label: 'Stale' }
+	]);
+
+	$effect(() => {
+		void (async () => {
+			const res = await adminCatalogApi.get('scholarships.verification_status');
+			if (res.ok && res.data?.length) scholarshipVerificationOptions = res.data;
+		})();
 	});
 
 	let entityController = $state<EntityPageController | undefined>(undefined);
@@ -248,12 +262,7 @@
 			{
 				key: 'verification_status',
 				label: t('app.tools.col_status', 'Status'),
-				options: [
-					{ value: 'verified', label: 'Verified' },
-					{ value: 'needs_review', label: 'Needs Review' },
-					{ value: 'conflict', label: 'Conflict' },
-					{ value: 'stale', label: 'Stale' }
-				]
+				options: scholarshipVerificationOptions
 			},
 			{
 				key: 'dest',

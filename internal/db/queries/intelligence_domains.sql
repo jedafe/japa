@@ -368,3 +368,54 @@ WHERE tenant_id = $1
        OR (created_at = $2 AND id < $3))
 ORDER BY created_at DESC, id DESC
 LIMIT $4;
+
+-- ===========================================================================
+-- credential_pathways (intelligence columns added by migration 000521)
+-- ===========================================================================
+
+-- name: CreateCredentialPathwayIntel :one
+INSERT INTO credential_pathways (
+  tenant_id, profession_id, issuing_space_id, destination_space_id,
+  regulatory_body, regulatory_body_url, pathway_type, timeline_estimate,
+  cost_estimate_usd, pathway_description, official_application_url,
+  source_url_last_checked, status, is_active, ai_generated, ai_model, ai_prompt_hash,
+  hitl_reviewed_by, hitl_reviewed_at, hitl_review_notes,
+  intel_record_id, guide_id, confidence_overall, verification_status,
+  freshness_score, override_source, editorial_overrides
+) VALUES (
+  $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
+  $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
+  $21, $22, $23, $24, $25, $26, $27
+) RETURNING *;
+
+-- name: GetCredentialPathwayByIntelRecord :one
+SELECT * FROM credential_pathways WHERE tenant_id = $1 AND intel_record_id = $2;
+
+-- name: UpdateCredentialPathwayIntel :exec
+UPDATE credential_pathways
+SET profession_id = $3, issuing_space_id = $4, destination_space_id = $5,
+    regulatory_body = $6, regulatory_body_url = $7, pathway_type = $8,
+    timeline_estimate = $9, cost_estimate_usd = $10, pathway_description = $11,
+    official_application_url = $12, source_url_last_checked = $13,
+    status = $14, is_active = $15, ai_generated = $16, ai_model = $17, ai_prompt_hash = $18,
+    hitl_reviewed_by = $19, hitl_reviewed_at = $20, hitl_review_notes = $21,
+    confidence_overall = $22, verification_status = $23, freshness_score = $24,
+    override_source = $25, editorial_overrides = $26,
+    updated_at = now()
+WHERE tenant_id = $1 AND id = $2;
+
+-- name: ListCredentialPathwaysIntelKeyset :many
+SELECT * FROM credential_pathways
+WHERE tenant_id = $1
+  AND intel_record_id IS NOT NULL
+  AND ($2::timestamptz IS NULL
+       OR created_at < $2
+       OR (created_at = $2 AND id < $3))
+ORDER BY created_at DESC, id DESC
+LIMIT $4;
+
+-- name: GetCredentialProfessionBySlug :one
+SELECT * FROM credential_professions WHERE slug = $1 LIMIT 1;
+
+-- name: GetCredentialProfessionByName :one
+SELECT * FROM credential_professions WHERE name = $1 LIMIT 1;

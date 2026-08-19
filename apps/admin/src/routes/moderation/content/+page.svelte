@@ -17,7 +17,7 @@
 		title: string;
 		author: string;
 		author_id: string;
-		type: 'post' | 'comment' | 'blog' | 'forum';
+		type: string;
 		status: string;
 		reports_count: number;
 		is_featured: boolean;
@@ -25,7 +25,9 @@
 		body_preview?: string;
 	};
 
-	const canModerateContent = $derived(hasPermission('content.moderate'));
+	// BUG-006: backend admin moderation uses admin.moderation for list and
+	// content.delete_any for remove/restore.
+	const canModerateContent = $derived(hasPermission('admin.moderation') || hasPermission('content.delete_any'));
 
 	// ── State-action confirmation modals ───────────────────────────────────
 	// EntityPage's confirm Modal only covers the default delete; state actions
@@ -130,6 +132,36 @@
 		}
 	}
 
+	// BUG-108 (Rule 16): type and status options are loaded from the backend
+	// so they match the contents table enums and content type catalog.
+	let typeOptions = $state<{ value: string; label: string }[]>([]);
+	let statusOptions = $state<{ value: string; label: string }[]>([]);
+
+	$effect(() => {
+		(async () => {
+			try {
+				const [typesRes, statusRes] = await Promise.all([
+					contentAdminApi.listContentTypes(),
+					contentAdminApi.getStatusOptions()
+				]);
+				if (typesRes.ok) {
+					typeOptions = (typesRes.data as { value: string; label: string }[]).map((ct) => ({
+						value: ct.value,
+						label: t(`content.type_${ct.value}`, ct.label)
+					}));
+				}
+				if (statusRes.ok) {
+					statusOptions = (statusRes.data as { value: string; label: string }[]).map((s) => ({
+						value: s.value,
+						label: t(`content.status_${s.value}`, s.label)
+					}));
+				}
+			} catch {
+				// Keep empty fallback on failure.
+			}
+		})();
+	});
+
 	const config = $derived<EntityPageConfig>({
 		title: t('moderation.content_admin', 'Content Moderation'),
 		description: t('moderation.content.description', 'Browse and manage platform content across all types.'),
@@ -181,23 +213,12 @@
 			{
 				key: 'type',
 				label: t('moderation.content_type', 'Content Type'),
-				options: [
-					{ value: 'post', label: t('app.moderation.queue.post', 'Post') },
-					{ value: 'comment', label: t('app.moderation.queue.comment', 'Comment') },
-					{ value: 'blog', label: t('app.moderation.queue.blog', 'Blog') },
-					{ value: 'forum', label: t('app.moderation.queue.forum', 'Forum') }
-				]
+				options: typeOptions
 			},
 			{
 				key: 'status',
 				label: t('moderation.status', 'Status'),
-				options: [
-					{ value: 'published', label: t('moderation.content.published', 'Published') },
-					{ value: 'draft', label: t('moderation.content.draft', 'Draft') },
-					{ value: 'archived', label: t('moderation.content.archived', 'Archived') },
-					{ value: 'flagged', label: t('moderation.content.flagged', 'Flagged') },
-					{ value: 'removed', label: t('moderation.content.removed', 'Removed') }
-				]
+				options: statusOptions
 			}
 		],
 		actions: rowActions,

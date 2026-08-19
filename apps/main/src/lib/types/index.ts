@@ -1006,6 +1006,8 @@ export interface Space {
 	keywords?: string[];
 	/** Resolved imgproxy-signed logo URL (GET /spaces list & detail). Empty/null when no logo is set. */
 	logo_url?: string | null;
+	/** University short code / acronym (initials custom field, Section 39). */
+	initials?: string | null;
 }
 
 /** GET /spaces/{slug} response — `{ space, rules, keywords, logo_url }` bundle. */

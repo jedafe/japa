@@ -12,7 +12,10 @@ vi.mock('$lib/api', () => ({
 		addComment: vi.fn().mockRejectedValue(new Error('not connected')),
 		addNote: vi.fn().mockRejectedValue(new Error('not connected')),
 		delete: vi.fn().mockRejectedValue(new Error('not connected')),
-	}
+	},
+	adminCatalogApi: {
+		get: vi.fn().mockResolvedValue({ ok: true, data: [] }),
+	},
 }));
 
 describe('Tickets +page.svelte', () => {

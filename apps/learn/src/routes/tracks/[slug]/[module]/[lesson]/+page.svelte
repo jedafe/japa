@@ -16,6 +16,7 @@
 	import { enrollmentsStore } from '$lib/stores/enrollments.svelte';
 	import type { PageData } from './$types';
 	import type { Enrollment, Quiz, QuizQuestion, QuizResult, QuizSubmission } from '$lib/types';
+	import { sanitizeContentHtml } from '$lib/utils/safeHtml';
 
 	let { data }: { data: PageData } = $props();
 	const track = $derived(data.track);
@@ -311,7 +312,7 @@
 			{#if lesson.lesson_type === 'article'}
 				<!-- Article: SSR TipTap .prose -->
 				{#if lesson.content_html}
-					<div class="prose">{@html lesson.content_html}</div>
+					<div class="prose">{@html sanitizeContentHtml(lesson.content_html)}</div>
 				{:else}
 					<p class="text-[var(--color-muted)]">{t('common.empty')}</p>
 				{/if}

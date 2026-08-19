@@ -7,6 +7,7 @@
 	import { page } from '$app/state';
 	import { persistNavCollapse } from '$lib/nav-collapse';
 	import { ArrowLeft, ArrowRight, Pencil } from 'lucide-svelte';
+	import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -21,13 +22,14 @@
 	// "Edit this page" link — only visible to users with docs.manage permission
 	// (Ref: §44 ROADMAP 02.10). The admin panel doc editor URL is
 	// {admin_origin}/docs/pages/{id}.
-	let canEdit = $derived(
-		!!data.user && (data.user.groups?.some((g) => g === 'Admin' || g === 'Super Admin') ?? false)
-	);
+	let canEdit = $derived(data.canEditDocs === true);
 
-	// Dynamic hreflang from enabled languages (§18, ADR-013).
+	// Dynamic hreflang from enabled languages (§18, ADR-013). The canonical
+	// list lives in the public site settings (i18n.enabled_languages). If the
+	// setting is not available, fall back to the active locale rather than a
+	// hardcoded list (Rule 16).
 	const enabledLanguages = $derived(
-		((page.data?.siteSettings?.['i18n.enabled_languages'] as string | undefined) ?? 'en,fr')
+		((page.data?.siteSettings?.['i18n.enabled_languages'] as string | undefined) ?? data.locale)
 			.split(',').map((l) => l.trim()).filter(Boolean)
 	);
 	const defaultLanguage = $derived(
@@ -69,7 +71,7 @@
 		<meta name="twitter:image" content={data.meta.twitterImage} />
 	{/if}
 	{#if data.meta.jsonLdString}
-		{@html `<script type="application/ld+json">${data.meta.jsonLdString}</script>`}
+		{@html safeJsonLdScript(data.meta.jsonLdString)}
 	{/if}
 </svelte:head>
 

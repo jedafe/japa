@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -34,6 +35,10 @@ type ModerationItem struct {
 // Supports filters: status, content_type (entity_type), q (search).
 // When content_type=ad_campaign, queries ad_campaigns with pending_review
 // status instead of the reviews table (§61 Review Gate, ADR-079 §3).
+//
+// and three source tables; breaking it up would not reduce the distinct checks.
+//
+//nolint:gocyclo,funlen // admin queue endpoint combines pagination, filtering,
 func (h *Handlers) ListModeration(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
@@ -85,45 +90,71 @@ func (h *Handlers) ListModeration(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Build dynamic WHERE clauses.
-	where := "r.tenant_id = $1"
-	args := []interface{}{tenantID}
-	argIdx := 2
+	// Build a unified moderation queue from:
+	// - reviews (§29 user-generated reviews)
+	// - content_reviews with source='persona_action' (§76)
+	// - ai_hitl_reviews with source='studio' (§75, ADR-076 §3)
+	// Filters are passed through for each sub-query; an empty filter string
+	// means "no filter" for that sub-query. Placeholders are shared across
+	// all three sub-queries so we can use a single arg list.
+	listArgs := []interface{}{tenantID, filterStatus, filterContentType, "%" + filterSearch + "%", limit, offset}
 
-	if filterStatus != "" {
-		where += fmt.Sprintf(" AND r.status = $%d", argIdx)
-		args = append(args, filterStatus)
-		argIdx++
-	}
+	query := `
+SELECT id, body, status, entity_type, created_at, reviewer_user_id, author_username, queue_source
+FROM (
+    SELECT r.id,
+           r.body,
+           r.status,
+           r.entity_type,
+           r.created_at,
+           r.reviewer_user_id,
+           COALESCE(u.username, 'unknown') AS author_username,
+           'review' AS queue_source
+    FROM reviews r
+    LEFT JOIN users u ON u.id = r.reviewer_user_id
+    WHERE r.tenant_id = $1
+      AND ($2::text = '' OR r.status = $2)
+      AND ($3::text = '' OR r.entity_type = $3)
+      AND ($4::text = '%' OR (r.body ILIKE $4 OR r.title ILIKE $4))
+    UNION ALL
+    SELECT cr.id,
+           cr.feedback AS body,
+           cr.status,
+           cr.source AS entity_type,
+           cr.created_at,
+           cr.reviewer_user_id,
+           COALESCE(u.username, 'unknown') AS author_username,
+           'content_review' AS queue_source
+    FROM content_reviews cr
+    LEFT JOIN users u ON u.id = cr.reviewer_user_id
+    WHERE cr.tenant_id = $1
+      AND cr.source = 'persona_action'
+      AND ($2::text = '' OR cr.status = $2)
+      AND ($3::text = '' OR cr.source = $3)
+      AND ($4::text = '%' OR cr.feedback ILIKE $4)
+    UNION ALL
+    SELECT ah.id,
+           COALESCE(ah.human_feedback::text, ah.ai_output::text) AS body,
+           ah.status,
+           ah.content_type AS entity_type,
+           ah.created_at,
+           ah.reviewer_id AS reviewer_user_id,
+           COALESCE(u.username, 'unknown') AS author_username,
+           'ai_hitl' AS queue_source
+    FROM ai_hitl_reviews ah
+    LEFT JOIN users u ON u.id = ah.reviewer_id
+    WHERE ah.tenant_id = $1
+      AND ah.source = 'studio'
+      AND ($2::text = '' OR ah.status = $2)
+      AND ($3::text = '' OR ah.content_type = $3)
+      AND ($4::text = '%' OR (ah.human_feedback::text ILIKE $4 OR ah.ai_output::text ILIKE $4))
+) combined
+ORDER BY created_at DESC
+LIMIT $5 OFFSET $6`
 
-	if filterContentType != "" {
-		where += fmt.Sprintf(" AND r.entity_type = $%d", argIdx)
-		args = append(args, filterContentType)
-		argIdx++
-	}
-
-	if filterSearch != "" {
-		where += fmt.Sprintf(" AND (r.body ILIKE $%d OR r.title ILIKE $%d)", argIdx, argIdx)
-		args = append(args, "%"+filterSearch+"%")
-		argIdx++
-	}
-
-	// Query with dynamic filters.
-	query := fmt.Sprintf(
-		`SELECT r.id, r.body, r.status, r.entity_type, r.created_at, r.reviewer_user_id,
-		        COALESCE(u.username, 'unknown') AS author_username
-		 FROM reviews r
-		 LEFT JOIN users u ON u.id = r.reviewer_user_id
-		 WHERE %s
-		 ORDER BY r.created_at DESC
-		 LIMIT $%d OFFSET $%d`,
-		where, argIdx, argIdx+1,
-	)
-	args = append(args, limit, offset)
-
-	rows, err := h.DB.Reader.Query(ctx, query, args...)
+	rows, err := h.DB.Reader.Query(ctx, query, listArgs...)
 	if err != nil {
-		slog.Error("moderation: querying reviews", "error", err)
+		slog.Error("moderation: querying unified queue", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to load moderation queue")
 		return
 	}
@@ -137,12 +168,13 @@ func (h *Handlers) ListModeration(w http.ResponseWriter, r *http.Request) {
 		CreatedAt      pgtype.Timestamptz
 		ReviewerUserID pgtype.UUID
 		AuthorUsername string
+		QueueSource    string
 	}
 
 	var rawRows []reviewRow
 	for rows.Next() {
 		var r reviewRow
-		if err := rows.Scan(&r.ID, &r.Body, &r.Status, &r.EntityType, &r.CreatedAt, &r.ReviewerUserID, &r.AuthorUsername); err != nil {
+		if err := rows.Scan(&r.ID, &r.Body, &r.Status, &r.EntityType, &r.CreatedAt, &r.ReviewerUserID, &r.AuthorUsername, &r.QueueSource); err != nil {
 			slog.Error("moderation: scanning review row", "error", err)
 			continue
 		}
@@ -150,14 +182,36 @@ func (h *Handlers) ListModeration(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Count total with same filters (without LIMIT/OFFSET).
-	countQuery := fmt.Sprintf(
-		`SELECT COUNT(*)::int FROM reviews r WHERE %s`, where,
-	)
-	countArgs := args[:len(args)-2] // exclude limit, offset
+	countArgs := []interface{}{tenantID, filterStatus, filterContentType, "%" + filterSearch + "%"}
+	countQuery := `
+SELECT COALESCE(SUM(cnt), 0)::int FROM (
+    SELECT COUNT(*) AS cnt
+    FROM reviews r
+    WHERE r.tenant_id = $1
+      AND ($2::text = '' OR r.status = $2)
+      AND ($3::text = '' OR r.entity_type = $3)
+      AND ($4::text = '%' OR (r.body ILIKE $4 OR r.title ILIKE $4))
+    UNION ALL
+    SELECT COUNT(*)
+    FROM content_reviews cr
+    WHERE cr.tenant_id = $1
+      AND cr.source = 'persona_action'
+      AND ($2::text = '' OR cr.status = $2)
+      AND ($3::text = '' OR cr.source = $3)
+      AND ($4::text = '%' OR cr.feedback ILIKE $4)
+    UNION ALL
+    SELECT COUNT(*)
+    FROM ai_hitl_reviews ah
+    WHERE ah.tenant_id = $1
+      AND ah.source = 'studio'
+      AND ($2::text = '' OR ah.status = $2)
+      AND ($3::text = '' OR ah.content_type = $3)
+      AND ($4::text = '%' OR (ah.human_feedback::text ILIKE $4 OR ah.ai_output::text ILIKE $4))
+) t`
 
 	var total int32
 	if err := h.DB.Reader.QueryRow(ctx, countQuery, countArgs...).Scan(&total); err != nil {
-		slog.Warn("moderation: counting reviews", "error", err)
+		slog.Warn("moderation: counting unified queue", "error", err)
 	}
 
 	totalPages := int32(0)
@@ -186,7 +240,7 @@ func (h *Handlers) ListModeration(w http.ResponseWriter, r *http.Request) {
 			Reporter:  row.AuthorUsername,
 			AuthorID:  authorID,
 			Created:   row.CreatedAt.Time.Format(time.RFC3339),
-			EntityRef: "review:" + row.ID.String(),
+			EntityRef: row.QueueSource + ":" + row.ID.String(),
 		})
 	}
 
@@ -196,6 +250,107 @@ func (h *Handlers) ListModeration(w http.ResponseWriter, r *http.Request) {
 			"total":       total,
 			"page":        offset / limit,
 			"total_pages": totalPages,
+		},
+	})
+}
+
+// ModerationOption is a single value/label pair used in filter dropdowns.
+type ModerationOption struct {
+	Value string `json:"value"`
+	Label string `json:"label"`
+}
+
+// labelForModerationType produces a human-readable label from a raw entity_type
+// value (e.g. "ad_campaign" -> "Ad Campaign").
+func labelForModerationType(v string) string {
+	if v == "" {
+		return v
+	}
+	parts := strings.Split(v, "_")
+	for i, p := range parts {
+		if len(p) > 0 {
+			parts[i] = strings.ToUpper(p[:1]) + p[1:]
+		}
+	}
+	return strings.Join(parts, " ")
+}
+
+// GetModerationOptions handles GET /api/v1/admin/moderation/options.
+// Returns the canonical status and content_type (entity_type) options for the
+// moderation queue, including tenant-specific entity types from the reviews
+// table (Rule 16).
+func (h *Handlers) GetModerationOptions(w http.ResponseWriter, r *http.Request) {
+	if _, ok := requireUser(w, r); !ok {
+		return
+	}
+
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	statuses := []ModerationOption{
+		{Value: "pending", Label: "Pending"},
+		{Value: "flagged", Label: "Flagged"},
+		{Value: "published", Label: "Published"},
+		{Value: "approved", Label: "Approved"},
+		{Value: "rejected", Label: "Rejected"},
+		{Value: "changes_requested", Label: "Changes Requested"},
+		{Value: "removed", Label: "Removed"},
+	}
+
+	contentTypes := []ModerationOption{
+		{Value: "organization", Label: "Organization"},
+		{Value: "service", Label: "Service"},
+		{Value: "mentor", Label: "Mentor"},
+		{Value: "university", Label: "University"},
+		{Value: "ad_campaign", Label: "Ad Campaign"},
+		{Value: "persona_action", Label: "Persona Action"},
+	}
+
+	seen := make(map[string]bool)
+	for i := range contentTypes {
+		seen[contentTypes[i].Value] = true
+	}
+
+	if h.DB != nil {
+		// Reviews entity types.
+		rows, err := h.DB.Reader.Query(r.Context(), `SELECT DISTINCT entity_type FROM reviews WHERE tenant_id = $1 AND entity_type <> ''`, tenantID)
+		if err == nil {
+			defer rows.Close()
+			for rows.Next() {
+				var et string
+				if err := rows.Scan(&et); err != nil {
+					continue
+				}
+				if !seen[et] {
+					seen[et] = true
+					contentTypes = append(contentTypes, ModerationOption{Value: et, Label: labelForModerationType(et)})
+				}
+			}
+		}
+
+		// Studio HITL content types.
+		rows2, err := h.DB.Reader.Query(r.Context(), `SELECT DISTINCT content_type FROM ai_hitl_reviews WHERE tenant_id = $1 AND content_type <> '' AND source = 'studio'`, tenantID)
+		if err == nil {
+			defer rows2.Close()
+			for rows2.Next() {
+				var ct string
+				if err := rows2.Scan(&ct); err != nil {
+					continue
+				}
+				if !seen[ct] {
+					seen[ct] = true
+					contentTypes = append(contentTypes, ModerationOption{Value: ct, Label: labelForModerationType(ct)})
+				}
+			}
+		}
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
+		"data": map[string]any{
+			"statuses":      statuses,
+			"content_types": contentTypes,
 		},
 	})
 }
@@ -1119,27 +1274,39 @@ func (h *Handlers) ModerateItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err := h.Queries.AdminUpdateReviewStatus(ctx, gen.AdminUpdateReviewStatusParams{
-		Status:   newStatus,
-		ID:       rid,
-		TenantID: tenantID,
-	})
-	if err != nil {
-		slog.Error("moderation: updating item", "id", id, "error", err)
-		errpkg.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to update moderation item")
-		return
-	}
+	// AI Content Studio (§75, ADR-076 §3): try the studio HITL queues first.
+	// Studio drafts live either in content_reviews (legacy path, source='studio')
+	// or in ai_hitl_reviews (current path, source='studio'). If this ID matches
+	// either, the hook updates the review row, transitions the studio_job, and
+	// — on approve — publishes the draft. In that case we skip the generic
+	// content_reviews / content_reports updates below because they have no row
+	// for an ai_hitl_reviews ID and would fail the request.
+	if h.handleStudioReview(ctx, rid, tenantID, user.UserID, input.Action, input.Reason) {
+		slog.Info("moderation: studio review processed",
+			"item_id", id, "action", input.Action, "reviewer", user.UserID.String())
+	} else {
+		err := h.Queries.AdminUpdateReviewStatus(ctx, gen.AdminUpdateReviewStatusParams{
+			Status:   newStatus,
+			ID:       rid,
+			TenantID: tenantID,
+		})
+		if err != nil {
+			slog.Error("moderation: updating item", "id", id, "error", err)
+			errpkg.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to update moderation item")
+			return
+		}
 
-	// Try as a content report if review update didn't match
-	err = h.Queries.ModerateContentReport(ctx, gen.ModerateContentReportParams{
-		Status:         newStatus,
-		ReviewedBy:     user.UserID,
-		ResolutionNote: &input.Reason,
-		ID:             rid,
-		TenantID:       tenantID,
-	})
-	if err != nil {
-		slog.Error("moderation: updating content report", "id", id, "error", err)
+		// Try as a content report if review update didn't match
+		err = h.Queries.ModerateContentReport(ctx, gen.ModerateContentReportParams{
+			Status:         newStatus,
+			ReviewedBy:     user.UserID,
+			ResolutionNote: &input.Reason,
+			ID:             rid,
+			TenantID:       tenantID,
+		})
+		if err != nil {
+			slog.Error("moderation: updating content report", "id", id, "error", err)
+		}
 	}
 
 	// Participation Orchestration (§76, ADR-077 §4, BUG-001): if the ID
@@ -1150,18 +1317,6 @@ func (h *Handlers) ModerateItem(w http.ResponseWriter, r *http.Request) {
 	// content_reviews persona-action row stayed 'pending' forever.
 	if h.handlePersonaActionReview(ctx, rid, tenantID, user.UserID, input.Action, input.Reason) {
 		slog.Info("moderation: persona action review processed",
-			"item_id", id, "action", input.Action, "reviewer", user.UserID.String())
-	}
-
-	// AI Content Studio (§75, ADR-076 §3): if the ID matches a
-	// content_reviews row with source='studio', transition the linked
-	// studio_jobs row to 'published' (approve) or 'rejected' (reject) and
-	// — on approve — publish the draft content and transition the linked
-	// intel_records row to 'published'. Without this, studio jobs stay
-	// 'in_review' forever after admin review (same defect class as the
-	// persona_action BUG-001 fix above).
-	if h.handleStudioReview(ctx, rid, tenantID, user.UserID, input.Action, input.Reason) {
-		slog.Info("moderation: studio review processed",
 			"item_id", id, "action", input.Action, "reviewer", user.UserID.String())
 	}
 
@@ -1255,15 +1410,31 @@ func (h *Handlers) handlePersonaActionReview(ctx context.Context, id, tenantID, 
 // The content_reviews status is updated first so the admin UI reflects the
 // decision immediately.
 func (h *Handlers) handleStudioReview(ctx context.Context, id, tenantID, reviewerID pgtype.UUID, action, reason string) bool {
-	// Check whether this ID is a studio content_reviews row.
-	var source, status string
+	// Try the current ai_hitl_reviews queue first (ADR-088 HITL queue).
+	var hitlSource, hitlStatus string
 	err := h.DB.Reader.QueryRow(ctx,
+		`SELECT source, status FROM ai_hitl_reviews
+		 WHERE id = $1 AND tenant_id = $2`,
+		id, tenantID,
+	).Scan(&hitlSource, &hitlStatus)
+	if err == nil && hitlSource == "studio" {
+		if hitlStatus != "pending" {
+			slog.Warn("moderation: studio ai_hitl_review is not pending, skipping",
+				"review_id", id, "status", hitlStatus)
+			return true
+		}
+		return h.updateAIHITLStudioReview(ctx, id, tenantID, reviewerID, action, reason)
+	}
+
+	// Fallback to the legacy content_reviews path.
+	var source, status string
+	err = h.DB.Reader.QueryRow(ctx,
 		`SELECT source, status FROM content_reviews
 		 WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL`,
 		id, tenantID,
 	).Scan(&source, &status)
 	if err != nil {
-		return false // not a content_reviews row (or not found)
+		return false // not a content_reviews row (or not found) — not a studio review
 	}
 	if source != "studio" {
 		return false // not a studio review — leave to other flows
@@ -1296,12 +1467,47 @@ func (h *Handlers) handleStudioReview(ctx context.Context, id, tenantID, reviewe
 			"id", id.String(), "action", action, "reason", reason)
 	}
 
-	// Delegate studio_jobs + intel_records transitions to the studio hook.
-	// The hook looks up the studio_jobs row by review_id and handles the
-	// full transition (publish content, update job status, transition
-	// intel_record). When no hook is wired, the content_reviews status is
-	// still updated above so the admin UI is consistent — but studio_jobs
-	// would remain 'in_review' (logged for ops visibility).
+	return h.callStudioHook(ctx, id, tenantID, reviewerID, action)
+}
+
+// updateAIHITLStudioReview updates an ai_hitl_reviews row with source='studio'
+// and invokes the studio hook. Returns true to indicate the review was handled.
+func (h *Handlers) updateAIHITLStudioReview(ctx context.Context, id, tenantID, reviewerID pgtype.UUID, action, reason string) bool {
+	var newHITLStatus string
+	switch action {
+	case "approve":
+		newHITLStatus = "approved"
+	case "reject", "delete":
+		newHITLStatus = "rejected"
+	default:
+		return true
+	}
+
+	var reasonPtr *string
+	if reason != "" {
+		reasonPtr = &reason
+	}
+
+	_, err := h.DB.Writer.Exec(ctx,
+		`UPDATE ai_hitl_reviews
+		 SET status = $1, reviewer_id = $2, reviewed_at = now(), reason = $3
+		 WHERE id = $4 AND tenant_id = $5 AND source = 'studio' AND status = 'pending'`,
+		newHITLStatus, reviewerID, reasonPtr, id, tenantID,
+	)
+	if err != nil {
+		slog.Error("moderation: studio ai_hitl_reviews update failed", "id", id, "error", err)
+		return true
+	}
+	if reason != "" {
+		slog.Info("moderation: studio ai_hitl review reason",
+			"id", id.String(), "action", action, "reason", reason)
+	}
+
+	return h.callStudioHook(ctx, id, tenantID, reviewerID, action)
+}
+
+// callStudioHook invokes the injected StudioReviewHook for approve/reject.
+func (h *Handlers) callStudioHook(ctx context.Context, id, tenantID, reviewerID pgtype.UUID, action string) bool {
 	if h.StudioHook == nil {
 		slog.Warn("moderation: studio review hook not wired, studio_jobs status not transitioned",
 			"review_id", id, "action", action)
@@ -1309,12 +1515,12 @@ func (h *Handlers) handleStudioReview(ctx context.Context, id, tenantID, reviewe
 	}
 	switch action {
 	case "approve":
-		if err := h.StudioHook.OnStudioReviewApproved(ctx, tenantID, id); err != nil {
+		if err := h.StudioHook.OnStudioReviewApproved(ctx, tenantID, id, reviewerID); err != nil {
 			slog.Error("moderation: studio review approve hook failed",
 				"review_id", id, "error", err)
 		}
 	case "reject", "delete":
-		if err := h.StudioHook.OnStudioReviewRejected(ctx, tenantID, id); err != nil {
+		if err := h.StudioHook.OnStudioReviewRejected(ctx, tenantID, id, reviewerID); err != nil {
 			slog.Error("moderation: studio review reject hook failed",
 				"review_id", id, "error", err)
 		}

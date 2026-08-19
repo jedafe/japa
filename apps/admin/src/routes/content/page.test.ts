@@ -13,6 +13,7 @@ vi.mock('$lib/api', () => ({
 		unfeature: vi.fn().mockResolvedValue({ ok: true }),
 		archive: vi.fn().mockResolvedValue({ ok: true }),
 		listContentTypes: vi.fn().mockResolvedValue({ ok: true, data: [] }),
+		getStatusOptions: vi.fn().mockResolvedValue({ ok: true, data: [] }),
 	},
 }));
 vi.mock('$app/state', () => ({

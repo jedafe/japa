@@ -38,13 +38,37 @@ type ContentPublisher interface {
 	UpdateContentStatus(ctx context.Context, contentID, tenantID pgtype.UUID, status string) (any, error)
 }
 
+// HITLReview is a minimal read model for the ai_hitl_reviews row the studio
+// hook needs to route tool-table drafts to the correct publisher.
+type HITLReview struct {
+	ID          pgtype.UUID
+	ContentID   pgtype.UUID
+	ContentType string
+	TargetTable string
+	Source      string
+	Status      string
+}
+
+// HITLReviewReader loads a single HITL review by tenant + id.
+type HITLReviewReader interface {
+	GetHITLReview(ctx context.Context, tenantID, reviewID pgtype.UUID) (HITLReview, error)
+}
+
+// ToolTablePublisher publishes a non-contents draft row when its studio HITL
+// review is approved. The targetTable value comes from ai_hitl_reviews.
+type ToolTablePublisher interface {
+	Publish(ctx context.Context, tenantID, reviewerID pgtype.UUID, targetTable string, targetID pgtype.UUID, notes string) error
+}
+
 // Service holds the business logic for the AI Content Studio.
 type Service struct {
-	store          *Store
-	settings       *config.Settings
-	enqueuer       TaskEnqueuer
-	intelUpdater   IntelRecordStatusUpdater
-	contentPub     ContentPublisher
+	store        *Store
+	settings     *config.Settings
+	enqueuer     TaskEnqueuer
+	intelUpdater IntelRecordStatusUpdater
+	contentPub   ContentPublisher
+	hitlReader   HITLReviewReader
+	toolTablePub ToolTablePublisher
 }
 
 // NewService creates a Service backed by the given store and settings.
@@ -65,11 +89,19 @@ func (s *Service) SetIntelRecordUpdater(u IntelRecordStatusUpdater) { s.intelUpd
 // Called at server wiring time.
 func (s *Service) SetContentPublisher(p ContentPublisher) { s.contentPub = p }
 
+// SetHITLReviewReader injects the HITL review reader so the review hook can
+// discover target_table for tool-table drafts.
+func (s *Service) SetHITLReviewReader(r HITLReviewReader) { s.hitlReader = r }
+
+// SetToolTablePublisher injects the publisher for tool-table drafts.
+func (s *Service) SetToolTablePublisher(p ToolTablePublisher) { s.toolTablePub = p }
+
 // highStakesCategories are the guide categories that always require human
 // review, regardless of studio.auto_publish_types. Hardcoded per §75 — not
 // configurable.
 var highStakesCategories = map[string]bool{
 	"visa":             true,
+	"remittance":       true, // financial (aligned with intel gate ADR-088)
 	"banking":          true,
 	"grants":           true,
 	"health_insurance": true,
@@ -96,6 +128,7 @@ var permanentlyExcludedTypes = map[string]bool{
 	"tax_obligation_guide":      true,
 	"community_organisation":    true,
 	"wiki_page":                 true,
+	"calendar_entry":            true, // tool-table projection row (calendar_entries)
 }
 
 // IsHighStakes returns true if the guide category requires mandatory review.
@@ -576,23 +609,63 @@ func (s *Service) EnqueueRetryFailed(ctx context.Context, tenantID, batchID pgty
 	return s.enqueueRetryFailed(ctx, tenantID, batchID)
 }
 
-// OnStudioReviewApproved is called by the admin moderation handler when a
-// source='studio' HITL review is approved (§75, ADR-076 §3). It publishes
-// the draft content, transitions studio_jobs to 'published', and transitions
-// the linked intel_records row to 'published'.
-func (s *Service) OnStudioReviewApproved(ctx context.Context, tenantID, reviewID pgtype.UUID) error {
+// OnStudioReviewApproved is called when a source='studio' HITL review is
+// approved (§75, ADR-076 §3). It publishes the draft content or tool-table
+// row, transitions studio_jobs to 'published', and transitions the linked
+// intel_records row to 'published'.
+func (s *Service) OnStudioReviewApproved(ctx context.Context, tenantID, reviewID, reviewerID pgtype.UUID) error {
 	job, err := s.store.GetJobByReviewID(ctx, tenantID, reviewID)
 	if err != nil {
 		return fmt.Errorf("studio: approve: find job by review_id: %w", err)
 	}
 
-	// Publish the draft content (contents table only — tool-table types
-	// have their own publish flows managed by their services).
-	if job.DraftContentID.Valid && s.contentPub != nil {
-		if _, perr := s.contentPub.UpdateContentStatus(ctx, job.DraftContentID, tenantID, "published"); perr != nil {
-			slog.Warn("studio: approve: publish content failed, marking job published anyway",
-				"job_id", job.ID, "content_id", job.DraftContentID, "error", perr)
+	// Load the HITL review to discover the actual target table. For
+	// contents it remains 'contents'; for tool-table drafts it tells us
+	// which service can publish the row.
+	targetTable := "contents"
+	var targetID pgtype.UUID
+	if s.hitlReader != nil {
+		review, herr := s.hitlReader.GetHITLReview(ctx, tenantID, reviewID)
+		if herr != nil {
+			slog.Warn("studio: approve: could not load HITL review, defaulting to contents target",
+				"review_id", reviewID, "error", herr)
+		} else {
+			targetTable = review.TargetTable
+			if targetTable == "" {
+				targetTable = "contents"
+			}
+			targetID = review.ContentID
 		}
+	}
+
+	// Determine the publish target. Prefer the HITL review's content_id +
+	// target_table; fall back to the legacy studio_jobs.draft_content_id for
+	// rows created before ADR-076 Amendment 1.
+	if !targetID.Valid && job.DraftContentID.Valid {
+		targetID = job.DraftContentID
+		targetTable = "contents"
+	}
+
+	// Publish the draft. contents rows use the content publisher; tool-table
+	// rows use the dedicated tool-table publisher (ADR-076 Amendment 1).
+	// If publication fails, the job is NOT marked published and the linked
+	// intel_record is NOT transitioned, so the state stays consistent.
+	if targetTable == "contents" && targetID.Valid {
+		if s.contentPub == nil {
+			return fmt.Errorf("studio: approve: content publisher not wired")
+		}
+		if _, perr := s.contentPub.UpdateContentStatus(ctx, targetID, tenantID, "published"); perr != nil {
+			return fmt.Errorf("studio: approve: publish content: %w", perr)
+		}
+	} else if targetTable != "contents" && targetID.Valid {
+		if s.toolTablePub == nil {
+			return fmt.Errorf("studio: approve: tool-table publisher not wired for %s", targetTable)
+		}
+		if perr := s.toolTablePub.Publish(ctx, tenantID, reviewerID, targetTable, targetID, ""); perr != nil {
+			return fmt.Errorf("studio: approve: publish %s: %w", targetTable, perr)
+		}
+	} else {
+		return fmt.Errorf("studio: approve: no target id to publish (job_id=%s, target_table=%s)", job.ID.String(), targetTable)
 	}
 
 	// Transition the studio job to 'published'.
@@ -605,14 +678,14 @@ func (s *Service) OnStudioReviewApproved(ctx context.Context, tenantID, reviewID
 
 	slog.Info("studio: review approved, job published",
 		"job_id", job.ID, "review_id", reviewID,
+		"target_table", targetTable, "target_id", targetID,
 		"content_id", job.DraftContentID, "intel_record_id", job.IntelRecordID)
 	return nil
 }
 
-// OnStudioReviewRejected is called by the admin moderation handler when a
-// source='studio' HITL review is rejected (§75: "Reject → job rejected,
-// draft remains as unpublished content").
-func (s *Service) OnStudioReviewRejected(ctx context.Context, tenantID, reviewID pgtype.UUID) error {
+// OnStudioReviewRejected is called when a source='studio' HITL review is
+// rejected (§75: "Reject → job rejected, draft remains as unpublished content").
+func (s *Service) OnStudioReviewRejected(ctx context.Context, tenantID, reviewID, reviewerID pgtype.UUID) error {
 	job, err := s.store.GetJobByReviewID(ctx, tenantID, reviewID)
 	if err != nil {
 		return fmt.Errorf("studio: reject: find job by review_id: %w", err)

@@ -3,7 +3,7 @@
 	import { Modal } from "$lib/components/ui/modal";
 	import { Button } from "$lib/components/ui/button";
 	import { SlideOver } from "$lib/components/ui/slide-over";
-	import { universityAdminApi } from "$lib/api";
+	import { universityAdminApi, adminCatalogApi, type CatalogOption } from "$lib/api";
 	import { t } from "$lib/stores/i18n.svelte";
 	import { hasPermission } from "$lib/stores/permissions.svelte";
 	import { Check, X, Ban, RotateCcw, Eye, Trash2, Pencil } from "lucide-svelte";
@@ -28,17 +28,26 @@
 	const canApprove = $derived(hasPermission("university.instructor.approve"));
 	const canManage = $derived(hasPermission("university.instructor.manage"));
 
+	let instructorStatusOptions = $state<CatalogOption[]>([
+		{ value: "pending", label: t("university.pending", "Pending") },
+		{ value: "approved", label: t("university.approved", "Approved") },
+		{ value: "rejected", label: t("university.rejected", "Rejected") },
+		{ value: "suspended", label: t("university.suspended", "Suspended") }
+	]);
+
+	$effect(() => {
+		void (async () => {
+			const res = await adminCatalogApi.get("university.instructors.status");
+			if (res.ok && res.data?.length) instructorStatusOptions = res.data;
+		})();
+	});
+
 	// ── Filter options ──────────────────────────────────────────────────────
 	const filterDefs = $derived<FilterDef[]>([
 		{
 			key: "status",
 			label: t("university.status", "Status"),
-			options: [
-				{ value: "pending", label: t("university.pending", "Pending") },
-				{ value: "approved", label: t("university.approved", "Approved") },
-				{ value: "rejected", label: t("university.rejected", "Rejected") },
-				{ value: "suspended", label: t("university.suspended", "Suspended") }
-			]
+			options: instructorStatusOptions
 		}
 	]);
 

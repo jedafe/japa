@@ -7,7 +7,7 @@
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import { Modal } from '$lib/components/ui/modal';
 	import { Button } from '$lib/components/ui/button';
-	import { pagesApi, pageTemplatesAdminApiExtended, pageBuilderAdminApiExtended, api, apiRaw } from '$lib/api';
+	import { pagesApi, pageTemplatesAdminApiExtended, pageBuilderAdminApiExtended, api, apiRaw, contentAdminApi } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { onMount } from 'svelte';
@@ -49,6 +49,10 @@
 	let themeOptions = $state<Array<{ value: string; label: string }>>([
 		{ value: '', label: t('page_builder.default_theme', 'Default') }
 	]);
+	// Page statuses are shared with the content status catalog (Rule 16).
+	// The page builder only uses draft / published / archived.
+	let statusOptions = $state<Array<{ value: string; label: string }>>([]);
+	let pageTypeOptions = $state<Array<{ value: string; label: string }>>([]);
 
 	async function loadTemplatesAndThemes() {
 		// Fetch with a large page_size so dropdown options aren't truncated
@@ -76,8 +80,26 @@
 		}
 	}
 
+	async function loadStatusOptions() {
+		const res = await contentAdminApi.getStatusOptions();
+		if (res.ok) {
+			const all = (res.data as Array<{ value: string; label: string }>) ?? [];
+			const allowed = new Set(['draft', 'published', 'archived']);
+			statusOptions = all.filter((o) => allowed.has(o.value));
+		}
+	}
+
+	async function loadPageTypeOptions() {
+		const res = await pageBuilderAdminApiExtended.getPageTypes();
+		if (res.ok) {
+			pageTypeOptions = (res.data as Array<{ value: string; label: string }>) ?? [];
+		}
+	}
+
 	onMount(() => {
 		loadTemplatesAndThemes();
+		loadStatusOptions();
+		loadPageTypeOptions();
 	});
 
 	// ── Bulk delete ───── EntityPage auto-reloads + clears selection after a bulk action handler completes.
@@ -342,7 +364,7 @@
 			key: 'page_type',
 			label: t('page_builder.page_type', 'Page type'),
 			type: 'select',
-			options: [
+			options: pageTypeOptions.length ? pageTypeOptions : [
 				{ value: 'landing', label: t('page_builder.landing', 'Landing') },
 				{ value: 'about', label: 'About' },
 				{ value: 'service', label: 'Service' },
@@ -355,7 +377,7 @@
 			key: 'status',
 			label: t('page_builder.status', 'Status'),
 			type: 'select',
-			options: [
+			options: statusOptions.length ? statusOptions : [
 				{ value: 'draft', label: t('page_builder.status_draft', 'Draft') },
 				{ value: 'published', label: t('page_builder.status_published', 'Published') },
 				{ value: 'archived', label: t('page_builder.status_archived', 'Archived') }
@@ -433,7 +455,7 @@
 			{
 				key: 'status',
 				label: t('page_builder.status', 'Status'),
-				options: [
+				options: statusOptions.length ? statusOptions : [
 					{ value: 'draft', label: t('page_builder.status_draft', 'Draft') },
 					{ value: 'published', label: t('page_builder.status_published', 'Published') },
 					{ value: 'archived', label: t('page_builder.status_archived', 'Archived') }

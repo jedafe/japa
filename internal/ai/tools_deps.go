@@ -18,6 +18,7 @@ import (
 	"net/http"
 
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/content/visibility"
 	"github.com/jedafe/japa/internal/db/gen"
 )
 
@@ -32,10 +33,10 @@ import (
 type ContentService interface {
 	// ListContents returns a tenant-wide text-filtered page of content.
 	// cursor is a zero/invalid pgtype.Timestamptz for the first page.
-	ListContents(ctx context.Context, tenantID pgtype.UUID, q string, cursor pgtype.Timestamptz, limit int32) ([]gen.ListContentsByTenantRow, error)
+	ListContents(ctx context.Context, tenantID pgtype.UUID, q string, cursor pgtype.Timestamptz, limit int32, filter visibility.VisibilityFilter) ([]gen.ListContentsByTenantRow, error)
 	// SearchContentsBySpace returns content within a space whose title
 	// matches the query.
-	SearchContentsBySpace(ctx context.Context, tenantID, spaceID pgtype.UUID, query string, limit, offset int32) ([]gen.SearchContentsBySpaceRow, error)
+	SearchContentsBySpace(ctx context.Context, tenantID, spaceID pgtype.UUID, query string, limit, offset int32, filter visibility.VisibilityFilter) ([]gen.SearchContentsBySpaceRow, error)
 	// GetContent returns a single content row by ID.
 	GetContent(ctx context.Context, id, tenantID pgtype.UUID) (gen.GetContentByIDRow, error)
 }
@@ -514,7 +515,7 @@ type CustomFieldDefsService interface {
 // Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Content tools)
 type ContentLifecycleService interface {
 	DeleteContent(ctx context.Context, id, tenantID pgtype.UUID) error
-	ListContentsByType(ctx context.Context, tenantID pgtype.UUID, contentType string, cursor pgtype.Timestamptz, limit int32) ([]gen.ListContentsByTypeRow, error)
+	ListContentsByType(ctx context.Context, tenantID pgtype.UUID, contentType string, cursor pgtype.Timestamptz, limit int32, filter visibility.VisibilityFilter) ([]gen.ListContentsByTypeRow, error)
 	UpdateContentStatus(ctx context.Context, id, tenantID pgtype.UUID, status string) (gen.UpdateContentStatusRow, error)
 }
 

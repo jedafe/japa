@@ -234,13 +234,12 @@ const agentSessionStateTTL = 5 * time.Minute
 // agentDefaults are the §103 system_settings defaults used when the
 // settings reader is nil or a key is absent.
 const (
-	defaultMaxToolCalls       = 10
-	defaultTimeoutSeconds     = 60
-	defaultCostLimitUSD       = 0.50
-	defaultRateLimitPerDay    = 50
-	defaultCostPer1kTokensUSD = 0.002
-	defaultDailyBudgetUSD     = 5.00
-	defaultLLMTemperature     = 0.3
+	defaultMaxToolCalls    = 10
+	defaultTimeoutSeconds  = 60
+	defaultCostLimitUSD    = 0.50
+	defaultRateLimitPerDay = 50
+	defaultDailyBudgetUSD  = 5.00
+	defaultLLMTemperature  = 0.3
 )
 
 // HandleAgentRequest runs the agent loop for a single user prompt. It
@@ -416,8 +415,11 @@ func (h *AgentHandler) runLoop(
 
 	maxToolCalls := h.getIntSetting(ctx, tenantID, "agent.max_tool_calls", defaultMaxToolCalls)
 	costLimit := h.getFloatSetting(ctx, tenantID, "agent.cost_limit_per_request_usd", defaultCostLimitUSD)
-	costPer1k := h.getFloatSetting(ctx, tenantID, "agent.cost_per_1k_tokens", defaultCostPer1kTokensUSD)
 	temperature := h.getFloatSetting(ctx, tenantID, "agent.temperature", defaultLLMTemperature)
+
+	// Cost estimator uses per-provider/model price settings so the agent's
+	// per-request cost limit reflects the actual configured LLM price.
+	costEstimator := NewCostEstimator(h.settings)
 
 	// sendEvent writes an event to the channel, respecting the original
 	// request context cancellation. If the SSE consumer stops reading
@@ -504,9 +506,9 @@ func (h *AgentHandler) runLoop(
 			break
 		}
 
-		// Accumulate token usage + cost.
+		// Accumulate token usage + cost using the per-provider/model price.
 		totalTokens += resp.Usage.TotalTokens
-		estimatedCost += estimateCost(resp.Usage.TotalTokens, costPer1k)
+		estimatedCost += costEstimator.Estimate(loopCtx, tenantID, resp.ProviderName, resp.Model, resp.Usage.TotalTokens)
 
 		// --- Cost limit check (task 5.10) ---
 		if estimatedCost > costLimit {
@@ -1003,7 +1005,11 @@ means you may create a draft for admin review.
 When the request is suitable for content creation:
 1. Call external.search to gather relevant external information.
 2. Summarize the external results for the user in your response.
-3. Call content.create_draft with:
+3. If the draft is a guide and the guide_category is one of visa, tax, banking,
+   housing, or cost_of_living, call external.search AGAIN with specific queries
+   for the current facts (fees, rates, rent ranges, requirements, processing
+   times) before writing the body. Cite the most relevant source URL(s).
+4. Call content.create_draft with:
    - author_id: "%s"  (the AI persona's backing user — do NOT use the calling user)
    - ai_persona_id: "%s"
    - original_prompt: the user's original request text
@@ -1051,12 +1057,21 @@ BEHAVIOR RULES:
    - If it exists and is current, present it
    - If it doesn't exist, determine the tier (structured/semi/unstructured)
      and execute the appropriate comparison strategy
+   - When filling comparison values from external.search, set source_ref to the
+     most relevant URL from the result's citations array.
 
-7. You are operating as the user who prompted you. You can only do what
+7. For guide and comparison creation that depends on current facts (visa fees,
+   rent ranges, processing times, tax rates, bank requirements, embassy rules):
+   - Call external.search first and, when citations are returned, cite the most
+     relevant source URL in the body or set source_ref on comparison values.
+   - Do not fabricate current figures. If no external source is available, say so
+     or ask the user for the current value.
+
+8. You are operating as the user who prompted you. You can only do what
    they can do. If a tool returns "unauthorized", do not retry — inform
    the user.
 
-8. Respect privacy. If a tool returns "privacy_blocked", do not attempt
+9. Respect privacy. If a tool returns "privacy_blocked", do not attempt
    to bypass — inform the user that the data is private.`
 
 // ---------------------------------------------------------------------------
@@ -1075,14 +1090,6 @@ func configsToToolDefinitions(configs []ToolConfig) []LLMToolDefinition {
 		})
 	}
 	return out
-}
-
-// estimateCost computes a rough USD cost estimate from token usage.
-func estimateCost(totalTokens int, costPer1kTokensUSD float64) float64 {
-	if totalTokens <= 0 {
-		return 0
-	}
-	return float64(totalTokens) * costPer1kTokensUSD / 1000.0
 }
 
 // floatToNumeric converts a float64 to a pgtype.Numeric suitable for the

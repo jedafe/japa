@@ -235,6 +235,8 @@ FROM content_scores cs
 JOIN contents c ON c.id = cs.content_id
 WHERE c.tenant_id = @tenant_id
   AND c.status = 'published'
+  AND c.visibility = 'public'
+  AND c.deleted_at IS NULL
   AND c.id != @exclude_id
   AND cs.relevance_embedding IS NOT NULL
 ORDER BY cs.relevance_embedding <=> @embedding

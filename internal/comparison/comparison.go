@@ -13,6 +13,9 @@
 package comparison
 
 import (
+	"math"
+
+	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/content"
 	"github.com/jedafe/japa/internal/customfields"
 	"github.com/jedafe/japa/internal/db"
@@ -48,6 +51,21 @@ func IsValidDimensionType(dt string) bool {
 	return validDimensionTypes[dt]
 }
 
+// toInt32 converts a non-negative int to int32, clamping it to the
+// maximum int32 value. Callers use it for loop indices and slice lengths
+// so gosec G115 does not flag the conversion.
+func toInt32(n int) int32 {
+	if n > math.MaxInt32 {
+		return math.MaxInt32
+	}
+
+	if n < math.MinInt32 {
+		return math.MinInt32
+	}
+
+	return int32(n) // #nosec G115 -- value is clamped to the int32 range above
+}
+
 // DefaultComparisonTypes are the pre-seeded comparison types for the platform.
 var DefaultComparisonTypes = []struct {
 	Name        string
@@ -63,10 +81,11 @@ var DefaultComparisonTypes = []struct {
 
 // Service provides comparison operations with reader/writer pool separation.
 type Service struct {
-	store      *Store
-	db         *db.DB
-	contentSvc *content.Service
-	cfSvc      *customfields.Service
+	store       *Store
+	db          *db.DB
+	contentSvc  *content.Service
+	cfSvc       *customfields.Service
+	settingsSvc *config.Settings
 }
 
 // NewService creates a Service backed by the given database pool.
@@ -80,4 +99,9 @@ func NewService(database *db.DB) *Service {
 		contentSvc: content.NewService(database),
 		cfSvc:      customfields.NewService(database),
 	}
+}
+
+// SetSettings injects the hot-reloadable system settings service.
+func (s *Service) SetSettings(ss *config.Settings) {
+	s.settingsSvc = ss
 }
