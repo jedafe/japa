@@ -80,6 +80,18 @@ LEFT JOIN spaces s ON s.id = c.space_id AND s.tenant_id = c.tenant_id
 WHERE c.tenant_id = @tenant_id
   AND c.deleted_at IS NULL
   AND c.auto_hidden = false
+  AND (
+      (@can_see_unpublished::boolean AND @can_see_private::boolean)
+      OR (c.author_id = @requester_id::uuid AND c.author_id IS NOT NULL)
+      OR (
+          c.status = 'published'
+          AND (
+              c.visibility = 'public'
+              OR (c.visibility = 'members' AND @can_see_members::boolean)
+              OR (c.visibility = 'private' AND (c.author_id = @requester_id::uuid OR @can_see_private::boolean))
+          )
+      )
+  )
   AND (@q::text IS NULL OR c.title ILIKE '%' || @q || '%' OR c.slug ILIKE '%' || @q || '%' OR c.body ILIKE '%' || @q || '%')
   AND (c.created_at < @cursor_created_at OR (@cursor_created_at IS NULL))
 ORDER BY c.created_at DESC, c.id DESC
@@ -107,6 +119,18 @@ WHERE c.tenant_id = @tenant_id
   AND c.id = ANY(@ids::uuid[])
   AND c.deleted_at IS NULL
   AND c.auto_hidden = false
+  AND (
+      (@can_see_unpublished::boolean AND @can_see_private::boolean)
+      OR (c.author_id = @requester_id::uuid AND c.author_id IS NOT NULL)
+      OR (
+          c.status = 'published'
+          AND (
+              c.visibility = 'public'
+              OR (c.visibility = 'members' AND @can_see_members::boolean)
+              OR (c.visibility = 'private' AND (c.author_id = @requester_id::uuid OR @can_see_private::boolean))
+          )
+      )
+  )
 ORDER BY c.created_at DESC, c.id DESC
 LIMIT @page_limit;
 
@@ -126,11 +150,26 @@ LEFT JOIN spaces s ON s.id = c.space_id AND s.tenant_id = c.tenant_id
 WHERE c.tenant_id = @tenant_id AND c.content_type = @content_type
   AND c.deleted_at IS NULL
   AND c.auto_hidden = false
+  AND (
+      (@can_see_unpublished::boolean AND @can_see_private::boolean)
+      OR (c.author_id = @requester_id::uuid AND c.author_id IS NOT NULL)
+      OR (
+          c.status = 'published'
+          AND (
+              c.visibility = 'public'
+              OR (c.visibility = 'members' AND @can_see_members::boolean)
+              OR (c.visibility = 'private' AND (c.author_id = @requester_id::uuid OR @can_see_private::boolean))
+          )
+      )
+  )
   AND (c.created_at < @cursor_created_at OR (@cursor_created_at IS NULL))
 ORDER BY c.created_at DESC, c.id DESC
 LIMIT @page_limit;
 
 -- name: ListContentsBySpace :many
+-- Lists content assigned to a given space via the authoritative
+-- content_spaces table (BUG-010), with visibility gating. The space name
+-- returned is the requested space, regardless of whether it is the primary.
 SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c.body_html,
        c.field_values, c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
        c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
@@ -140,35 +179,63 @@ SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type, c.title, c.sl
        u.username AS author_username, up.display_name AS author_display_name,
        s.name AS space_name
 FROM contents c
+JOIN content_spaces cs ON cs.content_id = c.id AND cs.space_id = @space_id
 LEFT JOIN users u ON u.id = c.author_id AND u.tenant_id = c.tenant_id
 LEFT JOIN user_profiles up ON up.user_id = c.author_id AND up.tenant_id = c.tenant_id
-LEFT JOIN spaces s ON s.id = c.space_id AND s.tenant_id = c.tenant_id
-WHERE c.tenant_id = @tenant_id AND c.space_id = @space_id
+LEFT JOIN spaces s ON s.id = cs.space_id AND s.tenant_id = c.tenant_id
+WHERE c.tenant_id = @tenant_id
   AND c.deleted_at IS NULL
   AND c.auto_hidden = false
+  AND (
+      (@can_see_unpublished::boolean AND @can_see_private::boolean)
+      OR (c.author_id = @requester_id::uuid AND c.author_id IS NOT NULL)
+      OR (
+          c.status = 'published'
+          AND (
+              c.visibility = 'public'
+              OR (c.visibility = 'members' AND @can_see_members::boolean)
+              OR (c.visibility = 'private' AND (c.author_id = @requester_id::uuid OR @can_see_private::boolean))
+          )
+      )
+  )
   AND (c.created_at < @cursor_created_at OR (@cursor_created_at IS NULL))
 ORDER BY c.created_at DESC, c.id DESC
 LIMIT @page_limit;
 
 -- name: SearchContentsBySpace :many
-SELECT id, tenant_id, author_id, space_id, content_type, title, slug, body, body_html,
-       field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
-       canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
-       status, visibility, is_locked, is_pinned, read_time_minutes,
-       view_count, comment_count, share_count, reshare_count, publish_at, published_at,
-       created_at, updated_at, guide_category
-FROM contents
-WHERE tenant_id = @tenant_id AND space_id = @space_id
-  AND deleted_at IS NULL
-  AND auto_hidden = false
-  AND title ILIKE '%' || @query || '%'
-ORDER BY created_at DESC, id DESC
+-- Searches content assigned to a given space via the authoritative
+-- content_spaces table (BUG-010), with visibility gating.
+SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c.body_html,
+       c.field_values, c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
+       c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
+       c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
+       c.view_count, c.comment_count, c.share_count, c.reshare_count, c.publish_at, c.published_at,
+       c.created_at, c.updated_at, c.guide_category
+FROM contents c
+JOIN content_spaces cs ON cs.content_id = c.id AND cs.space_id = @space_id
+WHERE c.tenant_id = @tenant_id
+  AND c.deleted_at IS NULL
+  AND c.auto_hidden = false
+  AND (
+      (@can_see_unpublished::boolean AND @can_see_private::boolean)
+      OR (c.author_id = @requester_id::uuid AND c.author_id IS NOT NULL)
+      OR (
+          c.status = 'published'
+          AND (
+              c.visibility = 'public'
+              OR (c.visibility = 'members' AND @can_see_members::boolean)
+              OR (c.visibility = 'private' AND (c.author_id = @requester_id::uuid OR @can_see_private::boolean))
+          )
+      )
+  )
+  AND c.title ILIKE '%' || @query || '%'
+ORDER BY c.created_at DESC, c.id DESC
 LIMIT @page_limit OFFSET @page_offset;
 
 -- name: UpdateContent :one
 UPDATE contents
 SET title = @title, slug = @slug, body = @body, body_html = @body_html,
-    field_values = @field_values, content_hash = sqlc.narg(content_hash),
+    field_values = @field_values, content_hash = COALESCE(sqlc.narg(content_hash), content_hash),
     geo_space_id = sqlc.narg(geo_space_id), canonical_url = sqlc.narg(canonical_url),
     header_image_id = sqlc.narg(header_image_id),
     featured_image_id = sqlc.narg(featured_image_id),
@@ -237,10 +304,12 @@ RETURNING id, tenant_id, author_id, space_id, content_type, title, slug, body, b
 -- name: IncrementContentView :exec
 UPDATE contents SET view_count = view_count + 1 WHERE id = @id AND tenant_id = @tenant_id AND deleted_at IS NULL;
 
--- name: RecordContentView :exec
+-- name: RecordContentView :execresult
 -- Inserts a deduplicated view record into user_content_views (Section 14).
--- The PK deduplicates per user/session per day; ON CONFLICT does nothing.
+-- The PK deduplicates per user/session per day; ON CONFLICT DO NOTHING.
 -- country_code is resolved server-side from the client IP via GeoIP.
+-- Returns the command tag so callers can detect whether a row was actually
+-- inserted (RowsAffected == 1) vs. deduplicated (RowsAffected == 0).
 INSERT INTO user_content_views (content_id, user_id, session_id, country_code, viewed_at)
 VALUES (@content_id, @user_id, @session_id, @country_code, now())
 ON CONFLICT DO NOTHING;
@@ -271,15 +340,20 @@ VALUES (@content_id, @field_values, @title, @body, @body_html, @edited_by)
 RETURNING id, content_id, field_values, title, body, body_html, edited_by, created_at;
 
 -- name: ListContentRevisions :many
-SELECT id, content_id, field_values, title, body, body_html, edited_by, created_at
-FROM content_revisions
-WHERE content_id = @content_id
-ORDER BY created_at DESC, id DESC;
+SELECT cr.id, cr.content_id, cr.field_values, cr.title, cr.body, cr.body_html, cr.edited_by, cr.created_at
+FROM content_revisions cr
+JOIN contents c ON c.id = cr.content_id
+WHERE cr.content_id = @content_id
+  AND c.tenant_id = @tenant_id
+ORDER BY cr.created_at DESC, cr.id DESC;
 
 -- name: GetContentRevision :one
-SELECT id, content_id, field_values, title, body, body_html, edited_by, created_at
-FROM content_revisions
-WHERE id = @id AND content_id = @content_id;
+SELECT cr.id, cr.content_id, cr.field_values, cr.title, cr.body, cr.body_html, cr.edited_by, cr.created_at
+FROM content_revisions cr
+JOIN contents c ON c.id = cr.content_id
+WHERE cr.id = @id
+  AND cr.content_id = @content_id
+  AND c.tenant_id = @tenant_id;
 
 -- =====================
 -- Slug History
@@ -451,10 +525,27 @@ INSERT INTO content_spaces (content_id, space_id, is_primary)
 VALUES (@content_id, @space_id, @is_primary);
 
 -- name: SetContentSpaceID :exec
--- Updates only the space_id column on a content item. Used by the auto-assign
--- feature to set the primary space after keyword matching.
-UPDATE contents SET space_id = @space_id, updated_at = now()
+-- Updates the primary space columns (space_id and geo_space_id) on a content
+-- item to keep contents and content_spaces synchronized. Used by the
+-- auto-assign feature and UpdateContentSpaces. Ref: Section 14.
+UPDATE contents SET space_id = @space_id, geo_space_id = @space_id, updated_at = now()
 WHERE id = @content_id;
+
+-- name: SetContentPrimarySpace :exec
+-- Sets is_primary=false on all existing content_spaces for this content,
+-- then ensures the requested space is present with is_primary=true. Used
+-- when UpdateContent changes the primary space without losing additional
+-- assignments. Ref: Section 14.
+WITH reassigned AS (
+    UPDATE content_spaces
+    SET is_primary = false
+    WHERE content_id = @content_id
+    RETURNING space_id
+)
+INSERT INTO content_spaces (content_id, space_id, is_primary)
+SELECT @content_id, @space_id, true
+FROM reassigned
+ON CONFLICT (content_id, space_id) DO UPDATE SET is_primary = true;
 
 -- name: ListContentByTag :many
 -- Composite cursor (created_at, id) avoids skipping items that share the
@@ -470,9 +561,21 @@ SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type, c.title, c.sl
 FROM contents c
 JOIN content_tags ct ON ct.content_id = c.id
 LEFT JOIN media m ON m.id = COALESCE(c.featured_image_id, c.header_image_id) AND m.deleted_at IS NULL
-WHERE ct.tag_id = @tag_id AND c.tenant_id = @tenant_id AND c.status = 'published'
+WHERE ct.tag_id = @tag_id AND c.tenant_id = @tenant_id
   AND c.deleted_at IS NULL
   AND c.auto_hidden = false
+  AND (
+      (@can_see_unpublished::boolean AND @can_see_private::boolean)
+      OR (c.author_id = @requester_id::uuid AND c.author_id IS NOT NULL)
+      OR (
+          c.status = 'published'
+          AND (
+              c.visibility = 'public'
+              OR (c.visibility = 'members' AND @can_see_members::boolean)
+              OR (c.visibility = 'private' AND (c.author_id = @requester_id::uuid OR @can_see_private::boolean))
+          )
+      )
+  )
   AND (
     @cursor_created_at::timestamptz IS NULL
     OR c.created_at < @cursor_created_at::timestamptz

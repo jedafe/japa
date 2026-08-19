@@ -1,5 +1,6 @@
 <script lang="ts">
 	import HelpfulWidget from './HelpfulWidget.svelte';
+	import { sanitizeSidebarHtml } from '$lib/utils/safeHtml';
 	import type { TocHeading } from '$lib/tiptap/serialize';
 
 	interface Props {
@@ -45,8 +46,8 @@
 </script>
 
 <div class="doc-content" bind:this={contentEl}>
-	<!-- eslint-disable-next-line svelte/no-at-html-tags — server-rendered from trusted TipTap JSON -->
-	{@html html}
+	<!-- eslint-disable-next-line svelte/no-at-html-tags — server-rendered from trusted TipTap JSON, re-sanitized client-side as defense in depth -->
+	{@html sanitizeSidebarHtml(html)}
 	<HelpfulWidget {pageId} {lastReviewedAt} {lastReviewedBy} />
 </div>
 

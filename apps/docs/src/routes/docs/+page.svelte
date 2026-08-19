@@ -7,6 +7,7 @@
 	import type { DocAudience } from '$lib/types';
 	import type { PageData } from './$types';
 	import { ArrowRight } from 'lucide-svelte';
+	import { safeJsonLdScript } from '$lib/utils/safeHtml';
 
 	let { data }: { data: PageData } = $props();
 
@@ -51,7 +52,7 @@
 	<meta name="twitter:title" content={data.meta.twitterTitle} />
 	<meta name="twitter:description" content={data.meta.twitterDescription} />
 	{#if data.meta.jsonLdString}
-		{@html `<script type="application/ld+json">${data.meta.jsonLdString}</script>`}
+		{@html safeJsonLdScript(data.meta.jsonLdString)}
 	{/if}
 </svelte:head>
 

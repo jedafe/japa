@@ -17,19 +17,6 @@ import (
 	"github.com/jedafe/japa/internal/ai"
 )
 
-// AIClassificationResult holds the output of an AI spam classification call.
-type AIClassificationResult struct {
-	Score   float64  // 0.0 = clean, 1.0 = definitely spam
-	Reasons []string // human-readable reasons from the model
-}
-
-// SpamClassifier abstracts AI-powered content classification so the pipeline
-// can call any backend that implements it without a hard dependency on the
-// ai package at the interface level.
-type SpamClassifier interface {
-	ClassifySpam(ctx context.Context, content string) (AIClassificationResult, error)
-}
-
 // AIClassifier adapts an ai.Dispatcher to the SpamClassifier interface.
 // It dispatches to the "moderation" category and parses the model's JSON
 // response into a normalised score + reasons.

@@ -411,6 +411,8 @@ export const comparisonAdminApi = {
 	// Comparison content CRUD (Section 30 — actual comparison articles).
 	listComparisons: (params?: string) =>
 		api<ComparisonEntry[]>(`/comparisons${params ? `?${params}` : ''}`),
+	listComparisonsAdmin: (params?: string) =>
+		api<ComparisonEntry[]>(`/comparisons/admin${params ? `?${params}` : ''}`),
 	createComparison: (body: {
 		title: string;
 		slug?: string;
@@ -641,6 +643,13 @@ export interface HitlReview {
 	reviewed_at?: string;
 }
 
+export interface HitlVerifyResult {
+	claim: string;
+	answer: string;
+	citations: string[];
+	provider: string;
+}
+
 export interface GenerateResult {
 	generated_text: string;
 	model: string;
@@ -674,6 +683,9 @@ export const aiApi = {
 
 	rejectHitlReview: (id: string, reason: string) =>
 		api<{ rejected: boolean }>(`/ai/hitl/${id}/reject`, { method: 'POST', body: { reason } }),
+
+	verifyHitlClaim: (data: { claim: string; context?: string }) =>
+		api<HitlVerifyResult>('/ai/hitl/verify', { method: 'POST', body: data }),
 
 	listCategories: () =>
 		api<Array<{ value: string; label: string; description: string }>>('/ai/categories'),
@@ -816,9 +828,9 @@ export const universitiesAdminApi = {
 	list: (params?: string) => apiRaw(`/admin/universities${params ? `?${params}` : ''}`),
 	listPublic: (params?: string) => api<unknown>(`/universities${params ? `?${params}` : ''}`),
 	getBySlug: (slug: string) => api<unknown>(`/universities/${encodeURIComponent(slug)}`),
-	create: (body: { name: string; slug: string; country?: string; logo_url?: string; verified: boolean }) =>
+	create: (body: { name: string; slug: string; initials?: string; country?: string; logo_url?: string; verified: boolean }) =>
 		api('/admin/universities', { method: 'POST', body }),
-	update: (id: string, body: { name?: string; slug?: string; country?: string; logo_url?: string; verified?: boolean }) =>
+	update: (id: string, body: { name?: string; slug?: string; initials?: string; country?: string; logo_url?: string; verified?: boolean }) =>
 		api(`/admin/universities/${id}`, { method: 'PATCH', body }),
 	delete: (id: string) =>
 		api(`/admin/universities/${id}`, { method: 'DELETE' }),
@@ -1076,8 +1088,15 @@ export const stockAdminApi = {
 		api<StockImportResult>('/stock/import', { method: 'POST', body: { provider, id } }),
 };
 
+export interface ModerationOptions {
+	statuses: { value: string; label: string }[];
+	content_types: { value: string; label: string }[];
+}
+
 export const moderationAdminApi = {
 	getQueue: (params?: string) => api<unknown>(`/admin/moderation-queue${params ? `?${params}` : ''}`),
+	// Rule 16: moderation filter options loaded from the backend.
+	getOptions: () => api<ModerationOptions>('/admin/moderation/options'),
 	getAlerts: (params?: string) => api<unknown>(`/admin/moderation/alerts${params ? `?${params}` : ''}`),
 	updateItem: (id: string, body: Record<string, unknown>) =>
 		api<unknown>(`/admin/moderation-queue/${id}`, { method: 'PATCH', body }),
@@ -1384,6 +1403,7 @@ export const mentorshipAdminApiExtended = {
 };
 
 export const pageBuilderAdminApiExtended = {
+	getPageTypes: () => api<{ value: string; label: string }[]>('/admin/pagebuilder/page-types'),
 	listBlocks: (params?: string) => api<unknown>(`/admin/pagebuilder/blocks${params ? `?${params}` : ''}`),
 	getBlock: (id: string) => api<unknown>(`/admin/pagebuilder/blocks/${id}`),
 	listThemes: (params?: string) => api<unknown>(`/admin/pagebuilder/themes${params ? `?${params}` : ''}`),
@@ -1406,6 +1426,13 @@ export const pageBuilderAdminApiExtended = {
 // Replaces the old pageBuilderAdminApiExtended sidebar methods.
 // Sidebar widgets use a dedicated widget type registry (search, theme_toggle,
 // trending_tags, etc.) — NOT pagebuilder block types. Ref: Section 59, ADR-066.
+export interface SidebarOptions {
+	apps: { value: string; label: string }[];
+	positions: { value: string; label: string }[];
+	visibilities: { value: string; label: string }[];
+	statuses: { value: string; label: string }[];
+}
+
 export const sidebarsAdminApi = {
 	list: (params?: string) => api<unknown>(`/admin/sidebars${params ? `?${params}` : ''}`),
 	get: (id: string) => api<unknown>(`/admin/sidebars/${id}`),
@@ -1421,6 +1448,8 @@ export const sidebarsAdminApi = {
 		api<{ deleted: boolean }>(`/admin/sidebars/${id}/widgets/${widgetId}`, { method: 'DELETE' }),
 	reorderWidgets: (id: string, body: { items: { id: string; sort_order: number }[] }) =>
 		api<unknown>(`/admin/sidebars/${id}/widgets/reorder`, { method: 'POST', body }),
+	// Rule 16: sidebar app/position/visibility/status options loaded from the backend.
+	getOptions: () => api<SidebarOptions>('/admin/sidebars/options'),
 	// Public: widget type registry (no auth required)
 	widgetTypes: () => api<{ widget_types: unknown[] }>('/sidebars/widget-types'),
 };
@@ -1428,6 +1457,8 @@ export const sidebarsAdminApi = {
 export const pageTemplatesAdminApiExtended = {
 	list: (params?: string) => api<unknown>(`/admin/page-templates${params ? `?${params}` : ''}`),
 	get: (id: string) => api<unknown>(`/admin/page-templates/${id}`),
+	// Rule 16: page_type category catalog is shared with the page builder.
+	getPageTypes: () => api<{ value: string; label: string }[]>('/admin/pagebuilder/page-types'),
 	create: (body: Record<string, unknown>) => api<unknown>('/admin/page-templates', { method: 'POST', body }),
 	update: (id: string, body: Record<string, unknown>) =>
 		api<unknown>(`/admin/page-templates/${id}`, { method: 'PATCH', body }),
@@ -1472,12 +1503,37 @@ export const searchAdminApiExtended = {
 		api<unknown>(`/admin/search/analytics${params ? `?${params}` : ''}`),
 };
 
+export interface WidgetConfigField {
+	key: string;
+	label: string;
+	type: 'text' | 'number' | 'checkbox' | 'select';
+	options?: CatalogOption[];
+	default?: unknown;
+	help?: string;
+}
+
+export interface CardTypeOption {
+	value: string;
+	label: string;
+	icon: string;
+	desc: string;
+}
+
+export interface WidgetConfigOptions {
+	widget_types: CatalogOption[];
+	config_schemas: Record<string, WidgetConfigField[]>;
+	card_types: CardTypeOption[];
+	content_widget_types: string[];
+}
+
 export const widgetsAdminApiExtended = {
 	list: (params?: string) => api<unknown>(`/admin/widgets${params ? `?${params}` : ''}`),
 	create: (body: Record<string, unknown>) => api<unknown>('/admin/widgets', { method: 'POST', body }),
 	update: (id: string, body: Record<string, unknown>) =>
 		api<unknown>(`/admin/widgets/${id}`, { method: 'PATCH', body }),
 	delete: (id: string) => api<{ deleted: boolean }>(`/admin/widgets/${id}`, { method: 'DELETE' }),
+	// Rule 16: widget type list and per-type config schemas from the backend.
+	getConfigOptions: () => api<WidgetConfigOptions>('/admin/pagebuilder/widget-config-options'),
 };
 
 export const pageBuilderSaveAsTemplateApi = {
@@ -2013,4 +2069,13 @@ export const travelAdminApi = {
 		affiliate_config?: unknown;
 		is_active?: boolean;
 	}) => api<TravelProvider>(`/admin/travel/providers/${id}`, { method: 'PATCH', body }),
+};
+
+export interface CatalogOption {
+	value: string;
+	label: string;
+}
+
+export const adminCatalogApi = {
+	get: (name: string) => api<CatalogOption[]>(`/admin/catalogs/${encodeURIComponent(name)}`),
 };

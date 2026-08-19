@@ -13,6 +13,7 @@
 	import type { MediaAsset, FeedItem } from '$lib/types';
 	import FeedCard from '$lib/components/feed/FeedCard.svelte';
 	import type { PageData } from './$types';
+	import { sanitizeContentHtml, safeJsonLdScript } from '$lib/utils/safeHtml';
 
 	let { data }: { data: PageData } = $props();
 
@@ -233,7 +234,7 @@
 	<meta name="twitter:card" content="summary" />
 	<meta name="twitter:title" content={title} />
 	<meta name="twitter:description" content={description} />
-	{@html `<script type="application/ld+json">${jsonLd}</script>`}
+	{@html safeJsonLdScript(jsonLd)}
 </svelte:head>
 
 <SetSidebar>
@@ -360,7 +361,7 @@
 							</a>
 						{:else if field.field_type === 'rich_text'}
 							<div class="prose prose-sm max-w-none text-sm text-[var(--color-text-subtle)]">
-								{@html String(fieldValues[field.key])}
+								{@html sanitizeContentHtml(String(fieldValues[field.key]))}
 							</div>
 						{:else}
 							<p class="whitespace-pre-line text-sm text-[var(--color-text-subtle)]">{String(fieldValues[field.key])}</p>

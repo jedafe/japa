@@ -18,14 +18,23 @@
 		updated_at: string;
 	};
 
-	// Page-type category enum (mirrors the legacy page; fixed schema values, not server-driven data).
-	const categoryOptions = [
-		{ value: 'landing', label: t('pageTemplates.categoryLanding', 'Landing') },
-		{ value: 'about', label: t('pageTemplates.categoryAbout', 'About') },
-		{ value: 'service', label: t('pageTemplates.categoryService', 'Service') },
-		{ value: 'event', label: t('pageTemplates.categoryEvent', 'Event') },
-		{ value: 'custom', label: t('pageTemplates.categoryCustom', 'Custom') }
-	];
+	// Rule 16: page-type categories are loaded from GET /admin/pagebuilder/page-types
+	// (shared catalog with the page builder) instead of being hardcoded.
+	let pageTypeOptions = $state<{ value: string; label: string }[]>([]);
+
+	$effect(() => {
+		void (async () => {
+			const res = await pageTemplatesAdminApiExtended.getPageTypes();
+			if (res.ok && res.data) {
+				pageTypeOptions = res.data.map((pt) => {
+					const key = pt.value ? pt.value.charAt(0).toUpperCase() + pt.value.slice(1) : pt.value;
+					return { value: pt.value, label: t(`pageTemplates.category${key}`, pt.label) };
+				});
+			}
+		})();
+	});
+
+	const categoryOptions = $derived(pageTypeOptions);
 
 	// ── Bulk delete ───── EntityPage auto-reloads + clears selection after a bulk action handler completes.
 	let entityController = $state<EntityPageController | undefined>(undefined);
@@ -51,7 +60,7 @@
 	// `fields` drives EntityForm rendering and edit-form seeding. The slug is server-generated
 	// from `name` (shown as a read-only preview in the legacy modal) and is not submitted, so it
 	// is intentionally omitted from the editable field set.
-	const fields: FieldDef[] = [
+	const fields = $derived<FieldDef[]>([
 		{ key: 'name', label: t('pageTemplates.name', 'Name'), type: 'text', required: true },
 		{
 			key: 'page_type',
@@ -61,9 +70,9 @@
 			required: true
 		},
 		{ key: 'description', label: t('pageTemplates.description', 'Description'), type: 'textarea' }
-	];
+	]);
 
-	const config: EntityPageConfig = {
+	const config = $derived<EntityPageConfig>({
 		title: t('pageTemplates.title', 'Page Templates'),
 		description: t('pageTemplates.description', 'Manage reusable page templates for the page builder.'),
 		createLabel: t('pageTemplates.create', 'Create'),
@@ -176,7 +185,7 @@
 			return res.ok ? { ok: true } : { ok: false, error: res.error };
 		},
 		viewSnippet: TemplateView
-	};
+	});
 </script>
 
 <svelte:head>

@@ -5,6 +5,7 @@
 	import { EmptyState } from '$lib/components/ui';
 	import { api } from '$lib/api/client';
 	import type { PageData } from './$types';
+import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	import type { Coupon } from '$lib/types';
 
 	let { data }: { data: PageData } = $props();
@@ -69,7 +70,7 @@
 	<meta name="twitter:card" content="summary" />
 	<meta name="twitter:title" content={title} />
 	<meta name="twitter:description" content={description} />
-	{@html `<script type="application/ld+json">${jsonLd}</script>`}
+	{@html safeJsonLdScript(jsonLd)}
 </svelte:head>
 
 <div class="mx-auto w-full max-w-full">

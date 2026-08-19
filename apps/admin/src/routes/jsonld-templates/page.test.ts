@@ -8,6 +8,9 @@ vi.mock('$lib/api', () => ({
 		upsertTemplate: vi.fn().mockResolvedValue({ ok: true }),
 		deleteTemplate: vi.fn().mockResolvedValue({ ok: true }),
 	},
+	contentAdminApi: {
+		listContentTypes: vi.fn().mockResolvedValue({ ok: true, data: [] }),
+	},
 }));
 vi.mock('$app/state', () => ({
 	page: { params: {}, url: new URL('http://localhost/') },

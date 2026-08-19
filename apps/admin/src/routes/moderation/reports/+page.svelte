@@ -7,7 +7,7 @@
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import { Modal } from '$lib/components/ui/modal';
 	import { Button } from '$lib/components/ui/button';
-	import { moderationAdminApi } from '$lib/api';
+	import { moderationAdminApi, adminCatalogApi, type CatalogOption } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { Eye, Ban, AlertTriangle, Trash2, XCircle } from 'lucide-svelte';
@@ -59,6 +59,21 @@
 	// a page-local Modal with richer copy + optional reason, then call
 	// controller.reload() after the API call succeeds.
 	let entityController = $state<EntityPageController | undefined>(undefined);
+
+	let moderationReportStatusOptions = $state<CatalogOption[]>([
+		{ value: 'pending', label: t('app.moderation.queue.pending', 'Pending') },
+		{ value: 'reviewing', label: t('moderation.reviewing', 'Reviewing') },
+		{ value: 'actioned', label: t('moderation.actioned', 'Actioned') },
+		{ value: 'dismissed', label: t('app.moderation.queue.dismissed', 'Dismissed') }
+	]);
+
+	$effect(() => {
+		void (async () => {
+			const res = await adminCatalogApi.get('reports.status');
+			if (res.ok && res.data?.length) moderationReportStatusOptions = res.data;
+		})();
+	});
+
 	let pageError = $state('');
 	let acting = $state(false);
 	let actionTarget = $state<Report | null>(null);
@@ -186,12 +201,7 @@
 			{
 				key: 'status',
 				label: t('moderation.status', 'Status'),
-				options: [
-					{ value: 'pending', label: t('app.moderation.queue.pending', 'Pending') },
-					{ value: 'reviewing', label: t('moderation.reviewing', 'Reviewing') },
-					{ value: 'actioned', label: t('moderation.actioned', 'Actioned') },
-					{ value: 'dismissed', label: t('app.moderation.queue.dismissed', 'Dismissed') }
-				]
+				options: moderationReportStatusOptions
 			}
 		],
 		actions: rowActions,

@@ -123,6 +123,26 @@ func totalPages(total int64, limit int32) int64 {
 }
 
 // ---------------------------------------------------------------------------
+// Catalog Handlers
+// ---------------------------------------------------------------------------
+
+// ListPageTypes handles GET /api/v1/admin/pagebuilder/page-types.
+// Returns the canonical page_type values from Section 16. Rule 16:
+// the frontend must not hardcode these options.
+func (h *Handlers) ListPageTypes(w http.ResponseWriter, r *http.Request) {
+	// No special permission required; the caller already passed
+	// RequireAuth and pages.manage on the pages list itself.
+	options := []map[string]string{
+		{"value": "landing", "label": "Landing"},
+		{"value": "about", "label": "About"},
+		{"value": "service", "label": "Service"},
+		{"value": "event", "label": "Event"},
+		{"value": "custom", "label": "Custom"},
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": options})
+}
+
+// ---------------------------------------------------------------------------
 // Block Handlers
 // ---------------------------------------------------------------------------
 

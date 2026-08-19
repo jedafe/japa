@@ -33,6 +33,7 @@ import (
 	"fmt"
 
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/content/visibility"
 	"github.com/jedafe/japa/internal/db/gen"
 )
 
@@ -82,7 +83,8 @@ func ContentSearchHandler(deps *ToolDeps) ToolHandler {
 			if err != nil {
 				return errorToolResult("invalid_geo_space_id", "geo_space_id is not a valid UUID"), nil
 			}
-			results, err := deps.Content.SearchContentsBySpace(ctx, tenantID, spaceID, a.Query, a.Limit, 0)
+			filter := visibility.InternalVisibilityFilter(userID)
+			results, err := deps.Content.SearchContentsBySpace(ctx, tenantID, spaceID, a.Query, a.Limit, 0, filter)
 			if err != nil {
 				return errorToolResult("content_search_failed", err.Error()), nil
 			}
@@ -95,7 +97,8 @@ func ContentSearchHandler(deps *ToolDeps) ToolHandler {
 		}
 
 		// Tenant-wide text search (first page — zero cursor).
-		results, err := deps.Content.ListContents(ctx, tenantID, a.Query, pgtype.Timestamptz{}, a.Limit)
+		filter := visibility.InternalVisibilityFilter(userID)
+		results, err := deps.Content.ListContents(ctx, tenantID, a.Query, pgtype.Timestamptz{}, a.Limit, filter)
 		if err != nil {
 			return errorToolResult("content_search_failed", err.Error()), nil
 		}
@@ -953,7 +956,8 @@ func ContentListHandler(deps *ToolDeps) ToolHandler {
 			if deps.ContentLifecycle == nil {
 				return errorToolResult("content_lifecycle_unavailable", "content lifecycle service is not configured"), nil
 			}
-			rows, err := deps.ContentLifecycle.ListContentsByType(ctx, tenantID, a.ContentType, pgtype.Timestamptz{}, a.Limit)
+			filter := visibility.InternalVisibilityFilter(userID)
+			rows, err := deps.ContentLifecycle.ListContentsByType(ctx, tenantID, a.ContentType, pgtype.Timestamptz{}, a.Limit, filter)
 			if err != nil {
 				return errorToolResult("content_list_failed", err.Error()), nil
 			}
@@ -966,10 +970,11 @@ func ContentListHandler(deps *ToolDeps) ToolHandler {
 		}
 
 		// Tenant-wide listing via ContentService (Phase 4).
+		filter := visibility.InternalVisibilityFilter(userID)
 		if deps.Content == nil {
 			return errorToolResult("content_unavailable", "content service is not configured"), nil
 		}
-		results, err := deps.Content.ListContents(ctx, tenantID, "", pgtype.Timestamptz{}, a.Limit)
+		results, err := deps.Content.ListContents(ctx, tenantID, "", pgtype.Timestamptz{}, a.Limit, filter)
 		if err != nil {
 			return errorToolResult("content_list_failed", err.Error()), nil
 		}

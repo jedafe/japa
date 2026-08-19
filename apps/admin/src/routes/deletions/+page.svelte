@@ -1,6 +1,6 @@
 <script lang="ts">
 	// /deletions — read-only audit log of soft-deleted and removed content.
-	// Backend: GET /admin/deletions → adminHandlers.ListDeletedContents (RBAC: content.moderate).
+	// Backend: GET /admin/deletions → adminHandlers.ListDeletedContents (RBAC: admin.moderation).
 	// Ref: sections/19-gdpr-ndpr-compliance.md, Rule 11 (soft deletes only for user content)
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import { api } from '$lib/api';
@@ -33,7 +33,7 @@
 		title: t('deletions.title', 'Deletions'),
 		description: t('deletions.description', 'Soft-deleted and removed content audit log'),
 		readonly: true,
-		createPermission: 'content.moderate',
+		createPermission: 'admin.moderation',
 		pageSize: 25,
 		columns: [
 			{

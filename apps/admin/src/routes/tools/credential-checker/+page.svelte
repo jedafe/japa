@@ -9,7 +9,7 @@
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { Eye, CheckCircle, Sparkles } from 'lucide-svelte';
 	import type { ActionItem, FilterDef } from '$lib/components/ui/data-table';
-	import { credentialCheckerAdminApi, apiFetch , spacesAdminApi } from '$lib/api';
+	import { credentialCheckerAdminApi, apiFetch , spacesAdminApi, adminCatalogApi, type CatalogOption } from '$lib/api';
 
 	type CredentialCheckerItem = {
 		id: string;
@@ -52,6 +52,22 @@ onMount(async () => {
 });
 
 	let entityController = $state<EntityPageController | undefined>(undefined);
+
+	let credentialCheckerStatusOptions = $state<CatalogOption[]>([
+		{ value: 'ai_draft', label: t('common.ai_draft', 'AI Draft') },
+		{ value: 'pending', label: t('common.pending', 'Pending') },
+		{ value: 'published', label: t('common.published', 'Published') },
+		{ value: 'rejected', label: t('common.rejected', 'Rejected') },
+		{ value: 'draft', label: t('common.draft', 'Draft') }
+	]);
+
+	$effect(() => {
+		void (async () => {
+			const res = await adminCatalogApi.get('tools.credential_checker.status');
+			if (res.ok && res.data?.length) credentialCheckerStatusOptions = res.data;
+		})();
+	});
+
 	let pageError = $state('');
 	let acting = $state(false);
 
@@ -140,18 +156,14 @@ onMount(async () => {
 	}
 
 	// ── Status filter options (HITL review queue) ───────────────────────────
-	const statusFilter: FilterDef = {
+	const statusFilter = $derived<FilterDef>({
 		key: 'status',
 		label: t('common.status', 'Status'),
 		options: [
 			{ value: '', label: t('common.all', 'All') },
-			{ value: 'ai_draft', label: t('common.ai_draft', 'AI Draft') },
-			{ value: 'pending', label: t('common.pending', 'Pending') },
-			{ value: 'published', label: t('common.published', 'Published') },
-			{ value: 'rejected', label: t('common.rejected', 'Rejected') },
-			{ value: 'draft', label: t('common.draft', 'Draft') }
+			...credentialCheckerStatusOptions
 		]
-	};
+	});
 
 	// ── Row actions ─────────────────────────────────────────────────────────
 	const rowActions = $derived.by<ActionItem[]>(() => {

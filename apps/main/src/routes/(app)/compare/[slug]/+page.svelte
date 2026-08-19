@@ -11,11 +11,10 @@
 	const comparison = $derived(data.comparison);
 	const matrix = $derived(data.matrix ?? []);
 
-	// Null-coalesce: the backend may return null (not []) for items/dimensions
-	// on a freshly created comparison before they are populated, despite the
-	// type declaring them as arrays. Coerce to [] to avoid a null-deref.
-	const items = $derived(comparison.items ?? []);
-	const dimensions = $derived(comparison.dimensions ?? []);
+	// Backend now guarantees non-null arrays (GetComparisonDetail coalesces
+	// nil slices to empty slices per the Section 30 contract).
+	const items = $derived(comparison.items);
+	const dimensions = $derived(comparison.dimensions);
 
 	const title = $derived(comparison.title || t('compare.detail.title', 'Comparison — JapaConnect'));
 	const description = $derived(

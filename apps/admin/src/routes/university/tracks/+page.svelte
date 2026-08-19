@@ -7,7 +7,7 @@
 	import { TableSkeleton } from "$lib/components/ui/skeleton";
 	import type { ActionItem } from "$lib/components/ui/data-table";
 	import { Check, Eye, RefreshCw, X } from "lucide-svelte";
-	import { universityAdminApi } from "$lib/api";
+	import { universityAdminApi, adminCatalogApi, type CatalogOption } from "$lib/api";
 	import { t } from "$lib/stores/i18n.svelte";
 	import { hasPermission } from "$lib/stores/permissions.svelte";
 
@@ -48,21 +48,36 @@
 
 	const canApprove = $derived(hasPermission("university.course.approve"));
 
-	const difficultyFilters = [
-		{ key: "difficulty", label: t("university.difficulty", "Difficulty"), options: [
-			{ value: "beginner", label: t("university.beginner", "Beginner") },
-			{ value: "intermediate", label: t("university.intermediate", "Intermediate") },
-			{ value: "advanced", label: t("university.advanced", "Advanced") }
-		]}
-	];
+	let trackDifficultyOptions = $state<CatalogOption[]>([
+		{ value: "beginner", label: t("university.beginner", "Beginner") },
+		{ value: "intermediate", label: t("university.intermediate", "Intermediate") },
+		{ value: "advanced", label: t("university.advanced", "Advanced") }
+	]);
 
-	const statusFilters = [
-		{ key: "status", label: t("university.status", "Status"), options: [
-			{ value: "pending", label: t("university.pending", "Pending") },
-			{ value: "approved", label: t("university.approved", "Approved") },
-			{ value: "rejected", label: t("university.rejected", "Rejected") }
-		]}
-	];
+	let trackStatusOptions = $state<CatalogOption[]>([
+		{ value: "pending", label: t("university.pending", "Pending") },
+		{ value: "approved", label: t("university.approved", "Approved") },
+		{ value: "rejected", label: t("university.rejected", "Rejected") }
+	]);
+
+	$effect(() => {
+		void (async () => {
+			const [diffRes, statusRes] = await Promise.all([
+				adminCatalogApi.get("university.tracks.difficulty"),
+				adminCatalogApi.get("university.tracks.status")
+			]);
+			if (diffRes.ok && diffRes.data?.length) trackDifficultyOptions = diffRes.data;
+			if (statusRes.ok && statusRes.data?.length) trackStatusOptions = statusRes.data;
+		})();
+	});
+
+	const difficultyFilters = $derived([
+		{ key: "difficulty", label: t("university.difficulty", "Difficulty"), options: trackDifficultyOptions }
+	]);
+
+	const statusFilters = $derived([
+		{ key: "status", label: t("university.status", "Status"), options: trackStatusOptions }
+	]);
 
 	const activeFilters = $derived(showAllTracks ? [...difficultyFilters, ...statusFilters] : difficultyFilters);
 

@@ -244,6 +244,31 @@ WHERE c.tenant_id = @tenant_id
 ORDER BY c.created_at DESC, c.id DESC
 LIMIT @page_limit OFFSET @page_offset;
 
+-- =====================
+-- Comparison admin list (Section 30)
+-- =====================
+
+-- name: ListComparisonsFilteredAdmin :many
+-- Admin list: returns all non-deleted comparison content rows for the tenant,
+-- optionally filtered by type_id and space_id.
+SELECT DISTINCT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type,
+       c.title, c.slug, c.body, c.body_html, c.field_values, c.content_hash,
+       c.geo_space_id, c.header_image_id, c.featured_image_id, c.canonical_url,
+       c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
+       c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
+       c.view_count, c.comment_count, c.share_count, c.reshare_count,
+       c.publish_at, c.published_at, c.created_at, c.updated_at
+FROM contents c
+LEFT JOIN comparison_items ci ON ci.content_id = c.id AND ci.tenant_id = c.tenant_id
+WHERE c.tenant_id = @tenant_id
+  AND c.content_type = 'comparison'
+  AND c.deleted_at IS NULL
+  AND c.auto_hidden = false
+  AND (sqlc.narg(space_id)::uuid IS NULL OR c.space_id = sqlc.narg(space_id))
+  AND (sqlc.narg(type_id)::uuid IS NULL OR ci.type_id = sqlc.narg(type_id))
+ORDER BY c.created_at DESC, c.id DESC
+LIMIT @page_limit OFFSET @page_offset;
+
 -- name: CountComparisonItemsByType :one
 SELECT count(*)::int FROM comparison_items WHERE type_id = @type_id AND tenant_id = @tenant_id AND deleted_at IS NULL;
 

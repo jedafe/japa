@@ -28,6 +28,7 @@ import (
 	"strings"
 
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/content/visibility"
 )
 
 // ---------------------------------------------------------------------------
@@ -191,8 +192,9 @@ func (p *PreSearcher) PreSearch(ctx context.Context, tenantID pgtype.UUID, promp
 // geoSpaceID is provided the search is space-scoped; otherwise it is
 // tenant-wide.
 func (p *PreSearcher) searchContent(ctx context.Context, tenantID pgtype.UUID, prompt string, geoSpaceID *pgtype.UUID) []PreSearchContentItem {
+	filter := visibility.InternalVisibilityFilter(pgtype.UUID{})
 	if geoSpaceID != nil && geoSpaceID.Valid {
-		rows, err := p.content.SearchContentsBySpace(ctx, tenantID, *geoSpaceID, prompt, preSearchLimit, 0)
+		rows, err := p.content.SearchContentsBySpace(ctx, tenantID, *geoSpaceID, prompt, preSearchLimit, 0, filter)
 		if err != nil {
 			slog.Warn("ai: pre-search content search by space failed", "error", err)
 			return nil
@@ -201,7 +203,7 @@ func (p *PreSearcher) searchContent(ctx context.Context, tenantID pgtype.UUID, p
 		return toPreSearchItems(contentSearchResultsFromSpace(filtered))
 	}
 
-	rows, err := p.content.ListContents(ctx, tenantID, prompt, pgtype.Timestamptz{}, preSearchLimit)
+	rows, err := p.content.ListContents(ctx, tenantID, prompt, pgtype.Timestamptz{}, preSearchLimit, filter)
 	if err != nil {
 		slog.Warn("ai: pre-search content search failed", "error", err)
 		return nil

@@ -293,12 +293,17 @@ func (s *ProviderStore) GetDecryptedAPIKey(ctx context.Context, tenantID, id pgt
 // Supported types:
 //   - "xiaomi": Xiaomi MiMo (uses api-key header, auto-selects base URL from key prefix)
 //   - "openai": Any OpenAI-compatible API with Bearer auth (OpenAI, OpenRouter,
-//     OpenCode Zen, Groq, Together AI, LiteLLM, vLLM, Command Code /chat/completions, etc.)
-//   - "ollama": Ollama's OpenAI-compatible endpoint (uses Bearer auth, no key needed)
+//     OpenCode Zen, Together AI, LiteLLM, vLLM, Command Code /chat/completions, etc.)
+//   - "groq": Groq Cloud OpenAI-compatible API (https://api.groq.com/openai/v1).
+//   - "ollama": Ollama's OpenAI-compatible endpoint. Local: http://localhost:11434/v1
+//     with any non-empty key (ignored by Ollama). Cloud: https://ollama.com/v1 with
+//     a real Ollama API key from https://ollama.com/settings/keys.
 //   - "anthropic": Anthropic Claude native Messages API (x-api-key header,
 //     /v1/messages endpoint). Also works with Command Code's /messages endpoint.
 //   - "devin": Devin agent API (async session-based, Bearer cog_ token,
 //     polls until session completes)
+//   - "cursor": Cursor Cloud Agents API (async agent-based, Basic auth)
+//   - "perplexity": Perplexity sonar API (OpenAI-compatible, returns citations)
 //   - "custom": Any OpenAI-compatible endpoint
 //
 // "openai", "ollama", and "custom" all use the OpenAIProvider implementation
@@ -313,13 +318,14 @@ func NewProviderFromConfig(cfg ProviderConfig, apiKey string) (Provider, error) 
 			p.SetName(cfg.Name)
 		}
 		return p, nil
-	case "openai", "ollama", "custom":
+	case "openai", "ollama", "custom", "groq":
 		// All OpenAI-compatible providers use the same implementation.
 		// The base URL and model differentiate them:
 		//   - OpenAI:       https://api.openai.com/v1
 		//   - OpenRouter:   https://openrouter.ai/api/v1
+		//   - Groq:         https://api.groq.com/openai/v1
 		//   - OpenCode Zen: (admin-configured base URL)
-		//   - Ollama:       http://localhost:11434/v1
+		//   - Ollama:       http://localhost:11434/v1 or https://ollama.com/v1 (Cloud)
 		//   - Command Code: https://api.commandcode.ai/provider/v1
 		//
 		// Validate the admin-supplied base URL before constructing the
@@ -334,7 +340,12 @@ func NewProviderFromConfig(cfg ProviderConfig, apiKey string) (Provider, error) 
 				return nil, fmt.Errorf("ai: invalid base URL for %s provider: %w", cfg.ProviderType, err)
 			}
 		}
-		p := NewOpenAIProvider(cfg.Name, apiKey, cfg.BaseURL, cfg.Model)
+		var p Provider
+		if cfg.ProviderType == "groq" {
+			p = NewGroqProvider(cfg.Name, apiKey, cfg.BaseURL, cfg.Model)
+		} else {
+			p = NewOpenAIProvider(cfg.Name, apiKey, cfg.BaseURL, cfg.Model)
+		}
 		return p, nil
 	case "anthropic":
 		// Dedicated Anthropic Messages API provider.
@@ -368,6 +379,17 @@ func NewProviderFromConfig(cfg ProviderConfig, apiKey string) (Provider, error) 
 			}
 		}
 		p := NewCursorProvider(cfg.Name, apiKey, cfg.BaseURL, cfg.Model)
+		return p, nil
+	case "perplexity":
+		// Perplexity sonar API — OpenAI-compatible chat completions with citations.
+		// Base URL: https://api.perplexity.ai (Perplexity does not use /v1 suffix)
+		// Auth: Bearer token. Sonar models: sonar-pro, sonar-reasoning, etc.
+		if cfg.BaseURL != "" {
+			if err := validateEndpointAllowHTTP(cfg.BaseURL); err != nil {
+				return nil, fmt.Errorf("ai: invalid base URL for perplexity provider: %w", err)
+			}
+		}
+		p := NewPerplexityProvider(cfg.Name, apiKey, cfg.BaseURL, cfg.Model)
 		return p, nil
 	default:
 		return nil, fmt.Errorf("unsupported provider type %q", cfg.ProviderType)

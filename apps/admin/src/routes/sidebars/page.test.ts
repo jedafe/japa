@@ -14,6 +14,13 @@ vi.mock('$lib/api', () => ({
 		deleteWidget: vi.fn().mockResolvedValue({ ok: true }),
 		reorderWidgets: vi.fn().mockResolvedValue({ ok: true }),
 		widgetTypes: vi.fn().mockResolvedValue({ ok: true, data: { widget_types: [] } }),
+		getOptions: vi.fn().mockResolvedValue({
+			ok: true,
+			data: { apps: [], positions: [], visibilities: [], statuses: [] }
+		}),
+	},
+	permissionsApi: {
+		list: vi.fn().mockResolvedValue({ ok: true, data: { roles: [] } })
 	},
 	userManagementApi: {
 		listGroups: vi.fn().mockResolvedValue({ ok: true, data: { groups: [] } }),

@@ -1,7 +1,6 @@
 package config
 
 import (
-	"context"
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -35,6 +34,7 @@ func TestParseBoolRoundTrip(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
+
 			got := parseBool(tt.input)
 			if got != tt.want {
 				t.Errorf("parseBool(%q) = %v, want %v", tt.input, got, tt.want)
@@ -70,17 +70,21 @@ func TestParseIntRoundTrip(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
+
 			got, err := parseInt(tt.input)
 			if tt.wantErr {
 				if err == nil {
 					t.Errorf("parseInt(%q) should return error", tt.input)
 				}
+
 				return
 			}
+
 			if err != nil {
 				t.Errorf("parseInt(%q) unexpected error: %v", tt.input, err)
 				return
 			}
+
 			if got != tt.want {
 				t.Errorf("parseInt(%q) = %v, want %v", tt.input, got, tt.want)
 			}
@@ -94,11 +98,13 @@ func TestSettingsCacheInvalidation(t *testing.T) {
 	t.Parallel()
 
 	s := &Settings{cache: make(map[string]cachedSetting)}
+
 	var tid pgtype.UUID
 	_ = tid.Scan("11111111-1111-1111-1111-111111111111")
 
 	s.cache[tid.String()+":test_key"] = cachedSetting{Value: `true`}
-	s.InvalidateSettings(context.Background(), tid)
+	s.InvalidateSettings(t.Context(), tid)
+
 	if _, ok := s.cache[tid.String()+":test_key"]; ok {
 		t.Error("invalidate should have removed the cached entry")
 	}
@@ -108,6 +114,8 @@ func TestSettingsCacheInvalidation(t *testing.T) {
 // background cleanup goroutine started by NewSettings. Without Close, the
 // goroutine leaks on every NewSettings call (BUG-001).
 func TestSettingsCloseStopsCleanupGoroutine(t *testing.T) {
+	t.Parallel()
+
 	s := &Settings{
 		cache:  make(map[string]cachedSetting),
 		stopCh: make(chan struct{}),
@@ -133,6 +141,8 @@ func TestSettingsCloseStopsCleanupGoroutine(t *testing.T) {
 // TestSettingsCloseNilStopCh verifies Close is safe on a Settings created
 // without NewSettings (stopCh == nil), as done in unit tests.
 func TestSettingsCloseNilStopCh(t *testing.T) {
+	t.Parallel()
+
 	s := &Settings{cache: make(map[string]cachedSetting)}
 	s.Close() // must not panic
 }

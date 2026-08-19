@@ -17,6 +17,7 @@
 	import { enrollmentsStore } from '$lib/stores/enrollments.svelte';
 	import type { PageData } from './$types';
 	import type { Enrollment } from '$lib/types';
+	import { sanitizeContentHtml } from '$lib/utils/safeHtml';
 
 	let { data }: { data: PageData } = $props();
 	const track = $derived(data.track);
@@ -250,7 +251,7 @@
 			<div class="max-w-3xl">
 				{#if track.overview_html}
 					<!-- Article content rendered server-side from TipTap JSON -->
-					<div class="prose">{@html track.overview_html}</div>
+					<div class="prose">{@html sanitizeContentHtml(track.overview_html)}</div>
 				{:else if track.description}
 					<p class="text-base text-[var(--color-text-subtle)]">{track.description}</p>
 				{/if}

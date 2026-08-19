@@ -8,6 +8,7 @@ package gen
 import (
 	"context"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -825,18 +826,22 @@ func (q *Queries) GetContentBySlug(ctx context.Context, arg GetContentBySlugPara
 }
 
 const getContentRevision = `-- name: GetContentRevision :one
-SELECT id, content_id, field_values, title, body, body_html, edited_by, created_at
-FROM content_revisions
-WHERE id = $1 AND content_id = $2
+SELECT cr.id, cr.content_id, cr.field_values, cr.title, cr.body, cr.body_html, cr.edited_by, cr.created_at
+FROM content_revisions cr
+JOIN contents c ON c.id = cr.content_id
+WHERE cr.id = $1
+  AND cr.content_id = $2
+  AND c.tenant_id = $3
 `
 
 type GetContentRevisionParams struct {
 	ID        pgtype.UUID `json:"id"`
 	ContentID pgtype.UUID `json:"content_id"`
+	TenantID  pgtype.UUID `json:"tenant_id"`
 }
 
 func (q *Queries) GetContentRevision(ctx context.Context, arg GetContentRevisionParams) (ContentRevision, error) {
-	row := q.db.QueryRow(ctx, getContentRevision, arg.ID, arg.ContentID)
+	row := q.db.QueryRow(ctx, getContentRevision, arg.ID, arg.ContentID, arg.TenantID)
 	var i ContentRevision
 	err := row.Scan(
 		&i.ID,
@@ -1444,24 +1449,40 @@ SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type, c.title, c.sl
 FROM contents c
 JOIN content_tags ct ON ct.content_id = c.id
 LEFT JOIN media m ON m.id = COALESCE(c.featured_image_id, c.header_image_id) AND m.deleted_at IS NULL
-WHERE ct.tag_id = $1 AND c.tenant_id = $2 AND c.status = 'published'
+WHERE ct.tag_id = $1 AND c.tenant_id = $2
   AND c.deleted_at IS NULL
   AND c.auto_hidden = false
   AND (
-    $3::timestamptz IS NULL
-    OR c.created_at < $3::timestamptz
-    OR (c.created_at = $3::timestamptz AND c.id < $4::uuid)
+      ($3::boolean AND $4::boolean)
+      OR (c.author_id = $5::uuid AND c.author_id IS NOT NULL)
+      OR (
+          c.status = 'published'
+          AND (
+              c.visibility = 'public'
+              OR (c.visibility = 'members' AND $6::boolean)
+              OR (c.visibility = 'private' AND (c.author_id = $5::uuid OR $4::boolean))
+          )
+      )
+  )
+  AND (
+    $7::timestamptz IS NULL
+    OR c.created_at < $7::timestamptz
+    OR (c.created_at = $7::timestamptz AND c.id < $8::uuid)
   )
 ORDER BY c.created_at DESC, c.id DESC
-LIMIT $5
+LIMIT $9
 `
 
 type ListContentByTagParams struct {
-	TagID           pgtype.UUID        `json:"tag_id"`
-	TenantID        pgtype.UUID        `json:"tenant_id"`
-	CursorCreatedAt pgtype.Timestamptz `json:"cursor_created_at"`
-	CursorID        pgtype.UUID        `json:"cursor_id"`
-	PageLimit       int32              `json:"page_limit"`
+	TagID             pgtype.UUID        `json:"tag_id"`
+	TenantID          pgtype.UUID        `json:"tenant_id"`
+	CanSeeUnpublished bool               `json:"can_see_unpublished"`
+	CanSeePrivate     bool               `json:"can_see_private"`
+	RequesterID       pgtype.UUID        `json:"requester_id"`
+	CanSeeMembers     bool               `json:"can_see_members"`
+	CursorCreatedAt   pgtype.Timestamptz `json:"cursor_created_at"`
+	CursorID          pgtype.UUID        `json:"cursor_id"`
+	PageLimit         int32              `json:"page_limit"`
 }
 
 type ListContentByTagRow struct {
@@ -1507,6 +1528,10 @@ func (q *Queries) ListContentByTag(ctx context.Context, arg ListContentByTagPara
 	rows, err := q.db.Query(ctx, listContentByTag,
 		arg.TagID,
 		arg.TenantID,
+		arg.CanSeeUnpublished,
+		arg.CanSeePrivate,
+		arg.RequesterID,
+		arg.CanSeeMembers,
 		arg.CursorCreatedAt,
 		arg.CursorID,
 		arg.PageLimit,
@@ -1610,14 +1635,21 @@ func (q *Queries) ListContentIDsScoredSince(ctx context.Context, arg ListContent
 }
 
 const listContentRevisions = `-- name: ListContentRevisions :many
-SELECT id, content_id, field_values, title, body, body_html, edited_by, created_at
-FROM content_revisions
-WHERE content_id = $1
-ORDER BY created_at DESC, id DESC
+SELECT cr.id, cr.content_id, cr.field_values, cr.title, cr.body, cr.body_html, cr.edited_by, cr.created_at
+FROM content_revisions cr
+JOIN contents c ON c.id = cr.content_id
+WHERE cr.content_id = $1
+  AND c.tenant_id = $2
+ORDER BY cr.created_at DESC, cr.id DESC
 `
 
-func (q *Queries) ListContentRevisions(ctx context.Context, contentID pgtype.UUID) ([]ContentRevision, error) {
-	rows, err := q.db.Query(ctx, listContentRevisions, contentID)
+type ListContentRevisionsParams struct {
+	ContentID pgtype.UUID `json:"content_id"`
+	TenantID  pgtype.UUID `json:"tenant_id"`
+}
+
+func (q *Queries) ListContentRevisions(ctx context.Context, arg ListContentRevisionsParams) ([]ContentRevision, error) {
+	rows, err := q.db.Query(ctx, listContentRevisions, arg.ContentID, arg.TenantID)
 	if err != nil {
 		return nil, err
 	}
@@ -1821,14 +1853,30 @@ WHERE c.tenant_id = $1
   AND c.id = ANY($2::uuid[])
   AND c.deleted_at IS NULL
   AND c.auto_hidden = false
+  AND (
+      ($3::boolean AND $4::boolean)
+      OR (c.author_id = $5::uuid AND c.author_id IS NOT NULL)
+      OR (
+          c.status = 'published'
+          AND (
+              c.visibility = 'public'
+              OR (c.visibility = 'members' AND $6::boolean)
+              OR (c.visibility = 'private' AND (c.author_id = $5::uuid OR $4::boolean))
+          )
+      )
+  )
 ORDER BY c.created_at DESC, c.id DESC
-LIMIT $3
+LIMIT $7
 `
 
 type ListContentsByIDsParams struct {
-	TenantID  pgtype.UUID   `json:"tenant_id"`
-	Ids       []pgtype.UUID `json:"ids"`
-	PageLimit int32         `json:"page_limit"`
+	TenantID          pgtype.UUID   `json:"tenant_id"`
+	Ids               []pgtype.UUID `json:"ids"`
+	CanSeeUnpublished bool          `json:"can_see_unpublished"`
+	CanSeePrivate     bool          `json:"can_see_private"`
+	RequesterID       pgtype.UUID   `json:"requester_id"`
+	CanSeeMembers     bool          `json:"can_see_members"`
+	PageLimit         int32         `json:"page_limit"`
 }
 
 type ListContentsByIDsRow struct {
@@ -1876,7 +1924,15 @@ type ListContentsByIDsRow struct {
 // then uses this query to fetch the full rows with author/space names.
 // Ref: docs/PERFORMANCE_AUDIT.md §4 (Search Offload)
 func (q *Queries) ListContentsByIDs(ctx context.Context, arg ListContentsByIDsParams) ([]ListContentsByIDsRow, error) {
-	rows, err := q.db.Query(ctx, listContentsByIDs, arg.TenantID, arg.Ids, arg.PageLimit)
+	rows, err := q.db.Query(ctx, listContentsByIDs,
+		arg.TenantID,
+		arg.Ids,
+		arg.CanSeeUnpublished,
+		arg.CanSeePrivate,
+		arg.RequesterID,
+		arg.CanSeeMembers,
+		arg.PageLimit,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -1942,22 +1998,39 @@ SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type, c.title, c.sl
        u.username AS author_username, up.display_name AS author_display_name,
        s.name AS space_name
 FROM contents c
+JOIN content_spaces cs ON cs.content_id = c.id AND cs.space_id = $1
 LEFT JOIN users u ON u.id = c.author_id AND u.tenant_id = c.tenant_id
 LEFT JOIN user_profiles up ON up.user_id = c.author_id AND up.tenant_id = c.tenant_id
-LEFT JOIN spaces s ON s.id = c.space_id AND s.tenant_id = c.tenant_id
-WHERE c.tenant_id = $1 AND c.space_id = $2
+LEFT JOIN spaces s ON s.id = cs.space_id AND s.tenant_id = c.tenant_id
+WHERE c.tenant_id = $2
   AND c.deleted_at IS NULL
   AND c.auto_hidden = false
-  AND (c.created_at < $3 OR ($3 IS NULL))
+  AND (
+      ($3::boolean AND $4::boolean)
+      OR (c.author_id = $5::uuid AND c.author_id IS NOT NULL)
+      OR (
+          c.status = 'published'
+          AND (
+              c.visibility = 'public'
+              OR (c.visibility = 'members' AND $6::boolean)
+              OR (c.visibility = 'private' AND (c.author_id = $5::uuid OR $4::boolean))
+          )
+      )
+  )
+  AND (c.created_at < $7 OR ($7 IS NULL))
 ORDER BY c.created_at DESC, c.id DESC
-LIMIT $4
+LIMIT $8
 `
 
 type ListContentsBySpaceParams struct {
-	TenantID        pgtype.UUID        `json:"tenant_id"`
-	SpaceID         pgtype.UUID        `json:"space_id"`
-	CursorCreatedAt pgtype.Timestamptz `json:"cursor_created_at"`
-	PageLimit       int32              `json:"page_limit"`
+	SpaceID           pgtype.UUID        `json:"space_id"`
+	TenantID          pgtype.UUID        `json:"tenant_id"`
+	CanSeeUnpublished bool               `json:"can_see_unpublished"`
+	CanSeePrivate     bool               `json:"can_see_private"`
+	RequesterID       pgtype.UUID        `json:"requester_id"`
+	CanSeeMembers     bool               `json:"can_see_members"`
+	CursorCreatedAt   pgtype.Timestamptz `json:"cursor_created_at"`
+	PageLimit         int32              `json:"page_limit"`
 }
 
 type ListContentsBySpaceRow struct {
@@ -1999,10 +2072,17 @@ type ListContentsBySpaceRow struct {
 	SpaceName         *string            `json:"space_name"`
 }
 
+// Lists content assigned to a given space via the authoritative
+// content_spaces table (BUG-010), with visibility gating. The space name
+// returned is the requested space, regardless of whether it is the primary.
 func (q *Queries) ListContentsBySpace(ctx context.Context, arg ListContentsBySpaceParams) ([]ListContentsBySpaceRow, error) {
 	rows, err := q.db.Query(ctx, listContentsBySpace,
-		arg.TenantID,
 		arg.SpaceID,
+		arg.TenantID,
+		arg.CanSeeUnpublished,
+		arg.CanSeePrivate,
+		arg.RequesterID,
+		arg.CanSeeMembers,
 		arg.CursorCreatedAt,
 		arg.PageLimit,
 	)
@@ -2077,17 +2157,33 @@ LEFT JOIN spaces s ON s.id = c.space_id AND s.tenant_id = c.tenant_id
 WHERE c.tenant_id = $1
   AND c.deleted_at IS NULL
   AND c.auto_hidden = false
-  AND ($2::text IS NULL OR c.title ILIKE '%' || $2 || '%' OR c.slug ILIKE '%' || $2 || '%' OR c.body ILIKE '%' || $2 || '%')
-  AND (c.created_at < $3 OR ($3 IS NULL))
+  AND (
+      ($2::boolean AND $3::boolean)
+      OR (c.author_id = $4::uuid AND c.author_id IS NOT NULL)
+      OR (
+          c.status = 'published'
+          AND (
+              c.visibility = 'public'
+              OR (c.visibility = 'members' AND $5::boolean)
+              OR (c.visibility = 'private' AND (c.author_id = $4::uuid OR $3::boolean))
+          )
+      )
+  )
+  AND ($6::text IS NULL OR c.title ILIKE '%' || $6 || '%' OR c.slug ILIKE '%' || $6 || '%' OR c.body ILIKE '%' || $6 || '%')
+  AND (c.created_at < $7 OR ($7 IS NULL))
 ORDER BY c.created_at DESC, c.id DESC
-LIMIT $4
+LIMIT $8
 `
 
 type ListContentsByTenantParams struct {
-	TenantID        pgtype.UUID        `json:"tenant_id"`
-	Q               string             `json:"q"`
-	CursorCreatedAt pgtype.Timestamptz `json:"cursor_created_at"`
-	PageLimit       int32              `json:"page_limit"`
+	TenantID          pgtype.UUID        `json:"tenant_id"`
+	CanSeeUnpublished bool               `json:"can_see_unpublished"`
+	CanSeePrivate     bool               `json:"can_see_private"`
+	RequesterID       pgtype.UUID        `json:"requester_id"`
+	CanSeeMembers     bool               `json:"can_see_members"`
+	Q                 string             `json:"q"`
+	CursorCreatedAt   pgtype.Timestamptz `json:"cursor_created_at"`
+	PageLimit         int32              `json:"page_limit"`
 }
 
 type ListContentsByTenantRow struct {
@@ -2132,6 +2228,10 @@ type ListContentsByTenantRow struct {
 func (q *Queries) ListContentsByTenant(ctx context.Context, arg ListContentsByTenantParams) ([]ListContentsByTenantRow, error) {
 	rows, err := q.db.Query(ctx, listContentsByTenant,
 		arg.TenantID,
+		arg.CanSeeUnpublished,
+		arg.CanSeePrivate,
+		arg.RequesterID,
+		arg.CanSeeMembers,
 		arg.Q,
 		arg.CursorCreatedAt,
 		arg.PageLimit,
@@ -2207,16 +2307,32 @@ LEFT JOIN spaces s ON s.id = c.space_id AND s.tenant_id = c.tenant_id
 WHERE c.tenant_id = $1 AND c.content_type = $2
   AND c.deleted_at IS NULL
   AND c.auto_hidden = false
-  AND (c.created_at < $3 OR ($3 IS NULL))
+  AND (
+      ($3::boolean AND $4::boolean)
+      OR (c.author_id = $5::uuid AND c.author_id IS NOT NULL)
+      OR (
+          c.status = 'published'
+          AND (
+              c.visibility = 'public'
+              OR (c.visibility = 'members' AND $6::boolean)
+              OR (c.visibility = 'private' AND (c.author_id = $5::uuid OR $4::boolean))
+          )
+      )
+  )
+  AND (c.created_at < $7 OR ($7 IS NULL))
 ORDER BY c.created_at DESC, c.id DESC
-LIMIT $4
+LIMIT $8
 `
 
 type ListContentsByTypeParams struct {
-	TenantID        pgtype.UUID        `json:"tenant_id"`
-	ContentType     string             `json:"content_type"`
-	CursorCreatedAt pgtype.Timestamptz `json:"cursor_created_at"`
-	PageLimit       int32              `json:"page_limit"`
+	TenantID          pgtype.UUID        `json:"tenant_id"`
+	ContentType       string             `json:"content_type"`
+	CanSeeUnpublished bool               `json:"can_see_unpublished"`
+	CanSeePrivate     bool               `json:"can_see_private"`
+	RequesterID       pgtype.UUID        `json:"requester_id"`
+	CanSeeMembers     bool               `json:"can_see_members"`
+	CursorCreatedAt   pgtype.Timestamptz `json:"cursor_created_at"`
+	PageLimit         int32              `json:"page_limit"`
 }
 
 type ListContentsByTypeRow struct {
@@ -2262,6 +2378,10 @@ func (q *Queries) ListContentsByType(ctx context.Context, arg ListContentsByType
 	rows, err := q.db.Query(ctx, listContentsByType,
 		arg.TenantID,
 		arg.ContentType,
+		arg.CanSeeUnpublished,
+		arg.CanSeePrivate,
+		arg.RequesterID,
+		arg.CanSeeMembers,
 		arg.CursorCreatedAt,
 		arg.PageLimit,
 	)
@@ -3058,7 +3178,7 @@ func (q *Queries) ReassignSingleContentAuthor(ctx context.Context, arg ReassignS
 	return i, err
 }
 
-const recordContentView = `-- name: RecordContentView :exec
+const recordContentView = `-- name: RecordContentView :execresult
 INSERT INTO user_content_views (content_id, user_id, session_id, country_code, viewed_at)
 VALUES ($1, $2, $3, $4, now())
 ON CONFLICT DO NOTHING
@@ -3072,16 +3192,17 @@ type RecordContentViewParams struct {
 }
 
 // Inserts a deduplicated view record into user_content_views (Section 14).
-// The PK deduplicates per user/session per day; ON CONFLICT does nothing.
+// The PK deduplicates per user/session per day; ON CONFLICT DO NOTHING.
 // country_code is resolved server-side from the client IP via GeoIP.
-func (q *Queries) RecordContentView(ctx context.Context, arg RecordContentViewParams) error {
-	_, err := q.db.Exec(ctx, recordContentView,
+// Returns the command tag so callers can detect whether a row was actually
+// inserted (RowsAffected == 1) vs. deduplicated (RowsAffected == 0).
+func (q *Queries) RecordContentView(ctx context.Context, arg RecordContentViewParams) (pgconn.CommandTag, error) {
+	return q.db.Exec(ctx, recordContentView,
 		arg.ContentID,
 		arg.UserID,
 		arg.SessionID,
 		arg.CountryCode,
 	)
-	return err
 }
 
 const removeContentTag = `-- name: RemoveContentTag :exec
@@ -3198,27 +3319,44 @@ func (q *Queries) ScheduleContent(ctx context.Context, arg ScheduleContentParams
 }
 
 const searchContentsBySpace = `-- name: SearchContentsBySpace :many
-SELECT id, tenant_id, author_id, space_id, content_type, title, slug, body, body_html,
-       field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
-       canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
-       status, visibility, is_locked, is_pinned, read_time_minutes,
-       view_count, comment_count, share_count, reshare_count, publish_at, published_at,
-       created_at, updated_at, guide_category
-FROM contents
-WHERE tenant_id = $1 AND space_id = $2
-  AND deleted_at IS NULL
-  AND auto_hidden = false
-  AND title ILIKE '%' || $3 || '%'
-ORDER BY created_at DESC, id DESC
-LIMIT $5 OFFSET $4
+SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c.body_html,
+       c.field_values, c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
+       c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
+       c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
+       c.view_count, c.comment_count, c.share_count, c.reshare_count, c.publish_at, c.published_at,
+       c.created_at, c.updated_at, c.guide_category
+FROM contents c
+JOIN content_spaces cs ON cs.content_id = c.id AND cs.space_id = $1
+WHERE c.tenant_id = $2
+  AND c.deleted_at IS NULL
+  AND c.auto_hidden = false
+  AND (
+      ($3::boolean AND $4::boolean)
+      OR (c.author_id = $5::uuid AND c.author_id IS NOT NULL)
+      OR (
+          c.status = 'published'
+          AND (
+              c.visibility = 'public'
+              OR (c.visibility = 'members' AND $6::boolean)
+              OR (c.visibility = 'private' AND (c.author_id = $5::uuid OR $4::boolean))
+          )
+      )
+  )
+  AND c.title ILIKE '%' || $7 || '%'
+ORDER BY c.created_at DESC, c.id DESC
+LIMIT $9 OFFSET $8
 `
 
 type SearchContentsBySpaceParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
-	SpaceID    pgtype.UUID `json:"space_id"`
-	Query      *string     `json:"query"`
-	PageOffset int32       `json:"page_offset"`
-	PageLimit  int32       `json:"page_limit"`
+	SpaceID           pgtype.UUID `json:"space_id"`
+	TenantID          pgtype.UUID `json:"tenant_id"`
+	CanSeeUnpublished bool        `json:"can_see_unpublished"`
+	CanSeePrivate     bool        `json:"can_see_private"`
+	RequesterID       pgtype.UUID `json:"requester_id"`
+	CanSeeMembers     bool        `json:"can_see_members"`
+	Query             *string     `json:"query"`
+	PageOffset        int32       `json:"page_offset"`
+	PageLimit         int32       `json:"page_limit"`
 }
 
 type SearchContentsBySpaceRow struct {
@@ -3257,10 +3395,16 @@ type SearchContentsBySpaceRow struct {
 	GuideCategory   *string            `json:"guide_category"`
 }
 
+// Searches content assigned to a given space via the authoritative
+// content_spaces table (BUG-010), with visibility gating.
 func (q *Queries) SearchContentsBySpace(ctx context.Context, arg SearchContentsBySpaceParams) ([]SearchContentsBySpaceRow, error) {
 	rows, err := q.db.Query(ctx, searchContentsBySpace,
-		arg.TenantID,
 		arg.SpaceID,
+		arg.TenantID,
+		arg.CanSeeUnpublished,
+		arg.CanSeePrivate,
+		arg.RequesterID,
+		arg.CanSeeMembers,
 		arg.Query,
 		arg.PageOffset,
 		arg.PageLimit,
@@ -3341,8 +3485,35 @@ func (q *Queries) SetBookmarkFolder(ctx context.Context, arg SetBookmarkFolderPa
 	return err
 }
 
+const setContentPrimarySpace = `-- name: SetContentPrimarySpace :exec
+WITH reassigned AS (
+    UPDATE content_spaces
+    SET is_primary = false
+    WHERE content_id = $1
+    RETURNING space_id
+)
+INSERT INTO content_spaces (content_id, space_id, is_primary)
+SELECT $1, $2, true
+FROM reassigned
+ON CONFLICT (content_id, space_id) DO UPDATE SET is_primary = true
+`
+
+type SetContentPrimarySpaceParams struct {
+	ContentID pgtype.UUID `json:"content_id"`
+	SpaceID   pgtype.UUID `json:"space_id"`
+}
+
+// Sets is_primary=false on all existing content_spaces for this content,
+// then ensures the requested space is present with is_primary=true. Used
+// when UpdateContent changes the primary space without losing additional
+// assignments. Ref: Section 14.
+func (q *Queries) SetContentPrimarySpace(ctx context.Context, arg SetContentPrimarySpaceParams) error {
+	_, err := q.db.Exec(ctx, setContentPrimarySpace, arg.ContentID, arg.SpaceID)
+	return err
+}
+
 const setContentSpaceID = `-- name: SetContentSpaceID :exec
-UPDATE contents SET space_id = $1, updated_at = now()
+UPDATE contents SET space_id = $1, geo_space_id = $1, updated_at = now()
 WHERE id = $2
 `
 
@@ -3351,8 +3522,9 @@ type SetContentSpaceIDParams struct {
 	ContentID pgtype.UUID `json:"content_id"`
 }
 
-// Updates only the space_id column on a content item. Used by the auto-assign
-// feature to set the primary space after keyword matching.
+// Updates the primary space columns (space_id and geo_space_id) on a content
+// item to keep contents and content_spaces synchronized. Used by the
+// auto-assign feature and UpdateContentSpaces. Ref: Section 14.
 func (q *Queries) SetContentSpaceID(ctx context.Context, arg SetContentSpaceIDParams) error {
 	_, err := q.db.Exec(ctx, setContentSpaceID, arg.SpaceID, arg.ContentID)
 	return err
@@ -3375,7 +3547,7 @@ func (q *Queries) UnpinContentFromSpace(ctx context.Context, arg UnpinContentFro
 const updateContent = `-- name: UpdateContent :one
 UPDATE contents
 SET title = $1, slug = $2, body = $3, body_html = $4,
-    field_values = $5, content_hash = $6,
+    field_values = $5, content_hash = COALESCE($6, content_hash),
     geo_space_id = $7, canonical_url = $8,
     header_image_id = $9,
     featured_image_id = $10,

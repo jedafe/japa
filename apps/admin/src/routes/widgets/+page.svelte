@@ -4,9 +4,16 @@
 	// dynamic per widget_type (e.g. latest_content has content_type/sort/featured,
 	// forum_threads has sort/space_id, reviews has entity_type, etc.).
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
-	import { widgetsAdminApiExtended, apiRaw, contentAdminApi } from '$lib/api';
+	import {
+		widgetsAdminApiExtended,
+		apiRaw,
+		contentAdminApi,
+		type CatalogOption,
+		type CardTypeOption,
+		type WidgetConfigField,
+		type WidgetConfigOptions
+	} from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
-	import { onMount } from 'svelte';
 
 	type Widget = {
 		id: string;
@@ -19,221 +26,184 @@
 		updated_at: string;
 	};
 
-	// Canonical widget types from Section 16, extended to cover all
-	// JapaConnect data sources. The backend validates against this list,
-	// so the select options must match exactly.
-	const widgetTypeOptions = [
-		// --- Original 7 (Section 16) ---
-		{ value: 'latest_content', label: 'Latest Content' },
-		{ value: 'trending_tags', label: 'Trending Tags' },
-		{ value: 'space_members', label: 'Space Members' },
-		{ value: 'user_leaderboard', label: 'User Leaderboard' },
-		{ value: 'upcoming_events', label: 'Upcoming Events' },
-		{ value: 'featured_spaces', label: 'Featured Spaces' },
-		{ value: 'custom_html', label: 'Custom HTML' },
-		// --- Extended: content-curation ---
-		{ value: 'featured_content', label: 'Featured Content (admin-pinned)' },
-		{ value: 'blog_posts', label: 'Blog Posts' },
-		{ value: 'forum_threads', label: 'Forum Threads' },
-		{ value: 'job_listings', label: 'Job Listings' },
-		{ value: 'achievements', label: 'Achievements' },
-		// --- Extended: domain-specific ---
-		{ value: 'learning_tracks', label: 'Learning Tracks' },
-		{ value: 'community_digest', label: 'Community Digest' },
-		{ value: 'reviews', label: 'Reviews' },
-		{ value: 'comparisons', label: 'Comparisons' },
-		{ value: 'professional_profiles', label: 'Professional Profiles' },
-		{ value: 'community_organisations', label: 'Community Organisations' },
-		{ value: 'mentor_spotlight', label: 'Mentor Spotlight' },
-		// --- Extended: form/widget types ---
-		{ value: 'newsletter_signup', label: 'Newsletter Signup' }
-	];
-
-	// ─── Per-type config schemas ──────────────────────────────────
-	// Each entry defines the config fields shown when that widget_type is
-	// selected. The field key matches the JSON key sent to the backend in
-	// the `config` JSONB column.
-	interface ConfigField {
-		key: string;
-		label: string;
-		type: 'text' | 'number' | 'checkbox' | 'select';
-		options?: Array<{ value: string; label: string }>;
-		default?: unknown;
-		help?: string;
+	// Fallback static catalog (Rule 16: replaced by the backend
+	// GET /admin/pagebuilder/widget-config-options payload when it loads).
+	function fallbackWidgetTypes(): CatalogOption[] {
+		return [
+			{ value: 'latest_content', label: 'Latest Content' },
+			{ value: 'trending_tags', label: 'Trending Tags' },
+			{ value: 'space_members', label: 'Space Members' },
+			{ value: 'user_leaderboard', label: 'User Leaderboard' },
+			{ value: 'upcoming_events', label: 'Upcoming Events' },
+			{ value: 'featured_spaces', label: 'Featured Spaces' },
+			{ value: 'custom_html', label: 'Custom HTML' },
+			{ value: 'featured_content', label: 'Featured Content (admin-pinned)' },
+			{ value: 'blog_posts', label: 'Blog Posts' },
+			{ value: 'forum_threads', label: 'Forum Threads' },
+			{ value: 'job_listings', label: 'Job Listings' },
+			{ value: 'achievements', label: 'Achievements' },
+			{ value: 'learning_tracks', label: 'Learning Tracks' },
+			{ value: 'community_digest', label: 'Community Digest' },
+			{ value: 'reviews', label: 'Reviews' },
+			{ value: 'comparisons', label: 'Comparisons' },
+			{ value: 'professional_profiles', label: 'Professional Profiles' },
+			{ value: 'community_organisations', label: 'Community Organisations' },
+			{ value: 'mentor_spotlight', label: 'Mentor Spotlight' },
+			{ value: 'newsletter_signup', label: 'Newsletter Signup' }
+		];
 	}
 
-	// Content types are fetched from GET /content-types so the dropdown
-	// stays in sync with the backend's canonical list (Rule 16).
-	let contentTypeOptions = $state<Array<{ value: string; label: string }>>([
-		{ value: '', label: 'All types' },
-	]);
+	function fallbackConfigSchemas(): Record<string, WidgetConfigField[]> {
+		return {
+			latest_content: [
+				{ key: 'content_type', label: 'Content Type', type: 'select', default: '', options: [{ value: '', label: 'All types' }], help: 'Filter by content type. Leave as "All types" for mixed content.' },
+				{ key: 'sort', label: 'Sort', type: 'select', default: 'recent', options: [{ value: 'recent', label: 'Most Recent' }, { value: 'popular', label: 'Most Viewed' }, { value: 'discussed', label: 'Most Discussed' }] },
+				{ key: 'featured', label: 'Featured Only', type: 'checkbox', default: false, help: 'Show only pinned/featured content.' },
+				{ key: 'space_id', label: 'Space ID', type: 'text', default: '', help: 'Filter by space UUID (optional).' },
+				{ key: 'limit', label: 'Limit', type: 'number', default: 5, help: 'Max items to return.' },
+			],
+			featured_content: [
+				{ key: 'content_type', label: 'Content Type', type: 'select', default: '', options: [{ value: '', label: 'All types' }], help: 'Filter by content type.' },
+				{ key: 'sort', label: 'Sort', type: 'select', default: 'featured', options: [{ value: 'featured', label: 'Featured Order (admin-curated)' }, { value: 'recent', label: 'Most Recent' }, { value: 'popular', label: 'Most Viewed' }, { value: 'discussed', label: 'Most Discussed' }] },
+				{ key: 'space_id', label: 'Space ID', type: 'text', default: '', help: 'Filter by space UUID (optional).' },
+				{ key: 'limit', label: 'Limit', type: 'number', default: 5 },
+			],
+			blog_posts: [
+				{ key: 'sort', label: 'Sort', type: 'select', default: 'recent', options: [{ value: 'recent', label: 'Most Recent' }, { value: 'popular', label: 'Most Viewed' }, { value: 'discussed', label: 'Most Discussed' }] },
+				{ key: 'space_id', label: 'Space ID', type: 'text', default: '', help: 'Filter by space UUID (optional).' },
+				{ key: 'limit', label: 'Limit', type: 'number', default: 5 },
+			],
+			forum_threads: [
+				{ key: 'sort', label: 'Sort', type: 'select', default: 'hot', options: [{ value: 'hot', label: 'Hot (vote score)' }, { value: 'recent', label: 'Most Recent' }, { value: 'unanswered', label: 'Unanswered' }] },
+				{ key: 'space_id', label: 'Space ID', type: 'text', default: '', help: 'Filter by space UUID (optional).' },
+				{ key: 'limit', label: 'Limit', type: 'number', default: 5 },
+			],
+			job_listings: [
+				{ key: 'space_id', label: 'Space ID', type: 'text', default: '', help: 'Filter by space UUID (optional).' },
+				{ key: 'limit', label: 'Limit', type: 'number', default: 5 },
+			],
+			achievements: [
+				{ key: 'milestone_type', label: 'Milestone Type', type: 'select', default: '', options: [{ value: '', label: 'All milestones' }, { value: 'relocation', label: 'Relocation' }, { value: 'career', label: 'Career' }, { value: 'education', label: 'Education' }, { value: 'community', label: 'Community' }] },
+				{ key: 'limit', label: 'Limit', type: 'number', default: 5 },
+			],
+			learning_tracks: [
+				{ key: 'difficulty', label: 'Difficulty', type: 'select', default: '', options: [{ value: '', label: 'All levels' }, { value: 'beginner', label: 'Beginner' }, { value: 'intermediate', label: 'Intermediate' }, { value: 'advanced', label: 'Advanced' }] },
+				{ key: 'limit', label: 'Limit', type: 'number', default: 5 },
+			],
+			community_digest: [
+				{ key: 'space_id', label: 'Space ID', type: 'text', default: '', help: 'Filter by space UUID (optional).' },
+				{ key: 'limit', label: 'Limit', type: 'number', default: 3 },
+			],
+			reviews: [
+				{ key: 'entity_type', label: 'Entity Type', type: 'select', default: '', options: [{ value: '', label: 'All entities' }, { value: 'content', label: 'Content' }, { value: 'space', label: 'Space' }, { value: 'professional_profile', label: 'Professional Profile' }, { value: 'university', label: 'University' }] },
+				{ key: 'limit', label: 'Limit', type: 'number', default: 5 },
+			],
+			comparisons: [
+				{ key: 'limit', label: 'Limit', type: 'number', default: 5 },
+			],
+			professional_profiles: [
+				{ key: 'verified_only', label: 'Verified Only', type: 'checkbox', default: false, help: 'Show only verified profiles.' },
+				{ key: 'limit', label: 'Limit', type: 'number', default: 5 },
+			],
+			community_organisations: [
+				{ key: 'org_type', label: 'Organisation Type', type: 'select', default: '', options: [{ value: '', label: 'All types' }, { value: 'association', label: 'Association' }, { value: 'club', label: 'Club' }, { value: 'society', label: 'Society' }, { value: 'network', label: 'Network' }] },
+				{ key: 'origin_community', label: 'Origin Community', type: 'text', default: '', help: 'Filter by origin community name.' },
+				{ key: 'limit', label: 'Limit', type: 'number', default: 5 },
+			],
+			mentor_spotlight: [
+				{ key: 'limit', label: 'Limit', type: 'number', default: 5 },
+			],
+			newsletter_signup: [
+				{ key: 'list_id', label: 'List ID', type: 'text', default: '', help: 'Newsletter list ID for subscriptions.' },
+				{ key: 'heading', label: 'Heading', type: 'text', default: 'Subscribe to our newsletter' },
+				{ key: 'subtext', label: 'Subtext', type: 'text', default: '' },
+				{ key: 'button_text', label: 'Button Text', type: 'text', default: 'Subscribe' },
+				{ key: 'placeholder', label: 'Placeholder', type: 'text', default: 'Enter your email' },
+			],
+			custom_html: [
+				{ key: 'html', label: 'HTML Content', type: 'text', default: '', help: 'Raw HTML (sanitized on render).' },
+			],
+			trending_tags: [{ key: 'limit', label: 'Limit', type: 'number', default: 10 }],
+			space_members: [
+				{ key: 'space_id', label: 'Space ID', type: 'text', default: '', help: 'Space UUID (required for space_members).' },
+				{ key: 'limit', label: 'Limit', type: 'number', default: 5 },
+			],
+			user_leaderboard: [{ key: 'limit', label: 'Limit', type: 'number', default: 10 }],
+			upcoming_events: [
+				{ key: 'space_id', label: 'Space ID', type: 'text', default: '', help: 'Filter by space UUID (optional).' },
+				{ key: 'limit', label: 'Limit', type: 'number', default: 5 },
+			],
+			featured_spaces: [{ key: 'limit', label: 'Limit', type: 'number', default: 5 }],
+		};
+	}
 
-	onMount(async () => {
-		const res = await contentAdminApi.listContentTypes();
-		if (res.ok && res.data) {
-			contentTypeOptions = [
-				{ value: '', label: 'All types' },
-				...res.data.map((ct) => ({ value: ct.value, label: ct.label })),
-			];
+	function fallbackCardTypes(): CardTypeOption[] {
+		return [
+			{ value: 'grid', icon: '▦', label: 'Grid', desc: 'Card grid with images and excerpts' },
+			{ value: 'list', icon: '☰', label: 'List', desc: 'Bordered rows with title and excerpt' },
+			{ value: 'compact', icon: '●', label: 'Compact', desc: 'Pill-style tags, minimal text' },
+			{ value: 'ghost', icon: '✦', label: 'Ghost', desc: 'Borderless, text-forward blog style' },
+			{ value: 'magazine', icon: '📰', label: 'Magazine', desc: 'Featured story + sidebar items' },
+			{ value: 'reddit', icon: '⚡', label: 'Reddit', desc: 'Compact rows with vote score and meta' },
+		];
+	}
+
+	function fallbackContentWidgetTypes(): string[] {
+		return [
+			'latest_content', 'featured_content', 'blog_posts', 'forum_threads',
+			'job_listings', 'achievements', 'learning_tracks', 'community_digest',
+			'reviews', 'comparisons', 'professional_profiles', 'community_organisations',
+			'mentor_spotlight', 'space_members', 'user_leaderboard', 'upcoming_events',
+			'featured_spaces',
+		];
+	}
+
+	let widgetConfigOptions = $state<WidgetConfigOptions | undefined>(undefined);
+	let contentTypeOptions = $state<CatalogOption[]>([{ value: '', label: 'All types' }]);
+
+	$effect(() => {
+		void (async () => {
+			const [configRes, ctRes] = await Promise.all([
+				widgetsAdminApiExtended.getConfigOptions(),
+				contentAdminApi.listContentTypes()
+			]);
+			if (configRes.ok && configRes.data) {
+				widgetConfigOptions = configRes.data;
+			}
+			if (ctRes.ok && ctRes.data) {
+				contentTypeOptions = [{ value: '', label: 'All types' }, ...ctRes.data];
+			}
+		})();
+	});
+
+	const widgetTypeOptions = $derived<CatalogOption[]>(
+		widgetConfigOptions?.widget_types?.length ? widgetConfigOptions.widget_types : fallbackWidgetTypes()
+	);
+
+	const cardTypeOptions = $derived<CardTypeOption[]>(
+		widgetConfigOptions?.card_types?.length ? widgetConfigOptions.card_types : fallbackCardTypes()
+	);
+
+	function buildConfigSchemas(): Record<string, WidgetConfigField[]> {
+		const base = widgetConfigOptions?.config_schemas ?? fallbackConfigSchemas();
+		const schemas: Record<string, WidgetConfigField[]> = {};
+		for (const [type, fields] of Object.entries(base)) {
+			schemas[type] = fields.map((f) => ({ ...f }));
+			for (const f of schemas[type]) {
+				if (f.key === 'content_type') {
+					f.options = contentTypeOptions;
+				}
+			}
 		}
-	});
+		return schemas;
+	}
 
-	// configSchemas is derived so it picks up the fetched content type
-	// options for latest_content and featured_content.
-	const configSchemas = $derived<Record<string, ConfigField[]>>({
-		latest_content: [
-			{
-				key: 'content_type', label: 'Content Type', type: 'select', default: '',
-				options: contentTypeOptions,
-				help: 'Filter by content type. Leave as "All types" for mixed content.'
-			},
-			{
-				key: 'sort', label: 'Sort', type: 'select', default: 'recent',
-				options: [
-					{ value: 'recent', label: 'Most Recent' },
-					{ value: 'popular', label: 'Most Viewed' },
-					{ value: 'discussed', label: 'Most Discussed' },
-				]
-			},
-			{ key: 'featured', label: 'Featured Only', type: 'checkbox', default: false, help: 'Show only pinned/featured content.' },
-			{ key: 'space_id', label: 'Space ID', type: 'text', default: '', help: 'Filter by space UUID (optional).' },
-			{ key: 'limit', label: 'Limit', type: 'number', default: 5, help: 'Max items to return.' },
-		],
-		featured_content: [
-			{
-				key: 'content_type', label: 'Content Type', type: 'select', default: '',
-				options: contentTypeOptions,
-				help: 'Filter by content type.'
-			},
-			{
-				key: 'sort', label: 'Sort', type: 'select', default: 'featured',
-				options: [
-					{ value: 'featured', label: 'Featured Order (admin-curated)' },
-					{ value: 'recent', label: 'Most Recent' },
-					{ value: 'popular', label: 'Most Viewed' },
-					{ value: 'discussed', label: 'Most Discussed' },
-				]
-			},
-			{ key: 'space_id', label: 'Space ID', type: 'text', default: '', help: 'Filter by space UUID (optional).' },
-			{ key: 'limit', label: 'Limit', type: 'number', default: 5 },
-		],
-		blog_posts: [
-			{
-				key: 'sort', label: 'Sort', type: 'select', default: 'recent',
-				options: [
-					{ value: 'recent', label: 'Most Recent' },
-					{ value: 'popular', label: 'Most Viewed' },
-					{ value: 'discussed', label: 'Most Discussed' },
-				]
-			},
-			{ key: 'space_id', label: 'Space ID', type: 'text', default: '', help: 'Filter by space UUID (optional).' },
-			{ key: 'limit', label: 'Limit', type: 'number', default: 5 },
-		],
-		forum_threads: [
-			{
-				key: 'sort', label: 'Sort', type: 'select', default: 'hot',
-				options: [
-					{ value: 'hot', label: 'Hot (vote score)' },
-					{ value: 'recent', label: 'Most Recent' },
-					{ value: 'unanswered', label: 'Unanswered' },
-				]
-			},
-			{ key: 'space_id', label: 'Space ID', type: 'text', default: '', help: 'Filter by space UUID (optional).' },
-			{ key: 'limit', label: 'Limit', type: 'number', default: 5 },
-		],
-		job_listings: [
-			{ key: 'space_id', label: 'Space ID', type: 'text', default: '', help: 'Filter by space UUID (optional).' },
-			{ key: 'limit', label: 'Limit', type: 'number', default: 5 },
-		],
-		achievements: [
-			{
-				key: 'milestone_type', label: 'Milestone Type', type: 'select', default: '',
-				options: [
-					{ value: '', label: 'All milestones' },
-					{ value: 'relocation', label: 'Relocation' },
-					{ value: 'career', label: 'Career' },
-					{ value: 'education', label: 'Education' },
-					{ value: 'community', label: 'Community' },
-				]
-			},
-			{ key: 'limit', label: 'Limit', type: 'number', default: 5 },
-		],
-		learning_tracks: [
-			{
-				key: 'difficulty', label: 'Difficulty', type: 'select', default: '',
-				options: [
-					{ value: '', label: 'All levels' },
-					{ value: 'beginner', label: 'Beginner' },
-					{ value: 'intermediate', label: 'Intermediate' },
-					{ value: 'advanced', label: 'Advanced' },
-				]
-			},
-			{ key: 'limit', label: 'Limit', type: 'number', default: 5 },
-		],
-		community_digest: [
-			{ key: 'space_id', label: 'Space ID', type: 'text', default: '', help: 'Filter by space UUID (optional).' },
-			{ key: 'limit', label: 'Limit', type: 'number', default: 3 },
-		],
-		reviews: [
-			{
-				key: 'entity_type', label: 'Entity Type', type: 'select', default: '',
-				options: [
-					{ value: '', label: 'All entities' },
-					{ value: 'content', label: 'Content' },
-					{ value: 'space', label: 'Space' },
-					{ value: 'professional_profile', label: 'Professional Profile' },
-					{ value: 'university', label: 'University' },
-				]
-			},
-			{ key: 'limit', label: 'Limit', type: 'number', default: 5 },
-		],
-		comparisons: [
-			{ key: 'limit', label: 'Limit', type: 'number', default: 5 },
-		],
-		professional_profiles: [
-			{ key: 'verified_only', label: 'Verified Only', type: 'checkbox', default: false, help: 'Show only verified profiles.' },
-			{ key: 'limit', label: 'Limit', type: 'number', default: 5 },
-		],
-		community_organisations: [
-			{
-				key: 'org_type', label: 'Organisation Type', type: 'select', default: '',
-				options: [
-					{ value: '', label: 'All types' },
-					{ value: 'association', label: 'Association' },
-					{ value: 'club', label: 'Club' },
-					{ value: 'society', label: 'Society' },
-					{ value: 'network', label: 'Network' },
-				]
-			},
-			{ key: 'origin_community', label: 'Origin Community', type: 'text', default: '', help: 'Filter by origin community name.' },
-			{ key: 'limit', label: 'Limit', type: 'number', default: 5 },
-		],
-		mentor_spotlight: [
-			{ key: 'limit', label: 'Limit', type: 'number', default: 5 },
-		],
-		newsletter_signup: [
-			{ key: 'list_id', label: 'List ID', type: 'text', default: '', help: 'Newsletter list ID for subscriptions.' },
-			{ key: 'heading', label: 'Heading', type: 'text', default: 'Subscribe to our newsletter' },
-			{ key: 'subtext', label: 'Subtext', type: 'text', default: '' },
-			{ key: 'button_text', label: 'Button Text', type: 'text', default: 'Subscribe' },
-			{ key: 'placeholder', label: 'Placeholder', type: 'text', default: 'Enter your email' },
-		],
-		custom_html: [
-			{ key: 'html', label: 'HTML Content', type: 'text', default: '', help: 'Raw HTML (sanitized on render).' },
-		],
-		// Types with no configurable options beyond limit.
-		trending_tags: [{ key: 'limit', label: 'Limit', type: 'number', default: 10 }],
-		space_members: [
-			{ key: 'space_id', label: 'Space ID', type: 'text', default: '', help: 'Space UUID (required for space_members).' },
-			{ key: 'limit', label: 'Limit', type: 'number', default: 5 },
-		],
-		user_leaderboard: [{ key: 'limit', label: 'Limit', type: 'number', default: 10 }],
-		upcoming_events: [
-			{ key: 'space_id', label: 'Space ID', type: 'text', default: '', help: 'Filter by space UUID (optional).' },
-			{ key: 'limit', label: 'Limit', type: 'number', default: 5 },
-		],
-		featured_spaces: [{ key: 'limit', label: 'Limit', type: 'number', default: 5 }],
-	});
+	const configSchemas = $derived<Record<string, WidgetConfigField[]>>(buildConfigSchemas());
+
+	function isContentWidget(type: string): boolean {
+		const set = new Set(widgetConfigOptions?.content_widget_types ?? fallbackContentWidgetTypes());
+		return set.has(type);
+	}
 
 	// Build default config for a widget type from its schema.
 	function defaultConfig(widgetType: string): Record<string, unknown> {
@@ -250,132 +220,112 @@
 		return cfg;
 	}
 
-	// Content widget types that render data cards and should show the card type picker.
-	const contentWidgetTypes = new Set([
-		'latest_content', 'featured_content', 'blog_posts', 'forum_threads',
-		'job_listings', 'achievements', 'learning_tracks', 'community_digest',
-		'reviews', 'comparisons', 'professional_profiles', 'community_organisations',
-		'mentor_spotlight', 'space_members', 'user_leaderboard', 'upcoming_events',
-		'featured_spaces',
-	]);
-	function isContentWidget(t: string): boolean {
-		return contentWidgetTypes.has(t);
-	}
-
-	// Card type options — determines how content cards are rendered on the frontend.
-	const cardTypeOptions = [
-		{ value: 'grid', icon: '▦', label: 'Grid', desc: 'Card grid with images and excerpts' },
-		{ value: 'list', icon: '☰', label: 'List', desc: 'Bordered rows with title and excerpt' },
-		{ value: 'compact', icon: '●', label: 'Compact', desc: 'Pill-style tags, minimal text' },
-		{ value: 'ghost', icon: '✦', label: 'Ghost', desc: 'Borderless, text-forward blog style' },
-		{ value: 'magazine', icon: '📰', label: 'Magazine', desc: 'Featured story + sidebar items' },
-		{ value: 'reddit', icon: '⚡', label: 'Reddit', desc: 'Compact rows with vote score and meta' },
-	];
-
 	let entityController = $state<EntityPageController | undefined>(undefined);
 	let pageError = $state('');
 
-	// `fields` drives EntityForm rendering and edit-form value seeding.
-	// The config field is handled by the formSnippet, not EntityForm.
-	const fields: FieldDef[] = [
-		{ key: 'name', label: t('widgets.name', 'Name'), type: 'text', required: true },
-		{
-			key: 'widget_type',
-			label: t('widgets.type', 'Type'),
-			type: 'select',
-			options: widgetTypeOptions,
-			required: true,
-			help: 'Data source for the widget (Section 16)'
-		},
-		{
-			key: 'cache_ttl_secs',
-			label: 'Cache TTL (seconds)',
-			type: 'number',
-			help: 'How long to cache rendered widget data in Valkey (default 300)'
-		},
-		{ key: 'is_active', label: t('widgets.active', 'Active'), type: 'checkbox' }
-	];
-
-	const config: EntityPageConfig = {
-		title: t('widgets.title', 'Widgets'),
-		description: t('widgets.description', 'Manage widgets available across the platform.'),
-		createLabel: t('widgets.create', 'Create'),
-		pageSize: 25,
-		columns: [
-			{ key: 'name', label: t('widgets.name', 'Name') },
+	function buildConfig(): EntityPageConfig {
+		const fields: FieldDef[] = [
+			{ key: 'name', label: t('widgets.name', 'Name'), type: 'text', required: true },
 			{
 				key: 'widget_type',
 				label: t('widgets.type', 'Type'),
-				render: (v: string) => `<span class="text-xs" style="color: var(--color-muted)">${v}</span>`
+				type: 'select',
+				options: widgetTypeOptions,
+				required: true,
+				help: 'Data source for the widget (Section 16)'
 			},
-			{ key: 'is_active', label: t('widgets.status', 'Status'), componentSnippet: StatusCell }
-		],
-		filters: [
 			{
-				key: 'is_active',
-				label: t('widgets.status', 'Status'),
-				options: [
-					{ value: 'true', label: t('widgets.active', 'Active') },
-					{ value: 'false', label: t('widgets.inactive', 'Inactive') }
-				]
-			}
-		],
-		fields,
-		load: async ({ q, filter, page, pageSize }) => {
-			const params = new URLSearchParams();
-			params.set('page_size', String(pageSize));
-			params.set('page_offset', String(page * pageSize));
-			if (filter.is_active) params.set('is_active', filter.is_active);
-			if (q) params.set('q', q);
-			const result = await apiRaw<{ data?: Widget[]; total?: number; total_pages?: number }>(
-				`/admin/widgets?${params.toString()}`
-			);
-			if (result.ok) {
-				const d = result.data;
-				const items = d.data ?? [];
-				return {
-					data: items,
-					total: d.total ?? items.length,
-					totalPages: d.total_pages ?? 1
-				};
-			}
-			throw new Error(result.error ?? t('common.error', 'Failed to load widgets'));
-		},
-		create: async (body) => {
-			const ttl = Number(body.cache_ttl_secs ?? 300);
-			const widgetType = String(body.widget_type ?? '').trim();
-			// Build config from the form values — the formSnippet stores
-			// config field values into body via the `_config` key.
-			const cfg = (body._config as Record<string, unknown>) ?? defaultConfig(widgetType);
-			const res = await widgetsAdminApiExtended.create({
-				name: String(body.name ?? '').trim(),
-				widget_type: widgetType,
-				config: cfg,
-				cache_ttl_secs: ttl > 0 ? ttl : 300,
-				is_active: body.is_active === undefined ? true : !!body.is_active
-			});
-			return res.ok ? { ok: true } : { ok: false, error: res.error };
-		},
-		update: async (id, body) => {
-			const ttl = Number(body.cache_ttl_secs ?? 300);
-			const widgetType = String(body.widget_type ?? '').trim();
-			const cfg = (body._config as Record<string, unknown>) ?? defaultConfig(widgetType);
-			const res = await widgetsAdminApiExtended.update(id, {
-				name: String(body.name ?? '').trim(),
-				widget_type: widgetType,
-				config: cfg,
-				cache_ttl_secs: ttl > 0 ? ttl : 300,
-				is_active: !!body.is_active
-			});
-			return res.ok ? { ok: true } : { ok: false, error: res.error };
-		},
-		remove: async (id) => {
-			const res = await widgetsAdminApiExtended.delete(id);
-			return res.ok ? { ok: true } : { ok: false, error: res.error };
-		},
-		formSnippet: WidgetForm,
-		viewSnippet: WidgetView
-	};
+				key: 'cache_ttl_secs',
+				label: 'Cache TTL (seconds)',
+				type: 'number',
+				help: 'How long to cache rendered widget data in Valkey (default 300)'
+			},
+			{ key: 'is_active', label: t('widgets.active', 'Active'), type: 'checkbox' }
+		];
+
+		return {
+			title: t('widgets.title', 'Widgets'),
+			description: t('widgets.description', 'Manage widgets available across the platform.'),
+			createLabel: t('widgets.create', 'Create'),
+			pageSize: 25,
+			columns: [
+				{ key: 'name', label: t('widgets.name', 'Name') },
+				{
+					key: 'widget_type',
+					label: t('widgets.type', 'Type'),
+					render: (v: string) => `<span class="text-xs" style="color: var(--color-muted)">${v}</span>`
+				},
+				{ key: 'is_active', label: t('widgets.status', 'Status'), componentSnippet: StatusCell }
+			],
+			filters: [
+				{
+					key: 'is_active',
+					label: t('widgets.status', 'Status'),
+					options: [
+						{ value: 'true', label: t('widgets.active', 'Active') },
+						{ value: 'false', label: t('widgets.inactive', 'Inactive') }
+					]
+				}
+			],
+			fields,
+			load: async ({ q, filter, page, pageSize }) => {
+				const params = new URLSearchParams();
+				params.set('page_size', String(pageSize));
+				params.set('page_offset', String(page * pageSize));
+				if (filter.is_active) params.set('is_active', filter.is_active);
+				if (q) params.set('q', q);
+				const result = await apiRaw<{ data?: Widget[]; total?: number; total_pages?: number }>(
+					`/admin/widgets?${params.toString()}`
+				);
+				if (result.ok) {
+					const d = result.data;
+					const items = d.data ?? [];
+					return {
+						data: items,
+						total: d.total ?? items.length,
+						totalPages: d.total_pages ?? 1
+					};
+				}
+				throw new Error(result.error ?? t('common.error', 'Failed to load widgets'));
+			},
+			create: async (body) => {
+				const ttl = Number(body.cache_ttl_secs ?? 300);
+				const widgetType = String(body.widget_type ?? '').trim();
+				// Build config from the form values — the formSnippet stores
+				// config field values into body via the `_config` key.
+				const cfg = (body._config as Record<string, unknown>) ?? defaultConfig(widgetType);
+				const res = await widgetsAdminApiExtended.create({
+					name: String(body.name ?? '').trim(),
+					widget_type: widgetType,
+					config: cfg,
+					cache_ttl_secs: ttl > 0 ? ttl : 300,
+					is_active: body.is_active === undefined ? true : !!body.is_active
+				});
+				return res.ok ? { ok: true } : { ok: false, error: res.error };
+			},
+			update: async (id, body) => {
+				const ttl = Number(body.cache_ttl_secs ?? 300);
+				const widgetType = String(body.widget_type ?? '').trim();
+				const cfg = (body._config as Record<string, unknown>) ?? defaultConfig(widgetType);
+				const res = await widgetsAdminApiExtended.update(id, {
+					name: String(body.name ?? '').trim(),
+					widget_type: widgetType,
+					config: cfg,
+					cache_ttl_secs: ttl > 0 ? ttl : 300,
+					is_active: !!body.is_active
+				});
+				return res.ok ? { ok: true } : { ok: false, error: res.error };
+			},
+			remove: async (id) => {
+				const res = await widgetsAdminApiExtended.delete(id);
+				return res.ok ? { ok: true } : { ok: false, error: res.error };
+			},
+			formSnippet: WidgetForm,
+			viewSnippet: WidgetView
+		};
+	}
+
+	const config = $derived<EntityPageConfig>(buildConfig());
 </script>
 
 <svelte:head>

@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/content/visibility"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
@@ -99,6 +100,14 @@ func (s *Service) createContent(ctx context.Context, readQ, writeQ *gen.Queries,
 		contentHash = &h
 	}
 
+	// Published or scheduled content must have a primary space. A provided
+	// SpaceID / GeoSpaceID will be written as the primary content_space
+	// immediately after the contents row is inserted (BUG-007).
+	if (input.Status == StatusPublished || input.Status == StatusScheduled) &&
+		!input.SpaceID.Valid && !input.GeoSpaceID.Valid {
+		return gen.CreateContentRow{}, ErrMissingPrimarySpace
+	}
+
 	// Post-as-org (ADR-062): attributing to an org requires the author be an
 	// owner/admin/editor of it. author_id remains the human, always.
 	if input.OrganizationID.Valid {
@@ -149,6 +158,29 @@ func (s *Service) createContent(ctx context.Context, readQ, writeQ *gen.Queries,
 			return gen.CreateContentRow{}, ErrDuplicateContent
 		}
 		return gen.CreateContentRow{}, fmt.Errorf("creating content: %w", err)
+	}
+
+	// Create the initial content_space row for the primary space (Section 14).
+	// This keeps content_spaces authoritative and ensures list-by-space and
+	// fan-out queries work regardless of the legacy contents.space_id column.
+	if input.SpaceID.Valid || input.GeoSpaceID.Valid {
+		primarySpaceID := input.SpaceID
+		if !primarySpaceID.Valid {
+			primarySpaceID = input.GeoSpaceID
+		}
+		if err := writeQ.AddContentSpace(ctx, gen.AddContentSpaceParams{
+			ContentID: content.ID,
+			SpaceID:   primarySpaceID,
+			IsPrimary: true,
+		}); err != nil {
+			return gen.CreateContentRow{}, fmt.Errorf("adding primary content_space: %w", err)
+		}
+		if err := writeQ.SetContentSpaceID(ctx, gen.SetContentSpaceIDParams{
+			ContentID: content.ID,
+			SpaceID:   primarySpaceID,
+		}); err != nil {
+			return gen.CreateContentRow{}, fmt.Errorf("setting primary content space: %w", err)
+		}
 	}
 
 	// Create the initial revision.
@@ -217,16 +249,22 @@ func (s *Service) GetContentBySlug(ctx context.Context, slug string, tenantID pg
 // ListContents returns a page of content for the given tenant, newest first.
 // Pass a zero-value CursorCreatedAt for the first page. When q is non-empty,
 // results are filtered by case-insensitive match on title, slug, or body.
-func (s *Service) ListContents(ctx context.Context, tenantID pgtype.UUID, q string, cursor pgtype.Timestamptz, limit int32) ([]gen.ListContentsByTenantRow, error) {
+// Visibility is gated by the supplied filter.
+func (s *Service) ListContents(ctx context.Context, tenantID pgtype.UUID, q string, cursor pgtype.Timestamptz, limit int32, filter visibility.VisibilityFilter) ([]gen.ListContentsByTenantRow, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
 
+	requesterID, canSeeUnpublished, canSeeMembers, canSeePrivate := filter.Params()
 	contents, err := s.read.ListContentsByTenant(ctx, gen.ListContentsByTenantParams{
-		TenantID:        tenantID,
-		Q:               q,
-		CursorCreatedAt: cursor,
-		PageLimit:       limit,
+		TenantID:          tenantID,
+		Q:                 q,
+		CursorCreatedAt:   cursor,
+		PageLimit:         limit,
+		RequesterID:       requesterID,
+		CanSeeUnpublished: canSeeUnpublished,
+		CanSeeMembers:     canSeeMembers,
+		CanSeePrivate:     canSeePrivate,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("listing contents: %w", err)
@@ -240,7 +278,7 @@ func (s *Service) ListContents(ctx context.Context, tenantID pgtype.UUID, q stri
 // Returns the same column set as ListContents but with Meilisearch-grade
 // full-text search (typo tolerance, relevance ranking) instead of ILIKE.
 // Call this when a ContentSearcher is wired and q is non-empty.
-func (s *Service) SearchContents(ctx context.Context, tenantID pgtype.UUID, q string, limit int32) ([]gen.ListContentsByIDsRow, error) {
+func (s *Service) SearchContents(ctx context.Context, tenantID pgtype.UUID, q string, limit int32, filter visibility.VisibilityFilter) ([]gen.ListContentsByIDsRow, error) {
 	if s.searcher == nil {
 		return nil, fmt.Errorf("no content searcher configured")
 	}
@@ -258,24 +296,35 @@ func (s *Service) SearchContents(ctx context.Context, tenantID pgtype.UUID, q st
 		return []gen.ListContentsByIDsRow{}, nil
 	}
 
+	requesterID, canSeeUnpublished, canSeeMembers, canSeePrivate := filter.Params()
 	return s.read.ListContentsByIDs(ctx, gen.ListContentsByIDsParams{
-		TenantID:  tenantID,
-		Ids:       ids,
-		PageLimit: limit,
+		TenantID:          tenantID,
+		Ids:               ids,
+		PageLimit:         limit,
+		RequesterID:       requesterID,
+		CanSeeUnpublished: canSeeUnpublished,
+		CanSeeMembers:     canSeeMembers,
+		CanSeePrivate:     canSeePrivate,
 	})
 }
 
 // ListContentsByType returns a page of content filtered by content_type.
-func (s *Service) ListContentsByType(ctx context.Context, tenantID pgtype.UUID, contentType string, cursor pgtype.Timestamptz, limit int32) ([]gen.ListContentsByTypeRow, error) {
+// Visibility is gated by the supplied filter.
+func (s *Service) ListContentsByType(ctx context.Context, tenantID pgtype.UUID, contentType string, cursor pgtype.Timestamptz, limit int32, filter visibility.VisibilityFilter) ([]gen.ListContentsByTypeRow, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
 
+	requesterID, canSeeUnpublished, canSeeMembers, canSeePrivate := filter.Params()
 	contents, err := s.read.ListContentsByType(ctx, gen.ListContentsByTypeParams{
-		TenantID:        tenantID,
-		ContentType:     contentType,
-		CursorCreatedAt: cursor,
-		PageLimit:       limit,
+		TenantID:          tenantID,
+		ContentType:       contentType,
+		CursorCreatedAt:   cursor,
+		PageLimit:         limit,
+		RequesterID:       requesterID,
+		CanSeeUnpublished: canSeeUnpublished,
+		CanSeeMembers:     canSeeMembers,
+		CanSeePrivate:     canSeePrivate,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("listing contents by type: %w", err)
@@ -285,16 +334,22 @@ func (s *Service) ListContentsByType(ctx context.Context, tenantID pgtype.UUID, 
 }
 
 // ListContentsBySpace returns a page of content filtered by space_id.
-func (s *Service) ListContentsBySpace(ctx context.Context, tenantID, spaceID pgtype.UUID, cursor pgtype.Timestamptz, limit int32) ([]gen.ListContentsBySpaceRow, error) {
+// Visibility is gated by the supplied filter.
+func (s *Service) ListContentsBySpace(ctx context.Context, tenantID, spaceID pgtype.UUID, cursor pgtype.Timestamptz, limit int32, filter visibility.VisibilityFilter) ([]gen.ListContentsBySpaceRow, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
 
+	requesterID, canSeeUnpublished, canSeeMembers, canSeePrivate := filter.Params()
 	contents, err := s.read.ListContentsBySpace(ctx, gen.ListContentsBySpaceParams{
-		TenantID:        tenantID,
-		SpaceID:         spaceID,
-		CursorCreatedAt: cursor,
-		PageLimit:       limit,
+		TenantID:          tenantID,
+		SpaceID:           spaceID,
+		CursorCreatedAt:   cursor,
+		PageLimit:         limit,
+		RequesterID:       requesterID,
+		CanSeeUnpublished: canSeeUnpublished,
+		CanSeeMembers:     canSeeMembers,
+		CanSeePrivate:     canSeePrivate,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("listing contents by space: %w", err)
@@ -306,7 +361,8 @@ func (s *Service) ListContentsBySpace(ctx context.Context, tenantID, spaceID pgt
 // SearchContentsBySpace returns content within a space whose title matches the
 // query (case-insensitive substring). Used by the space search tab
 // (GET /spaces/{slug}/content?q=...). Offset-paginated.
-func (s *Service) SearchContentsBySpace(ctx context.Context, tenantID, spaceID pgtype.UUID, query string, limit, offset int32) ([]gen.SearchContentsBySpaceRow, error) {
+// Visibility is gated by the supplied filter.
+func (s *Service) SearchContentsBySpace(ctx context.Context, tenantID, spaceID pgtype.UUID, query string, limit, offset int32, filter visibility.VisibilityFilter) ([]gen.SearchContentsBySpaceRow, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -314,12 +370,17 @@ func (s *Service) SearchContentsBySpace(ctx context.Context, tenantID, spaceID p
 		offset = 0
 	}
 
+	requesterID, canSeeUnpublished, canSeeMembers, canSeePrivate := filter.Params()
 	contents, err := s.read.SearchContentsBySpace(ctx, gen.SearchContentsBySpaceParams{
-		TenantID:   tenantID,
-		SpaceID:    spaceID,
-		Query:      &query,
-		PageLimit:  limit,
-		PageOffset: offset,
+		TenantID:          tenantID,
+		SpaceID:           spaceID,
+		Query:             &query,
+		PageLimit:         limit,
+		PageOffset:        offset,
+		RequesterID:       requesterID,
+		CanSeeUnpublished: canSeeUnpublished,
+		CanSeeMembers:     canSeeMembers,
+		CanSeePrivate:     canSeePrivate,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("searching contents by space: %w", err)
@@ -401,6 +462,19 @@ func (s *Service) UpdateContent(ctx context.Context, id, tenantID, editedBy pgty
 		fieldValues = existing.FieldValues
 	}
 
+	// Preserve body, body_html, and content_hash on metadata-only updates
+	// where the client omits those fields (BUG-004). The SQL UPDATE uses
+	// COALESCE for content_hash; this service-level fallback keeps body/body_html
+	// from being overwritten when both are empty.
+	if input.Body == "" && input.BodyHtml == "" {
+		input.Body = existing.Body
+		input.BodyHtml = existing.BodyHtml
+		if input.ContentHash == nil && existing.ContentHash != nil && *existing.ContentHash != "" {
+			existingHash := *existing.ContentHash
+			input.ContentHash = &existingHash
+		}
+	}
+
 	// Post-as-org (ADR-062): attributing/keeping an org on this post requires the
 	// editor be an owner/admin/editor of that org. Symmetric with CreateContent.
 	if input.OrganizationID.Valid {
@@ -435,6 +509,17 @@ func (s *Service) UpdateContent(ctx context.Context, id, tenantID, editedBy pgty
 		}
 	}
 
+	// Published/scheduled content must have a primary space. If the caller
+	// is setting the primary space in this same update, the sync below will
+	// create it; otherwise we must ensure one already exists (BUG-007).
+	if input.Status == StatusPublished || input.Status == StatusScheduled {
+		if !input.GeoSpaceID.Valid {
+			if err := hasPrimarySpace(ctx, s.read, id); err != nil {
+				return gen.UpdateContentRow{}, err
+			}
+		}
+	}
+
 	content, err := s.write.UpdateContent(ctx, gen.UpdateContentParams{
 		OrganizationID:  input.OrganizationID,
 		Title:           input.Title,
@@ -465,6 +550,25 @@ func (s *Service) UpdateContent(ctx context.Context, id, tenantID, editedBy pgty
 		return gen.UpdateContentRow{}, fmt.Errorf("updating content: %w", err)
 	}
 
+	// Synchronize content_spaces when the primary space changes, preserving
+	// any additional space assignments. This keeps content_spaces
+	// authoritative and the legacy contents.space_id / geo_space_id in sync.
+	if input.GeoSpaceID.Valid {
+		existingSpaces, err := s.read.GetContentSpaces(ctx, content.ID)
+		if err != nil {
+			return gen.UpdateContentRow{}, fmt.Errorf("getting content spaces for update: %w", err)
+		}
+		additional := make([]pgtype.UUID, 0, len(existingSpaces))
+		for _, sp := range existingSpaces {
+			if !isSameUUID(sp.SpaceID, input.GeoSpaceID) {
+				additional = append(additional, sp.SpaceID)
+			}
+		}
+		if err := s.UpdateContentSpaces(ctx, content.ID, tenantID, editedBy, input.GeoSpaceID, additional, bypassEditWindow); err != nil {
+			return gen.UpdateContentRow{}, fmt.Errorf("updating content spaces: %w", err)
+		}
+	}
+
 	// Record slug change for 301 redirect.
 	s.RecordSlugChange(ctx, EntityContent, id, existing.Slug, newSlug)
 
@@ -492,8 +596,20 @@ func (s *Service) UpdateContent(ctx context.Context, id, tenantID, editedBy pgty
 
 // UpdateContentStatus changes the status of a content row (e.g. draft to
 // published). When transitioning to 'published', published_at is stamped
-// if it was previously null.
+// if it was previously null. Publishing or scheduling requires a primary
+// space (Section 14 / BUG-007).
 func (s *Service) UpdateContentStatus(ctx context.Context, id, tenantID pgtype.UUID, status string) (gen.UpdateContentStatusRow, error) {
+	_, err := s.read.GetContentByID(ctx, gen.GetContentByIDParams{ID: id, TenantID: tenantID})
+	if err != nil {
+		return gen.UpdateContentStatusRow{}, fmt.Errorf("getting content for status change: %w", err)
+	}
+
+	if status == StatusPublished || status == StatusScheduled {
+		if err := hasPrimarySpace(ctx, s.read, id); err != nil {
+			return gen.UpdateContentStatusRow{}, err
+		}
+	}
+
 	content, err := s.write.UpdateContentStatus(ctx, gen.UpdateContentStatusParams{
 		Status:   status,
 		ID:       id,
@@ -530,7 +646,16 @@ func (s *Service) UpdateContentStatus(ctx context.Context, id, tenantID pgtype.U
 // time, without touching title/body/other fields (catalog: POST
 // /content/:id/schedule). Callers must also enqueue the scheduled_publish
 // Asynq task with ProcessAt=publishAt for the actual publish to happen.
+// Scheduled content must have a primary space (Section 14 / BUG-007).
 func (s *Service) ScheduleContent(ctx context.Context, id, tenantID pgtype.UUID, publishAt time.Time) (gen.ScheduleContentRow, error) {
+	_, err := s.read.GetContentByID(ctx, gen.GetContentByIDParams{ID: id, TenantID: tenantID})
+	if err != nil {
+		return gen.ScheduleContentRow{}, fmt.Errorf("getting content for scheduling: %w", err)
+	}
+	if err := hasPrimarySpace(ctx, s.read, id); err != nil {
+		return gen.ScheduleContentRow{}, err
+	}
+
 	content, err := s.write.ScheduleContent(ctx, gen.ScheduleContentParams{
 		PublishAt: pgtype.Timestamptz{Time: publishAt, Valid: true},
 		ID:        id,
@@ -555,30 +680,35 @@ func (s *Service) IncrementContentView(ctx context.Context, id, tenantID pgtype.
 	return nil
 }
 
-// RecordContentViewWithDetails increments the view count AND records a
-// deduplicated row in user_content_views with country_code and session_id
-// (Section 14 — view tracking). The user_content_views PK deduplicates
-// per user/session per day; ON CONFLICT DO NOTHING prevents duplicates.
+// RecordContentViewWithDetails records a deduplicated row in
+// user_content_views with country_code and session_id (Section 14 — view
+// tracking), then increments the view count only when the detailed row was
+// actually inserted. The user_content_views PK deduplicates per user/session
+// per day; ON CONFLICT DO NOTHING prevents duplicates, and the returned
+// command tag tells us whether the insert succeeded.
 // For anonymous users, user_id is invalid and session_id is used for
 // deduplication.
 func (s *Service) RecordContentViewWithDetails(ctx context.Context, id, tenantID, userID pgtype.UUID, sessionID, countryCode *string) error {
+	tag, err := s.write.RecordContentView(ctx, gen.RecordContentViewParams{
+		ContentID:   id,
+		UserID:      userID,
+		SessionID:   sessionID,
+		CountryCode: countryCode,
+	})
+	if err != nil {
+		return fmt.Errorf("recording content view: %w", err)
+	}
+
+	if tag.RowsAffected() == 0 {
+		// Duplicate view for this user/session/day; do not increment the count.
+		return nil
+	}
+
 	if err := s.write.IncrementContentView(ctx, gen.IncrementContentViewParams{
 		ID:       id,
 		TenantID: tenantID,
 	}); err != nil {
 		return fmt.Errorf("incrementing content view: %w", err)
-	}
-
-	// Best-effort: a failure to record the detailed view row should not
-	// block the view count increment (the count is already updated above).
-	if err := s.write.RecordContentView(ctx, gen.RecordContentViewParams{
-		ContentID:   id,
-		UserID:      userID,
-		SessionID:   sessionID,
-		CountryCode: countryCode,
-	}); err != nil {
-		slog.Warn("recording detailed content view",
-			"error", err, "content_id", id.String())
 	}
 
 	return nil
@@ -659,9 +789,12 @@ func (s *Service) DeleteContent(ctx context.Context, id, tenantID pgtype.UUID) e
 // ---------------------------------------------------------------------------
 
 // ListContentRevisions returns the full revision history for a content row,
-// newest first.
-func (s *Service) ListContentRevisions(ctx context.Context, contentID pgtype.UUID) ([]gen.ContentRevision, error) {
-	revisions, err := s.read.ListContentRevisions(ctx, contentID)
+// newest first. Tenant-scoped for defense-in-depth (BUG-012).
+func (s *Service) ListContentRevisions(ctx context.Context, tenantID, contentID pgtype.UUID) ([]gen.ContentRevision, error) {
+	revisions, err := s.read.ListContentRevisions(ctx, gen.ListContentRevisionsParams{
+		TenantID:  tenantID,
+		ContentID: contentID,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("listing content revisions: %w", err)
 	}
@@ -669,9 +802,11 @@ func (s *Service) ListContentRevisions(ctx context.Context, contentID pgtype.UUI
 	return revisions, nil
 }
 
-// GetContentRevision returns a specific revision by ID.
-func (s *Service) GetContentRevision(ctx context.Context, id, contentID pgtype.UUID) (gen.ContentRevision, error) {
+// GetContentRevision returns a specific revision by ID. Tenant-scoped for
+// defense-in-depth (BUG-012).
+func (s *Service) GetContentRevision(ctx context.Context, tenantID, id, contentID pgtype.UUID) (gen.ContentRevision, error) {
 	revision, err := s.read.GetContentRevision(ctx, gen.GetContentRevisionParams{
+		TenantID:  tenantID,
 		ID:        id,
 		ContentID: contentID,
 	})
@@ -1056,17 +1191,23 @@ func (s *Service) ListContentTags(ctx context.Context, contentID pgtype.UUID) ([
 // ListContentByTag returns published content items tagged with the given tag.
 // The cursor is a composite (created_at, id) pair to avoid skipping items
 // that share the same created_at timestamp. Ref: §4.1.
-func (s *Service) ListContentByTag(ctx context.Context, tenantID, tagID pgtype.UUID, cursorCreatedAt pgtype.Timestamptz, cursorID pgtype.UUID, limit int32) ([]gen.ListContentByTagRow, error) {
+// Visibility is gated by the supplied filter.
+func (s *Service) ListContentByTag(ctx context.Context, tenantID, tagID pgtype.UUID, cursorCreatedAt pgtype.Timestamptz, cursorID pgtype.UUID, limit int32, filter visibility.VisibilityFilter) ([]gen.ListContentByTagRow, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
 
+	requesterID, canSeeUnpublished, canSeeMembers, canSeePrivate := filter.Params()
 	contents, err := s.read.ListContentByTag(ctx, gen.ListContentByTagParams{
-		TagID:           tagID,
-		TenantID:        tenantID,
-		CursorCreatedAt: cursorCreatedAt,
-		CursorID:        cursorID,
-		PageLimit:       limit,
+		TagID:             tagID,
+		TenantID:          tenantID,
+		CursorCreatedAt:   cursorCreatedAt,
+		CursorID:          cursorID,
+		PageLimit:         limit,
+		RequesterID:       requesterID,
+		CanSeeUnpublished: canSeeUnpublished,
+		CanSeeMembers:     canSeeMembers,
+		CanSeePrivate:     canSeePrivate,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("listing content by tag: %w", err)
@@ -1251,24 +1392,64 @@ func (s *Service) GetRelatedContent(ctx context.Context, tenantID, excludeID pgt
 // ---------------------------------------------------------------------------
 
 // UpdateContentSpaces replaces the full set of space assignments for a
-// content item. The primary space is set on the contents.geo_space_id
-// column for backward-compat query compatibility, and a content_spaces
-// row is inserted for each assigned space (exactly one with is_primary
-// = true). The entire operation runs in a transaction.
-func (s *Service) UpdateContentSpaces(ctx context.Context, contentID, primarySpaceID pgtype.UUID, additionalSpaceIDs []pgtype.UUID) error {
+// content item. The primary space is mirrored on contents.space_id and
+// contents.geo_space_id for backward-compatible queries, and a
+// content_spaces row is inserted for each assigned space (exactly one with
+// is_primary = true). All space IDs are verified to exist in the tenant
+// before the transaction commits (BUG-018). The entire operation runs in a
+// transaction.
+func (s *Service) UpdateContentSpaces(ctx context.Context, contentID, tenantID, userID, primarySpaceID pgtype.UUID, additionalSpaceIDs []pgtype.UUID, bypassSpaceCheck bool) error {
 	return db.WithTx(ctx, s.db.Writer, func(q *gen.Queries) error {
+		// Validate that the primary and all additional spaces exist in
+		// this tenant before mutating anything (BUG-018).
+		spaceIDs := append([]pgtype.UUID{primarySpaceID}, additionalSpaceIDs...)
+		for _, sid := range spaceIDs {
+			if !sid.Valid {
+				return ErrInvalidSpace
+			}
+			if _, err := q.GetSpaceByID(ctx, gen.GetSpaceByIDParams{
+				ID:       sid,
+				TenantID: tenantID,
+			}); err != nil {
+				if errors.Is(err, pgx.ErrNoRows) {
+					return ErrInvalidSpace
+				}
+				return fmt.Errorf("validating content space: %w", err)
+			}
+		}
+
+		// Enforce the space posting-permission / membership axis for
+		// non-admin callers (Section 45 / BUG-018).
+		if !bypassSpaceCheck && s.spaceChecker != nil {
+			for _, sid := range spaceIDs {
+				ok, err := s.spaceChecker.CanPostInSpace(ctx, sid, userID, tenantID)
+				if err != nil {
+					return fmt.Errorf("checking space permission: %w", err)
+				}
+				if !ok {
+					return ErrNotSpaceMember
+				}
+			}
+		}
+
 		// Clear existing assignments.
 		if err := q.DeleteContentSpaces(ctx, contentID); err != nil {
 			return fmt.Errorf("deleting content_spaces: %w", err)
 		}
 
-		// Insert primary space.
+		// Insert primary space and keep the contents row in sync.
 		if err := q.AddContentSpace(ctx, gen.AddContentSpaceParams{
 			ContentID: contentID,
 			SpaceID:   primarySpaceID,
 			IsPrimary: true,
 		}); err != nil {
 			return fmt.Errorf("adding primary content_space: %w", err)
+		}
+		if err := q.SetContentSpaceID(ctx, gen.SetContentSpaceIDParams{
+			ContentID: contentID,
+			SpaceID:   primarySpaceID,
+		}); err != nil {
+			return fmt.Errorf("setting primary space on content: %w", err)
 		}
 
 		// Insert additional spaces.
@@ -1292,6 +1473,21 @@ func (s *Service) UpdateContentSpaces(ctx context.Context, contentID, primarySpa
 // isSameUUID returns true when two pgtype.UUID values are equal and valid.
 func isSameUUID(a, b pgtype.UUID) bool {
 	return a.Valid && b.Valid && a.Bytes == b.Bytes
+}
+
+// hasPrimarySpace returns nil when the content has at least one primary
+// space assignment in content_spaces, otherwise ErrMissingPrimarySpace.
+func hasPrimarySpace(ctx context.Context, q *gen.Queries, contentID pgtype.UUID) error {
+	spaces, err := q.GetContentSpaces(ctx, contentID)
+	if err != nil {
+		return fmt.Errorf("getting content spaces: %w", err)
+	}
+	for _, sp := range spaces {
+		if sp.IsPrimary {
+			return nil
+		}
+	}
+	return ErrMissingPrimarySpace
 }
 
 // SetContentSpaceID updates only the space_id column on a content item.

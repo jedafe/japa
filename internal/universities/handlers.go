@@ -11,6 +11,7 @@ import (
 	"context"
 	"encoding/csv"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -60,6 +61,11 @@ type CustomFieldsService interface {
 	// show_in_frontend = true — the display-ready shape used by the public
 	// /universities/{slug} About facts grid (Section 39).
 	ListFieldValuesWithDefsByEntity(ctx context.Context, tenantID pgtype.UUID, entityType string, entityID pgtype.UUID) ([]gen.ListCustomFieldValuesWithDefsByEntityRow, error)
+	// GetCustomFieldByKey looks up a field definition by key within a tenant.
+	// Used to resolve the deterministic initials field without hard-coding UUIDs.
+	GetCustomFieldByKey(ctx context.Context, key string, tenantID pgtype.UUID) (gen.GetCustomFieldByKeyRow, error)
+	// UpsertFieldValue stores or updates a single custom field value on an entity.
+	UpsertFieldValue(ctx context.Context, params gen.UpsertCustomFieldValueParams) (gen.CustomFieldValue, error)
 }
 
 // MediaResolver resolves a media ID to an imgproxy-signed URL for the
@@ -105,6 +111,28 @@ func (h *Handlers) SetEnqueuer(e TaskEnqueuer) { h.enqueuer = e }
 // generic "system user" row, so the task skips gracefully if this is
 // invalid. Fire-and-forget: enqueue failures are logged, never returned to
 // the caller (Rule 8 — never block a request on fan-out).
+
+// enqueueSpaceAutoPopulate enqueues space:auto_populate so Wikidata enrichment
+// (P1813 short name, founded year, student count, logo, etc.) runs for the
+// new or updated university. Fire-and-forget (Rule 8).
+func (h *Handlers) enqueueSpaceAutoPopulate(ctx context.Context, tenantID, spaceID pgtype.UUID) {
+	if h.enqueuer == nil {
+		return
+	}
+	payload, err := json.Marshal(map[string]string{
+		"version":   "1",
+		"tenant_id": tenantID.String(),
+		"space_id":  spaceID.String(),
+	})
+	if err != nil {
+		slog.Warn("universities: marshal auto_populate payload", "error", err)
+		return
+	}
+	if err := h.enqueuer.Enqueue(worker.TypeSpaceAutoPopulate, payload); err != nil {
+		slog.Warn("universities: enqueue auto_populate", "space_id", spaceID.String(), "error", err)
+	}
+}
+
 func (h *Handlers) enqueueFetchLogo(ctx context.Context, tenantID, spaceID, uploadedBy pgtype.UUID, logoURL string) {
 	if h.enqueuer == nil || strings.TrimSpace(logoURL) == "" {
 		return
@@ -140,6 +168,46 @@ func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype
 // via the media service. Returns an empty string when no logo is set, the
 // media resolver is not wired, or the media item cannot be loaded. Best-effort
 // — a failure never blocks the university response.
+// upsertUniversityInitials stores the initials custom field value for a
+// university space. It looks up the field definition by key and falls back
+// to a deterministic, migration-defined UUID if the lookup fails.
+// Ref: japaconnect-engineering/sections/39-space-types-university.md
+func (h *Handlers) upsertUniversityInitials(ctx context.Context, tenantID, spaceID pgtype.UUID, initials string) error {
+	if strings.TrimSpace(initials) == "" {
+		return nil
+	}
+
+	fieldID, err := h.resolveInitialsFieldID(ctx, tenantID)
+	if err != nil {
+		return err
+	}
+
+	value := strings.TrimSpace(initials)
+	_, err = h.customFields.UpsertFieldValue(ctx, gen.UpsertCustomFieldValueParams{
+		FieldID:    fieldID,
+		EntityType: customFieldEntityTypeSpace,
+		EntityID:   spaceID,
+		ValueText:  &value,
+	})
+	return err
+}
+
+// resolveInitialsFieldID resolves the university_fields.initials definition.
+// It queries by key in the common case, but falls back to the deterministic
+// UUID from migration 000288 so the call never fails for a correctly-migrated DB.
+func (h *Handlers) resolveInitialsFieldID(ctx context.Context, tenantID pgtype.UUID) (pgtype.UUID, error) {
+	field, err := h.customFields.GetCustomFieldByKey(ctx, "initials", tenantID)
+	if err == nil {
+		return field.ID, nil
+	}
+
+	var fieldID pgtype.UUID
+	if serr := fieldID.Scan("00000000-0000-0000-0000-000000000090"); serr != nil {
+		return pgtype.UUID{}, fmt.Errorf("resolving initials field id: %w", serr)
+	}
+	return fieldID, nil
+}
+
 func (h *Handlers) resolveLogoURL(ctx context.Context, tenantID pgtype.UUID, logoMediaID pgtype.UUID) string {
 	if !logoMediaID.Valid || h.media == nil {
 		return ""
@@ -173,6 +241,7 @@ type universityField struct {
 // admin tooling.
 type universityDetail struct {
 	gen.GetSpaceBySlugRow
+	Initials      *string                `json:"initials,omitempty"`
 	Fields        []gen.CustomFieldValue `json:"fields"`
 	DisplayFields []universityField      `json:"display_fields"`
 	LogoURL       string                 `json:"logo_url"`
@@ -363,8 +432,19 @@ func (h *Handlers) GetUniversity(w http.ResponseWriter, r *http.Request) {
 	// logo_url, and the frontend falls back to the GraduationCap icon.
 	logoURL := h.resolveLogoURL(r.Context(), tenantID, space.LogoMediaID)
 
+	// Pull initials out of the display-ready fields for convenient top-level use.
+	var initials *string
+	for _, df := range displayFields {
+		if df.Key == "initials" && df.Value != "" {
+			v := df.Value
+			initials = &v
+			break
+		}
+	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": universityDetail{
 		GetSpaceBySlugRow: space,
+		Initials:          initials,
 		Fields:            fields,
 		DisplayFields:     displayFields,
 		LogoURL:           logoURL,
@@ -527,6 +607,7 @@ func (h *Handlers) CreateUniversity(w http.ResponseWriter, r *http.Request) {
 	var input struct {
 		Name     string `json:"name"`
 		Slug     string `json:"slug"`
+		Initials string `json:"initials"`
 		Verified bool   `json:"verified"`
 		LogoURL  string `json:"logo_url"`
 	}
@@ -573,6 +654,22 @@ func (h *Handlers) CreateUniversity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Store the optional initials custom field value. If none was supplied,
+	// derive a default from the university name and let Wikidata P1813 refine
+	// it via space:auto_populate.
+	initialsToStore := input.Initials
+	if strings.TrimSpace(initialsToStore) == "" {
+		initialsToStore = DeriveInitials(input.Name, nil, nil)
+	}
+	if err := h.upsertUniversityInitials(r.Context(), tenantID, space.ID, initialsToStore); err != nil {
+		slog.Warn("universities: failed to upsert initials on create",
+			"space_id", space.ID.String(), "error", err)
+	}
+
+	// Always run Wikidata enrichment for a new university (P1813 short name,
+	// founded year, student count, logo, etc.).
+	h.enqueueSpaceAutoPopulate(r.Context(), tenantID, space.ID)
+
 	var actorID pgtype.UUID
 	if u := auth.FromContext(r.Context()); u != nil {
 		actorID = u.UserID
@@ -604,6 +701,7 @@ func (h *Handlers) UpdateUniversity(w http.ResponseWriter, r *http.Request) {
 	var input struct {
 		Name     *string `json:"name"`
 		Slug     *string `json:"slug"`
+		Initials *string `json:"initials"`
 		Verified *bool   `json:"verified"`
 		LogoURL  *string `json:"logo_url"`
 	}
@@ -661,6 +759,13 @@ func (h *Handlers) UpdateUniversity(w http.ResponseWriter, r *http.Request) {
 			}
 			space.Slug = updated.Slug
 			space.UpdatedAt = updated.UpdatedAt
+		}
+	}
+
+	if input.Initials != nil {
+		if err := h.upsertUniversityInitials(r.Context(), tenantID, space.ID, *input.Initials); err != nil {
+			slog.Warn("universities: failed to upsert initials on update",
+				"space_id", space.ID.String(), "error", err)
 		}
 	}
 
@@ -847,10 +952,12 @@ func (h *Handlers) UpdateUniversityStatus(w http.ResponseWriter, r *http.Request
 }
 
 // BulkImportUniversities handles POST /admin/universities/bulk-import —
-// accepts a CSV upload (columns: name, slug, logo_url) and creates a
+// accepts a CSV upload (columns: name, slug, logo_url, initials) and creates a
 // university space per row. Idempotent per row: a duplicate slug is skipped
-// (not an error) so re-importing the same file is safe. Returns a summary of
-// created / skipped / failed counts. Ref: Section 39, audit finding U-1.
+// (not an error) so re-importing the same file is safe. Missing initials are
+// derived from the university name; space:auto_populate may later refine them
+// from Wikidata P1813. Returns a summary of created / skipped / failed counts.
+// Ref: Section 39, audit finding U-1.
 func (h *Handlers) BulkImportUniversities(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -896,6 +1003,7 @@ func (h *Handlers) BulkImportUniversities(w http.ResponseWriter, r *http.Request
 	nameCol, nameOK := colIndex["name"]
 	slugCol, slugOK := colIndex["slug"]
 	logoCol, logoOK := colIndex["logo_url"]
+	initialsCol, initialsOK := colIndex["initials"]
 
 	if !nameOK {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_csv", "CSV must have a 'name' column")
@@ -927,6 +1035,15 @@ func (h *Handlers) BulkImportUniversities(w http.ResponseWriter, r *http.Request
 		if logoOK && logoCol < len(row) {
 			logoURL = strings.TrimSpace(row[logoCol])
 		}
+		initials := ""
+		if initialsOK && initialsCol < len(row) {
+			initials = strings.TrimSpace(row[initialsCol])
+		}
+		if initials == "" {
+			// Fall back to a name-derived short code; the admin can override later
+			// and space:auto_populate may refine it from Wikidata P1813.
+			initials = DeriveInitials(name, nil, nil)
+		}
 
 		space, err := h.spaces.CreateSpace(r.Context(), gen.CreateSpaceParams{
 			TenantID:       tenantID,
@@ -946,6 +1063,19 @@ func (h *Handlers) BulkImportUniversities(w http.ResponseWriter, r *http.Request
 			skipped++
 			continue
 		}
+
+		// Set the initials custom field value. If it came from the CSV, respect it
+		// and do not run Wikidata enrichment for it; otherwise allow auto-populate
+		// to refine the name-derived guess.
+		adminSuppliedInitials := initialsOK && initialsCol < len(row) && strings.TrimSpace(row[initialsCol]) != ""
+		if err := h.upsertUniversityInitials(r.Context(), tenantID, space.ID, initials); err != nil {
+			slog.Warn("universities: bulk import failed to set initials",
+				"space_id", space.ID.String(), "error", err)
+		}
+		if !adminSuppliedInitials {
+			h.enqueueSpaceAutoPopulate(r.Context(), tenantID, space.ID)
+		}
+
 		if logoURL != "" {
 			h.enqueueFetchLogo(r.Context(), tenantID, space.ID, actorID, logoURL)
 		}

@@ -103,6 +103,47 @@ func (h *Handlers) ListWidgetTypes(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"widget_types": GetWidgetTypes()}})
 }
 
+// SidebarOption is a single value/label pair used by the admin UI selectors.
+type SidebarOption struct {
+	Value string `json:"value"`
+	Label string `json:"label"`
+}
+
+// GetSidebarOptions handles GET /api/v1/admin/sidebars/options.
+// Returns the canonical app, position, visibility and status values (Rule 16)
+// so the admin UI can populate selects and filters without hardcoding them.
+func (h *Handlers) GetSidebarOptions(w http.ResponseWriter, r *http.Request) {
+	if _, ok := h.requireUser(w, r); !ok {
+		return
+	}
+
+	apps := []SidebarOption{
+		{Value: string(AppMain), Label: "Main"},
+		{Value: string(AppDocs), Label: "Docs"},
+		{Value: string(AppLearn), Label: "Learn"},
+	}
+	positions := []SidebarOption{
+		{Value: string(PositionLeft), Label: "Left"},
+		{Value: string(PositionRight), Label: "Right"},
+	}
+	visibilities := []SidebarOption{
+		{Value: string(VisibilityAll), Label: "All"},
+		{Value: string(VisibilityAuthenticated), Label: "Authenticated"},
+		{Value: string(VisibilityGuest), Label: "Guest"},
+	}
+	statuses := []SidebarOption{
+		{Value: string(StatusActive), Label: "Active"},
+		{Value: string(StatusInactive), Label: "Inactive"},
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
+		"apps":         apps,
+		"positions":    positions,
+		"visibilities": visibilities,
+		"statuses":     statuses,
+	}})
+}
+
 // ── Admin Sidebar CRUD ──────────────────────────────────────────────────
 
 // ListSidebars handles GET /api/v1/admin/sidebars.

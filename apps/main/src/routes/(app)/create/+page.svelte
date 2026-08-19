@@ -48,6 +48,7 @@
 		comparisonDetail={data.comparisonDetail}
 		comparisonTypes={data.comparisonTypes}
 		dimensionTypes={data.dimensionTypes}
+		visibilityOptions={data.visibilityOptions}
 		coverMedia={data.coverMedia}
 		draftSeriesId={data.draftSeriesId}
 		user={data.user}

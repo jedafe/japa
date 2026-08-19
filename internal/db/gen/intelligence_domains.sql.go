@@ -195,6 +195,123 @@ func (q *Queries) CreateComparisonItemIntel(ctx context.Context, arg CreateCompa
 	return i, err
 }
 
+const createCredentialPathwayIntel = `-- name: CreateCredentialPathwayIntel :one
+
+INSERT INTO credential_pathways (
+  tenant_id, profession_id, issuing_space_id, destination_space_id,
+  regulatory_body, regulatory_body_url, pathway_type, timeline_estimate,
+  cost_estimate_usd, pathway_description, official_application_url,
+  source_url_last_checked, status, is_active, ai_generated, ai_model, ai_prompt_hash,
+  hitl_reviewed_by, hitl_reviewed_at, hitl_review_notes,
+  intel_record_id, guide_id, confidence_overall, verification_status,
+  freshness_score, override_source, editorial_overrides
+) VALUES (
+  $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
+  $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
+  $21, $22, $23, $24, $25, $26, $27
+) RETURNING id, tenant_id, profession_id, issuing_space_id, destination_space_id, regulatory_body, regulatory_body_url, pathway_type, timeline_estimate, cost_estimate_usd, pathway_description, official_application_url, source_url_last_checked, status, is_active, ai_generated, ai_model, ai_prompt_hash, hitl_reviewed_by, hitl_reviewed_at, hitl_review_notes, created_at, updated_at, is_japabot_indexed, guide_id, intel_record_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides
+`
+
+type CreateCredentialPathwayIntelParams struct {
+	TenantID               pgtype.UUID        `json:"tenant_id"`
+	ProfessionID           pgtype.UUID        `json:"profession_id"`
+	IssuingSpaceID         pgtype.UUID        `json:"issuing_space_id"`
+	DestinationSpaceID     pgtype.UUID        `json:"destination_space_id"`
+	RegulatoryBody         string             `json:"regulatory_body"`
+	RegulatoryBodyUrl      *string            `json:"regulatory_body_url"`
+	PathwayType            string             `json:"pathway_type"`
+	TimelineEstimate       *string            `json:"timeline_estimate"`
+	CostEstimateUsd        *string            `json:"cost_estimate_usd"`
+	PathwayDescription     string             `json:"pathway_description"`
+	OfficialApplicationUrl *string            `json:"official_application_url"`
+	SourceUrlLastChecked   pgtype.Date        `json:"source_url_last_checked"`
+	Status                 string             `json:"status"`
+	IsActive               bool               `json:"is_active"`
+	AiGenerated            bool               `json:"ai_generated"`
+	AiModel                *string            `json:"ai_model"`
+	AiPromptHash           *string            `json:"ai_prompt_hash"`
+	HitlReviewedBy         pgtype.UUID        `json:"hitl_reviewed_by"`
+	HitlReviewedAt         pgtype.Timestamptz `json:"hitl_reviewed_at"`
+	HitlReviewNotes        *string            `json:"hitl_review_notes"`
+	IntelRecordID          pgtype.UUID        `json:"intel_record_id"`
+	GuideID                pgtype.UUID        `json:"guide_id"`
+	ConfidenceOverall      float32            `json:"confidence_overall"`
+	VerificationStatus     string             `json:"verification_status"`
+	FreshnessScore         int32              `json:"freshness_score"`
+	OverrideSource         string             `json:"override_source"`
+	EditorialOverrides     []byte             `json:"editorial_overrides"`
+}
+
+// ===========================================================================
+// credential_pathways (intelligence columns added by migration 000521)
+// ===========================================================================
+func (q *Queries) CreateCredentialPathwayIntel(ctx context.Context, arg CreateCredentialPathwayIntelParams) (CredentialPathway, error) {
+	row := q.db.QueryRow(ctx, createCredentialPathwayIntel,
+		arg.TenantID,
+		arg.ProfessionID,
+		arg.IssuingSpaceID,
+		arg.DestinationSpaceID,
+		arg.RegulatoryBody,
+		arg.RegulatoryBodyUrl,
+		arg.PathwayType,
+		arg.TimelineEstimate,
+		arg.CostEstimateUsd,
+		arg.PathwayDescription,
+		arg.OfficialApplicationUrl,
+		arg.SourceUrlLastChecked,
+		arg.Status,
+		arg.IsActive,
+		arg.AiGenerated,
+		arg.AiModel,
+		arg.AiPromptHash,
+		arg.HitlReviewedBy,
+		arg.HitlReviewedAt,
+		arg.HitlReviewNotes,
+		arg.IntelRecordID,
+		arg.GuideID,
+		arg.ConfidenceOverall,
+		arg.VerificationStatus,
+		arg.FreshnessScore,
+		arg.OverrideSource,
+		arg.EditorialOverrides,
+	)
+	var i CredentialPathway
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.ProfessionID,
+		&i.IssuingSpaceID,
+		&i.DestinationSpaceID,
+		&i.RegulatoryBody,
+		&i.RegulatoryBodyUrl,
+		&i.PathwayType,
+		&i.TimelineEstimate,
+		&i.CostEstimateUsd,
+		&i.PathwayDescription,
+		&i.OfficialApplicationUrl,
+		&i.SourceUrlLastChecked,
+		&i.Status,
+		&i.IsActive,
+		&i.AiGenerated,
+		&i.AiModel,
+		&i.AiPromptHash,
+		&i.HitlReviewedBy,
+		&i.HitlReviewedAt,
+		&i.HitlReviewNotes,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.IsJapabotIndexed,
+		&i.GuideID,
+		&i.IntelRecordID,
+		&i.ConfidenceOverall,
+		&i.VerificationStatus,
+		&i.FreshnessScore,
+		&i.OverrideSource,
+		&i.EditorialOverrides,
+	)
+	return i, err
+}
+
 const createHousingGuideIntel = `-- name: CreateHousingGuideIntel :one
 
 INSERT INTO housing_guides (
@@ -948,6 +1065,90 @@ func (q *Queries) GetComparisonItemByIntelRecord(ctx context.Context, arg GetCom
 	return i, err
 }
 
+const getCredentialPathwayByIntelRecord = `-- name: GetCredentialPathwayByIntelRecord :one
+SELECT id, tenant_id, profession_id, issuing_space_id, destination_space_id, regulatory_body, regulatory_body_url, pathway_type, timeline_estimate, cost_estimate_usd, pathway_description, official_application_url, source_url_last_checked, status, is_active, ai_generated, ai_model, ai_prompt_hash, hitl_reviewed_by, hitl_reviewed_at, hitl_review_notes, created_at, updated_at, is_japabot_indexed, guide_id, intel_record_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides FROM credential_pathways WHERE tenant_id = $1 AND intel_record_id = $2
+`
+
+type GetCredentialPathwayByIntelRecordParams struct {
+	TenantID      pgtype.UUID `json:"tenant_id"`
+	IntelRecordID pgtype.UUID `json:"intel_record_id"`
+}
+
+func (q *Queries) GetCredentialPathwayByIntelRecord(ctx context.Context, arg GetCredentialPathwayByIntelRecordParams) (CredentialPathway, error) {
+	row := q.db.QueryRow(ctx, getCredentialPathwayByIntelRecord, arg.TenantID, arg.IntelRecordID)
+	var i CredentialPathway
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.ProfessionID,
+		&i.IssuingSpaceID,
+		&i.DestinationSpaceID,
+		&i.RegulatoryBody,
+		&i.RegulatoryBodyUrl,
+		&i.PathwayType,
+		&i.TimelineEstimate,
+		&i.CostEstimateUsd,
+		&i.PathwayDescription,
+		&i.OfficialApplicationUrl,
+		&i.SourceUrlLastChecked,
+		&i.Status,
+		&i.IsActive,
+		&i.AiGenerated,
+		&i.AiModel,
+		&i.AiPromptHash,
+		&i.HitlReviewedBy,
+		&i.HitlReviewedAt,
+		&i.HitlReviewNotes,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.IsJapabotIndexed,
+		&i.GuideID,
+		&i.IntelRecordID,
+		&i.ConfidenceOverall,
+		&i.VerificationStatus,
+		&i.FreshnessScore,
+		&i.OverrideSource,
+		&i.EditorialOverrides,
+	)
+	return i, err
+}
+
+const getCredentialProfessionByName = `-- name: GetCredentialProfessionByName :one
+SELECT id, slug, name, category, created_at, updated_at FROM credential_professions WHERE name = $1 LIMIT 1
+`
+
+func (q *Queries) GetCredentialProfessionByName(ctx context.Context, name string) (CredentialProfession, error) {
+	row := q.db.QueryRow(ctx, getCredentialProfessionByName, name)
+	var i CredentialProfession
+	err := row.Scan(
+		&i.ID,
+		&i.Slug,
+		&i.Name,
+		&i.Category,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getCredentialProfessionBySlug = `-- name: GetCredentialProfessionBySlug :one
+SELECT id, slug, name, category, created_at, updated_at FROM credential_professions WHERE slug = $1 LIMIT 1
+`
+
+func (q *Queries) GetCredentialProfessionBySlug(ctx context.Context, slug string) (CredentialProfession, error) {
+	row := q.db.QueryRow(ctx, getCredentialProfessionBySlug, slug)
+	var i CredentialProfession
+	err := row.Scan(
+		&i.ID,
+		&i.Slug,
+		&i.Name,
+		&i.Category,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const getHousingGuideByIntelRecord = `-- name: GetHousingGuideByIntelRecord :one
 SELECT id, tenant_id, destination_space_id, city_space_id, accommodation_type, search_platforms, landlord_requirements, rent_ranges, scam_categories, tips, status, is_active, ai_generated, ai_model, ai_prompt_hash, hitl_reviewed_by, hitl_reviewed_at, hitl_review_notes, last_verified_at, created_at, updated_at, is_japabot_indexed, intel_record_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, guide_id FROM housing_guides WHERE tenant_id = $1 AND intel_record_id = $2
 `
@@ -1499,6 +1700,81 @@ func (q *Queries) ListComparisonItemsIntelKeyset(ctx context.Context, arg ListCo
 			&i.LastUpdatedAt,
 			&i.IntelRecordID,
 			&i.IntelCostData,
+			&i.ConfidenceOverall,
+			&i.VerificationStatus,
+			&i.FreshnessScore,
+			&i.OverrideSource,
+			&i.EditorialOverrides,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listCredentialPathwaysIntelKeyset = `-- name: ListCredentialPathwaysIntelKeyset :many
+SELECT id, tenant_id, profession_id, issuing_space_id, destination_space_id, regulatory_body, regulatory_body_url, pathway_type, timeline_estimate, cost_estimate_usd, pathway_description, official_application_url, source_url_last_checked, status, is_active, ai_generated, ai_model, ai_prompt_hash, hitl_reviewed_by, hitl_reviewed_at, hitl_review_notes, created_at, updated_at, is_japabot_indexed, guide_id, intel_record_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides FROM credential_pathways
+WHERE tenant_id = $1
+  AND intel_record_id IS NOT NULL
+  AND ($2::timestamptz IS NULL
+       OR created_at < $2
+       OR (created_at = $2 AND id < $3))
+ORDER BY created_at DESC, id DESC
+LIMIT $4
+`
+
+type ListCredentialPathwaysIntelKeysetParams struct {
+	TenantID pgtype.UUID        `json:"tenant_id"`
+	Column2  pgtype.Timestamptz `json:"column_2"`
+	ID       pgtype.UUID        `json:"id"`
+	Limit    int32              `json:"limit"`
+}
+
+func (q *Queries) ListCredentialPathwaysIntelKeyset(ctx context.Context, arg ListCredentialPathwaysIntelKeysetParams) ([]CredentialPathway, error) {
+	rows, err := q.db.Query(ctx, listCredentialPathwaysIntelKeyset,
+		arg.TenantID,
+		arg.Column2,
+		arg.ID,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []CredentialPathway
+	for rows.Next() {
+		var i CredentialPathway
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.ProfessionID,
+			&i.IssuingSpaceID,
+			&i.DestinationSpaceID,
+			&i.RegulatoryBody,
+			&i.RegulatoryBodyUrl,
+			&i.PathwayType,
+			&i.TimelineEstimate,
+			&i.CostEstimateUsd,
+			&i.PathwayDescription,
+			&i.OfficialApplicationUrl,
+			&i.SourceUrlLastChecked,
+			&i.Status,
+			&i.IsActive,
+			&i.AiGenerated,
+			&i.AiModel,
+			&i.AiPromptHash,
+			&i.HitlReviewedBy,
+			&i.HitlReviewedAt,
+			&i.HitlReviewNotes,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.IsJapabotIndexed,
+			&i.GuideID,
+			&i.IntelRecordID,
 			&i.ConfidenceOverall,
 			&i.VerificationStatus,
 			&i.FreshnessScore,
@@ -2150,6 +2426,81 @@ func (q *Queries) UpdateComparisonItemIntel(ctx context.Context, arg UpdateCompa
 		arg.TenantID,
 		arg.ID,
 		arg.IntelCostData,
+		arg.ConfidenceOverall,
+		arg.VerificationStatus,
+		arg.FreshnessScore,
+		arg.OverrideSource,
+		arg.EditorialOverrides,
+	)
+	return err
+}
+
+const updateCredentialPathwayIntel = `-- name: UpdateCredentialPathwayIntel :exec
+UPDATE credential_pathways
+SET profession_id = $3, issuing_space_id = $4, destination_space_id = $5,
+    regulatory_body = $6, regulatory_body_url = $7, pathway_type = $8,
+    timeline_estimate = $9, cost_estimate_usd = $10, pathway_description = $11,
+    official_application_url = $12, source_url_last_checked = $13,
+    status = $14, is_active = $15, ai_generated = $16, ai_model = $17, ai_prompt_hash = $18,
+    hitl_reviewed_by = $19, hitl_reviewed_at = $20, hitl_review_notes = $21,
+    confidence_overall = $22, verification_status = $23, freshness_score = $24,
+    override_source = $25, editorial_overrides = $26,
+    updated_at = now()
+WHERE tenant_id = $1 AND id = $2
+`
+
+type UpdateCredentialPathwayIntelParams struct {
+	TenantID               pgtype.UUID        `json:"tenant_id"`
+	ID                     pgtype.UUID        `json:"id"`
+	ProfessionID           pgtype.UUID        `json:"profession_id"`
+	IssuingSpaceID         pgtype.UUID        `json:"issuing_space_id"`
+	DestinationSpaceID     pgtype.UUID        `json:"destination_space_id"`
+	RegulatoryBody         string             `json:"regulatory_body"`
+	RegulatoryBodyUrl      *string            `json:"regulatory_body_url"`
+	PathwayType            string             `json:"pathway_type"`
+	TimelineEstimate       *string            `json:"timeline_estimate"`
+	CostEstimateUsd        *string            `json:"cost_estimate_usd"`
+	PathwayDescription     string             `json:"pathway_description"`
+	OfficialApplicationUrl *string            `json:"official_application_url"`
+	SourceUrlLastChecked   pgtype.Date        `json:"source_url_last_checked"`
+	Status                 string             `json:"status"`
+	IsActive               bool               `json:"is_active"`
+	AiGenerated            bool               `json:"ai_generated"`
+	AiModel                *string            `json:"ai_model"`
+	AiPromptHash           *string            `json:"ai_prompt_hash"`
+	HitlReviewedBy         pgtype.UUID        `json:"hitl_reviewed_by"`
+	HitlReviewedAt         pgtype.Timestamptz `json:"hitl_reviewed_at"`
+	HitlReviewNotes        *string            `json:"hitl_review_notes"`
+	ConfidenceOverall      float32            `json:"confidence_overall"`
+	VerificationStatus     string             `json:"verification_status"`
+	FreshnessScore         int32              `json:"freshness_score"`
+	OverrideSource         string             `json:"override_source"`
+	EditorialOverrides     []byte             `json:"editorial_overrides"`
+}
+
+func (q *Queries) UpdateCredentialPathwayIntel(ctx context.Context, arg UpdateCredentialPathwayIntelParams) error {
+	_, err := q.db.Exec(ctx, updateCredentialPathwayIntel,
+		arg.TenantID,
+		arg.ID,
+		arg.ProfessionID,
+		arg.IssuingSpaceID,
+		arg.DestinationSpaceID,
+		arg.RegulatoryBody,
+		arg.RegulatoryBodyUrl,
+		arg.PathwayType,
+		arg.TimelineEstimate,
+		arg.CostEstimateUsd,
+		arg.PathwayDescription,
+		arg.OfficialApplicationUrl,
+		arg.SourceUrlLastChecked,
+		arg.Status,
+		arg.IsActive,
+		arg.AiGenerated,
+		arg.AiModel,
+		arg.AiPromptHash,
+		arg.HitlReviewedBy,
+		arg.HitlReviewedAt,
+		arg.HitlReviewNotes,
 		arg.ConfidenceOverall,
 		arg.VerificationStatus,
 		arg.FreshnessScore,

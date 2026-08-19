@@ -7,6 +7,8 @@ vi.mock('$lib/api', () => ({
 		list: vi.fn().mockResolvedValue({ ok: true, data: { items: [] } }),
 		remove: vi.fn().mockResolvedValue({ ok: true }),
 		restore: vi.fn().mockResolvedValue({ ok: true }),
+		listContentTypes: vi.fn().mockResolvedValue({ ok: true, data: [] }),
+		getStatusOptions: vi.fn().mockResolvedValue({ ok: true, data: [] }),
 	},
 }));
 vi.mock('$app/state', () => ({

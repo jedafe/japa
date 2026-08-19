@@ -861,6 +861,8 @@
 		// tool_labels / tool_urls: slug → string (label or URL).
 		// stage_tool_matrix: archetype:stage → CSV of tool slugs.
 		if (setting.key === 'geo_personalization.tool_labels' || setting.key === 'geo_personalization.tool_urls') return 'key-value-editor';
+		// AI provider cost overrides — JSON map of "provider" or "provider.model" to USD per 1k tokens.
+		if (setting.key === 'ai.provider_cost_overrides') return 'key-value-editor';
 		if (setting.key === 'geo_personalization.stage_tool_matrix') return 'stage-tool-matrix-editor';
 		// Onboarding promoted_* fields store JSON arrays of UUIDs — render as
 		// an entity multi-select that shows names instead of raw UUIDs.
@@ -1362,8 +1364,8 @@
 								<KeyValueEditor
 									value={setting.value ?? '{}'}
 									valueMode="string"
-									keyPlaceholder="slug"
-									valuePlaceholder={setting.key === 'geo_personalization.tool_urls' ? '/path' : 'Display label'}
+									keyPlaceholder={setting.key === 'ai.provider_cost_overrides' ? 'provider.model' : 'slug'}
+									valuePlaceholder={setting.key === 'ai.provider_cost_overrides' ? '0.0003' : setting.key === 'geo_personalization.tool_urls' ? '/path' : 'Display label'}
 									disabled={isSaving}
 									onchange={(next) => updateSetting(setting.key, next)}
 								/>

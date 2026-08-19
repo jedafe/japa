@@ -9,7 +9,7 @@
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { Eye, CheckCircle, Sparkles } from 'lucide-svelte';
 	import type { ActionItem, FilterDef } from '$lib/components/ui/data-table';
-	import { arrivalChecklistAdminApi, api , spacesAdminApi } from '$lib/api';
+	import { arrivalChecklistAdminApi, api , spacesAdminApi, adminCatalogApi, type CatalogOption } from '$lib/api';
 
 	// GuideDTO — matches the backend response shape (internal/arrivalchecklist/service.go).
 	type ArrivalChecklistGuide = {
@@ -60,6 +60,22 @@ onMount(async () => {
 });
 
 	let entityController = $state<EntityPageController | undefined>(undefined);
+
+	let arrivalChecklistStatusOptions = $state<CatalogOption[]>([
+		{ value: 'draft', label: t('app.tools.status_draft', 'Draft') },
+		{ value: 'ai_draft', label: t('app.tools.status_ai_draft', 'AI Draft') },
+		{ value: 'pending', label: t('app.tools.status_pending', 'Pending') },
+		{ value: 'published', label: t('app.tools.status_published', 'Published') },
+		{ value: 'rejected', label: t('app.tools.status_rejected', 'Rejected') }
+	]);
+
+	$effect(() => {
+		void (async () => {
+			const res = await adminCatalogApi.get('tools.arrival_checklist.status');
+			if (res.ok && res.data?.length) arrivalChecklistStatusOptions = res.data;
+		})();
+	});
+
 	let pageError = $state('');
 	let acting = $state(false);
 
@@ -188,11 +204,7 @@ onMount(async () => {
 				label: t('app.tools.col_status', 'Status'),
 				options: [
 					{ value: '', label: t('common.all', 'All') },
-					{ value: 'draft', label: t('app.tools.status_draft', 'Draft') },
-					{ value: 'ai_draft', label: t('app.tools.status_ai_draft', 'AI Draft') },
-					{ value: 'pending', label: t('app.tools.status_pending', 'Pending') },
-					{ value: 'published', label: t('app.tools.status_published', 'Published') },
-					{ value: 'rejected', label: t('app.tools.status_rejected', 'Rejected') }
+					...arrivalChecklistStatusOptions
 				]
 			},
 			{ key: 'dest', label: t('app.tools.col_destination', 'Destination'), options: destOptions.map((s) => ({ value: s.id, label: s.name })) }

@@ -10,7 +10,7 @@
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { Eye, CheckCircle, Sparkles, Trash2 } from 'lucide-svelte';
 	import type { ActionItem, FilterDef } from '$lib/components/ui/data-table';
-	import { visaRoutesAdminApi, api , spacesAdminApi } from '$lib/api';
+	import { visaRoutesAdminApi, api , spacesAdminApi, adminCatalogApi, type CatalogOption } from '$lib/api';
 
 	// RouteDTO — matches the backend response shape (internal/visaroutes/service.go).
 	type VisaRoute = {
@@ -67,6 +67,22 @@ onMount(async () => {
 });
 
 	let entityController = $state<EntityPageController | undefined>(undefined);
+
+	let visaRouteStatusOptions = $state<CatalogOption[]>([
+		{ value: 'draft', label: 'Draft' },
+		{ value: 'ai_draft', label: 'AI Draft' },
+		{ value: 'pending', label: 'Pending' },
+		{ value: 'published', label: 'Published' },
+		{ value: 'rejected', label: 'Rejected' }
+	]);
+
+	$effect(() => {
+		void (async () => {
+			const res = await adminCatalogApi.get('tools.visa_routes.status');
+			if (res.ok && res.data?.length) visaRouteStatusOptions = res.data;
+		})();
+	});
+
 	let pageError = $state('');
 	let acting = $state(false);
 	let deleting = $state(false);
@@ -213,7 +229,7 @@ onMount(async () => {
 	}
 
 	// ── Form fields (drives EntityForm for create/edit) ─────────────────────
-	const fields: FieldDef[] = [
+	const fields = $derived<FieldDef[]>([
 		{ key: 'name', label: t('app.tools.col_name', 'Name'), type: 'text' },
 		{ key: 'visa_category', label: t('app.tools.col_visa_type', 'Visa Category'), type: 'text' },
 		{ key: 'destination_space_id', label: t('app.tools.col_dest_country', 'Destination Country'), type: 'autocomplete', placeholder: t('app.tools.country_placeholder', 'Search country…'), emptyMessage: t('common.no_results', 'No results found'), fetcher: fetchCountryId, initialFetcher: fetchCountryIdInitial, getSelectedLabel: getCountryIdLabel },
@@ -228,26 +244,16 @@ onMount(async () => {
 			key: 'status',
 			label: t('app.tools.col_status', 'Status'),
 			type: 'select',
-			options: [
-				{ value: 'draft', label: 'Draft' },
-				{ value: 'ai_draft', label: 'AI Draft' },
-				{ value: 'pending', label: 'Pending' },
-				{ value: 'published', label: 'Published' },
-				{ value: 'rejected', label: 'Rejected' }
-			]
+			options: visaRouteStatusOptions
 		},
 		{ key: 'is_active', label: t('app.tools.col_is_active', 'Active'), type: 'checkbox' }
-	];
+	]);
 
 	// ── Filters ─────────────────────────────────────────────────────────────
-	const statusFilterOptions = [
+	const statusFilterOptions = $derived<CatalogOption[]>([
 		{ value: '', label: t('common.all', 'All') },
-		{ value: 'draft', label: 'Draft' },
-		{ value: 'ai_draft', label: 'AI Draft' },
-		{ value: 'pending', label: 'Pending' },
-		{ value: 'published', label: 'Published' },
-		{ value: 'rejected', label: 'Rejected' }
-	];
+		...visaRouteStatusOptions
+	]);
 
 	const config = $derived<EntityPageConfig>({
 		title: t('app.tools.visa_routes_heading', 'Visa Routes Management'),

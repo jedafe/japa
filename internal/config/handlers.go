@@ -8,7 +8,7 @@ import (
 	"github.com/jedafe/japa/internal/tenant"
 )
 
-// Handlers holds dependencies for config HTTP handlers.
+// Handlers holds HTTP handlers for public config endpoints.
 type Handlers struct {
 	Settings *Settings
 }
@@ -31,8 +31,10 @@ func (h *Handlers) GetPublicSettings(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("config: get public settings", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to fetch public settings")
+
 		return
 	}
 
+	w.Header().Set("Cache-Control", "private, max-age=60")
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": settings})
 }

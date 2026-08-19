@@ -58,11 +58,13 @@
 		draftSeriesId?: string | null;
 		user: { id: string } | null;
 		defaultEditor?: EditorMode;
+		/** Visibility options from GET /content/visibility-options (Rule 16). */
+		visibilityOptions?: { value: Visibility; label: string }[];
 		/** Max tags per content item, from system setting content.max_tags (default 5). */
 		maxTags?: number;
 	}
 
-	let { types, spaces, fieldGroups, series = $bindable(), organizations, draft, draftTags = [], comparisonDetail = null, comparisonTypes = [], dimensionTypes = [], coverMedia = null, draftSeriesId = null, user, defaultEditor = 'block', maxTags = 5 }: Props = $props();
+	let { types, spaces, fieldGroups, series = $bindable(), organizations, draft, draftTags = [], comparisonDetail = null, comparisonTypes = [], dimensionTypes = [], coverMedia = null, draftSeriesId = null, user, defaultEditor = 'block', visibilityOptions = [], maxTags = 5 }: Props = $props();
 
 	// ---- form state ----
 	let selectedType = $state<TypeEntry>(
@@ -392,6 +394,7 @@
 			{visibility}
 			{canonicalUrl}
 			{publishAt}
+			{visibilityOptions}
 			bind:series
 			{seriesId}
 			bind:spaces

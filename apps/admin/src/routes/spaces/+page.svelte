@@ -9,7 +9,7 @@
 	import { Button } from "$lib/components/ui/button";
 	import { SlideOver } from "$lib/components/ui/slide-over";
 	import { Select } from "$lib/components/ui/select";
-	import { spacesAdminApi } from "$lib/api";
+	import { spacesAdminApi, contentAdminApi, adminCatalogApi, type CatalogOption } from "$lib/api";
 	import { goto } from "$app/navigation";
 	import { t } from "$lib/stores/i18n.svelte";
 	import { hasPermission } from "$lib/stores/permissions.svelte";
@@ -32,17 +32,43 @@
 	const canModerateSpaces = $derived(hasPermission("spaces.moderate"));
 	const canManageSpaces = $derived(hasPermission("spaces.admin"));
 
-	const visibilitySelectOptions = [
+	let visibilityOptions = $state<{ value: string; label: string }[]>([
 		{ value: "public", label: t("spaces.public", "Public") },
 		{ value: "members", label: t("spaces.perm.members", "Members") },
 		{ value: "private", label: t("spaces.private", "Private") }
-	];
+	]);
 
-	const levelOptions = [
+	$effect(() => {
+		void (async () => {
+			const res = await contentAdminApi.getVisibilityOptions();
+			if (res.ok && res.data) {
+				visibilityOptions = res.data;
+			}
+		})();
+	});
+
+	let levelOptions = $state<CatalogOption[]>([
 		{ value: "1", label: "1" },
 		{ value: "2", label: "2" },
 		{ value: "3", label: "3" }
-	];
+	]);
+
+	let spaceStatusOptions = $state<CatalogOption[]>([
+		{ value: "active", label: t("spaces.active", "Active") },
+		{ value: "suspended", label: t("spaces.suspended", "Suspended") },
+		{ value: "archived", label: t("spaces.archived", "Archived") }
+	]);
+
+	$effect(() => {
+		void (async () => {
+			const [levelRes, statusRes] = await Promise.all([
+				adminCatalogApi.get("spaces.level"),
+				adminCatalogApi.get("spaces.status")
+			]);
+			if (levelRes.ok && levelRes.data?.length) levelOptions = levelRes.data;
+			if (statusRes.ok && statusRes.data?.length) spaceStatusOptions = statusRes.data;
+		})();
+	});
 
 	// ── Page-local state for sub-flows ──────────────────────────────────────
 	let entityController = $state<EntityPageController | undefined>(undefined);
@@ -69,16 +95,12 @@
 		{
 			key: "status",
 			label: t("spaces.status", "Status"),
-			options: [
-				{ value: "active", label: t("spaces.active", "Active") },
-				{ value: "suspended", label: t("spaces.suspended", "Suspended") },
-				{ value: "archived", label: t("spaces.archived", "Archived") }
-			]
+			options: spaceStatusOptions
 		},
 		{
 			key: "visibility",
 			label: t("spaces.visibility", "Visibility"),
-			options: visibilitySelectOptions
+			options: visibilityOptions
 		}
 	]);
 
@@ -88,7 +110,7 @@
 		{ key: "slug", label: t("spaces.slug", "Slug"), type: "text", placeholder: "my-space" },
 		{ key: "space_type_id", label: t("spaces.space_type", "Space Type ID"), type: "text", placeholder: "e.g. standard" },
 		{ key: "level", label: t("spaces.level", "Level"), type: "select", options: levelOptions },
-		{ key: "visibility", label: t("spaces.visibility", "Visibility"), type: "select", options: visibilitySelectOptions },
+		{ key: "visibility", label: t("spaces.visibility", "Visibility"), type: "select", options: visibilityOptions },
 		{ key: "description", label: t("spaces.description", "Description"), type: "textarea" }
 	]);
 
@@ -328,7 +350,7 @@
 			</div>
 			<div>
 				<label for="edit-type" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('spaces.visibility')}</label>
-				<Select options={visibilitySelectOptions} bind:value={editVisibility} />
+				<Select options={visibilityOptions} bind:value={editVisibility} />
 			</div>
 		</div>
 	{/if}

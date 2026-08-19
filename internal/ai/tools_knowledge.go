@@ -4,7 +4,7 @@
 // Tools implemented here (Phase 4, tasks 4.09-4.10):
 //
 //   - rag.search       — vector retrieval from content_embeddings (geo-filtered)
-//   - external.search  — web search via Tavily/Brave API (configurable), cached
+//   - external.search  — web search via Tavily/Brave/Perplexity API (configurable), cached
 //
 // Privacy: the RAG retrieval queries (SearchContentEmbeddings,
 // SearchContentEmbeddingsGeoFiltered) do not filter ai_exempt at the SQL
@@ -16,7 +16,8 @@
 //
 // external.search hits an external API and caches results in
 // jc:agent:external:{hash} (30-min TTL per the Valkey keys catalog); it
-// never touches user data directly.
+// never touches user data directly. Perplexity search returns a synthesized
+// answer with a citations array instead of raw result snippets.
 //
 // Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Tool Catalog Expansion — Knowledge tools)
 // Ref: japaconnect-engineering/roadmaps/ROADMAP-AI-AGENT.md (Phase 4, tasks 4.09-4.10)
@@ -28,6 +29,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -156,12 +158,15 @@ type externalSearchArgs struct {
 	Limit int32  `json:"limit,omitempty"`
 }
 
-// externalSearchResult is a single web search result returned to the LLM.
-type externalSearchResult struct {
-	Title   string  `json:"title"`
-	URL     string  `json:"url"`
-	Content string  `json:"content"`
-	Score   float64 `json:"score,omitempty"`
+// WebSearchResult is a single web search result returned to the LLM.
+// Citations are populated by providers that return source URLs separately
+// from the result body (e.g. Perplexity sonar models).
+type WebSearchResult struct {
+	Title     string   `json:"title"`
+	URL       string   `json:"url"`
+	Content   string   `json:"content"`
+	Score     float64  `json:"score,omitempty"`
+	Citations []string `json:"citations,omitempty"`
 }
 
 // externalSearchCacheTTL is the TTL for jc:agent:external:{hash} keys.
@@ -169,9 +174,9 @@ type externalSearchResult struct {
 const externalSearchCacheTTL = 30 * time.Minute
 
 // ExternalSearchHandler returns a ToolHandler that searches the web via
-// Tavily or Brave (configurable via agent.external_search_provider). Results
-// are cached in jc:agent:external:{hash} for 30 minutes per the Valkey keys
-// catalog. The API key comes from agent.external_search_api_key (Rule 3 —
+// Tavily, Brave, or Perplexity (configurable via agent.external_search_provider).
+// Results are cached in jc:agent:external:{hash} for 30 minutes per the Valkey
+// keys catalog. The API key comes from agent.external_search_api_key (Rule 3 —
 // no hardcoded keys).
 //
 // The handler requires the agent.external_search RBAC permission, which is
@@ -197,12 +202,6 @@ func ExternalSearchHandler(deps *ToolDeps) ToolHandler {
 			a.Limit = 5
 		}
 
-		provider := deps.Settings.GetStringOr(ctx, tenantID, "agent.external_search_provider", "tavily")
-		apiKey := decryptSettingIfNeeded(deps.Settings.GetStringOr(ctx, tenantID, "agent.external_search_api_key", ""))
-		if apiKey == "" {
-			return errorToolResult("external_search_unavailable", "external search API key is not configured"), nil
-		}
-
 		// Check cache (jc:agent:external:{hash}).
 		cacheKey := externalSearchCacheKey(tenantID, a.Query, a.Limit)
 		if deps.Cache != nil {
@@ -212,20 +211,18 @@ func ExternalSearchHandler(deps *ToolDeps) ToolHandler {
 			}
 		}
 
-		// Dispatch to the configured provider.
-		var results []externalSearchResult
-		var err error
-		switch strings.ToLower(provider) {
-		case "tavily":
-			results, err = searchTavily(ctx, deps.httpClient(), apiKey, a.Query, int(a.Limit))
-		case "brave":
-			results, err = searchBrave(ctx, deps.httpClient(), apiKey, a.Query, int(a.Limit))
-		default:
-			return errorToolResult("unknown_provider", fmt.Sprintf("unsupported external search provider: %q", provider)), nil
-		}
+		// Search the web.
+		provider, results, err := SearchWeb(ctx, deps.httpClient(), deps.Settings, tenantID, a.Query, int(a.Limit))
 		if err != nil {
-			slog.Warn("ai: external search failed", "provider", provider, "error", err)
-			return errorToolResult("external_search_failed", err.Error()), nil
+			slog.Warn("ai: external search failed", "error", err)
+			switch {
+			case errors.Is(err, errExternalSearchUnavailable):
+				return errorToolResult("external_search_unavailable", err.Error()), nil
+			case errors.Is(err, errExternalSearchUnknownProvider):
+				return errorToolResult("unknown_provider", err.Error()), nil
+			default:
+				return errorToolResult("external_search_failed", err.Error()), nil
+			}
 		}
 
 		// Shape the response and cache it.
@@ -273,6 +270,42 @@ func decryptSettingIfNeeded(value string) string {
 	return plaintext
 }
 
+// Sentinel errors returned by SearchWeb so callers can map them to specific
+// user-facing error codes.
+var (
+	errExternalSearchUnavailable     = errors.New("external search API key is not configured")
+	errExternalSearchUnknownProvider = errors.New("unsupported external search provider")
+)
+
+// SearchWeb performs a web search using the configured external search
+// provider (tavily, brave, or perplexity) for the tenant. It is exported so
+// non-agent callers (e.g. guide services) can reuse the same provider wiring
+// and API-key management. The cache is the caller's responsibility.
+func SearchWeb(ctx context.Context, client *http.Client, settings SettingsReader, tenantID pgtype.UUID, query string, limit int) (string, []WebSearchResult, error) {
+	provider := settings.GetStringOr(ctx, tenantID, "agent.external_search_provider", "tavily")
+	apiKey := decryptSettingIfNeeded(settings.GetStringOr(ctx, tenantID, "agent.external_search_api_key", ""))
+	if apiKey == "" {
+		return "", nil, errExternalSearchUnavailable
+	}
+
+	var results []WebSearchResult
+	var err error
+	switch strings.ToLower(provider) {
+	case "tavily":
+		results, err = searchTavily(ctx, client, apiKey, query, limit)
+	case "brave":
+		results, err = searchBrave(ctx, client, apiKey, query, limit)
+	case "perplexity":
+		results, err = searchPerplexity(ctx, client, apiKey, query)
+	default:
+		return "", nil, fmt.Errorf("%w: %q", errExternalSearchUnknownProvider, provider)
+	}
+	if err != nil {
+		return provider, nil, err
+	}
+	return provider, results, nil
+}
+
 // ---------------------------------------------------------------------------
 // Tavily API client
 // ---------------------------------------------------------------------------
@@ -288,7 +321,7 @@ type tavilyResponse struct {
 }
 
 // searchTavily calls the Tavily Search API and returns normalized results.
-func searchTavily(ctx context.Context, client *http.Client, apiKey, query string, limit int) ([]externalSearchResult, error) {
+func searchTavily(ctx context.Context, client *http.Client, apiKey, query string, limit int) ([]WebSearchResult, error) {
 	body, err := json.Marshal(map[string]any{
 		"api_key":             apiKey,
 		"query":               query,
@@ -321,9 +354,9 @@ func searchTavily(ctx context.Context, client *http.Client, apiKey, query string
 		return nil, fmt.Errorf("decoding tavily response: %w", err)
 	}
 
-	out := make([]externalSearchResult, 0, len(tr.Results))
+	out := make([]WebSearchResult, 0, len(tr.Results))
 	for _, r := range tr.Results {
-		out = append(out, externalSearchResult{
+		out = append(out, WebSearchResult{
 			Title:   r.Title,
 			URL:     r.URL,
 			Content: r.Content,
@@ -349,7 +382,7 @@ type braveResponse struct {
 }
 
 // searchBrave calls the Brave Search API and returns normalized results.
-func searchBrave(ctx context.Context, client *http.Client, apiKey, query string, limit int) ([]externalSearchResult, error) {
+func searchBrave(ctx context.Context, client *http.Client, apiKey, query string, limit int) ([]WebSearchResult, error) {
 	u, err := url.Parse("https://api.search.brave.com/res/v1/web/search")
 	if err != nil {
 		return nil, fmt.Errorf("building brave url: %w", err)
@@ -382,13 +415,113 @@ func searchBrave(ctx context.Context, client *http.Client, apiKey, query string,
 		return nil, fmt.Errorf("decoding brave response: %w", err)
 	}
 
-	out := make([]externalSearchResult, 0, len(br.Web.Results))
+	out := make([]WebSearchResult, 0, len(br.Web.Results))
 	for _, r := range br.Web.Results {
-		out = append(out, externalSearchResult{
+		out = append(out, WebSearchResult{
 			Title:   r.Title,
 			URL:     r.URL,
 			Content: r.Description,
 		})
 	}
 	return out, nil
+}
+
+// ---------------------------------------------------------------------------
+// Perplexity API client
+// ---------------------------------------------------------------------------
+
+// perplexitySearchRequest is a minimal chat-completions request for sonar
+// search. The model is left to the caller (default: sonar-pro). Perplexity
+// returns a synthesized answer plus a citations array.
+type perplexitySearchRequest struct {
+	Model       string                `json:"model"`
+	Messages    []perplexitySearchMsg `json:"messages"`
+	MaxTokens   int                   `json:"max_tokens"`
+	Temperature float64               `json:"temperature"`
+	Stream      bool                  `json:"stream"`
+}
+
+type perplexitySearchMsg struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
+}
+
+// perplexitySearchResponse mirrors the OpenAI-compatible response from
+// Perplexity, including the citations array.
+type perplexitySearchResponse struct {
+	ID      string `json:"id"`
+	Model   string `json:"model"`
+	Choices []struct {
+		Message struct {
+			Role    string `json:"role"`
+			Content string `json:"content"`
+		} `json:"message"`
+		FinishReason string `json:"finish_reason"`
+	} `json:"choices"`
+	Citations []string `json:"citations"`
+}
+
+// searchPerplexity calls the Perplexity chat completions endpoint with a
+// search-style prompt and returns a single synthesized result with citations.
+// The limit argument is ignored because Perplexity returns one synthesized
+// answer; callers can split the content if they need multiple snippets.
+func searchPerplexity(ctx context.Context, client *http.Client, apiKey, query string) ([]WebSearchResult, error) {
+	body, err := json.Marshal(perplexitySearchRequest{
+		Model:       "sonar-pro",
+		Messages:    []perplexitySearchMsg{{Role: "user", Content: query}},
+		MaxTokens:   1024,
+		Temperature: 0.2,
+		Stream:      false,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("encoding perplexity request: %w", err)
+	}
+
+	req, err := newValidatedHTTPRequest(ctx, http.MethodPost, "https://api.perplexity.ai/chat/completions", bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("building perplexity request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+	req.Header.Set("HTTP-Referer", "https://japaconnect.com")
+	req.Header.Set("X-Title", "JapaConnect")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("calling perplexity: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		return nil, fmt.Errorf("perplexity returned status %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	var pr perplexitySearchResponse
+	if err := json.NewDecoder(resp.Body).Decode(&pr); err != nil {
+		return nil, fmt.Errorf("decoding perplexity response: %w", err)
+	}
+
+	if len(pr.Choices) == 0 {
+		return nil, nil
+	}
+
+	content := strings.TrimSpace(pr.Choices[0].Message.Content)
+	if content == "" {
+		return nil, nil
+	}
+
+	// Use the first citation as the canonical URL when one exists, so the
+	// result still has a source link even though the body is synthesized.
+	url := ""
+	if len(pr.Citations) > 0 {
+		url = pr.Citations[0]
+	}
+
+	return []WebSearchResult{{
+		Title:     query,
+		URL:       url,
+		Content:   content,
+		Citations: pr.Citations,
+	}}, nil
 }

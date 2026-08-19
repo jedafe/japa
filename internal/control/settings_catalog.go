@@ -93,6 +93,10 @@ var settingsCatalog = map[string]settingMeta{
 	"ai.monthly_budget_usd":     {Type: "float", DefaultValue: "100", Description: "Alert threshold for AI spend (not hard cap).", Panel: "admin"},
 	"ai.japabot_enabled":        {Type: "bool", DefaultValue: "true", Description: "Global JapaBot toggle.", Panel: "admin"},
 	"ai.content_assist_enabled": {Type: "bool", DefaultValue: "true", Description: "In-editor AI assist toggle.", Panel: "admin"},
+	"ai.cost_per_1k_tokens_usd": {Type: "float", DefaultValue: "0.002", Description: "Default USD cost per 1,000 tokens for AI usage monitoring and cost limits.", Panel: "control"},
+	"ai.cache_enabled":          {Type: "bool", DefaultValue: "false", Description: "Enable Valkey semantic cache for repeated AI prompts (generate, chat, assist).", Panel: "control"},
+	"ai.cache_ttl_seconds":      {Type: "int", DefaultValue: "300", Description: "TTL for cached AI responses (seconds).", Panel: "control"},
+	"ai.provider_cost_overrides": {Type: "json", DefaultValue: "{}", Description: `Per-provider/model price overrides. Keys are "provider" or "provider.model" (e.g. "xiaomi.mimo-v2-flash"), values are USD per 1,000 tokens.`, Panel: "control"},
 	// AI Humanization — injects natural-language style instructions into every
 	// AI generation surface (generate, chat, assist, persona/studio drafts).
 	// Gated by the ai.humanize.manage RBAC node for the admin toggle; users

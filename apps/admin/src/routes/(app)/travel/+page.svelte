@@ -8,7 +8,7 @@
 	// Ref: japaconnect-engineering/sections/67-travel-search.md
 	//      japaconnect-engineering/adr/ADR-085-travel-search.md
 	import { EntityPage, type EntityPageConfig, type FieldDef } from '$lib/components/entity';
-	import { travelAdminApi, type TravelProvider } from '$lib/api';
+	import { travelAdminApi, adminCatalogApi, type TravelProvider, type CatalogOption } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 
 	// Normalize an API row for the scaffold. affiliate_config arrives as a
@@ -47,10 +47,23 @@
 		}
 	}
 
+	let travelProviderTypeOptions = $state<CatalogOption[]>([
+		{ value: 'flight', label: t('travel.type_flight', 'Flights') },
+		{ value: 'hotel', label: t('travel.type_hotel', 'Hotels') },
+		{ value: 'both', label: t('travel.type_both', 'Flights & Hotels') }
+	]);
+
+	$effect(() => {
+		void (async () => {
+			const res = await adminCatalogApi.get('travel.provider_type');
+			if (res.ok && res.data?.length) travelProviderTypeOptions = res.data;
+		})();
+	});
+
 	// `fields` drives EntityForm rendering + edit-form value seeding. The
 	// JSON config fields use `textarea`; the snippet below overrides their
 	// rendering but the fields array is still required for seeding.
-	const fields: FieldDef[] = [
+	const fields = $derived<FieldDef[]>([
 		{ key: 'name', label: t('travel.name', 'Name'), type: 'text', required: true, placeholder: 'Skyscanner' },
 		{ key: 'slug', label: t('travel.slug', 'Slug'), type: 'text', required: true, placeholder: 'skyscanner', readonlyInEdit: true },
 		{
@@ -58,18 +71,14 @@
 			label: t('travel.type', 'Provider Type'),
 			type: 'select',
 			required: true,
-			options: [
-				{ value: 'flight', label: t('travel.type_flight', 'Flights') },
-				{ value: 'hotel', label: t('travel.type_hotel', 'Hotels') },
-				{ value: 'both', label: t('travel.type_both', 'Flights & Hotels') }
-			]
+			options: travelProviderTypeOptions
 		},
 		{ key: 'api_config_text', label: t('travel.api_config', 'API Config (JSON)'), type: 'textarea' },
 		{ key: 'affiliate_config_text', label: t('travel.affiliate_config', 'Affiliate Config (JSON)'), type: 'textarea' },
 		{ key: 'is_active', label: t('travel.active', 'Active'), type: 'checkbox' }
-	];
+	]);
 
-	const config: EntityPageConfig = {
+	const config = $derived<EntityPageConfig>({
 		title: t('travel.title', 'Travel Search'),
 		description: t('travel.description', 'Manage travel search providers and configuration.'),
 		createLabel: t('travel.create', 'Add Provider'),
@@ -106,11 +115,7 @@
 			{
 				key: 'provider_type',
 				label: t('travel.type', 'Type'),
-				options: [
-					{ value: 'flight', label: t('travel.type_flight', 'Flights') },
-					{ value: 'hotel', label: t('travel.type_hotel', 'Hotels') },
-					{ value: 'both', label: t('travel.type_both', 'Flights & Hotels') }
-				]
+				options: travelProviderTypeOptions
 			}
 		],
 		fields,
@@ -168,7 +173,7 @@
 		},
 		viewSnippet: ProviderView,
 		formSnippet: ConfigForm
-	};
+	});
 </script>
 
 <svelte:head>
@@ -231,9 +236,9 @@
 				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
 				bind:value={value.provider_type}
 			>
-				<option value="flight">{t('travel.type_flight', 'Flights')}</option>
-				<option value="hotel">{t('travel.type_hotel', 'Hotels')}</option>
-				<option value="both">{t('travel.type_both', 'Flights & Hotels')}</option>
+				{#each travelProviderTypeOptions as opt (opt.value)}
+					<option value={opt.value}>{opt.label}</option>
+				{/each}
 			</select>
 		</div>
 		<div>

@@ -276,9 +276,9 @@
 				label: t("tags.min_posts", "Min Posts"),
 				options: [
 					{ value: "0", label: t("tags.filter.any", "Any") },
-					{ value: "10", label: "10+" },
-					{ value: "100", label: "100+" },
-					{ value: "1000", label: "1000+" },
+					{ value: "10", label: t("tags.filter.10_plus", "10+") },
+					{ value: "100", label: t("tags.filter.100_plus", "100+") },
+					{ value: "1000", label: t("tags.filter.1000_plus", "1000+") },
 				],
 			},
 		],

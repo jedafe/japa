@@ -2,7 +2,7 @@
 	// /affiliate — migrated to shared components (ActionMenu, BulkBar, SlideOver, FilterPanel).
 	// Tabbed page (6 tabs) — not an EntityPage candidate; keeps the tab structure but
 	// uses DataTable `actions`/`bulkActionsList`/`filters` props and SlideOver for create.
-	import { api, affiliateProvidersAdminApi, affiliateProgramAdminApi, affiliateLinksAdminApi, affiliateEnhancementsAdminApi } from '$lib/api';
+	import { api, affiliateProvidersAdminApi, affiliateProgramAdminApi, affiliateLinksAdminApi, affiliateEnhancementsAdminApi, adminCatalogApi, type CatalogOption } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import PageHeader from '$lib/components/layout/page-header.svelte';
@@ -145,40 +145,59 @@
 		{ value: 'author_commissions', label: t('affiliate.author_commissions', 'Author Commissions'), icon: DollarSign }
 	]);
 
-	const memberFilters: FilterDef[] = [
+	let affiliateStatusOptions = $state<CatalogOption[]>([
+		{ value: 'active', label: t('affiliate.active') },
+		{ value: 'suspended', label: t('affiliate.suspended', 'Suspended') },
+		{ value: 'banned', label: t('affiliate.banned', 'Banned') }
+	]);
+
+	let affiliateActionTakenOptions = $state<CatalogOption[]>([
+		{ value: 'flagged', label: t('affiliate.flagged', 'Flagged') },
+		{ value: 'blocked', label: t('affiliate.blocked', 'Blocked') },
+		{ value: 'approved', label: t('affiliate.approved', 'Approved') }
+	]);
+
+	let affiliateCreditedOptions = $state<CatalogOption[]>([
+		{ value: 'true', label: t('affiliate.credited', 'Credited') },
+		{ value: 'false', label: t('affiliate.pending', 'Pending') }
+	]);
+
+	$effect(() => {
+		void (async () => {
+			const [statusRes, actionRes, creditedRes] = await Promise.all([
+				adminCatalogApi.get('affiliate.status'),
+				adminCatalogApi.get('affiliate.action_taken'),
+				adminCatalogApi.get('affiliate.credited')
+			]);
+			if (statusRes.ok && statusRes.data?.length) affiliateStatusOptions = statusRes.data;
+			if (actionRes.ok && actionRes.data?.length) affiliateActionTakenOptions = actionRes.data;
+			if (creditedRes.ok && creditedRes.data?.length) affiliateCreditedOptions = creditedRes.data;
+		})();
+	});
+
+	const memberFilters = $derived<FilterDef[]>([
 		{
 			key: 'status',
 			label: t('affiliate.status'),
-			options: [
-				{ value: 'active', label: t('affiliate.active') },
-				{ value: 'suspended', label: t('affiliate.suspended', 'Suspended') },
-				{ value: 'banned', label: t('affiliate.banned', 'Banned') }
-			]
+			options: affiliateStatusOptions
 		}
-	];
+	]);
 
-	const scanFilters: FilterDef[] = [
+	const scanFilters = $derived<FilterDef[]>([
 		{
 			key: 'action_taken',
 			label: t('affiliate.action', 'Action'),
-			options: [
-				{ value: 'flagged', label: t('affiliate.flagged', 'Flagged') },
-				{ value: 'blocked', label: t('affiliate.blocked', 'Blocked') },
-				{ value: 'approved', label: t('affiliate.approved', 'Approved') }
-			]
+			options: affiliateActionTakenOptions
 		}
-	];
+	]);
 
-	const commissionFilters: FilterDef[] = [
+	const commissionFilters = $derived<FilterDef[]>([
 		{
 			key: 'credited',
 			label: t('affiliate.credited', 'Credited'),
-			options: [
-				{ value: 'true', label: t('affiliate.credited', 'Credited') },
-				{ value: 'false', label: t('affiliate.pending', 'Pending') }
-			]
+			options: affiliateCreditedOptions
 		}
-	];
+	]);
 
 	const providerColumns = $derived([
 		{ key: 'name', label: t('affiliate.name'), sortable: true, render: (value: string) => `<span class="font-medium text-foreground">${value ?? '—'}</span>` },

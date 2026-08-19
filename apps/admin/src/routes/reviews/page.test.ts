@@ -4,6 +4,9 @@ import Page from './+page.svelte';
 
 vi.mock('$lib/api', () => ({
 	api: vi.fn().mockResolvedValue({ ok: true, data: [] }),
+	moderationAdminApi: {
+		getOptions: vi.fn().mockResolvedValue({ ok: true, data: { statuses: [], content_types: [] } })
+	}
 }));
 vi.mock('$app/state', () => ({
 	page: { params: {}, url: new URL('http://localhost/') },

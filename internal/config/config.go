@@ -8,6 +8,7 @@ package config
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
@@ -90,13 +91,9 @@ type Config struct {
 
 // Load reads all JC_ environment variables and returns a populated Config.
 // Missing variables fall back to development-safe defaults so the server can
-// boot locally without a complete .env file. In production every value should
-// be set explicitly.
-//
-// The function never returns an error for missing values — it only returns an
-// error if an internal invariant is violated, which currently cannot happen.
-// The error return is kept so callers can handle future validation needs
-// without changing the function signature.
+// boot locally without a complete .env file. In production, required values
+// (database URL, cookie domain, JWT secret, and encryption key) are validated
+// and an error is returned if any are missing or too short.
 func Load() (Config, error) {
 	// In non-production environments, load a .env file from the working
 	// directory if present. This lets `japa-api` boot with the project's
@@ -107,14 +104,14 @@ func Load() (Config, error) {
 	// is skipped entirely: a production deployment must set its variables
 	// explicitly and must not rely on a checked-in .env file.
 	if os.Getenv("JC_ENV") != "production" {
-		loadDotEnv(".env")
+		loadDotEnv()
 	}
 
 	cfg := Config{
 		DatabaseURL:              os.Getenv("JC_DATABASE_URL"),
 		DatabaseReaderURL:        os.Getenv("JC_DATABASE_READER_URL"),
-		DBMaxConns:               int32(getEnvInt("JC_DB_MAX_CONNS", 0)),
-		DBMinConns:               int32(getEnvInt("JC_DB_MIN_CONNS", 0)),
+		DBMaxConns:               getEnvInt32("JC_DB_MAX_CONNS", 0),
+		DBMinConns:               getEnvInt32("JC_DB_MIN_CONNS", 0),
 		DBMaxConnLifetimeMs:      getEnvInt("JC_DB_MAX_CONN_LIFETIME_MS", 0),
 		DBMaxConnIdleTimeMs:      getEnvInt("JC_DB_MAX_CONN_IDLE_TIME_MS", 0),
 		RedisAddr:                getEnvWithFallback("JC_VALKEY_ADDR", "JC_REDIS_ADDR"),
@@ -197,22 +194,15 @@ const minJWTSecretLength = 32
 func applyDefaults(cfg *Config) error {
 	if cfg.DatabaseURL == "" {
 		if cfg.Env == "production" {
-			return fmt.Errorf("JC_DATABASE_URL is required in production")
+			return errors.New("JC_DATABASE_URL is required in production")
 		}
+
 		cfg.DatabaseURL = "postgresql://japa:japa@localhost:5432/japa?sslmode=disable"
 	}
 
-	if cfg.RedisAddr == "" {
-		cfg.RedisAddr = "localhost:6379"
-	}
-
-	if cfg.MeilisearchURL == "" {
-		cfg.MeilisearchURL = "http://localhost:7700"
-	}
-
-	if cfg.ImgproxyBaseURL == "" {
-		cfg.ImgproxyBaseURL = "http://localhost:8099"
-	}
+	setStringIfEmpty(&cfg.RedisAddr, "localhost:6379")
+	setStringIfEmpty(&cfg.MeilisearchURL, "http://localhost:7700")
+	setStringIfEmpty(&cfg.ImgproxyBaseURL, "http://localhost:8099")
 
 	// When no internal imgproxy URL is configured, route internal requests
 	// through the public base URL so callers can use ImgproxyInternalURL
@@ -221,55 +211,21 @@ func applyDefaults(cfg *Config) error {
 		cfg.ImgproxyInternalURL = cfg.ImgproxyBaseURL
 	}
 
-	if cfg.HonchoURL == "" {
-		cfg.HonchoURL = "http://localhost:8001"
-	}
-
-	if cfg.ClamAVAddr == "" {
-		cfg.ClamAVAddr = "localhost:3310"
-	}
-
-	if cfg.ReleaseSHA == "" {
-		cfg.ReleaseSHA = "dev"
-	}
-
-	if cfg.Env == "" {
-		cfg.Env = "development"
-	}
-
-	if cfg.Port == "" {
-		cfg.Port = "8080"
-	}
-
-	if cfg.JWTKeyID == "" {
-		cfg.JWTKeyID = "key-dev"
-	}
-
-	if cfg.SiteName == "" {
-		// Support both JC_SITE_NAME and JC_SITE_TITLE for backward compatibility
-		if title := os.Getenv("JC_SITE_TITLE"); title != "" {
-			cfg.SiteName = title
-		} else {
-			cfg.SiteName = "JapaConnect"
-		}
-	}
-
-	if cfg.SiteURL == "" {
-		cfg.SiteURL = "http://localhost:8080"
-	}
-
-	if cfg.SiteDescription == "" {
-		cfg.SiteDescription = "A community platform for the Nigerian diaspora and Nigerians planning to relocate abroad"
-	}
-
-	if cfg.OAuthRedirectBase == "" {
-		cfg.OAuthRedirectBase = "http://localhost:8080"
-	}
+	setStringIfEmpty(&cfg.HonchoURL, "http://localhost:8001")
+	setStringIfEmpty(&cfg.ClamAVAddr, "localhost:3310")
+	setStringIfEmpty(&cfg.ReleaseSHA, "dev")
+	setStringIfEmpty(&cfg.Env, "development")
+	setStringIfEmpty(&cfg.Port, "8080")
+	setStringIfEmpty(&cfg.JWTKeyID, "key-dev")
+	setStringIfEmpty(&cfg.SiteName, "JapaConnect")
+	setStringIfEmpty(&cfg.SiteURL, "http://localhost:8080")
+	setStringIfEmpty(&cfg.SiteDescription, "A community platform for the Nigerian diaspora and Nigerians planning to relocate abroad")
+	setStringIfEmpty(&cfg.OAuthRedirectBase, "http://localhost:8080")
 
 	// CookieDomain defaults to empty in development (cookie scoped to exact host).
 	// In production, set JC_COOKIE_DOMAIN explicitly (e.g. ".example.com").
 	if cfg.IsProduction() && cfg.CookieDomain == "" {
-		return fmt.Errorf("JC_COOKIE_DOMAIN must be set in production for cross-subdomain session sharing")
+		return errors.New("JC_COOKIE_DOMAIN must be set in production for cross-subdomain session sharing")
 	}
 
 	// Without a configured secret the server signs tokens with a per-process
@@ -285,10 +241,16 @@ func applyDefaults(cfg *Config) error {
 	// but a hard fail-fast requirement in production. Priority:
 	// JC_ENCRYPTION_KEY → JC_STOCK_ENCRYPTION_KEY → JC_TOTP_ENCRYPTION_KEY.
 	if cfg.IsProduction() && cfg.EncryptionKey == "" && os.Getenv("JC_STOCK_ENCRYPTION_KEY") == "" && cfg.TOTPEncryptionKey == "" {
-		return fmt.Errorf("JC_ENCRYPTION_KEY must be set in production (secrets at rest cannot be encrypted without it)")
+		return errors.New("JC_ENCRYPTION_KEY must be set in production (secrets at rest cannot be encrypted without it)")
 	}
 
 	return nil
+}
+
+func setStringIfEmpty(value *string, fallback string) {
+	if *value == "" {
+		*value = fallback
+	}
 }
 
 // IsProduction returns true when the environment is set to production.
@@ -298,12 +260,20 @@ func (c Config) IsProduction() bool {
 	return strings.EqualFold(c.Env, "production")
 }
 
+// IsDevelopment returns true when the environment is not production.
+// This is the inverse of IsProduction and is provided for readability at
+// call sites that check for development-specific behavior.
+func (c Config) IsDevelopment() bool {
+	return !c.IsProduction()
+}
+
 // getEnvWithFallback returns the value of the first env var that is set.
 // If primary is empty, returns fallback. If both are empty, returns "".
 func getEnvWithFallback(primary, fallback string) string {
 	if v := os.Getenv(primary); v != "" {
 		return v
 	}
+
 	return os.Getenv(fallback)
 }
 
@@ -314,11 +284,31 @@ func getEnvInt(key string, fallback int) int {
 	if v == "" {
 		return fallback
 	}
+
 	n, err := strconv.Atoi(v)
 	if err != nil {
 		return fallback
 	}
+
 	return n
+}
+
+// getEnvInt32 reads an environment variable as a signed 32-bit integer and
+// returns the fallback if the variable is empty, unset, not a valid integer,
+// or outside the int32 range. Negative values are treated as invalid and fall
+// back to the default.
+func getEnvInt32(key string, fallback int32) int32 {
+	v := os.Getenv(key)
+	if v == "" {
+		return fallback
+	}
+
+	n, err := strconv.ParseInt(v, 10, 32)
+	if err != nil || n < 0 {
+		return fallback
+	}
+
+	return int32(n)
 }
 
 // getEnvBool reads an environment variable as a boolean and returns the
@@ -329,14 +319,8 @@ func getEnvBool(key string, fallback bool) bool {
 	if v == "" {
 		return fallback
 	}
-	return v == "true" || v == "1" || v == "yes"
-}
 
-// IsDevelopment returns true when the environment is not production.
-// This is the inverse of IsProduction and is provided for readability at
-// call sites that check for development-specific behavior.
-func (c Config) IsDevelopment() bool {
-	return !c.IsProduction()
+	return v == "true" || v == "1" || v == "yes"
 }
 
 // String returns a human-readable summary of the config for logging at startup.
@@ -363,6 +347,7 @@ func maskURL(rawURL string) string {
 	if schemeEnd == -1 {
 		return rawURL
 	}
+
 	// Find the "@" that separates credentials from the host.
 	at := strings.Index(rawURL[schemeEnd+3:], "@")
 	if at == -1 {
@@ -372,12 +357,12 @@ func maskURL(rawURL string) string {
 	return rawURL[:schemeEnd+3] + "***@" + rawURL[schemeEnd+3+at+1:]
 }
 
-// loadDotEnv reads a dotenv-style file and populates the process environment
-// for any KEY=VALUE pair whose KEY is not already set. Existing environment
-// variables always take precedence, so explicit exports, CI configuration,
-// and production deployments are never overridden. Missing files and
-// unreadable files are silently ignored — a missing .env must never prevent
-// the app from booting.
+// loadDotEnv reads a .env file from the working directory and populates the
+// process environment for any KEY=VALUE pair whose KEY is not already set.
+// Existing environment variables always take precedence, so explicit exports,
+// CI configuration, and production deployments are never overridden. Missing
+// files and unreadable files are silently ignored — a missing .env must never
+// prevent the app from booting.
 //
 // The parser supports:
 //   - KEY=VALUE and KEY="VALUE" (with surrounding quotes stripped)
@@ -387,12 +372,13 @@ func maskURL(rawURL string) string {
 //
 // It does not interpret escapes or multi-line values; .env files in this
 // project use plain scalar values, and complex secrets are base64/hex blobs.
-func loadDotEnv(path string) {
-	f, err := os.Open(path)
+func loadDotEnv() {
+	f, err := os.Open(".env")
 	if err != nil {
 		return
 	}
-	defer f.Close()
+
+	defer func() { _ = f.Close() }()
 
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
@@ -411,6 +397,7 @@ func loadDotEnv(path string) {
 
 		key := strings.TrimSpace(line[:eq])
 		value := strings.TrimSpace(line[eq+1:])
+
 		if key == "" {
 			continue
 		}

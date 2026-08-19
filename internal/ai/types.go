@@ -81,7 +81,9 @@ type ChatWithToolsRequest struct {
 // ChatWithToolsResponse is the result of a function-calling chat completion.
 // Either Content (a final text answer) or ToolCalls (one or more tool
 // invocations) is populated; both can be present when the model emits text
-// alongside tool calls.
+// alongside tool calls. Citations are populated by providers that return
+// source URLs (e.g. Perplexity sonar models) so the agent can attribute
+// claims.
 type ChatWithToolsResponse struct {
 	Content      string     `json:"content,omitempty"`
 	ToolCalls    []ToolCall `json:"tool_calls,omitempty"`
@@ -89,6 +91,8 @@ type ChatWithToolsResponse struct {
 	Model        string     `json:"model,omitempty"`
 	Usage        TokenUsage `json:"usage"`
 	ProviderRef  string     `json:"provider_ref,omitempty"`
+	ProviderName string     `json:"provider_name,omitempty"` // set by the dispatcher from the winning provider
+	Citations    []string   `json:"citations,omitempty"`
 }
 
 // TokenUsage reports token consumption in a provider-agnostic way. OpenAI and

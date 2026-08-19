@@ -4,6 +4,7 @@
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
 	import { persistNavCollapse } from '$lib/nav-collapse';
+	import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -15,9 +16,10 @@
 		await persistNavCollapse(collapsed);
 	}
 
-	// Dynamic hreflang from enabled languages (§18, ADR-013).
+	// Dynamic hreflang from enabled languages (§18, ADR-013). Falls back to the
+	// active locale instead of a hardcoded list when the setting is unavailable.
 	const enabledLanguages = $derived(
-		((page.data?.siteSettings?.['i18n.enabled_languages'] as string | undefined) ?? 'en,fr')
+		((page.data?.siteSettings?.['i18n.enabled_languages'] as string | undefined) ?? data.locale)
 			.split(',').map((l) => l.trim()).filter(Boolean)
 	);
 	const defaultLanguage = $derived(
@@ -59,7 +61,7 @@
 		<meta name="twitter:image" content={data.meta.twitterImage} />
 	{/if}
 	{#if data.meta.jsonLdString}
-		{@html `<script type="application/ld+json">${data.meta.jsonLdString}</script>`}
+		{@html safeJsonLdScript(data.meta.jsonLdString)}
 	{/if}
 </svelte:head>
 

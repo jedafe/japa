@@ -205,31 +205,51 @@ ORDER BY created_at DESC, id DESC;
 -- name: ListSpacesByTypePaginated :many
 -- sort accepts: '' (default → newest), 'name' (A–Z), 'members', 'followers',
 -- 'posts' (all numeric DESC). Unknown values fall back to newest.
-SELECT id, tenant_id, parent_id, space_type_id, name, slug, description, wiki_content,
-       logo_media_id, header_image_id, geo_code, level, member_count, post_count,
-       follower_count, visibility, posting_perm, replying_perm, commenting_perm,
-       joining_perm, status, created_at, updated_at, deleted_at, currency_code
-FROM spaces
-WHERE spaces.tenant_id = @tenant_id AND spaces.space_type_id = @space_type_id AND spaces.deleted_at IS NULL
-  AND (@search::text = '' OR name ILIKE '%' || @search || '%' OR slug ILIKE '%' || @search || '%')
-  AND (@geo_code::text = '' OR geo_code = @geo_code)
+-- The initials column comes from the university_fields custom field group
+-- (key = 'initials', deterministic id 00000000-0000-0000-0000-000000000090)
+-- and is left-joined so it is NULL for non-university space types.
+-- Ref: japaconnect-engineering/sections/39-space-types-university.md
+SELECT s.id, s.tenant_id, s.parent_id, s.space_type_id, s.name, s.slug, s.description, s.wiki_content,
+       s.logo_media_id, s.header_image_id, s.geo_code, s.level, s.member_count, s.post_count,
+       s.follower_count, s.visibility, s.posting_perm, s.replying_perm, s.commenting_perm,
+       s.joining_perm, s.status, s.created_at, s.updated_at, s.deleted_at, s.currency_code,
+       cfv.value_text AS initials
+FROM spaces s
+LEFT JOIN custom_field_values cfv ON cfv.entity_id = s.id
+  AND cfv.entity_type = 'space'
+  AND cfv.field_id = '00000000-0000-0000-0000-000000000090'::uuid
+WHERE s.tenant_id = @tenant_id AND s.space_type_id = @space_type_id AND s.deleted_at IS NULL
+  AND (@search::text = ''
+    OR s.name ILIKE '%' || @search || '%'
+    OR s.slug ILIKE '%' || @search || '%'
+    OR cfv.value_text ILIKE '%' || @search || '%')
+  AND (@geo_code::text = '' OR s.geo_code = @geo_code)
 ORDER BY
-  CASE WHEN @sort::text = 'name' THEN name ELSE NULL END ASC,
+  CASE WHEN @sort::text = 'name' THEN s.name ELSE NULL END ASC,
   CASE
-    WHEN @sort::text = 'members' THEN member_count
-    WHEN @sort::text = 'followers' THEN follower_count
-    WHEN @sort::text = 'posts' THEN post_count
+    WHEN @sort::text = 'members' THEN s.member_count
+    WHEN @sort::text = 'followers' THEN s.follower_count
+    WHEN @sort::text = 'posts' THEN s.post_count
     ELSE NULL
   END DESC,
-  created_at DESC, id DESC
+  s.created_at DESC, s.id DESC
 LIMIT @limit_val OFFSET @offset_val;
 
 -- name: CountSpacesByType :one
+-- Counts spaces with the same filters as ListSpacesByTypePaginated, including
+-- searching the initials custom field for university spaces.
+-- Ref: japaconnect-engineering/sections/39-space-types-university.md
 SELECT COUNT(*) AS total
-FROM spaces
-WHERE spaces.tenant_id = @tenant_id AND spaces.space_type_id = @space_type_id AND spaces.deleted_at IS NULL
-  AND (@search::text = '' OR name ILIKE '%' || @search || '%' OR slug ILIKE '%' || @search || '%')
-  AND (@geo_code::text = '' OR geo_code = @geo_code);
+FROM spaces s
+LEFT JOIN custom_field_values cfv ON cfv.entity_id = s.id
+  AND cfv.entity_type = 'space'
+  AND cfv.field_id = '00000000-0000-0000-0000-000000000090'::uuid
+WHERE s.tenant_id = @tenant_id AND s.space_type_id = @space_type_id AND s.deleted_at IS NULL
+  AND (@search::text = ''
+    OR s.name ILIKE '%' || @search || '%'
+    OR s.slug ILIKE '%' || @search || '%'
+    OR cfv.value_text ILIKE '%' || @search || '%')
+  AND (@geo_code::text = '' OR s.geo_code = @geo_code);
 
 -- name: ListChildSpaces :many
 -- SPACES-001: apply the same visibility filter as ListSpacesByTenant.
@@ -627,6 +647,12 @@ WHERE space_id = @space_id AND user_id = @user_id AND tenant_id = @tenant_id;
 -- Space Members (with profile data)
 -- =====================
 
+-- name: IsUserSpaceMember :one
+SELECT EXISTS (
+    SELECT 1 FROM space_members
+    WHERE space_id = @space_id AND user_id = @user_id AND tenant_id = @tenant_id AND status = 'approved'
+) AS is_member;
+
 -- name: ListSpaceMembersWithProfile :many
 -- SPACES-007: only list approved members, not pending join requests.
 SELECT sm.user_id, u.username, up.display_name, up.avatar_url, sm.joined_at
@@ -800,23 +826,96 @@ RETURNING id, tenant_id, parent_id, space_type_id, name, slug, description, wiki
           joining_perm, status, created_at, updated_at, deleted_at, currency_code;
 
 -- name: FindSpacesByKeywords :many
--- Find primary (country/state/city) and public spaces whose keywords overlap
--- with the given keyword list. Used for auto-assigning content to spaces
--- based on the content title. Only matches spaces with visibility='public'
--- and level IN ('country','state','city'). Returns only the fields needed
--- for auto-assignment (id, name, level) to avoid coupling to the full Space
--- model which doesn't include the keywords column.
-SELECT id, name, level
-FROM spaces
-WHERE tenant_id = @tenant_id
-  AND deleted_at IS NULL
-  AND visibility = 'public'
-  AND level IN ('country', 'state', 'city')
-  AND keywords && @keywords::text[]
+-- Find primary (country/state/city) and public university spaces whose
+-- keywords, full name, or university initials overlap with the given keyword
+-- list. Used for auto-assigning content to spaces based on the content title.
+-- Multi-word contiguous phrases in the title generate multi-word n-grams so
+-- that full names (e.g. "University of Lagos") and multi-word keywords
+-- (e.g. "new york") match exactly. Matches are ordered by specificity:
+-- initials match > full name match > keyword match, then by
+-- city > state > country > university. Errors are logged by the caller.
+WITH title_ngrams AS (
+    SELECT
+        value AS kw,
+        array_length(regexp_split_to_array(value, '\s+'), 1) AS word_count
+    FROM unnest(@keywords::text[]) AS value
+),
+keyword_matches AS (
+    -- country/state/city spaces whose configured keywords overlap with any title n-gram.
+    SELECT
+        s.id,
+        s.name,
+        s.level,
+        st.slug AS space_type_slug,
+        (SELECT COALESCE(MAX(tn.word_count * 1000), 0)
+         FROM title_ngrams tn
+         WHERE tn.kw IN (SELECT lower(sk) FROM unnest(s.keywords) sk)) AS score
+    FROM spaces s
+    JOIN space_types st ON st.id = s.space_type_id
+    WHERE s.tenant_id = @tenant_id
+      AND s.deleted_at IS NULL
+      AND s.visibility = 'public'
+      AND s.status = 'active'
+      AND (s.level IN ('country', 'state', 'city') OR st.slug = 'university')
+      AND s.keywords && @keywords::text[]
+),
+name_matches AS (
+    -- primary spaces and universities whose full name exactly matches a title n-gram.
+    SELECT
+        s.id,
+        s.name,
+        s.level,
+        st.slug AS space_type_slug,
+        (tn.word_count * 1000 + 100) AS score
+    FROM spaces s
+    JOIN space_types st ON st.id = s.space_type_id
+    CROSS JOIN title_ngrams tn
+    WHERE s.tenant_id = @tenant_id
+      AND s.deleted_at IS NULL
+      AND s.visibility = 'public'
+      AND s.status = 'active'
+      AND (s.level IN ('country', 'state', 'city') OR st.slug = 'university')
+      AND LOWER(s.name) = tn.kw
+),
+initials_matches AS (
+    -- universities whose initials custom-field value exactly matches a title n-gram.
+    SELECT
+        s.id,
+        s.name,
+        s.level,
+        st.slug AS space_type_slug,
+        (tn.word_count * 1000 + 500) AS score
+    FROM spaces s
+    JOIN space_types st ON st.id = s.space_type_id
+    JOIN custom_fields cf ON cf.tenant_id = s.tenant_id AND cf.key = 'initials'
+    JOIN custom_field_values cfv ON cfv.entity_id = s.id AND cfv.entity_type = 'space' AND cfv.field_id = cf.id
+    CROSS JOIN title_ngrams tn
+    WHERE s.tenant_id = @tenant_id
+      AND s.deleted_at IS NULL
+      AND s.visibility = 'public'
+      AND s.status = 'active'
+      AND st.slug = 'university'
+      AND LOWER(cfv.value_text) = tn.kw
+)
+SELECT
+    id,
+    name,
+    level,
+    space_type_slug
+FROM (
+    SELECT * FROM keyword_matches
+    UNION ALL
+    SELECT * FROM name_matches
+    UNION ALL
+    SELECT * FROM initials_matches
+) combined
+GROUP BY id, name, level, space_type_slug
 ORDER BY
-  CASE level
-    WHEN 'city' THEN 1
-    WHEN 'state' THEN 2
-    WHEN 'country' THEN 3
-  END,
-  name;
+    MAX(score) DESC,
+    CASE level
+        WHEN 'city' THEN 1
+        WHEN 'state' THEN 2
+        WHEN 'country' THEN 3
+        ELSE 4
+    END,
+    name;

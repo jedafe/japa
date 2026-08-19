@@ -26,6 +26,7 @@ import (
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/clientip"
 	"github.com/jedafe/japa/internal/config"
+	"github.com/jedafe/japa/internal/content/visibility"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/geoip"
@@ -99,9 +100,10 @@ type SpacePostChecker interface {
 	CanPostInSpace(ctx context.Context, spaceID, userID, tenantID pgtype.UUID) (bool, error)
 }
 
-// SpaceKeywordMatcher finds primary+public spaces whose keywords match the
-// content title, for auto-assigning content to spaces when the user didn't
-// select one. Implemented by spaces.Service.
+// SpaceKeywordMatcher finds primary+public spaces (country/state/city and
+// public universities) whose keywords, full name, or university initials match
+// the content title, for auto-assigning content to spaces. Implemented by
+// spaces.Service.
 type SpaceKeywordMatcher interface {
 	FindSpacesByKeywords(ctx context.Context, tenantID pgtype.UUID, keywords []string) ([]gen.FindSpacesByKeywordsRow, error)
 }
@@ -203,6 +205,28 @@ func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.Au
 	return user, true
 }
 
+// canModifyContent reports whether the caller may edit or delete a content
+// item. Authors may modify their own content. Super-admins and users with the
+// corresponding _any node (content.edit_any / content.delete_any) may modify
+// any content. This is the ownership enforcement for the _own/_any RBAC split
+// (BUG-001 / BUG-002 / BUG-003).
+func canModifyContent(r *http.Request, userID, tenantID, authorID pgtype.UUID, anyPerm string) bool {
+	if userID.Valid && authorID.Valid && userID.Bytes == authorID.Bytes {
+		return true
+	}
+
+	if resolver := rbac.FromContext(r.Context()); resolver != nil {
+		if resolver.IsSuperAdmin(r.Context(), userID, tenantID) {
+			return true
+		}
+		if resolver.HasPermission(r.Context(), userID, tenantID, anyPerm) {
+			return true
+		}
+	}
+
+	return false
+}
+
 // handleServiceError translates a Service-layer error into the appropriate HTTP
 // response.
 func handleServiceError(w http.ResponseWriter, err error) {
@@ -213,6 +237,10 @@ func handleServiceError(w http.ResponseWriter, err error) {
 		errpkg.WriteError(w, http.StatusForbidden, "org_post_forbidden", "Not authorized to post as this organization")
 	case errors.Is(err, ErrEditWindowExpired):
 		errpkg.WriteError(w, http.StatusForbidden, "edit_window_expired", "The edit window for this content has expired")
+	case errors.Is(err, ErrMissingPrimarySpace):
+		errpkg.WriteError(w, http.StatusUnprocessableEntity, "missing_primary_space", "Content requires a primary space before publishing or scheduling")
+	case errors.Is(err, ErrNotSpaceMember):
+		errpkg.WriteError(w, http.StatusForbidden, "not_space_member", "You must be a member of each assigned space")
 	default:
 		errpkg.HandleServiceError(w, err)
 	}
@@ -225,7 +253,7 @@ func parsePageSize(r *http.Request) int32 {
 		return defaultPageSize
 	}
 
-	n, err := strconv.Atoi(s)
+	n, err := strconv.ParseInt(s, 10, 32)
 	if err != nil || n <= 0 {
 		return defaultPageSize
 	}
@@ -234,65 +262,80 @@ func parsePageSize(r *http.Request) int32 {
 		return MaxPageSize
 	}
 
-	return int32(n) //nolint:gosec // G109: bounded by MaxPageSize check above
+	return int32(n)
 }
 
-// autoAssignSpaces finds primary+public spaces whose keywords appear in the
+// autoAssignSpaces finds primary+public spaces (country/state/city and
+// universities) whose keywords, full name, or university initials appear in the
 // content title and links the content to those spaces via content_spaces.
-// The deepest match (city > state > country) becomes the primary space
-// (set on contents.space_id). This only runs when the user didn't explicitly
-// select a space. Errors are logged but never block content creation.
-func (h *Handlers) autoAssignSpaces(ctx context.Context, tenantID, contentID pgtype.UUID, title string) {
-	// Extract keywords from the title: lowercase, split on word boundaries,
-	// filter out very short words and common stopwords.
-	words := strings.Fields(strings.ToLower(title))
-	keywords := make([]string, 0, len(words))
-	for _, w := range words {
-		// Strip punctuation.
-		w = strings.Trim(w, ".,!?;:\"'()[]{}—–-")
-		if len(w) < 3 {
-			continue // skip very short words
-		}
-		keywords = append(keywords, w)
-	}
+// When the user has already selected a primary space, it is preserved as the
+// primary and all title matches become additional spaces. When no space was
+// selected, the most specific title match becomes the primary space. Errors
+// are logged but never block content creation. Returns the final primary space
+// ID (selected or auto-assigned) so the caller can keep its local content row
+// in sync for downstream fan-out / notifications.
+func (h *Handlers) autoAssignSpaces(ctx context.Context, tenantID, contentID, selectedSpaceID pgtype.UUID, title string) pgtype.UUID {
+	keywords := extractTitleKeywords(title)
 	if len(keywords) == 0 {
-		return
+		return selectedSpaceID
 	}
 
 	matches, err := h.spaceMatcher.FindSpacesByKeywords(ctx, tenantID, keywords)
 	if err != nil {
 		slog.Warn("content: auto-assign space keyword match failed", "error", err)
-		return
+		return selectedSpaceID
 	}
 	if len(matches) == 0 {
-		return
+		return selectedSpaceID
 	}
 
-	// The first match is the deepest (city > state > country) due to ORDER BY.
-	// Set it as the primary space_id on the content, and link all matches
-	// via content_spaces.
-	primarySpaceID := matches[0].ID
+	// Preserve an explicit user-selected primary space. Otherwise the SQL
+	// ordering has already picked the most specific match (initials > name >
+	// keywords, then city > state > country > university).
+	var primarySpaceID pgtype.UUID
 	var additionalIDs []pgtype.UUID
-	for _, m := range matches[1:] {
-		additionalIDs = append(additionalIDs, m.ID)
+	if selectedSpaceID.Valid {
+		primarySpaceID = selectedSpaceID
+		for _, m := range matches {
+			if !isSameUUID(m.ID, selectedSpaceID) {
+				additionalIDs = append(additionalIDs, m.ID)
+			}
+		}
+	} else {
+		primarySpaceID = matches[0].ID
+		for _, m := range matches[1:] {
+			additionalIDs = append(additionalIDs, m.ID)
+		}
 	}
 
-	if err := h.Service.UpdateContentSpaces(ctx, contentID, primarySpaceID, additionalIDs); err != nil {
+	// Auto-assignment is system-driven, so bypass the per-user membership
+	// check while keeping the tenant-level space validation.
+	if err := h.Service.UpdateContentSpaces(ctx, contentID, tenantID, pgtype.UUID{}, primarySpaceID, additionalIDs, true); err != nil {
 		slog.Warn("content: auto-assign UpdateContentSpaces failed",
 			"content_id", contentID.String(), "error", err)
-		return
+		return selectedSpaceID
 	}
 
 	// Also update the content's space_id column for backward-compat queries.
 	if err := h.Service.SetContentSpaceID(ctx, contentID, primarySpaceID); err != nil {
 		slog.Warn("content: auto-assign SetContentSpaceID failed",
 			"content_id", contentID.String(), "error", err)
+		return selectedSpaceID
+	}
+
+	primaryName := ""
+	for _, m := range matches {
+		if isSameUUID(m.ID, primarySpaceID) {
+			primaryName = m.Name
+			break
+		}
 	}
 
 	slog.Info("content: auto-assigned spaces",
 		"content_id", contentID.String(),
-		"primary_space", matches[0].Name,
+		"primary_space", primaryName,
 		"match_count", len(matches))
+	return primarySpaceID
 }
 
 func (h *Handlers) enqueueContentEmbedding(contentID, tenantID pgtype.UUID) {
@@ -590,6 +633,83 @@ var hrefURLRegex = regexp.MustCompile(`(?i)href="(https?://[^"]+)"`)
 // data-url="https://..."> and use data-url, not href (BUG-004).
 var dataURLRegex = regexp.MustCompile(`(?i)data-url="(https?://[^"]+)"`)
 
+// titleWordSeparator normalises title text to whitespace-separated words,
+// dropping punctuation so multi-word names like "New-York" split into two
+// tokens and acronyms like "UoPeople" stay intact.
+var titleWordSeparator = regexp.MustCompile(`[^\p{L}\p{N}]+`)
+
+// maxTitleNgramLength limits contiguous n-gram generation from the title.
+// University and country/state names rarely exceed 20 words.
+const maxTitleNgramLength = 20
+
+// excludedOneGrams filters out 1-gram n-grams that are common English
+// stop-words, generic institution words, or short words that are also
+// country/state codes (e.g. "in", "at", "to") to avoid false keyword
+// matches. The words are still retained inside longer n-grams, so
+// multi-word names like "University of Lagos" continue to work.
+var excludedOneGrams = map[string]struct{}{
+	"a": {}, "an": {}, "the": {}, "this": {}, "that": {}, "these": {}, "those": {},
+	"and": {}, "or": {}, "but": {}, "nor": {}, "so": {}, "yet": {}, "if": {},
+	"about": {}, "above": {}, "across": {}, "after": {}, "against": {}, "along": {}, "among": {}, "around": {}, "at": {}, "before": {}, "behind": {}, "below": {}, "beneath": {}, "beside": {}, "between": {}, "beyond": {}, "by": {}, "down": {}, "during": {}, "except": {}, "for": {}, "from": {}, "in": {}, "inside": {}, "into": {}, "like": {}, "near": {}, "of": {}, "off": {}, "on": {}, "onto": {}, "out": {}, "outside": {}, "over": {}, "past": {}, "regarding": {}, "round": {}, "since": {}, "through": {}, "throughout": {}, "till": {}, "to": {}, "toward": {}, "towards": {}, "under": {}, "until": {}, "up": {}, "upon": {}, "with": {}, "within": {}, "without": {},
+	"i": {}, "me": {}, "my": {}, "myself": {}, "we": {}, "us": {}, "our": {}, "ours": {}, "ourselves": {}, "you": {}, "your": {}, "yours": {}, "yourself": {}, "yourselves": {}, "he": {}, "him": {}, "his": {}, "himself": {}, "she": {}, "her": {}, "hers": {}, "herself": {}, "it": {}, "its": {}, "itself": {}, "they": {}, "them": {}, "their": {}, "theirs": {}, "themselves": {},
+	"am": {}, "is": {}, "are": {}, "was": {}, "were": {}, "be": {}, "been": {}, "being": {}, "have": {}, "has": {}, "had": {}, "do": {}, "does": {}, "did": {}, "will": {}, "would": {}, "shall": {}, "should": {}, "can": {}, "could": {}, "may": {}, "might": {}, "must": {}, "ought": {},
+	"all": {}, "any": {}, "both": {}, "each": {}, "every": {}, "few": {}, "more": {}, "most": {}, "much": {}, "many": {}, "no": {}, "some": {}, "such": {}, "what": {}, "which": {}, "who": {}, "whom": {}, "whose": {}, "where": {}, "when": {}, "why": {}, "how": {}, "here": {}, "there": {}, "now": {}, "then": {}, "very": {}, "too": {}, "just": {}, "only": {}, "also": {}, "even": {}, "still": {}, "already": {},
+	"university": {}, "college": {}, "school": {}, "institute": {}, "academy": {}, "polytechnic": {}, "state": {}, "city": {}, "country": {}, "community": {}, "national": {}, "international": {}, "federal": {}, "private": {}, "public": {}, "global": {}, "world": {},
+}
+
+// extractTitleKeywords converts a title into a set of lowercased contiguous
+// n-grams (1 to maxTitleNgramLength words). Multi-word n-grams preserve
+// stop-words so full names like "University of Lagos" match; only 1-gram
+// stop-words are dropped, preventing false keyword hits for "in", "at", etc.
+func extractTitleKeywords(title string) []string {
+	if title == "" {
+		return nil
+	}
+
+	normalised := strings.ToLower(titleWordSeparator.ReplaceAllString(title, " "))
+	rawWords := strings.Fields(strings.TrimSpace(normalised))
+	if len(rawWords) == 0 {
+		return nil
+	}
+
+	words := make([]string, 0, len(rawWords))
+	for _, w := range rawWords {
+		if len(w) < 2 {
+			continue
+		}
+		words = append(words, w)
+	}
+	if len(words) == 0 {
+		return nil
+	}
+
+	maxN := maxTitleNgramLength
+	if len(words) < maxN {
+		maxN = len(words)
+	}
+
+	seen := make(map[string]struct{})
+	keywords := make([]string, 0, maxN*len(words))
+
+	for length := 1; length <= maxN; length++ {
+		for start := 0; start+length <= len(words); start++ {
+			phrase := strings.Join(words[start:start+length], " ")
+			if length == 1 {
+				if _, skip := excludedOneGrams[phrase]; skip {
+					continue
+				}
+			}
+			if _, ok := seen[phrase]; ok {
+				continue
+			}
+			seen[phrase] = struct{}{}
+			keywords = append(keywords, phrase)
+		}
+	}
+
+	return keywords
+}
+
 // enqueueLinkPreviewsForBody extracts external http(s) URLs from the HTML
 // body and enqueues a link preview fetch task for each. Fire-and-forget
 // (Section 15 — external links get async OG/oEmbed scrape). Called after
@@ -872,13 +992,13 @@ func (h *Handlers) CreateContent(w http.ResponseWriter, r *http.Request) {
 		h.SpamPipeline.RecordContentCreation(r.Context(), tenantID, user.UserID)
 	}
 
-	// Auto-assign content to spaces based on keyword matching in the title.
-	// Only runs when no space_id was explicitly selected by the user and a
-	// space matcher is wired. Matches primary (country/state/city) and public
-	// spaces only — the deepest match (city > state > country) becomes the
-	// primary space, and all matches are linked via content_spaces.
-	if !createInput.SpaceID.Valid && h.spaceMatcher != nil {
-		h.autoAssignSpaces(r.Context(), tenantID, content.ID, input.Title)
+	// Auto-assign content to primary spaces (country/state/city and public
+	// universities) based on keyword, full name, or university initials in the
+	// title. Runs regardless of whether the user selected a space; when a
+	// space is already selected it stays primary and matched spaces are added
+	// as additional. The most specific match becomes the primary otherwise.
+	if h.spaceMatcher != nil {
+		content.SpaceID = h.autoAssignSpaces(r.Context(), tenantID, content.ID, content.SpaceID, input.Title)
 	}
 
 	// Enqueue async embedding generation — fire-and-forget.
@@ -947,29 +1067,36 @@ func (h *Handlers) GetContent(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Visibility gate (§5.3 RBAC / §14 public content SSR):
-	//   - Published content is visible to everyone (authed or not).
+	// Visibility/status gate (§5.3 RBAC / §14 public content SSR):
+	//   - Published public content is visible to everyone (authed or not).
+	//   - Published members-only content requires an authenticated user.
+	//   - Published private content requires the author or a user holding
+	//     content.edit_any (admins/moderators).
 	//   - Non-published content (draft, scheduled, archived, in_review) is
-	//     only visible to the author or a user holding content.edit_any
-	//     (admins/moderators). Without this, any authenticated user could
-	//     read another user's drafts by guessing the slug.
+	//     only visible to the author or a user holding content.edit_any.
+	user := auth.FromContext(r.Context())
 	if content.Status != StatusPublished {
-		user := auth.FromContext(r.Context())
-		if user == nil {
+		if user == nil || !canModifyContent(r, user.UserID, tenantID, content.AuthorID, "content.edit_any") {
 			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Content not found")
 			return
 		}
-		isAuthor := content.AuthorID.Valid && content.AuthorID.Bytes == user.UserID.Bytes
-		if !isAuthor {
-			canEditAny := false
-			if resolver := rbac.FromContext(r.Context()); resolver != nil {
-				canEditAny = resolver.HasPermission(r.Context(), user.UserID, user.TenantID, "content.edit_any") ||
-					resolver.IsSuperAdmin(r.Context(), user.UserID, user.TenantID)
-			}
-			if !canEditAny {
+	} else {
+		switch content.Visibility {
+		case VisibilityPublic:
+			// always allowed
+		case VisibilityMembers:
+			if user == nil {
 				errpkg.WriteError(w, http.StatusNotFound, "not_found", "Content not found")
 				return
 			}
+		case VisibilityPrivate:
+			if user == nil || !canModifyContent(r, user.UserID, tenantID, content.AuthorID, "content.edit_any") {
+				errpkg.WriteError(w, http.StatusNotFound, "not_found", "Content not found")
+				return
+			}
+		default:
+			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Content not found")
+			return
 		}
 	}
 
@@ -1077,6 +1204,8 @@ func (h *Handlers) ListContent(w http.ResponseWriter, r *http.Request) {
 
 	var err error
 
+	filter := visibility.VisibilityFilterFromRequest(r)
+
 	if spaceIDStr != "" {
 		var spaceID pgtype.UUID
 		if err := spaceID.Scan(spaceIDStr); err != nil {
@@ -1084,21 +1213,21 @@ func (h *Handlers) ListContent(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		contents, err = h.Service.ListContentsBySpace(r.Context(), tenantID, spaceID, cursor, limit)
+		contents, err = h.Service.ListContentsBySpace(r.Context(), tenantID, spaceID, cursor, limit, filter)
 	} else if contentType != "" {
-		contents, err = h.Service.ListContentsByType(r.Context(), tenantID, contentType, cursor, limit)
+		contents, err = h.Service.ListContentsByType(r.Context(), tenantID, contentType, cursor, limit, filter)
 	} else if q != "" && h.Service.HasSearcher() {
 		// Use Meilisearch for full-text search (typo tolerance, ranking)
 		// instead of ILIKE. Falls back to ILIKE on Meilisearch failure.
-		results, searchErr := h.Service.SearchContents(r.Context(), tenantID, q, limit)
+		results, searchErr := h.Service.SearchContents(r.Context(), tenantID, q, limit, filter)
 		if searchErr != nil {
 			slog.Warn("content: Meilisearch search failed, falling back to ILIKE", "error", searchErr, "query", q)
-			contents, err = h.Service.ListContents(r.Context(), tenantID, q, cursor, limit)
+			contents, err = h.Service.ListContents(r.Context(), tenantID, q, cursor, limit, filter)
 		} else {
 			contents = results
 		}
 	} else {
-		contents, err = h.Service.ListContents(r.Context(), tenantID, q, cursor, limit)
+		contents, err = h.Service.ListContents(r.Context(), tenantID, q, cursor, limit, filter)
 	}
 
 	if err != nil {
@@ -1259,13 +1388,23 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 
 	// Capture previous status to detect draft→published transitions for fan-out.
 	prevContent, prevErr := h.Service.GetContent(r.Context(), id, tenantID)
+	if prevErr != nil {
+		handleServiceError(w, prevErr)
+		return
+	}
 
-	// Super admins bypass the edit-window restriction even on their own
-	// content — without this, a super_admin who authored a post more than
-	// content.edit_window_minutes ago is locked out of editing it (BL-008).
+	// BUG-001: enforce author-or-admin before allowing edits.
+	if !canModifyContent(r, user.UserID, tenantID, prevContent.AuthorID, "content.edit_any") {
+		errpkg.WriteError(w, http.StatusForbidden, "not_author", "You can only edit your own content")
+		return
+	}
+
+	// Super admins and content.edit_any holders bypass the edit-window
+	// restriction even on their own content.
 	bypassEditWindow := false
 	if resolver := rbac.FromContext(r.Context()); resolver != nil {
-		bypassEditWindow = resolver.IsSuperAdmin(r.Context(), user.UserID, user.TenantID)
+		bypassEditWindow = resolver.IsSuperAdmin(r.Context(), user.UserID, tenantID) ||
+			resolver.HasPermission(r.Context(), user.UserID, tenantID, "content.edit_any")
 	}
 
 	content, err := h.Service.UpdateContent(r.Context(), id, tenantID, user.UserID, updateInput, bypassEditWindow)
@@ -1317,6 +1456,11 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 
 // DeleteContent handles DELETE /api/v1/content/{id}.
 func (h *Handlers) DeleteContent(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
@@ -1325,6 +1469,17 @@ func (h *Handlers) DeleteContent(w http.ResponseWriter, r *http.Request) {
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		return
+	}
+
+	// BUG-002: verify authorship before soft-deleting.
+	content, err := h.Service.GetContent(r.Context(), id, tenantID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	if !canModifyContent(r, user.UserID, tenantID, content.AuthorID, "content.delete_any") {
+		errpkg.WriteError(w, http.StatusForbidden, "not_author", "You can only delete your own content")
 		return
 	}
 
@@ -1369,11 +1524,29 @@ func (h *Handlers) PublishContent(w http.ResponseWriter, r *http.Request) {
 
 	// Capture previous status to detect draft→published transitions for fan-out.
 	prevContent, prevErr := h.Service.GetContent(r.Context(), id, tenantID)
+	if prevErr != nil {
+		handleServiceError(w, prevErr)
+		return
+	}
+
+	// BUG-003: only the author, super-admins, or content.edit_any holders
+	// may publish this content.
+	if !canModifyContent(r, user.UserID, tenantID, prevContent.AuthorID, "content.edit_any") {
+		errpkg.WriteError(w, http.StatusForbidden, "not_author", "You can only publish your own content")
+		return
+	}
 
 	updated, err := h.Service.UpdateContentStatus(r.Context(), id, tenantID, StatusPublished)
 	if err != nil {
 		handleServiceError(w, err)
 		return
+	}
+
+	// Auto-assign spaces on the first publish (e.g. draft→published) using the
+	// content title, preserving any previously selected primary space.
+	// Ref: sections/14-content-type-system.md (Content Auto-Assignment to Spaces)
+	if h.spaceMatcher != nil && prevContent.Status != StatusPublished {
+		updated.SpaceID = h.autoAssignSpaces(r.Context(), tenantID, updated.ID, updated.SpaceID, updated.Title)
 	}
 
 	// AUDIT-BE-TASK-001: enqueue the affiliate link scan task on publish
@@ -1411,6 +1584,18 @@ func (h *Handlers) ArchiveContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// BUG-003: only the author, super-admins, or content.edit_any holders
+	// may archive this content.
+	prevContent, err := h.Service.GetContent(r.Context(), id, tenantID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	if !canModifyContent(r, user.UserID, tenantID, prevContent.AuthorID, "content.edit_any") {
+		errpkg.WriteError(w, http.StatusForbidden, "not_author", "You can only archive your own content")
+		return
+	}
+
 	updated, err := h.Service.UpdateContentStatus(r.Context(), id, tenantID, StatusArchived)
 	if err != nil {
 		handleServiceError(w, err)
@@ -1429,6 +1614,11 @@ func (h *Handlers) ArchiveContent(w http.ResponseWriter, r *http.Request) {
 // Asynq task (matching internal/worker's registered handler) to fire at
 // publish_at.
 func (h *Handlers) ScheduleContent(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
@@ -1451,6 +1641,18 @@ func (h *Handlers) ScheduleContent(w http.ResponseWriter, r *http.Request) {
 
 	if input.PublishAt.IsZero() || input.PublishAt.Before(time.Now()) {
 		errpkg.WriteError(w, http.StatusBadRequest, "publish_at_in_past", "publish_at must be in the future")
+		return
+	}
+
+	// BUG-003: only the author, super-admins, or content.edit_any holders
+	// may schedule this content.
+	prevContent, err := h.Service.GetContent(r.Context(), id, tenantID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	if !canModifyContent(r, user.UserID, tenantID, prevContent.AuthorID, "content.edit_any") {
+		errpkg.WriteError(w, http.StatusForbidden, "not_author", "You can only schedule your own content")
 		return
 	}
 
@@ -1575,14 +1777,28 @@ func (h *Handlers) enqueueScheduledPublish(contentID, tenantID pgtype.UUID, publ
 // ---------------------------------------------------------------------------
 
 // ListRevisions handles GET /api/v1/content/{id}/revisions.
+// Tenant-scoped and permission-gated (BUG-012).
 func (h *Handlers) ListRevisions(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
-	revisions, err := h.Service.ListContentRevisions(r.Context(), id)
+	revisions, err := h.Service.ListContentRevisions(r.Context(), tenantID, id)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	// Defense-in-depth: confirm the content exists and the requester can see it
+	// in this tenant (BUG-012 closes the tenant-scoping gap on the query itself).
+	_, err = h.Service.GetContent(r.Context(), id, tenantID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -2198,6 +2414,17 @@ func (h *Handlers) AddContentTag(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// BUG-001: only the content author or content.edit_any holder may tag it.
+	content, err := h.Service.GetContent(r.Context(), contentID, tenantID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	if !canModifyContent(r, user.UserID, tenantID, content.AuthorID, "content.edit_any") {
+		errpkg.WriteError(w, http.StatusForbidden, "not_author", "You can only tag your own content")
+		return
+	}
+
 	var input struct {
 		TagSlugs []string `json:"tag_slugs"`
 		TagID    string   `json:"tag_id"`
@@ -2283,11 +2510,26 @@ func (h *Handlers) RemoveContentTag(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_ = user // used for RBAC audit trail
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
 
 	contentID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		return
+	}
+
+	// BUG-001: only the content author or content.edit_any holder may untag it.
+	content, err := h.Service.GetContent(r.Context(), contentID, tenantID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	if !canModifyContent(r, user.UserID, tenantID, content.AuthorID, "content.edit_any") {
+		errpkg.WriteError(w, http.StatusForbidden, "not_author", "You can only remove tags from your own content")
 		return
 	}
 
@@ -2296,10 +2538,6 @@ func (h *Handlers) RemoveContentTag(w http.ResponseWriter, r *http.Request) {
 		// Not a valid UUID — try slug resolution if a resolver is wired.
 		if h.tagResolver == nil {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_tag_id", "Invalid tag ID format")
-			return
-		}
-		tenantID, ok := h.requireTenant(w, r)
-		if !ok {
 			return
 		}
 		slug := chi.URLParam(r, "tagId")
@@ -2511,15 +2749,13 @@ func (h *Handlers) UpdateContentSpaces(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Verify the content exists and belongs to the caller's tenant.
-	// The route middleware already enforces content.edit permission.
+	// BUG-005: the author may update spaces; content.edit_any holders may too.
 	existing, err := h.Service.GetContent(r.Context(), contentID, tenantID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
-	// Ensure the caller is the author (admins with content.edit_any
-	// bypass this via the RBAC layer's _any scope).
-	if existing.AuthorID.Valid && existing.AuthorID.Bytes != user.UserID.Bytes {
+	if !canModifyContent(r, user.UserID, tenantID, existing.AuthorID, "content.edit_any") {
 		errpkg.WriteError(w, http.StatusForbidden, "not_author",
 			"Only the author can update space assignments")
 		return
@@ -2536,12 +2772,26 @@ func (h *Handlers) UpdateContentSpaces(w http.ResponseWriter, r *http.Request) {
 		additionalSpaceIDs = append(additionalSpaceIDs, sid)
 	}
 
-	if err := h.Service.UpdateContentSpaces(r.Context(), contentID, primarySpaceID, additionalSpaceIDs); err != nil {
+	bypassSpaceCheck := false
+	if resolver := rbac.FromContext(r.Context()); resolver != nil {
+		bypassSpaceCheck = resolver.IsSuperAdmin(r.Context(), user.UserID, tenantID) ||
+			resolver.HasPermission(r.Context(), user.UserID, tenantID, "content.edit_any")
+	}
+	if err := h.Service.UpdateContentSpaces(r.Context(), contentID, tenantID, user.UserID, primarySpaceID, additionalSpaceIDs, bypassSpaceCheck); err != nil {
 		slog.Error("updating content spaces",
 			"error", err, "content_id", contentID.String(),
 			"user_id", user.UserID.String())
-		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error",
-			"Failed to update space assignments")
+		switch {
+		case errors.Is(err, ErrInvalidSpace):
+			errpkg.WriteError(w, http.StatusUnprocessableEntity, "invalid_space",
+				"One or more space IDs do not belong to this tenant")
+		case errors.Is(err, ErrNotSpaceMember):
+			errpkg.WriteError(w, http.StatusForbidden, "not_space_member",
+				"You must be a member of each assigned space")
+		default:
+			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error",
+				"Failed to update space assignments")
+		}
 		return
 	}
 

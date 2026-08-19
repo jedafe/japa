@@ -17,6 +17,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"strings"
 	"time"
 
@@ -36,6 +37,12 @@ var ErrPublishViaUpdate = errors.New("arrivalchecklist: cannot publish via updat
 // needs to generate draft guides. *ai.Dispatcher satisfies this.
 type AIDispatcher interface {
 	Dispatch(ctx context.Context, category string, req ai.Request) (ai.Response, error)
+}
+
+// Researcher runs grounded web research for a destination and visa category.
+// *Service implements this interface, but it can be swapped in tests.
+type Researcher interface {
+	Research(ctx context.Context, tenantID, destSpaceID, citySpaceID pgtype.UUID, visaCategory string) (string, []string, error)
 }
 
 // GuideDTO is the API response shape for a single arrival checklist guide.
@@ -142,20 +149,28 @@ type Service struct {
 	store      *Store
 	settings   *config.Settings
 	dispatcher AIDispatcher
+	httpClient *http.Client // nil = http.DefaultClient
+	researcher Researcher   // nil = use s.Research
 }
 
 // NewService creates an arrival checklist service.
 func NewService(store *Store, settings *config.Settings) *Service {
-	return &Service{
+	s := &Service{
 		store:    store,
 		settings: settings,
 	}
+	s.researcher = s
+	return s
 }
 
 // SetDispatcher injects the AI Gateway dispatcher for draft generation
 // (content_generation category). Optional: when nil or when the call
 // fails, the draft is still created so a reviewer can fill it manually.
 func (s *Service) SetDispatcher(d AIDispatcher) { s.dispatcher = d }
+
+// SetHTTPClient sets the HTTP client used for external web research. When
+// nil, http.DefaultClient is used.
+func (s *Service) SetHTTPClient(c *http.Client) { s.httpClient = c }
 
 // Enabled reads the arrival_checklist.enabled system_setting toggle
 // (§92 feature flag).
@@ -164,6 +179,121 @@ func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
 		return false
 	}
 	return s.settings.GetBoolOr(ctx, tenantID, "arrival_checklist.enabled", false)
+}
+
+// Research runs grounded web research for the given destination and visa
+// category. The citySpaceID parameter is reserved for future city-level
+// refinement and is currently ignored. It returns a formatted "GROUNDED
+// RESEARCH" section and a list of source URLs. Errors are returned so the
+// caller can log and fall back.
+func (s *Service) Research(ctx context.Context, tenantID, destSpaceID, citySpaceID pgtype.UUID, visaCategory string) (string, []string, error) {
+	_ = citySpaceID // reserved for future city-level refinement
+
+	client := s.httpClient
+	if client == nil {
+		client = http.DefaultClient
+	}
+
+	destName, err := s.store.GetSpaceName(ctx, destSpaceID, tenantID)
+	if err != nil {
+		return "", nil, err
+	}
+	dest := destName
+	if dest == "" {
+		dest = destSpaceID.String()
+	}
+
+	visa := visaCategory
+	if visa == "" {
+		visa = "arrival"
+	} else {
+		visa = strings.ReplaceAll(visa, "_", " ")
+	}
+
+	queries := []string{
+		fmt.Sprintf("current arrival requirements for %s visa in %s 2026", visa, dest),
+		fmt.Sprintf("current documents required at immigration %s 2026", dest),
+	}
+
+	return s.runWebResearch(ctx, client, tenantID, queries)
+}
+
+// runWebResearch executes the provided queries through the configured
+// external search provider and formats the results for the generation
+// prompt. It returns the full grounded research section and a deduplicated
+// list of citation URLs.
+func (s *Service) runWebResearch(ctx context.Context, client *http.Client, tenantID pgtype.UUID, queries []string) (string, []string, error) {
+	var sections []string
+	seenCitations := make(map[string]bool)
+	var citations []string
+
+	for _, q := range queries {
+		provider, results, err := ai.SearchWeb(ctx, client, s.settings, tenantID, q, 5)
+		if err != nil {
+			return "", nil, err
+		}
+		if len(results) == 0 {
+			continue
+		}
+		section, sectionCitations := buildGroundedResearchSection(q, provider, results)
+		sections = append(sections, section)
+		for _, c := range sectionCitations {
+			if !seenCitations[c] {
+				seenCitations[c] = true
+				citations = append(citations, c)
+			}
+		}
+	}
+
+	if len(sections) == 0 {
+		return "", nil, nil
+	}
+
+	var sb strings.Builder
+	sb.WriteString("GROUNDED RESEARCH (use the search results below for factual, time-sensitive sub-fields such as arrival requirements, documents required at immigration, and official links; cite the source URLs when you include factual claims):\n\n")
+	for _, sec := range sections {
+		sb.WriteString(sec)
+		sb.WriteString("\n\n")
+	}
+	if len(citations) > 0 {
+		sb.WriteString("Sources:\n")
+		for _, c := range citations {
+			sb.WriteString("- " + c + "\n")
+		}
+	}
+	return sb.String(), citations, nil
+}
+
+// buildGroundedResearchSection formats a single query's results.
+func buildGroundedResearchSection(query, provider string, results []ai.WebSearchResult) (string, []string) {
+	if len(results) == 0 {
+		return "", nil
+	}
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("Query: %q (provider: %s)\n", query, provider))
+
+	seen := make(map[string]bool)
+	var citations []string
+	for i, r := range results {
+		sb.WriteString(fmt.Sprintf("\nResult %d:\n", i+1))
+		sb.WriteString(fmt.Sprintf("Title: %s\n", r.Title))
+		sb.WriteString(fmt.Sprintf("URL: %s\n", r.URL))
+		sb.WriteString(fmt.Sprintf("Content: %s\n", r.Content))
+		if len(r.Citations) > 0 {
+			sb.WriteString(fmt.Sprintf("Citations: %s\n", strings.Join(r.Citations, ", ")))
+		}
+		for _, c := range append([]string{r.URL}, r.Citations...) {
+			if c == "" {
+				continue
+			}
+			if !seen[c] {
+				seen[c] = true
+				citations = append(citations, c)
+			}
+		}
+	}
+	return sb.String(), citations
 }
 
 // ListSelectors returns the distinct destination + visa category
@@ -384,20 +514,43 @@ func (s *Service) GenerateGuide(ctx context.Context, tenantID pgtype.UUID, req G
 		visaCategory = &v
 	}
 
-	// Build the prompt sent to the Content Agent. The destination space id,
-	// visa category, applicant type, and an optional caller-supplied prompt
-	// are combined into a single string the gateway can route to the model.
+	// Look up the destination name so the prompt and research queries are
+	// human-readable. A missing name is non-fatal; we fall back to the ID.
+	destName, _ := s.store.GetSpaceName(ctx, destSpaceID, tenantID)
+	location := destName
+	if location == "" {
+		location = req.DestinationSpaceID
+	}
+
+	// Build the prompt sent to the Content Agent. The destination, visa
+	// category, applicant type, and an optional caller-supplied prompt are
+	// combined into a single string the gateway can route to the model.
 	prompt := req.Prompt
 	if prompt == "" {
 		prompt = fmt.Sprintf(
-			"Generate an arrival checklist guide for destination_space_id=%s, visa_category=%s, applicant_type=%s.",
-			req.DestinationSpaceID, req.VisaCategory, applicantType,
+			"Generate an arrival checklist guide for destination %s (destination_space_id=%s), visa_category=%s, applicant_type=%s. "+
+				"Include ordered checklist items grouped by arrival phase (day_1_7, week_2_4, month_1_3, ongoing), required documents, immigration steps, and official links.\n\n"+
+				"Use the GROUNDED RESEARCH section below for current arrival requirements and documents. Cite the source URLs when you make factual claims. If no grounded research is available, use your training knowledge and clearly note that details may need verification.",
+			location, req.DestinationSpaceID, req.VisaCategory, applicantType,
 		)
 	} else {
 		prompt = fmt.Sprintf(
-			"%s\nContext: destination_space_id=%s, visa_category=%s, applicant_type=%s.",
-			prompt, req.DestinationSpaceID, req.VisaCategory, applicantType,
+			"%s\n\nContext: destination=%s, destination_space_id=%s, visa_category=%s, applicant_type=%s. "+
+				"Use the GROUNDED RESEARCH section below for current arrival requirements and documents. Cite the source URLs when you make factual claims.",
+			prompt, location, req.DestinationSpaceID, req.VisaCategory, applicantType,
 		)
+	}
+
+	// Augment the prompt with grounded web research. If research fails, log
+	// a warning and continue with the original prompt (graceful degradation).
+	var citySpaceID pgtype.UUID // not used yet; reserved for future refinement
+	if s.researcher != nil {
+		researchText, _, researchErr := s.researcher.Research(ctx, tenantID, destSpaceID, citySpaceID, req.VisaCategory)
+		if researchErr != nil {
+			slog.Warn("arrivalchecklist: web research failed, continuing with original prompt", "error", researchErr)
+		} else if researchText != "" {
+			prompt = prompt + "\n\n" + researchText
+		}
 	}
 
 	// ai_prompt_hash = SHA256(prompt) for audit traceability.

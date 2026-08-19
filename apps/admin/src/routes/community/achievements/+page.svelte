@@ -5,7 +5,7 @@
 	// the DataTable. Ref: §89, ADR-097.
 	import { onMount } from 'svelte';
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
-	import { achievementAdminApi , spacesAdminApi } from '$lib/api';
+	import { achievementAdminApi , spacesAdminApi, adminCatalogApi, type CatalogOption } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { Eye, EyeOff, Trash2, CheckCircle } from 'lucide-svelte';
@@ -34,6 +34,20 @@
 	const canManage = $derived(hasPermission('achievement.moderate'));
 
 	let entityController = $state<EntityPageController | undefined>(undefined);
+
+	let achievementStatusOptions = $state<CatalogOption[]>([
+		{ value: 'active', label: t('app.achievement.status_active', 'Active') },
+		{ value: 'inactive', label: t('app.achievement.status_inactive', 'Inactive') },
+		{ value: 'pending', label: t('app.achievement.status_pending', 'Pending') }
+	]);
+
+	$effect(() => {
+		void (async () => {
+			const res = await adminCatalogApi.get('community.achievements.status');
+			if (res.ok && res.data?.length) achievementStatusOptions = res.data;
+		})();
+	});
+
 	let pageError = $state('');
 	let actionLoading = $state(false);
 
@@ -116,11 +130,7 @@ onMount(async () => {
 		{
 			key: 'status',
 			label: t('app.achievement.col_status', 'Status'),
-			options: [
-				{ value: 'active', label: t('app.achievement.status_active', 'Active') },
-				{ value: 'inactive', label: t('app.achievement.status_inactive', 'Inactive') },
-				{ value: 'pending', label: t('app.achievement.status_pending', 'Pending') },
-			]
+			options: achievementStatusOptions
 		},
 		{
 			key: 'dest',

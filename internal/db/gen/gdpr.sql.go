@@ -1029,6 +1029,30 @@ func (q *Queries) GdprDeleteAdEventsByUser(ctx context.Context, userID pgtype.UU
 	return err
 }
 
+const gdprDeleteBookmarkFoldersByUser = `-- name: GdprDeleteBookmarkFoldersByUser :exec
+DELETE FROM bookmark_folders WHERE user_id = $1
+`
+
+// Deletes custom bookmark folders for the user. bookmark_folders.user_id
+// has ON DELETE CASCADE, but we delete explicitly so the erasure path is
+// self-documenting and survives future schema changes. Ref: BUG-011.
+func (q *Queries) GdprDeleteBookmarkFoldersByUser(ctx context.Context, userID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, gdprDeleteBookmarkFoldersByUser, userID)
+	return err
+}
+
+const gdprDeleteBookmarksByUser = `-- name: GdprDeleteBookmarksByUser :exec
+DELETE FROM bookmarks WHERE user_id = $1
+`
+
+// Deletes bookmark rows for the user. bookmarks.user_id has ON DELETE
+// CASCADE, but we delete explicitly so the erasure path is self-documenting
+// and survives future schema changes. Ref: BUG-011.
+func (q *Queries) GdprDeleteBookmarksByUser(ctx context.Context, userID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, gdprDeleteBookmarksByUser, userID)
+	return err
+}
+
 const gdprDeleteCalendarSavesByUser = `-- name: GdprDeleteCalendarSavesByUser :exec
 DELETE FROM calendar_saves
 WHERE user_id = $1 AND tenant_id = $2
@@ -1058,6 +1082,42 @@ type GdprDeleteCalendarSubscriptionsByUserParams struct {
 // §86: delete calendar_subscriptions for the user during GDPR erasure (BUG-025).
 func (q *Queries) GdprDeleteCalendarSubscriptionsByUser(ctx context.Context, arg GdprDeleteCalendarSubscriptionsByUserParams) error {
 	_, err := q.db.Exec(ctx, gdprDeleteCalendarSubscriptionsByUser, arg.UserID, arg.TenantID)
+	return err
+}
+
+const gdprDeleteContentSharesByUser = `-- name: GdprDeleteContentSharesByUser :exec
+DELETE FROM content_shares WHERE user_id = $1
+`
+
+// Deletes content_shares rows authored by the user. content_shares.user_id
+// has ON DELETE CASCADE, but we delete explicitly so the erasure path is
+// self-documenting and survives future schema changes. Ref: BUG-011.
+func (q *Queries) GdprDeleteContentSharesByUser(ctx context.Context, userID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, gdprDeleteContentSharesByUser, userID)
+	return err
+}
+
+const gdprDeleteForumBookmarksByUser = `-- name: GdprDeleteForumBookmarksByUser :exec
+DELETE FROM forum_bookmarks WHERE user_id = $1
+`
+
+// Deletes forum bookmark rows for the user. forum_bookmarks.user_id has
+// ON DELETE CASCADE, but we delete explicitly so the erasure path is
+// self-documenting and survives future schema changes. Ref: BUG-011.
+func (q *Queries) GdprDeleteForumBookmarksByUser(ctx context.Context, userID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, gdprDeleteForumBookmarksByUser, userID)
+	return err
+}
+
+const gdprDeleteReactionsByUser = `-- name: GdprDeleteReactionsByUser :exec
+DELETE FROM reactions WHERE user_id = $1
+`
+
+// Deletes reaction rows authored by the user. reactions.user_id has
+// ON DELETE CASCADE, but we delete explicitly so the erasure path is
+// self-documenting and survives future schema changes. Ref: BUG-011.
+func (q *Queries) GdprDeleteReactionsByUser(ctx context.Context, userID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, gdprDeleteReactionsByUser, userID)
 	return err
 }
 
