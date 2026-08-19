@@ -17,7 +17,7 @@ class _RealtimeInitializerState extends ConsumerState<RealtimeInitializer> {
     ref.listen<bool>(isAuthenticatedProvider, (prev, next) {
       final socket = ref.read(socketServiceProvider);
       if (next) {
-        socket.connect();
+        socket.connect().catchError((_) {}); // reconnect scheduled internally
       } else {
         socket.disconnect();
       }
