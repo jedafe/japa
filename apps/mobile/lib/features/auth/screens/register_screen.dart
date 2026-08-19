@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:japaconnect_core/japaconnect_core.dart';
 import 'package:japaconnect_mobile/features/auth/providers/auth_provider.dart';
+import 'package:japaconnect_mobile/i18n/app_localizations.dart';
 
 class RegisterScreen extends ConsumerStatefulWidget {
   const RegisterScreen({super.key});
@@ -36,6 +37,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
   Widget build(BuildContext context) {
     final state = ref.watch(authFormProvider);
     final notifier = ref.read(authFormProvider.notifier);
+    final t = ref.watch(tProvider);
 
     ref.listen(isAuthenticatedProvider, (prev, next) {
       if (next == true && prev != true) {
@@ -44,28 +46,28 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
     });
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Register')),
+      appBar: AppBar(title: Text(t('auth.register'))),
       body: Padding(
         padding: const EdgeInsets.all(24),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            JcTextField(label: 'Username', controller: _username),
+            JcTextField(label: t('auth.username'), controller: _username),
             const SizedBox(height: 16),
-            JcTextField(label: 'Email', controller: _email),
+            JcTextField(label: t('auth.email'), controller: _email),
             const SizedBox(height: 16),
-            JcTextField(label: 'Password', controller: _password, obscureText: true),
+            JcTextField(label: t('auth.password'), controller: _password, obscureText: true),
             if (state.error != null) Text(state.error!, style: const TextStyle(color: Colors.red)),
             const SizedBox(height: 16),
             JcButton(
-              label: state.isLoading ? 'Loading...' : 'Register',
+              label: state.isLoading ? t('auth.loading') : t('auth.register'),
               onPressed: state.isLoading
                   ? null
                   : () => notifier.register(_username.text, _email.text, _password.text),
             ),
             TextButton(
               onPressed: () => context.push('/login'),
-              child: const Text('Back to Login'),
+              child: Text(t('auth.back_to_login')),
             ),
           ],
         ),

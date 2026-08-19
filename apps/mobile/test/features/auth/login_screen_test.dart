@@ -9,18 +9,18 @@ void main() {
   testWidgets('LoginScreen shows login fields', (tester) async {
     await tester.pumpWidget(const ProviderScope(child: MaterialApp(home: LoginScreen())));
     expect(find.byType(TextField), findsNWidgets(2));
-    expect(find.text('Login'), findsOneWidget);
+    expect(find.text('auth.login'), findsOneWidget);
   });
 
   testWidgets('RegisterScreen shows register fields', (tester) async {
     await tester.pumpWidget(const ProviderScope(child: MaterialApp(home: RegisterScreen())));
     expect(find.byType(TextField), findsNWidgets(3));
-    expect(find.text('Register'), findsNWidgets(2));
+    expect(find.text('auth.register'), findsNWidgets(2));
   });
 
   testWidgets('TOTPScreen shows TOTP field', (tester) async {
     await tester.pumpWidget(const ProviderScope(child: MaterialApp(home: TOTPScreen())));
     expect(find.byType(TextField), findsOneWidget);
-    expect(find.text('Verify'), findsOneWidget);
+    expect(find.text('auth.verify'), findsOneWidget);
   });
 }

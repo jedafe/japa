@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:japaconnect_core/japaconnect_core.dart';
 import 'package:japaconnect_mobile/features/tools/scholarships/providers/scholarships_provider.dart';
+import 'package:japaconnect_mobile/i18n/app_localizations.dart';
 
 class ScholarshipsScreen extends ConsumerWidget {
   const ScholarshipsScreen({super.key});
@@ -9,8 +10,9 @@ class ScholarshipsScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(scholarshipsProvider);
+    final t = ref.watch(tProvider);
     return Scaffold(
-      appBar: AppBar(title: const Text('Scholarships')),
+      appBar: AppBar(title: Text(t('tools.scholarships'))),
       body: state.when(
         data: (items) => ListView.builder(
           itemCount: items.length,

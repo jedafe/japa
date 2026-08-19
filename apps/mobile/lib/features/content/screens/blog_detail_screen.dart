@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:japaconnect_core/japaconnect_core.dart';
 import 'package:japaconnect_mobile/features/content/providers/content_provider.dart';
+import 'package:japaconnect_mobile/i18n/app_localizations.dart';
 
 class BlogDetailScreen extends ConsumerWidget {
   final String slug;
@@ -10,8 +11,9 @@ class BlogDetailScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(blogDetailProvider(slug));
+    final t = ref.watch(tProvider);
     return Scaffold(
-      appBar: AppBar(title: const Text('Blog Post')),
+      appBar: AppBar(title: Text(t('content.blog_post'))),
       body: state.when(
         data: (item) => SingleChildScrollView(
           padding: const EdgeInsets.all(16),

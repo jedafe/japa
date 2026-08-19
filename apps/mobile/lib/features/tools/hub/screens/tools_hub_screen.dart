@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:japaconnect_core/japaconnect_core.dart';
 import 'package:japaconnect_mobile/features/tools/hub/providers/tools_hub_provider.dart';
+import 'package:japaconnect_mobile/i18n/app_localizations.dart';
 
 class ToolsHubScreen extends ConsumerWidget {
   const ToolsHubScreen({super.key});
@@ -10,39 +11,40 @@ class ToolsHubScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(toolsHubProvider);
+    final t = ref.watch(tProvider);
     return Scaffold(
-      appBar: AppBar(title: const Text('Tools')),
+      appBar: AppBar(title: Text(t('tools.title'))),
       body: state.when(
         data: (flags) {
           final items = <Widget>[
             if (flags['visa_checklist'] != false)
               ListTile(
-                title: const Text('Visa Checklist'),
+                title: Text(t('tools.visa_checklist')),
                 onTap: () => context.push('/tools/visa-checklist'),
               ),
             if (flags['readiness'] != false)
               ListTile(
-                title: const Text('Readiness Assessment'),
+                title: Text(t('tools.readiness')),
                 onTap: () => context.push('/tools/readiness'),
               ),
             if (flags['cost_of_living'] != false)
               ListTile(
-                title: const Text('Cost of Living'),
+                title: Text(t('tools.cost_of_living')),
                 onTap: () => context.push('/tools/cost-of-living'),
               ),
             if (flags['scholarships'] != false)
               ListTile(
-                title: const Text('Scholarships'),
+                title: Text(t('tools.scholarships')),
                 onTap: () => context.push('/tools/scholarships'),
               ),
             if (flags['remittance'] != false)
               ListTile(
-                title: const Text('Remittance'),
+                title: Text(t('tools.remittance')),
                 onTap: () => context.push('/tools/remittance'),
               ),
             if (flags['japabot'] != false)
               ListTile(
-                title: const Text('JapaBot'),
+                title: Text(t('tools.japabot')),
                 onTap: () => context.push('/tools/japabot'),
               ),
           ];

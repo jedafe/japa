@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:japaconnect_core/japaconnect_core.dart';
 import 'package:japaconnect_mobile/features/auth/providers/auth_provider.dart';
+import 'package:japaconnect_mobile/i18n/app_localizations.dart';
 
 class TOTPScreen extends ConsumerStatefulWidget {
   const TOTPScreen({super.key});
@@ -30,6 +31,7 @@ class _TOTPScreenState extends ConsumerState<TOTPScreen> {
   Widget build(BuildContext context) {
     final state = ref.watch(authFormProvider);
     final notifier = ref.read(authFormProvider.notifier);
+    final t = ref.watch(tProvider);
 
     ref.listen(isAuthenticatedProvider, (prev, next) {
       if (next == true && prev != true) {
@@ -38,17 +40,17 @@ class _TOTPScreenState extends ConsumerState<TOTPScreen> {
     });
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Two-Factor Authentication')),
+      appBar: AppBar(title: Text(t('auth.totp_title'))),
       body: Padding(
         padding: const EdgeInsets.all(24),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            JcTextField(label: 'TOTP Code', controller: _code),
+            JcTextField(label: t('auth.totp_code'), controller: _code),
             if (state.error != null) Text(state.error!, style: const TextStyle(color: Colors.red)),
             const SizedBox(height: 16),
             JcButton(
-              label: state.isLoading ? 'Verifying...' : 'Verify',
+              label: state.isLoading ? t('auth.verifying') : t('auth.verify'),
               onPressed: state.isLoading ? null : () => notifier.verifyTOTP(_code.text),
             ),
           ],

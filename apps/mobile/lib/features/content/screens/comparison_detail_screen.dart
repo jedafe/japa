@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:japaconnect_core/japaconnect_core.dart';
 import 'package:japaconnect_mobile/features/content/providers/content_provider.dart';
+import 'package:japaconnect_mobile/i18n/app_localizations.dart';
 
 class ComparisonDetailScreen extends ConsumerWidget {
   final String id;
@@ -10,8 +11,9 @@ class ComparisonDetailScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(comparisonDetailProvider(id));
+    final t = ref.watch(tProvider);
     return Scaffold(
-      appBar: AppBar(title: const Text('Comparison')),
+      appBar: AppBar(title: Text(t('content.comparison'))),
       body: state.when(
         data: (item) => SingleChildScrollView(
           padding: const EdgeInsets.all(16),

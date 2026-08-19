@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:japaconnect_core/japaconnect_core.dart';
 import 'package:japaconnect_mobile/features/learning/providers/learning_provider.dart';
+import 'package:japaconnect_mobile/i18n/app_localizations.dart';
 
 class CourseDetailScreen extends ConsumerStatefulWidget {
   final String slug;
@@ -19,14 +20,16 @@ class _CourseDetailScreenState extends ConsumerState<CourseDetailScreen> {
     try {
       await ref.read(learningServiceProvider).enroll(courseId);
       if (mounted) {
+        final t = ref.read(tProvider);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Enrolled!')),
+          SnackBar(content: Text(t('learning.enrolled'))),
         );
       }
     } catch (e) {
       if (mounted) {
+        final t = ref.read(tProvider);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to enroll: $e')),
+          SnackBar(content: Text(t('errors.failed_enroll', {'error': e.toString()}))),
         );
       }
     } finally {
@@ -37,8 +40,9 @@ class _CourseDetailScreenState extends ConsumerState<CourseDetailScreen> {
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(courseDetailProvider(widget.slug));
+    final t = ref.watch(tProvider);
     return Scaffold(
-      appBar: AppBar(title: const Text('Course')),
+      appBar: AppBar(title: Text(t('learning.course'))),
       body: state.when(
         data: (course) => SingleChildScrollView(
           padding: const EdgeInsets.all(16),
@@ -49,7 +53,7 @@ class _CourseDetailScreenState extends ConsumerState<CourseDetailScreen> {
               const SizedBox(height: 8),
               Text(course['description'] ?? ''),
               JcButton(
-                label: 'Enroll',
+                label: t('learning.enroll'),
                 onPressed:
                     _loading ? null : () => _enroll(course['id'] as String),
               ),

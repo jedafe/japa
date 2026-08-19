@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:japaconnect_core/japaconnect_core.dart';
 import 'package:japaconnect_mobile/features/content/providers/content_provider.dart';
+import 'package:japaconnect_mobile/i18n/app_localizations.dart';
 
 class BlogListScreen extends ConsumerWidget {
   const BlogListScreen({super.key});
@@ -10,8 +11,9 @@ class BlogListScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(blogListProvider);
+    final t = ref.watch(tProvider);
     return Scaffold(
-      appBar: AppBar(title: const Text('Blog')),
+      appBar: AppBar(title: Text(t('content.blog'))),
       body: state.when(
         data: (items) => ListView.builder(
           itemCount: items.length,
