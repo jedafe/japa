@@ -31,4 +31,9 @@ test.describe('Control App — Smoke Tests', () => {
 		await page.goto('/cache');
 		await expect(page.locator('h1, h2').first()).toBeVisible();
 	});
+
+	test('proposed sources review page loads', async ({ page }) => {
+		await page.goto('/intelligence/sources/proposed');
+		await expect(page.locator('h1, h2').first()).toBeVisible();
+	});
 });
