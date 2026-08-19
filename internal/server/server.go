@@ -5745,6 +5745,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Patch("/intel/sources/{id}", intelHandlers.HandleUpdateSource)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "intel.sources.manage")).
 				Delete("/intel/sources/{id}", intelHandlers.HandleDeleteSource)
+			// Proposed source admin workflow (source.discover).
+			// Requires: intel.sources.manage.
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "intel.sources.manage")).
+				Get("/intel/sources/proposed", intelHandlers.HandleListProposedSources)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "intel.sources.manage")).
+				Post("/intel/sources/{id}/approve", intelHandlers.HandleApproveProposedSource)
 			// Crawl-now — triggers an immediate fetch of a source (INTEL-011 fix).
 			// RBAC-gated by intel.sources.crawl_now (migration 000431).
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "intel.sources.crawl_now")).

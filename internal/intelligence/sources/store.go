@@ -186,5 +186,33 @@ func (s *Store) Update(ctx context.Context, tenantID pgtype.UUID, arg gen.Update
 	return row, nil
 }
 
+// ListProposed returns a page of sources with status='proposed' for admin
+// review. Tenant-scoped.
+func (s *Store) ListProposed(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]Source, error) {
+	rows, err := s.queries.ListProposedIntelSources(ctx, gen.ListProposedIntelSourcesParams{
+		TenantID: tenantID,
+		Limit:    limit,
+		Offset:   offset,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("sources: list proposed: %w", err)
+	}
+	return rows, nil
+}
+
+// ApproveProposed activates a proposed source (status='active', enabled=true)
+// and records the approver. Tenant-scoped.
+func (s *Store) ApproveProposed(ctx context.Context, tenantID, id, approvedBy pgtype.UUID) (Source, error) {
+	row, err := s.queries.ApproveProposedIntelSource(ctx, gen.ApproveProposedIntelSourceParams{
+		TenantID:   tenantID,
+		ID:         id,
+		ApprovedBy: approvedBy,
+	})
+	if err != nil {
+		return Source{}, fmt.Errorf("sources: approve proposed: %w", err)
+	}
+	return row, nil
+}
+
 // Compile-time guard that pgtype.UUID satisfies SourceID's underlying type.
 var _ SourceID = pgtype.UUID{}
