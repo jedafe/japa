@@ -11,11 +11,17 @@ class AuthFormState {
 
   const AuthFormState({this.isLoading = false, this.error, this.challengeToken});
 
-  AuthFormState copyWith({bool? isLoading, String? error, String? challengeToken}) {
+  AuthFormState copyWith({
+    bool? isLoading,
+    String? error,
+    String? challengeToken,
+    bool clearError = false,
+    bool clearChallenge = false,
+  }) {
     return AuthFormState(
       isLoading: isLoading ?? this.isLoading,
-      error: error ?? this.error,
-      challengeToken: challengeToken ?? this.challengeToken,
+      error: clearError ? null : (error ?? this.error),
+      challengeToken: clearChallenge ? null : (challengeToken ?? this.challengeToken),
     );
   }
 }
@@ -31,13 +37,13 @@ class AuthFormNotifier extends Notifier<AuthFormState> {
   }
 
   Future<void> login(String username, String password) async {
-    state = state.copyWith(isLoading: true, error: null);
+    state = state.copyWith(isLoading: true, clearError: true, clearChallenge: true);
     try {
       await _auth.login(username, password, onAuthenticated: _setAuthenticated);
-      state = state.copyWith(isLoading: false);
+      state = state.copyWith(isLoading: false, clearError: true, clearChallenge: true);
     } on JcApiError catch (e) {
       if (e.code == 'totp_required') {
-        state = state.copyWith(isLoading: false, challengeToken: e.message);
+        state = state.copyWith(isLoading: false, challengeToken: e.message, clearError: true);
       } else {
         ref.read(isAuthenticatedProvider.notifier).set(false);
         state = state.copyWith(isLoading: false, error: e.message);
@@ -46,10 +52,10 @@ class AuthFormNotifier extends Notifier<AuthFormState> {
   }
 
   Future<void> register(String username, String email, String password) async {
-    state = state.copyWith(isLoading: true, error: null);
+    state = state.copyWith(isLoading: true, clearError: true);
     try {
       await _auth.register(username, email, password, onAuthenticated: _setAuthenticated);
-      state = state.copyWith(isLoading: false);
+      state = state.copyWith(isLoading: false, clearError: true, clearChallenge: true);
     } on JcApiError catch (e) {
       ref.read(isAuthenticatedProvider.notifier).set(false);
       state = state.copyWith(isLoading: false, error: e.message);
@@ -57,7 +63,7 @@ class AuthFormNotifier extends Notifier<AuthFormState> {
   }
 
   Future<void> verifyTOTP(String code) async {
-    state = state.copyWith(isLoading: true, error: null);
+    state = state.copyWith(isLoading: true, clearError: true);
     try {
       final token = state.challengeToken;
       if (token == null) {
@@ -65,7 +71,7 @@ class AuthFormNotifier extends Notifier<AuthFormState> {
         return;
       }
       await _auth.verifyTOTP(token, code, onAuthenticated: _setAuthenticated);
-      state = state.copyWith(isLoading: false);
+      state = state.copyWith(isLoading: false, clearError: true, clearChallenge: true);
     } on JcApiError catch (e) {
       ref.read(isAuthenticatedProvider.notifier).set(false);
       state = state.copyWith(isLoading: false, error: e.message);
