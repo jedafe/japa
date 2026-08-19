@@ -11,6 +11,7 @@
 		Eye,
 		Rocket,
 		RefreshCw,
+		Search,
 		ArrowRight,
 		Database,
 		Globe,
@@ -34,6 +35,7 @@
 		name: string;
 		domain: string;
 		enabled: boolean;
+		status?: string | null;
 		last_crawled_at?: string | null;
 		last_success_at?: string | null;
 		last_error_at?: string | null;
@@ -163,6 +165,9 @@
 	// Publish queue: promoted records that are live in domain projections.
 	const publishQueueCount = $derived(promotedRecords.length);
 
+	// Proposed queue: sources discovered by the agent awaiting admin approval.
+	const proposedQueueCount = $derived(sources.filter((s) => s.status === 'proposed').length);
+
 	// Freshness queue: sources whose last crawl is stale relative to their
 	// crawl interval (computed from source metadata, not hardcoded).
 	const freshnessQueueCount = $derived.by(() => {
@@ -237,6 +242,15 @@
 			accent: 'text-emerald-500',
 			href: '/intelligence/review?status=published',
 			subtitle: t('intel.queue_publish_sub', 'Promoted records live')
+		},
+		{
+			key: 'proposed',
+			label: t('intel.queue_proposed', 'Proposed Sources'),
+			count: proposedQueueCount,
+			icon: Search,
+			accent: 'text-pink-500',
+			href: '/intelligence/sources/proposed',
+			subtitle: t('intel.queue_proposed_sub', 'Discovered sources awaiting review')
 		},
 		{
 			key: 'freshness',
