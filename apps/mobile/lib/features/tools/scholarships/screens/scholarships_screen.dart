@@ -14,18 +14,25 @@ class ScholarshipsScreen extends ConsumerWidget {
       body: state.when(
         data: (items) => ListView.builder(
           itemCount: items.length,
-          itemBuilder: (_, i) => ListTile(
-            title: Text(items[i]['title'] ?? ''),
-            trailing: IconButton(
-              icon: Icon(items[i]['is_saved'] == true
-                  ? Icons.bookmark
-                  : Icons.bookmark_border),
-              onPressed: () {
-                final service = ref.read(scholarshipsServiceProvider);
-                service.save(items[i]['id'] as String, true);
-              },
-            ),
-          ),
+          itemBuilder: (_, i) {
+            final isSaved = items[i]['is_saved'] == true;
+            return ListTile(
+              title: Text(items[i]['title'] ?? ''),
+              trailing: IconButton(
+                icon: Icon(
+                    isSaved ? Icons.bookmark : Icons.bookmark_border),
+                onPressed: () {
+                  final service = ref.read(scholarshipsServiceProvider);
+                  final id = items[i]['id'] as String;
+                  if (isSaved) {
+                    service.unsave(id);
+                  } else {
+                    service.save(id);
+                  }
+                },
+              ),
+            );
+          },
         ),
         loading: () => const LoadingShimmer(),
         error: (e, _) => JcErrorWidget(

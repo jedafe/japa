@@ -1,3 +1,2 @@
-import 'package:flutter_riverpod/misc.dart';
-
-final globalProviders = <Override>[];
+/// Placeholder for app-wide Riverpod overrides.
+final globalProviders = <dynamic>[];

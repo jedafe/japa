@@ -12,9 +12,11 @@ class ScholarshipsService {
     return response;
   }
 
-  Future<void> save(String id, bool saved) async {
-    if (saved) {
-      await _client.post<void>('/scholarships/$id/save', parse: (_) {});
-    }
+  Future<void> save(String id) async {
+    await _client.post<void>('/scholarships/$id/save', parse: (_) {});
+  }
+
+  Future<void> unsave(String id) async {
+    await _client.delete('/scholarships/$id/save');
   }
 }
