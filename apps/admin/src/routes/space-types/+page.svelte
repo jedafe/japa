@@ -10,7 +10,7 @@
 		name: string;
 		slug: string;
 		description: string;
-		is_university: boolean;
+		category?: string;
 		icon: string;
 	};
 
@@ -43,12 +43,20 @@
 	}
 
 	// `fields` drives EntityForm rendering and edit-form seeding.
+	const categoryOptions = [
+		{ value: 'education', label: t('space-types.category.education', 'Education') },
+		{ value: 'business', label: t('space-types.category.business', 'Business') },
+		{ value: 'profession', label: t('space-types.category.profession', 'Profession') },
+		{ value: 'interest', label: t('space-types.category.interest', 'Interest') },
+		{ value: 'lifestyle', label: t('space-types.category.lifestyle', 'Lifestyle') }
+	];
+
 	const fields: FieldDef[] = [
 		{ key: 'name', label: t('space-types.name', 'Name'), type: 'text', placeholder: 'University', required: true },
 		{ key: 'slug', label: t('space-types.slug', 'Slug'), type: 'text', placeholder: 'university', help: t('app.space_types.slug_hint', 'Leave blank to auto-generate from name.'), readonlyInEdit: true },
 		{ key: 'description', label: t('space-types.description', 'Description'), type: 'textarea', placeholder: '' },
 		{ key: 'icon', label: t('space-types.icon_emoji_or_name', 'Icon (emoji or name)'), type: 'text', placeholder: '🎓' },
-		{ key: 'is_university', label: t('space-types.university_type', 'University type'), type: 'checkbox' }
+		{ key: 'category', label: t('space-types.category', 'Category'), type: 'select', options: categoryOptions, required: true }
 	];
 
 	const config: EntityPageConfig = {
@@ -69,17 +77,14 @@
 				label: t('space-types.description', 'Description'),
 				render: (v: string) => (v ? `<span class="text-sm">${v}</span>` : '—')
 			},
-			{ key: 'is_university', label: t('space-types.university', 'University'), componentSnippet: UniversityCell },
+			{ key: 'category', label: t('space-types.category', 'Category'), componentSnippet: CategoryCell },
 			{ key: 'icon', label: t('space-types.icon', 'Icon'), componentSnippet: IconCell }
 		],
 		filters: [
 			{
-				key: 'is_university',
-				label: t('app.space_types.filter_university', 'University'),
-				options: [
-					{ value: 'true', label: t('app.space_types.filter_yes', 'Yes') },
-					{ value: 'false', label: t('app.space_types.filter_no', 'No') }
-				]
+				key: 'category',
+				label: t('space-types.category', 'Category'),
+				options: categoryOptions
 			}
 		],
 		bulkActions: [
@@ -93,7 +98,7 @@
 		fields,
 		load: async ({ q, filter }) => {
 			const params = new URLSearchParams();
-			if (filter.is_university) params.set('is_university', filter.is_university);
+			if (filter.category) params.set('category', filter.category);
 			if (q) params.set('q', q);
 			const result = await spaceTypesApi.list(params.toString() || undefined);
 			if (result.ok) {
@@ -109,7 +114,7 @@
 				name: String(body.name ?? '').trim(),
 				slug,
 				description: String(body.description ?? '').trim(),
-				is_university: !!body.is_university,
+				category: String(body.category ?? '').trim(),
 				icon: String(body.icon ?? '').trim()
 			});
 			return res.ok ? { ok: true } : { ok: false, error: res.error };
@@ -120,7 +125,7 @@
 				name: String(body.name ?? '').trim(),
 				slug,
 				description: String(body.description ?? '').trim(),
-				is_university: !!body.is_university,
+				category: String(body.category ?? '').trim(),
 				icon: String(body.icon ?? '').trim()
 			});
 			return res.ok ? { ok: true } : { ok: false, error: res.error };
@@ -154,10 +159,14 @@
 	<span class="text-lg">{value || '—'}</span>
 {/snippet}
 
-{#snippet UniversityCell({ value }: { value: boolean; row: SpaceType })}
-	<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium {value ? 'bg-info/15 text-info' : 'bg-muted/15 text-muted'}">
-		{value ? t('app.space_types.yes', 'Yes') : t('app.space_types.no', 'No')}
-	</span>
+{#snippet CategoryCell({ value }: { value: string; row: SpaceType })}
+	{#if value}
+		<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium bg-info/15 text-info">
+			{categoryOptions.find((o) => o.value === value)?.label ?? value}
+		</span>
+	{:else}
+		<span class="text-muted">—</span>
+	{/if}
 {/snippet}
 
 <!-- View slide-over body (mirrors the legacy view modal) -->
@@ -177,8 +186,10 @@
 		</div>
 		<div class="grid grid-cols-2 gap-4">
 			<div>
-				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.space_types.university_label', 'University')}</p>
-				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.is_university ? t('app.space_types.yes', 'Yes') : t('app.space_types.no', 'No')}</p>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.space_types.category_label', 'Category')}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">
+					{row.category ? (categoryOptions.find((o) => o.value === row.category)?.label ?? row.category) : '—'}
+				</p>
 			</div>
 			<div>
 				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.space_types.icon_label', 'Icon')}</p>
