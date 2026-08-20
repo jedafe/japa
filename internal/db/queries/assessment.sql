@@ -177,3 +177,23 @@ DELETE FROM assessment_results WHERE user_id = @user_id;
 -- name: CleanupAnonymousAssessmentResults :execrows
 DELETE FROM assessment_results
 WHERE user_id IS NULL AND created_at < now() - ($1::int || ' hours')::interval;
+
+-- =====================================================================
+-- Get the latest assessment result for a user, including the original
+-- submission field_values (used to infer origin, destination, visa route).
+-- Returns no rows if the user has not completed an assessment.
+-- Ref: docs/superpowers/specs/2026-08-21-journey-aware-recommendations-design.md
+-- =====================================================================
+
+-- name: GetLatestAssessmentJourneyContext :one
+SELECT
+    ar.roadmap_content,
+    ar.dimension_scores,
+    ar.threshold_label,
+    ar.created_at,
+    fs.field_values AS submission_values
+FROM assessment_results ar
+JOIN form_submissions fs ON fs.id = ar.submission_id
+WHERE ar.tenant_id = @tenant_id AND ar.user_id = @user_id
+ORDER BY ar.created_at DESC
+LIMIT 1;
