@@ -228,9 +228,9 @@ export const walletApi = {
 
 export const spaceTypesApi = {
 	list: (params?: string) => api<unknown>(`/admin/space-types${params ? `?${params}` : ''}`),
-	create: (body: { name: string; slug: string; description?: string; is_university: boolean; icon?: string }) =>
+	create: (body: { name: string; slug: string; description?: string; category: string; icon?: string }) =>
 		api('/admin/space-types', { method: 'POST', body }),
-	update: (id: string, body: { name?: string; slug?: string; description?: string; is_university?: boolean; icon?: string }) =>
+	update: (id: string, body: { name?: string; slug?: string; description?: string; category?: string; icon?: string }) =>
 		api(`/admin/space-types/${id}`, { method: 'PATCH', body }),
 	delete: (id: string) =>
 		api(`/admin/space-types/${id}`, { method: 'DELETE' }),
