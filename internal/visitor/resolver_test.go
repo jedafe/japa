@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"testing"
 )
 
@@ -199,7 +200,7 @@ func TestFromContextSet(t *testing.T) {
 	}
 	ctx := context.WithValue(context.Background(), ContextKey{}, want)
 	got := FromContext(ctx)
-	if got != want {
+	if !reflect.DeepEqual(got, want) {
 		t.Errorf("FromContext = %+v, want %+v", got, want)
 	}
 }

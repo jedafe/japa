@@ -890,6 +890,10 @@ type Content struct {
 	AiGeneratedAt   pgtype.Timestamptz `json:"ai_generated_at"`
 	HitlReviewedBy  pgtype.UUID        `json:"hitl_reviewed_by"`
 	HitlReviewedAt  pgtype.Timestamptz `json:"hitl_reviewed_at"`
+	JourneyStage    *string            `json:"journey_stage"`
+	VisaRoute       *string            `json:"visa_route"`
+	SourceCountry   *string            `json:"source_country"`
+	TargetCountry   *string            `json:"target_country"`
 }
 
 // Tracks affiliate links found in content that are not registered in affiliate_providers. Used for moderation and revenue tracking.

@@ -1249,12 +1249,13 @@ const getUserGeoProfileFields = `-- name: GetUserGeoProfileFields :one
 SELECT
     COALESCE(MAX(CASE WHEN cf.key = 'japa_status' THEN cfv.value_text END), '')::text AS japa_status,
     COALESCE(MAX(CASE WHEN cf.key = 'destination_country' THEN cfv.value_text END), '')::text AS destination_country,
-    COALESCE(MAX(CASE WHEN cf.key = 'origin_country' THEN cfv.value_text END), '')::text AS origin_country
+    COALESCE(MAX(CASE WHEN cf.key = 'origin_country' THEN cfv.value_text END), '')::text AS origin_country,
+    COALESCE(MAX(CASE WHEN cf.key = 'visa_route' THEN cfv.value_text END), '')::text AS visa_route
 FROM user_profiles up
 LEFT JOIN custom_field_values cfv
     ON cfv.entity_type = 'user_profile' AND cfv.entity_id = up.id
 LEFT JOIN custom_fields cf
-    ON cf.id = cfv.field_id AND cf.key IN ('japa_status', 'destination_country', 'origin_country')
+    ON cf.id = cfv.field_id AND cf.key IN ('japa_status', 'destination_country', 'origin_country', 'visa_route')
 WHERE up.tenant_id = $1 AND up.user_id = $2
 `
 
@@ -1267,6 +1268,7 @@ type GetUserGeoProfileFieldsRow struct {
 	JapaStatus         string `json:"japa_status"`
 	DestinationCountry string `json:"destination_country"`
 	OriginCountry      string `json:"origin_country"`
+	VisaRoute          string `json:"visa_route"`
 }
 
 // ADR-064 + ADR-064a: fetch the custom-field signals the archetype resolver
@@ -1276,7 +1278,12 @@ type GetUserGeoProfileFieldsRow struct {
 func (q *Queries) GetUserGeoProfileFields(ctx context.Context, arg GetUserGeoProfileFieldsParams) (GetUserGeoProfileFieldsRow, error) {
 	row := q.db.QueryRow(ctx, getUserGeoProfileFields, arg.TenantID, arg.UserID)
 	var i GetUserGeoProfileFieldsRow
-	err := row.Scan(&i.JapaStatus, &i.DestinationCountry, &i.OriginCountry)
+	err := row.Scan(
+		&i.JapaStatus,
+		&i.DestinationCountry,
+		&i.OriginCountry,
+		&i.VisaRoute,
+	)
 	return i, err
 }
 
