@@ -178,7 +178,7 @@ func computeForYouScore(c Candidate, now time.Time, maxVelocity float64, vc *vis
 // personalization and uses the existing follow/geo/velocity signals only.
 func rankCandidates(cands []Candidate, sortMode string, now time.Time, vc *visitor.VisitorContext, roadmapSlugs map[string]bool, w rankingWeights) []Candidate {
 	if w.TagOverlapCap == 0 {
-		w = defaultRankingWeights()
+		w.TagOverlapCap = defaultRankingWeights().TagOverlapCap
 	}
 
 	maxVel := 0.0

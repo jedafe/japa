@@ -1302,6 +1302,7 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 		Status          string          `json:"status"`
 		Visibility      string          `json:"visibility"`
 		PublishAt       *string         `json:"publish_at"`
+		SpaceID         *string         `json:"space_id"`
 		GeoSpaceID      *string         `json:"geo_space_id"`
 		OrganizationID  *string         `json:"organization_id"`
 		IsLocked        bool            `json:"is_locked"`
@@ -1377,6 +1378,13 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 		TargetCountry:   input.TargetCountry,
 	}
 
+	if input.SpaceID != nil && *input.SpaceID != "" {
+		if err := updateInput.SpaceID.Scan(*input.SpaceID); err != nil {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_space_id", "Invalid space_id format")
+			return
+		}
+	}
+
 	// Compute content hash for duplicate detection (Rule 12).
 	// Skip hashing for empty bodies — NULL content_hash doesn't
 	// collide (unique index has WHERE content_hash IS NOT NULL).
@@ -1439,12 +1447,16 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Super admins and content.edit_any holders bypass the edit-window
-	// restriction even on their own content.
+	// restriction even on their own content, and also bypass the
+	// per-space membership gate when changing the primary space.
 	bypassEditWindow := false
+	bypassSpaceCheck := false
 	if resolver := rbac.FromContext(r.Context()); resolver != nil {
 		bypassEditWindow = resolver.IsSuperAdmin(r.Context(), user.UserID, tenantID) ||
 			resolver.HasPermission(r.Context(), user.UserID, tenantID, "content.edit_any")
+		bypassSpaceCheck = bypassEditWindow
 	}
+	updateInput.BypassSpaceCheck = bypassSpaceCheck
 
 	content, err := h.Service.UpdateContent(r.Context(), id, tenantID, user.UserID, updateInput, bypassEditWindow)
 	if err != nil {
