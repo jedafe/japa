@@ -10,7 +10,8 @@ INSERT INTO contents (
     field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
     canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
     status, visibility, read_time_minutes, publish_at, published_at, guide_category,
-    ai_generated, ai_model, ai_generated_at, hitl_reviewed_by, hitl_reviewed_at
+    ai_generated, ai_model, ai_generated_at, hitl_reviewed_by, hitl_reviewed_at,
+    journey_stage, visa_route, source_country, target_country
 ) VALUES (
     @tenant_id, @author_id, sqlc.narg(organization_id), sqlc.narg(space_id), @content_type, @title, @slug, @body, @body_html,
     @field_values, sqlc.narg(content_hash), sqlc.narg(geo_space_id),
@@ -20,7 +21,8 @@ INSERT INTO contents (
     @status, @visibility, @read_time_minutes, sqlc.narg(publish_at), sqlc.narg(published_at),
     sqlc.narg(guide_category),
     COALESCE(sqlc.narg(ai_generated), false), sqlc.narg(ai_model), sqlc.narg(ai_generated_at),
-    sqlc.narg(hitl_reviewed_by), sqlc.narg(hitl_reviewed_at)
+    sqlc.narg(hitl_reviewed_by), sqlc.narg(hitl_reviewed_at),
+    sqlc.narg(journey_stage), sqlc.narg(visa_route), sqlc.narg(source_country), sqlc.narg(target_country)
 )
 RETURNING id, tenant_id, author_id, organization_id, space_id, content_type, title, slug, body, body_html,
           field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
@@ -28,7 +30,8 @@ RETURNING id, tenant_id, author_id, organization_id, space_id, content_type, tit
           status, visibility, is_locked, is_pinned, read_time_minutes,
           view_count, comment_count, share_count, reshare_count, publish_at, published_at,
           created_at, updated_at, guide_category,
-          ai_generated, ai_model, ai_generated_at, hitl_reviewed_by, hitl_reviewed_at;
+          ai_generated, ai_model, ai_generated_at, hitl_reviewed_by, hitl_reviewed_at,
+          journey_stage, visa_route, source_country, target_country;
 
 -- name: GetContentByID :one
 SELECT id, tenant_id, author_id, organization_id, space_id, content_type, title, slug, body, body_html,
@@ -37,7 +40,8 @@ SELECT id, tenant_id, author_id, organization_id, space_id, content_type, title,
        status, visibility, is_locked, is_pinned, read_time_minutes,
        view_count, comment_count, share_count, reshare_count, publish_at, published_at,
        created_at, updated_at, guide_category,
-       ai_generated, ai_model, ai_generated_at, hitl_reviewed_by, hitl_reviewed_at
+       ai_generated, ai_model, ai_generated_at, hitl_reviewed_by, hitl_reviewed_at,
+       journey_stage, visa_route, source_country, target_country
 FROM contents
 WHERE id = @id AND tenant_id = @tenant_id AND deleted_at IS NULL;
 
@@ -61,7 +65,7 @@ SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type, c.title, c.sl
        c.share_count,
        (SELECT COUNT(*) FROM reactions WHERE entity_id = c.id AND entity_type = 'content') AS reshare_count,
        c.publish_at, c.published_at,
-       c.created_at, c.updated_at, c.guide_category
+       c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country
 FROM contents c
 WHERE c.slug = @slug AND c.tenant_id = @tenant_id AND c.deleted_at IS NULL;
 
@@ -71,7 +75,7 @@ SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type, c.title, c.sl
        c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
        c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
        c.view_count, c.comment_count, c.share_count, c.reshare_count, c.publish_at, c.published_at,
-       c.created_at, c.updated_at, c.guide_category,
+       c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country,
        u.username AS author_username, up.display_name AS author_display_name,
        s.name AS space_name
 FROM contents c
@@ -109,7 +113,7 @@ SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type, c.title, c.sl
        c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
        c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
        c.view_count, c.comment_count, c.share_count, c.reshare_count, c.publish_at, c.published_at,
-       c.created_at, c.updated_at, c.guide_category,
+       c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country,
        u.username AS author_username, up.display_name AS author_display_name,
        s.name AS space_name
 FROM contents c
@@ -141,7 +145,7 @@ SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type, c.title, c.sl
        c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
        c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
        c.view_count, c.comment_count, c.share_count, c.reshare_count, c.publish_at, c.published_at,
-       c.created_at, c.updated_at, c.guide_category,
+       c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country,
        u.username AS author_username, up.display_name AS author_display_name,
        s.name AS space_name
 FROM contents c
@@ -176,7 +180,7 @@ SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type, c.title, c.sl
        c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
        c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
        c.view_count, c.comment_count, c.share_count, c.reshare_count, c.publish_at, c.published_at,
-       c.created_at, c.updated_at, c.guide_category,
+       c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country,
        u.username AS author_username, up.display_name AS author_display_name,
        s.name AS space_name
 FROM contents c
@@ -211,7 +215,7 @@ SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type, c.title, c.sl
        c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
        c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
        c.view_count, c.comment_count, c.share_count, c.reshare_count, c.publish_at, c.published_at,
-       c.created_at, c.updated_at, c.guide_category
+       c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country
 FROM contents c
 JOIN content_spaces cs ON cs.content_id = c.id AND cs.space_id = @space_id
 WHERE c.tenant_id = @tenant_id
@@ -250,6 +254,10 @@ SET title = @title, slug = @slug, body = @body, body_html = @body_html,
     organization_id = sqlc.narg(organization_id), guide_category = sqlc.narg(guide_category),
     ai_generated_at = COALESCE(sqlc.narg(ai_generated_at), ai_generated_at),
     ai_model = COALESCE(sqlc.narg(ai_model), ai_model),
+    journey_stage = COALESCE(sqlc.narg(journey_stage), journey_stage),
+    visa_route = COALESCE(sqlc.narg(visa_route), visa_route),
+    source_country = COALESCE(sqlc.narg(source_country), source_country),
+    target_country = COALESCE(sqlc.narg(target_country), target_country),
     updated_at = now()
 WHERE id = @id AND tenant_id = @tenant_id AND deleted_at IS NULL
 RETURNING id, tenant_id, author_id, organization_id, space_id, content_type, title, slug, body, body_html,
@@ -257,7 +265,8 @@ RETURNING id, tenant_id, author_id, organization_id, space_id, content_type, tit
           canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
           status, visibility, is_locked, is_pinned, read_time_minutes,
           view_count, comment_count, share_count, reshare_count, publish_at, published_at,
-          created_at, updated_at, guide_category;
+          created_at, updated_at, guide_category,
+          journey_stage, visa_route, source_country, target_country;
 
 -- name: UpdateContentStatus :one
 UPDATE contents
@@ -269,7 +278,8 @@ RETURNING id, tenant_id, author_id, space_id, content_type, title, slug, body, b
           canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
           status, visibility, is_locked, is_pinned, read_time_minutes,
           view_count, comment_count, share_count, reshare_count, publish_at, published_at,
-          created_at, updated_at, guide_category;
+          created_at, updated_at, guide_category,
+          journey_stage, visa_route, source_country, target_country;
 
 -- name: ReassignSingleContentAuthor :one
 -- Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Authorship Assignment)
@@ -287,7 +297,8 @@ RETURNING id, tenant_id, author_id, space_id, content_type, title, slug, body, b
           canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
           status, visibility, is_locked, is_pinned, read_time_minutes,
           view_count, comment_count, share_count, reshare_count, publish_at, published_at,
-          created_at, updated_at, guide_category;
+          created_at, updated_at, guide_category,
+          journey_stage, visa_route, source_country, target_country;
 
 -- name: ScheduleContent :one
 -- Sets status='scheduled' and publish_at without touching title/body/other
@@ -302,7 +313,8 @@ RETURNING id, tenant_id, author_id, space_id, content_type, title, slug, body, b
           canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
           status, visibility, is_locked, is_pinned, read_time_minutes,
           view_count, comment_count, share_count, reshare_count, publish_at, published_at,
-          created_at, updated_at, guide_category;
+          created_at, updated_at, guide_category,
+          journey_stage, visa_route, source_country, target_country;
 
 -- name: IncrementContentView :exec
 UPDATE contents SET view_count = view_count + 1 WHERE id = @id AND tenant_id = @tenant_id AND deleted_at IS NULL;
