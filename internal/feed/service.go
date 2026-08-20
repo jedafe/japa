@@ -729,6 +729,27 @@ func (s *Service) GetForYouFeed(
 		}
 	}
 
+	// Load scoring weights from system_settings. Defaults are provided by
+	// defaultRankingWeights() so new tenants work without explicit config.
+	w := defaultRankingWeights()
+	if s.settings != nil {
+		w.Velocity = s.settings.GetFloatOr(ctx, tenantID, "feed.for_you_weight_velocity", w.Velocity)
+		w.Author = s.settings.GetFloatOr(ctx, tenantID, "feed.for_you_weight_author", w.Author)
+		w.Space = s.settings.GetFloatOr(ctx, tenantID, "feed.for_you_weight_space", w.Space)
+		w.Tag = s.settings.GetFloatOr(ctx, tenantID, "feed.for_you_weight_tag", w.Tag)
+		w.Recency = s.settings.GetFloatOr(ctx, tenantID, "feed.for_you_weight_recency", w.Recency)
+		w.Geo = s.settings.GetFloatOr(ctx, tenantID, "feed.for_you_geo_weight", w.Geo)
+		w.GeoBoostCap = s.settings.GetFloatOr(ctx, tenantID, "feed.for_you_geo_boost_cap", w.GeoBoostCap)
+		w.JourneyDest = s.settings.GetFloatOr(ctx, tenantID, "feed.for_you_journey_weight_destination", w.JourneyDest)
+		w.JourneyStage = s.settings.GetFloatOr(ctx, tenantID, "feed.for_you_journey_weight_stage", w.JourneyStage)
+		w.JourneyVisa = s.settings.GetFloatOr(ctx, tenantID, "feed.for_you_journey_weight_visa", w.JourneyVisa)
+		w.JourneySource = s.settings.GetFloatOr(ctx, tenantID, "feed.for_you_journey_weight_source", w.JourneySource)
+		w.JourneyRoad = s.settings.GetFloatOr(ctx, tenantID, "feed.for_you_journey_weight_roadmap", w.JourneyRoad)
+		w.JourneyCap = s.settings.GetFloatOr(ctx, tenantID, "feed.for_you_journey_boost_cap", w.JourneyCap)
+		w.TagOverlapCap = s.settings.GetIntOr(ctx, tenantID, "feed.for_you_tag_overlap_cap", w.TagOverlapCap)
+		w.HalfLifeHours = s.settings.GetFloatOr(ctx, tenantID, "feed.for_you_half_life_hours", w.HalfLifeHours)
+	}
+
 	key := forYouCacheKey(tenantID, userID, sortMode, vc)
 
 	// Use the shared cache helper with distributed lock stampede protection
@@ -776,7 +797,7 @@ func (s *Service) GetForYouFeed(
 		}
 
 		result := make([]FeedItem, 0, len(cands))
-		for _, c := range rankCandidates(cands, sortMode, time.Now(), vc, roadmapSlugs) {
+		for _, c := range rankCandidates(cands, sortMode, time.Now(), vc, roadmapSlugs, w) {
 			result = append(result, c.Item)
 		}
 

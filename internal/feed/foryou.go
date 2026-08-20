@@ -14,30 +14,48 @@ import (
 	"github.com/jedafe/japa/internal/visitor"
 )
 
-// For-You ranking weights (v1 constants; later tunable via system_settings).
-const (
-	wVelocity     = 1.0
-	wAuthor       = 3.0
-	wSpace        = 2.5
-	wTag          = 1.5
-	wRecency      = 2.0
-	tagOverlapCap = 3
-	halfLifeHours = 48.0
+// rankingWeights holds the hot-reloadable scoring weights for the For-You
+// feed. Defaults are preserved in defaultRankingWeights and can be overridden
+// per tenant via system_settings (Rule 3).
+type rankingWeights struct {
+	Velocity      float64
+	Author        float64
+	Space         float64
+	Tag           float64
+	Recency       float64
+	Geo           float64
+	GeoBoostCap   float64
+	JourneyDest   float64
+	JourneyStage  float64
+	JourneyVisa   float64
+	JourneySource float64
+	JourneyRoad   float64
+	JourneyCap    float64
+	TagOverlapCap int
+	HalfLifeHours float64
+}
 
-	// Geo boost (ADR-064 §32): bounded multiplier so local content gets a
-	// relevance boost without dominating engagement/velocity signals. The
-	// cap ensures geo re-weights, never dominates.
-	wGeo        = 1.0
-	geoBoostCap = 1.5 // final score multiplied by at most 1.5 for geo-matched content
-
-	// Journey-aware recommendation weights.
-	wJourneyDestination = 1.5 // target country matches visitor destination
-	wJourneyStage       = 1.2 // journey stage matches
-	wJourneyVisa        = 1.0 // visa route matches
-	wJourneySource      = 0.8 // source/origin country matches
-	wJourneyRoadmap     = 1.4 // content slug appears in readiness roadmap
-	journeyBoostCap     = 1.8 // max combined journey multiplier
-)
+// defaultRankingWeights returns the package defaults used when no settings
+// reader is wired or when a specific setting is missing.
+func defaultRankingWeights() rankingWeights {
+	return rankingWeights{
+		Velocity:      1.0,
+		Author:        3.0,
+		Space:         2.5,
+		Tag:           1.5,
+		Recency:       2.0,
+		Geo:           1.0,
+		GeoBoostCap:   1.5,
+		JourneyDest:   1.5,
+		JourneyStage:  1.2,
+		JourneyVisa:   1.0,
+		JourneySource: 0.8,
+		JourneyRoad:   1.4,
+		JourneyCap:    1.8,
+		TagOverlapCap: 3,
+		HalfLifeHours: 48.0,
+	}
+}
 
 // Candidate is one scored row in the For-You candidate pool.
 type Candidate struct {
@@ -58,7 +76,7 @@ type Candidate struct {
 }
 
 // recencyDecay returns an exponential decay in [0,1]; fresher content scores higher.
-func recencyDecay(ageHours float64) float64 {
+func recencyDecay(ageHours, halfLifeHours float64) float64 {
 	if ageHours < 0 {
 		ageHours = 0
 	}
@@ -77,7 +95,7 @@ func ptrStrEquals(ptr *string, v string) bool {
 // journeyBoost computes a bounded multiplier for journey metadata matching.
 // Destination country is the strongest signal, followed by stage, visa route,
 // and source country. Roadmap content gets a separate additive bonus.
-func journeyBoost(c Candidate, vc *visitor.VisitorContext, roadmapSlugs map[string]bool) float64 {
+func journeyBoost(c Candidate, vc *visitor.VisitorContext, roadmapSlugs map[string]bool, w rankingWeights) float64 {
 	if vc == nil {
 		return 1.0
 	}
@@ -85,23 +103,23 @@ func journeyBoost(c Candidate, vc *visitor.VisitorContext, roadmapSlugs map[stri
 	boost := 1.0
 
 	if vc.DestinationCountry != "" && ptrStrEquals(c.TargetCountry, vc.DestinationCountry) {
-		boost += wJourneyDestination
+		boost += w.JourneyDest
 	}
 	if vc.JourneyStage != "" && ptrStrEquals(c.JourneyStage, vc.JourneyStage) {
-		boost += wJourneyStage
+		boost += w.JourneyStage
 	}
 	if vc.VisaRoute != "" && ptrStrEquals(c.VisaRoute, vc.VisaRoute) {
-		boost += wJourneyVisa
+		boost += w.JourneyVisa
 	}
 	if vc.OriginCountry != "" && ptrStrEquals(c.SourceCountry, vc.OriginCountry) {
-		boost += wJourneySource
+		boost += w.JourneySource
 	}
 	if len(roadmapSlugs) > 0 && c.Item.Slug != "" && roadmapSlugs[c.Item.Slug] {
-		boost += wJourneyRoadmap
+		boost += w.JourneyRoad
 	}
 
-	if boost > journeyBoostCap {
-		return journeyBoostCap
+	if boost > w.JourneyCap {
+		return w.JourneyCap
 	}
 	return boost
 }
@@ -112,7 +130,7 @@ func journeyBoost(c Candidate, vc *visitor.VisitorContext, roadmapSlugs map[stri
 // (city > state > country > region > global). vc provides journey-aware
 // context (destination, stage, visa route, roadmap); nil disables journey
 // scoring and global content still competes on other signals.
-func computeForYouScore(c Candidate, now time.Time, maxVelocity float64, vc *visitor.VisitorContext, roadmapSlugs map[string]bool) float64 {
+func computeForYouScore(c Candidate, now time.Time, maxVelocity float64, vc *visitor.VisitorContext, roadmapSlugs map[string]bool, w rankingWeights) float64 {
 	velNorm := 0.0
 	if maxVelocity > 0 {
 		velNorm = c.VelocityScore / maxVelocity
@@ -130,19 +148,19 @@ func computeForYouScore(c Candidate, now time.Time, maxVelocity float64, vc *vis
 		space = 1.0
 	}
 
-	overlap := min(c.FollowedTagOverlap, tagOverlapCap)
+	overlap := min(c.FollowedTagOverlap, w.TagOverlapCap)
 
-	tag := float64(overlap) / float64(tagOverlapCap)
-	rec := recencyDecay(now.Sub(c.CreatedAt).Hours())
+	tag := float64(overlap) / float64(w.TagOverlapCap)
+	rec := recencyDecay(now.Sub(c.CreatedAt).Hours(), w.HalfLifeHours)
 
-	baseScore := wVelocity*velNorm + wAuthor*author + wSpace*space + wTag*tag + wRecency*rec
+	baseScore := w.Velocity*velNorm + w.Author*author + w.Space*space + w.Tag*tag + w.Recency*rec
 
 	// Bounded geo boost: city/state/country/region matches increase the score.
 	// Proximity is 1 (none) to 5 (city). Scale the bonus linearly and cap it.
 	if c.GeoProximity > 1 {
-		boost := 1.0 + wGeo*(c.GeoProximity-1)/4.0
-		if boost > geoBoostCap {
-			boost = geoBoostCap
+		boost := 1.0 + w.Geo*(c.GeoProximity-1)/4.0
+		if boost > w.GeoBoostCap {
+			boost = w.GeoBoostCap
 		}
 		baseScore *= boost
 	}
@@ -150,7 +168,7 @@ func computeForYouScore(c Candidate, now time.Time, maxVelocity float64, vc *vis
 	// Journey-aware boost: destination-first, then stage/visa/source/roadmap.
 	// General content (no journey metadata) receives a neutral 1.0 and still
 	// competes via velocity/recency/follows/space geo.
-	baseScore *= journeyBoost(c, vc, roadmapSlugs)
+	baseScore *= journeyBoost(c, vc, roadmapSlugs, w)
 
 	return baseScore
 }
@@ -158,7 +176,11 @@ func computeForYouScore(c Candidate, now time.Time, maxVelocity float64, vc *vis
 // rankCandidates orders the pool in place per sortMode and returns it.
 // vc is the visitor's resolved context (ADR-064 / journey-aware); nil disables
 // personalization and uses the existing follow/geo/velocity signals only.
-func rankCandidates(cands []Candidate, sortMode string, now time.Time, vc *visitor.VisitorContext, roadmapSlugs map[string]bool) []Candidate {
+func rankCandidates(cands []Candidate, sortMode string, now time.Time, vc *visitor.VisitorContext, roadmapSlugs map[string]bool, w rankingWeights) []Candidate {
+	if w.TagOverlapCap == 0 {
+		w = defaultRankingWeights()
+	}
+
 	maxVel := 0.0
 	for i := range cands {
 		if cands[i].VelocityScore > maxVel {
@@ -180,7 +202,7 @@ func rankCandidates(cands []Candidate, sortMode string, now time.Time, vc *visit
 		case SortRising:
 			return cands[i].VelocityScore > cands[j].VelocityScore
 		default: // SortRelevant
-			return computeForYouScore(cands[i], now, maxVel, vc, roadmapSlugs) > computeForYouScore(cands[j], now, maxVel, vc, roadmapSlugs)
+			return computeForYouScore(cands[i], now, maxVel, vc, roadmapSlugs, w) > computeForYouScore(cands[j], now, maxVel, vc, roadmapSlugs, w)
 		}
 	})
 
