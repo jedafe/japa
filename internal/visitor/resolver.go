@@ -176,6 +176,14 @@ func FromContext(ctx context.Context) VisitorContext {
 // cacheTTL is the Valkey cache TTL for resolved visitor contexts (ADR-064).
 const cacheTTL = 30 * time.Minute
 
+// Default market lists for archetype resolution when the settings service is
+// unavailable (e.g. tests). The canonical values are seeded in
+// system_settings via migrations 000182 and 000382.
+const (
+	defaultOriginMarkets      = "NG,GH,ZA,KE,EG"
+	defaultDestinationMarkets = "GB,CA,US,DE,AU,AE"
+)
+
 // Resolver is the VisitorContext resolver middleware. It depends on:
 //   - a read-only sqlc Queries for user preference + custom-field lookups
 //   - a Redis client for caching
@@ -217,7 +225,7 @@ func (res *Resolver) resolve(r *http.Request) VisitorContext {
 		CurrentCountry:    geoCtx.CountryCode,
 		OriginCountry:     geoCtx.CountryCode, // default: GeoIP; enriched from profile below
 		CurrentCity:       geoCtx.City,        // ADR-064a: GeoIP city as initial value
-		Language:          resolveLanguage(r),
+		Language:          res.clampLanguage(r.Context(), resolveLanguage(r), t),
 		RoadmapSlugs:      []string{},
 		WeakestDimensions: []string{},
 	}
@@ -291,7 +299,7 @@ func (res *Resolver) resolve(r *http.Request) VisitorContext {
 	// bleed on an unscoped key).
 	if res.rdb != nil && cacheKey != "" {
 		if cached, err := res.rdb.Get(r.Context(), cacheKey).Result(); err == nil && cached != "" {
-			if cv, ok := unmarshalCache(cached); ok {
+			if cv, ok := res.unmarshalCache(r.Context(), cached, t); ok {
 				// Preserve auth state (not cached) and language (request-scoped).
 				cv.IsAuthenticated = vc.IsAuthenticated
 				cv.UserID = vc.UserID
@@ -332,8 +340,8 @@ func (res *Resolver) resolve(r *http.Request) VisitorContext {
 // context is cached.
 func (res *Resolver) enrichArchetype(ctx context.Context, vc *VisitorContext, user *auth.AuthenticatedUser, t *tenant.Tenant, cacheKey string) {
 	// Load config-driven market lists (ADR-064: config, not hardcoded).
-	originMarkets := res.marketSet(ctx, t, "geo_personalization.origin_markets", "NG,GH,ZA,KE,EG")
-	destMarkets := res.marketSet(ctx, t, "geo_personalization.destination_markets", "GB,CA,US,DE,AU,AE")
+	originMarkets := res.marketSet(ctx, t, "geo_personalization.origin_markets", defaultOriginMarkets)
+	destMarkets := res.marketSet(ctx, t, "geo_personalization.destination_markets", defaultDestinationMarkets)
 
 	// Load profile signals for authenticated users.
 	if user != nil && t != nil {
@@ -392,12 +400,18 @@ func (res *Resolver) enrichArchetype(ctx context.Context, vc *VisitorContext, us
 	)
 	vc.Archetype = archetype
 	vc.Confidence = confidence
-	vc.ContentCountry = contentCountry
+	// Preserve explicit user overrides (?geo=, content_country_preference).
+	// Archetype classification still runs for the signals it carries, but
+	// the resolved ContentCountry must not overwrite an explicit choice.
+	if vc.Source == "" {
+		vc.ContentCountry = contentCountry
+	}
 
 	// If archetype resolution produced no ContentCountry (no GeoIP), fall back
-	// to the system default rather than serving an empty country downstream.
+	// to the configured system default rather than serving an empty country
+	// downstream.
 	if vc.ContentCountry == "" {
-		vc.ContentCountry = "NG"
+		vc.ContentCountry = res.defaultCountry(ctx, t)
 	}
 
 	if vc.Source == "" {
@@ -475,6 +489,16 @@ func (res *Resolver) getBoolSetting(ctx context.Context, tenantID pgtype.UUID, k
 	return res.settings.GetBoolOr(ctx, tenantID, key, fallback)
 }
 
+// defaultCountry returns the configured fallback country code for visitors
+// with no resolvable geo signal. Falls back to "NG" when no setting/tenant.
+func (res *Resolver) defaultCountry(ctx context.Context, t *tenant.Tenant) string {
+	fallback := "NG"
+	if res.settings != nil && t != nil {
+		return res.settings.GetStringOr(ctx, t.ID, "geo_personalization.default_country", fallback)
+	}
+	return fallback
+}
+
 // cache writes the resolved context to Valkey (best-effort, never blocks).
 func (res *Resolver) cache(ctx context.Context, key string, vc VisitorContext) {
 	if res.rdb == nil {
@@ -487,7 +511,7 @@ func (res *Resolver) cache(ctx context.Context, key string, vc VisitorContext) {
 
 // unmarshalCache decodes a JSON-cached VisitorContext. Returns ok=false for
 // old-format (country|source) entries so the caller re-resolves.
-func unmarshalCache(s string) (VisitorContext, bool) {
+func (res *Resolver) unmarshalCache(ctx context.Context, s string, t *tenant.Tenant) (VisitorContext, bool) {
 	if len(s) == 0 || s[0] != '{' {
 		return VisitorContext{}, false
 	}
@@ -496,7 +520,7 @@ func unmarshalCache(s string) (VisitorContext, bool) {
 		return VisitorContext{}, false
 	}
 	if vc.ContentCountry == "" {
-		vc.ContentCountry = "NG"
+		vc.ContentCountry = res.defaultCountry(ctx, t)
 		vc.Source = "default"
 	}
 	if vc.RoadmapSlugs == nil {
@@ -516,7 +540,7 @@ func NormalizeCountry(c string) string {
 // normalizeCountry trims, uppercases, and validates a 2-letter ISO code.
 func normalizeCountry(c string) string {
 	c = strings.ToUpper(strings.TrimSpace(c))
-	if len(c) != 2 {
+	if len(c) != 2 || c[0] < 'A' || c[0] > 'Z' || c[1] < 'A' || c[1] > 'Z' {
 		return ""
 	}
 	return c
@@ -595,8 +619,11 @@ func (res *Resolver) enrichGuestJourney(r *http.Request, vc *VisitorContext) {
 		loaded = true
 	}
 	if v := q.Get("journey_travel_date"); v != "" {
-		stored.TravelDate = v
-		loaded = true
+		v = strings.TrimSpace(v)
+		if _, err := time.Parse("2006-01-02", v); err == nil {
+			stored.TravelDate = v
+			loaded = true
+		}
 	}
 
 	if !loaded {
@@ -620,7 +647,10 @@ func (res *Resolver) enrichGuestJourney(r *http.Request, vc *VisitorContext) {
 		vc.Purpose = normalizePurpose(stored.Purpose)
 	}
 	if stored.TravelDate != "" {
-		vc.TravelDate = strings.TrimSpace(stored.TravelDate)
+		v := strings.TrimSpace(stored.TravelDate)
+		if _, err := time.Parse("2006-01-02", v); err == nil {
+			vc.TravelDate = v
+		}
 	}
 }
 
@@ -867,6 +897,33 @@ func normalizeVisaRoute(s string) string {
 		return "other"
 	}
 	return ""
+}
+
+// clampLanguage ensures the resolved language is in the tenant's enabled list,
+// falling back to the default and then "en".
+func (res *Resolver) clampLanguage(ctx context.Context, lang string, t *tenant.Tenant) string {
+	if res.settings == nil || t == nil {
+		return lang
+	}
+	enabledRaw := res.settings.GetStringOr(ctx, t.ID, "i18n.enabled_languages", "en,fr")
+	enabled := make(map[string]bool)
+	for _, l := range strings.Split(enabledRaw, ",") {
+		if l = strings.ToLower(strings.TrimSpace(l)); l != "" {
+			enabled[l] = true
+		}
+	}
+	if enabled[lang] {
+		return lang
+	}
+	defaultLang := strings.ToLower(strings.TrimSpace(res.settings.GetStringOr(ctx, t.ID, "i18n.default_language", "en")))
+	if enabled[defaultLang] {
+		return defaultLang
+	}
+	// Final fallback if the configured default is also missing from enabled.
+	for l := range enabled {
+		return l
+	}
+	return "en"
 }
 
 // resolveLanguage extracts the primary 2-letter language tag from the

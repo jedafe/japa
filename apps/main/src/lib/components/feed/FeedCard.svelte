@@ -58,6 +58,16 @@
 	</div>
 {/snippet}
 
+{#snippet journeyBadges()}
+	{#if item.target_country || item.visa_route || item.journey_stage}
+		<div class="flex flex-wrap items-center gap-1.5">
+			{#if item.target_country}<span class="rounded bg-[var(--color-surface-subtle)] px-1.5 py-0.5 text-[10.5px] font-medium uppercase tracking-wide text-[var(--color-text-subtle)]">{t('feed.card.to', '→')} {item.target_country}</span>{/if}
+			{#if item.visa_route}<span class="rounded bg-[var(--color-surface-subtle)] px-1.5 py-0.5 text-[10.5px] font-medium uppercase tracking-wide text-[var(--color-text-subtle)]">{item.visa_route}</span>{/if}
+			{#if item.journey_stage}<span class="rounded bg-[var(--color-surface-subtle)] px-1.5 py-0.5 text-[10.5px] font-medium uppercase tracking-wide text-[var(--color-text-subtle)]">{item.journey_stage}</span>{/if}
+		</div>
+	{/if}
+{/snippet}
+
 {#snippet metaLine()}
 	<div class="flex flex-wrap items-center gap-1.5 text-xs text-[var(--color-muted)]">
 		{@render badge()}
@@ -76,9 +86,10 @@
 	{/if}
 		{#if item.author_name}<span>·</span><span>{item.author_name}</span>{/if}
 		{#if time}<span>·</span><span>{time}</span>{/if}
-		{#if item.target_country}<span>·</span><span class="rounded bg-[var(--color-surface-subtle)] px-1.5 py-0.5 text-[10.5px] font-medium uppercase tracking-wide text-[var(--color-text-subtle)]">{t('feed.card.to', '→')} {item.target_country}</span>{/if}
-		{#if item.visa_route}<span class="rounded bg-[var(--color-surface-subtle)] px-1.5 py-0.5 text-[10.5px] font-medium uppercase tracking-wide text-[var(--color-text-subtle)]">{item.visa_route}</span>{/if}
-		{#if item.journey_stage}<span class="rounded bg-[var(--color-surface-subtle)] px-1.5 py-0.5 text-[10.5px] font-medium uppercase tracking-wide text-[var(--color-text-subtle)]">{item.journey_stage}</span>{/if}
+		{#if item.target_country || item.visa_route || item.journey_stage}
+			{#if item.author_name || time}<span>·</span>{/if}
+			{@render journeyBadges()}
+		{/if}
 	</div>
 {/snippet}
 
@@ -96,6 +107,7 @@
 			{#if item.space_name}
 				<span class="text-xs font-medium text-[var(--color-text-subtle)]">{item.space_name}</span>
 			{/if}
+			{@render journeyBadges()}
 			<div class="mt-auto flex items-center gap-2 text-xs text-[var(--color-muted)]">
 				{@render avatar(20)}
 				<span>{item.author_name ?? ''}{#if time} · {time}{/if}</span>
@@ -106,7 +118,10 @@
 {:else if style === 'compact'}
 	<a href={href(item)} class="flex items-center gap-3 px-4 py-2 hover:bg-[color-mix(in_srgb,var(--color-surface-subtle)_45%,transparent)]">
 		<span class="flex w-11 shrink-0 items-center gap-1 text-xs font-semibold text-[var(--color-text-subtle)] [font-variant-numeric:tabular-nums]"><ArrowUp size={13} class="text-[var(--color-muted)]" /> {item.vote_score ?? 0}</span>
-		<span class="min-w-0 flex-1 truncate text-sm font-medium text-[var(--color-text)]">{item.title}</span>
+		<span class="min-w-0 flex-1 flex flex-col justify-center">
+			<span class="truncate text-sm font-medium text-[var(--color-text)]">{item.title}</span>
+			{@render journeyBadges()}
+		</span>
 		{#if item.space_name}<span class="hidden shrink-0 text-xs text-[var(--color-muted)] sm:inline">{item.space_name}{#if time} · {time}{/if}</span>{/if}
 		<span class="flex shrink-0 items-center gap-3 text-xs text-[var(--color-muted)] [font-variant-numeric:tabular-nums]">
 			<span class="flex items-center gap-1"><MessageSquare size={13} /> {item.comment_count ?? 0}</span>
@@ -130,6 +145,7 @@
 		{@render badge()}
 		<h2 class="mt-2 mb-2 text-balance font-serif text-[25px] font-medium leading-tight tracking-tight text-[var(--color-text)]">{item.title}</h2>
 		{#if item.excerpt}<p class="mb-3.5 line-clamp-2 text-[15px] leading-relaxed text-[var(--color-text-subtle)]">{item.excerpt}</p>{/if}
+		{@render journeyBadges()}
 		<div class="flex flex-wrap items-center justify-between gap-3.5">{@render tags()}{@render metrics()}</div>
 	</a>
 {:else}

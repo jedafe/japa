@@ -17,6 +17,7 @@ import (
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/seo"
+	"github.com/jedafe/japa/internal/visitor"
 	"github.com/pgvector/pgvector-go"
 )
 
@@ -85,6 +86,40 @@ func resolveSpaceCountryCode(ctx context.Context, q *gen.Queries, tenantID, spac
 	return "", nil
 }
 
+// normalizeJourneyFields canonicalizes the journey metadata supplied by the
+// client so stored values match the VisitorContext normalization rules.
+// Unknown but non-empty values are discarded for country codes and the journey
+// stage; visa routes fall back to "other" so the boost logic still works.
+func normalizeJourneyFields(journeyStage, visaRoute, sourceCountry, targetCountry **string) {
+	if journeyStage != nil && *journeyStage != nil && **journeyStage != "" {
+		n := visitor.NormalizeJourneyStage(**journeyStage)
+		if n == "" {
+			*journeyStage = nil
+		} else {
+			**journeyStage = n
+		}
+	}
+	if visaRoute != nil && *visaRoute != nil && **visaRoute != "" {
+		**visaRoute = visitor.NormalizeVisaRoute(**visaRoute)
+	}
+	if sourceCountry != nil && *sourceCountry != nil && **sourceCountry != "" {
+		n := visitor.NormalizeCountry(**sourceCountry)
+		if n == "" {
+			*sourceCountry = nil
+		} else {
+			**sourceCountry = n
+		}
+	}
+	if targetCountry != nil && *targetCountry != nil && **targetCountry != "" {
+		n := visitor.NormalizeCountry(**targetCountry)
+		if n == "" {
+			*targetCountry = nil
+		} else {
+			**targetCountry = n
+		}
+	}
+}
+
 // resolveAuthorProfileCountries loads the author's origin and destination
 // country custom field values. These are used as fallback source/target
 // countries when the caller does not explicitly set them.
@@ -101,6 +136,8 @@ func resolveAuthorProfileCountries(ctx context.Context, q *gen.Queries, tenantID
 // stage for newly created content when the caller left them unset. It prefers
 // explicit values, then the primary geo space, then the author's profile.
 func (s *Service) inferJourneyMetadataForCreate(ctx context.Context, q *gen.Queries, tenantID, authorID pgtype.UUID, input *CreateContentInput) {
+	normalizeJourneyFields(&input.JourneyStage, &input.VisaRoute, &input.SourceCountry, &input.TargetCountry)
+
 	if input.SourceCountry == nil || *input.SourceCountry == "" {
 		origin, _ := resolveAuthorProfileCountries(ctx, q, tenantID, authorID)
 		if origin != "" {
@@ -481,6 +518,7 @@ type UpdateContentInput struct {
 	BodyHtml        string //nolint:revive // matches sqlc-generated field name
 	FieldValues     []byte
 	ContentHash     *string
+	SpaceID         pgtype.UUID
 	GeoSpaceID      pgtype.UUID
 	HeaderImageID   pgtype.UUID
 	FeaturedImageID pgtype.UUID
@@ -498,6 +536,9 @@ type UpdateContentInput struct {
 	GuideCategory   *string
 	AIGeneratedAt   pgtype.Timestamptz
 	AIModel         *string
+	// BypassSpaceCheck lets admins update the primary space without the
+	// per-space membership/permission gate.
+	BypassSpaceCheck bool
 	// Journey-aware recommendation metadata.
 	JourneyStage  *string
 	VisaRoute     *string
@@ -509,6 +550,8 @@ type UpdateContentInput struct {
 // content row when the update leaves them unset. It uses the primary space and
 // the original author profile as fallbacks.
 func (s *Service) inferJourneyMetadataForUpdate(ctx context.Context, q *gen.Queries, tenantID pgtype.UUID, existing gen.GetContentByIDRow, input *UpdateContentInput) {
+	normalizeJourneyFields(&input.JourneyStage, &input.VisaRoute, &input.SourceCountry, &input.TargetCountry)
+
 	if input.SourceCountry == nil || *input.SourceCountry == "" {
 		origin, _ := resolveAuthorProfileCountries(ctx, q, tenantID, existing.AuthorID)
 		if origin != "" {
@@ -517,6 +560,9 @@ func (s *Service) inferJourneyMetadataForUpdate(ctx context.Context, q *gen.Quer
 	}
 
 	primarySpaceID := input.GeoSpaceID
+	if !primarySpaceID.Valid {
+		primarySpaceID = input.SpaceID
+	}
 	if !primarySpaceID.Valid {
 		primarySpaceID = existing.GeoSpaceID
 	}
@@ -634,11 +680,24 @@ func (s *Service) UpdateContent(ctx context.Context, id, tenantID, editedBy pgty
 		}
 	}
 
+	// Determine the primary space for this update. Prefer an explicit new
+	// space_id, then an explicit geo_space_id, then the existing values.
+	primarySpaceID := input.SpaceID
+	if !primarySpaceID.Valid {
+		primarySpaceID = input.GeoSpaceID
+	}
+	if !primarySpaceID.Valid {
+		primarySpaceID = existing.GeoSpaceID
+	}
+	if !primarySpaceID.Valid {
+		primarySpaceID = existing.SpaceID
+	}
+
 	// Published/scheduled content must have a primary space. If the caller
 	// is setting the primary space in this same update, the sync below will
 	// create it; otherwise we must ensure one already exists (BUG-007).
 	if input.Status == StatusPublished || input.Status == StatusScheduled {
-		if !input.GeoSpaceID.Valid {
+		if !primarySpaceID.Valid {
 			if err := hasPrimarySpace(ctx, s.read, id); err != nil {
 				return gen.UpdateContentRow{}, err
 			}
@@ -657,7 +716,7 @@ func (s *Service) UpdateContent(ctx context.Context, id, tenantID, editedBy pgty
 		BodyHtml:        input.BodyHtml,
 		FieldValues:     fieldValues,
 		ContentHash:     input.ContentHash,
-		GeoSpaceID:      input.GeoSpaceID,
+		GeoSpaceID:      primarySpaceID,
 		HeaderImageID:   input.HeaderImageID,
 		FeaturedImageID: input.FeaturedImageID,
 		CanonicalUrl:    input.CanonicalUrl,
@@ -688,18 +747,18 @@ func (s *Service) UpdateContent(ctx context.Context, id, tenantID, editedBy pgty
 	// Synchronize content_spaces when the primary space changes, preserving
 	// any additional space assignments. This keeps content_spaces
 	// authoritative and the legacy contents.space_id / geo_space_id in sync.
-	if input.GeoSpaceID.Valid {
+	if input.SpaceID.Valid || input.GeoSpaceID.Valid {
 		existingSpaces, err := s.read.GetContentSpaces(ctx, content.ID)
 		if err != nil {
 			return gen.UpdateContentRow{}, fmt.Errorf("getting content spaces for update: %w", err)
 		}
 		additional := make([]pgtype.UUID, 0, len(existingSpaces))
 		for _, sp := range existingSpaces {
-			if !isSameUUID(sp.SpaceID, input.GeoSpaceID) {
+			if !isSameUUID(sp.SpaceID, primarySpaceID) {
 				additional = append(additional, sp.SpaceID)
 			}
 		}
-		if err := s.UpdateContentSpaces(ctx, content.ID, tenantID, editedBy, input.GeoSpaceID, additional, bypassEditWindow); err != nil {
+		if err := s.UpdateContentSpaces(ctx, content.ID, tenantID, editedBy, primarySpaceID, additional, input.BypassSpaceCheck); err != nil {
 			return gen.UpdateContentRow{}, fmt.Errorf("updating content spaces: %w", err)
 		}
 	}
