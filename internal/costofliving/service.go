@@ -146,7 +146,9 @@ func (s *Service) maxCities(ctx context.Context, tenantID pgtype.UUID) int {
 
 // ListCities returns a paginated list of cities with cost_of_living data.
 // Public route (col_calculator.use — all users including anonymous).
-func (s *Service) ListCities(ctx context.Context, tenantID pgtype.UUID, search string, page, limit int) (CitiesListResponse, error) {
+// The optional countryCode is an ISO 3166-1 alpha-2 country code used to
+// filter cities to those in the selected primary geo space.
+func (s *Service) ListCities(ctx context.Context, tenantID pgtype.UUID, search, countryCode string, page, limit int) (CitiesListResponse, error) {
 	if s.settings != nil {
 		if enabled := s.settings.GetBoolOr(ctx, tenantID, "col_calculator.enabled", defaultEnabled); !enabled {
 			return CitiesListResponse{}, ErrCalculatorDisabled
@@ -166,12 +168,12 @@ func (s *Service) ListCities(ctx context.Context, tenantID pgtype.UUID, search s
 		return CitiesListResponse{}, fmt.Errorf("costofliving: list cities: %w", err)
 	}
 
-	rows, err := s.store.ListCities(ctx, tenantID, typeDef.ID, search, offset, int32(limit))
+	rows, err := s.store.ListCities(ctx, tenantID, typeDef.ID, search, countryCode, offset, int32(limit))
 	if err != nil {
 		return CitiesListResponse{}, err
 	}
 
-	total, err := s.store.CountCities(ctx, tenantID, typeDef.ID, search)
+	total, err := s.store.CountCities(ctx, tenantID, typeDef.ID, search, countryCode)
 	if err != nil {
 		return CitiesListResponse{}, err
 	}
@@ -500,7 +502,7 @@ func (s *Service) AdminStats(ctx context.Context, tenantID pgtype.UUID, page, li
 	}
 
 	// Total count of cities for pagination metadata.
-	total, err := s.store.CountCities(ctx, tenantID, typeDef.ID, "")
+	total, err := s.store.CountCities(ctx, tenantID, typeDef.ID, "", "")
 	if err != nil {
 		return AdminStatsResponse{}, err
 	}

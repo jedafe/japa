@@ -30,20 +30,33 @@ SELECT
     s.slug AS geo_space_slug
 FROM comparison_items ci
 LEFT JOIN spaces s ON s.id = ci.geo_space_id
+LEFT JOIN spaces state ON state.id = s.parent_id AND state.level = 'state'
+LEFT JOIN spaces country ON (
+    (country.id = state.parent_id AND country.level = 'country')
+    OR (country.id = s.parent_id AND country.level = 'country')
+)
 WHERE ci.tenant_id = @tenant_id
   AND ci.type_id = @type_id
   AND ci.deleted_at IS NULL
   AND (@search::text = '' OR ci.title ILIKE '%' || @search || '%')
+  AND (@country_code::text = '' OR country.geo_code = @country_code)
 ORDER BY ci.is_baseline DESC, ci.title ASC
 LIMIT @page_limit OFFSET @page_offset;
 
 -- name: CountCOLCities :one
 SELECT COUNT(*) AS count
-FROM comparison_items
-WHERE tenant_id = @tenant_id
-  AND type_id = @type_id
-  AND deleted_at IS NULL
-  AND (@search::text = '' OR title ILIKE '%' || @search || '%');
+FROM comparison_items ci
+LEFT JOIN spaces s ON s.id = ci.geo_space_id
+LEFT JOIN spaces state ON state.id = s.parent_id AND state.level = 'state'
+LEFT JOIN spaces country ON (
+    (country.id = state.parent_id AND country.level = 'country')
+    OR (country.id = s.parent_id AND country.level = 'country')
+)
+WHERE ci.tenant_id = @tenant_id
+  AND ci.type_id = @type_id
+  AND ci.deleted_at IS NULL
+  AND (@search::text = '' OR ci.title ILIKE '%' || @search || '%')
+  AND (@country_code::text = '' OR country.geo_code = @country_code);
 
 -- =====================================================================
 -- Get a single city (comparison_item) by ID with its geo space info.
