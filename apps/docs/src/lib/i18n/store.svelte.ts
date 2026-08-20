@@ -1,13 +1,7 @@
 import { page } from '$app/state';
-import en from './en.json';
-import fr from './fr.json';
+import { tServer, type Locale } from './dict';
 
-export type Locale = string;
-type Dict = Record<string, string>;
-
-// Static dictionaries for built-in locales. Additional locales resolved at
-// runtime fall back to English per Section 18. ADR-013 — runtime i18n.
-const dictionaries: Record<string, Dict> = { en, fr };
+export type { Locale };
 
 /**
  * Translator. Flat dotted keys resolved against the active locale's dictionary,
@@ -27,12 +21,8 @@ class I18nStore {
 	);
 
 	/** Interpolate {name} placeholders in the fallback string. */
-	t = (key: string, fallback?: string, vars?: Record<string, string>): string => {
-		const dict = dictionaries[this.locale] ?? dictionaries.en;
-		const raw = dict[key] ?? fallback ?? key;
-		if (!vars) return raw;
-		return raw.replace(/\{(\w+)\}/g, (_, k: string) => vars[k] ?? `{${k}}`);
-	};
+	t = (key: string, fallback?: string, vars?: Record<string, string>): string =>
+		tServer(this.locale, key, fallback, vars);
 }
 
 export const i18n = new I18nStore();

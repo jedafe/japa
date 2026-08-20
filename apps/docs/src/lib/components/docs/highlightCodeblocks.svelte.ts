@@ -6,12 +6,15 @@
  * the code element's class (e.g. `language-go`) or a `data-language` attribute.
  *
  * ADR-060: highlighting is progressive enhancement — failures degrade silently
- * to the unstyled <pre> block.
+ * to the unstyled <pre> block. Returns a cleanup function that removes the
+ * dynamically added listeners/timers so navigation does not leak state.
  */
 import { t } from '$lib/i18n';
 
-export function enhanceCodeblocks(root: HTMLElement): void {
+export function enhanceCodeblocks(root: HTMLElement): () => void {
+	const cleanups: Array<() => void> = [];
 	const blocks = root.querySelectorAll<HTMLPreElement>('pre');
+
 	for (const pre of blocks) {
 		if (pre.closest('.jc-code')) continue; // already enhanced
 		const code = pre.querySelector('code');
@@ -35,25 +38,39 @@ export function enhanceCodeblocks(root: HTMLElement): void {
 		copyBtn.className = 'jc-code-copy';
 		copyBtn.setAttribute('aria-label', t('a11y.copy_code'));
 		copyBtn.textContent = t('a11y.copy_code');
-		copyBtn.addEventListener('click', async () => {
+
+		let copyTimer: ReturnType<typeof setTimeout> | undefined = undefined;
+
+		const onCopy = async () => {
 			try {
 				await navigator.clipboard.writeText(code.textContent ?? '');
 				copyBtn.classList.add('copied');
 				copyBtn.textContent = t('a11y.code_copied');
-				setTimeout(() => {
+				copyTimer = setTimeout(() => {
 					copyBtn.classList.remove('copied');
 					copyBtn.textContent = t('a11y.copy_code');
 				}, 1500);
 			} catch {
 				/* clipboard unavailable */
 			}
+		};
+
+		copyBtn.addEventListener('click', onCopy);
+		cleanups.push(() => {
+			copyBtn.removeEventListener('click', onCopy);
+			clearTimeout(copyTimer);
 		});
+
 		header.appendChild(copyBtn);
 
 		pre.parentNode?.insertBefore(wrapper, pre);
 		wrapper.appendChild(header);
 		wrapper.appendChild(pre);
 	}
+
+	return () => {
+		for (const cleanup of cleanups) cleanup();
+	};
 }
 
 function inferLang(code: HTMLElement): string {

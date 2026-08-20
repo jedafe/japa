@@ -150,7 +150,7 @@
 					{/if}
 					<span>{t('app.name')}</span>
 				</a>
-				<div class="ml-auto"><SearchLauncher /></div>
+				<div class="ml-auto"><SearchLauncher keyboardShortcut={false} /></div>
 				{#if !user}<GuestAuthButtons compact />{/if}
 			</div>
 			{@render children()}
@@ -183,7 +183,7 @@
 		</div>
 	</div>
 
-	<GuestFooter menu={footerMenu} />
+	<GuestFooter menu={footerMenu} {user} />
 
 	{#if mobileNavOpen}
 		<button
@@ -239,7 +239,7 @@
 					{/if}
 					<span>{t('app.name')}</span>
 				</a>
-				<div class="ml-auto"><SearchLauncher /></div>
+				<div class="ml-auto"><SearchLauncher keyboardShortcut={false} /></div>
 			</div>
 			{@render children()}
 		</main>
@@ -271,6 +271,8 @@
 			</div>
 		</div>
 	</div>
+
+	<GuestFooter menu={footerMenu} {user} />
 
 	{#if mobileNavOpen}
 		<button

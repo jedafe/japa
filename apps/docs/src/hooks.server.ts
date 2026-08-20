@@ -126,10 +126,13 @@ export const handle: Handle = async ({ event, resolve }) => {
 			const csrf = await apiGet<{ csrfToken: string }>(apiContext(event), '/csrf');
 			event.locals.csrfToken = csrf?.csrfToken ?? null;
 			if (event.locals.csrfToken) {
+				// `secure` must be false in local HTTP dev so the browser accepts
+				// the csrf_token cookie; production HTTPS still sets it securely.
+				const isHttps = event.url.protocol === 'https:';
 				event.cookies.set('csrf_token', event.locals.csrfToken, {
 					path: '/',
 					httpOnly: false,
-					secure: true,
+					secure: isHttps,
 					sameSite: 'lax'
 				});
 			}
