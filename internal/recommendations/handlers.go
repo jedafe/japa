@@ -16,6 +16,7 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -124,10 +125,10 @@ type VisitorContextSummary struct {
 	CurrentCity    string `json:"current_city"`
 }
 
-// toolLabelMap maps tool/feature slugs to human-readable labels. These are
-// fallback values used when the system_settings geo_personalization.tool_labels
-// config is not set. The config is the primary source (Rule 3); this map
-// ensures the handler degrades gracefully when the setting is missing.
+// #nosec G101 // public fallback display labels; the canonical source is the
+// geo_personalization.tool_labels system_settings value (Rule 3). This map only
+// provides human-readable labels when the setting is missing or the service is
+// not wired.
 var toolLabelMap = map[string]string{
 	"visa-route-comparison":     "Visa Route Comparison",
 	"embassy-alerter":           "Embassy Appointment Alerter",
@@ -157,9 +158,9 @@ var toolLabelMap = map[string]string{
 	"mentorship":                "Mentorship Matching",
 }
 
-// toolURLMap maps tool/feature slugs to their frontend URLs. These are
-// fallback values used when the system_settings geo_personalization.tool_urls
-// config is not set. The config is the primary source (Rule 3).
+// #nosec G101 // public fallback URLs; the canonical source is the
+// geo_personalization.tool_urls system_settings value (Rule 3). This map only
+// provides URLs when the setting is missing or the service is not wired.
 var toolURLMap = map[string]string{
 	"visa-route-comparison":     "/tools/visa-route-comparison",
 	"embassy-alerter":           "/tools/embassy-alerter",
@@ -238,7 +239,10 @@ func (h *Handlers) GetRecommendations(w http.ResponseWriter, r *http.Request) {
 	// keeps the key aligned with the Valkey catalog pattern
 	// (jc:recommendations:{session_id} / jc:recommendations:ip:{tenant_id}:{ip})
 	// and ensures invalidateVisitorCache (users/handlers.go) can evict the
-	// exact key after a profile/stage/location update (BUG-002 fix).
+	// exact key after a profile/stage/location update. On hit, the cached
+	// VisitorContextSummary is compared to the current VisitorContext; if the
+	// context changed (?geo=, journey cookie, location) the cached response is
+	// treated as a miss even when the key matches.
 	var cacheKey string
 
 	if user := auth.FromContext(r.Context()); user != nil {
@@ -256,7 +260,7 @@ func (h *Handlers) GetRecommendations(w http.ResponseWriter, r *http.Request) {
 
 	// Try cache. On hit, slice tools/features to the requested limit and
 	// return. The cached payload is the full unbounded result set.
-	if h.serveFromCache(r.Context(), cacheKey, limit, w) {
+	if h.serveFromCache(r.Context(), cacheKey, limit, w, vc) {
 		return
 	}
 
@@ -273,8 +277,8 @@ func (h *Handlers) GetRecommendations(w http.ResponseWriter, r *http.Request) {
 	// Source content and space recommendations from the trending store
 	// (ADR-064a §5, Section 53). Skipped when no trending reader is wired
 	// (graceful degradation — empty arrays, never null).
-	content := h.buildContentItems(r.Context(), t.ID, vc, limit)
-	spaces := h.buildSpaceItems(r.Context(), t.ID, vc, limit)
+	content := h.buildContentItems(r.Context(), t.ID, vc, toInt32(limit))
+	spaces := h.buildSpaceItems(r.Context(), t.ID, vc, toInt32(limit))
 
 	// Build response.
 	resp := RecommendationResponse{
@@ -308,6 +312,19 @@ func (h *Handlers) GetRecommendations(w http.ResponseWriter, r *http.Request) {
 	resp.Features = sliceItems(resp.Features, limit)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": resp})
+}
+
+// toInt32 converts an int to int32 without overflow. It clamps to
+// math.MaxInt32 / math.MinInt32 so callers can use it for sqlc parameters
+// without triggering integer-overflow linters (Rule 15).
+func toInt32(v int) int32 {
+	if v > math.MaxInt32 {
+		v = math.MaxInt32
+	}
+	if v < math.MinInt32 {
+		v = math.MinInt32
+	}
+	return int32(v) // #nosec G115 // bounded by the explicit clamps above
 }
 
 // resolveLimit parses the ?limit query param and clamps it to the configured
@@ -406,12 +423,12 @@ func buildItems(slugs []string, labels, urls map[string]string, vc visitor.Visit
 // buildContentItems sources trending content (Section 53) and re-weights it by
 // the VisitorContext's ContentCountry (ADR-064a §5). Returns an empty slice
 // (never nil) when the trending reader is unavailable or returns no rows.
-func (h *Handlers) buildContentItems(ctx context.Context, tenantID pgtype.UUID, vc visitor.VisitorContext, limit int) []RecommendationContentItem {
+func (h *Handlers) buildContentItems(ctx context.Context, tenantID pgtype.UUID, vc visitor.VisitorContext, limit int32) []RecommendationContentItem {
 	if h.trending == nil {
 		return []RecommendationContentItem{}
 	}
 
-	rows, err := h.trending.GetTrendingContent(ctx, tenantID, h.resolveTrendingWindow(ctx, tenantID), vc.ContentCountry, int32(limit)) //nolint:gosec // G115: limit bounded by resolveLimit
+	rows, err := h.trending.GetTrendingContent(ctx, tenantID, h.resolveTrendingWindow(ctx, tenantID), vc.ContentCountry, limit)
 	if err != nil {
 		slog.Warn("recommendations: trending content fetch failed", "error", err)
 		return []RecommendationContentItem{}
@@ -440,13 +457,13 @@ func (h *Handlers) buildContentItems(ctx context.Context, tenantID pgtype.UUID, 
 // (never nil) when the trending reader is unavailable or returns no rows.
 // Populates the Level field via GetSpaceLevels (BUG-001 fix — ADR-064a §5
 // response shape requires `level`).
-func (h *Handlers) buildSpaceItems(ctx context.Context, tenantID pgtype.UUID, vc visitor.VisitorContext, limit int) []RecommendationSpaceItem {
+func (h *Handlers) buildSpaceItems(ctx context.Context, tenantID pgtype.UUID, vc visitor.VisitorContext, limit int32) []RecommendationSpaceItem {
 	if h.trending == nil {
 		return []RecommendationSpaceItem{}
 	}
 
 	window := h.resolveTrendingWindow(ctx, tenantID)
-	rows, err := h.trending.GetTrendingSpaces(ctx, tenantID, window, vc.ContentCountry, int32(limit)) //nolint:gosec // G115: limit bounded by resolveLimit
+	rows, err := h.trending.GetTrendingSpaces(ctx, tenantID, window, vc.ContentCountry, limit)
 	if err != nil {
 		slog.Warn("recommendations: trending spaces fetch failed", "error", err)
 		return []RecommendationSpaceItem{}
@@ -497,10 +514,24 @@ func sliceItems[T any](v []T, n int) []T {
 	return v
 }
 
+// contextMatches returns true when the cached VisitorContextSummary matches
+// the current request's VisitorContext. This prevents stale recommendations
+// when ?geo=, journey cookie, or profile/location changes shift the context
+// while the cache key (session/IP) stays the same.
+func contextMatches(summary VisitorContextSummary, vc visitor.VisitorContext) bool {
+	return summary.Archetype == vc.Archetype &&
+		summary.ContentCountry == vc.ContentCountry &&
+		summary.OriginCountry == vc.OriginCountry &&
+		summary.CurrentCountry == vc.CurrentCountry &&
+		summary.DestCountry == vc.DestinationCountry &&
+		summary.JapaStage == vc.JapaStage &&
+		summary.CurrentCity == vc.CurrentCity
+}
+
 // serveFromCache attempts to read a cached RecommendationResponse from Valkey
 // and write it to w (with tools/features sliced to limit). Returns true when a
 // cached response was served, false on miss/error (caller proceeds to compute).
-func (h *Handlers) serveFromCache(ctx context.Context, key string, limit int, w http.ResponseWriter) bool {
+func (h *Handlers) serveFromCache(ctx context.Context, key string, limit int, w http.ResponseWriter, vc visitor.VisitorContext) bool {
 	if h.cache == nil {
 		return false
 	}
@@ -512,6 +543,12 @@ func (h *Handlers) serveFromCache(ctx context.Context, key string, limit int, w 
 
 	var resp RecommendationResponse
 	if err := json.Unmarshal([]byte(cached), &resp); err != nil {
+		return false
+	}
+
+	// ADR-064a: cached recommendations must not be served when the
+	// VisitorContext changed, even if the cache key (session/IP) is the same.
+	if !contextMatches(resp.Context, vc) {
 		return false
 	}
 
@@ -685,8 +722,9 @@ func (h *Handlers) archetypeReason(vc visitor.VisitorContext) string {
 	}
 }
 
-// toolLabel returns the display label for a tool slug. Checks the config-driven
-// map first (Rule 3), then falls back to the compiled-in defaults.
+// toolLabel returns the display label for a tool slug. The config-driven
+// geo_personalization.tool_labels setting is the source of truth (Rule 3); when
+// that is missing, the public toolLabelMap fallback is used before humanizing.
 func toolLabel(slug string, configLabels map[string]string) string {
 	if configLabels != nil {
 		if label, ok := configLabels[slug]; ok && label != "" {
@@ -701,8 +739,9 @@ func toolLabel(slug string, configLabels map[string]string) string {
 	return strings.ReplaceAll(slug, "-", " ")
 }
 
-// toolURL returns the frontend URL for a tool slug. Checks the config-driven
-// map first (Rule 3), then falls back to the compiled-in defaults.
+// toolURL returns the frontend URL for a tool slug. The config-driven
+// geo_personalization.tool_urls setting is the source of truth (Rule 3); when
+// that is missing, the public toolURLMap fallback is used before /tools/{slug}.
 func toolURL(slug string, configURLs map[string]string) string {
 	if configURLs != nil {
 		if url, ok := configURLs[slug]; ok && url != "" {

@@ -143,6 +143,9 @@ func TestNormalizeCountry(t *testing.T) {
 		{"NGA", ""}, // 3 letters invalid
 		{"N", ""},   // 1 letter invalid
 		{"n-g", ""}, // hyphen invalid
+		{"12", ""},  // non-letters invalid
+		{"!@", ""},  // punctuation invalid
+		{"gb1", ""}, // 3 chars invalid
 	}
 	for _, tt := range tests {
 		if got := normalizeCountry(tt.in); got != tt.want {
@@ -223,7 +226,7 @@ func TestCacheRoundTrip(t *testing.T) {
 		t.Fatalf("marshal: %v", err)
 	}
 
-	got, ok := res.unmarshalCache(string(b), nil)
+	got, ok := res.unmarshalCache(context.Background(), string(b), nil)
 	if !ok {
 		t.Fatal("unmarshalCache returned ok=false for JSON entry")
 	}
@@ -244,10 +247,10 @@ func TestUnmarshalCacheRejectsOldFormat(t *testing.T) {
 	res := NewResolver(nil, nil, nil)
 	// Old format was "NG|geoip" (not JSON). Must return ok=false so the
 	// resolver re-resolves instead of trusting a stale shape.
-	if _, ok := res.unmarshalCache("NG|geoip", nil); ok {
+	if _, ok := res.unmarshalCache(context.Background(), "NG|geoip", nil); ok {
 		t.Fatal("unmarshalCache accepted old-format entry; expected ok=false")
 	}
-	if _, ok := res.unmarshalCache("", nil); ok {
+	if _, ok := res.unmarshalCache(context.Background(), "", nil); ok {
 		t.Fatal("unmarshalCache accepted empty entry; expected ok=false")
 	}
 }
@@ -259,7 +262,7 @@ func TestUnmarshalCacheEmptyCountryDefaultsToNG(t *testing.T) {
 	// fall back to the configured default (NG when no settings/tenant).
 	res := NewResolver(nil, nil, nil)
 	b, _ := json.Marshal(VisitorContext{Source: "archetype"})
-	got, ok := res.unmarshalCache(string(b), nil)
+	got, ok := res.unmarshalCache(context.Background(), string(b), nil)
 	if !ok {
 		t.Fatal("unmarshalCache returned ok=false for valid JSON")
 	}
@@ -290,5 +293,32 @@ func TestMarketSetParsing(t *testing.T) {
 	}
 	if dest["NG"] {
 		t.Error("NG should not be a destination market")
+	}
+}
+
+func TestEnrichArchetypePreservesContentCountryPreference(t *testing.T) {
+	t.Parallel()
+
+	// ADR-064 §5: content_country_preference is an explicit user override and
+	// must win over archetype-resolved ContentCountry.
+	res := NewResolver(nil, nil, nil)
+	vc := VisitorContext{
+		ContentCountry:     "FR",
+		Source:             "preference",
+		CurrentCountry:     "NG",
+		DestinationCountry: "",
+		RoadmapSlugs:       []string{},
+		WeakestDimensions:  []string{},
+	}
+	res.enrichArchetype(context.Background(), &vc, nil, nil, "")
+
+	if vc.ContentCountry != "FR" {
+		t.Errorf("ContentCountry = %q, want FR (preference preserved)", vc.ContentCountry)
+	}
+	if vc.Source != "preference" {
+		t.Errorf("Source = %q, want preference", vc.Source)
+	}
+	if vc.Archetype != ArchetypeOriginVisitor {
+		t.Errorf("Archetype = %q, want origin_visitor", vc.Archetype)
 	}
 }

@@ -606,6 +606,10 @@ func (h *Handlers) DeleteComment(w http.ResponseWriter, r *http.Request) {
 			handleServiceError(w, err)
 			return
 		}
+		// Keep content_scores.comment_count in sync with contents.comment_count.
+		if existing.Status == "published" && !existing.DeletedAt.Valid {
+			h.enqueueEngagementUpdate("content", existing.ContentID, "comment", -1)
+		}
 		errpkg.WriteJSON(w, http.StatusNoContent, nil)
 		return
 	}
@@ -620,6 +624,11 @@ func (h *Handlers) DeleteComment(w http.ResponseWriter, r *http.Request) {
 	if err := h.Service.SoftDeleteComment(r.Context(), tenantID, commentID); err != nil {
 		handleServiceError(w, err)
 		return
+	}
+
+	// Keep content_scores.comment_count in sync with contents.comment_count.
+	if existing.Status == "published" && !existing.DeletedAt.Valid {
+		h.enqueueEngagementUpdate("content", existing.ContentID, "comment", -1)
 	}
 
 	errpkg.WriteJSON(w, http.StatusNoContent, nil)
@@ -821,9 +830,22 @@ func (h *Handlers) RemoveComment(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Fetch the comment to get the content_id and current status for the
+	// engagement count update (Section 32).
+	existing, err := h.Service.GetComment(r.Context(), tenantID, commentID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
 	if err := h.Service.RemoveComment(r.Context(), tenantID, commentID, user.UserID, input.Reason); err != nil {
 		handleServiceError(w, err)
 		return
+	}
+
+	// Keep content_scores.comment_count in sync with contents.comment_count.
+	if existing.Status == "published" && !existing.DeletedAt.Valid {
+		h.enqueueEngagementUpdate("content", existing.ContentID, "comment", -1)
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"removed": true}})

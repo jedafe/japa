@@ -293,6 +293,25 @@ func nullableUUIDToString(u pgtype.UUID) *string {
 	return &s
 }
 
+// asString normalizes a string or *string value to a plain string.
+// sqlc may emit either type depending on whether the source column comes
+// from an OUTER JOIN; this avoids compile errors from row to row.
+func asString(v any) string {
+	if v == nil {
+		return ""
+	}
+	switch s := v.(type) {
+	case string:
+		return s
+	case *string:
+		if s == nil {
+			return ""
+		}
+		return *s
+	}
+	return ""
+}
+
 // splitTags splits a comma-separated tag string into a slice.
 // Handles interface{} from sqlc's string_agg which may be nil or string.
 func splitTags(v interface{}) []string {
@@ -343,14 +362,7 @@ func roadmapRowsToItems(rows []gen.ListContentsBySlugsRow) []FeedItem {
 		} else if r.AuthorUsername != nil {
 			authorName = *r.AuthorUsername
 		}
-		spaceName := ""
-		if r.SpaceName != nil {
-			spaceName = *r.SpaceName
-		}
-		excerpt := strings.TrimSpace(r.Body)
-		if len(excerpt) > 200 {
-			excerpt = excerpt[:200]
-		}
+		excerpt := strings.TrimSpace(r.Excerpt)
 
 		items[i] = FeedItem{
 			ID:                 uuidToString(r.ID),
@@ -362,10 +374,17 @@ func roadmapRowsToItems(rows []gen.ListContentsBySlugsRow) []FeedItem {
 			CreatedAt:          r.CreatedAt.Time.String(),
 			ViewCount:          r.ViewCount,
 			CommentCount:       r.CommentCount,
+			VoteScore:          r.VoteScore,
+			VelocityScore:      pgNumericToFloat64(r.VelocityScore),
 			AuthorName:         authorName,
-			SpaceName:          spaceName,
+			AuthorAvatarURL:    r.AuthorAvatarUrl,
+			SpaceName:          asString(r.SpaceName),
+			SpaceSlug:          r.SpaceSlug,
 			Excerpt:            excerpt,
 			ReadingTimeMinutes: int(r.ReadTimeMinutes),
+			CoverImageURL:      coverImageURL(r.CoverStorageBucket, r.CoverStoragePath),
+			BookmarkCount:      r.BookmarkCount,
+			Tags:               splitTags(r.Tags),
 			JourneyStage:       r.JourneyStage,
 			VisaRoute:          r.VisaRoute,
 			SourceCountry:      r.SourceCountry,
@@ -380,7 +399,7 @@ func roadmapRowsToItems(rows []gen.ListContentsBySlugsRow) []FeedItem {
 // order returned by the assessment. Empty roadmap slugs produce an empty list.
 // Public/members content is returned; private content is only returned for the
 // author or someone with can_see_private.
-func (s *Service) GetRoadmapFeed(ctx context.Context, tenantID, requesterID pgtype.UUID, slugs []string, limit int32) ([]FeedItem, error) {
+func (s *Service) GetRoadmapFeed(ctx context.Context, tenantID, requesterID pgtype.UUID, slugs []string, limit, offset int32) ([]FeedItem, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -389,7 +408,7 @@ func (s *Service) GetRoadmapFeed(ctx context.Context, tenantID, requesterID pgty
 		return []FeedItem{}, nil
 	}
 
-	rows, err := s.store.getContentsBySlugs(ctx, tenantID, requesterID, slugs, limit)
+	rows, err := s.store.getContentsBySlugs(ctx, tenantID, requesterID, slugs, limit, offset)
 	if err != nil {
 		return nil, err
 	}
@@ -414,7 +433,7 @@ func exploreRowsToItems(rows []gen.GetExploreFeedRow) []FeedItem {
 			VelocityScore:      pgNumericToFloat64(r.VelocityScore),
 			AuthorName:         r.AuthorName,
 			AuthorAvatarURL:    r.AuthorAvatarUrl,
-			SpaceName:          r.SpaceName,
+			SpaceName:          asString(r.SpaceName),
 			SpaceSlug:          r.SpaceSlug,
 			Excerpt:            r.Excerpt,
 			Tags:               splitTags(r.Tags),
@@ -444,7 +463,7 @@ func topRowsToItems(rows []gen.GetTopFeedRow) []FeedItem {
 			VelocityScore:      pgNumericToFloat64(r.VelocityScore),
 			AuthorName:         r.AuthorName,
 			AuthorAvatarURL:    r.AuthorAvatarUrl,
-			SpaceName:          r.SpaceName,
+			SpaceName:          asString(r.SpaceName),
 			SpaceSlug:          r.SpaceSlug,
 			Excerpt:            r.Excerpt,
 			Tags:               splitTags(r.Tags),
@@ -474,7 +493,7 @@ func risingRowsToItems(rows []gen.GetRisingFeedRow) []FeedItem {
 			VelocityScore:      pgNumericToFloat64(r.VelocityScore),
 			AuthorName:         r.AuthorName,
 			AuthorAvatarURL:    r.AuthorAvatarUrl,
-			SpaceName:          r.SpaceName,
+			SpaceName:          asString(r.SpaceName),
 			SpaceSlug:          r.SpaceSlug,
 			Excerpt:            r.Excerpt,
 			Tags:               splitTags(r.Tags),
@@ -504,7 +523,7 @@ func primaryRowsToItems(rows []gen.GetPrimaryFeedRow) []FeedItem {
 			VelocityScore:      pgNumericToFloat64(r.VelocityScore),
 			AuthorName:         r.AuthorName,
 			AuthorAvatarURL:    r.AuthorAvatarUrl,
-			SpaceName:          r.SpaceName,
+			SpaceName:          asString(r.SpaceName),
 			SpaceSlug:          r.SpaceSlug,
 			Excerpt:            r.Excerpt,
 			Tags:               splitTags(r.Tags),
@@ -533,7 +552,7 @@ func spaceRowsToItems(rows []gen.GetSpaceFeedRow) []FeedItem {
 			VelocityScore:      pgNumericToFloat64(r.VelocityScore),
 			AuthorName:         r.AuthorName,
 			AuthorAvatarURL:    r.AuthorAvatarUrl,
-			SpaceName:          r.SpaceName,
+			SpaceName:          asString(r.SpaceName),
 			SpaceSlug:          r.SpaceSlug,
 			Excerpt:            r.Excerpt,
 			Tags:               splitTags(r.Tags),
@@ -563,7 +582,7 @@ func profileRowsToItems(rows []gen.GetProfileFeedRow) []FeedItem {
 			VelocityScore:      pgNumericToFloat64(r.VelocityScore),
 			AuthorName:         r.AuthorName,
 			AuthorAvatarURL:    r.AuthorAvatarUrl,
-			SpaceName:          r.SpaceName,
+			SpaceName:          asString(r.SpaceName),
 			SpaceSlug:          r.SpaceSlug,
 			Excerpt:            r.Excerpt,
 			Tags:               splitTags(r.Tags),

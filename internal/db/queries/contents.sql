@@ -61,7 +61,12 @@ SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type, c.title, c.sl
        c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
        c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
        c.view_count,
-       (SELECT COUNT(*) FROM comments WHERE content_id = c.id AND deleted_at IS NULL) AS comment_count,
+       (SELECT COUNT(*)
+        FROM comments
+        WHERE content_id = c.id
+          AND tenant_id = c.tenant_id
+          AND deleted_at IS NULL
+          AND status = 'published') AS comment_count,
        c.share_count,
        (SELECT COUNT(*) FROM reactions WHERE entity_id = c.id AND entity_type = 'content') AS reshare_count,
        c.publish_at, c.published_at,
@@ -141,20 +146,35 @@ LIMIT @page_limit;
 
 -- name: ListContentsBySlugs :many
 -- Fetches published content rows by a list of slugs with the same JOINed
--- enrichment as ListContentsByTenant. Used by the journey-aware roadmap feed
--- to render the next steps from a readiness assessment.
+-- enrichment as the other feed queries. Used by the journey-aware roadmap feed
+-- to render the next steps from a readiness assessment in slug order, paginated.
 SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c.body_html,
        c.field_values, c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
        c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
        c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
        c.view_count, c.comment_count, c.share_count, c.reshare_count, c.publish_at, c.published_at,
        c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country,
-       u.username AS author_username, up.display_name AS author_display_name,
-       s.name AS space_name
+       u.username AS author_username,
+       up.display_name AS author_display_name,
+       COALESCE(up.avatar_url, '') AS author_avatar_url,
+       s.name AS space_name,
+       COALESCE(s.slug, '') AS space_slug,
+       COALESCE(cs.vote_score, 0) AS vote_score,
+       COALESCE(cs.bookmark_count, 0) AS bookmark_count,
+       COALESCE(cs.velocity_score, 0) AS velocity_score,
+       LEFT(c.body, 200)::text AS excerpt,
+       m.storage_bucket AS cover_storage_bucket,
+       m.storage_path AS cover_storage_path,
+       COALESCE((SELECT string_agg(t.name, ',' ORDER BY t.name)
+                 FROM content_tags ct
+                 JOIN tags t ON t.id = ct.tag_id
+                 WHERE ct.content_id = c.id), '') AS tags
 FROM contents c
 LEFT JOIN users u ON u.id = c.author_id AND u.tenant_id = c.tenant_id
 LEFT JOIN user_profiles up ON up.user_id = c.author_id AND up.tenant_id = c.tenant_id
 LEFT JOIN spaces s ON s.id = c.space_id AND s.tenant_id = c.tenant_id
+LEFT JOIN content_scores cs ON cs.content_id = c.id
+LEFT JOIN media m ON m.id = COALESCE(c.featured_image_id, c.header_image_id) AND m.deleted_at IS NULL
 WHERE c.tenant_id = @tenant_id
   AND c.slug = ANY(@slugs::text[])
   AND c.deleted_at IS NULL
@@ -172,7 +192,7 @@ WHERE c.tenant_id = @tenant_id
       )
   )
 ORDER BY array_position(@slugs::text[], c.slug)
-LIMIT @page_limit;
+LIMIT @page_limit OFFSET @page_offset;
 
 -- name: ListContentsByType :many
 SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c.body_html,
@@ -500,9 +520,9 @@ SET vote_score = vote_score + @delta, last_scored_at = now()
 WHERE content_id = @content_id;
 
 -- name: IncrementScoreComment :exec
--- Atomically increments comment_count by delta.
+-- Atomically adjusts comment_count by delta (clamped at 0).
 UPDATE content_scores
-SET comment_count = comment_count + @delta, last_scored_at = now()
+SET comment_count = GREATEST(0, comment_count + @delta), last_scored_at = now()
 WHERE content_id = @content_id;
 
 -- name: IncrementScoreView :exec

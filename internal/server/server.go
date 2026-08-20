@@ -619,6 +619,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	feedHandlers := feed.NewHandlers(feedService)
 	feedHandlers.SetSettings(settingsService)
 	feedHandlers.SetCache(vkClient.Valkey()) // BUG-006: explore feed caching
+	feedHandlers.SetCustomFields(cfService)  // journey options from custom fields (Rule 16)
 
 	// Trending & Discovery subsystem (Phase 28).
 	trendingStore := trending.NewStore(database)
@@ -2754,6 +2755,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Feed routes (Section 32 — Activity Feed / Timeline)
 			r.Get("/feed/card-style", feedHandlers.GetCardStyle)                                             // public — no auth required
 			r.Get("/feed/context", feedHandlers.GetFeedContext)                                              // public — returns resolved VisitorContext
+			r.Get("/feed/journey-options", feedHandlers.GetJourneyOptions)                                   // public — option lists for guest onboarding
 			r.Post("/feed/context", feedHandlers.SetFeedContext)                                             // public — set guest journey context cookie
 			r.Get("/explore", feedHandlers.GetExploreFeed)                                                   // public — no auth required (catalog: /explore)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/feed", feedHandlers.GetPrimaryFeed)         // catalog: /feed (primary timeline)

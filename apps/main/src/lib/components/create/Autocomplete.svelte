@@ -31,6 +31,12 @@
 		onfocus?: () => void;
 		/** Debounce delay in ms (default 300). */
 		debounceMs?: number;
+		/**
+		 * When true, the user can submit a typed value that does not appear in
+		 * the option list. Use with small canonical lists that should also accept
+		 * free-text fallback values.
+		 */
+		allowFreeText?: boolean;
 	}
 
 	let {
@@ -44,7 +50,8 @@
 		onSelect,
 		onClear,
 		onfocus,
-		debounceMs = 300
+		debounceMs = 300,
+		allowFreeText = false
 	}: Props = $props();
 
 	let open = $state(false);
@@ -127,7 +134,14 @@
 		// Close after focus transfer completes — prevents stale dropdowns
 		// when clicking another Autocomplete instance.
 		setTimeout(() => {
-			if (!focused) close();
+			if (!focused) {
+				// Allow free-text entry when no option was selected.
+				if (allowFreeText && !selectedId && query.trim()) {
+					onSelect({ id: query.trim(), label: query.trim() });
+					query = '';
+				}
+				close();
+			}
 		}, 0);
 	}
 
@@ -198,7 +212,11 @@
 			activeIndex = Math.max(activeIndex - 1, 0);
 		} else if (e.key === 'Enter') {
 			e.preventDefault();
-			if (items[activeIndex]) pick(items[activeIndex]);
+			if (items[activeIndex]) {
+				pick(items[activeIndex]);
+			} else if (allowFreeText && query.trim()) {
+				pick({ id: query.trim(), label: query.trim() });
+			}
 		} else if (e.key === 'Backspace' && query.length === 0 && selectedId && onClear) {
 			e.preventDefault();
 			clearSelection();

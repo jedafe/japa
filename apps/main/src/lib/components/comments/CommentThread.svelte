@@ -19,6 +19,8 @@
 	interface Props {
 		/** SSR-seeded top-level comments (parent_id IS NULL). */
 		comments: Comment[];
+		/** Total published comment count (top-level + replies). Falls back to the length of `comments` when omitted. */
+		totalCount?: number;
 		/** Content id — used for POST /content/{id}/comments and reply fetches. */
 		contentId: string;
 		/** Parent content type — controls vote vs emoji-reaction display (Section 49). */
@@ -34,15 +36,21 @@
 		/** Erased-user IDs for GDPR/ADR-029 mention redaction (Section 15). */
 		deletedUserIds?: Set<string>;
 	}
-	let { comments: initial, contentId, contentType, authed, currentUserId, canModerate, loadError = false, deletedUserIds }: Props = $props();
+	let { comments: initial, totalCount, contentId, contentType, authed, currentUserId, canModerate, loadError = false, deletedUserIds }: Props = $props();
 
 	let comments = $state<Comment[]>(untrack(() => initial));
+
+	// Tracks optimistic local adjustments to the total comment count. When a
+	// published comment is created or deleted we bump this, while the SSR total
+	// stays fixed until the next page navigation. Reset on a new SSR payload.
+	let localDelta = $state(0);
 
 	// Re-seed on a new SSR payload (navigation between articles).
 	$effect(() => {
 		const seed = initial;
 		untrack(() => {
 			comments = seed;
+			localDelta = 0;
 		});
 	});
 
@@ -63,9 +71,16 @@
 		}
 		comments = [res.data, ...comments];
 		draftBody = '';
+		// When a totalCount prop is supplied, the count no longer derives from
+		// comments.length, so we must bump the total for a new top-level comment.
+		if (totalCount != null) {
+			localDelta++;
+		}
 	}
 
-	const count = $derived(comments.length);
+	// Total published comment count (top-level + replies). Falls back to the
+	// number of top-level comments when totalCount is not provided.
+	const count = $derived((totalCount ?? comments.length) + localDelta);
 </script>
 
 <div id="comments" class="mt-12 border-t border-[var(--color-border)] pt-8">
@@ -121,6 +136,8 @@
 						{currentUserId}
 						{canModerate}
 						{deletedUserIds}
+						onReply={() => localDelta++}
+						onDelete={() => localDelta--}
 					/>
 				</div>
 			{/each}
