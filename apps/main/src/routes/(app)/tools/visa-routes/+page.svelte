@@ -5,7 +5,7 @@
 	import { Route, MapPin, GitCompare, DollarSign, Map, ExternalLink, Lock } from 'lucide-svelte';
 	import { EmptyState, LoadingSkeleton } from '$lib/components/ui';
 	import { api } from '$lib/api/client';
-	import type { VisaRouteWithAi, GeoSpaceOption } from '$lib/types';
+	import type { VisaRouteWithAi, GeoCountry } from '$lib/types';
 	import type { PageData } from './$types';
 	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
 	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
@@ -26,7 +26,7 @@
 		)
 	);
 
-	let destinations = $state<GeoSpaceOption[]>(untrack(() => data.destinations));
+	let destinations = $state<GeoCountry[]>(untrack(() => data.destinations));
 	let routes = $state<VisaRouteWithAi[]>(untrack(() => data.routes));
 	let selectedDestId = $state<string>(untrack(() => data.initialDestId ?? ''));
 	let loadingRoutes = $state(false);
@@ -117,8 +117,8 @@
 		const query = q.toLowerCase();
 		const filtered = query === ''
 			? destinations
-			: destinations.filter((d) => d.name.toLowerCase().includes(query));
-		return Promise.resolve(filtered.map((d) => ({ id: d.id, label: d.name })));
+			: destinations.filter((d) => d.name.toLowerCase().includes(query) || d.geo_code.toLowerCase().includes(query));
+		return Promise.resolve(filtered.map((d) => ({ id: d.id, label: d.name, sublabel: d.geo_code })));
 	}
 	function fetchDestinationsInitial(): Promise<AutocompleteItem[]> {
 		return fetchDestinations('');

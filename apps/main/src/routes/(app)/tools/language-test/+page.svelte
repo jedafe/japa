@@ -22,7 +22,7 @@
 		LanguageTestRequirementWithAi,
 		LanguageTestResource,
 		LanguageTestScoreStory,
-		GeoSpaceOption
+		GeoCountry
 	} from '$lib/types';
 	import type { PageData } from './$types';
 	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
@@ -49,7 +49,7 @@
 	const disabled = $derived(data.disabled);
 	const authed = $derived(data.authed);
 
-	let destinations = $state<GeoSpaceOption[]>(untrack(() => data.destinations));
+	let destinations = $state<GeoCountry[]>(untrack(() => data.destinations));
 	let tests = $state<LanguageTest[]>(untrack(() => data.tests));
 	let requirements = $state<LanguageTestRequirementWithAi[]>(untrack(() => data.requirements));
 
@@ -228,8 +228,8 @@
 		const query = q.toLowerCase();
 		const filtered = query === ''
 			? destinations
-			: destinations.filter((d) => d.name.toLowerCase().includes(query));
-		return Promise.resolve(filtered.map((d) => ({ id: d.id, label: d.name })));
+			: destinations.filter((d) => d.name.toLowerCase().includes(query) || d.geo_code.toLowerCase().includes(query));
+		return Promise.resolve(filtered.map((d) => ({ id: d.id, label: d.name, sublabel: d.geo_code })));
 	}
 	function fetchDestinationsInitial(): Promise<AutocompleteItem[]> {
 		return fetchDestinations('');

@@ -1,16 +1,16 @@
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiList, ApiError } from '$lib/server/api';
-import type { VisaRouteWithAi, GeoSpaceOption } from '$lib/types';
+import type { VisaRouteWithAi, GeoCountry } from '$lib/types';
 
 /**
  * Visa Route Comparison — §90, ADR-088.
- * SSR loads the destination country list from /spaces?level=country (the
+ * SSR loads the full 250 primary geo space countries from GET /geo/countries (the
  * geo-aware pattern — destination is the primary data axis). When a ?dest=
  * param is present, the routes for that destination are fetched server-side
  * so the page renders with content immediately.
  *
- * API: GET /spaces?level=country — destination countries (geo selector).
+ * API: GET /geo/countries — the full 250 primary geo space countries (geo selector).
  *      GET /visa-routes?dest={space_id} — visa routes for a destination.
  *      GET /visa-routes/compare?ids=... — comparison (client-side, on demand).
  *
@@ -28,10 +28,10 @@ export const load: PageServerLoad = async (event) => {
 
 	// Destination list — the geo-aware selector source (Rule 16).
 	// A 404 or visa_routes_disabled code means the tool is turned off.
-	let destinations: GeoSpaceOption[] = [];
+	let destinations: GeoCountry[] = [];
 	let disabled = false;
 	try {
-		destinations = (await apiList<GeoSpaceOption>(ctx, '/spaces?level=country')).items;
+		destinations = (await apiList<GeoCountry>(ctx, '/geo/countries')).items;
 	} catch (e) {
 		if (e instanceof ApiError && (e.status === 404 || e.code === 'visa_routes_disabled')) {
 			disabled = true;

@@ -1,15 +1,15 @@
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiList, ApiError } from '$lib/server/api';
-import type { GeoSpaceOption, CvStandard } from '$lib/types';
+import type { GeoCountry, CvStandard } from '$lib/types';
 
 /**
  * CV Formatter — §95.
- * SSR loads the destination country list and all CV standards. The standards
+ * SSR loads the full 250 primary geo space countries and all CV standards. The standards
  * list is used to filter the destination dropdown to only show destinations
  * that have a standard available.
  *
- * API: GET /spaces?level=country — destination selector options.
+ * API: GET /geo/countries — destination selector options (the full 250 primary geo space countries).
  *      GET /cv-formatter/standards — all CV standards (public).
  *      GET /cv-formatter/standards/{dest} — single standard for a destination.
  *      POST /cv-formatter/format — AI-assisted formatting (auth, 202 Accepted).
@@ -28,7 +28,7 @@ export const load: PageServerLoad = async (event) => {
 	const authed = !!event.locals.user;
 
 	let disabled = false;
-	let destinations: GeoSpaceOption[] = [];
+	let destinations: GeoCountry[] = [];
 	let standards: CvStandard[] = [];
 
 	// All CV standards — primary call; a 404 with cv_formatter_disabled (or any
@@ -47,7 +47,7 @@ export const load: PageServerLoad = async (event) => {
 	// Destination country list — the primary data axis (ADR-088). Rule 16.
 	if (!disabled) {
 		try {
-			destinations = (await apiList<GeoSpaceOption>(ctx, '/spaces?level=country')).items;
+			destinations = (await apiList<GeoCountry>(ctx, '/geo/countries')).items;
 		} catch {
 			destinations = [];
 		}
