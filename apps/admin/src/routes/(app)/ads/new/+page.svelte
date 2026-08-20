@@ -1,14 +1,17 @@
 <script lang="ts">
 	import PageHeader from "$lib/components/layout/page-header.svelte";
 	import { Button } from "$lib/components/ui/button";
-	import { adSlotTypesApi, adsAdminApi, geoApi } from "$lib/api";
+	import { adSlotTypesApi, adsAdminApi } from "$lib/api";
 	import SpaceAutocomplete from "$lib/components/ui/SpaceAutocomplete.svelte";
+	import Autocomplete from "$lib/components/ui/Autocomplete.svelte";
+	import type { AutocompleteItem } from "$lib/components/ui/Autocomplete.svelte";
 	import { t } from "$lib/stores/i18n.svelte";
 	import { hasPermission } from "$lib/stores/permissions.svelte";
 	import { goto } from "$app/navigation";
 	import { ArrowLeft, Save, Image as ImageIcon, X, Code, FileText, Type, Eye } from "lucide-svelte";
 	import MediaPickerModal from "$lib/components/ui/MediaPickerModal.svelte";
 	import { sanitizeHtml } from "$lib/utils/html";
+	import { useCountries } from "$lib/utils/countries.svelte";
 
 	// Ref: japaconnect-engineering/sections/25-ad-placement.md — the backend
 	// AdSlotType sqlc struct exposes `slot_name` and `max_display_per_page`
@@ -21,9 +24,9 @@
 		max_display_per_page?: number;
 		is_active?: boolean;
 	};
-	type GeoSpace = { id: string; name: string; slug: string; geo_code?: string | null; level: string };
 
 	const canManage = $derived(hasPermission('ad.campaign.manage'));
+	const countryUtils = useCountries('geo_code');
 
 	let name = $state('');
 	let slotTypeName = $state('');
@@ -46,8 +49,6 @@
 	// Geo targeting
 	let targetGeo = $state<string[]>([]);
 	let targetSpaceIds = $state<string[]>([]);
-	let geoInput = $state('');
-	let countries = $state<GeoSpace[]>([]);
 
 	let slotTypes = $state<SlotType[]>([]);
 	let saving = $state(false);
@@ -58,10 +59,9 @@
 	$effect(() => {
 		(async () => {
 			try {
-				const [slotsResult, countriesResult] = await Promise.all([
-					adSlotTypesApi.list('page_size=100'),
-					geoApi.listCountries()
-				]);
+				// Pre-load the 250 primary geo space countries for the Autocomplete.
+				countryUtils.load();
+				const slotsResult = await adSlotTypesApi.list('page_size=100');
 				if (slotsResult.ok) {
 					// §6.2: guard null data; backend returns {data: [...]} envelope
 					// which apiFetch already unwraps, so result.data is the array.
@@ -70,9 +70,6 @@
 				} else {
 					errorMessage = slotsResult.error || t('ads.load_error', 'Failed to load form data');
 				}
-				if (countriesResult.ok) {
-					countries = (countriesResult.data as GeoSpace[]) ?? [];
-				}
 			} catch {
 				errorMessage = t('ads.load_error', 'Failed to load form data');
 			} finally {
@@ -80,14 +77,6 @@
 			}
 		})();
 	});
-
-	function addGeoCode() {
-		const code = geoInput.trim().toUpperCase();
-		if (code && !targetGeo.includes(code)) {
-			targetGeo = [...targetGeo, code];
-		}
-		geoInput = '';
-	}
 
 	function removeGeoCode(code: string) {
 		targetGeo = targetGeo.filter((c) => c !== code);
@@ -427,10 +416,22 @@
 			<!-- Target Geo (country codes) -->
 			<div>
 				<label for="ad-geo-input" class="mb-1 block text-sm font-medium">{t('ads.target_countries', 'Target Countries (ISO codes)')}</label>
-				<div class="flex gap-2">
-					<input id="ad-geo-input" type="text" class="flex-1 rounded-md border px-3 py-2 text-sm font-mono uppercase" style="border-color: var(--color-border); background-color: var(--color-background)" placeholder={t('app.ads.new.ph_ng', 'NG')} bind:value={geoInput} onkeydown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addGeoCode(); } }} />
-					<Button variant="outline" size="sm" onclick={addGeoCode}>{t('common.add', 'Add')}</Button>
-				</div>
+				<Autocomplete
+					id="ad-geo-input"
+					placeholder={t('app.ads.new.ph_ng', 'NG')}
+					emptyMessage={t('common.no_results', 'No results found')}
+					fetcher={countryUtils.fetcher}
+					initialFetcher={countryUtils.initialFetcher}
+					selectedId={null}
+					selectedLabel={null}
+					onSelect={(item: AutocompleteItem) => {
+						const code = item.id.toUpperCase();
+						if (code && !targetGeo.includes(code)) {
+							targetGeo = [...targetGeo, code];
+						}
+					}}
+					onClear={() => {}}
+				/>
 				{#if targetGeo.length > 0}
 					<div class="mt-2 flex flex-wrap gap-2">
 						{#each targetGeo as code (code)}
@@ -438,17 +439,6 @@
 								{code}
 								<button onclick={() => removeGeoCode(code)} class="hover:opacity-70" aria-label={t('common.remove', 'Remove')}>×</button>
 							</span>
-						{/each}
-					</div>
-				{/if}
-				{#if countries.length > 0}
-					<div class="mt-2 flex flex-wrap gap-1">
-						{#each countries.slice(0, 20) as c (c)}
-								{#if c.geo_code}
-							<button class="rounded px-2 py-0.5 text-xs hover:opacity-70" style="background-color: var(--color-muted); color: var(--color-background)" onclick={() => { const code = c.geo_code!.toUpperCase(); if (!targetGeo.includes(code)) targetGeo = [...targetGeo, code]; }}>
-								{c.name} ({c.geo_code})
-							</button>
-								{/if}
 						{/each}
 					</div>
 				{/if}
