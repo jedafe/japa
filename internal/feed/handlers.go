@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"log/slog"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -14,6 +15,8 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
+	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/clientip"
 	"github.com/jedafe/japa/internal/config"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/tenant"
@@ -27,11 +30,32 @@ const defaultPageSize int32 = 20
 // exploreCacheTTL is the TTL for jc:explore:{tenant}:{geo}:{page} (Section 53).
 const exploreCacheTTL = 15 * time.Minute
 
+// toInt32 converts an int to int32 without overflow. It clamps to
+// math.MaxInt32 / math.MinInt32 so callers can use it for sqlc parameters
+// without triggering integer-overflow linters (Rule 15).
+func toInt32(v int) int32 {
+	if v > math.MaxInt32 {
+		v = math.MaxInt32
+	}
+	if v < math.MinInt32 {
+		v = math.MinInt32
+	}
+	return int32(v) // #nosec G115 // bounded by the explicit clamps above
+}
+
+// customFieldProvider resolves custom field definitions by key. The concrete
+// type is *internal/customfields.Service; the interface keeps the feed package
+// from importing a large dependency tree.
+type customFieldProvider interface {
+	GetCustomFieldByKey(ctx context.Context, key string, tenantID pgtype.UUID) (gen.GetCustomFieldByKeyRow, error)
+}
+
 // Handlers holds dependencies for feed HTTP handlers.
 type Handlers struct {
-	service  *Service
-	settings *config.Settings
-	cache    valkey.Client
+	service      *Service
+	settings     *config.Settings
+	cache        valkey.Client
+	customFields customFieldProvider
 }
 
 // NewHandlers creates Handlers with the given Service.
@@ -47,6 +71,12 @@ func (h *Handlers) SetSettings(s *config.Settings) {
 // SetCache injects the Valkey client for explore feed caching (BUG-006).
 func (h *Handlers) SetCache(c valkey.Client) {
 	h.cache = c
+}
+
+// SetCustomFields injects the custom field provider for resolving journey option
+// lists from the custom field system (Rule 16).
+func (h *Handlers) SetCustomFields(cf customFieldProvider) {
+	h.customFields = cf
 }
 
 // requireTenant resolves the tenant from the request context.
@@ -76,7 +106,10 @@ func (h *Handlers) parsePageSize(r *http.Request) int32 {
 	if h.settings != nil {
 		if t := tenant.FromContext(r.Context()); t != nil {
 			if v := h.settings.GetIntOr(r.Context(), t.ID, "content.posts_per_page", int(defaultPageSize)); v > 0 {
-				defaultSize = int32(v) //nolint:gosec // G109: bounded below by MaxPageSize clamp
+				if v > int(MaxPageSize) {
+					v = int(MaxPageSize)
+				}
+				defaultSize = toInt32(v)
 			}
 		}
 	}
@@ -98,7 +131,7 @@ func (h *Handlers) parsePageSize(r *http.Request) int32 {
 		return MaxPageSize
 	}
 
-	return int32(n) //nolint:gosec // G109: bounded by MaxPageSize check above
+	return toInt32(n)
 }
 
 // parsePageOffset extracts the page_offset query parameter.
@@ -113,7 +146,7 @@ func parsePageOffset(r *http.Request) int32 {
 		return 0
 	}
 
-	return int32(n) //nolint:gosec // G109: bounded by MaxPageSize check above
+	return toInt32(n)
 }
 
 // parseSort extracts and validates the sort query parameter.
@@ -240,7 +273,8 @@ func (h *Handlers) GetRoadmapFeed(w http.ResponseWriter, r *http.Request) {
 	limit := h.parsePageSize(r)
 
 	vc := visitor.FromContext(r.Context())
-	items, err := h.service.GetRoadmapFeed(r.Context(), tenantID, user.UserID, vc.RoadmapSlugs, limit)
+	offset := parsePageOffset(r)
+	items, err := h.service.GetRoadmapFeed(r.Context(), tenantID, user.UserID, vc.RoadmapSlugs, limit, offset)
 	if err != nil {
 		slog.Error("feed: get roadmap feed failed", "user_id", user.UserID, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to get roadmap feed")
@@ -378,6 +412,10 @@ func (h *Handlers) SetFeedContext(w http.ResponseWriter, r *http.Request) {
 		stored["purpose"] = v
 	}
 	if v := strings.TrimSpace(req.TravelDate); v != "" {
+		if _, err := time.Parse("2006-01-02", v); err != nil {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_travel_date", "travel_date must be YYYY-MM-DD")
+			return
+		}
 		stored["travel_date"] = v
 	}
 
@@ -390,29 +428,65 @@ func (h *Handlers) SetFeedContext(w http.ResponseWriter, r *http.Request) {
 	}
 	token := hex.EncodeToString(b)
 
-	// Persist to Valkey.
+	// Persist to Valkey and clear the visitor context cache so the next
+	// request re-resolves with the new journey signals.
 	if h.cache != nil {
 		if raw, err := json.Marshal(stored); err == nil {
 			key := vkcache.MustKey("visitor:journey:%s", token)
 			_ = h.cache.Do(r.Context(), h.cache.B().Set().Key(key).Value(string(raw)).Ex(guestJourneyTTL).Build()).Error()
 		}
+		h.invalidateVisitorContextCache(r)
 	}
 
-	// Set the cookie. Not HttpOnly so the frontend can read the token for
-	// localStorage sync; the actual values live in Valkey.
+	// Set the cookie. HttpOnly keeps the token out of XSS reach; the frontend
+	// receives the token in the response body for localStorage sync. Secure is
+	// set whenever the request came in over HTTPS.
+	// #nosec G124 — Secure is true for HTTPS requests; HTTP is intentionally
+	// allowed for local dev while SameSite=Lax + HttpOnly are always set.
 	http.SetCookie(w, &http.Cookie{
 		Name:     "jc_journey_token",
 		Value:    token,
 		Path:     "/",
 		MaxAge:   int(guestJourneyTTL.Seconds()),
 		SameSite: http.SameSiteLaxMode,
+		HttpOnly: true,
+		Secure:   r.TLS != nil,
 	})
 
-	// Return the resolved context for the current request. The middleware has
-	// already passed, so this is the previously-resolved context rather than
-	// the new one; the caller should refresh to see the applied context.
+	// Return the current (pre-middleware) context and the new token. The
+	// caller should refresh or call GET /feed/context to see the applied
+	// journey values because the middleware has already run.
 	vc := visitor.FromContext(r.Context())
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": vc})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": vc, "token": token})
+}
+
+// invalidateVisitorContextCache deletes the VisitorContext and recommendation
+// cache entries for the current requestor so that a new or updated journey
+// is reflected on the next request.
+func (h *Handlers) invalidateVisitorContextCache(r *http.Request) {
+	if h.cache == nil {
+		return
+	}
+
+	ctx := r.Context()
+	t := tenant.FromContext(ctx)
+	user := auth.FromContext(ctx)
+
+	if user != nil {
+		if user.SessionID != "" {
+			_ = h.cache.Do(ctx, h.cache.B().Del().Key(vkcache.MustKey("visitor:ctx:%s", user.SessionID)).Build()).Error()
+			_ = h.cache.Do(ctx, h.cache.B().Del().Key(vkcache.MustKey("recommendations:%s", user.SessionID)).Build()).Error()
+		}
+		_ = h.cache.Do(ctx, h.cache.B().Del().Key(vkcache.MustKey("visitor:ctx:user:%s", user.UserID.String())).Build()).Error()
+		_ = h.cache.Do(ctx, h.cache.B().Del().Key(vkcache.MustKey("recommendations:user:%s", user.UserID.String())).Build()).Error()
+		return
+	}
+
+	if t != nil {
+		ip := clientip.FromRequest(r)
+		_ = h.cache.Do(ctx, h.cache.B().Del().Key(vkcache.MustKey("visitor:ctx:ip:%s:%s", t.ID.String(), ip)).Build()).Error()
+		_ = h.cache.Do(ctx, h.cache.B().Del().Key(vkcache.MustKey("recommendations:ip:%s:%s", t.ID.String(), ip)).Build()).Error()
+	}
 }
 
 // GetCardStyle handles GET /api/v1/feed/card-style — public endpoint.
@@ -436,5 +510,62 @@ func (h *Handlers) GetCardStyle(w http.ResponseWriter, r *http.Request) {
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": cfg,
+	})
+}
+
+// journeyOption is a single select option for purpose, stage, or visa route.
+type journeyOption struct {
+	Value string `json:"value"`
+	Label string `json:"label"`
+}
+
+// parseCustomFieldOptions decodes a JSONB custom field options array into
+// journeyOption values. Returns nil for missing or malformed options.
+func parseCustomFieldOptions(raw []byte) []journeyOption {
+	if len(raw) == 0 {
+		return nil
+	}
+	var opts []journeyOption
+	if err := json.Unmarshal(raw, &opts); err != nil {
+		return nil
+	}
+	return opts
+}
+
+// customFieldOptionKeys maps the journey axes to their system custom field keys.
+// The keys mirror the profile fields read by GetUserGeoProfileFields.
+const (
+	journeyPurposeCustomFieldKey   = "purpose"
+	journeyStageCustomFieldKey     = "japa_status"
+	journeyVisaRouteCustomFieldKey = "visa_route"
+)
+
+// GetJourneyOptions handles GET /api/v1/feed/journey-options — public endpoint.
+// Resolves the option lists for purpose, journey stage, and visa route from the
+// custom field system so the guest onboarding UI never hardcodes option lists.
+// Ref: 2026-08-21-journey-aware-recommendations-design.md §6.1
+func (h *Handlers) GetJourneyOptions(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	t := tenant.FromContext(ctx)
+	if t == nil {
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		return
+	}
+
+	if h.customFields == nil {
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "journey_options_unavailable", "Journey options are not configured")
+		return
+	}
+
+	purpose, _ := h.customFields.GetCustomFieldByKey(ctx, journeyPurposeCustomFieldKey, t.ID)
+	stage, _ := h.customFields.GetCustomFieldByKey(ctx, journeyStageCustomFieldKey, t.ID)
+	visa, _ := h.customFields.GetCustomFieldByKey(ctx, journeyVisaRouteCustomFieldKey, t.ID)
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
+		"data": map[string]any{
+			"purposes":    parseCustomFieldOptions(purpose.Options),
+			"stages":      parseCustomFieldOptions(stage.Options),
+			"visa_routes": parseCustomFieldOptions(visa.Options),
+		},
 	})
 }

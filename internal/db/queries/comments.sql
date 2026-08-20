@@ -12,6 +12,7 @@ RETURNING *;
 -- name: GetComment :one
 SELECT c.id, c.tenant_id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
        c.vote_score, c.is_pinned, c.is_edited, c.edited_at, c.created_at, c.updated_at, c.deleted_at,
+       c.status,
        c.is_anonymous,
        u.username,
        COALESCE(up.display_name, '') AS display_name,
@@ -24,6 +25,7 @@ WHERE c.id = @id AND c.tenant_id = @tenant_id;
 -- name: ListCommentsByContent :many
 SELECT c.id, c.tenant_id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
        c.vote_score, c.is_pinned, c.is_edited, c.edited_at, c.created_at, c.updated_at, c.deleted_at,
+       c.reply_count,
        c.is_anonymous,
        u.username,
        COALESCE(up.display_name, '') AS display_name,
@@ -45,6 +47,7 @@ LIMIT @page_limit OFFSET @page_offset;
 -- Ref: japaconnect-engineering/sections/47-public-api-developer-portal.md
 SELECT c.id, c.tenant_id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
        c.vote_score, c.is_pinned, c.is_edited, c.edited_at, c.created_at, c.updated_at, c.deleted_at,
+       c.reply_count,
        c.is_anonymous,
        u.username,
        COALESCE(up.display_name, '') AS display_name,
@@ -68,6 +71,7 @@ LIMIT @page_limit OFFSET @page_offset;
 -- Section 49 ?sort=new — newest first (pinned still surface on top).
 SELECT c.id, c.tenant_id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
        c.vote_score, c.is_pinned, c.is_edited, c.edited_at, c.created_at, c.updated_at, c.deleted_at,
+       c.reply_count,
        c.is_anonymous,
        u.username,
        COALESCE(up.display_name, '') AS display_name,
@@ -85,6 +89,7 @@ LIMIT @page_limit OFFSET @page_offset;
 -- Section 49 ?sort=oldest — oldest first (pinned still surface on top).
 SELECT c.id, c.tenant_id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
        c.vote_score, c.is_pinned, c.is_edited, c.edited_at, c.created_at, c.updated_at, c.deleted_at,
+       c.reply_count,
        c.is_anonymous,
        u.username,
        COALESCE(up.display_name, '') AS display_name,
@@ -101,6 +106,7 @@ LIMIT @page_limit OFFSET @page_offset;
 -- name: ListRepliesByParent :many
 SELECT c.id, c.tenant_id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
        c.vote_score, c.is_pinned, c.is_edited, c.edited_at, c.created_at, c.updated_at, c.deleted_at,
+       c.reply_count,
        c.is_anonymous,
        u.username,
        COALESCE(up.display_name, '') AS display_name,
@@ -165,6 +171,12 @@ WHERE id = @id AND tenant_id = @tenant_id AND deleted_at IS NULL;
 -- is created (BUG-008).
 UPDATE comments
 SET reply_count = reply_count + 1, updated_at = now()
+WHERE id = @parent_id AND tenant_id = @tenant_id AND deleted_at IS NULL;
+
+-- name: DecrementCommentReplyCount :exec
+-- Decrement the parent reply_count when a reply is deleted or removed (clamped at 0).
+UPDATE comments
+SET reply_count = GREATEST(reply_count - 1, 0), updated_at = now()
 WHERE id = @parent_id AND tenant_id = @tenant_id AND deleted_at IS NULL;
 
 -- name: PinComment :exec

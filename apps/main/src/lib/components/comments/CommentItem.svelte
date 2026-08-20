@@ -25,8 +25,12 @@
 		canModerate: boolean;
 		/** Erased-user IDs for GDPR/ADR-029 mention redaction (Section 15). */
 		deletedUserIds?: Set<string>;
+		/** Called when any reply in this subtree is successfully posted. */
+		onReply?: () => void;
+		/** Called when this comment or any nested reply is deleted. */
+		onDelete?: () => void;
 	}
-	let { comment, contentId, contentType, depth, authed, currentUserId, canModerate, deletedUserIds }: Props = $props();
+	let { comment, contentId, contentType, depth, authed, currentUserId, canModerate, deletedUserIds, onReply = () => {}, onDelete = () => {} }: Props = $props();
 
 	const MAX_DEPTH = 3;
 	// Section 49: voting is forum-discussions-only; other content types use
@@ -118,6 +122,14 @@
 
 	const allReplies = $derived([...loadedReplies, ...localReplies]);
 
+	// Label for the lazy-load replies button. Hidden when the comment has no
+	// published replies. "View reply" for exactly one, "View X replies" otherwise.
+	const viewRepliesLabel = $derived(
+		comment.reply_count === 1
+			? t('comments.view_reply', 'View reply')
+			: t('comments.view_replies_count', 'View {count} replies').replace('{count}', String(comment.reply_count))
+	);
+
 	async function loadReplies() {
 		if (repliesLoading || repliesLoaded) return;
 		repliesLoading = true;
@@ -154,6 +166,7 @@
 		localReplies = [...localReplies, res.data];
 		replyBody = '';
 		composing = false;
+		onReply();
 	}
 
 	// Edit / delete (author only).
@@ -198,6 +211,7 @@
 			return;
 		}
 		deleted = true;
+		onDelete();
 	}
 
 	const upActive = $derived(userVote === 1);
@@ -378,18 +392,20 @@
 								{currentUserId}
 								{canModerate}
 								{deletedUserIds}
+								onReply={() => onReply()}
+								onDelete={() => onDelete()}
 							/>
 						{/each}
 					</div>
 				{/if}
-				{#if !repliesLoaded && allReplies.length === 0}
+				{#if !repliesLoaded && allReplies.length === 0 && comment.reply_count > 0}
 					<button
 						type="button"
 						onclick={loadReplies}
 						disabled={repliesLoading}
 						class="mt-2 inline-flex items-center gap-1 text-xs font-medium text-[var(--color-primary)] transition-colors hover:underline disabled:opacity-50"
 					>
-						{repliesLoading ? t('common.loading') : t('comments.view_replies')}
+						{repliesLoading ? t('common.loading') : viewRepliesLabel}
 					</button>
 				{/if}
 			{:else if allReplies.length > 0}

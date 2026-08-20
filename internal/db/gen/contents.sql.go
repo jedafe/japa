@@ -773,7 +773,12 @@ SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type, c.title, c.sl
        c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
        c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
        c.view_count,
-       (SELECT COUNT(*) FROM comments WHERE content_id = c.id AND deleted_at IS NULL) AS comment_count,
+       (SELECT COUNT(*)
+        FROM comments
+        WHERE content_id = c.id
+          AND tenant_id = c.tenant_id
+          AND deleted_at IS NULL
+          AND status = 'published') AS comment_count,
        c.share_count,
        (SELECT COUNT(*) FROM reactions WHERE entity_id = c.id AND entity_type = 'content') AS reshare_count,
        c.publish_at, c.published_at,
@@ -1275,7 +1280,7 @@ func (q *Queries) IncrementScoreBookmark(ctx context.Context, arg IncrementScore
 
 const incrementScoreComment = `-- name: IncrementScoreComment :exec
 UPDATE content_scores
-SET comment_count = comment_count + $1, last_scored_at = now()
+SET comment_count = GREATEST(0, comment_count + $1), last_scored_at = now()
 WHERE content_id = $2
 `
 
@@ -1284,7 +1289,7 @@ type IncrementScoreCommentParams struct {
 	ContentID pgtype.UUID `json:"content_id"`
 }
 
-// Atomically increments comment_count by delta.
+// Atomically adjusts comment_count by delta (clamped at 0).
 func (q *Queries) IncrementScoreComment(ctx context.Context, arg IncrementScoreCommentParams) error {
 	_, err := q.db.Exec(ctx, incrementScoreComment, arg.Delta, arg.ContentID)
 	return err
@@ -2050,12 +2055,27 @@ SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type, c.title, c.sl
        c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
        c.view_count, c.comment_count, c.share_count, c.reshare_count, c.publish_at, c.published_at,
        c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country,
-       u.username AS author_username, up.display_name AS author_display_name,
-       s.name AS space_name
+       u.username AS author_username,
+       up.display_name AS author_display_name,
+       COALESCE(up.avatar_url, '') AS author_avatar_url,
+       s.name AS space_name,
+       COALESCE(s.slug, '') AS space_slug,
+       COALESCE(cs.vote_score, 0) AS vote_score,
+       COALESCE(cs.bookmark_count, 0) AS bookmark_count,
+       COALESCE(cs.velocity_score, 0) AS velocity_score,
+       LEFT(c.body, 200)::text AS excerpt,
+       m.storage_bucket AS cover_storage_bucket,
+       m.storage_path AS cover_storage_path,
+       COALESCE((SELECT string_agg(t.name, ',' ORDER BY t.name)
+                 FROM content_tags ct
+                 JOIN tags t ON t.id = ct.tag_id
+                 WHERE ct.content_id = c.id), '') AS tags
 FROM contents c
 LEFT JOIN users u ON u.id = c.author_id AND u.tenant_id = c.tenant_id
 LEFT JOIN user_profiles up ON up.user_id = c.author_id AND up.tenant_id = c.tenant_id
 LEFT JOIN spaces s ON s.id = c.space_id AND s.tenant_id = c.tenant_id
+LEFT JOIN content_scores cs ON cs.content_id = c.id
+LEFT JOIN media m ON m.id = COALESCE(c.featured_image_id, c.header_image_id) AND m.deleted_at IS NULL
 WHERE c.tenant_id = $1
   AND c.slug = ANY($2::text[])
   AND c.deleted_at IS NULL
@@ -2073,7 +2093,7 @@ WHERE c.tenant_id = $1
       )
   )
 ORDER BY array_position($2::text[], c.slug)
-LIMIT $7
+LIMIT $8 OFFSET $7
 `
 
 type ListContentsBySlugsParams struct {
@@ -2083,55 +2103,65 @@ type ListContentsBySlugsParams struct {
 	CanSeePrivate     bool        `json:"can_see_private"`
 	RequesterID       pgtype.UUID `json:"requester_id"`
 	CanSeeMembers     bool        `json:"can_see_members"`
+	PageOffset        int32       `json:"page_offset"`
 	PageLimit         int32       `json:"page_limit"`
 }
 
 type ListContentsBySlugsRow struct {
-	ID                pgtype.UUID        `json:"id"`
-	TenantID          pgtype.UUID        `json:"tenant_id"`
-	AuthorID          pgtype.UUID        `json:"author_id"`
-	SpaceID           pgtype.UUID        `json:"space_id"`
-	ContentType       string             `json:"content_type"`
-	Title             string             `json:"title"`
-	Slug              string             `json:"slug"`
-	Body              string             `json:"body"`
-	BodyHtml          string             `json:"body_html"`
-	FieldValues       []byte             `json:"field_values"`
-	ContentHash       *string            `json:"content_hash"`
-	GeoSpaceID        pgtype.UUID        `json:"geo_space_id"`
-	HeaderImageID     pgtype.UUID        `json:"header_image_id"`
-	FeaturedImageID   pgtype.UUID        `json:"featured_image_id"`
-	CanonicalUrl      *string            `json:"canonical_url"`
-	MetaTitle         *string            `json:"meta_title"`
-	MetaDescription   *string            `json:"meta_description"`
-	OgImageUrl        *string            `json:"og_image_url"`
-	SeoIndexable      bool               `json:"seo_indexable"`
-	Status            string             `json:"status"`
-	Visibility        string             `json:"visibility"`
-	IsLocked          bool               `json:"is_locked"`
-	IsPinned          bool               `json:"is_pinned"`
-	ReadTimeMinutes   int32              `json:"read_time_minutes"`
-	ViewCount         int32              `json:"view_count"`
-	CommentCount      int32              `json:"comment_count"`
-	ShareCount        int32              `json:"share_count"`
-	ReshareCount      int32              `json:"reshare_count"`
-	PublishAt         pgtype.Timestamptz `json:"publish_at"`
-	PublishedAt       pgtype.Timestamptz `json:"published_at"`
-	CreatedAt         pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
-	GuideCategory     *string            `json:"guide_category"`
-	JourneyStage      *string            `json:"journey_stage"`
-	VisaRoute         *string            `json:"visa_route"`
-	SourceCountry     *string            `json:"source_country"`
-	TargetCountry     *string            `json:"target_country"`
-	AuthorUsername    *string            `json:"author_username"`
-	AuthorDisplayName *string            `json:"author_display_name"`
-	SpaceName         *string            `json:"space_name"`
+	ID                 pgtype.UUID        `json:"id"`
+	TenantID           pgtype.UUID        `json:"tenant_id"`
+	AuthorID           pgtype.UUID        `json:"author_id"`
+	SpaceID            pgtype.UUID        `json:"space_id"`
+	ContentType        string             `json:"content_type"`
+	Title              string             `json:"title"`
+	Slug               string             `json:"slug"`
+	Body               string             `json:"body"`
+	BodyHtml           string             `json:"body_html"`
+	FieldValues        []byte             `json:"field_values"`
+	ContentHash        *string            `json:"content_hash"`
+	GeoSpaceID         pgtype.UUID        `json:"geo_space_id"`
+	HeaderImageID      pgtype.UUID        `json:"header_image_id"`
+	FeaturedImageID    pgtype.UUID        `json:"featured_image_id"`
+	CanonicalUrl       *string            `json:"canonical_url"`
+	MetaTitle          *string            `json:"meta_title"`
+	MetaDescription    *string            `json:"meta_description"`
+	OgImageUrl         *string            `json:"og_image_url"`
+	SeoIndexable       bool               `json:"seo_indexable"`
+	Status             string             `json:"status"`
+	Visibility         string             `json:"visibility"`
+	IsLocked           bool               `json:"is_locked"`
+	IsPinned           bool               `json:"is_pinned"`
+	ReadTimeMinutes    int32              `json:"read_time_minutes"`
+	ViewCount          int32              `json:"view_count"`
+	CommentCount       int32              `json:"comment_count"`
+	ShareCount         int32              `json:"share_count"`
+	ReshareCount       int32              `json:"reshare_count"`
+	PublishAt          pgtype.Timestamptz `json:"publish_at"`
+	PublishedAt        pgtype.Timestamptz `json:"published_at"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+	GuideCategory      *string            `json:"guide_category"`
+	JourneyStage       *string            `json:"journey_stage"`
+	VisaRoute          *string            `json:"visa_route"`
+	SourceCountry      *string            `json:"source_country"`
+	TargetCountry      *string            `json:"target_country"`
+	AuthorUsername     *string            `json:"author_username"`
+	AuthorDisplayName  *string            `json:"author_display_name"`
+	AuthorAvatarUrl    string             `json:"author_avatar_url"`
+	SpaceName          *string            `json:"space_name"`
+	SpaceSlug          string             `json:"space_slug"`
+	VoteScore          int32              `json:"vote_score"`
+	BookmarkCount      int32              `json:"bookmark_count"`
+	VelocityScore      pgtype.Numeric     `json:"velocity_score"`
+	Excerpt            string             `json:"excerpt"`
+	CoverStorageBucket *string            `json:"cover_storage_bucket"`
+	CoverStoragePath   *string            `json:"cover_storage_path"`
+	Tags               interface{}        `json:"tags"`
 }
 
 // Fetches published content rows by a list of slugs with the same JOINed
-// enrichment as ListContentsByTenant. Used by the journey-aware roadmap feed
-// to render the next steps from a readiness assessment.
+// enrichment as the other feed queries. Used by the journey-aware roadmap feed
+// to render the next steps from a readiness assessment in slug order, paginated.
 func (q *Queries) ListContentsBySlugs(ctx context.Context, arg ListContentsBySlugsParams) ([]ListContentsBySlugsRow, error) {
 	rows, err := q.db.Query(ctx, listContentsBySlugs,
 		arg.TenantID,
@@ -2140,6 +2170,7 @@ func (q *Queries) ListContentsBySlugs(ctx context.Context, arg ListContentsBySlu
 		arg.CanSeePrivate,
 		arg.RequesterID,
 		arg.CanSeeMembers,
+		arg.PageOffset,
 		arg.PageLimit,
 	)
 	if err != nil {
@@ -2189,7 +2220,16 @@ func (q *Queries) ListContentsBySlugs(ctx context.Context, arg ListContentsBySlu
 			&i.TargetCountry,
 			&i.AuthorUsername,
 			&i.AuthorDisplayName,
+			&i.AuthorAvatarUrl,
 			&i.SpaceName,
+			&i.SpaceSlug,
+			&i.VoteScore,
+			&i.BookmarkCount,
+			&i.VelocityScore,
+			&i.Excerpt,
+			&i.CoverStorageBucket,
+			&i.CoverStoragePath,
+			&i.Tags,
 		); err != nil {
 			return nil, err
 		}

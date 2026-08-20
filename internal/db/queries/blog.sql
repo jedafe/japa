@@ -232,7 +232,12 @@ LIMIT @page_limit OFFSET @page_offset;
 SELECT cf.id AS featured_id, cf.content_id, cf.featured_order, cf.featured_until,
        c.title, c.slug, c.body, c.body_html, c.read_time_minutes,
        c.view_count,
-       (SELECT COUNT(*) FROM comments WHERE content_id = c.id AND deleted_at IS NULL) AS comment_count,
+       (SELECT COUNT(*)
+        FROM comments
+        WHERE content_id = c.id
+          AND tenant_id = c.tenant_id
+          AND deleted_at IS NULL
+          AND status = 'published') AS comment_count,
        (SELECT COUNT(*) FROM reactions WHERE entity_id = c.id AND entity_type = 'content') AS reshare_count,
        c.author_id,
        COALESCE(up.display_name, u.username, '') AS author_name,
@@ -282,7 +287,12 @@ SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type,
        c.canonical_url, c.meta_title, c.meta_description, c.og_image_url,
        c.seo_indexable, c.status, c.visibility, c.is_locked, c.is_pinned,
        c.read_time_minutes, c.view_count,
-       (SELECT COUNT(*) FROM comments WHERE content_id = c.id AND deleted_at IS NULL) AS comment_count,
+       (SELECT COUNT(*)
+        FROM comments
+        WHERE content_id = c.id
+          AND tenant_id = c.tenant_id
+          AND deleted_at IS NULL
+          AND status = 'published') AS comment_count,
        c.share_count,
        (SELECT COUNT(*) FROM reactions WHERE entity_id = c.id AND entity_type = 'content') AS reshare_count,
        c.publish_at, c.published_at, c.created_at, c.updated_at,
@@ -343,7 +353,7 @@ SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type,
        c.canonical_url, c.meta_title, c.meta_description, c.og_image_url,
        c.seo_indexable, c.status, c.visibility, c.is_locked, c.is_pinned,
        c.read_time_minutes, c.view_count,
-       (SELECT COUNT(*) FROM comments WHERE content_id = c.id AND deleted_at IS NULL) AS comment_count,
+       (SELECT COUNT(*) FROM comments WHERE content_id = c.id AND tenant_id = c.tenant_id AND deleted_at IS NULL) AS comment_count,
        c.share_count,
        (SELECT COUNT(*) FROM reactions WHERE entity_id = c.id AND entity_type = 'content') AS reshare_count,
        c.publish_at, c.published_at, c.created_at, c.updated_at,
@@ -372,7 +382,12 @@ SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type,
        c.canonical_url, c.meta_title, c.meta_description, c.og_image_url,
        c.seo_indexable, c.status, c.visibility, c.is_locked, c.is_pinned,
        c.read_time_minutes, c.view_count,
-       (SELECT COUNT(*) FROM comments WHERE content_id = c.id AND deleted_at IS NULL) AS comment_count,
+       (SELECT COUNT(*)
+        FROM comments
+        WHERE content_id = c.id
+          AND tenant_id = c.tenant_id
+          AND deleted_at IS NULL
+          AND status = 'published') AS comment_count,
        c.share_count,
        (SELECT COUNT(*) FROM reactions WHERE entity_id = c.id AND entity_type = 'content') AS reshare_count,
        c.publish_at, c.published_at, c.created_at, c.updated_at,

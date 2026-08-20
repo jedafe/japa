@@ -192,6 +192,7 @@
 		<!-- Unified comment engine (Section 49) — Reddit-style nested comments. -->
 		<CommentThread
 			comments={data.comments}
+			totalCount={article.comment_count}
 			contentId={article.id}
 			contentType={article.content_type}
 			authed={data.authed}
