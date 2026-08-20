@@ -185,6 +185,11 @@ export interface FeedItem {
 	reading_time_minutes?: number;
 	cover_image_url?: string | null;
 	tags?: string[];
+	// Journey-aware recommendation metadata surfaced on feed cards (§32).
+	journey_stage?: string | null;
+	visa_route?: string | null;
+	source_country?: string | null;
+	target_country?: string | null;
 }
 
 /* ------------------------------------------------------------------ *
@@ -271,6 +276,11 @@ export interface ContentRecord {
 	publish_at?: string | null;
 	space_id?: string | null;
 	guide_category?: string | null;
+	// Journey-aware recommendation metadata (§14 / 2026-08-21 journey design).
+	journey_stage?: string | null;
+	visa_route?: string | null;
+	source_country?: string | null;
+	target_country?: string | null;
 }
 
 /** Uploaded media (POST /media/upload → confirm, or GET /me/media). */
@@ -502,13 +512,30 @@ export interface RecommendationSpaceItem {
 }
 
 export interface VisitorContextSummary {
-	archetype: string;
 	content_country: string;
+	content_region: string;
+	source: string;
+	is_authenticated: boolean;
+	user_id: string;
+	geoip_country: string;
 	origin_country: string;
 	current_country: string;
 	destination_country: string;
 	japa_stage: string;
+	journey_stage: string;
+	visa_route: string;
+	purpose: string;
+	travel_date: string;
+	roadmap_slugs: string[];
+	weakest_dimensions: string[];
+	assessment_threshold: string;
+	language: string;
+	archetype: string;
+	confidence: number;
 	current_city: string;
+	origin_city: string;
+	dest_city: string;
+	current_geo_space_id: string;
 }
 
 export interface RecommendationsResponse {

@@ -76,6 +76,9 @@
 	{/if}
 		{#if item.author_name}<span>·</span><span>{item.author_name}</span>{/if}
 		{#if time}<span>·</span><span>{time}</span>{/if}
+		{#if item.target_country}<span>·</span><span class="rounded bg-[var(--color-surface-subtle)] px-1.5 py-0.5 text-[10.5px] font-medium uppercase tracking-wide text-[var(--color-text-subtle)]">{t('feed.card.to', '→')} {item.target_country}</span>{/if}
+		{#if item.visa_route}<span class="rounded bg-[var(--color-surface-subtle)] px-1.5 py-0.5 text-[10.5px] font-medium uppercase tracking-wide text-[var(--color-text-subtle)]">{item.visa_route}</span>{/if}
+		{#if item.journey_stage}<span class="rounded bg-[var(--color-surface-subtle)] px-1.5 py-0.5 text-[10.5px] font-medium uppercase tracking-wide text-[var(--color-text-subtle)]">{item.journey_stage}</span>{/if}
 	</div>
 {/snippet}
 

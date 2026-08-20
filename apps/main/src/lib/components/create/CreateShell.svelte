@@ -134,6 +134,11 @@
 
 	// ---- Guide category state ----
 	let guideCategory = $state<string | null>(untrack(() => draft?.guide_category ?? null));
+	// Journey-aware recommendation metadata (backend normalizes free-text input).
+	let journeyStage = $state<string | null>(untrack(() => draft?.journey_stage ?? null));
+	let visaRoute = $state<string | null>(untrack(() => draft?.visa_route ?? null));
+	let sourceCountry = $state<string | null>(untrack(() => draft?.source_country ?? null));
+	let targetCountry = $state<string | null>(untrack(() => draft?.target_country ?? null));
 	// Category-specific field groups loaded on-demand when a guide category is selected.
 	// These are merged with the base content field groups for rendering in the settings panel.
 	let categoryFieldGroups = $state<CustomFieldGroup[]>([]);
@@ -169,7 +174,11 @@
 		// future date set via the settings panel).
 		publish_at: draft?.status === 'published' ? null : publishAt,
 		space_id: spaceId,
-		guide_category: guideCategory
+		guide_category: guideCategory,
+		journey_stage: journeyStage,
+		visa_route: visaRoute,
+		source_country: sourceCountry,
+		target_country: targetCountry
 	});
 
 	// Merge base content field groups with category-specific ones for the
@@ -406,6 +415,14 @@
 	<div class="composer-right">
 		<CreateRightPanel
 			{focusedField}
+			{journeyStage}
+			{visaRoute}
+			{sourceCountry}
+			{targetCountry}
+			onjourney={(v) => { journeyStage = v; markDirty(); }}
+			onvisa={(v) => { visaRoute = v; markDirty(); }}
+			onsource={(v) => { sourceCountry = v; markDirty(); }}
+			ontarget={(v) => { targetCountry = v; markDirty(); }}
 			{slug}
 			{visibility}
 			{canonicalUrl}
