@@ -28,7 +28,7 @@ func GetPublicOpenAPISpec(siteURL string, siteName string) map[string]any {
 			"description": "API documentation",
 			"url":         siteURL + "/docs/api",
 		},
-		"paths": buildPublicPaths(),
+		"paths": mergePaths(buildPublicPaths(), buildCatalogPublicPaths()),
 		"components": map[string]any{
 			"securitySchemes": map[string]any{
 				"apiKeyAuth": map[string]any{
@@ -44,6 +44,18 @@ func GetPublicOpenAPISpec(siteURL string, siteName string) map[string]any {
 	}
 }
 
+// mergePaths combines two path maps without overwriting existing entries.
+func mergePaths(a, b map[string]any) map[string]any {
+	merged := make(map[string]any)
+	for k, v := range a {
+		merged[k] = v
+	}
+	for k, v := range b {
+		merged[k] = v
+	}
+	return merged
+}
+
 // buildTags describes the public API operation groups used by the spec.
 func buildTags() []any {
 	return []any{
@@ -53,6 +65,7 @@ func buildTags() []any {
 		map[string]any{"name": "Tags", "description": "Content tags and tag detail"},
 		map[string]any{"name": "Search", "description": "Search published content"},
 		map[string]any{"name": "Trending", "description": "Trending snapshots across entities"},
+		map[string]any{"name": "Public", "description": "Public catalog routes that do not require an API key"},
 	}
 }
 

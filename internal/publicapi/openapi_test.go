@@ -2,6 +2,7 @@ package publicapi
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 )
 
@@ -51,7 +52,8 @@ func TestGetPublicOpenAPISpec(t *testing.T) {
 		}
 	}
 
-	// Every public operation must have a stable operationId and a required scope.
+	// Every public operation must have a stable operationId.
+	// The API-key-scoped /public/* routes also carry x-required-scope.
 	for path, pathItem := range paths {
 		pi, ok := pathItem.(map[string]any)
 		if !ok {
@@ -64,6 +66,9 @@ func TestGetPublicOpenAPISpec(t *testing.T) {
 			}
 			if op["operationId"] == nil || op["operationId"] == "" {
 				t.Fatalf("%s %s is missing operationId", method, path)
+			}
+			if !strings.HasPrefix(path, "/public/") {
+				continue
 			}
 			scope, ok := op["x-required-scope"].(string)
 			if !ok || scope == "" {
