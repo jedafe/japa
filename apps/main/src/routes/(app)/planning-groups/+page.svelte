@@ -2,6 +2,8 @@
 	import { untrack } from 'svelte';
 	// Ref: japaconnect-engineering/sections/82-japa-planning-groups.md
 	import { t } from '$lib/i18n';
+	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
+	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 	import { page } from '$app/state';
 	import { Users, Plus, MapPin, Plane, Calendar, Search, Lock, Unlock } from 'lucide-svelte';
 	import { EmptyState } from '$lib/components/ui';
@@ -38,6 +40,27 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 		const qs = params.toString();
 		return qs ? `/planning-groups?${qs}` : '/planning-groups';
 	});
+
+	function fetchDestinationCountries(q: string): Promise<AutocompleteItem[]> {
+		const allLabel = t('planning_groups.filter_destination_all', 'All countries');
+		const query = q.toLowerCase().trim();
+		const allItem: AutocompleteItem = { id: '', label: allLabel };
+		if (query === '') {
+			return Promise.resolve([allItem, ...(data.countries ?? []).map((c) => ({ id: c.id, label: c.name, sublabel: c.geo_code }))]);
+		}
+		const matchesAll = allLabel.toLowerCase().includes(query);
+		const filtered = (data.countries ?? []).filter(
+			(c) => c.name.toLowerCase().includes(query) || c.geo_code.toLowerCase().includes(query)
+		);
+		const items = filtered.map((c) => ({ id: c.id, label: c.name, sublabel: c.geo_code }));
+		return Promise.resolve(matchesAll ? [allItem, ...items] : items);
+	}
+	function fetchDestinationCountriesInitial(): Promise<AutocompleteItem[]> {
+		return fetchDestinationCountries('');
+	}
+	const selectedDestinationLabel = $derived(
+		destFilter ? (data.countries ?? []).find((c) => c.id === destFilter)?.name ?? null : null
+	);
 </script>
 
 <svelte:head>
@@ -92,18 +115,16 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 						size={14}
 						class="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--color-muted)]"
 					/>
-					<select
-						id="filter-dest"
-						name="dest"
-						value={destFilter}
-						onchange={(e) => (destFilter = e.currentTarget.value)}
-						class="w-44 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] py-1.5 pl-8 pr-3 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]"
-					>
-						<option value="">{t('planning_groups.filter_destination_all', 'All countries')}</option>
-						{#each data.countries as c (c.id)}
-							<option value={c.id}>{c.name}</option>
-						{/each}
-					</select>
+					<Autocomplete
+						placeholder={t('planning_groups.filter_destination_all', 'All countries')}
+						emptyMessage={t('common.no_results', 'No results found')}
+						fetcher={fetchDestinationCountries}
+						initialFetcher={fetchDestinationCountriesInitial}
+						selectedId={destFilter || null}
+						selectedLabel={selectedDestinationLabel}
+						onSelect={(item) => (destFilter = item.id)}
+						onClear={() => (destFilter = '')}
+					/>
 				</div>
 			</div>
 			<div class="flex flex-col gap-1">

@@ -2,6 +2,8 @@
 	// Ref: japaconnect-engineering/sections/83-visa-timeline-tracker.md
 	import { untrack } from 'svelte';
 	import { t } from '$lib/i18n';
+	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
+	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 	import { api } from '$lib/api/client';
 	import { ArrowLeft, CalendarClock, Check, ChevronDown, ChevronRight, Pencil, Plus, X } from 'lucide-svelte';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
@@ -217,6 +219,48 @@
 	const inputClass =
 		'w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20';
 	const labelClass = 'text-xs font-medium text-[var(--color-text-subtle)]';
+
+	function fetchOriginCountries(q: string): Promise<AutocompleteItem[]> {
+		const allLabel = t('visa_timelines.origin', 'Origin');
+		const query = q.toLowerCase().trim();
+		const allItem: AutocompleteItem = { id: '', label: allLabel };
+		if (query === '') {
+			return Promise.resolve([allItem, ...(data.countries ?? []).map((c) => ({ id: c.id, label: c.name, sublabel: c.geo_code }))]);
+		}
+		const matchesAll = allLabel.toLowerCase().includes(query);
+		const filtered = (data.countries ?? []).filter(
+			(c) => c.name.toLowerCase().includes(query) || c.geo_code.toLowerCase().includes(query)
+		);
+		const items = filtered.map((c) => ({ id: c.id, label: c.name, sublabel: c.geo_code }));
+		return Promise.resolve(matchesAll ? [allItem, ...items] : items);
+	}
+	function fetchOriginCountriesInitial(): Promise<AutocompleteItem[]> {
+		return fetchOriginCountries('');
+	}
+	const selectedOriginLabel = $derived(
+		cOrigin ? (data.countries ?? []).find((c) => c.id === cOrigin)?.name ?? null : null
+	);
+
+	function fetchDestinationCountries(q: string): Promise<AutocompleteItem[]> {
+		const allLabel = t('visa_timelines.destination', 'Destination');
+		const query = q.toLowerCase().trim();
+		const allItem: AutocompleteItem = { id: '', label: allLabel };
+		if (query === '') {
+			return Promise.resolve([allItem, ...(data.countries ?? []).map((c) => ({ id: c.id, label: c.name, sublabel: c.geo_code }))]);
+		}
+		const matchesAll = allLabel.toLowerCase().includes(query);
+		const filtered = (data.countries ?? []).filter(
+			(c) => c.name.toLowerCase().includes(query) || c.geo_code.toLowerCase().includes(query)
+		);
+		const items = filtered.map((c) => ({ id: c.id, label: c.name, sublabel: c.geo_code }));
+		return Promise.resolve(matchesAll ? [allItem, ...items] : items);
+	}
+	function fetchDestinationCountriesInitial(): Promise<AutocompleteItem[]> {
+		return fetchDestinationCountries('');
+	}
+	const selectedDestinationLabel = $derived(
+		cDest ? (data.countries ?? []).find((c) => c.id === cDest)?.name ?? null : null
+	);
 </script>
 
 <svelte:head>
@@ -271,21 +315,29 @@
 				<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
 					<div class="flex flex-col gap-1">
 						<label for="c-origin" class={labelClass}>{t('visa_timelines.origin', 'Origin')}</label>
-						<select id="c-origin" bind:value={cOrigin} class={inputClass}>
-							<option value="">{t('visa_timelines.origin', 'Origin')}</option>
-							{#each data.countries as country (country.id)}
-								<option value={country.id}>{country.name}</option>
-							{/each}
-						</select>
+						<Autocomplete
+							placeholder={t('visa_timelines.origin', 'Origin')}
+							emptyMessage={t('common.no_results', 'No results found')}
+							fetcher={fetchOriginCountries}
+							initialFetcher={fetchOriginCountriesInitial}
+							selectedId={cOrigin || null}
+							selectedLabel={selectedOriginLabel}
+							onSelect={(item) => (cOrigin = item.id)}
+							onClear={() => (cOrigin = '')}
+						/>
 					</div>
 					<div class="flex flex-col gap-1">
 						<label for="c-dest" class={labelClass}>{t('visa_timelines.destination', 'Destination')} *</label>
-						<select id="c-dest" bind:value={cDest} class={inputClass}>
-							<option value="">{t('visa_timelines.destination', 'Destination')}</option>
-							{#each data.countries as country (country.id)}
-								<option value={country.id}>{country.name}</option>
-							{/each}
-						</select>
+						<Autocomplete
+							placeholder={t('visa_timelines.destination', 'Destination')}
+							emptyMessage={t('common.no_results', 'No results found')}
+							fetcher={fetchDestinationCountries}
+							initialFetcher={fetchDestinationCountriesInitial}
+							selectedId={cDest || null}
+							selectedLabel={selectedDestinationLabel}
+							onSelect={(item) => (cDest = item.id)}
+							onClear={() => (cDest = '')}
+						/>
 					</div>
 					<div class="flex flex-col gap-1">
 						<label for="c-visa" class={labelClass}>{t('visa_timelines.visa_category', 'Visa category')} *</label>

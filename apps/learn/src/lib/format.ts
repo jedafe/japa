@@ -3,16 +3,34 @@
  * Ref: ADR-063 (price_kobo marketplace), ADR-060 (duration display).
  */
 
-/** Format a kobo amount as a NGN price string. 0 or null → "Free". */
-export function formatPriceKobo(kobo: number | null | undefined): string {
+/**
+ * Format a kobo (minor-unit) amount as a localized price string.
+ * Currency and locale are driven by the track/caller, not hardcoded NGN/en-NG.
+ * 0 or null → "Free". Ref: ADR-063, Rule 16.
+ */
+export function formatPriceKobo(
+	kobo: number | null | undefined,
+	currency?: string | null,
+	locale?: string | null
+): string {
 	if (!kobo || kobo <= 0) return 'Free';
-	// 100 kobo = 1 naira. Use Intl.NumberFormat for grouping.
-	const naira = kobo / 100;
-	return new Intl.NumberFormat('en-NG', {
-		style: 'currency',
-		currency: 'NGN',
-		maximumFractionDigits: 0
-	}).format(naira);
+	const units = kobo / 100;
+	const code = (currency ?? '').trim() || undefined;
+	const loc = locale ?? undefined;
+	if (!code) {
+		// No currency code known — show the raw major-unit amount without guessing.
+		return units.toLocaleString(loc);
+	}
+	try {
+		return new Intl.NumberFormat(loc, {
+			style: 'currency',
+			currency: code,
+			maximumFractionDigits: 0
+		}).format(units);
+	} catch {
+		// Fall back to a plain number when the currency code is not recognized.
+		return `${units.toLocaleString(loc)} ${code}`;
+	}
 }
 
 /** True when the course is free (kobo is 0/null) or the user is Pro. */

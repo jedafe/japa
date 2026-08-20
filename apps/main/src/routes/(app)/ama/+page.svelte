@@ -6,6 +6,8 @@
 	import { MessageSquare, Plus, Circle, CircleSlash, Loader2, Filter } from 'lucide-svelte';
 	import { api } from '$lib/api/client';
 	import { t } from '$lib/i18n';
+	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
+	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 	import { i18n } from '$lib/i18n';
 	import { relativeTime } from '$lib/feed/time';
 	import { EmptyState, LoadingSkeleton } from '$lib/components/ui';
@@ -127,6 +129,27 @@
 		if (!cfg?.closes_at) return true;
 		return new Date(cfg.closes_at).getTime() > Date.now();
 	}
+
+	function fetchDestinationCountries(q: string): Promise<AutocompleteItem[]> {
+		const allLabel = t('ama.filter_all', 'All countries');
+		const query = q.toLowerCase().trim();
+		const allItem: AutocompleteItem = { id: '', label: allLabel };
+		if (query === '') {
+			return Promise.resolve([allItem, ...(data.countries ?? []).map((c) => ({ id: c.id, label: c.name, sublabel: c.geo_code }))]);
+		}
+		const matchesAll = allLabel.toLowerCase().includes(query);
+		const filtered = (data.countries ?? []).filter(
+			(c) => c.name.toLowerCase().includes(query) || c.geo_code.toLowerCase().includes(query)
+		);
+		const items = filtered.map((c) => ({ id: c.id, label: c.name, sublabel: c.geo_code }));
+		return Promise.resolve(matchesAll ? [allItem, ...items] : items);
+	}
+	function fetchDestinationCountriesInitial(): Promise<AutocompleteItem[]> {
+		return fetchDestinationCountries('');
+	}
+	const selectedDestinationLabel = $derived(
+		destFilter ? (data.countries ?? []).find((c) => c.id === destFilter)?.name ?? null : null
+	);
 </script>
 
 <svelte:head>
@@ -159,17 +182,16 @@
 			<label for="dest-filter" class="text-xs font-medium text-[var(--color-text-subtle)]">
 				{t('ama.filter_destination', 'Destination')}
 			</label>
-			<select
-				id="dest-filter"
-				value={destFilter}
-				onchange={(e) => (destFilter = e.currentTarget.value)}
-				class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-1.5 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none"
-			>
-				<option value="">{t('ama.filter_all', 'All countries')}</option>
-				{#each data.countries ?? [] as country (country.id)}
-					<option value={country.id}>{country.name}</option>
-				{/each}
-			</select>
+			<Autocomplete
+				placeholder={t('ama.filter_all', 'All countries')}
+				emptyMessage={t('common.no_results', 'No results found')}
+				fetcher={fetchDestinationCountries}
+				initialFetcher={fetchDestinationCountriesInitial}
+				selectedId={destFilter || null}
+				selectedLabel={selectedDestinationLabel}
+				onSelect={(item) => (destFilter = item.id)}
+				onClear={() => (destFilter = '')}
+			/>
 		</div>
 		<div class="flex flex-col gap-1">
 			<label for="profession-filter" class="text-xs font-medium text-[var(--color-text-subtle)]">

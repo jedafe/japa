@@ -1,6 +1,8 @@
 <script lang="ts">
 	// Ref: japaconnect-engineering/sections/102-mentorship-matching.md
 	import { t } from '$lib/i18n';
+	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
+	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 	import { api } from '$lib/api/client';
 	import { ArrowLeft, GraduationCap, Send, CheckCircle2 } from 'lucide-svelte';
 	import { EmptyState } from '$lib/components/ui';
@@ -66,6 +68,27 @@
 			submitting = false;
 		}
 	}
+
+	function fetchDestinationCountries(q: string): Promise<AutocompleteItem[]> {
+		const allLabel = t('common.all_countries', 'All countries');
+		const query = q.toLowerCase().trim();
+		const allItem: AutocompleteItem = { id: '', label: allLabel };
+		if (query === '') {
+			return Promise.resolve([allItem, ...(data.countries ?? []).map((c) => ({ id: c.id, label: c.name, sublabel: c.geo_code }))]);
+		}
+		const matchesAll = allLabel.toLowerCase().includes(query);
+		const filtered = (data.countries ?? []).filter(
+			(c) => c.name.toLowerCase().includes(query) || c.geo_code.toLowerCase().includes(query)
+		);
+		const items = filtered.map((c) => ({ id: c.id, label: c.name, sublabel: c.geo_code }));
+		return Promise.resolve(matchesAll ? [allItem, ...items] : items);
+	}
+	function fetchDestinationCountriesInitial(): Promise<AutocompleteItem[]> {
+		return fetchDestinationCountries('');
+	}
+	const selectedDestinationLabel = $derived(
+		destinationSpaceId ? (data.countries ?? []).find((c) => c.id === destinationSpaceId)?.name ?? null : null
+	);
 </script>
 
 <svelte:head>
@@ -208,16 +231,16 @@
 								<label for="dest" class="text-sm font-medium text-[var(--color-text)]">
 									{t('mentors.field_destination', 'Destination country')}
 								</label>
-								<select
-									id="dest"
-									bind:value={destinationSpaceId}
-									class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
-								>
-									<option value="">{t('common.select', 'Select...')}</option>
-									{#each countries as country (country.id)}
-										<option value={country.id}>{country.name}</option>
-									{/each}
-								</select>
+								<Autocomplete
+									placeholder={t('common.select', 'Select...')}
+									emptyMessage={t('common.no_results', 'No results found')}
+									fetcher={fetchDestinationCountries}
+									initialFetcher={fetchDestinationCountriesInitial}
+									selectedId={destinationSpaceId || null}
+									selectedLabel={selectedDestinationLabel}
+									onSelect={(item) => (destinationSpaceId = item.id)}
+									onClear={() => (destinationSpaceId = '')}
+								/>
 							</div>
 
 							{#if errorMsg}

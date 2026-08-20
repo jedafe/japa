@@ -1979,6 +1979,7 @@ export interface GeoCountry {
 	slug: string;
 	geo_code: string;
 	level: 'country';
+	currency_code?: string | null;
 	member_count: number;
 	post_count: number;
 	follower_count: number;
@@ -1992,6 +1993,7 @@ export interface GeoState {
 	geo_code: string | null;
 	level: 'state';
 	parent_id: string;
+	currency_code?: string | null;
 	member_count: number;
 }
 
@@ -2003,6 +2005,7 @@ export interface GeoCity {
 	geo_code: string | null;
 	level: 'city';
 	parent_id: string;
+	currency_code?: string | null;
 	member_count: number;
 }
 

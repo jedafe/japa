@@ -2,7 +2,7 @@
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiList } from '$lib/server/api';
-import type { MutualAidPost, Space } from '$lib/types';
+import type { MutualAidPost, GeoCountry } from '$lib/types';
 
 /**
  * Mutual Aid list at /mutual-aid — community help requests and offers inside
@@ -28,9 +28,9 @@ export const load: PageServerLoad = async (event) => {
 
 	const filters = { dest, type, category, sort, page };
 
-	let countries: Space[] = [];
+	let countries: GeoCountry[] = [];
 	try {
-		const { items } = await apiList<Space>(ctx, '/spaces?level=country');
+		const { items } = await apiList<GeoCountry>(ctx, '/geo/countries');
 		countries = items;
 	} catch {
 		countries = [];

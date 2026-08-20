@@ -2,7 +2,7 @@
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiList } from '$lib/server/api';
-import type { AMAThread, Space } from '$lib/types';
+import type { AMAThread, GeoCountry } from '$lib/types';
 
 const PAGE_SIZE = 20;
 
@@ -17,9 +17,9 @@ export const load: PageServerLoad = async (event) => {
 
 	// Fetch country spaces for the destination filter dropdown and for
 	// resolving host_dest_country_id to a human-readable name (BUG-007).
-	let countries: Space[] = [];
+	let countries: GeoCountry[] = [];
 	try {
-		const { items } = await apiList<Space>(ctx, '/spaces?level=country');
+		const { items } = await apiList<GeoCountry>(ctx, '/geo/countries');
 		countries = items;
 	} catch {
 		countries = [];

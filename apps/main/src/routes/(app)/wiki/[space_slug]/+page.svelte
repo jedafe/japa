@@ -7,7 +7,9 @@
 	import { api } from '$lib/api/client';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import { BookOpen, Lock, Star, ArrowLeft, Globe } from 'lucide-svelte';
-	import type { WikiCategory, WikiPageIndex } from '$lib/types';
+	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
+	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
+	import type { WikiCategory, WikiPageIndex, GeoCountry } from '$lib/types';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -57,11 +59,10 @@
 	// degrade gracefully to the slug when absent.
 	let spaceName = $state<string>(untrack(() => data.spaceSlug));
 
-	// Geo-aware destination selector: load country-level spaces from the API
-	// (Rule 16 — no hardcoded lists). The selector is the first input per the
-	// geo-aware tool pattern.
-	type CountrySpace = { id: string; slug: string; name: string };
-	let destOptions = $state<CountrySpace[]>([]);
+	// Geo-aware destination selector: load the canonical country list from
+	// /geo/countries (Rule 16 — no hardcoded lists, ADR-005). The selector is
+	// the first input per the geo-aware tool pattern.
+	let destOptions = $state<GeoCountry[]>([]);
 	let destLoading = $state(false);
 
 	$effect(() => {
@@ -83,11 +84,8 @@
 		(async () => {
 			destLoading = true;
 			try {
-				const res = await api.get<{ data?: CountrySpace[]; items?: CountrySpace[] }>(
-					`/spaces?level=country&limit=200`
-				);
-				const list = res.data?.data ?? res.data?.items ?? [];
-				destOptions = list.map((s) => ({ id: s.id, slug: s.slug, name: s.name }));
+				const res = await api.get<GeoCountry[]>('/geo/countries');
+				destOptions = res.data ?? [];
 			} catch {
 				/* keep empty options */
 			} finally {
@@ -96,13 +94,24 @@
 		})();
 	});
 
-	function onDestChange(e: Event) {
-		const select = e.target as HTMLSelectElement;
-		const slug = select.value;
-		if (slug && slug !== data.spaceSlug) {
-			goto(`/wiki/${encodeURIComponent(slug)}`);
-		}
+	function fetchDestinations(q: string): Promise<AutocompleteItem[]> {
+		const query = q.toLowerCase().trim();
+		const filtered = query === ''
+			? destOptions
+			: destOptions.filter(
+					(c) =>
+						c.name.toLowerCase().includes(query) ||
+						c.geo_code.toLowerCase().includes(query) ||
+						c.slug.toLowerCase().includes(query)
+				);
+		return Promise.resolve(filtered.map((c) => ({ id: c.slug, label: c.name, sublabel: c.geo_code })));
 	}
+	function fetchDestinationsInitial(): Promise<AutocompleteItem[]> {
+		return fetchDestinations('');
+	}
+	const selectedDestLabel = $derived(
+		destOptions.find((c) => c.slug === data.spaceSlug)?.name ?? data.spaceSlug
+	);
 
 	// Group pages by category, preserving the CATEGORIES order.
 	const grouped = $derived.by(() => {
@@ -146,24 +155,28 @@
 
 	<!-- Geo-aware destination selector (first input per geo-aware tool pattern) -->
 	<div class="border-b border-[var(--color-border)] px-4 py-3">
-		<label for="wiki-dest-select" class="mb-1 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)]">
+		<label class="mb-1 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)]">
 			<Globe size={13} /> {t('wiki.destination_label', 'Destination')}
 		</label>
-		<select
-			id="wiki-dest-select"
-			class="w-full max-w-sm rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
-			value={data.spaceSlug}
-			onchange={onDestChange}
-			disabled={destLoading}
-		>
-			{#if destLoading}
-				<option value="">{t('wiki.destination_loading', 'Loading destinations…')}</option>
-			{:else}
-				{#each destOptions as opt (opt.id)}
-					<option value={opt.slug}>{opt.name}</option>
-				{/each}
-			{/if}
-		</select>
+		{#if destLoading}
+			<div class="w-full max-w-sm rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-muted)]">
+				{t('wiki.destination_loading', 'Loading destinations…')}
+			</div>
+		{:else}
+			<div class="w-full max-w-sm">
+				<Autocomplete
+					placeholder={t('wiki.destination_label', 'Destination')}
+					emptyMessage={t('common.no_results', 'No results found')}
+					fetcher={fetchDestinations}
+					initialFetcher={fetchDestinationsInitial}
+					selectedId={data.spaceSlug || null}
+					selectedLabel={selectedDestLabel}
+					onSelect={(item) => {
+						if (item.id && item.id !== data.spaceSlug) goto(`/wiki/${encodeURIComponent(item.id)}`);
+					}}
+				/>
+			</div>
+		{/if}
 	</div>
 
 	<div class="p-3">

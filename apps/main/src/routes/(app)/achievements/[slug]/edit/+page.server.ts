@@ -5,7 +5,7 @@
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiGet, apiList, ApiError } from '$lib/server/api';
-import type { Achievement, Space } from '$lib/types';
+import type { Achievement, GeoCountry } from '$lib/types';
 
 export const load: PageServerLoad = async (event) => {
 	if (!event.locals.user) {
@@ -32,9 +32,9 @@ export const load: PageServerLoad = async (event) => {
 		throw error(403, { code: 'not_owner', message: 'You can only edit your own achievements' });
 	}
 
-	let countries: Space[] = [];
+	let countries: GeoCountry[] = [];
 	try {
-		const { items } = await apiList<Space>(ctx, '/spaces?level=country');
+		const { items } = await apiList<GeoCountry>(ctx, '/geo/countries');
 		countries = items;
 	} catch {
 		countries = [];

@@ -39,7 +39,17 @@ export interface ActionItem {
 export interface FilterDef {
   key: string;
   label: string;
-  options: Array<{ value: string; label: string }>;
+  options?: Array<{ value: string; label: string }>;
+  /** Use 'autocomplete' to render the country/space live-debounced Autocomplete instead of a Select. */
+  type?: 'select' | 'autocomplete';
+  placeholder?: string;
+  emptyMessage?: string;
+  /** Required when type is 'autocomplete'. */
+  fetcher?: (q: string) => Promise<{ id: string; label: string; sublabel?: string }[]>;
+  /** Optional initial suggestions for autocomplete. */
+  initialFetcher?: () => Promise<{ id: string; label: string; sublabel?: string }[]>;
+  /** Resolves the selected id to a display label for autocomplete. */
+  getSelectedLabel?: (id: string) => string;
 }
 
 export interface BulkAction {

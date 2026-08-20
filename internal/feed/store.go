@@ -126,15 +126,17 @@ func (s *Store) getProfileFeed(ctx context.Context, tenantID, authorID, viewerID
 // getTopFeed returns top published content from the 7-day rolling window.
 //
 //nolint:unused // reserved for future features
-func (s *Store) getTopFeed(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]gen.GetTopFeedRow, error) {
+func (s *Store) getTopFeed(ctx context.Context, tenantID pgtype.UUID, visitorCountryCode, visitorRegion string, limit, offset int32) ([]gen.GetTopFeedRow, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
 
 	rows, err := s.read.GetTopFeed(ctx, gen.GetTopFeedParams{
-		TenantID:   tenantID,
-		PageLimit:  limit,
-		PageOffset: offset,
+		TenantID:           tenantID,
+		VisitorCountryCode: &visitorCountryCode,
+		VisitorRegion:      &visitorRegion,
+		PageLimit:          limit,
+		PageOffset:         offset,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("getting top feed: %w", err)
@@ -146,15 +148,17 @@ func (s *Store) getTopFeed(ctx context.Context, tenantID pgtype.UUID, limit, off
 // getRisingFeed returns rising content sorted by velocity score.
 //
 //nolint:unused // reserved for future features
-func (s *Store) getRisingFeed(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]gen.GetRisingFeedRow, error) {
+func (s *Store) getRisingFeed(ctx context.Context, tenantID pgtype.UUID, visitorCountryCode, visitorRegion string, limit, offset int32) ([]gen.GetRisingFeedRow, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
 
 	rows, err := s.read.GetRisingFeed(ctx, gen.GetRisingFeedParams{
-		TenantID:   tenantID,
-		PageLimit:  limit,
-		PageOffset: offset,
+		TenantID:           tenantID,
+		VisitorCountryCode: &visitorCountryCode,
+		VisitorRegion:      &visitorRegion,
+		PageLimit:          limit,
+		PageOffset:         offset,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("getting rising feed: %w", err)

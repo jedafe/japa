@@ -4,6 +4,8 @@
 	// Japa Stage directory. SSR list of public member profiles from
 	// GET /members/by-stage with ?stage filter and pagination.
 	import { t } from '$lib/i18n';
+	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
+	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
@@ -80,6 +82,27 @@
 	);
 
 	const hasFilters = $derived(!!data.filters.stage || !!data.filters.dest);
+
+	function fetchDestinationCountries(q: string): Promise<AutocompleteItem[]> {
+		const allLabel = t('japa_stage.all_destinations', 'All destinations');
+		const query = q.toLowerCase().trim();
+		const allItem: AutocompleteItem = { id: '', label: allLabel };
+		if (query === '') {
+			return Promise.resolve([allItem, ...(data.countries ?? []).map((c) => ({ id: c.id, label: c.name, sublabel: c.geo_code }))]);
+		}
+		const matchesAll = allLabel.toLowerCase().includes(query);
+		const filtered = (data.countries ?? []).filter(
+			(c) => c.name.toLowerCase().includes(query) || c.geo_code.toLowerCase().includes(query)
+		);
+		const items = filtered.map((c) => ({ id: c.id, label: c.name, sublabel: c.geo_code }));
+		return Promise.resolve(matchesAll ? [allItem, ...items] : items);
+	}
+	function fetchDestinationCountriesInitial(): Promise<AutocompleteItem[]> {
+		return fetchDestinationCountries('');
+	}
+	const selectedDestinationLabel = $derived(
+		destFilter ? (data.countries ?? []).find((c) => c.id === destFilter)?.name ?? null : null
+	);
 </script>
 
 <svelte:head>
@@ -165,16 +188,16 @@
 				<label for="filter-dest" class="text-xs font-medium text-[var(--color-text-subtle)]">
 					{t('japa_stage.filter_dest', 'Destination')}
 				</label>
-				<select
-					id="filter-dest"
-					bind:value={destFilter}
-					class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]"
-				>
-					<option value="">{t('japa_stage.all_destinations', 'All destinations')}</option>
-					{#each data.countries as c (c.id)}
-						<option value={c.id}>{c.name}</option>
-					{/each}
-				</select>
+				<Autocomplete
+					placeholder={t('japa_stage.all_destinations', 'All destinations')}
+					emptyMessage={t('common.no_results', 'No results found')}
+					fetcher={fetchDestinationCountries}
+					initialFetcher={fetchDestinationCountriesInitial}
+					selectedId={destFilter || null}
+					selectedLabel={selectedDestinationLabel}
+					onSelect={(item) => (destFilter = item.id)}
+					onClear={() => (destFilter = '')}
+				/>
 			</div>
 			<button
 				type="button"

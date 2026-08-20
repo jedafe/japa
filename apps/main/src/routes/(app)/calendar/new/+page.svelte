@@ -1,6 +1,8 @@
 <script lang="ts">
 	// Ref: japaconnect-engineering/sections/86-community-calendar.md
 	import { t } from '$lib/i18n';
+	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
+	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { api } from '$lib/api/client';
@@ -104,6 +106,48 @@
 			submitting = false;
 		}
 	}
+
+	function fetchDestinationCountries(q: string): Promise<AutocompleteItem[]> {
+		const allLabel = t('common.all_countries', 'All countries');
+		const query = q.toLowerCase().trim();
+		const allItem: AutocompleteItem = { id: '', label: allLabel };
+		if (query === '') {
+			return Promise.resolve([allItem, ...(data.countries ?? []).map((c) => ({ id: c.id, label: c.name, sublabel: c.geo_code }))]);
+		}
+		const matchesAll = allLabel.toLowerCase().includes(query);
+		const filtered = (data.countries ?? []).filter(
+			(c) => c.name.toLowerCase().includes(query) || c.geo_code.toLowerCase().includes(query)
+		);
+		const items = filtered.map((c) => ({ id: c.id, label: c.name, sublabel: c.geo_code }));
+		return Promise.resolve(matchesAll ? [allItem, ...items] : items);
+	}
+	function fetchDestinationCountriesInitial(): Promise<AutocompleteItem[]> {
+		return fetchDestinationCountries('');
+	}
+	const selectedDestinationLabel = $derived(
+		destinationSpaceId ? (data.countries ?? []).find((c) => c.id === destinationSpaceId)?.name ?? null : null
+	);
+
+	function fetchOriginCountries(q: string): Promise<AutocompleteItem[]> {
+		const allLabel = t('common.all_countries', 'All countries');
+		const query = q.toLowerCase().trim();
+		const allItem: AutocompleteItem = { id: '', label: allLabel };
+		if (query === '') {
+			return Promise.resolve([allItem, ...(data.countries ?? []).map((c) => ({ id: c.id, label: c.name, sublabel: c.geo_code }))]);
+		}
+		const matchesAll = allLabel.toLowerCase().includes(query);
+		const filtered = (data.countries ?? []).filter(
+			(c) => c.name.toLowerCase().includes(query) || c.geo_code.toLowerCase().includes(query)
+		);
+		const items = filtered.map((c) => ({ id: c.id, label: c.name, sublabel: c.geo_code }));
+		return Promise.resolve(matchesAll ? [allItem, ...items] : items);
+	}
+	function fetchOriginCountriesInitial(): Promise<AutocompleteItem[]> {
+		return fetchOriginCountries('');
+	}
+	const selectedOriginLabel = $derived(
+		originSpaceId ? (data.countries ?? []).find((c) => c.id === originSpaceId)?.name ?? null : null
+	);
 </script>
 
 <svelte:head>
@@ -149,23 +193,31 @@
 					<label for="destination_country" class="mb-1.5 block text-sm font-medium text-[var(--color-text)]">
 						{t('calendar.new.label_destination', 'Destination country')} <span class="text-red-500" aria-hidden="true">*</span>
 					</label>
-					<select id="destination_country" bind:value={destinationSpaceId} class={inputClass}>
-						<option value="">{t('calendar.new.placeholder_destination', 'Select a country')}</option>
-						{#each data.countries as country (country.id)}
-							<option value={country.id}>{country.name}</option>
-						{/each}
-					</select>
+					<Autocomplete
+						placeholder={t('calendar.new.placeholder_destination', 'Select a country')}
+						emptyMessage={t('common.no_results', 'No results found')}
+						fetcher={fetchDestinationCountries}
+						initialFetcher={fetchDestinationCountriesInitial}
+						selectedId={destinationSpaceId || null}
+						selectedLabel={selectedDestinationLabel}
+						onSelect={(item) => (destinationSpaceId = item.id)}
+						onClear={() => (destinationSpaceId = '')}
+					/>
 				</div>
 				<div>
 					<label for="origin_country" class="mb-1.5 block text-sm font-medium text-[var(--color-text)]">
 						{t('calendar.new.label_origin', 'Origin country (optional)')}
 					</label>
-					<select id="origin_country" bind:value={originSpaceId} class={inputClass}>
-						<option value="">{t('calendar.new.placeholder_origin', 'Leave blank for all origins')}</option>
-						{#each data.countries as country (country.id)}
-							<option value={country.id}>{country.name}</option>
-						{/each}
-					</select>
+					<Autocomplete
+						placeholder={t('calendar.new.placeholder_origin', 'Leave blank for all origins')}
+						emptyMessage={t('common.no_results', 'No results found')}
+						fetcher={fetchOriginCountries}
+						initialFetcher={fetchOriginCountriesInitial}
+						selectedId={originSpaceId || null}
+						selectedLabel={selectedOriginLabel}
+						onSelect={(item) => (originSpaceId = item.id)}
+						onClear={() => (originSpaceId = '')}
+					/>
 				</div>
 			</div>
 

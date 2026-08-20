@@ -2,7 +2,7 @@
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiList } from '$lib/server/api';
-import type { ScamReport, Space } from '$lib/types';
+import type { ScamReport, GeoCountry } from '$lib/types';
 
 const PAGE_SIZE = 20;
 
@@ -16,9 +16,9 @@ export const load: PageServerLoad = async (event) => {
 	const dest = event.url.searchParams.get('dest') ?? '';
 	const scam_type = event.url.searchParams.get('scam_type') ?? '';
 
-	let countries: Space[] = [];
+	let countries: GeoCountry[] = [];
 	try {
-		const { items } = await apiList<Space>(ctx, '/spaces?level=country');
+		const { items } = await apiList<GeoCountry>(ctx, '/geo/countries');
 		countries = items;
 	} catch {
 		countries = [];

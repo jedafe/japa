@@ -2,6 +2,8 @@
 	// Ref: japaconnect-engineering/sections/85-mutual-aid-board.md
 	import { untrack } from 'svelte';
 	import { t } from '$lib/i18n';
+	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
+	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 	import { i18n } from '$lib/i18n';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
@@ -164,6 +166,27 @@
 		params.set('page', String(p));
 		return `/mutual-aid?${params.toString()}`;
 	}
+
+	function fetchDestinationCountries(q: string): Promise<AutocompleteItem[]> {
+		const allLabel = t('mutual_aid.filter_destination_all', 'All countries');
+		const query = q.toLowerCase().trim();
+		const allItem: AutocompleteItem = { id: '', label: allLabel };
+		if (query === '') {
+			return Promise.resolve([allItem, ...(data.countries ?? []).map((c) => ({ id: c.id, label: c.name, sublabel: c.geo_code }))]);
+		}
+		const matchesAll = allLabel.toLowerCase().includes(query);
+		const filtered = (data.countries ?? []).filter(
+			(c) => c.name.toLowerCase().includes(query) || c.geo_code.toLowerCase().includes(query)
+		);
+		const items = filtered.map((c) => ({ id: c.id, label: c.name, sublabel: c.geo_code }));
+		return Promise.resolve(matchesAll ? [allItem, ...items] : items);
+	}
+	function fetchDestinationCountriesInitial(): Promise<AutocompleteItem[]> {
+		return fetchDestinationCountries('');
+	}
+	const selectedDestinationLabel = $derived(
+		dest ? (data.countries ?? []).find((c) => c.id === dest)?.name ?? null : null
+	);
 </script>
 
 <svelte:head>
@@ -213,16 +236,16 @@
 				<label for="filter-dest" class="text-xs font-medium text-[var(--color-text-subtle)]">
 					{t('mutual_aid.filter_destination', 'Destination')}
 				</label>
-				<select
-					id="filter-dest"
-					bind:value={dest}
-					class="w-40 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none"
-				>
-					<option value="">{t('mutual_aid.filter_destination_all', 'All countries')}</option>
-					{#each data.countries as c (c.id)}
-						<option value={c.id}>{c.name}</option>
-					{/each}
-				</select>
+				<Autocomplete
+					placeholder={t('mutual_aid.filter_destination_all', 'All countries')}
+					emptyMessage={t('common.no_results', 'No results found')}
+					fetcher={fetchDestinationCountries}
+					initialFetcher={fetchDestinationCountriesInitial}
+					selectedId={dest || null}
+					selectedLabel={selectedDestinationLabel}
+					onSelect={(item) => (dest = item.id)}
+					onClear={() => (dest = '')}
+				/>
 			</div>
 
 			<div class="flex flex-col gap-1">

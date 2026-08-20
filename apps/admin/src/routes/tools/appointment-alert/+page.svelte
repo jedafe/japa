@@ -2,13 +2,13 @@
 	// /tools/appointment-alert — admin management for embassy appointment alerter (§91, ADR-099).
 	// Full CRUD for monitored embassies + immediate poll trigger.
 	// Ref: japaconnect-engineering/sections/91-embassy-appointment-alerter.md
-	import { onMount } from 'svelte';
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { Eye, RefreshCw, Pencil } from 'lucide-svelte';
 	import type { ActionItem, FilterDef } from '$lib/components/ui/data-table';
-	import { appointmentAlertAdminApi , spacesAdminApi } from '$lib/api';
+	import { appointmentAlertAdminApi } from '$lib/api';
+	import { useCountries } from '$lib/utils/countries.svelte';
 
 	// EmbassyDTO — matches the backend EmbassyDTO shape (§91).
 	// Ref: internal/appointmentalert/service.go EmbassyDTO
@@ -32,6 +32,12 @@
 	let entityController = $state<EntityPageController | undefined>(undefined);
 	let pageError = $state('');
 	let acting = $state(false);
+
+	// ── Country selector (250 primary geo space countries) ───────────────────
+	const countryUtils = useCountries();
+	$effect(() => {
+		countryUtils.load();
+	});
 
 	// ── Poll action ─────────────────────────────────────────────────────────
 	async function pollEmbassy(item: EmbassyItem) {
@@ -82,39 +88,32 @@
 		{ key: 'is_active', label: t('app.tools.col_is_active', 'Active'), type: 'checkbox' }
 	];
 
-	
-// Destination Spaces for the dest filter (geo-aware pattern).
-type SpaceOption = { id: string; name: string };
-let destOptions = $state<SpaceOption[]>([]);
-onMount(async () => {
-	try {
-		const res = await spacesAdminApi.list('?level=country&limit=200');
-		if (res.ok && Array.isArray(res.data)) {
-			destOptions = (res.data as Array<{ id: string; name: string }>).map((s) => ({
-				id: s.id, name: s.name
-			}));
-		}
-	} catch { /* Non-fatal */ }
-});
-
 		// Status filter: the backend handler reads ?active= (boolean), not
 	// ?status=. Sending ?status=active was silently ignored (§3 contract
 	// drift). Use the boolean param the handler expects (§91).
-	const filters = $derived<FilterDef[]>([
-		{
-			key: 'active',
-			label: t('app.tools.col_status', 'Status'),
-			options: [
-				{ value: 'true', label: 'Active' },
-				{ value: 'false', label: 'Inactive' }
-			]
-		},
-		{
-			key: 'dest',
-			label: t('app.tools.col_destination', 'Destination'),
-			options: destOptions.map((s) => ({ value: s.id, label: s.name }))
-		}
-	]);
+	const filters = $derived.by<FilterDef[]>(() => {
+		countryUtils.ready;
+		return [
+			{
+				key: 'active',
+				label: t('app.tools.col_status', 'Status'),
+				options: [
+					{ value: 'true', label: 'Active' },
+					{ value: 'false', label: 'Inactive' }
+				]
+			},
+			{
+				key: 'dest',
+				label: t('app.tools.col_destination', 'Destination'),
+				type: 'autocomplete',
+				placeholder: t('app.tools.country_placeholder', 'Search country…'),
+				emptyMessage: t('common.no_results', 'No results found'),
+				fetcher: countryUtils.fetcher,
+				initialFetcher: countryUtils.initialFetcher,
+				getSelectedLabel: countryUtils.getSelectedLabel
+			}
+		];
+	});
 
 	const config = $derived<EntityPageConfig>({
 		filters,

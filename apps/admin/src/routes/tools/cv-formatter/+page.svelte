@@ -1,15 +1,17 @@
 <script lang="ts">
 	// /tools/cv-formatter — admin management for CV formatting standards (§95).
 	// Ref: japaconnect-engineering/sections/95-cv-formatter.md
-	import { onMount } from 'svelte';
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import { Modal } from '$lib/components/ui/modal';
 	import { Button } from '$lib/components/ui/button';
+	import Autocomplete from '$lib/components/ui/Autocomplete.svelte';
+	import type { AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { Eye, Save } from 'lucide-svelte';
 	import type { ActionItem, FilterDef } from '$lib/components/ui/data-table';
-	import { cvFormatterAdminApi , spacesAdminApi } from '$lib/api';
+	import { cvFormatterAdminApi } from '$lib/api';
+	import { useCountries } from '$lib/utils/countries.svelte';
 
 	// CVStandardRow matches the backend StandardDTO (§95, ADR-103).
 	type CVStandardRow = {
@@ -27,33 +29,19 @@
 		updated_at: string;
 	};
 
-	type SpaceOption = {
-		id: string;
-		name: string;
-		geo_code?: string;
-	};
-
 	const canManage = $derived(hasPermission('cv_formatter.manage'));
 
 	// ── State ───────────────────────────────────────────────────────────────
 	
-// Destination Spaces for the dest filter (geo-aware pattern §90-101).
-let destOptions = $state<SpaceOption[]>([]);
-onMount(async () => {
-	try {
-		const res = await spacesAdminApi.list('?level=country&limit=200');
-		if (res.ok && Array.isArray(res.data)) {
-			destOptions = (res.data as Array<{ id: string; name: string }>).map((s) => ({
-				id: s.id, name: s.name
-			}));
-		}
-	} catch { /* Non-fatal */ }
-});
+	// ── Country selector (250 primary geo space countries) ───────────────────
+	const countryUtils = useCountries();
+	$effect(() => {
+		countryUtils.load();
+	});
 
 	let entityController = $state<EntityPageController | undefined>(undefined);
 	let pageError = $state('');
 	let acting = $state(false);
-	let destinations = $state<SpaceOption[]>([]);
 
 	// ── Upsert modal state ──────────────────────────────────────────────────
 	let showUpsertModal = $state(false);
@@ -64,20 +52,6 @@ onMount(async () => {
 	let upsertSections = $state('');
 	let upsertToneGuidance = $state('');
 	let upsertCommonPitfalls = $state('');
-
-	// Load destination spaces (countries) for the selector.
-	$effect(() => {
-		if (!showUpsertModal || destinations.length > 0) return;
-		cvFormatterAdminApi.listDestinations().then((res) => {
-			if (res.ok && Array.isArray(res.data)) {
-				destinations = (res.data as SpaceOption[]).map((d) => ({
-					id: d.id,
-					name: d.name,
-					geo_code: d.geo_code
-				}));
-			}
-		});
-	});
 
 	function openUpsert() {
 		upsertDestSpaceId = '';
@@ -137,9 +111,21 @@ onMount(async () => {
 		{ key: 'common_pitfalls', label: t('app.tools.col_common_pitfalls', 'Common Pitfalls'), type: 'textarea' }
 	];
 
-		const filters = $derived<FilterDef[]>([
-		{ key: 'dest', label: t('app.tools.col_destination', 'Destination'), options: destOptions.map((s) => ({ value: s.id, label: s.name })) }
-	]);
+		const filters = $derived.by<FilterDef[]>(() => {
+		countryUtils.ready;
+		return [
+			{
+				key: 'dest',
+				label: t('app.tools.col_destination', 'Destination'),
+				type: 'autocomplete',
+				placeholder: t('app.tools.country_placeholder', 'Search country…'),
+				emptyMessage: t('common.no_results', 'No results found'),
+				fetcher: countryUtils.fetcher,
+				initialFetcher: countryUtils.initialFetcher,
+				getSelectedLabel: countryUtils.getSelectedLabel
+			}
+		];
+	});
 
 	const config = $derived<EntityPageConfig>({
 		filters,
@@ -228,17 +214,17 @@ onMount(async () => {
 	<div class="space-y-4">
 		<div>
 			<label for="upsert-dest" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('app.tools.col_destination', 'Destination')}</label>
-			<select
+			<Autocomplete
 				id="upsert-dest"
-				class="w-full rounded-lg border p-3 text-sm"
-				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
-				bind:value={upsertDestSpaceId}
-			>
-				<option value="">{t('app.tools.select_destination', 'Select destination country')}</option>
-				{#each destinations as d (d.id)}
-					<option value={d.id}>{d.name}</option>
-				{/each}
-			</select>
+				placeholder={t('app.tools.country_placeholder', 'Search country…')}
+				emptyMessage={t('common.no_results', 'No results found')}
+				fetcher={countryUtils.fetcher}
+				initialFetcher={countryUtils.initialFetcher}
+				selectedId={upsertDestSpaceId || null}
+				selectedLabel={upsertDestSpaceId ? countryUtils.getSelectedLabel(upsertDestSpaceId) : null}
+				onSelect={(item: AutocompleteItem) => { upsertDestSpaceId = item.id; }}
+				onClear={() => { upsertDestSpaceId = ''; }}
+			/>
 		</div>
 		<div>
 			<label for="upsert-pages" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('app.tools.col_length_pages', 'Recommended Length (pages)')}</label>

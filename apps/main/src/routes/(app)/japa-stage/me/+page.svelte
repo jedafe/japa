@@ -5,6 +5,8 @@
 	// the browser API client to PATCH /me/japa-stage (auth). Shows the current
 	// stage, a visual stepper of the 7-stage progression, and stage history.
 	import { t } from '$lib/i18n';
+	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
+	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 	import { api } from '$lib/api/client';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
@@ -101,6 +103,27 @@
 
 	const inputClass =
 		'w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20';
+
+	function fetchDestinationCountries(q: string): Promise<AutocompleteItem[]> {
+		const allLabel = t('common.all_countries', 'All countries');
+		const query = q.toLowerCase().trim();
+		const allItem: AutocompleteItem = { id: '', label: allLabel };
+		if (query === '') {
+			return Promise.resolve([allItem, ...(data.countries ?? []).map((c) => ({ id: c.id, label: c.name, sublabel: c.geo_code }))]);
+		}
+		const matchesAll = allLabel.toLowerCase().includes(query);
+		const filtered = (data.countries ?? []).filter(
+			(c) => c.name.toLowerCase().includes(query) || c.geo_code.toLowerCase().includes(query)
+		);
+		const items = filtered.map((c) => ({ id: c.id, label: c.name, sublabel: c.geo_code }));
+		return Promise.resolve(matchesAll ? [allItem, ...items] : items);
+	}
+	function fetchDestinationCountriesInitial(): Promise<AutocompleteItem[]> {
+		return fetchDestinationCountries('');
+	}
+	const selectedDestinationLabel = $derived(
+		destCountry ? (data.countries ?? []).find((c) => c.id === destCountry)?.name ?? null : null
+	);
 </script>
 
 <svelte:head>
@@ -186,12 +209,16 @@
 			<label for="dest" class="text-sm font-medium text-[var(--color-text)]">
 				{t('japa_stage.dest_country', 'Destination country')}
 			</label>
-			<select id="dest" bind:value={destCountry} class={inputClass}>
-				<option value="">{t('japa_stage.dest_placeholder', 'e.g. Canada')}</option>
-				{#each data.countries as c (c.id)}
-					<option value={c.id}>{c.name}</option>
-				{/each}
-			</select>
+			<Autocomplete
+				placeholder={t('japa_stage.dest_placeholder', 'e.g. Canada')}
+				emptyMessage={t('common.no_results', 'No results found')}
+				fetcher={fetchDestinationCountries}
+				initialFetcher={fetchDestinationCountriesInitial}
+				selectedId={destCountry || null}
+				selectedLabel={selectedDestinationLabel}
+				onSelect={(item) => (destCountry = item.id)}
+				onClear={() => (destCountry = '')}
+			/>
 		</div>
 
 		<label class="flex items-center gap-2 text-sm text-[var(--color-text)]">

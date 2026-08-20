@@ -5,6 +5,7 @@
 	// subscribers, the parent skips this modal entirely.
 	import { t } from '$lib/i18n';
 	import { api } from '$lib/api/client';
+	import { page } from '$app/state';
 	import { formatPriceKobo } from '$lib/format';
 	import { X, CreditCard, ShieldCheck, Tag } from 'lucide-svelte';
 	import type { TrackDetail, SessionUser } from '$lib/types';
@@ -25,9 +26,11 @@
 	let error = $state<string | null>(null);
 	let applying = $state(false);
 
-	const displayPrice = $derived(formatPriceKobo(track.price_kobo));
+	const displayPrice = $derived(formatPriceKobo(track.price_kobo, track.currency, page.data.locale));
 	const finalPrice = $derived(
-		discountApplied ? formatPriceKobo(track.price_kobo! - discountApplied.amount_kobo) : displayPrice
+		discountApplied
+			? formatPriceKobo(track.price_kobo! - discountApplied.amount_kobo, track.currency, page.data.locale)
+			: displayPrice
 	);
 
 	async function applyDiscount() {
@@ -57,7 +60,7 @@
 				purpose_type: 'course_access',
 				purpose_id: track.id,
 				amount: track.price_kobo,
-				currency: track.currency || 'NGN',
+				currency: track.currency,
 				discount_code: discountApplied?.code ?? undefined
 			},
 			{ 'Idempotency-Key': crypto.randomUUID() }
@@ -81,7 +84,7 @@
 				purpose_type: 'course_access',
 				purpose_id: track.id,
 				amount: track.price_kobo,
-				currency: track.currency || 'NGN',
+				currency: track.currency,
 				discount_code: discountApplied?.code ?? undefined,
 				return_url: `${window.location.origin}/tracks/${track.slug}`
 			},
@@ -158,7 +161,7 @@
 					</div>
 					{#if discountApplied}
 						<p class="text-xs text-[var(--color-progress)]">
-							{t('university.discount_applied', 'Discount applied')}: -{formatPriceKobo(discountApplied.amount_kobo)}
+							{t('university.discount_applied', 'Discount applied')}: -{formatPriceKobo(discountApplied.amount_kobo, track.currency, page.data.locale)}
 						</p>
 					{/if}
 				</div>

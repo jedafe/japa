@@ -3,13 +3,16 @@
 	import { Modal } from "$lib/components/ui/modal";
 	import { Button } from "$lib/components/ui/button";
 	import { SlideOver } from "$lib/components/ui/slide-over";
-	import { universitiesAdminApi, geoApi } from "$lib/api";
+	import Autocomplete from "$lib/components/ui/Autocomplete.svelte";
+	import type { AutocompleteItem } from "$lib/components/ui/Autocomplete.svelte";
+	import { universitiesAdminApi } from "$lib/api";
 	import { t } from "$lib/stores/i18n.svelte";
 	import { hasPermission } from "$lib/stores/permissions.svelte";
 	import {
 		Eye, Pencil, Trash2, BadgeCheck, XCircle, Upload, FileEdit
 	} from "lucide-svelte";
 	import type { ActionItem, FilterDef } from "$lib/components/ui/data-table";
+	import { useCountries } from "$lib/utils/countries.svelte";
 
 	type University = {
 		id: string;
@@ -31,19 +34,11 @@
 
 	const canManage = $derived(hasPermission("admin.settings"));
 
-	// ── Country filter options (loaded from /geo/countries — Rule 16) ───────
+	// ── Country selector (250 primary geo space countries, keyed by geo_code) ─
 	// The backend ListUniversitiesAdmin accepts ?country= (ISO 3166-1 alpha-2).
-	// The country list is fetched from the geo API so it stays in sync with the
-	// seeded Primary Spaces and is never hardcoded.
-	let countryOptions = $state<{ value: string; label: string }[]>([]);
+	const countryUtils = useCountries('geo_code');
 	$effect(() => {
-		geoApi.listCountries().then((res: any) => {
-			const rows: Array<{ geo_code?: string; name?: string; slug?: string }> =
-				res?.ok ? (res.data ?? []) : [];
-			countryOptions = rows
-				.filter((c) => c.geo_code)
-				.map((c) => ({ value: c.geo_code!, label: c.name ?? c.geo_code! }));
-		}).catch(() => { /* empty filter on failure — list still works */ });
+		countryUtils.load();
 	});
 
 	// ── Filter options ──────────────────────────────────────────────────────
@@ -53,7 +48,12 @@
 		{
 			key: "country",
 			label: t("universities.country", "Country"),
-			options: countryOptions
+			type: "autocomplete",
+			placeholder: t("universities.country_placeholder", "Select country"),
+			emptyMessage: t("common.no_results", "No results found"),
+			fetcher: countryUtils.fetcher,
+			initialFetcher: countryUtils.initialFetcher,
+			getSelectedLabel: countryUtils.getSelectedLabel
 		}
 	]);
 
@@ -120,35 +120,36 @@
 		return acts;
 	});
 
-	// ── Country autocomplete helpers (filter pre-loaded options client-side) ──
-	function fetchCountryOptions(q: string): Promise<{ id: string; label: string }[]> {
-		const query = q.toLowerCase();
-		const filtered = query === ''
-			? countryOptions
-			: countryOptions.filter((o) => o.label.toLowerCase().includes(query));
-		return Promise.resolve(filtered.map((o) => ({ id: o.value, label: o.label })));
+	// ── Country autocomplete helpers (250 primary geo space countries) ─────────
+	const countryReady = $derived(countryUtils.ready);
+
+	function fetchCountryOptions(q: string): Promise<{ id: string; label: string; sublabel?: string }[]> {
+		return countryUtils.fetcher(q);
 	}
 
-	function fetchCountryOptionsInitial(): Promise<{ id: string; label: string }[]> {
-		return Promise.resolve(countryOptions.map((o) => ({ id: o.value, label: o.label })));
+	function fetchCountryOptionsInitial(): Promise<{ id: string; label: string; sublabel?: string }[]> {
+		return countryUtils.initialFetcher();
 	}
 
 	function getCountrySelectedLabel(id: string): string {
-		return countryOptions.find((o) => o.value === id)?.label ?? id;
+		return countryUtils.getSelectedLabel(id);
 	}
 
 	// ── Create/Edit form fields ─────────────────────────────────────────────
 	// logo_url is accepted by the backend (POST/PATCH /admin/universities) and
 	// enqueues university:fetch_logo to download + store it (Section 39).
 	// country is stored as geo_code (ISO 3166-1 alpha-2) (audit U-1/U-2).
-	const fields = $derived<FieldDef[]>([
-		{ key: "name", label: t("universities.name", "Name"), type: "text", required: true },
-		{ key: "slug", label: t("universities.domain_slug", "Domain"), type: "text", placeholder: "mit.edu" },
-		{ key: "initials", label: t("universities.initials", "Initials"), type: "text", placeholder: "UNILAG" },
-		{ key: "country", label: t("universities.country", "Country"), type: "autocomplete", placeholder: t("universities.country_placeholder", "Select country"), emptyMessage: t("common.no_results", "No results found"), fetcher: fetchCountryOptions, initialFetcher: fetchCountryOptionsInitial, getSelectedLabel: getCountrySelectedLabel },
-		{ key: "logo_url", label: t("universities.logo_url", "Logo URL"), type: "url", placeholder: "https://…" },
-		{ key: "verified", label: t("universities.verified", "Verified"), type: "checkbox" }
-	]);
+	const fields = $derived.by<FieldDef[]>(() => {
+		countryReady; // re-derive once the 250 primary geo space countries load
+		return [
+			{ key: "name", label: t("universities.name", "Name"), type: "text", required: true },
+			{ key: "slug", label: t("universities.domain_slug", "Domain"), type: "text", placeholder: "mit.edu" },
+			{ key: "initials", label: t("universities.initials", "Initials"), type: "text", placeholder: "UNILAG" },
+			{ key: "country", label: t("universities.country", "Country"), type: "autocomplete", placeholder: t("universities.country_placeholder", "Select country"), emptyMessage: t("common.no_results", "No results found"), fetcher: fetchCountryOptions, initialFetcher: fetchCountryOptionsInitial, getSelectedLabel: getCountrySelectedLabel },
+			{ key: "logo_url", label: t("universities.logo_url", "Logo URL"), type: "url", placeholder: "https://…" },
+			{ key: "verified", label: t("universities.verified", "Verified"), type: "checkbox" }
+		];
+	});
 
 	// ── Config ──────────────────────────────────────────────────────────────
 	// Built as $derived so canManage/rowActions updates propagate.
@@ -350,12 +351,17 @@
 			<div><label for="edit-uni-initials" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t("universities.initials", "Initials")}</label><input id="edit-uni-initials" type="text" placeholder="UNILAG" class="w-full rounded-lg border px-3 py-2 text-sm font-mono" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={formInitials} /></div>
 			<div>
 				<label for="edit-uni-country" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t("universities.country", "Country")}</label>
-				<select id="edit-uni-country" class="w-full rounded-lg border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={formCountry}>
-					<option value="">{t("universities.country_placeholder", "Select country")}</option>
-					{#each countryOptions as opt (opt.value)}
-						<option value={opt.value}>{opt.label}</option>
-					{/each}
-				</select>
+				<Autocomplete
+					id="edit-uni-country"
+					placeholder={t("universities.country_placeholder", "Select country")}
+					emptyMessage={t("common.no_results", "No results found")}
+					fetcher={countryUtils.fetcher}
+					initialFetcher={countryUtils.initialFetcher}
+					selectedId={formCountry || null}
+					selectedLabel={formCountry ? countryUtils.getSelectedLabel(formCountry) : null}
+					onSelect={(item: AutocompleteItem) => { formCountry = item.id; }}
+					onClear={() => { formCountry = ''; }}
+				/>
 			</div>
 			<div><label for="edit-uni-logo" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t("universities.logo_url", "Logo URL")}</label><input id="edit-uni-logo" type="url" placeholder="https://…" class="w-full rounded-lg border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={formLogoUrl} /></div>
 			<div class="flex items-center gap-2"><input id="edit-uni-verified" type="checkbox" bind:checked={formVerified} /><label for="edit-uni-verified" class="text-sm">{t("universities.verified", "Verified")}</label></div>
