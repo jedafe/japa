@@ -57,104 +57,104 @@ const (
 type VisitorContext struct {
 	// ContentCountry is the ISO 3166-1 alpha-2 country code used for
 	// personalizing content, feeds, and search results.
-	ContentCountry string
+	ContentCountry string `json:"content_country"`
 
 	// ContentRegion is the UN region of the resolved ContentCountry (e.g.
 	// "Africa", "Asia"), used for the region-level feed fallback.
-	ContentRegion string
+	ContentRegion string `json:"content_region"`
 
 	// Source indicates where ContentCountry came from: "query", "preference",
 	// "archetype", "geoip", "cached", or "default".
-	Source string
+	Source string `json:"source"`
 
 	// IsAuthenticated is true when the visitor has a valid session.
-	IsAuthenticated bool
+	IsAuthenticated bool `json:"is_authenticated"`
 
 	// UserID is the authenticated user's UUID string, empty for anonymous.
-	UserID string
+	UserID string `json:"user_id"`
 
 	// GeoIPCountry is the raw GeoIP country code (may differ from
 	// ContentCountry when the user has an override).
-	GeoIPCountry string
+	GeoIPCountry string `json:"geoip_country"`
 
 	// OriginCountry is the visitor's origin/home country (ADR-064 + ADR-064a).
 	// Populated from the origin_country custom field when set; falls back to
 	// GeoIP country when the field is empty (guests or users who haven't set it).
-	OriginCountry string
+	OriginCountry string `json:"origin_country"`
 
 	// CurrentCountry is where the visitor is now. When the user has set
 	// current_geo_space_id, this is resolved from the Space hierarchy
 	// (ADR-064a). Otherwise falls back to GeoContext.CountryCode.
-	CurrentCountry string
+	CurrentCountry string `json:"current_country"`
 
 	// DestinationCountry is the user's declared relocation destination
 	// (user_profiles custom field destination_country). Empty for guests or
 	// users who haven't set it.
-	DestinationCountry string
+	DestinationCountry string `json:"destination_country"`
 
 	// JapaStage is the user's relocation stage from the japa_status custom
 	// field (newly_japa|settled|planning|...). Empty for guests.
-	JapaStage string
+	JapaStage string `json:"japa_stage"`
 
 	// JourneyStage is a normalized relocation stage aligned with §87 Japa
 	// Stage Profiles (considering|planning|preparing|applied|approved|relocated|settled).
 	// It is derived from JapaStage for feed ranking and UI.
-	JourneyStage string
+	JourneyStage string `json:"journey_stage"`
 
 	// VisaRoute is the user's intended visa route from the visa_route custom
 	// field (student|work|business|...). Empty when unset.
-	VisaRoute string
+	VisaRoute string `json:"visa_route"`
 
 	// Purpose is the high-level travel purpose (study|work|business|relocation
 	// |vacation|tourism). It may be set by the Japa Readiness Assessment or
 	// the guest onboarding selector.
-	Purpose string
+	Purpose string `json:"purpose"`
 
 	// TravelDate is the user's planned travel/departure date in YYYY-MM-DD
 	// format, or empty. Used to shift journey-stage urgency.
-	TravelDate string
+	TravelDate string `json:"travel_date"`
 
 	// RoadmapSlugs are content slugs from the user's latest Japa Readiness
 	// Assessment roadmap (§71). Empty if the user has not taken an assessment.
-	RoadmapSlugs []string
+	RoadmapSlugs []string `json:"roadmap_slugs"`
 
 	// WeakestDimensions are the lowest-scoring readiness dimensions from the
 	// latest assessment (e.g. documents, finance). Empty if unset.
-	WeakestDimensions []string
+	WeakestDimensions []string `json:"weakest_dimensions"`
 
 	// AssessmentThreshold is the overall readiness threshold label from the
 	// latest Japa Readiness Assessment (e.g. "Japa Ready").
-	AssessmentThreshold string
+	AssessmentThreshold string `json:"assessment_threshold"`
 
 	// Language is the resolved i18n language (Accept-Language primary tag).
 	// Full i18n middleware integration is deferred; this is a best-effort
 	// resolution from the Accept-Language header.
-	Language string
+	Language string `json:"language"`
 
 	// Archetype is the resolved visitor archetype (ADR-064):
 	// origin_visitor | diaspora | global_traveler.
-	Archetype string
+	Archetype string `json:"archetype"`
 
 	// Confidence is the resolver's confidence in the archetype (0.0–1.0).
-	Confidence float32
+	Confidence float32 `json:"confidence"`
 
 	// CurrentCity is the visitor's current city name (ADR-064a). Populated
 	// from the user's current_geo_space_id Space name when set, or from
 	// GeoIP city when available. Empty when neither is available.
-	CurrentCity string
+	CurrentCity string `json:"current_city"`
 
 	// OriginCity is the visitor's origin city name (ADR-064a). Populated
 	// from profile data when available. Empty for guests or when not set.
-	OriginCity string
+	OriginCity string `json:"origin_city"`
 
 	// DestCity is the visitor's destination city name (ADR-064a). Populated
 	// from profile data when available. Empty for guests or when not set.
-	DestCity string
+	DestCity string `json:"dest_city"`
 
 	// CurrentGeoSpaceID is the UUID of the user's current geo Space
 	// (ADR-064a). Used for city-level filtering (community locator, local
 	// events). Empty for guests or users who haven't set it.
-	CurrentGeoSpaceID string
+	CurrentGeoSpaceID string `json:"current_geo_space_id"`
 }
 
 // FromContext extracts the VisitorContext from the request context.

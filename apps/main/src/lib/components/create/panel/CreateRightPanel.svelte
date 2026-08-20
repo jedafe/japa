@@ -3,11 +3,20 @@
 	import { t } from '$lib/i18n';
 	import CreateGuidePanel from './CreateGuidePanel.svelte';
 	import CreateSettingsPanel from './CreateSettingsPanel.svelte';
+	import CreateJourneyPanel from './CreateJourneyPanel.svelte';
 	import CreateSeoPanel from './CreateSeoPanel.svelte';
 	import type { BlogSeries, MediaAsset, MeSpace, Visibility } from '$lib/types';
 
 	interface Props {
 		focusedField: 'space' | 'tags' | 'series' | 'body' | null;
+		journeyStage: string | null;
+		visaRoute: string | null;
+		sourceCountry: string | null;
+		targetCountry: string | null;
+		onjourney: (v: string | null) => void;
+		onvisa: (v: string | null) => void;
+		onsource: (v: string | null) => void;
+		ontarget: (v: string | null) => void;
 		slug: string;
 		visibility: Visibility;
 		canonicalUrl: string;
@@ -50,6 +59,14 @@
 
 	let {
 		focusedField,
+		journeyStage,
+		visaRoute,
+		sourceCountry,
+		targetCountry,
+		onjourney,
+		onvisa,
+		onsource,
+		ontarget,
 		slug,
 		visibility,
 		canonicalUrl,
@@ -96,6 +113,9 @@
 		<Tabs.Trigger value="guide" class="right-panel-tab">
 			{t('create.panel.guide')}
 		</Tabs.Trigger>
+		<Tabs.Trigger value="journey" class="right-panel-tab">
+			{t('create.panel.journey')}
+		</Tabs.Trigger>
 		<Tabs.Trigger value="settings" class="right-panel-tab">
 			{t('create.panel.settings')}
 		</Tabs.Trigger>
@@ -122,6 +142,19 @@
 			{ontagsfocus}
 			{oncoveruploaded}
 			{oncoverremove}
+			{onedit}
+		/>
+	</Tabs.Content>
+	<Tabs.Content value="journey" class="pt-2">
+		<CreateJourneyPanel
+			{journeyStage}
+			{visaRoute}
+			{sourceCountry}
+			{targetCountry}
+			{onjourney}
+			{onvisa}
+			{onsource}
+			{ontarget}
 			{onedit}
 		/>
 	</Tabs.Content>
