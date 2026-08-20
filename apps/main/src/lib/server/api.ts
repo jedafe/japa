@@ -50,6 +50,11 @@ export interface ApiContext {
 	 * the cookie is absent (guests, or sessions logged out elsewhere).
 	 */
 	refreshCookie: string | null;
+	/**
+	 * Raw `jc_journey_token` cookie value forwarded to the backend so guest
+	 * journey context is available on SSR calls (ADR-064a / 2026-08-21).
+	 */
+	journeyCookie: string | null;
 }
 
 /** Build an ApiContext from a SvelteKit request event. */
@@ -60,7 +65,8 @@ export function apiContext(event: RequestEvent): ApiContext {
 		host: event.locals.tenantHost,
 		clientIP: event.getClientAddress() ?? null,
 		csrfToken: event.locals.csrfToken ?? null,
-		refreshCookie: event.cookies.get('jc_refresh') ?? null
+		refreshCookie: event.cookies.get('jc_refresh') ?? null,
+		journeyCookie: event.cookies.get('jc_journey_token') ?? null
 	};
 }
 
@@ -85,8 +91,13 @@ async function request<T>(
 	// backend's csrf.Middleware (Ref: §5.2) accepts it. GETs are exempt.
 	if (method !== 'GET' && ctx.csrfToken) headers['x-csrf-token'] = ctx.csrfToken;
 	// Forward the jc_refresh cookie so the backend can identify the current
-	// session (e.g. GET /me/sessions flags the current session per JEOS §50).
-	if (ctx.refreshCookie) headers.cookie = `jc_refresh=${ctx.refreshCookie}`;
+	// session (e.g. GET /me/sessions flags the current session per JEOS §50),
+	// and the jc_journey_token cookie so guest journey context is available
+	// on SSR (ADR-064a).
+	const cookies: string[] = [];
+	if (ctx.refreshCookie) cookies.push(`jc_refresh=${ctx.refreshCookie}`);
+	if (ctx.journeyCookie) cookies.push(`jc_journey_token=${ctx.journeyCookie}`);
+	if (cookies.length) headers.cookie = cookies.join('; ');
 
 	// Abort the fetch after REQUEST_TIMEOUT_MS so a slow/stuck backend cannot
 	// hang the SSR critical path. The controller + timer are cleaned up via
