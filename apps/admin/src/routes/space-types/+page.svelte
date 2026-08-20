@@ -1,9 +1,11 @@
 <script lang="ts">
-	// /space-types — migrated to the EntityPage scaffold; simple CRUD entity using `fields` (EntityForm).
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import { spaceTypesApi } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
-	import { Trash2 } from 'lucide-svelte';
+	import { hasPermission } from '$lib/stores/permissions.svelte';
+	import { Eye, Pencil, Trash2 } from 'lucide-svelte';
+	import type { ActionItem } from '$lib/components/ui/data-table';
+	import { onMount } from 'svelte';
 
 	type SpaceType = {
 		id: string;
@@ -12,22 +14,50 @@
 		description: string;
 		category?: string;
 		icon: string;
+		is_system: boolean;
 	};
 
-	// ── Bulk delete ───── EntityPage auto-reloads + clears selection after a bulk action handler completes.
+	type SpaceCategory = {
+		value: string;
+		selectable: boolean;
+	};
+
 	let entityController = $state<EntityPageController | undefined>(undefined);
 	let pageError = $state('');
 	let bulkDeleting = $state(false);
+	let categories = $state<SpaceCategory[]>([]);
+
+	const canEdit = $derived(hasPermission('spaces.types.edit'));
+	const canDelete = $derived(hasPermission('spaces.types.delete'));
+
+	onMount(async () => {
+		const res = await spaceTypesApi.categories();
+		if (res.ok) {
+			categories = (res.data ?? []).map((c) => ({ value: c.value, selectable: c.selectable }));
+		}
+	});
+
+	function categoryLabel(value: string): string {
+		const key = value.toLowerCase();
+		return t(`space-types.category.${key}`, key.charAt(0).toUpperCase() + key.slice(1));
+	}
+
+	const displayCategoryOptions = $derived(
+		categories.map((c) => ({ value: c.value, label: categoryLabel(c.value) }))
+	);
+
+	const formCategoryOptions = $derived(
+		categories.filter((c) => c.selectable).map((c) => ({ value: c.value, label: categoryLabel(c.value) }))
+	);
 
 	async function bulkDelete(ids: Set<string>) {
 		const idArr = Array.from(ids);
 		if (idArr.length === 0) return;
-		if (bulkDeleting) return; // in-flight guard
+		if (bulkDeleting) return;
 		bulkDeleting = true;
 		pageError = '';
 		try {
 			await Promise.all(idArr.map((id) => spaceTypesApi.delete(id)));
-			// EntityPage auto-reloads + clears selection after this returns.
 		} catch (e) {
 			pageError = e instanceof Error ? e.message : t('app.space_types.failed_to_delete_selected', 'Failed to delete selected items');
 		} finally {
@@ -42,24 +72,39 @@
 			.replace(/^-|-$/g, '');
 	}
 
-	// `fields` drives EntityForm rendering and edit-form seeding.
-	const categoryOptions = [
-		{ value: 'education', label: t('space-types.category.education', 'Education') },
-		{ value: 'business', label: t('space-types.category.business', 'Business') },
-		{ value: 'profession', label: t('space-types.category.profession', 'Profession') },
-		{ value: 'interest', label: t('space-types.category.interest', 'Interest') },
-		{ value: 'lifestyle', label: t('space-types.category.lifestyle', 'Lifestyle') }
-	];
-
-	const fields: FieldDef[] = [
+	const fields: FieldDef[] = $derived([
 		{ key: 'name', label: t('space-types.name', 'Name'), type: 'text', placeholder: 'University', required: true },
 		{ key: 'slug', label: t('space-types.slug', 'Slug'), type: 'text', placeholder: 'university', help: t('app.space_types.slug_hint', 'Leave blank to auto-generate from name.'), readonlyInEdit: true },
 		{ key: 'description', label: t('space-types.description', 'Description'), type: 'textarea', placeholder: '' },
 		{ key: 'icon', label: t('space-types.icon_emoji_or_name', 'Icon (emoji or name)'), type: 'text', placeholder: '🎓' },
-		{ key: 'category', label: t('space-types.category', 'Category'), type: 'select', options: categoryOptions, required: true }
-	];
+		{ key: 'category', label: t('space-types.category', 'Category'), type: 'select', options: formCategoryOptions, required: true }
+	]);
 
-	const config: EntityPageConfig = {
+	const rowActions = $derived.by<ActionItem[]>(() => {
+		const acts: ActionItem[] = [
+			{ label: t('common.view', 'View'), icon: Eye, onclick: (_row, ctx) => ctx?.openView(_row) }
+		];
+		if (canEdit) {
+			acts.push({
+				label: t('common.edit', 'Edit'),
+				icon: Pencil,
+				onclick: (row, ctx) => ctx?.openEdit(row),
+				show: (row: SpaceType) => !row.is_system
+			});
+		}
+		if (canDelete) {
+			acts.push({
+				label: t('common.delete', 'Delete'),
+				icon: Trash2,
+				variant: 'destructive',
+				onclick: (row, ctx) => ctx?.openDelete(row),
+				show: (row: SpaceType) => !row.is_system
+			});
+		}
+		return acts;
+	});
+
+	const config = $derived<EntityPageConfig>({
 		title: t('app.space_types.page_title', 'Space Types'),
 		description: t('space-types.manage_space_type_categories_including_u', 'Manage space type categories including university types.'),
 		createLabel: t('app.space_types.add_space_type', 'Add Space Type'),
@@ -84,17 +129,20 @@
 			{
 				key: 'category',
 				label: t('space-types.category', 'Category'),
-				options: categoryOptions
+				options: displayCategoryOptions
 			}
 		],
-		bulkActions: [
-			{
-				label: t('app.space_types.delete_selected', 'Delete Selected'),
-				icon: Trash2,
-				variant: 'destructive',
-				onclick: bulkDelete
-			}
-		],
+		actions: rowActions,
+		bulkActions: canDelete
+			? [
+					{
+						label: t('app.space_types.delete_selected', 'Delete Selected'),
+						icon: Trash2,
+						variant: 'destructive',
+						onclick: bulkDelete
+					}
+				]
+			: [],
 		fields,
 		load: async ({ q, filter }) => {
 			const params = new URLSearchParams();
@@ -135,7 +183,7 @@
 			return res.ok ? { ok: true } : { ok: false, error: res.error };
 		},
 		viewSnippet: SpaceTypeView
-	};
+	});
 </script>
 
 <svelte:head>
@@ -153,7 +201,7 @@
 
 <EntityPage {config} bind:controller={entityController} />
 
-<!-- ── Snippets ─────────────────────────────────────────────────────────── -->
+<!-- Snippets -->
 
 {#snippet IconCell({ value }: { value: any; row: SpaceType })}
 	<span class="text-lg">{value || '—'}</span>
@@ -162,14 +210,13 @@
 {#snippet CategoryCell({ value }: { value: string; row: SpaceType })}
 	{#if value}
 		<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium bg-info/15 text-info">
-			{categoryOptions.find((o) => o.value === value)?.label ?? value}
+			{displayCategoryOptions.find((o) => o.value === value)?.label ?? value}
 		</span>
 	{:else}
 		<span class="text-muted">—</span>
 	{/if}
 {/snippet}
 
-<!-- View slide-over body (mirrors the legacy view modal) -->
 {#snippet SpaceTypeView({ row }: { row: SpaceType })}
 	<div class="space-y-4">
 		<div>
@@ -188,7 +235,7 @@
 			<div>
 				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.space_types.category_label', 'Category')}</p>
 				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">
-					{row.category ? (categoryOptions.find((o) => o.value === row.category)?.label ?? row.category) : '—'}
+					{row.category ? (displayCategoryOptions.find((o) => o.value === row.category)?.label ?? row.category) : '—'}
 				</p>
 			</div>
 			<div>

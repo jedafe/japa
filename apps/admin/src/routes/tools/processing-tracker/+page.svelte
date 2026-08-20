@@ -1,7 +1,6 @@
 <script lang="ts">
 	// /tools/processing-tracker — management page for user-submitted visa processing timeline entries.
 	// Ref: japaconnect-engineering/sections/83-visa-timeline-tracker.md (ADR-091)
-	import { onMount } from 'svelte';
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import { Modal } from '$lib/components/ui/modal';
 	import { Button } from '$lib/components/ui/button';
@@ -9,7 +8,8 @@
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { Eye, Trash2 } from 'lucide-svelte';
 	import type { ActionItem, FilterDef } from '$lib/components/ui/data-table';
-	import { processingTrackerAdminApi , spacesAdminApi } from '$lib/api';
+	import { processingTrackerAdminApi } from '$lib/api';
+	import { useCountries } from '$lib/utils/countries.svelte';
 
 	// TimelineDTO shape from GET /admin/visa-timelines (§83). The backend
 	// returns the full TimelineDTO with joined milestones; we derive the
@@ -47,19 +47,11 @@
 
 	// ── State ───────────────────────────────────────────────────────────────
 	
-// Destination Spaces for the dest filter (geo-aware pattern §90-101).
-type SpaceOption = { id: string; name: string };
-let destOptions = $state<SpaceOption[]>([]);
-onMount(async () => {
-	try {
-		const res = await spacesAdminApi.list('?level=country&limit=200');
-		if (res.ok && Array.isArray(res.data)) {
-			destOptions = (res.data as Array<{ id: string; name: string }>).map((s) => ({
-				id: s.id, name: s.name
-			}));
-		}
-	} catch { /* Non-fatal */ }
-});
+	// ── Country selector (250 primary geo space countries) ───────────────────
+	const countryUtils = useCountries();
+	$effect(() => {
+		countryUtils.load();
+	});
 
 	let entityController = $state<EntityPageController | undefined>(undefined);
 	let pageError = $state('');
@@ -125,36 +117,31 @@ onMount(async () => {
 		return acts;
 	});
 
-	// ── Country autocomplete helpers (filter destOptions client-side) ──────
-	// Sourced from the spaces country table (destOptions, loaded from
-	// /admin/spaces?level=country) — never hardcoded (Rule 16). Keyed by
-	// space ID so the selected UUID is stored as the field value.
-	function fetchCountryId(q: string): Promise<{ id: string; label: string; sublabel?: string }[]> {
-		const needle = q.toLowerCase().trim();
-		const filtered = needle
-			? destOptions.filter((o) => o.name.toLowerCase().includes(needle))
-			: destOptions;
-		return Promise.resolve(filtered.slice(0, 50).map((o) => ({ id: o.id, label: o.name })));
-	}
-
-	function fetchCountryIdInitial(): Promise<{ id: string; label: string; sublabel?: string }[]> {
-		return Promise.resolve(destOptions.slice(0, 8).map((o) => ({ id: o.id, label: o.name })));
-	}
-
-	function getCountryIdLabel(id: string): string {
-		return destOptions.find((o) => o.id === id)?.name ?? id;
-	}
-
 	// `fields` is required by EntityPageConfig; readonly page so the form is never shown, but kept for shape completeness.
-	const fields: FieldDef[] = [
-		{ key: 'visa_category', label: t('app.tools.col_visa_category', 'Visa Category'), type: 'text' },
-		{ key: 'destination_space_id', label: t('app.tools.col_dest_country', 'Destination'), type: 'autocomplete', placeholder: t('app.tools.country_placeholder', 'Search country…'), emptyMessage: t('common.no_results', 'No results found'), fetcher: fetchCountryId, initialFetcher: fetchCountryIdInitial, getSelectedLabel: getCountryIdLabel },
-		{ key: 'outcome', label: t('app.tools.col_status', 'Status'), type: 'text' }
-	];
+	const fields = $derived.by<FieldDef[]>(() => {
+		countryUtils.ready;
+		return [
+			{ key: 'visa_category', label: t('app.tools.col_visa_category', 'Visa Category'), type: 'text' },
+			{ key: 'destination_space_id', label: t('app.tools.col_dest_country', 'Destination'), type: 'autocomplete', placeholder: t('app.tools.country_placeholder', 'Search country…'), emptyMessage: t('common.no_results', 'No results found'), fetcher: countryUtils.fetcher, initialFetcher: countryUtils.initialFetcher, getSelectedLabel: countryUtils.getSelectedLabel },
+			{ key: 'outcome', label: t('app.tools.col_status', 'Status'), type: 'text' }
+		];
+	});
 
-		const filters = $derived<FilterDef[]>([
-		{ key: 'dest', label: t('app.tools.col_destination', 'Destination'), options: destOptions.map((s) => ({ value: s.id, label: s.name })) }
-	]);
+		const filters = $derived.by<FilterDef[]>(() => {
+		countryUtils.ready;
+		return [
+			{
+				key: 'dest',
+				label: t('app.tools.col_destination', 'Destination'),
+				type: 'autocomplete',
+				placeholder: t('app.tools.country_placeholder', 'Search country…'),
+				emptyMessage: t('common.no_results', 'No results found'),
+				fetcher: countryUtils.fetcher,
+				initialFetcher: countryUtils.initialFetcher,
+				getSelectedLabel: countryUtils.getSelectedLabel
+			}
+		];
+	});
 
 	const config = $derived<EntityPageConfig>({
 		filters,

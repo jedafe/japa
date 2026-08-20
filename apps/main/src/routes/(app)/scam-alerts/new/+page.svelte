@@ -4,6 +4,8 @@
 	import { page } from '$app/state';
 	import { ArrowLeft, Send, TriangleAlert } from 'lucide-svelte';
 	import { t } from '$lib/i18n';
+	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
+	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 	import { api } from '$lib/api/client';
 	import type { ScamType, ScamPlatform } from '$lib/types';
 	import type { PageData } from './$types';
@@ -89,6 +91,48 @@
 			loading = false;
 		}
 	}
+
+	function fetchDestinationCountries(q: string): Promise<AutocompleteItem[]> {
+		const allLabel = t('common.all_countries', 'All countries');
+		const query = q.toLowerCase().trim();
+		const allItem: AutocompleteItem = { id: '', label: allLabel };
+		if (query === '') {
+			return Promise.resolve([allItem, ...(data.countries ?? []).map((c) => ({ id: c.id, label: c.name, sublabel: c.geo_code }))]);
+		}
+		const matchesAll = allLabel.toLowerCase().includes(query);
+		const filtered = (data.countries ?? []).filter(
+			(c) => c.name.toLowerCase().includes(query) || c.geo_code.toLowerCase().includes(query)
+		);
+		const items = filtered.map((c) => ({ id: c.id, label: c.name, sublabel: c.geo_code }));
+		return Promise.resolve(matchesAll ? [allItem, ...items] : items);
+	}
+	function fetchDestinationCountriesInitial(): Promise<AutocompleteItem[]> {
+		return fetchDestinationCountries('');
+	}
+	const selectedDestinationLabel = $derived(
+		destinationSpaceId ? (data.countries ?? []).find((c) => c.id === destinationSpaceId)?.name ?? null : null
+	);
+
+	function fetchOriginCountries(q: string): Promise<AutocompleteItem[]> {
+		const allLabel = t('common.all_countries', 'All countries');
+		const query = q.toLowerCase().trim();
+		const allItem: AutocompleteItem = { id: '', label: allLabel };
+		if (query === '') {
+			return Promise.resolve([allItem, ...(data.countries ?? []).map((c) => ({ id: c.id, label: c.name, sublabel: c.geo_code }))]);
+		}
+		const matchesAll = allLabel.toLowerCase().includes(query);
+		const filtered = (data.countries ?? []).filter(
+			(c) => c.name.toLowerCase().includes(query) || c.geo_code.toLowerCase().includes(query)
+		);
+		const items = filtered.map((c) => ({ id: c.id, label: c.name, sublabel: c.geo_code }));
+		return Promise.resolve(matchesAll ? [allItem, ...items] : items);
+	}
+	function fetchOriginCountriesInitial(): Promise<AutocompleteItem[]> {
+		return fetchOriginCountries('');
+	}
+	const selectedOriginLabel = $derived(
+		originSpaceId ? (data.countries ?? []).find((c) => c.id === originSpaceId)?.name ?? null : null
+	);
 </script>
 
 <svelte:head>
@@ -143,33 +187,31 @@
 				<label for="destination_space_id" class="text-sm font-medium text-[var(--color-text)]">
 					{t('scam_alerts.field_destination', 'Destination country')} <span class="text-red-500">*</span>
 				</label>
-				<select
-					id="destination_space_id"
-					value={destinationSpaceId}
-					onchange={(e) => (destinationSpaceId = e.currentTarget.value)}
-					class={inputClass}
-				>
-					<option value="">{t('scam_alerts.placeholder_destination', 'Select destination country')}</option>
-					{#each data.countries as country (country.id)}
-						<option value={country.id}>{country.name}</option>
-					{/each}
-				</select>
+				<Autocomplete
+					placeholder={t('scam_alerts.placeholder_destination', 'Select destination country')}
+					emptyMessage={t('common.no_results', 'No results found')}
+					fetcher={fetchDestinationCountries}
+					initialFetcher={fetchDestinationCountriesInitial}
+					selectedId={destinationSpaceId || null}
+					selectedLabel={selectedDestinationLabel}
+					onSelect={(item) => (destinationSpaceId = item.id)}
+					onClear={() => (destinationSpaceId = '')}
+				/>
 			</div>
 			<div class="flex flex-col gap-1.5">
 				<label for="origin_space_id" class="text-sm font-medium text-[var(--color-text)]">
 					{t('scam_alerts.field_origin_country', 'Origin country')}
 				</label>
-				<select
-					id="origin_space_id"
-					value={originSpaceId}
-					onchange={(e) => (originSpaceId = e.currentTarget.value)}
-					class={inputClass}
-				>
-					<option value="">{t('scam_alerts.placeholder_origin_country', 'Select origin country')}</option>
-					{#each data.countries as country (country.id)}
-						<option value={country.id}>{country.name}</option>
-					{/each}
-				</select>
+				<Autocomplete
+					placeholder={t('scam_alerts.placeholder_origin_country', 'Select origin country')}
+					emptyMessage={t('common.no_results', 'No results found')}
+					fetcher={fetchOriginCountries}
+					initialFetcher={fetchOriginCountriesInitial}
+					selectedId={originSpaceId || null}
+					selectedLabel={selectedOriginLabel}
+					onSelect={(item) => (originSpaceId = item.id)}
+					onClear={() => (originSpaceId = '')}
+				/>
 			</div>
 		</div>
 

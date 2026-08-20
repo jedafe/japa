@@ -264,6 +264,7 @@ type Track struct {
 	Currency                string     `json:"currency"`
 	Category                *string    `json:"category,omitempty"`
 	Language                string     `json:"language"`
+	GeoSpaceID              *string    `json:"geo_space_id,omitempty"`
 	TotalEnrolled           int32      `json:"total_enrolled"`
 	IsPublished             bool       `json:"is_published"`
 	IsPublishedToUniversity bool       `json:"is_published_to_university"`
@@ -302,6 +303,10 @@ func trackFromRow(r gen.GetUniversityTrackByIDRow) Track {
 	if r.Category != nil {
 		t.Category = r.Category
 	}
+	if r.GeoSpaceID.Valid {
+		s := r.GeoSpaceID.String()
+		t.GeoSpaceID = &s
+	}
 	if r.UniversitySubmittedAt.Valid {
 		tm := r.UniversitySubmittedAt.Time
 		t.SubmittedAt = &tm
@@ -327,6 +332,7 @@ type CatalogTrack struct {
 	Currency             string  `json:"currency"`
 	Category             *string `json:"category,omitempty"`
 	Language             string  `json:"language"`
+	GeoSpaceID           *string `json:"geo_space_id,omitempty"`
 	TotalEnrolled        int32   `json:"total_enrolled"`
 	SubscriptionEligible bool    `json:"subscription_eligible"`
 	InstructorName       *string `json:"instructor_name,omitempty"`
@@ -346,6 +352,10 @@ func catalogTrackFromRow(r gen.ListUniversityCatalogRow) CatalogTrack {
 	}
 	if r.Category != nil {
 		c.Category = r.Category
+	}
+	if r.GeoSpaceID.Valid {
+		s := r.GeoSpaceID.String()
+		c.GeoSpaceID = &s
 	}
 	if r.InstructorName != nil {
 		c.InstructorName = r.InstructorName
@@ -412,6 +422,7 @@ type CatalogTrackDetail struct {
 	Currency                string             `json:"currency"`
 	Category                *string            `json:"category,omitempty"`
 	Language                string             `json:"language"`
+	GeoSpaceID              *string            `json:"geo_space_id,omitempty"`
 	TotalEnrolled           int32              `json:"total_enrolled"`
 	SubscriptionEligible    bool               `json:"subscription_eligible"`
 	IsPublished             bool               `json:"is_published"`
@@ -428,7 +439,7 @@ type CatalogTrackDetail struct {
 // CatalogTrackDetailFromRow maps the sqlc row to the response DTO, setting
 // Level = Difficulty for the frontend contract.
 func CatalogTrackDetailFromRow(r gen.GetUniversityTrackBySlugRow) CatalogTrackDetail {
-	return CatalogTrackDetail{
+	c := CatalogTrackDetail{
 		ID: r.ID, TenantID: r.TenantID, Title: r.Title, Slug: r.Slug,
 		Description: r.Description, Difficulty: r.Difficulty, Level: r.Difficulty,
 		CoverMediaID: r.CoverMediaID, InstructorID: r.InstructorID,
@@ -440,6 +451,11 @@ func CatalogTrackDetailFromRow(r gen.GetUniversityTrackBySlugRow) CatalogTrackDe
 		InstructorName: r.InstructorName, InstructorHeadline: r.InstructorHeadline,
 		InstructorTier: r.InstructorTier, AvgRating: r.AvgRating, ReviewCount: r.ReviewCount,
 	}
+	if r.GeoSpaceID.Valid {
+		s := r.GeoSpaceID.String()
+		c.GeoSpaceID = &s
+	}
+	return c
 }
 
 // GetTrackByID returns a track by ID (any publish state).

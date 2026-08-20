@@ -175,7 +175,7 @@
 					<Star size={16} class="text-[var(--level-intermediate)]" />
 					{t('university.total_revenue')}
 				</div>
-				<p class="mt-2 text-3xl font-bold text-[var(--color-text)]">{formatPriceKobo(instructor.total_revenue_kobo)}</p>
+				<p class="mt-2 text-3xl font-bold text-[var(--color-text)]">{formatPriceKobo(instructor.total_revenue_kobo, instructor.currency, page.data.locale)}</p>
 			</div>
 		</div>
 
@@ -222,7 +222,7 @@
 											</span>
 										{/if}
 										{#if tr.price_kobo !== undefined && tr.price_kobo !== null}
-											<span class="font-medium text-[var(--color-text-subtle)]">{formatPriceKobo(tr.price_kobo)}</span>
+											<span class="font-medium text-[var(--color-text-subtle)]">{formatPriceKobo(tr.price_kobo, tr.currency, page.data.locale)}</span>
 										{/if}
 									</div>
 								</div>

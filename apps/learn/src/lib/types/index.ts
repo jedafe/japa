@@ -12,6 +12,19 @@ export type ThemeName = 'light' | 'dark';
 /** Supported UI locale code (e.g. 'en', 'fr', 'yo'). Dynamic per ADR-013. */
 export type Locale = string;
 
+/** GET /api/v1/geo/countries — a country-level geo space (ADR-005). */
+export interface GeoCountry {
+	id: string;
+	name: string;
+	slug: string;
+	geo_code: string;
+	level: 'country';
+	currency_code?: string | null;
+	member_count: number;
+	post_count: number;
+	follower_count: number;
+}
+
 /* ------------------------------------------------------------------ *
  * Transport envelope
  * ------------------------------------------------------------------ */
@@ -134,8 +147,14 @@ export interface TrackSummary {
 	enrolled_count?: number;
 	/** Marketplace price in kobo (ADR-063). Null/0 = free. */
 	price_kobo?: number | null;
-	/** Currency code for the price (e.g. 'NGN'). Defaults to NGN if absent. */
+	/** Currency code for the price. Inherits from the track's geo space. */
 	currency?: string | null;
+	/** Track category slug (from /learn/university/categories). */
+	category?: string | null;
+	/** ISO 639-1 language code for the track content. */
+	language?: string | null;
+	/** Primary geo space (country) this track is targeted at. */
+	geo_space_id?: string | null;
 	/** True when the course is published to the Japa University marketplace. */
 	is_published_to_university?: boolean;
 	/** True when the course can be accessed via subscription plans. */
@@ -387,6 +406,8 @@ export interface InstructorProfile {
 	/** Aggregate stats for the instructor dashboard. */
 	total_enrolled?: number;
 	total_revenue_kobo?: number;
+	/** Currency for revenue totals — resolved from wallet.default_currency. */
+	currency?: string | null;
 	courses_count?: number;
 }
 
@@ -398,6 +419,9 @@ export interface UniversityCatalogTrack extends TrackSummary {
 
 /** Instructor's own track with marketplace status — GET /learn/university/my/tracks. */
 export interface InstructorTrack extends TrackSummary {
+	description?: string | null;
+	/** True when the track is live (not draft). Distinct from university submission status. */
+	is_published?: boolean;
 	/** Marketplace submission status. */
 	submission_status: 'draft' | 'pending' | 'approved' | 'rejected';
 	submitted_at?: string | null;
@@ -413,6 +437,8 @@ export interface InstructorTrackStats {
 	total_enrolled: number;
 	completion_rate_pct: number;
 	total_revenue_kobo: number;
+	/** Currency for the revenue series and total. */
+	currency?: string | null;
 	/** Daily revenue series for LayerChart. */
 	revenue_series?: Array<{ date: string; kobo: number }>;
 	enrollment_series?: Array<{ date: string; count: number }>;
@@ -422,6 +448,8 @@ export interface EarningsSummary {
 	total_earned_kobo: number;
 	total_paid_out_kobo: number;
 	pending_kobo: number;
+	/** Currency for all amounts in this summary. */
+	currency?: string | null;
 	/** Daily revenue series for LayerChart. */
 	revenue_series: Array<{ date: string; kobo: number }>;
 }
@@ -429,6 +457,8 @@ export interface EarningsSummary {
 export interface Payout {
 	id: string;
 	amount_kobo: number;
+	/** ISO 4217 currency code for the payout. */
+	currency?: string | null;
 	status: 'pending' | 'processing' | 'paid' | 'failed';
 	period_start: string;
 	period_end: string;

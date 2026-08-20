@@ -1,7 +1,7 @@
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiList } from '$lib/server/api';
-import type { Scholarship, SavedScholarship } from '$lib/types';
+import type { Scholarship, SavedScholarship, GeoCountry } from '$lib/types';
 
 /**
  * Scholarship Finder at /scholarships (Section 73, ADR-073).
@@ -95,5 +95,13 @@ export const load: PageServerLoad = async (event) => {
 		}
 	}
 
-	return { scholarships, disabled, authed, pageSize: PAGE_SIZE, currentPage: page, total, savedScholarships, savedIds };
+	// Canonical country list for the filter dropdown (ADR-005).
+	let countries: GeoCountry[] = [];
+	try {
+		countries = (await apiList<GeoCountry>(ctx, '/geo/countries')).items;
+	} catch {
+		countries = [];
+	}
+
+	return { scholarships, disabled, authed, pageSize: PAGE_SIZE, currentPage: page, total, savedScholarships, savedIds, countries };
 };

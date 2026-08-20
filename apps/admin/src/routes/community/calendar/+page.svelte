@@ -1,10 +1,10 @@
 <script lang="ts">
 	// /community/calendar — admin HITL review queue for Calendar events with approve/reject.
-	import { onMount } from 'svelte';
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import { Modal } from '$lib/components/ui/modal';
 	import { Button } from '$lib/components/ui/button';
-	import { calendarAdminApi , spacesAdminApi } from '$lib/api';
+	import { calendarAdminApi } from '$lib/api';
+	import { useCountries } from '$lib/utils/countries.svelte';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { Eye, CheckCircle, XCircle, Trash2 } from 'lucide-svelte';
@@ -31,6 +31,12 @@
 	const canManage = $derived(hasPermission('calendar.review'));
 	// BUG-001/BUG-008: calendar.manage (admin+) gates the soft-delete action.
 	const canDelete = $derived(hasPermission('calendar.manage'));
+
+	// ── Country selector (250 primary geo space countries) ───────────────────
+	const countryUtils = useCountries();
+	$effect(() => {
+		countryUtils.load();
+	});
 
 	// ── State ───────────────────────────────────────────────────────────────
 	let entityController = $state<EntityPageController | undefined>(undefined);
@@ -170,33 +176,21 @@
 		{ key: 'description', label: t('app.calendar.detail_description', 'Description'), type: 'textarea' }
 	];
 
-	
-// Destination Spaces for the dest filter (geo-aware pattern). Loaded once
-// on mount from /admin/spaces?level=country so the filter options are
-// driven by the backend (Rule 16 — no hardcoded lists).
-type SpaceOption = { id: string; name: string };
-let destOptions = $state<SpaceOption[]>([]);
-onMount(async () => {
-	try {
-		const res = await spacesAdminApi.list('?level=country&limit=200');
-		if (res.ok && Array.isArray(res.data)) {
-			destOptions = (res.data as Array<{ id: string; name: string }>).map((s) => ({
-				id: s.id,
-				name: s.name
-			}));
-		}
-	} catch {
-		// Non-fatal — the dest filter simply stays empty.
-	}
-});
-
-		const filters = $derived<FilterDef[]>([
-		{
-			key: 'dest',
-			label: t('app.calendar.col_destination', 'Destination'),
-			options: destOptions.map((s) => ({ value: s.id, label: s.name }))
-		}
-	]);
+	const filters = $derived.by<FilterDef[]>(() => {
+		countryUtils.ready;
+		return [
+			{
+				key: 'dest',
+				label: t('app.calendar.col_destination', 'Destination'),
+				type: 'autocomplete',
+				placeholder: t('app.tools.country_placeholder', 'Search country…'),
+				emptyMessage: t('common.no_results', 'No results found'),
+				fetcher: countryUtils.fetcher,
+				initialFetcher: countryUtils.initialFetcher,
+				getSelectedLabel: countryUtils.getSelectedLabel
+			}
+		];
+	});
 
 	const config = $derived<EntityPageConfig>({
 		filters,

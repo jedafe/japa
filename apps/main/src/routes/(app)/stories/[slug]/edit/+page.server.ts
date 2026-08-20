@@ -2,7 +2,7 @@
 import { error, redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiGet, apiList, ApiError } from '$lib/server/api';
-import type { Story, Space } from '$lib/types';
+import type { Story, GeoCountry } from '$lib/types';
 
 /**
  * Edit-story form at /stories/[slug]/edit — auth-gated, author-only.
@@ -32,9 +32,9 @@ export const load: PageServerLoad = async (event) => {
 		throw error(403, { code: 'not_owner', message: 'You can only edit your own stories' });
 	}
 
-	let countries: Space[] = [];
+	let countries: GeoCountry[] = [];
 	try {
-		const { items } = await apiList<Space>(ctx, '/spaces?level=country');
+		const { items } = await apiList<GeoCountry>(ctx, '/geo/countries');
 		countries = items;
 	} catch {
 		countries = [];

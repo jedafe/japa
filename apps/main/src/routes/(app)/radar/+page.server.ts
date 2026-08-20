@@ -1,17 +1,16 @@
 import type { PageServerLoad } from './$types';
 import { apiContext, apiList, apiRadarList, ApiError } from '$lib/server/api';
-import type { Space } from '$lib/types';
-import type { RadarItem } from '$lib/types';
+import type { GeoCountry, RadarItem } from '$lib/types';
 
 /**
  * Japa Radar at /radar — the country-grouped intelligence feed (Phase 6,
  * Task 25). SSR-fetches the caller's followed-countries feed plus the full
- * country-space list so the page renders without a client round-trip and is
- * indexable. Followed-countries feed is auth-gated (401 for guests → empty);
- * the country browse list is public.
+ * 250 primary geo-space countries from GET /api/v1/geo/countries so the page
+ * renders without a client round-trip and is indexable. Followed-countries
+ * feed is auth-gated (401 for guests → empty); the country browse list is public.
  *
  * Ref: japaconnect-engineering — Japa Intelligence System spec §7
- *      ADR-058 (renders inside the unified app shell)
+ *      ADR-005 / ADR-058 (renders inside the unified app shell)
  */
 const PAGE_SIZE = 20;
 
@@ -31,23 +30,15 @@ export const load: PageServerLoad = async (event) => {
 	const dest = event.url.searchParams.get('dest') ?? '';
 	const hasGeoFilter = spaceId !== '' || dest !== '';
 
-	// Country list — public. Filtered to level=country so the browse list
-	// only shows country spaces (the radar groups opportunities by country).
-	let countries: Space[] = [];
+	// Country list — public. Consumes the canonical /geo/countries endpoint
+	// (ADR-005), which returns all 250 primary country geo spaces.
+	let countries: GeoCountry[] = [];
 	let countriesError = false;
 	try {
-		const params = new URLSearchParams();
-		params.set('level', 'country');
-		params.set('page_size', '100');
-		params.set('page_offset', '0');
-		const res = await apiList<Space>(ctx, `/spaces?${params.toString()}`);
+		const res = await apiList<GeoCountry>(ctx, '/geo/countries');
 		countries = res.items;
-	} catch (err) {
-		if (err instanceof ApiError && err.status === 403) {
-			countriesError = false; // degrade to empty, not a hard error
-		} else {
-			countriesError = true;
-		}
+	} catch {
+		countriesError = true;
 	}
 
 	// Followed-countries feed — auth-gated. Guests get an empty feed; the

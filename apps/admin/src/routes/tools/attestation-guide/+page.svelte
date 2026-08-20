@@ -1,14 +1,14 @@
 <script lang="ts">
 	// /tools/attestation-guide — HITL review queue with Approve, Generate, and
 	// community update review actions. Aligned with backend PathwayDTO fields.
-	import { onMount } from 'svelte';
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import { Modal } from '$lib/components/ui/modal';
 	import { Button } from '$lib/components/ui/button';
 	import Autocomplete from '$lib/components/ui/Autocomplete.svelte';
-	import { attestationGuideAdminApi , spacesAdminApi } from '$lib/api';
+	import { attestationGuideAdminApi } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
+	import { useCountries } from '$lib/utils/countries.svelte';
 	import { Eye, CheckCircle, Sparkles } from 'lucide-svelte';
 	import type { ActionItem, FilterDef } from '$lib/components/ui/data-table';
 
@@ -47,19 +47,11 @@
 
 	// ── State ───────────────────────────────────────────────────────────────
 	
-// Destination Spaces for the dest filter (geo-aware pattern §90-101).
-type SpaceOption = { id: string; name: string };
-let destOptions = $state<SpaceOption[]>([]);
-onMount(async () => {
-	try {
-		const res = await spacesAdminApi.list('?level=country&limit=200');
-		if (res.ok && Array.isArray(res.data)) {
-			destOptions = (res.data as Array<{ id: string; name: string }>).map((s) => ({
-				id: s.id, name: s.name
-			}));
-		}
-	} catch { /* Non-fatal */ }
-});
+	// ── Country selector (250 primary geo space countries) ───────────────────
+	const countryUtils = useCountries();
+	$effect(() => {
+		countryUtils.load();
+	});
 
 	let entityController = $state<EntityPageController | undefined>(undefined);
 	let pageError = $state('');
@@ -197,37 +189,33 @@ onMount(async () => {
 		return acts;
 	});
 
-	// ── Country autocomplete helpers (filter destOptions client-side) ──────
-	// Sourced from the spaces country table (destOptions, loaded from
-	// /admin/spaces?level=country) — never hardcoded (Rule 16). Keyed by
-	// space ID so the selected UUID is stored as the field value.
-	function fetchCountryId(q: string): Promise<{ id: string; label: string; sublabel?: string }[]> {
-		const needle = q.toLowerCase().trim();
-		const filtered = needle
-			? destOptions.filter((o) => o.name.toLowerCase().includes(needle))
-			: destOptions;
-		return Promise.resolve(filtered.slice(0, 50).map((o) => ({ id: o.id, label: o.name })));
-	}
+	// `fields` is required by EntityPageConfig; readonly page so the form is never shown, but kept for shape completeness.
+	const fields = $derived.by<FieldDef[]>(() => {
+		countryUtils.ready;
+		return [
+			{ key: 'document_type', label: t('common.doc_type', 'Document Type'), type: 'text' },
+			{ key: 'issuing_space_id', label: t('common.issuing_country', 'Issuing Country'), type: 'autocomplete', placeholder: t('app.tools.country_placeholder', 'Search country…'), emptyMessage: t('common.no_results', 'No results found'), fetcher: countryUtils.fetcher, initialFetcher: countryUtils.initialFetcher, getSelectedLabel: countryUtils.getSelectedLabel },
+			{ key: 'destination_space_id', label: t('common.dest_country', 'Destination Country'), type: 'autocomplete', placeholder: t('app.tools.country_placeholder', 'Search country…'), emptyMessage: t('common.no_results', 'No results found'), fetcher: countryUtils.fetcher, initialFetcher: countryUtils.initialFetcher, getSelectedLabel: countryUtils.getSelectedLabel },
+			{ key: 'apostille_required', label: t('common.apostille', 'Apostille Required'), type: 'checkbox' },
+			{ key: 'pathway_steps', label: t('common.pathway_steps', 'Pathway Steps (JSON)'), type: 'textarea' }
+		];
+	});
 
-	function fetchCountryIdInitial(): Promise<{ id: string; label: string; sublabel?: string }[]> {
-		return Promise.resolve(destOptions.slice(0, 8).map((o) => ({ id: o.id, label: o.name })));
-	}
-
-	function getCountryIdLabel(id: string): string {
-		return destOptions.find((o) => o.id === id)?.name ?? id;
-	}
-
-	const fields: FieldDef[] = [
-		{ key: 'document_type', label: t('common.doc_type', 'Document Type'), type: 'text' },
-		{ key: 'issuing_space_id', label: t('common.issuing_country', 'Issuing Country'), type: 'autocomplete', placeholder: t('app.tools.country_placeholder', 'Search country…'), emptyMessage: t('common.no_results', 'No results found'), fetcher: fetchCountryId, initialFetcher: fetchCountryIdInitial, getSelectedLabel: getCountryIdLabel },
-		{ key: 'destination_space_id', label: t('common.dest_country', 'Destination Country'), type: 'autocomplete', placeholder: t('app.tools.country_placeholder', 'Search country…'), emptyMessage: t('common.no_results', 'No results found'), fetcher: fetchCountryId, initialFetcher: fetchCountryIdInitial, getSelectedLabel: getCountryIdLabel },
-		{ key: 'apostille_required', label: t('common.apostille', 'Apostille Required'), type: 'checkbox' },
-		{ key: 'pathway_steps', label: t('common.pathway_steps', 'Pathway Steps (JSON)'), type: 'textarea' }
-	];
-
-		const filters = $derived<FilterDef[]>([
-		{ key: 'dest', label: t('app.tools.col_destination', 'Destination'), options: destOptions.map((s) => ({ value: s.id, label: s.name })) }
-	]);
+		const filters = $derived.by<FilterDef[]>(() => {
+		countryUtils.ready;
+		return [
+			{
+				key: 'dest',
+				label: t('app.tools.col_destination', 'Destination'),
+				type: 'autocomplete',
+				placeholder: t('app.tools.country_placeholder', 'Search country…'),
+				emptyMessage: t('common.no_results', 'No results found'),
+				fetcher: countryUtils.fetcher,
+				initialFetcher: countryUtils.initialFetcher,
+				getSelectedLabel: countryUtils.getSelectedLabel
+			}
+		];
+	});
 
 	const config = $derived<EntityPageConfig>({
 		filters,
@@ -434,10 +422,10 @@ onMount(async () => {
 				id="gen-issuing"
 				placeholder={t('app.tools.country_placeholder', 'Search country…')}
 				emptyMessage={t('common.no_results', 'No results found')}
-				fetcher={fetchCountryId}
-				initialFetcher={fetchCountryIdInitial}
+				fetcher={countryUtils.fetcher}
+				initialFetcher={countryUtils.initialFetcher}
 				selectedId={generateIssuingId || null}
-				selectedLabel={generateIssuingId ? getCountryIdLabel(generateIssuingId) : null}
+				selectedLabel={generateIssuingId ? countryUtils.getSelectedLabel(generateIssuingId) : null}
 				onSelect={(item) => { generateIssuingId = item.id; }}
 				onClear={() => { generateIssuingId = ''; }}
 			/>
@@ -448,10 +436,10 @@ onMount(async () => {
 				id="gen-dest"
 				placeholder={t('app.tools.country_placeholder', 'Search country…')}
 				emptyMessage={t('common.no_results', 'No results found')}
-				fetcher={fetchCountryId}
-				initialFetcher={fetchCountryIdInitial}
+				fetcher={countryUtils.fetcher}
+				initialFetcher={countryUtils.initialFetcher}
 				selectedId={generateDestId || null}
-				selectedLabel={generateDestId ? getCountryIdLabel(generateDestId) : null}
+				selectedLabel={generateDestId ? countryUtils.getSelectedLabel(generateDestId) : null}
 				onSelect={(item) => { generateDestId = item.id; }}
 				onClear={() => { generateDestId = ''; }}
 			/>

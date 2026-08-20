@@ -2,6 +2,8 @@
 	// Ref: japaconnect-engineering/sections/79-community-story-wall.md
 	import { untrack } from 'svelte';
 	import { t } from '$lib/i18n';
+	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
+	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { api } from '$lib/api/client';
@@ -104,6 +106,48 @@
 
 	const inputClass =
 		'w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm text-[var(--color-text)] outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20';
+
+	function fetchOriginCountries(q: string): Promise<AutocompleteItem[]> {
+		const allLabel = t('stories.filter_origin_all', 'All origins');
+		const query = q.toLowerCase().trim();
+		const allItem: AutocompleteItem = { id: '', label: allLabel };
+		if (query === '') {
+			return Promise.resolve([allItem, ...(data.countries ?? []).map((c) => ({ id: c.id, label: c.name, sublabel: c.geo_code }))]);
+		}
+		const matchesAll = allLabel.toLowerCase().includes(query);
+		const filtered = (data.countries ?? []).filter(
+			(c) => c.name.toLowerCase().includes(query) || c.geo_code.toLowerCase().includes(query)
+		);
+		const items = filtered.map((c) => ({ id: c.id, label: c.name, sublabel: c.geo_code }));
+		return Promise.resolve(matchesAll ? [allItem, ...items] : items);
+	}
+	function fetchOriginCountriesInitial(): Promise<AutocompleteItem[]> {
+		return fetchOriginCountries('');
+	}
+	const selectedOriginLabel = $derived(
+		originInput ? (data.countries ?? []).find((c) => c.id === originInput)?.name ?? null : null
+	);
+
+	function fetchDestinationCountries(q: string): Promise<AutocompleteItem[]> {
+		const allLabel = t('stories.filter_dest_all', 'All destinations');
+		const query = q.toLowerCase().trim();
+		const allItem: AutocompleteItem = { id: '', label: allLabel };
+		if (query === '') {
+			return Promise.resolve([allItem, ...(data.countries ?? []).map((c) => ({ id: c.id, label: c.name, sublabel: c.geo_code }))]);
+		}
+		const matchesAll = allLabel.toLowerCase().includes(query);
+		const filtered = (data.countries ?? []).filter(
+			(c) => c.name.toLowerCase().includes(query) || c.geo_code.toLowerCase().includes(query)
+		);
+		const items = filtered.map((c) => ({ id: c.id, label: c.name, sublabel: c.geo_code }));
+		return Promise.resolve(matchesAll ? [allItem, ...items] : items);
+	}
+	function fetchDestinationCountriesInitial(): Promise<AutocompleteItem[]> {
+		return fetchDestinationCountries('');
+	}
+	const selectedDestinationLabel = $derived(
+		destInput ? (data.countries ?? []).find((c) => c.id === destInput)?.name ?? null : null
+	);
 </script>
 
 <svelte:head>
@@ -171,28 +215,26 @@
 
 		<!-- Filters (country selects for origin/dest; text inputs for visa/profession) -->
 		<form onsubmit={applyFilters} class="flex flex-col gap-2 lg:flex-row lg:items-center">
-			<select
-				value={originInput}
-				onchange={(e) => (originInput = e.currentTarget.value)}
-				class={inputClass}
-				aria-label={t('stories.filter_origin', 'Origin country')}
-			>
-				<option value="">{t('stories.filter_origin_all', 'All origins')}</option>
-				{#each data.countries as c (c.id)}
-					<option value={c.id}>{c.name}</option>
-				{/each}
-			</select>
-			<select
-				value={destInput}
-				onchange={(e) => (destInput = e.currentTarget.value)}
-				class={inputClass}
-				aria-label={t('stories.filter_dest', 'Destination country')}
-			>
-				<option value="">{t('stories.filter_dest_all', 'All destinations')}</option>
-				{#each data.countries as c (c.id)}
-					<option value={c.id}>{c.name}</option>
-				{/each}
-			</select>
+			<Autocomplete
+				placeholder={t('stories.filter_origin_all', 'All origins')}
+				emptyMessage={t('common.no_results', 'No results found')}
+				fetcher={fetchOriginCountries}
+				initialFetcher={fetchOriginCountriesInitial}
+				selectedId={originInput || null}
+				selectedLabel={selectedOriginLabel}
+				onSelect={(item) => (originInput = item.id)}
+				onClear={() => (originInput = '')}
+			/>
+			<Autocomplete
+				placeholder={t('stories.filter_dest_all', 'All destinations')}
+				emptyMessage={t('common.no_results', 'No results found')}
+				fetcher={fetchDestinationCountries}
+				initialFetcher={fetchDestinationCountriesInitial}
+				selectedId={destInput || null}
+				selectedLabel={selectedDestinationLabel}
+				onSelect={(item) => (destInput = item.id)}
+				onClear={() => (destInput = '')}
+			/>
 			<input
 				type="text"
 				placeholder={t('stories.filter_visa', 'Visa type')}

@@ -1,6 +1,6 @@
 import type { PageServerLoad } from './$types';
 import { apiContext, apiList } from '$lib/server/api';
-import type { JobListing } from '$lib/types';
+import type { JobListing, GeoCountry } from '$lib/types';
 
 /**
  * Jobs Board finder at /jobs (Section 63, ADR-081).
@@ -43,5 +43,13 @@ export const load: PageServerLoad = async (event) => {
 		}
 	}
 
-	return { jobs, total, disabled, authed, pageSize: PAGE_SIZE, currentPage: parseInt(page, 10) };
+	// Canonical country list for the filter dropdown (ADR-005).
+	let countries: GeoCountry[] = [];
+	try {
+		countries = (await apiList<GeoCountry>(ctx, '/geo/countries')).items;
+	} catch {
+		countries = [];
+	}
+
+	return { jobs, total, disabled, authed, pageSize: PAGE_SIZE, currentPage: parseInt(page, 10), countries };
 };

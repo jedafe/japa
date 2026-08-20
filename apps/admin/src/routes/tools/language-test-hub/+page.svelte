@@ -2,17 +2,18 @@
 	// /tools/language-test-hub — HITL review queue with Approve, AI Generate,
 	// and Create actions. Fields map to the backend RequirementDTO contract.
 	// Ref: §99 (Language Test Hub), ADR-107, ADR-088 (HITL review).
-	import { onMount } from 'svelte';
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import { Modal } from '$lib/components/ui/modal';
 	import { Button } from '$lib/components/ui/button';
-	import { languageTestHubAdminApi , spacesAdminApi } from '$lib/api';
+	import Autocomplete from '$lib/components/ui/Autocomplete.svelte';
+	import type { AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
+	import { languageTestHubAdminApi } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { Eye, CheckCircle, Sparkles, Plus } from 'lucide-svelte';
 	import type { ActionItem, FilterDef } from '$lib/components/ui/data-table';
+	import { useCountries } from '$lib/utils/countries.svelte';
 
-	type DestinationOption = { id: string; name: string; slug: string };
 	type TestOption = { id: string; slug: string; name: string };
 
 	type RequirementItem = {
@@ -39,19 +40,12 @@
 
 	// ── State ───────────────────────────────────────────────────────────────
 	
-// Destination Spaces for the dest filter (geo-aware pattern §90-101).
-type SpaceOption = { id: string; name: string };
-let destOptions = $state<SpaceOption[]>([]);
-onMount(async () => {
-	try {
-		const res = await spacesAdminApi.list('?level=country&limit=200');
-		if (res.ok && Array.isArray(res.data)) {
-			destOptions = (res.data as Array<{ id: string; name: string }>).map((s) => ({
-				id: s.id, name: s.name
-			}));
-		}
-	} catch { /* Non-fatal */ }
-});
+	// ── Country selector (250 primary geo space countries) ───────────────────
+	const countryUtils = useCountries();
+	const countryUtilsName = useCountries('name');
+	$effect(() => {
+		countryUtils.load();
+	});
 
 	let entityController = $state<EntityPageController | undefined>(undefined);
 	let pageError = $state('');
@@ -74,37 +68,25 @@ onMount(async () => {
 	let createSourceUrl = $state('');
 	let creating = $state(false);
 
-	// Geo-aware selector sources (ADR-088 geo-aware-tool-pattern).
-	// Destinations and tests are fetched from the API so the admin never
-	// types a raw UUID — the destination selector is the first input.
-	let destinations = $state<DestinationOption[]>([]);
+	// Test selector source (destination countries now come from useCountries).
 	let tests = $state<TestOption[]>([]);
 
-	onMount(async () => {
-		try {
-			const destResult = await languageTestHubAdminApi.listDestinations();
-			if (destResult.ok && Array.isArray(destResult.data)) {
-				destinations = (destResult.data as DestinationOption[]).map((d) => ({
-					id: d.id,
-					name: d.name,
-					slug: d.slug
-				}));
+	$effect(() => {
+		void (async () => {
+			if (tests.length > 0) return;
+			try {
+				const testResult = await languageTestHubAdminApi.listTests();
+				if (testResult.ok && Array.isArray(testResult.data)) {
+					tests = (testResult.data as TestOption[]).map((tt) => ({
+						id: tt.id,
+						slug: tt.slug,
+						name: tt.name
+					}));
+				}
+			} catch {
+				tests = [];
 			}
-		} catch {
-			destinations = [];
-		}
-		try {
-			const testResult = await languageTestHubAdminApi.listTests();
-			if (testResult.ok && Array.isArray(testResult.data)) {
-				tests = (testResult.data as TestOption[]).map((tt) => ({
-					id: tt.id,
-					slug: tt.slug,
-					name: tt.name
-				}));
-			}
-		} catch {
-			tests = [];
-		}
+		})();
 	});
 
 	async function approveRequirement(item: RequirementItem) {
@@ -217,37 +199,33 @@ onMount(async () => {
 		return acts;
 	});
 
-	// ── Country autocomplete helpers (filter destinations client-side) ─────
-	// Sourced from the spaces country table (destinations, loaded from
-	// /spaces?level=country via listDestinations) — never hardcoded (Rule 16).
-	function fetchCountryName(q: string): Promise<{ id: string; label: string; sublabel?: string }[]> {
-		const needle = q.toLowerCase().trim();
-		const filtered = needle
-			? destinations.filter((d) => d.name.toLowerCase().includes(needle))
-			: destinations;
-		return Promise.resolve(filtered.slice(0, 50).map((d) => ({ id: d.name, label: d.name })));
-	}
+	const fields = $derived.by<FieldDef[]>(() => {
+		countryUtilsName.ready;
+		return [
+			{ key: 'test_name', label: t('common.test_name', 'Test Name'), type: 'text' },
+			{ key: 'destination_space_name', label: t('common.country', 'Country'), type: 'autocomplete', placeholder: t('app.tools.country_placeholder', 'Search country…'), emptyMessage: t('common.no_results', 'No results found'), fetcher: countryUtilsName.fetcher, initialFetcher: countryUtilsName.initialFetcher, getSelectedLabel: countryUtilsName.getSelectedLabel },
+			{ key: 'visa_category', label: t('common.visa_category', 'Visa Category'), type: 'text' },
+			{ key: 'minimum_score', label: t('common.minimum_score', 'Minimum Score'), type: 'text' },
+			{ key: 'notes', label: t('common.notes', 'Notes'), type: 'textarea' },
+			{ key: 'source_url', label: t('common.source_url', 'Source URL'), type: 'url' }
+		];
+	});
 
-	function fetchCountryNameInitial(): Promise<{ id: string; label: string; sublabel?: string }[]> {
-		return Promise.resolve(destinations.slice(0, 8).map((d) => ({ id: d.name, label: d.name })));
-	}
-
-	function getCountryNameLabel(id: string): string {
-		return destinations.find((d) => d.name === id)?.name ?? id;
-	}
-
-	const fields: FieldDef[] = [
-		{ key: 'test_name', label: t('common.test_name', 'Test Name'), type: 'text' },
-		{ key: 'destination_space_name', label: t('common.country', 'Country'), type: 'autocomplete', placeholder: t('app.tools.country_placeholder', 'Search country…'), emptyMessage: t('common.no_results', 'No results found'), fetcher: fetchCountryName, initialFetcher: fetchCountryNameInitial, getSelectedLabel: getCountryNameLabel },
-		{ key: 'visa_category', label: t('common.visa_category', 'Visa Category'), type: 'text' },
-		{ key: 'minimum_score', label: t('common.minimum_score', 'Minimum Score'), type: 'text' },
-		{ key: 'notes', label: t('common.notes', 'Notes'), type: 'textarea' },
-		{ key: 'source_url', label: t('common.source_url', 'Source URL'), type: 'url' }
-	];
-
-		const filters = $derived<FilterDef[]>([
-		{ key: 'dest', label: t('app.tools.col_destination', 'Destination'), options: destOptions.map((s) => ({ value: s.id, label: s.name })) }
-	]);
+		const filters = $derived.by<FilterDef[]>(() => {
+		countryUtils.ready;
+		return [
+			{
+				key: 'dest',
+				label: t('app.tools.col_destination', 'Destination'),
+				type: 'autocomplete',
+				placeholder: t('app.tools.country_placeholder', 'Search country…'),
+				emptyMessage: t('common.no_results', 'No results found'),
+				fetcher: countryUtils.fetcher,
+				initialFetcher: countryUtils.initialFetcher,
+				getSelectedLabel: countryUtils.getSelectedLabel
+			}
+		];
+	});
 
 	const config = $derived<EntityPageConfig>({
 		filters,
@@ -342,17 +320,17 @@ onMount(async () => {
 	<div class="space-y-4">
 		<div>
 			<label for="gen-dest" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('language_test.destination', 'Destination')}</label>
-			<select
+			<Autocomplete
 				id="gen-dest"
-				class="w-full rounded-lg border p-3 text-sm"
-				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
-				bind:value={generateDestSpaceId}
-			>
-				<option value="">{t('language_test.select_destination', 'Select destination...')}</option>
-				{#each destinations as d (d.id)}
-					<option value={d.id}>{d.name}</option>
-				{/each}
-			</select>
+				placeholder={t('app.tools.country_placeholder', 'Search country…')}
+				emptyMessage={t('common.no_results', 'No results found')}
+				fetcher={countryUtils.fetcher}
+				initialFetcher={countryUtils.initialFetcher}
+				selectedId={generateDestSpaceId || null}
+				selectedLabel={generateDestSpaceId ? countryUtils.getSelectedLabel(generateDestSpaceId) : null}
+				onSelect={(item: AutocompleteItem) => { generateDestSpaceId = item.id; }}
+				onClear={() => { generateDestSpaceId = ''; }}
+			/>
 		</div>
 		<div>
 			<label for="gen-test" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('common.test', 'Test')}</label>
@@ -393,17 +371,17 @@ onMount(async () => {
 	<div class="space-y-4">
 		<div>
 			<label for="cr-dest" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('language_test.destination', 'Destination')} *</label>
-			<select
+			<Autocomplete
 				id="cr-dest"
-				class="w-full rounded-lg border p-3 text-sm"
-				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
-				bind:value={createDestSpaceId}
-			>
-				<option value="">{t('language_test.select_destination', 'Select destination...')}</option>
-				{#each destinations as d (d.id)}
-					<option value={d.id}>{d.name}</option>
-				{/each}
-			</select>
+				placeholder={t('app.tools.country_placeholder', 'Search country…')}
+				emptyMessage={t('common.no_results', 'No results found')}
+				fetcher={countryUtils.fetcher}
+				initialFetcher={countryUtils.initialFetcher}
+				selectedId={createDestSpaceId || null}
+				selectedLabel={createDestSpaceId ? countryUtils.getSelectedLabel(createDestSpaceId) : null}
+				onSelect={(item: AutocompleteItem) => { createDestSpaceId = item.id; }}
+				onClear={() => { createDestSpaceId = ''; }}
+			/>
 		</div>
 		<div>
 			<label for="cr-test" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('common.test', 'Test')} *</label>

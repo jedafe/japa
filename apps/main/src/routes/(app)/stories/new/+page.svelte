@@ -1,6 +1,8 @@
 <script lang="ts">
 	// Ref: japaconnect-engineering/sections/79-community-story-wall.md
 	import { t } from '$lib/i18n';
+	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
+	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 	import { api } from '$lib/api/client';
 	import { ArrowLeft, Send, Loader2, CheckCircle } from 'lucide-svelte';
 	import type { Story } from '$lib/types';
@@ -69,6 +71,48 @@
 			loading = false;
 		}
 	}
+
+	function fetchOriginCountries(q: string): Promise<AutocompleteItem[]> {
+		const allLabel = t('common.all_countries', 'All countries');
+		const query = q.toLowerCase().trim();
+		const allItem: AutocompleteItem = { id: '', label: allLabel };
+		if (query === '') {
+			return Promise.resolve([allItem, ...(data.countries ?? []).map((c) => ({ id: c.id, label: c.name, sublabel: c.geo_code }))]);
+		}
+		const matchesAll = allLabel.toLowerCase().includes(query);
+		const filtered = (data.countries ?? []).filter(
+			(c) => c.name.toLowerCase().includes(query) || c.geo_code.toLowerCase().includes(query)
+		);
+		const items = filtered.map((c) => ({ id: c.id, label: c.name, sublabel: c.geo_code }));
+		return Promise.resolve(matchesAll ? [allItem, ...items] : items);
+	}
+	function fetchOriginCountriesInitial(): Promise<AutocompleteItem[]> {
+		return fetchOriginCountries('');
+	}
+	const selectedOriginLabel = $derived(
+		originSpaceId ? (data.countries ?? []).find((c) => c.id === originSpaceId)?.name ?? null : null
+	);
+
+	function fetchDestinationCountries(q: string): Promise<AutocompleteItem[]> {
+		const allLabel = t('common.all_countries', 'All countries');
+		const query = q.toLowerCase().trim();
+		const allItem: AutocompleteItem = { id: '', label: allLabel };
+		if (query === '') {
+			return Promise.resolve([allItem, ...(data.countries ?? []).map((c) => ({ id: c.id, label: c.name, sublabel: c.geo_code }))]);
+		}
+		const matchesAll = allLabel.toLowerCase().includes(query);
+		const filtered = (data.countries ?? []).filter(
+			(c) => c.name.toLowerCase().includes(query) || c.geo_code.toLowerCase().includes(query)
+		);
+		const items = filtered.map((c) => ({ id: c.id, label: c.name, sublabel: c.geo_code }));
+		return Promise.resolve(matchesAll ? [allItem, ...items] : items);
+	}
+	function fetchDestinationCountriesInitial(): Promise<AutocompleteItem[]> {
+		return fetchDestinationCountries('');
+	}
+	const selectedDestinationLabel = $derived(
+		destinationSpaceId ? (data.countries ?? []).find((c) => c.id === destinationSpaceId)?.name ?? null : null
+	);
 </script>
 
 <svelte:head>
@@ -138,21 +182,29 @@
 			<div class="grid gap-4 sm:grid-cols-2">
 				<div class="flex flex-col gap-1.5">
 					<label for="f-origin" class="text-sm font-medium text-[var(--color-text)]">{t('stories.field_origin', 'Origin Country')}</label>
-					<select id="f-origin" bind:value={originSpaceId} class={inputClass}>
-						<option value="">{t('stories.field_origin_ph', 'e.g. Nigeria')}</option>
-						{#each data.countries as country (country.id)}
-							<option value={country.id}>{country.name}</option>
-						{/each}
-					</select>
+					<Autocomplete
+						placeholder={t('stories.field_origin_ph', 'e.g. Nigeria')}
+						emptyMessage={t('common.no_results', 'No results found')}
+						fetcher={fetchOriginCountries}
+						initialFetcher={fetchOriginCountriesInitial}
+						selectedId={originSpaceId || null}
+						selectedLabel={selectedOriginLabel}
+						onSelect={(item) => (originSpaceId = item.id)}
+						onClear={() => (originSpaceId = '')}
+					/>
 				</div>
 				<div class="flex flex-col gap-1.5">
 					<label for="f-dest" class="text-sm font-medium text-[var(--color-text)]">{t('stories.field_destination', 'Destination Country')}</label>
-					<select id="f-dest" bind:value={destinationSpaceId} class={inputClass}>
-						<option value="">{t('stories.field_destination_ph', 'e.g. United Kingdom')}</option>
-						{#each data.countries as country (country.id)}
-							<option value={country.id}>{country.name}</option>
-						{/each}
-					</select>
+					<Autocomplete
+						placeholder={t('stories.field_destination_ph', 'e.g. United Kingdom')}
+						emptyMessage={t('common.no_results', 'No results found')}
+						fetcher={fetchDestinationCountries}
+						initialFetcher={fetchDestinationCountriesInitial}
+						selectedId={destinationSpaceId || null}
+						selectedLabel={selectedDestinationLabel}
+						onSelect={(item) => (destinationSpaceId = item.id)}
+						onClear={() => (destinationSpaceId = '')}
+					/>
 					{#if errors.destination_space_id}<p class="text-xs text-red-500">{errors.destination_space_id}</p>{/if}
 				</div>
 			</div>

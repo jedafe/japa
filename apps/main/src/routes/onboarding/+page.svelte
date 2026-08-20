@@ -80,6 +80,23 @@
 		return c?.name ?? id;
 	}
 
+	// Step 1: home-country autocomplete — keyed by ISO geo_code.
+	function fetchStep1Countries(q: string): Promise<AutocompleteItem[]> {
+		const query = q.toLowerCase().trim();
+		const filtered = query === ''
+			? data.countries
+			: data.countries.filter(
+					(c) => c.name.toLowerCase().includes(query) || c.geo_code.toLowerCase().includes(query)
+				);
+		return Promise.resolve(filtered.map((c) => ({ id: c.geo_code, label: c.name, sublabel: c.geo_code })));
+	}
+	function fetchStep1CountriesInitial(): Promise<AutocompleteItem[]> {
+		return fetchStep1Countries('');
+	}
+	const selectedCountryLabel = $derived(
+		selectedCountry ? data.countries.find((c) => c.geo_code === selectedCountry)?.name ?? selectedCountry : null
+	);
+
 	// Step 3: Interests/Tags
 	let selectedTags = $state<string[]>([]);
 
@@ -274,13 +291,19 @@
 						</select>
 					</div>
 					<div>
-						<label class="mb-1 block text-sm font-medium text-[var(--color-text)]" for="ob-country">{t('onboarding.field_country', 'Country')}</label>
-						<select id="ob-country" bind:value={selectedCountry} class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none">
-							<option value="">{t('onboarding.select_option', 'Select...')}</option>
-							{#each data.countries as c (c.id)}
-								<option value={c.geo_code}>{c.name}</option>
-							{/each}
-						</select>
+						<label class="mb-1 block text-sm font-medium text-[var(--color-text)]">
+							{t('onboarding.field_country', 'Country')}
+							<Autocomplete
+							placeholder={t('onboarding.select_option', 'Select...')}
+							emptyMessage={t('common.no_results', 'No results found')}
+							fetcher={fetchStep1Countries}
+							initialFetcher={fetchStep1CountriesInitial}
+							selectedId={selectedCountry || null}
+							selectedLabel={selectedCountryLabel}
+							onSelect={(item) => (selectedCountry = item.id)}
+							onClear={() => (selectedCountry = '')}
+						/>
+						</label>
 						{#if data.geoContext?.is_valid}
 							<p class="mt-1 flex items-center gap-1 text-xs text-[var(--color-muted)]">
 								<MapPin size={11} /> {t('onboarding.geo_detected', 'Detected: {country}').replace('{country}', data.geoContext.country_name)}

@@ -6,6 +6,8 @@
 	import { TriangleAlert, Plus, Pin, Search, X } from 'lucide-svelte';
 	import { api } from '$lib/api/client';
 	import { t } from '$lib/i18n';
+	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
+	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 	import { relativeTime } from '$lib/feed/time';
 	import { i18n } from '$lib/i18n';
 	import { EmptyState, LoadingSkeleton } from '$lib/components/ui';
@@ -124,6 +126,27 @@
 		if (text.length <= max) return text;
 		return text.slice(0, max).trimEnd() + '…';
 	}
+
+	function fetchDestinationCountries(q: string): Promise<AutocompleteItem[]> {
+		const allLabel = t('scam_alerts.filter_all_countries', 'All countries');
+		const query = q.toLowerCase().trim();
+		const allItem: AutocompleteItem = { id: '', label: allLabel };
+		if (query === '') {
+			return Promise.resolve([allItem, ...(data.countries ?? []).map((c) => ({ id: c.id, label: c.name, sublabel: c.geo_code }))]);
+		}
+		const matchesAll = allLabel.toLowerCase().includes(query);
+		const filtered = (data.countries ?? []).filter(
+			(c) => c.name.toLowerCase().includes(query) || c.geo_code.toLowerCase().includes(query)
+		);
+		const items = filtered.map((c) => ({ id: c.id, label: c.name, sublabel: c.geo_code }));
+		return Promise.resolve(matchesAll ? [allItem, ...items] : items);
+	}
+	function fetchDestinationCountriesInitial(): Promise<AutocompleteItem[]> {
+		return fetchDestinationCountries('');
+	}
+	const selectedDestinationLabel = $derived(
+		destFilter ? (data.countries ?? []).find((c) => c.id === destFilter)?.name ?? null : null
+	);
 </script>
 
 <svelte:head>
@@ -154,17 +177,16 @@
 			<label for="filter-dest" class="text-xs font-medium text-[var(--color-text-subtle)]">
 				{t('scam_alerts.filter_destination', 'Destination country')}
 			</label>
-			<select
-				id="filter-dest"
-				value={destFilter}
-				onchange={(e) => (destFilter = e.currentTarget.value)}
-				class="w-44 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none"
-			>
-				<option value="">{t('scam_alerts.filter_all_countries', 'All countries')}</option>
-				{#each data.countries as c (c.id)}
-					<option value={c.id}>{c.name}</option>
-				{/each}
-			</select>
+			<Autocomplete
+				placeholder={t('scam_alerts.filter_all_countries', 'All countries')}
+				emptyMessage={t('common.no_results', 'No results found')}
+				fetcher={fetchDestinationCountries}
+				initialFetcher={fetchDestinationCountriesInitial}
+				selectedId={destFilter || null}
+				selectedLabel={selectedDestinationLabel}
+				onSelect={(item) => (destFilter = item.id)}
+				onClear={() => (destFilter = '')}
+			/>
 		</div>
 		<div class="flex flex-col gap-1">
 			<label for="filter-scam-type" class="text-xs font-medium text-[var(--color-text-subtle)]">

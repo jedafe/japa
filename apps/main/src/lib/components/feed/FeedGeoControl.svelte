@@ -5,20 +5,20 @@
 	// the feed so the new geo re-weight takes effect immediately.
 	// Audit finding H1.
 	// Ref: japaconnect-engineering/sections/32-activity-feed-timeline.md (Geo)
-	// Ref: Rule 16 — country list fetched from /spaces?level=country, not hardcoded.
+	// Ref: Rule 16 — country list fetched from /geo/countries (ADR-005), not hardcoded.
 	import { invalidate } from '$app/navigation';
 	import { page } from '$app/state';
 	import { t } from '$lib/i18n';
 	import { api } from '$lib/api/client';
 	import { setContentCountry } from '$lib/api/geo';
 	import { Globe, ChevronDown } from 'lucide-svelte';
+	import type { GeoCountry } from '$lib/types';
 
 	let changing = $state(false);
 	let saving = $state(false);
 
-	// Country spaces fetched from the backend on first dropdown open.
-	// Rule 16: no hardcoded country lists — the backend /spaces?level=country
-	// endpoint is the single source of truth.
+	// Country spaces fetched from the canonical /geo/countries endpoint on
+	// first dropdown open. Rule 16: no hardcoded country lists.
 	let countrySpaces = $state<{ code: string; label: string }[]>([]);
 	let countriesLoaded = false;
 
@@ -35,15 +35,10 @@
 	async function loadCountries() {
 		if (countriesLoaded) return;
 		countriesLoaded = true;
-		// Space rows expose the ISO country code as `geo_code` (Space type,
-		// apps/main/src/lib/types/index.ts). Not `country_code`.
-		const res = await api.get<{ items: { geo_code: string | null; name: string }[] }>(
-			'/spaces?level=country&page_size=5'
-		);
-		if (!res.error && res.data?.items) {
-			countrySpaces = res.data.items
-				.filter((s) => s.geo_code)
-				.map((s) => ({ code: s.geo_code as string, label: s.name }));
+		// GeoCountry rows expose the ISO country code as `geo_code`.
+		const res = await api.get<GeoCountry[]>('/geo/countries');
+		if (!res.error && res.data) {
+			countrySpaces = res.data.map((c) => ({ code: c.geo_code, label: c.name }));
 		}
 	}
 

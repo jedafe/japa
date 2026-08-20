@@ -2,13 +2,13 @@
 	// /tools/scholarships — full CRUD admin page for scholarship projections.
 	// Combines the summary dashboard (stats + deadlines + reminder log) with
 	// an EntityPage CRUD list backed by /admin/scholarships.
-	import { onMount } from 'svelte';
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { Trash2, Eye, Pencil } from 'lucide-svelte';
 	import type { ActionItem, FilterDef } from '$lib/components/ui/data-table';
-	import { scholarshipAdminApi, spacesAdminApi, adminCatalogApi, type CatalogOption } from '$lib/api';
+	import { scholarshipAdminApi, adminCatalogApi, type CatalogOption } from '$lib/api';
+	import { useCountries } from '$lib/utils/countries.svelte';
 
 	type Scholarship = {
 		id: string;
@@ -46,23 +46,11 @@
 	const canManage = $derived(hasPermission('scholarship.manage'));
 
 	// ── State ───────────────────────────────────────────────────────────────
-	// Destination Spaces for the dest filter (geo-aware pattern). Loaded once
-	// on mount from /admin/spaces?level=country so the filter options are
-	// driven by the backend (Rule 16 — no hardcoded lists).
-	type SpaceOption = { id: string; name: string };
-	let destOptions = $state<SpaceOption[]>([]);
-	onMount(async () => {
-		try {
-			const res = await spacesAdminApi.list('?level=country&limit=200');
-			if (res.ok && Array.isArray(res.data)) {
-				destOptions = (res.data as Array<{ id: string; name: string }>).map((s) => ({
-					id: s.id,
-					name: s.name
-				}));
-			}
-		} catch {
-			// Non-fatal — the dest filter simply stays empty.
-		}
+	// ── Country selector (250 primary geo space countries) ───────────────────
+	const countryUtils = useCountries();
+	const countryUtilsName = useCountries('name');
+	$effect(() => {
+		countryUtils.load();
 	});
 
 	let scholarshipVerificationOptions = $state<CatalogOption[]>([
@@ -168,40 +156,43 @@
 		}
 	}
 
-	// ── Country autocomplete helpers (filter destOptions client-side) ──────
-	// The scholarships `country` field stores a free-text country NAME (e.g.
-	// "Germany"). The picker is sourced from the spaces country table
-	// (destOptions, loaded from /admin/spaces?level=country) so the user
-	// selects a real seeded country — never a hardcoded list (Rule 16).
-	function fetchCountryName(q: string): Promise<{ id: string; label: string; sublabel?: string }[]> {
-		const needle = q.toLowerCase().trim();
-		const filtered = needle
-			? destOptions.filter((o) => o.name.toLowerCase().includes(needle))
-			: destOptions;
-		return Promise.resolve(filtered.slice(0, 50).map((o) => ({ id: o.name, label: o.name })));
-	}
-
-	function fetchCountryNameInitial(): Promise<{ id: string; label: string; sublabel?: string }[]> {
-		return Promise.resolve(destOptions.slice(0, 8).map((o) => ({ id: o.name, label: o.name })));
-	}
-
-	function getCountryNameLabel(id: string): string {
-		return destOptions.find((o) => o.name === id)?.name ?? id;
-	}
-
 	// ── Fields ───── drives EntityForm rendering + edit-form seeding.
-	const fields: FieldDef[] = [
-		{ key: 'title', label: t('app.tools.col_title', 'Title'), type: 'text', required: true },
-		{ key: 'country', label: t('app.tools.col_country', 'Country'), type: 'autocomplete', placeholder: t('app.tools.country_placeholder', 'Search country…'), emptyMessage: t('common.no_results', 'No results found'), fetcher: fetchCountryName, initialFetcher: fetchCountryNameInitial, getSelectedLabel: getCountryNameLabel, required: true },
-		{ key: 'university', label: t('app.tools.col_university', 'University'), type: 'text' },
-		{ key: 'degree_level', label: t('app.tools.col_degree_level', 'Degree Level'), type: 'text', placeholder: 'masters, bachelors, phd' },
-		{ key: 'deadline', label: t('app.tools.col_deadline', 'Deadline'), type: 'date' },
-		{ key: 'application_url', label: t('app.tools.col_application_url', 'Application URL'), type: 'url' },
-		{ key: 'source_url', label: t('app.tools.col_source_url', 'Source URL'), type: 'url', required: true },
-		{ key: 'source_type', label: t('app.tools.col_source_type', 'Source Type'), type: 'text', placeholder: 'web, rss, api' },
-		{ key: 'trust_level', label: t('app.tools.col_trust_level', 'Trust Level'), type: 'number' },
-		{ key: 'description', label: t('app.tools.col_description', 'Description'), type: 'textarea' }
-	];
+	const fields = $derived.by<FieldDef[]>(() => {
+		countryUtilsName.ready;
+		return [
+			{ key: 'title', label: t('app.tools.col_title', 'Title'), type: 'text', required: true },
+			{ key: 'country', label: t('app.tools.col_country', 'Country'), type: 'autocomplete', placeholder: t('app.tools.country_placeholder', 'Search country…'), emptyMessage: t('common.no_results', 'No results found'), fetcher: countryUtilsName.fetcher, initialFetcher: countryUtilsName.initialFetcher, getSelectedLabel: countryUtilsName.getSelectedLabel, required: true },
+			{ key: 'university', label: t('app.tools.col_university', 'University'), type: 'text' },
+			{ key: 'degree_level', label: t('app.tools.col_degree_level', 'Degree Level'), type: 'text', placeholder: 'masters, bachelors, phd' },
+			{ key: 'deadline', label: t('app.tools.col_deadline', 'Deadline'), type: 'date' },
+			{ key: 'application_url', label: t('app.tools.col_application_url', 'Application URL'), type: 'url' },
+			{ key: 'source_url', label: t('app.tools.col_source_url', 'Source URL'), type: 'url', required: true },
+			{ key: 'source_type', label: t('app.tools.col_source_type', 'Source Type'), type: 'text', placeholder: 'web, rss, api' },
+			{ key: 'trust_level', label: t('app.tools.col_trust_level', 'Trust Level'), type: 'number' },
+			{ key: 'description', label: t('app.tools.col_description', 'Description'), type: 'textarea' }
+		];
+	});
+
+	const filters = $derived.by<FilterDef[]>(() => {
+		countryUtils.ready;
+		return [
+			{
+				key: 'verification_status',
+				label: t('app.tools.col_status', 'Status'),
+				options: scholarshipVerificationOptions
+			},
+			{
+				key: 'dest',
+				label: t('app.tools.col_destination', 'Destination'),
+				type: 'autocomplete',
+				placeholder: t('app.tools.country_placeholder', 'Search country…'),
+				emptyMessage: t('common.no_results', 'No results found'),
+				fetcher: countryUtils.fetcher,
+				initialFetcher: countryUtils.initialFetcher,
+				getSelectedLabel: countryUtils.getSelectedLabel
+			}
+		];
+	});
 
 	const config = $derived<EntityPageConfig>({
 		title: t('app.tools.scholarships_heading', 'Scholarships'),
@@ -258,18 +249,7 @@
 				render: (v: number) => (v != null ? `${v}%` : '—')
 			}
 		],
-		filters: [
-			{
-				key: 'verification_status',
-				label: t('app.tools.col_status', 'Status'),
-				options: scholarshipVerificationOptions
-			},
-			{
-				key: 'dest',
-				label: t('app.tools.col_destination', 'Destination'),
-				options: destOptions.map((s) => ({ value: s.id, label: s.name }))
-			}
-		],
+		filters,
 		bulkActions: [
 			{
 				label: t('common.deleteSelected', 'Delete Selected'),

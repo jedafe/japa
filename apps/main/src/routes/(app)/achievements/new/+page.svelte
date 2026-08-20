@@ -4,6 +4,8 @@
 	// auth required). On success navigates to the new achievement's detail page.
 	// The milestone_type select options mirror the schema-defined enum (Rule 16).
 	import { t } from '$lib/i18n';
+	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
+	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { api } from '$lib/api/client';
@@ -74,6 +76,48 @@
 			loading = false;
 		}
 	}
+
+	function fetchDestinationCountries(q: string): Promise<AutocompleteItem[]> {
+		const allLabel = t('common.all_countries', 'All countries');
+		const query = q.toLowerCase().trim();
+		const allItem: AutocompleteItem = { id: '', label: allLabel };
+		if (query === '') {
+			return Promise.resolve([allItem, ...(data.countries ?? []).map((c) => ({ id: c.id, label: c.name, sublabel: c.geo_code }))]);
+		}
+		const matchesAll = allLabel.toLowerCase().includes(query);
+		const filtered = (data.countries ?? []).filter(
+			(c) => c.name.toLowerCase().includes(query) || c.geo_code.toLowerCase().includes(query)
+		);
+		const items = filtered.map((c) => ({ id: c.id, label: c.name, sublabel: c.geo_code }));
+		return Promise.resolve(matchesAll ? [allItem, ...items] : items);
+	}
+	function fetchDestinationCountriesInitial(): Promise<AutocompleteItem[]> {
+		return fetchDestinationCountries('');
+	}
+	const selectedDestinationLabel = $derived(
+		destinationSpaceId ? (data.countries ?? []).find((c) => c.id === destinationSpaceId)?.name ?? null : null
+	);
+
+	function fetchOriginCountries(q: string): Promise<AutocompleteItem[]> {
+		const allLabel = t('common.all_countries', 'All countries');
+		const query = q.toLowerCase().trim();
+		const allItem: AutocompleteItem = { id: '', label: allLabel };
+		if (query === '') {
+			return Promise.resolve([allItem, ...(data.countries ?? []).map((c) => ({ id: c.id, label: c.name, sublabel: c.geo_code }))]);
+		}
+		const matchesAll = allLabel.toLowerCase().includes(query);
+		const filtered = (data.countries ?? []).filter(
+			(c) => c.name.toLowerCase().includes(query) || c.geo_code.toLowerCase().includes(query)
+		);
+		const items = filtered.map((c) => ({ id: c.id, label: c.name, sublabel: c.geo_code }));
+		return Promise.resolve(matchesAll ? [allItem, ...items] : items);
+	}
+	function fetchOriginCountriesInitial(): Promise<AutocompleteItem[]> {
+		return fetchOriginCountries('');
+	}
+	const selectedOriginLabel = $derived(
+		originSpaceId ? (data.countries ?? []).find((c) => c.id === originSpaceId)?.name ?? null : null
+	);
 </script>
 
 <svelte:head>
@@ -110,33 +154,31 @@
 					{t('achievements.field_destination', 'Destination country')}
 					<span class="text-red-500" aria-hidden="true">*</span>
 				</label>
-				<select
-					id="destination_country"
-					value={destinationSpaceId}
-					onchange={(e) => (destinationSpaceId = e.currentTarget.value)}
-					class={inputClass}
-				>
-					<option value="">{t('achievements.destination_placeholder', 'e.g. Canada')}</option>
-					{#each data.countries as c (c.id)}
-						<option value={c.id}>{c.name}</option>
-					{/each}
-				</select>
+				<Autocomplete
+					placeholder={t('achievements.destination_placeholder', 'e.g. Canada')}
+					emptyMessage={t('common.no_results', 'No results found')}
+					fetcher={fetchDestinationCountries}
+					initialFetcher={fetchDestinationCountriesInitial}
+					selectedId={destinationSpaceId || null}
+					selectedLabel={selectedDestinationLabel}
+					onSelect={(item) => (destinationSpaceId = item.id)}
+					onClear={() => (destinationSpaceId = '')}
+				/>
 			</div>
 			<div class="flex flex-col gap-1.5">
 				<label for="origin_country" class="text-sm font-medium text-[var(--color-text)]">
 					{t('achievements.field_origin', 'Origin country')}
 				</label>
-				<select
-					id="origin_country"
-					value={originSpaceId}
-					onchange={(e) => (originSpaceId = e.currentTarget.value)}
-					class={inputClass}
-				>
-					<option value="">{t('achievements.origin_placeholder', 'e.g. Nigeria')}</option>
-					{#each data.countries as c (c.id)}
-						<option value={c.id}>{c.name}</option>
-					{/each}
-				</select>
+				<Autocomplete
+					placeholder={t('achievements.origin_placeholder', 'e.g. Nigeria')}
+					emptyMessage={t('common.no_results', 'No results found')}
+					fetcher={fetchOriginCountries}
+					initialFetcher={fetchOriginCountriesInitial}
+					selectedId={originSpaceId || null}
+					selectedLabel={selectedOriginLabel}
+					onSelect={(item) => (originSpaceId = item.id)}
+					onClear={() => (originSpaceId = '')}
+				/>
 			</div>
 		</div>
 

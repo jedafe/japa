@@ -60,9 +60,9 @@
 			return data.user?.is_pro ? t('learn.included_pro') : t('learn.free');
 		}
 		if (isSubscriptionEligible) {
-			return t('learn.subscription_or_purchase', 'Subscription / {price}').replace('{price}', formatPriceKobo(track.price_kobo));
+			return t('learn.subscription_or_purchase', 'Subscription / {price}').replace('{price}', formatPriceKobo(track.price_kobo, track.currency, data.locale));
 		}
-		return formatPriceKobo(track.price_kobo);
+		return formatPriceKobo(track.price_kobo, track.currency, data.locale);
 	});
 
 	async function enroll() {
@@ -210,7 +210,7 @@
 						{#if enrolling}
 							{t('common.loading')}
 						{:else if isPaid && !isFreeOrPro && !isSubscriptionEligible}
-							<Lock size={18} /> {t('university.buy_for', 'Buy for {price}').replace('{price}', formatPriceKobo(track.price_kobo))}
+							<Lock size={18} /> {t('university.buy_for', 'Buy for {price}').replace('{price}', formatPriceKobo(track.price_kobo, track.currency, data.locale))}
 						{:else}
 							{t('learn.enroll')}
 						{/if}

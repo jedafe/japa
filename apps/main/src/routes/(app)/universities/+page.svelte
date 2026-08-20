@@ -42,18 +42,10 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	const effectiveCountry = $derived(countryParam || data.countryDefault || '');
 	const sortParam = $derived(page.url.searchParams.get('sort') ?? 'newest');
 
-	// Country options are derived from the distinct geo_code values present in
-	// the current page slice. When the page has no geo_codes the dropdown
-	// degrades to a single "All countries" entry. (For a full country list the
-	// /geo/countries endpoint is the canonical source; here we keep the dropdown
-	// lightweight and derived from what's on screen.)
-	const countryOptions = $derived.by(() => {
-		const codes = [...new Set(paged.map((u) => u.geo_code).filter((c): c is string => !!c))];
-		return [
-			{ value: '', label: t('universities.all_countries', 'All countries') },
-			...codes.map((c) => ({ value: c, label: c }))
-		];
-	});
+	// Country options are sourced from the canonical /geo/countries list
+	// loaded server-side (ADR-005). The dropdown now shows all 250 primary
+	// geo-space countries and filters client-side via Autocomplete.
+	const allLabel = t('universities.all_countries', 'All countries');
 
 	const sortOptions = $derived([
 		{ value: 'newest', label: t('universities.sort_newest', 'Newest') },
@@ -160,28 +152,27 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 		})
 	);
 
-	// Autocomplete fetchers — filter the already-derived country options client-side.
-	// The "All countries" option (id: '') is always included at the top.
+	// Autocomplete fetchers — filter the canonical /geo/countries list client-side.
+	// The "All countries" option (id: '') is always included at the top; each
+	// item is keyed by the ISO geo_code used by the university catalog.
 	function fetchCountries(q: string): Promise<AutocompleteItem[]> {
-		const allLabel = t('universities.all_countries', 'All countries');
-		const query = q.toLowerCase();
+		const query = q.toLowerCase().trim();
 		const allItem: AutocompleteItem = { id: '', label: allLabel };
 		if (query === '') {
-			return Promise.resolve([allItem, ...countryOptions.filter((o) => o.value !== '').map((o) => ({ id: o.value, label: o.label }))]);
+			return Promise.resolve([allItem, ...data.countries.map((c) => ({ id: c.geo_code, label: c.name, sublabel: c.geo_code }))]);
 		}
 		const matchesAll = allLabel.toLowerCase().includes(query);
-		const filtered = countryOptions
-			.filter((o) => o.value !== '' && (o.value.toLowerCase().includes(query) || o.label.toLowerCase().includes(query)))
-			.map((o) => ({ id: o.value, label: o.label }));
-		return Promise.resolve(matchesAll ? [allItem, ...filtered] : filtered);
+		const filtered = data.countries.filter(
+			(c) => c.name.toLowerCase().includes(query) || c.geo_code.toLowerCase().includes(query)
+		);
+		const items = filtered.map((c) => ({ id: c.geo_code, label: c.name, sublabel: c.geo_code }));
+		return Promise.resolve(matchesAll ? [allItem, ...items] : items);
 	}
 	function fetchCountriesInitial(): Promise<AutocompleteItem[]> {
 		return fetchCountries('');
 	}
 	const selectedCountryLabel = $derived(
-		countryInput
-			? countryOptions.find((o) => o.value === countryInput)?.label ?? countryInput
-			: t('universities.all_countries', 'All countries')
+		countryInput ? data.countries.find((c) => c.geo_code === countryInput)?.name ?? countryInput : allLabel
 	);
 </script>
 

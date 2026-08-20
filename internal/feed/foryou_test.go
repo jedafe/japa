@@ -61,14 +61,14 @@ func TestForYouCacheKey_IncludesSort(t *testing.T) {
 	_ = tid.Scan("11111111-1111-1111-1111-111111111111")
 	_ = uid.Scan("22222222-2222-2222-2222-222222222222")
 
-	relevant := forYouCacheKey(tid, uid, SortRelevant, "NG")
-	latest := forYouCacheKey(tid, uid, SortLatest, "NG")
+	relevant := forYouCacheKey(tid, uid, SortRelevant, "NG", "Africa")
+	latest := forYouCacheKey(tid, uid, SortLatest, "NG", "Africa")
 
 	if relevant == latest {
 		t.Fatal("cache key must differ per sort mode")
 	}
 
-	if want := "jc:cache:feed:foryou:11111111-1111-1111-1111-111111111111:22222222-2222-2222-2222-222222222222:relevant:NG"; relevant != want {
+	if want := "jc:cache:feed:foryou:11111111-1111-1111-1111-111111111111:22222222-2222-2222-2222-222222222222:relevant:NG:AFRICA"; relevant != want {
 		t.Errorf("key = %q, want %q", relevant, want)
 	}
 }
@@ -80,11 +80,26 @@ func TestForYouCacheKey_IncludesContentCountry(t *testing.T) {
 	_ = tid.Scan("11111111-1111-1111-1111-111111111111")
 	_ = uid.Scan("22222222-2222-2222-2222-222222222222")
 
-	ng := forYouCacheKey(tid, uid, SortRelevant, "NG")
-	gb := forYouCacheKey(tid, uid, SortRelevant, "GB")
+	ng := forYouCacheKey(tid, uid, SortRelevant, "NG", "Africa")
+	gb := forYouCacheKey(tid, uid, SortRelevant, "GB", "Europe")
 
 	if ng == gb {
 		t.Fatal("cache key must differ per content country — otherwise a ?geo= override or preference change serves a stale, wrong-geo ranking (ADR-064 §32)")
+	}
+}
+
+func TestForYouCacheKey_IncludesContentRegion(t *testing.T) {
+	t.Parallel()
+
+	var tid, uid pgtype.UUID
+	_ = tid.Scan("11111111-1111-1111-1111-111111111111")
+	_ = uid.Scan("22222222-2222-2222-2222-222222222222")
+
+	ngAfrica := forYouCacheKey(tid, uid, SortRelevant, "NG", "Africa")
+	ngEurope := forYouCacheKey(tid, uid, SortRelevant, "NG", "Europe")
+
+	if ngAfrica == ngEurope {
+		t.Fatal("cache key must differ per content region")
 	}
 }
 

@@ -1,6 +1,8 @@
 // Ref: japaconnect-engineering/sections/82-japa-planning-groups.md
 <script lang="ts">
 	import { t } from '$lib/i18n';
+	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
+	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 	import { goto } from '$app/navigation';
 	import { api } from '$lib/api/client';
 	import { untrack } from 'svelte';
@@ -55,6 +57,27 @@
 			loading = false;
 		}
 	}
+
+	function fetchDestinationCountries(q: string): Promise<AutocompleteItem[]> {
+		const allLabel = t('common.all_countries', 'All countries');
+		const query = q.toLowerCase().trim();
+		const allItem: AutocompleteItem = { id: '', label: allLabel };
+		if (query === '') {
+			return Promise.resolve([allItem, ...(data.countries ?? []).map((c) => ({ id: c.id, label: c.name, sublabel: c.geo_code }))]);
+		}
+		const matchesAll = allLabel.toLowerCase().includes(query);
+		const filtered = (data.countries ?? []).filter(
+			(c) => c.name.toLowerCase().includes(query) || c.geo_code.toLowerCase().includes(query)
+		);
+		const items = filtered.map((c) => ({ id: c.id, label: c.name, sublabel: c.geo_code }));
+		return Promise.resolve(matchesAll ? [allItem, ...items] : items);
+	}
+	function fetchDestinationCountriesInitial(): Promise<AutocompleteItem[]> {
+		return fetchDestinationCountries('');
+	}
+	const selectedDestinationLabel = $derived(
+		destinationSpaceId ? (data.countries ?? []).find((c) => c.id === destinationSpaceId)?.name ?? null : null
+	);
 </script>
 
 <svelte:head>
@@ -102,12 +125,16 @@
 			<label for="pg-dest" class="text-sm font-medium text-[var(--color-text)]">
 				{t('planning_groups.field_destination', 'Destination country')}
 			</label>
-			<select id="pg-dest" bind:value={destinationSpaceId} class={inputClass} required>
-				<option value="">—</option>
-				{#each data.countries as c (c.id)}
-					<option value={c.id}>{c.name}</option>
-				{/each}
-			</select>
+			<Autocomplete
+				placeholder={"—"}
+				emptyMessage={t('common.no_results', 'No results found')}
+				fetcher={fetchDestinationCountries}
+				initialFetcher={fetchDestinationCountriesInitial}
+				selectedId={destinationSpaceId || null}
+				selectedLabel={selectedDestinationLabel}
+				onSelect={(item) => (destinationSpaceId = item.id)}
+				onClear={() => (destinationSpaceId = '')}
+			/>
 		</div>
 
 		<div class="grid grid-cols-2 gap-4">

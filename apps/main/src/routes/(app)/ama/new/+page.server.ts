@@ -2,7 +2,7 @@
 import type { PageServerLoad } from './$types';
 import { redirect, error } from '@sveltejs/kit';
 import { apiContext, apiList } from '$lib/server/api';
-import type { Space } from '$lib/types';
+import type { GeoCountry } from '$lib/types';
 
 export const load: PageServerLoad = async (event) => {
 	const { features } = await event.parent();
@@ -25,9 +25,9 @@ export const load: PageServerLoad = async (event) => {
 
 	const ctx = apiContext(event);
 
-	let countries: Space[] = [];
+	let countries: GeoCountry[] = [];
 	try {
-		const { items } = await apiList<Space>(ctx, '/spaces?level=country');
+		const { items } = await apiList<GeoCountry>(ctx, '/geo/countries');
 		countries = items;
 	} catch {
 		countries = [];

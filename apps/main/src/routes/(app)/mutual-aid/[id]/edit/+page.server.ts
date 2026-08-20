@@ -2,7 +2,7 @@
 import { error, redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiGet, apiList, ApiError } from '$lib/server/api';
-import type { MutualAidPost, Space } from '$lib/types';
+import type { MutualAidPost, GeoCountry } from '$lib/types';
 
 /**
  * Edit mutual aid post at /mutual-aid/[id]/edit — loads the post and
@@ -32,9 +32,9 @@ export const load: PageServerLoad = async (event) => {
 		throw error(403, { code: 'forbidden', message: 'You can only edit your own posts' });
 	}
 
-	let countries: Space[] = [];
+	let countries: GeoCountry[] = [];
 	try {
-		const { items } = await apiList<Space>(ctx, '/spaces?level=country');
+		const { items } = await apiList<GeoCountry>(ctx, '/geo/countries');
 		countries = items;
 	} catch {
 		countries = [];

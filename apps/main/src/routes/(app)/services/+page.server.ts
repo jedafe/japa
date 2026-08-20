@@ -2,7 +2,7 @@
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiList } from '$lib/server/api';
-import type { ServiceListing, Space } from '$lib/types';
+import type { ServiceListing, GeoCountry } from '$lib/types';
 
 /**
  * Service Directory list at /services — geo-indexed directory of
@@ -37,9 +37,9 @@ export const load: PageServerLoad = async (event) => {
 	if (verified) params.set('verified', verified);
 	if (sort) params.set('sort', sort);
 
-	let countries: Space[] = [];
+	let countries: GeoCountry[] = [];
 	try {
-		const { items } = await apiList<Space>(ctx, '/spaces?level=country');
+		const { items } = await apiList<GeoCountry>(ctx, '/geo/countries');
 		countries = items;
 	} catch {
 		countries = [];

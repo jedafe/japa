@@ -210,7 +210,29 @@ ORDER BY
 LIMIT @page_limit OFFSET @page_offset;
 
 -- name: GetTopFeed :many
--- Top content in 7-day rolling window (for top sort)
+-- Top content in 7-day rolling window (for top sort), ranked by geo proximity.
+WITH content_geo AS (
+    SELECT cs.content_id,
+           COALESCE(MAX(CASE
+               WHEN COALESCE(NULLIF(cp.geo_code, ''), NULLIF(sp.geo_code, ''), NULLIF(s.geo_code, '')) = @visitor_country_code AND s.level = 'city' THEN 5
+               WHEN COALESCE(NULLIF(cp.geo_code, ''), NULLIF(sp.geo_code, ''), NULLIF(s.geo_code, '')) = @visitor_country_code AND s.level = 'state' THEN 4
+               WHEN COALESCE(NULLIF(cp.geo_code, ''), NULLIF(sp.geo_code, ''), NULLIF(s.geo_code, '')) = @visitor_country_code AND s.level = 'country' THEN 3
+               WHEN COALESCE(cp.region, sp.region, s.region) = @visitor_region THEN 2
+               ELSE 1
+           END), 1) AS geo_proximity
+    FROM content_spaces cs
+    JOIN contents c2 ON c2.id = cs.content_id
+      AND c2.tenant_id = @tenant_id
+      AND c2.status = 'published'
+      AND c2.deleted_at IS NULL
+      AND c2.visibility = 'public'
+    JOIN spaces s ON s.id = cs.space_id AND s.level IN ('country', 'state', 'city') AND s.deleted_at IS NULL
+    LEFT JOIN spaces sp ON sp.id = s.parent_id AND sp.deleted_at IS NULL
+    LEFT JOIN spaces cp ON cp.id = sp.parent_id AND cp.deleted_at IS NULL
+    WHERE COALESCE(NULLIF(cp.geo_code, ''), NULLIF(sp.geo_code, ''), NULLIF(s.geo_code, '')) IS NOT NULL
+      AND COALESCE(NULLIF(cp.geo_code, ''), NULLIF(sp.geo_code, ''), NULLIF(s.geo_code, '')) != ''
+    GROUP BY cs.content_id
+)
 SELECT c.id, c.title, c.slug, c.content_type, c.author_id, c.space_id,
        c.created_at, c.view_count, c.comment_count,
        cs.vote_score, cs.velocity_score,
@@ -223,7 +245,8 @@ SELECT c.id, c.title, c.slug, c.content_type, c.author_id, c.space_id,
        c.read_time_minutes,
        m.storage_bucket AS cover_storage_bucket,
        m.storage_path AS cover_storage_path,
-       COALESCE(string_agg(t.name, ',' ORDER BY t.name), '') AS tags
+       COALESCE(string_agg(t.name, ',' ORDER BY t.name), '') AS tags,
+       COALESCE(MAX(cg.geo_proximity), 1) AS geo_proximity
 FROM contents c
 JOIN content_scores cs ON cs.content_id = c.id
 LEFT JOIN users u ON u.id = c.author_id
@@ -232,6 +255,7 @@ LEFT JOIN spaces s ON s.id = c.space_id
 LEFT JOIN content_tags ct ON ct.content_id = c.id
 LEFT JOIN tags t ON t.id = ct.tag_id
 LEFT JOIN media m ON m.id = COALESCE(c.featured_image_id, c.header_image_id) AND m.deleted_at IS NULL
+LEFT JOIN content_geo cg ON cg.content_id = c.id
 WHERE c.tenant_id = @tenant_id
   AND c.status = 'published'
   AND c.deleted_at IS NULL
@@ -241,11 +265,33 @@ GROUP BY c.id, cs.vote_score, cs.velocity_score, cs.bookmark_count,
          u.username, up.display_name, up.avatar_url,
          s.name, s.slug,
          m.storage_bucket, m.storage_path
-ORDER BY cs.vote_score DESC
+ORDER BY COALESCE(MAX(cg.geo_proximity), 1) DESC, cs.vote_score DESC
 LIMIT @page_limit OFFSET @page_offset;
 
 -- name: GetRisingFeed :many
--- Rising content sorted by velocity score
+-- Rising content sorted by velocity score, ranked by geo proximity.
+WITH content_geo AS (
+    SELECT cs.content_id,
+           COALESCE(MAX(CASE
+               WHEN COALESCE(NULLIF(cp.geo_code, ''), NULLIF(sp.geo_code, ''), NULLIF(s.geo_code, '')) = @visitor_country_code AND s.level = 'city' THEN 5
+               WHEN COALESCE(NULLIF(cp.geo_code, ''), NULLIF(sp.geo_code, ''), NULLIF(s.geo_code, '')) = @visitor_country_code AND s.level = 'state' THEN 4
+               WHEN COALESCE(NULLIF(cp.geo_code, ''), NULLIF(sp.geo_code, ''), NULLIF(s.geo_code, '')) = @visitor_country_code AND s.level = 'country' THEN 3
+               WHEN COALESCE(cp.region, sp.region, s.region) = @visitor_region THEN 2
+               ELSE 1
+           END), 1) AS geo_proximity
+    FROM content_spaces cs
+    JOIN contents c2 ON c2.id = cs.content_id
+      AND c2.tenant_id = @tenant_id
+      AND c2.status = 'published'
+      AND c2.deleted_at IS NULL
+      AND c2.visibility = 'public'
+    JOIN spaces s ON s.id = cs.space_id AND s.level IN ('country', 'state', 'city') AND s.deleted_at IS NULL
+    LEFT JOIN spaces sp ON sp.id = s.parent_id AND sp.deleted_at IS NULL
+    LEFT JOIN spaces cp ON cp.id = sp.parent_id AND cp.deleted_at IS NULL
+    WHERE COALESCE(NULLIF(cp.geo_code, ''), NULLIF(sp.geo_code, ''), NULLIF(s.geo_code, '')) IS NOT NULL
+      AND COALESCE(NULLIF(cp.geo_code, ''), NULLIF(sp.geo_code, ''), NULLIF(s.geo_code, '')) != ''
+    GROUP BY cs.content_id
+)
 SELECT c.id, c.title, c.slug, c.content_type, c.author_id, c.space_id,
        c.created_at, c.view_count, c.comment_count,
        cs.vote_score, cs.velocity_score,
@@ -258,7 +304,8 @@ SELECT c.id, c.title, c.slug, c.content_type, c.author_id, c.space_id,
        c.read_time_minutes,
        m.storage_bucket AS cover_storage_bucket,
        m.storage_path AS cover_storage_path,
-       COALESCE(string_agg(t.name, ',' ORDER BY t.name), '') AS tags
+       COALESCE(string_agg(t.name, ',' ORDER BY t.name), '') AS tags,
+       COALESCE(MAX(cg.geo_proximity), 1) AS geo_proximity
 FROM contents c
 JOIN content_scores cs ON cs.content_id = c.id
 LEFT JOIN users u ON u.id = c.author_id
@@ -267,6 +314,7 @@ LEFT JOIN spaces s ON s.id = c.space_id
 LEFT JOIN content_tags ct ON ct.content_id = c.id
 LEFT JOIN tags t ON t.id = ct.tag_id
 LEFT JOIN media m ON m.id = COALESCE(c.featured_image_id, c.header_image_id) AND m.deleted_at IS NULL
+LEFT JOIN content_geo cg ON cg.content_id = c.id
 WHERE c.tenant_id = @tenant_id
   AND c.status = 'published'
   AND c.deleted_at IS NULL
@@ -275,7 +323,7 @@ GROUP BY c.id, cs.vote_score, cs.velocity_score, cs.bookmark_count,
          u.username, up.display_name, up.avatar_url,
          s.name, s.slug,
          m.storage_bucket, m.storage_path
-ORDER BY cs.velocity_score DESC
+ORDER BY COALESCE(MAX(cg.geo_proximity), 1) DESC, cs.velocity_score DESC
 LIMIT @page_limit OFFSET @page_offset;
 
 -- name: UpdateContentScore :exec

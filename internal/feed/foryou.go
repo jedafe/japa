@@ -120,15 +120,15 @@ func rankCandidates(cands []Candidate, sortMode string, now time.Time, contentCo
 	return cands
 }
 
-// forYouCacheKey builds the per-user, per-sort, per-content-country Valkey
-// key. contentCountry is included because the ranking (and therefore the
-// cached order) varies with the ADR-064 §32 geo boost — without it, a
-// ?geo= override or a preference change could serve a stale, wrong-geo
-// ranking for up to forYouCacheTTL. Uses the jc:cache:feed:foryou: prefix
-// per Rule 4 (VALKEY-001/005).
-func forYouCacheKey(tenantID, userID pgtype.UUID, sortMode, contentCountry string) string {
-	return valkey.MustKey("cache:feed:foryou:%s:%s:%s:%s",
-		uuidToString(tenantID), uuidToString(userID), sortMode, strings.ToUpper(contentCountry))
+// forYouCacheKey builds the per-user, per-sort, per-content-country and
+// per-content-region Valkey key. contentCountry and contentRegion are included
+// because the ranking (and therefore the cached order) varies with the ADR-064
+// §32 geo boost — without them, a ?geo= override or a preference change could
+// serve a stale, wrong-geo ranking for up to forYouCacheTTL. Uses the
+// jc:cache:feed:foryou: prefix per Rule 4 (VALKEY-001/005).
+func forYouCacheKey(tenantID, userID pgtype.UUID, sortMode, contentCountry, contentRegion string) string {
+	return valkey.MustKey("cache:feed:foryou:%s:%s:%s:%s:%s",
+		uuidToString(tenantID), uuidToString(userID), sortMode, strings.ToUpper(contentCountry), strings.ToUpper(contentRegion))
 }
 
 // candidateFromRow maps a generated candidate row into a scored Candidate.

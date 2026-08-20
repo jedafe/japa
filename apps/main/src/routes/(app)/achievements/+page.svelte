@@ -8,6 +8,8 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { t, i18n } from '$lib/i18n';
+	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
+	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 	import { relativeTime } from '$lib/feed/time';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import {
@@ -98,6 +100,27 @@
 		params.set('page', String(nextPage));
 		return params.toString();
 	}
+
+	function fetchDestinationCountries(q: string): Promise<AutocompleteItem[]> {
+		const allLabel = t('achievements.filter_all_countries', 'All countries');
+		const query = q.toLowerCase().trim();
+		const allItem: AutocompleteItem = { id: '', label: allLabel };
+		if (query === '') {
+			return Promise.resolve([allItem, ...(data.countries ?? []).map((c) => ({ id: c.id, label: c.name, sublabel: c.geo_code }))]);
+		}
+		const matchesAll = allLabel.toLowerCase().includes(query);
+		const filtered = (data.countries ?? []).filter(
+			(c) => c.name.toLowerCase().includes(query) || c.geo_code.toLowerCase().includes(query)
+		);
+		const items = filtered.map((c) => ({ id: c.id, label: c.name, sublabel: c.geo_code }));
+		return Promise.resolve(matchesAll ? [allItem, ...items] : items);
+	}
+	function fetchDestinationCountriesInitial(): Promise<AutocompleteItem[]> {
+		return fetchDestinationCountries('');
+	}
+	const selectedDestinationLabel = $derived(
+		dest ? (data.countries ?? []).find((c) => c.id === dest)?.name ?? null : null
+	);
 </script>
 
 <svelte:head>
@@ -145,17 +168,16 @@
 				<label for="filter-dest" class="text-xs font-medium text-[var(--color-text-subtle)]">
 					{t('achievements.filter_destination', 'Destination')}
 				</label>
-				<select
-					id="filter-dest"
-					value={dest}
-					onchange={(e) => (dest = e.currentTarget.value)}
-					class={inputClass}
-				>
-					<option value="">{t('achievements.filter_all_countries', 'All countries')}</option>
-					{#each data.countries as c (c.id)}
-						<option value={c.id}>{c.name}</option>
-					{/each}
-				</select>
+				<Autocomplete
+					placeholder={t('achievements.filter_all_countries', 'All countries')}
+					emptyMessage={t('common.no_results', 'No results found')}
+					fetcher={fetchDestinationCountries}
+					initialFetcher={fetchDestinationCountriesInitial}
+					selectedId={dest || null}
+					selectedLabel={selectedDestinationLabel}
+					onSelect={(item) => (dest = item.id)}
+					onClear={() => (dest = '')}
+				/>
 			</div>
 			<div class="flex flex-col gap-1">
 				<label for="filter-milestone" class="text-xs font-medium text-[var(--color-text-subtle)]">

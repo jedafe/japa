@@ -1,15 +1,17 @@
 <script lang="ts">
 	// /tools/housing-guide — admin HITL review queue for AI-generated housing guides.
 	// Ref: §96 (Housing Guide), ADR-088 (universal AI content generation).
-	import { onMount } from 'svelte';
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import { Modal } from '$lib/components/ui/modal';
 	import { Button } from '$lib/components/ui/button';
+	import Autocomplete from '$lib/components/ui/Autocomplete.svelte';
+	import type { AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { Eye, CheckCircle, XCircle, Sparkles } from 'lucide-svelte';
 	import type { ActionItem, FilterDef } from '$lib/components/ui/data-table';
-	import { housingGuideAdminApi, api , spacesAdminApi } from '$lib/api';
+	import { housingGuideAdminApi } from '$lib/api';
+	import { useCountries } from '$lib/utils/countries.svelte';
 
 	// GuideDTO fields from internal/housingguide/service.go (GuideDTO).
 	type HousingGuideItem = {
@@ -31,45 +33,19 @@
 		updated_at: string;
 	};
 
-	type GeoSpaceOption = { id: string; name: string };
-
 	const canManage = $derived(hasPermission('housing_guide.manage'));
 
 	// ── State ───────────────────────────────────────────────────────────────
 	
-// Destination Spaces for the dest filter (geo-aware pattern §90-101).
-type SpaceOption = { id: string; name: string };
-let destOptions = $state<SpaceOption[]>([]);
-onMount(async () => {
-	try {
-		const res = await spacesAdminApi.list('?level=country&limit=200');
-		if (res.ok && Array.isArray(res.data)) {
-			destOptions = (res.data as Array<{ id: string; name: string }>).map((s) => ({
-				id: s.id, name: s.name
-			}));
-		}
-	} catch { /* Non-fatal */ }
-});
+	// ── Country selector (250 primary geo space countries) ───────────────────
+	const countryUtils = useCountries();
+	$effect(() => {
+		countryUtils.load();
+	});
 
 	let entityController = $state<EntityPageController | undefined>(undefined);
 	let pageError = $state('');
 	let acting = $state(false);
-
-	// ── Destination country list (geo-aware selector source, Rule 16) ───────
-	// The public /spaces?level=country endpoint returns country-level spaces
-	// for the destination selector. The admin SPA calls it directly (it is
-	// gated by optional auth + directory.spaces.view, which admins have).
-	let destinations = $state<GeoSpaceOption[]>([]);
-	onMount(async () => {
-		try {
-			const res = await api<GeoSpaceOption[]>('/spaces?level=country');
-			if (res.ok && Array.isArray(res.data)) {
-				destinations = (res.data as GeoSpaceOption[]).map((s) => ({ id: s.id, name: s.name }));
-			}
-		} catch {
-			destinations = [];
-		}
-	});
 
 	// ── Generate modal state ────────────────────────────────────────────────
 	let showGenerateModal = $state(false);
@@ -177,35 +153,30 @@ onMount(async () => {
 		return acts;
 	});
 
-	// ── Country autocomplete helpers (filter destOptions client-side) ──────
-	// Sourced from the spaces country table (destOptions, loaded from
-	// /admin/spaces?level=country) — never hardcoded (Rule 16). Keyed by
-	// space ID so the selected UUID is stored as the field value.
-	function fetchCountryId(q: string): Promise<{ id: string; label: string; sublabel?: string }[]> {
-		const needle = q.toLowerCase().trim();
-		const filtered = needle
-			? destOptions.filter((o) => o.name.toLowerCase().includes(needle))
-			: destOptions;
-		return Promise.resolve(filtered.slice(0, 50).map((o) => ({ id: o.id, label: o.name })));
-	}
-
-	function fetchCountryIdInitial(): Promise<{ id: string; label: string; sublabel?: string }[]> {
-		return Promise.resolve(destOptions.slice(0, 8).map((o) => ({ id: o.id, label: o.name })));
-	}
-
-	function getCountryIdLabel(id: string): string {
-		return destOptions.find((o) => o.id === id)?.name ?? id;
-	}
-
 	// `fields` is required by EntityPageConfig; readonly page so the form is never shown, but kept for shape completeness.
-	const fields: FieldDef[] = [
-		{ key: 'destination_space_id', label: t('app.tools.col_dest_country', 'Destination Country'), type: 'autocomplete', placeholder: t('app.tools.country_placeholder', 'Search country…'), emptyMessage: t('common.no_results', 'No results found'), fetcher: fetchCountryId, initialFetcher: fetchCountryIdInitial, getSelectedLabel: getCountryIdLabel },
-		{ key: 'accommodation_type', label: t('app.tools.col_accommodation_type', 'Accommodation Type'), type: 'text' }
-	];
+	const fields = $derived.by<FieldDef[]>(() => {
+		countryUtils.ready;
+		return [
+			{ key: 'destination_space_id', label: t('app.tools.col_dest_country', 'Destination Country'), type: 'autocomplete', placeholder: t('app.tools.country_placeholder', 'Search country…'), emptyMessage: t('common.no_results', 'No results found'), fetcher: countryUtils.fetcher, initialFetcher: countryUtils.initialFetcher, getSelectedLabel: countryUtils.getSelectedLabel },
+			{ key: 'accommodation_type', label: t('app.tools.col_accommodation_type', 'Accommodation Type'), type: 'text' }
+		];
+	});
 
-		const filters = $derived<FilterDef[]>([
-		{ key: 'dest', label: t('app.tools.col_destination', 'Destination'), options: destOptions.map((s) => ({ value: s.id, label: s.name })) }
-	]);
+		const filters = $derived.by<FilterDef[]>(() => {
+		countryUtils.ready;
+		return [
+			{
+				key: 'dest',
+				label: t('app.tools.col_destination', 'Destination'),
+				type: 'autocomplete',
+				placeholder: t('app.tools.country_placeholder', 'Search country…'),
+				emptyMessage: t('common.no_results', 'No results found'),
+				fetcher: countryUtils.fetcher,
+				initialFetcher: countryUtils.initialFetcher,
+				getSelectedLabel: countryUtils.getSelectedLabel
+			}
+		];
+	});
 
 	const config = $derived<EntityPageConfig>({
 		filters,
@@ -313,17 +284,17 @@ onMount(async () => {
 	<div class="space-y-4">
 		<div>
 			<label for="gen-dest-country" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('app.tools.col_dest_country', 'Destination Country')}</label>
-			<select
+			<Autocomplete
 				id="gen-dest-country"
-				class="w-full rounded-lg border p-3 text-sm"
-				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
-				bind:value={generateDestSpaceId}
-			>
-				<option value="">{t('app.tools.dest_country_placeholder', 'Select a destination country')}</option>
-				{#each destinations as d (d.id)}
-					<option value={d.id}>{d.name}</option>
-				{/each}
-			</select>
+				placeholder={t('app.tools.country_placeholder', 'Search country…')}
+				emptyMessage={t('common.no_results', 'No results found')}
+				fetcher={countryUtils.fetcher}
+				initialFetcher={countryUtils.initialFetcher}
+				selectedId={generateDestSpaceId || null}
+				selectedLabel={generateDestSpaceId ? countryUtils.getSelectedLabel(generateDestSpaceId) : null}
+				onSelect={(item: AutocompleteItem) => { generateDestSpaceId = item.id; }}
+				onClear={() => { generateDestSpaceId = ''; }}
+			/>
 		</div>
 		<div>
 			<label for="gen-accommodation-type" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('app.tools.col_accommodation_type', 'Accommodation Type')}</label>

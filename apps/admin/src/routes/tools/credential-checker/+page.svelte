@@ -1,15 +1,17 @@
 <script lang="ts">
 	// /tools/credential-checker — admin HITL review queue for AI-generated credential checker guides.
 	// Fields map to the backend PathwayDTO contract (§94, ADR-102, ADR-088).
-	import { onMount } from 'svelte';
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import { Modal } from '$lib/components/ui/modal';
 	import { Button } from '$lib/components/ui/button';
+	import Autocomplete from '$lib/components/ui/Autocomplete.svelte';
+	import type { AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { Eye, CheckCircle, Sparkles } from 'lucide-svelte';
 	import type { ActionItem, FilterDef } from '$lib/components/ui/data-table';
-	import { credentialCheckerAdminApi, apiFetch , spacesAdminApi, adminCatalogApi, type CatalogOption } from '$lib/api';
+	import { credentialCheckerAdminApi, apiFetch, adminCatalogApi, type CatalogOption } from '$lib/api';
+	import { useCountries } from '$lib/utils/countries.svelte';
 
 	type CredentialCheckerItem = {
 		id: string;
@@ -31,25 +33,19 @@
 	};
 
 	type ProfessionOption = { id: string; slug: string; name: string; category?: string };
-	type GeoSpaceOption = { id: string; name: string; geo_code?: string };
 
 	const canManage = $derived(hasPermission('credential_checker.manage'));
 
+	// ── Country selectors (250 primary geo space countries) ──────────────────
+	// Fields use country *name*; filter and generate modal use space *id*.
+	const countryUtilsByName = useCountries('name');
+	const countryUtilsById = useCountries('id');
+	$effect(() => {
+		countryUtilsByName.load();
+		countryUtilsById.load();
+	});
+
 	// ── State ───────────────────────────────────────────────────────────────
-	
-// Destination Spaces for the dest filter (geo-aware pattern §90-101).
-type SpaceOption = { id: string; name: string };
-let destOptions = $state<SpaceOption[]>([]);
-onMount(async () => {
-	try {
-		const res = await spacesAdminApi.list('?level=country&limit=200');
-		if (res.ok && Array.isArray(res.data)) {
-			destOptions = (res.data as Array<{ id: string; name: string }>).map((s) => ({
-				id: s.id, name: s.name
-			}));
-		}
-	} catch { /* Non-fatal */ }
-});
 
 	let entityController = $state<EntityPageController | undefined>(undefined);
 
@@ -78,9 +74,8 @@ onMount(async () => {
 	let generateDestSpaceId = $state('');
 	let generating = $state(false);
 
-	// ── Reference data for the generate modal (professions + countries) ─────
+	// ── Reference data for the generate modal (professions) ─────────────────
 	let professions = $state<ProfessionOption[]>([]);
-	let destinations = $state<GeoSpaceOption[]>([]);
 
 	async function loadReferenceData() {
 		try {
@@ -88,12 +83,6 @@ onMount(async () => {
 			if (profRes.data) professions = profRes.data;
 		} catch {
 			professions = [];
-		}
-		try {
-			const destRes = await apiFetch<GeoSpaceOption[]>('/spaces?level=country');
-			if (destRes.data) destinations = destRes.data;
-		} catch {
-			destinations = [];
 		}
 	}
 
@@ -181,41 +170,54 @@ onMount(async () => {
 		return acts;
 	});
 
-	// ── Country autocomplete helpers (filter destOptions client-side) ──────
-	// Sourced from the spaces country table (destOptions, loaded from
-	// /admin/spaces?level=country) — never hardcoded (Rule 16).
+	// ── Country autocomplete helpers (250 primary geo space countries) ─────────
+	// Field values are country *names* (destination_space_name / issuing_space_name).
+	const countryByNameReady = $derived(countryUtilsByName.ready);
+
 	function fetchCountryName(q: string): Promise<{ id: string; label: string; sublabel?: string }[]> {
-		const needle = q.toLowerCase().trim();
-		const filtered = needle
-			? destOptions.filter((o) => o.name.toLowerCase().includes(needle))
-			: destOptions;
-		return Promise.resolve(filtered.slice(0, 50).map((o) => ({ id: o.name, label: o.name })));
+		return countryUtilsByName.fetcher(q);
 	}
 
 	function fetchCountryNameInitial(): Promise<{ id: string; label: string; sublabel?: string }[]> {
-		return Promise.resolve(destOptions.slice(0, 8).map((o) => ({ id: o.name, label: o.name })));
+		return countryUtilsByName.initialFetcher();
 	}
 
 	function getCountryNameLabel(id: string): string {
-		return destOptions.find((o) => o.name === id)?.name ?? id;
+		return countryUtilsByName.getSelectedLabel(id);
 	}
 
 	// `fields` is required by EntityPageConfig; readonly page so the form is never shown, but kept for shape completeness.
-	const fields: FieldDef[] = [
-		{ key: 'profession_name', label: t('app.tools.col_profession', 'Profession'), type: 'text' },
-		{ key: 'destination_space_name', label: t('app.tools.col_dest_country', 'Destination Country'), type: 'autocomplete', placeholder: t('app.tools.country_placeholder', 'Search country…'), emptyMessage: t('common.no_results', 'No results found'), fetcher: fetchCountryName, initialFetcher: fetchCountryNameInitial, getSelectedLabel: getCountryNameLabel },
-		{ key: 'issuing_space_name', label: t('app.tools.col_issuing_country', 'Issuing Country'), type: 'autocomplete', placeholder: t('app.tools.country_placeholder', 'Search country…'), emptyMessage: t('common.no_results', 'No results found'), fetcher: fetchCountryName, initialFetcher: fetchCountryNameInitial, getSelectedLabel: getCountryNameLabel },
-		{ key: 'pathway_description', label: t('app.tools.col_summary', 'Summary'), type: 'textarea' }
-	];
+	const fields = $derived.by<FieldDef[]>(() => {
+		countryByNameReady; // re-derive once the 250 primary geo space countries load
+		return [
+			{ key: 'profession_name', label: t('app.tools.col_profession', 'Profession'), type: 'text' },
+			{ key: 'destination_space_name', label: t('app.tools.col_dest_country', 'Destination Country'), type: 'autocomplete', placeholder: t('app.tools.country_placeholder', 'Search country…'), emptyMessage: t('common.no_results', 'No results found'), fetcher: fetchCountryName, initialFetcher: fetchCountryNameInitial, getSelectedLabel: getCountryNameLabel },
+			{ key: 'issuing_space_name', label: t('app.tools.col_issuing_country', 'Issuing Country'), type: 'autocomplete', placeholder: t('app.tools.country_placeholder', 'Search country…'), emptyMessage: t('common.no_results', 'No results found'), fetcher: fetchCountryName, initialFetcher: fetchCountryNameInitial, getSelectedLabel: getCountryNameLabel },
+			{ key: 'pathway_description', label: t('app.tools.col_summary', 'Summary'), type: 'textarea' }
+		];
+	});
 
-	const config = $derived<EntityPageConfig>({
-		title: t('app.tools.credential_checker_heading', 'Credential Checker Review Queue'),
-		description: t('app.tools.credential_checker_desc', 'Review and approve AI-generated credential checker guides'),
-		readonly: true,
-		pageSize: 25,
-		filters: [statusFilter,
-			{ key: 'dest', label: t('app.tools.col_destination', 'Destination'), options: destOptions.map((s) => ({ value: s.id, label: s.name })) }
-],
+	const countryByIdReady = $derived(countryUtilsById.ready);
+
+	const config = $derived.by<EntityPageConfig>(() => {
+		countryByIdReady; // re-derive once the 250 primary geo space countries load
+		return {
+			title: t('app.tools.credential_checker_heading', 'Credential Checker Review Queue'),
+			description: t('app.tools.credential_checker_desc', 'Review and approve AI-generated credential checker guides'),
+			readonly: true,
+			pageSize: 25,
+			filters: [statusFilter,
+				{
+					key: 'dest',
+					label: t('app.tools.col_destination', 'Destination'),
+					type: 'autocomplete',
+					placeholder: t('app.tools.country_placeholder', 'Search country…'),
+					emptyMessage: t('common.no_results', 'No results found'),
+					fetcher: countryUtilsById.fetcher,
+					initialFetcher: countryUtilsById.initialFetcher,
+					getSelectedLabel: countryUtilsById.getSelectedLabel
+				}
+			],
 		columns: [
 			{ key: 'profession_name', label: t('app.tools.col_profession', 'Profession'), sortable: true },
 			{ key: 'destination_space_name', label: t('app.tools.col_dest_country', 'Destination'), sortable: true },
@@ -265,7 +267,8 @@ onMount(async () => {
 			throw new Error(result.error ?? t('common.error', 'An error occurred'));
 		},
 		viewSnippet: CredentialCheckerView
-	});
+	};
+});
 </script>
 
 <svelte:head>
@@ -311,31 +314,31 @@ onMount(async () => {
 		</div>
 		<div>
 			<label for="gen-issuing-country" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('app.tools.col_issuing_country', 'Issuing Country')}</label>
-			<select
+			<Autocomplete
 				id="gen-issuing-country"
-				class="w-full rounded-lg border p-3 text-sm"
-				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
-				bind:value={generateIssuingSpaceId}
-			>
-				<option value="">{t('geo.select_destination', 'Select a country…')}</option>
-				{#each destinations as dest (dest.id)}
-					<option value={dest.id}>{dest.name}</option>
-				{/each}
-			</select>
+				placeholder={t('geo.select_destination', 'Select a country…')}
+				emptyMessage={t('common.no_results', 'No results found')}
+				fetcher={countryUtilsById.fetcher}
+				initialFetcher={countryUtilsById.initialFetcher}
+				selectedId={generateIssuingSpaceId || null}
+				selectedLabel={generateIssuingSpaceId ? countryUtilsById.getSelectedLabel(generateIssuingSpaceId) : null}
+				onSelect={(item: AutocompleteItem) => { generateIssuingSpaceId = item.id; }}
+				onClear={() => { generateIssuingSpaceId = ''; }}
+			/>
 		</div>
 		<div>
 			<label for="gen-dest-country" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('app.tools.col_dest_country', 'Destination Country')}</label>
-			<select
+			<Autocomplete
 				id="gen-dest-country"
-				class="w-full rounded-lg border p-3 text-sm"
-				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
-				bind:value={generateDestSpaceId}
-			>
-				<option value="">{t('geo.select_destination', 'Select a country…')}</option>
-				{#each destinations as dest (dest.id)}
-					<option value={dest.id}>{dest.name}</option>
-				{/each}
-			</select>
+				placeholder={t('geo.select_destination', 'Select a country…')}
+				emptyMessage={t('common.no_results', 'No results found')}
+				fetcher={countryUtilsById.fetcher}
+				initialFetcher={countryUtilsById.initialFetcher}
+				selectedId={generateDestSpaceId || null}
+				selectedLabel={generateDestSpaceId ? countryUtilsById.getSelectedLabel(generateDestSpaceId) : null}
+				onSelect={(item: AutocompleteItem) => { generateDestSpaceId = item.id; }}
+				onClear={() => { generateDestSpaceId = ''; }}
+			/>
 		</div>
 	</div>
 	<div class="mt-4 flex justify-end gap-2">

@@ -4,6 +4,8 @@
 	import { page } from '$app/state';
 	import { GraduationCap, Lock, Bookmark, BookmarkCheck, Search, ClipboardList } from 'lucide-svelte';
 	import { EmptyState, PaginationControls, SearchInput, type SearchSuggestion } from '$lib/components/ui';
+	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
+	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 	import { api } from '$lib/api/client';
 	import { goto } from '$app/navigation';
 	import type { Scholarship } from '$lib/types';
@@ -154,6 +156,24 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 		}));
 	}
 
+	// Country filter — keyed by the canonical country name used by the
+	// scholarship ILIKE filter. Filters the full /geo/countries list client-side.
+	function fetchCountries(q: string): Promise<AutocompleteItem[]> {
+		const query = q.toLowerCase().trim();
+		const filtered = query === ''
+			? data.countries
+			: data.countries.filter(
+					(c) => c.name.toLowerCase().includes(query) || c.geo_code.toLowerCase().includes(query)
+				);
+		return Promise.resolve(filtered.map((c) => ({ id: c.name, label: c.name, sublabel: c.geo_code })));
+	}
+	function fetchCountriesInitial(): Promise<AutocompleteItem[]> {
+		return fetchCountries('');
+	}
+	const selectedCountryLabel = $derived(
+		country ? data.countries.find((c) => c.name === country)?.name ?? country : null
+	);
+
 	// JSON-LD ItemList of scholarships for SEO (Ref: Section 73, ROADMAP-MAIN 36.03).
 	const jsonLd = $derived(
 		scholarships.length > 0
@@ -215,11 +235,15 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 					fetcher={scholarshipSearchFetcher}
 					inputClass="focus:ring-2 focus:ring-[var(--color-primary)]"
 				/>
-				<input
-					type="text"
+				<Autocomplete
 					placeholder={t('scholarships.country', 'Country')}
-					bind:value={country}
-					class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
+					emptyMessage={t('common.no_results', 'No results found')}
+					fetcher={fetchCountries}
+					initialFetcher={fetchCountriesInitial}
+					selectedId={country || null}
+					selectedLabel={selectedCountryLabel}
+					onSelect={(item) => (country = item.id)}
+					onClear={() => (country = '')}
 				/>
 				<input
 					type="text"
