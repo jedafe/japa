@@ -21,7 +21,8 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 		data.authed
 			? [
 					{ value: 'for_you', label: t('feed.tab.for_you') },
-					{ value: 'following', label: t('feed.tab.following') }
+					{ value: 'following', label: t('feed.tab.following') },
+					{ value: 'roadmap', label: t('feed.tab.roadmap', 'Roadmap') }
 				]
 			: [{ value: 'explore', label: t('feed.tab.explore', 'Explore') }]
 	);

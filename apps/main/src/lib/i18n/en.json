@@ -915,6 +915,7 @@
 	"feed.tab.explore": "Explore",
 	"feed.tab.following": "Following",
 	"feed.tab.for_you": "For you",
+	"feed.tab.roadmap": "Roadmap",
 	"feedback.errors.field_required": "Please fill in all required fields",
 	"feedback.errors.submit_failed": "Failed to submit your feedback. Please try again.",
 	"feedback.select_placeholder": "Select an option...",
