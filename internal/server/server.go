@@ -2752,12 +2752,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			})
 
 			// Feed routes (Section 32 — Activity Feed / Timeline)
-			r.Get("/feed/card-style", feedHandlers.GetCardStyle)                                            // public — no auth required
-			r.Get("/feed/context", feedHandlers.GetFeedContext)                                             // public — returns resolved VisitorContext
-			r.Post("/feed/context", feedHandlers.SetFeedContext)                                            // public — set guest journey context cookie
-			r.Get("/explore", feedHandlers.GetExploreFeed)                                                  // public — no auth required (catalog: /explore)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/feed", feedHandlers.GetPrimaryFeed)        // catalog: /feed (primary timeline)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/feed/for-you", feedHandlers.GetForYouFeed) // catalog: /feed/for-you (personalized ranked)
+			r.Get("/feed/card-style", feedHandlers.GetCardStyle)                                             // public — no auth required
+			r.Get("/feed/context", feedHandlers.GetFeedContext)                                              // public — returns resolved VisitorContext
+			r.Post("/feed/context", feedHandlers.SetFeedContext)                                             // public — set guest journey context cookie
+			r.Get("/explore", feedHandlers.GetExploreFeed)                                                   // public — no auth required (catalog: /explore)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/feed", feedHandlers.GetPrimaryFeed)         // catalog: /feed (primary timeline)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/feed/for-you", feedHandlers.GetForYouFeed)  // catalog: /feed/for-you (personalized ranked)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/feed/roadmap", feedHandlers.GetRoadmapFeed) // catalog: /feed/roadmap (readiness roadmap)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/feed/space/{space_id}", feedHandlers.GetSpaceFeed)
 			// catalog: GET /spaces/:id/feed — same handler, param name matches (space_id).
