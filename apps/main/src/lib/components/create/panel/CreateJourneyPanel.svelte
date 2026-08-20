@@ -119,7 +119,7 @@
 			class="field-input"
 			placeholder={t('create.journey.stage_placeholder')}
 			value={journeyStage ?? ''}
-			onchange={(e) => setJourney(e.currentTarget.value)}
+			oninput={(e) => setJourney(e.currentTarget.value)}
 		/>
 	</div>
 
@@ -131,7 +131,7 @@
 			class="field-input"
 			placeholder={t('create.journey.visa_placeholder')}
 			value={visaRoute ?? ''}
-			onchange={(e) => setVisa(e.currentTarget.value)}
+			oninput={(e) => setVisa(e.currentTarget.value)}
 		/>
 	</div>
 
