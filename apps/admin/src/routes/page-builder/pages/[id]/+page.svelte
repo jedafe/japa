@@ -10,6 +10,7 @@
 	import { api, pageBuilderAdminApiExtended } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
+	import { useCountries } from '$lib/utils/countries.svelte';
 	import { DragDropProvider, DragOverlay } from '@dnd-kit/svelte';
 	import { isSortable } from '@dnd-kit/svelte/sortable';
 	import {
@@ -37,6 +38,8 @@
 	import * as LucideIcons from 'lucide-svelte';
 	import { ArrowLeft, Save, Plus, Search, LayoutTemplate, Rocket, Archive, PanelLeft, PanelRight, PanelTop, Maximize2, Minimize2 } from 'lucide-svelte';
 	import MediaPickerModal from '$lib/components/ui/MediaPickerModal.svelte';
+	import Autocomplete from '$lib/components/ui/Autocomplete.svelte';
+	import type { AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
 
 	// Cast for DI — the editors expect Component<any>, MediaPickerModal has bindable props
 	const MediaPicker = MediaPickerModal as unknown as Component;
@@ -45,9 +48,9 @@
 
 	const canManagePages = $derived(hasPermission('pages.manage'));
 	const canPublishPages = $derived(hasPermission('pages.publish'));
+	const countryUtils = useCountries('geo_code');
 
 	interface Theme { id: string; name: string; is_default?: boolean }
-	interface GeoCountry { id: string; name: string; geo_code: string }
 	interface PageData {
 		id: string; title: string; slug: string; status: string;
 		page_type?: string; theme_id?: string; blocks: Block[] | string;
@@ -56,7 +59,6 @@
 	let pageData = $state<{ id: string; title: string; slug: string; status: string; page_type: string; theme_id?: string } | null>(null);
 	let blocks = $state<Block[]>([]);
 	let themes = $state<Theme[]>([]);
-	let countries = $state<GeoCountry[]>([]);
 	let loading = $state(true);
 	let saving = $state(false);
 	let publishing = $state(false);
@@ -141,10 +143,6 @@
 	const resolvedBlocks = $derived(resolveGeoCopy(visibleBlocks, previewCtx));
 	const deviceWidth = $derived(deviceMode === 'desktop' ? 1280 : deviceMode === 'tablet' ? 768 : 375);
 
-	// Geo countries for preview dropdown — sourced from /geo/countries (Rule 16).
-	// 'global' is prepended as the no-geo-override default.
-	const geoCountries = $derived(['global', ...countries.map((c) => c.geo_code)]);
-
 	// Block palette — grouped by category from the canonical blockRegistry,
 	// merged with DB-driven custom block definitions.
 	// Custom blocks appear as `custom:{blockDefId}` entries in the palette so
@@ -191,10 +189,12 @@
 		errorMessage = '';
 		try {
 			const pageId = page.params.id;
-			const [pageRes, themesRes, countriesRes, blocksRes] = await Promise.all([
+			// Pre-load the 250 primary geo space countries via the shared utility
+			// while the page data loads.
+			countryUtils.load();
+			const [pageRes, themesRes, blocksRes] = await Promise.all([
 				api<PageData>(`/admin/pages/${pageId}`),
 				pageBuilderAdminApiExtended.listThemes(),
-				api<GeoCountry[]>('/geo/countries'),
 				pageBuilderAdminApiExtended.listBlocks(),
 			]);
 			if (!pageRes.ok) {
@@ -209,7 +209,6 @@
 				selectedThemeId = d.theme_id ?? '';
 			}
 			if (themesRes.ok) themes = ((themesRes.data as any[]) ?? []).map((th) => ({ id: th.id, name: th.name, is_default: th.is_default }));
-			if (countriesRes.ok) countries = countriesRes.data ?? [];
 			// Load custom block definitions into the runtime registry.
 			if (blocksRes.ok && Array.isArray(blocksRes.data)) {
 				customBlockDefs = blocksRes.data as CustomBlockDef[];
@@ -767,9 +766,26 @@
 				{#if errorMessage}<span class="truncate text-sm" style="color: var(--color-danger)">{errorMessage}</span>{/if}
 			{:else if activeHeaderPanel === 'preview'}
 				<!-- Preview: geo country + device toggle + theme -->
-				<select bind:value={previewCountry} class="shrink-0 rounded border px-2 py-1 text-xs" style="border-color: var(--color-border-input); background: var(--color-background); color: var(--color-foreground)" aria-label={t('landing.preview_country', 'Preview country')}>
-					{#each geoCountries as c (c)}<option value={c}>{c === 'global' ? t('landing.global', 'Global') : c}</option>{/each}
-				</select>
+				<Autocomplete
+					id="preview-country"
+					placeholder={t('landing.preview_country', 'Preview country')}
+					emptyMessage={t('common.no_results', 'No results found')}
+					selectedId={previewCountry}
+					selectedLabel={previewCountry === 'global' ? t('landing.global', 'Global') : countryUtils.getSelectedLabel(previewCountry)}
+					fetcher={(q, limit = 50) => {
+						const globalItem = { id: 'global', label: t('landing.global', 'Global') };
+						const needle = q.toLowerCase().trim();
+						const matchesGlobal = !needle || 'global'.includes(needle) || globalItem.label.toLowerCase().includes(needle);
+						return countryUtils.fetcher(q, limit - (matchesGlobal ? 1 : 0)).then((items) => matchesGlobal ? [globalItem, ...items].slice(0, limit) : items);
+					}}
+					initialFetcher={() => {
+						const globalItem = { id: 'global', label: t('landing.global', 'Global') };
+						return countryUtils.initialFetcher().then((items) => [globalItem, ...items]);
+					}}
+					onSelect={(item: AutocompleteItem) => { previewCountry = item.id; }}
+					onClear={() => { previewCountry = 'global'; }}
+					inputClass="text-xs"
+				/>
 				<div class="flex shrink-0 gap-1">
 					<button onclick={() => (deviceMode = 'desktop')} class="rounded px-2 py-1 text-xs {deviceMode === 'desktop' ? 'text-white' : 'border'}" style={deviceMode === 'desktop' ? 'background: var(--color-primary)' : 'border-color: var(--color-border)'}>{t('landing.device_desktop', 'Desktop')}</button>
 					<button onclick={() => (deviceMode = 'tablet')} class="rounded px-2 py-1 text-xs {deviceMode === 'tablet' ? 'text-white' : 'border'}" style={deviceMode === 'tablet' ? 'background: var(--color-primary)' : 'border-color: var(--color-border)'}>{t('landing.device_tablet', 'Tablet')}</button>
@@ -1073,21 +1089,28 @@
 									</label>
 									<div>
 										<span class="mb-1 block text-xs" style="color: var(--color-muted)">{t('landing.geo_countries', 'Show only in countries')}</span>
-										<div class="max-h-40 overflow-y-auto rounded border p-2" style="border-color: var(--color-border)">
-											<div class="grid grid-cols-2 gap-1">
-												{#each countries as country (country.geo_code)}
-													<label class="flex items-center gap-1.5 text-xs" style="color: var(--color-foreground)">
-														<input
-															type="checkbox"
-															checked={(selectedBlock.visibility_rules?.geo_countries ?? []).includes(country.geo_code)}
-															onchange={(e) => updateVisibilityRuleGeo(selectedBlock.id, country.geo_code, e.currentTarget.checked)}
-														/>
-														<span class="truncate">{country.name}</span>
-													</label>
-												{/each}
-											</div>
+									<Autocomplete
+										id="block-geo-countries"
+										placeholder={t('landing.search_country', 'Search country...')}
+										emptyMessage={t('common.no_results', 'No results found')}
+										fetcher={countryUtils.fetcher}
+										initialFetcher={countryUtils.initialFetcher}
+										selectedId={null}
+										selectedLabel={null}
+										onSelect={(item: AutocompleteItem) => updateVisibilityRuleGeo(selectedBlock.id, item.id, true)}
+										onClear={() => {}}
+									/>
+									{#if (selectedBlock.visibility_rules?.geo_countries ?? []).length > 0}
+										<div class="mt-2 flex flex-wrap gap-2">
+											{#each (selectedBlock.visibility_rules?.geo_countries ?? []) as code (code)}
+												<span class="inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-medium" style="background-color: var(--color-primary); color: white">
+													{countryUtils.getSelectedLabel(code)}
+													<button onclick={() => updateVisibilityRuleGeo(selectedBlock.id, code, false)} class="hover:opacity-70" aria-label={t('common.remove', 'Remove')}>×</button>
+												</span>
+											{/each}
 										</div>
-									</div>
+									{/if}
+								</div>
 								</div>
 
 								<!-- Motion / Animation -->
