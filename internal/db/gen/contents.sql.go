@@ -2043,6 +2043,164 @@ func (q *Queries) ListContentsByIDs(ctx context.Context, arg ListContentsByIDsPa
 	return items, nil
 }
 
+const listContentsBySlugs = `-- name: ListContentsBySlugs :many
+SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c.body_html,
+       c.field_values, c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
+       c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
+       c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
+       c.view_count, c.comment_count, c.share_count, c.reshare_count, c.publish_at, c.published_at,
+       c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country,
+       u.username AS author_username, up.display_name AS author_display_name,
+       s.name AS space_name
+FROM contents c
+LEFT JOIN users u ON u.id = c.author_id AND u.tenant_id = c.tenant_id
+LEFT JOIN user_profiles up ON up.user_id = c.author_id AND up.tenant_id = c.tenant_id
+LEFT JOIN spaces s ON s.id = c.space_id AND s.tenant_id = c.tenant_id
+WHERE c.tenant_id = $1
+  AND c.slug = ANY($2::text[])
+  AND c.deleted_at IS NULL
+  AND c.auto_hidden = false
+  AND (
+      ($3::boolean AND $4::boolean)
+      OR (c.author_id = $5::uuid AND c.author_id IS NOT NULL)
+      OR (
+          c.status = 'published'
+          AND (
+              c.visibility = 'public'
+              OR (c.visibility = 'members' AND $6::boolean)
+              OR (c.visibility = 'private' AND (c.author_id = $5::uuid OR $4::boolean))
+          )
+      )
+  )
+ORDER BY array_position($2::text[], c.slug)
+LIMIT $7
+`
+
+type ListContentsBySlugsParams struct {
+	TenantID          pgtype.UUID `json:"tenant_id"`
+	Slugs             []string    `json:"slugs"`
+	CanSeeUnpublished bool        `json:"can_see_unpublished"`
+	CanSeePrivate     bool        `json:"can_see_private"`
+	RequesterID       pgtype.UUID `json:"requester_id"`
+	CanSeeMembers     bool        `json:"can_see_members"`
+	PageLimit         int32       `json:"page_limit"`
+}
+
+type ListContentsBySlugsRow struct {
+	ID                pgtype.UUID        `json:"id"`
+	TenantID          pgtype.UUID        `json:"tenant_id"`
+	AuthorID          pgtype.UUID        `json:"author_id"`
+	SpaceID           pgtype.UUID        `json:"space_id"`
+	ContentType       string             `json:"content_type"`
+	Title             string             `json:"title"`
+	Slug              string             `json:"slug"`
+	Body              string             `json:"body"`
+	BodyHtml          string             `json:"body_html"`
+	FieldValues       []byte             `json:"field_values"`
+	ContentHash       *string            `json:"content_hash"`
+	GeoSpaceID        pgtype.UUID        `json:"geo_space_id"`
+	HeaderImageID     pgtype.UUID        `json:"header_image_id"`
+	FeaturedImageID   pgtype.UUID        `json:"featured_image_id"`
+	CanonicalUrl      *string            `json:"canonical_url"`
+	MetaTitle         *string            `json:"meta_title"`
+	MetaDescription   *string            `json:"meta_description"`
+	OgImageUrl        *string            `json:"og_image_url"`
+	SeoIndexable      bool               `json:"seo_indexable"`
+	Status            string             `json:"status"`
+	Visibility        string             `json:"visibility"`
+	IsLocked          bool               `json:"is_locked"`
+	IsPinned          bool               `json:"is_pinned"`
+	ReadTimeMinutes   int32              `json:"read_time_minutes"`
+	ViewCount         int32              `json:"view_count"`
+	CommentCount      int32              `json:"comment_count"`
+	ShareCount        int32              `json:"share_count"`
+	ReshareCount      int32              `json:"reshare_count"`
+	PublishAt         pgtype.Timestamptz `json:"publish_at"`
+	PublishedAt       pgtype.Timestamptz `json:"published_at"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+	GuideCategory     *string            `json:"guide_category"`
+	JourneyStage      *string            `json:"journey_stage"`
+	VisaRoute         *string            `json:"visa_route"`
+	SourceCountry     *string            `json:"source_country"`
+	TargetCountry     *string            `json:"target_country"`
+	AuthorUsername    *string            `json:"author_username"`
+	AuthorDisplayName *string            `json:"author_display_name"`
+	SpaceName         *string            `json:"space_name"`
+}
+
+// Fetches published content rows by a list of slugs with the same JOINed
+// enrichment as ListContentsByTenant. Used by the journey-aware roadmap feed
+// to render the next steps from a readiness assessment.
+func (q *Queries) ListContentsBySlugs(ctx context.Context, arg ListContentsBySlugsParams) ([]ListContentsBySlugsRow, error) {
+	rows, err := q.db.Query(ctx, listContentsBySlugs,
+		arg.TenantID,
+		arg.Slugs,
+		arg.CanSeeUnpublished,
+		arg.CanSeePrivate,
+		arg.RequesterID,
+		arg.CanSeeMembers,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListContentsBySlugsRow
+	for rows.Next() {
+		var i ListContentsBySlugsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.AuthorID,
+			&i.SpaceID,
+			&i.ContentType,
+			&i.Title,
+			&i.Slug,
+			&i.Body,
+			&i.BodyHtml,
+			&i.FieldValues,
+			&i.ContentHash,
+			&i.GeoSpaceID,
+			&i.HeaderImageID,
+			&i.FeaturedImageID,
+			&i.CanonicalUrl,
+			&i.MetaTitle,
+			&i.MetaDescription,
+			&i.OgImageUrl,
+			&i.SeoIndexable,
+			&i.Status,
+			&i.Visibility,
+			&i.IsLocked,
+			&i.IsPinned,
+			&i.ReadTimeMinutes,
+			&i.ViewCount,
+			&i.CommentCount,
+			&i.ShareCount,
+			&i.ReshareCount,
+			&i.PublishAt,
+			&i.PublishedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.GuideCategory,
+			&i.JourneyStage,
+			&i.VisaRoute,
+			&i.SourceCountry,
+			&i.TargetCountry,
+			&i.AuthorUsername,
+			&i.AuthorDisplayName,
+			&i.SpaceName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listContentsBySpace = `-- name: ListContentsBySpace :many
 SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c.body_html,
        c.field_values, c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
