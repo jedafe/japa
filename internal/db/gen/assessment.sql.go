@@ -528,6 +528,53 @@ func (q *Queries) GetAssessmentResultBySubmission(ctx context.Context, arg GetAs
 	return i, err
 }
 
+const getLatestAssessmentJourneyContext = `-- name: GetLatestAssessmentJourneyContext :one
+
+SELECT
+    ar.roadmap_content,
+    ar.dimension_scores,
+    ar.threshold_label,
+    ar.created_at,
+    fs.field_values AS submission_values
+FROM assessment_results ar
+JOIN form_submissions fs ON fs.id = ar.submission_id
+WHERE ar.tenant_id = $1 AND ar.user_id = $2
+ORDER BY ar.created_at DESC
+LIMIT 1
+`
+
+type GetLatestAssessmentJourneyContextParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	UserID   pgtype.UUID `json:"user_id"`
+}
+
+type GetLatestAssessmentJourneyContextRow struct {
+	RoadmapContent   []byte             `json:"roadmap_content"`
+	DimensionScores  []byte             `json:"dimension_scores"`
+	ThresholdLabel   string             `json:"threshold_label"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	SubmissionValues []byte             `json:"submission_values"`
+}
+
+// =====================================================================
+// Get the latest assessment result for a user, including the original
+// submission field_values (used to infer origin, destination, visa route).
+// Returns no rows if the user has not completed an assessment.
+// Ref: docs/superpowers/specs/2026-08-21-journey-aware-recommendations-design.md
+// =====================================================================
+func (q *Queries) GetLatestAssessmentJourneyContext(ctx context.Context, arg GetLatestAssessmentJourneyContextParams) (GetLatestAssessmentJourneyContextRow, error) {
+	row := q.db.QueryRow(ctx, getLatestAssessmentJourneyContext, arg.TenantID, arg.UserID)
+	var i GetLatestAssessmentJourneyContextRow
+	err := row.Scan(
+		&i.RoadmapContent,
+		&i.DimensionScores,
+		&i.ThresholdLabel,
+		&i.CreatedAt,
+		&i.SubmissionValues,
+	)
+	return i, err
+}
+
 const listUserAssessmentResults = `-- name: ListUserAssessmentResults :many
 
 SELECT id, tenant_id, user_id, submission_id, total_score, dimension_scores, threshold_label, roadmap_content, created_at FROM assessment_results

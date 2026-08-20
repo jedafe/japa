@@ -28,6 +28,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -94,6 +95,36 @@ type VisitorContext struct {
 	// JapaStage is the user's relocation stage from the japa_status custom
 	// field (newly_japa|settled|planning|...). Empty for guests.
 	JapaStage string
+
+	// JourneyStage is a normalized relocation stage aligned with §87 Japa
+	// Stage Profiles (considering|planning|preparing|applied|approved|relocated|settled).
+	// It is derived from JapaStage for feed ranking and UI.
+	JourneyStage string
+
+	// VisaRoute is the user's intended visa route from the visa_route custom
+	// field (student|work|business|...). Empty when unset.
+	VisaRoute string
+
+	// Purpose is the high-level travel purpose (study|work|business|relocation
+	// |vacation|tourism). It may be set by the Japa Readiness Assessment or
+	// the guest onboarding selector.
+	Purpose string
+
+	// TravelDate is the user's planned travel/departure date in YYYY-MM-DD
+	// format, or empty. Used to shift journey-stage urgency.
+	TravelDate string
+
+	// RoadmapSlugs are content slugs from the user's latest Japa Readiness
+	// Assessment roadmap (§71). Empty if the user has not taken an assessment.
+	RoadmapSlugs []string
+
+	// WeakestDimensions are the lowest-scoring readiness dimensions from the
+	// latest assessment (e.g. documents, finance). Empty if unset.
+	WeakestDimensions []string
+
+	// AssessmentThreshold is the overall readiness threshold label from the
+	// latest Japa Readiness Assessment (e.g. "Japa Ready").
+	AssessmentThreshold string
 
 	// Language is the resolved i18n language (Accept-Language primary tag).
 	// Full i18n middleware integration is deferred; this is a best-effort
@@ -297,6 +328,8 @@ func (res *Resolver) enrichArchetype(ctx context.Context, vc *VisitorContext, us
 		})
 		if err == nil {
 			vc.JapaStage = strings.ToLower(strings.TrimSpace(fields.JapaStatus))
+			vc.JourneyStage = normalizeJourneyStage(vc.JapaStage)
+			vc.VisaRoute = normalizeVisaRoute(fields.VisaRoute)
 			vc.DestinationCountry = normalizeCountry(fields.DestinationCountry)
 			// ADR-064a: Use origin_country from profile when set; falls back
 			// to GeoIP country (already set in vc.OriginCountry).
@@ -305,6 +338,9 @@ func (res *Resolver) enrichArchetype(ctx context.Context, vc *VisitorContext, us
 			}
 		}
 
+		// Journey-aware recommendations: load the latest Japa Readiness
+		// Assessment (§71) and overlay its signals on top of profile fields.
+		res.enrichFromAssessment(ctx, vc, t, user.UserID)
 		// ADR-064a: Resolve the user's current_geo_space_id to extract
 		// city-level data and override CurrentCountry from the Space hierarchy
 		// (more reliable than GeoIP for VPN/travel scenarios). Gated on the
@@ -474,6 +510,206 @@ func (res *Resolver) enrichRegion(ctx context.Context, vc *VisitorContext, t *te
 		return
 	}
 	vc.ContentRegion = *row
+}
+
+// enrichFromAssessment loads the latest Japa Readiness Assessment result for
+// an authenticated user and overlays origin/destination/visa route, roadmap
+// slugs, and weakest dimensions onto the VisitorContext.
+func (res *Resolver) enrichFromAssessment(ctx context.Context, vc *VisitorContext, t *tenant.Tenant, userID pgtype.UUID) {
+	if res.read == nil {
+		return
+	}
+	row, err := res.read.GetLatestAssessmentJourneyContext(ctx, gen.GetLatestAssessmentJourneyContextParams{
+		TenantID: t.ID,
+		UserID:   userID,
+	})
+	if err != nil {
+		return
+	}
+
+	// Threshold label is surfaced as-is for UI copy.
+	vc.AssessmentThreshold = strings.TrimSpace(row.ThresholdLabel)
+
+	// Roadmap content is an array of RoadmapStep with ContentSlug fields.
+	vc.RoadmapSlugs = extractRoadmapSlugs(row.RoadmapContent)
+
+	// Dimension scores are {dimension: score}. Weak dimensions inform which
+	// journey-stage content to boost.
+	vc.WeakestDimensions = extractWeakestDimensions(row.DimensionScores)
+
+	// Submission field_values may contain origin, destination, visa_type, etc.
+	// Overlay them only when the profile has not already set a value.
+	fields := parseAssessmentSubmission(row.SubmissionValues)
+	if fields.Origin != "" && vc.OriginCountry == "" {
+		vc.OriginCountry = normalizeCountry(fields.Origin)
+	}
+	if fields.Destination != "" && vc.DestinationCountry == "" {
+		vc.DestinationCountry = normalizeCountry(fields.Destination)
+	}
+	if fields.VisaType != "" && vc.VisaRoute == "" {
+		vc.VisaRoute = normalizeVisaRoute(fields.VisaType)
+	}
+	if fields.TravelDate != "" && vc.TravelDate == "" {
+		vc.TravelDate = fields.TravelDate
+	}
+	if fields.Purpose != "" && vc.Purpose == "" {
+		vc.Purpose = fields.Purpose
+	}
+	if fields.JapaStage != "" {
+		vc.JapaStage = strings.ToLower(strings.TrimSpace(fields.JapaStage))
+		vc.JourneyStage = normalizeJourneyStage(vc.JapaStage)
+	}
+}
+
+type assessmentSubmissionFields struct {
+	Origin      string `json:"origin_country"`
+	Destination string `json:"destination_country"`
+	VisaType    string `json:"visa_type"`
+	JapaStage   string `json:"japa_status"`
+	Purpose     string `json:"purpose"`
+	TravelDate  string `json:"travel_date"`
+}
+
+// parseAssessmentSubmission extracts known journey fields from a form
+// submission's field_values JSONB. It ignores unknown keys and returns empty
+// values for missing or invalid fields.
+func parseAssessmentSubmission(b []byte) assessmentSubmissionFields {
+	var raw map[string]any
+	if err := json.Unmarshal(b, &raw); err != nil || raw == nil {
+		return assessmentSubmissionFields{}
+	}
+
+	// The assessment form stores field values under the custom field key,
+	// but some forms may use nested objects or arrays. Try a few common
+	// patterns and fall back to the raw string value.
+	getStr := func(keys ...string) string {
+		for _, k := range keys {
+			if v, ok := raw[k]; ok {
+				switch val := v.(type) {
+				case string:
+					return val
+				case map[string]any:
+					if s, ok := val["value"].(string); ok {
+						return s
+					}
+				}
+			}
+		}
+		return ""
+	}
+
+	return assessmentSubmissionFields{
+		Origin:      getStr("origin_country"),
+		Destination: getStr("destination_country"),
+		VisaType:    getStr("visa_type", "visa_route"),
+		JapaStage:   getStr("japa_status", "journey_stage"),
+		Purpose:     getStr("purpose", "travel_purpose"),
+		TravelDate:  getStr("travel_date", "planned_travel_date"),
+	}
+}
+
+// roadmapStep mirrors the RoadmapStep type in internal/assessment/service.go.
+type roadmapStep struct {
+	Title       string `json:"title"`
+	Description string `json:"description"`
+	ContentSlug string `json:"content_slug"`
+	Dimension   string `json:"dimension"`
+	Priority    int    `json:"priority"`
+}
+
+// extractRoadmapSlugs returns the content_slug values from a RoadmapStep array.
+func extractRoadmapSlugs(b []byte) []string {
+	if len(b) == 0 {
+		return nil
+	}
+	var steps []roadmapStep
+	if err := json.Unmarshal(b, &steps); err != nil {
+		return nil
+	}
+	var slugs []string
+	for _, s := range steps {
+		if s.ContentSlug != "" {
+			slugs = append(slugs, s.ContentSlug)
+		}
+	}
+	return slugs
+}
+
+// extractWeakestDimensions returns the up to three dimensions with the lowest
+// scores from an assessment result's dimension_scores JSONB.
+func extractWeakestDimensions(b []byte) []string {
+	if len(b) == 0 {
+		return nil
+	}
+	var scores map[string]int
+	if err := json.Unmarshal(b, &scores); err != nil {
+		return nil
+	}
+	type dim struct {
+		name  string
+		score int
+	}
+	var dims []dim
+	for n, s := range scores {
+		dims = append(dims, dim{name: n, score: s})
+	}
+	sort.Slice(dims, func(i, j int) bool { return dims[i].score < dims[j].score })
+	var out []string
+	for i := 0; i < len(dims) && i < 3; i++ {
+		out = append(out, dims[i].name)
+	}
+	return out
+}
+
+// normalizeJourneyStage maps the legacy japa_status values (and any assessment
+// form values) to the canonical §87 Japa Stage state machine.
+func normalizeJourneyStage(s string) string {
+	s = strings.ToLower(strings.TrimSpace(s))
+	switch s {
+	case "considering":
+		return "considering"
+	case "planning":
+		return "planning"
+	case "preparing", "newly_japa":
+		return "preparing"
+	case "applied", "applying":
+		return "applied"
+	case "approved", "visa_approved":
+		return "approved"
+	case "relocated", "traveling", "travelling", "settling_in":
+		return "relocated"
+	case "settled", "returned":
+		return "settled"
+	}
+	return ""
+}
+
+// normalizeVisaRoute normalises free-text visa route values into the canonical
+// set used by the content journey metadata.
+func normalizeVisaRoute(s string) string {
+	s = strings.ToLower(strings.TrimSpace(s))
+	switch s {
+	case "student", "study", "student visa":
+		return "student"
+	case "work", "work visa", "employment":
+		return "work"
+	case "business", "business visa":
+		return "business"
+	case "tourist", "tourism", "tourist visa", "visitor":
+		return "tourist"
+	case "spouse", "partner", "spousal":
+		return "spouse"
+	case "family", "family reunion", "family visa":
+		return "family"
+	case "investment", "investor", "investor visa":
+		return "investment"
+	case "transit", "transit visa":
+		return "transit"
+	}
+	if s != "" {
+		return "other"
+	}
+	return ""
 }
 
 // resolveLanguage extracts the primary 2-letter language tag from the
