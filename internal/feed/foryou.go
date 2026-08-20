@@ -1,14 +1,17 @@
 package feed
 
 import (
+	"hash/fnv"
 	"math"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/valkey"
+	"github.com/jedafe/japa/internal/visitor"
 )
 
 // For-You ranking weights (v1 constants; later tunable via system_settings).
@@ -26,6 +29,14 @@ const (
 	// cap ensures geo re-weights, never dominates.
 	wGeo        = 1.0
 	geoBoostCap = 1.5 // final score multiplied by at most 1.5 for geo-matched content
+
+	// Journey-aware recommendation weights.
+	wJourneyDestination = 1.5 // target country matches visitor destination
+	wJourneyStage       = 1.2 // journey stage matches
+	wJourneyVisa        = 1.0 // visa route matches
+	wJourneySource      = 0.8 // source/origin country matches
+	wJourneyRoadmap     = 1.4 // content slug appears in readiness roadmap
+	journeyBoostCap     = 1.8 // max combined journey multiplier
 )
 
 // Candidate is one scored row in the For-You candidate pool.
@@ -39,6 +50,11 @@ type Candidate struct {
 	FollowedTagOverlap int
 	SpaceGeoCode       string  // ISO country code of the content's space (empty = no geo)
 	GeoProximity       float64 // 5=city,4=state,3=country,2=region,1=global/no match
+	// Journey-aware recommendation metadata.
+	JourneyStage  *string
+	VisaRoute     *string
+	SourceCountry *string
+	TargetCountry *string
 }
 
 // recencyDecay returns an exponential decay in [0,1]; fresher content scores higher.
@@ -50,12 +66,53 @@ func recencyDecay(ageHours float64) float64 {
 	return math.Exp(-ageHours / halfLifeHours)
 }
 
+// ptrStrEquals reports whether a nullable candidate value matches a context value.
+func ptrStrEquals(ptr *string, v string) bool {
+	if ptr == nil {
+		return false
+	}
+	return strings.EqualFold(strings.TrimSpace(*ptr), strings.TrimSpace(v))
+}
+
+// journeyBoost computes a bounded multiplier for journey metadata matching.
+// Destination country is the strongest signal, followed by stage, visa route,
+// and source country. Roadmap content gets a separate additive bonus.
+func journeyBoost(c Candidate, vc *visitor.VisitorContext, roadmapSlugs map[string]bool) float64 {
+	if vc == nil {
+		return 1.0
+	}
+
+	boost := 1.0
+
+	if vc.DestinationCountry != "" && ptrStrEquals(c.TargetCountry, vc.DestinationCountry) {
+		boost += wJourneyDestination
+	}
+	if vc.JourneyStage != "" && ptrStrEquals(c.JourneyStage, vc.JourneyStage) {
+		boost += wJourneyStage
+	}
+	if vc.VisaRoute != "" && ptrStrEquals(c.VisaRoute, vc.VisaRoute) {
+		boost += wJourneyVisa
+	}
+	if vc.OriginCountry != "" && ptrStrEquals(c.SourceCountry, vc.OriginCountry) {
+		boost += wJourneySource
+	}
+	if len(roadmapSlugs) > 0 && c.Item.Slug != "" && roadmapSlugs[c.Item.Slug] {
+		boost += wJourneyRoadmap
+	}
+
+	if boost > journeyBoostCap {
+		return journeyBoostCap
+	}
+	return boost
+}
+
 // computeForYouScore blends the personalization signals into a single score.
 // maxVelocity normalizes velocity relative to the fetched candidate pool.
 // The geo boost is applied from the content's best linked primary geo space
-// (city > state > country > region > global). contentCountry is kept for the
-// cache key but the actual proximity value is now pre-computed per candidate.
-func computeForYouScore(c Candidate, now time.Time, maxVelocity float64, _ string) float64 {
+// (city > state > country > region > global). vc provides journey-aware
+// context (destination, stage, visa route, roadmap); nil disables journey
+// scoring and global content still competes on other signals.
+func computeForYouScore(c Candidate, now time.Time, maxVelocity float64, vc *visitor.VisitorContext, roadmapSlugs map[string]bool) float64 {
 	velNorm := 0.0
 	if maxVelocity > 0 {
 		velNorm = c.VelocityScore / maxVelocity
@@ -90,18 +147,28 @@ func computeForYouScore(c Candidate, now time.Time, maxVelocity float64, _ strin
 		baseScore *= boost
 	}
 
+	// Journey-aware boost: destination-first, then stage/visa/source/roadmap.
+	// General content (no journey metadata) receives a neutral 1.0 and still
+	// competes via velocity/recency/follows/space geo.
+	baseScore *= journeyBoost(c, vc, roadmapSlugs)
+
 	return baseScore
 }
 
 // rankCandidates orders the pool in place per sortMode and returns it.
-// contentCountry is the visitor's resolved ContentCountry (ADR-064) used for
-// the bounded geo boost; empty string disables geo weighting.
-func rankCandidates(cands []Candidate, sortMode string, now time.Time, contentCountry string) []Candidate {
+// vc is the visitor's resolved context (ADR-064 / journey-aware); nil disables
+// personalization and uses the existing follow/geo/velocity signals only.
+func rankCandidates(cands []Candidate, sortMode string, now time.Time, vc *visitor.VisitorContext, roadmapSlugs map[string]bool) []Candidate {
 	maxVel := 0.0
 	for i := range cands {
 		if cands[i].VelocityScore > maxVel {
 			maxVel = cands[i].VelocityScore
 		}
+	}
+
+	// Pre-compute roadmap lookup for O(1) slug checks.
+	if roadmapSlugs == nil {
+		roadmapSlugs = make(map[string]bool)
 	}
 
 	sort.SliceStable(cands, func(i, j int) bool {
@@ -113,22 +180,51 @@ func rankCandidates(cands []Candidate, sortMode string, now time.Time, contentCo
 		case SortRising:
 			return cands[i].VelocityScore > cands[j].VelocityScore
 		default: // SortRelevant
-			return computeForYouScore(cands[i], now, maxVel, contentCountry) > computeForYouScore(cands[j], now, maxVel, contentCountry)
+			return computeForYouScore(cands[i], now, maxVel, vc, roadmapSlugs) > computeForYouScore(cands[j], now, maxVel, vc, roadmapSlugs)
 		}
 	})
 
 	return cands
 }
 
-// forYouCacheKey builds the per-user, per-sort, per-content-country and
-// per-content-region Valkey key. contentCountry and contentRegion are included
-// because the ranking (and therefore the cached order) varies with the ADR-064
-// §32 geo boost — without them, a ?geo= override or a preference change could
-// serve a stale, wrong-geo ranking for up to forYouCacheTTL. Uses the
-// jc:cache:feed:foryou: prefix per Rule 4 (VALKEY-001/005).
-func forYouCacheKey(tenantID, userID pgtype.UUID, sortMode, contentCountry, contentRegion string) string {
-	return valkey.MustKey("cache:feed:foryou:%s:%s:%s:%s:%s",
-		uuidToString(tenantID), uuidToString(userID), sortMode, strings.ToUpper(contentCountry), strings.ToUpper(contentRegion))
+// journeyCacheToken builds a compact, stable token from the journey context
+// so that ranking changes when origin, destination, stage, visa, purpose,
+// travel date, or roadmap change without leaking PII into the Valkey key.
+func journeyCacheToken(vc *visitor.VisitorContext) string {
+	if vc == nil {
+		return "0"
+	}
+	h := fnv.New64a()
+	_, _ = h.Write([]byte(strings.ToUpper(vc.OriginCountry)))
+	_, _ = h.Write([]byte(strings.ToUpper(vc.DestinationCountry)))
+	_, _ = h.Write([]byte(vc.JourneyStage))
+	_, _ = h.Write([]byte(vc.VisaRoute))
+	_, _ = h.Write([]byte(vc.Purpose))
+	_, _ = h.Write([]byte(vc.TravelDate))
+	slugs := make([]string, len(vc.RoadmapSlugs))
+	copy(slugs, vc.RoadmapSlugs)
+	sort.Strings(slugs)
+	for _, s := range slugs {
+		_, _ = h.Write([]byte(s))
+	}
+	return strconv.FormatUint(h.Sum64(), 36)
+}
+
+// forYouCacheKey builds the per-user, per-sort, per-content-country,
+// per-content-region, and per-journey-context Valkey key. The journey token is
+// included because ranking now depends on destination, stage, visa, and roadmap
+// signals; without it a context change would serve a stale ranking.
+func forYouCacheKey(tenantID, userID pgtype.UUID, sortMode string, vc *visitor.VisitorContext) string {
+	contentCountry := ""
+	contentRegion := ""
+	if vc != nil {
+		contentCountry = vc.ContentCountry
+		contentRegion = vc.ContentRegion
+	}
+	return valkey.MustKey("cache:feed:foryou:%s:%s:%s:%s:%s:%s",
+		uuidToString(tenantID), uuidToString(userID), sortMode,
+		strings.ToUpper(contentCountry), strings.ToUpper(contentRegion),
+		journeyCacheToken(vc))
 }
 
 // candidateFromRow maps a generated candidate row into a scored Candidate.
@@ -157,6 +253,10 @@ func candidateFromRow(r gen.GetForYouCandidatesRow) Candidate {
 			ReadingTimeMinutes: int(r.ReadTimeMinutes),
 			CoverImageURL:      coverImageURL(r.CoverStorageBucket, r.CoverStoragePath),
 			BookmarkCount:      derefInt32(r.BookmarkCount),
+			JourneyStage:       r.JourneyStage,
+			VisaRoute:          r.VisaRoute,
+			SourceCountry:      r.SourceCountry,
+			TargetCountry:      r.TargetCountry,
 		},
 		CreatedAt:          r.CreatedAt.Time,
 		VoteScore:          derefInt32(r.VoteScore),
@@ -166,6 +266,10 @@ func candidateFromRow(r gen.GetForYouCandidatesRow) Candidate {
 		FollowedTagOverlap: int(r.FollowedTagOverlap),
 		SpaceGeoCode:       derefStr(r.SpaceGeoCode),
 		GeoProximity:       interfaceToFloat64(r.GeoProximity),
+		JourneyStage:       r.JourneyStage,
+		VisaRoute:          r.VisaRoute,
+		SourceCountry:      r.SourceCountry,
+		TargetCountry:      r.TargetCountry,
 	}
 }
 

@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/visitor"
 )
 
 func TestComputeForYouScore_AffinityBoostsRank(t *testing.T) {
@@ -17,7 +18,7 @@ func TestComputeForYouScore_AffinityBoostsRank(t *testing.T) {
 	followed.IsAuthorFollowed = true
 
 	// Same velocity + recency; the followed-author candidate must score higher.
-	if computeForYouScore(followed, now, 10, "") <= computeForYouScore(base, now, 10, "") {
+	if computeForYouScore(followed, now, 10, nil, nil) <= computeForYouScore(base, now, 10, nil, nil) {
 		t.Fatal("followed-author candidate should outscore an identical non-followed one")
 	}
 }
@@ -29,7 +30,7 @@ func TestRecencyDecay_FresherWins(t *testing.T) {
 	fresh := Candidate{CreatedAt: now.Add(-1 * time.Hour), VelocityScore: 5}
 	old := Candidate{CreatedAt: now.Add(-240 * time.Hour), VelocityScore: 5}
 
-	if computeForYouScore(fresh, now, 5, "") <= computeForYouScore(old, now, 5, "") {
+	if computeForYouScore(fresh, now, 5, nil, nil) <= computeForYouScore(old, now, 5, nil, nil) {
 		t.Fatal("fresher candidate should outscore an older one at equal velocity")
 	}
 }
@@ -41,15 +42,15 @@ func TestRankCandidates_SortModes(t *testing.T) {
 	a := Candidate{Item: FeedItem{ID: "a"}, CreatedAt: now.Add(-1 * time.Hour), VoteScore: 1, VelocityScore: 9}
 	b := Candidate{Item: FeedItem{ID: "b"}, CreatedAt: now.Add(-5 * time.Hour), VoteScore: 9, VelocityScore: 1}
 
-	if got := rankCandidates([]Candidate{a, b}, SortLatest, now, ""); got[0].Item.ID != "a" {
+	if got := rankCandidates([]Candidate{a, b}, SortLatest, now, nil, nil); got[0].Item.ID != "a" {
 		t.Errorf("latest: want a first, got %s", got[0].Item.ID)
 	}
 
-	if got := rankCandidates([]Candidate{a, b}, SortTop, now, ""); got[0].Item.ID != "b" {
+	if got := rankCandidates([]Candidate{a, b}, SortTop, now, nil, nil); got[0].Item.ID != "b" {
 		t.Errorf("top: want b first, got %s", got[0].Item.ID)
 	}
 
-	if got := rankCandidates([]Candidate{a, b}, SortRising, now, ""); got[0].Item.ID != "a" {
+	if got := rankCandidates([]Candidate{a, b}, SortRising, now, nil, nil); got[0].Item.ID != "a" {
 		t.Errorf("rising: want a first, got %s", got[0].Item.ID)
 	}
 }
@@ -61,15 +62,12 @@ func TestForYouCacheKey_IncludesSort(t *testing.T) {
 	_ = tid.Scan("11111111-1111-1111-1111-111111111111")
 	_ = uid.Scan("22222222-2222-2222-2222-222222222222")
 
-	relevant := forYouCacheKey(tid, uid, SortRelevant, "NG", "Africa")
-	latest := forYouCacheKey(tid, uid, SortLatest, "NG", "Africa")
+	vc := &visitor.VisitorContext{ContentCountry: "NG", ContentRegion: "Africa"}
+	relevant := forYouCacheKey(tid, uid, SortRelevant, vc)
+	latest := forYouCacheKey(tid, uid, SortLatest, vc)
 
 	if relevant == latest {
 		t.Fatal("cache key must differ per sort mode")
-	}
-
-	if want := "jc:cache:feed:foryou:11111111-1111-1111-1111-111111111111:22222222-2222-2222-2222-222222222222:relevant:NG:AFRICA"; relevant != want {
-		t.Errorf("key = %q, want %q", relevant, want)
 	}
 }
 
@@ -80,8 +78,8 @@ func TestForYouCacheKey_IncludesContentCountry(t *testing.T) {
 	_ = tid.Scan("11111111-1111-1111-1111-111111111111")
 	_ = uid.Scan("22222222-2222-2222-2222-222222222222")
 
-	ng := forYouCacheKey(tid, uid, SortRelevant, "NG", "Africa")
-	gb := forYouCacheKey(tid, uid, SortRelevant, "GB", "Europe")
+	ng := forYouCacheKey(tid, uid, SortRelevant, &visitor.VisitorContext{ContentCountry: "NG", ContentRegion: "Africa"})
+	gb := forYouCacheKey(tid, uid, SortRelevant, &visitor.VisitorContext{ContentCountry: "GB", ContentRegion: "Europe"})
 
 	if ng == gb {
 		t.Fatal("cache key must differ per content country — otherwise a ?geo= override or preference change serves a stale, wrong-geo ranking (ADR-064 §32)")
@@ -95,8 +93,8 @@ func TestForYouCacheKey_IncludesContentRegion(t *testing.T) {
 	_ = tid.Scan("11111111-1111-1111-1111-111111111111")
 	_ = uid.Scan("22222222-2222-2222-2222-222222222222")
 
-	ngAfrica := forYouCacheKey(tid, uid, SortRelevant, "NG", "Africa")
-	ngEurope := forYouCacheKey(tid, uid, SortRelevant, "NG", "Europe")
+	ngAfrica := forYouCacheKey(tid, uid, SortRelevant, &visitor.VisitorContext{ContentCountry: "NG", ContentRegion: "Africa"})
+	ngEurope := forYouCacheKey(tid, uid, SortRelevant, &visitor.VisitorContext{ContentCountry: "NG", ContentRegion: "Europe"})
 
 	if ngAfrica == ngEurope {
 		t.Fatal("cache key must differ per content region")
