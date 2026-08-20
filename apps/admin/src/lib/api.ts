@@ -228,6 +228,7 @@ export const walletApi = {
 
 export const spaceTypesApi = {
 	list: (params?: string) => api<unknown>(`/admin/space-types${params ? `?${params}` : ''}`),
+	categories: () => api<{ value: string; selectable: boolean }[]>('/admin/space-type-categories'),
 	create: (body: { name: string; slug: string; description?: string; category: string; icon?: string }) =>
 		api('/admin/space-types', { method: 'POST', body }),
 	update: (id: string, body: { name?: string; slug?: string; description?: string; category?: string; icon?: string }) =>
@@ -896,11 +897,23 @@ export const universityAdminApi = {
 
 // --- Geo IP (public hierarchy + admin lookup) ---
 
+export interface GeoCountry {
+	id: string;
+	name: string;
+	slug: string;
+	level: string;
+	geo_code: string;
+	description?: string;
+	member_count?: number;
+	post_count?: number;
+	follower_count?: number;
+}
+
 export const geoApi = {
 	me: () => api<unknown>('/geo/me'),
 	detect: () => api<unknown>('/geo/detect'),
 	lookup: (ip: string) => api<unknown>(`/geo/lookup?ip=${encodeURIComponent(ip)}`),
-	listCountries: () => api<unknown>('/geo/countries'),
+	listCountries: () => api<GeoCountry[]>('/geo/countries'),
 	listStates: (countryCode: string) => api<unknown>(`/geo/countries/${countryCode}/states`),
 	listCities: (stateId: string) => api<unknown>(`/geo/states/${stateId}/cities`),
 };
@@ -1905,7 +1918,7 @@ export const cvFormatterAdminApi = {
 		),
 	upsertStandard: (body: Record<string, unknown>) =>
 		api<unknown>(`/admin/cv-formatter/standards`, { method: 'POST', body }),
-	listDestinations: () => api<unknown>(`/spaces?level=country`),
+	listDestinations: () => api<GeoCountry[]>('/geo/countries'),
 };
 
 export const visaRoutesAdminApi = {
@@ -1995,7 +2008,7 @@ export const languageTestHubAdminApi = {
 	generate: (body: Record<string, unknown>) =>
 		api<unknown>(`/admin/language-tests/requirements/generate`, { method: 'POST', body }),
 	// Geo-aware selector sources (ADR-088 geo-aware-tool-pattern).
-	listDestinations: () => api<unknown>(`/spaces?level=country`),
+	listDestinations: () => api<GeoCountry[]>('/geo/countries'),
 	listTests: () => api<unknown>(`/language-tests`),
 };
 

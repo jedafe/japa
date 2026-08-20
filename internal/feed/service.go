@@ -152,14 +152,14 @@ func (s *Service) GetFeed(ctx context.Context, tenantID pgtype.UUID, timeline st
 func (s *Service) getExploreFeed(ctx context.Context, tenantID pgtype.UUID, sort, visitorCountryCode, visitorRegion string, limit, offset int32) ([]FeedItem, error) {
 	switch sort {
 	case SortTop:
-		rows, err := s.store.getTopFeed(ctx, tenantID, limit, offset)
+		rows, err := s.store.getTopFeed(ctx, tenantID, visitorCountryCode, visitorRegion, limit, offset)
 		if err != nil {
 			return nil, err
 		}
 
 		return topRowsToItems(rows), nil
 	case SortRising:
-		rows, err := s.store.getRisingFeed(ctx, tenantID, limit, offset)
+		rows, err := s.store.getRisingFeed(ctx, tenantID, visitorCountryCode, visitorRegion, limit, offset)
 		if err != nil {
 			return nil, err
 		}
@@ -171,7 +171,7 @@ func (s *Service) getExploreFeed(ctx context.Context, tenantID pgtype.UUID, sort
 		// requires a $user_embedding). Fall back to the top feed (7-day
 		// rolling window) as the closest relevance proxy for guests.
 		// The for-you feed handles true pgvector relevance for authed users.
-		rows, err := s.store.getTopFeed(ctx, tenantID, limit, offset)
+		rows, err := s.store.getTopFeed(ctx, tenantID, visitorCountryCode, visitorRegion, limit, offset)
 		if err != nil {
 			return nil, err
 		}
@@ -641,7 +641,7 @@ func (s *Service) GetForYouFeed(
 		}
 	}
 
-	key := forYouCacheKey(tenantID, userID, sortMode, contentCountry)
+	key := forYouCacheKey(tenantID, userID, sortMode, contentCountry, contentRegion)
 
 	// Use the shared cache helper with distributed lock stampede protection
 	// (BUG-008). On cache miss, the lock holder loads affinity, fetches

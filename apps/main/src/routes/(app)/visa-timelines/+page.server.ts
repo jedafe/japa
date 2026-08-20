@@ -1,7 +1,7 @@
 // Ref: japaconnect-engineering/sections/83-visa-timeline-tracker.md
 import type { PageServerLoad } from './$types';
 import { apiContext, apiGet, apiList } from '$lib/server/api';
-import type { VisaProcessingStats, TrendPoint, Space } from '$lib/types';
+import type { VisaProcessingStats, TrendPoint, GeoCountry } from '$lib/types';
 
 /**
  * Visa Timeline aggregate stats at /visa-timelines (Section 83).
@@ -24,9 +24,9 @@ export const load: PageServerLoad = async (event) => {
 		months: event.url.searchParams.get('months') ?? ''
 	};
 
-	let countries: Space[] = [];
+	let countries: GeoCountry[] = [];
 	try {
-		const { items } = await apiList<Space>(ctx, '/spaces?level=country');
+		const { items } = await apiList<GeoCountry>(ctx, '/geo/countries');
 		countries = items;
 	} catch {
 		countries = [];

@@ -2960,6 +2960,7 @@
 	"space-types.are_you_sure_you_want_to_delete_this_spa": "Are you sure you want to delete this space type? This action cannot be undone.",
 	"space-types.category": "Category",
 	"space-types.category.business": "Business",
+	"space-types.category.community": "Community",
 	"space-types.category.education": "Education",
 	"space-types.category.interest": "Interest",
 	"space-types.category.lifestyle": "Lifestyle",

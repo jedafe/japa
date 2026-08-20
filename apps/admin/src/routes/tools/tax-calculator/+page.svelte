@@ -1,15 +1,17 @@
 <script lang="ts">
 	// /tools/tax-calculator — HITL review queue with Approve Guide + AI Generate Guide actions.
 	// BUG-001/002/003/011 fix: response shape, field names, generate fields, pagination.
-	import { onMount } from 'svelte';
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import { Modal } from '$lib/components/ui/modal';
 	import { Button } from '$lib/components/ui/button';
-	import { taxCalculatorAdminApi , spacesAdminApi } from '$lib/api';
+	import Autocomplete from '$lib/components/ui/Autocomplete.svelte';
+	import type { AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
+	import { taxCalculatorAdminApi } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { Eye, CheckCircle, Sparkles } from 'lucide-svelte';
 	import type { ActionItem, FilterDef } from '$lib/components/ui/data-table';
+	import { useCountries } from '$lib/utils/countries.svelte';
 
 	type GuideItem = {
 		id: string;
@@ -34,19 +36,11 @@
 
 	// ── State ───────────────────────────────────────────────────────────────
 	
-// Destination Spaces for the dest filter (geo-aware pattern §90-101).
-type SpaceOption = { id: string; name: string };
-let destOptions = $state<SpaceOption[]>([]);
-onMount(async () => {
-	try {
-		const res = await spacesAdminApi.list('?level=country&limit=200');
-		if (res.ok && Array.isArray(res.data)) {
-			destOptions = (res.data as Array<{ id: string; name: string }>).map((s) => ({
-				id: s.id, name: s.name
-			}));
-		}
-	} catch { /* Non-fatal */ }
-});
+	// ── Country selector (250 primary geo space countries) ───────────────────
+	const countryUtils = useCountries();
+	$effect(() => {
+		countryUtils.load();
+	});
 
 	let entityController = $state<EntityPageController | undefined>(undefined);
 	let pageError = $state('');
@@ -144,9 +138,21 @@ onMount(async () => {
 		{ key: 'first_year_obligations', label: t('tax_calculator.first_year_obligations', 'First Year Obligations'), type: 'textarea' }
 	];
 
-		const filters = $derived<FilterDef[]>([
-		{ key: 'dest', label: t('app.tools.col_destination', 'Destination'), options: destOptions.map((s) => ({ value: s.id, label: s.name })) }
-	]);
+		const filters = $derived.by<FilterDef[]>(() => {
+		countryUtils.ready;
+		return [
+			{
+				key: 'dest',
+				label: t('app.tools.col_destination', 'Destination'),
+				type: 'autocomplete',
+				placeholder: t('app.tools.country_placeholder', 'Search country…'),
+				emptyMessage: t('common.no_results', 'No results found'),
+				fetcher: countryUtils.fetcher,
+				initialFetcher: countryUtils.initialFetcher,
+				getSelectedLabel: countryUtils.getSelectedLabel
+			}
+		];
+	});
 
 	const config = $derived<EntityPageConfig>({
 		filters,
@@ -249,32 +255,32 @@ onMount(async () => {
 		<!-- Destination selector (first — geo-aware pattern) -->
 		<div>
 			<label for="gen-dest" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('tax_calculator.destination', 'Destination')}</label>
-			<select
+			<Autocomplete
 				id="gen-dest"
-				class="w-full rounded-lg border p-3 text-sm"
-				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
-				bind:value={generateDest}
-			>
-				<option value="">{t('common.select', 'Select…')}</option>
-				{#each destOptions as opt (opt.id)}
-					<option value={opt.id}>{opt.name}</option>
-				{/each}
-			</select>
+				placeholder={t('app.tools.country_placeholder', 'Search country…')}
+				emptyMessage={t('common.no_results', 'No results found')}
+				fetcher={countryUtils.fetcher}
+				initialFetcher={countryUtils.initialFetcher}
+				selectedId={generateDest || null}
+				selectedLabel={generateDest ? countryUtils.getSelectedLabel(generateDest) : null}
+				onSelect={(item: AutocompleteItem) => { generateDest = item.id; }}
+				onClear={() => { generateDest = ''; }}
+			/>
 		</div>
 		<!-- Origin selector (secondary — geo-aware pattern) -->
 		<div>
 			<label for="gen-origin" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('tax_calculator.origin', 'Origin')}</label>
-			<select
+			<Autocomplete
 				id="gen-origin"
-				class="w-full rounded-lg border p-3 text-sm"
-				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
-				bind:value={generateOrigin}
-			>
-				<option value="">{t('common.select', 'Select…')}</option>
-				{#each destOptions as opt (opt.id)}
-					<option value={opt.id}>{opt.name}</option>
-				{/each}
-			</select>
+				placeholder={t('app.tools.country_placeholder', 'Search country…')}
+				emptyMessage={t('common.no_results', 'No results found')}
+				fetcher={countryUtils.fetcher}
+				initialFetcher={countryUtils.initialFetcher}
+				selectedId={generateOrigin || null}
+				selectedLabel={generateOrigin ? countryUtils.getSelectedLabel(generateOrigin) : null}
+				onSelect={(item: AutocompleteItem) => { generateOrigin = item.id; }}
+				onClear={() => { generateOrigin = ''; }}
+			/>
 		</div>
 		<div>
 			<label for="gen-emp" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('common.employment_status', 'Employment Status')}</label>

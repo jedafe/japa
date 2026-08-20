@@ -1,6 +1,8 @@
 <script lang="ts">
   import { Accordion } from "bits-ui";
   import { Select } from "$lib/components/ui/select";
+  import Autocomplete from "$lib/components/ui/Autocomplete.svelte";
+  import type { AutocompleteItem } from "$lib/components/ui/Autocomplete.svelte";
   import { Button } from "$lib/components/ui/button";
   import { Filter, X } from "lucide-svelte";
   import { t } from "$lib/stores/i18n.svelte";
@@ -41,12 +43,26 @@
     <Accordion.Content class="space-y-3 px-3 pb-3">
       <div class="flex flex-wrap gap-3">
         {#each filters as filter (filter.key)}
-          <div class="w-44">
-            <Select
-              bind:value={value[filter.key]}
-              options={filter.options}
-              placeholder={filter.label}
-            />
+          <div class={filter.type === 'autocomplete' ? 'w-64' : 'w-44'}>
+            {#if filter.type === 'autocomplete' && filter.fetcher}
+              <Autocomplete
+                id={`filter-${filter.key}`}
+                placeholder={filter.placeholder ?? filter.label}
+                emptyMessage={filter.emptyMessage ?? t('common.no_results', 'No results found')}
+                fetcher={filter.fetcher}
+                initialFetcher={filter.initialFetcher}
+                selectedId={value[filter.key] || null}
+                selectedLabel={value[filter.key] ? (filter.getSelectedLabel?.(value[filter.key]) ?? value[filter.key]) : null}
+                onSelect={(item: AutocompleteItem) => { value[filter.key] = item.id; }}
+                onClear={() => { value[filter.key] = ''; }}
+              />
+            {:else}
+              <Select
+                bind:value={value[filter.key]}
+                options={filter.options ?? []}
+                placeholder={filter.label}
+              />
+            {/if}
           </div>
         {/each}
       </div>

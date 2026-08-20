@@ -142,11 +142,13 @@ func (h *Handlers) GetExploreFeed(w http.ResponseWriter, r *http.Request) {
 
 	// Resolve geo code for cache key (ADR-064 VisitorContext).
 	geoCode := "global"
+	geoRegion := ""
 	if vc := visitor.FromContext(r.Context()); vc.ContentCountry != "" {
 		geoCode = vc.ContentCountry
+		geoRegion = vc.ContentRegion
 	}
 	page := int(offset) / int(limit)
-	cacheKey := vkcache.MustKey("explore:%s:%s:%s:%d", tenantID.String(), geoCode, sort, page)
+	cacheKey := vkcache.MustKey("explore:%s:%s:%s:%s:%d", tenantID.String(), geoCode, geoRegion, sort, page)
 
 	vc := visitor.FromContext(r.Context())
 	items, err := vkcache.GetOrComputeNative(r.Context(), h.cache, cacheKey, exploreCacheTTL, func(ctx context.Context) ([]FeedItem, error) {

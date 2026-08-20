@@ -4,6 +4,8 @@
 	import { page } from '$app/state';
 	import { ArrowLeft, Send } from 'lucide-svelte';
 	import { t } from '$lib/i18n';
+	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
+	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 	import { api } from '$lib/api/client';
 	import type { PageData } from './$types';
 
@@ -69,6 +71,27 @@
 			loading = false;
 		}
 	}
+
+	function fetchDestinationCountries(q: string): Promise<AutocompleteItem[]> {
+		const allLabel = t('common.all_countries', 'All countries');
+		const query = q.toLowerCase().trim();
+		const allItem: AutocompleteItem = { id: '', label: allLabel };
+		if (query === '') {
+			return Promise.resolve([allItem, ...(data.countries ?? []).map((c) => ({ id: c.id, label: c.name, sublabel: c.geo_code }))]);
+		}
+		const matchesAll = allLabel.toLowerCase().includes(query);
+		const filtered = (data.countries ?? []).filter(
+			(c) => c.name.toLowerCase().includes(query) || c.geo_code.toLowerCase().includes(query)
+		);
+		const items = filtered.map((c) => ({ id: c.id, label: c.name, sublabel: c.geo_code }));
+		return Promise.resolve(matchesAll ? [allItem, ...items] : items);
+	}
+	function fetchDestinationCountriesInitial(): Promise<AutocompleteItem[]> {
+		return fetchDestinationCountries('');
+	}
+	const selectedDestinationLabel = $derived(
+		hostDestCountryId ? (data.countries ?? []).find((c) => c.id === hostDestCountryId)?.name ?? null : null
+	);
 </script>
 
 <svelte:head>
@@ -100,18 +123,16 @@
 			<label for="host_dest_country_id" class="text-sm font-medium text-[var(--color-text)]">
 				{t('ama.field_destination', 'Destination country')} <span class="text-red-500">*</span>
 			</label>
-			<select
-				id="host_dest_country_id"
-				value={hostDestCountryId}
-				onchange={(e) => (hostDestCountryId = e.currentTarget.value)}
-				class={inputClass}
-				required
-			>
-				<option value="">{t('ama.placeholder_destination', 'Select destination country')}</option>
-				{#each data.countries as country (country.id)}
-					<option value={country.id}>{country.name}</option>
-				{/each}
-			</select>
+			<Autocomplete
+				placeholder={t('ama.placeholder_destination', 'Select destination country')}
+				emptyMessage={t('common.no_results', 'No results found')}
+				fetcher={fetchDestinationCountries}
+				initialFetcher={fetchDestinationCountriesInitial}
+				selectedId={hostDestCountryId || null}
+				selectedLabel={selectedDestinationLabel}
+				onSelect={(item) => (hostDestCountryId = item.id)}
+				onClear={() => (hostDestCountryId = '')}
+			/>
 		</div>
 
 		<!-- Title -->

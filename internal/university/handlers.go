@@ -165,6 +165,10 @@ func (h *Handlers) GetMyInstructorProfile(w http.ResponseWriter, r *http.Request
 	var profID pgtype.UUID
 	_ = profID.Scan(prof.ID)
 	summary, _ := h.service.store.DashboardSummary(r.Context(), tenantID, profID)
+	currency := ""
+	if h.service.settings != nil {
+		currency = h.service.settings.GetStringOr(r.Context(), tenantID, "wallet.default_currency", "")
+	}
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
 		"id":                      prof.ID,
 		"tenant_id":               prof.TenantID,
@@ -183,6 +187,7 @@ func (h *Handlers) GetMyInstructorProfile(w http.ResponseWriter, r *http.Request
 		"updated_at":              prof.UpdatedAt,
 		"total_enrolled":          summary.TotalEnrolled,
 		"total_revenue_kobo":      summary.TotalRevenueKobo,
+		"currency":                currency,
 		"courses_count":           summary.CoursesCount,
 	}})
 }
@@ -546,6 +551,7 @@ func (h *Handlers) GetMyTrackStats(w http.ResponseWriter, r *http.Request) {
 			"total_enrolled":      track.TotalEnrolled,
 			"completion_rate_pct": completionRate,
 			"total_revenue_kobo":  totalRevenue,
+			"currency":            track.Currency,
 			"revenue_series":      revData,
 			"enrollment_series":   enrollData,
 		},
@@ -660,10 +666,15 @@ func (h *Handlers) GetMyEarnings(w http.ResponseWriter, r *http.Request) {
 	}
 
 	totalEarned := summary.OpenKobo + summary.PaidKobo
+	currency := ""
+	if h.service.settings != nil {
+		currency = h.service.settings.GetStringOr(r.Context(), tenantID, "wallet.default_currency", "")
+	}
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
 		"total_earned_kobo":   totalEarned,
 		"total_paid_out_kobo": summary.PaidKobo,
 		"pending_kobo":        summary.OpenKobo,
+		"currency":            currency,
 		"revenue_series":      revenueSeries,
 	}})
 }
@@ -1118,6 +1129,10 @@ func trackFromGetRow(r gen.ListUniversityTracksByInstructorRow) Track {
 	if r.Category != nil {
 		t.Category = r.Category
 	}
+	if r.GeoSpaceID.Valid {
+		s := r.GeoSpaceID.String()
+		t.GeoSpaceID = &s
+	}
 	if r.UniversitySubmittedAt.Valid {
 		tm := r.UniversitySubmittedAt.Time
 		t.SubmittedAt = &tm
@@ -1155,6 +1170,10 @@ func trackFromPublishedRow(r gen.ListPublishedTracksByInstructorRow) Track {
 	}
 	if r.Category != nil {
 		t.Category = r.Category
+	}
+	if r.GeoSpaceID.Valid {
+		s := r.GeoSpaceID.String()
+		t.GeoSpaceID = &s
 	}
 	if r.UniversitySubmittedAt.Valid {
 		tm := r.UniversitySubmittedAt.Time

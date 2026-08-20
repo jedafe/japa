@@ -8,6 +8,7 @@
 	// passes the enrollment state down after fetching it client-side.
 	import { t } from '$lib/i18n';
 	import { goto } from '$app/navigation';
+	import { page } from '$app/state';
 	import { formatDuration, formatCount, formatPriceKobo, isFreeForUser } from '$lib/format';
 	import { Star, Users, Clock, PlayCircle, CheckCircle } from 'lucide-svelte';
 	import LevelBadge from './LevelBadge.svelte';
@@ -36,7 +37,7 @@
 		if (isFreeForUser(track.price_kobo, user?.is_pro)) {
 			return user?.is_pro ? t('learn.included_pro') : t('learn.free');
 		}
-		return formatPriceKobo(track.price_kobo);
+		return formatPriceKobo(track.price_kobo, track.currency, page.data.locale);
 	});
 </script>
 

@@ -8,7 +8,9 @@
 	import { api } from '$lib/api/client';
 	import { requireAuthOrRedirect } from '$lib/auth/guest';
 	import RadarItemRow from '$lib/components/RadarItemRow.svelte';
-	import type { Space, RadarItem } from '$lib/types';
+	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
+	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
+	import type { GeoCountry, RadarItem } from '$lib/types';
 	import type { PageData } from './$types';
 import { safeJsonLdScript } from '$lib/utils/safeHtml';
 
@@ -42,7 +44,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 
 	// Followed feed items + country browse list (SSR-seeded).
 	const followedItems = $derived<RadarItem[]>(data.followedItems);
-	const countries = $derived<Space[]>(data.countries);
+	const countries = $derived<GeoCountry[]>(data.countries);
 
 	// Followed space IDs — seeded from SSR, mutated optimistically on toggle.
 	let followedSpaceIds = $state<Set<string>>(untrack(() => new Set(data.followedSpaceIds ?? [])));
@@ -68,6 +70,26 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	const browseCountries = $derived(
 		countries.filter((c) => !followedSpaceIds.has(c.id))
 	);
+
+	// Autocomplete fetchers — filter the full /geo/countries list client-side.
+	// The "Browse countries" option (id: '') is always included at the top.
+	function fetchCountries(q: string): Promise<AutocompleteItem[]> {
+		const allLabel = t('radar.browse_countries', 'Browse countries');
+		const query = q.toLowerCase().trim();
+		const allItem: AutocompleteItem = { id: '', label: allLabel };
+		if (query === '') {
+			return Promise.resolve([allItem, ...data.countries.map((c) => ({ id: c.id, label: c.name, sublabel: c.geo_code }))]);
+		}
+		const matchesAll = allLabel.toLowerCase().includes(query);
+		const filtered = data.countries.filter(
+			(c) => c.name.toLowerCase().includes(query) || c.geo_code.toLowerCase().includes(query)
+		);
+		const items = filtered.map((c) => ({ id: c.id, label: c.name, sublabel: c.geo_code }));
+		return Promise.resolve(matchesAll ? [allItem, ...items] : items);
+	}
+	function fetchCountriesInitial(): Promise<AutocompleteItem[]> {
+		return fetchCountries('');
+	}
 
 	// "Load more" — appends the next page of followed items client-side.
 	// The radar feed uses a non-standard envelope ({items, ...} per spec
@@ -103,7 +125,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	// (followed feed + followed_space_ids) re-fetches from the server.
 	let pendingSpaceId = $state<string | null>(null);
 
-	async function toggleFollow(space: Space) {
+	async function toggleFollow(space: GeoCountry) {
 		if (pendingSpaceId) return;
 		if (!(await requireAuthOrRedirect())) return;
 		const wasFollowing = followedSpaceIds.has(space.id);
@@ -178,27 +200,19 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 		     BUG-012 fix. -->
 		<div class="border-b border-[var(--color-border)] px-4 py-3">
 			<div class="flex items-center gap-2">
-				<label for="radar-country-select" class="sr-only">
-					{t('radar.browse_countries', 'Browse countries')}
-				</label>
-				<select
-					id="radar-country-select"
-					class="flex-1 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none"
-					value={selectedSpaceId}
-					onchange={(e) => {
-						const val = e.currentTarget.value;
-						if (val) {
-							goto(`?space_id=${encodeURIComponent(val)}`, { keepFocus: true });
-						} else {
-							goto('?', { keepFocus: true });
-						}
+				<Autocomplete
+					placeholder={t('radar.browse_countries', 'Browse countries')}
+					emptyMessage={t('common.no_results', 'No results found')}
+					fetcher={fetchCountries}
+					initialFetcher={fetchCountriesInitial}
+					selectedId={selectedSpaceId || null}
+					selectedLabel={selectedCountryName || null}
+					onSelect={(item) => {
+						if (item.id) goto(`?space_id=${encodeURIComponent(item.id)}`, { keepFocus: true });
+						else goto('?', { keepFocus: true });
 					}}
-				>
-					<option value="">{t('radar.browse_countries', 'Browse countries')}</option>
-					{#each countries as space (space.id)}
-						<option value={space.id}>{space.name}</option>
-					{/each}
-				</select>
+					onClear={() => goto('?', { keepFocus: true })}
+				/>
 				{#if hasGeoFilter}
 					<button
 						type="button"

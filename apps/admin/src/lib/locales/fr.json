@@ -2960,6 +2960,7 @@
 	"space-types.are_you_sure_you_want_to_delete_this_spa": "Êtes-vous sûr de vouloir supprimer ce type d'espace ? Cette action est irréversible.",
 	"space-types.category": "Catégorie",
 	"space-types.category.business": "Entreprise",
+	"space-types.category.community": "Communauté",
 	"space-types.category.education": "Éducation",
 	"space-types.category.interest": "Intérêt",
 	"space-types.category.lifestyle": "Mode de vie",

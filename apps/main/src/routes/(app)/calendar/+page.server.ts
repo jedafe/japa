@@ -2,7 +2,7 @@
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiGet, apiList } from '$lib/server/api';
-import type { CalendarEntry, CalendarCategory, Space } from '$lib/types';
+import type { CalendarEntry, CalendarCategory, GeoCountry } from '$lib/types';
 
 /**
  * Community Calendar at /calendar — SSR list of calendar entries.
@@ -45,9 +45,9 @@ export const load: PageServerLoad = async (event) => {
 	const validCategoryValues = new Set(categories.map((c) => c.value));
 	const category = validCategoryValues.has(categoryRaw) ? categoryRaw : '';
 
-	let countries: Space[] = [];
+	let countries: GeoCountry[] = [];
 	try {
-		const { items } = await apiList<Space>(ctx, '/spaces?level=country');
+		const { items } = await apiList<GeoCountry>(ctx, '/geo/countries');
 		countries = items;
 	} catch {
 		countries = [];

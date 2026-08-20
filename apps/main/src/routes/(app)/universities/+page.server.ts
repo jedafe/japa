@@ -1,6 +1,6 @@
 import type { PageServerLoad } from './$types';
 import { apiContext, apiList } from '$lib/server/api';
-import type { University, ListMeta } from '$lib/types';
+import type { University, ListMeta, GeoCountry } from '$lib/types';
 
 /**
  * Universities at /universities — public, SSR, indexable. Lists university
@@ -52,10 +52,19 @@ export const load: PageServerLoad = async (event) => {
 		universities = [];
 	}
 
+	// Canonical country list for the filter dropdown (ADR-005).
+	let countries: GeoCountry[] = [];
+	try {
+		countries = (await apiList<GeoCountry>(ctx, '/geo/countries')).items;
+	} catch {
+		countries = [];
+	}
+
 	return {
 		universities,
 		meta,
 		pageSize: PAGE_SIZE,
-		countryDefault: countryDefault ?? null
+		countryDefault: countryDefault ?? null,
+		countries
 	};
 };

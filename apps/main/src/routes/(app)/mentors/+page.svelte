@@ -2,6 +2,8 @@
 	// Ref: japaconnect-engineering/sections/102-mentorship-matching.md
 	import { untrack } from 'svelte';
 	import { t } from '$lib/i18n';
+	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
+	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { GraduationCap, Search, X, GitCompare, UserPlus } from 'lucide-svelte';
@@ -106,6 +108,27 @@
 		params.set('page', String(p));
 		return `/mentors?${params.toString()}`;
 	}
+
+	function fetchDestinationCountries(q: string): Promise<AutocompleteItem[]> {
+		const allLabel = t('mentors.filter_destination_placeholder', 'All countries');
+		const query = q.toLowerCase().trim();
+		const allItem: AutocompleteItem = { id: '', label: allLabel };
+		if (query === '') {
+			return Promise.resolve([allItem, ...(data.countries ?? []).map((c) => ({ id: c.id, label: c.name, sublabel: c.geo_code }))]);
+		}
+		const matchesAll = allLabel.toLowerCase().includes(query);
+		const filtered = (data.countries ?? []).filter(
+			(c) => c.name.toLowerCase().includes(query) || c.geo_code.toLowerCase().includes(query)
+		);
+		const items = filtered.map((c) => ({ id: c.id, label: c.name, sublabel: c.geo_code }));
+		return Promise.resolve(matchesAll ? [allItem, ...items] : items);
+	}
+	function fetchDestinationCountriesInitial(): Promise<AutocompleteItem[]> {
+		return fetchDestinationCountries('');
+	}
+	const selectedDestinationLabel = $derived(
+		dest ? (data.countries ?? []).find((c) => c.id === dest)?.name ?? null : null
+	);
 </script>
 
 <svelte:head>
@@ -140,16 +163,16 @@
 				<label for="filter-dest" class="text-xs font-medium text-[var(--color-text-subtle)]">
 					{t('mentors.filter_destination', 'Destination')}
 				</label>
-				<select
-					id="filter-dest"
-					bind:value={dest}
-					class="w-40 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none"
-				>
-					<option value="">{t('mentors.filter_destination_placeholder', 'All countries')}</option>
-					{#each data.countries as country (country.id)}
-						<option value={country.id}>{country.name}</option>
-					{/each}
-				</select>
+				<Autocomplete
+					placeholder={t('mentors.filter_destination_placeholder', 'All countries')}
+					emptyMessage={t('common.no_results', 'No results found')}
+					fetcher={fetchDestinationCountries}
+					initialFetcher={fetchDestinationCountriesInitial}
+					selectedId={dest || null}
+					selectedLabel={selectedDestinationLabel}
+					onSelect={(item) => (dest = item.id)}
+					onClear={() => (dest = '')}
+				/>
 			</div>
 
 			<div class="flex flex-col gap-1">

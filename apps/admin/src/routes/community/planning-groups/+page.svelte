@@ -1,10 +1,10 @@
 <script lang="ts">
 	// /community/planning-groups — admin HITL review queue for Planning Groups with extend action.
-	import { onMount } from 'svelte';
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import { Modal } from '$lib/components/ui/modal';
 	import { Button } from '$lib/components/ui/button';
-	import { planningGroupAdminApi, apiRaw , spacesAdminApi } from '$lib/api';
+	import { planningGroupAdminApi, apiRaw } from '$lib/api';
+	import { useCountries } from '$lib/utils/countries.svelte';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { Eye, CalendarClock } from 'lucide-svelte';
@@ -20,6 +20,12 @@
 	};
 
 	const canManage = $derived(hasPermission('planning_group.manage_any'));
+
+	// ── Country selector (250 primary geo space countries) ───────────────────
+	const countryUtils = useCountries();
+	$effect(() => {
+		countryUtils.load();
+	});
 
 	// ── State ───────────────────────────────────────────────────────────────
 	let entityController = $state<EntityPageController | undefined>(undefined);
@@ -77,33 +83,21 @@
 		{ key: 'description', label: t('app.planning_group.detail_description', 'Description'), type: 'textarea' }
 	];
 
-	
-// Destination Spaces for the dest filter (geo-aware pattern). Loaded once
-// on mount from /admin/spaces?level=country so the filter options are
-// driven by the backend (Rule 16 — no hardcoded lists).
-type SpaceOption = { id: string; name: string };
-let destOptions = $state<SpaceOption[]>([]);
-onMount(async () => {
-	try {
-		const res = await spacesAdminApi.list('?level=country&limit=200');
-		if (res.ok && Array.isArray(res.data)) {
-			destOptions = (res.data as Array<{ id: string; name: string }>).map((s) => ({
-				id: s.id,
-				name: s.name
-			}));
-		}
-	} catch {
-		// Non-fatal — the dest filter simply stays empty.
-	}
-});
-
-		const filters = $derived<FilterDef[]>([
-		{
-			key: 'dest',
-			label: t('app.planning_group.col_destination', 'Destination'),
-			options: destOptions.map((s) => ({ value: s.id, label: s.name }))
-		}
-	]);
+	const filters = $derived.by<FilterDef[]>(() => {
+		countryUtils.ready;
+		return [
+			{
+				key: 'dest',
+				label: t('app.planning_group.col_destination', 'Destination'),
+				type: 'autocomplete',
+				placeholder: t('app.tools.country_placeholder', 'Search country…'),
+				emptyMessage: t('common.no_results', 'No results found'),
+				fetcher: countryUtils.fetcher,
+				initialFetcher: countryUtils.initialFetcher,
+				getSelectedLabel: countryUtils.getSelectedLabel
+			}
+		];
+	});
 
 	const config = $derived<EntityPageConfig>({
 		filters,

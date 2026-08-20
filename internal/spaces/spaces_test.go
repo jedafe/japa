@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -73,6 +74,24 @@ func TestIsValidLevel(t *testing.T) {
 		if IsValidLevel(level) {
 			t.Errorf("IsValidLevel(%q) = true, want false", level)
 		}
+	}
+}
+
+func TestExtractSpaceKeywords(t *testing.T) {
+	t.Parallel()
+
+	got := extractSpaceKeywords("Frontend Devs in Lagos, Nigeria")
+	want := []string{"frontend", "devs", "lagos", "nigeria", "frontend devs", "devs in", "in lagos", "lagos nigeria"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("extractSpaceKeywords() = %v, want %v", got, want)
+	}
+
+	if extractSpaceKeywords("") != nil {
+		t.Error("extractSpaceKeywords(\"\") should return nil")
+	}
+
+	if extractSpaceKeywords("a") != nil {
+		t.Error("extractSpaceKeywords(\"a\") should return nil")
 	}
 }
 
@@ -283,6 +302,22 @@ func TestCreateSpaceType_InvalidBody(t *testing.T) {
 
 	if got := decodeErrorResponse(t, rr.Body.Bytes()); got.Error.Code != "invalid_body" {
 		t.Errorf("error.code = %q, want invalid_body", got.Error.Code)
+	}
+}
+
+func TestIsAllowedCategory(t *testing.T) {
+	t.Parallel()
+
+	for _, cat := range []string{"education", "business", "profession", "interest", "lifestyle"} {
+		if !isAllowedCategory(cat) {
+			t.Errorf("isAllowedCategory(%q) = false, want true", cat)
+		}
+	}
+
+	for _, cat := range []string{"community", "global", "country", "", "foo"} {
+		if isAllowedCategory(cat) {
+			t.Errorf("isAllowedCategory(%q) = true, want false", cat)
+		}
 	}
 }
 

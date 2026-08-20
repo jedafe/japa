@@ -1,11 +1,10 @@
 <script lang="ts">
 	// /community/mutual-aid — admin HITL review queue for Mutual Aid requests with status update.
-	import { onMount } from 'svelte';
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import { Modal } from '$lib/components/ui/modal';
 	import { Button } from '$lib/components/ui/button';
-	import Autocomplete, { type AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
-	import { mutualAidAdminApi , spacesAdminApi, adminCatalogApi, type CatalogOption } from '$lib/api';
+	import { mutualAidAdminApi, adminCatalogApi, type CatalogOption } from '$lib/api';
+	import { useCountries } from '$lib/utils/countries.svelte';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { Eye, RefreshCw } from 'lucide-svelte';
@@ -26,6 +25,12 @@
 	};
 
 	const canManage = $derived(hasPermission('mutual_aid.moderate'));
+
+	// ── Country selector (250 primary geo space countries) ───────────────────
+	const countryUtils = useCountries();
+	$effect(() => {
+		countryUtils.load();
+	});
 
 	let statusOptions = $state<CatalogOption[]>([
 		{ value: 'active', label: t('mutual_aid.status.active', 'Active') },
@@ -102,62 +107,26 @@
 		{ key: 'description', label: t('app.mutual_aid.detail_description', 'Description'), type: 'textarea' }
 	]);
 
-	
-// Destination Spaces for the dest filter (geo-aware pattern). Loaded once
-// on mount from /admin/spaces?level=country so the filter options are
-// driven by the backend (Rule 16 — no hardcoded lists).
-type SpaceOption = { id: string; name: string };
-let destOptions = $state<SpaceOption[]>([]);
-let selectedDest = $state<string>('');
-onMount(async () => {
-	try {
-		const res = await spacesAdminApi.list('?level=country&limit=200');
-		if (res.ok && Array.isArray(res.data)) {
-			destOptions = (res.data as Array<{ id: string; name: string }>).map((s) => ({
-				id: s.id,
-				name: s.name
-			}));
-		}
-	} catch {
-		// Non-fatal — the dest filter simply stays empty.
-	}
-});
-
-// ── Dest autocomplete helpers (filter pre-loaded options client-side) ──
-function fetchDestOptions(q: string): Promise<{ id: string; label: string }[]> {
-	const opts = destOptions.map((s) => ({ id: s.id, label: s.name }));
-	const query = q.toLowerCase();
-	const filtered = query === ''
-		? opts
-		: opts.filter((o) => o.label.toLowerCase().includes(query));
-	return Promise.resolve(filtered);
-}
-
-function fetchDestOptionsInitial(): Promise<{ id: string; label: string }[]> {
-	return Promise.resolve(destOptions.map((s) => ({ id: s.id, label: s.name })));
-}
-
-function getDestSelectedLabel(id: string): string {
-	return destOptions.find((s) => s.id === id)?.name ?? id;
-}
-
-function selectDest(item: AutocompleteItem) {
-	selectedDest = item.id;
-	entityController?.reload();
-}
-
-function clearDest() {
-	selectedDest = '';
-	entityController?.reload();
-}
-
-		const filters = $derived<FilterDef[]>([
-		{
-			key: 'status',
-			label: t('app.mutual_aid.col_status', 'Status'),
-			options: statusOptions
-		}
-	]);
+	const filters = $derived.by<FilterDef[]>(() => {
+		countryUtils.ready;
+		return [
+			{
+				key: 'status',
+				label: t('app.mutual_aid.col_status', 'Status'),
+				options: statusOptions
+			},
+			{
+				key: 'dest',
+				label: t('app.mutual_aid.col_destination', 'Destination'),
+				type: 'autocomplete',
+				placeholder: t('app.tools.country_placeholder', 'Search country…'),
+				emptyMessage: t('common.no_results', 'No results found'),
+				fetcher: countryUtils.fetcher,
+				initialFetcher: countryUtils.initialFetcher,
+				getSelectedLabel: countryUtils.getSelectedLabel
+			}
+		];
+	});
 
 	const config = $derived<EntityPageConfig>({
 		filters,
@@ -198,9 +167,7 @@ function clearDest() {
 				queryParts.push(`sort=${params.sort}`);
 			}
 			if (params.filter?.status) queryParts.push(`status=${encodeURIComponent(params.filter.status)}`);
-			if (selectedDest) {
-				queryParts.push(`dest=${encodeURIComponent(selectedDest)}`);
-			}
+			if (params.filter?.dest) queryParts.push(`dest=${encodeURIComponent(params.filter.dest)}`);
 			const qs = queryParts.join('&');
 			const result = await mutualAidAdminApi.list(qs);
 			if (result.ok) {
@@ -229,25 +196,6 @@ function clearDest() {
 		{pageError}
 	</div>
 {/if}
-
-<div class="mb-4 flex items-center gap-2">
-	<label for="dest-filter" class="text-sm font-medium" style="color: var(--color-foreground)">
-		{t('app.mutual_aid.col_destination', 'Destination')}
-	</label>
-	<div class="w-64">
-		<Autocomplete
-			id="dest-filter"
-			placeholder={t('app.mutual_aid.dest_filter_placeholder', 'Search destination…')}
-			emptyMessage={t('common.no_results', 'No results found')}
-			fetcher={fetchDestOptions}
-			initialFetcher={fetchDestOptionsInitial}
-			selectedId={selectedDest || null}
-			selectedLabel={selectedDest ? getDestSelectedLabel(selectedDest) : null}
-			onSelect={selectDest}
-			onClear={clearDest}
-		/>
-	</div>
-</div>
 
 <EntityPage {config} bind:controller={entityController} />
 

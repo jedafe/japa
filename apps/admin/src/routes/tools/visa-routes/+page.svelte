@@ -2,15 +2,17 @@
 	// /tools/visa-routes — admin management page for visa route data.
 	// Full CRUD: create, edit, deactivate (soft-delete), approve (HITL), generate (AI draft).
 	// Ref: §90 (Visa Route Comparison), ADR-098, ADR-088 (Universal AI content generation).
-	import { onMount } from 'svelte';
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import { Modal } from '$lib/components/ui/modal';
 	import { Button } from '$lib/components/ui/button';
+	import Autocomplete from '$lib/components/ui/Autocomplete.svelte';
+	import type { AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { Eye, CheckCircle, Sparkles, Trash2 } from 'lucide-svelte';
 	import type { ActionItem, FilterDef } from '$lib/components/ui/data-table';
-	import { visaRoutesAdminApi, api , spacesAdminApi, adminCatalogApi, type CatalogOption } from '$lib/api';
+	import { visaRoutesAdminApi, adminCatalogApi, type CatalogOption } from '$lib/api';
+	import { useCountries } from '$lib/utils/countries.svelte';
 
 	// RouteDTO — matches the backend response shape (internal/visaroutes/service.go).
 	type VisaRoute = {
@@ -42,29 +44,15 @@
 		updated_at: string;
 	};
 
-	// Destination option — for the generate modal's destination dropdown.
-	type GeoSpaceOption = {
-		id: string;
-		name: string;
-	};
-
 	const canManage = $derived(hasPermission('visa_routes.manage'));
 
+	// ── Country selector (250 primary geo space countries) ───────────────────
+	const countryUtils = useCountries();
+	$effect(() => {
+		countryUtils.load();
+	});
+
 	// ── State ───────────────────────────────────────────────────────────────
-	
-// Destination Spaces for the dest filter (geo-aware pattern §90-101).
-type SpaceOption = { id: string; name: string };
-let destOptions = $state<SpaceOption[]>([]);
-onMount(async () => {
-	try {
-		const res = await spacesAdminApi.list('?level=country&limit=200');
-		if (res.ok && Array.isArray(res.data)) {
-			destOptions = (res.data as Array<{ id: string; name: string }>).map((s) => ({
-				id: s.id, name: s.name
-			}));
-		}
-	} catch { /* Non-fatal */ }
-});
 
 	let entityController = $state<EntityPageController | undefined>(undefined);
 
@@ -91,27 +79,11 @@ onMount(async () => {
 	let showGenerateModal = $state(false);
 	let generateDestSpaceId = $state('');
 	let generateVisaCategory = $state('');
-	let destinations = $state<GeoSpaceOption[]>([]);
-	let loadingDestinations = $state(false);
 
-	async function openGenerate() {
+	function openGenerate() {
 		generateDestSpaceId = '';
 		generateVisaCategory = '';
 		showGenerateModal = true;
-		// Fetch destination countries for the dropdown (Rule 16 — no hardcoded data).
-		if (destinations.length === 0) {
-			loadingDestinations = true;
-			try {
-				const result = await api<GeoSpaceOption[]>('/spaces?level=country');
-				if (result.ok) {
-					destinations = result.data ?? [];
-				}
-			} catch {
-				// Best-effort — modal still works with manual UUID entry.
-			} finally {
-				loadingDestinations = false;
-			}
-		}
 	}
 
 	async function confirmGenerate() {
@@ -208,46 +180,46 @@ onMount(async () => {
 		return acts;
 	});
 
-	// ── Country autocomplete helpers (filter destOptions client-side) ──────
-	// Sourced from the spaces country table (destOptions, loaded from
-	// /admin/spaces?level=country) — never hardcoded (Rule 16). Keyed by
-	// space ID so the selected UUID is stored as the field value.
+	// ── Country autocomplete helpers (250 primary geo space countries) ───────
+	// Sourced from GET /api/v1/geo/countries via useCountries(); filtered
+	// client-side for live debounced Autocomplete. Keyed by space ID.
+	const countryReady = $derived(countryUtils.ready);
+
 	function fetchCountryId(q: string): Promise<{ id: string; label: string; sublabel?: string }[]> {
-		const needle = q.toLowerCase().trim();
-		const filtered = needle
-			? destOptions.filter((o) => o.name.toLowerCase().includes(needle))
-			: destOptions;
-		return Promise.resolve(filtered.slice(0, 50).map((o) => ({ id: o.id, label: o.name })));
+		return countryUtils.fetcher(q);
 	}
 
 	function fetchCountryIdInitial(): Promise<{ id: string; label: string; sublabel?: string }[]> {
-		return Promise.resolve(destOptions.slice(0, 8).map((o) => ({ id: o.id, label: o.name })));
+		return countryUtils.initialFetcher();
 	}
 
 	function getCountryIdLabel(id: string): string {
-		return destOptions.find((o) => o.id === id)?.name ?? id;
+		return countryUtils.getSelectedLabel(id);
 	}
 
 	// ── Form fields (drives EntityForm for create/edit) ─────────────────────
-	const fields = $derived<FieldDef[]>([
-		{ key: 'name', label: t('app.tools.col_name', 'Name'), type: 'text' },
-		{ key: 'visa_category', label: t('app.tools.col_visa_type', 'Visa Category'), type: 'text' },
-		{ key: 'destination_space_id', label: t('app.tools.col_dest_country', 'Destination Country'), type: 'autocomplete', placeholder: t('app.tools.country_placeholder', 'Search country…'), emptyMessage: t('common.no_results', 'No results found'), fetcher: fetchCountryId, initialFetcher: fetchCountryIdInitial, getSelectedLabel: getCountryIdLabel },
-		{ key: 'slug', label: t('app.tools.col_slug', 'Slug'), type: 'text' },
-		{ key: 'eligibility_summary', label: t('app.tools.col_summary', 'Eligibility Summary'), type: 'textarea' },
-		{ key: 'gov_source_url', label: t('app.tools.col_gov_source_url', 'Government Source URL'), type: 'url' },
-		{ key: 'typical_fee_usd', label: t('app.tools.col_typical_fee', 'Typical Fee (USD)'), type: 'number' },
-		{ key: 'path_to_pr', label: t('app.tools.col_path_to_pr', 'Path to PR'), type: 'textarea' },
-		{ key: 'renewal_terms', label: t('app.tools.col_renewal_terms', 'Renewal Terms'), type: 'textarea' },
-		{ key: 'restrictions', label: t('app.tools.col_restrictions', 'Restrictions'), type: 'textarea' },
-		{
-			key: 'status',
-			label: t('app.tools.col_status', 'Status'),
-			type: 'select',
-			options: visaRouteStatusOptions
-		},
-		{ key: 'is_active', label: t('app.tools.col_is_active', 'Active'), type: 'checkbox' }
-	]);
+	const fields = $derived.by<FieldDef[]>(() => {
+		countryReady; // re-derive when the 250 primary geo space countries load
+		return [
+			{ key: 'name', label: t('app.tools.col_name', 'Name'), type: 'text' },
+			{ key: 'visa_category', label: t('app.tools.col_visa_type', 'Visa Category'), type: 'text' },
+			{ key: 'destination_space_id', label: t('app.tools.col_dest_country', 'Destination Country'), type: 'autocomplete', placeholder: t('app.tools.country_placeholder', 'Search country…'), emptyMessage: t('common.no_results', 'No results found'), fetcher: fetchCountryId, initialFetcher: fetchCountryIdInitial, getSelectedLabel: getCountryIdLabel },
+			{ key: 'slug', label: t('app.tools.col_slug', 'Slug'), type: 'text' },
+			{ key: 'eligibility_summary', label: t('app.tools.col_summary', 'Eligibility Summary'), type: 'textarea' },
+			{ key: 'gov_source_url', label: t('app.tools.col_gov_source_url', 'Government Source URL'), type: 'url' },
+			{ key: 'typical_fee_usd', label: t('app.tools.col_typical_fee', 'Typical Fee (USD)'), type: 'number' },
+			{ key: 'path_to_pr', label: t('app.tools.col_path_to_pr', 'Path to PR'), type: 'textarea' },
+			{ key: 'renewal_terms', label: t('app.tools.col_renewal_terms', 'Renewal Terms'), type: 'textarea' },
+			{ key: 'restrictions', label: t('app.tools.col_restrictions', 'Restrictions'), type: 'textarea' },
+			{
+				key: 'status',
+				label: t('app.tools.col_status', 'Status'),
+				type: 'select',
+				options: visaRouteStatusOptions
+			},
+			{ key: 'is_active', label: t('app.tools.col_is_active', 'Active'), type: 'checkbox' }
+		];
+	});
 
 	// ── Filters ─────────────────────────────────────────────────────────────
 	const statusFilterOptions = $derived<CatalogOption[]>([
@@ -265,8 +237,16 @@ onMount(async () => {
 		pageSize: 25,
 		filters: [
 			{ key: 'status', label: t('app.tools.col_status', 'Status'), options: statusFilterOptions },
-			{ key: 'dest', label: t('app.tools.col_destination', 'Destination'), options: destOptions.map((s) => ({ value: s.id, label: s.name })) }
-
+			{
+				key: 'dest',
+				label: t('app.tools.col_destination', 'Destination'),
+				type: 'autocomplete',
+				placeholder: t('app.tools.country_placeholder', 'Search country…'),
+				emptyMessage: t('common.no_results', 'No results found'),
+				fetcher: fetchCountryId,
+				initialFetcher: fetchCountryIdInitial,
+				getSelectedLabel: getCountryIdLabel
+			}
 		],
 		columns: [
 			{ key: 'name', label: t('app.tools.col_name', 'Name'), sortable: true },
@@ -382,29 +362,17 @@ onMount(async () => {
 	<div class="space-y-4">
 		<div>
 			<label for="gen-dest" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('app.tools.col_dest_country', 'Destination Country')}</label>
-			{#if loadingDestinations}
-				<p class="text-sm" style="color: var(--color-muted)">{t('common.loading', 'Loading...')}</p>
-			{:else if destinations.length > 0}
-				<select
-					id="gen-dest"
-					class="w-full rounded-lg border p-3 text-sm"
-					style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
-					bind:value={generateDestSpaceId}
-				>
-					<option value="">{t('common.select', 'Select...')}</option>
-					{#each destinations as dest (dest.id)}
-						<option value={dest.id}>{dest.name}</option>
-					{/each}
-				</select>
-			{:else}
-				<input
-					id="gen-dest"
-					class="w-full rounded-lg border p-3 text-sm"
-					style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
-					bind:value={generateDestSpaceId}
-					placeholder={t('app.tools.dest_space_id_placeholder', 'Destination space UUID')}
-				/>
-			{/if}
+			<Autocomplete
+				id="gen-dest"
+				placeholder={t('app.tools.country_placeholder', 'Search country…')}
+				emptyMessage={t('common.no_results', 'No results found')}
+				fetcher={countryUtils.fetcher}
+				initialFetcher={countryUtils.initialFetcher}
+				selectedId={generateDestSpaceId || null}
+				selectedLabel={generateDestSpaceId ? countryUtils.getSelectedLabel(generateDestSpaceId) : null}
+				onSelect={(item: AutocompleteItem) => { generateDestSpaceId = item.id; }}
+				onClear={() => { generateDestSpaceId = ''; }}
+			/>
 		</div>
 		<div>
 			<label for="gen-visa-cat" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('app.tools.col_visa_category', 'Visa Category (optional)')}</label>

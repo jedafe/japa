@@ -2,7 +2,7 @@
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiList } from '$lib/server/api';
-import type { Mentor, Space } from '$lib/types';
+import type { Mentor, GeoCountry } from '$lib/types';
 
 /**
  * Mentor discovery at /mentors — lists mentors with optional destination and
@@ -36,9 +36,9 @@ export const load: PageServerLoad = async (event) => {
 	if (areas) params.set('areas', areas);
 	if (sort) params.set('sort', sort);
 
-	let countries: Space[] = [];
+	let countries: GeoCountry[] = [];
 	try {
-		const { items } = await apiList<Space>(ctx, '/spaces?level=country');
+		const { items } = await apiList<GeoCountry>(ctx, '/geo/countries');
 		countries = items;
 	} catch {
 		countries = [];

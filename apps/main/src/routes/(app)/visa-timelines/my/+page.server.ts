@@ -2,7 +2,7 @@
 import { redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiList } from '$lib/server/api';
-import type { VisaTimeline, Space } from '$lib/types';
+import type { VisaTimeline, GeoCountry } from '$lib/types';
 
 /**
  * My Visa Timelines at /visa-timelines/my (Section 83).
@@ -23,9 +23,9 @@ export const load: PageServerLoad = async (event) => {
 		loadError = true;
 	}
 
-	let countries: Space[] = [];
+	let countries: GeoCountry[] = [];
 	try {
-		const { items } = await apiList<Space>(ctx, '/spaces?level=country');
+		const { items } = await apiList<GeoCountry>(ctx, '/geo/countries');
 		countries = items;
 	} catch {
 		countries = [];

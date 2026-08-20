@@ -1,15 +1,17 @@
 <script lang="ts">
 	// /tools/arrival-checklist — admin HITL review queue for AI-generated arrival checklists.
 	// Ref: §92 (Arrival Checklist Generator), ADR-100, ADR-088 (Universal AI content generation).
-	import { onMount } from 'svelte';
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import { Modal } from '$lib/components/ui/modal';
 	import { Button } from '$lib/components/ui/button';
+	import Autocomplete from '$lib/components/ui/Autocomplete.svelte';
+	import type { AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { Eye, CheckCircle, Sparkles } from 'lucide-svelte';
 	import type { ActionItem, FilterDef } from '$lib/components/ui/data-table';
-	import { arrivalChecklistAdminApi, api , spacesAdminApi, adminCatalogApi, type CatalogOption } from '$lib/api';
+	import { arrivalChecklistAdminApi, adminCatalogApi, type CatalogOption } from '$lib/api';
+	import { useCountries } from '$lib/utils/countries.svelte';
 
 	// GuideDTO — matches the backend response shape (internal/arrivalchecklist/service.go).
 	type ArrivalChecklistGuide = {
@@ -33,31 +35,14 @@
 		updated_at: string;
 	};
 
-	// Selector entry — for the generate modal's destination dropdown.
-	type SelectorEntry = {
-		destination_space_id: string;
-		destination_space_name?: string;
-		visa_category?: string;
-		guide_id: string;
-	};
-
 	const canManage = $derived(hasPermission('arrival_checklist.manage'));
 
-	// ── State ───────────────────────────────────────────────────────────────
-	
-// Destination Spaces for the dest filter (geo-aware pattern §90-101).
-type SpaceOption = { id: string; name: string };
-let destOptions = $state<SpaceOption[]>([]);
-onMount(async () => {
-	try {
-		const res = await spacesAdminApi.list('?level=country&limit=200');
-		if (res.ok && Array.isArray(res.data)) {
-			destOptions = (res.data as Array<{ id: string; name: string }>).map((s) => ({
-				id: s.id, name: s.name
-			}));
-		}
-	} catch { /* Non-fatal */ }
-});
+	// ── Country selector (250 primary geo space countries) ───────────────────
+	const countryUtils = useCountries();
+	const countryUtilsName = useCountries('name');
+	$effect(() => {
+		countryUtils.load();
+	});
 
 	let entityController = $state<EntityPageController | undefined>(undefined);
 
@@ -84,28 +69,12 @@ onMount(async () => {
 	let generateDestSpaceId = $state('');
 	let generateVisaCategory = $state('');
 	let generateApplicantType = $state('individual');
-	let selectorEntries = $state<SelectorEntry[]>([]);
-	let loadingSelectors = $state(false);
 
 	async function openGenerate() {
 		generateDestSpaceId = '';
 		generateVisaCategory = '';
 		generateApplicantType = 'individual';
 		showGenerateModal = true;
-		// Fetch selector data for the destination dropdown (Rule 16 — no hardcoded data).
-		if (selectorEntries.length === 0) {
-			loadingSelectors = true;
-			try {
-				const result = await api<SelectorEntry[]>('/arrival-checklist/selector');
-				if (result.ok) {
-					selectorEntries = result.data ?? [];
-				}
-			} catch {
-				// Best-effort — modal still works with manual UUID entry.
-			} finally {
-				loadingSelectors = false;
-			}
-		}
 	}
 
 	async function confirmGenerate() {
@@ -167,38 +136,19 @@ onMount(async () => {
 		return acts;
 	});
 
-	// ── Country autocomplete helpers (filter destOptions client-side) ──────
-	// Sourced from the spaces country table (destOptions, loaded from
-	// /admin/spaces?level=country) — never hardcoded (Rule 16).
-	function fetchDestName(q: string): Promise<{ id: string; label: string; sublabel?: string }[]> {
-		const needle = q.toLowerCase().trim();
-		const filtered = needle
-			? destOptions.filter((o) => o.name.toLowerCase().includes(needle))
-			: destOptions;
-		return Promise.resolve(filtered.slice(0, 50).map((o) => ({ id: o.name, label: o.name })));
-	}
-
-	function fetchDestNameInitial(): Promise<{ id: string; label: string; sublabel?: string }[]> {
-		return Promise.resolve(destOptions.slice(0, 8).map((o) => ({ id: o.name, label: o.name })));
-	}
-
-	function getDestNameLabel(id: string): string {
-		return destOptions.find((o) => o.name === id)?.name ?? id;
-	}
-
 	// `fields` is required by EntityPageConfig; readonly page so the form is never shown, but kept for shape completeness.
-	const fields: FieldDef[] = [
-		{ key: 'destination_space_name', label: t('app.tools.col_dest_country', 'Destination'), type: 'autocomplete', placeholder: t('app.tools.country_placeholder', 'Search country…'), emptyMessage: t('common.no_results', 'No results found'), fetcher: fetchDestName, initialFetcher: fetchDestNameInitial, getSelectedLabel: getDestNameLabel },
-		{ key: 'visa_category', label: t('app.tools.col_visa_category', 'Visa Category'), type: 'text' },
-		{ key: 'applicant_type', label: t('app.tools.col_applicant_type', 'Applicant Type'), type: 'text' }
-	];
+	const fields = $derived.by<FieldDef[]>(() => {
+		countryUtilsName.ready;
+		return [
+			{ key: 'destination_space_name', label: t('app.tools.col_dest_country', 'Destination'), type: 'autocomplete', placeholder: t('app.tools.country_placeholder', 'Search country…'), emptyMessage: t('common.no_results', 'No results found'), fetcher: countryUtilsName.fetcher, initialFetcher: countryUtilsName.initialFetcher, getSelectedLabel: countryUtilsName.getSelectedLabel },
+			{ key: 'visa_category', label: t('app.tools.col_visa_category', 'Visa Category'), type: 'text' },
+			{ key: 'applicant_type', label: t('app.tools.col_applicant_type', 'Applicant Type'), type: 'text' }
+		];
+	});
 
-	const config = $derived<EntityPageConfig>({
-		title: t('app.tools.arrival_checklist_heading', 'Arrival Checklist Review Queue'),
-		description: t('app.tools.arrival_checklist_desc', 'Review and approve AI-generated arrival checklists'),
-		readonly: true,
-		pageSize: 25,
-		filters: [
+	const filters = $derived.by<FilterDef[]>(() => {
+		countryUtils.ready;
+		return [
 			{
 				key: 'status',
 				label: t('app.tools.col_status', 'Status'),
@@ -207,9 +157,25 @@ onMount(async () => {
 					...arrivalChecklistStatusOptions
 				]
 			},
-			{ key: 'dest', label: t('app.tools.col_destination', 'Destination'), options: destOptions.map((s) => ({ value: s.id, label: s.name })) }
+			{
+				key: 'dest',
+				label: t('app.tools.col_destination', 'Destination'),
+				type: 'autocomplete',
+				placeholder: t('app.tools.country_placeholder', 'Search country…'),
+				emptyMessage: t('common.no_results', 'No results found'),
+				fetcher: countryUtils.fetcher,
+				initialFetcher: countryUtils.initialFetcher,
+				getSelectedLabel: countryUtils.getSelectedLabel
+			}
+		];
+	});
 
-		],
+	const config = $derived<EntityPageConfig>({
+		title: t('app.tools.arrival_checklist_heading', 'Arrival Checklist Review Queue'),
+		description: t('app.tools.arrival_checklist_desc', 'Review and approve AI-generated arrival checklists'),
+		readonly: true,
+		pageSize: 25,
+		filters,
 		columns: [
 			{
 				key: 'destination_space_name',
@@ -313,29 +279,17 @@ onMount(async () => {
 	<div class="space-y-4">
 		<div>
 			<label for="gen-dest" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('app.tools.col_dest_country', 'Destination Country')}</label>
-			{#if loadingSelectors}
-				<p class="text-sm" style="color: var(--color-muted)">{t('common.loading', 'Loading...')}</p>
-			{:else if selectorEntries.length > 0}
-				<select
-					id="gen-dest"
-					class="w-full rounded-lg border p-3 text-sm"
-					style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
-					bind:value={generateDestSpaceId}
-				>
-					<option value="">{t('common.select', 'Select...')}</option>
-					{#each selectorEntries as entry (entry.destination_space_id)}
-						<option value={entry.destination_space_id}>{entry.destination_space_name ?? entry.destination_space_id}</option>
-					{/each}
-				</select>
-			{:else}
-				<input
-					id="gen-dest"
-					class="w-full rounded-lg border p-3 text-sm"
-					style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
-					bind:value={generateDestSpaceId}
-					placeholder={t('app.tools.dest_space_id_placeholder', 'Destination space UUID')}
-				/>
-			{/if}
+			<Autocomplete
+				id="gen-dest"
+				placeholder={t('app.tools.country_placeholder', 'Search country…')}
+				emptyMessage={t('common.no_results', 'No results found')}
+				fetcher={countryUtils.fetcher}
+				initialFetcher={countryUtils.initialFetcher}
+				selectedId={generateDestSpaceId || null}
+				selectedLabel={generateDestSpaceId ? countryUtils.getSelectedLabel(generateDestSpaceId) : null}
+				onSelect={(item: AutocompleteItem) => { generateDestSpaceId = item.id; }}
+				onClear={() => { generateDestSpaceId = ''; }}
+			/>
 		</div>
 		<div>
 			<label for="gen-visa-cat" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('app.tools.col_visa_category', 'Visa Category (optional)')}</label>

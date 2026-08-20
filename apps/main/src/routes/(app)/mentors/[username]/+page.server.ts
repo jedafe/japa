@@ -2,7 +2,7 @@
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiGet, apiList } from '$lib/server/api';
-import type { Mentor, Space } from '$lib/types';
+import type { Mentor, GeoCountry } from '$lib/types';
 
 /**
  * Mentor profile at /mentors/{username} — SSR-fetches GET /mentors/{username}.
@@ -18,9 +18,9 @@ export const load: PageServerLoad = async (event) => {
 	const authed = !!event.locals.user;
 	const username = event.params.username;
 
-	let countries: Space[] = [];
+	let countries: GeoCountry[] = [];
 	try {
-		countries = (await apiList<Space>(ctx, '/spaces?level=country')).items;
+		countries = (await apiList<GeoCountry>(ctx, '/geo/countries')).items;
 	} catch {
 		countries = [];
 	}

@@ -45,15 +45,16 @@ type SuggestedSpace struct {
 // API shape and internal fields (tenant_id, perms, wiki_content, etc.) are
 // never leaked to unauthenticated callers.
 type GeoSpace struct {
-	ID            string `json:"id"`
-	Name          string `json:"name"`
-	Slug          string `json:"slug"`
-	Level         string `json:"level"`
-	GeoCode       string `json:"geo_code,omitempty"`
-	Description   string `json:"description,omitempty"`
-	MemberCount   int32  `json:"member_count"`
-	PostCount     int32  `json:"post_count"`
-	FollowerCount int32  `json:"follower_count"`
+	ID            string  `json:"id"`
+	Name          string  `json:"name"`
+	Slug          string  `json:"slug"`
+	Level         string  `json:"level"`
+	GeoCode       string  `json:"geo_code,omitempty"`
+	Description   string  `json:"description,omitempty"`
+	CurrencyCode  *string `json:"currency_code,omitempty"`
+	MemberCount   int32   `json:"member_count"`
+	PostCount     int32   `json:"post_count"`
+	FollowerCount int32   `json:"follower_count"`
 }
 
 // Handlers provides HTTP endpoints for geolocation.
@@ -186,7 +187,7 @@ func (h *Handlers) HandleListCountries(w http.ResponseWriter, r *http.Request) {
 
 	out := make([]GeoSpace, 0, len(countries))
 	for _, c := range countries {
-		out = append(out, projectGeoSpace(c.ID, c.Name, c.Slug, c.Level, c.GeoCode, c.Description, c.MemberCount, c.PostCount, c.FollowerCount))
+		out = append(out, projectGeoSpace(c.ID, c.Name, c.Slug, c.Level, c.GeoCode, c.Description, c.CurrencyCode, c.MemberCount, c.PostCount, c.FollowerCount))
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": out})
@@ -217,7 +218,7 @@ func (h *Handlers) HandleListStates(w http.ResponseWriter, r *http.Request) {
 
 	out := make([]GeoSpace, 0, len(states))
 	for _, s := range states {
-		out = append(out, projectGeoSpace(s.ID, s.Name, s.Slug, s.Level, s.GeoCode, s.Description, s.MemberCount, s.PostCount, s.FollowerCount))
+		out = append(out, projectGeoSpace(s.ID, s.Name, s.Slug, s.Level, s.GeoCode, s.Description, s.CurrencyCode, s.MemberCount, s.PostCount, s.FollowerCount))
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": out})
@@ -249,7 +250,7 @@ func (h *Handlers) HandleListCities(w http.ResponseWriter, r *http.Request) {
 
 	out := make([]GeoSpace, 0, len(cities))
 	for _, c := range cities {
-		out = append(out, projectGeoSpace(c.ID, c.Name, c.Slug, c.Level, c.GeoCode, c.Description, c.MemberCount, c.PostCount, c.FollowerCount))
+		out = append(out, projectGeoSpace(c.ID, c.Name, c.Slug, c.Level, c.GeoCode, c.Description, c.CurrencyCode, c.MemberCount, c.PostCount, c.FollowerCount))
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": out})
@@ -326,25 +327,32 @@ func derefStr(p *string) string {
 // projectGeoSpace builds a GeoSpace projection from the common fields shared
 // by all geo hierarchy sqlc row structs. It is the single chokepoint that
 // keeps internal columns (tenant_id, space_type_id, wiki_content, perms,
-// logo_media_id, header_image_id, deleted_at, currency_code, etc.) out of the
-// public API response.
+// logo_media_id, header_image_id, deleted_at, etc.) out of the public API
+// response. currency_code is intentionally exposed so geo-aware surfaces can
+// default currency to the selected primary space (Rule 16, ADR-065).
 func projectGeoSpace(
 	id pgtype.UUID,
 	name, slug, level string,
 	geoCode, description *string,
+	currencyCode *string,
 	memberCount, postCount, followerCount int32,
 ) GeoSpace {
-	return GeoSpace{
+	g := GeoSpace{
 		ID:            id.String(),
 		Name:          name,
 		Slug:          slug,
 		Level:         level,
 		GeoCode:       derefStr(geoCode),
 		Description:   derefStr(description),
+		CurrencyCode:  currencyCode,
 		MemberCount:   memberCount,
 		PostCount:     postCount,
 		FollowerCount: followerCount,
 	}
+	if g.CurrencyCode != nil && *g.CurrencyCode == "" {
+		g.CurrencyCode = nil
+	}
+	return g
 }
 
 // ---------------------------------------------------------------------------

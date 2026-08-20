@@ -1,10 +1,10 @@
 <script lang="ts">
 	// /community/wiki — admin HITL review queue for wiki page revisions.
-	import { onMount } from 'svelte';
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import { Modal } from '$lib/components/ui/modal';
 	import { Button } from '$lib/components/ui/button';
-	import { wikiAdminApi, apiRaw , spacesAdminApi } from '$lib/api';
+	import { wikiAdminApi, apiRaw } from '$lib/api';
+	import { useCountries } from '$lib/utils/countries.svelte';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { Eye, CheckCircle, XCircle, Sparkles, Lock, Unlock, Star } from 'lucide-svelte';
@@ -30,6 +30,12 @@
 	const canReview = $derived(hasPermission('wiki.review'));
 	const canManage = $derived(hasPermission('wiki.manage'));
 	const canLock = $derived(hasPermission('wiki.lock'));
+
+	// ── Country selector (250 primary geo space countries) ───────────────────
+	const countryUtils = useCountries();
+	$effect(() => {
+		countryUtils.load();
+	});
 
 	// ── State-action confirmation modal (reject with optional reason) ────────
 	let entityController = $state<EntityPageController | undefined>(undefined);
@@ -198,33 +204,21 @@
 		{ key: 'excerpt', label: t('app.wiki.detail_excerpt', 'Excerpt'), type: 'textarea' }
 	];
 
-	
-// Destination Spaces for the dest filter (geo-aware pattern). Loaded once
-// on mount from /admin/spaces?level=country so the filter options are
-// driven by the backend (Rule 16 — no hardcoded lists).
-type SpaceOption = { id: string; name: string };
-let destOptions = $state<SpaceOption[]>([]);
-onMount(async () => {
-	try {
-		const res = await spacesAdminApi.list('?level=country&limit=200');
-		if (res.ok && Array.isArray(res.data)) {
-			destOptions = (res.data as Array<{ id: string; name: string }>).map((s) => ({
-				id: s.id,
-				name: s.name
-			}));
-		}
-	} catch {
-		// Non-fatal — the dest filter simply stays empty.
-	}
-});
-
-		const filters = $derived<FilterDef[]>([
-		{
-			key: 'dest',
-			label: t('app.wiki.col_destination', 'Destination'),
-			options: destOptions.map((s) => ({ value: s.id, label: s.name }))
-		}
-	]);
+	const filters = $derived.by<FilterDef[]>(() => {
+		countryUtils.ready;
+		return [
+			{
+				key: 'dest',
+				label: t('app.wiki.col_destination', 'Destination'),
+				type: 'autocomplete',
+				placeholder: t('app.tools.country_placeholder', 'Search country…'),
+				emptyMessage: t('common.no_results', 'No results found'),
+				fetcher: countryUtils.fetcher,
+				initialFetcher: countryUtils.initialFetcher,
+				getSelectedLabel: countryUtils.getSelectedLabel
+			}
+		];
+	});
 
 	const config = $derived<EntityPageConfig>({
 		filters,

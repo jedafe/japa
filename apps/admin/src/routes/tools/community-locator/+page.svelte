@@ -1,12 +1,12 @@
 <script lang="ts">
 	// /tools/community-locator — read-only HITL review queue with Approve + Verify actions.
-	import { onMount } from 'svelte';
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
-	import { communityLocatorAdminApi , spacesAdminApi } from '$lib/api';
+	import { communityLocatorAdminApi } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { Eye, CheckCircle, BadgeCheck, Archive, Trash2, Hand, XCircle } from 'lucide-svelte';
 	import type { ActionItem, FilterDef } from '$lib/components/ui/data-table';
+	import { useCountries } from '$lib/utils/countries.svelte';
 
 	// CommunityItem matches the OrgDTO field names returned by the backend
 	// (internal/communitylocator/service.go OrgDTO). The previous version used
@@ -42,19 +42,12 @@
 
 	// ── State ───────────────────────────────────────────────────────────────
 	
-// Destination Spaces for the dest filter (geo-aware pattern §90-101).
-type SpaceOption = { id: string; name: string };
-let destOptions = $state<SpaceOption[]>([]);
-onMount(async () => {
-	try {
-		const res = await spacesAdminApi.list('?level=country&limit=200');
-		if (res.ok && Array.isArray(res.data)) {
-			destOptions = (res.data as Array<{ id: string; name: string }>).map((s) => ({
-				id: s.id, name: s.name
-			}));
-		}
-	} catch { /* Non-fatal */ }
-});
+	// ── Country selector (250 primary geo space countries) ───────────────────
+	const countryUtils = useCountries();
+	const countryUtilsName = useCountries('name');
+	$effect(() => {
+		countryUtils.load();
+	});
 
 	let entityController = $state<EntityPageController | undefined>(undefined);
 	let pageError = $state('');
@@ -221,39 +214,35 @@ onMount(async () => {
 		return acts;
 	});
 
-	// ── Country autocomplete helpers (filter destOptions client-side) ──────
-	// Sourced from the spaces country table (destOptions, loaded from
-	// /admin/spaces?level=country) — never hardcoded (Rule 16).
-	function fetchDestName(q: string): Promise<{ id: string; label: string; sublabel?: string }[]> {
-		const needle = q.toLowerCase().trim();
-		const filtered = needle
-			? destOptions.filter((o) => o.name.toLowerCase().includes(needle))
-			: destOptions;
-		return Promise.resolve(filtered.slice(0, 50).map((o) => ({ id: o.name, label: o.name })));
-	}
+	const fields = $derived.by<FieldDef[]>(() => {
+		countryUtilsName.ready;
+		return [
+			{ key: 'name', label: t('common.name', 'Name'), type: 'text' },
+			{ key: 'org_type', label: t('common.type', 'Type'), type: 'text' },
+			{ key: 'origin_community', label: t('common.origin', 'Origin'), type: 'text' },
+			{ key: 'destination_space_name', label: t('common.country', 'Country'), type: 'autocomplete', placeholder: t('app.tools.country_placeholder', 'Search country…'), emptyMessage: t('common.no_results', 'No results found'), fetcher: countryUtilsName.fetcher, initialFetcher: countryUtilsName.initialFetcher, getSelectedLabel: countryUtilsName.getSelectedLabel },
+			{ key: 'address', label: t('common.address', 'Address'), type: 'textarea' },
+			{ key: 'website_url', label: t('common.website', 'Website'), type: 'url' },
+			{ key: 'contact_info', label: t('common.contact', 'Contact'), type: 'text' },
+			{ key: 'meeting_frequency', label: t('common.frequency', 'Meeting frequency'), type: 'text' }
+		];
+	});
 
-	function fetchDestNameInitial(): Promise<{ id: string; label: string; sublabel?: string }[]> {
-		return Promise.resolve(destOptions.slice(0, 8).map((o) => ({ id: o.name, label: o.name })));
-	}
-
-	function getDestNameLabel(id: string): string {
-		return destOptions.find((o) => o.name === id)?.name ?? id;
-	}
-
-	const fields: FieldDef[] = [
-		{ key: 'name', label: t('common.name', 'Name'), type: 'text' },
-		{ key: 'org_type', label: t('common.type', 'Type'), type: 'text' },
-		{ key: 'origin_community', label: t('common.origin', 'Origin'), type: 'text' },
-		{ key: 'destination_space_name', label: t('common.country', 'Country'), type: 'autocomplete', placeholder: t('app.tools.country_placeholder', 'Search country…'), emptyMessage: t('common.no_results', 'No results found'), fetcher: fetchDestName, initialFetcher: fetchDestNameInitial, getSelectedLabel: getDestNameLabel },
-		{ key: 'address', label: t('common.address', 'Address'), type: 'textarea' },
-		{ key: 'website_url', label: t('common.website', 'Website'), type: 'url' },
-		{ key: 'contact_info', label: t('common.contact', 'Contact'), type: 'text' },
-		{ key: 'meeting_frequency', label: t('common.frequency', 'Meeting frequency'), type: 'text' }
-	];
-
-		const filters = $derived<FilterDef[]>([
-		{ key: 'dest', label: t('app.tools.col_destination', 'Destination'), options: destOptions.map((s) => ({ value: s.id, label: s.name })) }
-	]);
+		const filters = $derived.by<FilterDef[]>(() => {
+		countryUtils.ready;
+		return [
+			{
+				key: 'dest',
+				label: t('app.tools.col_destination', 'Destination'),
+				type: 'autocomplete',
+				placeholder: t('app.tools.country_placeholder', 'Search country…'),
+				emptyMessage: t('common.no_results', 'No results found'),
+				fetcher: countryUtils.fetcher,
+				initialFetcher: countryUtils.initialFetcher,
+				getSelectedLabel: countryUtils.getSelectedLabel
+			}
+		];
+	});
 
 	const config = $derived<EntityPageConfig>({
 		filters,

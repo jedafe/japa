@@ -2,7 +2,7 @@
 import type { PageServerLoad } from './$types';
 import { apiContext, apiGet, apiList } from '$lib/server/api';
 import { redirect } from '@sveltejs/kit';
-import type { MyJapaStage, Space } from '$lib/types';
+import type { MyJapaStage, GeoCountry } from '$lib/types';
 
 /**
  * My Japa Stage at /japa-stage/me. Auth-gated: redirects to login when not
@@ -22,9 +22,9 @@ export const load: PageServerLoad = async (event) => {
 		myStage = null;
 	}
 
-	let countries: Space[] = [];
+	let countries: GeoCountry[] = [];
 	try {
-		const { items } = await apiList<Space>(ctx, '/spaces?level=country');
+		const { items } = await apiList<GeoCountry>(ctx, '/geo/countries');
 		countries = items;
 	} catch {
 		countries = [];
