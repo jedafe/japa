@@ -1602,6 +1602,27 @@ func (q *Queries) GetSpacePrimaryGeoParents(ctx context.Context, arg GetSpacePri
 	return items, nil
 }
 
+const getSpaceRegionByGeoCode = `-- name: GetSpaceRegionByGeoCode :one
+SELECT region
+FROM spaces
+WHERE geo_code = $1 AND level = 'country' AND tenant_id = $2 AND deleted_at IS NULL
+LIMIT 1
+`
+
+type GetSpaceRegionByGeoCodeParams struct {
+	GeoCode  *string     `json:"geo_code"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+// Returns the region for a country-level space identified by its geo_code.
+// Used to map a resolved country code to its UN region for feed ranking.
+func (q *Queries) GetSpaceRegionByGeoCode(ctx context.Context, arg GetSpaceRegionByGeoCodeParams) (*string, error) {
+	row := q.db.QueryRow(ctx, getSpaceRegionByGeoCode, arg.GeoCode, arg.TenantID)
+	var region *string
+	err := row.Scan(&region)
+	return region, err
+}
+
 const getSpaceTypeByID = `-- name: GetSpaceTypeByID :one
 SELECT id, tenant_id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at, category
 FROM space_types

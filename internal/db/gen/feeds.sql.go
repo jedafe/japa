@@ -40,6 +40,23 @@ func (q *Queries) DeleteFeedItemsByUser(ctx context.Context, arg DeleteFeedItems
 }
 
 const getExploreFeed = `-- name: GetExploreFeed :many
+WITH content_geo AS (
+    SELECT cs.content_id,
+           COALESCE(MAX(CASE
+               WHEN COALESCE(NULLIF(cp.geo_code, ''), NULLIF(sp.geo_code, ''), NULLIF(s.geo_code, '')) = $4 AND s.level = 'city' THEN 5
+               WHEN COALESCE(NULLIF(cp.geo_code, ''), NULLIF(sp.geo_code, ''), NULLIF(s.geo_code, '')) = $4 AND s.level = 'state' THEN 4
+               WHEN COALESCE(NULLIF(cp.geo_code, ''), NULLIF(sp.geo_code, ''), NULLIF(s.geo_code, '')) = $4 AND s.level = 'country' THEN 3
+               WHEN COALESCE(cp.region, sp.region, s.region) = $5 THEN 2
+               ELSE 1
+           END), 1) AS geo_proximity
+    FROM content_spaces cs
+    JOIN spaces s ON s.id = cs.space_id AND s.level IN ('country', 'state', 'city') AND s.deleted_at IS NULL
+    LEFT JOIN spaces sp ON sp.id = s.parent_id
+    LEFT JOIN spaces cp ON cp.id = sp.parent_id
+    WHERE COALESCE(NULLIF(cp.geo_code, ''), NULLIF(sp.geo_code, ''), NULLIF(s.geo_code, '')) IS NOT NULL
+      AND COALESCE(NULLIF(cp.geo_code, ''), NULLIF(sp.geo_code, ''), NULLIF(s.geo_code, '')) != ''
+    GROUP BY cs.content_id
+)
 SELECT c.id, c.title, c.slug, c.content_type, c.author_id, c.space_id,
        c.created_at, c.view_count, c.comment_count,
        cs.vote_score, cs.velocity_score,
@@ -52,7 +69,8 @@ SELECT c.id, c.title, c.slug, c.content_type, c.author_id, c.space_id,
        c.read_time_minutes,
        m.storage_bucket AS cover_storage_bucket,
        m.storage_path AS cover_storage_path,
-       COALESCE(string_agg(t.name, ',' ORDER BY t.name), '') AS tags
+       COALESCE(string_agg(t.name, ',' ORDER BY t.name), '') AS tags,
+       COALESCE(MAX(cg.geo_proximity), 1) AS geo_proximity
 FROM contents c
 JOIN content_scores cs ON cs.content_id = c.id
 LEFT JOIN users u ON u.id = c.author_id
@@ -61,6 +79,7 @@ LEFT JOIN spaces s ON s.id = c.space_id
 LEFT JOIN content_tags ct ON ct.content_id = c.id
 LEFT JOIN tags t ON t.id = ct.tag_id
 LEFT JOIN media m ON m.id = COALESCE(c.featured_image_id, c.header_image_id) AND m.deleted_at IS NULL
+LEFT JOIN content_geo cg ON cg.content_id = c.id
 WHERE c.tenant_id = $1
   AND c.status = 'published'
   AND c.deleted_at IS NULL
@@ -69,14 +88,16 @@ GROUP BY c.id, cs.vote_score, cs.velocity_score, cs.bookmark_count,
          u.username, up.display_name, up.avatar_url,
          s.name, s.slug,
          m.storage_bucket, m.storage_path
-ORDER BY cs.velocity_score DESC, cs.vote_score DESC
+ORDER BY COALESCE(MAX(cg.geo_proximity), 1) DESC, cs.velocity_score DESC, cs.vote_score DESC
 LIMIT $3 OFFSET $2
 `
 
 type GetExploreFeedParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
-	PageOffset int32       `json:"page_offset"`
-	PageLimit  int32       `json:"page_limit"`
+	TenantID           pgtype.UUID `json:"tenant_id"`
+	PageOffset         int32       `json:"page_offset"`
+	PageLimit          int32       `json:"page_limit"`
+	VisitorCountryCode *string     `json:"visitor_country_code"`
+	VisitorRegion      *string     `json:"visitor_region"`
 }
 
 type GetExploreFeedRow struct {
@@ -101,11 +122,20 @@ type GetExploreFeedRow struct {
 	CoverStorageBucket *string            `json:"cover_storage_bucket"`
 	CoverStoragePath   *string            `json:"cover_storage_path"`
 	Tags               interface{}        `json:"tags"`
+	GeoProximity       interface{}        `json:"geo_proximity"`
 }
 
-// Trending content for guests (no user_id filter), pull from content_scores
+// Trending content for guests (no user_id filter), pull from content_scores.
+// Ranks by the content's best linked geo proximity to the visitor, falling
+// back to velocity and vote score for tie-breaking.
 func (q *Queries) GetExploreFeed(ctx context.Context, arg GetExploreFeedParams) ([]GetExploreFeedRow, error) {
-	rows, err := q.db.Query(ctx, getExploreFeed, arg.TenantID, arg.PageOffset, arg.PageLimit)
+	rows, err := q.db.Query(ctx, getExploreFeed,
+		arg.TenantID,
+		arg.PageOffset,
+		arg.PageLimit,
+		arg.VisitorCountryCode,
+		arg.VisitorRegion,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -135,6 +165,7 @@ func (q *Queries) GetExploreFeed(ctx context.Context, arg GetExploreFeedParams) 
 			&i.CoverStorageBucket,
 			&i.CoverStoragePath,
 			&i.Tags,
+			&i.GeoProximity,
 		); err != nil {
 			return nil, err
 		}
@@ -247,6 +278,23 @@ candidate_ids AS (
     SELECT id FROM affinity
     UNION
     SELECT id FROM velocity
+),
+content_geo AS (
+    SELECT cs.content_id,
+           COALESCE(MAX(CASE
+               WHEN COALESCE(NULLIF(cp.geo_code, ''), NULLIF(sp.geo_code, ''), NULLIF(s.geo_code, '')) = $10 AND s.level = 'city' THEN 5
+               WHEN COALESCE(NULLIF(cp.geo_code, ''), NULLIF(sp.geo_code, ''), NULLIF(s.geo_code, '')) = $10 AND s.level = 'state' THEN 4
+               WHEN COALESCE(NULLIF(cp.geo_code, ''), NULLIF(sp.geo_code, ''), NULLIF(s.geo_code, '')) = $10 AND s.level = 'country' THEN 3
+               WHEN COALESCE(cp.region, sp.region, s.region) = $11 THEN 2
+               ELSE 1
+           END), 1) AS geo_proximity
+    FROM content_spaces cs
+    JOIN spaces s ON s.id = cs.space_id AND s.level IN ('country', 'state', 'city') AND s.deleted_at IS NULL
+    LEFT JOIN spaces sp ON sp.id = s.parent_id
+    LEFT JOIN spaces cp ON cp.id = sp.parent_id
+    WHERE COALESCE(NULLIF(cp.geo_code, ''), NULLIF(sp.geo_code, ''), NULLIF(s.geo_code, '')) IS NOT NULL
+      AND COALESCE(NULLIF(cp.geo_code, ''), NULLIF(sp.geo_code, ''), NULLIF(s.geo_code, '')) != ''
+    GROUP BY cs.content_id
 )
 SELECT c.id, c.title, c.slug, c.content_type, c.author_id, c.space_id,
        c.created_at, c.view_count, c.comment_count,
@@ -265,7 +313,8 @@ SELECT c.id, c.title, c.slug, c.content_type, c.author_id, c.space_id,
        COUNT(DISTINCT t.id) FILTER (
            WHERE t.id = ANY(COALESCE($3::uuid[], ARRAY[]::uuid[]))
        )::int                                              AS followed_tag_overlap,
-       s.geo_code                                          AS space_geo_code
+       s.geo_code                                          AS space_geo_code,
+       COALESCE(cg.geo_proximity, 1)                       AS geo_proximity
 FROM contents c
 JOIN candidate_ids ci ON ci.id = c.id
 LEFT JOIN content_scores cs ON cs.content_id = c.id
@@ -275,23 +324,27 @@ LEFT JOIN spaces s ON s.id = c.space_id
 LEFT JOIN content_tags ct ON ct.content_id = c.id
 LEFT JOIN tags t ON t.id = ct.tag_id
 LEFT JOIN media m ON m.id = COALESCE(c.featured_image_id, c.header_image_id) AND m.deleted_at IS NULL
+LEFT JOIN content_geo cg ON cg.content_id = c.id
 GROUP BY c.id, cs.vote_score, cs.velocity_score, cs.bookmark_count,
          u.username, up.display_name, up.avatar_url,
          s.name, s.slug, s.geo_code,
-         m.storage_bucket, m.storage_path
+         m.storage_bucket, m.storage_path,
+         cg.geo_proximity
 LIMIT $4
 `
 
 type GetForYouCandidatesParams struct {
-	AuthorIds       []pgtype.UUID      `json:"author_ids"`
-	SpaceIds        []pgtype.UUID      `json:"space_ids"`
-	TagIds          []pgtype.UUID      `json:"tag_ids"`
-	CandidateCap    int32              `json:"candidate_cap"`
-	TenantID        pgtype.UUID        `json:"tenant_id"`
-	WindowStart     pgtype.Timestamptz `json:"window_start"`
-	ExcludeAuthorID pgtype.UUID        `json:"exclude_author_id"`
-	AffinityLimit   int32              `json:"affinity_limit"`
-	VelocityLimit   int32              `json:"velocity_limit"`
+	AuthorIds          []pgtype.UUID      `json:"author_ids"`
+	SpaceIds           []pgtype.UUID      `json:"space_ids"`
+	TagIds             []pgtype.UUID      `json:"tag_ids"`
+	CandidateCap       int32              `json:"candidate_cap"`
+	TenantID           pgtype.UUID        `json:"tenant_id"`
+	WindowStart        pgtype.Timestamptz `json:"window_start"`
+	ExcludeAuthorID    pgtype.UUID        `json:"exclude_author_id"`
+	AffinityLimit      int32              `json:"affinity_limit"`
+	VelocityLimit      int32              `json:"velocity_limit"`
+	VisitorCountryCode *string            `json:"visitor_country_code"`
+	VisitorRegion      *string            `json:"visitor_region"`
 }
 
 type GetForYouCandidatesRow struct {
@@ -320,6 +373,7 @@ type GetForYouCandidatesRow struct {
 	IsSpaceFollowed    bool               `json:"is_space_followed"`
 	FollowedTagOverlap int32              `json:"followed_tag_overlap"`
 	SpaceGeoCode       *string            `json:"space_geo_code"`
+	GeoProximity       interface{}        `json:"geo_proximity"`
 }
 
 // Bounded personalized candidate pool = UNION of (a) recent content from
@@ -338,6 +392,8 @@ func (q *Queries) GetForYouCandidates(ctx context.Context, arg GetForYouCandidat
 		arg.ExcludeAuthorID,
 		arg.AffinityLimit,
 		arg.VelocityLimit,
+		arg.VisitorCountryCode,
+		arg.VisitorRegion,
 	)
 	if err != nil {
 		return nil, err
@@ -372,6 +428,7 @@ func (q *Queries) GetForYouCandidates(ctx context.Context, arg GetForYouCandidat
 			&i.IsSpaceFollowed,
 			&i.FollowedTagOverlap,
 			&i.SpaceGeoCode,
+			&i.GeoProximity,
 		); err != nil {
 			return nil, err
 		}

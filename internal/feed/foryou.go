@@ -37,7 +37,8 @@ type Candidate struct {
 	IsAuthorFollowed   bool
 	IsSpaceFollowed    bool
 	FollowedTagOverlap int
-	SpaceGeoCode       string // ISO country code of the content's space (empty = no geo)
+	SpaceGeoCode       string  // ISO country code of the content's space (empty = no geo)
+	GeoProximity       float64 // 5=city,4=state,3=country,2=region,1=global/no match
 }
 
 // recencyDecay returns an exponential decay in [0,1]; fresher content scores higher.
@@ -51,9 +52,10 @@ func recencyDecay(ageHours float64) float64 {
 
 // computeForYouScore blends the personalization signals into a single score.
 // maxVelocity normalizes velocity relative to the fetched candidate pool.
-// contentCountry (from VisitorContext) applies a bounded geo boost when the
-// candidate's space geo_code matches the visitor's content country (ADR-064 §32).
-func computeForYouScore(c Candidate, now time.Time, maxVelocity float64, contentCountry string) float64 {
+// The geo boost is applied from the content's best linked primary geo space
+// (city > state > country > region > global). contentCountry is kept for the
+// cache key but the actual proximity value is now pre-computed per candidate.
+func computeForYouScore(c Candidate, now time.Time, maxVelocity float64, _ string) float64 {
 	velNorm := 0.0
 	if maxVelocity > 0 {
 		velNorm = c.VelocityScore / maxVelocity
@@ -64,6 +66,8 @@ func computeForYouScore(c Candidate, now time.Time, maxVelocity float64, content
 		author = 1.0
 	}
 
+	// Followed spaces get a strong affinity boost that is larger than the
+	// generic geo fallback, matching the requested ranking order.
 	space := 0.0
 	if c.IsSpaceFollowed {
 		space = 1.0
@@ -76,11 +80,10 @@ func computeForYouScore(c Candidate, now time.Time, maxVelocity float64, content
 
 	baseScore := wVelocity*velNorm + wAuthor*author + wSpace*space + wTag*tag + wRecency*rec
 
-	// Bounded geo boost (ADR-064 §32): multiply the base score by a capped
-	// factor when the content's space country matches the visitor's content
-	// country. The cap (geoBoostCap) ensures geo re-weights, never dominates.
-	if contentCountry != "" && c.SpaceGeoCode != "" && strings.EqualFold(c.SpaceGeoCode, contentCountry) {
-		boost := 1.0 + wGeo
+	// Bounded geo boost: city/state/country/region matches increase the score.
+	// Proximity is 1 (none) to 5 (city). Scale the bonus linearly and cap it.
+	if c.GeoProximity > 1 {
+		boost := 1.0 + wGeo*(c.GeoProximity-1)/4.0
 		if boost > geoBoostCap {
 			boost = geoBoostCap
 		}
@@ -162,6 +165,7 @@ func candidateFromRow(r gen.GetForYouCandidatesRow) Candidate {
 		IsSpaceFollowed:    r.IsSpaceFollowed,
 		FollowedTagOverlap: int(r.FollowedTagOverlap),
 		SpaceGeoCode:       derefStr(r.SpaceGeoCode),
+		GeoProximity:       interfaceToFloat64(r.GeoProximity),
 	}
 }
 

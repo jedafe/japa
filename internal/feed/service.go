@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"strconv"
 	"strings"
 	"time"
 
@@ -97,7 +98,7 @@ func (s *Service) FanOutPost(_ context.Context, tenantID, contentID, spaceID pgt
 // GetFeed returns paginated feed items for the specified timeline and sort.
 // timeline: "explore", "primary", "space", "profile"
 // sort: "latest", "top", "rising", "relevant"
-func (s *Service) GetFeed(ctx context.Context, tenantID pgtype.UUID, timeline string, userID, spaceID, authorID *pgtype.UUID, sort string, limit, offset int32) ([]FeedItem, error) {
+func (s *Service) GetFeed(ctx context.Context, tenantID pgtype.UUID, timeline string, userID, spaceID, authorID *pgtype.UUID, sort string, limit, offset int32, visitorCountryCode, visitorRegion string) ([]FeedItem, error) {
 	// Clamp pagination limits.
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
@@ -109,7 +110,7 @@ func (s *Service) GetFeed(ctx context.Context, tenantID pgtype.UUID, timeline st
 
 	switch timeline {
 	case "explore":
-		return s.getExploreFeed(ctx, tenantID, sort, limit, offset)
+		return s.getExploreFeed(ctx, tenantID, sort, visitorCountryCode, visitorRegion, limit, offset)
 	case "primary":
 		if userID == nil {
 			return nil, errors.New("primary feed requires user_id")
@@ -148,7 +149,7 @@ func (s *Service) GetFeed(ctx context.Context, tenantID pgtype.UUID, timeline st
 }
 
 // getExploreFeed returns the explore feed with the given sort mode.
-func (s *Service) getExploreFeed(ctx context.Context, tenantID pgtype.UUID, sort string, limit, offset int32) ([]FeedItem, error) {
+func (s *Service) getExploreFeed(ctx context.Context, tenantID pgtype.UUID, sort, visitorCountryCode, visitorRegion string, limit, offset int32) ([]FeedItem, error) {
 	switch sort {
 	case SortTop:
 		rows, err := s.store.getTopFeed(ctx, tenantID, limit, offset)
@@ -177,7 +178,7 @@ func (s *Service) getExploreFeed(ctx context.Context, tenantID pgtype.UUID, sort
 
 		return topRowsToItems(rows), nil
 	default: // "latest" uses velocity_score DESC
-		rows, err := s.store.getExploreFeed(ctx, tenantID, limit, offset)
+		rows, err := s.store.getExploreFeed(ctx, tenantID, visitorCountryCode, visitorRegion, limit, offset)
 		if err != nil {
 			return nil, err
 		}
@@ -544,6 +545,27 @@ func pgNumericToFloat64(n pgtype.Numeric) float64 {
 	return f.Float64
 }
 
+// interfaceToFloat64 converts the sqlc-generated interface{} value (used for
+// the MAX/CASE geo_proximity expression) into a float64 for ranking.
+func interfaceToFloat64(v interface{}) float64 {
+	switch n := v.(type) {
+	case int64:
+		return float64(n)
+	case int32:
+		return float64(n)
+	case int:
+		return float64(n)
+	case float64:
+		return n
+	case string:
+		f, err := strconv.ParseFloat(n, 64)
+		if err == nil {
+			return f
+		}
+	}
+	return 0
+}
+
 // For-You feed bounds and cache tuning (v1 constants).
 const (
 	forYouWindowDaysDefault = 30
@@ -600,7 +622,7 @@ func (s *Service) loadAffinity(
 // geo_personalization.enabled is false (Section 32 L147–149).
 func (s *Service) GetForYouFeed(
 	ctx context.Context, tenantID, userID pgtype.UUID, sortMode string, limit, offset int32,
-	contentCountry string,
+	contentCountry, contentRegion string,
 ) ([]FeedItem, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
@@ -611,10 +633,11 @@ func (s *Service) GetForYouFeed(
 	}
 
 	// BUG-007: honor geo_personalization.enabled. When disabled, clear
-	// contentCountry so no geo boost is applied. Ref: Section 32 L147–149.
-	if s.settings != nil && contentCountry != "" {
+	// contentCountry/contentRegion so no geo boost is applied. Ref: Section 32 L147–149.
+	if s.settings != nil && (contentCountry != "" || contentRegion != "") {
 		if !s.settings.GetBoolOr(ctx, tenantID, "geo_personalization.enabled", true) {
 			contentCountry = ""
+			contentRegion = ""
 		}
 	}
 
@@ -639,16 +662,20 @@ func (s *Service) GetForYouFeed(
 		var windowStart pgtype.Timestamptz
 		_ = windowStart.Scan(time.Now().Add(-time.Duration(windowDays) * 24 * time.Hour))
 
+		visitorCountryCode := contentCountry
+		visitorRegion := contentRegion
 		rows, err := s.store.getForYouCandidates(ctx, gen.GetForYouCandidatesParams{
-			TenantID:        tenantID,
-			WindowStart:     windowStart,
-			ExcludeAuthorID: userID,
-			AuthorIds:       authorIDs,
-			SpaceIds:        spaceIDs,
-			TagIds:          tagIDs,
-			AffinityLimit:   forYouAffinityCap,
-			VelocityLimit:   forYouVelocityCap,
-			CandidateCap:    forYouCandidateCap,
+			TenantID:           tenantID,
+			WindowStart:        windowStart,
+			ExcludeAuthorID:    userID,
+			AuthorIds:          authorIDs,
+			SpaceIds:           spaceIDs,
+			TagIds:             tagIDs,
+			AffinityLimit:      forYouAffinityCap,
+			VelocityLimit:      forYouVelocityCap,
+			CandidateCap:       forYouCandidateCap,
+			VisitorCountryCode: &visitorCountryCode,
+			VisitorRegion:      &visitorRegion,
 		})
 		if err != nil {
 			return nil, err
