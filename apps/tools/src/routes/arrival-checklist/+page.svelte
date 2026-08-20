@@ -155,14 +155,14 @@
 			</p>
 		</div>
 
-		{#if destinations.length === 0}
+		{#if selectorEntries.length === 0}
 			<EmptyState
 				icon="plane-landing"
 				title={t('arrival_checklist.no_destinations', 'No checklists available')}
 				description={t('arrival_checklist.no_destinations_desc', 'Arrival checklist guides haven’t been published yet. Please check back later.')}
 			/>
 		{:else}
-			<!-- Destination selector (built from selector data — geo-aware pattern) -->
+			<!-- Destination selector (full country list from GET /geo/countries) -->
 			<div class="mb-4">
 				<DestinationSelector {destinations} bind:selectedId={selectedDestId} onchange={onDestChange} />
 			</div>

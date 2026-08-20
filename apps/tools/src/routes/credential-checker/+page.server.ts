@@ -1,5 +1,6 @@
 import type { PageServerLoad } from './$types';
 import { apiContext, apiList } from '$lib/server/api';
+import { loadCountries } from '$lib/server/geo';
 import { getTool, isToolEnabled } from '$lib/tools/registry';
 import type {
 	GeoSpaceOption,
@@ -13,7 +14,7 @@ import type {
  * require a destination + profession selection, so they are fetched
  * client-side (with optional SSR pre-fetch when ?dest= is present).
  *
- * API: GET /spaces?level=country — destination selector options.
+ * API: GET /geo/countries — the full 250 primary geo space countries (geo selector).
  *      GET /credentials/professions — list of professions.
  *      GET /credentials?dest=&profession=&issuing= — pathway list.
  *      GET /credentials/{id} — { pathway, notes } (non-standard envelope).
@@ -42,7 +43,7 @@ export const load: PageServerLoad = async (event) => {
 	// Destination country list — the primary data axis (ADR-088). Rule 16.
 	let destinations: GeoSpaceOption[] = [];
 	try {
-		destinations = (await apiList<GeoSpaceOption>(ctx, '/spaces?level=country')).items;
+		destinations = await loadCountries(ctx);
 	} catch {
 		destinations = [];
 	}

@@ -1,16 +1,17 @@
 import type { PageServerLoad } from './$types';
 import { apiContext, apiList } from '$lib/server/api';
+import { loadCountries } from '$lib/server/geo';
 import { getTool, isToolEnabled } from '$lib/tools/registry';
 import type { Embassy, GeoSpaceOption } from '$lib/types';
 
 /**
  * Embassy Appointment Alerter — §91, ADR-099.
- * SSR loads the destination country list from /spaces?level=country (the
+ * SSR loads the destination country list from GET /geo/countries (the
  * geo-aware pattern). When ?dest= is present, embassies for that destination
  * are fetched server-side. User-specific alerts are fetched client-side on
  * mount (not in SSR) to avoid leaking user data across cached responses.
  *
- * API: GET /spaces?level=country — destination countries (geo selector).
+ * API: GET /geo/countries — the full 250 primary geo space countries (geo selector).
  *      GET /embassies?dest={space_id} — embassies for a destination (public).
  *      GET /me/appointment-alerts — user's alerts (auth, client-side only).
  *      POST/PATCH/DELETE /me/appointment-alerts — mutations (client-side).
@@ -38,7 +39,7 @@ export const load: PageServerLoad = async (event) => {
 	// Destination list — the geo-aware selector source (Rule 16).
 	let destinations: GeoSpaceOption[] = [];
 	try {
-		destinations = (await apiList<GeoSpaceOption>(ctx, '/spaces?level=country')).items;
+		destinations = await loadCountries(ctx);
 	} catch {
 		destinations = [];
 	}

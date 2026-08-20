@@ -1,5 +1,6 @@
 import type { PageServerLoad } from './$types';
-import { apiContext, apiList } from '$lib/server/api';
+import { apiContext } from '$lib/server/api';
+import { loadCountries } from '$lib/server/geo';
 import { getTool, isToolEnabled } from '$lib/tools/registry';
 import type { GeoSpaceOption, ProcessingStat, ProcessingTrendPoint } from '$lib/types';
 
@@ -8,7 +9,7 @@ import type { GeoSpaceOption, ProcessingStat, ProcessingTrendPoint } from '$lib/
  * SSR loads the destination country list only. Stats and trend data require
  * a destination + visa category selection, so they are fetched client-side.
  *
- * API: GET /spaces?level=country — destination selector options.
+ * API: GET /geo/countries — the full 250 primary geo space countries (geo selector).
  *      GET /visa-timelines/stats?dest=&origin=&visa= — processing stats.
  *      GET /visa-timelines/stats/trend?dest=&visa=&months=12 — trend.
  *
@@ -36,7 +37,7 @@ export const load: PageServerLoad = async (event) => {
 	// tool (ADR-088). Rule 16 — never hardcode the country list.
 	let destinations: GeoSpaceOption[] = [];
 	try {
-		destinations = (await apiList<GeoSpaceOption>(ctx, '/spaces?level=country')).items;
+		destinations = await loadCountries(ctx);
 	} catch {
 		destinations = [];
 	}
