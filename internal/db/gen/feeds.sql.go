@@ -311,6 +311,7 @@ SELECT c.id, c.title, c.slug, c.content_type, c.author_id, c.space_id,
        COALESCE(s.slug, '') AS space_slug,
        MAX(LEFT(c.body, 200))::text AS excerpt,
        c.read_time_minutes,
+       c.journey_stage, c.visa_route, c.source_country, c.target_country,
        m.storage_bucket AS cover_storage_bucket,
        m.storage_path   AS cover_storage_path,
        COALESCE(string_agg(t.name, ',' ORDER BY t.name), '') AS tags,
@@ -334,6 +335,7 @@ LEFT JOIN content_geo cg ON cg.content_id = c.id
 GROUP BY c.id, cs.vote_score, cs.velocity_score, cs.bookmark_count,
          u.username, up.display_name, up.avatar_url,
          s.name, s.slug, s.geo_code,
+         c.journey_stage, c.visa_route, c.source_country, c.target_country,
          m.storage_bucket, m.storage_path,
          cg.geo_proximity
 LIMIT $4
@@ -372,6 +374,10 @@ type GetForYouCandidatesRow struct {
 	SpaceSlug          string             `json:"space_slug"`
 	Excerpt            string             `json:"excerpt"`
 	ReadTimeMinutes    int32              `json:"read_time_minutes"`
+	JourneyStage       *string            `json:"journey_stage"`
+	VisaRoute          *string            `json:"visa_route"`
+	SourceCountry      *string            `json:"source_country"`
+	TargetCountry      *string            `json:"target_country"`
 	CoverStorageBucket *string            `json:"cover_storage_bucket"`
 	CoverStoragePath   *string            `json:"cover_storage_path"`
 	Tags               interface{}        `json:"tags"`
@@ -427,6 +433,10 @@ func (q *Queries) GetForYouCandidates(ctx context.Context, arg GetForYouCandidat
 			&i.SpaceSlug,
 			&i.Excerpt,
 			&i.ReadTimeMinutes,
+			&i.JourneyStage,
+			&i.VisaRoute,
+			&i.SourceCountry,
+			&i.TargetCountry,
 			&i.CoverStorageBucket,
 			&i.CoverStoragePath,
 			&i.Tags,

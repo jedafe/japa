@@ -15,6 +15,7 @@ import (
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/media"
 	vkcache "github.com/jedafe/japa/internal/valkey"
+	"github.com/jedafe/japa/internal/visitor"
 	"github.com/jedafe/japa/internal/worker"
 )
 
@@ -41,6 +42,11 @@ type FeedItem struct { //nolint:revive // stuttering type name preserved for API
 	ReadingTimeMinutes int      `json:"reading_time_minutes,omitempty"`
 	CoverImageURL      string   `json:"cover_image_url,omitempty"`
 	BookmarkCount      int32    `json:"bookmark_count,omitempty"`
+	// Journey-aware recommendation metadata surfaced on feed cards.
+	JourneyStage  *string `json:"journey_stage,omitempty"`
+	VisaRoute     *string `json:"visa_route,omitempty"`
+	SourceCountry *string `json:"source_country,omitempty"`
+	TargetCountry *string `json:"target_country,omitempty"`
 }
 
 // PrimaryFeedItem represents a feed item from the personalized (push) feed.
@@ -616,13 +622,15 @@ func (s *Service) loadAffinity(
 }
 
 // GetForYouFeed returns the personalized, ranked feed for a user, cached 90s per sort.
-// contentCountry is the visitor's resolved ContentCountry (ADR-064) used for
-// the bounded geo boost in the ranking; empty string disables geo weighting.
+// vc is the visitor's resolved context (ADR-064 + journey-aware). It provides
+// the geo country/region for the bounded geo boost and the journey signals
+// (destination, stage, visa, roadmap) for journey-aware ranking. A nil vc
+// disables both features and falls back to the follow/velocity/recency mix.
 // The geo boost is also disabled when the tenant setting
 // geo_personalization.enabled is false (Section 32 L147–149).
 func (s *Service) GetForYouFeed(
 	ctx context.Context, tenantID, userID pgtype.UUID, sortMode string, limit, offset int32,
-	contentCountry, contentRegion string,
+	vc *visitor.VisitorContext,
 ) ([]FeedItem, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
@@ -630,6 +638,13 @@ func (s *Service) GetForYouFeed(
 
 	if offset < 0 {
 		offset = 0
+	}
+
+	contentCountry := ""
+	contentRegion := ""
+	if vc != nil {
+		contentCountry = vc.ContentCountry
+		contentRegion = vc.ContentRegion
 	}
 
 	// BUG-007: honor geo_personalization.enabled. When disabled, clear
@@ -641,7 +656,17 @@ func (s *Service) GetForYouFeed(
 		}
 	}
 
-	key := forYouCacheKey(tenantID, userID, sortMode, contentCountry, contentRegion)
+	// Build the lookup map for readiness roadmap slug boosts.
+	roadmapSlugs := make(map[string]bool)
+	if vc != nil {
+		for _, slug := range vc.RoadmapSlugs {
+			if slug != "" {
+				roadmapSlugs[slug] = true
+			}
+		}
+	}
+
+	key := forYouCacheKey(tenantID, userID, sortMode, vc)
 
 	// Use the shared cache helper with distributed lock stampede protection
 	// (BUG-008). On cache miss, the lock holder loads affinity, fetches
@@ -688,7 +713,7 @@ func (s *Service) GetForYouFeed(
 		}
 
 		result := make([]FeedItem, 0, len(cands))
-		for _, c := range rankCandidates(cands, sortMode, time.Now(), contentCountry) {
+		for _, c := range rankCandidates(cands, sortMode, time.Now(), vc, roadmapSlugs) {
 			result = append(result, c.Item)
 		}
 
