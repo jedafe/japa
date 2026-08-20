@@ -190,7 +190,8 @@ INSERT INTO contents (
     field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
     canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
     status, visibility, read_time_minutes, publish_at, published_at, guide_category,
-    ai_generated, ai_model, ai_generated_at, hitl_reviewed_by, hitl_reviewed_at
+    ai_generated, ai_model, ai_generated_at, hitl_reviewed_by, hitl_reviewed_at,
+    journey_stage, visa_route, source_country, target_country
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8, $9,
     $10, $11, $12,
@@ -200,7 +201,8 @@ INSERT INTO contents (
     $20, $21, $22, $23, $24,
     $25,
     COALESCE($26, false), $27, $28,
-    $29, $30
+    $29, $30,
+    $31, $32, $33, $34
 )
 RETURNING id, tenant_id, author_id, organization_id, space_id, content_type, title, slug, body, body_html,
           field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
@@ -208,7 +210,8 @@ RETURNING id, tenant_id, author_id, organization_id, space_id, content_type, tit
           status, visibility, is_locked, is_pinned, read_time_minutes,
           view_count, comment_count, share_count, reshare_count, publish_at, published_at,
           created_at, updated_at, guide_category,
-          ai_generated, ai_model, ai_generated_at, hitl_reviewed_by, hitl_reviewed_at
+          ai_generated, ai_model, ai_generated_at, hitl_reviewed_by, hitl_reviewed_at,
+          journey_stage, visa_route, source_country, target_country
 `
 
 type CreateContentParams struct {
@@ -242,6 +245,10 @@ type CreateContentParams struct {
 	AiGeneratedAt   pgtype.Timestamptz `json:"ai_generated_at"`
 	HitlReviewedBy  pgtype.UUID        `json:"hitl_reviewed_by"`
 	HitlReviewedAt  pgtype.Timestamptz `json:"hitl_reviewed_at"`
+	JourneyStage    *string            `json:"journey_stage"`
+	VisaRoute       *string            `json:"visa_route"`
+	SourceCountry   *string            `json:"source_country"`
+	TargetCountry   *string            `json:"target_country"`
 }
 
 type CreateContentRow struct {
@@ -284,6 +291,10 @@ type CreateContentRow struct {
 	AiGeneratedAt   pgtype.Timestamptz `json:"ai_generated_at"`
 	HitlReviewedBy  pgtype.UUID        `json:"hitl_reviewed_by"`
 	HitlReviewedAt  pgtype.Timestamptz `json:"hitl_reviewed_at"`
+	JourneyStage    *string            `json:"journey_stage"`
+	VisaRoute       *string            `json:"visa_route"`
+	SourceCountry   *string            `json:"source_country"`
+	TargetCountry   *string            `json:"target_country"`
 }
 
 // Content, revision, slug history, pinned posts, JSON-LD templates, and scores.
@@ -322,6 +333,10 @@ func (q *Queries) CreateContent(ctx context.Context, arg CreateContentParams) (C
 		arg.AiGeneratedAt,
 		arg.HitlReviewedBy,
 		arg.HitlReviewedAt,
+		arg.JourneyStage,
+		arg.VisaRoute,
+		arg.SourceCountry,
+		arg.TargetCountry,
 	)
 	var i CreateContentRow
 	err := row.Scan(
@@ -364,6 +379,10 @@ func (q *Queries) CreateContent(ctx context.Context, arg CreateContentParams) (C
 		&i.AiGeneratedAt,
 		&i.HitlReviewedBy,
 		&i.HitlReviewedAt,
+		&i.JourneyStage,
+		&i.VisaRoute,
+		&i.SourceCountry,
+		&i.TargetCountry,
 	)
 	return i, err
 }
@@ -640,7 +659,8 @@ SELECT id, tenant_id, author_id, organization_id, space_id, content_type, title,
        status, visibility, is_locked, is_pinned, read_time_minutes,
        view_count, comment_count, share_count, reshare_count, publish_at, published_at,
        created_at, updated_at, guide_category,
-       ai_generated, ai_model, ai_generated_at, hitl_reviewed_by, hitl_reviewed_at
+       ai_generated, ai_model, ai_generated_at, hitl_reviewed_by, hitl_reviewed_at,
+       journey_stage, visa_route, source_country, target_country
 FROM contents
 WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
 `
@@ -690,6 +710,10 @@ type GetContentByIDRow struct {
 	AiGeneratedAt   pgtype.Timestamptz `json:"ai_generated_at"`
 	HitlReviewedBy  pgtype.UUID        `json:"hitl_reviewed_by"`
 	HitlReviewedAt  pgtype.Timestamptz `json:"hitl_reviewed_at"`
+	JourneyStage    *string            `json:"journey_stage"`
+	VisaRoute       *string            `json:"visa_route"`
+	SourceCountry   *string            `json:"source_country"`
+	TargetCountry   *string            `json:"target_country"`
 }
 
 func (q *Queries) GetContentByID(ctx context.Context, arg GetContentByIDParams) (GetContentByIDRow, error) {
@@ -735,6 +759,10 @@ func (q *Queries) GetContentByID(ctx context.Context, arg GetContentByIDParams) 
 		&i.AiGeneratedAt,
 		&i.HitlReviewedBy,
 		&i.HitlReviewedAt,
+		&i.JourneyStage,
+		&i.VisaRoute,
+		&i.SourceCountry,
+		&i.TargetCountry,
 	)
 	return i, err
 }
@@ -749,7 +777,7 @@ SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type, c.title, c.sl
        c.share_count,
        (SELECT COUNT(*) FROM reactions WHERE entity_id = c.id AND entity_type = 'content') AS reshare_count,
        c.publish_at, c.published_at,
-       c.created_at, c.updated_at, c.guide_category
+       c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country
 FROM contents c
 WHERE c.slug = $1 AND c.tenant_id = $2 AND c.deleted_at IS NULL
 `
@@ -793,6 +821,10 @@ type GetContentBySlugRow struct {
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
 	GuideCategory   *string            `json:"guide_category"`
+	JourneyStage    *string            `json:"journey_stage"`
+	VisaRoute       *string            `json:"visa_route"`
+	SourceCountry   *string            `json:"source_country"`
+	TargetCountry   *string            `json:"target_country"`
 }
 
 func (q *Queries) GetContentBySlug(ctx context.Context, arg GetContentBySlugParams) (GetContentBySlugRow, error) {
@@ -832,6 +864,10 @@ func (q *Queries) GetContentBySlug(ctx context.Context, arg GetContentBySlugPara
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.GuideCategory,
+		&i.JourneyStage,
+		&i.VisaRoute,
+		&i.SourceCountry,
+		&i.TargetCountry,
 	)
 	return i, err
 }
@@ -1853,7 +1889,7 @@ SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type, c.title, c.sl
        c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
        c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
        c.view_count, c.comment_count, c.share_count, c.reshare_count, c.publish_at, c.published_at,
-       c.created_at, c.updated_at, c.guide_category,
+       c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country,
        u.username AS author_username, up.display_name AS author_display_name,
        s.name AS space_name
 FROM contents c
@@ -1924,6 +1960,10 @@ type ListContentsByIDsRow struct {
 	CreatedAt         pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
 	GuideCategory     *string            `json:"guide_category"`
+	JourneyStage      *string            `json:"journey_stage"`
+	VisaRoute         *string            `json:"visa_route"`
+	SourceCountry     *string            `json:"source_country"`
+	TargetCountry     *string            `json:"target_country"`
 	AuthorUsername    *string            `json:"author_username"`
 	AuthorDisplayName *string            `json:"author_display_name"`
 	SpaceName         *string            `json:"space_name"`
@@ -1985,6 +2025,10 @@ func (q *Queries) ListContentsByIDs(ctx context.Context, arg ListContentsByIDsPa
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.GuideCategory,
+			&i.JourneyStage,
+			&i.VisaRoute,
+			&i.SourceCountry,
+			&i.TargetCountry,
 			&i.AuthorUsername,
 			&i.AuthorDisplayName,
 			&i.SpaceName,
@@ -2005,7 +2049,7 @@ SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type, c.title, c.sl
        c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
        c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
        c.view_count, c.comment_count, c.share_count, c.reshare_count, c.publish_at, c.published_at,
-       c.created_at, c.updated_at, c.guide_category,
+       c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country,
        u.username AS author_username, up.display_name AS author_display_name,
        s.name AS space_name
 FROM contents c
@@ -2078,6 +2122,10 @@ type ListContentsBySpaceRow struct {
 	CreatedAt         pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
 	GuideCategory     *string            `json:"guide_category"`
+	JourneyStage      *string            `json:"journey_stage"`
+	VisaRoute         *string            `json:"visa_route"`
+	SourceCountry     *string            `json:"source_country"`
+	TargetCountry     *string            `json:"target_country"`
 	AuthorUsername    *string            `json:"author_username"`
 	AuthorDisplayName *string            `json:"author_display_name"`
 	SpaceName         *string            `json:"space_name"`
@@ -2138,6 +2186,10 @@ func (q *Queries) ListContentsBySpace(ctx context.Context, arg ListContentsBySpa
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.GuideCategory,
+			&i.JourneyStage,
+			&i.VisaRoute,
+			&i.SourceCountry,
+			&i.TargetCountry,
 			&i.AuthorUsername,
 			&i.AuthorDisplayName,
 			&i.SpaceName,
@@ -2158,7 +2210,7 @@ SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type, c.title, c.sl
        c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
        c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
        c.view_count, c.comment_count, c.share_count, c.reshare_count, c.publish_at, c.published_at,
-       c.created_at, c.updated_at, c.guide_category,
+       c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country,
        u.username AS author_username, up.display_name AS author_display_name,
        s.name AS space_name
 FROM contents c
@@ -2231,6 +2283,10 @@ type ListContentsByTenantRow struct {
 	CreatedAt         pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
 	GuideCategory     *string            `json:"guide_category"`
+	JourneyStage      *string            `json:"journey_stage"`
+	VisaRoute         *string            `json:"visa_route"`
+	SourceCountry     *string            `json:"source_country"`
+	TargetCountry     *string            `json:"target_country"`
 	AuthorUsername    *string            `json:"author_username"`
 	AuthorDisplayName *string            `json:"author_display_name"`
 	SpaceName         *string            `json:"space_name"`
@@ -2288,6 +2344,10 @@ func (q *Queries) ListContentsByTenant(ctx context.Context, arg ListContentsByTe
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.GuideCategory,
+			&i.JourneyStage,
+			&i.VisaRoute,
+			&i.SourceCountry,
+			&i.TargetCountry,
 			&i.AuthorUsername,
 			&i.AuthorDisplayName,
 			&i.SpaceName,
@@ -2308,7 +2368,7 @@ SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type, c.title, c.sl
        c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
        c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
        c.view_count, c.comment_count, c.share_count, c.reshare_count, c.publish_at, c.published_at,
-       c.created_at, c.updated_at, c.guide_category,
+       c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country,
        u.username AS author_username, up.display_name AS author_display_name,
        s.name AS space_name
 FROM contents c
@@ -2380,6 +2440,10 @@ type ListContentsByTypeRow struct {
 	CreatedAt         pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
 	GuideCategory     *string            `json:"guide_category"`
+	JourneyStage      *string            `json:"journey_stage"`
+	VisaRoute         *string            `json:"visa_route"`
+	SourceCountry     *string            `json:"source_country"`
+	TargetCountry     *string            `json:"target_country"`
 	AuthorUsername    *string            `json:"author_username"`
 	AuthorDisplayName *string            `json:"author_display_name"`
 	SpaceName         *string            `json:"space_name"`
@@ -2437,6 +2501,10 @@ func (q *Queries) ListContentsByType(ctx context.Context, arg ListContentsByType
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.GuideCategory,
+			&i.JourneyStage,
+			&i.VisaRoute,
+			&i.SourceCountry,
+			&i.TargetCountry,
 			&i.AuthorUsername,
 			&i.AuthorDisplayName,
 			&i.SpaceName,
@@ -3090,7 +3158,8 @@ RETURNING id, tenant_id, author_id, space_id, content_type, title, slug, body, b
           canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
           status, visibility, is_locked, is_pinned, read_time_minutes,
           view_count, comment_count, share_count, reshare_count, publish_at, published_at,
-          created_at, updated_at, guide_category
+          created_at, updated_at, guide_category,
+          journey_stage, visa_route, source_country, target_country
 `
 
 type ReassignSingleContentAuthorParams struct {
@@ -3134,6 +3203,10 @@ type ReassignSingleContentAuthorRow struct {
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
 	GuideCategory   *string            `json:"guide_category"`
+	JourneyStage    *string            `json:"journey_stage"`
+	VisaRoute       *string            `json:"visa_route"`
+	SourceCountry   *string            `json:"source_country"`
+	TargetCountry   *string            `json:"target_country"`
 }
 
 // Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Authorship Assignment)
@@ -3185,6 +3258,10 @@ func (q *Queries) ReassignSingleContentAuthor(ctx context.Context, arg ReassignS
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.GuideCategory,
+		&i.JourneyStage,
+		&i.VisaRoute,
+		&i.SourceCountry,
+		&i.TargetCountry,
 	)
 	return i, err
 }
@@ -3239,7 +3316,8 @@ RETURNING id, tenant_id, author_id, space_id, content_type, title, slug, body, b
           canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
           status, visibility, is_locked, is_pinned, read_time_minutes,
           view_count, comment_count, share_count, reshare_count, publish_at, published_at,
-          created_at, updated_at, guide_category
+          created_at, updated_at, guide_category,
+          journey_stage, visa_route, source_country, target_country
 `
 
 type ScheduleContentParams struct {
@@ -3282,6 +3360,10 @@ type ScheduleContentRow struct {
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
 	GuideCategory   *string            `json:"guide_category"`
+	JourneyStage    *string            `json:"journey_stage"`
+	VisaRoute       *string            `json:"visa_route"`
+	SourceCountry   *string            `json:"source_country"`
+	TargetCountry   *string            `json:"target_country"`
 }
 
 // Sets status='scheduled' and publish_at without touching title/body/other
@@ -3325,6 +3407,10 @@ func (q *Queries) ScheduleContent(ctx context.Context, arg ScheduleContentParams
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.GuideCategory,
+		&i.JourneyStage,
+		&i.VisaRoute,
+		&i.SourceCountry,
+		&i.TargetCountry,
 	)
 	return i, err
 }
@@ -3335,7 +3421,7 @@ SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type, c.title, c.sl
        c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
        c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
        c.view_count, c.comment_count, c.share_count, c.reshare_count, c.publish_at, c.published_at,
-       c.created_at, c.updated_at, c.guide_category
+       c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country
 FROM contents c
 JOIN content_spaces cs ON cs.content_id = c.id AND cs.space_id = $1
 WHERE c.tenant_id = $2
@@ -3404,6 +3490,10 @@ type SearchContentsBySpaceRow struct {
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
 	GuideCategory   *string            `json:"guide_category"`
+	JourneyStage    *string            `json:"journey_stage"`
+	VisaRoute       *string            `json:"visa_route"`
+	SourceCountry   *string            `json:"source_country"`
+	TargetCountry   *string            `json:"target_country"`
 }
 
 // Searches content assigned to a given space via the authoritative
@@ -3461,6 +3551,10 @@ func (q *Queries) SearchContentsBySpace(ctx context.Context, arg SearchContentsB
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.GuideCategory,
+			&i.JourneyStage,
+			&i.VisaRoute,
+			&i.SourceCountry,
+			&i.TargetCountry,
 		); err != nil {
 			return nil, err
 		}
@@ -3572,14 +3666,19 @@ SET title = $1, slug = $2, body = $3, body_html = $4,
     organization_id = $22, guide_category = $23,
     ai_generated_at = COALESCE($24, ai_generated_at),
     ai_model = COALESCE($25, ai_model),
+    journey_stage = COALESCE($26, journey_stage),
+    visa_route = COALESCE($27, visa_route),
+    source_country = COALESCE($28, source_country),
+    target_country = COALESCE($29, target_country),
     updated_at = now()
-WHERE id = $26 AND tenant_id = $27 AND deleted_at IS NULL
+WHERE id = $30 AND tenant_id = $31 AND deleted_at IS NULL
 RETURNING id, tenant_id, author_id, organization_id, space_id, content_type, title, slug, body, body_html,
           field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
           canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
           status, visibility, is_locked, is_pinned, read_time_minutes,
           view_count, comment_count, share_count, reshare_count, publish_at, published_at,
-          created_at, updated_at, guide_category
+          created_at, updated_at, guide_category,
+          journey_stage, visa_route, source_country, target_country
 `
 
 type UpdateContentParams struct {
@@ -3608,6 +3707,10 @@ type UpdateContentParams struct {
 	GuideCategory   *string            `json:"guide_category"`
 	AiGeneratedAt   pgtype.Timestamptz `json:"ai_generated_at"`
 	AiModel         *string            `json:"ai_model"`
+	JourneyStage    *string            `json:"journey_stage"`
+	VisaRoute       *string            `json:"visa_route"`
+	SourceCountry   *string            `json:"source_country"`
+	TargetCountry   *string            `json:"target_country"`
 	ID              pgtype.UUID        `json:"id"`
 	TenantID        pgtype.UUID        `json:"tenant_id"`
 }
@@ -3647,6 +3750,10 @@ type UpdateContentRow struct {
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
 	GuideCategory   *string            `json:"guide_category"`
+	JourneyStage    *string            `json:"journey_stage"`
+	VisaRoute       *string            `json:"visa_route"`
+	SourceCountry   *string            `json:"source_country"`
+	TargetCountry   *string            `json:"target_country"`
 }
 
 func (q *Queries) UpdateContent(ctx context.Context, arg UpdateContentParams) (UpdateContentRow, error) {
@@ -3676,6 +3783,10 @@ func (q *Queries) UpdateContent(ctx context.Context, arg UpdateContentParams) (U
 		arg.GuideCategory,
 		arg.AiGeneratedAt,
 		arg.AiModel,
+		arg.JourneyStage,
+		arg.VisaRoute,
+		arg.SourceCountry,
+		arg.TargetCountry,
 		arg.ID,
 		arg.TenantID,
 	)
@@ -3715,6 +3826,10 @@ func (q *Queries) UpdateContent(ctx context.Context, arg UpdateContentParams) (U
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.GuideCategory,
+		&i.JourneyStage,
+		&i.VisaRoute,
+		&i.SourceCountry,
+		&i.TargetCountry,
 	)
 	return i, err
 }
@@ -3729,7 +3844,8 @@ RETURNING id, tenant_id, author_id, space_id, content_type, title, slug, body, b
           canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
           status, visibility, is_locked, is_pinned, read_time_minutes,
           view_count, comment_count, share_count, reshare_count, publish_at, published_at,
-          created_at, updated_at, guide_category
+          created_at, updated_at, guide_category,
+          journey_stage, visa_route, source_country, target_country
 `
 
 type UpdateContentStatusParams struct {
@@ -3772,6 +3888,10 @@ type UpdateContentStatusRow struct {
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
 	GuideCategory   *string            `json:"guide_category"`
+	JourneyStage    *string            `json:"journey_stage"`
+	VisaRoute       *string            `json:"visa_route"`
+	SourceCountry   *string            `json:"source_country"`
+	TargetCountry   *string            `json:"target_country"`
 }
 
 func (q *Queries) UpdateContentStatus(ctx context.Context, arg UpdateContentStatusParams) (UpdateContentStatusRow, error) {
@@ -3811,6 +3931,10 @@ func (q *Queries) UpdateContentStatus(ctx context.Context, arg UpdateContentStat
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.GuideCategory,
+		&i.JourneyStage,
+		&i.VisaRoute,
+		&i.SourceCountry,
+		&i.TargetCountry,
 	)
 	return i, err
 }

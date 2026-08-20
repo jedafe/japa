@@ -824,6 +824,11 @@ func (h *Handlers) CreateContent(w http.ResponseWriter, r *http.Request) {
 		GeoSpaceID      *string         `json:"geo_space_id"`
 		OrganizationID  *string         `json:"organization_id"`
 		GuideCategory   *string         `json:"guide_category"`
+		// Journey-aware recommendation metadata.
+		JourneyStage  *string `json:"journey_stage"`
+		VisaRoute     *string `json:"visa_route"`
+		SourceCountry *string `json:"source_country"`
+		TargetCountry *string `json:"target_country"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -908,6 +913,10 @@ func (h *Handlers) CreateContent(w http.ResponseWriter, r *http.Request) {
 		Status:          input.Status,
 		Visibility:      input.Visibility,
 		GuideCategory:   input.GuideCategory,
+		JourneyStage:    input.JourneyStage,
+		VisaRoute:       input.VisaRoute,
+		SourceCountry:   input.SourceCountry,
+		TargetCountry:   input.TargetCountry,
 	}
 	if input.SeoIndexable != nil {
 		createInput.SeoIndexable = *input.SeoIndexable
@@ -1298,6 +1307,11 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 		IsLocked        bool            `json:"is_locked"`
 		IsPinned        bool            `json:"is_pinned"`
 		GuideCategory   *string         `json:"guide_category"`
+		// Journey-aware recommendation metadata.
+		JourneyStage  *string `json:"journey_stage"`
+		VisaRoute     *string `json:"visa_route"`
+		SourceCountry *string `json:"source_country"`
+		TargetCountry *string `json:"target_country"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -1357,6 +1371,10 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 		IsLocked:        input.IsLocked,
 		IsPinned:        input.IsPinned,
 		GuideCategory:   input.GuideCategory,
+		JourneyStage:    input.JourneyStage,
+		VisaRoute:       input.VisaRoute,
+		SourceCountry:   input.SourceCountry,
+		TargetCountry:   input.TargetCountry,
 	}
 
 	// Compute content hash for duplicate detection (Rule 12).
