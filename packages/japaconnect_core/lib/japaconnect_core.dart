@@ -2,6 +2,9 @@ library japaconnect_core;
 
 export 'api/client.dart';
 export 'api/api_error.dart';
+export 'geo/models.dart';
+export 'geo/service.dart';
+export 'geo/providers.dart';
 export 'auth/token_store.dart';
 export 'auth/auth_state.dart';
 export 'auth/device_id.dart';
@@ -16,6 +19,7 @@ export 'widgets/loading_shimmer.dart';
 export 'widgets/jc_button.dart';
 export 'widgets/jc_icon_button.dart';
 export 'widgets/jc_text_field.dart';
+export 'widgets/jc_country_selector.dart';
 export 'widgets/jc_badge.dart';
 export 'widgets/jc_pill.dart';
 export 'widgets/jc_error_widget.dart';

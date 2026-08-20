@@ -127,6 +127,7 @@ func parsePageLimit(r *http.Request) (int, int) {
 // HandleListCities handles GET /api/v1/calculator/cost-of-living/cities —
 // paginated, searchable list of cities with cost_of_living data. Public
 // route (col_calculator.use — all users including anonymous).
+// Query params: search, country_code, page, limit.
 func (h *Handlers) HandleListCities(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
@@ -139,9 +140,10 @@ func (h *Handlers) HandleListCities(w http.ResponseWriter, r *http.Request) {
 	}
 
 	search := strings.TrimSpace(r.URL.Query().Get("search"))
+	countryCode := strings.TrimSpace(r.URL.Query().Get("country_code"))
 	page, limit := parsePageLimit(r)
 
-	resp, err := h.service.ListCities(r.Context(), tenantID, search, page, limit)
+	resp, err := h.service.ListCities(r.Context(), tenantID, search, countryCode, page, limit)
 	if err != nil {
 		if errors.Is(err, ErrCalculatorDisabled) {
 			errpkg.WriteError(w, http.StatusNotFound, "col_calculator_disabled", "Cost of Living Calculator is not available")

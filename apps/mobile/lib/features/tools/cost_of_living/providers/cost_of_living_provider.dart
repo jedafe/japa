@@ -7,9 +7,28 @@ final costOfLivingServiceProvider = Provider<CostOfLivingService>((ref) {
   return CostOfLivingService(client);
 });
 
-final costOfLivingProvider = FutureProvider.autoDispose
-    .family<Map<String, dynamic>, ({String origin, String destination})>(
-        (ref, args) async {
-  final service = ref.watch(costOfLivingServiceProvider);
-  return service.compare(args.origin, args.destination);
-});
+/// Loads cost-of-living cities for a given country geo code.
+/// An empty country code resolves to an empty list without a network call.
+final costOfLivingCitiesProvider =
+    FutureProvider.autoDispose.family<List<Map<String, dynamic>>, String>(
+  (ref, countryCode) async {
+    if (countryCode.isEmpty) return [];
+    final service = ref.watch(costOfLivingServiceProvider);
+    return service.listCities(countryCode: countryCode);
+  },
+);
+
+/// Compares the selected origin and destination city IDs.
+/// Returns an empty map until both cities are selected.
+final costOfLivingComparisonProvider = FutureProvider.autoDispose
+    .family<Map<String, dynamic>, ({String originCityId, String destinationCityId})>(
+  (ref, args) async {
+    if (args.originCityId.isEmpty || args.destinationCityId.isEmpty) {
+      return {};
+    }
+    final service = ref.watch(costOfLivingServiceProvider);
+    final response =
+        await service.compare([args.originCityId, args.destinationCityId]);
+    return (response['data'] as Map<String, dynamic>? ?? {});
+  },
+);
