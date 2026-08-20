@@ -2,6 +2,7 @@ library japaconnect_core;
 
 export 'api/client.dart';
 export 'api/api_error.dart';
+export 'models/models.dart';
 export 'geo/models.dart';
 export 'geo/service.dart';
 export 'geo/providers.dart';

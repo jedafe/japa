@@ -16,7 +16,6 @@ import (
 	"github.com/valkey-io/valkey-go/valkeycompat"
 
 	"github.com/jedafe/japa/internal/clientip"
-	"github.com/jedafe/japa/internal/csrf"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/email"
@@ -292,34 +291,22 @@ func (h *AuthHandlers) Register(w http.ResponseWriter, r *http.Request) {
 		UserID:     userID,
 		TokenHash:  tokenHash,
 		ExpiresAt:  pgtype.Timestamptz{Time: expiresAt, Valid: true},
-		DeviceName: deviceName(r),
+		DeviceName: sessionDeviceName(r),
 		IpAddress:  ipPtr(r),
 	}); err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "token_error", "Failed to create session")
 		return
 	}
 
-	http.SetCookie(w, &http.Cookie{
-		Name:     "jc_refresh",
-		Value:    refreshToken,
-		Path:     "/api/v1",
-		Domain:   h.CookieDomain,
-		MaxAge:   int(refreshTTL.Seconds()),
-		HttpOnly: true,
-		Secure:   h.SecureCookies,
-		SameSite: http.SameSiteStrictMode,
-	}) // #nosec G124 -- Secure is set via h.SecureCookies (true in production); gosec can't verify the struct field statically
-
-	errpkg.WriteJSON(w, http.StatusCreated, map[string]interface{}{
-		"data": map[string]interface{}{
-			"access_token": accessToken,
-			"user": map[string]interface{}{
-				"id":       userID.String(),
-				"email":    req.Email,
-				"username": req.Username,
-			},
+	data := map[string]interface{}{
+		"access_token": accessToken,
+		"user": map[string]interface{}{
+			"id":       userID.String(),
+			"email":    req.Email,
+			"username": req.Username,
 		},
-	})
+	}
+	writeSessionResponse(w, r, h.CookieDomain, h.SecureCookies, refreshToken, refreshTTL, data, true)
 }
 
 // Login handles POST /api/v1/auth/login.
@@ -507,38 +494,22 @@ func (h *AuthHandlers) Login(w http.ResponseWriter, r *http.Request) {
 		UserID:     user.ID,
 		TokenHash:  tokenHash,
 		ExpiresAt:  pgtype.Timestamptz{Time: expiresAt, Valid: true},
-		DeviceName: deviceName(r),
+		DeviceName: sessionDeviceName(r),
 		IpAddress:  ipPtr(r),
 	}); err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "token_error", "Failed to create session")
 		return
 	}
 
-	http.SetCookie(w, &http.Cookie{
-		Name:     "jc_refresh",
-		Value:    refreshToken,
-		Path:     "/api/v1",
-		Domain:   h.CookieDomain,
-		MaxAge:   int(refreshTTL.Seconds()),
-		HttpOnly: true,
-		Secure:   h.SecureCookies,
-		SameSite: http.SameSiteStrictMode,
-	}) // #nosec G124 -- Secure is set via h.SecureCookies (true in production); gosec can't verify the struct field statically
-
-	// Issue the double-submit CSRF cookie so the SPA can include it as the
-	// X-CSRF-Token header on subsequent mutating requests (audit finding C1).
-	csrf.SetCookie(w, h.CookieDomain, h.SecureCookies)
-
-	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
-		"data": map[string]interface{}{
-			"access_token": accessToken,
-			"user": map[string]interface{}{
-				"id":       user.ID.String(),
-				"email":    user.Email,
-				"username": user.Username,
-			},
+	data := map[string]interface{}{
+		"access_token": accessToken,
+		"user": map[string]interface{}{
+			"id":       user.ID.String(),
+			"email":    user.Email,
+			"username": user.Username,
 		},
-	})
+	}
+	writeSessionResponse(w, r, h.CookieDomain, h.SecureCookies, refreshToken, refreshTTL, data, true)
 }
 
 // Refresh handles POST /api/v1/auth/refresh.
@@ -552,14 +523,30 @@ func (h *AuthHandlers) Login(w http.ResponseWriter, r *http.Request) {
 // refresh so a suspended/banned user cannot keep minting access tokens
 // until their refresh token expires. Ref: §02 (Session invalidation on
 // ban, Email verify required).
+//
+// Mobile clients (X-Device-Id header) send the refresh token in the JSON
+// body instead of the HttpOnly cookie used by the web SPA.
 func (h *AuthHandlers) Refresh(w http.ResponseWriter, r *http.Request) {
-	cookie, err := r.Cookie("jc_refresh")
-	if err != nil {
-		errpkg.WriteError(w, http.StatusUnauthorized, "no_refresh_token", "Refresh token cookie is required")
-		return
+	var refreshToken string
+	if isMobileClient(r) {
+		var req struct {
+			RefreshToken string `json:"refresh_token"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.RefreshToken == "" {
+			errpkg.WriteError(w, http.StatusUnauthorized, "no_refresh_token", "refresh_token is required")
+			return
+		}
+		refreshToken = req.RefreshToken
+	} else {
+		cookie, err := r.Cookie("jc_refresh")
+		if err != nil || cookie.Value == "" {
+			errpkg.WriteError(w, http.StatusUnauthorized, "no_refresh_token", "Refresh token cookie is required")
+			return
+		}
+		refreshToken = cookie.Value
 	}
 
-	tokenHash := hashRefreshToken(cookie.Value)
+	tokenHash := hashRefreshToken(refreshToken)
 
 	stored, err := h.DB.GetRefreshToken(r.Context(), tokenHash)
 	if err != nil || stored == nil {
@@ -648,7 +635,7 @@ func (h *AuthHandlers) Refresh(w http.ResponseWriter, r *http.Request) {
 		UserID:     stored.UserID,
 		TokenHash:  newTokenHash,
 		ExpiresAt:  pgtype.Timestamptz{Time: newExpiresAt, Valid: true},
-		DeviceName: deviceName(r),
+		DeviceName: sessionDeviceName(r),
 		IpAddress:  ipPtr(r),
 	}); err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "token_error", "Failed to create session")
@@ -663,23 +650,8 @@ func (h *AuthHandlers) Refresh(w http.ResponseWriter, r *http.Request) {
 			"user_id", stored.UserID.String(), "error", err)
 	}
 
-	// Set the new refresh token cookie.
-	http.SetCookie(w, &http.Cookie{
-		Name:     "jc_refresh",
-		Value:    newRefreshToken,
-		Path:     "/api/v1",
-		Domain:   h.CookieDomain,
-		MaxAge:   int(refreshTTL.Seconds()),
-		HttpOnly: true,
-		Secure:   h.SecureCookies,
-		SameSite: http.SameSiteStrictMode,
-	}) // #nosec G124 -- Secure is set via h.SecureCookies (true in production); gosec can't verify the struct field statically
-
-	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
-		"data": map[string]interface{}{
-			"access_token": accessToken,
-		},
-	})
+	data := map[string]interface{}{"access_token": accessToken}
+	writeSessionResponse(w, r, h.CookieDomain, h.SecureCookies, newRefreshToken, refreshTTL, data, false)
 }
 
 // VerifyLoginChallenge handles POST /api/v1/auth/totp/verify-challenge.
@@ -776,31 +748,15 @@ func (h *AuthHandlers) VerifyLoginChallenge(w http.ResponseWriter, r *http.Reque
 		UserID:     userID,
 		TokenHash:  tokenHash,
 		ExpiresAt:  pgtype.Timestamptz{Time: expiresAt, Valid: true},
-		DeviceName: deviceName(r),
+		DeviceName: sessionDeviceName(r),
 		IpAddress:  ipPtr(r),
 	}); err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "token_error", "Failed to create session")
 		return
 	}
 
-	http.SetCookie(w, &http.Cookie{
-		Name:     "jc_refresh",
-		Value:    refreshToken,
-		Path:     "/api/v1",
-		Domain:   h.CookieDomain,
-		MaxAge:   int(refreshTTL.Seconds()),
-		HttpOnly: true,
-		Secure:   h.SecureCookies,
-		SameSite: http.SameSiteStrictMode,
-	}) // #nosec G124 -- Secure is set via h.SecureCookies (true in production); gosec can't verify the struct field statically
-
-	csrf.SetCookie(w, h.CookieDomain, h.SecureCookies)
-
-	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
-		"data": map[string]interface{}{
-			"access_token": accessToken,
-		},
-	})
+	data := map[string]interface{}{"access_token": accessToken}
+	writeSessionResponse(w, r, h.CookieDomain, h.SecureCookies, refreshToken, refreshTTL, data, true)
 }
 
 // ConsumeBackupCode handles POST /api/v1/auth/totp/backup.
@@ -911,43 +867,44 @@ func (h *AuthHandlers) ConsumeBackupCode(w http.ResponseWriter, r *http.Request)
 		UserID:     userID,
 		TokenHash:  tokenHash,
 		ExpiresAt:  pgtype.Timestamptz{Time: expiresAt, Valid: true},
-		DeviceName: deviceName(r),
+		DeviceName: sessionDeviceName(r),
 		IpAddress:  ipPtr(r),
 	}); err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "token_error", "Failed to create session")
 		return
 	}
 
-	http.SetCookie(w, &http.Cookie{
-		Name:     "jc_refresh",
-		Value:    refreshToken,
-		Path:     "/api/v1",
-		Domain:   h.CookieDomain,
-		MaxAge:   int(refreshTTL.Seconds()),
-		HttpOnly: true,
-		Secure:   h.SecureCookies,
-		SameSite: http.SameSiteStrictMode,
-	}) // #nosec G124 -- Secure is set via h.SecureCookies (true in production); gosec can't verify the struct field statically
-
-	csrf.SetCookie(w, h.CookieDomain, h.SecureCookies)
-
-	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
-		"data": map[string]interface{}{
-			"access_token":    accessToken,
-			"codes_remaining": remaining,
-		},
-	})
+	data := map[string]interface{}{
+		"access_token":    accessToken,
+		"codes_remaining": remaining,
+	}
+	writeSessionResponse(w, r, h.CookieDomain, h.SecureCookies, refreshToken, refreshTTL, data, true)
 }
 
 // Logout handles POST /api/v1/auth/logout.
 // Revokes the refresh token, revokes the current access token's JTI,
 // and clears the cookie.
+//
+// Mobile clients send the refresh token in the JSON body because they do
+// not store the HttpOnly cookie used by the web SPA.
 func (h *AuthHandlers) Logout(w http.ResponseWriter, r *http.Request) {
-	cookie, err := r.Cookie("jc_refresh")
-	if err == nil {
-		tokenHash := hashRefreshToken(cookie.Value)
-		if err := h.DB.RevokeRefreshToken(r.Context(), tokenHash); err != nil {
-			slog.Error("revoke refresh token", "error", err)
+	if isMobileClient(r) {
+		var req struct {
+			RefreshToken string `json:"refresh_token"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err == nil && req.RefreshToken != "" {
+			tokenHash := hashRefreshToken(req.RefreshToken)
+			if err := h.DB.RevokeRefreshToken(r.Context(), tokenHash); err != nil {
+				slog.Error("revoke refresh token", "error", err)
+			}
+		}
+	} else {
+		cookie, err := r.Cookie("jc_refresh")
+		if err == nil && cookie.Value != "" {
+			tokenHash := hashRefreshToken(cookie.Value)
+			if err := h.DB.RevokeRefreshToken(r.Context(), tokenHash); err != nil {
+				slog.Error("revoke refresh token", "error", err)
+			}
 		}
 	}
 

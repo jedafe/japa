@@ -18,8 +18,8 @@ class SpaceListScreen extends ConsumerWidget {
         data: (items) => ListView.builder(
           itemCount: items.length,
           itemBuilder: (_, i) => ListTile(
-            title: Text(items[i]['name'] ?? ''),
-            onTap: () => context.push('/spaces/${items[i]['slug']}'),
+            title: Text(items[i].name ?? ''),
+            onTap: () => context.push('/spaces/${items[i].slug}'),
           ),
         ),
         loading: () => const LoadingShimmer(),

@@ -4,17 +4,18 @@ class JobsService {
   final JcApiClient _client;
   JobsService(this._client);
 
-  Future<List<Map<String, dynamic>>> listJobs() async {
-    return _client.get<List<Map<String, dynamic>>>(
+  Future<List<Job>> listJobs() async {
+    return _client.get<List<Job>>(
       '/jobs',
-      parse: (json) => (json as List).cast<Map<String, dynamic>>(),
+      parse: (json) =>
+          (json as List).map((e) => Job.fromJson(e as Map<String, dynamic>)).toList(),
     );
   }
 
-  Future<Map<String, dynamic>> getJob(String slug) async {
-    final response = await _client.get<Map<String, dynamic>>(
+  Future<Job> getJob(String slug) async {
+    final response = await _client.get<Job>(
       '/jobs/$slug',
-      parse: (json) => json as Map<String, dynamic>,
+      parse: (json) => Job.fromJson(json as Map<String, dynamic>),
     );
     return response;
   }

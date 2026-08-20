@@ -4,17 +4,18 @@ class ForumService {
   final JcApiClient _client;
   ForumService(this._client);
 
-  Future<List<Map<String, dynamic>>> listThreads() async {
-    return _client.get<List<Map<String, dynamic>>>(
+  Future<List<ForumThread>> listThreads() async {
+    return _client.get<List<ForumThread>>(
       '/forum',
-      parse: (json) => (json as List).cast<Map<String, dynamic>>(),
+      parse: (json) =>
+          (json as List).map((e) => ForumThread.fromJson(e as Map<String, dynamic>)).toList(),
     );
   }
 
-  Future<Map<String, dynamic>> getThread(String slug) async {
-    return _client.get<Map<String, dynamic>>(
+  Future<ForumThread> getThread(String slug) async {
+    return _client.get<ForumThread>(
       '/forum/$slug',
-      parse: (json) => json as Map<String, dynamic>,
+      parse: (json) => ForumThread.fromJson(json as Map<String, dynamic>),
     );
   }
 

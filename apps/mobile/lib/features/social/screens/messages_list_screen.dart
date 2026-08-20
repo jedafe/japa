@@ -19,10 +19,10 @@ class MessagesListScreen extends ConsumerWidget {
         data: (items) => ListView.builder(
           itemCount: items.length,
           itemBuilder: (_, i) => ListTile(
-            title: Text(items[i]['title'] ??
-                items[i]['with_user']?['username'] ??
+            title: Text(items[i].title ??
+                items[i].withUser?.username ??
                 t('social.conversation')),
-            onTap: () => context.push('/messages/${items[i]['id']}'),
+            onTap: () => context.push('/messages/${items[i].id}'),
           ),
         ),
         loading: () => const LoadingShimmer(),

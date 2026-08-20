@@ -1,0 +1,14 @@
+analyzer:
+  exclude:
+    - lib/api/generated/test/**
+    - lib/api/generated/doc/**
+    - lib/api/generated/git_push.sh
+    - lib/api/generated/.openapi-generator/**
+    - lib/api/generated/lib/api_client.dart
+    - build/**
+    - android/**
+    - ios/**
+    - web/**
+    - windows/**
+    - macos/**
+    - linux/**

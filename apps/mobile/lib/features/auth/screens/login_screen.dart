@@ -53,7 +53,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            JcTextField(label: t('auth.username'), controller: _username),
+            JcTextField(label: t('auth.email'), controller: _username),
             const SizedBox(height: 16),
             JcTextField(label: t('auth.password'), controller: _password, obscureText: true),
             if (state.error != null) Text(state.error!, style: const TextStyle(color: Colors.red)),

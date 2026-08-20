@@ -4,10 +4,11 @@ class ScholarshipsService {
   final JcApiClient _client;
   ScholarshipsService(this._client);
 
-  Future<List<Map<String, dynamic>>> listScholarships() async {
-    final response = await _client.get<List<Map<String, dynamic>>>(
+  Future<List<Scholarship>> listScholarships() async {
+    final response = await _client.get<List<Scholarship>>(
       '/scholarships',
-      parse: (json) => (json as List).cast<Map<String, dynamic>>(),
+      parse: (json) =>
+          (json as List).map((e) => Scholarship.fromJson(e as Map<String, dynamic>)).toList(),
     );
     return response;
   }

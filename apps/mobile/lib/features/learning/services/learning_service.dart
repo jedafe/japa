@@ -4,17 +4,18 @@ class LearningService {
   final JcApiClient _client;
   LearningService(this._client);
 
-  Future<List<Map<String, dynamic>>> listCourses() async {
-    return _client.get<List<Map<String, dynamic>>>(
+  Future<List<Course>> listCourses() async {
+    return _client.get<List<Course>>(
       '/learn/university/catalog',
-      parse: (json) => (json as List).cast<Map<String, dynamic>>(),
+      parse: (json) =>
+          (json as List).map((e) => Course.fromJson(e as Map<String, dynamic>)).toList(),
     );
   }
 
-  Future<Map<String, dynamic>> getCourse(String slug) async {
-    return _client.get<Map<String, dynamic>>(
+  Future<Course> getCourse(String slug) async {
+    return _client.get<Course>(
       '/learn/university/catalog/$slug',
-      parse: (json) => json as Map<String, dynamic>,
+      parse: (json) => Course.fromJson(json as Map<String, dynamic>),
     );
   }
 
@@ -25,14 +26,14 @@ class LearningService {
     );
   }
 
-  Future<Map<String, dynamic>> getLesson(
+  Future<Lesson> getLesson(
     String trackSlug,
     String moduleSlug,
     String lessonSlug,
   ) async {
-    return _client.get<Map<String, dynamic>>(
+    return _client.get<Lesson>(
       '/learn/tracks/$trackSlug/modules/$moduleSlug/lessons/$lessonSlug',
-      parse: (json) => json as Map<String, dynamic>,
+      parse: (json) => Lesson.fromJson(json as Map<String, dynamic>),
     );
   }
 

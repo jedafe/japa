@@ -28,14 +28,14 @@ class LessonPlayerScreen extends ConsumerWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(lesson['title'] ?? '', style: JcTypography.heading),
+              Text(lesson.title, style: JcTypography.heading),
               const SizedBox(height: 8),
-              Text(lesson['body'] ?? ''),
+              Text(lesson.body ?? ''),
               JcButton(
                 label: t('learning.mark_complete'),
                 onPressed: () => ref
                     .read(learningServiceProvider)
-                    .updateProgress(lesson['id'] as String, 1.0),
+                    .updateProgress(lesson.id, 1.0),
               ),
             ],
           ),

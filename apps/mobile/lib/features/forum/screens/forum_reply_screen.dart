@@ -50,7 +50,7 @@ class _ForumReplyScreenState extends ConsumerState<ForumReplyScreen> {
                         final thread = await ref
                             .read(forumThreadProvider(widget.slug).future);
                         await service.postReply(
-                            thread['id'] as String, _bodyController.text);
+                            thread.id, _bodyController.text);
                         if (context.mounted) context.pop();
                       } catch (e) {
                         if (context.mounted) {

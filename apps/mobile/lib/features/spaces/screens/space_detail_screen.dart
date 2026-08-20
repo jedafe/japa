@@ -62,7 +62,7 @@ class _SpaceDetailScreenState extends ConsumerState<SpaceDetailScreen> {
       body: state.when(
         data: (space) => Column(
           children: [
-            ListTile(title: Text(space['name'] ?? '')),
+            ListTile(title: Text(space.name ?? '')),
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [

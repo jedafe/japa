@@ -4,10 +4,11 @@ class RemittanceService {
   final JcApiClient _client;
   RemittanceService(this._client);
 
-  Future<List<Map<String, dynamic>>> listProviders() async {
-    final response = await _client.get<List<Map<String, dynamic>>>(
+  Future<List<RemittanceProvider>> listProviders() async {
+    final response = await _client.get<List<RemittanceProvider>>(
       '/remittance/providers',
-      parse: (json) => (json as List).cast<Map<String, dynamic>>(),
+      parse: (json) =>
+          (json as List).map((e) => RemittanceProvider.fromJson(e as Map<String, dynamic>)).toList(),
     );
     return response;
   }

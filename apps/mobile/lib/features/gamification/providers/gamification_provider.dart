@@ -7,12 +7,12 @@ final gamificationServiceProvider = Provider<GamificationService>((ref) {
   return GamificationService(client);
 });
 
-final myBadgesProvider = FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref) async {
+final myBadgesProvider = FutureProvider.autoDispose<List<Badge>>((ref) async {
   final service = ref.watch(gamificationServiceProvider);
   return service.listMyBadges();
 });
 
-final leaderboardProvider = FutureProvider.autoDispose<Map<String, dynamic>>((ref) async {
+final leaderboardProvider = FutureProvider.autoDispose<Leaderboard>((ref) async {
   final service = ref.watch(gamificationServiceProvider);
   return service.getLeaderboard();
 });
