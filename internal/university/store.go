@@ -258,6 +258,9 @@ type Track struct {
 	Slug                    string     `json:"slug"`
 	Description             *string    `json:"description,omitempty"`
 	Difficulty              string     `json:"difficulty"`
+	/** Level is an alias for Difficulty, matching the frontend TrackSummary.level
+	 *  contract (ADR-060). Always equal to Difficulty. */
+	Level                   string     `json:"level"`
 	CoverMediaID            *string    `json:"cover_media_id,omitempty"`
 	InstructorID            *string    `json:"instructor_id,omitempty"`
 	PriceKobo               *int64     `json:"price_kobo,omitempty"`
@@ -281,7 +284,7 @@ type Track struct {
 func trackFromRow(r gen.GetUniversityTrackByIDRow) Track {
 	t := Track{
 		ID: r.ID.String(), Title: r.Title, Slug: r.Slug, Description: r.Description,
-		Difficulty: r.Difficulty, Currency: r.Currency, Language: r.Language,
+		Difficulty: r.Difficulty, Level: r.Difficulty, Currency: r.Currency, Language: r.Language,
 		TotalEnrolled: r.TotalEnrolled, IsPublished: r.IsPublished,
 		IsPublishedToUniversity: r.IsPublishedToUniversity,
 		SubmissionStatus:        r.UniversitySubmissionStatus,

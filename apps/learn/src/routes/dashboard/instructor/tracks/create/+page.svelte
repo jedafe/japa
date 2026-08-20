@@ -26,7 +26,7 @@
 	let slug = $state('');
 	let slugTouched = $state(false);
 	let description = $state('');
-	let difficulty = $state<Difficulty | ''>('');
+	let difficulty = $state<Difficulty>('beginner');
 	let priceMain = $state(0);
 	let currency = $state('');
 	let category = $state('');
@@ -215,7 +215,6 @@
 				bind:value={difficulty}
 				class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-3 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none"
 			>
-				<option value="">—</option>
 				{#each DIFFICULTIES as d (d)}
 					<option value={d}>{t(`level.${d}`)}</option>
 				{/each}
