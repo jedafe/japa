@@ -17,6 +17,7 @@
 	];
 </script>
 
+{#if tab !== 'roadmap'}
 <div
 	class="sticky z-10 flex items-center gap-2 bg-[color-mix(in_srgb,var(--color-bg)_90%,transparent)] px-4 py-2 backdrop-blur"
 	style="top: var(--nav-height)"
@@ -34,3 +35,4 @@
 		</a>
 	{/each}
 </div>
+{/if}
