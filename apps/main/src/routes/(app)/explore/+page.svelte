@@ -9,7 +9,9 @@
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
-	let showJourneyBanner = $state(false);
+	// Start true; the banner's own context fetch will hide it if a guest
+	// journey is already resolved.
+	let showJourneyBanner = $state(true);
 
 	const config = $derived((page.data.cardStyleConfig as CardStyleConfig) ?? { default: 'reddit', byType: {} });
 
