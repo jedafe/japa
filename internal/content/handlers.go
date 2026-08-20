@@ -291,21 +291,42 @@ func (h *Handlers) autoAssignSpaces(ctx context.Context, tenantID, contentID, se
 
 	// Preserve an explicit user-selected primary space. Otherwise the SQL
 	// ordering has already picked the most specific match (initials > name >
-	// keywords, then city > state > country > university).
+	// keywords, then city > state > country > education).
 	var primarySpaceID pgtype.UUID
-	var additionalIDs []pgtype.UUID
+	additionalSet := make(map[pgtype.UUID]struct{})
 	if selectedSpaceID.Valid {
 		primarySpaceID = selectedSpaceID
 		for _, m := range matches {
 			if !isSameUUID(m.ID, selectedSpaceID) {
-				additionalIDs = append(additionalIDs, m.ID)
+				additionalSet[m.ID] = struct{}{}
 			}
 		}
 	} else {
 		primarySpaceID = matches[0].ID
 		for _, m := range matches[1:] {
-			additionalIDs = append(additionalIDs, m.ID)
+			additionalSet[m.ID] = struct{}{}
 		}
+	}
+
+	// Also inherit the geo parents of the source space so a post in
+	// "Lagos Tech Community" surfaces in Lagos and Nigeria feeds even if the
+	// title has no geo keywords.
+	if selectedSpaceID.Valid {
+		parents, err := h.Service.GetSpacePrimaryGeoParents(ctx, tenantID, selectedSpaceID)
+		if err != nil {
+			slog.Warn("content: failed to load source space geo parents", "error", err)
+		} else {
+			for _, pid := range parents {
+				if !isSameUUID(pid, primarySpaceID) {
+					additionalSet[pid] = struct{}{}
+				}
+			}
+		}
+	}
+
+	additionalIDs := make([]pgtype.UUID, 0, len(additionalSet))
+	for id := range additionalSet {
+		additionalIDs = append(additionalIDs, id)
 	}
 
 	// Auto-assignment is system-driven, so bypass the per-user membership

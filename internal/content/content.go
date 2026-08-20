@@ -16,6 +16,7 @@ package content
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db"
@@ -217,6 +218,20 @@ func (s *Service) SetSearcher(searcher ContentSearcher) { s.searcher = searcher 
 
 // HasSearcher returns true when a Meilisearch content searcher is wired.
 // Used by handlers to decide whether to use SearchContents or ListContents.
+
+// GetSpacePrimaryGeoParents returns the country/state/city spaces linked to the
+// given space via space_parent_spaces. Used when auto-assigning content to
+// also inherit the geo parents of the space it is posted in.
+func (s *Service) GetSpacePrimaryGeoParents(ctx context.Context, spaceID, tenantID pgtype.UUID) ([]pgtype.UUID, error) {
+	ids, err := s.read.GetSpacePrimaryGeoParents(ctx, gen.GetSpacePrimaryGeoParentsParams{
+		SpaceID:  spaceID,
+		TenantID: tenantID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("getting space primary geo parents: %w", err)
+	}
+	return ids, nil
+}
 func (s *Service) HasSearcher() bool { return s.searcher != nil }
 
 // emitWebhook fires a content.* event fire-and-forget (Rule 8). Errors are
