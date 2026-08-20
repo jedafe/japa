@@ -89,8 +89,10 @@
 
 	function isDefaultContext(c: VisitorContextSummary | null): boolean {
 		if (!c) return true;
+		// The banner is meant for guests. Even if GeoIP inferred an origin
+		// country, the key missing signal is usually the destination.
 		if (c.is_authenticated) return false;
-		return !c.origin_country && !c.destination_country;
+		return !c.destination_country;
 	}
 
 	async function submit() {
