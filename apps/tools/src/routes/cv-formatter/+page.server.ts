@@ -1,5 +1,6 @@
 import type { PageServerLoad } from './$types';
 import { apiContext, apiList } from '$lib/server/api';
+import { loadCountries } from '$lib/server/geo';
 import { getTool, isToolEnabled } from '$lib/tools/registry';
 import type { GeoSpaceOption, CvStandard } from '$lib/types';
 
@@ -9,7 +10,7 @@ import type { GeoSpaceOption, CvStandard } from '$lib/types';
  * list is used to filter the destination dropdown to only show destinations
  * that have a standard available.
  *
- * API: GET /spaces?level=country — destination selector options.
+ * API: GET /geo/countries — the full 250 primary geo space countries (geo selector).
  *      GET /cv-formatter/standards — all CV standards (public).
  *      GET /cv-formatter/standards/{dest} — single standard for a destination.
  *      POST /cv-formatter/format — AI-assisted formatting (auth, 202 Accepted).
@@ -38,7 +39,7 @@ export const load: PageServerLoad = async (event) => {
 	// Destination country list — the primary data axis (ADR-088). Rule 16.
 	let destinations: GeoSpaceOption[] = [];
 	try {
-		destinations = (await apiList<GeoSpaceOption>(ctx, '/spaces?level=country')).items;
+		destinations = await loadCountries(ctx);
 	} catch {
 		destinations = [];
 	}

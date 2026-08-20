@@ -1,16 +1,17 @@
 import type { PageServerLoad } from './$types';
 import { apiContext, apiList } from '$lib/server/api';
+import { loadCountries } from '$lib/server/geo';
 import { getTool, isToolEnabled } from '$lib/tools/registry';
 import type { HousingGuideWithAi, GeoSpaceOption } from '$lib/types';
 
 /**
  * Housing Guide — §96, ADR-088.
- * SSR loads the destination country list from /spaces?level=country (the
+ * SSR loads the destination country list from GET /geo/countries (the
  * geo-aware pattern — destination is the primary data axis). When a ?dest=
  * param is present, the housing guides for that destination are fetched
  * server-side so the page renders with content immediately.
  *
- * API: GET /spaces?level=country — destination countries (geo selector).
+ * API: GET /geo/countries — the full 250 primary geo space countries (geo selector).
  *      GET /housing-guide?dest={space_id} — housing guides for a destination.
  *      GET /housing-guide/{id} — single housing guide detail.
  *
@@ -37,7 +38,7 @@ export const load: PageServerLoad = async (event) => {
 	// Destination list — the geo-aware selector source (Rule 16).
 	let destinations: GeoSpaceOption[] = [];
 	try {
-		destinations = (await apiList<GeoSpaceOption>(ctx, '/spaces?level=country')).items;
+		destinations = await loadCountries(ctx);
 	} catch {
 		destinations = [];
 	}

@@ -1,16 +1,19 @@
 import type { PageServerLoad } from './$types';
 import { apiContext, apiGet, apiList } from '$lib/server/api';
+import { loadCountries } from '$lib/server/geo';
 import { getTool, isToolEnabled } from '$lib/tools/registry';
 import type { ArrivalChecklistSelectorEntry, ArrivalChecklistItem, GeoSpaceOption } from '$lib/types';
 
 /**
  * Arrival Checklist — §92, ADR-088.
- * SSR loads the selector from /arrival-checklist/selector which returns the
- * available destinations (only those with published guides). The destination
- * dropdown is built from this data — NOT from /spaces?level=country — because
- * only destinations with guides are relevant here.
+ * SSR loads the destination dropdown from /geo/countries (all 250 primary
+ * geo space countries) and the published guides/categories from
+ * /arrival-checklist/selector. The destination dropdown is the geo-aware
+ * selector source; selectorEntries remains the source of truth for which
+ * destinations have published guides and which categories exist.
  *
- * API: GET /arrival-checklist/selector — available destinations + categories.
+ * API: GET /geo/countries — the full 250 primary geo space countries (geo selector).
+ *      GET /arrival-checklist/selector — available destinations + categories.
  *      GET /arrival-checklist/{guide_id} — checklist items for a guide.
  *
  * Ref: §92 (Arrival Checklist), ROADMAP-TOOLS 02.06.
@@ -45,20 +48,12 @@ export const load: PageServerLoad = async (event) => {
 		selectorEntries = [];
 	}
 
-	// Build the destination dropdown from the selector data (Rule 16 — no
-	// hardcoded data). Group by destination_space_id to deduplicate.
-	const seen = new Set<string>();
-	const destinations: GeoSpaceOption[] = [];
-	for (const entry of selectorEntries) {
-		if (!seen.has(entry.destination_space_id)) {
-			seen.add(entry.destination_space_id);
-			destinations.push({
-				id: entry.destination_space_id,
-				name: entry.destination_space_name ?? entry.destination_space_id,
-				slug: entry.destination_space_id,
-				code: entry.destination_space_code ?? null
-			});
-		}
+	// Destination country list — the full 250 primary geo space countries.
+	let destinations: GeoSpaceOption[] = [];
+	try {
+		destinations = await loadCountries(ctx);
+	} catch {
+		destinations = [];
 	}
 
 	// If ?dest= is present and valid, fetch the guide items for that

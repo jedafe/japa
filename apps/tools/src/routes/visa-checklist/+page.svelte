@@ -33,6 +33,8 @@
 	let guide = $state<ChecklistGuide | null>(untrack(() => data.guide));
 	let progress = $state<ChecklistProgress | null>(untrack(() => data.progress));
 	let user = $state(untrack(() => data.user));
+	let originOptions = $state(untrack(() => data.origins));
+	let destinationOptions = $state(untrack(() => data.destinations));
 
 	// Selector state
 	let selectedOrigin = $state<string>('');
@@ -53,13 +55,16 @@
 	// Registration prompt
 	let showRegisterPrompt = $state(false);
 
-	const destinations = $derived(
+	const selectorDestinations = $derived(
 		selector?.destinations ?? []
 	);
-	const selectedDestOption = $derived(
-		destinations.find((d) => d.id === selectedDestination)
+	const selectedDestName = $derived(
+		destinationOptions.find((d) => d.id === selectedDestination)?.name ?? ''
 	);
-	const visaTypes = $derived(selectedDestOption?.visa_types ?? []);
+	const selectedDestinationGuide = $derived(
+		selectorDestinations.find((d) => d.name === selectedDestName)
+	);
+	const visaTypes = $derived(selectedDestinationGuide?.visa_types ?? []);
 
 	const seo = $derived(
 		buildSeoMeta({
@@ -220,8 +225,8 @@
 			requestLoading = false;
 			return;
 		}
-		const originName = selector?.origins.find((o) => o.id === selectedOrigin)?.name ?? selectedOrigin;
-		const destName = destinations.find((d) => d.id === selectedDestination)?.name ?? selectedDestination;
+		const originName = originOptions.find((o) => o.id === selectedOrigin)?.name ?? selectedOrigin;
+		const destName = destinationOptions.find((d) => d.id === selectedDestination)?.name ?? selectedDestination;
 		const res = await api.post(`/forms/${formId}/submissions`, {
 			field_values: {
 				origin_country: originName,
@@ -257,11 +262,10 @@
 	const progressPct = $derived(totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0);
 
 	function fetchOrigins(q: string): Promise<AutocompleteItem[]> {
-		const opts = selector?.origins ?? [];
 		const query = q.toLowerCase();
 		const filtered = query === ''
-			? opts
-			: opts.filter((o) => o.name.toLowerCase().includes(query));
+			? originOptions
+			: originOptions.filter((o) => o.name.toLowerCase().includes(query));
 		return Promise.resolve(filtered.map((o) => ({ id: o.id, label: o.name })));
 	}
 
@@ -270,14 +274,14 @@
 	}
 
 	function getOriginLabel(id: string): string {
-		return selector?.origins.find((o) => o.id === id)?.name ?? id;
+		return originOptions.find((o) => o.id === id)?.name ?? id;
 	}
 
 	function fetchDestinations(q: string): Promise<AutocompleteItem[]> {
 		const query = q.toLowerCase();
 		const filtered = query === ''
-			? destinations
-			: destinations.filter((d) => d.name.toLowerCase().includes(query));
+			? destinationOptions
+			: destinationOptions.filter((d) => d.name.toLowerCase().includes(query));
 		return Promise.resolve(filtered.map((d) => ({ id: d.id, label: d.name })));
 	}
 
@@ -286,7 +290,7 @@
 	}
 
 	function getDestinationLabel(id: string): string {
-		return destinations.find((d) => d.id === id)?.name ?? id;
+		return destinationOptions.find((d) => d.id === id)?.name ?? id;
 	}
 </script>
 
@@ -378,14 +382,14 @@
 				</div>
 			{/if}
 
-			{#if selectedOrigin && destinations.length === 0}
+			{#if selectedOrigin && selectorDestinations.length === 0}
 				<p class="text-sm text-muted">{t('checklist.no_destinations', 'No visa guides have been published yet. Please check back later.')}</p>
 			{:else if selectedDestination && visaTypes.length === 0}
 				<p class="text-sm text-muted">{t('checklist.no_guides', 'No visa guides found for this destination.')}</p>
 			{/if}
 
 			<!-- Request-a-guide CTA (§70: form_submission via §06, slug 'visa-guide-request') -->
-			{#if (selectedOrigin && destinations.length === 0) || (selectedDestination && visaTypes.length === 0)}
+			{#if (selectedOrigin && selectorDestinations.length === 0) || (selectedDestination && visaTypes.length === 0)}
 				{#if requestSubmitted}
 					<p class="text-sm text-primary">
 						{t('checklist.request_success', 'Your request has been submitted. Our team will prioritize this route.')}

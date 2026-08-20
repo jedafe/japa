@@ -896,9 +896,21 @@ export interface OrgTypeOption {
 	label: string;
 }
 
-/* --- Geo Space reference (for destination selectors) --- */
-// Used by all V2 tools for the ?dest= destination selector.
-// Fetched from /spaces?level=country or the tool-specific selector endpoint.
+/* --- Geo Space reference (for country/city selectors) --- */
+// Used by all V2 tools for country selectors (fetched from /geo/countries)
+// and city selectors (fetched from /spaces?level=city).
+
+/** GET /api/v1/geo/countries — a country-level geo space (ADR-005). */
+export interface GeoCountry {
+	id: string;
+	name: string;
+	slug: string;
+	geo_code: string;
+	level: 'country';
+	member_count: number;
+	post_count: number;
+	follower_count: number;
+}
 
 export interface GeoSpaceOption {
 	id: string;

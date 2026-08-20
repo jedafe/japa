@@ -1,5 +1,6 @@
 import type { PageServerLoad } from './$types';
 import { apiContext, apiList } from '$lib/server/api';
+import { loadCountries } from '$lib/server/geo';
 import { getTool, isToolEnabled } from '$lib/tools/registry';
 import type {
 	LanguageTest,
@@ -9,12 +10,12 @@ import type {
 
 /**
  * Language Test Hub — §99, ADR-088.
- * SSR loads the destination country list from /spaces?level=country AND all
+ * SSR loads the destination country list from GET /geo/countries AND all
  * language tests from /language-tests. When a ?dest= param is present, the
  * requirements for that destination are fetched server-side so the page
  * renders with content immediately.
  *
- * API: GET /spaces?level=country — destination countries (geo selector).
+ * API: GET /geo/countries — the full 250 primary geo space countries (geo selector).
  *      GET /language-tests — all tests (IELTS, TOEFL, etc.).
  *      GET /language-tests/requirements?dest={space_id}&visa={category}
  *          — requirements for a destination.
@@ -47,7 +48,7 @@ export const load: PageServerLoad = async (event) => {
 	// Destination list — the geo-aware selector source (Rule 16).
 	let destinations: GeoSpaceOption[] = [];
 	try {
-		destinations = (await apiList<GeoSpaceOption>(ctx, '/spaces?level=country')).items;
+		destinations = await loadCountries(ctx);
 	} catch {
 		destinations = [];
 	}
