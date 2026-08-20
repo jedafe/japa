@@ -1,16 +1,20 @@
 import type { PageServerLoad } from './$types';
 import { apiContext, apiGet, apiGetOrNull } from '$lib/server/api';
+import { loadCountries } from '$lib/server/geo';
 import { getTool, isToolEnabled } from '$lib/tools/registry';
-import type { ChecklistSelector, ChecklistGuide, ChecklistProgress } from '$lib/types';
+import type { ChecklistSelector, ChecklistGuide, ChecklistProgress, GeoSpaceOption } from '$lib/types';
 
 /**
  * Visa Document Checklist — §70, ADR-070.
- * SSR loads the selector options (countries + visa types). The checklist
- * itself is loaded after the user selects origin → destination → visa type.
+ * SSR loads the origin/destination country lists from /geo/countries and the
+ * checklist selector (origin/destination metadata + visa types) from
+ * /checklist/selector. The checklist itself is loaded after the user selects
+ * origin → destination → visa type.
  *
- * API: GET /checklist/selector — country + visa-type options from published
- * visa guides. GET /checklist/:guide_id — checklist items. GET /checklist/
- * :guide_id/progress — user's progress (auth only).
+ * API: GET /geo/countries — the full 250 primary geo space countries (geo selector).
+ *      GET /checklist/selector — origin/destination metadata + visa-type options.
+ *      GET /checklist/:guide_id — checklist items.
+ *      GET /checklist/:guide_id/progress — user's progress (auth only).
  *
  * Ref: §70 (Visa Document Checklist), ROADMAP-TOOLS 02.02.
  */
@@ -19,10 +23,26 @@ export const load: PageServerLoad = async (event) => {
 	// Ref: conventions/system-settings-catalog.md, Rule 3.
 	const tool = getTool('visa-checklist')!;
 	if (!isToolEnabled(tool, event.locals.features)) {
-		return { enabled: false, tool, selector: null, guide: null, progress: null, user: event.locals.user };
+		return { enabled: false, tool, origins: [], destinations: [], selector: null, guide: null, progress: null, user: event.locals.user };
 	}
 
 	const ctx = apiContext(event);
+
+	// Origin country list — the geo-aware primary data axis.
+	let origins: GeoSpaceOption[] = [];
+	try {
+		origins = await loadCountries(ctx);
+	} catch {
+		origins = [];
+	}
+
+	// Destination country list — the geo-aware primary data axis.
+	let destinations: GeoSpaceOption[] = [];
+	try {
+		destinations = await loadCountries(ctx);
+	} catch {
+		destinations = [];
+	}
 
 	let selector: ChecklistSelector | null = null;
 	try {
@@ -56,6 +76,8 @@ export const load: PageServerLoad = async (event) => {
 	return {
 		enabled: true,
 		tool,
+		origins,
+		destinations,
 		selector,
 		guide,
 		progress,

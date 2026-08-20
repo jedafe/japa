@@ -1,7 +1,8 @@
 import type { PageServerLoad } from './$types';
 import { apiContext, apiList, apiGetOrNull } from '$lib/server/api';
+import { loadCountries } from '$lib/server/geo';
 import { getTool, isToolEnabled } from '$lib/tools/registry';
-import type { Scholarship, SavedScholarship } from '$lib/types';
+import type { Scholarship, SavedScholarship, GeoSpaceOption } from '$lib/types';
 
 /**
  * Scholarship Finder — §73, ADR-073.
@@ -18,10 +19,18 @@ export const load: PageServerLoad = async (event) => {
 	// Ref: conventions/system-settings-catalog.md, Rule 3.
 	const tool = getTool('scholarships')!;
 	if (!isToolEnabled(tool, event.locals.features)) {
-		return { enabled: false, tool, scholarships: [], saved: [], user: event.locals.user };
+		return { enabled: false, tool, countries: [], scholarships: [], saved: [], user: event.locals.user };
 	}
 
 	const ctx = apiContext(event);
+
+	// Country list — the geo-aware selector source (Rule 16).
+	let countries: GeoSpaceOption[] = [];
+	try {
+		countries = await loadCountries(ctx);
+	} catch {
+		countries = [];
+	}
 
 	// Pass through any filter params from the URL for SSR + shareability.
 	const searchParams = event.url.searchParams;
@@ -50,6 +59,7 @@ export const load: PageServerLoad = async (event) => {
 	return {
 		enabled: true,
 		tool,
+		countries,
 		scholarships,
 		saved,
 		user: event.locals.user

@@ -11,7 +11,7 @@
 	import ToolDisabled from '$lib/components/ui/ToolDisabled.svelte';
 	import Autocomplete from '$lib/components/ui/Autocomplete.svelte';
 	import type { AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
-	import type { Scholarship, SavedScholarship, ScholarshipStatus } from '$lib/types';
+	import type { Scholarship, SavedScholarship, ScholarshipStatus, GeoSpaceOption } from '$lib/types';
 	import { t } from '$lib/i18n';
 
 	/**
@@ -24,6 +24,7 @@
 	let scholarships = $state<Scholarship[]>(untrack(() => data.scholarships));
 	let saved = $state<SavedScholarship[]>(untrack(() => data.saved));
 	let user = $state(untrack(() => data.user));
+	let countries = $state<GeoSpaceOption[]>(untrack(() => data.countries));
 
 	// Filter state
 	let filterCountry = $state('');
@@ -185,6 +186,19 @@
 	function fetchLevelsInitial(): Promise<AutocompleteItem[]> {
 		return fetchLevels('');
 	}
+
+	function fetchCountries(q: string): Promise<AutocompleteItem[]> {
+		const query = q.toLowerCase();
+		const filtered =
+			query === ''
+				? countries
+				: countries.filter((c) => c.name.toLowerCase().includes(query));
+		return Promise.resolve(filtered.map((c) => ({ id: c.name, label: c.name })));
+	}
+
+	function fetchCountriesInitial(): Promise<AutocompleteItem[]> {
+		return fetchCountries('');
+	}
 </script>
 
 <svelte:head>
@@ -242,12 +256,16 @@
 
 				<div>
 					<label class="block text-xs font-medium text-muted mb-1" for="scholarship-country">{t('scholarships.country', 'Country')}</label>
-					<input
+					<Autocomplete
 						id="scholarship-country"
-						type="text"
-						bind:value={filterCountry}
 						placeholder={t('scholarships.country_placeholder', 'e.g. United Kingdom')}
-						class="w-full px-3 py-2 text-sm bg-surface border border-border rounded focus:border-primary focus:outline-none"
+						emptyMessage={t('geo.no_destinations', 'No countries found')}
+						fetcher={fetchCountries}
+						initialFetcher={fetchCountriesInitial}
+						selectedId={filterCountry || null}
+						selectedLabel={filterCountry || null}
+						onSelect={(item) => (filterCountry = item.id)}
+						onClear={() => (filterCountry = '')}
 					/>
 				</div>
 
