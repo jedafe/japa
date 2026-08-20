@@ -222,6 +222,34 @@ func (h *Handlers) GetForYouFeed(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": items})
 }
 
+// GetRoadmapFeed handles GET /api/v1/feed/roadmap — the next steps from the
+// visitor's latest readiness assessment, returned in roadmap order.
+// Requires authentication.
+func (h *Handlers) GetRoadmapFeed(w http.ResponseWriter, r *http.Request) {
+	user := h.optionalUser(r)
+	if user == nil {
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	limit := h.parsePageSize(r)
+
+	vc := visitor.FromContext(r.Context())
+	items, err := h.service.GetRoadmapFeed(r.Context(), tenantID, user.UserID, vc.RoadmapSlugs, limit)
+	if err != nil {
+		slog.Error("feed: get roadmap feed failed", "user_id", user.UserID, "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to get roadmap feed")
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": items})
+}
+
 // GetSpaceFeed handles GET /api/v1/feed/space/{space_id}.
 func (h *Handlers) GetSpaceFeed(w http.ResponseWriter, r *http.Request) {
 	user := h.optionalUser(r)
