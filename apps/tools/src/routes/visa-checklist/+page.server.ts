@@ -28,19 +28,15 @@ export const load: PageServerLoad = async (event) => {
 
 	const ctx = apiContext(event);
 
-	// Origin country list — the geo-aware primary data axis.
+	// Country list (origins and destinations share the same canonical source).
 	let origins: GeoSpaceOption[] = [];
-	try {
-		origins = await loadCountries(ctx);
-	} catch {
-		origins = [];
-	}
-
-	// Destination country list — the geo-aware primary data axis.
 	let destinations: GeoSpaceOption[] = [];
 	try {
-		destinations = await loadCountries(ctx);
+		const countries = await loadCountries(ctx);
+		origins = countries;
+		destinations = countries;
 	} catch {
+		origins = [];
 		destinations = [];
 	}
 
