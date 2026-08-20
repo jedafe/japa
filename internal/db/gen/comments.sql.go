@@ -190,6 +190,23 @@ func (q *Queries) CreateContentThreadLink(ctx context.Context, arg CreateContent
 	return i, err
 }
 
+const decrementCommentReplyCount = `-- name: DecrementCommentReplyCount :exec
+UPDATE comments
+SET reply_count = GREATEST(reply_count - 1, 0), updated_at = now()
+WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
+`
+
+type DecrementCommentReplyCountParams struct {
+	ParentID pgtype.UUID `json:"parent_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+// Decrement the parent reply_count when a reply is deleted or removed (clamped at 0).
+func (q *Queries) DecrementCommentReplyCount(ctx context.Context, arg DecrementCommentReplyCountParams) error {
+	_, err := q.db.Exec(ctx, decrementCommentReplyCount, arg.ParentID, arg.TenantID)
+	return err
+}
+
 const deleteCommentVote = `-- name: DeleteCommentVote :exec
 DELETE FROM comment_votes
 WHERE comment_id = $1 AND user_id = $2 AND tenant_id = $3
@@ -209,6 +226,7 @@ func (q *Queries) DeleteCommentVote(ctx context.Context, arg DeleteCommentVotePa
 const getComment = `-- name: GetComment :one
 SELECT c.id, c.tenant_id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
        c.vote_score, c.is_pinned, c.is_edited, c.edited_at, c.created_at, c.updated_at, c.deleted_at,
+       c.status,
        c.is_anonymous,
        u.username,
        COALESCE(up.display_name, '') AS display_name,
@@ -239,6 +257,7 @@ type GetCommentRow struct {
 	CreatedAt    pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
 	DeletedAt    pgtype.Timestamptz `json:"deleted_at"`
+	Status       string             `json:"status"`
 	IsAnonymous  bool               `json:"is_anonymous"`
 	Username     string             `json:"username"`
 	DisplayName  string             `json:"display_name"`
@@ -263,6 +282,7 @@ func (q *Queries) GetComment(ctx context.Context, arg GetCommentParams) (GetComm
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DeletedAt,
+		&i.Status,
 		&i.IsAnonymous,
 		&i.Username,
 		&i.DisplayName,
@@ -507,6 +527,7 @@ func (q *Queries) ListCommentsByAuthor(ctx context.Context, arg ListCommentsByAu
 const listCommentsByContent = `-- name: ListCommentsByContent :many
 SELECT c.id, c.tenant_id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
        c.vote_score, c.is_pinned, c.is_edited, c.edited_at, c.created_at, c.updated_at, c.deleted_at,
+       c.reply_count,
        c.is_anonymous,
        u.username,
        COALESCE(up.display_name, '') AS display_name,
@@ -543,6 +564,7 @@ type ListCommentsByContentRow struct {
 	CreatedAt    pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
 	DeletedAt    pgtype.Timestamptz `json:"deleted_at"`
+	ReplyCount   int32              `json:"reply_count"`
 	IsAnonymous  bool               `json:"is_anonymous"`
 	Username     string             `json:"username"`
 	DisplayName  string             `json:"display_name"`
@@ -578,6 +600,7 @@ func (q *Queries) ListCommentsByContent(ctx context.Context, arg ListCommentsByC
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.DeletedAt,
+			&i.ReplyCount,
 			&i.IsAnonymous,
 			&i.Username,
 			&i.DisplayName,
@@ -596,6 +619,7 @@ func (q *Queries) ListCommentsByContent(ctx context.Context, arg ListCommentsByC
 const listCommentsByContentNew = `-- name: ListCommentsByContentNew :many
 SELECT c.id, c.tenant_id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
        c.vote_score, c.is_pinned, c.is_edited, c.edited_at, c.created_at, c.updated_at, c.deleted_at,
+       c.reply_count,
        c.is_anonymous,
        u.username,
        COALESCE(up.display_name, '') AS display_name,
@@ -632,6 +656,7 @@ type ListCommentsByContentNewRow struct {
 	CreatedAt    pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
 	DeletedAt    pgtype.Timestamptz `json:"deleted_at"`
+	ReplyCount   int32              `json:"reply_count"`
 	IsAnonymous  bool               `json:"is_anonymous"`
 	Username     string             `json:"username"`
 	DisplayName  string             `json:"display_name"`
@@ -668,6 +693,7 @@ func (q *Queries) ListCommentsByContentNew(ctx context.Context, arg ListComments
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.DeletedAt,
+			&i.ReplyCount,
 			&i.IsAnonymous,
 			&i.Username,
 			&i.DisplayName,
@@ -686,6 +712,7 @@ func (q *Queries) ListCommentsByContentNew(ctx context.Context, arg ListComments
 const listCommentsByContentOldest = `-- name: ListCommentsByContentOldest :many
 SELECT c.id, c.tenant_id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
        c.vote_score, c.is_pinned, c.is_edited, c.edited_at, c.created_at, c.updated_at, c.deleted_at,
+       c.reply_count,
        c.is_anonymous,
        u.username,
        COALESCE(up.display_name, '') AS display_name,
@@ -722,6 +749,7 @@ type ListCommentsByContentOldestRow struct {
 	CreatedAt    pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
 	DeletedAt    pgtype.Timestamptz `json:"deleted_at"`
+	ReplyCount   int32              `json:"reply_count"`
 	IsAnonymous  bool               `json:"is_anonymous"`
 	Username     string             `json:"username"`
 	DisplayName  string             `json:"display_name"`
@@ -758,6 +786,7 @@ func (q *Queries) ListCommentsByContentOldest(ctx context.Context, arg ListComme
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.DeletedAt,
+			&i.ReplyCount,
 			&i.IsAnonymous,
 			&i.Username,
 			&i.DisplayName,
@@ -846,6 +875,7 @@ func (q *Queries) ListContentThreadLinks(ctx context.Context, arg ListContentThr
 const listPublicCommentsByContent = `-- name: ListPublicCommentsByContent :many
 SELECT c.id, c.tenant_id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
        c.vote_score, c.is_pinned, c.is_edited, c.edited_at, c.created_at, c.updated_at, c.deleted_at,
+       c.reply_count,
        c.is_anonymous,
        u.username,
        COALESCE(up.display_name, '') AS display_name,
@@ -888,6 +918,7 @@ type ListPublicCommentsByContentRow struct {
 	CreatedAt    pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
 	DeletedAt    pgtype.Timestamptz `json:"deleted_at"`
+	ReplyCount   int32              `json:"reply_count"`
 	IsAnonymous  bool               `json:"is_anonymous"`
 	Username     string             `json:"username"`
 	DisplayName  string             `json:"display_name"`
@@ -928,6 +959,7 @@ func (q *Queries) ListPublicCommentsByContent(ctx context.Context, arg ListPubli
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.DeletedAt,
+			&i.ReplyCount,
 			&i.IsAnonymous,
 			&i.Username,
 			&i.DisplayName,
@@ -946,6 +978,7 @@ func (q *Queries) ListPublicCommentsByContent(ctx context.Context, arg ListPubli
 const listRepliesByParent = `-- name: ListRepliesByParent :many
 SELECT c.id, c.tenant_id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
        c.vote_score, c.is_pinned, c.is_edited, c.edited_at, c.created_at, c.updated_at, c.deleted_at,
+       c.reply_count,
        c.is_anonymous,
        u.username,
        COALESCE(up.display_name, '') AS display_name,
@@ -981,6 +1014,7 @@ type ListRepliesByParentRow struct {
 	CreatedAt    pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
 	DeletedAt    pgtype.Timestamptz `json:"deleted_at"`
+	ReplyCount   int32              `json:"reply_count"`
 	IsAnonymous  bool               `json:"is_anonymous"`
 	Username     string             `json:"username"`
 	DisplayName  string             `json:"display_name"`
@@ -1016,6 +1050,7 @@ func (q *Queries) ListRepliesByParent(ctx context.Context, arg ListRepliesByPare
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.DeletedAt,
+			&i.ReplyCount,
 			&i.IsAnonymous,
 			&i.Username,
 			&i.DisplayName,

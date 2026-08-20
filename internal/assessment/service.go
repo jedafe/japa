@@ -746,96 +746,96 @@ func curatedRoadmapLibrary() map[string][]RoadmapStep {
 			{
 				Title:       "Build your relocation savings fund",
 				Description: "Calculate your target savings based on your destination's cost of living and create a monthly savings plan.",
-				ContentSlug: "guide/banking-finance-relocation",
+				ContentSlug: "guide-banking-finance-relocation",
 			},
 			{
 				Title:       "Use the Cost of Living Calculator",
 				Description: "Compare living costs between your current city and target destination to set a realistic budget.",
-				ContentSlug: "tool/cost-of-living-calculator",
+				ContentSlug: "tool-cost-of-living-calculator",
 			},
 		},
 		"logistical": {
 			{
 				Title:       "Determine your visa pathway",
 				Description: "Research visa categories you qualify for based on your skills, experience, and destination.",
-				ContentSlug: "guide/visa-pathways-overview",
+				ContentSlug: "guide-visa-pathways-overview",
 			},
 			{
 				Title:       "Prepare your visa application documents",
 				Description: "Gather and organise the documents required for your target visa category.",
-				ContentSlug: "guide/visa-document-checklist",
+				ContentSlug: "guide-visa-document-checklist",
 			},
 			{
 				Title:       "Research housing at your destination",
 				Description: "Compare neighbourhoods, rental costs, and short-term accommodation options before you arrive.",
-				ContentSlug: "guide/destination-research-guide",
+				ContentSlug: "guide-destination-research-guide",
 			},
 		},
 		"professional": {
 			{
 				Title:       "Get your credentials evaluated",
 				Description: "Research credential recognition requirements for your profession in your target country.",
-				ContentSlug: "guide/credential-evaluation",
+				ContentSlug: "guide-credential-evaluation",
 			},
 			{
 				Title:       "Upgrade your professional certifications",
 				Description: "Identify and pursue certifications that are in demand in your destination's job market.",
-				ContentSlug: "guide/professional-certifications",
+				ContentSlug: "guide-professional-certifications",
 			},
 		},
 		"personal": {
 			{
 				Title:       "Connect with the diaspora community",
 				Description: "Join spaces and forums for Nigerians in your destination country for on-the-ground insights and support.",
-				ContentSlug: "guide/connecting-with-diaspora",
+				ContentSlug: "guide-connecting-with-diaspora",
 			},
 			{
 				Title:       "Plan your emotional and family readiness",
 				Description: "Reflect on cultural adjustment, family logistics, and support networks to ease the transition.",
-				ContentSlug: "guide/emotional-readiness-relocation",
+				ContentSlug: "guide-emotional-readiness-relocation",
 			},
 		},
 		"language": {
 			{
 				Title:       "Start a language learning track",
 				Description: "Begin structured language lessons for your destination country's primary language.",
-				ContentSlug: "track/language-proficiency",
+				ContentSlug: "track-language-proficiency",
 			},
 		},
 		"qualifications": {
 			{
 				Title:       "Get your credentials evaluated",
 				Description: "Research credential recognition requirements for your profession in your target country.",
-				ContentSlug: "guide/credential-evaluation",
+				ContentSlug: "guide-credential-evaluation",
 			},
 			{
 				Title:       "Upgrade your professional certifications",
 				Description: "Identify and pursue certifications that are in demand in your destination's job market.",
-				ContentSlug: "guide/professional-certifications",
+				ContentSlug: "guide-professional-certifications",
 			},
 		},
 		"visa_eligibility": {
 			{
 				Title:       "Determine your visa pathway",
 				Description: "Research visa categories you qualify for based on your skills, experience, and destination.",
-				ContentSlug: "guide/visa-pathways-overview",
+				ContentSlug: "guide-visa-pathways-overview",
 			},
 			{
 				Title:       "Prepare your visa application documents",
 				Description: "Gather and organise the documents required for your target visa category.",
-				ContentSlug: "guide/visa-document-checklist",
+				ContentSlug: "guide-visa-document-checklist",
 			},
 		},
 		"destination_knowledge": {
 			{
 				Title:       "Research your destination city",
 				Description: "Learn about housing, healthcare, transportation, and community in your target city.",
-				ContentSlug: "guide/destination-research-guide",
+				ContentSlug: "guide-destination-research-guide",
 			},
 			{
 				Title:       "Connect with the diaspora community",
 				Description: "Join spaces and forums for Nigerians in your destination country for on-the-ground insights.",
-				ContentSlug: "guide/connecting-with-diaspora",
+				ContentSlug: "guide-connecting-with-diaspora",
 			},
 		},
 	}

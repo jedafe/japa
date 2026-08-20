@@ -1,29 +1,26 @@
 <script lang="ts">
 	// Ref: 2026-08-21-journey-aware-recommendations-design.md §6.1
-	// Rule 16: countries come from /geo/countries; canonical values are
-	// normalized on the backend, so free-text inputs are used for
-	// purpose/visa/stage (same pattern as CreateJourneyPanel).
+	// Guest journey onboarding modal. Appears automatically after 5 minutes
+	// when a guest has not set their destination, and can be opened manually
+	// via the JourneyContextBar.
+	import { browser } from '$app/environment';
 	import { t } from '$lib/i18n';
 	import { api } from '$lib/api/client';
-	import { getFeedContext, setFeedContext } from '$lib/api/journey';
+	import { getFeedContext, getJourneyOptions, setFeedContext } from '$lib/api/journey';
+	import { journeyModal, JOURNEY_MODAL_DELAY_MS } from '$lib/stores/journey.svelte';
 	import type { GeoCountry, VisitorContextSummary } from '$lib/types';
+	import type { JourneyOptions, JourneyOption } from '$lib/api/journey';
 	import Autocomplete from '../create/Autocomplete.svelte';
 	import type { AutocompleteItem } from '../create/Autocomplete.svelte';
-	import { X } from 'lucide-svelte';
-
-	interface Props {
-		open?: boolean;
-		onOpenChange?: (open: boolean) => void;
-		onComplete?: () => void;
-	}
-
-	let { open = $bindable(true), onOpenChange, onComplete }: Props = $props();
+	import { Dialog } from 'bits-ui';
 
 	let loaded = $state(false);
 	let countryList = $state<GeoCountry[]>([]);
 	let ctx = $state<VisitorContextSummary | null>(null);
+	let options = $state<JourneyOptions | null>(null);
 	let saving = $state(false);
 	let error = $state<string | null>(null);
+	let timer: ReturnType<typeof setTimeout> | null = null;
 
 	let origin = $state('');
 	let destination = $state('');
@@ -36,12 +33,16 @@
 		if (loaded) return;
 		loaded = true;
 		void (async () => {
-			const [countriesRes, ctxRes] = await Promise.all([
+			const [countriesRes, ctxRes, optsRes] = await Promise.all([
 				api.get<GeoCountry[]>('/geo/countries'),
-				getFeedContext()
+				getFeedContext(),
+				getJourneyOptions()
 			]);
 			if (countriesRes.data) {
 				countryList = countriesRes.data;
+			}
+			if (optsRes.data) {
+				options = optsRes.data;
 			}
 			if (ctxRes.data) {
 				ctx = ctxRes.data;
@@ -52,12 +53,23 @@
 				purpose = ctxRes.data.purpose ?? '';
 				travelDate = ctxRes.data.travel_date ?? '';
 			}
+
+			if (browser && isDefaultContext(ctx)) {
+				timer = setTimeout(() => {
+					journeyModal.open = true;
+				}, JOURNEY_MODAL_DELAY_MS);
+			}
 		})();
+
+		return () => {
+			if (timer) clearTimeout(timer);
+		};
 	});
 
-	function setOpen(value: boolean) {
-		open = value;
-		onOpenChange?.(value);
+	function isDefaultContext(c: VisitorContextSummary | null): boolean {
+		if (!c) return true;
+		if (c.is_authenticated) return false;
+		return !c.destination_country;
 	}
 
 	function countryItems(): AutocompleteItem[] {
@@ -87,12 +99,39 @@
 		return c?.name ?? code;
 	}
 
-	function isDefaultContext(c: VisitorContextSummary | null): boolean {
-		if (!c) return true;
-		// The banner is meant for guests. Even if GeoIP inferred an origin
-		// country, the key missing signal is usually the destination.
-		if (c.is_authenticated) return false;
-		return !c.destination_country;
+	function optionItems(list: JourneyOption[]): AutocompleteItem[] {
+		return list.map((o) => ({ id: o.value, label: o.label, sublabel: o.value }));
+	}
+
+	function optionFetcher(list: JourneyOption[]): (q: string) => Promise<AutocompleteItem[]> {
+		return (q: string) => {
+			const needle = q.toLowerCase().trim();
+			const filtered = needle
+				? list.filter(
+						(o) =>
+							o.label.toLowerCase().includes(needle) ||
+							o.value.toLowerCase().includes(needle)
+					)
+				: list;
+			return Promise.resolve(optionItems(filtered.slice(0, 20)));
+		};
+	}
+
+	function optionInitialFetcher(list: JourneyOption[], value: string): () => Promise<AutocompleteItem[]> {
+		return () => {
+			if (!value) return Promise.resolve(optionItems(list.slice(0, 8)));
+			const c = list.find((o) => o.value === value);
+			return Promise.resolve([{ id: value, label: c?.label ?? value }]);
+		};
+	}
+
+	function optionLabel(list: JourneyOption[], value: string): string {
+		const o = list.find((x) => x.value === value);
+		return o?.label ?? value;
+	}
+
+	function hasOptions(list: JourneyOption[] | undefined): list is JourneyOption[] {
+		return !!list && list.length > 0;
 	}
 
 	async function submit() {
@@ -115,9 +154,7 @@
 				error = res.error.message;
 				return;
 			}
-			// The backend set an HttpOnly cookie. Reload so the next SSR/hydrate
-			// cycle resolves the new context and the banner flips to the bar.
-			onComplete?.();
+			journeyModal.open = false;
 			if (typeof window !== 'undefined') {
 				window.location.reload();
 			}
@@ -129,29 +166,34 @@
 	}
 </script>
 
-{#if open && (isDefaultContext(ctx) || !ctx)}
-	<div class="mx-auto w-full max-w-full">
-		<div class="border-b border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-4 py-4">
+<Dialog.Root bind:open={journeyModal.open}>
+	<Dialog.Portal>
+		<Dialog.Overlay class="fixed inset-0 z-40 bg-black/50" />
+		<Dialog.Content
+			class="fixed left-1/2 top-1/2 z-50 w-[calc(100%-2rem)] max-w-xl -translate-x-1/2 -translate-y-1/2 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-xl"
+		>
 			<div class="flex items-start justify-between gap-3">
 				<div>
-					<h2 class="text-base font-semibold text-[var(--color-text)]">{t('journey.banner.title', "Tell us about your journey")}</h2>
-					<p class="mt-0.5 text-sm text-[var(--color-text-subtle)]">{t('journey.banner.subtitle', "We'll show content that matches where you're coming from and where you're going.")}</p>
+					<Dialog.Title class="text-lg font-semibold text-[var(--color-text)]">
+						{t('journey.banner.title', 'Tell us about your journey')}
+					</Dialog.Title>
+					<Dialog.Description class="mt-0.5 text-sm text-[var(--color-text-subtle)]">
+						{t('journey.banner.subtitle', "We'll show content that matches where you're coming from and where you're going.")}
+					</Dialog.Description>
 				</div>
-				<button
-					type="button"
+				<Dialog.Close
 					class="shrink-0 text-[var(--color-muted)] hover:text-[var(--color-text)]"
-					onclick={() => setOpen(false)}
 					aria-label={t('common.close', 'Close')}
 				>
-					<X size={18} />
-				</button>
+					<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+				</Dialog.Close>
 			</div>
 
 			{#if error}
-				<p class="mt-3 rounded bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950 dark:text-red-200">{error}</p>
+				<p class="mt-4 rounded bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950 dark:text-red-200">{error}</p>
 			{/if}
 
-			<div class="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+			<div class="mt-4 grid gap-4 sm:grid-cols-2">
 				<div class="field-row">
 					<label class="field-label" for="journey-origin">{t('journey.banner.origin_country', 'Where are you now?')}</label>
 					<Autocomplete
@@ -182,35 +224,77 @@
 
 				<div class="field-row">
 					<label class="field-label" for="journey-purpose">{t('journey.banner.purpose', 'Why are you traveling?')}</label>
-					<input
-						id="journey-purpose"
-						type="text"
-						class="field-input"
-						placeholder={t('journey.banner.purpose_placeholder', 'e.g. study')}
-						bind:value={purpose}
-					/>
+					{#if hasOptions(options?.purposes)}
+						<Autocomplete
+							placeholder={t('journey.banner.purpose_placeholder', 'e.g. study')}
+							emptyMessage={t('journey.banner.no_options', 'No matching option')}
+							fetcher={optionFetcher(options.purposes)}
+							initialFetcher={optionInitialFetcher(options.purposes, purpose)}
+							selectedId={purpose}
+							selectedLabel={optionLabel(options.purposes, purpose)}
+							onSelect={(item) => { purpose = item.id; }}
+							onClear={() => { purpose = ''; }}
+							allowFreeText
+						/>
+					{:else}
+						<input
+							id="journey-purpose"
+							type="text"
+							class="field-input"
+							placeholder={t('journey.banner.purpose_placeholder', 'e.g. study')}
+							bind:value={purpose}
+						/>
+					{/if}
 				</div>
 
 				<div class="field-row">
 					<label class="field-label" for="journey-visa">{t('journey.banner.visa_route', 'Which visa route?')}</label>
-					<input
-						id="journey-visa"
-						type="text"
-						class="field-input"
-						placeholder={t('journey.banner.visa_placeholder', 'e.g. student')}
-						bind:value={visaRoute}
-					/>
+					{#if hasOptions(options?.visa_routes)}
+						<Autocomplete
+							placeholder={t('journey.banner.visa_placeholder', 'e.g. student')}
+							emptyMessage={t('journey.banner.no_options', 'No matching option')}
+							fetcher={optionFetcher(options.visa_routes)}
+							initialFetcher={optionInitialFetcher(options.visa_routes, visaRoute)}
+							selectedId={visaRoute}
+							selectedLabel={optionLabel(options.visa_routes, visaRoute)}
+							onSelect={(item) => { visaRoute = item.id; }}
+							onClear={() => { visaRoute = ''; }}
+							allowFreeText
+						/>
+					{:else}
+						<input
+							id="journey-visa"
+							type="text"
+							class="field-input"
+							placeholder={t('journey.banner.visa_placeholder', 'e.g. student')}
+							bind:value={visaRoute}
+						/>
+					{/if}
 				</div>
 
 				<div class="field-row">
 					<label class="field-label" for="journey-stage">{t('journey.banner.stage', 'Where are you in the journey?')}</label>
-					<input
-						id="journey-stage"
-						type="text"
-						class="field-input"
-						placeholder={t('journey.banner.stage_placeholder', 'e.g. preparing')}
-						bind:value={japaStage}
-					/>
+					{#if hasOptions(options?.stages)}
+						<Autocomplete
+							placeholder={t('journey.banner.stage_placeholder', 'e.g. preparing')}
+							emptyMessage={t('journey.banner.no_options', 'No matching option')}
+							fetcher={optionFetcher(options.stages)}
+							initialFetcher={optionInitialFetcher(options.stages, japaStage)}
+							selectedId={japaStage}
+							selectedLabel={optionLabel(options.stages, japaStage)}
+							onSelect={(item) => { japaStage = item.id; }}
+							onClear={() => { japaStage = ''; }}
+							allowFreeText
+						/>
+					{:else}
+						<input
+							id="journey-stage"
+							type="text"
+							class="field-input"
+							placeholder={t('journey.banner.stage_placeholder', 'e.g. preparing')}
+							bind:value={japaStage}
+						/>
+					{/if}
 				</div>
 
 				<div class="field-row">
@@ -224,7 +308,13 @@
 				</div>
 			</div>
 
-			<div class="mt-4 flex items-center gap-3">
+			<div class="mt-6 flex items-center justify-end gap-3">
+				<Dialog.Close
+					type="button"
+					class="text-sm text-[var(--color-muted)] hover:text-[var(--color-text)]"
+				>
+					{t('common.close', 'Close')}
+				</Dialog.Close>
 				<button
 					type="button"
 					class="rounded bg-[var(--color-primary)] px-4 py-2 text-sm font-semibold text-[var(--color-primary-contrast)] hover:opacity-90 disabled:opacity-50"
@@ -233,17 +323,10 @@
 				>
 					{saving ? t('journey.banner.saving', 'Saving...') : t('journey.banner.submit', 'Show me relevant content')}
 				</button>
-				<button
-					type="button"
-					class="text-sm text-[var(--color-muted)] hover:text-[var(--color-text)]"
-					onclick={() => setOpen(false)}
-				>
-					{t('common.close', 'Close')}
-				</button>
 			</div>
-		</div>
-	</div>
-{/if}
+		</Dialog.Content>
+	</Dialog.Portal>
+</Dialog.Root>
 
 <style>
 	.field-row {

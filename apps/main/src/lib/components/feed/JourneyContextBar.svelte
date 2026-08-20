@@ -4,14 +4,9 @@
 	import { t } from '$lib/i18n';
 	import { api } from '$lib/api/client';
 	import { getFeedContext } from '$lib/api/journey';
+	import { journeyModal } from '$lib/stores/journey.svelte';
 	import type { GeoCountry, VisitorContextSummary } from '$lib/types';
 	import { Pencil } from 'lucide-svelte';
-
-	interface Props {
-		onEdit?: () => void;
-	}
-
-	let { onEdit }: Props = $props();
 
 	let loaded = $state(false);
 	let countryList = $state<GeoCountry[]>([]);
@@ -61,6 +56,10 @@
 		if (c.travel_date) parts.push(c.travel_date);
 		return parts.join(' · ');
 	}
+
+	function openModal() {
+		journeyModal.open = true;
+	}
 </script>
 
 {#if hasContext(ctx)}
@@ -75,10 +74,25 @@
 			<button
 				type="button"
 				class="shrink-0 rounded p-1 text-[var(--color-muted)] hover:bg-[var(--color-surface)] hover:text-[var(--color-text)]"
-				onclick={() => onEdit?.()}
+				onclick={openModal}
 				aria-label={t('journey.bar.edit', 'Edit journey')}
 			>
 				<Pencil size={16} />
+			</button>
+		</div>
+	</div>
+{:else if ctx && !ctx.is_authenticated}
+	<div class="border-b border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-4 py-2">
+		<div class="flex items-center justify-between gap-3">
+			<p class="text-sm text-[var(--color-text-subtle)]">
+				{t('journey.bar.prompt', 'Set your journey to see content that matches where you are going.')}
+			</p>
+			<button
+				type="button"
+				class="shrink-0 rounded bg-[var(--color-primary)] px-3 py-1.5 text-xs font-semibold text-[var(--color-primary-contrast)] hover:opacity-90"
+				onclick={openModal}
+			>
+				{t('journey.bar.set', 'Set journey')}
 			</button>
 		</div>
 	</div>

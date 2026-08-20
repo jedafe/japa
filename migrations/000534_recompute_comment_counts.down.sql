@@ -1,0 +1,2 @@
+-- No-op: there is no reliable way to restore the previous denormalized values
+-- after a full recomputation from the comments table.

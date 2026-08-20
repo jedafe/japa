@@ -266,9 +266,9 @@ func candidateFromRow(r gen.GetForYouCandidatesRow) Candidate {
 			CommentCount:       r.CommentCount,
 			VoteScore:          derefInt32(r.VoteScore),
 			VelocityScore:      pgNumericToFloat64(r.VelocityScore),
-			AuthorName:         r.AuthorName,
+			AuthorName:         asString(r.AuthorName),
 			AuthorAvatarURL:    r.AuthorAvatarUrl,
-			SpaceName:          r.SpaceName,
+			SpaceName:          asString(r.SpaceName),
 			SpaceSlug:          r.SpaceSlug,
 			Excerpt:            r.Excerpt,
 			Tags:               splitTags(r.Tags),
@@ -297,7 +297,7 @@ func candidateFromRow(r gen.GetForYouCandidatesRow) Candidate {
 
 // pageSlice returns a bounded page of items; out-of-range offsets yield empty.
 func pageSlice(items []FeedItem, offset, limit int32) []FeedItem {
-	n := int32(len(items)) //nolint:gosec // G115: feed length is bounded by the candidate cap (<< int32 max)
+	n := toInt32(len(items))
 	if offset >= n {
 		return []FeedItem{}
 	}

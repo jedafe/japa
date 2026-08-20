@@ -78,7 +78,10 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 			<UrlTabs
 				{tabs}
 				value={data.tab}
-				onValueChange={(v) => goto(`?tab=${v}&sort=${data.sort}`)}
+				onValueChange={(v) => {
+					const sortParam = v !== 'roadmap' ? `&sort=${data.sort}` : '';
+					goto(`?tab=${v}${sortParam}`);
+				}}
 				class="border-b-0"
 			/>
 			{#if data.authed}

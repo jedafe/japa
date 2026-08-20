@@ -528,12 +528,28 @@ func (s *Service) UpdateComment(ctx context.Context, tenantID, commentID, userID
 // moderator path (comments.delete_any) — no author check. Authors must use
 // SoftDeleteCommentByAuthor instead (Section 49, BUG-003).
 func (s *Service) SoftDeleteComment(ctx context.Context, tenantID, commentID pgtype.UUID) error {
+	comment, err := s.read.GetComment(ctx, gen.GetCommentParams{
+		ID:       commentID,
+		TenantID: tenantID,
+	})
+	if err != nil {
+		return fmt.Errorf("getting comment for delete: %w", err)
+	}
+
+	// Only decrement counters for currently-published, non-deleted comments.
+	// Removed/flagged comments were already excluded from public counts.
+	if comment.DeletedAt.Valid || comment.Status != "published" {
+		return nil
+	}
+
 	if err := s.write.SoftDeleteComment(ctx, gen.SoftDeleteCommentParams{
 		ID:       commentID,
 		TenantID: tenantID,
 	}); err != nil {
 		return fmt.Errorf("deleting comment: %w", err)
 	}
+
+	s.decrementCommentCounters(ctx, comment)
 
 	return nil
 }
@@ -544,6 +560,19 @@ func (s *Service) SoftDeleteComment(ctx context.Context, tenantID, commentID pgt
 // (BUG-003). Returns errpkg.ErrNotFound when the comment does not exist or the
 // user is not the author.
 func (s *Service) SoftDeleteCommentByAuthor(ctx context.Context, tenantID, commentID, userID pgtype.UUID) error {
+	comment, err := s.read.GetComment(ctx, gen.GetCommentParams{
+		ID:       commentID,
+		TenantID: tenantID,
+	})
+	if err != nil {
+		return fmt.Errorf("getting comment for delete: %w", err)
+	}
+
+	// Only decrement counters for currently-published, non-deleted comments.
+	if comment.DeletedAt.Valid || comment.Status != "published" {
+		return nil
+	}
+
 	if err := s.write.SoftDeleteCommentByAuthor(ctx, gen.SoftDeleteCommentByAuthorParams{
 		ID:           commentID,
 		TenantID:     tenantID,
@@ -551,6 +580,9 @@ func (s *Service) SoftDeleteCommentByAuthor(ctx context.Context, tenantID, comme
 	}); err != nil {
 		return fmt.Errorf("deleting own comment: %w", err)
 	}
+
+	s.decrementCommentCounters(ctx, comment)
+
 	return nil
 }
 
@@ -560,6 +592,18 @@ func (s *Service) SoftDeleteCommentByAuthor(ctx context.Context, tenantID, comme
 // status filter. The reason is optional (empty string → NULL). Used by the
 // admin moderation surface (BUG-010).
 func (s *Service) RemoveComment(ctx context.Context, tenantID, commentID, moderatorID pgtype.UUID, reason string) error {
+	comment, err := s.read.GetComment(ctx, gen.GetCommentParams{
+		ID:       commentID,
+		TenantID: tenantID,
+	})
+	if err != nil {
+		return fmt.Errorf("getting comment for remove: %w", err)
+	}
+
+	if comment.DeletedAt.Valid || comment.Status != "published" {
+		return nil
+	}
+
 	var reasonPtr *string
 	if reason != "" {
 		reasonPtr = &reason
@@ -572,7 +616,34 @@ func (s *Service) RemoveComment(ctx context.Context, tenantID, commentID, modera
 	}); err != nil {
 		return fmt.Errorf("removing comment: %w", err)
 	}
+
+	s.decrementCommentCounters(ctx, comment)
+
 	return nil
+}
+
+// decrementCommentCounters keeps the denormalized content.comment_count and
+// the parent comment's reply_count in sync when a published comment is
+// soft-deleted or removed. Failures are logged, not returned, so the request
+// still succeeds (Rule 8).
+func (s *Service) decrementCommentCounters(ctx context.Context, comment gen.GetCommentRow) {
+	if err := s.write.DecrementContentCommentCount(ctx, gen.DecrementContentCommentCountParams{
+		ID:       comment.ContentID,
+		TenantID: comment.TenantID,
+	}); err != nil {
+		slog.Warn("comments: failed to decrement content comment_count",
+			"content_id", comment.ContentID.String(), "error", err)
+	}
+
+	if comment.ParentID.Valid {
+		if err := s.write.DecrementCommentReplyCount(ctx, gen.DecrementCommentReplyCountParams{
+			ParentID: comment.ParentID,
+			TenantID: comment.TenantID,
+		}); err != nil {
+			slog.Warn("comments: failed to decrement parent reply_count",
+				"parent_id", comment.ParentID.String(), "error", err)
+		}
+	}
 }
 
 // PinComment pins a comment (only content author or moderator).

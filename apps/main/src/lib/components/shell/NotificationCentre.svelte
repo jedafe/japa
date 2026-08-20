@@ -13,11 +13,17 @@
 	import { onMount, onDestroy } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { DropdownMenu } from 'bits-ui';
-	import { Bell, CheckCheck, BellOff, Loader2, AtSign, Heart, UserPlus, MessageSquare, Megaphone } from 'lucide-svelte';
+	import { Bell, CheckCheck, BellOff, Loader2 } from 'lucide-svelte';
 	import { t } from '$lib/i18n';
 	import { api } from '$lib/api/client';
 	import { realtime } from '$lib/realtime/realtime.svelte';
 	import { EmptyState } from '$lib/components/ui';
+	import {
+		NOTIFICATION_FILTER_TABS,
+		notificationFilterFor,
+		notificationIconFor,
+		type NotificationFilterTab
+	} from '$lib/components/notifications/notificationType';
 	import type { Notification } from '$lib/types';
 
 	interface Props {
@@ -43,31 +49,12 @@
 	let hasMore = $state(true);
 	let loadingMore = $state(false);
 	// Section 35 filter-by-type tabs.
-	type FilterTab = 'all' | 'mentions' | 'reactions' | 'follows' | 'replies' | 'system';
-	let activeFilter = $state<FilterTab>('all');
-
-	// Maps a notification_type to a filter tab.
-	function filterTabOf(type: string): FilterTab {
-		if (type.startsWith('mention')) return 'mentions';
-		if (type.startsWith('reaction') || type === 'content.reaction') return 'reactions';
-		if (type.startsWith('follow') || type === 'new_follower') return 'follows';
-		if (type.startsWith('comment') || type === 'content.comment' || type === 'post_reply') return 'replies';
-		return 'system';
-	}
-
-	const FILTER_TABS: { key: FilterTab; label: string; icon: typeof Bell }[] = [
-		{ key: 'all', label: 'notifications.filter_all', icon: Bell },
-		{ key: 'mentions', label: 'notifications.filter_mentions', icon: AtSign },
-		{ key: 'reactions', label: 'notifications.filter_reactions', icon: Heart },
-		{ key: 'follows', label: 'notifications.filter_follows', icon: UserPlus },
-		{ key: 'replies', label: 'notifications.filter_replies', icon: MessageSquare },
-		{ key: 'system', label: 'notifications.filter_system', icon: Megaphone }
-	];
+	let activeFilter = $state<NotificationFilterTab>('all');
 
 	const filteredNotifications = $derived(
 		activeFilter === 'all'
 			? notifications
-			: notifications.filter((n) => filterTabOf(n.notification_type) === activeFilter)
+			: notifications.filter((n) => notificationFilterFor(n.notification_type) === activeFilter)
 	);
 
 	// Live-prepend handler — registered on mount, fires whenever a `notification`
@@ -136,7 +123,9 @@
 	async function openNotification(n: Notification) {
 		if (!n.read_at) {
 			// Optimistic — don't block navigation on the API call.
-			notifications = notifications.map((x) => (x.id === n.id ? { ...x, read_at: 'read' } : x));
+			notifications = notifications.map((x) =>
+				x.id === n.id ? { ...x, read_at: new Date().toISOString() } : x
+			);
 			realtime.decrementUnread(1);
 			void api.post(`/me/notifications/${n.id}/read`);
 		}
@@ -150,7 +139,10 @@
 		markingAll = true;
 		const res = await api.post(`/me/notifications/read-all`);
 		if (!res.error) {
-			notifications = notifications.map((x) => ({ ...x, read_at: 'read' }));
+			notifications = notifications.map((x) => ({
+				...x,
+				read_at: x.read_at ?? new Date().toISOString()
+			}));
 			realtime.clearUnread();
 		}
 		markingAll = false;
@@ -182,11 +174,10 @@
 	}
 </script>
 
-<DropdownMenu.Root bind:open>
+<DropdownMenu.Root bind:open onOpenChange={(isOpen) => { if (isOpen) loadOnOpen(); }}>
 	<DropdownMenu.Trigger
 		class="w-full text-left {klass}"
 		aria-label={t('nav.notifications')}
-		onclick={loadOnOpen}
 	>
 		{@render children?.()}
 	</DropdownMenu.Trigger>
@@ -225,15 +216,15 @@
 
 			<!-- Filter tabs (Section 35 — Filter by type) -->
 			<div class="flex items-center gap-1 overflow-x-auto border-b border-[var(--color-border)] px-2 py-1.5">
-				{#each FILTER_TABS as tab (tab.key)}
+				{#each NOTIFICATION_FILTER_TABS as tab (tab.key)}
 					<button
 						type="button"
 						onclick={() => (activeFilter = tab.key)}
 						class="inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-1 text-[11px] font-medium transition-colors {activeFilter === tab.key ? 'bg-[var(--color-primary)] text-[var(--color-primary-contrast)]' : 'text-[var(--color-text-subtle)] hover:bg-[var(--color-surface-subtle)]'}"
-						aria-label={t(tab.label, tab.key)}
+						aria-label={t(tab.labelKey, tab.fallback)}
 					>
 						<tab.icon size={11} />
-						{t(tab.label, tab.key)}
+						{t(tab.labelKey, tab.fallback)}
 					</button>
 				{/each}
 			</div>
@@ -250,13 +241,14 @@
 					</div>
 				{:else}
 					{#each filteredNotifications as n (n.id)}
+						{@const Icon = notificationIconFor(n.notification_type)}
 						<button
 							type="button"
 							onclick={() => openNotification(n)}
 							class="flex w-full items-start gap-2 px-3 py-2.5 text-left transition-colors hover:bg-[var(--color-surface-subtle)]"
 						>
 							<span class="mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-full bg-[var(--color-surface-subtle)] text-[var(--color-text-subtle)]">
-								<Bell size={13} />
+								<Icon size={13} />
 							</span>
 							<span class="min-w-0 flex-1">
 								<span class="flex items-center gap-1.5">

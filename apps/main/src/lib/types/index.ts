@@ -719,6 +719,8 @@ export interface Comment {
 	display_name: string;
 	/** Joined author avatar URL (empty string when absent). */
 	avatar_url: string;
+	/** Number of published, non-deleted direct replies (Section 49). */
+	reply_count: number;
 }
 
 /* ------------------------------------------------------------------ *

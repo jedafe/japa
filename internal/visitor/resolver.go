@@ -29,6 +29,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -385,6 +386,19 @@ func (res *Resolver) enrichArchetype(ctx context.Context, vc *VisitorContext, us
 				// city-level spaces; state/country names are NOT treated as cities).
 				if geoSpace.CityName != "" {
 					vc.CurrentCity = geoSpace.CityName
+					// Best-effort origin/destination city: if the user is currently
+					// in a city that matches their origin or destination country,
+					// mirror the city name. True origin/destination city fields are
+					// not yet seeded as custom fields, so this is a partial fill.
+					if geoSpace.CountryGeoCode != nil && *geoSpace.CountryGeoCode != "" {
+						country := strings.ToUpper(*geoSpace.CountryGeoCode)
+						if country == vc.OriginCountry {
+							vc.OriginCity = geoSpace.CityName
+						}
+						if country == vc.DestinationCountry {
+							vc.DestCity = geoSpace.CityName
+						}
+					}
 				}
 			}
 		}
@@ -737,6 +751,33 @@ func parseAssessmentSubmission(b []byte) assessmentSubmissionFields {
 					if s, ok := val["value"].(string); ok {
 						return s
 					}
+					// Some clients send {id: "...", label: "..."} for selects.
+					if s, ok := val["id"].(string); ok {
+						return s
+					}
+				case []any:
+					// Multi-select: join non-empty values with a comma.
+					var parts []string
+					for _, el := range val {
+						switch e := el.(type) {
+						case string:
+							if e != "" {
+								parts = append(parts, e)
+							}
+						case map[string]any:
+							if s, ok := e["value"].(string); ok && s != "" {
+								parts = append(parts, s)
+							} else if s, ok := e["id"].(string); ok && s != "" {
+								parts = append(parts, s)
+							}
+						}
+					}
+					return strings.Join(parts, ",")
+				case float64:
+					// Numeric values (e.g. year, age).
+					return strconv.FormatFloat(val, 'f', -1, 64)
+				case int:
+					return strconv.Itoa(val)
 				}
 			}
 		}
