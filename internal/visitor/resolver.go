@@ -162,7 +162,13 @@ type VisitorContext struct {
 func FromContext(ctx context.Context) VisitorContext {
 	vc, ok := ctx.Value(ContextKey{}).(VisitorContext)
 	if !ok {
-		return VisitorContext{ContentCountry: "NG", ContentRegion: "Africa", Source: "default"}
+		return VisitorContext{
+			ContentCountry:    "NG",
+			ContentRegion:     "Africa",
+			Source:            "default",
+			RoadmapSlugs:      []string{},
+			WeakestDimensions: []string{},
+		}
 	}
 	return vc
 }
@@ -207,11 +213,13 @@ func (res *Resolver) resolve(r *http.Request) VisitorContext {
 	t := tenant.FromContext(r.Context())
 
 	vc := VisitorContext{
-		GeoIPCountry:   geoCtx.CountryCode,
-		CurrentCountry: geoCtx.CountryCode,
-		OriginCountry:  geoCtx.CountryCode, // default: GeoIP; enriched from profile below
-		CurrentCity:    geoCtx.City,        // ADR-064a: GeoIP city as initial value
-		Language:       resolveLanguage(r),
+		GeoIPCountry:      geoCtx.CountryCode,
+		CurrentCountry:    geoCtx.CountryCode,
+		OriginCountry:     geoCtx.CountryCode, // default: GeoIP; enriched from profile below
+		CurrentCity:       geoCtx.City,        // ADR-064a: GeoIP city as initial value
+		Language:          resolveLanguage(r),
+		RoadmapSlugs:      []string{},
+		WeakestDimensions: []string{},
 	}
 	if user != nil {
 		vc.IsAuthenticated = true
@@ -491,6 +499,12 @@ func unmarshalCache(s string) (VisitorContext, bool) {
 		vc.ContentCountry = "NG"
 		vc.Source = "default"
 	}
+	if vc.RoadmapSlugs == nil {
+		vc.RoadmapSlugs = []string{}
+	}
+	if vc.WeakestDimensions == nil {
+		vc.WeakestDimensions = []string{}
+	}
 	return vc, true
 }
 
@@ -721,13 +735,13 @@ type roadmapStep struct {
 // extractRoadmapSlugs returns the content_slug values from a RoadmapStep array.
 func extractRoadmapSlugs(b []byte) []string {
 	if len(b) == 0 {
-		return nil
+		return []string{}
 	}
 	var steps []roadmapStep
 	if err := json.Unmarshal(b, &steps); err != nil {
-		return nil
+		return []string{}
 	}
-	var slugs []string
+	slugs := []string{}
 	for _, s := range steps {
 		if s.ContentSlug != "" {
 			slugs = append(slugs, s.ContentSlug)
@@ -740,11 +754,11 @@ func extractRoadmapSlugs(b []byte) []string {
 // scores from an assessment result's dimension_scores JSONB.
 func extractWeakestDimensions(b []byte) []string {
 	if len(b) == 0 {
-		return nil
+		return []string{}
 	}
 	var scores map[string]int
 	if err := json.Unmarshal(b, &scores); err != nil {
-		return nil
+		return []string{}
 	}
 	type dim struct {
 		name  string
@@ -755,7 +769,7 @@ func extractWeakestDimensions(b []byte) []string {
 		dims = append(dims, dim{name: n, score: s})
 	}
 	sort.Slice(dims, func(i, j int) bool { return dims[i].score < dims[j].score })
-	var out []string
+	out := []string{}
 	for i := 0; i < len(dims) && i < 3; i++ {
 		out = append(out, dims[i].name)
 	}
