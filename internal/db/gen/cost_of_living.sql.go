@@ -84,21 +84,34 @@ func (q *Queries) AdminCOLStats(ctx context.Context, arg AdminCOLStatsParams) ([
 
 const countCOLCities = `-- name: CountCOLCities :one
 SELECT COUNT(*) AS count
-FROM comparison_items
-WHERE tenant_id = $1
-  AND type_id = $2
-  AND deleted_at IS NULL
-  AND ($3::text = '' OR title ILIKE '%' || $3 || '%')
+FROM comparison_items ci
+LEFT JOIN spaces s ON s.id = ci.geo_space_id
+LEFT JOIN spaces state ON state.id = s.parent_id AND state.level = 'state'
+LEFT JOIN spaces country ON (
+    (country.id = state.parent_id AND country.level = 'country')
+    OR (country.id = s.parent_id AND country.level = 'country')
+)
+WHERE ci.tenant_id = $1
+  AND ci.type_id = $2
+  AND ci.deleted_at IS NULL
+  AND ($3::text = '' OR ci.title ILIKE '%' || $3 || '%')
+  AND ($4::text = '' OR country.geo_code = $4)
 `
 
 type CountCOLCitiesParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	TypeID   pgtype.UUID `json:"type_id"`
-	Search   string      `json:"search"`
+	TenantID    pgtype.UUID `json:"tenant_id"`
+	TypeID      pgtype.UUID `json:"type_id"`
+	Search      string      `json:"search"`
+	CountryCode string      `json:"country_code"`
 }
 
 func (q *Queries) CountCOLCities(ctx context.Context, arg CountCOLCitiesParams) (int64, error) {
-	row := q.db.QueryRow(ctx, countCOLCities, arg.TenantID, arg.TypeID, arg.Search)
+	row := q.db.QueryRow(ctx, countCOLCities,
+		arg.TenantID,
+		arg.TypeID,
+		arg.Search,
+		arg.CountryCode,
+	)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -444,20 +457,27 @@ SELECT
     s.slug AS geo_space_slug
 FROM comparison_items ci
 LEFT JOIN spaces s ON s.id = ci.geo_space_id
+LEFT JOIN spaces state ON state.id = s.parent_id AND state.level = 'state'
+LEFT JOIN spaces country ON (
+    (country.id = state.parent_id AND country.level = 'country')
+    OR (country.id = s.parent_id AND country.level = 'country')
+)
 WHERE ci.tenant_id = $1
   AND ci.type_id = $2
   AND ci.deleted_at IS NULL
   AND ($3::text = '' OR ci.title ILIKE '%' || $3 || '%')
+  AND ($4::text = '' OR country.geo_code = $4)
 ORDER BY ci.is_baseline DESC, ci.title ASC
-LIMIT $5 OFFSET $4
+LIMIT $6 OFFSET $5
 `
 
 type ListCOLCitiesParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
-	TypeID     pgtype.UUID `json:"type_id"`
-	Search     string      `json:"search"`
-	PageOffset int32       `json:"page_offset"`
-	PageLimit  int32       `json:"page_limit"`
+	TenantID    pgtype.UUID `json:"tenant_id"`
+	TypeID      pgtype.UUID `json:"type_id"`
+	Search      string      `json:"search"`
+	CountryCode string      `json:"country_code"`
+	PageOffset  int32       `json:"page_offset"`
+	PageLimit   int32       `json:"page_limit"`
 }
 
 type ListCOLCitiesRow struct {
@@ -481,6 +501,7 @@ func (q *Queries) ListCOLCities(ctx context.Context, arg ListCOLCitiesParams) ([
 		arg.TenantID,
 		arg.TypeID,
 		arg.Search,
+		arg.CountryCode,
 		arg.PageOffset,
 		arg.PageLimit,
 	)
