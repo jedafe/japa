@@ -1250,12 +1250,14 @@ SELECT
     COALESCE(MAX(CASE WHEN cf.key = 'japa_status' THEN cfv.value_text END), '')::text AS japa_status,
     COALESCE(MAX(CASE WHEN cf.key = 'destination_country' THEN cfv.value_text END), '')::text AS destination_country,
     COALESCE(MAX(CASE WHEN cf.key = 'origin_country' THEN cfv.value_text END), '')::text AS origin_country,
-    COALESCE(MAX(CASE WHEN cf.key = 'visa_route' THEN cfv.value_text END), '')::text AS visa_route
+    COALESCE(MAX(CASE WHEN cf.key = 'visa_route' THEN cfv.value_text END), '')::text AS visa_route,
+    COALESCE(MAX(CASE WHEN cf.key = 'purpose' THEN cfv.value_text END), '')::text AS purpose,
+    COALESCE(MAX(CASE WHEN cf.key = 'planned_travel_date' THEN cfv.value_text END), '')::text AS planned_travel_date
 FROM user_profiles up
 LEFT JOIN custom_field_values cfv
     ON cfv.entity_type = 'user_profile' AND cfv.entity_id = up.id
 LEFT JOIN custom_fields cf
-    ON cf.id = cfv.field_id AND cf.key IN ('japa_status', 'destination_country', 'origin_country', 'visa_route')
+    ON cf.id = cfv.field_id AND cf.key IN ('japa_status', 'destination_country', 'origin_country', 'visa_route', 'purpose', 'planned_travel_date')
 WHERE up.tenant_id = $1 AND up.user_id = $2
 `
 
@@ -1269,6 +1271,8 @@ type GetUserGeoProfileFieldsRow struct {
 	DestinationCountry string `json:"destination_country"`
 	OriginCountry      string `json:"origin_country"`
 	VisaRoute          string `json:"visa_route"`
+	Purpose            string `json:"purpose"`
+	PlannedTravelDate  string `json:"planned_travel_date"`
 }
 
 // ADR-064 + ADR-064a: fetch the custom-field signals the archetype resolver
@@ -1283,6 +1287,8 @@ func (q *Queries) GetUserGeoProfileFields(ctx context.Context, arg GetUserGeoPro
 		&i.DestinationCountry,
 		&i.OriginCountry,
 		&i.VisaRoute,
+		&i.Purpose,
+		&i.PlannedTravelDate,
 	)
 	return i, err
 }

@@ -2753,6 +2753,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 			// Feed routes (Section 32 — Activity Feed / Timeline)
 			r.Get("/feed/card-style", feedHandlers.GetCardStyle)                                            // public — no auth required
+			r.Get("/feed/context", feedHandlers.GetFeedContext)                                             // public — returns resolved VisitorContext
+			r.Post("/feed/context", feedHandlers.SetFeedContext)                                            // public — set guest journey context cookie
 			r.Get("/explore", feedHandlers.GetExploreFeed)                                                  // public — no auth required (catalog: /explore)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/feed", feedHandlers.GetPrimaryFeed)        // catalog: /feed (primary timeline)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/feed/for-you", feedHandlers.GetForYouFeed) // catalog: /feed/for-you (personalized ranked)
@@ -3878,6 +3880,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), csrf.EnsureCookie(cfg.CookieDomain, cfg.IsProduction())).Get("/me", usersHandlers.GetMyProfile)
 			// Ref: japaconnect-engineering/sections/50-user-dashboard-settings.md (user.profile.edit_own)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "user.profile.edit_own")).Patch("/me/profile", usersHandlers.UpdateMyProfile)
+			// Journey-aware recommendations (docs/superpowers/specs/2026-08-21-journey-aware-recommendations-design.md)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "user.profile.edit_own")).Patch("/me/journey", usersHandlers.UpdateMyJourney)
 			// NOTE (§6.3 dedupe): /me/preferences overlaps /me/notification-preferences;
 			// kept as a documented extra pending confirmation of distinct semantics.
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/preferences", usersHandlers.GetMyPreferences)
