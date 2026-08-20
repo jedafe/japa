@@ -32,16 +32,20 @@
 		const _html = html;
 		if (!contentEl) return;
 		let cancelled = false;
+		let cleanup: (() => void) | undefined;
 		// Highlight code blocks via dynamic import (browser-only).
 		(async () => {
 			try {
 				const mod = await import('./highlightCodeblocks.svelte');
-				if (!cancelled && contentEl) mod.enhanceCodeblocks(contentEl);
+				if (!cancelled && contentEl) cleanup = mod.enhanceCodeblocks(contentEl);
 			} catch {
 				// Highlighting is progressive enhancement — never block reading.
 			}
 		})();
-		return () => { cancelled = true; };
+		return () => {
+			cancelled = true;
+			cleanup?.();
+		};
 	});
 </script>
 

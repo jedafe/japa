@@ -78,7 +78,7 @@ seed-geo-wiki
 fix-geo-logos
 seed-geo-enrich
 seed-universities
-api
+/api
 jc-api
 reindex
 meilisearch

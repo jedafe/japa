@@ -5,6 +5,7 @@ import { renderDocContent, extractTocHeadings, ensureHeadingIds } from '$lib/tip
 import { buildMeta, techArticleLd, DOCS_ORIGIN } from '$lib/seo/meta';
 import type { DocPage, DocAudience } from '$lib/types';
 import { AUDIENCE_LABEL_KEY } from '$lib/types';
+import { tServer } from '$lib/i18n/dict';
 
 /**
  * Single doc page: fetches the published page, renders TipTap JSON → HTML
@@ -43,15 +44,25 @@ export const load: PageServerLoad = async (event) => {
 	const html = ensureHeadingIds(rawHtml);
 	const toc = extractTocHeadings(html);
 
+	const locale = event.locals.locale;
+	const appName = tServer(locale, 'app.name', 'JapaConnect Docs');
+	const title = `${page.title} · ${appName}`;
+	const description = tServer(
+		locale,
+		'page.doc_description',
+		'JapaConnect documentation — {title}.',
+		{ title: page.title }
+	);
+
 	const meta = buildMeta({
-		title: `${page.title} · JapaConnect Docs`,
-		description: `JapaConnect documentation — ${page.title}.`,
+		title,
+		description,
 		path: `/docs/${audience}/${slug}`,
 		jsonLd: techArticleLd({
 			headline: page.title,
 			dateModified: page.updated_at,
 			url: `${DOCS_ORIGIN}/docs/${audience}/${slug}`,
-			description: `JapaConnect documentation — ${page.title}.`
+			description
 		})
 	});
 

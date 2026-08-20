@@ -73,6 +73,16 @@
 		view = new EditorView({ state, parent: editorEl });
 	});
 
+	// Sync external `value` prop changes back into the editor.
+	$effect(() => {
+		const next = value;
+		if (!view || view.state.doc.toString() === next) return;
+		view.dispatch({
+			changes: { from: 0, to: view.state.doc.length, insert: next },
+			scrollIntoView: false
+		});
+	});
+
 	// Clean up on unmount
 	$effect(() => {
 		return () => {

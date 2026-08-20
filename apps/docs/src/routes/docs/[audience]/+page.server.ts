@@ -4,6 +4,7 @@ import { apiContext, apiGet, apiList, ApiError } from '$lib/server/api';
 import { buildMeta, techArticleLd, DOCS_ORIGIN } from '$lib/seo/meta';
 import type { DocPageSummary, DocAudience } from '$lib/types';
 import { AUDIENCE_ORDER, AUDIENCE_LABEL_KEY } from '$lib/types';
+import { tServer } from '$lib/i18n/dict';
 
 /**
  * Audience landing: lists published pages for the given audience. Gated
@@ -31,20 +32,30 @@ export const load: PageServerLoad = async (event) => {
 		pages = [];
 	}
 
+	const locale = event.locals.locale;
+	const appName = tServer(locale, 'app.name', 'JapaConnect Docs');
 	const labelKey = AUDIENCE_LABEL_KEY[audience];
-	const title = `${audience[0].toUpperCase()}${audience.slice(1)} · JapaConnect Docs`;
+	const audienceLabel = tServer(locale, labelKey, audience);
+	const title = `${audienceLabel} · ${appName}`;
+	const description = tServer(
+		locale,
+		'page.audience_description',
+		'Documentation for the {audience} audience.',
+		{ audience: audienceLabel }
+	);
+
 	// Gated audiences get noindex (Ref: §26 ROADMAP 07.02). Public audiences
 	// (users, api) are indexable.
 	const isGated = audience !== 'users' && audience !== 'api';
 	const meta = buildMeta({
 		title,
-		description: `Documentation for the ${audience} audience.`,
+		description,
 		path: `/docs/${audience}`,
 		jsonLd: techArticleLd({
 			headline: title,
 			dateModified: new Date().toISOString(),
 			url: `${DOCS_ORIGIN}/docs/${audience}`,
-			description: `Documentation for the ${audience} audience.`
+			description
 		})
 	});
 

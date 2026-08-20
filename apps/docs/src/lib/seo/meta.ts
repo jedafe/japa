@@ -84,11 +84,12 @@ export function techArticleLd(opts: {
 }
 
 /** WebSite JSON-LD with SearchAction for the docs landing page. */
-export function webSiteLd(): object {
+export function webSiteLd(opts?: { name?: string; description?: string }): object {
 	return {
 		'@context': 'https://schema.org',
 		'@type': 'WebSite',
-		name: 'JapaConnect Docs',
+		name: opts?.name ?? 'JapaConnect Docs',
+		description: opts?.description,
 		url: DOCS_ORIGIN,
 		potentialAction: {
 			'@type': 'SearchAction',

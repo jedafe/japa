@@ -3,6 +3,7 @@ import { apiContext, apiGet } from '$lib/server/api';
 import { buildMeta } from '$lib/seo/meta';
 import type { DocSearchResult, DocAudience } from '$lib/types';
 import { ValidAudiences } from '$lib/types';
+import { tServer } from '$lib/i18n/dict';
 
 /**
  * Server-side search results page (the ⌘K palette is the in-app search; this
@@ -24,15 +25,18 @@ export const load: PageServerLoad = async (event) => {
 		}
 	}
 
+	const locale = event.locals.locale;
+	const appName = tServer(locale, 'app.name', 'JapaConnect Docs');
+	const title = q
+		? `${tServer(locale, 'search.results_for', 'Results for "{q}"', { q })} · ${appName}`
+		: `${tServer(locale, 'search.title', 'Search docs')} · ${appName}`;
+	const description = tServer(locale, 'search.placeholder', 'Search the documentation…');
+
 	const meta = buildMeta({
-		title: q ? `${resultsFor(q)} · JapaConnect Docs` : 'Search · JapaConnect Docs',
-		description: 'Search the JapaConnect documentation.',
+		title,
+		description,
 		path: q ? `/docs/search?q=${encodeURIComponent(q)}` : '/docs/search'
 	});
 
 	return { q, audience: audience || null, results, meta };
-};
-
-function resultsFor(q: string): string {
-	return `Results for “${q}”`;
 }

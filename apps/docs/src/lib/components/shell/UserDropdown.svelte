@@ -16,13 +16,16 @@
 	import type { SessionUser } from '$lib/types';
 
 	const mainOrigin = (env.PUBLIC_MAIN_ORIGIN ?? 'http://localhost:3000').replace(/\/$/, '');
-	const returnTo = encodeURIComponent(page.url.href);
 
 	interface Props {
 		user: SessionUser | null;
 	}
 
 	let { user }: Props = $props();
+
+	// Recompute the redirect URL on client-side navigation so login/signup
+	// return links point to the current docs page.
+	let returnTo = $derived(encodeURIComponent(page.url.href));
 
 	let initials = $derived(
 		user?.displayName
