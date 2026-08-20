@@ -139,6 +139,41 @@ WHERE c.tenant_id = @tenant_id
 ORDER BY c.created_at DESC, c.id DESC
 LIMIT @page_limit;
 
+-- name: ListContentsBySlugs :many
+-- Fetches published content rows by a list of slugs with the same JOINed
+-- enrichment as ListContentsByTenant. Used by the journey-aware roadmap feed
+-- to render the next steps from a readiness assessment.
+SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c.body_html,
+       c.field_values, c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
+       c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
+       c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
+       c.view_count, c.comment_count, c.share_count, c.reshare_count, c.publish_at, c.published_at,
+       c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country,
+       u.username AS author_username, up.display_name AS author_display_name,
+       s.name AS space_name
+FROM contents c
+LEFT JOIN users u ON u.id = c.author_id AND u.tenant_id = c.tenant_id
+LEFT JOIN user_profiles up ON up.user_id = c.author_id AND up.tenant_id = c.tenant_id
+LEFT JOIN spaces s ON s.id = c.space_id AND s.tenant_id = c.tenant_id
+WHERE c.tenant_id = @tenant_id
+  AND c.slug = ANY(@slugs::text[])
+  AND c.deleted_at IS NULL
+  AND c.auto_hidden = false
+  AND (
+      (@can_see_unpublished::boolean AND @can_see_private::boolean)
+      OR (c.author_id = @requester_id::uuid AND c.author_id IS NOT NULL)
+      OR (
+          c.status = 'published'
+          AND (
+              c.visibility = 'public'
+              OR (c.visibility = 'members' AND @can_see_members::boolean)
+              OR (c.visibility = 'private' AND (c.author_id = @requester_id::uuid OR @can_see_private::boolean))
+          )
+      )
+  )
+ORDER BY array_position(@slugs::text[], c.slug)
+LIMIT @page_limit;
+
 -- name: ListContentsByType :many
 SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c.body_html,
        c.field_values, c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,

@@ -30,6 +30,25 @@ func (s *Store) insertFeedItem(ctx context.Context, params gen.InsertFeedItemPar
 	return nil
 }
 
+// getContentsBySlugs returns published content for the given slugs in the order
+// provided by the slugs array. Used for the readiness roadmap feed.
+func (s *Store) getContentsBySlugs(ctx context.Context, tenantID, requesterID pgtype.UUID, slugs []string, limit int32) ([]gen.ListContentsBySlugsRow, error) {
+	rows, err := s.read.ListContentsBySlugs(ctx, gen.ListContentsBySlugsParams{
+		TenantID:          tenantID,
+		Slugs:             slugs,
+		CanSeeUnpublished: false,
+		CanSeePrivate:     false,
+		RequesterID:       requesterID,
+		CanSeeMembers:     true,
+		PageLimit:         limit,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("getting contents by slugs: %w", err)
+	}
+
+	return rows, nil
+}
+
 // getExploreFeed returns trending published content for guest users, ranked by
 // the visitor's geo proximity.
 //

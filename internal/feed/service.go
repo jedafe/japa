@@ -334,6 +334,69 @@ func coverImageURL(bucket, path *string) string {
 	return media.MediaURL(*bucket, *path, media.ImageProxyOpts{})
 }
 
+func roadmapRowsToItems(rows []gen.ListContentsBySlugsRow) []FeedItem {
+	items := make([]FeedItem, len(rows))
+	for i, r := range rows {
+		authorName := ""
+		if r.AuthorDisplayName != nil && *r.AuthorDisplayName != "" {
+			authorName = *r.AuthorDisplayName
+		} else if r.AuthorUsername != nil {
+			authorName = *r.AuthorUsername
+		}
+		spaceName := ""
+		if r.SpaceName != nil {
+			spaceName = *r.SpaceName
+		}
+		excerpt := strings.TrimSpace(r.Body)
+		if len(excerpt) > 200 {
+			excerpt = excerpt[:200]
+		}
+
+		items[i] = FeedItem{
+			ID:                 uuidToString(r.ID),
+			Title:              r.Title,
+			Slug:               r.Slug,
+			ContentType:        r.ContentType,
+			AuthorID:           uuidToString(r.AuthorID),
+			SpaceID:            nullableUUIDToString(r.SpaceID),
+			CreatedAt:          r.CreatedAt.Time.String(),
+			ViewCount:          r.ViewCount,
+			CommentCount:       r.CommentCount,
+			AuthorName:         authorName,
+			SpaceName:          spaceName,
+			Excerpt:            excerpt,
+			ReadingTimeMinutes: int(r.ReadTimeMinutes),
+			JourneyStage:       r.JourneyStage,
+			VisaRoute:          r.VisaRoute,
+			SourceCountry:      r.SourceCountry,
+			TargetCountry:      r.TargetCountry,
+		}
+	}
+
+	return items
+}
+
+// GetRoadmapFeed returns the readiness roadmap contents for the visitor, in the
+// order returned by the assessment. Empty roadmap slugs produce an empty list.
+// Public/members content is returned; private content is only returned for the
+// author or someone with can_see_private.
+func (s *Service) GetRoadmapFeed(ctx context.Context, tenantID, requesterID pgtype.UUID, slugs []string, limit int32) ([]FeedItem, error) {
+	if limit <= 0 || limit > MaxPageSize {
+		limit = DefaultPageSize
+	}
+
+	if len(slugs) == 0 {
+		return []FeedItem{}, nil
+	}
+
+	rows, err := s.store.getContentsBySlugs(ctx, tenantID, requesterID, slugs, limit)
+	if err != nil {
+		return nil, err
+	}
+
+	return roadmapRowsToItems(rows), nil
+}
+
 func exploreRowsToItems(rows []gen.GetExploreFeedRow) []FeedItem {
 	items := make([]FeedItem, len(rows))
 	for i, r := range rows {
