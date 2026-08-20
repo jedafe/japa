@@ -318,6 +318,33 @@ func (h *Handlers) UpdateMyProfile(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "updated"}})
 }
 
+// UpdateMyJourney handles PATCH /api/v1/me/journey.
+// Updates the user's journey context fields (origin, destination, japa stage,
+// visa route, purpose, planned travel date) stored as user_profile custom
+// fields, then invalidates the VisitorContext cache so the next feed request
+// picks up the new signals.
+func (h *Handlers) UpdateMyJourney(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	var req UpdateJourneyRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		return
+	}
+
+	if err := h.Service.UpdateJourney(r.Context(), user.TenantID, user.UserID, &req); err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	h.invalidateVisitorCache(r.Context(), user)
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "updated"}})
+}
+
 // invalidateVisitorCache deletes the VisitorContext and recommendations
 // cache entries for the given user (ADR-064a).
 func (h *Handlers) invalidateVisitorCache(ctx context.Context, user *auth.AuthenticatedUser) {

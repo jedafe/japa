@@ -365,6 +365,65 @@ func (s *Service) UpdateProfile(ctx context.Context, tenantID, userID pgtype.UUI
 	return nil
 }
 
+// UpdateJourney updates the journey-related custom field values on the user's
+// profile (origin_country, destination_country, japa_status, visa_route,
+// purpose, planned_travel_date). All fields are optional partial updates.
+// Ref: docs/superpowers/specs/2026-08-21-journey-aware-recommendations-design.md
+func (s *Service) UpdateJourney(ctx context.Context, tenantID, userID pgtype.UUID, req *UpdateJourneyRequest) error {
+	if err := db.WithTx(ctx, s.db.Writer, func(q *gen.Queries) error {
+		if req.OriginCountry != nil {
+			if err := s.store.setGeoCustomFieldTx(ctx, q, tenantID, userID, "origin_country", normalizeCountryCode(*req.OriginCountry)); err != nil {
+				return fmt.Errorf("saving origin_country: %w", err)
+			}
+		}
+		if req.DestinationCountry != nil {
+			if err := s.store.setGeoCustomFieldTx(ctx, q, tenantID, userID, "destination_country", normalizeCountryCode(*req.DestinationCountry)); err != nil {
+				return fmt.Errorf("saving destination_country: %w", err)
+			}
+		}
+		if req.JapaStage != nil {
+			if err := s.store.setGeoCustomFieldTx(ctx, q, tenantID, userID, "japa_status", normalizeJourneyValue(*req.JapaStage)); err != nil {
+				return fmt.Errorf("saving japa_status: %w", err)
+			}
+		}
+		if req.VisaRoute != nil {
+			if err := s.store.setGeoCustomFieldTx(ctx, q, tenantID, userID, "visa_route", normalizeJourneyValue(*req.VisaRoute)); err != nil {
+				return fmt.Errorf("saving visa_route: %w", err)
+			}
+		}
+		if req.Purpose != nil {
+			if err := s.store.setGeoCustomFieldTx(ctx, q, tenantID, userID, "purpose", normalizeJourneyValue(*req.Purpose)); err != nil {
+				return fmt.Errorf("saving purpose: %w", err)
+			}
+		}
+		if req.TravelDate != nil {
+			if err := s.store.setGeoCustomFieldTx(ctx, q, tenantID, userID, "planned_travel_date", strings.TrimSpace(*req.TravelDate)); err != nil {
+				return fmt.Errorf("saving planned_travel_date: %w", err)
+			}
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+	return nil
+}
+
+// normalizeCountryCode trims and upper-cases a 2-letter ISO country code.
+// Values that are not 2 letters are returned as-is (preserving user intent
+// while still trimming) so the custom field value remains searchable.
+func normalizeCountryCode(s string) string {
+	s = strings.ToUpper(strings.TrimSpace(s))
+	if len(s) == 2 {
+		return s
+	}
+	return strings.TrimSpace(s)
+}
+
+// normalizeJourneyValue trims and lower-cases a journey enumeration value.
+func normalizeJourneyValue(s string) string {
+	return strings.ToLower(strings.TrimSpace(s))
+}
+
 // GetPreferences returns user preferences. If no preferences exist yet,
 // returns the system defaults (dark_mode='system', language='en-NG').
 func (s *Service) GetPreferences(ctx context.Context, tenantID, userID pgtype.UUID) (*UserPreferencesResponse, error) {
