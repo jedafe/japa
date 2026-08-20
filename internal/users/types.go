@@ -39,6 +39,18 @@ type UpdatePreferencesRequest struct {
 	Language *string `json:"language"`  // "en-NG", "en-US", "en-GB", "en-CA"
 }
 
+// UpdateJourneyRequest is the JSON body for PATCH /api/v1/me/journey.
+// All fields are optional. Values are normalised before being persisted as
+// user_profile custom field values.
+type UpdateJourneyRequest struct {
+	OriginCountry      *string `json:"origin_country"`
+	DestinationCountry *string `json:"destination_country"`
+	JapaStage          *string `json:"japa_stage"`
+	VisaRoute          *string `json:"visa_route"`
+	Purpose            *string `json:"purpose"`
+	TravelDate         *string `json:"travel_date"`
+}
+
 // UserProfileResponse is the API response for a user profile.
 type UserProfileResponse struct {
 	ID            string   `json:"id"`

@@ -740,12 +740,14 @@ SELECT
     COALESCE(MAX(CASE WHEN cf.key = 'japa_status' THEN cfv.value_text END), '')::text AS japa_status,
     COALESCE(MAX(CASE WHEN cf.key = 'destination_country' THEN cfv.value_text END), '')::text AS destination_country,
     COALESCE(MAX(CASE WHEN cf.key = 'origin_country' THEN cfv.value_text END), '')::text AS origin_country,
-    COALESCE(MAX(CASE WHEN cf.key = 'visa_route' THEN cfv.value_text END), '')::text AS visa_route
+    COALESCE(MAX(CASE WHEN cf.key = 'visa_route' THEN cfv.value_text END), '')::text AS visa_route,
+    COALESCE(MAX(CASE WHEN cf.key = 'purpose' THEN cfv.value_text END), '')::text AS purpose,
+    COALESCE(MAX(CASE WHEN cf.key = 'planned_travel_date' THEN cfv.value_text END), '')::text AS planned_travel_date
 FROM user_profiles up
 LEFT JOIN custom_field_values cfv
     ON cfv.entity_type = 'user_profile' AND cfv.entity_id = up.id
 LEFT JOIN custom_fields cf
-    ON cf.id = cfv.field_id AND cf.key IN ('japa_status', 'destination_country', 'origin_country', 'visa_route')
+    ON cf.id = cfv.field_id AND cf.key IN ('japa_status', 'destination_country', 'origin_country', 'visa_route', 'purpose', 'planned_travel_date')
 WHERE up.tenant_id = @tenant_id AND up.user_id = @user_id;
 
 -- name: SetUserContentCountryPreference :exec

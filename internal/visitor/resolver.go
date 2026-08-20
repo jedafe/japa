@@ -246,6 +246,12 @@ func (res *Resolver) resolve(r *http.Request) VisitorContext {
 		return vc
 	}
 
+	// 1b. Guest journey cookie / query parameters (journey-aware
+	// recommendations). Allows anonymous users to set origin, destination,
+	// stage, and visa route without logging in. Auth/profile resolution below
+	// may override these values for authenticated users.
+	res.enrichGuestJourney(r, &vc)
+
 	// Determine cache key and auth state.
 	// ADR-064: cache key is jc:visitor:ctx:{session_id} for authenticated
 	// users (using the JWT JTI as session ID) and jc:visitor:ctx:ip:{ip}
@@ -330,6 +336,8 @@ func (res *Resolver) enrichArchetype(ctx context.Context, vc *VisitorContext, us
 			vc.JapaStage = strings.ToLower(strings.TrimSpace(fields.JapaStatus))
 			vc.JourneyStage = normalizeJourneyStage(vc.JapaStage)
 			vc.VisaRoute = normalizeVisaRoute(fields.VisaRoute)
+			vc.Purpose = normalizePurpose(fields.Purpose)
+			vc.TravelDate = strings.TrimSpace(fields.PlannedTravelDate)
 			vc.DestinationCountry = normalizeCountry(fields.DestinationCountry)
 			// ADR-064a: Use origin_country from profile when set; falls back
 			// to GeoIP country (already set in vc.OriginCountry).
@@ -486,6 +494,11 @@ func unmarshalCache(s string) (VisitorContext, bool) {
 	return vc, true
 }
 
+// NormalizeCountry trims, uppercases, and validates a 2-letter ISO code.
+func NormalizeCountry(c string) string {
+	return normalizeCountry(c)
+}
+
 // normalizeCountry trims, uppercases, and validates a 2-letter ISO code.
 func normalizeCountry(c string) string {
 	c = strings.ToUpper(strings.TrimSpace(c))
@@ -510,6 +523,91 @@ func (res *Resolver) enrichRegion(ctx context.Context, vc *VisitorContext, t *te
 		return
 	}
 	vc.ContentRegion = *row
+}
+
+// storedJourneyContext is the JSON shape persisted in Valkey for guest
+// journey cookies (jc:visitor:journey:{token}). It intentionally mirrors the
+// user-provided fields from POST /api/v1/feed/context.
+type storedJourneyContext struct {
+	OriginCountry      string `json:"origin_country"`
+	DestinationCountry string `json:"destination_country"`
+	JapaStage          string `json:"japa_stage"`
+	VisaRoute          string `json:"visa_route"`
+	Purpose            string `json:"purpose"`
+	TravelDate         string `json:"travel_date"`
+}
+
+// enrichGuestJourney reads the jc_journey_token cookie and/or ?journey_*
+// query parameters and overlays the values onto the VisitorContext for
+// anonymous users. Authenticated users are not skipped here — profile fields
+// are preferred in enrichArchetype, but a cookie/query can still seed defaults
+// when a profile field is empty.
+func (res *Resolver) enrichGuestJourney(r *http.Request, vc *VisitorContext) {
+	var stored storedJourneyContext
+	loaded := false
+
+	// 1. Try the cookie-backed Valkey store.
+	if res.rdb != nil {
+		if token, err := r.Cookie("jc_journey_token"); err == nil && token.Value != "" {
+			key := valkey.MustKey("visitor:journey:%s", token.Value)
+			if raw, err := res.rdb.Get(r.Context(), key).Result(); err == nil && raw != "" {
+				if err := json.Unmarshal([]byte(raw), &stored); err == nil {
+					loaded = true
+				}
+			}
+		}
+	}
+
+	// 2. Query parameters override or supplement the cookie.
+	q := r.URL.Query()
+	if v := q.Get("journey_origin"); v != "" {
+		stored.OriginCountry = v
+		loaded = true
+	}
+	if v := q.Get("journey_destination"); v != "" {
+		stored.DestinationCountry = v
+		loaded = true
+	}
+	if v := q.Get("journey_stage"); v != "" {
+		stored.JapaStage = v
+		loaded = true
+	}
+	if v := q.Get("journey_visa"); v != "" {
+		stored.VisaRoute = v
+		loaded = true
+	}
+	if v := q.Get("journey_purpose"); v != "" {
+		stored.Purpose = v
+		loaded = true
+	}
+	if v := q.Get("journey_travel_date"); v != "" {
+		stored.TravelDate = v
+		loaded = true
+	}
+
+	if !loaded {
+		return
+	}
+
+	if stored.OriginCountry != "" {
+		vc.OriginCountry = normalizeCountry(stored.OriginCountry)
+	}
+	if stored.DestinationCountry != "" {
+		vc.DestinationCountry = normalizeCountry(stored.DestinationCountry)
+	}
+	if stored.JapaStage != "" {
+		vc.JapaStage = strings.ToLower(strings.TrimSpace(stored.JapaStage))
+		vc.JourneyStage = normalizeJourneyStage(vc.JapaStage)
+	}
+	if stored.VisaRoute != "" {
+		vc.VisaRoute = normalizeVisaRoute(stored.VisaRoute)
+	}
+	if stored.Purpose != "" {
+		vc.Purpose = normalizePurpose(stored.Purpose)
+	}
+	if stored.TravelDate != "" {
+		vc.TravelDate = strings.TrimSpace(stored.TravelDate)
+	}
 }
 
 // enrichFromAssessment loads the latest Japa Readiness Assessment result for
@@ -540,6 +638,9 @@ func (res *Resolver) enrichFromAssessment(ctx context.Context, vc *VisitorContex
 	// Submission field_values may contain origin, destination, visa_type, etc.
 	// Overlay them only when the profile has not already set a value.
 	fields := parseAssessmentSubmission(row.SubmissionValues)
+	fields.VisaType = normalizeVisaRoute(fields.VisaType)
+	fields.JapaStage = strings.ToLower(strings.TrimSpace(fields.JapaStage))
+	fields.Purpose = normalizePurpose(fields.Purpose)
 	if fields.Origin != "" && vc.OriginCountry == "" {
 		vc.OriginCountry = normalizeCountry(fields.Origin)
 	}
@@ -661,6 +762,12 @@ func extractWeakestDimensions(b []byte) []string {
 	return out
 }
 
+// NormalizeJourneyStage maps the legacy japa_status values (and any assessment
+// form values) to the canonical §87 Japa Stage state machine.
+func NormalizeJourneyStage(s string) string {
+	return normalizeJourneyStage(s)
+}
+
 // normalizeJourneyStage maps the legacy japa_status values (and any assessment
 // form values) to the canonical §87 Japa Stage state machine.
 func normalizeJourneyStage(s string) string {
@@ -682,6 +789,42 @@ func normalizeJourneyStage(s string) string {
 		return "settled"
 	}
 	return ""
+}
+
+// NormalizePurpose normalises free-text travel purpose values.
+func NormalizePurpose(s string) string {
+	return normalizePurpose(s)
+}
+
+// normalizePurpose normalises free-text travel purpose values.
+func normalizePurpose(s string) string {
+	s = strings.ToLower(strings.TrimSpace(s))
+	switch s {
+	case "study":
+		return "study"
+	case "work", "employment":
+		return "work"
+	case "business":
+		return "business"
+	case "relocation", "relocate":
+		return "relocation"
+	case "vacation", "holiday":
+		return "vacation"
+	case "tourism", "tourist":
+		return "tourism"
+	case "family", "family reunion":
+		return "family"
+	}
+	if s != "" {
+		return "other"
+	}
+	return ""
+}
+
+// NormalizeVisaRoute normalises free-text visa route values into the canonical
+// set used by the content journey metadata.
+func NormalizeVisaRoute(s string) string {
+	return normalizeVisaRoute(s)
 }
 
 // normalizeVisaRoute normalises free-text visa route values into the canonical

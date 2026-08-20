@@ -2,9 +2,13 @@ package feed
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"encoding/json"
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -292,6 +296,95 @@ func (h *Handlers) GetProfileFeed(w http.ResponseWriter, r *http.Request) {
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": items})
+}
+
+// GetFeedContext handles GET /api/v1/feed/context.
+// Returns the resolved VisitorContext for the current request so the main
+// app can render the active origin/destination/visa route/stage and allow
+// one-tap editing.
+func (h *Handlers) GetFeedContext(w http.ResponseWriter, r *http.Request) {
+	vc := visitor.FromContext(r.Context())
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": vc})
+}
+
+// feedContextRequest is the body for POST /api/v1/feed/context.
+type feedContextRequest struct {
+	OriginCountry      string `json:"origin_country"`
+	DestinationCountry string `json:"destination_country"`
+	JapaStage          string `json:"japa_stage"`
+	VisaRoute          string `json:"visa_route"`
+	Purpose            string `json:"purpose"`
+	TravelDate         string `json:"travel_date"`
+}
+
+// guestJourneyTTL is the lifetime of a guest journey context in Valkey.
+const guestJourneyTTL = 30 * 24 * time.Hour
+
+// SetFeedContext handles POST /api/v1/feed/context.
+// Anonymous users can set their journey context (origin, destination, stage,
+// visa, purpose, travel date) without creating an account. The context is
+// stored in Valkey and a cookie is returned so the middleware can resolve it
+// on subsequent requests.
+func (h *Handlers) SetFeedContext(w http.ResponseWriter, r *http.Request) {
+	var req feedContextRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		return
+	}
+
+	// Build the stored context. Empty strings are omitted from Valkey.
+	stored := map[string]string{}
+	if v := visitor.NormalizeCountry(req.OriginCountry); v != "" {
+		stored["origin_country"] = v
+	}
+	if v := visitor.NormalizeCountry(req.DestinationCountry); v != "" {
+		stored["destination_country"] = v
+	}
+	if v := visitor.NormalizeJourneyStage(req.JapaStage); v != "" {
+		stored["japa_stage"] = v
+	}
+	if v := visitor.NormalizeVisaRoute(req.VisaRoute); v != "" {
+		stored["visa_route"] = v
+	}
+	if v := visitor.NormalizePurpose(req.Purpose); v != "" {
+		stored["purpose"] = v
+	}
+	if v := strings.TrimSpace(req.TravelDate); v != "" {
+		stored["travel_date"] = v
+	}
+
+	// Generate a random token for the cookie.
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		slog.Error("feed: failed to generate journey token", "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to save journey context")
+		return
+	}
+	token := hex.EncodeToString(b)
+
+	// Persist to Valkey.
+	if h.cache != nil {
+		if raw, err := json.Marshal(stored); err == nil {
+			key := vkcache.MustKey("visitor:journey:%s", token)
+			_ = h.cache.Do(r.Context(), h.cache.B().Set().Key(key).Value(string(raw)).Ex(guestJourneyTTL).Build()).Error()
+		}
+	}
+
+	// Set the cookie. Not HttpOnly so the frontend can read the token for
+	// localStorage sync; the actual values live in Valkey.
+	http.SetCookie(w, &http.Cookie{
+		Name:     "jc_journey_token",
+		Value:    token,
+		Path:     "/",
+		MaxAge:   int(guestJourneyTTL.Seconds()),
+		SameSite: http.SameSiteLaxMode,
+	})
+
+	// Return the resolved context for the current request. The middleware has
+	// already passed, so this is the previously-resolved context rather than
+	// the new one; the caller should refresh to see the applied context.
+	vc := visitor.FromContext(r.Context())
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": vc})
 }
 
 // GetCardStyle handles GET /api/v1/feed/card-style — public endpoint.
