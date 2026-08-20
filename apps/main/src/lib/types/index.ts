@@ -1980,6 +1980,8 @@ export interface GeoCountry {
 	geo_code: string;
 	level: 'country';
 	member_count: number;
+	post_count: number;
+	follower_count: number;
 }
 
 /** GET /api/v1/geo/countries/{code}/states — a state/province geo space. */

@@ -1,11 +1,11 @@
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiList, ApiError } from '$lib/server/api';
-import type { CommunityOrgWithAi, GeoSpaceOption, OrgTypeOption } from '$lib/types';
+import type { CommunityOrgWithAi, GeoCountry, OrgTypeOption } from '$lib/types';
 
 /**
  * Diaspora Community Locator — §101, ADR-088.
- * SSR loads the destination country list from /spaces?level=country (the
+ * SSR loads the full 250 primary geo space countries from GET /geo/countries (the
  * geo-aware pattern — destination is the primary data axis). When a ?dest=
  * param is present, the community orgs for that destination are fetched
  * server-side so the page renders with content immediately.
@@ -14,7 +14,7 @@ import type { CommunityOrgWithAi, GeoSpaceOption, OrgTypeOption } from '$lib/typ
  * layout's features map (data.features). Disabled tools are hidden from the
  * /tools hub and direct navigation to this route returns a 404.
  *
- * API: GET /spaces?level=country — destination countries (geo selector).
+ * API: GET /geo/countries — the full 250 primary geo space countries (geo selector).
  *      GET /community-locator/org-types — org-type allow-list (Rule 16).
  *      GET /community-locator?dest={space_id} — community orgs for a dest.
  *      GET /community-locator/{slug} — single org (client-side, on demand).
@@ -40,10 +40,10 @@ export const load: PageServerLoad = async (event) => {
 	}
 
 	// Destination list — the geo-aware selector source (Rule 16).
-	let destinations: GeoSpaceOption[] = [];
+	let destinations: GeoCountry[] = [];
 	let disabled = false;
 	try {
-		destinations = (await apiList<GeoSpaceOption>(ctx, '/spaces?level=country')).items;
+		destinations = (await apiList<GeoCountry>(ctx, '/geo/countries')).items;
 	} catch (e) {
 		if (e instanceof ApiError && (e.status === 404 || e.code === 'community_locator_disabled')) {
 			disabled = true;

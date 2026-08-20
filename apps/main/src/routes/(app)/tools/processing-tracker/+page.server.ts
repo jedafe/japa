@@ -1,14 +1,14 @@
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiList, ApiError } from '$lib/server/api';
-import type { GeoSpaceOption } from '$lib/types';
+import type { GeoCountry } from '$lib/types';
 
 /**
  * Visa Processing Time Tracker at /tools/processing-tracker (§93, reuses §83 visa timeline backend).
- * SSR loads the destination country list only. Stats and trend data require
+ * SSR loads the full 250 primary geo space countries only. Stats and trend data require
  * a destination + visa category selection, so they are fetched client-side.
  *
- * API: GET /spaces?level=country — destination selector options.
+ * API: GET /geo/countries — destination selector options (the full 250 primary geo space countries).
  *      GET /visa-timelines/stats?dest=&origin=&visa= — processing stats.
  *      GET /visa-timelines/stats/trend?dest=&visa=&months=12 — trend.
  *
@@ -25,10 +25,10 @@ export const load: PageServerLoad = async (event) => {
 
 	// Destination country list — the primary data axis for every V2 geo-aware
 	// tool (ADR-088). Rule 16 — never hardcode the country list.
-	let destinations: GeoSpaceOption[] = [];
+	let destinations: GeoCountry[] = [];
 	let disabled = false;
 	try {
-		destinations = (await apiList<GeoSpaceOption>(ctx, '/spaces?level=country')).items;
+		destinations = (await apiList<GeoCountry>(ctx, '/geo/countries')).items;
 	} catch (e) {
 		if (e instanceof ApiError && e.status === 404) {
 			disabled = true;

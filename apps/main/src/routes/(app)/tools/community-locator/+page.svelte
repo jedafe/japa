@@ -22,7 +22,7 @@
 	} from 'lucide-svelte';
 	import { EmptyState, LoadingSkeleton } from '$lib/components/ui';
 	import { api } from '$lib/api/client';
-	import type { CommunityOrgWithAi, GeoSpaceOption, OrgTypeOption } from '$lib/types';
+	import type { CommunityOrgWithAi, GeoCountry, GeoSpaceOption, OrgTypeOption } from '$lib/types';
 	import OrgMap from '$lib/components/tools/OrgMap.svelte';
 	import 'leaflet/dist/leaflet.css';
 	import type { PageData } from './$types';
@@ -46,7 +46,7 @@
 	const disabled = $derived(data.disabled);
 	const authed = $derived(data.authed);
 
-	let destinations = $state<GeoSpaceOption[]>(untrack(() => data.destinations));
+	let destinations = $state<GeoCountry[]>(untrack(() => data.destinations));
 	let orgs = $state<CommunityOrgWithAi[]>(untrack(() => data.orgs));
 	// BUG-005: org-type allow-list from the backend (Rule 16).
 	let orgTypes = $state<OrgTypeOption[]>(untrack(() => data.orgTypes ?? []));
@@ -224,8 +224,8 @@
 		const query = q.toLowerCase();
 		const filtered = query === ''
 			? destinations
-			: destinations.filter((d) => d.name.toLowerCase().includes(query));
-		return Promise.resolve(filtered.map((d) => ({ id: d.id, label: d.name })));
+			: destinations.filter((d) => d.name.toLowerCase().includes(query) || d.geo_code.toLowerCase().includes(query));
+		return Promise.resolve(filtered.map((d) => ({ id: d.id, label: d.name, sublabel: d.geo_code })));
 	}
 	function fetchDestinationsInitial(): Promise<AutocompleteItem[]> {
 		return fetchDestinations('');

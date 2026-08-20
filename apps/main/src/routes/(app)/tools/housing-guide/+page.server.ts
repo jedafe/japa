@@ -1,16 +1,16 @@
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiList, ApiError } from '$lib/server/api';
-import type { HousingGuideWithAi, GeoSpaceOption } from '$lib/types';
+import type { HousingGuideWithAi, GeoCountry } from '$lib/types';
 
 /**
  * Housing Guide — §96, ADR-088.
- * SSR loads the destination country list from /spaces?level=country (the
+ * SSR loads the full 250 primary geo space countries from GET /geo/countries (the
  * geo-aware pattern — destination is the primary data axis). When a ?dest=
  * param is present, the housing guides for that destination are fetched
  * server-side so the page renders with content immediately.
  *
- * API: GET /spaces?level=country — destination countries (geo selector).
+ * API: GET /geo/countries — the full 250 primary geo space countries (geo selector).
  *      GET /housing-guide?dest={space_id} — housing guides for a destination.
  *      GET /housing-guide/{id} — single housing guide detail.
  *
@@ -28,10 +28,10 @@ export const load: PageServerLoad = async (event) => {
 
 	// Destination list — the geo-aware selector source (Rule 16).
 	// A 404 or housing_guide_disabled code means the tool is turned off.
-	let destinations: GeoSpaceOption[] = [];
+	let destinations: GeoCountry[] = [];
 	let disabled = false;
 	try {
-		destinations = (await apiList<GeoSpaceOption>(ctx, '/spaces?level=country')).items;
+		destinations = (await apiList<GeoCountry>(ctx, '/geo/countries')).items;
 	} catch (e) {
 		if (e instanceof ApiError && (e.status === 404 || e.code === 'housing_guide_disabled')) {
 			disabled = true;

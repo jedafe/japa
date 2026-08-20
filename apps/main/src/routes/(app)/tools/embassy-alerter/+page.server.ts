@@ -1,16 +1,16 @@
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiList, ApiError } from '$lib/server/api';
-import type { Embassy, GeoSpaceOption } from '$lib/types';
+import type { Embassy, GeoCountry } from '$lib/types';
 
 /**
  * Embassy Appointment Alerter — §91, ADR-099.
- * SSR loads the destination country list from /spaces?level=country (the
+ * SSR loads the full 250 primary geo space countries from GET /geo/countries (the
  * geo-aware pattern). When ?dest= is present, embassies for that destination
  * are fetched server-side. User-specific alerts are fetched client-side on
  * mount (not in SSR) to avoid leaking user data across cached responses.
  *
- * API: GET /spaces?level=country — destination countries (geo selector).
+ * API: GET /geo/countries — the full 250 primary geo space countries (geo selector).
  *      GET /embassies?dest={space_id} — embassies for a destination (public).
  *      GET /me/appointment-alerts — user's alerts (auth, client-side only).
  *      POST/PATCH/DELETE /me/appointment-alerts — mutations (client-side).
@@ -27,10 +27,10 @@ export const load: PageServerLoad = async (event) => {
 	const ctx = apiContext(event);
 	const authed = !!event.locals.user;
 
-	let destinations: GeoSpaceOption[] = [];
+	let destinations: GeoCountry[] = [];
 	let disabled = false;
 	try {
-		destinations = (await apiList<GeoSpaceOption>(ctx, '/spaces?level=country')).items;
+		destinations = (await apiList<GeoCountry>(ctx, '/geo/countries')).items;
 	} catch (e) {
 		if (e instanceof ApiError && (e.status === 404 || e.code === 'appointment_alert_disabled')) {
 			disabled = true;

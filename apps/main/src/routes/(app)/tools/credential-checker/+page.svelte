@@ -17,7 +17,7 @@
 	import { EmptyState, LoadingSkeleton, SelectField } from '$lib/components/ui';
 	import { api } from '$lib/api/client';
 	import type {
-		GeoSpaceOption,
+		GeoCountry,
 		CredentialProfession,
 		CredentialPathwayWithAi,
 		CredentialCommunityNote,
@@ -41,7 +41,7 @@
 		)
 	);
 
-	const destinations = $derived<GeoSpaceOption[]>(data.destinations);
+	const destinations = $derived<GeoCountry[]>(data.destinations);
 	const professions = $derived<CredentialProfession[]>(data.professions);
 	let pathways = $state<CredentialPathwayWithAi[]>(untrack(() => data.pathways));
 	const authed = $derived(data.authed);
