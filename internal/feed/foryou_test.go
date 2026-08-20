@@ -18,7 +18,7 @@ func TestComputeForYouScore_AffinityBoostsRank(t *testing.T) {
 	followed.IsAuthorFollowed = true
 
 	// Same velocity + recency; the followed-author candidate must score higher.
-	if computeForYouScore(followed, now, 10, nil, nil) <= computeForYouScore(base, now, 10, nil, nil) {
+	if computeForYouScore(followed, now, 10, nil, nil, defaultRankingWeights()) <= computeForYouScore(base, now, 10, nil, nil, defaultRankingWeights()) {
 		t.Fatal("followed-author candidate should outscore an identical non-followed one")
 	}
 }
@@ -30,7 +30,7 @@ func TestRecencyDecay_FresherWins(t *testing.T) {
 	fresh := Candidate{CreatedAt: now.Add(-1 * time.Hour), VelocityScore: 5}
 	old := Candidate{CreatedAt: now.Add(-240 * time.Hour), VelocityScore: 5}
 
-	if computeForYouScore(fresh, now, 5, nil, nil) <= computeForYouScore(old, now, 5, nil, nil) {
+	if computeForYouScore(fresh, now, 5, nil, nil, defaultRankingWeights()) <= computeForYouScore(old, now, 5, nil, nil, defaultRankingWeights()) {
 		t.Fatal("fresher candidate should outscore an older one at equal velocity")
 	}
 }
@@ -42,15 +42,15 @@ func TestRankCandidates_SortModes(t *testing.T) {
 	a := Candidate{Item: FeedItem{ID: "a"}, CreatedAt: now.Add(-1 * time.Hour), VoteScore: 1, VelocityScore: 9}
 	b := Candidate{Item: FeedItem{ID: "b"}, CreatedAt: now.Add(-5 * time.Hour), VoteScore: 9, VelocityScore: 1}
 
-	if got := rankCandidates([]Candidate{a, b}, SortLatest, now, nil, nil); got[0].Item.ID != "a" {
+	if got := rankCandidates([]Candidate{a, b}, SortLatest, now, nil, nil, defaultRankingWeights()); got[0].Item.ID != "a" {
 		t.Errorf("latest: want a first, got %s", got[0].Item.ID)
 	}
 
-	if got := rankCandidates([]Candidate{a, b}, SortTop, now, nil, nil); got[0].Item.ID != "b" {
+	if got := rankCandidates([]Candidate{a, b}, SortTop, now, nil, nil, defaultRankingWeights()); got[0].Item.ID != "b" {
 		t.Errorf("top: want b first, got %s", got[0].Item.ID)
 	}
 
-	if got := rankCandidates([]Candidate{a, b}, SortRising, now, nil, nil); got[0].Item.ID != "a" {
+	if got := rankCandidates([]Candidate{a, b}, SortRising, now, nil, nil, defaultRankingWeights()); got[0].Item.ID != "a" {
 		t.Errorf("rising: want a first, got %s", got[0].Item.ID)
 	}
 }
