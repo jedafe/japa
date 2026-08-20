@@ -5,7 +5,7 @@
 	import { Home, MapPin, ChevronDown, ChevronUp, Globe, AlertTriangle, Lock } from 'lucide-svelte';
 	import { EmptyState, LoadingSkeleton } from '$lib/components/ui';
 	import { api } from '$lib/api/client';
-	import type { HousingGuideWithAi, GeoSpaceOption } from '$lib/types';
+	import type { HousingGuideWithAi, GeoCountry } from '$lib/types';
 	import type { PageData } from './$types';
 	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
 	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
@@ -27,7 +27,7 @@
 		)
 	);
 
-	let destinations = $state<GeoSpaceOption[]>(untrack(() => data.destinations));
+	let destinations = $state<GeoCountry[]>(untrack(() => data.destinations));
 	let guides = $state<HousingGuideWithAi[]>(untrack(() => data.guides));
 
 	let selectedDestId = $state<string>(untrack(() => data.initialDestId ?? ''));
@@ -116,8 +116,8 @@
 		const query = q.toLowerCase();
 		const filtered = query === ''
 			? destinations
-			: destinations.filter((d) => d.name.toLowerCase().includes(query));
-		return Promise.resolve(filtered.map((d) => ({ id: d.id, label: d.name })));
+			: destinations.filter((d) => d.name.toLowerCase().includes(query) || d.geo_code.toLowerCase().includes(query));
+		return Promise.resolve(filtered.map((d) => ({ id: d.id, label: d.name, sublabel: d.geo_code })));
 	}
 	function fetchDestinationsInitial(): Promise<AutocompleteItem[]> {
 		return fetchDestinations('');

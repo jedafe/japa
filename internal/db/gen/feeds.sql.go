@@ -50,9 +50,14 @@ WITH content_geo AS (
                ELSE 1
            END), 1) AS geo_proximity
     FROM content_spaces cs
+    JOIN contents c2 ON c2.id = cs.content_id
+      AND c2.tenant_id = $1
+      AND c2.status = 'published'
+      AND c2.deleted_at IS NULL
+      AND c2.visibility = 'public'
     JOIN spaces s ON s.id = cs.space_id AND s.level IN ('country', 'state', 'city') AND s.deleted_at IS NULL
-    LEFT JOIN spaces sp ON sp.id = s.parent_id
-    LEFT JOIN spaces cp ON cp.id = sp.parent_id
+    LEFT JOIN spaces sp ON sp.id = s.parent_id AND sp.deleted_at IS NULL
+    LEFT JOIN spaces cp ON cp.id = sp.parent_id AND cp.deleted_at IS NULL
     WHERE COALESCE(NULLIF(cp.geo_code, ''), NULLIF(sp.geo_code, ''), NULLIF(s.geo_code, '')) IS NOT NULL
       AND COALESCE(NULLIF(cp.geo_code, ''), NULLIF(sp.geo_code, ''), NULLIF(s.geo_code, '')) != ''
     GROUP BY cs.content_id
@@ -289,9 +294,10 @@ content_geo AS (
                ELSE 1
            END), 1) AS geo_proximity
     FROM content_spaces cs
+    JOIN candidate_ids ci ON ci.id = cs.content_id
     JOIN spaces s ON s.id = cs.space_id AND s.level IN ('country', 'state', 'city') AND s.deleted_at IS NULL
-    LEFT JOIN spaces sp ON sp.id = s.parent_id
-    LEFT JOIN spaces cp ON cp.id = sp.parent_id
+    LEFT JOIN spaces sp ON sp.id = s.parent_id AND sp.deleted_at IS NULL
+    LEFT JOIN spaces cp ON cp.id = sp.parent_id AND cp.deleted_at IS NULL
     WHERE COALESCE(NULLIF(cp.geo_code, ''), NULLIF(sp.geo_code, ''), NULLIF(s.geo_code, '')) IS NOT NULL
       AND COALESCE(NULLIF(cp.geo_code, ''), NULLIF(sp.geo_code, ''), NULLIF(s.geo_code, '')) != ''
     GROUP BY cs.content_id

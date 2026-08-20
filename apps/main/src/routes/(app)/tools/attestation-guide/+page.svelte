@@ -15,7 +15,7 @@
 		Lock
 	} from 'lucide-svelte';
 	import { EmptyState, LoadingSkeleton } from '$lib/components/ui';
-	import type { AttestationPathwayWithAi, AttestationCommunityUpdate, GeoSpaceOption } from '$lib/types';
+	import type { AttestationPathwayWithAi, AttestationCommunityUpdate, GeoCountry } from '$lib/types';
 	import type { PageData } from './$types';
 	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
 	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
@@ -40,7 +40,7 @@
 	const disabled = $derived(data.disabled);
 	const authed = $derived(data.authed);
 
-	let destinations = $state<GeoSpaceOption[]>(untrack(() => data.destinations));
+	let destinations = $state<GeoCountry[]>(untrack(() => data.destinations));
 	let pathways = $state<AttestationPathwayWithAi[]>(untrack(() => data.pathways));
 
 	let selectedDestId = $state<string>(untrack(() => data.initialDestId ?? ''));
@@ -197,8 +197,8 @@
 		const query = q.toLowerCase();
 		const filtered = query === ''
 			? destinations
-			: destinations.filter((d) => d.name.toLowerCase().includes(query));
-		return Promise.resolve(filtered.map((d) => ({ id: d.id, label: d.name })));
+			: destinations.filter((d) => d.name.toLowerCase().includes(query) || d.geo_code.toLowerCase().includes(query));
+		return Promise.resolve(filtered.map((d) => ({ id: d.id, label: d.name, sublabel: d.geo_code })));
 	}
 	function fetchDestinationsInitial(): Promise<AutocompleteItem[]> {
 		return fetchDestinations('');

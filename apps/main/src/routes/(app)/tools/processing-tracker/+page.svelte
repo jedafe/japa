@@ -14,7 +14,7 @@
 	import { EmptyState, LoadingSkeleton, SelectField } from '$lib/components/ui';
 	import { api } from '$lib/api/client';
 	import { LineChart } from 'layerchart';
-	import type { GeoSpaceOption, ProcessingStat, ProcessingTrendPoint } from '$lib/types';
+	import type { GeoCountry, ProcessingStat, ProcessingTrendPoint } from '$lib/types';
 	import type { PageData } from './$types';
 
 	/**
@@ -32,7 +32,7 @@
 		)
 	);
 
-	const destinations = $derived<GeoSpaceOption[]>(data.destinations);
+	const destinations = $derived<GeoCountry[]>(data.destinations);
 	const disabled = $derived(data.disabled);
 	const authed = $derived(data.authed);
 

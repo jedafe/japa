@@ -5,7 +5,7 @@
 	import { FileText, Lock, Sparkles, Loader2, AlertTriangle, XCircle, Download, Upload } from 'lucide-svelte';
 	import { EmptyState, LoadingSkeleton } from '$lib/components/ui';
 	import { api } from '$lib/api/client';
-	import type { GeoSpaceOption, CvStandard, CvFormatSession } from '$lib/types';
+	import type { GeoCountry, CvStandard, CvFormatSession } from '$lib/types';
 	import type { PageData } from './$types';
 	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
 	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
@@ -28,7 +28,7 @@
 	const disabled = $derived(data.disabled);
 	const authed = $derived(data.authed);
 
-	let destinations = $state<GeoSpaceOption[]>(untrack(() => data.destinations));
+	let destinations = $state<GeoCountry[]>(untrack(() => data.destinations));
 	let standards = $state<CvStandard[]>(untrack(() => data.standards));
 
 	let selectedDest = $state('');
@@ -175,8 +175,8 @@
 		const query = q.toLowerCase();
 		const filtered = query === ''
 			? availableDestinations
-			: availableDestinations.filter((d) => d.name.toLowerCase().includes(query));
-		return Promise.resolve(filtered.map((d) => ({ id: d.id, label: d.name })));
+			: availableDestinations.filter((d) => d.name.toLowerCase().includes(query) || d.geo_code.toLowerCase().includes(query));
+		return Promise.resolve(filtered.map((d) => ({ id: d.id, label: d.name, sublabel: d.geo_code })));
 	}
 	function fetchDestinationsInitial(): Promise<AutocompleteItem[]> {
 		return fetchDestinations('');

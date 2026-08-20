@@ -2,18 +2,18 @@ import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiList, ApiError } from '$lib/server/api';
 import type {
-	GeoSpaceOption,
+	GeoCountry,
 	CredentialProfession,
 	CredentialPathwayWithAi
 } from '$lib/types';
 
 /**
  * Professional Credential Checker — §94.
- * SSR loads the destination country list and the professions list. Pathways
+ * SSR loads the full 250 primary geo space countries and the professions list. Pathways
  * require a destination + profession selection, so they are fetched
  * client-side (with optional SSR pre-fetch when ?dest= is present).
  *
- * API: GET /spaces?level=country — destination selector options.
+ * API: GET /geo/countries — destination selector options (the full 250 primary geo space countries).
  *      GET /credentials/professions — list of professions.
  *      GET /credentials?dest=&profession=&issuing= — pathway list.
  *      GET /credentials/{id} — { pathway, notes } (non-standard envelope).
@@ -33,10 +33,10 @@ export const load: PageServerLoad = async (event) => {
 
 	// Destination country list — the primary data axis (ADR-088). Rule 16.
 	// A 404 or credential_checker_disabled code means the tool is turned off.
-	let destinations: GeoSpaceOption[] = [];
+	let destinations: GeoCountry[] = [];
 	let disabled = false;
 	try {
-		destinations = (await apiList<GeoSpaceOption>(ctx, '/spaces?level=country')).items;
+		destinations = (await apiList<GeoCountry>(ctx, '/geo/countries')).items;
 	} catch (e) {
 		if (e instanceof ApiError && (e.status === 404 || e.code === 'credential_checker_disabled')) {
 			disabled = true;
