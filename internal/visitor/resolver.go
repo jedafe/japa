@@ -58,6 +58,10 @@ type VisitorContext struct {
 	// personalizing content, feeds, and search results.
 	ContentCountry string
 
+	// ContentRegion is the UN region of the resolved ContentCountry (e.g.
+	// "Africa", "Asia"), used for the region-level feed fallback.
+	ContentRegion string
+
 	// Source indicates where ContentCountry came from: "query", "preference",
 	// "archetype", "geoip", "cached", or "default".
 	Source string
@@ -127,7 +131,7 @@ type VisitorContext struct {
 func FromContext(ctx context.Context) VisitorContext {
 	vc, ok := ctx.Value(ContextKey{}).(VisitorContext)
 	if !ok {
-		return VisitorContext{ContentCountry: "NG", Source: "default"}
+		return VisitorContext{ContentCountry: "NG", ContentRegion: "Africa", Source: "default"}
 	}
 	return vc
 }
@@ -157,6 +161,9 @@ func NewResolver(read *gen.Queries, rdb valkeycompat.Cmdable, settings *config.S
 func (res *Resolver) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		vc := res.resolve(r)
+		if t := tenant.FromContext(r.Context()); t != nil {
+			res.enrichRegion(r.Context(), &vc, t)
+		}
 		ctx := context.WithValue(r.Context(), ContextKey{}, vc)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
@@ -450,6 +457,23 @@ func normalizeCountry(c string) string {
 		return ""
 	}
 	return c
+}
+
+// enrichRegion populates ContentRegion from the resolved ContentCountry by
+// looking up the matching primary country space. Falls back to empty.
+func (res *Resolver) enrichRegion(ctx context.Context, vc *VisitorContext, t *tenant.Tenant) {
+	if vc.ContentCountry == "" {
+		return
+	}
+	code := strings.ToUpper(vc.ContentCountry)
+	row, err := res.read.GetSpaceRegionByGeoCode(ctx, gen.GetSpaceRegionByGeoCodeParams{
+		GeoCode:  &code,
+		TenantID: t.ID,
+	})
+	if err != nil || row == nil || *row == "" {
+		return
+	}
+	vc.ContentRegion = *row
 }
 
 // resolveLanguage extracts the primary 2-letter language tag from the

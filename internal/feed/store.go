@@ -30,18 +30,21 @@ func (s *Store) insertFeedItem(ctx context.Context, params gen.InsertFeedItemPar
 	return nil
 }
 
-// getExploreFeed returns trending published content for guest users.
+// getExploreFeed returns trending published content for guest users, ranked by
+// the visitor's geo proximity.
 //
 //nolint:unused // reserved for future features
-func (s *Store) getExploreFeed(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]gen.GetExploreFeedRow, error) {
+func (s *Store) getExploreFeed(ctx context.Context, tenantID pgtype.UUID, visitorCountryCode, visitorRegion string, limit, offset int32) ([]gen.GetExploreFeedRow, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
 
 	rows, err := s.read.GetExploreFeed(ctx, gen.GetExploreFeedParams{
-		TenantID:   tenantID,
-		PageLimit:  limit,
-		PageOffset: offset,
+		TenantID:           tenantID,
+		VisitorCountryCode: &visitorCountryCode,
+		VisitorRegion:      &visitorRegion,
+		PageLimit:          limit,
+		PageOffset:         offset,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("getting explore feed: %w", err)
