@@ -1,21 +1,26 @@
 <script lang="ts">
-	// Shared footer for unauthenticated users across all docs pages.
+	// Shared footer for all docs pages, guest or authenticated.
 	// Ref: ADR-054 — footer links are driven by the docs_footer menu slug
 	// so admins can add/remove/reorder links from the admin panel without
 	// touching frontend code.
 	import { t } from '$lib/i18n';
-	import type { Menu, MenuItem } from '$lib/types';
+	import type { Menu, MenuItem, SessionUser } from '$lib/types';
 
 	interface Props {
-		/** Navigation menu from GET /menus/docs_footer — filtered to guest-visible items. */
+		/** Navigation menu from GET /menus/docs_footer. */
 		menu: Menu | null;
+		/** Current user so visibility can be filtered correctly. */
+		user?: SessionUser | null;
 	}
 
-	let { menu }: Props = $props();
+	let { menu, user = null }: Props = $props();
 
-	// Filter to guest-visible items only (visibility === 'guest' or 'all').
+	// Guests see 'all' + 'guest'; authenticated users see 'all' + 'authenticated'.
 	const footerItems = $derived(
-		(menu?.items ?? []).filter((item: MenuItem) => item.visibility !== 'authenticated')
+		(menu?.items ?? []).filter((item: MenuItem) =>
+			item.visibility === 'all' ||
+			(user ? item.visibility === 'authenticated' : item.visibility === 'guest')
+		)
 	);
 </script>
 

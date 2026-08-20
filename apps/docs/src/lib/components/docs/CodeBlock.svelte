@@ -11,12 +11,17 @@
 	let { code, lang = '' }: Props = $props();
 
 	let copied = $state(false);
+	let copyTimer: ReturnType<typeof setTimeout> | undefined = undefined;
+
+	$effect(() => {
+		return () => clearTimeout(copyTimer);
+	});
 
 	async function copy() {
 		try {
 			await navigator.clipboard.writeText(code);
 			copied = true;
-			setTimeout(() => (copied = false), 1500);
+			copyTimer = setTimeout(() => (copied = false), 1500);
 		} catch {
 			// Clipboard may be unavailable (permissions); fail silently.
 		}

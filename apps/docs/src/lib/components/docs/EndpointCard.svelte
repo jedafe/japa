@@ -44,6 +44,11 @@
 	let showResponse = $state(false);
 	let showExample = $state(false);
 	let copied = $state(false);
+	let copyTimer: ReturnType<typeof setTimeout> | undefined = undefined;
+
+	$effect(() => {
+		return () => clearTimeout(copyTimer);
+	});
 
 	// Split path into segments, highlighting {path_param} portions.
 	let pathSegments = $derived(
@@ -52,11 +57,15 @@
 
 	// API base URL from PUBLIC_JC_API_URL env var (Rule 3 — no hardcoded URLs).
 	// In dev this is a relative path (/api/v1); in production it's the full
-	// API gateway URL. For curl examples, ensure an absolute URL.
+	// API gateway URL. For curl examples, ensure an absolute URL by joining it
+	// with PUBLIC_MAIN_ORIGIN when the API base is relative.
 	const apiBaseUrl = env.PUBLIC_JC_API_URL ?? '/api/v1';
+	const mainOrigin = (env.PUBLIC_MAIN_ORIGIN ?? '').replace(/\/$/, '');
 	const curlBaseUrl = apiBaseUrl.startsWith('http')
 		? apiBaseUrl
-		: `https://api.japaconnect.com${apiBaseUrl}`;
+		: mainOrigin
+			? `${mainOrigin}${apiBaseUrl}`
+			: '';
 
 	let curlExample = $derived(
 		example ||
@@ -68,7 +77,7 @@
 		try {
 			await navigator.clipboard.writeText(curlExample);
 			copied = true;
-			setTimeout(() => (copied = false), 2000);
+			copyTimer = setTimeout(() => (copied = false), 2000);
 		} catch {
 			// clipboard not available
 		}

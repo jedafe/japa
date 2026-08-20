@@ -3,6 +3,13 @@
 	import { t } from '$lib/i18n';
 	import SearchPalette from '$lib/components/docs/SearchPalette.svelte';
 
+	interface Props {
+		/** Whether this launcher registers the global ⌘/Ctrl+K shortcut. */
+		keyboardShortcut?: boolean;
+	}
+
+	let { keyboardShortcut = true }: Props = $props();
+
 	let open = $state(false);
 
 	function onKeydown(e: KeyboardEvent) {
@@ -12,9 +19,13 @@
 			open = true;
 		}
 	}
-</script>
 
-<svelte:window onkeydown={onKeydown} />
+	$effect(() => {
+		if (!keyboardShortcut) return;
+		window.addEventListener('keydown', onKeydown);
+		return () => window.removeEventListener('keydown', onKeydown);
+	});
+</script>
 
 <button
 	type="button"

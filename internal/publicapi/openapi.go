@@ -23,6 +23,11 @@ func GetPublicOpenAPISpec(siteURL string, siteName string) map[string]any {
 		"security": []any{
 			map[string]any{"apiKeyAuth": []any{}},
 		},
+		"tags":       buildTags(),
+		"externalDocs": map[string]any{
+			"description": "API documentation",
+			"url":         siteURL + "/docs/api",
+		},
 		"paths": buildPublicPaths(),
 		"components": map[string]any{
 			"securitySchemes": map[string]any{
@@ -37,6 +42,35 @@ func GetPublicOpenAPISpec(siteURL string, siteName string) map[string]any {
 			"responses": buildPublicResponses(),
 		},
 	}
+}
+
+// buildTags describes the public API operation groups used by the spec.
+func buildTags() []any {
+	return []any{
+		map[string]any{"name": "Spaces", "description": "Public space discovery and detail"},
+		map[string]any{"name": "Content", "description": "Published content and comments"},
+		map[string]any{"name": "Users", "description": "Public user profiles and the current user"},
+		map[string]any{"name": "Tags", "description": "Content tags and tag detail"},
+		map[string]any{"name": "Search", "description": "Search published content"},
+		map[string]any{"name": "Trending", "description": "Trending snapshots across entities"},
+	}
+}
+
+// operation builds a single OpenAPI operation object with an operationId,
+// tags, required scope (x-required-scope) and the standard response map.
+func operation(operationID, summary, description string, tags []any, scope string, parameters []any, responses map[string]any) map[string]any {
+	op := map[string]any{
+		"operationId":      operationID,
+		"summary":          summary,
+		"description":      description,
+		"tags":             tags,
+		"x-required-scope": scope,
+		"responses":        responses,
+	}
+	if len(parameters) > 0 {
+		op["parameters"] = parameters
+	}
+	return op
 }
 
 // buildPublicPaths constructs the paths object for every public endpoint.
@@ -57,10 +91,10 @@ func buildPublicPaths() map[string]any {
 		"/public/tags/{slug}":           tagBySlugPath(),
 		"/public/search":                searchPath(),
 		"/public/me":                    mePath(),
-		"/public/trending/content":      trendingEndpoint("Trending content", "Retrieve trending content snapshots scored by recent engagement."),
-		"/public/trending/tags":         trendingEndpoint("Trending tags", "Retrieve trending tag snapshots scored by recent follower growth."),
-		"/public/trending/spaces":       trendingEndpoint("Trending spaces", "Retrieve trending space snapshots scored by recent member activity."),
-		"/public/trending/users":        trendingEndpoint("Trending users", "Retrieve trending user snapshots scored by recent engagement."),
+		"/public/trending/content":      trendingEndpoint("listTrendingContent", "Trending content", "Retrieve trending content snapshots scored by recent engagement.", "api.read.content"),
+		"/public/trending/tags":         trendingEndpoint("listTrendingTags", "Trending tags", "Retrieve trending tag snapshots scored by recent follower growth.", "api.read.tags"),
+		"/public/trending/spaces":       trendingEndpoint("listTrendingSpaces", "Trending spaces", "Retrieve trending space snapshots scored by recent member activity.", "api.read.spaces"),
+		"/public/trending/users":        trendingEndpoint("listTrendingUsers", "Trending users", "Retrieve trending user snapshots scored by recent engagement.", "api.read.users.public"),
 	}
 }
 
@@ -70,155 +104,101 @@ func buildPublicPaths() map[string]any {
 
 func spacesPath() map[string]any {
 	return map[string]any{
-		"get": map[string]any{
-			"summary":     "List public spaces",
-			"description": "Retrieve a paginated list of public spaces visible to the API key's tenant.",
-			"tags":        []any{"Spaces"},
-			"parameters":  paginationParams("spaces"),
-			"responses": map[string]any{
-				"200": paginatedResponse("List of spaces", "Space"),
-				"401": refResponse("Unauthorized"),
-				"429": refResponse("RateLimited"),
-			},
-		},
+		"get": operation("listSpaces", "List public spaces", "Retrieve a paginated list of public spaces visible to the API key's tenant.", []any{"Spaces"}, "api.read.spaces", paginationParams("spaces"), map[string]any{
+			"200": paginatedResponse("List of spaces", "Space"),
+			"401": refResponse("Unauthorized"),
+			"429": refResponse("RateLimited"),
+		}),
 	}
 }
 
 func spaceBySlugPath() map[string]any {
 	return map[string]any{
-		"get": map[string]any{
-			"summary":     "Get space detail",
-			"description": "Retrieve a single space by its URL slug.",
-			"tags":        []any{"Spaces"},
-			"parameters":  []any{stringPathParam("slug", "Space slug")},
-			"responses": map[string]any{
-				"200": singleResponse("Space details", "Space"),
-				"401": refResponse("Unauthorized"),
-				"404": refResponse("NotFound"),
-				"429": refResponse("RateLimited"),
-			},
-		},
+		"get": operation("getSpaceBySlug", "Get space detail", "Retrieve a single space by its URL slug.", []any{"Spaces"}, "api.read.spaces", []any{stringPathParam("slug", "Space slug")}, map[string]any{
+			"200": singleResponse("Space details", "Space"),
+			"401": refResponse("Unauthorized"),
+			"404": refResponse("NotFound"),
+			"429": refResponse("RateLimited"),
+		}),
 	}
 }
 
 func contentByIDPath() map[string]any {
 	return map[string]any{
-		"get": map[string]any{
-			"summary":     "Get content detail",
-			"description": "Retrieve a single published content item by its unique identifier.",
-			"tags":        []any{"Content"},
-			"parameters":  []any{uuidPathParam("id", "Content ID")},
-			"responses": map[string]any{
-				"200": singleResponse("Content details", "Content"),
-				"401": refResponse("Unauthorized"),
-				"404": refResponse("NotFound"),
-				"429": refResponse("RateLimited"),
-			},
-		},
+		"get": operation("getContentByID", "Get content detail", "Retrieve a single published content item by its unique identifier.", []any{"Content"}, "api.read.content", []any{uuidPathParam("id", "Content ID")}, map[string]any{
+			"200": singleResponse("Content details", "Content"),
+			"401": refResponse("Unauthorized"),
+			"404": refResponse("NotFound"),
+			"429": refResponse("RateLimited"),
+		}),
 	}
 }
 
 func contentListPath() map[string]any {
 	return map[string]any{
-		"get": map[string]any{
-			"summary":     "List published content",
-			"description": "Retrieve a paginated list of published, public content within the API key's tenant. Drafts, scheduled, and private content are never exposed.",
-			"tags":        []any{"Content"},
-			"parameters":  paginationParams("content"),
-			"responses": map[string]any{
-				"200": paginatedResponse("List of published content", "Content"),
-				"401": refResponse("Unauthorized"),
-				"429": refResponse("RateLimited"),
-			},
-		},
+		"get": operation("listContent", "List published content", "Retrieve a paginated list of published, public content within the API key's tenant. Drafts, scheduled, and private content are never exposed.", []any{"Content"}, "api.read.content", paginationParams("content"), map[string]any{
+			"200": paginatedResponse("List of published content", "Content"),
+			"401": refResponse("Unauthorized"),
+			"429": refResponse("RateLimited"),
+		}),
 	}
 }
 
 func contentCommentsPath() map[string]any {
 	return map[string]any{
-		"get": map[string]any{
-			"summary":     "List content comments",
-			"description": "Retrieve top-level published comments for a content item, ordered by pinned then vote score.",
-			"tags":        []any{"Content"},
-			"parameters":  append([]any{uuidPathParam("id", "Content ID")}, paginationParams("comments")...),
-			"responses": map[string]any{
-				"200": paginatedResponse("List of comments", "Comment"),
-				"401": refResponse("Unauthorized"),
-				"404": refResponse("NotFound"),
-				"429": refResponse("RateLimited"),
-			},
-		},
+		"get": operation("listContentComments", "List content comments", "Retrieve top-level published comments for a content item, ordered by pinned then vote score.", []any{"Content"}, "api.read.content", append([]any{uuidPathParam("id", "Content ID")}, paginationParams("comments")...), map[string]any{
+			"200": paginatedResponse("List of comments", "Comment"),
+			"401": refResponse("Unauthorized"),
+			"404": refResponse("NotFound"),
+			"429": refResponse("RateLimited"),
+		}),
 	}
 }
 
 func usersListPath() map[string]any {
 	return map[string]any{
-		"get": map[string]any{
-			"summary":     "List public users",
-			"description": "Retrieve a paginated list of public user profiles. PII-safe: no email, status, last_login, or group membership. Filter by ?q= (username/display_name search) and ?type= (profile_type).",
-			"tags":        []any{"Users"},
-			"parameters": []any{
-				queryParam("q", "Search by username or display name"),
-				filterParam("type", "Filter by profile type (e.g. individual, organization)"),
-				limitParam(20, 100),
-				offsetParam(),
-			},
-			"responses": map[string]any{
-				"200": paginatedResponse("List of public user profiles", "User"),
-				"401": refResponse("Unauthorized"),
-				"429": refResponse("RateLimited"),
-			},
-		},
+		"get": operation("listUsers", "List public users", "Retrieve a paginated list of public user profiles. PII-safe: no email, status, last_login, or group membership. Filter by ?q= (username/display_name search) and ?type= (profile_type).", []any{"Users"}, "api.read.users.public", []any{
+			queryParam("q", "Search by username or display name"),
+			filterParam("type", "Filter by profile type (e.g. individual, organization)"),
+			limitParam(20, 100),
+			offsetParam(),
+		}, map[string]any{
+			"200": paginatedResponse("List of public user profiles", "User"),
+			"401": refResponse("Unauthorized"),
+			"429": refResponse("RateLimited"),
+		}),
 	}
 }
 
 func tagBySlugPath() map[string]any {
 	return map[string]any{
-		"get": map[string]any{
-			"summary":     "Get tag detail",
-			"description": "Retrieve a single tag by its URL slug, including follower and content counts.",
-			"tags":        []any{"Tags"},
-			"parameters":  []any{stringPathParam("slug", "Tag slug")},
-			"responses": map[string]any{
-				"200": singleResponse("Tag details", "Tag"),
-				"401": refResponse("Unauthorized"),
-				"404": refResponse("NotFound"),
-				"429": refResponse("RateLimited"),
-			},
-		},
+		"get": operation("getTagBySlug", "Get tag detail", "Retrieve a single tag by its URL slug, including follower and content counts.", []any{"Tags"}, "api.read.tags", []any{stringPathParam("slug", "Tag slug")}, map[string]any{
+			"200": singleResponse("Tag details", "Tag"),
+			"401": refResponse("Unauthorized"),
+			"404": refResponse("NotFound"),
+			"429": refResponse("RateLimited"),
+		}),
 	}
 }
 
 func userByIDPath() map[string]any {
 	return map[string]any{
-		"get": map[string]any{
-			"summary":     "Get user profile",
-			"description": "Retrieve a public user profile by their unique identifier.",
-			"tags":        []any{"Users"},
-			"parameters":  []any{uuidPathParam("id", "User ID")},
-			"responses": map[string]any{
-				"200": singleResponse("User profile", "User"),
-				"401": refResponse("Unauthorized"),
-				"404": refResponse("NotFound"),
-				"429": refResponse("RateLimited"),
-			},
-		},
+		"get": operation("getUserByID", "Get user profile", "Retrieve a public user profile by their unique identifier.", []any{"Users"}, "api.read.users.public", []any{uuidPathParam("id", "User ID")}, map[string]any{
+			"200": singleResponse("User profile", "User"),
+			"401": refResponse("Unauthorized"),
+			"404": refResponse("NotFound"),
+			"429": refResponse("RateLimited"),
+		}),
 	}
 }
 
 func tagsPath() map[string]any {
 	return map[string]any{
-		"get": map[string]any{
-			"summary":     "List tags",
-			"description": "Retrieve a paginated list of content tags.",
-			"tags":        []any{"Tags"},
-			"parameters":  paginationParams("tags"),
-			"responses": map[string]any{
-				"200": paginatedResponse("List of tags", "Tag"),
-				"401": refResponse("Unauthorized"),
-				"429": refResponse("RateLimited"),
-			},
-		},
+		"get": operation("listTags", "List tags", "Retrieve a paginated list of content tags.", []any{"Tags"}, "api.read.tags", paginationParams("tags"), map[string]any{
+			"200": paginatedResponse("List of tags", "Tag"),
+			"401": refResponse("Unauthorized"),
+			"429": refResponse("RateLimited"),
+		}),
 	}
 }
 
@@ -227,82 +207,65 @@ func searchPath() map[string]any {
 	qp["required"] = true
 
 	return map[string]any{
-		"get": map[string]any{
-			"summary":     "Search content",
-			"description": "Search published content by title within the API key's tenant.",
-			"tags":        []any{"Search"},
-			"parameters": []any{
-				qp,
-				limitParam(20, 100),
-				offsetParam(),
-			},
-			"responses": map[string]any{
-				"200": paginatedResponse("Search results", "Content"),
-				"401": refResponse("Unauthorized"),
-				"429": refResponse("RateLimited"),
-			},
-		},
+		"get": operation("searchContent", "Search content", "Search published content by title within the API key's tenant.", []any{"Search"}, "api.read.content", []any{
+			qp,
+			limitParam(20, 100),
+			offsetParam(),
+		}, map[string]any{
+			"200": paginatedResponse("Search results", "Content"),
+			"401": refResponse("Unauthorized"),
+			"429": refResponse("RateLimited"),
+		}),
 	}
 }
 
-func trendingEndpoint(summary, description string) map[string]any {
+func trendingEndpoint(operationID, summary, description, scope string) map[string]any {
 	return map[string]any{
-		"get": map[string]any{
-			"summary":     summary,
-			"description": description,
-			"tags":        []any{"Trending"},
-			"parameters": []any{
-				limitParam(10, 50),
-				map[string]any{
-					"name":        "window",
-					"in":          "query",
-					"schema":      map[string]any{"type": "string", "enum": []any{"24h", "7d", "30d"}, "default": "24h"},
-					"description": "Time window for the trending snapshot.",
-				},
-				map[string]any{
-					"name":        "geo",
-					"in":          "query",
-					"schema":      map[string]any{"type": "string"},
-					"description": "Geo code filter for geo-aware trending (ADR-064). Omit for global ranking.",
-				},
+		"get": operation(operationID, summary, description, []any{"Trending"}, scope, []any{
+			limitParam(10, 50),
+			map[string]any{
+				"name":        "window",
+				"in":          "query",
+				"schema":      map[string]any{"type": "string", "enum": []any{"24h", "7d", "30d"}, "default": "24h"},
+				"description": "Time window for the trending snapshot.",
 			},
-			"responses": map[string]any{
-				"200": map[string]any{
-					"description": "Trending snapshot",
-					"content": map[string]any{
-						"application/json": map[string]any{
-							"schema": map[string]any{
-								"type": "object",
-								"properties": map[string]any{
-									"data": map[string]any{
-										"type":  "array",
-										"items": map[string]any{"$ref": "#/components/schemas/TrendingItem"},
-									},
-									"computed_at": map[string]any{"type": "string", "format": "date-time"},
+			map[string]any{
+				"name":        "geo",
+				"in":          "query",
+				"schema":      map[string]any{"type": "string"},
+				"description": "Geo code filter for geo-aware trending (ADR-064). Omit for global ranking.",
+			},
+		}, map[string]any{
+			"200": map[string]any{
+				"description": "Trending snapshot",
+				"content": map[string]any{
+					"application/json": map[string]any{
+						"schema": map[string]any{
+							"type": "object",
+							"properties": map[string]any{
+								"data": map[string]any{
+									"type":  "array",
+									"items": map[string]any{"$ref": "#/components/schemas/TrendingItem"},
 								},
+								"computed_at": map[string]any{"type": "string", "format": "date-time"},
 							},
 						},
 					},
 				},
-				"401": refResponse("Unauthorized"),
-				"429": refResponse("RateLimited"),
 			},
-		},
+			"401": refResponse("Unauthorized"),
+			"429": refResponse("RateLimited"),
+		}),
 	}
 }
 
 func mePath() map[string]any {
 	return map[string]any{
-		"get": map[string]any{
-			"summary":     "Get current user profile",
-			"description": "Retrieve the authenticated user's own profile. Requires the api.read.me scope.",
-			"tags":        []any{"Users"},
-			"responses": map[string]any{
-				"200": singleResponse("Current user profile", "User"),
-				"401": refResponse("Unauthorized"),
-				"429": refResponse("RateLimited"),
-			},
-		},
+		"get": operation("getMe", "Get current user profile", "Retrieve the authenticated user's own profile. Requires the api.read.me scope.", []any{"Users"}, "api.read.me", nil, map[string]any{
+			"200": singleResponse("Current user profile", "User"),
+			"401": refResponse("Unauthorized"),
+			"429": refResponse("RateLimited"),
+		}),
 	}
 }
 
