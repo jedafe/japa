@@ -23,6 +23,11 @@ export interface CreateContentInput {
 	space_id?: string | null;
 	geo_space_id?: string | null;
 	guide_category?: string | null;
+	// Journey-aware recommendation metadata (backend normalizes values).
+	journey_stage?: string | null;
+	visa_route?: string | null;
+	source_country?: string | null;
+	target_country?: string | null;
 }
 
 /** Map an HTTP status to a save-failure class (drives retry vs surface behavior). */
