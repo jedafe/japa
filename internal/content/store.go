@@ -50,6 +50,82 @@ type CreateContentInput struct {
 	Visibility      string
 	PublishAt       pgtype.Timestamptz
 	GuideCategory   *string
+	// Journey-aware recommendation metadata (§14 / ADR-064a).
+	JourneyStage  *string
+	VisaRoute     *string
+	SourceCountry *string
+	TargetCountry *string
+}
+
+// resolveSpaceCountryCode walks a space's parent_id chain until it reaches
+// a country and returns its 2-letter geo_code. Returns "" for non-geo spaces
+// or when the chain has no country.
+func resolveSpaceCountryCode(ctx context.Context, q *gen.Queries, tenantID, spaceID pgtype.UUID) (string, error) {
+	const maxDepth = 5
+	currentID := spaceID
+	for i := 0; i < maxDepth; i++ {
+		space, err := q.GetSpaceByID(ctx, gen.GetSpaceByIDParams{ID: currentID, TenantID: tenantID})
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return "", nil
+			}
+			return "", err
+		}
+		if space.Level == "country" {
+			if space.GeoCode != nil {
+				return strings.ToUpper(strings.TrimSpace(*space.GeoCode)), nil
+			}
+			return "", nil
+		}
+		if !space.ParentID.Valid || space.ParentID == space.ID {
+			return "", nil
+		}
+		currentID = space.ParentID
+	}
+	return "", nil
+}
+
+// resolveAuthorProfileCountries loads the author's origin and destination
+// country custom field values. These are used as fallback source/target
+// countries when the caller does not explicitly set them.
+func resolveAuthorProfileCountries(ctx context.Context, q *gen.Queries, tenantID, authorID pgtype.UUID) (origin, destination string) {
+	fields, err := q.GetUserGeoProfileFields(ctx, gen.GetUserGeoProfileFieldsParams{TenantID: tenantID, UserID: authorID})
+	if err != nil {
+		return "", ""
+	}
+	return strings.ToUpper(strings.TrimSpace(fields.OriginCountry)),
+		strings.ToUpper(strings.TrimSpace(fields.DestinationCountry))
+}
+
+// inferJourneyMetadataForCreate fills in source/target country and journey
+// stage for newly created content when the caller left them unset. It prefers
+// explicit values, then the primary geo space, then the author's profile.
+func (s *Service) inferJourneyMetadataForCreate(ctx context.Context, q *gen.Queries, tenantID, authorID pgtype.UUID, input *CreateContentInput) {
+	if input.SourceCountry == nil || *input.SourceCountry == "" {
+		origin, _ := resolveAuthorProfileCountries(ctx, q, tenantID, authorID)
+		if origin != "" {
+			input.SourceCountry = &origin
+		}
+	}
+
+	primarySpaceID := input.GeoSpaceID
+	if !primarySpaceID.Valid {
+		primarySpaceID = input.SpaceID
+	}
+	if input.TargetCountry == nil || *input.TargetCountry == "" {
+		if primarySpaceID.Valid {
+			code, err := resolveSpaceCountryCode(ctx, q, tenantID, primarySpaceID)
+			if err == nil && code != "" {
+				input.TargetCountry = &code
+			}
+		}
+		if input.TargetCountry == nil || *input.TargetCountry == "" {
+			_, destination := resolveAuthorProfileCountries(ctx, q, tenantID, authorID)
+			if destination != "" {
+				input.TargetCountry = &destination
+			}
+		}
+	}
 }
 
 // CreateContent creates a new content row, ensuring slug uniqueness within
@@ -126,6 +202,10 @@ func (s *Service) createContent(ctx context.Context, readQ, writeQ *gen.Queries,
 		}
 	}
 
+	// Journey-aware recommendations: infer source/target countries and stage
+	// from the primary space and the author's profile when not explicitly set.
+	s.inferJourneyMetadataForCreate(ctx, readQ, tenantID, input.AuthorID, &input)
+
 	content, err := writeQ.CreateContent(ctx, gen.CreateContentParams{
 		TenantID:        tenantID,
 		AuthorID:        input.AuthorID,
@@ -151,6 +231,10 @@ func (s *Service) createContent(ctx context.Context, readQ, writeQ *gen.Queries,
 		ReadTimeMinutes: ComputeReadTime(input.Body),
 		PublishAt:       input.PublishAt,
 		GuideCategory:   input.GuideCategory,
+		JourneyStage:    input.JourneyStage,
+		VisaRoute:       input.VisaRoute,
+		SourceCountry:   input.SourceCountry,
+		TargetCountry:   input.TargetCountry,
 	})
 	if err != nil {
 		var pgErr *pgconn.PgError
@@ -414,6 +498,45 @@ type UpdateContentInput struct {
 	GuideCategory   *string
 	AIGeneratedAt   pgtype.Timestamptz
 	AIModel         *string
+	// Journey-aware recommendation metadata.
+	JourneyStage  *string
+	VisaRoute     *string
+	SourceCountry *string
+	TargetCountry *string
+}
+
+// inferJourneyMetadataForUpdate fills in source/target country for an existing
+// content row when the update leaves them unset. It uses the primary space and
+// the original author profile as fallbacks.
+func (s *Service) inferJourneyMetadataForUpdate(ctx context.Context, q *gen.Queries, tenantID pgtype.UUID, existing gen.GetContentByIDRow, input *UpdateContentInput) {
+	if input.SourceCountry == nil || *input.SourceCountry == "" {
+		origin, _ := resolveAuthorProfileCountries(ctx, q, tenantID, existing.AuthorID)
+		if origin != "" {
+			input.SourceCountry = &origin
+		}
+	}
+
+	primarySpaceID := input.GeoSpaceID
+	if !primarySpaceID.Valid {
+		primarySpaceID = existing.GeoSpaceID
+	}
+	if !primarySpaceID.Valid {
+		primarySpaceID = existing.SpaceID
+	}
+	if input.TargetCountry == nil || *input.TargetCountry == "" {
+		if primarySpaceID.Valid {
+			code, err := resolveSpaceCountryCode(ctx, q, tenantID, primarySpaceID)
+			if err == nil && code != "" {
+				input.TargetCountry = &code
+			}
+		}
+		if input.TargetCountry == nil || *input.TargetCountry == "" {
+			_, destination := resolveAuthorProfileCountries(ctx, q, tenantID, existing.AuthorID)
+			if destination != "" {
+				input.TargetCountry = &destination
+			}
+		}
+	}
 }
 
 // UpdateContent updates an existing content row, recording a revision and
@@ -522,6 +645,10 @@ func (s *Service) UpdateContent(ctx context.Context, id, tenantID, editedBy pgty
 		}
 	}
 
+	// Journey-aware recommendations: infer source/target country for this
+	// content when the update leaves them unset.
+	s.inferJourneyMetadataForUpdate(ctx, s.read, tenantID, existing, &input)
+
 	content, err := s.write.UpdateContent(ctx, gen.UpdateContentParams{
 		OrganizationID:  input.OrganizationID,
 		Title:           input.Title,
@@ -547,6 +674,10 @@ func (s *Service) UpdateContent(ctx context.Context, id, tenantID, editedBy pgty
 		GuideCategory:   input.GuideCategory,
 		AiGeneratedAt:   input.AIGeneratedAt,
 		AiModel:         input.AIModel,
+		JourneyStage:    input.JourneyStage,
+		VisaRoute:       input.VisaRoute,
+		SourceCountry:   input.SourceCountry,
+		TargetCountry:   input.TargetCountry,
 		ID:              id,
 		TenantID:        tenantID,
 	})
