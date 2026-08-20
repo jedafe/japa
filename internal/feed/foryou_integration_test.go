@@ -36,7 +36,7 @@ func TestGetForYouFeed_NullSpaceIDDoesNotFailScan(t *testing.T) {
 
 	service := NewService(database, nil)
 
-	items, err := service.GetForYouFeed(ctx, tenantID, viewerID, SortRelevant, 20, 0, "")
+	items, err := service.GetForYouFeed(ctx, tenantID, viewerID, SortRelevant, 20, 0, nil)
 	if err != nil {
 		t.Fatalf("GetForYouFeed returned an error: %v", err)
 	}
