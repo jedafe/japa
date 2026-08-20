@@ -17,7 +17,7 @@ class BookmarksScreen extends ConsumerWidget {
         data: (items) => ListView.builder(
           itemCount: items.length,
           itemBuilder: (_, i) =>
-              ListTile(title: Text(items[i]['title'] ?? '')),
+              ListTile(title: Text(items[i].title ?? t('profile.bookmark'))),
         ),
         loading: () => const LoadingShimmer(),
         error: (e, _) => JcErrorWidget(

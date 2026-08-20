@@ -7,7 +7,7 @@ final profileServiceProvider = Provider<ProfileService>((ref) {
   return ProfileService(client);
 });
 
-final meProvider = FutureProvider.autoDispose<Map<String, dynamic>>((ref) async {
+final meProvider = FutureProvider.autoDispose<UserProfile>((ref) async {
   final service = ref.watch(profileServiceProvider);
   return service.getMe();
 });
@@ -18,14 +18,13 @@ final preferencesProvider =
   return service.getPreferences();
 });
 
-final walletProvider =
-    FutureProvider.autoDispose<Map<String, dynamic>>((ref) async {
+final walletProvider = FutureProvider.autoDispose<Wallet>((ref) async {
   final service = ref.watch(profileServiceProvider);
   return service.getWallet();
 });
 
 final bookmarksProvider =
-    FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref) async {
+    FutureProvider.autoDispose<List<Bookmark>>((ref) async {
   final service = ref.watch(profileServiceProvider);
   return service.getBookmarks();
 });

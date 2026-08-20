@@ -18,9 +18,9 @@ class CourseListScreen extends ConsumerWidget {
         data: (items) => ListView.builder(
           itemCount: items.length,
           itemBuilder: (_, i) => ListTile(
-            title: Text(items[i]['title'] ?? ''),
+            title: Text(items[i].title),
             onTap: () => context
-                .push('/learn/university/catalog/${items[i]['slug']}'),
+                .push('/learn/university/catalog/${items[i].slug}'),
           ),
         ),
         loading: () => const LoadingShimmer(),

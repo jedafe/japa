@@ -7,7 +7,7 @@ final feedServiceProvider = Provider<FeedService>((ref) {
   return FeedService(client);
 });
 
-final feedProvider = FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref) async {
+final feedProvider = FutureProvider.autoDispose<List<Content>>((ref) async {
   final service = ref.watch(feedServiceProvider);
   return service.fetchFeed();
 });

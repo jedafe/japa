@@ -4,10 +4,11 @@ class JapaBotService {
   final JcApiClient _client;
   JapaBotService(this._client);
 
-  Future<List<Map<String, dynamic>>> listConversations() async {
-    return _client.get<List<Map<String, dynamic>>>(
+  Future<List<JapaBotConversation>> listConversations() async {
+    return _client.get<List<JapaBotConversation>>(
       '/ai/conversations',
-      parse: (json) => (json as List).cast<Map<String, dynamic>>(),
+      parse: (json) =>
+          (json as List).map((e) => JapaBotConversation.fromJson(e as Map<String, dynamic>)).toList(),
     );
   }
 

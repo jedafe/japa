@@ -8,7 +8,7 @@ final scholarshipsServiceProvider = Provider<ScholarshipsService>((ref) {
 });
 
 final scholarshipsProvider =
-    FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref) async {
+    FutureProvider.autoDispose<List<Scholarship>>((ref) async {
   final service = ref.watch(scholarshipsServiceProvider);
   return service.listScholarships();
 });

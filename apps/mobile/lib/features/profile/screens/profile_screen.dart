@@ -18,8 +18,8 @@ class ProfileScreen extends ConsumerWidget {
         data: (user) => ListView(
           children: [
             ListTile(
-                title: Text(user['username'] ?? ''),
-                subtitle: Text(user['email'] ?? '')),
+                title: Text(user.username),
+                subtitle: Text(user.email)),
             ListTile(
                 title: Text(t('profile.settings')),
                 onTap: () => context.push('/profile/settings')),

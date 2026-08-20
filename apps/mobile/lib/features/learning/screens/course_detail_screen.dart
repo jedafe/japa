@@ -49,13 +49,13 @@ class _CourseDetailScreenState extends ConsumerState<CourseDetailScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(course['title'] ?? '', style: JcTypography.heading),
+              Text(course.title, style: JcTypography.heading),
               const SizedBox(height: 8),
-              Text(course['description'] ?? ''),
+              Text(course.description ?? ''),
               JcButton(
                 label: t('learning.enroll'),
                 onPressed:
-                    _loading ? null : () => _enroll(course['id'] as String),
+                    _loading ? null : () => _enroll(course.id),
               ),
             ],
           ),

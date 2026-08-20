@@ -19,7 +19,7 @@ class WalletScreen extends ConsumerWidget {
             ListTile(
                 title: Text(t('profile.balance')),
                 subtitle:
-                    Text(wallet['balance']?.toString() ?? '0')),
+                    Text(wallet.balance?.toString() ?? '0')),
           ],
         ),
         loading: () => const LoadingShimmer(),

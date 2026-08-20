@@ -8,13 +8,13 @@ final jobsServiceProvider = Provider<JobsService>((ref) {
 });
 
 final jobsListProvider =
-    FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref) async {
+    FutureProvider.autoDispose<List<Job>>((ref) async {
   final service = ref.watch(jobsServiceProvider);
   return service.listJobs();
 });
 
 final jobDetailProvider = FutureProvider.autoDispose
-    .family<Map<String, dynamic>, String>((ref, slug) async {
+    .family<Job, String>((ref, slug) async {
   final service = ref.watch(jobsServiceProvider);
   return service.getJob(slug);
 });

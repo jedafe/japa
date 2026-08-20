@@ -4,17 +4,18 @@ class SpacesService {
   final JcApiClient _client;
   SpacesService(this._client);
 
-  Future<List<Map<String, dynamic>>> listSpaces() async {
-    return _client.get<List<Map<String, dynamic>>>(
+  Future<List<Space>> listSpaces() async {
+    return _client.get<List<Space>>(
       '/spaces',
-      parse: (json) => (json as List).cast<Map<String, dynamic>>(),
+      parse: (json) =>
+          (json as List).map((e) => Space.fromJson(e)!).toList(),
     );
   }
 
-  Future<Map<String, dynamic>> getSpace(String slug) async {
-    return _client.get<Map<String, dynamic>>(
+  Future<Space> getSpace(String slug) async {
+    return _client.get<Space>(
       '/spaces/$slug',
-      parse: (json) => json as Map<String, dynamic>,
+      parse: (json) => Space.fromJson(json)!,
     );
   }
 

@@ -8,19 +8,19 @@ final socialServiceProvider = Provider<SocialService>((ref) {
 });
 
 final notificationsProvider =
-    FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref) async {
+    FutureProvider.autoDispose<List<Notification>>((ref) async {
   final service = ref.watch(socialServiceProvider);
   return service.listNotifications();
 });
 
 final conversationsProvider =
-    FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref) async {
+    FutureProvider.autoDispose<List<Conversation>>((ref) async {
   final service = ref.watch(socialServiceProvider);
   return service.listConversations();
 });
 
 final conversationMessagesProvider = FutureProvider.autoDispose
-    .family<List<Map<String, dynamic>>, String>((ref, id) async {
+    .family<List<Message>, String>((ref, id) async {
   final service = ref.watch(socialServiceProvider);
   return service.getConversationMessages(id);
 });

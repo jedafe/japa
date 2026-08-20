@@ -49,13 +49,13 @@ class _JobDetailScreenState extends ConsumerState<JobDetailScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(job['title'] ?? '', style: JcTypography.heading),
+              Text(job.title, style: JcTypography.heading),
               const SizedBox(height: 8),
-              Text(job['description'] ?? ''),
+              Text(job.description ?? ''),
               JcButton(
                 label: t('jobs.apply'),
                 onPressed:
-                    _loading ? null : () => _apply(job['id'] as String),
+                    _loading ? null : () => _apply(job.id),
               ),
             ],
           ),

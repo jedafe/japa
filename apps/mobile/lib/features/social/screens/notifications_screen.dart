@@ -18,12 +18,12 @@ class NotificationsScreen extends ConsumerWidget {
         data: (items) => ListView.builder(
           itemCount: items.length,
           itemBuilder: (_, i) => ListTile(
-            title: Text(items[i]['title'] ?? ''),
+            title: Text(items[i].title ?? ''),
             trailing: IconButton(
               icon: const Icon(Icons.check),
               onPressed: () => ref
                   .read(socialServiceProvider)
-                  .markNotificationRead(items[i]['id'] as String),
+                  .markNotificationRead(items[i].id),
             ),
           ),
         ),

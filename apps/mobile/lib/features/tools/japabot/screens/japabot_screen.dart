@@ -17,7 +17,7 @@ class JapaBotScreen extends ConsumerWidget {
         data: (items) => ListView.builder(
           itemCount: items.length,
           itemBuilder: (_, i) =>
-              ListTile(title: Text(items[i]['title'] ?? t('social.conversation'))),
+              ListTile(title: Text(items[i].title ?? t('social.conversation'))),
         ),
         loading: () => const LoadingShimmer(),
         error: (e, _) => JcErrorWidget(

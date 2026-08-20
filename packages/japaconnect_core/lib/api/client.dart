@@ -139,6 +139,12 @@ class JcApiClient {
     final streamedResponse = await _http.send(request);
     final response = await http.Response.fromStream(streamedResponse);
 
+    final responseBody = response.body;
+    dynamic decoded;
+    if (responseBody.isNotEmpty) {
+      decoded = jsonDecode(responseBody);
+    }
+
     if (response.statusCode == 401) {
       if (!includeAuth || isRetry) {
         onUnauthenticated?.call();
@@ -169,12 +175,16 @@ class JcApiClient {
 
     if (response.statusCode >= 400) {
       throw JcApiError.fromJson(
-        jsonDecode(response.body) as Map<String, dynamic>,
+        (decoded ?? {}) as Map<String, dynamic>,
         fallbackStatus: response.statusCode,
       );
     }
 
-    return parse(jsonDecode(response.body));
+    // JEOS API responses wrap the payload in a top-level `data` key.
+    if (decoded is Map<String, dynamic> && decoded.containsKey('data')) {
+      return parse(decoded['data']);
+    }
+    return parse(decoded);
   }
 
   Future<bool> refresh() => _refresh();
@@ -194,9 +204,10 @@ class JcApiClient {
         includeAuth: false,
       );
       _accessToken = data['access_token'] as String;
-      await tokenStore.writeRefreshToken(
-        data['refresh_token'] as String,
-      );
+      final newRefreshToken = data['refresh_token'] as String?;
+      if (newRefreshToken != null) {
+        await tokenStore.writeRefreshToken(newRefreshToken);
+      }
       return true;
     } catch (_) {
       onUnauthenticated?.call();
@@ -207,7 +218,12 @@ class JcApiClient {
 
   Future<void> logout() async {
     try {
-      await post<void>('/auth/logout', parse: (_) {});
+      final refreshToken = await tokenStore.readRefreshToken();
+      await post<void>(
+        '/auth/logout',
+        body: refreshToken != null ? {'refresh_token': refreshToken} : null,
+        parse: (_) {},
+      );
     } catch (_) {}
     clearAccessToken();
     await tokenStore.deleteRefreshToken();

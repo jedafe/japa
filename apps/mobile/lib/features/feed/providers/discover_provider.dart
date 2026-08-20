@@ -13,5 +13,10 @@ final discoverProvider = FutureProvider.autoDispose<Map<String, List<Map<String,
   final spaces = await service.suggestedSpaces();
   final tags = await service.suggestedTags();
   final content = await service.suggestedContent();
-  return {'users': users, 'spaces': spaces, 'tags': tags, 'content': content};
+  return {
+    'users': users.map((e) => e.toCardMap()).toList(),
+    'spaces': spaces.map((e) => e.toCardMap()).toList(),
+    'tags': tags.map((e) => e.toCardMap()).toList(),
+    'content': content.map((e) => e.toCardMap()).toList(),
+  };
 });

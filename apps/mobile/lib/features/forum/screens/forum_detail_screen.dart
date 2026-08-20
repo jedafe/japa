@@ -18,12 +18,12 @@ class ForumDetailScreen extends ConsumerWidget {
       body: state.when(
         data: (thread) => Column(
           children: [
-            ListTile(title: Text(thread['title'] ?? '')),
+            ListTile(title: Text(thread.title)),
             Expanded(
               child: ListView.builder(
-                itemCount: (thread['replies'] as List? ?? []).length,
+                itemCount: thread.replies?.length ?? 0,
                 itemBuilder: (_, i) =>
-                    ListTile(title: Text(thread['replies'][i]['body'] ?? '')),
+                    ListTile(title: Text(thread.replies![i].body)),
               ),
             ),
             JcButton(
