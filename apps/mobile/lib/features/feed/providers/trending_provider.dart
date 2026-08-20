@@ -13,5 +13,10 @@ final trendingProvider = FutureProvider.autoDispose<Map<String, List<Map<String,
   final spaces = await service.trendingSpaces();
   final users = await service.trendingUsers();
   final tags = await service.trendingTags();
-  return {'content': content, 'spaces': spaces, 'users': users, 'tags': tags};
+  return {
+    'content': content.map((e) => e.toCardMap()).toList(),
+    'spaces': spaces.map((e) => e.toCardMap()).toList(),
+    'users': users.map((e) => e.toCardMap()).toList(),
+    'tags': tags.map((e) => e.toCardMap()).toList(),
+  };
 });

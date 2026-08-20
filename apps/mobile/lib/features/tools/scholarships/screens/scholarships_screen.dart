@@ -17,15 +17,15 @@ class ScholarshipsScreen extends ConsumerWidget {
         data: (items) => ListView.builder(
           itemCount: items.length,
           itemBuilder: (_, i) {
-            final isSaved = items[i]['is_saved'] == true;
+            final isSaved = items[i].isSaved;
             return ListTile(
-              title: Text(items[i]['title'] ?? ''),
+              title: Text(items[i].title ?? ''),
               trailing: IconButton(
                 icon: Icon(
                     isSaved ? Icons.bookmark : Icons.bookmark_border),
                 onPressed: () {
                   final service = ref.read(scholarshipsServiceProvider);
-                  final id = items[i]['id'] as String;
+                  final id = items[i].id;
                   if (isSaved) {
                     service.unsave(id);
                   } else {

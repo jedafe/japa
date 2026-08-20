@@ -4,19 +4,19 @@ class ProfileService {
   final JcApiClient _client;
   ProfileService(this._client);
 
-  Future<Map<String, dynamic>> getMe() async {
-    final response = await _client.get<Map<String, dynamic>>(
+  Future<UserProfile> getMe() async {
+    final response = await _client.get<UserProfile>(
       '/me',
-      parse: (json) => json as Map<String, dynamic>,
+      parse: (json) => UserProfile.fromJson(json as Map<String, dynamic>),
     );
     return response;
   }
 
-  Future<Map<String, dynamic>> updateProfile(Map<String, dynamic> data) async {
-    final response = await _client.patch<Map<String, dynamic>>(
+  Future<UserProfile> updateProfile(Map<String, dynamic> data) async {
+    final response = await _client.patch<UserProfile>(
       '/me/profile',
       body: data,
-      parse: (json) => json as Map<String, dynamic>,
+      parse: (json) => UserProfile.fromJson(json as Map<String, dynamic>),
     );
     return response;
   }
@@ -39,18 +39,19 @@ class ProfileService {
     return response;
   }
 
-  Future<Map<String, dynamic>> getWallet() async {
-    final response = await _client.get<Map<String, dynamic>>(
+  Future<Wallet> getWallet() async {
+    final response = await _client.get<Wallet>(
       '/me/wallet',
-      parse: (json) => json as Map<String, dynamic>,
+      parse: (json) => Wallet.fromJson(json as Map<String, dynamic>),
     );
     return response;
   }
 
-  Future<List<Map<String, dynamic>>> getBookmarks() async {
-    final response = await _client.get<List<Map<String, dynamic>>>(
+  Future<List<Bookmark>> getBookmarks() async {
+    final response = await _client.get<List<Bookmark>>(
       '/me/bookmarks',
-      parse: (json) => (json as List).cast<Map<String, dynamic>>(),
+      parse: (json) =>
+          (json as List).map((e) => Bookmark.fromJson(e as Map<String, dynamic>)).toList(),
     );
     return response;
   }

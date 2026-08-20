@@ -12,10 +12,11 @@ class SocialService {
     await _client.delete('/users/$userId/follow');
   }
 
-  Future<List<Map<String, dynamic>>> listNotifications() async {
-    final response = await _client.get<List<Map<String, dynamic>>>(
+  Future<List<Notification>> listNotifications() async {
+    final response = await _client.get<List<Notification>>(
       '/me/notifications',
-      parse: (json) => (json as List).cast<Map<String, dynamic>>(),
+      parse: (json) =>
+          (json as List).map((e) => Notification.fromJson(e as Map<String, dynamic>)).toList(),
     );
     return response;
   }
@@ -28,18 +29,20 @@ class SocialService {
     await _client.post<void>('/me/notifications/read-all', parse: (_) {});
   }
 
-  Future<List<Map<String, dynamic>>> listConversations() async {
-    final response = await _client.get<List<Map<String, dynamic>>>(
+  Future<List<Conversation>> listConversations() async {
+    final response = await _client.get<List<Conversation>>(
       '/dm/conversations',
-      parse: (json) => (json as List).cast<Map<String, dynamic>>(),
+      parse: (json) =>
+          (json as List).map((e) => Conversation.fromJson(e as Map<String, dynamic>)).toList(),
     );
     return response;
   }
 
-  Future<List<Map<String, dynamic>>> getConversationMessages(String id) async {
-    final response = await _client.get<List<Map<String, dynamic>>>(
+  Future<List<Message>> getConversationMessages(String id) async {
+    final response = await _client.get<List<Message>>(
       '/dm/conversations/$id/messages',
-      parse: (json) => (json as List).cast<Map<String, dynamic>>(),
+      parse: (json) =>
+          (json as List).map((e) => Message.fromJson(e as Map<String, dynamic>)).toList(),
     );
     return response;
   }

@@ -20,12 +20,12 @@ class ComparisonDetailScreen extends ConsumerWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(item['title'] ?? '', style: JcTypography.heading),
+              Text(item.title, style: JcTypography.heading),
               const SizedBox(height: 8),
-              ...((item['items'] as List? ?? [])).map<Widget>(
+              ...(item.items ?? []).map<Widget>(
                 (row) => ListTile(
-                  title: Text(row['label']?.toString() ?? ''),
-                  trailing: Text(row['value']?.toString() ?? ''),
+                  title: Text(row.label),
+                  trailing: Text(row.value),
                 ),
               ),
             ],

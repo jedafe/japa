@@ -42,7 +42,7 @@ class _MessageThreadScreenState extends ConsumerState<MessageThreadScreen> {
               child: ListView.builder(
                 itemCount: items.length,
                 itemBuilder: (_, i) =>
-                    ListTile(title: Text(items[i]['text'] ?? '')),
+                    ListTile(title: Text(items[i].text)),
               ),
             ),
             Padding(

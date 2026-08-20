@@ -31,6 +31,7 @@ class AppShell extends ConsumerWidget {
     final path = GoRouterState.of(context).uri.path;
     if (path == '/' || path == '/discover' || path == '/trending') return 0;
     if (path.startsWith('/spaces')) return 1;
+    if (path == '/compose') return 2;
     if (path.startsWith('/notifications')) return 3;
     if (path.startsWith('/profile')) return 4;
     return 0;

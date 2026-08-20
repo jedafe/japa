@@ -8,13 +8,13 @@ final spacesServiceProvider = Provider<SpacesService>((ref) {
 });
 
 final spaceListProvider =
-    FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref) async {
+    FutureProvider.autoDispose<List<Space>>((ref) async {
   final service = ref.watch(spacesServiceProvider);
   return service.listSpaces();
 });
 
 final spaceDetailProvider = FutureProvider.autoDispose
-    .family<Map<String, dynamic>, String>((ref, slug) async {
+    .family<Space, String>((ref, slug) async {
   final service = ref.watch(spacesServiceProvider);
   return service.getSpace(slug);
 });

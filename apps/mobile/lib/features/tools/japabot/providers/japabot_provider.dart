@@ -8,7 +8,7 @@ final japabotServiceProvider = Provider<JapaBotService>((ref) {
 });
 
 final japabotConversationsProvider =
-    FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref) async {
+    FutureProvider.autoDispose<List<JapaBotConversation>>((ref) async {
   final service = ref.watch(japabotServiceProvider);
   return service.listConversations();
 });

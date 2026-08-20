@@ -18,8 +18,8 @@ class BlogListScreen extends ConsumerWidget {
         data: (items) => ListView.builder(
           itemCount: items.length,
           itemBuilder: (_, i) => EntityCard(
-            item: items[i],
-            onTap: () => context.push('/blog/${items[i]['slug']}'),
+            item: items[i].toCardMap(),
+            onTap: () => context.push('/blog/${items[i].slug}'),
           ),
         ),
         loading: () => const LoadingShimmer(),

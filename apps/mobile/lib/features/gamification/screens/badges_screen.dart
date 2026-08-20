@@ -16,7 +16,7 @@ class BadgesScreen extends ConsumerWidget {
       body: state.when(
         data: (items) => ListView.builder(
           itemCount: items.length,
-          itemBuilder: (_, i) => ListTile(title: Text(items[i]['name'] ?? '')),
+          itemBuilder: (_, i) => ListTile(title: Text(items[i].name)),
         ),
         loading: () => const LoadingShimmer(),
         error: (e, _) => JcErrorWidget(error: e, onRetry: () => ref.invalidate(myBadgesProvider)),

@@ -8,13 +8,13 @@ final forumServiceProvider = Provider<ForumService>((ref) {
 });
 
 final forumListProvider =
-    FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref) async {
+    FutureProvider.autoDispose<List<ForumThread>>((ref) async {
   final service = ref.watch(forumServiceProvider);
   return service.listThreads();
 });
 
 final forumThreadProvider = FutureProvider.autoDispose
-    .family<Map<String, dynamic>, String>((ref, slug) async {
+    .family<ForumThread, String>((ref, slug) async {
   final service = ref.watch(forumServiceProvider);
   return service.getThread(slug);
 });

@@ -8,7 +8,7 @@ final remittanceServiceProvider = Provider<RemittanceService>((ref) {
 });
 
 final remittanceProvidersProvider =
-    FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref) async {
+    FutureProvider.autoDispose<List<RemittanceProvider>>((ref) async {
   final service = ref.watch(remittanceServiceProvider);
   return service.listProviders();
 });

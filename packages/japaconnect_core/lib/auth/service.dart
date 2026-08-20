@@ -16,13 +16,13 @@ class AuthService {
   String? get accessToken => client.accessToken;
 
   Future<void> login(
-    String username,
+    String email,
     String password, {
     void Function()? onAuthenticated,
   }) async {
     final result = await client.post<Map<String, dynamic>>(
       '/auth/login',
-      body: {'username': username, 'password': password},
+      body: {'email': email, 'password': password},
       parse: (json) => json as Map<String, dynamic>,
     );
     final challengeToken = result['challenge_token'] as String?;
@@ -69,6 +69,14 @@ class AuthService {
 
   Future<bool> refresh() async => client.refresh();
 
+  /// Restores a session from the stored refresh token on app startup.
+  /// Returns `true` if a new access token was obtained.
+  Future<bool> tryRestore() async {
+    final refreshToken = await client.tokenStore.readRefreshToken();
+    if (refreshToken == null || refreshToken.isEmpty) return false;
+    return client.refresh();
+  }
+
   Future<void> logout() async {
     try {
       final manager =
@@ -79,7 +87,18 @@ class AuthService {
   }
 
   Future<void> _persist(Map<String, dynamic> result) async {
-    client.setAccessToken(result['access_token'] as String);
-    await client.tokenStore.writeRefreshToken(result['refresh_token'] as String);
+    final accessToken = result['access_token'] as String?;
+    final refreshToken = result['refresh_token'] as String?;
+    if (accessToken == null || accessToken.isEmpty) {
+      throw JcApiError(
+        code: 'invalid_session',
+        message: 'Access token missing from response',
+        status: 500,
+      );
+    }
+    client.setAccessToken(accessToken);
+    if (refreshToken != null && refreshToken.isNotEmpty) {
+      await client.tokenStore.writeRefreshToken(refreshToken);
+    }
   }
 }

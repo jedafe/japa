@@ -8,37 +8,37 @@ final contentServiceProvider = Provider<ContentService>((ref) {
 });
 
 final blogListProvider =
-    FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref) async {
+    FutureProvider.autoDispose<List<Content>>((ref) async {
   final service = ref.watch(contentServiceProvider);
   return service.listBlog();
 });
 
 final blogDetailProvider = FutureProvider.autoDispose
-    .family<Map<String, dynamic>, String>((ref, slug) async {
+    .family<Content, String>((ref, slug) async {
   final service = ref.watch(contentServiceProvider);
   return service.getBlog(slug);
 });
 
 final guideListProvider =
-    FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref) async {
+    FutureProvider.autoDispose<List<Content>>((ref) async {
   final service = ref.watch(contentServiceProvider);
   return service.listGuides();
 });
 
 final guideDetailProvider = FutureProvider.autoDispose
-    .family<Map<String, dynamic>, String>((ref, slug) async {
+    .family<Content, String>((ref, slug) async {
   final service = ref.watch(contentServiceProvider);
   return service.getGuide(slug);
 });
 
 final comparisonListProvider =
-    FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref) async {
+    FutureProvider.autoDispose<List<Content>>((ref) async {
   final service = ref.watch(contentServiceProvider);
   return service.listComparisons();
 });
 
 final comparisonDetailProvider = FutureProvider.autoDispose
-    .family<Map<String, dynamic>, String>((ref, id) async {
+    .family<Content, String>((ref, id) async {
   final service = ref.watch(contentServiceProvider);
   return service.getComparison(id);
 });

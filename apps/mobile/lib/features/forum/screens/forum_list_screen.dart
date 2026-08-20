@@ -18,8 +18,8 @@ class ForumListScreen extends ConsumerWidget {
         data: (items) => ListView.builder(
           itemCount: items.length,
           itemBuilder: (_, i) => ListTile(
-            title: Text(items[i]['title'] ?? ''),
-            onTap: () => context.push('/forum/${items[i]['slug']}'),
+            title: Text(items[i].title),
+            onTap: () => context.push('/forum/${items[i].slug}'),
           ),
         ),
         loading: () => const LoadingShimmer(),

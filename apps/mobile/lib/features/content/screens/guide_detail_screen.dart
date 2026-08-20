@@ -20,9 +20,9 @@ class GuideDetailScreen extends ConsumerWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(item['title'] ?? '', style: JcTypography.heading),
+              Text(item.title, style: JcTypography.heading),
               const SizedBox(height: 8),
-              Text(item['body'] ?? ''),
+              Text(item.body ?? ''),
             ],
           ),
         ),

@@ -18,8 +18,8 @@ class ComparisonListScreen extends ConsumerWidget {
         data: (items) => ListView.builder(
           itemCount: items.length,
           itemBuilder: (_, i) => EntityCard(
-            item: items[i],
-            onTap: () => context.push('/comparisons/${items[i]['id']}'),
+            item: items[i].toCardMap(),
+            onTap: () => context.push('/comparisons/${items[i].id}'),
           ),
         ),
         loading: () => const LoadingShimmer(),

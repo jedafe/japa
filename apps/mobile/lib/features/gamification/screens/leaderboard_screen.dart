@@ -15,12 +15,12 @@ class LeaderboardScreen extends ConsumerWidget {
       appBar: AppBar(title: Text(t('gamification.leaderboard'))),
       body: state.when(
         data: (leaderboard) => ListView.builder(
-          itemCount: (leaderboard['entries'] as List? ?? []).length,
+          itemCount: leaderboard.entries.length,
           itemBuilder: (_, i) {
-            final entry = (leaderboard['entries'] as List<dynamic>)[i] as Map<String, dynamic>;
+            final entry = leaderboard.entries[i];
             return ListTile(
-              title: Text(entry['username'] ?? ''),
-              trailing: Text(entry['points']?.toString() ?? '0'),
+              title: Text(entry.username),
+              trailing: Text(entry.points.toString()),
             );
           },
         ),

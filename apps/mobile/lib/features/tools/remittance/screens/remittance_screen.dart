@@ -17,8 +17,8 @@ class RemittanceScreen extends ConsumerWidget {
         data: (items) => ListView.builder(
           itemCount: items.length,
           itemBuilder: (_, i) => ListTile(
-            title: Text(items[i]['name'] ?? ''),
-            subtitle: Text('${t('tools.rate_label')}${items[i]['rate'] ?? ''}'),
+            title: Text(items[i].name),
+            subtitle: Text('${t('tools.rate_label')}${items[i].rate ?? ''}'),
           ),
         ),
         loading: () => const LoadingShimmer(),

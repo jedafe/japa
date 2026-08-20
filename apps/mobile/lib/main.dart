@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'app/theme.dart';
 import 'app/router.dart';
+import 'app/auth_initializer.dart';
 import 'app/push_initializer.dart';
 import 'app/realtime_initializer.dart';
 
@@ -14,7 +15,9 @@ void main() async {
     await Firebase.initializeApp();
   }
   runApp(const ProviderScope(
-      child: PushInitializer(child: RealtimeInitializer(child: JapaConnectApp()))));
+      child: AuthInitializer(
+        child: PushInitializer(child: RealtimeInitializer(child: JapaConnectApp())),
+      )));
 }
 
 class JapaConnectApp extends ConsumerWidget {

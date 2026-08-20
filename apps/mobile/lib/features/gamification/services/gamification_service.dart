@@ -4,32 +4,35 @@ class GamificationService {
   final JcApiClient _client;
   GamificationService(this._client);
 
-  Future<List<Map<String, dynamic>>> listMyBadges() async {
-    return _client.get<List<Map<String, dynamic>>>(
+  Future<List<Badge>> listMyBadges() async {
+    return _client.get<List<Badge>>(
       '/me/badges',
-      parse: (json) => (json as List).cast<Map<String, dynamic>>(),
+      parse: (json) =>
+          (json as List).map((e) => Badge.fromJson(e as Map<String, dynamic>)).toList(),
     );
   }
 
-  Future<List<Map<String, dynamic>>> listBadges() async {
-    return _client.get<List<Map<String, dynamic>>>(
+  Future<List<Badge>> listBadges() async {
+    return _client.get<List<Badge>>(
       '/gamification/badges',
-      parse: (json) => (json as List).cast<Map<String, dynamic>>(),
+      parse: (json) =>
+          (json as List).map((e) => Badge.fromJson(e as Map<String, dynamic>)).toList(),
     );
   }
 
-  Future<List<Map<String, dynamic>>> listChallenges() async {
-    return _client.get<List<Map<String, dynamic>>>(
+  Future<List<Badge>> listChallenges() async {
+    return _client.get<List<Badge>>(
       '/gamification/challenges',
-      parse: (json) => (json as List).cast<Map<String, dynamic>>(),
+      parse: (json) =>
+          (json as List).map((e) => Badge.fromJson(e as Map<String, dynamic>)).toList(),
     );
   }
 
-  Future<Map<String, dynamic>> getLeaderboard({String scope = 'global', String period = 'all_time'}) async {
-    return _client.get<Map<String, dynamic>>(
+  Future<Leaderboard> getLeaderboard({String scope = 'global', String period = 'all_time'}) async {
+    return _client.get<Leaderboard>(
       '/gamification/leaderboard',
       query: {'scope': scope, 'period': period},
-      parse: (json) => json as Map<String, dynamic>,
+      parse: (json) => Leaderboard.fromJson(json as Map<String, dynamic>),
     );
   }
 }

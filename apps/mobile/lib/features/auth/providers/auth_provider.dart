@@ -36,10 +36,10 @@ class AuthFormNotifier extends Notifier<AuthFormState> {
     ref.read(isAuthenticatedProvider.notifier).set(true);
   }
 
-  Future<void> login(String username, String password) async {
+  Future<void> login(String email, String password) async {
     state = state.copyWith(isLoading: true, clearError: true, clearChallenge: true);
     try {
-      await _auth.login(username, password, onAuthenticated: _setAuthenticated);
+      await _auth.login(email, password, onAuthenticated: _setAuthenticated);
       state = state.copyWith(isLoading: false, clearError: true, clearChallenge: true);
     } on JcApiError catch (e) {
       if (e.code == 'totp_required') {

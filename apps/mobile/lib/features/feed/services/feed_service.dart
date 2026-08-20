@@ -4,11 +4,12 @@ class FeedService {
   final JcApiClient _client;
   FeedService(this._client);
 
-  Future<List<Map<String, dynamic>>> fetchFeed({int page = 1}) async {
-    final response = await _client.get<List<Map<String, dynamic>>>(
+  Future<List<Content>> fetchFeed({int page = 1}) async {
+    final response = await _client.get<List<Content>>(
       '/feed',
       query: {'page': page.toString()},
-      parse: (json) => (json as List).cast<Map<String, dynamic>>(),
+      parse: (json) =>
+          (json as List).map((e) => Content.fromJson(e as Map<String, dynamic>)).toList(),
     );
     return response;
   }

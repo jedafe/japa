@@ -18,8 +18,8 @@ class JobsListScreen extends ConsumerWidget {
         data: (items) => ListView.builder(
           itemCount: items.length,
           itemBuilder: (_, i) => ListTile(
-            title: Text(items[i]['title'] ?? ''),
-            onTap: () => context.push('/jobs/${items[i]['slug']}'),
+            title: Text(items[i].title),
+            onTap: () => context.push('/jobs/${items[i].slug}'),
           ),
         ),
         loading: () => const LoadingShimmer(),

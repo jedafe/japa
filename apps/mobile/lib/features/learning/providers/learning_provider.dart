@@ -8,20 +8,19 @@ final learningServiceProvider = Provider<LearningService>((ref) {
 });
 
 final courseListProvider =
-    FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref) async {
+    FutureProvider.autoDispose<List<Course>>((ref) async {
   final service = ref.watch(learningServiceProvider);
   return service.listCourses();
 });
 
 final courseDetailProvider = FutureProvider.autoDispose
-    .family<Map<String, dynamic>, String>((ref, slug) async {
+    .family<Course, String>((ref, slug) async {
   final service = ref.watch(learningServiceProvider);
   return service.getCourse(slug);
 });
 
 final courseLessonProvider = FutureProvider.autoDispose
-    .family<Map<String, dynamic>, (String, String, String)>(
-        (ref, args) async {
+    .family<Lesson, (String, String, String)>((ref, args) async {
   final service = ref.watch(learningServiceProvider);
   final (trackSlug, moduleSlug, lessonSlug) = args;
   return service.getLesson(trackSlug, moduleSlug, lessonSlug);

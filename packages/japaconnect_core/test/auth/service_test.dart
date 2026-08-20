@@ -122,4 +122,24 @@ void main() {
 
     expect(service.accessToken, 'tok-123');
   });
+
+  test('tryRestore returns true and refreshes when a token exists', () async {
+    when(() => tokenStore.readRefreshToken())
+        .thenAnswer((_) async => 'stored-refresh');
+    when(() => client.refresh()).thenAnswer((_) async => true);
+
+    final result = await service.tryRestore();
+
+    expect(result, isTrue);
+    verify(() => client.refresh()).called(1);
+  });
+
+  test('tryRestore returns false when no token is stored', () async {
+    when(() => tokenStore.readRefreshToken()).thenAnswer((_) async => null);
+
+    final result = await service.tryRestore();
+
+    expect(result, isFalse);
+    verifyNever(() => client.refresh());
+  });
 }
