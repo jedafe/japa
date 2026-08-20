@@ -148,8 +148,9 @@ func (h *Handlers) GetExploreFeed(w http.ResponseWriter, r *http.Request) {
 	page := int(offset) / int(limit)
 	cacheKey := vkcache.MustKey("explore:%s:%s:%s:%d", tenantID.String(), geoCode, sort, page)
 
+	vc := visitor.FromContext(r.Context())
 	items, err := vkcache.GetOrComputeNative(r.Context(), h.cache, cacheKey, exploreCacheTTL, func(ctx context.Context) ([]FeedItem, error) {
-		return h.service.GetFeed(ctx, tenantID, "explore", nil, nil, nil, sort, limit, offset)
+		return h.service.GetFeed(ctx, tenantID, "explore", nil, nil, nil, sort, limit, offset, vc.ContentCountry, vc.ContentRegion)
 	})
 	if err != nil {
 		slog.Error("feed: get explore feed failed", "sort", sort, "geo", geoCode, "error", err)
@@ -177,7 +178,7 @@ func (h *Handlers) GetPrimaryFeed(w http.ResponseWriter, r *http.Request) {
 	offset := parsePageOffset(r)
 	sort := parseSort(r)
 
-	items, err := h.service.GetFeed(r.Context(), tenantID, "primary", &user.UserID, nil, nil, sort, limit, offset)
+	items, err := h.service.GetFeed(r.Context(), tenantID, "primary", &user.UserID, nil, nil, sort, limit, offset, "", "")
 	if err != nil {
 		slog.Error("feed: get primary feed failed", "user_id", user.UserID, "sort", sort, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to get primary feed")
@@ -204,7 +205,8 @@ func (h *Handlers) GetForYouFeed(w http.ResponseWriter, r *http.Request) {
 	offset := parsePageOffset(r)
 	sortMode := parseSort(r)
 
-	items, err := h.service.GetForYouFeed(r.Context(), tenantID, user.UserID, sortMode, limit, offset, visitor.FromContext(r.Context()).ContentCountry)
+	vc := visitor.FromContext(r.Context())
+	items, err := h.service.GetForYouFeed(r.Context(), tenantID, user.UserID, sortMode, limit, offset, vc.ContentCountry, vc.ContentRegion)
 	if err != nil {
 		slog.Error("feed: get for-you feed failed", "user_id", user.UserID, "sort", sortMode, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to get For-You feed")
@@ -240,7 +242,7 @@ func (h *Handlers) GetSpaceFeed(w http.ResponseWriter, r *http.Request) {
 	offset := parsePageOffset(r)
 	sort := parseSort(r)
 
-	items, err := h.service.GetFeed(r.Context(), tenantID, "space", &user.UserID, &spaceID, nil, sort, limit, offset)
+	items, err := h.service.GetFeed(r.Context(), tenantID, "space", &user.UserID, &spaceID, nil, sort, limit, offset, "", "")
 	if err != nil {
 		slog.Error("feed: get space feed failed", "space_id", spaceID, "sort", sort, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to get space feed")
@@ -280,7 +282,7 @@ func (h *Handlers) GetProfileFeed(w http.ResponseWriter, r *http.Request) {
 		viewerID = &user.UserID
 	}
 
-	items, err := h.service.GetFeed(r.Context(), tenantID, "profile", viewerID, nil, &authorID, sort, limit, offset)
+	items, err := h.service.GetFeed(r.Context(), tenantID, "profile", viewerID, nil, &authorID, sort, limit, offset, "", "")
 	if err != nil {
 		slog.Error("feed: get profile feed failed", "author_id", authorID, "sort", sort, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to get profile feed")

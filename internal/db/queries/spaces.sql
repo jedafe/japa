@@ -418,6 +418,14 @@ FROM spaces
 WHERE geo_code = $1 AND level = 'country' AND tenant_id = $2 AND deleted_at IS NULL
 LIMIT 1;
 
+-- name: GetSpaceRegionByGeoCode :one
+-- Returns the region for a country-level space identified by its geo_code.
+-- Used to map a resolved country code to its UN region for feed ranking.
+SELECT region
+FROM spaces
+WHERE geo_code = $1 AND level = 'country' AND tenant_id = $2 AND deleted_at IS NULL
+LIMIT 1;
+
 -- name: FindCitySpaceByName :one
 -- ADR-064a: Finds a city-level space by name within a country-level space.
 -- Used by the reverse-geocoding flow (POST /me/location) to match a
