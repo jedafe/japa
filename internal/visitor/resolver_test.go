@@ -208,6 +208,7 @@ func TestFromContextSet(t *testing.T) {
 func TestCacheRoundTrip(t *testing.T) {
 	t.Parallel()
 
+	res := NewResolver(nil, nil, nil)
 	vc := VisitorContext{
 		ContentCountry:     "NG",
 		Source:             "archetype",
@@ -222,7 +223,7 @@ func TestCacheRoundTrip(t *testing.T) {
 		t.Fatalf("marshal: %v", err)
 	}
 
-	got, ok := unmarshalCache(string(b))
+	got, ok := res.unmarshalCache(string(b), nil)
 	if !ok {
 		t.Fatal("unmarshalCache returned ok=false for JSON entry")
 	}
@@ -240,12 +241,13 @@ func TestCacheRoundTrip(t *testing.T) {
 func TestUnmarshalCacheRejectsOldFormat(t *testing.T) {
 	t.Parallel()
 
+	res := NewResolver(nil, nil, nil)
 	// Old format was "NG|geoip" (not JSON). Must return ok=false so the
 	// resolver re-resolves instead of trusting a stale shape.
-	if _, ok := unmarshalCache("NG|geoip"); ok {
+	if _, ok := res.unmarshalCache("NG|geoip", nil); ok {
 		t.Fatal("unmarshalCache accepted old-format entry; expected ok=false")
 	}
-	if _, ok := unmarshalCache(""); ok {
+	if _, ok := res.unmarshalCache("", nil); ok {
 		t.Fatal("unmarshalCache accepted empty entry; expected ok=false")
 	}
 }
@@ -254,9 +256,10 @@ func TestUnmarshalCacheEmptyCountryDefaultsToNG(t *testing.T) {
 	t.Parallel()
 
 	// A cached JSON entry with an empty ContentCountry (edge case) must
-	// fall back to NG/default so downstream never sees an empty country.
+	// fall back to the configured default (NG when no settings/tenant).
+	res := NewResolver(nil, nil, nil)
 	b, _ := json.Marshal(VisitorContext{Source: "archetype"})
-	got, ok := unmarshalCache(string(b))
+	got, ok := res.unmarshalCache(string(b), nil)
 	if !ok {
 		t.Fatal("unmarshalCache returned ok=false for valid JSON")
 	}
