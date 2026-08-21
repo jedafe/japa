@@ -1076,6 +1076,60 @@ func (h *Handlers) HandleGenerateOG(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": resp})
 }
 
+type FieldSchema struct {
+	Key     string        `json:"key"`
+	Type    string        `json:"type"`
+	Label   string        `json:"label"`
+	Options []FieldOption `json:"options,omitempty"`
+}
+
+type FieldOption struct {
+	Value string `json:"value"`
+	Label string `json:"label"`
+}
+
+type DraftInput struct {
+	ContentType   string         `json:"content_type"`
+	Title         string         `json:"title"`
+	ExistingBody  string         `json:"existing_body"`
+	Instructions  string         `json:"instructions"`
+	Tone          string         `json:"tone"`
+	Humanize      *bool          `json:"humanize,omitempty"`
+	HumanizeLevel string         `json:"humanize_level,omitempty"`
+	FieldSchema   []FieldSchema  `json:"field_schema,omitempty"`
+	Context       map[string]any `json:"context,omitempty"`
+}
+
+// HandleDraft handles POST /api/v1/ai/assist/draft — generate or improve a body
+// and optionally fill custom fields.
+func (h *Handlers) HandleDraft(w http.ResponseWriter, r *http.Request) {
+	user, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	_ = user
+	_ = tenantID
+
+	var input DraftInput
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
+		return
+	}
+
+	if input.ContentType == "" {
+		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "content_type is required")
+		return
+	}
+
+	errpkg.WriteError(w, http.StatusBadRequest, "not_implemented", "Draft generation not yet implemented")
+}
+
 // ---------------------------------------------------------------------------
 // HITL Handlers
 // ---------------------------------------------------------------------------
