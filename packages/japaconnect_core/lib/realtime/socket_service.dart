@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:japaconnect_core/api/client.dart';
+import 'package:japaconnect_core/models/realtime_event.dart';
 import 'socket_client.dart';
 
 final socketServiceProvider = Provider<SocketService>((ref) {
@@ -8,20 +9,20 @@ final socketServiceProvider = Provider<SocketService>((ref) {
   return SocketService(client: client);
 });
 
-final realtimeEventsProvider = StreamProvider<Map<String, dynamic>>((ref) {
+final realtimeEventsProvider = StreamProvider<RealtimeEvent>((ref) {
   final socket = ref.watch(socketServiceProvider);
   return socket.events;
 });
 
 class SocketService {
   final JcApiClient client;
-  final _eventController = StreamController<Map<String, dynamic>>.broadcast();
+  final _eventController = StreamController<RealtimeEvent>.broadcast();
   SocketClient? _socket;
   Timer? _reconnectTimer;
 
   SocketService({required this.client});
 
-  Stream<Map<String, dynamic>> get events => _eventController.stream;
+  Stream<RealtimeEvent> get events => _eventController.stream;
 
   Future<void> connect() async {
     if (client.accessToken == null || _socket != null) return;
@@ -33,7 +34,11 @@ class SocketService {
       _socket = SocketClient(url: client.effectiveWsUrl);
       _socket!.connect(ticket['token'] as String);
       _socket!.events.listen(
-        (event) => _eventController.add(event as Map<String, dynamic>),
+        (event) {
+          if (event is Map<String, dynamic>) {
+            _eventController.add(RealtimeEvent.fromJson(event));
+          }
+        },
         onError: (_) => _onConnectionLost(),
         onDone: _onConnectionLost,
       );

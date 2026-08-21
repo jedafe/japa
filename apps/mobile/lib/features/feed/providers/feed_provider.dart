@@ -18,7 +18,7 @@ final feedProvider = FutureProvider.autoDispose<List<Content>>((ref) async {
 final feedRealtimeSyncProvider = Provider<void>((ref) {
   ref.listen(realtimeEventsProvider, (previous, next) {
     next.whenData((event) {
-      if (event['type'] == 'feed_update') {
+      if (event.type == 'feed_update') {
         ref.invalidate(feedProvider);
       }
     });

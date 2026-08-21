@@ -13,6 +13,9 @@ export 'remittance_provider.dart';
 export 'japabot_conversation.dart';
 export 'bookmark.dart';
 export 'wallet.dart';
+export 'preferences.dart';
+export 'feature_flags.dart';
+export 'realtime_event.dart';
 export '../api/generated/lib/api.dart'
     show
         User,
