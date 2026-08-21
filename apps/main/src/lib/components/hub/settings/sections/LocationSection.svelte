@@ -2,13 +2,14 @@
 	/**
 	 * Location settings — ADR-064a.
 	 *
-	 * Lets the user set their origin country, destination country, and current
+	 * Lets the user set their origin location, destination country, and current
 	 * location (city-level via cascading picker or browser geolocation).
-	 * Origin and destination countries are saved as custom field values via
-	 * PATCH /me/profile. Current location is saved via POST /me/location.
+	 * Origin location (country/state/city) and destination country are saved as
+	 * custom field values via PATCH /me/profile. Current location is saved via
+	 * POST /me/location.
 	 *
-	 * All five location fields use the debounced Autocomplete.svelte component
-	 * for live search — the fetchers filter the already-loaded geo arrays
+	 * All location fields use the debounced Autocomplete.svelte component for
+	 * live search — the fetchers filter the already-loaded geo arrays
 	 * client-side (no extra API round-trip per keystroke).
 	 *
 	 * Ref: japaconnect-engineering/adr/ADR-064a-geo-awareness-extension.md
@@ -27,6 +28,8 @@
 	interface LocationData {
 		profile: {
 			origin_country?: string | null;
+			origin_state_id?: string | null;
+			origin_city_id?: string | null;
 			destination_country?: string | null;
 		};
 		countries?: GeoCountry[];
@@ -36,19 +39,35 @@
 	const payload = $derived(data as LocationData | null);
 	const countries = $derived(payload?.countries ?? []);
 
-	// Origin and destination country values (ISO 3166-1 alpha-2).
+	// Origin location values. Country is an ISO 3166-1 alpha-2 code; state and
+	// city are geo Space UUIDs.
 	let originCountry = $state(untrack(() => payload?.profile?.origin_country ?? ''));
-	let destCountry = $state(untrack(() => payload?.profile?.destination_country ?? ''));
+	let originStateId = $state(untrack(() => payload?.profile?.origin_state_id ?? ''));
+	let originCityId = $state(untrack(() => payload?.profile?.origin_city_id ?? ''));
 	let savingOrigin = $state(false);
-	let savingDest = $state(false);
 	let originError = $state<string | null>(null);
-	let destError = $state<string | null>(null);
 
-	// Resolved labels for the currently-selected origin/destination (avoids
-	// re-fetching on every render — the Autocomplete shows this as the chip).
-	const originLabel = $derived(
+	// Cascading picker data for origin location.
+	let originStates = $state<GeoState[]>([]);
+	let originCities = $state<GeoCity[]>([]);
+	let originLoadingStates = $state(false);
+	let originLoadingCities = $state(false);
+
+	// Resolved labels for the currently-selected origin values.
+	const originCountryLabel = $derived(
 		originCountry ? countries.find((c) => c.geo_code === originCountry)?.name ?? originCountry : null
 	);
+	const originStateLabel = $derived(
+		originStateId ? originStates.find((s) => s.id === originStateId)?.name ?? originStateId : null
+	);
+	const originCityLabel = $derived(
+		originCityId ? originCities.find((c) => c.id === originCityId)?.name ?? originCityId : null
+	);
+
+	// Destination country value (ISO 3166-1 alpha-2).
+	let destCountry = $state(untrack(() => payload?.profile?.destination_country ?? ''));
+	let savingDest = $state(false);
+	let destError = $state<string | null>(null);
 	const destLabel = $derived(
 		destCountry ? countries.find((c) => c.geo_code === destCountry)?.name ?? destCountry : null
 	);
@@ -58,6 +77,9 @@
 		space_id: string | null;
 		name: string | null;
 		city: string | null;
+		city_id: string | null;
+		state: string | null;
+		state_id: string | null;
 		country: string | null;
 		country_code: string | null;
 	} | null>(null);
@@ -68,12 +90,13 @@
 	// Cascading picker state for current location.
 	let selectedCountryCode = $state('');
 	let selectedStateId = $state('');
+	let currentCityId = $state('');
 	let states = $state<GeoState[]>([]);
 	let cities = $state<GeoCity[]>([]);
 	let loadingStates = $state(false);
 	let loadingCities = $state(false);
 
-	// Resolved labels for the cascading picker selections.
+	// Resolved labels for the current location cascading picker selections.
 	const cascadeCountryLabel = $derived(
 		selectedCountryCode
 			? countries.find((c) => c.geo_code === selectedCountryCode)?.name ?? selectedCountryCode
@@ -82,17 +105,77 @@
 	const cascadeStateLabel = $derived(
 		selectedStateId ? states.find((s) => s.id === selectedStateId)?.name ?? selectedStateId : null
 	);
+	const currentCityLabel = $derived(
+		currentCityId ? cities.find((c) => c.id === currentCityId)?.name ?? currentCityId : null
+	);
+	const currentLocationDisplay = $derived(
+		currentLocation
+			? [currentLocation.city, currentLocation.state, currentLocation.country]
+					.filter((v): v is string => Boolean(v))
+					.join(', ')
+			: ''
+	);
 
 	// Browser geolocation state.
 	let geoLoading = $state(false);
 	let geoError = $state<string | null>(null);
 
-	// Load current location on mount.
+	// Load current location and pre-populate the origin cascade on mount.
 	onMount(async () => {
-		const loc = await getMyLocation();
+		const [loc] = await Promise.all([getMyLocation(), initOriginCascades()]);
 		currentLocation = loc;
 		loadingLocation = false;
+		if (loc) {
+			await syncCurrentPickersFromLocation(loc);
+		}
 	});
+
+	async function initOriginCascades() {
+		if (!originCountry) return;
+		originLoadingStates = true;
+		try {
+			originStates = await listStates(originCountry);
+		} finally {
+			originLoadingStates = false;
+		}
+		if (originStateId) {
+			originLoadingCities = true;
+			try {
+				originCities = await listCities(originStateId);
+			} finally {
+				originLoadingCities = false;
+			}
+		}
+	}
+
+	async function syncCurrentPickersFromLocation(loc: NonNullable<typeof currentLocation>) {
+		if (loc.country_code) {
+			selectedCountryCode = loc.country_code;
+			loadingStates = true;
+			try {
+				states = await listStates(loc.country_code);
+			} finally {
+				loadingStates = false;
+			}
+		}
+		if (loc.state_id) {
+			selectedStateId = loc.state_id;
+			loadingCities = true;
+			try {
+				cities = await listCities(loc.state_id);
+			} finally {
+				loadingCities = false;
+			}
+		} else {
+			selectedStateId = '';
+			cities = [];
+		}
+		if (loc.city_id) {
+			currentCityId = loc.city_id;
+		} else {
+			currentCityId = '';
+		}
+	}
 
 	// ---- Fetchers: filter the already-loaded geo arrays client-side ----
 	// No API call per keystroke — the loader already fetched all 250
@@ -116,55 +199,139 @@
 		);
 	}
 
-	function stateFetcher(q: string): Promise<AutocompleteItem[]> {
-		const needle = q.toLowerCase().trim();
-		const filtered = needle
-			? states.filter(
-					(s) => s.name.toLowerCase().includes(needle) || (s.geo_code ?? '').toLowerCase().includes(needle)
-				)
-			: states;
-		return Promise.resolve(filtered.slice(0, 50).map((s) => ({ id: s.id, label: s.name })));
+	function createStateFetcher(stateList: GeoState[]) {
+		return (q: string): Promise<AutocompleteItem[]> => {
+			const needle = q.toLowerCase().trim();
+			const filtered = needle
+				? stateList.filter(
+						(s) =>
+							s.name.toLowerCase().includes(needle) ||
+							(s.geo_code ?? '').toLowerCase().includes(needle)
+					)
+				: stateList;
+			return Promise.resolve(filtered.slice(0, 50).map((s) => ({ id: s.id, label: s.name })));
+		};
 	}
 
-	function stateInitialFetcher(): Promise<AutocompleteItem[]> {
-		return Promise.resolve(states.slice(0, 8).map((s) => ({ id: s.id, label: s.name })));
+	function createStateInitialFetcher(stateList: GeoState[]) {
+		return (): Promise<AutocompleteItem[]> => {
+			return Promise.resolve(stateList.slice(0, 8).map((s) => ({ id: s.id, label: s.name })));
+		};
 	}
 
-	function cityFetcher(q: string): Promise<AutocompleteItem[]> {
-		const needle = q.toLowerCase().trim();
-		const filtered = needle
-			? cities.filter(
-					(c) => c.name.toLowerCase().includes(needle) || (c.geo_code ?? '').toLowerCase().includes(needle)
-				)
-			: cities;
-		return Promise.resolve(filtered.slice(0, 50).map((c) => ({ id: c.id, label: c.name })));
+	function createCityFetcher(cityList: GeoCity[]) {
+		return (q: string): Promise<AutocompleteItem[]> => {
+			const needle = q.toLowerCase().trim();
+			const filtered = needle
+				? cityList.filter(
+						(c) =>
+							c.name.toLowerCase().includes(needle) ||
+							(c.geo_code ?? '').toLowerCase().includes(needle)
+					)
+				: cityList;
+			return Promise.resolve(filtered.slice(0, 50).map((c) => ({ id: c.id, label: c.name })));
+		};
 	}
 
-	function cityInitialFetcher(): Promise<AutocompleteItem[]> {
-		return Promise.resolve(cities.slice(0, 8).map((c) => ({ id: c.id, label: c.name })));
+	function createCityInitialFetcher(cityList: GeoCity[]) {
+		return (): Promise<AutocompleteItem[]> => {
+			return Promise.resolve(cityList.slice(0, 8).map((c) => ({ id: c.id, label: c.name })));
+		};
 	}
 
-	// ---- Save handlers ----
+	// ---- Origin location save handlers ----
 
-	async function saveOriginCountry(item: AutocompleteItem) {
+	async function saveOrigin(
+		patch: {
+			origin_country?: string;
+			origin_state_id?: string;
+			origin_city_id?: string;
+		} = {}
+	) {
+		savingOrigin = true;
+		originError = null;
+		const res = await patchProfile(patch);
+		savingOrigin = false;
+		if (res.error) originError = res.error.message;
+	}
+
+	async function onOriginCountrySelect(item: AutocompleteItem) {
 		originCountry = item.id;
-		savingOrigin = true;
-		originError = null;
-		// Save via PATCH /me/profile — the backend stores origin_country
-		// as a custom_field_values entry on the user_profile entity (ADR-064a).
-		const res = await patchProfile({ origin_country: item.id });
-		savingOrigin = false;
-		if (res.error) originError = res.error.message;
+		originStateId = '';
+		originCityId = '';
+		originStates = [];
+		originCities = [];
+		await saveOrigin({
+			origin_country: item.id,
+			origin_state_id: '',
+			origin_city_id: ''
+		});
+		if (item.id) {
+			originLoadingStates = true;
+			try {
+				originStates = await listStates(item.id);
+			} finally {
+				originLoadingStates = false;
+			}
+		}
 	}
 
-	async function clearOriginCountry() {
+	async function onOriginCountryClear() {
 		originCountry = '';
-		savingOrigin = true;
-		originError = null;
-		const res = await patchProfile({ origin_country: '' });
-		savingOrigin = false;
-		if (res.error) originError = res.error.message;
+		originStateId = '';
+		originCityId = '';
+		originStates = [];
+		originCities = [];
+		await saveOrigin({
+			origin_country: '',
+			origin_state_id: '',
+			origin_city_id: ''
+		});
 	}
+
+	async function onOriginStateSelect(item: AutocompleteItem) {
+		originStateId = item.id;
+		originCityId = '';
+		originCities = [];
+		await saveOrigin({
+			origin_state_id: item.id,
+			origin_city_id: ''
+		});
+		if (item.id) {
+			originLoadingCities = true;
+			try {
+				originCities = await listCities(item.id);
+			} finally {
+				originLoadingCities = false;
+			}
+		}
+	}
+
+	async function onOriginStateClear() {
+		originStateId = '';
+		originCityId = '';
+		originCities = [];
+		await saveOrigin({
+			origin_state_id: '',
+			origin_city_id: ''
+		});
+	}
+
+	async function onOriginCitySelect(item: AutocompleteItem) {
+		originCityId = item.id;
+		await saveOrigin({
+			origin_city_id: item.id
+		});
+	}
+
+	async function onOriginCityClear() {
+		originCityId = '';
+		await saveOrigin({
+			origin_city_id: ''
+		});
+	}
+
+	// ---- Destination country save handlers ----
 
 	async function saveDestCountry(item: AutocompleteItem) {
 		destCountry = item.id;
@@ -184,78 +351,100 @@
 		if (res.error) destError = res.error.message;
 	}
 
+	// ---- Current location save handlers ----
+
 	async function onCountrySelect(item: AutocompleteItem) {
 		selectedCountryCode = item.id;
 		selectedStateId = '';
+		currentCityId = '';
 		states = [];
 		cities = [];
 		if (item.id) {
 			loadingStates = true;
-			states = await listStates(item.id);
-			loadingStates = false;
+			try {
+				states = await listStates(item.id);
+			} finally {
+				loadingStates = false;
+			}
 		}
 	}
 
 	function onCountryClear() {
 		selectedCountryCode = '';
 		selectedStateId = '';
+		currentCityId = '';
 		states = [];
 		cities = [];
 	}
 
 	async function onStateSelect(item: AutocompleteItem) {
 		selectedStateId = item.id;
+		currentCityId = '';
 		cities = [];
 		if (item.id) {
 			loadingCities = true;
-			cities = await listCities(item.id);
-			loadingCities = false;
+			try {
+				cities = await listCities(item.id);
+			} finally {
+				loadingCities = false;
+			}
 		}
 	}
 
 	function onStateClear() {
 		selectedStateId = '';
+		currentCityId = '';
 		cities = [];
 	}
 
 	async function onCitySelect(item: AutocompleteItem) {
-		await saveLocation(item.id, item.label);
+		currentCityId = item.id;
+		await saveLocation(item.id);
+	}
+
+	async function onCityClear() {
+		currentCityId = '';
+		const state = states.find((s) => s.id === selectedStateId);
+		if (state) {
+			await saveLocation(state.id);
+		} else {
+			const country = countries.find((c) => c.geo_code === selectedCountryCode);
+			if (country) {
+				await saveLocation(country.id);
+			}
+		}
 	}
 
 	/**
-	 * Save the selected geo space as the user's current location. Works at
-	 * any level (country, state, or city) — the backend validates that the
-	 * space_id is a geo space. This lets users save their location even
-	 * when no city-level spaces are seeded for their state (BUG-005).
+	 * Save the selected geo space as the user's current location, then refresh
+	 * the resolved location and the manual pickers so the UI stays in sync.
 	 */
-	async function saveLocation(spaceId: string, label: string) {
+	async function saveLocation(spaceId: string) {
 		savingLocation = true;
 		locationError = null;
 		const res = await setLocation({ space_id: spaceId });
-		savingLocation = false;
 		if (res) {
-			currentLocation = {
-				space_id: res.space_id,
-				name: label,
-				city: label,
-				country: countries.find((c) => c.geo_code === selectedCountryCode)?.name ?? null,
-				country_code: selectedCountryCode || null
-			};
+			const loc = await getMyLocation();
+			currentLocation = loc;
+			if (loc) {
+				await syncCurrentPickersFromLocation(loc);
+			}
 		} else {
 			locationError = t('settings.location.save_error', 'Could not save location');
 		}
+		savingLocation = false;
 	}
 
 	/** Save the currently-selected country as the user's location. */
 	async function saveCountryAsLocation() {
 		const country = countries.find((c) => c.geo_code === selectedCountryCode);
-		if (country) await saveLocation(country.id, country.name);
+		if (country) await saveLocation(country.id);
 	}
 
 	/** Save the currently-selected state as the user's location. */
 	async function saveStateAsLocation() {
 		const state = states.find((s) => s.id === selectedStateId);
-		if (state) await saveLocation(state.id, state.name);
+		if (state) await saveLocation(state.id);
 	}
 
 	async function useBrowserGeolocation() {
@@ -276,8 +465,13 @@
 			});
 			savingLocation = false;
 			if (res) {
-				// Refresh the resolved location from the backend.
-				currentLocation = await getMyLocation();
+				// Refresh the resolved location from the backend and sync the
+				// manual pickers so the detected country/state/city are visible.
+				const loc = await getMyLocation();
+				currentLocation = loc;
+				if (loc) {
+					await syncCurrentPickersFromLocation(loc);
+				}
 			} else {
 				geoError = t('settings.location.geocode_error', 'Could not resolve your location to a known city');
 			}
@@ -296,11 +490,13 @@
 </script>
 
 <SettingsSection titleKey="settings.nav.location" descKey="settings.location.desc">
-	<!-- Origin Country -->
+	<!-- Origin Location -->
 	<div class="mb-4 block">
 		<span class="mb-1.5 flex items-center gap-1.5 text-sm text-[var(--color-muted)]">
-			<Home size={14} /> {t('settings.location.origin_country', 'Origin country')}
+			<Home size={14} /> {t('settings.location.origin_country', 'Origin location')}
 		</span>
+
+		<!-- Country -->
 		<div class="relative">
 			<Autocomplete
 				placeholder={t('settings.location.search_origin', 'Search origin country…')}
@@ -308,14 +504,53 @@
 				fetcher={countryFetcher}
 				initialFetcher={countryInitialFetcher}
 				selectedId={originCountry || null}
-				selectedLabel={originLabel}
-				onSelect={saveOriginCountry}
-				onClear={clearOriginCountry}
+				selectedLabel={originCountryLabel}
+				onSelect={onOriginCountrySelect}
+				onClear={onOriginCountryClear}
 			/>
 			{#if savingOrigin}
 				<span class="absolute right-3 top-1/2 -translate-y-1/2"><Loader2 size={12} class="animate-spin" /></span>
 			{/if}
 		</div>
+
+		<!-- State -->
+		{#if originCountry}
+			<div class="relative mt-2">
+				<Autocomplete
+					placeholder={t('settings.location.search_origin_state', 'Search origin state/region…')}
+					emptyMessage={t('settings.location.no_states', 'No states/regions found')}
+					fetcher={createStateFetcher(originStates)}
+					initialFetcher={createStateInitialFetcher(originStates)}
+					selectedId={originStateId || null}
+					selectedLabel={originStateLabel}
+					onSelect={onOriginStateSelect}
+					onClear={onOriginStateClear}
+				/>
+				{#if originLoadingStates}
+					<span class="absolute right-3 top-1/2 -translate-y-1/2"><Loader2 size={12} class="animate-spin" /></span>
+				{/if}
+			</div>
+		{/if}
+
+		<!-- City -->
+		{#if originStateId && originStates.length > 0}
+			<div class="relative mt-2">
+				<Autocomplete
+					placeholder={t('settings.location.search_origin_city', 'Search origin city…')}
+					emptyMessage={t('settings.location.no_cities', 'No cities found')}
+					fetcher={createCityFetcher(originCities)}
+					initialFetcher={createCityInitialFetcher(originCities)}
+					selectedId={originCityId || null}
+					selectedLabel={originCityLabel}
+					onSelect={onOriginCitySelect}
+					onClear={onOriginCityClear}
+				/>
+				{#if originLoadingCities}
+					<span class="absolute right-3 top-1/2 -translate-y-1/2"><Loader2 size={12} class="animate-spin" /></span>
+				{/if}
+			</div>
+		{/if}
+
 		<p class="mt-1.5 text-xs text-[var(--color-muted)]">
 			{t('settings.location.origin_hint', 'Where you are from. Used to personalize content for your origin community.')}
 		</p>
@@ -356,14 +591,8 @@
 
 		{#if loadingLocation}
 			<p class="text-sm text-[var(--color-muted)]"><Loader2 size={14} class="inline animate-spin" /> Loading…</p>
-		{:else if currentLocation?.city}
-			<p class="mb-3 text-sm text-[var(--color-text)]">
-				{currentLocation.city}{#if currentLocation.country && currentLocation.country !== currentLocation.city}, {currentLocation.country}{/if}
-			</p>
-		{:else if currentLocation?.name}
-			<p class="mb-3 text-sm text-[var(--color-text)]">
-				{currentLocation.name}{#if currentLocation.country && currentLocation.country !== currentLocation.name}, {currentLocation.country}{/if}
-			</p>
+		{:else if currentLocationDisplay}
+			<p class="mb-3 text-sm text-[var(--color-text)]">{currentLocationDisplay}</p>
 		{:else}
 			<p class="mb-3 text-sm text-[var(--color-muted)]">
 				{t('settings.location.not_set_current', 'Not set — using IP-based detection')}
@@ -402,7 +631,7 @@
 
 			<!-- "Use this country" button — lets the user save at country
 			     level without drilling into state/city (BUG-005). -->
-			{#if selectedCountryCode && !selectedStateId}
+			{#if selectedCountryCode && !selectedStateId && !currentCityId}
 				<button
 					type="button"
 					disabled={savingLocation}
@@ -420,8 +649,8 @@
 					<Autocomplete
 						placeholder={t('settings.location.search_state', 'Search state/region…')}
 						emptyMessage={t('settings.location.no_states', 'No states/regions found')}
-						fetcher={stateFetcher}
-						initialFetcher={stateInitialFetcher}
+						fetcher={createStateFetcher(states)}
+						initialFetcher={createStateInitialFetcher(states)}
 						selectedId={selectedStateId || null}
 						selectedLabel={cascadeStateLabel}
 						onSelect={onStateSelect}
@@ -434,8 +663,8 @@
 			{/if}
 
 			<!-- "Use this state" button — lets the user save at state level
-			     when no cities are seeded for the state (BUG-005). -->
-			{#if selectedStateId && cities.length === 0 && !loadingCities}
+			     when no city is selected (BUG-005). -->
+			{#if selectedStateId && !currentCityId}
 				<button
 					type="button"
 					disabled={savingLocation}
@@ -453,10 +682,12 @@
 					<Autocomplete
 						placeholder={t('settings.location.search_city', 'Search city…')}
 						emptyMessage={t('settings.location.no_cities', 'No cities found')}
-						fetcher={cityFetcher}
-						initialFetcher={cityInitialFetcher}
-						selectedId={null}
+						fetcher={createCityFetcher(cities)}
+						initialFetcher={createCityInitialFetcher(cities)}
+						selectedId={currentCityId || null}
+						selectedLabel={currentCityLabel}
 						onSelect={onCitySelect}
+						onClear={onCityClear}
 					/>
 					{#if loadingCities}<span class="absolute right-3 top-1/2 -translate-y-1/2"><Loader2 size={12} class="animate-spin" /></span>{/if}
 					{#if savingLocation}<span class="absolute right-3 top-1/2 -translate-y-1/2"><Loader2 size={12} class="animate-spin" /></span>{/if}

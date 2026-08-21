@@ -409,6 +409,10 @@ export interface MeProfile {
 	ui?: { nav_collapsed?: boolean; theme?: string } & Record<string, unknown>;
 	/** ADR-064a: ISO 3166-1 alpha-2 origin country code (custom field). */
 	origin_country?: string | null;
+	/** ADR-064a: origin state space id (custom field). */
+	origin_state_id?: string | null;
+	/** ADR-064a: origin city space id (custom field). */
+	origin_city_id?: string | null;
 	/** ADR-064a: ISO 3166-1 alpha-2 destination country code (custom field). */
 	destination_country?: string | null;
 }

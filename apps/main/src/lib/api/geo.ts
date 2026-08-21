@@ -76,6 +76,9 @@ export async function getMyLocation(): Promise<{
 	space_id: string | null;
 	name: string | null;
 	city: string | null;
+	city_id: string | null;
+	state: string | null;
+	state_id: string | null;
 	country: string | null;
 	country_code: string | null;
 } | null> {
@@ -83,6 +86,9 @@ export async function getMyLocation(): Promise<{
 		space_id: string | null;
 		name: string | null;
 		city: string | null;
+		city_id: string | null;
+		state: string | null;
+		state_id: string | null;
 		country: string | null;
 		country_code: string | null;
 	}>('/me/location');
