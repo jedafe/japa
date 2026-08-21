@@ -361,6 +361,21 @@
 		};
 	});
 
+	// Keep the editor document in sync with external `html` updates (e.g.
+	// AI-generated body applied from CreateShell). `emitUpdate: false` avoids
+	// re-firing onhtml/onjson and creating a feedback loop.
+	$effect(() => {
+		if (!editor || editor.isDestroyed) return;
+		if (html !== editor.getHTML()) {
+			editor.commands.setContent(html, { emitUpdate: false });
+			if (untrack(() => mode) === 'markdown') {
+				markdownSource = editor.getMarkdown();
+				markdownDirty = false;
+			}
+			requestAnimationFrame(hydrateEditorLinkPreviews);
+		}
+	});
+
 	// ---- WYSIWYG toolbar helpers ----
 	function tb(cmd: string, ...args: unknown[]) {
 		if (!editor) return;

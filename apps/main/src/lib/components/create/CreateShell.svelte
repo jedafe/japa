@@ -72,9 +72,11 @@
 		visibilityOptions?: { value: Visibility; label: string }[];
 		/** Max tags per content item, from system setting content.max_tags (default 5). */
 		maxTags?: number;
+		/** Feature flags map, passed down to gate the AI assistant. */
+		features?: Record<string, boolean>;
 	}
 
-	let { types, spaces, fieldGroups, series = $bindable(), organizations, draft, draftTags = [], comparisonDetail = null, comparisonTypes = [], dimensionTypes = [], coverMedia = null, draftSeriesId = null, initialType = null, initialSpaceId = null, user, defaultEditor = 'block', visibilityOptions = [], maxTags = 5 }: Props = $props();
+	let { types, spaces, fieldGroups, series = $bindable(), organizations, draft, draftTags = [], comparisonDetail = null, comparisonTypes = [], dimensionTypes = [], coverMedia = null, draftSeriesId = null, initialType = null, initialSpaceId = null, user, defaultEditor = 'block', visibilityOptions = [], maxTags = 5, features = {} }: Props = $props();
 
 	// ---- form state ----
 	let selectedType = $state<TypeEntry>(
@@ -324,7 +326,7 @@
 </script>
 
 {#snippet aiButtonSnippet()}
-	{#if canUseAI(user)}
+	{#if canUseAI(user, features)}
 		<AiBodyButton onclick={() => (aiPanelOpen = true)} />
 	{/if}
 {/snippet}
