@@ -8,7 +8,7 @@ final toolsHubServiceProvider = Provider<ToolsHubService>((ref) {
 });
 
 final toolsHubProvider =
-    FutureProvider.autoDispose<Map<String, dynamic>>((ref) async {
+    FutureProvider.autoDispose<FeatureFlags>((ref) async {
   final service = ref.watch(toolsHubServiceProvider);
   return service.listFeatureFlags();
 });

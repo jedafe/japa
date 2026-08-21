@@ -4,10 +4,10 @@ class ToolsHubService {
   final JcApiClient _client;
   ToolsHubService(this._client);
 
-  Future<Map<String, dynamic>> listFeatureFlags() async {
-    return _client.get<Map<String, dynamic>>(
+  Future<FeatureFlags> listFeatureFlags() async {
+    return _client.get<FeatureFlags>(
       '/feature-flags',
-      parse: (json) => json as Map<String, dynamic>,
+      parse: (json) => FeatureFlags.fromJson(json as Map<String, dynamic>),
     );
   }
 }

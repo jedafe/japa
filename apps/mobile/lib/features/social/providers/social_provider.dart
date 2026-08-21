@@ -34,14 +34,13 @@ final conversationMessagesProvider = FutureProvider.autoDispose
 final socialRealtimeSyncProvider = Provider<void>((ref) {
   ref.listen(realtimeEventsProvider, (previous, next) {
     next.whenData((event) {
-      final type = event['type'] as String?;
-      switch (type) {
+      switch (event.type) {
         case 'notification':
           ref.invalidate(notificationsProvider);
           break;
         case 'dm':
           ref.invalidate(conversationsProvider);
-          final conversationId = event['conversation_id'] as String?;
+          final conversationId = event.conversationId;
           if (conversationId != null) {
             ref.invalidate(conversationMessagesProvider(conversationId));
           }

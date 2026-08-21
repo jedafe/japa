@@ -21,20 +21,19 @@ class ProfileService {
     return response;
   }
 
-  Future<Map<String, dynamic>> getPreferences() async {
-    final response = await _client.get<Map<String, dynamic>>(
+  Future<UserPreferences> getPreferences() async {
+    final response = await _client.get<UserPreferences>(
       '/me/preferences',
-      parse: (json) => json as Map<String, dynamic>,
+      parse: (json) => UserPreferences.fromJson(json as Map<String, dynamic>),
     );
     return response;
   }
 
-  Future<Map<String, dynamic>> updatePreferences(
-      Map<String, dynamic> data) async {
-    final response = await _client.put<Map<String, dynamic>>(
+  Future<UserPreferences> updatePreferences(UserPreferences preferences) async {
+    final response = await _client.put<UserPreferences>(
       '/me/preferences',
-      body: data,
-      parse: (json) => json as Map<String, dynamic>,
+      body: preferences.toJson(),
+      parse: (json) => UserPreferences.fromJson(json as Map<String, dynamic>),
     );
     return response;
   }
