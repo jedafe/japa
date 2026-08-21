@@ -2517,6 +2517,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// catalog: POST /spaces/:id/report — takes a raw ID (like the other
 			// report routes), not the slug the rest of this block resolves on.
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "reports.submit")).Post("/spaces/{id}/report", reportsHandlers.ReportSpace)
+			// catalog: GET /spaces/:id/reviews — public reviews for a university/space.
+			// Ref: Section 29 (polymorphic reviews), Section 39 (university as space).
+			r.With(auth.OptionalAuth(kr, vkClient.Redis())).Get("/spaces/{id}/reviews", reviewHandlers.ListSpaceReviews)
 
 			// Space rule routes (slug-resolved via SpaceResolver middleware)
 			r.With(auth.OptionalAuth(kr, vkClient.Redis()), spaces.SpaceResolver(spaceService)).
@@ -2808,6 +2811,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.Get("/geo/countries", geoHandlers.HandleListCountries)
 			r.Get("/geo/countries/{code}/states", geoHandlers.HandleListStates)
 			r.Get("/geo/states/{id}/cities", geoHandlers.HandleListCities)
+			// Authenticated users can add a missing city to the geo catalog for
+			// location settings. It is intentionally quota-free.
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/geo/states/{id}/cities", geoHandlers.CreateCity)
 
 			// Universities (Section 39 — read-view over University-type spaces)
 			r.Get("/universities", universitiesHandlers.ListUniversities)
@@ -3327,6 +3333,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "professional_profile.invite")).
 					Post("/profiles/{id}/invitations", professionalHandlers.CreateInvitation)
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/profiles/{id}/invitations", professionalHandlers.ListInvitations)
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).Delete("/profiles/{id}/invitations/{invitationId}", professionalHandlers.DeleteInvitation)
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/profiles/invitations/{token}/accept", professionalHandlers.AcceptInvitation)
 
 				// Author context route
