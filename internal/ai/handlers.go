@@ -1100,6 +1100,13 @@ type DraftInput struct {
 	Context       map[string]any `json:"context,omitempty"`
 }
 
+type DraftResult struct {
+	Title       string         `json:"title"`
+	BodyHTML    string         `json:"body_html"`
+	FieldValues map[string]any `json:"field_values"`
+	TokensUsed  int            `json:"tokens_used"`
+}
+
 // HandleDraft handles POST /api/v1/ai/assist/draft — generate or improve a body
 // and optionally fill custom fields.
 func (h *Handlers) HandleDraft(w http.ResponseWriter, r *http.Request) {
@@ -1113,9 +1120,6 @@ func (h *Handlers) HandleDraft(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_ = user
-	_ = tenantID
-
 	var input DraftInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
@@ -1127,7 +1131,94 @@ func (h *Handlers) HandleDraft(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	errpkg.WriteError(w, http.StatusBadRequest, "not_implemented", "Draft generation not yet implemented")
+	if input.Tone == "" {
+		input.Tone = "professional"
+	}
+
+	prompt := buildDraftPrompt(input)
+
+	payload := map[string]any{
+		"prompt":       prompt,
+		"user_id":      user.UserID.String(),
+		"tenant_id":    tenantID.String(),
+		"content_type": input.ContentType,
+		"tone":         input.Tone,
+		"task":         "draft",
+	}
+
+	hEnabled, hLevel := h.resolveHandlerHumanize(r.Context(), tenantID, input.Humanize, input.HumanizeLevel)
+	writeHumanizePayload(payload, hEnabled, hLevel)
+
+	resp, err := h.dispatchAndRecordUsage(r.Context(), tenantID, user.UserID, "assist_draft", "content_generation", Request{
+		Category: "content_generation",
+		Payload:  payload,
+	})
+	if err != nil {
+		slog.Error("ai draft failed", "error", err)
+		errpkg.WriteError(w, http.StatusBadGateway, "ai_error", "AI draft failed")
+		return
+	}
+
+	result, err := parseDraftResponse(resp)
+	if err != nil {
+		slog.Error("ai draft parse failed", "error", err)
+		errpkg.WriteError(w, http.StatusBadGateway, "ai_error", "Failed to parse AI draft")
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": result})
+}
+
+func buildDraftPrompt(input DraftInput) string {
+	var b strings.Builder
+	b.WriteString("You are a content editor for an immigration community platform.\n")
+	b.WriteString("Content type: " + input.ContentType + "\n")
+	if input.Title != "" {
+		b.WriteString("Current title: " + input.Title + "\n")
+	}
+	if input.ExistingBody != "" {
+		b.WriteString("Existing body: " + input.ExistingBody + "\n")
+	}
+	b.WriteString("Tone: " + input.Tone + "\n")
+	if input.Instructions != "" {
+		b.WriteString("Instructions: " + input.Instructions + "\n")
+	}
+	if len(input.FieldSchema) > 0 {
+		b.WriteString("Also return values for these fields as JSON under field_values:\n")
+		for _, f := range input.FieldSchema {
+			b.WriteString("- " + f.Key + " (" + f.Type + "): " + f.Label + "\n")
+		}
+	}
+	b.WriteString("Return a JSON object with keys: title (optional), body_html, field_values (optional). Do not include markdown code fences.\n")
+	return b.String()
+}
+
+func parseDraftResponse(resp Response) (DraftResult, error) {
+	result := DraftResult{Title: "", BodyHTML: "", FieldValues: map[string]any{}, TokensUsed: 0}
+
+	raw := mapGenerateResult(resp)
+	result.TokensUsed = raw["tokens_used"].(int)
+
+	content := raw["generated_text"].(string)
+	if content == "" {
+		return result, nil
+	}
+
+	// Try to parse the generated text as a JSON object. If that fails,
+	// treat the whole content as body_html.
+	var parsed DraftResult
+	if err := json.Unmarshal([]byte(content), &parsed); err == nil {
+		result.Title = parsed.Title
+		result.BodyHTML = parsed.BodyHTML
+		result.FieldValues = parsed.FieldValues
+	} else {
+		result.BodyHTML = content
+	}
+
+	if result.FieldValues == nil {
+		result.FieldValues = map[string]any{}
+	}
+	return result, nil
 }
 
 // ---------------------------------------------------------------------------
