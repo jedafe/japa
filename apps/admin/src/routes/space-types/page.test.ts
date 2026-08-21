@@ -5,6 +5,7 @@ import Page from './+page.svelte';
 vi.mock('$lib/api', () => ({
 	spaceTypesApi: {
 		list: vi.fn().mockResolvedValue({ ok: true, data: [] }),
+		categories: vi.fn().mockResolvedValue({ ok: true, data: [] }),
 		create: vi.fn().mockResolvedValue({ ok: true }),
 		update: vi.fn().mockResolvedValue({ ok: true }),
 		delete: vi.fn().mockResolvedValue({ ok: true }),

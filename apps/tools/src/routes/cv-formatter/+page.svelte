@@ -10,7 +10,7 @@
 	import RegistrationPrompt from '$lib/components/ui/RegistrationPrompt.svelte';
 	import ToolDisabled from '$lib/components/ui/ToolDisabled.svelte';
 	import DestinationSelector from '$lib/components/tools/DestinationSelector.svelte';
-	import type { GeoSpaceOption, CvStandard, CvFormatSession } from '$lib/types';
+	import type { GeoSpaceOption, CvStandard, CvFormatSession, CatalogOption } from '$lib/types';
 
 	/**
 	 * CV Formatter tool — §95.
@@ -22,6 +22,7 @@
 
 	let destinations = $state<GeoSpaceOption[]>(untrack(() => data.destinations));
 	let standards = $state<CvStandard[]>(untrack(() => data.standards));
+	let formatOptions = $state<CatalogOption[]>(untrack(() => data.formatOptions));
 	let user = $state(untrack(() => data.user));
 
 	let selectedDest = $state('');
@@ -280,8 +281,9 @@
 								bind:value={outputFormat}
 								class="px-3 py-1.5 bg-surface border border-border rounded-lg text-sm text-text focus:border-primary focus:outline-none"
 							>
-								<option value="docx">{t('cv_formatter.format_docx', 'DOCX')}</option>
-								<option value="pdf">{t('cv_formatter.format_pdf', 'PDF')}</option>
+								{#each formatOptions as opt (opt.value)}
+									<option value={opt.value}>{t(`cv_formatter.format_${opt.value}`, opt.label)}</option>
+								{/each}
 							</select>
 						</div>
 

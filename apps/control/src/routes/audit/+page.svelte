@@ -2,13 +2,15 @@
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import DataTable from '$lib/components/DataTable.svelte';
 	import ConfirmModal from '$lib/components/ui/ConfirmModal.svelte';
+
 	import { Select } from 'bits-ui';
 	import { api } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
-	import { ACTION_TYPES, TARGET_TYPES } from '$lib/constants/audit';
+	import { actionColorClass } from '$lib/constants/audit';
 	import { escapeHtml } from '$lib/utils';
 	import type { AuditLogEntry, PaginatedResponse, DataTableColumn, DataTableRowAction, DataTableBulkAction } from '$lib/api/types';
 	import { Trash2 } from 'lucide-svelte';
+
 
 	let entries = $state<AuditLogEntry[]>([]);
 	let page = $state(0);
@@ -30,15 +32,35 @@
 	let filterFrom = $state('');
 	let filterTo = $state('');
 
+	let actionOptions = $state<string[]>([]);
+	let targetOptions = $state<string[]>([]);
+
 	const actionTypes = $derived([
 		{ value: 'all', label: t('audit.action_all', 'All Actions') },
-		...ACTION_TYPES.map((a) => ({ value: a, label: a }))
+		...actionOptions.map((a) => ({ value: a, label: a }))
 	]);
 
 	const targetTypes = $derived([
 		{ value: 'all', label: t('audit.target_all', 'All Target Types') },
-		...TARGET_TYPES.map((tt) => ({ value: tt, label: tt }))
+		...targetOptions.map((tt) => ({ value: tt, label: tt }))
 	]);
+
+	interface AuditLogFilterOptions {
+		action_types: string[];
+		target_types: string[];
+	}
+
+	async function loadFilters() {
+		try {
+			const result = await api<AuditLogFilterOptions>('/control/audit-logs/filters');
+			if (result.ok) {
+				actionOptions = result.data.action_types ?? [];
+				targetOptions = result.data.target_types ?? [];
+			}
+		} catch {
+			// Filter dropdowns fall back to empty (user can still free-type actor/date).
+		}
+	}
 
 	function formatTimestamp(val: unknown): string {
 		if (!val) return '—';
@@ -105,18 +127,9 @@
 			label: t('audit.action', 'Action'),
 			sortable: true,
 			render: (val: unknown) => {
-				const action = escapeHtml(val);
-				const color =
-					action === 'delete'
-						? 'bg-destructive/10 text-destructive'
-						: action === 'create'
-							? 'bg-emerald-500/10 text-emerald-600'
-							: action === 'auth.login_failed'
-								? 'bg-amber-500/10 text-amber-600'
-								: action === 'impersonation.start'
-									? 'bg-blue-500/10 text-blue-600'
-									: 'bg-accent text-accent-foreground';
-				return `<span class="${color} rounded-full px-2 py-0.5 text-xs font-medium">${action}</span>`;
+				const action = String(val ?? '');
+				const color = actionColorClass(action);
+				return `<span class="${color} rounded-full px-2 py-0.5 text-xs font-medium">${escapeHtml(action)}</span>`;
 			}
 		},
 		{
@@ -270,6 +283,7 @@
 	$effect(() => {
 		if (!initialized) {
 			initialized = true;
+			loadFilters();
 			load();
 			return;
 		}

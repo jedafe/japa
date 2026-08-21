@@ -10,7 +10,7 @@
 	import RegistrationPrompt from '$lib/components/ui/RegistrationPrompt.svelte';
 	import ToolDisabled from '$lib/components/ui/ToolDisabled.svelte';
 	import DestinationSelector from '$lib/components/tools/DestinationSelector.svelte';
-	import type { Embassy, AppointmentAlert, GeoSpaceOption } from '$lib/types';
+	import type { Embassy, AppointmentAlert, GeoSpaceOption, CatalogOption } from '$lib/types';
 
 	/**
 	 * Embassy Appointment Alerter tool — §91, ADR-099.
@@ -22,6 +22,7 @@
 
 	let destinations = $state<GeoSpaceOption[]>(untrack(() => data.destinations));
 	let embassies = $state<Embassy[]>(untrack(() => data.embassies));
+	let channelOptions = $state<CatalogOption[]>(untrack(() => data.channelOptions));
 	let alerts = $state<AppointmentAlert[]>([]);
 	let user = $state(untrack(() => data.user));
 	let selectedDestId = $state<string>(untrack(() => data.initialDestId ?? ''));
@@ -31,13 +32,23 @@
 	// responses if the user changed destination while a load was in flight.
 	let loadEmbassiesReqId = 0;
 
+	// Premium-tier detection (§91, ADR-099): the SMS notification channel is
+	// only available to premium users (holding appointment_alert.premium).
+	// The backend rejects sms for non-premium users with 403 sms_premium_only.
+	const canUseSMS = $derived(!!user?.permissions?.includes('appointment_alert.premium'));
+
+	// Default channels are derived from the API-backed catalog (Rule 16).
+	const defaultChannelValues = $derived<string[]>(
+		channelOptions.filter((c) => c.default && (c.value !== 'sms' || canUseSMS)).map((c) => c.value)
+	);
+
 	// Alert creation form state
 	let showRegisterPrompt = $state(false);
 	let alertFormEmbassy = $state<Embassy | null>(null);
 	let alertDateStart = $state('');
 	let alertDateEnd = $state('');
 	let alertVisaCategory = $state('');
-	let alertChannels = $state<string[]>(['in_app', 'email']);
+	let alertChannels = $state<string[]>(untrack(() => defaultChannelValues));
 	let alertSaving = $state(false);
 
 	// Alert edit state
@@ -46,11 +57,6 @@
 	let editDateEnd = $state('');
 	let editVisaCategory = $state('');
 	let editChannels = $state<string[]>([]);
-
-	// Premium-tier detection (§91, ADR-099): the SMS notification channel is
-	// only available to premium users (holding appointment_alert.premium).
-	// The backend rejects sms for non-premium users with 403 sms_premium_only.
-	const canUseSMS = $derived(!!user?.permissions?.includes('appointment_alert.premium'));
 
 	const seo = $derived(
 		buildSeoMeta({
@@ -102,7 +108,7 @@
 		alertDateStart = '';
 		alertDateEnd = '';
 		alertVisaCategory = '';
-		alertChannels = ['in_app', 'email'];
+		alertChannels = [...defaultChannelValues];
 	}
 
 	function closeAlertForm() {
@@ -369,44 +375,19 @@
 													class="w-full px-2 py-1 text-sm bg-surface border border-border rounded focus:border-primary focus:outline-none"
 												/>
 												<div class="flex gap-3 text-xs">
-													<label class="flex items-center gap-1 text-text">
-														<input
-															type="checkbox"
-															checked={editChannels.includes('in_app')}
-															onchange={() => (editChannels = toggleChannel(editChannels, 'in_app'))}
-															class="accent-[var(--tool-accent)]"
-														/>
-														{t('embassy_alerter.in_app', 'In-app')}
-													</label>
-													<label class="flex items-center gap-1 text-text">
-														<input
-															type="checkbox"
-															checked={editChannels.includes('email')}
-															onchange={() => (editChannels = toggleChannel(editChannels, 'email'))}
-															class="accent-[var(--tool-accent)]"
-														/>
-														{t('embassy_alerter.email', 'Email')}
-													</label>
-													<label class="flex items-center gap-1 text-text">
-														<input
-															type="checkbox"
-															checked={editChannels.includes('push')}
-															onchange={() => (editChannels = toggleChannel(editChannels, 'push'))}
-															class="accent-[var(--tool-accent)]"
-														/>
-														{t('embassy_alerter.push', 'Push')}
-													</label>
-													{#if canUseSMS}
-														<label class="flex items-center gap-1 text-text">
-															<input
-																type="checkbox"
-																checked={editChannels.includes('sms')}
-																onchange={() => (editChannels = toggleChannel(editChannels, 'sms'))}
-																class="accent-[var(--tool-accent)]"
-															/>
-															{t('embassy_alerter.sms', 'SMS')}
-														</label>
-													{/if}
+													{#each channelOptions as opt (opt.value)}
+														{#if opt.value !== 'sms' || canUseSMS}
+															<label class="flex items-center gap-1 text-text">
+																<input
+																	type="checkbox"
+																	checked={editChannels.includes(opt.value)}
+																	onchange={() => (editChannels = toggleChannel(editChannels, opt.value))}
+																	class="accent-[var(--tool-accent)]"
+																/>
+																{t(`embassy_alerter.${opt.value}`, opt.label)}
+															</label>
+														{/if}
+													{/each}
 												</div>
 												<div class="flex gap-2">
 													<button
@@ -545,45 +526,22 @@
 								{t('embassy_alerter.notifications', 'Notifications')}
 							</span>
 							<div class="flex gap-4">
-								<label class="flex items-center gap-2 text-sm text-text">
-									<input
-										type="checkbox"
-										checked={alertChannels.includes('in_app')}
-										onchange={() => (alertChannels = toggleChannel(alertChannels, 'in_app'))}
-										class="accent-[var(--tool-accent)]"
-									/>
-									{t('embassy_alerter.in_app', 'In-app')}
-								</label>
-								<label class="flex items-center gap-2 text-sm text-text">
-									<input
-										type="checkbox"
-										checked={alertChannels.includes('email')}
-										onchange={() => (alertChannels = toggleChannel(alertChannels, 'email'))}
-										class="accent-[var(--tool-accent)]"
-									/>
-									{t('embassy_alerter.email', 'Email')}
-								</label>
-								<label class="flex items-center gap-2 text-sm text-text">
-									<input
-										type="checkbox"
-										checked={alertChannels.includes('push')}
-										onchange={() => (alertChannels = toggleChannel(alertChannels, 'push'))}
-										class="accent-[var(--tool-accent)]"
-									/>
-									{t('embassy_alerter.push', 'Push')}
-								</label>
-								{#if canUseSMS}
-									<label class="flex items-center gap-2 text-sm text-text">
-										<input
-											type="checkbox"
-											checked={alertChannels.includes('sms')}
-											onchange={() => (alertChannels = toggleChannel(alertChannels, 'sms'))}
-											class="accent-[var(--tool-accent)]"
-										/>
-										{t('embassy_alerter.sms', 'SMS')}
-										<span class="text-xs text-muted">({t('embassy_alerter.premium', 'premium')})</span>
-									</label>
-								{/if}
+								{#each channelOptions as opt (opt.value)}
+									{#if opt.value !== 'sms' || canUseSMS}
+										<label class="flex items-center gap-2 text-sm text-text">
+											<input
+												type="checkbox"
+												checked={alertChannels.includes(opt.value)}
+												onchange={() => (alertChannels = toggleChannel(alertChannels, opt.value))}
+												class="accent-[var(--tool-accent)]"
+											/>
+											{t(`embassy_alerter.${opt.value}`, opt.label)}
+											{#if opt.value === 'sms'}
+												<span class="text-xs text-muted">({t('embassy_alerter.premium', 'premium')})</span>
+											{/if}
+										</label>
+									{/if}
+								{/each}
 							</div>
 						</div>
 						<button

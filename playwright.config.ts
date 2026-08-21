@@ -30,6 +30,11 @@ export default defineConfig({
 			name: 'connectivity',
 			testMatch: 'api-connectivity.spec.ts',
 			use: { baseURL: 'http://localhost:3000', channel: 'chrome' }
+		},
+		{
+			name: 'docs',
+			testMatch: 'docs.spec.ts',
+			use: { baseURL: 'http://localhost:3004', channel: 'chrome' }
 		}
 	]
 });

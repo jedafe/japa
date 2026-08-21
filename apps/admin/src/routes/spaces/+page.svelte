@@ -200,7 +200,9 @@
 			if (result.ok) {
 				const d = result.data as Space[] | { items: Space[]; total: number; total_pages: number };
 				if (Array.isArray(d)) {
-					return { data: d, total: d.length, totalPages: 1 };
+					const start = page * pageSize;
+					const total = d.length;
+					return { data: d.slice(start, start + pageSize), total, totalPages: Math.max(1, Math.ceil(total / pageSize)) };
 				}
 				return {
 					data: d.items ?? [],

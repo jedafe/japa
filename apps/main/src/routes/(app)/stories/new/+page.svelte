@@ -213,7 +213,7 @@
 			<div class="grid gap-4 sm:grid-cols-3">
 				<div class="flex flex-col gap-1.5">
 					<label for="f-year" class="text-sm font-medium text-[var(--color-text)]">{t('stories.field_year', 'Relocation Year')}</label>
-					<input id="f-year" type="number" bind:value={relocation_year} class={inputClass} placeholder="2020" />
+					<input id="f-year" type="number" bind:value={relocation_year} class={inputClass} placeholder={t('stories.field_year_ph', '2020')} />
 					{#if errors.relocation_year}<p class="text-xs text-red-500">{errors.relocation_year}</p>{/if}
 				</div>
 				<div class="flex flex-col gap-1.5">

@@ -33,14 +33,16 @@ export function feedPath(
 	pageOffset: number,
 	geo?: string
 ): string {
-	let path = `${TAB_PATH[tab]}?page_size=${pageSize}&page_offset=${pageOffset}`;
 	// The roadmap feed is returned in assessment roadmap order; it does not
 	// accept a sort parameter or geo override (ADR-064, §71).
+	let path = `${TAB_PATH[tab]}`;
+	const params: string[] = [];
 	if (tab !== 'roadmap') {
-		path += `&sort=${sort}`;
+		params.push(`sort=${sort}`);
 	}
-	if (geo && tab !== 'roadmap') path += `&geo=${encodeURIComponent(geo)}`;
-	return path;
+	params.push(`page_size=${pageSize}`, `page_offset=${pageOffset}`);
+	if (geo && tab !== 'roadmap') params.push(`geo=${encodeURIComponent(geo)}`);
+	return `${path}?${params.join('&')}`;
 }
 
 /** Resolve the active tab. Guests are always explore; authed users default to for_you. */

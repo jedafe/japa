@@ -314,7 +314,7 @@ func TestHasPermission_Wildcard(t *testing.T) {
 		Permissions: map[string]bool{SystemWildcardPermission: true},
 	})
 
-	for _, perm := range []string{"blog.publish", "admin.users.manage", "control.tenants.manage", "wallet.admin"} {
+	for _, perm := range []string{"blog.publish", "admin.users.manage", "system.tenants.manage", "wallet.admin"} {
 		if !r.HasPermission(t.Context(), userID, tenantID, perm) {
 			t.Errorf("wildcard user should have %q", perm)
 		}

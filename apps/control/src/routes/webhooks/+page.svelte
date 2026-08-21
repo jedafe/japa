@@ -114,7 +114,9 @@
 	$effect(() => {
 		load();
 		const interval = setInterval(() => {
-			load();
+			if (document.visibilityState === 'visible') {
+				load();
+			}
 		}, 30000);
 		return () => clearInterval(interval);
 	});

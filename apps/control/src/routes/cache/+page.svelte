@@ -2,9 +2,12 @@
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import AlertBanner from '$lib/components/ui/AlertBanner.svelte';
 	import ConfirmModal from '$lib/components/ui/ConfirmModal.svelte';
+	import DataTable from '$lib/components/DataTable.svelte';
 	import { Tabs } from 'bits-ui';
 	import { api } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
+	import { escapeHtml } from '$lib/utils';
+	import type { DataTableColumn } from '$lib/api/types';
 	import { Database, RefreshCw } from 'lucide-svelte';
 
 	interface CacheNamespace {
@@ -80,6 +83,39 @@
 		if (mb >= 1024) return (mb / 1024).toFixed(1) + ' GB';
 		return mb.toFixed(1) + ' MB';
 	}
+
+	const namespaceColumns: DataTableColumn[] = [
+		{
+			key: 'prefix',
+			label: t('cache.prefix', 'Namespace'),
+			sortable: true,
+			render: (val: unknown) => `<span class="font-mono text-xs">${escapeHtml(String(val))}</span>`
+		},
+		{
+			key: 'key_count',
+			label: t('cache.keys', 'Keys'),
+			sortable: true,
+			class: 'text-right',
+			render: (val: unknown) => `<span class="font-mono text-xs text-right block">${Number(val).toLocaleString()}</span>`
+		},
+		{
+			key: 'memory_estimate_mb',
+			label: t('cache.memory', 'Memory'),
+			sortable: true,
+			class: 'text-right',
+			render: (val: unknown) => `<span class="font-mono text-xs text-right block">${formatMemory(Number(val))}</span>`
+		},
+		{
+			key: 'memory_estimate_mb',
+			label: t('cache.usage', 'Usage'),
+			render: (_val: unknown, row: Record<string, unknown>) => {
+				const ns = row as unknown as CacheNamespace;
+				const total = stats?.total_memory_mb ?? 1;
+				const pct = total > 0 ? (ns.memory_estimate_mb / total) * 100 : 0;
+				return `<div class="bg-muted h-2 w-full max-w-[120px] rounded-full"><div class="bg-foreground h-full rounded-full transition-all" style="width: ${pct.toFixed(1)}%"></div></div>`;
+			}
+		}
+	];
 </script>
 
 <PageHeader title={t('cache.title')} description={t('cache.description')} />
@@ -129,33 +165,15 @@
 					<div class="border-border-card border-b px-4 py-3">
 						<h3 class="text-foreground text-sm font-semibold">{t('cache.namespaces')}</h3>
 					</div>
-					<table class="w-full text-sm">
-						<thead>
-							<tr class="border-border-card border-b">
-								<th class="text-muted-foreground px-4 py-3 text-left font-medium">{t('cache.prefix')}</th>
-								<th class="text-muted-foreground px-4 py-3 text-right font-medium">{t('cache.keys')}</th>
-								<th class="text-muted-foreground px-4 py-3 text-right font-medium">{t('cache.memory')}</th>
-								<th class="text-muted-foreground px-4 py-3 text-left font-medium">{t('cache.usage')}</th>
-							</tr>
-						</thead>
-						<tbody>
-							{#each stats.namespaces as ns}
-								<tr class="border-border-card border-t">
-									<td class="px-4 py-3 font-mono text-xs">{ns.prefix}</td>
-									<td class="px-4 py-3 text-right font-mono text-xs">{ns.key_count.toLocaleString()}</td>
-									<td class="px-4 py-3 text-right font-mono text-xs">{formatMemory(ns.memory_estimate_mb)}</td>
-									<td class="px-4 py-3">
-										<div class="bg-muted h-2 w-full max-w-[120px] rounded-full">
-											<div
-												class="bg-foreground h-full rounded-full transition-all"
-												style="width: {(stats.total_memory_mb ?? 0) > 0 ? (ns.memory_estimate_mb / (stats.total_memory_mb ?? 1)) * 100 : 0}%"
-											></div>
-										</div>
-									</td>
-								</tr>
-							{/each}
-						</tbody>
-					</table>
+					<DataTable
+						columns={namespaceColumns}
+						rows={stats.namespaces}
+						totalRows={stats.namespaces.length}
+						loading={loadingStats}
+						selectable={false}
+						getRowId={(row) => (row as CacheNamespace).prefix}
+						emptyMessage={t('cache.no_stats', 'No cache statistics available')}
+					/>
 				</div>
 			{/if}
 		{:else}

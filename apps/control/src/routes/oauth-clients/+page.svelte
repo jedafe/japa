@@ -6,7 +6,7 @@
 	import type { DataTableColumn, DataTableRowAction, DataTableBulkAction } from '$lib/api/types';
 	import { t, translations } from '$lib/stores/i18n.svelte';
 	import { Dialog } from 'bits-ui';
-	import { KeyRound, Plus, Trash2, RefreshCw, CheckCircle, XCircle } from 'lucide-svelte';
+	import { KeyRound, Plus, Trash2, RefreshCw, CheckCircle, XCircle, Copy, Check } from 'lucide-svelte';
 
 	// RBAC CRUD: OAuth Clients management
 
@@ -54,6 +54,9 @@
 	let pendingBulkDeleteIds = $state<string[]>([]);
 	let confirmBulkDeleteOpen = $state(false);
 	let toggling = $state<string | null>(null);
+	let showSecretReveal = $state(false);
+	let revealedSecret = $state('');
+	let secretCopied = $state(false);
 
 	async function load() {
 		const result = await api<OAuthClient[]>('/control/oauth-clients');
@@ -124,9 +127,15 @@
 				icon: RefreshCw,
 				onClick: async (row) => {
 					const id = (row as unknown as OAuthClient).id;
-					const result = await api(`/control/oauth-clients/${id}/rotate-secret`, { method: 'POST' });
+					const result = await api<{ client_secret?: string }>(`/control/oauth-clients/${id}/rotate-secret`, { method: 'POST' });
 					if (result.ok) {
-						load();
+						if (result.data?.client_secret) {
+							revealedSecret = result.data.client_secret;
+							showSecretReveal = true;
+							load();
+						} else {
+							errorMessage = t('oauth_clients.rotate_error', 'Failed to rotate secret');
+						}
 					} else {
 						errorMessage = result.error || t('oauth_clients.rotate_error', 'Failed to rotate secret');
 					}
@@ -212,10 +221,12 @@
 		});
 		if (result.ok) {
 			showCreateModal = false;
+			revealedSecret = result.data?.client_secret ?? createClientSecret;
 			createName = '';
 			createClientId = '';
 			createClientSecret = '';
 			createRedirectUri = '';
+			showSecretReveal = true;
 			load();
 		} else {
 			errorMessage = result.error || t('oauth_clients.create_error', 'Failed to create OAuth client');
@@ -245,6 +256,24 @@
 		createRedirectUri = '';
 		errorMessage = '';
 		showCreateModal = true;
+	}
+
+	async function copyRevealedSecret() {
+		try {
+			await navigator.clipboard.writeText(revealedSecret);
+			secretCopied = true;
+			setTimeout(() => (secretCopied = false), 2000);
+		} catch {
+			// Clipboard API may be unavailable in some contexts.
+		}
+	}
+
+	function closeSecretReveal(open: boolean) {
+		if (!open) {
+			revealedSecret = '';
+			secretCopied = false;
+			showSecretReveal = false;
+		}
 	}
 </script>
 
@@ -316,9 +345,9 @@
 				</div>
 				<div>
 					<label for="oauth-client-secret" class="text-foreground mb-1 block text-sm font-medium">{t('oauth_clients.client_secret_label', 'Client Secret')}</label>
-					<input id="oauth-client-secret" type="password" bind:value={createClientSecret} required class="border-border-input bg-background text-foreground w-full rounded-lg border px-3 py-2 text-sm font-mono" placeholder="GOCSPX-xxxxxxxxxxxxx" />
+					<input id="oauth-client-secret" type="text" bind:value={createClientSecret} required class="border-border-input bg-background text-foreground w-full rounded-lg border px-3 py-2 text-sm font-mono" placeholder="GOCSPX-xxxxxxxxxxxxx" />
 					<p class="text-muted-foreground mt-1 text-xs">
-						{t('oauth_clients.client_secret_hint', 'Used to authenticate with the OAuth provider. Stored encrypted.')}
+						{t('oauth_clients.client_secret_hint', 'Used to authenticate with the OAuth provider. Stored encrypted. Revealed once after creation.')}
 					</p>
 				</div>
 				<div>
@@ -358,4 +387,49 @@
 		onConfirm={async () => { await bulkDeleteClients(pendingBulkDeleteIds); pendingBulkDeleteIds = []; }}
 		onCancel={() => (pendingBulkDeleteIds = [])}
 	/>
+{/if}
+
+{#if showSecretReveal}
+	<Dialog.Root bind:open={showSecretReveal} onOpenChange={closeSecretReveal}>
+		<Dialog.Portal>
+			<Dialog.Overlay class="fixed inset-0 z-50 bg-black/50 data-[state=open]:animate-in data-[state=open]:fade-in data-[state=closed]:animate-out data-[state=closed]:fade-out" />
+			<Dialog.Content
+				class="border-border-card bg-background shadow-popover fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-xl border p-6 focus:outline-none"
+				role="dialog"
+				aria-modal="true"
+			>
+				<Dialog.Title class="text-foreground mb-2 text-lg font-semibold">{t('oauth_clients.secret_reveal_title', 'Client Secret')}</Dialog.Title>
+				<p class="text-muted-foreground text-sm">{t('oauth_clients.secret_reveal_desc', 'Copy this secret now. It will not be shown again.')}</p>
+				<div class="mt-4 flex items-center gap-2">
+					<input
+						type="text"
+						readonly
+						value={revealedSecret}
+						class="border-border-input bg-background text-foreground w-full rounded-lg border px-3 py-2 text-sm font-mono"
+					/>
+					<button
+						type="button"
+						class="bg-foreground text-background hover:bg-foreground/90 inline-flex h-9 w-9 items-center justify-center rounded-lg transition-colors"
+						onclick={copyRevealedSecret}
+						aria-label={t('common.copy', 'Copy')}
+					>
+						{#if secretCopied}
+							<Check class="size-4" />
+						{:else}
+							<Copy class="size-4" />
+						{/if}
+					</button>
+				</div>
+				<div class="mt-4 flex justify-end">
+					<button
+						type="button"
+						class="bg-foreground text-background hover:bg-foreground/90 rounded-lg px-4 py-2 text-sm font-medium transition-colors"
+						onclick={() => (showSecretReveal = false)}
+					>
+						{t('common.close', 'Close')}
+					</button>
+				</div>
+			</Dialog.Content>
+		</Dialog.Portal>
+	</Dialog.Root>
 {/if}

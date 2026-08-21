@@ -144,15 +144,31 @@
 				]
 			: [],
 		fields,
-		load: async ({ q, filter }) => {
-			const params = new URLSearchParams();
-			if (filter.category) params.set('category', filter.category);
-			if (q) params.set('q', q);
-			const result = await spaceTypesApi.list(params.toString() || undefined);
+		load: async ({ page, pageSize, q, filter }) => {
+			const result = await spaceTypesApi.list('?page_size=1000');
 			if (result.ok) {
 				const d = result.data as SpaceType[] | { items: SpaceType[]; total_pages: number };
-				const data = Array.isArray(d) ? d : (d.items ?? []);
-				return { data, total: data.length, totalPages: 1 };
+				let data = Array.isArray(d) ? d : (d.items ?? []);
+				if (filter?.category) {
+					data = data.filter((row) => row.category === filter.category);
+				}
+				const query = (q ?? '').toLowerCase();
+				if (query) {
+					data = data.filter((row) =>
+						[row.name, row.slug, row.description, row.category, row.icon].some((v) =>
+							String(v ?? '').toLowerCase().includes(query)
+						)
+					);
+				}
+				const size = pageSize || 25;
+				const offset = (page || 0) * size;
+				const total = data.length;
+				const totalPages = Math.max(1, Math.ceil(total / size));
+				return {
+					data: data.slice(offset, offset + size),
+					total,
+					totalPages
+				};
 			}
 			throw new Error(result.error ?? t('common.error', 'Failed to load space types'));
 		},

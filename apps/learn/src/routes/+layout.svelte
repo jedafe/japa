@@ -85,4 +85,4 @@
 	{@render children()}
 </AppShell>
 
-<MobileBottomTabBar user={data.user} />
+<MobileBottomTabBar user={data.user} menu={data.bottomMenu} />

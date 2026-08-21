@@ -215,13 +215,13 @@
 					<label for="f-visa" class="text-xs text-[var(--color-text-subtle)]">
 						{t('visa_timelines.visa_category', 'Visa category')}
 					</label>
-					<input id="f-visa" type="text" bind:value={fVisa} class={inputClass} placeholder="e.g. student" />
+					<input id="f-visa" type="text" bind:value={fVisa} class={inputClass} placeholder={t('visa_timelines.visa_placeholder', 'e.g. student')} />
 				</div>
 				<div class="flex flex-col gap-1">
 					<label for="f-consulate" class="text-xs text-[var(--color-text-subtle)]">
 						{t('visa_timelines.consulate', 'Consulate')}
 					</label>
-					<input id="f-consulate" type="text" bind:value={fConsulate} class={inputClass} placeholder="e.g. Lagos" />
+					<input id="f-consulate" type="text" bind:value={fConsulate} class={inputClass} placeholder={t('visa_timelines.consulate_placeholder', 'e.g. Lagos')} />
 				</div>
 			</div>
 			<div class="mt-3 flex items-center justify-end gap-2">

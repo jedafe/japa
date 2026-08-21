@@ -192,15 +192,30 @@
 		headerActions: canManageNewsletter
 			? [{ label: t('app.newsletter.btn_import_subscribers', 'Import Subscribers'), icon: Upload, variant: 'outline', onclick: openImportModal }]
 			: [],
-		load: async ({ q, filter }) => {
-			const params = new URLSearchParams();
-			if (q) params.set('search', q);
-			if (filter.status) params.set('status', filter.status);
-			const query = params.toString();
-			const result = await api<Subscriber[]>(`/admin/newsletter/subscribers${query ? `?${query}` : ''}`);
+		load: async ({ page, pageSize, q, filter }) => {
+			const result = await api<Subscriber[]>('/admin/newsletter/subscribers?page_size=1000');
 			if (result.ok) {
-				const data = result.data ?? [];
-				return { data, total: data.length, totalPages: 1 };
+				let data = result.data ?? [];
+				const query = (q ?? '').toLowerCase();
+				if (query) {
+					data = data.filter((row) =>
+						[row.email, row.name].some((v) =>
+							String(v ?? '').toLowerCase().includes(query)
+						)
+					);
+				}
+				if (filter?.status) {
+					data = data.filter((row) => row.status === filter.status);
+				}
+				const size = pageSize || 25;
+				const offset = (page || 0) * size;
+				const total = data.length;
+				const totalPages = Math.max(1, Math.ceil(total / size));
+				return {
+					data: data.slice(offset, offset + size),
+					total,
+					totalPages
+				};
 			}
 			throw new Error(result.error ?? t('app.newsletter.error_load_subscribers', 'Failed to load subscribers'));
 		},

@@ -1,11 +1,13 @@
 import type { PageServerLoad } from './$types';
 import { apiContext, apiGet, apiList } from '$lib/server/api';
+import { loadCatalog } from '$lib/server/catalog';
 import { getTool, isToolEnabled } from '$lib/tools/registry';
 import type {
 	RemittanceCorridor,
 	RemittanceProvider,
 	RemittanceRate,
-	RemittanceAlert
+	RemittanceAlert,
+	CatalogOption
 } from '$lib/types';
 
 /**
@@ -33,6 +35,7 @@ export const load: PageServerLoad = async (event) => {
 			providers: [],
 			rates: [],
 			alerts: [],
+			directionOptions: [],
 			defaultCorridor: { send_currency: 'GBP', receive_currency: 'NGN', label: 'GBP → NGN' },
 			manualStaleHours: 24,
 			user: event.locals.user
@@ -93,6 +96,14 @@ export const load: PageServerLoad = async (event) => {
 		}
 	}
 
+	// Rate alert direction options from the public catalog (Rule 16).
+	let directionOptions: CatalogOption[] = [];
+	try {
+		directionOptions = await loadCatalog(ctx, 'remittance.alert_direction');
+	} catch {
+		directionOptions = [];
+	}
+
 	// Manual-rate staleness threshold from system_settings (Rule 3 — never
 	// hardcode config values). Falls back to the spec default of 24h.
 	// Ref: conventions/system-settings-catalog.md (remittance.manual_stale_hours).
@@ -108,6 +119,7 @@ export const load: PageServerLoad = async (event) => {
 		providers,
 		rates,
 		alerts,
+		directionOptions,
 		defaultCorridor,
 		manualStaleHours,
 		user: event.locals.user

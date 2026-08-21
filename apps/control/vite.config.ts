@@ -30,6 +30,12 @@ export default defineConfig({
 		conditions: ['browser']
 	},
 	server: {
+		// Vite's root is apps/control; @fontsource/inter is hoisted to the
+		// workspace node_modules/.bun outside that root, so disable fs.strict
+		// in dev to allow those static font assets to be served.
+		fs: {
+			strict: false
+		},
 		proxy: {
 			'/api/': {
 				target: 'http://localhost:8080',

@@ -1,8 +1,9 @@
 import type { PageServerLoad } from './$types';
 import { apiContext } from '$lib/server/api';
+import { loadCatalog } from '$lib/server/catalog';
 import { loadCountries } from '$lib/server/geo';
 import { getTool, isToolEnabled } from '$lib/tools/registry';
-import type { GeoSpaceOption } from '$lib/types';
+import type { GeoSpaceOption, CatalogOption } from '$lib/types';
 
 /**
  * Tax Calculator — §100, ADR-088.
@@ -22,12 +23,12 @@ export const load: PageServerLoad = async (event) => {
 	// Gate: skip all backend calls when tax_calculator.enabled is false.
 	// Ref: conventions/system-settings-catalog.md, Rule 3.
 	const tool = getTool('tax-calculator')!;
-	const settings = event.locals.siteSettings;
 	if (!isToolEnabled(tool, event.locals.features)) {
 		return {
 			enabled: false,
 			tool,
 			destinations: [],
+			employmentOptions: [],
 			user: event.locals.user
 		};
 	}
@@ -43,10 +44,19 @@ export const load: PageServerLoad = async (event) => {
 		destinations = [];
 	}
 
+	// Employment status filter options from the public catalog (Rule 16).
+	let employmentOptions: CatalogOption[] = [];
+	try {
+		employmentOptions = await loadCatalog(ctx, 'tax_calculator.employment_status');
+	} catch {
+		employmentOptions = [];
+	}
+
 	return {
 		enabled: true,
 		tool,
 		destinations,
+		employmentOptions,
 		user: event.locals.user
 	};
 };

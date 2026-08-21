@@ -14,6 +14,7 @@
 	import { TableSkeleton } from '$lib/components/ui/skeleton';
 	import Autocomplete, { type AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
 	import {
+		api,
 		comparisonAdminApi,
 		userManagementApi,
 		type ComparisonType,
@@ -223,24 +224,31 @@
 			}
 		],
 		fields,
-		load: async ({ q, filter }) => {
-			const result = await comparisonAdminApi.listTypes();
+		load: async ({ page, pageSize, q, filter }) => {
+			const result = await api<ComparisonType[]>('/comparisons/types?page_size=1000');
 			if (result.ok) {
 				let data = (result.data as ComparisonType[]) ?? [];
-				if (q) {
-					const lq = q.toLowerCase();
-					data = data.filter(
-						(ct) =>
-							ct.name.toLowerCase().includes(lq) ||
-							ct.slug.toLowerCase().includes(lq) ||
-							(ct.description ?? '').toLowerCase().includes(lq)
+				const lq = (q ?? '').toLowerCase();
+				if (lq) {
+					data = data.filter((ct) =>
+						[ct.name, ct.slug, ct.description, ct.item_label].some((v) =>
+							String(v ?? '').toLowerCase().includes(lq)
+						)
 					);
 				}
-				if (filter.is_system) {
+				if (filter?.is_system) {
 					const val = filter.is_system === 'true';
 					data = data.filter((ct) => ct.is_system === val);
 				}
-				return { data, total: data.length, totalPages: 1 };
+				const size = pageSize || 25;
+				const offset = (page || 0) * size;
+				const total = data.length;
+				const totalPages = Math.max(1, Math.ceil(total / size));
+				return {
+					data: data.slice(offset, offset + size),
+					total,
+					totalPages
+				};
 			}
 			throw new Error(result.error ?? t('common.error', 'Failed to load comparison types'));
 		},

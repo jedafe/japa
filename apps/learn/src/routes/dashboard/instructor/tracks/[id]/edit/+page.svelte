@@ -10,9 +10,8 @@
 	import { onMount } from 'svelte';
 	import { LoadingSkeleton, EmptyState } from '$lib/components/ui';
 	import { Save, ArrowLeft } from 'lucide-svelte';
-	import { DIFFICULTY_LEVELS } from '$lib/constants/learning';
 	import { formatPriceKobo } from '$lib/format';
-	import type { InstructorTrack, TrackLevel, GeoCountry } from '$lib/types';
+	import type { InstructorTrack, GeoCountry, CatalogOption } from '$lib/types';
 	import Autocomplete from '$lib/components/ui/Autocomplete.svelte';
 	import type { AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
 
@@ -30,7 +29,8 @@
 	// Form fields
 	let title = $state('');
 	let description = $state('');
-	let difficulty = $state<TrackLevel>('beginner');
+	let difficulty = $state('');
+	let difficultyLevels = $state<CatalogOption[]>([]);
 	let priceMain = $state(0);
 	let currency = $state('');
 	let category = $state('');
@@ -41,17 +41,21 @@
 	let geoSpaceId = $state('');
 	let countries = $state<GeoCountry[]>([]);
 
-	// Fetch active categories and seeded country spaces from public APIs (Rule 16).
+	// Fetch active categories, country spaces, and difficulty options from public APIs (Rule 16).
 	onMount(async () => {
-		const [catRes, geoRes] = await Promise.all([
+		const [catRes, geoRes, optRes] = await Promise.all([
 			api.get<Category[]>('/learn/university/categories'),
-			api.get<GeoCountry[]>('/geo/countries')
+			api.get<GeoCountry[]>('/geo/countries'),
+			api.get<{ difficulty_levels: CatalogOption[] }>('/learn/university/catalog/options')
 		]);
 		if (!catRes.error && catRes.data) {
 			categories = catRes.data;
 		}
 		if (!geoRes.error && geoRes.data) {
 			countries = geoRes.data;
+		}
+		if (!optRes.error && optRes.data) {
+			difficultyLevels = optRes.data.difficulty_levels ?? [];
 		}
 	});
 
@@ -103,7 +107,7 @@
 				if (found) {
 					title = found.title ?? '';
 					description = found.description ?? '';
-					difficulty = found.level ?? 'beginner';
+					difficulty = found.level ?? '';
 					priceMain = (found.price_kobo ?? 0) / 100;
 					currency = found.currency ?? '';
 					category = found.category ?? '';
@@ -220,8 +224,8 @@
 					bind:value={difficulty}
 					class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-3 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none"
 				>
-					{#each DIFFICULTY_LEVELS as level}
-						<option value={level}>{t(`level.${level}`)}</option>
+					{#each difficultyLevels as opt (opt.value)}
+						<option value={opt.value}>{t(`level.${opt.value}`)}</option>
 					{/each}
 				</select>
 			</div>

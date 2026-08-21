@@ -11,7 +11,7 @@
 	import ToolDisabled from '$lib/components/ui/ToolDisabled.svelte';
 	import Autocomplete from '$lib/components/ui/Autocomplete.svelte';
 	import type { AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
-	import type { Scholarship, SavedScholarship, ScholarshipStatus, GeoSpaceOption } from '$lib/types';
+	import type { Scholarship, SavedScholarship, ScholarshipStatus, GeoSpaceOption, CatalogOption } from '$lib/types';
 	import { t } from '$lib/i18n';
 
 	/**
@@ -25,6 +25,8 @@
 	let saved = $state<SavedScholarship[]>(untrack(() => data.saved));
 	let user = $state(untrack(() => data.user));
 	let countries = $state<GeoSpaceOption[]>(untrack(() => data.countries));
+	let statusOptions = $state<CatalogOption[]>(untrack(() => data.statusOptions));
+	let renewableOptions = $state<CatalogOption[]>(untrack(() => data.renewableOptions));
 
 	// Filter state
 	let filterCountry = $state('');
@@ -150,18 +152,9 @@
 		return Math.ceil(diff / (1000 * 60 * 60 * 24));
 	}
 
-	// Scholarship application statuses — these are domain enum values defined
-	// by the ScholarshipStatus type (structural metadata, not configurable
-	// data). The labels are display strings for the status dropdown.
-	// $derived so labels re-render when the locale changes.
-	const statusOptions = $derived<{ value: ScholarshipStatus; label: string }[]>([
-		{ value: 'saved', label: t('scholarships.status_saved', 'Saved') },
-		{ value: 'researching', label: t('scholarships.status_researching', 'Researching') },
-		{ value: 'applied', label: t('scholarships.status_applied', 'Applied') },
-		{ value: 'accepted', label: t('scholarships.status_accepted', 'Accepted') },
-		{ value: 'rejected', label: t('scholarships.status_rejected', 'Rejected') },
-		{ value: 'withdrawn', label: t('scholarships.status_withdrawn', 'Withdrawn') }
-	]);
+	// Scholarship application status options are loaded from
+	// GET /scholarships/statuses (Rule 16 — no hardcoded option lists).
+	// Labels are translated client-side using value-based i18n keys.
 
 	// Derive level-of-study filter options from the fetched scholarship data
 	// (Rule 16 — no hardcoded option lists). The values come from the
@@ -314,9 +307,15 @@
 						bind:value={filterRenewable}
 						class="w-full px-3 py-2 text-sm bg-surface border border-border rounded focus:border-primary focus:outline-none"
 					>
-						<option value="">{t('scholarships.renewable_any', 'Any')}</option>
-						<option value="true">{t('scholarships.renewable_yes', 'Yes')}</option>
-						<option value="false">{t('scholarships.renewable_no', 'No')}</option>
+						{#each renewableOptions as opt (opt.value)}
+							<option value={opt.value}>
+								{opt.value === 'true'
+									? t('scholarships.renewable_yes', opt.label)
+									: opt.value === 'false'
+										? t('scholarships.renewable_no', opt.label)
+										: t('scholarships.renewable_any', opt.label)}
+							</option>
+						{/each}
 					</select>
 				</div>
 
@@ -441,7 +440,7 @@
 											class="px-2 py-1 text-xs bg-surface border border-border rounded focus:border-primary focus:outline-none"
 										>
 											{#each statusOptions as opt (opt.value)}
-												<option value={opt.value}>{opt.label}</option>
+												<option value={opt.value}>{t(`scholarships.status_${opt.value}`, opt.label)}</option>
 											{/each}
 										</select>
 									{/if}

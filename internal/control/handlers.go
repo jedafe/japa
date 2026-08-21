@@ -24,7 +24,6 @@ import (
 	"github.com/jedafe/japa/internal/clientip"
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/db"
-	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/features"
 	"github.com/jedafe/japa/internal/honcho"
@@ -2317,17 +2316,58 @@ func (h *Handlers) ListAuditLogs(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// auditLogDefaultRetentionDays is the fallback retention window for an
-// unscoped (no-body) bulk clear. Logs older than this are purged; everything
-// newer is preserved unless an explicit `confirm: true` is supplied. A
-// production deployment may override this via system_settings
-// `audit.logs.retention_days`.
-const auditLogDefaultRetentionDays = 365
+// GetAuditLogFilters returns the distinct action_type and target_type values
+// observed in audit_logs. The control panel uses these to populate the action
+// and target filter dropdowns so the lists stay in sync with the backend.
+func (h *Handlers) GetAuditLogFilters(w http.ResponseWriter, r *http.Request) {
+	actionTypes := []string{}
+	rows, err := h.DB.Reader.Query(r.Context(), `SELECT DISTINCT action_type FROM audit_logs ORDER BY action_type`)
+	if err != nil {
+		slog.Error("control: list audit log action types", "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list audit log filters")
+		return
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var action string
+		if err := rows.Scan(&action); err != nil {
+			slog.Error("control: scan audit log action type", "error", err)
+			continue
+		}
+		actionTypes = append(actionTypes, action)
+	}
+
+	targetTypes := []string{}
+	rows2, err := h.DB.Reader.Query(r.Context(), `SELECT DISTINCT target_type FROM audit_logs WHERE target_type IS NOT NULL ORDER BY target_type`)
+	if err != nil {
+		slog.Error("control: list audit log target types", "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list audit log filters")
+		return
+	}
+	defer rows2.Close()
+	for rows2.Next() {
+		var target sql.NullString
+		if err := rows2.Scan(&target); err != nil {
+			slog.Error("control: scan audit log target type", "error", err)
+			continue
+		}
+		if target.Valid {
+			targetTypes = append(targetTypes, target.String)
+		}
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
+		"data": map[string]any{
+			"action_types": actionTypes,
+			"target_types": targetTypes,
+		},
+	})
+}
 
 // DeleteAuditLog handles DELETE /api/v1/control/audit-logs/{id}.
 // Hard-deletes a single audit log entry by id. The control panel audit log is
 // a full cross-tenant super-admin view (see ListAuditLogs), so the lookup is
-// not tenant-scoped. Returns 404 when the row does not exist.
+// not tenant-scoped. Returns 200 even if the row did not exist.
 func (h *Handlers) DeleteAuditLog(w http.ResponseWriter, r *http.Request) {
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -2335,8 +2375,7 @@ func (h *Handlers) DeleteAuditLog(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	q := gen.New(h.DB.Writer)
-	if err := q.DeleteAuditLog(r.Context(), id); err != nil {
+	if _, err := h.DB.Writer.Exec(r.Context(), `DELETE FROM audit_logs WHERE id = $1`, id); err != nil {
 		slog.Error("control: delete audit log", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to delete audit log")
 		return
@@ -2359,10 +2398,9 @@ type AuditLogClearInput struct {
 }
 
 // ClearAuditLogs handles POST /api/v1/control/audit-logs/clear.
-// Bulk-deletes audit log entries. GDPR-safe by default: a no-body request
-// purges only logs beyond the retention window. Scoped purges (`before` /
-// `action_type`) are allowed without confirmation; an unscoped full clear
-// requires an explicit `confirm: true` in the request body.
+// Bulk-deletes audit log entries. By default (no body) it purges logs older
+// than the retention window. Scoped purges (`before` / `action_type`) are
+// allowed without confirmation; an unscoped full clear requires `confirm: true`.
 func (h *Handlers) ClearAuditLogs(w http.ResponseWriter, r *http.Request) {
 	var input AuditLogClearInput
 	if body, _ := io.ReadAll(r.Body); len(body) > 0 {
@@ -2372,7 +2410,6 @@ func (h *Handlers) ClearAuditLogs(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Build the scoped WHERE clause (audit_logs is cross-tenant here).
 	var where string
 	var args []any
 
@@ -2397,7 +2434,8 @@ func (h *Handlers) ClearAuditLogs(w http.ResponseWriter, r *http.Request) {
 		if input.Confirm {
 			where = "" // clear everything
 		} else {
-			cutoff := time.Now().AddDate(0, 0, -auditLogDefaultRetentionDays)
+			retentionDays := h.Settings.GetIntOr(r.Context(), tenant.IDFromContext(r.Context()), "audit.log_retention_days", 365)
+			cutoff := time.Now().AddDate(0, 0, -retentionDays)
 			where = "created_at < $1"
 			args = []any{cutoff}
 		}
@@ -2419,6 +2457,7 @@ func (h *Handlers) ClearAuditLogs(w http.ResponseWriter, r *http.Request) {
 		"data": map[string]any{"cleared": tag.RowsAffected()},
 	})
 }
+
 
 // ---------------------------------------------------------------------------
 // Deployment Handlers (stubs)
@@ -2992,6 +3031,13 @@ func oauthClientsKey(ctx context.Context) string {
 	return valkey.MustKey("oauth_clients:%s", tenant.IDFromContext(ctx).String())
 }
 
+const oauthClientSecretMasked = "••••••••"
+
+func maskOAuthClient(c oauthClientEntry) oauthClientEntry {
+	c.ClientSecret = oauthClientSecretMasked
+	return c
+}
+
 func (h *Handlers) ListOAuthClients(w http.ResponseWriter, r *http.Request) {
 	if h.Valkey == nil {
 		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": []any{}})
@@ -3007,7 +3053,13 @@ func (h *Handlers) ListOAuthClients(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": []any{}})
 		return
 	}
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": clients})
+	// Secrets are never returned in list views; they are revealed once on
+	// create/rotate and are otherwise masked in the UI.
+	masked := make([]oauthClientEntry, len(clients))
+	for i, c := range clients {
+		masked[i] = maskOAuthClient(c)
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": masked})
 }
 
 // ListOAuthProviders handles GET /control/oauth-providers — returns the list of
@@ -3025,7 +3077,7 @@ func (h *Handlers) GetOAuthClient(w http.ResponseWriter, r *http.Request) {
 	clients := h.loadOAuthClients(r)
 	for _, c := range clients {
 		if c.ID == id {
-			errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": c})
+			errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": maskOAuthClient(c)})
 			return
 		}
 	}
@@ -3114,7 +3166,7 @@ func (h *Handlers) UpdateOAuthClient(w http.ResponseWriter, r *http.Request) {
 				errpkg.WriteError(w, http.StatusInternalServerError, "save_error", "Failed to update OAuth client")
 				return
 			}
-			errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": clients[i]})
+			errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": maskOAuthClient(clients[i])})
 			return
 		}
 	}
@@ -3152,12 +3204,14 @@ func (h *Handlers) RotateOAuthClientSecret(w http.ResponseWriter, r *http.Reques
 	for i := range clients {
 		if clients[i].ID == id {
 			// Generate a new random secret (32 hex chars).
-			clients[i].ClientSecret = fmt.Sprintf("sec_%x", time.Now().UnixNano())
+			// The new secret is returned exactly once; list/get always mask it.
+			newSecret := fmt.Sprintf("sec_%x", time.Now().UnixNano())
+			clients[i].ClientSecret = newSecret
 			if err := h.saveOAuthClients(r, clients); err != nil {
 				errpkg.WriteError(w, http.StatusInternalServerError, "save_error", "Failed to rotate secret")
 				return
 			}
-			errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"id": id, "status": "rotated"}})
+			errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"id": id, "status": "rotated", "client_secret": newSecret}})
 			return
 		}
 	}

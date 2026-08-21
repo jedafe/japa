@@ -6,7 +6,7 @@
 	import { page } from '$app/state';
 	import Icon from '$lib/components/ui/Icon.svelte';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
-	import type { SavedScholarship, ScholarshipStatus } from '$lib/types';
+	import type { SavedScholarship, ScholarshipStatus, CatalogOption } from '$lib/types';
 
 	/**
 	 * Saved Scholarships tracker — §73, ADR-073.
@@ -17,16 +17,11 @@
 	let { data } = $props();
 
 	let saved = $state<SavedScholarship[]>(untrack(() => data.saved));
+	let statusOptions = $state<CatalogOption[]>(untrack(() => data.statusOptions));
 
-	// $derived so labels re-render when the locale changes.
-	const statusOptions = $derived<{ value: ScholarshipStatus; label: string }[]>([
-		{ value: 'saved', label: t('scholarships.status_saved', 'Saved') },
-		{ value: 'researching', label: t('scholarships.status_researching', 'Researching') },
-		{ value: 'applied', label: t('scholarships.status_applied', 'Applied') },
-		{ value: 'accepted', label: t('scholarships.status_accepted', 'Accepted') },
-		{ value: 'rejected', label: t('scholarships.status_rejected', 'Rejected') },
-		{ value: 'withdrawn', label: t('scholarships.status_withdrawn', 'Withdrawn') }
-	]);
+	// Scholarship application status options are loaded from
+	// GET /scholarships/statuses (Rule 16 — no hardcoded option lists).
+	// Labels are translated client-side using value-based i18n keys.
 
 	const seo = $derived(
 		buildSeoMeta({
@@ -141,7 +136,7 @@
 								class="px-2 py-1 text-xs bg-surface border border-border rounded focus:border-primary focus:outline-none"
 							>
 								{#each statusOptions as opt (opt.value)}
-									<option value={opt.value}>{opt.label}</option>
+									<option value={opt.value}>{t(`scholarships.status_${opt.value}`, opt.label)}</option>
 								{/each}
 							</select>
 							<button

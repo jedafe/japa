@@ -148,22 +148,39 @@
 			}
 		],
 		fields,
-		load: async ({ q, filter }) => {
+		load: async ({ page, pageSize, q, filter }) => {
+			// The backend supports pagination but not text/provider/active filters,
+			// so we fetch a large window and apply client-side search/filter/pagination.
 			const params = new URLSearchParams();
-			if (filter.is_active) params.set('is_active', filter.is_active);
-			if (filter.provider) params.set('provider', filter.provider);
-			if (q) params.set('q', q);
-			const result = await adNetworksApi.list(params.toString() || undefined);
+			params.set('page_size', '1000');
+			const result = await adNetworksApi.list(params.toString());
 			if (result.ok) {
 				const resp = result.data as Record<string, unknown> | undefined;
-				const raw = (Array.isArray(resp) ? resp : (resp?.data as AdNetwork[]) ?? []) as AdNetwork[];
+				let raw = (Array.isArray(resp) ? resp : (resp?.data as AdNetwork[]) ?? []) as AdNetwork[];
+				if (filter.is_active) {
+					const active = filter.is_active === 'true';
+					raw = raw.filter((n) => n.is_active === active);
+				}
+				if (filter.provider) {
+					raw = raw.filter((n) => n.provider === filter.provider);
+				}
+				const query = (q ?? '').trim().toLowerCase();
+				if (query) {
+					raw = raw.filter((n) =>
+						n.name.toLowerCase().includes(query) ||
+						n.provider.toLowerCase().includes(query)
+					);
+				}
 				// Stringify JSON object fields so the textarea inputs seed correctly.
 				const data = raw.map((n) => ({
 					...n,
 					slot_mapping: n.slot_mapping ? JSON.stringify(n.slot_mapping, null, 2) : '',
 					config: n.config ? JSON.stringify(n.config, null, 2) : ''
 				}));
-				return { data, total: data.length, totalPages: 1 };
+				const total = data.length;
+				const totalPages = pageSize > 0 ? Math.max(1, Math.ceil(total / pageSize)) : 1;
+				const start = page * pageSize;
+				return { data: data.slice(start, start + pageSize), total, totalPages };
 			}
 			throw new Error(result.error ?? t('networks.load_error', 'Failed to load ad networks'));
 		},

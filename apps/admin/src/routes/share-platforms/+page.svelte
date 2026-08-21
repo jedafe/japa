@@ -102,15 +102,28 @@
 			}
 		],
 		fields,
-		load: async ({ q, filter }) => {
-			const params = new URLSearchParams();
-			if (filter.enabled) params.set('enabled', filter.enabled);
-			if (q) params.set('q', q);
-			const result = await sharePlatformsAdminApi.list(params.toString() || undefined);
+		load: async ({ page, pageSize, q, filter }) => {
+			// The backend returns every share platform without pagination,
+			// so we fetch a large window and apply client-side search/filter/pagination.
+			const result = await sharePlatformsAdminApi.list();
 			if (result.ok) {
-				const data = (result.data as SharePlatform[]) ?? [];
-				const mapped = data.map(mapPlatform);
-				return { data: mapped, total: mapped.length, totalPages: 1 };
+				let data = ((result.data as SharePlatform[]) ?? []).map(mapPlatform);
+				if (filter.enabled) {
+					const enabled = filter.enabled === 'true';
+					data = data.filter((p) => p.enabled === enabled);
+				}
+				const query = (q ?? '').trim().toLowerCase();
+				if (query) {
+					data = data.filter((p) =>
+						p.key.toLowerCase().includes(query) ||
+						p.label.toLowerCase().includes(query) ||
+						p.url_template.toLowerCase().includes(query)
+					);
+				}
+				const total = data.length;
+				const totalPages = pageSize > 0 ? Math.max(1, Math.ceil(total / pageSize)) : 1;
+				const start = page * pageSize;
+				return { data: data.slice(start, start + pageSize), total, totalPages };
 			}
 			throw new Error(result.error ?? t('common.error', 'Failed to load share platforms'));
 		},

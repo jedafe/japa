@@ -7,7 +7,7 @@
 		title: string;
 		consequence?: string;
 		confirmText?: string;
-		onConfirm?: () => void;
+		onConfirm?: () => void | Promise<void>;
 		onCancel?: () => void;
 		onOpenChange?: (open: boolean) => void;
 	}
@@ -17,13 +17,16 @@
 	let typedText = $state('');
 	let confirming = $state(false);
 
-	function handleConfirm() {
+	async function handleConfirm() {
 		if (confirmText && typedText !== confirmText) return;
 		confirming = true;
-		onConfirm?.();
-		open = false;
-		typedText = '';
-		confirming = false;
+		try {
+			await onConfirm?.();
+			open = false;
+			typedText = '';
+		} finally {
+			confirming = false;
+		}
 	}
 
 	function cancel() {
@@ -34,7 +37,7 @@
 	}
 </script>
 
-<Dialog.Root bind:open={open} onOpenChange={(isOpen) => { if (!isOpen) { typedText = ''; } onOpenChange?.(isOpen); }}>
+<Dialog.Root bind:open={open} onOpenChange={(isOpen) => { if (!isOpen && !confirming) { typedText = ''; } onOpenChange?.(isOpen); }}>
 	<Dialog.Portal>
 		<Dialog.Overlay class="fixed inset-0 z-50 bg-black/50 data-[state=open]:animate-in data-[state=open]:fade-in data-[state=closed]:animate-out data-[state=closed]:fade-out" />
 		<Dialog.Content
@@ -60,6 +63,7 @@
 						id="confirm-input"
 						type="text"
 						bind:value={typedText}
+						disabled={confirming}
 						class="border-border-input bg-background text-foreground placeholder:text-muted-foreground/50 mt-1 block w-full rounded-md border px-3 py-2 text-sm transition-colors hover:border-border-input-hover focus:border-border-input-hover focus:shadow-date-field-focus"
 					/>
 				</div>
@@ -67,6 +71,7 @@
 			<div class="mt-6 flex justify-end gap-3">
 				<button
 					class="border-border-input bg-background-alt hover:bg-muted text-foreground rounded-md border px-4 py-2 text-sm font-medium transition-colors"
+					disabled={confirming}
 					onclick={cancel}
 				>
 					{t('common.cancel')}
@@ -74,10 +79,10 @@
 				<button
 					type="button"
 					class="bg-destructive text-white rounded-md px-4 py-2 text-sm font-medium transition-colors hover:opacity-90 disabled:opacity-50"
-					disabled={confirmText !== '' && typedText !== confirmText}
+					disabled={(confirmText !== '' && typedText !== confirmText) || confirming}
 					onclick={handleConfirm}
 				>
-					{t('common.confirm')}
+					{confirming ? t('common.confirming', 'Confirming...') : t('common.confirm')}
 				</button>
 			</div>
 		</Dialog.Content>

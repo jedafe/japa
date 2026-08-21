@@ -2,14 +2,14 @@
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from "$lib/components/entity";
 	import { Modal } from "$lib/components/ui/modal";
 	import { Button } from "$lib/components/ui/button";
-	import { SlideOver } from "$lib/components/ui/slide-over";
 	import Autocomplete from "$lib/components/ui/Autocomplete.svelte";
 	import type { AutocompleteItem } from "$lib/components/ui/Autocomplete.svelte";
+	import MediaPickerModal from "$lib/components/ui/MediaPickerModal.svelte";
 	import { universitiesAdminApi } from "$lib/api";
 	import { t } from "$lib/stores/i18n.svelte";
 	import { hasPermission } from "$lib/stores/permissions.svelte";
 	import {
-		Eye, Pencil, Trash2, BadgeCheck, XCircle, Upload, FileEdit
+		Eye, Pencil, Trash2, BadgeCheck, XCircle, Upload, FileEdit, ImageIcon, X
 	} from "lucide-svelte";
 	import type { ActionItem, FilterDef } from "$lib/components/ui/data-table";
 	import { useCountries } from "$lib/utils/countries.svelte";
@@ -20,6 +20,7 @@
 		slug: string;
 		initials?: string;
 		geo_code?: string;
+		logo_url?: string;
 		member_count: number;
 		status: string;
 		verified: boolean;
@@ -59,13 +60,12 @@
 
 	// ── Page-local state for sub-flows ──────────────────────────────────────
 	// EntityPage owns list/pagination/search state; the page only owns
-	// state-action modals + the create/edit form fields.
+	// state-action modals + the logo picker.
 	let entityController = $state<EntityPageController | undefined>(undefined);
 	let pageError = $state("");
 	let acting = $state(false);
+	let logoPickerOpen = $state(false);
 
-	let showEditSlideOver = $state(false);
-	let editTarget = $state<University | null>(null);
 	let showDeleteConfirm = $state(false);
 	let deleteTarget = $state<University | null>(null);
 	let showStatusModal = $state(false);
@@ -73,13 +73,6 @@
 	let formStatus = $state("pending");
 	let showBulkImportModal = $state(false);
 	let csvFile = $state<File | null>(null);
-
-	let formName = $state("");
-	let formSlug = $state("");
-	let formInitials = $state("");
-	let formCountry = $state("");
-	let formLogoUrl = $state("");
-	let formVerified = $state(false);
 
 	// ── Row actions ─────────────────────────────────────────────────────────
 	const rowActions = $derived.by<ActionItem[]>(() => {
@@ -108,7 +101,7 @@
 			acts.push({
 				label: t("common.edit", "Edit"),
 				icon: Pencil,
-				onclick: (row: University) => openEdit(row)
+				onclick: (row: University, ctx) => ctx?.openEdit(row)
 			});
 			acts.push({
 				label: t("common.delete", "Delete"),
@@ -186,6 +179,7 @@
 			}
 		] : [],
 		fields,
+		formSnippet: UniversityForm,
 		headerActions: canManage ? [
 			{ label: t("universities.bulkImport", "CSV Import"), icon: Upload, onclick: openBulkImport, variant: "outline" }
 		] : [],
@@ -221,6 +215,17 @@
 			});
 			return res.ok ? { ok: true } : { ok: false, error: res.error };
 		},
+		update: async (id, body) => {
+			const res = await universitiesAdminApi.update(id, {
+				name: String(body.name ?? "").trim(),
+				slug: String(body.slug ?? "").trim(),
+				initials: String(body.initials ?? "").trim() || undefined as any,
+				country: String(body.country ?? "").trim() || undefined as any,
+				logo_url: String(body.logo_url ?? "").trim() || undefined as any,
+				verified: !!body.verified
+			});
+			return res.ok ? { ok: true } : { ok: false, error: res.error };
+		},
 		remove: async (id) => {
 			const res = await universitiesAdminApi.delete(id);
 			return res.ok ? { ok: true } : { ok: false, error: res.error };
@@ -229,12 +234,6 @@
 	});
 
 	// ── Sub-flow handlers ───────────────────────────────────────────────────
-	function openEdit(uni: University) {
-		editTarget = uni;
-		formName = uni.name; formSlug = uni.slug; formInitials = uni.initials ?? ""; formCountry = uni.geo_code ?? ""; formLogoUrl = ""; formVerified = uni.status === "active";
-		showEditSlideOver = true;
-	}
-
 	function openDelete(uni: University) { deleteTarget = uni; showDeleteConfirm = true; }
 
 	function openStatusModal(uni: University) {
@@ -246,23 +245,6 @@
 	function openBulkImport() {
 		csvFile = null;
 		showBulkImportModal = true;
-	}
-
-	async function submitEdit() {
-		if (!editTarget) return;
-		acting = true;
-		try {
-			const result = await universitiesAdminApi.update(editTarget.id, {
-				name: formName.trim(),
-				slug: formSlug.trim(),
-				initials: formInitials.trim() || undefined,
-				country: formCountry.trim() || undefined,
-				logo_url: formLogoUrl.trim() || undefined,
-				verified: formVerified
-			});
-			if (result.ok) { showEditSlideOver = false; entityController?.reload(); }
-			else { pageError = result.error; }
-		} catch { pageError = t("common.error", "Failed to update"); } finally { acting = false; }
 	}
 
 	async function executeDelete() {
@@ -327,7 +309,7 @@
 		} catch { pageError = t("common.error", "Failed to import"); } finally { acting = false; }
 	}
 
-	// ── View snippet is declared in the template as {#snippet UniversityView(...)}
+	// ── Form + View snippets are declared in the template below
 </script>
 
 <svelte:head>
@@ -341,39 +323,6 @@
 {/if}
 
 <EntityPage {config} bind:controller={entityController} />
-
-<!-- ── Edit slide-over (page-local because update isn't in EntityPage config) ── -->
-<SlideOver bind:open={showEditSlideOver} title={t("universities.edit", "Edit University")}>
-	{#if editTarget}
-		<div class="space-y-3">
-			<div><label for="edit-uni-name" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t("universities.name", "Name")}</label><input id="edit-uni-name" type="text" class="w-full rounded-lg border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={formName} /></div>
-			<div><label for="edit-uni-domain" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t("universities.domain_slug", "Domain")}</label><input id="edit-uni-domain" type="text" class="w-full rounded-lg border px-3 py-2 text-sm font-mono" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={formSlug} /></div>
-			<div><label for="edit-uni-initials" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t("universities.initials", "Initials")}</label><input id="edit-uni-initials" type="text" placeholder="UNILAG" class="w-full rounded-lg border px-3 py-2 text-sm font-mono" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={formInitials} /></div>
-			<div>
-				<label for="edit-uni-country" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t("universities.country", "Country")}</label>
-				<Autocomplete
-					id="edit-uni-country"
-					placeholder={t("universities.country_placeholder", "Select country")}
-					emptyMessage={t("common.no_results", "No results found")}
-					fetcher={countryUtils.fetcher}
-					initialFetcher={countryUtils.initialFetcher}
-					selectedId={formCountry || null}
-					selectedLabel={formCountry ? countryUtils.getSelectedLabel(formCountry) : null}
-					onSelect={(item: AutocompleteItem) => { formCountry = item.id; }}
-					onClear={() => { formCountry = ''; }}
-				/>
-			</div>
-			<div><label for="edit-uni-logo" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t("universities.logo_url", "Logo URL")}</label><input id="edit-uni-logo" type="url" placeholder="https://…" class="w-full rounded-lg border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={formLogoUrl} /></div>
-			<div class="flex items-center gap-2"><input id="edit-uni-verified" type="checkbox" bind:checked={formVerified} /><label for="edit-uni-verified" class="text-sm">{t("universities.verified", "Verified")}</label></div>
-		</div>
-	{/if}
-	{#snippet footer()}
-		<div class="flex justify-end gap-2">
-			<Button variant="outline" onclick={() => (showEditSlideOver = false)}>{t("common.cancel", "Cancel")}</Button>
-			<Button onclick={submitEdit} disabled={acting}>{acting ? t("common.saving", "Saving...") : t("common.save", "Save")}</Button>
-		</div>
-	{/snippet}
-</SlideOver>
 
 <!-- ── Delete confirmation ── -->
 <Modal bind:open={showDeleteConfirm} title={t("common.confirmDelete", "Confirm Delete")} size="sm">
@@ -419,6 +368,70 @@
 		<Button onclick={submitBulkImport} disabled={acting || !csvFile}>{acting ? t("common.importing", "Importing...") : t("common.import", "Import")}</Button>
 	</div>
 </Modal>
+
+<!-- ── Form snippet (create/edit) ────────────────────────────────────────── -->
+{#snippet UniversityForm({ value, editing }: { value: any; editing: boolean })}
+	<div class="space-y-3">
+		<div>
+			<label for="uni-name" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t("universities.name", "Name")}</label>
+			<input id="uni-name" type="text" class="w-full rounded-lg border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={value.name} />
+		</div>
+		<div>
+			<label for="uni-slug" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t("universities.domain_slug", "Domain")}</label>
+			<input id="uni-slug" type="text" class="w-full rounded-lg border px-3 py-2 text-sm font-mono" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={value.slug} />
+		</div>
+		<div>
+			<label for="uni-initials" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t("universities.initials", "Initials")}</label>
+			<input id="uni-initials" type="text" placeholder="UNILAG" class="w-full rounded-lg border px-3 py-2 text-sm font-mono" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={value.initials} />
+		</div>
+		<div>
+			<label for="uni-country" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t("universities.country", "Country")}</label>
+			<Autocomplete
+				id="uni-country"
+				placeholder={t("universities.country_placeholder", "Select country")}
+				emptyMessage={t("common.no_results", "No results found")}
+				fetcher={countryUtils.fetcher}
+				initialFetcher={countryUtils.initialFetcher}
+				selectedId={value.country || null}
+				selectedLabel={value.country ? countryUtils.getSelectedLabel(value.country) : null}
+				onSelect={(item: AutocompleteItem) => { value.country = item.id; }}
+				onClear={() => { value.country = ''; }}
+			/>
+		</div>
+		<div>
+			<span class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t("universities.logo", "Logo")}</span>
+			<div class="mt-1 flex items-center gap-3">
+				{#if value.logo_url}
+					<div class="relative">
+						<img src={value.logo_url} alt="" class="h-12 w-12 rounded-lg border object-cover" style="border-color: var(--color-border)" />
+						<button type="button" onclick={() => { value.logo_url = ''; }} class="absolute -right-1 -top-1 rounded-full p-0.5" style="background: var(--color-danger); color: white" aria-label={t("common.remove", "Remove")}>
+							<X class="h-3 w-3" />
+						</button>
+					</div>
+				{:else}
+					<div class="grid h-12 w-12 place-items-center rounded-lg border" style="border-color: var(--color-border); background: var(--color-surface)">
+						<ImageIcon class="h-5 w-5" style="color: var(--color-muted)" />
+					</div>
+				{/if}
+				<Button type="button" variant="outline" size="sm" onclick={() => (logoPickerOpen = true)}>
+					<ImageIcon class="mr-1 h-4 w-4" />
+					{t("universities.choose_logo", "Choose Logo")}
+				</Button>
+			</div>
+		</div>
+		<div class="flex items-center gap-2">
+			<input id="uni-verified" type="checkbox" class="h-4 w-4 rounded" bind:checked={value.verified} />
+			<label for="uni-verified" class="text-sm" style="color: var(--color-foreground)">{t("universities.verified", "Verified")}</label>
+		</div>
+	</div>
+
+	<MediaPickerModal
+		bind:open={logoPickerOpen}
+		onselect={(media: { id: string; url: string }) => {
+			value.logo_url = media.url;
+		}}
+	/>
+{/snippet}
 
 <!-- ── View snippet ──────────────────────────────────────────────────────── -->
 {#snippet UniversityView({ row }: { row: University })}

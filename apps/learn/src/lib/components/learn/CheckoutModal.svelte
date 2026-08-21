@@ -8,7 +8,7 @@
 	import { page } from '$app/state';
 	import { formatPriceKobo } from '$lib/format';
 	import { X, CreditCard, ShieldCheck, Tag } from 'lucide-svelte';
-	import type { TrackDetail, SessionUser } from '$lib/types';
+	import type { TrackDetail, SessionUser, DiscountCode, PaymentIntent } from '$lib/types';
 
 	interface Props {
 		track: TrackDetail;
@@ -29,7 +29,11 @@
 	const displayPrice = $derived(formatPriceKobo(track.price_kobo, track.currency, page.data.locale));
 	const finalPrice = $derived(
 		discountApplied
-			? formatPriceKobo(track.price_kobo! - discountApplied.amount_kobo, track.currency, page.data.locale)
+			? formatPriceKobo(
+					Math.max(0, track.price_kobo! - discountApplied.amount_kobo),
+					track.currency,
+					page.data.locale
+				)
 			: displayPrice
 	);
 
@@ -37,13 +41,24 @@
 		if (!discountCode.trim() || applying) return;
 		applying = true;
 		error = null;
-		const r = await api.post<{ code: string; discount_kobo: number }>(
+		const r = await api.post<DiscountCode>(
 			`/payments/discount-codes/validate`,
 			{ code: discountCode.trim(), purpose_type: 'course_access', purpose_id: track.id }
 		);
 		applying = false;
 		if (r.data) {
-			discountApplied = { code: r.data.code, amount_kobo: r.data.discount_kobo };
+			const rawValue = Number(r.data.discount_value);
+			const value = Number.isFinite(rawValue) ? rawValue : 0;
+			const priceKobo = track.price_kobo ?? 0;
+			let discountKobo = 0;
+			if (r.data.discount_type === 'percent' || r.data.discount_type === 'percentage') {
+				discountKobo = Math.round((priceKobo * value) / 100);
+			} else if (r.data.discount_type === 'fixed') {
+				discountKobo = Math.round(value);
+			}
+			// Never let the preview show a discount larger than the course price.
+			discountKobo = Math.min(discountKobo, priceKobo);
+			discountApplied = { code: r.data.code, amount_kobo: discountKobo };
 		} else if (r.error) {
 			error = r.error.message;
 		}
@@ -53,7 +68,7 @@
 		if (!user) return;
 		processing = true;
 		error = null;
-		const r = await api.post<{ payment: { id: string }; status: string }>(
+		const r = await api.post<PaymentIntent>(
 			`/payments/intent`,
 			{
 				provider: 'credit',
@@ -77,7 +92,7 @@
 		if (!user) return;
 		processing = true;
 		error = null;
-		const r = await api.post<{ payment: { id: string }; checkout_url: string }>(
+		const r = await api.post<PaymentIntent>(
 			`/payments/intent`,
 			{
 				provider,
@@ -93,6 +108,9 @@
 		processing = false;
 		if (r.data?.checkout_url) {
 			window.location.href = r.data.checkout_url;
+		} else if (r.data?.status === 'succeeded' || r.data?.status === 'completed') {
+			// 100% discount — the backend has already recorded a succeeded payment.
+			onSuccess();
 		} else if (r.error) {
 			error = r.error.message;
 		}

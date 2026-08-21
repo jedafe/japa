@@ -83,15 +83,28 @@
 			}
 		],
 		fields,
-		load: async ({ q, filter }) => {
-			const params = new URLSearchParams();
-			if (filter.enabled) params.set('enabled', filter.enabled);
-			if (q) params.set('q', q);
-			const result = await reactionsAdminApi.list(params.toString() || undefined);
+		load: async ({ page, pageSize, q, filter }) => {
+			// The backend currently returns every reaction type without pagination,
+			// so we fetch a large window and apply client-side search/filter/pagination.
+			const result = await reactionsAdminApi.list('limit=10000');
 			if (result.ok) {
-				const data = (result.data as ReactionType[]) ?? [];
-				const mapped = data.map(mapReaction);
-				return { data: mapped, total: mapped.length, totalPages: 1 };
+				let data = ((result.data as ReactionType[]) ?? []).map(mapReaction);
+				if (filter.enabled) {
+					const enabled = filter.enabled === 'true';
+					data = data.filter((r) => r.enabled === enabled);
+				}
+				const query = (q ?? '').trim().toLowerCase();
+				if (query) {
+					data = data.filter((r) =>
+						r.key.toLowerCase().includes(query) ||
+						r.label.toLowerCase().includes(query) ||
+						r.emoji.toLowerCase().includes(query)
+					);
+				}
+				const total = data.length;
+				const totalPages = pageSize > 0 ? Math.max(1, Math.ceil(total / pageSize)) : 1;
+				const start = page * pageSize;
+				return { data: data.slice(start, start + pageSize), total, totalPages };
 			}
 			throw new Error(result.error ?? t('common.error', 'Failed to load reactions'));
 		},
