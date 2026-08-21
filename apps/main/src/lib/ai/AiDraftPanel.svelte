@@ -177,7 +177,7 @@
 				class="inline-flex w-full items-center justify-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)] disabled:opacity-50"
 			>
 				{#if loading}<Loader2 size={14} class="animate-spin" />{/if}
-				{t('ai.body.generate', 'Generate')}
+				{t('ai.body.regenerate', 'Generate')}
 			</button>
 
 			{#if error}
@@ -192,6 +192,7 @@
 				<div class="flex gap-2">
 					<button
 						type="button"
+						disabled={loading}
 						onclick={apply}
 						class="inline-flex flex-1 items-center justify-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)] disabled:opacity-50"
 					>
