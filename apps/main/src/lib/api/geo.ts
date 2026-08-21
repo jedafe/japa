@@ -1,13 +1,11 @@
 import { api } from '$lib/api/client';
-import { listSpaceTypes, createSpace } from '$lib/api/create';
 import type {
 	GeoContext,
 	GeoDetect,
 	GeoCountry,
 	GeoState,
 	GeoCity,
-	ContentCountryPreference,
-	Space
+	ContentCountryPreference
 } from '$lib/types';
 
 /**
@@ -47,56 +45,17 @@ export async function listCities(stateId: string): Promise<GeoCity[]> {
 	return res.data ?? [];
 }
 
-function slugify(name: string): string {
-	return name
-		.toLowerCase()
-		.trim()
-		.replace(/\s+/g, '-')
-		.replace(/[^\w-]+/g, '')
-		.replace(/--+/g, '-')
-		.replace(/^-|-$/g, '');
-}
-
 /**
- * POST /spaces — create a new city-level geo space under the given state.
+ * POST /geo/states/{id}/cities — create a new city under a state.
  * Used by the location settings picker when a city is not yet seeded.
+ * This endpoint is quota-free and intended for geo-catalog completion.
  * Returns the created city or null on failure.
  */
 export async function createCity(stateId: string, name: string): Promise<GeoCity | null> {
-	const typesRes = await listSpaceTypes();
-	const cityType = typesRes.data?.find(
-		(t) => t.slug === 'city' || t.name.toLowerCase() === 'city'
-	);
-	if (!cityType) {
-		return null;
-	}
-
-	const res = await createSpace({
-		name: name.trim(),
-		slug: slugify(name),
-		space_type_id: cityType.id,
-		level: 'city',
-		parent_id: stateId,
-		parent_space_ids: [stateId]
+	const res = await api.post<GeoCity>(`/geo/states/${stateId}/cities`, {
+		name: name.trim()
 	});
-	if (!res.data) {
-		return null;
-	}
-	const space = res.data;
-	return spaceToCity(space);
-}
-
-function spaceToCity(space: Space): GeoCity {
-	return {
-		id: space.id,
-		name: space.name,
-		slug: space.slug,
-		geo_code: space.geo_code,
-		level: 'city',
-		parent_id: space.parent_id ?? '',
-		currency_code: null,
-		member_count: space.member_count
-	};
+	return res.data ?? null;
 }
 
 /**

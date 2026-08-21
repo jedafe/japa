@@ -2,12 +2,15 @@ package geoip
 
 import (
 	"context"
+	"encoding/json"
 	"log/slog"
 	"net"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/tenant"
@@ -22,6 +25,7 @@ type SpacesService interface {
 	ListCitiesByState(ctx context.Context, tenantID, stateID pgtype.UUID) ([]gen.ListCitiesByStateIDRow, error)
 	GetSpaceByGeoCode(ctx context.Context, tenantID pgtype.UUID, countryCode string) (gen.GetSpaceByGeoCodeRow, error)
 	FindCitySpaceByName(ctx context.Context, tenantID pgtype.UUID, cityName string) (gen.FindCitySpaceByNameRow, error)
+	CreateCity(ctx context.Context, tenantID, stateID pgtype.UUID, name string) (gen.CreateSpaceRow, error)
 }
 
 // SuggestedSpace is the public projection of a seeded geo Space returned in
@@ -254,6 +258,60 @@ func (h *Handlers) HandleListCities(w http.ResponseWriter, r *http.Request) {
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": out})
+}
+
+// CreateCity creates a new city-level geo space under the given state.
+// It is intentionally quota-free because adding a missing city is part of
+// completing a user's location, not creating an owned community.
+//
+// POST /api/v1/geo/states/{id}/cities
+func (h *Handlers) CreateCity(w http.ResponseWriter, r *http.Request) {
+	t := tenant.FromContext(r.Context())
+	if t == nil {
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		return
+	}
+
+	user := auth.FromContext(r.Context())
+	if user == nil {
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		return
+	}
+
+	stateIDStr := chi.URLParam(r, "id")
+	var stateID pgtype.UUID
+	if err := stateID.Scan(stateIDStr); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid state id format")
+		return
+	}
+
+	var req struct {
+		Name string `json:"name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		return
+	}
+
+	name := strings.TrimSpace(req.Name)
+	if name == "" {
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_fields", "name is required")
+		return
+	}
+
+	city, err := h.spaces.CreateCity(r.Context(), t.ID, stateID, name)
+	if err != nil {
+		slog.Warn("create city failed", "user_id", user.UserID.String(), "state_id", stateIDStr, "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Could not create city")
+		return
+	}
+
+	out := projectGeoSpace(
+		city.ID, city.Name, city.Slug, city.Level,
+		city.GeoCode, city.Description, city.CurrencyCode,
+		city.MemberCount, city.PostCount, city.FollowerCount,
+	)
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": out})
 }
 
 // suggestedSpaces runs the deterministic /geo/me suggested_spaces algorithm

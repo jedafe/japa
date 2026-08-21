@@ -336,6 +336,10 @@ func (m *mockSpacesService) FindCitySpaceByName(_ context.Context, _ pgtype.UUID
 	return m.cityByName, m.cityErr
 }
 
+func (m *mockSpacesService) CreateCity(_ context.Context, _, _ pgtype.UUID, _ string) (gen.CreateSpaceRow, error) {
+	return gen.CreateSpaceRow{}, nil
+}
+
 // withGeoContext injects a GeoContext into the request context, simulating
 // the GeoIPMiddleware.
 func withGeoContext(r *http.Request, gc GeoContext) *http.Request {
