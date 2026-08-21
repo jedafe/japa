@@ -1,19 +1,22 @@
 class JapaBotConversation {
   final String id;
   final String? title;
-  final DateTime? createdAt;
+  final int? turnCount;
+  final DateTime? lastEntryAt;
 
   JapaBotConversation({
     required this.id,
     this.title,
-    this.createdAt,
+    this.turnCount,
+    this.lastEntryAt,
   });
 
   factory JapaBotConversation.fromJson(Map<String, dynamic> json) {
     return JapaBotConversation(
-      id: json['id'] as String,
-      title: json['title'] as String?,
-      createdAt: _parseDateTime(json['created_at']),
+      id: (json['conversation_id'] ?? json['id']) as String,
+      title: (json['preview'] ?? json['title']) as String?,
+      turnCount: json['turn_count'] as int?,
+      lastEntryAt: _parseDateTime(json['last_entry_at'] ?? json['created_at']),
     );
   }
 
@@ -25,8 +28,9 @@ class JapaBotConversation {
   }
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        if (title != null) 'title': title,
-        if (createdAt != null) 'created_at': createdAt!.toIso8601String(),
+        'conversation_id': id,
+        if (title != null) 'preview': title,
+        if (turnCount != null) 'turn_count': turnCount,
+        if (lastEntryAt != null) 'last_entry_at': lastEntryAt!.toIso8601String(),
       };
 }

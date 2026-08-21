@@ -13,21 +13,26 @@ class JobsService {
   }
 
   Future<Job> getJob(String slug) async {
-    final response = await _client.get<Job>(
+    return _client.get<Job>(
       '/jobs/$slug',
       parse: (json) => Job.fromJson(json as Map<String, dynamic>),
     );
-    return response;
   }
 
-  Future<void> apply(String id) async {
-    await _client.post<void>('/jobs/$id/apply', parse: (_) {});
-  }
-
-  Future<List<Map<String, dynamic>>> myApplications() async {
-    return _client.get<List<Map<String, dynamic>>>(
+  Future<List<JobApplication>> myApplications() async {
+    return _client.get<List<JobApplication>>(
       '/me/jobs/applications',
-      parse: (json) => (json as List).cast<Map<String, dynamic>>(),
+      parse: (json) => (json as List)
+          .map((e) => JobApplication.fromJson(e as Map<String, dynamic>))
+          .toList(),
     );
+  }
+
+  Future<JobApplication> apply(String jobId) async {
+    final response = await _client.post<JobApplication>(
+      '/jobs/$jobId/apply',
+      parse: (json) => JobApplication.fromJson(json as Map<String, dynamic>),
+    );
+    return response;
   }
 }

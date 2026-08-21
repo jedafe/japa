@@ -13,12 +13,19 @@ class RemittanceService {
     return response;
   }
 
-  Future<Map<String, dynamic>> getRate(String providerId) async {
-    final response = await _client.get<Map<String, dynamic>>(
+  Future<List<RemittanceRate>> getRates(
+    String sendCurrency,
+    String receiveCurrency,
+  ) async {
+    return _client.get<List<RemittanceRate>>(
       '/remittance/rates',
-      query: {'provider': providerId},
-      parse: (json) => json as Map<String, dynamic>,
+      query: {
+        'send': sendCurrency,
+        'receive': receiveCurrency,
+      },
+      parse: (json) => (json as List)
+          .map((e) => RemittanceRate.fromJson(e as Map<String, dynamic>))
+          .toList(),
     );
-    return response;
   }
 }

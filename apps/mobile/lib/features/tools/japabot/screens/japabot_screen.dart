@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:japaconnect_core/japaconnect_core.dart';
 import 'package:japaconnect_mobile/features/tools/japabot/providers/japabot_provider.dart';
 import 'package:japaconnect_mobile/i18n/app_localizations.dart';
@@ -16,8 +17,13 @@ class JapaBotScreen extends ConsumerWidget {
       body: state.when(
         data: (items) => ListView.builder(
           itemCount: items.length,
-          itemBuilder: (_, i) =>
-              ListTile(title: Text(items[i].title ?? t('social.conversation'))),
+          itemBuilder: (_, i) => ListTile(
+            title: Text(items[i].title ?? t('tools.japabot')),
+            subtitle: items[i].turnCount != null
+                ? Text('${items[i].turnCount} ${t('tools.turns')}')
+                : null,
+            onTap: () => context.push('/tools/japabot/${items[i].id}'),
+          ),
         ),
         loading: () => const LoadingShimmer(),
         error: (e, _) => JcErrorWidget(
@@ -25,6 +31,7 @@ class JapaBotScreen extends ConsumerWidget {
           onRetry: () => ref.invalidate(japabotConversationsProvider),
         ),
       ),
+
     );
   }
 }
