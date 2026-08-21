@@ -13,7 +13,16 @@ class JobsListScreen extends ConsumerWidget {
     final state = ref.watch(jobsListProvider);
     final t = ref.watch(tProvider);
     return Scaffold(
-      appBar: AppBar(title: Text(t('jobs.title'))),
+      appBar: AppBar(
+        title: Text(t('jobs.title')),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.assignment_turned_in),
+            tooltip: t('jobs.my_applications'),
+            onPressed: () => context.push('/jobs/applications'),
+          ),
+        ],
+      ),
       body: state.when(
         data: (items) => ListView.builder(
           itemCount: items.length,

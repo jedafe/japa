@@ -12,3 +12,11 @@ final remittanceProvidersProvider =
   final service = ref.watch(remittanceServiceProvider);
   return service.listProviders();
 });
+
+final remittanceRatesProvider = FutureProvider.autoDispose
+    .family<List<RemittanceRate>, ({String send, String receive})>(
+  (ref, corridor) async {
+    final service = ref.watch(remittanceServiceProvider);
+    return service.getRates(corridor.send, corridor.receive);
+  },
+);

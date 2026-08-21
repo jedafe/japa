@@ -22,11 +22,13 @@ import '../features/forum/screens/forum_detail_screen.dart';
 import '../features/forum/screens/forum_reply_screen.dart';
 import '../features/tools/hub/screens/tools_hub_screen.dart';
 import '../features/tools/japabot/screens/japabot_screen.dart';
+import '../features/tools/japabot/screens/japabot_chat_screen.dart';
 import '../features/tools/visa_checklist/screens/visa_checklist_screen.dart';
 import '../features/tools/readiness/screens/readiness_screen.dart';
 import '../features/tools/cost_of_living/screens/cost_of_living_screen.dart';
 import '../features/tools/scholarships/screens/scholarships_screen.dart';
 import '../features/tools/remittance/screens/remittance_screen.dart';
+import '../features/tools/remittance/screens/remittance_rate_screen.dart';
 import '../features/spaces/screens/space_list_screen.dart';
 import '../features/spaces/screens/space_detail_screen.dart';
 import '../features/social/screens/notifications_screen.dart';
@@ -43,6 +45,7 @@ import '../features/gamification/screens/badges_screen.dart';
 import '../features/gamification/screens/leaderboard_screen.dart';
 import '../features/jobs/screens/jobs_list_screen.dart';
 import '../features/jobs/screens/job_detail_screen.dart';
+import '../features/jobs/screens/my_applications_screen.dart';
 
 class _ComposePlaceholder extends ConsumerWidget {
   const _ComposePlaceholder();
@@ -150,6 +153,12 @@ final jcRouterProvider = Provider<GoRouter>((ref) {
         builder: (_, _) => const JapaBotScreen(),
       ),
       GoRoute(
+        path: '/tools/japabot/:id',
+        builder: (ctx, state) => JapaBotChatScreen(
+          conversationId: state.pathParameters['id']!,
+        ),
+      ),
+      GoRoute(
         path: '/tools/visa-checklist',
         builder: (_, _) => const VisaChecklistScreen(),
       ),
@@ -168,6 +177,10 @@ final jcRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/tools/remittance',
         builder: (_, _) => const RemittanceScreen(),
+      ),
+      GoRoute(
+        path: '/tools/remittance/rates',
+        builder: (_, _) => const RemittanceRateScreen(),
       ),
       GoRoute(
         path: '/learn/university/catalog',
@@ -191,6 +204,10 @@ final jcRouterProvider = Provider<GoRouter>((ref) {
           path: '/leaderboard',
           builder: (_, _) => const LeaderboardScreen()),
       GoRoute(path: '/jobs', builder: (_, _) => const JobsListScreen()),
+      GoRoute(
+        path: '/jobs/applications',
+        builder: (_, _) => const MyApplicationsScreen(),
+      ),
       GoRoute(
         path: '/jobs/:slug',
         builder: (ctx, state) =>
