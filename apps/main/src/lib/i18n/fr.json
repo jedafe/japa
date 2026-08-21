@@ -2191,6 +2191,7 @@
 	"settings.location.search_origin_city": "Rechercher la ville d'origine…",
 	"settings.location.permission_denied": "Autorisation de localisation refusée. Utilisation de la détection basée sur l'IP.",
 	"settings.location.save_error": "Impossible d'enregistrer l'emplacement",
+	"settings.location.add_city": "Ajouter \"{query}\"",
 	"settings.location.search_city": "Rechercher une ville…",
 	"settings.location.search_country": "Rechercher un pays…",
 	"settings.location.search_dest": "Rechercher pays de destination…",

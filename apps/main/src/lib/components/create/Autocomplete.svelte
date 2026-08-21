@@ -37,6 +37,17 @@
 		 * free-text fallback values.
 		 */
 		allowFreeText?: boolean;
+		/**
+		 * Optional label for an empty-state action that creates a new option.
+		 * The placeholder {query} is replaced with the current search text.
+		 */
+		addActionLabel?: string;
+		/**
+		 * If provided, an add button is shown when the search returns no
+		 * results. It receives the current query and should return the newly
+		 * created item so it can be selected immediately.
+		 */
+		onAdd?: (query: string) => Promise<AutocompleteItem | null>;
 	}
 
 	let {
@@ -51,7 +62,9 @@
 		onClear,
 		onfocus,
 		debounceMs = 300,
-		allowFreeText = false
+		allowFreeText = false,
+		addActionLabel,
+		onAdd
 	}: Props = $props();
 
 	let open = $state(false);
@@ -60,6 +73,8 @@
 	let initialResults = $state<AutocompleteItem[]>([]);
 	let loading = $state(false);
 	let loadingInitial = $state(false);
+	let adding = $state(false);
+	let addError = $state<string | null>(null);
 	let activeIndex = $state(0);
 	let inputEl: HTMLInputElement | null = null;
 	let fieldEl: HTMLDivElement | null = null;
@@ -193,8 +208,26 @@
 		}, debounceMs);
 	});
 
+	async function handleAdd() {
+		const q = query.trim();
+		if (!q || !onAdd) return;
+		adding = true;
+		addError = null;
+		try {
+			const item = await onAdd(q);
+			if (item) {
+				pick(item);
+			}
+		} catch (err) {
+			addError = err instanceof Error ? err.message : 'Failed to add';
+		} finally {
+			adding = false;
+		}
+	}
+
 	function pick(item: AutocompleteItem) {
 		query = '';
+		addError = null;
 		onSelect(item);
 		focused = false;
 		inputEl?.blur();
@@ -279,6 +312,18 @@
 					<!-- Search results -->
 					{#if !loading && results.length === 0}
 						<div class="autocomplete-empty">{emptyMessage}</div>
+						{#if onAdd && query.trim()}
+							{#if addError}<div class="autocomplete-empty autocomplete-add-error">{addError}</div>{/if}
+							<button
+								type="button"
+								class="autocomplete-option"
+								disabled={adding}
+								onmousedown={async (e) => { e.preventDefault(); await handleAdd(); }}
+							>
+								{#if adding}<span class="autocomplete-spinner" aria-label={t('common.loading')}></span>{/if}
+								{(addActionLabel ?? 'Add "{query}"').replace('{query}', query.trim())}
+							</button>
+						{/if}
 					{:else}
 						{#each results as item, i (item.id)}
 							<button
@@ -498,5 +543,9 @@
 		text-align: center;
 		color: var(--color-muted);
 		font-size: 0.8125rem;
+	}
+	.autocomplete-add-error {
+		color: var(--color-danger, #dc2626);
+		padding: 0.5rem 1rem;
 	}
 </style>
