@@ -10,6 +10,7 @@
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import type { CalendarCategory } from '$lib/types';
 	import type { PageData } from './$types';
+	import AiBodyField from '$lib/ai/AiBodyField.svelte';
 
 	let { data }: { data: PageData } = $props();
 
@@ -249,18 +250,18 @@
 			</div>
 
 			<!-- Description -->
-			<div>
-				<label for="description" class="mb-1.5 block text-sm font-medium text-[var(--color-text)]">
-					{t('calendar.new.label_description', 'Description')}
-				</label>
-				<textarea
-					id="description"
-					bind:value={description}
-					rows="5"
-					placeholder={t('calendar.new.placeholder_description', 'Add details about this event…')}
-					class={inputClass}
-				></textarea>
-			</div>
+			<AiBodyField
+				id="description"
+				label={t('calendar.new.label_description', 'Description')}
+				contentType="calendar"
+				{title}
+				body={description}
+				onBody={(v) => (description = v)}
+				onTitle={(v) => (title = v)}
+				user={data.user}
+				placeholder={t('calendar.new.placeholder_description', 'Add details about this event…')}
+				rows={5}
+			/>
 
 			<!-- Dates -->
 			<div class="grid gap-4 sm:grid-cols-2">
