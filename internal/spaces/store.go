@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -577,6 +579,73 @@ func (s *Service) CreateSpaceWithOwner(
 			}); err != nil {
 				return gen.CreateSpaceRow{}, fmt.Errorf("linking parent space: %w", err)
 			}
+		}
+
+		return space, nil
+	})
+}
+
+var slugReplaceRe = regexp.MustCompile(`[^\w\s-]+`)
+var slugSpaceRe = regexp.MustCompile(`[\s_]+`)
+var slugHyphenRe = regexp.MustCompile(`-{2,}`)
+
+// slugify converts a human-readable name to a URL-friendly slug.
+func slugify(name string) string {
+	s := strings.ToLower(strings.TrimSpace(name))
+	s = slugReplaceRe.ReplaceAllString(s, "")
+	s = slugSpaceRe.ReplaceAllString(s, "-")
+	s = slugHyphenRe.ReplaceAllString(s, "-")
+	return strings.Trim(s, "-")
+}
+
+// CreateCity creates a city-level geo space under the given state. It is
+// intentionally separate from CreateSpaceWithOwner because adding a missing
+// city to the geo catalog should not count against the user's
+// max_spaces_creatable quota (the user does not own the city).
+func (s *Service) CreateCity(ctx context.Context, tenantID, stateID pgtype.UUID, name string) (gen.CreateSpaceRow, error) {
+	state, err := s.read.GetSpaceByID(ctx, gen.GetSpaceByIDParams{ID: stateID, TenantID: tenantID})
+	if err != nil {
+		return gen.CreateSpaceRow{}, fmt.Errorf("getting state: %w", err)
+	}
+	if state.Level != LevelState {
+		return gen.CreateSpaceRow{}, errors.New("parent is not a state")
+	}
+
+	cityType, err := s.read.GetSpaceTypeBySlug(ctx, gen.GetSpaceTypeBySlugParams{
+		Slug:     "city",
+		TenantID: tenantID,
+	})
+	if err != nil {
+		return gen.CreateSpaceRow{}, fmt.Errorf("getting city space type: %w", err)
+	}
+
+	axes := DefaultPermAxes()
+	params := gen.CreateSpaceParams{
+		TenantID:       tenantID,
+		ParentID:       stateID,
+		SpaceTypeID:    cityType.ID,
+		Name:           strings.TrimSpace(name),
+		Slug:           slugify(name),
+		Level:          LevelCity,
+		Visibility:     axes.Visibility,
+		PostingPerm:    axes.Posting,
+		ReplyingPerm:   axes.Replying,
+		CommentingPerm: axes.Commenting,
+		JoiningPerm:    axes.Joining,
+		Status:         StatusActive,
+	}
+
+	return db.WithTxResult(ctx, s.db.Writer, func(q *gen.Queries) (gen.CreateSpaceRow, error) {
+		space, err := q.CreateSpace(ctx, params)
+		if err != nil {
+			return gen.CreateSpaceRow{}, fmt.Errorf("creating city: %w", err)
+		}
+
+		if err := q.AddParentSpace(ctx, gen.AddParentSpaceParams{
+			SpaceID:       space.ID,
+			ParentSpaceID: stateID,
+		}); err != nil {
+			return gen.CreateSpaceRow{}, fmt.Errorf("linking city to state: %w", err)
 		}
 
 		return space, nil
