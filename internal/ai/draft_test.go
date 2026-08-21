@@ -2,6 +2,7 @@ package ai
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -41,5 +42,66 @@ func TestHandleDraft_ValidBlogPost(t *testing.T) {
 
 	if w.Code != http.StatusOK {
 		t.Errorf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+}
+
+func TestHandleDraft_ReturnsBodyAndTitle(t *testing.T) {
+	t.Parallel()
+
+	provider := &mockProvider{
+		name: "mock",
+		sendFn: func(_ context.Context, _ Request) (Response, error) {
+			return Response{
+				ProviderRef: "mock-ref",
+				Status:      "success",
+				Raw: map[string]any{
+					"model": "mock-model",
+					"usage": map[string]any{"total_tokens": 42.0},
+					"choices": []any{
+						map[string]any{
+							"message": map[string]any{
+								"content": `{"title":"Final Title","body_html":"<p>Hello</p>","field_values":{}}`,
+							},
+						},
+					},
+				},
+			}, nil
+		},
+	}
+	disp := NewDispatcher()
+	disp.RegisterProvider("content_generation", provider)
+	h := &Handlers{Dispatcher: disp}
+
+	user, tenant := testUserAndTenant()
+	body, _ := json.Marshal(map[string]any{
+		"content_type": "blog_post",
+		"title":        "Draft Title",
+		"tone":         "friendly",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/ai/assist/draft", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req = withAuthContext(req, user, tenant)
+	w := httptest.NewRecorder()
+
+	h.HandleDraft(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+
+	var resp struct {
+		Data DraftResult `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if resp.Data.Title != "Final Title" {
+		t.Errorf("title = %q, want %q", resp.Data.Title, "Final Title")
+	}
+	if resp.Data.BodyHTML != "<p>Hello</p>" {
+		t.Errorf("body_html = %q, want %q", resp.Data.BodyHTML, "<p>Hello</p>")
+	}
+	if resp.Data.TokensUsed != 42 {
+		t.Errorf("tokens_used = %d, want 42", resp.Data.TokensUsed)
 	}
 }
