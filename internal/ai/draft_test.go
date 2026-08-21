@@ -105,3 +105,56 @@ func TestHandleDraft_ReturnsBodyAndTitle(t *testing.T) {
 		t.Errorf("tokens_used = %d, want 42", resp.Data.TokensUsed)
 	}
 }
+
+func TestHandleDraft_MissingContentType(t *testing.T) {
+	t.Parallel()
+	h := &Handlers{}
+	user, tenant := testUserAndTenant()
+	req := httptest.NewRequest(http.MethodPost, "/ai/assist/draft", bytes.NewReader([]byte(`{"title":"x"}`)))
+	req.Header.Set("Content-Type", "application/json")
+	req = withAuthContext(req, user, tenant)
+	w := httptest.NewRecorder()
+
+	h.HandleDraft(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusBadRequest)
+	}
+}
+
+func TestHandleDraft_HumanizeOverride(t *testing.T) {
+	t.Parallel()
+	var got map[string]any
+	provider := &mockProvider{
+		name: "mock",
+		sendFn: func(_ context.Context, req Request) (Response, error) {
+			got = req.Payload
+			return Response{Raw: map[string]any{
+				"choices": []any{map[string]any{"message": map[string]any{"content": `{"body_html":"<p>x</p>"}`}}},
+			}}, nil
+		},
+	}
+	disp := NewDispatcher()
+	disp.RegisterProvider("content_generation", provider)
+	h := &Handlers{Dispatcher: disp}
+	user, tenant := testUserAndTenant()
+	body, _ := json.Marshal(map[string]any{
+		"content_type":   "blog_post",
+		"title":          "t",
+		"humanize":       true,
+		"humanize_level": "heavy",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/ai/assist/draft", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req = withAuthContext(req, user, tenant)
+	w := httptest.NewRecorder()
+
+	h.HandleDraft(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+	if got["humanize"] != true || got["humanize_level"] != "heavy" {
+		t.Errorf("humanize payload = %v", got)
+	}
+}
