@@ -26,8 +26,8 @@ export interface DraftRequest {
 
 /** Success response from POST /api/v1/ai/assist/draft. */
 export interface DraftResponse {
-	title?: string;
+	title: string;
 	body_html: string;
-	field_values?: Record<string, unknown>;
-	tokens_used?: number;
+	field_values: Record<string, unknown>;
+	tokens_used: number;
 }
