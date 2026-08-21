@@ -11,6 +11,7 @@
 	import { scamTypeOptions, scamPlatformOptions } from '$lib/enumOptions';
 	import type { ScamType, ScamPlatform } from '$lib/types';
 	import type { PageData } from './$types';
+	import AiBodyField from '$lib/ai/AiBodyField.svelte';
 
 	let { data }: { data: PageData } = $props();
 
@@ -258,19 +259,17 @@
 		</div>
 
 		<!-- Description -->
-		<div class="flex flex-col gap-1.5">
-			<label for="description" class="text-sm font-medium text-[var(--color-text)]">
-				{t('scam_alerts.field_description', 'Description')} <span class="text-red-500">*</span>
-			</label>
-			<textarea
-				id="description"
-				rows="6"
-				value={description}
-				oninput={(e) => (description = e.currentTarget.value)}
-				placeholder={t('scam_alerts.placeholder_description', 'Describe what happened, how the scam worked, and any warning signs…')}
-				class={inputClass}
-			></textarea>
-		</div>
+		<AiBodyField
+			id="description"
+			label={t('scam_alerts.field_description', 'Description')}
+			contentType="scam_alert"
+			title=""
+			body={description}
+			onBody={(v) => (description = v)}
+			user={data.user}
+			placeholder={t('scam_alerts.placeholder_description', 'Describe what happened, how the scam worked, and any warning signs…')}
+			rows={6}
+		/>
 
 		<!-- Reported to authorities -->
 		<label class="flex cursor-pointer items-center gap-2 text-sm text-[var(--color-text-subtle)]">
