@@ -32,6 +32,8 @@
 
 	let languages = $state<Language[]>([]);
 	let translations = $state<TranslationEntry[]>([]);
+	let languageSearch = $state('');
+	let translationSearch = $state('');
 	let loading = $state(true);
 	let activeTab = $state('languages');
 	let selectedLocale = $state('en');
@@ -57,9 +59,21 @@
 
 	let form = $state({ code: '', name: '', flag: '' });
 
+	const filteredLanguages = $derived.by(() => {
+		const q = languageSearch.trim().toLowerCase();
+		if (!q) return languages;
+		return languages.filter((l) => l.code.toLowerCase().includes(q) || l.name.toLowerCase().includes(q));
+	});
+
+	const filteredTranslations = $derived.by(() => {
+		const q = translationSearch.trim().toLowerCase();
+		if (!q) return translations;
+		return translations.filter((tr) => tr.key.toLowerCase().includes(q) || (tr.value ?? '').toLowerCase().includes(q));
+	});
+
 	let tabs = $derived([
-		{ value: 'languages', label: t('app.i18n.tab_languages', 'Languages'), icon: Globe, count: languages.length },
-		{ value: 'translations', label: t('app.i18n.tab_translations', 'Translations'), icon: FileText, count: translations.length }
+		{ value: 'languages', label: t('app.i18n.tab_languages', 'Languages'), icon: Globe, count: filteredLanguages.length },
+		{ value: 'translations', label: t('app.i18n.tab_translations', 'Translations'), icon: FileText, count: filteredTranslations.length }
 	]);
 
 	const languageColumns = [
@@ -339,12 +353,15 @@
 				{:else}
 					<DataTable
 						columns={languageColumns}
-						data={languages}
+						data={filteredLanguages}
 						actions={languageRowActions}
 						pageSize={20}
 						emptyMessage={t('app.i18n.no_languages')}
 						selectable
 						bind:selectedIds={selectedLanguageIds}
+						searchable
+						searchPlaceholder={t('app.i18n.search_languages', 'Search languages...')}
+						onsearch={(q) => { languageSearch = q; }}
 					>
 						{#snippet bulkActions()}
 							<Button variant="destructive" size="sm" onclick={bulkDeleteLanguages} disabled={bulkDeleting || selectedLanguageIds.size === 0}>
@@ -378,12 +395,15 @@
 				{:else}
 					<DataTable
 						columns={translationColumns}
-						data={translations}
+						data={filteredTranslations}
 						actions={translationRowActions}
 						pageSize={50}
 						emptyMessage={t('app.i18n.no_translations')}
 						selectable
 						bind:selectedIds={selectedTranslationIds}
+						searchable
+						searchPlaceholder={t('app.i18n.search_translations', 'Search translations...')}
+						onsearch={(q) => { translationSearch = q; }}
 					>
 						{#snippet bulkActions()}
 							<Button variant="destructive" size="sm" onclick={bulkDeleteTranslations} disabled={bulkDeleting || selectedTranslationIds.size === 0}>

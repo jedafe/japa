@@ -55,6 +55,15 @@ export const load: LayoutServerLoad = async (event) => {
 		footerMenu = null;
 	}
 
+	// Mobile bottom tab bar menu — ADR-054. The Learn bottom bar slug is
+	// `learn_bottom_bar` (seeded by migration 000213).
+	let bottomMenu: Menu | null = null;
+	try {
+		bottomMenu = await apiGet<Menu>(ctx, '/menus/learn_bottom_bar');
+	} catch {
+		bottomMenu = null;
+	}
+
 	// Authed-only: unread notification count for the LeftNav badge. Seeded
 	// server-side so the badge paints during SSR; the realtime store keeps it
 	// live via WebSocket notification events.
@@ -89,6 +98,7 @@ export const load: LayoutServerLoad = async (event) => {
 		siteSettings,
 		features,
 		menu,
+		bottomMenu,
 		footerMenu,
 		unreadNotifications,
 		rightSidebarWidgets,

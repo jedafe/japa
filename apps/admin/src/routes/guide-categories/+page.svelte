@@ -2,7 +2,7 @@
 	// /guide-categories — migrated to the EntityPage scaffold.
 	// Create + delete only (no update API); custom `actions` array omits Edit.
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
-	import { guideCategoriesAdminApi, type GuideCategory } from '$lib/api';
+	import { api, guideCategoriesAdminApi, type GuideCategory } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { Trash2, Eye } from 'lucide-svelte';
 
@@ -90,12 +90,30 @@
 			}
 		],
 		fields,
-		load: async () => {
-			const result = await guideCategoriesAdminApi.list();
+		load: async ({ page, pageSize, q, filter }) => {
+			const result = await api<GuideCategory[]>('/admin/guide-categories?page_size=1000');
 			if (result.ok) {
 				const data = (result.data as GuideCategory[]) ?? [];
 				const mapped = data.map(mapCategory);
-				return { data: mapped, total: mapped.length, totalPages: 1 };
+				const query = (q ?? '').toLowerCase();
+				let filtered = mapped;
+				if (query) {
+					filtered = filtered.filter((row) =>
+						[row.Slug, row.Label].some((v) =>
+							String(v ?? '').toLowerCase().includes(query)
+						)
+					);
+				}
+				filter;
+				const size = pageSize || 25;
+				const offset = (page || 0) * size;
+				const total = filtered.length;
+				const totalPages = Math.max(1, Math.ceil(total / size));
+				return {
+					data: filtered.slice(offset, offset + size),
+					total,
+					totalPages
+				};
 			}
 			throw new Error(result.error ?? t('common.error', 'Failed to load guide categories'));
 		},

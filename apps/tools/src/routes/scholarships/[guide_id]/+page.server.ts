@@ -1,7 +1,7 @@
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet, apiGetOrNull } from '$lib/server/api';
-import type { ScholarshipDetail, SavedScholarship } from '$lib/types';
+import { apiContext, apiGet, apiGetOrNull, apiList } from '$lib/server/api';
+import type { ScholarshipDetail, SavedScholarship, CatalogOption } from '$lib/types';
 
 /**
  * Scholarship detail page — §73, ADR-073.
@@ -43,9 +43,19 @@ export const load: PageServerLoad = async (event) => {
 		}
 	}
 
+	// Canonical status options from the backend (Rule 16 — no hardcoded list).
+	let statusOptions: CatalogOption[] = [];
+	try {
+		const res = await apiList<CatalogOption>(ctx, '/scholarships/statuses');
+		statusOptions = res.items;
+	} catch {
+		statusOptions = [];
+	}
+
 	return {
 		scholarship,
 		savedItem,
+		statusOptions,
 		user: event.locals.user
 	};
 };

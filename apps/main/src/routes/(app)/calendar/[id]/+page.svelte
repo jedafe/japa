@@ -15,9 +15,10 @@
 		Loader2
 	} from 'lucide-svelte';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
+	import { calendarCategoryLabel } from '$lib/enumOptions';
 	import type { CalendarEntry, CalendarCategory } from '$lib/types';
 	import type { PageData } from './$types';
-import { safeJsonLdScript } from '$lib/utils/safeHtml';
+	import { safeJsonLdScript } from '$lib/utils/safeHtml';
 
 	let { data }: { data: PageData } = $props();
 
@@ -29,14 +30,9 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	);
 	const description = $derived(entry?.description ?? entry?.title ?? '');
 
-	const categoryLabels: Record<CalendarCategory, string> = {
-		visa_window: t('calendar.cat_visa_window', 'Visa window'),
-		embassy_closure: t('calendar.cat_embassy_closure', 'Embassy closure'),
-		application_deadline: t('calendar.cat_application_deadline', 'Application deadline'),
-		exam_window: t('calendar.cat_exam_window', 'Exam window'),
-		immigration_office: t('calendar.cat_immigration_office', 'Immigration office'),
-		other: t('calendar.cat_other', 'Other')
-	};
+	function categoryLabel(cat: CalendarCategory): string {
+		return calendarCategoryLabel(t, cat);
+	}
 
 	const statusLabels: Record<string, string> = {
 		pending: t('calendar.status_pending', 'Pending'),
@@ -148,7 +144,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 
 			<div class="mt-3 flex flex-wrap items-center gap-2">
 				<span class="rounded-full bg-[var(--color-surface-subtle)] px-2 py-0.5 text-xs font-medium text-[var(--color-text-subtle)]">
-					{categoryLabels[entry.category as CalendarCategory] ?? entry.category}
+					{categoryLabel(entry.category as CalendarCategory)}
 				</span>
 				<span class="rounded-full px-2 py-0.5 text-xs font-medium {statusColor(entry.status ?? 'pending')}">
 					{statusLabels[entry.status ?? 'pending'] ?? entry.status}

@@ -890,11 +890,15 @@ export interface CommunityOrg {
 
 export interface CommunityOrgWithAi extends CommunityOrg, AiGenerationMeta {}
 
-/** Org-type allow-list entry from GET /community-locator/org-types (Rule 16). */
-export interface OrgTypeOption {
+/** Generic value/label option returned by backend catalogs (Rule 16). */
+export interface CatalogOption {
 	value: string;
 	label: string;
+	default?: boolean;
 }
+
+/** Org-type allow-list entry from GET /community-locator/org-types (Rule 16). */
+export interface OrgTypeOption extends CatalogOption {}
 
 /* --- Geo Space reference (for country/city selectors) --- */
 // Used by all V2 tools for country selectors (fetched from /geo/countries)

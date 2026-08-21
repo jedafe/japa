@@ -1,8 +1,9 @@
 import type { PageServerLoad } from './$types';
-import { apiContext, apiList, apiGetOrNull } from '$lib/server/api';
+import { apiContext, apiList } from '$lib/server/api';
 import { loadCountries } from '$lib/server/geo';
 import { getTool, isToolEnabled } from '$lib/tools/registry';
-import type { Scholarship, SavedScholarship, GeoSpaceOption } from '$lib/types';
+import type { Scholarship, SavedScholarship, GeoSpaceOption, CatalogOption } from '$lib/types';
+import { loadCatalog } from '$lib/server/catalog';
 
 /**
  * Scholarship Finder — §73, ADR-073.
@@ -19,7 +20,7 @@ export const load: PageServerLoad = async (event) => {
 	// Ref: conventions/system-settings-catalog.md, Rule 3.
 	const tool = getTool('scholarships')!;
 	if (!isToolEnabled(tool, event.locals.features)) {
-		return { enabled: false, tool, countries: [], scholarships: [], saved: [], user: event.locals.user };
+		return { enabled: false, tool, countries: [], scholarships: [], saved: [], statusOptions: [], renewableOptions: [], user: event.locals.user };
 	}
 
 	const ctx = apiContext(event);
@@ -56,12 +57,31 @@ export const load: PageServerLoad = async (event) => {
 		}
 	}
 
+	// Canonical status options from the backend (Rule 16 — no hardcoded list).
+	let statusOptions: CatalogOption[] = [];
+	try {
+		const res = await apiList<CatalogOption>(ctx, '/scholarships/statuses');
+		statusOptions = res.items;
+	} catch {
+		statusOptions = [];
+	}
+
+	// Renewable filter options from the public catalog (Rule 16).
+	let renewableOptions: CatalogOption[] = [];
+	try {
+		renewableOptions = await loadCatalog(ctx, 'scholarships.renewable');
+	} catch {
+		renewableOptions = [];
+	}
+
 	return {
 		enabled: true,
 		tool,
 		countries,
 		scholarships,
 		saved,
+		statusOptions,
+		renewableOptions,
 		user: event.locals.user
 	};
 };

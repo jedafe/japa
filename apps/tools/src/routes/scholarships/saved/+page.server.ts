@@ -1,7 +1,7 @@
 import { redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiList } from '$lib/server/api';
-import type { SavedScholarship } from '$lib/types';
+import type { SavedScholarship, CatalogOption } from '$lib/types';
 
 /**
  * Saved Scholarships tracker — §73, ADR-073.
@@ -31,8 +31,18 @@ export const load: PageServerLoad = async (event) => {
 		saved = [];
 	}
 
+	// Canonical status options from the backend (Rule 16 — no hardcoded list).
+	let statusOptions: CatalogOption[] = [];
+	try {
+		const res = await apiList<CatalogOption>(ctx, '/scholarships/statuses');
+		statusOptions = res.items;
+	} catch {
+		statusOptions = [];
+	}
+
 	return {
 		saved,
+		statusOptions,
 		user: event.locals.user
 	};
 };

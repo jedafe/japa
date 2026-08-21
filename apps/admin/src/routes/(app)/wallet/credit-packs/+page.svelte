@@ -89,7 +89,7 @@
 			{ label: t('common.deleteSelected', 'Delete Selected'), icon: Trash2, variant: 'destructive', onclick: bulkDelete }
 		],
 		fields,
-		load: async ({ q, filter }) => {
+		load: async ({ page, pageSize, q, filter }) => {
 			const result = await walletApi.listCreditPacks();
 			if (result.ok) {
 				let data = (result.data as CreditPack[] | { data: CreditPack[] }) as any;
@@ -99,7 +99,10 @@
 					const lq = q.toLowerCase();
 					data = data.filter((p: CreditPack) => p.name?.toLowerCase().includes(lq) || (p.description ?? '').toLowerCase().includes(lq));
 				}
-				return { data, total: data.length, totalPages: 1 };
+				const total = data.length;
+				const totalPages = pageSize > 0 ? Math.max(1, Math.ceil(total / pageSize)) : 1;
+				const start = page * pageSize;
+				return { data: data.slice(start, start + pageSize), total, totalPages };
 			}
 			throw new Error(result.error ?? t('app.wallet.error_load_packs', 'Failed to load credit packs'));
 		},

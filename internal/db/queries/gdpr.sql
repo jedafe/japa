@@ -50,8 +50,6 @@ WHERE cr.tenant_id = @tenant_id
 ORDER BY cr.created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
--- name: DeleteAuditLog :exec
-DELETE FROM audit_logs WHERE id = @id;
 
 -- name: DeleteConsent :one
 DELETE FROM consent_records

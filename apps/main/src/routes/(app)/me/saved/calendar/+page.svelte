@@ -5,6 +5,7 @@
 	import { goto } from '$app/navigation';
 	import { CalendarDays, ExternalLink, AlertTriangle, Bookmark } from 'lucide-svelte';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
+	import { calendarCategoryLabel } from '$lib/enumOptions';
 	import type { CalendarEntry, CalendarCategory } from '$lib/types';
 	import type { PageData } from './$types';
 
@@ -12,14 +13,9 @@
 
 	const title = $derived(t('calendar.saved_title', 'Saved Calendar Entries — JapaConnect'));
 
-	const categoryLabels: Record<CalendarCategory, string> = {
-		visa_window: t('calendar.cat_visa_window', 'Visa window'),
-		embassy_closure: t('calendar.cat_embassy_closure', 'Embassy closure'),
-		application_deadline: t('calendar.cat_application_deadline', 'Application deadline'),
-		exam_window: t('calendar.cat_exam_window', 'Exam window'),
-		immigration_office: t('calendar.cat_immigration_office', 'Immigration office'),
-		other: t('calendar.cat_other', 'Other')
-	};
+	function categoryLabel(cat: CalendarCategory): string {
+		return calendarCategoryLabel(t, cat);
+	}
 
 	function fmtDate(iso: string): string {
 		try {
@@ -88,7 +84,7 @@
 									{entry.title}
 								</h2>
 								<span class="shrink-0 rounded-full bg-[var(--color-surface-subtle)] px-2 py-0.5 text-xs font-medium text-[var(--color-text-subtle)]">
-									{categoryLabels[entry.category as CalendarCategory] ?? entry.category}
+									{categoryLabel(entry.category as CalendarCategory)}
 								</span>
 							</div>
 							<div class="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[var(--color-muted)]">

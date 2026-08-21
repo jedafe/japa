@@ -7,7 +7,7 @@
 	// page-local header actions rendered above the scaffold.
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import { Button } from '$lib/components/ui/button';
-	import { jsonLdApi, contentAdminApi, type JsonLdTemplate } from '$lib/api';
+	import { api, jsonLdApi, contentAdminApi, type JsonLdTemplate } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { Trash2, Download, Upload } from 'lucide-svelte';
@@ -196,22 +196,34 @@
 			}
 		],
 		fields,
-		load: async ({ q, filter }) => {
-			const result = await jsonLdApi.listTemplates();
+		load: async ({ page, pageSize, q, filter }) => {
+			const result = await api<JsonLdTemplate[]>('/content/jsonld-templates?page_size=1000');
 			if (!result.ok) {
 				throw new Error(result.error ?? t('common.error', 'Failed to load templates'));
 			}
 			let data = (result.data ?? []) as JsonLdTemplate[];
 			// The list endpoint returns the full set, so filter client-side.
-			if (filter.is_active) {
+			if (filter?.is_active) {
 				data = data.filter((x) => String(x.is_active) === filter.is_active);
 			}
-			if (q) {
-				const lc = q.toLowerCase();
-				data = data.filter((x) => x.content_type.toLowerCase().includes(lc));
+			const lc = (q ?? '').toLowerCase();
+			if (lc) {
+				data = data.filter((x) =>
+					[x.content_type, schemaTypeOf(x)].some((v) =>
+						String(v ?? '').toLowerCase().includes(lc)
+					)
+				);
 			}
 			const mapped = data.map(mapTemplate);
-			return { data: mapped, total: mapped.length, totalPages: 1 };
+			const size = pageSize || 25;
+			const offset = (page || 0) * size;
+			const total = mapped.length;
+			const totalPages = Math.max(1, Math.ceil(total / size));
+			return {
+				data: mapped.slice(offset, offset + size),
+				total,
+				totalPages
+			};
 		},
 		create: async (body) => {
 			const parsed = toUpsertBody(body);

@@ -1,41 +1,42 @@
-// ACTION_TYPES lists every action_type value written to audit_logs across
-// the backend. The control panel audit-log filter dropdown is populated from
-// this list, so it MUST stay in sync with the string literals passed to the
-// INSERT INTO audit_logs calls in:
-//   - internal/auth/handlers.go          (auth.login_failed, user.password_reset)
-//   - internal/impersonation/service.go  (impersonate.start, impersonate.end)
-//   - internal/control/handlers.go       (tenant.delete, tenant.suspend, tenant.unsuspend)
-//   - internal/visatimeline/store.go     (visa_timeline.implausible_sequence)
-// If you add a new audit-log call, add the action_type here too.
-// NOTE: 'impersonation.start'/'impersonation.end' are kept for compatibility
-// with rows written by an earlier version of the impersonation service; the
-// current code writes 'impersonate.start'/'impersonate.end'.
-export const ACTION_TYPES = [
-	'auth.login_failed',
-	'user.password_reset',
-	'impersonate.start',
-	'impersonate.end',
-	'impersonation.start',
-	'impersonation.end',
-	'tenant.delete',
-	'tenant.suspend',
-	'tenant.unsuspend',
-	'visa_timeline.implausible_sequence'
-] as const;
+/**
+ * actionColorClass returns a Tailwind badge class for an audit action_type.
+ * It matches by prefix/suffix so namespaced actions like `tenant.delete` and
+ * `gdpr.account_deleted` are classified correctly. Used by the control panel
+ * audit-log action column renderer.
+ */
+export function actionColorClass(action: string): string {
+	if (!action) return 'bg-accent text-accent-foreground';
 
-export type AuditActionType = (typeof ACTION_TYPES)[number];
+	if (action === 'delete' || action.endsWith('.delete') || action.endsWith('_deleted')) {
+		return 'bg-destructive/10 text-destructive';
+	}
+	if (action === 'create' || action.endsWith('.create')) {
+		return 'bg-emerald-500/10 text-emerald-600';
+	}
+	if (action === 'update' || action.endsWith('.update')) {
+		return 'bg-blue-500/10 text-blue-600';
+	}
+	if (action.endsWith('.moderate')) {
+		return 'bg-violet-500/10 text-violet-600';
+	}
+	if (action.startsWith('impersonate') || action.startsWith('impersonation')) {
+		return 'bg-blue-500/10 text-blue-600';
+	}
+	if (
+		action.startsWith('auth.') ||
+		action.includes('login_failed') ||
+		action.includes('.password_reset') ||
+		action.endsWith('.failed') ||
+		action.endsWith('.suspend') ||
+		action.endsWith('.unsuspend') ||
+		action.endsWith('.retention_wait') ||
+		action.includes('.implausible')
+	) {
+		return 'bg-amber-500/10 text-amber-600';
+	}
+	if (action.startsWith('gdpr.')) {
+		return 'bg-rose-500/10 text-rose-600';
+	}
 
-// TARGET_TYPES lists every target_type value written to audit_logs. The
-// control panel target-type filter dropdown is populated from this list.
-// Sources:
-//   - internal/auth/handlers.go          ('user')
-//   - internal/impersonation/service.go  ('user')
-//   - internal/control/handlers.go       ('tenant')
-//   - internal/visatimeline/store.go     ('visa_timeline_milestone')
-export const TARGET_TYPES = [
-	'user',
-	'tenant',
-	'visa_timeline_milestone'
-] as const;
-
-export type AuditTargetType = (typeof TARGET_TYPES)[number];
+	return 'bg-accent text-accent-foreground';
+}

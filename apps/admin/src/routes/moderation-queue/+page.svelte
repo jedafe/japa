@@ -407,13 +407,30 @@
 		],
 		actions: alertActions,
 		fields: [] as FieldDef[],
-		load: async () => {
-			const result = await moderationAdminApi.getAlerts();
+		load: async ({ page, pageSize, q, filter }) => {
+			const result = await moderationAdminApi.getAlerts('?page_size=1000');
 			if (result.ok) {
-				const alerts = Array.isArray(result.data)
+				let alerts = Array.isArray(result.data)
 					? (result.data as ModerationAlert[])
 					: ((result.data as { alerts?: ModerationAlert[] })?.alerts) ?? [];
-				return { data: alerts, total: alerts.length, totalPages: 1 };
+				const query = (q ?? '').toLowerCase();
+				if (query) {
+					alerts = alerts.filter((row) =>
+						[row.title, row.description, row.severity, row.status, row.alert_type].some((v) =>
+							String(v ?? '').toLowerCase().includes(query)
+						)
+					);
+				}
+				filter;
+				const size = pageSize || 25;
+				const offset = (page || 0) * size;
+				const total = alerts.length;
+				const totalPages = Math.max(1, Math.ceil(total / size));
+				return {
+					data: alerts.slice(offset, offset + size),
+					total,
+					totalPages
+				};
 			}
 			throw new Error(result.error ?? t('common.error', 'Failed to load moderation alerts'));
 		},

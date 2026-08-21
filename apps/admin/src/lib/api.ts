@@ -850,6 +850,8 @@ export const universitiesAdminApi = {
 export const universityAdminApi = {
 	listInstructors: (params?: string) =>
 		api<unknown>(`/admin/university/instructors${params ? `?${params}` : ''}`),
+	getInstructor: (id: string) =>
+		api<unknown>(`/admin/university/instructors/${id}`),
 	approveInstructor: (id: string, body: { tier?: string; commission_pct_override?: number }) =>
 		api<unknown>(`/admin/university/instructors/${id}/approve`, { method: 'POST', body }),
 	rejectInstructor: (id: string) =>
@@ -859,9 +861,11 @@ export const universityAdminApi = {
 	reinstateInstructor: (id: string) =>
 		api<unknown>(`/admin/university/instructors/${id}/reinstate`, { method: 'POST', body: {} }),
 	listPendingTracks: (params?: string) =>
-		api<unknown>(`/admin/university/tracks/pending${params ? `?${params}` : ''}`),
+		apiRaw<{ data: { id: string; title: string; slug: string; description?: string | null; difficulty: string; instructor_id?: string | null; instructor_name: string; price_kobo?: number | null; currency: string; category?: string | null; language: string; geo_space_id?: string | null; total_enrolled: number; is_published: boolean; is_published_to_university: boolean; created_at: string; updated_at: string }[]; meta: { total: number; limit: number; offset: number } }>(`/admin/university/tracks/pending${params ? `?${params}` : ''}`),
 	listAllTracks: (params?: string) =>
-		api<unknown>(`/admin/university/tracks${params ? `?${params}` : ''}`),
+		apiRaw<{ data: { id: string; title: string; slug: string; description?: string | null; difficulty: string; instructor_id?: string | null; instructor_name: string; price_kobo?: number | null; currency: string; category?: string | null; language: string; geo_space_id?: string | null; total_enrolled: number; is_published: boolean; is_published_to_university: boolean; created_at: string; updated_at: string }[]; meta: { total: number; limit: number; offset: number } }>(`/admin/university/tracks${params ? `?${params}` : ''}`),
+	getTrack: (id: string) =>
+		api<unknown>(`/admin/university/tracks/${id}`),
 	approveTrack: (id: string) =>
 		api<unknown>(`/admin/university/tracks/${id}/approve`, { method: 'POST', body: {} }),
 	rejectTrack: (id: string, body: { reason?: string }) =>
@@ -884,7 +888,7 @@ export const universityAdminApi = {
 		api<unknown>(`/admin/university/tracks/${id}/feature`, { method: 'POST', body: { featured } }),
 	// Track categories (ADR-063 §9.1)
 	listCategories: (params?: string) =>
-		api<unknown>(`/admin/university/categories${params ? `?${params}` : ''}`),
+		apiRaw<{ data: { id: string; slug: string; name: string; sort_order: number; is_active: boolean; created_at: string; updated_at: string }[]; meta: { total: number; page: number; limit: number } }>(`/admin/university/categories${params ? `?${params}` : ''}`),
 	createCategory: (body: { slug: string; name: string; sort_order?: number; is_active?: boolean }) =>
 		api<unknown>(`/admin/university/categories`, { method: 'POST', body }),
 	getCategory: (id: string) =>

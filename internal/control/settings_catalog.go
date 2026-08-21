@@ -90,12 +90,12 @@ var settingsCatalog = map[string]settingMeta{
 	"ads.frequency_cap_per_day": {Type: "int", DefaultValue: "3", Description: "Max ad impressions per user per day (global default).", Panel: "admin"},
 	"ads.min_campaign_budget":   {Type: "float", DefaultValue: "10", Description: "Minimum campaign budget in credits.", Panel: "admin"},
 	// AI
-	"ai.monthly_budget_usd":     {Type: "float", DefaultValue: "100", Description: "Alert threshold for AI spend (not hard cap).", Panel: "admin"},
-	"ai.japabot_enabled":        {Type: "bool", DefaultValue: "true", Description: "Global JapaBot toggle.", Panel: "admin"},
-	"ai.content_assist_enabled": {Type: "bool", DefaultValue: "true", Description: "In-editor AI assist toggle.", Panel: "admin"},
-	"ai.cost_per_1k_tokens_usd": {Type: "float", DefaultValue: "0.002", Description: "Default USD cost per 1,000 tokens for AI usage monitoring and cost limits.", Panel: "control"},
-	"ai.cache_enabled":          {Type: "bool", DefaultValue: "false", Description: "Enable Valkey semantic cache for repeated AI prompts (generate, chat, assist).", Panel: "control"},
-	"ai.cache_ttl_seconds":      {Type: "int", DefaultValue: "300", Description: "TTL for cached AI responses (seconds).", Panel: "control"},
+	"ai.monthly_budget_usd":      {Type: "float", DefaultValue: "100", Description: "Alert threshold for AI spend (not hard cap).", Panel: "admin"},
+	"ai.japabot_enabled":         {Type: "bool", DefaultValue: "true", Description: "Global JapaBot toggle.", Panel: "admin"},
+	"ai.content_assist_enabled":  {Type: "bool", DefaultValue: "true", Description: "In-editor AI assist toggle.", Panel: "admin"},
+	"ai.cost_per_1k_tokens_usd":  {Type: "float", DefaultValue: "0.002", Description: "Default USD cost per 1,000 tokens for AI usage monitoring and cost limits.", Panel: "control"},
+	"ai.cache_enabled":           {Type: "bool", DefaultValue: "false", Description: "Enable Valkey semantic cache for repeated AI prompts (generate, chat, assist).", Panel: "control"},
+	"ai.cache_ttl_seconds":       {Type: "int", DefaultValue: "300", Description: "TTL for cached AI responses (seconds).", Panel: "control"},
 	"ai.provider_cost_overrides": {Type: "json", DefaultValue: "{}", Description: `Per-provider/model price overrides. Keys are "provider" or "provider.model" (e.g. "xiaomi.mimo-v2-flash"), values are USD per 1,000 tokens.`, Panel: "control"},
 	// AI Humanization — injects natural-language style instructions into every
 	// AI generation surface (generate, chat, assist, persona/studio drafts).
@@ -352,7 +352,7 @@ var settingsCatalog = map[string]settingMeta{
 
 	// Community Achievement Feed (§89, ADR-097)
 	"achievement.enabled":   {Type: "bool", DefaultValue: "false", Description: "Global achievement feed toggle.", Panel: "control"},
-	"achievement_reactions": {Type: "json", DefaultValue: "[]", Description: "Curated reaction set for achievements (emoji + label pairs).", Panel: "control"},
+	"achievement_reactions": {Type: "json", DefaultValue: `[{"emoji":"🎉","label":"Celebrate"},{"emoji":"🔥","label":"Inspired"},{"emoji":"💪","label":"Motivated"}]`, Description: "Curated reaction set for achievements (emoji + label pairs).", Panel: "control"},
 
 	// Service Directory (§98, ADR-106)
 	"service_directory.enabled":       {Type: "bool", DefaultValue: "false", Description: "Global service directory toggle.", Panel: "control"},
@@ -364,38 +364,38 @@ var settingsCatalog = map[string]settingMeta{
 	// visa_timeline.enabled is catalogued above (§83/§93); the remaining
 	// ten are registered here so the control-panel settings page exposes
 	// form fields and the /extensions Tools tab resolves their defaults.
-	"visa_routes.enabled":              {Type: "bool", DefaultValue: "false", Description: "Global visa route comparison tool toggle.", Panel: "control"},
-	"visa_routes.subdomain":            {Type: "string", DefaultValue: "", Description: "Optional standalone subdomain (ADR-086).", Panel: "control"},
-	"visa_routes.custom_domain":        {Type: "string", DefaultValue: "", Description: "Optional custom domain (ADR-086).", Panel: "control"},
-	"appointment_alert.enabled":              {Type: "bool", DefaultValue: "false", Description: "Global embassy appointment alerter toggle.", Panel: "control"},
+	"visa_routes.enabled":                     {Type: "bool", DefaultValue: "false", Description: "Global visa route comparison tool toggle.", Panel: "control"},
+	"visa_routes.subdomain":                   {Type: "string", DefaultValue: "", Description: "Optional standalone subdomain (ADR-086).", Panel: "control"},
+	"visa_routes.custom_domain":               {Type: "string", DefaultValue: "", Description: "Optional custom domain (ADR-086).", Panel: "control"},
+	"appointment_alert.enabled":               {Type: "bool", DefaultValue: "false", Description: "Global embassy appointment alerter toggle.", Panel: "control"},
 	"appointment_alert.premium_poll_interval": {Type: "int", DefaultValue: "300", Description: "Polling interval (seconds) for embassies with premium-tier alerts (5 min default vs 15 min standard). §91, ADR-099.", Panel: "control"},
-	"appointment_alert.subdomain":            {Type: "string", DefaultValue: "", Description: "Optional standalone subdomain (ADR-086).", Panel: "control"},
-	"appointment_alert.custom_domain":  {Type: "string", DefaultValue: "", Description: "Optional custom domain (ADR-086).", Panel: "control"},
-	"arrival_checklist.enabled":        {Type: "bool", DefaultValue: "false", Description: "Global arrival checklist tool toggle.", Panel: "control"},
-	"arrival_checklist.subdomain":      {Type: "string", DefaultValue: "", Description: "Optional standalone subdomain (ADR-086).", Panel: "control"},
-	"arrival_checklist.custom_domain":  {Type: "string", DefaultValue: "", Description: "Optional custom domain (ADR-086).", Panel: "control"},
-	"credential_checker.enabled":       {Type: "bool", DefaultValue: "false", Description: "Global professional credential checker toggle.", Panel: "control"},
-	"credential_checker.subdomain":     {Type: "string", DefaultValue: "", Description: "Optional standalone subdomain (ADR-086).", Panel: "control"},
-	"credential_checker.custom_domain": {Type: "string", DefaultValue: "", Description: "Optional custom domain (ADR-086).", Panel: "control"},
-	"cv_formatter.enabled":             {Type: "bool", DefaultValue: "false", Description: "Global CV formatter tool toggle.", Panel: "control"},
-	"cv_formatter.subdomain":           {Type: "string", DefaultValue: "", Description: "Optional standalone subdomain (ADR-086).", Panel: "control"},
-	"cv_formatter.custom_domain":       {Type: "string", DefaultValue: "", Description: "Optional custom domain (ADR-086).", Panel: "control"},
-	"cv_formatter.quota_standard":      {Type: "int", DefaultValue: "3", Description: "Monthly CV formatting quota for standard members (§95).", Panel: "control"},
-	"housing_guide.enabled":            {Type: "bool", DefaultValue: "false", Description: "Global housing guide tool toggle.", Panel: "control"},
-	"housing_guide.subdomain":          {Type: "string", DefaultValue: "", Description: "Optional standalone subdomain (ADR-086).", Panel: "control"},
-	"housing_guide.custom_domain":      {Type: "string", DefaultValue: "", Description: "Optional custom domain (ADR-086).", Panel: "control"},
-	"attestation_guide.enabled":        {Type: "bool", DefaultValue: "false", Description: "Global attestation guide tool toggle.", Panel: "control"},
-	"attestation_guide.subdomain":      {Type: "string", DefaultValue: "", Description: "Optional standalone subdomain (ADR-086).", Panel: "control"},
-	"attestation_guide.custom_domain":  {Type: "string", DefaultValue: "", Description: "Optional custom domain (ADR-086).", Panel: "control"},
-	"language_test_hub.enabled":        {Type: "bool", DefaultValue: "false", Description: "Global language test hub tool toggle.", Panel: "control"},
-	"language_test_hub.subdomain":      {Type: "string", DefaultValue: "", Description: "Optional standalone subdomain (ADR-086).", Panel: "control"},
-	"language_test_hub.custom_domain":  {Type: "string", DefaultValue: "", Description: "Optional custom domain (ADR-086).", Panel: "control"},
-	"tax_calculator.enabled":           {Type: "bool", DefaultValue: "false", Description: "Global tax calculator tool toggle.", Panel: "control"},
-	"tax_calculator.subdomain":         {Type: "string", DefaultValue: "", Description: "Optional standalone subdomain (ADR-086).", Panel: "control"},
-	"tax_calculator.custom_domain":     {Type: "string", DefaultValue: "", Description: "Optional custom domain (ADR-086).", Panel: "control"},
-	"community_locator.enabled":        {Type: "bool", DefaultValue: "false", Description: "Global diaspora community locator toggle.", Panel: "control"},
-	"community_locator.subdomain":      {Type: "string", DefaultValue: "", Description: "Optional standalone subdomain (ADR-086).", Panel: "control"},
-	"community_locator.custom_domain":  {Type: "string", DefaultValue: "", Description: "Optional custom domain (ADR-086).", Panel: "control"},
+	"appointment_alert.subdomain":             {Type: "string", DefaultValue: "", Description: "Optional standalone subdomain (ADR-086).", Panel: "control"},
+	"appointment_alert.custom_domain":         {Type: "string", DefaultValue: "", Description: "Optional custom domain (ADR-086).", Panel: "control"},
+	"arrival_checklist.enabled":               {Type: "bool", DefaultValue: "false", Description: "Global arrival checklist tool toggle.", Panel: "control"},
+	"arrival_checklist.subdomain":             {Type: "string", DefaultValue: "", Description: "Optional standalone subdomain (ADR-086).", Panel: "control"},
+	"arrival_checklist.custom_domain":         {Type: "string", DefaultValue: "", Description: "Optional custom domain (ADR-086).", Panel: "control"},
+	"credential_checker.enabled":              {Type: "bool", DefaultValue: "false", Description: "Global professional credential checker toggle.", Panel: "control"},
+	"credential_checker.subdomain":            {Type: "string", DefaultValue: "", Description: "Optional standalone subdomain (ADR-086).", Panel: "control"},
+	"credential_checker.custom_domain":        {Type: "string", DefaultValue: "", Description: "Optional custom domain (ADR-086).", Panel: "control"},
+	"cv_formatter.enabled":                    {Type: "bool", DefaultValue: "false", Description: "Global CV formatter tool toggle.", Panel: "control"},
+	"cv_formatter.subdomain":                  {Type: "string", DefaultValue: "", Description: "Optional standalone subdomain (ADR-086).", Panel: "control"},
+	"cv_formatter.custom_domain":              {Type: "string", DefaultValue: "", Description: "Optional custom domain (ADR-086).", Panel: "control"},
+	"cv_formatter.quota_standard":             {Type: "int", DefaultValue: "3", Description: "Monthly CV formatting quota for standard members (§95).", Panel: "control"},
+	"housing_guide.enabled":                   {Type: "bool", DefaultValue: "false", Description: "Global housing guide tool toggle.", Panel: "control"},
+	"housing_guide.subdomain":                 {Type: "string", DefaultValue: "", Description: "Optional standalone subdomain (ADR-086).", Panel: "control"},
+	"housing_guide.custom_domain":             {Type: "string", DefaultValue: "", Description: "Optional custom domain (ADR-086).", Panel: "control"},
+	"attestation_guide.enabled":               {Type: "bool", DefaultValue: "false", Description: "Global attestation guide tool toggle.", Panel: "control"},
+	"attestation_guide.subdomain":             {Type: "string", DefaultValue: "", Description: "Optional standalone subdomain (ADR-086).", Panel: "control"},
+	"attestation_guide.custom_domain":         {Type: "string", DefaultValue: "", Description: "Optional custom domain (ADR-086).", Panel: "control"},
+	"language_test_hub.enabled":               {Type: "bool", DefaultValue: "false", Description: "Global language test hub tool toggle.", Panel: "control"},
+	"language_test_hub.subdomain":             {Type: "string", DefaultValue: "", Description: "Optional standalone subdomain (ADR-086).", Panel: "control"},
+	"language_test_hub.custom_domain":         {Type: "string", DefaultValue: "", Description: "Optional custom domain (ADR-086).", Panel: "control"},
+	"tax_calculator.enabled":                  {Type: "bool", DefaultValue: "false", Description: "Global tax calculator tool toggle.", Panel: "control"},
+	"tax_calculator.subdomain":                {Type: "string", DefaultValue: "", Description: "Optional standalone subdomain (ADR-086).", Panel: "control"},
+	"tax_calculator.custom_domain":            {Type: "string", DefaultValue: "", Description: "Optional custom domain (ADR-086).", Panel: "control"},
+	"community_locator.enabled":               {Type: "bool", DefaultValue: "false", Description: "Global diaspora community locator toggle.", Panel: "control"},
+	"community_locator.subdomain":             {Type: "string", DefaultValue: "", Description: "Optional standalone subdomain (ADR-086).", Panel: "control"},
+	"community_locator.custom_domain":         {Type: "string", DefaultValue: "", Description: "Optional custom domain (ADR-086).", Panel: "control"},
 
 	// Remittance Rate Tracker (§74, ADR-075)
 	"remittance.enabled":                {Type: "bool", DefaultValue: "true", Description: "Global tracker toggle.", Panel: "control"},
@@ -460,6 +460,55 @@ var settingsCatalog = map[string]settingMeta{
 
 	// Mentorship Matching (§102, ADR-110)
 	"mentorship.max_capacity": {Type: "int", DefaultValue: "10", Min: 1, Description: "Maximum mentee capacity per mentor (platform-wide cap).", Panel: "control"},
+
+	// Security Scan Thresholds (§40, Rule 3)
+	"security.scan.failed_login_threshold":       {Type: "int", DefaultValue: "50", Min: 0, Description: "Failed logins in 1h that triggers a warning finding.", Panel: "control"},
+	"security.scan.sla_breach_threshold":         {Type: "int", DefaultValue: "5", Min: 0, Description: "Open tickets with breached SLA that triggers a critical finding.", Panel: "control"},
+	"security.scan.stale_tokens_threshold":       {Type: "int", DefaultValue: "100", Min: 0, Description: "Unrevoked refresh tokens older than 30d that triggers a warning.", Panel: "control"},
+	"security.scan.unverified_users_threshold":   {Type: "int", DefaultValue: "10", Min: 0, Description: "Users with unverified email older than 7d that triggers an info finding.", Panel: "control"},
+	"security.scan.min_password_length":          {Type: "int", DefaultValue: "8", Min: 0, Description: "Recommended minimum password length for the weak-password scan.", Panel: "control"},
+	"security.scan.excessive_api_keys_threshold": {Type: "int", DefaultValue: "20", Min: 0, Description: "Active API keys without expiration that triggers an info finding.", Panel: "control"},
+
+	// Content Import (§65, ADR-083)
+	"dataimport.max_file_mb": {Type: "int", DefaultValue: "100", Min: 1, Description: "Max import file size in MB (Section 67 platform data imports).", Panel: "control"},
+
+	// Mobile Push (§77, ADR-074)
+	"push.apns_bundle_id": {Type: "string", DefaultValue: "", Description: "APNs topic (app bundle ID, e.g. com.japaconnect.app).", Sensitive: true, Panel: "control"},
+
+	// V2 Community Features & Tools (§§79–101)
+	"visa_timeline.min_account_age_days": {Type: "int", DefaultValue: "30", Min: 0, Description: "Min account age to contribute to processing time aggregate (§83).", Panel: "control"},
+	"visa_timeline.min_reputation":       {Type: "int", DefaultValue: "50", Min: 0, Description: "Min reputation to contribute to processing time aggregate (§83).", Panel: "control"},
+	"calendar.categories":                {Type: "json", DefaultValue: `[{"value":"visa_window","label":"Visa window"},{"value":"embassy_closure","label":"Embassy closure"},{"value":"application_deadline","label":"Application deadline"},{"value":"exam_window","label":"Exam window"},{"value":"immigration_office","label":"Immigration office"},{"value":"other","label":"Other"}]`, Description: "Allowed calendar entry categories (§86). Array of {value, label} objects.", Panel: "control"},
+	"attestation_guide.hague_members":    {Type: "json", DefaultValue: "[]", Description: "JSON array of destination space IDs that are Hague Convention members (§97).", Panel: "control"},
+
+	// Claim Ownership (§07)
+	"claim_ownership.form_slug":   {Type: "string", DefaultValue: "claim-ownership", Description: "Slug of the Form Builder form used for ownership claims (§07).", Panel: "control"},
+	"claim_ownership.fee_credits": {Type: "int", DefaultValue: "0", Min: 0, Description: "Override fee for claim submissions in credits; 0 = use form's submission_fee_credits (§07).", Panel: "control"},
+
+	// Webhooks (§12)
+	"webhooks.event_catalog": {Type: "json", DefaultValue: "", Description: "JSON array of {key,label,description} objects defining the available webhook event types. Empty = use the built-in default catalog (§12).", Panel: "control"},
+
+	// Intelligence System (§INTEL, ADR-112)
+	"intel.enabled":                           {Type: "bool", DefaultValue: "true", Description: "Global intelligence system toggle.", Panel: "control"},
+	"intel.schedule_batch_size":               {Type: "int", DefaultValue: "50", Min: 1, Max: 1000, Description: "Max sources selected per scheduler tick.", Panel: "control"},
+	"intel.extraction_confidence_auto":        {Type: "float", DefaultValue: "0.85", Min: 0, Max: 1, Description: "Auto-publish threshold (confidence ≥ this AND source Tier 1-2 → AUTO_PUBLISH).", Panel: "control"},
+	"intel.extraction_confidence_review":      {Type: "float", DefaultValue: "0.50", Min: 0, Max: 1, Description: "Review threshold (confidence ≥ this but below auto → REVIEW_REQUIRED).", Panel: "control"},
+	"intel.extraction_confidence_reject":      {Type: "float", DefaultValue: "0.50", Min: 0, Max: 1, Description: "Reject threshold (confidence below this from Tier 3+ → reject).", Panel: "control"},
+	"intel.extraction_max_retries":            {Type: "int", DefaultValue: "3", Min: 0, Max: 10, Description: "Malformed JSON retries before routing to REVIEW_REQUIRED.", Panel: "control"},
+	"intel.extraction_model":                  {Type: "string", DefaultValue: "gpt-4o-mini", Description: "Extraction model via §20 AI gateway (cost-tuned; switchable).", Panel: "control"},
+	"intel.freshness_decay_scholarship":       {Type: "string", DefaultValue: "slow", Description: "Freshness policy per entity type: slow | medium | fast.", Options: `[{"value":"slow","label":"Slow"},{"value":"medium","label":"Medium"},{"value":"fast","label":"Fast"}]`, Panel: "control"},
+	"intel.credential.enabled":                {Type: "bool", DefaultValue: "true", Description: "Enable the credential_pathways intelligence domain.", Panel: "control"},
+	"intel.credential.freshness_decay_policy": {Type: "string", DefaultValue: "slow", Description: "Freshness policy for credential_pathways: slow | medium | fast.", Options: `[{"value":"slow","label":"Slow"},{"value":"medium","label":"Medium"},{"value":"fast","label":"Fast"}]`, Panel: "control"},
+	"intel.crawl_lock_ttl_secs":               {Type: "int", DefaultValue: "3600", Min: 60, Description: "Crawl lock TTL (prevents concurrent crawls of same source).", Panel: "control"},
+	"intel.ratelimit_default_per_min":         {Type: "int", DefaultValue: "10", Min: 1, Description: "Default rate-limit tokens per domain per minute.", Panel: "control"},
+	"intel.radar.default_page_size":           {Type: "int", DefaultValue: "20", Min: 1, Max: 100, Description: "Default page size for radar feed/counts endpoints (INTEL-016).", Panel: "control"},
+	"intel.radar.max_page_size":               {Type: "int", DefaultValue: "100", Min: 1, Max: 1000, Description: "Maximum page size for radar feed/counts endpoints (INTEL-016).", Panel: "control"},
+	"intel.radar.max_followed_spaces":         {Type: "int", DefaultValue: "100", Min: 1, Max: 1000, Description: "Max followed spaces returned by /intel/radar/followed (INTEL-016).", Panel: "control"},
+	"intel.scholarships.max_page_size":        {Type: "int", DefaultValue: "50", Min: 1, Max: 1000, Description: "Maximum page size for /intel/scholarships search (INTEL-016).", Panel: "control"},
+	"intel.default_persona_id":                {Type: "string", DefaultValue: "", Description: "Fallback AI persona whose backing bot user is stamped as contents.author_id when an intel source has no explicit persona_id.", Panel: "control"},
+
+	// Generic Comparison System (§30, ADR-030)
+	"comparison.auto_dimension_hints": {Type: "json", DefaultValue: `{"default":["Overview","Key features","Pros","Cons","Overall rating"],"groups":[{"hints":["price","cost","plan","package","version","edition","model"],"dimensions":["Price","Value for money"],"prepend":true},{"hints":["course","university","school","program","degree","certification"],"dimensions":["Curriculum","Duration","Cost","Accreditation"],"prepend":false}]}`, Description: "Heuristic hints used by POST /comparisons/auto-dimensions to derive dimension suggestions from item names. Admin-configurable per tenant.", Panel: "control"},
 }
 
 // IsPublicSetting reports whether the given dot-notation key is marked Public

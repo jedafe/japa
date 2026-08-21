@@ -149,11 +149,28 @@
 		],
 		actions: rowActions,
 		fields,
-		load: async () => {
-			const result = await blogAdminApi.getReviewQueue();
+		load: async ({ page, pageSize, q, filter }) => {
+			const result = await blogAdminApi.getReviewQueue('?page_size=1000');
 			if (result.ok) {
-				const data = (result.data as ReviewItem[]) ?? [];
-				return { data, total: data.length, totalPages: 1 };
+				let data = (result.data as ReviewItem[]) ?? [];
+				const query = (q ?? '').toLowerCase();
+				if (query) {
+					data = data.filter((row) =>
+						[row.title, row.author_name, row.slug, row.excerpt].some((v) =>
+							String(v ?? '').toLowerCase().includes(query)
+						)
+					);
+				}
+				filter;
+				const size = pageSize || 25;
+				const offset = (page || 0) * size;
+				const total = data.length;
+				const totalPages = Math.max(1, Math.ceil(total / size));
+				return {
+					data: data.slice(offset, offset + size),
+					total,
+					totalPages
+				};
 			}
 			throw new Error(result.error ?? t('common.error', 'An error occurred'));
 		},

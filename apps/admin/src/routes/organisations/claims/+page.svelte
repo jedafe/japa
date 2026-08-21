@@ -1,7 +1,6 @@
 <script lang="ts">
 	import PageHeader from "$lib/components/layout/page-header.svelte";
 	import { DataTable } from "$lib/components/ui/data-table";
-	import { FilterBar } from "$lib/components/ui/filter-bar";
 	import { Button } from "$lib/components/ui/button";
 	import { Modal } from "$lib/components/ui/modal";
 	import { TableSkeleton } from "$lib/components/ui/skeleton";
@@ -47,7 +46,7 @@
 	// Default to "pending" — the actionable review queue. The status filter is
 	// server-side: selecting another value re-fetches from the API. "all" shows
 	// the full history (approved/rejected/withdrawn) for audit.
-	let statusFilter = $state("pending");
+	let filterValues = $state<Record<string, string>>({ status: "pending" });
 
 	// BUG-022/023: Claim status options fetched from the API (Rule 16).
 	let claimStatusOptions = $state<{ value: string; label: string }[]>([]);
@@ -167,11 +166,12 @@
 		errorMessage = "";
 		selectedIds = new Set();
 		try {
-			// statusFilter is read here (before the first await) so the $effect
+			// filterValues.status is read here (before the first await) so the $effect
 			// below tracks it and re-fetches when the admin changes status.
 			// "all" is passed explicitly so the backend returns every claim
 			// (history view); an empty param would default to "pending".
-			const params = `status=${statusFilter || "pending"}`;
+			const status = filterValues.status || "pending";
+			const params = `status=${status}`;
 			const result = await organisationsAdminApi.pendingClaims(params);
 			if (result.ok) {
 				claims = result.data as unknown as PendingClaim[];
@@ -185,9 +185,8 @@
 		}
 	}
 
-	function handleSearch(values: Record<string, string>) {
-		searchQuery = values.search ?? "";
-		statusFilter = values.status ?? "pending";
+	function handleSearch(q: string) {
+		searchQuery = q;
 	}
 
 	function openView(c: PendingClaim) {
@@ -345,17 +344,6 @@
 	</Button>
 </div>
 
-<FilterBar
-	filters={statusFilters}
-	onsearch={handleSearch}
-	onclear={() => {
-		searchQuery = "";
-		statusFilter = "";
-	}}
-/>
-
-<div class="mb-4"></div>
-
 {#if loading}
 	<TableSkeleton rows={5} />
 {:else}
@@ -368,6 +356,10 @@
 		bind:selectedIds
 		bulkActionsList={bulkActionsList}
 		emptyMessage={t("organisations.no_claims", "No claims found")}
+		searchable
+		onsearch={handleSearch}
+		filters={statusFilters}
+		bind:filterValue={filterValues}
 	/>
 {/if}
 

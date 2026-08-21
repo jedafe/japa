@@ -346,7 +346,7 @@
 					{/if}
 					<div>
 						<label class="mb-1 block text-sm font-medium text-[var(--color-text)]" for="ob-location">{t('onboarding.field_location', 'Current location')}</label>
-						<input id="ob-location" bind:value={currentLocation} type="text" placeholder="e.g. Lagos, Nigeria" class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none" />
+						<input id="ob-location" bind:value={currentLocation} type="text" placeholder={t('onboarding.location_placeholder', 'e.g. Lagos, Nigeria')} class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none" />
 					</div>
 				</div>
 			{/if}

@@ -409,7 +409,7 @@
 										id="story-score"
 										type="text"
 										bind:value={storyFinalScore}
-										placeholder="e.g. 7.5"
+										placeholder={t('language_test.score_placeholder', 'e.g. 7.5')}
 										class="w-full px-3 py-2 text-sm bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius)] focus:border-[var(--color-primary)] focus:outline-none"
 									/>
 								</div>
@@ -421,7 +421,7 @@
 										id="story-level"
 										type="text"
 										bind:value={storyStartingLevel}
-										placeholder="e.g. B1"
+										placeholder={t('language_test.level_placeholder', 'e.g. B1')}
 										class="w-full px-3 py-2 text-sm bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius)] focus:border-[var(--color-primary)] focus:outline-none"
 									/>
 								</div>
@@ -445,7 +445,7 @@
 										id="story-resources"
 										type="text"
 										bind:value={storyResourcesUsed}
-										placeholder="e.g. IELTS Liz, YouTube, Cambridge books"
+										placeholder={t('language_test.resources_placeholder', 'e.g. IELTS Liz, YouTube, Cambridge books')}
 										class="w-full px-3 py-2 text-sm bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius)] focus:border-[var(--color-primary)] focus:outline-none"
 									/>
 								</div>

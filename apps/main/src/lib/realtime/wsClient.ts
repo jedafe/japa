@@ -1,6 +1,6 @@
+import { api } from '$lib/api/client';
+
 /**
- * WebSocket client for the JapaConnect Real-Time system (Section 10).
- *
  * Backend protocol (internal/websocket):
  *   - Connect:  GET /api/v1/ws?ticket={ticket_id}
  *   - Ticket:   POST /api/v1/auth/ws-ticket -> { "ticket": "..." }
@@ -34,14 +34,8 @@ const MAX_RECONNECT_ATTEMPTS = 10;
 /** Mint a short-lived WS ticket via POST /api/v1/auth/ws-ticket. */
 async function mintTicket(): Promise<string | null> {
 	try {
-		const res = await fetch('/api/v1/auth/ws-ticket', {
-			method: 'POST',
-			credentials: 'include',
-			headers: { 'content-type': 'application/json' }
-		});
-		if (!res.ok) return null;
-		const body = (await res.json()) as { ticket?: string };
-		return body.ticket ?? null;
+		const res = await api.post<{ ticket: string }>('/auth/ws-ticket');
+		return res.data?.ticket ?? null;
 	} catch {
 		return null;
 	}

@@ -9,6 +9,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/admin"
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
@@ -777,6 +778,26 @@ func (h *Handlers) AdminListInstructors(w http.ResponseWriter, r *http.Request) 
 	})
 }
 
+// AdminGetInstructor handles GET /admin/university/instructors/{id}.
+// Returns the masked instructor profile (payout_method is never exposed raw).
+func (h *Handlers) AdminGetInstructor(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+	instructorID, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	prof, err := h.service.store.GetByID(r.Context(), tenantID, instructorID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": profileFromRow(prof)})
+}
+
 // AdminApproveInstructor handles POST /admin/university/instructors/{id}/approve.
 func (h *Handlers) AdminApproveInstructor(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := requireTenant(w, r)
@@ -1222,6 +1243,25 @@ func (h *Handlers) AdminListAllTracks(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// AdminGetTrack handles GET /admin/university/tracks/{id}.
+func (h *Handlers) AdminGetTrack(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+	trackID, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	track, err := h.service.store.GetTrackByID(r.Context(), tenantID, trackID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": track})
+}
+
 // AdminRejectTrack handles POST /admin/university/tracks/{id}/reject.
 // Rejects a submitted track with an optional reason (BUG-002, BUG-004).
 func (h *Handlers) AdminRejectTrack(w http.ResponseWriter, r *http.Request) {
@@ -1516,4 +1556,22 @@ func (h *Handlers) PublicListActiveCategories(w http.ResponseWriter, r *http.Req
 		rows = []gen.ListActiveUniversityTrackCategoriesRow{}
 	}
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": rows})
+}
+
+// GetCatalogOptions handles GET /learn/university/catalog/options.
+// No auth required — returns public marketplace option lists (difficulty levels,
+// instructor social platforms). Ref: Section 36 (Rule 16).
+func (h *Handlers) GetCatalogOptions(w http.ResponseWriter, r *http.Request) {
+	if _, ok := requireTenant(w, r); !ok {
+		return
+	}
+
+	difficulty, _ := admin.CatalogOptions("university.tracks.difficulty")
+	social, _ := admin.CatalogOptions("university.instructor.social_platforms")
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
+		"data": map[string]any{
+			"difficulty_levels": difficulty,
+			"social_platforms":  social,
+		},
+	})
 }

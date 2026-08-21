@@ -6,7 +6,6 @@
 	import TrackCard from '$lib/components/learn/TrackCard.svelte';
 	import { LoadingSkeleton, EmptyState } from '$lib/components/ui';
 	import { Compass, GraduationCap, ArrowRight } from 'lucide-svelte';
-	import { DIFFICULTY_LEVELS } from '$lib/constants/learning';
 	import type { PageData } from './$types';
 	import type { Enrollment } from '$lib/types';
 
@@ -37,7 +36,7 @@
 
 <svelte:head>
 	<title>{t('university.catalog')} · {t('university.name')}</title>
-	<meta name="description" content="Browse courses on Japa University." />
+	<meta name="description" content={t('university.catalog_description')} />
 	<link rel="canonical" href="https://university.japaconnect.com/" />
 </svelte:head>
 
@@ -50,7 +49,9 @@
 		</h1>
 		{#if data.query}
 			<p class="mt-1 text-sm text-[var(--color-muted)]">
-				{data.tracks.length} results for "{data.query}"
+				{t('learn.results_for_query', '{count} results for "{query}"')
+					.replace('{count}', String(data.tracks.length))
+					.replace('{query}', data.query)}
 			</p>
 		{/if}
 	</header>
@@ -85,12 +86,12 @@
 		>
 			{t('learn.overview')}
 		</a>
-		{#each DIFFICULTY_LEVELS as level}
+		{#each data.difficultyLevels as opt (opt.value)}
 			<a
-				href="/?level={level}"
-				class="rounded-full px-3 py-1 text-sm {data.levelFilter === level ? 'bg-[var(--color-primary)] text-[var(--color-primary-contrast)]' : 'border border-[var(--color-border)] text-[var(--color-text-subtle)] hover:bg-[var(--color-surface-subtle)]'}"
+				href="/?level={opt.value}"
+				class="rounded-full px-3 py-1 text-sm {data.levelFilter === opt.value ? 'bg-[var(--color-primary)] text-[var(--color-primary-contrast)]' : 'border border-[var(--color-border)] text-[var(--color-text-subtle)] hover:bg-[var(--color-surface-subtle)]'}"
 			>
-				{t(`level.${level}`)}
+				{t(`level.${opt.value}`)}
 			</a>
 		{/each}
 	</div>
@@ -99,7 +100,9 @@
 	{#if data.tracks.length === 0}
 		<EmptyState
 			title={t('common.empty')}
-			description={data.query ? t('learn.no_match_for_query', `No courses match "${data.query}".`) : t('learn.no_courses_yet', 'No courses published yet.')}
+			description={data.query
+				? t('learn.no_match_for_query', 'No courses match "{query}".').replace('{query}', data.query)
+				: t('learn.no_courses_yet', 'No courses published yet.')}
 		>
 			{#snippet action()}
 				{#if data.query || data.levelFilter}

@@ -66,6 +66,12 @@ var adminCatalogs = map[string][]CatalogOption{
 		{Value: "intermediate", Label: "Intermediate"},
 		{Value: "advanced", Label: "Advanced"},
 	},
+	"university.instructor.social_platforms": {
+		{Value: "twitter", Label: "Twitter"},
+		{Value: "linkedin", Label: "LinkedIn"},
+		{Value: "website", Label: "Website"},
+		{Value: "youtube", Label: "YouTube"},
+	},
 	"university.tracks.status": {
 		{Value: "pending", Label: "Pending"},
 		{Value: "approved", Label: "Approved"},
@@ -269,6 +275,19 @@ var adminCatalogs = map[string][]CatalogOption{
 		{Value: "tax_obligation_guide", Label: "Tax Obligation Guide"},
 		{Value: "community_organisation", Label: "Community Organisation"},
 	},
+}
+
+// CatalogOptions returns a defensive copy of the options for a named catalog.
+// It is exported so other packages (e.g. the university marketplace) can expose
+// the same source of truth without duplicating option lists (Rule 16).
+func CatalogOptions(name string) ([]CatalogOption, bool) {
+	opts, ok := adminCatalogs[name]
+	if !ok {
+		return nil, false
+	}
+	out := make([]CatalogOption, len(opts))
+	copy(out, opts)
+	return out, true
 }
 
 // catalogKeys returns the list of registered catalog names, sorted.

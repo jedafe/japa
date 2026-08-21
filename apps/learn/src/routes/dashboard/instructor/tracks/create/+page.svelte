@@ -10,15 +10,10 @@
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
 	import { Plus, Save, ArrowLeft } from 'lucide-svelte';
-	import { DIFFICULTY_LEVELS } from '$lib/constants/learning';
 	import { formatPriceKobo } from '$lib/format';
 	import Autocomplete from '$lib/components/ui/Autocomplete.svelte';
 	import type { AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
-	import type { GeoCountry } from '$lib/types';
-
-	// Difficulty options are a fixed enum from the backend, not configurable data (Rule 16).
-	const DIFFICULTIES = DIFFICULTY_LEVELS;
-	type Difficulty = (typeof DIFFICULTIES)[number];
+	import type { GeoCountry, CatalogOption } from '$lib/types';
 
 	type Category = { id: string; slug: string; name: string; sort_order: number };
 
@@ -26,7 +21,8 @@
 	let slug = $state('');
 	let slugTouched = $state(false);
 	let description = $state('');
-	let difficulty = $state<Difficulty>('beginner');
+	let difficulty = $state('');
+	let difficultyLevels = $state<CatalogOption[]>([]);
 	let priceMain = $state(0);
 	let currency = $state('');
 	let category = $state('');
@@ -41,17 +37,24 @@
 	let countries = $state<GeoCountry[]>([]);
 	let countriesLoading = $state(false);
 
-	// Fetch active categories and seeded country spaces from public APIs (Rule 16).
+	// Fetch active categories, country spaces, and difficulty options from public APIs (Rule 16).
 	onMount(async () => {
-		const [catRes, geoRes] = await Promise.all([
+		const [catRes, geoRes, optRes] = await Promise.all([
 			api.get<Category[]>('/learn/university/categories'),
-			api.get<GeoCountry[]>('/geo/countries')
+			api.get<GeoCountry[]>('/geo/countries'),
+			api.get<{ difficulty_levels: CatalogOption[] }>('/learn/university/catalog/options')
 		]);
 		if (!catRes.error && catRes.data) {
 			categories = catRes.data;
 		}
 		if (!geoRes.error && geoRes.data) {
 			countries = geoRes.data;
+		}
+		if (!optRes.error && optRes.data) {
+			difficultyLevels = optRes.data.difficulty_levels ?? [];
+			if (difficulty === '' && difficultyLevels.length > 0) {
+				difficulty = difficultyLevels[0].value;
+			}
 		}
 	});
 
@@ -215,8 +218,8 @@
 				bind:value={difficulty}
 				class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-3 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none"
 			>
-				{#each DIFFICULTIES as d (d)}
-					<option value={d}>{t(`level.${d}`)}</option>
+				{#each difficultyLevels as opt (opt.value)}
+					<option value={opt.value}>{t(`level.${opt.value}`)}</option>
 				{/each}
 			</select>
 		</div>

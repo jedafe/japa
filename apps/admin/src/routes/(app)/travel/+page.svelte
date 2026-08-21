@@ -119,16 +119,34 @@
 			}
 		],
 		fields,
-		load: async ({ q, filter }) => {
-			const params = new URLSearchParams();
-			if (filter.is_active) params.set('is_active', filter.is_active);
-			if (filter.provider_type) params.set('provider_type', filter.provider_type);
-			if (q) params.set('q', q);
-			const result = await travelAdminApi.list(params.toString() || undefined);
+		load: async ({ page, pageSize, q, filter }) => {
+			const result = await travelAdminApi.list('?page_size=1000');
 			if (result.ok) {
-				const data = (result.data as TravelProvider[]) ?? [];
+				let data = (result.data as TravelProvider[]) ?? [];
+				if (filter?.is_active) {
+					data = data.filter((row) => String(row.is_active) === filter.is_active);
+				}
+				if (filter?.provider_type) {
+					data = data.filter((row) => row.provider_type === filter.provider_type);
+				}
+				const query = (q ?? '').toLowerCase();
+				if (query) {
+					data = data.filter((row) =>
+						[row.name, row.slug, row.provider_type].some((v) =>
+							String(v ?? '').toLowerCase().includes(query)
+						)
+					);
+				}
 				const mapped = data.map(mapProvider);
-				return { data: mapped, total: mapped.length, totalPages: 1 };
+				const size = pageSize || 25;
+				const offset = (page || 0) * size;
+				const total = mapped.length;
+				const totalPages = Math.max(1, Math.ceil(total / size));
+				return {
+					data: mapped.slice(offset, offset + size),
+					total,
+					totalPages
+				};
 			}
 			throw new Error(result.error ?? t('travel.load_error', 'Failed to load travel providers'));
 		},

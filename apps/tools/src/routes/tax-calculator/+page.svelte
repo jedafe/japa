@@ -10,7 +10,7 @@
 	import ToolDisabled from '$lib/components/ui/ToolDisabled.svelte';
 	import Autocomplete from '$lib/components/ui/Autocomplete.svelte';
 	import type { AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
-	import type { TaxGuideWithAi, TaxTreaty, GeoSpaceOption } from '$lib/types';
+	import type { TaxGuideWithAi, TaxTreaty, GeoSpaceOption, CatalogOption } from '$lib/types';
 
 	/**
 	 * Tax Calculator tool — §100, ADR-088.
@@ -22,6 +22,7 @@
 	let { data } = $props();
 
 	let destinations = $state<GeoSpaceOption[]>(untrack(() => data.destinations));
+	let employmentOptions = $state<CatalogOption[]>(untrack(() => data.employmentOptions));
 	let user = $state(untrack(() => data.user));
 
 	let selectedOriginId = $state<string>('');
@@ -220,11 +221,13 @@
 					onchange={(e) => (employmentStatus = (e.currentTarget as HTMLSelectElement).value)}
 					class="flex-1 px-4 py-2 bg-surface border border-border rounded-lg text-text focus:border-primary focus:outline-none"
 				>
-					<option value="">{t('tax_calculator.employment_any', 'Any (optional)')}</option>
-					<option value="employed">{t('tax_calculator.employed', 'Employed')}</option>
-					<option value="self_employed">{t('tax_calculator.self_employed', 'Self-employed')}</option>
-					<option value="contractor">{t('tax_calculator.contractor', 'Contractor')}</option>
-					<option value="unemployed">{t('tax_calculator.unemployed', 'Unemployed')}</option>
+					{#each employmentOptions as opt (opt.value)}
+						<option value={opt.value}>
+							{opt.value
+								? t(`tax_calculator.${opt.value}`, opt.label)
+								: t('tax_calculator.employment_any', opt.label)}
+						</option>
+					{/each}
 				</select>
 				<button
 					onclick={search}

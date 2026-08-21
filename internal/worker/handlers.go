@@ -581,7 +581,7 @@ func HandlePaymentWebhookProcess(ctx context.Context, t *asynq.Task) error {
 				"track_id":   trackID,
 				"payment_id": p.ID.String(),
 				"source":     "purchase",
-				"gross_kobo": p.Amount - p.DiscountAmount,
+				"gross_kobo": p.Amount,
 			})
 			if err := taskEnqueuer.Enqueue(TypeUniversityProcessEnrollment, enrollPayload); err != nil {
 				slog.Error("task:payment:process_webhook: failed to enqueue university enrollment",

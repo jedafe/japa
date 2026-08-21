@@ -19,7 +19,8 @@
 		RemittanceRate,
 		RemittanceAlert,
 		RemittanceHistoryPoint,
-		RemittanceCalculation
+		RemittanceCalculation,
+		CatalogOption
 	} from '$lib/types';
 
 	/**
@@ -36,6 +37,7 @@
 	let user = $state(untrack(() => data.user));
 
 	let selectedCorridor = $state<RemittanceCorridor>(untrack(() => data.defaultCorridor));
+	let directionOptions = $state<CatalogOption[]>(untrack(() => data.directionOptions));
 	let history = $state<RemittanceHistoryPoint[]>([]);
 	let loadingRates = $state(false);
 	let loadingHistory = $state(false);
@@ -51,7 +53,7 @@
 
 	// Alert creation state
 	let alertTargetRate = $state('');
-	let alertDirection = $state<'above' | 'below'>('above');
+	let alertDirection = $state('above');
 	let showRegisterPrompt = $state(false);
 
 	const seo = $derived(
@@ -117,7 +119,7 @@
 			send_currency: selectedCorridor.send_currency,
 			receive_currency: selectedCorridor.receive_currency,
 			target_rate: parseFloat(alertTargetRate),
-			direction: alertDirection
+			direction: alertDirection as 'above' | 'below'
 		});
 		if (!res.error && res.data) {
 			alerts = [...alerts, res.data];
@@ -151,7 +153,7 @@
 	/** Edit an alert's target rate and direction via PATCH (§74). */
 	let editingAlertId = $state<string | null>(null);
 	let editTargetRate = $state('');
-	let editDirection = $state<'above' | 'below'>('above');
+	let editDirection = $state('above');
 
 	function startEditAlert(alert: RemittanceAlert) {
 		editingAlertId = alert.id;
@@ -166,13 +168,13 @@
 		}
 		const res = await api.patch<RemittanceAlert>(`/remittance/alerts/${id}`, {
 			target_rate: parseFloat(editTargetRate),
-			direction: editDirection
+			direction: editDirection as 'above' | 'below'
 		});
 		editingAlertId = null;
 		if (!res.error) {
 			alerts = alerts.map((a) =>
 				a.id === id
-					? { ...a, target_rate: parseFloat(editTargetRate), direction: editDirection }
+					? { ...a, target_rate: parseFloat(editTargetRate), direction: editDirection as 'above' | 'below' }
 					: a
 			);
 		}
@@ -493,8 +495,9 @@
 							bind:value={alertDirection}
 							class="px-3 py-1.5 text-sm bg-surface border border-border rounded focus:border-primary focus:outline-none"
 						>
-							<option value="above">{t('remittance.direction_above', 'rate goes above')}</option>
-							<option value="below">{t('remittance.direction_below', 'rate drops below')}</option>
+							{#each directionOptions as opt (opt.value)}
+								<option value={opt.value}>{t(`remittance.direction_${opt.value}`, opt.label)}</option>
+							{/each}
 						</select>
 						<input
 							type="number"
@@ -527,8 +530,9 @@
 												bind:value={editDirection}
 												class="px-2 py-1 text-sm bg-surface border border-border rounded focus:border-primary focus:outline-none"
 											>
-												<option value="above">{t('remittance.direction_above', 'rate goes above')}</option>
-												<option value="below">{t('remittance.direction_below', 'rate drops below')}</option>
+												{#each directionOptions as opt (opt.value)}
+												<option value={opt.value}>{t(`remittance.direction_${opt.value}`, opt.label)}</option>
+											{/each}
 											</select>
 											<input
 												type="number"

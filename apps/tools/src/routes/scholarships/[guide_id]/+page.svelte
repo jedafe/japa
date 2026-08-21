@@ -7,7 +7,7 @@
 	import Icon from '$lib/components/ui/Icon.svelte';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import RegistrationPrompt from '$lib/components/ui/RegistrationPrompt.svelte';
-	import type { ScholarshipDetail, SavedScholarship, ScholarshipStatus } from '$lib/types';
+	import type { ScholarshipDetail, SavedScholarship, ScholarshipStatus, CatalogOption } from '$lib/types';
 
 	/**
 	 * Scholarship detail page — §73, ADR-073.
@@ -20,6 +20,7 @@
 	let scholarship = $state<ScholarshipDetail | null>(untrack(() => data.scholarship));
 	let savedItem = $state<SavedScholarship | null>(untrack(() => data.savedItem));
 	let user = $state(untrack(() => data.user));
+	let statusOptions = $state<CatalogOption[]>(untrack(() => data.statusOptions));
 
 	let showRegisterPrompt = $state(false);
 	let editingNotes = $state(false);
@@ -28,15 +29,9 @@
 	let reminderDraft = $state(14);
 	let updating = $state(false);
 
-	// $derived so labels re-render when the locale changes.
-	const statusOptions = $derived<{ value: ScholarshipStatus; label: string }[]>([
-		{ value: 'saved', label: t('scholarships.status_saved', 'Saved') },
-		{ value: 'researching', label: t('scholarships.status_researching', 'Researching') },
-		{ value: 'applied', label: t('scholarships.status_applied', 'Applied') },
-		{ value: 'accepted', label: t('scholarships.status_accepted', 'Accepted') },
-		{ value: 'rejected', label: t('scholarships.status_rejected', 'Rejected') },
-		{ value: 'withdrawn', label: t('scholarships.status_withdrawn', 'Withdrawn') }
-	]);
+	// Scholarship application status options are loaded from
+	// GET /scholarships/statuses (Rule 16 — no hardcoded option lists).
+	// Labels are translated client-side using value-based i18n keys.
 
 	const seo = $derived(
 		buildSeoMeta({
@@ -283,7 +278,7 @@
 							class="w-full px-3 py-2 text-sm bg-surface border border-border rounded focus:border-primary focus:outline-none"
 						>
 							{#each statusOptions as opt (opt.value)}
-								<option value={opt.value}>{opt.label}</option>
+								<option value={opt.value}>{t(`scholarships.status_${opt.value}`, opt.label)}</option>
 							{/each}
 						</select>
 					</div>
