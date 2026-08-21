@@ -12,3 +12,10 @@ final japabotConversationsProvider =
   final service = ref.watch(japabotServiceProvider);
   return service.listConversations();
 });
+
+final japabotMessagesProvider = FutureProvider.autoDispose
+    .family<List<JapaBotMessage>, String>((ref, id) async {
+  final service = ref.watch(japabotServiceProvider);
+  final detail = await service.getConversation(id);
+  return detail.messages;
+});

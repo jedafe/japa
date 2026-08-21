@@ -18,3 +18,9 @@ final jobDetailProvider = FutureProvider.autoDispose
   final service = ref.watch(jobsServiceProvider);
   return service.getJob(slug);
 });
+
+final myApplicationsProvider =
+    FutureProvider.autoDispose<List<JobApplication>>((ref) async {
+  final service = ref.watch(jobsServiceProvider);
+  return service.myApplications();
+});
