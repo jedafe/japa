@@ -20,7 +20,7 @@
 	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
 	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 	import { patchProfile } from '$lib/api/hub';
-	import { listStates, listCities, setLocation, getMyLocation } from '$lib/api/geo';
+	import { listStates, listCities, setLocation, getMyLocation, createCity } from '$lib/api/geo';
 	import { t } from '$lib/i18n';
 	import { MapPin, Navigation, Loader2, Home, Plane } from 'lucide-svelte';
 	import type { GeoCountry, GeoState, GeoCity } from '$lib/types';
@@ -331,6 +331,20 @@
 		});
 	}
 
+	async function addOriginCity(name: string): Promise<AutocompleteItem | null> {
+		if (!originStateId) {
+			originError = t('settings.location.search_state', 'Select a state first');
+			return null;
+		}
+		const city = await createCity(originStateId, name);
+		if (!city) {
+			originError = t('settings.location.save_error', 'Could not add city');
+			return null;
+		}
+		originCities = [...originCities, city];
+		return { id: city.id, label: city.name };
+	}
+
 	// ---- Destination country save handlers ----
 
 	async function saveDestCountry(item: AutocompleteItem) {
@@ -413,6 +427,20 @@
 				await saveLocation(country.id);
 			}
 		}
+	}
+
+	async function addCurrentCity(name: string): Promise<AutocompleteItem | null> {
+		if (!selectedStateId) {
+			locationError = t('settings.location.search_state', 'Select a state first');
+			return null;
+		}
+		const city = await createCity(selectedStateId, name);
+		if (!city) {
+			locationError = t('settings.location.save_error', 'Could not add city');
+			return null;
+		}
+		cities = [...cities, city];
+		return { id: city.id, label: city.name };
 	}
 
 	/**
@@ -533,7 +561,7 @@
 		{/if}
 
 		<!-- City -->
-		{#if originStateId && originStates.length > 0}
+		{#if originStateId}
 			<div class="relative mt-2">
 				<Autocomplete
 					placeholder={t('settings.location.search_origin_city', 'Search origin city…')}
@@ -544,6 +572,8 @@
 					selectedLabel={originCityLabel}
 					onSelect={onOriginCitySelect}
 					onClear={onOriginCityClear}
+					onAdd={addOriginCity}
+					addActionLabel={t('settings.location.add_city', 'Add "{query}"')}
 				/>
 				{#if originLoadingCities}
 					<span class="absolute right-3 top-1/2 -translate-y-1/2"><Loader2 size={12} class="animate-spin" /></span>
@@ -677,7 +707,7 @@
 			{/if}
 
 			<!-- City (only after state is selected and cities are loaded) -->
-			{#if selectedStateId && cities.length > 0}
+			{#if selectedStateId}
 				<div class="relative">
 					<Autocomplete
 						placeholder={t('settings.location.search_city', 'Search city…')}
@@ -688,6 +718,8 @@
 						selectedLabel={currentCityLabel}
 						onSelect={onCitySelect}
 						onClear={onCityClear}
+						onAdd={addCurrentCity}
+						addActionLabel={t('settings.location.add_city', 'Add "{query}"')}
 					/>
 					{#if loadingCities}<span class="absolute right-3 top-1/2 -translate-y-1/2"><Loader2 size={12} class="animate-spin" /></span>{/if}
 					{#if savingLocation}<span class="absolute right-3 top-1/2 -translate-y-1/2"><Loader2 size={12} class="animate-spin" /></span>{/if}

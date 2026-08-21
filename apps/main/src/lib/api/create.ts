@@ -73,6 +73,8 @@ export const createSpace = (input: {
 	space_type_id: string;
 	level: string;
 	description?: string;
+	geo_code?: string;
+	parent_id?: string;
 	parent_space_ids?: string[];
 }) => api.post<Space>('/spaces', input);
 export const createSeries = (input: {
