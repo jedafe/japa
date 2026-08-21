@@ -70,8 +70,8 @@
 		</div>
 	{:else if error}
 		<!-- Error state with retry -->
-		<div class="rounded-[var(--radius-card)] border border-[var(--color-error)] bg-[var(--color-surface)] p-6 text-center">
-			<AlertTriangle size={32} class="mx-auto mb-3 text-[var(--color-error)]" />
+		<div class="rounded-[var(--radius-card)] border border-[var(--color-danger)] bg-[var(--color-surface)] p-6 text-center">
+			<AlertTriangle size={32} class="mx-auto mb-3 text-[var(--color-danger)]" />
 			<p class="text-sm font-medium text-[var(--color-text)]">{t('learn.load_error', 'Failed to load your enrollments')}</p>
 			<p class="mt-1 text-xs text-[var(--color-muted)]">{error}</p>
 			<button

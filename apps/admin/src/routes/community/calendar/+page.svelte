@@ -259,7 +259,10 @@
 				if (meta) {
 					return { data, total: meta.total, totalPages: meta.total_pages };
 				}
-				return { data, total: data.length, totalPages: 1 };
+				const pageSize = params.pageSize || 10;
+				const start = params.page * pageSize;
+				const total = data.length;
+				return { data: data.slice(start, start + pageSize), total, totalPages: Math.max(1, Math.ceil(total / pageSize)) };
 			}
 			throw new Error(result.error ?? t('common.error', 'An error occurred'));
 		},

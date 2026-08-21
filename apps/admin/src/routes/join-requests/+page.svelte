@@ -137,14 +137,24 @@
 			}
 		],
 		fields,
-		load: async ({ q }) => {
-			const params = new URLSearchParams();
-			if (q) params.set('q', q);
-			const qs = params.toString();
-			const result = await api<JoinRequest[]>(`/admin/join-requests${qs ? `?${qs}` : ''}`);
+		load: async ({ page, pageSize, q }) => {
+			// The backend currently returns every join request without pagination,
+			// so we fetch a large window and apply client-side search/pagination.
+			const result = await api<JoinRequest[]>(`/admin/join-requests?limit=10000`);
 			if (result.ok) {
-				const data = result.data ?? [];
-				return { data, total: data.length, totalPages: 1 };
+				let data = result.data ?? [];
+				const query = (q ?? '').trim().toLowerCase();
+				if (query) {
+					data = data.filter((r) =>
+						(r.username ?? '').toLowerCase().includes(query) ||
+						(r.display_name ?? '').toLowerCase().includes(query) ||
+						(r.space_name ?? '').toLowerCase().includes(query)
+					);
+				}
+				const total = data.length;
+				const totalPages = pageSize > 0 ? Math.max(1, Math.ceil(total / pageSize)) : 1;
+				const start = page * pageSize;
+				return { data: data.slice(start, start + pageSize), total, totalPages };
 			}
 			throw new Error(result.error ?? t('common.error', 'Failed to load join requests'));
 		},

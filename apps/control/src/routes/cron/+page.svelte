@@ -5,7 +5,7 @@
 	import ConfirmModal from '$lib/components/ui/ConfirmModal.svelte';
 	import { Dialog, Select } from 'bits-ui';
 	import { api } from '$lib/api';
-	import { t } from '$lib/stores/i18n.svelte';
+	import { t, translations } from '$lib/stores/i18n.svelte';
 	import { escapeHtml } from '$lib/utils';
 	import { Play, Pause, PlayCircle, Pencil, Plus, RefreshCw, Trash2 } from 'lucide-svelte';
 	import type { DataTableColumn, DataTableRowAction, DataTableBulkAction } from '$lib/api/types';
@@ -50,11 +50,23 @@
 	let confirmBulkDeleteOpen = $state(false);
 	let pendingBulkIds = $state<string[]>([]);
 
-	const statusItems = [
-		{ value: 'all', label: t('cron.all_status', 'All Status') },
-		{ value: 'active', label: t('cron.active', 'Active') },
-		{ value: 'paused', label: t('cron.paused', 'Paused') }
-	];
+	const statusItems = $derived.by(() => {
+		translations();
+		const seen = new Set<string>();
+		for (const j of jobs) {
+			seen.add(j.paused ? 'paused' : 'active');
+		}
+		const items = [{ value: 'all', label: t('cron.all_status', 'All Status') }];
+		if (seen.has('active')) items.push({ value: 'active', label: t('cron.active', 'Active') });
+		if (seen.has('paused')) items.push({ value: 'paused', label: t('cron.paused', 'Paused') });
+		return items;
+	});
+
+	$effect(() => {
+		if (filterStatus !== 'all' && !statusItems.some((i) => i.value === filterStatus)) {
+			filterStatus = 'all';
+		}
+	});
 
 	interface TaskTypeOption {
 		value: string;

@@ -4,9 +4,10 @@
 	// PATCH payload: display_name?, headline?, bio?, social_links?, payout_method?
 	import { t } from '$lib/i18n';
 	import { api } from '$lib/api/client';
+	import { onMount } from 'svelte';
 	import { LoadingSkeleton, EmptyState } from '$lib/components/ui';
-	import { PenLine, Save, ArrowLeft, AtSign, Share2, Globe, Play } from 'lucide-svelte';
-	import type { InstructorProfile } from '$lib/types';
+	import { PenLine, Save, ArrowLeft, AtSign, Share2, Globe, Play, Link } from 'lucide-svelte';
+	import type { InstructorProfile, CatalogOption } from '$lib/types';
 
 	let profile = $state<InstructorProfile | null>(null);
 	let loading = $state(true);
@@ -18,34 +19,64 @@
 	let displayName = $state('');
 	let headline = $state('');
 	let bio = $state('');
-	let socialTwitter = $state('');
-	let socialLinkedin = $state('');
-	let socialWebsite = $state('');
-	let socialYoutube = $state('');
+	let socialLinks = $state<Record<string, string>>({});
+	let socialPlatforms = $state<CatalogOption[]>([]);
 
-	const socialFields = $derived([
-		{ key: 'twitter', label: t('university.social_twitter_label'), icon: AtSign, value: socialTwitter },
-		{ key: 'linkedin', label: t('university.social_linkedin_label'), icon: Share2, value: socialLinkedin },
-		{ key: 'website', label: t('university.social_website_label'), icon: Globe, value: socialWebsite },
-		{ key: 'youtube', label: t('university.social_youtube_label'), icon: Play, value: socialYoutube }
-	]);
+	// UI metadata for known social platforms (presentation layer, not the option list).
+	const socialIconMap: Record<string, typeof Link> = {
+		twitter: AtSign,
+		linkedin: Share2,
+		website: Globe,
+		youtube: Play
+	};
 
-	$effect(() => {
-		(async () => {
-			const r = await api.get<InstructorProfile>('/learn/university/instructor/me');
-			loading = false;
-			if (r.data) {
-				profile = r.data;
-				displayName = r.data.display_name ?? '';
-				headline = r.data.headline ?? '';
-				bio = r.data.bio ?? '';
-				const links = r.data.social_links ?? {};
-				socialTwitter = links.twitter ?? '';
-				socialLinkedin = links.linkedin ?? '';
-				socialWebsite = links.website ?? '';
-				socialYoutube = links.youtube ?? '';
+	const socialLabelMap: Record<string, string> = {
+		twitter: 'university.social_twitter_label',
+		linkedin: 'university.social_linkedin_label',
+		website: 'university.social_website_label',
+		youtube: 'university.social_youtube_label'
+	};
+
+	// Rule 16: social platform list comes from the backend, not a hardcoded array.
+	// Combine backend platforms with any extra keys already stored on the profile.
+	const socialFields = $derived(
+		(() => {
+			const keys = new Set(socialPlatforms.map((p) => p.value));
+			for (const k of Object.keys(socialLinks)) {
+				if (socialLinks[k]?.trim()) keys.add(k);
 			}
-		})();
+			return [...keys].map((key) => ({
+				key,
+				label: t(socialLabelMap[key]) || socialPlatforms.find((p) => p.value === key)?.label || key,
+				icon: socialIconMap[key] || Link
+			}));
+		})()
+	);
+
+	onMount(async () => {
+		const [profRes, optsRes] = await Promise.all([
+			api.get<InstructorProfile>('/learn/university/instructor/me'),
+			api.get<{ difficulty_levels: CatalogOption[]; social_platforms: CatalogOption[] }>(
+				'/learn/university/catalog/options'
+			)
+		]);
+		loading = false;
+
+		if (optsRes.data) {
+			socialPlatforms = optsRes.data.social_platforms ?? [];
+		}
+
+		if (profRes.data) {
+			profile = profRes.data;
+			displayName = profRes.data.display_name ?? '';
+			headline = profRes.data.headline ?? '';
+			bio = profRes.data.bio ?? '';
+			const links = { ...(profRes.data.social_links ?? {}) };
+			for (const p of socialPlatforms) {
+				if (!(p.value in links)) links[p.value] = '';
+			}
+			socialLinks = links;
+		}
 	});
 
 	async function save(e: SubmitEvent) {
@@ -54,11 +85,12 @@
 		saving = true;
 		success = null;
 		error = null;
+
 		const social_links: Record<string, string> = {};
-		if (socialTwitter) social_links.twitter = socialTwitter;
-		if (socialLinkedin) social_links.linkedin = socialLinkedin;
-		if (socialWebsite) social_links.website = socialWebsite;
-		if (socialYoutube) social_links.youtube = socialYoutube;
+		for (const [key, value] of Object.entries(socialLinks)) {
+			if (value.trim()) social_links[key] = value.trim();
+		}
+
 		const r = await api.patch<InstructorProfile>('/learn/university/instructor/me', {
 			display_name: displayName || undefined,
 			headline: headline || undefined,
@@ -179,14 +211,7 @@
 						<input
 							id="social_{field.key}"
 							type="url"
-							value={field.value}
-							oninput={(e) => {
-								const v = e.currentTarget.value;
-								if (field.key === 'twitter') socialTwitter = v;
-								else if (field.key === 'linkedin') socialLinkedin = v;
-								else if (field.key === 'website') socialWebsite = v;
-								else if (field.key === 'youtube') socialYoutube = v;
-							}}
+							bind:value={socialLinks[field.key]}
 							placeholder={t('university.social_url_placeholder', 'https://')}
 							class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-3 text-sm text-[var(--color-text)] placeholder:text-[var(--color-muted)] focus:border-[var(--color-primary)] focus:outline-none"
 						/>

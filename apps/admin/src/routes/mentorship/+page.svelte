@@ -153,14 +153,30 @@
 			}
 		],
 		fields: programFields,
-		load: async ({ q, filter }) => {
-			const params = new URLSearchParams();
-			if (q) params.set('q', q);
-			if (filter.is_active) params.set('is_active', filter.is_active);
-			const result = await mentorshipApi.listPrograms(params.toString() || undefined);
+		load: async ({ page, pageSize, q, filter }) => {
+			const result = await mentorshipApi.listPrograms('?page_size=1000');
 			if (result.ok) {
-				const data = (result.data as Program[]) ?? [];
-				return { data, total: data.length, totalPages: 1 };
+				let data = (result.data as Program[]) ?? [];
+				if (filter?.is_active) {
+					data = data.filter((row) => String(row.is_active) === filter.is_active);
+				}
+				const query = (q ?? '').toLowerCase();
+				if (query) {
+					data = data.filter((row) =>
+						[row.name, row.description].some((v) =>
+							String(v ?? '').toLowerCase().includes(query)
+						)
+					);
+				}
+				const size = pageSize || 25;
+				const offset = (page || 0) * size;
+				const total = data.length;
+				const totalPages = Math.max(1, Math.ceil(total / size));
+				return {
+					data: data.slice(offset, offset + size),
+					total,
+					totalPages
+				};
 			}
 			throw new Error(result.error ?? t('app.mentorship.error.load_failed', 'Failed to load programs'));
 		},
@@ -282,14 +298,30 @@
 		],
 		actions: matchActions,
 		fields: [],
-		load: async ({ q, filter }) => {
-			const params = new URLSearchParams();
-			if (q) params.set('q', q);
-			if (filter.status) params.set('status', filter.status);
-			const result = await mentorshipApi.listMatches(params.toString() || undefined);
+		load: async ({ page, pageSize, q, filter }) => {
+			const result = await mentorshipApi.listMatches('?page_size=1000');
 			if (result.ok) {
-				const data = (result.data as Match[]) ?? [];
-				return { data, total: data.length, totalPages: 1 };
+				let data = (result.data as Match[]) ?? [];
+				if (filter?.status) {
+					data = data.filter((row) => row.status === filter.status);
+				}
+				const query = (q ?? '').toLowerCase();
+				if (query) {
+					data = data.filter((row) =>
+						[row.program_name, row.mentor_username, row.mentee_username, row.status].some((v) =>
+							String(v ?? '').toLowerCase().includes(query)
+						)
+					);
+				}
+				const size = pageSize || 25;
+				const offset = (page || 0) * size;
+				const total = data.length;
+				const totalPages = Math.max(1, Math.ceil(total / size));
+				return {
+					data: data.slice(offset, offset + size),
+					total,
+					totalPages
+				};
 			}
 			throw new Error(result.error ?? t('app.mentorship.error.load_matches_failed', 'Failed to load matches'));
 		},
@@ -356,17 +388,34 @@
 			}
 		],
 		fields: connectionFields,
-		load: async ({ q, sort, filter }) => {
-			const params = new URLSearchParams();
-			if (q) params.set('q', q);
+		load: async ({ page, pageSize, q, sort, filter }) => {
+			const params = new URLSearchParams({ page_size: '1000' });
 			if (sort) {
 				params.set('sort', sort);
 			}
-			if (filter.status) params.set('status', filter.status);
-			const result = await mentorshipApi.listConnections(params.toString() || undefined);
+			const result = await mentorshipApi.listConnections(`?${params.toString()}`);
 			if (result.ok) {
-				const data = (result.data as Connection[]) ?? [];
-				return { data, total: data.length, totalPages: 1 };
+				let data = (result.data as Connection[]) ?? [];
+				if (filter?.status) {
+					data = data.filter((row) => row.status === filter.status);
+				}
+				const query = (q ?? '').toLowerCase();
+				if (query) {
+					data = data.filter((row) =>
+						[row.mentor_username, row.mentee_username, row.status, row.goals].some((v) =>
+							String(v ?? '').toLowerCase().includes(query)
+						)
+					);
+				}
+				const size = pageSize || 25;
+				const offset = (page || 0) * size;
+				const total = data.length;
+				const totalPages = Math.max(1, Math.ceil(total / size));
+				return {
+					data: data.slice(offset, offset + size),
+					total,
+					totalPages
+				};
 			}
 			throw new Error(
 				result.error ?? t('app.mentorship.error.load_connections_failed', 'Failed to load connections')

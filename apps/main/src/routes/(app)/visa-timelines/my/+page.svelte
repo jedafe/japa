@@ -341,11 +341,11 @@
 					</div>
 					<div class="flex flex-col gap-1">
 						<label for="c-visa" class={labelClass}>{t('visa_timelines.visa_category', 'Visa category')} *</label>
-						<input id="c-visa" type="text" bind:value={cVisa} class={inputClass} placeholder="e.g. student" />
+						<input id="c-visa" type="text" bind:value={cVisa} class={inputClass} placeholder={t('visa_timelines.visa_placeholder', 'e.g. student')} />
 					</div>
 					<div class="flex flex-col gap-1">
 						<label for="c-consulate" class={labelClass}>{t('visa_timelines.consulate', 'Consulate')}</label>
-						<input id="c-consulate" type="text" bind:value={cConsulate} class={inputClass} placeholder="e.g. Lagos" />
+						<input id="c-consulate" type="text" bind:value={cConsulate} class={inputClass} placeholder={t('visa_timelines.consulate_placeholder', 'e.g. Lagos')} />
 					</div>
 					<div class="flex flex-col gap-1">
 						<label for="c-method" class={labelClass}>{t('visa_timelines.application_method', 'Application method')}</label>

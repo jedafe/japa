@@ -1,7 +1,7 @@
 <script lang="ts">
 	// /professional-types — migrated to the EntityPage scaffold; simple CRUD entity using `fields` (EntityForm).
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
-	import { professionalAdminApi, type ProfileType } from '$lib/api';
+	import { api, professionalAdminApi, type ProfileType } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { Trash2 } from 'lucide-svelte';
 
@@ -57,18 +57,28 @@
 			}
 		],
 		fields,
-		load: async ({ q }) => {
-			const result = await professionalAdminApi.listTypes();
+		load: async ({ page, pageSize, q, filter }) => {
+			const result = await api<ProfileType[]>('/profiles/types?page_size=1000');
 			if (result.ok) {
 				let items = (result.data as ProfileType[]) ?? [];
-				if (q) {
-					const query = q.toLowerCase();
-					items = items.filter(
-						(pt: ProfileType) =>
-							pt.name.toLowerCase().includes(query) || pt.slug.toLowerCase().includes(query)
+				const query = (q ?? '').toLowerCase();
+				if (query) {
+					items = items.filter((pt) =>
+						[pt.name, pt.slug, pt.description].some((v) =>
+							String(v ?? '').toLowerCase().includes(query)
+						)
 					);
 				}
-				return { data: items, total: items.length, totalPages: 1 };
+				filter;
+				const size = pageSize || 25;
+				const offset = (page || 0) * size;
+				const total = items.length;
+				const totalPages = Math.max(1, Math.ceil(total / size));
+				return {
+					data: items.slice(offset, offset + size),
+					total,
+					totalPages
+				};
 			}
 			throw new Error(result.error ?? t('common.error', 'Failed to load professional types'));
 		},

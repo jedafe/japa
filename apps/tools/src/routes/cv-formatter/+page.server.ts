@@ -1,8 +1,9 @@
 import type { PageServerLoad } from './$types';
 import { apiContext, apiList } from '$lib/server/api';
+import { loadCatalog } from '$lib/server/catalog';
 import { loadCountries } from '$lib/server/geo';
 import { getTool, isToolEnabled } from '$lib/tools/registry';
-import type { GeoSpaceOption, CvStandard } from '$lib/types';
+import type { GeoSpaceOption, CvStandard, CatalogOption } from '$lib/types';
 
 /**
  * CV Formatter — §95.
@@ -30,6 +31,7 @@ export const load: PageServerLoad = async (event) => {
 			tool,
 			destinations: [],
 			standards: [],
+			formatOptions: [],
 			user: event.locals.user
 		};
 	}
@@ -54,11 +56,20 @@ export const load: PageServerLoad = async (event) => {
 		standards = [];
 	}
 
+	// Supported output formats from the public catalog (Rule 16).
+	let formatOptions: CatalogOption[] = [];
+	try {
+		formatOptions = await loadCatalog(ctx, 'cv_formatter.format');
+	} catch {
+		formatOptions = [];
+	}
+
 	return {
 		enabled: true,
 		tool,
 		destinations,
 		standards,
+		formatOptions,
 		user: event.locals.user
 	};
 };

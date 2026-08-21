@@ -14,8 +14,9 @@
 		Building2
 	} from 'lucide-svelte';
 	import { EmptyState, UrlTabs, type UrlTab } from '$lib/components/ui';
+	import { trendingWindowOptions, trendingTabs } from '$lib/enumOptions';
+	import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	import type { PageData } from './$types';
-import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	import type { TrendingWindow } from '$lib/types';
 
 	let { data }: { data: PageData } = $props();
@@ -38,12 +39,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 		})
 	);
 
-	const tabs = $derived([
-		{ id: 'content', label: t('trending.tab_content', 'Content'), icon: Flame },
-		{ id: 'tags', label: t('trending.tab_tags', 'Tags'), icon: Hash },
-		{ id: 'spaces', label: t('trending.tab_spaces', 'Spaces'), icon: Layers },
-		{ id: 'users', label: t('trending.tab_users', 'People'), icon: Users }
-	]);
+	const tabs = $derived(trendingTabs(t));
 
 	const urlTabs = $derived<UrlTab[]>(
 		tabs.map((tab) => ({ value: tab.id, label: tab.label }))
@@ -54,11 +50,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	// URL via history.replaceState, preserving other params like ?window=).
 	let activeTab = $state(untrack(() => data.tab));
 
-	const windows: { value: TrendingWindow; label: string }[] = [
-		{ value: '24h', label: t('trending.window_24h', '24 hours') },
-		{ value: '7d', label: t('trending.window_7d', '7 days') },
-		{ value: '30d', label: t('trending.window_30d', '30 days') }
-	];
+	const windows = $derived(trendingWindowOptions(t));
 
 	// Round the trending score for display (Rule: round every displayed number).
 	const score = (n: number) => Math.round(n);

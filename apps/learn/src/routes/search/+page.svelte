@@ -7,9 +7,8 @@
 	import TrackCard from '$lib/components/learn/TrackCard.svelte';
 	import { LoadingSkeleton, EmptyState } from '$lib/components/ui';
 	import { Search } from 'lucide-svelte';
-	import { DIFFICULTY_LEVELS } from '$lib/constants/learning';
-	import type { PageData } from './$types';
-	import type { Enrollment } from '$lib/types';
+import type { PageData } from './$types';
+import type { Enrollment } from '$lib/types';
 
 	let { data }: { data: PageData } = $props();
 
@@ -47,7 +46,9 @@
 		</h1>
 		{#if data.query}
 			<p class="mt-1 text-sm text-[var(--color-muted)]">
-				{t('learn.results_for')} "{data.query}" — {data.total}
+				{t('learn.results_for_query', '{count} results for "{query}"')
+					.replace('{count}', String(data.total))
+					.replace('{query}', data.query)}
 			</p>
 		{/if}
 	</header>
@@ -60,12 +61,12 @@
 		>
 			{t('learn.overview')}
 		</a>
-		{#each DIFFICULTY_LEVELS as level}
+		{#each data.difficultyLevels as opt (opt.value)}
 			<a
-				href="/search?q={encodeURIComponent(data.query)}&level={level}"
-				class="rounded-full px-3 py-1 text-sm {data.levelFilter === level ? 'bg-[var(--color-primary)] text-[var(--color-primary-contrast)]' : 'border border-[var(--color-border)] text-[var(--color-text-subtle)] hover:bg-[var(--color-surface-subtle)]'}"
+				href="/search?q={encodeURIComponent(data.query)}&level={opt.value}"
+				class="rounded-full px-3 py-1 text-sm {data.levelFilter === opt.value ? 'bg-[var(--color-primary)] text-[var(--color-primary-contrast)]' : 'border border-[var(--color-border)] text-[var(--color-text-subtle)] hover:bg-[var(--color-surface-subtle)]'}"
 			>
-				{t(`level.${level}`)}
+				{t(`level.${opt.value}`)}
 			</a>
 		{/each}
 	</div>

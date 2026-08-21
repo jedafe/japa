@@ -1,8 +1,9 @@
 import type { PageServerLoad } from './$types';
 import { apiContext, apiList } from '$lib/server/api';
+import { loadCatalog } from '$lib/server/catalog';
 import { loadCountries } from '$lib/server/geo';
 import { getTool, isToolEnabled } from '$lib/tools/registry';
-import type { Embassy, GeoSpaceOption } from '$lib/types';
+import type { Embassy, GeoSpaceOption, CatalogOption } from '$lib/types';
 
 /**
  * Embassy Appointment Alerter — §91, ADR-099.
@@ -30,6 +31,7 @@ export const load: PageServerLoad = async (event) => {
 			destinations: [],
 			embassies: [],
 			initialDestId: null,
+			channelOptions: [],
 			user: event.locals.user
 		};
 	}
@@ -61,12 +63,23 @@ export const load: PageServerLoad = async (event) => {
 	// mount to avoid leaking user-specific data across cached SSR responses.
 	// Ref: jc-tools-audit checklist §4 (SSR/CSR boundary).
 
+	// Notification channel options from the public catalog (Rule 16).
+	// The catalog lists all canonical channels; UI gating for premium SMS
+	// happens client-side via the user capabilities check.
+	let channelOptions: CatalogOption[] = [];
+	try {
+		channelOptions = await loadCatalog(ctx, 'appointment_alert.notification_channels');
+	} catch {
+		channelOptions = [];
+	}
+
 	return {
 		enabled: true,
 		tool,
 		destinations,
 		embassies,
 		initialDestId,
+		channelOptions,
 		user: event.locals.user
 	};
 };

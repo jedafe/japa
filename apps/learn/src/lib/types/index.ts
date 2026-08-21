@@ -126,7 +126,23 @@ export interface Menu {
  *   GET /me/enrollments, GET /me/certificates, GET/POST /learn/quizzes/{id}
  * ------------------------------------------------------------------ */
 
-export type TrackLevel = 'beginner' | 'intermediate' | 'advanced';
+/** Difficulty level is a catalog value returned by the backend. */
+export type TrackLevel = string;
+
+/** Option list item (value/label) — returned by catalog endpoints. */
+export interface CatalogOption {
+	value: string;
+	label: string;
+}
+
+/** Social / share platform — GET /share-platforms/enabled. */
+export interface SharePlatform {
+	key: string;
+	label: string;
+	icon: string;
+	url_template: string;
+	color: string;
+}
 
 /** Catalog list item — GET /learn/tracks. */
 export interface TrackSummary {
@@ -511,4 +527,34 @@ export interface BookmarkFolder {
 	bookmark_count?: number;
 	created_at: string;
 	updated_at?: string;
+}
+
+/* ------------------------------------------------------------------ *
+ * Discount codes — POST /payments/discount-codes/validate
+ * Ref: internal/payments/handlers.go (ValidateDiscountCode)
+ * The backend returns the full discount_codes row; the frontend
+ * computes the kobo discount from discount_type + discount_value.
+ * ------------------------------------------------------------------ */
+
+export interface DiscountCode {
+	id: string;
+	code: string;
+	discount_type: 'percent' | 'percentage' | 'fixed';
+	discount_value: number | string;
+	applicable_to: string;
+}
+
+/* ------------------------------------------------------------------ *
+ * Payment intent — POST /payments/intent
+ * Ref: internal/payments/dto.go (PaymentAPIResponse)
+ * ------------------------------------------------------------------ */
+
+export interface PaymentIntent {
+	id: string;
+	status: string;
+	checkout_url?: string;
+	amount: number;
+	currency: string;
+	discount_amount?: number;
+	discount_code_id?: string;
 }

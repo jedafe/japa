@@ -124,16 +124,16 @@
 					return;
 				}
 				// C1: Fetch the resolved permission set from /me/permissions
-				// and verify the control_panel.access node (or '*' wildcard).
+				// and verify the control.panel.access node (or '*' wildcard).
 				// The backend RBAC resolver returns '*' for super_admin_role,
-				// plus any explicit grants like control_panel.access (migration
+				// plus any explicit grants like control.panel.access (migration
 				// 000184). This prevents a revoked super_admin from entering.
 				let perms: string[] = [];
 				const permResult = await api<{ permissions: string[] }>('/api/v1/me/permissions');
 				if (permResult.ok && permResult.data?.permissions) {
 					perms = permResult.data.permissions;
 				}
-				const hasControlPanelAccess = perms.includes('*') || perms.includes('control_panel.access');
+				const hasControlPanelAccess = perms.includes('*') || perms.includes('control.panel.access');
 				if (!hasControlPanelAccess) {
 					setToken(null);
 					clearUser();
@@ -237,11 +237,11 @@
 		}));
 	});
 
-	// C1/L2: Access is gated by the control_panel.access RBAC node (or '*'
+	// C1/L2: Access is gated by the control.panel.access RBAC node (or '*'
 	// wildcard) verified in initAuth via /me/permissions. The derived check
 	// here mirrors the gate so AccessDenied renders if permissions change.
 	const canAccess = $derived(
-		userPermissions.includes('*') || userPermissions.includes('control_panel.access')
+		userPermissions.includes('*') || userPermissions.includes('control.panel.access')
 	);
 </script>
 

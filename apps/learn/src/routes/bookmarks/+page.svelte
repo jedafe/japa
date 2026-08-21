@@ -17,9 +17,6 @@
 
 	let { data }: { data: PageData } = $props();
 
-	// Learning-related entity types shown on this page.
-	const LEARNING_ENTITY_TYPES = 'learning_track,content';
-
 	let bookmarks = $state<Bookmark[]>([]);
 	let totalCount = $state(0);
 	let folders = $state<BookmarkFolder[]>([]);
@@ -39,9 +36,10 @@
 
 	async function loadBookmarks(folderId: string | null) {
 		loading = true;
-		const params = new URLSearchParams({ entity_type: LEARNING_ENTITY_TYPES });
+		const params = new URLSearchParams();
 		if (folderId) params.set('folder_id', folderId);
-		const r = await api.get<Bookmark[]>(`/me/bookmarks?${params.toString()}`);
+		const qs = params.toString() ? `?${params.toString()}` : '';
+		const r = await api.get<Bookmark[]>(`/me/bookmarks${qs}`);
 		loading = false;
 		if (r.data) {
 			bookmarks = r.data;

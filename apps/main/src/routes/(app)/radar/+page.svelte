@@ -105,13 +105,11 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 		loadingMore = true;
 		const nextOffset = allFollowedItems.length;
 		try {
-			const r = await fetch(
-				`/api/v1/intel/radar/followed?page_size=${data.pageSize}&page_offset=${nextOffset}`,
-				{ credentials: 'include' }
+			const res = await api.getEnvelope<{ items: RadarItem[] }>(
+				`/intel/radar/followed?page_size=${data.pageSize}&page_offset=${nextOffset}`
 			);
-			if (r.ok) {
-				const body = await r.json();
-				const items = (body?.items as RadarItem[] | undefined) ?? [];
+			if (res.envelope?.items) {
+				const items = res.envelope.items as RadarItem[];
 				extraItems = [...extraItems, ...items];
 			}
 		} catch {

@@ -7,6 +7,7 @@
 	import { api } from '$lib/api/client';
 	import { relativeTime } from '$lib/feed/time';
 	import { EmptyState } from '$lib/components/ui';
+	import { scamTypeLabel } from '$lib/enumOptions';
 	import type { ScamReport, ScamStatus, ScamType } from '$lib/types';
 	import type { PageData } from './$types';
 
@@ -38,10 +39,6 @@
 			: await api.post(`/scam-alerts/${alert.id}/subscribe`);
 		if (res.error) subscribed = wasSubscribed;
 		subscribing = false;
-	}
-
-	function scamTypeLabel(type: ScamType): string {
-		return t(`scam_alerts.type.${type}`, type.replace(/_/g, ' '));
 	}
 
 	function statusClass(status: ScamStatus): string {
@@ -83,7 +80,7 @@
 			<!-- Badges -->
 			<div class="flex flex-wrap items-center gap-2">
 				<span class="rounded-full bg-[var(--color-primary)]/10 px-2.5 py-0.5 text-xs font-semibold text-[var(--color-primary)]">
-					{scamTypeLabel(alert.scam_type as ScamType)}
+					{scamTypeLabel(t, alert.scam_type as ScamType)}
 				</span>
 				{#if alert.is_pinned}
 					<span class="inline-flex items-center gap-0.5 rounded-full bg-amber-500/10 px-2 py-0.5 text-xs font-semibold text-amber-600">

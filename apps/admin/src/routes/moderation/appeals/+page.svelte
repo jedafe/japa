@@ -196,7 +196,9 @@
 			if (result.ok) {
 				const data = result.data as Appeal[] | { items: Appeal[]; total: number; total_pages: number };
 				if (Array.isArray(data)) {
-					return { data, total: data.length, totalPages: 1 };
+					const start = page * pageSize;
+					const total = data.length;
+					return { data: data.slice(start, start + pageSize), total, totalPages: Math.max(1, Math.ceil(total / pageSize)) };
 				}
 				return {
 					data: data.items ?? [],

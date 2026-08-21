@@ -54,6 +54,8 @@
 	let loading = $state(true);
 	let error = $state("");
 	let success = $state("");
+	let searchQuery = $state("");
+	let filterValues = $state<Record<string, string>>({});
 	let selectedIds = $state<Set<string>>(new Set());
 	let bulkDeleting = $state(false);
 
@@ -93,6 +95,34 @@
 
 	// Event types fetched from API
 	let availableEvents = $state<WebhookEventDef[]>([]);
+
+	const statusFilters = $derived([
+		{
+			key: 'is_active',
+			label: t('common.status', 'Status'),
+			options: [
+				{ value: 'true', label: t('common.active', 'Active') },
+				{ value: 'false', label: t('common.inactive', 'Inactive') }
+			]
+		}
+	]);
+
+	const filtered = $derived.by(() => {
+		let out = endpoints;
+		const q = searchQuery.trim().toLowerCase();
+		if (q) {
+			out = out.filter((ep) =>
+				ep.name.toLowerCase().includes(q) ||
+				ep.url.toLowerCase().includes(q) ||
+				ep.event_types.some((et) => et.toLowerCase().includes(q))
+			);
+		}
+		if (filterValues.is_active) {
+			const active = filterValues.is_active === 'true';
+			out = out.filter((ep) => ep.is_active === active);
+		}
+		return out;
+	});
 
 	const columns = [
 		{ key: "name", label: t("webhooks.name", "Name"), sortable: true },
@@ -434,7 +464,7 @@
 		{#if loading}
 			<TableSkeleton rows={8} columns={columns.length} />
 		{:else}
-			<DataTable {columns} data={endpoints} actions={rowActions} pageSize={10} selectable bind:selectedIds>
+			<DataTable {columns} data={filtered} actions={rowActions} pageSize={10} selectable bind:selectedIds searchable searchPlaceholder={t('webhooks.search', 'Search webhooks...')} onsearch={(q) => { searchQuery = q; }} filters={statusFilters} bind:filterValue={filterValues} onfilterapply={() => {}} onfilterclear={() => {}}>
 				{#snippet bulkActions()}
 					<Button variant="destructive" size="sm" onclick={bulkDelete} disabled={bulkDeleting || selectedIds.size === 0}>
 						<Trash2 class="h-3.5 w-3.5 mr-1" />

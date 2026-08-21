@@ -7,7 +7,7 @@
 	// jsonb editor (a textarea accepting a JSON array), since EntityForm does
 	// not have a native JSON field type.
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
-	import { onboardingAdminApi } from '$lib/api';
+	import { api, onboardingAdminApi } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { Trash2 } from 'lucide-svelte';
@@ -121,11 +121,30 @@
 			}
 		],
 		fields,
-		load: async () => {
-			const result = await onboardingAdminApi.listTemplates();
+		load: async ({ page, pageSize, q, filter }) => {
+			const result = await api<OnboardingTemplate[]>('/admin/onboarding/templates?page_size=1000');
 			if (result.ok) {
-				const data = (result.data as OnboardingTemplate[]) ?? [];
-				return { data, total: data.length, totalPages: 1 };
+				let data = (result.data as OnboardingTemplate[]) ?? [];
+				const query = (q ?? '').toLowerCase();
+				if (query) {
+					data = data.filter((row) =>
+						[row.name, row.description].some((v) =>
+							String(v ?? '').toLowerCase().includes(query)
+						)
+					);
+				}
+				if (filter?.is_active) {
+					data = data.filter((row) => String(row.is_active) === filter.is_active);
+				}
+				const size = pageSize || 25;
+				const offset = (page || 0) * size;
+				const total = data.length;
+				const totalPages = Math.max(1, Math.ceil(total / size));
+				return {
+					data: data.slice(offset, offset + size),
+					total,
+					totalPages
+				};
 			}
 			throw new Error(result.error ?? t('onboarding.templates.load_error', 'Failed to load templates'));
 		},

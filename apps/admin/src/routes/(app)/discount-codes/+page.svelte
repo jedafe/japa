@@ -191,19 +191,34 @@
 		],
 		actions,
 		fields,
-		load: async ({ q, filter }) => {
-			const result = await api<DiscountCode[]>('/admin/discount-codes');
+		load: async ({ page, pageSize, q, filter }) => {
+			const result = await api<DiscountCode[]>('/admin/discount-codes?page_size=1000');
 			if (result.ok) {
 				let data = (result.data ?? []) as DiscountCode[];
 				// Compute status for each row (used by column render + filter).
 				data = data.map((c) => ({ ...c, computed_status: computeStatus(c) }));
-				if (filter.computed_status === 'inactive') data = data.filter((c) => c.computed_status !== 'active');
-			else if (filter.computed_status) data = data.filter((c) => c.computed_status === filter.computed_status);
-				if (q) {
-					const lq = q.toLowerCase();
-					data = data.filter((c) => c.code?.toLowerCase().includes(lq) || (c.description ?? '').toLowerCase().includes(lq));
+				if (filter?.computed_status === 'inactive') {
+					data = data.filter((c) => c.computed_status !== 'active');
+				} else if (filter?.computed_status) {
+					data = data.filter((c) => c.computed_status === filter.computed_status);
 				}
-				return { data, total: data.length, totalPages: 1 };
+				const lq = (q ?? '').toLowerCase();
+				if (lq) {
+					data = data.filter((c) =>
+						[c.code, c.description].some((v) =>
+							String(v ?? '').toLowerCase().includes(lq)
+						)
+					);
+				}
+				const size = pageSize || 25;
+				const offset = (page || 0) * size;
+				const total = data.length;
+				const totalPages = Math.max(1, Math.ceil(total / size));
+				return {
+					data: data.slice(offset, offset + size),
+					total,
+					totalPages
+				};
 			}
 			throw new Error(result.error ?? t('common.error', 'Failed to load discount codes'));
 		},

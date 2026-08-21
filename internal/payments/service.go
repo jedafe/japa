@@ -59,9 +59,29 @@ func (s *Service) CreatePayment(ctx context.Context, tenantID, userID pgtype.UUI
 		}
 	}
 
+	discountCodeID, discountAmount, netAmount, err := s.resolveDiscount(ctx, tenantID, userID, input)
+	if err != nil {
+		return CreatePaymentResult{}, err
+	}
+
+	// A 100% discount leaves nothing to charge. Record a succeeded payment
+	// so the post-payment fulfillment (course enrollment) is triggered.
+	// The payment row stores the original gross Amount and the DiscountAmount.
+	if netAmount <= 0 {
+		p, err := s.createPaymentRow(ctx, tenantID, userID, input, currency, "", "", input.Amount, discountAmount, discountCodeID, PaymentStatusSucceeded)
+		if err != nil {
+			return CreatePaymentResult{}, err
+		}
+		if _, uErr := s.UpdatePaymentStatus(ctx, p.ID, tenantID, PaymentStatusSucceeded); uErr != nil {
+			slog.Error("payments: failed to emit succeeded webhook for zero-amount payment",
+				"payment_id", p.ID, "error", uErr)
+		}
+		return CreatePaymentResult{Payment: p}, nil
+	}
+
 	// Credit payments are synchronous wallet debits — no external provider call.
 	if input.Provider == ProviderCredit {
-		p, err := s.payWithCreditInternal(ctx, tenantID, userID, input, currency)
+		p, err := s.payWithCreditInternal(ctx, tenantID, userID, input, currency, netAmount, discountAmount, discountCodeID)
 		if err != nil {
 			return CreatePaymentResult{}, err
 		}
@@ -76,7 +96,7 @@ func (s *Service) CreatePayment(ctx context.Context, tenantID, userID pgtype.UUI
 			TenantID:    tenantID.String(),
 			UserID:      userID.String(),
 			Email:       input.Email,
-			Amount:      input.Amount,
+			Amount:      netAmount,
 			Currency:    currency,
 			PurposeType: input.PurposeType,
 			PurposeID:   input.PurposeID,
@@ -89,35 +109,55 @@ func (s *Service) CreatePayment(ctx context.Context, tenantID, userID pgtype.UUI
 		checkoutURL = resp.CheckoutURL
 	}
 
-	p, err := s.createPaymentRow(ctx, tenantID, userID, input, currency, providerRef, checkoutURL)
+	p, err := s.createPaymentRow(ctx, tenantID, userID, input, currency, providerRef, checkoutURL, input.Amount, discountAmount, discountCodeID, PaymentStatusPending)
 	if err != nil {
 		return CreatePaymentResult{}, err
 	}
+
 	return CreatePaymentResult{Payment: p, CheckoutURL: checkoutURL}, nil
 }
 
-// createPaymentRow inserts the payment record after validation and discount calculation.
-func (s *Service) createPaymentRow(ctx context.Context, tenantID, userID pgtype.UUID, input CreatePaymentInput, currency, providerRef, checkoutURL string) (gen.Payment, error) {
+// resolveDiscount validates a discount code (if supplied) and returns the
+// net amount to charge. input.Amount is the gross amount; discountAmount is
+// the deduction computed from the code. netAmount is never negative.
+func (s *Service) resolveDiscount(ctx context.Context, tenantID, userID pgtype.UUID, input CreatePaymentInput) (pgtype.UUID, int64, int64, error) {
+	var discountCodeID pgtype.UUID
+	discountAmount := int64(0)
+	netAmount := input.Amount
+
+	if input.DiscountCode == "" {
+		return discountCodeID, discountAmount, netAmount, nil
+	}
+
+	code, err := s.store.getDiscountCodeByCode(ctx, tenantID, input.DiscountCode)
+	if err != nil {
+		return discountCodeID, discountAmount, netAmount, fmt.Errorf("invalid discount code: %w", err)
+	}
+	if err := s.validateDiscountCode(ctx, code, userID); err != nil {
+		return discountCodeID, discountAmount, netAmount, err
+	}
+
+	discountCodeID = code.ID
+	discountAmount = s.calculateDiscount(code, input.Amount)
+	if discountAmount > input.Amount {
+		discountAmount = input.Amount
+	}
+	netAmount = input.Amount - discountAmount
+	if netAmount < 0 {
+		netAmount = 0
+	}
+
+	return discountCodeID, discountAmount, netAmount, nil
+}
+
+// createPaymentRow inserts the payment record. amount is the gross invoice
+// amount, discountAmount the deduction, and status the initial state.
+func (s *Service) createPaymentRow(ctx context.Context, tenantID, userID pgtype.UUID, input CreatePaymentInput, currency, providerRef, checkoutURL string, amount, discountAmount int64, discountCodeID pgtype.UUID, status string) (gen.Payment, error) {
 	var purposeID pgtype.UUID
 	if input.PurposeID != "" {
 		if err := purposeID.Scan(input.PurposeID); err != nil {
 			return gen.Payment{}, fmt.Errorf("invalid purpose_id: %w", err)
 		}
-	}
-
-	var discountCodeID pgtype.UUID
-	var discountAmount int64
-
-	if input.DiscountCode != "" {
-		code, err := s.store.getDiscountCodeByCode(ctx, tenantID, input.DiscountCode)
-		if err != nil {
-			return gen.Payment{}, fmt.Errorf("invalid discount code: %w", err)
-		}
-		if err := s.validateDiscountCode(ctx, code, userID); err != nil {
-			return gen.Payment{}, err
-		}
-		discountCodeID = code.ID
-		discountAmount = s.calculateDiscount(code, input.Amount)
 	}
 
 	var metadata []byte
@@ -152,9 +192,9 @@ func (s *Service) createPaymentRow(ctx context.Context, tenantID, userID pgtype.
 		ProviderRef:    ref,
 		PurposeType:    input.PurposeType,
 		PurposeID:      purposeID,
-		Amount:         input.Amount,
+		Amount:         amount,
 		Currency:       currency,
-		Status:         PaymentStatusPending,
+		Status:         status,
 		Metadata:       metadata,
 		DiscountCodeID: discountCodeID,
 		DiscountAmount: discountAmount,
@@ -185,20 +225,20 @@ func (s *Service) createPaymentRow(ctx context.Context, tenantID, userID pgtype.
 // payWithCreditInternal handles credit wallet payments.
 // Uses pending-first ordering (BUG-004): create payment row, then debit
 // credits, then mark succeeded. See PayWithCredit for full rationale.
-func (s *Service) payWithCreditInternal(ctx context.Context, tenantID, userID pgtype.UUID, input CreatePaymentInput, currency string) (gen.Payment, error) {
+func (s *Service) payWithCreditInternal(ctx context.Context, tenantID, userID pgtype.UUID, input CreatePaymentInput, currency string, amount, discountAmount int64, discountCodeID pgtype.UUID) (gen.Payment, error) {
 	if s.wallet == nil {
 		return gen.Payment{}, errors.New("wallet service not configured")
 	}
 
-	// Step 1: Create the payment row with status="pending" FIRST.
-	payment, err := s.createPaymentRow(ctx, tenantID, userID, input, currency, "", "")
+	// Step 1: Create the payment row with the original gross Amount and DiscountAmount.
+	payment, err := s.createPaymentRow(ctx, tenantID, userID, input, currency, "", "", input.Amount, discountAmount, discountCodeID, PaymentStatusPending)
 	if err != nil {
 		return gen.Payment{}, fmt.Errorf("recording credit payment: %w", err)
 	}
 
-	// Step 2: Debit credits from the wallet.
+	// Step 2: Debit credits from the wallet for the net amount.
 	creditInput := CreditSpendInput{
-		Amount:      input.Amount,
+		Amount:      amount,
 		Source:      "payment",
 		Reference:   fmt.Sprintf("payment:%s:%s", input.PurposeType, input.PurposeID),
 		PurposeType: input.PurposeType,

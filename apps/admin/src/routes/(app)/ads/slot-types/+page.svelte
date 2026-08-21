@@ -102,15 +102,28 @@
 			}
 		],
 		fields,
-		load: async ({ q, filter }) => {
-			const params = new URLSearchParams();
-			if (filter.is_active) params.set('is_active', filter.is_active);
-			if (q) params.set('q', q);
-			const result = await adSlotTypesApi.list(params.toString() || undefined);
+		load: async ({ page, pageSize, q, filter }) => {
+			// The backend returns every slot type without pagination,
+			// so we fetch a large window and apply client-side search/filter/pagination.
+			const result = await adSlotTypesApi.list();
 			if (result.ok) {
 				const resp = result.data as Record<string, unknown> | undefined;
-				const data = (Array.isArray(resp) ? resp : (resp?.data as SlotType[]) ?? []) as SlotType[];
-				return { data, total: data.length, totalPages: 1 };
+				let data = (Array.isArray(resp) ? resp : (resp?.data as SlotType[]) ?? []) as SlotType[];
+				if (filter.is_active) {
+					const active = filter.is_active === 'true';
+					data = data.filter((s) => s.is_active === active);
+				}
+				const query = (q ?? '').trim().toLowerCase();
+				if (query) {
+					data = data.filter((s) =>
+						s.slot_name.toLowerCase().includes(query) ||
+						(s.description ?? '').toLowerCase().includes(query)
+					);
+				}
+				const total = data.length;
+				const totalPages = pageSize > 0 ? Math.max(1, Math.ceil(total / pageSize)) : 1;
+				const start = page * pageSize;
+				return { data: data.slice(start, start + pageSize), total, totalPages };
 			}
 			throw new Error(result.error ?? t('slot_types.load_error', 'Failed to load slot types'));
 		},

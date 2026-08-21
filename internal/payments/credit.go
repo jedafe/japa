@@ -82,7 +82,7 @@ func (s *Service) PayWithCredit(
 		PurposeID:   purposeID,
 		Amount:      amount,
 		Currency:    currency,
-	}, currency, "", "")
+	}, currency, "", "", amount, 0, pgtype.UUID{}, PaymentStatusPending)
 	if err != nil {
 		return 0, fmt.Errorf("recording credit payment: %w", err)
 	}

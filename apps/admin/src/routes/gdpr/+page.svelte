@@ -117,21 +117,29 @@
 		],
 		actions: rowActions,
 		fields,
-		load: async ({ q }) => {
-			// The endpoint returns a flat array; search is filtered client-side to preserve legacy behavior.
-			const result = await gdprAdminApiExtended.listDeletionRequests();
+		load: async ({ page, pageSize, q, filter }) => {
+			// Fetch the full list; search/filter/pagination are applied client-side.
+			const result = await gdprAdminApiExtended.listDeletionRequests('?page_size=1000');
 			if (result.ok) {
 				let data = (result.data as DeletionRequest[]) ?? [];
-				if (q) {
-					const lower = q.toLowerCase();
-					data = data.filter(
-						(r) =>
-							(r.display_name || r.username || '').toLowerCase().includes(lower) ||
-							(r.reason || '').toLowerCase().includes(lower) ||
-							r.status.toLowerCase().includes(lower)
+				const lower = (q ?? '').toLowerCase();
+				if (lower) {
+					data = data.filter((r) =>
+						[r.display_name, r.username, r.reason, r.status].some((v) =>
+							String(v ?? '').toLowerCase().includes(lower)
+						)
 					);
 				}
-				return { data, total: data.length, totalPages: 1 };
+				filter;
+				const size = pageSize || 25;
+				const offset = (page || 0) * size;
+				const total = data.length;
+				const totalPages = Math.max(1, Math.ceil(total / size));
+				return {
+					data: data.slice(offset, offset + size),
+					total,
+					totalPages
+				};
 			}
 			throw new Error(result.error ?? t('common.error', 'Failed to load deletion requests'));
 		},

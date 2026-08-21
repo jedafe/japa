@@ -652,7 +652,7 @@
 			<input
 				type="text"
 				bind:value={keywords}
-				placeholder="e.g. nigeria, lagos, naija"
+				placeholder={t('spaces.keywords_placeholder', 'e.g. nigeria, lagos, naija')}
 				class="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"
 			/>
 			<p class="mt-2 text-xs text-[var(--color-muted)]">

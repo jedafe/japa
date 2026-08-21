@@ -49,19 +49,15 @@
 		// rows become the teaser list.
 		//
 		// The radar feed uses a non-standard envelope ({items, ...} per spec
-		// §739) — the array is under `items`, not `data`, so api.get (which
-		// reads body.data) cannot be used. We fetch directly and read `items`,
-		// mirroring the radar page's loadMore pattern.
+		// §739) — the array is under `items`, not `data`. Use api.getEnvelope
+		// to read the raw response envelope.
 		let followedUnavailable = false;
 		try {
-			const r = await fetch('/api/v1/intel/radar/followed?page_size=100', {
-				credentials: 'include'
-			});
-			if (r.status === 503) {
+			const res = await api.getEnvelope<{ items: RadarItem[] }>('/intel/radar/followed?page_size=100');
+			if (res.status === 503) {
 				followedUnavailable = true;
-			} else if (r.ok) {
-				const body = await r.json();
-				followedItems = (body?.items as RadarItem[] | undefined) ?? [];
+			} else if (res.envelope?.items) {
+				followedItems = res.envelope.items as RadarItem[];
 			}
 		} catch {
 			// network error — keep empty list

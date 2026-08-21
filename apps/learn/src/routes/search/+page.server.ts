@@ -1,6 +1,6 @@
 import type { PageServerLoad } from './$types';
-import { apiContext, apiList } from '$lib/server/api';
-import type { TrackSummary } from '$lib/types';
+import { apiContext, apiList, apiGet } from '$lib/server/api';
+import type { TrackSummary, CatalogOption } from '$lib/types';
 
 /**
  * Search results page — Phase 10 (ROADMAP-LEARN.md).
@@ -45,11 +45,24 @@ export const load: PageServerLoad = async (event) => {
 		}
 	}
 
+	// Rule 16: option lists must come from the backend, not hardcoded constants.
+	let difficultyLevels: CatalogOption[] = [];
+	try {
+		const opts = await apiGet<{ difficulty_levels: CatalogOption[] }>(
+			ctx,
+			'/learn/university/catalog/options'
+		);
+		difficultyLevels = opts.difficulty_levels ?? [];
+	} catch {
+		difficultyLevels = [];
+	}
+
 	return {
 		results,
 		total,
 		suggested,
 		query: q,
-		levelFilter: level
+		levelFilter: level,
+		difficultyLevels
 	};
 };

@@ -6,6 +6,12 @@ vi.mock('$lib/api', () => ({
 	api: vi.fn().mockRejectedValue(new Error('not connected'))
 }));
 
+vi.mock('layerchart', () => ({
+	PieChart: {},
+	BarChart: {},
+	Spline: {}
+}));
+
 describe('Control +page.svelte', () => {
 	it('renders the dashboard heading', () => {
 		render(Page);
