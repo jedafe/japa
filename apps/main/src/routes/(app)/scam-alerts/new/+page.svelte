@@ -2,39 +2,26 @@
 	// Ref: japaconnect-engineering/sections/81-scam-alert-board.md
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
+	import { untrack } from 'svelte';
 	import { ArrowLeft, Send, TriangleAlert } from 'lucide-svelte';
 	import { t } from '$lib/i18n';
 	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
 	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 	import { api } from '$lib/api/client';
+	import { scamTypeOptions, scamPlatformOptions } from '$lib/enumOptions';
 	import type { ScamType, ScamPlatform } from '$lib/types';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
 
-	const SCAM_TYPES: ScamType[] = [
-		'fraudulent_agent',
-		'fake_job',
-		'housing_fraud',
-		'fake_scholarship',
-		'whatsapp_telegram',
-		'other'
-	];
+	const scamTypeOpts = $derived(scamTypeOptions(t, data.scamTypes));
+	const scamPlatformOpts = $derived(scamPlatformOptions(t, data.scamPlatforms));
 
-	const PLATFORMS: ScamPlatform[] = [
-		'whatsapp',
-		'instagram',
-		'linkedin',
-		'email',
-		'website',
-		'other'
-	];
-
-	let scamType = $state<ScamType>('fraudulent_agent');
+	let scamType = $state<ScamType>(untrack(() => data.scamTypes[0] ?? 'fraudulent_agent'));
 	let destinationSpaceId = $state('');
 	let originSpaceId = $state('');
 	let originCommunity = $state('');
-	let platformUsed = $state<ScamPlatform>('whatsapp');
+	let platformUsed = $state<ScamPlatform>(untrack(() => data.scamPlatforms[0] ?? 'whatsapp'));
 	let approximateDate = $state('');
 	let amountRange = $state('');
 	let description = $state('');
@@ -50,13 +37,7 @@
 			!loading
 	);
 
-	function scamTypeLabel(type: ScamType): string {
-		return t(`scam_alerts.type.${type}`, type.replace(/_/g, ' '));
-	}
 
-	function platformLabel(p: ScamPlatform): string {
-		return t(`scam_alerts.platform.${p}`, p);
-	}
 
 	const inputClass =
 		'w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] placeholder:text-[var(--color-muted)] focus:border-[var(--color-primary)] focus:outline-none';
@@ -175,8 +156,8 @@
 				onchange={(e) => (scamType = e.currentTarget.value as ScamType)}
 				class={inputClass}
 			>
-				{#each SCAM_TYPES as st (st)}
-					<option value={st}>{scamTypeLabel(st)}</option>
+				{#each scamTypeOpts as opt (opt.value)}
+					<option value={opt.value}>{opt.label}</option>
 				{/each}
 			</select>
 		</div>
@@ -241,8 +222,8 @@
 				onchange={(e) => (platformUsed = e.currentTarget.value as ScamPlatform)}
 				class={inputClass}
 			>
-				{#each PLATFORMS as p (p)}
-					<option value={p}>{platformLabel(p)}</option>
+				{#each scamPlatformOpts as opt (opt.value)}
+					<option value={opt.value}>{opt.label}</option>
 				{/each}
 			</select>
 		</div>

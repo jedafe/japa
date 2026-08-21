@@ -19,6 +19,7 @@
 	} from 'lucide-svelte';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import PaginationControls from '$lib/components/ui/PaginationControls.svelte';
+	import { serviceCategoryOptions, serviceCategoryLabel } from '$lib/enumOptions';
 	import type { ServiceListing, ServiceCategory } from '$lib/types';
 	import type { PageData } from './$types';
 
@@ -47,19 +48,10 @@
 		sortInput = data.filters.sort;
 	});
 
-	// Schema-defined service_category enum (§98) — labels via i18n fallback.
-	const categoryOptions: { value: ServiceCategory; label: string }[] = [
-		{ value: 'immigration_legal', label: t('services.cat_immigration_legal', 'Immigration & Legal') },
-		{ value: 'relocation', label: t('services.cat_relocation', 'Relocation') },
-		{ value: 'finance', label: t('services.cat_finance', 'Finance') },
-		{ value: 'education', label: t('services.cat_education', 'Education') },
-		{ value: 'health', label: t('services.cat_health', 'Health') },
-		{ value: 'community', label: t('services.cat_community', 'Community') },
-		{ value: 'other', label: t('services.cat_other', 'Other') }
-	];
+	const categoryOptions = $derived(serviceCategoryOptions(t, data.serviceCategories));
 
 	function categoryLabel(value: string): string {
-		return categoryOptions.find((o) => o.value === value)?.label ?? value;
+		return serviceCategoryLabel(t, value as ServiceCategory);
 	}
 
 	const sortOptions = [

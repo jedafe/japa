@@ -143,6 +143,23 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// HandleSchema handles GET /scam-alerts/schema — returns the canonical
+// scam_type and platform option lists (Rule 16).
+func (h *Handlers) HandleSchema(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+		errpkg.WriteError(w, http.StatusNotFound, "scam_alert_disabled", "Scam alert board is not available")
+		return
+	}
+
+	schema := h.service.Schema()
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": schema})
+}
+
 // HandleGet handles GET /scam-alerts/:id — single confirmed scam report.
 func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := requireTenant(w, r)

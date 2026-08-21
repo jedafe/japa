@@ -11,41 +11,20 @@
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
 	import { ArrowLeft, Compass, Save } from 'lucide-svelte';
+	import { japaStageColors, japaStageLabel, japaStageOptions } from '$lib/enumOptions';
 	import type { JapaStage, MyJapaStage } from '$lib/types';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
 
-	const STAGES: JapaStage[] = [
-		'considering',
-		'planning',
-		'preparing',
-		'applied',
-		'approved',
-		'relocated',
-		'settled'
-	];
-
-	const STAGE_COLORS: Record<JapaStage, string> = {
-		considering: 'var(--color-muted)',
-		planning: 'var(--stage-planning)',
-		preparing: 'var(--stage-preparing)',
-		applied: 'var(--stage-applied)',
-		approved: 'var(--stage-approved)',
-		relocated: 'var(--stage-relocated)',
-		settled: 'var(--color-primary)'
-	};
-
-	function stageLabel(s: JapaStage): string {
-		return t(`japa_stage.${s}`, s.charAt(0).toUpperCase() + s.slice(1));
-	}
+	const stageOpts = $derived(japaStageOptions(t, data.stages));
 
 	function stageIndex(s: JapaStage): number {
-		return STAGES.indexOf(s);
+		return data.stages.indexOf(s);
 	}
 
 	// Form state, seeded from the SSR-loaded stage.
-	let stage = $state<JapaStage>(untrack(() => (data.myStage?.stage as JapaStage) ?? 'considering'));
+	let stage = $state<JapaStage>(untrack(() => (data.myStage?.stage as JapaStage) ?? (data.stages[0] ?? 'considering')));
 	let destCountry = $state<string>(untrack(() => data.myStage?.destination_space_id ?? ''));
 	let isPublic = $state<boolean>(untrack(() => data.myStage?.is_public ?? false));
 
@@ -167,19 +146,19 @@
 			{t('japa_stage.progression', 'Stage progression')}
 		</p>
 		<ol class="flex flex-wrap items-center gap-1">
-			{#each STAGES as s, i (s)}
+			{#each stageOpts as opt, i (opt.value)}
 				<li class="flex items-center gap-1">
 					<div
 						class="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium"
-						style={`border-color: ${i <= currentIndex ? STAGE_COLORS[s] : 'var(--color-border)'}; color: ${i <= currentIndex ? STAGE_COLORS[s] : 'var(--color-muted)'}; background-color: ${i === currentIndex ? `${STAGE_COLORS[s]}1a` : 'transparent'};`}
+						style={`border-color: ${i <= currentIndex ? japaStageColors[opt.value] : 'var(--color-border)'}; color: ${i <= currentIndex ? japaStageColors[opt.value] : 'var(--color-muted)'}; background-color: ${i === currentIndex ? `${japaStageColors[opt.value]}1a` : 'transparent'};`}
 					>
 						<span
 							class="inline-block h-2 w-2 rounded-full"
-							style={`background-color: ${i <= currentIndex ? STAGE_COLORS[s] : 'var(--color-border)'};`}
+							style={`background-color: ${i <= currentIndex ? japaStageColors[opt.value] : 'var(--color-border)'};`}
 						></span>
-						{stageLabel(s)}
+						{opt.label}
 					</div>
-					{#if i < STAGES.length - 1}
+					{#if i < stageOpts.length - 1}
 						<span class="text-[var(--color-muted)]" aria-hidden="true">→</span>
 					{/if}
 				</li>
@@ -199,8 +178,8 @@
 				{t('japa_stage.current_stage', 'Current stage')}
 			</label>
 			<select id="stage" bind:value={stage} class={inputClass}>
-				{#each STAGES as s (s)}
-					<option value={s}>{stageLabel(s)}</option>
+				{#each stageOpts as opt (opt.value)}
+					<option value={opt.value}>{opt.label}</option>
 				{/each}
 			</select>
 		</div>
@@ -265,9 +244,9 @@
 					<li class="flex items-center gap-2 text-sm">
 						<span
 							class="inline-block h-2 w-2 shrink-0 rounded-full"
-							style={`background-color: ${STAGE_COLORS[entry.stage] ?? 'var(--color-muted)'};`}
+							style={`background-color: ${japaStageColors[entry.stage as JapaStage] ?? 'var(--color-muted)'};`}
 						></span>
-						<span class="font-medium text-[var(--color-text)]">{stageLabel(entry.stage)}</span>
+						<span class="font-medium text-[var(--color-text)]">{japaStageLabel(t, entry.stage as JapaStage)}</span>
 						{#if entry.dest_space_id}
 							<span class="text-[var(--color-text-subtle)]">→ {destName(entry.dest_space_id) || t('japa_stage.dest_set', 'Destination set')}</span>
 						{/if}

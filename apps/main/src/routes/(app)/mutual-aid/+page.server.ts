@@ -1,8 +1,8 @@
 // Ref: japaconnect-engineering/sections/85-mutual-aid-board.md
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiList } from '$lib/server/api';
-import type { MutualAidPost, GeoCountry } from '$lib/types';
+import { apiContext, apiGet, apiList } from '$lib/server/api';
+import type { MutualAidPost, MutualAidPostType, MutualAidCategory, GeoCountry } from '$lib/types';
 
 /**
  * Mutual Aid list at /mutual-aid — community help requests and offers inside
@@ -36,6 +36,18 @@ export const load: PageServerLoad = async (event) => {
 		countries = [];
 	}
 
+	let postTypes: MutualAidPostType[] = [];
+	let categories: MutualAidCategory[] = [];
+	try {
+		const pt = await apiGet<{ value: string; label: string }[]>(ctx, '/mutual-aid/post-types');
+		postTypes = (pt ?? []).map((o) => o.value as MutualAidPostType);
+		const cat = await apiGet<{ value: string; label: string }[]>(ctx, '/mutual-aid/categories');
+		categories = (cat ?? []).map((o) => o.value as MutualAidCategory);
+	} catch {
+		postTypes = [];
+		categories = [];
+	}
+
 	const params = new URLSearchParams();
 	params.set('page_size', String(PAGE_SIZE));
 	if (dest) params.set('dest', dest);
@@ -45,12 +57,14 @@ export const load: PageServerLoad = async (event) => {
 
 	try {
 		const { items, meta } = await apiList<MutualAidPost>(ctx, `/mutual-aid?${params.toString()}`);
-		return { posts: items, meta, countries, authed, pageSize: PAGE_SIZE, filters, loadError: false };
+		return { posts: items, meta, countries, postTypes, categories, authed, pageSize: PAGE_SIZE, filters, loadError: false };
 	} catch {
 		return {
 			posts: [] as MutualAidPost[],
 			meta: undefined,
 			countries,
+			postTypes,
+			categories,
 			authed,
 			pageSize: PAGE_SIZE,
 			filters,

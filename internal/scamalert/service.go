@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"sort"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -157,6 +158,18 @@ func (s *Service) AnonymousReportsAllowed(ctx context.Context, tenantID pgtype.U
 	return s.settings.GetBoolOr(ctx, tenantID, "scam_alert.anonymous_reports", true)
 }
 
+// Option is a single selectable value exposed by the schema endpoint.
+type Option struct {
+	Value string `json:"value"`
+	Label string `json:"label"`
+}
+
+// SchemaOptions holds the canonical scam report vocabulary.
+type SchemaOptions struct {
+	ScamTypes []Option `json:"scam_types"`
+	Platforms []Option `json:"platforms"`
+}
+
 // validScamTypes and validPlatforms are the §81 enum values. The DB CHECK
 // constraints (migration 000417) enforce these at the store layer; these
 // constants let the service reject invalid input with a structured error
@@ -177,6 +190,46 @@ var validPlatforms = map[string]bool{
 	"email":     true,
 	"website":   true,
 	"other":     true,
+}
+
+// human labels for schema endpoint (Rule 16: backend owns canonical values).
+var scamTypeLabels = map[string]string{
+	"fraudulent_agent":  "Fraudulent agent",
+	"fake_job":          "Fake job offer",
+	"housing_fraud":     "Housing fraud",
+	"fake_scholarship":  "Fake scholarship",
+	"whatsapp_telegram": "WhatsApp / Telegram",
+	"other":             "Other",
+}
+
+var platformLabels = map[string]string{
+	"whatsapp":  "WhatsApp",
+	"instagram": "Instagram",
+	"linkedin":  "LinkedIn",
+	"email":     "Email",
+	"website":   "Website",
+	"other":     "Other",
+}
+
+func sortOptions(opts []Option) {
+	sort.Slice(opts, func(i, j int) bool { return opts[i].Value < opts[j].Value })
+}
+
+// Schema returns the canonical scam type and platform options.
+func (s *Service) Schema() SchemaOptions {
+	scamTypes := make([]Option, 0, len(validScamTypes))
+	for v := range validScamTypes {
+		scamTypes = append(scamTypes, Option{Value: v, Label: scamTypeLabels[v]})
+	}
+	sortOptions(scamTypes)
+
+	platforms := make([]Option, 0, len(validPlatforms))
+	for v := range validPlatforms {
+		platforms = append(platforms, Option{Value: v, Label: platformLabels[v]})
+	}
+	sortOptions(platforms)
+
+	return SchemaOptions{ScamTypes: scamTypes, Platforms: platforms}
 }
 
 // validReviewStatuses are the status values a moderator may set via Review
