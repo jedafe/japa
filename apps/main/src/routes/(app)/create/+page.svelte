@@ -54,6 +54,7 @@
 		initialType={data.initialType}
 		initialSpaceId={data.initialSpaceId}
 		user={data.user}
+		features={data.features ?? {}}
 		{defaultEditor}
 		{maxTags}
 	/>
