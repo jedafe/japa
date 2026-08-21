@@ -121,6 +121,31 @@ func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
 	return s.settings.GetBoolOr(ctx, tenantID, "japa_stage.enabled", false)
 }
 
+// Option is a single selectable value exposed by the option endpoint.
+type Option struct {
+	Value string `json:"value"`
+	Label string `json:"label"`
+}
+
+var stageLabels = map[string]string{
+	"considering": "Considering",
+	"planning":    "Planning",
+	"preparing":   "Preparing",
+	"applied":     "Applied",
+	"approved":    "Approved",
+	"relocated":   "Relocated",
+	"settled":     "Settled",
+}
+
+// Stages returns the canonical japa stage option list (Rule 16).
+func (s *Service) Stages() []Option {
+	out := make([]Option, 0, len(validStages))
+	for _, v := range validStages {
+		out = append(out, Option{Value: v, Label: stageLabels[v]})
+	}
+	return out
+}
+
 // GetOwn returns the authenticated user's own japa stage profile (full
 // view, including history and the visibility flag). Backs GET /me/japa-stage.
 func (s *Service) GetOwn(ctx context.Context, userID, tenantID pgtype.UUID) (ProfileDTO, error) {

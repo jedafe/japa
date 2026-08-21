@@ -12,6 +12,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sort"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -96,6 +97,53 @@ func NewService(store *Store, settings *config.Settings) *Service {
 // notification step but still expires posts.
 func (s *Service) SetNotifier(n Notifier) {
 	s.notifier = n
+}
+
+// Option is a single selectable value exposed by the option endpoints.
+type Option struct {
+	Value string `json:"value"`
+	Label string `json:"label"`
+}
+
+// human labels for option endpoints (Rule 16: backend owns canonical values).
+var postTypeLabels = map[string]string{
+	PostTypeNeed:      "Need",
+	PostTypeOffer:     "Offer",
+	PostTypeSkillSwap: "Skill swap",
+}
+
+var categoryLabels = map[string]string{
+	CategoryHousing:   "Housing",
+	CategoryTransport: "Transport",
+	CategoryDocuments: "Documents",
+	CategoryJobSearch: "Job search",
+	CategoryLanguage:  "Language",
+	CategorySocial:    "Social",
+	CategoryOther:     "Other",
+}
+
+func sortOptions(opts []Option) {
+	sort.Slice(opts, func(i, j int) bool { return opts[i].Value < opts[j].Value })
+}
+
+// PostTypes returns the canonical mutual aid post type options.
+func (s *Service) PostTypes() []Option {
+	out := make([]Option, 0, len(postTypeLabels))
+	for v, label := range postTypeLabels {
+		out = append(out, Option{Value: v, Label: label})
+	}
+	sortOptions(out)
+	return out
+}
+
+// Categories returns the canonical mutual aid category options.
+func (s *Service) Categories() []Option {
+	out := make([]Option, 0, len(categoryLabels))
+	for v, label := range categoryLabels {
+		out = append(out, Option{Value: v, Label: label})
+	}
+	sortOptions(out)
+	return out
 }
 
 // Create inserts a new mutual aid post. Auth required (permission checked at

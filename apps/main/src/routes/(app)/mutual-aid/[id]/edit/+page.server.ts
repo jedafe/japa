@@ -2,7 +2,7 @@
 import { error, redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiGet, apiList, ApiError } from '$lib/server/api';
-import type { MutualAidPost, GeoCountry } from '$lib/types';
+import type { MutualAidPost, MutualAidPostType, MutualAidCategory, GeoCountry } from '$lib/types';
 
 /**
  * Edit mutual aid post at /mutual-aid/[id]/edit — loads the post and
@@ -40,5 +40,17 @@ export const load: PageServerLoad = async (event) => {
 		countries = [];
 	}
 
-	return { post, countries };
+	let postTypes: MutualAidPostType[] = [];
+	let categories: MutualAidCategory[] = [];
+	try {
+		const pt = await apiGet<{ value: string; label: string }[]>(ctx, '/mutual-aid/post-types');
+		postTypes = (pt ?? []).map((o) => o.value as MutualAidPostType);
+		const cat = await apiGet<{ value: string; label: string }[]>(ctx, '/mutual-aid/categories');
+		categories = (cat ?? []).map((o) => o.value as MutualAidCategory);
+	} catch {
+		postTypes = [];
+		categories = [];
+	}
+
+	return { post, countries, postTypes, categories };
 };

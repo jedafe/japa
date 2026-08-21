@@ -48,18 +48,14 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	let level = $state(page.url.searchParams.get('level') ?? '');
 	let savedIds = $state<Set<string>>(untrack(() => new Set(data.savedIds ?? [])));
 
-	// Application status options — driven by the backend's saved-scholarship
-	// PATCH endpoint (Phase 33.04 application tracker). The values must
-	// match the backend CHECK constraint + IsValidStatus exactly:
-	// saved/researching/applied/accepted/rejected/withdrawn.
-	const statusOptions = $derived([
-		{ value: 'saved', label: t('scholarships.status_saved', 'Saved') },
-		{ value: 'researching', label: t('scholarships.status_researching', 'Researching') },
-		{ value: 'applied', label: t('scholarships.status_applied', 'Applied') },
-		{ value: 'accepted', label: t('scholarships.status_accepted', 'Accepted') },
-		{ value: 'rejected', label: t('scholarships.status_rejected', 'Rejected') },
-		{ value: 'withdrawn', label: t('scholarships.status_withdrawn', 'Withdrawn') }
-	]);
+	// Rule 16: application status options come from the backend API and are
+	// passed in via PageData. Labels are derived from i18n keys by status value.
+	const statusOptions = $derived(
+		data.statuses.map((value) => ({
+			value,
+			label: t(`scholarships.status_${value}`, value.charAt(0).toUpperCase() + value.slice(1))
+		}))
+	);
 
 	const statusBadgeColor = (status: string): string => {
 		if (status === 'accepted') return 'bg-[var(--color-success)] text-white';
@@ -115,7 +111,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 					title: s.title,
 					slug: s.slug,
 					summary: s.summary,
-					status: 'saved',
+					status: data.statuses[0] ?? 'saved',
 					notes: '',
 					remind_before_days: null,
 					updated_at: new Date().toISOString()

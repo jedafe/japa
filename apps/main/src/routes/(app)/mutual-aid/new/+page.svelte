@@ -1,5 +1,6 @@
 <script lang="ts">
 	// Ref: japaconnect-engineering/sections/85-mutual-aid-board.md
+	import { untrack } from 'svelte';
 	import { t } from '$lib/i18n';
 	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
 	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
@@ -7,6 +8,7 @@
 	import { goto } from '$app/navigation';
 	import { ArrowLeft, Send } from 'lucide-svelte';
 	import { api } from '$lib/api/client';
+	import { mutualAidPostTypeOptions, mutualAidCategoryOptions } from '$lib/enumOptions';
 	import type { MutualAidPost, MutualAidPostType, MutualAidCategory, Space } from '$lib/types';
 	import type { PageData } from './$types';
 
@@ -16,31 +18,18 @@
 	// loads). Redirect unauthenticated users to login with a return path.
 	const authed = $derived(data.isAuthed);
 
-	const postTypeOptions: { value: MutualAidPostType; label: string }[] = [
-		{ value: 'need', label: t('mutual_aid.type_need', 'Need') },
-		{ value: 'offer', label: t('mutual_aid.type_offer', 'Offer') },
-		{ value: 'skill_swap', label: t('mutual_aid.type_skill_swap', 'Skill swap') }
-	];
-
-	const categoryOptions: { value: MutualAidCategory; label: string }[] = [
-		{ value: 'housing', label: t('mutual_aid.cat_housing', 'Housing') },
-		{ value: 'transport', label: t('mutual_aid.cat_transport', 'Transport') },
-		{ value: 'documents', label: t('mutual_aid.cat_documents', 'Documents') },
-		{ value: 'job_search', label: t('mutual_aid.cat_job_search', 'Job search') },
-		{ value: 'language', label: t('mutual_aid.cat_language', 'Language') },
-		{ value: 'social', label: t('mutual_aid.cat_social', 'Social') },
-		{ value: 'other', label: t('mutual_aid.cat_other', 'Other') }
-	];
+	const postTypeOptions = $derived(mutualAidPostTypeOptions(t, false, data.postTypes));
+	const categoryOptions = $derived(mutualAidCategoryOptions(t, false, data.categories));
 
 	// Pre-select post_type from the ?type= query param (e.g. /mutual-aid/new?type=offer).
 	const initialType = (() => {
 		const q = page.url.searchParams.get('type');
-		if (q === 'need' || q === 'offer' || q === 'skill_swap') return q;
-		return 'need';
+		if (data.postTypes.includes(q as MutualAidPostType)) return q as MutualAidPostType;
+		return data.postTypes[0] ?? 'need';
 	})();
 
-	let postType = $state<MutualAidPostType>(initialType);
-	let category = $state<MutualAidCategory>('housing');
+	let postType = $state<MutualAidPostType>(untrack(() => initialType));
+	let category = $state<MutualAidCategory>(untrack(() => data.categories[0] ?? 'housing'));
 	let title = $state('');
 	let description = $state('');
 	let destinationSpaceId = $state('');

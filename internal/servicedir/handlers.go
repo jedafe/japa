@@ -136,6 +136,23 @@ func parsePageParams(r *http.Request) (page, limit int32) {
 // Public handlers (list + single — anonymous browse per §98)
 // ---------------------------------------------------------------------------
 
+// HandleCategories handles GET /services/categories — returns the canonical
+// service category option list (Rule 16).
+func (h *Handlers) HandleCategories(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+		errpkg.WriteError(w, http.StatusNotFound, "service_directory_disabled", "Service directory is not available")
+		return
+	}
+
+	cats := h.service.Categories()
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": cats})
+}
+
 // HandleList handles GET /services — list published service listings with
 // filters. Query params: ?dest=&city=&category=&origin=&verified=&sort=top|latest&page=&limit=
 func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {

@@ -1,8 +1,8 @@
 // Ref: japaconnect-engineering/sections/98-service-directory.md
 import { redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiList } from '$lib/server/api';
-import type { GeoCountry } from '$lib/types';
+import { apiContext, apiGet, apiList } from '$lib/server/api';
+import type { GeoCountry, ServiceCategory } from '$lib/types';
 
 /**
  * Create-service form at /services/new — auth-gated. Guests are
@@ -24,5 +24,13 @@ export const load: PageServerLoad = async (event) => {
 		countries = [];
 	}
 
-	return { authed: true, countries };
+	let serviceCategories: ServiceCategory[] = [];
+	try {
+		const cat = await apiGet<{ value: string; label: string }[]>(ctx, '/services/categories');
+		serviceCategories = (cat ?? []).map((o) => o.value as ServiceCategory);
+	} catch {
+		serviceCategories = [];
+	}
+
+	return { authed: true, countries, serviceCategories };
 };

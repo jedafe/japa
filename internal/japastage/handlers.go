@@ -131,6 +131,23 @@ func parsePageParams(r *http.Request) (page, limit int32) {
 // Public handlers
 // ---------------------------------------------------------------------------
 
+// HandleStages handles GET /japa-stage/stages — returns the canonical stage
+// option list (Rule 16).
+func (h *Handlers) HandleStages(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+		errpkg.WriteError(w, http.StatusNotFound, "japa_stage_disabled", "Japa stage profiles are not available")
+		return
+	}
+
+	stages := h.service.Stages()
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": stages})
+}
+
 // HandleGetByUsername handles GET /users/:username/japa-stage — public stage
 // view. Returns an empty data object (stage omitted) when the profile is not
 // public, so anonymous browsers simply see no stage.

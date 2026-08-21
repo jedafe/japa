@@ -1,6 +1,6 @@
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiList } from '$lib/server/api';
+import { apiContext, apiGet, apiList } from '$lib/server/api';
 import type { Scholarship, SavedScholarship, GeoCountry } from '$lib/types';
 
 /**
@@ -103,5 +103,14 @@ export const load: PageServerLoad = async (event) => {
 		countries = [];
 	}
 
-	return { scholarships, disabled, authed, pageSize: PAGE_SIZE, currentPage: page, total, savedScholarships, savedIds, countries };
+	// Rule 16: canonical saved-scholarship status options from the API.
+	let statuses: string[] = [];
+	try {
+		const list = await apiGet<{ value: string; label: string }[]>(ctx, '/scholarships/statuses');
+		statuses = (list ?? []).map((o) => o.value);
+	} catch {
+		statuses = [];
+	}
+
+	return { scholarships, disabled, authed, pageSize: PAGE_SIZE, currentPage: page, total, savedScholarships, savedIds, countries, statuses };
 };

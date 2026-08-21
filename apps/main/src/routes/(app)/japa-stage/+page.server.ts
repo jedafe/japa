@@ -1,8 +1,8 @@
 // Ref: japaconnect-engineering/sections/87-japa-stage-profiles.md
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiList } from '$lib/server/api';
-import type { MemberStage, GeoCountry } from '$lib/types';
+import { apiContext, apiGet, apiList } from '$lib/server/api';
+import type { MemberStage, JapaStage, GeoCountry } from '$lib/types';
 
 const PAGE_SIZE = 20;
 
@@ -46,10 +46,19 @@ export const load: PageServerLoad = async (event) => {
 		countries = [];
 	}
 
+	let stages: JapaStage[] = [];
+	try {
+		const list = await apiGet<{ value: string; label: string }[]>(ctx, '/japa-stage/stages');
+		stages = (list ?? []).map((o) => o.value as JapaStage);
+	} catch {
+		stages = [];
+	}
+
 	return {
 		members,
 		authed,
 		countries,
+		stages,
 		pageSize: PAGE_SIZE,
 		currentPage: page,
 		totalPages,

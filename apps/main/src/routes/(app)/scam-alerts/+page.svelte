@@ -10,20 +10,14 @@
 	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 	import { relativeTime } from '$lib/feed/time';
 	import { i18n } from '$lib/i18n';
+	import { scamTypeFilterOptions, scamTypeLabel } from '$lib/enumOptions';
 	import { EmptyState, LoadingSkeleton } from '$lib/components/ui';
 	import type { ScamReport, ScamType, ScamStatus } from '$lib/types';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
 
-	const SCAM_TYPES: ScamType[] = [
-		'fraudulent_agent',
-		'fake_job',
-		'housing_fraud',
-		'fake_scholarship',
-		'whatsapp_telegram',
-		'other'
-	];
+	const scamTypeFilterOpts = $derived(scamTypeFilterOptions(t, data.scamTypes));
 
 	let alerts = $state<ScamReport[]>(untrack(() => data.alerts));
 	let atEnd = $state(false);
@@ -107,10 +101,6 @@
 	}
 
 	const hasFilters = $derived(!!data.filters.dest || !!data.filters.scam_type);
-
-	function scamTypeLabel(type: ScamType): string {
-		return t(`scam_alerts.type.${type}`, type.replace(/_/g, ' '));
-	}
 
 	function statusClass(status: ScamStatus): string {
 		if (status === 'confirmed') return 'bg-red-500/10 text-red-600';
@@ -198,9 +188,8 @@
 				onchange={(e) => (scamTypeFilter = e.currentTarget.value)}
 				class="w-44 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none"
 			>
-				<option value="">{t('scam_alerts.filter_all_types', 'All types')}</option>
-				{#each SCAM_TYPES as st (st)}
-					<option value={st}>{scamTypeLabel(st)}</option>
+				{#each scamTypeFilterOpts as opt (opt.value)}
+					<option value={opt.value}>{opt.label}</option>
 				{/each}
 			</select>
 		</div>
@@ -245,7 +234,7 @@
 					>
 						<div class="flex flex-wrap items-center gap-2">
 							<span class="rounded-full bg-[var(--color-primary)]/10 px-2 py-0.5 text-xs font-semibold text-[var(--color-primary)]">
-								{scamTypeLabel(alert.scam_type as ScamType)}
+								{scamTypeLabel(t, alert.scam_type as ScamType)}
 							</span>
 							{#if alert.is_pinned}
 								<span class="inline-flex items-center gap-0.5 rounded-full bg-amber-500/10 px-2 py-0.5 text-xs font-semibold text-amber-600">

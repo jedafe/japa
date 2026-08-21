@@ -1,7 +1,7 @@
 // Ref: japaconnect-engineering/sections/81-scam-alert-board.md
 import type { PageServerLoad } from './$types';
-import { apiContext, apiList } from '$lib/server/api';
-import type { GeoCountry } from '$lib/types';
+import { apiContext, apiGet, apiList } from '$lib/server/api';
+import type { GeoCountry, ScamType, ScamPlatform } from '$lib/types';
 
 export const load: PageServerLoad = async (event) => {
 	// §81: anonymous reports are allowed when scam_alert.anonymous_reports is
@@ -17,5 +17,16 @@ export const load: PageServerLoad = async (event) => {
 		countries = [];
 	}
 
-	return { countries };
+	let scamTypes: ScamType[] = [];
+	let scamPlatforms: ScamPlatform[] = [];
+	try {
+		const schema = await apiGet<{ scam_types: { value: string; label: string }[]; platforms: { value: string; label: string }[] }>(ctx, '/scam-alerts/schema');
+		scamTypes = (schema.scam_types ?? []).map((o) => o.value as ScamType);
+		scamPlatforms = (schema.platforms ?? []).map((o) => o.value as ScamPlatform);
+	} catch {
+		scamTypes = [];
+		scamPlatforms = [];
+	}
+
+	return { countries, scamTypes, scamPlatforms };
 };

@@ -35,6 +35,7 @@ import (
 	"github.com/jedafe/japa/internal/bookmarkfolders"
 	"github.com/jedafe/japa/internal/bots"
 	"github.com/jedafe/japa/internal/calendar"
+	"github.com/jedafe/japa/internal/catalog"
 	"github.com/jedafe/japa/internal/checklist"
 	"github.com/jedafe/japa/internal/comments"
 	"github.com/jedafe/japa/internal/communitylocator"
@@ -950,6 +951,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	docsHandlers := docs.NewHandlers(docsService, cfg.SiteURL, cfg.SiteName)
 	docsHandlers.AsynqClient = asynqClient // SEARCH-001: enqueue Meilisearch index sync
 	docsHandlers.SetRBAC(rbacResolver)     // §44: audience RBAC gating
+
+	// Public option catalog (Rule 16 — no hardcoded option lists).
+	catalogHandlers := catalog.NewHandlers()
 
 	// Admin Settings subsystem.
 	adminHandlers := admin.NewHandlers(database, gen.New(database.Writer))
@@ -2242,6 +2246,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Feature flags endpoint (public - frontend needs flags to
 			// render navigation, no auth required)
 			r.Get("/feature-flags", featureHandlers.HandleGetFeatureFlags)
+
+			// Public option catalog (Rule 16 — canonical option lists for
+			// Tools surface dropdowns, no auth required).
+			r.Get("/catalogs/{name}", catalogHandlers.GetCatalog)
 
 			// Feature flags admin toggle (requires auth + RBAC permission)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.feature_flags.manage")).
@@ -4535,6 +4543,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 			// Marketplace catalog
 			r.Get("/learn/university/catalog", universityHandlers.ListCatalog)
+			// Catalog option lists are registered before the {slug} route so the
+			// literal path /options is matched first (Rule 16).
+			r.Get("/learn/university/catalog/options", universityHandlers.GetCatalogOptions)
 			r.Get("/learn/university/catalog/{slug}", universityHandlers.GetCatalogTrack)
 
 			// Consolidated learner routes (ADR-063 consolidation: /learn/tracks/*
@@ -4564,6 +4575,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "university.instructor.approve")).
 				Get("/admin/university/instructors", universityHandlers.AdminListInstructors)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "university.instructor.approve")).
+				Get("/admin/university/instructors/{id}", universityHandlers.AdminGetInstructor)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "university.instructor.approve")).
 				Post("/admin/university/instructors/{id}/approve", universityHandlers.AdminApproveInstructor)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "university.instructor.approve")).
 				Post("/admin/university/instructors/{id}/reject", universityHandlers.AdminRejectInstructor)
@@ -4581,6 +4594,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// BUG-002: GET all tracks (not just pending).
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "university.course.approve")).
 				Get("/admin/university/tracks", universityHandlers.AdminListAllTracks)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "university.course.approve")).
+				Get("/admin/university/tracks/{id}", universityHandlers.AdminGetTrack)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "university.course.approve")).
 				Post("/admin/university/tracks/{id}/approve", universityHandlers.AdminApproveTrack)
 			// BUG-002: POST reject track.
@@ -5441,6 +5456,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 			// Section 81 — Scam Alert Board (ADR-089)
 			r.With(features.Gate(featureChecker, "scam_alert.enabled")).Group(func(r chi.Router) {
+				r.Get("/scam-alerts/schema", scamAlertHandlers.HandleSchema)
 				r.Get("/scam-alerts", scamAlertHandlers.HandleList)
 				r.Get("/scam-alerts/{id}", scamAlertHandlers.HandleGet)
 				r.Post("/scam-alerts", scamAlertHandlers.HandleSubmit)
@@ -5530,6 +5546,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 			// Section 85 — Mutual Aid Board (ADR-093)
 			r.With(features.Gate(featureChecker, "mutual_aid.enabled")).Group(func(r chi.Router) {
+				r.Get("/mutual-aid/categories", mutualAidHandlers.HandleCategories)
+				r.Get("/mutual-aid/post-types", mutualAidHandlers.HandlePostTypes)
 				r.Get("/mutual-aid", mutualAidHandlers.HandleList)
 				r.Get("/mutual-aid/{id}", mutualAidHandlers.HandleGet)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "mutual_aid.create_offer")).
@@ -5580,6 +5598,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 			// Section 87 — Japa Stage Progress Profiles (ADR-095)
 			r.With(features.Gate(featureChecker, "japa_stage.enabled")).Group(func(r chi.Router) {
+				r.Get("/japa-stage/stages", japaStageHandlers.HandleStages)
 				r.Get("/users/{username}/japa-stage", japaStageHandlers.HandleGetByUsername)
 				r.Get("/members/by-stage", japaStageHandlers.HandleListByStage)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "profile.japa_stage.edit")).
@@ -5613,6 +5632,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 			// Section 98 — Service Directory (ADR-106)
 			r.With(features.Gate(featureChecker, "service_directory.enabled")).Group(func(r chi.Router) {
+				r.Get("/services/categories", serviceDirHandlers.HandleCategories)
 				r.Get("/services", serviceDirHandlers.HandleList)
 				r.Get("/services/{slug}", serviceDirHandlers.HandleGet)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "service.create")).
@@ -5686,6 +5706,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Get("/scholarships", scholarshipsHandlers.HandleFindScholarships)
 				r.With(auth.OptionalAuth(kr, vkClient.Redis()), rbac.OptionalPermission(rbacResolver, "scholarship.browse")).
 					Get("/scholarships/{id}", scholarshipsHandlers.HandleScholarshipDetail)
+				r.With(auth.OptionalAuth(kr, vkClient.Redis()), rbac.OptionalPermission(rbacResolver, "scholarship.browse")).
+					Get("/scholarships/statuses", scholarshipsHandlers.HandleStatuses)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "scholarship.save")).
 					Get("/scholarships/saved", scholarshipsHandlers.HandleListSavedScholarships)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "scholarship.save")).
@@ -6136,11 +6158,15 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		r.Use(csrf.EnsureCookie(cfg.CookieDomain, cfg.IsProduction()))
 
 		r.Route("/control", func(r chi.Router) {
-			// System Settings
-			r.Get("/system-settings", controlHandlers.ListSystemSettings)
-			r.Patch("/system-settings", controlHandlers.UpdateSystemSettings)
-			r.Patch("/system-settings/{key}", controlHandlers.UpdateSystemSetting)
-			r.Post("/system-settings/{key}/reset", controlHandlers.ResetSystemSetting)
+			// System Settings — canonical RBAC per Section 21.
+			r.With(rbac.RequirePermission(rbacResolver, "system.settings.view")).
+				Get("/system-settings", controlHandlers.ListSystemSettings)
+			r.With(rbac.RequirePermission(rbacResolver, "system.settings.edit")).
+				Patch("/system-settings", controlHandlers.UpdateSystemSettings)
+			r.With(rbac.RequirePermission(rbacResolver, "system.settings.edit")).
+				Patch("/system-settings/{key}", controlHandlers.UpdateSystemSetting)
+			r.With(rbac.RequirePermission(rbacResolver, "system.settings.edit")).
+				Post("/system-settings/{key}/reset", controlHandlers.ResetSystemSetting)
 
 			// Infrastructure Health
 			r.Get("/health", controlHandlers.HealthCheck)
@@ -6238,8 +6264,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(rbac.RequirePermission(rbacResolver, "ai.providers.manage")).
 				Post("/ai-providers/{id}/test", controlHandlers.TestAIProvider)
 
-			// Audit Log (full cross-tenant view)
+			// Audit Log (full cross-tenant view; super-admin may delete/clear).
 			r.Get("/audit-logs", controlHandlers.ListAuditLogs)
+			r.Get("/audit-logs/filters", controlHandlers.GetAuditLogFilters)
 			r.Delete("/audit-logs/{id}", controlHandlers.DeleteAuditLog)
 			r.Post("/audit-logs/clear", controlHandlers.ClearAuditLogs)
 
@@ -6297,6 +6324,30 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.Delete("/backup-configs/{id}", controlHandlers.DeleteBackupConfig)
 			r.Post("/backup-configs/{id}/trigger", controlHandlers.TriggerBackup)
 			r.Get("/backup-targets", controlHandlers.ListBackupTargets)
+
+			// Tenant Management — canonical RBAC per Section 21.
+			r.With(rbac.RequirePermission(rbacResolver, "system.tenants.manage")).
+				Get("/tenants", controlHandlers.ListTenants)
+			r.With(rbac.RequirePermission(rbacResolver, "system.tenants.manage")).
+				Post("/tenants", controlHandlers.CreateTenant)
+			r.With(rbac.RequirePermission(rbacResolver, "system.tenants.manage")).
+				Get("/tenants/{id}", controlHandlers.GetTenant)
+			r.With(rbac.RequirePermission(rbacResolver, "system.tenants.manage")).
+				Patch("/tenants/{id}", controlHandlers.UpdateTenant)
+			r.With(rbac.RequirePermission(rbacResolver, "system.tenants.manage")).
+				Delete("/tenants/{id}", controlHandlers.DeleteTenant)
+			r.With(rbac.RequirePermission(rbacResolver, "system.tenants.manage")).
+				Post("/tenants/{id}/suspend", controlHandlers.SuspendTenant)
+			r.With(rbac.RequirePermission(rbacResolver, "system.tenants.manage")).
+				Post("/tenants/{id}/unsuspend", controlHandlers.UnsuspendTenant)
+			r.With(rbac.RequirePermission(rbacResolver, "system.tenants.manage")).
+				Get("/tenants/{id}/settings", controlHandlers.GetTenantSettings)
+			r.With(rbac.RequirePermission(rbacResolver, "system.tenants.manage")).
+				Patch("/tenants/{id}/settings", controlHandlers.UpdateTenantSettings)
+			r.With(rbac.RequirePermission(rbacResolver, "system.tenants.manage")).
+				Patch("/tenants/{id}/settings/{key}", controlHandlers.UpdateTenantSettingKey)
+			r.With(rbac.RequirePermission(rbacResolver, "system.tenants.manage")).
+				Post("/tenants/{id}/settings/{key}/reset", controlHandlers.ResetTenantSetting)
 
 			// Wallet Currencies — super_admin CRUD
 			r.With(rbac.RequirePermission(rbacResolver, "wallet.currency.manage")).
