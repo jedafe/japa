@@ -30,9 +30,11 @@ type HumanizeLevel string
 
 const (
 	HumanizeOff    HumanizeLevel = ""
+	HumanizeLight  HumanizeLevel = "light"
 	HumanizeLow    HumanizeLevel = "low"
 	HumanizeMedium HumanizeLevel = "medium"
 	HumanizeHigh   HumanizeLevel = "high"
+	HumanizeHeavy  HumanizeLevel = "heavy"
 )
 
 // humanizeInstructions maps each level to the system-prompt fragment injected
@@ -48,7 +50,7 @@ var humanizeInstructions = map[HumanizeLevel]string{
 // Returns the level and whether humanization was explicitly requested.
 // Payload keys:
 //   - "humanize" (bool):   explicitly enable/disable for this request.
-//   - "humanize_level" (string): "low" | "medium" | "high" (default "medium").
+//   - "humanize_level" (string): "off" | "light" | "low" | "medium" | "high" | "heavy" (default "medium").
 //
 // When "humanize" is absent, the caller's global setting decides; this helper
 // only reports what the payload says so the caller can AND it with the global.
@@ -72,8 +74,14 @@ func PayloadHumanize(payload map[string]any) (level HumanizeLevel, requested boo
 	lvl := HumanizeMedium
 	if s, ok := payload["humanize_level"].(string); ok {
 		switch HumanizeLevel(s) {
-		case HumanizeLow, HumanizeMedium, HumanizeHigh:
-			lvl = HumanizeLevel(s)
+		case "off":
+			lvl = HumanizeOff
+		case HumanizeLow, HumanizeLight:
+			lvl = HumanizeLow
+		case HumanizeMedium:
+			lvl = HumanizeMedium
+		case HumanizeHigh, HumanizeHeavy:
+			lvl = HumanizeHigh
 		}
 	}
 
@@ -105,7 +113,7 @@ func ResolveHumanize(globalEnabled bool, globalLevel HumanizeLevel, reqHumanize 
 
 	if reqLevel != "" {
 		switch HumanizeLevel(reqLevel) {
-		case HumanizeLow, HumanizeMedium, HumanizeHigh:
+		case HumanizeLow, HumanizeLight, HumanizeMedium, HumanizeHigh, HumanizeHeavy, "off":
 			level = HumanizeLevel(reqLevel)
 		}
 	}
@@ -151,6 +159,13 @@ func writeHumanizePayload(payload map[string]any, enabled bool, level HumanizeLe
 func ApplyHumanization(existing string, level HumanizeLevel) string {
 	if level == HumanizeOff {
 		return existing
+	}
+
+	switch level {
+	case HumanizeLight:
+		level = HumanizeLow
+	case HumanizeHeavy:
+		level = HumanizeHigh
 	}
 
 	instr, ok := humanizeInstructions[level]

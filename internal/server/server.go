@@ -4081,6 +4081,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Post("/ai/assist/generate-tags", aiHandlers.HandleGenerateTags)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ai.editor.assist"), mw.RateLimit(vkClient.Redis(), "moderate")).
 				Post("/ai/assist/generate-og", aiHandlers.HandleGenerateOG)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ai.editor.assist"), mw.RateLimit(vkClient.Redis(), "moderate")).
+				Post("/ai/assist/draft", aiHandlers.HandleDraft)
 
 			// HITL review routes
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ai.hitl.review")).
