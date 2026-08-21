@@ -63,6 +63,7 @@
 		onjson?: (json: Record<string, unknown>) => void;
 		onfocus?: () => void;
 		defaultMode?: EditorMode;
+		aiTrigger?: import('svelte').Snippet;
 	}
 
 	let {
@@ -71,7 +72,8 @@
 		onhtml,
 		onjson,
 		onfocus,
-		defaultMode = 'block'
+		defaultMode = 'block',
+		aiTrigger
 	}: Props = $props();
 
 	let element = $state<HTMLDivElement>(null!);
@@ -557,6 +559,10 @@
 				<span class="tb-sep"></span>
 				<button type="button" class="tb-btn" title={t('create.editor.toolbar.undo')} onclick={() => tb('undo')} disabled={!editor.can().undo()}><Undo2 size={16} /></button>
 				<button type="button" class="tb-btn" title={t('create.editor.toolbar.redo')} onclick={() => tb('redo')} disabled={!editor.can().redo()}><Redo2 size={16} /></button>
+				{#if aiTrigger}
+					<span class="tb-sep"></span>
+					{@render aiTrigger()}
+				{/if}
 			</div>
 		{/if}
 		<div

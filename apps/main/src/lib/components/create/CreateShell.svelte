@@ -30,6 +30,10 @@
 	import ComparisonBuilder from './editors/ComparisonBuilder.svelte';
 	import CreateRightPanel from './panel/CreateRightPanel.svelte';
 	import CustomFieldGroupCmp from './panel/CustomFieldGroup.svelte';
+	import AiBodyButton from '$lib/ai/AiBodyButton.svelte';
+	import AiDraftPanel from '$lib/ai/AiDraftPanel.svelte';
+	import { canUseAI } from '$lib/ai/canUseAI';
+	import type { SessionUser } from '$lib/types';
 
 	interface Props {
 		types: TypeEntry[];
@@ -62,7 +66,7 @@
 		/** Space ID resolved from ?space — used to preselect the space
 		 *  when creating new content. Ignored when restoring a draft. */
 		initialSpaceId?: string | null;
-		user: { id: string } | null;
+		user: SessionUser | null;
 		defaultEditor?: EditorMode;
 		/** Visibility options from GET /content/visibility-options (Rule 16). */
 		visibilityOptions?: { value: Visibility; label: string }[];
@@ -131,6 +135,9 @@
 	// comparison-only
 	let items = $state<{ label: string }[]>([]);
 	let dimensions = $state<{ label: string }[]>([]);
+
+	// AI drafting panel (Task 7)
+	let aiPanelOpen = $state(false);
 
 	// ---- Guide category state ----
 	let guideCategory = $state<string | null>(untrack(() => draft?.guide_category ?? null));
@@ -316,6 +323,12 @@
 	}
 </script>
 
+{#snippet aiButtonSnippet()}
+	{#if canUseAI(user)}
+		<AiBodyButton onclick={() => (aiPanelOpen = true)} />
+	{/if}
+{/snippet}
+
 <div class="composer-grid">
 	<div class="composer-main">
 		<div class="composer-header">
@@ -379,8 +392,36 @@
 				onhtml={(v) => { bodyHtml = v; }}
 				onfocus={() => (focusedField = 'body')}
 				defaultMode={defaultEditor}
+				aiTrigger={aiButtonSnippet}
 			/>
 		{/if}
+
+		<AiDraftPanel
+			open={aiPanelOpen}
+			contentType={selectedType.value}
+			{title}
+			body={bodyHtml}
+			fieldSchema={allFieldGroups.flatMap((g) => g.fields).map((f) => ({
+				key: f.key,
+				type: f.field_type,
+				label: f.label,
+				options: Array.isArray(f.options)
+					? f.options.map((o) => (typeof o === 'string' ? { value: o, label: o } : o))
+					: undefined,
+			}))}
+			onApply={(payload) => {
+				if (payload.title) {
+					title = payload.title;
+					handleTitle(payload.title);
+				}
+				bodyHtml = payload.body;
+				if (payload.fieldValues) {
+					fieldValues = { ...fieldValues, ...payload.fieldValues };
+				}
+				markDirty();
+			}}
+			onClose={() => (aiPanelOpen = false)}
+		/>
 
 		{#if allFieldGroups.length > 0}
 			<div class="composer-field-groups">
