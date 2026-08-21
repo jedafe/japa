@@ -20,6 +20,8 @@ type UpdateProfileRequest struct {
 	Bio                *string `json:"bio"`
 	Timezone           *string `json:"timezone"`
 	OriginCountry      *string `json:"origin_country"`
+	OriginStateID      *string `json:"origin_state_id"`
+	OriginCityID       *string `json:"origin_city_id"`
 	DestinationCountry *string `json:"destination_country"`
 }
 
@@ -79,6 +81,8 @@ type UserProfileResponse struct {
 	// field values resolved from custom_field_values). Surfaced on /me so the
 	// settings/location page can pre-populate without an extra fetch.
 	OriginCountry      string `json:"origin_country"`
+	OriginStateID      string `json:"origin_state_id"`
+	OriginCityID       string `json:"origin_city_id"`
 	DestinationCountry string `json:"destination_country"`
 	// The user's current geo space ID (migration 000200, ADR-064a). Surfaced
 	// on /me so sidebar widgets can fetch geo-relevant content (Option A,

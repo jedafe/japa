@@ -309,9 +309,10 @@ func (h *Handlers) UpdateMyProfile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// ADR-064a: Invalidate the VisitorContext cache when geo custom fields
-	// (origin_country, destination_country) are updated, so the next request
-	// picks up the new archetype/ContentCountry resolution.
-	if req.OriginCountry != nil || req.DestinationCountry != nil {
+	// (origin_country, origin_state_id, origin_city_id, destination_country)
+	// are updated, so the next request picks up the new archetype/ContentCountry
+	// resolution.
+	if req.OriginCountry != nil || req.OriginStateID != nil || req.OriginCityID != nil || req.DestinationCountry != nil {
 		h.invalidateVisitorCache(r.Context(), user)
 	}
 
@@ -886,6 +887,9 @@ func (h *Handlers) GetMyLocation(w http.ResponseWriter, r *http.Request) {
 		"space_id":     nil,
 		"name":         nil,
 		"city":         nil,
+		"city_id":      nil,
+		"state":        nil,
+		"state_id":     nil,
 		"country":      nil,
 		"country_code": nil,
 	}
@@ -901,6 +905,16 @@ func (h *Handlers) GetMyLocation(w http.ResponseWriter, r *http.Request) {
 	// city is only non-nil when the space is city-level (BUG-VIS-002).
 	if geoSpace.CityName != "" {
 		data["city"] = geoSpace.CityName
+	}
+	if geoSpace.CityID.Valid && geoSpace.CityName != "" {
+		data["city_id"] = geoSpace.CityID.String()
+	}
+	// state is populated when the space is state-level or a city with a parent state.
+	if geoSpace.StateName != nil && *geoSpace.StateName != "" {
+		data["state"] = *geoSpace.StateName
+	}
+	if geoSpace.StateID.Valid {
+		data["state_id"] = geoSpace.StateID.String()
 	}
 	if geoSpace.CountryName != nil {
 		data["country"] = *geoSpace.CountryName

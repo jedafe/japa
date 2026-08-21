@@ -557,14 +557,22 @@ WHERE id = $2 AND tenant_id = $3;
 SELECT
     u.current_geo_space_id,
     city.id AS city_id,
-    CASE WHEN city.level = 'city' THEN city.name END::text AS city_name,
+    COALESCE(CASE WHEN city.level = 'city' THEN city.name END, '')::text AS city_name,
     city.geo_code AS city_geo_code,
     city.name AS space_name,
+    state.id AS state_id,
+    state.name AS state_name,
     country.id AS country_id,
     country.name AS country_name,
     country.geo_code AS country_geo_code
 FROM users u
 LEFT JOIN spaces city ON city.id = u.current_geo_space_id AND city.tenant_id = u.tenant_id AND city.deleted_at IS NULL
+LEFT JOIN spaces state ON state.id = COALESCE(
+    -- If the current geo space is a state, use it directly.
+    CASE WHEN city.level = 'state' THEN city.id END,
+    -- If it's a city, use its parent state.
+    CASE WHEN city.level = 'city' AND city.parent_id IS NOT NULL THEN city.parent_id END
+) AND state.tenant_id = u.tenant_id AND state.deleted_at IS NULL
 LEFT JOIN spaces country ON country.id = COALESCE(
     -- If the current geo space is a country itself, use it.
     CASE WHEN city.level = 'country' THEN city.id END,

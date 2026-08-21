@@ -126,6 +126,8 @@ func (s *Service) GetProfile(ctx context.Context, tenantID, userID pgtype.UUID) 
 	// values so the settings/location page can pre-populate. A failure
 	// degrades to empty strings (the dropdowns show "Not set").
 	originCountry, _ := s.store.getGeoCustomField(ctx, tenantID, userID, "origin_country")
+	originStateID, _ := s.store.getGeoCustomField(ctx, tenantID, userID, "origin_state_id")
+	originCityID, _ := s.store.getGeoCustomField(ctx, tenantID, userID, "origin_city_id")
 	destCountry, _ := s.store.getGeoCustomField(ctx, tenantID, userID, "destination_country")
 
 	// ADR-064 Option A: best-effort fetch of the user's current_geo_space_id
@@ -169,6 +171,8 @@ func (s *Service) GetProfile(ctx context.Context, tenantID, userID pgtype.UUID) 
 		UpdatedAt:                p.UpdatedAt.Time.Format(time.RFC3339),
 		ContentCountryPreference: contentCountry,
 		OriginCountry:            originCountry,
+		OriginStateID:            originStateID,
+		OriginCityID:             originCityID,
 		DestinationCountry:       destCountry,
 		CurrentGeoSpaceID:        currentGeoSpaceID,
 	}, nil
@@ -338,16 +342,27 @@ func (s *Service) UpdateProfile(ctx context.Context, tenantID, userID pgtype.UUI
 			return fmt.Errorf("updating profile: %w", err)
 		}
 
-		// ADR-064a: Save geo custom fields (origin_country, destination_country)
-		// as custom_field_values on the user_profile entity. These are saved
-		// after the profile upsert to ensure the profile row exists.
+		// ADR-064a: Save geo custom fields (origin_country, origin_state_id,
+		// origin_city_id, destination_country) as custom_field_values on the
+		// user_profile entity. These are saved after the profile upsert to
+		// ensure the profile row exists.
 		if req.OriginCountry != nil {
-			if err := s.store.setGeoCustomFieldTx(ctx, q, tenantID, userID, "origin_country", strings.ToUpper(strings.TrimSpace(*req.OriginCountry))); err != nil {
+			if err := s.store.setGeoCustomFieldTx(ctx, q, tenantID, userID, "origin_country", normalizeCountryCode(*req.OriginCountry)); err != nil {
 				return fmt.Errorf("saving origin_country: %w", err)
 			}
 		}
+		if req.OriginStateID != nil {
+			if err := s.store.setGeoCustomFieldTx(ctx, q, tenantID, userID, "origin_state_id", strings.TrimSpace(*req.OriginStateID)); err != nil {
+				return fmt.Errorf("saving origin_state_id: %w", err)
+			}
+		}
+		if req.OriginCityID != nil {
+			if err := s.store.setGeoCustomFieldTx(ctx, q, tenantID, userID, "origin_city_id", strings.TrimSpace(*req.OriginCityID)); err != nil {
+				return fmt.Errorf("saving origin_city_id: %w", err)
+			}
+		}
 		if req.DestinationCountry != nil {
-			if err := s.store.setGeoCustomFieldTx(ctx, q, tenantID, userID, "destination_country", strings.ToUpper(strings.TrimSpace(*req.DestinationCountry))); err != nil {
+			if err := s.store.setGeoCustomFieldTx(ctx, q, tenantID, userID, "destination_country", normalizeCountryCode(*req.DestinationCountry)); err != nil {
 				return fmt.Errorf("saving destination_country: %w", err)
 			}
 		}
