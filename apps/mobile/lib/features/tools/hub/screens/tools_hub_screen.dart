@@ -17,32 +17,32 @@ class ToolsHubScreen extends ConsumerWidget {
       body: state.when(
         data: (flags) {
           final items = <Widget>[
-            if (flags['visa_checklist'] != false)
+            if (flags.visaChecklist)
               ListTile(
                 title: Text(t('tools.visa_checklist')),
                 onTap: () => context.push('/tools/visa-checklist'),
               ),
-            if (flags['readiness'] != false)
+            if (flags.readiness)
               ListTile(
                 title: Text(t('tools.readiness')),
                 onTap: () => context.push('/tools/readiness'),
               ),
-            if (flags['cost_of_living'] != false)
+            if (flags.costOfLiving)
               ListTile(
                 title: Text(t('tools.cost_of_living')),
                 onTap: () => context.push('/tools/cost-of-living'),
               ),
-            if (flags['scholarships'] != false)
+            if (flags.scholarships)
               ListTile(
                 title: Text(t('tools.scholarships')),
                 onTap: () => context.push('/tools/scholarships'),
               ),
-            if (flags['remittance'] != false)
+            if (flags.remittance)
               ListTile(
                 title: Text(t('tools.remittance')),
                 onTap: () => context.push('/tools/remittance'),
               ),
-            if (flags['japabot'] != false)
+            if (flags.japabot)
               ListTile(
                 title: Text(t('tools.japabot')),
                 onTap: () => context.push('/tools/japabot'),

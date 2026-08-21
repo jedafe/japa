@@ -13,7 +13,7 @@ final meProvider = FutureProvider.autoDispose<UserProfile>((ref) async {
 });
 
 final preferencesProvider =
-    FutureProvider.autoDispose<Map<String, dynamic>>((ref) async {
+    FutureProvider.autoDispose<UserPreferences>((ref) async {
   final service = ref.watch(profileServiceProvider);
   return service.getPreferences();
 });

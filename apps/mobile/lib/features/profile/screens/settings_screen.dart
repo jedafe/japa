@@ -18,10 +18,10 @@ class SettingsScreen extends ConsumerWidget {
           children: [
             ListTile(
                 title: Text(t('profile.theme')),
-                subtitle: Text(prefs['theme'] ?? 'system')),
+                subtitle: Text(prefs.theme ?? 'system')),
             ListTile(
                 title: Text(t('profile.language')),
-                subtitle: Text(prefs['language'] ?? 'en')),
+                subtitle: Text(prefs.language ?? 'en')),
           ],
         ),
         loading: () => const LoadingShimmer(),
