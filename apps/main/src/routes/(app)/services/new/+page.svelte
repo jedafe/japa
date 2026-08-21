@@ -11,6 +11,7 @@
 	import { serviceCategoryOptions } from '$lib/enumOptions';
 	import type { ServiceCategory, ServiceListing, Space } from '$lib/types';
 	import type { PageData } from './$types';
+	import AiBodyField from '$lib/ai/AiBodyField.svelte';
 
 	let { data }: { data: PageData } = $props();
 
@@ -167,18 +168,18 @@
 			</div>
 
 			<!-- Body -->
-			<div>
-				<label for="body" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
-					{t('services.field_description', 'Description')}
-				</label>
-				<textarea
-					id="body"
-					rows="5"
-					bind:value={body}
-					placeholder={t('services.description_placeholder', 'Describe the service you offer…')}
-					class={inputClass}
-				></textarea>
-			</div>
+			<AiBodyField
+				id="body"
+				label={t('services.field_description', 'Description')}
+				contentType="service"
+				{title}
+				body={body}
+				onBody={(v) => (body = v)}
+				onTitle={(v) => (title = v)}
+				user={data.user}
+				placeholder={t('services.description_placeholder', 'Describe the service you offer…')}
+				rows={5}
+			/>
 
 			<!-- Category -->
 			<div>

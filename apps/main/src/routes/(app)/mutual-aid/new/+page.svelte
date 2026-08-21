@@ -11,6 +11,7 @@
 	import { mutualAidPostTypeOptions, mutualAidCategoryOptions } from '$lib/enumOptions';
 	import type { MutualAidPost, MutualAidPostType, MutualAidCategory, Space } from '$lib/types';
 	import type { PageData } from './$types';
+	import AiBodyField from '$lib/ai/AiBodyField.svelte';
 
 	let { data }: { data: PageData } = $props();
 
@@ -250,19 +251,18 @@
 			</div>
 
 			<!-- Description -->
-			<div class="flex flex-col gap-1.5">
-				<label for="description" class="text-sm font-medium text-[var(--color-text)]">
-					{t('mutual_aid.field_description', 'Description')}
-					<span class="text-red-500" aria-hidden="true">*</span>
-				</label>
-				<textarea
-					id="description"
-					bind:value={description}
-					rows="6"
-					placeholder={t('mutual_aid.field_description_placeholder', 'Provide details about your request or offer…')}
-					class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] placeholder:text-[var(--color-muted)] focus:border-[var(--color-primary)] focus:outline-none"
-				></textarea>
-			</div>
+			<AiBodyField
+				id="description"
+				label={t('mutual_aid.field_description', 'Description')}
+				contentType="mutual_aid"
+				{title}
+				body={description}
+				onBody={(v) => (description = v)}
+				onTitle={(v) => (title = v)}
+				user={data.user}
+				placeholder={t('mutual_aid.field_description_placeholder', 'Provide details about your request or offer…')}
+				rows={6}
+			/>
 
 			<!-- Submit -->
 			<div class="flex items-center justify-end gap-2 border-t border-[var(--color-border)] pt-4">

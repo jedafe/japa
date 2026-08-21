@@ -9,6 +9,7 @@
 	import { api } from '$lib/api/client';
 	import { Users, Plus, ArrowLeft } from 'lucide-svelte';
 	import type { PageData } from './$types';
+	import AiBodyField from '$lib/ai/AiBodyField.svelte';
 
 	let { data }: { data: PageData } = $props();
 
@@ -125,19 +126,18 @@
 				/>
 			</div>
 
-			<div class="flex flex-col gap-1.5">
-				<label for="pg-desc" class="text-sm font-medium text-[var(--color-text)]">
-					{t('planning_groups.field_description', 'Description')}
-				</label>
-				<textarea
-					id="pg-desc"
-					rows={4}
-					value={description}
-					oninput={(e) => (description = e.currentTarget.value)}
-					placeholder={t('planning_groups.field_description_placeholder', 'What is this group about?')}
-					class={inputClass}
-				></textarea>
-			</div>
+			<AiBodyField
+				id="pg-desc"
+				label={t('planning_groups.field_description', 'Description')}
+				contentType="planning_group"
+				title={name}
+				body={description}
+				onBody={(v) => (description = v)}
+				onTitle={(v) => (name = v)}
+				user={data.user}
+				placeholder={t('planning_groups.field_description_placeholder', 'What is this group about?')}
+				rows={4}
+			/>
 
 			<div class="grid gap-4 sm:grid-cols-2">
 				<div class="flex flex-col gap-1.5">

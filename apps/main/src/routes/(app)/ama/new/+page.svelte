@@ -8,6 +8,7 @@
 	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 	import { api } from '$lib/api/client';
 	import type { PageData } from './$types';
+	import AiBodyField from '$lib/ai/AiBodyField.svelte';
 
 	let { data }: { data: PageData } = $props();
 
@@ -152,19 +153,18 @@
 		</div>
 
 		<!-- Body / intro -->
-		<div class="flex flex-col gap-1.5">
-			<label for="body" class="text-sm font-medium text-[var(--color-text)]">
-				{t('ama.field_intro', 'Introduction')}
-			</label>
-			<textarea
-				id="body"
-				rows="5"
-				value={body}
-				oninput={(e) => (body = e.currentTarget.value)}
-				placeholder={t('ama.placeholder_intro', 'Introduce yourself and the kind of questions you can answer…')}
-				class={inputClass}
-			></textarea>
-		</div>
+		<AiBodyField
+			id="body"
+			label={t('ama.field_intro', 'Introduction')}
+			contentType="ama"
+			{title}
+			body={body}
+			onBody={(v) => (body = v)}
+			onTitle={(v) => (title = v)}
+			user={data.user}
+			placeholder={t('ama.placeholder_intro', 'Introduce yourself and the kind of questions you can answer…')}
+			rows={5}
+		/>
 
 		<!-- Host profession + years abroad -->
 		<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">

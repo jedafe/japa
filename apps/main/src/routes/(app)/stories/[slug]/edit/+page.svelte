@@ -9,6 +9,7 @@
 	import { ArrowLeft, Send, Loader2 } from 'lucide-svelte';
 	import type { Story } from '$lib/types';
 	import type { PageData } from './$types';
+	import AiBodyField from '$lib/ai/AiBodyField.svelte';
 
 	let { data }: { data: PageData } = $props();
 
@@ -152,10 +153,18 @@
 
 			<!-- Body -->
 			<div class="flex flex-col gap-1.5">
-				<label for="f-body" class="text-sm font-medium text-[var(--color-text)]">
-					{t('stories.field_body', 'Your Story')} <span class="text-red-500">*</span>
-				</label>
-				<textarea id="f-body" rows={8} bind:value={body} class={inputClass} placeholder={t('stories.field_body_ph', 'Tell us about your relocation experience…')}></textarea>
+				<AiBodyField
+					id="f-body"
+					label={t('stories.field_body', 'Your Story')}
+					contentType="story"
+					{title}
+					body={body}
+					onBody={(v) => (body = v)}
+					onTitle={(v) => (title = v)}
+					user={data.user}
+					placeholder={t('stories.field_body_ph', 'Tell us about your relocation experience…')}
+					rows={8}
+				/>
 				{#if errors.body}<p class="text-xs text-red-500">{errors.body}</p>{/if}
 			</div>
 

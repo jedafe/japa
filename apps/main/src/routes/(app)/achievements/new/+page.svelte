@@ -13,6 +13,7 @@
 	import type { Achievement, AchievementMilestoneType } from '$lib/types';
 	import { milestoneOptions } from '$lib/achievement';
 	import type { PageData } from './$types';
+	import AiBodyField from '$lib/ai/AiBodyField.svelte';
 
 	let { data }: { data: PageData } = $props();
 
@@ -197,20 +198,18 @@
 			/>
 		</div>
 
-		<div class="flex flex-col gap-1.5">
-			<label for="body" class="text-sm font-medium text-[var(--color-text)]">
-				{t('achievements.field_body', 'Story')}
-				<span class="text-red-500" aria-hidden="true">*</span>
-			</label>
-			<textarea
-				id="body"
-				rows="6"
-				value={body}
-				oninput={(e) => (body = e.currentTarget.value)}
-				placeholder={t('achievements.body_placeholder', 'Share your journey…')}
-				class={inputClass}
-			></textarea>
-		</div>
+		<AiBodyField
+			id="body"
+			label={t('achievements.field_body', 'Story')}
+			contentType="achievement"
+			{title}
+			body={body}
+			onBody={(v) => (body = v)}
+			onTitle={(v) => (title = v)}
+			user={data.user}
+			placeholder={t('achievements.body_placeholder', 'Share your journey…')}
+			rows={6}
+		/>
 
 		<div class="flex flex-col gap-1.5">
 			<label for="milestone_type" class="text-sm font-medium text-[var(--color-text)]">
