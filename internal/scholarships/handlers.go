@@ -131,6 +131,24 @@ func (h *Handlers) HandleScholarshipDetail(w http.ResponseWriter, r *http.Reques
 	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{"data": result})
 }
 
+// HandleStatuses returns the canonical saved-scholarship status options.
+// GET /scholarships/statuses (Rule 16).
+func (h *Handlers) HandleStatuses(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	// Global killswitch (scholarship_finder.enabled, ADR-073 §73).
+	if !h.svc.Enabled(r.Context(), tenantID) {
+		errpkg.WriteError(w, http.StatusNotFound, "scholarship_finder_disabled", "Scholarship Finder is not available")
+		return
+	}
+
+	statuses := h.svc.Statuses()
+	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{"data": statuses})
+}
+
 // HandleSaveScholarship saves a scholarship to the user's tracker.
 // POST /me/scholarships/{id}/save
 func (h *Handlers) HandleSaveScholarship(w http.ResponseWriter, r *http.Request) {

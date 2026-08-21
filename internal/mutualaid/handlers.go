@@ -191,6 +191,26 @@ func scanOptionalUUIDParam(r *http.Request, name string) (pgtype.UUID, error) {
 // Public handlers (list + single — anonymous browse per §85)
 // ---------------------------------------------------------------------------
 
+// HandleCategories handles GET /mutual-aid/categories — returns the canonical
+// category option list (Rule 16).
+func (h *Handlers) HandleCategories(w http.ResponseWriter, r *http.Request) {
+	if _, ok := requireTenant(w, r); !ok {
+		return
+	}
+	cats := h.service.Categories()
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": cats})
+}
+
+// HandlePostTypes handles GET /mutual-aid/post-types — returns the canonical
+// post type option list (Rule 16).
+func (h *Handlers) HandlePostTypes(w http.ResponseWriter, r *http.Request) {
+	if _, ok := requireTenant(w, r); !ok {
+		return
+	}
+	types := h.service.PostTypes()
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": types})
+}
+
 // HandleList handles GET /mutual-aid — list active posts with filters.
 // Query params: ?type=&category=&dest=&city=&page=&limit=
 func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {

@@ -1,8 +1,8 @@
 // Ref: japaconnect-engineering/sections/98-service-directory.md
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiList } from '$lib/server/api';
-import type { ServiceListing, GeoCountry } from '$lib/types';
+import { apiContext, apiGet, apiList } from '$lib/server/api';
+import type { ServiceListing, ServiceCategory, GeoCountry } from '$lib/types';
 
 /**
  * Service Directory list at /services — geo-indexed directory of
@@ -45,9 +45,17 @@ export const load: PageServerLoad = async (event) => {
 		countries = [];
 	}
 
+	let serviceCategories: ServiceCategory[] = [];
+	try {
+		const cat = await apiGet<{ value: string; label: string }[]>(ctx, '/services/categories');
+		serviceCategories = (cat ?? []).map((o) => o.value as ServiceCategory);
+	} catch {
+		serviceCategories = [];
+	}
+
 	try {
 		const { items, meta } = await apiList<ServiceListing>(ctx, `/services?${params.toString()}`);
-		return { services: items, meta, authed, pageSize: PAGE_SIZE, filters, countries, loadError: false };
+		return { services: items, meta, authed, pageSize: PAGE_SIZE, filters, countries, serviceCategories, loadError: false };
 	} catch {
 		return {
 			services: [] as ServiceListing[],
@@ -56,6 +64,7 @@ export const load: PageServerLoad = async (event) => {
 			pageSize: PAGE_SIZE,
 			filters,
 			countries,
+			serviceCategories,
 			loadError: true
 		};
 	}

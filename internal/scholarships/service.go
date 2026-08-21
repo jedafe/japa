@@ -279,6 +279,24 @@ func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
 	return s.settings.GetBoolOr(ctx, tenantID, "scholarship_finder.enabled", true)
 }
 
+// Option is a single selectable value exposed by the statuses endpoint.
+type Option struct {
+	Value string `json:"value"`
+	Label string `json:"label"`
+}
+
+// Statuses returns the canonical saved-scholarship status options.
+func (s *Service) Statuses() []Option {
+	return []Option{
+		{Value: StatusSaved, Label: "Saved"},
+		{Value: StatusResearching, Label: "Researching"},
+		{Value: StatusApplied, Label: "Applied"},
+		{Value: StatusAccepted, Label: "Accepted"},
+		{Value: StatusRejected, Label: "Rejected"},
+		{Value: StatusWithdrawn, Label: "Withdrawn"},
+	}
+}
+
 // SetEnqueuer injects the Asynq task enqueuer.
 func (s *Service) SetEnqueuer(e TaskEnqueuer) { s.enqueuer = e }
 

@@ -5,6 +5,7 @@
 	import { ArrowLeft, Send } from 'lucide-svelte';
 	import { api } from '$lib/api/client';
 	import { untrack } from 'svelte';
+	import { mutualAidCategoryOptions } from '$lib/enumOptions';
 	import type { MutualAidPost, MutualAidPostType, MutualAidCategory } from '$lib/types';
 	import type { PageData } from './$types';
 
@@ -12,18 +13,10 @@
 
 	const post = $derived(data.post);
 
-	const categoryOptions: { value: MutualAidCategory; label: string }[] = [
-		{ value: 'housing', label: t('mutual_aid.cat_housing', 'Housing') },
-		{ value: 'transport', label: t('mutual_aid.cat_transport', 'Transport') },
-		{ value: 'documents', label: t('mutual_aid.cat_documents', 'Documents') },
-		{ value: 'job_search', label: t('mutual_aid.cat_job_search', 'Job search') },
-		{ value: 'language', label: t('mutual_aid.cat_language', 'Language') },
-		{ value: 'social', label: t('mutual_aid.cat_social', 'Social') },
-		{ value: 'other', label: t('mutual_aid.cat_other', 'Other') }
-	];
+	const categoryOptions = $derived(mutualAidCategoryOptions(t, false, data.categories));
 
 	let postType = $state<MutualAidPostType>(untrack(() => post.post_type as MutualAidPostType));
-	let category = $state<MutualAidCategory>(untrack(() => (post.category as MutualAidCategory) ?? 'housing'));
+	let category = $state<MutualAidCategory>(untrack(() => (post.category as MutualAidCategory) ?? (data.categories[0] ?? 'housing')));
 	let title = $state(untrack(() => post.title ?? ''));
 	let description = $state(untrack(() => post.description ?? ''));
 	// BUG-005: destination/city are read-only on edit — the backend

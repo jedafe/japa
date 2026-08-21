@@ -10,6 +10,7 @@
 	import { HandHeart, Plus, Search, MapPin, Clock, X } from 'lucide-svelte';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import { relativeTime } from '$lib/feed/time';
+	import { mutualAidPostTypeOptions, mutualAidCategoryOptions } from '$lib/enumOptions';
 	import type { MutualAidPost, MutualAidPostType, MutualAidCategory } from '$lib/types';
 	import type { PageData } from './$types';
 
@@ -34,27 +35,10 @@
 		sort = data.filters.sort;
 	});
 
-	const postTypeOptions: { value: MutualAidPostType | ''; label: string }[] = [
-		{ value: '', label: 'All types' },
-		{ value: 'need', label: 'Need' },
-		{ value: 'offer', label: 'Offer' },
-		{ value: 'skill_swap', label: 'Skill swap' }
-	];
+	const postTypeOptions = $derived(mutualAidPostTypeOptions(t, true, data.postTypes));
+	const categoryOptions = $derived(mutualAidCategoryOptions(t, true, data.categories));
 
-	const categoryOptions: { value: MutualAidCategory | ''; label: string }[] = [
-		{ value: '', label: 'All categories' },
-		{ value: 'housing', label: 'Housing' },
-		{ value: 'transport', label: 'Transport' },
-		{ value: 'documents', label: 'Documents' },
-		{ value: 'job_search', label: 'Job search' },
-		{ value: 'language', label: 'Language' },
-		{ value: 'social', label: 'Social' },
-		{ value: 'other', label: 'Other' }
-	];
-
-	const sortOptions = [
-		{ value: 'latest', label: 'Latest' }
-	];
+	const sortOptions = [{ value: 'latest', label: t('mutual_aid.sort_latest', 'Latest') }];
 
 	const title = $derived(t('mutual_aid.list_title', 'Mutual Aid — JapaConnect'));
 	const description = $derived(

@@ -1,5 +1,6 @@
 <script lang="ts">
 	// Ref: japaconnect-engineering/sections/98-service-directory.md
+	import { untrack } from 'svelte';
 	import { t } from '$lib/i18n';
 	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
 	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
@@ -7,6 +8,7 @@
 	import { goto } from '$app/navigation';
 	import { api } from '$lib/api/client';
 	import { Briefcase, Plus, Loader2, AlertCircle } from 'lucide-svelte';
+	import { serviceCategoryOptions } from '$lib/enumOptions';
 	import type { ServiceCategory, ServiceListing, Space } from '$lib/types';
 	import type { PageData } from './$types';
 
@@ -20,7 +22,7 @@
 	// Form state.
 	let title = $state('');
 	let body = $state('');
-	let serviceCategory = $state<ServiceCategory>('immigration_legal');
+	let serviceCategory = $state<ServiceCategory>(untrack(() => data.serviceCategories[0] ?? 'immigration_legal'));
 	let destinationSpaceId = $state('');
 	let citySpaceId = $state('');
 	let originCommunities = $state('');
@@ -36,16 +38,7 @@
 	let cities = $state<Space[]>([]);
 	let loadingCities = $state(false);
 
-	// Schema-defined service_category enum (§98) — labels via i18n fallback.
-	const categoryOptions: { value: ServiceCategory; label: string }[] = [
-		{ value: 'immigration_legal', label: t('services.cat_immigration_legal', 'Immigration & Legal') },
-		{ value: 'relocation', label: t('services.cat_relocation', 'Relocation') },
-		{ value: 'finance', label: t('services.cat_finance', 'Finance') },
-		{ value: 'education', label: t('services.cat_education', 'Education') },
-		{ value: 'health', label: t('services.cat_health', 'Health') },
-		{ value: 'community', label: t('services.cat_community', 'Community') },
-		{ value: 'other', label: t('services.cat_other', 'Other') }
-	];
+	const categoryOptions = $derived(serviceCategoryOptions(t, data.serviceCategories));
 
 	const inputClass =
 		'w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20';
@@ -280,7 +273,7 @@
 						id="website"
 						type="url"
 						bind:value={websiteUrl}
-						placeholder="https://example.com"
+						placeholder={t('services.website_placeholder', 'https://example.com')}
 						class={inputClass}
 					/>
 				</div>
@@ -292,7 +285,7 @@
 						id="booking"
 						type="url"
 						bind:value={bookingUrl}
-						placeholder="https://booking.example.com"
+						placeholder={t('services.booking_placeholder', 'https://booking.example.com')}
 						class={inputClass}
 					/>
 				</div>

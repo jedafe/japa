@@ -14,6 +14,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"sort"
 	"strings"
 	"time"
 
@@ -129,6 +130,36 @@ func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
 		return false
 	}
 	return s.settings.GetBoolOr(ctx, tenantID, "service_directory.enabled", false)
+}
+
+// Option is a single selectable value exposed by the option endpoints.
+type Option struct {
+	Value string `json:"value"`
+	Label string `json:"label"`
+}
+
+var categoryLabels = map[string]string{
+	CategoryImmigrationLegal: "Immigration & legal",
+	CategoryRelocation:       "Relocation",
+	CategoryFinance:          "Finance",
+	CategoryEducation:        "Education",
+	CategoryHealth:           "Health",
+	CategoryCommunity:        "Community",
+	CategoryOther:            "Other",
+}
+
+func sortOptions(opts []Option) {
+	sort.Slice(opts, func(i, j int) bool { return opts[i].Value < opts[j].Value })
+}
+
+// Categories returns the canonical service category options (Rule 16).
+func (s *Service) Categories() []Option {
+	out := make([]Option, 0, len(categoryLabels))
+	for v, label := range categoryLabels {
+		out = append(out, Option{Value: v, Label: label})
+	}
+	sortOptions(out)
+	return out
 }
 
 // ErrInvalidCategory is returned when a create/edit input supplies a
