@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -65,6 +66,10 @@ type TaskEnqueuer interface {
 // ErrDuplicateApplication is returned when a user has already applied to a job.
 var ErrDuplicateApplication = errors.New("jobs: already applied to this job")
 
+// ErrNotOrgMember is returned when a caller is not a member of the target
+// organization with a job-editor-or-above role.
+var ErrNotOrgMember = errors.New("jobs: not an organization member")
+
 // JobFilters holds the server-side filter parameters for the job finder.
 type JobFilters struct {
 	Country         string
@@ -96,6 +101,16 @@ type JobDetail struct {
 	Body        string            `json:"body"`
 	FieldValues map[string]string `json:"field_values"`
 	PublishedAt string            `json:"published_at"`
+}
+
+// UpdateJobListingInput is the request body for the public PATCH
+// /org/:org_id/jobs/:id endpoint.
+type UpdateJobListingInput struct {
+	Title       string
+	Slug        string
+	Body        string
+	FieldValues map[string]string
+	PublishedAt *string
 }
 
 // AdminJobListing is a job listing row in the admin list view. It extends
@@ -654,6 +669,178 @@ func (s *Service) CreateJobListing(ctx context.Context, tenantID, orgID, authorI
 		FieldValues: fieldValues,
 		PublishedAt: "",
 	}, nil
+}
+
+// GetJobByID returns a single job_listing content row by id, scoped to
+// tenant and organization. Used by the public update flow to verify ownership
+// and to re-fetch the updated row.
+func (s *Service) GetJobByID(ctx context.Context, tenantID, orgID, jobID pgtype.UUID) (JobDetail, error) {
+	query := `
+		SELECT
+			c.id, c.title, c.slug, c.body,
+			COALESCE(
+				(SELECT json_object_agg(cf.key,
+					CASE
+						WHEN cfv.value_text IS NOT NULL THEN cfv.value_text
+						WHEN cfv.value_number IS NOT NULL THEN cfv.value_number::text
+						WHEN cfv.value_bool IS NOT NULL THEN cfv.value_bool::text
+						ELSE ''
+					END
+				) FROM custom_field_values cfv
+				  JOIN custom_fields cf ON cf.id = cfv.field_id
+				  WHERE cfv.entity_type = 'content' AND cfv.entity_id = c.id
+				    AND cf.tenant_id = c.tenant_id),
+				'{}'::json
+			) AS field_values,
+			c.published_at
+		FROM contents c
+		WHERE c.tenant_id = $1
+		  AND c.organization_id = $2
+		  AND c.id = $3
+		  AND c.content_type = 'job_listing'
+		  AND c.deleted_at IS NULL
+		LIMIT 1`
+
+	var (
+		id          pgtype.UUID
+		title       string
+		slugOut     string
+		body        *string
+		fieldValues []byte
+		publishedAt pgtype.Timestamptz
+	)
+
+	err := s.store.pool.Writer.QueryRow(ctx, query, tenantID, orgID, jobID).Scan(
+		&id, &title, &slugOut, &body, &fieldValues, &publishedAt,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return JobDetail{}, pgx.ErrNoRows
+		}
+		return JobDetail{}, fmt.Errorf("jobs: get job by id: %w", err)
+	}
+
+	fvMap := make(map[string]string)
+	if len(fieldValues) > 0 {
+		_ = json.Unmarshal(fieldValues, &fvMap)
+	}
+
+	bodyStr := ""
+	if body != nil {
+		bodyStr = *body
+	}
+
+	publishedStr := ""
+	if publishedAt.Valid {
+		publishedStr = publishedAt.Time.UTC().Format("2006-01-02T15:04:05Z07:00")
+	}
+
+	return JobDetail{
+		ID:          id.String(),
+		Title:       title,
+		Slug:        slugOut,
+		Summary:     deriveSummary(bodyStr),
+		Body:        bodyStr,
+		FieldValues: fvMap,
+		PublishedAt: publishedStr,
+	}, nil
+}
+
+// UpdateJobListing updates an org-owned job listing. The caller must be an
+// editor-or-above member of the organization. Immutable fields (tenant,
+// organization, author, content_type, status) are not changed.
+func (s *Service) UpdateJobListing(ctx context.Context, tenantID, orgID, jobID, callerID pgtype.UUID, input UpdateJobListingInput) (JobDetail, error) {
+	member, err := s.IsOrgMember(ctx, callerID, orgID, OrgJobEditorRoles)
+	if err != nil {
+		return JobDetail{}, fmt.Errorf("jobs: update listing: org check: %w", err)
+	}
+	if !member {
+		return JobDetail{}, ErrNotOrgMember
+	}
+
+	existing, err := s.GetJobByID(ctx, tenantID, orgID, jobID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return JobDetail{}, pgx.ErrNoRows
+		}
+		return JobDetail{}, fmt.Errorf("jobs: update listing: %w", err)
+	}
+
+	if input.Title == "" && input.Body == "" && input.Slug == "" && input.PublishedAt == nil && len(input.FieldValues) == 0 {
+		// Nothing to change; return the existing listing as-is.
+		return existing, nil
+	}
+
+	// Fill in any omitted fields with the existing values.
+	title := input.Title
+	if title == "" {
+		title = existing.Title
+	}
+	slug := input.Slug
+	if slug == "" {
+		slug = existing.Slug
+	}
+	body := input.Body
+	if body == "" {
+		body = existing.Body
+	}
+
+	var publishedAt pgtype.Timestamptz
+	if input.PublishedAt != nil && *input.PublishedAt != "" {
+		t, err := time.Parse(time.RFC3339, *input.PublishedAt)
+		if err != nil {
+			return JobDetail{}, fmt.Errorf("jobs: update listing: invalid published_at: %w", err)
+		}
+		publishedAt = pgtype.Timestamptz{Time: t, Valid: true}
+	} else {
+		// Preserve the existing published_at timestamp.
+		if existing.PublishedAt != "" {
+			t, err := time.Parse(time.RFC3339, existing.PublishedAt)
+			if err == nil {
+				publishedAt = pgtype.Timestamptz{Time: t, Valid: true}
+			}
+		}
+	}
+
+	contentHash := content.ComputeContentHash(body)
+
+	setParts := []string{"updated_at = now()", "title = $3", "slug = $4", "body = $5", "content_hash = $6"}
+	args := []any{tenantID, jobID, title, slug, body, contentHash}
+	argIdx := 7
+
+	if publishedAt.Valid {
+		setParts = append(setParts, fmt.Sprintf("published_at = $%d", argIdx))
+		args = append(args, publishedAt)
+		argIdx++
+	}
+
+	// Add the organization predicate last so the UPDATE can only touch rows
+	// that belong to the caller's org.
+	orgIdx := argIdx
+	args = append(args, orgID)
+	argIdx++
+
+	query := fmt.Sprintf(`
+		UPDATE contents SET %s
+		WHERE id = $2 AND tenant_id = $1 AND organization_id = $%d
+		  AND content_type = 'job_listing' AND deleted_at IS NULL`,
+		strings.Join(setParts, ", "), orgIdx)
+
+	cmd, err := s.store.pool.Writer.Exec(ctx, query, args...)
+	if err != nil {
+		return JobDetail{}, fmt.Errorf("jobs: update listing: update content: %w", err)
+	}
+	if cmd.RowsAffected() == 0 {
+		return JobDetail{}, pgx.ErrNoRows
+	}
+
+	// Upsert any custom field values provided.
+	for fieldKey, value := range input.FieldValues {
+		s.upsertJobFieldValue(ctx, tenantID, jobID, fieldKey, value)
+	}
+
+	// Re-fetch from the writer to avoid read-replica lag.
+	return s.GetJobByID(ctx, tenantID, orgID, jobID)
 }
 
 // generateJobSlug creates a URL-safe slug from a title.

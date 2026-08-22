@@ -107,6 +107,10 @@ type AdminUpdateEntryInput struct {
 	Reason string `json:"reason"`
 }
 
+// UpdateEntryInput is the request body for PATCH /calendar/:id.
+// It mirrors SubmitEntryInput but omits immutable ownership/admin fields.
+type UpdateEntryInput SubmitEntryInput
+
 // AIDispatcher is the subset of the AI Gateway the calendar service needs
 // to generate draft entries (content_generation category).
 type AIDispatcher interface {
@@ -122,12 +126,22 @@ var ErrHITLReviewRequired = errors.New("calendar: HITL review required before pu
 // verifiable official source link).
 var ErrSourceURLRequired = errors.New("calendar: a verifiable official source_url is required before publishing")
 
+// ErrEditForbidden is returned when a user attempts to edit a calendar entry
+// they do not own and they do not hold calendar.edit_any.
+var ErrEditForbidden = errors.New("calendar: edit forbidden")
+
+// permissionChecker is the subset of rbac.RBAC used for edit authorization.
+type permissionChecker interface {
+	HasPermission(ctx context.Context, userID, tenantID pgtype.UUID, permKey string) bool
+}
+
 // Service holds the business logic for the Community Calendar.
 type Service struct {
 	store      *Store
 	settings   *config.Settings
 	notifier   Notifier
 	dispatcher AIDispatcher
+	rbac       permissionChecker
 }
 
 // NewService creates a calendar service.
@@ -144,6 +158,10 @@ func (s *Service) SetNotifier(n Notifier) {
 
 // SetDispatcher injects the AI Gateway dispatcher for draft generation.
 func (s *Service) SetDispatcher(d AIDispatcher) { s.dispatcher = d }
+
+// SetRBAC injects the permission resolver used for edit authorization
+// (calendar.edit_own / calendar.edit_any).
+func (s *Service) SetRBAC(r permissionChecker) { s.rbac = r }
 
 // Enabled reads the calendar.enabled system_setting toggle.
 func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
@@ -258,59 +276,93 @@ func (s *Service) Get(ctx context.Context, id, tenantID pgtype.UUID) (CalendarEn
 	return entryToDTO(entry), nil
 }
 
-// Submit creates a new pending calendar entry. The caller must have the
-// calendar.submit permission (checked by the handler before calling).
-func (s *Service) Submit(ctx context.Context, tenantID, userID pgtype.UUID, input SubmitEntryInput) (string, error) {
+// Update edits a calendar entry's content fields. Ownership is enforced unless
+// the caller holds calendar.edit_any. Status, moderation and AI provenance
+// metadata are not modified by this endpoint.
+func (s *Service) Update(ctx context.Context, id, tenantID, callerID pgtype.UUID, input UpdateEntryInput) (CalendarEntryDTO, error) {
+	existing, err := s.store.GetEntryForUpdate(ctx, id, tenantID)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return CalendarEntryDTO{}, pgx.ErrNoRows
+		}
+		return CalendarEntryDTO{}, fmt.Errorf("calendar: update: %w", err)
+	}
+
+	editAny := s.rbac != nil && s.rbac.HasPermission(ctx, callerID, tenantID, "calendar.edit_any")
+	if !editAny && (!existing.SubmittedBy.Valid || existing.SubmittedBy != callerID) {
+		return CalendarEntryDTO{}, ErrEditForbidden
+	}
+
+	entry, err := s.buildEntry(ctx, tenantID, SubmitEntryInput(input))
+	if err != nil {
+		return CalendarEntryDTO{}, err
+	}
+
+	updated, err := s.store.UpdateEntry(ctx, id, tenantID, entry)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return CalendarEntryDTO{}, pgx.ErrNoRows
+		}
+		return CalendarEntryDTO{}, fmt.Errorf("calendar: update: %w", err)
+	}
+
+	return entryToDTO(updated), nil
+}
+
+// buildEntry validates a submit/update input and converts it into a
+// CalendarEntry value. The caller is responsible for setting Status,
+// SubmittedBy and ID (for update) as appropriate.
+func (s *Service) buildEntry(ctx context.Context, tenantID pgtype.UUID, input SubmitEntryInput) (CalendarEntry, error) {
 	if input.Title == "" {
-		return "", fmt.Errorf("title is required")
+		return CalendarEntry{}, fmt.Errorf("title is required")
 	}
 	if input.Category == "" {
-		return "", fmt.Errorf("category is required")
+		return CalendarEntry{}, fmt.Errorf("category is required")
 	}
 	// BUG-009: validate category against the dynamic calendar.categories
 	// system_setting list (Rule 3: no hardcoded config).
 	if !s.ValidCategory(ctx, tenantID, input.Category) {
-		return "", fmt.Errorf("invalid category: %s", input.Category)
+		return CalendarEntry{}, fmt.Errorf("invalid category: %s", input.Category)
 	}
 	if input.OccursAt == "" {
-		return "", fmt.Errorf("occurs_at is required")
+		return CalendarEntry{}, fmt.Errorf("occurs_at is required")
 	}
 	// §86: "Every entry must include a verifiable official source link."
 	if input.SourceURL == "" {
-		return "", fmt.Errorf("source_url is required")
+		return CalendarEntry{}, fmt.Errorf("source_url is required")
 	}
 	// BUG-011: validate source_url scheme is http or https to prevent
 	// stored XSS via javascript:/data: URIs rendered as <a href> in the
 	// frontend. Ref: japaconnect-engineering/sections/5.1-xss-prevention.md
 	parsedURL, err := url.Parse(input.SourceURL)
 	if err != nil || (parsedURL.Scheme != "http" && parsedURL.Scheme != "https") {
-		return "", fmt.Errorf("source_url must be a valid http or https URL")
+		return CalendarEntry{}, fmt.Errorf("source_url must be a valid http or https URL")
 	}
 
 	occursAt, err := parseTimestamp(input.OccursAt)
 	if err != nil {
-		return "", fmt.Errorf("invalid occurs_at: %w", err)
+		return CalendarEntry{}, fmt.Errorf("invalid occurs_at: %w", err)
 	}
 
 	var endsAt pgtype.Timestamptz
 	if input.EndsAt != "" {
 		endsAt, err = parseTimestamp(input.EndsAt)
 		if err != nil {
-			return "", fmt.Errorf("invalid ends_at: %w", err)
+			return CalendarEntry{}, fmt.Errorf("invalid ends_at: %w", err)
 		}
 	}
 
 	var destSpaceID pgtype.UUID
 	if input.DestinationSpaceID != "" {
 		if err := destSpaceID.Scan(input.DestinationSpaceID); err != nil {
-			return "", fmt.Errorf("invalid destination_space_id: %w", err)
+			return CalendarEntry{}, fmt.Errorf("invalid destination_space_id: %w", err)
 		}
 	}
 
 	var originSpaceID pgtype.UUID
 	if input.OriginSpaceID != "" {
 		if err := originSpaceID.Scan(input.OriginSpaceID); err != nil {
-			return "", fmt.Errorf("invalid origin_space_id: %w", err)
+			return CalendarEntry{}, fmt.Errorf("invalid origin_space_id: %w", err)
 		}
 	}
 
@@ -323,7 +375,6 @@ func (s *Service) Submit(ctx context.Context, tenantID, userID pgtype.UUID, inpu
 		OccursAt:           occursAt,
 		EndsAt:             endsAt,
 		IsRecurring:        input.IsRecurring,
-		SubmittedBy:        userID,
 		SourceURL:          input.SourceURL,
 	}
 
@@ -334,17 +385,28 @@ func (s *Service) Submit(ctx context.Context, tenantID, userID pgtype.UUID, inpu
 		entry.RecurrencePattern = &input.RecurrencePattern
 	}
 
-	// BUG-002: compute staleness_check_due BEFORE insert so the entry is
-	// created with the correct value in a single write. For recurring entries
-	// the staleness check is due 60 days before the occurrence (§86 Staleness
-	// Management). Non-recurring entries get a NULL staleness_check_due.
+	// BUG-002: compute staleness_check_due BEFORE the write. For recurring
+	// entries the staleness check is due 60 days before the occurrence (§86
+	// Staleness Management). Non-recurring entries get a NULL value.
 	if input.IsRecurring {
-		stalenessDue := pgtype.Timestamptz{
+		entry.StalenessCheckDue = pgtype.Timestamptz{
 			Time:  occursAt.Time.AddDate(0, 0, -60),
 			Valid: true,
 		}
-		entry.StalenessCheckDue = stalenessDue
 	}
+
+	return entry, nil
+}
+
+// Submit creates a new pending calendar entry. The caller must have the
+// calendar.submit permission (checked by the handler before calling).
+func (s *Service) Submit(ctx context.Context, tenantID, userID pgtype.UUID, input SubmitEntryInput) (string, error) {
+	entry, err := s.buildEntry(ctx, tenantID, input)
+	if err != nil {
+		return "", err
+	}
+	entry.Status = "pending"
+	entry.SubmittedBy = userID
 
 	entryID, err := s.store.CreateEntry(ctx, entry)
 	if err != nil {
