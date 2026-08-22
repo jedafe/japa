@@ -1132,6 +1132,19 @@ type FieldOption struct {
 	Label string `json:"label"`
 }
 
+// DraftOptions lets users tailor the generated body.
+type DraftOptions struct {
+	MinWords            *int `json:"min_words,omitempty"`
+	ParagraphCount      *int `json:"paragraph_count,omitempty"`
+	HeadingCount        *int `json:"heading_count,omitempty"`
+	IncludeIntro        bool `json:"include_intro,omitempty"`
+	IncludeConclusion   bool `json:"include_conclusion,omitempty"`
+	IncludeFAQs         bool `json:"include_faqs,omitempty"`
+	IncludeInlineImage  bool `json:"include_inline_image,omitempty"`
+	IncludeSteps        bool `json:"include_steps,omitempty"`
+	IncludeKeyTakeaways bool `json:"include_key_takeaways,omitempty"`
+}
+
 type DraftInput struct {
 	ContentType   string         `json:"content_type"`
 	Title         string         `json:"title"`
@@ -1142,6 +1155,7 @@ type DraftInput struct {
 	HumanizeLevel string         `json:"humanize_level,omitempty"`
 	FieldSchema   []FieldSchema  `json:"field_schema,omitempty"`
 	Context       map[string]any `json:"context,omitempty"`
+	Options       DraftOptions   `json:"options,omitempty"`
 }
 
 type DraftResult struct {
@@ -1451,6 +1465,41 @@ func buildDraftPrompt(input DraftInput) string {
 	if input.Instructions != "" {
 		b.WriteString("Instructions: " + input.Instructions + "\n")
 	}
+
+	// Content tailoring options.
+	opt := input.Options
+	if opt.MinWords != nil && *opt.MinWords > 0 {
+		b.WriteString(fmt.Sprintf("Minimum word count: %d\n", *opt.MinWords))
+	}
+	if opt.ParagraphCount != nil && *opt.ParagraphCount > 0 {
+		b.WriteString(fmt.Sprintf("Number of paragraphs: %d\n", *opt.ParagraphCount))
+	}
+	if opt.HeadingCount != nil {
+		if *opt.HeadingCount == 0 {
+			b.WriteString("Do not use section headings.\n")
+		} else {
+			b.WriteString(fmt.Sprintf("Number of section headings: %d\n", *opt.HeadingCount))
+		}
+	}
+	if opt.IncludeIntro {
+		b.WriteString("Include an introduction section.\n")
+	}
+	if opt.IncludeConclusion {
+		b.WriteString("Include a conclusion section.\n")
+	}
+	if opt.IncludeFAQs {
+		b.WriteString("Include a FAQ section at the end.\n")
+	}
+	if opt.IncludeInlineImage {
+		b.WriteString("Include an inline image placeholder with a descriptive alt attribute and a relevant src path.\n")
+	}
+	if opt.IncludeSteps {
+		b.WriteString("Format the content as a clear numbered or bulleted step-by-step guide.\n")
+	}
+	if opt.IncludeKeyTakeaways {
+		b.WriteString("Include a key takeaways section at the end.\n")
+	}
+
 	if len(input.FieldSchema) > 0 {
 		b.WriteString("Also return values for these fields as JSON under field_values:\n")
 		for _, f := range input.FieldSchema {
