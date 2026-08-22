@@ -20,6 +20,8 @@
 		fieldSchema?: FieldSchema[];
 		disabled?: boolean;
 		user?: SessionUser | null;
+		features?: Record<string, boolean>;
+		required?: boolean;
 	}
 
 	let {
@@ -35,19 +37,24 @@
 		context,
 		fieldSchema,
 		disabled = false,
-		user
+		user,
+		features = {},
+		required
 	}: Props = $props();
 
 	let open = $state(false);
 
 	const inputClass =
-		'w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20';
+		'w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none transition placeholder:text-[var(--color-muted)] focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20';
 </script>
 
 <div class="flex flex-col gap-1.5">
 	<div class="flex items-center justify-between">
-		<label for={id} class="text-sm font-medium text-[var(--color-text)]">{label}</label>
-		{#if canUseAI(user)}
+		<label for={id} class="text-sm font-medium text-[var(--color-text)]">
+			{label}
+			{#if required}<span class="text-red-500" aria-hidden="true">*</span>{/if}
+		</label>
+		{#if canUseAI(user, features)}
 			<AiBodyButton onclick={() => (open = true)} {disabled} />
 		{/if}
 	</div>

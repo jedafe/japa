@@ -162,6 +162,7 @@
 			onBody={(v) => (body = v)}
 			onTitle={(v) => (title = v)}
 			user={data.user}
+			features={data.features ?? {}}
 			placeholder={t('ama.placeholder_intro', 'Introduce yourself and the kind of questions you can answer…')}
 			rows={5}
 		/>

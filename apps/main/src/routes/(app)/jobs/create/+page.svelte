@@ -131,6 +131,7 @@
 				onBody={(v) => (bodyVal = v)}
 				onTitle={(v) => (titleVal = v)}
 				user={data.user}
+				features={data.features ?? {}}
 				placeholder={t('jobs.body_placeholder', 'Describe the role, responsibilities, and requirements…')}
 				rows={5}
 			/>
