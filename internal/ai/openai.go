@@ -88,9 +88,12 @@ type openAIChatRequest struct {
 }
 
 // openAIMessage is a single chat message in the OpenAI format.
+// Some providers (e.g. StepFun /step-*-flash) put the generated output in
+// the "reasoning" field and leave "content" empty; we capture both.
 type openAIMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
+	Role      string `json:"role"`
+	Content   string `json:"content"`
+	Reasoning string `json:"reasoning"`
 }
 
 // openAIChatResponse is the standard OpenAI chat completions response.
@@ -179,12 +182,26 @@ func (p *OpenAIProvider) Send(ctx context.Context, req Request) (Response, error
 		return Response{}, fmt.Errorf("openai: parsing response: %w", err)
 	}
 
+	contentPreview := ""
+	if len(chatResp.Choices) > 0 {
+		msg := chatResp.Choices[0].Message
+		if msg.Content != "" {
+			contentPreview = strings.TrimSpace(msg.Content)
+		} else {
+			contentPreview = strings.TrimSpace(msg.Reasoning)
+		}
+		if len(contentPreview) > 200 {
+			contentPreview = contentPreview[:200]
+		}
+	}
 	slog.Info(
 		"openai: request completed",
 		"provider", p.name,
 		"model", chatResp.Model,
 		"prompt_tokens", chatResp.Usage.PromptTokens,
 		"completion_tokens", chatResp.Usage.CompletionTokens,
+		"content_len", len(contentPreview),
+		"content_preview", contentPreview,
 	)
 
 	return Response{
