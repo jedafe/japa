@@ -2,7 +2,7 @@
 	import { Sparkles, X, Loader2, RefreshCw, Check } from 'lucide-svelte';
 	import { t } from '$lib/i18n';
 	import { draftContent } from './draftApi';
-	import type { DraftRequest, DraftResponse, FieldSchema } from './types';
+	import type { DraftRequest, DraftResponse, FieldSchema, DraftOptions } from './types';
 
 	interface Props {
 		open: boolean;
@@ -24,6 +24,15 @@
 	let prompt = $state('');
 	let tone = $state('professional');
 	let humanizeLevel = $state('medium');
+	let minWords = $state('');
+	let paragraphCount = $state('');
+	let headingCount = $state('');
+	let includeIntro = $state(false);
+	let includeConclusion = $state(false);
+	let includeFAQs = $state(false);
+	let includeInlineImage = $state(false);
+	let includeSteps = $state(false);
+	let includeKeyTakeaways = $state(false);
 	let draft = $state<DraftResponse | null>(null);
 	let loading = $state(false);
 	let error = $state('');
@@ -52,6 +61,23 @@
 
 	const humanize = $derived(humanizeLevel !== 'off');
 
+	function buildOptions(): DraftOptions | undefined {
+		const opts: DraftOptions = {};
+		const mw = parseInt(minWords, 10);
+		if (!isNaN(mw) && mw > 0) opts.min_words = mw;
+		const pc = parseInt(paragraphCount, 10);
+		if (!isNaN(pc) && pc > 0) opts.paragraph_count = pc;
+		const hc = parseInt(headingCount, 10);
+		if (!isNaN(hc) && hc >= 0) opts.heading_count = hc;
+		if (includeIntro) opts.include_intro = true;
+		if (includeConclusion) opts.include_conclusion = true;
+		if (includeFAQs) opts.include_faqs = true;
+		if (includeInlineImage) opts.include_inline_image = true;
+		if (includeSteps) opts.include_steps = true;
+		if (includeKeyTakeaways) opts.include_key_takeaways = true;
+		return Object.keys(opts).length > 0 ? opts : undefined;
+	}
+
 	async function generate() {
 		if (loading) return;
 		loading = true;
@@ -67,6 +93,7 @@
 				humanize_level: humanizeLevel,
 				field_schema: fieldSchema,
 				context,
+				options: buildOptions(),
 			};
 			const res = await draftContent(req);
 			if (res.error) {
@@ -168,6 +195,66 @@
 						{/each}
 					</select>
 				</div>
+			</div>
+
+			<div class="grid grid-cols-2 gap-2">
+				<div class="flex flex-col gap-1">
+					<label class="text-xs text-[var(--color-muted)]" for="ai-min-words">{t('ai.body.min_words', 'Min words')}</label>
+					<input
+						id="ai-min-words"
+						type="number"
+						min="0"
+						bind:value={minWords}
+						class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
+					/>
+				</div>
+				<div class="flex flex-col gap-1">
+					<label class="text-xs text-[var(--color-muted)]" for="ai-paragraphs">{t('ai.body.paragraphs', 'Paragraphs')}</label>
+					<input
+						id="ai-paragraphs"
+						type="number"
+						min="0"
+						bind:value={paragraphCount}
+						class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
+					/>
+				</div>
+				<div class="flex flex-col gap-1">
+					<label class="text-xs text-[var(--color-muted)]" for="ai-headings">{t('ai.body.headings', 'Headings')}</label>
+					<input
+						id="ai-headings"
+						type="number"
+						min="0"
+						bind:value={headingCount}
+						class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
+					/>
+				</div>
+			</div>
+
+			<div class="grid grid-cols-2 gap-x-3 gap-y-2 text-sm text-[var(--color-text)]">
+				<label class="flex items-center gap-2">
+					<input type="checkbox" bind:checked={includeIntro} class="rounded border-[var(--color-border)]" />
+					{t('ai.body.include_intro', 'Introduction')}
+				</label>
+				<label class="flex items-center gap-2">
+					<input type="checkbox" bind:checked={includeConclusion} class="rounded border-[var(--color-border)]" />
+					{t('ai.body.include_conclusion', 'Conclusion')}
+				</label>
+				<label class="flex items-center gap-2">
+					<input type="checkbox" bind:checked={includeFAQs} class="rounded border-[var(--color-border)]" />
+					{t('ai.body.include_faqs', 'FAQs')}
+				</label>
+				<label class="flex items-center gap-2">
+					<input type="checkbox" bind:checked={includeInlineImage} class="rounded border-[var(--color-border)]" />
+					{t('ai.body.include_inline_image', 'Inline image')}
+				</label>
+				<label class="flex items-center gap-2">
+					<input type="checkbox" bind:checked={includeSteps} class="rounded border-[var(--color-border)]" />
+					{t('ai.body.include_steps', 'Steps')}
+				</label>
+				<label class="flex items-center gap-2">
+					<input type="checkbox" bind:checked={includeKeyTakeaways} class="rounded border-[var(--color-border)]" />
+					{t('ai.body.include_key_takeaways', 'Key takeaways')}
+				</label>
 			</div>
 
 			<button
