@@ -1,0 +1,198 @@
+<script lang="ts">
+	import { untrack } from 'svelte';
+	import { buildSeoMeta, mainAppUrl } from '$lib/seo';
+	import { t } from '$lib/i18n';
+	import { page } from '$app/state';
+	import Icon from '$lib/components/ui/Icon.svelte';
+	import type { CommunityOrgWithAi } from '$lib/types';
+
+	/**
+	 * Community organisation detail page — §101, ADR-109.
+	 * Renders name, type, origin, address, website, meeting frequency, contact,
+	 * map link, and AI/HITL metadata.
+	 */
+	let { data } = $props();
+
+	let org = $state<CommunityOrgWithAi>(untrack(() => data.org));
+
+	const seo = $derived(
+		buildSeoMeta({
+			title: `${org.name} — ${t('community_locator.seo_title', 'Diaspora Community Locator — JapaConnect Tools')}`,
+			description: `Diaspora community organisation in ${org.destination_space_name ?? ''}: ${org.org_type}, ${org.origin_community}.`,
+			path: `/community-locator/${page.params.slug}`,
+			origin: page.url.origin
+		})
+	);
+
+	function formatDate(iso?: string | null): string {
+		if (!iso) return '';
+		try {
+			return new Date(iso).toLocaleDateString(undefined, {
+				year: 'numeric',
+				month: 'short',
+				day: 'numeric'
+			});
+		} catch {
+			return iso;
+		}
+	}
+
+	function mapsUrl(lat: number, lng: number): string {
+		// ADR-109: No Google Maps dependency — use OpenStreetMap.
+		return `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lng}#map=16/${lat}/${lng}`;
+	}
+</script>
+
+<svelte:head>
+	<title>{seo.title}</title>
+	<meta name="description" content={seo.description} />
+	<link rel="canonical" href={seo.canonical} />
+	<meta property="og:title" content={seo.title} />
+	<meta property="og:description" content={seo.description} />
+	<meta property="og:url" content={seo.canonical} />
+	<meta property="og:type" content="website" />
+	<meta name="twitter:card" content="summary" />
+	<meta name="twitter:title" content={seo.title} />
+	<meta name="twitter:description" content={seo.description} />
+</svelte:head>
+
+<div class="mx-auto max-w-3xl px-4 py-8">
+	<a
+		href="/community-locator"
+		class="inline-flex items-center gap-1.5 text-sm text-muted hover:text-text transition-colors mb-6"
+	>
+		<Icon name="arrow-left" size={16} />
+		{t('community_locator.back_to_list', 'Back to community locator')}
+	</a>
+
+	<div class="p-6 bg-surface border border-border rounded-lg space-y-4">
+		<div>
+			<h1 class="text-2xl font-bold text-text">{org.name}</h1>
+			<p class="text-sm text-text-subtle mt-1">
+				{org.org_type}
+				{#if org.origin_community}
+					· {org.origin_community}
+				{/if}
+			</p>
+		</div>
+
+		<div class="flex flex-wrap gap-2">
+			{#if org.is_verified}
+				<span class="inline-flex items-center gap-1 text-xs px-2 py-0.5 bg-[var(--tool-accent)]/10 text-[var(--tool-accent)] rounded">
+					<Icon name="badge-check" size={12} />
+					{t('community_locator.verified', 'Verified')}
+				</span>
+			{/if}
+			{#if org.is_community_submitted}
+				<span class="text-xs px-2 py-0.5 bg-surface-subtle text-muted rounded">
+					{t('community_locator.community_submitted', 'Community')}
+				</span>
+			{/if}
+			<span class="text-xs px-2 py-0.5 bg-surface-subtle text-muted rounded">
+				{t('community_locator.claim_status', 'Claim status')}:
+				{org.claim_status}
+			</span>
+		</div>
+	</div>
+
+	<div class="mt-6 p-6 bg-surface border border-border rounded-lg space-y-3">
+		{#if org.destination_space_name || org.city_space_name}
+			<div class="flex items-start gap-2 text-sm">
+				<Icon name="map-pin" size={16} class="text-muted flex-shrink-0 mt-0.5" />
+				<span class="text-text">
+					{[org.city_space_name, org.destination_space_name].filter(Boolean).join(', ')}
+				</span>
+			</div>
+		{/if}
+
+		{#if org.address}
+			<div class="flex items-start gap-2 text-sm">
+				<Icon name="map-pin" size={16} class="text-muted flex-shrink-0 mt-0.5" />
+				<span class="text-text">{org.address}</span>
+			</div>
+		{/if}
+
+		{#if org.website_url}
+			<div class="flex items-start gap-2 text-sm">
+				<Icon name="globe" size={16} class="text-muted flex-shrink-0 mt-0.5" />
+				<a
+					href={org.website_url}
+					target="_blank"
+					rel="noopener noreferrer"
+					class="text-[var(--tool-accent)] hover:underline break-all"
+				>
+					{org.website_url}
+				</a>
+			</div>
+		{/if}
+
+		{#if org.meeting_frequency}
+			<div class="flex items-start gap-2 text-sm">
+				<Icon name="calendar" size={16} class="text-muted flex-shrink-0 mt-0.5" />
+				<span class="text-text">
+					{t('community_locator.meets', 'Meets:')} {org.meeting_frequency}
+				</span>
+			</div>
+		{/if}
+
+		{#if org.contact_info}
+			<div class="flex items-start gap-2 text-sm">
+				<Icon name="mail" size={16} class="text-muted flex-shrink-0 mt-0.5" />
+				<span class="text-text">{org.contact_info}</span>
+			</div>
+		{/if}
+
+		{#if org.latitude != null && org.longitude != null}
+			<div class="flex items-start gap-2 text-sm">
+				<Icon name="navigation" size={16} class="text-muted flex-shrink-0 mt-0.5" />
+				<a
+					href={mapsUrl(org.latitude, org.longitude)}
+					target="_blank"
+					rel="noopener noreferrer"
+					class="text-[var(--tool-accent)] hover:underline"
+				>
+					{t('community_locator.view_on_map', 'View on map')}
+				</a>
+			</div>
+		{/if}
+
+		{#if org.japaconnect_space_id}
+			<div class="pt-2 border-t border-border">
+				<a
+					href={mainAppUrl(`/spaces/${org.japaconnect_space_id}`)}
+					class="inline-flex items-center gap-1.5 text-sm text-[var(--tool-accent)] hover:underline"
+				>
+					<Icon name="users" size={14} />
+					{t('community_locator.view_space', 'View Space — posts, members & events')}
+				</a>
+			</div>
+		{/if}
+	</div>
+
+	{#if org.ai_generated}
+		<div class="mt-6 p-4 bg-amber-500/5 border border-amber-500/20 rounded-lg flex items-start gap-2">
+			<Icon name="alert-triangle" size={14} class="text-amber-600 flex-shrink-0 mt-0.5" />
+			<div class="text-xs text-text leading-relaxed">
+				<p>
+					{t('common.ai_generated', 'AI-generated content')}
+					{#if org.ai_model}({org.ai_model}){/if}
+				</p>
+				{#if org.hitl_reviewed_by}
+					<p class="mt-1 text-muted">
+						{t('common.reviewed_by', 'Reviewed by')} {org.hitl_reviewed_by}
+						{#if org.hitl_reviewed_at}
+							· {formatDate(org.hitl_reviewed_at)}
+						{/if}
+					</p>
+				{:else}
+					<p class="mt-1 text-amber-600">
+						{t(
+							'common.hitl_pending',
+							'This content has not been human-reviewed yet. Verify with official sources.'
+						)}
+					</p>
+				{/if}
+			</div>
+		</div>
+	{/if}
+</div>

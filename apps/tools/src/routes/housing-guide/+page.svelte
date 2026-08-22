@@ -314,6 +314,16 @@
 										{t('housing_guide.reviewed_by', 'Reviewed by')} {guide.reviewer_name}
 									</p>
 								{/if}
+
+								<div class="pt-2">
+									<a
+										href={`/housing-guide/${guide.id}`}
+										class="inline-flex items-center gap-1.5 text-sm text-[var(--tool-accent)] hover:underline"
+									>
+										<Icon name="external-link" size={16} />
+										{t('housing_guide.view_guide', 'View guide')}
+									</a>
+								</div>
 							</div>
 						{/if}
 					</div>

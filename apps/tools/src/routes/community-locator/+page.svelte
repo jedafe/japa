@@ -488,7 +488,13 @@
 								>
 									<div class="min-w-0">
 										<div class="flex items-center gap-2 flex-wrap">
-											<span class="text-sm font-semibold text-text">{org.name}</span>
+											<a
+												href={`/community-locator/${org.slug}`}
+												onclick={(e) => e.stopPropagation()}
+												class="text-sm font-semibold text-text hover:text-[var(--tool-accent)] hover:underline"
+											>
+												{org.name}
+											</a>
 											{#if org.is_verified}
 												<span class="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 bg-[var(--tool-accent)]/10 text-[var(--tool-accent)] rounded">
 													<Icon name="badge-check" size={12} />
