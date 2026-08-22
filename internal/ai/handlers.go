@@ -371,6 +371,10 @@ func (h *Handlers) dispatchAndRecordUsage(ctx context.Context, tenantID, userID 
 		promptTokens = int32(usage.PromptTokens)
 		completionTokens = int32(usage.CompletionTokens)
 		totalTokens = int32(usage.TotalTokens)
+	} else if usage, ok := resp.Raw["usage"].(openAIUsage); ok {
+		promptTokens = int32(usage.PromptTokens)
+		completionTokens = int32(usage.CompletionTokens)
+		totalTokens = int32(usage.TotalTokens)
 	} else if usageRaw, ok := resp.Raw["usage"].(map[string]any); ok {
 		if v, ok := usageRaw["prompt_tokens"].(float64); ok {
 			promptTokens = int32(v)
@@ -454,9 +458,14 @@ func (h *Handlers) HandleGenerate(w http.ResponseWriter, r *http.Request) {
 	// task and return 202 Accepted with the task reference instead of blocking
 	// on the AI gateway call synchronously.
 	if input.Category == "docs" {
-		// Extract audience and related_features from the context map (§44).
-		// The context is optional but audience is recommended for docs generation.
+		// Extract title, slug, audience and related_features from the context map (§44).
+		// Title is required so the worker can create a real doc page draft.
+		title, _ := input.Context["title"].(string)
+		slug, _ := input.Context["slug"].(string)
 		audience, _ := input.Context["audience"].(string)
+		if audience == "" {
+			audience = "users"
+		}
 		relatedFeatures := []string{}
 		if rf, ok := input.Context["related_features"].([]any); ok {
 			for _, v := range rf {
@@ -466,8 +475,15 @@ func (h *Handlers) HandleGenerate(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
+		if title == "" {
+			errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "title is required for docs generation")
+			return
+		}
+
 		payload, err := json.Marshal(map[string]any{
 			"prompt":           input.Prompt,
+			"title":            title,
+			"slug":             slug,
 			"user_id":          user.UserID.String(),
 			"tenant_id":        tenantID.String(),
 			"audience":         audience,
@@ -484,14 +500,16 @@ func (h *Handlers) HandleGenerate(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// DOC-014: deterministic task ID so repeated identical generation requests
-		// de-duplicate. The catalog lists idempotency keyed by page slug; until
-		// title/slug are part of the request, a hash of tenant + audience + prompt
-		// is the stable key.
-		promptHash := sha256.Sum256([]byte(input.Prompt))
+		// de-duplicate. Keyed by tenant + audience + slug (or title hash when no slug provided).
+		idSeed := slug
+		if idSeed == "" {
+			sum := sha256.Sum256([]byte(title))
+			idSeed = hex.EncodeToString(sum[:])
+		}
 		taskID := fmt.Sprintf("docs:generate_page:%s:%s:%s",
 			tenantID.String(),
 			audience,
-			hex.EncodeToString(promptHash[:]),
+			idSeed,
 		)
 
 		info, err := h.AsynqClient.Enqueue(
@@ -571,14 +589,23 @@ func mapGenerateResult(resp Response) map[string]any {
 		result["model"] = model
 	}
 
-	// Extract generated_text from choices[0].message.content.
+	// Extract generated_text from choices[0].message.content or message.reasoning.
 	if choices, ok := resp.Raw["choices"].([]mimoChoice); ok && len(choices) > 0 {
 		result["generated_text"] = choices[0].Message.Content
+	} else if choices, ok := resp.Raw["choices"].([]openAIChoice); ok && len(choices) > 0 {
+		msg := choices[0].Message
+		if msg.Content != "" {
+			result["generated_text"] = msg.Content
+		} else {
+			result["generated_text"] = msg.Reasoning
+		}
 	} else if choicesRaw, ok := resp.Raw["choices"].([]any); ok && len(choicesRaw) > 0 {
 		if choice, ok := choicesRaw[0].(map[string]any); ok {
 			if msg, ok := choice["message"].(map[string]any); ok {
-				if content, ok := msg["content"].(string); ok {
+				if content, ok := msg["content"].(string); ok && content != "" {
 					result["generated_text"] = content
+				} else if reasoning, ok := msg["reasoning"].(string); ok {
+					result["generated_text"] = reasoning
 				}
 			}
 		}
@@ -586,6 +613,8 @@ func mapGenerateResult(resp Response) map[string]any {
 
 	// Extract tokens_used from usage.total_tokens.
 	if usage, ok := resp.Raw["usage"].(mimoUsage); ok {
+		result["tokens_used"] = usage.TotalTokens
+	} else if usage, ok := resp.Raw["usage"].(openAIUsage); ok {
 		result["tokens_used"] = usage.TotalTokens
 	} else if usageRaw, ok := resp.Raw["usage"].(map[string]any); ok {
 		if total, ok := usageRaw["total_tokens"].(float64); ok {
@@ -1203,30 +1232,76 @@ func buildDraftPrompt(input DraftInput) string {
 			b.WriteString("- " + f.Key + " (" + f.Type + "): " + f.Label + "\n")
 		}
 	}
-	b.WriteString("Return a JSON object with keys: title (optional), body_html, field_values (optional). Do not include markdown code fences.\n")
+	b.WriteString("Return a JSON object with keys: title (optional), body_html (HTML, not plain text), field_values (optional). Do not include markdown code fences and do not include any chain-of-thought or reasoning text.\n")
 	return b.String()
+}
+
+// plainTextToHTML converts a block of plain text into a minimal HTML
+// paragraph structure. Double line breaks become <p> boundaries, single
+// line breaks become <br> so it renders in a WYSIWYG editor.
+func plainTextToHTML(text string) string {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return ""
+	}
+	// If the text already looks like HTML, leave it alone.
+	if strings.HasPrefix(text, "<") {
+		return text
+	}
+	paragraphs := strings.Split(text, "\n\n")
+	for i, p := range paragraphs {
+		p = strings.TrimSpace(p)
+		p = strings.ReplaceAll(p, "\n", "<br>")
+		if p != "" {
+			paragraphs[i] = "<p>" + p + "</p>"
+		} else {
+			paragraphs[i] = ""
+		}
+	}
+	return strings.Join(paragraphs, "")
 }
 
 func parseDraftResponse(resp Response) (DraftResult, error) {
 	result := DraftResult{Title: "", BodyHTML: "", FieldValues: map[string]any{}, TokensUsed: 0}
 
 	raw := mapGenerateResult(resp)
-	result.TokensUsed = raw["tokens_used"].(int)
+	if v, ok := raw["tokens_used"].(int); ok {
+		result.TokensUsed = v
+	}
 
 	content := raw["generated_text"].(string)
 	if content == "" {
 		return result, nil
 	}
 
+	// Some providers wrap JSON in markdown code fences; strip them before parsing.
+	content = strings.TrimSpace(content)
+	content = strings.TrimPrefix(content, "```json")
+	content = strings.TrimPrefix(content, "```")
+	content = strings.TrimSuffix(content, "```")
+	content = strings.TrimSpace(content)
+
 	// Try to parse the generated text as a JSON object. If that fails,
 	// treat the whole content as body_html.
-	var parsed DraftResult
+	var parsed struct {
+		Title       string         `json:"title"`
+		Body        string         `json:"body"`
+		BodyHTML    string         `json:"body_html"`
+		Content     string         `json:"content"`
+		FieldValues map[string]any `json:"field_values"`
+	}
 	if err := json.Unmarshal([]byte(content), &parsed); err == nil {
 		result.Title = parsed.Title
-		result.BodyHTML = parsed.BodyHTML
+		if parsed.BodyHTML != "" {
+			result.BodyHTML = parsed.BodyHTML
+		} else if parsed.Body != "" {
+			result.BodyHTML = parsed.Body
+		} else if parsed.Content != "" {
+			result.BodyHTML = parsed.Content
+		}
 		result.FieldValues = parsed.FieldValues
 	} else {
-		result.BodyHTML = content
+		result.BodyHTML = plainTextToHTML(content)
 	}
 
 	if result.FieldValues == nil {
