@@ -25,6 +25,7 @@ import (
 // ScamReportDTO is the API response shape for a single scam report.
 type ScamReportDTO struct {
 	ID                    string `json:"id"`
+	ReporterID            string `json:"reporter_id,omitempty"`
 	ScamType              string `json:"scam_type"`
 	DestinationSpaceID    string `json:"destination_space_id,omitempty"`
 	DestinationSpaceName  string `json:"destination_space_name,omitempty"`
@@ -671,6 +672,9 @@ func rowToDTO(r ScamReportRow) ScamReportDTO {
 		CreatedAt:             formatTs(r.CreatedAt),
 		UpdatedAt:             formatTs(r.UpdatedAt),
 		ReviewedAt:            formatTs(r.ReviewedAt),
+	}
+	if r.ReporterID.Valid {
+		dto.ReporterID = r.ReporterID.String()
 	}
 	if r.DestinationSpaceID.Valid {
 		dto.DestinationSpaceID = r.DestinationSpaceID.String()

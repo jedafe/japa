@@ -981,6 +981,47 @@ export interface AffiliateEarnings {
 	}>;
 }
 
+/** GET /me/payments — payment history for the billing Payments section. */
+export interface Payment {
+	id: string;
+	provider: string;
+	provider_ref?: string;
+	purpose_type?: string;
+	purpose_id?: string;
+	amount: string;
+	currency: string;
+	status: string;
+	metadata?: Record<string, unknown> | null;
+	subscription_id?: string;
+	discount_code_id?: string;
+	discount_amount?: string;
+	checkout_url?: string;
+	created_at: string;
+	updated_at?: string;
+}
+
+/** GET /me/api-keys — API key returned to the owner (no secret). */
+export interface ApiKey {
+	id: string;
+	name: string;
+	key_prefix?: string;
+	scopes?: string[];
+	rate_limit_tier?: string;
+	status?: string;
+	notes?: string;
+	created_at?: string;
+	updated_at?: string;
+}
+
+/** GET /me/api-keys/{id}/ip-allowlist — single IP allowlist entry. */
+export interface ApiKeyIPAllowlist {
+	id: string;
+	api_key_id: string;
+	cidr: string;
+	description?: string;
+	created_at?: string;
+}
+
 /** GET /me/analytics — aggregate analytics for the dashboard. */
 export interface MeAnalytics {
 	total_content: number;
@@ -1975,6 +2016,8 @@ export interface CatalogTrack {
 	is_published_to_university?: boolean;
 	/** Resolved cover image URL when a track has cover media. */
 	thumbnail_url?: string | null;
+	avg_rating?: number;
+	review_count?: number;
 	created_at: string;
 }
 
@@ -2332,6 +2375,7 @@ export interface JobListing {
 	summary: string;
 	field_values: Record<string, string>;
 	published_at: string;
+	org_id?: string;
 }
 
 export interface JobDetail {
@@ -2342,6 +2386,7 @@ export interface JobDetail {
 	body: string;
 	field_values: Record<string, string>;
 	published_at: string;
+	org_id?: string;
 }
 
 export interface JobApplication {
@@ -2608,6 +2653,7 @@ export type ScamPlatform =
 
 export interface ScamReport {
 	id: string;
+	reporter_id?: string;
 	scam_type: string;
 	destination_space_id?: string;
 	destination_space_name?: string;
@@ -2921,6 +2967,7 @@ export interface AMAThread {
 	author_user_id?: string;
 	author_name?: string;
 	author_avatar?: string;
+	is_anonymous?: boolean;
 	ama_config: unknown;
 	created_at: string;
 	updated_at: string;

@@ -94,13 +94,14 @@ type JobResult struct {
 
 // JobDetail is a single job listing with all its custom field values.
 type JobDetail struct {
-	ID          string            `json:"id"`
-	Title       string            `json:"title"`
-	Slug        string            `json:"slug"`
-	Summary     string            `json:"summary"`
-	Body        string            `json:"body"`
-	FieldValues map[string]string `json:"field_values"`
-	PublishedAt string            `json:"published_at"`
+	ID             string            `json:"id"`
+	Title          string            `json:"title"`
+	Slug           string            `json:"slug"`
+	Summary        string            `json:"summary"`
+	Body           string            `json:"body"`
+	FieldValues    map[string]string `json:"field_values"`
+	PublishedAt    string            `json:"published_at"`
+	OrganizationID string            `json:"organization_id,omitempty"`
 }
 
 // UpdateJobListingInput is the request body for the public PATCH
@@ -463,7 +464,7 @@ func (s *Service) FindJobs(ctx context.Context, tenantID pgtype.UUID, filters Jo
 func (s *Service) GetJobDetail(ctx context.Context, tenantID pgtype.UUID, slug string) (JobDetail, error) {
 	query := `
 		SELECT
-			c.id, c.title, c.slug, c.body,
+			c.id, c.title, c.slug, c.body, c.organization_id,
 			COALESCE(
 				(SELECT json_object_agg(cf.key,
 					CASE
@@ -494,10 +495,11 @@ func (s *Service) GetJobDetail(ctx context.Context, tenantID pgtype.UUID, slug s
 		body        *string
 		fieldValues []byte
 		publishedAt pgtype.Timestamptz
+		orgID       pgtype.UUID
 	)
 
 	err := s.store.pool.Reader.QueryRow(ctx, query, tenantID, slug).Scan(
-		&id, &title, &slugOut, &body, &fieldValues, &publishedAt,
+		&id, &title, &slugOut, &body, &orgID, &fieldValues, &publishedAt,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -521,7 +523,7 @@ func (s *Service) GetJobDetail(ctx context.Context, tenantID pgtype.UUID, slug s
 		publishedStr = publishedAt.Time.UTC().Format("2006-01-02T15:04:05Z07:00")
 	}
 
-	return JobDetail{
+	detail := JobDetail{
 		ID:          id.String(),
 		Title:       title,
 		Slug:        slugOut,
@@ -529,7 +531,11 @@ func (s *Service) GetJobDetail(ctx context.Context, tenantID pgtype.UUID, slug s
 		Body:        bodyStr,
 		FieldValues: fvMap,
 		PublishedAt: publishedStr,
-	}, nil
+	}
+	if orgID.Valid {
+		detail.OrganizationID = orgID.String()
+	}
+	return detail, nil
 }
 
 // ListOrgJobs returns published job_listing contents for a specific org,
@@ -736,13 +742,14 @@ func (s *Service) GetJobByID(ctx context.Context, tenantID, orgID, jobID pgtype.
 	}
 
 	return JobDetail{
-		ID:          id.String(),
-		Title:       title,
-		Slug:        slugOut,
-		Summary:     deriveSummary(bodyStr),
-		Body:        bodyStr,
-		FieldValues: fvMap,
-		PublishedAt: publishedStr,
+		ID:             id.String(),
+		Title:          title,
+		Slug:           slugOut,
+		Summary:        deriveSummary(bodyStr),
+		Body:           bodyStr,
+		FieldValues:    fvMap,
+		PublishedAt:    publishedStr,
+		OrganizationID: orgID.String(),
 	}, nil
 }
 
