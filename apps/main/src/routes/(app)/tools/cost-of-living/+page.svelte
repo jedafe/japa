@@ -70,6 +70,21 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 		fetchComparison();
 	}
 
+	// Seed matrix from SSR data when available.
+	$effect(() => {
+		if (data.matrix && selectedIds.join(',') === data.preselected.join(',')) {
+			matrix = data.matrix;
+		}
+	});
+
+	// Fetch comparison on initial client load when a shareable URL preloaded
+	// the selected IDs but no matrix was returned from the server.
+	$effect(() => {
+		const ids = selectedIds.join(',');
+		const initialIds = untrack(() => data.preselected.join(','));
+		if (ids !== initialIds || !data.matrix) fetchComparison();
+	});
+
 	async function shareUrl() {
 		const url = `${page.url.origin}${page.url.pathname}?city_ids=${selectedIds.join(',')}`;
 		try {

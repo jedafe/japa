@@ -2,7 +2,7 @@ import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiGet } from '$lib/server/api';
 import { ApiError } from '$lib/server/api';
-import type { ColCity, ColCitiesListResponse } from '$lib/types';
+import type { ColCity, ColCitiesListResponse, ColComparisonMatrix } from '$lib/types';
 
 /**
  * Cost of Living Calculator at /tools/cost-of-living (Section 72, ADR-072).
@@ -46,9 +46,20 @@ export const load: PageServerLoad = async (event) => {
 		}
 	}
 
-	// Pre-select from shareable URL ?city_ids=a,b,c
+	// Pre-select from shareable URL ?city_ids=a,b,c and SSR the matrix if present.
 	const cityIdsParam = event.url.searchParams.get('city_ids');
 	const preselected = cityIdsParam ? cityIdsParam.split(',').filter(Boolean) : [];
+	let matrix: ColComparisonMatrix | null = null;
+	if (cityIdsParam) {
+		try {
+			matrix = await apiGet<ColComparisonMatrix>(
+				ctx,
+				`/calculator/cost-of-living/compare?city_ids=${encodeURIComponent(cityIdsParam)}`
+			);
+		} catch {
+			matrix = null;
+		}
+	}
 
-	return { cities, disabled, authed, preselected, maxCities, staleDays };
+	return { cities, disabled, authed, preselected, maxCities, staleDays, matrix };
 };

@@ -76,7 +76,7 @@
 		loadingComparison = true;
 		showComparison = true;
 		const ids = Array.from(selectedRouteIds).join(',');
-		const res = await api.get<VisaRouteWithAi[]>(`/visa-routes/compare?ids=${ids}`);
+		const res = await api.get<VisaRouteWithAi[]>(`/visa-routes/compare?dest=${selectedDestId}&ids=${ids}`);
 		loadingComparison = false;
 		if (!res.error) comparisonData = res.data ?? [];
 		else comparisonData = [];
