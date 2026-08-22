@@ -2,6 +2,7 @@
 	import { untrack } from 'svelte';
 	import { replaceState } from '$app/navigation';
 	import { api } from '$lib/api/client';
+	import AiBodyField from '$lib/ai/AiBodyField.svelte';
 	import { PUBLIC_JC_API_URL } from '$env/static/public';
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
@@ -518,16 +519,18 @@
 												</div>
 											</div>
 											<div>
-												<label for="upd-note" class="block text-xs font-medium text-[var(--color-muted)] mb-1">
-													{t('attestation_guide.note', 'Note')}
-												</label>
-												<textarea
+												<AiBodyField
 													id="upd-note"
-													bind:value={updateNote}
-													rows="3"
+													label={t('attestation_guide.note', 'Note')}
+													contentType="attestation_guide"
+													title={pathway.document_type}
+													body={updateNote}
+													onBody={(v) => (updateNote = v)}
 													placeholder={t('attestation_guide.note_placeholder', 'Share your experience with this step...')}
-													class="w-full px-3 py-2 text-sm bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius)] focus:border-[var(--color-primary)] focus:outline-none"
-												></textarea>
+													rows={3}
+													user={data.user}
+													features={data.features ?? {}}
+												/>
 											</div>
 											<div class="flex items-center gap-2">
 												<button
