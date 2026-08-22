@@ -124,6 +124,7 @@
 			onBody={(v) => (description = v)}
 			onTitle={(v) => (name = v)}
 			user={data.user}
+			features={data.features ?? {}}
 			placeholder={t('planning_groups.field_description_placeholder', 'What is this group about?')}
 			rows={3}
 		/>

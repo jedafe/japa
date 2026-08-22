@@ -177,6 +177,7 @@
 				onBody={(v) => (body = v)}
 				onTitle={(v) => (title = v)}
 				user={data.user}
+				features={data.features ?? {}}
 				placeholder={t('services.description_placeholder', 'Describe the service you offer…')}
 				rows={5}
 			/>

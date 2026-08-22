@@ -181,6 +181,8 @@
 					onBody={(v) => (body = v)}
 					onTitle={(v) => (title = v)}
 					user={data.user}
+					features={data.features ?? {}}
+					required
 					placeholder={t('stories.field_body_ph', 'Tell us about your relocation experience…')}
 					rows={8}
 				/>
