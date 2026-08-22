@@ -52,7 +52,7 @@ export default defineConfig({
 			// (which has no ws:true) so the dev proxy upgrades /api/v1/ws to the
 			// backend's GET /api/v1/ws?ticket=... handler.
 			'/api/v1/ws': { target: API_TARGET.replace(/^http/, 'ws'), ws: true, changeOrigin: true },
-			'/api/v1': { target: API_TARGET, changeOrigin: true },
+			'/api/v1': { target: API_TARGET, changeOrigin: true, timeout: 120000, proxyTimeout: 120000 },
 			'/ws': { target: API_TARGET.replace(/^http/, 'ws'), ws: true, changeOrigin: true },
 			// SeaweedFS upload fallback — dev-only presigned URL proxy.
 			// When S3 is not configured, the backend returns /seaweedfs/upload/...
